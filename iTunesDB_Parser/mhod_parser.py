@@ -14,4 +14,7 @@ def parse_mhod(data, offset, header_length, chunk_length) -> dict:
     else:
         string_decode = string_data.decode("utf-8")
 
+    #TODO: MHODs are much more complex and need further implementing
+    #This only covers the basics of some mhod types
+
     return {"nextOffset": offset+chunk_length, "result": {"mhodType": mhod_type, "string": string_decode}}

@@ -18,10 +18,14 @@ def parse_chunk(data, offset) -> dict:
       return result
     case "mhlt":
       #track list
-      return {}
+      from .mhlt_parser import parse_trackList
+      result = parse_trackList(data, offset, header_length, chunk_length)
+      return result
     case "mhit":
-      #track item
-      return {}
+      #Track Item
+      from .mhit_parser import parse_trackItem
+      result = parse_trackItem(data, offset, header_length, chunk_length)
+      return result
     case "mhlp":
       #playlist list
       return {}
