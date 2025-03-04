@@ -5,6 +5,7 @@ name = "pypi"
 
 [packages]
 dearpygui = "*"
+pyqt6 = "*"
 
 [dev-packages]
 

@@ -19,7 +19,7 @@ def log_message(message):
 
 
 def start_parsing():
-    result = parse_itunesdb(r"C:\Users\JohnG\Documents\Coding Projects\iOpenPod\iOpenPod\iTunes\iTunesDB")
+    result = parse_itunesdb(r"C:\Users\JohnG\Documents\Coding Projects\iOpenPod\iOpenPod\iTunesDB")
     print(str(result))
     with open("data.json", "w") as f:
         json.dump(result, f, indent=2)
