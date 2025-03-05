@@ -11,6 +11,8 @@ def parse_albumItem(data, offset, header_length, chunk_length) -> dict:
     unk3 = struct.unpack("<I", data[offset+28:offset+32])[0]  #always 2 0x18+
     
     album = {}
+    
+    album["AlbumIDforTrack"] = album_id_for_track
 
     #Parse Children
     next_offset = offset+header_length

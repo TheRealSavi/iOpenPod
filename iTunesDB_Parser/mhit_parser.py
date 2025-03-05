@@ -6,11 +6,18 @@ def parse_trackItem(data, offset, header_length, chunk_length) -> dict:
 
     childCount = struct.unpack("<I", data[offset+12:offset+16])[0]
     track_id  = struct.unpack("<I", data[offset+16:offset+20])[0]
+    #used for playlists
+    
+    dbid = struct.unpack("<Q", data[offset+112:offset+120])[0]
+    #the unique identifier
 
     #much much more data...
     #TODO: Finish implementing track data
 
     track = {}
+    
+    track["trackID"] = track_id
+    track["dbid"] = dbid
 
     #Parse Children
     next_offset = offset+header_length

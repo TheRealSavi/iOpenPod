@@ -1,4 +1,4 @@
-def parse_itunesdb(file) -> dict:
+def parse_artworkdb(file) -> dict:
     from .chunk_parser import parse_chunk
     
     if isinstance(file, str):  # If it's a file path, open the file
