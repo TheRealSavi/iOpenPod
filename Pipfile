@@ -6,6 +6,8 @@ name = "pypi"
 [packages]
 dearpygui = "*"
 pyqt6 = "*"
+numpy = "*"
+pillow = "*"
 
 [dev-packages]
 

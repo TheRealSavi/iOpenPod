@@ -8,9 +8,10 @@ from PyQt6.QtGui import QFont, QPixmap, QPainter, QFontMetrics
 from PyQt6.QtCore import Qt, QSize, QPropertyAnimation, pyqtProperty, QAbstractAnimation
 import sys
 
+
 # Load JSON data from data.json in the parent directory.
 base_path = os.path.dirname(os.path.abspath(__file__))
-json_file = os.path.join(base_path, "..", "data.json")
+json_file = os.path.join(base_path, "..", "idb.json")
 with open(json_file, "r", encoding="utf-8") as f:
     json_data = json.load(f)
 
