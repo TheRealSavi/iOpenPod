@@ -10,6 +10,12 @@ def parse_trackItem(data, offset, header_length, chunk_length) -> dict:
     
     dbid = struct.unpack("<Q", data[offset+112:offset+120])[0]
     #the unique identifier
+    
+    albumid = struct.unpack("<H", data[offset+314:offset+316])[0]
+    #the album identifier
+    
+    mhii_link = struct.unpack("<I", data[offset+352:offset+356])[0]
+    #the link to the album art
 
     #much much more data...
     #TODO: Finish implementing track data
@@ -18,6 +24,8 @@ def parse_trackItem(data, offset, header_length, chunk_length) -> dict:
     
     track["trackID"] = track_id
     track["dbid"] = dbid
+    track["albumID"] = albumid
+    track["mhiiLink"] = mhii_link
 
     #Parse Children
     next_offset = offset+header_length

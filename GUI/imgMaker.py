@@ -73,8 +73,8 @@ def load_images_from_json(json_path, ithmb_folder_path):
     return images
 
 
-def find_image_by_songID(json_path, ithmb_folder_path, songID):
-    """Find and return image for the given songID."""
+def find_image_by_imgId(json_path, ithmb_folder_path, imgId):
+    """Find and return image for the given imgID."""
     with open(json_path, "r") as f:
         data = json.load(f)
 
@@ -85,12 +85,14 @@ def find_image_by_songID(json_path, ithmb_folder_path, songID):
             print("Thumbnail image data not found for an entry; skipping.")
             continue
 
-        img_id = entry.get("songId", "unknown")
-        if img_id != songID:
+        entry_imgId = entry.get("imgId", None)
+        if entry_imgId != imgId:
             continue  # Skip entries that don't match the songID
         
         file_info = thumb_result.get("3", {})
         ithmb_filename = file_info.get("File Name", f"F{thumb_result.get('correlationID')}_1.ithmb")
+        if ithmb_filename.startswith(":"):
+            ithmb_filename = ithmb_filename[1:]
         ithmb_path = os.path.join(ithmb_folder_path, ithmb_filename)
 
         required_keys = ["ithmbOffset", "imgSize", "image_format"]
@@ -101,5 +103,5 @@ def find_image_by_songID(json_path, ithmb_folder_path, songID):
         img = generate_image(ithmb_path, thumb_result)
         if img is not None:
             return img
-    print(f"No image found for songID: {songID}")
+    print(f"No image found for imgId: {imgId}")
     return None
