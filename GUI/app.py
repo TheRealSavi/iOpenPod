@@ -100,7 +100,7 @@ class ScrollingLabel(QLabel):
       self.setOffset(0)
       super().leaveEvent(event)
 
-class Sidebar(QWidget):
+class Sidebar(QFrame):
   def __init__(self):
       super().__init__()
       self.setStyleSheet(
