@@ -2,7 +2,7 @@ import json
 import sys
 #sys used to access the command line arguments
 from PyQt6.QtCore import Qt, QSize, QPropertyAnimation, pyqtProperty, QAbstractAnimation, QThread, pyqtSignal
-from PyQt6.QtWidgets import QApplication, QWidget, QScrollArea, QLabel, QFrame, QSplitter, QMainWindow, QPushButton, QVBoxLayout, QHBoxLayout, QGridLayout, QStackedLayout, QTabWidget, QSizePolicy
+from PyQt6.QtWidgets import QApplication, QAbstractItemView, QTableWidgetItem, QHeaderView, QTableWidget, QWidget, QScrollArea, QLabel, QFrame, QSplitter, QMainWindow, QPushButton, QVBoxLayout, QHBoxLayout, QGridLayout, QStackedLayout, QTabWidget, QSizePolicy
 from PyQt6.QtGui import QColor, QPalette, QFont, QPainter, QFontMetrics, QPixmap
 from PIL.ImageQt import ImageQt
 from imgMaker import find_image_by_imgId
@@ -45,7 +45,27 @@ class AlbumLoaderThread(QThread):
         
       items.append({"artist": artist, "album": album, "mhiiLink": mhiiLink})
     self.data_loaded.emit(items)
-
+    
+class TrackLoaderThread(QThread):
+  data_loaded = pyqtSignal(list) #signal to return parsed data
+  
+  def __init__(self ):
+    super().__init__()
+  
+  def run(self):
+    with open(ITUNESDB_PATH, "r") as f:
+      data = json.load(f)
+      items = []
+      
+      tracks = data.get("mhlt", [])
+      
+      for track in tracks:
+        items.append(track)
+        
+    self.data_loaded.emit(items)
+    
+    
+    
 class ScrollingLabel(QLabel):
   def __init__(self, text="", parent=None):
     super().__init__(text, parent)
@@ -244,6 +264,8 @@ class MusicBrowser(QWidget):
     #Bottom: Track Browser
     self.browserTrack = MusicBrowserList()
     self.gridTrackSplitter.addWidget(self.browserTrack)
+    
+    self.browserTrack.loadFromJSON()
           
 class MusicBrowserGrid(QWidget):
   def __init__(self):
@@ -300,9 +322,44 @@ class MusicBrowserGrid(QWidget):
 class MusicBrowserList(QWidget):
   def __init__(self):
     super().__init__()
-    self.layout = QVBoxLayout(self)
+    self.layout = QHBoxLayout(self)
     self.layout.setContentsMargins(0, 0, 0, 0)
-  
+    self.tracks = []
+    
+  def loadFromJSON(self):
+    self.thread = TrackLoaderThread()
+    self.thread.data_loaded.connect(self.populateTable)
+    self.thread.start()
+      
+  def populateTable(self, tracks):
+      self.tracks = tracks
+
+      # Collect all unique keys from all tracks
+      all_keys = set(key for track in self.tracks for key in track.keys())
+      
+      # Create the table
+      self.table = QTableWidget()
+      self.table.setRowCount(len(self.tracks))
+      self.table.setColumnCount(len(all_keys))
+      
+      # Set the headers
+      self.table.setHorizontalHeaderLabels(sorted(all_keys))
+      self.table.setSortingEnabled(True)
+      self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+      self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+       
+      # Stretch headers to fill the window
+      header = self.table.horizontalHeader()
+      header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+      
+      # Populate the table
+      for row, track in enumerate(self.tracks):
+          for col, key in enumerate(sorted(all_keys)):
+              value = track.get(key, "")  # Get the value or an empty string if key is missing
+              self.table.setItem(row, col, QTableWidgetItem(str(value)))
+      
+      self.layout.addWidget(self.table)
+      
       
 class MusicBrowserGridItem(QFrame):
   def __init__(self, album, artist, mhiiLink):
