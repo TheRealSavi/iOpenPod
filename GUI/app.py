@@ -3,7 +3,7 @@ import os
 import sys
 import traceback
 #sys used to access the command line arguments
-from PyQt6.QtCore import Qt,QRunnable, QTimer, QSize, QPropertyAnimation, pyqtProperty, QAbstractAnimation, QThread, pyqtSignal, pyqtSlot, QObject, QThreadPool, QMetaObject, Q_ARG
+from PyQt6.QtCore import Qt,QRunnable, QTimer, QSize, QPropertyAnimation, pyqtProperty, QAbstractAnimation, QThread, pyqtSignal, pyqtSlot, QObject, QThreadPool, QMetaObject, Q_ARG, QPoint
 from PyQt6.QtWidgets import QApplication, QAbstractItemView, QTableWidgetItem, QHeaderView, QTableWidget, QWidget, QScrollArea, QLabel, QFrame, QSplitter, QMainWindow, QPushButton, QVBoxLayout, QHBoxLayout, QGridLayout, QStackedLayout, QTabWidget, QSizePolicy
 from PyQt6.QtGui import QColor, QPalette, QFont, QPainter, QFontMetrics, QPixmap
 from PyQt6.QtSvgWidgets import QSvgWidget
@@ -46,7 +46,6 @@ class Worker(QRunnable):
     finally:
       self.signals.finished.emit()
     
-
 class WorkerSignals(QObject):
   finished = pyqtSignal()
   error = pyqtSignal(tuple)
@@ -88,8 +87,6 @@ def TrackLoaderThread():
   for track in tracks:
     items.append(track)
   return items
-    
-    
     
 class ScrollingLabel(QLabel):
   def __init__(self, text="", parent=None):
@@ -146,6 +143,7 @@ class ScrollingLabel(QLabel):
       super().leaveEvent(event)
 
 class Sidebar(QFrame):
+  category_changed = pyqtSignal(str)
   def __init__(self):
       super().__init__()
       self.setStyleSheet(
@@ -242,7 +240,7 @@ class Sidebar(QFrame):
     #set the selected button's style
     self.buttons[self.selectedCategory].setStyleSheet(
       "QPushButton {"
-      "background-color: rgba(0,122,204,255);"
+      "background-color: #409cff;"
       "border: none;"
       "color: white;"
       "padding: 10px 0;"
@@ -250,65 +248,199 @@ class Sidebar(QFrame):
       "QPushButton:hover {"
       "background-color: rgba(0,122,204,204);"
       "}"
-)
+    )
+    self.category_changed.emit(category)
 
+class TrackListTitleBar(QFrame):
+  def __init__(self, splitterToControl):
+    super().__init__()
+    self.splitter = splitterToControl
+    self.dragging = False
+    self.dragStartPos = QPoint()
+    self.setMouseTracking(True)
+    self.layout = QHBoxLayout(self)
+    self.layout.setContentsMargins(2,2,2,2)
+    #self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+    self.splitter.splitterMoved.connect(self.enforceMinHeight)
 
+    
+    # Set minimum and maximum height
+    self.setMinimumHeight(30)  # Minimum height in pixels
+    self.setMaximumHeight(30)  # Maximum height in pixels
+    self.setFixedHeight(30)
+    
+    self.setStyleSheet("""
+            QFrame {
+                background-color: #409cff;
+                border: none;
+                border-radius: 5px;
+                color: white;
+            }
+            QLabel {
+                font-weight: bold;
+                font-size: 14px;
+                color: white;
+                margin-left: 10px;
+            }
+            QPushButton {
+                background-color: transparent;
+                border: none;
+                color: white;
+                font-size: 12px;
+                font-weight: bold;
+                width: 30px;
+                height: 30px;
+                border-radius: 3px;
+                margin-right: 5px;  /* Right margin for buttons */
+            }
+            QPushButton:hover {
+                background-color: #ff375f;  /* Hover effect for buttons */
+            }
+            QPushButton:pressed {
+                background-color: #888888;  /* Pressed effect for buttons */
+            }
+        """)
+    
+    self.title = QLabel("Tracks")
+    self.button1 = QPushButton("-")
+    self.button2 = QPushButton("X")
+    self.layout.addWidget(self.title)
+    self.layout.addStretch()
+    self.layout.addWidget(self.button1)
+    self.layout.addWidget(self.button2)
+   
+  
+  def mousePressEvent(self, event):
+    if event.button()== Qt.MouseButton.LeftButton:
+      if self.childAt(event.pos()) is None:
+        self.dragging = True
+        self.dragStartPos = event.globalPosition().toPoint()
+        event.accept()
+      else:
+        event.ignore()
+        
+  def mouseMoveEvent(self, event):
+    if self.dragging:
+      delta = event.globalPosition().toPoint().y() - self.dragStartPos.y()
+      self.dragStartPos = event.globalPosition().toPoint()
+      
+      current_pos = self.splitter.handle(1).y()
+      new_pos = self.splitter.mapFromGlobal(event.globalPosition().toPoint()).y()
+      
+      max_pos = self.splitter.parent().height() - self.splitter.handleWidth()
+      
+      new_pos = max(0, min(new_pos, max_pos))
+      
+      #move the splitter handle
+      self.splitter.moveSplitter(new_pos, 1)
+      event.accept()
+    else:
+      event.ignore()
+      
+  def mouseReleaseEvent(self, event):
+    if event.button() == Qt.MouseButton.LeftButton:
+      self.dragging = False
+      event.accept()
+      
+  def enterEvent(self, event):
+    if self.childAt(event.position().toPoint()) is None:
+      QApplication.setOverrideCursor(Qt.CursorShape.SizeVerCursor)
+    else:
+      QApplication.restoreOverrideCursor()
+      
+  def leaveEvent(self, event):
+    QApplication.restoreOverrideCursor()
+    super().leaveEvent(event)
+  
+  def enforceMinHeight(self):
+    sizes = self.splitter.sizes()
+    min_height = self.minimumHeight()
+    if sizes[1] <= min_height:
+      for child in self.parent().children():
+        if isinstance(child, QWidget) and child != self:
+          child.hide()
+    else:
+      for child in self.parent().children():
+        if isinstance(child, QWidget):
+          child.show()
+
+    if sizes[1] < min_height:
+        sizes[1] = min_height
+        sizes[0] = max(sizes[0] - sizes[1], 0)
+        self.splitter.setSizes(sizes)
+      
+    
 class MusicBrowser(QWidget):
   def __init__(self):
     super().__init__()
     
-    self.layout = QVBoxLayout(self)
-    self.layout.setContentsMargins(0, 0, 0, 0)
+    self.layoutSwitch = QStackedLayout(self)
+    self.layoutSwitch.setContentsMargins(0, 0, 0, 0)
     
     self.gridTrackSplitter = QSplitter(Qt.Orientation.Vertical)
-    self.gridTrackSplitter.setStyleSheet(
-      "QSplitter::handle {"
-      "background-color: rgba(255,255,255,102);"
-      "border: 1px solid rgba(0,0,0,102);"
-      "width: 10px;"
-      "height: 5px;"
-      "margin: 2px;"
-      "border-radius: 5px;"
-      "}"
-    )
-    
-    self.layout.addWidget(self.gridTrackSplitter)
-    
+
+
     #Top: Grid Browser
     self.browserGrid = MusicBrowserGrid()
+    
     self.browserGridScroll = QScrollArea()
     self.browserGridScroll.setWidgetResizable(True)
     self.browserGridScroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
     self.browserGridScroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+    self.browserGridScroll.setMinimumHeight(0)
+    self.browserGridScroll.setMinimumWidth(0)
+    self.browserGridScroll.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
+    self.browserGridScroll.minimumSizeHint = lambda: QSize(0, 0)
     self.browserGridScroll.setWidget(self.browserGrid)
     
     self.gridTrackSplitter.addWidget(self.browserGridScroll)
-    
-    self.browserGrid.loadFromJSON()
+       
     
     #Bottom: Track Browser
     self.browserTrack = MusicBrowserList()
+    self.browserTrack.setMinimumHeight(0)
+    self.browserTrack.setMinimumWidth(0)
+    self.browserTrack.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
+    self.browserTrack.minimumSizeHint = lambda: QSize(0, 0)
     self.gridTrackSplitter.addWidget(self.browserTrack)
     
+    #Track Browser TitleBar
+    self.trackListTitleBar = TrackListTitleBar(self.gridTrackSplitter)
+    self.browserTrack.layout.insertWidget(0, self.trackListTitleBar)
+    
+    #splitter prop
+    self.gridTrackSplitter.handle(1).setEnabled(False)
+    self.gridTrackSplitter.setCollapsible(0, True)
+    self.gridTrackSplitter.setHandleWidth(1)
+    self.gridTrackSplitter.setStretchFactor(0, 1)
+    self.gridTrackSplitter.setMinimumSize(0,0)
+    
+    #load contents
+    self.browserGrid.loadFromJSON()
     self.browserTrack.loadFromJSON()
+    
+    #add to layouts
+    self.layoutSwitch.addWidget(self.gridTrackSplitter)
+
+    
+  def updateCategory(self, category):
+    print(f"Selected: {category}")
+
+
+    
           
-class MusicBrowserGrid(QWidget):
+class MusicBrowserGrid(QFrame):
   def __init__(self):
     super().__init__()
     self.layout = QGridLayout(self)
     self.layout.setContentsMargins(0, 0, 0, 0)
     self.layout.setSpacing(10)
     self.layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
-    self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
     self.gridItems = []
     
-    self.loadingSpiner = QLabel("Loading...")
-    self.loadingSpiner.setFixedSize(QSize(100, 100))
-    self.loadingSpiner.setVisible(False)
-    self.layout.addWidget(self.loadingSpiner, 0, 0, 1, 1, Qt.AlignmentFlag.AlignCenter)
     
   def loadFromJSON(self):
-    self.loadingSpiner.setVisible(True)
     self.worker = Worker(
       AlbumLoaderThread
     )
@@ -316,7 +448,6 @@ class MusicBrowserGrid(QWidget):
     threadpool.start(self.worker)
     
   def populateGrid(self, items):
-    self.loadingSpiner.setVisible(False)
     # Clear the layout (remove previous widgets)
     while self.layout.count():
       item = self.layout.takeAt(0)
@@ -342,6 +473,7 @@ class MusicBrowserGrid(QWidget):
       
       
       self.layout.addWidget(gridItem, row, col)
+
       
   
   def resizeEvent(self, event):
@@ -355,12 +487,13 @@ class MusicBrowserGrid(QWidget):
    
     
 
-class MusicBrowserList(QWidget):
+class MusicBrowserList(QFrame):
   def __init__(self):
     super().__init__()
-    self.layout = QHBoxLayout(self)
+    self.layout = QVBoxLayout(self)
     self.layout.setContentsMargins(0, 0, 0, 0)
     self.tracks = []
+   
   
     
   def loadFromJSON(self):
@@ -385,7 +518,9 @@ class MusicBrowserList(QWidget):
     self.table.setSortingEnabled(True)
     self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
     self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+    self.table.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
     self.layout.addWidget(self.table)
+    self.table.hide()
     
     # Set the headers
     self.table.setHorizontalHeaderLabels(self.final_column_order)
@@ -393,6 +528,49 @@ class MusicBrowserList(QWidget):
     header.setSectionsMovable(True)
     header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
     header.setSectionResizeMode(len(self.final_column_order) - 1, QHeaderView.ResizeMode.Stretch)
+   
+    self.table.setStyleSheet("""
+            QTableWidget {
+                border: 1px solid #444;
+                background-color: #2c2c2c;
+                color: white;
+                selection-background-color: #3a3a3a;
+                selection-color: white;
+            }
+            QTableWidget::item {
+                padding: 5px;
+                border: 1px solid #444;
+                background-color: #2c2c2c;
+            }
+            QTableWidget::item:selected {
+                background-color: #5a5a5a;
+                color: white;
+            }
+            QTableWidget::horizontalHeader {
+                background-color: #333;
+                color: white;
+                font-weight: bold;
+                border: none;
+                padding: 5px;
+            }
+            QTableWidget::verticalHeader {
+                background-color: #333;
+                color: white;
+                font-weight: bold;
+                border: none;
+                padding: 5px;
+            }
+            QHeaderView::section {
+                padding: 5px;
+                background-color: #333;
+                color: white;
+                border: 1px solid #444;
+                font-weight: bold;
+            }
+            QHeaderView::section:focus {
+                background-color: #444;
+            }
+        """)
     
     self.addTracks()
       
@@ -493,6 +671,8 @@ class MainWindow(QMainWindow):
         
         self.musicBrowser = MusicBrowser()
         self.mainLayout.addWidget(self.musicBrowser)
+        
+        self.sidebar.category_changed.connect(self.musicBrowser.updateCategory)  # Connect the signal to the slot
         
         
         
