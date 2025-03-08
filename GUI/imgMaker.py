@@ -73,6 +73,12 @@ def load_images_from_json(json_path, ithmb_folder_path):
     return images
 
 
+def getDominantColor(image):
+    image = image.convert("P", palette=Image.ADAPTIVE, colors=1)
+    dominant_color = image.getpalette()[:3]
+    return tuple(dominant_color)
+
+
 def find_image_by_imgId(json_path, ithmb_folder_path, imgId):
     """Find and return image for the given imgID."""
     with open(json_path, "r") as f:
@@ -101,7 +107,9 @@ def find_image_by_imgId(json_path, ithmb_folder_path, imgId):
             continue
 
         img = generate_image(ithmb_path, thumb_result)
+        
         if img is not None:
-            return img
+            dcol = getDominantColor(img)
+            return img, dcol
     print(f"No image found for imgId: {imgId}")
     return None

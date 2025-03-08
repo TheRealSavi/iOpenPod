@@ -639,19 +639,73 @@ class MusicBrowserGridItem(QFrame):
     
     
   def generateImage(self, mhiiLink):
-    pil_image = find_image_by_imgId(ARTWORKDB_PATH, ITHMB_FOLDER_PATH, mhiiLink)
+    result = find_image_by_imgId(ARTWORKDB_PATH, ITHMB_FOLDER_PATH, mhiiLink)
+    
+    if result is None:
+      emoji = "❓" + str(mhiiLink)
+      self.img_label.setText(emoji)
+      self.img_label.setFont(QFont("Arial", 48))
+      return
+    
+    pil_image, dcol = result
     if pil_image is not None:
       qimage = ImageQt(pil_image)
       pixmap = QPixmap.fromImage(qimage)
       pixmap = pixmap.scaled(200,200, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
       self.img_label.setPixmap(pixmap)
-    else:
-      emoji = "❓" + str(mhiiLink)
-      self.img_label.setText(emoji)
-      self.img_label.setFont(QFont("Arial", 48))
+      if dcol:
+        r, g, b = ensure_readable_color(*dcol)
+        self.setStyleSheet(f"""
+        QFrame {{
+            background-color: rgb({r}, {g}, {b});
+            border: none;
+            border-radius: 10px;
+            padding: 5px;
+            color: white;
+        }}
+        QFrame:hover {{
+            background-color: rgba({r}, {g}, {b}, 200);
+        }}
+    """)
+   
     QApplication.processEvents()
     
-    
+def ensure_readable_color(r, g, b, text_color=(255, 255, 255)):
+    """
+    Adjusts the background color to ensure at least 4.5:1 contrast with text.
+    """
+    def relative_luminance(rgb):
+        """Calculate luminance as per WCAG formula."""
+        def to_linear(c):
+            c /= 255
+            return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+        
+        r, g, b = [to_linear(c) for c in rgb]
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+    bg_lum = relative_luminance((r, g, b))
+    text_lum = relative_luminance(text_color)
+
+    # Ensure L_light > L_dark for ratio calculation
+    L1, L2 = max(bg_lum, text_lum), min(bg_lum, text_lum)
+    contrast = (L1 + 0.05) / (L2 + 0.05)
+
+    # If contrast is too low, adjust brightness
+    while contrast < 4.5:
+        r, g, b = [min(255, c * 1.1) for c in (r, g, b)]  # Lighten
+        bg_lum = relative_luminance((r, g, b))
+        L1, L2 = max(bg_lum, text_lum), min(bg_lum, text_lum)
+        contrast = (L1 + 0.05) / (L2 + 0.05)
+
+        if contrast >= 4.5:
+            break
+
+        r, g, b = [max(0, c * 0.9) for c in (r, g, b)]  # Darken
+        bg_lum = relative_luminance((r, g, b))
+        L1, L2 = max(bg_lum, text_lum), min(bg_lum, text_lum)
+        contrast = (L1 + 0.05) / (L2 + 0.05)
+
+    return (int(r), int(g), int(b))
     
 class MainWindow(QMainWindow):
     def __init__(self):
