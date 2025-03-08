@@ -1,9 +1,7 @@
 import os
 import json
-import struct
 import numpy as np
 from PIL import Image
-from PyQt6.QtGui import QPixmap
 
 def rgb565_to_rgb888(pixel):
     """Convert RGB565 to RGB888 format."""
