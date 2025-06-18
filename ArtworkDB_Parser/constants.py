@@ -6,7 +6,7 @@ chunk_type_map = {
 }
 
 # maps the chunk header marker to a readable name
-# the identifier appears to be backward, I estimate that it should read something like
+# the identifier appears to be backward, I estimate that it should read like
 # DataBaseHeaderMarker(DBHM) and DataStructureHeaderMarker(DSHM) and
 # TrackListHeaderMarker(TLHM)...
 identifier_readable_map = {

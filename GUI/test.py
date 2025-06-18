@@ -19,11 +19,13 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+
 class WorkerSignals(QObject):
     finished = pyqtSignal()
     error = pyqtSignal(tuple)
     result = pyqtSignal(object)
     progress = pyqtSignal(float)
+
 
 class Worker(QRunnable):
     def __init__(self, fn, *args, **kwargs):
@@ -47,6 +49,7 @@ class Worker(QRunnable):
             self.signals.result.emit(result)
         finally:
             self.signals.finished.emit()
+
 
 class MainWindow(QMainWindow):
     def __init__(self, *args, **kwargs):
@@ -107,6 +110,7 @@ class MainWindow(QMainWindow):
     def recurring_timer(self):
         self.counter += 1
         self.label.setText(f"Counter: {self.counter}")
+
 
 app = QApplication([])
 window = MainWindow()
