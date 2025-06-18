@@ -2,86 +2,91 @@ from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import QApplication, QFrame, QGridLayout
 from .MBGridViewItem import MusicBrowserGridItem
 
+
 class MusicBrowserGrid(QFrame):
-  
-  def __init__(self):
-    super().__init__()
-    self.layout = QGridLayout(self)
-    self.layout.setContentsMargins(0, 0, 0, 0)
-    self.layout.setSpacing(10)
-    self.layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
 
-    self.gridItems = []  # Already added items
-    self.pendingItems = []  # Items waiting to be added
-    self.timerActive = False  # Prevent duplicate timers
-    self.columnCount = 1  # Default column count
-    
-  def loadFromJSON(self):
-    from ..app import AlbumLoaderThread, ThreadPoolSingleton, Worker
-    self.worker = Worker(AlbumLoaderThread)
-    self.worker.signals.result.connect(self.populateGrid)
-    ThreadPoolSingleton.get_instance().start(self.worker)
+    def __init__(self):
+        super().__init__()
+        self.layout = QGridLayout(self)
+        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.layout.setSpacing(10)
+        self.layout.setAlignment(
+            Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
 
-  def populateGrid(self, items):
-    # Only clear layout if new data is coming in (not resizing)
-    if not self.gridItems:
-      while self.layout.count():
-        item = self.layout.takeAt(0)
-        if item.widget():
-          item.widget().deleteLater()  # Properly delete instead of detaching
+        self.gridItems = []  # Already added items
+        self.pendingItems = []  # Items waiting to be added
+        self.timerActive = False  # Prevent duplicate timers
+        self.columnCount = 1  # Default column count
 
-    # Recalculate column count
-    self.columnCount = max(1, self.width() // (220 + 10))
+    def loadFromJSON(self):
+        from ..app import AlbumLoaderThread, ThreadPoolSingleton, Worker
+        self.worker = Worker(AlbumLoaderThread)
+        self.worker.signals.result.connect(self.populateGrid)
+        ThreadPoolSingleton.get_instance().start(self.worker)
 
-    if not self.gridItems:
-      # If first load, reset pendingItems
-      self.pendingItems = list(enumerate(items))
-    else:
-      # Recalculate positions of already-added items
-      self.rearrangeGrid()
+    def populateGrid(self, items):
+        # Only clear layout if new data is coming in (not resizing)
+        if not self.gridItems:
+            while self.layout.count():
+                item = self.layout.takeAt(0)
+                if item.widget():
+                    item.widget().deleteLater()  # Properly delete instead of detaching
 
-    # Start incremental loading if not active
-    if self.pendingItems and not self.timerActive:
-      self.timerActive = True
-      self.addNextItem()
+        # Recalculate column count
+        self.columnCount = max(1, self.width() // (220 + 10))
 
-  def addNextItem(self):
-    if not self.pendingItems:
-      self.timerActive = False
-      return
+        if not self.gridItems:
+            # If first load, reset pendingItems
+            self.pendingItems = list(enumerate(items))
+        else:
+            # Recalculate positions of already-added items
+            self.rearrangeGrid()
 
-    i, item = self.pendingItems.pop(0)
-    row = i // self.columnCount
-    col = i % self.columnCount
+        # Start incremental loading if not active
+        if self.pendingItems and not self.timerActive:
+            self.timerActive = True
+            self.addNextItem()
 
-    if isinstance(item, dict):
-      gridItem = MusicBrowserGridItem(item["album"], item["artist"], item["mhiiLink"])
-      self.gridItems.append(gridItem)
-    elif isinstance(item, MusicBrowserGridItem):
-      gridItem = item
-    else:
-      raise TypeError("populateGrid() expected a dict or MusicBrowserGridItem")
+    def addNextItem(self):
+        if not self.pendingItems:
+            self.timerActive = False
+            return
 
-    self.layout.addWidget(gridItem, row, col)
+        i, item = self.pendingItems.pop(0)
+        row = i // self.columnCount
+        col = i % self.columnCount
 
-    # Schedule the next item while ensuring responsiveness
-    QTimer.singleShot(1000 // 144, self.addNextItem)
+        if isinstance(item, dict):
+            gridItem = MusicBrowserGridItem(
+                item["album"], item["artist"], item["mhiiLink"])
+            self.gridItems.append(gridItem)
+        elif isinstance(item, MusicBrowserGridItem):
+            gridItem = item
+        else:
+            raise TypeError(
+                "populateGrid() expected a dict or MusicBrowserGridItem")
 
-  def rearrangeGrid(self):
-    """Rearrange grid items based on the new column count without clearing them."""
-    if not self.gridItems:
-      return
+        self.layout.addWidget(gridItem, row, col)
 
-    self.columnCount = max(1, self.width() // (220 + 10))
+        # Schedule the next item while ensuring responsiveness
+        QTimer.singleShot(1000 // 144, self.addNextItem)
 
-    for i, gridItem in enumerate(self.gridItems):
-      row = i // self.columnCount
-      col = i % self.columnCount
-      self.layout.addWidget(gridItem, row, col)  # Just update positions, no removing
+    def rearrangeGrid(self):
+        """Rearrange grid items based on the new column count without clearing them."""
+        if not self.gridItems:
+            return
 
-  def resizeEvent(self, event):
-    newCols = max(1, self.width() // (220 + 10))
-    if self.columnCount != newCols:
-      self.rearrangeGrid()  # Only rearrange if column count changes
-    
-    super().resizeEvent(event)  # Always call this last
+        self.columnCount = max(1, self.width() // (220 + 10))
+
+        for i, gridItem in enumerate(self.gridItems):
+            row = i // self.columnCount
+            col = i % self.columnCount
+            # Just update positions, no removing
+            self.layout.addWidget(gridItem, row, col)
+
+    def resizeEvent(self, event):
+        newCols = max(1, self.width() // (220 + 10))
+        if self.columnCount != newCols:
+            self.rearrangeGrid()  # Only rearrange if column count changes
+
+        super().resizeEvent(event)  # Always call this last

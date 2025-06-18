@@ -1,13 +1,13 @@
-#maps the id used in mhsd to the proper header marker
+# maps the id used in mhsd to the proper header marker
 chunk_type_map = {
-    1: "mhlt", #track list chunk
-    2: "mhlp", #playlist list chunk
-    3: "mhlp", #podcast list, same identifer as playlist, but has slight differnce
-    4: "mhla", #Album Lists (iTunes 7.1>)
-    5: "mhsp", #Smart playlist list (iTunes 7.3>)
+    1: "mhlt",  # track list chunk
+    2: "mhlp",  # playlist list chunk
+    3: "mhlp",  # podcast list, same identifer as playlist, but has slight differnce
+    4: "mhla",  # Album Lists (iTunes 7.1>)
+    5: "mhsp",  # Smart playlist list (iTunes 7.3>)
 }
 
-#maps the database version to an iTunes version
+# maps the database version to an iTunes version
 version_map = {
     0x09: "iTunes 4.2",
     0x0a: "iTunes 4.5",
@@ -28,10 +28,10 @@ version_map = {
     0x19: "iTunes 7.4"
 }
 
-#maps the chunk header marker to a readable name
-#the identifier appears to be backward, I estimate that it should read something like 
-#DataBaseHeaderMarker(DBHM) and DataStructureHeaderMarker(DSHM) and 
-#TrackListHeaderMarker(TLHM)...
+# maps the chunk header marker to a readable name
+# the identifier appears to be backward, I estimate that it should read something like
+# DataBaseHeaderMarker(DBHM) and DataStructureHeaderMarker(DSHM) and
+# TrackListHeaderMarker(TLHM)...
 identifier_readable_map = {
     "mhbd": "Database",
     "mhsd": "Dataset",
@@ -46,7 +46,7 @@ identifier_readable_map = {
     "mhip": "Playlist Item",
 }
 
-#maps the mhod type to its readable name
+# maps the mhod type to its readable name
 mhod_type_map = {
     1: "Title",
     2: "Location",

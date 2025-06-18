@@ -7,11 +7,12 @@ def parse_mhod(data, offset, header_length, chunk_length) -> dict:
 
     dataObject = {}
 
-    dataObject["mhodType"] = struct.unpack("<H", data[offset + 12 : offset + 14])[0]
+    dataObject["mhodType"] = struct.unpack(
+        "<H", data[offset + 12: offset + 14])[0]
 
-    unk0 = struct.unpack("<B", data[offset + 14 : offset + 15])[0]  # always 0
+    unk0 = struct.unpack("<B", data[offset + 14: offset + 15])[0]  # always 0
 
-    paddingLength = struct.unpack("<B", data[offset + 15 : offset + 16])[0]
+    paddingLength = struct.unpack("<B", data[offset + 15: offset + 16])[0]
     # all MHOD pad to be be a multiple of 4. the length will be 0,1,3
 
     # There is a bug in the iPod code that causes an MHBA to have an MHOD
@@ -24,16 +25,21 @@ def parse_mhod(data, offset, header_length, chunk_length) -> dict:
         case "String":
             content_offset = offset + header_length
 
-            stringByteLength = struct.unpack("<I", data[content_offset : content_offset + 4])[0]
+            stringByteLength = struct.unpack(
+                "<I", data[content_offset: content_offset + 4])[0]
 
-            unk1 = struct.unpack("<I", data[content_offset + 4 : content_offset + 8])[0]
+            unk1 = struct.unpack(
+                "<I", data[content_offset + 4: content_offset + 8])[0]
 
             # 	might be the string encoding: 0,1 == UTF-8; 2 == UTF-16-LE.
             # Observed values are: 1 in type 1 MHODs and 2 in type 3 MHODs.
 
-            unk2 = struct.unpack("<I", data[content_offset + 8 : content_offset + 12])[0]  # always 0
+            unk2 = struct.unpack(
+                # always 0
+                "<I", data[content_offset + 8: content_offset + 12])[0]
 
-            stringContent = data[content_offset + 12 : content_offset + 12 + stringByteLength]
+            stringContent = data[content_offset +
+                                 12: content_offset + 12 + stringByteLength]
 
             # padding would be offset+stringByteLength:offset+paddingLength
             # but for the purposes of parsing it is not needed.
@@ -46,7 +52,8 @@ def parse_mhod(data, offset, header_length, chunk_length) -> dict:
             else:
                 string_decode = stringContent.decode("utf-8")
 
-            dataObject[mhod_type_map[dataObject["mhodType"]]["name"]] = string_decode
+            dataObject[mhod_type_map[dataObject["mhodType"]]
+                       ["name"]] = string_decode
 
             print("String")
             print(str(string_decode))
@@ -58,7 +65,8 @@ def parse_mhod(data, offset, header_length, chunk_length) -> dict:
             next_offset = offset + header_length
             childResult = parse_chunk(data, next_offset)
 
-            dataObject[mhod_type_map[dataObject["mhodType"]]["name"]] = childResult
+            dataObject[mhod_type_map[dataObject["mhodType"]]
+                       ["name"]] = childResult
 
             return {"nextOffset": offset + chunk_length, "result": dataObject}
 

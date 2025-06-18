@@ -1,6 +1,7 @@
 from PyQt6.QtCore import QSize
 from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QSplitter, QPushButton, QWidget, QFrame, QSizePolicy
 
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -24,7 +25,7 @@ class MainWindow(QMainWindow):
         top_layout = QVBoxLayout()
         top_layout.addWidget(QPushButton("hi"))
         self.top.setLayout(top_layout)
-        
+
         bot_layout = QVBoxLayout()
         bot_layout.addWidget(QPushButton("hi"))
         self.bot.setLayout(bot_layout)
@@ -32,14 +33,17 @@ class MainWindow(QMainWindow):
         # Set frames to allow infinite shrinking
         self.top.setMinimumHeight(0)
         self.top.setMinimumWidth(0)
-        self.top.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
+        self.top.setSizePolicy(QSizePolicy.Policy.Ignored,
+                               QSizePolicy.Policy.Ignored)
 
         self.bot.setMinimumHeight(0)
         self.bot.setMinimumWidth(0)
-        self.bot.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
+        self.bot.setSizePolicy(QSizePolicy.Policy.Ignored,
+                               QSizePolicy.Policy.Ignored)
 
         # Fine control over splitter behavior (handleWidth)
-        self.split.setHandleWidth(10)  # You can adjust the width for a smoother experience
+        # You can adjust the width for a smoother experience
+        self.split.setHandleWidth(10)
 
         # Override the minimum size hint to avoid snapping
         self.top.minimumSizeHint = lambda: QSize(0, 0)
@@ -51,6 +55,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central_widget)
 
         self.show()
+
 
 # Initialize and run the application
 app = QApplication([])
