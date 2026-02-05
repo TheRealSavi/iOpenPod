@@ -315,13 +315,13 @@ class Sidebar(QFrame):
         self.device_card = DeviceInfoCard()
         self.sidebarLayout.addWidget(self.device_card)
 
-        # Device select buttons
+        # Device select buttons - row 1
         self.deviceSelectLayout = QHBoxLayout()
         self.deviceSelectLayout.setContentsMargins(0, 0, 0, 0)
         self.deviceSelectLayout.setSpacing(6)
 
         self.deviceButton = QPushButton("📂 Select")
-        self.syncButton = QPushButton("🔄 Sync")
+        self.rescanButton = QPushButton("🔃 Rescan")
 
         button_style = """
             QPushButton {
@@ -340,14 +340,35 @@ class Sidebar(QFrame):
             }
         """
         self.deviceButton.setStyleSheet(button_style)
-        self.syncButton.setStyleSheet(button_style)
+        self.rescanButton.setStyleSheet(button_style)
         self.deviceButton.setFont(QFont("Segoe UI", 10, QFont.Weight.DemiBold))
-        self.syncButton.setFont(QFont("Segoe UI", 10, QFont.Weight.DemiBold))
+        self.rescanButton.setFont(QFont("Segoe UI", 10, QFont.Weight.DemiBold))
 
         self.deviceSelectLayout.addWidget(self.deviceButton)
-        self.deviceSelectLayout.addWidget(self.syncButton)
+        self.deviceSelectLayout.addWidget(self.rescanButton)
 
         self.sidebarLayout.addLayout(self.deviceSelectLayout)
+
+        # Sync button - row 2 (full width)
+        self.syncButton = QPushButton("🔄 Sync with PC")
+        self.syncButton.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(64,156,255,80);
+                border: 1px solid rgba(64,156,255,100);
+                border-radius: 6px;
+                color: white;
+                padding: 8px 0;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background-color: rgba(64,156,255,120);
+            }
+            QPushButton:pressed {
+                background-color: rgba(64,156,255,60);
+            }
+        """)
+        self.syncButton.setFont(QFont("Segoe UI", 10, QFont.Weight.DemiBold))
+        self.sidebarLayout.addWidget(self.syncButton)
 
         # Separator
         sep = QFrame()

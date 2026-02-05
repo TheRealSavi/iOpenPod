@@ -2,9 +2,10 @@ import os
 import sys
 import traceback
 from PyQt6.QtCore import QRunnable, pyqtSignal, pyqtSlot, QObject, QThreadPool
-from PyQt6.QtWidgets import QWidget, QMainWindow, QHBoxLayout, QFileDialog, QMessageBox
+from PyQt6.QtWidgets import QWidget, QMainWindow, QHBoxLayout, QFileDialog, QMessageBox, QStackedWidget
 from GUI.widgets.musicBrowser import MusicBrowser
 from GUI.widgets.sidebar import Sidebar
+from GUI.widgets.syncReview import SyncReviewWidget, SyncWorker, PCFolderDialog
 import threading
 
 # Paths relative to project root
@@ -547,11 +548,14 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("iOpenPod")
         self.setGeometry(100, 100, 1280, 720)
 
-        self.mainLayout = QHBoxLayout()
+        # Central widget with stacked layout for main/sync views
+        self.centralStack = QStackedWidget()
+        self.setCentralWidget(self.centralStack)
 
-        self.contentContainer = QWidget()
-        self.contentContainer.setLayout(self.mainLayout)
-        self.setCentralWidget(self.contentContainer)
+        # Main browsing view
+        self.mainWidget = QWidget()
+        self.mainLayout = QHBoxLayout(self.mainWidget)
+        self.mainLayout.setContentsMargins(0, 0, 0, 0)
 
         self.sidebar = Sidebar()
         self.mainLayout.addWidget(self.sidebar)
@@ -559,14 +563,29 @@ class MainWindow(QMainWindow):
         self.musicBrowser = MusicBrowser()
         self.mainLayout.addWidget(self.musicBrowser)
 
+        self.centralStack.addWidget(self.mainWidget)  # Index 0
+
+        # Sync review view
+        self.syncReview = SyncReviewWidget()
+        self.syncReview.cancelled.connect(self.hideSyncReview)
+        self.syncReview.sync_requested.connect(self.executeSyncPlan)
+        self.centralStack.addWidget(self.syncReview)  # Index 1
+
+        # Sync worker reference
+        self._sync_worker = None
+        self._last_pc_folder = os.path.join(os.path.expanduser("~"), "Music")
+
         self.sidebar.category_changed.connect(
             self.musicBrowser.updateCategory)  # Connect the signal to the slot
 
         # Connect device button to folder picker
         self.sidebar.deviceButton.clicked.connect(self.selectDevice)
 
-        # Connect sync button to resync
-        self.sidebar.syncButton.clicked.connect(self.resyncDevice)
+        # Connect rescan button to rebuild cache
+        self.sidebar.rescanButton.clicked.connect(self.resyncDevice)
+
+        # Connect sync button to PC sync
+        self.sidebar.syncButton.clicked.connect(self.startPCSync)
 
         # Connect device manager to reload data when device changes
         DeviceManager.get_instance().device_changed.connect(self.onDeviceChanged)
@@ -697,8 +716,85 @@ class MainWindow(QMainWindow):
         # Start loading (will emit data_ready when done)
         cache.start_loading()
 
+    def startPCSync(self):
+        """Start the PC ↔ iPod sync process."""
+        device = DeviceManager.get_instance()
+        if not device.device_path:
+            QMessageBox.warning(
+                self,
+                "No Device",
+                "Please select an iPod device first."
+            )
+            return
+
+        # Show folder selection dialog
+        dialog = PCFolderDialog(self, self._last_pc_folder)
+        if dialog.exec() != dialog.DialogCode.Accepted:
+            return
+
+        self._last_pc_folder = dialog.selected_folder
+
+        # Switch to sync review view
+        self.centralStack.setCurrentIndex(1)
+        self.syncReview.show_loading()
+
+        # Get iPod tracks from cache
+        cache = iTunesDBCache.get_instance()
+        ipod_tracks = cache.get_tracks()
+
+        # Start background worker
+        self._sync_worker = SyncWorker(
+            pc_folder=self._last_pc_folder,
+            ipod_tracks=ipod_tracks
+        )
+        self._sync_worker.progress.connect(self.syncReview.update_progress)
+        self._sync_worker.finished.connect(self._onSyncDiffComplete)
+        self._sync_worker.error.connect(self._onSyncError)
+        self._sync_worker.start()
+
+    def _onSyncDiffComplete(self, plan):
+        """Called when sync diff calculation is complete."""
+        self.syncReview.show_plan(plan)
+
+    def _onSyncError(self, error_msg: str):
+        """Called when sync diff fails."""
+        self.syncReview.show_error(error_msg)
+
+    def hideSyncReview(self):
+        """Return to the main browsing view."""
+        self.centralStack.setCurrentIndex(0)
+
+    def executeSyncPlan(self, selected_items):
+        """Execute the selected sync actions.
+
+        NOTE: This is a placeholder - the actual writer implementation
+        comes later. For now we just show what would happen.
+        """
+        from SyncEngine.diff_engine import SyncAction
+
+        add_count = sum(1 for s in selected_items if s.action == SyncAction.ADD_TO_IPOD)
+        remove_count = sum(1 for s in selected_items if s.action == SyncAction.REMOVE_FROM_IPOD)
+
+        QMessageBox.information(
+            self,
+            "Sync Preview (Writer Not Implemented)",
+            f"The sync would:\n\n"
+            f"• Add {add_count} tracks to iPod\n"
+            f"• Remove {remove_count} tracks from iPod\n\n"
+            f"iTunesDB writer is not yet implemented.\n"
+            f"This preview shows what WILL happen once the writer is complete."
+        )
+
+        # Return to main view
+        self.hideSyncReview()
+
     def closeEvent(self, a0):
         """Ensure all threads are stopped when the window is closed."""
+        # Stop sync worker if running
+        if self._sync_worker and self._sync_worker.isRunning():
+            self._sync_worker.terminate()
+            self._sync_worker.wait(1000)
+
         thread_pool = ThreadPoolSingleton.get_instance()
         if thread_pool:
             thread_pool.clear()  # Remove pending tasks

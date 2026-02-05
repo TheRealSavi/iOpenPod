@@ -1,0 +1,1313 @@
+"""
+Sync Review Widget - GUI for reviewing and executing sync plans.
+
+Shows the diff between PC library and iPod with:
+- Tracks to add (on PC, not on iPod)
+- Tracks to remove (on iPod, not on PC)
+- Tracks to update (PC file changed)
+- Play counts to sync back
+"""
+
+from PyQt6.QtCore import Qt, pyqtSignal, QThread
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QTreeWidget, QTreeWidgetItem, QHeaderView, QProgressBar,
+    QFrame, QStackedWidget, QMessageBox, QFileDialog, QDialog,
+    QDialogButtonBox, QSplitter
+)
+from PyQt6.QtGui import QFont, QColor, QBrush
+
+from SyncEngine.diff_engine import SyncPlan, SyncItem, SyncAction, QualityChange, DiffEngine
+from SyncEngine.pc_library import PCLibrary
+
+import os
+from typing import Optional
+
+
+class SyncWorker(QThread):
+    """Background worker for computing sync diff."""
+    progress = pyqtSignal(str, int, int, str)  # stage, current, total, message
+    finished = pyqtSignal(object)  # SyncPlan
+    error = pyqtSignal(str)
+
+    def __init__(self, pc_folder: str, ipod_tracks: list):
+        super().__init__()
+        self.pc_folder = pc_folder
+        self.ipod_tracks = ipod_tracks
+
+    def run(self):
+        try:
+            # Initialize PC library scanner
+            pc_library = PCLibrary(self.pc_folder)
+
+            # Create diff engine (no database needed!)
+            diff_engine = DiffEngine(pc_library)
+
+            # Compute diff with progress callback
+            plan = diff_engine.compute_diff(
+                self.ipod_tracks,
+                progress_callback=lambda stage, cur, tot, msg: self.progress.emit(stage, cur, tot, msg)
+            )
+
+            self.finished.emit(plan)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            self.error.emit(str(e))
+
+
+class SyncItemWidget(QTreeWidgetItem):
+    """Tree item representing a single sync action."""
+
+    def __init__(self, item: SyncItem, parent=None):
+        super().__init__(parent)
+        self.sync_item = item
+        self.setCheckState(0, Qt.CheckState.Checked)
+
+        # Set columns based on action type
+        if item.action == SyncAction.ADD_TO_IPOD:
+            self._setup_add_item()
+        elif item.action == SyncAction.REMOVE_FROM_IPOD:
+            self._setup_remove_item()
+        elif item.action == SyncAction.SYNC_PLAYCOUNT:
+            self._setup_playcount_item()
+
+    def _set_tooltip(self, track=None, ipod_track=None, extra_info=""):
+        """Set comprehensive tooltip for the item."""
+        lines = []
+
+        if track:
+            lines.append(f"Title: {track.title or track.filename}")
+            lines.append(f"Artist: {track.artist or 'Unknown'}")
+            lines.append(f"Album: {track.album or 'Unknown'}")
+            if track.album_artist and track.album_artist != track.artist:
+                lines.append(f"Album Artist: {track.album_artist}")
+            if track.year:
+                lines.append(f"Year: {track.year}")
+            if track.genre:
+                lines.append(f"Genre: {track.genre}")
+            if track.track_number:
+                lines.append(f"Track: {track.track_number}")
+            lines.append(f"Duration: {self._format_duration(track.duration_ms)}")
+            lines.append(f"Size: {self._format_size(track.size)}")
+            lines.append(f"Format: {track.extension.upper()}")
+            lines.append("")
+            lines.append(f"Path: {track.path}")
+        elif ipod_track:
+            lines.append(f"Title: {ipod_track.get('Title', 'Unknown')}")
+            lines.append(f"Artist: {ipod_track.get('Artist', 'Unknown')}")
+            lines.append(f"Album: {ipod_track.get('Album', 'Unknown')}")
+            lines.append(f"Duration: {self._format_duration(ipod_track.get('length', 0))}")
+            lines.append(f"Size: {self._format_size(ipod_track.get('size', 0))}")
+
+        if extra_info:
+            lines.append("")
+            lines.append(extra_info)
+
+        tooltip = "\n".join(lines)
+        for i in range(self.columnCount()):
+            self.setToolTip(i, tooltip)
+
+    def _setup_add_item(self):
+        """Setup for ADD_TO_IPOD action."""
+        track = self.sync_item.pc_track
+        if track:
+            self.setText(1, track.title or track.filename)
+            self.setText(2, track.artist or "Unknown")
+            self.setText(3, track.album or "Unknown")
+            self.setText(4, self._format_size(track.size))
+            self.setText(5, self._format_duration(track.duration_ms))
+            self._set_tooltip(track=track, extra_info="Action: Add to iPod")
+            # Green tint for adds
+            for i in range(6):
+                self.setForeground(i, QBrush(QColor(100, 200, 100)))
+
+    def _setup_remove_item(self):
+        """Setup for REMOVE_FROM_IPOD action."""
+        ipod_track = self.sync_item.ipod_track
+
+        if ipod_track:
+            self.setText(1, ipod_track.get("Title", "Unknown"))
+            self.setText(2, ipod_track.get("Artist", "Unknown"))
+            self.setText(3, ipod_track.get("Album", "Unknown"))
+            self.setText(4, self._format_size(ipod_track.get("size", 0)))
+            self.setText(5, self._format_duration(ipod_track.get("length", 0)))
+            self._set_tooltip(ipod_track=ipod_track, extra_info="Action: Remove from iPod\n(File not found on PC)")
+
+        # Red tint for removes
+        for i in range(6):
+            self.setForeground(i, QBrush(QColor(220, 100, 100)))
+
+    def _setup_playcount_item(self):
+        """Setup for SYNC_PLAYCOUNT action."""
+        track = self.sync_item.pc_track
+        if track:
+            self.setText(1, track.title or track.filename)
+            self.setText(2, track.artist or "Unknown")
+            self.setText(3, track.album or "Unknown")
+
+            plays = self.sync_item.play_count_delta
+            skips = self.sync_item.skip_count_delta
+            stats_parts = []
+            if plays > 0:
+                stats_parts.append(f"+{plays} plays")
+            if skips > 0:
+                stats_parts.append(f"+{skips} skips")
+            self.setText(4, " ".join(stats_parts) if stats_parts else "—")
+            self.setText(5, self._format_duration(track.duration_ms))
+
+            extra = f"Action: Sync play statistics back to PC\n\nPlays since last sync: {plays}\nSkips since last sync: {skips}"
+            self._set_tooltip(track=track, extra_info=extra)
+
+            # Blue tint for playcount sync
+            for i in range(6):
+                self.setForeground(i, QBrush(QColor(100, 150, 220)))
+
+    @staticmethod
+    def _format_size(bytes_val: int) -> str:
+        if bytes_val < 1024:
+            return f"{bytes_val} B"
+        elif bytes_val < 1024 * 1024:
+            return f"{bytes_val / 1024:.1f} KB"
+        elif bytes_val < 1024 * 1024 * 1024:
+            return f"{bytes_val / (1024 * 1024):.1f} MB"
+        return f"{bytes_val / (1024 * 1024 * 1024):.1f} GB"
+
+    @staticmethod
+    def _format_duration(ms: int) -> str:
+        if ms <= 0:
+            return "—"
+        seconds = ms // 1000
+        minutes = seconds // 60
+        secs = seconds % 60
+        return f"{minutes}:{secs:02d}"
+
+
+class SyncRatingWidget(QTreeWidgetItem):
+    """Tree item representing a rating sync action."""
+
+    def __init__(self, item: SyncItem, parent=None):
+        super().__init__(parent)
+        self.sync_item = item
+        self.setCheckState(0, Qt.CheckState.Checked)
+
+        track = item.pc_track
+        if track:
+            self.setText(1, track.title or track.filename)
+            self.setText(2, track.artist or "Unknown")
+            self.setText(3, track.album or "Unknown")
+
+            # Show rating change: PC/iPod → new rating
+            pc_stars = self._rating_to_stars(item.pc_rating)
+            ipod_stars = self._rating_to_stars(item.ipod_rating)
+            new_stars = self._rating_to_stars(item.new_rating)
+            rating_text = f"{pc_stars}/{ipod_stars} → {new_stars}"
+            self.setText(4, rating_text)
+            self.setText(5, self._format_duration(track.duration_ms))
+
+            # Tooltip with details
+            lines = [
+                f"Title: {track.title or track.filename}",
+                f"Artist: {track.artist or 'Unknown'}",
+                f"Album: {track.album or 'Unknown'}",
+                "",
+                f"PC Rating: {pc_stars} ({item.pc_rating}/100)",
+                f"iPod Rating: {ipod_stars} ({item.ipod_rating}/100)",
+                f"New Rating: {new_stars} ({item.new_rating}/100)",
+                "",
+                "Action: Sync rating to both PC and iPod",
+            ]
+            tooltip = "\n".join(lines)
+            for i in range(6):
+                self.setToolTip(i, tooltip)
+
+            # Gold/orange tint for rating sync
+            for i in range(6):
+                self.setForeground(i, QBrush(QColor(230, 180, 80)))
+
+    @staticmethod
+    def _rating_to_stars(rating: int) -> str:
+        """Convert rating (0-100) to star display."""
+        if rating <= 0:
+            return "☆☆☆☆☆"
+        stars = (rating + 10) // 20  # 0-20=1, 21-40=2, etc.
+        stars = max(0, min(5, stars))  # Clamp to 0-5
+        return "★" * stars + "☆" * (5 - stars)
+
+    @staticmethod
+    def _format_duration(ms: int) -> str:
+        if ms <= 0:
+            return "—"
+        seconds = ms // 1000
+        minutes = seconds // 60
+        secs = seconds % 60
+        return f"{minutes}:{secs:02d}"
+
+
+class SyncCategoryHeader(QTreeWidgetItem):
+    """Category header in the sync tree (Add, Remove, Update, etc.)."""
+
+    def __init__(self, icon: str, title: str, count: int, size_bytes: int = 0):
+        super().__init__()
+        self.setFlags(self.flags() | Qt.ItemFlag.ItemIsAutoTristate)
+        self.setCheckState(0, Qt.CheckState.Checked)
+
+        # Format the header text
+        size_str = ""
+        if size_bytes > 0:
+            size_str = f"+{self._format_size(size_bytes)}"
+        elif size_bytes < 0:
+            size_str = f"-{self._format_size(abs(size_bytes))}"
+
+        header_text = f"{icon} {title} ({count})"
+        if size_str:
+            header_text += f" — {size_str}"
+
+        self.setText(1, header_text)
+
+        # Bold font
+        font = QFont()
+        font.setBold(True)
+        font.setPointSize(11)
+        self.setFont(1, font)
+
+        # Expand by default
+        self.setExpanded(True)
+
+    @staticmethod
+    def _format_size(bytes_val: int) -> str:
+        if bytes_val < 1024:
+            return f"{bytes_val} B"
+        elif bytes_val < 1024 * 1024:
+            return f"{bytes_val / 1024:.1f} KB"
+        elif bytes_val < 1024 * 1024 * 1024:
+            return f"{bytes_val / (1024 * 1024):.1f} MB"
+        return f"{bytes_val / (1024 * 1024 * 1024):.1f} GB"
+
+
+class DuplicateGroupHeader(QTreeWidgetItem):
+    """Header for a group of duplicate files with the same fingerprint."""
+
+    def __init__(self, fingerprint: str, tracks: list):
+        super().__init__()
+        self.fingerprint = fingerprint
+        self.tracks = tracks
+
+        # No checkbox for info-only section
+        self.setFlags(self.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
+
+        # Parse fingerprint to show track info
+        parts = fingerprint.split("|")
+        if len(parts) >= 3:
+            artist = parts[0].title() if parts[0] else "Unknown"
+            album = parts[1].title() if parts[1] else "Unknown"
+            title = parts[2].title() if parts[2] else "Unknown"
+            self.setText(1, f"{title}")
+            self.setText(2, f"{artist}")
+            self.setText(3, f"{album}")
+        else:
+            self.setText(1, fingerprint)
+
+        self.setText(4, f"{len(tracks)} copies")
+
+        # Yellow/orange tint for duplicates
+        for i in range(6):
+            self.setForeground(i, QBrush(QColor(220, 180, 80)))
+
+        # Bold font
+        font = QFont()
+        font.setBold(True)
+        self.setFont(1, font)
+
+
+class DuplicateItemWidget(QTreeWidgetItem):
+    """Tree item representing a single file in a duplicate group."""
+
+    def __init__(self, track, parent=None):
+        super().__init__(parent)
+        self.track = track
+
+        # No checkbox for info-only section
+        self.setFlags(self.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
+
+        # Show the path difference - just the directory part
+        self.setText(1, track.filename)
+        self.setText(2, self._get_short_path(track.path))
+        self.setText(3, "")
+        self.setText(4, self._format_size(track.size))
+        self.setText(5, self._format_duration(track.duration_ms))
+
+        # Set tooltip with full path
+        tooltip = f"Full path: {track.path}"
+        for i in range(6):
+            self.setToolTip(i, tooltip)
+            self.setForeground(i, QBrush(QColor(180, 160, 100)))
+
+    def _get_short_path(self, path: str) -> str:
+        """Get shortened directory path."""
+        import os
+        dir_path = os.path.dirname(path)
+        # Show last 2-3 directory components
+        parts = dir_path.replace("\\", "/").split("/")
+        if len(parts) > 3:
+            return ".../" + "/".join(parts[-3:])
+        return dir_path
+
+    @staticmethod
+    def _format_size(bytes_val: int) -> str:
+        if bytes_val < 1024:
+            return f"{bytes_val} B"
+        elif bytes_val < 1024 * 1024:
+            return f"{bytes_val / 1024:.1f} KB"
+        elif bytes_val < 1024 * 1024 * 1024:
+            return f"{bytes_val / (1024 * 1024):.1f} MB"
+        return f"{bytes_val / (1024 * 1024 * 1024):.1f} GB"
+
+    @staticmethod
+    def _format_duration(ms: int) -> str:
+        if ms <= 0:
+            return "—"
+        seconds = ms // 1000
+        minutes = seconds // 60
+        secs = seconds % 60
+        return f"{minutes}:{secs:02d}"
+
+
+class QualityChangeGroupHeader(QTreeWidgetItem):
+    """Header for a quality change showing track info."""
+
+    def __init__(self, quality_change: QualityChange):
+        super().__init__()
+        self.quality_change = quality_change
+
+        # Checkbox for this quality change
+        self.setFlags(self.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+        self.setCheckState(0, Qt.CheckState.Checked)
+
+        pc = quality_change.pc_track
+        self.setText(1, pc.title or pc.filename)
+        self.setText(2, pc.artist or "Unknown")
+        self.setText(3, pc.album or "Unknown")
+
+        # Show size difference
+        size_diff = quality_change.size_diff
+        if size_diff > 0:
+            self.setText(4, f"↑ +{self._format_size(size_diff)}")
+            color = QColor(100, 200, 100)  # Green for upgrade
+        else:
+            self.setText(4, f"↓ {self._format_size(size_diff)}")
+            color = QColor(220, 150, 80)  # Orange for downgrade
+
+        self.setText(5, self._format_duration(pc.duration_ms))
+
+        for i in range(6):
+            self.setForeground(i, QBrush(color))
+
+        # Bold font
+        font = QFont()
+        font.setBold(True)
+        self.setFont(1, font)
+
+    @staticmethod
+    def _format_size(bytes_val: int) -> str:
+        bytes_val = abs(bytes_val)
+        if bytes_val < 1024:
+            return f"{bytes_val} B"
+        elif bytes_val < 1024 * 1024:
+            return f"{bytes_val / 1024:.1f} KB"
+        elif bytes_val < 1024 * 1024 * 1024:
+            return f"{bytes_val / (1024 * 1024):.1f} MB"
+        return f"{bytes_val / (1024 * 1024 * 1024):.1f} GB"
+
+    @staticmethod
+    def _format_duration(ms: int) -> str:
+        if ms <= 0:
+            return "—"
+        seconds = ms // 1000
+        minutes = seconds // 60
+        secs = seconds % 60
+        return f"{minutes}:{secs:02d}"
+
+
+class QualityChangeFileWidget(QTreeWidgetItem):
+    """Shows a single file (PC or iPod) in a quality change comparison."""
+
+    def __init__(self, label: str, filename: str, path: str, size: int,
+                 duration_ms: int, color: QColor, parent=None):
+        super().__init__(parent)
+
+        # No checkbox for child items
+        self.setFlags(self.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
+
+        self.setText(1, f"{label}: {filename}")
+        self.setText(2, self._get_short_path(path))
+        self.setText(3, "")
+        self.setText(4, self._format_size(size))
+        self.setText(5, self._format_duration(duration_ms))
+
+        # Set tooltip with full path
+        tooltip = f"Full path: {path}"
+        for i in range(6):
+            self.setToolTip(i, tooltip)
+            self.setForeground(i, QBrush(color))
+
+    def _get_short_path(self, path: str) -> str:
+        """Get shortened directory path."""
+        dir_path = os.path.dirname(path)
+        parts = dir_path.replace("\\", "/").split("/")
+        if len(parts) > 3:
+            return ".../" + "/".join(parts[-3:])
+        return dir_path
+
+    @staticmethod
+    def _format_size(bytes_val: int) -> str:
+        if bytes_val < 1024:
+            return f"{bytes_val} B"
+        elif bytes_val < 1024 * 1024:
+            return f"{bytes_val / 1024:.1f} KB"
+        elif bytes_val < 1024 * 1024 * 1024:
+            return f"{bytes_val / (1024 * 1024):.1f} MB"
+        return f"{bytes_val / (1024 * 1024 * 1024):.1f} GB"
+
+    @staticmethod
+    def _format_duration(ms: int) -> str:
+        if ms <= 0:
+            return "—"
+        seconds = ms // 1000
+        minutes = seconds // 60
+        secs = seconds % 60
+        return f"{minutes}:{secs:02d}"
+
+
+class SyncReviewWidget(QWidget):
+    """
+    Main widget for reviewing sync differences.
+
+    Shows a tree view of all pending sync actions grouped by type,
+    with checkboxes to include/exclude individual items.
+    """
+
+    sync_requested = pyqtSignal(object)  # Emits list of selected SyncItems to execute
+    cancelled = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._plan: Optional[SyncPlan] = None
+        self._setup_ui()
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # Header
+        header = QFrame()
+        header.setStyleSheet("""
+            QFrame {
+                background: rgba(40, 40, 45, 200);
+                border-bottom: 1px solid rgba(255,255,255,30);
+            }
+        """)
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(16, 12, 16, 12)
+
+        title = QLabel("🔄 Sync Review")
+        title.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
+        title.setStyleSheet("color: white; background: transparent;")
+        header_layout.addWidget(title)
+
+        header_layout.addStretch()
+
+        self.summary_label = QLabel("")
+        self.summary_label.setStyleSheet("color: rgba(255,255,255,150); background: transparent;")
+        header_layout.addWidget(self.summary_label)
+
+        layout.addWidget(header)
+
+        # Stacked widget for loading/content states
+        self.stack = QStackedWidget()
+        layout.addWidget(self.stack, 1)
+
+        # Loading state
+        loading_widget = QWidget()
+        loading_layout = QVBoxLayout(loading_widget)
+        loading_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.loading_label = QLabel("Scanning library...")
+        self.loading_label.setStyleSheet("color: white; font-size: 14px;")
+        self.loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        loading_layout.addWidget(self.loading_label)
+
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setFixedWidth(300)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                background: rgba(255,255,255,20);
+                border: none;
+                border-radius: 4px;
+                height: 8px;
+            }
+            QProgressBar::chunk {
+                background: #409cff;
+                border-radius: 4px;
+            }
+        """)
+        loading_layout.addWidget(self.progress_bar, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        self.progress_detail = QLabel("")
+        self.progress_detail.setStyleSheet("color: rgba(255,255,255,100); font-size: 11px;")
+        self.progress_detail.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        loading_layout.addWidget(self.progress_detail)
+
+        self.stack.addWidget(loading_widget)  # Index 0
+
+        # Content state - tree view with details panel
+        content_widget = QWidget()
+        content_layout = QVBoxLayout(content_widget)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(0)
+
+        # Splitter for tree and details
+        self.splitter = QSplitter(Qt.Orientation.Vertical)
+        self.splitter.setStyleSheet("""
+            QSplitter::handle {
+                background: rgba(255,255,255,20);
+                height: 3px;
+            }
+            QSplitter::handle:hover {
+                background: rgba(64, 156, 255, 100);
+            }
+        """)
+
+        self.tree = QTreeWidget()
+        self.tree.setHeaderLabels(["", "Title", "Artist", "Album", "Size", "Duration"])
+        self.tree.setRootIsDecorated(True)
+        self.tree.setAlternatingRowColors(True)
+        self.tree.setMouseTracking(True)  # Enable hover tooltips
+        self.tree.setStyleSheet("""
+            QTreeWidget {
+                background: rgba(30, 30, 35, 200);
+                border: none;
+                color: white;
+                font-size: 12px;
+            }
+            QTreeWidget::item {
+                padding: 6px 0;
+                border-bottom: 1px solid rgba(255,255,255,10);
+            }
+            QTreeWidget::item:selected {
+                background: rgba(64, 156, 255, 100);
+            }
+            QTreeWidget::item:hover {
+                background: rgba(255,255,255,20);
+            }
+            QHeaderView::section {
+                background: rgba(50, 50, 55, 200);
+                color: rgba(255,255,255,150);
+                padding: 8px;
+                border: none;
+                border-bottom: 1px solid rgba(255,255,255,30);
+                font-weight: bold;
+            }
+            QToolTip {
+                background: rgba(40, 40, 45, 250);
+                color: white;
+                border: 1px solid rgba(255,255,255,30);
+                padding: 8px;
+                font-size: 11px;
+            }
+        """)
+
+        # Configure columns - wider for better readability
+        tree_header = self.tree.header()
+        if tree_header:
+            tree_header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+            tree_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+            tree_header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
+            tree_header.setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
+            tree_header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+            tree_header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
+            tree_header.setMinimumSectionSize(60)
+        self.tree.setColumnWidth(0, 30)   # Checkbox
+        self.tree.setColumnWidth(2, 200)  # Artist (wider)
+        self.tree.setColumnWidth(3, 200)  # Album (wider)
+        self.tree.setColumnWidth(5, 70)   # Duration
+
+        # Connect selection change to update details
+        self.tree.itemSelectionChanged.connect(self._update_details_panel)
+
+        self.splitter.addWidget(self.tree)
+
+        # Details panel (collapsible)
+        self.details_panel = QFrame()
+        self.details_panel.setStyleSheet("""
+            QFrame {
+                background: rgba(25, 25, 30, 200);
+                border-top: 1px solid rgba(255,255,255,20);
+            }
+        """)
+        self.details_panel.setMinimumHeight(80)
+        self.details_panel.setMaximumHeight(150)
+
+        details_layout = QVBoxLayout(self.details_panel)
+        details_layout.setContentsMargins(16, 12, 16, 12)
+        details_layout.setSpacing(4)
+
+        details_header = QLabel("Details")
+        details_header.setStyleSheet("color: rgba(255,255,255,100); font-size: 10px; font-weight: bold; text-transform: uppercase;")
+        details_layout.addWidget(details_header)
+
+        self.details_text = QLabel("Select an item to see details")
+        self.details_text.setStyleSheet("color: rgba(255,255,255,200); font-size: 11px;")
+        self.details_text.setWordWrap(True)
+        self.details_text.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        details_layout.addWidget(self.details_text)
+        details_layout.addStretch()
+
+        self.splitter.addWidget(self.details_panel)
+        self.splitter.setSizes([400, 100])  # Initial sizes
+
+        content_layout.addWidget(self.splitter)
+        self.stack.addWidget(content_widget)  # Index 1
+
+        # Empty state
+        empty_widget = QWidget()
+        empty_layout = QVBoxLayout(empty_widget)
+        empty_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        empty_icon = QLabel("✅")
+        empty_icon.setFont(QFont("Segoe UI Emoji", 48))
+        empty_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        empty_layout.addWidget(empty_icon)
+
+        empty_text = QLabel("Everything is in sync!")
+        empty_text.setFont(QFont("Segoe UI", 16))
+        empty_text.setStyleSheet("color: white;")
+        empty_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        empty_layout.addWidget(empty_text)
+
+        self.stack.addWidget(empty_widget)  # Index 2
+
+        # Footer with action buttons
+        footer = QFrame()
+        footer.setStyleSheet("""
+            QFrame {
+                background: rgba(40, 40, 45, 200);
+                border-top: 1px solid rgba(255,255,255,30);
+            }
+        """)
+        footer_layout = QHBoxLayout(footer)
+        footer_layout.setContentsMargins(16, 12, 16, 12)
+
+        # Select all / none buttons
+        self.select_all_btn = QPushButton("Select All")
+        self.select_all_btn.clicked.connect(self._select_all)
+        self.select_none_btn = QPushButton("Select None")
+        self.select_none_btn.clicked.connect(self._select_none)
+
+        for btn in [self.select_all_btn, self.select_none_btn]:
+            btn.setStyleSheet("""
+                QPushButton {
+                    background: rgba(255,255,255,20);
+                    border: 1px solid rgba(255,255,255,30);
+                    border-radius: 4px;
+                    color: white;
+                    padding: 6px 12px;
+                }
+                QPushButton:hover {
+                    background: rgba(255,255,255,40);
+                }
+            """)
+
+        footer_layout.addWidget(self.select_all_btn)
+        footer_layout.addWidget(self.select_none_btn)
+        footer_layout.addStretch()
+
+        # Selection summary
+        self.selection_label = QLabel("")
+        self.selection_label.setStyleSheet("color: rgba(255,255,255,150);")
+        footer_layout.addWidget(self.selection_label)
+
+        footer_layout.addSpacing(20)
+
+        # Cancel and Apply buttons
+        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.clicked.connect(self.cancelled.emit)
+        self.cancel_btn.setStyleSheet("""
+            QPushButton {
+                background: rgba(255,255,255,20);
+                border: 1px solid rgba(255,255,255,30);
+                border-radius: 4px;
+                color: white;
+                padding: 8px 20px;
+            }
+            QPushButton:hover {
+                background: rgba(255,255,255,40);
+            }
+        """)
+
+        self.apply_btn = QPushButton("Apply Sync")
+        self.apply_btn.clicked.connect(self._apply_sync)
+        self.apply_btn.setStyleSheet("""
+            QPushButton {
+                background: #409cff;
+                border: none;
+                border-radius: 4px;
+                color: white;
+                padding: 8px 24px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background: #5aacff;
+            }
+            QPushButton:disabled {
+                background: rgba(64, 156, 255, 50);
+                color: rgba(255,255,255,100);
+            }
+        """)
+
+        footer_layout.addWidget(self.cancel_btn)
+        footer_layout.addWidget(self.apply_btn)
+
+        layout.addWidget(footer)
+
+        # Connect tree item changes to update selection count
+        self.tree.itemChanged.connect(self._update_selection_count)
+
+    def show_loading(self):
+        """Show loading state."""
+        self.stack.setCurrentIndex(0)
+        self.progress_bar.setRange(0, 0)  # Indeterminate
+        self.apply_btn.setEnabled(False)
+
+    def update_progress(self, stage: str, current: int, total: int, message: str):
+        """Update progress indicator."""
+        self.loading_label.setText(f"Scanning: {stage}")
+        self.progress_detail.setText(message)
+
+        if total > 0:
+            self.progress_bar.setRange(0, total)
+            self.progress_bar.setValue(current)
+        else:
+            self.progress_bar.setRange(0, 0)  # Indeterminate
+
+    def show_plan(self, plan: SyncPlan):
+        """Display the sync plan in the tree view."""
+        self._plan = plan
+        self.tree.clear()
+
+        if not plan.has_changes:
+            self.stack.setCurrentIndex(2)  # Empty state
+            self.summary_label.setText("No changes needed")
+            self.apply_btn.setEnabled(False)
+            return
+
+        # Show content
+        self.stack.setCurrentIndex(1)
+
+        # Update summary with git-diff style size stats
+        total_changes = sum([
+            len(plan.to_add), len(plan.to_remove),
+            len(plan.to_sync_playcount), len(plan.to_sync_rating),
+            len(plan.quality_changes)
+        ])
+
+        # Build size diff string
+        size_parts = []
+        if plan.bytes_to_add > 0:
+            size_parts.append(f"<span style='color: #70c070;'>+{self._format_size(plan.bytes_to_add)}</span>")
+        if plan.bytes_to_remove > 0:
+            size_parts.append(f"<span style='color: #e07070;'>-{self._format_size(plan.bytes_to_remove)}</span>")
+
+        net_change = plan.bytes_to_add - plan.bytes_to_remove
+        if size_parts and net_change != 0:
+            net_sign = "+" if net_change > 0 else "-"
+            size_parts.append(f"(net {net_sign}{self._format_size(abs(net_change))})")
+
+        size_str = " ".join(size_parts) if size_parts else ""
+
+        summary_text = f"{plan.total_pc_tracks} PC tracks · {plan.total_ipod_tracks} iPod tracks · {total_changes} changes"
+        if size_str:
+            summary_text += f" · {size_str}"
+
+        self.summary_label.setText(summary_text)
+        self.summary_label.setTextFormat(Qt.TextFormat.RichText)
+
+        # Add categories to tree
+        if plan.to_add:
+            header = SyncCategoryHeader("📥", "Add to iPod", len(plan.to_add), plan.bytes_to_add)
+            self.tree.addTopLevelItem(header)
+            for item in plan.to_add:
+                header.addChild(SyncItemWidget(item))
+            header.setExpanded(True)
+
+        if plan.to_remove:
+            header = SyncCategoryHeader("🗑️", "Remove from iPod", len(plan.to_remove), plan.bytes_to_remove)
+            self.tree.addTopLevelItem(header)
+            for item in plan.to_remove:
+                header.addChild(SyncItemWidget(item))
+            header.setExpanded(True)
+
+        if plan.to_sync_playcount:
+            header = SyncCategoryHeader("🎵", "Sync Play Counts", len(plan.to_sync_playcount))
+            self.tree.addTopLevelItem(header)
+            for item in plan.to_sync_playcount:
+                header.addChild(SyncItemWidget(item))
+            header.setExpanded(False)
+
+        # Show rating changes
+        if plan.to_sync_rating:
+            header = SyncCategoryHeader("⭐", "Sync Ratings", len(plan.to_sync_rating))
+            self.tree.addTopLevelItem(header)
+            for item in plan.to_sync_rating:
+                header.addChild(SyncRatingWidget(item))
+            header.setExpanded(False)
+
+        # Show quality changes (upgrades/downgrades)
+        if plan.quality_changes:
+            # Separate upgrades and downgrades
+            upgrades = [qc for qc in plan.quality_changes if qc.is_upgrade]
+            downgrades = [qc for qc in plan.quality_changes if not qc.is_upgrade]
+
+            if upgrades:
+                total_bytes = sum(qc.size_diff for qc in upgrades)
+                header = SyncCategoryHeader("⬆️", "Quality Upgrades", len(upgrades), total_bytes)
+                self.tree.addTopLevelItem(header)
+                for qc in upgrades:
+                    group = QualityChangeGroupHeader(qc)
+                    header.addChild(group)
+                    # Add PC file (new/bigger)
+                    group.addChild(QualityChangeFileWidget(
+                        "New (PC)",
+                        qc.pc_track.filename,
+                        qc.pc_track.path,
+                        qc.pc_track.size,
+                        qc.pc_track.duration_ms,
+                        QColor(100, 200, 100)  # Green
+                    ))
+                    # Add iPod file (current/smaller)
+                    ipod_size = qc.ipod_track.get("size", 0)
+                    ipod_duration = qc.ipod_track.get("length", 0)
+                    ipod_path = qc.ipod_track.get("location", "Unknown")
+                    ipod_filename = os.path.basename(ipod_path)
+                    group.addChild(QualityChangeFileWidget(
+                        "Current (iPod)",
+                        ipod_filename,
+                        ipod_path,
+                        ipod_size,
+                        ipod_duration,
+                        QColor(150, 150, 150)  # Gray
+                    ))
+                    group.setExpanded(False)
+                header.setExpanded(True)
+
+            if downgrades:
+                total_bytes = sum(qc.size_diff for qc in downgrades)
+                header = SyncCategoryHeader("⬇️", "Quality Downgrades", len(downgrades), total_bytes)
+                self.tree.addTopLevelItem(header)
+                for qc in downgrades:
+                    group = QualityChangeGroupHeader(qc)
+                    header.addChild(group)
+                    # Add PC file (new/smaller)
+                    group.addChild(QualityChangeFileWidget(
+                        "New (PC)",
+                        qc.pc_track.filename,
+                        qc.pc_track.path,
+                        qc.pc_track.size,
+                        qc.pc_track.duration_ms,
+                        QColor(220, 150, 80)  # Orange
+                    ))
+                    # Add iPod file (current/bigger)
+                    ipod_size = qc.ipod_track.get("size", 0)
+                    ipod_duration = qc.ipod_track.get("length", 0)
+                    ipod_path = qc.ipod_track.get("location", "Unknown")
+                    ipod_filename = os.path.basename(ipod_path)
+                    group.addChild(QualityChangeFileWidget(
+                        "Current (iPod)",
+                        ipod_filename,
+                        ipod_path,
+                        ipod_size,
+                        ipod_duration,
+                        QColor(150, 150, 150)  # Gray
+                    ))
+                    group.setExpanded(False)
+                header.setExpanded(True)
+
+        # Show duplicate files (BLOCKING - must be resolved before sync)
+        if plan.duplicates:
+            dup_count = plan.duplicate_count
+            header = SyncCategoryHeader("🚫", f"DUPLICATES BLOCKING SYNC ({len(plan.duplicates)} groups, {dup_count} extra files)", 0)
+            # Remove checkbox from duplicates header - it's info only
+            header.setFlags(header.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
+            header.setCheckState(0, Qt.CheckState.Unchecked)  # Clear any checkbox state
+            # Red color to indicate blocking
+            for i in range(6):
+                header.setForeground(i, QBrush(QColor(255, 100, 100)))
+            self.tree.addTopLevelItem(header)
+
+            for fingerprint, tracks in plan.duplicates.items():
+                group_header = DuplicateGroupHeader(fingerprint, tracks)
+                header.addChild(group_header)
+                for track in tracks:
+                    group_header.addChild(DuplicateItemWidget(track))
+                group_header.setExpanded(False)  # Collapsed by default
+
+            header.setExpanded(True)  # Show duplicates expanded since they're blocking
+
+        self._update_selection_count()
+
+        # Disable sync if duplicates exist
+        if plan.duplicates:
+            self.apply_btn.setEnabled(False)
+            self.apply_btn.setToolTip("Resolve duplicate files before syncing")
+        else:
+            self.apply_btn.setEnabled(True)
+            self.apply_btn.setToolTip("")
+
+    def show_error(self, message: str):
+        """Show error message."""
+        QMessageBox.critical(self, "Sync Error", message)
+        self.stack.setCurrentIndex(2)
+        self.summary_label.setText("Error during scan")
+
+    def _select_all(self):
+        """Select all items."""
+        for i in range(self.tree.topLevelItemCount()):
+            item = self.tree.topLevelItem(i)
+            if item:
+                item.setCheckState(0, Qt.CheckState.Checked)
+
+    def _select_none(self):
+        """Deselect all items."""
+        for i in range(self.tree.topLevelItemCount()):
+            item = self.tree.topLevelItem(i)
+            if item:
+                item.setCheckState(0, Qt.CheckState.Unchecked)
+
+    def _update_selection_count(self):
+        """Update the selection summary label."""
+        selected = 0
+        total = 0
+        bytes_to_add = 0
+        bytes_to_remove = 0
+
+        for i in range(self.tree.topLevelItemCount()):
+            header = self.tree.topLevelItem(i)
+            if not header:
+                continue
+            # Skip duplicate headers (they're info-only)
+            if isinstance(header, SyncCategoryHeader):
+                header_text = header.text(1)
+                if "DUPLICATE" in header_text:
+                    continue
+            for j in range(header.childCount()):
+                child = header.child(j)
+                if not child:
+                    continue
+                # Skip duplicate items
+                if isinstance(child, (DuplicateGroupHeader, DuplicateItemWidget)):
+                    continue
+                # Skip quality change file widgets (only count the group header)
+                if isinstance(child, QualityChangeFileWidget):
+                    continue
+                total += 1
+                if child.checkState(0) == Qt.CheckState.Checked:
+                    selected += 1
+                    if isinstance(child, SyncItemWidget):
+                        item = child.sync_item
+                        # Track adds and removes separately
+                        if item.action == SyncAction.ADD_TO_IPOD:
+                            if item.pc_track:
+                                bytes_to_add += item.pc_track.size
+                        elif item.action == SyncAction.REMOVE_FROM_IPOD:
+                            if item.ipod_track:
+                                bytes_to_remove += item.ipod_track.get("size", 0)
+                    elif isinstance(child, QualityChangeGroupHeader):
+                        # Quality change: adds new file, removes old
+                        qc = child.quality_change
+                        bytes_to_add += qc.pc_track.size
+                        bytes_to_remove += qc.ipod_track.get("size", 0)
+
+        # Build git-diff style size string
+        size_parts = []
+        if bytes_to_add > 0:
+            size_parts.append(f"+{self._format_size(bytes_to_add)}")
+        if bytes_to_remove > 0:
+            size_parts.append(f"-{self._format_size(bytes_to_remove)}")
+
+        net_change = bytes_to_add - bytes_to_remove
+        if bytes_to_add > 0 or bytes_to_remove > 0:
+            net_sign = "+" if net_change >= 0 else "-"
+            size_parts.append(f"(net {net_sign}{self._format_size(abs(net_change))})")
+
+        size_str = " ".join(size_parts) if size_parts else ""
+
+        label_text = f"{selected} of {total} selected"
+        if size_str:
+            label_text += f" · {size_str}"
+
+        self.selection_label.setText(label_text)
+
+    def _update_details_panel(self):
+        """Update the details panel with selected item info."""
+        selected = self.tree.selectedItems()
+        if not selected:
+            self.details_text.setText("Select an item to see details")
+            return
+
+        item = selected[0]
+
+        # Skip if it's a category header
+        if isinstance(item, SyncCategoryHeader):
+            count = item.childCount()
+            self.details_text.setText(f"Category with {count} item{'s' if count != 1 else ''}")
+            return
+
+        # Handle duplicate group headers
+        if isinstance(item, DuplicateGroupHeader):
+            lines = []
+            lines.append("<span style='color: #ff6666;'><b>⚠️ BLOCKING SYNC</b></span>")
+            lines.append(f"<b>Duplicate Group:</b> {len(item.tracks)} files with identical metadata")
+            lines.append("<span style='color: #e0b050;'>These files have the same artist, album, title, and duration.</span>")
+            lines.append("<span style='color: #e07070;'>You must delete or rename the duplicates before syncing.</span>")
+            lines.append("")
+            lines.append("<b>Duplicate Paths:</b>")
+            for track in item.tracks:
+                lines.append(f"  • {track.path}")
+            self.details_text.setText("<br>".join(lines))
+            return
+
+        # Handle individual duplicate items
+        if isinstance(item, DuplicateItemWidget):
+            track = item.track
+            lines = []
+            lines.append("<span style='color: #ff6666;'><b>⚠️ DUPLICATE FILE - BLOCKING SYNC</b></span>")
+            lines.append(f"<b>Path:</b> {track.path}")
+            lines.append(f"<b>Size:</b> {self._format_size(track.size)} · <b>Duration:</b> {self._format_duration(track.duration_ms)}")
+            if track.artist:
+                lines.append(f"<b>Artist:</b> {track.artist}")
+            if track.album:
+                lines.append(f"<b>Album:</b> {track.album}")
+            if track.title:
+                lines.append(f"<b>Title:</b> {track.title}")
+            lines.append("")
+            lines.append("<span style='color: #e07070;'>Delete or rename this file to resolve the duplicate.</span>")
+            self.details_text.setText("<br>".join(lines))
+            return
+
+        # Handle quality change group headers
+        if isinstance(item, QualityChangeGroupHeader):
+            qc = item.quality_change
+            lines = []
+            if qc.is_upgrade:
+                lines.append("<span style='color: #70c070;'><b>⬆️ QUALITY UPGRADE</b></span>")
+                lines.append("The PC file is larger (higher quality) than the iPod version.")
+            else:
+                lines.append("<span style='color: #e0b050;'><b>⬇️ QUALITY DOWNGRADE</b></span>")
+                lines.append("The PC file is smaller (lower quality) than the iPod version.")
+            lines.append("")
+            lines.append(f"<b>Track:</b> {qc.pc_track.title or qc.pc_track.filename}")
+            lines.append(f"<b>Artist:</b> {qc.pc_track.artist or 'Unknown'}")
+            lines.append(f"<b>Album:</b> {qc.pc_track.album or 'Unknown'}")
+            lines.append("")
+            lines.append(f"<b>PC File:</b> {self._format_size(qc.pc_track.size)}")
+            lines.append(f"<b>iPod File:</b> {self._format_size(qc.ipod_track.get('size', 0))}")
+            lines.append(f"<b>Difference:</b> {'+' if qc.size_diff > 0 else ''}{self._format_size(qc.size_diff)}")
+            self.details_text.setText("<br>".join(lines))
+            return
+
+        # Handle quality change file items
+        if isinstance(item, QualityChangeFileWidget):
+            # Just show basic info - parent has the full context
+            self.details_text.setText("Select the parent item for quality change details")
+            return
+
+        if not isinstance(item, SyncItemWidget):
+            return
+
+        sync_item = item.sync_item
+        lines = []
+
+        # Action-specific details
+        if sync_item.action == SyncAction.ADD_TO_IPOD:
+            track = sync_item.pc_track
+            if track:
+                lines.append("<b>Action:</b> Add to iPod")
+                lines.append(f"<b>File:</b> {track.path}")
+                lines.append(f"<b>Size:</b> {self._format_size(track.size)} · <b>Duration:</b> {self._format_duration(track.duration_ms)} · <b>Format:</b> {track.extension.upper()}")
+                if track.genre:
+                    lines.append(f"<b>Genre:</b> {track.genre}")
+
+        elif sync_item.action == SyncAction.REMOVE_FROM_IPOD:
+            ipod_track = sync_item.ipod_track
+            lines.append("<b>Action:</b> Remove from iPod")
+            lines.append("<span style='color: #e07070;'>Track not found on PC</span>")
+            if ipod_track:
+                lines.append(f"<b>iPod location:</b> {ipod_track.get('Location', 'Unknown')}")
+
+        elif sync_item.action == SyncAction.SYNC_PLAYCOUNT:
+            track = sync_item.pc_track
+            ipod_track = sync_item.ipod_track
+            plays = sync_item.play_count_delta
+            skips = sync_item.skip_count_delta
+            lines.append("<b>Action:</b> Sync play statistics back to PC library")
+            if track:
+                lines.append(f"<b>File:</b> {track.path}")
+            stats_parts = []
+            if plays > 0:
+                stats_parts.append(f"<span style='color: #70a0e0;'><b>+{plays}</b> plays</span>")
+            if skips > 0:
+                stats_parts.append(f"<span style='color: #e0a070;'><b>+{skips}</b> skips</span>")
+            if stats_parts:
+                lines.append(f"<b>Changes:</b> {' · '.join(stats_parts)}")
+
+        self.details_text.setText("<br>".join(lines))
+
+    def _get_selected_items(self) -> list[SyncItem]:
+        """Get all checked sync items."""
+        selected = []
+        for i in range(self.tree.topLevelItemCount()):
+            header = self.tree.topLevelItem(i)
+            if not header:
+                continue
+            for j in range(header.childCount()):
+                child = header.child(j)
+                if not child:
+                    continue
+                if child.checkState(0) == Qt.CheckState.Checked:
+                    if isinstance(child, SyncItemWidget):
+                        selected.append(child.sync_item)
+        return selected
+
+    def _apply_sync(self):
+        """Emit signal to apply the selected sync actions."""
+        selected = self._get_selected_items()
+        if not selected:
+            QMessageBox.information(self, "No Selection", "Please select items to sync.")
+            return
+
+        # Confirm
+        add_count = sum(1 for s in selected if s.action == SyncAction.ADD_TO_IPOD)
+        remove_count = sum(1 for s in selected if s.action == SyncAction.REMOVE_FROM_IPOD)
+
+        msg_parts = []
+        if add_count:
+            msg_parts.append(f"Add {add_count} tracks")
+        if remove_count:
+            msg_parts.append(f"Remove {remove_count} tracks")
+
+        msg = "This will:\n• " + "\n• ".join(msg_parts) + "\n\nContinue?"
+
+        reply = QMessageBox.question(
+            self, "Confirm Sync", msg,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            self.sync_requested.emit(selected)
+
+    @staticmethod
+    def _format_size(bytes_val: int) -> str:
+        if bytes_val < 1024:
+            return f"{bytes_val} B"
+        elif bytes_val < 1024 * 1024:
+            return f"{bytes_val / 1024:.1f} KB"
+        elif bytes_val < 1024 * 1024 * 1024:
+            return f"{bytes_val / (1024 * 1024):.1f} MB"
+        return f"{bytes_val / (1024 * 1024 * 1024):.1f} GB"
+
+    @staticmethod
+    def _format_duration(ms: int) -> str:
+        if not ms:
+            return "—"
+        seconds = ms // 1000
+        minutes = seconds // 60
+        secs = seconds % 60
+        if minutes >= 60:
+            hours = minutes // 60
+            mins = minutes % 60
+            return f"{hours}:{mins:02d}:{secs:02d}"
+        return f"{minutes}:{secs:02d}"
+
+
+class PCFolderDialog(QDialog):
+    """Dialog to select PC music folder for syncing."""
+
+    def __init__(self, parent=None, last_folder: str = ""):
+        super().__init__(parent)
+        self.setWindowTitle("Select Music Folder")
+        self.setMinimumWidth(400)
+        self.selected_folder = ""
+        self.last_folder = last_folder
+
+        self._setup_ui()
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)
+
+        # Instructions
+        label = QLabel(
+            "Select the folder containing your music library.\n"
+            "This folder will be compared with your iPod to find:\n"
+            "• New tracks to add\n"
+            "• Removed tracks to delete\n"
+            "• Updated tracks to re-sync"
+        )
+        label.setWordWrap(True)
+        layout.addWidget(label)
+
+        # Folder selection
+        folder_layout = QHBoxLayout()
+
+        self.folder_edit = QLabel(self.last_folder or "No folder selected")
+        self.folder_edit.setStyleSheet("""
+            QLabel {
+                background: palette(base);
+                border: 1px solid palette(mid);
+                border-radius: 4px;
+                padding: 8px;
+            }
+        """)
+        self.folder_edit.setWordWrap(True)
+        folder_layout.addWidget(self.folder_edit, 1)
+
+        browse_btn = QPushButton("Browse...")
+        browse_btn.clicked.connect(self._browse)
+        folder_layout.addWidget(browse_btn)
+
+        layout.addLayout(folder_layout)
+
+        # Buttons
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self._accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def _browse(self):
+        folder = QFileDialog.getExistingDirectory(
+            self,
+            "Select Music Folder",
+            self.last_folder,
+            QFileDialog.Option.ShowDirsOnly
+        )
+        if folder:
+            self.selected_folder = folder
+            self.folder_edit.setText(folder)
+
+    def _accept(self):
+        if not self.selected_folder and self.last_folder:
+            self.selected_folder = self.last_folder
+
+        if not self.selected_folder:
+            QMessageBox.warning(self, "No Folder", "Please select a music folder.")
+            return
+
+        if not os.path.isdir(self.selected_folder):
+            QMessageBox.warning(self, "Invalid Folder", "The selected folder does not exist.")
+            return
+
+        self.accept()
