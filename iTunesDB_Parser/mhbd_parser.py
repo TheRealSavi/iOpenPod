@@ -1,15 +1,13 @@
 import base64
 import struct
-
-from .chunk_parser import parse_chunk
-from .constants import version_map, chunk_type_map
+from typing import Any
 
 
-def parse_db(data, offset, header_length, chunk_length) -> dict:
+def parse_db(data, offset, header_length, chunk_length) -> dict[str, Any]:
     from .chunk_parser import parse_chunk
-    from .constants import version_map, chunk_type_map
+    from .constants import version_map, chunk_type_map  # noqa: F401
 
-    database = {}
+    database: dict[str, Any] = {}
 
     database["unk1"] = struct.unpack(
         "<I", data[offset + 12:offset + 16])[0]  # always 1?
@@ -57,7 +55,7 @@ def parse_db(data, offset, header_length, chunk_length) -> dict:
         database[chunk_type_map[resultType]] = resultData
 
     # TODO: TEMPORARY FIX FOR FIXING BYTE DATA INTO BASE64 TO BE JSON WRITABLE
-    def replace_bytes_with_base64(data):
+    def replace_bytes_with_base64(data: Any) -> Any:
         if isinstance(data, dict):  # If it's a dictionary, process each key-value pair
             return {key: replace_bytes_with_base64(value) for key, value in data.items()}
         elif isinstance(data, list):  # If it's a list, process each item
@@ -69,4 +67,4 @@ def parse_db(data, offset, header_length, chunk_length) -> dict:
 
     cleaned_database = replace_bytes_with_base64(database)
 
-    return cleaned_database
+    return {"nextOffset": offset + chunk_length, "result": cleaned_database}

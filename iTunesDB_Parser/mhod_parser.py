@@ -5,7 +5,7 @@ def parse_mhod(data, offset, header_length, chunk_length) -> dict:
     mhod_type = struct.unpack("<I", data[offset + 12:offset + 16])[0]
     string_length = struct.unpack("<I", data[offset + 28:offset + 32])[0]
     # Encoding hint (not always reliable)
-    encoding_flag = struct.unpack("<I", data[offset + 32:offset + 36])[0]
+    # encoding_flag = struct.unpack("<I", data[offset + 32:offset + 36])[0]
     string_data = data[offset + 40:offset + 40 + string_length]
 
     # guess encoding based on the presence of a null byte

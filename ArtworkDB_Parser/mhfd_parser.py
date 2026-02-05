@@ -1,12 +1,13 @@
 import base64
 import struct
+from typing import Any
 
 
-def parse_mhfd(data, offset, header_length, chunk_length) -> dict:
+def parse_mhfd(data, offset, header_length, chunk_length) -> dict[str, Any]:
     from .chunk_parser import parse_chunk
     from .constants import chunk_type_map
 
-    datafile = {}
+    datafile: dict[str, Any] = {}
 
     datafile["unk1"] = struct.unpack(
         "<I", data[offset + 12:offset + 16])[0]  # always 0
@@ -44,17 +45,17 @@ def parse_mhfd(data, offset, header_length, chunk_length) -> dict:
         resultType = childResult["datasetType"]
         datafile[chunk_type_map[resultType]] = resultData
 
-        # TODO: TEMPORARY FIX FOR FIXING BYTE DATA INTO BASE64 TO BE JSON WRITABLE
-        def replace_bytes_with_base64(data):
-            if isinstance(data, dict):  # If it's a dictionary, process each key-value pair
-                return {key: replace_bytes_with_base64(value) for key, value in data.items()}
-            elif isinstance(data, list):  # If it's a list, process each item
-                return [replace_bytes_with_base64(item) for item in data]
-            elif isinstance(data, bytes):  # If it's bytes, encode to Base64
-                return base64.b64encode(data).decode("utf-8")
-            else:
-                return data  # If it's not bytes, return as-is
+    # TODO: TEMPORARY FIX FOR FIXING BYTE DATA INTO BASE64 TO BE JSON WRITABLE
+    def replace_bytes_with_base64(data: Any) -> Any:
+        if isinstance(data, dict):  # If it's a dictionary, process each key-value pair
+            return {key: replace_bytes_with_base64(value) for key, value in data.items()}
+        elif isinstance(data, list):  # If it's a list, process each item
+            return [replace_bytes_with_base64(item) for item in data]
+        elif isinstance(data, bytes):  # If it's bytes, encode to Base64
+            return base64.b64encode(data).decode("utf-8")
+        else:
+            return data  # If it's not bytes, return as-is
 
-        cleaned_database = replace_bytes_with_base64(datafile)
+    cleaned_database = replace_bytes_with_base64(datafile)
 
-        return cleaned_database
+    return {"nextOffset": next_offset, "result": cleaned_database}

@@ -7,12 +7,12 @@ def parse_albumItem(data, offset, header_length, chunk_length) -> dict:
 
     childCount = struct.unpack("<I", data[offset + 12:offset + 16])[0]
     # prev long length 4 possible album id
-    unk = struct.unpack("<H", data[offset + 16:offset + 18])[0]
+    # unk = struct.unpack("<H", data[offset + 16:offset + 18])[0]
     album_id_for_track = struct.unpack(
         "<I", data[offset + 16:offset + 20])[0]  # 0x18+ prev long length 4
     # timestamp? 0x18+
     unk2 = struct.unpack("<Q", data[offset + 20:offset + 28])[0]
-    unk3 = struct.unpack("<I", data[offset + 28:offset + 32])[0]  # always 2 0x18+
+    # unk3 = struct.unpack("<I", data[offset + 28:offset + 32])[0]  # always 2 0x18+
 
     album = {}
 

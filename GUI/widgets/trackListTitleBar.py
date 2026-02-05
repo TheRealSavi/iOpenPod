@@ -1,118 +1,150 @@
 from PyQt6.QtCore import Qt, QPoint
 from PyQt6.QtWidgets import QApplication, QHBoxLayout, QFrame, QLabel, QPushButton, QWidget
+from PyQt6.QtGui import QFont
 
 
 class TrackListTitleBar(QFrame):
+    """Draggable title bar for the track list panel."""
+
     def __init__(self, splitterToControl):
         super().__init__()
         self.splitter = splitterToControl
         self.dragging = False
         self.dragStartPos = QPoint()
         self.setMouseTracking(True)
-        self.layout = QHBoxLayout(self)
-        self.layout.setContentsMargins(2, 2, 2, 2)
-        # self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.titleBarLayout = QHBoxLayout(self)
+        self.titleBarLayout.setContentsMargins(12, 0, 8, 0)
         self.splitter.splitterMoved.connect(self.enforceMinHeight)
 
-        # Set minimum and maximum height
-        self.setMinimumHeight(30)  # Minimum height in pixels
-        self.setMaximumHeight(30)  # Maximum height in pixels
-        self.setFixedHeight(30)
+        self.setMinimumHeight(36)
+        self.setMaximumHeight(36)
+        self.setFixedHeight(36)
 
         self.setStyleSheet("""
             QFrame {
-                background-color: #409cff;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 rgba(64,156,255,200), stop:1 rgba(40,120,200,200));
                 border: none;
-                border-radius: 5px;
-                color: white;
+                border-radius: 0px;
             }
             QLabel {
                 font-weight: bold;
-                font-size: 14px;
+                font-size: 13px;
                 color: white;
-                margin-left: 10px;
+                background: transparent;
             }
             QPushButton {
                 background-color: transparent;
                 border: none;
                 color: white;
-                font-size: 12px;
+                font-size: 16px;
                 font-weight: bold;
-                width: 30px;
-                height: 30px;
-                border-radius: 3px;
-                margin-right: 5px;  /* Right margin for buttons */
+                width: 28px;
+                height: 28px;
+                border-radius: 4px;
             }
             QPushButton:hover {
-                background-color: #ff375f;  /* Hover effect for buttons */
+                background-color: rgba(255,255,255,30);
             }
             QPushButton:pressed {
-                background-color: #888888;  /* Pressed effect for buttons */
+                background-color: rgba(0,0,0,30);
             }
         """)
 
         self.title = QLabel("Tracks")
-        self.button1 = QPushButton("-")
-        self.button2 = QPushButton("X")
-        self.layout.addWidget(self.title)
-        self.layout.addStretch()
-        self.layout.addWidget(self.button1)
-        self.layout.addWidget(self.button2)
+        self.title.setFont(QFont("Segoe UI", 12, QFont.Weight.DemiBold))
 
-    def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            if self.childAt(event.pos()) is None:
+        self.button1 = QPushButton("▼")
+        self.button1.setToolTip("Minimize")
+        self.button1.clicked.connect(self._toggleMinimize)
+
+        self.button2 = QPushButton("▲")
+        self.button2.setToolTip("Maximize")
+        self.button2.clicked.connect(self._toggleMaximize)
+
+        self.titleBarLayout.addWidget(self.title)
+        self.titleBarLayout.addStretch()
+        self.titleBarLayout.addWidget(self.button1)
+        self.titleBarLayout.addWidget(self.button2)
+
+    def setTitle(self, title: str):
+        """Set the title text."""
+        self.title.setText(title)
+
+    def _toggleMinimize(self):
+        """Minimize the track list panel."""
+        sizes = self.splitter.sizes()
+        total = sum(sizes)
+        # Set track panel to minimum (just title bar)
+        self.splitter.setSizes([total - 40, 40])
+
+    def _toggleMaximize(self):
+        """Maximize the track list panel."""
+        sizes = self.splitter.sizes()
+        total = sum(sizes)
+        # Set track panel to 80% of space
+        self.splitter.setSizes([int(total * 0.2), int(total * 0.8)])
+
+    def mousePressEvent(self, a0):
+        if a0 and a0.button() == Qt.MouseButton.LeftButton:
+            if self.childAt(a0.pos()) is None:
                 self.dragging = True
-                self.dragStartPos = event.globalPosition().toPoint()
-                event.accept()
+                self.dragStartPos = a0.globalPosition().toPoint()
+                a0.accept()
             else:
-                event.ignore()
+                a0.ignore()
 
-    def mouseMoveEvent(self, event):
-        if self.dragging:
-            delta = event.globalPosition().toPoint().y() - self.dragStartPos.y()
-            self.dragStartPos = event.globalPosition().toPoint()
+    def mouseMoveEvent(self, a0):
+        if self.dragging and a0:
+            _ = a0.globalPosition().toPoint().y() - self.dragStartPos.y()  # delta
+            self.dragStartPos = a0.globalPosition().toPoint()
 
-            current_pos = self.splitter.handle(1).y()
+            _ = self.splitter.handle(1).y() if self.splitter.handle(1) else 0  # current_pos
             new_pos = self.splitter.mapFromGlobal(
-                event.globalPosition().toPoint()).y()
+                a0.globalPosition().toPoint()).y()
 
-            max_pos = self.splitter.parent().height() - self.splitter.handleWidth()
+            parent = self.splitter.parent()
+            max_pos = parent.height() - self.splitter.handleWidth() if parent else 0
 
             new_pos = max(0, min(new_pos, max_pos))
 
             # move the splitter handle
             self.splitter.moveSplitter(new_pos, 1)
-            event.accept()
-        else:
-            event.ignore()
+            a0.accept()
+        elif a0:
+            a0.ignore()
 
-    def mouseReleaseEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
+    def mouseReleaseEvent(self, a0):
+        if a0 and a0.button() == Qt.MouseButton.LeftButton:
             self.dragging = False
-            event.accept()
+            a0.accept()
 
-    def enterEvent(self, event):
-        if self.childAt(event.position().toPoint()) is None:
-            QApplication.setOverrideCursor(Qt.CursorShape.SizeVerCursor)
-        else:
-            QApplication.restoreOverrideCursor()
+    def enterEvent(self, event):  # type: ignore[override]
+        if event:
+            pos = event.position().toPoint()
+            if self.childAt(pos) is None:
+                QApplication.setOverrideCursor(Qt.CursorShape.SizeVerCursor)
+            else:
+                QApplication.restoreOverrideCursor()
 
-    def leaveEvent(self, event):
+    def leaveEvent(self, a0):
         QApplication.restoreOverrideCursor()
-        super().leaveEvent(event)
+        super().leaveEvent(a0)
 
     def enforceMinHeight(self):
         sizes = self.splitter.sizes()
         min_height = self.minimumHeight()
+        parent = self.parent()
         if sizes[1] <= min_height:
-            for child in self.parent().children():
-                if isinstance(child, QWidget) and child != self:
-                    child.hide()
+            if parent:
+                for child in parent.children():
+                    if isinstance(child, QWidget) and child != self:
+                        child.hide()
         else:
-            for child in self.parent().children():
-                if isinstance(child, QWidget):
-                    child.show()
+            if parent:
+                for child in parent.children():
+                    if isinstance(child, QWidget):
+                        child.show()
 
         if sizes[1] < min_height:
             sizes[1] = min_height
