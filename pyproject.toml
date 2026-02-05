@@ -13,6 +13,7 @@ dependencies = [
     "numpy>=2.3.0,<3.0.0",
     "pillow>=11.2.1,<12.0.0",
     "pycryptodome>=3.20.0,<4.0.0",
+    "mutagen>=1.47.0,<2.0.0",
 ]
 
 [dependency-groups]
