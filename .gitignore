@@ -160,5 +160,4 @@ cython_debug/
 #.idea/
 /iTunes
 /testData
-idb.json
-idb.json
+/ipodTestData

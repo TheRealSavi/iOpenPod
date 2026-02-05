@@ -1,7 +1,7 @@
-from typing import List
+from typing import Any
 
 
-def parse_albumList(data, offset, header_length, albumCount) -> List[dict]:
+def parse_albumList(data, offset, header_length, albumCount) -> dict[str, Any]:
     from .chunk_parser import parse_chunk
 
     albumList = []
@@ -13,4 +13,4 @@ def parse_albumList(data, offset, header_length, albumCount) -> List[dict]:
         next_offset = response["nextOffset"]
         albumList.append(response["result"])
 
-    return albumList
+    return {"nextOffset": next_offset, "result": albumList}

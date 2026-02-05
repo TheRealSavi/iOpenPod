@@ -1,4 +1,7 @@
-def parse_mhli(data, offset, header_length, imageCount) -> dict:
+from typing import Any
+
+
+def parse_mhli(data, offset, header_length, imageCount) -> dict[str, Any]:
     from .chunk_parser import parse_chunk
 
     imageList = []
@@ -10,4 +13,4 @@ def parse_mhli(data, offset, header_length, imageCount) -> dict:
         next_offset = response["nextOffset"]
         imageList.append(response["result"])
 
-    return imageList
+    return {"nextOffset": next_offset, "result": imageList}

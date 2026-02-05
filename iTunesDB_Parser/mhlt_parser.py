@@ -1,7 +1,7 @@
-from typing import List
+from typing import Any
 
 
-def parse_trackList(data, offset, header_length, trackCount) -> List[dict]:
+def parse_trackList(data, offset, header_length, trackCount) -> dict[str, Any]:
     from .chunk_parser import parse_chunk
 
     trackList = []
@@ -13,4 +13,4 @@ def parse_trackList(data, offset, header_length, trackCount) -> List[dict]:
         next_offset = response["nextOffset"]
         trackList.append(response["result"])
 
-    return trackList
+    return {"nextOffset": next_offset, "result": trackList}

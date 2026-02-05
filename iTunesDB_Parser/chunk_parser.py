@@ -1,7 +1,8 @@
 import struct
+from typing import Any
 
 
-def parse_chunk(data, offset) -> dict:
+def parse_chunk(data, offset) -> dict[str, Any]:
     chunk_type = data[offset:offset + 4].decode("utf-8")
     header_length = struct.unpack("<I", data[offset + 4:offset + 8])[0]
     chunk_length = struct.unpack("<I", data[offset + 8:offset + 12])[0]

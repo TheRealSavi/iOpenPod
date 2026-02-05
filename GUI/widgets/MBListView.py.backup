@@ -1,0 +1,455 @@
+import logging
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtWidgets import QAbstractItemView, QTableWidgetItem, QHeaderView, QTableWidget, QFrame, QVBoxLayout
+from PyQt6.QtGui import QFont
+
+log = logging.getLogger(__name__)
+
+
+def format_duration(ms: int) -> str:
+    """Format milliseconds as M:SS or H:MM:SS."""
+    if not ms or ms <= 0:
+        return ""
+    total_seconds = ms // 1000
+    hours = total_seconds // 3600
+    minutes = (total_seconds % 3600) // 60
+    seconds = total_seconds % 60
+    if hours > 0:
+        return f"{hours}:{minutes:02d}:{seconds:02d}"
+    return f"{minutes}:{seconds:02d}"
+
+
+def format_rating(rating: int) -> str:
+    """Format rating (0-100) as stars."""
+    if not rating or rating <= 0:
+        return ""
+    stars = rating // 20
+    return "★" * stars + "☆" * (5 - stars)
+
+
+def format_bitrate(bitrate: int) -> str:
+    """Format bitrate with kbps."""
+    if not bitrate or bitrate <= 0:
+        return ""
+    return f"{bitrate} kbps"
+
+
+def format_size(size_bytes: int) -> str:
+    """Format file size in human-readable form."""
+    if not size_bytes or size_bytes <= 0:
+        return ""
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    elif size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    elif size_bytes < 1024 * 1024 * 1024:
+        return f"{size_bytes / (1024 * 1024):.1f} MB"
+    return f"{size_bytes / (1024 * 1024 * 1024):.2f} GB"
+
+
+def format_sample_rate(rate: int) -> str:
+    """Format sample rate in kHz."""
+    if not rate or rate <= 0:
+        return ""
+    return f"{rate / 1000:.1f} kHz"
+
+
+def format_date(unix_timestamp: int) -> str:
+    """Format Unix timestamp as date string."""
+    if not unix_timestamp or unix_timestamp <= 0:
+        return ""
+    from datetime import datetime
+    try:
+        dt = datetime.fromtimestamp(unix_timestamp)
+        return dt.strftime("%Y-%m-%d")
+    except (ValueError, OSError):
+        return ""
+
+
+class MusicBrowserList(QFrame):
+    """Track list view with filtering support."""
+
+    # Column display configuration: internal_key -> (display_name, formatter)
+    COLUMN_CONFIG = {
+        "Title": ("Title", None),
+        "Artist": ("Artist", None),
+        "Album": ("Album", None),
+        "Album Artist": ("Album Artist", None),
+        "Genre": ("Genre", None),
+        "year": ("Year", None),
+        "length": ("Time", format_duration),
+        "rating": ("Rating", format_rating),
+        "playCount": ("Plays", None),
+        "skipCount": ("Skips", None),
+        "bitrate": ("Bitrate", format_bitrate),
+        "size": ("Size", format_size),
+        "sampleRate": ("Sample Rate", format_sample_rate),
+        "trackNumber": ("#", None),
+        "discNumber": ("Disc", None),
+        "dateAdded": ("Added", format_date),
+        "lastPlayed": ("Last Played", format_date),
+        "bpm": ("BPM", None),
+        "Composer": ("Composer", None),
+        "filetype": ("Format", None),
+    }
+
+    def __init__(self):
+        super().__init__()
+        self.listLayout = QVBoxLayout(self)
+        self.listLayout.setContentsMargins(0, 0, 0, 0)
+        self.all_tracks = []  # All tracks from device
+        self.tracks = []  # Currently displayed (filtered) tracks
+        self.table = QTableWidget()
+        self.listLayout.addWidget(self.table)
+        self.setupTable()
+        self._current_filter = None  # Current filter being applied
+
+        # Default columns to show (using internal keys)
+        self.default_columns = ["Title", "Artist", "Album", "Genre", "length", "rating", "playCount"]
+        self.final_column_order = self.default_columns.copy()
+
+        # Incremental loading state
+        self._load_id = 0
+        self._current_load_id = 0
+        self._pending_rows = []
+        self._is_populating = False
+
+    def setupTable(self):
+        self.table.setSortingEnabled(True)
+        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.table.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table.setAlternatingRowColors(True)
+
+        # Styling
+        self.table.setStyleSheet("""
+            QTableWidget {
+                background-color: rgba(0,0,0,30);
+                border: none;
+                color: white;
+                gridline-color: rgba(255,255,255,20);
+                selection-background-color: rgba(64,156,255,100);
+            }
+            QTableWidget::item {
+                padding: 8px;
+                border-bottom: 1px solid rgba(255,255,255,10);
+            }
+            QTableWidget::item:selected {
+                background-color: rgba(64,156,255,100);
+            }
+            QHeaderView::section {
+                background-color: rgba(255,255,255,15);
+                color: white;
+                padding: 8px;
+                border: none;
+                border-bottom: 2px solid rgba(64,156,255,150);
+                font-weight: bold;
+            }
+            QHeaderView::section:hover {
+                background-color: rgba(255,255,255,25);
+            }
+        """)
+
+        header = self.table.horizontalHeader()
+        if header is not None:
+            header.setSectionsMovable(True)
+            header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+            header.setStretchLastSection(True)
+            header.setDefaultSectionSize(150)
+
+    def loadTracks(self):
+        """Load all tracks from the cache."""
+        from ..app import iTunesDBCache
+
+        cache = iTunesDBCache.get_instance()
+        if not cache.is_ready():
+            return  # Data not ready yet
+
+        self.all_tracks = cache.get_tracks()
+
+        # Apply current filter or show all
+        if self._current_filter:
+            self.applyFilter(self._current_filter)
+        else:
+            self.showAllTracks()
+
+    def showAllTracks(self):
+        """Display all tracks without filtering."""
+        self._current_filter = None
+        self.tracks = self.all_tracks
+        self._setupColumns()
+        self._populateTable()
+
+    def clearFilter(self):
+        """Clear the current filter without reloading data."""
+        self._current_filter = None
+
+    def filterByAlbum(self, album: str, artist: str | None = None):
+        """Filter tracks to show only those from a specific album."""
+        # Ensure tracks are loaded first
+        if not self.all_tracks:
+            self.loadTracks()
+
+        self._current_filter = {"type": "album", "album": album, "artist": artist}
+
+        if artist:
+            self.tracks = [
+                t for t in self.all_tracks
+                if t.get("Album") == album and t.get("Artist") == artist
+            ]
+        else:
+            self.tracks = [t for t in self.all_tracks if t.get("Album") == album]
+
+        self._setupColumns()
+        self._populateTable()
+
+    def filterByArtist(self, artist: str):
+        """Filter tracks to show only those from a specific artist."""
+        # Ensure tracks are loaded first
+        if not self.all_tracks:
+            self.loadTracks()
+
+        self._current_filter = {"type": "artist", "artist": artist}
+        self.tracks = [t for t in self.all_tracks if t.get("Artist") == artist]
+        self._setupColumns()
+        self._populateTable()
+
+    def filterByGenre(self, genre: str):
+        """Filter tracks to show only those of a specific genre."""
+        # Ensure tracks are loaded first
+        if not self.all_tracks:
+            self.loadTracks()
+
+        self._current_filter = {"type": "genre", "genre": genre}
+        self.tracks = [t for t in self.all_tracks if t.get("Genre") == genre]
+        self._setupColumns()
+        self._populateTable()
+
+    def applyFilter(self, filter_data: dict):
+        """Apply a filter from grid item selection."""
+        # Ensure tracks are loaded first
+        if not self.all_tracks:
+            self.loadTracks()
+
+        filter_key = filter_data.get("filter_key")
+        filter_value = filter_data.get("filter_value")
+
+        if filter_key and filter_value:
+            self._current_filter = filter_data
+            self.tracks = [t for t in self.all_tracks if t.get(filter_key) == filter_value]
+            self._setupColumns()
+            self._populateTable()
+
+    def _setupColumns(self):
+        """Setup columns based on available data."""
+        if not self.tracks:
+            self.final_column_order = self.default_columns.copy()
+            return
+
+        # Get all available keys from sample tracks
+        all_keys = set()
+        for track in self.tracks[:100]:  # Sample first 100 for performance
+            all_keys.update(track.keys())
+
+        # Preferred order of columns (internal keys)
+        preferred = [
+            "Title", "Artist", "Album", "Album Artist", "Genre",
+            "year", "length", "rating", "playCount", "skipCount",
+            "trackNumber", "discNumber", "bitrate", "dateAdded", "lastPlayed"
+        ]
+
+        # Build final order: preferred first (if data exists), then others
+        self.final_column_order = [k for k in preferred if k in all_keys]
+
+        # Add remaining known columns that have data
+        for key in self.COLUMN_CONFIG:
+            if key in all_keys and key not in self.final_column_order:
+                self.final_column_order.append(key)
+
+    def _getColumnHeader(self, internal_key: str) -> str:
+        """Get display name for a column."""
+        if internal_key in self.COLUMN_CONFIG:
+            return self.COLUMN_CONFIG[internal_key][0]
+        return internal_key
+
+    def _formatValue(self, key: str, value) -> str:
+        """Format a value for display based on column type."""
+        if value is None or value == "":
+            return ""
+
+        # Check if we have a custom formatter
+        if key in self.COLUMN_CONFIG:
+            _, formatter = self.COLUMN_CONFIG[key]
+            if formatter and isinstance(value, (int, float)):
+                return formatter(int(value))
+
+        return str(value)
+
+    def _populateTable(self):
+        """Start populating the table with current tracks."""
+        try:
+            # Cancel any in-progress population first
+            self._load_id += 1
+            self._pending_rows = []
+            self._is_populating = False
+
+            self.table.setUpdatesEnabled(False)  # Prevent repaints during setup
+            self.table.setSortingEnabled(False)  # Disable sorting during population
+            self.table.clearContents()
+
+            # Set up columns with display names
+            self.table.setColumnCount(len(self.final_column_order))
+            header_labels = [self._getColumnHeader(k) for k in self.final_column_order]
+            self.table.setHorizontalHeaderLabels(header_labels)
+            self.table.setRowCount(len(self.tracks))
+
+            # For small datasets (< 500 rows), populate synchronously for speed
+            if len(self.tracks) < 500:
+                self._populateAllRows()
+                self.table.setUpdatesEnabled(True)
+                self._finishPopulation()
+                return
+
+            # For large datasets, use incremental population
+            self._pending_rows = list(range(len(self.tracks)))
+            self._current_load_id = self._load_id
+
+            if self._pending_rows and not self._is_populating:
+                self._is_populating = True
+                self.table.setUpdatesEnabled(True)  # Enable updates for incremental
+                QTimer.singleShot(0, self._populateNextBatch)
+        except RuntimeError:
+            # Widget was deleted during population
+            pass
+
+    def _populateAllRows(self):
+        """Populate all rows synchronously - used for small datasets."""
+        try:
+            font = QFont("Segoe UI", 10)
+            numeric_cols = {"year", "playCount", "skipCount", "trackNumber", "discNumber", "bpm"}
+
+            # Capture current load_id to check if we should abort
+            current_load_id = self._load_id
+            tracks = self.tracks  # Local reference to avoid mid-loop changes
+            columns = self.final_column_order  # Local reference
+
+            for row, track in enumerate(tracks):
+                # Check if load was superseded (user clicked something else)
+                if self._load_id != current_load_id:
+                    return
+
+                # Safety: check row is still valid
+                if row >= self.table.rowCount():
+                    return
+
+                for col, key in enumerate(columns):
+                    value = track.get(key, "")
+                    display_value = self._formatValue(key, value)
+
+                    item = QTableWidgetItem(display_value)
+                    item.setFont(font)
+
+                    if key == "rating" and display_value:
+                        item.setForeground(Qt.GlobalColor.yellow)
+                    if key in numeric_cols:
+                        item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+
+                    self.table.setItem(row, col, item)
+        except RuntimeError:
+            # Widget was deleted during population
+            pass
+
+    def _populateNextBatch(self):
+        """Populate the next batch of rows."""
+        try:
+            # Check if this load has been superseded
+            if self._current_load_id != self._load_id:
+                self._is_populating = False
+                return
+
+            if not self._pending_rows:
+                self._is_populating = False
+                self._finishPopulation()
+                return
+
+            # Safety check - make sure table still exists and is valid
+            if not self.table or self.table.rowCount() == 0:
+                self._is_populating = False
+                return
+
+            # Pre-create font and numeric cols set outside loop
+            font = QFont("Segoe UI", 10)
+            numeric_cols = {"year", "playCount", "skipCount", "trackNumber", "discNumber", "bpm"}
+
+            # Larger batch size for better throughput
+            batch_size = 200
+            batch = self._pending_rows[:batch_size]
+            self._pending_rows = self._pending_rows[batch_size:]
+
+            self.table.setUpdatesEnabled(False)  # Disable updates during batch
+
+            for row in batch:
+                if row >= len(self.tracks):
+                    continue
+                track = self.tracks[row]
+                for col, key in enumerate(self.final_column_order):
+                    value = track.get(key, "")
+                    display_value = self._formatValue(key, value)
+
+                    item = QTableWidgetItem(display_value)
+                    item.setFont(font)
+
+                    if key == "rating" and display_value:
+                        item.setForeground(Qt.GlobalColor.yellow)
+                    if key in numeric_cols:
+                        item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+
+                    self.table.setItem(row, col, item)
+
+            self.table.setUpdatesEnabled(True)  # Re-enable updates after batch
+
+            # Schedule next batch if there are more rows and load is still valid
+            if self._pending_rows and self._current_load_id == self._load_id:
+                QTimer.singleShot(0, self._populateNextBatch)
+            else:
+                self._is_populating = False
+                if self._current_load_id == self._load_id:
+                    self._finishPopulation()
+
+        except RuntimeError:
+            # Widget was deleted
+            self._is_populating = False
+        except Exception:
+            self._is_populating = False
+
+    def _finishPopulation(self):
+        """Finish table population - enable sorting and resize columns."""
+        try:
+            self.table.setSortingEnabled(True)  # Re-enable sorting
+
+            # Resize columns to content
+            header = self.table.horizontalHeader()
+            if header:
+                for i in range(len(self.final_column_order) - 1):
+                    header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
+                header.setSectionResizeMode(len(self.final_column_order) - 1, QHeaderView.ResizeMode.Stretch)
+        except RuntimeError:
+            # Widget was deleted
+            pass
+
+    def clearTable(self):
+        """Clear the table to prepare for reloading."""
+        # Cancel any in-progress population
+        self._load_id += 1
+        self._pending_rows = []
+        self._is_populating = False
+
+        self.all_tracks = []
+        self.tracks = []
+        self._current_filter = None
+        self.table.setUpdatesEnabled(False)
+        self.table.clearContents()
+        self.table.setRowCount(0)
+        self.table.setColumnCount(0)
+        self.table.setUpdatesEnabled(True)

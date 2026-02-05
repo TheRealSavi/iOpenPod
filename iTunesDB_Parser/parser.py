@@ -11,4 +11,5 @@ def parse_itunesdb(file) -> dict:
 
     result = parse_chunk(data, 0)
 
-    return result
+    # Return just the parsed data, not the wrapper with nextOffset
+    return result.get("result", result)
