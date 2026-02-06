@@ -42,7 +42,7 @@ from .hash72 import (
 )
 
 from .mhit_writer import TrackInfo, write_mhit
-from .mhbd_writer import write_itunesdb, write_mhbd, add_tracks_to_itunesdb, extract_db_info
+from .mhbd_writer import write_itunesdb, write_mhbd, extract_db_info
 
 
 def write_checksum(itdb_data: bytearray, ipod_path: str) -> bool:
@@ -99,6 +99,5 @@ __all__ = [
     'write_mhit',
     'write_mhbd',
     'write_itunesdb',
-    'add_tracks_to_itunesdb',
     'extract_db_info',
 ]

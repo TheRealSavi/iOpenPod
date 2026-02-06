@@ -55,7 +55,7 @@ def test_mapping_file():
     print(f"Added track: {mapping.track_count} tracks")
 
     # Lookup by fingerprint
-    track = mapping.get_track("AQADtNQyRUkSRZEiJYqSKMmS")
+    track = mapping.get_single("AQADtNQyRUkSRZEiJYqSKMmS")
     if track:
         print(f"Found track: dbid=0x{track.dbid:016X}, format={track.source_format}→{track.ipod_format}")
 

@@ -93,8 +93,11 @@ class PCTrack:
     sample_rate: Optional[int]  # Sample rate in Hz
     rating: Optional[int]  # Rating 0-100 (stars × 20, same as iPod)
 
+    # Artwork hash (MD5 of embedded image bytes, for change detection)
+    art_hash: Optional[str] = None
+
     # Computed
-    needs_transcoding: bool  # True if format not iPod-native
+    needs_transcoding: bool = False  # True if format not iPod-native
 
     @property
     def fingerprint(self) -> tuple:
@@ -197,6 +200,9 @@ class PCLibrary:
         # Extract metadata based on file type
         metadata = self._extract_metadata(audio, ext)
 
+        # Extract art hash for artwork change detection
+        art_hash = self._compute_art_hash(file_path)
+
         return PCTrack(
             path=str(file_path),
             relative_path=str(file_path.relative_to(self.root_path)),
@@ -218,8 +224,20 @@ class PCLibrary:
             bitrate=metadata.get("bitrate"),
             sample_rate=metadata.get("sample_rate"),
             rating=metadata.get("rating"),
+            art_hash=art_hash,
             needs_transcoding=ext in NEEDS_TRANSCODING,
         )
+
+    def _compute_art_hash(self, file_path: Path) -> Optional[str]:
+        """Compute MD5 hash of embedded album art for change detection."""
+        try:
+            from ArtworkDB_Writer.art_extractor import extract_art, art_hash
+            art_bytes = extract_art(str(file_path))
+            if art_bytes:
+                return art_hash(art_bytes)
+        except Exception as e:
+            logging.debug(f"Could not extract art from {file_path}: {e}")
+        return None
 
     def _extract_metadata(self, audio, ext: str) -> dict:
         """Extract metadata from mutagen object."""

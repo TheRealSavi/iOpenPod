@@ -17,8 +17,10 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtGui import QFont, QColor, QBrush
 
-from SyncEngine.diff_engine import SyncPlan, SyncItem, SyncAction, QualityChange, DiffEngine
+from SyncEngine.fingerprint_diff_engine import SyncPlan, SyncItem, SyncAction, FingerprintDiffEngine
 from SyncEngine.pc_library import PCLibrary
+
+from .formatters import format_size as _format_size, format_duration_mmss as _format_duration
 
 import os
 from typing import Optional
@@ -30,18 +32,19 @@ class SyncWorker(QThread):
     finished = pyqtSignal(object)  # SyncPlan
     error = pyqtSignal(str)
 
-    def __init__(self, pc_folder: str, ipod_tracks: list):
+    def __init__(self, pc_folder: str, ipod_tracks: list, ipod_path: str = ""):
         super().__init__()
         self.pc_folder = pc_folder
         self.ipod_tracks = ipod_tracks
+        self.ipod_path = ipod_path
 
     def run(self):
         try:
             # Initialize PC library scanner
             pc_library = PCLibrary(self.pc_folder)
 
-            # Create diff engine (no database needed!)
-            diff_engine = DiffEngine(pc_library)
+            # Create fingerprint-based diff engine
+            diff_engine = FingerprintDiffEngine(pc_library, self.ipod_path)
 
             # Compute diff with progress callback
             plan = diff_engine.compute_diff(
@@ -75,7 +78,7 @@ class SyncExecuteWorker(QThread):
             # Initialize executor
             executor = SyncExecutor(self.ipod_path)
 
-            # Load or create mapping file (load() returns empty MappingFile if doesn't exist)
+            # Load mapping file (load() returns empty MappingFile if doesn't exist)
             mapping_manager = MappingManager(self.ipod_path)
             mapping = mapping_manager.load()
 
@@ -83,16 +86,13 @@ class SyncExecuteWorker(QThread):
             def on_progress(prog: SyncProgress):
                 self.progress.emit(prog.stage, prog.current, prog.total, prog.message)
 
-            # Execute sync
+            # Execute sync — executor saves mapping internally on success
             result = executor.execute(
                 plan=self.plan,
                 mapping=mapping,
                 progress_callback=on_progress,
                 dry_run=False,
             )
-
-            # Save mapping
-            mapping_manager.save(mapping)
 
             self.finished.emit(result)
         except Exception as e:
@@ -116,6 +116,12 @@ class SyncItemWidget(QTreeWidgetItem):
             self._setup_remove_item()
         elif item.action == SyncAction.SYNC_PLAYCOUNT:
             self._setup_playcount_item()
+        elif item.action == SyncAction.UPDATE_METADATA:
+            self._setup_metadata_item()
+        elif item.action == SyncAction.UPDATE_FILE:
+            self._setup_file_update_item()
+        elif item.action == SyncAction.UPDATE_ARTWORK:
+            self._setup_artwork_item()
 
     def _set_tooltip(self, track=None, ipod_track=None, extra_info=""):
         """Set comprehensive tooltip for the item."""
@@ -178,6 +184,17 @@ class SyncItemWidget(QTreeWidgetItem):
             self.setText(4, self._format_size(ipod_track.get("size", 0)))
             self.setText(5, self._format_duration(ipod_track.get("length", 0)))
             self._set_tooltip(ipod_track=ipod_track, extra_info="Action: Remove from iPod\n(File not found on PC)")
+        else:
+            # Orphaned mapping entry — track no longer in iTunesDB
+            desc = self.sync_item.description or "Unknown track"
+            self.setText(1, desc)
+            self.setText(2, "—")
+            self.setText(3, "—")
+            self.setText(4, "—")
+            dbid = self.sync_item.dbid
+            tooltip = f"Orphaned mapping entry (dbid={dbid})\nTrack not found in iTunesDB or on PC."
+            for i in range(6):
+                self.setToolTip(i, tooltip)
 
         # Red tint for removes
         for i in range(6):
@@ -208,24 +225,77 @@ class SyncItemWidget(QTreeWidgetItem):
             for i in range(6):
                 self.setForeground(i, QBrush(QColor(100, 150, 220)))
 
-    @staticmethod
-    def _format_size(bytes_val: int) -> str:
-        if bytes_val < 1024:
-            return f"{bytes_val} B"
-        elif bytes_val < 1024 * 1024:
-            return f"{bytes_val / 1024:.1f} KB"
-        elif bytes_val < 1024 * 1024 * 1024:
-            return f"{bytes_val / (1024 * 1024):.1f} MB"
-        return f"{bytes_val / (1024 * 1024 * 1024):.1f} GB"
+    def _setup_metadata_item(self):
+        """Setup for UPDATE_METADATA action."""
+        track = self.sync_item.pc_track
+        if track:
+            self.setText(1, track.title or track.filename)
+            self.setText(2, track.artist or "Unknown")
+            self.setText(3, track.album or "Unknown")
 
-    @staticmethod
-    def _format_duration(ms: int) -> str:
-        if ms <= 0:
-            return "—"
-        seconds = ms // 1000
-        minutes = seconds // 60
-        secs = seconds % 60
-        return f"{minutes}:{secs:02d}"
+            changes = self.sync_item.metadata_changes
+            changed_fields = ", ".join(changes.keys()) if changes else "metadata"
+            self.setText(4, changed_fields)
+            self.setText(5, self._format_duration(track.duration_ms))
+
+            # Build tooltip with before/after for each field
+            extra_lines = ["Action: Update metadata on iPod", ""]
+            for field_name, (pc_val, ipod_val) in changes.items():
+                extra_lines.append(f"{field_name}: \"{ipod_val}\" → \"{pc_val}\"")
+            self._set_tooltip(track=track, extra_info="\n".join(extra_lines))
+
+            # Purple tint for metadata updates
+            for i in range(6):
+                self.setForeground(i, QBrush(QColor(170, 130, 220)))
+
+    def _setup_file_update_item(self):
+        """Setup for UPDATE_FILE action."""
+        track = self.sync_item.pc_track
+        if track:
+            self.setText(1, track.title or track.filename)
+            self.setText(2, track.artist or "Unknown")
+            self.setText(3, track.album or "Unknown")
+            self.setText(4, self._format_size(track.size))
+            self.setText(5, self._format_duration(track.duration_ms))
+            self._set_tooltip(track=track, extra_info="Action: Source file changed, re-sync to iPod")
+
+            # Cyan tint for file updates
+            for i in range(6):
+                self.setForeground(i, QBrush(QColor(100, 200, 200)))
+
+    def _setup_artwork_item(self):
+        """Setup for UPDATE_ARTWORK action."""
+        track = self.sync_item.pc_track
+        if track:
+            self.setText(1, track.title or track.filename)
+            self.setText(2, track.artist or "Unknown")
+            self.setText(3, track.album or "Unknown")
+
+            # Distinguish add / change / remove
+            new_hash = self.sync_item.new_art_hash
+            old_hash = self.sync_item.old_art_hash
+            if not new_hash and old_hash:
+                label = "Art removed"
+                color = QColor(220, 120, 120)  # Red-ish for removal
+                tooltip_extra = "Action: Embedded album art was removed from the PC file"
+            elif new_hash and not old_hash:
+                label = "Art added"
+                color = QColor(130, 200, 170)  # Green-ish for addition
+                tooltip_extra = "Action: New album art detected, will sync to iPod"
+            else:
+                label = "Art changed"
+                color = QColor(200, 130, 200)  # Magenta for change
+                tooltip_extra = "Action: Album art changed, re-extract to iPod"
+
+            self.setText(4, label)
+            self.setText(5, self._format_duration(track.duration_ms))
+            self._set_tooltip(track=track, extra_info=tooltip_extra)
+
+            for i in range(6):
+                self.setForeground(i, QBrush(color))
+
+    _format_size = staticmethod(_format_size)
+    _format_duration = staticmethod(_format_duration)
 
 
 class SyncRatingWidget(QTreeWidgetItem):
@@ -279,14 +349,7 @@ class SyncRatingWidget(QTreeWidgetItem):
         stars = max(0, min(5, stars))  # Clamp to 0-5
         return "★" * stars + "☆" * (5 - stars)
 
-    @staticmethod
-    def _format_duration(ms: int) -> str:
-        if ms <= 0:
-            return "—"
-        seconds = ms // 1000
-        minutes = seconds // 60
-        secs = seconds % 60
-        return f"{minutes}:{secs:02d}"
+    _format_duration = staticmethod(_format_duration)
 
 
 class SyncCategoryHeader(QTreeWidgetItem):
@@ -319,15 +382,7 @@ class SyncCategoryHeader(QTreeWidgetItem):
         # Expand by default
         self.setExpanded(True)
 
-    @staticmethod
-    def _format_size(bytes_val: int) -> str:
-        if bytes_val < 1024:
-            return f"{bytes_val} B"
-        elif bytes_val < 1024 * 1024:
-            return f"{bytes_val / 1024:.1f} KB"
-        elif bytes_val < 1024 * 1024 * 1024:
-            return f"{bytes_val / (1024 * 1024):.1f} MB"
-        return f"{bytes_val / (1024 * 1024 * 1024):.1f} GB"
+    _format_size = staticmethod(_format_size)
 
 
 class DuplicateGroupHeader(QTreeWidgetItem):
@@ -398,130 +453,8 @@ class DuplicateItemWidget(QTreeWidgetItem):
             return ".../" + "/".join(parts[-3:])
         return dir_path
 
-    @staticmethod
-    def _format_size(bytes_val: int) -> str:
-        if bytes_val < 1024:
-            return f"{bytes_val} B"
-        elif bytes_val < 1024 * 1024:
-            return f"{bytes_val / 1024:.1f} KB"
-        elif bytes_val < 1024 * 1024 * 1024:
-            return f"{bytes_val / (1024 * 1024):.1f} MB"
-        return f"{bytes_val / (1024 * 1024 * 1024):.1f} GB"
-
-    @staticmethod
-    def _format_duration(ms: int) -> str:
-        if ms <= 0:
-            return "—"
-        seconds = ms // 1000
-        minutes = seconds // 60
-        secs = seconds % 60
-        return f"{minutes}:{secs:02d}"
-
-
-class QualityChangeGroupHeader(QTreeWidgetItem):
-    """Header for a quality change showing track info."""
-
-    def __init__(self, quality_change: QualityChange):
-        super().__init__()
-        self.quality_change = quality_change
-
-        # Checkbox for this quality change
-        self.setFlags(self.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-        self.setCheckState(0, Qt.CheckState.Checked)
-
-        pc = quality_change.pc_track
-        self.setText(1, pc.title or pc.filename)
-        self.setText(2, pc.artist or "Unknown")
-        self.setText(3, pc.album or "Unknown")
-
-        # Show size difference
-        size_diff = quality_change.size_diff
-        if size_diff > 0:
-            self.setText(4, f"↑ +{self._format_size(size_diff)}")
-            color = QColor(100, 200, 100)  # Green for upgrade
-        else:
-            self.setText(4, f"↓ {self._format_size(size_diff)}")
-            color = QColor(220, 150, 80)  # Orange for downgrade
-
-        self.setText(5, self._format_duration(pc.duration_ms))
-
-        for i in range(6):
-            self.setForeground(i, QBrush(color))
-
-        # Bold font
-        font = QFont()
-        font.setBold(True)
-        self.setFont(1, font)
-
-    @staticmethod
-    def _format_size(bytes_val: int) -> str:
-        bytes_val = abs(bytes_val)
-        if bytes_val < 1024:
-            return f"{bytes_val} B"
-        elif bytes_val < 1024 * 1024:
-            return f"{bytes_val / 1024:.1f} KB"
-        elif bytes_val < 1024 * 1024 * 1024:
-            return f"{bytes_val / (1024 * 1024):.1f} MB"
-        return f"{bytes_val / (1024 * 1024 * 1024):.1f} GB"
-
-    @staticmethod
-    def _format_duration(ms: int) -> str:
-        if ms <= 0:
-            return "—"
-        seconds = ms // 1000
-        minutes = seconds // 60
-        secs = seconds % 60
-        return f"{minutes}:{secs:02d}"
-
-
-class QualityChangeFileWidget(QTreeWidgetItem):
-    """Shows a single file (PC or iPod) in a quality change comparison."""
-
-    def __init__(self, label: str, filename: str, path: str, size: int,
-                 duration_ms: int, color: QColor, parent=None):
-        super().__init__(parent)
-
-        # No checkbox for child items
-        self.setFlags(self.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
-
-        self.setText(1, f"{label}: {filename}")
-        self.setText(2, self._get_short_path(path))
-        self.setText(3, "")
-        self.setText(4, self._format_size(size))
-        self.setText(5, self._format_duration(duration_ms))
-
-        # Set tooltip with full path
-        tooltip = f"Full path: {path}"
-        for i in range(6):
-            self.setToolTip(i, tooltip)
-            self.setForeground(i, QBrush(color))
-
-    def _get_short_path(self, path: str) -> str:
-        """Get shortened directory path."""
-        dir_path = os.path.dirname(path)
-        parts = dir_path.replace("\\", "/").split("/")
-        if len(parts) > 3:
-            return ".../" + "/".join(parts[-3:])
-        return dir_path
-
-    @staticmethod
-    def _format_size(bytes_val: int) -> str:
-        if bytes_val < 1024:
-            return f"{bytes_val} B"
-        elif bytes_val < 1024 * 1024:
-            return f"{bytes_val / 1024:.1f} KB"
-        elif bytes_val < 1024 * 1024 * 1024:
-            return f"{bytes_val / (1024 * 1024):.1f} MB"
-        return f"{bytes_val / (1024 * 1024 * 1024):.1f} GB"
-
-    @staticmethod
-    def _format_duration(ms: int) -> str:
-        if ms <= 0:
-            return "—"
-        seconds = ms // 1000
-        minutes = seconds // 60
-        secs = seconds % 60
-        return f"{minutes}:{secs:02d}"
+    _format_size = staticmethod(_format_size)
+    _format_duration = staticmethod(_format_duration)
 
 
 class SyncReviewWidget(QWidget):
@@ -532,7 +465,7 @@ class SyncReviewWidget(QWidget):
     with checkboxes to include/exclude individual items.
     """
 
-    sync_requested = pyqtSignal(object)  # Emits tuple of (list[SyncItem], list[QualityChange])
+    sync_requested = pyqtSignal(object)  # Emits list[SyncItem]
     cancelled = pyqtSignal()
 
     def __init__(self, parent=None):
@@ -646,6 +579,27 @@ class SyncReviewWidget(QWidget):
             QTreeWidget::item:selected {
                 background: rgba(64, 156, 255, 100);
             }
+            QTreeWidget::indicator {
+                width: 16px;
+                height: 16px;
+                margin-left: 6px;
+            }
+            QTreeWidget::indicator:unchecked {
+                border: 2px solid rgba(255,255,255,80);
+                border-radius: 3px;
+                background: transparent;
+            }
+            QTreeWidget::indicator:checked {
+                border: 2px solid #409cff;
+                border-radius: 3px;
+                background: #409cff;
+                image: none;
+            }
+            QTreeWidget::indicator:indeterminate {
+                border: 2px solid #409cff;
+                border-radius: 3px;
+                background: rgba(64, 156, 255, 80);
+            }
             QTreeWidget::item:hover {
                 background: rgba(255,255,255,20);
             }
@@ -666,6 +620,9 @@ class SyncReviewWidget(QWidget):
             }
         """)
 
+        # Reduce tree indentation so child checkboxes don't get clipped
+        self.tree.setIndentation(12)
+
         # Configure columns - wider for better readability
         tree_header = self.tree.header()
         if tree_header:
@@ -676,7 +633,7 @@ class SyncReviewWidget(QWidget):
             tree_header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
             tree_header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
             tree_header.setMinimumSectionSize(60)
-        self.tree.setColumnWidth(0, 30)   # Checkbox
+        self.tree.setColumnWidth(0, 50)   # Checkbox (needs room for indentation + indicator)
         self.tree.setColumnWidth(2, 200)  # Artist (wider)
         self.tree.setColumnWidth(3, 200)  # Album (wider)
         self.tree.setColumnWidth(5, 70)   # Duration
@@ -851,18 +808,23 @@ class SyncReviewWidget(QWidget):
 
         # Connect tree item changes to update selection count
         self.tree.itemChanged.connect(self._update_selection_count)
+        # Allow clicking anywhere on a row to toggle its checkbox
+        self.tree.itemClicked.connect(self._on_item_clicked)
 
     # Map internal stage names → user-friendly labels
     _STAGE_LABELS = {
         "scan": "Scanning libraries",
         "scan_pc": "Scanning PC library",
         "scan_ipod": "Scanning iPod library",
+        "load_mapping": "Loading iPod mapping",
+        "fingerprint": "Computing fingerprints",
         "duplicates": "Checking for duplicates",
         "diff": "Comparing libraries",
         "add": "Copying tracks to iPod",
         "remove": "Removing tracks from iPod",
-        "quality_change": "Re-syncing quality changes",
+        "update_file": "Re-syncing changed files",
         "update_metadata": "Updating metadata",
+        "quality_change": "Re-syncing quality changes",
         "sync_playcount": "Syncing play counts",
         "sync_rating": "Syncing ratings",
         "write_database": "Writing iPod database",
@@ -927,8 +889,12 @@ class SyncReviewWidget(QWidget):
             stats = f"{plan.matched_tracks} tracks matched"
             if plan.total_pc_tracks:
                 stats = f"{plan.total_pc_tracks} PC tracks · {plan.total_ipod_tracks} iPod tracks · {stats}"
+            if plan.fingerprint_errors:
+                stats += f" · <span style='color: #c8a040;'>{len(plan.fingerprint_errors)} files skipped (fingerprint errors)</span>"
             self.summary_label.setText(stats)
+            self.summary_label.setTextFormat(Qt.TextFormat.RichText)
             self.empty_stats.setText(stats)
+            self.empty_stats.setTextFormat(Qt.TextFormat.RichText)
             self._set_footer_for_state("empty")
             return
 
@@ -939,19 +905,20 @@ class SyncReviewWidget(QWidget):
         # Update summary with git-diff style size stats
         total_changes = sum([
             len(plan.to_add), len(plan.to_remove),
+            len(plan.to_update_metadata), len(plan.to_update_file),
+            len(plan.to_update_artwork),
             len(plan.to_sync_playcount), len(plan.to_sync_rating),
-            len(plan.quality_changes),
-            1 if getattr(plan, 'artwork_needs_sync', False) else 0,
+            1 if plan.artwork_needs_sync else 0,
         ])
 
         # Build size diff string
         size_parts = []
-        if plan.bytes_to_add > 0:
-            size_parts.append(f"<span style='color: #70c070;'>+{self._format_size(plan.bytes_to_add)}</span>")
-        if plan.bytes_to_remove > 0:
-            size_parts.append(f"<span style='color: #e07070;'>-{self._format_size(plan.bytes_to_remove)}</span>")
+        if plan.storage.bytes_to_add > 0:
+            size_parts.append(f"<span style='color: #70c070;'>+{self._format_size(plan.storage.bytes_to_add)}</span>")
+        if plan.storage.bytes_to_remove > 0:
+            size_parts.append(f"<span style='color: #e07070;'>-{self._format_size(plan.storage.bytes_to_remove)}</span>")
 
-        net_change = plan.bytes_to_add - plan.bytes_to_remove
+        net_change = plan.storage.bytes_to_add - plan.storage.bytes_to_remove
         if size_parts and net_change != 0:
             net_sign = "+" if net_change > 0 else "-"
             size_parts.append(f"(net {net_sign}{self._format_size(abs(net_change))})")
@@ -961,24 +928,47 @@ class SyncReviewWidget(QWidget):
         summary_text = f"{plan.total_pc_tracks} PC tracks · {plan.total_ipod_tracks} iPod tracks · {total_changes} changes"
         if size_str:
             summary_text += f" · {size_str}"
+        if plan.fingerprint_errors:
+            summary_text += f" · <span style='color: #c8a040;'>{len(plan.fingerprint_errors)} skipped</span>"
 
         self.summary_label.setText(summary_text)
         self.summary_label.setTextFormat(Qt.TextFormat.RichText)
 
         # Add categories to tree
         if plan.to_add:
-            header = SyncCategoryHeader("📥", "Add to iPod", len(plan.to_add), plan.bytes_to_add)
+            header = SyncCategoryHeader("📥", "Add to iPod", len(plan.to_add), plan.storage.bytes_to_add)
             self.tree.addTopLevelItem(header)
             for item in plan.to_add:
                 header.addChild(SyncItemWidget(item))
             header.setExpanded(True)
 
         if plan.to_remove:
-            header = SyncCategoryHeader("🗑️", "Remove from iPod", len(plan.to_remove), plan.bytes_to_remove)
+            header = SyncCategoryHeader("🗑️", "Remove from iPod", len(plan.to_remove), plan.storage.bytes_to_remove)
             self.tree.addTopLevelItem(header)
             for item in plan.to_remove:
                 header.addChild(SyncItemWidget(item))
             header.setExpanded(True)
+
+        if plan.to_update_file:
+            header = SyncCategoryHeader("🔄", "Re-sync Changed Files", len(plan.to_update_file), plan.storage.bytes_to_update)
+            self.tree.addTopLevelItem(header)
+            for item in plan.to_update_file:
+                header.addChild(SyncItemWidget(item))
+            header.setExpanded(True)
+
+        if plan.to_update_metadata:
+            header = SyncCategoryHeader("📝", "Update Metadata", len(plan.to_update_metadata))
+            self.tree.addTopLevelItem(header)
+            for item in plan.to_update_metadata:
+                header.addChild(SyncItemWidget(item))
+            header.setExpanded(False)
+
+        if plan.to_update_artwork:
+            header = SyncCategoryHeader("🎨", "Update Artwork", len(plan.to_update_artwork))
+            self.tree.addTopLevelItem(header)
+            for item in plan.to_update_artwork:
+                header.addChild(SyncItemWidget(item))
+            header.setExpanded(False)
 
         if plan.to_sync_playcount:
             header = SyncCategoryHeader("🎵", "Sync Play Counts", len(plan.to_sync_playcount))
@@ -995,79 +985,9 @@ class SyncReviewWidget(QWidget):
                 header.addChild(SyncRatingWidget(item))
             header.setExpanded(False)
 
-        # Show quality changes (upgrades/downgrades)
-        if plan.quality_changes:
-            # Separate upgrades and downgrades
-            upgrades = [qc for qc in plan.quality_changes if qc.is_upgrade]
-            downgrades = [qc for qc in plan.quality_changes if not qc.is_upgrade]
-
-            if upgrades:
-                total_bytes = sum(qc.size_diff for qc in upgrades)
-                header = SyncCategoryHeader("⬆️", "Quality Upgrades", len(upgrades), total_bytes)
-                self.tree.addTopLevelItem(header)
-                for qc in upgrades:
-                    group = QualityChangeGroupHeader(qc)
-                    header.addChild(group)
-                    # Add PC file (new/bigger)
-                    group.addChild(QualityChangeFileWidget(
-                        "New (PC)",
-                        qc.pc_track.filename,
-                        qc.pc_track.path,
-                        qc.pc_track.size,
-                        qc.pc_track.duration_ms,
-                        QColor(100, 200, 100)  # Green
-                    ))
-                    # Add iPod file (current/smaller)
-                    ipod_size = qc.ipod_track.get("size", 0)
-                    ipod_duration = qc.ipod_track.get("length", 0)
-                    ipod_path = qc.ipod_track.get("location", "Unknown")
-                    ipod_filename = os.path.basename(ipod_path)
-                    group.addChild(QualityChangeFileWidget(
-                        "Current (iPod)",
-                        ipod_filename,
-                        ipod_path,
-                        ipod_size,
-                        ipod_duration,
-                        QColor(150, 150, 150)  # Gray
-                    ))
-                    group.setExpanded(False)
-                header.setExpanded(True)
-
-            if downgrades:
-                total_bytes = sum(qc.size_diff for qc in downgrades)
-                header = SyncCategoryHeader("⬇️", "Quality Downgrades", len(downgrades), total_bytes)
-                self.tree.addTopLevelItem(header)
-                for qc in downgrades:
-                    group = QualityChangeGroupHeader(qc)
-                    header.addChild(group)
-                    # Add PC file (new/smaller)
-                    group.addChild(QualityChangeFileWidget(
-                        "New (PC)",
-                        qc.pc_track.filename,
-                        qc.pc_track.path,
-                        qc.pc_track.size,
-                        qc.pc_track.duration_ms,
-                        QColor(220, 150, 80)  # Orange
-                    ))
-                    # Add iPod file (current/bigger)
-                    ipod_size = qc.ipod_track.get("size", 0)
-                    ipod_duration = qc.ipod_track.get("length", 0)
-                    ipod_path = qc.ipod_track.get("location", "Unknown")
-                    ipod_filename = os.path.basename(ipod_path)
-                    group.addChild(QualityChangeFileWidget(
-                        "Current (iPod)",
-                        ipod_filename,
-                        ipod_path,
-                        ipod_size,
-                        ipod_duration,
-                        QColor(150, 150, 150)  # Gray
-                    ))
-                    group.setExpanded(False)
-                header.setExpanded(True)
-
         # Show artwork sync info with individual track details
-        if getattr(plan, 'artwork_needs_sync', False):
-            count = getattr(plan, 'artwork_missing_count', 0)
+        if plan.artwork_needs_sync:
+            count = plan.artwork_missing_count
             header = SyncCategoryHeader("\U0001f3a8", "Sync Album Art", count)
             header.setFlags(header.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
             self.tree.addTopLevelItem(header)
@@ -1101,6 +1021,34 @@ class SyncReviewWidget(QWidget):
                     child.setForeground(ci, QBrush(QColor(180, 140, 220)))
 
             header.setExpanded(False)
+
+        # Show fingerprint errors (info only, non-blocking)
+        if plan.fingerprint_errors:
+            err_header = SyncCategoryHeader("⚠️", "Fingerprint Errors", len(plan.fingerprint_errors))
+            err_header.setFlags(err_header.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
+            err_header.setCheckState(0, Qt.CheckState.Unchecked)
+            for i in range(6):
+                err_header.setForeground(i, QBrush(QColor(200, 160, 80)))
+            self.tree.addTopLevelItem(err_header)
+
+            for filepath, error_msg in plan.fingerprint_errors[:50]:  # Cap at 50
+                child = QTreeWidgetItem(err_header)
+                child.setFlags(child.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
+                child.setText(1, os.path.basename(filepath))
+                child.setText(2, error_msg)
+                child.setToolTip(1, filepath)
+                child.setToolTip(2, error_msg)
+                for ci in range(6):
+                    child.setForeground(ci, QBrush(QColor(180, 150, 80)))
+
+            if len(plan.fingerprint_errors) > 50:
+                overflow = QTreeWidgetItem(err_header)
+                overflow.setFlags(overflow.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
+                overflow.setText(1, f"...and {len(plan.fingerprint_errors) - 50} more")
+                for ci in range(6):
+                    overflow.setForeground(ci, QBrush(QColor(180, 150, 80)))
+
+            err_header.setExpanded(False)
 
         # Show duplicate files (BLOCKING - must be resolved before sync)
         if plan.duplicates:
@@ -1136,6 +1084,8 @@ class SyncReviewWidget(QWidget):
     def show_executing(self):
         """Show executing state - similar to loading but for sync execution."""
         self._cancelled = False
+        self._completed_stages = []  # Track completed stage names
+        self._current_exec_stage = ""
         self.stack.setCurrentIndex(0)  # Loading view
         self.loading_label.setText("Starting sync...")
         self.progress_detail.setText("Preparing...")
@@ -1144,8 +1094,24 @@ class SyncReviewWidget(QWidget):
 
     def update_execute_progress(self, stage: str, current: int, total: int, message: str):
         """Update progress during sync execution."""
-        self.loading_label.setText(self._friendly_stage(stage))
-        self.progress_detail.setText(message)
+        friendly = self._friendly_stage(stage)
+
+        # Track stage transitions for the log
+        if stage != self._current_exec_stage:
+            if self._current_exec_stage:
+                self._completed_stages.append(self._friendly_stage(self._current_exec_stage))
+            self._current_exec_stage = stage
+
+        self.loading_label.setText(friendly)
+
+        # Build detail text: completed stages + current progress
+        detail_parts = []
+        for s in self._completed_stages[-4:]:  # Show last 4 completed stages
+            detail_parts.append(f"<span style='color: rgba(255,255,255,80);'>✓ {s}</span>")
+        if message:
+            detail_parts.append(f"<span style='color: rgba(255,255,255,180);'>{message}</span>")
+        self.progress_detail.setText("<br>".join(detail_parts))
+        self.progress_detail.setTextFormat(Qt.TextFormat.RichText)
 
         if total > 0:
             self.progress_bar.setRange(0, total)
@@ -1208,6 +1174,11 @@ class SyncReviewWidget(QWidget):
             if len(errors) > 10:
                 lines.append(f"<span style='color: #e07070;'>  ...and {len(errors) - 10} more</span>")
 
+        # Safe-eject reminder
+        if success and (added or removed or updated_file or updated_meta):
+            lines.append("")
+            lines.append("<span style='color: rgba(255,255,255,100);'>Safely eject your iPod before disconnecting.</span>")
+
         self.result_details.setText("<br>".join(lines))
         self.result_details.setTextFormat(Qt.TextFormat.RichText)
 
@@ -1249,6 +1220,21 @@ class SyncReviewWidget(QWidget):
             if item:
                 item.setCheckState(0, Qt.CheckState.Unchecked)
 
+    def _on_item_clicked(self, item: QTreeWidgetItem, column: int):
+        """Toggle checkbox when clicking anywhere on the row (not just the checkbox column).
+
+        Column 0 is the checkbox column — Qt already handles toggling there,
+        so we only act on clicks on columns 1-5 to avoid double-toggling.
+        """
+        if column > 0 and (item.flags() & Qt.ItemFlag.ItemIsUserCheckable):
+            current = item.checkState(0)
+            new_state = (
+                Qt.CheckState.Unchecked
+                if current == Qt.CheckState.Checked
+                else Qt.CheckState.Checked
+            )
+            item.setCheckState(0, new_state)
+
     def _update_selection_count(self):
         """Update the selection summary label."""
         selected = 0
@@ -1272,9 +1258,6 @@ class SyncReviewWidget(QWidget):
                 # Skip duplicate items
                 if isinstance(child, (DuplicateGroupHeader, DuplicateItemWidget)):
                     continue
-                # Skip quality change file widgets (only count the group header)
-                if isinstance(child, QualityChangeFileWidget):
-                    continue
                 total += 1
                 if child.checkState(0) == Qt.CheckState.Checked:
                     selected += 1
@@ -1287,11 +1270,9 @@ class SyncReviewWidget(QWidget):
                         elif item.action == SyncAction.REMOVE_FROM_IPOD:
                             if item.ipod_track:
                                 bytes_to_remove += item.ipod_track.get("size", 0)
-                    elif isinstance(child, QualityChangeGroupHeader):
-                        # Quality change: adds new file, removes old
-                        qc = child.quality_change
-                        bytes_to_add += qc.pc_track.size
-                        bytes_to_remove += qc.ipod_track.get("size", 0)
+                        elif item.action == SyncAction.UPDATE_FILE:
+                            if item.pc_track:
+                                bytes_to_add += item.pc_track.size
 
         # Build git-diff style size string
         size_parts = []
@@ -1365,33 +1346,6 @@ class SyncReviewWidget(QWidget):
             self.details_text.setText("<br>".join(lines))
             return
 
-        # Handle quality change group headers
-        if isinstance(item, QualityChangeGroupHeader):
-            qc = item.quality_change
-            lines = []
-            if qc.is_upgrade:
-                lines.append("<span style='color: #70c070;'><b>⬆️ QUALITY UPGRADE</b></span>")
-                lines.append("The PC file is larger (higher quality) than the iPod version.")
-            else:
-                lines.append("<span style='color: #e0b050;'><b>⬇️ QUALITY DOWNGRADE</b></span>")
-                lines.append("The PC file is smaller (lower quality) than the iPod version.")
-            lines.append("")
-            lines.append(f"<b>Track:</b> {qc.pc_track.title or qc.pc_track.filename}")
-            lines.append(f"<b>Artist:</b> {qc.pc_track.artist or 'Unknown'}")
-            lines.append(f"<b>Album:</b> {qc.pc_track.album or 'Unknown'}")
-            lines.append("")
-            lines.append(f"<b>PC File:</b> {self._format_size(qc.pc_track.size)}")
-            lines.append(f"<b>iPod File:</b> {self._format_size(qc.ipod_track.get('size', 0))}")
-            lines.append(f"<b>Difference:</b> {'+' if qc.size_diff > 0 else ''}{self._format_size(qc.size_diff)}")
-            self.details_text.setText("<br>".join(lines))
-            return
-
-        # Handle quality change file items
-        if isinstance(item, QualityChangeFileWidget):
-            # Just show basic info - parent has the full context
-            self.details_text.setText("Select the parent item for quality change details")
-            return
-
         # Handle rating sync items
         if isinstance(item, SyncRatingWidget):
             si = item.sync_item
@@ -1412,7 +1366,7 @@ class SyncReviewWidget(QWidget):
             lines.append(f"<b>New Rating:</b> <span style='color: #e0b050;'>{new_stars} ({si.new_rating}/100)</span>")
             lines.append("")
             if si.pc_rating > 0 and si.ipod_rating > 0:
-                lines.append("Both PC and iPod have ratings \u2014 using the average.")
+                lines.append("Both have ratings \u2014 iPod rating wins (last-write-wins).")
             elif si.ipod_rating > 0:
                 lines.append("PC has no rating \u2014 using iPod rating.")
             else:
@@ -1459,12 +1413,53 @@ class SyncReviewWidget(QWidget):
             if stats_parts:
                 lines.append(f"<b>Changes:</b> {' · '.join(stats_parts)}")
 
+        elif sync_item.action == SyncAction.UPDATE_METADATA:
+            track = sync_item.pc_track
+            lines.append("<b>Action:</b> Update metadata on iPod")
+            if track:
+                lines.append(f"<b>File:</b> {track.path}")
+            lines.append("")
+            for field_name, (pc_val, ipod_val) in sync_item.metadata_changes.items():
+                lines.append(f"<b>{field_name}:</b> <span style='color: #e07070;'>{ipod_val}</span> → <span style='color: #70c070;'>{pc_val}</span>")
+
+        elif sync_item.action == SyncAction.UPDATE_FILE:
+            track = sync_item.pc_track
+            lines.append("<b>Action:</b> Re-sync changed file to iPod")
+            if track:
+                lines.append(f"<b>File:</b> {track.path}")
+                lines.append(f"<b>Size:</b> {self._format_size(track.size)} · <b>Format:</b> {track.extension.upper()}")
+            lines.append("")
+            lines.append("<span style='color: #70c0c0;'>The source file has been modified since last sync.</span>")
+
+        elif sync_item.action == SyncAction.UPDATE_ARTWORK:
+            track = sync_item.pc_track
+            new_hash = sync_item.new_art_hash
+            old_hash = sync_item.old_art_hash
+            if not new_hash and old_hash:
+                lines.append("<b>Action:</b> Remove album art from iPod")
+                if track:
+                    lines.append(f"<b>File:</b> {track.path}")
+                lines.append("")
+                lines.append("<span style='color: #e07070;'>The embedded album art was removed from the PC file.</span>")
+                lines.append("<span style='color: #e07070;'>Art will be cleared on iPod at next database write.</span>")
+            elif new_hash and not old_hash:
+                lines.append("<b>Action:</b> Add album art to iPod")
+                if track:
+                    lines.append(f"<b>File:</b> {track.path}")
+                lines.append("")
+                lines.append("<span style='color: #80c8a8;'>New album art detected in the PC file.</span>")
+            else:
+                lines.append("<b>Action:</b> Update album art on iPod")
+                if track:
+                    lines.append(f"<b>File:</b> {track.path}")
+                lines.append("")
+                lines.append("<span style='color: #c080c0;'>The embedded album art has changed.</span>")
+
         self.details_text.setText("<br>".join(lines))
 
-    def _get_selected_items(self) -> tuple[list[SyncItem], list[QualityChange]]:
-        """Get all checked sync items and quality changes."""
+    def _get_selected_items(self) -> list[SyncItem]:
+        """Get all checked sync items."""
         selected_items = []
-        selected_quality_changes = []
         for i in range(self.tree.topLevelItemCount()):
             header = self.tree.topLevelItem(i)
             if not header:
@@ -1478,36 +1473,35 @@ class SyncReviewWidget(QWidget):
                         selected_items.append(child.sync_item)
                     elif isinstance(child, SyncRatingWidget):
                         selected_items.append(child.sync_item)
-                    elif isinstance(child, QualityChangeGroupHeader):
-                        selected_quality_changes.append(child.quality_change)
-        return selected_items, selected_quality_changes
+        return selected_items
 
     def _apply_sync(self):
         """Emit signal to apply the selected sync actions."""
-        selected_items, selected_quality_changes = self._get_selected_items()
-        if not selected_items and not selected_quality_changes:
+        selected_items = self._get_selected_items()
+        if not selected_items:
             QMessageBox.information(self, "No Selection", "Please select items to sync.")
             return
 
         # Confirm
         add_count = sum(1 for s in selected_items if s.action == SyncAction.ADD_TO_IPOD)
         remove_count = sum(1 for s in selected_items if s.action == SyncAction.REMOVE_FROM_IPOD)
+        meta_count = sum(1 for s in selected_items if s.action == SyncAction.UPDATE_METADATA)
+        file_count = sum(1 for s in selected_items if s.action == SyncAction.UPDATE_FILE)
+        art_count = sum(1 for s in selected_items if s.action == SyncAction.UPDATE_ARTWORK)
         playcount_count = sum(1 for s in selected_items if s.action == SyncAction.SYNC_PLAYCOUNT)
         rating_count = sum(1 for s in selected_items if s.action == SyncAction.SYNC_RATING)
-        quality_count = len(selected_quality_changes)
 
         msg_parts = []
         if add_count:
             msg_parts.append(f"Add {add_count} tracks")
         if remove_count:
             msg_parts.append(f"Remove {remove_count} tracks")
-        if quality_count:
-            upgrades = sum(1 for qc in selected_quality_changes if qc.is_upgrade)
-            downgrades = quality_count - upgrades
-            if upgrades:
-                msg_parts.append(f"Upgrade {upgrades} track files")
-            if downgrades:
-                msg_parts.append(f"Downgrade {downgrades} track files")
+        if file_count:
+            msg_parts.append(f"Re-sync {file_count} changed files")
+        if meta_count:
+            msg_parts.append(f"Update metadata for {meta_count} tracks")
+        if art_count:
+            msg_parts.append(f"Update artwork for {art_count} tracks")
         if playcount_count:
             msg_parts.append(f"Sync {playcount_count} play counts")
         if rating_count:
@@ -1521,30 +1515,10 @@ class SyncReviewWidget(QWidget):
         )
 
         if reply == QMessageBox.StandardButton.Yes:
-            self.sync_requested.emit((selected_items, selected_quality_changes))
+            self.sync_requested.emit(selected_items)
 
-    @staticmethod
-    def _format_size(bytes_val: int) -> str:
-        if bytes_val < 1024:
-            return f"{bytes_val} B"
-        elif bytes_val < 1024 * 1024:
-            return f"{bytes_val / 1024:.1f} KB"
-        elif bytes_val < 1024 * 1024 * 1024:
-            return f"{bytes_val / (1024 * 1024):.1f} MB"
-        return f"{bytes_val / (1024 * 1024 * 1024):.1f} GB"
-
-    @staticmethod
-    def _format_duration(ms: int) -> str:
-        if not ms:
-            return "—"
-        seconds = ms // 1000
-        minutes = seconds // 60
-        secs = seconds % 60
-        if minutes >= 60:
-            hours = minutes // 60
-            mins = minutes % 60
-            return f"{hours}:{mins:02d}:{secs:02d}"
-        return f"{minutes}:{secs:02d}"
+    _format_size = staticmethod(_format_size)
+    _format_duration = staticmethod(_format_duration)
 
 
 class PCFolderDialog(QDialog):

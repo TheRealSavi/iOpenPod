@@ -45,7 +45,7 @@ def parse_mhfd(data, offset, header_length, chunk_length) -> dict[str, Any]:
         resultType = childResult["datasetType"]
         datafile[chunk_type_map[resultType]] = resultData
 
-    # TODO: TEMPORARY FIX FOR FIXING BYTE DATA INTO BASE64 TO BE JSON WRITABLE
+    # Convert byte fields to base64 for JSON serialization
     def replace_bytes_with_base64(data: Any) -> Any:
         if isinstance(data, dict):  # If it's a dictionary, process each key-value pair
             return {key: replace_bytes_with_base64(value) for key, value in data.items()}

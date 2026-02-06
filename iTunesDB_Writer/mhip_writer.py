@@ -8,7 +8,6 @@ Based on libgpod's mk_mhip() in itdb_itunesdb.c
 """
 
 import struct
-from typing import Optional
 
 
 # MHIP header size - libgpod uses 76 bytes

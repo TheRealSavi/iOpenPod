@@ -17,7 +17,6 @@ import os
 import logging
 from dataclasses import dataclass, field
 from typing import Optional
-from pathlib import Path
 
 from .rgb565 import IPOD_CLASSIC_FORMATS, convert_art_for_ipod
 from .art_extractor import extract_art, art_hash

@@ -211,7 +211,7 @@ def write_mhit(track: TrackInfo, track_id: int, id_0x24: int = 0) -> bytes:
 
     # +0x50
     struct.pack_into('<I', header, 0x50, track.play_count)  # playcount
-    struct.pack_into('<I', header, 0x54, track.play_count)  # playcount2
+    struct.pack_into('<I', header, 0x54, 0)  # playcount2 — reset after sync (iPod increments this)
     struct.pack_into('<I', header, 0x58, unix_to_mac_timestamp(track.last_played))  # last played
     struct.pack_into('<I', header, 0x5C, track.disc_number)  # disc number
 

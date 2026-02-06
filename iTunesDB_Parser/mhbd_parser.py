@@ -14,7 +14,6 @@ def parse_db(data, offset, header_length, chunk_length) -> dict[str, Any]:
 
     version_number = struct.unpack("<I", data[offset + 16:offset + 20])[0]
     database["VersionHex"] = hex(version_number)
-    # TODO: get the rest of the database version numbers and add them to the map
     # database["VersionName"] = version_map[database["VersionHex"]]
 
     database["ChildrenCount"] = struct.unpack(
@@ -63,7 +62,7 @@ def parse_db(data, offset, header_length, chunk_length) -> dict[str, Any]:
         resultType = childResult["datasetType"]
         database[chunk_type_map[resultType]] = resultData
 
-    # TODO: TEMPORARY FIX FOR FIXING BYTE DATA INTO BASE64 TO BE JSON WRITABLE
+    # Convert byte fields to base64 for JSON serialization
     def replace_bytes_with_base64(data: Any) -> Any:
         if isinstance(data, dict):  # If it's a dictionary, process each key-value pair
             return {key: replace_bytes_with_base64(value) for key, value in data.items()}
