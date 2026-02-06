@@ -56,6 +56,51 @@ class SyncWorker(QThread):
             self.error.emit(str(e))
 
 
+class SyncExecuteWorker(QThread):
+    """Background worker for executing sync plan."""
+    progress = pyqtSignal(str, int, int, str)  # stage, current, total, message
+    finished = pyqtSignal(object)  # SyncResult
+    error = pyqtSignal(str)
+
+    def __init__(self, ipod_path: str, plan):
+        super().__init__()
+        self.ipod_path = ipod_path
+        self.plan = plan
+
+    def run(self):
+        try:
+            from SyncEngine.sync_executor import SyncExecutor, SyncProgress
+            from SyncEngine.mapping import MappingManager
+
+            # Initialize executor
+            executor = SyncExecutor(self.ipod_path)
+
+            # Load or create mapping file (load() returns empty MappingFile if doesn't exist)
+            mapping_manager = MappingManager(self.ipod_path)
+            mapping = mapping_manager.load()
+
+            # Progress callback
+            def on_progress(prog: SyncProgress):
+                self.progress.emit(prog.stage, prog.current, prog.total, prog.message)
+
+            # Execute sync
+            result = executor.execute(
+                plan=self.plan,
+                mapping=mapping,
+                progress_callback=on_progress,
+                dry_run=False,
+            )
+
+            # Save mapping
+            mapping_manager.save(mapping)
+
+            self.finished.emit(result)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            self.error.emit(str(e))
+
+
 class SyncItemWidget(QTreeWidgetItem):
     """Tree item representing a single sync action."""
 
@@ -487,12 +532,14 @@ class SyncReviewWidget(QWidget):
     with checkboxes to include/exclude individual items.
     """
 
-    sync_requested = pyqtSignal(object)  # Emits list of selected SyncItems to execute
+    sync_requested = pyqtSignal(object)  # Emits tuple of (list[SyncItem], list[QualityChange])
     cancelled = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._plan: Optional[SyncPlan] = None
+        self._cancelled = False
+        self._ipod_tracks_cache: list = []
         self._setup_ui()
 
     def _setup_ui(self):
@@ -687,7 +734,37 @@ class SyncReviewWidget(QWidget):
         empty_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
         empty_layout.addWidget(empty_text)
 
+        self.empty_stats = QLabel("")
+        self.empty_stats.setStyleSheet("color: rgba(255,255,255,100); font-size: 12px;")
+        self.empty_stats.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        empty_layout.addWidget(self.empty_stats)
+
         self.stack.addWidget(empty_widget)  # Index 2
+
+        # Results state (sync completion)
+        results_widget = QWidget()
+        results_layout = QVBoxLayout(results_widget)
+        results_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        results_layout.setSpacing(12)
+
+        self.result_icon = QLabel("")
+        self.result_icon.setFont(QFont("Segoe UI Emoji", 48))
+        self.result_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        results_layout.addWidget(self.result_icon)
+
+        self.result_title = QLabel("")
+        self.result_title.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
+        self.result_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        results_layout.addWidget(self.result_title)
+
+        self.result_details = QLabel("")
+        self.result_details.setStyleSheet("color: rgba(255,255,255,200); font-size: 13px;")
+        self.result_details.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.result_details.setWordWrap(True)
+        self.result_details.setMaximumWidth(500)
+        results_layout.addWidget(self.result_details, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        self.stack.addWidget(results_widget)  # Index 3
 
         # Footer with action buttons
         footer = QFrame()
@@ -733,7 +810,7 @@ class SyncReviewWidget(QWidget):
 
         # Cancel and Apply buttons
         self.cancel_btn = QPushButton("Cancel")
-        self.cancel_btn.clicked.connect(self.cancelled.emit)
+        self.cancel_btn.clicked.connect(self._on_cancel_clicked)
         self.cancel_btn.setStyleSheet("""
             QPushButton {
                 background: rgba(255,255,255,20);
@@ -775,15 +852,62 @@ class SyncReviewWidget(QWidget):
         # Connect tree item changes to update selection count
         self.tree.itemChanged.connect(self._update_selection_count)
 
+    # Map internal stage names → user-friendly labels
+    _STAGE_LABELS = {
+        "scan": "Scanning libraries",
+        "scan_pc": "Scanning PC library",
+        "scan_ipod": "Scanning iPod library",
+        "duplicates": "Checking for duplicates",
+        "diff": "Comparing libraries",
+        "add": "Copying tracks to iPod",
+        "remove": "Removing tracks from iPod",
+        "quality_change": "Re-syncing quality changes",
+        "update_metadata": "Updating metadata",
+        "sync_playcount": "Syncing play counts",
+        "sync_rating": "Syncing ratings",
+        "write_database": "Writing iPod database",
+    }
+
+    def _friendly_stage(self, stage: str) -> str:
+        return self._STAGE_LABELS.get(stage, stage.replace("_", " ").title())
+
+    def _set_footer_for_state(self, state: str):
+        """Update footer button visibility for the current state.
+
+        States: 'loading', 'plan', 'empty', 'executing', 'results'
+        """
+        show_plan_btns = (state == "plan")
+        self.select_all_btn.setVisible(show_plan_btns)
+        self.select_none_btn.setVisible(show_plan_btns)
+        self.selection_label.setVisible(show_plan_btns)
+        self.apply_btn.setVisible(show_plan_btns)
+
+        if state == "loading":
+            self.cancel_btn.setText("Cancel")
+            self.cancel_btn.setEnabled(True)
+        elif state == "plan":
+            self.cancel_btn.setText("Cancel")
+            self.cancel_btn.setEnabled(True)
+        elif state == "empty":
+            self.cancel_btn.setText("Done")
+            self.cancel_btn.setEnabled(True)
+        elif state == "executing":
+            self.cancel_btn.setText("Cancel")
+            self.cancel_btn.setEnabled(True)
+        elif state == "results":
+            self.cancel_btn.setText("Done")
+            self.cancel_btn.setEnabled(True)
+
     def show_loading(self):
         """Show loading state."""
         self.stack.setCurrentIndex(0)
+        self.loading_label.setText("Scanning library...")
         self.progress_bar.setRange(0, 0)  # Indeterminate
-        self.apply_btn.setEnabled(False)
+        self._set_footer_for_state("loading")
 
     def update_progress(self, stage: str, current: int, total: int, message: str):
         """Update progress indicator."""
-        self.loading_label.setText(f"Scanning: {stage}")
+        self.loading_label.setText(self._friendly_stage(stage))
         self.progress_detail.setText(message)
 
         if total > 0:
@@ -799,18 +923,25 @@ class SyncReviewWidget(QWidget):
 
         if not plan.has_changes:
             self.stack.setCurrentIndex(2)  # Empty state
-            self.summary_label.setText("No changes needed")
-            self.apply_btn.setEnabled(False)
+            # Show match stats
+            stats = f"{plan.matched_tracks} tracks matched"
+            if plan.total_pc_tracks:
+                stats = f"{plan.total_pc_tracks} PC tracks · {plan.total_ipod_tracks} iPod tracks · {stats}"
+            self.summary_label.setText(stats)
+            self.empty_stats.setText(stats)
+            self._set_footer_for_state("empty")
             return
 
         # Show content
         self.stack.setCurrentIndex(1)
+        self._set_footer_for_state("plan")
 
         # Update summary with git-diff style size stats
         total_changes = sum([
             len(plan.to_add), len(plan.to_remove),
             len(plan.to_sync_playcount), len(plan.to_sync_rating),
-            len(plan.quality_changes)
+            len(plan.quality_changes),
+            1 if getattr(plan, 'artwork_needs_sync', False) else 0,
         ])
 
         # Build size diff string
@@ -934,6 +1065,43 @@ class SyncReviewWidget(QWidget):
                     group.setExpanded(False)
                 header.setExpanded(True)
 
+        # Show artwork sync info with individual track details
+        if getattr(plan, 'artwork_needs_sync', False):
+            count = getattr(plan, 'artwork_missing_count', 0)
+            header = SyncCategoryHeader("\U0001f3a8", "Sync Album Art", count)
+            header.setFlags(header.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
+            self.tree.addTopLevelItem(header)
+
+            # List individual tracks missing artwork
+            ipod_tracks_cache = getattr(self, '_ipod_tracks_cache', None)
+            if plan.matched_pc_paths and ipod_tracks_cache:
+                for dbid in plan.matched_pc_paths:
+                    ipod_track = next(
+                        (t for t in ipod_tracks_cache if t.get('dbid') == dbid), None
+                    )
+                    if ipod_track:
+                        ac = ipod_track.get('artworkCount', 0)
+                        ml = ipod_track.get('mhiiLink', 0)
+                        if ac == 0 or ml == 0:
+                            child = QTreeWidgetItem(header)
+                            child.setFlags(child.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
+                            child.setText(1, ipod_track.get('Title', 'Unknown'))
+                            child.setText(2, ipod_track.get('Artist', 'Unknown'))
+                            child.setText(3, ipod_track.get('Album', 'Unknown'))
+                            child.setText(4, "Missing art")
+                            for ci in range(6):
+                                child.setForeground(ci, QBrush(QColor(180, 140, 220)))
+            elif count > 0:
+                # Fallback: just show a note
+                child = QTreeWidgetItem(header)
+                child.setFlags(child.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
+                child.setText(1, f"{count} tracks missing album art")
+                child.setText(4, "Will be synced")
+                for ci in range(6):
+                    child.setForeground(ci, QBrush(QColor(180, 140, 220)))
+
+            header.setExpanded(False)
+
         # Show duplicate files (BLOCKING - must be resolved before sync)
         if plan.duplicates:
             dup_count = plan.duplicate_count
@@ -965,11 +1133,107 @@ class SyncReviewWidget(QWidget):
             self.apply_btn.setEnabled(True)
             self.apply_btn.setToolTip("")
 
+    def show_executing(self):
+        """Show executing state - similar to loading but for sync execution."""
+        self._cancelled = False
+        self.stack.setCurrentIndex(0)  # Loading view
+        self.loading_label.setText("Starting sync...")
+        self.progress_detail.setText("Preparing...")
+        self.progress_bar.setRange(0, 0)  # Indeterminate initially
+        self._set_footer_for_state("executing")
+
+    def update_execute_progress(self, stage: str, current: int, total: int, message: str):
+        """Update progress during sync execution."""
+        self.loading_label.setText(self._friendly_stage(stage))
+        self.progress_detail.setText(message)
+
+        if total > 0:
+            self.progress_bar.setRange(0, total)
+            self.progress_bar.setValue(current)
+        else:
+            self.progress_bar.setRange(0, 0)  # Indeterminate
+
+    def show_result(self, result):
+        """Show sync completion results in a styled view."""
+        self.stack.setCurrentIndex(3)  # Results view
+        self._set_footer_for_state("results")
+
+        success = getattr(result, 'success', True)
+        errors = getattr(result, 'errors', [])
+
+        # Title
+        if success and not errors:
+            self.result_icon.setText("✅")
+            self.result_title.setText("Sync Complete")
+            self.result_title.setStyleSheet("color: #70c070; font-size: 18px; font-weight: bold;")
+        elif errors:
+            self.result_icon.setText("⚠️")
+            self.result_title.setText("Sync Completed with Errors")
+            self.result_title.setStyleSheet("color: #e0b050; font-size: 18px; font-weight: bold;")
+        else:
+            self.result_icon.setText("❌")
+            self.result_title.setText("Sync Failed")
+            self.result_title.setStyleSheet("color: #e07070; font-size: 18px; font-weight: bold;")
+
+        # Build results text
+        lines = []
+        added = getattr(result, 'tracks_added', 0)
+        removed = getattr(result, 'tracks_removed', 0)
+        updated_meta = getattr(result, 'tracks_updated_metadata', 0)
+        updated_file = getattr(result, 'tracks_updated_file', 0)
+        playcounts = getattr(result, 'playcounts_synced', 0)
+        ratings = getattr(result, 'ratings_synced', 0)
+
+        if added:
+            lines.append(f"<span style='color: #70c070;'>Added {added} track{'s' if added != 1 else ''}</span>")
+        if removed:
+            lines.append(f"<span style='color: #e07070;'>Removed {removed} track{'s' if removed != 1 else ''}</span>")
+        if updated_file:
+            lines.append(f"<span style='color: #70a0e0;'>Re-synced {updated_file} track{'s' if updated_file != 1 else ''}</span>")
+        if updated_meta:
+            lines.append(f"<span style='color: #70a0e0;'>Updated metadata for {updated_meta} track{'s' if updated_meta != 1 else ''}</span>")
+        if playcounts:
+            lines.append(f"<span style='color: #70a0e0;'>Synced play counts for {playcounts} track{'s' if playcounts != 1 else ''}</span>")
+        if ratings:
+            lines.append(f"<span style='color: #e0b050;'>Synced ratings for {ratings} track{'s' if ratings != 1 else ''}</span>")
+
+        if not lines:
+            lines.append("No changes were made.")
+
+        if errors:
+            lines.append("")
+            lines.append(f"<span style='color: #e07070;'><b>{len(errors)} error{'s' if len(errors) != 1 else ''}:</b></span>")
+            for desc, msg in errors[:10]:  # Show max 10
+                lines.append(f"<span style='color: #e07070;'>  {desc}: {msg}</span>")
+            if len(errors) > 10:
+                lines.append(f"<span style='color: #e07070;'>  ...and {len(errors) - 10} more</span>")
+
+        self.result_details.setText("<br>".join(lines))
+        self.result_details.setTextFormat(Qt.TextFormat.RichText)
+
+        # Update summary
+        total_actions = added + removed + updated_file + updated_meta + playcounts + ratings
+        self.summary_label.setText(f"{total_actions} action{'s' if total_actions != 1 else ''} completed")
+
     def show_error(self, message: str):
         """Show error message."""
         QMessageBox.critical(self, "Sync Error", message)
         self.stack.setCurrentIndex(2)
         self.summary_label.setText("Error during scan")
+        self._set_footer_for_state("empty")
+
+    def _on_cancel_clicked(self):
+        """Handle cancel/done button clicks based on current state."""
+        current_idx = self.stack.currentIndex()
+        if current_idx == 0 and not self._cancelled:
+            # During loading/executing — ask for confirmation
+            self._cancelled = True
+            self.cancel_btn.setEnabled(False)
+            self.cancel_btn.setText("Cancelling...")
+            self.cancelled.emit()
+        else:
+            # Plan view, empty view, or results view — just go back
+            self.cancelled.emit()
 
     def _select_all(self):
         """Select all items."""
@@ -1067,14 +1331,18 @@ class SyncReviewWidget(QWidget):
         # Handle duplicate group headers
         if isinstance(item, DuplicateGroupHeader):
             lines = []
-            lines.append("<span style='color: #ff6666;'><b>⚠️ BLOCKING SYNC</b></span>")
+            lines.append("<span style='color: #ff6666;'><b>⚠️ DUPLICATES BLOCKING SYNC</b></span>")
             lines.append(f"<b>Duplicate Group:</b> {len(item.tracks)} files with identical metadata")
-            lines.append("<span style='color: #e0b050;'>These files have the same artist, album, title, and duration.</span>")
-            lines.append("<span style='color: #e07070;'>You must delete or rename the duplicates before syncing.</span>")
             lines.append("")
-            lines.append("<b>Duplicate Paths:</b>")
+            lines.append("<span style='color: #e0b050;'>These files share the same artist, album, title, and duration.</span>")
+            lines.append("<span style='color: #e0b050;'>iOpenPod can't decide which copy to use.</span>")
+            lines.append("")
+            lines.append("<b>To resolve:</b> Delete or move the extra copies so each song")
+            lines.append("exists in only one location within your music folder.")
+            lines.append("")
+            lines.append("<b>Files:</b>")
             for track in item.tracks:
-                lines.append(f"  • {track.path}")
+                lines.append(f"  • {track.path} ({self._format_size(track.size)})")
             self.details_text.setText("<br>".join(lines))
             return
 
@@ -1082,7 +1350,7 @@ class SyncReviewWidget(QWidget):
         if isinstance(item, DuplicateItemWidget):
             track = item.track
             lines = []
-            lines.append("<span style='color: #ff6666;'><b>⚠️ DUPLICATE FILE - BLOCKING SYNC</b></span>")
+            lines.append("<span style='color: #ff6666;'><b>⚠️ DUPLICATE FILE</b></span>")
             lines.append(f"<b>Path:</b> {track.path}")
             lines.append(f"<b>Size:</b> {self._format_size(track.size)} · <b>Duration:</b> {self._format_duration(track.duration_ms)}")
             if track.artist:
@@ -1092,7 +1360,8 @@ class SyncReviewWidget(QWidget):
             if track.title:
                 lines.append(f"<b>Title:</b> {track.title}")
             lines.append("")
-            lines.append("<span style='color: #e07070;'>Delete or rename this file to resolve the duplicate.</span>")
+            lines.append("Delete or move this file to resolve the duplicate,")
+            lines.append("then re-scan to continue syncing.")
             self.details_text.setText("<br>".join(lines))
             return
 
@@ -1121,6 +1390,34 @@ class SyncReviewWidget(QWidget):
         if isinstance(item, QualityChangeFileWidget):
             # Just show basic info - parent has the full context
             self.details_text.setText("Select the parent item for quality change details")
+            return
+
+        # Handle rating sync items
+        if isinstance(item, SyncRatingWidget):
+            si = item.sync_item
+            lines = []
+            lines.append("<b>Action:</b> Sync rating between PC and iPod")
+            if si.pc_track:
+                lines.append(f"<b>Track:</b> {si.pc_track.title or si.pc_track.filename}")
+                lines.append(f"<b>Artist:</b> {si.pc_track.artist or 'Unknown'}")
+                lines.append(f"<b>Album:</b> {si.pc_track.album or 'Unknown'}")
+                lines.append("")
+                lines.append(f"<b>File:</b> {si.pc_track.path}")
+            lines.append("")
+            pc_stars = item._rating_to_stars(si.pc_rating)
+            ipod_stars = item._rating_to_stars(si.ipod_rating)
+            new_stars = item._rating_to_stars(si.new_rating)
+            lines.append(f"<b>PC Rating:</b> {pc_stars} ({si.pc_rating}/100)")
+            lines.append(f"<b>iPod Rating:</b> {ipod_stars} ({si.ipod_rating}/100)")
+            lines.append(f"<b>New Rating:</b> <span style='color: #e0b050;'>{new_stars} ({si.new_rating}/100)</span>")
+            lines.append("")
+            if si.pc_rating > 0 and si.ipod_rating > 0:
+                lines.append("Both PC and iPod have ratings \u2014 using the average.")
+            elif si.ipod_rating > 0:
+                lines.append("PC has no rating \u2014 using iPod rating.")
+            else:
+                lines.append("iPod has no rating \u2014 using PC rating.")
+            self.details_text.setText("<br>".join(lines))
             return
 
         if not isinstance(item, SyncItemWidget):
@@ -1164,9 +1461,10 @@ class SyncReviewWidget(QWidget):
 
         self.details_text.setText("<br>".join(lines))
 
-    def _get_selected_items(self) -> list[SyncItem]:
-        """Get all checked sync items."""
-        selected = []
+    def _get_selected_items(self) -> tuple[list[SyncItem], list[QualityChange]]:
+        """Get all checked sync items and quality changes."""
+        selected_items = []
+        selected_quality_changes = []
         for i in range(self.tree.topLevelItemCount()):
             header = self.tree.topLevelItem(i)
             if not header:
@@ -1177,25 +1475,43 @@ class SyncReviewWidget(QWidget):
                     continue
                 if child.checkState(0) == Qt.CheckState.Checked:
                     if isinstance(child, SyncItemWidget):
-                        selected.append(child.sync_item)
-        return selected
+                        selected_items.append(child.sync_item)
+                    elif isinstance(child, SyncRatingWidget):
+                        selected_items.append(child.sync_item)
+                    elif isinstance(child, QualityChangeGroupHeader):
+                        selected_quality_changes.append(child.quality_change)
+        return selected_items, selected_quality_changes
 
     def _apply_sync(self):
         """Emit signal to apply the selected sync actions."""
-        selected = self._get_selected_items()
-        if not selected:
+        selected_items, selected_quality_changes = self._get_selected_items()
+        if not selected_items and not selected_quality_changes:
             QMessageBox.information(self, "No Selection", "Please select items to sync.")
             return
 
         # Confirm
-        add_count = sum(1 for s in selected if s.action == SyncAction.ADD_TO_IPOD)
-        remove_count = sum(1 for s in selected if s.action == SyncAction.REMOVE_FROM_IPOD)
+        add_count = sum(1 for s in selected_items if s.action == SyncAction.ADD_TO_IPOD)
+        remove_count = sum(1 for s in selected_items if s.action == SyncAction.REMOVE_FROM_IPOD)
+        playcount_count = sum(1 for s in selected_items if s.action == SyncAction.SYNC_PLAYCOUNT)
+        rating_count = sum(1 for s in selected_items if s.action == SyncAction.SYNC_RATING)
+        quality_count = len(selected_quality_changes)
 
         msg_parts = []
         if add_count:
             msg_parts.append(f"Add {add_count} tracks")
         if remove_count:
             msg_parts.append(f"Remove {remove_count} tracks")
+        if quality_count:
+            upgrades = sum(1 for qc in selected_quality_changes if qc.is_upgrade)
+            downgrades = quality_count - upgrades
+            if upgrades:
+                msg_parts.append(f"Upgrade {upgrades} track files")
+            if downgrades:
+                msg_parts.append(f"Downgrade {downgrades} track files")
+        if playcount_count:
+            msg_parts.append(f"Sync {playcount_count} play counts")
+        if rating_count:
+            msg_parts.append(f"Sync {rating_count} ratings")
 
         msg = "This will:\n• " + "\n• ".join(msg_parts) + "\n\nContinue?"
 
@@ -1205,7 +1521,7 @@ class SyncReviewWidget(QWidget):
         )
 
         if reply == QMessageBox.StandardButton.Yes:
-            self.sync_requested.emit(selected)
+            self.sync_requested.emit((selected_items, selected_quality_changes))
 
     @staticmethod
     def _format_size(bytes_val: int) -> str:

@@ -39,9 +39,9 @@ ITDB_CHECKSUM_HASH72 = 2
 # Header offsets
 OFFSET_DB_ID = 0x18       # 8 bytes
 OFFSET_UNK_0x32 = 0x32    # 20 bytes
-OFFSET_HASHING_SCHEME = 0x46  # 2 bytes
-OFFSET_HASH58 = 0x58      # 20 bytes (zeroed for hash72)
-OFFSET_HASH72 = 0x58      # 46 bytes (overlaps with hash58 area)
+OFFSET_HASHING_SCHEME = 0x30  # 2 bytes (was 0x46 - wrong!)
+OFFSET_HASH58 = 0x58      # 20 bytes
+OFFSET_HASH72 = 0x72      # 46 bytes (NOT at 0x58!)
 
 # HashInfo file structure
 HASHINFO_HEADER = b"HASHv0"
@@ -288,14 +288,19 @@ def extract_hash_info(ipod_path: str, valid_itdb_data: bytes) -> bool:
     Returns:
         True if HashInfo was successfully extracted and saved
     """
-    if len(valid_itdb_data) < 0x6C:
+    if len(valid_itdb_data) < 0xA0:
         return False
 
     if valid_itdb_data[:4] != b'mhbd':
         return False
 
-    # Get existing hash72
+    # Get existing hash72 from CORRECT offset (0x72)
     hash72 = bytes(valid_itdb_data[OFFSET_HASH72:OFFSET_HASH72 + 46])
+
+    # Check for valid signature marker
+    if hash72[0:2] != bytes([0x01, 0x00]):
+        # Not a valid hash72 signature
+        return False
 
     # Compute SHA1
     itdb_copy = bytearray(valid_itdb_data)
@@ -308,9 +313,9 @@ def extract_hash_info(ipod_path: str, valid_itdb_data: bytes) -> bool:
 
     iv, rndpart = result
 
-    # Get UUID from device
-    from .hash58 import read_firewire_id
+    # Get UUID from device (or use zeros if not available)
     try:
+        from .hash58 import read_firewire_id
         fw_id = read_firewire_id(ipod_path)
         uuid = bytearray(20)
         uuid[:len(fw_id)] = fw_id
@@ -318,6 +323,44 @@ def extract_hash_info(ipod_path: str, valid_itdb_data: bytes) -> bool:
         uuid = bytes(20)
 
     return write_hash_info(ipod_path, bytes(uuid), iv, rndpart)
+
+
+def extract_hash_info_to_dict(valid_itdb_data: bytes) -> dict | None:
+    """
+    Extract HashInfo from a valid iTunes-generated iTunesDB.
+
+    Returns the extracted info as a dict instead of writing to disk.
+
+    Args:
+        valid_itdb_data: Contents of valid iTunes-generated iTunesDB
+
+    Returns:
+        Dict with 'iv' and 'rndpart' keys, or None if extraction failed
+    """
+    if len(valid_itdb_data) < 0xA0:
+        return None
+
+    if valid_itdb_data[:4] != b'mhbd':
+        return None
+
+    # Get existing hash72 from CORRECT offset (0x72)
+    hash72 = bytes(valid_itdb_data[OFFSET_HASH72:OFFSET_HASH72 + 46])
+
+    # Check for valid signature marker
+    if hash72[0:2] != bytes([0x01, 0x00]):
+        return None
+
+    # Compute SHA1
+    itdb_copy = bytearray(valid_itdb_data)
+    sha1 = _compute_itunesdb_sha1(itdb_copy)
+
+    # Extract IV and rndpart
+    result = _hash_extract(hash72, sha1)
+    if result is None:
+        return None
+
+    iv, rndpart = result
+    return {'iv': iv, 'rndpart': rndpart}
 
 
 def compute_hash72(ipod_path: str, itdb_data: bytes) -> bytes:

@@ -63,7 +63,11 @@ mhbd (Database) → mhsd (DataSet, type 1-5) →
 | 156 | skip_count | 4 | |
 | 160 | last_skipped | 4 | Mac timestamp |
 | 208 | media_type | 4 | 1=audio, 2=video, 0x20=music video |
-| 298 | album_id | 2 | links to mhia |
+| 248 | gapless_data | 4 | gapless playback data |
+| 256 | gapless_track_flag | 2 | |
+| 258 | gapless_album_flag | 2 | |
+| 288 | album_id | 4 | links to mhia (u32 per libgpod) |
+| 352 | mhii_link | 4 | links to ArtworkDB mhii entry |
 
 ### Play Counts File Format
 Read this file on sync to get actual play counts (iPod updates this, not iTunesDB):
@@ -238,8 +242,8 @@ def write_hash58(itdb_data: bytearray, firewire_id: bytes):
     itdb_data[0x32:0x46] = b'\x00' * 20  # unk_0x32
     itdb_data[0x58:0x6C] = b'\x00' * 20  # hash58 field
     
-    # Set hashing scheme
-    itdb_data[0x46:0x48] = (1).to_bytes(2, 'little')  # HASH58 = 1
+    # Set hashing scheme at offset 0x30 (NOT 0x46 which is the language field!)
+    itdb_data[0x30:0x32] = (1).to_bytes(2, 'little')  # HASH58 = 1
     
     # Compute and write hash
     hash_val = compute_hash58(firewire_id, bytes(itdb_data))
@@ -322,6 +326,103 @@ def read_sysinfo(ipod_path: str) -> dict:
 - Single bytes: just `data[offset]`
 - MHOD strings: Check for null bytes to determine UTF-16-LE vs UTF-8 encoding
 - Mac timestamps: seconds since 1904-01-01 (add 2082844800 to convert to Unix epoch)
+
+## Sync Engine Architecture (`SyncEngine/`)
+
+### Overview
+The sync engine uses **acoustic fingerprinting** (Chromaprint) to reliably track identity between PC files and iPod tracks. This allows:
+- Metadata changes to sync without re-copying files
+- File quality upgrades to be detected even with same metadata
+- Different encodings of the same song to be recognized
+
+### Key Components
+
+| Module | Purpose |
+|--------|---------|
+| `audio_fingerprint.py` | Compute/read/write acoustic fingerprints using fpcalc |
+| `mapping.py` | Manage `iOpenPod.json` mapping file on iPod |
+| `fingerprint_diff_engine.py` | Compare PC library with iPod using fingerprints |
+| `transcoder.py` | Convert non-iPod formats (FLAC→ALAC, OGG→AAC) |
+| `pc_library.py` | Scan PC music folder, extract metadata |
+
+### Data Flow
+
+```
+PC Music File                           iPod
+┌─────────────────┐                    ┌─────────────────────────────────┐
+│ song.flac       │                    │ /iPod_Control/iTunes/           │
+│                 │ ──fingerprint──►   │   iOpenPod.json                 │
+│ ACOUSTID_FP: X  │                    │   {                             │
+│ Artist: Queen   │                    │     "X": {                      │
+│ Genre: Rock     │                    │       "dbid": 0x1234...,        │
+└─────────────────┘                    │       "source_format": "flac",  │
+                                       │       "ipod_format": "alac"     │
+                                       │     }                           │
+                                       │   }                             │
+                                       │                                 │
+                                       │   iTunesDB                      │
+                                       │     track dbid=0x1234...        │
+                                       └─────────────────────────────────┘
+```
+
+### Sync Scenarios
+
+| Scenario | Detection | Action |
+|----------|-----------|--------|
+| New track on PC | Fingerprint not in mapping | Add to iPod, store mapping |
+| Track deleted from PC | Fingerprint in mapping but not in PC scan | Remove from iPod |
+| Metadata changed on PC | Fingerprint matches, compare fields | Update iPod track metadata |
+| File replaced (quality upgrade) | Fingerprint matches, size/mtime differ | Re-transcode/copy to iPod |
+| Same song, different encode | Same acoustic fingerprint | Detected as same track |
+
+### Fingerprint Storage
+
+Acoustic fingerprints are stored in file metadata to avoid recomputation:
+
+| Format | Tag |
+|--------|-----|
+| MP3 | `TXXX:ACOUSTID_FINGERPRINT` (ID3v2) |
+| M4A/AAC | `----:com.apple.iTunes:ACOUSTID_FINGERPRINT` |
+| FLAC/Ogg | `ACOUSTID_FINGERPRINT` (Vorbis comment) |
+
+### Mapping File Format (`iOpenPod.json`)
+
+```json
+{
+  "version": 1,
+  "created": "2026-02-05T10:00:00Z",
+  "modified": "2026-02-05T12:30:00Z",
+  "tracks": {
+    "AQADtNQyRUk...": {
+      "dbid": 1311768465173141503,
+      "source_format": "flac",
+      "ipod_format": "alac",
+      "source_size": 45000000,
+      "source_mtime": 1738756200.0,
+      "was_transcoded": true,
+      "last_sync": "2026-02-05T12:30:00Z"
+    }
+  }
+}
+```
+
+### External Dependencies
+
+| Tool | Purpose | Required |
+|------|---------|----------|
+| `fpcalc` | Chromaprint CLI for fingerprinting | Yes |
+| `ffmpeg` | Transcoding (FLAC→ALAC, etc.) | For non-native formats |
+| `mutagen` | Read/write audio metadata | Yes |
+
+Install Chromaprint: https://acoustid.org/chromaprint
+
+### Initial Sync Limitation
+
+**Not yet implemented**: Syncing an existing PC library with an existing iPod library that were never paired. This requires acoustic fingerprinting of iPod files (which may be differently encoded) or manual user matching.
+
+**Supported scenarios**:
+- Fresh iPod + existing PC library ✅
+- Existing iPod (copy files to PC first, then re-sync) ✅
 
 ### PyQt6 Patterns
 - Use `QRunnable` + `WorkerSignals` for background tasks (see `Worker` class in `app.py`)

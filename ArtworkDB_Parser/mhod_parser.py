@@ -28,12 +28,11 @@ def parse_mhod(data, offset, header_length, chunk_length) -> dict:
             stringByteLength = struct.unpack(
                 "<I", data[content_offset: content_offset + 4])[0]
 
-            # unk1 = struct.unpack("<I", data[content_offset + 4: content_offset + 8])[0]
+            # Encoding byte at content_offset+4 (ArtworkDB_MhodHeaderString.encoding)
+            # Per libgpod db-itunes-parser.h: 0,1 = UTF-8; 2 = UTF-16-LE
+            encoding = data[content_offset + 4]
 
-            # 	might be the string encoding: 0,1 == UTF-8; 2 == UTF-16-LE.
-            # Observed values are: 1 in type 1 MHODs and 2 in type 3 MHODs.
-
-            # unk2 = struct.unpack("<I", data[content_offset + 8: content_offset + 12])[0]  # always 0
+            # content_offset+8: unknown (always 0)
 
             stringContent = data[
                 content_offset + 12: content_offset + 12 + stringByteLength]
@@ -41,19 +40,13 @@ def parse_mhod(data, offset, header_length, chunk_length) -> dict:
             # padding would be offset+stringByteLength:offset+paddingLength
             # but for the purposes of parsing it is not needed.
 
-            # guess encoding based on the presence of a null byte
-            # its in every utf16 but very rare in utf8
-            string_decode = ""
-            if b"\x00" in stringContent:
-                string_decode = stringContent.decode("utf-16-le")
+            if encoding == 2:
+                string_decode = stringContent.decode("utf-16-le", errors="replace")
             else:
-                string_decode = stringContent.decode("utf-8")
+                string_decode = stringContent.decode("utf-8", errors="replace")
 
             dataObject[mhod_type_map[dataObject["mhodType"]]
                        ["name"]] = string_decode
-
-            print("String")
-            print(str(string_decode))
 
             return {"nextOffset": offset + chunk_length, "result": dataObject}
         case "Container":
