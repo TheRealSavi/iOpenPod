@@ -177,12 +177,16 @@ class TranscodeCache:
         except Exception as e:
             logger.error(f"Failed to save cache index: {e}")
 
-    def _fingerprint_to_filename(self, fingerprint: str, target_format: str) -> str:
+    def _fingerprint_to_filename(
+        self, fingerprint: str, target_format: str,
+        bitrate: Optional[int] = None,
+    ) -> str:
         """Convert fingerprint to a safe filename."""
         # Hash the fingerprint to get a fixed-length, filesystem-safe name
         fp_hash = hashlib.sha256(fingerprint.encode()).hexdigest()[:24]
         ext = ".m4a" if target_format in ("alac", "aac") else f".{target_format}"
-        return f"{fp_hash}_{target_format}{ext}"
+        bitrate_tag = f"_{bitrate}" if bitrate else ""
+        return f"{fp_hash}_{target_format}{bitrate_tag}{ext}"
 
     def get(
         self,
@@ -220,6 +224,14 @@ class TranscodeCache:
             logger.debug(
                 f"Source size changed: {cached.source_size} → {source_size}, invalidating cache"
             )
+            # Clean up the stale entry and file
+            self._index.remove(fingerprint, target_format, bitrate)
+            if cached_path.exists():
+                try:
+                    cached_path.unlink()
+                except Exception:
+                    pass
+            self._save_index()
             return None
 
         logger.debug(f"Cache hit: {fingerprint[:20]}... → {cached.filename}")
@@ -252,8 +264,8 @@ class TranscodeCache:
             logger.error(f"Cannot cache non-existent file: {transcoded_path}")
             return None
 
-        # Generate cache filename
-        filename = self._fingerprint_to_filename(fingerprint, target_format)
+        # Generate cache filename (include bitrate to differentiate quality levels)
+        filename = self._fingerprint_to_filename(fingerprint, target_format, bitrate)
         cached_path = self.files_dir / filename
 
         try:

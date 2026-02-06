@@ -37,7 +37,6 @@ from .mhla_writer import write_mhla
 from .mhit_writer import TrackInfo
 from .device import detect_checksum_type, ChecksumType
 from .hash58 import write_hash58
-from .hash72 import write_hash72
 
 
 # MHBD header size (version 0x4F+)
@@ -596,71 +595,3 @@ def write_itunesdb(
         if os.path.exists(temp_path):
             os.remove(temp_path)
         return False
-
-
-def add_tracks_to_itunesdb(
-    ipod_path: str,
-    new_tracks: List[TrackInfo],
-    backup: bool = True,
-) -> bool:
-    """
-    Add tracks to an existing iTunesDB.
-
-    This reads the existing database, parses the tracks, adds new ones,
-    and writes back.
-
-    Args:
-        ipod_path: Mount point of iPod
-        new_tracks: Tracks to add
-        backup: Whether to backup existing iTunesDB
-
-    Returns:
-        True if successful
-    """
-    from iTunesDB_Parser import parse_itunesdb
-
-    itdb_path = os.path.join(ipod_path, "iPod_Control", "iTunes", "iTunesDB")
-
-    # Parse existing database
-    if os.path.exists(itdb_path):
-        existing = parse_itunesdb(itdb_path)
-        existing_tracks = existing.get('mhlt', [])
-        db_id = existing.get('DatabaseID')
-    else:
-        existing_tracks = []
-        db_id = None
-
-    # Convert existing tracks to TrackInfo objects
-    converted_tracks = []
-    for t in existing_tracks:
-        track_info = TrackInfo(
-            title=t.get('Title', 'Unknown'),
-            location=t.get('Location', ''),
-            size=t.get('size', 0),
-            length=t.get('length', 0),
-            filetype=t.get('filetype', 'mp3').lower().replace(' ', ''),
-            bitrate=t.get('bitrate', 0),
-            sample_rate=t.get('sampleRate', 44100),
-            artist=t.get('Artist'),
-            album=t.get('Album'),
-            album_artist=t.get('Album Artist'),
-            genre=t.get('Genre'),
-            year=t.get('year', 0),
-            track_number=t.get('trackNumber', 0),
-            total_tracks=t.get('totalTracks', 0),
-            disc_number=t.get('discNumber', 1),
-            total_discs=t.get('totalDiscs', 1),
-            rating=t.get('rating', 0),
-            play_count=t.get('playCount', 0),
-            skip_count=t.get('skipCount', 0),
-            dbid=t.get('dbid', 0),
-            date_added=t.get('dateAdded', 0),
-            mhii_link=t.get('mhiiLink', 0),
-        )
-        converted_tracks.append(track_info)
-
-    # Add new tracks
-    all_tracks = converted_tracks + new_tracks
-
-    # Write updated database
-    return write_itunesdb(ipod_path, all_tracks, db_id, backup)

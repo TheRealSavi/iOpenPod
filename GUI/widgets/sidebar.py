@@ -4,26 +4,7 @@ from PyQt6.QtWidgets import (
     QLabel, QWidget, QProgressBar
 )
 from PyQt6.QtGui import QFont
-
-
-def format_size(size_bytes: int) -> str:
-    """Format file size in human-readable form."""
-    if size_bytes < 1024:
-        return f"{size_bytes} B"
-    elif size_bytes < 1024 * 1024:
-        return f"{size_bytes / 1024:.1f} KB"
-    elif size_bytes < 1024 * 1024 * 1024:
-        return f"{size_bytes / (1024 * 1024):.1f} MB"
-    return f"{size_bytes / (1024 * 1024 * 1024):.1f} GB"
-
-
-def format_duration(ms: int) -> str:
-    """Format duration in hours and minutes."""
-    hours = ms / (1000 * 60 * 60)
-    if hours >= 1:
-        return f"{hours:.1f} hours"
-    minutes = ms / (1000 * 60)
-    return f"{minutes:.0f} min"
+from .formatters import format_size, format_duration_human as format_duration
 
 
 class StatWidget(QWidget):

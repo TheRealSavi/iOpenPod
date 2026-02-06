@@ -26,27 +26,17 @@ log = logging.getLogger(__name__)
 
 
 # =============================================================================
-# Formatters - Pure functions for displaying values
+# Formatters - Shared formatters + local display-specific ones
 # =============================================================================
 
+from .formatters import format_size, format_duration_mmss, format_rating  # noqa: E402
+
+
 def format_duration(ms: int) -> str:
-    """Format milliseconds as M:SS or H:MM:SS."""
+    """Format milliseconds as M:SS or H:MM:SS (empty string for 0)."""
     if not ms or ms <= 0:
         return ""
-    total_seconds = ms // 1000
-    hours, remainder = divmod(total_seconds, 3600)
-    minutes, seconds = divmod(remainder, 60)
-    if hours > 0:
-        return f"{hours}:{minutes:02d}:{seconds:02d}"
-    return f"{minutes}:{seconds:02d}"
-
-
-def format_rating(rating: int) -> str:
-    """Format rating (0-100) as stars (★☆)."""
-    if not rating or rating <= 0:
-        return ""
-    stars = min(5, rating // 20)
-    return "★" * stars + "☆" * (5 - stars)
+    return format_duration_mmss(ms)
 
 
 def format_bitrate(bitrate: int) -> str:
@@ -54,19 +44,6 @@ def format_bitrate(bitrate: int) -> str:
     if not bitrate or bitrate <= 0:
         return ""
     return f"{bitrate} kbps"
-
-
-def format_size(size_bytes: int) -> str:
-    """Format file size in human-readable form (B, KB, MB, GB)."""
-    if not size_bytes or size_bytes <= 0:
-        return ""
-    if size_bytes < 1024:
-        return f"{size_bytes} B"
-    elif size_bytes < 1024 * 1024:
-        return f"{size_bytes / 1024:.1f} KB"
-    elif size_bytes < 1024 * 1024 * 1024:
-        return f"{size_bytes / (1024 * 1024):.1f} MB"
-    return f"{size_bytes / (1024 * 1024 * 1024):.2f} GB"
 
 
 def format_sample_rate(rate: int) -> str:

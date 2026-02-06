@@ -5,16 +5,19 @@ Core components:
 - PCLibrary: Scans PC music folder, extracts metadata
 - FingerprintDiffEngine: Computes sync plan using acoustic fingerprints
 - SyncExecutor: Executes sync plan (copy, transcode, update mapping)
-- MappingManager: Tracks fingerprint → dbid relationships
+- MappingManager: Tracks fingerprint → list[dbid] relationships
 - Transcoder: Converts non-iPod formats (FLAC, etc.) to ALAC/AAC
 
-Legacy:
-- DiffEngine: Old signature-based diff (deprecated)
 """
 
 from .pc_library import PCLibrary, PCTrack
-from .diff_engine import DiffEngine, QualityChange
-from .fingerprint_diff_engine import FingerprintDiffEngine, SyncAction, SyncPlan, SyncItem
+from .fingerprint_diff_engine import (
+    FingerprintDiffEngine,
+    SyncAction,
+    SyncPlan,
+    SyncItem,
+    StorageSummary,
+)
 from .sync_executor import SyncExecutor, SyncResult, SyncProgress
 from .audio_fingerprint import (
     compute_fingerprint,
@@ -43,6 +46,7 @@ __all__ = [
     "SyncAction",
     "SyncPlan",
     "SyncItem",
+    "StorageSummary",
     # Sync execution
     "SyncExecutor",
     "SyncResult",
@@ -53,7 +57,7 @@ __all__ = [
     "write_fingerprint",
     "get_or_compute_fingerprint",
     "is_fpcalc_available",
-    # iPod mapping
+    # Mapping
     "MappingManager",
     "MappingFile",
     "TrackMapping",
@@ -63,11 +67,9 @@ __all__ = [
     "is_ffmpeg_available",
     "TranscodeTarget",
     "TranscodeResult",
+    "IPOD_NATIVE_FORMATS",
+    # Transcode cache
     "TranscodeCache",
     "CachedFile",
     "CacheIndex",
-    "IPOD_NATIVE_FORMATS",
-    # Legacy (signature-based)
-    "DiffEngine",
-    "QualityChange",
 ]

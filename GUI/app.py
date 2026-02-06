@@ -10,7 +10,6 @@ import threading
 
 # Paths relative to project root
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SPINNER_PATH = os.path.join(os.path.dirname(__file__), "spinner.svg")
 
 
 class CancellationToken:
@@ -120,6 +119,7 @@ class iTunesDBCache(QObject):
         self._lock = threading.Lock()
         # Pre-computed indexes for fast lookups
         self._album_index: dict | None = None  # (album, artist) -> list of tracks
+        self._album_only_index: dict | None = None  # album -> list of tracks
         self._artist_index: dict | None = None  # artist -> list of tracks
         self._genre_index: dict | None = None   # genre -> list of tracks
 
@@ -503,44 +503,6 @@ def build_genre_list(cache: iTunesDBCache) -> list:
     return sorted(items, key=lambda x: x["title"].lower())
 
 
-def ensure_readable_color(r, g, b, text_color=(255, 255, 255)):
-    """
-    Adjusts the background color to ensure at least 4.5:1 contrast with text.
-    """
-    def relative_luminance(rgb):
-        """Calculate luminance as per WCAG formula."""
-        def to_linear(c):
-            c /= 255
-            return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
-
-        r, g, b = [to_linear(c) for c in rgb]
-        return 0.2126 * r + 0.7152 * g + 0.0722 * b
-
-    bg_lum = relative_luminance((r, g, b))
-    text_lum = relative_luminance(text_color)
-
-    # Ensure L_light > L_dark for ratio calculation
-    L1, L2 = max(bg_lum, text_lum), min(bg_lum, text_lum)
-    contrast = (L1 + 0.05) / (L2 + 0.05)
-
-    # If contrast is too low, adjust brightness
-    while contrast < 4.5:
-        r, g, b = [min(255, c * 1.1) for c in (r, g, b)]  # Lighten
-        bg_lum = relative_luminance((r, g, b))
-        L1, L2 = max(bg_lum, text_lum), min(bg_lum, text_lum)
-        contrast = (L1 + 0.05) / (L2 + 0.05)
-
-        if contrast >= 4.5:
-            break
-
-        r, g, b = [max(0, c * 0.9) for c in (r, g, b)]  # Darken
-        bg_lum = relative_luminance((r, g, b))
-        L1, L2 = max(bg_lum, text_lum), min(bg_lum, text_lum)
-        contrast = (L1 + 0.05) / (L2 + 0.05)
-
-    return (int(r), int(g), int(b))
-
-
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -729,6 +691,31 @@ class MainWindow(QMainWindow):
             )
             return
 
+        # Pre-flight: check for required external tools
+        from SyncEngine.audio_fingerprint import is_fpcalc_available
+        from SyncEngine.transcoder import is_ffmpeg_available
+
+        missing = []
+        if not is_fpcalc_available():
+            missing.append("fpcalc (Chromaprint) — required for fingerprinting.\n  Install from: https://acoustid.org/chromaprint")
+        if not is_ffmpeg_available():
+            missing.append("ffmpeg — needed to transcode FLAC/OGG/etc.\n  Without it, only MP3 and M4A files can be synced.")
+
+        if missing:
+            msg = "Some tools are not available:\n\n• " + "\n\n• ".join(missing)
+            if not is_fpcalc_available():
+                # fpcalc is required — block sync
+                QMessageBox.critical(self, "Missing Dependency", msg + "\n\nSync cannot proceed without fpcalc.")
+                return
+            else:
+                # ffmpeg is optional — warn and let user continue
+                reply = QMessageBox.warning(
+                    self, "Missing Tool", msg + "\n\nContinue anyway?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                )
+                if reply != QMessageBox.StandardButton.Yes:
+                    return
+
         # Show folder selection dialog
         dialog = PCFolderDialog(self, self._last_pc_folder)
         if dialog.exec() != dialog.DialogCode.Accepted:
@@ -745,9 +732,11 @@ class MainWindow(QMainWindow):
         ipod_tracks = cache.get_tracks()
 
         # Start background worker
+        device_manager = DeviceManager.get_instance()
         self._sync_worker = SyncWorker(
             pc_folder=self._last_pc_folder,
-            ipod_tracks=ipod_tracks
+            ipod_tracks=ipod_tracks,
+            ipod_path=device_manager.device_path or ""
         )
         self._sync_worker.progress.connect(self.syncReview.update_progress)
         self._sync_worker.finished.connect(self._onSyncDiffComplete)
@@ -770,12 +759,9 @@ class MainWindow(QMainWindow):
         """Return to the main browsing view."""
         self.centralStack.setCurrentIndex(0)
 
-    def executeSyncPlan(self, selection):
+    def executeSyncPlan(self, selected_items):
         """Execute the selected sync actions."""
-        from SyncEngine.diff_engine import SyncAction, SyncPlan
-
-        # Unpack selection tuple (items, quality_changes)
-        selected_items, selected_quality_changes = selection
+        from SyncEngine.fingerprint_diff_engine import SyncAction, SyncPlan
 
         # Get device path
         device_manager = DeviceManager.get_instance()
@@ -786,28 +772,30 @@ class MainWindow(QMainWindow):
         # Filter items by action type
         add_items = [s for s in selected_items if s.action == SyncAction.ADD_TO_IPOD]
         remove_items = [s for s in selected_items if s.action == SyncAction.REMOVE_FROM_IPOD]
+        meta_items = [s for s in selected_items if s.action == SyncAction.UPDATE_METADATA]
+        file_items = [s for s in selected_items if s.action == SyncAction.UPDATE_FILE]
+        art_items = [s for s in selected_items if s.action == SyncAction.UPDATE_ARTWORK]
         playcount_items = [s for s in selected_items if s.action == SyncAction.SYNC_PLAYCOUNT]
         rating_items = [s for s in selected_items if s.action == SyncAction.SYNC_RATING]
 
-        # Create filtered plan with quality changes
-        # IMPORTANT: carry matched_pc_paths and artwork info from the original plan
-        # so the artwork writer can extract art from ALL tracks, not just new ones.
+        # Create filtered plan
+        # Carry matched_pc_paths and artwork info from the original plan
         original_plan = self._plan  # stored in _onSyncDiffComplete
         filtered_plan = SyncPlan(
             to_add=add_items,
             to_remove=remove_items,
+            to_update_metadata=meta_items,
+            to_update_file=file_items,
+            to_update_artwork=art_items,
             to_sync_playcount=playcount_items,
             to_sync_rating=rating_items,
-            quality_changes=selected_quality_changes,
-            matched_pc_paths=getattr(original_plan, 'matched_pc_paths', {}) if original_plan else {},
-            artwork_needs_sync=getattr(original_plan, 'artwork_needs_sync', False) if original_plan else False,
-            artwork_missing_count=getattr(original_plan, 'artwork_missing_count', 0) if original_plan else 0,
+            matched_pc_paths=original_plan.matched_pc_paths if original_plan else {},
+            artwork_needs_sync=original_plan.artwork_needs_sync if original_plan else False,
+            artwork_missing_count=original_plan.artwork_missing_count if original_plan else 0,
+            _stale_mapping_entries=original_plan._stale_mapping_entries if original_plan else [],
         )
 
-        # Nothing to do?
-        total = len(selected_items) + len(selected_quality_changes)
-        if total == 0:
-            # Should not happen since _apply_sync already checks this
+        if not filtered_plan.has_changes:
             return
 
         # Show progress in sync review widget

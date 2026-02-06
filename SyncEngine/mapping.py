@@ -1,7 +1,11 @@
 """
 iPod Mapping File - Tracks the relationship between PC files and iPod tracks.
 
-Stores: acoustic_fingerprint → {dbid, source info, sync metadata}
+Stores: acoustic_fingerprint → list[TrackMapping]
+
+The mapping is fingerprint → list because the same acoustic fingerprint can
+legitimately appear on multiple albums (e.g., a song on both the original album
+and a Greatest Hits compilation). The common case (99%+) is a list of length 1.
 
 Location on iPod: /iPod_Control/iTunes/iOpenPod.json
 """
@@ -37,12 +41,17 @@ class TrackMapping:
     last_sync: str  # ISO timestamp of last sync
     was_transcoded: bool  # True if format conversion was needed
 
-    # Optional: path hint for debugging (not used for matching)
+    # Optional: path hint for disambiguation (not used as primary key)
     source_path_hint: Optional[str] = None
+
+    # Artwork hash for change detection (MD5 of embedded image bytes)
+    art_hash: Optional[str] = None
 
     def to_dict(self) -> dict:
         """Convert to JSON-serializable dict."""
-        return asdict(self)
+        d = asdict(self)
+        # Omit None fields for cleaner JSON
+        return {k: v for k, v in d.items() if v is not None}
 
     @classmethod
     def from_dict(cls, data: dict) -> "TrackMapping":
@@ -56,6 +65,7 @@ class TrackMapping:
             last_sync=data["last_sync"],
             was_transcoded=data["was_transcoded"],
             source_path_hint=data.get("source_path_hint"),
+            art_hash=data.get("art_hash"),
         )
 
 
@@ -64,13 +74,15 @@ class MappingFile:
     """
     The complete mapping file structure.
 
-    Tracks all fingerprint → iPod track relationships.
+    Maps fingerprint → list[TrackMapping].
+    Most fingerprints map to exactly one entry. Multiple entries occur when
+    the same song appears on multiple albums (same acoustic fingerprint).
     """
 
-    version: int = 1
+    version: int = 2  # v2: tracks are lists
     created: str = ""
     modified: str = ""
-    _tracks: dict[str, TrackMapping] | None = None  # fingerprint → TrackMapping
+    _tracks: dict[str, list[TrackMapping]] | None = None
 
     def __post_init__(self):
         if self._tracks is None:
@@ -81,7 +93,7 @@ class MappingFile:
             self.modified = self.created
 
     @property
-    def tracks(self) -> dict[str, TrackMapping]:
+    def tracks(self) -> dict[str, list[TrackMapping]]:
         """Access tracks dict, ensuring it's never None."""
         if self._tracks is None:
             self._tracks = {}
@@ -97,10 +109,16 @@ class MappingFile:
         source_mtime: float,
         was_transcoded: bool,
         source_path_hint: Optional[str] = None,
+        art_hash: Optional[str] = None,
     ) -> None:
-        """Add or update a track mapping."""
+        """Add or update a track mapping.
+
+        If entry with same dbid exists under this fingerprint, update it.
+        Otherwise append a new entry.
+        """
         now = datetime.now(timezone.utc).isoformat()
-        self.tracks[fingerprint] = TrackMapping(
+
+        new_mapping = TrackMapping(
             dbid=dbid,
             source_format=source_format,
             ipod_format=ipod_format,
@@ -109,40 +127,98 @@ class MappingFile:
             last_sync=now,
             was_transcoded=was_transcoded,
             source_path_hint=source_path_hint,
+            art_hash=art_hash,
         )
+
+        entries = self.tracks.get(fingerprint, [])
+
+        # Check if this dbid already exists in the list
+        for i, entry in enumerate(entries):
+            if entry.dbid == dbid:
+                entries[i] = new_mapping
+                self.tracks[fingerprint] = entries
+                self.modified = now
+                return
+
+        # New entry
+        entries.append(new_mapping)
+        self.tracks[fingerprint] = entries
         self.modified = now
 
-    def get_track(self, fingerprint: str) -> Optional[TrackMapping]:
-        """Get track mapping by fingerprint."""
-        return self.tracks.get(fingerprint)
+    def get_entries(self, fingerprint: str) -> list[TrackMapping]:
+        """Get all mapping entries for a fingerprint. Returns empty list if none."""
+        return self.tracks.get(fingerprint, [])
+
+    def get_single(self, fingerprint: str) -> Optional[TrackMapping]:
+        """Get mapping for a fingerprint that has exactly one entry.
+
+        Returns None if fingerprint not found or has multiple entries.
+        Use get_entries() for collision-aware access.
+        """
+        entries = self.tracks.get(fingerprint, [])
+        if len(entries) == 1:
+            return entries[0]
+        return None
 
     def get_by_dbid(self, dbid: int) -> Optional[tuple[str, TrackMapping]]:
         """Get track mapping by dbid. Returns (fingerprint, mapping) or None."""
-        for fp, mapping in self.tracks.items():
-            if mapping.dbid == dbid:
-                return (fp, mapping)
+        for fp, entries in self.tracks.items():
+            for entry in entries:
+                if entry.dbid == dbid:
+                    return (fp, entry)
         return None
 
-    def remove_track(self, fingerprint: str) -> bool:
-        """Remove a track mapping. Returns True if removed."""
-        if fingerprint in self.tracks:
+    def remove_track(self, fingerprint: str, dbid: Optional[int] = None) -> bool:
+        """Remove a track mapping.
+
+        If dbid is provided, remove only that specific entry (for collisions).
+        If dbid is None and only one entry exists, remove it.
+        If dbid is None and multiple entries exist, remove all.
+
+        Returns True if anything was removed.
+        """
+        entries = self.tracks.get(fingerprint, [])
+        if not entries:
+            return False
+
+        if dbid is not None:
+            new_entries = [e for e in entries if e.dbid != dbid]
+            if len(new_entries) == len(entries):
+                return False  # dbid not found
+            if new_entries:
+                self.tracks[fingerprint] = new_entries
+            else:
+                del self.tracks[fingerprint]
+        else:
             del self.tracks[fingerprint]
-            self.modified = datetime.now(timezone.utc).isoformat()
-            return True
-        return False
+
+        self.modified = datetime.now(timezone.utc).isoformat()
+        return True
 
     def remove_by_dbid(self, dbid: int) -> bool:
-        """Remove a track mapping by dbid. Returns True if removed."""
-        for fp, mapping in list(self.tracks.items()):
-            if mapping.dbid == dbid:
-                del self.tracks[fp]
+        """Remove a track mapping by dbid (searches all fingerprints).
+
+        Returns True if removed.
+        """
+        for fp, entries in list(self.tracks.items()):
+            new_entries = [e for e in entries if e.dbid != dbid]
+            if len(new_entries) < len(entries):
+                if new_entries:
+                    self.tracks[fp] = new_entries
+                else:
+                    del self.tracks[fp]
                 self.modified = datetime.now(timezone.utc).isoformat()
                 return True
         return False
 
     @property
     def track_count(self) -> int:
-        """Number of tracks in mapping."""
+        """Total number of individual track entries (across all fingerprints)."""
+        return sum(len(entries) for entries in self.tracks.values())
+
+    @property
+    def fingerprint_count(self) -> int:
+        """Number of unique fingerprints in mapping."""
         return len(self.tracks)
 
     def all_fingerprints(self) -> set[str]:
@@ -151,7 +227,19 @@ class MappingFile:
 
     def all_dbids(self) -> set[int]:
         """Get all dbids in mapping."""
-        return {m.dbid for m in self.tracks.values()}
+        dbids: set[int] = set()
+        for entries in self.tracks.values():
+            for entry in entries:
+                dbids.add(entry.dbid)
+        return dbids
+
+    def all_entries(self) -> list[tuple[str, TrackMapping]]:
+        """Return all (fingerprint, mapping) pairs flattened."""
+        result = []
+        for fp, entries in self.tracks.items():
+            for entry in entries:
+                result.append((fp, entry))
+        return result
 
     def to_dict(self) -> dict:
         """Convert to JSON-serializable dict."""
@@ -159,18 +247,33 @@ class MappingFile:
             "version": self.version,
             "created": self.created,
             "modified": self.modified,
-            "tracks": {fp: m.to_dict() for fp, m in self.tracks.items()},
+            "tracks": {
+                fp: [m.to_dict() for m in entries]
+                for fp, entries in self.tracks.items()
+            },
         }
 
     @classmethod
     def from_dict(cls, data: dict) -> "MappingFile":
-        """Create from dict (JSON parsing)."""
-        tracks = {}
+        """Create from dict (JSON parsing).
+
+        Handles both v1 (single entry) and v2 (list entries) formats.
+        """
+        version = data.get("version", 1)
+        tracks: dict[str, list[TrackMapping]] = {}
+
         for fp, track_data in data.get("tracks", {}).items():
-            tracks[fp] = TrackMapping.from_dict(track_data)
+            if version >= 2 and isinstance(track_data, list):
+                # v2: each fingerprint maps to a list
+                tracks[fp] = [TrackMapping.from_dict(entry) for entry in track_data]
+            elif isinstance(track_data, dict):
+                # v1: each fingerprint maps to a single entry — upgrade to list
+                tracks[fp] = [TrackMapping.from_dict(track_data)]
+            else:
+                logger.warning(f"Unexpected track data format for {fp}: {type(track_data)}")
 
         return cls(
-            version=data.get("version", 1),
+            version=2,  # Always upgrade to v2
             created=data.get("created", ""),
             modified=data.get("modified", ""),
             _tracks=tracks,
@@ -189,12 +292,6 @@ class MappingManager:
     """
 
     def __init__(self, ipod_path: str | Path):
-        """
-        Initialize manager with iPod mount path.
-
-        Args:
-            ipod_path: Root path of mounted iPod (e.g., "E:" or "/mnt/ipod")
-        """
         self.ipod_path = Path(ipod_path)
         self.mapping_dir = self.ipod_path / MAPPING_PATH
         self.mapping_file = self.mapping_dir / MAPPING_FILENAME
@@ -204,12 +301,7 @@ class MappingManager:
         return self.mapping_file.exists()
 
     def load(self) -> MappingFile:
-        """
-        Load mapping file from iPod.
-
-        Returns:
-            MappingFile (empty if file doesn't exist)
-        """
+        """Load mapping file from iPod. Returns empty MappingFile if not found."""
         if not self.mapping_file.exists():
             logger.info(f"No mapping file found at {self.mapping_file}, creating new")
             return MappingFile()
@@ -218,12 +310,12 @@ class MappingManager:
             with open(self.mapping_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
             mapping = MappingFile.from_dict(data)
-            logger.info(f"Loaded mapping with {mapping.track_count} tracks")
+            logger.info(f"Loaded mapping with {mapping.track_count} tracks "
+                        f"({mapping.fingerprint_count} fingerprints)")
             return mapping
 
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON in mapping file: {e}")
-            # Backup corrupt file and start fresh
             backup = self.mapping_file.with_suffix(".json.bak")
             self.mapping_file.rename(backup)
             logger.warning(f"Backed up corrupt mapping to {backup}")
@@ -234,30 +326,16 @@ class MappingManager:
             return MappingFile()
 
     def save(self, mapping: MappingFile) -> bool:
-        """
-        Save mapping file to iPod.
-
-        Args:
-            mapping: MappingFile to save
-
-        Returns:
-            True if successful
-        """
+        """Save mapping file to iPod atomically."""
         try:
-            # Ensure directory exists
             self.mapping_dir.mkdir(parents=True, exist_ok=True)
-
-            # Update modified timestamp
             mapping.modified = datetime.now(timezone.utc).isoformat()
 
-            # Write atomically (temp file + rename)
             temp_file = self.mapping_file.with_suffix(".json.tmp")
             with open(temp_file, "w", encoding="utf-8") as f:
                 json.dump(mapping.to_dict(), f, indent=2)
 
-            # Rename to final location
             temp_file.replace(self.mapping_file)
-
             logger.info(f"Saved mapping with {mapping.track_count} tracks")
             return True
 
@@ -266,12 +344,7 @@ class MappingManager:
             return False
 
     def backup(self) -> Optional[Path]:
-        """
-        Create a backup of the mapping file.
-
-        Returns:
-            Path to backup file, or None if failed
-        """
+        """Create a timestamped backup of the mapping file."""
         if not self.mapping_file.exists():
             return None
 
@@ -280,7 +353,6 @@ class MappingManager:
 
         try:
             import shutil
-
             shutil.copy2(self.mapping_file, backup_path)
             logger.info(f"Created mapping backup: {backup_path}")
             return backup_path
