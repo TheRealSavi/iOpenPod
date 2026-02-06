@@ -60,6 +60,12 @@ class SyncItem:
     # For REMOVE/SYNC_PLAYCOUNT/SYNC_RATING actions (from iTunesDB)
     ipod_track: Optional[dict] = None
 
+    # Acoustic fingerprint for matching
+    fingerprint: Optional[str] = None
+
+    # Database ID (for tracks already on iPod)
+    dbid: Optional[int] = None
+
     # For SYNC_PLAYCOUNT
     play_count_delta: int = 0
     skip_count_delta: int = 0
@@ -89,6 +95,14 @@ class SyncPlan:
     # Duplicates on PC: fingerprint -> list of PCTrack with same fingerprint
     duplicates: dict[str, list[PCTrack]] = field(default_factory=dict)
 
+    # PC file paths for ALL matched tracks (dbid → absolute PC path)
+    # Used by artwork writer to extract embedded art for every track
+    matched_pc_paths: dict[int, str] = field(default_factory=dict)
+
+    # Artwork sync: True if any matched iPod track is missing artwork
+    artwork_needs_sync: bool = False
+    artwork_missing_count: int = 0
+
     # Stats
     total_pc_tracks: int = 0
     total_ipod_tracks: int = 0
@@ -107,6 +121,7 @@ class SyncPlan:
             self.to_sync_playcount,
             self.to_sync_rating,
             self.quality_changes,
+            self.artwork_needs_sync,
         ])
 
     @property
@@ -140,7 +155,8 @@ class SyncPlan:
             lines.append(f"  ⭐ {len(self.to_sync_rating)} tracks with rating changes")
         if self.duplicates:
             lines.append(f"  ⚠️  {len(self.duplicates)} duplicate groups ({self.duplicate_count} extra files)")
-
+        if self.artwork_needs_sync:
+            lines.append(f"  \U0001f3a8 {self.artwork_missing_count} tracks missing album art")
         if not lines:
             return "✅ Everything is in sync!"
 
@@ -276,6 +292,7 @@ class DiffEngine:
                 plan.to_add.append(SyncItem(
                     action=SyncAction.ADD_TO_IPOD,
                     pc_track=pc_track,
+                    fingerprint=fp,
                     description=f"New: {pc_track.artist or 'Unknown'} - {pc_track.title or pc_track.filename}",
                 ))
                 plan.bytes_to_add += pc_track.size
@@ -283,6 +300,11 @@ class DiffEngine:
                 # Both have it → MATCHED
                 plan.matched_tracks += 1
                 ipod_track = ipod_by_fingerprint[fp]
+                ipod_dbid = ipod_track.get("dbid")
+
+                # Record PC path for artwork extraction
+                if ipod_dbid and pc_track.path:
+                    plan.matched_pc_paths[ipod_dbid] = str(pc_track.path)
 
                 # Check for quality difference
                 ipod_size = ipod_track.get("size", 0)
@@ -300,6 +322,8 @@ class DiffEngine:
                         action=SyncAction.SYNC_PLAYCOUNT,
                         pc_track=pc_track,
                         ipod_track=ipod_track,
+                        fingerprint=fp,
+                        dbid=ipod_dbid,
                         play_count_delta=plays_since_sync,
                         description=f"Played {plays_since_sync}x: {pc_track.artist or 'Unknown'} - {pc_track.title or pc_track.filename}",
                     ))
@@ -320,6 +344,8 @@ class DiffEngine:
                         action=SyncAction.SYNC_RATING,
                         pc_track=pc_track,
                         ipod_track=ipod_track,
+                        fingerprint=fp,
+                        dbid=ipod_dbid,
                         ipod_rating=ipod_rating,
                         pc_rating=pc_rating,
                         new_rating=new_rating,
@@ -336,9 +362,25 @@ class DiffEngine:
                 plan.to_remove.append(SyncItem(
                     action=SyncAction.REMOVE_FROM_IPOD,
                     ipod_track=ipod_track,
+                    fingerprint=fp,
+                    dbid=ipod_track.get("dbid"),
                     description=f"Not on PC: {ipod_track.get('Artist', 'Unknown')} - {ipod_track.get('Title', 'Unknown')}",
                 ))
                 plan.bytes_to_remove += ipod_track.get("size", 0)
             # else: fingerprint exists on PC (maybe as duplicate) - don't remove
+
+        # ===== Step 5: Check for missing artwork =====
+        for dbid, pc_path in plan.matched_pc_paths.items():
+            ipod_track = next(
+                (t for t in ipod_tracks if t.get("dbid") == dbid), None
+            )
+            if ipod_track:
+                artwork_count = ipod_track.get("artworkCount", 0)
+                mhii_link = ipod_track.get("mhiiLink", 0)
+                if artwork_count == 0 or mhii_link == 0:
+                    plan.artwork_missing_count += 1
+
+        if plan.artwork_missing_count > 0:
+            plan.artwork_needs_sync = True
 
         return plan

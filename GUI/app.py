@@ -5,7 +5,7 @@ from PyQt6.QtCore import QRunnable, pyqtSignal, pyqtSlot, QObject, QThreadPool
 from PyQt6.QtWidgets import QWidget, QMainWindow, QHBoxLayout, QFileDialog, QMessageBox, QStackedWidget
 from GUI.widgets.musicBrowser import MusicBrowser
 from GUI.widgets.sidebar import Sidebar
-from GUI.widgets.syncReview import SyncReviewWidget, SyncWorker, PCFolderDialog
+from GUI.widgets.syncReview import SyncReviewWidget, SyncWorker, PCFolderDialog, SyncExecuteWorker
 import threading
 
 # Paths relative to project root
@@ -573,6 +573,8 @@ class MainWindow(QMainWindow):
 
         # Sync worker reference
         self._sync_worker = None
+        self._sync_execute_worker = None
+        self._plan = None
         self._last_pc_folder = os.path.join(os.path.expanduser("~"), "Music")
 
         self.sidebar.category_changed.connect(
@@ -754,6 +756,10 @@ class MainWindow(QMainWindow):
 
     def _onSyncDiffComplete(self, plan):
         """Called when sync diff calculation is complete."""
+        self._plan = plan  # Store for executeSyncPlan to access matched_pc_paths
+        # Provide iPod tracks cache so the review widget can list artwork-missing tracks
+        cache = iTunesDBCache.get_instance()
+        self.syncReview._ipod_tracks_cache = cache.get_tracks() or []
         self.syncReview.show_plan(plan)
 
     def _onSyncError(self, error_msg: str):
@@ -764,36 +770,87 @@ class MainWindow(QMainWindow):
         """Return to the main browsing view."""
         self.centralStack.setCurrentIndex(0)
 
-    def executeSyncPlan(self, selected_items):
-        """Execute the selected sync actions.
+    def executeSyncPlan(self, selection):
+        """Execute the selected sync actions."""
+        from SyncEngine.diff_engine import SyncAction, SyncPlan
 
-        NOTE: This is a placeholder - the actual writer implementation
-        comes later. For now we just show what would happen.
-        """
-        from SyncEngine.diff_engine import SyncAction
+        # Unpack selection tuple (items, quality_changes)
+        selected_items, selected_quality_changes = selection
 
-        add_count = sum(1 for s in selected_items if s.action == SyncAction.ADD_TO_IPOD)
-        remove_count = sum(1 for s in selected_items if s.action == SyncAction.REMOVE_FROM_IPOD)
+        # Get device path
+        device_manager = DeviceManager.get_instance()
+        if not device_manager.device_path:
+            QMessageBox.warning(self, "No Device", "No iPod device selected.")
+            return
 
-        QMessageBox.information(
-            self,
-            "Sync Preview (Writer Not Implemented)",
-            f"The sync would:\n\n"
-            f"• Add {add_count} tracks to iPod\n"
-            f"• Remove {remove_count} tracks from iPod\n\n"
-            f"iTunesDB writer is not yet implemented.\n"
-            f"This preview shows what WILL happen once the writer is complete."
+        # Filter items by action type
+        add_items = [s for s in selected_items if s.action == SyncAction.ADD_TO_IPOD]
+        remove_items = [s for s in selected_items if s.action == SyncAction.REMOVE_FROM_IPOD]
+        playcount_items = [s for s in selected_items if s.action == SyncAction.SYNC_PLAYCOUNT]
+        rating_items = [s for s in selected_items if s.action == SyncAction.SYNC_RATING]
+
+        # Create filtered plan with quality changes
+        # IMPORTANT: carry matched_pc_paths and artwork info from the original plan
+        # so the artwork writer can extract art from ALL tracks, not just new ones.
+        original_plan = self._plan  # stored in _onSyncDiffComplete
+        filtered_plan = SyncPlan(
+            to_add=add_items,
+            to_remove=remove_items,
+            to_sync_playcount=playcount_items,
+            to_sync_rating=rating_items,
+            quality_changes=selected_quality_changes,
+            matched_pc_paths=getattr(original_plan, 'matched_pc_paths', {}) if original_plan else {},
+            artwork_needs_sync=getattr(original_plan, 'artwork_needs_sync', False) if original_plan else False,
+            artwork_missing_count=getattr(original_plan, 'artwork_missing_count', 0) if original_plan else 0,
         )
 
-        # Return to main view
+        # Nothing to do?
+        total = len(selected_items) + len(selected_quality_changes)
+        if total == 0:
+            # Should not happen since _apply_sync already checks this
+            return
+
+        # Show progress in sync review widget
+        self.syncReview.show_executing()
+
+        # Start sync execution worker
+        self._sync_execute_worker = SyncExecuteWorker(
+            ipod_path=device_manager.device_path,
+            plan=filtered_plan,
+        )
+        self._sync_execute_worker.progress.connect(self.syncReview.update_execute_progress)
+        self._sync_execute_worker.finished.connect(self._onSyncExecuteComplete)
+        self._sync_execute_worker.error.connect(self._onSyncExecuteError)
+        self._sync_execute_worker.start()
+
+    def _onSyncExecuteComplete(self, result):
+        """Called when sync execution is complete."""
+        # Show styled results view instead of a plain message box
+        self.syncReview.show_result(result)
+
+        # Reload the database to show changes
+        cache = iTunesDBCache.get_instance()
+        cache._data = None  # Force reload
+        cache.start_loading()
+
+    def _onSyncExecuteError(self, error_msg: str):
+        """Called when sync execution fails."""
+        QMessageBox.critical(
+            self,
+            "Sync Error",
+            f"Sync failed:\n\n{error_msg}"
+        )
         self.hideSyncReview()
 
     def closeEvent(self, a0):
         """Ensure all threads are stopped when the window is closed."""
-        # Stop sync worker if running
+        # Stop sync workers if running
         if self._sync_worker and self._sync_worker.isRunning():
             self._sync_worker.terminate()
             self._sync_worker.wait(1000)
+        if self._sync_execute_worker and self._sync_execute_worker.isRunning():
+            self._sync_execute_worker.terminate()
+            self._sync_execute_worker.wait(1000)
 
         thread_pool = ThreadPoolSingleton.get_instance()
         if thread_pool:

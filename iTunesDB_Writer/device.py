@@ -36,14 +36,14 @@ class ChecksumType(IntEnum):
 # However, libgpod's model detection may vary. When in doubt, check HashInfo existence.
 
 DEVICE_CHECKSUMS = {
-    # iPod Classic - HASH72 (per Clickwheel and real-world testing)
-    # Model numbers: MB029 (80GB), MB147 (160GB), MC293 (160GB 2G), etc.
-    'MB029': ChecksumType.HASH72,  # Classic 1G 80GB (Sept 2007)
-    'MB147': ChecksumType.HASH72,  # Classic 1G 160GB (Sept 2007)
-    'MB562': ChecksumType.HASH72,  # Classic 1G 80GB (late 2007)
-    'MB565': ChecksumType.HASH72,  # Classic 1G 160GB (late 2007)
-    'MC293': ChecksumType.HASH72,  # Classic 2G 160GB (Sept 2009)
-    'MC297': ChecksumType.HASH72,  # Classic 2G 160GB (Sept 2009)
+    # iPod Classic - HASH58 (per libgpod itdb_device.c: CLASSIC_1/2/3 → HASH58)
+    # The iPod Classic firmware checks hash58 (scheme=1). iTunes also writes hash72.
+    'MB029': ChecksumType.HASH58,  # Classic 1G 80GB (Sept 2007)
+    'MB147': ChecksumType.HASH58,  # Classic 1G 160GB (Sept 2007)
+    'MB562': ChecksumType.HASH58,  # Classic 2G 120GB
+    'MB565': ChecksumType.HASH58,  # Classic 2G 120GB
+    'MC293': ChecksumType.HASH58,  # Classic 3G 160GB (Sept 2009)
+    'MC297': ChecksumType.HASH58,  # Classic 3G 160GB (Sept 2009)
 
     # iPod Nano 3G - HASH58 (confirmed in libgpod)
     'MA978': ChecksumType.HASH58,  # Nano 3G 4GB
@@ -334,31 +334,180 @@ def _extract_model_number(model_str: str) -> Optional[str]:
     return model_str.upper()[:5] if len(model_str) >= 5 else model_str.upper()
 
 
+def _read_firewire_id_from_registry() -> Optional[bytes]:
+    """
+    Read iPod FireWire GUID from Windows registry USB device entries.
+
+    When an iPod is connected to Windows, its USB serial number is stored in:
+      HKLM\\SYSTEM\\CurrentControlSet\\Enum\\USBSTOR\\Disk&Ven_Apple&Prod_iPod&Rev_*\\<SERIAL>&0
+
+    The USB serial number for iPod Classic IS the FireWire GUID (16 hex chars = 8 bytes).
+    This persists in the registry even after the iPod is disconnected.
+
+    Returns:
+        FireWire GUID as bytes, or None if not found
+    """
+    import sys
+    if sys.platform != 'win32':
+        return None
+
+    try:
+        import winreg
+    except ImportError:
+        return None
+
+    try:
+        usbstor_key = winreg.OpenKey(
+            winreg.HKEY_LOCAL_MACHINE,
+            r"SYSTEM\CurrentControlSet\Enum\USBSTOR"
+        )
+    except OSError:
+        return None
+
+    try:
+        # Find Apple iPod entries
+        i = 0
+        while True:
+            try:
+                subkey_name = winreg.EnumKey(usbstor_key, i)
+                i += 1
+            except OSError:
+                break
+
+            if 'Apple' not in subkey_name or 'iPod' not in subkey_name:
+                continue
+
+            # Found an iPod entry — look at instance IDs for the serial
+            try:
+                device_key = winreg.OpenKey(usbstor_key, subkey_name)
+                j = 0
+                while True:
+                    try:
+                        instance_id = winreg.EnumKey(device_key, j)
+                        j += 1
+                    except OSError:
+                        break
+
+                    # Instance ID format: "<SERIAL>&0" or "8&xxx&0&<SERIAL>&0"
+                    # The serial is a 16-char hex string (FireWire GUID)
+                    # Try extracting from the instance ID
+                    parts = instance_id.split('&')
+                    for part in parts:
+                        part = part.strip()
+                        if len(part) == 16:
+                            try:
+                                guid = bytes.fromhex(part)
+                                if guid != b'\x00' * 8:
+                                    winreg.CloseKey(device_key)
+                                    winreg.CloseKey(usbstor_key)
+                                    return guid
+                            except ValueError:
+                                pass
+
+                winreg.CloseKey(device_key)
+            except OSError:
+                continue
+
+    finally:
+        winreg.CloseKey(usbstor_key)
+
+    return None
+
+
+def _read_firewire_id_from_sysinfo_extended(ipod_path: str) -> Optional[bytes]:
+    """
+    Read FireWire GUID from iPod's SysInfoExtended XML plist file.
+
+    SysInfoExtended is an XML plist located at:
+      /iPod_Control/Device/SysInfoExtended
+
+    It contains a FireWireGUID key with the device's GUID as a string.
+
+    Returns:
+        FireWire GUID as bytes, or None if not found
+    """
+    sysinfo_ex_path = os.path.join(ipod_path, "iPod_Control", "Device", "SysInfoExtended")
+    if not os.path.exists(sysinfo_ex_path):
+        return None
+
+    try:
+        with open(sysinfo_ex_path, 'r', errors='ignore') as f:
+            content = f.read()
+
+        # Simple XML parsing for FireWireGUID
+        import re as _re
+        match = _re.search(
+            r'<key>FireWireGUID</key>\s*<string>([0-9A-Fa-f]+)</string>',
+            content
+        )
+        if match:
+            guid_hex = match.group(1)
+            if guid_hex.startswith('0x') or guid_hex.startswith('0X'):
+                guid_hex = guid_hex[2:]
+            return bytes.fromhex(guid_hex)
+    except Exception:
+        pass
+
+    return None
+
+
 def get_firewire_id(ipod_path: str) -> bytes:
     """
-    Get FireWire GUID from iPod SysInfo.
+    Get FireWire GUID for an iPod, trying multiple sources.
+
+    Sources tried in order:
+    1. SysInfo file on the iPod (/iPod_Control/Device/SysInfo)
+    2. SysInfoExtended XML plist on the iPod
+    3. Windows registry (persists from previous USB connections)
+
+    The FireWire GUID is required for HASH58 computation on iPod Classic
+    and Nano 3G/4G. Despite the name, it's also used on USB-only iPods
+    where it equals the USB device serial number.
 
     Args:
-        ipod_path: Mount point of iPod
+        ipod_path: Mount point / root path of iPod filesystem
 
     Returns:
         FireWire GUID as bytes (typically 8 bytes)
 
     Raises:
-        FileNotFoundError: If SysInfo doesn't exist
-        KeyError: If FirewireGuid not in SysInfo
+        RuntimeError: If FireWire GUID cannot be found from any source
     """
-    sysinfo = read_sysinfo(ipod_path)
+    # Source 1: SysInfo file
+    try:
+        sysinfo = read_sysinfo(ipod_path)
+        guid = sysinfo.get('FirewireGuid')
+        if guid:
+            if guid.startswith('0x') or guid.startswith('0X'):
+                guid = guid[2:]
+            result = bytes.fromhex(guid)
+            if result != b'\x00' * len(result):
+                print(f"FireWire GUID from SysInfo: {result.hex()}")
+                return result
+    except (FileNotFoundError, ValueError):
+        pass
 
-    guid = sysinfo.get('FirewireGuid')
-    if guid is None:
-        raise KeyError("FirewireGuid not found in SysInfo")
+    # Source 2: SysInfoExtended plist
+    result = _read_firewire_id_from_sysinfo_extended(ipod_path)
+    if result:
+        print(f"FireWire GUID from SysInfoExtended: {result.hex()}")
+        return result
 
-    # Remove optional '0x' prefix
-    if guid.startswith('0x') or guid.startswith('0X'):
-        guid = guid[2:]
+    # Source 3: Windows registry (USB serial from previous connection)
+    result = _read_firewire_id_from_registry()
+    if result:
+        print(f"FireWire GUID from Windows registry: {result.hex()}")
+        return result
 
-    return bytes.fromhex(guid)
+    raise RuntimeError(
+        "Could not find iPod FireWire GUID. Tried:\n"
+        "  1. SysInfo file (empty or missing)\n"
+        "  2. SysInfoExtended file (not found)\n"
+        "  3. Windows registry (no iPod USB history found)\n"
+        "\n"
+        "To fix this, connect the iPod and try again, or manually provide\n"
+        "the FireWire GUID via the firewire_id parameter."
+    )
 
 
 def detect_checksum_type(ipod_path: str) -> ChecksumType:

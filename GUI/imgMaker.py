@@ -88,6 +88,11 @@ def generate_image(ithmb_filename, image_info):
         pixels = read_rgb565_pixels(img_data, fmt)
         rgb_array = rgb565_to_rgb888_vectorized(pixels)
 
+        # Guard against empty/truncated ithmb data
+        expected_size = current_height * current_width * 3
+        if rgb_array.size == 0 or rgb_array.size < expected_size:
+            return None
+
         # Reshape image
         rgb_array = rgb_array.reshape((current_height, current_width, 3))
         img_pil = Image.fromarray(rgb_array)

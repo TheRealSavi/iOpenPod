@@ -105,7 +105,7 @@ ITDB_CHECKSUM_HASH58 = 1
 # Header offsets
 OFFSET_DB_ID = 0x18       # 8 bytes
 OFFSET_UNK_0x32 = 0x32    # 20 bytes
-OFFSET_HASHING_SCHEME = 0x46  # 2 bytes
+OFFSET_HASHING_SCHEME = 0x30  # 2 bytes (hashing_scheme in MhbdHeader struct)
 OFFSET_HASH58 = 0x58      # 20 bytes
 
 

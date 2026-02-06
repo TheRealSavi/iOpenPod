@@ -50,12 +50,11 @@ def parse_trackItem(data, offset, header_length, chunk_length) -> dict:
     # ============================================================
     # Track metadata (integers)
     # ============================================================
-    track["rating"] = data[offset + 31]  # Single byte: stars × 20 (0-100)
-
-    # VBR flag is at offset 30 (1 byte)
-    track["vbr"] = data[offset + 30]  # 1 = VBR, 0 = CBR
-
-    track["compilation"] = data[offset + 32]  # 1 = part of compilation
+    # Bytes 0x1C-0x1F: type1 (VBR), type2, compilation, rating
+    track["vbr"] = data[offset + 28]  # 0x1C: type1 - 1 = VBR, 0 = CBR
+    # data[offset + 29] = type2 (unused)
+    track["compilation"] = data[offset + 30]  # 0x1E: 1 = part of compilation
+    track["rating"] = data[offset + 31]  # 0x1F: Single byte: stars × 20 (0-100)
 
     track["size"] = struct.unpack("<I", data[offset + 36:offset + 40])[0]
     # File size in bytes
@@ -149,7 +148,9 @@ def parse_trackItem(data, offset, header_length, chunk_length) -> dict:
 
     track["rememberPosition"] = data[offset + 166]  # 1 = remember playback position
 
-    track["podcast"] = data[offset + 168]  # 1 = podcast
+    # Podcast status is derived from mediaType, not stored as a separate byte
+    # offset 168 (0xA8) is actually the start of dbid2 (64-bit backup of dbid)
+    track["dbid2"] = struct.unpack("<Q", data[offset + 168:offset + 176])[0]
 
     track["mediaType"] = struct.unpack("<I", data[offset + 208:offset + 212])[0]
     # 0x01 = audio, 0x02 = video, 0x04 = podcast, 0x08 = video podcast
@@ -158,14 +159,14 @@ def parse_trackItem(data, offset, header_length, chunk_length) -> dict:
     track["seasonNumber"] = struct.unpack("<I", data[offset + 212:offset + 216])[0]
     track["episodeNumber"] = struct.unpack("<I", data[offset + 216:offset + 220])[0]
 
-    track["gaplessData"] = struct.unpack("<I", data[offset + 224:offset + 228])[0]
+    track["gaplessData"] = struct.unpack("<I", data[offset + 248:offset + 252])[0]  # 0xF8
 
-    track["gaplessTrackFlag"] = struct.unpack("<H", data[offset + 232:offset + 234])[0]
+    track["gaplessTrackFlag"] = struct.unpack("<H", data[offset + 256:offset + 258])[0]  # 0x100
 
-    track["gaplessAlbumFlag"] = struct.unpack("<H", data[offset + 234:offset + 236])[0]
+    track["gaplessAlbumFlag"] = struct.unpack("<H", data[offset + 258:offset + 260])[0]  # 0x102
 
-    track["albumID"] = struct.unpack("<H", data[offset + 314:offset + 316])[0]
-    # Links to mhia in album list
+    track["albumID"] = struct.unpack("<I", data[offset + 288:offset + 292])[0]  # 0x120
+    # Links to mhia in album list (u32 per libgpod)
 
     track["mhiiLink"] = struct.unpack("<I", data[offset + 352:offset + 356])[0]
     # Link to album art in ArtworkDB
