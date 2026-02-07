@@ -2,10 +2,12 @@ import os
 import sys
 import traceback
 from PyQt6.QtCore import QRunnable, pyqtSignal, pyqtSlot, QObject, QThreadPool
-from PyQt6.QtWidgets import QWidget, QMainWindow, QHBoxLayout, QFileDialog, QMessageBox, QStackedWidget
+from PyQt6.QtWidgets import QWidget, QMainWindow, QHBoxLayout, QMessageBox, QStackedWidget
 from GUI.widgets.musicBrowser import MusicBrowser
 from GUI.widgets.sidebar import Sidebar
 from GUI.widgets.syncReview import SyncReviewWidget, SyncWorker, PCFolderDialog, SyncExecuteWorker
+from GUI.widgets.settingsPage import SettingsPage
+from GUI.settings import get_settings
 import threading
 
 # Paths relative to project root
@@ -533,11 +535,19 @@ class MainWindow(QMainWindow):
         self.syncReview.sync_requested.connect(self.executeSyncPlan)
         self.centralStack.addWidget(self.syncReview)  # Index 1
 
+        # Settings view
+        self.settingsPage = SettingsPage()
+        self.settingsPage.closed.connect(self.hideSettings)
+        self.centralStack.addWidget(self.settingsPage)  # Index 2
+
         # Sync worker reference
         self._sync_worker = None
         self._sync_execute_worker = None
         self._plan = None
-        self._last_pc_folder = os.path.join(os.path.expanduser("~"), "Music")
+
+        # Load persisted settings
+        settings = get_settings()
+        self._last_pc_folder = settings.music_folder or os.path.join(os.path.expanduser("~"), "Music")
 
         self.sidebar.category_changed.connect(
             self.musicBrowser.updateCategory)  # Connect the signal to the slot
@@ -551,26 +561,39 @@ class MainWindow(QMainWindow):
         # Connect sync button to PC sync
         self.sidebar.syncButton.clicked.connect(self.startPCSync)
 
+        # Connect settings button
+        self.sidebar.settingsButton.clicked.connect(self.showSettings)
+
         # Connect device manager to reload data when device changes
         DeviceManager.get_instance().device_changed.connect(self.onDeviceChanged)
 
         # Connect cache ready signal to refresh UI
         iTunesDBCache.get_instance().data_ready.connect(self.onDataReady)
 
-    def selectDevice(self):
-        """Open folder picker dialog to select iPod root folder."""
-        folder = QFileDialog.getExistingDirectory(
-            self,
-            "Select iPod Root Folder",
-            "",
-            QFileDialog.Option.ShowDirsOnly
-        )
+        # Restore last device path
+        if settings.last_device_path:
+            device_manager = DeviceManager.get_instance()
+            if device_manager.is_valid_ipod_root(settings.last_device_path):
+                device_manager.device_path = settings.last_device_path
+                self.sidebar.updateDeviceButton(
+                    os.path.basename(settings.last_device_path) or settings.last_device_path
+                )
 
-        if folder:
+    def selectDevice(self):
+        """Open device picker dialog to scan and select an iPod."""
+        from GUI.widgets.devicePicker import DevicePickerDialog
+
+        dialog = DevicePickerDialog(self)
+        if dialog.exec() and dialog.selected_path:
+            folder = dialog.selected_path
             device_manager = DeviceManager.get_instance()
             if device_manager.is_valid_ipod_root(folder):
                 device_manager.device_path = folder
                 self.sidebar.updateDeviceButton(os.path.basename(folder) or folder)
+                # Persist selection
+                settings = get_settings()
+                settings.last_device_path = folder
+                settings.save()
             else:
                 QMessageBox.warning(
                     self,
@@ -722,6 +745,10 @@ class MainWindow(QMainWindow):
             return
 
         self._last_pc_folder = dialog.selected_folder
+        # Persist the folder choice
+        settings = get_settings()
+        settings.music_folder = dialog.selected_folder
+        settings.save()
 
         # Switch to sync review view
         self.centralStack.setCurrentIndex(1)
@@ -757,6 +784,18 @@ class MainWindow(QMainWindow):
 
     def hideSyncReview(self):
         """Return to the main browsing view."""
+        self.centralStack.setCurrentIndex(0)
+
+    def showSettings(self):
+        """Show the settings page."""
+        self.settingsPage.load_from_settings()
+        self.centralStack.setCurrentIndex(2)
+
+    def hideSettings(self):
+        """Return from settings to the main browsing view."""
+        # Re-read persisted settings to pick up changes
+        settings = get_settings()
+        self._last_pc_folder = settings.music_folder or self._last_pc_folder
         self.centralStack.setCurrentIndex(0)
 
     def executeSyncPlan(self, selected_items):
@@ -832,13 +871,13 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, a0):
         """Ensure all threads are stopped when the window is closed."""
-        # Stop sync workers if running
+        # Request graceful stop for sync workers
         if self._sync_worker and self._sync_worker.isRunning():
-            self._sync_worker.terminate()
-            self._sync_worker.wait(1000)
+            self._sync_worker.requestInterruption()
+            self._sync_worker.wait(3000)
         if self._sync_execute_worker and self._sync_execute_worker.isRunning():
-            self._sync_execute_worker.terminate()
-            self._sync_execute_worker.wait(1000)
+            self._sync_execute_worker.requestInterruption()
+            self._sync_execute_worker.wait(3000)
 
         thread_pool = ThreadPoolSingleton.get_instance()
         if thread_pool:

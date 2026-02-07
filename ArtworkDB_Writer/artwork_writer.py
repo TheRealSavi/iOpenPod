@@ -660,13 +660,19 @@ def write_artworkdb(
         stride = IPOD_STRIDE_OVERRIDE.get(fmt_id, w)
         image_sizes[fmt_id] = stride * h * 2
 
-    # Open ithmb files for writing
+    # Write ithmb files to temp paths first — originals stay intact until
+    # both ithmb AND ArtworkDB are fully written and verified.
+    ithmb_temp_paths: dict[int, str] = {}  # fmt_id → temp path
+    ithmb_final_paths: dict[int, str] = {}  # fmt_id → final path
     ithmb_files = {}
-    for fmt_id in format_ids:
-        ithmb_path = os.path.join(artwork_dir, f"F{fmt_id}_1.ithmb")
-        ithmb_files[fmt_id] = open(ithmb_path, 'wb')
-
     try:
+        for fmt_id in format_ids:
+            final = os.path.join(artwork_dir, f"F{fmt_id}_1.ithmb")
+            temp = final + ".tmp"
+            ithmb_final_paths[fmt_id] = final
+            ithmb_temp_paths[fmt_id] = temp
+            ithmb_files[fmt_id] = open(temp, 'wb')
+
         for entry in entries:
             offsets = {}
             for fmt_id in format_ids:
@@ -676,15 +682,14 @@ def write_artworkdb(
                     ithmb_files[fmt_id].write(img_data)
                     ithmb_offsets[fmt_id] += len(img_data)
             format_offsets_map[entry.img_id] = offsets
+
+        # Flush and sync all ithmb temp files
+        for f in ithmb_files.values():
+            f.flush()
+            os.fsync(f.fileno())
     finally:
         for f in ithmb_files.values():
             f.close()
-
-    logger.info(f"Wrote ithmb files for {len(entries)} images")
-    for fmt_id in format_ids:
-        ithmb_path = os.path.join(artwork_dir, f"F{fmt_id}_1.ithmb")
-        size = os.path.getsize(ithmb_path)
-        logger.info(f"  F{fmt_id}_1.ithmb: {size} bytes")
 
     # --- Step 4: Build ArtworkDB binary ---
 
@@ -704,12 +709,51 @@ def write_artworkdb(
     next_id = start_img_id + len(entries)
     artdb_data = _write_mhfd([ds1, ds2, ds3], next_id, ref_mhfd)
 
-    # Write ArtworkDB
+    # Write ArtworkDB to temp file
     artdb_path = os.path.join(artwork_dir, "ArtworkDB")
-    with open(artdb_path, 'wb') as f:
-        f.write(artdb_data)
+    artdb_temp = artdb_path + ".tmp"
+    try:
+        with open(artdb_temp, 'wb') as f:
+            f.write(artdb_data)
+            f.flush()
+            os.fsync(f.fileno())
+    except Exception:
+        # Clean up all temp files on failure
+        for tp in ithmb_temp_paths.values():
+            try:
+                os.remove(tp)
+            except OSError:
+                pass
+        try:
+            os.remove(artdb_temp)
+        except OSError:
+            pass
+        raise
 
-    logger.info(f"Wrote ArtworkDB: {len(artdb_data)} bytes")
+    # --- Atomic commit: all temp files are complete, swap them in ---
+    # os.replace is atomic on NTFS and POSIX — old files are only removed
+    # when the new file is fully in place.
+    try:
+        for fmt_id in format_ids:
+            os.replace(ithmb_temp_paths[fmt_id], ithmb_final_paths[fmt_id])
+        os.replace(artdb_temp, artdb_path)
+    except Exception:
+        # If any replace fails, clean up remaining temps
+        for tp in ithmb_temp_paths.values():
+            try:
+                os.remove(tp)
+            except OSError:
+                pass
+        try:
+            os.remove(artdb_temp)
+        except OSError:
+            pass
+        raise
+
+    logger.info(f"Wrote ithmb files for {len(entries)} images")
+    for fmt_id in format_ids:
+        size = os.path.getsize(ithmb_final_paths[fmt_id])
+        logger.info(f"  F{fmt_id}_1.ithmb: {size} bytes")
 
     # --- Step 5: Build dbid → (imgId, src_img_size) mapping ---
     dbid_to_art_info: dict[int, tuple[int, int]] = {}

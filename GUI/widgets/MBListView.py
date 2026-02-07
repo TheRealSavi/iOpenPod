@@ -11,8 +11,8 @@ from __future__ import annotations
 import logging
 from typing import Callable
 
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QFont
+from PyQt6.QtCore import Qt, QTimer, QSize
+from PyQt6.QtGui import QFont, QPixmap, QImage, QIcon
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QFrame,
@@ -109,6 +109,9 @@ NUMERIC_COLUMNS = frozenset({"year", "playCount", "skipCount", "trackNumber", "d
 # Keep small to avoid blocking UI
 BATCH_SIZE = 50
 
+# Artwork thumbnail size in pixels for the track list
+ART_THUMB_SIZE = 32
+
 
 # =============================================================================
 # MusicBrowserList - Main Table Widget
@@ -146,6 +149,11 @@ class MusicBrowserList(QFrame):
         self._current_load_id = 0   # Load ID when current population started
         self._pending_rows: list[int] = []
         self._is_populating = False
+
+        # Artwork state
+        self._show_art = False      # Controlled by settings
+        self._art_cache: dict[int, QPixmap] = {}   # mhiiLink → scaled QPixmap
+        self._art_pending: set[int] = set()         # mhiiLinks currently being loaded
 
         # Shared resources (created once, reused)
         self._font = QFont("Segoe UI", 10)
@@ -306,6 +314,8 @@ class MusicBrowserList(QFrame):
         self._all_tracks = []
         self._tracks = []
         self._current_filter = None
+        self._art_cache.clear()
+        self._art_pending.clear()
 
         try:
             self.table.setUpdatesEnabled(False)
@@ -361,6 +371,10 @@ class MusicBrowserList(QFrame):
         try:
             self._cancel_population()
 
+            # Check artwork setting
+            from ..settings import get_settings
+            self._show_art = get_settings().show_art_in_tracklist
+
             # Capture state for this load
             load_id = self._load_id
             tracks = self._tracks
@@ -371,8 +385,21 @@ class MusicBrowserList(QFrame):
             # Minimal setup - no setRowCount to avoid blocking!
             self.table.setSortingEnabled(False)
             self.table.setRowCount(0)  # Clear existing rows (fast when going to 0)
-            self.table.setColumnCount(len(columns))
-            self.table.setHorizontalHeaderLabels([self._get_header(k) for k in columns])
+
+            # Build header list — prepend art column if enabled
+            if self._show_art:
+                col_count = 1 + len(columns)
+                headers = [""] + [self._get_header(k) for k in columns]
+            else:
+                col_count = len(columns)
+                headers = [self._get_header(k) for k in columns]
+
+            self.table.setColumnCount(col_count)
+            self.table.setHorizontalHeaderLabels(headers)
+
+            if self._show_art:
+                self.table.setColumnWidth(0, ART_THUMB_SIZE + 8)
+                self.table.setIconSize(QSize(ART_THUMB_SIZE, ART_THUMB_SIZE))
 
             # Always use incremental population to keep UI responsive
             self._pending_rows = list(range(len(tracks)))
@@ -445,6 +472,26 @@ class MusicBrowserList(QFrame):
 
     def _populate_row(self, row: int, track: dict, columns: list[str]) -> None:
         """Populate a single row with track data."""
+        col_offset = 0
+
+        if self._show_art:
+            col_offset = 1
+            # Set row height to fit the thumbnail
+            self.table.setRowHeight(row, ART_THUMB_SIZE + 4)
+            # Place a placeholder; actual art is loaded async after population
+            art_item = QTableWidgetItem()
+            art_item.setFlags(Qt.ItemFlag.ItemIsEnabled)  # not selectable/editable
+            self.table.setItem(row, 0, art_item)
+
+            # Request artwork load for this track's mhiiLink
+            mhii_link = track.get("mhiiLink")
+            if mhii_link is not None:
+                if mhii_link in self._art_cache:
+                    art_item.setIcon(QIcon(self._art_cache[mhii_link]))
+                else:
+                    # Remember row for async backfill
+                    art_item.setData(Qt.ItemDataRole.UserRole, mhii_link)
+
         for col, key in enumerate(columns):
             value = track.get(key, "")
             display = self._format_value(key, value)
@@ -457,18 +504,128 @@ class MusicBrowserList(QFrame):
             if key in NUMERIC_COLUMNS:
                 item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
-            self.table.setItem(row, col, item)
+            self.table.setItem(row, col + col_offset, item)
 
     def _finish_population(self) -> None:
-        """Complete table population - enable sorting and resize columns."""
+        """Complete table population - enable sorting, resize columns, load art."""
         try:
             self.table.setSortingEnabled(True)
 
             header = self.table.horizontalHeader()
             if header and self._columns:
-                for i in range(len(self._columns) - 1):
+                start_col = 1 if self._show_art else 0
+                total_cols = self.table.columnCount()
+                # Art column: fixed width
+                if self._show_art and total_cols > 0:
+                    header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+                    self.table.setColumnWidth(0, ART_THUMB_SIZE + 8)
+                # Data columns: resize to contents, stretch last
+                for i in range(start_col, total_cols - 1):
                     header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
-                header.setSectionResizeMode(len(self._columns) - 1, QHeaderView.ResizeMode.Stretch)
+                if total_cols > 0:
+                    header.setSectionResizeMode(total_cols - 1, QHeaderView.ResizeMode.Stretch)
+
+            # Kick off async artwork loading
+            if self._show_art:
+                self._load_art_async()
+
+        except RuntimeError:
+            pass  # Widget deleted
+
+    # -------------------------------------------------------------------------
+    # Internal - Async Artwork Loading
+    # -------------------------------------------------------------------------
+
+    def _load_art_async(self) -> None:
+        """Scan rows for missing artwork and load in background batches."""
+        from ..app import Worker, ThreadPoolSingleton
+
+        # Collect unique mhiiLinks that need loading
+        links_to_load: set[int] = set()
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, 0)
+            if item is None:
+                continue
+            link = item.data(Qt.ItemDataRole.UserRole)
+            if link is not None and link not in self._art_cache and link not in self._art_pending:
+                links_to_load.add(link)
+
+        if not links_to_load:
+            return
+
+        self._art_pending |= links_to_load
+        load_id = self._load_id
+
+        # Load in a single background worker
+        worker = Worker(self._load_art_batch, list(links_to_load))
+        worker.signals.result.connect(
+            lambda result, lid=load_id: self._on_art_loaded(result, lid))
+        ThreadPoolSingleton.get_instance().start(worker)
+
+    def _load_art_batch(self, links: list[int]) -> dict[int, bytes | None]:
+        """Background worker: decode artwork for a batch of mhiiLinks.
+
+        Returns dict mapping mhiiLink -> (width, height, rgba_bytes) or None.
+        """
+        from ..app import DeviceManager
+        from ..imgMaker import find_image_by_imgId, get_artworkdb_cached
+        import os
+
+        device = DeviceManager.get_instance()
+        if not device.device_path:
+            return {}
+
+        artworkdb_path = device.artworkdb_path
+        artwork_folder = device.artwork_folder_path
+        if not artworkdb_path or not os.path.exists(artworkdb_path):
+            return {}
+
+        artworkdb_data, imgid_index = get_artworkdb_cached(artworkdb_path)
+        results: dict[int, tuple[int, int, bytes] | None] = {}
+
+        for link in links:
+            if device.cancellation_token.is_cancelled():
+                break
+            result = find_image_by_imgId(artworkdb_data, artwork_folder, link, imgid_index)
+            if result is not None:
+                pil_img, _dcol = result
+                pil_img = pil_img.convert("RGBA")
+                results[link] = (pil_img.width, pil_img.height, pil_img.tobytes("raw", "RGBA"))
+            else:
+                results[link] = None
+
+        return results
+
+    def _on_art_loaded(self, results: dict | None, load_id: int) -> None:
+        """Main-thread callback: apply loaded artwork to table rows."""
+        if results is None or self._load_id != load_id:
+            return
+
+        try:
+            # Convert to QPixmaps and cache
+            for link, data in results.items():
+                self._art_pending.discard(link)
+                if data is None:
+                    continue
+                w, h, rgba = data
+                qimg = QImage(rgba, w, h, QImage.Format.Format_RGBA8888).copy()
+                pixmap = QPixmap.fromImage(qimg).scaled(
+                    ART_THUMB_SIZE, ART_THUMB_SIZE,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+                self._art_cache[link] = pixmap
+
+            # Backfill rows
+            for row in range(self.table.rowCount()):
+                item = self.table.item(row, 0)
+                if item is None:
+                    continue
+                link = item.data(Qt.ItemDataRole.UserRole)
+                if link is not None and link in self._art_cache:
+                    item.setIcon(QIcon(self._art_cache[link]))
+                    item.setData(Qt.ItemDataRole.UserRole, None)  # Clear pending marker
+
         except RuntimeError:
             pass  # Widget deleted
 

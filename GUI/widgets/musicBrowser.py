@@ -137,12 +137,14 @@ class MusicBrowser(QFrame):
             self.browserTrack.clearFilter()
             self.browserTrack.loadTracks()
             self.trackListTitleBar.setTitle("All Tracks")
+            self.trackListTitleBar.resetColor()
         elif category == "Playlists":
             log.debug("  Showing Playlists view")
             # TODO: Implement playlist support
             self.browserGridScroll.show()
             self.browserGrid.clearGrid()
             self.trackListTitleBar.setTitle("Playlists - Coming Soon")
+            self.trackListTitleBar.resetColor()
         else:
             log.debug(f"  Showing grid view for: {category}")
             # Show grid for Albums, Artists, Genres
@@ -151,6 +153,7 @@ class MusicBrowser(QFrame):
             # Clear track list filter - user needs to select an item
             self.browserTrack.clearFilter()
             self.trackListTitleBar.setTitle(f"Select a{'n' if category[0] in 'AE' else ''} {category[:-1]}")
+            self.trackListTitleBar.resetColor()
 
     def _onGridItemSelected(self, item_data: dict):
         """Handle when a grid item is clicked."""
@@ -160,8 +163,14 @@ class MusicBrowser(QFrame):
         filter_key = item_data.get("filter_key")
         filter_value = item_data.get("filter_value")
 
-        # Update title bar
+        # Update title bar with album color
         self.trackListTitleBar.setTitle(title)
+        dominant_color = item_data.get("dominant_color")
+        if dominant_color:
+            r, g, b = dominant_color
+            self.trackListTitleBar.setColor(r, g, b)
+        else:
+            self.trackListTitleBar.resetColor()
 
         # Apply filter to track list
         if filter_key and filter_value:

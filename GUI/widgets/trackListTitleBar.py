@@ -71,6 +71,80 @@ class TrackListTitleBar(QFrame):
         """Set the title text."""
         self.title.setText(title)
 
+    def setColor(self, r: int, g: int, b: int):
+        """Set the title bar gradient to the given RGB color."""
+        # Lighter variant for gradient top
+        r2 = min(255, r + 30)
+        g2 = min(255, g + 30)
+        b2 = min(255, b + 30)
+        # Darker variant for gradient bottom
+        r3 = max(0, r - 30)
+        g3 = max(0, g - 30)
+        b3 = max(0, b - 30)
+        self.setStyleSheet(f"""
+            QFrame {{
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 rgba({r2},{g2},{b2},200), stop:1 rgba({r3},{g3},{b3},200));
+                border: none;
+                border-radius: 0px;
+            }}
+            QLabel {{
+                font-weight: bold;
+                font-size: 13px;
+                color: white;
+                background: transparent;
+            }}
+            QPushButton {{
+                background-color: transparent;
+                border: none;
+                color: white;
+                font-size: 16px;
+                font-weight: bold;
+                width: 28px;
+                height: 28px;
+                border-radius: 4px;
+            }}
+            QPushButton:hover {{
+                background-color: rgba(255,255,255,30);
+            }}
+            QPushButton:pressed {{
+                background-color: rgba(0,0,0,30);
+            }}
+        """)
+
+    def resetColor(self):
+        """Reset to the default blue gradient."""
+        self.setStyleSheet("""
+            QFrame {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 rgba(64,156,255,200), stop:1 rgba(40,120,200,200));
+                border: none;
+                border-radius: 0px;
+            }
+            QLabel {
+                font-weight: bold;
+                font-size: 13px;
+                color: white;
+                background: transparent;
+            }
+            QPushButton {
+                background-color: transparent;
+                border: none;
+                color: white;
+                font-size: 16px;
+                font-weight: bold;
+                width: 28px;
+                height: 28px;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: rgba(255,255,255,30);
+            }
+            QPushButton:pressed {
+                background-color: rgba(0,0,0,30);
+            }
+        """)
+
     def _toggleMinimize(self):
         """Minimize the track list panel."""
         sizes = self.splitter.sizes()

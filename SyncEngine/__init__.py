@@ -27,6 +27,16 @@ from .audio_fingerprint import (
     is_fpcalc_available,
 )
 from .mapping import MappingManager, MappingFile, TrackMapping
+from .integrity import check_integrity, IntegrityReport
+from .itunes_prefs import (
+    read_prefs,
+    protect_from_itunes,
+    check_library_owner,
+    generate_library_id,
+    ITunesPrefs,
+    DeviceTotals,
+    SyncHistoryEntry,
+)
 from .transcoder import (
     transcode,
     needs_transcoding,
@@ -61,6 +71,17 @@ __all__ = [
     "MappingManager",
     "MappingFile",
     "TrackMapping",
+    # Integrity
+    "check_integrity",
+    "IntegrityReport",
+    # iTunes Prefs
+    "read_prefs",
+    "protect_from_itunes",
+    "check_library_owner",
+    "generate_library_id",
+    "ITunesPrefs",
+    "DeviceTotals",
+    "SyncHistoryEntry",
     # Transcoding
     "transcode",
     "needs_transcoding",

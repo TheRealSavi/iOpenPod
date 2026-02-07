@@ -6,11 +6,14 @@ Uses Chromaprint acoustic fingerprints for reliable track identification:
 - Metadata changes don't affect fingerprint
 - Only audio content changes create new fingerprint
 
+Identity model: (fingerprint, album) — same song on different albums
+(e.g., original album vs Greatest Hits) syncs as separate iPod tracks.
+True duplicates (same fingerprint AND same album) are deduplicated silently.
+
 Handles fingerprint collisions (same song on multiple albums) via disambiguation:
   1. source_path_hint matches → unique
-  2. album + track_number → disambiguate
-  3. duration_ms within ±2 seconds → disambiguate
-  4. Unresolved → surfaced to user
+  2. Claimed-dbid filtering → prevents double-matching
+  3. Unresolved → surfaced to user
 
 Change detection uses size+mtime as a fast gate:
   - If neither changed → skip (nothing to do)
@@ -33,6 +36,7 @@ import logging
 from .pc_library import PCLibrary, PCTrack
 from .audio_fingerprint import get_or_compute_fingerprint, is_fpcalc_available
 from .mapping import MappingManager, TrackMapping
+from .integrity import IntegrityReport
 
 logger = logging.getLogger(__name__)
 
@@ -141,12 +145,17 @@ class SyncPlan:
     # Fingerprint collisions that couldn't be auto-resolved
     unresolved_collisions: list[tuple[str, list[PCTrack]]] = field(default_factory=list)
 
-    # PC duplicates: fingerprint → list[PCTrack] with same fingerprint on PC
+    # PC duplicates: display_key → list[PCTrack] with same song AND same album
+    # True duplicates only — same fingerprint + same album.
+    # Same song on different albums is NOT a duplicate (greatest hits case).
     duplicates: dict[str, list[PCTrack]] = field(default_factory=dict)
 
     # Stale mapping entries: (fingerprint, dbid) pairs where dbid is not in iTunesDB.
     # Cleaned from mapping during execution, not shown to user.
     _stale_mapping_entries: list[tuple[str, int]] = field(default_factory=list)
+
+    # Integrity report from pre-flight check (None if not run)
+    integrity_report: IntegrityReport | None = None
 
     # Stats
     total_pc_tracks: int = 0
@@ -199,15 +208,27 @@ class SyncPlan:
         if self.fingerprint_errors:
             lines.append(f"  ⚠️  {len(self.fingerprint_errors)} files could not be fingerprinted")
         if self.duplicates:
-            lines.append(f"  🚫 {len(self.duplicates)} duplicate groups ({self.duplicate_count} extra files)")
+            lines.append(f"  ⚠️  {len(self.duplicates)} duplicate groups ({self.duplicate_count} extra files skipped)")
         if self.unresolved_collisions:
             lines.append(f"  ❓ {len(self.unresolved_collisions)} unresolved fingerprint collisions")
 
-        if not lines:
+        # Show integrity fixes at the top if any were found
+        integrity_lines = []
+        if self.integrity_report and not self.integrity_report.is_clean:
+            ir = self.integrity_report
+            if ir.missing_files:
+                integrity_lines.append(f"  🔧 {len(ir.missing_files)} DB tracks had missing files (cleaned)")
+            if ir.stale_mappings:
+                integrity_lines.append(f"  🔧 {len(ir.stale_mappings)} stale mapping entries (cleaned)")
+            if ir.orphan_files:
+                integrity_lines.append(f"  🔧 {len(ir.orphan_files)} orphan files removed from iPod")
+
+        if not lines and not integrity_lines:
             return "✅ Everything is in sync!"
 
         header = f"Sync Plan ({self.matched_tracks} matched, {self.total_pc_tracks} PC, {self.total_ipod_tracks} iPod):"
-        return header + "\n" + "\n".join(lines)
+        all_lines = integrity_lines + lines
+        return header + "\n" + "\n".join(all_lines)
 
 
 # ─── Metadata Comparison ──────────────────────────────────────────────────────
@@ -269,18 +290,60 @@ class FingerprintDiffEngine:
 
         plan = SyncPlan()
 
-        # Build iPod track lookup by dbid
-        ipod_by_dbid: dict[int, dict] = {}
+        # Load mapping
+        if progress_callback:
+            progress_callback("load_mapping", 0, 0, "Loading iPod mapping...")
+        mapping = self.mapping_manager.load()
+
+        # ===== Pre-flight: Integrity check =====
+        # Validate consistency between filesystem, iTunesDB, and mapping.
+        # This mutates ipod_tracks (removes entries with missing files)
+        # and mapping (removes stale dbids), and deletes orphan files.
+        from .integrity import check_integrity
+        if progress_callback:
+            progress_callback("integrity", 0, 0, "Checking iPod integrity…")
+        integrity_report = check_integrity(
+            self.ipod_path,
+            ipod_tracks,
+            mapping,
+            delete_orphans=True,
+            progress_callback=progress_callback,
+        )
+        if not integrity_report.is_clean:
+            logger.info(integrity_report.summary)
+            # Save cleaned mapping immediately so stale entries don't persist
+            if integrity_report.stale_mappings:
+                self.mapping_manager.save(mapping)
+
+        plan.integrity_report = integrity_report
+
+        # Tracks whose files are missing must be explicitly removed from the
+        # iPod database.  The integrity check pulled them out of ipod_tracks
+        # (so the diff engine won't try to match them), but the executor
+        # re-reads the full iTunesDB from disk — so without a REMOVE action
+        # they'd be written straight back.
+        for ghost_track in integrity_report.missing_files:
+            ghost_dbid = ghost_track.get("dbid")
+            plan.to_remove.append(SyncItem(
+                action=SyncAction.REMOVE_FROM_IPOD,
+                fingerprint=None,
+                dbid=ghost_dbid,
+                ipod_track=ghost_track,
+                description=(
+                    f"File missing on iPod: "
+                    f"{ghost_track.get('Artist', 'Unknown')} - "
+                    f"{ghost_track.get('Title', 'Unknown')}"
+                ),
+            ))
+            plan.storage.bytes_to_remove += ghost_track.get("size", 0)
+
+        # Rebuild dbid lookup in case integrity check removed some tracks
+        ipod_by_dbid = {}
         for track in ipod_tracks:
             dbid = track.get("dbid")
             if dbid:
                 ipod_by_dbid[dbid] = track
         plan.total_ipod_tracks = len(ipod_by_dbid)
-
-        # Load mapping
-        if progress_callback:
-            progress_callback("load_mapping", 0, 0, "Loading iPod mapping...")
-        mapping = self.mapping_manager.load()
 
         # ===== Phase 1: Scan PC & fingerprint =====
         if progress_callback:
@@ -305,23 +368,36 @@ class FingerprintDiffEngine:
             pc_by_fp.setdefault(fp, []).append(track)
             seen_fps.add(fp)
 
-        # ===== Phase 2: Detect PC duplicates =====
-        duplicate_fps: set[str] = set()
+        # ===== Phase 2: Group by identity (fingerprint + album) =====
+        # Same fingerprint + same album = true duplicate (pick one, report rest)
+        # Same fingerprint + different album = independent tracks (greatest hits)
+
+        # (fp, album_key) → list[PCTrack]
+        identity_groups: dict[tuple[str, str], list[PCTrack]] = {}
         for fp, tracks in pc_by_fp.items():
-            if len(tracks) > 1:
-                plan.duplicates[fp] = tracks
-                duplicate_fps.add(fp)
+            by_album: dict[str, list[PCTrack]] = {}
+            for t in tracks:
+                album_key = (t.album or "").strip().lower()
+                by_album.setdefault(album_key, []).append(t)
+
+            for album_key, album_tracks in by_album.items():
+                identity_groups[(fp, album_key)] = album_tracks
+                if len(album_tracks) > 1:
+                    # True duplicates: same song, same album, multiple files
+                    display_key = f"{album_tracks[0].artist or 'Unknown'}|{album_tracks[0].album or 'Unknown'}|{album_tracks[0].title or 'Unknown'}"
+                    plan.duplicates[display_key] = album_tracks
 
         # ===== Phase 3: Match & Diff =====
         if progress_callback:
             progress_callback("diff", 0, 0, "Computing differences...")
 
-        for fp, pc_tracks_for_fp in pc_by_fp.items():
-            if fp in duplicate_fps:
-                # Duplicates on PC — blocked from sync
-                continue
+        # For fingerprints with multiple album groups, we need to track which
+        # mapping entries have already been claimed so each PC track gets its own.
+        claimed_dbids: set[int] = set()
 
-            pc_track = pc_tracks_for_fp[0]
+        for (fp, _album_key), pc_tracks_for_group in identity_groups.items():
+            # Pick representative track (first one from this album group)
+            pc_track = pc_tracks_for_group[0]
             mapping_entries = mapping.get_entries(fp)
 
             if not mapping_entries:
@@ -335,13 +411,30 @@ class FingerprintDiffEngine:
                 plan.storage.bytes_to_add += pc_track.size
                 continue
 
+            # Filter out mapping entries already claimed by another album group
+            available_entries = [e for e in mapping_entries if e.dbid not in claimed_dbids]
+
+            if not available_entries:
+                # All mapping entries for this fingerprint are claimed by other
+                # album groups → this is a new album variant (greatest hits case)
+                plan.to_add.append(SyncItem(
+                    action=SyncAction.ADD_TO_IPOD,
+                    fingerprint=fp,
+                    pc_track=pc_track,
+                    description=f"New (album variant): {pc_track.artist or 'Unknown'} - {pc_track.title or pc_track.filename} [{pc_track.album or 'Unknown'}]",
+                ))
+                plan.storage.bytes_to_add += pc_track.size
+                continue
+
             # MATCHED: Resolve which mapping entry this PC track matches
-            matched_entry = self._resolve_collision(pc_track, mapping_entries)
+            matched_entry = self._resolve_collision(pc_track, available_entries, ipod_by_dbid)
 
             if matched_entry is None:
                 # Collision couldn't be resolved
-                plan.unresolved_collisions.append((fp, pc_tracks_for_fp))
+                plan.unresolved_collisions.append((fp, pc_tracks_for_group))
                 continue
+
+            claimed_dbids.add(matched_entry.dbid)
 
             dbid = matched_entry.dbid
             ipod_track = ipod_by_dbid.get(dbid)
@@ -441,6 +534,7 @@ class FingerprintDiffEngine:
                 ))
 
         # ===== Phase 4: Find tracks to remove =====
+        # 4a: Fingerprints entirely absent from PC → all entries are removals
         mapping_fps = mapping.all_fingerprints()
         orphaned_fps = mapping_fps - seen_fps
 
@@ -450,8 +544,6 @@ class FingerprintDiffEngine:
                 ipod_track = ipod_by_dbid.get(dbid)
 
                 if not ipod_track:
-                    # Stale mapping entry — dbid not in current iTunesDB.
-                    # Nothing to remove from iPod; silently clean from mapping.
                     plan._stale_mapping_entries.append((fp, dbid))
                     continue
 
@@ -467,6 +559,63 @@ class FingerprintDiffEngine:
                     ),
                 ))
                 plan.storage.bytes_to_remove += ipod_track.get("size", 0)
+
+        # 4b: Fingerprints still on PC but with unclaimed mapping entries.
+        # These are album variants that were deleted (e.g., removed from
+        # Greatest Hits but kept on original album).
+        for fp in seen_fps & mapping_fps:
+            for entry in mapping.get_entries(fp):
+                if entry.dbid in claimed_dbids:
+                    continue
+                dbid = entry.dbid
+                ipod_track = ipod_by_dbid.get(dbid)
+
+                if not ipod_track:
+                    plan._stale_mapping_entries.append((fp, dbid))
+                    continue
+
+                plan.to_remove.append(SyncItem(
+                    action=SyncAction.REMOVE_FROM_IPOD,
+                    fingerprint=fp,
+                    dbid=dbid,
+                    ipod_track=ipod_track,
+                    description=(
+                        f"Album variant removed: "
+                        f"{ipod_track.get('Artist', 'Unknown')} - "
+                        f"{ipod_track.get('Title', 'Unknown')} "
+                        f"[{ipod_track.get('Album', '')}]"
+                    ),
+                ))
+                plan.storage.bytes_to_remove += ipod_track.get("size", 0)
+
+        # 4c: Unmapped iPod tracks — tracks in iTunesDB that have NO mapping
+        # entry at all (e.g., put there by iTunes, not by iOpenPod).
+        # These are invisible to 4a/4b which only iterate mapping entries.
+        # Collect all dbids already accounted for by matches or removals.
+        accounted_dbids = claimed_dbids.copy()
+        for item in plan.to_remove:
+            if item.dbid:
+                accounted_dbids.add(item.dbid)
+        for fp, dbid in plan._stale_mapping_entries:
+            accounted_dbids.add(dbid)
+
+        for dbid, ipod_track in ipod_by_dbid.items():
+            if dbid in accounted_dbids:
+                continue
+            # This track exists in iTunesDB but has no mapping entry and
+            # was not matched to any PC track → it should be removed.
+            plan.to_remove.append(SyncItem(
+                action=SyncAction.REMOVE_FROM_IPOD,
+                fingerprint=None,
+                dbid=dbid,
+                ipod_track=ipod_track,
+                description=(
+                    f"Not in PC library: "
+                    f"{ipod_track.get('Artist', 'Unknown')} - "
+                    f"{ipod_track.get('Title', 'Unknown')}"
+                ),
+            ))
+            plan.storage.bytes_to_remove += ipod_track.get("size", 0)
 
         # ===== Phase 5: Missing artwork check =====
         for dbid, _pc_path in plan.matched_pc_paths.items():
@@ -487,6 +636,7 @@ class FingerprintDiffEngine:
         self,
         pc_track: PCTrack,
         entries: list[TrackMapping],
+        ipod_by_dbid: Optional[dict] = None,
     ) -> Optional[TrackMapping]:
         """
         Resolve a fingerprint collision (multiple mapping entries).
@@ -494,8 +644,8 @@ class FingerprintDiffEngine:
         Disambiguation cascade:
           1. Single entry → trivial
           2. source_path_hint matches → unique
-          3. Only one entry matching same album+track# → unique
-          4. Duration within ±2s → unique
+          3. Album name matches exactly one entry → unique
+          4. Album + track number matches → unique
           5. Otherwise → None (unresolved)
         """
         if len(entries) == 1:
@@ -506,13 +656,36 @@ class FingerprintDiffEngine:
             if entry.source_path_hint and entry.source_path_hint == pc_track.relative_path:
                 return entry
 
-        # NOTE: Further disambiguation (album+track#, duration) would require
-        # iPod track data which we don't have here. For now, return None for
-        # true multi-entry collisions that path hint can't resolve.
-        # The caller will add these to unresolved_collisions.
+        # Try album-based disambiguation using iPod track data
+        if ipod_by_dbid:
+            pc_album = (pc_track.album or "").strip().lower()
+            pc_track_num = pc_track.track_number or 0
+
+            # Step 3: Match by album name
+            album_matches = []
+            for entry in entries:
+                ipod_track = ipod_by_dbid.get(entry.dbid)
+                if ipod_track:
+                    ipod_album = (ipod_track.get("Album", "") or "").strip().lower()
+                    if ipod_album == pc_album:
+                        album_matches.append(entry)
+
+            if len(album_matches) == 1:
+                return album_matches[0]
+
+            # Step 4: Narrow further by track number if album matched multiple
+            if len(album_matches) > 1 and pc_track_num > 0:
+                tn_matches = []
+                for entry in album_matches:
+                    ipod_track = ipod_by_dbid.get(entry.dbid)
+                    if ipod_track and ipod_track.get("trackNumber", 0) == pc_track_num:
+                        tn_matches.append(entry)
+                if len(tn_matches) == 1:
+                    return tn_matches[0]
+
         logger.warning(
             f"Unresolved collision: {len(entries)} entries for same fingerprint, "
-            f"none match path hint '{pc_track.relative_path}'"
+            f"could not disambiguate for '{pc_track.relative_path}'"
         )
         return None
 

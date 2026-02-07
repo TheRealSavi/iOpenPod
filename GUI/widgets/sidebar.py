@@ -5,6 +5,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtGui import QFont
 from .formatters import format_size, format_duration_human as format_duration
+from ..ipod_images import get_ipod_image
 
 
 class StatWidget(QWidget):
@@ -86,6 +87,8 @@ class DeviceInfoCard(QFrame):
 
         self.icon_label = QLabel("🎵")
         self.icon_label.setFont(QFont("Segoe UI Emoji", 24))
+        self.icon_label.setFixedSize(52, 52)
+        self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.icon_label.setStyleSheet("background: transparent; border: none;")
         header_layout.addWidget(self.icon_label)
 
@@ -213,20 +216,36 @@ class DeviceInfoCard(QFrame):
         self.name_label.setText(name or "No Device")
         self.model_label.setText(model)
 
-        # Update icon based on model
-        model_lower = model.lower() if model else ""
-        if "classic" in model_lower:
-            self.icon_label.setText("📱")
-        elif "nano" in model_lower:
-            self.icon_label.setText("🎵")
-        elif "shuffle" in model_lower:
-            self.icon_label.setText("🔀")
-        elif "mini" in model_lower:
-            self.icon_label.setText("🎶")
-        elif "video" in model_lower or "photo" in model_lower:
-            self.icon_label.setText("📱")
+        # Try to load real product photo
+        family = ""
+        generation = ""
+        if device_info:
+            family = device_info.get('model_name', '') or ''
+            generation = device_info.get('model_generation', '') or ''
+        elif model:
+            # Parse from model string as fallback
+            family = model
+
+        photo = get_ipod_image(family, generation, 48) if family else None
+        if photo and not photo.isNull():
+            self.icon_label.setPixmap(photo)
+            self.icon_label.setFont(QFont())  # Clear emoji font
         else:
-            self.icon_label.setText("🎵")
+            # Fallback to emoji
+            model_lower = model.lower() if model else ""
+            if "classic" in model_lower:
+                self.icon_label.setText("📱")
+            elif "nano" in model_lower:
+                self.icon_label.setText("🎵")
+            elif "shuffle" in model_lower:
+                self.icon_label.setText("🔀")
+            elif "mini" in model_lower:
+                self.icon_label.setText("🎶")
+            elif "video" in model_lower or "photo" in model_lower:
+                self.icon_label.setText("📱")
+            else:
+                self.icon_label.setText("🎵")
+            self.icon_label.setFont(QFont("Segoe UI Emoji", 24))
 
         # Update technical details if provided
         if device_info:
@@ -390,6 +409,25 @@ class Sidebar(QFrame):
             self.buttons[category] = btn
 
         self.sidebarLayout.addStretch()
+
+        # Settings button at bottom
+        self.settingsButton = QPushButton("⚙ Settings")
+        self.settingsButton.setFont(QFont("Segoe UI", 10, QFont.Weight.DemiBold))
+        self.settingsButton.setStyleSheet(
+            "QPushButton {"
+            "background-color: rgba(255,255,255,30);"
+            "border: none;"
+            "border-radius: 6px;"
+            "color: rgba(255,255,255,150);"
+            "padding: 8px 12px;"
+            "text-align: left;"
+            "}"
+            "QPushButton:hover {"
+            "background-color: rgba(255,255,255,50);"
+            "color: white;"
+            "}"
+        )
+        self.sidebarLayout.addWidget(self.settingsButton)
 
         self.selectedCategory = list(category_glyphs.keys())[0]
         self.selectCategory(self.selectedCategory)
