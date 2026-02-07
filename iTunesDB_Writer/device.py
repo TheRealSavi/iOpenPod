@@ -96,68 +96,138 @@ NO_CHECKSUM_MODELS = {
 
 
 # Comprehensive iPod model database
-# Maps model numbers to (name, generation, capacity, color)
-# Based on libgpod's ipod_info_table from itdb_device.c
+# Maps order number prefixes to (product_line, generation, capacity, color)
+#
+# Sources:
+#   - Universal Compendium iPod Models table (universalcompendium.com)
+#   - The Apple Wiki: Models/iPod (theapplewiki.com)
+#
+# Generation naming conventions:
+#   The full-size iPod line has TWO numbering systems. This table uses the
+#   product-specific generation (matching what users see in "About" screens),
+#   with the overall iPod lineage noted in comments.
+#
+#   Overall iPod gen │ Product-specific gen │ Years │ Apple Model
+#   ─────────────────┼──────────────────────┼───────┼────────────
+#   1st gen           │ iPod 1st Gen         │ 2001  │ M8541
+#   2nd gen           │ iPod 2nd Gen         │ 2002  │ A1019
+#   3rd gen           │ iPod 3rd Gen         │ 2003  │ A1040
+#   4th gen           │ iPod 4th Gen         │ 2004  │ A1059
+#   4th gen (color)   │ iPod Photo           │ 2004  │ A1099
+#   5th gen           │ iPod Video 5th Gen   │ 2005  │ A1136
+#   5.5th gen         │ iPod Video 5.5th Gen │ 2006  │ A1136 (Rev B)
+#   6th gen           │ iPod Classic 1st Gen │ 2007  │ A1238
+#   6.5th gen         │ iPod Classic 2nd Gen │ 2008  │ A1238 (Rev A)
+#   7th gen           │ iPod Classic 3rd Gen │ 2009  │ A1238 (Rev B/C)
+#
 IPOD_MODELS = {
-    # iPod Classic (2007-2014)
+    # ==========================================================================
+    # iPod Classic (2007-2009)
+    # Community: "6th gen / 6.5th gen / 7th gen iPod"
+    # ==========================================================================
+    # 1st Gen Classic / 6th gen overall (2007) — Apple Model A1238, Internal N25
     'MB029': ("iPod Classic", "1st Gen", "80GB", "Silver"),
-    'MB147': ("iPod Classic", "1st Gen", "160GB", "Silver"),
+    'MB147': ("iPod Classic", "1st Gen", "80GB", "Black"),
+    'MB145': ("iPod Classic", "1st Gen", "160GB", "Silver"),
     'MB150': ("iPod Classic", "1st Gen", "160GB", "Black"),
-    'MB562': ("iPod Classic", "1st Gen", "80GB", "Silver"),
-    'MB565': ("iPod Classic", "1st Gen", "160GB", "Silver"),
-    'MC293': ("iPod Classic", "2nd Gen", "160GB", "Silver"),
-    'MC297': ("iPod Classic", "2nd Gen", "160GB", "Black"),
+    # 2nd Gen Classic / 6.5th gen overall (2008) — A1238 Rev A (thin, 120GB)
+    'MB562': ("iPod Classic", "2nd Gen", "120GB", "Silver"),
+    'MB565': ("iPod Classic", "2nd Gen", "120GB", "Black"),
+    # 3rd Gen Classic / 7th gen overall (Late 2009) — A1238 Rev B/C
+    'MC293': ("iPod Classic", "3rd Gen", "160GB", "Silver"),
+    'MC297': ("iPod Classic", "3rd Gen", "160GB", "Black"),
 
-    # iPod (Original / Scroll Wheel)
+    # ==========================================================================
+    # iPod (Scroll Wheel) — 1st Generation (2001)
+    # Apple Model: M8541 — Internal: P68/P68C
+    # ==========================================================================
+    'M8513': ("iPod", "1st Gen", "5GB", "White"),
     'M8541': ("iPod", "1st Gen", "5GB", "White"),
     'M8697': ("iPod", "1st Gen", "5GB", "White"),
     'M8709': ("iPod", "1st Gen", "10GB", "White"),
+
+    # ==========================================================================
+    # iPod (Touch Wheel) — 2nd Generation (2002)
+    # Apple Model: A1019 — Internal: P97
+    # ==========================================================================
+    'M8737': ("iPod", "2nd Gen", "10GB", "White"),
     'M8740': ("iPod", "2nd Gen", "10GB", "White"),
+    'M8738': ("iPod", "2nd Gen", "20GB", "White"),
     'M8741': ("iPod", "2nd Gen", "20GB", "White"),
-    'M8948': ("iPod", "2nd Gen", "20GB", "White"),
 
-    # iPod (Touch Wheel / Dock Connector)
+    # ==========================================================================
+    # iPod (Dock Connector) — 3rd Generation (2003)
+    # Apple Model: A1040 — Internal: Q14
+    # ==========================================================================
     'M8976': ("iPod", "3rd Gen", "10GB", "White"),
-    'M9244': ("iPod", "3rd Gen", "15GB", "White"),
-    'M9245': ("iPod", "3rd Gen", "30GB", "White"),
-    'M9460': ("iPod", "3rd Gen", "40GB", "White"),
+    'M8946': ("iPod", "3rd Gen", "15GB", "White"),
+    'M8948': ("iPod", "3rd Gen", "30GB", "White"),
+    'M9244': ("iPod", "3rd Gen", "20GB", "White"),
+    'M9245': ("iPod", "3rd Gen", "40GB", "White"),
+    'M9460': ("iPod", "3rd Gen", "15GB", "White"),  # Rev B
 
-    # iPod (Click Wheel / 4th Gen)
+    # ==========================================================================
+    # iPod (Click Wheel) — 4th Generation (2004)
+    # Apple Model: A1059 — Internal: Q21
+    # ==========================================================================
+    'M9268': ("iPod", "4th Gen", "40GB", "White"),
     'M9282': ("iPod", "4th Gen", "20GB", "White"),
-    'M9585': ("iPod U2", "4th Gen", "20GB", "Black"),
-    'M9586': ("iPod U2", "4th Gen", "20GB", "Black"),
+    # U2 Special Edition — 4th Gen
+    'M9787': ("iPod U2", "4th Gen", "20GB", "Black"),
 
-    # iPod Photo / Color
+    # ==========================================================================
+    # iPod Photo / iPod with Colour Display — 4th Gen (Color) (2004-2005)
+    # Apple Model: A1099 — Internal: P98
+    # Community: "4th gen color" or "iPod Photo"
+    # ==========================================================================
+    'M9585': ("iPod Photo", "4th Gen", "40GB", "White"),
+    'M9586': ("iPod Photo", "4th Gen", "60GB", "White"),
     'M9829': ("iPod Photo", "4th Gen", "30GB", "White"),
     'M9830': ("iPod Photo", "4th Gen", "60GB", "White"),
-    'M9831': ("iPod Photo U2", "4th Gen", "20GB", "Black"),
-    'M9834': ("iPod Photo", "4th Gen", "40GB", "White"),
-    'MA079': ("iPod Photo", "4th Gen", "30GB", "White"),
-    'MA127': ("iPod Photo U2", "4th Gen", "20GB", "Black"),
+    'MA079': ("iPod Photo", "4th Gen", "20GB", "White"),
+    # U2 Special Edition (Colour Display)
+    'MA127': ("iPod U2", "4th Gen", "20GB", "Black"),
+    # Harry Potter Special Edition
+    'MA215': ("iPod Photo", "4th Gen", "20GB", "White"),
 
-    # iPod Video (5th Gen)
+    # ==========================================================================
+    # iPod Video — 5th Generation (2005)
+    # Apple Model: A1136 — Internal: M25
+    # Same A1136 for both 5th and 5.5th gen; Rev B = "Enhanced" / 5.5th gen
+    # ==========================================================================
     'MA002': ("iPod Video", "5th Gen", "30GB", "White"),
     'MA003': ("iPod Video", "5th Gen", "60GB", "White"),
-    'MA005': ("iPod Video U2", "5th Gen", "30GB", "Black"),
-    'MA099': ("iPod Video", "5th Gen", "30GB", "Black"),
-    'MA107': ("iPod Video", "5th Gen", "60GB", "Black"),
-    'MA146': ("iPod Video", "5th Gen", "30GB", "White"),
-    'MA147': ("iPod Video", "5th Gen", "60GB", "White"),
-    'MA148': ("iPod Video U2", "5th Gen", "30GB", "Black"),
+    'MA146': ("iPod Video", "5th Gen", "30GB", "Black"),
+    'MA147': ("iPod Video", "5th Gen", "60GB", "Black"),
+    # U2 Special Edition — 5th Gen
+    'MA452': ("iPod Video U2", "5th Gen", "30GB", "Black"),
 
-    # iPod Video (5.5th Gen / Enhanced)
+    # ==========================================================================
+    # iPod Video — 5.5th Generation / Enhanced (Late 2006)
+    # Apple Model: A1136 Rev B — Internal: M25
+    # Community: "5.5th gen" — brighter screen, search feature, gapless playback
+    # ==========================================================================
     'MA444': ("iPod Video", "5.5th Gen", "30GB", "White"),
     'MA446': ("iPod Video", "5.5th Gen", "30GB", "Black"),
-    'MA448': ("iPod Video", "5.5th Gen", "60GB", "Black"),
+    'MA448': ("iPod Video", "5.5th Gen", "80GB", "White"),
     'MA450': ("iPod Video", "5.5th Gen", "80GB", "Black"),
-    'MA664': ("iPod Video", "5.5th Gen", "80GB", "Black"),
+    # U2 Special Edition — 5.5th Gen
+    'MA664': ("iPod Video U2", "5.5th Gen", "30GB", "Black"),
 
-    # iPod Mini
+    # ==========================================================================
+    # iPod Mini — 1st Generation (2004)
+    # Apple Model: A1051 — Internal: Q22
+    # ==========================================================================
     'M9160': ("iPod Mini", "1st Gen", "4GB", "Silver"),
+    'M9434': ("iPod Mini", "1st Gen", "4GB", "Green"),
+    'M9435': ("iPod Mini", "1st Gen", "4GB", "Pink"),
     'M9436': ("iPod Mini", "1st Gen", "4GB", "Blue"),
-    'M9437': ("iPod Mini", "1st Gen", "4GB", "Pink"),
-    'M9438': ("iPod Mini", "1st Gen", "4GB", "Green"),
-    'M9439': ("iPod Mini", "1st Gen", "4GB", "Gold"),
+    'M9437': ("iPod Mini", "1st Gen", "4GB", "Gold"),
+
+    # ==========================================================================
+    # iPod Mini — 2nd Generation (2005)
+    # Apple Model: A1051 — Internal: Q22B
+    # ==========================================================================
     'M9800': ("iPod Mini", "2nd Gen", "4GB", "Silver"),
     'M9801': ("iPod Mini", "2nd Gen", "6GB", "Silver"),
     'M9802': ("iPod Mini", "2nd Gen", "4GB", "Blue"),
@@ -167,110 +237,233 @@ IPOD_MODELS = {
     'M9806': ("iPod Mini", "2nd Gen", "4GB", "Green"),
     'M9807': ("iPod Mini", "2nd Gen", "6GB", "Green"),
 
-    # iPod Nano (1st Gen)
-    # Note: MA350, MA352, MA426, MA428 confirmed for Nano 1st Gen
-    'MA350': ("iPod Nano", "1st Gen", "1GB", "Black"),
-    'MA352': ("iPod Nano", "1st Gen", "2GB", "Black"),
-    'MA426': ("iPod Nano", "1st Gen", "4GB", "Black"),
-    'MA428': ("iPod Nano", "1st Gen", "4GB", "White"),
-    'MA099B': ("iPod Nano", "1st Gen", "2GB", "Black"),  # UK model
+    # ==========================================================================
+    # iPod Nano — 1st Generation (2005)
+    # Apple Model: A1137 — Internal: M26
+    # ==========================================================================
+    'MA004': ("iPod Nano", "1st Gen", "2GB", "White"),
+    'MA005': ("iPod Nano", "1st Gen", "4GB", "White"),
+    'MA099': ("iPod Nano", "1st Gen", "2GB", "Black"),
+    'MA107': ("iPod Nano", "1st Gen", "4GB", "Black"),
+    'MA350': ("iPod Nano", "1st Gen", "1GB", "White"),
+    'MA352': ("iPod Nano", "1st Gen", "1GB", "Black"),
 
-    # iPod Nano (2nd Gen)
+    # ==========================================================================
+    # iPod Nano — 2nd Generation (2006)
+    # Apple Model: A1199 — Internal: N36
+    # ==========================================================================
+    'MA426': ("iPod Nano", "2nd Gen", "4GB", "Silver"),
+    'MA428': ("iPod Nano", "2nd Gen", "4GB", "Blue"),
     'MA477': ("iPod Nano", "2nd Gen", "2GB", "Silver"),
-    'MA484': ("iPod Nano", "2nd Gen", "4GB", "Silver"),
-    'MA487': ("iPod Nano", "2nd Gen", "8GB", "Black"),
-    'MA497': ("iPod Nano", "2nd Gen", "4GB", "Blue"),
-    'MA725': ("iPod Nano", "2nd Gen", "4GB", "Pink"),
-    'MA726': ("iPod Nano", "2nd Gen", "4GB", "Green"),
-    'MA727': ("iPod Nano", "2nd Gen", "2GB", "Pink"),
+    'MA487': ("iPod Nano", "2nd Gen", "4GB", "Green"),
+    'MA489': ("iPod Nano", "2nd Gen", "4GB", "Pink"),
+    'MA497': ("iPod Nano", "2nd Gen", "8GB", "Black"),
+    'MA725': ("iPod Nano", "2nd Gen", "4GB", "Red"),
+    'MA726': ("iPod Nano", "2nd Gen", "8GB", "Red"),
+    'MA899': ("iPod Nano", "2nd Gen", "8GB", "Red"),
 
-    # iPod Nano (3rd Gen - "Fat" Nano with video)
+    # ==========================================================================
+    # iPod Nano — 3rd Generation (2007, "Fat" Nano with video)
+    # Apple Model: A1236 — Internal: N46
+    # ==========================================================================
     'MA978': ("iPod Nano", "3rd Gen", "4GB", "Silver"),
-    'MA979': ("iPod Nano", "3rd Gen", "8GB", "Silver"),
-    'MA980': ("iPod Nano", "3rd Gen", "8GB", "Black"),
-    'MB245': ("iPod Nano", "3rd Gen", "4GB", "Blue"),
+    'MA980': ("iPod Nano", "3rd Gen", "8GB", "Silver"),
     'MB249': ("iPod Nano", "3rd Gen", "8GB", "Blue"),
-    'MB253': ("iPod Nano", "3rd Gen", "4GB", "Green"),
-    'MB257': ("iPod Nano", "3rd Gen", "8GB", "Green"),
-    'MB261': ("iPod Nano", "3rd Gen", "4GB", "Red"),
+    'MB253': ("iPod Nano", "3rd Gen", "8GB", "Green"),
+    'MB257': ("iPod Nano", "3rd Gen", "8GB", "Red"),
+    'MB261': ("iPod Nano", "3rd Gen", "8GB", "Black"),
+    'MB453': ("iPod Nano", "3rd Gen", "8GB", "Pink"),
 
-    # iPod Nano (4th Gen - Tall Nano)
+    # ==========================================================================
+    # iPod Nano — 4th Generation (2008)
+    # Apple Model: A1285 — Internal: N58
+    # ==========================================================================
+    # 4GB
+    'MB480': ("iPod Nano", "4th Gen", "4GB", "Silver"),
+    'MB651': ("iPod Nano", "4th Gen", "4GB", "Blue"),
+    'MB654': ("iPod Nano", "4th Gen", "4GB", "Pink"),
+    'MB657': ("iPod Nano", "4th Gen", "4GB", "Purple"),
+    'MB660': ("iPod Nano", "4th Gen", "4GB", "Orange"),
+    'MB663': ("iPod Nano", "4th Gen", "4GB", "Green"),
+    'MB666': ("iPod Nano", "4th Gen", "4GB", "Yellow"),
+    # 8GB
     'MB598': ("iPod Nano", "4th Gen", "8GB", "Silver"),
-    'MB654': ("iPod Nano", "4th Gen", "8GB", "Purple"),
-    'MB732': ("iPod Nano", "4th Gen", "16GB", "Black"),
-    'MB742': ("iPod Nano", "4th Gen", "8GB", "Black"),
-    'MB748': ("iPod Nano", "4th Gen", "4GB", "Silver"),
-    'MB754': ("iPod Nano", "4th Gen", "8GB", "Pink"),
-    'MB903': ("iPod Nano", "4th Gen", "4GB", "Silver"),
-    'MB907': ("iPod Nano", "4th Gen", "8GB", "Blue"),
-    'MB909': ("iPod Nano", "4th Gen", "16GB", "Silver"),
+    'MB732': ("iPod Nano", "4th Gen", "8GB", "Blue"),
+    'MB735': ("iPod Nano", "4th Gen", "8GB", "Pink"),
+    'MB739': ("iPod Nano", "4th Gen", "8GB", "Purple"),
+    'MB742': ("iPod Nano", "4th Gen", "8GB", "Orange"),
+    'MB745': ("iPod Nano", "4th Gen", "8GB", "Green"),
+    'MB748': ("iPod Nano", "4th Gen", "8GB", "Yellow"),
+    'MB751': ("iPod Nano", "4th Gen", "8GB", "Red"),
+    'MB754': ("iPod Nano", "4th Gen", "8GB", "Black"),
+    # 16GB
+    'MB903': ("iPod Nano", "4th Gen", "16GB", "Silver"),
+    'MB905': ("iPod Nano", "4th Gen", "16GB", "Blue"),
+    'MB907': ("iPod Nano", "4th Gen", "16GB", "Pink"),
+    'MB909': ("iPod Nano", "4th Gen", "16GB", "Purple"),
+    'MB911': ("iPod Nano", "4th Gen", "16GB", "Orange"),
+    'MB913': ("iPod Nano", "4th Gen", "16GB", "Green"),
+    'MB915': ("iPod Nano", "4th Gen", "16GB", "Yellow"),
+    'MB917': ("iPod Nano", "4th Gen", "16GB", "Red"),
+    'MB918': ("iPod Nano", "4th Gen", "16GB", "Black"),
 
-    # iPod Nano (5th Gen - Camera Nano)
+    # ==========================================================================
+    # iPod Nano — 5th Generation (2009, Camera Nano)
+    # Apple Model: A1320 — Internal: N33
+    # ==========================================================================
+    # 8GB
     'MC027': ("iPod Nano", "5th Gen", "8GB", "Silver"),
     'MC031': ("iPod Nano", "5th Gen", "8GB", "Black"),
-    'MC040': ("iPod Nano", "5th Gen", "8GB", "Purple"),
-    'MC049': ("iPod Nano", "5th Gen", "16GB", "Silver"),
-    'MC050': ("iPod Nano", "5th Gen", "16GB", "Black"),
-    'MC060': ("iPod Nano", "5th Gen", "8GB", "Green"),
-    'MC062': ("iPod Nano", "5th Gen", "16GB", "Purple"),
-    'MC064': ("iPod Nano", "5th Gen", "8GB", "Pink"),
-    'MC066': ("iPod Nano", "5th Gen", "8GB", "Orange"),
-    'MC068': ("iPod Nano", "5th Gen", "8GB", "Yellow"),
-    'MC072': ("iPod Nano", "5th Gen", "8GB", "Blue"),
+    'MC034': ("iPod Nano", "5th Gen", "8GB", "Purple"),
+    'MC037': ("iPod Nano", "5th Gen", "8GB", "Blue"),
+    'MC040': ("iPod Nano", "5th Gen", "8GB", "Green"),
+    'MC043': ("iPod Nano", "5th Gen", "8GB", "Yellow"),
+    'MC046': ("iPod Nano", "5th Gen", "8GB", "Orange"),
+    'MC049': ("iPod Nano", "5th Gen", "8GB", "Red"),
+    'MC050': ("iPod Nano", "5th Gen", "8GB", "Pink"),
+    # 16GB
+    'MC060': ("iPod Nano", "5th Gen", "16GB", "Silver"),
+    'MC062': ("iPod Nano", "5th Gen", "16GB", "Black"),
+    'MC064': ("iPod Nano", "5th Gen", "16GB", "Purple"),
+    'MC066': ("iPod Nano", "5th Gen", "16GB", "Blue"),
+    'MC068': ("iPod Nano", "5th Gen", "16GB", "Green"),
+    'MC070': ("iPod Nano", "5th Gen", "16GB", "Yellow"),
+    'MC072': ("iPod Nano", "5th Gen", "16GB", "Orange"),
+    'MC074': ("iPod Nano", "5th Gen", "16GB", "Red"),
+    'MC075': ("iPod Nano", "5th Gen", "16GB", "Pink"),
 
-    # iPod Nano (6th Gen - Touchscreen Square)
-    'MC525': ("iPod Nano", "6th Gen", "8GB", "Graphite"),
-    'MC526': ("iPod Nano", "6th Gen", "8GB", "Silver"),
-    'MC540': ("iPod Nano", "6th Gen", "8GB", "Blue"),
-    'MC688': ("iPod Nano", "6th Gen", "16GB", "Graphite"),
-    'MC689': ("iPod Nano", "6th Gen", "16GB", "Silver"),
-    'MC690': ("iPod Nano", "6th Gen", "16GB", "Blue"),
-    'MC691': ("iPod Nano", "6th Gen", "16GB", "Green"),
-    'MC692': ("iPod Nano", "6th Gen", "16GB", "Orange"),
-    'MC693': ("iPod Nano", "6th Gen", "16GB", "Pink"),
+    # ==========================================================================
+    # iPod Nano — 6th Generation (2010, Square Touchscreen)
+    # Apple Model: A1366 — Internal: N20
+    # ==========================================================================
+    # 8GB
+    'MC525': ("iPod Nano", "6th Gen", "8GB", "Silver"),
+    'MC688': ("iPod Nano", "6th Gen", "8GB", "Graphite"),
+    'MC689': ("iPod Nano", "6th Gen", "8GB", "Blue"),
+    'MC690': ("iPod Nano", "6th Gen", "8GB", "Green"),
+    'MC691': ("iPod Nano", "6th Gen", "8GB", "Orange"),
+    'MC692': ("iPod Nano", "6th Gen", "8GB", "Pink"),
+    'MC693': ("iPod Nano", "6th Gen", "8GB", "Red"),
+    # 16GB
+    'MC526': ("iPod Nano", "6th Gen", "16GB", "Silver"),
+    'MC694': ("iPod Nano", "6th Gen", "16GB", "Graphite"),
+    'MC695': ("iPod Nano", "6th Gen", "16GB", "Blue"),
+    'MC696': ("iPod Nano", "6th Gen", "16GB", "Green"),
+    'MC697': ("iPod Nano", "6th Gen", "16GB", "Orange"),
+    'MC698': ("iPod Nano", "6th Gen", "16GB", "Pink"),
+    'MC699': ("iPod Nano", "6th Gen", "16GB", "Red"),
 
-    # iPod Nano (7th Gen - Tall Touchscreen)
-    'MD476': ("iPod Nano", "7th Gen", "16GB", "Slate"),
-    'MD477': ("iPod Nano", "7th Gen", "16GB", "Silver"),
-    'MD478': ("iPod Nano", "7th Gen", "16GB", "Purple"),
-    'MD479': ("iPod Nano", "7th Gen", "16GB", "Pink"),
-    'MD480': ("iPod Nano", "7th Gen", "16GB", "Yellow"),
-    'MD481': ("iPod Nano", "7th Gen", "16GB", "Green"),
+    # ==========================================================================
+    # iPod Nano — 7th Generation (2012, Tall Touchscreen)
+    # Apple Model: A1446 — Internal: N31
+    # ==========================================================================
+    'MD475': ("iPod Nano", "7th Gen", "16GB", "Pink"),
+    'MD476': ("iPod Nano", "7th Gen", "16GB", "Yellow"),
+    'MD477': ("iPod Nano", "7th Gen", "16GB", "Blue"),
+    'MD478': ("iPod Nano", "7th Gen", "16GB", "Green"),
+    'MD479': ("iPod Nano", "7th Gen", "16GB", "Purple"),
+    'MD480': ("iPod Nano", "7th Gen", "16GB", "Silver"),
+    'MD481': ("iPod Nano", "7th Gen", "16GB", "Slate"),
+    'MD744': ("iPod Nano", "7th Gen", "16GB", "Red"),
+    'ME971': ("iPod Nano", "7th Gen", "16GB", "Space Gray"),
+    # Mid 2015 refresh (Rev A) — same A1446
+    'MKMV2': ("iPod Nano", "7th Gen", "16GB", "Pink"),
+    'MKMX2': ("iPod Nano", "7th Gen", "16GB", "Gold"),
+    'MKN02': ("iPod Nano", "7th Gen", "16GB", "Blue"),
+    'MKN22': ("iPod Nano", "7th Gen", "16GB", "Silver"),
+    'MKN52': ("iPod Nano", "7th Gen", "16GB", "Space Gray"),
+    'MKN72': ("iPod Nano", "7th Gen", "16GB", "Red"),
 
-    # iPod Shuffle (1st Gen)
+    # ==========================================================================
+    # iPod Shuffle — 1st Generation (2005)
+    # Apple Model: A1112 — Internal: Q98
+    # ==========================================================================
     'M9724': ("iPod Shuffle", "1st Gen", "512MB", "White"),
     'M9725': ("iPod Shuffle", "1st Gen", "1GB", "White"),
 
-    # iPod Shuffle (2nd Gen)
+    # ==========================================================================
+    # iPod Shuffle — 2nd Generation (2006-2008)
+    # Apple Model: A1204 — Internal: N98
+    # Multiple color refreshes within same generation
+    # ==========================================================================
+    # Initial (2006)
     'MA564': ("iPod Shuffle", "2nd Gen", "1GB", "Silver"),
-    'MA947': ("iPod Shuffle", "2nd Gen", "1GB", "Blue"),
-    'MA949': ("iPod Shuffle", "2nd Gen", "1GB", "Green"),
-    'MA951': ("iPod Shuffle", "2nd Gen", "1GB", "Orange"),
-    'MA953': ("iPod Shuffle", "2nd Gen", "1GB", "Pink"),
-    'MB225': ("iPod Shuffle", "2nd Gen", "2GB", "Silver"),
-    'MB518': ("iPod Shuffle", "2nd Gen", "1GB", "Red"),
+    # Jan 2007 colors
+    'MA947': ("iPod Shuffle", "2nd Gen", "1GB", "Pink"),
+    'MA949': ("iPod Shuffle", "2nd Gen", "1GB", "Blue"),
+    'MA951': ("iPod Shuffle", "2nd Gen", "1GB", "Green"),
+    'MA953': ("iPod Shuffle", "2nd Gen", "1GB", "Orange"),
+    # Sept 2007 (Rev A) — 1GB
+    'MB225': ("iPod Shuffle", "2nd Gen", "1GB", "Silver"),
+    'MB227': ("iPod Shuffle", "2nd Gen", "1GB", "Blue"),
+    'MB228': ("iPod Shuffle", "2nd Gen", "1GB", "Blue"),
+    'MB229': ("iPod Shuffle", "2nd Gen", "1GB", "Green"),
+    'MB231': ("iPod Shuffle", "2nd Gen", "1GB", "Red"),
+    'MB233': ("iPod Shuffle", "2nd Gen", "1GB", "Purple"),
+    # Sept 2007 (Rev A) — 2GB
+    'MB518': ("iPod Shuffle", "2nd Gen", "2GB", "Silver"),
+    'MB520': ("iPod Shuffle", "2nd Gen", "2GB", "Blue"),
+    'MB522': ("iPod Shuffle", "2nd Gen", "2GB", "Green"),
+    'MB524': ("iPod Shuffle", "2nd Gen", "2GB", "Red"),
+    'MB526': ("iPod Shuffle", "2nd Gen", "2GB", "Purple"),
+    # 2008 (Rev B) — 1GB
+    'MB811': ("iPod Shuffle", "2nd Gen", "1GB", "Pink"),
+    'MB813': ("iPod Shuffle", "2nd Gen", "1GB", "Blue"),
+    'MB815': ("iPod Shuffle", "2nd Gen", "1GB", "Green"),
+    'MB817': ("iPod Shuffle", "2nd Gen", "1GB", "Red"),
+    # 2008 (Rev B) — 2GB
+    'MB681': ("iPod Shuffle", "2nd Gen", "2GB", "Pink"),
+    'MB683': ("iPod Shuffle", "2nd Gen", "2GB", "Blue"),
+    'MB685': ("iPod Shuffle", "2nd Gen", "2GB", "Green"),
+    'MB779': ("iPod Shuffle", "2nd Gen", "2GB", "Red"),
+    # Special Edition
+    'MC167': ("iPod Shuffle", "2nd Gen", "1GB", "Gold"),
 
-    # iPod Shuffle (3rd Gen - Buttonless)
-    'MC164': ("iPod Shuffle", "3rd Gen", "4GB", "Silver"),
-    'MC305': ("iPod Shuffle", "3rd Gen", "4GB", "Black"),
+    # ==========================================================================
+    # iPod Shuffle — 3rd Generation (2009, Buttonless/VoiceOver)
+    # Apple Model: A1271 — Internal: D98
+    # ==========================================================================
+    'MB867': ("iPod Shuffle", "3rd Gen", "4GB", "Silver"),
+    'MC164': ("iPod Shuffle", "3rd Gen", "4GB", "Black"),
+    # Sept 2009 refresh — 2GB
     'MC306': ("iPod Shuffle", "3rd Gen", "2GB", "Silver"),
-    'MC307': ("iPod Shuffle", "3rd Gen", "2GB", "Black"),
-    'MC381': ("iPod Shuffle", "3rd Gen", "2GB", "Silver"),
-    'MC384': ("iPod Shuffle", "3rd Gen", "2GB", "Pink"),
+    'MC323': ("iPod Shuffle", "3rd Gen", "2GB", "Black"),
+    'MC381': ("iPod Shuffle", "3rd Gen", "2GB", "Green"),
+    'MC384': ("iPod Shuffle", "3rd Gen", "2GB", "Blue"),
+    'MC387': ("iPod Shuffle", "3rd Gen", "2GB", "Pink"),
+    # Sept 2009 refresh — 4GB
+    'MC303': ("iPod Shuffle", "3rd Gen", "4GB", "Stainless Steel"),
+    'MC307': ("iPod Shuffle", "3rd Gen", "4GB", "Green"),
+    'MC328': ("iPod Shuffle", "3rd Gen", "4GB", "Blue"),
+    'MC331': ("iPod Shuffle", "3rd Gen", "4GB", "Pink"),
 
-    # iPod Shuffle (4th Gen - With Buttons)
-    'MC749': ("iPod Shuffle", "4th Gen", "2GB", "Silver"),
-    'MC750': ("iPod Shuffle", "4th Gen", "2GB", "Blue"),
-    'MC751': ("iPod Shuffle", "4th Gen", "2GB", "Green"),
-    'MC752': ("iPod Shuffle", "4th Gen", "2GB", "Orange"),
-    'MC753': ("iPod Shuffle", "4th Gen", "2GB", "Pink"),
-    'MD773': ("iPod Shuffle", "4th Gen", "2GB", "Space Gray"),
-    'MD774': ("iPod Shuffle", "4th Gen", "2GB", "Silver"),
+    # ==========================================================================
+    # iPod Shuffle — 4th Generation (2010-2015)
+    # Apple Model: A1373 — Internal: N12
+    # ==========================================================================
+    # Initial (Sept 2010)
+    'MC584': ("iPod Shuffle", "4th Gen", "2GB", "Silver"),
+    'MC585': ("iPod Shuffle", "4th Gen", "2GB", "Pink"),
+    'MC749': ("iPod Shuffle", "4th Gen", "2GB", "Orange"),
+    'MC750': ("iPod Shuffle", "4th Gen", "2GB", "Green"),
+    'MC751': ("iPod Shuffle", "4th Gen", "2GB", "Blue"),
+    # Late 2012 (Rev A)
+    'MD773': ("iPod Shuffle", "4th Gen", "2GB", "Pink"),
+    'MD774': ("iPod Shuffle", "4th Gen", "2GB", "Yellow"),
     'MD775': ("iPod Shuffle", "4th Gen", "2GB", "Blue"),
-    'MD776': ("iPod Shuffle", "4th Gen", "2GB", "Pink"),
-    'MD777': ("iPod Shuffle", "4th Gen", "2GB", "Yellow"),
-    'MD778': ("iPod Shuffle", "4th Gen", "2GB", "Green"),
-    'MD779': ("iPod Shuffle", "4th Gen", "2GB", "Red"),
+    'MD776': ("iPod Shuffle", "4th Gen", "2GB", "Green"),
+    'MD777': ("iPod Shuffle", "4th Gen", "2GB", "Purple"),
+    'MD778': ("iPod Shuffle", "4th Gen", "2GB", "Silver"),
+    'MD779': ("iPod Shuffle", "4th Gen", "2GB", "Slate"),
+    'MD780': ("iPod Shuffle", "4th Gen", "2GB", "Red"),
+    'ME949': ("iPod Shuffle", "4th Gen", "2GB", "Space Gray"),
+    # Mid 2015 (Rev B)
+    'MKM72': ("iPod Shuffle", "4th Gen", "2GB", "Pink"),
+    'MKM92': ("iPod Shuffle", "4th Gen", "2GB", "Gold"),
+    'MKME2': ("iPod Shuffle", "4th Gen", "2GB", "Blue"),
+    'MKMG2': ("iPod Shuffle", "4th Gen", "2GB", "Silver"),
+    'MKMJ2': ("iPod Shuffle", "4th Gen", "2GB", "Space Gray"),
+    'MKML2': ("iPod Shuffle", "4th Gen", "2GB", "Red"),
 }
 
 
@@ -616,7 +809,9 @@ def get_friendly_model_name(model_number: Optional[str]) -> str:
 
 def get_device_info(ipod_path: str) -> dict:
     """
-    Get comprehensive device information.
+    Get comprehensive device information using multiple sources.
+
+    Falls back through: SysInfo → SysInfoExtended → USB registry → iTunesDB header.
 
     Args:
         ipod_path: Mount point of iPod
@@ -630,17 +825,6 @@ def get_device_info(ipod_path: str) -> dict:
         - checksum_type: Required checksum type
         - checksum_name: Human-readable checksum name
     """
-    try:
-        sysinfo = read_sysinfo(ipod_path)
-    except FileNotFoundError:
-        return {
-            'error': 'SysInfo not found',
-            'checksum_type': ChecksumType.NONE,
-            'checksum_name': 'None (pre-2007 or not an iPod)',
-        }
-
-    checksum_type = detect_checksum_type(ipod_path)
-
     checksum_names = {
         ChecksumType.NONE: 'None (no checksum required)',
         ChecksumType.HASH58: 'HASH58 (Nano 3G - fully supported)',
@@ -649,25 +833,101 @@ def get_device_info(ipod_path: str) -> dict:
         ChecksumType.UNKNOWN: 'Unknown (device not in database)',
     }
 
-    model_str = sysinfo.get('ModelNumStr', '')
-    model_num = _extract_model_number(model_str)
-    model_info = get_model_info(model_num)
+    # Start with SysInfo (may be empty/missing)
+    sysinfo = {}
+    try:
+        sysinfo = read_sysinfo(ipod_path)
+    except FileNotFoundError:
+        pass
 
-    return {
+    # Try SysInfo-based identification first
+    model_str = sysinfo.get('ModelNumStr', '')
+    model_num = _extract_model_number(model_str) if model_str else None
+    model_info = get_model_info(model_num) if model_num else None
+
+    serial = sysinfo.get('pszSerialNumber', '')
+    firmware = sysinfo.get('visibleBuildID', '')
+    firewire_id = sysinfo.get('FirewireGuid', '')
+
+    # If SysInfo didn't give us enough, try device scanner fallbacks
+    if not model_info:
+        try:
+            from GUI.device_scanner import (
+                _identify_via_usb_registry,
+                _identify_via_serial_lookup,
+                _identify_via_hashing_scheme,
+                _estimate_capacity_from_disk_size,
+            )
+
+            # USB registry
+            usb_info = _identify_via_usb_registry("")
+            if usb_info:
+                if not serial and usb_info.get("serial"):
+                    serial = usb_info["serial"]
+                if not firewire_id and usb_info.get("firewire_guid"):
+                    firewire_id = usb_info["firewire_guid"]
+                if not firmware and usb_info.get("firmware"):
+                    firmware = usb_info["firmware"]
+
+            # Serial → model lookup (most specific)
+            if serial:
+                serial_info = _identify_via_serial_lookup(serial)
+                if serial_info:
+                    model_num = serial_info.get("model_number", model_num)
+                    model_info = (
+                        serial_info.get("model_family", "iPod"),
+                        serial_info.get("generation", ""),
+                        serial_info.get("capacity", ""),
+                        serial_info.get("color", ""),
+                    )
+
+            # USB PID fallback
+            if not model_info and usb_info and usb_info.get("model_family"):
+                import shutil
+                try:
+                    usage = shutil.disk_usage(ipod_path)
+                    disk_gb = usage.total / (1024**3)
+                    capacity = _estimate_capacity_from_disk_size(disk_gb)
+                except OSError:
+                    capacity = ""
+                model_info = (
+                    usb_info["model_family"],
+                    usb_info.get("generation", ""),
+                    capacity,
+                    "",
+                )
+
+            # Hashing scheme fallback
+            if not model_info:
+                hash_info = _identify_via_hashing_scheme(ipod_path)
+                if hash_info and hash_info.get("model_family"):
+                    model_info = (hash_info["model_family"], hash_info.get("generation", ""), "", "")
+
+        except ImportError:
+            pass  # GUI module not available (e.g., headless use)
+
+    checksum_type = detect_checksum_type(ipod_path)
+
+    result = {
         'model': model_num,
         'model_raw': model_str,
         'model_name': model_info[0] if model_info else 'Unknown',
         'model_generation': model_info[1] if model_info else '',
         'model_capacity': model_info[2] if model_info else '',
         'model_color': model_info[3] if model_info else '',
-        'friendly_name': get_friendly_model_name(model_num),
-        'serial': sysinfo.get('pszSerialNumber', ''),
-        'firmware': sysinfo.get('visibleBuildID', ''),
+        'friendly_name': get_friendly_model_name(model_num) if model_num else (
+            f"{model_info[0]} {model_info[2]} {model_info[3]} ({model_info[1]})".strip()
+            if model_info else "iPod"
+        ),
+        'serial': serial,
+        'firmware': firmware,
         'board': sysinfo.get('BoardHwName', ''),
-        'firewire_id': sysinfo.get('FirewireGuid', ''),
+        'firewire_id': firewire_id,
         'checksum_type': checksum_type,
         'checksum_name': checksum_names.get(checksum_type, 'Unknown'),
     }
+
+    return result
 
 
 if __name__ == "__main__":

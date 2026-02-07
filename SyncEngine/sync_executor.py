@@ -21,6 +21,7 @@ from .fingerprint_diff_engine import SyncPlan, SyncItem
 from .mapping import MappingManager, MappingFile
 from .transcoder import transcode, needs_transcoding
 from .audio_fingerprint import get_or_compute_fingerprint
+from .itunes_prefs import protect_from_itunes
 
 from iTunesDB_Writer.mhit_writer import TrackInfo
 
@@ -112,9 +113,23 @@ class SyncExecutor:
         mapping: MappingFile,
         progress_callback: Optional[Callable[[SyncProgress], None]] = None,
         dry_run: bool = False,
+        is_cancelled: Optional[Callable[[], bool]] = None,
+        write_back_to_pc: bool = False,
+        aac_bitrate: int = 256,
     ) -> SyncResult:
         """
         Execute the sync plan.
+
+        Args:
+            plan: The computed sync plan.
+            mapping: The iPod mapping file.
+            progress_callback: Optional callback for progress updates.
+            dry_run: If True, simulate without making changes.
+            is_cancelled: Optional callback returning True if user cancelled.
+            write_back_to_pc: If True, write play counts and ratings back to
+                PC source files. Defaults to False for safety — users must
+                explicitly opt in to having their PC files modified.
+            aac_bitrate: Bitrate for lossy transcodes (default 256 kbps).
 
         Flow:
         1. Parse existing iTunesDB → dict[dbid, TrackInfo]
@@ -126,6 +141,27 @@ class SyncExecutor:
         7. Build final list[TrackInfo], call write_itunesdb() once
         """
         result = SyncResult(success=True)
+
+        # Store on instance so helper methods can access it
+        self._aac_bitrate = aac_bitrate
+
+        # ===== Pre-flight: Storage space check =====
+        if not dry_run and plan.storage.bytes_to_add > 0:
+            try:
+                disk = shutil.disk_usage(self.ipod_path)
+                # Need space for new files plus some buffer (10 MB for database overhead)
+                needed = plan.storage.bytes_to_add - plan.storage.bytes_to_remove + (10 * 1024 * 1024)
+                if needed > 0 and disk.free < needed:
+                    free_mb = disk.free / (1024 * 1024)
+                    need_mb = needed / (1024 * 1024)
+                    result.errors.append((
+                        "storage",
+                        f"Not enough space on iPod: {free_mb:.0f} MB free, {need_mb:.0f} MB needed"
+                    ))
+                    result.success = False
+                    return result
+            except OSError as e:
+                logger.warning(f"Could not check disk space: {e}")
 
         # Load existing tracks from iPod database
         existing_tracks_data = self._read_existing_tracks()
@@ -149,26 +185,45 @@ class SyncExecutor:
         pc_file_paths: dict[int, str] = dict(plan.matched_pc_paths)
         logger.info(f"ART: starting with {len(pc_file_paths)} matched PC paths from sync plan")
 
+        def _check_cancelled() -> bool:
+            if is_cancelled and is_cancelled():
+                result.errors.append(("cancelled", "Sync was cancelled by user"))
+                result.success = False
+                return True
+            return False
+
         # ===== Stage 1: Remove deleted tracks =====
-        self._execute_removes(plan, mapping, tracks_by_dbid, tracks_by_location, result, progress_callback, dry_run)
+        self._execute_removes(plan, mapping, tracks_by_dbid, tracks_by_location, result, progress_callback, dry_run, _check_cancelled)
+        if not result.success:
+            return result
 
         # ===== Stage 2: Update files (re-copy/transcode changed files) =====
-        self._execute_file_updates(plan, mapping, tracks_by_dbid, tracks_by_location, pc_file_paths, result, progress_callback, dry_run)
+        self._execute_file_updates(plan, mapping, tracks_by_dbid, tracks_by_location, pc_file_paths, result, progress_callback, dry_run, _check_cancelled, aac_bitrate)
+        if not result.success:
+            return result
 
         # ===== Stage 3: Update metadata =====
-        self._execute_metadata_updates(plan, mapping, tracks_by_dbid, result, progress_callback, dry_run)
+        self._execute_metadata_updates(plan, mapping, tracks_by_dbid, result, progress_callback, dry_run, _check_cancelled)
+        if not result.success:
+            return result
 
         # ===== Stage 3b: Update artwork mapping entries =====
         self._execute_artwork_updates(plan, mapping, dry_run)
 
         # ===== Stage 4: Add new tracks =====
-        self._execute_adds(plan, mapping, new_tracks, new_track_fingerprints, new_track_info, pc_file_paths, result, progress_callback, dry_run)
+        self._execute_adds(plan, mapping, new_tracks, new_track_fingerprints, new_track_info, pc_file_paths, result, progress_callback, dry_run, _check_cancelled, aac_bitrate)
+        if not result.success:
+            return result
 
         # ===== Stage 5: Sync play counts back to PC =====
-        self._execute_playcount_sync(plan, tracks_by_dbid, result, progress_callback, dry_run)
+        self._execute_playcount_sync(plan, tracks_by_dbid, result, progress_callback, dry_run, _check_cancelled, write_back_to_pc)
+        if not result.success:
+            return result
 
         # ===== Stage 6: Sync ratings =====
-        self._execute_rating_sync(plan, tracks_by_dbid, result, progress_callback, dry_run)
+        self._execute_rating_sync(plan, tracks_by_dbid, result, progress_callback, dry_run, _check_cancelled, write_back_to_pc)
+        if not result.success:
+            return result
 
         # ===== Stage 7: Write database (one shot) =====
         if not dry_run:
@@ -183,47 +238,64 @@ class SyncExecutor:
 
             logger.info(f"ART: pc_file_paths total={len(pc_file_paths)}, all_tracks={len(all_tracks)}")
 
-            if all_tracks:
+            # Always write — even if all_tracks is empty (e.g. all tracks
+            # were removed).  Skipping the write would leave the old DB
+            # intact and ghost tracks would reappear on next sync.
+            try:
+                self._write_database(all_tracks, pc_file_paths=pc_file_paths)
+                if progress_callback:
+                    progress_callback(SyncProgress("write_database", 1, 1, message=f"Database written with {len(all_tracks)} tracks"))
+
+                # ── Backpatch: new tracks now have real dbids assigned by writer ──
+                for track in new_tracks:
+                    obj_key = id(track)
+                    fp = new_track_fingerprints.get(obj_key)
+                    info = new_track_info.get(obj_key)
+                    if fp and info and track.dbid != 0:
+                        pc_track, ipod_dest, was_transcoded = info
+                        mapping.add_track(
+                            fingerprint=fp,
+                            dbid=track.dbid,
+                            source_format=Path(pc_track.path).suffix.lstrip("."),
+                            ipod_format=ipod_dest.suffix.lstrip("."),
+                            source_size=pc_track.size,
+                            source_mtime=pc_track.mtime,
+                            was_transcoded=was_transcoded,
+                            source_path_hint=pc_track.relative_path,
+                            art_hash=getattr(pc_track, "art_hash", None),
+                        )
+
+                # Save mapping ONLY after successful DB write + backpatch.
+                # If write fails, we must NOT save the mutated mapping
+                # (stages 1-6 already modified it), or the next sync will
+                # see mismatched state and create duplicates.
+                self.mapping_manager.save(mapping)
+
+                # ── Apply iTunes protections ────────────────────────────
+                # Compute totals from the final track list for the plist
+                total_bytes = sum(t.size for t in all_tracks)
+                total_secs = sum(t.length for t in all_tracks) // 1000
                 try:
-                    self._write_database(all_tracks, pc_file_paths=pc_file_paths)
-                    if progress_callback:
-                        progress_callback(SyncProgress("write_database", 1, 1, message=f"Database written with {len(all_tracks)} tracks"))
-
-                    # ── Backpatch: new tracks now have real dbids assigned by writer ──
-                    for track in new_tracks:
-                        obj_key = id(track)
-                        fp = new_track_fingerprints.get(obj_key)
-                        info = new_track_info.get(obj_key)
-                        if fp and info and track.dbid != 0:
-                            pc_track, ipod_dest, was_transcoded = info
-                            mapping.add_track(
-                                fingerprint=fp,
-                                dbid=track.dbid,
-                                source_format=Path(pc_track.path).suffix.lstrip("."),
-                                ipod_format=ipod_dest.suffix.lstrip("."),
-                                source_size=pc_track.size,
-                                source_mtime=pc_track.mtime,
-                                was_transcoded=was_transcoded,
-                                source_path_hint=pc_track.relative_path,
-                                art_hash=getattr(pc_track, "art_hash", None),
-                            )
-
-                    # Save mapping ONLY after successful DB write + backpatch.
-                    # If write fails, we must NOT save the mutated mapping
-                    # (stages 1-6 already modified it), or the next sync will
-                    # see mismatched state and create duplicates.
-                    self.mapping_manager.save(mapping)
-
+                    protect_from_itunes(
+                        self.ipod_path,
+                        track_count=len(all_tracks),
+                        total_music_bytes=total_bytes,
+                        total_music_seconds=total_secs,
+                    )
                 except Exception as e:
-                    result.errors.append(("database write", str(e)))
-                    logger.error("Database write failed — mapping NOT saved to preserve consistency")
+                    # Non-fatal — database is already written + mapping saved
+                    logger.warning("iTunesPrefs protection failed (non-fatal): %s", e)
+
+            except Exception as e:
+                result.errors.append(("database write", str(e)))
+                logger.error("Database write failed — mapping NOT saved to preserve consistency")
 
         result.success = not result.has_errors
         return result
 
     # ── Stage Implementations ───────────────────────────────────────────────
 
-    def _execute_removes(self, plan, mapping, tracks_by_dbid, tracks_by_location, result, progress_callback, dry_run):
+    def _execute_removes(self, plan, mapping, tracks_by_dbid, tracks_by_location, result, progress_callback, dry_run, check_cancelled=None):
         if not plan.to_remove:
             return
 
@@ -231,6 +303,9 @@ class SyncExecutor:
             progress_callback(SyncProgress("remove", 0, len(plan.to_remove), message="Removing tracks..."))
 
         for i, item in enumerate(plan.to_remove):
+            if check_cancelled and check_cancelled():
+                return
+
             if progress_callback:
                 progress_callback(SyncProgress("remove", i + 1, len(plan.to_remove), item, item.description))
 
@@ -267,7 +342,7 @@ class SyncExecutor:
         for fp, dbid in getattr(plan, '_stale_mapping_entries', []):
             mapping.remove_track(fp, dbid=dbid)
 
-    def _execute_file_updates(self, plan, mapping, tracks_by_dbid, tracks_by_location, pc_file_paths, result, progress_callback, dry_run):
+    def _execute_file_updates(self, plan, mapping, tracks_by_dbid, tracks_by_location, pc_file_paths, result, progress_callback, dry_run, check_cancelled=None, aac_bitrate=256):
         if not plan.to_update_file:
             return
 
@@ -275,6 +350,9 @@ class SyncExecutor:
             progress_callback(SyncProgress("update_file", 0, len(plan.to_update_file), message="Re-syncing changed files..."))
 
         for i, item in enumerate(plan.to_update_file):
+            if check_cancelled and check_cancelled():
+                return
+
             if progress_callback:
                 progress_callback(SyncProgress("update_file", i + 1, len(plan.to_update_file), item, item.description))
 
@@ -302,6 +380,7 @@ class SyncExecutor:
             need_transcode = needs_transcoding(source_path)
             success, ipod_path, was_transcoded = self._copy_to_ipod(
                 source_path, need_transcode, fingerprint=item.fingerprint,
+                aac_bitrate=aac_bitrate,
             )
 
             if not success or ipod_path is None:
@@ -333,7 +412,7 @@ class SyncExecutor:
 
                 if was_transcoded:
                     if ext in ("m4a", "aac") and ext != "alac":
-                        existing_track.bitrate = 256  # AAC transcode default
+                        existing_track.bitrate = aac_bitrate
 
                 # Refresh audio properties from PC track metadata
                 if item.pc_track.duration_ms:
@@ -363,7 +442,7 @@ class SyncExecutor:
 
             result.tracks_updated_file += 1
 
-    def _execute_metadata_updates(self, plan, mapping, tracks_by_dbid, result, progress_callback, dry_run):
+    def _execute_metadata_updates(self, plan, mapping, tracks_by_dbid, result, progress_callback, dry_run, check_cancelled=None):
         if not plan.to_update_metadata:
             return
 
@@ -371,6 +450,9 @@ class SyncExecutor:
             progress_callback(SyncProgress("update_metadata", 0, len(plan.to_update_metadata), message="Updating metadata..."))
 
         for i, item in enumerate(plan.to_update_metadata):
+            if check_cancelled and check_cancelled():
+                return
+
             if progress_callback:
                 progress_callback(SyncProgress("update_metadata", i + 1, len(plan.to_update_metadata), item, item.description))
 
@@ -449,7 +531,7 @@ class SyncExecutor:
                     art_hash=item.new_art_hash,
                 )
 
-    def _execute_adds(self, plan, mapping, new_tracks, new_track_fingerprints, new_track_info, pc_file_paths, result, progress_callback, dry_run):
+    def _execute_adds(self, plan, mapping, new_tracks, new_track_fingerprints, new_track_info, pc_file_paths, result, progress_callback, dry_run, check_cancelled=None, aac_bitrate=256):
         if not plan.to_add:
             return
 
@@ -457,6 +539,9 @@ class SyncExecutor:
             progress_callback(SyncProgress("add", 0, len(plan.to_add), message="Adding new tracks..."))
 
         for i, item in enumerate(plan.to_add):
+            if check_cancelled and check_cancelled():
+                return
+
             if progress_callback:
                 progress_callback(SyncProgress("add", i + 1, len(plan.to_add), item, item.description))
 
@@ -472,6 +557,7 @@ class SyncExecutor:
 
             success, ipod_path, was_transcoded = self._copy_to_ipod(
                 source_path, need_transcode, fingerprint=item.fingerprint,
+                aac_bitrate=aac_bitrate,
             )
 
             if not success or ipod_path is None:
@@ -500,7 +586,7 @@ class SyncExecutor:
 
             result.tracks_added += 1
 
-    def _execute_playcount_sync(self, plan, tracks_by_dbid, result, progress_callback, dry_run):
+    def _execute_playcount_sync(self, plan, tracks_by_dbid, result, progress_callback, dry_run, check_cancelled=None, write_back_to_pc=False):
         if not plan.to_sync_playcount:
             return
 
@@ -508,6 +594,9 @@ class SyncExecutor:
             progress_callback(SyncProgress("sync_playcount", 0, len(plan.to_sync_playcount), message="Syncing play counts..."))
 
         for i, item in enumerate(plan.to_sync_playcount):
+            if check_cancelled and check_cancelled():
+                return
+
             if progress_callback:
                 progress_callback(SyncProgress("sync_playcount", i + 1, len(plan.to_sync_playcount), item, item.description))
 
@@ -523,12 +612,17 @@ class SyncExecutor:
             # The mhit_writer resets playCount2 to 0, so next sync only
             # picks up genuinely new plays.
 
-            # TODO: Write play count delta back to PC file metadata
-            # (future: use mutagen PCNT/POPM for MP3, or custom tags for M4A)
+            # Write play count delta back to PC file metadata (only if user opted in)
+            if write_back_to_pc and item.pc_track and item.play_count_delta:
+                self._write_playcount_to_pc(
+                    item.pc_track.path,
+                    item.play_count_delta,
+                    item.skip_count_delta or 0,
+                )
             logger.debug(f"Play count sync: {item.description} +{item.play_count_delta} plays")
             result.playcounts_synced += 1
 
-    def _execute_rating_sync(self, plan, tracks_by_dbid, result, progress_callback, dry_run):
+    def _execute_rating_sync(self, plan, tracks_by_dbid, result, progress_callback, dry_run, check_cancelled=None, write_back_to_pc=False):
         if not plan.to_sync_rating:
             return
 
@@ -536,6 +630,9 @@ class SyncExecutor:
             progress_callback(SyncProgress("sync_rating", 0, len(plan.to_sync_rating), message="Syncing ratings..."))
 
         for i, item in enumerate(plan.to_sync_rating):
+            if check_cancelled and check_cancelled():
+                return
+
             if progress_callback:
                 progress_callback(SyncProgress("sync_rating", i + 1, len(plan.to_sync_rating), item, item.description))
 
@@ -548,8 +645,9 @@ class SyncExecutor:
             if dbid and dbid in tracks_by_dbid and item.new_rating is not None:
                 tracks_by_dbid[dbid].rating = item.new_rating
 
-            # TODO: Write rating to PC file metadata
-            # (future: use mutagen POPM for MP3, or custom atom for M4A)
+            # Write rating to PC file metadata (only if user opted in)
+            if write_back_to_pc and item.pc_track and item.new_rating is not None:
+                self._write_rating_to_pc(item.pc_track.path, item.new_rating)
             logger.debug(f"Rating sync: {item.description} → {item.new_rating}")
             result.ratings_synced += 1
 
@@ -631,6 +729,10 @@ class SyncExecutor:
             # Transcode
             result = transcode(source_path, dest_folder, aac_bitrate=aac_bitrate)
             if result.success and result.output_path:
+                # Copy metadata tags that ffmpeg may not have preserved
+                from .transcoder import copy_metadata
+                copy_metadata(source_path, result.output_path)
+
                 new_name = self._generate_ipod_filename(source_path.stem, result.output_path.suffix, dest_folder)
                 final_path = dest_folder / new_name
                 result.output_path.rename(final_path)
@@ -670,6 +772,95 @@ class SyncExecutor:
             return True
         except Exception as e:
             logger.error(f"Delete failed for {ipod_path}: {e}")
+            return False
+
+    # ── PC Write-Back ───────────────────────────────────────────────────────
+
+    def _write_playcount_to_pc(self, file_path: str, play_delta: int, skip_delta: int) -> bool:
+        """Write play count delta back to PC file metadata using mutagen.
+
+        For MP3: uses PCNT (play counter) frame.
+        For M4A/FLAC/OGG: uses custom tags.
+        """
+        try:
+            import mutagen  # type: ignore[import-untyped]
+            from mutagen.id3._frames import PCNT  # type: ignore[import-untyped]
+
+            ext = Path(file_path).suffix.lower()
+            audio = mutagen.File(file_path)  # type: ignore[attr-defined]
+            if audio is None:
+                return False
+
+            if ext == ".mp3":
+                # PCNT frame: increment existing count
+                existing = 0
+                if "PCNT" in audio.tags:
+                    existing = audio.tags["PCNT"].count
+                audio.tags.add(PCNT(count=existing + play_delta))
+                audio.save()
+            elif ext in (".m4a", ".m4p", ".aac"):
+                # Custom freeform atom for play count
+                key = "----:com.apple.iTunes:PLAY_COUNT"
+                existing = 0
+                if key in audio.tags:
+                    try:
+                        existing = int(audio.tags[key][0].decode())
+                    except (ValueError, TypeError, IndexError):
+                        pass
+                from mutagen.mp4 import MP4FreeForm  # type: ignore[import-untyped]
+                audio.tags[key] = [MP4FreeForm(str(existing + play_delta).encode())]
+                audio.save()
+            elif ext in (".flac", ".ogg", ".opus"):
+                # Vorbis comment
+                existing = 0
+                if "PLAY_COUNT" in audio.tags:
+                    try:
+                        existing = int(audio.tags["PLAY_COUNT"][0])
+                    except (ValueError, TypeError, IndexError):
+                        pass
+                audio.tags["PLAY_COUNT"] = [str(existing + play_delta)]
+                audio.save()
+
+            return True
+        except Exception as e:
+            logger.warning(f"Could not write play count to {file_path}: {e}")
+            return False
+
+    def _write_rating_to_pc(self, file_path: str, rating: int) -> bool:
+        """Write rating (0-100) to PC file metadata using mutagen.
+
+        For MP3: uses POPM (Popularimeter) frame (0-255 scale).
+        For M4A: uses 'rtng' atom (0-100 scale, same as iPod).
+        For FLAC/OGG: uses RATING vorbis comment.
+        """
+        try:
+            import mutagen  # type: ignore[import-untyped]
+
+            ext = Path(file_path).suffix.lower()
+            audio = mutagen.File(file_path)  # type: ignore[attr-defined]
+            if audio is None:
+                return False
+
+            if ext == ".mp3":
+                from mutagen.id3._frames import POPM  # type: ignore[import-untyped]
+                # Convert 0-100 to 0-255 POPM scale
+                stars = min(5, rating // 20) if rating > 0 else 0
+                popm_map = {0: 0, 1: 1, 2: 64, 3: 128, 4: 196, 5: 255}
+                popm_rating = popm_map.get(stars, 0)
+                audio.tags.add(POPM(email="iOpenPod", rating=popm_rating, count=0))
+                audio.save()
+            elif ext in (".m4a", ".m4p", ".aac"):
+                # rtng atom: stores rating directly (0-100)
+                audio.tags["rtng"] = [rating]
+                audio.save()
+            elif ext in (".flac", ".ogg", ".opus"):
+                # RATING vorbis comment (store as 0-100)
+                audio.tags["RATING"] = [str(rating)]
+                audio.save()
+
+            return True
+        except Exception as e:
+            logger.warning(f"Could not write rating to {file_path}: {e}")
             return False
 
     # ── Track Conversion ────────────────────────────────────────────────────
@@ -773,7 +964,7 @@ class SyncExecutor:
         if was_transcoded:
             if filetype == "m4a" and ext != "alac":
                 # AAC transcode — use the configured bitrate
-                bitrate = 256  # default AAC bitrate
+                bitrate = self._aac_bitrate  # user-configured AAC bitrate
             # sample_rate is typically preserved by transcoder
 
         return TrackInfo(
@@ -796,6 +987,10 @@ class SyncExecutor:
             total_discs=getattr(pc_track, "disc_total", None) or 1,
             rating=rating,
             play_count=getattr(pc_track, "play_count", 0) or 0,
+            compilation=getattr(pc_track, "compilation", False),
+            sort_artist=getattr(pc_track, "sort_artist", None),
+            sort_name=getattr(pc_track, "sort_name", None),
+            sort_album=getattr(pc_track, "sort_album", None),
         )
 
     def _write_database(

@@ -93,6 +93,14 @@ class PCTrack:
     sample_rate: Optional[int]  # Sample rate in Hz
     rating: Optional[int]  # Rating 0-100 (stars × 20, same as iPod)
 
+    # Sort tags (for proper ordering on iPod)
+    sort_artist: Optional[str] = None
+    sort_name: Optional[str] = None
+    sort_album: Optional[str] = None
+
+    # Compilation flag (Various Artists albums)
+    compilation: bool = False
+
     # Artwork hash (MD5 of embedded image bytes, for change detection)
     art_hash: Optional[str] = None
 
@@ -224,6 +232,10 @@ class PCLibrary:
             bitrate=metadata.get("bitrate"),
             sample_rate=metadata.get("sample_rate"),
             rating=metadata.get("rating"),
+            sort_artist=metadata.get("sort_artist"),
+            sort_name=metadata.get("sort_name"),
+            sort_album=metadata.get("sort_album"),
+            compilation=metadata.get("compilation", False),
             art_hash=art_hash,
             needs_transcoding=ext in NEEDS_TRANSCODING,
         )
@@ -311,6 +323,18 @@ class PCLibrary:
         """Extract from ID3 tags (MP3, AIFF, WAV)."""
         metadata = self._extract_easy(audio)
 
+        # Sort tags (TSOP = sort artist, TSOT = sort name, TSOA = sort album)
+        if hasattr(audio, 'tags') and audio.tags:
+            for frame_id, meta_key in [('TSOP', 'sort_artist'), ('TSOT', 'sort_name'), ('TSOA', 'sort_album')]:
+                frame = audio.tags.get(frame_id)
+                if frame and hasattr(frame, 'text') and frame.text:
+                    metadata[meta_key] = str(frame.text[0])
+
+            # Compilation flag (TCMP frame)
+            tcmp = audio.tags.get('TCMP')
+            if tcmp and hasattr(tcmp, 'text') and tcmp.text:
+                metadata['compilation'] = str(tcmp.text[0]) == '1'
+
         # Extract rating from POPM (Popularimeter) frame
         # POPM rating is 0-255, convert to 0-100 (iPod style: stars × 20)
         if hasattr(audio, 'tags') and audio.tags:
@@ -390,11 +414,46 @@ class PCLibrary:
                 except (ValueError, TypeError):
                     pass
 
+            # Sort tags
+            sort_map = {
+                "soar": "sort_artist",   # Sort Artist
+                "sonm": "sort_name",     # Sort Name/Title
+                "soal": "sort_album",    # Sort Album
+            }
+            for mp4_key, meta_key in sort_map.items():
+                val = audio.tags.get(mp4_key)
+                if val and len(val) > 0:
+                    metadata[meta_key] = str(val[0])
+
+            # Compilation flag
+            cpil = audio.tags.get("cpil")
+            if cpil and len(cpil) > 0:
+                metadata["compilation"] = bool(cpil[0])
+
         return metadata
 
     def _extract_vorbis(self, audio) -> dict:
         """Extract from Vorbis comments (FLAC, OGG, Opus)."""
-        return self._extract_easy(audio)
+        metadata = self._extract_easy(audio)
+
+        # Sort tags (Vorbis comment names)
+        if hasattr(audio, 'tags') and audio.tags:
+            sort_map = {
+                "artistsort": "sort_artist",
+                "titlesort": "sort_name",
+                "albumsort": "sort_album",
+            }
+            for tag_key, meta_key in sort_map.items():
+                val = audio.tags.get(tag_key)
+                if val and len(val) > 0:
+                    metadata[meta_key] = str(val[0])
+
+            # Compilation flag
+            comp = audio.tags.get("compilation")
+            if comp and len(comp) > 0:
+                metadata["compilation"] = str(comp[0]) == "1"
+
+        return metadata
 
     def _parse_track_number(self, value: str) -> dict:
         """Parse track number string like '3' or '3/12'."""

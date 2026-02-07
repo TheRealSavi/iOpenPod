@@ -198,7 +198,9 @@ def write_mhbd(
     struct.pack_into('<Q', header, 0x18, db_id)
 
     # +0x20: Platform (1 = Mac, 2 = Windows)
-    struct.pack_into('<H', header, 0x20, 2)  # Windows
+    import sys
+    platform_id = 2 if sys.platform == 'win32' else 1
+    struct.pack_into('<H', header, 0x20, platform_id)
 
     # +0x22: unk_0x22 - iTunes version indicator
     # Value 611 observed in working databases
@@ -577,17 +579,15 @@ def write_itunesdb(
         except Exception as e:
             print(f"Warning: Could not backup iTunesDB: {e}")
 
-    # Write atomically
+    # Write atomically — os.replace is atomic on NTFS and POSIX
     temp_path = itdb_path + ".tmp"
     try:
         with open(temp_path, 'wb') as f:
             f.write(itdb_data)
+            f.flush()
+            os.fsync(f.fileno())
 
-        # Replace original
-        if os.path.exists(itdb_path):
-            os.remove(itdb_path)
-        os.rename(temp_path, itdb_path)
-
+        os.replace(temp_path, itdb_path)
         return True
 
     except Exception as e:

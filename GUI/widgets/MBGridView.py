@@ -1,6 +1,6 @@
 import logging
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-from PyQt6.QtWidgets import QFrame, QGridLayout
+from PyQt6.QtWidgets import QFrame, QGridLayout, QSizePolicy
 from .MBGridViewItem import MusicBrowserGridItem
 
 log = logging.getLogger(__name__)
@@ -15,8 +15,13 @@ class MusicBrowserGrid(QFrame):
         self.gridLayout = QGridLayout(self)
         self.gridLayout.setContentsMargins(10, 10, 10, 10)
         self.gridLayout.setSpacing(12)
-        self.gridLayout.setAlignment(
-            Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        self.gridLayout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        # Allow the widget to shrink below the layout's natural minimum.
+        # Without this, QGridLayout prevents shrinking inside a QScrollArea,
+        # so resizeEvent never fires when the window gets narrower.
+        self.setMinimumWidth(0)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
 
         self.gridItems = []  # Already added items
         self.pendingItems = []  # Items waiting to be added
@@ -60,7 +65,8 @@ class MusicBrowserGrid(QFrame):
         current_load_id = self._load_id
 
         # Recalculate column count (180px item + 12px spacing)
-        self.columnCount = max(1, self.width() // (180 + 12))
+        self.columnCount = max(1, self._get_available_width() // (180 + 12))
+        self._update_margins()
 
         # Reset pendingItems for fresh load
         self.pendingItems = list(enumerate(items))
@@ -134,12 +140,33 @@ class MusicBrowserGrid(QFrame):
         """Handle grid item click."""
         self.item_selected.emit(item_data)
 
+    def _get_available_width(self) -> int:
+        """Get the available width for column calculations.
+
+        When inside a QScrollArea, the grid widget's own width may not
+        decrease (the layout minimum holds it), but the viewport always
+        reflects the actual available space.
+        """
+        parent = self.parent()
+        if parent:
+            return parent.width()
+        return self.width()
+
+    def _update_margins(self):
+        """Distribute leftover horizontal space as side padding so items stay centered."""
+        available = self._get_available_width()
+        used = self.columnCount * 180 + max(0, self.columnCount - 1) * 12
+        leftover = max(0, available - used)
+        side = leftover // 2
+        self.gridLayout.setContentsMargins(side, 10, side, 10)
+
     def rearrangeGrid(self):
         """Rearrange grid items based on the new column count without clearing them."""
         if not self.gridItems:
             return
 
-        self.columnCount = max(1, self.width() // (180 + 12))
+        self.columnCount = max(1, self._get_available_width() // (180 + 12))
+        self._update_margins()
 
         for i, gridItem in enumerate(self.gridItems):
             row = i // self.columnCount
@@ -172,8 +199,10 @@ class MusicBrowserGrid(QFrame):
         self.gridItems = []
 
     def resizeEvent(self, a0):
-        newCols = max(1, self.width() // (180 + 12))
+        newCols = max(1, self._get_available_width() // (180 + 12))
         if self.columnCount != newCols:
             self.rearrangeGrid()
+        else:
+            self._update_margins()
 
         super().resizeEvent(a0)

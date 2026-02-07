@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
     QDialogButtonBox, QSplitter
 )
 from PyQt6.QtGui import QFont, QColor, QBrush
+from pathlib import Path
 
 from SyncEngine.fingerprint_diff_engine import SyncPlan, SyncItem, SyncAction, FingerprintDiffEngine
 from SyncEngine.pc_library import PCLibrary
@@ -74,9 +75,15 @@ class SyncExecuteWorker(QThread):
         try:
             from SyncEngine.sync_executor import SyncExecutor, SyncProgress
             from SyncEngine.mapping import MappingManager
+            from ..settings import get_settings
+
+            settings = get_settings()
+
+            # Use custom transcode cache dir if configured
+            cache_dir = Path(settings.transcode_cache_dir) if settings.transcode_cache_dir else None
 
             # Initialize executor
-            executor = SyncExecutor(self.ipod_path)
+            executor = SyncExecutor(self.ipod_path, cache_dir=cache_dir)
 
             # Load mapping file (load() returns empty MappingFile if doesn't exist)
             mapping_manager = MappingManager(self.ipod_path)
@@ -92,6 +99,9 @@ class SyncExecuteWorker(QThread):
                 mapping=mapping,
                 progress_callback=on_progress,
                 dry_run=False,
+                is_cancelled=self.isInterruptionRequested,
+                write_back_to_pc=settings.write_back_to_pc,
+                aac_bitrate=settings.aac_bitrate,
             )
 
             self.finished.emit(result)
@@ -817,6 +827,7 @@ class SyncReviewWidget(QWidget):
         "scan_pc": "Scanning PC library",
         "scan_ipod": "Scanning iPod library",
         "load_mapping": "Loading iPod mapping",
+        "integrity": "Checking iPod integrity",
         "fingerprint": "Computing fingerprints",
         "duplicates": "Checking for duplicates",
         "diff": "Comparing libraries",
@@ -891,6 +902,10 @@ class SyncReviewWidget(QWidget):
                 stats = f"{plan.total_pc_tracks} PC tracks · {plan.total_ipod_tracks} iPod tracks · {stats}"
             if plan.fingerprint_errors:
                 stats += f" · <span style='color: #c8a040;'>{len(plan.fingerprint_errors)} files skipped (fingerprint errors)</span>"
+            ir = plan.integrity_report
+            if ir and not ir.is_clean:
+                fixes = len(ir.missing_files) + len(ir.stale_mappings) + len(ir.orphan_files)
+                stats += f" · <span style='color: #64b4e6;'>🔧 {fixes} integrity fixes applied</span>"
             self.summary_label.setText(stats)
             self.summary_label.setTextFormat(Qt.TextFormat.RichText)
             self.empty_stats.setText(stats)
@@ -933,6 +948,60 @@ class SyncReviewWidget(QWidget):
 
         self.summary_label.setText(summary_text)
         self.summary_label.setTextFormat(Qt.TextFormat.RichText)
+
+        # Show integrity fixes at top if any were found
+        ir = plan.integrity_report
+        if ir and not ir.is_clean:
+            fix_count = len(ir.missing_files) + len(ir.stale_mappings) + len(ir.orphan_files)
+            header = SyncCategoryHeader("🔧", "Integrity Fixes (auto-repaired)", fix_count)
+            header.setFlags(header.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
+            header.setCheckState(0, Qt.CheckState.Unchecked)
+            for i in range(6):
+                header.setForeground(i, QBrush(QColor(100, 180, 230)))
+            self.tree.addTopLevelItem(header)
+
+            if ir.missing_files:
+                for track in ir.missing_files:
+                    child = QTreeWidgetItem(header)
+                    child.setFlags(child.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
+                    child.setText(1, track.get("Title", "Unknown"))
+                    child.setText(2, track.get("Artist", "Unknown"))
+                    child.setText(3, track.get("Album", "Unknown"))
+                    child.setText(4, "File missing from iPod")
+                    for ci in range(6):
+                        child.setForeground(ci, QBrush(QColor(100, 180, 230)))
+
+            if ir.stale_mappings:
+                for fp, dbid in ir.stale_mappings:
+                    child = QTreeWidgetItem(header)
+                    child.setFlags(child.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
+                    child.setText(1, f"Stale mapping (dbid={dbid})")
+                    child.setText(4, "Removed from mapping")
+                    for ci in range(6):
+                        child.setForeground(ci, QBrush(QColor(100, 180, 230)))
+
+            if ir.orphan_files:
+                orphan_bytes = 0
+                for orphan in ir.orphan_files[:20]:
+                    try:
+                        orphan_bytes += orphan.stat().st_size
+                    except OSError:
+                        pass
+                    child = QTreeWidgetItem(header)
+                    child.setFlags(child.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
+                    child.setText(1, orphan.name)
+                    child.setText(4, "Orphan file deleted")
+                    child.setToolTip(1, str(orphan))
+                    for ci in range(6):
+                        child.setForeground(ci, QBrush(QColor(100, 180, 230)))
+                if len(ir.orphan_files) > 20:
+                    overflow = QTreeWidgetItem(header)
+                    overflow.setFlags(overflow.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
+                    overflow.setText(1, f"...and {len(ir.orphan_files) - 20} more")
+                    for ci in range(6):
+                        overflow.setForeground(ci, QBrush(QColor(100, 180, 230)))
+
+            header.setExpanded(False)
 
         # Add categories to tree
         if plan.to_add:
@@ -1050,16 +1119,16 @@ class SyncReviewWidget(QWidget):
 
             err_header.setExpanded(False)
 
-        # Show duplicate files (BLOCKING - must be resolved before sync)
+        # Show duplicate files (informational - first file from each group is synced)
         if plan.duplicates:
             dup_count = plan.duplicate_count
-            header = SyncCategoryHeader("🚫", f"DUPLICATES BLOCKING SYNC ({len(plan.duplicates)} groups, {dup_count} extra files)", 0)
+            header = SyncCategoryHeader("⚠️", f"Duplicates ({len(plan.duplicates)} groups, {dup_count} extra files skipped)", 0)
             # Remove checkbox from duplicates header - it's info only
             header.setFlags(header.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
             header.setCheckState(0, Qt.CheckState.Unchecked)  # Clear any checkbox state
-            # Red color to indicate blocking
+            # Yellow/orange color for informational warning
             for i in range(6):
-                header.setForeground(i, QBrush(QColor(255, 100, 100)))
+                header.setForeground(i, QBrush(QColor(230, 180, 80)))
             self.tree.addTopLevelItem(header)
 
             for fingerprint, tracks in plan.duplicates.items():
@@ -1069,17 +1138,11 @@ class SyncReviewWidget(QWidget):
                     group_header.addChild(DuplicateItemWidget(track))
                 group_header.setExpanded(False)  # Collapsed by default
 
-            header.setExpanded(True)  # Show duplicates expanded since they're blocking
+            header.setExpanded(False)  # Collapsed by default since non-blocking
 
         self._update_selection_count()
-
-        # Disable sync if duplicates exist
-        if plan.duplicates:
-            self.apply_btn.setEnabled(False)
-            self.apply_btn.setToolTip("Resolve duplicate files before syncing")
-        else:
-            self.apply_btn.setEnabled(True)
-            self.apply_btn.setToolTip("")
+        self.apply_btn.setEnabled(True)
+        self.apply_btn.setToolTip("")
 
     def show_executing(self):
         """Show executing state - similar to loading but for sync execution."""

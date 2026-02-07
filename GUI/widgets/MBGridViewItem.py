@@ -211,6 +211,10 @@ class MusicBrowserGridItem(QFrame):
                 border-radius: 8px;
             """)
 
+            # Store dominant color in item_data for downstream use
+            if dcol:
+                self.item_data["dominant_color"] = dcol
+
             # Tint background with dominant color
             if dcol:
                 r, g, b = dcol

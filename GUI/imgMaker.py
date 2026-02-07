@@ -156,14 +156,14 @@ def getDominantColor(image):
 
     r, g, b = best_color
 
-    # Boost saturation and brightness for a more vivid result
+    # Boost saturation and brightness for a vivid, punchy result
     h, s, v = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
 
     # Aggressively increase saturation
-    s = min(1.0, s * 2.0 + 0.25)
+    s = min(1.0, s * 2.2 + 0.3)
 
     # Boost brightness significantly
-    v = max(0.5, min(0.95, v * 1.6 + 0.15))
+    v = max(0.55, min(0.97, v * 1.8 + 0.2))
 
     # Convert back to RGB
     r, g, b = colorsys.hsv_to_rgb(h, s, v)
