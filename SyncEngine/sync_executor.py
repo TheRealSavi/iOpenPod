@@ -14,6 +14,8 @@ The database is always fully rewritten (not patched incrementally).
 
 import logging
 import shutil
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed, Future
 from pathlib import Path
 from typing import Optional, Callable
 from dataclasses import dataclass, field
@@ -95,7 +97,8 @@ class SyncExecutor:
         result = executor.execute(plan, mapping, progress_callback)
     """
 
-    def __init__(self, ipod_path: str | Path, cache_dir: Optional[Path] = None):
+    def __init__(self, ipod_path: str | Path, cache_dir: Optional[Path] = None,
+                 max_workers: int = 0):
         from .transcode_cache import TranscodeCache
 
         self.ipod_path = Path(ipod_path)
@@ -104,6 +107,14 @@ class SyncExecutor:
         self.transcode_cache = TranscodeCache(cache_dir)
 
         self._folder_counter = 0
+        self._folder_lock = threading.Lock()
+
+        # 0 = auto (CPU count, capped at 8), 1 = sequential
+        import os
+        if max_workers <= 0:
+            self._max_workers = min(os.cpu_count() or 4, 8)
+        else:
+            self._max_workers = max_workers
 
     # ── Public API ──────────────────────────────────────────────────────────
 
@@ -349,98 +360,137 @@ class SyncExecutor:
         if progress_callback:
             progress_callback(SyncProgress("update_file", 0, len(plan.to_update_file), message="Re-syncing changed files..."))
 
-        for i, item in enumerate(plan.to_update_file):
-            if check_cancelled and check_cancelled():
-                return
-
-            if progress_callback:
-                progress_callback(SyncProgress("update_file", i + 1, len(plan.to_update_file), item, item.description))
-
-            if dry_run:
+        if dry_run:
+            for i, item in enumerate(plan.to_update_file):
+                if check_cancelled and check_cancelled():
+                    return
+                if progress_callback:
+                    progress_callback(SyncProgress("update_file", i + 1, len(plan.to_update_file), item, item.description))
                 result.tracks_updated_file += 1
-                continue
+            return
 
+        # Pre-process: delete old files and invalidate cache (sequential, fast)
+        for item in plan.to_update_file:
             if item.pc_track is None:
                 continue
-
-            # Delete old file
             if item.ipod_track:
                 file_path = item.ipod_track.get("Location") or item.ipod_track.get("location")
                 if file_path:
                     relative_path = file_path.replace(":", "/").lstrip("/")
                     full_path = self.ipod_path / relative_path
                     self._delete_from_ipod(full_path)
-
-            # Invalidate cache entry
             if item.fingerprint:
                 self.transcode_cache.invalidate(item.fingerprint)
 
-            # Copy/transcode new file
+        # ── Parallel transcode/copy ─────────────────────────────────────
+        items_to_process = [(i, item) for i, item in enumerate(plan.to_update_file) if item.pc_track is not None]
+        if not items_to_process:
+            return
+
+        completed_count = 0
+        completed_lock = threading.Lock()
+        total = len(plan.to_update_file)
+
+        def _do_copy(item: SyncItem) -> tuple[SyncItem, bool, Optional[Path], bool]:
+            """Transcode/copy a single track. Runs in worker thread."""
             source_path = Path(item.pc_track.path)
             need_transcode = needs_transcoding(source_path)
             success, ipod_path, was_transcoded = self._copy_to_ipod(
                 source_path, need_transcode, fingerprint=item.fingerprint,
                 aac_bitrate=aac_bitrate,
             )
+            return (item, success, ipod_path, was_transcoded)
 
-            if not success or ipod_path is None:
-                result.errors.append((item.description, "Failed to re-sync"))
-                continue
+        workers = self._max_workers
+        logger.info(f"Re-syncing {len(items_to_process)} files with {workers} workers")
 
-            ipod_location = ":" + str(ipod_path.relative_to(self.ipod_path)).replace("\\", ":").replace("/", ":")
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            future_to_idx: dict[Future, int] = {}
+            for idx, item in items_to_process:
+                if check_cancelled and check_cancelled():
+                    return
+                fut = pool.submit(_do_copy, item)
+                future_to_idx[fut] = idx
 
-            # Update existing TrackInfo
-            dbid = item.dbid
-            if dbid and dbid in tracks_by_dbid:
-                existing_track = tracks_by_dbid[dbid]
-                if existing_track.location in tracks_by_location:
-                    del tracks_by_location[existing_track.location]
-                existing_track.location = ipod_location
-                # Use actual iPod file size (not PC source size — may differ after transcode)
-                existing_track.size = ipod_path.stat().st_size if ipod_path.exists() else item.pc_track.size
+            for future in as_completed(future_to_idx):
+                if check_cancelled and check_cancelled():
+                    for f in future_to_idx:
+                        f.cancel()
+                    return
 
-                # Update filetype based on the actual file now on iPod
-                ext = ipod_path.suffix.lower().lstrip(".")
-                if ext in ("m4a", "mp4"):
-                    existing_track.filetype = "m4a"
-                elif ext == "mp3":
-                    existing_track.filetype = "mp3"
-                elif ext == "wav":
-                    existing_track.filetype = "wav"
-                else:
-                    existing_track.filetype = ext
+                idx = future_to_idx[future]
+                try:
+                    item, success, ipod_path, was_transcoded = future.result()
+                except Exception as e:
+                    item = plan.to_update_file[idx]
+                    result.errors.append((item.description, f"Worker error: {e}"))
+                    logger.error(f"Worker exception for {item.description}: {e}")
+                    with completed_lock:
+                        completed_count += 1
+                    if progress_callback:
+                        progress_callback(SyncProgress("update_file", completed_count, total, item, item.description))
+                    continue
 
-                if was_transcoded:
-                    if ext in ("m4a", "aac") and ext != "alac":
-                        existing_track.bitrate = aac_bitrate
+                with completed_lock:
+                    completed_count += 1
 
-                # Refresh audio properties from PC track metadata
-                if item.pc_track.duration_ms:
-                    existing_track.length = item.pc_track.duration_ms
-                if item.pc_track.sample_rate:
-                    existing_track.sample_rate = item.pc_track.sample_rate
+                if progress_callback:
+                    progress_callback(SyncProgress("update_file", completed_count, total, item, item.description))
 
-                tracks_by_location[ipod_location] = existing_track
+                if not success or ipod_path is None:
+                    result.errors.append((item.description, "Failed to re-sync"))
+                    continue
 
-            # Update PC path for artwork
-            if dbid:
-                pc_file_paths[dbid] = str(source_path)
+                ipod_location = ":" + str(ipod_path.relative_to(self.ipod_path)).replace("\\", ":").replace("/", ":")
+                source_path = Path(item.pc_track.path)
 
-            # Update mapping
-            if item.fingerprint and ipod_path:
-                mapping.add_track(
-                    fingerprint=item.fingerprint,
-                    dbid=dbid or 0,
-                    source_format=source_path.suffix.lstrip("."),
-                    ipod_format=ipod_path.suffix.lstrip("."),
-                    source_size=item.pc_track.size,
-                    source_mtime=item.pc_track.mtime,
-                    was_transcoded=was_transcoded,
-                    source_path_hint=item.pc_track.relative_path,
-                    art_hash=getattr(item.pc_track, "art_hash", None),
-                )
+                # Update existing TrackInfo
+                dbid = item.dbid
+                if dbid and dbid in tracks_by_dbid:
+                    existing_track = tracks_by_dbid[dbid]
+                    if existing_track.location in tracks_by_location:
+                        del tracks_by_location[existing_track.location]
+                    existing_track.location = ipod_location
+                    existing_track.size = ipod_path.stat().st_size if ipod_path.exists() else item.pc_track.size
 
-            result.tracks_updated_file += 1
+                    ext = ipod_path.suffix.lower().lstrip(".")
+                    if ext in ("m4a", "mp4"):
+                        existing_track.filetype = "m4a"
+                    elif ext == "mp3":
+                        existing_track.filetype = "mp3"
+                    elif ext == "wav":
+                        existing_track.filetype = "wav"
+                    else:
+                        existing_track.filetype = ext
+
+                    if was_transcoded:
+                        if ext in ("m4a", "aac") and ext != "alac":
+                            existing_track.bitrate = aac_bitrate
+
+                    if item.pc_track.duration_ms:
+                        existing_track.length = item.pc_track.duration_ms
+                    if item.pc_track.sample_rate:
+                        existing_track.sample_rate = item.pc_track.sample_rate
+
+                    tracks_by_location[ipod_location] = existing_track
+
+                if dbid:
+                    pc_file_paths[dbid] = str(source_path)
+
+                if item.fingerprint and ipod_path:
+                    mapping.add_track(
+                        fingerprint=item.fingerprint,
+                        dbid=dbid or 0,
+                        source_format=source_path.suffix.lstrip("."),
+                        ipod_format=ipod_path.suffix.lstrip("."),
+                        source_size=item.pc_track.size,
+                        source_mtime=item.pc_track.mtime,
+                        was_transcoded=was_transcoded,
+                        source_path_hint=item.pc_track.relative_path,
+                        art_hash=getattr(item.pc_track, "art_hash", None),
+                    )
+
+                result.tracks_updated_file += 1
 
     def _execute_metadata_updates(self, plan, mapping, tracks_by_dbid, result, progress_callback, dry_run, check_cancelled=None):
         if not plan.to_update_metadata:
@@ -538,53 +588,102 @@ class SyncExecutor:
         if progress_callback:
             progress_callback(SyncProgress("add", 0, len(plan.to_add), message="Adding new tracks..."))
 
-        for i, item in enumerate(plan.to_add):
-            if check_cancelled and check_cancelled():
-                return
+        if dry_run:
+            for i, item in enumerate(plan.to_add):
+                if check_cancelled and check_cancelled():
+                    return
+                if progress_callback:
+                    progress_callback(SyncProgress("add", i + 1, len(plan.to_add), item, item.description))
+                if item.pc_track is not None:
+                    result.tracks_added += 1
+            return
 
-            if progress_callback:
-                progress_callback(SyncProgress("add", i + 1, len(plan.to_add), item, item.description))
+        # ── Parallel transcode/copy ─────────────────────────────────────
+        # Submit all copy/transcode jobs to a thread pool, then process
+        # results sequentially for metadata, mapping, and progress updates.
 
-            if item.pc_track is None:
-                continue
+        items_to_process = [(i, item) for i, item in enumerate(plan.to_add) if item.pc_track is not None]
+        if not items_to_process:
+            return
 
-            if dry_run:
-                result.tracks_added += 1
-                continue
+        completed_count = 0
+        completed_lock = threading.Lock()
+        total = len(plan.to_add)
 
+        def _do_copy(item: SyncItem) -> tuple[SyncItem, bool, Optional[Path], bool]:
+            """Transcode/copy a single track. Runs in worker thread."""
             source_path = Path(item.pc_track.path)
             need_transcode = needs_transcoding(source_path)
-
             success, ipod_path, was_transcoded = self._copy_to_ipod(
                 source_path, need_transcode, fingerprint=item.fingerprint,
                 aac_bitrate=aac_bitrate,
             )
+            return (item, success, ipod_path, was_transcoded)
 
-            if not success or ipod_path is None:
-                result.errors.append((item.description, "Failed to copy/transcode"))
-                continue
+        workers = self._max_workers
+        logger.info(f"Adding {len(items_to_process)} tracks with {workers} workers")
 
-            ipod_location = ":" + str(ipod_path.relative_to(self.ipod_path)).replace("\\", ":").replace("/", ":")
-            track_info = self._pc_track_to_info(item.pc_track, ipod_location, was_transcoded, ipod_file_path=ipod_path)
-            new_tracks.append(track_info)
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            # Submit all jobs
+            future_to_idx: dict[Future, int] = {}
+            for idx, item in items_to_process:
+                if check_cancelled and check_cancelled():
+                    return
+                fut = pool.submit(_do_copy, item)
+                future_to_idx[fut] = idx
 
-            # Track PC path for artwork extraction (keyed by obj id since dbid=0)
-            pc_file_paths[id(track_info)] = str(source_path)
+            # Process results as they complete
+            for future in as_completed(future_to_idx):
+                if check_cancelled and check_cancelled():
+                    # Cancel pending futures
+                    for f in future_to_idx:
+                        f.cancel()
+                    return
 
-            # Update mapping
-            fingerprint = item.fingerprint
-            if not fingerprint:
-                fingerprint = get_or_compute_fingerprint(source_path)
+                idx = future_to_idx[future]
+                try:
+                    item, success, ipod_path, was_transcoded = future.result()
+                except Exception as e:
+                    item = plan.to_add[idx]
+                    result.errors.append((item.description, f"Worker error: {e}"))
+                    logger.error(f"Worker exception for {item.description}: {e}")
+                    with completed_lock:
+                        completed_count += 1
+                    if progress_callback:
+                        progress_callback(SyncProgress("add", completed_count, total, item, item.description))
+                    continue
 
-            # Remember fingerprint for this track so we can backpatch the real dbid later
-            if fingerprint:
-                new_track_fingerprints[id(track_info)] = fingerprint
-                new_track_info[id(track_info)] = (item.pc_track, ipod_path, was_transcoded)
+                with completed_lock:
+                    completed_count += 1
 
-            # Note: mapping entry is NOT created here yet — dbid=0 is useless.
-            # Entry will be created after _write_database() assigns real dbids.
+                if progress_callback:
+                    progress_callback(SyncProgress("add", completed_count, total, item, item.description))
 
-            result.tracks_added += 1
+                if not success or ipod_path is None:
+                    result.errors.append((item.description, "Failed to copy/transcode"))
+                    continue
+
+                ipod_location = ":" + str(ipod_path.relative_to(self.ipod_path)).replace("\\", ":").replace("/", ":")
+                track_info = self._pc_track_to_info(item.pc_track, ipod_location, was_transcoded, ipod_file_path=ipod_path)
+                new_tracks.append(track_info)
+
+                # Track PC path for artwork extraction (keyed by obj id since dbid=0)
+                pc_file_paths[id(track_info)] = str(item.pc_track.path)
+
+                # Update mapping
+                fingerprint = item.fingerprint
+                if not fingerprint:
+                    fingerprint = get_or_compute_fingerprint(Path(item.pc_track.path))
+
+                # Remember fingerprint for this track so we can backpatch the real dbid later
+                if fingerprint:
+                    new_track_fingerprints[id(track_info)] = fingerprint
+                    new_track_info[id(track_info)] = (item.pc_track, ipod_path, was_transcoded)
+
+                # Note: mapping entry is NOT created here yet — dbid=0 is useless.
+                # Entry will be created after _write_database() assigns real dbids.
+
+                result.tracks_added += 1
 
     def _execute_playcount_sync(self, plan, tracks_by_dbid, result, progress_callback, dry_run, check_cancelled=None, write_back_to_pc=False):
         if not plan.to_sync_playcount:
@@ -654,9 +753,10 @@ class SyncExecutor:
     # ── File Operations ─────────────────────────────────────────────────────
 
     def _get_next_music_folder(self) -> Path:
-        """Get next music folder (F00-F49) using round-robin."""
-        folder_name = f"F{self._folder_counter:02d}"
-        self._folder_counter = (self._folder_counter + 1) % 50
+        """Get next music folder (F00-F49) using round-robin. Thread-safe."""
+        with self._folder_lock:
+            folder_name = f"F{self._folder_counter:02d}"
+            self._folder_counter = (self._folder_counter + 1) % 50
         folder = self.music_dir / folder_name
         folder.mkdir(parents=True, exist_ok=True)
         return folder

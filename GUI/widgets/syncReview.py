@@ -83,7 +83,8 @@ class SyncExecuteWorker(QThread):
             cache_dir = Path(settings.transcode_cache_dir) if settings.transcode_cache_dir else None
 
             # Initialize executor
-            executor = SyncExecutor(self.ipod_path, cache_dir=cache_dir)
+            executor = SyncExecutor(self.ipod_path, cache_dir=cache_dir,
+                                    max_workers=settings.sync_workers)
 
             # Load mapping file (load() returns empty MappingFile if doesn't exist)
             mapping_manager = MappingManager(self.ipod_path)

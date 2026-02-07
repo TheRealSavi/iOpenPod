@@ -17,6 +17,7 @@ import json
 import hashlib
 import logging
 import shutil
+import threading
 from pathlib import Path
 from typing import Optional
 from dataclasses import dataclass, asdict
@@ -147,6 +148,7 @@ class TranscodeCache:
         self.cache_dir = cache_dir or DEFAULT_CACHE_DIR
         self.files_dir = self.cache_dir / "files"
         self.index_path = self.cache_dir / "index.json"
+        self._lock = threading.Lock()
 
         # Ensure directories exist
         self.files_dir.mkdir(parents=True, exist_ok=True)
@@ -207,35 +209,36 @@ class TranscodeCache:
         Returns:
             Path to cached file, or None if not cached/invalid
         """
-        cached = self._index.get(fingerprint, target_format, bitrate)
-        if cached is None:
-            return None
+        with self._lock:
+            cached = self._index.get(fingerprint, target_format, bitrate)
+            if cached is None:
+                return None
 
-        # Check if cached file exists
-        cached_path = self.files_dir / cached.filename
-        if not cached_path.exists():
-            logger.debug(f"Cached file missing: {cached.filename}")
-            self._index.remove(fingerprint, target_format, bitrate)
-            self._save_index()
-            return None
+            # Check if cached file exists
+            cached_path = self.files_dir / cached.filename
+            if not cached_path.exists():
+                logger.debug(f"Cached file missing: {cached.filename}")
+                self._index.remove(fingerprint, target_format, bitrate)
+                self._save_index()
+                return None
 
-        # Validate source hasn't changed (if source_size provided)
-        if source_size is not None and cached.source_size != source_size:
-            logger.debug(
-                f"Source size changed: {cached.source_size} → {source_size}, invalidating cache"
-            )
-            # Clean up the stale entry and file
-            self._index.remove(fingerprint, target_format, bitrate)
-            if cached_path.exists():
-                try:
-                    cached_path.unlink()
-                except Exception:
-                    pass
-            self._save_index()
-            return None
+            # Validate source hasn't changed (if source_size provided)
+            if source_size is not None and cached.source_size != source_size:
+                logger.debug(
+                    f"Source size changed: {cached.source_size} → {source_size}, invalidating cache"
+                )
+                # Clean up the stale entry and file
+                self._index.remove(fingerprint, target_format, bitrate)
+                if cached_path.exists():
+                    try:
+                        cached_path.unlink()
+                    except Exception:
+                        pass
+                self._save_index()
+                return None
 
-        logger.debug(f"Cache hit: {fingerprint[:20]}... → {cached.filename}")
-        return cached_path
+            logger.debug(f"Cache hit: {fingerprint[:20]}... → {cached.filename}")
+            return cached_path
 
     def add(
         self,
@@ -283,8 +286,9 @@ class TranscodeCache:
                 source_size=source_size,
                 bitrate=bitrate,
             )
-            self._index.add(cached_file)
-            self._save_index()
+            with self._lock:
+                self._index.add(cached_file)
+                self._save_index()
 
             logger.info(f"Cached: {fingerprint[:20]}... → {filename}")
             return cached_path
@@ -343,25 +347,26 @@ class TranscodeCache:
         count = 0
         keys_to_remove = []
 
-        for key, cached in self._index.files.items():
-            if cached.fingerprint == fingerprint:
-                if target_format is None or cached.target_format == target_format:
-                    keys_to_remove.append(key)
+        with self._lock:
+            for key, cached in self._index.files.items():
+                if cached.fingerprint == fingerprint:
+                    if target_format is None or cached.target_format == target_format:
+                        keys_to_remove.append(key)
 
-        for key in keys_to_remove:
-            cached = self._index.files[key]
-            cached_path = self.files_dir / cached.filename
-            if cached_path.exists():
-                try:
-                    cached_path.unlink()
-                except Exception as e:
-                    logger.warning(f"Failed to delete cached file: {e}")
-            del self._index.files[key]
-            count += 1
+            for key in keys_to_remove:
+                cached = self._index.files[key]
+                cached_path = self.files_dir / cached.filename
+                if cached_path.exists():
+                    try:
+                        cached_path.unlink()
+                    except Exception as e:
+                        logger.warning(f"Failed to delete cached file: {e}")
+                del self._index.files[key]
+                count += 1
 
-        if count > 0:
-            self._save_index()
-            logger.info(f"Invalidated {count} cached entries for {fingerprint[:20]}...")
+            if count > 0:
+                self._save_index()
+                logger.info(f"Invalidated {count} cached entries for {fingerprint[:20]}...")
 
         return count
 
