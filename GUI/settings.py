@@ -87,6 +87,10 @@ class AppSettings:
     # FFmpeg timeout in seconds per file.
     transcode_timeout: int = 300
 
+    # Number of parallel transcode/copy workers.
+    # 0 = auto (CPU count), 1 = sequential (legacy behaviour).
+    sync_workers: int = 0
+
     # ── Library ─────────────────────────────────────────────────────────────
     # Last selected iPod device path (remembered between sessions)
     last_device_path: str = ""

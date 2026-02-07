@@ -32,6 +32,8 @@ from typing import Optional, Callable
 from enum import Enum, auto
 from pathlib import Path
 import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .pc_library import PCLibrary, PCTrack
 from .audio_fingerprint import get_or_compute_fingerprint, is_fpcalc_available
@@ -356,17 +358,45 @@ class FingerprintDiffEngine:
         pc_by_fp: dict[str, list[PCTrack]] = {}
         seen_fps: set[str] = set()
 
-        for i, track in enumerate(pc_tracks):
-            if progress_callback:
-                progress_callback("fingerprint", i + 1, len(pc_tracks), track.filename)
+        # Parallel fingerprinting — fpcalc is a subprocess so threading
+        # scales well.  Respect the user's sync_workers setting.
+        import os
+        try:
+            from GUI.settings import get_settings
+            _sw = get_settings().sync_workers
+            fp_workers = min(_sw or (os.cpu_count() or 4), 8)
+        except Exception:
+            fp_workers = min(os.cpu_count() or 4, 8)
 
+        completed = 0
+        completed_lock = threading.Lock()
+        total = len(pc_tracks)
+
+        def _fingerprint_one(track: PCTrack) -> tuple[PCTrack, Optional[str]]:
             fp = get_or_compute_fingerprint(track.path, write_to_file=write_fingerprints)
-            if not fp:
-                plan.fingerprint_errors.append((track.path, "Could not compute fingerprint"))
-                continue
+            return (track, fp)
 
-            pc_by_fp.setdefault(fp, []).append(track)
-            seen_fps.add(fp)
+        logger.info(f"Fingerprinting {total} tracks with {fp_workers} workers")
+
+        with ThreadPoolExecutor(max_workers=fp_workers) as pool:
+            futures = {pool.submit(_fingerprint_one, t): t for t in pc_tracks}
+
+            for future in as_completed(futures):
+                with completed_lock:
+                    completed += 1
+                    current = completed
+
+                track, fp = future.result()
+
+                if progress_callback:
+                    progress_callback("fingerprint", current, total, track.filename)
+
+                if not fp:
+                    plan.fingerprint_errors.append((track.path, "Could not compute fingerprint"))
+                    continue
+
+                pc_by_fp.setdefault(fp, []).append(track)
+                seen_fps.add(fp)
 
         # ===== Phase 2: Group by identity (fingerprint + album) =====
         # Same fingerprint + same album = true duplicate (pick one, report rest)

@@ -319,6 +319,15 @@ class SettingsPage(QWidget):
         )
         layout.addWidget(self.transcode_timeout)
 
+        self.sync_workers = ComboRow(
+            "Parallel Workers",
+            "Number of files to transcode/copy simultaneously. "
+            "Auto uses your CPU core count (capped at 8). More workers = faster syncs with many transcodes.",
+            options=["Auto", "1", "2", "4", "6", "8"],
+            current="Auto",
+        )
+        layout.addWidget(self.sync_workers)
+
         # ── APPEARANCE section ──────────────────────────────────────────────
         layout.addWidget(self._section_label("APPEARANCE"))
 
@@ -402,11 +411,19 @@ class SettingsPage(QWidget):
         if idx >= 0:
             self.transcode_timeout.combo.setCurrentIndex(idx)
 
+        # Sync workers → combo text
+        workers_map = {0: "Auto", 1: "1", 2: "2", 4: "4", 6: "6", 8: "8"}
+        sw_text = workers_map.get(s.sync_workers, "Auto")
+        idx = self.sync_workers.combo.findText(sw_text)
+        if idx >= 0:
+            self.sync_workers.combo.setCurrentIndex(idx)
+
         # Connect signals to auto-save
         self.music_folder.changed.connect(self._save)
         self.write_back.changed.connect(self._save)
         self.aac_bitrate.changed.connect(self._save)
         self.transcode_timeout.changed.connect(self._save)
+        self.sync_workers.changed.connect(self._save)
         self.show_art.changed.connect(self._save)
         self.transcode_cache_dir.changed.connect(self._save)
         self.settings_dir.changed.connect(self._save)
@@ -430,6 +447,10 @@ class SettingsPage(QWidget):
         tt_text = self.transcode_timeout.value
         timeout_values = {"2 minutes": 120, "5 minutes": 300, "10 minutes": 600, "30 minutes": 1800}
         s.transcode_timeout = timeout_values.get(tt_text, 300)
+
+        # Parse sync workers
+        sw_text = self.sync_workers.value
+        s.sync_workers = int(sw_text) if sw_text and sw_text != "Auto" else 0
 
         s.save()
 
