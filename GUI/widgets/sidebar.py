@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtGui import QFont
 from .formatters import format_size, format_duration_human as format_duration
 from ..ipod_images import get_ipod_image
+from ..styles import Colors, Metrics, btn_css, accent_btn_css
 
 
 class StatWidget(QWidget):
@@ -16,17 +17,17 @@ class StatWidget(QWidget):
         self.setStyleSheet("background: transparent; border: none;")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        layout.setSpacing(1)
 
         self.value_label = QLabel(value)
-        self.value_label.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
-        self.value_label.setStyleSheet("color: white; background: transparent; border: none;")
+        self.value_label.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
+        self.value_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent; border: none;")
         self.value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.value_label)
 
         self.desc_label = QLabel(label)
         self.desc_label.setFont(QFont("Segoe UI", 8))
-        self.desc_label.setStyleSheet("color: rgba(255,255,255,150); background: transparent; border: none;")
+        self.desc_label.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent; border: none;")
         self.desc_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.desc_label)
 
@@ -47,14 +48,14 @@ class TechInfoRow(QWidget):
 
         self.label_widget = QLabel(label)
         self.label_widget.setFont(QFont("Segoe UI", 8))
-        self.label_widget.setStyleSheet("color: rgba(255,255,255,100); background: transparent; border: none;")
+        self.label_widget.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent; border: none;")
         layout.addWidget(self.label_widget)
 
         layout.addStretch()
 
         self.value_widget = QLabel(value)
         self.value_widget.setFont(QFont("Consolas", 8))
-        self.value_widget.setStyleSheet("color: rgba(255,255,255,200); background: transparent; border: none;")
+        self.value_widget.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
         self.value_widget.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(self.value_widget)
 
@@ -68,13 +69,13 @@ class DeviceInfoCard(QFrame):
 
     def __init__(self):
         super().__init__()
-        self.setStyleSheet("""
-            QFrame {
+        self.setStyleSheet(f"""
+            QFrame {{
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba(64,156,255,80), stop:1 rgba(40,100,180,80));
-                border: 1px solid rgba(64,156,255,100);
-                border-radius: 10px;
-            }
+                    stop:0 rgba(64,156,255,60), stop:1 rgba(40,100,180,60));
+                border: 1px solid rgba(64,156,255,70);
+                border-radius: {Metrics.BORDER_RADIUS_LG}px;
+            }}
         """)
 
         layout = QVBoxLayout(self)
@@ -97,12 +98,12 @@ class DeviceInfoCard(QFrame):
 
         self.name_label = QLabel("No Device")
         self.name_label.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
-        self.name_label.setStyleSheet("color: white; background: transparent; border: none;")
+        self.name_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent; border: none;")
         name_layout.addWidget(self.name_label)
 
         self.model_label = QLabel("")
         self.model_label.setFont(QFont("Segoe UI", 9))
-        self.model_label.setStyleSheet("color: rgba(255,255,255,180); background: transparent; border: none;")
+        self.model_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
         self.model_label.setWordWrap(True)
         name_layout.addWidget(self.model_label)
 
@@ -144,17 +145,17 @@ class DeviceInfoCard(QFrame):
         # Technical details section (collapsible)
         self.tech_toggle = QPushButton("▶ Technical Details")
         self.tech_toggle.setFont(QFont("Segoe UI", 8))
-        self.tech_toggle.setStyleSheet("""
-            QPushButton {
+        self.tech_toggle.setStyleSheet(f"""
+            QPushButton {{
                 background: transparent;
                 border: none;
-                color: rgba(255,255,255,120);
+                color: {Colors.TEXT_TERTIARY};
                 text-align: left;
                 padding: 2px 0;
-            }
-            QPushButton:hover {
-                color: rgba(255,255,255,200);
-            }
+            }}
+            QPushButton:hover {{
+                color: {Colors.TEXT_SECONDARY};
+            }}
         """)
         self.tech_toggle.clicked.connect(self._toggle_tech_details)
         layout.addWidget(self.tech_toggle)
@@ -186,19 +187,19 @@ class DeviceInfoCard(QFrame):
 
         # Storage bar (optional, for when we have capacity info)
         self.storage_bar = QProgressBar()
-        self.storage_bar.setFixedHeight(6)
+        self.storage_bar.setFixedHeight(5)
         self.storage_bar.setTextVisible(False)
-        self.storage_bar.setStyleSheet("""
-            QProgressBar {
-                background-color: rgba(0,0,0,50);
+        self.storage_bar.setStyleSheet(f"""
+            QProgressBar {{
+                background-color: rgba(0,0,0,40);
                 border: none;
-                border-radius: 3px;
-            }
-            QProgressBar::chunk {
+                border-radius: 2px;
+            }}
+            QProgressBar::chunk {{
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #409cff, stop:1 #60b0ff);
-                border-radius: 3px;
-            }
+                    stop:0 {Colors.ACCENT}, stop:1 {Colors.ACCENT_LIGHT});
+                border-radius: 2px;
+            }}
         """)
         self.storage_bar.hide()  # Hidden until we have capacity data
         layout.addWidget(self.storage_bar)
@@ -300,16 +301,19 @@ class Sidebar(QFrame):
     def __init__(self):
         from ..app import category_glyphs
         super().__init__()
-        self.setStyleSheet(
-            "background-color: rgba(255,255,255,26);"
-            "border: 1px solid rgba(255,255,255,51);"
-            "border-radius: 10px;"
-        )
+        self.setStyleSheet(f"""
+            QFrame#sidebar {{
+                background-color: {Colors.SURFACE};
+                border: 1px solid {Colors.BORDER};
+                border-radius: {Metrics.BORDER_RADIUS_LG}px;
+            }}
+        """)
+        self.setObjectName("sidebar")
 
         self.sidebarLayout = QVBoxLayout(self)
-        self.sidebarLayout.setContentsMargins(10, 10, 10, 10)
-        self.sidebarLayout.setSpacing(10)
-        self.setFixedWidth(210)
+        self.sidebarLayout.setContentsMargins(10, 12, 10, 12)
+        self.sidebarLayout.setSpacing(8)
+        self.setFixedWidth(Metrics.SIDEBAR_WIDTH)
 
         # Device info card at top
         self.device_card = DeviceInfoCard()
@@ -323,22 +327,12 @@ class Sidebar(QFrame):
         self.deviceButton = QPushButton("📂 Select")
         self.rescanButton = QPushButton("🔃 Rescan")
 
-        button_style = """
-            QPushButton {
-                background-color: rgba(255,255,255,51);
-                border: none;
-                border-radius: 6px;
-                color: white;
-                padding: 8px 0;
-                font-size: 11px;
-            }
-            QPushButton:hover {
-                background-color: rgba(255,255,255,80);
-            }
-            QPushButton:pressed {
-                background-color: rgba(255,255,255,40);
-            }
-        """
+        button_style = btn_css(
+            bg=Colors.SURFACE_RAISED,
+            bg_hover=Colors.SURFACE_ACTIVE,
+            bg_press=Colors.SURFACE_ALT,
+            padding="7px 0",
+        )
         self.deviceButton.setStyleSheet(button_style)
         self.rescanButton.setStyleSheet(button_style)
         self.deviceButton.setFont(QFont("Segoe UI", 10, QFont.Weight.DemiBold))
@@ -351,35 +345,20 @@ class Sidebar(QFrame):
 
         # Sync button - row 2 (full width)
         self.syncButton = QPushButton("🔄 Sync with PC")
-        self.syncButton.setStyleSheet("""
-            QPushButton {
-                background-color: rgba(64,156,255,80);
-                border: 1px solid rgba(64,156,255,100);
-                border-radius: 6px;
-                color: white;
-                padding: 8px 0;
-                font-size: 11px;
-            }
-            QPushButton:hover {
-                background-color: rgba(64,156,255,120);
-            }
-            QPushButton:pressed {
-                background-color: rgba(64,156,255,60);
-            }
-        """)
+        self.syncButton.setStyleSheet(accent_btn_css())
         self.syncButton.setFont(QFont("Segoe UI", 10, QFont.Weight.DemiBold))
         self.sidebarLayout.addWidget(self.syncButton)
 
         # Separator
         sep = QFrame()
         sep.setFixedHeight(1)
-        sep.setStyleSheet("background-color: rgba(255,255,255,20);")
+        sep.setStyleSheet(f"background-color: {Colors.BORDER_SUBTLE};")
         self.sidebarLayout.addWidget(sep)
 
         # Category label
         lib_label = QLabel("LIBRARY")
         lib_label.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
-        lib_label.setStyleSheet("color: rgba(255,255,255,100); background: transparent; padding-left: 4px;")
+        lib_label.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent; padding-left: 4px;")
         self.sidebarLayout.addWidget(lib_label)
 
         self.buttons = {}
@@ -388,19 +367,14 @@ class Sidebar(QFrame):
             btn = QPushButton(f"{glyph} {category}")
             btn.setFont(QFont("Segoe UI", 11, QFont.Weight.DemiBold))
 
-            btn.setStyleSheet(
-                "QPushButton {"
-                "background-color: rgba(255,255,255,40);"
-                "border: none;"
-                "border-radius: 6px;"
-                "color: white;"
-                "padding: 10px 12px;"
-                "text-align: left;"
-                "}"
-                "QPushButton:hover {"
-                "background-color: rgba(255,255,255,70);"
-                "}"
-            )
+            btn.setStyleSheet(btn_css(
+                bg=Colors.SURFACE_ALT,
+                bg_hover=Colors.SURFACE_ACTIVE,
+                bg_press=Colors.SURFACE,
+                radius=Metrics.BORDER_RADIUS_SM,
+                padding="9px 12px",
+                extra="text-align: left;",
+            ))
 
             btn.clicked.connect(
                 lambda clicked, category=category: self.selectCategory(category))
@@ -413,20 +387,14 @@ class Sidebar(QFrame):
         # Settings button at bottom
         self.settingsButton = QPushButton("⚙ Settings")
         self.settingsButton.setFont(QFont("Segoe UI", 10, QFont.Weight.DemiBold))
-        self.settingsButton.setStyleSheet(
-            "QPushButton {"
-            "background-color: rgba(255,255,255,30);"
-            "border: none;"
-            "border-radius: 6px;"
-            "color: rgba(255,255,255,150);"
-            "padding: 8px 12px;"
-            "text-align: left;"
-            "}"
-            "QPushButton:hover {"
-            "background-color: rgba(255,255,255,50);"
-            "color: white;"
-            "}"
-        )
+        self.settingsButton.setStyleSheet(btn_css(
+            bg="transparent",
+            bg_hover=Colors.SURFACE_RAISED,
+            bg_press=Colors.SURFACE,
+            fg=Colors.TEXT_SECONDARY,
+            padding="8px 12px",
+            extra="text-align: left;",
+        ))
         self.sidebarLayout.addWidget(self.settingsButton)
 
         self.selectedCategory = list(category_glyphs.keys())[0]
@@ -456,33 +424,23 @@ class Sidebar(QFrame):
 
     def selectCategory(self, category):
         # Reset the previous selected button's style
-        self.buttons[self.selectedCategory].setStyleSheet(
-            "QPushButton {"
-            "background-color: rgba(255,255,255,40);"
-            "border: none;"
-            "border-radius: 6px;"
-            "color: white;"
-            "padding: 10px 12px;"
-            "text-align: left;"
-            "}"
-            "QPushButton:hover {"
-            "background-color: rgba(255,255,255,70);"
-            "}"
-        )
+        self.buttons[self.selectedCategory].setStyleSheet(btn_css(
+            bg=Colors.SURFACE_ALT,
+            bg_hover=Colors.SURFACE_ACTIVE,
+            bg_press=Colors.SURFACE,
+            radius=Metrics.BORDER_RADIUS_SM,
+            padding="9px 12px",
+            extra="text-align: left;",
+        ))
 
         self.selectedCategory = category
         # set the selected button's style
-        self.buttons[self.selectedCategory].setStyleSheet(
-            "QPushButton {"
-            "background-color: #409cff;"
-            "border: none;"
-            "border-radius: 6px;"
-            "color: white;"
-            "padding: 10px 12px;"
-            "text-align: left;"
-            "}"
-            "QPushButton:hover {"
-            "background-color: rgba(64,156,255,200);"
-            "}"
-        )
+        self.buttons[self.selectedCategory].setStyleSheet(btn_css(
+            bg=Colors.ACCENT,
+            bg_hover="rgba(64,156,255,200)",
+            bg_press="rgba(64,156,255,160)",
+            radius=Metrics.BORDER_RADIUS_SM,
+            padding="9px 12px",
+            extra="text-align: left;",
+        ))
         self.category_changed.emit(category)

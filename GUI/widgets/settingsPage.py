@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
     QCheckBox, QComboBox, QFrame, QScrollArea, QFileDialog,
 )
 from PyQt6.QtGui import QFont
+from ..styles import Colors, Metrics, btn_css
 
 
 # ── Reusable row widgets ────────────────────────────────────────────────────
@@ -20,12 +21,12 @@ class SettingRow(QFrame):
 
     def __init__(self, title: str, description: str = ""):
         super().__init__()
-        self.setStyleSheet("""
-            QFrame {
-                background: rgba(255,255,255,15);
-                border: 1px solid rgba(255,255,255,30);
-                border-radius: 8px;
-            }
+        self.setStyleSheet(f"""
+            QFrame {{
+                background: {Colors.SURFACE_ALT};
+                border: 1px solid {Colors.BORDER_SUBTLE};
+                border-radius: {Metrics.BORDER_RADIUS}px;
+            }}
         """)
 
         self._layout = QHBoxLayout(self)
@@ -38,13 +39,13 @@ class SettingRow(QFrame):
 
         self.title_label = QLabel(title)
         self.title_label.setFont(QFont("Segoe UI", 11, QFont.Weight.DemiBold))
-        self.title_label.setStyleSheet("color: white; background: transparent; border: none;")
+        self.title_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent; border: none;")
         text_layout.addWidget(self.title_label)
 
         if description:
             self.desc_label = QLabel(description)
             self.desc_label.setFont(QFont("Segoe UI", 9))
-            self.desc_label.setStyleSheet("color: rgba(255,255,255,120); background: transparent; border: none;")
+            self.desc_label.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent; border: none;")
             self.desc_label.setWordWrap(True)
             text_layout.addWidget(self.desc_label)
 
@@ -66,22 +67,22 @@ class ToggleRow(SettingRow):
 
         self.checkbox = QCheckBox()
         self.checkbox.setChecked(checked)
-        self.checkbox.setStyleSheet("""
-            QCheckBox {
+        self.checkbox.setStyleSheet(f"""
+            QCheckBox {{
                 background: transparent;
                 border: none;
-            }
-            QCheckBox::indicator {
-                width: 40px;
-                height: 22px;
-                border-radius: 11px;
-                background: rgba(255,255,255,40);
-                border: 1px solid rgba(255,255,255,60);
-            }
-            QCheckBox::indicator:checked {
-                background: #409cff;
-                border: 1px solid #409cff;
-            }
+            }}
+            QCheckBox::indicator {{
+                width: 38px;
+                height: 20px;
+                border-radius: 10px;
+                background: rgba(255,255,255,30);
+                border: 1px solid rgba(255,255,255,40);
+            }}
+            QCheckBox::indicator:checked {{
+                background: {Colors.ACCENT};
+                border: 1px solid {Colors.ACCENT};
+            }}
         """)
         self.checkbox.toggled.connect(self.changed.emit)
         self.add_control(self.checkbox)
@@ -105,30 +106,36 @@ class ComboRow(SettingRow):
         super().__init__(title, description)
 
         self.combo = QComboBox()
-        self.combo.setFixedWidth(120)
+        self.combo.setFixedWidth(130)
         self.combo.setFont(QFont("Segoe UI", 10))
-        self.combo.setStyleSheet("""
-            QComboBox {
-                background: rgba(255,255,255,30);
-                border: 1px solid rgba(255,255,255,50);
-                border-radius: 6px;
+        self.combo.setStyleSheet(f"""
+            QComboBox {{
+                background: {Colors.SURFACE_RAISED};
+                border: 1px solid {Colors.BORDER};
+                border-radius: {Metrics.BORDER_RADIUS_SM}px;
                 color: white;
-                padding: 4px 8px;
-            }
-            QComboBox::drop-down {
+                padding: 5px 10px;
+            }}
+            QComboBox:hover {{
+                border: 1px solid {Colors.BORDER_FOCUS};
+            }}
+            QComboBox::drop-down {{
                 border: none;
-                width: 20px;
-            }
-            QComboBox::down-arrow {
+                width: 22px;
+            }}
+            QComboBox::down-arrow {{
                 image: none;
                 border: none;
-            }
-            QComboBox QAbstractItemView {
-                background: #2a2a2a;
+            }}
+            QComboBox QAbstractItemView {{
+                background: #2a2a3a;
                 color: white;
-                selection-background-color: #409cff;
-                border: 1px solid rgba(255,255,255,50);
-            }
+                selection-background-color: {Colors.ACCENT};
+                border: 1px solid {Colors.BORDER};
+                border-radius: 4px;
+                padding: 2px;
+                outline: none;
+            }}
         """)
         if options:
             self.combo.addItems(options)
@@ -157,7 +164,7 @@ class FolderRow(SettingRow):
 
         self.path_label = QLabel(self._truncate(path) if path else "Not set")
         self.path_label.setFont(QFont("Segoe UI", 9))
-        self.path_label.setStyleSheet("color: rgba(255,255,255,150); background: transparent; border: none;")
+        self.path_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
         self.path_label.setMinimumWidth(120)
         self.path_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         right_layout.addWidget(self.path_label)
@@ -165,18 +172,13 @@ class FolderRow(SettingRow):
         self.browse_btn = QPushButton("Browse…")
         self.browse_btn.setFont(QFont("Segoe UI", 9))
         self.browse_btn.setFixedWidth(80)
-        self.browse_btn.setStyleSheet("""
-            QPushButton {
-                background: rgba(255,255,255,30);
-                border: 1px solid rgba(255,255,255,50);
-                border-radius: 6px;
-                color: white;
-                padding: 4px 8px;
-            }
-            QPushButton:hover {
-                background: rgba(255,255,255,50);
-            }
-        """)
+        self.browse_btn.setStyleSheet(btn_css(
+            bg=Colors.SURFACE_RAISED,
+            bg_hover=Colors.SURFACE_ACTIVE,
+            bg_press=Colors.SURFACE_ALT,
+            border=f"1px solid {Colors.BORDER}",
+            padding="4px 8px",
+        ))
         self.browse_btn.clicked.connect(self._browse)
         right_layout.addWidget(self.browse_btn)
 
@@ -211,6 +213,33 @@ class FolderRow(SettingRow):
         self.path_label.setText(self._truncate(v) if v else "Not set")
 
 
+class ActionRow(SettingRow):
+    """Setting row with an action button."""
+
+    clicked = pyqtSignal()
+
+    def __init__(self, title: str, description: str = "", button_text: str = "Run"):
+        super().__init__(title, description)
+
+        self.action_btn = QPushButton(button_text)
+        self.action_btn.setFont(QFont("Segoe UI", 9))
+        self.action_btn.setFixedWidth(100)
+        self.action_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.action_btn.setStyleSheet(btn_css(
+            bg=Colors.SURFACE_RAISED,
+            bg_hover=Colors.SURFACE_ACTIVE,
+            bg_press=Colors.SURFACE_ALT,
+            border=f"1px solid {Colors.BORDER}",
+            padding="5px 12px",
+        ))
+        self.action_btn.clicked.connect(self.clicked.emit)
+        self.add_control(self.action_btn)
+
+    def set_enabled(self, enabled: bool):
+        """Enable or disable the action button."""
+        self.action_btn.setEnabled(enabled)
+
+
 # ── Main settings page ─────────────────────────────────────────────────────
 
 class SettingsPage(QWidget):
@@ -233,21 +262,21 @@ class SettingsPage(QWidget):
         back_btn = QPushButton("← Back")
         back_btn.setFont(QFont("Segoe UI", 11))
         back_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        back_btn.setStyleSheet("""
-            QPushButton {
+        back_btn.setStyleSheet(f"""
+            QPushButton {{
                 background: transparent;
                 border: none;
-                color: #409cff;
+                color: {Colors.ACCENT};
                 padding: 4px 8px;
-            }
-            QPushButton:hover { color: #60b0ff; }
+            }}
+            QPushButton:hover {{ color: {Colors.ACCENT_LIGHT}; }}
         """)
         back_btn.clicked.connect(self._on_close)
         tb_layout.addWidget(back_btn)
 
         title = QLabel("Settings")
         title.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
-        title.setStyleSheet("color: white; background: transparent;")
+        title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent;")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         tb_layout.addWidget(title, stretch=1)
 
@@ -265,16 +294,6 @@ class SettingsPage(QWidget):
         scroll.setStyleSheet("""
             QScrollArea { background: transparent; border: none; }
             QScrollArea > QWidget > QWidget { background: transparent; }
-            QScrollBar:vertical {
-                background: transparent;
-                width: 8px;
-            }
-            QScrollBar::handle:vertical {
-                background: rgba(255,255,255,40);
-                border-radius: 4px;
-                min-height: 30px;
-            }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
         """)
 
         content = QWidget()
@@ -359,22 +378,29 @@ class SettingsPage(QWidget):
         self.reset_cache_dir_btn.setFont(QFont("Segoe UI", 9))
         self.reset_cache_dir_btn.setFixedWidth(130)
         self.reset_cache_dir_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.reset_cache_dir_btn.setStyleSheet("""
-            QPushButton {
-                background: rgba(255,255,255,20);
-                border: 1px solid rgba(255,255,255,40);
-                border-radius: 6px;
-                color: rgba(255,255,255,150);
-                padding: 4px 8px;
-            }
-            QPushButton:hover {
-                background: rgba(255,255,255,40);
-                color: white;
-            }
-        """)
+        self.reset_cache_dir_btn.setStyleSheet(btn_css(
+            bg=Colors.SURFACE,
+            bg_hover=Colors.SURFACE_RAISED,
+            bg_press=Colors.SURFACE_ALT,
+            fg=Colors.TEXT_SECONDARY,
+            border=f"1px solid {Colors.BORDER}",
+            padding="4px 8px",
+        ))
         self.reset_cache_dir_btn.setToolTip("Clear both custom paths and use platform defaults")
         self.reset_cache_dir_btn.clicked.connect(self._reset_storage_defaults)
         layout.addWidget(self.reset_cache_dir_btn, alignment=Qt.AlignmentFlag.AlignRight)
+
+        # ── RECOVERY section ────────────────────────────────────────────────
+        layout.addWidget(self._section_label("RECOVERY"))
+
+        # Rollback row with button
+        self.rollback_row = ActionRow(
+            "Rollback Last Sync",
+            "If a sync failed or corrupted your iPod database, use this to restore "
+            "the backup made before the last sync attempt.",
+        )
+        self.rollback_row.clicked.connect(self._on_rollback_clicked)
+        layout.addWidget(self.rollback_row)
 
         layout.addStretch()
         scroll.setWidget(content)
@@ -383,7 +409,7 @@ class SettingsPage(QWidget):
     def _section_label(self, text: str) -> QLabel:
         label = QLabel(text)
         label.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
-        label.setStyleSheet("color: rgba(255,255,255,100); background: transparent; padding-left: 4px; padding-top: 8px;")
+        label.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent; padding-left: 4px; padding-top: 8px;")
         return label
 
     def load_from_settings(self):
@@ -459,6 +485,66 @@ class SettingsPage(QWidget):
         self.transcode_cache_dir.value = ""
         self.settings_dir.value = ""
         self._save()
+
+    def _on_rollback_clicked(self):
+        """Handle rollback button click - restore last pre-sync backup."""
+        from ..app import DeviceManager, iTunesDBCache
+        from SyncEngine.checkpoint import CheckpointManager
+        from PyQt6.QtWidgets import QMessageBox
+
+        device_manager = DeviceManager.get_instance()
+        if not device_manager.device_path:
+            QMessageBox.warning(
+                self,
+                "No Device",
+                "Please connect and select an iPod first."
+            )
+            return
+
+        checkpoint = CheckpointManager(device_manager.device_path)
+        latest = checkpoint._find_latest_checkpoint()
+
+        if not latest:
+            QMessageBox.information(
+                self,
+                "No Backup Available",
+                "There are no sync backups available for this iPod.\n\n"
+                "Backups are automatically created before each sync."
+            )
+            return
+
+        # Get checkpoint timestamp from folder name
+        checkpoint_name = latest.name.replace("checkpoint_", "").replace("_", " ")
+
+        reply = QMessageBox.question(
+            self,
+            "Confirm Rollback",
+            f"This will restore your iPod database to the backup from:\n\n"
+            f"{checkpoint_name}\n\n"
+            f"Your current iPod database will be overwritten. Continue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            if checkpoint.rollback():
+                QMessageBox.information(
+                    self,
+                    "Rollback Complete",
+                    "Successfully restored iPod database to the backup state.\n\n"
+                    "The library view will now refresh."
+                )
+                # Reload the database
+                cache = iTunesDBCache.get_instance()
+                cache._data = None
+                cache.start_loading()
+            else:
+                QMessageBox.critical(
+                    self,
+                    "Rollback Failed",
+                    "Could not restore the backup.\n\n"
+                    "The backup files may be missing or corrupted."
+                )
 
     def _on_close(self):
         """Go back — settings are already saved on every change."""

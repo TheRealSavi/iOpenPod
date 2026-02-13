@@ -3,6 +3,7 @@ from PyQt6.QtCore import Qt, QSize, pyqtSignal
 from PyQt6.QtWidgets import QLabel, QFrame, QVBoxLayout
 from PyQt6.QtGui import QFont, QPixmap, QCursor, QImage
 from ..imgMaker import find_image_by_imgId, get_artworkdb_cached
+from ..styles import Colors, Metrics
 from .scrollingLabel import ScrollingLabel
 
 log = logging.getLogger(__name__)
@@ -20,13 +21,13 @@ class MusicBrowserGridItem(QFrame):
         self.item_data = item_data or {"title": title, "subtitle": subtitle, "mhiiLink": mhiiLink}
         self._destroyed = False  # Track if widget is being destroyed
 
-        self.setFixedSize(QSize(180, 240))
+        self.setFixedSize(QSize(Metrics.GRID_ITEM_W, Metrics.GRID_ITEM_H))
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self._setupStyle()
 
         self.gridItemLayout = QVBoxLayout(self)
-        self.gridItemLayout.setContentsMargins(8, 8, 8, 8)
-        self.gridItemLayout.setSpacing(4)
+        self.gridItemLayout.setContentsMargins(10, 10, 10, 8)
+        self.gridItemLayout.setSpacing(6)
 
         self.worker = None
         self._cancellation_token = None
@@ -34,11 +35,11 @@ class MusicBrowserGridItem(QFrame):
         # Album art
         self.img_label = QLabel()
         self.img_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.img_label.setFixedSize(QSize(164, 164))
-        self.img_label.setStyleSheet("""
+        self.img_label.setFixedSize(QSize(Metrics.GRID_ART_SIZE, Metrics.GRID_ART_SIZE))
+        self.img_label.setStyleSheet(f"""
             border: none;
-            background: rgba(0,0,0,30);
-            border-radius: 8px;
+            background: rgba(0,0,0,25);
+            border-radius: {Metrics.BORDER_RADIUS}px;
         """)
         self.gridItemLayout.addWidget(self.img_label)
 
@@ -49,42 +50,43 @@ class MusicBrowserGridItem(QFrame):
 
         # Title
         self.title_label = ScrollingLabel(title)
-        self.title_label.setFont(QFont("Segoe UI", 11, QFont.Weight.DemiBold))
+        self.title_label.setFont(QFont("Segoe UI", 10, QFont.Weight.DemiBold))
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        self.title_label.setStyleSheet("border: none; background: transparent; color: white;")
+        self.title_label.setStyleSheet(f"border: none; background: transparent; color: {Colors.TEXT_PRIMARY};")
         self.title_label.setFixedHeight(20)
         self.gridItemLayout.addWidget(self.title_label)
 
         # Subtitle
         self.subtitle_label = ScrollingLabel(subtitle)
-        self.subtitle_label.setFont(QFont("Segoe UI", 10))
+        self.subtitle_label.setFont(QFont("Segoe UI", 9))
         self.subtitle_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        self.subtitle_label.setStyleSheet("border: none; background: transparent; color: rgba(255,255,255,180);")
+        self.subtitle_label.setStyleSheet(f"border: none; background: transparent; color: {Colors.TEXT_SECONDARY};")
         self.subtitle_label.setFixedHeight(18)
         self.gridItemLayout.addWidget(self.subtitle_label)
 
     def _setupStyle(self):
-        self.setStyleSheet("""
-            QFrame {
-                background-color: rgba(255,255,255,15);
-                border: none;
-                border-radius: 12px;
+        self.setStyleSheet(f"""
+            QFrame {{
+                background-color: {Colors.SURFACE_ALT};
+                border: 1px solid {Colors.BORDER_SUBTLE};
+                border-radius: {Metrics.BORDER_RADIUS_XL}px;
                 color: white;
-            }
-            QFrame:hover {
-                background-color: rgba(255,255,255,30);
-            }
+            }}
+            QFrame:hover {{
+                background-color: {Colors.SURFACE_HOVER};
+                border: 1px solid {Colors.BORDER};
+            }}
         """)
 
     def _setPlaceholderImage(self):
         """Set a placeholder when no artwork is available."""
         self.img_label.setText("🎵")
-        self.img_label.setFont(QFont("Segoe UI", 48))
-        self.img_label.setStyleSheet("""
+        self.img_label.setFont(QFont("Segoe UI Emoji", 40))
+        self.img_label.setStyleSheet(f"""
             border: none;
-            background: rgba(64,156,255,50);
-            border-radius: 8px;
-            color: rgba(255,255,255,100);
+            background: rgba(64,156,255,35);
+            border-radius: {Metrics.BORDER_RADIUS}px;
+            color: rgba(255,255,255,80);
         """)
 
     def mousePressEvent(self, a0):
@@ -200,15 +202,15 @@ class MusicBrowserGridItem(QFrame):
             qimage = qimage.copy()
             pixmap = QPixmap.fromImage(qimage)
             pixmap = pixmap.scaled(
-                164, 164,
+                Metrics.GRID_ART_SIZE, Metrics.GRID_ART_SIZE,
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation
             )
             self.img_label.setPixmap(pixmap)
-            self.img_label.setStyleSheet("""
+            self.img_label.setStyleSheet(f"""
                 border: none;
                 background: transparent;
-                border-radius: 8px;
+                border-radius: {Metrics.BORDER_RADIUS}px;
             """)
 
             # Store dominant color in item_data for downstream use
@@ -220,12 +222,13 @@ class MusicBrowserGridItem(QFrame):
                 r, g, b = dcol
                 self.setStyleSheet(f"""
                     QFrame {{
-                        background-color: rgba({r}, {g}, {b}, 40);
-                        border: none;
-                        border-radius: 12px;
+                        background-color: rgba({r}, {g}, {b}, 30);
+                        border: 1px solid rgba({r}, {g}, {b}, 25);
+                        border-radius: {Metrics.BORDER_RADIUS_XL}px;
                         color: white;
                     }}
                     QFrame:hover {{
-                        background-color: rgba({r}, {g}, {b}, 70);
+                        background-color: rgba({r}, {g}, {b}, 55);
+                        border: 1px solid rgba({r}, {g}, {b}, 45);
                     }}
                 """)

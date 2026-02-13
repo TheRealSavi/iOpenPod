@@ -24,6 +24,7 @@ from .mapping import MappingManager, MappingFile
 from .transcoder import transcode, needs_transcoding
 from .audio_fingerprint import get_or_compute_fingerprint
 from .itunes_prefs import protect_from_itunes
+from .checkpoint import CheckpointManager
 
 from iTunesDB_Writer.mhit_writer import TrackInfo
 
@@ -153,6 +154,14 @@ class SyncExecutor:
         """
         result = SyncResult(success=True)
 
+        # ===== Create checkpoint for rollback capability =====
+        checkpoint = CheckpointManager(self.ipod_path)
+        if not dry_run:
+            if not checkpoint.create_checkpoint():
+                logger.warning("Could not create checkpoint - proceeding without backup")
+            else:
+                logger.info("Created pre-sync checkpoint for rollback capability")
+
         # Store on instance so helper methods can access it
         self._aac_bitrate = aac_bitrate
 
@@ -194,7 +203,7 @@ class SyncExecutor:
         new_track_info: dict[int, tuple] = {}
         # PC source file paths for artwork extraction
         pc_file_paths: dict[int, str] = dict(plan.matched_pc_paths)
-        logger.info(f"ART: starting with {len(pc_file_paths)} matched PC paths from sync plan")
+        logger.debug(f"ART: starting with {len(pc_file_paths)} matched PC paths from sync plan")
 
         def _check_cancelled() -> bool:
             if is_cancelled and is_cancelled():
@@ -204,40 +213,77 @@ class SyncExecutor:
             return False
 
         # ===== Stage 1: Remove deleted tracks =====
+        if not dry_run:
+            checkpoint.update_state(stage="remove")
         self._execute_removes(plan, mapping, tracks_by_dbid, tracks_by_location, result, progress_callback, dry_run, _check_cancelled)
         if not result.success:
+            if not dry_run:
+                checkpoint.mark_failed("Failed during remove stage")
             return result
+        if not dry_run:
+            checkpoint.update_state(stage="remove", stage_complete=True, tracks_removed=result.tracks_removed)
 
         # ===== Stage 2: Update files (re-copy/transcode changed files) =====
+        if not dry_run:
+            checkpoint.update_state(stage="update_file")
         self._execute_file_updates(plan, mapping, tracks_by_dbid, tracks_by_location, pc_file_paths, result, progress_callback, dry_run, _check_cancelled, aac_bitrate)
         if not result.success:
+            if not dry_run:
+                checkpoint.mark_failed("Failed during file update stage")
             return result
+        if not dry_run:
+            checkpoint.update_state(stage="update_file", stage_complete=True, tracks_updated=result.tracks_updated_file)
 
         # ===== Stage 3: Update metadata =====
+        if not dry_run:
+            checkpoint.update_state(stage="update_metadata")
         self._execute_metadata_updates(plan, mapping, tracks_by_dbid, result, progress_callback, dry_run, _check_cancelled)
         if not result.success:
+            if not dry_run:
+                checkpoint.mark_failed("Failed during metadata update stage")
             return result
+        if not dry_run:
+            checkpoint.update_state(stage="update_metadata", stage_complete=True)
 
         # ===== Stage 3b: Update artwork mapping entries =====
         self._execute_artwork_updates(plan, mapping, dry_run)
 
         # ===== Stage 4: Add new tracks =====
+        if not dry_run:
+            checkpoint.update_state(stage="add")
         self._execute_adds(plan, mapping, new_tracks, new_track_fingerprints, new_track_info, pc_file_paths, result, progress_callback, dry_run, _check_cancelled, aac_bitrate)
         if not result.success:
+            if not dry_run:
+                checkpoint.mark_failed("Failed during add stage")
             return result
+        if not dry_run:
+            checkpoint.update_state(stage="add", stage_complete=True, tracks_added=result.tracks_added)
 
         # ===== Stage 5: Sync play counts back to PC =====
+        if not dry_run:
+            checkpoint.update_state(stage="sync_playcount")
         self._execute_playcount_sync(plan, tracks_by_dbid, result, progress_callback, dry_run, _check_cancelled, write_back_to_pc)
         if not result.success:
+            if not dry_run:
+                checkpoint.mark_failed("Failed during playcount sync stage")
             return result
+        if not dry_run:
+            checkpoint.update_state(stage="sync_playcount", stage_complete=True)
 
         # ===== Stage 6: Sync ratings =====
+        if not dry_run:
+            checkpoint.update_state(stage="sync_rating")
         self._execute_rating_sync(plan, tracks_by_dbid, result, progress_callback, dry_run, _check_cancelled, write_back_to_pc)
         if not result.success:
+            if not dry_run:
+                checkpoint.mark_failed("Failed during rating sync stage")
             return result
+        if not dry_run:
+            checkpoint.update_state(stage="sync_rating", stage_complete=True)
 
         # ===== Stage 7: Write database (one shot) =====
         if not dry_run:
+            checkpoint.update_state(stage="write_database")
             if progress_callback:
                 progress_callback(SyncProgress("write_database", 0, 1, message="Writing database..."))
 
@@ -247,7 +293,7 @@ class SyncExecutor:
             # id(track_info) for new tracks.  mhbd_writer.py handles the
             # obj-id → dbid remapping after assigning real dbids.
 
-            logger.info(f"ART: pc_file_paths total={len(pc_file_paths)}, all_tracks={len(all_tracks)}")
+            logger.debug(f"ART: pc_file_paths total={len(pc_file_paths)}, all_tracks={len(all_tracks)}")
 
             # Always write — even if all_tracks is empty (e.g. all tracks
             # were removed).  Skipping the write would leave the old DB
@@ -297,9 +343,19 @@ class SyncExecutor:
                     # Non-fatal — database is already written + mapping saved
                     logger.warning("iTunesPrefs protection failed (non-fatal): %s", e)
 
+                # Mark checkpoint as complete on success
+                checkpoint.update_state(stage="write_database", stage_complete=True)
+                checkpoint.mark_complete()
+
             except Exception as e:
                 result.errors.append(("database write", str(e)))
                 logger.error("Database write failed — mapping NOT saved to preserve consistency")
+                checkpoint.mark_failed(f"Database write failed: {e}")
+                # Offer rollback guidance in error message
+                result.errors.append((
+                    "recovery",
+                    "A backup was created before sync. Use 'Rollback to Checkpoint' in settings to restore."
+                ))
 
         result.success = not result.has_errors
         return result
@@ -393,6 +449,10 @@ class SyncExecutor:
 
         def _do_copy(item: SyncItem) -> tuple[SyncItem, bool, Optional[Path], bool]:
             """Transcode/copy a single track. Runs in worker thread."""
+            # Defensive check - should never fail as we pre-filtered items
+            if item.pc_track is None:
+                logger.error(f"_do_copy called with None pc_track for {item.description}")
+                return (item, False, None, False)
             source_path = Path(item.pc_track.path)
             need_transcode = needs_transcoding(source_path)
             success, ipod_path, was_transcoded = self._copy_to_ipod(
@@ -612,6 +672,10 @@ class SyncExecutor:
 
         def _do_copy(item: SyncItem) -> tuple[SyncItem, bool, Optional[Path], bool]:
             """Transcode/copy a single track. Runs in worker thread."""
+            # Defensive check - should never fail as we pre-filtered items
+            if item.pc_track is None:
+                logger.error(f"_do_copy called with None pc_track for {item.description}")
+                return (item, False, None, False)
             source_path = Path(item.pc_track.path)
             need_transcode = needs_transcoding(source_path)
             success, ipod_path, was_transcoded = self._copy_to_ipod(
@@ -1101,8 +1165,8 @@ class SyncExecutor:
         """Write tracks to iTunesDB (and ArtworkDB if pc_file_paths provided)."""
         from iTunesDB_Writer import write_itunesdb
 
-        logger.info(f"ART: _write_database called with {len(tracks)} tracks, "
-                    f"pc_file_paths={'None' if pc_file_paths is None else len(pc_file_paths)}")
+        logger.debug(f"ART: _write_database called with {len(tracks)} tracks, "
+                     f"pc_file_paths={'None' if pc_file_paths is None else len(pc_file_paths)}")
 
         try:
             return write_itunesdb(

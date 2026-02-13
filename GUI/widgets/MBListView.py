@@ -12,7 +12,7 @@ import logging
 from typing import Callable
 
 from PyQt6.QtCore import Qt, QTimer, QSize
-from PyQt6.QtGui import QFont, QPixmap, QImage, QIcon
+from PyQt6.QtGui import QFont, QPixmap, QImage, QIcon, QColor
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QFrame,
@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem,
     QVBoxLayout,
 )
+from ..styles import Colors
 
 log = logging.getLogger(__name__)
 
@@ -200,32 +201,48 @@ class MusicBrowserList(QFrame):
         t.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         t.setAlternatingRowColors(True)
 
-        t.setStyleSheet("""
-            QTableWidget {
-                background-color: rgba(0,0,0,30);
+        t.setStyleSheet(f"""
+            QTableWidget {{
+                background-color: rgba(0,0,0,20);
+                alternate-background-color: rgba(255,255,255,4);
                 border: none;
-                color: white;
-                gridline-color: rgba(255,255,255,20);
-                selection-background-color: rgba(64,156,255,100);
-            }
-            QTableWidget::item {
-                padding: 8px;
-                border-bottom: 1px solid rgba(255,255,255,10);
-            }
-            QTableWidget::item:selected {
-                background-color: rgba(64,156,255,100);
-            }
-            QHeaderView::section {
-                background-color: rgba(255,255,255,15);
-                color: white;
-                padding: 8px;
+                color: {Colors.TEXT_PRIMARY};
+                gridline-color: {Colors.GRIDLINE};
+                selection-background-color: {Colors.SELECTION};
+                outline: none;
+            }}
+            QTableWidget::item {{
+                padding: 6px 8px;
+                border-bottom: 1px solid {Colors.BORDER_SUBTLE};
+            }}
+            QTableWidget::item:selected {{
+                background-color: {Colors.SELECTION};
+            }}
+            QTableWidget::item:hover {{
+                background-color: rgba(255,255,255,6);
+            }}
+            QHeaderView::section {{
+                background-color: {Colors.SURFACE_ALT};
+                color: {Colors.TEXT_SECONDARY};
+                padding: 6px 8px;
                 border: none;
-                border-bottom: 2px solid rgba(64,156,255,150);
-                font-weight: bold;
-            }
-            QHeaderView::section:hover {
-                background-color: rgba(255,255,255,25);
-            }
+                border-bottom: 1px solid {Colors.BORDER};
+                font-weight: 600;
+                font-size: 11px;
+            }}
+            QHeaderView::section:hover {{
+                background-color: {Colors.SURFACE_RAISED};
+                color: {Colors.TEXT_PRIMARY};
+            }}
+            QHeaderView::section:pressed {{
+                background-color: {Colors.SURFACE_ACTIVE};
+            }}
+            /* Corner button (top-left) */
+            QTableCornerButton::section {{
+                background-color: {Colors.SURFACE_ALT};
+                border: none;
+                border-bottom: 1px solid {Colors.BORDER};
+            }}
         """)
 
         header = t.horizontalHeader()
@@ -500,7 +517,7 @@ class MusicBrowserList(QFrame):
             item.setFont(self._font)
 
             if key == "rating" and display:
-                item.setForeground(Qt.GlobalColor.yellow)
+                item.setForeground(QColor(Colors.STAR))
             if key in NUMERIC_COLUMNS:
                 item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 

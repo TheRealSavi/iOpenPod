@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
 
 from ..device_scanner import scan_for_ipods, DiscoveredIPod
 from ..ipod_images import get_ipod_image
+from ..styles import Colors, Metrics, btn_css
 
 
 class _ScanThread(QThread):
@@ -230,7 +231,7 @@ class DeviceCard(QFrame):
         name_label.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
         name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         name_label.setWordWrap(True)
-        name_label.setStyleSheet("color: white; background: transparent; border: none;")
+        name_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent; border: none;")
         layout.addWidget(name_label)
 
         # Subtitle (drive letter + space)
@@ -238,34 +239,34 @@ class DeviceCard(QFrame):
         sub_label.setFont(QFont("Segoe UI", 9))
         sub_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         sub_label.setWordWrap(True)
-        sub_label.setStyleSheet("color: rgba(255,255,255,150); background: transparent; border: none;")
+        sub_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
         layout.addWidget(sub_label)
 
     def _apply_style(self, hovered: bool):
         if self._selected:
-            self.setStyleSheet("""
-                DeviceCard {
+            self.setStyleSheet(f"""
+                DeviceCard {{
                     background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                        stop:0 rgba(64,156,255,120), stop:1 rgba(40,100,200,120));
-                    border: 2px solid rgba(64,156,255,200);
-                    border-radius: 12px;
-                }
+                        stop:0 rgba(64,156,255,100), stop:1 rgba(40,100,200,100));
+                    border: 2px solid {Colors.ACCENT};
+                    border-radius: {Metrics.BORDER_RADIUS_XL}px;
+                }}
             """)
         elif hovered:
-            self.setStyleSheet("""
-                DeviceCard {
-                    background: rgba(255,255,255,40);
-                    border: 1px solid rgba(255,255,255,60);
-                    border-radius: 12px;
-                }
+            self.setStyleSheet(f"""
+                DeviceCard {{
+                    background: {Colors.SURFACE_HOVER};
+                    border: 1px solid {Colors.BORDER};
+                    border-radius: {Metrics.BORDER_RADIUS_XL}px;
+                }}
             """)
         else:
-            self.setStyleSheet("""
-                DeviceCard {
-                    background: rgba(255,255,255,20);
-                    border: 1px solid rgba(255,255,255,30);
-                    border-radius: 12px;
-                }
+            self.setStyleSheet(f"""
+                DeviceCard {{
+                    background: {Colors.SURFACE_ALT};
+                    border: 1px solid {Colors.BORDER_SUBTLE};
+                    border-radius: {Metrics.BORDER_RADIUS_XL}px;
+                }}
             """)
 
     def setSelected(self, selected: bool):
@@ -311,6 +312,7 @@ class DevicePickerDialog(QDialog):
         self.resize(560, 440)
 
         self.selected_path: str = ""
+        self.selected_ipod: DiscoveredIPod | None = None
         self._cards: list[DeviceCard] = []
         self._scan_thread: _ScanThread | None = None
 
@@ -325,12 +327,12 @@ class DevicePickerDialog(QDialog):
         # Title
         title = QLabel("Select your iPod")
         title.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
-        title.setStyleSheet("color: white;")
+        title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
         layout.addWidget(title)
 
         subtitle = QLabel("Scanning for connected iPods...")
         subtitle.setFont(QFont("Segoe UI", 10))
-        subtitle.setStyleSheet("color: rgba(255,255,255,150);")
+        subtitle.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
         self._subtitle = subtitle
         layout.addWidget(subtitle)
 
@@ -340,17 +342,6 @@ class DevicePickerDialog(QDialog):
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setStyleSheet("""
             QScrollArea { background: transparent; border: none; }
-            QScrollBar:vertical {
-                border: none;
-                background: rgba(255,255,255,10);
-                width: 8px;
-                border-radius: 4px;
-            }
-            QScrollBar::handle:vertical {
-                background: rgba(255,255,255,60);
-                border-radius: 4px;
-                min-height: 20px;
-            }
         """)
 
         self._grid_container = QWidget()
@@ -368,7 +359,7 @@ class DevicePickerDialog(QDialog):
             "You can also use the button below to select a folder manually."
         )
         self._no_devices_label.setFont(QFont("Segoe UI", 10))
-        self._no_devices_label.setStyleSheet("color: rgba(255,255,255,120);")
+        self._no_devices_label.setStyleSheet(f"color: {Colors.TEXT_TERTIARY};")
         self._no_devices_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._no_devices_label.setWordWrap(True)
         self._no_devices_label.hide()
@@ -377,7 +368,7 @@ class DevicePickerDialog(QDialog):
         # Separator
         sep = QFrame()
         sep.setFixedHeight(1)
-        sep.setStyleSheet("background: rgba(255,255,255,25);")
+        sep.setStyleSheet(f"background: {Colors.BORDER_SUBTLE};")
         layout.addWidget(sep)
 
         # Bottom buttons
@@ -387,38 +378,28 @@ class DevicePickerDialog(QDialog):
         self._manual_btn = QPushButton("📁  Browse Manually...")
         self._manual_btn.setFont(QFont("Segoe UI", 10))
         self._manual_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._manual_btn.setStyleSheet("""
-            QPushButton {
-                background: rgba(255,255,255,30);
-                border: 1px solid rgba(255,255,255,40);
-                border-radius: 6px;
-                color: rgba(255,255,255,180);
-                padding: 8px 16px;
-            }
-            QPushButton:hover {
-                background: rgba(255,255,255,50);
-                color: white;
-            }
-        """)
+        self._manual_btn.setStyleSheet(btn_css(
+            bg=Colors.SURFACE_RAISED,
+            bg_hover=Colors.SURFACE_ACTIVE,
+            bg_press=Colors.SURFACE_ALT,
+            fg=Colors.TEXT_SECONDARY,
+            border=f"1px solid {Colors.BORDER}",
+            padding="7px 16px",
+        ))
         self._manual_btn.clicked.connect(self._browse_manually)
         btn_layout.addWidget(self._manual_btn)
 
         self._rescan_btn = QPushButton("🔃  Rescan")
         self._rescan_btn.setFont(QFont("Segoe UI", 10))
         self._rescan_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._rescan_btn.setStyleSheet("""
-            QPushButton {
-                background: rgba(255,255,255,30);
-                border: 1px solid rgba(255,255,255,40);
-                border-radius: 6px;
-                color: rgba(255,255,255,180);
-                padding: 8px 16px;
-            }
-            QPushButton:hover {
-                background: rgba(255,255,255,50);
-                color: white;
-            }
-        """)
+        self._rescan_btn.setStyleSheet(btn_css(
+            bg=Colors.SURFACE_RAISED,
+            bg_hover=Colors.SURFACE_ACTIVE,
+            bg_press=Colors.SURFACE_ALT,
+            fg=Colors.TEXT_SECONDARY,
+            border=f"1px solid {Colors.BORDER}",
+            padding="7px 16px",
+        ))
         self._rescan_btn.clicked.connect(self._start_scan)
         btn_layout.addWidget(self._rescan_btn)
 
@@ -428,22 +409,22 @@ class DevicePickerDialog(QDialog):
         self._select_btn.setFont(QFont("Segoe UI", 10, QFont.Weight.DemiBold))
         self._select_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._select_btn.setEnabled(False)
-        self._select_btn.setStyleSheet("""
-            QPushButton {
-                background: rgba(64,156,255,80);
-                border: 1px solid rgba(64,156,255,100);
-                border-radius: 6px;
+        self._select_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {Colors.ACCENT_DIM};
+                border: 1px solid {Colors.ACCENT_BORDER};
+                border-radius: {Metrics.BORDER_RADIUS_SM}px;
                 color: white;
-                padding: 8px 24px;
-            }
-            QPushButton:hover {
-                background: rgba(64,156,255,140);
-            }
-            QPushButton:disabled {
-                background: rgba(255,255,255,15);
-                border: 1px solid rgba(255,255,255,20);
-                color: rgba(255,255,255,60);
-            }
+                padding: 7px 24px;
+            }}
+            QPushButton:hover {{
+                background: {Colors.ACCENT_HOVER};
+            }}
+            QPushButton:disabled {{
+                background: {Colors.SURFACE};
+                border: 1px solid {Colors.BORDER_SUBTLE};
+                color: {Colors.TEXT_DISABLED};
+            }}
         """)
         self._select_btn.clicked.connect(self.accept)
         btn_layout.addWidget(self._select_btn)
@@ -451,19 +432,14 @@ class DevicePickerDialog(QDialog):
         cancel_btn = QPushButton("Cancel")
         cancel_btn.setFont(QFont("Segoe UI", 10))
         cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        cancel_btn.setStyleSheet("""
-            QPushButton {
-                background: rgba(255,255,255,20);
-                border: 1px solid rgba(255,255,255,30);
-                border-radius: 6px;
-                color: rgba(255,255,255,150);
-                padding: 8px 20px;
-            }
-            QPushButton:hover {
-                background: rgba(255,255,255,40);
-                color: white;
-            }
-        """)
+        cancel_btn.setStyleSheet(btn_css(
+            bg=Colors.SURFACE_RAISED,
+            bg_hover=Colors.SURFACE_ACTIVE,
+            bg_press=Colors.SURFACE_ALT,
+            fg=Colors.TEXT_SECONDARY,
+            border=f"1px solid {Colors.BORDER}",
+            padding="7px 20px",
+        ))
         cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(cancel_btn)
 
@@ -513,6 +489,7 @@ class DevicePickerDialog(QDialog):
     def _on_card_clicked(self, ipod: DiscoveredIPod):
         """Handle a device card being clicked."""
         self.selected_path = ipod.path
+        self.selected_ipod = ipod
 
         # Update card selection states
         for card in self._cards:

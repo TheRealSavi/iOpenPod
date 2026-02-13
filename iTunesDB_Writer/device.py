@@ -644,14 +644,21 @@ def _read_firewire_id_from_sysinfo_extended(ipod_path: str) -> Optional[bytes]:
     return None
 
 
-def get_firewire_id(ipod_path: str) -> bytes:
+def get_firewire_id(
+    ipod_path: str,
+    *,
+    known_guid: Optional[str] = None,
+    drive_letter: Optional[str] = None,
+) -> bytes:
     """
     Get FireWire GUID for an iPod, trying multiple sources.
 
-    Sources tried in order:
-    1. SysInfo file on the iPod (/iPod_Control/Device/SysInfo)
-    2. SysInfoExtended XML plist on the iPod
-    3. Windows registry (persists from previous USB connections)
+    Sources tried in priority order:
+    0. Pre-discovered GUID (``known_guid``) from the device scanner
+    1. PnP device tree walk (most authoritative — tied to this drive letter)
+    2. SysInfo file on the iPod (/iPod_Control/Device/SysInfo)
+    3. SysInfoExtended XML plist on the iPod
+    4. Windows registry (persists from previous USB connections)
 
     The FireWire GUID is required for HASH58 computation on iPod Classic
     and Nano 3G/4G. Despite the name, it's also used on USB-only iPods
@@ -659,6 +666,10 @@ def get_firewire_id(ipod_path: str) -> bytes:
 
     Args:
         ipod_path: Mount point / root path of iPod filesystem
+        known_guid: Pre-discovered GUID hex string (e.g. from DiscoveredIPod).
+                    If provided and valid, skips all probing.
+        drive_letter: Drive letter (e.g. "D") for device tree walk.
+                      If omitted, extracted from ``ipod_path`` if possible.
 
     Returns:
         FireWire GUID as bytes (typically 8 bytes)
@@ -666,7 +677,37 @@ def get_firewire_id(ipod_path: str) -> bytes:
     Raises:
         RuntimeError: If FireWire GUID cannot be found from any source
     """
-    # Source 1: SysInfo file
+    # Source 0: Pre-discovered GUID (from device scanner pipeline)
+    if known_guid:
+        try:
+            guid_bytes = bytes.fromhex(known_guid)
+            if guid_bytes != b'\x00' * len(guid_bytes):
+                return guid_bytes
+        except ValueError:
+            pass
+
+    # Determine drive letter for device tree walk
+    if not drive_letter and ipod_path:
+        # Extract from path like "D:\\" or "D:"
+        clean = ipod_path.rstrip("\\/")
+        if len(clean) >= 1 and clean[0].isalpha():
+            drive_letter = clean[0]
+
+    # Source 1: PnP device tree walk (most authoritative for connected device)
+    if drive_letter:
+        try:
+            from GUI.device_scanner import _walk_device_tree, _setup_win32_prototypes
+            _setup_win32_prototypes()
+            tree_info = _walk_device_tree(drive_letter)
+            if tree_info and tree_info.get("firewire_guid"):
+                guid_hex = tree_info["firewire_guid"]
+                result = bytes.fromhex(guid_hex)
+                if result != b'\x00' * len(result):
+                    return result
+        except (ImportError, Exception):
+            pass
+
+    # Source 2: SysInfo file
     try:
         sysinfo = read_sysinfo(ipod_path)
         guid = sysinfo.get('FirewireGuid')
@@ -675,31 +716,29 @@ def get_firewire_id(ipod_path: str) -> bytes:
                 guid = guid[2:]
             result = bytes.fromhex(guid)
             if result != b'\x00' * len(result):
-                print(f"FireWire GUID from SysInfo: {result.hex()}")
                 return result
     except (FileNotFoundError, ValueError):
         pass
 
-    # Source 2: SysInfoExtended plist
+    # Source 3: SysInfoExtended plist
     result = _read_firewire_id_from_sysinfo_extended(ipod_path)
     if result:
-        print(f"FireWire GUID from SysInfoExtended: {result.hex()}")
         return result
 
-    # Source 3: Windows registry (USB serial from previous connection)
+    # Source 4: Windows registry (USB serial from previous connection)
     result = _read_firewire_id_from_registry()
     if result:
-        print(f"FireWire GUID from Windows registry: {result.hex()}")
         return result
 
     raise RuntimeError(
         "Could not find iPod FireWire GUID. Tried:\n"
-        "  1. SysInfo file (empty or missing)\n"
-        "  2. SysInfoExtended file (not found)\n"
-        "  3. Windows registry (no iPod USB history found)\n"
+        "  1. Device tree walk (device not connected or no USB parent?)\n"
+        "  2. SysInfo file (empty or missing)\n"
+        "  3. SysInfoExtended file (not found)\n"
+        "  4. Windows registry (no iPod USB history found)\n"
         "\n"
         "To fix this, connect the iPod and try again, or manually provide\n"
-        "the FireWire GUID via the firewire_id parameter."
+        "the FireWire GUID via the known_guid parameter."
     )
 
 
@@ -811,7 +850,8 @@ def get_device_info(ipod_path: str) -> dict:
     """
     Get comprehensive device information using multiple sources.
 
-    Falls back through: SysInfo → SysInfoExtended → USB registry → iTunesDB header.
+    Delegates to the unified scanner pipeline when available, falling back
+    to local SysInfo parsing if the GUI module is not importable.
 
     Args:
         ipod_path: Mount point of iPod
@@ -833,84 +873,72 @@ def get_device_info(ipod_path: str) -> dict:
         ChecksumType.UNKNOWN: 'Unknown (device not in database)',
     }
 
-    # Start with SysInfo (may be empty/missing)
+    # Try the unified scanner pipeline first (uses all sources)
+    model_num = None
+    model_info = None
+    serial = ""
+    firmware = ""
+    firewire_id = ""
+    board = ""
+
+    try:
+        from GUI.app import DeviceManager
+
+        # Use cached scanner result from DeviceManager (avoids re-scanning)
+        dm = DeviceManager.get_instance()
+        ipod = dm.discovered_ipod
+        if ipod is not None and os.path.normpath(ipod.path) == os.path.normpath(ipod_path):
+            if True:  # indent block preserved for minimal diff
+                model_num = ipod.model_number or None
+                if model_num:
+                    model_info = IPOD_MODELS.get(model_num)
+                if not model_info and ipod.model_family != "iPod":
+                    model_info = (
+                        ipod.model_family,
+                        ipod.generation,
+                        ipod.capacity,
+                        ipod.color,
+                    )
+                serial = ipod.serial
+                firmware = ipod.firmware
+                firewire_id = ipod.firewire_guid
+    except ImportError:
+        pass  # GUI module not available (e.g., headless use)
+
+    # Fallback: use local SysInfo parsing if scanner didn't find it
     sysinfo = {}
     try:
         sysinfo = read_sysinfo(ipod_path)
     except FileNotFoundError:
         pass
 
-    # Try SysInfo-based identification first
-    model_str = sysinfo.get('ModelNumStr', '')
-    model_num = _extract_model_number(model_str) if model_str else None
-    model_info = get_model_info(model_num) if model_num else None
-
-    serial = sysinfo.get('pszSerialNumber', '')
-    firmware = sysinfo.get('visibleBuildID', '')
-    firewire_id = sysinfo.get('FirewireGuid', '')
-
-    # If SysInfo didn't give us enough, try device scanner fallbacks
     if not model_info:
-        try:
-            from GUI.device_scanner import (
-                _identify_via_usb_registry,
-                _identify_via_serial_lookup,
-                _identify_via_hashing_scheme,
-                _estimate_capacity_from_disk_size,
-            )
+        model_str = sysinfo.get('ModelNumStr', '')
+        model_num = _extract_model_number(model_str) if model_str else model_num
+        model_info = get_model_info(model_num) if model_num else None
 
-            # USB registry
-            usb_info = _identify_via_usb_registry("")
-            if usb_info:
-                if not serial and usb_info.get("serial"):
-                    serial = usb_info["serial"]
-                if not firewire_id and usb_info.get("firewire_guid"):
-                    firewire_id = usb_info["firewire_guid"]
-                if not firmware and usb_info.get("firmware"):
-                    firmware = usb_info["firmware"]
+    if not serial:
+        serial = sysinfo.get('pszSerialNumber', '')
+    if not firmware:
+        firmware = sysinfo.get('visibleBuildID', '')
+    if not firewire_id:
+        firewire_id = sysinfo.get('FirewireGuid', '')
+    board = sysinfo.get('BoardHwName', '')
 
-            # Serial → model lookup (most specific)
-            if serial:
-                serial_info = _identify_via_serial_lookup(serial)
-                if serial_info:
-                    model_num = serial_info.get("model_number", model_num)
-                    model_info = (
-                        serial_info.get("model_family", "iPod"),
-                        serial_info.get("generation", ""),
-                        serial_info.get("capacity", ""),
-                        serial_info.get("color", ""),
-                    )
-
-            # USB PID fallback
-            if not model_info and usb_info and usb_info.get("model_family"):
-                import shutil
-                try:
-                    usage = shutil.disk_usage(ipod_path)
-                    disk_gb = usage.total / (1024**3)
-                    capacity = _estimate_capacity_from_disk_size(disk_gb)
-                except OSError:
-                    capacity = ""
-                model_info = (
-                    usb_info["model_family"],
-                    usb_info.get("generation", ""),
-                    capacity,
-                    "",
-                )
-
-            # Hashing scheme fallback
-            if not model_info:
-                hash_info = _identify_via_hashing_scheme(ipod_path)
-                if hash_info and hash_info.get("model_family"):
-                    model_info = (hash_info["model_family"], hash_info.get("generation", ""), "", "")
-
-        except ImportError:
-            pass  # GUI module not available (e.g., headless use)
+    # Serial → model lookup as one more fallback
+    if not model_info and serial:
+        last3 = serial[-3:] if len(serial) >= 3 else ""
+        from GUI.device_scanner import SERIAL_LAST3_TO_MODEL
+        mn = SERIAL_LAST3_TO_MODEL.get(last3)
+        if mn:
+            model_num = mn
+            model_info = IPOD_MODELS.get(mn)
 
     checksum_type = detect_checksum_type(ipod_path)
 
     result = {
         'model': model_num,
-        'model_raw': model_str,
+        'model_raw': sysinfo.get('ModelNumStr', ''),
         'model_name': model_info[0] if model_info else 'Unknown',
         'model_generation': model_info[1] if model_info else '',
         'model_capacity': model_info[2] if model_info else '',
@@ -921,7 +949,7 @@ def get_device_info(ipod_path: str) -> dict:
         ),
         'serial': serial,
         'firmware': firmware,
-        'board': sysinfo.get('BoardHwName', ''),
+        'board': board,
         'firewire_id': firewire_id,
         'checksum_type': checksum_type,
         'checksum_name': checksum_names.get(checksum_type, 'Unknown'),

@@ -4,6 +4,7 @@ from PyQt6.QtWidgets import QScrollArea, QFrame, QSplitter, QVBoxLayout, QSizePo
 from .MBGridView import MusicBrowserGrid
 from .MBListView import MusicBrowserList
 from .trackListTitleBar import TrackListTitleBar
+from ..styles import Colors
 
 log = logging.getLogger(__name__)
 
@@ -39,19 +40,6 @@ class MusicBrowser(QFrame):
                 background: transparent;
                 border: none;
             }
-            QScrollBar:vertical {
-                background: rgba(255,255,255,10);
-                width: 10px;
-                border-radius: 5px;
-            }
-            QScrollBar::handle:vertical {
-                background: rgba(255,255,255,40);
-                border-radius: 5px;
-                min-height: 30px;
-            }
-            QScrollBar::handle:vertical:hover {
-                background: rgba(255,255,255,60);
-            }
         """)
 
         self.gridTrackSplitter.addWidget(self.browserGridScroll)
@@ -81,17 +69,20 @@ class MusicBrowser(QFrame):
             handle.setEnabled(True)
         self.gridTrackSplitter.setCollapsible(0, True)
         self.gridTrackSplitter.setCollapsible(1, True)
-        self.gridTrackSplitter.setHandleWidth(4)
+        self.gridTrackSplitter.setHandleWidth(3)
         self.gridTrackSplitter.setStretchFactor(0, 2)
         self.gridTrackSplitter.setStretchFactor(1, 1)
         self.gridTrackSplitter.setMinimumSize(0, 0)
-        self.gridTrackSplitter.setStyleSheet("""
-            QSplitter::handle {
-                background: rgba(255,255,255,30);
-            }
-            QSplitter::handle:hover {
-                background: rgba(64,156,255,100);
-            }
+        self.gridTrackSplitter.setStyleSheet(f"""
+            QSplitter::handle {{
+                background: {Colors.BORDER_SUBTLE};
+            }}
+            QSplitter::handle:hover {{
+                background: {Colors.ACCENT};
+            }}
+            QSplitter::handle:pressed {{
+                background: {Colors.ACCENT_LIGHT};
+            }}
         """)
 
         # Set initial sizes (60% grid, 40% tracks)
