@@ -46,6 +46,13 @@ from .transcoder import (
     IPOD_NATIVE_FORMATS,
 )
 from .transcode_cache import TranscodeCache, CachedFile, CacheIndex
+from .checkpoint import (
+    CheckpointManager,
+    SyncState,
+    check_for_interrupted_sync,
+    offer_rollback,
+)
+from .eta import ETATracker
 
 __all__ = [
     # PC Library
@@ -93,4 +100,11 @@ __all__ = [
     "TranscodeCache",
     "CachedFile",
     "CacheIndex",
+    # Checkpoint / rollback
+    "CheckpointManager",
+    "SyncState",
+    "check_for_interrupted_sync",
+    "offer_rollback",
+    # ETA tracking
+    "ETATracker",
 ]

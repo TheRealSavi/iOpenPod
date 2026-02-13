@@ -1,12 +1,27 @@
 [project]
 name = "iopenpod"
 version = "0.1.0"
-description = "iPod Sync tool"
+description = "Open-source iPod Classic sync tool — manage your iPod music library without iTunes. Reads and writes iTunesDB directly."
 authors = [
     {name = "John Gibbons", email = "johngibbons167@gmail.com"}
 ]
 readme = "README.md"
+license = {text = "MIT"}
 requires-python = ">=3.13"
+keywords = [
+    "ipod", "ipod-classic", "itunes", "itunesdb", "music-sync",
+    "ipod-manager", "pyqt6", "music-library", "ipod-sync",
+    "itunes-alternative", "acoustic-fingerprint",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Sound/Audio",
+    "Topic :: Multimedia :: Sound/Audio :: Players",
+]
 dependencies = [
     "dearpygui>=2.0.0,<3.0.0",
     "pyqt6>=6.9.1,<7.0.0",

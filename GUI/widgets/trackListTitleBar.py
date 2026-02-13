@@ -3,6 +3,45 @@ from PyQt6.QtWidgets import QApplication, QHBoxLayout, QFrame, QLabel, QPushButt
 from PyQt6.QtGui import QFont
 
 
+def _title_bar_css(r1: int, g1: int, b1: int, r2: int, g2: int, b2: int) -> str:
+    """Generate the title bar stylesheet for given gradient colors."""
+    return f"""
+        QFrame {{
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 rgba({r1},{g1},{b1},220), stop:1 rgba({r2},{g2},{b2},220));
+            border: none;
+            border-radius: 0px;
+        }}
+        QLabel {{
+            font-weight: 600;
+            font-size: 12px;
+            color: white;
+            background: transparent;
+        }}
+        QPushButton {{
+            background-color: transparent;
+            border: none;
+            color: rgba(255,255,255,180);
+            font-size: 14px;
+            font-weight: bold;
+            width: 26px;
+            height: 26px;
+            border-radius: 4px;
+        }}
+        QPushButton:hover {{
+            background-color: rgba(255,255,255,25);
+            color: white;
+        }}
+        QPushButton:pressed {{
+            background-color: rgba(0,0,0,25);
+        }}
+    """
+
+
+# Default blue gradient
+_DEFAULT_CSS = _title_bar_css(64, 156, 255, 40, 110, 200)
+
+
 class TrackListTitleBar(QFrame):
     """Draggable title bar for the track list panel."""
 
@@ -16,40 +55,11 @@ class TrackListTitleBar(QFrame):
         self.titleBarLayout.setContentsMargins(12, 0, 8, 0)
         self.splitter.splitterMoved.connect(self.enforceMinHeight)
 
-        self.setMinimumHeight(36)
-        self.setMaximumHeight(36)
-        self.setFixedHeight(36)
+        self.setMinimumHeight(34)
+        self.setMaximumHeight(34)
+        self.setFixedHeight(34)
 
-        self.setStyleSheet("""
-            QFrame {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba(64,156,255,200), stop:1 rgba(40,120,200,200));
-                border: none;
-                border-radius: 0px;
-            }
-            QLabel {
-                font-weight: bold;
-                font-size: 13px;
-                color: white;
-                background: transparent;
-            }
-            QPushButton {
-                background-color: transparent;
-                border: none;
-                color: white;
-                font-size: 16px;
-                font-weight: bold;
-                width: 28px;
-                height: 28px;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: rgba(255,255,255,30);
-            }
-            QPushButton:pressed {
-                background-color: rgba(0,0,0,30);
-            }
-        """)
+        self.setStyleSheet(_DEFAULT_CSS)
 
         self.title = QLabel("Tracks")
         self.title.setFont(QFont("Segoe UI", 12, QFont.Weight.DemiBold))
@@ -73,77 +83,17 @@ class TrackListTitleBar(QFrame):
 
     def setColor(self, r: int, g: int, b: int):
         """Set the title bar gradient to the given RGB color."""
-        # Lighter variant for gradient top
-        r2 = min(255, r + 30)
-        g2 = min(255, g + 30)
-        b2 = min(255, b + 30)
-        # Darker variant for gradient bottom
-        r3 = max(0, r - 30)
-        g3 = max(0, g - 30)
-        b3 = max(0, b - 30)
-        self.setStyleSheet(f"""
-            QFrame {{
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba({r2},{g2},{b2},200), stop:1 rgba({r3},{g3},{b3},200));
-                border: none;
-                border-radius: 0px;
-            }}
-            QLabel {{
-                font-weight: bold;
-                font-size: 13px;
-                color: white;
-                background: transparent;
-            }}
-            QPushButton {{
-                background-color: transparent;
-                border: none;
-                color: white;
-                font-size: 16px;
-                font-weight: bold;
-                width: 28px;
-                height: 28px;
-                border-radius: 4px;
-            }}
-            QPushButton:hover {{
-                background-color: rgba(255,255,255,30);
-            }}
-            QPushButton:pressed {{
-                background-color: rgba(0,0,0,30);
-            }}
-        """)
+        r2 = min(255, r + 25)
+        g2 = min(255, g + 25)
+        b2 = min(255, b + 25)
+        r3 = max(0, r - 25)
+        g3 = max(0, g - 25)
+        b3 = max(0, b - 25)
+        self.setStyleSheet(_title_bar_css(r2, g2, b2, r3, g3, b3))
 
     def resetColor(self):
         """Reset to the default blue gradient."""
-        self.setStyleSheet("""
-            QFrame {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba(64,156,255,200), stop:1 rgba(40,120,200,200));
-                border: none;
-                border-radius: 0px;
-            }
-            QLabel {
-                font-weight: bold;
-                font-size: 13px;
-                color: white;
-                background: transparent;
-            }
-            QPushButton {
-                background-color: transparent;
-                border: none;
-                color: white;
-                font-size: 16px;
-                font-weight: bold;
-                width: 28px;
-                height: 28px;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: rgba(255,255,255,30);
-            }
-            QPushButton:pressed {
-                background-color: rgba(0,0,0,30);
-            }
-        """)
+        self.setStyleSheet(_DEFAULT_CSS)
 
     def _toggleMinimize(self):
         """Minimize the track list panel."""

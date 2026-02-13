@@ -20,8 +20,10 @@ from pathlib import Path
 
 from SyncEngine.fingerprint_diff_engine import SyncPlan, SyncItem, SyncAction, FingerprintDiffEngine
 from SyncEngine.pc_library import PCLibrary
+from SyncEngine.eta import ETATracker
 
 from .formatters import format_size as _format_size, format_duration_mmss as _format_duration
+from ..styles import Colors, Metrics, btn_css
 
 import os
 from typing import Optional
@@ -86,9 +88,14 @@ class SyncExecuteWorker(QThread):
             executor = SyncExecutor(self.ipod_path, cache_dir=cache_dir,
                                     max_workers=settings.sync_workers)
 
-            # Load mapping file (load() returns empty MappingFile if doesn't exist)
-            mapping_manager = MappingManager(self.ipod_path)
-            mapping = mapping_manager.load()
+            # Reuse the mapping loaded during compute_diff (avoids duplicate
+            # load / "No mapping file found" log).  Falls back to fresh load
+            # if the plan somehow doesn't carry one.
+            if self.plan.mapping is not None:
+                mapping = self.plan.mapping
+            else:
+                mapping_manager = MappingManager(self.ipod_path)
+                mapping = mapping_manager.load()
 
             # Progress callback
             def on_progress(prog: SyncProgress):
@@ -484,6 +491,7 @@ class SyncReviewWidget(QWidget):
         self._plan: Optional[SyncPlan] = None
         self._cancelled = False
         self._ipod_tracks_cache: list = []
+        self._eta_tracker = ETATracker()
         self._setup_ui()
 
     def _setup_ui(self):
@@ -493,24 +501,24 @@ class SyncReviewWidget(QWidget):
 
         # Header
         header = QFrame()
-        header.setStyleSheet("""
-            QFrame {
-                background: rgba(40, 40, 45, 200);
-                border-bottom: 1px solid rgba(255,255,255,30);
-            }
+        header.setStyleSheet(f"""
+            QFrame {{
+                background: rgba(30, 30, 38, 220);
+                border-bottom: 1px solid {Colors.BORDER};
+            }}
         """)
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(16, 12, 16, 12)
 
         title = QLabel("🔄 Sync Review")
         title.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
-        title.setStyleSheet("color: white; background: transparent;")
+        title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent;")
         header_layout.addWidget(title)
 
         header_layout.addStretch()
 
         self.summary_label = QLabel("")
-        self.summary_label.setStyleSheet("color: rgba(255,255,255,150); background: transparent;")
+        self.summary_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent;")
         header_layout.addWidget(self.summary_label)
 
         layout.addWidget(header)
@@ -525,31 +533,36 @@ class SyncReviewWidget(QWidget):
         loading_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.loading_label = QLabel("Scanning library...")
-        self.loading_label.setStyleSheet("color: white; font-size: 14px;")
+        self.loading_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; font-size: 14px;")
         self.loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         loading_layout.addWidget(self.loading_label)
 
         self.progress_bar = QProgressBar()
         self.progress_bar.setFixedWidth(300)
         self.progress_bar.setTextVisible(False)
-        self.progress_bar.setStyleSheet("""
-            QProgressBar {
-                background: rgba(255,255,255,20);
+        self.progress_bar.setStyleSheet(f"""
+            QProgressBar {{
+                background: rgba(255,255,255,15);
                 border: none;
                 border-radius: 4px;
-                height: 8px;
-            }
-            QProgressBar::chunk {
-                background: #409cff;
-                border-radius: 4px;
-            }
+                height: 6px;
+            }}
+            QProgressBar::chunk {{
+                background: {Colors.ACCENT};
+                border-radius: 3px;
+            }}
         """)
         loading_layout.addWidget(self.progress_bar, alignment=Qt.AlignmentFlag.AlignCenter)
 
         self.progress_detail = QLabel("")
-        self.progress_detail.setStyleSheet("color: rgba(255,255,255,100); font-size: 11px;")
+        self.progress_detail.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; font-size: 11px;")
         self.progress_detail.setAlignment(Qt.AlignmentFlag.AlignCenter)
         loading_layout.addWidget(self.progress_detail)
+
+        self.eta_label = QLabel("")
+        self.eta_label.setStyleSheet(f"color: {Colors.ACCENT}; font-size: 11px;")
+        self.eta_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        loading_layout.addWidget(self.eta_label)
 
         self.stack.addWidget(loading_widget)  # Index 0
 
@@ -561,14 +574,14 @@ class SyncReviewWidget(QWidget):
 
         # Splitter for tree and details
         self.splitter = QSplitter(Qt.Orientation.Vertical)
-        self.splitter.setStyleSheet("""
-            QSplitter::handle {
-                background: rgba(255,255,255,20);
+        self.splitter.setStyleSheet(f"""
+            QSplitter::handle {{
+                background: {Colors.BORDER_SUBTLE};
                 height: 3px;
-            }
-            QSplitter::handle:hover {
-                background: rgba(64, 156, 255, 100);
-            }
+            }}
+            QSplitter::handle:hover {{
+                background: {Colors.ACCENT};
+            }}
         """)
 
         self.tree = QTreeWidget()
@@ -576,59 +589,55 @@ class SyncReviewWidget(QWidget):
         self.tree.setRootIsDecorated(True)
         self.tree.setAlternatingRowColors(True)
         self.tree.setMouseTracking(True)  # Enable hover tooltips
-        self.tree.setStyleSheet("""
-            QTreeWidget {
-                background: rgba(30, 30, 35, 200);
+        self.tree.setStyleSheet(f"""
+            QTreeWidget {{
+                background: rgba(22, 22, 30, 220);
+                alternate-background-color: rgba(255,255,255,3);
                 border: none;
-                color: white;
+                color: {Colors.TEXT_PRIMARY};
                 font-size: 12px;
-            }
-            QTreeWidget::item {
-                padding: 6px 0;
-                border-bottom: 1px solid rgba(255,255,255,10);
-            }
-            QTreeWidget::item:selected {
-                background: rgba(64, 156, 255, 100);
-            }
-            QTreeWidget::indicator {
+                outline: none;
+            }}
+            QTreeWidget::item {{
+                padding: 5px 0;
+                border-bottom: 1px solid {Colors.BORDER_SUBTLE};
+            }}
+            QTreeWidget::item:selected {{
+                background: {Colors.SELECTION};
+            }}
+            QTreeWidget::indicator {{
                 width: 16px;
                 height: 16px;
                 margin-left: 6px;
-            }
-            QTreeWidget::indicator:unchecked {
-                border: 2px solid rgba(255,255,255,80);
+            }}
+            QTreeWidget::indicator:unchecked {{
+                border: 2px solid rgba(255,255,255,60);
                 border-radius: 3px;
                 background: transparent;
-            }
-            QTreeWidget::indicator:checked {
-                border: 2px solid #409cff;
+            }}
+            QTreeWidget::indicator:checked {{
+                border: 2px solid {Colors.ACCENT};
                 border-radius: 3px;
-                background: #409cff;
+                background: {Colors.ACCENT};
                 image: none;
-            }
-            QTreeWidget::indicator:indeterminate {
-                border: 2px solid #409cff;
+            }}
+            QTreeWidget::indicator:indeterminate {{
+                border: 2px solid {Colors.ACCENT};
                 border-radius: 3px;
-                background: rgba(64, 156, 255, 80);
-            }
-            QTreeWidget::item:hover {
-                background: rgba(255,255,255,20);
-            }
-            QHeaderView::section {
-                background: rgba(50, 50, 55, 200);
-                color: rgba(255,255,255,150);
-                padding: 8px;
+                background: rgba(64, 156, 255, 60);
+            }}
+            QTreeWidget::item:hover {{
+                background: rgba(255,255,255,8);
+            }}
+            QHeaderView::section {{
+                background: {Colors.SURFACE_ALT};
+                color: {Colors.TEXT_SECONDARY};
+                padding: 6px 8px;
                 border: none;
-                border-bottom: 1px solid rgba(255,255,255,30);
-                font-weight: bold;
-            }
-            QToolTip {
-                background: rgba(40, 40, 45, 250);
-                color: white;
-                border: 1px solid rgba(255,255,255,30);
-                padding: 8px;
+                border-bottom: 1px solid {Colors.BORDER};
+                font-weight: 600;
                 font-size: 11px;
-            }
+            }}
         """)
 
         # Reduce tree indentation so child checkboxes don't get clipped
@@ -656,11 +665,11 @@ class SyncReviewWidget(QWidget):
 
         # Details panel (collapsible)
         self.details_panel = QFrame()
-        self.details_panel.setStyleSheet("""
-            QFrame {
-                background: rgba(25, 25, 30, 200);
-                border-top: 1px solid rgba(255,255,255,20);
-            }
+        self.details_panel.setStyleSheet(f"""
+            QFrame {{
+                background: rgba(20, 20, 28, 220);
+                border-top: 1px solid {Colors.BORDER_SUBTLE};
+            }}
         """)
         self.details_panel.setMinimumHeight(80)
         self.details_panel.setMaximumHeight(150)
@@ -670,11 +679,11 @@ class SyncReviewWidget(QWidget):
         details_layout.setSpacing(4)
 
         details_header = QLabel("Details")
-        details_header.setStyleSheet("color: rgba(255,255,255,100); font-size: 10px; font-weight: bold; text-transform: uppercase;")
+        details_header.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; font-size: 10px; font-weight: bold; text-transform: uppercase;")
         details_layout.addWidget(details_header)
 
         self.details_text = QLabel("Select an item to see details")
-        self.details_text.setStyleSheet("color: rgba(255,255,255,200); font-size: 11px;")
+        self.details_text.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: 11px;")
         self.details_text.setWordWrap(True)
         self.details_text.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         details_layout.addWidget(self.details_text)
@@ -698,12 +707,12 @@ class SyncReviewWidget(QWidget):
 
         empty_text = QLabel("Everything is in sync!")
         empty_text.setFont(QFont("Segoe UI", 16))
-        empty_text.setStyleSheet("color: white;")
+        empty_text.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
         empty_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
         empty_layout.addWidget(empty_text)
 
         self.empty_stats = QLabel("")
-        self.empty_stats.setStyleSheet("color: rgba(255,255,255,100); font-size: 12px;")
+        self.empty_stats.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; font-size: 12px;")
         self.empty_stats.setAlignment(Qt.AlignmentFlag.AlignCenter)
         empty_layout.addWidget(self.empty_stats)
 
@@ -726,7 +735,7 @@ class SyncReviewWidget(QWidget):
         results_layout.addWidget(self.result_title)
 
         self.result_details = QLabel("")
-        self.result_details.setStyleSheet("color: rgba(255,255,255,200); font-size: 13px;")
+        self.result_details.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: 13px;")
         self.result_details.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.result_details.setWordWrap(True)
         self.result_details.setMaximumWidth(500)
@@ -736,14 +745,14 @@ class SyncReviewWidget(QWidget):
 
         # Footer with action buttons
         footer = QFrame()
-        footer.setStyleSheet("""
-            QFrame {
-                background: rgba(40, 40, 45, 200);
-                border-top: 1px solid rgba(255,255,255,30);
-            }
+        footer.setStyleSheet(f"""
+            QFrame {{
+                background: rgba(30, 30, 38, 220);
+                border-top: 1px solid {Colors.BORDER};
+            }}
         """)
         footer_layout = QHBoxLayout(footer)
-        footer_layout.setContentsMargins(16, 12, 16, 12)
+        footer_layout.setContentsMargins(16, 10, 16, 10)
 
         # Select all / none buttons
         self.select_all_btn = QPushButton("Select All")
@@ -752,18 +761,14 @@ class SyncReviewWidget(QWidget):
         self.select_none_btn.clicked.connect(self._select_none)
 
         for btn in [self.select_all_btn, self.select_none_btn]:
-            btn.setStyleSheet("""
-                QPushButton {
-                    background: rgba(255,255,255,20);
-                    border: 1px solid rgba(255,255,255,30);
-                    border-radius: 4px;
-                    color: white;
-                    padding: 6px 12px;
-                }
-                QPushButton:hover {
-                    background: rgba(255,255,255,40);
-                }
-            """)
+            btn.setStyleSheet(btn_css(
+                bg=Colors.SURFACE_RAISED,
+                bg_hover=Colors.SURFACE_ACTIVE,
+                bg_press=Colors.SURFACE_ALT,
+                border=f"1px solid {Colors.BORDER}",
+                radius=Metrics.BORDER_RADIUS_SM,
+                padding="5px 12px",
+            ))
 
         footer_layout.addWidget(self.select_all_btn)
         footer_layout.addWidget(self.select_none_btn)
@@ -771,7 +776,7 @@ class SyncReviewWidget(QWidget):
 
         # Selection summary
         self.selection_label = QLabel("")
-        self.selection_label.setStyleSheet("color: rgba(255,255,255,150);")
+        self.selection_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
         footer_layout.addWidget(self.selection_label)
 
         footer_layout.addSpacing(20)
@@ -779,37 +784,33 @@ class SyncReviewWidget(QWidget):
         # Cancel and Apply buttons
         self.cancel_btn = QPushButton("Cancel")
         self.cancel_btn.clicked.connect(self._on_cancel_clicked)
-        self.cancel_btn.setStyleSheet("""
-            QPushButton {
-                background: rgba(255,255,255,20);
-                border: 1px solid rgba(255,255,255,30);
-                border-radius: 4px;
-                color: white;
-                padding: 8px 20px;
-            }
-            QPushButton:hover {
-                background: rgba(255,255,255,40);
-            }
-        """)
+        self.cancel_btn.setStyleSheet(btn_css(
+            bg=Colors.SURFACE_RAISED,
+            bg_hover=Colors.SURFACE_ACTIVE,
+            bg_press=Colors.SURFACE_ALT,
+            border=f"1px solid {Colors.BORDER}",
+            radius=Metrics.BORDER_RADIUS_SM,
+            padding="7px 20px",
+        ))
 
         self.apply_btn = QPushButton("Apply Sync")
         self.apply_btn.clicked.connect(self._apply_sync)
-        self.apply_btn.setStyleSheet("""
-            QPushButton {
-                background: #409cff;
+        self.apply_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {Colors.ACCENT};
                 border: none;
-                border-radius: 4px;
+                border-radius: {Metrics.BORDER_RADIUS_SM}px;
                 color: white;
-                padding: 8px 24px;
+                padding: 7px 24px;
                 font-weight: bold;
-            }
-            QPushButton:hover {
-                background: #5aacff;
-            }
-            QPushButton:disabled {
-                background: rgba(64, 156, 255, 50);
-                color: rgba(255,255,255,100);
-            }
+            }}
+            QPushButton:hover {{
+                background: {Colors.ACCENT_LIGHT};
+            }}
+            QPushButton:disabled {{
+                background: rgba(64, 156, 255, 40);
+                color: {Colors.TEXT_DISABLED};
+            }}
         """)
 
         footer_layout.addWidget(self.cancel_btn)
@@ -877,6 +878,8 @@ class SyncReviewWidget(QWidget):
         self.stack.setCurrentIndex(0)
         self.loading_label.setText("Scanning library...")
         self.progress_bar.setRange(0, 0)  # Indeterminate
+        self.eta_label.setText("")
+        self._eta_tracker.start()
         self._set_footer_for_state("loading")
 
     def update_progress(self, stage: str, current: int, total: int, message: str):
@@ -887,8 +890,11 @@ class SyncReviewWidget(QWidget):
         if total > 0:
             self.progress_bar.setRange(0, total)
             self.progress_bar.setValue(current)
+            self._eta_tracker.update(stage, current, total)
+            self.eta_label.setText(self._eta_tracker.format_stage_progress(stage, current, total))
         else:
             self.progress_bar.setRange(0, 0)  # Indeterminate
+            self.eta_label.setText("")
 
     def show_plan(self, plan: SyncPlan):
         """Display the sync plan in the tree view."""
@@ -1150,10 +1156,12 @@ class SyncReviewWidget(QWidget):
         self._cancelled = False
         self._completed_stages = []  # Track completed stage names
         self._current_exec_stage = ""
+        self._eta_tracker.start()
         self.stack.setCurrentIndex(0)  # Loading view
         self.loading_label.setText("Starting sync...")
         self.progress_detail.setText("Preparing...")
         self.progress_bar.setRange(0, 0)  # Indeterminate initially
+        self.eta_label.setText("")
         self._set_footer_for_state("executing")
 
     def update_execute_progress(self, stage: str, current: int, total: int, message: str):
@@ -1180,8 +1188,11 @@ class SyncReviewWidget(QWidget):
         if total > 0:
             self.progress_bar.setRange(0, total)
             self.progress_bar.setValue(current)
+            self._eta_tracker.update(stage, current, total)
+            self.eta_label.setText(self._eta_tracker.format_stage_progress(stage, current, total))
         else:
             self.progress_bar.setRange(0, 0)  # Indeterminate
+            self.eta_label.setText("")
 
     def show_result(self, result):
         """Show sync completion results in a styled view."""
@@ -1195,15 +1206,15 @@ class SyncReviewWidget(QWidget):
         if success and not errors:
             self.result_icon.setText("✅")
             self.result_title.setText("Sync Complete")
-            self.result_title.setStyleSheet("color: #70c070; font-size: 18px; font-weight: bold;")
+            self.result_title.setStyleSheet(f"color: {Colors.SUCCESS}; font-size: 18px; font-weight: bold;")
         elif errors:
             self.result_icon.setText("⚠️")
             self.result_title.setText("Sync Completed with Errors")
-            self.result_title.setStyleSheet("color: #e0b050; font-size: 18px; font-weight: bold;")
+            self.result_title.setStyleSheet(f"color: {Colors.WARNING}; font-size: 18px; font-weight: bold;")
         else:
             self.result_icon.setText("❌")
             self.result_title.setText("Sync Failed")
-            self.result_title.setStyleSheet("color: #e07070; font-size: 18px; font-weight: bold;")
+            self.result_title.setStyleSheet(f"color: {Colors.DANGER}; font-size: 18px; font-weight: bold;")
 
         # Build results text
         lines = []
@@ -1616,13 +1627,14 @@ class PCFolderDialog(QDialog):
         folder_layout = QHBoxLayout()
 
         self.folder_edit = QLabel(self.last_folder or "No folder selected")
-        self.folder_edit.setStyleSheet("""
-            QLabel {
-                background: palette(base);
-                border: 1px solid palette(mid);
-                border-radius: 4px;
+        self.folder_edit.setStyleSheet(f"""
+            QLabel {{
+                background: {Colors.SURFACE_RAISED};
+                border: 1px solid {Colors.BORDER};
+                border-radius: {Metrics.BORDER_RADIUS_SM}px;
                 padding: 8px;
-            }
+                color: {Colors.TEXT_PRIMARY};
+            }}
         """)
         self.folder_edit.setWordWrap(True)
         folder_layout.addWidget(self.folder_edit, 1)

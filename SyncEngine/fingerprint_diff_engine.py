@@ -37,7 +37,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .pc_library import PCLibrary, PCTrack
 from .audio_fingerprint import get_or_compute_fingerprint, is_fpcalc_available
-from .mapping import MappingManager, TrackMapping
+from .mapping import MappingManager, MappingFile, TrackMapping
 from .integrity import IntegrityReport
 
 logger = logging.getLogger(__name__)
@@ -155,6 +155,10 @@ class SyncPlan:
     # Stale mapping entries: (fingerprint, dbid) pairs where dbid is not in iTunesDB.
     # Cleaned from mapping during execution, not shown to user.
     _stale_mapping_entries: list[tuple[str, int]] = field(default_factory=list)
+
+    # Mapping file loaded during compute_diff — carried through to executor
+    # so we don't load it twice.
+    mapping: MappingFile | None = None
 
     # Integrity report from pre-flight check (None if not run)
     integrity_report: IntegrityReport | None = None
@@ -657,6 +661,10 @@ class FingerprintDiffEngine:
         if plan.artwork_missing_count > 0:
             plan.artwork_needs_sync = True
             logger.info(f"ART: {plan.artwork_missing_count} matched tracks missing artwork")
+
+        # Attach the mapping so the executor can reuse it instead of
+        # loading from disk a second time.
+        plan.mapping = mapping
 
         return plan
 

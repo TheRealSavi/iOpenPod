@@ -28,6 +28,7 @@ import random
 import os
 import shutil
 import time
+import logging
 from typing import List, Optional
 
 from .mhlt_writer import write_mhlt
@@ -38,6 +39,7 @@ from .mhit_writer import TrackInfo
 from .device import detect_checksum_type, ChecksumType
 from .hash58 import write_hash58
 
+logger = logging.getLogger(__name__)
 
 # MHBD header size (version 0x4F+)
 MHBD_HEADER_SIZE = 244
@@ -355,9 +357,10 @@ def write_itunesdb(
                 'unk_0xa6': struct.unpack('<H', source_itdb[0xA6:0xA8])[0],
                 'unk_0xa8': struct.unpack('<H', source_itdb[0xA8:0xAA])[0],
             }
-            print(f"Using reference database fields: id_0x24={reference_info['id_0x24']:016X}, lib_pid={reference_info['lib_persistent_id']:016X}")
+            logger.debug("Using reference database fields: id_0x24=%016X, lib_pid=%016X",
+                         reference_info['id_0x24'], reference_info['lib_persistent_id'])
         except Exception as e:
-            print(f"Warning: Could not extract reference info: {e}")
+            logger.warning("Could not extract reference info: %s", e)
             reference_info = None
 
     # --- Generate dbids for all tracks BEFORE artwork ---
@@ -370,7 +373,8 @@ def write_itunesdb(
 
     # --- Write ArtworkDB if PC file paths provided ---
     if pc_file_paths:
-        print(f"ART: pc_file_paths has {len(pc_file_paths)} entries, tracks has {len(tracks)} tracks")
+        logger.debug("ART: pc_file_paths has %d entries, tracks has %d tracks",
+                     len(pc_file_paths), len(tracks))
 
         # Remap pc_file_paths: the sync executor may have used id(track_info) as keys
         # because dbids weren't assigned yet. Now that dbids are assigned, remap.
@@ -386,8 +390,9 @@ def write_itunesdb(
                 # Key is already a dbid (from matched_pc_paths)
                 remapped_paths[key] = path
 
-        print(f"ART: remapped {remap_count} new-track paths from object-id to dbid, "
-              f"{len(remapped_paths) - remap_count} existing-track paths kept by dbid")
+        logger.debug("ART: remapped %d new-track paths from object-id to dbid, "
+                     "%d existing-track paths kept by dbid",
+                     remap_count, len(remapped_paths) - remap_count)
         pc_file_paths = remapped_paths
 
         # Log sample of pc_file_paths
@@ -398,11 +403,11 @@ def write_itunesdb(
                 if t.dbid == dbid:
                     title = t.title
                     break
-            print(f"ART:   [{i}] dbid={dbid} title='{title}' path={path}")
+            logger.debug("ART:   [%d] dbid=%d title='%s' path=%s", i, dbid, title, path)
 
         # Check how many tracks have matching pc_file_paths
         matched = sum(1 for t in tracks if t.dbid in pc_file_paths)
-        print(f"ART: {matched}/{len(tracks)} tracks have a PC source path")
+        logger.debug("ART: %d/%d tracks have a PC source path", matched, len(tracks))
 
         try:
             from ArtworkDB_Writer import write_artworkdb
@@ -433,18 +438,18 @@ def write_itunesdb(
                         track.mhii_link = 0
                         track.artwork_count = 0
                         track.artwork_size = 0
-                print(f"ART: linked {art_count}/{len(tracks)} tracks to {len(dbid_to_imgid)} unique images")
-                # Log sample of linked tracks
+                logger.debug("ART: linked %d/%d tracks to %d unique images",
+                             art_count, len(tracks), len(dbid_to_imgid))
                 for t in tracks[:5]:
-                    print(f"ART:   '{t.title}' mhii_link={t.mhii_link} artwork_count={t.artwork_count} artwork_size={t.artwork_size}")
+                    logger.debug("ART:   '%s' mhii_link=%d artwork_count=%d artwork_size=%d",
+                                 t.title, t.mhii_link, t.artwork_count, t.artwork_size)
             else:
-                print("ART: write_artworkdb returned EMPTY dict — no artwork was generated")
+                logger.warning("ART: write_artworkdb returned empty dict — no artwork was generated")
         except Exception as e:
-            print(f"ART ERROR: ArtworkDB write failed: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error("ART: ArtworkDB write failed: %s", e, exc_info=True)
     else:
-        print(f"ART: pc_file_paths is {'None' if pc_file_paths is None else 'empty dict'} — skipping ArtworkDB")
+        logger.debug("ART: pc_file_paths is %s — skipping ArtworkDB",
+                     'None' if pc_file_paths is None else 'empty dict')
 
     # Build database with reference info
     itdb_data = bytearray(write_mhbd(tracks, db_id, reference_info=reference_info))
@@ -455,7 +460,7 @@ def write_itunesdb(
 
     if force_checksum is not None:
         checksum_type = force_checksum
-        print(f"Using forced checksum type: {checksum_type.name}")
+        logger.debug("Using forced checksum type: %s", checksum_type.name)
     else:
         checksum_type = detect_checksum_type(ipod_path)
         # If detection returned NONE but we have an existing database with hashing,
@@ -468,20 +473,17 @@ def write_itunesdb(
             has_valid_hash58 = source_itdb[0x58:0x6C] != bytes(20)
 
             if existing_scheme == 1 and has_valid_hash58 and has_valid_hash72:
-                # iPod Classic pattern: hash_scheme=1 with BOTH hashes
-                # This requires copying hash58 (we can't compute it without FireWire ID)
-                # and regenerating hash72 (we can extract IV/rndpart)
                 checksum_type = ChecksumType.HASH58
-                print("Detected iPod Classic pattern (hash_scheme=1 with both hashes)")
+                logger.debug("Detected iPod Classic pattern (hash_scheme=1 with both hashes)")
             elif has_valid_hash72:
                 checksum_type = ChecksumType.HASH72
-                print("Detected valid HASH72 signature in existing database")
+                logger.debug("Detected valid HASH72 signature in existing database")
             elif existing_scheme == 1:
                 checksum_type = ChecksumType.HASH58
-                print("Detected HASH58 from existing database")
+                logger.debug("Detected HASH58 from existing database")
             elif existing_scheme == 2:
                 checksum_type = ChecksumType.HASH72
-                print("Detected HASH72 from existing database")
+                logger.debug("Detected HASH72 from existing database")
 
     if checksum_type == ChecksumType.HASH58:
         # iPod Classic requires HASH58 (and often HASH72 too)
@@ -499,7 +501,7 @@ def write_itunesdb(
                 sha1 = _compute_itunesdb_sha1(itdb_data)
                 signature = _hash_generate(sha1, hash_dict['iv'], hash_dict['rndpart'])
                 itdb_data[0x72:0x72 + 46] = signature
-                print(f"HASH72 signature written first (hash58 depends on it)")
+                logger.debug("HASH72 signature written first (hash58 depends on it)")
 
         # Step 2: Write HASH58 (HMAC-SHA1 using key derived from device FireWire GUID)
         # Try to get FireWire ID from parameter, SysInfo, SysInfoExtended, or Windows registry
@@ -508,20 +510,20 @@ def write_itunesdb(
                 from .device import get_firewire_id
                 firewire_id = get_firewire_id(ipod_path)
             except Exception as e:
-                print(f"Warning: Could not get FireWire ID: {e}")
+                logger.warning("Could not get FireWire ID: %s", e)
 
         if firewire_id:
             write_hash58(itdb_data, firewire_id)
-            print(f"HASH58 signature computed with FireWire ID: {firewire_id.hex()}")
+            logger.info("HASH58 signature computed with FireWire ID: %s", firewire_id.hex())
         elif source_itdb and len(source_itdb) >= 0x6C and source_itdb[0x58:0x6C] != bytes(20):
             # Last resort: copy hash58 from reference database
             # NOTE: This is WRONG if the database content changed! hash58 is content-dependent.
             # This fallback only works if the database is byte-identical to the reference.
             itdb_data[0x58:0x6C] = source_itdb[0x58:0x6C]
-            print(f"WARNING: HASH58 copied from reference (content-dependent — may be invalid!)")
-            print(f"  To fix: connect iPod so FireWire GUID can be read from USB serial")
+            logger.warning("HASH58 copied from reference (content-dependent — may be invalid!)")
+            logger.warning("  To fix: connect iPod so FireWire GUID can be read from USB serial")
         else:
-            print("ERROR: No FireWire ID and no reference hash58 — database will be rejected!")
+            logger.error("No FireWire ID and no reference hash58 — database will be rejected!")
 
         # hash_scheme is already set to 1 in write_mhbd
 
@@ -535,11 +537,11 @@ def write_itunesdb(
             # Try to extract from reference database
             source_itdb = reference_itdb or existing_itdb
             if source_itdb:
-                print("Attempting to extract hash info from reference database...")
+                logger.debug("Attempting to extract hash info from reference database...")
                 hash_dict = extract_hash_info_to_dict(source_itdb)
                 if hash_dict:
-                    print(f"  IV: {hash_dict['iv'].hex()}")
-                    print(f"  rndpart: {hash_dict['rndpart'].hex()}")
+                    logger.debug("  IV: %s", hash_dict['iv'].hex())
+                    logger.debug("  rndpart: %s", hash_dict['rndpart'].hex())
 
                     # Compute SHA1 of new database
                     sha1 = _compute_itunesdb_sha1(itdb_data)
@@ -551,21 +553,21 @@ def write_itunesdb(
                     itdb_data[0x72:0x72 + 46] = signature
                     # Keep hash_scheme = 1 (already set in write_mhbd) to match iTunes behavior
                     # iTunes writes both hash58 and hash72, with hash_scheme=1
-                    print("HASH72 signature written successfully!")
+                    logger.info("HASH72 signature written successfully")
                 else:
-                    print("Warning: Could not extract hash info from reference database")
+                    logger.warning("Could not extract hash info from reference database")
             else:
-                print("Warning: No HashInfo file and no reference database available")
+                logger.warning("No HashInfo file and no reference database available")
         else:
             # Use existing HashInfo file
             sha1 = _compute_itunesdb_sha1(itdb_data)
             signature = _hash_generate(sha1, hash_info.iv, hash_info.rndpart)
             itdb_data[0x72:0x72 + 46] = signature
             # Keep hash_scheme = 1 (already set in write_mhbd) to match iTunes behavior
-            print("HASH72 signature written from HashInfo file")
+            logger.info("HASH72 signature written from HashInfo file")
 
     elif checksum_type == ChecksumType.UNSUPPORTED:
-        print("Error: Device requires HASHAB which is not supported")
+        logger.error("Device requires HASHAB which is not supported")
         return False
     else:
         # ChecksumType.NONE or UNKNOWN - set hash_scheme to 0
@@ -577,7 +579,7 @@ def write_itunesdb(
         try:
             shutil.copy2(itdb_path, backup_path)
         except Exception as e:
-            print(f"Warning: Could not backup iTunesDB: {e}")
+            logger.warning("Could not backup iTunesDB: %s", e)
 
     # Write atomically — os.replace is atomic on NTFS and POSIX
     temp_path = itdb_path + ".tmp"
@@ -591,7 +593,7 @@ def write_itunesdb(
         return True
 
     except Exception as e:
-        print(f"Error writing iTunesDB: {e}")
+        logger.error("Error writing iTunesDB: %s", e)
         if os.path.exists(temp_path):
             os.remove(temp_path)
         return False

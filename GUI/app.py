@@ -1,3 +1,4 @@
+import logging
 import os
 import sys
 import traceback
@@ -8,7 +9,10 @@ from GUI.widgets.sidebar import Sidebar
 from GUI.widgets.syncReview import SyncReviewWidget, SyncWorker, PCFolderDialog, SyncExecuteWorker
 from GUI.widgets.settingsPage import SettingsPage
 from GUI.settings import get_settings
+from GUI.notifications import Notifier
 import threading
+
+logger = logging.getLogger(__name__)
 
 # Paths relative to project root
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -40,6 +44,7 @@ class DeviceManager(QObject):
     def __init__(self):
         super().__init__()
         self._device_path = None
+        self._discovered_ipod = None  # cached DiscoveredIPod from last scan
         self._cancellation_token = CancellationToken()
 
     @classmethod
@@ -61,6 +66,15 @@ class DeviceManager(QObject):
     def device_path(self) -> str | None:
         return self._device_path
 
+    @property
+    def discovered_ipod(self):
+        """Return the cached DiscoveredIPod from the last scan, if any."""
+        return self._discovered_ipod
+
+    @discovered_ipod.setter
+    def discovered_ipod(self, ipod):
+        self._discovered_ipod = ipod
+
     @device_path.setter
     def device_path(self, path: str | None):
         # Signal that device is changing (for cleanup)
@@ -70,6 +84,8 @@ class DeviceManager(QObject):
         # Clear the iTunesDB cache
         iTunesDBCache.get_instance().clear()
         self._device_path = path
+        if path is None:
+            self._discovered_ipod = None
         self.device_changed.emit(path or "")
 
     @property
@@ -273,7 +289,7 @@ class iTunesDBCache(QObject):
             data = parse_itunesdb(itunesdb_path)
             return (data, device_path)
         except Exception as e:
-            print(f"Error parsing iTunesDB: {e}")
+            logger.error("Error parsing iTunesDB: %s", e)
             return (None, device_path)
 
     def _on_load_complete(self, result: tuple):
@@ -297,6 +313,12 @@ category_glyphs = {
 
 
 class Worker(QRunnable):
+    """Generic background worker with error recovery.
+
+    Wraps a function to run in a thread pool with proper cancellation,
+    error handling, and cleanup support.
+    """
+
     def __init__(self, fn, *args, **kwargs):
         super().__init__()
         self.fn = fn
@@ -306,6 +328,7 @@ class Worker(QRunnable):
         # Capture the current cancellation token at creation time
         self._cancellation_token = DeviceManager.get_instance().cancellation_token
         self._is_cancelled = False
+        self._fn_name = getattr(fn, '__name__', str(fn))
 
     def is_cancelled(self) -> bool:
         """Check if this worker has been cancelled."""
@@ -319,7 +342,11 @@ class Worker(QRunnable):
     def run(self):
         # Check cancellation before starting
         if self.is_cancelled():
-            self.signals.finished.emit()
+            logger.debug(f"Worker {self._fn_name} cancelled before start")
+            try:
+                self.signals.finished.emit()
+            except RuntimeError:
+                pass
             return
 
         try:
@@ -330,15 +357,15 @@ class Worker(QRunnable):
                     self.signals.result.emit(result)
                 except RuntimeError:
                     # Signal receiver was deleted
-                    pass
-        except Exception:
+                    logger.debug(f"Worker {self._fn_name} result signal receiver deleted")
+        except Exception as e:
             if not self.is_cancelled():
-                traceback.print_exc()
+                logger.error(f"Worker {self._fn_name} failed: {e}", exc_info=True)
                 exectype, value = sys.exc_info()[:2]
                 try:
                     self.signals.error.emit((exectype, value, traceback.format_exc()))
                 except RuntimeError:
-                    pass
+                    logger.debug(f"Worker {self._fn_name} error signal receiver deleted")
         finally:
             try:
                 self.signals.finished.emit()
@@ -545,6 +572,9 @@ class MainWindow(QMainWindow):
         self._sync_execute_worker = None
         self._plan = None
 
+        # Initialize system notifications
+        self._notifier = Notifier.get_instance(self)
+
         # Load persisted settings
         settings = get_settings()
         self._last_pc_folder = settings.music_folder or os.path.join(os.path.expanduser("~"), "Music")
@@ -588,6 +618,7 @@ class MainWindow(QMainWindow):
             folder = dialog.selected_path
             device_manager = DeviceManager.get_instance()
             if device_manager.is_valid_ipod_root(folder):
+                device_manager.discovered_ipod = dialog.selected_ipod
                 device_manager.device_path = folder
                 self.sidebar.updateDeviceButton(os.path.basename(folder) or folder)
                 # Persist selection
@@ -619,8 +650,63 @@ class MainWindow(QMainWindow):
         self.musicBrowser.browserTrack.clearTable()
 
         if path:
+            # Check for interrupted sync from previous session
+            self._check_interrupted_sync(path)
+
             # Start loading data (will emit data_ready when done)
             iTunesDBCache.get_instance().start_loading()
+
+    def _check_interrupted_sync(self, device_path: str):
+        """Check if there's an interrupted sync that needs recovery."""
+        from SyncEngine.checkpoint import check_for_interrupted_sync, CheckpointManager
+
+        try:
+            state = check_for_interrupted_sync(device_path)
+            if state and (state.is_failed or state.current_stage):
+                # Build user-friendly message
+                if state.is_failed:
+                    status = f"A previous sync failed during: {state.current_stage or 'unknown stage'}\n\n"
+                    if state.last_error:
+                        status += f"Error: {state.last_error}\n\n"
+                else:
+                    status = f"A previous sync was interrupted during: {state.current_stage}\n\n"
+
+                progress_info = []
+                if state.tracks_added:
+                    progress_info.append(f"{state.tracks_added} tracks added")
+                if state.tracks_removed:
+                    progress_info.append(f"{state.tracks_removed} tracks removed")
+                if state.tracks_updated:
+                    progress_info.append(f"{state.tracks_updated} tracks updated")
+                if progress_info:
+                    status += f"Progress before failure: {', '.join(progress_info)}\n\n"
+
+                reply = QMessageBox.question(
+                    self,
+                    "Interrupted Sync Detected",
+                    f"{status}"
+                    f"Would you like to rollback to the pre-sync backup?\n\n"
+                    f"(If you choose No, the iPod will use its current state)",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No
+                )
+
+                if reply == QMessageBox.StandardButton.Yes:
+                    checkpoint = CheckpointManager(device_path)
+                    if checkpoint.rollback():
+                        QMessageBox.information(
+                            self,
+                            "Rollback Complete",
+                            "Successfully restored iPod to its pre-sync state."
+                        )
+                    else:
+                        QMessageBox.warning(
+                            self,
+                            "Rollback Failed",
+                            "Could not restore the backup. You may need to re-sync."
+                        )
+        except Exception as e:
+            logger.warning(f"Error checking for interrupted sync: {e}")
 
     def onDataReady(self):
         """Called when iTunesDB data is loaded and ready."""
@@ -650,7 +736,7 @@ class MainWindow(QMainWindow):
                 elif 'model_name' in device_info:
                     model = device_info['model_name']
         except Exception as e:
-            print(f"Could not get device info: {e}")
+            logger.warning("Could not get device info: %s", e)
 
         # Get database version info
         db_version_hex = ""
@@ -832,6 +918,7 @@ class MainWindow(QMainWindow):
             artwork_needs_sync=original_plan.artwork_needs_sync if original_plan else False,
             artwork_missing_count=original_plan.artwork_missing_count if original_plan else 0,
             _stale_mapping_entries=original_plan._stale_mapping_entries if original_plan else [],
+            mapping=original_plan.mapping if original_plan else None,
         )
 
         if not filtered_plan.has_changes:
@@ -855,22 +942,76 @@ class MainWindow(QMainWindow):
         # Show styled results view instead of a plain message box
         self.syncReview.show_result(result)
 
+        # Desktop notification if app is not focused
+        if not self.isActiveWindow():
+            self._notifier.notify_sync_complete(
+                added=getattr(result, 'tracks_added', 0),
+                removed=getattr(result, 'tracks_removed', 0),
+                updated=getattr(result, 'tracks_updated_metadata', 0) + getattr(result, 'tracks_updated_file', 0),
+                errors=len(getattr(result, 'errors', [])),
+            )
+
         # Reload the database to show changes
         cache = iTunesDBCache.get_instance()
         cache._data = None  # Force reload
         cache.start_loading()
 
     def _onSyncExecuteError(self, error_msg: str):
-        """Called when sync execution fails."""
-        QMessageBox.critical(
-            self,
-            "Sync Error",
-            f"Sync failed:\n\n{error_msg}"
-        )
+        """Called when sync execution fails - offers rollback option."""
+        from SyncEngine.checkpoint import CheckpointManager
+
+        # Desktop notification if app is not focused
+        if not self.isActiveWindow():
+            self._notifier.notify_sync_error(error_msg)
+
+        device_manager = DeviceManager.get_instance()
+        has_checkpoint = False
+        checkpoint = None
+
+        if device_manager.device_path:
+            checkpoint = CheckpointManager(device_manager.device_path)
+            # Check if we have a checkpoint to roll back to
+            has_checkpoint = checkpoint._find_latest_checkpoint() is not None
+
+        if has_checkpoint:
+            reply = QMessageBox.critical(
+                self,
+                "Sync Error",
+                f"Sync failed:\n\n{error_msg}\n\nWould you like to rollback to the last backup?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                if checkpoint and checkpoint.rollback():
+                    QMessageBox.information(
+                        self,
+                        "Rollback Complete",
+                        "Successfully restored iPod database to the pre-sync state."
+                    )
+                    # Reload the database
+                    cache = iTunesDBCache.get_instance()
+                    cache._data = None
+                    cache.start_loading()
+                else:
+                    QMessageBox.warning(
+                        self,
+                        "Rollback Failed",
+                        "Could not restore the backup. The iPod database may be corrupted."
+                    )
+        else:
+            QMessageBox.critical(
+                self,
+                "Sync Error",
+                f"Sync failed:\n\n{error_msg}"
+            )
+
         self.hideSyncReview()
 
     def closeEvent(self, a0):
         """Ensure all threads are stopped when the window is closed."""
+        # Clean up system tray notification icon
+        Notifier.shutdown()
+
         # Request graceful stop for sync workers
         if self._sync_worker and self._sync_worker.isRunning():
             self._sync_worker.requestInterruption()
