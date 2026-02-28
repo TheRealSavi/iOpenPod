@@ -6,6 +6,12 @@ This module handles:
 - Reading SysInfo file for device identification
 - Detecting which checksum type a device requires
 - Getting FireWire GUID for hash computation
+
+Checksum type summary:
+  NONE       Pre-2007 iPods (1G–5G, Photo, Video, Mini, Nano 1G–2G, Shuffle)
+  HASH58     iPod Classic (all gens), Nano 3G, Nano 4G
+  HASH72     Nano 5G (requires HashInfo file from an iTunes sync)
+  HASHAB     Nano 6G/7G — never reverse-engineered, UNSUPPORTED
 """
 
 import os
@@ -15,87 +21,87 @@ from typing import Optional
 
 
 class ChecksumType(IntEnum):
-    """Checksum types for different iPod generations."""
-    NONE = 0           # Pre-2007 iPods: no checksum needed
-    HASH58 = 1         # iPod Nano 3G
-    HASH72 = 2         # iPod Classic (all), Nano 4G/5G
-    UNSUPPORTED = 98   # iPod Nano 6G/7G (HASHAB - not reverse-engineered)
-    UNKNOWN = 99       # Unknown device
+    """Checksum types for different iPod generations.
+
+    NONE      — Pre-2007 iPods (1G–5G, Photo, Video, Mini, Nano 1G–2G, Shuffle)
+    HASH58    — iPod Classic (all gens), Nano 3G, Nano 4G
+    HASH72    — Nano 5G
+    UNSUPPORTED — Nano 6G/7G (HASHAB — never reverse-engineered)
+    UNKNOWN   — Device not yet identified
+    """
+    NONE = 0
+    HASH58 = 1
+    HASH72 = 2
+    UNSUPPORTED = 98
+    UNKNOWN = 99
 
 
-# Device model patterns and their checksum requirements
-# Based on libgpod itdb_device.c itdb_device_get_checksum_type()
+# ---------------------------------------------------------------------------
+# Family / generation → checksum type
+# ---------------------------------------------------------------------------
+# This is the PRIMARY authority for determining checksum requirements.
+# It covers every model implicitly via the (family, generation) tuple that
+# IPOD_MODELS already provides, eliminating the need to enumerate each
+# colour variant individually.
 #
-# HASH58: Nano 3G, Nano 4G, Classic 2G*, Classic 3G*
-# HASH72: Nano 5G, Classic 1G (and iPhones/iPod Touches - not supported here)
-# HASHAB: Nano 6G/7G - UNSUPPORTED (never reverse-engineered)
+# Sources:
+#   - libgpod itdb_device.c  itdb_device_get_checksum_type()
+#   - Empirical testing: iPod Classic 2G (MB565) → HASH58, confirmed working
 #
-# *Note: "Classic 2G/3G" in libgpod refers to the 6.5G/7G iPod Video variants,
-# NOT the iPod Classic product line. The actual "iPod Classic" (released 2007)
-# uses HASH72 according to multiple sources including Clickwheel library.
-# However, libgpod's model detection may vary. When in doubt, check HashInfo existence.
+# Note on iPod Classic:
+#   libgpod maps CLASSIC_1/2/3 → HASH58 (the device firmware checks hash58,
+#   scheme=1).  iTunes additionally writes a HASH72 signature, which is
+#   preserved but not required.  We follow libgpod and sign with HASH58.
+#
+# Note on iPod Shuffle:
+#   Shuffles use iTunesSD, not iTunesDB — listed here for completeness only.
 
-DEVICE_CHECKSUMS = {
-    # iPod Classic - HASH58 (per libgpod itdb_device.c: CLASSIC_1/2/3 → HASH58)
-    # The iPod Classic firmware checks hash58 (scheme=1). iTunes also writes hash72.
-    'MB029': ChecksumType.HASH58,  # Classic 1G 80GB (Sept 2007)
-    'MB147': ChecksumType.HASH58,  # Classic 1G 160GB (Sept 2007)
-    'MB562': ChecksumType.HASH58,  # Classic 2G 120GB
-    'MB565': ChecksumType.HASH58,  # Classic 2G 120GB
-    'MC293': ChecksumType.HASH58,  # Classic 3G 160GB (Sept 2009)
-    'MC297': ChecksumType.HASH58,  # Classic 3G 160GB (Sept 2009)
+_FAMILY_GEN_CHECKSUM: dict[tuple[str, str], ChecksumType] = {
+    # iPod (full-size "scroll-wheel" line) — no checksum
+    ("iPod", "1st Gen"): ChecksumType.NONE,
+    ("iPod", "2nd Gen"): ChecksumType.NONE,
+    ("iPod", "3rd Gen"): ChecksumType.NONE,
+    ("iPod", "4th Gen"): ChecksumType.NONE,
+    ("iPod", "4th Gen (Photo)"): ChecksumType.NONE,
+    ("iPod", "5th Gen"): ChecksumType.NONE,
+    ("iPod", "5th Gen Enhanced"): ChecksumType.NONE,
 
-    # iPod Nano 3G - HASH58 (confirmed in libgpod)
-    'MA978': ChecksumType.HASH58,  # Nano 3G 4GB
-    'MA980': ChecksumType.HASH58,  # Nano 3G 8GB
-    'MB261': ChecksumType.HASH58,  # Nano 3G 4GB
-    'MB249': ChecksumType.HASH58,  # Nano 3G 8GB
+    # iPod Classic — HASH58 (all generations, per libgpod + empirical)
+    ("iPod Classic", "1st Gen"): ChecksumType.HASH58,
+    ("iPod Classic", "2nd Gen"): ChecksumType.HASH58,
+    ("iPod Classic", "3rd Gen"): ChecksumType.HASH58,
 
-    # iPod Nano 4G - HASH58 (confirmed in libgpod)
-    'MB754': ChecksumType.HASH58,  # Nano 4G 8GB
-    'MB903': ChecksumType.HASH58,  # Nano 4G 4GB
-    'MB907': ChecksumType.HASH58,  # Nano 4G 8GB
-    'MB909': ChecksumType.HASH58,  # Nano 4G 16GB
+    # iPod Mini — no checksum
+    ("iPod Mini", "1st Gen"): ChecksumType.NONE,
+    ("iPod Mini", "2nd Gen"): ChecksumType.NONE,
 
-    # iPod Nano 5G - HASH72 (confirmed in libgpod)
-    'MC031': ChecksumType.HASH72,  # Nano 5G 8GB
-    'MC040': ChecksumType.HASH72,  # Nano 5G 8GB
-    'MC049': ChecksumType.HASH72,  # Nano 5G 16GB
-    'MC050': ChecksumType.HASH72,  # Nano 5G 16GB
-    'MC060': ChecksumType.HASH72,  # Nano 5G 8GB
-    'MC062': ChecksumType.HASH72,  # Nano 5G 16GB
+    # iPod Nano
+    ("iPod Nano", "1st Gen"): ChecksumType.NONE,
+    ("iPod Nano", "2nd Gen"): ChecksumType.NONE,
+    ("iPod Nano", "3rd Gen"): ChecksumType.HASH58,
+    ("iPod Nano", "4th Gen"): ChecksumType.HASH58,
+    ("iPod Nano", "5th Gen"): ChecksumType.HASH72,
+    ("iPod Nano", "6th Gen"): ChecksumType.UNSUPPORTED,
+    ("iPod Nano", "7th Gen"): ChecksumType.UNSUPPORTED,
 
-    # iPod Nano 6G/7G - UNSUPPORTED (HASHAB never reverse-engineered)
-    'MC525': ChecksumType.UNSUPPORTED,  # Nano 6G 8GB
-    'MC526': ChecksumType.UNSUPPORTED,  # Nano 6G 8GB
-    'MC688': ChecksumType.UNSUPPORTED,  # Nano 6G 16GB
-    'MC689': ChecksumType.UNSUPPORTED,  # Nano 6G 16GB
-    'MD476': ChecksumType.UNSUPPORTED,  # Nano 7G 16GB
-    'MD477': ChecksumType.UNSUPPORTED,  # Nano 7G 16GB
-    'MD481': ChecksumType.UNSUPPORTED,  # Nano 7G 16GB
+    # iPod Shuffle — no checksum (uses iTunesSD, not iTunesDB)
+    ("iPod Shuffle", "1st Gen"): ChecksumType.NONE,
+    ("iPod Shuffle", "2nd Gen"): ChecksumType.NONE,
+    ("iPod Shuffle", "3rd Gen"): ChecksumType.NONE,
+    ("iPod Shuffle", "4th Gen"): ChecksumType.NONE,
 }
 
-# Older iPods that don't need any checksum
-NO_CHECKSUM_MODELS = {
-    # iPod 1G-3G
-    'M8541', 'M8697', 'M8709', 'M8740', 'M8741',
-    'M8976', 'M9244', 'M9245', 'M9282',
-    # iPod 4G
-    'M9585', 'M9586', 'M9724', 'M9725',
-    # iPod Photo
-    'M9800', 'M9829', 'M9830', 'M9831', 'M9834',
-    # iPod 5G
-    'MA002', 'MA003', 'MA004', 'MA005', 'MA006',
-    'MA099', 'MA107', 'MA147', 'MA148', 'MA350',
-    'MA446', 'MA448', 'MA450', 'MA497',
-    # iPod Mini
-    'M9160', 'M9436', 'M9437', 'M9460',
-    'M9801', 'M9802', 'M9803', 'M9804', 'M9805',
-    'M9806', 'M9807', 'M9809',
-    # Nano 1G-2G
-    'MA477', 'MA484', 'MA487', 'MA725', 'MA726',
-    'MA727', 'MA428', 'MA464',
-}
+
+def checksum_type_for_family_gen(
+    family: str,
+    generation: str,
+) -> Optional[ChecksumType]:
+    """Return the checksum type for a (family, generation) pair.
+
+    Returns None if the pair is not in the lookup table — callers should
+    fall through to secondary detection (HashInfo, firmware hints, etc.).
+    """
+    return _FAMILY_GEN_CHECKSUM.get((family, generation))
 
 
 # Comprehensive iPod model database
@@ -530,123 +536,6 @@ def _extract_model_number(model_str: str) -> Optional[str]:
     return model_str.upper()[:5] if len(model_str) >= 5 else model_str.upper()
 
 
-def _read_firewire_id_from_registry() -> Optional[bytes]:
-    """
-    Read iPod FireWire GUID from Windows registry USB device entries.
-
-    When an iPod is connected to Windows, its USB serial number is stored in:
-      HKLM\\SYSTEM\\CurrentControlSet\\Enum\\USBSTOR\\Disk&Ven_Apple&Prod_iPod&Rev_*\\<SERIAL>&0
-
-    The USB serial number for iPod Classic IS the FireWire GUID (16 hex chars = 8 bytes).
-    This persists in the registry even after the iPod is disconnected.
-
-    Returns:
-        FireWire GUID as bytes, or None if not found
-    """
-    import sys
-    if sys.platform != 'win32':
-        return None
-
-    try:
-        import winreg
-    except ImportError:
-        return None
-
-    try:
-        usbstor_key = winreg.OpenKey(
-            winreg.HKEY_LOCAL_MACHINE,
-            r"SYSTEM\CurrentControlSet\Enum\USBSTOR"
-        )
-    except OSError:
-        return None
-
-    try:
-        # Find Apple iPod entries
-        i = 0
-        while True:
-            try:
-                subkey_name = winreg.EnumKey(usbstor_key, i)
-                i += 1
-            except OSError:
-                break
-
-            if 'Apple' not in subkey_name or 'iPod' not in subkey_name:
-                continue
-
-            # Found an iPod entry — look at instance IDs for the serial
-            try:
-                device_key = winreg.OpenKey(usbstor_key, subkey_name)
-                j = 0
-                while True:
-                    try:
-                        instance_id = winreg.EnumKey(device_key, j)
-                        j += 1
-                    except OSError:
-                        break
-
-                    # Instance ID format: "<SERIAL>&0" or "8&xxx&0&<SERIAL>&0"
-                    # The serial is a 16-char hex string (FireWire GUID)
-                    # Try extracting from the instance ID
-                    parts = instance_id.split('&')
-                    for part in parts:
-                        part = part.strip()
-                        if len(part) == 16:
-                            try:
-                                guid = bytes.fromhex(part)
-                                if guid != b'\x00' * 8:
-                                    winreg.CloseKey(device_key)
-                                    winreg.CloseKey(usbstor_key)
-                                    return guid
-                            except ValueError:
-                                pass
-
-                winreg.CloseKey(device_key)
-            except OSError:
-                continue
-
-    finally:
-        winreg.CloseKey(usbstor_key)
-
-    return None
-
-
-def _read_firewire_id_from_sysinfo_extended(ipod_path: str) -> Optional[bytes]:
-    """
-    Read FireWire GUID from iPod's SysInfoExtended XML plist file.
-
-    SysInfoExtended is an XML plist located at:
-      /iPod_Control/Device/SysInfoExtended
-
-    It contains a FireWireGUID key with the device's GUID as a string.
-
-    Returns:
-        FireWire GUID as bytes, or None if not found
-    """
-    sysinfo_ex_path = os.path.join(ipod_path, "iPod_Control", "Device", "SysInfoExtended")
-    if not os.path.exists(sysinfo_ex_path):
-        return None
-
-    try:
-        with open(sysinfo_ex_path, 'r', errors='ignore') as f:
-            content = f.read()
-
-        # Simple XML parsing for FireWireGUID
-        import re as _re
-        match = _re.search(
-            r'<key>FireWireGUID</key>\s*<string>([0-9A-Fa-f]+)</string>',
-            content
-        )
-        if match:
-            guid_hex = match.group(1)
-            if guid_hex.startswith('0x') or guid_hex.startswith('0X'):
-                guid_hex = guid_hex[2:]
-            return bytes.fromhex(guid_hex)
-    except Exception:
-        pass
-
-    return None
-
-
 def get_firewire_id(
     ipod_path: str,
     *,
@@ -680,7 +569,7 @@ def get_firewire_id(
     Raises:
         RuntimeError: If FireWire GUID cannot be found from any source
     """
-    # Source 0: Pre-discovered GUID (from device scanner pipeline)
+    # Source 0: Caller-supplied GUID
     if known_guid:
         try:
             guid_bytes = bytes.fromhex(known_guid)
@@ -689,29 +578,35 @@ def get_firewire_id(
         except ValueError:
             pass
 
-    # Source 0b: Try DeviceManager's cached scanner result
-    if not known_guid:
-        try:
-            from GUI.app import DeviceManager
-            dm = DeviceManager.get_instance()
-            ipod = dm.discovered_ipod
-            if ipod is not None and os.path.normpath(ipod.path) == os.path.normpath(ipod_path):
-                guid_hex = ipod.firewire_guid
-                if guid_hex:
-                    guid_bytes = bytes.fromhex(guid_hex)
-                    if guid_bytes != b'\x00' * len(guid_bytes):
-                        return guid_bytes
-        except (ImportError, Exception):
-            pass
+    # Source 1: Centralised device info store (the fast path)
+    from device_info import get_current_device
+    device = get_current_device()
+    if device is not None:
+        fwid = device.firewire_id_bytes
+        if fwid:
+            return fwid
+
+    # Source 2: DeviceManager's cached scanner result (GUI running)
+    try:
+        from GUI.app import DeviceManager
+        dm = DeviceManager.get_instance()
+        ipod = dm.discovered_ipod
+        if ipod is not None and os.path.normpath(ipod.path) == os.path.normpath(ipod_path):
+            guid_hex = ipod.firewire_guid
+            if guid_hex:
+                guid_bytes = bytes.fromhex(guid_hex)
+                if guid_bytes != b'\x00' * len(guid_bytes):
+                    return guid_bytes
+    except (ImportError, Exception):
+        pass
 
     # Determine drive letter for device tree walk
     if not drive_letter and ipod_path:
-        # Extract from path like "D:\\" or "D:"
         clean = ipod_path.rstrip("\\/")
         if len(clean) >= 1 and clean[0].isalpha():
             drive_letter = clean[0]
 
-    # Source 1: PnP device tree walk (most authoritative for connected device)
+    # Source 3: PnP device tree walk (most authoritative for connected device)
     if drive_letter:
         try:
             from GUI.device_scanner import _walk_device_tree, _setup_win32_prototypes
@@ -725,7 +620,7 @@ def get_firewire_id(
         except (ImportError, Exception):
             pass
 
-    # Source 2: SysInfo file
+    # Source 4: SysInfo file
     try:
         sysinfo = read_sysinfo(ipod_path)
         guid = sysinfo.get('FirewireGuid')
@@ -738,22 +633,84 @@ def get_firewire_id(
     except (FileNotFoundError, ValueError):
         pass
 
-    # Source 3: SysInfoExtended plist
-    result = _read_firewire_id_from_sysinfo_extended(ipod_path)
-    if result:
-        return result
+    # Source 5: SysInfoExtended plist
+    sysinfo_ex_path = os.path.join(ipod_path, "iPod_Control", "Device", "SysInfoExtended")
+    if os.path.exists(sysinfo_ex_path):
+        try:
+            with open(sysinfo_ex_path, 'r', errors='ignore') as f:
+                content = f.read()
+            import re as _re
+            match = _re.search(
+                r'<key>FireWireGUID</key>\s*<string>([0-9A-Fa-f]+)</string>',
+                content,
+            )
+            if match:
+                guid_hex = match.group(1)
+                if guid_hex.startswith(('0x', '0X')):
+                    guid_hex = guid_hex[2:]
+                result = bytes.fromhex(guid_hex)
+                if result != b'\x00' * len(result):
+                    return result
+        except Exception:
+            pass
 
-    # Source 4: Windows registry (USB serial from previous connection)
-    result = _read_firewire_id_from_registry()
-    if result:
-        return result
+    # Source 6: Windows registry (USB serial from previous connection)
+    import sys as _sys
+    if _sys.platform == 'win32':
+        try:
+            import winreg
+            usbstor_key = winreg.OpenKey(
+                winreg.HKEY_LOCAL_MACHINE,
+                r"SYSTEM\CurrentControlSet\Enum\USBSTOR",
+            )
+            try:
+                i = 0
+                while True:
+                    try:
+                        subkey_name = winreg.EnumKey(usbstor_key, i)
+                        i += 1
+                    except OSError:
+                        break
+                    if 'Apple' not in subkey_name or 'iPod' not in subkey_name:
+                        continue
+                    try:
+                        device_key = winreg.OpenKey(usbstor_key, subkey_name)
+                        j = 0
+                        while True:
+                            try:
+                                instance_id = winreg.EnumKey(device_key, j)
+                                j += 1
+                            except OSError:
+                                break
+                            parts = instance_id.split('&')
+                            for part in parts:
+                                part = part.strip()
+                                if len(part) == 16:
+                                    try:
+                                        guid = bytes.fromhex(part)
+                                        if guid != b'\x00' * 8:
+                                            winreg.CloseKey(device_key)
+                                            winreg.CloseKey(usbstor_key)
+                                            return guid
+                                    except ValueError:
+                                        pass
+                        winreg.CloseKey(device_key)
+                    except OSError:
+                        continue
+            finally:
+                winreg.CloseKey(usbstor_key)
+        except (ImportError, OSError):
+            pass
 
     raise RuntimeError(
         "Could not find iPod FireWire GUID. Tried:\n"
-        "  1. Device tree walk (device not connected or no USB parent?)\n"
-        "  2. SysInfo file (empty or missing)\n"
-        "  3. SysInfoExtended file (not found)\n"
-        "  4. Windows registry (no iPod USB history found)\n"
+        "  0. known_guid parameter\n"
+        "  1. Centralised device info store\n"
+        "  2. DeviceManager scanner cache\n"
+        "  3. PnP device tree walk (Windows)\n"
+        "  4. SysInfo file\n"
+        "  5. SysInfoExtended plist\n"
+        "  6. Windows registry\n"
         "\n"
         "To fix this, connect the iPod and try again, or manually provide\n"
         "the FireWire GUID via the known_guid parameter."
@@ -761,64 +718,53 @@ def get_firewire_id(
 
 
 def detect_checksum_type(ipod_path: str) -> ChecksumType:
+    """Detect which checksum type an iPod requires.
+
+    Checks the centralised store first, then falls back to full probing
+    (SysInfo → model number → family/gen lookup → HashInfo → firmware hints).
     """
-    Detect which checksum type an iPod requires.
+    # Fast path: centralised store
+    from device_info import get_current_device
+    device = get_current_device()
+    if device is not None and device.checksum_type != 99:
+        return ChecksumType(device.checksum_type)
 
-    Detection order:
-    1. Check for model number in SysInfo
-    2. Match against known device database
-    3. Check for HashInfo file (indicates HASH72)
-    4. Default to UNKNOWN
-
-    Args:
-        ipod_path: Mount point of iPod
-
-    Returns:
-        ChecksumType enum value
-    """
+    # Fallback: probe from scratch
     try:
         sysinfo = read_sysinfo(ipod_path)
     except FileNotFoundError:
-        # No SysInfo = probably not an iPod or very old
         return ChecksumType.NONE
 
-    # Try to get model number
     model_str = sysinfo.get('ModelNumStr', '')
     model_num = _extract_model_number(model_str)
 
+    # Family/generation-based lookup (covers all colour variants)
     if model_num:
-        # Check no-checksum models first
-        for prefix in NO_CHECKSUM_MODELS:
-            if model_num.startswith(prefix):
-                return ChecksumType.NONE
+        model_info = IPOD_MODELS.get(model_num)
+        if model_info:
+            family, gen = model_info[0], model_info[1]
+            ct = checksum_type_for_family_gen(family, gen)
+            if ct is not None:
+                return ct
 
-        # Check known devices with checksums
-        for prefix, checksum in DEVICE_CHECKSUMS.items():
-            if model_num.startswith(prefix):
-                return checksum
-
-    # Check for HashInfo file (indicates HASH72-capable device that was synced)
+    # Check for HashInfo file (indicates HASH72-capable device)
     hash_info_path = os.path.join(ipod_path, "iPod_Control", "Device", "HashInfo")
     if os.path.exists(hash_info_path):
         return ChecksumType.HASH72
 
-    # Check firmware version for hints
+    # Firmware version hints
     firmware = sysinfo.get('visibleBuildID', '')
     if firmware:
-        # Later firmware versions require checksums
         try:
             version = int(firmware.split('.')[0])
             if version >= 2:
-                return ChecksumType.UNKNOWN  # Needs investigation
+                return ChecksumType.UNKNOWN
         except (ValueError, IndexError):
             pass
 
-    # If we have a FireWire ID, it's probably a post-2007 device
     if 'FirewireGuid' in sysinfo:
-        # Conservative: return UNKNOWN so user knows to investigate
         return ChecksumType.UNKNOWN
 
-    # Older iPods without FireWire ID don't need checksums
     return ChecksumType.NONE
 
 
@@ -870,94 +816,39 @@ def get_friendly_model_name(model_number: Optional[str]) -> str:
 
 
 def get_device_info(ipod_path: str) -> dict:
-    """
-    Get comprehensive device information using multiple sources.
+    """Return device information from the centralised DeviceInfo store.
 
-    Delegates to the unified scanner pipeline when available, falling back
-    to local SysInfo parsing if the GUI module is not importable.
-
-    Args:
-        ipod_path: Mount point of iPod
-
-    Returns:
-        Dictionary with device details including:
-        - model: Model number
-        - serial: Serial number
-        - firmware: Firmware version
-        - firewire_id: FireWire GUID
-        - checksum_type: Required checksum type
-        - checksum_name: Human-readable checksum name
+    If no device info is available, returns safe defaults.
     """
     checksum_names = {
         ChecksumType.NONE: 'None (no checksum required)',
-        ChecksumType.HASH58: 'HASH58 (Nano 3G - fully supported)',
-        ChecksumType.HASH72: 'HASH72 (Classic/Nano 4G-5G - requires HashInfo)',
+        ChecksumType.HASH58: 'HASH58 (Classic, Nano 3G/4G - fully supported)',
+        ChecksumType.HASH72: 'HASH72 (Nano 5G - requires HashInfo)',
         ChecksumType.UNSUPPORTED: 'UNSUPPORTED (Nano 6G/7G - HASHAB not reverse-engineered)',
         ChecksumType.UNKNOWN: 'Unknown (device not in database)',
     }
 
-    # Try the unified scanner pipeline first (uses all sources)
-    model_num = None
-    model_info = None
-    serial = ""
-    firmware = ""
-    firewire_id = ""
-    board = ""
+    # Read everything from the centralised DeviceInfo store.
+    from device_info import get_current_device
+    device = get_current_device()
 
-    try:
-        from GUI.app import DeviceManager
+    model_num = device.model_number if device else None
+    model_info = IPOD_MODELS.get(model_num) if model_num else None
+    if not model_info and device and device.model_family != "iPod":
+        model_info = (
+            device.model_family,
+            device.generation,
+            device.capacity,
+            device.color,
+        )
 
-        # Use cached scanner result from DeviceManager (avoids re-scanning)
-        dm = DeviceManager.get_instance()
-        ipod = dm.discovered_ipod
-        if ipod is not None and os.path.normpath(ipod.path) == os.path.normpath(ipod_path):
-            if True:  # indent block preserved for minimal diff
-                model_num = ipod.model_number or None
-                if model_num:
-                    model_info = IPOD_MODELS.get(model_num)
-                if not model_info and ipod.model_family != "iPod":
-                    model_info = (
-                        ipod.model_family,
-                        ipod.generation,
-                        ipod.capacity,
-                        ipod.color,
-                    )
-                serial = ipod.serial
-                firmware = ipod.firmware
-                firewire_id = ipod.firewire_guid
-    except ImportError:
-        pass  # GUI module not available (e.g., headless use)
+    serial = device.serial if device else ""
+    firmware = device.firmware if device else ""
+    firewire_id = device.firewire_guid if device else ""
+    board = device.board if device else ""
+    sysinfo = device.sysinfo if device else {}
 
-    # Fallback: use local SysInfo parsing if scanner didn't find it
-    sysinfo = {}
-    try:
-        sysinfo = read_sysinfo(ipod_path)
-    except FileNotFoundError:
-        pass
-
-    if not model_info:
-        model_str = sysinfo.get('ModelNumStr', '')
-        model_num = _extract_model_number(model_str) if model_str else model_num
-        model_info = get_model_info(model_num) if model_num else None
-
-    if not serial:
-        serial = sysinfo.get('pszSerialNumber', '')
-    if not firmware:
-        firmware = sysinfo.get('visibleBuildID', '')
-    if not firewire_id:
-        firewire_id = sysinfo.get('FirewireGuid', '')
-    board = sysinfo.get('BoardHwName', '')
-
-    # Serial → model lookup as one more fallback
-    if not model_info and serial:
-        last3 = serial[-3:] if len(serial) >= 3 else ""
-        from GUI.device_scanner import SERIAL_LAST3_TO_MODEL
-        mn = SERIAL_LAST3_TO_MODEL.get(last3)
-        if mn:
-            model_num = mn
-            model_info = IPOD_MODELS.get(mn)
-
-    checksum_type = detect_checksum_type(ipod_path)
+    checksum_type = ChecksumType(device.checksum_type) if device else ChecksumType.NONE
 
     result = {
         'model': model_num,

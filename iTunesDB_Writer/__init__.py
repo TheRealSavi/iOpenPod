@@ -4,9 +4,9 @@ iTunesDB Writer module for iOpenPod.
 This module provides write support for iPod Classic/Nano iTunesDB files.
 
 Supported devices:
-- Pre-2007 iPods (1G-5G, Mini, Photo): No hash required
-- iPod Nano 3G, Nano 4G: HASH58 (fully portable, needs FireWire ID)
-- iPod Classic (all generations), Nano 5G: HASH72 (requires HashInfo file)
+- Pre-2007 iPods (1G-5G, Mini, Photo, Nano 1G-2G): No hash required
+- iPod Classic (all gens), Nano 3G, Nano 4G: HASH58 (needs FireWire ID)
+- iPod Nano 5G: HASH72 (requires HashInfo file from an iTunes sync)
 
 NOT supported (out of scope):
 - iPod Nano 6G/7G: HASHAB algorithm was never reverse-engineered
@@ -24,7 +24,6 @@ Usage:
 from .device import (
     ChecksumType,
     detect_checksum_type,
-    read_sysinfo,
     get_firewire_id,
 )
 
@@ -84,7 +83,6 @@ def write_checksum(itdb_data: bytearray, ipod_path: str) -> bool:
 __all__ = [
     'ChecksumType',
     'detect_checksum_type',
-    'read_sysinfo',
     'get_firewire_id',
     'compute_hash58',
     'write_hash58',
