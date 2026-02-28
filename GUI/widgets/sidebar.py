@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtGui import QFont
 from .formatters import format_size, format_duration_human as format_duration
 from ..ipod_images import get_ipod_image
-from ..styles import Colors, Metrics, btn_css, accent_btn_css
+from ..styles import Colors, FONT_FAMILY, MONO_FONT_FAMILY, Metrics, btn_css, accent_btn_css
 
 
 class StatWidget(QWidget):
@@ -20,13 +20,13 @@ class StatWidget(QWidget):
         layout.setSpacing(1)
 
         self.value_label = QLabel(value)
-        self.value_label.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
+        self.value_label.setFont(QFont(FONT_FAMILY, 13, QFont.Weight.Bold))
         self.value_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent; border: none;")
         self.value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.value_label)
 
         self.desc_label = QLabel(label)
-        self.desc_label.setFont(QFont("Segoe UI", 8))
+        self.desc_label.setFont(QFont(FONT_FAMILY, 8))
         self.desc_label.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent; border: none;")
         self.desc_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.desc_label)
@@ -47,14 +47,14 @@ class TechInfoRow(QWidget):
         layout.setSpacing(4)
 
         self.label_widget = QLabel(label)
-        self.label_widget.setFont(QFont("Segoe UI", 8))
+        self.label_widget.setFont(QFont(FONT_FAMILY, 8))
         self.label_widget.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent; border: none;")
         layout.addWidget(self.label_widget)
 
         layout.addStretch()
 
         self.value_widget = QLabel(value)
-        self.value_widget.setFont(QFont("Consolas", 8))
+        self.value_widget.setFont(QFont(MONO_FONT_FAMILY, 8))
         self.value_widget.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
         self.value_widget.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(self.value_widget)
@@ -87,7 +87,7 @@ class DeviceInfoCard(QFrame):
         header_layout.setSpacing(8)
 
         self.icon_label = QLabel("🎵")
-        self.icon_label.setFont(QFont("Segoe UI Emoji", 24))
+        self.icon_label.setFont(QFont(FONT_FAMILY, 24))
         self.icon_label.setFixedSize(52, 52)
         self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.icon_label.setStyleSheet("background: transparent; border: none;")
@@ -97,12 +97,12 @@ class DeviceInfoCard(QFrame):
         name_layout.setSpacing(0)
 
         self.name_label = QLabel("No Device")
-        self.name_label.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
+        self.name_label.setFont(QFont(FONT_FAMILY, 13, QFont.Weight.Bold))
         self.name_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent; border: none;")
         name_layout.addWidget(self.name_label)
 
         self.model_label = QLabel("")
-        self.model_label.setFont(QFont("Segoe UI", 9))
+        self.model_label.setFont(QFont(FONT_FAMILY, 9))
         self.model_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
         self.model_label.setWordWrap(True)
         name_layout.addWidget(self.model_label)
@@ -144,7 +144,7 @@ class DeviceInfoCard(QFrame):
 
         # Technical details section (collapsible)
         self.tech_toggle = QPushButton("▶ Technical Details")
-        self.tech_toggle.setFont(QFont("Segoe UI", 8))
+        self.tech_toggle.setFont(QFont(FONT_FAMILY, 8))
         self.tech_toggle.setStyleSheet(f"""
             QPushButton {{
                 background: transparent;
@@ -246,7 +246,7 @@ class DeviceInfoCard(QFrame):
                 self.icon_label.setText("📱")
             else:
                 self.icon_label.setText("🎵")
-            self.icon_label.setFont(QFont("Segoe UI Emoji", 24))
+            self.icon_label.setFont(QFont(FONT_FAMILY, 24))
 
         # Update technical details if provided
         if device_info:
@@ -335,8 +335,8 @@ class Sidebar(QFrame):
         )
         self.deviceButton.setStyleSheet(button_style)
         self.rescanButton.setStyleSheet(button_style)
-        self.deviceButton.setFont(QFont("Segoe UI", 10, QFont.Weight.DemiBold))
-        self.rescanButton.setFont(QFont("Segoe UI", 10, QFont.Weight.DemiBold))
+        self.deviceButton.setFont(QFont(FONT_FAMILY, 10, QFont.Weight.DemiBold))
+        self.rescanButton.setFont(QFont(FONT_FAMILY, 10, QFont.Weight.DemiBold))
 
         self.deviceSelectLayout.addWidget(self.deviceButton)
         self.deviceSelectLayout.addWidget(self.rescanButton)
@@ -346,7 +346,7 @@ class Sidebar(QFrame):
         # Sync button - row 2 (full width)
         self.syncButton = QPushButton("🔄 Sync with PC")
         self.syncButton.setStyleSheet(accent_btn_css())
-        self.syncButton.setFont(QFont("Segoe UI", 10, QFont.Weight.DemiBold))
+        self.syncButton.setFont(QFont(FONT_FAMILY, 10, QFont.Weight.DemiBold))
         self.sidebarLayout.addWidget(self.syncButton)
 
         # Separator
@@ -357,7 +357,7 @@ class Sidebar(QFrame):
 
         # Category label
         lib_label = QLabel("LIBRARY")
-        lib_label.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+        lib_label.setFont(QFont(FONT_FAMILY, 9, QFont.Weight.Bold))
         lib_label.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent; padding-left: 4px;")
         self.sidebarLayout.addWidget(lib_label)
 
@@ -365,7 +365,7 @@ class Sidebar(QFrame):
 
         for category, glyph in category_glyphs.items():
             btn = QPushButton(f"{glyph} {category}")
-            btn.setFont(QFont("Segoe UI", 11, QFont.Weight.DemiBold))
+            btn.setFont(QFont(FONT_FAMILY, 11, QFont.Weight.DemiBold))
 
             btn.setStyleSheet(btn_css(
                 bg=Colors.SURFACE_ALT,
@@ -386,7 +386,7 @@ class Sidebar(QFrame):
 
         # Settings button at bottom
         self.settingsButton = QPushButton("⚙ Settings")
-        self.settingsButton.setFont(QFont("Segoe UI", 10, QFont.Weight.DemiBold))
+        self.settingsButton.setFont(QFont(FONT_FAMILY, 10, QFont.Weight.DemiBold))
         self.settingsButton.setStyleSheet(btn_css(
             bg="transparent",
             bg_hover=Colors.SURFACE_RAISED,

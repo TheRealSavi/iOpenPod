@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
     QCheckBox, QComboBox, QFrame, QScrollArea, QFileDialog,
 )
 from PyQt6.QtGui import QFont
-from ..styles import Colors, Metrics, btn_css
+from ..styles import Colors, FONT_FAMILY, Metrics, btn_css
 
 
 # ── Reusable row widgets ────────────────────────────────────────────────────
@@ -38,13 +38,13 @@ class SettingRow(QFrame):
         text_layout.setSpacing(2)
 
         self.title_label = QLabel(title)
-        self.title_label.setFont(QFont("Segoe UI", 11, QFont.Weight.DemiBold))
+        self.title_label.setFont(QFont(FONT_FAMILY, 11, QFont.Weight.DemiBold))
         self.title_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent; border: none;")
         text_layout.addWidget(self.title_label)
 
         if description:
             self.desc_label = QLabel(description)
-            self.desc_label.setFont(QFont("Segoe UI", 9))
+            self.desc_label.setFont(QFont(FONT_FAMILY, 9))
             self.desc_label.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent; border: none;")
             self.desc_label.setWordWrap(True)
             text_layout.addWidget(self.desc_label)
@@ -107,7 +107,7 @@ class ComboRow(SettingRow):
 
         self.combo = QComboBox()
         self.combo.setFixedWidth(130)
-        self.combo.setFont(QFont("Segoe UI", 10))
+        self.combo.setFont(QFont(FONT_FAMILY, 10))
         self.combo.setStyleSheet(f"""
             QComboBox {{
                 background: {Colors.SURFACE_RAISED};
@@ -163,14 +163,14 @@ class FolderRow(SettingRow):
         right_layout.setSpacing(8)
 
         self.path_label = QLabel(self._truncate(path) if path else "Not set")
-        self.path_label.setFont(QFont("Segoe UI", 9))
+        self.path_label.setFont(QFont(FONT_FAMILY, 9))
         self.path_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
         self.path_label.setMinimumWidth(120)
         self.path_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         right_layout.addWidget(self.path_label)
 
         self.browse_btn = QPushButton("Browse…")
-        self.browse_btn.setFont(QFont("Segoe UI", 9))
+        self.browse_btn.setFont(QFont(FONT_FAMILY, 9))
         self.browse_btn.setFixedWidth(80)
         self.browse_btn.setStyleSheet(btn_css(
             bg=Colors.SURFACE_RAISED,
@@ -222,7 +222,7 @@ class ActionRow(SettingRow):
         super().__init__(title, description)
 
         self.action_btn = QPushButton(button_text)
-        self.action_btn.setFont(QFont("Segoe UI", 9))
+        self.action_btn.setFont(QFont(FONT_FAMILY, 9))
         self.action_btn.setFixedWidth(100)
         self.action_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.action_btn.setStyleSheet(btn_css(
@@ -260,7 +260,7 @@ class SettingsPage(QWidget):
         tb_layout.setContentsMargins(24, 16, 24, 8)
 
         back_btn = QPushButton("← Back")
-        back_btn.setFont(QFont("Segoe UI", 11))
+        back_btn.setFont(QFont(FONT_FAMILY, 11))
         back_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         back_btn.setStyleSheet(f"""
             QPushButton {{
@@ -275,7 +275,7 @@ class SettingsPage(QWidget):
         tb_layout.addWidget(back_btn)
 
         title = QLabel("Settings")
-        title.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
+        title.setFont(QFont(FONT_FAMILY, 18, QFont.Weight.Bold))
         title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent;")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         tb_layout.addWidget(title, stretch=1)
@@ -375,7 +375,7 @@ class SettingsPage(QWidget):
         layout.addWidget(self.settings_dir)
 
         self.reset_cache_dir_btn = QPushButton("Reset to Default")
-        self.reset_cache_dir_btn.setFont(QFont("Segoe UI", 9))
+        self.reset_cache_dir_btn.setFont(QFont(FONT_FAMILY, 9))
         self.reset_cache_dir_btn.setFixedWidth(130)
         self.reset_cache_dir_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.reset_cache_dir_btn.setStyleSheet(btn_css(
@@ -408,7 +408,7 @@ class SettingsPage(QWidget):
 
     def _section_label(self, text: str) -> QLabel:
         label = QLabel(text)
-        label.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+        label.setFont(QFont(FONT_FAMILY, 9, QFont.Weight.Bold))
         label.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent; padding-left: 4px; padding-top: 8px;")
         return label
 

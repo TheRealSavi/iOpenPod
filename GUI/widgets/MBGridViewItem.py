@@ -3,7 +3,7 @@ from PyQt6.QtCore import Qt, QSize, pyqtSignal
 from PyQt6.QtWidgets import QLabel, QFrame, QVBoxLayout
 from PyQt6.QtGui import QFont, QPixmap, QCursor, QImage
 from ..imgMaker import find_image_by_imgId, get_artworkdb_cached
-from ..styles import Colors, Metrics
+from ..styles import Colors, FONT_FAMILY, Metrics
 from .scrollingLabel import ScrollingLabel
 
 log = logging.getLogger(__name__)
@@ -50,7 +50,7 @@ class MusicBrowserGridItem(QFrame):
 
         # Title
         self.title_label = ScrollingLabel(title)
-        self.title_label.setFont(QFont("Segoe UI", 10, QFont.Weight.DemiBold))
+        self.title_label.setFont(QFont(FONT_FAMILY, 10, QFont.Weight.DemiBold))
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.title_label.setStyleSheet(f"border: none; background: transparent; color: {Colors.TEXT_PRIMARY};")
         self.title_label.setFixedHeight(20)
@@ -58,7 +58,7 @@ class MusicBrowserGridItem(QFrame):
 
         # Subtitle
         self.subtitle_label = ScrollingLabel(subtitle)
-        self.subtitle_label.setFont(QFont("Segoe UI", 9))
+        self.subtitle_label.setFont(QFont(FONT_FAMILY, 9))
         self.subtitle_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.subtitle_label.setStyleSheet(f"border: none; background: transparent; color: {Colors.TEXT_SECONDARY};")
         self.subtitle_label.setFixedHeight(18)
@@ -81,7 +81,7 @@ class MusicBrowserGridItem(QFrame):
     def _setPlaceholderImage(self):
         """Set a placeholder when no artwork is available."""
         self.img_label.setText("🎵")
-        self.img_label.setFont(QFont("Segoe UI Emoji", 40))
+        self.img_label.setFont(QFont(FONT_FAMILY, 40))
         self.img_label.setStyleSheet(f"""
             border: none;
             background: rgba(64,156,255,35);

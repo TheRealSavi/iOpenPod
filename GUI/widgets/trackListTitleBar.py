@@ -2,6 +2,8 @@ from PyQt6.QtCore import Qt, QPoint
 from PyQt6.QtWidgets import QApplication, QHBoxLayout, QFrame, QLabel, QPushButton, QWidget
 from PyQt6.QtGui import QFont
 
+from ..styles import FONT_FAMILY
+
 
 def _title_bar_css(r1: int, g1: int, b1: int, r2: int, g2: int, b2: int) -> str:
     """Generate the title bar stylesheet for given gradient colors."""
@@ -62,7 +64,7 @@ class TrackListTitleBar(QFrame):
         self.setStyleSheet(_DEFAULT_CSS)
 
         self.title = QLabel("Tracks")
-        self.title.setFont(QFont("Segoe UI", 12, QFont.Weight.DemiBold))
+        self.title.setFont(QFont(FONT_FAMILY, 12, QFont.Weight.DemiBold))
 
         self.button1 = QPushButton("▼")
         self.button1.setToolTip("Minimize")

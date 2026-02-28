@@ -5,6 +5,8 @@ All colors, dimensions, and reusable stylesheet fragments live here so that
 every widget draws from a single visual language.
 """
 
+import sys
+
 from PyQt6.QtCore import QRect, Qt
 from PyQt6.QtGui import QColor, QPainter
 from PyQt6.QtWidgets import (
@@ -13,6 +15,21 @@ from PyQt6.QtWidgets import (
     QStyleOptionComplex,
     QStyleOptionSlider,
 )
+
+# ── Cross-platform font ─────────────────────────────────────────────────────
+
+if sys.platform == "darwin":
+    FONT_FAMILY = ".AppleSystemUIFont"
+    MONO_FONT_FAMILY = "Menlo"
+    _CSS_FONT_STACK = '".AppleSystemUIFont", "Helvetica Neue"'
+elif sys.platform == "win32":
+    FONT_FAMILY = "Segoe UI"
+    MONO_FONT_FAMILY = "Consolas"
+    _CSS_FONT_STACK = '"Segoe UI"'
+else:
+    FONT_FAMILY = "Noto Sans"
+    MONO_FONT_FAMILY = "Noto Mono"
+    _CSS_FONT_STACK = '"Noto Sans", "Ubuntu", "DejaVu Sans"'
 
 # ── Color palette ────────────────────────────────────────────────────────────
 
@@ -384,7 +401,7 @@ APP_STYLESHEET = f"""
             stop:0 {Colors.BG_DARK}, stop:1 {Colors.BG_MID});
     }}
     QWidget {{
-        font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+        font-family: {_CSS_FONT_STACK};
     }}
     QStackedWidget {{
         background: transparent;

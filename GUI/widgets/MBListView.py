@@ -21,7 +21,7 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem,
     QVBoxLayout,
 )
-from ..styles import Colors
+from ..styles import Colors, FONT_FAMILY
 
 log = logging.getLogger(__name__)
 
@@ -157,7 +157,7 @@ class MusicBrowserList(QFrame):
         self._art_pending: set[int] = set()         # mhiiLinks currently being loaded
 
         # Shared resources (created once, reused)
-        self._font = QFont("Segoe UI", 10)
+        self._font = QFont(FONT_FAMILY, 10)
 
     # -------------------------------------------------------------------------
     # Properties for backwards compatibility
