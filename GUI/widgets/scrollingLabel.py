@@ -51,6 +51,9 @@ class ScrollingLabel(QLabel):
             if self.animation_group is not None and self.animation_group.state() == QAbstractAnimation.State.Running:
                 self.animation_group.stop()
 
+            if self.animation_group is not None:
+                self.animation_group.deleteLater()
+
             # Create sequential animation: pause -> scroll right -> pause -> scroll left -> loop
             self.animation_group = QSequentialAnimationGroup(self)
 

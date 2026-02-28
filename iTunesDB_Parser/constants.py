@@ -2,7 +2,7 @@
 chunk_type_map = {
     1: "mhlt",  # track list chunk
     2: "mhlp",  # playlist list chunk
-    3: "mhlp",  # podcast list, same identifer as playlist, but has slight differnce
+    3: "mhlp_podcast",  # podcast list (same format as playlist, different dataset)
     4: "mhla",  # Album Lists (iTunes 7.1>)
     5: "mhsp",  # Smart playlist list (iTunes 7.3>)
 }

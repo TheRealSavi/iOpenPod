@@ -21,6 +21,12 @@ def parse_mhod(data, offset, header_length, chunk_length) -> dict:
     # MHOD type 2 contain a MHNI that cotains a MHOD type 3 with a thmbnl ref
     # MHOD type 5 contain a MHNI that cotains a MHOD type 3 with a fulrez ref
 
+    if dataObject["mhodType"] not in mhod_type_map:
+        return {
+            "nextOffset": offset + chunk_length,
+            "result": {"mhodType": dataObject["mhodType"], "_unknown": True},
+        }
+
     match mhod_type_map[dataObject["mhodType"]]["type"]:
         case "String":
             content_offset = offset + header_length

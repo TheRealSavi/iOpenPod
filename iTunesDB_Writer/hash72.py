@@ -148,7 +148,7 @@ def _compute_itunesdb_sha1(itdb_data: bytearray) -> bytes:
     data = bytearray(itdb_data)
 
     # Zero fields for hash computation (same as libgpod)
-    # Note: hash58 and hash72 share the same offset 0x58
+    # hash58 lives at offset 0x58 (20 bytes), hash72 at 0x72 (46 bytes)
     data[OFFSET_DB_ID:OFFSET_DB_ID + 8] = b'\x00' * 8
     data[OFFSET_HASH58:OFFSET_HASH58 + 20] = b'\x00' * 20
     data[OFFSET_HASH72:OFFSET_HASH72 + 46] = b'\x00' * 46

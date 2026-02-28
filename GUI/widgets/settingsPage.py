@@ -390,17 +390,32 @@ class SettingsPage(QWidget):
         self.reset_cache_dir_btn.clicked.connect(self._reset_storage_defaults)
         layout.addWidget(self.reset_cache_dir_btn, alignment=Qt.AlignmentFlag.AlignRight)
 
-        # ── RECOVERY section ────────────────────────────────────────────────
-        layout.addWidget(self._section_label("RECOVERY"))
+        # ── BACKUPS section ────────────────────────────────────────────────────────────
+        layout.addWidget(self._section_label("BACKUPS"))
 
-        # Rollback row with button
-        self.rollback_row = ActionRow(
-            "Rollback Last Sync",
-            "If a sync failed or corrupted your iPod database, use this to restore "
-            "the backup made before the last sync attempt.",
+        self.backup_dir = FolderRow(
+            "Backup Location",
+            "Where full device backups are stored on your PC. "
+            "Leave empty for the default (~/iOpenPod_Backups/).",
         )
-        self.rollback_row.clicked.connect(self._on_rollback_clicked)
-        layout.addWidget(self.rollback_row)
+        layout.addWidget(self.backup_dir)
+
+        self.backup_before_sync = ToggleRow(
+            "Backup Before Sync",
+            "Automatically create a full device backup before each sync. "
+            "Recommended — allows you to restore your iPod if a sync goes wrong.",
+            checked=True,
+        )
+        layout.addWidget(self.backup_before_sync)
+
+        self.max_backups = ComboRow(
+            "Max Backups",
+            "Maximum number of backup snapshots to keep per device. "
+            "Oldest backups are automatically removed when the limit is exceeded.",
+            options=["5", "10", "20", "Unlimited"],
+            current="10",
+        )
+        layout.addWidget(self.max_backups)
 
         layout.addStretch()
         scroll.setWidget(content)
@@ -423,6 +438,16 @@ class SettingsPage(QWidget):
         self.transcode_cache_dir.value = s.transcode_cache_dir
         self.settings_dir.value = s.settings_dir
 
+        self.backup_dir.value = s.backup_dir
+        self.backup_before_sync.value = s.backup_before_sync
+
+        # Max backups → combo text
+        max_map = {0: "Unlimited", 5: "5", 10: "10", 20: "20"}
+        mb_text = max_map.get(s.max_backups, "10")
+        idx = self.max_backups.combo.findText(mb_text)
+        if idx >= 0:
+            self.max_backups.combo.setCurrentIndex(idx)
+
         # AAC bitrate → combo text
         bitrate_map = {128: "128 kbps", 192: "192 kbps", 256: "256 kbps", 320: "320 kbps"}
         br_text = bitrate_map.get(s.aac_bitrate, "256 kbps")
@@ -444,15 +469,20 @@ class SettingsPage(QWidget):
         if idx >= 0:
             self.sync_workers.combo.setCurrentIndex(idx)
 
-        # Connect signals to auto-save
-        self.music_folder.changed.connect(self._save)
-        self.write_back.changed.connect(self._save)
-        self.aac_bitrate.changed.connect(self._save)
-        self.transcode_timeout.changed.connect(self._save)
-        self.sync_workers.changed.connect(self._save)
-        self.show_art.changed.connect(self._save)
-        self.transcode_cache_dir.changed.connect(self._save)
-        self.settings_dir.changed.connect(self._save)
+        # Connect signals to auto-save (only once)
+        if not hasattr(self, '_signals_connected'):
+            self._signals_connected = True
+            self.music_folder.changed.connect(self._save)
+            self.write_back.changed.connect(self._save)
+            self.aac_bitrate.changed.connect(self._save)
+            self.transcode_timeout.changed.connect(self._save)
+            self.sync_workers.changed.connect(self._save)
+            self.show_art.changed.connect(self._save)
+            self.transcode_cache_dir.changed.connect(self._save)
+            self.settings_dir.changed.connect(self._save)
+            self.backup_dir.changed.connect(self._save)
+            self.backup_before_sync.changed.connect(self._save)
+            self.max_backups.changed.connect(self._save)
 
     def _save(self, *_args):
         """Read all controls back into AppSettings and persist."""
@@ -464,6 +494,12 @@ class SettingsPage(QWidget):
         s.show_art_in_tracklist = self.show_art.value
         s.transcode_cache_dir = self.transcode_cache_dir.value
         s.settings_dir = self.settings_dir.value
+        s.backup_dir = self.backup_dir.value
+        s.backup_before_sync = self.backup_before_sync.value
+
+        # Parse max backups
+        mb_text = self.max_backups.value
+        s.max_backups = int(mb_text) if mb_text and mb_text != "Unlimited" else 0
 
         # Parse AAC bitrate
         br_text = self.aac_bitrate.value
@@ -484,67 +520,8 @@ class SettingsPage(QWidget):
         """Clear custom storage paths and revert to platform defaults."""
         self.transcode_cache_dir.value = ""
         self.settings_dir.value = ""
+        self.backup_dir.value = ""
         self._save()
-
-    def _on_rollback_clicked(self):
-        """Handle rollback button click - restore last pre-sync backup."""
-        from ..app import DeviceManager, iTunesDBCache
-        from SyncEngine.checkpoint import CheckpointManager
-        from PyQt6.QtWidgets import QMessageBox
-
-        device_manager = DeviceManager.get_instance()
-        if not device_manager.device_path:
-            QMessageBox.warning(
-                self,
-                "No Device",
-                "Please connect and select an iPod first."
-            )
-            return
-
-        checkpoint = CheckpointManager(device_manager.device_path)
-        latest = checkpoint._find_latest_checkpoint()
-
-        if not latest:
-            QMessageBox.information(
-                self,
-                "No Backup Available",
-                "There are no sync backups available for this iPod.\n\n"
-                "Backups are automatically created before each sync."
-            )
-            return
-
-        # Get checkpoint timestamp from folder name
-        checkpoint_name = latest.name.replace("checkpoint_", "").replace("_", " ")
-
-        reply = QMessageBox.question(
-            self,
-            "Confirm Rollback",
-            f"This will restore your iPod database to the backup from:\n\n"
-            f"{checkpoint_name}\n\n"
-            f"Your current iPod database will be overwritten. Continue?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
-        )
-
-        if reply == QMessageBox.StandardButton.Yes:
-            if checkpoint.rollback():
-                QMessageBox.information(
-                    self,
-                    "Rollback Complete",
-                    "Successfully restored iPod database to the backup state.\n\n"
-                    "The library view will now refresh."
-                )
-                # Reload the database
-                cache = iTunesDBCache.get_instance()
-                cache._data = None
-                cache.start_loading()
-            else:
-                QMessageBox.critical(
-                    self,
-                    "Rollback Failed",
-                    "Could not restore the backup.\n\n"
-                    "The backup files may be missing or corrupted."
-                )
 
     def _on_close(self):
         """Go back — settings are already saved on every change."""

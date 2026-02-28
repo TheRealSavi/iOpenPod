@@ -41,7 +41,6 @@ AUDIO_EXTENSIONS = {
     ".ogg",
     ".opus",
     ".wma",
-    ".alac",
 }
 
 # Formats that need transcoding for iPod
@@ -53,7 +52,6 @@ NEEDS_TRANSCODING = {
     ".ogg",
     ".opus",
     ".wma",
-    ".alac",
 }
 
 # Formats iPod can play natively

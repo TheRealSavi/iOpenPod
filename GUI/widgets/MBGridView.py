@@ -1,4 +1,5 @@
 import logging
+from collections import deque
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import QFrame, QGridLayout, QSizePolicy
 from .MBGridViewItem import MusicBrowserGridItem
@@ -29,7 +30,7 @@ class MusicBrowserGrid(QFrame):
         self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
 
         self.gridItems = []  # Already added items
-        self.pendingItems = []  # Items waiting to be added
+        self.pendingItems: deque = deque()  # Items waiting to be added
         self.timerActive = False  # Prevent duplicate timers
         self.columnCount = 1  # Default column count
         self._current_category = "Albums"  # Current display category
@@ -74,7 +75,7 @@ class MusicBrowserGrid(QFrame):
         self._update_margins()
 
         # Reset pendingItems for fresh load
-        self.pendingItems = list(enumerate(items))
+        self.pendingItems = deque(enumerate(items))
 
         # Start incremental loading if not active
         if self.pendingItems and not self.timerActive:
@@ -102,7 +103,7 @@ class MusicBrowserGrid(QFrame):
             if not self.pendingItems:
                 break
 
-            i, item = self.pendingItems.pop(0)
+            i, item = self.pendingItems.popleft()
             row = i // self.columnCount
             col = i % self.columnCount
 
@@ -153,8 +154,8 @@ class MusicBrowserGrid(QFrame):
         reflects the actual available space.
         """
         parent = self.parent()
-        if parent:
-            return parent.width()
+        if parent and hasattr(parent, 'width'):
+            return parent.width()  # type: ignore[union-attr]
         return self.width()
 
     def _update_margins(self):
@@ -182,7 +183,7 @@ class MusicBrowserGrid(QFrame):
         """Clear all grid items to prepare for reloading."""
         log.debug(f"clearGrid() called, current items: {len(self.gridItems)}, load_id: {self._load_id}")
         self.timerActive = False
-        self.pendingItems = []
+        self.pendingItems = deque()
         # Increment load_id to invalidate any pending timer callbacks
         self._load_id += 1
         log.debug(f"  New load_id: {self._load_id}")

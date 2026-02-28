@@ -16,18 +16,14 @@ from typing import Optional
 # iPod Classic image formats (correlationID → dimensions)
 # From ArtworkDB_Parser/mhni_parser.py FORMAT_ID_MAP
 # iPod Classic image formats (correlationID → (width, height))
-# Format 1061: real iPod uses 55×55 visible pixels with stride=56
-# (each row is padded to 56 pixels = 112 bytes, total = 55 rows × 112 = 6160 bytes)
 IPOD_CLASSIC_FORMATS = {
     1055: (128, 128),  # Medium album art
     1060: (320, 320),  # Large album art
-    1061: (55, 55),    # Small album art (thumbnail), stride-padded to 56
+    1061: (56, 56),    # Small album art (thumbnail)
 }
 
 # Stride override: format_id → stride in pixels (when stride != width)
-# Format 1061 has 55 visible pixels per row, padded to 56 for alignment
 IPOD_STRIDE_OVERRIDE = {
-    1061: 56,
 }
 
 

@@ -304,7 +304,7 @@ def copy_metadata(source_path: str | Path, dest_path: str | Path) -> bool:
         True if successful
     """
     try:
-        from mutagen._file import File as MutagenFile  # type: ignore[import-not-found]
+        from mutagen import File as MutagenFile  # type: ignore[import-not-found]
 
         source = MutagenFile(source_path, easy=True)
         dest = MutagenFile(dest_path, easy=True)

@@ -131,9 +131,19 @@ class ETATracker:
         # Update total in case it changed
         stats.total_items = total
 
-        # Record any newly completed items
-        while stats.completed_items < current:
-            self.item_done(stage)
+        # Record newly completed items.
+        # When progress jumps by >1 (batched updates), spread the elapsed
+        # time evenly across the skipped items instead of recording near-zero
+        # deltas for each, which would collapse the rolling average to ~0.
+        gap = current - stats.completed_items
+        if gap > 0:
+            now = time.monotonic()
+            total_dt = now - stats._last_item_time
+            per_item = total_dt / gap
+            for _ in range(gap):
+                stats._item_times.append(per_item)
+                stats.completed_items += 1
+            stats._last_item_time = now
 
     @property
     def current_stage_stats(self) -> Optional[StageStats]:

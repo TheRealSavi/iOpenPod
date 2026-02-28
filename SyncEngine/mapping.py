@@ -83,6 +83,7 @@ class MappingFile:
     created: str = ""
     modified: str = ""
     _tracks: dict[str, list[TrackMapping]] | None = None
+    _dbid_index: dict[int, tuple[str, TrackMapping]] | None = None
 
     def __post_init__(self):
         if self._tracks is None:
@@ -91,6 +92,7 @@ class MappingFile:
             self.created = datetime.now(timezone.utc).isoformat()
         if not self.modified:
             self.modified = self.created
+        self._dbid_index = None
 
     @property
     def tracks(self) -> dict[str, list[TrackMapping]]:
@@ -138,12 +140,14 @@ class MappingFile:
                 entries[i] = new_mapping
                 self.tracks[fingerprint] = entries
                 self.modified = now
+                self._dbid_index = None  # invalidate reverse index
                 return
 
         # New entry
         entries.append(new_mapping)
         self.tracks[fingerprint] = entries
         self.modified = now
+        self._dbid_index = None  # invalidate reverse index
 
     def get_entries(self, fingerprint: str) -> list[TrackMapping]:
         """Get all mapping entries for a fingerprint. Returns empty list if none."""
@@ -162,11 +166,12 @@ class MappingFile:
 
     def get_by_dbid(self, dbid: int) -> Optional[tuple[str, TrackMapping]]:
         """Get track mapping by dbid. Returns (fingerprint, mapping) or None."""
-        for fp, entries in self.tracks.items():
-            for entry in entries:
-                if entry.dbid == dbid:
-                    return (fp, entry)
-        return None
+        if self._dbid_index is None:
+            self._dbid_index = {}
+            for fp, entries in self.tracks.items():
+                for entry in entries:
+                    self._dbid_index[entry.dbid] = (fp, entry)
+        return self._dbid_index.get(dbid)
 
     def remove_track(self, fingerprint: str, dbid: Optional[int] = None) -> bool:
         """Remove a track mapping.
@@ -193,6 +198,7 @@ class MappingFile:
             del self.tracks[fingerprint]
 
         self.modified = datetime.now(timezone.utc).isoformat()
+        self._dbid_index = None  # invalidate reverse index
         return True
 
     def remove_by_dbid(self, dbid: int) -> bool:
@@ -208,6 +214,7 @@ class MappingFile:
                 else:
                     del self.tracks[fp]
                 self.modified = datetime.now(timezone.utc).isoformat()
+                self._dbid_index = None  # invalidate reverse index
                 return True
         return False
 
@@ -317,7 +324,7 @@ class MappingManager:
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON in mapping file: {e}")
             backup = self.mapping_file.with_suffix(".json.bak")
-            self.mapping_file.rename(backup)
+            self.mapping_file.replace(backup)
             logger.warning(f"Backed up corrupt mapping to {backup}")
             return MappingFile()
 

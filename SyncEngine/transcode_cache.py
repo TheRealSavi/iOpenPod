@@ -272,21 +272,24 @@ class TranscodeCache:
         cached_path = self.files_dir / filename
 
         try:
-            # Copy to cache (preserving the transcoded file for the caller)
-            shutil.copy2(transcoded_path, cached_path)
-
-            # Update index
-            cached_file = CachedFile(
-                fingerprint=fingerprint,
-                source_format=source_format,
-                target_format=target_format,
-                filename=filename,
-                size=cached_path.stat().st_size,
-                created=datetime.now(timezone.utc).isoformat(),
-                source_size=source_size,
-                bitrate=bitrate,
-            )
+            # Lock the entire copy+index-update to prevent two threads from
+            # racing on the same fingerprint+format (last copy wins on disk
+            # but index entry could reference a different file's size).
             with self._lock:
+                # Copy to cache (preserving the transcoded file for the caller)
+                shutil.copy2(transcoded_path, cached_path)
+
+                # Update index
+                cached_file = CachedFile(
+                    fingerprint=fingerprint,
+                    source_format=source_format,
+                    target_format=target_format,
+                    filename=filename,
+                    size=cached_path.stat().st_size,
+                    created=datetime.now(timezone.utc).isoformat(),
+                    source_size=source_size,
+                    bitrate=bitrate,
+                )
                 self._index.add(cached_file)
                 self._save_index()
 

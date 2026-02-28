@@ -714,7 +714,6 @@ _FILE_SHARE_READ = 0x01
 _FILE_SHARE_WRITE = 0x02
 _OPEN_EXISTING = 3
 _IOCTL_STORAGE_QUERY_PROPERTY = 0x002D1400
-_INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
 
 
 def _identify_via_direct_ioctl(drive_letter: str) -> Optional[dict]:
@@ -849,7 +848,7 @@ def _identify_via_direct_ioctl(drive_letter: str) -> Optional[dict]:
             if len(clean) == 16:
                 try:
                     bytes.fromhex(clean)
-                    result["firewire_guid"] = clean
+                    result["firewire_guid"] = clean.upper()
                 except ValueError:
                     pass
 
@@ -1522,11 +1521,13 @@ def _identify_via_hashing_scheme(ipod_path: str) -> Optional[dict]:
             result["model_family"] = "iPod"
             result["generation"] = "(pre-2007)"
         elif scheme == 1:
-            result["model_family"] = "iPod Classic"
-            result["generation"] = ""  # Could be Classic or Nano 3G/4G
+            # HASH58 is used by Nano 3G and Nano 4G
+            result["model_family"] = "iPod Nano"
+            result["generation"] = "(3rd/4th gen)"
         elif scheme == 2:
-            result["model_family"] = "iPod"
-            result["generation"] = "(HASH72)"
+            # HASH72 is used by iPod Classic (all gens) and Nano 5G
+            result["model_family"] = "iPod Classic"
+            result["generation"] = ""
 
         return result
     except Exception:

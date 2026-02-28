@@ -1,5 +1,5 @@
 from PyQt6.QtCore import Qt, QPoint
-from PyQt6.QtWidgets import QApplication, QHBoxLayout, QFrame, QLabel, QPushButton, QWidget
+from PyQt6.QtWidgets import QHBoxLayout, QFrame, QLabel, QPushButton, QWidget
 from PyQt6.QtGui import QFont
 
 from ..styles import FONT_FAMILY
@@ -122,10 +122,8 @@ class TrackListTitleBar(QFrame):
 
     def mouseMoveEvent(self, a0):
         if self.dragging and a0:
-            _ = a0.globalPosition().toPoint().y() - self.dragStartPos.y()  # delta
             self.dragStartPos = a0.globalPosition().toPoint()
 
-            _ = self.splitter.handle(1).y() if self.splitter.handle(1) else 0  # current_pos
             new_pos = self.splitter.mapFromGlobal(
                 a0.globalPosition().toPoint()).y()
 
@@ -149,12 +147,12 @@ class TrackListTitleBar(QFrame):
         if event:
             pos = event.position().toPoint()
             if self.childAt(pos) is None:
-                QApplication.setOverrideCursor(Qt.CursorShape.SizeVerCursor)
+                self.setCursor(Qt.CursorShape.SizeVerCursor)
             else:
-                QApplication.restoreOverrideCursor()
+                self.unsetCursor()
 
     def leaveEvent(self, a0):
-        QApplication.restoreOverrideCursor()
+        self.unsetCursor()
         super().leaveEvent(a0)
 
     def enforceMinHeight(self):
@@ -173,6 +171,7 @@ class TrackListTitleBar(QFrame):
                         child.show()
 
         if sizes[1] < min_height:
+            total = sizes[0] + sizes[1]
             sizes[1] = min_height
-            sizes[0] = max(sizes[0] - sizes[1], 0)
+            sizes[0] = max(total - min_height, 0)
             self.splitter.setSizes(sizes)

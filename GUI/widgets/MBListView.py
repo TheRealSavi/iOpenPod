@@ -348,9 +348,13 @@ class MusicBrowserList(QFrame):
     # -------------------------------------------------------------------------
 
     def _ensure_tracks_loaded(self) -> None:
-        """Ensure tracks are loaded before filtering."""
+        """Ensure tracks are loaded before filtering (without populating table)."""
         if not self._all_tracks:
-            self.loadTracks()
+            from ..app import iTunesDBCache
+
+            cache = iTunesDBCache.get_instance()
+            if cache.is_ready():
+                self._all_tracks = cache.get_tracks()
 
     def _setup_columns(self) -> None:
         """Determine which columns to display based on available data."""
@@ -579,7 +583,7 @@ class MusicBrowserList(QFrame):
             lambda result, lid=load_id: self._on_art_loaded(result, lid))
         ThreadPoolSingleton.get_instance().start(worker)
 
-    def _load_art_batch(self, links: list[int]) -> dict[int, bytes | None]:
+    def _load_art_batch(self, links: list[int]) -> dict[int, tuple[int, int, bytes] | None]:
         """Background worker: decode artwork for a batch of mhiiLinks.
 
         Returns dict mapping mhiiLink -> (width, height, rgba_bytes) or None.
