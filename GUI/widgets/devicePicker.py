@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
 
 from ..device_scanner import scan_for_ipods, DiscoveredIPod
 from ..ipod_images import get_ipod_image
-from ..styles import Colors, Metrics, btn_css
+from ..styles import Colors, FONT_FAMILY, Metrics, btn_css
 
 
 class _ScanThread(QThread):
@@ -228,7 +228,7 @@ class DeviceCard(QFrame):
 
         # Model name
         name_label = QLabel(ipod.display_name)
-        name_label.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+        name_label.setFont(QFont(FONT_FAMILY, 11, QFont.Weight.Bold))
         name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         name_label.setWordWrap(True)
         name_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent; border: none;")
@@ -236,7 +236,7 @@ class DeviceCard(QFrame):
 
         # Subtitle (drive letter + space)
         sub_label = QLabel(ipod.subtitle)
-        sub_label.setFont(QFont("Segoe UI", 9))
+        sub_label.setFont(QFont(FONT_FAMILY, 9))
         sub_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         sub_label.setWordWrap(True)
         sub_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
@@ -326,12 +326,12 @@ class DevicePickerDialog(QDialog):
 
         # Title
         title = QLabel("Select your iPod")
-        title.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
+        title.setFont(QFont(FONT_FAMILY, 16, QFont.Weight.Bold))
         title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
         layout.addWidget(title)
 
         subtitle = QLabel("Scanning for connected iPods...")
-        subtitle.setFont(QFont("Segoe UI", 10))
+        subtitle.setFont(QFont(FONT_FAMILY, 10))
         subtitle.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
         self._subtitle = subtitle
         layout.addWidget(subtitle)
@@ -358,7 +358,7 @@ class DevicePickerDialog(QDialog):
             "Make sure your iPod is connected and shows as a drive letter.\n"
             "You can also use the button below to select a folder manually."
         )
-        self._no_devices_label.setFont(QFont("Segoe UI", 10))
+        self._no_devices_label.setFont(QFont(FONT_FAMILY, 10))
         self._no_devices_label.setStyleSheet(f"color: {Colors.TEXT_TERTIARY};")
         self._no_devices_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._no_devices_label.setWordWrap(True)
@@ -376,7 +376,7 @@ class DevicePickerDialog(QDialog):
         btn_layout.setSpacing(10)
 
         self._manual_btn = QPushButton("📁  Browse Manually...")
-        self._manual_btn.setFont(QFont("Segoe UI", 10))
+        self._manual_btn.setFont(QFont(FONT_FAMILY, 10))
         self._manual_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._manual_btn.setStyleSheet(btn_css(
             bg=Colors.SURFACE_RAISED,
@@ -390,7 +390,7 @@ class DevicePickerDialog(QDialog):
         btn_layout.addWidget(self._manual_btn)
 
         self._rescan_btn = QPushButton("🔃  Rescan")
-        self._rescan_btn.setFont(QFont("Segoe UI", 10))
+        self._rescan_btn.setFont(QFont(FONT_FAMILY, 10))
         self._rescan_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._rescan_btn.setStyleSheet(btn_css(
             bg=Colors.SURFACE_RAISED,
@@ -406,7 +406,7 @@ class DevicePickerDialog(QDialog):
         btn_layout.addStretch()
 
         self._select_btn = QPushButton("Select")
-        self._select_btn.setFont(QFont("Segoe UI", 10, QFont.Weight.DemiBold))
+        self._select_btn.setFont(QFont(FONT_FAMILY, 10, QFont.Weight.DemiBold))
         self._select_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._select_btn.setEnabled(False)
         self._select_btn.setStyleSheet(f"""
@@ -430,7 +430,7 @@ class DevicePickerDialog(QDialog):
         btn_layout.addWidget(self._select_btn)
 
         cancel_btn = QPushButton("Cancel")
-        cancel_btn.setFont(QFont("Segoe UI", 10))
+        cancel_btn.setFont(QFont(FONT_FAMILY, 10))
         cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         cancel_btn.setStyleSheet(btn_css(
             bg=Colors.SURFACE_RAISED,
@@ -496,7 +496,7 @@ class DevicePickerDialog(QDialog):
             card.setSelected(card.ipod is ipod)
 
         self._select_btn.setEnabled(True)
-        self._select_btn.setText(f"Select ({ipod.drive_letter}:)")
+        self._select_btn.setText(f"Select ({ipod.mount_name})")
 
     def _browse_manually(self):
         """Open a standard folder picker dialog."""

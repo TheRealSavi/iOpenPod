@@ -24,15 +24,19 @@ Detection pipeline:
     - model_family:  IPOD_MODELS  >  USB PID table (with disk-size sanity check)  >  hashing_scheme
 """
 
-import ctypes
-import ctypes.wintypes as wt
 import logging
 import os
 import struct
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+
+import ctypes
+if sys.platform == "win32":
+    import ctypes.wintypes as wt
+elif TYPE_CHECKING:
+    import ctypes.wintypes as wt  # type-checker only
 
 logger = logging.getLogger(__name__)
 
@@ -173,8 +177,8 @@ def _extract_guid_from_instance_id(instance_id: str) -> str:
 @dataclass
 class DiscoveredIPod:
     """A discovered iPod device."""
-    path: str  # Drive root path (e.g., "D:\\")
-    drive_letter: str  # Just the letter (e.g., "D")
+    path: str  # Mount root path (e.g., "D:\\" on Windows, "/Volumes/iPod" on macOS)
+    mount_name: str  # Display name for the mount (e.g., "D:", "iPod", "IPOD")
 
     # Identification (may be partially filled)
     model_family: str = "iPod"  # e.g., "iPod Classic", "iPod Nano"
@@ -196,6 +200,13 @@ class DiscoveredIPod:
     identification_method: str = "filesystem"  # filesystem, usb_pid, serial, sysinfo, hashing
 
     @property
+    def drive_letter(self) -> str:
+        """Backward-compatible drive letter (Windows only)."""
+        if sys.platform == "win32" and self.mount_name and self.mount_name[0].isalpha():
+            return self.mount_name[0]
+        return ""
+
+    @property
     def display_name(self) -> str:
         """User-friendly display name."""
         parts = [self.model_family]
@@ -209,8 +220,8 @@ class DiscoveredIPod:
 
     @property
     def subtitle(self) -> str:
-        """Secondary line (drive letter + free space)."""
-        parts = [f"Drive {self.drive_letter}:"]
+        """Secondary line (mount name + free space)."""
+        parts = [self.mount_name]
         if self.disk_size_gb > 0:
             parts.append(f"{self.free_space_gb:.1f} / {self.disk_size_gb:.1f} GB free")
         return " — ".join(parts)
@@ -259,6 +270,272 @@ def _get_disk_info(drive_path: str) -> tuple[float, float]:
         return usage.total / (1024**3), usage.free / (1024**3)
     except OSError:
         return 0.0, 0.0
+
+
+def _find_ipod_volumes() -> list[tuple[str, str]]:
+    """
+    Find mounted volumes that contain an iPod_Control directory.
+
+    Returns a list of (mount_path, display_name) tuples.
+    Cross-platform: Windows drive letters, macOS /Volumes, Linux common mount dirs.
+    """
+    candidates: list[tuple[str, str]] = []
+
+    if sys.platform == "win32":
+        for letter in _get_drive_letters():
+            drive_path = f"{letter}:\\"
+            try:
+                if _has_ipod_control(drive_path):
+                    candidates.append((drive_path, f"{letter}:"))
+            except PermissionError:
+                continue
+
+    elif sys.platform == "darwin":
+        # macOS: iPods mount under /Volumes/
+        volumes_dir = "/Volumes"
+        if os.path.isdir(volumes_dir):
+            for name in os.listdir(volumes_dir):
+                vol_path = os.path.join(volumes_dir, name)
+                if os.path.isdir(vol_path):
+                    try:
+                        if _has_ipod_control(vol_path):
+                            candidates.append((vol_path, name))
+                    except PermissionError:
+                        continue
+
+    else:
+        # Linux: check common mount locations
+        import getpass
+        user = getpass.getuser()
+        search_dirs = [
+            f"/media/{user}",
+            f"/run/media/{user}",
+            "/mnt",
+        ]
+        # Also check /media/* for distros that mount directly under /media
+        if os.path.isdir("/media"):
+            try:
+                for entry in os.listdir("/media"):
+                    d = os.path.join("/media", entry)
+                    if os.path.isdir(d) and d not in search_dirs:
+                        search_dirs.append(d)
+            except PermissionError:
+                pass
+
+        seen: set[str] = set()
+        for search_dir in search_dirs:
+            if not os.path.isdir(search_dir):
+                continue
+            try:
+                entries = os.listdir(search_dir)
+            except PermissionError:
+                continue
+            for name in entries:
+                vol_path = os.path.join(search_dir, name)
+                if vol_path in seen or not os.path.isdir(vol_path):
+                    continue
+                seen.add(vol_path)
+                try:
+                    if _has_ipod_control(vol_path):
+                        candidates.append((vol_path, name))
+                except PermissionError:
+                    continue
+
+    return candidates
+
+
+def _probe_hardware_macos(mount_path: str) -> dict:
+    """
+    macOS hardware probing via ioreg + diskutil.
+
+    Uses ``diskutil info`` to confirm the volume is on a USB bus, then
+    queries ``ioreg`` for Apple USB host devices (filtered to iPod-named
+    devices) to extract the USB PID, serial number, and FireWire GUID.
+
+    Falls back to scanning all Apple USB devices if the iPod-specific
+    query doesn't match.
+    """
+    import plistlib
+    import subprocess
+
+    result: dict = {}
+
+    # ── Step 1: Confirm this volume is on USB via diskutil ─────────────
+    try:
+        proc = subprocess.run(
+            ["diskutil", "info", "-plist", mount_path],
+            capture_output=True, timeout=10,
+        )
+        if proc.returncode == 0:
+            disk_info = plistlib.loads(proc.stdout)
+            if disk_info.get("BusProtocol") != "USB":
+                logger.debug(
+                    "macOS probe: %s is not on USB (protocol=%s)",
+                    mount_path, disk_info.get("BusProtocol"),
+                )
+                # Not a USB device — no USB hardware info to gather
+                return result
+    except Exception as e:
+        logger.debug("diskutil info failed for %s: %s", mount_path, e)
+
+    # ── Step 2: Query ioreg for Apple USB devices ──────────────────────
+    # First try iPod-specific query (fast), then fall back to all USB devices.
+    apple_usb_devices: list[dict] = []
+
+    for ioreg_args in [
+        # Fast path: only devices named "iPod"
+        ["ioreg", "-a", "-r", "-c", "IOUSBHostDevice", "-n", "iPod"],
+        # Fallback: all USB host devices (slower, but catches renamed iPods)
+        ["ioreg", "-a", "-r", "-d", "1", "-c", "IOUSBHostDevice"],
+    ]:
+        if apple_usb_devices:
+            break
+        try:
+            proc = subprocess.run(
+                ioreg_args, capture_output=True, timeout=10,
+            )
+            if proc.returncode != 0 or not proc.stdout.strip():
+                continue
+            devices = plistlib.loads(proc.stdout)
+            if not isinstance(devices, list):
+                devices = [devices]
+            # Filter to Apple vendor (0x05AC = 1452)
+            for dev in devices:
+                vendor = dev.get("idVendor", 0)
+                if vendor == 0x05AC:
+                    apple_usb_devices.append(dev)
+        except Exception as e:
+            logger.debug("ioreg query %s failed: %s", ioreg_args[:5], e)
+
+    if not apple_usb_devices:
+        logger.debug("macOS probe: no Apple USB devices found in ioreg")
+        return result
+
+    # ── Step 3: Extract info from the matched device ───────────────────
+    # If there's exactly one Apple USB device, use it directly.
+    # If multiple, pick the one with a known iPod PID.
+    target_dev = None
+    if len(apple_usb_devices) == 1:
+        target_dev = apple_usb_devices[0]
+    else:
+        for dev in apple_usb_devices:
+            pid = dev.get("idProduct", 0)
+            if pid in USB_PID_TO_MODEL:
+                target_dev = dev
+                break
+        if not target_dev:
+            target_dev = apple_usb_devices[0]
+
+    if target_dev:
+        # USB PID
+        pid = target_dev.get("idProduct", 0)
+        if pid:
+            result["usb_pid"] = pid
+            model_info = USB_PID_TO_MODEL.get(pid)
+            if model_info:
+                result["model_family"] = model_info[0]
+                result["generation"] = model_info[1]
+
+        # Serial number / FireWire GUID
+        serial = target_dev.get("USB Serial Number", "") or target_dev.get("kUSBSerialNumberString", "")
+        if serial:
+            result["serial"] = serial
+            clean = serial.replace(" ", "").strip()
+            if len(clean) == 16:
+                try:
+                    bytes.fromhex(clean)
+                    result["firewire_guid"] = clean.upper()
+                except ValueError:
+                    pass
+
+        # Firmware revision (bcdDevice)
+        bcd = target_dev.get("bcdDevice", 0)
+        if bcd:
+            major = (bcd >> 8) & 0xFF
+            minor = bcd & 0xFF
+            result["firmware"] = f"{major}.{minor:02d}"
+
+    return result
+
+
+def _probe_hardware_linux(mount_path: str) -> dict:
+    """
+    Linux hardware probing via sysfs.
+
+    Traces the mount point → block device → USB device through sysfs
+    to extract the USB PID, serial number, and FireWire GUID.
+    """
+    import re as _re
+
+    result: dict = {}
+
+    try:
+        # Find the device for this mount point from /proc/mounts
+        device = None
+        with open("/proc/mounts", "r") as f:
+            for line in f:
+                parts = line.split()
+                if len(parts) >= 2 and parts[1] == mount_path:
+                    device = parts[0]  # e.g., /dev/sdb1
+                    break
+
+        if not device or not device.startswith("/dev/"):
+            return result
+
+        # Get the base disk name (e.g., sdb from /dev/sdb1)
+        dev_name = os.path.basename(device)
+        base_disk = _re.sub(r"\d+$", "", dev_name)  # sdb1 → sdb
+
+        # Navigate sysfs to find USB device info
+        sysfs_path = f"/sys/block/{base_disk}/device"
+        if not os.path.exists(sysfs_path):
+            return result
+
+        # Walk up the sysfs tree to find the USB device with idVendor/idProduct
+        current = os.path.realpath(sysfs_path)
+        for _ in range(8):
+            vendor_file = os.path.join(current, "idVendor")
+            if os.path.exists(vendor_file):
+                with open(vendor_file) as vf:
+                    vendor = vf.read().strip()
+                if vendor == "05ac":  # Apple
+                    # Read product ID
+                    product_file = os.path.join(current, "idProduct")
+                    if os.path.exists(product_file):
+                        with open(product_file) as pf:
+                            product = pf.read().strip()
+                        try:
+                            pid = int(product, 16)
+                            result["usb_pid"] = pid
+                            model_info = USB_PID_TO_MODEL.get(pid)
+                            if model_info:
+                                result["model_family"] = model_info[0]
+                                result["generation"] = model_info[1]
+                        except ValueError:
+                            pass
+
+                    # Read serial number
+                    serial_file = os.path.join(current, "serial")
+                    if os.path.exists(serial_file):
+                        with open(serial_file) as sf:
+                            serial = sf.read().strip()
+                        if serial:
+                            result["serial"] = serial
+                            clean = serial.replace(" ", "")
+                            if len(clean) == 16:
+                                try:
+                                    bytes.fromhex(clean)
+                                    result["firewire_guid"] = clean.upper()
+                                except ValueError:
+                                    pass
+                    break
+
+            current = os.path.dirname(current)
+
+    except Exception as e:
+        logger.debug("Linux hardware probe failed: %s", e)
+
+    return result
 
 
 def _identify_via_usb_for_drive(drive_letter: str) -> Optional[dict]:
@@ -464,7 +741,7 @@ def _identify_via_direct_ioctl(drive_letter: str) -> Optional[dict]:
     result: dict = {}
     path = f"\\\\.\\{drive_letter}:"
 
-    handle = ctypes.windll.kernel32.CreateFileW(
+    handle = ctypes.windll.kernel32.CreateFileW(  # type: ignore[attr-defined]
         path,
         _GENERIC_READ,
         _FILE_SHARE_READ | _FILE_SHARE_WRITE,
@@ -489,7 +766,7 @@ def _identify_via_direct_ioctl(drive_letter: str) -> Optional[dict]:
         out_buf = (ctypes.c_ubyte * buf_size)()
         returned = wt.DWORD(0)
 
-        ok = ctypes.windll.kernel32.DeviceIoControl(
+        ok = ctypes.windll.kernel32.DeviceIoControl(  # type: ignore[attr-defined]
             handle,
             _IOCTL_STORAGE_QUERY_PROPERTY,
             query,
@@ -577,7 +854,7 @@ def _identify_via_direct_ioctl(drive_letter: str) -> Optional[dict]:
                     pass
 
     finally:
-        ctypes.windll.kernel32.CloseHandle(handle)
+        ctypes.windll.kernel32.CloseHandle(handle)  # type: ignore[attr-defined]
 
     # ── Walk the PnP device tree to get FireWire GUID and USB PID ──
     # The SCSI layer gives us vendor/product/serial/firmware, but the
@@ -662,9 +939,9 @@ def _setup_win32_prototypes() -> None:
         return
     _setup_win32_prototypes._done = True  # type: ignore[attr-defined]
 
-    k32 = ctypes.windll.kernel32
-    sa = ctypes.windll.setupapi
-    cm = ctypes.windll.cfgmgr32
+    k32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+    sa = ctypes.windll.setupapi  # type: ignore[attr-defined]
+    cm = ctypes.windll.cfgmgr32  # type: ignore[attr-defined]
 
     # ── kernel32 ───────────────────────────────────────────────────────
     k32.CreateFileW.argtypes = [
@@ -746,9 +1023,9 @@ def _walk_device_tree(drive_letter: str) -> dict:
     _setup_win32_prototypes()
 
     result: dict = {}
-    kernel32 = ctypes.windll.kernel32
-    setupapi = ctypes.windll.setupapi
-    cfgmgr32 = ctypes.windll.cfgmgr32
+    kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+    setupapi = ctypes.windll.setupapi  # type: ignore[attr-defined]
+    cfgmgr32 = ctypes.windll.cfgmgr32  # type: ignore[attr-defined]
 
     INVALID = ctypes.c_void_p(-1).value  # 0xFFFFFFFFFFFFFFFF on 64-bit
 
@@ -963,13 +1240,14 @@ def _walk_device_tree(drive_letter: str) -> dict:
 # ── Unified probing functions ──────────────────────────────────────────────
 
 
-def _probe_hardware(drive_letter: str) -> dict:
+def _probe_hardware(mount_path: str, mount_name: str) -> dict:
     """
-    Phase 1: Hardware probing — query the device directly via Win32 APIs.
+    Phase 1: Hardware probing — query the USB device for identification.
 
-    Tries the fast direct path first (IOCTL + device tree walk), then falls
-    back to WMI if the direct path fails entirely.  The result merges data
-    from whichever sources succeed.
+    Platform-specific:
+      - **Windows**: Direct IOCTL + device tree walk, with WMI fallback.
+      - **macOS**: system_profiler SPUSBDataType to find the Apple USB device.
+      - **Linux**: sysfs traversal from block device to USB device.
 
     Returns a dict that may contain any of:
         vendor, product, serial, firmware, bus_type, firewire_guid,
@@ -977,28 +1255,38 @@ def _probe_hardware(drive_letter: str) -> dict:
     """
     result: dict = {}
 
-    if sys.platform != "win32":
-        return result
+    if sys.platform == "win32":
+        # On Windows, mount_name is "D:" — extract the drive letter
+        drive_letter = mount_name[0] if mount_name and mount_name[0].isalpha() else ""
+        if not drive_letter:
+            return result
 
-    # ── Primary: Direct IOCTL + device tree (fast, no subprocess) ──────
-    ioctl_info = _identify_via_direct_ioctl(drive_letter)
-    if ioctl_info:
-        result.update(ioctl_info)
-        logger.debug("Hardware probe (direct): %s", result)
+        # ── Primary: Direct IOCTL + device tree (fast, no subprocess) ──
+        ioctl_info = _identify_via_direct_ioctl(drive_letter)
+        if ioctl_info:
+            result.update(ioctl_info)
+            logger.debug("Hardware probe (direct): %s", result)
 
-    # ── Fallback: WMI (only if direct gave us nothing useful) ──────────
-    # The WMI path is kept as a safety net for edge cases where the direct
-    # path can't open the device handle (e.g., permission denied, unusual
-    # driver stack).  It's never tried when direct already succeeded.
-    if not result:
-        logger.debug(
-            "Direct probe failed for drive %s, falling back to WMI",
-            drive_letter,
-        )
-        wmi_info = _identify_via_usb_for_drive(drive_letter)
-        if wmi_info:
-            result.update(wmi_info)
-            logger.debug("Hardware probe (WMI fallback): %s", result)
+        # ── Fallback: WMI (only if direct gave us nothing useful) ──────
+        if not result:
+            logger.debug(
+                "Direct probe failed for drive %s, falling back to WMI",
+                drive_letter,
+            )
+            wmi_info = _identify_via_usb_for_drive(drive_letter)
+            if wmi_info:
+                result.update(wmi_info)
+                logger.debug("Hardware probe (WMI fallback): %s", result)
+
+    elif sys.platform == "darwin":
+        result = _probe_hardware_macos(mount_path)
+        if result:
+            logger.debug("Hardware probe (macOS): %s", result)
+
+    else:
+        result = _probe_hardware_linux(mount_path)
+        if result:
+            logger.debug("Hardware probe (Linux): %s", result)
 
     return result
 
@@ -1324,47 +1612,36 @@ def _model_matches_disk_size(model_family: str, disk_gb: float) -> bool:
 
 def scan_for_ipods() -> list[DiscoveredIPod]:
     """
-    Scan all drives for connected iPods.
+    Scan all mounted volumes for connected iPods.
 
     Uses a unified three-phase pipeline:
 
-      **Phase 1 — Hardware probing** (Win32 APIs, no subprocess):
-        Direct IOCTL + device tree walk, with silent WMI fallback.
+      **Phase 1 — Hardware probing** (platform-specific):
+        Windows: Direct IOCTL + device tree walk, with silent WMI fallback.
+        macOS: system_profiler SPUSBDataType for USB device identification.
+        Linux: sysfs traversal from block device to USB device.
 
-      **Phase 2 — Filesystem probing** (file reads on iPod):
+      **Phase 2 — Filesystem probing** (cross-platform file reads):
         SysInfo / SysInfoExtended + iTunesDB header.
 
       **Phase 3 — Model resolution** (per-field priority merge):
         SysInfo ModelNumStr > serial last-3 > USB PID > hashing_scheme.
 
-    Returns a list of DiscoveredIPod objects, sorted by drive letter.
+    Returns a list of DiscoveredIPod objects.
     """
     ipods: list[DiscoveredIPod] = []
 
-    if sys.platform != "win32":
-        logger.warning("Drive scanning is only supported on Windows")
-        return ipods
+    for mount_path, display_name in _find_ipod_volumes():
+        logger.info("Found iPod_Control at %s", mount_path)
 
-    for letter in _get_drive_letters():
-        drive_path = f"{letter}:\\"
-
-        # Quick check: skip if not accessible or no iPod_Control
-        try:
-            if not _has_ipod_control(drive_path):
-                continue
-        except PermissionError:
-            continue
-
-        logger.info("Found iPod_Control on drive %s:", letter)
-
-        ipod = DiscoveredIPod(path=drive_path, drive_letter=letter)
-        ipod.disk_size_gb, ipod.free_space_gb = _get_disk_info(drive_path)
+        ipod = DiscoveredIPod(path=mount_path, mount_name=display_name)
+        ipod.disk_size_gb, ipod.free_space_gb = _get_disk_info(mount_path)
 
         # ── Phase 1: Hardware probing ──────────────────────────────────
-        hw = _probe_hardware(letter)
+        hw = _probe_hardware(mount_path, display_name)
 
         # ── Phase 2: Filesystem probing ────────────────────────────────
-        fs = _probe_filesystem(drive_path)
+        fs = _probe_filesystem(mount_path)
 
         # ── Phase 3: Model resolution (per-field priority merge) ───────
         resolved = _resolve_model(hw, fs, ipod.disk_size_gb)
