@@ -1,6 +1,10 @@
 """
-HASH72 implementation for iPod Classic 1G, Nano 4G/5G.
+HASH72 implementation for iPod Nano 5G.
 Ported from libgpod's itdb_hash72.c.
+
+Note: iTunes also writes a HASH72 signature on iPod Classic devices, but
+the Classic firmware only checks HASH58 (scheme=1).  We preserve HASH72
+from a reference database when available but do not require it for Classic.
 
 IMPORTANT: This requires a HashInfo file that must be extracted from a valid
 iTunes sync. The HashInfo file contains the IV and random bytes needed to
@@ -81,6 +85,16 @@ def read_hash_info(ipod_path: str) -> Optional[HashInfo]:
     Returns:
         HashInfo object or None if file doesn't exist
     """
+    # Check centralized device_info store first
+    try:
+        from device_info import get_current_device
+        dev = get_current_device()
+        if dev and dev.hash_info_iv and dev.hash_info_rndpart:
+            return HashInfo(uuid=b'\x00' * 20, rndpart=dev.hash_info_rndpart, iv=dev.hash_info_iv)
+    except Exception:
+        pass
+
+    # Fallback: read from disk
     path = _get_hash_info_path(ipod_path)
 
     if not os.path.exists(path):

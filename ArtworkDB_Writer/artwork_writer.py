@@ -36,11 +36,6 @@ MHOD_HEADER_SIZE = 24
 MHNI_HEADER_SIZE = 76
 MHIF_HEADER_SIZE = 124
 
-# MHOD type 6 (unknown but present in real ArtworkDB)
-# Contains an mhaf child: 96 bytes in-file (MHOD total=120 − header=24 = 96).
-# The mhaf headerSize field = 96, but its totalSize field = 60 (meaning unclear).
-MHAF_DATA_SIZE = 96
-
 
 @dataclass
 class ArtworkEntry:
@@ -140,34 +135,6 @@ def _write_mhod_container(mhod_type: int, mhni_data: bytes) -> bytes:
     return bytes(header) + mhni_data
 
 
-def _write_mhod6() -> bytes:
-    """
-    Write MHOD type 6 (unknown purpose, present in real ArtworkDB).
-
-    Contains an mhaf child.  In real iPod databases:
-    - MHOD total = 120 (24 header + 96 data)
-    - mhaf headerSize field = 96
-    - mhaf totalSize field = 60
-    - 96 bytes of mhaf data are actually present in the file
-    """
-    # mhaf child — 96 bytes in-file matching real iPod
-    mhaf = bytearray(MHAF_DATA_SIZE)
-    mhaf[0:4] = b'mhaf'
-    struct.pack_into('<I', mhaf, 4, MHAF_DATA_SIZE)  # headerSize = 96
-    struct.pack_into('<I', mhaf, 8, 60)               # totalSize = 60 (as in real iPod)
-    # Rest is zeros
-
-    total_len = MHOD_HEADER_SIZE + len(mhaf)  # 24 + 96 = 120
-
-    header = bytearray(MHOD_HEADER_SIZE)
-    header[0:4] = b'mhod'
-    struct.pack_into('<I', header, 4, MHOD_HEADER_SIZE)
-    struct.pack_into('<I', header, 8, total_len)
-    struct.pack_into('<H', header, 12, 6)  # type 6
-
-    return bytes(header) + bytes(mhaf)
-
-
 def _write_mhii(entry: ArtworkEntry, format_offsets: dict) -> bytes:
     """
     Write an MHII (image item) chunk.
@@ -176,7 +143,7 @@ def _write_mhii(entry: ArtworkEntry, format_offsets: dict) -> bytes:
         entry: ArtworkEntry with converted format data
         format_offsets: {format_id: current_offset} for ithmb file positions
     """
-    # Build MHOD children (one per format + MHOD type 6)
+    # Build MHOD children (one per format)
     children = []
     for fmt_id in sorted(entry.formats.keys()):
         img_info = entry.formats[fmt_id]
@@ -185,8 +152,8 @@ def _write_mhii(entry: ArtworkEntry, format_offsets: dict) -> bytes:
         mhod = _write_mhod_container(2, mhni)
         children.append(mhod)
 
-    # Add MHOD type 6
-    children.append(_write_mhod6())
+    # NOTE: libgpod does NOT write MHOD type 6 / mhaf children in MHII.
+    # Earlier versions of this code added one but it confused Nano 2G firmware.
 
     children_data = b''.join(children)
     total_len = MHII_HEADER_SIZE + len(children_data)
@@ -204,10 +171,9 @@ def _write_mhii(entry: ArtworkEntry, format_offsets: dict) -> bytes:
     # offset 40: originalDate = 0
     # offset 44: exifTakenDate = 0
     struct.pack_into('<I', header, 48, entry.src_img_size)  # source image size
-    # offset 56: unk (real iPod had 9 here — unknown purpose)
-    struct.pack_into('<I', header, 56, 9)
-    # offset 60: unk (real iPod had 1 here — unknown purpose)
-    struct.pack_into('<I', header, 60, 1)
+    # offset 56 and 60: libgpod defaults these to 0 for new artwork
+    # (our old code had 9 and 1 copied from an iPod Classic db, which
+    #  may confuse older/simpler firmware like Nano 2G)
 
     return bytes(header) + children_data
 
@@ -303,7 +269,7 @@ def _write_mhfd(datasets: list[bytes], next_mhii_id: int,
     struct.pack_into('<I', header, 4, MHFD_HEADER_SIZE)
     struct.pack_into('<I', header, 8, total_len)
     # offset 12: unk1 = 0
-    struct.pack_into('<I', header, 16, 6)                # unk2 = 6 (from real iPod Classic ArtworkDB)
+    struct.pack_into('<I', header, 16, 2)                # unk2 = 2 (per libgpod, always 2)
     struct.pack_into('<I', header, 20, len(datasets))    # childCount
     # offset 24: unk3 = 0
     struct.pack_into('<I', header, 28, next_mhii_id)     # next_mhii_id
@@ -441,6 +407,31 @@ def _parse_mhii_existing(data: bytes, offset: int, artwork_dir: str) -> Optional
     }
 
 
+def _cleanup_stale_ithmb_files(artwork_dir: str, target_format_ids: set[int]) -> None:
+    """Remove ithmb files whose format ID doesn't belong to the target device.
+
+    When switching from one device family's formats to another (e.g. Classic
+    format IDs 1055/1060/1061 on a Nano 2G that expects 1027/1031), stale
+    ithmb files from the old format set can confuse the iPod firmware.
+    """
+    import re
+    pattern = re.compile(r'^F(\d+)_\d+\.ithmb$', re.IGNORECASE)
+    if not os.path.isdir(artwork_dir):
+        return
+    for name in os.listdir(artwork_dir):
+        m = pattern.match(name)
+        if m:
+            fmt_id = int(m.group(1))
+            if fmt_id not in target_format_ids:
+                path = os.path.join(artwork_dir, name)
+                try:
+                    os.remove(path)
+                    logger.info("ART: removed stale ithmb file %s (format %d not in target set)",
+                                name, fmt_id)
+                except OSError as e:
+                    logger.warning("ART: failed to remove stale ithmb %s: %s", name, e)
+
+
 def write_artworkdb(
     ipod_path: str,
     tracks: list,
@@ -483,6 +474,12 @@ def write_artworkdb(
         artwork_formats = get_artwork_formats(ipod_path)
     device_formats = artwork_formats
     logger.info("ART: using formats %s", list(device_formats.keys()))
+
+    # Clean up stale ithmb files whose format IDs don't match the target
+    # device.  This prevents leftover files from a previous sync with wrong
+    # formats (e.g. Classic formats written to a Nano) from confusing the
+    # iPod firmware.
+    _cleanup_stale_ithmb_files(artwork_dir, set(device_formats.keys()))
 
     # Read reference ArtworkDB for header fields
     ref_mhfd = None

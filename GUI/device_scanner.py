@@ -1521,13 +1521,13 @@ def _identify_via_hashing_scheme(ipod_path: str) -> Optional[dict]:
             result["model_family"] = "iPod"
             result["generation"] = "(pre-2007)"
         elif scheme == 1:
-            # HASH58 is used by Nano 3G and Nano 4G
-            result["model_family"] = "iPod Nano"
-            result["generation"] = "(3rd/4th gen)"
+            # HASH58 is used by Classic (all gens), Nano 3G, Nano 4G
+            result["model_family"] = "iPod"
+            result["generation"] = "(Classic or Nano 3G/4G)"
         elif scheme == 2:
-            # HASH72 is used by iPod Classic (all gens) and Nano 5G
-            result["model_family"] = "iPod Classic"
-            result["generation"] = ""
+            # HASH72 is used by Nano 5G only
+            result["model_family"] = "iPod Nano"
+            result["generation"] = "(5th gen)"
 
         return result
     except Exception:

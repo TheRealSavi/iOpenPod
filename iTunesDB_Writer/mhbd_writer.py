@@ -528,10 +528,26 @@ def write_itunesdb(
         # hash_scheme is already set to 1 in write_mhbd
 
     elif checksum_type == ChecksumType.HASH72:
-        # Try to extract hash info from reference or existing database
-        from .hash72 import extract_hash_info_to_dict, read_hash_info, _compute_itunesdb_sha1, _hash_generate
+        # Try to get hash info from centralized store first, then fall back to disk
+        from .hash72 import extract_hash_info_to_dict, read_hash_info, _compute_itunesdb_sha1, _hash_generate, HashInfo
 
-        hash_info = read_hash_info(ipod_path)
+        hash_info = None
+        try:
+            from device_info import get_current_device
+            dev = get_current_device()
+            if dev and dev.hash_info_iv and dev.hash_info_rndpart:
+                hash_info = HashInfo(uuid=b'\x00' * 20, rndpart=dev.hash_info_rndpart, iv=dev.hash_info_iv)
+                logger.debug("HashInfo loaded from centralized device store")
+        except Exception:
+            pass
+
+        if hash_info is None:
+            # Fallback: read_hash_info checks the store again (harmless)
+            # then reads from disk if needed
+            try:
+                hash_info = read_hash_info(ipod_path)
+            except Exception:
+                pass
 
         if hash_info is None:
             # Try to extract from reference database

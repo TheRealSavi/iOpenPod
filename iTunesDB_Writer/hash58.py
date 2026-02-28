@@ -1,9 +1,9 @@
 """
-HASH58 implementation for iPod Nano 3G.
+HASH58 implementation for iPod Classic (all gens), Nano 3G, and Nano 4G.
 Ported from libgpod's itdb_hash58.c.
 
 This is the complete, working implementation for signing iTunesDB files
-for the iPod Nano 3rd generation.
+for devices that use hashing_scheme=1 (HASH58).
 
 Usage:
     from hash58 import write_hash58
@@ -229,40 +229,20 @@ def write_hash58(itdb_data: bytearray, firewire_id: bytes) -> None:
 
 
 def read_firewire_id(ipod_path: str) -> bytes:
+    """Return the FireWire GUID for the connected iPod.
+
+    Reads from the centralised DeviceInfo store.  Raises if not available.
     """
-    Read FireWire GUID from iPod's SysInfo file.
-
-    Args:
-        ipod_path: Mount point of iPod (e.g., "E:" on Windows, "/media/ipod" on Linux)
-
-    Returns:
-        Bytes of the FireWire GUID (typically 8 bytes)
-
-    Raises:
-        FileNotFoundError: If SysInfo file doesn't exist
-        KeyError: If FirewireGuid not found in SysInfo
-    """
-    import os
-
-    sysinfo_path = os.path.join(ipod_path, "iPod_Control", "Device", "SysInfo")
-    sysinfo = {}
-
-    with open(sysinfo_path, 'r') as f:
-        for line in f:
-            line = line.strip()
-            if ':' in line:
-                key, value = line.split(':', 1)
-                sysinfo[key.strip()] = value.strip()
-
-    guid = sysinfo.get('FirewireGuid')
-    if guid is None:
-        raise KeyError("FirewireGuid not found in SysInfo")
-
-    # Remove optional '0x' prefix
-    if guid.startswith('0x') or guid.startswith('0X'):
-        guid = guid[2:]
-
-    return bytes.fromhex(guid)
+    from device_info import get_current_device
+    device = get_current_device()
+    if device is not None:
+        fwid = device.firewire_id_bytes
+        if fwid:
+            return fwid
+    raise RuntimeError(
+        "FireWire GUID not available. Device info was not populated "
+        "by the device scanner."
+    )
 
 
 if __name__ == "__main__":

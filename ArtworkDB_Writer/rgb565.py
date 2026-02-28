@@ -70,53 +70,25 @@ IPOD_STRIDE_OVERRIDE: dict[int, int] = {}
 
 
 def get_artwork_formats(ipod_path: str) -> dict[int, tuple[int, int]]:
-    """Return the correct format table for the iPod at *ipod_path*.
+    """Return the correct format table for the connected iPod.
 
-    Detection strategy (in order):
-    1. Read existing ArtworkDB and use whatever format IDs it already has.
-       This is the most reliable method — the device (or iTunes) chose them.
-    2. Look up the model number from SysInfo / device.py to determine device
-       family and map to the right table.
-    3. Fall back to iPod Classic formats (the most common case).
+    Reads exclusively from the centralised DeviceInfo store which was
+    populated when the device was selected.  If no device info is
+    available, defaults to iPod Classic formats.
     """
-    import os
     import logging
     _log = logging.getLogger(__name__)
 
-    # ── Strategy 1: Existing ArtworkDB ─────────────────────────────────
-    artdb_path = os.path.join(ipod_path, "iPod_Control", "Artwork", "ArtworkDB")
-    if os.path.exists(artdb_path):
-        try:
-            with open(artdb_path, 'rb') as f:
-                data = f.read()
-            if len(data) >= 32 and data[:4] == b'mhfd':
-                fmt_ids = _extract_format_ids(data)
-                if fmt_ids:
-                    fmts = {fid: ALL_KNOWN_FORMATS[fid]
-                            for fid in fmt_ids if fid in ALL_KNOWN_FORMATS}
-                    if fmts:
-                        _log.info("ART: detected formats from existing ArtworkDB: %s", list(fmts.keys()))
-                        return fmts
-        except Exception as e:
-            _log.debug("ART: could not read existing ArtworkDB: %s", e)
+    from device_info import get_current_device
+    device = get_current_device()
+    if device is not None and device.artwork_formats:
+        _log.info(
+            "ART: using formats from DeviceInfo: %s",
+            list(device.artwork_formats.keys()),
+        )
+        return device.artwork_formats
 
-    # ── Strategy 2: Model number from SysInfo ─────────────────────────
-    try:
-        from iTunesDB_Writer.device import IPOD_MODELS, read_sysinfo
-        sysinfo = read_sysinfo(ipod_path)
-        model_num = sysinfo.get("ModelNumStr", "")[:5]
-        if model_num and model_num in IPOD_MODELS:
-            family = IPOD_MODELS[model_num][0]  # e.g. "iPod Nano"
-            gen = IPOD_MODELS[model_num][1]       # e.g. "2nd Gen"
-            table = _family_gen_to_formats(family, gen)
-            if table:
-                _log.info("ART: using formats for %s %s: %s", family, gen, list(table.keys()))
-                return table
-    except Exception as e:
-        _log.debug("ART: SysInfo lookup failed: %s", e)
-
-    # ── Strategy 3: Fall back to Classic ───────────────────────────────
-    _log.info("ART: defaulting to iPod Classic formats")
+    _log.info("ART: no DeviceInfo available — defaulting to iPod Classic formats")
     return IPOD_CLASSIC_FORMATS
 
 

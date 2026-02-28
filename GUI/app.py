@@ -75,6 +75,8 @@ class DeviceManager(QObject):
     @discovered_ipod.setter
     def discovered_ipod(self, ipod):
         self._discovered_ipod = ipod
+        # Populate the centralised device info store
+        self._sync_device_info(ipod)
 
     @device_path.setter
     def device_path(self, path: str | None):
@@ -87,6 +89,9 @@ class DeviceManager(QObject):
         self._device_path = path
         if path is None:
             self._discovered_ipod = None
+            # Clear centralized device store
+            from device_info import clear_current_device
+            clear_current_device()
         self.device_changed.emit(path or "")
 
     @property
@@ -112,6 +117,34 @@ class DeviceManager(QObject):
         ipod_control = os.path.join(path, "iPod_Control")
         itunes_folder = os.path.join(ipod_control, "iTunes")
         return os.path.isdir(ipod_control) and os.path.isdir(itunes_folder)
+
+    @staticmethod
+    def _sync_device_info(ipod) -> None:
+        """Convert a DiscoveredIPod to a DeviceInfo and store it centrally."""
+        from device_info import DeviceInfo, set_current_device, enrich, clear_current_device
+
+        if ipod is None:
+            clear_current_device()
+            return
+
+        info = DeviceInfo(
+            path=ipod.path,
+            model_number=ipod.model_number,
+            model_family=ipod.model_family,
+            generation=ipod.generation,
+            capacity=ipod.capacity,
+            color=ipod.color,
+            firewire_guid=ipod.firewire_guid,
+            serial=ipod.serial,
+            firmware=ipod.firmware,
+            usb_pid=ipod.usb_pid,
+            hashing_scheme=ipod.hashing_scheme,
+            disk_size_gb=ipod.disk_size_gb,
+            free_space_gb=ipod.free_space_gb,
+            identification_method=ipod.identification_method,
+        )
+        enrich(info)
+        set_current_device(info)
 
 
 class ThreadPoolSingleton:
