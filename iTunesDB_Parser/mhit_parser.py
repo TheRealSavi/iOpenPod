@@ -180,6 +180,8 @@ def parse_trackItem(data, offset, header_length, chunk_length) -> dict:
         next_offset = response["nextOffset"]
 
         trackData = response["result"]
-        track[mhod_type_map[trackData["mhodType"]]] = trackData["string"]
+        mhod_type = trackData["mhodType"]
+        field_name = mhod_type_map.get(mhod_type, f"unknown_mhod_{mhod_type}")
+        track[field_name] = trackData["string"]
 
     return {"nextOffset": offset + chunk_length, "result": track}

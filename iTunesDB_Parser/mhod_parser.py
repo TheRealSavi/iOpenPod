@@ -1,10 +1,11 @@
 import struct
 
 
-# String MHOD types (1-31, 200-300) have a string sub-header at offset 24
+# String MHOD types have a string sub-header at offset 24.
+# Types 1-44 are track/item string metadata, 200-300 are album item strings.
 # Non-string types (50, 51, 52, 53, 100) have completely different binary layouts
 # per libgpod's MhodHeaderSmartPlaylistData, etc.
-STRING_MHOD_TYPES = set(range(1, 32)) | set(range(200, 301))
+STRING_MHOD_TYPES = set(range(1, 45)) | set(range(200, 301))
 
 
 def parse_mhod(data, offset, header_length, chunk_length) -> dict:

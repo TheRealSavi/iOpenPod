@@ -26,6 +26,8 @@ def parse_albumItem(data, offset, header_length, chunk_length) -> dict:
         next_offset = response["nextOffset"]
 
         albumData = response["result"]
-        album[mhod_type_map[albumData["mhodType"]]] = albumData["string"]
+        mhod_type = albumData["mhodType"]
+        field_name = mhod_type_map.get(mhod_type, f"unknown_mhod_{mhod_type}")
+        album[field_name] = albumData["string"]
 
     return {"nextOffset": offset + chunk_length, "result": album}
