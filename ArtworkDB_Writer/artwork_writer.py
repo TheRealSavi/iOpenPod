@@ -18,7 +18,9 @@ import logging
 from dataclasses import dataclass, field
 from typing import Optional
 
-from .rgb565 import IPOD_CLASSIC_FORMATS, convert_art_for_ipod
+from .rgb565 import (ALL_KNOWN_FORMATS,
+                     IPOD_STRIDE_OVERRIDE, convert_art_for_ipod,
+                     get_artwork_formats)
 from .art_extractor import extract_art, art_hash
 
 logger = logging.getLogger(__name__)
@@ -445,6 +447,7 @@ def write_artworkdb(
     pc_file_paths: Optional[dict] = None,
     start_img_id: int = 100,
     reference_artdb_path: Optional[str] = None,
+    artwork_formats: Optional[dict[int, tuple[int, int]]] = None,
 ) -> dict:
     """
     Write ArtworkDB and ithmb files for an iPod.
@@ -464,6 +467,8 @@ def write_artworkdb(
                        (if None, tries to extract art from iPod copies)
         start_img_id: Starting image ID (default 100, matching iTunes behavior)
         reference_artdb_path: Path to existing ArtworkDB for copying header fields
+        artwork_formats: Device-specific format table {correlationID: (w,h)}.
+                         If None, auto-detected from existing ArtworkDB / SysInfo.
 
     Returns:
         Dict mapping track dbid (int) → (imgId, src_img_size) tuple for
@@ -472,6 +477,12 @@ def write_artworkdb(
     """
     artwork_dir = os.path.join(ipod_path, "iPod_Control", "Artwork")
     os.makedirs(artwork_dir, exist_ok=True)
+
+    # Detect device artwork formats if not explicitly provided
+    if artwork_formats is None:
+        artwork_formats = get_artwork_formats(ipod_path)
+    device_formats = artwork_formats
+    logger.info("ART: using formats %s", list(device_formats.keys()))
 
     # Read reference ArtworkDB for header fields
     ref_mhfd = None
@@ -597,7 +608,7 @@ def write_artworkdb(
         )
 
         # Convert to each iPod format
-        for fmt_id in sorted(IPOD_CLASSIC_FORMATS.keys()):
+        for fmt_id in sorted(device_formats.keys()):
             result = convert_art_for_ipod(art_bytes, fmt_id)
             if result:
                 entry.formats[fmt_id] = result
@@ -627,7 +638,7 @@ def write_artworkdb(
 
         # Use existing pixel data directly (already RGB565)
         for fmt_id, pixel_data in existing_entry['formats'].items():
-            dims = IPOD_CLASSIC_FORMATS.get(fmt_id)
+            dims = ALL_KNOWN_FORMATS.get(fmt_id)
             if dims:
                 w, h = dims
                 entry.formats[fmt_id] = {
@@ -647,16 +658,15 @@ def write_artworkdb(
         return {}
 
     # --- Step 3: Write ithmb files ---
-    format_ids = sorted(IPOD_CLASSIC_FORMATS.keys())
+    format_ids = sorted(device_formats.keys())
     # Track current offset per format (for ithmb file append position)
     ithmb_offsets = {fmt_id: 0 for fmt_id in format_ids}
     # Map entry img_id → {format_id: offset} for MHNI
     format_offsets_map = {}
     # Track image sizes for MHIF — use stride × h × 2 to match ithmb entry size
-    from .rgb565 import IPOD_STRIDE_OVERRIDE
     image_sizes = {}
     for fmt_id in format_ids:
-        w, h = IPOD_CLASSIC_FORMATS[fmt_id]
+        w, h = device_formats[fmt_id]
         stride = IPOD_STRIDE_OVERRIDE.get(fmt_id, w)
         image_sizes[fmt_id] = stride * h * 2
 

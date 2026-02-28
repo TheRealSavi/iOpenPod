@@ -29,7 +29,14 @@ from .rgb565 import (
     convert_art_for_ipod,
     image_from_bytes,
     rgb888_to_rgb565,
+    get_artwork_formats,
     IPOD_CLASSIC_FORMATS,
+    IPOD_NANO_1G2G_FORMATS,
+    IPOD_PHOTO_FORMATS,
+    IPOD_VIDEO_FORMATS,
+    IPOD_NANO_4G_FORMATS,
+    IPOD_NANO_5G_FORMATS,
+    ALL_KNOWN_FORMATS,
 )
 
 __all__ = [
@@ -40,5 +47,12 @@ __all__ = [
     'convert_art_for_ipod',
     'image_from_bytes',
     'rgb888_to_rgb565',
+    'get_artwork_formats',
     'IPOD_CLASSIC_FORMATS',
+    'IPOD_NANO_1G2G_FORMATS',
+    'IPOD_PHOTO_FORMATS',
+    'IPOD_VIDEO_FORMATS',
+    'IPOD_NANO_4G_FORMATS',
+    'IPOD_NANO_5G_FORMATS',
+    'ALL_KNOWN_FORMATS',
 ]

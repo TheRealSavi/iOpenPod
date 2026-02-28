@@ -5,7 +5,6 @@ Supports: MP3, M4A/AAC, FLAC, OGG Vorbis, OPUS, WMA, AIFF/WAV
 Returns raw image bytes (typically JPEG or PNG).
 """
 
-import io
 import hashlib
 import logging
 from pathlib import Path
@@ -15,12 +14,6 @@ logger = logging.getLogger(__name__)
 
 try:
     import mutagen
-    from mutagen.mp3 import MP3
-    from mutagen.mp4 import MP4
-    from mutagen.flac import FLAC
-    from mutagen.oggvorbis import OggVorbis
-    from mutagen.oggopus import OggOpus
-    from mutagen.aiff import AIFF
     MUTAGEN_AVAILABLE = True
 except ImportError:
     MUTAGEN_AVAILABLE = False
@@ -66,6 +59,8 @@ def extract_art(file_path: str) -> Optional[bytes]:
 
 def _extract_mp3(path: str) -> Optional[bytes]:
     """Extract art from MP3 (ID3v2 APIC frames)."""
+    from mutagen.mp3 import MP3
+
     audio = MP3(path)
     if audio.tags is None:
         return None
@@ -81,6 +76,8 @@ def _extract_mp3(path: str) -> Optional[bytes]:
 
 def _extract_mp4(path: str) -> Optional[bytes]:
     """Extract art from M4A/AAC (covr atom)."""
+    from mutagen.mp4 import MP4
+
     audio = MP4(path)
     if audio.tags is None:
         return None
@@ -93,6 +90,8 @@ def _extract_mp4(path: str) -> Optional[bytes]:
 
 def _extract_flac(path: str) -> Optional[bytes]:
     """Extract art from FLAC (picture blocks)."""
+    from mutagen.flac import FLAC
+
     audio = FLAC(path)
     if audio.pictures:
         return audio.pictures[0].data
@@ -101,12 +100,16 @@ def _extract_flac(path: str) -> Optional[bytes]:
 
 def _extract_ogg(path: str) -> Optional[bytes]:
     """Extract art from Ogg Vorbis (METADATA_BLOCK_PICTURE)."""
+    from mutagen.oggvorbis import OggVorbis
+
     audio = OggVorbis(path)
     return _extract_vorbis_picture(audio)
 
 
 def _extract_opus(path: str) -> Optional[bytes]:
     """Extract art from Opus (METADATA_BLOCK_PICTURE)."""
+    from mutagen.oggopus import OggOpus
+
     audio = OggOpus(path)
     return _extract_vorbis_picture(audio)
 
@@ -128,6 +131,8 @@ def _extract_vorbis_picture(audio) -> Optional[bytes]:
 
 def _extract_aiff(path: str) -> Optional[bytes]:
     """Extract art from AIFF (ID3v2 APIC frames)."""
+    from mutagen.aiff import AIFF
+
     audio = AIFF(path)
     if audio.tags is None:
         return None
@@ -139,7 +144,7 @@ def _extract_aiff(path: str) -> Optional[bytes]:
 
 def _extract_generic(path: str) -> Optional[bytes]:
     """Try generic mutagen extraction."""
-    audio = mutagen.File(path)
+    audio = mutagen.File(path)  # type: ignore[union-attr]
     if audio is None or audio.tags is None:
         return None
 

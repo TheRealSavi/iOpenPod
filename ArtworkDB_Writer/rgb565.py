@@ -13,18 +13,174 @@ from PIL import Image
 from typing import Optional
 
 
-# iPod Classic image formats (correlationID → dimensions)
-# From ArtworkDB_Parser/mhni_parser.py FORMAT_ID_MAP
-# iPod Classic image formats (correlationID → (width, height))
+# ── Per-device artwork format tables ──────────────────────────────────────
+# correlationID → (width, height).  Each device family uses a different set
+# of format IDs.  The master list lives in ArtworkDB_Parser/mhni_parser.py
+# FORMAT_ID_MAP.
+
 IPOD_CLASSIC_FORMATS = {
     1055: (128, 128),  # Medium album art
     1060: (320, 320),  # Large album art
     1061: (56, 56),    # Small album art (thumbnail)
 }
 
-# Stride override: format_id → stride in pixels (when stride != width)
-IPOD_STRIDE_OVERRIDE = {
+IPOD_NANO_1G2G_FORMATS = {
+    1027: (100, 100),  # Album art large
+    1031: (42, 42),    # Album art small
 }
+
+IPOD_PHOTO_FORMATS = {
+    1016: (140, 140),  # Album art large
+    1017: (56, 56),    # Album art small
+}
+
+IPOD_VIDEO_FORMATS = {
+    1028: (100, 100),  # Album art small
+    1029: (200, 200),  # Album art large
+}
+
+IPOD_NANO_3G_FORMATS = {
+    # Nano 3G uses Classic format IDs (per libgpod)
+    1055: (128, 128),
+    1060: (320, 320),
+    1061: (56, 56),
+}
+
+IPOD_NANO_4G_FORMATS = {
+    1071: (240, 240),  # Album art large
+    1074: (50, 50),    # Album art tiny
+    1078: (80, 80),    # Album art small
+}
+
+IPOD_NANO_5G_FORMATS = {
+    1073: (240, 240),  # Album art large
+    1078: (80, 80),    # Album art small
+}
+
+# Combined lookup for all known format IDs (used for validation)
+ALL_KNOWN_FORMATS: dict[int, tuple[int, int]] = {}
+for _fmt_table in (IPOD_CLASSIC_FORMATS, IPOD_NANO_1G2G_FORMATS,
+                   IPOD_PHOTO_FORMATS, IPOD_VIDEO_FORMATS,
+                   IPOD_NANO_3G_FORMATS, IPOD_NANO_4G_FORMATS,
+                   IPOD_NANO_5G_FORMATS):
+    ALL_KNOWN_FORMATS.update(_fmt_table)
+
+# Stride override: format_id → stride in pixels (when stride != width)
+IPOD_STRIDE_OVERRIDE: dict[int, int] = {}
+
+
+def get_artwork_formats(ipod_path: str) -> dict[int, tuple[int, int]]:
+    """Return the correct format table for the iPod at *ipod_path*.
+
+    Detection strategy (in order):
+    1. Read existing ArtworkDB and use whatever format IDs it already has.
+       This is the most reliable method — the device (or iTunes) chose them.
+    2. Look up the model number from SysInfo / device.py to determine device
+       family and map to the right table.
+    3. Fall back to iPod Classic formats (the most common case).
+    """
+    import os
+    import logging
+    _log = logging.getLogger(__name__)
+
+    # ── Strategy 1: Existing ArtworkDB ─────────────────────────────────
+    artdb_path = os.path.join(ipod_path, "iPod_Control", "Artwork", "ArtworkDB")
+    if os.path.exists(artdb_path):
+        try:
+            with open(artdb_path, 'rb') as f:
+                data = f.read()
+            if len(data) >= 32 and data[:4] == b'mhfd':
+                fmt_ids = _extract_format_ids(data)
+                if fmt_ids:
+                    fmts = {fid: ALL_KNOWN_FORMATS[fid]
+                            for fid in fmt_ids if fid in ALL_KNOWN_FORMATS}
+                    if fmts:
+                        _log.info("ART: detected formats from existing ArtworkDB: %s", list(fmts.keys()))
+                        return fmts
+        except Exception as e:
+            _log.debug("ART: could not read existing ArtworkDB: %s", e)
+
+    # ── Strategy 2: Model number from SysInfo ─────────────────────────
+    try:
+        from iTunesDB_Writer.device import IPOD_MODELS, read_sysinfo
+        sysinfo = read_sysinfo(ipod_path)
+        model_num = sysinfo.get("ModelNumStr", "")[:5]
+        if model_num and model_num in IPOD_MODELS:
+            family = IPOD_MODELS[model_num][0]  # e.g. "iPod Nano"
+            gen = IPOD_MODELS[model_num][1]       # e.g. "2nd Gen"
+            table = _family_gen_to_formats(family, gen)
+            if table:
+                _log.info("ART: using formats for %s %s: %s", family, gen, list(table.keys()))
+                return table
+    except Exception as e:
+        _log.debug("ART: SysInfo lookup failed: %s", e)
+
+    # ── Strategy 3: Fall back to Classic ───────────────────────────────
+    _log.info("ART: defaulting to iPod Classic formats")
+    return IPOD_CLASSIC_FORMATS
+
+
+def _extract_format_ids(data: bytes) -> list[int]:
+    """Extract correlation IDs from mhif entries in an ArtworkDB binary."""
+    import struct
+    result = []
+    mhfd_hdr = struct.unpack('<I', data[4:8])[0]
+    child_count = struct.unpack('<I', data[20:24])[0]
+    offset = mhfd_hdr
+    for _ in range(child_count):
+        if offset + 14 > len(data) or data[offset:offset + 4] != b'mhsd':
+            break
+        mhsd_hdr = struct.unpack('<I', data[offset + 4:offset + 8])[0]
+        mhsd_total = struct.unpack('<I', data[offset + 8:offset + 12])[0]
+        ds_type = struct.unpack('<H', data[offset + 12:offset + 14])[0]
+        if ds_type == 3:  # file list
+            mhlf_off = offset + mhsd_hdr
+            if mhlf_off + 12 <= len(data) and data[mhlf_off:mhlf_off + 4] == b'mhlf':
+                mhlf_hdr = struct.unpack('<I', data[mhlf_off + 4:mhlf_off + 8])[0]
+                mhif_count = struct.unpack('<I', data[mhlf_off + 8:mhlf_off + 12])[0]
+                mhif_off = mhlf_off + mhlf_hdr
+                for _ in range(mhif_count):
+                    if mhif_off + 20 <= len(data) and data[mhif_off:mhif_off + 4] == b'mhif':
+                        mhif_size = struct.unpack('<I', data[mhif_off + 4:mhif_off + 8])[0]
+                        corr_id = struct.unpack('<I', data[mhif_off + 16:mhif_off + 20])[0]
+                        result.append(corr_id)
+                        mhif_off += mhif_size
+                    else:
+                        break
+        offset += mhsd_total
+    return result
+
+
+def _family_gen_to_formats(family: str, gen: str) -> Optional[dict[int, tuple[int, int]]]:
+    """Map device family + generation to the correct format table."""
+    family_lower = family.lower()
+
+    if "nano" in family_lower:
+        gen_lower = gen.lower()
+        if "1st" in gen_lower or "2nd" in gen_lower:
+            return IPOD_NANO_1G2G_FORMATS
+        elif "3rd" in gen_lower:
+            return IPOD_NANO_3G_FORMATS
+        elif "4th" in gen_lower:
+            return IPOD_NANO_4G_FORMATS
+        elif "5th" in gen_lower:
+            return IPOD_NANO_5G_FORMATS
+        # 6G/7G are out of scope for write support
+        return IPOD_NANO_1G2G_FORMATS  # safe fallback for unknown nano
+
+    if "photo" in family_lower:
+        return IPOD_PHOTO_FORMATS
+
+    if "video" in family_lower:
+        return IPOD_VIDEO_FORMATS
+
+    if "classic" in family_lower:
+        return IPOD_CLASSIC_FORMATS
+
+    # iPod 1G-4G (monochrome / greyscale) — no artwork support
+    # Mini — no colour screen on 1G, 2G has greyscale
+    # Default to Classic formats for anything unrecognised
+    return None
 
 
 def image_from_bytes(art_bytes: bytes) -> Optional[Image.Image]:
@@ -67,10 +223,10 @@ def resize_for_format(img: Image.Image, format_id: int) -> Image.Image:
     Returns:
         Resized PIL Image at exactly (format_w, format_h)
     """
-    if format_id not in IPOD_CLASSIC_FORMATS:
+    if format_id not in ALL_KNOWN_FORMATS:
         raise ValueError(f"Unknown format ID: {format_id}")
 
-    target_w, target_h = IPOD_CLASSIC_FORMATS[format_id]
+    target_w, target_h = ALL_KNOWN_FORMATS[format_id]
     return img.resize((target_w, target_h), Image.Resampling.LANCZOS)
 
 
@@ -136,7 +292,7 @@ def convert_art_for_ipod(art_bytes: bytes, format_id: int) -> Optional[dict]:
     if img is None:
         return None
 
-    format_w, format_h = IPOD_CLASSIC_FORMATS[format_id]
+    format_w, format_h = ALL_KNOWN_FORMATS[format_id]
     stride = IPOD_STRIDE_OVERRIDE.get(format_id, format_w)
     resized = resize_for_format(img, format_id)
 
