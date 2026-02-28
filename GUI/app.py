@@ -604,6 +604,16 @@ class MainWindow(QMainWindow):
         if settings.last_device_path:
             device_manager = DeviceManager.get_instance()
             if device_manager.is_valid_ipod_root(settings.last_device_path):
+                # Run a quick scan so discovered_ipod is populated
+                # (needed for FireWire GUID, model info, etc.)
+                try:
+                    from GUI.device_scanner import scan_for_ipods
+                    for ipod in scan_for_ipods():
+                        if os.path.normpath(ipod.path) == os.path.normpath(settings.last_device_path):
+                            device_manager.discovered_ipod = ipod
+                            break
+                except Exception as e:
+                    logger.warning("Auto-restore scan failed: %s", e)
                 device_manager.device_path = settings.last_device_path
                 self.sidebar.updateDeviceButton(
                     os.path.basename(settings.last_device_path) or settings.last_device_path

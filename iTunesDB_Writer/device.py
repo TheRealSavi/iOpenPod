@@ -686,6 +686,21 @@ def get_firewire_id(
         except ValueError:
             pass
 
+    # Source 0b: Try DeviceManager's cached scanner result
+    if not known_guid:
+        try:
+            from GUI.app import DeviceManager
+            dm = DeviceManager.get_instance()
+            ipod = dm.discovered_ipod
+            if ipod is not None and os.path.normpath(ipod.path) == os.path.normpath(ipod_path):
+                guid_hex = ipod.firewire_guid
+                if guid_hex:
+                    guid_bytes = bytes.fromhex(guid_hex)
+                    if guid_bytes != b'\x00' * len(guid_bytes):
+                        return guid_bytes
+        except (ImportError, Exception):
+            pass
+
     # Determine drive letter for device tree walk
     if not drive_letter and ipod_path:
         # Extract from path like "D:\\" or "D:"
@@ -842,7 +857,12 @@ def get_friendly_model_name(model_number: Optional[str]) -> str:
     info = get_model_info(model_number)
     if info:
         name, gen, capacity, color = info
-        return f"{name} {capacity} {color} ({gen})"
+        parts = [name, capacity]
+        if color:
+            parts.append(color)
+        if gen:
+            parts.append(f"({gen})")
+        return " ".join(p for p in parts if p)
     return f"Unknown iPod ({model_number})" if model_number else "Unknown iPod"
 
 
@@ -944,7 +964,11 @@ def get_device_info(ipod_path: str) -> dict:
         'model_capacity': model_info[2] if model_info else '',
         'model_color': model_info[3] if model_info else '',
         'friendly_name': get_friendly_model_name(model_num) if model_num else (
-            f"{model_info[0]} {model_info[2]} {model_info[3]} ({model_info[1]})".strip()
+            " ".join(p for p in [
+                model_info[0], model_info[2],
+                model_info[3] or "",
+                f"({model_info[1]})" if model_info[1] else "",
+            ] if p)
             if model_info else "iPod"
         ),
         'serial': serial,
