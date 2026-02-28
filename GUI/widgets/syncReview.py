@@ -8,7 +8,7 @@ Shows the diff between PC library and iPod with:
 - Play counts to sync back
 """
 
-from PyQt6.QtCore import Qt, pyqtSignal, QThread
+from PyQt6.QtCore import Qt, pyqtSignal, QThread, QTimer
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTreeWidget, QTreeWidgetItem, QHeaderView, QProgressBar,
@@ -23,7 +23,7 @@ from SyncEngine.pc_library import PCLibrary
 from SyncEngine.eta import ETATracker
 
 from .formatters import format_size as _format_size, format_duration_mmss as _format_duration
-from ..styles import Colors, Metrics, btn_css
+from ..styles import Colors, FONT_FAMILY, Metrics, btn_css
 
 import os
 from typing import Optional
@@ -492,6 +492,11 @@ class SyncReviewWidget(QWidget):
         self._cancelled = False
         self._ipod_tracks_cache: list = []
         self._eta_tracker = ETATracker()
+        # Debounce timer for selection count updates (avoids O(n²) on bulk toggles)
+        self._count_timer = QTimer(self)
+        self._count_timer.setSingleShot(True)
+        self._count_timer.setInterval(0)  # fires on next event loop iteration
+        self._count_timer.timeout.connect(self._do_update_selection_count)
         self._setup_ui()
 
     def _setup_ui(self):
@@ -511,7 +516,7 @@ class SyncReviewWidget(QWidget):
         header_layout.setContentsMargins(16, 12, 16, 12)
 
         title = QLabel("🔄 Sync Review")
-        title.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
+        title.setFont(QFont(FONT_FAMILY, 14, QFont.Weight.Bold))
         title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent;")
         header_layout.addWidget(title)
 
@@ -701,12 +706,12 @@ class SyncReviewWidget(QWidget):
         empty_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         empty_icon = QLabel("✅")
-        empty_icon.setFont(QFont("Segoe UI Emoji", 48))
+        empty_icon.setFont(QFont(FONT_FAMILY, 48))
         empty_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         empty_layout.addWidget(empty_icon)
 
         empty_text = QLabel("Everything is in sync!")
-        empty_text.setFont(QFont("Segoe UI", 16))
+        empty_text.setFont(QFont(FONT_FAMILY, 16))
         empty_text.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
         empty_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
         empty_layout.addWidget(empty_text)
@@ -725,12 +730,12 @@ class SyncReviewWidget(QWidget):
         results_layout.setSpacing(12)
 
         self.result_icon = QLabel("")
-        self.result_icon.setFont(QFont("Segoe UI Emoji", 48))
+        self.result_icon.setFont(QFont(FONT_FAMILY, 48))
         self.result_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         results_layout.addWidget(self.result_icon)
 
         self.result_title = QLabel("")
-        self.result_title.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
+        self.result_title.setFont(QFont(FONT_FAMILY, 18, QFont.Weight.Bold))
         self.result_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         results_layout.addWidget(self.result_title)
 
@@ -1283,23 +1288,42 @@ class SyncReviewWidget(QWidget):
 
     def _select_all(self):
         """Select all items."""
+        self.tree.blockSignals(True)
         for i in range(self.tree.topLevelItemCount()):
-            item = self.tree.topLevelItem(i)
-            if item:
-                item.setCheckState(0, Qt.CheckState.Checked)
+            header = self.tree.topLevelItem(i)
+            if header:
+                if header.flags() & Qt.ItemFlag.ItemIsUserCheckable:
+                    header.setCheckState(0, Qt.CheckState.Checked)
+                for j in range(header.childCount()):
+                    child = header.child(j)
+                    if child and (child.flags() & Qt.ItemFlag.ItemIsUserCheckable):
+                        child.setCheckState(0, Qt.CheckState.Checked)
+        self.tree.blockSignals(False)
+        self._do_update_selection_count()
 
     def _select_none(self):
         """Deselect all items."""
+        self.tree.blockSignals(True)
         for i in range(self.tree.topLevelItemCount()):
-            item = self.tree.topLevelItem(i)
-            if item:
-                item.setCheckState(0, Qt.CheckState.Unchecked)
+            header = self.tree.topLevelItem(i)
+            if header:
+                if header.flags() & Qt.ItemFlag.ItemIsUserCheckable:
+                    header.setCheckState(0, Qt.CheckState.Unchecked)
+                for j in range(header.childCount()):
+                    child = header.child(j)
+                    if child and (child.flags() & Qt.ItemFlag.ItemIsUserCheckable):
+                        child.setCheckState(0, Qt.CheckState.Unchecked)
+        self.tree.blockSignals(False)
+        self._do_update_selection_count()
 
     def _on_item_clicked(self, item: QTreeWidgetItem, column: int):
         """Toggle checkbox when clicking anywhere on the row (not just the checkbox column).
 
         Column 0 is the checkbox column — Qt already handles toggling there,
         so we only act on clicks on columns 1-5 to avoid double-toggling.
+
+        For section headers (which have auto-tristate), we block signals
+        and manually propagate to children to avoid O(n) itemChanged emissions.
         """
         if column > 0 and (item.flags() & Qt.ItemFlag.ItemIsUserCheckable):
             current = item.checkState(0)
@@ -1308,10 +1332,25 @@ class SyncReviewWidget(QWidget):
                 if current == Qt.CheckState.Checked
                 else Qt.CheckState.Checked
             )
-            item.setCheckState(0, new_state)
+            # If this is a section header, block signals and propagate manually
+            if isinstance(item, SyncCategoryHeader):
+                self.tree.blockSignals(True)
+                item.setCheckState(0, new_state)
+                for j in range(item.childCount()):
+                    child = item.child(j)
+                    if child and (child.flags() & Qt.ItemFlag.ItemIsUserCheckable):
+                        child.setCheckState(0, new_state)
+                self.tree.blockSignals(False)
+                self._do_update_selection_count()
+            else:
+                item.setCheckState(0, new_state)
 
     def _update_selection_count(self):
-        """Update the selection summary label."""
+        """Schedule a debounced update of the selection summary label."""
+        self._count_timer.start()
+
+    def _do_update_selection_count(self):
+        """Actually update the selection summary label."""
         selected = 0
         total = 0
         bytes_to_add = 0
