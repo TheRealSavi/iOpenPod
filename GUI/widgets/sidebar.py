@@ -251,7 +251,8 @@ class DeviceInfoCard(QFrame):
         # Update technical details if provided
         if device_info:
             self.model_num_row.setValue(device_info.get('model', '—') or '—')
-            self.serial_row.setValue(device_info.get('serial', '—')[:12] + '...' if len(device_info.get('serial', '')) > 12 else device_info.get('serial', '—') or '—')
+            serial_val = device_info.get('serial') or '—'
+            self.serial_row.setValue(serial_val[:12] + '...' if len(serial_val) > 12 else serial_val)
             self.firmware_row.setValue(device_info.get('firmware', '—') or '—')
             # Checksum type - just show short name
             checksum_type = device_info.get('checksum_type')
@@ -348,6 +349,18 @@ class Sidebar(QFrame):
         self.syncButton.setStyleSheet(accent_btn_css())
         self.syncButton.setFont(QFont(FONT_FAMILY, 10, QFont.Weight.DemiBold))
         self.sidebarLayout.addWidget(self.syncButton)
+
+        # Backup button
+        self.backupButton = QPushButton("💾 Backups")
+        self.backupButton.setFont(QFont(FONT_FAMILY, 10, QFont.Weight.DemiBold))
+        self.backupButton.setStyleSheet(btn_css(
+            bg=Colors.SURFACE_ALT,
+            bg_hover=Colors.SURFACE_ACTIVE,
+            bg_press=Colors.SURFACE,
+            padding="8px 12px",
+            extra="text-align: left;",
+        ))
+        self.sidebarLayout.addWidget(self.backupButton)
 
         # Separator
         sep = QFrame()

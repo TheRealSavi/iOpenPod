@@ -46,12 +46,7 @@ from .transcoder import (
     IPOD_NATIVE_FORMATS,
 )
 from .transcode_cache import TranscodeCache, CachedFile, CacheIndex
-from .checkpoint import (
-    CheckpointManager,
-    SyncState,
-    check_for_interrupted_sync,
-    offer_rollback,
-)
+from .backup_manager import BackupManager, SnapshotInfo, BackupProgress, get_device_identifier, get_device_display_name
 from .eta import ETATracker
 
 __all__ = [
@@ -100,11 +95,12 @@ __all__ = [
     "TranscodeCache",
     "CachedFile",
     "CacheIndex",
-    # Checkpoint / rollback
-    "CheckpointManager",
-    "SyncState",
-    "check_for_interrupted_sync",
-    "offer_rollback",
+    # Backup manager
+    "BackupManager",
+    "SnapshotInfo",
+    "BackupProgress",
+    "get_device_identifier",
+    "get_device_display_name",
     # ETA tracking
     "ETATracker",
 ]

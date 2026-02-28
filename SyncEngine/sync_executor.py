@@ -24,7 +24,6 @@ from .mapping import MappingManager, MappingFile
 from .transcoder import transcode, needs_transcoding
 from .audio_fingerprint import get_or_compute_fingerprint
 from .itunes_prefs import protect_from_itunes
-from .checkpoint import CheckpointManager
 
 from iTunesDB_Writer.mhit_writer import TrackInfo
 
@@ -154,14 +153,6 @@ class SyncExecutor:
         """
         result = SyncResult(success=True)
 
-        # ===== Create checkpoint for rollback capability =====
-        checkpoint = CheckpointManager(self.ipod_path)
-        if not dry_run:
-            if not checkpoint.create_checkpoint():
-                logger.warning("Could not create checkpoint - proceeding without backup")
-            else:
-                logger.info("Created pre-sync checkpoint for rollback capability")
-
         # Store on instance so helper methods can access it
         self._aac_bitrate = aac_bitrate
 
@@ -213,77 +204,40 @@ class SyncExecutor:
             return False
 
         # ===== Stage 1: Remove deleted tracks =====
-        if not dry_run:
-            checkpoint.update_state(stage="remove")
         self._execute_removes(plan, mapping, tracks_by_dbid, tracks_by_location, result, progress_callback, dry_run, _check_cancelled)
         if not result.success:
-            if not dry_run:
-                checkpoint.mark_failed("Failed during remove stage")
             return result
-        if not dry_run:
-            checkpoint.update_state(stage="remove", stage_complete=True, tracks_removed=result.tracks_removed)
 
         # ===== Stage 2: Update files (re-copy/transcode changed files) =====
-        if not dry_run:
-            checkpoint.update_state(stage="update_file")
         self._execute_file_updates(plan, mapping, tracks_by_dbid, tracks_by_location, pc_file_paths, result, progress_callback, dry_run, _check_cancelled, aac_bitrate)
         if not result.success:
-            if not dry_run:
-                checkpoint.mark_failed("Failed during file update stage")
             return result
-        if not dry_run:
-            checkpoint.update_state(stage="update_file", stage_complete=True, tracks_updated=result.tracks_updated_file)
 
         # ===== Stage 3: Update metadata =====
-        if not dry_run:
-            checkpoint.update_state(stage="update_metadata")
         self._execute_metadata_updates(plan, mapping, tracks_by_dbid, result, progress_callback, dry_run, _check_cancelled)
         if not result.success:
-            if not dry_run:
-                checkpoint.mark_failed("Failed during metadata update stage")
             return result
-        if not dry_run:
-            checkpoint.update_state(stage="update_metadata", stage_complete=True)
 
         # ===== Stage 3b: Update artwork mapping entries =====
         self._execute_artwork_updates(plan, mapping, dry_run)
 
         # ===== Stage 4: Add new tracks =====
-        if not dry_run:
-            checkpoint.update_state(stage="add")
         self._execute_adds(plan, mapping, new_tracks, new_track_fingerprints, new_track_info, pc_file_paths, result, progress_callback, dry_run, _check_cancelled, aac_bitrate)
         if not result.success:
-            if not dry_run:
-                checkpoint.mark_failed("Failed during add stage")
             return result
-        if not dry_run:
-            checkpoint.update_state(stage="add", stage_complete=True, tracks_added=result.tracks_added)
 
         # ===== Stage 5: Sync play counts back to PC =====
-        if not dry_run:
-            checkpoint.update_state(stage="sync_playcount")
         self._execute_playcount_sync(plan, tracks_by_dbid, result, progress_callback, dry_run, _check_cancelled, write_back_to_pc)
         if not result.success:
-            if not dry_run:
-                checkpoint.mark_failed("Failed during playcount sync stage")
             return result
-        if not dry_run:
-            checkpoint.update_state(stage="sync_playcount", stage_complete=True)
 
         # ===== Stage 6: Sync ratings =====
-        if not dry_run:
-            checkpoint.update_state(stage="sync_rating")
         self._execute_rating_sync(plan, tracks_by_dbid, result, progress_callback, dry_run, _check_cancelled, write_back_to_pc)
         if not result.success:
-            if not dry_run:
-                checkpoint.mark_failed("Failed during rating sync stage")
             return result
-        if not dry_run:
-            checkpoint.update_state(stage="sync_rating", stage_complete=True)
 
         # ===== Stage 7: Write database (one shot) =====
         if not dry_run:
-            checkpoint.update_state(stage="write_database")
             if progress_callback:
                 progress_callback(SyncProgress("write_database", 0, 1, message="Writing database..."))
 
@@ -343,19 +297,9 @@ class SyncExecutor:
                     # Non-fatal — database is already written + mapping saved
                     logger.warning("iTunesPrefs protection failed (non-fatal): %s", e)
 
-                # Mark checkpoint as complete on success
-                checkpoint.update_state(stage="write_database", stage_complete=True)
-                checkpoint.mark_complete()
-
             except Exception as e:
                 result.errors.append(("database write", str(e)))
                 logger.error("Database write failed — mapping NOT saved to preserve consistency")
-                checkpoint.mark_failed(f"Database write failed: {e}")
-                # Offer rollback guidance in error message
-                result.errors.append((
-                    "recovery",
-                    "A backup was created before sync. Use 'Rollback to Checkpoint' in settings to restore."
-                ))
 
         result.success = not result.has_errors
         return result
@@ -382,7 +326,7 @@ class SyncExecutor:
 
             # Delete file from iPod
             if item.ipod_track:
-                file_path = item.ipod_track.get("Location")
+                file_path = item.ipod_track.get("Location") or item.ipod_track.get("location")
                 if file_path:
                     relative_path = file_path.replace(":", "/").lstrip("/")
                     full_path = self.ipod_path / relative_path
@@ -825,11 +769,11 @@ class SyncExecutor:
         folder.mkdir(parents=True, exist_ok=True)
         return folder
 
-    def _generate_ipod_filename(self, original_name: str, extension: str,
+    def _generate_ipod_filename(self, _original_name: str, extension: str,
                                 dest_folder: Optional[Path] = None) -> str:
         """Generate a unique filename for iPod storage.
 
-        Uses 8 random chars to minimize collision probability.
+        Uses 4 random alphanumeric chars (36^4 = 1.7M combinations).
         If dest_folder is provided, checks for existence and retries.
         """
         import random
@@ -1047,10 +991,16 @@ class SyncExecutor:
     def _track_dict_to_info(self, t: dict) -> TrackInfo:
         """Convert parsed track dict to TrackInfo for writing."""
         filetype = t.get("filetype", "MP3")
-        if "AAC" in filetype or "M4A" in filetype:
+        if "AAC" in filetype or "M4A" in filetype or "Lossless" in filetype:
             filetype_code = "m4a"
-        elif "Lossless" in filetype:
-            filetype_code = "m4a"
+        elif "Protected" in filetype:
+            filetype_code = "m4p"
+        elif "Audiobook" in filetype:
+            filetype_code = "m4b"
+        elif "WAV" in filetype:
+            filetype_code = "wav"
+        elif "AIFF" in filetype:
+            filetype_code = "aiff"
         else:
             filetype_code = "mp3"
 
@@ -1126,8 +1076,12 @@ class SyncExecutor:
         bitrate = pc_track.bitrate or 0
         sample_rate = pc_track.sample_rate or 44100
         if was_transcoded:
-            if filetype == "m4a" and ext != "alac":
-                # AAC transcode — use the configured bitrate
+            # Lossless sources (.flac, .wav, .aif, .aiff) transcode to ALAC —
+            # keep the source bitrate.  Lossy sources (.ogg, .opus, .wma) go
+            # to AAC — use the user-configured bitrate.
+            source_ext = pc_track.extension.lower().lstrip(".")
+            is_lossless_source = source_ext in ("flac", "wav", "aif", "aiff")
+            if filetype == "m4a" and not is_lossless_source:
                 bitrate = self._aac_bitrate  # user-configured AAC bitrate
             # sample_rate is typically preserved by transcoder
 

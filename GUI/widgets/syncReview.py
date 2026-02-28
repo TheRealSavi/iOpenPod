@@ -26,7 +26,10 @@ from .formatters import format_size as _format_size, format_duration_mmss as _fo
 from ..styles import Colors, FONT_FAMILY, Metrics, btn_css
 
 import os
+import logging
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 class SyncWorker(QThread):
@@ -68,10 +71,16 @@ class SyncExecuteWorker(QThread):
     finished = pyqtSignal(object)  # SyncResult
     error = pyqtSignal(str)
 
-    def __init__(self, ipod_path: str, plan):
+    def __init__(self, ipod_path: str, plan, *, skip_backup: bool = False):
         super().__init__()
         self.ipod_path = ipod_path
         self.plan = plan
+        self.skip_backup = skip_backup
+        self._skip_backup_requested = False
+
+    def request_skip_backup(self):
+        """Signal the worker to skip the in-progress backup and proceed to sync."""
+        self._skip_backup_requested = True
 
     def run(self):
         try:
@@ -80,6 +89,58 @@ class SyncExecuteWorker(QThread):
             from ..settings import get_settings
 
             settings = get_settings()
+
+            # ── Pre-sync backup ───────────────────────────────────────
+            if not self.skip_backup:
+                try:
+                    self.progress.emit("backup", 0, 0, "Creating pre-sync backup…")
+                    from SyncEngine.backup_manager import (
+                        BackupManager, get_device_identifier,
+                        get_device_display_name,
+                    )
+                    from ..app import DeviceManager
+
+                    device = DeviceManager.get_instance()
+                    device_id = get_device_identifier(
+                        self.ipod_path, device.discovered_ipod,
+                    )
+                    device_name = get_device_display_name(device.discovered_ipod)
+
+                    manager = BackupManager(
+                        device_id=device_id,
+                        backup_dir=settings.backup_dir,
+                        device_name=device_name,
+                    )
+
+                    def on_backup_progress(prog):
+                        self.progress.emit(
+                            "backup", prog.current, prog.total, prog.message,
+                        )
+
+                    snap = manager.create_backup(
+                        ipod_path=self.ipod_path,
+                        progress_callback=on_backup_progress,
+                        is_cancelled=lambda: self.isInterruptionRequested() or self._skip_backup_requested,
+                        max_backups=settings.max_backups,
+                    )
+
+                    if snap is None and self.isInterruptionRequested():
+                        return  # Cancelled entire operation
+
+                    # If snap is None due to skip/no-changes, GC orphaned blobs
+                    if snap is None:
+                        try:
+                            manager.garbage_collect()
+                        except Exception:
+                            pass
+                    else:
+                        logger.info("Pre-sync backup created: %s", snap.id)
+                except Exception as e:
+                    logger.warning("Pre-sync backup failed (continuing sync): %s", e)
+                    import traceback as _tb
+                    _tb.print_exc()
+
+            # ── Execute sync ──────────────────────────────────────────
 
             # Use custom transcode cache dir if configured
             cache_dir = Path(settings.transcode_cache_dir) if settings.transcode_cache_dir else None
@@ -484,6 +545,7 @@ class SyncReviewWidget(QWidget):
     """
 
     sync_requested = pyqtSignal(object)  # Emits list[SyncItem]
+    skip_backup_signal = pyqtSignal()     # Skip the in-progress pre-sync backup
     cancelled = pyqtSignal()
 
     def __init__(self, parent=None):
@@ -492,6 +554,9 @@ class SyncReviewWidget(QWidget):
         self._cancelled = False
         self._ipod_tracks_cache: list = []
         self._eta_tracker = ETATracker()
+        self._skip_presync_backup: bool = False
+        self._pending_sync_items: list = []
+        self._is_auto_presync: bool = False
         # Debounce timer for selection count updates (avoids O(n²) on bulk toggles)
         self._count_timer = QTimer(self)
         self._count_timer.setSingleShot(True)
@@ -568,6 +633,18 @@ class SyncReviewWidget(QWidget):
         self.eta_label.setStyleSheet(f"color: {Colors.ACCENT}; font-size: 11px;")
         self.eta_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         loading_layout.addWidget(self.eta_label)
+
+        # Hint label (shown only during automatic pre-sync backup stage)
+        self._backup_hint = QLabel(
+            "Pre-sync backups are enabled. "
+            "You can turn this off in Settings \u2192 Backups."
+        )
+        self._backup_hint.setStyleSheet(
+            f"color: {Colors.TEXT_TERTIARY}; font-size: 10px;"
+        )
+        self._backup_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._backup_hint.setVisible(False)
+        loading_layout.addWidget(self._backup_hint)
 
         self.stack.addWidget(loading_widget)  # Index 0
 
@@ -748,6 +825,81 @@ class SyncReviewWidget(QWidget):
 
         self.stack.addWidget(results_widget)  # Index 3
 
+        # Pre-sync backup prompt (Index 4)
+        presync_widget = QWidget()
+        presync_layout = QVBoxLayout(presync_widget)
+        presync_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        presync_layout.setSpacing(16)
+
+        self._presync_icon = QLabel("💾")
+        self._presync_icon.setFont(QFont(FONT_FAMILY, 48))
+        self._presync_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        presync_layout.addWidget(self._presync_icon)
+
+        self._presync_title = QLabel("")
+        self._presync_title.setFont(QFont(FONT_FAMILY, 16, QFont.Weight.Bold))
+        self._presync_title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
+        self._presync_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        presync_layout.addWidget(self._presync_title)
+
+        self._presync_text = QLabel("")
+        self._presync_text.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: 12px;")
+        self._presync_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._presync_text.setWordWrap(True)
+        self._presync_text.setMaximumWidth(460)
+        presync_layout.addWidget(self._presync_text, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        presync_layout.addSpacing(8)
+
+        presync_btn_row = QHBoxLayout()
+        presync_btn_row.setSpacing(12)
+        presync_btn_row.addStretch()
+
+        # "Skip Backup & Sync Now" / "Sync Without Backup" — secondary action
+        self._presync_skip_btn = QPushButton("Skip Backup & Sync Now")
+        self._presync_skip_btn.setStyleSheet(btn_css(
+            bg=Colors.SURFACE_RAISED,
+            bg_hover=Colors.SURFACE_ACTIVE,
+            bg_press=Colors.SURFACE_ALT,
+            border=f"1px solid {Colors.BORDER}",
+            radius=Metrics.BORDER_RADIUS_SM,
+            padding="8px 20px",
+        ))
+        self._presync_skip_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._presync_skip_btn.clicked.connect(self._presync_skip)
+        presync_btn_row.addWidget(self._presync_skip_btn)
+
+        # "Back Up & Sync" — primary action
+        self._presync_backup_btn = QPushButton("Back Up & Sync")
+        self._presync_backup_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {Colors.ACCENT};
+                border: none;
+                border-radius: {Metrics.BORDER_RADIUS_SM}px;
+                color: white;
+                padding: 8px 24px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background: {Colors.ACCENT_LIGHT};
+            }}
+        """)
+        self._presync_backup_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._presync_backup_btn.clicked.connect(self._presync_backup)
+        presync_btn_row.addWidget(self._presync_backup_btn)
+
+        presync_btn_row.addStretch()
+        presync_layout.addLayout(presync_btn_row)
+
+        self._presync_hint = QLabel("")
+        self._presync_hint.setStyleSheet(
+            f"color: {Colors.TEXT_TERTIARY}; font-size: 10px;"
+        )
+        self._presync_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        presync_layout.addWidget(self._presync_hint)
+
+        self.stack.addWidget(presync_widget)  # Index 4
+
         # Footer with action buttons
         footer = QFrame()
         footer.setStyleSheet(f"""
@@ -846,6 +998,7 @@ class SyncReviewWidget(QWidget):
         "sync_playcount": "Syncing play counts",
         "sync_rating": "Syncing ratings",
         "write_database": "Writing iPod database",
+        "backup": "Creating pre-sync backup",
     }
 
     def _friendly_stage(self, stage: str) -> str:
@@ -854,7 +1007,7 @@ class SyncReviewWidget(QWidget):
     def _set_footer_for_state(self, state: str):
         """Update footer button visibility for the current state.
 
-        States: 'loading', 'plan', 'empty', 'executing', 'results'
+        States: 'loading', 'plan', 'empty', 'executing', 'results', 'presync'
         """
         show_plan_btns = (state == "plan")
         self.select_all_btn.setVisible(show_plan_btns)
@@ -872,6 +1025,9 @@ class SyncReviewWidget(QWidget):
             self.cancel_btn.setText("Done")
             self.cancel_btn.setEnabled(True)
         elif state == "executing":
+            self.cancel_btn.setText("Cancel")
+            self.cancel_btn.setEnabled(True)
+        elif state == "presync":
             self.cancel_btn.setText("Cancel")
             self.cancel_btn.setEnabled(True)
         elif state == "results":
@@ -1167,7 +1323,40 @@ class SyncReviewWidget(QWidget):
         self.progress_detail.setText("Preparing...")
         self.progress_bar.setRange(0, 0)  # Indeterminate initially
         self.eta_label.setText("")
+        self._backup_hint.setVisible(False)
         self._set_footer_for_state("executing")
+
+    # ── Pre-sync backup prompt ──────────────────────────────────────────
+
+    def _show_presync_prompt(self):
+        """Show the pre-sync backup prompt page.
+
+        Only shown when backup_before_sync is OFF — asks if the user
+        wants to create a backup before syncing.
+        """
+        self._presync_title.setText("Back Up Before Syncing?")
+        self._presync_text.setText(
+            "Would you like to create a backup before syncing?\n"
+            "This protects your iPod data in case anything goes wrong."
+        )
+        self._presync_backup_btn.setText("Back Up & Sync")
+        self._presync_skip_btn.setText("Sync Without Backup")
+        self._presync_skip_btn.setVisible(True)
+        self._presync_hint.setText("")
+
+        self.stack.setCurrentIndex(4)
+        self._set_footer_for_state("presync")
+
+    def _presync_backup(self):
+        """User chose to back up before syncing (from the OFF prompt)."""
+        self._is_auto_presync = False
+        self._skip_presync_backup = False
+        self.sync_requested.emit(self._pending_sync_items)
+
+    def _presync_skip(self):
+        """User chose to sync without backup (from the OFF prompt)."""
+        self._skip_presync_backup = True
+        self.sync_requested.emit(self._pending_sync_items)
 
     def update_execute_progress(self, stage: str, current: int, total: int, message: str):
         """Update progress during sync execution."""
@@ -1178,6 +1367,17 @@ class SyncReviewWidget(QWidget):
             if self._current_exec_stage:
                 self._completed_stages.append(self._friendly_stage(self._current_exec_stage))
             self._current_exec_stage = stage
+
+        # During the backup stage, repurpose the footer cancel as "Skip"
+        is_backup = (stage == "backup")
+        self._backup_hint.setVisible(is_backup and self._is_auto_presync)
+        if is_backup:
+            self.cancel_btn.setText("Skip Backup & Sync")
+            self.cancel_btn.setEnabled(True)
+        else:
+            # Leaving backup stage — reset footer cancel to normal
+            self.cancel_btn.setText("Cancel")
+            self.cancel_btn.setEnabled(True)
 
         self.loading_label.setText(friendly)
 
@@ -1276,12 +1476,23 @@ class SyncReviewWidget(QWidget):
     def _on_cancel_clicked(self):
         """Handle cancel/done button clicks based on current state."""
         current_idx = self.stack.currentIndex()
-        if current_idx == 0 and not self._cancelled:
-            # During loading/executing — ask for confirmation
-            self._cancelled = True
-            self.cancel_btn.setEnabled(False)
-            self.cancel_btn.setText("Cancelling...")
-            self.cancelled.emit()
+        if current_idx == 4:
+            # Pre-sync backup prompt — go back to plan view
+            self.stack.setCurrentIndex(1)
+            self._set_footer_for_state("plan")
+        elif current_idx == 0 and not self._cancelled:
+            # During loading/executing — check if we're in a backup stage
+            if self._current_exec_stage == "backup":
+                # Skip the in-progress backup and proceed to sync
+                self.cancel_btn.setEnabled(False)
+                self.cancel_btn.setText("Skipping backup…")
+                self.skip_backup_signal.emit()
+            else:
+                # Full cancel
+                self._cancelled = True
+                self.cancel_btn.setEnabled(False)
+                self.cancel_btn.setText("Cancelling...")
+                self.cancelled.emit()
         else:
             # Plan view, empty view, or results view — just go back
             self.cancelled.emit()
@@ -1590,7 +1801,7 @@ class SyncReviewWidget(QWidget):
         return selected_items
 
     def _apply_sync(self):
-        """Emit signal to apply the selected sync actions."""
+        """Show confirmation, then pre-sync backup prompt before syncing."""
         selected_items = self._get_selected_items()
         if not selected_items:
             QMessageBox.information(self, "No Selection", "Please select items to sync.")
@@ -1628,8 +1839,24 @@ class SyncReviewWidget(QWidget):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
 
-        if reply == QMessageBox.StandardButton.Yes:
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        # Decide backup strategy based on setting
+        from ..settings import get_settings
+        settings = get_settings()
+
+        self._pending_sync_items = selected_items
+
+        if settings.backup_before_sync:
+            # Backup is automatic — sync starts immediately with backup.
+            # The user can skip via the footer cancel button on the progress screen.
+            self._is_auto_presync = True
+            self._skip_presync_backup = False
             self.sync_requested.emit(selected_items)
+        else:
+            # Backup is off — ask if they'd like to back up first.
+            self._show_presync_prompt()
 
     _format_size = staticmethod(_format_size)
     _format_duration = staticmethod(_format_duration)

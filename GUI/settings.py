@@ -13,6 +13,7 @@ location so the next launch can find the custom path.
 """
 
 import json
+import threading
 import os
 import sys
 from dataclasses import dataclass, asdict
@@ -99,6 +100,16 @@ class AppSettings:
     # Show album art in the track list view
     show_art_in_tracklist: bool = True
 
+    # ── Backups ─────────────────────────────────────────────────────────────
+    # Custom backup directory (empty = ~/iOpenPod_Backups/).
+    backup_dir: str = ""
+
+    # Automatically create a full device backup before each sync.
+    backup_before_sync: bool = True
+
+    # Maximum number of backup snapshots to retain per device (0 = unlimited).
+    max_backups: int = 10
+
     def save(self) -> None:
         """Write settings to the active settings directory.
 
@@ -127,8 +138,9 @@ class AppSettings:
         if self.settings_dir and self.settings_dir != default_dir:
             self._write_redirect(default_dir, self.settings_dir)
         elif not self.settings_dir:
-            # Using the default — clean up any stale redirect
-            self._clean_redirect(default_dir)
+            # Using the default — the normal save above overwrites any
+            # stale redirect, so nothing extra to do.
+            pass
 
     @staticmethod
     def _write_redirect(default_dir: str, custom_dir: str) -> None:
@@ -140,15 +152,6 @@ class AppSettings:
                 json.dump({"settings_dir": custom_dir}, f, indent=2)
         except OSError:
             pass
-
-    @staticmethod
-    def _clean_redirect(default_dir: str) -> None:
-        """
-        If the default settings.json is a redirect-only file (no other
-        meaningful keys), it will be overwritten by the normal save above,
-        so nothing extra to do here.
-        """
-        pass
 
     @classmethod
     def load(cls) -> "AppSettings":
@@ -176,18 +179,22 @@ class AppSettings:
 # ── Singleton accessor ──────────────────────────────────────────────────────
 
 _instance: Optional[AppSettings] = None
+_settings_lock = threading.Lock()
 
 
 def get_settings() -> AppSettings:
     """Get the global settings instance (loaded once on first access)."""
     global _instance
     if _instance is None:
-        _instance = AppSettings.load()
+        with _settings_lock:
+            if _instance is None:
+                _instance = AppSettings.load()
     return _instance
 
 
 def reload_settings() -> AppSettings:
     """Force reload from disk."""
     global _instance
-    _instance = AppSettings.load()
+    with _settings_lock:
+        _instance = AppSettings.load()
     return _instance

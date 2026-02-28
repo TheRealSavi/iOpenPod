@@ -4,7 +4,7 @@ import logging
 import traceback
 from PyQt6.QtGui import QPalette, QColor
 from PyQt6.QtWidgets import QApplication, QMessageBox
-from GUI.app import MainWindow, DeviceManager
+from GUI.app import MainWindow
 
 # Configure logging
 logging.basicConfig(
@@ -111,20 +111,7 @@ def run_pyqt_app():
     from GUI.styles import APP_STYLESHEET
     app.setStyleSheet(APP_STYLESHEET)
 
-    # Check for ipodTestData before creating window
-    project_root = os.path.dirname(os.path.abspath(__file__))
-    test_data_path = os.path.join(project_root, "ipodTestData")
-    device_manager = DeviceManager.get_instance()
-
-    has_test_data = device_manager.is_valid_ipod_root(test_data_path)
-
     window = MainWindow()
-
-    # Auto-select ipodTestData if it exists (for development convenience)
-    if has_test_data:
-        device_manager.device_path = test_data_path
-        window.sidebar.updateDeviceButton("ipodTestData")
-        print(f"Auto-selected test data: {test_data_path}")
 
     window.show()
 
