@@ -52,9 +52,10 @@ iOpenPod reads and writes the iPod's native iTunesDB and ArtworkDB binary format
 | Device | Read | Write | Notes |
 |--------|------|-------|-------|
 | iPod 1G–5G, Mini, Photo | ✅ | ✅ | No hash required |
+| iPod Classic (all gens) | ✅ | ✅ | HASH58 (FireWire ID from SysInfo) |
+| iPod Nano 1G–2G | ✅ | ✅ | No hash required |
 | iPod Nano 3G–4G | ✅ | ✅ | HASH58 (FireWire ID from SysInfo) |
-| iPod Classic (all gens) | ✅ | ✅ | HASH72 (requires one iTunes sync for HashInfo) |
-| iPod Nano 5G | ✅ | ✅ | HASH72 |
+| iPod Nano 5G | ✅ | ✅ | HASH72 (requires one iTunes sync for HashInfo) |
 | iPod Nano 6G–7G | ✅ | ❌ | HASHAB not reverse-engineered |
 
 ## Screenshots

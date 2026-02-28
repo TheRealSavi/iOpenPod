@@ -125,13 +125,17 @@ static void fix_header (WContents *cts, gulong header_seek)
 #### 2. Cryptographic Hash (The Real Blocker)
 iPod Classic and Nano 3G+ require a **device-specific cryptographic hash** at mhbd offset 88. Without the correct hash, the iPod will reject the entire database.
 
-**Checksum types by device** (from `itdb_device_get_checksum_type`):
+**Checksum types by device** (from libgpod `itdb_device_get_checksum_type` + empirical testing):
 | Checksum Type | Devices | Hash Location | Size | Status |
 |--------------|---------|---------------|------|--------|
-| NONE | Pre-2007 iPods | N/A | N/A | ✅ Supported |
-| HASH58 | iPod Nano 3G | mhbd+88 | 20 bytes | ✅ Supported |
-| HASH72 | iPod Classic (all), Nano 4G/5G | mhbd+88 | 46 bytes | ✅ Supported |
+| NONE | Pre-2007 iPods (1G–5G, Photo, Video, Mini, Nano 1G–2G) | N/A | N/A | ✅ Supported |
+| HASH58 | iPod Classic (all gens), Nano 3G, Nano 4G | mhbd+88 | 20 bytes | ✅ Supported |
+| HASH72 | Nano 5G | mhbd+88 | 46 bytes | ✅ Supported |
 | HASHAB | iPod Nano 6G/7G | mhbd+88 | 57 bytes | ❌ **OUT OF SCOPE** |
+
+Note: iTunes writes both HASH58 and HASH72 signatures on iPod Classic. The firmware only
+checks HASH58 (scheme=1). We follow libgpod and sign with HASH58; HASH72 is preserved from
+reference databases when available but is not required.
 
 **Hash generation requires**:
 1. The iPod's **FireWire ID** (8 bytes) or **UUID** (20 bytes) - stored in `/iPod_Control/Device/SysInfo`
@@ -191,7 +195,7 @@ hash_generate(signature, sha1, hash_info->iv, hash_info->rndpart);
 
 ### Hash Algorithm Details (for Python porting)
 
-#### HASH58 (Nano 3G) - FULLY PORTABLE
+#### HASH58 (Classic all gens, Nano 3G, Nano 4G) - FULLY PORTABLE
 Complete algorithm from `itdb_hash58.c`:
 
 ```python
@@ -254,7 +258,7 @@ def write_hash58(itdb_data: bytearray, firewire_id: bytes):
     itdb_data[0x32:0x46] = backup_unk32
 ```
 
-#### HASH72 (Classic all gens, Nano 5G) - REQUIRES HASHINFO FILE
+#### HASH72 (Nano 5G only) - REQUIRES HASHINFO FILE
 Requires `/iPod_Control/Device/HashInfo` extracted from a valid iTunes sync.
 
 ```python
@@ -293,9 +297,9 @@ If you have a Nano 6G/7G, use iTunes or Rockbox instead.
 
 | Strategy | Devices | Requirements | Status |
 |----------|---------|--------------|--------|
-| No hash | iPod 1G-5G, Mini, Photo | Just length recalculation | ✅ Supported |
-| HASH58 | Nano 3G, Nano 4G | FireWire ID from SysInfo | ✅ Supported |
-| HASH72 | Classic (all gens), Nano 5G | HashInfo file (sync with iTunes once) | ✅ Supported |
+| No hash | iPod 1G-5G, Mini, Photo, Nano 1G-2G | Just length recalculation | ✅ Supported |
+| HASH58 | Classic (all gens), Nano 3G, Nano 4G | FireWire ID from SysInfo | ✅ Supported |
+| HASH72 | Nano 5G | HashInfo file (sync with iTunes once) | ✅ Supported |
 | HASHAB | Nano 6G/7G only | Not reverse-engineered | ❌ Out of Scope |
 
 ### Reading Device Info
@@ -465,6 +469,6 @@ Parsers expect iPod database files. JSON outputs (`idb.json`, `artdb.json`) shou
 - libgpod GitHub mirror: https://github.com/gtkpod/libgpod
 - Key libgpod files for write support:
   - `itdb_itunesdb.c` - Main database writer (`mk_mhbd`, `mk_mhit`, `fix_header`)
-  - `itdb_hash58.c` - Hash generation for Nano 3G
-  - `itdb_hash72.c` - Hash generation for Classic/Nano 4G-5G
+  - `itdb_hash58.c` - Hash generation for Classic, Nano 3G/4G
+  - `itdb_hash72.c` - Hash generation for Nano 5G
   - `itdb_device.c` - Device detection and checksum type selection

@@ -422,8 +422,8 @@ flowchart TD
     PLAYLISTS --> ASSEMBLE["Assemble MHBD\n(albums + tracks + podcasts + playlists + smart)"]
     ASSEMBLE --> HASH{"Device needs\ncryptographic hash?"}
     HASH -- "Pre-2007 iPods" --> NONE["No hash needed"]
-    HASH -- "Nano 3G / Classic" --> HASH58["Compute HASH58\n(HMAC-SHA1 w/ FireWire ID)"]
-    HASH -- "Classic + Nano 5G" --> HASH72["Compute HASH72\n(AES-CBC w/ HashInfo)"]
+    HASH -- "Classic, Nano 3G/4G" --> HASH58["Compute HASH58\n(HMAC-SHA1 w/ FireWire ID)"]
+    HASH -- "Nano 5G" --> HASH72["Compute HASH72\n(AES-CBC w/ HashInfo)"]
     HASH58 --> WRITE
     HASH72 --> WRITE
     NONE --> WRITE
@@ -461,12 +461,12 @@ iPod Classic and Nano 3G+ require a device-specific hash at MHBD offset 0x58/0x7
 
 | Device | Hash Type | Requirement |
 |--------|-----------|-------------|
-| iPod 1G–5G, Mini, Photo | None | Just length recalculation |
-| Nano 3G, Classic (all) | HASH58 | FireWire GUID from SysInfo |
-| Classic (all), Nano 5G | HASH72 | HashInfo file or reference DB |
+| iPod 1G–5G, Mini, Photo, Nano 1G–2G | None | Just length recalculation |
+| Classic (all), Nano 3G, Nano 4G | HASH58 | FireWire GUID from SysInfo |
+| Nano 5G | HASH72 | HashInfo file or reference DB |
 | Nano 6G/7G | HASHAB | **Not supported** (never reverse-engineered) |
 
-For iPod Classic, both HASH72 and HASH58 are computed. HASH72 is written first because HASH58's computation depends on HASH72 being present in the data.
+For iPod Classic, the HASH58 signature is the one checked by firmware (scheme=1). iTunes also writes a HASH72 signature, which we preserve from a reference database when available but do not require.
 
 #### Atomic Write
 

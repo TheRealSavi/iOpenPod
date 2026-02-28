@@ -168,20 +168,35 @@ class DeviceInfoCard(QFrame):
         tech_layout.setContentsMargins(0, 4, 0, 0)
         tech_layout.setSpacing(2)
 
-        # Technical info rows
-        self.db_version_row = TechInfoRow("Database:", "—")
+        # Technical info rows — identity
         self.model_num_row = TechInfoRow("Model #:", "—")
         self.serial_row = TechInfoRow("Serial:", "—")
         self.firmware_row = TechInfoRow("Firmware:", "—")
+        self.board_row = TechInfoRow("Board:", "—")
+        self.fw_guid_row = TechInfoRow("FW GUID:", "—")
+        self.usb_pid_row = TechInfoRow("USB PID:", "—")
+        self.id_method_row = TechInfoRow("ID Method:", "—")
+
+        # Technical info rows — database / security
+        self.db_version_row = TechInfoRow("Database:", "—")
         self.db_id_row = TechInfoRow("DB ID:", "—")
         self.checksum_row = TechInfoRow("Checksum:", "—")
+        self.hash_scheme_row = TechInfoRow("Hash Scheme:", "—")
 
-        tech_layout.addWidget(self.db_version_row)
-        tech_layout.addWidget(self.model_num_row)
-        tech_layout.addWidget(self.serial_row)
-        tech_layout.addWidget(self.firmware_row)
-        tech_layout.addWidget(self.db_id_row)
-        tech_layout.addWidget(self.checksum_row)
+        # Technical info rows — storage & artwork
+        self.disk_size_row = TechInfoRow("Disk Size:", "—")
+        self.free_space_row = TechInfoRow("Free Space:", "—")
+        self.art_formats_row = TechInfoRow("Art Formats:", "—")
+
+        for w in (
+            self.model_num_row, self.serial_row, self.firmware_row,
+            self.board_row, self.fw_guid_row, self.usb_pid_row,
+            self.id_method_row,
+            self.db_version_row, self.db_id_row,
+            self.checksum_row, self.hash_scheme_row,
+            self.disk_size_row, self.free_space_row, self.art_formats_row,
+        ):
+            tech_layout.addWidget(w)
 
         layout.addWidget(self.tech_container)
 
@@ -248,19 +263,49 @@ class DeviceInfoCard(QFrame):
                 self.icon_label.setText("🎵")
             self.icon_label.setFont(QFont(FONT_FAMILY, 24))
 
-        # Update technical details if provided
-        if device_info:
-            self.model_num_row.setValue(device_info.get('model', '—') or '—')
-            serial_val = device_info.get('serial') or '—'
-            self.serial_row.setValue(serial_val[:12] + '...' if len(serial_val) > 12 else serial_val)
-            self.firmware_row.setValue(device_info.get('firmware', '—') or '—')
-            # Checksum type - just show short name
-            checksum_type = device_info.get('checksum_type')
-            if checksum_type is not None:
-                checksum_names = {0: 'None', 1: 'HASH58', 2: 'HASH72', 98: 'HASHAB', 99: 'Unknown'}
-                self.checksum_row.setValue(checksum_names.get(int(checksum_type), 'Unknown'))
+        # Update technical details from centralized store
+        try:
+            from device_info import get_current_device
+            dev = get_current_device()
+        except Exception:
+            dev = None
+
+        if dev:
+            self.model_num_row.setValue(dev.model_number or '—')
+            self.serial_row.setValue(dev.serial or '—')
+            self.firmware_row.setValue(dev.firmware or '—')
+            self.board_row.setValue(dev.board or '—')
+            self.fw_guid_row.setValue(dev.firewire_guid or '—')
+            self.usb_pid_row.setValue(f"0x{dev.usb_pid:04X}" if dev.usb_pid else '—')
+            self.id_method_row.setValue(dev.identification_method or '—')
+
+            # Checksum / hashing
+            checksum_names = {0: 'None', 1: 'HASH58', 2: 'HASH72', 98: 'HASHAB', 99: 'Unknown'}
+            self.checksum_row.setValue(checksum_names.get(dev.checksum_type, 'Unknown'))
+            scheme_names = {-1: '—', 0: 'None', 1: 'Scheme 1', 2: 'Scheme 2'}
+            self.hash_scheme_row.setValue(scheme_names.get(dev.hashing_scheme, str(dev.hashing_scheme)))
+
+            # Storage
+            if dev.disk_size_gb > 0:
+                self.disk_size_row.setValue(f"{dev.disk_size_gb:.1f} GB")
+            if dev.free_space_gb > 0:
+                self.free_space_row.setValue(f"{dev.free_space_gb:.1f} GB")
+
+            # Storage bar
+            if dev.disk_size_gb > 0:
+                used_pct = int(((dev.disk_size_gb - dev.free_space_gb) / dev.disk_size_gb) * 100)
+                self.storage_bar.setValue(max(0, min(100, used_pct)))
+                self.storage_bar.setToolTip(
+                    f"{dev.free_space_gb:.1f} GB free of {dev.disk_size_gb:.1f} GB"
+                )
+                self.storage_bar.show()
+
+            # Artwork formats
+            if dev.artwork_formats:
+                fmt_strs = [f"{fid}" for fid in sorted(dev.artwork_formats)]
+                self.art_formats_row.setValue(", ".join(fmt_strs))
             else:
-                self.checksum_row.setValue('—')
+                self.art_formats_row.setValue('—')
 
     def update_database_info(self, version_hex: str, version_name: str, db_id: int):
         """Update database technical information."""
@@ -288,12 +333,15 @@ class DeviceInfoCard(QFrame):
         self.duration_stat.setValue("—")
         self.storage_bar.hide()
         # Clear tech details
-        self.db_version_row.setValue("—")
-        self.model_num_row.setValue("—")
-        self.serial_row.setValue("—")
-        self.firmware_row.setValue("—")
-        self.db_id_row.setValue("—")
-        self.checksum_row.setValue("—")
+        for row in (
+            self.model_num_row, self.serial_row, self.firmware_row,
+            self.board_row, self.fw_guid_row, self.usb_pid_row,
+            self.id_method_row,
+            self.db_version_row, self.db_id_row,
+            self.checksum_row, self.hash_scheme_row,
+            self.disk_size_row, self.free_space_row, self.art_formats_row,
+        ):
+            row.setValue("—")
 
 
 class Sidebar(QFrame):
