@@ -294,6 +294,12 @@ def enrich(info: DeviceInfo) -> None:
     if info.serial and not info.model_number:
         _enrich_from_serial_lookup(info)
 
+    # ── 5d. Persist ModelNumStr to SysInfo for future scans ───────────
+    #   After model resolution (steps 5/5b), write ModelNumStr back to
+    #   SysInfo so the scanner can use Layer 1 (fastest) on next launch.
+    if info.model_number and info.path:
+        _persist_model_to_sysinfo(info)
+
     # ── 5c. USB PID-based family/generation (if nothing else worked) ──
     if info.usb_pid and info.model_family == "iPod":
         try:
@@ -771,6 +777,36 @@ def _enrich_from_serial_lookup(info: DeviceInfo) -> None:
     logger.debug("enrich: serial-last-3 '%s' → %s %s %s %s",
                  last3, model_info[0], model_info[1],
                  model_info[2], model_info[3])
+
+
+def _persist_model_to_sysinfo(info: DeviceInfo) -> None:
+    """Append ModelNumStr to SysInfo if it's missing.
+
+    After serial-based model resolution determines the model_number,
+    write it back to the SysInfo file so the scanner's Layer 1 (fast
+    SysInfo lookup) works on future launches — no serial lookup needed.
+    """
+    if not info.path or not info.model_number:
+        return
+
+    sysinfo_path = os.path.join(
+        info.path, "iPod_Control", "Device", "SysInfo",
+    )
+    if not os.path.exists(sysinfo_path):
+        return
+
+    try:
+        content = open(sysinfo_path, "r", errors="replace").read()
+        if "ModelNumStr" in content:
+            return  # already present
+
+        # Append ModelNumStr in the format the scanner expects
+        with open(sysinfo_path, "a") as f:
+            f.write(f"ModelNumStr: x{info.model_number[1:]}\n")
+        logger.info("enrich: appended ModelNumStr to SysInfo (%s)",
+                    info.model_number)
+    except Exception as exc:
+        logger.debug("enrich: failed to persist ModelNumStr: %s", exc)
 
 
 def _enrich_from_windows_registry(info: DeviceInfo) -> None:

@@ -1461,10 +1461,18 @@ def _resolve_model(
             return resolved
 
     # Layer 2: Serial last-3-char → IPOD_MODELS (very reliable)
+    # Try the resolved serial first (usually HW serial).  On macOS the HW
+    # serial is often the FireWire GUID, not the Apple serial, so also try
+    # the FS serial (from SysInfo pszSerialNumber) if the first attempt
+    # doesn't produce a match.
     serial = resolved["serial"]
-    if serial:
-        serial_info = _identify_via_serial_lookup(serial)
+    fs_serial = fs.get("serial", "")
+    for candidate in (serial, fs_serial):
+        if not candidate:
+            continue
+        serial_info = _identify_via_serial_lookup(candidate)
         if serial_info:
+            resolved["serial"] = candidate
             resolved["model_number"] = serial_info.get("model_number", "")
             resolved["model_family"] = serial_info.get("model_family", "iPod")
             resolved["generation"] = serial_info.get("generation", "")

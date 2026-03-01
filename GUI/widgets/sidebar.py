@@ -235,14 +235,16 @@ class DeviceInfoCard(QFrame):
         # Try to load real product photo
         family = ""
         generation = ""
+        color = ""
         if device_info:
             family = device_info.get('model_name', '') or ''
             generation = device_info.get('model_generation', '') or ''
+            color = device_info.get('model_color', '') or ''
         elif model:
             # Parse from model string as fallback
             family = model
 
-        photo = get_ipod_image(family, generation, 48) if family else None
+        photo = get_ipod_image(family, generation, 48, color) if family else None
         if photo and not photo.isNull():
             self.icon_label.setPixmap(photo)
             self.icon_label.setFont(QFont())  # Clear emoji font
@@ -478,10 +480,7 @@ class Sidebar(QFrame):
 
     def updateDeviceButton(self, device_name: str):
         """Update the device button text to show selected device."""
-        # Truncate long names
-        if len(device_name) > 12:
-            device_name = device_name[:10] + "…"
-        self.deviceButton.setText(f"📂 {device_name}")
+        self.deviceButton.setText("📂 Device")
 
     def selectCategory(self, category):
         # Reset the previous selected button's style

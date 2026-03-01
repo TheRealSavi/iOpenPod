@@ -217,7 +217,7 @@ class DeviceCard(QFrame):
         icon_label = QLabel()
         icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         icon_label.setStyleSheet("background: transparent; border: none;")
-        photo = get_ipod_image(ipod.model_family, ipod.generation, 80)
+        photo = get_ipod_image(ipod.model_family, ipod.generation, 80, ipod.color)
         if photo and not photo.isNull():
             icon_label.setPixmap(photo)
         else:
