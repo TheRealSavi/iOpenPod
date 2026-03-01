@@ -227,21 +227,25 @@ class DeviceInfoCard(QFrame):
         self.tech_container.setVisible(self._tech_expanded)
         self.tech_toggle.setText("▼ Technical Details" if self._tech_expanded else "▶ Technical Details")
 
-    def update_device_info(self, name: str, model: str = "", device_info: dict | None = None):
+    def update_device_info(self, name: str, model: str = ""):
         """Update device name and model."""
         self.name_label.setText(name or "No Device")
         self.model_label.setText(model)
 
-        # Try to load real product photo
+        # Try to load real product photo from centralized store
         family = ""
         generation = ""
         color = ""
-        if device_info:
-            family = device_info.get('model_name', '') or ''
-            generation = device_info.get('model_generation', '') or ''
-            color = device_info.get('model_color', '') or ''
-        elif model:
-            # Parse from model string as fallback
+        try:
+            from device_info import get_current_device
+            dev = get_current_device()
+            if dev:
+                family = dev.model_family or ""
+                generation = dev.generation or ""
+                color = dev.color or ""
+        except Exception:
+            pass
+        if not family and model:
             family = model
 
         photo = get_ipod_image(family, generation, 48, color) if family else None
@@ -465,11 +469,10 @@ class Sidebar(QFrame):
 
     def updateDeviceInfo(self, name: str, model: str, tracks: int, albums: int,
                          size_bytes: int, duration_ms: int,
-                         device_info: dict | None = None,
                          db_version_hex: str = "", db_version_name: str = "",
                          db_id: int = 0):
         """Update the device info card with current device data."""
-        self.device_card.update_device_info(name, model, device_info)
+        self.device_card.update_device_info(name, model)
         self.device_card.update_stats(tracks, albums, size_bytes, duration_ms)
         if db_version_hex:
             self.device_card.update_database_info(db_version_hex, db_version_name, db_id)

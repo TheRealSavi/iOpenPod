@@ -89,7 +89,7 @@ def run_pyqt_app():
     from GUI.styles import DarkScrollbarStyle
     app.setStyle(DarkScrollbarStyle("Fusion"))
 
-    # Set a dark palette so Fusion's fallback colours aren't bright grey/blue
+    # Set a dark palette so Fusion's fallback colors aren't bright grey/blue
     palette = QPalette()
     palette.setColor(QPalette.ColorRole.Window, QColor(26, 26, 46))
     palette.setColor(QPalette.ColorRole.WindowText, QColor(255, 255, 255))

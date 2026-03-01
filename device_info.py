@@ -9,7 +9,7 @@ on its own.**  If the store is empty the consumer uses a safe default.
 
 Typical flow
 ~~~~~~~~~~~~
-1. Device scanner discovers iPod → ``DiscoveredIPod``
+1. Device scanner discovers iPod → ``DeviceInfo``
 2. User picks one → ``DeviceManager`` calls ``set_current_device(info)``
 3. Any backend module: ``device = get_current_device()``
 
@@ -46,6 +46,7 @@ class DeviceInfo:
 
     # ── Identity ──────────────────────────────────────────────────────
     path: str = ""                    # Mount root (e.g. "D:\\" or "/Volumes/iPod")
+    mount_name: str = ""              # Volume display name (e.g. "D:", "IPOD")
     model_number: str = ""            # Normalised (e.g. "MC297", never "xA623")
     model_family: str = "iPod"        # e.g. "iPod Classic", "iPod Nano"
     generation: str = ""              # e.g. "3rd Gen"
@@ -114,6 +115,85 @@ class DeviceInfo:
             parts.append(self.color)
         return " ".join(parts)
 
+    @property
+    def subtitle(self) -> str:
+        """Secondary line (mount name + free space)."""
+        parts = [self.mount_name] if self.mount_name else []
+        if self.disk_size_gb > 0:
+            parts.append(f"{self.free_space_gb:.1f} of {self.disk_size_gb:.1f} GB free")
+        return " — ".join(parts) if parts else ""
+
+    @property
+    def icon(self) -> str:
+        """Emoji icon based on model family."""
+        family = self.model_family.lower()
+        if "classic" in family or "video" in family or "photo" in family:
+            return "📱"
+        elif "nano" in family:
+            return "🎵"
+        elif "shuffle" in family:
+            return "🔀"
+        elif "mini" in family:
+            return "🎶"
+        return "🎵"
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Utility functions (used by multiple modules)
+# ──────────────────────────────────────────────────────────────────────
+
+def read_sysinfo(ipod_path: str) -> dict:
+    """Parse the SysInfo file from an iPod.
+
+    The SysInfo file at ``/iPod_Control/Device/SysInfo`` contains device
+    identification info as ``key: value`` pairs (one per line):
+
+    - ``ModelNumStr`` — device model (e.g. ``"xA623"``)
+    - ``FirewireGuid`` — device GUID for hash computation
+    - ``pszSerialNumber`` — Apple serial number
+    - ``BoardHwName`` — hardware identifier
+    - ``visibleBuildID`` — firmware version
+
+    Returns:
+        Dictionary of SysInfo key→value pairs.
+
+    Raises:
+        FileNotFoundError: If SysInfo doesn't exist.
+    """
+    sysinfo_path = os.path.join(ipod_path, "iPod_Control", "Device", "SysInfo")
+
+    if not os.path.exists(sysinfo_path):
+        raise FileNotFoundError(f"SysInfo not found at {sysinfo_path}")
+
+    sysinfo: dict[str, str] = {}
+    with open(sysinfo_path, "r", errors="ignore") as f:
+        for line in f:
+            line = line.strip()
+            if ":" in line:
+                key, value = line.split(":", 1)
+                sysinfo[key.strip()] = value.strip()
+
+    return sysinfo
+
+
+def _estimate_capacity_from_disk_size(disk_gb: float) -> str:
+    """Map raw disk size (GB) to a marketed capacity string.
+
+    iPod capacities are advertised in base-10, but actual formatted space
+    is lower due to filesystem overhead and base-2/base-10 conversion.
+    This uses generous thresholds to handle both.
+    """
+    thresholds = [
+        (140, "160GB"), (100, "120GB"), (65, "80GB"),
+        (50, "60GB"), (35, "40GB"), (25, "30GB"),
+        (17, "20GB"), (13, "16GB"), (6.5, "8GB"), (3, "4GB"),
+        (1.5, "2GB"), (0.7, "1GB"), (0.3, "512MB"),
+    ]
+    for threshold, label in thresholds:
+        if disk_gb >= threshold:
+            return label
+    return ""
+
 
 # ──────────────────────────────────────────────────────────────────────
 # Thread-safe singleton store
@@ -179,6 +259,135 @@ def clear_current_device() -> None:
     set_current_device(None)
 
 
+def detect_checksum_type(ipod_path: str):
+    """Detect which checksum type an iPod requires.
+
+    Reads from the centralised store first; falls back to SysInfo probing.
+    Returns a :class:`ipod_models.ChecksumType` enum value.
+    """
+    from ipod_models import (
+        ChecksumType,
+        checksum_type_for_family_gen,
+        extract_model_number,
+        get_model_info,
+    )
+
+    # Fast path: centralised store
+    device = get_current_device()
+    if device is not None and device.checksum_type != 99:
+        return ChecksumType(device.checksum_type)
+
+    # Fallback: probe from scratch
+    try:
+        sysinfo = read_sysinfo(ipod_path)
+    except FileNotFoundError:
+        return ChecksumType.NONE
+
+    model_str = sysinfo.get("ModelNumStr", "")
+    model_num = extract_model_number(model_str)
+
+    if model_num:
+        mi = get_model_info(model_num)
+        if mi:
+            ct = checksum_type_for_family_gen(mi[0], mi[1])
+            if ct is not None:
+                return ct
+
+    hi_path = os.path.join(ipod_path, "iPod_Control", "Device", "HashInfo")
+    if os.path.exists(hi_path):
+        return ChecksumType.HASH72
+
+    firmware = sysinfo.get("visibleBuildID", "")
+    if firmware:
+        try:
+            version = int(firmware.split(".")[0])
+            if version >= 2:
+                return ChecksumType.UNKNOWN
+        except (ValueError, IndexError):
+            pass
+
+    if "FirewireGuid" in sysinfo:
+        return ChecksumType.UNKNOWN
+
+    return ChecksumType.NONE
+
+
+def get_firewire_id(ipod_path: str, *, known_guid: str | None = None) -> bytes:
+    """Get the FireWire GUID for an iPod, trying multiple sources.
+
+    Sources (in priority order):
+      0. ``known_guid`` parameter
+      1. Centralised DeviceInfo store
+      2. SysInfo file
+      3. SysInfoExtended plist
+
+    Returns:
+        FireWire GUID as raw bytes (typically 8 bytes).
+
+    Raises:
+        RuntimeError: If the GUID cannot be found from any source.
+    """
+    # Source 0: caller-supplied
+    if known_guid:
+        try:
+            guid_bytes = bytes.fromhex(known_guid)
+            if guid_bytes != b"\x00" * len(guid_bytes):
+                return guid_bytes
+        except ValueError:
+            pass
+
+    # Source 1: centralised store
+    device = get_current_device()
+    if device is not None:
+        fwid = device.firewire_id_bytes
+        if fwid:
+            return fwid
+
+    # Source 2: SysInfo
+    try:
+        sysinfo = read_sysinfo(ipod_path)
+        guid = sysinfo.get("FirewireGuid", "")
+        if guid:
+            if guid.startswith(("0x", "0X")):
+                guid = guid[2:]
+            result = bytes.fromhex(guid)
+            if result != b"\x00" * len(result):
+                return result
+    except (FileNotFoundError, ValueError):
+        pass
+
+    # Source 3: SysInfoExtended
+    sysinfo_ex_path = os.path.join(ipod_path, "iPod_Control", "Device", "SysInfoExtended")
+    if os.path.exists(sysinfo_ex_path):
+        try:
+            with open(sysinfo_ex_path, "r", errors="ignore") as f:
+                content = f.read()
+            import re as _re
+            m = _re.search(
+                r"<key>FireWireGUID</key>\s*<string>([0-9A-Fa-f]+)</string>",
+                content,
+            )
+            if m:
+                guid_hex = m.group(1)
+                if guid_hex.startswith(("0x", "0X")):
+                    guid_hex = guid_hex[2:]
+                result = bytes.fromhex(guid_hex)
+                if result != b"\x00" * len(result):
+                    return result
+        except Exception:
+            pass
+
+    raise RuntimeError(
+        "Could not find iPod FireWire GUID. Tried:\n"
+        "  0. known_guid parameter\n"
+        "  1. Centralised device info store\n"
+        "  2. SysInfo file\n"
+        "  3. SysInfoExtended plist\n"
+        "\n"
+        "Connect the iPod and try again."
+    )
+
+
 # ──────────────────────────────────────────────────────────────────────
 # Enrichment — fills derived fields from the ones already known
 # ──────────────────────────────────────────────────────────────────────
@@ -203,7 +412,6 @@ def enrich(info: DeviceInfo) -> None:
     # ── 1. SysInfo (text key:value file) ──────────────────────────────
     if info.path and not info.sysinfo:
         try:
-            from iTunesDB_Writer.device import read_sysinfo
             info.sysinfo = read_sysinfo(info.path)
             logger.debug("enrich: SysInfo loaded (%d keys)", len(info.sysinfo))
         except FileNotFoundError:
@@ -238,10 +446,10 @@ def enrich(info: DeviceInfo) -> None:
     # Model number from SysInfo
     if not info.model_number and info.sysinfo:
         try:
-            from iTunesDB_Writer.device import _extract_model_number
+            from ipod_models import extract_model_number
             raw = info.sysinfo.get("ModelNumStr", "")
             if raw:
-                mn = _extract_model_number(raw)
+                mn = extract_model_number(raw)
                 if mn:
                     info.model_number = mn
                     logger.debug("enrich: model from SysInfo: %s", mn)
@@ -274,8 +482,8 @@ def enrich(info: DeviceInfo) -> None:
     # ── 5. Model lookup (map model_number → family/gen/capacity/color) ─
     if info.model_number and info.model_family == "iPod":
         try:
-            from iTunesDB_Writer.device import IPOD_MODELS
-            mi = IPOD_MODELS.get(info.model_number)
+            from ipod_models import get_model_info
+            mi = get_model_info(info.model_number)
             if mi:
                 info.model_family = mi[0]
                 info.generation = mi[1]
@@ -303,7 +511,7 @@ def enrich(info: DeviceInfo) -> None:
     # ── 5c. USB PID-based family/generation (if nothing else worked) ──
     if info.usb_pid and info.model_family == "iPod":
         try:
-            from GUI.device_scanner import USB_PID_TO_MODEL
+            from ipod_models import USB_PID_TO_MODEL
             pid_info = USB_PID_TO_MODEL.get(info.usb_pid)
             if pid_info:
                 info.model_family = pid_info[0]
@@ -370,13 +578,9 @@ def enrich(info: DeviceInfo) -> None:
 
     # ── 11. Capacity from disk size (if still unknown) ────────────────
     if not info.capacity and info.disk_size_gb > 0:
-        try:
-            from GUI.device_scanner import _estimate_capacity_from_disk_size
-            info.capacity = _estimate_capacity_from_disk_size(info.disk_size_gb)
-            if info.capacity:
-                logger.debug("enrich: capacity from disk size: %s", info.capacity)
-        except ImportError:
-            pass
+        info.capacity = _estimate_capacity_from_disk_size(info.disk_size_gb)
+        if info.capacity:
+            logger.debug("enrich: capacity from disk size: %s", info.capacity)
 
     logger.info(
         "DeviceInfo enriched: %s %s (%s), checksum=%s, fw=%s, formats=%s, "
@@ -440,8 +644,8 @@ def _enrich_from_sysinfo_extended(info: DeviceInfo) -> None:
         )
         if m:
             try:
-                from iTunesDB_Writer.device import _extract_model_number
-                mn = _extract_model_number(m.group(1).strip())
+                from ipod_models import extract_model_number
+                mn = extract_model_number(m.group(1).strip())
                 if mn:
                     info.model_number = mn
                     logger.debug("enrich: model from SysInfoExtended: %s", mn)
@@ -540,201 +744,64 @@ def _enrich_from_hardware_probe(info: DeviceInfo) -> None:
         info.identification_method = "hardware"
 
 
-def _try_iokit_vpd(
-    info: "DeviceInfo", usb_pid: int, serial_filter: str
-) -> dict | None:
-    """Attempt IOKit SCSI VPD query (macOS only, no root)."""
+def _enrich_from_usb_vpd(info: DeviceInfo) -> None:
+    """Query iPod firmware via USB SCSI VPD pages for device identification.
+
+    Delegates to :func:`ipod_usb_query.identify_via_vpd` which handles all
+    platforms (IOKit on macOS, pyusb on Linux/Windows), resolves the exact
+    model via serial-last-3 lookup, writes SysInfo to the iPod, and handles
+    post-query remount on Linux/macOS.
+    """
     try:
-        from ipod_iokit_query import query_ipod_vpd
+        from ipod_usb_query import identify_via_vpd
     except ImportError:
-        logger.debug("enrich: ipod_iokit_query not available")
-        return None
+        logger.debug("enrich: ipod_usb_query not available")
+        return
 
-    logger.info(
-        "enrich: SysInfo missing — trying IOKit SCSI VPD "
-        "(pid=0x%04X, serial=%s)",
-        usb_pid,
-        serial_filter,
+    result = identify_via_vpd(
+        mount_path=info.path,
+        usb_pid=info.usb_pid or 0,
+        firewire_guid=info.firewire_guid or "",
     )
-    try:
-        vpd_info = query_ipod_vpd(
-            usb_pid=usb_pid, serial_filter=serial_filter
-        )
-    except Exception as exc:
-        logger.debug("enrich: IOKit VPD query failed: %s", exc)
-        return None
+    if result is None:
+        return
 
-    if not vpd_info or not vpd_info.get("SerialNumber"):
-        logger.debug("enrich: IOKit VPD returned no useful data")
-        return None
+    # Apply VPD-derived fields to DeviceInfo
+    if result["serial"]:
+        info.serial = result["serial"]
+    if not info.firewire_guid and result["firewire_guid"]:
+        info.firewire_guid = result["firewire_guid"]
+    if result["firmware"]:
+        info.firmware = result["firmware"]
+    if result["model_number"]:
+        info.model_number = result["model_number"]
+        info.model_family = result["model_family"]
+        info.generation = result["generation"]
+        if not info.capacity:
+            info.capacity = result["capacity"]
+        if not info.color:
+            info.color = result["color"]
 
-    logger.info(
-        "enrich: IOKit VPD got serial=%s, FamilyID=%s",
-        vpd_info.get("SerialNumber"),
-        vpd_info.get("FamilyID"),
-    )
-    return vpd_info
+    # Update mount path if pyusb caused a remount to a different location
+    if result["mount_path"] and result["mount_path"] != info.path:
+        logger.info("enrich: mount path changed %s → %s",
+                    info.path, result["mount_path"])
+        info.path = result["mount_path"]
 
-
-def _apply_vpd_result(info: "DeviceInfo", vpd_info: dict) -> None:
-    """Apply VPD query results to DeviceInfo and write SysInfo to iPod."""
-    from ipod_usb_query import write_sysinfo
-
-    # Write SysInfo to iPod so future runs don't need VPD
-    if info.path and os.path.exists(info.path):
+    # Re-read SysInfo now that it's been written
+    if info.path and not info.sysinfo and result["sysinfo_written"]:
         try:
-            wrote = write_sysinfo(info.path, vpd_info)
-            if wrote:
-                logger.info(
-                    "enrich: wrote SysInfo to %s from VPD data", info.path
-                )
-        except Exception as exc:
-            logger.debug("enrich: SysInfo write failed: %s", exc)
-
-    # Apply VPD data directly to info
-    vpd_serial = vpd_info.get("SerialNumber", "")
-    if vpd_serial:
-        info.serial = vpd_serial
-    if not info.firewire_guid:
-        fw = vpd_info.get("FireWireGUID", vpd_info.get("usb_serial", ""))
-        if fw:
-            info.firewire_guid = fw.upper()
-    vpd_fw = vpd_info.get("VisibleBuildID", vpd_info.get("BuildID", ""))
-    if vpd_fw:
-        info.firmware = vpd_fw
-
-    # Re-read SysInfo if it was written successfully
-    if info.path and not info.sysinfo:
-        try:
-            from iTunesDB_Writer.device import read_sysinfo
-
             info.sysinfo = read_sysinfo(info.path)
             if info.sysinfo:
-                logger.debug(
-                    "enrich: SysInfo re-read after VPD (%d keys)",
-                    len(info.sysinfo),
-                )
+                logger.debug("enrich: SysInfo re-read after VPD (%d keys)",
+                             len(info.sysinfo))
                 if not info.board:
                     info.board = info.sysinfo.get("BoardHwName", "")
-                if not info.serial:
-                    info.serial = info.sysinfo.get("pszSerialNumber", "")
-                if not info.firmware:
-                    info.firmware = info.sysinfo.get("visibleBuildID", "")
         except Exception:
             pass
 
     if info.serial:
         info.identification_method = "usb_vpd"
-
-
-def _enrich_from_usb_vpd(info: DeviceInfo) -> None:
-    """Query iPod firmware via USB SCSI VPD pages for device identification.
-
-    This is the fallback when SysInfo is missing or empty (iPod was never
-    synced with iTunes).  It sends SCSI INQUIRY commands over USB to read
-    Apple-proprietary VPD pages containing a full device XML plist.
-
-    On macOS, the preferred path uses IOKit SCSITaskLib — no root needed
-    and the iPod stays mounted.  Falls back to pyusb on other platforms
-    (root required on Linux; unmounts then remounts the iPod).
-
-    If the query succeeds, writes SysInfo + SysInfoExtended to the iPod
-    so that subsequent runs can identify the device normally.
-    """
-    import sys as _sys
-    import time as _time
-
-    # Use USB PID and/or FireWire GUID to target the right device
-    usb_pid = info.usb_pid or 0
-    serial_filter = info.firewire_guid or ""
-
-    # ── macOS fast path: IOKit SCSI (no root, no unmount) ──────────
-    if _sys.platform == "darwin":
-        vpd_info = _try_iokit_vpd(info, usb_pid, serial_filter)
-        if vpd_info:
-            _apply_vpd_result(info, vpd_info)
-            return
-
-    # ── Fallback: pyusb path (requires root on macOS/Linux) ────────
-    if _sys.platform != "win32":
-        try:
-            if os.geteuid() != 0:
-                logger.debug("enrich: USB VPD skipped (not root)")
-                return
-        except AttributeError:
-            pass  # Shouldn't happen on Unix, but be safe
-
-    try:
-        from ipod_usb_query import query_ipod_vpd
-    except ImportError:
-        logger.debug("enrich: ipod_usb_query not available")
-        return
-
-    logger.info(
-        "enrich: SysInfo missing — attempting USB VPD query "
-        "(pid=0x%04X, serial=%s)", usb_pid, serial_filter,
-    )
-
-    try:
-        vpd_info = query_ipod_vpd(
-            usb_pid=usb_pid,
-            serial_filter=serial_filter,
-        )
-    except PermissionError:
-        logger.debug("enrich: USB VPD query needs root — skipping")
-        return
-    except Exception as exc:
-        logger.debug("enrich: USB VPD query failed: %s", exc)
-        return
-
-    if not vpd_info or not vpd_info.get("SerialNumber"):
-        logger.debug("enrich: USB VPD returned no useful data")
-        return
-
-    logger.info(
-        "enrich: USB VPD got serial=%s, FamilyID=%s",
-        vpd_info.get("SerialNumber"), vpd_info.get("FamilyID"),
-    )
-
-    # On macOS/Linux the disk was unmounted during query — wait for remount.
-    # The mount point may change (e.g. "/Volumes/JOHN'S IPOD" → "JOHN'S IPOD 1")
-    # if old stale dirs exist, so we use the USB serial to find the new path.
-    if _sys.platform != "win32":
-        logger.debug("enrich: waiting for iPod to remount after VPD query...")
-        usb_serial = vpd_info.get("usb_serial", "") or info.firewire_guid or ""
-        new_path: str | None = None
-        try:
-            from ipod_usb_query import _find_mount_point_for_usb_serial
-        except ImportError:
-            _find_mount_point_for_usb_serial = None  # type: ignore[assignment]
-
-        for attempt in range(12):
-            _time.sleep(1)
-            # First try the lookup-by-serial approach (handles renamed mounts)
-            if _find_mount_point_for_usb_serial and usb_serial:
-                new_path = _find_mount_point_for_usb_serial(usb_serial)
-                if new_path:
-                    break
-            # Fallback: check if original path is still a valid mount
-            if os.path.ismount(info.path):
-                new_path = info.path
-                break
-
-        if new_path and new_path != info.path:
-            logger.info(
-                "enrich: iPod remounted at new path: %s (was %s)",
-                new_path, info.path,
-            )
-            info.path = new_path
-        elif not new_path:
-            logger.warning(
-                "enrich: iPod did not remount within 12s (serial=%s)",
-                usb_serial,
-            )
-            # Still apply VPD data directly to info (below)
-
-    # Write SysInfo + apply VPD data to info
-    _apply_vpd_result(info, vpd_info)
 
 
 def _enrich_from_serial_lookup(info: DeviceInfo) -> None:
@@ -747,23 +814,15 @@ def _enrich_from_serial_lookup(info: DeviceInfo) -> None:
         return
 
     try:
-        from GUI.device_scanner import SERIAL_LAST3_TO_MODEL
-        from iTunesDB_Writer.device import IPOD_MODELS
+        from ipod_models import lookup_by_serial
     except ImportError:
         return
 
-    last3 = info.serial[-3:]
-    model_num = SERIAL_LAST3_TO_MODEL.get(last3)
-    if not model_num:
+    result = lookup_by_serial(info.serial)
+    if not result:
         return
 
-    model_info = IPOD_MODELS.get(model_num)
-    if not model_info:
-        # At least set the model number
-        if not info.model_number:
-            info.model_number = model_num
-        return
-
+    model_num, model_info = result
     if not info.model_number:
         info.model_number = model_num
     info.model_family = model_info[0]
@@ -775,7 +834,7 @@ def _enrich_from_serial_lookup(info: DeviceInfo) -> None:
     if info.identification_method in ("unknown", "hardware"):
         info.identification_method = "serial"
     logger.debug("enrich: serial-last-3 '%s' → %s %s %s %s",
-                 last3, model_info[0], model_info[1],
+                 info.serial[-3:], model_info[0], model_info[1],
                  model_info[2], model_info[3])
 
 
@@ -951,7 +1010,7 @@ def _resolve_checksum_type(info: DeviceInfo) -> None:
     """Determine checksum type using every available signal.
 
     Priority:
-      1. Family + generation → canonical lookup (covers ALL colour variants)
+      1. Family + generation → canonical lookup (covers ALL color variants)
       2. HashInfo file existence → HASH72
       3. iTunesDB hashing_scheme field
       4. Firmware version hints
@@ -959,7 +1018,7 @@ def _resolve_checksum_type(info: DeviceInfo) -> None:
       6. Default to NONE (safe for pre-2007 iPods)
     """
     try:
-        from iTunesDB_Writer.device import (
+        from ipod_models import (
             ChecksumType, checksum_type_for_family_gen,
         )
     except ImportError:

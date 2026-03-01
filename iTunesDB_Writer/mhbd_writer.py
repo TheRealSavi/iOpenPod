@@ -36,7 +36,8 @@ from .mhsd_writer import write_mhsd_tracks, write_mhsd_playlists, write_mhsd_alb
 from .mhlp_writer import write_mhlp_empty, write_mhlp_with_master
 from .mhla_writer import write_mhla
 from .mhit_writer import TrackInfo
-from .device import detect_checksum_type, ChecksumType
+from ipod_models import ChecksumType
+from device_info import detect_checksum_type
 from .hash58 import write_hash58
 
 logger = logging.getLogger(__name__)
@@ -507,7 +508,7 @@ def write_itunesdb(
         # Try to get FireWire ID from parameter, SysInfo, SysInfoExtended, or Windows registry
         if firewire_id is None:
             try:
-                from .device import get_firewire_id
+                from device_info import get_firewire_id
                 firewire_id = get_firewire_id(ipod_path)
             except Exception as e:
                 logger.warning("Could not get FireWire ID: %s", e)

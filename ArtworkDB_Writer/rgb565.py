@@ -150,7 +150,7 @@ def _family_gen_to_formats(family: str, gen: str) -> Optional[dict[int, tuple[in
         return IPOD_CLASSIC_FORMATS
 
     # iPod 1G-4G (monochrome / greyscale) — no artwork support
-    # Mini — no colour screen on 1G, 2G has greyscale
+    # Mini — no color screen on 1G, 2G has greyscale
     # Default to Classic formats for anything unrecognised
     return None
 

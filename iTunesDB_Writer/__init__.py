@@ -21,11 +21,8 @@ Usage:
     success = write_checksum(itdb_data, ipod_path)
 """
 
-from .device import (
-    ChecksumType,
-    detect_checksum_type,
-    get_firewire_id,
-)
+from ipod_models import ChecksumType
+from device_info import detect_checksum_type, get_firewire_id
 
 from .hash58 import (
     compute_hash58,

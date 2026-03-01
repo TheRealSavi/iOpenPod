@@ -13,14 +13,15 @@ from PyQt6.QtWidgets import (
     QScrollArea,
 )
 
-from ..device_scanner import scan_for_ipods, DiscoveredIPod
+from device_info import DeviceInfo
+from ..device_scanner import scan_for_ipods
 from ..ipod_images import get_ipod_image
 from ..styles import Colors, FONT_FAMILY, Metrics, btn_css
 
 
 class _ScanThread(QThread):
     """Background thread to scan for iPods without freezing the UI."""
-    finished = pyqtSignal(list)  # list[DiscoveredIPod]
+    finished = pyqtSignal(list)  # list[DeviceInfo]
 
     def run(self):
         ipods = scan_for_ipods()
@@ -197,9 +198,9 @@ def _make_ipod_icon(family: str, color_hint: str, size: int = 80) -> QPixmap:
 class DeviceCard(QFrame):
     """A clickable card representing a discovered iPod."""
 
-    clicked = pyqtSignal(DiscoveredIPod)
+    clicked = pyqtSignal(DeviceInfo)
 
-    def __init__(self, ipod: DiscoveredIPod, parent=None):
+    def __init__(self, ipod: DeviceInfo, parent=None):
         super().__init__(parent)
         self.ipod = ipod
         self._selected = False
@@ -312,7 +313,7 @@ class DevicePickerDialog(QDialog):
         self.resize(560, 440)
 
         self.selected_path: str = ""
-        self.selected_ipod: DiscoveredIPod | None = None
+        self.selected_ipod: DeviceInfo | None = None
         self._cards: list[DeviceCard] = []
         self._scan_thread: _ScanThread | None = None
 
@@ -454,7 +455,7 @@ class DevicePickerDialog(QDialog):
         self._scan_thread.finished.connect(self._on_scan_complete)
         self._scan_thread.start()
 
-    def _on_scan_complete(self, ipods: list[DiscoveredIPod]):
+    def _on_scan_complete(self, ipods: list[DeviceInfo]):
         """Handle scan results."""
         self._rescan_btn.setEnabled(True)
 
@@ -486,7 +487,7 @@ class DevicePickerDialog(QDialog):
             self._subtitle.setText("No iPods found")
             self._no_devices_label.show()
 
-    def _on_card_clicked(self, ipod: DiscoveredIPod):
+    def _on_card_clicked(self, ipod: DeviceInfo):
         """Handle a device card being clicked."""
         self.selected_path = ipod.path
         self.selected_ipod = ipod

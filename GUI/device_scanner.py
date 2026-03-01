@@ -22,13 +22,19 @@ Detection pipeline:
     - firmware:      IOCTL revision  >  SysInfo visibleBuildID
     - usb_pid:       device tree USB parent  >  WMI fallback
     - model_family:  IPOD_MODELS  >  USB PID table (with disk-size sanity check)  >  hashing_scheme
+
+  **Phase 4 — Inline VPD** (macOS only, for incomplete identification):
+    If model_number is still unknown after Phase 3, query the iPod's
+    firmware via IOKit SCSI VPD (~1 s, no root, disk stays mounted)
+    to get the Apple serial.  Serial-last-3 lookup resolves exact model
+    (family, generation, capacity, color).  Writes SysInfo to the iPod
+    so that subsequent scans never need VPD again.
 """
 
 import logging
 import os
 import struct
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
@@ -38,109 +44,10 @@ if sys.platform == "win32":
 elif TYPE_CHECKING:
     import ctypes.wintypes as wt  # type-checker only
 
+from device_info import DeviceInfo
+from ipod_models import USB_PID_TO_MODEL
+
 logger = logging.getLogger(__name__)
-
-
-# ── USB Product ID → iPod generation (Apple VID = 0x05AC) ──────────────────
-#
-# Sources: Linux USB ID Repository, The Apple Wiki, empirical testing.
-#
-# IMPORTANT: The 0x124x range are DFU/WTF recovery mode PIDs, NOT normal
-# operation PIDs.  They should only appear if the iPod is in recovery mode.
-# In normal disk mode, iPods use PIDs from 0x120x and 0x126x ranges.
-#
-# Note: Some PIDs are shared across generations or USB modes.  PID-based
-# identification is a LOW-confidence fallback — prefer SysInfo ModelNumStr
-# or serial number suffix matching.
-
-USB_PID_TO_MODEL: dict[int, tuple[str, str]] = {
-    # (model_family, generation)
-
-    # ── Normal-mode PIDs (0x120x) ──────────────────────────────────────────
-    0x1201: ("iPod", "3rd Gen"),       # iPod 3G (dock connector)
-    0x1202: ("iPod", "2nd Gen"),       # iPod 2G (touch wheel)
-    0x1203: ("iPod", "4th Gen"),       # iPod 4G (click wheel, grayscale)
-    0x1204: ("iPod Photo", "4th Gen"),  # iPod Photo / iPod with Colour Display
-    0x1205: ("iPod Mini", "1st Gen"),  # iPod Mini 1G
-    0x1206: ("iPod Nano", "1st Gen"),  # iPod Nano 1G (A1137)
-    0x1207: ("iPod Mini", "2nd Gen"),  # iPod Mini 2G
-    0x1208: ("iPod", "1st Gen"),       # iPod 1G (scroll wheel, FireWire)
-    0x1209: ("iPod Video", "5th Gen"),  # iPod Video 5G/5.5G (A1136)
-    0x120A: ("iPod Nano", "2nd Gen"),  # iPod Nano 2G (A1199) — disk mode
-
-    # ── DFU / WTF recovery mode PIDs (0x124x) ─────────────────────────────
-    # These appear when the iPod is in firmware recovery, NOT normal use.
-    # Included so recovery-mode devices are still identified, but marked with
-    # a "(Recovery)" suffix in the generation string.
-    0x1240: ("iPod Nano", "2nd Gen (Recovery)"),     # Nano 2G DFU
-    0x1241: ("iPod Classic", "1st Gen (Recovery)"),   # Classic 1G DFU
-    0x1242: ("iPod Nano", "3rd Gen (Recovery)"),      # Nano 3G WTF
-    0x1243: ("iPod Nano", "4th Gen (Recovery)"),      # Nano 4G WTF
-    0x1245: ("iPod Classic", "3rd Gen (Recovery)"),   # Classic 3G WTF
-    0x1246: ("iPod Nano", "5th Gen (Recovery)"),      # Nano 5G WTF
-    0x1255: ("iPod Nano", "4th Gen (Recovery)"),      # Nano 4G DFU
-
-    # ── Normal-mode PIDs (0x126x) ──────────────────────────────────────────
-    0x1260: ("iPod Nano", "2nd Gen"),  # iPod Nano 2G (A1199) — normal mode
-    0x1261: ("iPod Classic", ""),      # iPod Classic (all gens share this PID)
-    0x1262: ("iPod Nano", "3rd Gen"),  # iPod Nano 3G (A1236)
-    0x1263: ("iPod Nano", "4th Gen"),  # iPod Nano 4G (A1285)
-    0x1265: ("iPod Nano", "5th Gen"),  # iPod Nano 5G (A1320)
-    0x1266: ("iPod Nano", "6th Gen"),  # iPod Nano 6G (A1366)
-    0x1267: ("iPod Nano", "7th Gen"),  # iPod Nano 7G (A1446)
-
-    # ── iPod Shuffle PIDs ──────────────────────────────────────────────────
-    0x1300: ("iPod Shuffle", "1st Gen"),
-    0x1301: ("iPod Shuffle", "2nd Gen"),
-    0x1302: ("iPod Shuffle", "3rd Gen"),
-    0x1303: ("iPod Shuffle", "4th Gen"),
-}
-
-
-# ── Serial number last-3-char → model number (from libgpod) ────────────────
-
-SERIAL_LAST3_TO_MODEL: dict[str, str] = {
-    # iPod Classic
-    "Y5N": "MB029", "YMV": "MB147", "YMU": "MB145", "YMX": "MB150",
-    "2C5": "MB562", "2C7": "MB565",
-    "9ZS": "MC293", "9ZU": "MC297",
-    # iPod Mini 1G
-    "PFW": "M9160", "PRC": "M9160",
-    "QKL": "M9436", "QKQ": "M9436", "QKK": "M9435", "QKP": "M9435",
-    "QKJ": "M9434", "QKN": "M9434", "QKM": "M9437", "QKR": "M9437",
-    # iPod Mini 2G
-    "S41": "M9800", "S4C": "M9800", "S43": "M9802", "S45": "M9804",
-    "S47": "M9806", "S4J": "M9806", "S42": "M9801", "S44": "M9803",
-    "S48": "M9807",
-    # Nano 1G
-    "TUZ": "MA004", "TV0": "MA005", "TUY": "MA099", "TV1": "MA107",
-    "UYN": "MA350", "UYP": "MA352",
-    # Nano 2G  (A1199 — serial from Apple Wiki / libgpod)
-    "VQ5": "MA477", "VQ6": "MA477",  # 2GB Silver
-    "V8T": "MA426", "V8U": "MA426",  # 4GB Silver
-    "V8W": "MA428", "V8X": "MA428",  # 4GB Blue
-    "VQH": "MA487", "VQJ": "MA487",  # 4GB Green
-    "VQK": "MA489", "VQL": "MA489",  # 4GB Pink
-    "WL2": "MA725", "WL3": "MA725",  # 4GB Red
-    "X9A": "MA726", "X9B": "MA726",  # 8GB Red
-    "VQT": "MA497", "VQU": "MA497",  # 8GB Black
-    "YER": "MA899", "YES": "MA899",  # 8GB (PRODUCT) RED
-    # Nano 3G
-    "Y0P": "MA978", "Y0R": "MA980",
-    "YXR": "MB249", "YXV": "MB257", "YXT": "MB253", "YXX": "MB261",
-    # Nano 4G
-    "37P": "MB663", "37Q": "MB666", "37H": "MB654", "1P1": "MB480",
-    "37K": "MB657", "37L": "MB660", "2ME": "MB598",
-    "3QS": "MB732", "3QT": "MB735", "3QU": "MB739", "3QW": "MB742",
-    "3QX": "MB745", "3QY": "MB748", "3R0": "MB754", "3QZ": "MB751",
-    # Nano 5G
-    "71V": "MC027", "71Y": "MC031", "721": "MC034", "726": "MC037",
-    "72A": "MC040", "72F": "MC046", "72K": "MC049", "72L": "MC050",
-    "72Q": "MC060", "72R": "MC062",
-    # Video 5G / 5.5G
-    "SZ9": "MA002", "TXK": "MA146", "TXM": "MA146",
-    "V96": "MA450", "WUC": "MA450", "W9G": "MA664",
-}
 
 
 def _extract_guid_from_instance_id(instance_id: str) -> str:
@@ -172,73 +79,6 @@ def _extract_guid_from_instance_id(instance_id: str) -> str:
             except ValueError:
                 pass
     return ""
-
-
-@dataclass
-class DiscoveredIPod:
-    """A discovered iPod device."""
-    path: str  # Mount root path (e.g., "D:\\" on Windows, "/Volumes/iPod" on macOS)
-    mount_name: str  # Display name for the mount (e.g., "D:", "iPod", "IPOD")
-
-    # Identification (may be partially filled)
-    model_family: str = "iPod"  # e.g., "iPod Classic", "iPod Nano"
-    generation: str = ""  # e.g., "3rd Gen"
-    capacity: str = ""  # e.g., "160GB"
-    color: str = ""  # e.g., "Black"
-    model_number: str = ""  # e.g., "MC297"
-
-    # Technical
-    firewire_guid: str = ""
-    serial: str = ""
-    firmware: str = ""
-    usb_pid: int = 0
-    hashing_scheme: int = -1  # from iTunesDB header
-    disk_size_gb: float = 0.0
-    free_space_gb: float = 0.0
-
-    # How was it identified?
-    identification_method: str = "filesystem"  # filesystem, usb_pid, serial, sysinfo, hashing
-
-    @property
-    def drive_letter(self) -> str:
-        """Backward-compatible drive letter (Windows only)."""
-        if sys.platform == "win32" and self.mount_name and self.mount_name[0].isalpha():
-            return self.mount_name[0]
-        return ""
-
-    @property
-    def display_name(self) -> str:
-        """User-friendly display name."""
-        parts = [self.model_family]
-        if self.generation:
-            parts.append(self.generation)
-        if self.capacity:
-            parts.append(self.capacity)
-        if self.color:
-            parts.append(self.color)
-        return " ".join(parts)
-
-    @property
-    def subtitle(self) -> str:
-        """Secondary line (mount name + free space)."""
-        parts = [self.mount_name]
-        if self.disk_size_gb > 0:
-            parts.append(f"{self.free_space_gb:.1f} / {self.disk_size_gb:.1f} GB free")
-        return " — ".join(parts)
-
-    @property
-    def icon(self) -> str:
-        """Emoji icon based on model family."""
-        family = self.model_family.lower()
-        if "classic" in family or "video" in family or "photo" in family:
-            return "📱"
-        elif "nano" in family:
-            return "🎵"
-        elif "shuffle" in family:
-            return "🔀"
-        elif "mini" in family:
-            return "🎶"
-        return "🎵"
 
 
 def _get_drive_letters() -> list[str]:
@@ -1414,7 +1254,7 @@ def _resolve_model(
     capacity, color, firewire_guid, serial, firmware, usb_pid, hashing_scheme,
     identification_method.
     """
-    from iTunesDB_Writer.device import IPOD_MODELS
+    from ipod_models import get_model_info
 
     resolved: dict = {}
 
@@ -1450,7 +1290,7 @@ def _resolve_model(
     # Layer 1: SysInfo ModelNumStr → IPOD_MODELS (highest confidence)
     sysinfo_model = fs.get("model_number", "")
     if sysinfo_model:
-        info = IPOD_MODELS.get(sysinfo_model)
+        info = get_model_info(sysinfo_model)
         if info:
             resolved["model_number"] = sysinfo_model
             resolved["model_family"] = info[0]
@@ -1512,7 +1352,6 @@ def _resolve_model(
 
 def _identify_via_sysinfo(ipod_path: str) -> Optional[dict]:
     """Try to identify via SysInfo / SysInfoExtended files."""
-    from iTunesDB_Writer.device import IPOD_MODELS
 
     result: dict = {}
 
@@ -1549,21 +1388,16 @@ def _identify_via_sysinfo(ipod_path: str) -> Optional[dict]:
                     key, val = key.strip(), val.strip()
                     if key == "ModelNumStr" and val:
                         result["model_raw"] = val
-                        # Parse model number
-                        model_str = val
-                        if model_str.startswith("x"):
-                            model_str = "M" + model_str[1:]
-                        import re
-                        match = re.match(r"^(M[A-Z]?\d{3,4})", model_str.upper())
-                        if match:
-                            model_num = match.group(1)
+                        from ipod_models import extract_model_number, get_model_info
+                        model_num = extract_model_number(val)
+                        if model_num:
                             result["model_number"] = model_num
-                            info = IPOD_MODELS.get(model_num)
-                            if info:
-                                result["model_family"] = info[0]
-                                result["generation"] = info[1]
-                                result["capacity"] = info[2]
-                                result["color"] = info[3]
+                            mi = get_model_info(model_num)
+                            if mi:
+                                result["model_family"] = mi[0]
+                                result["generation"] = mi[1]
+                                result["capacity"] = mi[2]
+                                result["color"] = mi[3]
                     elif key == "pszSerialNumber" and val:
                         result.setdefault("serial", val)
                     elif key == "FirewireGuid" and val:
@@ -1618,26 +1452,20 @@ def _identify_via_hashing_scheme(ipod_path: str) -> Optional[dict]:
 
 def _identify_via_serial_lookup(serial: str) -> Optional[dict]:
     """Look up model from serial number's last 3 characters."""
-    from iTunesDB_Writer.device import IPOD_MODELS
+    from ipod_models import lookup_by_serial
 
-    if not serial or len(serial) < 3:
+    result = lookup_by_serial(serial)
+    if not result:
         return None
 
-    last3 = serial[-3:]
-    model_num = SERIAL_LAST3_TO_MODEL.get(last3)
-    if not model_num:
-        return None
-
-    info = IPOD_MODELS.get(model_num)
-    if info:
-        return {
-            "model_number": model_num,
-            "model_family": info[0],
-            "generation": info[1],
-            "capacity": info[2],
-            "color": info[3],
-        }
-    return {"model_number": model_num}
+    model_num, info = result
+    return {
+        "model_number": model_num,
+        "model_family": info[0],
+        "generation": info[1],
+        "capacity": info[2],
+        "color": info[3],
+    }
 
 
 def _estimate_capacity_from_disk_size(disk_gb: float) -> str:
@@ -1658,46 +1486,55 @@ def _estimate_capacity_from_disk_size(disk_gb: float) -> str:
     return ""
 
 
-def _model_matches_disk_size(model_family: str, disk_gb: float) -> bool:
+def _try_vpd_identification(ipod: DeviceInfo) -> None:
+    """Attempt full VPD-based identification for an incompletely resolved iPod.
+
+    Delegates to :func:`ipod_usb_query.identify_via_vpd` which handles all
+    platforms (IOKit on macOS, pyusb on Linux/Windows) and writes SysInfo
+    so future scans are instant.
     """
-    Sanity-check whether the identified model is plausible given the disk size.
+    try:
+        from ipod_usb_query import identify_via_vpd
+    except ImportError:
+        return
 
-    This catches misidentification where e.g. a 2GB Nano is wrongly identified
-    as a 160GB Classic due to stale USB PID entries.
-    """
-    family = model_family.lower()
+    result = identify_via_vpd(
+        mount_path=ipod.path,
+        usb_pid=ipod.usb_pid,
+        firewire_guid=ipod.firewire_guid,
+    )
+    if result is None:
+        return
 
-    if "classic" in family:
-        # iPod Classic: 80GB, 120GB, 160GB  → real disk > 60GB
-        return disk_gb > 60
-    elif "video" in family:
-        # iPod Video: 30GB, 60GB, 80GB → real disk > 20GB
-        return disk_gb > 20
-    elif "photo" in family:
-        # iPod Photo: 20GB, 30GB, 40GB, 60GB → real disk > 15GB
-        return disk_gb > 15
-    elif "mini" in family:
-        # iPod Mini: 4GB, 6GB → real disk 2-8GB
-        return 2 <= disk_gb <= 10
-    elif "nano" in family:
-        # iPod Nano: 1-16GB → real disk < 20GB
-        return disk_gb < 20
-    elif "shuffle" in family:
-        # iPod Shuffle: 512MB - 4GB → real disk < 5GB
-        return disk_gb < 5
-    elif family == "ipod":
-        # Generic iPod (1G-4G): 5-40GB → real disk > 3GB
-        return disk_gb > 3
+    # Apply resolved fields
+    if result["model_number"]:
+        ipod.model_number = result["model_number"]
+        ipod.model_family = result["model_family"]
+        ipod.generation = result["generation"]
+        ipod.capacity = result["capacity"]
+        ipod.color = result["color"]
+        ipod.identification_method = "usb_vpd"
 
-    # Unknown family — don't reject
-    return True
+    if not ipod.serial and result["serial"]:
+        ipod.serial = result["serial"]
+    if not ipod.firewire_guid and result["firewire_guid"]:
+        ipod.firewire_guid = result["firewire_guid"]
+    if not ipod.firmware and result["firmware"]:
+        ipod.firmware = result["firmware"]
+
+    # Update mount path in case pyusb caused a remount to a different path
+    if result["mount_path"] and result["mount_path"] != ipod.path:
+        logger.info("  VPD: mount path changed %s → %s", ipod.path, result["mount_path"])
+        ipod.path = result["mount_path"]
 
 
-def scan_for_ipods() -> list[DiscoveredIPod]:
+def scan_for_ipods() -> list[DeviceInfo]:
     """
     Scan all mounted volumes for connected iPods.
 
-    Uses a unified three-phase pipeline:
+    Uses a unified four-phase pipeline, then calls ``enrich()`` so each
+    returned :class:`DeviceInfo` is fully populated (checksum type, artwork
+    formats, HashInfo, disk stats, etc.).
 
       **Phase 1 — Hardware probing** (platform-specific):
         Windows: Direct IOCTL + device tree walk, with silent WMI fallback.
@@ -1710,14 +1547,23 @@ def scan_for_ipods() -> list[DiscoveredIPod]:
       **Phase 3 — Model resolution** (per-field priority merge):
         SysInfo ModelNumStr > serial last-3 > USB PID > hashing_scheme.
 
-    Returns a list of DiscoveredIPod objects.
+      **Phase 4 — Inline VPD** (macOS only, for incomplete identification):
+        If model_number is still unknown after Phase 3, query the iPod's
+        firmware via IOKit SCSI VPD to get the Apple serial, then resolve
+        via serial-last-3 lookup.  Writes SysInfo so this only runs once.
+
+      **Phase 5 — Enrich** (fills derived fields: checksum, artwork, etc.)
+
+    Returns a list of fully-enriched DeviceInfo objects.
     """
-    ipods: list[DiscoveredIPod] = []
+    from device_info import enrich
+
+    ipods: list[DeviceInfo] = []
 
     for mount_path, display_name in _find_ipod_volumes():
         logger.info("Found iPod_Control at %s", mount_path)
 
-        ipod = DiscoveredIPod(path=mount_path, mount_name=display_name)
+        ipod = DeviceInfo(path=mount_path, mount_name=display_name)
         ipod.disk_size_gb, ipod.free_space_gb = _get_disk_info(mount_path)
 
         # ── Phase 1: Hardware probing ──────────────────────────────────
@@ -1729,7 +1575,7 @@ def scan_for_ipods() -> list[DiscoveredIPod]:
         # ── Phase 3: Model resolution (per-field priority merge) ───────
         resolved = _resolve_model(hw, fs, ipod.disk_size_gb)
 
-        # Apply resolved fields to the DiscoveredIPod
+        # Apply resolved fields to the DeviceInfo
         ipod.model_number = resolved.get("model_number", "")
         ipod.model_family = resolved.get("model_family", "iPod")
         ipod.generation = resolved.get("generation", "")
@@ -1742,9 +1588,16 @@ def scan_for_ipods() -> list[DiscoveredIPod]:
         ipod.hashing_scheme = resolved.get("hashing_scheme", -1)
         ipod.identification_method = resolved.get("identification_method", "filesystem")
 
+        # ── Phase 4: Inline VPD for incomplete identification ──────────
+        if not ipod.model_number and ipod.usb_pid:
+            _try_vpd_identification(ipod)
+
         # Estimate capacity from disk size if still unknown
         if not ipod.capacity and ipod.disk_size_gb > 0:
             ipod.capacity = _estimate_capacity_from_disk_size(ipod.disk_size_gb)
+
+        # ── Phase 5: Enrich (fills checksum, artwork, HashInfo, etc.) ──
+        enrich(ipod)
 
         logger.info(
             "  Identified: %s (method=%s, model=%s, serial=%s)",

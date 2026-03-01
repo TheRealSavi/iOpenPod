@@ -1,5 +1,6 @@
 """Integration test for the unified device scanner pipeline."""
 from GUI.device_scanner import scan_for_ipods
+from device_info import get_firewire_id
 import logging
 logging.basicConfig(level=logging.DEBUG)
 
@@ -25,6 +26,7 @@ else:
         print(f"Firmware:     {ipod.firmware}")
         print(f"Method:       {ipod.identification_method}")
         print(f"Hash scheme:  {ipod.hashing_scheme}")
+        print(f"Checksum:     {ipod.checksum_type}")
         print(f"Disk:         {ipod.disk_size_gb:.1f} GB ({ipod.free_space_gb:.1f} GB free)")
         gb_str = gb.hex() if gb else missing
         gb_len = len(gb) if gb else 0
@@ -35,7 +37,6 @@ else:
     # Also test get_firewire_id with the pre-discovered GUID
     print()
     print("--- Testing get_firewire_id() ---")
-    from iTunesDB_Writer.device import get_firewire_id
 
     ipod = results[0]
 
@@ -43,9 +44,9 @@ else:
     fwid = get_firewire_id(ipod.path, known_guid=ipod.firewire_guid)
     print(f"get_firewire_id(known_guid): {fwid.hex()} ({len(fwid)} bytes)")
 
-    # Test 2: Without pre-discovered GUID (should use device tree)
+    # Test 2: Without pre-discovered GUID (should use store)
     fwid2 = get_firewire_id(ipod.path)
-    print(f"get_firewire_id(probing):    {fwid2.hex()} ({len(fwid2)} bytes)")
+    print(f"get_firewire_id(store):      {fwid2.hex()} ({len(fwid2)} bytes)")
 
     assert fwid == fwid2, "GUID mismatch!"
     print("GUIDs match!")

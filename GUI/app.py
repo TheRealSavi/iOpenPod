@@ -45,7 +45,7 @@ class DeviceManager(QObject):
     def __init__(self):
         super().__init__()
         self._device_path = None
-        self._discovered_ipod = None  # cached DiscoveredIPod from last scan
+        self._discovered_ipod = None  # cached DeviceInfo from last scan
         self._cancellation_token = CancellationToken()
 
     @classmethod
@@ -69,13 +69,13 @@ class DeviceManager(QObject):
 
     @property
     def discovered_ipod(self):
-        """Return the cached DiscoveredIPod from the last scan, if any."""
+        """Return the cached DeviceInfo from the last scan, if any."""
         return self._discovered_ipod
 
     @discovered_ipod.setter
     def discovered_ipod(self, ipod):
         self._discovered_ipod = ipod
-        # Populate the centralised device info store
+        # Store in the centralised device info store
         self._sync_device_info(ipod)
 
     @device_path.setter
@@ -120,31 +120,18 @@ class DeviceManager(QObject):
 
     @staticmethod
     def _sync_device_info(ipod) -> None:
-        """Convert a DiscoveredIPod to a DeviceInfo and store it centrally."""
-        from device_info import DeviceInfo, set_current_device, enrich, clear_current_device
+        """Store a DeviceInfo (from scanner) in the centralised store.
+
+        The scanner already calls ``enrich()`` so devices arrive
+        fully populated — no conversion or re-probing needed.
+        """
+        from device_info import set_current_device, clear_current_device
 
         if ipod is None:
             clear_current_device()
             return
 
-        info = DeviceInfo(
-            path=ipod.path,
-            model_number=ipod.model_number,
-            model_family=ipod.model_family,
-            generation=ipod.generation,
-            capacity=ipod.capacity,
-            color=ipod.color,
-            firewire_guid=ipod.firewire_guid,
-            serial=ipod.serial,
-            firmware=ipod.firmware,
-            usb_pid=ipod.usb_pid,
-            hashing_scheme=ipod.hashing_scheme,
-            disk_size_gb=ipod.disk_size_gb,
-            free_space_gb=ipod.free_space_gb,
-            identification_method=ipod.identification_method,
-        )
-        enrich(info)
-        set_current_device(info)
+        set_current_device(ipod)
 
 
 class ThreadPoolSingleton:
@@ -749,17 +736,13 @@ class MainWindow(QMainWindow):
         # Get device name from folder
         device_name = os.path.basename(device.device_path) if device.device_path else "iPod"
 
-        # Get actual device info from SysInfo if available
-        device_info = None
+        # Get model name from centralised DeviceInfo store
         model = "iPod"  # Default
         try:
-            from iTunesDB_Writer.device import get_device_info
-            if device.device_path:
-                device_info = get_device_info(device.device_path)
-                if 'friendly_name' in device_info:
-                    model = device_info['friendly_name']
-                elif 'model_name' in device_info:
-                    model = device_info['model_name']
+            from device_info import get_current_device
+            dev = get_current_device()
+            if dev:
+                model = dev.display_name
         except Exception as e:
             logger.warning("Could not get device info: %s", e)
 
@@ -784,7 +767,6 @@ class MainWindow(QMainWindow):
             albums=len(albums),
             size_bytes=total_size,
             duration_ms=total_duration,
-            device_info=device_info,
             db_version_hex=db_version_hex,
             db_version_name=db_version_name,
             db_id=db_id
