@@ -247,19 +247,25 @@ The Nano 2G returned **37 fields** and **6,279 bytes**.
 ## Architecture
 
 ```
+ipod_usb_query.py
+  └─ identify_via_vpd()                              ← single entry point
+       ├─ _vpd_query_any_platform()
+       │    ├─ macOS fast path: ipod_iokit_query.query_ipod_vpd()  ← IOKit, no root
+       │    └─ Fallback: query_ipod_vpd()             ← pyusb, root on Linux
+       ├─ ipod_models.lookup_by_serial()              ← serial-last-3 → exact model
+       ├─ _wait_for_remount()                         ← pyusb remount handling
+       └─ write_sysinfo()                             ← persist to iPod
+
 device_info.py
-  └─ _enrich_from_usb_vpd()
-       ├─ macOS fast path: _try_iokit_vpd()
-       │    └─ ipod_iokit_query.query_ipod_vpd()    ← IOKit, no root
-       │         └─ _apply_vpd_result()              ← write SysInfo + update DeviceInfo
-       │
-       └─ Fallback: ipod_usb_query.query_ipod_vpd() ← pyusb, root required
-            └─ remount wait → _apply_vpd_result()
+  └─ _enrich_from_usb_vpd()  → calls identify_via_vpd()
+
+GUI/device_scanner.py
+  └─ _try_vpd_identification()  → calls identify_via_vpd()
 ```
 
 On non-macOS platforms, `ipod_iokit_query` raises `ImportError` at import time
-(line 34: `if sys.platform != "darwin": raise ImportError`).  The `_try_iokit_vpd`
-wrapper catches this and falls through to the pyusb path automatically.
+(line 34: `if sys.platform != "darwin": raise ImportError`).  The centralized
+`_vpd_query_any_platform()` catches this and falls through to pyusb automatically.
 
 ## Platform Compatibility
 

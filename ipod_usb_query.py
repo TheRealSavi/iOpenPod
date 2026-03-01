@@ -50,17 +50,12 @@ import struct
 import sys
 from typing import Optional
 
+from ipod_models import IPOD_USB_PIDS as IPOD_PIDS
+
 logger = logging.getLogger(__name__)
 
 # Apple USB Vendor ID
 APPLE_VID = 0x05AC
-
-# Known iPod USB PIDs (mass storage mode)
-IPOD_PIDS = {
-    0x1201, 0x1202, 0x1203, 0x1204, 0x1205, 0x1206, 0x1207, 0x1208,
-    0x1209, 0x120A, 0x1260, 0x1261, 0x1262, 0x1263, 0x1265, 0x1266,
-    0x1267, 0x1301, 0x1302, 0x1303, 0x1304, 0x1305, 0x1306, 0x1307,
-}
 
 
 def _find_ipod_devices() -> list:
@@ -534,6 +529,187 @@ def write_sysinfo(ipod_path: str, vpd_info: dict) -> bool:
 
 
 # ──────────────────────────────────────────────────────────────────────
+# High-level identification — single entry point for all callers
+# ──────────────────────────────────────────────────────────────────────
+
+def identify_via_vpd(
+    mount_path: str = "",
+    usb_pid: int = 0,
+    firewire_guid: str = "",
+    *,
+    write_sysinfo_to_device: bool = True,
+) -> Optional[dict]:
+    """Full iPod identification via SCSI VPD + model lookup + SysInfo write.
+
+    Tries **IOKit** (macOS, no root, no unmount) first, then falls back to
+    **pyusb** (root required on Linux, no root on Windows; unmounts disk on
+    Linux/macOS).
+
+    On success, resolves the exact model (family, generation, capacity,
+    color) from the Apple serial's last 3 characters and optionally writes
+    SysInfo + SysInfoExtended to the iPod for instant future identification.
+
+    Parameters
+    ----------
+    mount_path : str
+        iPod mount point (e.g. ``"/Volumes/IPOD"``).  Required for SysInfo
+        writing; optional for query-only use.
+    usb_pid : int
+        Target a specific USB Product ID (0 = any).
+    firewire_guid : str
+        Target a specific USB serial / FireWire GUID (case-insensitive).
+    write_sysinfo_to_device : bool
+        If True (default) and *mount_path* is set, write SysInfo files.
+
+    Returns
+    -------
+    dict or None
+        ``serial``, ``firewire_guid``, ``firmware``, ``model_number``,
+        ``model_family``, ``generation``, ``capacity``, ``color``,
+        ``mount_path`` (may differ from input after pyusb remount),
+        ``sysinfo_written`` (bool), ``vpd_info`` (raw VPD dict).
+    """
+    # ── Step 1: VPD query (IOKit fast path, then pyusb fallback) ───
+    vpd_info = _vpd_query_any_platform(usb_pid, firewire_guid)
+    if vpd_info is None:
+        return None
+
+    apple_serial = vpd_info.get("SerialNumber", "")
+    if not apple_serial:
+        logger.debug("identify_via_vpd: VPD returned no Apple serial")
+        return None
+
+    # ── Step 2: Resolve model from serial-last-3 ──────────────────
+    vpd_fw_guid = vpd_info.get("FireWireGUID") or vpd_info.get("usb_serial", "")
+    result: dict = {
+        "serial": apple_serial,
+        "firewire_guid": vpd_fw_guid.upper() or firewire_guid,
+        "firmware": vpd_info.get("VisibleBuildID", vpd_info.get("BuildID", "")),
+        "model_number": "",
+        "model_family": "",
+        "generation": "",
+        "capacity": "",
+        "color": "",
+        "mount_path": mount_path,
+        "sysinfo_written": False,
+        "vpd_info": vpd_info,
+    }
+
+    try:
+        from ipod_models import lookup_by_serial
+
+        lookup = lookup_by_serial(apple_serial)
+        if lookup:
+            model_num, info = lookup
+            result["model_number"] = model_num
+            result["model_family"] = info[0]
+            result["generation"] = info[1]
+            result["capacity"] = info[2]
+            result["color"] = info[3]
+            logger.info(
+                "identify_via_vpd: serial=%s → %s %s %s %s (%s)",
+                apple_serial, info[0], info[1], info[2], info[3], model_num,
+            )
+    except ImportError:
+        pass
+
+    # ── Step 3: Handle pyusb remount (non-Windows, non-IOKit) ─────
+    used_pyusb = vpd_info.get("_used_pyusb", False)
+    if used_pyusb and sys.platform != "win32" and mount_path:
+        result["mount_path"] = _wait_for_remount(mount_path, firewire_guid, vpd_info)
+
+    # ── Step 4: Write SysInfo to iPod ─────────────────────────────
+    effective_path = result["mount_path"]
+    if write_sysinfo_to_device and effective_path and os.path.exists(effective_path):
+        try:
+            wrote = write_sysinfo(effective_path, vpd_info)
+            result["sysinfo_written"] = wrote
+            if wrote:
+                logger.info("identify_via_vpd: wrote SysInfo to %s", effective_path)
+        except Exception as exc:
+            logger.debug("identify_via_vpd: SysInfo write failed: %s", exc)
+
+    return result
+
+
+def _vpd_query_any_platform(usb_pid: int, firewire_guid: str) -> Optional[dict]:
+    """Try IOKit (macOS) first, then pyusb, returning the raw VPD dict."""
+
+    # ── macOS fast path: IOKit SCSI (no root, no unmount) ──────────
+    if sys.platform == "darwin":
+        try:
+            from ipod_iokit_query import query_ipod_vpd as iokit_query
+
+            vpd = iokit_query(usb_pid=usb_pid, serial_filter=firewire_guid)
+            if vpd and vpd.get("SerialNumber"):
+                logger.debug("_vpd_query_any_platform: IOKit success")
+                return vpd
+        except ImportError:
+            logger.debug("_vpd_query_any_platform: ipod_iokit_query not available")
+        except Exception as exc:
+            logger.debug("_vpd_query_any_platform: IOKit failed: %s", exc)
+
+    # ── Fallback: pyusb (root on Linux/macOS, no root on Windows) ──
+    if sys.platform != "win32":
+        try:
+            if os.geteuid() != 0:
+                logger.debug("_vpd_query_any_platform: pyusb skipped (not root)")
+                return None
+        except AttributeError:
+            pass
+
+    try:
+        vpd = query_ipod_vpd(usb_pid=usb_pid, serial_filter=firewire_guid)
+        if vpd and vpd.get("SerialNumber"):
+            vpd["_used_pyusb"] = True
+            return vpd
+    except PermissionError:
+        logger.debug("_vpd_query_any_platform: pyusb needs root")
+    except ImportError:
+        logger.debug("_vpd_query_any_platform: pyusb not available")
+    except Exception as exc:
+        logger.debug("_vpd_query_any_platform: pyusb failed: %s", exc)
+
+    return None
+
+
+def _wait_for_remount(
+    original_path: str, firewire_guid: str, vpd_info: dict,
+) -> str:
+    """After a pyusb VPD query unmounts the disk, wait for it to come back.
+
+    Returns the (possibly new) mount path.
+    """
+    import time
+
+    logger.debug("_wait_for_remount: waiting for %s to remount...", original_path)
+
+    usb_serial = vpd_info.get("usb_serial", "") or firewire_guid
+
+    for _attempt in range(12):
+        time.sleep(1)
+        # Lookup by USB serial handles path renames after remount
+        if usb_serial:
+            new_path = _find_mount_point_for_usb_serial(usb_serial)
+            if new_path:
+                if new_path != original_path:
+                    logger.info(
+                        "_wait_for_remount: remounted at %s (was %s)",
+                        new_path, original_path,
+                    )
+                return new_path
+        # Fallback: check if original path is still valid
+        if os.path.ismount(original_path):
+            return original_path
+
+    logger.warning(
+        "_wait_for_remount: iPod did not remount within 12s (serial=%s)",
+        usb_serial,
+    )
+    return original_path
+
+
+# ──────────────────────────────────────────────────────────────────────
 # Mount-point resolution — per-platform implementations
 # ──────────────────────────────────────────────────────────────────────
 
@@ -897,18 +1073,15 @@ def main() -> int:
         # Try serial-last-3 model lookup
         apple_serial = info.get("SerialNumber", "")
         if apple_serial and len(apple_serial) >= 3:
-            last3 = apple_serial[-3:]
             try:
-                from GUI.device_scanner import SERIAL_LAST3_TO_MODEL
-                from iTunesDB_Writer.device import IPOD_MODELS
-                model_num = SERIAL_LAST3_TO_MODEL.get(last3)
-                if model_num:
-                    model_info = IPOD_MODELS.get(model_num)
-                    if model_info:
-                        print(f"\n  Model:           {model_info[0]} {model_info[1]}")
-                        print(f"  Capacity:        {model_info[2]}")
-                        print(f"  Color:           {model_info[3]}")
-                        print(f"  Model Number:    {model_num}")
+                from ipod_models import lookup_by_serial
+                result = lookup_by_serial(apple_serial)
+                if result:
+                    model_num, model_info = result
+                    print(f"\n  Model:           {model_info[0]} {model_info[1]}")
+                    print(f"  Capacity:        {model_info[2]}")
+                    print(f"  Color:           {model_info[3]}")
+                    print(f"  Model Number:    {model_num}")
             except ImportError:
                 pass
 
