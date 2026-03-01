@@ -344,23 +344,118 @@ def _find_ipod_volumes() -> list[tuple[str, str]]:
     return candidates
 
 
+# ── macOS: BSD name → USB serial mapping via ioreg text parsing ────────
+#
+# ioreg's plist (-a) format does NOT include "BSD Name" on child IOMedia
+# nodes, but the text format does.  We parse the text output to build a
+# mapping from BSD whole-disk name (e.g. "disk4") to the owning USB
+# device's serial number.  A second (plist) query then gives us the
+# full device properties keyed by serial.
+#
+# Cache is built once per scan cycle and cleared at the end of
+# scan_for_ipods().
+
+_macos_bsd_to_serial: dict[str, str] | None = None
+_macos_serial_to_dev: dict[str, dict] | None = None
+
+
+def _build_macos_usb_cache() -> None:
+    """Build both caches from ioreg in one shot."""
+    global _macos_bsd_to_serial, _macos_serial_to_dev
+
+    import plistlib
+    import re as _re
+    import subprocess
+
+    bsd_map: dict[str, str] = {}
+    dev_map: dict[str, dict] = {}
+
+    # ── 1. Text parse: map BSD whole-disk → USB serial ─────────────────
+    #
+    # The text ioreg output for iPod nodes looks like:
+    #   +-o iPod@01130000  <class IOUSBHostDevice, ...>
+    #     |   "USB Serial Number" = "000A270018A1F847"
+    #     |   "idProduct" = 4704
+    #     ...
+    #     +-o Apple iPod Media  <class IOMedia, ...>
+    #     |   "BSD Name" = "disk4"
+    #
+    # We track the current USB serial as we scan lines.  When we hit a
+    # "BSD Name" at a deeper indent, we know which USB device owns it.
+    try:
+        proc = subprocess.run(
+            ["ioreg", "-r", "-c", "IOUSBHostDevice", "-n", "iPod",
+             "-l", "-d", "20", "-w", "0"],
+            capture_output=True, text=True, timeout=15,
+        )
+        if proc.returncode == 0 and proc.stdout:
+            current_serial: str = ""
+            for line in proc.stdout.splitlines():
+                # USB Serial Number
+                m = _re.search(r'"USB Serial Number"\s*=\s*"([^"]+)"', line)
+                if m:
+                    current_serial = m.group(1).replace(" ", "").strip()
+                    continue
+                # BSD Name on IOMedia child
+                m = _re.search(r'"BSD Name"\s*=\s*"(disk\d+)"', line)
+                if m and current_serial:
+                    bsd_map[m.group(1)] = current_serial.upper()
+    except Exception as e:
+        logger.debug("macOS: ioreg text parse failed: %s", e)
+
+    if bsd_map:
+        logger.debug("macOS: BSD→serial map: %s", bsd_map)
+
+    # ── 2. Plist query: full device properties keyed by serial ─────────
+    for ioreg_args in [
+        ["ioreg", "-a", "-r", "-c", "IOUSBHostDevice", "-n", "iPod"],
+        ["ioreg", "-a", "-r", "-d", "1", "-c", "IOUSBHostDevice"],
+    ]:
+        if dev_map:
+            break
+        try:
+            proc = subprocess.run(
+                ioreg_args, capture_output=True, timeout=10,
+            )
+            if proc.returncode != 0 or not proc.stdout.strip():
+                continue
+            parsed = plistlib.loads(proc.stdout)
+            if not isinstance(parsed, list):
+                parsed = [parsed]
+            for dev in parsed:
+                if dev.get("idVendor", 0) != 0x05AC:
+                    continue
+                serial = (dev.get("USB Serial Number", "") or dev.get("kUSBSerialNumberString", ""))
+                key = serial.replace(" ", "").strip().upper()
+                if key:
+                    dev_map[key] = dev
+        except Exception as e:
+            logger.debug("ioreg plist query failed: %s", e)
+
+    _macos_bsd_to_serial = bsd_map
+    _macos_serial_to_dev = dev_map
+
+
 def _probe_hardware_macos(mount_path: str) -> dict:
     """
     macOS hardware probing via ioreg + diskutil.
 
-    Uses ``diskutil info`` to confirm the volume is on a USB bus, then
-    queries ``ioreg`` for Apple USB host devices (filtered to iPod-named
-    devices) to extract the USB PID, serial number, and FireWire GUID.
+    **Matching strategy**: ``diskutil info`` gives the BSD whole-disk name
+    for each volume.  A text-format ``ioreg`` query maps BSD names to USB
+    serial numbers (because the text format exposes "BSD Name" on IOMedia
+    children, while the plist format does not).  A second plist query gives
+    full device properties (PID, serial, firmware) keyed by serial.
 
-    Falls back to scanning all Apple USB devices if the iPod-specific
-    query doesn't match.
+    This correctly associates each volume with its own USB device even when
+    multiple iPods are connected, without relying on SysInfo files.
     """
     import plistlib
     import subprocess
 
     result: dict = {}
 
-    # ── Step 1: Confirm this volume is on USB via diskutil ─────────────
+    # ── Step 1: Confirm USB bus and get BSD whole-disk via diskutil ─────
+    bsd_whole_disk: str | None = None
     try:
         proc = subprocess.run(
             ["diskutil", "info", "-plist", mount_path],
@@ -373,87 +468,71 @@ def _probe_hardware_macos(mount_path: str) -> dict:
                     "macOS probe: %s is not on USB (protocol=%s)",
                     mount_path, disk_info.get("BusProtocol"),
                 )
-                # Not a USB device — no USB hardware info to gather
                 return result
+            bsd_whole_disk = disk_info.get("ParentWholeDisk")
     except Exception as e:
         logger.debug("diskutil info failed for %s: %s", mount_path, e)
 
-    # ── Step 2: Query ioreg for Apple USB devices ──────────────────────
-    # First try iPod-specific query (fast), then fall back to all USB devices.
-    apple_usb_devices: list[dict] = []
+    # ── Step 2: Ensure the ioreg caches are built ──────────────────────
+    if _macos_bsd_to_serial is None or _macos_serial_to_dev is None:
+        _build_macos_usb_cache()
 
-    for ioreg_args in [
-        # Fast path: only devices named "iPod"
-        ["ioreg", "-a", "-r", "-c", "IOUSBHostDevice", "-n", "iPod"],
-        # Fallback: all USB host devices (slower, but catches renamed iPods)
-        ["ioreg", "-a", "-r", "-d", "1", "-c", "IOUSBHostDevice"],
-    ]:
-        if apple_usb_devices:
-            break
-        try:
-            proc = subprocess.run(
-                ioreg_args, capture_output=True, timeout=10,
-            )
-            if proc.returncode != 0 or not proc.stdout.strip():
-                continue
-            devices = plistlib.loads(proc.stdout)
-            if not isinstance(devices, list):
-                devices = [devices]
-            # Filter to Apple vendor (0x05AC = 1452)
-            for dev in devices:
-                vendor = dev.get("idVendor", 0)
-                if vendor == 0x05AC:
-                    apple_usb_devices.append(dev)
-        except Exception as e:
-            logger.debug("ioreg query %s failed: %s", ioreg_args[:5], e)
+    bsd_map = _macos_bsd_to_serial or {}
+    dev_map = _macos_serial_to_dev or {}
 
-    if not apple_usb_devices:
+    if not dev_map:
         logger.debug("macOS probe: no Apple USB devices found in ioreg")
         return result
 
-    # ── Step 3: Extract info from the matched device ───────────────────
-    # If there's exactly one Apple USB device, use it directly.
-    # If multiple, pick the one with a known iPod PID.
-    target_dev = None
-    if len(apple_usb_devices) == 1:
-        target_dev = apple_usb_devices[0]
-    else:
-        for dev in apple_usb_devices:
-            pid = dev.get("idProduct", 0)
-            if pid in USB_PID_TO_MODEL:
-                target_dev = dev
-                break
-        if not target_dev:
-            target_dev = apple_usb_devices[0]
+    # ── Step 3: Match this volume's BSD name → USB serial → device ─────
+    target_dev: dict | None = None
 
-    if target_dev:
-        # USB PID
-        pid = target_dev.get("idProduct", 0)
-        if pid:
-            result["usb_pid"] = pid
-            model_info = USB_PID_TO_MODEL.get(pid)
-            if model_info:
-                result["model_family"] = model_info[0]
-                result["generation"] = model_info[1]
+    if bsd_whole_disk and bsd_whole_disk in bsd_map:
+        serial_key = bsd_map[bsd_whole_disk]
+        target_dev = dev_map.get(serial_key)
+        if target_dev:
+            logger.debug(
+                "macOS probe: %s → %s → serial %s → PID 0x%04X",
+                mount_path, bsd_whole_disk, serial_key,
+                target_dev.get("idProduct", 0),
+            )
 
-        # Serial number / FireWire GUID
-        serial = target_dev.get("USB Serial Number", "") or target_dev.get("kUSBSerialNumberString", "")
-        if serial:
-            result["serial"] = serial
-            clean = serial.replace(" ", "").strip()
-            if len(clean) == 16:
-                try:
-                    bytes.fromhex(clean)
-                    result["firewire_guid"] = clean.upper()
-                except ValueError:
-                    pass
+    # Fallback: if only one USB device, use it directly
+    if not target_dev and len(dev_map) == 1:
+        target_dev = next(iter(dev_map.values()))
 
-        # Firmware revision (bcdDevice)
-        bcd = target_dev.get("bcdDevice", 0)
-        if bcd:
-            major = (bcd >> 8) & 0xFF
-            minor = bcd & 0xFF
-            result["firmware"] = f"{major}.{minor:02d}"
+    if not target_dev:
+        logger.debug(
+            "macOS probe: could not match %s (bsd=%s) to any Apple "
+            "USB device", mount_path, bsd_whole_disk or "unknown",
+        )
+        return result
+
+    # ── Step 4: Extract device info ────────────────────────────────────
+    pid = target_dev.get("idProduct", 0)
+    if pid:
+        result["usb_pid"] = pid
+        model_info = USB_PID_TO_MODEL.get(pid)
+        if model_info:
+            result["model_family"] = model_info[0]
+            result["generation"] = model_info[1]
+
+    serial = (target_dev.get("USB Serial Number", "") or target_dev.get("kUSBSerialNumberString", ""))
+    if serial:
+        result["serial"] = serial
+        clean = serial.replace(" ", "").strip()
+        if len(clean) == 16:
+            try:
+                bytes.fromhex(clean)
+                result["firewire_guid"] = clean.upper()
+            except ValueError:
+                pass
+
+    bcd = target_dev.get("bcdDevice", 0)
+    if bcd:
+        major = (bcd >> 8) & 0xFF
+        minor = bcd & 0xFF
+        result["firmware"] = f"{major}.{minor:02d}"
 
     return result
 
@@ -1394,20 +1473,15 @@ def _resolve_model(
             resolved["identification_method"] = "serial"
             return resolved
 
-    # Layer 3: USB PID → family/generation (coarse, sanity-checked)
+    # Layer 3: USB PID → family/generation (coarse)
+    # No disk-size rejection — modded iPods often have non-stock storage.
     pid = resolved["usb_pid"]
     pid_family = hw.get("model_family", "")
     pid_gen = hw.get("generation", "")
     if pid and pid_family:
-        if _model_matches_disk_size(pid_family, disk_size_gb):
-            resolved["model_family"] = pid_family
-            resolved["generation"] = pid_gen
-            resolved["identification_method"] = "usb_pid"
-        else:
-            logger.warning(
-                "USB PID 0x%04X says %s but disk is %.1f GB — ignoring "
-                "(likely stale or shared PID)", pid, pid_family, disk_size_gb,
-            )
+        resolved["model_family"] = pid_family
+        resolved["generation"] = pid_gen
+        resolved["identification_method"] = "usb_pid"
 
     # Layer 4: Hashing scheme → generation class (coarsest)
     if resolved.get("model_family", "iPod") == "iPod":
@@ -1672,5 +1746,10 @@ def scan_for_ipods() -> list[DiscoveredIPod]:
         )
 
         ipods.append(ipod)
+
+    # Clear the macOS ioreg caches so they're fresh on the next rescan.
+    global _macos_bsd_to_serial, _macos_serial_to_dev
+    _macos_bsd_to_serial = None
+    _macos_serial_to_dev = None
 
     return ipods

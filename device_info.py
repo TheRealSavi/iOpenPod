@@ -213,10 +213,17 @@ def enrich(info: DeviceInfo) -> None:
 
     if not info.board and info.sysinfo:
         info.board = info.sysinfo.get("BoardHwName", "")
-    if not info.serial and info.sysinfo:
-        info.serial = info.sysinfo.get("pszSerialNumber", "")
+    # Apple serial from SysInfo always overrides — the scanner often
+    # pre-fills info.serial with the FireWire GUID (ioreg USB serial),
+    # which is NOT the real Apple serial needed for model lookup.
+    if info.sysinfo:
+        apple_serial = info.sysinfo.get("pszSerialNumber", "")
+        if apple_serial and apple_serial != info.firewire_guid:
+            info.serial = apple_serial
     if not info.firmware and info.sysinfo:
-        info.firmware = info.sysinfo.get("visibleBuildID", "")
+        fw_ver = info.sysinfo.get("visibleBuildID", "")
+        if fw_ver:
+            info.firmware = fw_ver
 
     # FireWire GUID from SysInfo
     if not info.firewire_guid and info.sysinfo:
@@ -252,6 +259,14 @@ def enrich(info: DeviceInfo) -> None:
     #   to a model family.  On macOS/Linux the platform-specific probers run.
     _enrich_from_hardware_probe(info)
 
+    # ── 3b. USB VPD query (if SysInfo is missing/empty) ───────────────
+    #   After hardware probe gives us usb_pid + firewire_guid,
+    #   if we still don't have a SysInfo dict, query the iPod firmware
+    #   via SCSI VPD pages and write SysInfo to disk for future runs.
+    #   This gets the real Apple serial (→ exact model) and FamilyID.
+    if info.path and not info.sysinfo:
+        _enrich_from_usb_vpd(info)
+
     # ── 4. Windows registry (USB serial persists after disconnect) ────
     if not info.firewire_guid:
         _enrich_from_windows_registry(info)
@@ -275,7 +290,8 @@ def enrich(info: DeviceInfo) -> None:
     # ── 5b. Serial-last-3 model lookup ────────────────────────────────
     #   Very reliable — the last 3 chars of the serial encode the exact
     #   model (incl. capacity and color).  Higher confidence than USB PID.
-    if info.serial and info.model_family == "iPod":
+    #   Always run when we have a serial but no model_number yet.
+    if info.serial and not info.model_number:
         _enrich_from_serial_lookup(info)
 
     # ── 5c. USB PID-based family/generation (if nothing else worked) ──
@@ -516,6 +532,203 @@ def _enrich_from_hardware_probe(info: DeviceInfo) -> None:
 
     if info.identification_method == "unknown":
         info.identification_method = "hardware"
+
+
+def _try_iokit_vpd(
+    info: "DeviceInfo", usb_pid: int, serial_filter: str
+) -> dict | None:
+    """Attempt IOKit SCSI VPD query (macOS only, no root)."""
+    try:
+        from ipod_iokit_query import query_ipod_vpd
+    except ImportError:
+        logger.debug("enrich: ipod_iokit_query not available")
+        return None
+
+    logger.info(
+        "enrich: SysInfo missing — trying IOKit SCSI VPD "
+        "(pid=0x%04X, serial=%s)",
+        usb_pid,
+        serial_filter,
+    )
+    try:
+        vpd_info = query_ipod_vpd(
+            usb_pid=usb_pid, serial_filter=serial_filter
+        )
+    except Exception as exc:
+        logger.debug("enrich: IOKit VPD query failed: %s", exc)
+        return None
+
+    if not vpd_info or not vpd_info.get("SerialNumber"):
+        logger.debug("enrich: IOKit VPD returned no useful data")
+        return None
+
+    logger.info(
+        "enrich: IOKit VPD got serial=%s, FamilyID=%s",
+        vpd_info.get("SerialNumber"),
+        vpd_info.get("FamilyID"),
+    )
+    return vpd_info
+
+
+def _apply_vpd_result(info: "DeviceInfo", vpd_info: dict) -> None:
+    """Apply VPD query results to DeviceInfo and write SysInfo to iPod."""
+    from ipod_usb_query import write_sysinfo
+
+    # Write SysInfo to iPod so future runs don't need VPD
+    if info.path and os.path.exists(info.path):
+        try:
+            wrote = write_sysinfo(info.path, vpd_info)
+            if wrote:
+                logger.info(
+                    "enrich: wrote SysInfo to %s from VPD data", info.path
+                )
+        except Exception as exc:
+            logger.debug("enrich: SysInfo write failed: %s", exc)
+
+    # Apply VPD data directly to info
+    vpd_serial = vpd_info.get("SerialNumber", "")
+    if vpd_serial:
+        info.serial = vpd_serial
+    if not info.firewire_guid:
+        fw = vpd_info.get("FireWireGUID", vpd_info.get("usb_serial", ""))
+        if fw:
+            info.firewire_guid = fw.upper()
+    vpd_fw = vpd_info.get("VisibleBuildID", vpd_info.get("BuildID", ""))
+    if vpd_fw:
+        info.firmware = vpd_fw
+
+    # Re-read SysInfo if it was written successfully
+    if info.path and not info.sysinfo:
+        try:
+            from iTunesDB_Writer.device import read_sysinfo
+
+            info.sysinfo = read_sysinfo(info.path)
+            if info.sysinfo:
+                logger.debug(
+                    "enrich: SysInfo re-read after VPD (%d keys)",
+                    len(info.sysinfo),
+                )
+                if not info.board:
+                    info.board = info.sysinfo.get("BoardHwName", "")
+                if not info.serial:
+                    info.serial = info.sysinfo.get("pszSerialNumber", "")
+                if not info.firmware:
+                    info.firmware = info.sysinfo.get("visibleBuildID", "")
+        except Exception:
+            pass
+
+    if info.serial:
+        info.identification_method = "usb_vpd"
+
+
+def _enrich_from_usb_vpd(info: DeviceInfo) -> None:
+    """Query iPod firmware via USB SCSI VPD pages for device identification.
+
+    This is the fallback when SysInfo is missing or empty (iPod was never
+    synced with iTunes).  It sends SCSI INQUIRY commands over USB to read
+    Apple-proprietary VPD pages containing a full device XML plist.
+
+    On macOS, the preferred path uses IOKit SCSITaskLib — no root needed
+    and the iPod stays mounted.  Falls back to pyusb on other platforms
+    (root required on Linux; unmounts then remounts the iPod).
+
+    If the query succeeds, writes SysInfo + SysInfoExtended to the iPod
+    so that subsequent runs can identify the device normally.
+    """
+    import sys as _sys
+    import time as _time
+
+    # Use USB PID and/or FireWire GUID to target the right device
+    usb_pid = info.usb_pid or 0
+    serial_filter = info.firewire_guid or ""
+
+    # ── macOS fast path: IOKit SCSI (no root, no unmount) ──────────
+    if _sys.platform == "darwin":
+        vpd_info = _try_iokit_vpd(info, usb_pid, serial_filter)
+        if vpd_info:
+            _apply_vpd_result(info, vpd_info)
+            return
+
+    # ── Fallback: pyusb path (requires root on macOS/Linux) ────────
+    if _sys.platform != "win32":
+        try:
+            if os.geteuid() != 0:
+                logger.debug("enrich: USB VPD skipped (not root)")
+                return
+        except AttributeError:
+            pass  # Shouldn't happen on Unix, but be safe
+
+    try:
+        from ipod_usb_query import query_ipod_vpd
+    except ImportError:
+        logger.debug("enrich: ipod_usb_query not available")
+        return
+
+    logger.info(
+        "enrich: SysInfo missing — attempting USB VPD query "
+        "(pid=0x%04X, serial=%s)", usb_pid, serial_filter,
+    )
+
+    try:
+        vpd_info = query_ipod_vpd(
+            usb_pid=usb_pid,
+            serial_filter=serial_filter,
+        )
+    except PermissionError:
+        logger.debug("enrich: USB VPD query needs root — skipping")
+        return
+    except Exception as exc:
+        logger.debug("enrich: USB VPD query failed: %s", exc)
+        return
+
+    if not vpd_info or not vpd_info.get("SerialNumber"):
+        logger.debug("enrich: USB VPD returned no useful data")
+        return
+
+    logger.info(
+        "enrich: USB VPD got serial=%s, FamilyID=%s",
+        vpd_info.get("SerialNumber"), vpd_info.get("FamilyID"),
+    )
+
+    # On macOS/Linux the disk was unmounted during query — wait for remount.
+    # The mount point may change (e.g. "/Volumes/JOHN'S IPOD" → "JOHN'S IPOD 1")
+    # if old stale dirs exist, so we use the USB serial to find the new path.
+    if _sys.platform != "win32":
+        logger.debug("enrich: waiting for iPod to remount after VPD query...")
+        usb_serial = vpd_info.get("usb_serial", "") or info.firewire_guid or ""
+        new_path: str | None = None
+        try:
+            from ipod_usb_query import _find_mount_point_for_usb_serial
+        except ImportError:
+            _find_mount_point_for_usb_serial = None  # type: ignore[assignment]
+
+        for attempt in range(12):
+            _time.sleep(1)
+            # First try the lookup-by-serial approach (handles renamed mounts)
+            if _find_mount_point_for_usb_serial and usb_serial:
+                new_path = _find_mount_point_for_usb_serial(usb_serial)
+                if new_path:
+                    break
+            # Fallback: check if original path is still a valid mount
+            if os.path.ismount(info.path):
+                new_path = info.path
+                break
+
+        if new_path and new_path != info.path:
+            logger.info(
+                "enrich: iPod remounted at new path: %s (was %s)",
+                new_path, info.path,
+            )
+            info.path = new_path
+        elif not new_path:
+            logger.warning(
+                "enrich: iPod did not remount within 12s (serial=%s)",
+                usb_serial,
+            )
+            # Still apply VPD data directly to info (below)
+
+    # Write SysInfo + apply VPD data to info
+    _apply_vpd_result(info, vpd_info)
 
 
 def _enrich_from_serial_lookup(info: DeviceInfo) -> None:
