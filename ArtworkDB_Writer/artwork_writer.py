@@ -494,7 +494,8 @@ def write_artworkdb(
         logger.info(f"ART: read {len(existing_art)} existing image entries from ArtworkDB")
 
     # --- Step 1: Extract and deduplicate album art from PC files ---
-    # Group tracks by art hash to create one MHII per unique image
+    # Each track gets its own MHII (with song_id = track dbid) but
+    # identical images are written to ithmb only once.
     art_map = {}      # art_hash → art_bytes
     track_art = {}    # dbid → art_hash (or preserve_key)
 
@@ -543,6 +544,39 @@ def write_artworkdb(
                 f"{tracks_art_extracted} have art, "
                 f"{tracks_no_art} have no art")
 
+    # --- Step 1a: Share art across album tracks ---
+    # If any track in an album has embedded art, apply it to all tracks
+    # in the same album that lack art. This matches iTunes behaviour.
+    album_groups: dict[tuple[str, str], list[int]] = {}   # (album, artist) → [dbid]
+    album_art_hash: dict[tuple[str, str], str] = {}       # (album, artist) → art_hash
+
+    for track in tracks:
+        dbid = _get_track_field(track, 'dbid')
+        if not dbid:
+            continue
+        album = _get_track_field(track, 'album') or ''
+        if not album:
+            continue  # can't group without album name
+        album_artist = (_get_track_field(track, 'album_artist') or _get_track_field(track, 'artist') or '')
+        key = (album, album_artist)
+        album_groups.setdefault(key, []).append(dbid)
+        if dbid in track_art and key not in album_art_hash:
+            album_art_hash[key] = track_art[dbid]
+
+    tracks_shared = 0
+    for key, dbids in album_groups.items():
+        h = album_art_hash.get(key)
+        if not h:
+            continue
+        for dbid in dbids:
+            if dbid not in track_art:
+                track_art[dbid] = h
+                tracks_shared += 1
+
+    if tracks_shared:
+        logger.info(f"ART: shared album art to {tracks_shared} additional "
+                    f"tracks via album-level dedup")
+
     # --- Step 1b: Preserve existing art for tracks without PC paths ---
     preserved_art = {}  # preserve_key → {formats: {fmt_id: bytes}, src_img_size, song_id}
     tracks_preserved = 0
@@ -580,79 +614,71 @@ def write_artworkdb(
                 f"{len(art_map) + len(preserved_art)} unique album art images "
                 f"for {len(track_art)} tracks")
 
-    # --- Step 2: Create ArtworkEntry objects ---
-    entries = []
-    img_id = start_img_id
-    hash_to_imgid = {}  # art_hash/preserve_key → img_id
+    # --- Step 2a: Convert unique images to iPod formats ---
+    # Build a lookup of converted pixel data keyed by art_hash.
+    # This avoids converting the same source image more than once.
+    unique_converted: dict[str, dict] = {}  # art_hash → {formats, src_img_size}
 
-    # New art entries (converted from source JPEG/PNG)
+    # New art (from PC JPEG/PNG)
     for h, art_bytes in art_map.items():
-        # Find the first track dbid with this art (for songId)
-        song_id = 0
-        associated_dbids = []
-        for dbid, th in track_art.items():
-            if th == h:
-                if song_id == 0:
-                    song_id = dbid
-                associated_dbids.append(dbid)
-
-        entry = ArtworkEntry(
-            img_id=img_id,
-            song_id=song_id,
-            art_hash=h,
-            src_img_size=len(art_bytes),
-            track_dbids=associated_dbids,
-        )
-
-        # Convert to each iPod format
+        formats = {}
         for fmt_id in sorted(device_formats.keys()):
             result = convert_art_for_ipod(art_bytes, fmt_id)
             if result:
-                entry.formats[fmt_id] = result
+                formats[fmt_id] = result
+        if formats:
+            unique_converted[h] = {
+                'formats': formats,
+                'src_img_size': len(art_bytes),
+            }
 
-        if entry.formats:
-            entries.append(entry)
-            hash_to_imgid[h] = img_id
-            img_id += 1
-
-    # Preserved art entries (already in RGB565 format from existing ithmb files)
+    # Preserved art (already RGB565 from existing ithmb files)
     for preserve_key, existing_entry in preserved_art.items():
-        song_id = 0
-        associated_dbids = []
-        for dbid, th in track_art.items():
-            if th == preserve_key:
-                if song_id == 0:
-                    song_id = dbid
-                associated_dbids.append(dbid)
-
-        entry = ArtworkEntry(
-            img_id=img_id,
-            song_id=song_id,
-            art_hash=preserve_key,
-            src_img_size=existing_entry['src_img_size'],
-            track_dbids=associated_dbids,
-        )
-
-        # Use existing pixel data directly (already RGB565)
+        formats = {}
         for fmt_id, pixel_data in existing_entry['formats'].items():
             dims = ALL_KNOWN_FORMATS.get(fmt_id)
             if dims:
-                w, h = dims
-                entry.formats[fmt_id] = {
+                w, h_dim = dims
+                formats[fmt_id] = {
                     'data': pixel_data,
                     'width': w,
-                    'height': h,
+                    'height': h_dim,
                     'size': len(pixel_data),
                 }
+        if formats:
+            unique_converted[preserve_key] = {
+                'formats': formats,
+                'src_img_size': existing_entry['src_img_size'],
+            }
 
-        if entry.formats:
-            entries.append(entry)
-            hash_to_imgid[preserve_key] = img_id
-            img_id += 1
+    # --- Step 2b: Create per-track ArtworkEntry objects ---
+    # Each track gets its OWN MHII entry with song_id = track dbid.
+    # The iPod firmware (especially Nano) checks song_id to match the
+    # requesting track, so a shared MHII only works for one track.
+    entries: list[ArtworkEntry] = []
+    img_id = start_img_id
+
+    for dbid, h in track_art.items():
+        if h not in unique_converted:
+            continue
+        uc = unique_converted[h]
+        entry = ArtworkEntry(
+            img_id=img_id,
+            song_id=dbid,
+            art_hash=h,
+            src_img_size=uc['src_img_size'],
+            track_dbids=[dbid],
+        )
+        entry.formats = uc['formats']
+        entries.append(entry)
+        img_id += 1
 
     if not entries:
         logger.warning("Failed to convert any album art to iPod format")
         return {}
+
+    logger.info(f"ART: created {len(entries)} per-track MHII entries "
+                f"from {len(unique_converted)} unique images")
 
     # --- Step 3: Write ithmb files ---
     format_ids = sorted(device_formats.keys())
@@ -672,6 +698,8 @@ def write_artworkdb(
     ithmb_temp_paths: dict[int, str] = {}  # fmt_id → temp path
     ithmb_final_paths: dict[int, str] = {}  # fmt_id → final path
     ithmb_files = {}
+    # Track which unique images have been written to avoid ithmb duplication
+    art_hash_written: dict[str, dict[int, int]] = {}  # hash → {fmt: offset}
     try:
         for fmt_id in format_ids:
             final = os.path.join(artwork_dir, f"F{fmt_id}_1.ithmb")
@@ -680,15 +708,24 @@ def write_artworkdb(
             ithmb_temp_paths[fmt_id] = temp
             ithmb_files[fmt_id] = open(temp, 'wb')
 
+        # Write each unique image only once; per-track entries sharing
+        # the same art_hash reuse the same ithmb offsets.
+
         for entry in entries:
-            offsets = {}
-            for fmt_id in format_ids:
-                if fmt_id in entry.formats:
-                    img_data = entry.formats[fmt_id]['data']
-                    offsets[fmt_id] = ithmb_offsets[fmt_id]
-                    ithmb_files[fmt_id].write(img_data)
-                    ithmb_offsets[fmt_id] += len(img_data)
-            format_offsets_map[entry.img_id] = offsets
+            h = entry.art_hash
+            if h in art_hash_written:
+                # Already written — reuse offsets
+                format_offsets_map[entry.img_id] = dict(art_hash_written[h])
+            else:
+                offsets = {}
+                for fmt_id in format_ids:
+                    if fmt_id in entry.formats:
+                        img_data = entry.formats[fmt_id]['data']
+                        offsets[fmt_id] = ithmb_offsets[fmt_id]
+                        ithmb_files[fmt_id].write(img_data)
+                        ithmb_offsets[fmt_id] += len(img_data)
+                art_hash_written[h] = offsets
+                format_offsets_map[entry.img_id] = dict(offsets)
 
         # Flush and sync all ithmb temp files
         for f in ithmb_files.values():
@@ -757,21 +794,17 @@ def write_artworkdb(
             pass
         raise
 
-    logger.info(f"Wrote ithmb files for {len(entries)} images")
+    logger.info(f"Wrote ithmb files: {len(art_hash_written)} unique images, "
+                f"{len(entries)} MHII entries (per-track)")
     for fmt_id in format_ids:
         size = os.path.getsize(ithmb_final_paths[fmt_id])
         logger.info(f"  F{fmt_id}_1.ithmb: {size} bytes")
 
     # --- Step 5: Build dbid → (imgId, src_img_size) mapping ---
+    # Each entry already has a unique img_id and a single song_id (dbid).
     dbid_to_art_info: dict[int, tuple[int, int]] = {}
-    # Build hash → (imgId, src_img_size) lookup
-    hash_to_art_info: dict[str, tuple[int, int]] = {}
     for entry in entries:
-        hash_to_art_info[entry.art_hash] = (entry.img_id, entry.src_img_size)
-
-    for dbid, h in track_art.items():
-        if h in hash_to_art_info:
-            dbid_to_art_info[dbid] = hash_to_art_info[h]
+        dbid_to_art_info[entry.song_id] = (entry.img_id, entry.src_img_size)
 
     return dbid_to_art_info
 
