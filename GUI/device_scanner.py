@@ -34,6 +34,7 @@ Detection pipeline:
 import logging
 import os
 import struct
+import subprocess
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
@@ -48,6 +49,11 @@ from device_info import DeviceInfo
 from ipod_models import USB_PID_TO_MODEL
 
 logger = logging.getLogger(__name__)
+
+# Prevents console windows from flashing on Windows during subprocess calls
+_SP_KWARGS: dict = (
+    {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
+)
 
 
 def _extract_guid_from_instance_id(instance_id: str) -> str:
@@ -501,6 +507,7 @@ def _identify_via_usb_for_drive(drive_letter: str) -> Optional[dict]:
         wmi_result = subprocess.run(
             ["powershell", "-NoProfile", "-Command", ps_cmd],
             capture_output=True, text=True, timeout=10,
+            **_SP_KWARGS,
         )
         pnp_id = ""
         for line in wmi_result.stdout.strip().splitlines():

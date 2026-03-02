@@ -263,6 +263,9 @@ METADATA_FIELDS: dict[str, str] = {
     "year": "year",
     "track_number": "trackNumber",
     "disc_number": "discNumber",
+    "composer": "Composer",
+    "comment": "Comment",
+    "grouping": "Grouping",
 }
 
 
@@ -547,9 +550,22 @@ class FingerprintDiffEngine:
                 ))
 
             # Play count: additive (iPod→PC)
-            plays_since_sync = ipod_track.get("playCount2", 0)
-            skips_since_sync = ipod_track.get("skipCount", 0)
+            # Deltas come from the Play Counts file (merged into the track
+            # dict by _read_existing_database → merge_playcounts).
+            # "recent_playcount" = plays since last sync (from Play Counts file)
+            # "recent_skipcount" = skips since last sync (from Play Counts file)
+            plays_since_sync = ipod_track.get("recent_playcount", 0)
+            skips_since_sync = ipod_track.get("recent_skipcount", 0)
             if plays_since_sync > 0 or skips_since_sync > 0:
+                # Build a readable description
+                parts = []
+                if plays_since_sync > 0:
+                    parts.append(f"+{plays_since_sync} play{'s' if plays_since_sync != 1 else ''}")
+                if skips_since_sync > 0:
+                    parts.append(f"+{skips_since_sync} skip{'s' if skips_since_sync != 1 else ''}")
+                track_name = f"{pc_track.artist or 'Unknown'} - {pc_track.title or pc_track.filename}"
+                desc = f"{', '.join(parts)}: {track_name}"
+
                 plan.to_sync_playcount.append(SyncItem(
                     action=SyncAction.SYNC_PLAYCOUNT,
                     fingerprint=fp,
@@ -558,7 +574,7 @@ class FingerprintDiffEngine:
                     ipod_track=ipod_track,
                     play_count_delta=plays_since_sync,
                     skip_count_delta=skips_since_sync,
-                    description=f"Played {plays_since_sync}x: {pc_track.artist or 'Unknown'} - {pc_track.title or pc_track.filename}",
+                    description=desc,
                 ))
 
             # Rating: last-write-wins

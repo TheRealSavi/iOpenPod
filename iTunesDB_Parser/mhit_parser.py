@@ -131,6 +131,9 @@ def parse_trackItem(data, offset, header_length, chunk_length) -> dict:
     date_released_mac = struct.unpack("<I", data[offset + 140:offset + 144])[0]
     track["dateReleased"] = mac_to_unix_timestamp(date_released_mac)
 
+    # Content advisory / explicit flag (0=none, 1=explicit, 2=clean)
+    track["explicitFlag"] = struct.unpack("<H", data[offset + 146:offset + 148])[0]  # 0x92
+
     # ============================================================
     # Skip statistics
     # ============================================================
@@ -150,6 +153,8 @@ def parse_trackItem(data, offset, header_length, chunk_length) -> dict:
 
     # Podcast status is derived from mediaType, not stored as a separate byte
     # offset 168 (0xA8) is actually the start of dbid2 (64-bit backup of dbid)
+    track["lyricsFlag"] = data[offset + 176]  # 0xB0: 1 = has lyrics
+
     track["dbid2"] = struct.unpack("<Q", data[offset + 168:offset + 176])[0]
 
     track["mediaType"] = struct.unpack("<I", data[offset + 208:offset + 212])[0]

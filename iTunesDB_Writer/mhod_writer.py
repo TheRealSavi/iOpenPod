@@ -188,6 +188,9 @@ def write_track_mhods(
     sort_artist: Optional[str] = None,
     sort_name: Optional[str] = None,
     sort_album: Optional[str] = None,
+    sort_album_artist: Optional[str] = None,
+    sort_composer: Optional[str] = None,
+    grouping: Optional[str] = None,
 ) -> tuple[bytes, int]:
     """
     Write all MHODs for a track.
@@ -205,6 +208,9 @@ def write_track_mhods(
         sort_artist: Sort artist name
         sort_name: Sort title
         sort_album: Sort album name
+        sort_album_artist: Sort album artist name
+        sort_composer: Sort composer name
+        grouping: Grouping tag
 
     Returns:
         Tuple of (concatenated MHOD bytes, count of MHODs)
@@ -236,6 +242,12 @@ def write_track_mhods(
         mhods.append(write_mhod_sort_name(sort_name))
     if sort_album:
         mhods.append(write_mhod_sort_album(sort_album))
+    if sort_album_artist:
+        mhods.append(write_mhod_string(MHOD_TYPE_SORT_ALBUM_ARTIST, sort_album_artist))
+    if sort_composer:
+        mhods.append(write_mhod_string(MHOD_TYPE_SORT_COMPOSER, sort_composer))
+    if grouping:
+        mhods.append(write_mhod_string(MHOD_TYPE_GROUPING, grouping))
 
     # Filter out empty MHODs
     mhods = [m for m in mhods if m]

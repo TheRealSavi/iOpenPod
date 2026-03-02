@@ -12,6 +12,7 @@ The executor takes a SyncPlan (from FingerprintDiffEngine) and:
 The database is always fully rewritten (not patched incrementally).
 """
 
+import base64
 import logging
 import shutil
 import threading
@@ -343,6 +344,9 @@ class SyncExecutor:
                     if gui_cache.has_pending_playlists():
                         gui_cache._user_playlists.clear()
                         logger.info("Cleared pending user playlists after successful write")
+                    if gui_cache.has_pending_track_edits():
+                        gui_cache.clear_track_edits()
+                        logger.info("Cleared pending track flag edits after successful write")
                 except Exception:
                     pass
 
@@ -360,6 +364,14 @@ class SyncExecutor:
                 except Exception as e:
                     # Non-fatal — database is already written + mapping saved
                     logger.warning("iTunesPrefs protection failed (non-fatal): %s", e)
+
+                # ── Delete Play Counts file ─────────────────────────────
+                # The iPod firmware creates this file to record play/skip/
+                # rating deltas since the last sync.  Now that we've merged
+                # the deltas into the new iTunesDB, it must be deleted so
+                # the iPod creates a fresh one.  (Matches libgpod's
+                # playcounts_reset() behaviour.)
+                self._delete_playcounts_file()
 
             except Exception as e:
                 result.errors.append(("database write", str(e)))
@@ -598,6 +610,12 @@ class SyncExecutor:
                         track.track_number = pc_value if pc_value else 0
                     elif field_name == "disc_number":
                         track.disc_number = pc_value if pc_value else 0
+                    elif field_name == "composer":
+                        track.composer = pc_value
+                    elif field_name == "comment":
+                        track.comment = pc_value
+                    elif field_name == "grouping":
+                        track.grouping = pc_value
 
             # Refresh mapping mtime/size so next sync doesn't see a spurious file change
             if item.fingerprint and item.pc_track and not dry_run:
@@ -775,22 +793,26 @@ class SyncExecutor:
                 result.playcounts_synced += 1
                 continue
 
-            # Play counts are already folded by _track_dict_to_info:
-            #   play_count = playCount + playCount2
-            # Do NOT add play_count_delta here — it equals playCount2, which
-            # was already folded. Adding it again would double-count.
+            # Play/skip counts are already correct in tracks_by_dbid:
+            #   _read_existing_database() merged the Play Counts file into
+            #   the parsed track dicts (playCount += delta, skipCount += delta).
+            #   _track_dict_to_info() then copied the cumulative values into
+            #   TrackInfo.play_count / .skip_count.
             #
-            # The mhit_writer resets playCount2 to 0, so next sync only
-            # picks up genuinely new plays.
+            # The mhit_writer writes these cumulative values to disk.
+            # After the database is written, the Play Counts file is deleted
+            # (see _delete_playcounts_file), so the iPod creates a fresh one.
+            #
+            # No manual adjustments to tracks_by_dbid are needed here.
 
-            # Write play count delta back to PC file metadata (only if user opted in)
-            if write_back_to_pc and item.pc_track and item.play_count_delta:
+            # Write play/skip count deltas back to PC file metadata (only if user opted in)
+            if write_back_to_pc and item.pc_track and (item.play_count_delta or item.skip_count_delta):
                 self._write_playcount_to_pc(
                     item.pc_track.path,
-                    item.play_count_delta,
+                    item.play_count_delta or 0,
                     item.skip_count_delta or 0,
                 )
-            logger.debug(f"Play count sync: {item.description} +{item.play_count_delta} plays")
+            logger.debug(f"Play count sync: {item.description} +{item.play_count_delta} plays, +{item.skip_count_delta} skips")
             result.playcounts_synced += 1
 
     def _execute_rating_sync(self, plan, tracks_by_dbid, result, progress_callback, dry_run, check_cancelled=None, write_back_to_pc=False):
@@ -949,14 +971,15 @@ class SyncExecutor:
     # ── PC Write-Back ───────────────────────────────────────────────────────
 
     def _write_playcount_to_pc(self, file_path: str, play_delta: int, skip_delta: int) -> bool:
-        """Write play count delta back to PC file metadata using mutagen.
+        """Write play count and skip count deltas back to PC file metadata.
 
-        For MP3: uses PCNT (play counter) frame.
-        For M4A/FLAC/OGG: uses custom tags.
+        For MP3: uses PCNT frame (play count) and TXXX:SKIP_COUNT (skip count).
+        For M4A: uses freeform atoms PLAY_COUNT and SKIP_COUNT.
+        For FLAC/OGG: uses PLAY_COUNT and SKIP_COUNT vorbis comments.
         """
         try:
             import mutagen  # type: ignore[import-untyped]
-            from mutagen.id3._frames import PCNT  # type: ignore[import-untyped]
+            from mutagen.id3._frames import PCNT, TXXX  # type: ignore[import-untyped]
 
             ext = Path(file_path).suffix.lower()
             audio = mutagen.File(file_path)  # type: ignore[attr-defined]
@@ -964,45 +987,79 @@ class SyncExecutor:
                 return False
 
             if ext == ".mp3":
-                # PCNT frame: increment existing count
-                existing = 0
-                if "PCNT" in audio.tags:
-                    existing = audio.tags["PCNT"].count
-                audio.tags.add(PCNT(count=existing + play_delta))
+                # PCNT frame: increment existing play count
+                if play_delta:
+                    existing = 0
+                    if "PCNT" in audio.tags:
+                        existing = audio.tags["PCNT"].count
+                    audio.tags.add(PCNT(count=existing + play_delta))
+                # TXXX:SKIP_COUNT — no standard ID3 frame for skip count
+                if skip_delta:
+                    existing_skip = 0
+                    txxx_key = "TXXX:SKIP_COUNT"
+                    if txxx_key in audio.tags:
+                        try:
+                            existing_skip = int(audio.tags[txxx_key].text[0])
+                        except (ValueError, TypeError, IndexError):
+                            pass
+                    audio.tags.add(TXXX(encoding=3, desc="SKIP_COUNT",
+                                        text=[str(existing_skip + skip_delta)]))
                 audio.save()
             elif ext in (".m4a", ".m4p", ".aac"):
-                # Custom freeform atom for play count
-                key = "----:com.apple.iTunes:PLAY_COUNT"
-                existing = 0
-                if key in audio.tags:
-                    try:
-                        existing = int(audio.tags[key][0].decode())
-                    except (ValueError, TypeError, IndexError):
-                        pass
                 from mutagen.mp4 import MP4FreeForm  # type: ignore[import-untyped]
-                audio.tags[key] = [MP4FreeForm(str(existing + play_delta).encode())]
+                # Play count freeform atom
+                if play_delta:
+                    key = "----:com.apple.iTunes:PLAY_COUNT"
+                    existing = 0
+                    if key in audio.tags:
+                        try:
+                            existing = int(audio.tags[key][0].decode())
+                        except (ValueError, TypeError, IndexError):
+                            pass
+                    audio.tags[key] = [MP4FreeForm(str(existing + play_delta).encode())]
+                # Skip count freeform atom
+                if skip_delta:
+                    skip_key = "----:com.apple.iTunes:SKIP_COUNT"
+                    existing_skip = 0
+                    if skip_key in audio.tags:
+                        try:
+                            existing_skip = int(audio.tags[skip_key][0].decode())
+                        except (ValueError, TypeError, IndexError):
+                            pass
+                    audio.tags[skip_key] = [MP4FreeForm(str(existing_skip + skip_delta).encode())]
                 audio.save()
             elif ext in (".flac", ".ogg", ".opus"):
-                # Vorbis comment
-                existing = 0
-                if "PLAY_COUNT" in audio.tags:
-                    try:
-                        existing = int(audio.tags["PLAY_COUNT"][0])
-                    except (ValueError, TypeError, IndexError):
-                        pass
-                audio.tags["PLAY_COUNT"] = [str(existing + play_delta)]
+                # Vorbis comments
+                if play_delta:
+                    existing = 0
+                    if "PLAY_COUNT" in audio.tags:
+                        try:
+                            existing = int(audio.tags["PLAY_COUNT"][0])
+                        except (ValueError, TypeError, IndexError):
+                            pass
+                    audio.tags["PLAY_COUNT"] = [str(existing + play_delta)]
+                if skip_delta:
+                    existing_skip = 0
+                    if "SKIP_COUNT" in audio.tags:
+                        try:
+                            existing_skip = int(audio.tags["SKIP_COUNT"][0])
+                        except (ValueError, TypeError, IndexError):
+                            pass
+                    audio.tags["SKIP_COUNT"] = [str(existing_skip + skip_delta)]
                 audio.save()
 
             return True
         except Exception as e:
-            logger.warning(f"Could not write play count to {file_path}: {e}")
+            logger.warning(f"Could not write play/skip count to {file_path}: {e}")
             return False
 
     def _write_rating_to_pc(self, file_path: str, rating: int) -> bool:
         """Write rating (0-100) to PC file metadata using mutagen.
 
         For MP3: uses POPM (Popularimeter) frame (0-255 scale).
-        For M4A: uses 'rtng' atom (0-100 scale, same as iPod).
+        For M4A: uses freeform atom (0-100 scale, same as iPod).
+            NOTE: 'rtng' is the Content Advisory atom (0=none, 1=explicit,
+            2=clean) and must NOT be used for star ratings.
         For FLAC/OGG: uses RATING vorbis comment.
         """
         try:
@@ -1019,11 +1076,18 @@ class SyncExecutor:
                 stars = min(5, rating // 20) if rating > 0 else 0
                 popm_map = {0: 0, 1: 1, 2: 64, 3: 128, 4: 196, 5: 255}
                 popm_rating = popm_map.get(stars, 0)
-                audio.tags.add(POPM(email="iOpenPod", rating=popm_rating, count=0))
+                # Preserve existing play count stored in POPM frame
+                existing_count = 0
+                popm_key = "POPM:iOpenPod"
+                if popm_key in audio.tags:
+                    existing_count = audio.tags[popm_key].count
+                audio.tags.add(POPM(email="iOpenPod", rating=popm_rating, count=existing_count))
                 audio.save()
             elif ext in (".m4a", ".m4p", ".aac"):
-                # rtng atom: stores rating directly (0-100)
-                audio.tags["rtng"] = [rating]
+                from mutagen.mp4 import MP4FreeForm  # type: ignore[import-untyped]
+                # Freeform atom for star rating (0-100)
+                key = "----:com.apple.iTunes:RATING"
+                audio.tags[key] = [MP4FreeForm(str(rating).encode())]
                 audio.save()
             elif ext in (".flac", ".ogg", ".opus"):
                 # RATING vorbis comment (store as 0-100)
@@ -1035,11 +1099,48 @@ class SyncExecutor:
             logger.warning(f"Could not write rating to {file_path}: {e}")
             return False
 
+    # ── Play Counts cleanup ─────────────────────────────────────────────────
+
+    def _delete_playcounts_file(self) -> None:
+        """Delete Play Counts (and related) files after a successful sync.
+
+        The iPod firmware creates these files to record play/skip/rating
+        deltas since the last sync.  After merging the deltas into the new
+        iTunesDB and writing it, these files must be removed so the iPod
+        creates fresh ones.
+
+        Matches libgpod's ``playcounts_reset()`` which deletes:
+        - ``Play Counts``
+        - ``iTunesStats``
+        - ``PlayCounts.plist``
+        """
+        itunes_dir = self.ipod_path / "iPod_Control" / "iTunes"
+        for name in ("Play Counts", "iTunesStats", "PlayCounts.plist"):
+            path = itunes_dir / name
+            if path.exists():
+                try:
+                    path.unlink()
+                    logger.info("Deleted %s", path)
+                except OSError as exc:
+                    # Non-fatal — the file will be re-read next sync but
+                    # that just means the same deltas get applied again
+                    # (idempotent for play/skip counts since they're additive
+                    # and the cumulative was already written).
+                    logger.warning("Could not delete %s: %s", path, exc)
+
     # ── Track Conversion ────────────────────────────────────────────────────
 
     def _read_existing_database(self) -> dict:
-        """Read existing tracks, playlists, and smart playlists from iTunesDB."""
+        """Read existing tracks, playlists, and smart playlists from iTunesDB.
+
+        Also reads the Play Counts file (if present) and merges per-track
+        deltas into the track dicts.  After merging:
+        - ``playCount`` / ``skipCount`` are the new cumulative values
+        - ``recent_playcount`` / ``recent_skipcount`` are the deltas
+        - ``rating`` may be overridden if the user rated on the iPod
+        """
         from iTunesDB_Parser import parse_itunesdb
+        from iTunesDB_Parser.playcounts import parse_playcounts, merge_playcounts
 
         empty = {"tracks": [], "playlists": [], "smart_playlists": []}
         itdb_path = self.ipod_path / "iPod_Control" / "iTunes" / "iTunesDB"
@@ -1049,6 +1150,39 @@ class SyncExecutor:
         try:
             result = parse_itunesdb(str(itdb_path))
             tracks = result.get("mhlt", [])
+
+            # ── Merge Play Counts file (iPod-generated deltas) ──────────
+            pc_path = self.ipod_path / "iPod_Control" / "iTunes" / "Play Counts"
+            pc_entries = parse_playcounts(pc_path)
+            if pc_entries is not None:
+                merge_playcounts(tracks, pc_entries)
+            else:
+                # No Play Counts file → zero deltas for all tracks
+                for t in tracks:
+                    t.setdefault("recent_playcount", 0)
+                    t.setdefault("recent_skipcount", 0)
+
+            # ── Apply pending track flag edits from the GUI ─────────────
+            # The user may have toggled flags (compilation, skip when
+            # shuffling, etc.) via the right-click menu.  These are stored
+            # in the iTunesDBCache and must be merged into the freshly
+            # parsed track dicts before building TrackInfo objects.
+            try:
+                from GUI.app import iTunesDBCache
+                gui_cache = iTunesDBCache.get_instance()
+                track_edits = gui_cache.get_track_edits()
+                if track_edits:
+                    dbid_to_track = {t.get("dbid", 0): t for t in tracks if t.get("dbid")}
+                    applied = 0
+                    for dbid, changes in track_edits.items():
+                        track = dbid_to_track.get(dbid)
+                        if track:
+                            track.update(changes)
+                            applied += 1
+                    if applied:
+                        logger.info("Applied %d pending track flag edits", applied)
+            except Exception as e:
+                logger.debug("No GUI cache for track edits (headless?): %s", e)
 
             # Dataset 2: regular + user playlists (mhlp)
             all_playlists = result.get("mhlp", [])
@@ -1107,6 +1241,8 @@ class SyncExecutor:
             album_artist=t.get("Album Artist"),
             genre=t.get("Genre"),
             composer=t.get("Composer"),
+            comment=t.get("Comment"),
+            grouping=t.get("Grouping"),
             year=t.get("year", 0),
             track_number=t.get("trackNumber", 0),
             total_tracks=t.get("totalTracks", 0),
@@ -1114,11 +1250,27 @@ class SyncExecutor:
             total_discs=t.get("totalDiscs", 1),
             bpm=t.get("bpm", 0),
             compilation=bool(t.get("compilation", 0)),
+            skip_when_shuffling=bool(t.get("skipWhenShuffling", 0)),
+            remember_position=bool(t.get("rememberPosition", 0)),
             rating=t.get("rating", 0),
-            play_count=t.get("playCount", 0) + t.get("playCount2", 0),
+            # playCount already includes the Play Counts file delta
+            # (merged by merge_playcounts in _read_existing_database).
+            # Do NOT add playCount2 — that was the old pre-merge approach.
+            play_count=t.get("playCount", 0),
             skip_count=t.get("skipCount", 0),
             volume=t.get("volume", 0),
+            start_time=t.get("startTime", 0),
+            stop_time=t.get("stopTime", 0),
+            sound_check=t.get("soundCheck", 0),
+            bookmark_time=t.get("bookmarkTime", 0),
+            checked=t.get("checked", 0),
+            gapless_data=t.get("gaplessData", 0),
+            gapless_track_flag=t.get("gaplessTrackFlag", 0),
+            gapless_album_flag=t.get("gaplessAlbumFlag", 0),
+            explicit_flag=t.get("explicitFlag", 0),
+            has_lyrics=bool(t.get("lyricsFlag", 0)),
             date_added=t.get("dateAdded", 0),
+            date_released=t.get("dateReleased", 0),
             last_played=t.get("lastPlayed", 0),
             last_skipped=t.get("lastSkipped", 0),
             dbid=t.get("dbid", 0),
@@ -1129,6 +1281,8 @@ class SyncExecutor:
             sort_artist=t.get("Sort Artist"),
             sort_name=t.get("Sort Name"),
             sort_album=t.get("Sort Album"),
+            sort_album_artist=t.get("Sort Album Artist"),
+            sort_composer=t.get("Sort Composer"),
             filetype_desc=t.get("filetype"),
         )
 
@@ -1187,18 +1341,48 @@ class SyncExecutor:
             album_artist=pc_track.album_artist,
             genre=pc_track.genre,
             composer=getattr(pc_track, "composer", None),
+            comment=getattr(pc_track, "comment", None),
+            grouping=getattr(pc_track, "grouping", None),
             year=pc_track.year or 0,
             track_number=pc_track.track_number or 0,
             total_tracks=getattr(pc_track, "track_total", None) or 0,
             disc_number=pc_track.disc_number or 1,
             total_discs=getattr(pc_track, "disc_total", None) or 1,
+            bpm=getattr(pc_track, "bpm", None) or 0,
             rating=rating,
             play_count=getattr(pc_track, "play_count", 0) or 0,
             compilation=getattr(pc_track, "compilation", False),
+            sound_check=getattr(pc_track, "sound_check", 0) or 0,
+            pregap=getattr(pc_track, "pregap", 0) or 0,
+            sample_count=getattr(pc_track, "sample_count", 0) or 0,
+            gapless_data=getattr(pc_track, "gapless_data", 0) or 0,
+            explicit_flag=getattr(pc_track, "explicit_flag", 0) or 0,
+            has_lyrics=getattr(pc_track, "has_lyrics", False),
             sort_artist=getattr(pc_track, "sort_artist", None),
             sort_name=getattr(pc_track, "sort_name", None),
             sort_album=getattr(pc_track, "sort_album", None),
+            sort_album_artist=getattr(pc_track, "sort_album_artist", None),
+            sort_composer=getattr(pc_track, "sort_composer", None),
         )
+
+    @staticmethod
+    def _decode_raw_blob(value) -> Optional[bytes]:
+        """Decode a raw MHOD blob from parsed playlist data.
+
+        The parser stores bytes, but mhbd_parser's replace_bytes_with_base64()
+        converts them to base64 strings for JSON serialization. This method
+        handles both cases.
+        """
+        if value is None:
+            return None
+        if isinstance(value, bytes):
+            return value
+        if isinstance(value, str):
+            try:
+                return base64.b64decode(value)
+            except Exception:
+                return None
+        return None
 
     def _build_and_evaluate_playlists(
         self,
@@ -1255,6 +1439,8 @@ class SyncExecutor:
                 playlist_id=pl.get("playlistID"),
                 hidden=False,
                 sortorder=pl.get("sortOrder", 0),
+                raw_mhod100=self._decode_raw_blob(pl.get("rawMhod100")),
+                raw_mhod102=self._decode_raw_blob(pl.get("rawMhod102")),
             )
 
             # Smart playlist rules (dataset 2 smart playlists)
@@ -1296,6 +1482,8 @@ class SyncExecutor:
                 hidden=bool(pl.get("type", 0)),
                 sortorder=pl.get("sortOrder", 0),
                 mhsd5_type=pl.get("mhsd5Type", 0),
+                raw_mhod100=self._decode_raw_blob(pl.get("rawMhod100")),
+                raw_mhod102=self._decode_raw_blob(pl.get("rawMhod102")),
             )
 
             if prefs_data and rules_data:
@@ -1346,6 +1534,9 @@ class SyncExecutor:
             "Sort Title": t.sort_name or "",
             "Sort Album": t.sort_album or "",
             "Sort Artist": t.sort_artist or "",
+            "Sort Album Artist": t.sort_album_artist or "",
+            "Sort Composer": t.sort_composer or "",
+            "Grouping": t.grouping or "",
             # Integer fields
             "bitrate": t.bitrate,
             "sampleRate": t.sample_rate,
@@ -1367,7 +1558,7 @@ class SyncExecutor:
             # Binary AND fields
             "mediaType": t.media_type,
             # Checked flag (0=checked, 1=unchecked in iPod convention)
-            "checked": 0,
+            "checked": t.checked,
         }
         return d
 

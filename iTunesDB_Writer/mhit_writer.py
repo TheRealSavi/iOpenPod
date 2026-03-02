@@ -94,6 +94,22 @@ class TrackInfo:
     volume: int = 0  # -255 to +255
     start_time: int = 0  # ms
     stop_time: int = 0  # ms
+    sound_check: int = 0  # Volume normalization value (from ReplayGain)
+    bookmark_time: int = 0  # Resume position in ms (audiobooks/podcasts)
+    checked: int = 0  # 0 = checked/enabled, 1 = unchecked/disabled
+
+    # Gapless playback
+    gapless_data: int = 0  # Gapless playback encoder delay data
+    gapless_track_flag: int = 0  # 1 = track has gapless info
+    gapless_album_flag: int = 0  # 1 = album is gapless
+    pregap: int = 0  # Encoder pregap samples
+    sample_count: int = 0  # Total decoded sample count (64-bit)
+
+    # Track flags
+    skip_when_shuffling: bool = False  # 1 = skip in shuffle mode
+    remember_position: bool = False    # 1 = resume from bookmark (audiobooks)
+    explicit_flag: int = 0  # 0=none, 1=explicit, 2=clean
+    has_lyrics: bool = False  # True if track has embedded lyrics
 
     # Timestamps (Unix)
     date_added: int = 0  # Will be set to now if 0
@@ -114,6 +130,11 @@ class TrackInfo:
     sort_artist: Optional[str] = None
     sort_name: Optional[str] = None
     sort_album: Optional[str] = None
+    sort_album_artist: Optional[str] = None
+    sort_composer: Optional[str] = None
+
+    # Extra string metadata
+    grouping: Optional[str] = None
 
     # Filetype description
     filetype_desc: Optional[str] = None  # e.g., "MPEG audio file"
@@ -165,6 +186,9 @@ def write_mhit(track: TrackInfo, track_id: int, id_0x24: int = 0) -> bytes:
         sort_artist=track.sort_artist,
         sort_name=track.sort_name,
         sort_album=track.sort_album,
+        sort_album_artist=track.sort_album_artist,
+        sort_composer=track.sort_composer,
+        grouping=track.grouping,
     )
 
     # Total chunk length = header + all MHODs
@@ -207,7 +231,7 @@ def write_mhit(track: TrackInfo, track_id: int, id_0x24: int = 0) -> bytes:
     struct.pack_into('<i', header, 0x40, track.volume)  # volume (signed)
     struct.pack_into('<I', header, 0x44, track.start_time)  # start time
     struct.pack_into('<I', header, 0x48, track.stop_time)  # stop time
-    struct.pack_into('<I', header, 0x4C, 0)  # sound check
+    struct.pack_into('<I', header, 0x4C, track.sound_check)  # sound check
 
     # +0x50
     struct.pack_into('<I', header, 0x50, track.play_count)  # playcount
@@ -219,13 +243,13 @@ def write_mhit(track: TrackInfo, track_id: int, id_0x24: int = 0) -> bytes:
     struct.pack_into('<I', header, 0x60, track.total_discs)  # total discs
     struct.pack_into('<I', header, 0x64, 0)  # drm_userid
     struct.pack_into('<I', header, 0x68, unix_to_mac_timestamp(track.date_added))  # date added (again)
-    struct.pack_into('<I', header, 0x6C, 0)  # bookmark time
+    struct.pack_into('<I', header, 0x6C, track.bookmark_time)  # bookmark time
 
     # +0x70: DBID (64-bit)
     struct.pack_into('<Q', header, 0x70, track.dbid)
 
     # +0x78: checked(1), app_rating(1), BPM(2), artwork_count(2), unk126(2)
-    header[0x78] = 0  # checked (0 = checked)
+    header[0x78] = track.checked  # checked (0 = checked/enabled, 1 = unchecked)
     header[0x79] = 0  # app_rating
     struct.pack_into('<H', header, 0x7A, track.bpm)  # BPM
     struct.pack_into('<H', header, 0x7C, track.artwork_count)  # artwork count
@@ -239,7 +263,7 @@ def write_mhit(track: TrackInfo, track_id: int, id_0x24: int = 0) -> bytes:
 
     # +0x90: unk144(2), explicit_flag(2), unk148(4), unk152(4)
     struct.pack_into('<H', header, 0x90, 0)  # unk144
-    struct.pack_into('<H', header, 0x92, 0)  # explicit_flag
+    struct.pack_into('<H', header, 0x92, track.explicit_flag)  # explicit_flag (0=none, 1=explicit, 2=clean)
     struct.pack_into('<I', header, 0x94, 0)  # unk148
     struct.pack_into('<I', header, 0x98, 0)  # unk152
 
@@ -248,30 +272,33 @@ def write_mhit(track: TrackInfo, track_id: int, id_0x24: int = 0) -> bytes:
     struct.pack_into('<I', header, 0x9C, track.skip_count)  # skip count
     struct.pack_into('<I', header, 0xA0, unix_to_mac_timestamp(track.last_skipped))  # last skipped
     header[0xA4] = 1 if track.artwork_count > 0 else 2  # has_artwork (1=has, 2=no)
-    header[0xA5] = 0  # skip_when_shuffling
-    header[0xA6] = 0  # remember_playback_position
+    header[0xA5] = 1 if track.skip_when_shuffling else 0
+    header[0xA6] = 1 if track.remember_position else 0
     header[0xA7] = 0  # flag4
 
     # +0xA8: dbid2 (64-bit) - backup copy of dbid
     struct.pack_into('<Q', header, 0xA8, track.dbid)
 
     # +0xB0: lyrics_flag, movie_flag, mark_unplayed, unk179, unk180, etc.
-    header[0xB0] = 0  # lyrics_flag
+    header[0xB0] = 1 if track.has_lyrics else 0  # lyrics_flag
     header[0xB1] = 0  # movie_flag
-    header[0xB2] = 0x02  # mark_unplayed (0x02 = unplayed bullet, 0x01 = played)
+    # mark_unplayed: 0x02 = unplayed bullet, 0x01 = no bullet (played)
+    header[0xB2] = 0x01 if track.play_count > 0 else 0x02
     header[0xB3] = 0  # unk179
 
     # +0xB4: unk180(4), pregap(4), samplecount(8), unk196(4), etc.
     struct.pack_into('<I', header, 0xB4, 0)  # unk180
-    struct.pack_into('<I', header, 0xB8, 0)  # pregap
-    struct.pack_into('<Q', header, 0xBC, 0)  # samplecount (64-bit)
+    struct.pack_into('<I', header, 0xB8, track.pregap)  # pregap
+    struct.pack_into('<Q', header, 0xBC, track.sample_count)  # samplecount (64-bit)
     struct.pack_into('<I', header, 0xC4, 0)  # unk196
 
     # +0xD0: media_type (offset 0xD0 = 208)
     struct.pack_into('<I', header, 0xD0, track.media_type)
 
     # +0xF8: gapless_data (libgpod: seek+248)
-    # gapless fields default to 0 which is correct for non-gapless tracks
+    struct.pack_into('<I', header, 0xF8, track.gapless_data)
+    struct.pack_into('<H', header, 0x100, track.gapless_track_flag)
+    struct.pack_into('<H', header, 0x102, track.gapless_album_flag)
 
     # +0x120: album_id (u32) - links track to MHIA album entry
     struct.pack_into('<I', header, 0x120, track.album_id)

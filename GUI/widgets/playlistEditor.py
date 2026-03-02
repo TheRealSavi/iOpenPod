@@ -575,6 +575,13 @@ class SmartRuleRow(QFrame):
         if not hasattr(self, "_range_label"):
             return
         try:
+            # Guard against deleted C++ objects
+            import sip  # type: ignore[import-untyped]
+            if sip.isdeleted(self._range_label):  # type: ignore[arg-type]
+                return
+        except (ImportError, TypeError):
+            pass
+        try:
             aid = self.action_combo.currentData()
             is_range = aid in (0x00000100, 0x02000100)
             spins = self._find_widgets(QSpinBox)

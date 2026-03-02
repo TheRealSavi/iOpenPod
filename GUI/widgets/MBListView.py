@@ -1111,7 +1111,7 @@ class MusicBrowserList(QFrame):
         from ..app import iTunesDBCache
 
         menu = QMenu(self)
-        menu.setStyleSheet(f"""
+        menu_style = f"""
             QMenu {{
                 background: {Colors.SURFACE_RAISED};
                 color: {Colors.TEXT_PRIMARY};
@@ -1129,10 +1129,12 @@ class MusicBrowserList(QFrame):
                 background: {Colors.BORDER_SUBTLE};
                 margin: 4px 8px;
             }}
-        """)
+        """
+        menu.setStyleSheet(menu_style)
+
+        cache = iTunesDBCache.get_instance()
 
         # ── "Add to Playlist >" cascade ──
-        cache = iTunesDBCache.get_instance()
         if cache.is_ready():
             playlists = cache.get_playlists()
 
@@ -1144,7 +1146,7 @@ class MusicBrowserList(QFrame):
 
             add_menu = menu.addMenu("Add to Playlist")
             if add_menu:
-                add_menu.setStyleSheet(menu.styleSheet())
+                add_menu.setStyleSheet(menu_style)
 
                 if regular:
                     for pl in regular:
@@ -1159,9 +1161,6 @@ class MusicBrowserList(QFrame):
                     if no_act:
                         no_act.setEnabled(False)
 
-        vp = self.table.viewport()
-        global_pos = vp.mapToGlobal(pos) if vp else QCursor.pos()
-
         # ── "Remove from Playlist" (only for editable regular playlists) ──
         if (self._is_playlist_mode and self._current_playlist
                 and not self._current_playlist.get("isMaster")
@@ -1175,7 +1174,146 @@ class MusicBrowserList(QFrame):
             if remove_act:
                 remove_act.triggered.connect(self._remove_selected_from_playlist)
 
+        # ── Track Flags ──
+        menu.addSeparator()
+        self._build_flag_menu(menu, menu_style, selected, cache)
+
+        # ── Rating ──
+        self._build_rating_menu(menu, menu_style, selected, cache)
+
+        vp = self.table.viewport()
+        global_pos = vp.mapToGlobal(pos) if vp else QCursor.pos()
         menu.exec(global_pos)
+
+    # ── Flag & Rating Sub-menus ──────────────────────────────────────────
+
+    def _build_flag_menu(self, menu: QMenu, style: str, selected: list[dict], cache) -> None:
+        """Add boolean flag toggle actions to the context menu.
+
+        Each flag shows a check mark (✓) when ALL selected tracks have it
+        enabled, a dash (–) for mixed state, or blank when all disabled.
+        Clicking toggles: all-on → off, otherwise → on.
+        """
+        FLAG_DEFS: list[tuple[str, str, str]] = [
+            # (track_dict_key, menu_label, description)
+            ("compilation", "Compilation", "Part of a compilation album"),
+            ("skipWhenShuffling", "Skip When Shuffling", "Skip this track in shuffle mode"),
+            ("rememberPosition", "Remember Playback Position", "Resume from last position (audiobooks)"),
+        ]
+
+        for key, label, _tip in FLAG_DEFS:
+            on_count = sum(1 for t in selected if t.get(key, 0))
+            total = len(selected)
+
+            if on_count == total:
+                prefix = "✓  "
+                new_val = 0  # toggle off
+            elif on_count == 0:
+                prefix = "    "
+                new_val = 1  # toggle on
+            else:
+                prefix = "–  "
+                new_val = 1  # mixed → on
+
+            act = menu.addAction(f"{prefix}{label}")
+            if act:
+                act.triggered.connect(
+                    lambda _=False, k=key, v=new_val: self._set_track_flag(k, v)
+                )
+
+    def _build_rating_menu(self, menu: QMenu, style: str, selected: list[dict], cache) -> None:
+        """Add a Rating submenu with 0-5 star options."""
+        rating_menu = menu.addMenu("Rating")
+        if not rating_menu:
+            return
+        rating_menu.setStyleSheet(style)
+
+        # Current rating (show check for unanimous value)
+        current_ratings = {t.get("rating", 0) for t in selected}
+        unanimous = current_ratings.pop() if len(current_ratings) == 1 else None
+
+        stars = [
+            (0, "☆  No Rating"),
+            (20, "★  ★"),
+            (40, "★  ★★"),
+            (60, "★  ★★★"),
+            (80, "★  ★★★★"),
+            (100, "★  ★★★★★"),
+        ]
+        for value, label in stars:
+            prefix = "✓ " if unanimous == value else "   "
+            act = rating_menu.addAction(f"{prefix}{label}")
+            if act:
+                act.triggered.connect(
+                    lambda _=False, v=value: self._set_track_flag("rating", v)
+                )
+
+    def _set_track_flag(self, key: str, value: int) -> None:
+        """Apply a flag/field change to all selected tracks via the cache."""
+        from ..app import iTunesDBCache
+
+        selected = self._get_selected_tracks()
+        if not selected:
+            return
+
+        cache = iTunesDBCache.get_instance()
+        if not cache.is_ready():
+            return
+
+        cache.update_track_flags(selected, {key: value})
+
+        # Refresh visible rows so the change is immediately visible
+        # (rating column, or future flag columns)
+        self._refresh_visible_rows()
+
+    def _refresh_visible_rows(self) -> None:
+        """Re-populate currently visible rows from their track dicts.
+
+        Lightweight alternative to a full repopulate — only touches the
+        cells that are already on screen.  Useful after in-place edits to
+        track dicts (flags, ratings, etc.).
+        """
+        if not self._tracks:
+            return
+
+        first_data_col = 1 if self._show_art else 0
+        col_count = self.table.columnCount()
+        row_count = self.table.rowCount()
+
+        for row in range(row_count):
+            item = self.table.item(row, first_data_col)
+            if item is None:
+                continue
+            orig_idx = item.data(Qt.ItemDataRole.UserRole + 1)
+            if orig_idx is None or orig_idx < 0 or orig_idx >= len(self._tracks):
+                continue
+            track = self._tracks[orig_idx]
+
+            for col in range(first_data_col, col_count):
+                h_item = self.table.horizontalHeaderItem(col)
+                if h_item is None:
+                    continue
+                key = h_item.data(Qt.ItemDataRole.UserRole)
+                if key is None:
+                    continue
+
+                raw = track.get(key, "")
+                cfg = COLUMN_CONFIG.get(key)
+                formatter = cfg[1] if cfg else None
+
+                if formatter and raw not in (None, "", 0):
+                    try:
+                        display_text = formatter(raw)
+                    except Exception:
+                        display_text = str(raw) if raw else ""
+                else:
+                    display_text = str(raw) if raw not in (None, "") else ""
+
+                cell = self.table.item(row, col)
+                if cell is not None:
+                    cell.setText(display_text)
+                    if key in SORTABLE_NUMERIC_KEYS:
+                        cell.setData(Qt.ItemDataRole.UserRole, raw if raw else 0)
 
     def _add_selected_to_playlist(self, playlist: dict) -> None:
         """Add all selected tracks to the given playlist and save it."""

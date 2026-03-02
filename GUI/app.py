@@ -346,6 +346,7 @@ class iTunesDBCache(QObject):
     _instance: "iTunesDBCache | None" = None
 
     playlists_changed = pyqtSignal()   # Emitted when user playlists are added/edited/removed
+    tracks_changed = pyqtSignal()       # Emitted when track flags are modified (pending sync)
 
     def __init__(self):
         super().__init__()
@@ -361,6 +362,9 @@ class iTunesDBCache(QObject):
         self._track_id_index: dict | None = None  # trackID -> track dict
         # User-created/edited playlists (persisted in memory until sync)
         self._user_playlists: list[dict] = []
+        # Pending track flag edits: dbid -> { field: value, ... }
+        # Merged into track dicts at sync time by sync_executor.
+        self._track_edits: dict[int, dict] = {}
 
     @classmethod
     def get_instance(cls) -> "iTunesDBCache":
@@ -380,6 +384,7 @@ class iTunesDBCache(QObject):
             self._genre_index = None
             self._track_id_index = None
             self._user_playlists.clear()
+            self._track_edits.clear()
 
     def invalidate(self):
         """Mark cached data stale so the next start_loading() re-parses."""
@@ -562,6 +567,53 @@ class iTunesDBCache(QObject):
         with self._lock:
             return len(self._user_playlists) > 0
 
+    # ─────────────────────────────────────────────────────────────
+    # Track flag edits (in-memory, applied at sync time)
+    # ─────────────────────────────────────────────────────────────
+
+    def update_track_flags(self, tracks: list[dict], changes: dict) -> None:
+        """Apply flag changes to one or more tracks.
+
+        Updates the in-memory track dicts immediately (so the UI reflects
+        the change) and records the edit so it persists through the next
+        sync/database write.
+
+        Args:
+            tracks:  List of track dicts (from the parsed iTunesDB).
+            changes: Field→value mapping, e.g.
+                     ``{"skipWhenShuffling": 1, "compilation": 0}``.
+        """
+        with self._lock:
+            for track in tracks:
+                dbid = track.get("dbid", 0)
+                if not dbid:
+                    continue
+                # Apply to the in-memory dict so the UI sees it instantly
+                for key, value in changes.items():
+                    track[key] = value
+                # Store the pending edit for sync time
+                self._track_edits.setdefault(dbid, {}).update(changes)
+
+        n = len(tracks)
+        fields = ", ".join(f"{k}={v}" for k, v in changes.items())
+        logger.info("Track flags updated on %d track(s): %s", n, fields)
+        self.tracks_changed.emit()
+
+    def get_track_edits(self) -> dict[int, dict]:
+        """Get all pending track flag edits: dbid -> {field: value}."""
+        with self._lock:
+            return dict(self._track_edits)
+
+    def has_pending_track_edits(self) -> bool:
+        """Check if there are track edits waiting to be synced."""
+        with self._lock:
+            return len(self._track_edits) > 0
+
+    def clear_track_edits(self) -> None:
+        """Clear pending track edits (called after successful sync)."""
+        with self._lock:
+            self._track_edits.clear()
+
     def set_data(self, data: dict, device_path: str):
         """Set cached data, build indexes, and emit ready signal."""
         # Build indexes for fast lookups
@@ -643,12 +695,26 @@ class iTunesDBCache(QObject):
         ThreadPoolSingleton.get_instance().start(worker)
 
     def _load_data(self, device_path: str, itunesdb_path: str) -> tuple:
-        """Background thread: parse the iTunesDB."""
+        """Background thread: parse the iTunesDB and merge Play Counts."""
         from iTunesDB_Parser.parser import parse_itunesdb
         if not itunesdb_path or not os.path.exists(itunesdb_path):
             return (None, device_path)
         try:
             data = parse_itunesdb(itunesdb_path)
+
+            # Merge Play Counts file so the GUI shows accurate play/skip
+            # counts (the iPod firmware records deltas there, not in the
+            # iTunesDB itself).
+            try:
+                from iTunesDB_Parser.playcounts import parse_playcounts, merge_playcounts
+                pc_path = os.path.join(os.path.dirname(itunesdb_path), "Play Counts")
+                entries = parse_playcounts(pc_path)
+                if entries is not None:
+                    tracks = data.get("mhlt", [])
+                    merge_playcounts(tracks, entries)
+            except Exception as e:
+                logger.debug("Play Counts merge skipped: %s", e)
+
             return (data, device_path)
         except Exception as e:
             logger.error("Error parsing iTunesDB: %s", e)
@@ -1423,6 +1489,13 @@ class MainWindow(QMainWindow):
         # Create filtered plan
         # Carry matched_pc_paths, artwork info, and playlist changes from the original plan
         original_plan = self._plan  # stored in _onSyncDiffComplete
+
+        # Playlists: only include if the playlist card's checkbox is checked
+        pl_card = getattr(self.syncReview, '_playlist_card', None)
+        include_playlists = (
+            pl_card is not None and pl_card._select_all_cb.isChecked()
+        ) if pl_card else True  # default to True if no card exists
+
         filtered_plan = SyncPlan(
             to_add=add_items,
             to_remove=remove_items,
@@ -1436,9 +1509,9 @@ class MainWindow(QMainWindow):
             artwork_missing_count=original_plan.artwork_missing_count if original_plan else 0,
             _stale_mapping_entries=original_plan._stale_mapping_entries if original_plan else [],
             mapping=original_plan.mapping if original_plan else None,
-            playlists_to_add=original_plan.playlists_to_add if original_plan else [],
-            playlists_to_edit=original_plan.playlists_to_edit if original_plan else [],
-            playlists_to_remove=original_plan.playlists_to_remove if original_plan else [],
+            playlists_to_add=original_plan.playlists_to_add if (original_plan and include_playlists) else [],
+            playlists_to_edit=original_plan.playlists_to_edit if (original_plan and include_playlists) else [],
+            playlists_to_remove=original_plan.playlists_to_remove if (original_plan and include_playlists) else [],
         )
 
         if not filtered_plan.has_changes:
