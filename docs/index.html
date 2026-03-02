@@ -22,6 +22,7 @@
     <meta name="twitter:image" content="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/screenshots/albums.png">
 
     <link rel="canonical" href="https://therealsavi.github.io/iOpenPod/">
+    <link rel="sitemap" type="application/xml" href="/iOpenPod/sitemap.xml">
 
     <style>
         :root {
@@ -297,6 +298,53 @@
             border: 0;
         }
 
+        /* FAQ */
+        .faq-list {
+            max-width: 700px;
+            margin: 0 auto;
+        }
+
+        .faq-list details {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            margin-bottom: 12px;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        .faq-list summary {
+            padding: 16px 20px;
+            font-weight: 600;
+            font-size: 1.05rem;
+            cursor: pointer;
+            list-style: none;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .faq-list summary::before {
+            content: "+";
+            font-size: 1.2rem;
+            color: var(--accent);
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+
+        .faq-list details[open] summary::before {
+            content: "−";
+        }
+
+        .faq-list summary::-webkit-details-marker { display: none; }
+
+        .faq-list details p {
+            padding: 0 20px 16px;
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            line-height: 1.6;
+        }
+
         @media (max-width: 480px) {
             header h1 { font-size: 2.2rem; }
             .screenshot-gallery { grid-template-columns: 1fr; }
@@ -326,6 +374,54 @@
         }
     }
     </script>
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+            {
+                "@type": "Question",
+                "name": "How do I sync my iPod without iTunes?",
+                "acceptedAnswer": {
+                    "@type": "Answer",
+                    "text": "Install iOpenPod, connect your iPod via USB, select your music folder, and click sync. iOpenPod writes directly to the iPod's database — no iTunes needed."
+                }
+            },
+            {
+                "@type": "Question",
+                "name": "Can I put FLAC files on an iPod?",
+                "acceptedAnswer": {
+                    "@type": "Answer",
+                    "text": "Yes. iOpenPod automatically converts FLAC files to Apple Lossless (ALAC) during sync, so your iPod can play them natively with no quality loss."
+                }
+            },
+            {
+                "@type": "Question",
+                "name": "Does iOpenPod work on Linux and macOS?",
+                "acceptedAnswer": {
+                    "@type": "Answer",
+                    "text": "Yes. iOpenPod is built with Python and PyQt6 and runs on Windows, macOS, and Linux. Just mount your iPod as a drive and go."
+                }
+            },
+            {
+                "@type": "Question",
+                "name": "Which iPod models are supported?",
+                "acceptedAnswer": {
+                    "@type": "Answer",
+                    "text": "All iPod Classic generations, iPod Mini, iPod Photo, and iPod Nano 1G through 5G have full read and write support. Nano 6G and 7G are read-only."
+                }
+            },
+            {
+                "@type": "Question",
+                "name": "Will syncing with iOpenPod erase my iPod?",
+                "acceptedAnswer": {
+                    "@type": "Answer",
+                    "text": "No. iOpenPod shows you exactly what will change before anything is written, and automatically backs up your database before every sync. You can roll back with one click."
+                }
+            }
+        ]
+    }
+    </script>
 </head>
 <body>
     <h2 class="sr-only">iOpenPod: Open-Source iPod Sync Tool — Manage Your iPod Without iTunes</h2>
@@ -348,7 +444,7 @@
             </div>
 
             <div class="hero-screenshot">
-                <img src="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/screenshots/albums.png" alt="iOpenPod album browser showing album grid with artwork">
+                <img src="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/screenshots/albums.png" alt="iOpenPod — open source iPod Classic sync tool showing album grid with artwork on Windows">
             </div>
         </div>
     </header>
@@ -394,27 +490,27 @@
             <h2>See It In Action</h2>
             <div class="screenshot-gallery">
                 <div class="screenshot-item">
-                    <img src="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/screenshots/syncreview.png" alt="Sync review screen">
+                    <img src="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/screenshots/syncreview.png" alt="iPod sync review — see tracks being added and removed before syncing without iTunes">
                     <div class="caption">Review every change before it hits your iPod</div>
                 </div>
                 <div class="screenshot-item">
-                    <img src="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/screenshots/devicepicker.png" alt="Device picker">
+                    <img src="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/screenshots/devicepicker.png" alt="iPod device detection — auto-detect iPod Classic and Nano models on Windows, Mac, Linux">
                     <div class="caption">Detect and pick your connected iPod</div>
                 </div>
                 <div class="screenshot-item">
-                    <img src="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/screenshots/playlists.png" alt="Playlist browser">
+                    <img src="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/screenshots/playlists.png" alt="iPod playlist manager — browse and edit playlists without iTunes">
                     <div class="caption">Browse and manage playlists</div>
                 </div>
                 <div class="screenshot-item">
-                    <img src="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/screenshots/smartplaylists.png" alt="Smart playlists">
+                    <img src="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/screenshots/smartplaylists.png" alt="iPod smart playlists — rule-based playlist filtering for iPod Classic">
                     <div class="caption">Smart playlists with rule-based filtering</div>
                 </div>
                 <div class="screenshot-item">
-                    <img src="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/screenshots/backups.png" alt="Backup manager">
+                    <img src="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/screenshots/backups.png" alt="iPod database backup and restore — one-click rollback for safe syncing">
                     <div class="caption">One-click backup and restore</div>
                 </div>
                 <div class="screenshot-item">
-                    <img src="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/screenshots/settings.png" alt="Settings page">
+                    <img src="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/screenshots/settings.png" alt="iOpenPod settings — configure FLAC to ALAC transcoding and sync options">
                     <div class="caption">Configure transcoding, sync behavior, and more</div>
                 </div>
             </div>
@@ -450,6 +546,31 @@
                 <code>cd iOpenPod</code>
                 <code>uv sync</code>
                 <code>uv run python main.py</code>
+            </div>
+        </section>
+        <section>
+            <h2>Frequently Asked Questions</h2>
+            <div class="faq-list">
+                <details>
+                    <summary>How do I sync my iPod without iTunes?</summary>
+                    <p>Install iOpenPod, connect your iPod via USB, select your music folder, and click sync. iOpenPod writes directly to the iPod's database — no iTunes needed.</p>
+                </details>
+                <details>
+                    <summary>Can I put FLAC files on an iPod?</summary>
+                    <p>Yes. iOpenPod automatically converts FLAC to Apple Lossless (ALAC) during sync, so your iPod plays them natively with no quality loss.</p>
+                </details>
+                <details>
+                    <summary>Does it work on Linux and macOS?</summary>
+                    <p>Yes. It's built with Python and PyQt6 — runs on Windows, macOS, and Linux. Just mount your iPod as a drive and go.</p>
+                </details>
+                <details>
+                    <summary>Which iPod models are supported?</summary>
+                    <p>All iPod Classic generations, iPod Mini, iPod Photo, and iPod Nano 1G–5G have full read/write support. Nano 6G/7G are read-only.</p>
+                </details>
+                <details>
+                    <summary>Will syncing erase my iPod?</summary>
+                    <p>No. iOpenPod shows you exactly what will change before writing anything, and backs up your database before every sync. Roll back with one click.</p>
+                </details>
             </div>
         </section>
     </main>
