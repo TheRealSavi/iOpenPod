@@ -12,58 +12,33 @@ import numpy as np
 from PIL import Image
 from typing import Optional
 
+from ipod_models import (
+    ITHMB_FORMAT_MAP,
+    ithmb_formats_for_device,
+)
 
-# ── Per-device artwork format tables ──────────────────────────────────────
-# correlationID → (width, height).  Each device family uses a different set
-# of format IDs.  The master list lives in ArtworkDB_Parser/mhni_parser.py
-# FORMAT_ID_MAP.
 
-IPOD_CLASSIC_FORMATS = {
-    1055: (128, 128),  # Medium album art
-    1060: (320, 320),  # Large album art
-    1061: (56, 56),    # Small album art (thumbnail)
+# ── Artwork format tables ─────────────────────────────────────────────────
+# All canonical format definitions now live in ipod_models.py.
+#
+# The dicts below are DERIVED from the canonical source so that existing
+# callers (artwork_writer.py, __init__.py, etc.) still see the same
+# ``{correlation_id: (width, height)}`` interface without changes.
+
+# Combined lookup for ALL known format IDs (validation / preserved art)
+ALL_KNOWN_FORMATS: dict[int, tuple[int, int]] = {
+    fid: (af.width, af.height) for fid, af in ITHMB_FORMAT_MAP.items()
 }
 
-IPOD_NANO_1G2G_FORMATS = {
-    1027: (100, 100),  # Album art large
-    1031: (42, 42),    # Album art small
-}
-
-IPOD_PHOTO_FORMATS = {
-    1016: (140, 140),  # Album art large
-    1017: (56, 56),    # Album art small
-}
-
-IPOD_VIDEO_FORMATS = {
-    1028: (100, 100),  # Album art small
-    1029: (200, 200),  # Album art large
-}
-
-IPOD_NANO_3G_FORMATS = {
-    # Nano 3G uses Classic format IDs (per libgpod)
-    1055: (128, 128),
-    1060: (320, 320),
-    1061: (56, 56),
-}
-
-IPOD_NANO_4G_FORMATS = {
-    1071: (240, 240),  # Album art large
-    1074: (50, 50),    # Album art tiny
-    1078: (80, 80),    # Album art small
-}
-
-IPOD_NANO_5G_FORMATS = {
-    1073: (240, 240),  # Album art large
-    1078: (80, 80),    # Album art small
-}
-
-# Combined lookup for all known format IDs (used for validation)
-ALL_KNOWN_FORMATS: dict[int, tuple[int, int]] = {}
-for _fmt_table in (IPOD_CLASSIC_FORMATS, IPOD_NANO_1G2G_FORMATS,
-                   IPOD_PHOTO_FORMATS, IPOD_VIDEO_FORMATS,
-                   IPOD_NANO_3G_FORMATS, IPOD_NANO_4G_FORMATS,
-                   IPOD_NANO_5G_FORMATS):
-    ALL_KNOWN_FORMATS.update(_fmt_table)
+# Per-family convenience dicts — thin wrappers around ipod_models data.
+# May be removed in a future cleanup once all callers migrate to
+# ``ithmb_formats_for_device()`` or ``capabilities_for_family_gen()``.
+IPOD_CLASSIC_FORMATS = ithmb_formats_for_device("iPod Classic", "1st Gen")
+IPOD_NANO_1G2G_FORMATS = ithmb_formats_for_device("iPod Nano", "1st Gen")
+IPOD_PHOTO_FORMATS = ithmb_formats_for_device("iPod Photo", "4th Gen")
+IPOD_VIDEO_FORMATS = ithmb_formats_for_device("iPod Video", "5th Gen")
+IPOD_NANO_4G_FORMATS = ithmb_formats_for_device("iPod Nano", "4th Gen")
+IPOD_NANO_5G_FORMATS = ithmb_formats_for_device("iPod Nano", "5th Gen")
 
 # Stride override: format_id → stride in pixels (when stride != width)
 IPOD_STRIDE_OVERRIDE: dict[int, int] = {}
@@ -72,9 +47,9 @@ IPOD_STRIDE_OVERRIDE: dict[int, int] = {}
 def get_artwork_formats(ipod_path: str) -> dict[int, tuple[int, int]]:
     """Return the correct format table for the connected iPod.
 
-    Reads exclusively from the centralised DeviceInfo store which was
-    populated when the device was selected.  If no device info is
-    available, defaults to iPod Classic formats.
+    Reads from the centralised DeviceInfo store (populated when the device
+    was selected).  Falls back to the model capabilities table, and finally
+    to iPod Classic formats as a safe default.
     """
     import logging
     _log = logging.getLogger(__name__)
@@ -87,6 +62,13 @@ def get_artwork_formats(ipod_path: str) -> dict[int, tuple[int, int]]:
             list(device.artwork_formats.keys()),
         )
         return device.artwork_formats
+
+    # Try capabilities table via device family/generation
+    if device is not None and device.model_family and device.generation:
+        caps_fmts = ithmb_formats_for_device(device.model_family, device.generation)
+        if caps_fmts:
+            _log.info("ART: using formats from capabilities: %s", list(caps_fmts.keys()))
+            return caps_fmts
 
     _log.info("ART: no DeviceInfo available — defaulting to iPod Classic formats")
     return IPOD_CLASSIC_FORMATS
@@ -121,38 +103,6 @@ def _extract_format_ids(data: bytes) -> list[int]:
                         break
         offset += mhsd_total
     return result
-
-
-def _family_gen_to_formats(family: str, gen: str) -> Optional[dict[int, tuple[int, int]]]:
-    """Map device family + generation to the correct format table."""
-    family_lower = family.lower()
-
-    if "nano" in family_lower:
-        gen_lower = gen.lower()
-        if "1st" in gen_lower or "2nd" in gen_lower:
-            return IPOD_NANO_1G2G_FORMATS
-        elif "3rd" in gen_lower:
-            return IPOD_NANO_3G_FORMATS
-        elif "4th" in gen_lower:
-            return IPOD_NANO_4G_FORMATS
-        elif "5th" in gen_lower:
-            return IPOD_NANO_5G_FORMATS
-        # 6G/7G are out of scope for write support
-        return IPOD_NANO_1G2G_FORMATS  # safe fallback for unknown nano
-
-    if "photo" in family_lower:
-        return IPOD_PHOTO_FORMATS
-
-    if "video" in family_lower:
-        return IPOD_VIDEO_FORMATS
-
-    if "classic" in family_lower:
-        return IPOD_CLASSIC_FORMATS
-
-    # iPod 1G-4G (monochrome / greyscale) — no artwork support
-    # Mini — no color screen on 1G, 2G has greyscale
-    # Default to Classic formats for anything unrecognised
-    return None
 
 
 def image_from_bytes(art_bytes: bytes) -> Optional[Image.Image]:

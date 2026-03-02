@@ -38,6 +38,8 @@ from .rgb565 import (
     IPOD_NANO_5G_FORMATS,
     ALL_KNOWN_FORMATS,
 )
+# Re-export canonical format lookups from ipod_models
+from ipod_models import ITHMB_FORMAT_MAP, ITHMB_SIZE_MAP, ithmb_formats_for_device
 
 __all__ = [
     'write_artworkdb',
@@ -55,4 +57,7 @@ __all__ = [
     'IPOD_NANO_4G_FORMATS',
     'IPOD_NANO_5G_FORMATS',
     'ALL_KNOWN_FORMATS',
+    'ITHMB_FORMAT_MAP',
+    'ITHMB_SIZE_MAP',
+    'ithmb_formats_for_device',
 ]
