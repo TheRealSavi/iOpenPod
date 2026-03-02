@@ -179,7 +179,7 @@ def read_fingerprint(filepath: str | Path) -> Optional[str]:
                 if frame.desc == FINGERPRINT_TAG:
                     return frame.text[0] if frame.text else None
 
-        elif suffix in (".m4a", ".m4p", ".aac", ".alac"):
+        elif suffix in (".m4a", ".m4p", ".aac", ".alac", ".m4v", ".mp4", ".mov"):
             audio = MP4(filepath)
             if FINGERPRINT_TAG_MP4 in audio:
                 val = audio[FINGERPRINT_TAG_MP4]
@@ -242,7 +242,7 @@ def write_fingerprint(filepath: str | Path, fingerprint: str) -> bool:
             audio.save(filepath)
             return True
 
-        elif suffix in (".m4a", ".m4p", ".aac", ".alac"):
+        elif suffix in (".m4a", ".m4p", ".aac", ".alac", ".m4v", ".mp4", ".mov"):
             audio = MP4(filepath)
             audio[FINGERPRINT_TAG_MP4] = [fingerprint.encode("utf-8")]
             audio.save()

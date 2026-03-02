@@ -266,6 +266,18 @@ METADATA_FIELDS: dict[str, str] = {
     "composer": "Composer",
     "comment": "Comment",
     "grouping": "Grouping",
+    # Video/TV show fields
+    "show_name": "Show",
+    "season_number": "seasonNumber",
+    "episode_number": "episodeNumber",
+    "description": "Description Text",
+    "episode_id": "Episode",
+    "network_name": "TV Network",
+    # Podcast / extra string fields
+    "category": "Category",
+    "subtitle": "Subtitle",
+    # Sort fields
+    "sort_show": "Sort Show",
 }
 
 
@@ -282,9 +294,12 @@ class FingerprintDiffEngine:
         print(plan.summary)
     """
 
-    def __init__(self, pc_library: PCLibrary, ipod_path: str | Path):
+    def __init__(self, pc_library: PCLibrary, ipod_path: str | Path,
+                 supports_video: bool = True, supports_podcast: bool = True):
         self.pc_library = pc_library
         self.ipod_path = Path(ipod_path)
+        self.supports_video = supports_video
+        self.supports_podcast = supports_podcast
         self.mapping_manager = MappingManager(ipod_path)
 
     # ── Public API ──────────────────────────────────────────────────────────
@@ -294,6 +309,7 @@ class FingerprintDiffEngine:
         ipod_tracks: list[dict],
         progress_callback: Optional[Callable[[str, int, int, str], None]] = None,
         write_fingerprints: bool = True,
+        is_cancelled: Optional[Callable[[], bool]] = None,
     ) -> SyncPlan:
         """
         Compute the full sync plan.
@@ -302,6 +318,8 @@ class FingerprintDiffEngine:
             ipod_tracks: Track dicts from iTunesDB parser
             progress_callback: Optional callback(stage, current, total, message)
             write_fingerprints: Store computed fingerprints in PC file metadata
+            is_cancelled: Optional callable returning True when the caller
+                          wants to abort early.  Checked between stages.
 
         Returns:
             SyncPlan
@@ -331,7 +349,10 @@ class FingerprintDiffEngine:
             mapping,
             delete_orphans=True,
             progress_callback=progress_callback,
+            is_cancelled=is_cancelled,
         )
+        if is_cancelled and is_cancelled():
+            return plan
         if not integrity_report.is_clean:
             logger.info(integrity_report.summary)
             # Save cleaned mapping immediately so stale entries don't persist
@@ -369,10 +390,20 @@ class FingerprintDiffEngine:
         plan.total_ipod_tracks = len(ipod_by_dbid)
 
         # ===== Phase 1: Scan PC & fingerprint =====
+        if is_cancelled and is_cancelled():
+            return plan
+
         if progress_callback:
             progress_callback("scan_pc", 0, 0, "Scanning PC library...")
 
-        pc_tracks = list(self.pc_library.scan())
+        pc_tracks = list(self.pc_library.scan(include_video=self.supports_video))
+
+        # Filter out podcast tracks when the device doesn't support podcasts.
+        # This mirrors the include_video filter: no point syncing content the
+        # iPod can't categorise.
+        if not self.supports_podcast:
+            pc_tracks = [t for t in pc_tracks if not t.is_podcast]
+
         plan.total_pc_tracks = len(pc_tracks)
 
         # fingerprint → list[PCTrack]  (to detect PC-side duplicates)
@@ -403,6 +434,12 @@ class FingerprintDiffEngine:
             futures = {pool.submit(_fingerprint_one, t): t for t in pc_tracks}
 
             for future in as_completed(futures):
+                if is_cancelled and is_cancelled():
+                    # Cancel remaining futures and bail out
+                    for f in futures:
+                        f.cancel()
+                    return plan
+
                 with completed_lock:
                     completed += 1
                     current = completed
@@ -439,6 +476,9 @@ class FingerprintDiffEngine:
                     plan.duplicates[display_key] = album_tracks
 
         # ===== Phase 3: Match & Diff =====
+        if is_cancelled and is_cancelled():
+            return plan
+
         if progress_callback:
             progress_callback("diff", 0, 0, "Computing differences...")
 
@@ -598,6 +638,9 @@ class FingerprintDiffEngine:
                 ))
 
         # ===== Phase 4: Find tracks to remove =====
+        if is_cancelled and is_cancelled():
+            return plan
+
         # 4a: Fingerprints entirely absent from PC → all entries are removals
         mapping_fps = mapping.all_fingerprints()
         orphaned_fps = mapping_fps - seen_fps
@@ -772,6 +815,13 @@ class FingerprintDiffEngine:
                 pc_value = ""
             if ipod_value is None:
                 ipod_value = ""
+
+            # Normalize int/str mismatch (e.g. season_number: None→"" vs 0)
+            # Treat "" and 0 as equivalent "empty" values
+            if pc_value == "" and ipod_value == 0:
+                continue
+            if pc_value == 0 and ipod_value == "":
+                continue
 
             if isinstance(pc_value, str) and isinstance(ipod_value, str):
                 if pc_value.strip() != ipod_value.strip():

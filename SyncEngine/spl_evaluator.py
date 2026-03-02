@@ -71,6 +71,7 @@ _INT_FIELD_KEY: dict[int, str] = {
     0x19: "rating",          # Rating (0-100, stars×20)
     0x23: "bpm",             # BPM
     0x3F: "seasonNumber",    # Season Number
+    0x40: "episodeNumber",   # Episode Number
     0x44: "skipCount",       # Skip Count
     0x5A: "albumRating",     # Album Rating (not always present)
     0x39: "podcast",         # Podcast flag (not always present)

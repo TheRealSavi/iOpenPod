@@ -35,10 +35,11 @@ from .mapping import MappingFile
 
 logger = logging.getLogger(__name__)
 
-# Audio extensions the iPod can contain
-_AUDIO_EXTS = frozenset({
+# Media extensions the iPod can contain (audio + video)
+_MEDIA_EXTS = frozenset({
     ".mp3", ".m4a", ".m4b", ".m4p", ".mp4",
     ".aac", ".wav", ".aif", ".aiff", ".alac",
+    ".m4v",  # iPod video format
 })
 
 
@@ -85,6 +86,7 @@ def check_integrity(
     *,
     delete_orphans: bool = True,
     progress_callback: Optional[Callable] = None,
+    is_cancelled: Optional[Callable[[], bool]] = None,
 ) -> IntegrityReport:
     """
     Run all three consistency checks and repair discrepancies.
@@ -107,11 +109,17 @@ def check_integrity(
     music_dir = ipod_root / "iPod_Control" / "Music"
     report = IntegrityReport()
 
+    def _cancelled() -> bool:
+        return is_cancelled is not None and is_cancelled()
+
     # ── A. iTunesDB → Filesystem ────────────────────────────────────────────
     if progress_callback:
         progress_callback("integrity", 0, 0, "Checking iTunesDB against filesystem…")
 
     _check_db_files_exist(ipod_root, ipod_tracks, report)
+
+    if _cancelled():
+        return report
 
     # ── B. iOpenPod.json → iTunesDB ────────────────────────────────────────
     if progress_callback:
@@ -119,11 +127,14 @@ def check_integrity(
 
     _check_mapping_dbids(ipod_tracks, mapping, report)
 
+    if _cancelled():
+        return report
+
     # ── C. Filesystem → iTunesDB  (orphan scan) ────────────────────────────
     if progress_callback:
         progress_callback("integrity", 0, 0, "Scanning for orphan files…")
 
-    _check_orphan_files(ipod_root, music_dir, ipod_tracks, report, delete_orphans)
+    _check_orphan_files(ipod_root, music_dir, ipod_tracks, report, delete_orphans, _cancelled)
 
     if not report.is_clean:
         logger.warning(report.summary)
@@ -213,35 +224,44 @@ def _check_orphan_files(
     ipod_tracks: list[dict],
     report: IntegrityReport,
     delete_orphans: bool,
+    is_cancelled: Callable[[], bool] = lambda: False,
 ) -> None:
     """Find and optionally delete files in Music/F** not referenced by iTunesDB."""
     if not music_dir.exists():
         return
 
-    # Build set of absolute paths referenced by iTunesDB
-    referenced_paths: set[Path] = set()
+    # Build set of normalised paths referenced by iTunesDB.
+    # Use os.path.normcase(os.path.join(...)) instead of Path.resolve() to
+    # avoid a stat() syscall per path — the iPod filesystem is case-preserving
+    # so normalised string comparison is sufficient.
+    import os
+    referenced: set[str] = set()
+    ipod_str = str(ipod_root)
     for track in ipod_tracks:
         location = track.get("Location")
         if not location:
             continue
-        relative = location.replace(":", "/").lstrip("/")
-        full_path = (ipod_root / relative).resolve()
-        referenced_paths.add(full_path)
+        relative = location.replace(":", os.sep).lstrip(os.sep)
+        referenced.add(os.path.normcase(os.path.join(ipod_str, relative)))
 
-    # Scan F00–F49 for actual audio files
+    # Scan F00–F## for actual audio files
     orphans: list[Path] = []
     for folder in sorted(music_dir.iterdir()):
+        if is_cancelled():
+            return
         if not folder.is_dir():
             continue
         # Only look in F## folders
         if not (len(folder.name) >= 2 and folder.name[0] == "F" and folder.name[1:].isdigit()):
             continue
         for file in folder.iterdir():
+            if is_cancelled():
+                return
             if not file.is_file():
                 continue
-            if file.suffix.lower() not in _AUDIO_EXTS:
+            if file.suffix.lower() not in _MEDIA_EXTS:
                 continue
-            if file.resolve() not in referenced_paths:
+            if os.path.normcase(str(file)) not in referenced:
                 orphans.append(file)
 
     report.orphan_files = orphans

@@ -1,5 +1,5 @@
 """
-PC Library Scanner - Scans a folder for music files and extracts metadata.
+PC Library Scanner - Scans a folder for media files and extracts metadata.
 
 Uses mutagen for metadata extraction. Supports:
 - MP3 (.mp3)
@@ -81,6 +81,7 @@ AUDIO_EXTENSIONS = {
     ".m4a",
     ".m4p",
     ".aac",
+    ".m4b",
     ".flac",
     ".wav",
     ".aif",
@@ -89,6 +90,18 @@ AUDIO_EXTENSIONS = {
     ".opus",
     ".wma",
 }
+
+# Supported video extensions (iPod Video 5G+, Classic, Nano 3G+)
+VIDEO_EXTENSIONS = {
+    ".m4v",
+    ".mp4",
+    ".mov",
+    ".mkv",
+    ".avi",
+}
+
+# All supported media extensions (audio + video)
+MEDIA_EXTENSIONS = AUDIO_EXTENSIONS | VIDEO_EXTENSIONS
 
 # Formats that need transcoding for iPod
 NEEDS_TRANSCODING = {
@@ -101,18 +114,39 @@ NEEDS_TRANSCODING = {
     ".wma",
 }
 
+# Video formats that always need transcoding (non-iPod containers)
+VIDEO_ALWAYS_TRANSCODE = {
+    ".mov",
+    ".mkv",
+    ".avi",
+}
+
+# Video containers that MIGHT be iPod-native (need ffprobe to confirm)
+# These are only truly native if they contain H.264 Baseline ≤640x480, 8-bit, stereo AAC
+VIDEO_PROBE_CONTAINERS = {
+    ".m4v",
+    ".mp4",
+}
+
 # Formats iPod can play natively
 IPOD_NATIVE = {
     ".mp3",
     ".m4a",
     ".m4p",
+    ".m4b",
     ".aac",
+}
+
+# Video formats iPod can play natively (only if codec is compatible — use probe)
+IPOD_NATIVE_VIDEO = {
+    ".m4v",
+    ".mp4",
 }
 
 
 @dataclass
 class PCTrack:
-    """A music track on the PC."""
+    """A media track on the PC (audio, video, podcast, or audiobook)."""
 
     # File info
     path: str  # Absolute path
@@ -165,9 +199,28 @@ class PCTrack:
     # Content advisory / explicit flag
     explicit_flag: int = 0  # 0=none, 1=explicit, 2=clean
     has_lyrics: bool = False  # True if embedded lyrics exist
+    lyrics: Optional[str] = None  # Full lyrics text (for iPod MHOD type 10)
 
     # Artwork hash (MD5 of embedded image bytes, for change detection)
     art_hash: Optional[str] = None
+
+    # Video metadata (populated only for video files)
+    is_video: bool = False  # True if file is a video
+    video_kind: str = ""  # "movie", "music_video", "tv_show", or "" for audio
+    show_name: Optional[str] = None  # TV show name
+    season_number: Optional[int] = None  # TV show season
+    episode_number: Optional[int] = None  # TV show episode number
+    episode_id: Optional[str] = None  # Episode ID string
+    description: Optional[str] = None  # Track/episode description
+    long_description: Optional[str] = None  # Extended description
+    network_name: Optional[str] = None  # TV network
+    sort_show: Optional[str] = None  # Sort show name
+
+    # Podcast/audiobook detection (populated from stik atom or file extension)
+    is_podcast: bool = False     # True if stik=21 or pcst atom present
+    is_audiobook: bool = False   # True if stik=2 or .m4b extension
+    category: Optional[str] = None  # Podcast/audiobook category (from catg atom)
+    podcast_url: Optional[str] = None  # Podcast feed URL (from purl atom)
 
     # Computed
     needs_transcoding: bool = False  # True if format not iPod-native
@@ -180,7 +233,7 @@ class PCTrack:
 
 class PCLibrary:
     """
-    Scanner for PC music library.
+    Scanner for PC media library.
 
     Usage:
         library = PCLibrary("D:/Music")
@@ -206,36 +259,46 @@ class PCLibrary:
         if not self.root_path.is_dir():
             raise ValueError(f"Library path is not a directory: {self.root_path}")
 
-    def count_audio_files(self) -> int:
-        """Count total audio files in library (fast, no metadata reading)."""
+    def count_audio_files(self, include_video: bool = True) -> int:
+        """Count total media files in library (fast, no metadata reading).
+
+        Args:
+            include_video: When False, only count audio files (skip VIDEO_EXTENSIONS).
+        """
+        extensions = MEDIA_EXTENSIONS if include_video else AUDIO_EXTENSIONS
         count = 0
         for root, _, files in os.walk(self.root_path):
             for filename in files:
-                if Path(filename).suffix.lower() in AUDIO_EXTENSIONS:
+                if Path(filename).suffix.lower() in extensions:
                     count += 1
         return count
 
     def scan(
         self,
         progress_callback: Optional[Callable[[int, int, PCTrack], None]] = None,
+        include_video: bool = True,
     ) -> Iterator[PCTrack]:
         """
         Scan the library and yield PCTrack objects.
 
         Args:
             progress_callback: Optional callback(current, total, track) for progress updates
+            include_video: When False, skip video files entirely.
+                           Set to False when syncing to iPods that don't support video.
         """
         if not MUTAGEN_AVAILABLE:
             raise RuntimeError("mutagen is required for library scanning. Install with: pip install mutagen")
 
+        extensions = MEDIA_EXTENSIONS if include_video else AUDIO_EXTENSIONS
+
         # First count files for progress
-        total = self.count_audio_files() if progress_callback else 0
+        total = self.count_audio_files(include_video=include_video) if progress_callback else 0
         current = 0
 
         for root, _, files in os.walk(self.root_path):
             for filename in files:
                 ext = Path(filename).suffix.lower()
-                if ext not in AUDIO_EXTENSIONS:
+                if ext not in extensions:
                     continue
 
                 file_path = Path(root) / filename
@@ -252,9 +315,10 @@ class PCLibrary:
                     continue
 
     def _read_track(self, file_path: Path) -> Optional[PCTrack]:
-        """Read metadata from a single audio file."""
+        """Read metadata from a single audio or video file."""
         stat = file_path.stat()
         ext = file_path.suffix.lower()
+        is_video = ext in VIDEO_EXTENSIONS
 
         # Try to open with mutagen
         if mutagen is None:
@@ -275,6 +339,31 @@ class PCLibrary:
 
         # Extract art hash for artwork change detection
         art_hash = self._compute_art_hash(file_path)
+
+        # Determine video kind from metadata or extension
+        video_kind = ""
+        if is_video:
+            video_kind = metadata.get("video_kind", "movie")
+
+        # Detect podcast and audiobook content
+        is_podcast = metadata.get("is_podcast", False)
+        is_audiobook = metadata.get("is_audiobook", False)
+        # .m4b extension is always an audiobook container
+        if ext == ".m4b" and not is_audiobook:
+            is_audiobook = True
+
+        # Determine transcoding need
+        if is_video:
+            if ext in VIDEO_ALWAYS_TRANSCODE:
+                needs_tc = True
+            elif ext in VIDEO_PROBE_CONTAINERS:
+                # Probe the actual codec to decide
+                from .transcoder import probe_video_needs_transcode
+                needs_tc = probe_video_needs_transcode(file_path)
+            else:
+                needs_tc = True  # Unknown video format, transcode to be safe
+        else:
+            needs_tc = ext in NEEDS_TRANSCODING
 
         return PCTrack(
             path=str(file_path),
@@ -313,8 +402,23 @@ class PCLibrary:
             gapless_data=metadata.get("gapless_data", 0),
             explicit_flag=metadata.get("explicit_flag", 0),
             has_lyrics=metadata.get("has_lyrics", False),
+            lyrics=metadata.get("lyrics"),
             art_hash=art_hash,
-            needs_transcoding=ext in NEEDS_TRANSCODING,
+            needs_transcoding=needs_tc,
+            is_video=is_video,
+            video_kind=video_kind,
+            show_name=metadata.get("show_name"),
+            season_number=metadata.get("season_number"),
+            episode_number=metadata.get("episode_number"),
+            episode_id=metadata.get("episode_id"),
+            description=metadata.get("description"),
+            long_description=metadata.get("long_description"),
+            network_name=metadata.get("network_name"),
+            sort_show=metadata.get("sort_show"),
+            is_podcast=is_podcast,
+            is_audiobook=is_audiobook,
+            category=metadata.get("category"),
+            podcast_url=metadata.get("podcast_url"),
         )
 
     def _compute_art_hash(self, file_path: Path) -> Optional[str]:
@@ -344,7 +448,7 @@ class PCLibrary:
         # Handle different tag formats
         if ext == ".mp3":
             metadata.update(self._extract_id3(audio))
-        elif ext in {".m4a", ".m4p", ".aac"}:
+        elif ext in {".m4a", ".m4p", ".m4b", ".m4v", ".mp4", ".aac"}:
             metadata.update(self._extract_mp4(audio))
         elif ext == ".flac":
             metadata.update(self._extract_vorbis(audio))
@@ -469,8 +573,29 @@ class PCLibrary:
                 if key.startswith('USLT'):
                     uslt = audio.tags[key]
                     if hasattr(uslt, 'text') and uslt.text:
-                        metadata['has_lyrics'] = True
+                        text = str(uslt.text).strip()
+                        if text:
+                            metadata['has_lyrics'] = True
+                            metadata['lyrics'] = text
                     break
+
+            # Podcast flag (PCST frame — Apple non-standard ID3)
+            pcst = audio.tags.get('PCST')
+            if pcst and hasattr(pcst, 'text') and pcst.text:
+                metadata['is_podcast'] = True
+
+            # Podcast category (TCAT frame — Apple non-standard ID3)
+            tcat = audio.tags.get('TCAT')
+            if tcat and hasattr(tcat, 'text') and tcat.text:
+                metadata['category'] = str(tcat.text[0])
+
+            # Podcast feed URL (WFED frame — Apple non-standard ID3)
+            wfed = audio.tags.get('WFED')
+            if wfed:
+                if hasattr(wfed, 'url') and wfed.url:
+                    metadata['podcast_url'] = str(wfed.url)
+                elif hasattr(wfed, 'text') and wfed.text:
+                    metadata['podcast_url'] = str(wfed.text[0])
 
         # Extract rating from POPM (Popularimeter) frame
         # POPM rating is 0-255, convert to 0-100 (iPod style: stars × 20)
@@ -612,6 +737,88 @@ class PCLibrary:
             lyr = audio.tags.get("\xa9lyr")
             if lyr and len(lyr) > 0 and str(lyr[0]).strip():
                 metadata["has_lyrics"] = True
+                metadata["lyrics"] = str(lyr[0]).strip()
+
+            # --- Video-specific atoms ---
+            # stik: media kind (0/1=Normal/Music, 2=Audiobook, 6=Music Video,
+            #                   9=Movie, 10=TV Show, 21=Podcast)
+            stik = audio.tags.get("stik")
+            if stik and len(stik) > 0:
+                try:
+                    kind = int(stik[0])
+                    _STIK_MAP = {6: "music_video", 9: "movie", 10: "tv_show"}
+                    metadata["video_kind"] = _STIK_MAP.get(kind, "")
+                    if kind == 2:
+                        metadata["is_audiobook"] = True
+                    elif kind == 21:
+                        metadata["is_podcast"] = True
+                except (ValueError, TypeError):
+                    pass
+
+            # pcst: Podcast flag atom (boolean, present = podcast)
+            pcst = audio.tags.get("pcst")
+            if pcst and len(pcst) > 0:
+                try:
+                    if int(pcst[0]):
+                        metadata["is_podcast"] = True
+                except (ValueError, TypeError):
+                    pass
+
+            # catg: Category (podcasts/audiobooks)
+            catg = audio.tags.get("catg")
+            if catg and len(catg) > 0:
+                metadata["category"] = str(catg[0])
+
+            # purl: Podcast URL
+            purl = audio.tags.get("purl")
+            if purl and len(purl) > 0:
+                metadata["podcast_url"] = str(purl[0])
+
+            # tvsh: TV Show name
+            tvsh = audio.tags.get("tvsh")
+            if tvsh and len(tvsh) > 0:
+                metadata["show_name"] = str(tvsh[0])
+
+            # tven: Episode ID (e.g. "S01E05")
+            tven = audio.tags.get("tven")
+            if tven and len(tven) > 0:
+                metadata["episode_id"] = str(tven[0])
+
+            # tves: Episode number
+            tves = audio.tags.get("tves")
+            if tves and len(tves) > 0:
+                try:
+                    metadata["episode_number"] = int(tves[0])
+                except (ValueError, TypeError):
+                    pass
+
+            # tvsn: Season number
+            tvsn = audio.tags.get("tvsn")
+            if tvsn and len(tvsn) > 0:
+                try:
+                    metadata["season_number"] = int(tvsn[0])
+                except (ValueError, TypeError):
+                    pass
+
+            # tvnn: Network name
+            tvnn = audio.tags.get("tvnn")
+            if tvnn and len(tvnn) > 0:
+                metadata["network_name"] = str(tvnn[0])
+
+            # desc: Short description
+            desc_val = audio.tags.get("desc")
+            if desc_val and len(desc_val) > 0:
+                metadata["description"] = str(desc_val[0])
+
+            # ldes: Long description
+            ldes = audio.tags.get("ldes")
+            if ldes and len(ldes) > 0:
+                metadata["long_description"] = str(ldes[0])
+
+            # sosn: Sort Show
+            sosn = audio.tags.get("sosn")
+            if sosn and len(sosn) > 0:
+                metadata["sort_show"] = str(sosn[0])
 
         return metadata
 
@@ -674,6 +881,7 @@ class PCLibrary:
             lyrics = audio.tags.get("lyrics")
             if lyrics and len(lyrics) > 0 and str(lyrics[0]).strip():
                 metadata["has_lyrics"] = True
+                metadata["lyrics"] = str(lyrics[0]).strip()
 
         return metadata
 

@@ -215,6 +215,22 @@ def _build_device_totals(
     track_count: int,
     total_music_bytes: int,
     total_music_seconds: int,
+    *,
+    video_tracks: int = 0,
+    video_bytes: int = 0,
+    video_seconds: int = 0,
+    podcast_tracks: int = 0,
+    podcast_bytes: int = 0,
+    podcast_seconds: int = 0,
+    audiobook_tracks: int = 0,
+    audiobook_bytes: int = 0,
+    audiobook_seconds: int = 0,
+    tv_show_tracks: int = 0,
+    tv_show_bytes: int = 0,
+    tv_show_seconds: int = 0,
+    music_video_tracks: int = 0,
+    music_video_bytes: int = 0,
+    music_video_seconds: int = 0,
 ) -> dict:
     """Build an EstimatedDeviceTotals dict for writing to the plist."""
     try:
@@ -248,9 +264,9 @@ def _build_device_totals(
         "totalAudioBytes": total_music_bytes,
         "totalAudioSeconds": total_music_seconds,
         "totalAudioTracks": track_count,
-        "totalAudiobookBytes": 0,
-        "totalAudiobookSeconds": 0,
-        "totalAudiobookTracks": 0,
+        "totalAudiobookBytes": audiobook_bytes,
+        "totalAudiobookSeconds": audiobook_seconds,
+        "totalAudiobookTracks": audiobook_tracks,
         "totalBookBytes": 0,
         "totalBookTracks": 0,
         "totalBookletBytes": 0,
@@ -261,36 +277,36 @@ def _build_device_totals(
         "totalITunesUBytes": 0,
         "totalITunesUSeconds": 0,
         "totalITunesUTracks": 0,
-        "totalMovieBytes": 0,
+        "totalMovieBytes": video_bytes,
         "totalMovieRentalBytes": 0,
         "totalMovieRentalSeconds": 0,
         "totalMovieRentalTracks": 0,
-        "totalMovieSeconds": 0,
-        "totalMovieTracks": 0,
+        "totalMovieSeconds": video_seconds,
+        "totalMovieTracks": video_tracks,
         "totalMusicBytes": total_music_bytes,
         "totalMusicSeconds": total_music_seconds,
         "totalMusicTracks": track_count,
-        "totalMusicVideoBytes": 0,
-        "totalMusicVideoSeconds": 0,
-        "totalMusicVideoTracks": 0,
+        "totalMusicVideoBytes": music_video_bytes,
+        "totalMusicVideoSeconds": music_video_seconds,
+        "totalMusicVideoTracks": music_video_tracks,
         "totalPhotoBytes": 0,
         "totalPhotos": 0,
-        "totalPodcastBytes": 0,
-        "totalPodcastSeconds": 0,
-        "totalPodcastTracks": 0,
+        "totalPodcastBytes": podcast_bytes,
+        "totalPodcastSeconds": podcast_seconds,
+        "totalPodcastTracks": podcast_tracks,
         "totalRingtoneBytes": 0,
         "totalRingtoneSeconds": 0,
         "totalRingtoneTracks": 0,
         "totalSystemBytes": 0,
-        "totalTVShowBytes": 0,
+        "totalTVShowBytes": tv_show_bytes,
         "totalTVShowRentalBytes": 0,
         "totalTVShowRentalSeconds": 0,
         "totalTVShowRentalTracks": 0,
-        "totalTVShowSeconds": 0,
-        "totalTVShowTracks": 0,
-        "totalVideoBytes": 0,
-        "totalVideoSeconds": 0,
-        "totalVideoTracks": 0,
+        "totalTVShowSeconds": tv_show_seconds,
+        "totalTVShowTracks": tv_show_tracks,
+        "totalVideoBytes": video_bytes + tv_show_bytes + music_video_bytes,
+        "totalVideoSeconds": video_seconds + tv_show_seconds + music_video_seconds,
+        "totalVideoTracks": video_tracks + tv_show_tracks + music_video_tracks,
         "totalVoiceMemoBytes": 0,
         "totalVoiceMemoSeconds": 0,
         "totalVoiceMemoTracks": 0,
@@ -404,6 +420,7 @@ def protect_from_itunes(
     track_count: int = 0,
     total_music_bytes: int = 0,
     total_music_seconds: int = 0,
+    **category_totals,
 ) -> ITunesPrefs:
     """
     Apply protective settings to prevent iTunes from clobbering our database:
@@ -420,6 +437,9 @@ def protect_from_itunes(
         track_count: Number of tracks now on iPod.
         total_music_bytes: Total bytes of music files.
         total_music_seconds: Total duration in seconds.
+        **category_totals: Per-category keyword args forwarded to
+            ``_build_device_totals`` (e.g. ``video_tracks``,
+            ``podcast_bytes``).
 
     Returns:
         The updated ITunesPrefs.
@@ -483,7 +503,8 @@ def protect_from_itunes(
 
     # Update EstimatedDeviceTotals
     plist_data["EstimatedDeviceTotals"] = _build_device_totals(
-        ipod_path, track_count, total_music_bytes, total_music_seconds
+        ipod_path, track_count, total_music_bytes, total_music_seconds,
+        **category_totals,
     )
 
     # Ensure standard empty arrays exist (iTunes expects these)

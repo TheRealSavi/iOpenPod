@@ -26,9 +26,21 @@ from .transcoder import transcode, needs_transcoding
 from .audio_fingerprint import get_or_compute_fingerprint
 from .itunes_prefs import protect_from_itunes
 
-from iTunesDB_Writer.mhit_writer import TrackInfo
+from iTunesDB_Writer.mhit_writer import (
+    TrackInfo,
+    MEDIA_TYPE_AUDIO,
+    MEDIA_TYPE_VIDEO,
+    MEDIA_TYPE_PODCAST,
+    MEDIA_TYPE_VIDEO_PODCAST,
+    MEDIA_TYPE_AUDIOBOOK,
+    MEDIA_TYPE_MUSIC_VIDEO,
+    MEDIA_TYPE_TV_SHOW,
+)
 from iTunesDB_Writer.mhyp_writer import PlaylistInfo
-from iTunesDB_Writer.mhod_spl_writer import prefs_from_parsed, rules_from_parsed
+from iTunesDB_Writer.mhod_spl_writer import (
+    prefs_from_parsed, rules_from_parsed,
+    SmartPlaylistPrefs, SmartPlaylistRule, SmartPlaylistRules,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -352,14 +364,60 @@ class SyncExecutor:
 
                 # ── Apply iTunes protections ────────────────────────────
                 # Compute totals from the final track list for the plist
-                total_bytes = sum(t.size for t in all_tracks)
-                total_secs = sum(t.length for t in all_tracks) // 1000
+                # Break down by media type category for accurate reporting
+                music_bytes = music_secs = music_count = 0
+                video_bytes = video_secs = video_count = 0
+                podcast_bytes = podcast_secs = podcast_count = 0
+                audiobook_bytes = audiobook_secs = audiobook_count = 0
+                tv_bytes = tv_secs = tv_count = 0
+                mv_bytes = mv_secs = mv_count = 0
+                for t in all_tracks:
+                    mt = t.media_type
+                    if mt & 0x04:  # Podcast (including video podcast)
+                        podcast_bytes += t.size
+                        podcast_secs += t.length // 1000
+                        podcast_count += 1
+                    elif mt & 0x08:  # Audiobook
+                        audiobook_bytes += t.size
+                        audiobook_secs += t.length // 1000
+                        audiobook_count += 1
+                    elif mt & 0x40:  # TV Show
+                        tv_bytes += t.size
+                        tv_secs += t.length // 1000
+                        tv_count += 1
+                    elif mt & 0x20:  # Music Video
+                        mv_bytes += t.size
+                        mv_secs += t.length // 1000
+                        mv_count += 1
+                    elif mt & 0x02:  # Movie/Video (generic)
+                        video_bytes += t.size
+                        video_secs += t.length // 1000
+                        video_count += 1
+                    else:  # Music/Audio
+                        music_bytes += t.size
+                        music_secs += t.length // 1000
+                        music_count += 1
                 try:
                     protect_from_itunes(
                         self.ipod_path,
-                        track_count=len(all_tracks),
-                        total_music_bytes=total_bytes,
-                        total_music_seconds=total_secs,
+                        track_count=music_count,
+                        total_music_bytes=music_bytes,
+                        total_music_seconds=music_secs,
+                        video_tracks=video_count,
+                        video_bytes=video_bytes,
+                        video_seconds=video_secs,
+                        podcast_tracks=podcast_count,
+                        podcast_bytes=podcast_bytes,
+                        podcast_seconds=podcast_secs,
+                        audiobook_tracks=audiobook_count,
+                        audiobook_bytes=audiobook_bytes,
+                        audiobook_seconds=audiobook_secs,
+                        tv_show_tracks=tv_count,
+                        tv_show_bytes=tv_bytes,
+                        tv_show_seconds=tv_secs,
+                        music_video_tracks=mv_count,
+                        music_video_bytes=mv_bytes,
+                        music_video_seconds=mv_secs,
                     )
                 except Exception as e:
                     # Non-fatal — database is already written + mapping saved
@@ -475,9 +533,26 @@ class SyncExecutor:
                 return (item, False, None, False)
             source_path = Path(item.pc_track.path)
             need_transcode = needs_transcoding(source_path)
+
+            # Build a transcode progress callback that emits UI updates
+            tc_progress: Optional[Callable[[float], None]] = None
+            if progress_callback and need_transcode:
+                filename = source_path.name
+
+                def _make_tc_cb(_fn: str) -> Callable[[float], None]:
+                    def _cb(frac: float) -> None:
+                        pct = int(frac * 100)
+                        progress_callback(SyncProgress(
+                            "transcode", pct, 100, message=f"Transcoding {_fn} \u2014 {pct}%",
+                        ))
+                    return _cb
+
+                tc_progress = _make_tc_cb(filename)
+
             success, ipod_path, was_transcoded = self._copy_to_ipod(
                 source_path, need_transcode, fingerprint=item.fingerprint,
                 aac_bitrate=aac_bitrate,
+                transcode_progress=tc_progress,
             )
             return (item, success, ipod_path, was_transcoded)
 
@@ -616,6 +691,19 @@ class SyncExecutor:
                         track.comment = pc_value
                     elif field_name == "grouping":
                         track.grouping = pc_value
+                    # Video/TV show fields
+                    elif field_name == "show_name":
+                        track.show_name = pc_value
+                    elif field_name == "season_number":
+                        track.season_number = pc_value if pc_value else 0
+                    elif field_name == "episode_number":
+                        track.episode_number = pc_value if pc_value else 0
+                    elif field_name == "description":
+                        track.description = pc_value
+                    elif field_name == "episode_id":
+                        track.episode_id = pc_value
+                    elif field_name == "network_name":
+                        track.network_name = pc_value
 
             # Refresh mapping mtime/size so next sync doesn't see a spurious file change
             if item.fingerprint and item.pc_track and not dry_run:
@@ -704,9 +792,26 @@ class SyncExecutor:
                 return (item, False, None, False)
             source_path = Path(item.pc_track.path)
             need_transcode = needs_transcoding(source_path)
+
+            # Build a transcode progress callback that emits UI updates
+            tc_progress: Optional[Callable[[float], None]] = None
+            if progress_callback and need_transcode:
+                filename = source_path.name
+
+                def _make_tc_cb(_fn: str) -> Callable[[float], None]:
+                    def _cb(frac: float) -> None:
+                        pct = int(frac * 100)
+                        progress_callback(SyncProgress(
+                            "transcode", pct, 100, message=f"Transcoding {_fn} \u2014 {pct}%",
+                        ))
+                    return _cb
+
+                tc_progress = _make_tc_cb(filename)
+
             success, ipod_path, was_transcoded = self._copy_to_ipod(
                 source_path, need_transcode, fingerprint=item.fingerprint,
                 aac_bitrate=aac_bitrate,
+                transcode_progress=tc_progress,
             )
             return (item, success, ipod_path, was_transcoded)
 
@@ -847,10 +952,27 @@ class SyncExecutor:
     # ── File Operations ─────────────────────────────────────────────────────
 
     def _get_next_music_folder(self) -> Path:
-        """Get next music folder (F00-F49) using round-robin. Thread-safe."""
+        """Get next music folder (F00-Fxx) using round-robin. Thread-safe.
+
+        The number of Fxx directories varies by device (3-50); defaults to
+        20 (most common value) if device capabilities are unknown.
+        """
+        # Determine music_dirs from device capabilities
+        music_dirs = 20  # most common default across all non-Classic models
+        try:
+            from device_info import get_current_device
+            from ipod_models import capabilities_for_family_gen
+            dev = get_current_device()
+            if dev and dev.model_family and dev.generation:
+                caps = capabilities_for_family_gen(dev.model_family, dev.generation)
+                if caps:
+                    music_dirs = caps.music_dirs
+        except Exception:
+            pass
+
         with self._folder_lock:
             folder_name = f"F{self._folder_counter:02d}"
-            self._folder_counter = (self._folder_counter + 1) % 50
+            self._folder_counter = (self._folder_counter + 1) % music_dirs
         folder = self.music_dir / folder_name
         folder.mkdir(parents=True, exist_ok=True)
         return folder
@@ -883,6 +1005,8 @@ class SyncExecutor:
             return "alac"
         elif target == TranscodeTarget.AAC:
             return "aac"
+        elif target == TranscodeTarget.VIDEO_H264:
+            return "m4v"
         return source_path.suffix.lstrip(".")
 
     def _copy_to_ipod(
@@ -891,9 +1015,14 @@ class SyncExecutor:
         needs_transcode: bool,
         fingerprint: Optional[str] = None,
         aac_bitrate: int = 256,
+        transcode_progress: Optional[Callable[[float], None]] = None,
     ) -> tuple[bool, Optional[Path], bool]:
         """
         Copy or transcode a file to iPod, using cache when possible.
+
+        Args:
+            transcode_progress: Optional callback receiving 0.0-1.0 fraction
+                for transcode progress (forwarded to ffmpeg).
 
         Returns: (success, ipod_path, was_transcoded)
         """
@@ -921,7 +1050,8 @@ class SyncExecutor:
                         logger.warning(f"Cache copy failed, will transcode: {e}")
 
             # Transcode
-            result = transcode(source_path, dest_folder, aac_bitrate=aac_bitrate)
+            result = transcode(source_path, dest_folder, aac_bitrate=aac_bitrate,
+                               progress_callback=transcode_progress)
             if result.success and result.output_path:
                 # Copy metadata tags that ffmpeg may not have preserved
                 from .transcoder import copy_metadata
@@ -1113,9 +1243,11 @@ class SyncExecutor:
         - ``Play Counts``
         - ``iTunesStats``
         - ``PlayCounts.plist``
+        - ``OTGPlaylistInfo`` (On-The-Go playlists created on device)
         """
         itunes_dir = self.ipod_path / "iPod_Control" / "iTunes"
-        for name in ("Play Counts", "iTunesStats", "PlayCounts.plist"):
+        for name in ("Play Counts", "iTunesStats", "PlayCounts.plist",
+                     "OTGPlaylistInfo"):
             path = itunes_dir / name
             if path.exists():
                 try:
@@ -1224,6 +1356,10 @@ class SyncExecutor:
             filetype_code = "wav"
         elif "AIFF" in filetype:
             filetype_code = "aiff"
+        elif "M4V" in filetype:
+            filetype_code = "m4v"
+        elif "MP4" in filetype:
+            filetype_code = "mp4"
         else:
             filetype_code = "mp3"
 
@@ -1267,14 +1403,24 @@ class SyncExecutor:
             gapless_data=t.get("gaplessData", 0),
             gapless_track_flag=t.get("gaplessTrackFlag", 0),
             gapless_album_flag=t.get("gaplessAlbumFlag", 0),
+            pregap=t.get("pregap", 0),
+            postgap=t.get("postgap", 0),
+            sample_count=t.get("sampleCount", 0),
+            encoder_flag=t.get("encoderFlag", 0),
             explicit_flag=t.get("explicitFlag", 0),
             has_lyrics=bool(t.get("lyricsFlag", 0)),
+            lyrics=t.get("Lyrics"),
+            eq_setting=t.get("EQ Setting"),
             date_added=t.get("dateAdded", 0),
             date_released=t.get("dateReleased", 0),
             last_played=t.get("lastPlayed", 0),
             last_skipped=t.get("lastSkipped", 0),
+            last_modified=t.get("lastModified", 0),
             dbid=t.get("dbid", 0),
             media_type=t.get("mediaType", 1),
+            movie_file_flag=t.get("movieFileFlag", 0),
+            season_number=t.get("seasonNumber", 0),
+            episode_number=t.get("episodeNumber", 0),
             artwork_count=t.get("artworkCount", 0),
             artwork_size=t.get("artworkSize", 0),
             mhii_link=t.get("mhiiLink", 0),
@@ -1284,6 +1430,21 @@ class SyncExecutor:
             sort_album_artist=t.get("Sort Album Artist"),
             sort_composer=t.get("Sort Composer"),
             filetype_desc=t.get("filetype"),
+            # Video string fields from parsed MHOD types
+            show_name=t.get("Show"),
+            episode_id=t.get("Episode"),
+            description=t.get("Description Text"),
+            subtitle=t.get("Subtitle"),
+            network_name=t.get("TV Network"),
+            sort_show=t.get("Sort Show"),
+            show_locale=t.get("Show Locale"),
+            keywords=t.get("Track Keywords"),
+            # Podcast/audiobook fields from parsed track
+            podcast_enclosure_url=t.get("Podcast Enclosure URL"),
+            podcast_rss_url=t.get("Podcast RSS URL"),
+            category=t.get("Category"),
+            played_mark=t.get("playedMark", -1),
+            podcast_flag=t.get("podcastFlag", 0),
         )
 
     def _pc_track_to_info(self, pc_track, ipod_location: str, was_transcoded: bool,
@@ -1328,6 +1489,41 @@ class SyncExecutor:
                 bitrate = self._aac_bitrate  # user-configured AAC bitrate
             # sample_rate is typically preserved by transcoder
 
+        # ── Media type auto-detection ────────────────────────────────
+        is_video = getattr(pc_track, "is_video", False)
+        video_kind = getattr(pc_track, "video_kind", "") or ""
+        is_podcast = getattr(pc_track, "is_podcast", False)
+        is_audiobook = getattr(pc_track, "is_audiobook", False)
+        movie_file_flag = 0
+        media_type = MEDIA_TYPE_AUDIO
+        podcast_flag = 0
+        skip_when_shuffling = False
+        remember_position = False
+
+        if is_video:
+            movie_file_flag = 1
+            if is_podcast:
+                media_type = MEDIA_TYPE_VIDEO_PODCAST
+                podcast_flag = 1
+                skip_when_shuffling = True
+                remember_position = True
+            elif video_kind == "tv_show":
+                media_type = MEDIA_TYPE_TV_SHOW
+            elif video_kind == "music_video":
+                media_type = MEDIA_TYPE_MUSIC_VIDEO
+            else:
+                # Default to movie for generic video files
+                media_type = MEDIA_TYPE_VIDEO
+        elif is_podcast:
+            media_type = MEDIA_TYPE_PODCAST
+            podcast_flag = 1
+            skip_when_shuffling = True
+            remember_position = True
+        elif is_audiobook:
+            media_type = MEDIA_TYPE_AUDIOBOOK
+            skip_when_shuffling = True
+            remember_position = True
+
         return TrackInfo(
             title=pc_track.title or Path(pc_track.path).stem,
             location=ipod_location,
@@ -1354,15 +1550,33 @@ class SyncExecutor:
             compilation=getattr(pc_track, "compilation", False),
             sound_check=getattr(pc_track, "sound_check", 0) or 0,
             pregap=getattr(pc_track, "pregap", 0) or 0,
+            postgap=getattr(pc_track, "postgap", 0) or 0,
             sample_count=getattr(pc_track, "sample_count", 0) or 0,
             gapless_data=getattr(pc_track, "gapless_data", 0) or 0,
             explicit_flag=getattr(pc_track, "explicit_flag", 0) or 0,
             has_lyrics=getattr(pc_track, "has_lyrics", False),
+            lyrics=getattr(pc_track, "lyrics", None),
             sort_artist=getattr(pc_track, "sort_artist", None),
             sort_name=getattr(pc_track, "sort_name", None),
             sort_album=getattr(pc_track, "sort_album", None),
             sort_album_artist=getattr(pc_track, "sort_album_artist", None),
             sort_composer=getattr(pc_track, "sort_composer", None),
+            # Video fields
+            media_type=media_type,
+            movie_file_flag=movie_file_flag,
+            season_number=getattr(pc_track, "season_number", None) or 0,
+            episode_number=getattr(pc_track, "episode_number", None) or 0,
+            show_name=getattr(pc_track, "show_name", None),
+            episode_id=getattr(pc_track, "episode_id", None),
+            description=getattr(pc_track, "description", None),
+            network_name=getattr(pc_track, "network_name", None),
+            sort_show=getattr(pc_track, "sort_show", None),
+            # Podcast/audiobook flags
+            podcast_flag=podcast_flag,
+            skip_when_shuffling=skip_when_shuffling,
+            remember_position=remember_position,
+            category=getattr(pc_track, "category", None),
+            podcast_rss_url=getattr(pc_track, "podcast_url", None),
         )
 
     @staticmethod
@@ -1508,6 +1722,59 @@ class SyncExecutor:
             len(smart_playlists),
         )
 
+        # ── Auto-generate video browsing playlists (dataset 5) ───────
+        # iPods often already have these from iTunes.  Only add if missing
+        # by checking mhsd5_type of existing playlists.
+        existing_mhsd5_types = {sp.mhsd5_type for sp in smart_playlists}
+
+        # Video browsing playlists: (mhsd5_type, name, media_type_bitmask)
+        _VIDEO_BROWSING = [
+            (2, "Movies", MEDIA_TYPE_VIDEO),
+            (3, "TV Shows", MEDIA_TYPE_TV_SHOW),
+            (4, "Music Videos", MEDIA_TYPE_MUSIC_VIDEO),
+        ]
+
+        # Podcast and Audiobook browsing playlists
+        _MEDIA_BROWSING = [
+            (5, "Podcasts", MEDIA_TYPE_PODCAST),
+            (6, "Audiobooks", MEDIA_TYPE_AUDIOBOOK),
+        ]
+
+        for mhsd5, name, media_mask in _VIDEO_BROWSING + _MEDIA_BROWSING:
+            if mhsd5 in existing_mhsd5_types:
+                logger.debug(
+                    "Browsing playlist '%s' (mhsd5_type=%d) already exists, skipping",
+                    name, mhsd5,
+                )
+                continue
+
+            # Build a smart playlist rule: mediaType includes <mask>
+            rule = SmartPlaylistRule(
+                field_id=0x3C,           # mediaType
+                action_id=0x00000400,    # binary AND (includes)
+                from_value=media_mask,
+            )
+            prefs = SmartPlaylistPrefs(
+                live_update=True,
+                check_rules=True,
+                check_limits=False,
+            )
+            rules = SmartPlaylistRules(conjunction="AND", rules=[rule])
+
+            info = PlaylistInfo(
+                name=name,
+                hidden=True,           # Browsing playlists are hidden
+                mhsd5_type=mhsd5,
+                smart_prefs=prefs,
+                smart_rules=rules,
+                track_ids=[],          # iPod evaluates at runtime
+            )
+            smart_playlists.append(info)
+            logger.info(
+                "Auto-generated browsing playlist '%s' (mhsd5_type=%d)",
+                name, mhsd5,
+            )
+
         return playlists, smart_playlists
 
     @staticmethod
@@ -1559,6 +1826,15 @@ class SyncExecutor:
             "mediaType": t.media_type,
             # Checked flag (0=checked, 1=unchecked in iPod convention)
             "checked": t.checked,
+            # Video fields for smart playlist evaluation
+            "seasonNumber": t.season_number,
+            "Show": t.show_name or "",
+            "TVShow": t.show_name or "",  # alias: spl_evaluator uses "TVShow"
+            "Sort TV Show": t.sort_show or "",
+            # Podcast/audiobook fields for smart playlist evaluation
+            "Description": t.description or "",
+            "Category": t.category or "",
+            "podcast": t.podcast_flag,
         }
         return d
 
@@ -1569,7 +1845,12 @@ class SyncExecutor:
         playlists: Optional[list[PlaylistInfo]] = None,
         smart_playlists: Optional[list[PlaylistInfo]] = None,
     ) -> bool:
-        """Write tracks to iTunesDB (and ArtworkDB if pc_file_paths provided)."""
+        """Write tracks to iTunesDB (and ArtworkDB if pc_file_paths provided).
+
+        Automatically detects device capabilities from the centralized store
+        and passes them to the writer for db_version, gapless/video filtering,
+        and conditional podcast MHSD inclusion.
+        """
         from iTunesDB_Writer import write_itunesdb
 
         logger.debug(f"ART: _write_database called with {len(tracks)} tracks, "
@@ -1580,6 +1861,19 @@ class SyncExecutor:
             len(smart_playlists) if smart_playlists else 0,
         )
 
+        # Resolve capabilities once for the writer
+        capabilities = None
+        try:
+            from device_info import get_current_device
+            from ipod_models import capabilities_for_family_gen
+            dev = get_current_device()
+            if dev and dev.model_family and dev.generation:
+                capabilities = capabilities_for_family_gen(
+                    dev.model_family, dev.generation,
+                )
+        except Exception as exc:
+            logger.debug("Could not load device capabilities: %s", exc)
+
         try:
             return write_itunesdb(
                 str(self.ipod_path),
@@ -1587,6 +1881,7 @@ class SyncExecutor:
                 pc_file_paths=pc_file_paths,
                 playlists=playlists,
                 smart_playlists=smart_playlists,
+                capabilities=capabilities,
             )
         except Exception as e:
             logger.error(f"Failed to write iTunesDB: {e}")
