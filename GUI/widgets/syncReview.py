@@ -11,12 +11,12 @@ Shows the diff between PC library and iPod with:
 from PyQt6.QtCore import Qt, pyqtSignal, QThread, QTimer
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QTreeWidget, QTreeWidgetItem, QHeaderView, QProgressBar,
-    QFrame, QStackedWidget, QMessageBox, QFileDialog, QDialog,
-    QDialogButtonBox, QSplitter
+    QProgressBar, QFrame, QStackedWidget, QMessageBox,
+    QFileDialog, QDialog, QScrollArea, QCheckBox,
 )
-from PyQt6.QtGui import QFont, QColor, QBrush
+from PyQt6.QtGui import QFont
 from pathlib import Path
+import shutil
 
 from SyncEngine.fingerprint_diff_engine import SyncPlan, SyncItem, SyncAction, FingerprintDiffEngine
 from SyncEngine.pc_library import PCLibrary
@@ -180,360 +180,474 @@ class SyncExecuteWorker(QThread):
             self.error.emit(str(e))
 
 
-class SyncItemWidget(QTreeWidgetItem):
-    """Tree item representing a single sync action."""
+# ── Category color palette ──────────────────────────────────────────────────
 
-    def __init__(self, item: SyncItem, parent=None):
+_CAT_COLORS = {
+    "add": "#51cf66",  # green
+    "remove": "#ff6b6b",  # red
+    "update_file": "#66d9e8",  # cyan
+    "metadata": "#b197fc",  # purple
+    "artwork": "#f06595",  # magenta
+    "playcount": "#74c0fc",  # blue
+    "rating": "#fcc419",  # gold
+    "playlist": "#74c0fc",  # blue
+    "integrity": "#74c0fc",  # blue
+    "error": "#fcc419",  # yellow
+    "duplicate": "#ff922b",  # orange
+}
+
+
+def _rating_to_stars(rating: int) -> str:
+    """Convert rating (0-100) to star display."""
+    if rating <= 0:
+        return "☆☆☆☆☆"
+    stars = (rating + 10) // 20
+    stars = max(0, min(5, stars))
+    return "★" * stars + "☆" * (5 - stars)
+
+
+# ── SyncTrackRow ────────────────────────────────────────────────────────────
+
+class SyncTrackRow(QFrame):
+    """A two-line row representing one sync item inside a category card."""
+
+    toggled = pyqtSignal()  # emitted when the checkbox changes
+
+    def __init__(self, item: SyncItem, accent: str, checkable: bool = True, parent=None):
         super().__init__(parent)
         self.sync_item = item
-        self.setCheckState(0, Qt.CheckState.Checked)
+        self._accent = accent
+        self._checkable = checkable
 
-        # Set columns based on action type
-        if item.action == SyncAction.ADD_TO_IPOD:
-            self._setup_add_item()
-        elif item.action == SyncAction.REMOVE_FROM_IPOD:
-            self._setup_remove_item()
-        elif item.action == SyncAction.SYNC_PLAYCOUNT:
-            self._setup_playcount_item()
-        elif item.action == SyncAction.UPDATE_METADATA:
-            self._setup_metadata_item()
-        elif item.action == SyncAction.UPDATE_FILE:
-            self._setup_file_update_item()
-        elif item.action == SyncAction.UPDATE_ARTWORK:
-            self._setup_artwork_item()
+        self.setStyleSheet(f"""
+            SyncTrackRow {{
+                background: transparent;
+                border-bottom: 1px solid {Colors.BORDER_SUBTLE};
+                padding: 0;
+            }}
+            SyncTrackRow:hover {{
+                background: rgba(255,255,255,5);
+            }}
+        """)
+        self.setCursor(Qt.CursorShape.PointingHandCursor if checkable else Qt.CursorShape.ArrowCursor)
 
-    def _set_tooltip(self, track=None, ipod_track=None, extra_info=""):
-        """Set comprehensive tooltip for the item."""
-        lines = []
+        row = QHBoxLayout(self)
+        row.setContentsMargins(12, 6, 14, 6)
+        row.setSpacing(10)
 
-        if track:
-            lines.append(f"Title: {track.title or track.filename}")
-            lines.append(f"Artist: {track.artist or 'Unknown'}")
-            lines.append(f"Album: {track.album or 'Unknown'}")
-            if track.album_artist and track.album_artist != track.artist:
-                lines.append(f"Album Artist: {track.album_artist}")
-            if track.year:
-                lines.append(f"Year: {track.year}")
-            if track.genre:
-                lines.append(f"Genre: {track.genre}")
-            if track.track_number:
-                lines.append(f"Track: {track.track_number}")
-            lines.append(f"Duration: {self._format_duration(track.duration_ms)}")
-            lines.append(f"Size: {self._format_size(track.size)}")
-            lines.append(f"Format: {track.extension.upper()}")
-            lines.append("")
-            lines.append(f"Path: {track.path}")
-        elif ipod_track:
-            lines.append(f"Title: {ipod_track.get('Title', 'Unknown')}")
-            lines.append(f"Artist: {ipod_track.get('Artist', 'Unknown')}")
-            lines.append(f"Album: {ipod_track.get('Album', 'Unknown')}")
-            lines.append(f"Duration: {self._format_duration(ipod_track.get('length', 0))}")
-            lines.append(f"Size: {self._format_size(ipod_track.get('size', 0))}")
+        # Checkbox
+        self.cb = QCheckBox(self)
+        self.cb.setChecked(True)
+        self.cb.setVisible(checkable)
+        self.cb.setStyleSheet(f"""
+            QCheckBox::indicator {{
+                width: 16px; height: 16px;
+                border: 2px solid rgba(255,255,255,60);
+                border-radius: 3px;
+                background: transparent;
+            }}
+            QCheckBox::indicator:checked {{
+                border-color: {accent};
+                background: {accent};
+            }}
+        """)
+        self.cb.toggled.connect(self.toggled.emit)
+        row.addWidget(self.cb)
 
-        if extra_info:
-            lines.append("")
-            lines.append(extra_info)
+        # Two-line text block
+        text_col = QVBoxLayout()
+        text_col.setContentsMargins(0, 0, 0, 0)
+        text_col.setSpacing(1)
 
-        tooltip = "\n".join(lines)
-        for i in range(self.columnCount()):
-            self.setToolTip(i, tooltip)
+        self.title_label = QLabel(self)
+        self.title_label.setFont(QFont(FONT_FAMILY, 11))
+        self.title_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background:transparent;")
+        text_col.addWidget(self.title_label)
 
-    def _setup_add_item(self):
-        """Setup for ADD_TO_IPOD action."""
-        track = self.sync_item.pc_track
-        if track:
-            self.setText(1, track.title or track.filename)
-            self.setText(2, track.artist or "Unknown")
-            self.setText(3, track.album or "Unknown")
-            self.setText(4, self._format_size(track.size))
-            self.setText(5, self._format_duration(track.duration_ms))
-            self._set_tooltip(track=track, extra_info="Action: Add to iPod")
-            # Green tint for adds
-            for i in range(6):
-                self.setForeground(i, QBrush(QColor(100, 200, 100)))
+        self.detail_label = QLabel(self)
+        self.detail_label.setFont(QFont(FONT_FAMILY, 9))
+        self.detail_label.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background:transparent;")
+        text_col.addWidget(self.detail_label)
 
-    def _setup_remove_item(self):
-        """Setup for REMOVE_FROM_IPOD action."""
-        ipod_track = self.sync_item.ipod_track
+        row.addLayout(text_col, 1)
 
-        if ipod_track:
-            self.setText(1, ipod_track.get("Title", "Unknown"))
-            self.setText(2, ipod_track.get("Artist", "Unknown"))
-            self.setText(3, ipod_track.get("Album", "Unknown"))
-            self.setText(4, self._format_size(ipod_track.get("size", 0)))
-            self.setText(5, self._format_duration(ipod_track.get("length", 0)))
-            self._set_tooltip(ipod_track=ipod_track, extra_info="Action: Remove from iPod\n(File not found on PC)")
-        else:
-            # Orphaned mapping entry — track no longer in iTunesDB
-            desc = self.sync_item.description or "Unknown track"
-            self.setText(1, desc)
-            self.setText(2, "—")
-            self.setText(3, "—")
-            self.setText(4, "—")
-            dbid = self.sync_item.dbid
-            tooltip = f"Orphaned mapping entry (dbid={dbid})\nTrack not found in iTunesDB or on PC."
-            for i in range(6):
-                self.setToolTip(i, tooltip)
+        # Right-side badge / duration
+        self.badge_label = QLabel(self)
+        self.badge_label.setFont(QFont(FONT_FAMILY, 10))
+        self.badge_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background:transparent;")
+        self.badge_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        row.addWidget(self.badge_label)
 
-        # Red tint for removes
-        for i in range(6):
-            self.setForeground(i, QBrush(QColor(220, 100, 100)))
+        self._populate(item)
 
-    def _setup_playcount_item(self):
-        """Setup for SYNC_PLAYCOUNT action."""
-        track = self.sync_item.pc_track
-        if track:
-            self.setText(1, track.title or track.filename)
-            self.setText(2, track.artist or "Unknown")
-            self.setText(3, track.album or "Unknown")
-
-            plays = self.sync_item.play_count_delta
-            skips = self.sync_item.skip_count_delta
-            stats_parts = []
-            if plays > 0:
-                stats_parts.append(f"+{plays} plays")
-            if skips > 0:
-                stats_parts.append(f"+{skips} skips")
-            self.setText(4, " ".join(stats_parts) if stats_parts else "—")
-            self.setText(5, self._format_duration(track.duration_ms))
-
-            extra = f"Action: Sync play statistics back to PC\n\nPlays since last sync: {plays}\nSkips since last sync: {skips}"
-            self._set_tooltip(track=track, extra_info=extra)
-
-            # Blue tint for playcount sync
-            for i in range(6):
-                self.setForeground(i, QBrush(QColor(100, 150, 220)))
-
-    def _setup_metadata_item(self):
-        """Setup for UPDATE_METADATA action."""
-        track = self.sync_item.pc_track
-        if track:
-            self.setText(1, track.title or track.filename)
-            self.setText(2, track.artist or "Unknown")
-            self.setText(3, track.album or "Unknown")
-
-            changes = self.sync_item.metadata_changes
-            changed_fields = ", ".join(changes.keys()) if changes else "metadata"
-            self.setText(4, changed_fields)
-            self.setText(5, self._format_duration(track.duration_ms))
-
-            # Build tooltip with before/after for each field
-            extra_lines = ["Action: Update metadata on iPod", ""]
-            for field_name, (pc_val, ipod_val) in changes.items():
-                extra_lines.append(f"{field_name}: \"{ipod_val}\" → \"{pc_val}\"")
-            self._set_tooltip(track=track, extra_info="\n".join(extra_lines))
-
-            # Purple tint for metadata updates
-            for i in range(6):
-                self.setForeground(i, QBrush(QColor(170, 130, 220)))
-
-    def _setup_file_update_item(self):
-        """Setup for UPDATE_FILE action."""
-        track = self.sync_item.pc_track
-        if track:
-            self.setText(1, track.title or track.filename)
-            self.setText(2, track.artist or "Unknown")
-            self.setText(3, track.album or "Unknown")
-            self.setText(4, self._format_size(track.size))
-            self.setText(5, self._format_duration(track.duration_ms))
-            self._set_tooltip(track=track, extra_info="Action: Source file changed, re-sync to iPod")
-
-            # Cyan tint for file updates
-            for i in range(6):
-                self.setForeground(i, QBrush(QColor(100, 200, 200)))
-
-    def _setup_artwork_item(self):
-        """Setup for UPDATE_ARTWORK action."""
-        track = self.sync_item.pc_track
-        if track:
-            self.setText(1, track.title or track.filename)
-            self.setText(2, track.artist or "Unknown")
-            self.setText(3, track.album or "Unknown")
-
-            # Distinguish add / change / remove
-            new_hash = self.sync_item.new_art_hash
-            old_hash = self.sync_item.old_art_hash
-            if not new_hash and old_hash:
-                label = "Art removed"
-                color = QColor(220, 120, 120)  # Red-ish for removal
-                tooltip_extra = "Action: Embedded album art was removed from the PC file"
-            elif new_hash and not old_hash:
-                label = "Art added"
-                color = QColor(130, 200, 170)  # Green-ish for addition
-                tooltip_extra = "Action: New album art detected, will sync to iPod"
-            else:
-                label = "Art changed"
-                color = QColor(200, 130, 200)  # Magenta for change
-                tooltip_extra = "Action: Album art changed, re-extract to iPod"
-
-            self.setText(4, label)
-            self.setText(5, self._format_duration(track.duration_ms))
-            self._set_tooltip(track=track, extra_info=tooltip_extra)
-
-            for i in range(6):
-                self.setForeground(i, QBrush(color))
-
-    _format_size = staticmethod(_format_size)
-    _format_duration = staticmethod(_format_duration)
-
-
-class SyncRatingWidget(QTreeWidgetItem):
-    """Tree item representing a rating sync action."""
-
-    def __init__(self, item: SyncItem, parent=None):
-        super().__init__(parent)
-        self.sync_item = item
-        self.setCheckState(0, Qt.CheckState.Checked)
-
+    def _populate(self, item: SyncItem):
         track = item.pc_track
+        ipod = item.ipod_track
+
+        if item.action == SyncAction.ADD_TO_IPOD and track:
+            self.title_label.setText(track.title or track.filename)
+            parts = [track.artist or "Unknown", track.album or "Unknown"]
+            if track.size:
+                parts.append(_format_size(track.size))
+            parts.append(track.extension.upper())
+            self.detail_label.setText(" · ".join(parts))
+            self.badge_label.setText(_format_duration(track.duration_ms))
+
+        elif item.action == SyncAction.REMOVE_FROM_IPOD:
+            if ipod:
+                self.title_label.setText(ipod.get("Title", "Unknown"))
+                parts = [ipod.get("Artist", "Unknown"), ipod.get("Album", "Unknown")]
+                if ipod.get("size"):
+                    parts.append(_format_size(ipod["size"]))
+                # Show removal reason from the description
+                reason = item.description or ""
+                if reason:
+                    # Extract the reason prefix (before the colon + name)
+                    reason_short = reason.split(":")[0] if ":" in reason else reason
+                    parts.append(reason_short)
+                self.detail_label.setText(" · ".join(parts))
+                self.badge_label.setText(_format_duration(ipod.get("length", 0)))
+            else:
+                self.title_label.setText(item.description or "Unknown track")
+                self.detail_label.setText(f"Orphaned mapping (dbid={item.dbid})")
+
+        elif item.action == SyncAction.UPDATE_FILE and track:
+            self.title_label.setText(track.title or track.filename)
+            parts = [track.artist or "Unknown", track.album or "Unknown", _format_size(track.size)]
+            self.detail_label.setText(" · ".join(parts))
+            self.badge_label.setText(_format_duration(track.duration_ms))
+
+        elif item.action == SyncAction.UPDATE_METADATA and track:
+            self.title_label.setText(track.title or track.filename)
+            changes = item.metadata_changes
+            diff_parts = []
+            for field_name, (pc_val, ipod_val) in changes.items():
+                diff_parts.append(f'{field_name}: "{ipod_val}" → "{pc_val}"')
+            self.detail_label.setText("  |  ".join(diff_parts) if diff_parts else "metadata changed")
+            self.badge_label.setText(_format_duration(track.duration_ms))
+
+        elif item.action == SyncAction.UPDATE_ARTWORK and track:
+            self.title_label.setText(track.title or track.filename)
+            new_h, old_h = item.new_art_hash, item.old_art_hash
+            if not new_h and old_h:
+                art_lbl = "Art removed"
+            elif new_h and not old_h:
+                art_lbl = "Art added"
+            else:
+                art_lbl = "Art changed"
+            self.detail_label.setText(f"{track.artist or 'Unknown'} · {track.album or 'Unknown'} · {art_lbl}")
+            self.badge_label.setText(_format_duration(track.duration_ms))
+
+        elif item.action == SyncAction.SYNC_PLAYCOUNT and track:
+            self.title_label.setText(track.title or track.filename)
+            stats = []
+            if item.play_count_delta > 0:
+                ipod_total = ipod.get("playCount", 0) if ipod else 0
+                prev = max(ipod_total - item.play_count_delta, 0)
+                stats.append(f"{prev} → {ipod_total} plays")
+            if item.skip_count_delta > 0:
+                ipod_skips = ipod.get("skipCount", 0) if ipod else 0
+                prev_skips = max(ipod_skips - item.skip_count_delta, 0)
+                stats.append(f"{prev_skips} → {ipod_skips} skips")
+            self.detail_label.setText(
+                f"{track.artist or 'Unknown'} · {track.album or 'Unknown'} · {' '.join(stats)}"
+            )
+            self.badge_label.setText(_format_duration(track.duration_ms))
+
+        elif item.action == SyncAction.SYNC_RATING and track:
+            pc_s = _rating_to_stars(item.pc_rating)
+            ipod_s = _rating_to_stars(item.ipod_rating)
+            new_s = _rating_to_stars(item.new_rating)
+            self.title_label.setText(track.title or track.filename)
+            self.detail_label.setText(
+                f"{track.artist or 'Unknown'} · PC {pc_s} / iPod {ipod_s} → {new_s}"
+            )
+            self.badge_label.setText(_format_duration(track.duration_ms))
+
+        # Tooltip
+        tt_lines = []
         if track:
-            self.setText(1, track.title or track.filename)
-            self.setText(2, track.artist or "Unknown")
-            self.setText(3, track.album or "Unknown")
-
-            # Show rating change: PC/iPod → new rating
-            pc_stars = self._rating_to_stars(item.pc_rating)
-            ipod_stars = self._rating_to_stars(item.ipod_rating)
-            new_stars = self._rating_to_stars(item.new_rating)
-            rating_text = f"{pc_stars}/{ipod_stars} → {new_stars}"
-            self.setText(4, rating_text)
-            self.setText(5, self._format_duration(track.duration_ms))
-
-            # Tooltip with details
-            lines = [
+            tt_lines += [
                 f"Title: {track.title or track.filename}",
                 f"Artist: {track.artist or 'Unknown'}",
                 f"Album: {track.album or 'Unknown'}",
-                "",
-                f"PC Rating: {pc_stars} ({item.pc_rating}/100)",
-                f"iPod Rating: {ipod_stars} ({item.ipod_rating}/100)",
-                f"New Rating: {new_stars} ({item.new_rating}/100)",
-                "",
-                "Action: Sync rating to both PC and iPod",
+                f"Path: {track.path}",
             ]
-            tooltip = "\n".join(lines)
-            for i in range(6):
-                self.setToolTip(i, tooltip)
+        elif ipod:
+            tt_lines += [
+                f"Title: {ipod.get('Title', 'Unknown')}",
+                f"Artist: {ipod.get('Artist', 'Unknown')}",
+                f"iPod Location: {ipod.get('Location', 'Unknown')}",
+            ]
+        self.setToolTip("\n".join(tt_lines))
 
-            # Gold/orange tint for rating sync
-            for i in range(6):
-                self.setForeground(i, QBrush(QColor(230, 180, 80)))
+    def is_checked(self) -> bool:
+        return self.cb.isChecked()
+
+    def set_checked(self, state: bool):
+        self.cb.setChecked(state)
+
+    def mousePressEvent(self, a0):
+        if self._checkable and a0 is not None and a0.button() == Qt.MouseButton.LeftButton:
+            self.cb.setChecked(not self.cb.isChecked())
+        super().mousePressEvent(a0)
+
+
+# ── InfoRow (non-checkable, for duplicates/errors/playlists) ────────────────
+
+class _InfoRow(QFrame):
+    """Simple two-line info row (no checkbox)."""
+
+    def __init__(self, title: str, detail: str, accent: str, badge: str = "", parent=None):
+        super().__init__(parent)
+        self.setStyleSheet(f"""
+            _InfoRow {{
+                background: transparent;
+                border-bottom: 1px solid {Colors.BORDER_SUBTLE};
+            }}
+        """)
+        row = QHBoxLayout(self)
+        row.setContentsMargins(40, 4, 14, 4)
+        row.setSpacing(10)
+
+        text_col = QVBoxLayout()
+        text_col.setContentsMargins(0, 0, 0, 0)
+        text_col.setSpacing(1)
+
+        t = QLabel(title, self)
+        t.setFont(QFont(FONT_FAMILY, 10))
+        t.setStyleSheet(f"color: {accent}; background:transparent;")
+        text_col.addWidget(t)
+
+        if detail:
+            d = QLabel(detail, self)
+            d.setFont(QFont(FONT_FAMILY, 9))
+            d.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background:transparent;")
+            d.setWordWrap(True)
+            text_col.addWidget(d)
+
+        row.addLayout(text_col, 1)
+
+        if badge:
+            b = QLabel(badge, self)
+            b.setFont(QFont(FONT_FAMILY, 9))
+            b.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background:transparent;")
+            b.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            row.addWidget(b)
+
+
+# ── SyncCategoryCard ────────────────────────────────────────────────────────
+
+class SyncCategoryCard(QFrame):
+    """Collapsible card for one category of sync actions."""
+
+    selection_changed = pyqtSignal()
+
+    def __init__(
+        self,
+        icon: str,
+        title: str,
+        count: int,
+        accent: str,
+        size_bytes: int = 0,
+        checkable: bool = True,
+        start_expanded: bool = True,
+        subtitle: str = "",
+        parent=None,
+    ):
+        super().__init__(parent)
+        self._accent = accent
+        self._expanded = start_expanded
+        self._checkable = checkable
+        self._track_rows: list[SyncTrackRow] = []
+
+        self.setStyleSheet(f"""
+            SyncCategoryCard {{
+                background: rgba(255,255,255,4);
+                border: 1px solid {Colors.BORDER_SUBTLE};
+                border-left: 3px solid {accent};
+                border-radius: {Metrics.BORDER_RADIUS}px;
+            }}
+        """)
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        # ── Header ──────────────────────────────────────────────
+        self._header_frame = QFrame(self)
+        self._header_frame.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._header_frame.setStyleSheet("background: transparent; border: none;")
+        hdr = QHBoxLayout(self._header_frame)
+        hdr.setContentsMargins(14, 10, 14, 10)
+        hdr.setSpacing(10)
+
+        # Select-all checkbox (only for checkable cards)
+        self._select_all_cb = QCheckBox(self._header_frame)
+        self._select_all_cb.setChecked(True)
+        self._select_all_cb.setVisible(checkable)
+        self._select_all_cb.setStyleSheet(f"""
+            QCheckBox::indicator {{
+                width: 16px; height: 16px;
+                border: 2px solid rgba(255,255,255,60);
+                border-radius: 3px;
+                background: transparent;
+            }}
+            QCheckBox::indicator:checked {{
+                border-color: {accent};
+                background: {accent};
+            }}
+            QCheckBox::indicator:indeterminate {{
+                border-color: {accent};
+                background: rgba({self._rgb(accent)},60);
+            }}
+        """)
+        self._select_all_cb.toggled.connect(self._on_select_all_toggled)
+        hdr.addWidget(self._select_all_cb)
+
+        # Icon
+        icon_lbl = QLabel(icon, self._header_frame)
+        icon_lbl.setFont(QFont(FONT_FAMILY, 15))
+        icon_lbl.setStyleSheet("background:transparent;")
+        hdr.addWidget(icon_lbl)
+
+        # Title
+        title_lbl = QLabel(title, self._header_frame)
+        title_lbl.setFont(QFont(FONT_FAMILY, 12, QFont.Weight.Bold))
+        title_lbl.setStyleSheet(f"color:{Colors.TEXT_PRIMARY}; background:transparent;")
+        hdr.addWidget(title_lbl)
+
+        # Title + subtitle column
+        title_col = QVBoxLayout()
+        title_col.setContentsMargins(0, 0, 0, 0)
+        title_col.setSpacing(0)
+        title_col.addWidget(title_lbl)
+        if subtitle:
+            sub_lbl = QLabel(subtitle, self._header_frame)
+            sub_lbl.setFont(QFont(FONT_FAMILY, 9))
+            sub_lbl.setStyleSheet(f"color:{Colors.TEXT_TERTIARY}; background:transparent;")
+            title_col.addWidget(sub_lbl)
+        hdr.addLayout(title_col, 1)
+
+        # Count pill
+        count_lbl = QLabel(str(count), self._header_frame)
+        count_lbl.setFont(QFont(FONT_FAMILY, 9, QFont.Weight.Bold))
+        count_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        count_lbl.setFixedHeight(20)
+        count_lbl.setMinimumWidth(28)
+        count_lbl.setStyleSheet(f"""
+            background: {accent};
+            color: #111;
+            border-radius: 10px;
+            padding: 0 6px;
+        """)
+        hdr.addWidget(count_lbl)
+
+        # Size info
+        if size_bytes != 0:
+            sign = "+" if size_bytes > 0 else "-"
+            sz_lbl = QLabel(f"{sign}{_format_size(abs(size_bytes))}", self._header_frame)
+            sz_lbl.setFont(QFont(FONT_FAMILY, 10))
+            sz_lbl.setStyleSheet(f"color:{accent}; background:transparent;")
+            hdr.addWidget(sz_lbl)
+
+        # Chevron
+        self._chevron = QLabel("▾" if start_expanded else "▸", self._header_frame)
+        self._chevron.setFont(QFont(FONT_FAMILY, 13))
+        self._chevron.setStyleSheet(f"color:{Colors.TEXT_TERTIARY}; background:transparent;")
+        hdr.addWidget(self._chevron)
+
+        outer.addWidget(self._header_frame)
+
+        # ── Body (expandable) ───────────────────────────────────
+        self._body = QWidget(self)
+        body_lay = QVBoxLayout(self._body)
+        body_lay.setContentsMargins(0, 0, 0, 0)
+        body_lay.setSpacing(0)
+        self._body_layout = body_lay
+        self._body.setVisible(start_expanded)
+
+        outer.addWidget(self._body)
+
+        # Make header clickable — use installEventFilter pattern
+        self._header_frame.installEventFilter(self)
+
+    # ── helpers ──────────────────────────────────────────────────
 
     @staticmethod
-    def _rating_to_stars(rating: int) -> str:
-        """Convert rating (0-100) to star display."""
-        if rating <= 0:
-            return "☆☆☆☆☆"
-        stars = (rating + 10) // 20  # 0-20=1, 21-40=2, etc.
-        stars = max(0, min(5, stars))  # Clamp to 0-5
-        return "★" * stars + "☆" * (5 - stars)
+    def _rgb(color: str) -> str:
+        """Convert '#rrggbb' or 'rgba(r,g,b,a)' to 'r,g,b'."""
+        if color.startswith("rgba(") or color.startswith("rgb("):
+            # Extract numbers from rgb()/rgba()
+            inner = color.split("(", 1)[1].rstrip(")")
+            parts = [p.strip() for p in inner.split(",")]
+            return f"{parts[0]},{parts[1]},{parts[2]}"
+        h = color.lstrip("#")
+        return f"{int(h[0:2], 16)},{int(h[2:4], 16)},{int(h[4:6], 16)}"
 
-    _format_duration = staticmethod(_format_duration)
+    def eventFilter(self, a0, a1):
+        from PyQt6.QtCore import QEvent
+        if a0 is self._header_frame and a1 is not None and a1.type() == QEvent.Type.MouseButtonPress:
+            self._toggle_expanded()
+            return True
+        return super().eventFilter(a0, a1)
 
+    def _toggle_expanded(self, _ev=None):
+        self._expanded = not self._expanded
+        self._body.setVisible(self._expanded)
+        self._chevron.setText("▾" if self._expanded else "▸")
 
-class SyncCategoryHeader(QTreeWidgetItem):
-    """Category header in the sync tree (Add, Remove, Update, etc.)."""
+    def _on_select_all_toggled(self, checked: bool):
+        for row in self._track_rows:
+            row.cb.blockSignals(True)
+            row.set_checked(checked)
+            row.cb.blockSignals(False)
+        self.selection_changed.emit()
 
-    def __init__(self, icon: str, title: str, count: int, size_bytes: int = 0):
-        super().__init__()
-        self.setFlags(self.flags() | Qt.ItemFlag.ItemIsAutoTristate)
-        self.setCheckState(0, Qt.CheckState.Checked)
-
-        # Format the header text
-        size_str = ""
-        if size_bytes > 0:
-            size_str = f"+{self._format_size(size_bytes)}"
-        elif size_bytes < 0:
-            size_str = f"-{self._format_size(abs(size_bytes))}"
-
-        header_text = f"{icon} {title} ({count})"
-        if size_str:
-            header_text += f" — {size_str}"
-
-        self.setText(1, header_text)
-
-        # Bold font
-        font = QFont()
-        font.setBold(True)
-        font.setPointSize(11)
-        self.setFont(1, font)
-
-        # Expand by default
-        self.setExpanded(True)
-
-    _format_size = staticmethod(_format_size)
-
-
-class DuplicateGroupHeader(QTreeWidgetItem):
-    """Header for a group of duplicate files with the same fingerprint."""
-
-    def __init__(self, fingerprint: str, tracks: list):
-        super().__init__()
-        self.fingerprint = fingerprint
-        self.tracks = tracks
-
-        # No checkbox for info-only section
-        self.setFlags(self.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
-
-        # Parse fingerprint to show track info
-        parts = fingerprint.split("|")
-        if len(parts) >= 3:
-            artist = parts[0].title() if parts[0] else "Unknown"
-            album = parts[1].title() if parts[1] else "Unknown"
-            title = parts[2].title() if parts[2] else "Unknown"
-            self.setText(1, f"{title}")
-            self.setText(2, f"{artist}")
-            self.setText(3, f"{album}")
+    def _on_row_toggled(self):
+        """Update the select-all checkbox tri-state and emit."""
+        checked = sum(1 for r in self._track_rows if r.is_checked())
+        total = len(self._track_rows)
+        self._select_all_cb.blockSignals(True)
+        if checked == total:
+            self._select_all_cb.setChecked(True)
+        elif checked == 0:
+            self._select_all_cb.setChecked(False)
         else:
-            self.setText(1, fingerprint)
+            self._select_all_cb.setTristate(True)
+            self._select_all_cb.setCheckState(Qt.CheckState.PartiallyChecked)
+        self._select_all_cb.blockSignals(False)
+        self.selection_changed.emit()
 
-        self.setText(4, f"{len(tracks)} copies")
+    # ── public API ──────────────────────────────────────────────
 
-        # Yellow/orange tint for duplicates
-        for i in range(6):
-            self.setForeground(i, QBrush(QColor(220, 180, 80)))
+    def add_track_row(self, item: SyncItem) -> SyncTrackRow:
+        row = SyncTrackRow(item, self._accent, checkable=self._checkable, parent=self)
+        row.toggled.connect(self._on_row_toggled)
+        self._body_layout.addWidget(row)
+        self._track_rows.append(row)
+        return row
 
-        # Bold font
-        font = QFont()
-        font.setBold(True)
-        self.setFont(1, font)
+    def add_info_row(self, title: str, detail: str = "", badge: str = ""):
+        self._body_layout.addWidget(_InfoRow(title, detail, self._accent, badge, parent=self))
 
+    def get_checked_items(self) -> list[SyncItem]:
+        return [r.sync_item for r in self._track_rows if r.is_checked()]
 
-class DuplicateItemWidget(QTreeWidgetItem):
-    """Tree item representing a single file in a duplicate group."""
+    def set_all_checked(self, state: bool):
+        self._select_all_cb.blockSignals(True)
+        self._select_all_cb.setChecked(state)
+        self._select_all_cb.blockSignals(False)
+        for r in self._track_rows:
+            r.cb.blockSignals(True)
+            r.set_checked(state)
+            r.cb.blockSignals(False)
 
-    def __init__(self, track, parent=None):
-        super().__init__(parent)
-        self.track = track
+    def checked_count(self) -> int:
+        return sum(1 for r in self._track_rows if r.is_checked())
 
-        # No checkbox for info-only section
-        self.setFlags(self.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
-
-        # Show the path difference - just the directory part
-        self.setText(1, track.filename)
-        self.setText(2, self._get_short_path(track.path))
-        self.setText(3, "")
-        self.setText(4, self._format_size(track.size))
-        self.setText(5, self._format_duration(track.duration_ms))
-
-        # Set tooltip with full path
-        tooltip = f"Full path: {track.path}"
-        for i in range(6):
-            self.setToolTip(i, tooltip)
-            self.setForeground(i, QBrush(QColor(180, 160, 100)))
-
-    def _get_short_path(self, path: str) -> str:
-        """Get shortened directory path."""
-        import os
-        dir_path = os.path.dirname(path)
-        # Show last 2-3 directory components
-        parts = dir_path.replace("\\", "/").split("/")
-        if len(parts) > 3:
-            return ".../" + "/".join(parts[-3:])
-        return dir_path
-
-    _format_size = staticmethod(_format_size)
-    _format_duration = staticmethod(_format_duration)
+    def total_count(self) -> int:
+        return len(self._track_rows)
 
 
 class SyncReviewWidget(QWidget):
@@ -562,6 +676,7 @@ class SyncReviewWidget(QWidget):
         self._count_timer.setSingleShot(True)
         self._count_timer.setInterval(0)  # fires on next event loop iteration
         self._count_timer.timeout.connect(self._do_update_selection_count)
+        self._playlist_card: SyncCategoryCard | None = None
         self._setup_ui()
 
     def _setup_ui(self):
@@ -570,7 +685,7 @@ class SyncReviewWidget(QWidget):
         layout.setSpacing(0)
 
         # Header
-        header = QFrame()
+        header = QFrame(self)
         header.setStyleSheet(f"""
             QFrame {{
                 background: rgba(30, 30, 38, 220);
@@ -580,34 +695,34 @@ class SyncReviewWidget(QWidget):
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(16, 12, 16, 12)
 
-        title = QLabel("🔄 Sync Review")
+        title = QLabel("🔄 Sync Review", header)
         title.setFont(QFont(FONT_FAMILY, 14, QFont.Weight.Bold))
         title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent;")
         header_layout.addWidget(title)
 
         header_layout.addStretch()
 
-        self.summary_label = QLabel("")
+        self.summary_label = QLabel("", header)
         self.summary_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent;")
         header_layout.addWidget(self.summary_label)
 
         layout.addWidget(header)
 
         # Stacked widget for loading/content states
-        self.stack = QStackedWidget()
+        self.stack = QStackedWidget(self)
         layout.addWidget(self.stack, 1)
 
         # Loading state
-        loading_widget = QWidget()
+        loading_widget = QWidget(self.stack)
         loading_layout = QVBoxLayout(loading_widget)
         loading_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self.loading_label = QLabel("Scanning library...")
+        self.loading_label = QLabel("Scanning library...", loading_widget)
         self.loading_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; font-size: 14px;")
         self.loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         loading_layout.addWidget(self.loading_label)
 
-        self.progress_bar = QProgressBar()
+        self.progress_bar = QProgressBar(loading_widget)
         self.progress_bar.setFixedWidth(300)
         self.progress_bar.setTextVisible(False)
         self.progress_bar.setStyleSheet(f"""
@@ -624,12 +739,12 @@ class SyncReviewWidget(QWidget):
         """)
         loading_layout.addWidget(self.progress_bar, alignment=Qt.AlignmentFlag.AlignCenter)
 
-        self.progress_detail = QLabel("")
+        self.progress_detail = QLabel("", loading_widget)
         self.progress_detail.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; font-size: 11px;")
         self.progress_detail.setAlignment(Qt.AlignmentFlag.AlignCenter)
         loading_layout.addWidget(self.progress_detail)
 
-        self.eta_label = QLabel("")
+        self.eta_label = QLabel("", loading_widget)
         self.eta_label.setStyleSheet(f"color: {Colors.ACCENT}; font-size: 11px;")
         self.eta_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         loading_layout.addWidget(self.eta_label)
@@ -637,7 +752,8 @@ class SyncReviewWidget(QWidget):
         # Hint label (shown only during automatic pre-sync backup stage)
         self._backup_hint = QLabel(
             "Pre-sync backups are enabled. "
-            "You can turn this off in Settings \u2192 Backups."
+            "You can turn this off in Settings \u2192 Backups.",
+            loading_widget,
         )
         self._backup_hint.setStyleSheet(
             f"color: {Colors.TEXT_TERTIARY}; font-size: 10px;"
@@ -648,152 +764,128 @@ class SyncReviewWidget(QWidget):
 
         self.stack.addWidget(loading_widget)  # Index 0
 
-        # Content state - tree view with details panel
-        content_widget = QWidget()
+        # Content state — card-based scroll area
+        content_widget = QWidget(self.stack)
         content_layout = QVBoxLayout(content_widget)
         content_layout.setContentsMargins(0, 0, 0, 0)
         content_layout.setSpacing(0)
 
-        # Splitter for tree and details
-        self.splitter = QSplitter(Qt.Orientation.Vertical)
-        self.splitter.setStyleSheet(f"""
-            QSplitter::handle {{
-                background: {Colors.BORDER_SUBTLE};
-                height: 3px;
-            }}
-            QSplitter::handle:hover {{
-                background: {Colors.ACCENT};
-            }}
-        """)
-
-        self.tree = QTreeWidget()
-        self.tree.setHeaderLabels(["", "Title", "Artist", "Album", "Size", "Duration"])
-        self.tree.setRootIsDecorated(True)
-        self.tree.setAlternatingRowColors(True)
-        self.tree.setMouseTracking(True)  # Enable hover tooltips
-        self.tree.setStyleSheet(f"""
-            QTreeWidget {{
-                background: rgba(22, 22, 30, 220);
-                alternate-background-color: rgba(255,255,255,3);
-                border: none;
-                color: {Colors.TEXT_PRIMARY};
-                font-size: 12px;
-                outline: none;
-            }}
-            QTreeWidget::item {{
-                padding: 5px 0;
+        # Summary stats bar
+        self._stats_bar = QFrame(content_widget)
+        self._stats_bar.setStyleSheet(f"""
+            QFrame {{
+                background: rgba(255,255,255,4);
                 border-bottom: 1px solid {Colors.BORDER_SUBTLE};
             }}
-            QTreeWidget::item:selected {{
-                background: {Colors.SELECTION};
-            }}
-            QTreeWidget::indicator {{
-                width: 16px;
-                height: 16px;
-                margin-left: 6px;
-            }}
-            QTreeWidget::indicator:unchecked {{
-                border: 2px solid rgba(255,255,255,60);
-                border-radius: 3px;
-                background: transparent;
-            }}
-            QTreeWidget::indicator:checked {{
-                border: 2px solid {Colors.ACCENT};
-                border-radius: 3px;
-                background: {Colors.ACCENT};
-                image: none;
-            }}
-            QTreeWidget::indicator:indeterminate {{
-                border: 2px solid {Colors.ACCENT};
-                border-radius: 3px;
-                background: rgba(64, 156, 255, 60);
-            }}
-            QTreeWidget::item:hover {{
-                background: rgba(255,255,255,8);
-            }}
-            QHeaderView::section {{
-                background: {Colors.SURFACE_ALT};
-                color: {Colors.TEXT_SECONDARY};
-                padding: 6px 8px;
-                border: none;
-                border-bottom: 1px solid {Colors.BORDER};
-                font-weight: 600;
-                font-size: 11px;
-            }}
         """)
+        stats_lay = QHBoxLayout(self._stats_bar)
+        stats_lay.setContentsMargins(16, 8, 16, 8)
+        stats_lay.setSpacing(16)
+        self._stats_layout = stats_lay
+        self._stats_pills: list[QLabel] = []
+        stats_lay.addStretch()
+        content_layout.addWidget(self._stats_bar)
 
-        # Reduce tree indentation so child checkboxes don't get clipped
-        self.tree.setIndentation(12)
-
-        # Configure columns - wider for better readability
-        tree_header = self.tree.header()
-        if tree_header:
-            tree_header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
-            tree_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-            tree_header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
-            tree_header.setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
-            tree_header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
-            tree_header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
-            tree_header.setMinimumSectionSize(60)
-        self.tree.setColumnWidth(0, 50)   # Checkbox (needs room for indentation + indicator)
-        self.tree.setColumnWidth(2, 200)  # Artist (wider)
-        self.tree.setColumnWidth(3, 200)  # Album (wider)
-        self.tree.setColumnWidth(5, 70)   # Duration
-
-        # Connect selection change to update details
-        self.tree.itemSelectionChanged.connect(self._update_details_panel)
-
-        self.splitter.addWidget(self.tree)
-
-        # Details panel (collapsible)
-        self.details_panel = QFrame()
-        self.details_panel.setStyleSheet(f"""
+        # iPod storage bar
+        self._storage_frame = QFrame(content_widget)
+        self._storage_frame.setStyleSheet(f"""
             QFrame {{
-                background: rgba(20, 20, 28, 220);
-                border-top: 1px solid {Colors.BORDER_SUBTLE};
+                background: rgba(255,255,255,4);
+                border-bottom: 1px solid {Colors.BORDER_SUBTLE};
             }}
         """)
-        self.details_panel.setMinimumHeight(80)
-        self.details_panel.setMaximumHeight(150)
+        storage_row = QHBoxLayout(self._storage_frame)
+        storage_row.setContentsMargins(16, 6, 16, 6)
+        storage_row.setSpacing(10)
 
-        details_layout = QVBoxLayout(self.details_panel)
-        details_layout.setContentsMargins(16, 12, 16, 12)
-        details_layout.setSpacing(4)
+        self._storage_label = QLabel("iPod Storage:", self._storage_frame)
+        self._storage_label.setFont(QFont(FONT_FAMILY, 9))
+        self._storage_label.setStyleSheet(f"color:{Colors.TEXT_TERTIARY}; background:transparent;")
+        storage_row.addWidget(self._storage_label)
 
-        details_header = QLabel("Details")
-        details_header.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; font-size: 10px; font-weight: bold; text-transform: uppercase;")
-        details_layout.addWidget(details_header)
+        self._storage_bar = QProgressBar(self._storage_frame)
+        self._storage_bar.setFixedHeight(8)
+        self._storage_bar.setTextVisible(False)
+        self._storage_bar.setStyleSheet(f"""
+            QProgressBar {{
+                background: rgba(255,255,255,15);
+                border: none;
+                border-radius: 4px;
+            }}
+            QProgressBar::chunk {{
+                background: {Colors.ACCENT};
+                border-radius: 4px;
+            }}
+        """)
+        storage_row.addWidget(self._storage_bar, 1)
 
-        self.details_text = QLabel("Select an item to see details")
-        self.details_text.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: 11px;")
-        self.details_text.setWordWrap(True)
-        self.details_text.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        details_layout.addWidget(self.details_text)
-        details_layout.addStretch()
+        self._storage_detail = QLabel("", self._storage_frame)
+        self._storage_detail.setFont(QFont(FONT_FAMILY, 9))
+        self._storage_detail.setStyleSheet(f"color:{Colors.TEXT_TERTIARY}; background:transparent;")
+        storage_row.addWidget(self._storage_detail)
 
-        self.splitter.addWidget(self.details_panel)
-        self.splitter.setSizes([400, 100])  # Initial sizes
+        self._storage_frame.setVisible(False)  # shown when plan arrives
+        content_layout.addWidget(self._storage_frame)
 
-        content_layout.addWidget(self.splitter)
+        # Scroll area for category cards
+        self._scroll = QScrollArea(content_widget)
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._scroll.setStyleSheet(f"""
+            QScrollArea {{
+                background: transparent;
+                border: none;
+            }}
+            QScrollBar:vertical {{
+                background: transparent;
+                width: 8px;
+            }}
+            QScrollBar::handle:vertical {{
+                background: rgba(255,255,255,50);
+                border-radius: 4px;
+                min-height: 30px;
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background: rgba(255,255,255,80);
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0;
+            }}
+        """)
+
+        self._cards_container = QWidget(self._scroll)
+        self._cards_container.setStyleSheet("background: transparent;")
+        self._cards_layout = QVBoxLayout(self._cards_container)
+        self._cards_layout.setContentsMargins(16, 12, 16, 12)
+        self._cards_layout.setSpacing(10)
+        self._cards_layout.addStretch()  # push cards to top
+
+        self._scroll.setWidget(self._cards_container)
+        content_layout.addWidget(self._scroll, 1)
+
+        # Track all cards for selection management
+        self._category_cards: list[SyncCategoryCard] = []
+
         self.stack.addWidget(content_widget)  # Index 1
 
         # Empty state
-        empty_widget = QWidget()
+        empty_widget = QWidget(self.stack)
         empty_layout = QVBoxLayout(empty_widget)
         empty_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        empty_icon = QLabel("✅")
+        empty_icon = QLabel("✅", empty_widget)
         empty_icon.setFont(QFont(FONT_FAMILY, 48))
         empty_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         empty_layout.addWidget(empty_icon)
 
-        empty_text = QLabel("Everything is in sync!")
+        empty_text = QLabel("Everything is in sync!", empty_widget)
         empty_text.setFont(QFont(FONT_FAMILY, 16))
         empty_text.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
         empty_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
         empty_layout.addWidget(empty_text)
 
-        self.empty_stats = QLabel("")
+        self.empty_stats = QLabel("", empty_widget)
         self.empty_stats.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; font-size: 12px;")
         self.empty_stats.setAlignment(Qt.AlignmentFlag.AlignCenter)
         empty_layout.addWidget(self.empty_stats)
@@ -801,22 +893,22 @@ class SyncReviewWidget(QWidget):
         self.stack.addWidget(empty_widget)  # Index 2
 
         # Results state (sync completion)
-        results_widget = QWidget()
+        results_widget = QWidget(self.stack)
         results_layout = QVBoxLayout(results_widget)
         results_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         results_layout.setSpacing(12)
 
-        self.result_icon = QLabel("")
+        self.result_icon = QLabel("", results_widget)
         self.result_icon.setFont(QFont(FONT_FAMILY, 48))
         self.result_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         results_layout.addWidget(self.result_icon)
 
-        self.result_title = QLabel("")
+        self.result_title = QLabel("", results_widget)
         self.result_title.setFont(QFont(FONT_FAMILY, 18, QFont.Weight.Bold))
         self.result_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         results_layout.addWidget(self.result_title)
 
-        self.result_details = QLabel("")
+        self.result_details = QLabel("", results_widget)
         self.result_details.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: 13px;")
         self.result_details.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.result_details.setWordWrap(True)
@@ -826,23 +918,23 @@ class SyncReviewWidget(QWidget):
         self.stack.addWidget(results_widget)  # Index 3
 
         # Pre-sync backup prompt (Index 4)
-        presync_widget = QWidget()
+        presync_widget = QWidget(self.stack)
         presync_layout = QVBoxLayout(presync_widget)
         presync_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         presync_layout.setSpacing(16)
 
-        self._presync_icon = QLabel("💾")
+        self._presync_icon = QLabel("💾", presync_widget)
         self._presync_icon.setFont(QFont(FONT_FAMILY, 48))
         self._presync_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         presync_layout.addWidget(self._presync_icon)
 
-        self._presync_title = QLabel("")
+        self._presync_title = QLabel("", presync_widget)
         self._presync_title.setFont(QFont(FONT_FAMILY, 16, QFont.Weight.Bold))
         self._presync_title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
         self._presync_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         presync_layout.addWidget(self._presync_title)
 
-        self._presync_text = QLabel("")
+        self._presync_text = QLabel("", presync_widget)
         self._presync_text.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: 12px;")
         self._presync_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._presync_text.setWordWrap(True)
@@ -856,7 +948,7 @@ class SyncReviewWidget(QWidget):
         presync_btn_row.addStretch()
 
         # "Skip Backup & Sync Now" / "Sync Without Backup" — secondary action
-        self._presync_skip_btn = QPushButton("Skip Backup & Sync Now")
+        self._presync_skip_btn = QPushButton("Skip Backup & Sync Now", presync_widget)
         self._presync_skip_btn.setStyleSheet(btn_css(
             bg=Colors.SURFACE_RAISED,
             bg_hover=Colors.SURFACE_ACTIVE,
@@ -870,7 +962,7 @@ class SyncReviewWidget(QWidget):
         presync_btn_row.addWidget(self._presync_skip_btn)
 
         # "Back Up & Sync" — primary action
-        self._presync_backup_btn = QPushButton("Back Up & Sync")
+        self._presync_backup_btn = QPushButton("Back Up & Sync", presync_widget)
         self._presync_backup_btn.setStyleSheet(f"""
             QPushButton {{
                 background: {Colors.ACCENT};
@@ -891,7 +983,7 @@ class SyncReviewWidget(QWidget):
         presync_btn_row.addStretch()
         presync_layout.addLayout(presync_btn_row)
 
-        self._presync_hint = QLabel("")
+        self._presync_hint = QLabel("", presync_widget)
         self._presync_hint.setStyleSheet(
             f"color: {Colors.TEXT_TERTIARY}; font-size: 10px;"
         )
@@ -901,7 +993,7 @@ class SyncReviewWidget(QWidget):
         self.stack.addWidget(presync_widget)  # Index 4
 
         # Footer with action buttons
-        footer = QFrame()
+        footer = QFrame(self)
         footer.setStyleSheet(f"""
             QFrame {{
                 background: rgba(30, 30, 38, 220);
@@ -912,9 +1004,9 @@ class SyncReviewWidget(QWidget):
         footer_layout.setContentsMargins(16, 10, 16, 10)
 
         # Select all / none buttons
-        self.select_all_btn = QPushButton("Select All")
+        self.select_all_btn = QPushButton("Select All", footer)
         self.select_all_btn.clicked.connect(self._select_all)
-        self.select_none_btn = QPushButton("Select None")
+        self.select_none_btn = QPushButton("Select None", footer)
         self.select_none_btn.clicked.connect(self._select_none)
 
         for btn in [self.select_all_btn, self.select_none_btn]:
@@ -929,17 +1021,35 @@ class SyncReviewWidget(QWidget):
 
         footer_layout.addWidget(self.select_all_btn)
         footer_layout.addWidget(self.select_none_btn)
+
+        # Expand / Collapse All
+        self.expand_all_btn = QPushButton("Expand All", footer)
+        self.expand_all_btn.clicked.connect(self._expand_all)
+        self.collapse_all_btn = QPushButton("Collapse All", footer)
+        self.collapse_all_btn.clicked.connect(self._collapse_all)
+        for btn in [self.expand_all_btn, self.collapse_all_btn]:
+            btn.setStyleSheet(btn_css(
+                bg=Colors.SURFACE_RAISED,
+                bg_hover=Colors.SURFACE_ACTIVE,
+                bg_press=Colors.SURFACE_ALT,
+                border=f"1px solid {Colors.BORDER}",
+                radius=Metrics.BORDER_RADIUS_SM,
+                padding="5px 12px",
+            ))
+        footer_layout.addWidget(self.expand_all_btn)
+        footer_layout.addWidget(self.collapse_all_btn)
+
         footer_layout.addStretch()
 
         # Selection summary
-        self.selection_label = QLabel("")
+        self.selection_label = QLabel("", footer)
         self.selection_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
         footer_layout.addWidget(self.selection_label)
 
         footer_layout.addSpacing(20)
 
         # Cancel and Apply buttons
-        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn = QPushButton("Cancel", footer)
         self.cancel_btn.clicked.connect(self._on_cancel_clicked)
         self.cancel_btn.setStyleSheet(btn_css(
             bg=Colors.SURFACE_RAISED,
@@ -950,7 +1060,7 @@ class SyncReviewWidget(QWidget):
             padding="7px 20px",
         ))
 
-        self.apply_btn = QPushButton("Apply Sync")
+        self.apply_btn = QPushButton("Apply Sync", footer)
         self.apply_btn.clicked.connect(self._apply_sync)
         self.apply_btn.setStyleSheet(f"""
             QPushButton {{
@@ -974,11 +1084,6 @@ class SyncReviewWidget(QWidget):
         footer_layout.addWidget(self.apply_btn)
 
         layout.addWidget(footer)
-
-        # Connect tree item changes to update selection count
-        self.tree.itemChanged.connect(self._update_selection_count)
-        # Allow clicking anywhere on a row to toggle its checkbox
-        self.tree.itemClicked.connect(self._on_item_clicked)
 
     # Map internal stage names → user-friendly labels
     _STAGE_LABELS = {
@@ -1013,6 +1118,8 @@ class SyncReviewWidget(QWidget):
         show_plan_btns = (state == "plan")
         self.select_all_btn.setVisible(show_plan_btns)
         self.select_none_btn.setVisible(show_plan_btns)
+        self.expand_all_btn.setVisible(show_plan_btns)
+        self.collapse_all_btn.setVisible(show_plan_btns)
         self.selection_label.setVisible(show_plan_btns)
         self.apply_btn.setVisible(show_plan_btns)
 
@@ -1046,8 +1153,13 @@ class SyncReviewWidget(QWidget):
 
     def update_progress(self, stage: str, current: int, total: int, message: str):
         """Update progress indicator."""
-        self.loading_label.setText(self._friendly_stage(stage))
-        self.progress_detail.setText(message)
+        friendly = self._friendly_stage(stage)
+        if total > 0 and message:
+            self.loading_label.setText(f"{friendly} ({current}/{total})")
+            self.progress_detail.setText(message)
+        else:
+            self.loading_label.setText(friendly)
+            self.progress_detail.setText(message)
 
         if total > 0:
             self.progress_bar.setRange(0, total)
@@ -1059,13 +1171,29 @@ class SyncReviewWidget(QWidget):
             self.eta_label.setText("")
 
     def show_plan(self, plan: SyncPlan):
-        """Display the sync plan in the tree view."""
+        """Display the sync plan as styled category cards."""
         self._plan = plan
-        self.tree.clear()
+        self._category_cards.clear()
+        self._playlist_card = None
+        self._storage_frame.setVisible(False)  # reset until updated
+
+        # Clear previous cards
+        while self._cards_layout.count() > 1:  # keep the stretch
+            w = self._cards_layout.takeAt(0)
+            wgt = w.widget() if w else None
+            if wgt:
+                wgt.deleteLater()
+
+        # Clear stats pills
+        stats_lay = self._stats_layout
+        while stats_lay.count() > 1:  # keep stretch
+            w = stats_lay.takeAt(0)
+            wgt = w.widget() if w else None
+            if wgt:
+                wgt.deleteLater()
 
         if not plan.has_changes:
             self.stack.setCurrentIndex(2)  # Empty state
-            # Show match stats
             stats = f"{plan.matched_tracks} tracks matched"
             if plan.total_pc_tracks:
                 stats = f"{plan.total_pc_tracks} PC tracks · {plan.total_ipod_tracks} iPod tracks · {stats}"
@@ -1082,211 +1210,197 @@ class SyncReviewWidget(QWidget):
             self._set_footer_for_state("empty")
             return
 
-        # Show content
+        # ── Show content ────────────────────────────────────────────
         self.stack.setCurrentIndex(1)
         self._set_footer_for_state("plan")
 
-        # Update summary with git-diff style size stats
+        # ── Summary stats pills ─────────────────────────────────────
+        def _add_pill(text: str, color: str):
+            pill = QLabel(text, self._stats_bar)
+            pill.setFont(QFont(FONT_FAMILY, 10))
+            pill.setStyleSheet(
+                f"color:{color}; background:rgba({SyncCategoryCard._rgb(color)},15); "
+                f"border:1px solid rgba({SyncCategoryCard._rgb(color)},40); "
+                f"border-radius:10px; padding:2px 10px;"
+            )
+            stats_lay.insertWidget(stats_lay.count() - 1, pill)  # before stretch
+
+        if plan.to_add:
+            _add_pill(f"📥 {len(plan.to_add)} add", _CAT_COLORS["add"])
+        if plan.to_remove:
+            _add_pill(f"🗑️ {len(plan.to_remove)} remove", _CAT_COLORS["remove"])
+        if plan.to_update_file:
+            _add_pill(f"🔄 {len(plan.to_update_file)} re-sync", _CAT_COLORS["update_file"])
+        if plan.to_update_metadata:
+            _add_pill(f"📝 {len(plan.to_update_metadata)} metadata", _CAT_COLORS["metadata"])
+        if plan.to_update_artwork:
+            _add_pill(f"🎨 {len(plan.to_update_artwork)} artwork", _CAT_COLORS["artwork"])
+        if plan.to_sync_playcount:
+            _add_pill(f"🎵 {len(plan.to_sync_playcount)} plays", _CAT_COLORS["playcount"])
+        if plan.to_sync_rating:
+            _add_pill(f"⭐ {len(plan.to_sync_rating)} ratings", _CAT_COLORS["rating"])
+
+        # Net size pill
+        if plan.storage.bytes_to_add or plan.storage.bytes_to_remove:
+            net = plan.storage.bytes_to_add - plan.storage.bytes_to_remove
+            sign = "+" if net >= 0 else "-"
+            _add_pill(f"net {sign}{_format_size(abs(net))}", Colors.TEXT_SECONDARY)
+
+        # Build header summary
         total_changes = sum([
             len(plan.to_add), len(plan.to_remove),
             len(plan.to_update_metadata), len(plan.to_update_file),
             len(plan.to_update_artwork),
             len(plan.to_sync_playcount), len(plan.to_sync_rating),
-            1 if plan.artwork_needs_sync else 0,
-            len(plan.playlists_to_add), len(plan.playlists_to_edit),
-            len(plan.playlists_to_remove),
         ])
-
-        # Build size diff string
-        size_parts = []
-        if plan.storage.bytes_to_add > 0:
-            size_parts.append(f"<span style='color: #70c070;'>+{self._format_size(plan.storage.bytes_to_add)}</span>")
-        if plan.storage.bytes_to_remove > 0:
-            size_parts.append(f"<span style='color: #e07070;'>-{self._format_size(plan.storage.bytes_to_remove)}</span>")
-
-        net_change = plan.storage.bytes_to_add - plan.storage.bytes_to_remove
-        if size_parts and net_change != 0:
-            net_sign = "+" if net_change > 0 else "-"
-            size_parts.append(f"(net {net_sign}{self._format_size(abs(net_change))})")
-
-        size_str = " ".join(size_parts) if size_parts else ""
-
-        summary_text = f"{plan.total_pc_tracks} PC tracks · {plan.total_ipod_tracks} iPod tracks · {total_changes} changes"
-        if size_str:
-            summary_text += f" · {size_str}"
+        summary_text = (
+            f"{plan.total_pc_tracks} PC tracks · "
+            f"{plan.total_ipod_tracks} iPod tracks · "
+            f"{total_changes} changes"
+        )
         if plan.fingerprint_errors:
             summary_text += f" · <span style='color: #c8a040;'>{len(plan.fingerprint_errors)} skipped</span>"
-
         self.summary_label.setText(summary_text)
         self.summary_label.setTextFormat(Qt.TextFormat.RichText)
 
-        # Show integrity fixes at top if any were found
+        # ── iPod storage bar ─────────────────────────────────────────
+        self._update_storage_bar(plan)
+
+        insert_idx = 0  # where to insert next card (before the stretch)
+
+        def _insert_card(card: SyncCategoryCard):
+            nonlocal insert_idx
+            self._cards_layout.insertWidget(insert_idx, card)
+            insert_idx += 1
+
+        # ── Integrity fixes ─────────────────────────────────────────
         ir = plan.integrity_report
         if ir and not ir.is_clean:
             fix_count = len(ir.missing_files) + len(ir.stale_mappings) + len(ir.orphan_files)
-            header = SyncCategoryHeader("🔧", "Integrity Fixes (auto-repaired)", fix_count)
-            header.setFlags(header.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
-            header.setCheckState(0, Qt.CheckState.Unchecked)
-            for i in range(6):
-                header.setForeground(i, QBrush(QColor(100, 180, 230)))
-            self.tree.addTopLevelItem(header)
+            card = SyncCategoryCard("🔧", "Integrity Fixes (auto-repaired)", fix_count,
+                                    _CAT_COLORS["integrity"], checkable=False, start_expanded=False,
+                                    parent=self._cards_container)
+            for t in ir.missing_files:
+                card.add_info_row(t.get("Title", "Unknown"),
+                                  f"{t.get('Artist', 'Unknown')} · File missing from iPod")
+            for fp, dbid in ir.stale_mappings:
+                card.add_info_row(f"Stale mapping (dbid={dbid})", "Removed from mapping")
+            for orphan in ir.orphan_files[:20]:
+                card.add_info_row(orphan.name, "Orphan file deleted")
+            if len(ir.orphan_files) > 20:
+                card.add_info_row(f"...and {len(ir.orphan_files) - 20} more")
+            _insert_card(card)
 
-            if ir.missing_files:
-                for track in ir.missing_files:
-                    child = QTreeWidgetItem(header)
-                    child.setFlags(child.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
-                    child.setText(1, track.get("Title", "Unknown"))
-                    child.setText(2, track.get("Artist", "Unknown"))
-                    child.setText(3, track.get("Album", "Unknown"))
-                    child.setText(4, "File missing from iPod")
-                    for ci in range(6):
-                        child.setForeground(ci, QBrush(QColor(100, 180, 230)))
-
-            if ir.stale_mappings:
-                for fp, dbid in ir.stale_mappings:
-                    child = QTreeWidgetItem(header)
-                    child.setFlags(child.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
-                    child.setText(1, f"Stale mapping (dbid={dbid})")
-                    child.setText(4, "Removed from mapping")
-                    for ci in range(6):
-                        child.setForeground(ci, QBrush(QColor(100, 180, 230)))
-
-            if ir.orphan_files:
-                orphan_bytes = 0
-                for orphan in ir.orphan_files[:20]:
-                    try:
-                        orphan_bytes += orphan.stat().st_size
-                    except OSError:
-                        pass
-                    child = QTreeWidgetItem(header)
-                    child.setFlags(child.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
-                    child.setText(1, orphan.name)
-                    child.setText(4, "Orphan file deleted")
-                    child.setToolTip(1, str(orphan))
-                    for ci in range(6):
-                        child.setForeground(ci, QBrush(QColor(100, 180, 230)))
-                if len(ir.orphan_files) > 20:
-                    overflow = QTreeWidgetItem(header)
-                    overflow.setFlags(overflow.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
-                    overflow.setText(1, f"...and {len(ir.orphan_files) - 20} more")
-                    for ci in range(6):
-                        overflow.setForeground(ci, QBrush(QColor(100, 180, 230)))
-
-            header.setExpanded(False)
-
-        # Add categories to tree
+        # ── Add to iPod ─────────────────────────────────────────────
         if plan.to_add:
-            header = SyncCategoryHeader("📥", "Add to iPod", len(plan.to_add), plan.storage.bytes_to_add)
-            self.tree.addTopLevelItem(header)
+            card = SyncCategoryCard("📥", "Add to iPod", len(plan.to_add),
+                                    _CAT_COLORS["add"], size_bytes=plan.storage.bytes_to_add,
+                                    subtitle="New tracks found on PC — will be copied to iPod",
+                                    parent=self._cards_container)
             for item in plan.to_add:
-                header.addChild(SyncItemWidget(item))
-            header.setExpanded(True)
+                card.add_track_row(item)
+            card.selection_changed.connect(self._schedule_selection_update)
+            self._category_cards.append(card)
+            _insert_card(card)
 
+        # ── Remove from iPod ────────────────────────────────────────
         if plan.to_remove:
-            header = SyncCategoryHeader("🗑️", "Remove from iPod", len(plan.to_remove), plan.storage.bytes_to_remove)
-            self.tree.addTopLevelItem(header)
+            card = SyncCategoryCard("🗑️", "Remove from iPod", len(plan.to_remove),
+                                    _CAT_COLORS["remove"], size_bytes=-plan.storage.bytes_to_remove,
+                                    subtitle="No longer in PC library — will be deleted from iPod",
+                                    parent=self._cards_container)
             for item in plan.to_remove:
-                header.addChild(SyncItemWidget(item))
-            header.setExpanded(True)
+                card.add_track_row(item)
+            card.selection_changed.connect(self._schedule_selection_update)
+            self._category_cards.append(card)
+            _insert_card(card)
 
+        # ── Re-sync changed files ───────────────────────────────────
         if plan.to_update_file:
-            header = SyncCategoryHeader("🔄", "Re-sync Changed Files", len(plan.to_update_file), plan.storage.bytes_to_update)
-            self.tree.addTopLevelItem(header)
+            card = SyncCategoryCard("🔄", "Re-sync Changed Files", len(plan.to_update_file),
+                                    _CAT_COLORS["update_file"], size_bytes=plan.storage.bytes_to_update,
+                                    subtitle="Audio file changed on PC — will be re-copied to iPod",
+                                    parent=self._cards_container)
             for item in plan.to_update_file:
-                header.addChild(SyncItemWidget(item))
-            header.setExpanded(True)
+                card.add_track_row(item)
+            card.selection_changed.connect(self._schedule_selection_update)
+            self._category_cards.append(card)
+            _insert_card(card)
 
+        # ── Update metadata ─────────────────────────────────────────
         if plan.to_update_metadata:
-            header = SyncCategoryHeader("📝", "Update Metadata", len(plan.to_update_metadata))
-            self.tree.addTopLevelItem(header)
+            card = SyncCategoryCard("📝", "Update Metadata", len(plan.to_update_metadata),
+                                    _CAT_COLORS["metadata"], start_expanded=False,
+                                    subtitle="Tags changed on PC — title, artist, etc. updated without re-copying",
+                                    parent=self._cards_container)
             for item in plan.to_update_metadata:
-                header.addChild(SyncItemWidget(item))
-            header.setExpanded(False)
+                card.add_track_row(item)
+            card.selection_changed.connect(self._schedule_selection_update)
+            self._category_cards.append(card)
+            _insert_card(card)
 
+        # ── Update artwork ──────────────────────────────────────────
         if plan.to_update_artwork:
-            header = SyncCategoryHeader("🎨", "Update Artwork", len(plan.to_update_artwork))
-            self.tree.addTopLevelItem(header)
+            card = SyncCategoryCard("🎨", "Update Artwork", len(plan.to_update_artwork),
+                                    _CAT_COLORS["artwork"], start_expanded=False,
+                                    subtitle="Album art changed on PC — will be re-extracted",
+                                    parent=self._cards_container)
             for item in plan.to_update_artwork:
-                header.addChild(SyncItemWidget(item))
-            header.setExpanded(False)
+                card.add_track_row(item)
+            card.selection_changed.connect(self._schedule_selection_update)
+            self._category_cards.append(card)
+            _insert_card(card)
 
+        # ── Sync play counts ────────────────────────────────────────
         if plan.to_sync_playcount:
-            header = SyncCategoryHeader("🎵", "Sync Play Counts", len(plan.to_sync_playcount))
-            self.tree.addTopLevelItem(header)
+            card = SyncCategoryCard("🎵", "Sync Play Counts", len(plan.to_sync_playcount),
+                                    _CAT_COLORS["playcount"], start_expanded=False,
+                                    subtitle="New plays on iPod — will be written back to PC files",
+                                    parent=self._cards_container)
             for item in plan.to_sync_playcount:
-                header.addChild(SyncItemWidget(item))
-            header.setExpanded(False)
+                card.add_track_row(item)
+            card.selection_changed.connect(self._schedule_selection_update)
+            self._category_cards.append(card)
+            _insert_card(card)
 
-        # Show rating changes
+        # ── Sync ratings ────────────────────────────────────────────
         if plan.to_sync_rating:
-            header = SyncCategoryHeader("⭐", "Sync Ratings", len(plan.to_sync_rating))
-            self.tree.addTopLevelItem(header)
+            card = SyncCategoryCard("⭐", "Sync Ratings", len(plan.to_sync_rating),
+                                    _CAT_COLORS["rating"], start_expanded=False,
+                                    subtitle="Rating differs between PC and iPod — most recent wins",
+                                    parent=self._cards_container)
             for item in plan.to_sync_rating:
-                header.addChild(SyncRatingWidget(item))
-            header.setExpanded(False)
+                card.add_track_row(item)
+            card.selection_changed.connect(self._schedule_selection_update)
+            self._category_cards.append(card)
+            _insert_card(card)
 
-        # Show playlist changes
-        playlist_color = QColor(120, 180, 230)
-
-        if plan.playlists_to_add:
-            header = SyncCategoryHeader("🎶", "Add Playlists", len(plan.playlists_to_add))
-            header.setFlags(header.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
-            header.setCheckState(0, Qt.CheckState.Unchecked)
-            self.tree.addTopLevelItem(header)
+        # ── Playlist changes ────────────────────────────────────────
+        pl_total = len(plan.playlists_to_add) + len(plan.playlists_to_edit) + len(plan.playlists_to_remove)
+        if pl_total:
+            card = SyncCategoryCard("🎶", "Playlist Changes", pl_total,
+                                    _CAT_COLORS["playlist"], checkable=True, start_expanded=True,
+                                    subtitle="Playlist additions, updates, and removals",
+                                    parent=self._cards_container)
             for pl in plan.playlists_to_add:
-                child = QTreeWidgetItem(header)
-                child.setFlags(child.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
-                child.setText(1, pl.get("Title", "Untitled"))
                 pl_type = "Smart" if pl.get("smartPlaylistData") else "Regular"
-                child.setText(2, pl_type)
-                rules = pl.get("smartPlaylistRules", {})
-                rule_count = len(rules.get("rules", [])) if rules else 0
-                if rule_count:
-                    child.setText(3, f"{rule_count} rules")
-                for ci in range(6):
-                    child.setForeground(ci, QBrush(playlist_color))
-            header.setExpanded(True)
-
-        if plan.playlists_to_edit:
-            header = SyncCategoryHeader("📝", "Update Playlists", len(plan.playlists_to_edit))
-            header.setFlags(header.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
-            header.setCheckState(0, Qt.CheckState.Unchecked)
-            self.tree.addTopLevelItem(header)
+                card.add_info_row(pl.get("Title", "Untitled"), f"Add · {pl_type}")
             for pl in plan.playlists_to_edit:
-                child = QTreeWidgetItem(header)
-                child.setFlags(child.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
-                child.setText(1, pl.get("Title", "Untitled"))
                 pl_type = "Smart" if pl.get("smartPlaylistData") else "Regular"
-                child.setText(2, pl_type)
-                rules = pl.get("smartPlaylistRules", {})
-                rule_count = len(rules.get("rules", [])) if rules else 0
-                if rule_count:
-                    child.setText(3, f"{rule_count} rules")
-                for ci in range(6):
-                    child.setForeground(ci, QBrush(playlist_color))
-            header.setExpanded(True)
-
-        if plan.playlists_to_remove:
-            header = SyncCategoryHeader("🗑️", "Remove Playlists", len(plan.playlists_to_remove))
-            header.setFlags(header.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
-            header.setCheckState(0, Qt.CheckState.Unchecked)
-            self.tree.addTopLevelItem(header)
+                card.add_info_row(pl.get("Title", "Untitled"), f"Update · {pl_type}")
             for pl in plan.playlists_to_remove:
-                child = QTreeWidgetItem(header)
-                child.setFlags(child.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
-                child.setText(1, pl.get("Title", "Untitled"))
-                for ci in range(6):
-                    child.setForeground(ci, QBrush(QColor(220, 110, 110)))
-            header.setExpanded(True)
+                card.add_info_row(pl.get("Title", "Untitled"), "Remove")
+            card.selection_changed.connect(self._schedule_selection_update)
+            self._category_cards.append(card)
+            self._playlist_card = card
+            _insert_card(card)
 
-        # Show artwork sync info with individual track details
+        # ── Artwork sync (global, info) ─────────────────────────────
         if plan.artwork_needs_sync:
             count = plan.artwork_missing_count
-            header = SyncCategoryHeader("\U0001f3a8", "Sync Album Art", count)
-            header.setFlags(header.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
-            self.tree.addTopLevelItem(header)
-
-            # List individual tracks missing artwork
+            card = SyncCategoryCard("🖼️", "Sync Album Art", count,
+                                    _CAT_COLORS["artwork"], checkable=False, start_expanded=False,
+                                    parent=self._cards_container)
             ipod_tracks_cache = getattr(self, '_ipod_tracks_cache', None)
             if plan.matched_pc_paths and ipod_tracks_cache:
                 for dbid in plan.matched_pc_paths:
@@ -1297,77 +1411,107 @@ class SyncReviewWidget(QWidget):
                         ac = ipod_track.get('artworkCount', 0)
                         ml = ipod_track.get('mhiiLink', 0)
                         if ac == 0 or ml == 0:
-                            child = QTreeWidgetItem(header)
-                            child.setFlags(child.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
-                            child.setText(1, ipod_track.get('Title', 'Unknown'))
-                            child.setText(2, ipod_track.get('Artist', 'Unknown'))
-                            child.setText(3, ipod_track.get('Album', 'Unknown'))
-                            child.setText(4, "Missing art")
-                            for ci in range(6):
-                                child.setForeground(ci, QBrush(QColor(180, 140, 220)))
+                            card.add_info_row(
+                                ipod_track.get('Title', 'Unknown'),
+                                f"{ipod_track.get('Artist', 'Unknown')} · {ipod_track.get('Album', 'Unknown')} · Missing art",
+                            )
             elif count > 0:
-                # Fallback: just show a note
-                child = QTreeWidgetItem(header)
-                child.setFlags(child.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
-                child.setText(1, f"{count} tracks missing album art")
-                child.setText(4, "Will be synced")
-                for ci in range(6):
-                    child.setForeground(ci, QBrush(QColor(180, 140, 220)))
+                card.add_info_row(f"{count} tracks missing album art", "Will be synced")
+            _insert_card(card)
 
-            header.setExpanded(False)
-
-        # Show fingerprint errors (info only, non-blocking)
+        # ── Fingerprint errors ──────────────────────────────────────
         if plan.fingerprint_errors:
-            err_header = SyncCategoryHeader("⚠️", "Fingerprint Errors", len(plan.fingerprint_errors))
-            err_header.setFlags(err_header.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
-            err_header.setCheckState(0, Qt.CheckState.Unchecked)
-            for i in range(6):
-                err_header.setForeground(i, QBrush(QColor(200, 160, 80)))
-            self.tree.addTopLevelItem(err_header)
-
-            for filepath, error_msg in plan.fingerprint_errors[:50]:  # Cap at 50
-                child = QTreeWidgetItem(err_header)
-                child.setFlags(child.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
-                child.setText(1, os.path.basename(filepath))
-                child.setText(2, error_msg)
-                child.setToolTip(1, filepath)
-                child.setToolTip(2, error_msg)
-                for ci in range(6):
-                    child.setForeground(ci, QBrush(QColor(180, 150, 80)))
-
+            card = SyncCategoryCard("⚠️", "Fingerprint Errors", len(plan.fingerprint_errors),
+                                    _CAT_COLORS["error"], checkable=False, start_expanded=False,
+                                    parent=self._cards_container)
+            for filepath, error_msg in plan.fingerprint_errors[:50]:
+                card.add_info_row(os.path.basename(filepath), error_msg)
             if len(plan.fingerprint_errors) > 50:
-                overflow = QTreeWidgetItem(err_header)
-                overflow.setFlags(overflow.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
-                overflow.setText(1, f"...and {len(plan.fingerprint_errors) - 50} more")
-                for ci in range(6):
-                    overflow.setForeground(ci, QBrush(QColor(180, 150, 80)))
+                card.add_info_row(f"...and {len(plan.fingerprint_errors) - 50} more")
+            _insert_card(card)
 
-            err_header.setExpanded(False)
-
-        # Show duplicate files (informational - first file from each group is synced)
+        # ── Duplicates ──────────────────────────────────────────────
         if plan.duplicates:
             dup_count = plan.duplicate_count
-            header = SyncCategoryHeader("⚠️", f"Duplicates ({len(plan.duplicates)} groups, {dup_count} extra files skipped)", 0)
-            # Remove checkbox from duplicates header - it's info only
-            header.setFlags(header.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
-            header.setCheckState(0, Qt.CheckState.Unchecked)  # Clear any checkbox state
-            # Yellow/orange color for informational warning
-            for i in range(6):
-                header.setForeground(i, QBrush(QColor(230, 180, 80)))
-            self.tree.addTopLevelItem(header)
-
+            card = SyncCategoryCard(
+                "⚠️", f"Duplicates ({len(plan.duplicates)} groups)",
+                dup_count, _CAT_COLORS["duplicate"], checkable=False, start_expanded=False,
+                parent=self._cards_container,
+            )
             for fingerprint, tracks in plan.duplicates.items():
-                group_header = DuplicateGroupHeader(fingerprint, tracks)
-                header.addChild(group_header)
+                parts = fingerprint.split("|")
+                if len(parts) >= 3:
+                    group_title = f"{parts[2].title()} — {parts[0].title()}"
+                else:
+                    group_title = fingerprint
+                card.add_info_row(group_title, f"{len(tracks)} copies · first file synced, rest skipped")
                 for track in tracks:
-                    group_header.addChild(DuplicateItemWidget(track))
-                group_header.setExpanded(False)  # Collapsed by default
+                    short_dir = os.path.dirname(track.path).replace("\\", "/")
+                    dp = short_dir.split("/")
+                    short_dir = ".../" + "/".join(dp[-3:]) if len(dp) > 3 else short_dir
+                    card.add_info_row(
+                        f"  {track.filename}", f"{short_dir} · {_format_size(track.size)}",
+                    )
+            _insert_card(card)
 
-            header.setExpanded(False)  # Collapsed by default since non-blocking
-
-        self._update_selection_count()
+        self._do_update_selection_count()
         self.apply_btn.setEnabled(True)
         self.apply_btn.setToolTip("")
+
+    # ── Storage bar helper ──────────────────────────────────────────────
+
+    def _update_storage_bar(self, plan: SyncPlan):
+        """Update the iPod storage bar using actual disk usage."""
+        try:
+            from ..app import DeviceManager
+            device_manager = DeviceManager.get_instance()
+            ipod_path = device_manager.device_path
+            if not ipod_path:
+                self._storage_frame.setVisible(False)
+                return
+            usage = shutil.disk_usage(ipod_path)
+            total_bytes = usage.total
+            used_bytes = usage.used
+            free_bytes = usage.free
+            net_change = plan.storage.bytes_to_add + plan.storage.bytes_to_update - plan.storage.bytes_to_remove
+            projected_used = used_bytes + net_change
+            projected_free = max(free_bytes - net_change, 0)
+
+            self._storage_bar.setRange(0, max(total_bytes // (1024 * 1024), 1))
+            self._storage_bar.setValue(min(projected_used // (1024 * 1024), total_bytes // (1024 * 1024)))
+
+            # Color the bar red if it would overflow
+            if projected_used > total_bytes:
+                self._storage_bar.setStyleSheet(self._storage_bar.styleSheet().replace(
+                    Colors.ACCENT, Colors.DANGER))
+                self._storage_detail.setStyleSheet(
+                    f"color:{Colors.DANGER}; font-size:9px; font-family:{FONT_FAMILY}; background:transparent;")
+                self._storage_detail.setText(
+                    f"{_format_size(projected_used)} / {_format_size(total_bytes)} "
+                    f"— ⚠ {_format_size(projected_used - total_bytes)} over capacity!"
+                )
+            else:
+                self._storage_bar.setStyleSheet(f"""
+                    QProgressBar {{
+                        background: rgba(255,255,255,15);
+                        border: none;
+                        border-radius: 4px;
+                    }}
+                    QProgressBar::chunk {{
+                        background: {Colors.ACCENT};
+                        border-radius: 4px;
+                    }}
+                """)
+                self._storage_detail.setStyleSheet(
+                    f"color:{Colors.TEXT_TERTIARY}; font-size:9px; font-family:{FONT_FAMILY}; background:transparent;")
+                net_sign = "+" if net_change >= 0 else "-"
+                self._storage_detail.setText(
+                    f"{_format_size(projected_used)} / {_format_size(total_bytes)} "
+                    f"({_format_size(projected_free)} free after sync, net {net_sign}{_format_size(abs(net_change))})"
+                )
+            self._storage_frame.setVisible(True)
+        except Exception:
+            self._storage_frame.setVisible(False)
 
     def show_executing(self):
         """Show executing state - similar to loading but for sync execution."""
@@ -1555,63 +1699,36 @@ class SyncReviewWidget(QWidget):
             self.cancelled.emit()
 
     def _select_all(self):
-        """Select all items."""
-        self.tree.blockSignals(True)
-        for i in range(self.tree.topLevelItemCount()):
-            header = self.tree.topLevelItem(i)
-            if header:
-                if header.flags() & Qt.ItemFlag.ItemIsUserCheckable:
-                    header.setCheckState(0, Qt.CheckState.Checked)
-                for j in range(header.childCount()):
-                    child = header.child(j)
-                    if child and (child.flags() & Qt.ItemFlag.ItemIsUserCheckable):
-                        child.setCheckState(0, Qt.CheckState.Checked)
-        self.tree.blockSignals(False)
+        """Select all items in all cards."""
+        for card in self._category_cards:
+            card.set_all_checked(True)
         self._do_update_selection_count()
 
     def _select_none(self):
-        """Deselect all items."""
-        self.tree.blockSignals(True)
-        for i in range(self.tree.topLevelItemCount()):
-            header = self.tree.topLevelItem(i)
-            if header:
-                if header.flags() & Qt.ItemFlag.ItemIsUserCheckable:
-                    header.setCheckState(0, Qt.CheckState.Unchecked)
-                for j in range(header.childCount()):
-                    child = header.child(j)
-                    if child and (child.flags() & Qt.ItemFlag.ItemIsUserCheckable):
-                        child.setCheckState(0, Qt.CheckState.Unchecked)
-        self.tree.blockSignals(False)
+        """Deselect all items in all cards."""
+        for card in self._category_cards:
+            card.set_all_checked(False)
         self._do_update_selection_count()
 
-    def _on_item_clicked(self, item: QTreeWidgetItem, column: int):
-        """Toggle checkbox when clicking anywhere on the row (not just the checkbox column).
+    def _expand_all(self):
+        """Expand all category cards."""
+        for i in range(self._cards_layout.count()):
+            item = self._cards_layout.itemAt(i)
+            card = item.widget() if item else None
+            if isinstance(card, SyncCategoryCard) and not card._expanded:
+                card._toggle_expanded()
 
-        Column 0 is the checkbox column — Qt already handles toggling there,
-        so we only act on clicks on columns 1-5 to avoid double-toggling.
+    def _collapse_all(self):
+        """Collapse all category cards."""
+        for i in range(self._cards_layout.count()):
+            item = self._cards_layout.itemAt(i)
+            card = item.widget() if item else None
+            if isinstance(card, SyncCategoryCard) and card._expanded:
+                card._toggle_expanded()
 
-        For section headers (which have auto-tristate), we block signals
-        and manually propagate to children to avoid O(n) itemChanged emissions.
-        """
-        if column > 0 and (item.flags() & Qt.ItemFlag.ItemIsUserCheckable):
-            current = item.checkState(0)
-            new_state = (
-                Qt.CheckState.Unchecked
-                if current == Qt.CheckState.Checked
-                else Qt.CheckState.Checked
-            )
-            # If this is a section header, block signals and propagate manually
-            if isinstance(item, SyncCategoryHeader):
-                self.tree.blockSignals(True)
-                item.setCheckState(0, new_state)
-                for j in range(item.childCount()):
-                    child = item.child(j)
-                    if child and (child.flags() & Qt.ItemFlag.ItemIsUserCheckable):
-                        child.setCheckState(0, new_state)
-                self.tree.blockSignals(False)
-                self._do_update_selection_count()
-            else:
-                item.setCheckState(0, new_state)
+    def _schedule_selection_update(self):
+        """Alias used by card signals."""
+        self._count_timer.start()
 
     def _update_selection_count(self):
         """Schedule a debounced update of the selection summary label."""
@@ -1624,49 +1741,35 @@ class SyncReviewWidget(QWidget):
         bytes_to_add = 0
         bytes_to_remove = 0
 
-        for i in range(self.tree.topLevelItemCount()):
-            header = self.tree.topLevelItem(i)
-            if not header:
-                continue
-            # Skip duplicate headers (they're info-only)
-            if isinstance(header, SyncCategoryHeader):
-                header_text = header.text(1)
-                if "DUPLICATE" in header_text:
-                    continue
-            for j in range(header.childCount()):
-                child = header.child(j)
-                if not child:
-                    continue
-                # Skip duplicate items
-                if isinstance(child, (DuplicateGroupHeader, DuplicateItemWidget)):
+        for card in self._category_cards:
+            for row in card._track_rows:
+                if not isinstance(row, SyncTrackRow):
                     continue
                 total += 1
-                if child.checkState(0) == Qt.CheckState.Checked:
+                if row.is_checked():
                     selected += 1
-                    if isinstance(child, SyncItemWidget):
-                        item = child.sync_item
-                        # Track adds and removes separately
-                        if item.action == SyncAction.ADD_TO_IPOD:
-                            if item.pc_track:
-                                bytes_to_add += item.pc_track.size
-                        elif item.action == SyncAction.REMOVE_FROM_IPOD:
-                            if item.ipod_track:
-                                bytes_to_remove += item.ipod_track.get("size", 0)
-                        elif item.action == SyncAction.UPDATE_FILE:
-                            if item.pc_track:
-                                bytes_to_add += item.pc_track.size
+                    item = row.sync_item
+                    if item.action == SyncAction.ADD_TO_IPOD:
+                        if item.pc_track:
+                            bytes_to_add += item.pc_track.size
+                    elif item.action == SyncAction.REMOVE_FROM_IPOD:
+                        if item.ipod_track:
+                            bytes_to_remove += item.ipod_track.get("size", 0)
+                    elif item.action == SyncAction.UPDATE_FILE:
+                        if item.pc_track:
+                            bytes_to_add += item.pc_track.size
 
         # Build git-diff style size string
         size_parts = []
         if bytes_to_add > 0:
-            size_parts.append(f"+{self._format_size(bytes_to_add)}")
+            size_parts.append(f"+{_format_size(bytes_to_add)}")
         if bytes_to_remove > 0:
-            size_parts.append(f"-{self._format_size(bytes_to_remove)}")
+            size_parts.append(f"-{_format_size(bytes_to_remove)}")
 
         net_change = bytes_to_add - bytes_to_remove
         if bytes_to_add > 0 or bytes_to_remove > 0:
             net_sign = "+" if net_change >= 0 else "-"
-            size_parts.append(f"(net {net_sign}{self._format_size(abs(net_change))})")
+            size_parts.append(f"(net {net_sign}{_format_size(abs(net_change))})")
 
         size_str = " ".join(size_parts) if size_parts else ""
 
@@ -1676,185 +1779,11 @@ class SyncReviewWidget(QWidget):
 
         self.selection_label.setText(label_text)
 
-    def _update_details_panel(self):
-        """Update the details panel with selected item info."""
-        selected = self.tree.selectedItems()
-        if not selected:
-            self.details_text.setText("Select an item to see details")
-            return
-
-        item = selected[0]
-
-        # Skip if it's a category header
-        if isinstance(item, SyncCategoryHeader):
-            count = item.childCount()
-            self.details_text.setText(f"Category with {count} item{'s' if count != 1 else ''}")
-            return
-
-        # Handle duplicate group headers
-        if isinstance(item, DuplicateGroupHeader):
-            lines = []
-            lines.append("<span style='color: #ff6666;'><b>⚠️ DUPLICATES BLOCKING SYNC</b></span>")
-            lines.append(f"<b>Duplicate Group:</b> {len(item.tracks)} files with identical metadata")
-            lines.append("")
-            lines.append("<span style='color: #e0b050;'>These files share the same artist, album, title, and duration.</span>")
-            lines.append("<span style='color: #e0b050;'>iOpenPod can't decide which copy to use.</span>")
-            lines.append("")
-            lines.append("<b>To resolve:</b> Delete or move the extra copies so each song")
-            lines.append("exists in only one location within your music folder.")
-            lines.append("")
-            lines.append("<b>Files:</b>")
-            for track in item.tracks:
-                lines.append(f"  • {track.path} ({self._format_size(track.size)})")
-            self.details_text.setText("<br>".join(lines))
-            return
-
-        # Handle individual duplicate items
-        if isinstance(item, DuplicateItemWidget):
-            track = item.track
-            lines = []
-            lines.append("<span style='color: #ff6666;'><b>⚠️ DUPLICATE FILE</b></span>")
-            lines.append(f"<b>Path:</b> {track.path}")
-            lines.append(f"<b>Size:</b> {self._format_size(track.size)} · <b>Duration:</b> {self._format_duration(track.duration_ms)}")
-            if track.artist:
-                lines.append(f"<b>Artist:</b> {track.artist}")
-            if track.album:
-                lines.append(f"<b>Album:</b> {track.album}")
-            if track.title:
-                lines.append(f"<b>Title:</b> {track.title}")
-            lines.append("")
-            lines.append("Delete or move this file to resolve the duplicate,")
-            lines.append("then re-scan to continue syncing.")
-            self.details_text.setText("<br>".join(lines))
-            return
-
-        # Handle rating sync items
-        if isinstance(item, SyncRatingWidget):
-            si = item.sync_item
-            lines = []
-            lines.append("<b>Action:</b> Sync rating between PC and iPod")
-            if si.pc_track:
-                lines.append(f"<b>Track:</b> {si.pc_track.title or si.pc_track.filename}")
-                lines.append(f"<b>Artist:</b> {si.pc_track.artist or 'Unknown'}")
-                lines.append(f"<b>Album:</b> {si.pc_track.album or 'Unknown'}")
-                lines.append("")
-                lines.append(f"<b>File:</b> {si.pc_track.path}")
-            lines.append("")
-            pc_stars = item._rating_to_stars(si.pc_rating)
-            ipod_stars = item._rating_to_stars(si.ipod_rating)
-            new_stars = item._rating_to_stars(si.new_rating)
-            lines.append(f"<b>PC Rating:</b> {pc_stars} ({si.pc_rating}/100)")
-            lines.append(f"<b>iPod Rating:</b> {ipod_stars} ({si.ipod_rating}/100)")
-            lines.append(f"<b>New Rating:</b> <span style='color: #e0b050;'>{new_stars} ({si.new_rating}/100)</span>")
-            lines.append("")
-            if si.pc_rating > 0 and si.ipod_rating > 0:
-                lines.append("Both have ratings \u2014 iPod rating wins (last-write-wins).")
-            elif si.ipod_rating > 0:
-                lines.append("PC has no rating \u2014 using iPod rating.")
-            else:
-                lines.append("iPod has no rating \u2014 using PC rating.")
-            self.details_text.setText("<br>".join(lines))
-            return
-
-        if not isinstance(item, SyncItemWidget):
-            return
-
-        sync_item = item.sync_item
-        lines = []
-
-        # Action-specific details
-        if sync_item.action == SyncAction.ADD_TO_IPOD:
-            track = sync_item.pc_track
-            if track:
-                lines.append("<b>Action:</b> Add to iPod")
-                lines.append(f"<b>File:</b> {track.path}")
-                lines.append(f"<b>Size:</b> {self._format_size(track.size)} · <b>Duration:</b> {self._format_duration(track.duration_ms)} · <b>Format:</b> {track.extension.upper()}")
-                if track.genre:
-                    lines.append(f"<b>Genre:</b> {track.genre}")
-
-        elif sync_item.action == SyncAction.REMOVE_FROM_IPOD:
-            ipod_track = sync_item.ipod_track
-            lines.append("<b>Action:</b> Remove from iPod")
-            lines.append("<span style='color: #e07070;'>Track not found on PC</span>")
-            if ipod_track:
-                lines.append(f"<b>iPod location:</b> {ipod_track.get('Location', 'Unknown')}")
-
-        elif sync_item.action == SyncAction.SYNC_PLAYCOUNT:
-            track = sync_item.pc_track
-            ipod_track = sync_item.ipod_track
-            plays = sync_item.play_count_delta
-            skips = sync_item.skip_count_delta
-            lines.append("<b>Action:</b> Sync play statistics back to PC library")
-            if track:
-                lines.append(f"<b>File:</b> {track.path}")
-            stats_parts = []
-            if plays > 0:
-                stats_parts.append(f"<span style='color: #70a0e0;'><b>+{plays}</b> plays</span>")
-            if skips > 0:
-                stats_parts.append(f"<span style='color: #e0a070;'><b>+{skips}</b> skips</span>")
-            if stats_parts:
-                lines.append(f"<b>Changes:</b> {' · '.join(stats_parts)}")
-
-        elif sync_item.action == SyncAction.UPDATE_METADATA:
-            track = sync_item.pc_track
-            lines.append("<b>Action:</b> Update metadata on iPod")
-            if track:
-                lines.append(f"<b>File:</b> {track.path}")
-            lines.append("")
-            for field_name, (pc_val, ipod_val) in sync_item.metadata_changes.items():
-                lines.append(f"<b>{field_name}:</b> <span style='color: #e07070;'>{ipod_val}</span> → <span style='color: #70c070;'>{pc_val}</span>")
-
-        elif sync_item.action == SyncAction.UPDATE_FILE:
-            track = sync_item.pc_track
-            lines.append("<b>Action:</b> Re-sync changed file to iPod")
-            if track:
-                lines.append(f"<b>File:</b> {track.path}")
-                lines.append(f"<b>Size:</b> {self._format_size(track.size)} · <b>Format:</b> {track.extension.upper()}")
-            lines.append("")
-            lines.append("<span style='color: #70c0c0;'>The source file has been modified since last sync.</span>")
-
-        elif sync_item.action == SyncAction.UPDATE_ARTWORK:
-            track = sync_item.pc_track
-            new_hash = sync_item.new_art_hash
-            old_hash = sync_item.old_art_hash
-            if not new_hash and old_hash:
-                lines.append("<b>Action:</b> Remove album art from iPod")
-                if track:
-                    lines.append(f"<b>File:</b> {track.path}")
-                lines.append("")
-                lines.append("<span style='color: #e07070;'>The embedded album art was removed from the PC file.</span>")
-                lines.append("<span style='color: #e07070;'>Art will be cleared on iPod at next database write.</span>")
-            elif new_hash and not old_hash:
-                lines.append("<b>Action:</b> Add album art to iPod")
-                if track:
-                    lines.append(f"<b>File:</b> {track.path}")
-                lines.append("")
-                lines.append("<span style='color: #80c8a8;'>New album art detected in the PC file.</span>")
-            else:
-                lines.append("<b>Action:</b> Update album art on iPod")
-                if track:
-                    lines.append(f"<b>File:</b> {track.path}")
-                lines.append("")
-                lines.append("<span style='color: #c080c0;'>The embedded album art has changed.</span>")
-
-        self.details_text.setText("<br>".join(lines))
-
     def _get_selected_items(self) -> list[SyncItem]:
-        """Get all checked sync items."""
-        selected_items = []
-        for i in range(self.tree.topLevelItemCount()):
-            header = self.tree.topLevelItem(i)
-            if not header:
-                continue
-            for j in range(header.childCount()):
-                child = header.child(j)
-                if not child:
-                    continue
-                if child.checkState(0) == Qt.CheckState.Checked:
-                    if isinstance(child, SyncItemWidget):
-                        selected_items.append(child.sync_item)
-                    elif isinstance(child, SyncRatingWidget):
-                        selected_items.append(child.sync_item)
+        """Get all checked sync items from category cards."""
+        selected_items: list[SyncItem] = []
+        for card in self._category_cards:
+            selected_items.extend(card.get_checked_items())
         return selected_items
 
     def _apply_sync(self):
@@ -1862,10 +1791,15 @@ class SyncReviewWidget(QWidget):
         selected_items = self._get_selected_items()
 
         # Check if there are playlist changes even when no track items selected
-        has_playlist_changes = (self._plan is not None and bool(
-            self._plan.playlists_to_add or self._plan.playlists_to_edit or self._plan.playlists_to_remove))
+        # Playlist card is now checkable — only include if the card's select-all is checked
+        playlists_selected = (
+            self._playlist_card is not None
+            and self._playlist_card._select_all_cb.isChecked()
+            and self._plan is not None
+            and bool(self._plan.playlists_to_add or self._plan.playlists_to_edit or self._plan.playlists_to_remove)
+        )
 
-        if not selected_items and not has_playlist_changes:
+        if not selected_items and not playlists_selected:
             QMessageBox.information(self, "No Selection", "Please select items to sync.")
             return
 
@@ -1894,8 +1828,8 @@ class SyncReviewWidget(QWidget):
         if rating_count:
             msg_parts.append(f"Sync {rating_count} ratings")
 
-        # Playlist changes (from the stored plan, not SyncItem-based)
-        if self._plan:
+        # Playlist changes (only if playlist card is checked)
+        if playlists_selected and self._plan:
             pl_add = len(self._plan.playlists_to_add)
             pl_edit = len(self._plan.playlists_to_edit)
             pl_remove = len(self._plan.playlists_to_remove)
@@ -1908,12 +1842,68 @@ class SyncReviewWidget(QWidget):
 
         msg = "This will:\n• " + "\n• ".join(msg_parts) + "\n\nContinue?"
 
-        reply = QMessageBox.question(
-            self, "Confirm Sync", msg,
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
+        # Styled confirmation dialog (matches dark theme)
+        confirm = QDialog(self)
+        confirm.setWindowTitle("Confirm Sync")
+        confirm.setMinimumWidth(420)
+        confirm.setStyleSheet(f"""
+            QDialog {{
+                background: {Colors.BG_DARK};
+                color: {Colors.TEXT_PRIMARY};
+            }}
+            QLabel {{
+                color: {Colors.TEXT_PRIMARY};
+                background: transparent;
+            }}
+        """)
+        cl = QVBoxLayout(confirm)
+        cl.setContentsMargins(20, 16, 20, 16)
+        cl.setSpacing(12)
 
-        if reply != QMessageBox.StandardButton.Yes:
+        confirm_title = QLabel("🔄 Confirm Sync", confirm)
+        confirm_title.setFont(QFont(FONT_FAMILY, 14, QFont.Weight.Bold))
+        cl.addWidget(confirm_title)
+
+        confirm_body = QLabel(msg, confirm)
+        confirm_body.setWordWrap(True)
+        confirm_body.setFont(QFont(FONT_FAMILY, 11))
+        confirm_body.setStyleSheet(f"color:{Colors.TEXT_SECONDARY}; background:transparent;")
+        cl.addWidget(confirm_body)
+
+        cl.addSpacing(8)
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        cancel_btn = QPushButton("Cancel", confirm)
+        cancel_btn.setStyleSheet(btn_css(
+            bg=Colors.SURFACE_RAISED,
+            bg_hover=Colors.SURFACE_ACTIVE,
+            bg_press=Colors.SURFACE_ALT,
+            border=f"1px solid {Colors.BORDER}",
+            radius=Metrics.BORDER_RADIUS_SM,
+            padding="8px 20px",
+        ))
+        cancel_btn.clicked.connect(confirm.reject)
+        btn_row.addWidget(cancel_btn)
+
+        confirm_btn = QPushButton("Apply Sync", confirm)
+        confirm_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {Colors.ACCENT};
+                border: none;
+                border-radius: {Metrics.BORDER_RADIUS_SM}px;
+                color: white;
+                padding: 8px 24px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background: {Colors.ACCENT_LIGHT};
+            }}
+        """)
+        confirm_btn.clicked.connect(confirm.accept)
+        btn_row.addWidget(confirm_btn)
+        cl.addLayout(btn_row)
+
+        if confirm.exec() != QDialog.DialogCode.Accepted:
             return
 
         # Decide backup strategy based on setting
@@ -1942,15 +1932,43 @@ class PCFolderDialog(QDialog):
     def __init__(self, parent=None, last_folder: str = ""):
         super().__init__(parent)
         self.setWindowTitle("Select Music Folder")
-        self.setMinimumWidth(400)
+        self.setMinimumWidth(440)
         self.selected_folder = ""
         self.last_folder = last_folder
+
+        # Dark theme stylesheet
+        self.setStyleSheet(f"""
+            QDialog {{
+                background: {Colors.BG_DARK};
+                color: {Colors.TEXT_PRIMARY};
+            }}
+            QLabel {{
+                color: {Colors.TEXT_PRIMARY};
+                background: transparent;
+            }}
+            QPushButton {{
+                background: {Colors.SURFACE_RAISED};
+                color: {Colors.TEXT_PRIMARY};
+                border: 1px solid {Colors.BORDER};
+                border-radius: {Metrics.BORDER_RADIUS_SM}px;
+                padding: 6px 14px;
+            }}
+            QPushButton:hover {{
+                background: {Colors.SURFACE_ACTIVE};
+            }}
+        """)
 
         self._setup_ui()
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
+        layout.setContentsMargins(20, 16, 20, 16)
+
+        # Title
+        title = QLabel("📁 Select Music Folder", self)
+        title.setFont(QFont(FONT_FAMILY, 14, QFont.Weight.Bold))
+        layout.addWidget(title)
 
         # Instructions
         label = QLabel(
@@ -1961,6 +1979,8 @@ class PCFolderDialog(QDialog):
             "• Updated tracks to re-sync"
         )
         label.setWordWrap(True)
+        label.setFont(QFont(FONT_FAMILY, 11))
+        label.setStyleSheet(f"color:{Colors.TEXT_SECONDARY}; background:transparent;")
         layout.addWidget(label)
 
         # Folder selection
@@ -1979,19 +1999,51 @@ class PCFolderDialog(QDialog):
         self.folder_edit.setWordWrap(True)
         folder_layout.addWidget(self.folder_edit, 1)
 
-        browse_btn = QPushButton("Browse...")
+        browse_btn = QPushButton("Browse...", self)
         browse_btn.clicked.connect(self._browse)
+        browse_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {Colors.ACCENT};
+                border: none;
+                border-radius: {Metrics.BORDER_RADIUS_SM}px;
+                color: white;
+                padding: 6px 16px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background: {Colors.ACCENT_LIGHT};
+            }}
+        """)
         folder_layout.addWidget(browse_btn)
 
         layout.addLayout(folder_layout)
 
+        layout.addSpacing(8)
+
         # Buttons
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.accepted.connect(self._accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        cancel_btn = QPushButton("Cancel", self)
+        cancel_btn.clicked.connect(self.reject)
+        btn_row.addWidget(cancel_btn)
+
+        ok_btn = QPushButton("OK", self)
+        ok_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {Colors.ACCENT};
+                border: none;
+                border-radius: {Metrics.BORDER_RADIUS_SM}px;
+                color: white;
+                padding: 6px 20px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background: {Colors.ACCENT_LIGHT};
+            }}
+        """)
+        ok_btn.clicked.connect(self._accept)
+        btn_row.addWidget(ok_btn)
+        layout.addLayout(btn_row)
 
     def _browse(self):
         folder = QFileDialog.getExistingDirectory(
