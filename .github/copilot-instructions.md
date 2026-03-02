@@ -131,7 +131,7 @@ iPod Classic and Nano 3G+ require a **device-specific cryptographic hash** at mh
 | NONE | Pre-2007 iPods (1G–5G, Photo, Video, Mini, Nano 1G–2G) | N/A | N/A | ✅ Supported |
 | HASH58 | iPod Classic (all gens), Nano 3G, Nano 4G | mhbd+88 | 20 bytes | ✅ Supported |
 | HASH72 | Nano 5G | mhbd+88 | 46 bytes | ✅ Supported |
-| HASHAB | iPod Nano 6G/7G | mhbd+88 | 57 bytes | ❌ **OUT OF SCOPE** |
+| HASHAB | iPod Nano 6G/7G | mhbd+0xAB | 57 bytes | ✅ Supported (WASM) |
 
 Note: iTunes writes both HASH58 and HASH72 signatures on iPod Classic. The firmware only
 checks HASH58 (scheme=1). We follow libgpod and sign with HASH58; HASH72 is preserved from
@@ -286,12 +286,19 @@ def hash72_generate(sha1: bytes, iv: bytes, rndpart: bytes) -> bytes:
     return bytes([0x01, 0x00]) + rndpart + encrypted
 ```
 
-#### HASHAB (Nano 6G/7G) - ❌ UNSUPPORTED / OUT OF SCOPE
-The HASHAB algorithm was **never reverse-engineered**. It requires a proprietary binary blob
-(`libhashab.so`) that contains code extracted from iTunes. Since this only affects iPod Nano 6G
-and 7G (a very small user base), these devices are explicitly out of scope for iOpenPod.
+#### HASHAB (Nano 6G/7G) - ✅ SUPPORTED (WASM)
+Implemented using dstaley/hashab — a clean-room reimplementation of Apple's
+white-box AES signing algorithm, compiled to WebAssembly and executed via
+wasmtime-py.  The WASM binary (`calcHashAB.wasm`) ships in
+`iTunesDB_Writer/wasm/` and works cross-platform without native compilation.
 
-If you have a Nano 6G/7G, use iTunes or Rockbox instead.
+Source: https://github.com/dstaley/hashab (The Unlicense)
+
+```python
+from iTunesDB_Writer.hashab import write_hashab
+
+write_hashab(itdb_data, firewire_id)  # 57 bytes written at mhbd+0xAB
+```
 
 ### Supported Devices by Write Strategy
 
@@ -300,7 +307,7 @@ If you have a Nano 6G/7G, use iTunes or Rockbox instead.
 | No hash | iPod 1G-5G, Mini, Photo, Nano 1G-2G | Just length recalculation | ✅ Supported |
 | HASH58 | Classic (all gens), Nano 3G, Nano 4G | FireWire ID from SysInfo | ✅ Supported |
 | HASH72 | Nano 5G | HashInfo file (sync with iTunes once) | ✅ Supported |
-| HASHAB | Nano 6G/7G only | Not reverse-engineered | ❌ Out of Scope |
+| HASHAB | Nano 6G/7G | FireWire ID + wasmtime | ✅ Supported |
 
 ### Reading Device Info
 
@@ -322,6 +329,45 @@ def read_sysinfo(ipod_path: str) -> dict:
 ```
 
 ## Key Conventions
+
+### Device Capabilities (`ipod_models.py`)
+`DeviceCapabilities` and `capabilities_for_family_gen()` are the single source
+of truth for per-generation feature support.  **Always check capabilities before
+writing device-specific data.**
+
+| Capability | What it controls |
+|------------|-----------------|
+| `checksum` | Hash algorithm for mhbd signing |
+| `is_shuffle` / `shadow_db_version` | Whether to write iTunesSD (v1 or v2) |
+| `supports_compressed_db` | Write iTunesCDB (zlib) instead of raw iTunesDB |
+| `supports_video` | Allow video mediatype tracks |
+| `supports_podcast` | Include mhsd type 3 (podcast list) |
+| `supports_gapless` | Populate pregap/postgap/samplecount in mhit |
+| `supports_artwork` / `cover_art_formats` | ArtworkDB writing + thumbnail sizes |
+| `supports_sparse_artwork` | Sparse vs. dense artwork writing strategy |
+| `music_dirs` | Number of Fxx directories to create |
+| `db_version` | iTunesDB version number for mhbd header |
+| `byte_order` | LE for all current models (`"be"` reserved for iPod Mobile) |
+
+Quick reference per generation family:
+
+| Family | Gens | Checksum | Video | Gapless | Artwork | Compressed DB | Shuffle |
+|--------|------|----------|-------|---------|---------|---------------|---------|
+| iPod | 1G–3G | NONE | No | No | No | No | No |
+| iPod | 4G | NONE | No | No | No | No | No |
+| iPod Photo | 4G | NONE | No | No | 56+140 | No | No |
+| iPod Video | 5G | NONE | Yes | No | 100+200 | No | No |
+| iPod Video | 5.5G | NONE | Yes | Yes | 100+200 | No | No |
+| iPod Classic | 1G–3G | HASH58 | Yes | Yes | 56+128+320 | No | No |
+| iPod Mini | 1G–2G | NONE | No | No | No | No | No |
+| iPod Nano | 1G–2G | NONE | No | No | 42+100 | No | No |
+| iPod Nano | 3G | HASH58 | Yes | Yes | 56+128+320 | No | No |
+| iPod Nano | 4G | HASH58 | Yes | Yes | 50+80+128+240 | No | No |
+| iPod Nano | 5G | HASH72 | Yes | Yes | 50+80+128+240 | Yes | No |
+| iPod Nano | 6G | HASHAB | No | Yes | (5G fmt) | Yes | No |
+| iPod Nano | 7G | HASHAB | Yes | Yes | (5G fmt) | Yes | No |
+| iPod Shuffle | 1G–2G | NONE | No | No | No | No | v1 |
+| iPod Shuffle | 3G–4G | NONE | No | No | No | No | v2 |
 
 ### Binary Parsing
 - Use `struct.unpack("<I", data[offset:offset+4])[0]` for 32-bit LE integers
