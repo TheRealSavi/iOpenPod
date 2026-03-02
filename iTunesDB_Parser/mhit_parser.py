@@ -194,118 +194,161 @@ def parse_trackItem(data, offset, header_length, chunk_length) -> dict:
     # 0x98: unk152 — unknown (4 bytes, skipped).
 
     # ============================================================
-    # Skip statistics (added in dbversion 0x0c)
+    # Skip statistics & extended metadata (added in dbversion 0x0c+)
+    # The minimum MHIT header is 0x9C (156 bytes) for dbversion ≤ 0x0b.
+    # Fields at offsets 0x9C–0xCC were added in dbversion 0x0c/0x0d
+    # (header ≥ 0xF4 = 244 bytes).  Guard them with a single bounds
+    # check so we don't accidentally parse child MHOD data as track
+    # fields on very old databases.
     # ============================================================
-    track["skipCount"] = struct.unpack("<I", data[offset + 156:offset + 160])[0]
-    # 0x9C: Number of times skipped.
+    if header_length >= 0xF4:
+        track["skipCount"] = struct.unpack("<I", data[offset + 156:offset + 160])[0]
+        # 0x9C: Number of times skipped.
 
-    last_skipped_mac = struct.unpack("<I", data[offset + 160:offset + 164])[0]
-    track["lastSkipped"] = mac_to_unix_timestamp(last_skipped_mac)
-    # 0xA0: Mac timestamp of last skip.
+        last_skipped_mac = struct.unpack("<I", data[offset + 160:offset + 164])[0]
+        track["lastSkipped"] = mac_to_unix_timestamp(last_skipped_mac)
+        # 0xA0: Mac timestamp of last skip.
+
+        track["hasArtwork"] = data[offset + 164]
+        # 0xA4: 0x01 = has associated artwork, 0x02 = no artwork (even if
+        #       artwork exists, iPod will not display it). Must be 0x01
+        #       for artwork from .ithmb files to be shown.
+
+        track["skipWhenShuffling"] = data[offset + 165]
+        # 0xA5: 0x01 = skip in shuffle mode.  Note: .m4b and .aa files are
+        #       always excluded from shuffle regardless of this flag.
+
+        track["rememberPosition"] = data[offset + 166]
+        # 0xA6: 0x01 = remember playback position (bookmark).  Like shuffle,
+        #       .m4b and .aa are always bookmarkable regardless of this flag.
+
+        track["podcastFlag"] = data[offset + 167]
+        # 0xA7: Podcast display flag.  0x01 or 0x02 = podcast (hides artist on
+        #       "Now Playing", adds info sub-page).  0x00 = normal track.
+        #       Must match actual podcast/music status or iTunes may remove it.
+
+        track["dbid2"] = struct.unpack("<Q", data[offset + 168:offset + 176])[0]
+        # 0xA8: Until dbversion 0x12 this equals dbid; from 0x12+ it differs.
+
+        track["lyricsFlag"] = data[offset + 176]
+        # 0xB0: 0x01 = lyrics stored in MP3 USLT tags.
+
+        track["movieFileFlag"] = data[offset + 177]
+        # 0xB1: 0x01 = video/movie file, 0x00 = audio file.
+
+        track["playedMark"] = data[offset + 178]
+        # 0xB2: For podcasts: 0x02 = bullet "not played" on iPod,
+        #       0x01 = no bullet.  For non-podcasts: always 0x01.
+
+        # 0xB4: unk180 — unknown (4 bytes, skipped).
+
+        track["pregap"] = struct.unpack("<I", data[offset + 184:offset + 188])[0]
+        # 0xB8: Number of samples of silence before the track starts.
+
+        track["sampleCount"] = struct.unpack("<Q", data[offset + 188:offset + 196])[0]
+        # 0xBC: Total number of samples in the track (8 bytes, u64).
+
+        # 0xC4: unk196 — unknown (4 bytes, skipped).
+
+        track["postgap"] = struct.unpack("<I", data[offset + 200:offset + 204])[0]
+        # 0xC8: Number of samples of silence at the end of the track.
+
+        track["encoderFlag"] = struct.unpack("<I", data[offset + 204:offset + 208])[0]
+        # 0xCC: 0x01 = MP3 encoder, 0x00 = other.  Per iPodLinux wiki.
+
+        # ============================================================
+        # Media classification (0xD0+)
+        # Also part of the 0xF4 header generation — no separate guard
+        # needed; libgpod reads these inside the same
+        # ``if (header_len >= 0xf4)`` block in get_mhit().
+        # ============================================================
+        track["mediaType"] = struct.unpack("<I", data[offset + 208:offset + 212])[0]
+        # 0xD0: Media type bitmask:
+        #   0x00000000 = Audio/Video (shows in both audio and video menus)
+        #   0x00000001 = Audio
+        #   0x00000002 = Video (Movie)
+        #   0x00000004 = Podcast
+        #   0x00000006 = Video Podcast
+        #   0x00000008 = Audiobook
+        #   0x00000020 = Music Video
+        #   0x00000040 = TV Show
+        #   0x00000060 = TV Show (alt)
+        #   0x00000100 = Ringtone (legacy/iPodLinux wiki value)
+        #   0x00004000 = Ringtone (libgpod ITDB_MEDIATYPE_RINGTONE = 1 << 14)
+        #   0x00000200 = Rental (iTunes rental movie)
+        #   0x00040000 = iTunes Pass
+        #   0x00060000 = Memo/Voice Memo
+
+        track["seasonNumber"] = struct.unpack("<I", data[offset + 212:offset + 216])[0]
+        # 0xD4: TV show season number.
+
+        track["episodeNumber"] = struct.unpack("<I", data[offset + 216:offset + 220])[0]
+        # 0xD8: TV show episode number.
+    else:
+        # Old database (header < 0xF4): defaults for all extended fields
+        track["skipCount"] = 0
+        track["lastSkipped"] = 0
+        track["hasArtwork"] = 0
+        track["skipWhenShuffling"] = 0
+        track["rememberPosition"] = 0
+        track["podcastFlag"] = 0
+        track["dbid2"] = 0
+        track["lyricsFlag"] = 0
+        track["movieFileFlag"] = 0
+        track["playedMark"] = 0x01
+        track["pregap"] = 0
+        track["sampleCount"] = 0
+        track["postgap"] = 0
+        track["encoderFlag"] = 0
+        track["mediaType"] = 0x01  # default to Audio
+        track["seasonNumber"] = 0
+        track["episodeNumber"] = 0
 
     # ============================================================
-    # Additional metadata (added in dbversion 0x0d)
+    # Gapless playback fields (added in header >= 0x148 / dbversion 0x12+)
+    # libgpod: guarded by ``if (header_len >= 0x148)`` in get_mhit().
     # ============================================================
-    track["hasArtwork"] = data[offset + 164]
-    # 0xA4: 0x01 = has associated artwork, 0x02 = no artwork (even if
-    #       artwork exists, iPod will not display it). Must be 0x01
-    #       for artwork from .ithmb files to be shown.
+    if header_length >= 0x148:
+        track["gaplessData"] = struct.unpack("<I", data[offset + 248:offset + 252])[0]
+        # 0xF8: Bytes from first Sync Frame (usually XING/LAME frame) to 8th
+        #       before last frame.  MP3 gapless playback fails if this is 0.
+        #       May be 0 for AAC tracks.  (Added in dbversion 0x13.)
 
-    track["skipWhenShuffling"] = data[offset + 165]
-    # 0xA5: 0x01 = skip in shuffle mode.  Note: .m4b and .aa files are
-    #       always excluded from shuffle regardless of this flag.
+        # 0xFC: unk252 — unknown (4 bytes, skipped).
 
-    track["rememberPosition"] = data[offset + 166]
-    # 0xA6: 0x01 = remember playback position (bookmark).  Like shuffle,
-    #       .m4b and .aa are always bookmarkable regardless of this flag.
+        track["gaplessTrackFlag"] = struct.unpack("<H", data[offset + 256:offset + 258])[0]
+        # 0x100: 1 = this track has gapless playback data.
 
-    track["podcastFlag"] = data[offset + 167]
-    # 0xA7: Podcast display flag.  0x01 or 0x02 = podcast (hides artist on
-    #       "Now Playing", adds info sub-page).  0x00 = normal track.
-    #       Must match actual podcast/music status or iTunes may remove it.
-
-    track["dbid2"] = struct.unpack("<Q", data[offset + 168:offset + 176])[0]
-    # 0xA8: Until dbversion 0x12 this equals dbid; from 0x12+ it differs.
-
-    track["lyricsFlag"] = data[offset + 176]
-    # 0xB0: 0x01 = lyrics stored in MP3 USLT tags.
-
-    track["movieFileFlag"] = data[offset + 177]
-    # 0xB1: 0x01 = video/movie file, 0x00 = audio file.
-
-    track["playedMark"] = data[offset + 178]
-    # 0xB2: For podcasts: 0x02 = bullet "not played" on iPod,
-    #       0x01 = no bullet.  For non-podcasts: always 0x01.
-
-    # ============================================================
-    # Gapless playback data (added in dbversion 0x0c, values in 0x0d+)
-    # ============================================================
-    # 0xB4: unk180 — unknown (4 bytes, skipped).
-
-    track["pregap"] = struct.unpack("<I", data[offset + 184:offset + 188])[0]
-    # 0xB8: Number of samples of silence before the song starts.
-
-    track["sampleCount"] = struct.unpack("<Q", data[offset + 188:offset + 196])[0]
-    # 0xBC: Total number of samples in the song (8 bytes, u64).
-
-    # 0xC4: unk196 — unknown (4 bytes, skipped).
-
-    track["postgap"] = struct.unpack("<I", data[offset + 200:offset + 204])[0]
-    # 0xC8: Number of samples of silence at the end of the song.
-
-    track["encoderFlag"] = struct.unpack("<I", data[offset + 204:offset + 208])[0]
-    # 0xCC: 0x01 = MP3 encoder, 0x00 = other.  Per iPodLinux wiki.
-
-    # ============================================================
-    # Media classification (added in dbversion 0x0c)
-    # ============================================================
-    track["mediaType"] = struct.unpack("<I", data[offset + 208:offset + 212])[0]
-    # 0xD0: Media type bitmask:
-    #   0x00000000 = Audio/Video (shows in both menus)
-    #   0x00000001 = Audio
-    #   0x00000002 = Video (Movie)
-    #   0x00000004 = Podcast
-    #   0x00000006 = Video Podcast
-    #   0x00000008 = Audiobook
-    #   0x00000020 = Music Video
-    #   0x00000040 = TV Show
-    #   0x00000060 = TV Show (alt)
-    #   0x00000100 = Ringtone
-    #   0x00000200 = Rental (iTunes rental movie)
-    #   0x00040000 = iTunes Pass
-    #   0x00060000 = Memo/Voice Memo
-
-    track["seasonNumber"] = struct.unpack("<I", data[offset + 212:offset + 216])[0]
-    track["episodeNumber"] = struct.unpack("<I", data[offset + 216:offset + 220])[0]
-
-    track["gaplessData"] = struct.unpack("<I", data[offset + 248:offset + 252])[0]
-    # 0xF8: Bytes from first Sync Frame (usually XING/LAME frame) to 8th
-    #       before last frame.  MP3 gapless playback fails if this is 0.
-    #       May be 0 for AAC tracks.  (Added in dbversion 0x13.)
-
-    # 0xFC: unk252 — unknown (4 bytes, skipped).
-
-    track["gaplessTrackFlag"] = struct.unpack("<H", data[offset + 256:offset + 258])[0]
-    # 0x100: 1 = this track has gapless playback data (dbversion 0x13+).
-
-    track["gaplessAlbumFlag"] = struct.unpack("<H", data[offset + 258:offset + 260])[0]
-    # 0x102: 1 = this track does not use crossfading in iTunes (dbversion 0x13+).
+        track["gaplessAlbumFlag"] = struct.unpack("<H", data[offset + 258:offset + 260])[0]
+        # 0x102: 1 = this track does not use crossfading in iTunes.
+    else:
+        track["gaplessData"] = 0
+        track["gaplessTrackFlag"] = 0
+        track["gaplessAlbumFlag"] = 0
 
     # 0x104: unk260 — 20 bytes, appears to be a hash, not checked by iPod.
     # 0x118: unk280 — 4 bytes (seen set to 0xBF).
     # 0x11C: unk284 — 4 bytes.
 
-    track["albumID"] = struct.unpack("<I", data[offset + 288:offset + 292])[0]
-    # 0x120: Album ID linking to MHIA in the album list.
-    # libgpod treats this as u32 at offset 0x120.  The older iPodLinux wiki
-    # documented this as a u16 at offset 298 (0x12A), but that predates the
-    # Album List feature (iTunes 7.1).  libgpod is authoritative here.
+    # ============================================================
+    # Album & artwork links (added in header >= 0x184 / dbversion 0x14+)
+    # libgpod: guarded by ``if (header_len >= 0x184)`` in get_mhit().
+    # ============================================================
+    if header_length >= 0x184:
+        track["albumID"] = struct.unpack("<I", data[offset + 288:offset + 292])[0]
+        # 0x120: Album ID linking to MHIA in the album list.
+        # libgpod treats this as u32 at offset 0x120.  The older iPodLinux wiki
+        # documented this as a u16 at offset 298 (0x12A), but that predates the
+        # Album List feature (iTunes 7.1).  libgpod is authoritative here.
 
-    track["mhiiLink"] = struct.unpack("<I", data[offset + 352:offset + 356])[0]
-    # 0x160: Artwork lookup ID.  Setting this != 0 triggers the right-pane
-    #        artwork slideshow on late-2007 iPods (Nano 3G).  References
-    #        the 'id' field of the corresponding ArtworkDB MHII (offset 16).
-    #        When set, dbid-based artwork lookup is bypassed.
+        track["mhiiLink"] = struct.unpack("<I", data[offset + 352:offset + 356])[0]
+        # 0x160: Artwork lookup ID.  Setting this != 0 triggers the right-pane
+        #        artwork slideshow on late-2007 iPods (Nano 3G).  References
+        #        the 'id' field of the corresponding ArtworkDB MHII (offset 16).
+        #        When set, dbid-based artwork lookup is bypassed.
+    else:
+        track["albumID"] = 0
+        track["mhiiLink"] = 0
 
     # ============================================================
     # Parse child MHODs (strings: title, artist, album, etc.)

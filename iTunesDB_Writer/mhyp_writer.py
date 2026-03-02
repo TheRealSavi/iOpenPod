@@ -296,8 +296,10 @@ def write_mhyp(
     struct.pack_into('<I', header, 0x58, unix_to_mac_timestamp(timestamp))
 
     # +0x50: mhsd5_type — browsing category for dataset 5 smart playlists
+    # libgpod writes the same value at BOTH +0x50 and +0x52.
     if mhsd5_type:
         struct.pack_into('<H', header, 0x50, mhsd5_type)
+        struct.pack_into('<H', header, 0x52, mhsd5_type)
 
     # Rest is padding (already zero-initialized)
 

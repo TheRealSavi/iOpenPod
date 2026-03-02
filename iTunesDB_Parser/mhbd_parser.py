@@ -48,7 +48,6 @@ def parse_db(data, offset, header_length, chunk_length) -> dict[str, Any]:
 
     version_number = struct.unpack("<I", data[offset + 16:offset + 20])[0]
     database["VersionHex"] = hex(version_number)
-    # database["VersionName"] = version_map[database["VersionHex"]]
 
     database["ChildrenCount"] = struct.unpack(
         "<I", data[offset + 20:offset + 24])[0]
@@ -74,7 +73,7 @@ def parse_db(data, offset, header_length, chunk_length) -> dict[str, Any]:
         "<Q", data[offset + 72:offset + 80])[0]  # 0x48: version 0x14+
     # 64-bit Persistent ID for this iPod Library. This matches the value of
     # "Library Persistent ID" seen in hex form (as a 16-char hex string)
-    # in the drag object XML when dragging a song from an iPod in iTunes.
+    # in the drag object XML when dragging a track from an iPod in iTunes.
 
     database["unk_0x50"] = struct.unpack(
         "<I", data[offset + 80:offset + 84])[0]  # 0x50
@@ -86,6 +85,22 @@ def parse_db(data, offset, header_length, chunk_length) -> dict[str, Any]:
     database["unk_0x70"] = struct.unpack(
         "<H", data[offset + 112:offset + 114])[0]  # 0x70
     database["hash72"] = data[offset + 114:offset + 160]  # 0x72: 46 bytes
+
+    # Extended fields (0xA0+) — only present in newer database versions.
+    # These are read by extract_db_info() in the writer for round-trip,
+    # but we also expose them in the parsed output for completeness.
+    if header_length >= 0xA4:
+        database["audioLanguage"] = struct.unpack(
+            "<H", data[offset + 0xA0:offset + 0xA2])[0]
+        database["subtitleLanguage"] = struct.unpack(
+            "<H", data[offset + 0xA2:offset + 0xA4])[0]
+    if header_length >= 0xAB:
+        database["unk_0xa4"] = struct.unpack(
+            "<H", data[offset + 0xA4:offset + 0xA6])[0]
+        database["unk_0xa6"] = struct.unpack(
+            "<H", data[offset + 0xA6:offset + 0xA8])[0]
+        database["unk_0xa8"] = struct.unpack(
+            "<H", data[offset + 0xA8:offset + 0xAA])[0]
 
     # parse children
     next_offset = offset + header_length

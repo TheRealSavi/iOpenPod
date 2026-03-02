@@ -84,12 +84,17 @@ def _get_sort_fields(track: "TrackInfo", sort_type: int) -> tuple:
 
     Returns a tuple used for sorting. Multi-field sorts match
     libgpod's mhod52_sort_* comparison functions.
+
+    IMPORTANT: For every field, prefer the sort_* variant over the
+    display variant (e.g. sort_album over album).  This matches
+    libgpod's ``sort_compare(track->sort_X ? track->sort_X : track->X, ...)``
+    pattern used in mhod52_sort_album(), mhod52_sort_artist(), etc.
     """
-    title = _sort_key(track.title or "")
-    album = _sort_key(track.album or "")
+    title = _sort_key(track.sort_name or track.title or "")
+    album = _sort_key(track.sort_album or track.album or "")
     artist = _sort_key(track.sort_artist or track.artist or "")
     genre = _sort_key(track.genre or "")
-    composer = _sort_key(getattr(track, 'composer', None) or "")
+    composer = _sort_key(track.sort_composer or getattr(track, 'composer', None) or "")
     track_nr = getattr(track, 'track_number', 0) or 0
     cd_nr = getattr(track, 'disc_number', 0) or 0
 
@@ -108,20 +113,23 @@ def _get_sort_fields(track: "TrackInfo", sort_type: int) -> tuple:
 
 
 def _get_jump_letter(track: "TrackInfo", sort_type: int) -> int:
-    """Get the letter for jump table grouping based on sort type."""
+    """Get the letter for jump table grouping based on sort type.
+
+    Uses sort_* field variants for consistency with ``_get_sort_fields``.
+    """
     if sort_type == SORT_TITLE:
-        return _jump_table_letter(track.title or "")
+        return _jump_table_letter(track.sort_name or track.title or "")
     elif sort_type == SORT_ALBUM:
-        return _jump_table_letter(track.album or "")
+        return _jump_table_letter(track.sort_album or track.album or "")
     elif sort_type == SORT_ARTIST:
         s = track.sort_artist or track.artist or ""
         return _jump_table_letter(s)
     elif sort_type == SORT_GENRE:
         return _jump_table_letter(track.genre or "")
     elif sort_type == SORT_COMPOSER:
-        return _jump_table_letter(getattr(track, 'composer', None) or "")
+        return _jump_table_letter(track.sort_composer or getattr(track, 'composer', None) or "")
     else:
-        return _jump_table_letter(track.title or "")
+        return _jump_table_letter(track.sort_name or track.title or "")
 
 
 def write_mhod_type52(tracks: list["TrackInfo"], sort_type: int) -> tuple[bytes, list[tuple[int, int, int]]]:

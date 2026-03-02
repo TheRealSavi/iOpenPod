@@ -67,17 +67,20 @@ from .mhlp_writer import write_mhlp_with_playlists, write_mhlp_smart
 from .mhla_writer import write_mhla
 from .mhit_writer import TrackInfo
 from .mhyp_writer import PlaylistInfo
-from ipod_models import ChecksumType
+from ipod_models import ChecksumType, DeviceCapabilities
 from device_info import detect_checksum_type
 from .hash58 import write_hash58
+from .hashab import write_hashab
 
 logger = logging.getLogger(__name__)
 
 # MHBD header size (version 0x4F+)
 MHBD_HEADER_SIZE = 244
 
-# Database version - using 0x4F (79) which is widely compatible
-DATABASE_VERSION = 0x4F
+# Default database version — 0x4F (79) works for iPod Classic / Nano 3G+.
+# For older devices, callers should pass `db_version` from
+# ``ipod_models.DeviceCapabilities.db_version``.
+DATABASE_VERSION_DEFAULT = 0x4F
 
 
 def extract_db_info(itdb_path: str) -> dict:
@@ -183,6 +186,7 @@ def write_mhbd(
     playlists: Optional[List[PlaylistInfo]] = None,
     smart_playlists: Optional[List[PlaylistInfo]] = None,
     preserved_mhsd_blobs: Optional[List[bytes]] = None,
+    capabilities: Optional[DeviceCapabilities] = None,
 ) -> bytes:
     """
     Write a complete iTunesDB database.
@@ -200,6 +204,8 @@ def write_mhbd(
                               an existing database via extract_preserved_mhsd_blobs().
                               Appended verbatim after the 5 standard datasets to
                               preserve Genius and other iTunes-generated data.
+        capabilities: Device capabilities from ``ipod_models``.  When provided,
+                      ``db_version`` and ``supports_podcast`` are respected.
 
     Returns:
         Complete iTunesDB file content as bytes
@@ -229,7 +235,7 @@ def write_mhbd(
 
     # Build track list (Type 1 dataset)
     # This also returns next_track_id which tells us track IDs used
-    mhlt_data, next_track_id = write_mhlt(tracks, id_0x24=id_0x24)
+    mhlt_data, next_track_id = write_mhlt(tracks, id_0x24=id_0x24, capabilities=capabilities)
     mhsd_tracks = write_mhsd_tracks(mhlt_data)
 
     # Collect all track IDs for the master playlist
@@ -277,7 +283,13 @@ def write_mhbd(
     # libgpod writes type 3 with the SAME playlist data as type 2,
     # just with the MHSD type byte set to 3. An empty podcast section
     # causes the iPod Classic to reject the database.
-    mhsd_podcasts = write_mhsd_podcasts(mhlp_data)
+    #
+    # Pre-podcast devices (iPod 1G-3G, Mini 1G-2G, Shuffle 1G-2G)
+    # don't understand type 3; skip it when capabilities say so.
+    include_podcasts = True
+    if capabilities is not None and not capabilities.supports_podcast:
+        include_podcasts = False
+    mhsd_podcasts = write_mhsd_podcasts(mhlp_data) if include_podcasts else b''
 
     # Build smart playlist list (Type 5 dataset)
     ds5_playlists = smart_playlists or []
@@ -294,7 +306,7 @@ def write_mhbd(
     all_datasets = mhsd_albums + mhsd_tracks + mhsd_podcasts + mhsd_playlists + mhsd_smart
 
     # Number of child datasets
-    child_count = 5  # albums, tracks, podcasts, playlists, smart playlists
+    child_count = 5 if include_podcasts else 4
 
     # Append preserved MHSD blobs (Genius data, types 6+) from original database
     extra_blobs = preserved_mhsd_blobs or []
@@ -318,11 +330,15 @@ def write_mhbd(
     # +0x08: Total length (entire file)
     struct.pack_into('<I', header, 0x08, total_length)
 
-    # +0x0C: Unknown (always 1)
-    struct.pack_into('<I', header, 0x0C, 1)
+    # +0x0C: 1 for most iPods, 2 for devices with compressed iTunesDB
+    # (Nano 5G+, iPhone 3.0+).  iPod Classic 3G won't work if set to 2.
+    # See libgpod mk_mhbd(): itdb_device_supports_compressed_itunesdb().
+    unk_0x0c = 2 if (capabilities and capabilities.supports_compressed_db) else 1
+    struct.pack_into('<I', header, 0x0C, unk_0x0c)
 
-    # +0x10: Version
-    struct.pack_into('<I', header, 0x10, DATABASE_VERSION)
+    # +0x10: Version — use device-specific db_version when available
+    db_version = capabilities.db_version if capabilities else DATABASE_VERSION_DEFAULT
+    struct.pack_into('<I', header, 0x10, db_version)
 
     # +0x14: Child count (number of MHSDs)
     struct.pack_into('<I', header, 0x14, child_count)
@@ -347,10 +363,16 @@ def write_mhbd(
     struct.pack_into('<I', header, 0x2C, 0)
 
     # +0x30: hashing_scheme (0=none, 1=hash58, 2=hash72, 4=hashAB)
-    # Default to hash58 (1) - will be updated by write_checksum() if needed
-    struct.pack_into('<H', header, 0x30, 1)
+    # Default to 0 (none).  write_itunesdb() sets the correct value
+    # after detecting/computing the checksum.  Baking in 1 here would
+    # break pre-2007 iPods that don't use hashing.
+    struct.pack_into('<H', header, 0x30, 0)
 
-    # +0x32: unk_0x32[20] - padding, leave zeros
+    # +0x32: unk_0x32[20] - preserve from reference if available (libgpod does this)
+    if reference_info and 'unk_0x32' in reference_info:
+        raw = reference_info['unk_0x32']
+        if isinstance(raw, (bytes, bytearray)) and len(raw) == 20:
+            header[0x32:0x46] = raw
 
     # +0x46: Language ID (2 bytes, e.g. "en")
     if reference_info and 'language' in reference_info:
@@ -388,8 +410,16 @@ def write_mhbd(
             tz_offset = -time.timezone
     struct.pack_into('<i', header, 0x6C, tz_offset)
 
-    # +0x70: unk_0x70 - observed value 3 in working databases
-    struct.pack_into('<H', header, 0x70, reference_info.get('unk_0x70', 3) if reference_info else 3)
+    # +0x70: unk_0x70 - libgpod sets this based on checksum type:
+    #   HASHAB → 4, HASH72 → 2, default → 0.
+    if reference_info:
+        unk_0x70 = reference_info.get('unk_0x70', 0)
+    elif capabilities:
+        _ck_to_0x70 = {ChecksumType.HASHAB: 4, ChecksumType.HASH72: 2}
+        unk_0x70 = _ck_to_0x70.get(capabilities.checksum, 0)
+    else:
+        unk_0x70 = 0
+    struct.pack_into('<H', header, 0x70, unk_0x70)
 
     # +0x72: hash72[46] - will be filled by write_checksum()
     # Leave zeros
@@ -417,6 +447,7 @@ def write_itunesdb(
     pc_file_paths: Optional[dict] = None,
     playlists: Optional[List[PlaylistInfo]] = None,
     smart_playlists: Optional[List[PlaylistInfo]] = None,
+    capabilities: Optional[DeviceCapabilities] = None,
 ) -> bool:
     """
     Write a complete iTunesDB to an iPod.
@@ -442,11 +473,37 @@ def write_itunesdb(
         playlists: List of PlaylistInfo for user playlists (dataset 2).
                    The master playlist is always generated automatically.
         smart_playlists: List of PlaylistInfo for dataset 5 smart playlists.
+        capabilities: Device capabilities from ``ipod_models``.  Auto-detected
+                      from the current device if not provided.
 
     Returns:
         True if successful
     """
     itdb_path = os.path.join(ipod_path, "iPod_Control", "iTunes", "iTunesDB")
+
+    # Auto-detect capabilities from the centralized device store
+    if capabilities is None:
+        try:
+            from device_info import get_current_device
+            from ipod_models import capabilities_for_family_gen
+            dev = get_current_device()
+            if dev and dev.model_family and dev.generation:
+                capabilities = capabilities_for_family_gen(
+                    dev.model_family, dev.generation,
+                )
+                if capabilities:
+                    logger.debug(
+                        "Auto-detected capabilities: %s %s (db_version=0x%X, "
+                        "podcast=%s, gapless=%s, video=%s, music_dirs=%d)",
+                        dev.model_family, dev.generation,
+                        capabilities.db_version,
+                        capabilities.supports_podcast,
+                        capabilities.supports_gapless,
+                        capabilities.supports_video,
+                        capabilities.music_dirs,
+                    )
+        except Exception as e:
+            logger.debug("Could not auto-detect capabilities: %s", e)
 
     # Read existing database for reference (for db_id and hash info extraction)
     existing_itdb = None
@@ -597,6 +654,7 @@ def write_itunesdb(
         tracks, db_id, reference_info=reference_info,
         playlists=playlists, smart_playlists=smart_playlists,
         preserved_mhsd_blobs=preserved_blobs,
+        capabilities=capabilities,
     ))
 
     # Detect checksum type (or use forced type)
@@ -670,7 +728,8 @@ def write_itunesdb(
         else:
             logger.error("No FireWire ID and no reference hash58 — database will be rejected!")
 
-        # hash_scheme is already set to 1 in write_mhbd
+        # Set hashing_scheme to 1 (hash58 is the primary scheme)
+        struct.pack_into('<H', itdb_data, 0x30, 1)
 
     elif checksum_type == ChecksumType.HASH72:
         # Try to get hash info from centralized store first, then fall back to disk
@@ -712,8 +771,9 @@ def write_itunesdb(
 
                     # Write to database
                     itdb_data[0x72:0x72 + 46] = signature
-                    # Keep hash_scheme = 1 (already set in write_mhbd) to match iTunes behavior
-                    # iTunes writes both hash58 and hash72, with hash_scheme=1
+                    # Set hash_scheme=1 to match iTunes behavior
+                    # (iTunes writes both hash58 and hash72, with hash_scheme=1)
+                    struct.pack_into('<H', itdb_data, 0x30, 1)
                     logger.info("HASH72 signature written successfully")
                 else:
                     logger.warning("Could not extract hash info from reference database")
@@ -724,11 +784,43 @@ def write_itunesdb(
             sha1 = _compute_itunesdb_sha1(itdb_data)
             signature = _hash_generate(sha1, hash_info.iv, hash_info.rndpart)
             itdb_data[0x72:0x72 + 46] = signature
-            # Keep hash_scheme = 1 (already set in write_mhbd) to match iTunes behavior
+            # Set hash_scheme=1 to match iTunes behavior
+            struct.pack_into('<H', itdb_data, 0x30, 1)
             logger.info("HASH72 signature written from HashInfo file")
 
+    elif checksum_type == ChecksumType.HASHAB:
+        # iPod Nano 6G/7G — white-box AES via WASM module
+        # Requires FireWire ID (same as HASH58)
+        if firewire_id is None:
+            try:
+                from device_info import get_firewire_id
+                firewire_id = get_firewire_id(ipod_path)
+            except Exception as e:
+                logger.warning("Could not get FireWire ID for HASHAB: %s", e)
+
+        if firewire_id:
+            try:
+                write_hashab(itdb_data, firewire_id)
+                # Set hashing_scheme to 4 (HASHAB wire value)
+                struct.pack_into('<H', itdb_data, 0x30, 4)
+                logger.info("HASHAB signature computed with FireWire ID: %s",
+                            firewire_id.hex())
+            except ImportError as e:
+                logger.error("HASHAB dependency missing: %s", e)
+                return False
+            except FileNotFoundError as e:
+                logger.error("HASHAB WASM module missing: %s", e)
+                return False
+        else:
+            logger.error(
+                "No FireWire ID available — cannot compute HASHAB. "
+                "Ensure the iPod is connected so the FireWire GUID can be "
+                "read from USB serial number."
+            )
+            return False
+
     elif checksum_type == ChecksumType.UNSUPPORTED:
-        logger.error("Device requires HASHAB which is not supported")
+        logger.error("Device requires an unsupported hashing scheme")
         return False
     else:
         # ChecksumType.NONE or UNKNOWN - set hash_scheme to 0

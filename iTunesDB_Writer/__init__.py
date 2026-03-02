@@ -7,9 +7,7 @@ Supported devices:
 - Pre-2007 iPods (1G-5G, Mini, Photo, Nano 1G-2G): No hash required
 - iPod Classic (all gens), Nano 3G, Nano 4G: HASH58 (needs FireWire ID)
 - iPod Nano 5G: HASH72 (requires HashInfo file from an iTunes sync)
-
-NOT supported (out of scope):
-- iPod Nano 6G/7G: HASHAB algorithm was never reverse-engineered
+- iPod Nano 6G/7G: HASHAB (needs FireWire ID + WASM runtime)
 
 Usage:
     from iTunesDB_Writer import write_checksum, detect_checksum_type
@@ -37,7 +35,22 @@ from .hash72 import (
     extract_hash_info_to_dict,
 )
 
+from .hashab import (
+    compute_hashab,
+    write_hashab,
+)
+
 from .mhit_writer import TrackInfo, write_mhit
+from .mhit_writer import (
+    MEDIA_TYPE_AUDIO,
+    MEDIA_TYPE_VIDEO,
+    MEDIA_TYPE_PODCAST,
+    MEDIA_TYPE_VIDEO_PODCAST,
+    MEDIA_TYPE_AUDIOBOOK,
+    MEDIA_TYPE_MUSIC_VIDEO,
+    MEDIA_TYPE_TV_SHOW,
+    MEDIA_TYPE_RINGTONE,
+)
 from .mhyp_writer import PlaylistInfo, write_playlist, write_mhyp
 from .mhod_spl_writer import (
     SmartPlaylistPrefs,
@@ -78,10 +91,14 @@ def write_checksum(itdb_data: bytearray, ipod_path: str) -> bool:
         write_hash72(itdb_data, ipod_path)
         return True
 
+    elif checksum_type == ChecksumType.HASHAB:
+        firewire_id = get_firewire_id(ipod_path)
+        write_hashab(itdb_data, firewire_id)
+        return True
+
     else:
         raise ValueError(
-            f"Unsupported checksum type: {checksum_type}. "
-            "iPod Nano 6G/7G devices use HASHAB which is not supported."
+            f"Unsupported checksum type: {checksum_type}."
         )
 
 
@@ -96,10 +113,21 @@ __all__ = [
     'read_hash_info',
     'extract_hash_info',
     'extract_hash_info_to_dict',
+    'compute_hashab',
+    'write_hashab',
     'write_checksum',
     # Writer
     'TrackInfo',
     'write_mhit',
+    # Media type constants
+    'MEDIA_TYPE_AUDIO',
+    'MEDIA_TYPE_VIDEO',
+    'MEDIA_TYPE_PODCAST',
+    'MEDIA_TYPE_VIDEO_PODCAST',
+    'MEDIA_TYPE_AUDIOBOOK',
+    'MEDIA_TYPE_MUSIC_VIDEO',
+    'MEDIA_TYPE_TV_SHOW',
+    'MEDIA_TYPE_RINGTONE',
     'write_mhbd',
     'write_itunesdb',
     'extract_db_info',

@@ -57,7 +57,8 @@ def _assign_artist_composer_ids(tracks: List[TrackInfo], start_track_id: int) ->
 
 
 def write_mhlt(tracks: List[TrackInfo], start_track_id: int = 1,
-               id_0x24: int = 0) -> tuple[bytes, int]:
+               id_0x24: int = 0,
+               capabilities=None) -> tuple[bytes, int]:
     """
     Write a complete MHLT chunk with all tracks.
 
@@ -65,6 +66,7 @@ def write_mhlt(tracks: List[TrackInfo], start_track_id: int = 1,
         tracks: List of TrackInfo objects
         start_track_id: Starting track ID (increments for each track)
         id_0x24: Database-wide ID from MHBD (written into every MHIT at offset 0x124)
+        capabilities: Optional DeviceCapabilities for gapless/video filtering
 
     Returns:
         Tuple of (complete MHLT chunk bytes, next available track ID)
@@ -81,7 +83,7 @@ def write_mhlt(tracks: List[TrackInfo], start_track_id: int = 1,
     track_id = start_track_id
 
     for track in tracks:
-        mhit_data = write_mhit(track, track_id, id_0x24)
+        mhit_data = write_mhit(track, track_id, id_0x24, capabilities=capabilities)
         track_chunks.append(mhit_data)
         track_id += 1
 

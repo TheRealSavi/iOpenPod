@@ -33,6 +33,8 @@ MHOD_TYPE_GENRE = 5
 MHOD_TYPE_FILETYPE = 6
 MHOD_TYPE_EQ_SETTING = 7
 MHOD_TYPE_COMMENT = 8
+MHOD_TYPE_CATEGORY = 9
+MHOD_TYPE_LYRICS = 10
 MHOD_TYPE_COMPOSER = 12
 MHOD_TYPE_GROUPING = 13
 MHOD_TYPE_DESCRIPTION = 14
@@ -46,6 +48,7 @@ MHOD_TYPE_NETWORK_NAME = 21
 MHOD_TYPE_ALBUM_ARTIST = 22
 MHOD_TYPE_SORT_ARTIST = 23
 MHOD_TYPE_KEYWORDS = 24
+MHOD_TYPE_SHOW_LOCALE = 25
 MHOD_TYPE_SORT_NAME = 27
 MHOD_TYPE_SORT_ALBUM = 28
 MHOD_TYPE_SORT_ALBUM_ARTIST = 29
@@ -253,6 +256,10 @@ def write_track_mhods(
     network_name: Optional[str] = None,
     keywords: Optional[str] = None,
     sort_show: Optional[str] = None,
+    category: Optional[str] = None,
+    lyrics: Optional[str] = None,
+    eq_setting: Optional[str] = None,
+    show_locale: Optional[str] = None,
 ) -> tuple[bytes, int]:
     """
     Write all MHODs for a track.
@@ -282,6 +289,7 @@ def write_track_mhods(
         network_name: TV network name (type 21)
         keywords: Keywords (type 24)
         sort_show: Sort show name (type 31)
+        category: Podcast/audiobook category (type 9)
 
     Returns:
         Tuple of (concatenated MHOD bytes, count of MHODs)
@@ -307,6 +315,8 @@ def write_track_mhods(
         mhods.append(write_mhod_comment(comment))
     if filetype_desc:
         mhods.append(write_mhod_filetype(filetype_desc))
+    if category:
+        mhods.append(write_mhod_string(MHOD_TYPE_CATEGORY, category))
     if description:
         mhods.append(write_mhod_string(MHOD_TYPE_DESCRIPTION, description))
     if subtitle:
@@ -331,6 +341,8 @@ def write_track_mhods(
         mhods.append(write_mhod_string(MHOD_TYPE_SORT_COMPOSER, sort_composer))
     if sort_show:
         mhods.append(write_mhod_string(MHOD_TYPE_SORT_SHOW, sort_show))
+    if show_locale:
+        mhods.append(write_mhod_string(MHOD_TYPE_SHOW_LOCALE, show_locale))
     if grouping:
         mhods.append(write_mhod_string(MHOD_TYPE_GROUPING, grouping))
 
@@ -339,6 +351,14 @@ def write_track_mhods(
         mhods.append(write_mhod_podcast_url(MHOD_TYPE_PODCAST_ENCLOSURE_URL, podcast_enclosure_url))
     if podcast_rss_url:
         mhods.append(write_mhod_podcast_url(MHOD_TYPE_PODCAST_RSS_URL, podcast_rss_url))
+
+    # EQ preset name (type 7) — standard string MHOD
+    if eq_setting:
+        mhods.append(write_mhod_string(MHOD_TYPE_EQ_SETTING, eq_setting))
+
+    # Lyrics text (type 10) — standard string MHOD
+    if lyrics:
+        mhods.append(write_mhod_string(MHOD_TYPE_LYRICS, lyrics))
 
     # Filter out empty MHODs
     mhods = [m for m in mhods if m]

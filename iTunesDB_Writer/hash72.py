@@ -152,7 +152,7 @@ def _compute_itunesdb_sha1(itdb_data: bytearray) -> bytes:
     From libgpod itdb_hash72_compute_itunesdb_sha1():
     - db_id (offset 0x18, 8 bytes) is zeroed
     - hash58 (offset 0x58, 20 bytes) is zeroed
-    - hash72 (offset 0x58, 46 bytes) is zeroed
+    - hash72 (offset 0x72, 46 bytes) is zeroed
 
     NOTE: Unlike HASH58, unk_0x32 is NOT zeroed for HASH72!
     libgpod backs it up and restores it, but since it's never zeroed,

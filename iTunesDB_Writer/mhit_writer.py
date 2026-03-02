@@ -106,6 +106,8 @@ FILETYPE_CODES = {
     'm4a': 0x4D344120,   # "M4A "
     'm4p': 0x4D345020,   # "M4P "
     'm4b': 0x4D344220,   # "M4B "
+    'm4v': 0x4D345620,   # "M4V "
+    'mp4': 0x4D503420,   # "MP4 "
     'wav': 0x57415620,   # "WAV "
     'aif': 0x41494646,   # "AIFF"
     'aiff': 0x41494646,  # "AIFF"
@@ -113,14 +115,15 @@ FILETYPE_CODES = {
 }
 
 
-# Media type constants
-MEDIA_TYPE_AUDIO = 0x01
-MEDIA_TYPE_VIDEO = 0x02
-MEDIA_TYPE_PODCAST = 0x04
-MEDIA_TYPE_VIDEO_PODCAST = 0x08
-MEDIA_TYPE_MUSIC_VIDEO = 0x20
-MEDIA_TYPE_TV_SHOW = 0x40
-MEDIA_TYPE_RINGTONE = 0x100
+# Media type constants (from libgpod Itdb_Mediatype in itdb.h)
+MEDIA_TYPE_AUDIO = 0x01          # (1 << 0)
+MEDIA_TYPE_VIDEO = 0x02          # (1 << 1) — Movie
+MEDIA_TYPE_PODCAST = 0x04        # (1 << 2)
+MEDIA_TYPE_VIDEO_PODCAST = 0x06  # MOVIE | PODCAST
+MEDIA_TYPE_AUDIOBOOK = 0x08      # (1 << 3)
+MEDIA_TYPE_MUSIC_VIDEO = 0x20    # (1 << 5)
+MEDIA_TYPE_TV_SHOW = 0x40        # (1 << 6)
+MEDIA_TYPE_RINGTONE = 0x4000     # (1 << 14)
 
 
 @dataclass
@@ -179,8 +182,11 @@ class TrackInfo:
     remember_position: bool = False    # 1 = resume from bookmark (audiobooks)
     podcast_flag: int = 0  # 0xA7: 0x00=normal, 0x01/0x02=podcast
     movie_file_flag: int = 0  # 0xB1: 0x01=video/movie file, 0x00=audio
+    played_mark: int = -1  # 0xB2: -1=auto (derive from play_count), 0x01=played, 0x02=unplayed
     explicit_flag: int = 0  # 0=none, 1=explicit, 2=clean
     has_lyrics: bool = False  # True if track has embedded lyrics
+    lyrics: Optional[str] = None  # Full lyrics text (MHOD type 10)
+    eq_setting: Optional[str] = None  # EQ preset name (MHOD type 7), e.g. "Bass Booster"
 
     # Timestamps (Unix)
     date_added: int = 0  # Will be set to now if 0
@@ -209,6 +215,21 @@ class TrackInfo:
 
     # Extra string metadata
     grouping: Optional[str] = None
+    keywords: Optional[str] = None  # MHOD type 24 (track keywords)
+
+    # Podcast string metadata (written as MHODs)
+    podcast_enclosure_url: Optional[str] = None  # MHOD type 15
+    podcast_rss_url: Optional[str] = None        # MHOD type 16
+    category: Optional[str] = None               # MHOD type 9
+
+    # Video string metadata (written as MHODs)
+    description: Optional[str] = None       # MHOD type 14
+    subtitle: Optional[str] = None          # MHOD type 18
+    show_name: Optional[str] = None         # MHOD type 19 (TV show name)
+    episode_id: Optional[str] = None        # MHOD type 20 (e.g. "S01E05")
+    network_name: Optional[str] = None      # MHOD type 21 (TV network)
+    sort_show: Optional[str] = None         # MHOD type 31
+    show_locale: Optional[str] = None       # MHOD type 25 (show locale, e.g. "en_US")
 
     # Filetype description
     filetype_desc: Optional[str] = None  # e.g., "MPEG audio file"
@@ -223,7 +244,8 @@ class TrackInfo:
 MHIT_HEADER_SIZE = 0x248  # 584 bytes
 
 
-def write_mhit(track: TrackInfo, track_id: int, id_0x24: int = 0) -> bytes:
+def write_mhit(track: TrackInfo, track_id: int, id_0x24: int = 0,
+               capabilities=None) -> bytes:
     """
     Write a complete MHIT chunk with all child MHODs.
 
@@ -231,6 +253,10 @@ def write_mhit(track: TrackInfo, track_id: int, id_0x24: int = 0) -> bytes:
         track: TrackInfo dataclass with all track metadata
         track_id: Unique track ID within this database
         id_0x24: Database-wide ID from MHBD offset 0x24 (written into every track)
+        capabilities: Optional DeviceCapabilities for gapless/video filtering.
+                      When provided, gapless fields are zeroed if
+                      ``supports_gapless`` is False, and video media_type
+                      is downgraded to audio if ``supports_video`` is False.
 
     Returns:
         Complete MHIT chunk bytes (header + MHODs)
@@ -263,6 +289,19 @@ def write_mhit(track: TrackInfo, track_id: int, id_0x24: int = 0) -> bytes:
         sort_album_artist=track.sort_album_artist,
         sort_composer=track.sort_composer,
         grouping=track.grouping,
+        keywords=track.keywords,
+        description=track.description,
+        subtitle=track.subtitle,
+        show_name=track.show_name,
+        episode_id=track.episode_id,
+        network_name=track.network_name,
+        sort_show=track.sort_show,
+        show_locale=track.show_locale,
+        podcast_enclosure_url=track.podcast_enclosure_url,
+        podcast_rss_url=track.podcast_rss_url,
+        category=track.category,
+        lyrics=track.lyrics,
+        eq_setting=track.eq_setting,
     )
 
     # Total chunk length = header + all MHODs
@@ -330,7 +369,12 @@ def write_mhit(track: TrackInfo, track_id: int, id_0x24: int = 0) -> bytes:
     header[0x79] = 0  # app_rating
     struct.pack_into('<H', header, 0x7A, track.bpm)  # BPM
     struct.pack_into('<H', header, 0x7C, track.artwork_count)  # artwork count
-    struct.pack_into('<H', header, 0x7E, 0xFFFF)  # unk126 (0xFFFF for MP3/AAC)
+    # +0x7E: unk126 — codec hint / sub-codec indicator.
+    # libgpod sets this per filetype: 0xFFFF for MP3/AAC/ALAC,
+    # 0x0000 for WAV/AIFF, 0x0001 for Audible (M4B audiobooks).
+    _unk126_map = {'wav': 0x0000, 'aif': 0x0000, 'aiff': 0x0000, 'm4b': 0x0001}
+    unk126 = _unk126_map.get(track.filetype.lower(), 0xFFFF)
+    struct.pack_into('<H', header, 0x7E, unk126)
 
     # +0x80
     struct.pack_into('<I', header, 0x80, track.artwork_size)  # artwork size
@@ -357,35 +401,78 @@ def write_mhit(track: TrackInfo, track_id: int, id_0x24: int = 0) -> bytes:
     struct.pack_into('<Q', header, 0xA8, track.dbid)
 
     # +0xB0: lyrics_flag, movie_flag, mark_unplayed, unk179, unk180, etc.
-    header[0xB0] = 1 if track.has_lyrics else 0  # lyrics_flag
-    header[0xB1] = track.movie_file_flag  # 0xB1: 1=video/movie, 0=audio
+    # Auto-derive lyrics flag: set if lyrics text is present or has_lyrics was explicitly True
+    has_lyrics = track.has_lyrics or bool(track.lyrics)
+    header[0xB0] = 1 if has_lyrics else 0  # lyrics_flag
+    # Auto-derive movie_file_flag from media_type when the caller left it at 0.
+    # Note: libgpod writes movie_flag verbatim from its data model; this
+    # auto-derivation is an iOpenPod convenience to prevent mismatched flags
+    # when the caller only sets media_type.  Video types must have this set
+    # or the iPod won't treat the file as video.
+    movie_flag = track.movie_file_flag
+    if movie_flag == 0 and track.media_type in (
+        MEDIA_TYPE_VIDEO, MEDIA_TYPE_MUSIC_VIDEO,
+        MEDIA_TYPE_TV_SHOW, MEDIA_TYPE_VIDEO_PODCAST,
+    ):
+        movie_flag = 1
+    header[0xB1] = movie_flag  # 0xB1: 1=video/movie, 0=audio
     # mark_unplayed: 0x02 = unplayed bullet, 0x01 = no bullet (played)
-    header[0xB2] = 0x01 if track.play_count > 0 else 0x02
+    # When played_mark is -1 (default), auto-derive from play_count.
+    # Otherwise honour the explicit value (e.g. podcast "mark as played").
+    if track.played_mark >= 0:
+        header[0xB2] = track.played_mark
+    else:
+        header[0xB2] = 0x01 if track.play_count > 0 else 0x02
     header[0xB3] = 0  # unk179
 
     # +0xB4: unk180(4), pregap(4), samplecount(8), unk196(4), etc.
     struct.pack_into('<I', header, 0xB4, 0)  # unk180
-    struct.pack_into('<I', header, 0xB8, track.pregap)  # pregap
-    struct.pack_into('<Q', header, 0xBC, track.sample_count)  # samplecount (64-bit)
+    # Gapless fields: zero them when the device doesn't support gapless playback
+    if capabilities is not None and not capabilities.supports_gapless:
+        struct.pack_into('<I', header, 0xB8, 0)  # pregap
+        struct.pack_into('<Q', header, 0xBC, 0)  # samplecount
+    else:
+        struct.pack_into('<I', header, 0xB8, track.pregap)  # pregap
+        struct.pack_into('<Q', header, 0xBC, track.sample_count)  # samplecount (64-bit)
     struct.pack_into('<I', header, 0xC4, 0)  # unk196
 
     # +0xC8: postgap (encoder padding samples at end of track)
-    struct.pack_into('<I', header, 0xC8, track.postgap)
+    if capabilities is not None and not capabilities.supports_gapless:
+        struct.pack_into('<I', header, 0xC8, 0)
+    else:
+        struct.pack_into('<I', header, 0xC8, track.postgap)
 
     # +0xCC: encoder_flag (0x01=MP3 encoder, 0x00=other)
     struct.pack_into('<I', header, 0xCC, track.encoder_flag)
 
     # +0xD0: media_type (offset 0xD0 = 208)
-    struct.pack_into('<I', header, 0xD0, track.media_type)
+    # Downgrade media types when the device lacks the required capability.
+    media_type = track.media_type
+    if capabilities is not None:
+        if not capabilities.supports_video:
+            if media_type in (MEDIA_TYPE_VIDEO, MEDIA_TYPE_MUSIC_VIDEO, MEDIA_TYPE_TV_SHOW):
+                media_type = MEDIA_TYPE_AUDIO
+            elif media_type == MEDIA_TYPE_VIDEO_PODCAST:
+                # Video podcast → audio podcast (strip the video bit, keep podcast)
+                media_type = MEDIA_TYPE_PODCAST
+        if not capabilities.supports_podcast:
+            if media_type in (MEDIA_TYPE_PODCAST, MEDIA_TYPE_VIDEO_PODCAST):
+                media_type = MEDIA_TYPE_AUDIO
+    struct.pack_into('<I', header, 0xD0, media_type)
 
     # +0xD4: season_number, +0xD8: episode_number (TV shows)
     struct.pack_into('<I', header, 0xD4, track.season_number)
     struct.pack_into('<I', header, 0xD8, track.episode_number)
 
     # +0xF8: gapless_data (libgpod: seek+248)
-    struct.pack_into('<I', header, 0xF8, track.gapless_data)
-    struct.pack_into('<H', header, 0x100, track.gapless_track_flag)
-    struct.pack_into('<H', header, 0x102, track.gapless_album_flag)
+    if capabilities is not None and not capabilities.supports_gapless:
+        struct.pack_into('<I', header, 0xF8, 0)
+        struct.pack_into('<H', header, 0x100, 0)
+        struct.pack_into('<H', header, 0x102, 0)
+    else:
+        struct.pack_into('<I', header, 0xF8, track.gapless_data)
+        struct.pack_into('<H', header, 0x100, track.gapless_track_flag)
+        struct.pack_into('<H', header, 0x102, track.gapless_album_flag)
 
     # +0x120: album_id (u32) - links track to MHIA album entry
     struct.pack_into('<I', header, 0x120, track.album_id)

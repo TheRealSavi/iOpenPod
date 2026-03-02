@@ -42,7 +42,8 @@ MHIA_HEADER_SIZE = 88
 
 
 def write_mhia(album_id: int, album_name: str, album_artist: str,
-               sort_album_artist: str = "") -> bytes:
+               sort_album_artist: str = "",
+               podcast_url: str = "", show_name: str = "") -> bytes:
     """
     Write an MHIA (album item) chunk.
 
@@ -51,6 +52,8 @@ def write_mhia(album_id: int, album_name: str, album_artist: str,
         album_name: Album name
         album_artist: Album artist
         sort_album_artist: Sort album artist (for proper alphabetical sorting)
+        podcast_url: Podcast RSS URL (MHOD type 203)
+        show_name: Show/series name (MHOD type 204)
 
     Returns:
         Complete MHIA chunk with MHODs
@@ -72,6 +75,16 @@ def write_mhia(album_id: int, album_name: str, album_artist: str,
     # MHOD type 202 = sort artist (per libgpod mk_mhia, uses sort_albumartist or sort_artist)
     if sort_album_artist:
         children.extend(write_mhod_string(202, sort_album_artist))
+        child_count += 1
+
+    # MHOD type 203 = podcast RSS URL (album-level, mirrors track MHOD type 16)
+    if podcast_url:
+        children.extend(write_mhod_string(203, podcast_url))
+        child_count += 1
+
+    # MHOD type 204 = show name (album-level, mirrors track MHOD type 19)
+    if show_name:
+        children.extend(write_mhod_string(204, show_name))
         child_count += 1
 
     # Total chunk length
@@ -130,23 +143,38 @@ def write_mhla(tracks: list["TrackInfo"]) -> tuple[bytes, dict[tuple[str, str], 
     album_items = bytearray()
     album_map: dict[tuple[str, str], int] = {}  # (album, artist) -> album_id
 
-    # Collect sort artist info per album key
+    # Collect sort artist, podcast URL, and show name per album key
     album_sort_artists: dict[tuple[str, str], str] = {}
+    album_podcast_urls: dict[tuple[str, str], str] = {}
+    album_show_names: dict[tuple[str, str], str] = {}
     for track in tracks:
         album_name = track.album or ""
         album_artist = track.album_artist or track.artist or ""
         key = (album_name, album_artist)
         if key not in album_sort_artists:
-            # Use sort_artist from track (per libgpod: sort_albumartist > sort_artist)
-            sort_artist = getattr(track, 'sort_artist', None) or ""
+            # Use sort_albumartist from track first, fall back to sort_artist (per libgpod mk_mhia)
+            sort_artist = getattr(track, 'sort_album_artist', None) or getattr(track, 'sort_artist', None) or ""
             if sort_artist:
                 album_sort_artists[key] = sort_artist
+        if key not in album_podcast_urls:
+            podcast_url = getattr(track, 'podcast_rss_url', None) or ""
+            if podcast_url:
+                album_podcast_urls[key] = podcast_url
+        if key not in album_show_names:
+            show_name = getattr(track, 'show_name', None) or ""
+            if show_name:
+                album_show_names[key] = show_name
 
     album_id = 1  # Start album IDs at 1
     for (album_name, album_artist) in sorted(album_tracks.keys()):
         album_map[(album_name, album_artist)] = album_id
         sort_artist = album_sort_artists.get((album_name, album_artist), "")
-        album_items.extend(write_mhia(album_id, album_name, album_artist, sort_artist))
+        podcast_url = album_podcast_urls.get((album_name, album_artist), "")
+        show_name = album_show_names.get((album_name, album_artist), "")
+        album_items.extend(write_mhia(
+            album_id, album_name, album_artist, sort_artist,
+            podcast_url=podcast_url, show_name=show_name,
+        ))
         album_id += 1
 
     album_count = len(album_map)

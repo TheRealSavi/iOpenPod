@@ -231,16 +231,24 @@ def merge_playcounts(
                 track["rating"] = entry.rating
                 merged_ratings += 1
 
+        # --- Bookmark (override — iPod always has the latest position) ---
+        if entry.bookmark_time > 0:
+            track["bookmarkTime"] = entry.bookmark_time
+
         # --- Timestamps (use more-recent value) ---
+        # IMPORTANT: track["lastPlayed"] is a Unix timestamp (mhit_parser
+        # converts from Mac), but entry.last_played is a raw Mac timestamp.
+        # Use the .last_played_unix / .last_skipped_unix properties to
+        # compare in the same unit and avoid double-conversion downstream.
         if entry.last_played > 0:
-            mac_ts = track.get("lastPlayed", 0)
-            if entry.last_played > mac_ts:
-                track["lastPlayed"] = entry.last_played
+            unix_ts = entry.last_played_unix
+            if unix_ts > track.get("lastPlayed", 0):
+                track["lastPlayed"] = unix_ts
 
         if entry.last_skipped > 0:
-            mac_ts = track.get("lastSkipped", 0)
-            if entry.last_skipped > mac_ts:
-                track["lastSkipped"] = entry.last_skipped
+            unix_ts = entry.last_skipped_unix
+            if unix_ts > track.get("lastSkipped", 0):
+                track["lastSkipped"] = unix_ts
 
     # Tracks beyond the Play Counts entries get zero deltas
     for i in range(count, len(tracks)):

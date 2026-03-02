@@ -156,6 +156,7 @@ mhod_type_map = {
     7: "EQ Setting",
     8: "Comment",
     9: "Category",
+    10: "Lyrics",
     12: "Composer",
     13: "Grouping",
     14: "Description Text",
@@ -216,8 +217,9 @@ MEDIA_TYPE_MAP = {
     0x00000020: "Music Video",
     0x00000040: "TV Show",
     0x00000060: "TV Show (alt)",
-    0x00000100: "Ringtone",
+    0x00000100: "Ringtone",        # libgpod ITDB_MEDIATYPE_RINGTONE (1 << 8)
     0x00000200: "Rental",         # iTunes rental movie
+    0x00004000: "Ringtone (alt)",  # Alternate ringtone value (some firmware)
     0x00040000: "iTunes Pass",
     0x00060000: "Memo / Voice Memo",
 }
