@@ -14,7 +14,9 @@ iOpenPod is a desktop app for managing iPod Classic and iPod Nano libraries. It 
 
 ## Get Started
 
-You'll need **Python 3.13+** and **[uv](https://docs.astral.sh/uv/)**. For transcoding, install **[FFmpeg](https://ffmpeg.org/)**. For fingerprinting, install **[Chromaprint](https://acoustid.org/chromaprint)**.
+You'll need **Python 3.13+**. For transcoding, install **[FFmpeg](https://ffmpeg.org/)**. For fingerprinting, install **[Chromaprint](https://acoustid.org/chromaprint)**.
+
+**With [uv](https://docs.astral.sh/uv/) (recommended):**
 
 ```bash
 git clone https://github.com/TheRealSavi/iOpenPod.git
@@ -23,10 +25,19 @@ uv sync
 uv run python main.py
 ```
 
-Or with pip:
+**With pip:**
 
 ```bash
+git clone https://github.com/TheRealSavi/iOpenPod.git
+cd iOpenPod
 pip install -e .
+python main.py
+```
+
+**Manual pip install (if the above fails):**
+
+```bash
+pip install PyQt6 numpy Pillow pycryptodome mutagen pyusb wasmtime dearpygui
 python main.py
 ```
 
@@ -77,7 +88,7 @@ python main.py
 | iPod Nano 1G–2G | ✅ | ✅ | No hash required |
 | iPod Nano 3G–4G | ✅ | ✅ | Uses FireWire ID from SysInfo |
 | iPod Nano 5G | ✅ | ✅ | Needs one iTunes sync for HashInfo |
-| iPod Nano 6G–7G | ✅ | ❌ | Hash not reverse-engineered |
+| iPod Nano 6G–7G | ✅ | ✅ | HASHAB via WebAssembly |
 
 ---
 
