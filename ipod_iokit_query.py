@@ -217,29 +217,35 @@ def _walk_parents_for_usb_info(service: int) -> dict:
     """Walk IOKit registry parents to find USB device properties."""
     result: dict = {}
     entry = service
-    # Walk up to 10 levels
-    for _ in range(10):
-        parent = c_uint32(0)
-        kr = _iok.IORegistryEntryGetParentEntry(entry, kIOServicePlane, byref(parent))
-        if kr != 0:
-            break
-        # Check for USB device properties
-        pid = _cf_property_int(parent.value, "idProduct")
-        if pid is not None and "usb_pid" not in result:
-            result["usb_pid"] = pid
-        vid = _cf_property_int(parent.value, "idVendor")
-        if vid is not None and "usb_vid" not in result:
-            result["usb_vid"] = vid
-        serial = _cf_property_string(parent.value, "USB Serial Number")
-        if serial and "usb_serial" not in result:
-            result["usb_serial"] = serial
+    # Walk up to 10 levels — wrapped in try/finally so the last
+    # parent IOKit handle is always released even on unexpected errors.
+    try:
+        for _ in range(10):
+            parent = c_uint32(0)
+            kr = _iok.IORegistryEntryGetParentEntry(entry, kIOServicePlane, byref(parent))
+            if kr != 0:
+                break
+            # Check for USB device properties
+            pid = _cf_property_int(parent.value, "idProduct")
+            if pid is not None and "usb_pid" not in result:
+                result["usb_pid"] = pid
+            vid = _cf_property_int(parent.value, "idVendor")
+            if vid is not None and "usb_vid" not in result:
+                result["usb_vid"] = vid
+            serial = _cf_property_string(parent.value, "USB Serial Number")
+            if serial and "usb_serial" not in result:
+                result["usb_serial"] = serial
+            if entry != service:
+                _iok.IOObjectRelease(entry)
+            entry = parent.value
+            if "usb_pid" in result and "usb_serial" in result:
+                break
+    finally:
         if entry != service:
-            _iok.IOObjectRelease(entry)
-        entry = parent.value
-        if "usb_pid" in result and "usb_serial" in result:
-            break
-    if entry != service:
-        _iok.IOObjectRelease(entry)
+            try:
+                _iok.IOObjectRelease(entry)
+            except Exception:
+                pass
     return result
 
 
@@ -301,18 +307,31 @@ class _SCSISession:
         return True
 
     def close(self):
-        """Release all resources."""
+        """Release all resources.  Each step is guarded so a failure
+        in one does not prevent cleanup of the others."""
         if self._task:
-            _vt_call(c_void_p(self._task), 3, c_uint32, [])  # Release
+            try:
+                _vt_call(c_void_p(self._task), 3, c_uint32, [])  # Release
+            except Exception:
+                log.debug("SCSISession: task Release failed", exc_info=True)
             self._task = None
         if self._exclusive and self._device_if:
-            _vt_call(self._device_if, 9, c_int32, [])  # ReleaseExclusive
+            try:
+                _vt_call(self._device_if, 9, c_int32, [])  # ReleaseExclusive
+            except Exception:
+                log.debug("SCSISession: ReleaseExclusive failed", exc_info=True)
             self._exclusive = False
         if self._device_if:
-            _vt_call(self._device_if, 3, c_uint32, [])  # Release
+            try:
+                _vt_call(self._device_if, 3, c_uint32, [])  # Release
+            except Exception:
+                log.debug("SCSISession: device_if Release failed", exc_info=True)
             self._device_if = None
         if self._plugin:
-            _vt_call(self._plugin, 3, c_uint32, [])  # Release
+            try:
+                _vt_call(self._plugin, 3, c_uint32, [])  # Release
+            except Exception:
+                log.debug("SCSISession: plugin Release failed", exc_info=True)
             self._plugin = None
 
     def __enter__(self):
@@ -495,6 +514,8 @@ def query_ipod_vpd(
                 result = _query_one_service(svc, usb_pid, serial_filter)
                 if result is not None:
                     return result
+            except Exception as exc:
+                log.debug("Failed to query iPod service %d: %s", svc, exc)
             finally:
                 _iok.IOObjectRelease(svc)
     finally:

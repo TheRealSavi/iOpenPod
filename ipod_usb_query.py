@@ -344,8 +344,10 @@ def query_ipod_vpd(
         "usb_serial": usb_serial,
     }
 
+    claimed = False
     try:
         usb.util.claim_interface(dev, 0)
+        claimed = True
 
         # Find bulk endpoints
         cfg = dev.get_active_configuration()
@@ -377,11 +379,16 @@ def query_ipod_vpd(
         else:
             logger.warning("No VPD data returned from iPod")
 
-        usb.util.release_interface(dev, 0)
-
     except usb.core.USBError as exc:
         logger.error("USB error during VPD query: %s", exc)
+    except Exception as exc:
+        logger.error("Unexpected error during VPD query: %s", exc)
     finally:
+        if claimed:
+            try:
+                usb.util.release_interface(dev, 0)
+            except Exception as exc:
+                logger.debug("Could not release USB interface: %s", exc)
         if detached:
             try:
                 dev.attach_kernel_driver(0)
@@ -750,7 +757,7 @@ def _find_mount_macos(usb_serial: str) -> Optional[str]:
         proc = subprocess.run(
             ["ioreg", "-r", "-c", "IOUSBHostDevice", "-n", "iPod",
              "-l", "-d", "20", "-w", "0"],
-            capture_output=True, text=True, timeout=15,
+            capture_output=True, text=True, timeout=8,
         )
         if proc.returncode == 0:
             current_serial = ""

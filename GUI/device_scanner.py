@@ -232,7 +232,7 @@ def _build_macos_usb_cache() -> None:
         proc = subprocess.run(
             ["ioreg", "-r", "-c", "IOUSBHostDevice", "-n", "iPod",
              "-l", "-d", "20", "-w", "0"],
-            capture_output=True, text=True, timeout=15,
+            capture_output=True, text=True, timeout=8,
         )
         if proc.returncode == 0 and proc.stdout:
             current_serial: str = ""
@@ -246,6 +246,8 @@ def _build_macos_usb_cache() -> None:
                 m = _re.search(r'"BSD Name"\s*=\s*"(disk\d+)"', line)
                 if m and current_serial:
                     bsd_map[m.group(1)] = current_serial.upper()
+    except subprocess.TimeoutExpired:
+        logger.warning("macOS: ioreg text parse timed out")
     except Exception as e:
         logger.debug("macOS: ioreg text parse failed: %s", e)
 
@@ -588,6 +590,10 @@ def _identify_via_usb_for_drive(drive_letter: str) -> Optional[dict]:
                     # Check if THIS USB device has our USBSTOR instance ID
                     try:
                         pid_key = winreg.OpenKey(usb_key, subkey_name)
+                    except OSError:
+                        continue
+
+                    try:
                         m = 0
                         while True:
                             try:
@@ -614,10 +620,8 @@ def _identify_via_usb_for_drive(drive_letter: str) -> Optional[dict]:
                                 except ValueError:
                                     pass
                                 break  # Found our device
-
+                    finally:
                         winreg.CloseKey(pid_key)
-                    except OSError:
-                        continue
 
                     # Stop scanning once we found our match
                     if "usb_pid" in result:
@@ -1423,8 +1427,8 @@ def _identify_via_sysinfo(ipod_path: str) -> Optional[dict]:
 def _extract_ipod_name(ipod_path: str) -> str:
     """
     Lightweight extraction of the iPod's user-assigned name from the master
-    playlist title in the iTunesDB binary.  Walks the chunk headers without
-    doing a full parse — typically reads <4 KB.
+    playlist title in the iTunesDB binary.  Uses buffered positional reads
+    so only a few KB are transferred over USB — never reads the whole file.
 
     Returns the name string, or empty string if extraction fails.
     """
@@ -1433,68 +1437,86 @@ def _extract_ipod_name(ipod_path: str) -> str:
         return ""
     try:
         with open(itdb_path, "rb") as f:
-            data = f.read()
+            # ── Helper: read exactly *n* bytes at current position ──────
+            def _read(n: int) -> bytes:
+                buf = f.read(n)
+                if len(buf) < n:
+                    raise EOFError("Unexpected end of iTunesDB")
+                return buf
 
-        if len(data) < 12 or data[:4] != b"mhbd":
-            return ""
+            hdr = _read(24)
+            if hdr[:4] != b"mhbd":
+                return ""
 
-        mhbd_header_len = struct.unpack("<I", data[4:8])[0]
-        mhbd_children = struct.unpack("<I", data[20:24])[0]
+            mhbd_header_len = struct.unpack("<I", hdr[4:8])[0]
+            mhbd_children = struct.unpack("<I", hdr[20:24])[0]
 
-        # Walk mhsd children to find dataset type 2 (playlist list)
-        pos = mhbd_header_len
-        for _ in range(mhbd_children):
-            if pos + 16 > len(data) or data[pos:pos + 4] != b"mhsd":
-                break
-            mhsd_hdr_len = struct.unpack("<I", data[pos + 4:pos + 8])[0]
-            mhsd_total_len = struct.unpack("<I", data[pos + 8:pos + 12])[0]
-            ds_type = struct.unpack("<I", data[pos + 12:pos + 16])[0]
-
-            if ds_type == 2:
-                # Found playlist dataset — its child is an mhlp
-                mhlp_pos = pos + mhsd_hdr_len
-                if mhlp_pos + 12 > len(data) or data[mhlp_pos:mhlp_pos + 4] != b"mhlp":
+            # Walk mhsd children to find dataset type 2 (playlist list)
+            pos = mhbd_header_len
+            for _ in range(mhbd_children):
+                f.seek(pos)
+                mhsd_hdr = _read(16)
+                if mhsd_hdr[:4] != b"mhsd":
                     break
-                mhlp_hdr_len = struct.unpack("<I", data[mhlp_pos + 4:mhlp_pos + 8])[0]
-                pl_count = struct.unpack("<I", data[mhlp_pos + 8:mhlp_pos + 12])[0]
-                if pl_count == 0:
-                    break
+                mhsd_hdr_len = struct.unpack("<I", mhsd_hdr[4:8])[0]
+                mhsd_total_len = struct.unpack("<I", mhsd_hdr[8:12])[0]
+                ds_type = struct.unpack("<I", mhsd_hdr[12:16])[0]
 
-                # First mhyp is the master playlist
-                mhyp_pos = mhlp_pos + mhlp_hdr_len
-                if mhyp_pos + 24 > len(data) or data[mhyp_pos:mhyp_pos + 4] != b"mhyp":
-                    break
-                mhyp_hdr_len = struct.unpack("<I", data[mhyp_pos + 4:mhyp_pos + 8])[0]
-                mhod_count = struct.unpack("<I", data[mhyp_pos + 12:mhyp_pos + 16])[0]
-                pl_type = data[mhyp_pos + 20]
-                if pl_type != 1:
-                    break  # Not the master playlist
-
-                # Walk child MHODs to find type 1 (title)
-                mhod_pos = mhyp_pos + mhyp_hdr_len
-                for _ in range(mhod_count):
-                    if mhod_pos + 40 > len(data) or data[mhod_pos:mhod_pos + 4] != b"mhod":
+                if ds_type == 2:
+                    # Found playlist dataset — its child is an mhlp
+                    mhlp_pos = pos + mhsd_hdr_len
+                    f.seek(mhlp_pos)
+                    mhlp_hdr = _read(12)
+                    if mhlp_hdr[:4] != b"mhlp":
                         break
-                    mhod_total = struct.unpack("<I", data[mhod_pos + 8:mhod_pos + 12])[0]
-                    mhod_type = struct.unpack("<I", data[mhod_pos + 12:mhod_pos + 16])[0]
+                    mhlp_hdr_len = struct.unpack("<I", mhlp_hdr[4:8])[0]
+                    pl_count = struct.unpack("<I", mhlp_hdr[8:12])[0]
+                    if pl_count == 0:
+                        break
 
-                    if mhod_type == 1:
-                        # String MHOD: encoding at +24, string_length at +28, data at +40
-                        enc = struct.unpack("<I", data[mhod_pos + 24:mhod_pos + 28])[0]
-                        slen = struct.unpack("<I", data[mhod_pos + 28:mhod_pos + 32])[0]
-                        sdata = data[mhod_pos + 40:mhod_pos + 40 + slen]
-                        if enc == 2:
-                            return sdata.decode("utf-8", errors="replace")
-                        else:
-                            return sdata.decode("utf-16-le", errors="replace")
+                    # First mhyp is the master playlist
+                    mhyp_pos = mhlp_pos + mhlp_hdr_len
+                    f.seek(mhyp_pos)
+                    mhyp_hdr = _read(24)
+                    if mhyp_hdr[:4] != b"mhyp":
+                        break
+                    mhyp_hdr_len = struct.unpack("<I", mhyp_hdr[4:8])[0]
+                    mhod_count = struct.unpack("<I", mhyp_hdr[12:16])[0]
+                    pl_type = mhyp_hdr[20]
+                    if pl_type != 1:
+                        break  # Not the master playlist
 
-                    mhod_pos += mhod_total
-                break  # Done with dataset type 2
+                    # Walk child MHODs to find type 1 (title)
+                    mhod_pos = mhyp_pos + mhyp_hdr_len
+                    for _ in range(min(mhod_count, 64)):
+                        f.seek(mhod_pos)
+                        mhod_hdr = _read(40)
+                        if mhod_hdr[:4] != b"mhod":
+                            break
+                        mhod_total = struct.unpack("<I", mhod_hdr[8:12])[0]
+                        mhod_type = struct.unpack("<I", mhod_hdr[12:16])[0]
 
-            pos += mhsd_total_len
+                        if mhod_type == 1:
+                            enc = struct.unpack("<I", mhod_hdr[24:28])[0]
+                            slen = struct.unpack("<I", mhod_hdr[28:32])[0]
+                            # Sanity-cap the string length (iPod names are short)
+                            if slen > 1024:
+                                break
+                            sdata = _read(slen)
+                            if enc == 2:
+                                return sdata.decode("utf-8", errors="replace")
+                            else:
+                                return sdata.decode("utf-16-le", errors="replace")
 
-    except Exception as e:
+                        mhod_pos += mhod_total
+                    break  # Done with dataset type 2
+
+                pos += mhsd_total_len
+
+    except (EOFError, OSError, struct.error) as e:
         logger.debug("Could not extract iPod name: %s", e)
+    except Exception as e:
+        logger.debug("Could not extract iPod name (unexpected): %s", e)
     return ""
 
 
@@ -1518,17 +1540,22 @@ def _identify_via_hashing_scheme(ipod_path: str) -> Optional[dict]:
 
         result: dict = {"hashing_scheme": scheme}
 
-        if scheme == 0:
+        # Map raw mhbd hashing_scheme to ChecksumType via canonical table
+        from ipod_models import MHBD_SCHEME_TO_CHECKSUM, ChecksumType
+        cs_type = MHBD_SCHEME_TO_CHECKSUM.get(scheme)
+
+        if cs_type == ChecksumType.NONE or cs_type is None:
             result["model_family"] = "iPod"
             result["generation"] = "(pre-2007)"
-        elif scheme == 1:
-            # HASH58 is used by Classic (all gens), Nano 3G, Nano 4G
+        elif cs_type == ChecksumType.HASH58:
             result["model_family"] = "iPod"
             result["generation"] = "(Classic or Nano 3G/4G)"
-        elif scheme == 2:
-            # HASH72 is used by Nano 5G only
+        elif cs_type == ChecksumType.HASH72:
             result["model_family"] = "iPod Nano"
             result["generation"] = "(5th gen)"
+        elif cs_type == ChecksumType.HASHAB:
+            result["model_family"] = "iPod Nano"
+            result["generation"] = "(6th/7th gen)"
 
         return result
     except Exception:
@@ -1554,21 +1581,12 @@ def _identify_via_serial_lookup(serial: str) -> Optional[dict]:
 
 
 def _estimate_capacity_from_disk_size(disk_gb: float) -> str:
-    """Estimate marketed capacity from actual disk size."""
-    # Marketed vs actual (base-10 GB → base-2):
-    # 1GB → ~0.93, 2GB → ~1.86, 4GB → ~3.73, 8GB → ~7.45
-    # 16GB → ~14.9, 30GB → ~27.9, 60GB → ~55.9, 80GB → ~74.5
-    # 120GB → ~111.8, 160GB → ~149.0
-    thresholds = [
-        (140, "160GB"), (105, "120GB"), (70, "80GB"),
-        (50, "60GB"), (25, "30GB"), (18, "20GB"),
-        (13, "16GB"), (6.5, "8GB"), (3, "4GB"),
-        (1.5, "2GB"), (0.7, "1GB"), (0.3, "512MB"),
-    ]
-    for threshold, label in thresholds:
-        if disk_gb >= threshold:
-            return label
-    return ""
+    """Estimate marketed capacity from actual disk size.
+
+    .. deprecated:: Use :func:`device_info._estimate_capacity_from_disk_size` directly.
+    """
+    from device_info import _estimate_capacity_from_disk_size as _impl
+    return _impl(disk_gb)
 
 
 def _try_vpd_identification(ipod: DeviceInfo) -> None:

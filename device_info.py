@@ -552,8 +552,8 @@ def enrich(info: DeviceInfo) -> None:
     # Try model-based lookup first
     if not info.artwork_formats and info.model_family and info.generation:
         try:
-            from ArtworkDB_Writer.rgb565 import _family_gen_to_formats
-            table = _family_gen_to_formats(info.model_family, info.generation)
+            from ipod_models import ithmb_formats_for_device
+            table = ithmb_formats_for_device(info.model_family, info.generation)
             if table:
                 info.artwork_formats = dict(table)
                 logger.debug("enrich: artwork formats from model: %s",
@@ -856,17 +856,20 @@ def _persist_model_to_sysinfo(info: DeviceInfo) -> None:
         return
 
     try:
-        content = open(sysinfo_path, "r", errors="replace").read()
+        with open(sysinfo_path, "r", errors="replace") as fh:
+            content = fh.read()
         if "ModelNumStr" in content:
             return  # already present
 
         # Append ModelNumStr in the format the scanner expects
-        with open(sysinfo_path, "a") as f:
-            f.write(f"ModelNumStr: x{info.model_number[1:]}\n")
+        with open(sysinfo_path, "a") as fh:
+            fh.write(f"ModelNumStr: x{info.model_number[1:]}\n")
         logger.info("enrich: appended ModelNumStr to SysInfo (%s)",
                     info.model_number)
-    except Exception as exc:
+    except OSError as exc:
         logger.debug("enrich: failed to persist ModelNumStr: %s", exc)
+    except Exception as exc:
+        logger.debug("enrich: failed to persist ModelNumStr (unexpected): %s", exc)
 
 
 def _enrich_from_windows_registry(info: DeviceInfo) -> None:
@@ -919,6 +922,10 @@ def _enrich_from_windows_registry(info: DeviceInfo) -> None:
 
             try:
                 device_key = winreg.OpenKey(usbstor_key, subkey_name)
+            except OSError:
+                continue
+
+            try:
                 j = 0
                 while True:
                     try:
@@ -949,17 +956,13 @@ def _enrich_from_windows_registry(info: DeviceInfo) -> None:
                                         "enrich: FW GUID from registry "
                                         "(serial-matched): %s", guid_upper,
                                     )
-                                    winreg.CloseKey(device_key)
-                                    winreg.CloseKey(usbstor_key)
                                     return
                             else:
                                 # No serial — remember first valid GUID
                                 if best_guid is None:
                                     best_guid = guid_upper
-
+            finally:
                 winreg.CloseKey(device_key)
-            except OSError:
-                continue
     finally:
         winreg.CloseKey(usbstor_key)
 
@@ -1080,15 +1083,27 @@ def _resolve_checksum_type(info: DeviceInfo) -> None:
 
 
 def _enrich_artwork_from_artworkdb(info: DeviceInfo) -> None:
-    """Scan ArtworkDB binary for mhif format IDs as a last resort."""
+    """Scan ArtworkDB binary for mhif format IDs as a last resort.
+
+    Only reads the file header and dataset/format-list chunks (typically
+    < 8 KB) rather than the entire ArtworkDB, which can be many MB.
+    """
     artdb_path = os.path.join(info.path, "iPod_Control", "Artwork", "ArtworkDB")
     if not os.path.exists(artdb_path):
         return
 
+    # The format-ID entries live in the first dataset (mhsd type 3).
+    # Cap the read at 64 KB — far more than enough for the header region,
+    # and safe even over a slow USB connection.
+    _MAX_HEADER_READ = 65536
+
     try:
         from ArtworkDB_Writer.rgb565 import _extract_format_ids, ALL_KNOWN_FORMATS
         with open(artdb_path, "rb") as f:
-            data = f.read()
+            data = f.read(_MAX_HEADER_READ)
+
+        if len(data) < 24 or data[:4] != b"mhfd":
+            return
 
         format_ids = _extract_format_ids(data)
         if format_ids:

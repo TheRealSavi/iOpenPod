@@ -1,9 +1,10 @@
 """
 iPod model identification database.
 
-Single source of truth for all iPod model identification, mapping, and image
-resolution.  Every other module imports model data from here — no other file
-should define model tables, serial lookups, USB PID maps, or image mappings.
+Single source of truth for all iPod model identification, mapping, image
+resolution, and device capabilities.  Every other module imports model data
+from here — no other file should define model tables, serial lookups, USB
+PID maps, image mappings, or per-generation feature flags.
 
 Data tables
 ~~~~~~~~~~~
@@ -15,6 +16,20 @@ Data tables
 - ``COLOR_MAP``              (family, gen, color) → image filename
 - ``MODEL_IMAGE``            Model number → image filename (revision overrides)
 - ``FAMILY_FALLBACK``        Family → default image filename
+
+Device capabilities
+~~~~~~~~~~~~~~~~~~~
+- ``ArtworkFormat``           Dataclass for one artwork thumbnail size
+- ``DeviceCapabilities``      Dataclass aggregating all per-generation flags
+- ``capabilities_for_family_gen()``  Lookup capabilities by (family, gen)
+- ``CHECKSUM_MHBD_SCHEME``   ChecksumType → raw mhbd hashing_scheme value
+- ``MHBD_SCHEME_TO_CHECKSUM``  Reverse: hashing_scheme → ChecksumType
+
+Artwork format lookups
+~~~~~~~~~~~~~~~~~~~~~~
+- ``ITHMB_FORMAT_MAP``         Correlation ID → ``ArtworkFormat`` (all known)
+- ``ITHMB_SIZE_MAP``           Byte size → ``ArtworkFormat`` (fallback)
+- ``ithmb_formats_for_device()``  {corr_id: (w, h)} for a device's cover art
 
 Lookup functions
 ~~~~~~~~~~~~~~~~
@@ -29,12 +44,14 @@ Lookup functions
 Sources
 ~~~~~~~
 - libgpod ``itdb_device.c`` (SourceForge / GitHub mirror)
+- libgpod ``itdb_itunesdb.c`` (iTunesSD format, mhbd version)
 - Universal Compendium iPod Models table
 - The Apple Wiki: Models/iPod
 - macOS AMPDevices.framework icon assets
 """
 
 import re
+from dataclasses import dataclass
 from enum import IntEnum
 from typing import Optional
 
@@ -49,86 +66,38 @@ class ChecksumType(IntEnum):
     NONE        — Pre-2007 iPods (1G–5G, Photo, Video, Mini, Nano 1G–2G, Shuffle)
     HASH58      — iPod Classic (all gens), Nano 3G, Nano 4G
     HASH72      — Nano 5G
-    UNSUPPORTED — Nano 6G/7G (HASHAB — never reverse-engineered)
+    HASHAB      — Nano 6G, Nano 7G (white-box AES, via WASM module)
+    UNSUPPORTED — Reserved for any future unsupported scheme
     UNKNOWN     — Device not yet identified
     """
     NONE = 0
     HASH58 = 1
     HASH72 = 2
+    HASHAB = 3
     UNSUPPORTED = 98
     UNKNOWN = 99
 
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗
-# ║  Family / generation → checksum type                                    ║
+# ║  MHBD hashing scheme ↔ ChecksumType mapping                            ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 #
-# PRIMARY authority for determining checksum requirements.  Covers every
-# model implicitly via the (family, generation) tuple that IPOD_MODELS
-# provides, eliminating the need to enumerate each color variant.
-#
-# Sources:
-#   - libgpod itdb_device.c  itdb_device_get_checksum_type()
-#   - Empirical testing: iPod Classic 2G (MB565) → HASH58, confirmed working
-#
-# Note on iPod Classic:
-#   libgpod maps CLASSIC_1/2/3 → HASH58 (the device firmware checks hash58,
-#   scheme=1).  iTunes additionally writes a HASH72 signature, which is
-#   preserved but not required.  We follow libgpod and sign with HASH58.
-#
-# Note on iPod Shuffle:
-#   Shuffles use iTunesSD, not iTunesDB — listed here for completeness only.
+# The mhbd header at offset 0x30 stores a 16-bit ``hashing_scheme`` value.
+# These constants map between our ``ChecksumType`` enum and the raw wire
+# values.  Note: HASHAB is enum 3 but wire 4.
 
-_FAMILY_GEN_CHECKSUM: dict[tuple[str, str], ChecksumType] = {
-    # iPod (full-size "scroll-wheel" line) — no checksum
-    # libgpod: GENERATION_FIRST .. GENERATION_FOURTH
-    ("iPod", "1st Gen"): ChecksumType.NONE,
-    ("iPod", "2nd Gen"): ChecksumType.NONE,
-    ("iPod", "3rd Gen"): ChecksumType.NONE,
-    ("iPod", "4th Gen"): ChecksumType.NONE,
-
-    # iPod U2 special editions share hardware with their base model
-    ("iPod U2", "4th Gen"): ChecksumType.NONE,
-
-    # iPod Photo / iPod with Color Display — no checksum
-    # libgpod: GENERATION_PHOTO  (model: COLOR / COLOR_U2)
-    ("iPod Photo", "4th Gen"): ChecksumType.NONE,
-
-    # iPod Video — no checksum
-    # libgpod: GENERATION_VIDEO_1 (5th gen), GENERATION_VIDEO_2 (5.5th gen)
-    ("iPod Video", "5th Gen"): ChecksumType.NONE,
-    ("iPod Video", "5.5th Gen"): ChecksumType.NONE,
-    ("iPod Video U2", "5th Gen"): ChecksumType.NONE,
-    ("iPod Video U2", "5.5th Gen"): ChecksumType.NONE,
-
-    # iPod Classic — HASH58 (all generations, per libgpod + empirical)
-    # libgpod: GENERATION_CLASSIC_1/2/3
-    ("iPod Classic", "1st Gen"): ChecksumType.HASH58,
-    ("iPod Classic", "2nd Gen"): ChecksumType.HASH58,
-    ("iPod Classic", "3rd Gen"): ChecksumType.HASH58,
-
-    # iPod Mini — no checksum
-    # libgpod: GENERATION_MINI_1/2
-    ("iPod Mini", "1st Gen"): ChecksumType.NONE,
-    ("iPod Mini", "2nd Gen"): ChecksumType.NONE,
-
-    # iPod Nano
-    # libgpod: GENERATION_NANO_1 .. GENERATION_NANO_6  (+ 7G unsupported)
-    ("iPod Nano", "1st Gen"): ChecksumType.NONE,
-    ("iPod Nano", "2nd Gen"): ChecksumType.NONE,
-    ("iPod Nano", "3rd Gen"): ChecksumType.HASH58,
-    ("iPod Nano", "4th Gen"): ChecksumType.HASH58,
-    ("iPod Nano", "5th Gen"): ChecksumType.HASH72,
-    ("iPod Nano", "6th Gen"): ChecksumType.UNSUPPORTED,
-    ("iPod Nano", "7th Gen"): ChecksumType.UNSUPPORTED,
-
-    # iPod Shuffle — no checksum (uses iTunesSD, not iTunesDB)
-    # libgpod: GENERATION_SHUFFLE_1 .. GENERATION_SHUFFLE_4
-    ("iPod Shuffle", "1st Gen"): ChecksumType.NONE,
-    ("iPod Shuffle", "2nd Gen"): ChecksumType.NONE,
-    ("iPod Shuffle", "3rd Gen"): ChecksumType.NONE,
-    ("iPod Shuffle", "4th Gen"): ChecksumType.NONE,
+CHECKSUM_MHBD_SCHEME: dict[ChecksumType, int] = {
+    ChecksumType.NONE: 0,
+    ChecksumType.HASH58: 1,
+    ChecksumType.HASH72: 2,
+    ChecksumType.HASHAB: 4,
 }
+"""Map ``ChecksumType`` → raw ``hashing_scheme`` field in mhbd header."""
+
+MHBD_SCHEME_TO_CHECKSUM: dict[int, ChecksumType] = {
+    v: k for k, v in CHECKSUM_MHBD_SCHEME.items()
+}
+"""Map raw ``hashing_scheme`` field in mhbd header → ``ChecksumType``."""
 
 
 def checksum_type_for_family_gen(
@@ -137,10 +106,531 @@ def checksum_type_for_family_gen(
 ) -> Optional[ChecksumType]:
     """Return the checksum type for a (family, generation) pair.
 
-    Returns None if the pair is not in the lookup table — callers should
-    fall through to secondary detection (HashInfo, firmware hints, etc.).
+    Derives the answer from ``_FAMILY_GEN_CAPABILITIES``.  Returns ``None``
+    if the pair is not in the lookup table — callers should fall through to
+    secondary detection (HashInfo, firmware hints, etc.).
     """
-    return _FAMILY_GEN_CHECKSUM.get((family, generation))
+    caps = _FAMILY_GEN_CAPABILITIES.get((family, generation))
+    if caps is not None:
+        return caps.checksum
+    return None
+
+
+# ╔═══════════════════════════════════════════════════════════════════════════╗
+# ║  Device capabilities — per-generation feature map                       ║
+# ╚═══════════════════════════════════════════════════════════════════════════╝
+#
+# Sources:
+#   - libgpod ``itdb_device.c`` — itdb_device_supports_*() functions,
+#     ipod_info_table, artwork format tables
+#   - libgpod ``itdb_itunesdb.c`` — iTunesSD writer, mhbd version handling
+#   - Empirical: iPod Classic 2G, Nano 3G confirmed
+#
+# This table captures every capability dimension that affects database
+# writing, artwork generation, or sync behaviour.  It is the single
+# authority for "what does this device support?" questions.
+
+@dataclass(frozen=True)
+class ArtworkFormat:
+    """One artwork thumbnail size for a device generation.
+
+    Attributes:
+        format_id:    Ithmb correlation ID (e.g. 1055, 1060, 1061) — the
+                      value stored in MHNIs and MHIFs in the ArtworkDB binary.
+        width:        Pixel width
+        height:       Pixel height
+        row_bytes:    Bytes per row (often ``width * 2`` for RGB565)
+        pixel_format: ``"RGB565_LE"`` (most iPods), ``"RGB565_LE_90"``
+                      (rotated, Nano 4G), ``"RGB565_BE"`` (Mobile/Motorola)
+        role:         ``"cover_small"``, ``"cover_large"``, ``"photo_full"``,
+                      ``"tv_out"``, etc.
+        description:  Human-readable label for logs / parser output.
+    """
+    format_id: int
+    width: int
+    height: int
+    row_bytes: int
+    pixel_format: str = "RGB565_LE"
+    role: str = "cover"
+    description: str = ""
+
+
+@dataclass(frozen=True)
+class DeviceCapabilities:
+    """Per-generation device capability flags.
+
+    Every (family, generation) pair maps to exactly one of these.  The
+    flags drive decisions in the sync engine, iTunesDB writer, and
+    ArtworkDB writer.
+
+    All flags default to the *most common* value so that only deviations
+    need to be specified in the lookup table.
+    """
+
+    # ── Database format ────────────────────────────────────────────────
+    checksum: ChecksumType = ChecksumType.NONE
+    is_shuffle: bool = False
+    """If True, device uses iTunesSD (flat binary) instead of / in addition
+    to iTunesDB.  Shadow DB version determines the iTunesSD format."""
+    shadow_db_version: int = 0
+    """0 = not a shuffle.  1 = iTunesSD v1 (Shuffle 1G/2G, 18-byte header,
+    558-byte entries, big-endian).  2 = iTunesSD v2 (Shuffle 3G/4G,
+    bdhs/hths/hphs chunk format, little-endian)."""
+    supports_compressed_db: bool = False
+    """If True, device expects iTunesCDB (zlib-compressed iTunesDB) and will
+    generate an empty iTunesDB alongside it.  Nano 5G/6G/7G only."""
+
+    # ── Media type support ─────────────────────────────────────────────
+    supports_video: bool = False
+    """Device can play video files (mediatype & VIDEO != 0)."""
+    supports_podcast: bool = True
+    """Device supports podcast mhsd types (type 3).  False only for
+    very early iPods (1G–3G) and iPod Mobile."""
+    supports_gapless: bool = False
+    """Device honours gapless playback fields (pregap, postgap,
+    samplecount, gapless_data, gapless_track_flag).  Introduced with
+    iPod Video 5.5G (Late 2006)."""
+
+    # ── Artwork ────────────────────────────────────────────────────────
+    supports_artwork: bool = True
+    """Device has an ArtworkDB and .ithmb files for album art."""
+    supports_photo: bool = False
+    """Device has additional photo artwork formats (for photo viewer)."""
+    supports_chapter_image: bool = False
+    """Device has chapter image artwork formats (for enhanced podcasts)."""
+    supports_sparse_artwork: bool = False
+    """Artwork can be written in sparse mode (Nano 3G+, Classic, Touch)."""
+    cover_art_formats: tuple[ArtworkFormat, ...] = ()
+    """Supported cover-art thumbnail sizes.  Empty means no artwork."""
+
+    # ── Storage layout ─────────────────────────────────────────────────
+    music_dirs: int = 20
+    """Number of ``Fxx`` directories under ``iPod_Control/Music/``.
+    Varies 0–50 depending on model and storage capacity."""
+
+    # ── Writer parameters ──────────────────────────────────────────────
+    db_version: int = 0x30
+    """iTunesDB version to write in mhbd header.  Older iPods need
+    lower values (0x0c for Shuffle 1G/2G, 0x13 for pre-Classic)."""
+    byte_order: str = "le"
+    """Byte order for database writing.  ``"le"`` for almost all models.
+    ``"be"`` for iPod Mobile (Motorola ROKR/SLVR/RAZR)."""
+
+    # ── Screen / display ───────────────────────────────────────────────
+    has_screen: bool = True
+    """Device has a display.  Shuffles have no screen."""
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Cover-art format sets — ithmb correlation IDs
+#
+# ``format_id`` is the correlation ID stored in MHNI/MHIF entries inside
+# the ArtworkDB binary.  These are the values that appear on-disk and
+# are used by both the parser and writer.
+#
+# Sources:
+#   - Real ArtworkDB files from iPod Classic / Nano / Video / Photo
+#   - libgpod itdb_device.c artwork_info_* arrays
+#   - ArtworkDB_Parser FORMAT_ID_MAP (cross-referenced)
+#   - ArtworkDB_Writer format tables (confirmed working)
+# ──────────────────────────────────────────────────────────────────────────
+
+_ART_PHOTO = (
+    ArtworkFormat(1017, 56, 56, 112, "RGB565_LE", "cover_small", "Photo album art small"),
+    ArtworkFormat(1016, 140, 140, 280, "RGB565_LE", "cover_large", "Photo album art large"),
+)
+
+_ART_NANO_1G2G = (
+    ArtworkFormat(1031, 42, 42, 84, "RGB565_LE", "cover_small", "Nano album art small"),
+    ArtworkFormat(1027, 100, 100, 200, "RGB565_LE", "cover_large", "Nano album art large"),
+)
+
+_ART_VIDEO = (
+    ArtworkFormat(1028, 100, 100, 200, "RGB565_LE", "cover_small", "Video album art small"),
+    ArtworkFormat(1029, 200, 200, 400, "RGB565_LE", "cover_large", "Video album art large"),
+)
+
+_ART_CLASSIC = (
+    ArtworkFormat(1061, 56, 56, 112, "RGB565_LE", "cover_small", "Classic album art small"),
+    ArtworkFormat(1055, 128, 128, 256, "RGB565_LE", "cover_medium", "Classic album art medium"),
+    ArtworkFormat(1060, 320, 320, 640, "RGB565_LE", "cover_large", "Classic album art large"),
+)
+
+_ART_NANO_4G = (
+    ArtworkFormat(1071, 240, 240, 480, "RGB565_LE", "cover_large", "Nano 4G album art large"),
+    ArtworkFormat(1074, 50, 50, 100, "RGB565_LE", "cover_xsmall", "Nano 4G album art tiny"),
+    ArtworkFormat(1078, 80, 80, 160, "RGB565_LE", "cover_small", "Nano 4G/5G album art small"),
+)
+
+_ART_NANO_5G = (
+    ArtworkFormat(1073, 240, 240, 480, "RGB565_LE", "cover_large", "Nano 5G album art large"),
+    ArtworkFormat(1078, 80, 80, 160, "RGB565_LE", "cover_small", "Nano 4G/5G album art small"),
+)
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# All known ithmb formats — comprehensive correlation-ID lookup
+#
+# This is the SINGLE SOURCE OF TRUTH for every known ithmb format ID,
+# including photo-viewer, TV-output, and alternate cover-art formats that
+# may appear in parsed ArtworkDB files from any iPod generation.
+#
+# Previously duplicated in:
+#   - ArtworkDB_Parser/mhni_parser.py  FORMAT_ID_MAP
+#   - ArtworkDB_Writer/rgb565.py       IPOD_*_FORMATS dicts
+# ──────────────────────────────────────────────────────────────────────────
+
+_EXTRA_FORMATS = (
+    # iPod Photo/Video photos & TV
+    ArtworkFormat(1009, 42, 30, 84, "RGB565_LE", "photo_list", "Photo list thumbnail"),
+    ArtworkFormat(1013, 220, 176, 440, "RGB565_BE_90", "photo_full", "Photo full screen (rotated)"),
+    ArtworkFormat(1015, 130, 88, 260, "RGB565_LE", "photo_preview", "Photo/Video preview"),
+    ArtworkFormat(1019, 720, 480, 1440, "UYVY", "tv_out", "Photo/Video NTSC TV output"),
+    # iPod Nano 1G/2G photos
+    ArtworkFormat(1023, 176, 132, 352, "RGB565_BE", "photo_full", "Nano full screen"),
+    ArtworkFormat(1032, 42, 37, 84, "RGB565_LE", "photo_list", "Nano list thumbnail"),
+    # iPod Video photos
+    ArtworkFormat(1024, 320, 240, 640, "RGB565_LE", "photo_full", "Video full screen"),
+    ArtworkFormat(1036, 50, 41, 100, "RGB565_LE", "photo_list", "Video list thumbnail"),
+    # iPod Classic alternates & photos
+    ArtworkFormat(1056, 128, 128, 256, "RGB565_LE", "cover_medium_alt", "Classic album art (alt)"),
+    ArtworkFormat(1068, 128, 128, 256, "RGB565_LE", "cover_medium_alt", "Classic album art (alt 2)"),
+    ArtworkFormat(1066, 64, 64, 128, "RGB565_LE", "photo_thumb", "Classic photo thumbnail"),
+    ArtworkFormat(1067, 720, 480, 1080, "I420_LE", "tv_out", "Classic TV output (YUV)"),
+    # iPod Nano 4G/5G alternates & photos
+    ArtworkFormat(1084, 240, 240, 480, "RGB565_LE", "cover_large_alt", "Nano 4G album art (alt)"),
+    ArtworkFormat(1079, 80, 80, 160, "RGB565_LE", "photo_thumb", "Nano 4G/5G photo thumbnail"),
+    ArtworkFormat(1083, 320, 240, 640, "RGB565_LE", "photo_full", "Nano 4G photo full screen"),
+    ArtworkFormat(1087, 384, 384, 768, "RGB565_LE", "photo_large", "Nano 5G photo large"),
+)
+
+ITHMB_FORMAT_MAP: dict[int, ArtworkFormat] = {}
+"""Comprehensive lookup of ithmb correlation ID → `ArtworkFormat`.
+
+This replaces all per-file ``FORMAT_ID_MAP`` dicts.  Used by the parser
+to identify image formats by correlation ID, and by the writer to
+validate format IDs.
+"""
+for _group in (_ART_PHOTO, _ART_NANO_1G2G, _ART_VIDEO, _ART_CLASSIC,
+               _ART_NANO_4G, _ART_NANO_5G, _EXTRA_FORMATS):
+    for _af in _group:
+        if _af.format_id not in ITHMB_FORMAT_MAP:
+            ITHMB_FORMAT_MAP[_af.format_id] = _af
+
+ITHMB_SIZE_MAP: dict[int, ArtworkFormat] = {}
+"""Fallback lookup: byte size → `ArtworkFormat`.
+
+Byte size is computed as ``row_bytes × height``.  Used when the
+correlation ID is unknown or zero and only the raw image byte count
+is available.
+"""
+for _af in ITHMB_FORMAT_MAP.values():
+    _byte_size = _af.row_bytes * _af.height
+    if _byte_size > 0 and _byte_size not in ITHMB_SIZE_MAP:
+        ITHMB_SIZE_MAP[_byte_size] = _af
+
+
+def ithmb_formats_for_device(
+    family: str,
+    generation: str,
+) -> dict[int, tuple[int, int]]:
+    """Return ``{correlation_id: (width, height)}`` for a device's cover art.
+
+    This is the format expected by the ArtworkDB writer.  Returns an empty
+    dict if the device is not recognised or has no artwork support.
+    """
+    caps = _FAMILY_GEN_CAPABILITIES.get((family, generation))
+    if caps is None or not caps.supports_artwork:
+        return {}
+    return {af.format_id: (af.width, af.height) for af in caps.cover_art_formats}
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# The master capabilities table
+# ──────────────────────────────────────────────────────────────────────────
+
+_FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
+
+    # ── iPod 1G–3G: earliest models, no podcast, no gapless ───────────
+    ("iPod", "1st Gen"): DeviceCapabilities(
+        supports_podcast=False,
+        supports_artwork=False,
+        has_screen=True,
+        music_dirs=20,
+        db_version=0x13,
+    ),
+    ("iPod", "2nd Gen"): DeviceCapabilities(
+        supports_podcast=False,
+        supports_artwork=False,
+        has_screen=True,
+        music_dirs=20,
+        db_version=0x13,
+    ),
+    ("iPod", "3rd Gen"): DeviceCapabilities(
+        supports_podcast=False,
+        supports_artwork=False,
+        has_screen=True,
+        music_dirs=20,
+        db_version=0x13,
+    ),
+
+    # ── iPod 4G (Click Wheel): first with podcast support ─────────────
+    ("iPod", "4th Gen"): DeviceCapabilities(
+        supports_artwork=False,
+        music_dirs=20,
+        db_version=0x13,
+    ),
+
+    # ── iPod U2 Special Edition (4th Gen hardware) ────────────────────
+    ("iPod U2", "4th Gen"): DeviceCapabilities(
+        supports_artwork=False,
+        music_dirs=20,
+        db_version=0x13,
+    ),
+
+    # ── iPod Photo (Color Display) ────────────────────────────────────
+    ("iPod Photo", "4th Gen"): DeviceCapabilities(
+        supports_artwork=True,
+        supports_photo=True,
+        cover_art_formats=_ART_PHOTO,
+        music_dirs=20,
+        db_version=0x13,
+    ),
+
+    # ── iPod Video 5th Gen ────────────────────────────────────────────
+    ("iPod Video", "5th Gen"): DeviceCapabilities(
+        supports_video=True,
+        supports_artwork=True,
+        supports_photo=True,
+        cover_art_formats=_ART_VIDEO,
+        music_dirs=20,
+        db_version=0x19,
+    ),
+
+    # ── iPod Video 5.5th Gen — first with gapless playback ───────────
+    ("iPod Video", "5.5th Gen"): DeviceCapabilities(
+        supports_video=True,
+        supports_gapless=True,
+        supports_artwork=True,
+        supports_photo=True,
+        cover_art_formats=_ART_VIDEO,
+        music_dirs=20,
+        db_version=0x19,
+    ),
+
+    # ── iPod Video U2 editions (same hardware as their base) ─────────
+    ("iPod Video U2", "5th Gen"): DeviceCapabilities(
+        supports_video=True,
+        supports_artwork=True,
+        supports_photo=True,
+        cover_art_formats=_ART_VIDEO,
+        music_dirs=20,
+        db_version=0x19,
+    ),
+    ("iPod Video U2", "5.5th Gen"): DeviceCapabilities(
+        supports_video=True,
+        supports_gapless=True,
+        supports_artwork=True,
+        supports_photo=True,
+        cover_art_formats=_ART_VIDEO,
+        music_dirs=20,
+        db_version=0x19,
+    ),
+
+    # ── iPod Classic (all gens): HASH58, gapless, video ───────────────
+    ("iPod Classic", "1st Gen"): DeviceCapabilities(
+        checksum=ChecksumType.HASH58,
+        supports_video=True,
+        supports_gapless=True,
+        supports_artwork=True,
+        supports_photo=True,
+        supports_chapter_image=True,
+        supports_sparse_artwork=True,
+        cover_art_formats=_ART_CLASSIC,
+        music_dirs=50,
+        db_version=0x30,
+    ),
+    ("iPod Classic", "2nd Gen"): DeviceCapabilities(
+        checksum=ChecksumType.HASH58,
+        supports_video=True,
+        supports_gapless=True,
+        supports_artwork=True,
+        supports_photo=True,
+        supports_chapter_image=True,
+        supports_sparse_artwork=True,
+        cover_art_formats=_ART_CLASSIC,
+        music_dirs=50,
+        db_version=0x30,
+    ),
+    ("iPod Classic", "3rd Gen"): DeviceCapabilities(
+        checksum=ChecksumType.HASH58,
+        supports_video=True,
+        supports_gapless=True,
+        supports_artwork=True,
+        supports_photo=True,
+        supports_chapter_image=True,
+        supports_sparse_artwork=True,
+        cover_art_formats=_ART_CLASSIC,
+        music_dirs=50,
+        db_version=0x30,
+    ),
+
+    # ── iPod Mini (no artwork, no video) ──────────────────────────────
+    ("iPod Mini", "1st Gen"): DeviceCapabilities(
+        supports_artwork=False,
+        music_dirs=6,
+        db_version=0x13,
+    ),
+    ("iPod Mini", "2nd Gen"): DeviceCapabilities(
+        supports_artwork=False,
+        music_dirs=6,
+        db_version=0x13,
+    ),
+
+    # ── iPod Nano 1G/2G: small cover art, no video, no gapless ───────
+    ("iPod Nano", "1st Gen"): DeviceCapabilities(
+        supports_artwork=True,
+        supports_photo=True,
+        cover_art_formats=_ART_NANO_1G2G,
+        music_dirs=14,
+        db_version=0x13,
+    ),
+    ("iPod Nano", "2nd Gen"): DeviceCapabilities(
+        supports_artwork=True,
+        supports_photo=True,
+        cover_art_formats=_ART_NANO_1G2G,
+        music_dirs=14,
+        db_version=0x13,
+    ),
+
+    # ── iPod Nano 3G ("Fat"): first Nano with video, HASH58 ──────────
+    ("iPod Nano", "3rd Gen"): DeviceCapabilities(
+        checksum=ChecksumType.HASH58,
+        supports_video=True,
+        supports_gapless=True,
+        supports_artwork=True,
+        supports_photo=True,
+        supports_sparse_artwork=True,
+        cover_art_formats=_ART_CLASSIC,  # shares Classic 1G formats
+        music_dirs=20,
+        db_version=0x30,
+    ),
+
+    # ── iPod Nano 4G: HASH58, rotated artwork (RGB565_LE_90) ─────────
+    ("iPod Nano", "4th Gen"): DeviceCapabilities(
+        checksum=ChecksumType.HASH58,
+        supports_video=True,
+        supports_gapless=True,
+        supports_artwork=True,
+        supports_photo=True,
+        supports_chapter_image=True,
+        supports_sparse_artwork=True,
+        cover_art_formats=_ART_NANO_4G,
+        music_dirs=20,
+        db_version=0x30,
+    ),
+
+    # ── iPod Nano 5G: HASH72, camera, compressed DB ──────────────────
+    ("iPod Nano", "5th Gen"): DeviceCapabilities(
+        checksum=ChecksumType.HASH72,
+        supports_video=True,
+        supports_gapless=True,
+        supports_artwork=True,
+        supports_photo=True,
+        supports_sparse_artwork=True,
+        supports_compressed_db=True,
+        cover_art_formats=_ART_NANO_5G,
+        music_dirs=20,
+        db_version=0x30,
+    ),
+
+    # ── iPod Nano 6G: HASHAB, square touchscreen, no video ───────────
+    ("iPod Nano", "6th Gen"): DeviceCapabilities(
+        checksum=ChecksumType.HASHAB,
+        supports_video=False,   # Nano 6G dropped video playback
+        supports_gapless=True,
+        supports_artwork=True,
+        supports_sparse_artwork=True,
+        supports_compressed_db=True,
+        cover_art_formats=_ART_NANO_5G,  # reuses 5G formats
+        music_dirs=20,
+        db_version=0x30,
+    ),
+
+    # ── iPod Nano 7G: HASHAB, tall touchscreen, video returns ────────
+    ("iPod Nano", "7th Gen"): DeviceCapabilities(
+        checksum=ChecksumType.HASHAB,
+        supports_video=True,
+        supports_gapless=True,
+        supports_artwork=True,
+        supports_sparse_artwork=True,
+        supports_compressed_db=True,
+        cover_art_formats=_ART_NANO_5G,  # assumed same as 5G/6G
+        music_dirs=20,
+        db_version=0x30,
+    ),
+
+    # ── iPod Shuffle 1G: iTunesSD v1, no screen, no artwork ──────────
+    ("iPod Shuffle", "1st Gen"): DeviceCapabilities(
+        is_shuffle=True,
+        shadow_db_version=1,
+        supports_podcast=True,
+        supports_artwork=False,
+        has_screen=False,
+        music_dirs=3,
+        db_version=0x0c,
+    ),
+
+    # ── iPod Shuffle 2G: iTunesSD v1, no screen ──────────────────────
+    ("iPod Shuffle", "2nd Gen"): DeviceCapabilities(
+        is_shuffle=True,
+        shadow_db_version=1,
+        supports_podcast=True,
+        supports_artwork=False,
+        has_screen=False,
+        music_dirs=3,
+        db_version=0x13,
+    ),
+
+    # ── iPod Shuffle 3G: iTunesSD v2, VoiceOver, no screen ───────────
+    ("iPod Shuffle", "3rd Gen"): DeviceCapabilities(
+        is_shuffle=True,
+        shadow_db_version=2,
+        supports_podcast=True,
+        supports_artwork=False,
+        has_screen=False,
+        music_dirs=3,
+        db_version=0x19,
+    ),
+
+    # ── iPod Shuffle 4G: iTunesSD v2, buttons return, no screen ──────
+    ("iPod Shuffle", "4th Gen"): DeviceCapabilities(
+        is_shuffle=True,
+        shadow_db_version=2,
+        supports_podcast=True,
+        supports_artwork=False,
+        has_screen=False,
+        music_dirs=3,
+        db_version=0x19,
+    ),
+}
+
+
+def capabilities_for_family_gen(
+    family: str,
+    generation: str,
+) -> Optional[DeviceCapabilities]:
+    """Return the device capabilities for a (family, generation) pair.
+
+    Returns ``None`` if the pair is not in the lookup table.
+
+    Usage::
+
+        caps = capabilities_for_family_gen("iPod Classic", "2nd Gen")
+        if caps and caps.supports_video:
+            ...
+    """
+    return _FAMILY_GEN_CAPABILITIES.get((family, generation))
 
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗
