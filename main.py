@@ -84,6 +84,11 @@ sys.excepthook = global_exception_handler
 def run_pyqt_app():
     app = QApplication([])
 
+    # Register bundled Noto fonts so the UI renders correctly on systems
+    # that lack them (e.g. Fedora Silverblue, minimal Linux installs).
+    from GUI.fonts import load_bundled_fonts
+    load_bundled_fonts()
+
     # Use custom proxy style for dark scrollbars (CSS scrollbar styling is
     # unreliable on Windows with Fusion — this paints them directly).
     from GUI.styles import DarkScrollbarStyle

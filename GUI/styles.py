@@ -28,8 +28,11 @@ elif sys.platform == "win32":
     _CSS_FONT_STACK = '"Segoe UI"'
 else:
     FONT_FAMILY = "Noto Sans"
-    MONO_FONT_FAMILY = "Noto Mono"
-    _CSS_FONT_STACK = '"Noto Sans", "Ubuntu", "DejaVu Sans"'
+    MONO_FONT_FAMILY = "Noto Sans Mono"
+    _CSS_FONT_STACK = (
+        '"Noto Sans", "Noto Sans Symbols 2", "Noto Emoji",'
+        ' "Ubuntu", "DejaVu Sans"'
+    )
 
 # ── Color palette ────────────────────────────────────────────────────────────
 
