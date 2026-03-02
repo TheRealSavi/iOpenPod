@@ -626,6 +626,8 @@ def _parse_mhod100_playlist_prefs(data, body_offset, body_length) -> dict:
         result["context"] = "playlist_prefs"
         result["bodyLength"] = body_length
         result["fields"] = _scan_nonzero_fields(data, body_offset, body_length)
+        # Preserve raw bytes for round-trip fidelity
+        result["rawBody"] = bytes(data[body_offset:body_offset + body_length])
 
     return result
 
@@ -681,5 +683,7 @@ def _parse_mhod102_playlist_settings(data, body_offset, body_length) -> dict:
         "context": "playlist_settings",
         "bodyLength": body_length,
         "fields": _scan_nonzero_fields(data, body_offset, body_length),
+        # Preserve raw bytes for round-trip fidelity
+        "rawBody": bytes(data[body_offset:body_offset + body_length]),
     }
     return result

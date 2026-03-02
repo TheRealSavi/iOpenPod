@@ -281,10 +281,10 @@ def write_mhbd(
     struct.pack_into('<Q', header, 0x48, lib_pid)
 
     # +0x50: unk_0x50 - observed value 1 in working databases
-    struct.pack_into('<I', header, 0x50, 1)
+    struct.pack_into('<I', header, 0x50, reference_info.get('unk_0x50', 1) if reference_info else 1)
 
     # +0x54: unk_0x54 - observed value 15 in working databases
-    struct.pack_into('<I', header, 0x54, 15)
+    struct.pack_into('<I', header, 0x54, reference_info.get('unk_0x54', 15) if reference_info else 15)
 
     # +0x58: hash58[20] - will be filled by write_checksum()
     # Leave zeros

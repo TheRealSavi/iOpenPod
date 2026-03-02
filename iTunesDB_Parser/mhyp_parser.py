@@ -137,7 +137,11 @@ def parse_playlist(data, offset, header_length, chunk_length) -> dict:
             playlist["Title"] = mhod_result.get("string", "")
         elif mhod_type == 100:
             # Playlist display preferences (binary blob, store raw info)
-            playlist["playlistPrefs"] = mhod_result.get("data", {})
+            prefs_data = mhod_result.get("data", {})
+            playlist["playlistPrefs"] = prefs_data
+            # Preserve raw body bytes for round-trip fidelity
+            if isinstance(prefs_data, dict) and "rawBody" in prefs_data:
+                playlist["rawMhod100"] = prefs_data["rawBody"]
         elif mhod_type == 50:
             # Smart playlist preferences
             smart_playlist_data = mhod_result.get("data", {})
@@ -160,7 +164,11 @@ def parse_playlist(data, offset, header_length, chunk_length) -> dict:
             })
         elif mhod_type == 102:
             # Playlist settings (binary blob, post-iTunes 7)
-            playlist["playlistSettings"] = mhod_result.get("data", {})
+            settings_data = mhod_result.get("data", {})
+            playlist["playlistSettings"] = settings_data
+            # Preserve raw body bytes for round-trip fidelity
+            if isinstance(settings_data, dict) and "rawBody" in settings_data:
+                playlist["rawMhod102"] = settings_data["rawBody"]
         else:
             # Other string MHODs
             field_name = mhod_type_map.get(mhod_type, f"unknown_mhod_{mhod_type}")
