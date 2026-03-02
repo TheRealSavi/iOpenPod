@@ -204,7 +204,7 @@ flowchart TD
     COMPARE --> ART_CHK{Art hash\ndiffers?}
     ART_CHK -- Yes --> UPDATE_ART["UPDATE_ARTWORK"]
 
-    COMPARE --> PLAY_CHK{playCount2 > 0?}
+    COMPARE --> PLAY_CHK{recent_playcount > 0\nor recent_skipcount > 0?}
     PLAY_CHK -- Yes --> SYNC_PLAY["SYNC_PLAYCOUNT"]
 
     COMPARE --> RATE_CHK{Rating\ndiffers?}
@@ -226,7 +226,7 @@ When a fingerprint has multiple mapping entries (same song on multiple albums), 
 | **File changed** | `size + mtime` gate: size diff > 1% AND > 10 KB, or mtime changed AND size changed | `UPDATE_FILE` — re-copy/transcode |
 | **Metadata changed** | Compare 8 fields: title, artist, album, album_artist, genre, year, track_number, disc_number | `UPDATE_METADATA` — update TrackInfo |
 | **Artwork changed** | Compare `art_hash` (MD5 of embedded image bytes) vs mapping's stored hash | `UPDATE_ARTWORK` — mapping update + full ArtworkDB rewrite |
-| **Play count** | `playCount2 > 0` in iTunesDB (iPod increments this between syncs) | `SYNC_PLAYCOUNT` — additive write-back |
+| **Play count** | `recent_playcount > 0` or `recent_skipcount > 0` (from Play Counts file) | `SYNC_PLAYCOUNT` — additive write-back |
 | **Rating** | iPod rating ≠ PC rating, either non-zero | `SYNC_RATING` — last-write-wins (iPod preferred) |
 
 ### Metadata Fields Compared
@@ -383,17 +383,29 @@ For each `ADD_TO_IPOD` item:
 
 ### Stage 5: Sync Play Counts
 
-Play counts use an **additive** strategy: iPod plays add to PC totals.
+Play counts use an **additive** strategy: iPod plays/skips add to PC totals.
 
-The `playCount2` field in iTunesDB records plays since last sync. When reading existing tracks, the executor folds this into the total: `play_count = playCount + playCount2`. The writer resets `playCount2` to 0, so next sync only picks up genuinely new plays.
+#### Play Counts File
 
-If `write_back_to_pc` is enabled in settings, play count deltas are written to PC file metadata:
+The iPod firmware does **not** modify iTunesDB directly.  Instead it creates a separate binary file at `/iPod_Control/iTunes/Play Counts` that records per-track deltas (play count, skip count, rating, timestamps) accumulated since the last sync.
 
-| Format | Tag |
-|--------|-----|
-| MP3 | `PCNT` frame (ID3v2 play counter) |
-| M4A | `----:com.apple.iTunes:PLAY_COUNT` (freeform atom) |
-| FLAC/OGG | `PLAY_COUNT` (Vorbis comment) |
+When reading the existing database (`_read_existing_database`), the executor:
+1. Parses the iTunesDB to get the track list
+2. Parses the Play Counts file (if present) via `iTunesDB_Parser.playcounts`
+3. Merges the deltas: `playCount += recent_plays`, `skipCount += recent_skips`
+4. Stores `recent_playcount` and `recent_skipcount` on each track dict
+
+The diff engine then checks `recent_playcount > 0 or recent_skipcount > 0` to detect tracks needing play count sync.
+
+After the database is written, the Play Counts file is **deleted** (matching libgpod's `playcounts_reset()`) so the iPod creates a fresh one.
+
+If `write_back_to_pc` is enabled in settings, play count and skip count deltas are written to PC file metadata:
+
+| Format | Play Count Tag | Skip Count Tag |
+|--------|---------------|----------------|
+| MP3 | `PCNT` frame (ID3v2 play counter) | `TXXX:SKIP_COUNT` (user text frame) |
+| M4A | `----:com.apple.iTunes:PLAY_COUNT` (freeform atom) | `----:com.apple.iTunes:SKIP_COUNT` (freeform atom) |
+| FLAC/OGG | `PLAY_COUNT` (Vorbis comment) | `SKIP_COUNT` (Vorbis comment) |
 
 ### Stage 6: Sync Ratings
 
@@ -404,8 +416,11 @@ If `write_back_to_pc` is enabled:
 | Format | Tag | Scale |
 |--------|-----|-------|
 | MP3 | `POPM` (Popularimeter, email="iOpenPod") | 0–255 mapped from stars |
-| M4A | `rtng` atom | 0–100 directly |
+| M4A | `----:com.apple.iTunes:RATING` (freeform atom) | 0–100 as string |
 | FLAC/OGG | `RATING` (Vorbis comment) | 0–100 as string |
+
+> **Note:** The M4A `rtng` atom is the Content Advisory field (0=none, 1=explicit, 2=clean)
+> and must NOT be used for star ratings.
 
 ### Stage 7: Write Database
 
