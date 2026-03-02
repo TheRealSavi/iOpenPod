@@ -79,12 +79,37 @@ class TranscodeResult:
 
 
 def find_ffmpeg() -> Optional[str]:
-    """Find ffmpeg binary. Returns path or None."""
+    """Find ffmpeg binary.
+
+    Search order:
+    1. User-configured path in settings
+    2. Bundled binary (auto-downloaded to ~/.iopenpod/bin/)
+    3. System PATH
+    4. Common installation directories
+    """
+    try:
+        from GUI.settings import get_settings
+        custom = get_settings().ffmpeg_path
+        if custom and Path(custom).is_file():
+            return custom
+    except Exception:
+        pass
+
+    # 2. Bundled binary
+    try:
+        from .dependency_manager import get_bundled_ffmpeg
+        bundled = get_bundled_ffmpeg()
+        if bundled:
+            return bundled
+    except Exception:
+        pass
+
+    # 3. System PATH
     ffmpeg = shutil.which("ffmpeg")
     if ffmpeg:
         return ffmpeg
 
-    # Common installation locations
+    # 4. Common installation locations
     common_paths = [
         # Windows
         r"C:\Program Files\ffmpeg\bin\ffmpeg.exe",

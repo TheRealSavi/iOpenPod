@@ -5,12 +5,13 @@ Displayed as a full-page view in the central stack (like the sync review page).
 Matches the dark translucent UI style of the rest of the app.
 """
 
-from PyQt6.QtCore import pyqtSignal, Qt
+from PyQt6.QtCore import pyqtSignal, pyqtSlot, Qt
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QCheckBox, QComboBox, QFrame, QScrollArea, QFileDialog,
 )
 from PyQt6.QtGui import QFont
+from pathlib import Path
 from ..styles import Colors, FONT_FAMILY, Metrics, btn_css
 
 
@@ -240,6 +241,146 @@ class ActionRow(SettingRow):
         self.action_btn.setEnabled(enabled)
 
 
+class FileRow(SettingRow):
+    """Setting row with file path display and browse button (picks a file, not a folder)."""
+
+    changed = pyqtSignal(str)
+
+    def __init__(self, title: str, description: str = "", path: str = "",
+                 filter_str: str = "All Files (*)"):
+        super().__init__(title, description)
+        self._filter_str = filter_str
+
+        right_layout = QHBoxLayout()
+        right_layout.setSpacing(8)
+
+        self.path_label = QLabel(self._truncate(path) if path else "Auto-detect")
+        self.path_label.setFont(QFont(FONT_FAMILY, 9))
+        self.path_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
+        self.path_label.setMinimumWidth(120)
+        self.path_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        right_layout.addWidget(self.path_label)
+
+        self.browse_btn = QPushButton("Browse…")
+        self.browse_btn.setFont(QFont(FONT_FAMILY, 9))
+        self.browse_btn.setFixedWidth(80)
+        self.browse_btn.setStyleSheet(btn_css(
+            bg=Colors.SURFACE_RAISED,
+            bg_hover=Colors.SURFACE_ACTIVE,
+            bg_press=Colors.SURFACE_ALT,
+            border=f"1px solid {Colors.BORDER}",
+            padding="4px 8px",
+        ))
+        self.browse_btn.clicked.connect(self._browse)
+        right_layout.addWidget(self.browse_btn)
+
+        self.clear_btn = QPushButton("✕")
+        self.clear_btn.setFont(QFont(FONT_FAMILY, 9))
+        self.clear_btn.setFixedWidth(28)
+        self.clear_btn.setToolTip("Reset to auto-detect")
+        self.clear_btn.setStyleSheet(btn_css(
+            bg="transparent",
+            bg_hover=Colors.SURFACE_ACTIVE,
+            bg_press=Colors.SURFACE_ALT,
+            fg=Colors.TEXT_TERTIARY,
+            border="none",
+            padding="2px",
+        ))
+        self.clear_btn.clicked.connect(self._clear)
+        right_layout.addWidget(self.clear_btn)
+
+        container = QWidget()
+        container.setLayout(right_layout)
+        self.add_control(container)
+
+        self._full_path = path
+
+    def _truncate(self, path: str) -> str:
+        if len(path) > 40:
+            return "…" + path[-38:]
+        return path
+
+    def _browse(self):
+        start_dir = str(Path(self._full_path).parent) if self._full_path else ""
+        filepath, _ = QFileDialog.getOpenFileName(
+            self, "Select File", start_dir, self._filter_str,
+        )
+        if filepath:
+            self._full_path = filepath
+            self.path_label.setText(self._truncate(filepath))
+            self.changed.emit(filepath)
+
+    def _clear(self):
+        self._full_path = ""
+        self.path_label.setText("Auto-detect")
+        self.changed.emit("")
+
+    @property
+    def value(self) -> str:
+        return self._full_path
+
+    @value.setter
+    def value(self, v: str):
+        self._full_path = v
+        self.path_label.setText(self._truncate(v) if v else "Auto-detect")
+
+
+class ToolRow(SettingRow):
+    """Setting row showing tool status with a Download button."""
+
+    download_clicked = pyqtSignal()
+
+    def __init__(self, title: str, description: str = ""):
+        super().__init__(title, description)
+
+        right_layout = QHBoxLayout()
+        right_layout.setSpacing(8)
+
+        self.status_label = QLabel("Checking…")
+        self.status_label.setFont(QFont(FONT_FAMILY, 9))
+        self.status_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
+        right_layout.addWidget(self.status_label)
+
+        self.download_btn = QPushButton("Download")
+        self.download_btn.setFont(QFont(FONT_FAMILY, 9))
+        self.download_btn.setFixedWidth(90)
+        self.download_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.download_btn.setStyleSheet(btn_css(
+            bg=Colors.ACCENT,
+            bg_hover=Colors.ACCENT_LIGHT,
+            bg_press=Colors.ACCENT,
+            fg="#000000",
+            border="none",
+            padding="4px 8px",
+        ))
+        self.download_btn.clicked.connect(self.download_clicked.emit)
+        self.download_btn.hide()
+        right_layout.addWidget(self.download_btn)
+
+        container = QWidget()
+        container.setLayout(right_layout)
+        self.add_control(container)
+
+    def set_status(self, found: bool, path: str = ""):
+        """Update the status display."""
+        if found:
+            display = path if len(path) <= 40 else "…" + path[-38:]
+            self.status_label.setText(f"✓ {display}")
+            self.status_label.setStyleSheet(f"color: {Colors.SUCCESS}; background: transparent; border: none;")
+            self.download_btn.hide()
+        else:
+            self.status_label.setText("Not found")
+            self.status_label.setStyleSheet(f"color: {Colors.WARNING}; background: transparent; border: none;")
+            self.download_btn.show()
+
+    def set_downloading(self):
+        """Show downloading state."""
+        self.download_btn.setEnabled(False)
+        self.download_btn.setText("Downloading…")
+        self.status_label.setText("Downloading…")
+        self.status_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
+
+
 # ── Main settings page ─────────────────────────────────────────────────────
 
 class SettingsPage(QWidget):
@@ -301,6 +442,37 @@ class SettingsPage(QWidget):
         layout = QVBoxLayout(content)
         layout.setContentsMargins(24, 8, 24, 24)
         layout.setSpacing(12)
+
+        # ── EXTERNAL TOOLS section ──────────────────────────────────────────
+        layout.addWidget(self._section_label("EXTERNAL TOOLS"))
+
+        self.ffmpeg_tool = ToolRow(
+            "FFmpeg",
+            "Required for transcoding FLAC, OGG, and other formats to iPod-compatible audio.",
+        )
+        self.ffmpeg_tool.download_clicked.connect(self._download_ffmpeg)
+        layout.addWidget(self.ffmpeg_tool)
+
+        self.fpcalc_tool = ToolRow(
+            "fpcalc (Chromaprint)",
+            "Required for acoustic fingerprinting, which identifies tracks even after re-encoding.",
+        )
+        self.fpcalc_tool.download_clicked.connect(self._download_fpcalc)
+        layout.addWidget(self.fpcalc_tool)
+
+        self.ffmpeg_path = FileRow(
+            "FFmpeg Path Override",
+            "Point to a custom ffmpeg binary. Leave empty to auto-detect.",
+            filter_str="FFmpeg (ffmpeg ffmpeg.exe);;All Files (*)",
+        )
+        layout.addWidget(self.ffmpeg_path)
+
+        self.fpcalc_path = FileRow(
+            "fpcalc Path Override",
+            "Point to a custom fpcalc binary. Leave empty to auto-detect.",
+            filter_str="fpcalc (fpcalc fpcalc.exe);;All Files (*)",
+        )
+        layout.addWidget(self.fpcalc_path)
 
         # ── SYNC section ────────────────────────────────────────────────────
         layout.addWidget(self._section_label("SYNC"))
@@ -437,9 +609,14 @@ class SettingsPage(QWidget):
         self.show_art.value = s.show_art_in_tracklist
         self.transcode_cache_dir.value = s.transcode_cache_dir
         self.settings_dir.value = s.settings_dir
+        self.ffmpeg_path.value = s.ffmpeg_path
+        self.fpcalc_path.value = s.fpcalc_path
 
         self.backup_dir.value = s.backup_dir
         self.backup_before_sync.value = s.backup_before_sync
+
+        # Refresh tool status indicators
+        self._refresh_tool_status()
 
         # Max backups → combo text
         max_map = {0: "Unlimited", 5: "5", 10: "10", 20: "20"}
@@ -480,6 +657,8 @@ class SettingsPage(QWidget):
             self.show_art.changed.connect(self._save)
             self.transcode_cache_dir.changed.connect(self._save)
             self.settings_dir.changed.connect(self._save)
+            self.ffmpeg_path.changed.connect(self._save_and_refresh_tools)
+            self.fpcalc_path.changed.connect(self._save_and_refresh_tools)
             self.backup_dir.changed.connect(self._save)
             self.backup_before_sync.changed.connect(self._save)
             self.max_backups.changed.connect(self._save)
@@ -494,6 +673,8 @@ class SettingsPage(QWidget):
         s.show_art_in_tracklist = self.show_art.value
         s.transcode_cache_dir = self.transcode_cache_dir.value
         s.settings_dir = self.settings_dir.value
+        s.ffmpeg_path = self.ffmpeg_path.value
+        s.fpcalc_path = self.fpcalc_path.value
         s.backup_dir = self.backup_dir.value
         s.backup_before_sync = self.backup_before_sync.value
 
@@ -526,3 +707,66 @@ class SettingsPage(QWidget):
     def _on_close(self):
         """Go back — settings are already saved on every change."""
         self.closed.emit()
+
+    def _save_and_refresh_tools(self, *_args):
+        """Save settings then refresh tool status indicators."""
+        self._save()
+        self._refresh_tool_status()
+
+    def _refresh_tool_status(self):
+        """Check whether ffmpeg and fpcalc are reachable and update the UI."""
+        from SyncEngine.transcoder import find_ffmpeg
+        from SyncEngine.audio_fingerprint import find_fpcalc
+
+        ffmpeg = find_ffmpeg()
+        self.ffmpeg_tool.set_status(bool(ffmpeg), ffmpeg or "")
+
+        fpcalc = find_fpcalc()
+        self.fpcalc_tool.set_status(bool(fpcalc), fpcalc or "")
+
+    def _download_ffmpeg(self):
+        """Download FFmpeg in a background thread."""
+        self.ffmpeg_tool.set_downloading()
+        import threading
+
+        def _do():
+            from SyncEngine.dependency_manager import download_ffmpeg
+            download_ffmpeg()
+            # Update UI from main thread
+            from PyQt6.QtCore import QMetaObject, Qt as QtCore_Qt
+            QMetaObject.invokeMethod(
+                self, "_on_ffmpeg_downloaded",
+                QtCore_Qt.ConnectionType.QueuedConnection,
+            )
+
+        threading.Thread(target=_do, daemon=True).start()
+
+    def _download_fpcalc(self):
+        """Download fpcalc in a background thread."""
+        self.fpcalc_tool.set_downloading()
+        import threading
+
+        def _do():
+            from SyncEngine.dependency_manager import download_fpcalc
+            download_fpcalc()
+            from PyQt6.QtCore import QMetaObject, Qt as QtCore_Qt
+            QMetaObject.invokeMethod(
+                self, "_on_fpcalc_downloaded",
+                QtCore_Qt.ConnectionType.QueuedConnection,
+            )
+
+        threading.Thread(target=_do, daemon=True).start()
+
+    @pyqtSlot()
+    def _on_ffmpeg_downloaded(self):
+        """Called on main thread after FFmpeg download completes."""
+        self._refresh_tool_status()
+        self.ffmpeg_tool.download_btn.setEnabled(True)
+        self.ffmpeg_tool.download_btn.setText("Download")
+
+    @pyqtSlot()
+    def _on_fpcalc_downloaded(self):
+        """Called on main thread after fpcalc download completes."""
+        self._refresh_tool_status()
+        self.fpcalc_tool.download_btn.setEnabled(True)
+        self.fpcalc_tool.download_btn.setText("Download")

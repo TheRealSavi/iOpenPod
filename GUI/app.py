@@ -2,8 +2,12 @@ import logging
 import os
 import sys
 import traceback
-from PyQt6.QtCore import QRunnable, pyqtSignal, pyqtSlot, QObject, QThreadPool, QThread
-from PyQt6.QtWidgets import QWidget, QMainWindow, QHBoxLayout, QMessageBox, QStackedWidget
+from PyQt6.QtCore import QRunnable, pyqtSignal, pyqtSlot, QObject, QThreadPool, QThread, Qt, QTimer
+from PyQt6.QtGui import QFont
+from PyQt6.QtWidgets import (
+    QWidget, QMainWindow, QHBoxLayout, QMessageBox, QStackedWidget,
+    QDialog, QVBoxLayout, QLabel, QPushButton, QProgressBar,
+)
 from GUI.widgets.musicBrowser import MusicBrowser
 from GUI.widgets.sidebar import Sidebar
 from GUI.widgets.syncReview import SyncReviewWidget, SyncWorker, PCFolderDialog, SyncExecuteWorker
@@ -11,12 +15,203 @@ from GUI.widgets.settingsPage import SettingsPage
 from GUI.widgets.backupBrowser import BackupBrowserWidget
 from GUI.settings import get_settings
 from GUI.notifications import Notifier
+from GUI.styles import Colors, FONT_FAMILY, btn_css
 import threading
 
 logger = logging.getLogger(__name__)
 
 # Paths relative to project root
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+# ── Styled Dialogs ──────────────────────────────────────────────────────────
+
+class _MissingToolsDialog(QDialog):
+    """Dark-themed dialog prompting the user to download missing tools."""
+
+    def __init__(
+        self,
+        parent: QWidget,
+        tool_list: str,
+        can_download: bool,
+        detail_lines: str = "",
+    ):
+        super().__init__(parent)
+        self.setWindowTitle("Missing Tools")
+        self.setFixedWidth(420)
+        self.setStyleSheet(f"""
+            QDialog {{
+                background: #222233;
+                color: white;
+            }}
+        """)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(28, 24, 28, 24)
+        layout.setSpacing(10)
+
+        # Icon + title row
+        icon_label = QLabel("⚠️")
+        icon_label.setFont(QFont(FONT_FAMILY, 22))
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(icon_label)
+
+        title = QLabel(f"{tool_list} Not Found")
+        title.setFont(QFont(FONT_FAMILY, 14, QFont.Weight.Bold))
+        title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setWordWrap(True)
+        layout.addWidget(title)
+
+        layout.addSpacing(4)
+
+        if can_download:
+            body = QLabel(
+                "iOpenPod can download these automatically (~80 MB).\n"
+                "Download now?"
+            )
+        else:
+            body = QLabel(detail_lines)
+        body.setFont(QFont(FONT_FAMILY, 10))
+        body.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
+        body.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        body.setWordWrap(True)
+        layout.addWidget(body)
+
+        layout.addSpacing(12)
+
+        # Buttons
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(12)
+
+        if can_download:
+            no_btn = QPushButton("Not Now")
+            no_btn.setFont(QFont(FONT_FAMILY, 11))
+            no_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            no_btn.setMinimumHeight(40)
+            no_btn.setStyleSheet(btn_css(
+                bg=Colors.SURFACE_RAISED,
+                bg_hover=Colors.SURFACE_HOVER,
+                bg_press=Colors.SURFACE_ACTIVE,
+                border=f"1px solid {Colors.BORDER_SUBTLE}",
+                padding="8px 24px",
+            ))
+            no_btn.clicked.connect(self.reject)
+            btn_row.addWidget(no_btn)
+
+            yes_btn = QPushButton("Download")
+            yes_btn.setFont(QFont(FONT_FAMILY, 11))
+            yes_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            yes_btn.setMinimumHeight(40)
+            yes_btn.setStyleSheet(btn_css(
+                bg=Colors.ACCENT_DIM,
+                bg_hover=Colors.ACCENT_HOVER,
+                bg_press=Colors.ACCENT_PRESS,
+                border=f"1px solid {Colors.ACCENT_BORDER}",
+                padding="8px 24px",
+            ))
+            yes_btn.clicked.connect(self.accept)
+            btn_row.addWidget(yes_btn)
+        else:
+            ok_btn = QPushButton("OK")
+            ok_btn.setFont(QFont(FONT_FAMILY, 11))
+            ok_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            ok_btn.setMinimumHeight(40)
+            ok_btn.setStyleSheet(btn_css(
+                bg=Colors.SURFACE_RAISED,
+                bg_hover=Colors.SURFACE_HOVER,
+                bg_press=Colors.SURFACE_ACTIVE,
+                border=f"1px solid {Colors.BORDER_SUBTLE}",
+                padding="8px 24px",
+            ))
+            ok_btn.clicked.connect(self.reject)
+            btn_row.addWidget(ok_btn)
+
+            # If only ffmpeg is missing, offer to continue
+            self._continue_btn: QPushButton | None = None
+
+        layout.addLayout(btn_row)
+
+    def add_continue_option(self):
+        """Add a 'Continue Anyway' button (for ffmpeg-only missing)."""
+        btn_layout = self.layout()
+        assert isinstance(btn_layout, QVBoxLayout)
+        # Get the last item which is the btn_row layout
+        btn_row_item = btn_layout.itemAt(btn_layout.count() - 1)
+        row_layout = btn_row_item.layout() if btn_row_item else None
+        if row_layout is not None:
+            cont_btn = QPushButton("Continue Anyway")
+            cont_btn.setFont(QFont(FONT_FAMILY, 11))
+            cont_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            cont_btn.setMinimumHeight(40)
+            cont_btn.setStyleSheet(btn_css(
+                bg=Colors.ACCENT_DIM,
+                bg_hover=Colors.ACCENT_HOVER,
+                bg_press=Colors.ACCENT_PRESS,
+                border=f"1px solid {Colors.ACCENT_BORDER}",
+                padding="8px 24px",
+            ))
+            cont_btn.clicked.connect(self.accept)
+            row_layout.addWidget(cont_btn)
+
+
+class _DownloadProgressDialog(QDialog):
+    """Dark-themed modal progress dialog for downloading tools."""
+
+    def __init__(self, parent: QWidget):
+        super().__init__(parent)
+        self.setWindowTitle("Downloading")
+        self.setFixedSize(380, 180)
+        self.setModal(True)
+        self.setWindowFlags(
+            self.windowFlags()
+            & ~Qt.WindowType.WindowCloseButtonHint  # type: ignore[operator]
+        )
+        self.setStyleSheet(f"""
+            QDialog {{
+                background: #222233;
+                color: white;
+            }}
+        """)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(28, 24, 28, 24)
+        layout.setSpacing(14)
+
+        title = QLabel("Downloading Tools…")
+        title.setFont(QFont(FONT_FAMILY, 13, QFont.Weight.Bold))
+        title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title)
+
+        self._status = QLabel("Preparing download…")
+        self._status.setFont(QFont(FONT_FAMILY, 10))
+        self._status.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
+        self._status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self._status)
+
+        bar = QProgressBar()
+        bar.setRange(0, 0)  # indeterminate
+        bar.setFixedHeight(6)
+        bar.setTextVisible(False)
+        bar.setStyleSheet(f"""
+            QProgressBar {{
+                background: {Colors.SURFACE};
+                border: none;
+                border-radius: 3px;
+            }}
+            QProgressBar::chunk {{
+                background: {Colors.ACCENT};
+                border-radius: 3px;
+            }}
+        """)
+        layout.addWidget(bar)
+
+        layout.addStretch()
+
+    def set_status(self, text: str):
+        """Update the status label (must be called from the main thread)."""
+        self._status.setText(text)
 
 
 class CancellationToken:
@@ -1010,6 +1205,7 @@ class MainWindow(QMainWindow):
             f"Failed to rename iPod:\n{error_msg}"
         )
 
+    @pyqtSlot()
     def startPCSync(self):
         """Start the PC ↔ iPod sync process."""
         device = DeviceManager.get_instance()
@@ -1024,27 +1220,45 @@ class MainWindow(QMainWindow):
         # Pre-flight: check for required external tools
         from SyncEngine.audio_fingerprint import is_fpcalc_available
         from SyncEngine.transcoder import is_ffmpeg_available
+        from SyncEngine.dependency_manager import is_platform_supported
 
-        missing = []
-        if not is_fpcalc_available():
-            missing.append("fpcalc (Chromaprint) — required for fingerprinting.\n  Install from: https://acoustid.org/chromaprint")
-        if not is_ffmpeg_available():
-            missing.append("ffmpeg — needed to transcode FLAC/OGG/etc.\n  Without it, only MP3 and M4A files can be synced.")
+        missing_fpcalc = not is_fpcalc_available()
+        missing_ffmpeg = not is_ffmpeg_available()
 
-        if missing:
-            msg = "Some tools are not available:\n\n• " + "\n\n• ".join(missing)
-            if not is_fpcalc_available():
-                # fpcalc is required — block sync
-                QMessageBox.critical(self, "Missing Dependency", msg + "\n\nSync cannot proceed without fpcalc.")
-                return
-            else:
-                # ffmpeg is optional — warn and let user continue
-                reply = QMessageBox.warning(
-                    self, "Missing Tool", msg + "\n\nContinue anyway?",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                )
-                if reply != QMessageBox.StandardButton.Yes:
+        if missing_fpcalc or missing_ffmpeg:
+            names = []
+            if missing_fpcalc:
+                names.append("fpcalc (Chromaprint)")
+            if missing_ffmpeg:
+                names.append("FFmpeg")
+            tool_list = " and ".join(names)
+
+            if is_platform_supported():
+                dlg = _MissingToolsDialog(self, tool_list, can_download=True)
+                if dlg.exec() == QDialog.DialogCode.Accepted:
+                    self._download_missing_tools_then_sync(missing_ffmpeg, missing_fpcalc)
                     return
+                elif missing_fpcalc:
+                    return
+                # ffmpeg missing but user declined — let them continue with MP3/M4A only
+            else:
+                # Platform doesn't support auto-download
+                lines = ""
+                if missing_fpcalc:
+                    lines += "fpcalc is required for sync.\nInstall from: https://acoustid.org/chromaprint\n\n"
+                if missing_ffmpeg:
+                    lines += "FFmpeg is needed for transcoding.\nInstall from: https://ffmpeg.org\n\n"
+                lines += "You can also set custom paths in\nSettings → External Tools."
+
+                dlg = _MissingToolsDialog(
+                    self, tool_list, can_download=False, detail_lines=lines,
+                )
+                if not missing_fpcalc:
+                    dlg.add_continue_option()
+
+                if dlg.exec() != QDialog.DialogCode.Accepted:
+                    return
+                # User clicked Continue Anyway (only possible when fpcalc is present)
 
         # Show folder selection dialog
         dialog = PCFolderDialog(self, self._last_pc_folder)
@@ -1076,6 +1290,40 @@ class MainWindow(QMainWindow):
         self._sync_worker.finished.connect(self._onSyncDiffComplete)
         self._sync_worker.error.connect(self._onSyncError)
         self._sync_worker.start()
+
+    def _download_missing_tools_then_sync(self, need_ffmpeg: bool, need_fpcalc: bool):
+        """Download missing tools in a background thread, then restart sync."""
+        progress = _DownloadProgressDialog(self)
+        progress.show()
+
+        # Keep a reference so it isn't garbage collected
+        self._dl_progress = progress
+
+        import threading
+
+        def _do():
+            from SyncEngine.dependency_manager import download_ffmpeg, download_fpcalc
+            if need_fpcalc:
+                download_fpcalc()
+            if need_ffmpeg:
+                download_ffmpeg()
+
+            from PyQt6.QtCore import QMetaObject, Qt as QtCore_Qt
+            QMetaObject.invokeMethod(
+                self, "_on_tools_downloaded",
+                QtCore_Qt.ConnectionType.QueuedConnection,
+            )
+
+        threading.Thread(target=_do, daemon=True).start()
+
+    @pyqtSlot()
+    def _on_tools_downloaded(self):
+        """Called on main thread after tool downloads finish."""
+        if hasattr(self, '_dl_progress') and self._dl_progress:
+            self._dl_progress.close()
+            self._dl_progress = None
+        # Re-run sync now that tools should be available
+        self.startPCSync()
 
     def _onSyncDiffComplete(self, plan):
         """Called when sync diff calculation is complete."""
@@ -1231,7 +1479,6 @@ class MainWindow(QMainWindow):
             )
 
         # Reload the database to show changes (delay lets OS flush writes)
-        from PyQt6.QtCore import QTimer
         QTimer.singleShot(500, self._rescanAfterSync)
 
     def _rescanAfterSync(self):

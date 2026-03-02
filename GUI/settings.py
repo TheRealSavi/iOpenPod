@@ -80,6 +80,13 @@ class AppSettings:
     # Off by default — users must opt in to having source files modified.
     write_back_to_pc: bool = False
 
+    # ── External Tools ────────────────────────────────────────────────────
+    # Custom path to ffmpeg binary. Empty = auto-detect (bundled → system PATH).
+    ffmpeg_path: str = ""
+
+    # Custom path to fpcalc binary. Empty = auto-detect (bundled → system PATH).
+    fpcalc_path: str = ""
+
     # ── Transcoding ─────────────────────────────────────────────────────────
     # AAC bitrate for lossy transcodes (OGG/Opus/WMA → AAC).
     # Common values: 128, 192, 256, 320. Higher = better quality, more space.

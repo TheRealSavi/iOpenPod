@@ -45,13 +45,37 @@ FINGERPRINT_TAG_MP4 = "----:com.apple.iTunes:ACOUSTID_FINGERPRINT"
 
 
 def find_fpcalc() -> Optional[str]:
-    """Find the fpcalc binary. Returns path or None."""
-    # Check if in PATH
+    """Find the fpcalc binary.
+
+    Search order:
+    1. User-configured path in settings
+    2. Bundled binary (auto-downloaded to ~/.iopenpod/bin/)
+    3. System PATH
+    4. Common installation directories
+    """
+    try:
+        from GUI.settings import get_settings
+        custom = get_settings().fpcalc_path
+        if custom and Path(custom).is_file():
+            return custom
+    except Exception:
+        pass
+
+    # 2. Bundled binary
+    try:
+        from SyncEngine.dependency_manager import get_bundled_fpcalc
+        bundled = get_bundled_fpcalc()
+        if bundled:
+            return bundled
+    except Exception:
+        pass
+
+    # 3. System PATH
     fpcalc = shutil.which("fpcalc")
     if fpcalc:
         return fpcalc
 
-    # Common installation locations
+    # 4. Common installation locations
     common_paths = [
         # Windows
         r"C:\Program Files\fpcalc\fpcalc.exe",
