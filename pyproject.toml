@@ -40,6 +40,16 @@ dependencies = [
 [dependency-groups]
 dev = []
 
+[tool.hatch.build.targets.wheel]
+packages = [
+    "GUI",
+    "iTunesDB_Parser",
+    "iTunesDB_Writer",
+    "ArtworkDB_Parser",
+    "ArtworkDB_Writer",
+    "SyncEngine",
+]
+
 [tool.flake8]
 # Allow line breaks before binary operators (W503) — matches Black's style
 extend-ignore = ["W503"]
