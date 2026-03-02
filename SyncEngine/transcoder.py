@@ -12,12 +12,18 @@ iPod-native formats (no transcoding needed):
 """
 
 import subprocess
+import sys
 import logging
 import shutil
 from pathlib import Path
 from typing import Optional
 from dataclasses import dataclass
 from enum import Enum
+
+# Prevents console windows from flashing on Windows during subprocess calls
+_SP_KWARGS: dict = (
+    {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
+)
 
 logger = logging.getLogger(__name__)
 
@@ -263,6 +269,7 @@ def transcode(
             encoding="utf-8",
             errors="replace",  # Handle non-UTF8 bytes gracefully
             timeout=300,  # 5 minute timeout
+            **_SP_KWARGS,
         )
 
         if result.returncode != 0:

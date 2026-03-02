@@ -47,12 +47,18 @@ import os
 import plistlib
 import re
 import struct
+import subprocess
 import sys
 from typing import Optional
 
 from ipod_models import IPOD_USB_PIDS as IPOD_PIDS
 
 logger = logging.getLogger(__name__)
+
+# Prevents console windows from flashing on Windows during subprocess calls
+_SP_KWARGS: dict = (
+    {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
+)
 
 # Apple USB Vendor ID
 APPLE_VID = 0x05AC
@@ -893,6 +899,7 @@ def _find_mount_windows(usb_serial: str) -> Optional[str]:
             ["wmic", "diskdrive", "where", "InterfaceType='USB'",
              "get", "DeviceID,PNPDeviceID", "/format:csv"],
             capture_output=True, text=True, timeout=15,
+            **_SP_KWARGS,
         )
         if proc.returncode != 0:
             # wmic might not be available on newer Windows — try PowerShell
@@ -922,6 +929,7 @@ def _find_mount_windows(usb_serial: str) -> Optional[str]:
              f'Antecedent="\\\\\\\\.\\\\{escaped_id}"',
              "get", "Dependent", "/format:csv"],
             capture_output=True, text=True, timeout=15,
+            **_SP_KWARGS,
         )
 
         # This is getting complex — fall back to PowerShell approach
@@ -966,6 +974,7 @@ def _find_mount_windows_ps(usb_serial: str) -> Optional[str]:
         proc = subprocess.run(
             ["powershell", "-NoProfile", "-Command", ps_script],
             capture_output=True, text=True, timeout=20,
+            **_SP_KWARGS,
         )
         if proc.returncode == 0 and proc.stdout.strip():
             drive_letter = proc.stdout.strip().splitlines()[0].strip()

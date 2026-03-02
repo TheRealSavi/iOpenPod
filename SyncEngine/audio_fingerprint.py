@@ -10,10 +10,16 @@ Storage: Fingerprints are stored in file metadata as ACOUSTID_FINGERPRINT tag.
 """
 
 import subprocess
+import sys
 import logging
 from pathlib import Path
 from typing import Optional, Any
 import shutil
+
+# Prevents console windows from flashing on Windows during subprocess calls
+_SP_KWARGS: dict = (
+    {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
+)
 
 try:
     import mutagen
@@ -121,6 +127,7 @@ def compute_fingerprint(filepath: str | Path, fpcalc_path: Optional[str] = None)
             capture_output=True,
             text=True,
             timeout=60,
+            **_SP_KWARGS,
         )
 
         if result.returncode != 0:
