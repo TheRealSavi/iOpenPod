@@ -1,10 +1,30 @@
+"""
+iTunesDB constants — chunk identifiers, version maps, MHOD type definitions,
+media type bitmask, and playlist sort order values.
+
+Cross-referenced against:
+  - iPodLinux wiki: https://web.archive.org/web/20081006030946/http://ipodlinux.org/wiki/ITunesDB
+  - libgpod itdb_itunesdb.c, itdb.h
+"""
+
 # maps the id used in mhsd to the proper header marker
 chunk_type_map = {
-    1: "mhlt",  # track list chunk
-    2: "mhlp",  # playlist list chunk
-    3: "mhlp_podcast",  # podcast list (same format as playlist, different dataset)
-    4: "mhla",  # Album Lists (iTunes 7.1>)
-    5: "mhsp",  # Smart playlist list (iTunes 7.3>)
+    1: "mhlt",  # Track list (contains MHIT children)
+    2: "mhlp",  # Playlist list (contains MHYP children) — regular playlists
+    3: "mhlp_podcast",  # Podcast list (same MHLP format, different dataset)
+                        # NOTE: Type 3 MHSD MUST come between type 1 and type 2
+                        # for the iPod to list podcasts correctly.
+    4: "mhla",  # Album list (iTunes 7.1+; contains MHIA children)
+    5: "mhsp",  # Smart playlist list (iTunes 7.3+; contains MHYP children)
+    # Types 6–10 were added in iTunes 9+ for Genius and other features.
+    # Their child chunk reuses the 'mhli' magic (same as ArtworkDB's image
+    # list, but here it is a generic item list — different semantics).
+    # We skip their contents but must recognise them to avoid crashing.
+    6: "mhsd_type_6",   # Genius suggestions list
+    7: "mhsd_type_7",   # (reserved, rarely seen)
+    8: "mhsd_type_8",   # (reserved, rarely seen)
+    9: "mhsd_type_9",   # Genius Chill list
+    10: "mhsd_type_10",  # Genius Mix list
 }
 
 # maps the database version to an iTunes version
@@ -91,9 +111,12 @@ def get_version_name(version_hex: int | str) -> str:
 
 
 # maps the chunk header marker to a readable name
-# the identifier appears to be backward, I estimate that it should read something like
-# DataBaseHeaderMarker(DBHM) and DataStructureHeaderMarker(DSHM) and
-# TrackListHeaderMarker(TLHM)...
+# The identifiers read backwards conceptually — the convention is:
+#   mhbd = DataBase Header Marker     mhsd = DataSet Header Marker
+#   mhlt = Track List Header Marker   mhit = Track Item Header Marker
+#   mhlp = Playlist List Header Marker mhla = Album List Header Marker
+#   mhyp = plaYlist Header Marker     mhip = playlist Item Header Marker
+#   mhia = album Item Header Marker   mhod = Data Object Header Marker
 identifier_readable_map = {
     "mhbd": "Database",
     "mhsd": "Dataset",
@@ -109,6 +132,20 @@ identifier_readable_map = {
 }
 
 # maps the mhod type to its readable name
+#
+# Types 1-14:   Track string MHODs (standard sub-header at offset 24)
+# Types 15-16:  Podcast URL MHODs (UTF-8 string at offset 24, NO sub-header)
+# Type 17:      Chapter data (big-endian atom-based binary blob)
+# Types 18-31:  Track string MHODs (standard sub-header)
+# Type 32:      Unknown binary data for video tracks (not a string!)
+# Types 33-44:  Track string MHODs (standard sub-header)
+# Type 50:      Smart playlist preferences (SPLPref binary)
+# Type 51:      Smart playlist rules (SLst — BIG-endian binary)
+# Type 52:      Library playlist sorted index (binary)
+# Type 53:      Library playlist jump table (binary)
+# Type 100:     Playlist column prefs (MHYP child) or position (MHIP child)
+# Type 102:     Playlist settings (post-iTunes 7, binary blob)
+# Types 200-204: Album item string MHODs (standard sub-header)
 mhod_type_map = {
     1: "Title",
     2: "Location",
@@ -162,4 +199,75 @@ mhod_type_map = {
     202: "Sort Artist (Used by Album Item)",
     203: "Podcast URL (Used by Album Item)",
     204: "Show (Used by Album Item)"
+}
+
+
+# ============================================================
+# Media Type bitmask values (MHIT offset 208 / 0xD0)
+# From libgpod ItdbMediatype enum and iPodLinux wiki.
+# ============================================================
+MEDIA_TYPE_MAP = {
+    0x00000000: "Audio/Video",    # shows in both audio and video menus
+    0x00000001: "Audio",
+    0x00000002: "Video",          # Movie
+    0x00000004: "Podcast",
+    0x00000006: "Video Podcast",
+    0x00000008: "Audiobook",
+    0x00000020: "Music Video",
+    0x00000040: "TV Show",
+    0x00000060: "TV Show (alt)",
+    0x00000100: "Ringtone",
+    0x00000200: "Rental",         # iTunes rental movie
+    0x00040000: "iTunes Pass",
+    0x00060000: "Memo / Voice Memo",
+}
+
+
+# ============================================================
+# Playlist Sort Order (MHYP offset 44 / 0x2C)
+# From iPodLinux wiki "List Sort Order" and libgpod ItdbPlaylistSortOrder.
+# ============================================================
+PLAYLIST_SORT_ORDER_MAP = {
+    0: "default (unset)",
+    1: "playlist order (manual)",
+    # 2: unknown
+    3: "title",
+    4: "album",
+    5: "artist",
+    6: "bitrate",
+    7: "genre",
+    8: "kind",
+    9: "date modified",
+    10: "track number",
+    11: "size",
+    12: "time",
+    13: "year",
+    14: "sample rate",
+    15: "comment",
+    16: "date added",
+    17: "equalizer",
+    18: "composer",
+    # 19: unknown
+    20: "play count",
+    21: "last played",
+    22: "disc number",
+    23: "my rating",
+    24: "release date",     # used for Podcasts list
+    25: "BPM",
+    26: "grouping",
+    27: "category",
+    28: "description",
+    29: "show",
+    30: "season",
+    31: "episode number",
+}
+
+
+# ============================================================
+# Explicit / content advisory flag values (MHIT offset 146 / 0x92)
+# ============================================================
+EXPLICIT_FLAG_MAP = {
+    0: "none",
+    1: "explicit",
+    2: "clean",
 }

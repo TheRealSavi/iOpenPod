@@ -1,3 +1,37 @@
+"""
+MHBD (Database Header) parser.
+
+The MHBD chunk is the root of the iTunesDB file.  It contains global
+metadata (version, IDs, crypto hashes) and all MHSD (DataSet) children.
+
+Field layout (offset from chunk start):
+    +0x00 (0):   'mhbd' magic (4B)
+    +0x04 (4):   header_length (4B) — 0x68 for dbversion <= 0x15, 0xBC for >= 0x17
+    +0x08 (8):   total_length (4B) — entire file size
+    +0x0C (12):  unk1 (4B) — always 1
+    +0x10 (16):  version_number (4B) — see constants.version_map
+    +0x14 (20):  children_count (4B) — number of MHSD children (2–5)
+    +0x18 (24):  database_id (8B) — dbid, not checked by iPod, zeroed before hashing
+    +0x20 (32):  platform (2B) — 1=Mac, 2=Windows
+    +0x22 (34):  unk_0x22 (2B)
+    +0x24 (36):  id_0x24 (8B) — secondary 64-bit ID (dbversion 0x11+)
+    +0x2C (44):  unk_0x2c (4B)
+    +0x30 (48):  hashingScheme (2B) — 0x01 for Nano 3G / Classic (dbversion 0x19+)
+    +0x32 (50):  unk_0x32 (20B) — zeroed before hashing on Nano 3G / Classic
+    +0x46 (70):  language (2B) — e.g. 'en' (dbversion 0x13+)
+    +0x48 (72):  lib_persist_id (8B) — Library Persistent ID (dbversion 0x14+)
+    +0x50 (80):  unk_0x50 (4B)
+    +0x54 (84):  unk_0x54 (4B)
+    +0x58 (88):  hash58 (20B) — HMAC-SHA1 for Classic/Nano 3G-4G (dbversion 0x19+)
+    +0x6C (108): timezone_offset (4B, signed) — seconds from UTC
+    +0x70 (112): unk_0x70 (2B)
+    +0x72 (114): hash72 (46B) — AES-CBC signature for Nano 5G
+
+Cross-referenced against:
+  - iPodLinux wiki: https://web.archive.org/web/20081006030946/http://ipodlinux.org/wiki/ITunesDB
+  - libgpod itdb_itunesdb.c: parse_mhbd() / mk_mhbd()
+"""
+
 import base64
 import struct
 from typing import Any
@@ -60,7 +94,8 @@ def parse_db(data, offset, header_length, chunk_length) -> dict[str, Any]:
         next_offset = childResult["nextOffset"]
         resultData = childResult["result"]
         resultType = childResult["datasetType"]
-        database[chunk_type_map[resultType]] = resultData
+        type_key = chunk_type_map.get(resultType, f"mhsd_type_{resultType}")
+        database[type_key] = resultData
 
     # Convert byte fields to base64 for JSON serialization
     def replace_bytes_with_base64(data: Any) -> Any:

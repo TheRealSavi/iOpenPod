@@ -1,11 +1,74 @@
+"""
+MHOD (Data Object) parser.
+
+MHODs are the most varied chunk type in the iTunesDB.  They carry per-track
+strings (title, artist, album ...), playlist metadata, smart-playlist rules,
+library sort indices, and various binary blobs.
+
+All MHOD chunks share a common 24-byte header:
+    +0x00: 'mhod' magic (4 bytes)
+    +0x04: header_length (4 bytes) — always 0x18 (24)
+    +0x08: total_length (4 bytes) — header + body
+    +0x0C: type (4 bytes) — determines body layout (see constants.mhod_type_map)
+    +0x10: unk1 (4 bytes) — usually 0
+    +0x14: unk2 (4 bytes) — usually 0
+
+Body layout depends on type:
+
+  Types 1–14, 18–31, 33–44, 200–204  — String MHODs
+    Sub-header at +0x18:
+      +0x18 (24): position/encoding (4B) — 1=UTF-16LE (standard), 2=UTF-8
+      +0x1C (28): string_length (4B)
+      +0x20 (32): unk (4B)
+      +0x24 (36): unk (4B)
+      +0x28 (40): string data (string_length bytes)
+
+  Types 15–16  — Podcast Enclosure / RSS URL
+    String directly at +0x18, NO sub-header.  UTF-8/ASCII only.
+    Length = total_length − header_length.
+
+  Type 17  — Chapter Data
+    Big-endian atom-based binary blob (sean/chap/name/hedr atoms).
+    Stored as raw bytes; full atom parsing is out of scope.
+
+  Type 32  — Unknown Video Track Data
+    Binary field (not a string despite being in the 1–44 range).
+
+  Type 50  — Smart Playlist Preferences (SPLPref)
+  Type 51  — Smart Playlist Rules (SLst — BIG-endian!)
+  Type 52  — Library Playlist Sorted Index
+  Type 53  — Library Playlist Jump Table
+  Type 100 — Playlist column prefs / item position
+  Type 102 — Playlist settings (post-iTunes 7)
+
+Cross-referenced against:
+  - iPodLinux wiki: https://web.archive.org/web/20081006030946/http://ipodlinux.org/wiki/ITunesDB
+  - libgpod itdb_itunesdb.c: get_mhod() / mk_mhod()
+"""
+
 import struct
 
 
-# String MHOD types have a string sub-header at offset 24.
-# Types 1-44 are track/item string metadata, 200-300 are album item strings.
-# Non-string types (50, 51, 52, 53, 100) have completely different binary layouts
-# per libgpod's MhodHeaderSmartPlaylistData, etc.
-STRING_MHOD_TYPES = set(range(1, 45)) | set(range(200, 301))
+# String MHOD types that use the standard sub-header at offset 24.
+# Types 1-14, 18-31, 33-44 are track/item string metadata.
+# Types 200-204 are album item strings.
+#
+# EXCLUDED from this set (handled separately):
+#   15-16: Podcast URLs — UTF-8 string with NO sub-header
+#   17:    Chapter data — big-endian atom blob
+#   32:    Video track data — binary, not a string
+STRING_MHOD_TYPES = (
+    set(range(1, 15))   # 1..14
+    | set(range(18, 32))  # 18..31
+    | set(range(33, 45))  # 33..44
+    | set(range(200, 205))  # 200..204
+)
+
+# Podcast URL types — UTF-8/ASCII string directly at offset 24, no sub-header.
+PODCAST_URL_MHOD_TYPES = {15, 16}
+
+# Binary / atom-based MHOD types — stored as raw bytes.
+BINARY_BLOB_MHOD_TYPES = {17, 32}
 
 # Non-string MHOD types with dedicated binary formats
 NON_STRING_MHOD_TYPES = {50, 51, 52, 53, 100, 102}
@@ -19,21 +82,48 @@ def parse_mhod(data, offset, header_length, chunk_length) -> dict:
         parsed_data = _parse_nonstring_mhod(data, offset, header_length, chunk_length, mhod_type)
         return {"nextOffset": offset + chunk_length, "result": {"mhodType": mhod_type, "data": parsed_data}}
 
+    # Podcast URL types (15, 16): UTF-8/ASCII string directly at offset 24,
+    # with NO sub-header (no position/length fields).  Per iPodLinux wiki:
+    # "Note: this is either a UTF-8 or ASCII encoded string (NOT UTF-16).
+    #  Also, there is no mhod::length value for this type."
+    if mhod_type in PODCAST_URL_MHOD_TYPES:
+        url_length = chunk_length - header_length
+        if url_length > 0:
+            url_data = data[offset + header_length:offset + header_length + url_length]
+            url_string = url_data.decode("utf-8", errors="replace").rstrip("\x00")
+        else:
+            url_string = ""
+        return {"nextOffset": offset + chunk_length, "result": {"mhodType": mhod_type, "string": url_string}}
+
+    # Binary blob types (17=chapter data, 32=video track data):
+    # Store as raw hex string for JSON serialization.  Chapter data (type 17)
+    # uses big-endian atom format (sean/chap/name/hedr) internally.
+    if mhod_type in BINARY_BLOB_MHOD_TYPES:
+        blob_length = chunk_length - header_length
+        blob = data[offset + header_length:offset + header_length + blob_length]
+        return {"nextOffset": offset + chunk_length, "result": {"mhodType": mhod_type, "string": blob.hex()}}
+
     # Only attempt string parsing for known string MHOD types
     if mhod_type not in STRING_MHOD_TYPES:
         # Unknown non-string MHOD — return stub
         return {"nextOffset": offset + chunk_length, "result": {"mhodType": mhod_type, "string": ""}}
 
+    # --- Standard string MHOD with sub-header at offset 24 ---
     string_length = struct.unpack("<I", data[offset + 28:offset + 32])[0]
-    # Read encoding flag from the string sub-header (0 or 1 = UTF-16LE, 2 = UTF-8)
-    encoding_flag = struct.unpack("<I", data[offset + 24:offset + 28])[0]
+
+    # The field at offset 24 is called "position" in the iPodLinux wiki.
+    # It doubles as an encoding indicator:
+    #   1 (or 0) = UTF-16LE (standard iPod, little-endian strings)
+    #   2        = UTF-8 (mobile-phone iTunesDBs, inversed endian)
+    # libgpod checks this same field to decide encoding.
+    position = struct.unpack("<I", data[offset + 24:offset + 28])[0]
     string_data = data[offset + 40:offset + 40 + string_length]
 
     string_decode = ""
-    if encoding_flag == 2:
+    if position == 2:
         string_decode = string_data.decode("utf-8", errors="replace")
     else:
-        # encoding_flag 0 or 1 = UTF-16LE (most common on iPod)
+        # position 0 or 1 = UTF-16LE (most common on iPod)
         string_decode = string_data.decode("utf-16-le", errors="replace")
 
     return {"nextOffset": offset + chunk_length, "result": {"mhodType": mhod_type, "string": string_decode}}
@@ -246,36 +336,43 @@ SPL_FIELD_MAP = {
     0x5A: "Album Rating",
 }
 
-# Action ID → human-readable name (from libgpod ItdbSPLAction enum in itdb.h)
+# Action ID → human-readable name (from libgpod ItdbSPLAction enum in itdb.h;
+# confirmed against iPodLinux wiki).
 # Actions are 32-bit bitmapped values, NOT small sequential integers.
+# Byte layout:
+#   Bits 24-25: 0x00=int/date, 0x01=string, 0x02=negated int, 0x03=negated string
+#   Bits 0-10:  comparison operator flags
 SPL_ACTION_MAP = {
-    # Integer comparisons (low bits only)
+    # Integer / date comparisons (0x00xxxxxx)
     0x00000001: "is",
     0x00000010: "is greater than",
+    0x00000020: "is greater than or equal to",  # not in iTunes UI
     0x00000040: "is less than",
+    0x00000080: "is less than or equal to",  # not in iTunes UI
     0x00000100: "is in the range",
     0x00000200: "is in the last",
-    0x00000400: "binary AND",
+    0x00000400: "binary AND",  # used for Media Type / Video Kind
+    0x00000800: "binary unknown1",
     # String comparisons (0x01xxxxxx)
     0x01000001: "is (string)",
     0x01000002: "contains",
     0x01000004: "starts with",
     0x01000008: "ends with",
-    # Negated integer (0x02xxxxxx)
+    # Negated integer / date (0x02xxxxxx)
     0x02000001: "is not",
-    0x02000010: "is not greater than",
-    0x02000040: "is not less than",
-    0x02000100: "is not in the range",
+    0x02000010: "is not greater than",  # not in iTunes UI
+    0x02000020: "is not greater than or equal to",  # not in iTunes UI
+    0x02000040: "is not less than",  # not in iTunes UI
+    0x02000080: "is not less than or equal to",  # not in iTunes UI
+    0x02000100: "is not in the range",  # not in iTunes UI
     0x02000200: "is not in the last",
     0x02000400: "not binary AND",
     0x02000800: "binary unknown2",
-    # Binary unknown (low bits only)
-    0x00000800: "binary unknown1",
     # Negated string (0x03xxxxxx)
     0x03000001: "is not (string)",
     0x03000002: "does not contain",
-    0x03000004: "does not start with",
-    0x03000008: "does not end with",
+    0x03000004: "does not start with",  # not in iTunes UI
+    0x03000008: "does not end with",  # not in iTunes UI
 }
 
 # Field type enum (from libgpod ItdbSPLFieldType — values start at 1)
@@ -504,10 +601,15 @@ def _parse_spl_rule(data, rule_offset) -> tuple[dict, int]:
 
 SORT_TYPE_MAP = {
     0x03: "title",
-    0x04: "album",
-    0x05: "artist",
-    0x07: "genre",
-    0x12: "composer",
+    0x04: "album",          # then disc/track number, then title
+    0x05: "artist",         # then album, then disc/track number, then title
+    0x07: "genre",          # then artist, then album, then disc/track number, then title
+    0x12: "composer",       # then title
+    0x1D: "show",           # iTunes 7.2+; secondary sort TBD
+    0x1E: "season_number",  # iTunes 7.2+; secondary sort TBD
+    0x1F: "episode_number",  # iTunes 7.2+; secondary sort TBD
+    0x23: "album_artist",   # then artist (ignoring sort-artist), then album, disc/track, title
+    0x24: "artist_nosort",  # artist (ignoring sort-artist), then album, disc/track, title
 }
 
 

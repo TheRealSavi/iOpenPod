@@ -1,3 +1,17 @@
+"""
+iTunesDB entry-point parser.
+
+Accepts a file path (str) or file-like readable object pointing to
+an iPod's ``/iPod_Control/iTunes/iTunesDB`` binary file.  Returns
+the fully-parsed database as a nested dict/list structure.
+
+Usage::
+
+    from iTunesDB_Parser.parser import parse_itunesdb
+    db = parse_itunesdb("/Volumes/IPOD/iPod_Control/iTunes/iTunesDB")
+"""
+
+
 def parse_itunesdb(file) -> dict:
     from .chunk_parser import parse_chunk
 

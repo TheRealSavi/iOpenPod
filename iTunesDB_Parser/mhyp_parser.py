@@ -1,3 +1,16 @@
+"""
+MHYP (Playlist) parser.
+
+Parses individual playlists from the iTunesDB playlist list (MHLP).
+Every iTunesDB has at least one playlist — the Master Playlist (MPL) —
+which references all tracks.  User playlists, smart playlists, and
+podcast playlists also use MHYP.
+
+Cross-referenced against:
+  - iPodLinux wiki: https://web.archive.org/web/20081006030946/http://ipodlinux.org/wiki/ITunesDB
+  - libgpod itdb_itunesdb.c: read_playlist() / mk_mhyp()
+"""
+
 import struct
 
 # Mac HFS+ epoch starts 1904-01-01, Unix epoch 1970-01-01
@@ -93,14 +106,23 @@ def parse_playlist(data, offset, header_length, chunk_length) -> dict:
     playlist["unk1"] = struct.unpack("<I", data[offset + 36:offset + 40])[0]
 
     playlist["stringMhodCount"] = struct.unpack("<H", data[offset + 40:offset + 42])[0]
-    # Number of string-type MHODs (usually 1 for the title)
+    # 0x28: Number of string-type MHODs (type < 50), usually 1 for the title.
 
-    playlist["podcastFlag"] = struct.unpack("<H", data[offset + 42:offset + 44])[0]
-    # 1 if this is a podcast playlist
+    playlist["podcastFlag"] = data[offset + 42]
+    # 0x2A: 1 byte.  0 = normal playlist, 1 = podcast playlist.
+    #       If set to 1 the playlist appears under 'Podcasts' in the
+    #       Music menu instead of 'Playlists'.  Only one playlist
+    #       should have this set; multiples cause none to show.
+
+    playlist["groupFlag"] = data[offset + 43]
+    # 0x2B: 1 byte.  0 = normal playlist, 1 = grouping playlist
+    #       (iTunes 7 feature).  If set, the playlist appears as
+    #       a top-level folder on the iPod.
 
     playlist["sortOrder"] = struct.unpack("<I", data[offset + 44:offset + 48])[0]
-    # Sort order: 1=manual, 3=title, 4=album, 5=artist, 6=bitrate...
-    # 0=default/unset.  See libgpod's ItdbPlaylistSortOrder enum.
+    # 0x2C: Sort order — see constants.PLAYLIST_SORT_ORDER_MAP.
+    #   0=default, 1=manual, 3=title, 4=album, 5=artist, 6=bitrate,
+    #   7=genre, 8=kind, 9=date modified, 10=track number ... 31=episode
 
     # ============================================================
     # Extended header fields (184-byte headers, iPod Classic era)
