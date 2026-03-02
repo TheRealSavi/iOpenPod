@@ -52,6 +52,7 @@ class Colors:
     SURFACE_RAISED = "rgba(255,255,255,18)"
     SURFACE_HOVER = "rgba(255,255,255,25)"
     SURFACE_ACTIVE = "rgba(255,255,255,35)"
+    MENU_BG = "#2a2a40"  # Opaque — QMenu on macOS renders rgba transparency
 
     # Text
     TEXT_PRIMARY = "rgba(255,255,255,230)"

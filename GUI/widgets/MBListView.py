@@ -68,6 +68,48 @@ def format_date(unix_timestamp: int) -> str:
         return ""
 
 
+def format_media_type(value: int) -> str:
+    """Format media type bitmask as human-readable string."""
+    from iTunesDB_Parser.constants import MEDIA_TYPE_MAP
+    if value in MEDIA_TYPE_MAP:
+        return MEDIA_TYPE_MAP[value]
+    # Fallback: decode known bits
+    names = []
+    _BITS = {
+        0x01: "Audio", 0x02: "Video", 0x04: "Podcast",
+        0x08: "Audiobook", 0x20: "Music Video", 0x40: "TV Show",
+        0x100: "Ringtone",
+    }
+    for bit, name in _BITS.items():
+        if value & bit:
+            names.append(name)
+    return " | ".join(names) if names else str(value) if value else ""
+
+
+def format_volume(vol: int) -> str:
+    """Format volume adjustment (-255 to +255) as a percentage string."""
+    if not vol:
+        return ""
+    pct = round(vol / 255 * 100)
+    return f"+{pct}%" if pct > 0 else f"{pct}%"
+
+
+def format_explicit(flag: int) -> str:
+    """Format explicit/clean flag (0=none, 1=explicit, 2=clean)."""
+    if flag == 1:
+        return "Explicit"
+    if flag == 2:
+        return "Clean"
+    return ""
+
+
+def format_checked(val: int) -> str:
+    """Format the 'checked' field (0=checked, 1=unchecked — inverted)."""
+    if val == 0:
+        return "✓"
+    return ""
+
+
 # =============================================================================
 # Column Configuration
 # =============================================================================
@@ -95,6 +137,24 @@ COLUMN_CONFIG: dict[str, tuple[str, Callable[[int], str] | None]] = {
     "bpm": ("BPM", None),
     "Composer": ("Composer", None),
     "filetype": ("Format", None),
+    # ── New columns from parser improvements ──
+    "lastModified": ("Modified", format_date),
+    "lastSkipped": ("Last Skipped", format_date),
+    "dateReleased": ("Released", format_date),
+    "mediaType": ("Media Type", format_media_type),
+    "volume": ("Volume Adj.", format_volume),
+    "explicitFlag": ("Explicit", format_explicit),
+    "totalTracks": ("Track Total", None),
+    "totalDiscs": ("Disc Total", None),
+    "Comment": ("Comment", None),
+    "Grouping": ("Grouping", None),
+    "Description Text": ("Description", None),
+    "startTime": ("Start", format_duration),
+    "stopTime": ("Stop", format_duration),
+    "bookmarkTime": ("Bookmark", format_duration),
+    "checked": ("Checked", format_checked),
+    "gaplessTrackFlag": ("Gapless", None),
+    "gaplessAlbumFlag": ("Gapless Album", None),
 }
 
 # Preferred column order when displaying tracks
@@ -102,20 +162,31 @@ PREFERRED_COLUMN_ORDER = [
     "Title", "Artist", "Album", "Album Artist", "Genre",
     "year", "length", "rating", "playCount", "skipCount",
     "trackNumber", "discNumber", "bitrate", "dateAdded", "lastPlayed",
+    "lastModified", "lastSkipped", "dateReleased", "mediaType",
+    "volume", "explicitFlag", "Comment", "Grouping", "Description Text",
+    "totalTracks", "totalDiscs", "startTime", "stopTime", "bookmarkTime",
+    "checked", "gaplessTrackFlag", "gaplessAlbumFlag",
 ]
 
 # Default columns shown when no specific selection
 DEFAULT_COLUMNS = ["Title", "Artist", "Album", "Genre", "length", "rating", "playCount"]
 
 # Columns that should be right-aligned (numeric)
-NUMERIC_COLUMNS = frozenset({"year", "playCount", "skipCount", "trackNumber", "discNumber", "bpm", "_pl_pos"})
+NUMERIC_COLUMNS = frozenset({
+    "year", "playCount", "skipCount", "trackNumber", "discNumber", "bpm",
+    "_pl_pos", "totalTracks", "totalDiscs", "volume",
+    "gaplessTrackFlag", "gaplessAlbumFlag",
+})
 
 # Columns whose raw value should be stored in UserRole for correct numeric sorting.
 # Includes all integer/float columns and formatted columns (size, bitrate, etc.).
 SORTABLE_NUMERIC_KEYS = frozenset({
     "year", "playCount", "skipCount", "trackNumber", "discNumber", "bpm",
     "_pl_pos", "length", "rating", "bitrate", "size", "sampleRate",
-    "dateAdded", "lastPlayed",
+    "dateAdded", "lastPlayed", "lastModified", "lastSkipped", "dateReleased",
+    "mediaType", "volume", "explicitFlag", "totalTracks", "totalDiscs",
+    "startTime", "stopTime", "bookmarkTime", "checked",
+    "gaplessTrackFlag", "gaplessAlbumFlag",
 })
 
 # Batch size for incremental population (rows per timer tick)
@@ -530,6 +601,14 @@ class MusicBrowserList(QFrame):
 
             self.table.setColumnCount(col_count)
             self.table.setHorizontalHeaderLabels(headers)
+
+            # Store column keys in header items' UserRole so that
+            # _refresh_visible_rows can map columns back to track dict keys.
+            col_offset = 1 if self._show_art else 0
+            for ci, key in enumerate(columns):
+                h_item = self.table.horizontalHeaderItem(ci + col_offset)
+                if h_item:
+                    h_item.setData(Qt.ItemDataRole.UserRole, key)
 
             if self._show_art:
                 self.table.setColumnWidth(0, ART_THUMB_SIZE + 8)
@@ -963,7 +1042,7 @@ class MusicBrowserList(QFrame):
         menu = QMenu(self)
         menu.setStyleSheet(f"""
             QMenu {{
-                background: {Colors.SURFACE_RAISED};
+                background: {Colors.MENU_BG};
                 color: {Colors.TEXT_PRIMARY};
                 border: 1px solid {Colors.BORDER};
                 padding: 4px 0;
@@ -1113,7 +1192,7 @@ class MusicBrowserList(QFrame):
         menu = QMenu(self)
         menu_style = f"""
             QMenu {{
-                background: {Colors.SURFACE_RAISED};
+                background: {Colors.MENU_BG};
                 color: {Colors.TEXT_PRIMARY};
                 border: 1px solid {Colors.BORDER};
                 padding: 4px 0;
@@ -1181,6 +1260,12 @@ class MusicBrowserList(QFrame):
         # ── Rating ──
         self._build_rating_menu(menu, menu_style, selected, cache)
 
+        # ── Volume Adjustment ──
+        self._build_volume_menu(menu, menu_style, selected)
+
+        # ── Start/Stop Time ──
+        self._build_start_stop_menu(menu, menu_style, selected)
+
         vp = self.table.viewport()
         global_pos = vp.mapToGlobal(pos) if vp else QCursor.pos()
         menu.exec(global_pos)
@@ -1194,11 +1279,14 @@ class MusicBrowserList(QFrame):
         enabled, a dash (–) for mixed state, or blank when all disabled.
         Clicking toggles: all-on → off, otherwise → on.
         """
+        # Standard boolean flags (0=off, 1=on)
         FLAG_DEFS: list[tuple[str, str, str]] = [
             # (track_dict_key, menu_label, description)
             ("compilation", "Compilation", "Part of a compilation album"),
             ("skipWhenShuffling", "Skip When Shuffling", "Skip this track in shuffle mode"),
             ("rememberPosition", "Remember Playback Position", "Resume from last position (audiobooks)"),
+            ("gaplessTrackFlag", "Gapless Track", "Enable gapless playback for this track"),
+            ("gaplessAlbumFlag", "Gapless Album", "Enable gapless playback for this album"),
         ]
 
         for key, label, _tip in FLAG_DEFS:
@@ -1221,6 +1309,41 @@ class MusicBrowserList(QFrame):
                     lambda _=False, k=key, v=new_val: self._set_track_flag(k, v)
                 )
 
+        # ── Inverted flag: 'checked' (0=checked, 1=unchecked) ──
+        checked_count = sum(1 for t in selected if t.get("checked", 0) == 0)
+        total = len(selected)
+        if checked_count == total:
+            prefix = "✓  "
+            new_val = 1  # uncheck
+        elif checked_count == 0:
+            prefix = "    "
+            new_val = 0  # check
+        else:
+            prefix = "–  "
+            new_val = 0  # mixed → check
+        act = menu.addAction(f"{prefix}Checked")
+        if act:
+            act.triggered.connect(
+                lambda _=False, v=new_val: self._set_track_flag("checked", v)
+            )
+
+        # ── Played Mark (for podcasts: 0=not played, 2=played) ──
+        played_count = sum(1 for t in selected if t.get("playedMark", 0) != 0)
+        if played_count == total:
+            prefix = "✓  "
+            new_val = 0  # mark as unplayed
+        elif played_count == 0:
+            prefix = "    "
+            new_val = 2  # mark as played
+        else:
+            prefix = "–  "
+            new_val = 2  # mixed → played
+        act = menu.addAction(f"{prefix}Mark as Played")
+        if act:
+            act.triggered.connect(
+                lambda _=False, v=new_val: self._set_track_flag("playedMark", v)
+            )
+
     def _build_rating_menu(self, menu: QMenu, style: str, selected: list[dict], cache) -> None:
         """Add a Rating submenu with 0-5 star options."""
         rating_menu = menu.addMenu("Rating")
@@ -1233,12 +1356,12 @@ class MusicBrowserList(QFrame):
         unanimous = current_ratings.pop() if len(current_ratings) == 1 else None
 
         stars = [
-            (0, "☆  No Rating"),
-            (20, "★  ★"),
-            (40, "★  ★★"),
-            (60, "★  ★★★"),
-            (80, "★  ★★★★"),
-            (100, "★  ★★★★★"),
+            (0, "No Rating"),
+            (20, "★"),
+            (40, "★★"),
+            (60, "★★★"),
+            (80, "★★★★"),
+            (100, "★★★★★"),
         ]
         for value, label in stars:
             prefix = "✓ " if unanimous == value else "   "
@@ -1246,6 +1369,59 @@ class MusicBrowserList(QFrame):
             if act:
                 act.triggered.connect(
                     lambda _=False, v=value: self._set_track_flag("rating", v)
+                )
+
+    def _build_volume_menu(self, menu: QMenu, style: str, selected: list[dict]) -> None:
+        """Add a Volume Adjustment submenu with common presets (-100% to +100%)."""
+        vol_menu = menu.addMenu("Volume Adjustment")
+        if not vol_menu:
+            return
+        vol_menu.setStyleSheet(style)
+
+        # Current volume (show check for unanimous value)
+        current_vols = {t.get("volume", 0) for t in selected}
+        unanimous = current_vols.pop() if len(current_vols) == 1 else None
+
+        # iPod volume range: -255 to +255.  Show as percentage.
+        presets = [
+            (-255, "−100%"),
+            (-191, "−75%"),
+            (-128, "−50%"),
+            (-64, "−25%"),
+            (0, "None (0%)"),
+            (64, "+25%"),
+            (128, "+50%"),
+            (191, "+75%"),
+            (255, "+100%"),
+        ]
+        for value, label in presets:
+            prefix = "✓ " if unanimous == value else "   "
+            act = vol_menu.addAction(f"{prefix}{label}")
+            if act:
+                act.triggered.connect(
+                    lambda _=False, v=value: self._set_track_flag("volume", v)
+                )
+
+    def _build_start_stop_menu(self, menu: QMenu, style: str, selected: list[dict]) -> None:
+        """Add Start/Stop Time actions to clear custom start or stop times."""
+        # Only show if any selected track has a non-zero start or stop time
+        has_start = any(t.get("startTime", 0) for t in selected)
+        has_stop = any(t.get("stopTime", 0) for t in selected)
+        if not has_start and not has_stop:
+            return
+
+        menu.addSeparator()
+        if has_start:
+            act = menu.addAction("Clear Start Time")
+            if act:
+                act.triggered.connect(
+                    lambda _=False: self._set_track_flag("startTime", 0)
+                )
+        if has_stop:
+            act = menu.addAction("Clear Stop Time")
+            if act:
+                act.triggered.connect(
+                    lambda _=False: self._set_track_flag("stopTime", 0)
                 )
 
     def _set_track_flag(self, key: str, value: int) -> None:
@@ -1301,13 +1477,18 @@ class MusicBrowserList(QFrame):
                 cfg = COLUMN_CONFIG.get(key)
                 formatter = cfg[1] if cfg else None
 
-                if formatter and raw not in (None, "", 0):
+                # Use the same formatting logic as _format_value():
+                # skip only None/"", let 0 through to the formatter
+                # (0 is meaningful for fields like 'checked', 'explicitFlag')
+                if raw is None or raw == "":
+                    display_text = ""
+                elif formatter and isinstance(raw, (int, float)):
                     try:
-                        display_text = formatter(raw)
+                        display_text = formatter(int(raw))
                     except Exception:
-                        display_text = str(raw) if raw else ""
+                        display_text = str(raw)
                 else:
-                    display_text = str(raw) if raw not in (None, "") else ""
+                    display_text = str(raw)
 
                 cell = self.table.item(row, col)
                 if cell is not None:
