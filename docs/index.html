@@ -3,21 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>iOpenPod — Open-Source iPod Classic Sync Tool</title>
-    <meta name="description" content="Manage your iPod Classic without iTunes. iOpenPod reads and writes iTunesDB directly — sync music, play counts, ratings, and album art from any OS.">
+    <title>iOpenPod — Sync Your iPod Without iTunes</title>
+    <meta name="description" content="Ditch iTunes. iOpenPod syncs music, play counts, ratings, and album art to your iPod Classic directly. Open-source, cross-platform, plays nice with FLAC.">
     <meta name="keywords" content="iPod sync tool, iPod Classic manager, iTunes alternative, iTunesDB, iPod music sync, open source iPod, iPod Linux, iPod Windows, iPod manager without iTunes, FLAC to iPod">
     <meta name="author" content="John Gibbons">
 
     <!-- Open Graph / Social -->
     <meta property="og:type" content="website">
-    <meta property="og:title" content="iOpenPod — Open-Source iPod Classic Sync Tool">
-    <meta property="og:description" content="Manage your iPod Classic without iTunes. Sync music, metadata, play counts, ratings, and album art directly via iTunesDB.">
-    <meta property="og:url" content="https://github.com/TheRealSavi/iOpenPod">
+    <meta property="og:title" content="iOpenPod — Sync Your iPod Without iTunes">
+    <meta property="og:description" content="Ditch iTunes. iOpenPod syncs music, play counts, ratings, and album art to your iPod Classic directly. Open-source and cross-platform.">
+    <meta property="og:url" content="https://therealsavi.github.io/iOpenPod/">
+    <meta property="og:image" content="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/screenshots/albums.png">
 
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="iOpenPod — Open-Source iPod Sync Tool">
-    <meta name="twitter:description" content="Sync your iPod Classic without iTunes. Open-source, cross-platform, supports FLAC transcoding.">
+    <meta name="twitter:title" content="iOpenPod — Sync Your iPod Without iTunes">
+    <meta name="twitter:description" content="Open-source iPod sync. Handles FLAC, play counts, album art, playlists. No iTunes required.">
+    <meta name="twitter:image" content="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/screenshots/albums.png">
 
     <link rel="canonical" href="https://therealsavi.github.io/iOpenPod/">
 
@@ -45,7 +47,7 @@
         }
 
         .container {
-            max-width: 900px;
+            max-width: 960px;
             margin: 0 auto;
             padding: 0 24px;
         }
@@ -117,7 +119,7 @@
 
         .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
 
-        /* Features */
+        /* Sections */
         section {
             padding: 56px 0;
             border-bottom: 1px solid var(--border);
@@ -132,6 +134,28 @@
             text-align: center;
         }
 
+        section > p {
+            color: var(--text-secondary);
+            text-align: center;
+            max-width: 640px;
+            margin: -12px auto 28px;
+            font-size: 1.05rem;
+        }
+
+        /* Hero screenshot */
+        .hero-screenshot {
+            margin-top: 32px;
+            text-align: center;
+        }
+
+        .hero-screenshot img {
+            max-width: 100%;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+        }
+
+        /* Feature grid */
         .feature-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
@@ -160,6 +184,36 @@
             font-size: 1.5rem;
             margin-bottom: 8px;
             display: block;
+        }
+
+        /* Screenshot gallery */
+        .screenshot-gallery {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 24px;
+            margin-top: 8px;
+        }
+
+        .screenshot-item {
+            text-align: center;
+        }
+
+        .screenshot-item img {
+            width: 100%;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+            transition: transform 0.2s ease;
+        }
+
+        .screenshot-item img:hover {
+            transform: scale(1.02);
+        }
+
+        .screenshot-item .caption {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            margin-top: 10px;
         }
 
         /* Device table */
@@ -206,6 +260,20 @@
             font-style: italic;
         }
 
+        .prereqs {
+            text-align: center;
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            margin-bottom: 20px;
+        }
+
+        .prereqs a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        .prereqs a:hover { text-decoration: underline; }
+
         /* Footer */
         footer {
             text-align: center;
@@ -217,7 +285,7 @@
         footer a { color: var(--accent); text-decoration: none; }
         footer a:hover { text-decoration: underline; }
 
-        /* SEO hidden heading for search engines */
+        /* SEO hidden heading */
         .sr-only {
             position: absolute;
             width: 1px;
@@ -228,6 +296,11 @@
             clip: rect(0, 0, 0, 0);
             border: 0;
         }
+
+        @media (max-width: 480px) {
+            header h1 { font-size: 2.2rem; }
+            .screenshot-gallery { grid-template-columns: 1fr; }
+        }
     </style>
 
     <!-- Structured Data for Google -->
@@ -236,9 +309,10 @@
         "@context": "https://schema.org",
         "@type": "SoftwareApplication",
         "name": "iOpenPod",
-        "description": "Open-source iPod Classic sync tool that reads and writes iTunesDB directly. Manage music, play counts, ratings, and album art without iTunes.",
+        "description": "Open-source iPod sync tool. Manages music, play counts, ratings, and album art on iPod Classic and Nano without iTunes.",
         "applicationCategory": "MultimediaApplication",
         "operatingSystem": "Windows, macOS, Linux",
+        "screenshot": "https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/screenshots/albums.png",
         "offers": {
             "@type": "Offer",
             "price": "0",
@@ -254,12 +328,12 @@
     </script>
 </head>
 <body>
-    <h2 class="sr-only">iOpenPod: Open-Source iPod Classic Sync Tool — iTunes Alternative for iPod Music Management</h2>
+    <h2 class="sr-only">iOpenPod: Open-Source iPod Sync Tool — Manage Your iPod Without iTunes</h2>
 
     <header>
         <div class="container">
             <h1><span>i</span>OpenPod</h1>
-            <p>Sync your iPod Classic without iTunes. Open-source, cross-platform, format-agnostic.</p>
+            <p>Ditch iTunes. Sync your iPod the open way.</p>
 
             <div class="badges">
                 <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="MIT License">
@@ -272,74 +346,109 @@
                 <a href="https://github.com/TheRealSavi/iOpenPod" class="btn btn-primary">View on GitHub</a>
                 <a href="#install" class="btn btn-secondary">Get Started</a>
             </div>
+
+            <div class="hero-screenshot">
+                <img src="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/screenshots/albums.png" alt="iOpenPod album browser showing album grid with artwork">
+            </div>
         </div>
     </header>
 
     <main class="container">
         <section>
-            <h2>Features</h2>
+            <h2>What It Does</h2>
             <div class="feature-grid">
                 <div class="feature-card">
-                    <span class="icon">🔄</span>
-                    <h3>Smart Sync</h3>
-                    <p>Acoustic fingerprinting detects new, removed, and changed tracks — even after re-encodes or metadata edits.</p>
+                    <span class="icon">🎵</span>
+                    <h3>Any Format In, iPod Out</h3>
+                    <p>FLAC, OGG, WMA, MP3, AAC — drop in whatever you have. Non-native formats get transcoded to ALAC or AAC automatically.</p>
                 </div>
                 <div class="feature-card">
-                    <span class="icon">🎵</span>
-                    <h3>Format Agnostic</h3>
-                    <p>Automatically transcodes FLAC, OGG, WMA to iPod-compatible ALAC or AAC. No manual conversion needed.</p>
+                    <span class="icon">🔍</span>
+                    <h3>Fingerprint-Based Matching</h3>
+                    <p>Tracks are identified by how they sound, not filenames or tags. Re-encode a file or fix a typo — it still matches.</p>
                 </div>
                 <div class="feature-card">
                     <span class="icon">📊</span>
-                    <h3>Play Count Sync</h3>
-                    <p>Two-way sync of play counts, ratings, and skip counts between your iPod and PC library.</p>
+                    <h3>Play Counts Come Back</h3>
+                    <p>Listen on your iPod, plug it in, and your play counts, ratings, and skip counts sync back to your PC library.</p>
                 </div>
                 <div class="feature-card">
                     <span class="icon">🖼️</span>
-                    <h3>Album Art</h3>
-                    <p>Automatically extracts and writes album artwork in the iPod's native RGB565 format.</p>
+                    <h3>Album Art Included</h3>
+                    <p>Art is pulled from your files, resized, and written in the iPod's native format. No extra steps.</p>
+                </div>
+                <div class="feature-card">
+                    <span class="icon">✅</span>
+                    <h3>Review Before Syncing</h3>
+                    <p>Every sync shows you exactly what's changing — adds, removes, metadata updates — with checkboxes for each track.</p>
                 </div>
                 <div class="feature-card">
                     <span class="icon">🛡️</span>
                     <h3>Backup & Rollback</h3>
-                    <p>Automatic pre-sync checkpoints let you restore your iPod database with one click if anything goes wrong.</p>
-                </div>
-                <div class="feature-card">
-                    <span class="icon">📝</span>
-                    <h3>Visual Review</h3>
-                    <p>See exactly what will change before syncing — add, remove, update metadata — with per-track control.</p>
+                    <p>Your iPod database is snapshotted before every sync. One click to undo if something goes wrong.</p>
                 </div>
             </div>
         </section>
 
         <section>
-            <h2>Supported iPod Models</h2>
+            <h2>See It In Action</h2>
+            <div class="screenshot-gallery">
+                <div class="screenshot-item">
+                    <img src="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/screenshots/syncreview.png" alt="Sync review screen">
+                    <div class="caption">Review every change before it hits your iPod</div>
+                </div>
+                <div class="screenshot-item">
+                    <img src="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/screenshots/devicepicker.png" alt="Device picker">
+                    <div class="caption">Detect and pick your connected iPod</div>
+                </div>
+                <div class="screenshot-item">
+                    <img src="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/screenshots/playlists.png" alt="Playlist browser">
+                    <div class="caption">Browse and manage playlists</div>
+                </div>
+                <div class="screenshot-item">
+                    <img src="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/screenshots/smartplaylists.png" alt="Smart playlists">
+                    <div class="caption">Smart playlists with rule-based filtering</div>
+                </div>
+                <div class="screenshot-item">
+                    <img src="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/screenshots/backups.png" alt="Backup manager">
+                    <div class="caption">One-click backup and restore</div>
+                </div>
+                <div class="screenshot-item">
+                    <img src="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/screenshots/settings.png" alt="Settings page">
+                    <div class="caption">Configure transcoding, sync behavior, and more</div>
+                </div>
+            </div>
+        </section>
+
+        <section>
+            <h2>Supported iPods</h2>
+            <p>Works with every click-wheel iPod that Apple made — except Nano 6G/7G writes.</p>
             <table>
                 <thead>
                     <tr><th>Device</th><th>Read</th><th>Write</th><th>Notes</th></tr>
                 </thead>
                 <tbody>
                     <tr><td>iPod 1G–5G, Mini, Photo</td><td>✅</td><td>✅</td><td>No hash required</td></tr>
-                    <tr><td>iPod Classic (all gens)</td><td>✅</td><td>✅</td><td>HASH58 via FireWire ID</td></tr>
+                    <tr><td>iPod Classic (all gens)</td><td>✅</td><td>✅</td><td>Uses FireWire ID</td></tr>
                     <tr><td>iPod Nano 1G–2G</td><td>✅</td><td>✅</td><td>No hash required</td></tr>
-                    <tr><td>iPod Nano 3G–4G</td><td>✅</td><td>✅</td><td>HASH58 via FireWire ID</td></tr>
-                    <tr><td>iPod Nano 5G</td><td>✅</td><td>✅</td><td>HASH72 (one iTunes sync needed)</td></tr>
-                    <tr><td>iPod Nano 6G–7G</td><td>✅</td><td>❌</td><td>Hash not reverse-engineered</td></tr>
+                    <tr><td>iPod Nano 3G–4G</td><td>✅</td><td>✅</td><td>Uses FireWire ID</td></tr>
+                    <tr><td>iPod Nano 5G</td><td>✅</td><td>✅</td><td>Needs one iTunes sync first</td></tr>
+                    <tr><td>iPod Nano 6G–7G</td><td>✅</td><td>❌</td><td>Hash not cracked</td></tr>
                 </tbody>
             </table>
         </section>
 
         <section id="install">
-            <h2>Installation</h2>
+            <h2>Get Started</h2>
+            <p class="prereqs">
+                Requires <strong>Python 3.13+</strong> and <a href="https://docs.astral.sh/uv/">uv</a>.
+                For transcoding: <a href="https://ffmpeg.org/">FFmpeg</a>.
+                For fingerprinting: <a href="https://acoustid.org/chromaprint">Chromaprint</a>.
+            </p>
             <div class="install-steps">
-                <code class="comment"># Clone the repository</code>
                 <code>git clone https://github.com/TheRealSavi/iOpenPod.git</code>
                 <code>cd iOpenPod</code>
-                <br>
-                <code class="comment"># Install dependencies</code>
                 <code>uv sync</code>
-                <br>
-                <code class="comment"># Launch iOpenPod</code>
                 <code>uv run python main.py</code>
             </div>
         </section>

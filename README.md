@@ -1,163 +1,135 @@
 # iOpenPod
 
-**Open-source iPod Classic sync tool — manage your iPod without iTunes.**
-
-iOpenPod reads and writes the iPod's native iTunesDB and ArtworkDB binary formats directly, giving you full control over your music library. Sync tracks, metadata, play counts, ratings, and album art between your PC and iPod — no iTunes required.
+**Ditch iTunes. Sync your iPod the open way.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.13+](https://img.shields.io/badge/Python-3.13%2B-3776AB.svg)](https://www.python.org/)
 [![PyQt6](https://img.shields.io/badge/GUI-PyQt6-41CD52.svg)](https://www.riverbankcomputing.com/software/pyqt/)
 
+iOpenPod is a desktop app for managing iPod Classic and iPod Nano libraries. It speaks the iPod's native database format directly — no iTunes, no middleman. Plug in your iPod, point it at your music folder, and sync. FLAC, OGG, whatever — it handles the conversion.
+
+![Album Browser](screenshots/albums.png)
+
 ---
 
-## Why iOpenPod?
+## Get Started
 
-- **No iTunes dependency** — Syncs directly with the iPod's database files
-- **Format agnostic** — Automatically transcodes FLAC, OGG, and other formats to iPod-compatible ALAC/AAC
-- **Acoustic fingerprinting** — Uses Chromaprint to reliably match tracks even after re-encodes or metadata changes
-- **Two-way sync** — Play counts, ratings, and skip counts sync back to your PC library
-- **Cross-platform** — Built with Python and PyQt6 (Windows, macOS, Linux)
-
-## Features
-
-### Music Sync
-- **Smart library diffing** — Detects new, removed, and changed tracks using acoustic fingerprints
-- **Automatic transcoding** — Converts FLAC, OGG, WMA, and other formats to ALAC or AAC on-the-fly
-- **Transcode caching** — Optionally cache converted files for faster repeat syncs
-- **Metadata-only updates** — Tag changes sync without re-copying audio files
-
-### Play Count & Rating Sync
-- **Bidirectional play count sync** — Reads the iPod's Play Counts file and merges with your PC library
-- **Rating strategies** — Choose pessimistic (keep lower) or optimistic (keep higher) for conflicts
-- **Skip count tracking** — Skip counts sync alongside play counts
-
-### Library Management
-- **Visual sync review** — See exactly what will change before syncing (add, remove, update)
-- **Selective sync** — Check/uncheck individual tracks or entire categories
-- **Duplicate detection** — Identifies duplicate tracks via acoustic fingerprinting
-- **Integrity checks** — Detects orphan files, stale mappings, and missing tracks automatically
-
-### Album Artwork
-- **Artwork sync** — Extracts and writes RGB565 album art to iPod `.ithmb` files
-- **Automatic resizing** — Generates all required artwork sizes (140×140, 56×56, etc.)
-
-### Storage & Safety
-- **Storage estimates** — Shows space required/freed before syncing
-- **Checkpoint & rollback** — Automatic pre-sync backups with one-click restore
-- **ETA tracking** — Real-time progress estimates during sync operations
-- **Desktop notifications** — Get notified when long syncs complete
-
-## Supported Devices
-
-| Device | Read | Write | Notes |
-|--------|------|-------|-------|
-| iPod 1G–5G, Mini, Photo | ✅ | ✅ | No hash required |
-| iPod Classic (all gens) | ✅ | ✅ | HASH58 (FireWire ID from SysInfo) |
-| iPod Nano 1G–2G | ✅ | ✅ | No hash required |
-| iPod Nano 3G–4G | ✅ | ✅ | HASH58 (FireWire ID from SysInfo) |
-| iPod Nano 5G | ✅ | ✅ | HASH72 (requires one iTunes sync for HashInfo) |
-| iPod Nano 6G–7G | ✅ | ❌ | HASHAB not reverse-engineered |
-
-## Screenshots
-
-<!-- Add screenshots here -->
-<!-- ![Main Window](docs/screenshots/main.png) -->
-<!-- ![Sync Review](docs/screenshots/sync-review.png) -->
-
-*Screenshots coming soon — contributions welcome!*
-
-## Installation
-
-### Prerequisites
-- **Python 3.13+**
-- **[uv](https://docs.astral.sh/uv/)** (recommended) or pip
-- **[Chromaprint / fpcalc](https://acoustid.org/chromaprint)** — for acoustic fingerprinting
-- **[FFmpeg](https://ffmpeg.org/)** — for transcoding non-native formats
-
-### Quick Start
+You'll need **Python 3.13+** and **[uv](https://docs.astral.sh/uv/)**. For transcoding, install **[FFmpeg](https://ffmpeg.org/)**. For fingerprinting, install **[Chromaprint](https://acoustid.org/chromaprint)**.
 
 ```bash
-# Clone the repository
 git clone https://github.com/TheRealSavi/iOpenPod.git
 cd iOpenPod
-
-# Install dependencies with uv
 uv sync
-
-# Launch the app
 uv run python main.py
 ```
 
-### Alternative (pip)
+Or with pip:
 
 ```bash
 pip install -e .
 python main.py
 ```
 
-## Usage
+## How to Use
 
-1. **Connect your iPod** — Plug in via USB and mount it (it should appear as a drive)
-2. **Select device** — Click the device button in the sidebar to scan for connected iPods
-3. **Browse your library** — View albums, tracks, and metadata in the album grid or list view
-4. **Start a sync** — Click Sync, select your PC music folder, and review the proposed changes
-5. **Apply changes** — Check/uncheck items as needed, then click Apply to sync
+1. **Plug in your iPod** — it mounts as a regular drive
+2. **Pick your device** — iOpenPod scans for connected iPods automatically
+3. **Browse** — flip through albums, tracks, playlists, and artwork
+4. **Sync** — choose your music folder, review what'll change, and hit go
 
-## How It Works
+![Device Picker](screenshots/devicepicker.png)
 
-iOpenPod uses a **fingerprint-based sync engine** to reliably track identity between your PC files and iPod tracks:
+---
 
-1. **Scan** — Reads your PC music folder and the iPod's iTunesDB
-2. **Fingerprint** — Computes acoustic fingerprints (Chromaprint) for each track
-3. **Diff** — Compares fingerprints to find new, removed, changed, and matched tracks
-4. **Review** — Shows a detailed sync plan with categories (add, remove, update metadata, etc.)
-5. **Execute** — Copies/transcodes files, updates the iTunesDB, syncs artwork and play counts
-6. **Write** — Rebuilds the entire iTunesDB with proper checksums for your device generation
+## What It Does
 
-## Project Structure
+**Sync music from any format.** Drop in FLAC, OGG, WMA, MP3, AAC — iOpenPod transcodes whatever the iPod can't play natively into ALAC or AAC. Converted files are cached so repeat syncs are fast.
+
+**Keep play counts and ratings in sync.** When you listen on the iPod, those play counts and ratings come back to your PC library. You pick the conflict strategy — keep the higher count or the lower one.
+
+**Album art just works.** Art gets extracted from your files, resized, and written in the iPod's RGB565 format. No extra steps.
+
+**Review before you commit.** Every sync shows you exactly what's about to happen — new tracks, removals, metadata updates — with checkboxes for each item. Nothing changes until you say so.
+
+![Sync Review](screenshots/syncreview.png)
+
+**Playlists and smart playlists.** Browse and manage standard playlists. Smart playlists with rule-based filtering are supported too.
+
+![Playlists](screenshots/playlists.png)
+![Smart Playlists](screenshots/smartplaylists.png)
+
+**Backups with one-click restore.** A snapshot of your iPod database is saved before every sync. If something goes wrong, roll back instantly.
+
+![Backups](screenshots/backups.png)
+
+**Configurable.** Tweak transcoding settings, sync behavior, and more from the settings page.
+
+![Settings](screenshots/settings.png)
+
+---
+
+## Supported iPods
+
+| Device | Read | Write | Notes |
+|--------|------|-------|-------|
+| iPod 1G–5G, Mini, Photo | ✅ | ✅ | No hash required |
+| iPod Classic (all gens) | ✅ | ✅ | Uses FireWire ID from SysInfo |
+| iPod Nano 1G–2G | ✅ | ✅ | No hash required |
+| iPod Nano 3G–4G | ✅ | ✅ | Uses FireWire ID from SysInfo |
+| iPod Nano 5G | ✅ | ✅ | Needs one iTunes sync for HashInfo |
+| iPod Nano 6G–7G | ✅ | ❌ | Hash not reverse-engineered |
+
+---
+
+## For Contributors
+
+### How Sync Works
+
+The sync engine matches tracks between your PC and iPod using acoustic fingerprints ([Chromaprint](https://acoustid.org/chromaprint)). This means it can identify the same song even after re-encoding, format conversion, or metadata changes.
+
+1. Scan both the PC music folder and iPod's iTunesDB
+2. Compute or read cached fingerprints for each track
+3. Diff by fingerprint to classify: new, removed, changed, or matched
+4. Present the sync plan for review
+5. Copy/transcode files, update the database, sync artwork and play counts
+6. Rebuild the iTunesDB binary with the correct device-specific checksum
+
+### Project Layout
 
 ```
 iOpenPod/
-├── GUI/                    # PyQt6 user interface
+├── GUI/                    # PyQt6 interface
 │   ├── app.py              # Main window, device management
-│   ├── notifications.py    # Desktop notification support
-│   └── widgets/            # UI components (grid, list, sidebar, sync review)
-├── iTunesDB_Parser/        # Binary parser for iTunesDB format
-├── iTunesDB_Writer/        # Binary writer with hash/checksum support
-├── ArtworkDB_Parser/       # Binary parser for ArtworkDB format
-├── ArtworkDB_Writer/       # Album art extraction and writing
-├── SyncEngine/             # Core sync logic
-│   ├── fingerprint_diff_engine.py  # Acoustic fingerprint-based diffing
-│   ├── sync_executor.py    # Executes sync plans
-│   ├── transcoder.py       # FLAC→ALAC, OGG→AAC conversion
-│   ├── checkpoint.py       # Backup & rollback system
-│   └── eta.py              # ETA time estimation
-└── main.py                 # Application entry point
+│   └── widgets/            # Album grid, track list, sidebar, sync review, etc.
+├── iTunesDB_Parser/        # Reads iPod's binary iTunesDB
+├── iTunesDB_Writer/        # Writes iTunesDB with hash/checksum support
+├── ArtworkDB_Parser/       # Reads ArtworkDB binary format
+├── ArtworkDB_Writer/       # Writes album art to .ithmb files
+├── SyncEngine/             # Fingerprinting, diffing, transcoding, sync execution
+└── main.py                 # Entry point
 ```
 
-## Contributing
+### Binary Format
 
-Contributions are welcome! Areas where help is especially appreciated:
+Both database parsers (iTunesDB, ArtworkDB) use a recursive chunk-based architecture. Each chunk type (`mhbd`, `mhit`, `mhod`, etc.) has its own parser returning `{"nextOffset": int, "result": dict}`. The writer mirrors this structure, building chunks in a buffer and backpatching length fields.
 
-- **Testing on real hardware** — Especially iPod Nano models
-- **macOS / Linux testing** — Primary development is on Windows
-- **UI polish** — Dark theme refinements, accessibility
-- **Documentation** — Usage guides, wiki pages
+Writing to newer iPods (Classic, Nano 3G+) requires computing a device-specific cryptographic hash. See the copilot instructions or `iTunesDB_Writer/hash58.py` for details.
 
-Please open an issue first to discuss major changes.
+### Areas Where Help Is Needed
 
-## Related Projects
+- **Real hardware testing** — especially Nano 3G–5G models
+- **macOS and Linux testing** — primary dev is on Windows
+- **UI improvements** — dark theme polish, accessibility, new features
+- **Bug reports** — open an issue with steps to reproduce
 
-- [libgpod](https://github.com/gtkpod/libgpod) — C library for iPod database access (reference implementation)
+Open an issue before starting major changes so we can coordinate.
+
+### Related Projects
+
+- [libgpod](https://github.com/gtkpod/libgpod) — C library for iPod database access (the reference implementation this project learned from)
 - [gtkpod](https://github.com/gtkpod/gtkpod) — GTK+ iPod manager
 - [Rockbox](https://www.rockbox.org/) — Open-source firmware replacement for iPods
 
 ## License
 
-This project is licensed under the MIT License — see [LICENSE](LICENSE) for details.
-
-## Keywords
-
-iPod sync tool, iPod Classic manager, iTunes alternative, iTunesDB reader writer,
-iPod music sync without iTunes, open source iPod manager, iPod database tool,
-manage iPod on Linux, manage iPod on Windows, iPod FLAC sync, acoustic fingerprint sync
+MIT — see [LICENSE](LICENSE).
