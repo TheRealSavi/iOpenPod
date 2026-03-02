@@ -39,7 +39,7 @@ SPLFT_BINARY_AND = 7
 
 # Field ID → (display name, field type)
 FIELD_DEFS: dict[int, tuple[str, int]] = {
-    0x02: ("Song Name", SPLFT_STRING),
+    0x02: ("Name", SPLFT_STRING),
     0x03: ("Album", SPLFT_STRING),
     0x04: ("Artist", SPLFT_STRING),
     0x05: ("Bitrate", SPLFT_INT),
@@ -62,7 +62,14 @@ FIELD_DEFS: dict[int, tuple[str, int]] = {
     0x23: ("BPM", SPLFT_INT),
     0x27: ("Grouping", SPLFT_STRING),
     0x28: ("Playlist", SPLFT_PLAYLIST),
+    0x29: ("Has Video", SPLFT_BOOLEAN),
+    0x36: ("Description", SPLFT_STRING),
+    0x37: ("Category", SPLFT_STRING),
+    0x39: ("Video Kind", SPLFT_INT),
     0x3C: ("Media Type", SPLFT_BINARY_AND),
+    0x3E: ("Video Show", SPLFT_STRING),
+    0x3F: ("Season Number", SPLFT_INT),
+    0x40: ("Episode Number", SPLFT_INT),
     0x44: ("Skip Count", SPLFT_INT),
     0x45: ("Last Skipped", SPLFT_DATE),
     0x47: ("Album Artist", SPLFT_STRING),
@@ -121,7 +128,7 @@ DATE_UNITS: list[tuple[int, str]] = [
 
 # Limit types
 LIMIT_TYPES: list[tuple[int, str]] = [
-    (0x03, "songs"),
+    (0x03, "items"),
     (0x01, "minutes"),
     (0x04, "hours"),
     (0x02, "MB"),
@@ -131,7 +138,7 @@ LIMIT_TYPES: list[tuple[int, str]] = [
 # Limit sort options
 LIMIT_SORTS: list[tuple[int, str]] = [
     (0x02, "random"),
-    (0x03, "song name"),
+    (0x03, "name"),
     (0x04, "album"),
     (0x07, "artist"),
     (0x09, "genre"),
@@ -150,7 +157,8 @@ MEDIA_TYPE_FLAGS: list[tuple[int, str]] = [
     (0x01, "Music"),
     (0x02, "Video"),
     (0x04, "Podcast"),
-    (0x08, "Video Podcast"),
+    (0x06, "Video Podcast"),
+    (0x08, "Audiobook"),
     (0x20, "Music Video"),
     (0x40, "TV Show"),
     (0x100, "Ringtone"),

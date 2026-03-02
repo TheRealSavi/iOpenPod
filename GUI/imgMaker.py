@@ -1,7 +1,10 @@
+import logging
 import os
 import threading
 import numpy as np
 from PIL import Image
+
+logger = logging.getLogger(__name__)
 
 
 # Cache for parsed ArtworkDB and index
@@ -72,7 +75,7 @@ def generate_image(ithmb_filename, image_info):
             f.seek(image_info["ithmbOffset"])
             img_data = f.read(image_info["imgSize"])
     except Exception as e:
-        print(f"Error reading {ithmb_filename}: {e}")
+        logger.warning("Error reading %s: %s", ithmb_filename, e)
         return None
 
     fmt = image_info["image_format"]["format"]
@@ -107,7 +110,7 @@ def generate_image(ithmb_filename, image_info):
                 (target_width, target_height), Image.Resampling.LANCZOS)
         return img_pil
 
-    print(f"Unsupported image format: {fmt}")
+    logger.warning("Unsupported image format: %s", fmt)
     return None
 
 

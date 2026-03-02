@@ -38,11 +38,14 @@ class SyncWorker(QThread):
     finished = pyqtSignal(object)  # SyncPlan
     error = pyqtSignal(str)
 
-    def __init__(self, pc_folder: str, ipod_tracks: list, ipod_path: str = ""):
+    def __init__(self, pc_folder: str, ipod_tracks: list, ipod_path: str = "",
+                 supports_video: bool = True, supports_podcast: bool = True):
         super().__init__()
         self.pc_folder = pc_folder
         self.ipod_tracks = ipod_tracks
         self.ipod_path = ipod_path
+        self.supports_video = supports_video
+        self.supports_podcast = supports_podcast
 
     def run(self):
         try:
@@ -50,16 +53,24 @@ class SyncWorker(QThread):
             pc_library = PCLibrary(self.pc_folder)
 
             # Create fingerprint-based diff engine
-            diff_engine = FingerprintDiffEngine(pc_library, self.ipod_path)
-
-            # Compute diff with progress callback
-            plan = diff_engine.compute_diff(
-                self.ipod_tracks,
-                progress_callback=lambda stage, cur, tot, msg: self.progress.emit(stage, cur, tot, msg)
+            diff_engine = FingerprintDiffEngine(
+                pc_library, self.ipod_path,
+                supports_video=self.supports_video,
+                supports_podcast=self.supports_podcast,
             )
 
-            self.finished.emit(plan)
+            # Compute diff with progress callback and cancellation support
+            plan = diff_engine.compute_diff(
+                self.ipod_tracks,
+                progress_callback=lambda stage, cur, tot, msg: self.progress.emit(stage, cur, tot, msg),
+                is_cancelled=self.isInterruptionRequested,
+            )
+
+            if not self.isInterruptionRequested():
+                self.finished.emit(plan)
         except Exception as e:
+            if self.isInterruptionRequested():
+                return  # Suppressed — user cancelled
             import traceback
             traceback.print_exc()
             self.error.emit(str(e))
@@ -196,6 +207,80 @@ _CAT_COLORS = {
     "duplicate": "#ff922b",  # orange
 }
 
+# ── Media type classification for sync items ────────────────────────────────
+
+# Map from media type bitmask to (label, icon) for sync review grouping
+_MEDIA_TYPE_LABELS: dict[str, tuple[str, str]] = {
+    "music": ("Music", "🎵"),
+    "podcast": ("Podcasts", "🎙️"),
+    "audiobook": ("Audiobooks", "📖"),
+    "video": ("Videos", "📹"),
+    "music_video": ("Music Videos", "🎤"),
+    "tv_show": ("TV Shows", "📺"),
+    "other": ("Other", "📄"),
+}
+
+
+def _classify_media_type(item: SyncItem) -> str:
+    """Classify a SyncItem into a media type bucket.
+
+    Uses pc_track for ADD actions, ipod_track for REMOVE actions.
+    Returns a key from _MEDIA_TYPE_LABELS.
+    """
+    track = item.pc_track
+    ipod = item.ipod_track
+
+    # From PC track — check high-level flags first
+    if track:
+        if track.is_podcast:
+            return "podcast"
+        if track.is_audiobook:
+            return "audiobook"
+        if track.is_video:
+            if track.video_kind == "tv_show":
+                return "tv_show"
+            if track.video_kind == "music_video":
+                return "music_video"
+            return "video"
+        return "music"
+
+    # From iPod track dict — use mediaType bitmask
+    if ipod:
+        mt = ipod.get("mediaType", 1)
+        if mt & 0x04:
+            return "podcast"
+        if mt & 0x08:
+            return "audiobook"
+        if mt & 0x40:
+            return "tv_show"
+        if mt & 0x20:
+            return "music_video"
+        if mt & 0x02:
+            return "video"
+        if mt == 0 or mt & 0x01:
+            return "music"
+
+    return "music"  # default
+
+
+def _group_by_media_type(items: list[SyncItem]) -> list[tuple[str, list[SyncItem]]]:
+    """Group sync items by media type, returning (type_key, items) pairs.
+
+    Returns groups in a stable display order, only including non-empty groups.
+    """
+    groups: dict[str, list[SyncItem]] = {}
+    for item in items:
+        key = _classify_media_type(item)
+        groups.setdefault(key, []).append(item)
+
+    # Return in preferred display order
+    order = ["music", "podcast", "audiobook", "video", "music_video", "tv_show", "other"]
+    result = []
+    for key in order:
+        if key in groups:
+            result.append((key, groups[key]))
+    return result
+
 
 def _rating_to_stars(rating: int) -> str:
     """Convert rating (0-100) to star display."""
@@ -290,6 +375,15 @@ class SyncTrackRow(QFrame):
             if track.size:
                 parts.append(_format_size(track.size))
             parts.append(track.extension.upper())
+            # Media type indicator for non-music items
+            if track.is_podcast:
+                parts.append("🎙️ Podcast")
+            elif track.is_audiobook:
+                parts.append("📖 Audiobook")
+            elif track.is_video:
+                kind_labels = {"movie": "🎬 Movie", "tv_show": "📺 TV Show",
+                               "music_video": "🎤 Music Video"}
+                parts.append(kind_labels.get(track.video_kind, "📹 Video"))
             self.detail_label.setText(" · ".join(parts))
             self.badge_label.setText(_format_duration(track.duration_ms))
 
@@ -299,6 +393,18 @@ class SyncTrackRow(QFrame):
                 parts = [ipod.get("Artist", "Unknown"), ipod.get("Album", "Unknown")]
                 if ipod.get("size"):
                     parts.append(_format_size(ipod["size"]))
+                # Media type indicator for non-music items
+                mt = ipod.get("mediaType", 1)
+                if mt & 0x04:
+                    parts.append("🎙️ Podcast")
+                elif mt & 0x08:
+                    parts.append("📖 Audiobook")
+                elif mt & 0x40:
+                    parts.append("📺 TV Show")
+                elif mt & 0x20:
+                    parts.append("🎤 Music Video")
+                elif mt & 0x02:
+                    parts.append("🎬 Movie")
                 # Show removal reason from the description
                 reason = item.description or ""
                 if reason:
@@ -671,6 +777,8 @@ class SyncReviewWidget(QWidget):
         self._skip_presync_backup: bool = False
         self._pending_sync_items: list = []
         self._is_auto_presync: bool = False
+        self._completed_stages: list = []
+        self._current_exec_stage = ""
         # Debounce timer for selection count updates (avoids O(n²) on bulk toggles)
         self._count_timer = QTimer(self)
         self._count_timer.setSingleShot(True)
@@ -1105,6 +1213,7 @@ class SyncReviewWidget(QWidget):
         "playlists": "Updating playlists",
         "write_database": "Writing iPod database",
         "backup": "Creating pre-sync backup",
+        "transcode": "Transcoding",
     }
 
     def _friendly_stage(self, stage: str) -> str:
@@ -1293,27 +1402,68 @@ class SyncReviewWidget(QWidget):
 
         # ── Add to iPod ─────────────────────────────────────────────
         if plan.to_add:
-            card = SyncCategoryCard("📥", "Add to iPod", len(plan.to_add),
-                                    _CAT_COLORS["add"], size_bytes=plan.storage.bytes_to_add,
-                                    subtitle="New tracks found on PC — will be copied to iPod",
-                                    parent=self._cards_container)
-            for item in plan.to_add:
-                card.add_track_row(item)
-            card.selection_changed.connect(self._schedule_selection_update)
-            self._category_cards.append(card)
-            _insert_card(card)
+            groups = _group_by_media_type(plan.to_add)
+            use_subgroups = len(groups) > 1  # Only sub-group when multiple types exist
+
+            if use_subgroups:
+                for type_key, group_items in groups:
+                    label, icon = _MEDIA_TYPE_LABELS[type_key]
+                    group_size = sum((it.pc_track.size if it.pc_track else 0) for it in group_items)
+                    card = SyncCategoryCard(
+                        f"📥 {icon}", f"Add {label} to iPod", len(group_items),
+                        _CAT_COLORS["add"], size_bytes=group_size,
+                        subtitle=f"New {label.lower()} found on PC — will be copied to iPod",
+                        parent=self._cards_container,
+                    )
+                    for item in group_items:
+                        card.add_track_row(item)
+                    card.selection_changed.connect(self._schedule_selection_update)
+                    self._category_cards.append(card)
+                    _insert_card(card)
+            else:
+                card = SyncCategoryCard("📥", "Add to iPod", len(plan.to_add),
+                                        _CAT_COLORS["add"], size_bytes=plan.storage.bytes_to_add,
+                                        subtitle="New tracks found on PC — will be copied to iPod",
+                                        parent=self._cards_container)
+                for item in plan.to_add:
+                    card.add_track_row(item)
+                card.selection_changed.connect(self._schedule_selection_update)
+                self._category_cards.append(card)
+                _insert_card(card)
 
         # ── Remove from iPod ────────────────────────────────────────
         if plan.to_remove:
-            card = SyncCategoryCard("🗑️", "Remove from iPod", len(plan.to_remove),
-                                    _CAT_COLORS["remove"], size_bytes=-plan.storage.bytes_to_remove,
-                                    subtitle="No longer in PC library — will be deleted from iPod",
-                                    parent=self._cards_container)
-            for item in plan.to_remove:
-                card.add_track_row(item)
-            card.selection_changed.connect(self._schedule_selection_update)
-            self._category_cards.append(card)
-            _insert_card(card)
+            groups = _group_by_media_type(plan.to_remove)
+            use_subgroups = len(groups) > 1
+
+            if use_subgroups:
+                for type_key, group_items in groups:
+                    label, icon = _MEDIA_TYPE_LABELS[type_key]
+                    group_size = sum(
+                        (it.ipod_track.get("size", 0) if it.ipod_track else 0)
+                        for it in group_items
+                    )
+                    card = SyncCategoryCard(
+                        f"🗑️ {icon}", f"Remove {label} from iPod", len(group_items),
+                        _CAT_COLORS["remove"], size_bytes=-group_size,
+                        subtitle=f"{label} no longer in PC library — will be deleted from iPod",
+                        parent=self._cards_container,
+                    )
+                    for item in group_items:
+                        card.add_track_row(item)
+                    card.selection_changed.connect(self._schedule_selection_update)
+                    self._category_cards.append(card)
+                    _insert_card(card)
+            else:
+                card = SyncCategoryCard("🗑️", "Remove from iPod", len(plan.to_remove),
+                                        _CAT_COLORS["remove"], size_bytes=-plan.storage.bytes_to_remove,
+                                        subtitle="No longer in PC library — will be deleted from iPod",
+                                        parent=self._cards_container)
+                for item in plan.to_remove:
+                    card.add_track_row(item)
+                card.selection_changed.connect(self._schedule_selection_update)
+                self._category_cards.append(card)
+                _insert_card(card)
 
         # ── Re-sync changed files ───────────────────────────────────
         if plan.to_update_file:
@@ -1561,6 +1711,22 @@ class SyncReviewWidget(QWidget):
 
     def update_execute_progress(self, stage: str, current: int, total: int, message: str):
         """Update progress during sync execution."""
+        # Transcode is a sub-stage — show its percentage without changing
+        # the headline or stage history.
+        if stage == "transcode":
+            # Show transcode detail under the current stage label
+            detail_parts = []
+            for s in self._completed_stages[-4:]:
+                detail_parts.append(f"<span style='color: rgba(255,255,255,80);'>✓ {s}</span>")
+            if message:
+                detail_parts.append(f"<span style='color: rgba(255,255,255,180);'>{message}</span>")
+            self.progress_detail.setText("<br>".join(detail_parts))
+            self.progress_detail.setTextFormat(Qt.TextFormat.RichText)
+            if total > 0:
+                self.progress_bar.setRange(0, total)
+                self.progress_bar.setValue(current)
+            return
+
         friendly = self._friendly_stage(stage)
 
         # Track stage transitions for the log

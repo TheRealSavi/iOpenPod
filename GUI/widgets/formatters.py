@@ -125,6 +125,7 @@ _MEDIATYPE_FLAGS = {
     0x00000001: "Music",
     0x00000002: "Movie",
     0x00000004: "Podcast",
+    0x00000006: "Video Podcast",
     0x00000008: "Audiobook",
     0x00000020: "Music Video",
     0x00000040: "TV Show",

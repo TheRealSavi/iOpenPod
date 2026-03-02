@@ -137,20 +137,54 @@ class MusicBrowser(QFrame):
             self.browserGrid.clearGrid()  # Clear grid to cancel pending image loads
             self.browserTrack.clearTable()  # Clear track list before reloading
             self.browserTrack.clearFilter()
-            self.browserTrack.loadTracks()
+            self.browserTrack.loadTracks(media_type_filter=0x01)  # Audio only
             self.trackListTitleBar.setTitle("All Tracks")
             self.trackListTitleBar.resetColor()
         elif category == "Playlists":
             log.debug("  Showing Playlists view")
             self.stack.setCurrentIndex(1)
             self.playlistBrowser.loadPlaylists()
+        elif category in ("Podcasts", "Audiobooks"):
+            # Non-music audio categories
+            _NOMUSIC_FILTER = {
+                "Podcasts": 0x04,      # MEDIA_TYPE_PODCAST (includes video podcast 0x06)
+                "Audiobooks": 0x08,    # MEDIA_TYPE_AUDIOBOOK
+            }
+            log.debug(f"  Showing {category} view")
+            self.stack.setCurrentIndex(0)
+            self.browserGridScroll.hide()
+            self.browserGrid.clearGrid()
+            self.browserTrack.clearTable()
+            self.browserTrack.clearFilter()
+            self.browserTrack.loadTracks(media_type_filter=_NOMUSIC_FILTER[category])
+            self.trackListTitleBar.setTitle(category)
+            self.trackListTitleBar.resetColor()
+        elif category in ("Videos", "Movies", "TV Shows", "Music Videos"):
+            # Video categories: show track list filtered by media type
+            _MEDIA_TYPE_FILTER = {
+                "Videos": 0x62,        # All video (VIDEO|MUSIC_VIDEO|TV_SHOW)
+                "Movies": 0x02,        # MEDIA_TYPE_VIDEO
+                "TV Shows": 0x40,      # MEDIA_TYPE_TV_SHOW
+                "Music Videos": 0x20,  # MEDIA_TYPE_MUSIC_VIDEO
+            }
+            log.debug(f"  Showing video category: {category}")
+            self.stack.setCurrentIndex(0)
+            self.browserGridScroll.hide()
+            self.browserGrid.clearGrid()
+            self.browserTrack.clearTable()
+            self.browserTrack.clearFilter()
+            self.browserTrack.loadTracks(media_type_filter=_MEDIA_TYPE_FILTER[category])
+            self.trackListTitleBar.setTitle(category)
+            self.trackListTitleBar.resetColor()
         else:
             log.debug(f"  Showing grid view for: {category}")
             self.stack.setCurrentIndex(0)
             # Show grid for Albums, Artists, Genres
             self.browserGridScroll.show()
             self.browserGrid.loadCategory(category)
-            # Clear track list filter - user needs to select an item
+            # Pre-load audio-only tracks so filterByAlbum/Artist/Genre
+            # won't include video tracks in results.
+            self.browserTrack.loadTracks(media_type_filter=0x01)
             self.browserTrack.clearFilter()
             self.trackListTitleBar.setTitle(f"Select a{'n' if category[0] in 'AE' else ''} {category[:-1]}")
             self.trackListTitleBar.resetColor()

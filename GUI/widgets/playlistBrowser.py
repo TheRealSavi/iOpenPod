@@ -650,9 +650,6 @@ class PlaylistListPanel(QFrame):
         self._inner_layout.addWidget(btn)
         self._buttons.append(btn)
 
-    # Signals for new playlist creation
-    new_playlist_requested = pyqtSignal(str)  # "smart" or "regular"
-
     def _on_new_playlist(self) -> None:
         """Show the type picker dialog."""
         dlg = NewPlaylistDialog(self)

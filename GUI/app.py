@@ -630,6 +630,14 @@ class iTunesDBCache(QObject):
             if tid is not None:
                 track_id_index[tid] = track
 
+            # Only include audio tracks in album/artist/genre indices.
+            # Video, podcast, audiobook etc. tracks belong in their own
+            # sidebar categories and should not pollute the music views.
+            # mediaType 0 ("Audio/Video") appears in both menus per iTunes.
+            mt = track.get("mediaType", 1)
+            if mt != 0 and not (mt & 0x01):
+                continue
+
             album = track.get("Album", "Unknown Album")
             artist = track.get("Artist", "Unknown Artist")
             # Use Album Artist for album grouping (matches mhla's "Artist (Used by Album Item)")
@@ -737,7 +745,14 @@ category_glyphs = {
     "Artists": "🧑‍🎤",
     "Tracks": "🎵",
     "Playlists": "📂",
-    "Genres": "📜"}
+    "Genres": "📜",
+    "Podcasts": "🎙️",
+    "Audiobooks": "📖",
+    "Videos": "📹",
+    "Movies": "🎬",
+    "TV Shows": "📺",
+    "Music Videos": "🎤",
+}
 
 
 class Worker(QRunnable):
@@ -860,6 +875,10 @@ def build_album_list(cache: iTunesDBCache) -> list:
             subtitle_parts.append(str(year))
         subtitle_parts.append(f"{track_count} tracks")
         subtitle = " · ".join(subtitle_parts)
+
+        # Skip albums that have no audio tracks (e.g. video-only albums)
+        if track_count == 0:
+            continue
 
         items.append({
             "title": album,
@@ -1131,8 +1150,17 @@ class MainWindow(QMainWindow):
         albums = cache.get_albums()
         db_data = cache.get_data()
 
-        total_size = sum(t.get("size", 0) for t in tracks)
-        total_duration = sum(t.get("length", 0) for t in tracks)
+        # Compute stats for audio tracks only (music section).
+        # mediaType 0 ("Audio/Video") counts as audio per iTunes behaviour.
+        audio_tracks = [t for t in tracks if t.get("mediaType", 1) in (0,) or t.get("mediaType", 1) & 0x01]
+        video_tracks = [t for t in tracks
+                        if (t.get("mediaType", 1) & 0x62)
+                        and not (t.get("mediaType", 1) & 0x01)
+                        and t.get("mediaType", 1) != 0]
+        podcast_tracks = [t for t in tracks if t.get("mediaType", 1) & 0x04]
+        audiobook_tracks = [t for t in tracks if t.get("mediaType", 1) & 0x08]
+        total_size = sum(t.get("size", 0) for t in audio_tracks)
+        total_duration = sum(t.get("length", 0) for t in audio_tracks)
 
         # Get device name from master playlist title (the iPod's user name)
         device_name = ""
@@ -1180,14 +1208,41 @@ class MainWindow(QMainWindow):
         self.sidebar.updateDeviceInfo(
             name=device_name,
             model=model,
-            tracks=len(tracks),
+            tracks=len(audio_tracks),
             albums=len(albums),
             size_bytes=total_size,
             duration_ms=total_duration,
             db_version_hex=db_version_hex,
             db_version_name=db_version_name,
-            db_id=db_id
+            db_id=db_id,
+            videos=len(video_tracks),
+            podcasts=len(podcast_tracks),
+            audiobooks=len(audiobook_tracks),
         )
+
+        # Show/hide video sidebar categories based on device capabilities
+        supports_video = len(video_tracks) > 0  # If there are videos, definitely show
+        supports_podcast = len(podcast_tracks) > 0
+        supports_audiobook = len(audiobook_tracks) > 0
+        if not supports_video or not supports_podcast:
+            try:
+                from device_info import get_current_device
+                from ipod_models import capabilities_for_family_gen
+                dev = get_current_device()
+                if dev and dev.model_family and dev.generation:
+                    caps = capabilities_for_family_gen(dev.model_family, dev.generation)
+                    if not supports_video:
+                        supports_video = bool(caps and caps.supports_video)
+                    if not supports_podcast:
+                        supports_podcast = bool(caps and caps.supports_podcast)
+                    # Show audiobooks if podcasts are supported (same era devices)
+                    if not supports_audiobook:
+                        supports_audiobook = bool(caps and caps.supports_podcast)
+            except Exception:
+                pass
+        self.sidebar.setVideoVisible(supports_video)
+        self.sidebar.setPodcastVisible(supports_podcast)
+        self.sidebar.setAudiobookVisible(supports_audiobook)
 
         # Refresh the current view with the loaded data
         self.musicBrowser.onDataReady()
@@ -1347,10 +1402,27 @@ class MainWindow(QMainWindow):
 
         # Start background worker
         device_manager = DeviceManager.get_instance()
+
+        # Check device video capability
+        supports_video = False
+        supports_podcast = True
+        try:
+            from device_info import get_current_device
+            from ipod_models import capabilities_for_family_gen
+            dev = get_current_device()
+            if dev and dev.model_family and dev.generation:
+                caps = capabilities_for_family_gen(dev.model_family, dev.generation)
+                supports_video = bool(caps and caps.supports_video)
+                supports_podcast = bool(caps and caps.supports_podcast)
+        except Exception:
+            pass
+
         self._sync_worker = SyncWorker(
             pc_folder=self._last_pc_folder,
             ipod_tracks=ipod_tracks,
-            ipod_path=device_manager.device_path or ""
+            ipod_path=device_manager.device_path or "",
+            supports_video=supports_video,
+            supports_podcast=supports_podcast,
         )
         self._sync_worker.progress.connect(self.syncReview.update_progress)
         self._sync_worker.finished.connect(self._onSyncDiffComplete)
@@ -1425,7 +1497,7 @@ class MainWindow(QMainWindow):
                 pid = pl.get("playlistID", 0)
                 if pid:
                     existing_ids.add(pid)
-            for pl in data.get("smart_playlists", []):
+            for pl in data.get("mhsp", []):
                 pid = pl.get("playlistID", 0)
                 if pid:
                     existing_ids.add(pid)
@@ -1443,7 +1515,12 @@ class MainWindow(QMainWindow):
         self.syncReview.show_error(error_msg)
 
     def hideSyncReview(self):
-        """Return to the main browsing view."""
+        """Return to the main browsing view, stopping any background scan."""
+        # Request interruption so SyncWorker / SyncExecuteWorker can bail out
+        if self._sync_worker is not None and self._sync_worker.isRunning():
+            self._sync_worker.requestInterruption()
+        if self._sync_execute_worker is not None and self._sync_execute_worker.isRunning():
+            self._sync_execute_worker.requestInterruption()
         self.centralStack.setCurrentIndex(0)
 
     def showSettings(self):

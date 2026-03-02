@@ -370,9 +370,13 @@ class DeviceInfoCard(QFrame):
             self.usb_pid_row.setValue(f"0x{dev.usb_pid:04X}" if dev.usb_pid else '—')
             self.id_method_row.setValue(dev.identification_method or '—')
 
-            # Checksum / hashing
-            checksum_names = {0: 'None', 1: 'HASH58', 2: 'HASH72', 98: 'HASHAB', 99: 'Unknown'}
-            self.checksum_row.setValue(checksum_names.get(dev.checksum_type, 'Unknown'))
+            # Checksum / hashing — derive display name from the canonical enum
+            from ipod_models import ChecksumType
+            try:
+                cs_name = ChecksumType(dev.checksum_type).name
+            except ValueError:
+                cs_name = 'Unknown'
+            self.checksum_row.setValue(cs_name)
             scheme_names = {-1: '—', 0: 'None', 1: 'Scheme 1', 2: 'Scheme 2'}
             self.hash_scheme_row.setValue(scheme_names.get(dev.hashing_scheme, str(dev.hashing_scheme)))
 
@@ -407,12 +411,26 @@ class DeviceInfoCard(QFrame):
         else:
             self.db_id_row.setValue("—")
 
-    def update_stats(self, tracks: int, albums: int, size_bytes: int, duration_ms: int):
+    def update_stats(self, tracks: int, albums: int, size_bytes: int, duration_ms: int,
+                     videos: int = 0, podcasts: int = 0, audiobooks: int = 0):
         """Update library statistics."""
         self.tracks_stat.setValue(f"{tracks:,}")
         self.albums_stat.setValue(f"{albums:,}")
         self.size_stat.setValue(format_size(size_bytes))
         self.duration_stat.setValue(format_duration(duration_ms))
+        # Build secondary description with extra media type counts
+        extras = []
+        if videos > 0:
+            extras.append(f"{videos:,} videos")
+        if podcasts > 0:
+            extras.append(f"{podcasts:,} podcasts")
+        if audiobooks > 0:
+            extras.append(f"{audiobooks:,} audiobooks")
+        if extras:
+            self.tracks_stat.desc_label.setText(f"tracks · {' · '.join(extras)}")
+        else:
+            self.tracks_stat.desc_label.setText("tracks")
+        self.albums_stat.desc_label.setText("albums")
 
     def clear(self):
         """Clear all info (when no device selected)."""
@@ -438,6 +456,15 @@ class DeviceInfoCard(QFrame):
 class Sidebar(QFrame):
     category_changed = pyqtSignal(str)
     device_renamed = pyqtSignal(str)  # emits new iPod name
+
+    # Categories that only make sense on video-capable iPods
+    _VIDEO_CATEGORIES = frozenset({"Videos", "Movies", "TV Shows", "Music Videos"})
+
+    # Categories that only make sense when podcast support is present
+    _PODCAST_CATEGORIES = frozenset({"Podcasts"})
+
+    # Audiobook categories (all iPods support audiobooks via media type)
+    _AUDIOBOOK_CATEGORIES = frozenset({"Audiobooks"})
 
     def __init__(self):
         from ..app import category_glyphs
@@ -557,16 +584,63 @@ class Sidebar(QFrame):
     def updateDeviceInfo(self, name: str, model: str, tracks: int, albums: int,
                          size_bytes: int, duration_ms: int,
                          db_version_hex: str = "", db_version_name: str = "",
-                         db_id: int = 0):
+                         db_id: int = 0, videos: int = 0,
+                         podcasts: int = 0, audiobooks: int = 0):
         """Update the device info card with current device data."""
         self.device_card.update_device_info(name, model)
-        self.device_card.update_stats(tracks, albums, size_bytes, duration_ms)
+        self.device_card.update_stats(tracks, albums, size_bytes, duration_ms,
+                                      videos=videos, podcasts=podcasts, audiobooks=audiobooks)
         if db_version_hex:
             self.device_card.update_database_info(db_version_hex, db_version_name, db_id)
 
     def clearDeviceInfo(self):
         """Clear device info when no device is selected."""
         self.device_card.clear()
+        # Show all categories again when no device is selected
+        self.setVideoVisible(True)
+        self.setPodcastVisible(True)
+        self.setAudiobookVisible(True)
+
+    def setVideoVisible(self, visible: bool):
+        """Show or hide video-related sidebar categories.
+
+        Called after device identification to hide video categories on iPods
+        that don't support video (e.g. Mini, Nano 1G/2G, Shuffle, iPod 1G-4G).
+        If the currently selected category is being hidden, switch to Albums.
+        """
+        for cat in self._VIDEO_CATEGORIES:
+            btn = self.buttons.get(cat)
+            if btn:
+                btn.setVisible(visible)
+        # If the selected category is being hidden, switch to a safe default
+        if not visible and self.selectedCategory in self._VIDEO_CATEGORIES:
+            self.selectCategory("Albums")
+
+    def setPodcastVisible(self, visible: bool):
+        """Show or hide podcast sidebar categories.
+
+        Called after device identification to hide podcasts on iPods
+        that don't support them (pre-5G, Shuffle).
+        """
+        for cat in self._PODCAST_CATEGORIES:
+            btn = self.buttons.get(cat)
+            if btn:
+                btn.setVisible(visible)
+        if not visible and self.selectedCategory in self._PODCAST_CATEGORIES:
+            self.selectCategory("Albums")
+
+    def setAudiobookVisible(self, visible: bool):
+        """Show or hide audiobook sidebar categories.
+
+        Audiobooks are hidden when the iPod has no audiobook tracks and the
+        device doesn't support podcast (a rough proxy for older models).
+        """
+        for cat in self._AUDIOBOOK_CATEGORIES:
+            btn = self.buttons.get(cat)
+            if btn:
+                btn.setVisible(visible)
+        if not visible and self.selectedCategory in self._AUDIOBOOK_CATEGORIES:
+            self.selectCategory("Albums")
 
     def updateDeviceButton(self, device_name: str):
         """Update the device button text to show selected device."""

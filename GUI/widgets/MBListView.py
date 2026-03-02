@@ -77,8 +77,9 @@ def format_media_type(value: int) -> str:
     names = []
     _BITS = {
         0x01: "Audio", 0x02: "Video", 0x04: "Podcast",
-        0x08: "Audiobook", 0x20: "Music Video", 0x40: "TV Show",
-        0x100: "Ringtone",
+        0x06: "Video Podcast", 0x08: "Audiobook",
+        0x20: "Music Video", 0x40: "TV Show",
+        0x4000: "Ringtone",
     }
     for bit, name in _BITS.items():
         if value & bit:
@@ -171,6 +172,15 @@ PREFERRED_COLUMN_ORDER = [
 # Default columns shown when no specific selection
 DEFAULT_COLUMNS = ["Title", "Artist", "Album", "Genre", "length", "rating", "playCount"]
 
+# Default columns for video categories (more relevant to video content)
+DEFAULT_VIDEO_COLUMNS = ["Title", "Artist", "Album", "length", "mediaType", "size", "dateAdded"]
+
+# Default columns for podcast categories
+DEFAULT_PODCAST_COLUMNS = ["Title", "Artist", "Album", "length", "dateAdded", "playCount", "Description Text"]
+
+# Default columns for audiobook categories
+DEFAULT_AUDIOBOOK_COLUMNS = ["Title", "Artist", "Album", "length", "bookmarkTime", "playCount", "dateAdded"]
+
 # Columns that should be right-aligned (numeric)
 NUMERIC_COLUMNS = frozenset({
     "year", "playCount", "skipCount", "trackNumber", "discNumber", "bpm",
@@ -251,6 +261,7 @@ class MusicBrowserList(QFrame):
         self._tracks: list[dict] = []          # Currently displayed (filtered) tracks
         self._columns: list[str] = DEFAULT_COLUMNS.copy()
         self._current_filter: dict | None = None
+        self._media_type_filter: int | None = None  # Persisted from loadTracks()
         self._is_playlist_mode: bool = False   # True when showing a playlist in order
         self._current_playlist: dict | None = None  # The playlist dict when in playlist mode
 
@@ -398,15 +409,30 @@ class MusicBrowserList(QFrame):
     # Public API - Loading and Filtering
     # -------------------------------------------------------------------------
 
-    def loadTracks(self) -> None:
-        """Load all tracks from the cache and apply current filter."""
+    def loadTracks(self, media_type_filter: int | None = None) -> None:
+        """Load all tracks from the cache and apply current filter.
+
+        Args:
+            media_type_filter: If set, only include tracks whose mediaType
+                               has this bit set (bitwise AND).  mediaType 0
+                               ("Audio/Video") passes both audio and video
+                               filters, matching iTunes behaviour.
+        """
         from ..app import iTunesDBCache
 
         cache = iTunesDBCache.get_instance()
         if not cache.is_ready():
             return
 
+        self._media_type_filter = media_type_filter
         self._all_tracks = cache.get_tracks()
+
+        if media_type_filter is not None:
+            self._all_tracks = [
+                t for t in self._all_tracks
+                if t.get("mediaType", 1) == 0  # type 0 = "Audio/Video", shows everywhere
+                or (t.get("mediaType", 1) & media_type_filter)
+            ]
 
         if self._current_filter:
             self.applyFilter(self._current_filter)
@@ -496,6 +522,7 @@ class MusicBrowserList(QFrame):
         self._all_tracks = []
         self._tracks = []
         self._current_filter = None
+        self._media_type_filter = None
         self._is_playlist_mode = False
         self._current_playlist = None
         self._art_cache.clear()
@@ -516,18 +543,43 @@ class MusicBrowserList(QFrame):
     # -------------------------------------------------------------------------
 
     def _ensure_tracks_loaded(self) -> None:
-        """Ensure tracks are loaded before filtering (without populating table)."""
+        """Ensure tracks are loaded before filtering (without populating table).
+
+        Respects the media type filter set by the most recent loadTracks() call
+        so that filterByAlbum/Artist/Genre don't reintroduce excluded tracks.
+        """
         if not self._all_tracks:
             from ..app import iTunesDBCache
 
             cache = iTunesDBCache.get_instance()
             if cache.is_ready():
                 self._all_tracks = cache.get_tracks()
+                mf = getattr(self, "_media_type_filter", None)
+                if mf is not None:
+                    self._all_tracks = [
+                        t for t in self._all_tracks
+                        if t.get("mediaType", 1) == 0
+                        or (t.get("mediaType", 1) & mf)
+                    ]
 
     def _setup_columns(self) -> None:
         """Determine which columns to display based on available data."""
+        # Choose appropriate defaults based on media type filter
+        mf = getattr(self, "_media_type_filter", None)
+        is_video = mf is not None and (mf & 0x62) and not (mf & 0x01)
+        is_podcast = mf is not None and (mf & 0x04) != 0 and not is_video
+        is_audiobook = mf is not None and (mf & 0x08) != 0 and not is_video
+        if is_video:
+            defaults = DEFAULT_VIDEO_COLUMNS
+        elif is_podcast:
+            defaults = DEFAULT_PODCAST_COLUMNS
+        elif is_audiobook:
+            defaults = DEFAULT_AUDIOBOOK_COLUMNS
+        else:
+            defaults = DEFAULT_COLUMNS
+
         if not self._tracks:
-            self._columns = [c for c in DEFAULT_COLUMNS if c not in self._hidden_columns]
+            self._columns = [c for c in defaults if c not in self._hidden_columns]
             return
 
         # Sample tracks to find available keys
@@ -912,13 +964,27 @@ class MusicBrowserList(QFrame):
         """Update the status label with track count info."""
         shown = len(self._tracks)
         total = len(self._all_tracks)
+        # Determine context-appropriate noun from media type filter
+        mf = getattr(self, "_media_type_filter", None)
+        if mf is not None and mf & 0x62 and not (mf & 0x01):
+            noun = "video"
+        elif mf is not None and mf == 0x04:
+            noun = "episode"  # Podcast episodes
+        elif mf is not None and mf == 0x08:
+            noun = "audiobook"
+        elif mf is not None and mf == 0x01:
+            noun = "song"
+        else:
+            noun = "track"
+        noun_pl = noun + "s" if total != 1 else noun
+        shown_pl = noun + "s" if shown != 1 else noun
         if total == 0:
             self._status_label.setText("")
         elif shown == total or self._current_filter is None:
-            self._status_label.setText(f"{total:,} track{'s' if total != 1 else ''}")
+            self._status_label.setText(f"{total:,} {noun_pl}")
         else:
             self._status_label.setText(
-                f"{shown:,} of {total:,} track{'s' if total != 1 else ''}"
+                f"{shown:,} of {total:,} {shown_pl}"
             )
 
     @staticmethod
@@ -971,23 +1037,31 @@ class MusicBrowserList(QFrame):
         if table_vp and obj is table_vp:
             etype = event.type()
 
-            # Shift + wheel → horizontal scroll
+            # Wheel events: horizontal trackpad swipe, shift+wheel, normal wheel
             if etype == QEvent.Type.Wheel:
                 we: QWheelEvent = event  # type: ignore[assignment]
+                dx = we.angleDelta().x()
+                dy = we.angleDelta().y()
+
+                # Shift + wheel → horizontal scroll (mouse wheel users)
                 if we.modifiers() & Qt.KeyboardModifier.ShiftModifier:
                     hbar = self.table.horizontalScrollBar()
                     if hbar:
-                        delta = we.angleDelta().y() or we.angleDelta().x()
+                        delta = dy or dx
                         hbar.setValue(hbar.value() - delta)
                     return True
 
-                # Normal wheel → scroll exactly one row per notch
+                # Trackpad horizontal swipe (dx dominant, dy near zero)
+                # Let it through to both scrollbars naturally
+                hbar = self.table.horizontalScrollBar()
                 vbar = self.table.verticalScrollBar()
-                if vbar:
-                    delta_y = we.angleDelta().y()
-                    if delta_y > 0:
+                if hbar and dx != 0:
+                    hbar.setValue(hbar.value() - dx)
+                # Vertical: scroll exactly one row per notch
+                if vbar and dy != 0:
+                    if dy > 0:
                         vbar.setValue(vbar.value() - 1)
-                    elif delta_y < 0:
+                    else:
                         vbar.setValue(vbar.value() + 1)
                 return True
 
