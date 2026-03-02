@@ -1080,7 +1080,14 @@ def get_device_identifier(ipod_path: str | Path, discovered_ipod=None) -> str:
 
 
 def get_device_display_name(discovered_ipod=None, fallback: str = "iPod") -> str:
-    """Get a human-readable device name for display in manifests."""
+    """Get a human-readable device name for display in manifests.
+
+    Prefers the user-assigned iPod name (from the master playlist title)
+    when available, falling back to the model display name.
+    """
     if discovered_ipod:
+        ipod_name = getattr(discovered_ipod, "ipod_name", "")
+        if ipod_name:
+            return ipod_name
         return getattr(discovered_ipod, "display_name", fallback) or fallback
     return fallback

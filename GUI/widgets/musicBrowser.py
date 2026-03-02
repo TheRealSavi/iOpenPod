@@ -1,8 +1,9 @@
 import logging
 from PyQt6.QtCore import Qt, QSize
-from PyQt6.QtWidgets import QScrollArea, QFrame, QSplitter, QVBoxLayout, QSizePolicy
+from PyQt6.QtWidgets import QScrollArea, QFrame, QSplitter, QVBoxLayout, QSizePolicy, QStackedWidget
 from .MBGridView import MusicBrowserGrid
 from .MBListView import MusicBrowserList
+from .playlistBrowser import PlaylistBrowser
 from .trackListTitleBar import TrackListTitleBar
 from ..styles import Colors
 
@@ -88,12 +89,21 @@ class MusicBrowser(QFrame):
         # Set initial sizes (60% grid, 40% tracks)
         self.gridTrackSplitter.setSizes([600, 400])
 
-        self.mainLayout.addWidget(self.gridTrackSplitter)
+        # Playlist browser (shown when Playlists category is active)
+        self.playlistBrowser = PlaylistBrowser()
+
+        # Use a stacked widget to toggle between grid/track and playlist views
+        self.stack = QStackedWidget()
+        self.stack.addWidget(self.gridTrackSplitter)   # index 0
+        self.stack.addWidget(self.playlistBrowser)      # index 1
+
+        self.mainLayout.addWidget(self.stack)
 
     def reloadData(self):
         """Reload data from the current device."""
         self.browserGrid.clearGrid()
         self.browserTrack.clearTable()
+        self.playlistBrowser.clear()
         # Data will be loaded when cache emits data_ready
 
     def onDataReady(self):
@@ -121,6 +131,7 @@ class MusicBrowser(QFrame):
 
         if category == "Tracks":
             log.debug("  Showing Tracks view")
+            self.stack.setCurrentIndex(0)
             # Hide grid, show all tracks
             self.browserGridScroll.hide()
             self.browserGrid.clearGrid()  # Clear grid to cancel pending image loads
@@ -131,13 +142,11 @@ class MusicBrowser(QFrame):
             self.trackListTitleBar.resetColor()
         elif category == "Playlists":
             log.debug("  Showing Playlists view")
-            # TODO: Implement playlist support
-            self.browserGridScroll.show()
-            self.browserGrid.clearGrid()
-            self.trackListTitleBar.setTitle("Playlists - Coming Soon")
-            self.trackListTitleBar.resetColor()
+            self.stack.setCurrentIndex(1)
+            self.playlistBrowser.loadPlaylists()
         else:
             log.debug(f"  Showing grid view for: {category}")
+            self.stack.setCurrentIndex(0)
             # Show grid for Albums, Artists, Genres
             self.browserGridScroll.show()
             self.browserGrid.loadCategory(category)

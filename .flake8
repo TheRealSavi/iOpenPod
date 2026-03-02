@@ -1,2 +1,3 @@
 [flake8]
-ignore = E501, F541
+# Preserve existing ignores and add W503 (allow line break before operator)
+ignore = E501, F541, W503

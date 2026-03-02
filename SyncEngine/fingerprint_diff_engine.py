@@ -168,6 +168,11 @@ class SyncPlan:
     total_ipod_tracks: int = 0
     matched_tracks: int = 0
 
+    # Playlist changes (populated by GUI before showing plan)
+    playlists_to_add: list[dict] = field(default_factory=list)
+    playlists_to_edit: list[dict] = field(default_factory=list)
+    playlists_to_remove: list[dict] = field(default_factory=list)
+
     # Storage
     storage: StorageSummary = field(default_factory=StorageSummary)
 
@@ -182,6 +187,9 @@ class SyncPlan:
             self.to_sync_playcount,
             self.to_sync_rating,
             self.artwork_needs_sync,
+            self.playlists_to_add,
+            self.playlists_to_edit,
+            self.playlists_to_remove,
         ])
 
     @property
@@ -213,6 +221,12 @@ class SyncPlan:
             lines.append(f"  🖼️  {self.artwork_missing_count} tracks missing album art")
         if self.fingerprint_errors:
             lines.append(f"  ⚠️  {len(self.fingerprint_errors)} files could not be fingerprinted")
+        if self.playlists_to_add:
+            lines.append(f"  🎶 {len(self.playlists_to_add)} playlists to add")
+        if self.playlists_to_edit:
+            lines.append(f"  📝 {len(self.playlists_to_edit)} playlists to update")
+        if self.playlists_to_remove:
+            lines.append(f"  🗑️  {len(self.playlists_to_remove)} playlists to remove")
         if self.duplicates:
             lines.append(f"  ⚠️  {len(self.duplicates)} duplicate groups ({self.duplicate_count} extra files skipped)")
         if self.unresolved_collisions:

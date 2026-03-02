@@ -26,6 +26,8 @@ from .audio_fingerprint import get_or_compute_fingerprint
 from .itunes_prefs import protect_from_itunes
 
 from iTunesDB_Writer.mhit_writer import TrackInfo
+from iTunesDB_Writer.mhyp_writer import PlaylistInfo
+from iTunesDB_Writer.mhod_spl_writer import prefs_from_parsed, rules_from_parsed
 
 logger = logging.getLogger(__name__)
 
@@ -174,8 +176,11 @@ class SyncExecutor:
             except OSError as e:
                 logger.warning(f"Could not check disk space: {e}")
 
-        # Load existing tracks from iPod database
-        existing_tracks_data = self._read_existing_tracks()
+        # Load existing tracks and playlists from iPod database
+        existing_db = self._read_existing_database()
+        existing_tracks_data = existing_db["tracks"]
+        existing_playlists_raw = existing_db["playlists"]
+        existing_smart_raw = existing_db["smart_playlists"]
 
         # Convert to TrackInfo objects, indexed by dbid
         tracks_by_dbid: dict[int, TrackInfo] = {}
@@ -249,11 +254,60 @@ class SyncExecutor:
 
             logger.debug(f"ART: pc_file_paths total={len(pc_file_paths)}, all_tracks={len(all_tracks)}")
 
+            # ── Merge user-created playlists from GUI cache ────────────
+            playlist_merge_count = 0
+            try:
+                from GUI.app import iTunesDBCache
+                cache = iTunesDBCache.get_instance()
+                user_pls = cache.get_user_playlists()
+                if user_pls and progress_callback:
+                    progress_callback(SyncProgress("playlists", 0, len(user_pls), message="Merging playlists..."))
+                for idx, upl in enumerate(user_pls):
+                    is_new = upl.get("_isNew", False)
+                    pid = upl.get("playlistID", 0)
+                    if is_new:
+                        # Brand-new playlist — add to the regular list
+                        # (smart playlists in dataset 2 are fully supported)
+                        existing_playlists_raw.append(upl)
+                    else:
+                        # Edited existing playlist — replace in-place
+                        replaced = False
+                        for i, epl in enumerate(existing_playlists_raw):
+                            if epl.get("playlistID") == pid:
+                                existing_playlists_raw[i] = upl
+                                replaced = True
+                                break
+                        if not replaced:
+                            for i, epl in enumerate(existing_smart_raw):
+                                if epl.get("playlistID") == pid:
+                                    existing_smart_raw[i] = upl
+                                    replaced = True
+                                    break
+                        if not replaced:
+                            existing_playlists_raw.append(upl)
+                    playlist_merge_count += 1
+                    logger.info("Merged user playlist '%s' (id=0x%X, new=%s)",
+                                upl.get("Title", "?"), pid, is_new)
+                    if progress_callback:
+                        progress_callback(SyncProgress("playlists", idx + 1, len(user_pls),
+                                                       message=f"Merged playlist: {upl.get('Title', '?')}"))
+            except Exception as e:
+                logger.debug("No GUI cache available (headless sync?): %s", e)
+
+            # ── Build playlists and evaluate smart playlists ──────────
+            playlists, smart_playlists = self._build_and_evaluate_playlists(
+                existing_tracks_data, all_tracks,
+                existing_playlists_raw, existing_smart_raw,
+            )
+
             # Always write — even if all_tracks is empty (e.g. all tracks
             # were removed).  Skipping the write would leave the old DB
             # intact and ghost tracks would reappear on next sync.
             try:
-                self._write_database(all_tracks, pc_file_paths=pc_file_paths)
+                self._write_database(
+                    all_tracks, pc_file_paths=pc_file_paths,
+                    playlists=playlists, smart_playlists=smart_playlists,
+                )
                 if progress_callback:
                     progress_callback(SyncProgress("write_database", 1, 1, message=f"Database written with {len(all_tracks)} tracks"))
 
@@ -281,6 +335,16 @@ class SyncExecutor:
                 # (stages 1-6 already modified it), or the next sync will
                 # see mismatched state and create duplicates.
                 self.mapping_manager.save(mapping)
+
+                # Clear user playlists from cache — they've been written
+                try:
+                    from GUI.app import iTunesDBCache
+                    gui_cache = iTunesDBCache.get_instance()
+                    if gui_cache.has_pending_playlists():
+                        gui_cache._user_playlists.clear()
+                        logger.info("Cleared pending user playlists after successful write")
+                except Exception:
+                    pass
 
                 # ── Apply iTunes protections ────────────────────────────
                 # Compute totals from the final track list for the plist
@@ -973,20 +1037,45 @@ class SyncExecutor:
 
     # ── Track Conversion ────────────────────────────────────────────────────
 
-    def _read_existing_tracks(self) -> list[dict]:
-        """Read existing tracks from iTunesDB."""
+    def _read_existing_database(self) -> dict:
+        """Read existing tracks, playlists, and smart playlists from iTunesDB."""
         from iTunesDB_Parser import parse_itunesdb
 
+        empty = {"tracks": [], "playlists": [], "smart_playlists": []}
         itdb_path = self.ipod_path / "iPod_Control" / "iTunes" / "iTunesDB"
         if not itdb_path.exists():
-            return []
+            return empty
 
         try:
             result = parse_itunesdb(str(itdb_path))
-            return result.get("mhlt", [])
+            tracks = result.get("mhlt", [])
+
+            # Dataset 2: regular + user playlists (mhlp)
+            all_playlists = result.get("mhlp", [])
+            # Deduplicate by playlistID
+            seen_ids: set[int] = set()
+            playlists: list[dict] = []
+            for pl in all_playlists:
+                pid = pl.get("playlistID", 0)
+                if pid not in seen_ids:
+                    seen_ids.add(pid)
+                    playlists.append(pl)
+
+            # Dataset 5: smart playlists for browsing (mhsp)
+            smart_playlists = result.get("mhsp", [])
+
+            logger.info(
+                "Parsed iPod database: %d tracks, %d playlists, %d smart playlists",
+                len(tracks), len(playlists), len(smart_playlists),
+            )
+            return {
+                "tracks": tracks,
+                "playlists": playlists,
+                "smart_playlists": smart_playlists,
+            }
         except Exception as e:
             logger.error(f"Failed to parse iTunesDB: {e}")
-            return []
+            return empty
 
     def _track_dict_to_info(self, t: dict) -> TrackInfo:
         """Convert parsed track dict to TrackInfo for writing."""
@@ -1111,22 +1200,202 @@ class SyncExecutor:
             sort_album=getattr(pc_track, "sort_album", None),
         )
 
+    def _build_and_evaluate_playlists(
+        self,
+        parsed_tracks: list[dict],
+        all_track_infos: list[TrackInfo],
+        parsed_playlists: list[dict],
+        parsed_smart: list[dict],
+    ) -> tuple[list[PlaylistInfo], list[PlaylistInfo]]:
+        """Build PlaylistInfo lists and evaluate smart playlist rules.
+
+        Playlist *definitions* (names, rules, sort orders) come from the
+        existing iPod database, but smart playlist *evaluation* runs against
+        the NEW track list being written — so newly added tracks are
+        included and removed tracks are excluded.
+
+        Returns (regular_playlists, smart_playlists) ready for write_itunesdb().
+        """
+        from .spl_evaluator import spl_update
+
+        # Map old trackID → dbid so we can remap regular playlist items
+        old_tid_to_dbid: dict[int, int] = {}
+        for t in parsed_tracks:
+            tid = t.get("trackID", 0)
+            dbid = t.get("dbid", 0)
+            if tid and dbid:
+                old_tid_to_dbid[tid] = dbid
+
+        # Set of valid dbids in the final track list
+        valid_dbids: set[int] = {t.dbid for t in all_track_infos if t.dbid}
+
+        # Convert the NEW TrackInfo list → evaluator-compatible dicts.
+        # The evaluator expects parsed-track-style dicts with keys like
+        # "trackID", "Title", "Artist", "rating", etc.
+        eval_tracks = [self._trackinfo_to_eval_dict(t) for t in all_track_infos]
+
+        # ── Regular playlists (dataset 2) ────────────────────────────
+        playlists: list[PlaylistInfo] = []
+        for pl in parsed_playlists:
+            if pl.get("isMaster", False):
+                continue  # master playlist is auto-generated by the writer
+
+            # Resolve track IDs → dbids, filtering out removed tracks
+            items = pl.get("items", [])
+            track_ids = []
+            for item in items:
+                tid = item.get("trackID", 0)
+                dbid = old_tid_to_dbid.get(tid, 0)
+                if dbid in valid_dbids:
+                    track_ids.append(dbid)
+
+            info = PlaylistInfo(
+                name=pl.get("Title", "Untitled"),
+                track_ids=track_ids,
+                playlist_id=pl.get("playlistID"),
+                hidden=False,
+                sortorder=pl.get("sortOrder", 0),
+            )
+
+            # Smart playlist rules (dataset 2 smart playlists)
+            if pl.get("isSmartPlaylist", False):
+                prefs_data = pl.get("smartPlaylistData")
+                rules_data = pl.get("smartPlaylistRules")
+                if prefs_data and rules_data:
+                    info.smart_prefs = prefs_from_parsed(prefs_data)
+                    info.smart_rules = rules_from_parsed(rules_data)
+
+                    # Evaluate rules against the NEW track list
+                    matched_dbids = spl_update(
+                        info.smart_prefs, info.smart_rules, eval_tracks,
+                    )
+                    # Filter to valid dbids (should already be, but be safe)
+                    info.track_ids = [
+                        d for d in matched_dbids if d in valid_dbids
+                    ]
+                    logger.debug(
+                        "SPL (ds2) '%s': %d tracks matched",
+                        info.name, len(info.track_ids),
+                    )
+
+            playlists.append(info)
+
+        logger.info(
+            "Prepared %d user playlists for writing", len(playlists)
+        )
+
+        # ── Smart playlists (dataset 5) ──────────────────────────────
+        smart_playlists: list[PlaylistInfo] = []
+        for pl in parsed_smart:
+            prefs_data = pl.get("smartPlaylistData")
+            rules_data = pl.get("smartPlaylistRules")
+
+            info = PlaylistInfo(
+                name=pl.get("Title", "Untitled"),
+                playlist_id=pl.get("playlistID"),
+                hidden=bool(pl.get("type", 0)),
+                sortorder=pl.get("sortOrder", 0),
+                mhsd5_type=pl.get("mhsd5Type", 0),
+            )
+
+            if prefs_data and rules_data:
+                info.smart_prefs = prefs_from_parsed(prefs_data)
+                info.smart_rules = rules_from_parsed(rules_data)
+
+                # Dataset 5 smart playlists: iPod evaluates these at runtime,
+                # so we write 0 MHIPs.  But we still evaluate for logging.
+                matched_dbids = spl_update(
+                    info.smart_prefs, info.smart_rules, eval_tracks,
+                )
+                logger.debug(
+                    "SPL (ds5) '%s': %d tracks would match (iPod evaluates at runtime)",
+                    info.name, len(matched_dbids),
+                )
+                # track_ids stays empty — iPod firmware evaluates these
+
+            smart_playlists.append(info)
+
+        logger.info(
+            "Prepared %d smart playlists (dataset 5) for writing",
+            len(smart_playlists),
+        )
+
+        return playlists, smart_playlists
+
+    @staticmethod
+    def _trackinfo_to_eval_dict(t: TrackInfo) -> dict:
+        """Convert a TrackInfo to a dict the SPL evaluator can consume.
+
+        The evaluator expects parsed-track-style dicts with keys matching
+        the accessor maps in spl_evaluator.py (e.g. "Title", "Artist",
+        "rating", "trackID").  We use dbid as the trackID so that
+        spl_update() returns dbids directly.
+        """
+        d: dict = {
+            # Use dbid as trackID so evaluator returns dbids
+            "trackID": t.dbid,
+            # String fields
+            "Title": t.title or "",
+            "Album": t.album or "",
+            "Artist": t.artist or "",
+            "Genre": t.genre or "",
+            "filetype": t.filetype_desc or t.filetype or "",
+            "Comment": t.comment or "",
+            "Composer": t.composer or "",
+            "Album Artist": t.album_artist or "",
+            "Sort Title": t.sort_name or "",
+            "Sort Album": t.sort_album or "",
+            "Sort Artist": t.sort_artist or "",
+            # Integer fields
+            "bitrate": t.bitrate,
+            "sampleRate": t.sample_rate,
+            "year": t.year,
+            "trackNumber": t.track_number,
+            "size": t.size,
+            "length": t.length,
+            "playCount": t.play_count,
+            "discNumber": t.disc_number,
+            "rating": t.rating,
+            "bpm": t.bpm,
+            "skipCount": t.skip_count,
+            # Date fields (Unix timestamps)
+            "dateAdded": t.date_added,
+            "lastPlayed": t.last_played,
+            "lastSkipped": t.last_skipped,
+            # Boolean fields
+            "compilation": 1 if t.compilation else 0,
+            # Binary AND fields
+            "mediaType": t.media_type,
+            # Checked flag (0=checked, 1=unchecked in iPod convention)
+            "checked": 0,
+        }
+        return d
+
     def _write_database(
         self,
         tracks: list[TrackInfo],
         pc_file_paths: Optional[dict] = None,
+        playlists: Optional[list[PlaylistInfo]] = None,
+        smart_playlists: Optional[list[PlaylistInfo]] = None,
     ) -> bool:
         """Write tracks to iTunesDB (and ArtworkDB if pc_file_paths provided)."""
         from iTunesDB_Writer import write_itunesdb
 
         logger.debug(f"ART: _write_database called with {len(tracks)} tracks, "
                      f"pc_file_paths={'None' if pc_file_paths is None else len(pc_file_paths)}")
+        logger.debug(
+            "DB: playlists=%s, smart_playlists=%s",
+            len(playlists) if playlists else 0,
+            len(smart_playlists) if smart_playlists else 0,
+        )
 
         try:
             return write_itunesdb(
                 str(self.ipod_path),
                 tracks,
                 pc_file_paths=pc_file_paths,
+                playlists=playlists,
+                smart_playlists=smart_playlists,
             )
         except Exception as e:
             logger.error(f"Failed to write iTunesDB: {e}")

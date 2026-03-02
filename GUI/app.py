@@ -2,7 +2,7 @@ import logging
 import os
 import sys
 import traceback
-from PyQt6.QtCore import QRunnable, pyqtSignal, pyqtSlot, QObject, QThreadPool
+from PyQt6.QtCore import QRunnable, pyqtSignal, pyqtSlot, QObject, QThreadPool, QThread
 from PyQt6.QtWidgets import QWidget, QMainWindow, QHBoxLayout, QMessageBox, QStackedWidget
 from GUI.widgets.musicBrowser import MusicBrowser
 from GUI.widgets.sidebar import Sidebar
@@ -150,6 +150,8 @@ class iTunesDBCache(QObject):
     data_ready = pyqtSignal()  # Emitted when data is loaded and ready
     _instance: "iTunesDBCache | None" = None
 
+    playlists_changed = pyqtSignal()   # Emitted when user playlists are added/edited/removed
+
     def __init__(self):
         super().__init__()
         self._data: dict | None = None
@@ -161,6 +163,9 @@ class iTunesDBCache(QObject):
         self._album_only_index: dict | None = None  # album -> list of tracks
         self._artist_index: dict | None = None  # artist -> list of tracks
         self._genre_index: dict | None = None   # genre -> list of tracks
+        self._track_id_index: dict | None = None  # trackID -> track dict
+        # User-created/edited playlists (persisted in memory until sync)
+        self._user_playlists: list[dict] = []
 
     @classmethod
     def get_instance(cls) -> "iTunesDBCache":
@@ -178,6 +183,8 @@ class iTunesDBCache(QObject):
             self._album_only_index = None
             self._artist_index = None
             self._genre_index = None
+            self._track_id_index = None
+            self._user_playlists.clear()
 
     def invalidate(self):
         """Mark cached data stale so the next start_loading() re-parses."""
@@ -187,6 +194,7 @@ class iTunesDBCache(QObject):
             self._album_only_index = None
             self._artist_index = None
             self._genre_index = None
+            self._track_id_index = None
 
     def is_ready(self) -> bool:
         """Check if data is cached and ready."""
@@ -237,6 +245,128 @@ class iTunesDBCache(QObject):
         with self._lock:
             return self._genre_index or {}
 
+    def get_track_id_index(self) -> dict:
+        """Get pre-computed trackID index: trackID -> track dict."""
+        with self._lock:
+            return self._track_id_index or {}
+
+    def get_playlists(self) -> list:
+        """Get all playlists (regular + podcast + smart), tagged with _source.
+
+        Deduplicates by playlistID since the podcast dataset (type 3) often
+        contains the same playlists as the regular dataset (type 2).  The
+        regular copy is preferred when duplicates exist.  Playlists from
+        mhlp_podcast are only tagged as 'podcast' when their podcastFlag is
+        set — otherwise they are just duplicates of regular playlists.
+        """
+        data = self.get_data()
+        if not data:
+            return []
+
+        seen_ids: set[int] = set()
+        result: list[dict] = []
+
+        # 1. Regular playlists (mhlp / dataset type 2) — always preferred
+        for pl in data.get("mhlp", []):
+            pl["_source"] = "regular"
+            pid = pl.get("playlistID", 0)
+            if pid not in seen_ids:
+                seen_ids.add(pid)
+                result.append(pl)
+
+        # 2. Podcast playlists (mhlp_podcast / dataset type 3)
+        #    Only add if not already seen, and tag as podcast only when
+        #    podcastFlag is actually set.
+        for pl in data.get("mhlp_podcast", []):
+            pid = pl.get("playlistID", 0)
+            if pid in seen_ids:
+                continue  # duplicate of a regular playlist
+            pl["_source"] = "podcast" if pl.get("podcastFlag", 0) == 1 else "regular"
+            seen_ids.add(pid)
+            result.append(pl)
+
+        # 3. Smart playlists (mhsp / dataset type 5)
+        for pl in data.get("mhsp", []):
+            pid = pl.get("playlistID", 0)
+            if pid in seen_ids:
+                continue
+            pl["_source"] = "smart"
+            seen_ids.add(pid)
+            result.append(pl)
+
+        # 4. User-created/edited playlists (from GUI, pending sync)
+        with self._lock:
+            for upl in self._user_playlists:
+                pid = upl.get("playlistID", 0)
+                if pid in seen_ids:
+                    # Replace the existing entry with the edited version
+                    result = [upl if r.get("playlistID") == pid else r for r in result]
+                else:
+                    seen_ids.add(pid)
+                    result.append(upl)
+
+        return result
+
+    # ─────────────────────────────────────────────────────────────
+    # User playlist management (in-memory, written at sync time)
+    # ─────────────────────────────────────────────────────────────
+
+    def save_user_playlist(self, playlist: dict) -> None:
+        """Add or update a user-created/edited playlist in memory.
+
+        If the playlist has a playlistID that matches an existing user
+        playlist, the old entry is replaced.  Otherwise a new ID is generated.
+        Emits playlists_changed so the UI can refresh.
+        """
+        import random
+
+        with self._lock:
+            pid = playlist.get("playlistID", 0)
+
+            # Assign a new playlistID if this is a brand-new playlist
+            if not pid:
+                pid = random.getrandbits(64)
+                playlist["playlistID"] = pid
+
+            # Replace existing or append
+            replaced = False
+            for i, upl in enumerate(self._user_playlists):
+                if upl.get("playlistID") == pid:
+                    self._user_playlists[i] = playlist
+                    replaced = True
+                    break
+            if not replaced:
+                self._user_playlists.append(playlist)
+
+        logger.info(
+            "User playlist saved: '%s' (id=0x%016X, new=%s)",
+            playlist.get("Title", "?"), pid, not replaced,
+        )
+        self.playlists_changed.emit()
+
+    def remove_user_playlist(self, playlist_id: int) -> bool:
+        """Remove a user playlist by playlistID. Returns True if found."""
+        with self._lock:
+            before = len(self._user_playlists)
+            self._user_playlists = [
+                p for p in self._user_playlists
+                if p.get("playlistID") != playlist_id
+            ]
+            removed = len(self._user_playlists) < before
+        if removed:
+            self.playlists_changed.emit()
+        return removed
+
+    def get_user_playlists(self) -> list[dict]:
+        """Get all user-created/edited playlists (pending sync)."""
+        with self._lock:
+            return list(self._user_playlists)
+
+    def has_pending_playlists(self) -> bool:
+        """Check if there are user playlists waiting to be synced."""
+        with self._lock:
+            return len(self._user_playlists) > 0
+
     def set_data(self, data: dict, device_path: str):
         """Set cached data, build indexes, and emit ready signal."""
         # Build indexes for fast lookups
@@ -245,8 +375,14 @@ class iTunesDBCache(QObject):
         artist_index = {}  # artist -> list of tracks
         genre_index = {}   # genre -> list of tracks
 
+        track_id_index = {}  # trackID -> track dict
+
         tracks = list(data.get("mhlt", []))
         for track in tracks:
+            tid = track.get("trackID")
+            if tid is not None:
+                track_id_index[tid] = track
+
             album = track.get("Album", "Unknown Album")
             artist = track.get("Artist", "Unknown Artist")
             # Use Album Artist for album grouping (matches mhla's "Artist (Used by Album Item)")
@@ -282,6 +418,7 @@ class iTunesDBCache(QObject):
             self._album_only_index = album_only_index
             self._artist_index = artist_index
             self._genre_index = genre_index
+            self._track_id_index = track_id_index
         # Emit signal outside lock to avoid deadlock
         self.data_ready.emit()
 
@@ -617,6 +754,9 @@ class MainWindow(QMainWindow):
         self.sidebar.category_changed.connect(
             self.musicBrowser.updateCategory)  # Connect the signal to the slot
 
+        # Connect device rename
+        self.sidebar.device_renamed.connect(self._onDeviceRenamed)
+
         # Connect device button to folder picker
         self.sidebar.deviceButton.clicked.connect(self.selectDevice)
 
@@ -733,8 +873,24 @@ class MainWindow(QMainWindow):
         total_size = sum(t.get("size", 0) for t in tracks)
         total_duration = sum(t.get("length", 0) for t in tracks)
 
-        # Get device name from folder
-        device_name = os.path.basename(device.device_path) if device.device_path else "iPod"
+        # Get device name from master playlist title (the iPod's user name)
+        device_name = ""
+        playlists = cache.get_playlists()
+        for pl in playlists:
+            if pl.get("isMaster"):
+                device_name = pl.get("Title", "")
+                break
+        if not device_name:
+            device_name = os.path.basename(device.device_path) if device.device_path else "iPod"
+
+        # Store iPod name in centralized DeviceInfo
+        try:
+            from device_info import get_current_device
+            dev = get_current_device()
+            if dev and not dev.ipod_name:
+                dev.ipod_name = device_name
+        except Exception:
+            pass
 
         # Get model name from centralised DeviceInfo store
         model = "iPod"  # Default
@@ -795,6 +951,64 @@ class MainWindow(QMainWindow):
 
         # Start loading (will emit data_ready when done)
         cache.start_loading()
+
+    def _onDeviceRenamed(self, new_name: str):
+        """Handle device rename from sidebar — update master playlist and write to iPod."""
+        device = DeviceManager.get_instance()
+        if not device.device_path:
+            return
+
+        cache = iTunesDBCache.get_instance()
+        data = cache.get_data()
+        if not data:
+            return
+
+        # Update DeviceInfo.ipod_name
+        try:
+            from device_info import get_current_device
+            dev = get_current_device()
+            if dev:
+                dev.ipod_name = new_name
+        except Exception:
+            pass
+
+        # Update master playlist Title in the cache
+        playlists = cache.get_playlists()
+        master_pl = None
+        for pl in playlists:
+            if pl.get("isMaster"):
+                pl["Title"] = new_name
+                master_pl = pl
+                break
+
+        if not master_pl:
+            logger.warning("Could not find master playlist to rename")
+            return
+
+        logger.info("Renaming iPod to '%s'", new_name)
+
+        # Write the full database to persist the rename
+        self._rename_worker = _DeviceRenameWorker(device.device_path)
+        self._rename_worker.finished_ok.connect(self._onRenameDone)
+        self._rename_worker.failed.connect(self._onRenameFailed)
+        self._rename_worker.start()
+
+    def _onRenameDone(self):
+        """Device rename write completed."""
+        logger.info("iPod renamed successfully")
+        Notifier.get_instance().notify("iPod Renamed", "Device name updated successfully")
+        # Reload the database to reflect changes
+        cache = iTunesDBCache.get_instance()
+        cache.invalidate()
+        cache.start_loading()
+
+    def _onRenameFailed(self, error_msg: str):
+        """Device rename write failed."""
+        logger.error("iPod rename failed: %s", error_msg)
+        QMessageBox.critical(
+            self, "Rename Failed",
+            f"Failed to rename iPod:\n{error_msg}"
+        )
 
     def startPCSync(self):
         """Start the PC ↔ iPod sync process."""
@@ -869,7 +1083,46 @@ class MainWindow(QMainWindow):
         # Provide iPod tracks cache so the review widget can list artwork-missing tracks
         cache = iTunesDBCache.get_instance()
         self.syncReview._ipod_tracks_cache = cache.get_tracks() or []
+
+        # ── Populate playlist change info on the plan ──────────────
+        self._populate_playlist_changes(plan, cache)
+
         self.syncReview.show_plan(plan)
+
+    def _populate_playlist_changes(self, plan, cache: 'iTunesDBCache'):
+        """Compute playlist add/edit/remove lists for the sync plan.
+
+        Compares user-created/edited playlists (pending in cache) against
+        the existing iPod playlists to categorize changes.
+        """
+        user_playlists = cache.get_user_playlists()
+        if not user_playlists:
+            return
+
+        # Build set of existing iPod playlist IDs (from parsed DB)
+        existing_ids: set[int] = set()
+        data = cache.get_data()
+        if data:
+            for pl in data.get("mhlp", []):
+                pid = pl.get("playlistID", 0)
+                if pid:
+                    existing_ids.add(pid)
+            for pl in data.get("mhlp_podcast", []):
+                pid = pl.get("playlistID", 0)
+                if pid:
+                    existing_ids.add(pid)
+            for pl in data.get("smart_playlists", []):
+                pid = pl.get("playlistID", 0)
+                if pid:
+                    existing_ids.add(pid)
+
+        for upl in user_playlists:
+            pid = upl.get("playlistID", 0)
+            is_new = upl.get("_isNew", False)
+            if is_new or pid not in existing_ids:
+                plan.playlists_to_add.append(upl)
+            else:
+                plan.playlists_to_edit.append(upl)
 
     def _onSyncError(self, error_msg: str):
         """Called when sync diff fails."""
@@ -920,7 +1173,7 @@ class MainWindow(QMainWindow):
         rating_items = [s for s in selected_items if s.action == SyncAction.SYNC_RATING]
 
         # Create filtered plan
-        # Carry matched_pc_paths and artwork info from the original plan
+        # Carry matched_pc_paths, artwork info, and playlist changes from the original plan
         original_plan = self._plan  # stored in _onSyncDiffComplete
         filtered_plan = SyncPlan(
             to_add=add_items,
@@ -935,6 +1188,9 @@ class MainWindow(QMainWindow):
             artwork_missing_count=original_plan.artwork_missing_count if original_plan else 0,
             _stale_mapping_entries=original_plan._stale_mapping_entries if original_plan else [],
             mapping=original_plan.mapping if original_plan else None,
+            playlists_to_add=original_plan.playlists_to_add if original_plan else [],
+            playlists_to_edit=original_plan.playlists_to_edit if original_plan else [],
+            playlists_to_remove=original_plan.playlists_to_remove if original_plan else [],
         )
 
         if not filtered_plan.has_changes:
@@ -974,7 +1230,12 @@ class MainWindow(QMainWindow):
                 errors=len(getattr(result, 'errors', [])),
             )
 
-        # Reload the database to show changes
+        # Reload the database to show changes (delay lets OS flush writes)
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(500, self._rescanAfterSync)
+
+    def _rescanAfterSync(self):
+        """Rescan the iPod database after a short post-write delay."""
         cache = iTunesDBCache.get_instance()
         cache.invalidate()
         cache.start_loading()
@@ -1025,3 +1286,53 @@ class MainWindow(QMainWindow):
             thread_pool.waitForDone(3000)  # Wait up to 3 seconds for running tasks
         if a0:
             a0.accept()
+
+
+# =============================================================================
+# _DeviceRenameWorker — background thread for iPod rename (full DB rewrite)
+# =============================================================================
+
+class _DeviceRenameWorker(QThread):
+    """Rewrite the iTunesDB after renaming the iPod (master playlist title)."""
+
+    finished_ok = pyqtSignal()
+    failed = pyqtSignal(str)
+
+    def __init__(self, ipod_path: str):
+        super().__init__()
+        self._ipod_path = ipod_path
+
+    def run(self):
+        try:
+            from SyncEngine.sync_executor import SyncExecutor
+
+            executor = SyncExecutor(self._ipod_path)
+            existing_db = executor._read_existing_database()
+            existing_tracks_data = existing_db["tracks"]
+            existing_playlists_raw = list(existing_db["playlists"])
+            existing_smart_raw = list(existing_db["smart_playlists"])
+
+            all_tracks = [
+                executor._track_dict_to_info(t) for t in existing_tracks_data
+            ]
+
+            playlists, smart_playlists = executor._build_and_evaluate_playlists(
+                existing_tracks_data, all_tracks,
+                existing_playlists_raw, existing_smart_raw,
+            )
+
+            success = executor._write_database(
+                all_tracks,
+                playlists=playlists,
+                smart_playlists=smart_playlists,
+            )
+
+            if success:
+                self.finished_ok.emit()
+            else:
+                self.failed.emit("Database write returned False.")
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            self.failed.emit(str(e))

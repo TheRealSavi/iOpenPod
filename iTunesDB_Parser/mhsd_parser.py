@@ -7,6 +7,13 @@ def parse_dataset(data, offset, header_length, chunk_length) -> dict:
     datasetType = struct.unpack("<I", data[offset + 12:offset + 16])[0]
     # In order for the iPod to list podcasts
     # the type 3 Data Set MUST come between the type 1 and type 2 Data Sets.
+    #
+    # Dataset types:
+    #   1 = Track List (mhlt)
+    #   2 = Playlist List (mhlp) — regular playlists
+    #   3 = Podcast List (mhlp) — podcast playlists
+    #   4 = Album List (mhla)
+    #   5 = Smart Playlist List (mhlp) — smart playlists
 
     # Parse Child
     next_offset = offset + header_length

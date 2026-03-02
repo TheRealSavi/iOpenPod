@@ -1413,6 +1413,84 @@ def _identify_via_sysinfo(ipod_path: str) -> Optional[dict]:
     return result if result else None
 
 
+def _extract_ipod_name(ipod_path: str) -> str:
+    """
+    Lightweight extraction of the iPod's user-assigned name from the master
+    playlist title in the iTunesDB binary.  Walks the chunk headers without
+    doing a full parse — typically reads <4 KB.
+
+    Returns the name string, or empty string if extraction fails.
+    """
+    itdb_path = os.path.join(ipod_path, "iPod_Control", "iTunes", "iTunesDB")
+    if not os.path.exists(itdb_path):
+        return ""
+    try:
+        with open(itdb_path, "rb") as f:
+            data = f.read()
+
+        if len(data) < 12 or data[:4] != b"mhbd":
+            return ""
+
+        mhbd_header_len = struct.unpack("<I", data[4:8])[0]
+        mhbd_children = struct.unpack("<I", data[20:24])[0]
+
+        # Walk mhsd children to find dataset type 2 (playlist list)
+        pos = mhbd_header_len
+        for _ in range(mhbd_children):
+            if pos + 16 > len(data) or data[pos:pos + 4] != b"mhsd":
+                break
+            mhsd_hdr_len = struct.unpack("<I", data[pos + 4:pos + 8])[0]
+            mhsd_total_len = struct.unpack("<I", data[pos + 8:pos + 12])[0]
+            ds_type = struct.unpack("<I", data[pos + 12:pos + 16])[0]
+
+            if ds_type == 2:
+                # Found playlist dataset — its child is an mhlp
+                mhlp_pos = pos + mhsd_hdr_len
+                if mhlp_pos + 12 > len(data) or data[mhlp_pos:mhlp_pos + 4] != b"mhlp":
+                    break
+                mhlp_hdr_len = struct.unpack("<I", data[mhlp_pos + 4:mhlp_pos + 8])[0]
+                pl_count = struct.unpack("<I", data[mhlp_pos + 8:mhlp_pos + 12])[0]
+                if pl_count == 0:
+                    break
+
+                # First mhyp is the master playlist
+                mhyp_pos = mhlp_pos + mhlp_hdr_len
+                if mhyp_pos + 24 > len(data) or data[mhyp_pos:mhyp_pos + 4] != b"mhyp":
+                    break
+                mhyp_hdr_len = struct.unpack("<I", data[mhyp_pos + 4:mhyp_pos + 8])[0]
+                mhod_count = struct.unpack("<I", data[mhyp_pos + 12:mhyp_pos + 16])[0]
+                pl_type = data[mhyp_pos + 20]
+                if pl_type != 1:
+                    break  # Not the master playlist
+
+                # Walk child MHODs to find type 1 (title)
+                mhod_pos = mhyp_pos + mhyp_hdr_len
+                for _ in range(mhod_count):
+                    if mhod_pos + 40 > len(data) or data[mhod_pos:mhod_pos + 4] != b"mhod":
+                        break
+                    mhod_total = struct.unpack("<I", data[mhod_pos + 8:mhod_pos + 12])[0]
+                    mhod_type = struct.unpack("<I", data[mhod_pos + 12:mhod_pos + 16])[0]
+
+                    if mhod_type == 1:
+                        # String MHOD: encoding at +24, string_length at +28, data at +40
+                        enc = struct.unpack("<I", data[mhod_pos + 24:mhod_pos + 28])[0]
+                        slen = struct.unpack("<I", data[mhod_pos + 28:mhod_pos + 32])[0]
+                        sdata = data[mhod_pos + 40:mhod_pos + 40 + slen]
+                        if enc == 2:
+                            return sdata.decode("utf-8", errors="replace")
+                        else:
+                            return sdata.decode("utf-16-le", errors="replace")
+
+                    mhod_pos += mhod_total
+                break  # Done with dataset type 2
+
+            pos += mhsd_total_len
+
+    except Exception as e:
+        logger.debug("Could not extract iPod name: %s", e)
+    return ""
+
+
 def _identify_via_hashing_scheme(ipod_path: str) -> Optional[dict]:
     """
     Identify generation class from iTunesDB hashing_scheme field.
@@ -1591,6 +1669,9 @@ def scan_for_ipods() -> list[DeviceInfo]:
         # ── Phase 4: Inline VPD for incomplete identification ──────────
         if not ipod.model_number and ipod.usb_pid:
             _try_vpd_identification(ipod)
+
+        # Extract user-assigned iPod name from master playlist
+        ipod.ipod_name = _extract_ipod_name(mount_path)
 
         # Estimate capacity from disk size if still unknown
         if not ipod.capacity and ipod.disk_size_gb > 0:

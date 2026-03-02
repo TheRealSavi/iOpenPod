@@ -227,21 +227,25 @@ class DeviceCard(QFrame):
             )
         layout.addWidget(icon_label)
 
+        # iPod name (user-assigned name from master playlist)
+        if ipod.ipod_name:
+            ipod_name_label = QLabel(ipod.ipod_name)
+            ipod_name_label.setFont(QFont(FONT_FAMILY, 11, QFont.Weight.Bold))
+            ipod_name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            ipod_name_label.setWordWrap(True)
+            ipod_name_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent; border: none;")
+            layout.addWidget(ipod_name_label)
+
         # Model name
         name_label = QLabel(ipod.display_name)
-        name_label.setFont(QFont(FONT_FAMILY, 11, QFont.Weight.Bold))
+        name_font_size = 9 if ipod.ipod_name else 11
+        name_font_weight = QFont.Weight.Normal if ipod.ipod_name else QFont.Weight.Bold
+        name_label.setFont(QFont(FONT_FAMILY, name_font_size, name_font_weight))
         name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         name_label.setWordWrap(True)
-        name_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent; border: none;")
+        name_color = Colors.TEXT_SECONDARY if ipod.ipod_name else Colors.TEXT_PRIMARY
+        name_label.setStyleSheet(f"color: {name_color}; background: transparent; border: none;")
         layout.addWidget(name_label)
-
-        # Subtitle (drive letter + space)
-        sub_label = QLabel(ipod.subtitle)
-        sub_label.setFont(QFont(FONT_FAMILY, 9))
-        sub_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        sub_label.setWordWrap(True)
-        sub_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
-        layout.addWidget(sub_label)
 
     def _apply_style(self, hovered: bool):
         if self._selected:

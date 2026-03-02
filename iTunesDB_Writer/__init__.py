@@ -38,6 +38,14 @@ from .hash72 import (
 )
 
 from .mhit_writer import TrackInfo, write_mhit
+from .mhyp_writer import PlaylistInfo, write_playlist, write_mhyp
+from .mhod_spl_writer import (
+    SmartPlaylistPrefs,
+    SmartPlaylistRules,
+    SmartPlaylistRule,
+    prefs_from_parsed,
+    rules_from_parsed,
+)
 from .mhbd_writer import write_itunesdb, write_mhbd, extract_db_info
 
 
@@ -95,4 +103,13 @@ __all__ = [
     'write_mhbd',
     'write_itunesdb',
     'extract_db_info',
+    # Playlists
+    'PlaylistInfo',
+    'write_playlist',
+    'write_mhyp',
+    'SmartPlaylistPrefs',
+    'SmartPlaylistRules',
+    'SmartPlaylistRule',
+    'prefs_from_parsed',
+    'rules_from_parsed',
 ]

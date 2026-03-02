@@ -997,6 +997,7 @@ class SyncReviewWidget(QWidget):
         "quality_change": "Re-syncing quality changes",
         "sync_playcount": "Syncing play counts",
         "sync_rating": "Syncing ratings",
+        "playlists": "Updating playlists",
         "write_database": "Writing iPod database",
         "backup": "Creating pre-sync backup",
     }
@@ -1092,6 +1093,8 @@ class SyncReviewWidget(QWidget):
             len(plan.to_update_artwork),
             len(plan.to_sync_playcount), len(plan.to_sync_rating),
             1 if plan.artwork_needs_sync else 0,
+            len(plan.playlists_to_add), len(plan.playlists_to_edit),
+            len(plan.playlists_to_remove),
         ])
 
         # Build size diff string
@@ -1221,6 +1224,60 @@ class SyncReviewWidget(QWidget):
             for item in plan.to_sync_rating:
                 header.addChild(SyncRatingWidget(item))
             header.setExpanded(False)
+
+        # Show playlist changes
+        playlist_color = QColor(120, 180, 230)
+
+        if plan.playlists_to_add:
+            header = SyncCategoryHeader("🎶", "Add Playlists", len(plan.playlists_to_add))
+            header.setFlags(header.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
+            header.setCheckState(0, Qt.CheckState.Unchecked)
+            self.tree.addTopLevelItem(header)
+            for pl in plan.playlists_to_add:
+                child = QTreeWidgetItem(header)
+                child.setFlags(child.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
+                child.setText(1, pl.get("Title", "Untitled"))
+                pl_type = "Smart" if pl.get("smartPlaylistData") else "Regular"
+                child.setText(2, pl_type)
+                rules = pl.get("smartPlaylistRules", {})
+                rule_count = len(rules.get("rules", [])) if rules else 0
+                if rule_count:
+                    child.setText(3, f"{rule_count} rules")
+                for ci in range(6):
+                    child.setForeground(ci, QBrush(playlist_color))
+            header.setExpanded(True)
+
+        if plan.playlists_to_edit:
+            header = SyncCategoryHeader("📝", "Update Playlists", len(plan.playlists_to_edit))
+            header.setFlags(header.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
+            header.setCheckState(0, Qt.CheckState.Unchecked)
+            self.tree.addTopLevelItem(header)
+            for pl in plan.playlists_to_edit:
+                child = QTreeWidgetItem(header)
+                child.setFlags(child.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
+                child.setText(1, pl.get("Title", "Untitled"))
+                pl_type = "Smart" if pl.get("smartPlaylistData") else "Regular"
+                child.setText(2, pl_type)
+                rules = pl.get("smartPlaylistRules", {})
+                rule_count = len(rules.get("rules", [])) if rules else 0
+                if rule_count:
+                    child.setText(3, f"{rule_count} rules")
+                for ci in range(6):
+                    child.setForeground(ci, QBrush(playlist_color))
+            header.setExpanded(True)
+
+        if plan.playlists_to_remove:
+            header = SyncCategoryHeader("🗑️", "Remove Playlists", len(plan.playlists_to_remove))
+            header.setFlags(header.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
+            header.setCheckState(0, Qt.CheckState.Unchecked)
+            self.tree.addTopLevelItem(header)
+            for pl in plan.playlists_to_remove:
+                child = QTreeWidgetItem(header)
+                child.setFlags(child.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
+                child.setText(1, pl.get("Title", "Untitled"))
+                for ci in range(6):
+                    child.setForeground(ci, QBrush(QColor(220, 110, 110)))
+            header.setExpanded(True)
 
         # Show artwork sync info with individual track details
         if plan.artwork_needs_sync:
@@ -1803,7 +1860,12 @@ class SyncReviewWidget(QWidget):
     def _apply_sync(self):
         """Show confirmation, then pre-sync backup prompt before syncing."""
         selected_items = self._get_selected_items()
-        if not selected_items:
+
+        # Check if there are playlist changes even when no track items selected
+        has_playlist_changes = (self._plan is not None and bool(
+            self._plan.playlists_to_add or self._plan.playlists_to_edit or self._plan.playlists_to_remove))
+
+        if not selected_items and not has_playlist_changes:
             QMessageBox.information(self, "No Selection", "Please select items to sync.")
             return
 
@@ -1831,6 +1893,18 @@ class SyncReviewWidget(QWidget):
             msg_parts.append(f"Sync {playcount_count} play counts")
         if rating_count:
             msg_parts.append(f"Sync {rating_count} ratings")
+
+        # Playlist changes (from the stored plan, not SyncItem-based)
+        if self._plan:
+            pl_add = len(self._plan.playlists_to_add)
+            pl_edit = len(self._plan.playlists_to_edit)
+            pl_remove = len(self._plan.playlists_to_remove)
+            if pl_add:
+                msg_parts.append(f"Add {pl_add} playlists")
+            if pl_edit:
+                msg_parts.append(f"Update {pl_edit} playlists")
+            if pl_remove:
+                msg_parts.append(f"Remove {pl_remove} playlists")
 
         msg = "This will:\n• " + "\n• ".join(msg_parts) + "\n\nContinue?"
 

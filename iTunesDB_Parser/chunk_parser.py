@@ -30,13 +30,19 @@ def parse_chunk(data, offset) -> dict[str, Any]:
             return result
         case "mhlp":
             # playlist list
-            return {}
+            from .mhlp_parser import parse_playlistList
+            result = parse_playlistList(data, offset, header_length, chunk_length)
+            return result
         case "mhyp":
             # playlist
-            return {}
+            from .mhyp_parser import parse_playlist
+            result = parse_playlist(data, offset, header_length, chunk_length)
+            return result
         case "mhip":
             # playlist item
-            return {}
+            from .mhip_parser import parse_playlistItem
+            result = parse_playlistItem(data, offset, header_length, chunk_length)
+            return result
         case "mhod":
             # data object
             from .mhod_parser import parse_mhod

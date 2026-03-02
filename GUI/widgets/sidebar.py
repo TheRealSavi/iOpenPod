@@ -1,12 +1,35 @@
-from PyQt6.QtCore import pyqtSignal, Qt
+from PyQt6.QtCore import pyqtSignal, Qt, QRegularExpression
 from PyQt6.QtWidgets import (
     QFrame, QPushButton, QVBoxLayout, QHBoxLayout,
-    QLabel, QWidget, QProgressBar
+    QLabel, QWidget, QProgressBar, QLineEdit
 )
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QCursor, QRegularExpressionValidator
 from .formatters import format_size, format_duration_human as format_duration
 from ..ipod_images import get_ipod_image
 from ..styles import Colors, FONT_FAMILY, MONO_FONT_FAMILY, Metrics, btn_css, accent_btn_css
+
+
+# iTunes enforces 63 characters for iPod names; MHOD strings are UTF-16-LE
+# so only printable Unicode is allowed (no control characters).
+_MAX_IPOD_NAME_LEN = 63
+_IPOD_NAME_RE = QRegularExpression(r"^[^\x00-\x1f\x7f]*$")
+
+
+class _RenameLineEdit(QLineEdit):
+    """QLineEdit that emits cancelled on Escape."""
+
+    cancelled = pyqtSignal()
+
+    def __init__(self, text: str = "", parent=None):
+        super().__init__(text, parent)
+        self.setMaxLength(_MAX_IPOD_NAME_LEN)
+        self.setValidator(QRegularExpressionValidator(_IPOD_NAME_RE, self))
+
+    def keyPressEvent(self, a0):
+        if a0 and a0.key() == Qt.Key.Key_Escape:
+            self.cancelled.emit()
+        else:
+            super().keyPressEvent(a0)
 
 
 class StatWidget(QWidget):
@@ -67,8 +90,11 @@ class TechInfoRow(QWidget):
 class DeviceInfoCard(QFrame):
     """Card showing iPod device information and stats."""
 
+    device_renamed = pyqtSignal(str)  # emits the new name
+
     def __init__(self):
         super().__init__()
+        self._rename_edit: QLineEdit | None = None
         self.setStyleSheet(f"""
             QFrame {{
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
@@ -95,10 +121,14 @@ class DeviceInfoCard(QFrame):
 
         name_layout = QVBoxLayout()
         name_layout.setSpacing(0)
+        self._name_layout = name_layout
 
         self.name_label = QLabel("No Device")
         self.name_label.setFont(QFont(FONT_FAMILY, 13, QFont.Weight.Bold))
         self.name_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent; border: none;")
+        self.name_label.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.name_label.setToolTip("Click to rename your iPod")
+        self.name_label.mousePressEvent = lambda ev: self._start_rename()
         name_layout.addWidget(self.name_label)
 
         self.model_label = QLabel("")
@@ -220,6 +250,61 @@ class DeviceInfoCard(QFrame):
         layout.addWidget(self.storage_bar)
 
         self._tech_expanded = False
+
+    def _start_rename(self, event=None):
+        """Show an inline QLineEdit to rename the iPod."""
+        current = self.name_label.text()
+        if current == "No Device" or self._rename_edit is not None:
+            return
+
+        self._rename_edit = _RenameLineEdit(current)
+        self._rename_edit.setFont(QFont(FONT_FAMILY, 13, QFont.Weight.Bold))
+        self._rename_edit.setStyleSheet(f"""
+            QLineEdit {{
+                color: {Colors.TEXT_PRIMARY};
+                background: rgba(0,0,0,60);
+                border: 1px solid {Colors.ACCENT};
+                border-radius: 4px;
+                padding: 1px 4px;
+            }}
+        """)
+        self._rename_edit.selectAll()
+        self._rename_edit.returnPressed.connect(self._finish_rename)
+        self._rename_edit.editingFinished.connect(self._finish_rename)
+        self._rename_edit.cancelled.connect(self._cancel_rename)
+
+        # Replace name_label with the line edit in the name VBox
+        idx = self._name_layout.indexOf(self.name_label)
+        self.name_label.hide()
+        self._name_layout.insertWidget(idx, self._rename_edit)
+        self._rename_edit.setFocus()
+
+    def _cancel_rename(self):
+        """Cancel the rename and restore the original label."""
+        if self._rename_edit is None:
+            return
+        self._rename_edit.hide()
+        self._rename_edit.deleteLater()
+        self._rename_edit = None
+        self.name_label.show()
+
+    def _finish_rename(self):
+        """Accept the rename and emit the new name."""
+        if self._rename_edit is None:
+            return
+
+        new_name = self._rename_edit.text().strip()
+        old_name = self.name_label.text()
+
+        # Remove the edit widget
+        self._rename_edit.hide()
+        self._rename_edit.deleteLater()
+        self._rename_edit = None
+        self.name_label.show()
+
+        if new_name and new_name != old_name:
+            self.name_label.setText(new_name)
+            self.device_renamed.emit(new_name)
 
     def _toggle_tech_details(self):
         """Toggle technical details visibility."""
@@ -352,6 +437,7 @@ class DeviceInfoCard(QFrame):
 
 class Sidebar(QFrame):
     category_changed = pyqtSignal(str)
+    device_renamed = pyqtSignal(str)  # emits new iPod name
 
     def __init__(self):
         from ..app import category_glyphs
@@ -372,6 +458,7 @@ class Sidebar(QFrame):
 
         # Device info card at top
         self.device_card = DeviceInfoCard()
+        self.device_card.device_renamed.connect(self.device_renamed)
         self.sidebarLayout.addWidget(self.device_card)
 
         # Device select buttons - row 1

@@ -47,6 +47,7 @@ class DeviceInfo:
     # ── Identity ──────────────────────────────────────────────────────
     path: str = ""                    # Mount root (e.g. "D:\\" or "/Volumes/iPod")
     mount_name: str = ""              # Volume display name (e.g. "D:", "IPOD")
+    ipod_name: str = ""               # User-assigned name from master playlist Title
     model_number: str = ""            # Normalised (e.g. "MC297", never "xA623")
     model_family: str = "iPod"        # e.g. "iPod Classic", "iPod Nano"
     generation: str = ""              # e.g. "3rd Gen"

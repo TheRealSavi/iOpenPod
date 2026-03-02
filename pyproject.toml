@@ -34,3 +34,9 @@ dependencies = [
 
 [dependency-groups]
 dev = []
+
+[tool.flake8]
+# Allow line breaks before binary operators (W503) — matches Black's style
+extend-ignore = ["W503"]
+# Keep line length reasonable; adjust if you prefer a different value
+max-line-length = 88

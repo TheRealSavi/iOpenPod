@@ -4,12 +4,18 @@ MHYP Writer - Write playlist chunks for iTunesDB.
 MHYP chunks define playlists. Every iTunesDB MUST have at least one
 playlist - the Master Playlist (MPL) which references all tracks.
 
+Supports three kinds of playlists:
+- Master Playlist (hidden=True): references all tracks, includes library indices
+- Regular playlists: user-created playlists with explicit track lists
+- Smart playlists: rule-based playlists with MHOD types 50 (prefs) and 51 (rules)
+
 Based on libgpod's write_playlist() and mk_mhyp in itdb_itunesdb.c
 """
 
 import struct
 import random
 import time
+from dataclasses import dataclass, field
 from typing import List, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -18,6 +24,13 @@ if TYPE_CHECKING:
 from .mhod_writer import write_mhod_string, MHOD_TYPE_TITLE
 from .mhip_writer import write_mhip
 from .mhod52_writer import write_library_indices
+from .mhod_spl_writer import (
+    SmartPlaylistPrefs,
+    SmartPlaylistRules,
+    write_mhod50,
+    write_mhod51,
+    write_mhod102,
+)
 
 
 # Playlist type constants
@@ -27,6 +40,39 @@ PLAYLIST_TYPE_NORMAL = 0  # Regular user playlist
 
 # MHYP header size - iTunes uses 184 bytes (libgpod uses 108, but iPod Classic rejects it)
 MHYP_HEADER_SIZE = 184
+
+
+@dataclass
+class PlaylistInfo:
+    """Structured input for writing a playlist to iTunesDB.
+
+    Covers regular playlists, smart playlists, and the master playlist.
+    The master playlist is constructed internally by write_master_playlist()
+    and does not need a PlaylistInfo.
+    """
+    name: str
+    track_ids: List[int] = field(default_factory=list)
+
+    # Identity
+    playlist_id: Optional[int] = None   # 64-bit; generated if None
+    hidden: bool = False                 # True for master playlist only
+    sortorder: int = 0                   # 0=default, 1=manual, 3=title ...
+
+    # Smart playlist fields (both must be set for a smart playlist)
+    smart_prefs: Optional[SmartPlaylistPrefs] = None
+    smart_rules: Optional[SmartPlaylistRules] = None
+
+    # mhsd5Type: browsing category for dataset 5 smart playlists
+    # (1=Music, 2=Movies, 3=TV Shows, 4=Music Video, 5=Audiobooks, 6=Podcasts, 7=Rentals)
+    mhsd5_type: int = 0
+
+    # Opaque blobs preserved from parsed data for round-trip fidelity
+    raw_mhod100: Optional[bytes] = None   # Playlist prefs (type 100 body)
+    raw_mhod102: Optional[bytes] = None   # Playlist settings (type 102 body)
+
+    @property
+    def is_smart(self) -> bool:
+        return self.smart_prefs is not None and self.smart_rules is not None
 
 
 def generate_playlist_id() -> int:
@@ -55,6 +101,11 @@ def write_mhyp(
     sortorder: int = 0,
     tracks: Optional[List["TrackInfo"]] = None,
     id_0x24: int = 0,
+    smart_prefs: Optional[SmartPlaylistPrefs] = None,
+    smart_rules: Optional[SmartPlaylistRules] = None,
+    mhsd5_type: int = 0,
+    raw_mhod100: Optional[bytes] = None,
+    raw_mhod102: Optional[bytes] = None,
 ) -> bytes:
     """
     Write a complete MHYP (playlist) chunk with MHODs and MHIPs.
@@ -63,6 +114,9 @@ def write_mhyp(
     - MHYP header (184 bytes)
     - MHOD title (string)
     - MHOD playlist data (type 100 preferences)
+    - [Smart only] MHOD type 50 (smart playlist prefs)
+    - [Smart only] MHOD type 51 (smart playlist rules / SLst)
+    - [Smart only] MHOD type 102 (playlist settings, if provided)
     - [Master Playlist only] MHOD type 52/53 pairs (library indices)
     - MHIP entries (one per track)
 
@@ -80,6 +134,13 @@ def write_mhyp(
                 generate library index MHODs type 52/53)
         id_0x24: Database-wide ID from MHBD offset 0x24. Written at MHYP offset
                  0x3C for non-master playlists, and used as a validation field.
+        smart_prefs: Smart playlist preferences (MHOD 50). Both smart_prefs
+                     and smart_rules must be set for a smart playlist.
+        smart_rules: Smart playlist rules (MHOD 51).
+        mhsd5_type: Browsing category for dataset 5 smart playlists.
+        raw_mhod100: If provided, use this raw body for MHOD type 100 instead
+                     of generating a default one.
+        raw_mhod102: If provided, write an MHOD type 102 with this raw body.
 
     Returns:
         Complete MHYP chunk bytes
@@ -94,8 +155,27 @@ def write_mhyp(
     mhod_title = write_mhod_string(MHOD_TYPE_TITLE, name)
 
     # Build MHOD for playlist preferences (type 100)
-    # This is a binary blob that iTunes uses for display settings
-    mhod_playlist = write_mhod_playlist_prefs()
+    if raw_mhod100 is not None:
+        mhod_playlist = _write_mhod100_raw(raw_mhod100)
+    else:
+        mhod_playlist = write_mhod_playlist_prefs()
+
+    # Smart playlist MHODs (type 50 + 51)
+    mhod_smart = b''
+    smart_mhod_count = 0
+    is_smart = smart_prefs is not None and smart_rules is not None
+    if is_smart:
+        assert smart_prefs is not None and smart_rules is not None
+        mhod_smart += write_mhod50(smart_prefs)
+        mhod_smart += write_mhod51(smart_rules)
+        smart_mhod_count = 2
+
+    # Optional MHOD type 102 (playlist settings — opaque iTunes blob)
+    mhod_settings = b''
+    settings_count = 0
+    if raw_mhod102 is not None:
+        mhod_settings = write_mhod102(raw_mhod102)
+        settings_count = 1
 
     # Build library index MHODs for master playlist (type 52/53 pairs)
     # These are REQUIRED for iPod Classic to build its browsing views
@@ -118,11 +198,13 @@ def write_mhyp(
         mhips.append(mhip)
     mhip_data = b''.join(mhips)
 
-    # Count MHODs (title + playlist prefs + library indices)
-    mhod_count = 2 + library_indices_count
+    # Count MHODs (title + playlist prefs + smart + settings + library indices)
+    mhod_count = 2 + smart_mhod_count + settings_count + library_indices_count
 
     # Total chunk length
-    total_length = MHYP_HEADER_SIZE + len(mhod_title) + len(mhod_playlist) + len(library_indices_data) + len(mhip_data)
+    total_length = (
+        MHYP_HEADER_SIZE + len(mhod_title) + len(mhod_playlist) + len(mhod_smart) + len(mhod_settings) + len(library_indices_data) + len(mhip_data)
+    )
 
     # Build MHYP header (108 bytes)
     header = bytearray(MHYP_HEADER_SIZE)
@@ -182,9 +264,15 @@ def write_mhyp(
     # Both master and non-master get a timestamp at 0x58
     struct.pack_into('<I', header, 0x58, unix_to_mac_timestamp(timestamp))
 
+    # +0x50: mhsd5_type — browsing category for dataset 5 smart playlists
+    if mhsd5_type:
+        struct.pack_into('<H', header, 0x50, mhsd5_type)
+
     # Rest is padding (already zero-initialized)
 
-    return bytes(header) + mhod_title + mhod_playlist + library_indices_data + mhip_data
+    return (
+        bytes(header) + mhod_title + mhod_playlist + mhod_smart + mhod_settings + library_indices_data + mhip_data
+    )
 
 
 def write_mhod_playlist_prefs() -> bytes:
@@ -250,6 +338,61 @@ def write_mhod_playlist_prefs() -> bytes:
     # Rest is zeros (padding to 0x288)
 
     return bytes(data)
+
+
+def _write_mhod100_raw(raw_body: bytes) -> bytes:
+    """Write an MHOD type 100 from a raw body blob (round-trip passthrough).
+
+    Args:
+        raw_body: Body bytes (everything after the 24-byte MHOD header).
+
+    Returns:
+        Complete MHOD type 100 chunk.
+    """
+    header_len = 24
+    total_len = header_len + len(raw_body)
+
+    header = struct.pack(
+        '<4sIIIII',
+        b'mhod',
+        header_len,
+        total_len,
+        100,  # type
+        0,    # unk1
+        0,    # unk2
+    )
+
+    return header + raw_body
+
+
+def write_playlist(
+    playlist: "PlaylistInfo",
+    id_0x24: int = 0,
+) -> bytes:
+    """Write a regular or smart playlist from a PlaylistInfo dataclass.
+
+    This is the high-level API for writing any non-master playlist.
+
+    Args:
+        playlist: A PlaylistInfo instance.
+        id_0x24: Database-wide ID from MHBD offset 0x24.
+
+    Returns:
+        Complete MHYP chunk bytes.
+    """
+    return write_mhyp(
+        name=playlist.name,
+        track_ids=playlist.track_ids,
+        playlist_id=playlist.playlist_id,
+        hidden=playlist.hidden,
+        sortorder=playlist.sortorder,
+        id_0x24=id_0x24,
+        smart_prefs=playlist.smart_prefs,
+        smart_rules=playlist.smart_rules,
+        mhsd5_type=playlist.mhsd5_type,
+        raw_mhod100=playlist.raw_mhod100,
+        raw_mhod102=playlist.raw_mhod102,
+    )
 
 
 def write_master_playlist(

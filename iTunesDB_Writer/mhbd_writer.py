@@ -33,9 +33,10 @@ from typing import List, Optional
 
 from .mhlt_writer import write_mhlt
 from .mhsd_writer import write_mhsd_tracks, write_mhsd_playlists, write_mhsd_albums, write_mhsd_podcasts, write_mhsd_smart_playlists
-from .mhlp_writer import write_mhlp_empty, write_mhlp_with_master
+from .mhlp_writer import write_mhlp_with_playlists, write_mhlp_smart
 from .mhla_writer import write_mhla
 from .mhit_writer import TrackInfo
+from .mhyp_writer import PlaylistInfo
 from ipod_models import ChecksumType
 from device_info import detect_checksum_type
 from .hash58 import write_hash58
@@ -103,6 +104,8 @@ def write_mhbd(
     db_id: Optional[int] = None,
     language: str = "en",
     reference_info: Optional[dict] = None,
+    playlists: Optional[List[PlaylistInfo]] = None,
+    smart_playlists: Optional[List[PlaylistInfo]] = None,
 ) -> bytes:
     """
     Write a complete iTunesDB database.
@@ -112,6 +115,10 @@ def write_mhbd(
         db_id: Database ID (generated if not provided)
         language: 2-letter language code
         reference_info: Dict from extract_db_info() to copy device-specific fields
+        playlists: List of PlaylistInfo for user playlists (dataset 2).
+                   The master playlist is always generated automatically.
+        smart_playlists: List of PlaylistInfo for dataset 5 smart playlists
+                         (iPod browsing categories like Music, Movies, etc.)
 
     Returns:
         Complete iTunesDB file content as bytes
@@ -148,10 +155,41 @@ def write_mhbd(
     # Track IDs are sequential starting from 1
     track_ids = list(range(1, next_track_id))
 
+    # Build dbid → sequential track_id map so playlists can reference
+    # tracks by their 32-bit MHIT trackID (not 64-bit dbid).
+    # The sync executor stores dbids in PlaylistInfo.track_ids because
+    # dbids are the stable identifier, but MHIP entries need 32-bit IDs.
+    dbid_to_track_id: dict[int, int] = {}
+    for i, track in enumerate(tracks):
+        if track.dbid:
+            dbid_to_track_id[track.dbid] = i + 1  # track IDs start at 1
+
+    # Remap playlist track_ids from dbid → sequential track_id
+    user_playlists = playlists or []
+    for pl in user_playlists:
+        pl.track_ids = [
+            dbid_to_track_id[d] for d in pl.track_ids if d in dbid_to_track_id
+        ]
+
     # Build playlist list WITH master playlist (Type 2 dataset)
     # The master playlist is REQUIRED and must reference ALL tracks
     # Pass tracks so master playlist can generate library index MHODs (type 52/53)
-    mhlp_data = write_mhlp_with_master(track_ids, device_name="iPod", tracks=tracks, id_0x24=id_0x24)
+    user_playlists = playlists or []
+
+    # Use the iPod's user-assigned name for the master playlist
+    master_name = "iPod"
+    try:
+        from device_info import get_current_device
+        dev = get_current_device()
+        if dev and dev.ipod_name:
+            master_name = dev.ipod_name
+    except Exception:
+        pass
+
+    mhlp_data = write_mhlp_with_playlists(
+        track_ids, playlists=user_playlists, device_name=master_name,
+        tracks=tracks, id_0x24=id_0x24,
+    )
     mhsd_playlists = write_mhsd_playlists(mhlp_data)
 
     # Build podcast list (Type 3 dataset)
@@ -160,8 +198,13 @@ def write_mhbd(
     # causes the iPod Classic to reject the database.
     mhsd_podcasts = write_mhsd_podcasts(mhlp_data)
 
-    # Build empty smart playlist list (Type 5 dataset)
-    mhlp_smart = write_mhlp_empty()
+    # Build smart playlist list (Type 5 dataset)
+    ds5_playlists = smart_playlists or []
+    for pl in ds5_playlists:
+        pl.track_ids = [
+            dbid_to_track_id[d] for d in pl.track_ids if d in dbid_to_track_id
+        ]
+    mhlp_smart = write_mhlp_smart(ds5_playlists, id_0x24=id_0x24)
     mhsd_smart = write_mhsd_smart_playlists(mhlp_smart)
 
     # Concatenate all datasets
@@ -285,6 +328,8 @@ def write_itunesdb(
     firewire_id: Optional[bytes] = None,
     reference_itdb_path: Optional[str] = None,
     pc_file_paths: Optional[dict] = None,
+    playlists: Optional[List[PlaylistInfo]] = None,
+    smart_playlists: Optional[List[PlaylistInfo]] = None,
 ) -> bool:
     """
     Write a complete iTunesDB to an iPod.
@@ -307,6 +352,9 @@ def write_itunesdb(
         pc_file_paths: Dict mapping track dbid (int) → PC source file path (str)
                        for extracting embedded album art. If provided, ArtworkDB
                        and ithmb files will be written and mhii_link set on tracks.
+        playlists: List of PlaylistInfo for user playlists (dataset 2).
+                   The master playlist is always generated automatically.
+        smart_playlists: List of PlaylistInfo for dataset 5 smart playlists.
 
     Returns:
         True if successful
@@ -453,7 +501,10 @@ def write_itunesdb(
                      'None' if pc_file_paths is None else 'empty dict')
 
     # Build database with reference info
-    itdb_data = bytearray(write_mhbd(tracks, db_id, reference_info=reference_info))
+    itdb_data = bytearray(write_mhbd(
+        tracks, db_id, reference_info=reference_info,
+        playlists=playlists, smart_playlists=smart_playlists,
+    ))
 
     # Detect checksum type (or use forced type)
     # Use reference or existing database as the source for hash extraction
