@@ -1,8 +1,27 @@
-"""
-MHLA Writer - Write album list chunks for iTunesDB.
+"""MHLA Writer — Write album list chunks for iTunesDB.
 
-MHLA (album list) contains album entries that group tracks.
-Each album entry (MHIA) contains MHODs for album name and artist.
+MHLA (album list) contains MHIA (album item) entries that group tracks.
+Introduced in iTunes 7.1 (dbversion >= 0x14).
+
+MHLA header layout (MHLA_HEADER_SIZE = 92 bytes):
+    +0x00: 'mhla' magic (4B)
+    +0x04: header_length (4B)
+    +0x08: album_count (4B)
+
+MHIA header layout (MHIA_HEADER_SIZE = 88 bytes):
+    +0x00: 'mhia' magic (4B)
+    +0x04: header_length (4B)
+    +0x08: total_length (4B) — header + child MHODs
+    +0x0C: child_count (4B)
+    +0x10: album_id (4B) — links to MHIT.albumID
+    +0x14: sql_id (8B) — internal iPod DB id (must be non-zero)
+    +0x1C: unk3 (4B) — always 2
+
+    Children: MHOD types 200 (album name), 201 (artist), 202 (sort artist)
+
+Cross-referenced against:
+  - iTunesDB_Parser/mhia_parser.py parse_albumItem()
+  - libgpod itdb_itunesdb.c: mk_mhia()
 """
 
 import struct

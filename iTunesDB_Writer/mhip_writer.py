@@ -1,10 +1,22 @@
-"""
-MHIP Writer - Write playlist item chunks for iTunesDB.
+"""MHIP Writer — Write playlist item chunks for iTunesDB.
 
 MHIP chunks are playlist entries that reference tracks by their ID.
 Each playlist (MHYP) contains MHIP entries for each track in the playlist.
 
-Based on libgpod's mk_mhip() in itdb_itunesdb.c
+Header layout (MHIP_HEADER_SIZE = 76 bytes):
+    +0x00: 'mhip' magic (4B)
+    +0x04: header_length (4B)
+    +0x08: total_length (4B) — header + children
+    +0x0C: child_count (4B) — number of MHOD children (0 or 1)
+    +0x10: podcast_group_flag (4B) — 0=normal, 0x100=podcast group header
+    +0x14: mhip_id (4B) — unique MHIP identifier (groupID)
+    +0x18: track_id (4B) — references MHIT trackID
+    +0x1C: timestamp (4B Mac)
+    +0x20: podcast_group_ref (4B) — references another MHIP's groupID
+
+Cross-referenced against:
+  - iTunesDB_Parser/mhip_parser.py parse_playlistItem()
+  - libgpod itdb_itunesdb.c: mk_mhip()
 """
 
 import struct

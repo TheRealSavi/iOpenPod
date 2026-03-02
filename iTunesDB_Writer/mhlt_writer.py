@@ -1,7 +1,16 @@
-"""
-MHLT Writer - Write track list chunks for iTunesDB.
+"""MHLT Writer — Write track list chunks for iTunesDB.
 
-MHLT (track list) contains all MHIT (track) chunks.
+MHLT (track list) wraps all MHIT (track) chunks and provides
+the track count in its header.
+
+Header layout (MHLT_HEADER_SIZE = 92 bytes):
+    +0x00: 'mhlt' magic (4B)
+    +0x04: header_length (4B)
+    +0x08: track_count (4B)
+
+Cross-referenced against:
+  - iTunesDB_Parser/mhlt_parser.py
+  - libgpod itdb_itunesdb.c: mk_mhlt()
 """
 
 import struct

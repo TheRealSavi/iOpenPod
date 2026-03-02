@@ -1,12 +1,22 @@
-"""
-MHSD Writer - Write dataset chunks for iTunesDB.
+"""MHSD Writer — Write dataset chunks for iTunesDB.
 
-MHSD (dataset) chunks are containers for different types of data:
-- Type 1: Track list (mhlt)
-- Type 2: Playlist list (mhlp)
-- Type 3: Podcast list (mhlp)
-- Type 4: Album list (mhla)
-- Type 5: Smart playlist list (mhlp)
+MHSD (dataset) chunks are containers for different types of data.
+Each MHSD wraps exactly one child list chunk (mhlt, mhlp, or mhla).
+
+Header layout (MHSD_HEADER_SIZE = 96 bytes):
+    +0x00: 'mhsd' magic (4B)
+    +0x04: header_length (4B)
+    +0x08: total_length (4B) — header + child data
+    +0x0C: dataset_type (4B):
+           1 = Track list (mhlt)
+           2 = Playlist list (mhlp)
+           3 = Podcast list (mhlp) — same content as type 2
+           4 = Album list (mhla)
+           5 = Smart playlist list (mhlp)
+
+Cross-referenced against:
+  - iTunesDB_Parser/mhsd_parser.py
+  - libgpod itdb_itunesdb.c: mk_mhsd()
 """
 
 import struct

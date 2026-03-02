@@ -1,8 +1,13 @@
-"""
-MHLP Writer - Write playlist list chunks for iTunesDB.
+"""MHLP Writer — Write playlist list chunks for iTunesDB.
 
-MHLP contains all playlists. At minimum, every iTunesDB needs the
-"master playlist" which contains references to all tracks.
+MHLP (playlist list) wraps all MHYP (playlist) chunks and provides
+the playlist count in its header. Every iTunesDB needs at least a
+"master playlist" referencing all tracks.
+
+Header layout (MHLP_HEADER_SIZE = 92 bytes):
+    +0x00: 'mhlp' magic (4B)
+    +0x04: header_length (4B)
+    +0x08: playlist_count (4B)
 
 Supports:
 - Master playlist only (write_mhlp_with_master)
@@ -10,7 +15,9 @@ Supports:
 - Dataset 3 podcast playlists (podcast clone of dataset 2)
 - Dataset 5 smart playlists (write_mhlp_smart)
 
-Based on libgpod's mk_mhlp() in itdb_itunesdb.c
+Cross-referenced against:
+  - iTunesDB_Parser/mhlp_parser.py
+  - libgpod itdb_itunesdb.c: mk_mhlp()
 """
 
 import struct

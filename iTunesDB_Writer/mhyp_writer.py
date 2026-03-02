@@ -1,15 +1,37 @@
 """
-MHYP Writer - Write playlist chunks for iTunesDB.
+MHYP Writer — Write playlist chunks for iTunesDB.
 
 MHYP chunks define playlists. Every iTunesDB MUST have at least one
-playlist - the Master Playlist (MPL) which references all tracks.
+playlist — the Master Playlist (MPL) which references all tracks.
 
 Supports three kinds of playlists:
 - Master Playlist (hidden=True): references all tracks, includes library indices
 - Regular playlists: user-created playlists with explicit track lists
 - Smart playlists: rule-based playlists with MHOD types 50 (prefs) and 51 (rules)
 
-Based on libgpod's write_playlist() and mk_mhyp in itdb_itunesdb.c
+Header layout (MHYP_HEADER_SIZE = 184 bytes):
+    +0x00: 'mhyp' magic (4B)
+    +0x04: header_length (4B)
+    +0x08: total_length (4B) — header + all children
+    +0x0C: mhod_count (4B)
+    +0x10: mhip_count (4B)
+    +0x14: type (1B) + flag1 (1B) + flag2 (1B) + flag3 (1B) — hidden/master flag
+    +0x18: timestamp (4B Mac)
+    +0x1C: playlist_id (8B)
+    +0x24: unk1 (4B)
+    +0x28: string_mhod_count (2B)
+    +0x2A: podcast_flag (1B) — 0=normal, 1=podcast playlist
+    +0x2B: group_flag (1B) — 0=normal, 1=grouping playlist
+    +0x2C: sort_order (4B)
+    +0x3C: id_0x24 (8B) — MHBD database ID reference (non-master)
+    +0x44: playlist_id_copy (8B)
+    +0x50: mhsd5_type (2B) — browsing category for dataset 5
+    +0x58: timestamp_copy (4B Mac)
+
+Cross-referenced against:
+  - iTunesDB_Parser/mhyp_parser.py parse_playlist()
+  - libgpod itdb_itunesdb.c: write_playlist() / mk_mhyp()
+  - iPodLinux wiki MHYP documentation
 """
 
 import struct
@@ -57,6 +79,8 @@ class PlaylistInfo:
     playlist_id: Optional[int] = None   # 64-bit; generated if None
     hidden: bool = False                 # True for master playlist only
     sortorder: int = 0                   # 0=default, 1=manual, 3=title ...
+    podcast_flag: int = 0                # 0x2A: 0=normal, 1=podcast playlist
+    group_flag: int = 0                  # 0x2B: 0=normal, 1=grouping playlist
 
     # Smart playlist fields (both must be set for a smart playlist)
     smart_prefs: Optional[SmartPlaylistPrefs] = None
@@ -99,6 +123,8 @@ def write_mhyp(
     hidden: bool = False,
     timestamp: Optional[int] = None,
     sortorder: int = 0,
+    podcast_flag: int = 0,
+    group_flag: int = 0,
     tracks: Optional[List["TrackInfo"]] = None,
     id_0x24: int = 0,
     smart_prefs: Optional[SmartPlaylistPrefs] = None,
@@ -130,6 +156,8 @@ def write_mhyp(
                 The 'type' byte at offset 0x14 is set to 1 if hidden=True (MPL).
         timestamp: Creation timestamp (now if not provided)
         sortorder: Sort order (0 = manual)
+        podcast_flag: 0x2A — 0=normal playlist, 1=podcast playlist.
+        group_flag: 0x2B — 0=normal playlist, 1=grouping playlist (iTunes 7).
         tracks: List of TrackInfo objects (required for Master Playlist to
                 generate library index MHODs type 52/53)
         id_0x24: Database-wide ID from MHBD offset 0x24. Written at MHYP offset
@@ -239,8 +267,11 @@ def write_mhyp(
     # +0x28: String MHOD count (usually 1 for title)
     struct.pack_into('<H', header, 0x28, 1)
 
-    # +0x2A: Podcast flag
-    struct.pack_into('<H', header, 0x2A, 0)
+    # +0x2A: Podcast flag (1 byte) — 0=normal, 1=podcast playlist
+    # +0x2B: Group flag (1 byte) — 0=normal, 1=grouping playlist
+    # Parser reads these as two separate bytes; previous writer used <H (2B).
+    header[0x2A] = podcast_flag & 0xFF
+    header[0x2B] = group_flag & 0xFF
 
     # +0x2C: Sort order
     struct.pack_into('<I', header, 0x2C, sortorder)
@@ -386,6 +417,8 @@ def write_playlist(
         playlist_id=playlist.playlist_id,
         hidden=playlist.hidden,
         sortorder=playlist.sortorder,
+        podcast_flag=playlist.podcast_flag,
+        group_flag=playlist.group_flag,
         id_0x24=id_0x24,
         smart_prefs=playlist.smart_prefs,
         smart_rules=playlist.smart_rules,

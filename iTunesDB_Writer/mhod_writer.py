@@ -1,11 +1,23 @@
 """
-MHOD Writer - Write string/data chunks for iTunesDB.
+MHOD Writer — Write string/data chunks for iTunesDB.
 
 MHOD chunks store strings (track titles, artist names, paths) and
 other metadata in the iTunesDB. Each MHOD has a type that indicates
 what kind of data it contains.
 
-Based on libgpod's mk_mhod() in itdb_itunesdb.c
+String MHODs (types 1–14, 18–31, 33–44, 200–204):
+    Standard layout: header(24) + type_header(16) + UTF-16LE string.
+    The type_header has: encoding(4B), string_length(4B), unk(4B), unk(4B).
+
+Podcast URL MHODs (types 15–16):
+    Different layout: header(24) + raw UTF-8 string.  NO type sub-header.
+    Per iPodLinux wiki: "this is either a UTF-8 or ASCII encoded string
+    (NOT UTF-16). Also, there is no mhod::length value for this type."
+
+Cross-referenced against:
+  - iTunesDB_Parser/mhod_parser.py
+  - libgpod itdb_itunesdb.c: mk_mhod() / get_mhod_string()
+  - iPodLinux wiki MHOD documentation
 """
 
 import struct
@@ -175,6 +187,47 @@ def write_mhod_sort_album(sort_album: str) -> bytes:
     return write_mhod_string(MHOD_TYPE_SORT_ALBUM, sort_album)
 
 
+def write_mhod_podcast_url(mhod_type: int, url: str) -> bytes:
+    """
+    Write a podcast URL MHOD (type 15 or 16).
+
+    Podcast URL MHODs use a DIFFERENT format from standard string MHODs:
+    - UTF-8 encoded (NOT UTF-16LE)
+    - NO type sub-header (string follows directly after the 24-byte header)
+    - Length = total_length − header_length
+
+    Per iPodLinux wiki and parser: types 15 (enclosure URL) and 16 (RSS URL)
+    have no mhod::length field and use UTF-8/ASCII encoding.
+
+    Args:
+        mhod_type: Must be 15 (enclosure URL) or 16 (RSS URL)
+        url: URL string to encode
+
+    Returns:
+        Complete MHOD chunk as bytes
+    """
+    if not url:
+        return b''
+    if mhod_type not in (MHOD_TYPE_PODCAST_ENCLOSURE_URL, MHOD_TYPE_PODCAST_RSS_URL):
+        raise ValueError(f"write_mhod_podcast_url only supports types 15 and 16, got {mhod_type}")
+
+    string_data = url.encode('utf-8')
+    header_len = 24
+    total_len = header_len + len(string_data)
+
+    header = struct.pack(
+        '<4sIIIII',
+        b'mhod',
+        header_len,
+        total_len,
+        mhod_type,
+        0,  # unk1
+        0,  # unk2
+    )
+
+    return header + string_data
+
+
 def write_track_mhods(
     title: str,
     location: str,
@@ -191,6 +244,15 @@ def write_track_mhods(
     sort_album_artist: Optional[str] = None,
     sort_composer: Optional[str] = None,
     grouping: Optional[str] = None,
+    description: Optional[str] = None,
+    podcast_enclosure_url: Optional[str] = None,
+    podcast_rss_url: Optional[str] = None,
+    subtitle: Optional[str] = None,
+    show_name: Optional[str] = None,
+    episode_id: Optional[str] = None,
+    network_name: Optional[str] = None,
+    keywords: Optional[str] = None,
+    sort_show: Optional[str] = None,
 ) -> tuple[bytes, int]:
     """
     Write all MHODs for a track.
@@ -211,6 +273,15 @@ def write_track_mhods(
         sort_album_artist: Sort album artist name
         sort_composer: Sort composer name
         grouping: Grouping tag
+        description: Track description (type 14)
+        podcast_enclosure_url: Podcast enclosure URL (type 15, UTF-8, no sub-header)
+        podcast_rss_url: Podcast RSS feed URL (type 16, UTF-8, no sub-header)
+        subtitle: Subtitle (type 18)
+        show_name: TV show name (type 19)
+        episode_id: Episode ID string (type 20)
+        network_name: TV network name (type 21)
+        keywords: Keywords (type 24)
+        sort_show: Sort show name (type 31)
 
     Returns:
         Tuple of (concatenated MHOD bytes, count of MHODs)
@@ -221,7 +292,7 @@ def write_track_mhods(
     mhods.append(write_mhod_title(title))
     mhods.append(write_mhod_location(location))
 
-    # Optional MHODs
+    # Optional MHODs — standard string types (UTF-16LE with sub-header)
     if artist:
         mhods.append(write_mhod_artist(artist))
     if album:
@@ -236,6 +307,18 @@ def write_track_mhods(
         mhods.append(write_mhod_comment(comment))
     if filetype_desc:
         mhods.append(write_mhod_filetype(filetype_desc))
+    if description:
+        mhods.append(write_mhod_string(MHOD_TYPE_DESCRIPTION, description))
+    if subtitle:
+        mhods.append(write_mhod_string(MHOD_TYPE_SUBTITLE, subtitle))
+    if show_name:
+        mhods.append(write_mhod_string(MHOD_TYPE_SHOW_NAME, show_name))
+    if episode_id:
+        mhods.append(write_mhod_string(MHOD_TYPE_EPISODE_ID, episode_id))
+    if network_name:
+        mhods.append(write_mhod_string(MHOD_TYPE_NETWORK_NAME, network_name))
+    if keywords:
+        mhods.append(write_mhod_string(MHOD_TYPE_KEYWORDS, keywords))
     if sort_artist:
         mhods.append(write_mhod_sort_artist(sort_artist))
     if sort_name:
@@ -246,8 +329,16 @@ def write_track_mhods(
         mhods.append(write_mhod_string(MHOD_TYPE_SORT_ALBUM_ARTIST, sort_album_artist))
     if sort_composer:
         mhods.append(write_mhod_string(MHOD_TYPE_SORT_COMPOSER, sort_composer))
+    if sort_show:
+        mhods.append(write_mhod_string(MHOD_TYPE_SORT_SHOW, sort_show))
     if grouping:
         mhods.append(write_mhod_string(MHOD_TYPE_GROUPING, grouping))
+
+    # Podcast URL types — DIFFERENT format: UTF-8, no sub-header
+    if podcast_enclosure_url:
+        mhods.append(write_mhod_podcast_url(MHOD_TYPE_PODCAST_ENCLOSURE_URL, podcast_enclosure_url))
+    if podcast_rss_url:
+        mhods.append(write_mhod_podcast_url(MHOD_TYPE_PODCAST_RSS_URL, podcast_rss_url))
 
     # Filter out empty MHODs
     mhods = [m for m in mhods if m]

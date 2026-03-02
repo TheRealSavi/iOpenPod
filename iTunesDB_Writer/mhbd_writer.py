@@ -1,26 +1,56 @@
-"""
-MHBD Writer - Write complete iTunesDB database files.
+"""MHBD Writer — Write complete iTunesDB database files.
 
 This is the top-level writer that assembles all components into
 a valid iTunesDB file.
 
-Database structure (based on libgpod order):
-  mhbd (database header)
+Database structure (order matches iTunes-generated databases):
+  mhbd (database header, 244 bytes)
+    mhsd type 4 (albums dataset)
+      mhla (album list)
+        mhia (album item) × N
     mhsd type 1 (tracks dataset)
       mhlt (track list)
         mhit (track) × N
           mhod (string) × M
     mhsd type 3 (podcasts dataset)
-      mhlp (podcast playlist list)
+      mhlp (playlist list) — same data as type 2
     mhsd type 2 (playlists dataset)
       mhlp (playlist list)
-        mhyp (master playlist) - REQUIRED
+        mhyp (master playlist) — REQUIRED, always first
+          mhod types 52/53 (library indices)
           mhip (track ref) × N
         mhyp (user playlist) × M
-    mhsd type 4 (albums dataset)
-      mhla (album list)
     mhsd type 5 (smart playlists dataset)
       mhlp (smart playlist list)
+
+MHBD header layout (MHBD_HEADER_SIZE = 244 bytes):
+    +0x00: 'mhbd' magic (4B)
+    +0x04: header_length (4B)
+    +0x08: total_length (4B) — entire file size
+    +0x0C: unk1 (4B) — always 1
+    +0x10: version (4B) — 0x4F
+    +0x14: children_count (4B) — 5
+    +0x18: database_id (8B)
+    +0x20: platform (2B) — 1=Mac, 2=Windows
+    +0x22: unk_0x22 (2B) — ~611
+    +0x24: id_0x24 (8B) — secondary ID (written in every MHIT)
+    +0x2C: unk_0x2c (4B)
+    +0x30: hashing_scheme (2B) — 0=none, 1=hash58
+    +0x32: unk_0x32 (20B) — zeroed before hash58
+    +0x46: language (2B)
+    +0x48: lib_persistent_id (8B)
+    +0x50: unk_0x50 (4B)
+    +0x54: unk_0x54 (4B)
+    +0x58: hash58 (20B)
+    +0x6C: timezone_offset (4B signed)
+    +0x70: unk_0x70 (2B)
+    +0x72: hash72 (46B)
+    +0xA0: audio_language (2B)
+    +0xA2: subtitle_language (2B)
+
+Cross-referenced against:
+  - iTunesDB_Parser/mhbd_parser.py parse_db()
+  - libgpod itdb_itunesdb.c: mk_mhbd() / parse_mhbd()
 """
 
 import struct
@@ -94,6 +124,52 @@ def extract_db_info(itdb_path: str) -> dict:
     }
 
 
+def extract_preserved_mhsd_blobs(itdb_data: bytes) -> list[bytes]:
+    """Extract raw MHSD blobs for dataset types we don't generate (6+).
+
+    iTunes 9+ writes additional MHSD children for Genius features
+    (types 6-10).  Their internal structure uses 'mhli' chunks that
+    we don't parse or generate.  To preserve Genius functionality
+    across rewrites, we capture these datasets as opaque byte blobs
+    and append them verbatim when writing a new database.
+
+    Args:
+        itdb_data: Complete original iTunesDB file bytes.
+
+    Returns:
+        List of raw MHSD byte blobs for dataset types > 5,
+        in the order they appeared in the original database.
+    """
+    if len(itdb_data) < 24 or itdb_data[:4] != b'mhbd':
+        return []
+
+    header_length = struct.unpack('<I', itdb_data[4:8])[0]
+    children_count = struct.unpack('<I', itdb_data[0x14:0x18])[0]
+
+    blobs: list[bytes] = []
+    offset = header_length
+
+    for _ in range(children_count):
+        if offset + 16 > len(itdb_data):
+            break
+        magic = itdb_data[offset:offset + 4]
+        if magic != b'mhsd':
+            break
+        mhsd_total = struct.unpack('<I', itdb_data[offset + 8:offset + 12])[0]
+        mhsd_type = struct.unpack('<I', itdb_data[offset + 12:offset + 16])[0]
+
+        if mhsd_type > 5:
+            blob = itdb_data[offset:offset + mhsd_total]
+            blobs.append(bytes(blob))
+            logger.debug("Preserved MHSD type %d blob (%d bytes)", mhsd_type, mhsd_total)
+
+        offset += mhsd_total
+
+    if blobs:
+        logger.info("Preserved %d extra MHSD blob(s) from existing database (Genius etc.)", len(blobs))
+    return blobs
+
+
 def generate_database_id() -> int:
     """Generate a random 64-bit database ID."""
     return random.getrandbits(64)
@@ -106,6 +182,7 @@ def write_mhbd(
     reference_info: Optional[dict] = None,
     playlists: Optional[List[PlaylistInfo]] = None,
     smart_playlists: Optional[List[PlaylistInfo]] = None,
+    preserved_mhsd_blobs: Optional[List[bytes]] = None,
 ) -> bytes:
     """
     Write a complete iTunesDB database.
@@ -119,6 +196,10 @@ def write_mhbd(
                    The master playlist is always generated automatically.
         smart_playlists: List of PlaylistInfo for dataset 5 smart playlists
                          (iPod browsing categories like Music, Movies, etc.)
+        preserved_mhsd_blobs: Raw MHSD byte blobs (types 6+) extracted from
+                              an existing database via extract_preserved_mhsd_blobs().
+                              Appended verbatim after the 5 standard datasets to
+                              preserve Genius and other iTunes-generated data.
 
     Returns:
         Complete iTunesDB file content as bytes
@@ -212,11 +293,17 @@ def write_mhbd(
     # (albums, tracks, podcasts, playlists, smart playlists)
     all_datasets = mhsd_albums + mhsd_tracks + mhsd_podcasts + mhsd_playlists + mhsd_smart
 
-    # Total file length
-    total_length = MHBD_HEADER_SIZE + len(all_datasets)
-
     # Number of child datasets
     child_count = 5  # albums, tracks, podcasts, playlists, smart playlists
+
+    # Append preserved MHSD blobs (Genius data, types 6+) from original database
+    extra_blobs = preserved_mhsd_blobs or []
+    for blob in extra_blobs:
+        all_datasets += blob
+    child_count += len(extra_blobs)
+
+    # Total file length
+    total_length = MHBD_HEADER_SIZE + len(all_datasets)
 
     # Build MHBD header
     # Layout based on libgpod mk_mhbd() and MhbdHeader struct
@@ -500,10 +587,16 @@ def write_itunesdb(
         logger.debug("ART: pc_file_paths is %s — skipping ArtworkDB",
                      'None' if pc_file_paths is None else 'empty dict')
 
+    # Extract preserved MHSD blobs (Genius data, types 6+) from existing database
+    preserved_blobs: list[bytes] = []
+    if existing_itdb:
+        preserved_blobs = extract_preserved_mhsd_blobs(existing_itdb)
+
     # Build database with reference info
     itdb_data = bytearray(write_mhbd(
         tracks, db_id, reference_info=reference_info,
         playlists=playlists, smart_playlists=smart_playlists,
+        preserved_mhsd_blobs=preserved_blobs,
     ))
 
     # Detect checksum type (or use forced type)

@@ -1,10 +1,77 @@
 """
-MHIT Writer - Write track item chunks for iTunesDB.
+MHIT Writer — Write track item chunks for iTunesDB.
 
 MHIT chunks contain all metadata for a single track, plus child MHOD
 chunks for strings (title, artist, path, etc.).
 
-Based on libgpod's mk_mhit() in itdb_itunesdb.c
+Header layout (MHIT_HEADER_SIZE = 0x248 / 584 bytes, matching libgpod):
+    +0x00: 'mhit' magic (4B)
+    +0x04: header_length (4B)
+    +0x08: total_length (4B) — header + all child MHODs
+    +0x0C: mhod_count (4B)
+    +0x10: trackID (4B) — unique within database
+    +0x14: visible (4B) — 1=visible
+    +0x18: filetype (4B) — big-endian ASCII stored as LE u32 ("MP3 ", "M4A ")
+    +0x1C: type1/VBR (1B), type2 (1B), compilation (1B), rating (1B)
+    +0x20: time_modified (4B Mac) — file modification time
+    +0x24: size (4B) — file size in bytes
+    +0x28: length (4B) — duration in ms
+    +0x2C: track_number (4B)
+    +0x30: total_tracks (4B)
+    +0x34: year (4B)
+    +0x38: bitrate (4B)
+    +0x3C: sample_rate (4B) — value << 16
+    +0x40: volume (4B signed) — -255 to +255
+    +0x44: start_time (4B ms)
+    +0x48: stop_time (4B ms)
+    +0x4C: sound_check (4B)
+    +0x50: play_count (4B)
+    +0x54: play_count2 (4B) — reset after sync
+    +0x58: last_played (4B Mac)
+    +0x5C: disc_number (4B)
+    +0x60: total_discs (4B)
+    +0x64: drm_userid (4B) — always 0
+    +0x68: date_added (4B Mac)
+    +0x6C: bookmark_time (4B ms)
+    +0x70: dbid (8B) — unique 64-bit ID
+    +0x78: checked (1B), app_rating (1B), bpm (2B)
+    +0x7C: artwork_count (2B), unk126 (2B)
+    +0x80: artwork_size (4B)
+    +0x84: unk132 (4B)
+    +0x88: sample_rate2 (4B float)
+    +0x8C: date_released (4B Mac)
+    +0x90: unk144 (2B), explicit_flag (2B)
+    +0x94: unk148 (4B), unk152 (4B)
+    +0x9C: skip_count (4B)
+    +0xA0: last_skipped (4B Mac)
+    +0xA4: has_artwork (1B), skip_shuffle (1B), remember_pos (1B), podcast_flag (1B)
+    +0xA8: dbid2 (8B) — copy of dbid
+    +0xB0: lyrics_flag (1B), movie_flag (1B), played_mark (1B), unk179 (1B)
+    +0xB4: unk180 (4B)
+    +0xB8: pregap (4B)
+    +0xBC: sample_count (8B)
+    +0xC4: unk196 (4B)
+    +0xC8: postgap (4B)
+    +0xCC: encoder_flag (4B) — 0x01=MP3
+    +0xD0: media_type (4B)
+    +0xD4: season_number (4B)
+    +0xD8: episode_number (4B)
+    +0xF8: gapless_data (4B)
+    +0x100: gapless_track_flag (2B)
+    +0x102: gapless_album_flag (2B)
+    +0x120: album_id (4B)
+    +0x124: id_0x24 (8B) — from MHBD
+    +0x12C: size (4B) — duplicate
+    +0x134: mystery_pattern (8B) — 0x808080808080
+    +0x160: mhii_link (4B) — ArtworkDB reference
+    +0x168: unk (4B) — always 1
+    +0x1E0: artist_id (4B)
+    +0x1F4: composer_id (4B)
+
+Cross-referenced against:
+  - iTunesDB_Parser/mhit_parser.py parse_trackItem()
+  - libgpod itdb_itunesdb.c: mk_mhit()
+  - iPodLinux wiki MHIT documentation
 """
 
 import struct
@@ -103,17 +170,22 @@ class TrackInfo:
     gapless_track_flag: int = 0  # 1 = track has gapless info
     gapless_album_flag: int = 0  # 1 = album is gapless
     pregap: int = 0  # Encoder pregap samples
+    postgap: int = 0  # Encoder postgap/padding samples (0xC8)
     sample_count: int = 0  # Total decoded sample count (64-bit)
+    encoder_flag: int = 0  # 0xCC: 0x01=MP3 encoder, 0x00=other
 
     # Track flags
     skip_when_shuffling: bool = False  # 1 = skip in shuffle mode
     remember_position: bool = False    # 1 = resume from bookmark (audiobooks)
+    podcast_flag: int = 0  # 0xA7: 0x00=normal, 0x01/0x02=podcast
+    movie_file_flag: int = 0  # 0xB1: 0x01=video/movie file, 0x00=audio
     explicit_flag: int = 0  # 0=none, 1=explicit, 2=clean
     has_lyrics: bool = False  # True if track has embedded lyrics
 
     # Timestamps (Unix)
     date_added: int = 0  # Will be set to now if 0
     date_released: int = 0
+    last_modified: int = 0  # 0x20: file modification time (0 = use date_added)
     last_played: int = 0
     last_skipped: int = 0
 
@@ -121,6 +193,8 @@ class TrackInfo:
     track_id: int = 0  # Will be assigned during write
     dbid: int = 0  # Will be generated if 0
     media_type: int = MEDIA_TYPE_AUDIO
+    season_number: int = 0  # 0xD4: TV show season number
+    episode_number: int = 0  # 0xD8: TV show episode number
     artwork_count: int = 0
     artwork_size: int = 0
     mhii_link: int = 0  # Link to ArtworkDB
@@ -211,12 +285,15 @@ def write_mhit(track: TrackInfo, track_id: int, id_0x24: int = 0) -> bytes:
 
     # +0x1C: type1 (VBR flag), type2, compilation, rating (single bytes)
     header[0x1C] = 1 if track.vbr else 0  # type1: VBR flag (0x00=CBR, 0x01=VBR)
-    header[0x1D] = 1  # type2: track type, always 1 for audio tracks
+    # type2: 0x01=MP3, 0x00=AAC/ALAC/other. Derives from filetype when not explicitly set.
+    ft = track.filetype.lower()
+    header[0x1D] = 1 if ft == 'mp3' else 0
     header[0x1E] = 1 if track.compilation else 0  # compilation
     header[0x1F] = min(100, max(0, track.rating))  # rating
 
-    # +0x20: time_modified (libgpod field), then size, length, track_number
-    struct.pack_into('<I', header, 0x20, unix_to_mac_timestamp(track.date_added))  # time_modified (use date_added as proxy)
+    # +0x20: time_modified (Mac timestamp). Use last_modified if set, else date_added as fallback.
+    time_mod = track.last_modified if track.last_modified else track.date_added
+    struct.pack_into('<I', header, 0x20, unix_to_mac_timestamp(time_mod))  # time_modified
     struct.pack_into('<I', header, 0x24, track.size)  # file size
     struct.pack_into('<I', header, 0x28, track.length)  # length in ms
     struct.pack_into('<I', header, 0x2C, track.track_number)  # track number
@@ -225,7 +302,7 @@ def write_mhit(track: TrackInfo, track_id: int, id_0x24: int = 0) -> bytes:
     struct.pack_into('<I', header, 0x30, track.total_tracks)  # total tracks
     struct.pack_into('<I', header, 0x34, track.year)  # year
     struct.pack_into('<I', header, 0x38, track.bitrate)  # bitrate
-    struct.pack_into('<I', header, 0x3C, track.sample_rate << 16)  # samplerate (stored << 16)
+    struct.pack_into('<I', header, 0x3C, (track.sample_rate << 16) & 0xFFFFFFFF)  # samplerate (stored << 16)
 
     # +0x40
     struct.pack_into('<i', header, 0x40, track.volume)  # volume (signed)
@@ -274,14 +351,14 @@ def write_mhit(track: TrackInfo, track_id: int, id_0x24: int = 0) -> bytes:
     header[0xA4] = 1 if track.artwork_count > 0 else 2  # has_artwork (1=has, 2=no)
     header[0xA5] = 1 if track.skip_when_shuffling else 0
     header[0xA6] = 1 if track.remember_position else 0
-    header[0xA7] = 0  # flag4
+    header[0xA7] = track.podcast_flag  # 0xA7: podcast display flag (0=normal, 1-2=podcast)
 
     # +0xA8: dbid2 (64-bit) - backup copy of dbid
     struct.pack_into('<Q', header, 0xA8, track.dbid)
 
     # +0xB0: lyrics_flag, movie_flag, mark_unplayed, unk179, unk180, etc.
     header[0xB0] = 1 if track.has_lyrics else 0  # lyrics_flag
-    header[0xB1] = 0  # movie_flag
+    header[0xB1] = track.movie_file_flag  # 0xB1: 1=video/movie, 0=audio
     # mark_unplayed: 0x02 = unplayed bullet, 0x01 = no bullet (played)
     header[0xB2] = 0x01 if track.play_count > 0 else 0x02
     header[0xB3] = 0  # unk179
@@ -292,8 +369,18 @@ def write_mhit(track: TrackInfo, track_id: int, id_0x24: int = 0) -> bytes:
     struct.pack_into('<Q', header, 0xBC, track.sample_count)  # samplecount (64-bit)
     struct.pack_into('<I', header, 0xC4, 0)  # unk196
 
+    # +0xC8: postgap (encoder padding samples at end of track)
+    struct.pack_into('<I', header, 0xC8, track.postgap)
+
+    # +0xCC: encoder_flag (0x01=MP3 encoder, 0x00=other)
+    struct.pack_into('<I', header, 0xCC, track.encoder_flag)
+
     # +0xD0: media_type (offset 0xD0 = 208)
     struct.pack_into('<I', header, 0xD0, track.media_type)
+
+    # +0xD4: season_number, +0xD8: episode_number (TV shows)
+    struct.pack_into('<I', header, 0xD4, track.season_number)
+    struct.pack_into('<I', header, 0xD8, track.episode_number)
 
     # +0xF8: gapless_data (libgpod: seek+248)
     struct.pack_into('<I', header, 0xF8, track.gapless_data)
