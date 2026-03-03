@@ -477,20 +477,29 @@ class iTunesDBCache(QObject):
         # 2. Podcast playlists (mhlp_podcast / dataset type 3)
         #    Only add if not already seen, and tag as podcast only when
         #    podcastFlag is actually set.
+        #    isMaster is forced False — dataset 3 reuses the same MHLP
+        #    structure as dataset 2 so hidden playlists get type=1, but
+        #    the real master playlist only lives in dataset 2.
         for pl in data.get("mhlp_podcast", []):
             pid = pl.get("playlistID", 0)
             if pid in seen_ids:
                 continue  # duplicate of a regular playlist
             pl["_source"] = "podcast" if pl.get("podcastFlag", 0) == 1 else "regular"
+            pl["isMaster"] = False
             seen_ids.add(pid)
             result.append(pl)
 
         # 3. Smart playlists (mhsp / dataset type 5)
+        #    isMaster is forced False — dataset 5 MHYP entries reuse the
+        #    same type byte at offset 0x14 (1=hidden), but "hidden" here
+        #    means an iPod built-in category (Music, Movies, etc.), NOT
+        #    the master playlist.  Only dataset 2 has the real master.
         for pl in data.get("mhsp", []):
             pid = pl.get("playlistID", 0)
             if pid in seen_ids:
                 continue
             pl["_source"] = "smart"
+            pl["isMaster"] = False
             seen_ids.add(pid)
             result.append(pl)
 
