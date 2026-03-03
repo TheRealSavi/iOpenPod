@@ -1,33 +1,85 @@
 import os
 import sys
 import logging
+import logging.handlers
 import traceback
 from PyQt6.QtGui import QPalette, QColor
 from PyQt6.QtWidgets import QApplication, QMessageBox
 from GUI.app import MainWindow
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
-    datefmt='%H:%M:%S'
-)
 
-logger = logging.getLogger(__name__)
+def _get_log_dir() -> str:
+    """Get platform-appropriate log directory, creating it if needed."""
+    # Check for user-configured log directory in settings
+    try:
+        from GUI.settings import AppSettings
+        custom = AppSettings.load().log_dir
+        if custom:
+            os.makedirs(custom, exist_ok=True)
+            return custom
+    except Exception:
+        pass
 
-
-def _get_crash_log_path() -> str:
-    """Get path for crash log file."""
     if sys.platform == "win32":
         base = os.environ.get("APPDATA", os.path.expanduser("~"))
     elif sys.platform == "darwin":
         base = os.path.join(os.path.expanduser("~"), "Library", "Logs")
     else:
-        base = os.environ.get("XDG_STATE_HOME", os.path.join(os.path.expanduser("~"), ".local", "state"))
-
+        base = os.environ.get(
+            "XDG_STATE_HOME",
+            os.path.join(os.path.expanduser("~"), ".local", "state"),
+        )
     log_dir = os.path.join(base, "iOpenPod")
     os.makedirs(log_dir, exist_ok=True)
-    return os.path.join(log_dir, "crash.log")
+    return log_dir
+
+
+def _configure_logging() -> str:
+    """Set up console + rotating file logging.
+
+    Returns:
+        Path to the active log file.
+    """
+    log_dir = _get_log_dir()
+    log_path = os.path.join(log_dir, "iopenpod.log")
+
+    root = logging.getLogger()
+    root.setLevel(logging.DEBUG)
+
+    # Console handler — INFO level, compact timestamp
+    console = logging.StreamHandler()
+    console.setLevel(logging.INFO)
+    console.setFormatter(logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+    ))
+    root.addHandler(console)
+
+    # File handler — DEBUG level, 5 MB rotation, keep 3 backups
+    file_handler = logging.handlers.RotatingFileHandler(
+        log_path,
+        maxBytes=5 * 1024 * 1024,
+        backupCount=3,
+        encoding="utf-8",
+    )
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    ))
+    root.addHandler(file_handler)
+
+    return log_path
+
+
+# Configure logging before anything else
+_log_file_path = _configure_logging()
+logger = logging.getLogger(__name__)
+
+
+def _get_crash_log_path() -> str:
+    """Get path for crash log file."""
+    return os.path.join(_get_log_dir(), "crash.log")
 
 
 def global_exception_handler(exc_type, exc_value, exc_tb):
@@ -82,6 +134,7 @@ sys.excepthook = global_exception_handler
 
 
 def run_pyqt_app():
+    logger.info("iOpenPod starting — log file: %s", _log_file_path)
     app = QApplication([])
 
     # Register bundled Noto fonts so the UI renders correctly on systems
@@ -122,8 +175,13 @@ def run_pyqt_app():
 
     # Start the event loop
     app.exec()
-    print("App closed")
+    logger.info("App closed")
+
+
+def main():
+    """Entry point for the iOpenPod application."""
+    run_pyqt_app()
 
 
 if __name__ == "__main__":
-    run_pyqt_app()
+    main()

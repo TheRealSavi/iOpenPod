@@ -45,6 +45,11 @@ from iTunesDB_Writer.mhod_spl_writer import (
 logger = logging.getLogger(__name__)
 
 
+class _OutOfSpaceError(Exception):
+    """Raised when iPod disk space drops below the 30 MB safety reserve."""
+    pass
+
+
 @dataclass
 class SyncProgress:
     """Progress info for sync callbacks."""
@@ -576,6 +581,13 @@ class SyncExecutor:
                 idx = future_to_idx[future]
                 try:
                     item, success, ipod_path, was_transcoded = future.result()
+                except _OutOfSpaceError as e:
+                    logger.error(str(e))
+                    result.errors.append(("storage", str(e)))
+                    result.success = False
+                    for f in future_to_idx:
+                        f.cancel()
+                    return
                 except Exception as e:
                     item = plan.to_update_file[idx]
                     result.errors.append((item.description, f"Worker error: {e}"))
@@ -838,6 +850,13 @@ class SyncExecutor:
                 idx = future_to_idx[future]
                 try:
                     item, success, ipod_path, was_transcoded = future.result()
+                except _OutOfSpaceError as e:
+                    logger.error(str(e))
+                    result.errors.append(("storage", str(e)))
+                    result.success = False
+                    for f in future_to_idx:
+                        f.cancel()
+                    return
                 except Exception as e:
                     item = plan.to_add[idx]
                     result.errors.append((item.description, f"Worker error: {e}"))
@@ -1028,6 +1047,19 @@ class SyncExecutor:
         """
         dest_folder = self._get_next_music_folder()
         source_size = source_path.stat().st_size
+
+        # Safety check: abort if writing this file would leave < 30 MB free
+        RESERVE_BYTES = 30 * 1024 * 1024  # 30 MB
+        try:
+            free = shutil.disk_usage(self.ipod_path).free
+            if free - source_size < RESERVE_BYTES:
+                free_mb = free / (1024 * 1024)
+                raise _OutOfSpaceError(
+                    f"iPod is out of space ({free_mb:.0f} MB remaining, "
+                    f"30 MB reserve required). Stopping file writes."
+                )
+        except OSError:
+            pass  # Can't check — proceed and let the copy fail naturally
 
         if needs_transcode:
             target_format = self._get_target_format(source_path)

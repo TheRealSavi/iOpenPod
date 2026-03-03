@@ -218,7 +218,7 @@ def _probe_video_needs_transcode_cached(
             text=True,
             encoding="utf-8",
             errors="replace",
-            timeout=30,
+            timeout=120,
             **_SP_KWARGS,
         )
         if result.returncode != 0:
@@ -368,7 +368,7 @@ def _probe_duration_us(filepath: str | Path) -> int:
             ],
             capture_output=True,
             text=True,
-            timeout=10,
+            timeout=120,
             **_SP_KWARGS,
         )
         if result.returncode == 0:
@@ -473,7 +473,7 @@ def transcode(
         output_filename: Optional custom output filename (without extension)
         ffmpeg_path: Optional path to ffmpeg binary
         aac_bitrate: Bitrate for AAC encoding (kbps)
-        progress_callback: Optional callback receiving a 0.0–1.0 float
+        progress_callback: Optional callback receiving a 0.0-1.0 float
             indicating transcode progress. Called periodically (~4/s)
             for video transcodes.
 
@@ -494,6 +494,18 @@ def transcode(
         )
 
     target = get_transcode_target(source_path)
+
+    # Read video CRF / preset from user settings (compatibility settings
+    # like resolution, codec, and pixel format are always forced).
+    crf = 23
+    preset = "fast"
+    try:
+        from GUI.settings import get_settings
+        _s = get_settings()
+        crf = _s.video_crf
+        preset = _s.video_preset
+    except Exception:
+        pass
 
     # Determine output path
     if output_filename:
@@ -577,8 +589,8 @@ def transcode(
                 ":force_original_aspect_ratio=decrease,"
                 "scale='trunc(iw/2)*2':'trunc(ih/2)*2'"
             ),                          # Fit within 640 wide, even dimensions
-            "-crf", "23",               # Quality-based encoding
-            "-preset", "fast",          # Good speed/quality at 640p target
+            "-crf", str(crf),               # Quality-based encoding
+            "-preset", preset,          # Speed/quality tradeoff
             "-acodec", "aac",
             "-ac", "2",                 # Stereo downmix
             "-b:a", f"{aac_bitrate}k",
@@ -605,7 +617,7 @@ def transcode(
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Video transcoding may take significantly longer than audio
-        timeout = 1800 if target == TranscodeTarget.VIDEO_H264 else 300
+        timeout = 7200 if target == TranscodeTarget.VIDEO_H264 else 600
 
         # Use streaming progress for video when a callback is provided
         if progress_callback and target == TranscodeTarget.VIDEO_H264:
