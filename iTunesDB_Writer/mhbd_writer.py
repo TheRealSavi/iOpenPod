@@ -275,7 +275,7 @@ def write_mhbd(
 
     mhlp_data = write_mhlp_with_playlists(
         track_ids, playlists=user_playlists, device_name=master_name,
-        tracks=tracks, id_0x24=id_0x24,
+        tracks=tracks, id_0x24=id_0x24, capabilities=capabilities,
     )
     mhsd_playlists = write_mhsd_playlists(mhlp_data)
 
@@ -355,6 +355,8 @@ def write_mhbd(
     struct.pack_into('<Q', header, 0x18, db_id)
 
     # +0x20: Platform (1 = Mac, 2 = Windows)
+    # NOTE: libgpod preserves this from the existing DB, but we recalculate
+    # from the current OS. Firmware doesn't check this field.
     import sys
     platform_id = 2 if sys.platform == 'win32' else 1
     struct.pack_into('<H', header, 0x20, platform_id)
@@ -546,6 +548,7 @@ def write_itunesdb(
                 'platform': struct.unpack('<H', source_itdb[0x20:0x22])[0],
                 'unk_0x22': struct.unpack('<H', source_itdb[0x22:0x24])[0],
                 'id_0x24': struct.unpack('<Q', source_itdb[0x24:0x2C])[0],
+                'unk_0x32': bytes(source_itdb[0x32:0x46]),
                 'language': source_itdb[0x46:0x48].decode('utf-8', errors='ignore'),
                 'lib_persistent_id': struct.unpack('<Q', source_itdb[0x48:0x50])[0],
                 'unk_0x50': struct.unpack('<I', source_itdb[0x50:0x54])[0],

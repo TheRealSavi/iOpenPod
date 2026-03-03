@@ -362,9 +362,10 @@ class iTunesDBCache(QObject):
         self._track_id_index: dict | None = None  # trackID -> track dict
         # User-created/edited playlists (persisted in memory until sync)
         self._user_playlists: list[dict] = []
-        # Pending track flag edits: dbid -> { field: value, ... }
-        # Merged into track dicts at sync time by sync_executor.
-        self._track_edits: dict[int, dict] = {}
+        # Pending track flag edits: dbid -> { field: (original, new), ... }
+        # Originals are captured on first edit so the diff engine can
+        # revert in-memory track dicts before comparing.
+        self._track_edits: dict[int, dict[str, tuple]] = {}
 
     @classmethod
     def get_instance(cls) -> "iTunesDBCache":
@@ -584,8 +585,8 @@ class iTunesDBCache(QObject):
         """Apply flag changes to one or more tracks.
 
         Updates the in-memory track dicts immediately (so the UI reflects
-        the change) and records the edit so it persists through the next
-        sync/database write.
+        the change) and records the edit as ``(original, new)`` so the diff
+        engine can revert to the true iPod state before comparing.
 
         Args:
             tracks:  List of track dicts (from the parsed iTunesDB).
@@ -597,19 +598,25 @@ class iTunesDBCache(QObject):
                 dbid = track.get("dbid", 0)
                 if not dbid:
                     continue
-                # Apply to the in-memory dict so the UI sees it instantly
+                edits = self._track_edits.setdefault(dbid, {})
                 for key, value in changes.items():
+                    if key in edits:
+                        # Already edited — keep the *original* value, update new
+                        orig, _ = edits[key]
+                        edits[key] = (orig, value)
+                    else:
+                        # First edit for this field — snapshot original
+                        edits[key] = (track.get(key), value)
+                    # Apply to the in-memory dict so the UI sees it instantly
                     track[key] = value
-                # Store the pending edit for sync time
-                self._track_edits.setdefault(dbid, {}).update(changes)
 
         n = len(tracks)
         fields = ", ".join(f"{k}={v}" for k, v in changes.items())
         logger.info("Track flags updated on %d track(s): %s", n, fields)
         self.tracks_changed.emit()
 
-    def get_track_edits(self) -> dict[int, dict]:
-        """Get all pending track flag edits: dbid -> {field: value}."""
+    def get_track_edits(self) -> dict[int, dict[str, tuple]]:
+        """Get all pending track flag edits: dbid → {field: (original, new)}."""
         with self._lock:
             return dict(self._track_edits)
 
@@ -1595,8 +1602,6 @@ class MainWindow(QMainWindow):
             to_sync_playcount=playcount_items,
             to_sync_rating=rating_items,
             matched_pc_paths=original_plan.matched_pc_paths if original_plan else {},
-            artwork_needs_sync=original_plan.artwork_needs_sync if original_plan else False,
-            artwork_missing_count=original_plan.artwork_missing_count if original_plan else 0,
             _stale_mapping_entries=original_plan._stale_mapping_entries if original_plan else [],
             mapping=original_plan.mapping if original_plan else None,
             playlists_to_add=original_plan.playlists_to_add if (original_plan and include_playlists) else [],

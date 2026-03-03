@@ -83,6 +83,12 @@ class AppSettings:
     # Off by default — users must opt in to having source files modified.
     write_back_to_pc: bool = False
 
+    # Compute Sound Check (loudness normalization) for files that don't
+    # already have ReplayGain or iTunNORM tags. Uses ffmpeg's EBU R128
+    # measurement and writes the result back into the PC file's tags.
+    # Sound Check values are always synced to iPod regardless of this setting.
+    compute_sound_check: bool = False
+
     # Rating conflict strategy when iPod and PC ratings differ.
     # Options: ipod_wins, pc_wins, highest, lowest, average.
     rating_conflict_strategy: str = "ipod_wins"

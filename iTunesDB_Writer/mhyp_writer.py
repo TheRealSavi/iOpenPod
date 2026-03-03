@@ -65,6 +65,20 @@ MHYP_HEADER_SIZE = 184
 
 
 @dataclass
+class PlaylistItemMeta:
+    """Per-item metadata preserved from parsed MHIP entries for round-trip fidelity.
+
+    These fields map directly to MHIP header offsets:
+      +0x10: podcast_group_flag (4B)
+      +0x14: group_id (4B) — unique MHIP identifier (libgpod: podcastgroupid)
+      +0x20: podcast_group_ref (4B) — references another MHIP's group_id
+    """
+    podcast_group_flag: int = 0
+    group_id: int = 0
+    podcast_group_ref: int = 0
+
+
+@dataclass
 class PlaylistInfo:
     """Structured input for writing a playlist to iTunesDB.
 
@@ -93,6 +107,10 @@ class PlaylistInfo:
     # Opaque blobs preserved from parsed data for round-trip fidelity
     raw_mhod100: Optional[bytes] = None   # Playlist prefs (type 100 body)
     raw_mhod102: Optional[bytes] = None   # Playlist settings (type 102 body)
+
+    # Per-MHIP metadata preserved from parsed data for round-trip fidelity.
+    # When provided, must be the same length as track_ids and in the same order.
+    item_metadata: Optional[List[PlaylistItemMeta]] = None
 
     @property
     def is_smart(self) -> bool:
@@ -132,6 +150,8 @@ def write_mhyp(
     mhsd5_type: int = 0,
     raw_mhod100: Optional[bytes] = None,
     raw_mhod102: Optional[bytes] = None,
+    item_metadata: Optional[List[PlaylistItemMeta]] = None,
+    capabilities=None,
 ) -> bytes:
     """
     Write a complete MHYP (playlist) chunk with MHODs and MHIPs.
@@ -210,19 +230,24 @@ def write_mhyp(
     library_indices_data = b''
     library_indices_count = 0
     if hidden and tracks:
-        library_indices_data, library_indices_count = write_library_indices(tracks)
+        library_indices_data, library_indices_count = write_library_indices(tracks, capabilities=capabilities)
 
     # Build MHIP entries for each track
     # libgpod's write_playlist_mhips() uses:
     # - podcastgroupid = 0 (MHIP offset 0x14)
     # - MHOD type 100 contains the position index (0, 1, 2, ...)
     #
-    # Note: iTunes uses a unique ID at offset 0x14 and stores it in MHOD too,
-    # but libgpod's approach (using 0) works fine with all iPods.
+    # When item_metadata is provided (round-trip from parsed data), we
+    # preserve per-MHIP fields: podcastGroupFlag, groupID, podcastGroupRef.
     mhips = []
     for i, track_id in enumerate(track_ids):
-        # mhip_id=0 matches libgpod behavior for regular (non-podcast) playlists
-        mhip = write_mhip(track_id, position=i, mhip_id=0)
+        meta = item_metadata[i] if item_metadata and i < len(item_metadata) else None
+        mhip = write_mhip(
+            track_id, position=i,
+            mhip_id=meta.group_id if meta else 0,
+            podcast_group_flag=meta.podcast_group_flag if meta else 0,
+            podcast_group_ref=meta.podcast_group_ref if meta else 0,
+        )
         mhips.append(mhip)
     mhip_data = b''.join(mhips)
 
@@ -427,6 +452,7 @@ def write_playlist(
         mhsd5_type=playlist.mhsd5_type,
         raw_mhod100=playlist.raw_mhod100,
         raw_mhod102=playlist.raw_mhod102,
+        item_metadata=playlist.item_metadata,
     )
 
 
@@ -435,6 +461,7 @@ def write_master_playlist(
     name: str = "iPod",
     tracks: Optional[List["TrackInfo"]] = None,
     id_0x24: int = 0,
+    capabilities=None,
 ) -> bytes:
     """
     Write the Master Playlist (MPL).
@@ -447,6 +474,7 @@ def write_master_playlist(
         name: Playlist name (usually "iPod" or device name)
         tracks: List of ALL TrackInfo objects (needed for library indices)
         id_0x24: Database-wide ID from MHBD offset 0x24
+        capabilities: Optional DeviceCapabilities for video sort indices.
 
     Returns:
         Complete MHYP chunk for master playlist
@@ -461,4 +489,5 @@ def write_master_playlist(
         sortorder=5,  # Match iTunes default sort order
         tracks=tracks,
         id_0x24=id_0x24,
+        capabilities=capabilities,
     )

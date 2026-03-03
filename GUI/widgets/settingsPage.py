@@ -490,6 +490,14 @@ class SettingsPage(QWidget):
         )
         layout.addWidget(self.write_back)
 
+        self.compute_sound_check = ToggleRow(
+            "Compute Sound Check",
+            "Analyze loudness of files missing ReplayGain/iTunNORM tags using ffmpeg, "
+            "then write the result back into your PC files and sync to iPod. "
+            "Sound Check values are always synced to iPod regardless of this setting.",
+        )
+        layout.addWidget(self.compute_sound_check)
+
         self.rating_strategy = ComboRow(
             "Rating Conflict Strategy",
             "How to resolve rating conflicts when iPod and PC ratings differ. "
@@ -632,6 +640,7 @@ class SettingsPage(QWidget):
 
         self.music_folder.value = s.music_folder
         self.write_back.value = s.write_back_to_pc
+        self.compute_sound_check.value = s.compute_sound_check
 
         # Rating conflict strategy
         strategy_display = {
@@ -694,6 +703,7 @@ class SettingsPage(QWidget):
             self._signals_connected = True
             self.music_folder.changed.connect(self._save)
             self.write_back.changed.connect(self._save)
+            self.compute_sound_check.changed.connect(self._save)
             self.rating_strategy.changed.connect(self._save)
             self.aac_bitrate.changed.connect(self._save)
             self.video_crf.changed.connect(self._save)
@@ -716,6 +726,7 @@ class SettingsPage(QWidget):
 
         s.music_folder = self.music_folder.value
         s.write_back_to_pc = self.write_back.value
+        s.compute_sound_check = self.compute_sound_check.value
 
         # Rating conflict strategy
         strategy_keys = {

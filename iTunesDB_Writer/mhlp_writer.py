@@ -121,6 +121,7 @@ def write_mhlp_with_playlists(
     device_name: str = "iPod",
     tracks: Optional[List["TrackInfo"]] = None,
     id_0x24: int = 0,
+    capabilities=None,
 ) -> bytes:
     """
     Write an MHLP chunk with the master playlist + user playlists.
@@ -134,6 +135,7 @@ def write_mhlp_with_playlists(
         device_name: Name for the master playlist (default "iPod")
         tracks: List of ALL TrackInfo objects (needed for library indices)
         id_0x24: Database-wide ID from MHBD offset 0x24
+        capabilities: Optional DeviceCapabilities for video sort indices.
 
     Returns:
         Complete MHLP chunk
@@ -141,7 +143,7 @@ def write_mhlp_with_playlists(
     chunks = []
 
     # Master playlist MUST be first
-    master = write_master_playlist(track_ids, name=device_name, tracks=tracks, id_0x24=id_0x24)
+    master = write_master_playlist(track_ids, name=device_name, tracks=tracks, id_0x24=id_0x24, capabilities=capabilities)
     chunks.append(master)
 
     # User playlists (regular and smart)

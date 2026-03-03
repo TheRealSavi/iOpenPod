@@ -423,14 +423,21 @@ class SyncTrackRow(QFrame):
             self.detail_label.setText(" · ".join(parts))
             self.badge_label.setText(_format_duration(track.duration_ms))
 
-        elif item.action == SyncAction.UPDATE_METADATA and track:
-            self.title_label.setText(track.title or track.filename)
+        elif item.action == SyncAction.UPDATE_METADATA:
+            is_gui_edit = track is None  # GUI edits have no pc_track
+            if track:
+                self.title_label.setText(track.title or track.filename)
+                self.badge_label.setText(_format_duration(track.duration_ms))
+            elif ipod:
+                self.title_label.setText(ipod.get("Title", "Unknown"))
+                self.badge_label.setText(_format_duration(ipod.get("length", 0)))
             changes = item.metadata_changes
             diff_parts = []
+            source = "iOpenPod" if is_gui_edit else "PC"
             for field_name, (pc_val, ipod_val) in changes.items():
                 diff_parts.append(f'{field_name}: "{ipod_val}" → "{pc_val}"')
-            self.detail_label.setText("  |  ".join(diff_parts) if diff_parts else "metadata changed")
-            self.badge_label.setText(_format_duration(track.duration_ms))
+            prefix = f"[{source}]  " if diff_parts else ""
+            self.detail_label.setText(prefix + ("  |  ".join(diff_parts) if diff_parts else "metadata changed"))
 
         elif item.action == SyncAction.UPDATE_ARTWORK and track:
             self.title_label.setText(track.title or track.filename)
@@ -460,15 +467,26 @@ class SyncTrackRow(QFrame):
             )
             self.badge_label.setText(_format_duration(track.duration_ms))
 
-        elif item.action == SyncAction.SYNC_RATING and track:
-            pc_s = _rating_to_stars(item.pc_rating)
-            ipod_s = _rating_to_stars(item.ipod_rating)
-            new_s = _rating_to_stars(item.new_rating)
-            self.title_label.setText(track.title or track.filename)
+        elif item.action == SyncAction.SYNC_RATING:
+            is_gui_edit = track is None
+            old_stars = _rating_to_stars(item.ipod_rating)
+            new_stars = _rating_to_stars(item.new_rating)
+            if track:
+                self.title_label.setText(track.title or track.filename)
+                artist = track.artist or "Unknown"
+                self.badge_label.setText(_format_duration(track.duration_ms))
+            elif ipod:
+                self.title_label.setText(ipod.get("Title", "Unknown"))
+                artist = ipod.get("Artist", "Unknown")
+                self.badge_label.setText(_format_duration(ipod.get("length", 0)))
+            else:
+                self.title_label.setText("Unknown")
+                artist = "Unknown"
+            source = "iOpenPod" if is_gui_edit else "PC"
             self.detail_label.setText(
-                f"{track.artist or 'Unknown'} · PC {pc_s} / iPod {ipod_s} → {new_s}"
+                f"{artist}  ·  [{source}]  {old_stars}  →  {new_stars}"
             )
-            self.badge_label.setText(_format_duration(track.duration_ms))
+            self.detail_label.setFont(QFont(FONT_FAMILY, 10))
 
         # Tooltip
         tt_lines = []
@@ -1543,30 +1561,6 @@ class SyncReviewWidget(QWidget):
             card.selection_changed.connect(self._schedule_selection_update)
             self._category_cards.append(card)
             self._playlist_card = card
-            _insert_card(card)
-
-        # ── Artwork sync (global, info) ─────────────────────────────
-        if plan.artwork_needs_sync:
-            count = plan.artwork_missing_count
-            card = SyncCategoryCard("🖼️", "Sync Album Art", count,
-                                    _CAT_COLORS["artwork"], checkable=False, start_expanded=False,
-                                    parent=self._cards_container)
-            ipod_tracks_cache = getattr(self, '_ipod_tracks_cache', None)
-            if plan.matched_pc_paths and ipod_tracks_cache:
-                for dbid in plan.matched_pc_paths:
-                    ipod_track = next(
-                        (t for t in ipod_tracks_cache if t.get('dbid') == dbid), None
-                    )
-                    if ipod_track:
-                        ac = ipod_track.get('artworkCount', 0)
-                        ml = ipod_track.get('mhiiLink', 0)
-                        if ac == 0 or ml == 0:
-                            card.add_info_row(
-                                ipod_track.get('Title', 'Unknown'),
-                                f"{ipod_track.get('Artist', 'Unknown')} · {ipod_track.get('Album', 'Unknown')} · Missing art",
-                            )
-            elif count > 0:
-                card.add_info_row(f"{count} tracks missing album art", "Will be synced")
             _insert_card(card)
 
         # ── Fingerprint errors ──────────────────────────────────────

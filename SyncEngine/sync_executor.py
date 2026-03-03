@@ -36,7 +36,7 @@ from iTunesDB_Writer.mhit_writer import (
     MEDIA_TYPE_MUSIC_VIDEO,
     MEDIA_TYPE_TV_SHOW,
 )
-from iTunesDB_Writer.mhyp_writer import PlaylistInfo
+from iTunesDB_Writer.mhyp_writer import PlaylistInfo, PlaylistItemMeta
 from iTunesDB_Writer.mhod_spl_writer import (
     prefs_from_parsed, rules_from_parsed,
     SmartPlaylistPrefs, SmartPlaylistRule, SmartPlaylistRules,
@@ -265,6 +265,22 @@ class SyncExecutor:
                 progress_callback(SyncProgress("write_database", 0, 1, message="Writing database..."))
 
             all_tracks = list(tracks_by_dbid.values()) + new_tracks
+
+            # ── Auto-detect gapless_album_flag ────────────────────────
+            # If ALL tracks in an album have gapless_track_flag set, mark
+            # them all with gapless_album_flag=1 (tells iPod to apply
+            # gapless playback across album transitions).
+            from collections import defaultdict
+            albums: dict[tuple[str, str], list[TrackInfo]] = defaultdict(list)
+            for t in all_tracks:
+                key = (t.album or "", t.album_artist or t.artist or "")
+                albums[key].append(t)
+            for album_tracks in albums.values():
+                if len(album_tracks) >= 2 and all(
+                    t.gapless_track_flag for t in album_tracks
+                ):
+                    for t in album_tracks:
+                        t.gapless_album_flag = 1
 
             # pc_file_paths has mixed keys: dbid (int) for existing tracks,
             # id(track_info) for new tracks.  mhbd_writer.py handles the
@@ -695,14 +711,37 @@ class SyncExecutor:
                         track.year = pc_value if pc_value else 0
                     elif field_name == "track_number":
                         track.track_number = pc_value if pc_value else 0
+                    elif field_name == "track_total":
+                        track.total_tracks = pc_value if pc_value else 0
                     elif field_name == "disc_number":
                         track.disc_number = pc_value if pc_value else 0
+                    elif field_name == "disc_total":
+                        track.total_discs = pc_value if pc_value else 1
                     elif field_name == "composer":
                         track.composer = pc_value
                     elif field_name == "comment":
                         track.comment = pc_value
                     elif field_name == "grouping":
                         track.grouping = pc_value
+                    elif field_name == "bpm":
+                        track.bpm = pc_value if pc_value else 0
+                    elif field_name == "compilation":
+                        track.compilation = bool(pc_value)
+                    elif field_name == "explicit_flag":
+                        track.explicit_flag = pc_value if pc_value else 0
+                    # Sort fields
+                    elif field_name == "sort_name":
+                        track.sort_name = pc_value
+                    elif field_name == "sort_artist":
+                        track.sort_artist = pc_value
+                    elif field_name == "sort_album":
+                        track.sort_album = pc_value
+                    elif field_name == "sort_album_artist":
+                        track.sort_album_artist = pc_value
+                    elif field_name == "sort_composer":
+                        track.sort_composer = pc_value
+                    elif field_name == "sort_show":
+                        track.sort_show = pc_value
                     # Video/TV show fields
                     elif field_name == "show_name":
                         track.show_name = pc_value
@@ -716,6 +755,37 @@ class SyncExecutor:
                         track.episode_id = pc_value
                     elif field_name == "network_name":
                         track.network_name = pc_value
+                    elif field_name == "sound_check":
+                        track.sound_check = pc_value if pc_value else 0
+                    elif field_name == "subtitle":
+                        track.subtitle = pc_value
+                    elif field_name == "category":
+                        track.category = pc_value
+                    elif field_name == "podcast_url":
+                        track.podcast_enclosure_url = pc_value
+                    elif field_name == "lyrics":
+                        track.lyrics = pc_value
+                    elif field_name == "sort_show":
+                        track.sort_show = pc_value
+                    # ── iPod-only flags (from GUI edits) ──────────────
+                    elif field_name == "skipWhenShuffling":
+                        track.skip_when_shuffling = bool(pc_value)
+                    elif field_name == "rememberPosition":
+                        track.remember_position = bool(pc_value)
+                    elif field_name == "gaplessTrackFlag":
+                        track.gapless_track_flag = pc_value if pc_value else 0
+                    elif field_name == "gaplessAlbumFlag":
+                        track.gapless_album_flag = pc_value if pc_value else 0
+                    elif field_name == "checked":
+                        track.checked = pc_value if pc_value else 0
+                    elif field_name == "playedMark":
+                        track.played_mark = pc_value if pc_value else 0
+                    elif field_name == "volume":
+                        track.volume = pc_value if pc_value else 0
+                    elif field_name == "startTime":
+                        track.start_time = pc_value if pc_value else 0
+                    elif field_name == "stopTime":
+                        track.stop_time = pc_value if pc_value else 0
 
             # Refresh mapping mtime/size so next sync doesn't see a spurious file change
             if item.fingerprint and item.pc_track and not dry_run:
@@ -1326,27 +1396,9 @@ class SyncExecutor:
                     t.setdefault("recent_playcount", 0)
                     t.setdefault("recent_skipcount", 0)
 
-            # ── Apply pending track flag edits from the GUI ─────────────
-            # The user may have toggled flags (compilation, skip when
-            # shuffling, etc.) via the right-click menu.  These are stored
-            # in the iTunesDBCache and must be merged into the freshly
-            # parsed track dicts before building TrackInfo objects.
-            try:
-                from GUI.app import iTunesDBCache
-                gui_cache = iTunesDBCache.get_instance()
-                track_edits = gui_cache.get_track_edits()
-                if track_edits:
-                    dbid_to_track = {t.get("dbid", 0): t for t in tracks if t.get("dbid")}
-                    applied = 0
-                    for dbid, changes in track_edits.items():
-                        track = dbid_to_track.get(dbid)
-                        if track:
-                            track.update(changes)
-                            applied += 1
-                    if applied:
-                        logger.info("Applied %d pending track flag edits", applied)
-            except Exception as e:
-                logger.debug("No GUI cache for track edits (headless?): %s", e)
+            # NOTE: GUI track edits (rating, flags, etc.) are no longer
+            # silently applied here.  They flow through the diff engine as
+            # proper SyncItems so they appear in the sync review UI.
 
             # Dataset 2: regular + user playlists (mhlp)
             all_playlists = result.get("mhlp", [])
@@ -1477,6 +1529,10 @@ class SyncExecutor:
             category=t.get("Category"),
             played_mark=t.get("playedMark", -1),
             podcast_flag=t.get("podcastFlag", 0),
+            # Round-trip fields (preserved from existing iPod database)
+            user_id=t.get("userID", 0),
+            app_rating=t.get("appRating", 0),
+            unk144=t.get("unk144", 0),
         )
 
     def _pc_track_to_info(self, pc_track, ipod_location: str, was_transcoded: bool,
@@ -1556,6 +1612,18 @@ class SyncExecutor:
             skip_when_shuffling = True
             remember_position = True
 
+        # ── Gapless & encoder flags ──────────────────────────────────
+        pregap = getattr(pc_track, "pregap", 0) or 0
+        postgap = getattr(pc_track, "postgap", 0) or 0
+        sample_count = getattr(pc_track, "sample_count", 0) or 0
+        gapless_data = getattr(pc_track, "gapless_data", 0) or 0
+        # Auto-set gapless_track_flag when we have meaningful gapless data
+        gapless_track_flag = 1 if (pregap or postgap or sample_count) else 0
+        # encoder_flag: set to 1 for MP3 (iPod needs this for LAME gapless)
+        encoder_flag = 1 if filetype == "mp3" else 0
+        # VBR detection from mutagen bitrate_mode
+        vbr = getattr(pc_track, "vbr", False)
+
         return TrackInfo(
             title=pc_track.title or Path(pc_track.path).stem,
             location=ipod_location,
@@ -1564,6 +1632,7 @@ class SyncExecutor:
             filetype=filetype,
             bitrate=bitrate,
             sample_rate=sample_rate,
+            vbr=vbr,
             artist=pc_track.artist,
             album=pc_track.album,
             album_artist=pc_track.album_artist,
@@ -1581,13 +1650,17 @@ class SyncExecutor:
             play_count=getattr(pc_track, "play_count", 0) or 0,
             compilation=getattr(pc_track, "compilation", False),
             sound_check=getattr(pc_track, "sound_check", 0) or 0,
-            pregap=getattr(pc_track, "pregap", 0) or 0,
-            postgap=getattr(pc_track, "postgap", 0) or 0,
-            sample_count=getattr(pc_track, "sample_count", 0) or 0,
-            gapless_data=getattr(pc_track, "gapless_data", 0) or 0,
+            pregap=pregap,
+            postgap=postgap,
+            sample_count=sample_count,
+            gapless_data=gapless_data,
+            gapless_track_flag=gapless_track_flag,
+            encoder_flag=encoder_flag,
             explicit_flag=getattr(pc_track, "explicit_flag", 0) or 0,
             has_lyrics=getattr(pc_track, "has_lyrics", False),
             lyrics=getattr(pc_track, "lyrics", None),
+            date_released=getattr(pc_track, "date_released", 0) or 0,
+            subtitle=getattr(pc_track, "subtitle", None),
             sort_artist=getattr(pc_track, "sort_artist", None),
             sort_name=getattr(pc_track, "sort_name", None),
             sort_album=getattr(pc_track, "sort_album", None),
@@ -1670,14 +1743,21 @@ class SyncExecutor:
             if pl.get("isMaster", False):
                 continue  # master playlist is auto-generated by the writer
 
-            # Resolve track IDs → dbids, filtering out removed tracks
+            # Resolve track IDs → dbids, filtering out removed tracks.
+            # Also preserve per-MHIP metadata for round-trip fidelity.
             items = pl.get("items", [])
             track_ids = []
+            item_meta = []
             for item in items:
                 tid = item.get("trackID", 0)
                 dbid = old_tid_to_dbid.get(tid, 0)
                 if dbid in valid_dbids:
                     track_ids.append(dbid)
+                    item_meta.append(PlaylistItemMeta(
+                        podcast_group_flag=item.get("podcastGroupFlag", 0),
+                        group_id=item.get("groupID", 0),
+                        podcast_group_ref=item.get("podcastGroupRef", 0),
+                    ))
 
             info = PlaylistInfo(
                 name=pl.get("Title", "Untitled"),
@@ -1685,8 +1765,11 @@ class SyncExecutor:
                 playlist_id=pl.get("playlistID"),
                 hidden=False,
                 sortorder=pl.get("sortOrder", 0),
+                podcast_flag=pl.get("podcastFlag", 0),
+                group_flag=pl.get("groupFlag", 0),
                 raw_mhod100=self._decode_raw_blob(pl.get("rawMhod100")),
                 raw_mhod102=self._decode_raw_blob(pl.get("rawMhod102")),
+                item_metadata=item_meta if item_meta else None,
             )
 
             # Smart playlist rules (dataset 2 smart playlists)

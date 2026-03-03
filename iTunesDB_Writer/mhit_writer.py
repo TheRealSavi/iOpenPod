@@ -234,6 +234,11 @@ class TrackInfo:
     # Filetype description
     filetype_desc: Optional[str] = None  # e.g., "MPEG audio file"
 
+    # Round-trip fields (preserved from existing iPod database)
+    user_id: int = 0      # 0x64: DRM user ID (preserved for round-trip)
+    app_rating: int = 0   # 0x79: Application-computed rating (preserved for round-trip)
+    unk144: int = 0       # 0x90: Unknown field (preserved for round-trip)
+
     # Internal IDs (assigned during database write, NOT user-provided)
     artist_id: int = 0   # Links to artist entry (assigned by writer)
     composer_id: int = 0  # Links to composer entry (assigned by writer)
@@ -357,7 +362,7 @@ def write_mhit(track: TrackInfo, track_id: int, id_0x24: int = 0,
 
     # +0x60
     struct.pack_into('<I', header, 0x60, track.total_discs)  # total discs
-    struct.pack_into('<I', header, 0x64, 0)  # drm_userid
+    struct.pack_into('<I', header, 0x64, track.user_id)  # drm_userid
     struct.pack_into('<I', header, 0x68, unix_to_mac_timestamp(track.date_added))  # date added (again)
     struct.pack_into('<I', header, 0x6C, track.bookmark_time)  # bookmark time
 
@@ -366,7 +371,7 @@ def write_mhit(track: TrackInfo, track_id: int, id_0x24: int = 0,
 
     # +0x78: checked(1), app_rating(1), BPM(2), artwork_count(2), unk126(2)
     header[0x78] = track.checked  # checked (0 = checked/enabled, 1 = unchecked)
-    header[0x79] = 0  # app_rating
+    header[0x79] = track.app_rating  # app_rating
     struct.pack_into('<H', header, 0x7A, track.bpm)  # BPM
     struct.pack_into('<H', header, 0x7C, track.artwork_count)  # artwork count
     # +0x7E: unk126 — codec hint / sub-codec indicator.
@@ -383,7 +388,7 @@ def write_mhit(track: TrackInfo, track_id: int, id_0x24: int = 0,
     struct.pack_into('<I', header, 0x8C, unix_to_mac_timestamp(track.date_released))  # date released
 
     # +0x90: unk144(2), explicit_flag(2), unk148(4), unk152(4)
-    struct.pack_into('<H', header, 0x90, 0)  # unk144
+    struct.pack_into('<H', header, 0x90, track.unk144)  # unk144
     struct.pack_into('<H', header, 0x92, track.explicit_flag)  # explicit_flag (0=none, 1=explicit, 2=clean)
     struct.pack_into('<I', header, 0x94, 0)  # unk148
     struct.pack_into('<I', header, 0x98, 0)  # unk152

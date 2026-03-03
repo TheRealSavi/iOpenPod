@@ -37,7 +37,22 @@ SORT_ARTIST = 0x05
 SORT_GENRE = 0x07
 SORT_COMPOSER = 0x12
 
-ALL_SORT_TYPES = [SORT_TITLE, SORT_ALBUM, SORT_ARTIST, SORT_GENRE, SORT_COMPOSER]
+# Video sort types (written when device supports video)
+SORT_SHOW = 0x1D
+SORT_SEASON = 0x1E
+SORT_EPISODE = 0x1F
+
+# Album artist sort (written for modern iPods)
+SORT_ALBUM_ARTIST = 0x23
+
+# Base sort types — always written
+BASE_SORT_TYPES = [SORT_TITLE, SORT_ALBUM, SORT_ARTIST, SORT_GENRE, SORT_COMPOSER]
+
+# Video sort types — only for devices with supports_video
+VIDEO_SORT_TYPES = [SORT_SHOW, SORT_SEASON, SORT_EPISODE]
+
+# Legacy alias for backward compatibility
+ALL_SORT_TYPES = BASE_SORT_TYPES
 
 
 def _sort_key(s: str) -> str:
@@ -108,6 +123,28 @@ def _get_sort_fields(track: "TrackInfo", sort_type: int) -> tuple:
         return (genre, artist, album, cd_nr, track_nr, title)
     elif sort_type == SORT_COMPOSER:
         return (composer, album, cd_nr, track_nr, title)
+    elif sort_type == SORT_SHOW:
+        show = _sort_key(getattr(track, 'sort_show', None) or getattr(track, 'show_name', None) or "")
+        season = getattr(track, 'season_number', 0) or 0
+        episode = getattr(track, 'episode_number', 0) or 0
+        return (show, season, episode, title)
+    elif sort_type == SORT_SEASON:
+        season = getattr(track, 'season_number', 0) or 0
+        episode = getattr(track, 'episode_number', 0) or 0
+        show = _sort_key(getattr(track, 'sort_show', None) or getattr(track, 'show_name', None) or "")
+        return (season, episode, show, title)
+    elif sort_type == SORT_EPISODE:
+        episode = getattr(track, 'episode_number', 0) or 0
+        season = getattr(track, 'season_number', 0) or 0
+        show = _sort_key(getattr(track, 'sort_show', None) or getattr(track, 'show_name', None) or "")
+        return (episode, season, show, title)
+    elif sort_type == SORT_ALBUM_ARTIST:
+        album_artist = _sort_key(
+            getattr(track, 'sort_album_artist', None)
+            or getattr(track, 'album_artist', None)
+            or track.sort_artist or track.artist or ""
+        )
+        return (album_artist, album, cd_nr, track_nr, title)
     else:
         return (title,)
 
@@ -128,6 +165,21 @@ def _get_jump_letter(track: "TrackInfo", sort_type: int) -> int:
         return _jump_table_letter(track.genre or "")
     elif sort_type == SORT_COMPOSER:
         return _jump_table_letter(track.sort_composer or getattr(track, 'composer', None) or "")
+    elif sort_type == SORT_SHOW:
+        return _jump_table_letter(getattr(track, 'sort_show', None) or getattr(track, 'show_name', None) or "")
+    elif sort_type == SORT_SEASON:
+        n = getattr(track, 'season_number', 0) or 0
+        return _jump_table_letter(str(n)) if n else ord('0')
+    elif sort_type == SORT_EPISODE:
+        n = getattr(track, 'episode_number', 0) or 0
+        return _jump_table_letter(str(n)) if n else ord('0')
+    elif sort_type == SORT_ALBUM_ARTIST:
+        s = (
+            getattr(track, 'sort_album_artist', None)
+            or getattr(track, 'album_artist', None)
+            or track.sort_artist or track.artist or ""
+        )
+        return _jump_table_letter(s)
     else:
         return _jump_table_letter(track.sort_name or track.title or "")
 
@@ -244,20 +296,23 @@ def write_mhod_type53(sort_type: int, jump_entries: list[tuple[int, int, int]]) 
     return bytes(header) + bytes(body_header) + bytes(entries_data)
 
 
-def write_library_indices(tracks: list["TrackInfo"]) -> tuple[bytes, int]:
+def write_library_indices(tracks: list["TrackInfo"], capabilities=None) -> tuple[bytes, int]:
     """
     Write all library index MHODs (type 52 + type 53 pairs) for the
     master playlist.
 
-    Generates 5 sort categories × 2 MHODs = 10 MHODs total:
-    - Title (0x03)
-    - Album (0x04)
-    - Artist (0x05)
-    - Genre (0x07)
-    - Composer (0x12)
+    Base sort categories (always written):
+    - Title (0x03), Album (0x04), Artist (0x05), Genre (0x07), Composer (0x12)
+
+    Video sort categories (when capabilities.supports_video is True):
+    - Show (0x1D), Season (0x1E), Episode (0x1F)
+
+    Album Artist sort (0x23) is written for all devices with capabilities
+    (i.e. modern iPods that use the capabilities system).
 
     Args:
         tracks: List of all TrackInfo objects
+        capabilities: Optional DeviceCapabilities for conditional sort types.
 
     Returns:
         Tuple of (concatenated MHOD bytes, count of MHODs written)
@@ -265,10 +320,18 @@ def write_library_indices(tracks: list["TrackInfo"]) -> tuple[bytes, int]:
     if not tracks:
         return b'', 0
 
+    # Build the list of sort types to write
+    sort_types = list(BASE_SORT_TYPES)
+    if capabilities is not None:
+        if capabilities.supports_video:
+            sort_types.extend(VIDEO_SORT_TYPES)
+        # Album artist sort for all modern iPods
+        sort_types.append(SORT_ALBUM_ARTIST)
+
     result = bytearray()
     mhod_count = 0
 
-    for sort_type in ALL_SORT_TYPES:
+    for sort_type in sort_types:
         # Write type 52 (sorted index)
         mhod52_data, jump_entries = write_mhod_type52(tracks, sort_type)
         result.extend(mhod52_data)

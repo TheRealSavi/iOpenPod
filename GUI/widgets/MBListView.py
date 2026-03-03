@@ -33,7 +33,7 @@ log = logging.getLogger(__name__)
 # Formatters - Shared formatters + local display-specific ones
 # =============================================================================
 
-from .formatters import format_size, format_duration_mmss, format_rating  # noqa: E402
+from .formatters import format_size, format_duration_mmss  # noqa: E402
 
 
 def format_duration(ms: int) -> str:
@@ -111,92 +111,247 @@ def format_checked(val: int) -> str:
     return ""
 
 
+def format_bool_flag(val: int) -> str:
+    """Format a 0/1 flag as Yes/empty."""
+    return "Yes" if val else ""
+
+
+def format_compilation(val: int) -> str:
+    """Format compilation flag."""
+    return "Yes" if val else ""
+
+
+def format_sound_check(val: int) -> str:
+    """Format Sound Check value as dB gain."""
+    if not val:
+        return ""
+    import math
+    try:
+        db = 10 * math.log10(val / 1000.0)
+        return f"{db:+.1f} dB"
+    except (ValueError, ZeroDivisionError):
+        return str(val)
+
+
+def format_rating(stars_x20: int) -> str:
+    """Format rating (0-100, stars x 20) as star display."""
+    if not stars_x20:
+        return ""
+    stars = stars_x20 // 20
+    return "★" * stars + "☆" * (5 - stars)
+
+
+def format_dbid(val: int) -> str:
+    """Format 64-bit dbid as hex."""
+    if not val:
+        return ""
+    return f"0x{val:016X}"
+
+
+def format_samples(val: int) -> str:
+    """Format large sample counts with comma separators."""
+    if not val:
+        return ""
+    return f"{val:,}"
+
+
 # =============================================================================
 # Column Configuration
 # =============================================================================
 
 # Maps internal key -> (display_name, optional_formatter)
 COLUMN_CONFIG: dict[str, tuple[str, Callable[[int], str] | None]] = {
+    # ── Playlist position (synthetic) ──
     "_pl_pos": ("#", None),
+    # ── Core metadata ──
     "Title": ("Title", None),
     "Artist": ("Artist", None),
     "Album": ("Album", None),
     "Album Artist": ("Album Artist", None),
     "Genre": ("Genre", None),
+    "Composer": ("Composer", None),
+    "Comment": ("Comment", None),
+    "Grouping": ("Grouping", None),
     "year": ("Year", None),
+    "trackNumber": ("Track #", None),
+    "totalTracks": ("Track Total", None),
+    "discNumber": ("Disc #", None),
+    "totalDiscs": ("Disc Total", None),
+    "compilation": ("Compilation", format_compilation),
+    "bpm": ("BPM", None),
+    # ── Playback ──
     "length": ("Time", format_duration),
     "rating": ("Rating", format_rating),
     "playCount": ("Plays", None),
     "skipCount": ("Skips", None),
-    "bitrate": ("Bitrate", format_bitrate),
-    "size": ("Size", format_size),
-    "sampleRate": ("Sample Rate", format_sample_rate),
-    "trackNumber": ("#", None),
-    "discNumber": ("Disc", None),
-    "dateAdded": ("Added", format_date),
     "lastPlayed": ("Last Played", format_date),
-    "bpm": ("BPM", None),
-    "Composer": ("Composer", None),
-    "filetype": ("Format", None),
-    # ── New columns from parser improvements ──
-    "lastModified": ("Modified", format_date),
     "lastSkipped": ("Last Skipped", format_date),
-    "dateReleased": ("Released", format_date),
-    "mediaType": ("Media Type", format_media_type),
-    "volume": ("Volume Adj.", format_volume),
-    "explicitFlag": ("Explicit", format_explicit),
-    "totalTracks": ("Track Total", None),
-    "totalDiscs": ("Disc Total", None),
-    "Comment": ("Comment", None),
-    "Grouping": ("Grouping", None),
-    "Description Text": ("Description", None),
-    "startTime": ("Start", format_duration),
-    "stopTime": ("Stop", format_duration),
+    "startTime": ("Start Time", format_duration),
+    "stopTime": ("Stop Time", format_duration),
     "bookmarkTime": ("Bookmark", format_duration),
     "checked": ("Checked", format_checked),
-    "gaplessTrackFlag": ("Gapless", None),
-    "gaplessAlbumFlag": ("Gapless Album", None),
+    "playedMark": ("Played", format_bool_flag),
+    "soundCheck": ("Sound Check", format_sound_check),
+    "volume": ("Volume Adj.", format_volume),
+    # ── File / encoding info ──
+    "filetype": ("Format", None),
+    "bitrate": ("Bitrate", format_bitrate),
+    "sampleRate": ("Sample Rate", format_sample_rate),
+    "size": ("Size", format_size),
+    "vbr": ("VBR", format_bool_flag),
+    "mediaType": ("Media Type", format_media_type),
+    "explicitFlag": ("Explicit", format_explicit),
+    # ── Dates ──
+    "dateAdded": ("Date Added", format_date),
+    "lastModified": ("Date Modified", format_date),
+    "dateReleased": ("Release Date", format_date),
+    # ── Sort override fields ──
+    "Sort Title": ("Sort Title", None),
+    "Sort Artist": ("Sort Artist", None),
+    "Sort Album": ("Sort Album", None),
+    "Sort Album Artist": ("Sort Album Artist", None),
+    "Sort Composer": ("Sort Composer", None),
+    "Sort Show": ("Sort Show", None),
+    # ── Video / TV Show ──
+    "Show": ("Show", None),
+    "seasonNumber": ("Season", None),
+    "episodeNumber": ("Episode #", None),
+    "Episode": ("Episode ID", None),
+    "TV Network": ("Network", None),
+    "Description Text": ("Description", None),
+    "Subtitle": ("Subtitle", None),
+    # ── Podcast ──
+    "Category": ("Category", None),
+    "Podcast Enclosure URL": ("Enclosure URL", None),
+    "Podcast RSS URL": ("RSS URL", None),
+    "podcastFlag": ("Podcast", format_bool_flag),
+    # ── Gapless ──
+    "gaplessTrackFlag": ("Gapless", format_bool_flag),
+    "gaplessAlbumFlag": ("Gapless Album", format_bool_flag),
+    "pregap": ("Pre-gap", format_samples),
+    "postgap": ("Post-gap", format_samples),
+    "sampleCount": ("Sample Count", format_samples),
+    # ── Flags ──
+    "skipWhenShuffling": ("Skip Shuffle", format_bool_flag),
+    "rememberPosition": ("Remember Pos.", format_bool_flag),
+    "lyricsFlag": ("Has Lyrics", format_bool_flag),
+    # ── Artwork ──
+    "artworkCount": ("Art Count", None),
+    # ── Identifiers (diagnostic) ──
+    "trackID": ("Track ID", None),
+    "dbid": ("DBID", format_dbid),
+    "albumID": ("Album ID", None),
+    # ── EQ ──
+    "EQ Setting": ("Equalizer", None),
 }
 
-# Preferred column order when displaying tracks
+# Preferred column order — controls the order columns appear when auto-
+# building the list AND the order they appear in the "Add Column" menu.
+# Every key in COLUMN_CONFIG should appear here; anything omitted is
+# appended at the end.
 PREFERRED_COLUMN_ORDER = [
-    "Title", "Artist", "Album", "Album Artist", "Genre",
-    "year", "length", "rating", "playCount", "skipCount",
-    "trackNumber", "discNumber", "bitrate", "dateAdded", "lastPlayed",
-    "lastModified", "lastSkipped", "dateReleased", "mediaType",
-    "volume", "explicitFlag", "Comment", "Grouping", "Description Text",
-    "totalTracks", "totalDiscs", "startTime", "stopTime", "bookmarkTime",
-    "checked", "gaplessTrackFlag", "gaplessAlbumFlag",
+    # Core identity
+    "Title", "Artist", "Album", "Album Artist", "Genre", "Composer",
+    "year", "trackNumber", "totalTracks", "discNumber", "totalDiscs",
+    "compilation", "bpm",
+    # Playback / stats
+    "length", "rating", "playCount", "skipCount",
+    "lastPlayed", "lastSkipped", "checked", "playedMark",
+    # Audio quality
+    "filetype", "bitrate", "sampleRate", "size", "vbr",
+    # Volume / normalization
+    "soundCheck", "volume",
+    # Dates
+    "dateAdded", "lastModified", "dateReleased",
+    # Tags
+    "Comment", "Grouping", "explicitFlag",
+    # Sort overrides
+    "Sort Title", "Sort Artist", "Sort Album",
+    "Sort Album Artist", "Sort Composer", "Sort Show",
+    # Video / TV
+    "mediaType", "Show", "seasonNumber", "episodeNumber",
+    "Episode", "TV Network", "Description Text", "Subtitle",
+    # Podcast
+    "Category", "podcastFlag",
+    "Podcast Enclosure URL", "Podcast RSS URL",
+    # Playback range
+    "startTime", "stopTime", "bookmarkTime",
+    # Gapless
+    "gaplessTrackFlag", "gaplessAlbumFlag",
+    "pregap", "postgap", "sampleCount",
+    # Flags
+    "skipWhenShuffling", "rememberPosition", "lyricsFlag",
+    # Artwork
+    "artworkCount",
+    # Identifiers
+    "trackID", "dbid", "albumID",
+    # EQ
+    "EQ Setting",
 ]
 
-# Default columns shown when no specific selection
-DEFAULT_COLUMNS = ["Title", "Artist", "Album", "Genre", "length", "rating", "playCount"]
+# ── Per-media-type default column sets ────────────────────────────────────────
 
-# Default columns for video categories (more relevant to video content)
-DEFAULT_VIDEO_COLUMNS = ["Title", "Artist", "Album", "length", "mediaType", "size", "dateAdded"]
+# Music (default)
+DEFAULT_COLUMNS = [
+    "Title", "Artist", "Album", "Genre", "year",
+    "trackNumber", "length", "rating", "playCount",
+    "dateAdded",
+]
 
-# Default columns for podcast categories
-DEFAULT_PODCAST_COLUMNS = ["Title", "Artist", "Album", "length", "dateAdded", "playCount", "Description Text"]
+# Music videos / Movies
+DEFAULT_VIDEO_COLUMNS = [
+    "Title", "Artist", "Album", "length",
+    "mediaType", "size", "bitrate", "dateAdded",
+    "rating", "playCount",
+]
 
-# Default columns for audiobook categories
-DEFAULT_AUDIOBOOK_COLUMNS = ["Title", "Artist", "Album", "length", "bookmarkTime", "playCount", "dateAdded"]
+# Podcasts
+DEFAULT_PODCAST_COLUMNS = [
+    "Title", "Artist", "Album", "length",
+    "dateReleased", "playCount", "playedMark",
+    "Description Text", "dateAdded",
+]
+
+# Audiobooks
+DEFAULT_AUDIOBOOK_COLUMNS = [
+    "Title", "Artist", "Album", "length",
+    "bookmarkTime", "playCount", "rating", "dateAdded",
+]
 
 # Columns that should be right-aligned (numeric)
 NUMERIC_COLUMNS = frozenset({
-    "year", "playCount", "skipCount", "trackNumber", "discNumber", "bpm",
-    "_pl_pos", "totalTracks", "totalDiscs", "volume",
-    "gaplessTrackFlag", "gaplessAlbumFlag",
+    "_pl_pos", "year", "trackNumber", "totalTracks", "discNumber", "totalDiscs",
+    "bpm", "playCount", "skipCount", "volume",
+    "seasonNumber", "episodeNumber", "artworkCount",
+    "trackID", "albumID",
+    "pregap", "postgap", "sampleCount",
 })
 
 # Columns whose raw value should be stored in UserRole for correct numeric sorting.
 # Includes all integer/float columns and formatted columns (size, bitrate, etc.).
 SORTABLE_NUMERIC_KEYS = frozenset({
-    "year", "playCount", "skipCount", "trackNumber", "discNumber", "bpm",
-    "_pl_pos", "length", "rating", "bitrate", "size", "sampleRate",
+    "_pl_pos",
+    # Core numeric
+    "year", "trackNumber", "totalTracks", "discNumber", "totalDiscs",
+    "bpm", "compilation",
+    # Playback stats
+    "length", "rating", "playCount", "skipCount",
+    "startTime", "stopTime", "bookmarkTime",
+    "checked", "playedMark", "soundCheck", "volume",
+    # File info
+    "bitrate", "size", "sampleRate", "vbr",
+    "mediaType", "explicitFlag",
+    # Dates
     "dateAdded", "lastPlayed", "lastModified", "lastSkipped", "dateReleased",
-    "mediaType", "volume", "explicitFlag", "totalTracks", "totalDiscs",
-    "startTime", "stopTime", "bookmarkTime", "checked",
+    # Video/Podcast
+    "seasonNumber", "episodeNumber", "podcastFlag",
+    # Gapless
     "gaplessTrackFlag", "gaplessAlbumFlag",
+    "pregap", "postgap", "sampleCount",
+    # Flags
+    "skipWhenShuffling", "rememberPosition", "lyricsFlag",
+    # Artwork / IDs
+    "artworkCount", "trackID", "dbid", "albumID",
 })
 
 # Batch size for incremental population (rows per timer tick)
@@ -592,14 +747,9 @@ class MusicBrowserList(QFrame):
             base = [k for k in self._user_col_order
                     if k in available_keys and k not in self._hidden_columns]
         else:
-            # Build column order: preferred columns first (if data exists)
-            base = [k for k in PREFERRED_COLUMN_ORDER
+            # Show only the media-type defaults (user can add more via header menu)
+            base = [k for k in defaults
                     if k in available_keys and k not in self._hidden_columns]
-
-            # Add any remaining known columns that aren't hidden
-            for key in COLUMN_CONFIG:
-                if key in available_keys and key not in base and key not in self._hidden_columns:
-                    base.append(key)
 
         self._columns = base
 
@@ -1477,26 +1627,101 @@ class MusicBrowserList(QFrame):
                 )
 
     def _build_start_stop_menu(self, menu: QMenu, style: str, selected: list[dict]) -> None:
-        """Add Start/Stop Time actions to clear custom start or stop times."""
-        # Only show if any selected track has a non-zero start or stop time
-        has_start = any(t.get("startTime", 0) for t in selected)
-        has_stop = any(t.get("stopTime", 0) for t in selected)
-        if not has_start and not has_stop:
+        """Add Start/Stop Time submenu with Set and Clear actions."""
+        menu.addSeparator()
+
+        # ── Start Time ────────────────────────────────────────────────
+        start_menu = menu.addMenu("Start Time")
+        if start_menu:
+            start_menu.setStyleSheet(style)
+            # Current value display (if unanimous across selection)
+            start_vals = {t.get("startTime", 0) for t in selected}
+            if len(start_vals) == 1:
+                val = start_vals.pop()
+                if val:
+                    info_act = start_menu.addAction(f"Current: {format_duration(val)}")
+                    if info_act:
+                        info_act.setEnabled(False)
+
+            act_set = start_menu.addAction("Set Start Time…")
+            if act_set:
+                act_set.triggered.connect(
+                    lambda _=False: self._prompt_time("startTime", selected)
+                )
+            has_start = any(t.get("startTime", 0) for t in selected)
+            if has_start:
+                act_clear = start_menu.addAction("Clear Start Time")
+                if act_clear:
+                    act_clear.triggered.connect(
+                        lambda _=False: self._set_track_flag("startTime", 0)
+                    )
+
+        # ── Stop Time ─────────────────────────────────────────────────
+        stop_menu = menu.addMenu("Stop Time")
+        if stop_menu:
+            stop_menu.setStyleSheet(style)
+            stop_vals = {t.get("stopTime", 0) for t in selected}
+            if len(stop_vals) == 1:
+                val = stop_vals.pop()
+                if val:
+                    info_act = stop_menu.addAction(f"Current: {format_duration(val)}")
+                    if info_act:
+                        info_act.setEnabled(False)
+
+            act_set = stop_menu.addAction("Set Stop Time…")
+            if act_set:
+                act_set.triggered.connect(
+                    lambda _=False: self._prompt_time("stopTime", selected)
+                )
+            has_stop = any(t.get("stopTime", 0) for t in selected)
+            if has_stop:
+                act_clear = stop_menu.addAction("Clear Stop Time")
+                if act_clear:
+                    act_clear.triggered.connect(
+                        lambda _=False: self._set_track_flag("stopTime", 0)
+                    )
+
+    def _prompt_time(self, key: str, selected: list[dict]) -> None:
+        """Show a dialog to set start or stop time in mm:ss format."""
+        from PyQt6.QtWidgets import QInputDialog
+
+        label = "Start Time" if key == "startTime" else "Stop Time"
+
+        # Pre-fill with current value if all selected tracks agree
+        vals = {t.get(key, 0) for t in selected}
+        default_text = ""
+        if len(vals) == 1:
+            ms = vals.pop()
+            if ms:
+                total_sec = ms // 1000
+                m, s = divmod(total_sec, 60)
+                default_text = f"{m}:{s:02d}"
+
+        text, ok = QInputDialog.getText(
+            self, f"Set {label}",
+            f"Enter {label.lower()} (m:ss or mm:ss):",
+            text=default_text,
+        )
+        if not ok or not text.strip():
             return
 
-        menu.addSeparator()
-        if has_start:
-            act = menu.addAction("Clear Start Time")
-            if act:
-                act.triggered.connect(
-                    lambda _=False: self._set_track_flag("startTime", 0)
-                )
-        if has_stop:
-            act = menu.addAction("Clear Stop Time")
-            if act:
-                act.triggered.connect(
-                    lambda _=False: self._set_track_flag("stopTime", 0)
-                )
+        # Parse mm:ss or m:ss or just seconds
+        text = text.strip()
+        try:
+            if ":" in text:
+                parts = text.split(":")
+                minutes = int(parts[0])
+                seconds = int(parts[1])
+            else:
+                minutes = 0
+                seconds = int(text)
+            ms = (minutes * 60 + seconds) * 1000
+            if ms < 0:
+                return
+        except (ValueError, IndexError):
+            return
+
+        self._set_track_flag(key, ms)
 
     def _set_track_flag(self, key: str, value: int) -> None:
         """Apply a flag/field change to all selected tracks via the cache."""
