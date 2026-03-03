@@ -301,9 +301,17 @@ def write_mhbd(
     mhsd_smart = write_mhsd_smart_playlists(mhlp_smart)
 
     # Concatenate all datasets
-    # Order observed in iTunes-generated clean database: Type 4, 1, 3, 2, 5
-    # (albums, tracks, podcasts, playlists, smart playlists)
-    all_datasets = mhsd_albums + mhsd_tracks + mhsd_podcasts + mhsd_playlists + mhsd_smart
+    # Order MUST match libgpod: Type 1, 3, 2, 4, 5
+    # (tracks, podcasts, playlists, albums, smart playlists)
+    #
+    # This ordering is critical for iPod firmware compatibility:
+    #   - Type 3 MUST appear between types 1 and 2 for podcast support
+    #     (documented on iPodLinux wiki and in libgpod source)
+    #   - Type 1 MUST be first — older iPod firmware (Video 5G, Nano 1G-2G)
+    #     may assume dataset[0] is the track list.  Placing type 4 (albums)
+    #     first causes the firmware to fail to load any tracks.
+    #   - Types 4 and 5 come after the core 1-3-2 triple, matching libgpod.
+    all_datasets = mhsd_tracks + mhsd_podcasts + mhsd_playlists + mhsd_albums + mhsd_smart
 
     # Number of child datasets
     child_count = 5 if include_podcasts else 4
