@@ -38,17 +38,21 @@ def _assign_artist_composer_ids(tracks: List[TrackInfo], start_track_id: int) ->
     # Start assigning after the last track ID
     next_id = start_track_id + len(tracks)
 
-    # Map unique artists and composers to IDs
+    # Map unique artists to IDs (fallback only — normally set by write_mhli)
     artist_ids: dict[str, int] = {}
-    composer_ids: dict[str, int] = {}
 
     for track in tracks:
-        # Artist ID
-        artist_key = (track.artist or "").lower()
-        if artist_key not in artist_ids:
-            artist_ids[artist_key] = next_id
-            next_id += 1
-        track.artist_id = artist_ids[artist_key]
+        # Artist ID — only assign if not already set by the MHSD type 8
+        # artist list (write_mhli + write_mhbd).  When write_mhbd() builds
+        # the artist list it sets track.artist_id to match the MHII entries;
+        # overwriting it here with a different numbering scheme would break
+        # the cross-reference and make tracks invisible in the Artists view.
+        if track.artist_id == 0:
+            artist_key = (track.artist or "").lower()
+            if artist_key not in artist_ids:
+                artist_ids[artist_key] = next_id
+                next_id += 1
+            track.artist_id = artist_ids[artist_key]
 
         # Composer ID (each track gets its own in clean DB, even if same composer)
         # Matching observed iTunes behavior: composer_id is per-track, NOT deduped
