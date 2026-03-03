@@ -96,24 +96,19 @@ class MusicBrowserGridItem(QFrame):
 
     def cleanup(self):
         """Mark widget as destroyed and cancel any pending work."""
-        log.debug(f"cleanup() called for item: {self.title_text}")
         self._destroyed = True
         if self.worker:
-            log.debug(f"  Cancelling worker for: {self.title_text}")
             self.worker.cancel()
             try:
                 self.worker.signals.result.disconnect(self._applyImage)
-                log.debug(f"  Disconnected signal for: {self.title_text}")
-            except (TypeError, RuntimeError) as e:
-                log.debug(f"  Signal disconnect failed: {e}")
+            except (TypeError, RuntimeError):
+                pass
             self.worker = None
 
     def loadImage(self):
         from ..app import Worker, ThreadPoolSingleton, DeviceManager
-        log.debug(f"loadImage() called for: {self.title_text}, mhiiLink={self.mhiiLink}")
 
         if self.worker:
-            log.debug(f"  Cancelling previous worker for: {self.title_text}")
             self.worker.cancel()
 
         self._cancellation_token = DeviceManager.get_instance().cancellation_token
@@ -121,7 +116,6 @@ class MusicBrowserGridItem(QFrame):
         self.worker = Worker(self._loadImageData, self.mhiiLink)
         self.worker.signals.result.connect(self._applyImage)
         ThreadPoolSingleton.get_instance().start(self.worker)
-        log.debug(f"  Worker started for: {self.title_text}")
 
     def _loadImageData(self, mhiiLink):
         """Load image data in worker thread."""
@@ -155,35 +149,25 @@ class MusicBrowserGridItem(QFrame):
         if result is None:
             return {"error": True, "mhiiLink": mhiiLink}
 
-        pil_image, dcol = result
-        return {"pil_image": pil_image, "dcol": dcol}
+        pil_image, dcol, album_colors = result
+        return {"pil_image": pil_image, "dcol": dcol, "album_colors": album_colors}
 
     def _applyImage(self, result):
         """Apply loaded image data on main thread."""
-        log.debug(f"_applyImage() called for: {self.title_text}, destroyed={self._destroyed}")
-
-        # Check if widget was destroyed while loading
         if self._destroyed:
-            log.debug(f"  Widget destroyed, skipping: {self.title_text}")
             return
 
         try:
-            # Additional safety check
             if not self.isVisible() and not self.parent():
-                log.debug(f"  Widget not visible/no parent, skipping: {self.title_text}")
                 return
-        except RuntimeError as e:
-            log.debug(f"  RuntimeError checking visibility: {e}")
+        except RuntimeError:
             return
 
         from ..app import DeviceManager
 
         current_token = DeviceManager.get_instance().cancellation_token
         if self._cancellation_token is not current_token:
-            log.debug(f"  Cancellation token mismatch, skipping: {self.title_text}")
             return
-
-        log.debug(f"  Applying image for: {self.title_text}, result={result is not None}")
 
         if result is None or result.get("error"):
             self._setPlaceholderImage()
@@ -213,9 +197,12 @@ class MusicBrowserGridItem(QFrame):
                 border-radius: {Metrics.BORDER_RADIUS}px;
             """)
 
-            # Store dominant color in item_data for downstream use
+            # Store dominant color and album colors for downstream use
             if dcol:
                 self.item_data["dominant_color"] = dcol
+            album_colors = result.get("album_colors")
+            if album_colors:
+                self.item_data["album_colors"] = album_colors
 
             # Tint background with dominant color
             if dcol:

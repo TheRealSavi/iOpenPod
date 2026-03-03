@@ -114,63 +114,188 @@ def generate_image(ithmb_filename, image_info):
     return None
 
 
-def getDominantColor(image):
-    """Extract a vibrant dominant color from an image.
+# ---------------------------------------------------------------------------
+# Color helpers
+# ---------------------------------------------------------------------------
 
-    Uses adaptive palette extraction then boosts saturation and brightness
-    to get a more visually appealing background color.
+def _yiq_brightness(r: int, g: int, b: int) -> float:
+    """YIQ perceived brightness (0-255). Higher = lighter."""
+    return (r * 299 + g * 587 + b * 114) / 1000
+
+
+def _yiq_contrast(c1: tuple, c2: tuple) -> float:
+    """Contrast ratio between two (r, g, b) colors using YIQ brightness."""
+    return abs(_yiq_brightness(*c1) - _yiq_brightness(*c2))
+
+
+def _detect_border(image_rgb, threshold: int = 8):
+    """Detect and crop a solid-color border/frame around artwork.
+
+    Returns the cropped image (or the original if no border detected).
+    iTunes 11 skipped solid-color frames before sampling.
+    """
+    w, h = image_rgb.size
+    if w < 6 or h < 6:
+        return image_rgb
+
+    pixels = image_rgb.load()
+    corner_color = pixels[0, 0]
+
+    # Check whether the left edge is all roughly the same color
+    same_count = 0
+    for y in range(0, h, max(1, h // 10)):
+        pr, pg, pb = pixels[0, y]
+        cr, cg, cb = corner_color
+        if abs(pr - cr) < threshold and abs(pg - cg) < threshold and abs(pb - cb) < threshold:
+            same_count += 1
+
+    if same_count < (h // max(1, h // 10)) * 0.8:
+        return image_rgb  # Left edge isn't uniform -- no border
+
+    # Find border width (how many pixels deep the border goes)
+    border = 0
+    for x in range(min(w // 4, 20)):
+        pr, pg, pb = pixels[x, h // 2]
+        cr, cg, cb = corner_color
+        if abs(pr - cr) < threshold and abs(pg - cg) < threshold and abs(pb - cb) < threshold:
+            border = x + 1
+        else:
+            break
+
+    if border > 1:
+        return image_rgb.crop((border, border, w - border, h - border))
+    return image_rgb
+
+
+def getDominantColor(image):
+    """Extract a dominant background color from album artwork (iTunes 11 style).
+
+    Samples primarily from the left edge of the artwork (like iTunes 11),
+    detects and skips solid-color borders/frames, and prefers saturated
+    colors over black/white.
+
+    Returns (r, g, b) tuple.
     """
     import colorsys
 
-    # Resize to small size for faster processing
+    # Resize for performance
     small = image.copy()
-    small.thumbnail((50, 50))
-
-    # Extract multiple colors and find the most vibrant one
+    small.thumbnail((80, 80))
     small_rgb = small.convert("RGB")
-    colors = small_rgb.quantize(colors=8, method=Image.Quantize.MEDIANCUT)
-    palette = colors.getpalette()[:24]  # 8 colors * 3 RGB values
+
+    # Detect and crop border frames
+    small_rgb = _detect_border(small_rgb)
+
+    w, h = small_rgb.size
+
+    # Sample the left ~20% of the image (iTunes 11 approach)
+    left_strip_w = max(2, w // 5)
+    left_strip = small_rgb.crop((0, 0, left_strip_w, h))
+
+    # Extract palette from left strip
+    quantized = left_strip.quantize(colors=8, method=Image.Quantize.MEDIANCUT)
+    palette_data = quantized.getpalette()[:24]
 
     best_color = None
     best_score = -1
 
-    for i in range(0, len(palette), 3):
-        r, g, b = palette[i], palette[i + 1], palette[i + 2]
+    for i in range(0, len(palette_data), 3):
+        r, g, b = palette_data[i], palette_data[i + 1], palette_data[i + 2]
+        h_val, s, v = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
 
-        # Convert to HSV to evaluate saturation and value
-        h, s, v = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
-
-        # Score based on saturation and brightness (prefer vibrant colors)
-        # Avoid very dark colors (v < 0.2) and very light/white colors (s < 0.1)
-        score = s * 2 + v  # Weight saturation more heavily
-        if v < 0.15:  # Too dark
-            score *= 0.3
-        if s < 0.1:  # Too desaturated (grays/whites)
-            score *= 0.3
+        # Score: prefer saturated, reasonably bright colors
+        score = s * 2.5 + v
+        if v < 0.15:
+            score *= 0.2  # Too dark
+        if s < 0.08:
+            score *= 0.2  # Too desaturated (grays/whites/blacks)
 
         if score > best_score:
             best_score = score
             best_color = (r, g, b)
 
     if best_color is None:
-        # Fallback to simple dominant color
         simple = image.convert("P", palette=Image.Palette.ADAPTIVE, colors=1)
         best_color = tuple(simple.getpalette()[:3])
 
     r, g, b = best_color
 
-    # Boost saturation and brightness for a vivid, punchy result
-    h, s, v = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
+    # If the best color is too neutral, fall back to sampling the whole image
+    h_val, s_val, v_val = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
+    if s_val < 0.12 and best_score < 0.8:
+        quantized_full = small_rgb.quantize(colors=8, method=Image.Quantize.MEDIANCUT)
+        palette_full = quantized_full.getpalette()[:24]
+        for i in range(0, len(palette_full), 3):
+            fr, fg, fb = palette_full[i], palette_full[i + 1], palette_full[i + 2]
+            fh, fs, fv = colorsys.rgb_to_hsv(fr / 255, fg / 255, fb / 255)
+            fscore = fs * 2.5 + fv
+            if fv < 0.15:
+                fscore *= 0.2
+            if fs < 0.08:
+                fscore *= 0.2
+            if fscore > best_score:
+                best_score = fscore
+                best_color = (fr, fg, fb)
+                r, g, b = fr, fg, fb
 
-    # Aggressively increase saturation
-    s = min(1.0, s * 2.2 + 0.3)
-
-    # Boost brightness significantly
-    v = max(0.55, min(0.97, v * 1.8 + 0.2))
-
-    # Convert back to RGB
-    r, g, b = colorsys.hsv_to_rgb(h, s, v)
+    # Moderate boost to saturation and brightness for visual appeal
+    h_val, s_val, v_val = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
+    s_val = min(1.0, s_val * 1.4 + 0.1)
+    v_val = max(0.35, min(0.85, v_val * 1.2 + 0.05))
+    r, g, b = colorsys.hsv_to_rgb(h_val, s_val, v_val)
     return (int(r * 255), int(g * 255), int(b * 255))
+
+
+def getAlbumColors(image):
+    """Extract background + text colors from album artwork (iTunes 11 style).
+
+    Returns a dict with:
+        bg:             (r, g, b) - dominant background color
+        text:           (r, g, b) - primary text color (high contrast with bg)
+        text_secondary: (r, g, b) - secondary text color (lower contrast)
+    """
+    import colorsys
+
+    bg = getDominantColor(image)
+
+    # Get palette from the full image for text color candidates
+    small = image.copy()
+    small.thumbnail((80, 80))
+    small_rgb = small.convert("RGB")
+
+    quantized = small_rgb.quantize(colors=12, method=Image.Quantize.MEDIANCUT)
+    palette_data = quantized.getpalette()[:36]
+
+    candidates = []
+    for i in range(0, len(palette_data), 3):
+        r, g, b = palette_data[i], palette_data[i + 1], palette_data[i + 2]
+        contrast = _yiq_contrast((r, g, b), bg)
+        candidates.append(((r, g, b), contrast))
+
+    # Sort by contrast against background (highest first)
+    candidates.sort(key=lambda x: x[1], reverse=True)
+
+    # Pick primary text: highest contrast, with minimum threshold
+    text = (255, 255, 255) if _yiq_brightness(*bg) < 128 else (0, 0, 0)
+    for color, contrast in candidates:
+        if contrast >= 100:
+            # Ensure it's distinct enough from bg
+            h1, s1, _ = colorsys.rgb_to_hsv(*[c / 255 for c in color])
+            h2, s2, _ = colorsys.rgb_to_hsv(*[c / 255 for c in bg])
+            # Skip colors too similar in hue to the background
+            hue_diff = min(abs(h1 - h2), 1 - abs(h1 - h2))
+            if hue_diff > 0.05 or s1 < 0.15:
+                text = color
+                break
+
+    # Pick secondary text: good contrast but distinct from primary
+    text_secondary = tuple(max(0, min(255, c + (40 if _yiq_brightness(*bg) < 128 else -40))) for c in text)
+    for color, contrast in candidates:
+        if contrast >= 60 and _yiq_contrast(color, text) >= 30:
+            text_secondary = color
+            break
+
+    return {"bg": bg, "text": text, "text_secondary": text_secondary}
 
 
 def find_image_by_imgId(artworkdb_data, ithmb_folder_path, imgId, imgid_index=None):
@@ -219,5 +344,6 @@ def find_image_by_imgId(artworkdb_data, ithmb_folder_path, imgId, imgid_index=No
 
         if img is not None:
             dcol = getDominantColor(img)
-            return img, dcol
+            album_colors = getAlbumColors(img)
+            return img, dcol, album_colors
     return None

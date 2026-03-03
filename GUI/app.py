@@ -293,7 +293,8 @@ class DeviceManager(QObject):
     def itunesdb_path(self) -> str | None:
         if not self._device_path:
             return None
-        return os.path.join(self._device_path, "iPod_Control", "iTunes", "iTunesDB")
+        from device_info import resolve_itdb_path
+        return resolve_itdb_path(self._device_path)
 
     @property
     def artworkdb_path(self) -> str | None:
@@ -459,6 +460,11 @@ class iTunesDBCache(QObject):
         regular copy is preferred when duplicates exist.  Playlists from
         mhlp_podcast are only tagged as 'podcast' when their podcastFlag is
         set — otherwise they are just duplicates of regular playlists.
+
+        Nano 5G+ / newer iTunes versions may omit dataset type 2 entirely,
+        placing the master playlist and all user playlists in type 3 instead.
+        In that case we honour isMaster from type 3 to avoid losing the
+        master playlist.
         """
         data = self.get_data()
         if not data:
@@ -468,25 +474,30 @@ class iTunesDBCache(QObject):
         result: list[dict] = []
 
         # 1. Regular playlists (mhlp / dataset type 2) — always preferred
+        has_type2_master = False
         for pl in data.get("mhlp", []):
             pl["_source"] = "regular"
             pid = pl.get("playlistID", 0)
             if pid not in seen_ids:
                 seen_ids.add(pid)
                 result.append(pl)
+                if pl.get("isMaster"):
+                    has_type2_master = True
 
         # 2. Podcast playlists (mhlp_podcast / dataset type 3)
         #    Only add if not already seen, and tag as podcast only when
         #    podcastFlag is actually set.
-        #    isMaster is forced False — dataset 3 reuses the same MHLP
-        #    structure as dataset 2 so hidden playlists get type=1, but
-        #    the real master playlist only lives in dataset 2.
+        #    When type 2 provided a master playlist, force isMaster=False
+        #    on type 3 entries (they duplicate the hidden flag).  But when
+        #    type 2 is absent (Nano 5G+, newer iTunes), honour isMaster
+        #    from type 3 — that's where the master playlist actually lives.
         for pl in data.get("mhlp_podcast", []):
             pid = pl.get("playlistID", 0)
             if pid in seen_ids:
                 continue  # duplicate of a regular playlist
             pl["_source"] = "podcast" if pl.get("podcastFlag", 0) == 1 else "regular"
-            pl["isMaster"] = False
+            if has_type2_master:
+                pl["isMaster"] = False
             seen_ids.add(pid)
             result.append(pl)
 
@@ -494,7 +505,7 @@ class iTunesDBCache(QObject):
         #    isMaster is forced False — dataset 5 MHYP entries reuse the
         #    same type byte at offset 0x14 (1=hidden), but "hidden" here
         #    means an iPod built-in category (Music, Movies, etc.), NOT
-        #    the master playlist.  Only dataset 2 has the real master.
+        #    the master playlist.  Only dataset 2 or 3 has the real master.
         for pl in data.get("mhsp", []):
             pid = pl.get("playlistID", 0)
             if pid in seen_ids:

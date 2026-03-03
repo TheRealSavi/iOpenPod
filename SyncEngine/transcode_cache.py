@@ -165,7 +165,7 @@ class TranscodeCache:
             with open(self.index_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
             index = CacheIndex.from_dict(data)
-            logger.debug(f"Loaded cache index: {index.count} files")
+            logger.info(f"Loaded cache index: {index.count} files")
             return index
         except Exception as e:
             logger.warning(f"Failed to load cache index: {e}")

@@ -1377,7 +1377,9 @@ class SyncExecutor:
         from iTunesDB_Parser.playcounts import parse_playcounts, merge_playcounts
 
         empty = {"tracks": [], "playlists": [], "smart_playlists": []}
-        itdb_path = self.ipod_path / "iPod_Control" / "iTunes" / "iTunesDB"
+        from device_info import resolve_itdb_path
+        _resolved = resolve_itdb_path(str(self.ipod_path))
+        itdb_path = Path(_resolved) if _resolved else self.ipod_path / "iPod_Control" / "iTunes" / "iTunesDB"
         if not itdb_path.exists():
             return empty
 
