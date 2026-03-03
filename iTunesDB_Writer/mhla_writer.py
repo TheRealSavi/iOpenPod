@@ -34,6 +34,23 @@ if TYPE_CHECKING:
 from .mhod_writer import write_mhod_string
 
 
+def _album_key(track: "TrackInfo") -> tuple[str, str]:
+    """Compute the album grouping key for a track.
+
+    Compilation albums (``track.compilation == True``) are grouped by album
+    name alone — the artist dimension is always ``""`` so that all tracks
+    on a Various-Artists / compilation album share a single album ID.
+
+    Non-compilation albums fall back through ``album_artist`` then ``artist``
+    so that two artists who each have a "Greatest Hits" album remain separate.
+    """
+    album_name = track.album or ""
+    if getattr(track, "compilation", False):
+        return (album_name, "")
+    album_artist = track.album_artist or track.artist or ""
+    return (album_name, album_artist)
+
+
 # MHLA header size
 MHLA_HEADER_SIZE = 92
 
@@ -130,11 +147,11 @@ def write_mhla(tracks: list["TrackInfo"]) -> tuple[bytes, dict[tuple[str, str], 
         Tuple of (MHLA chunk bytes, album_map dict mapping (album, artist) to album_id)
     """
     # Collect unique albums: (album_name, album_artist) -> list of tracks
+    # Compilation albums use ("", "") for the artist dimension so that
+    # Various-Artists compilations stay grouped under a single album ID.
     album_tracks: dict[tuple[str, str], list] = {}
     for track in tracks:
-        album_name = track.album or ""
-        album_artist = track.album_artist or track.artist or ""
-        key = (album_name, album_artist)
+        key = _album_key(track)
         if key not in album_tracks:
             album_tracks[key] = []
         album_tracks[key].append(track)
@@ -148,9 +165,7 @@ def write_mhla(tracks: list["TrackInfo"]) -> tuple[bytes, dict[tuple[str, str], 
     album_podcast_urls: dict[tuple[str, str], str] = {}
     album_show_names: dict[tuple[str, str], str] = {}
     for track in tracks:
-        album_name = track.album or ""
-        album_artist = track.album_artist or track.artist or ""
-        key = (album_name, album_artist)
+        key = _album_key(track)
         if key not in album_sort_artists:
             # Use sort_albumartist from track first, fall back to sort_artist (per libgpod mk_mhia)
             sort_artist = getattr(track, 'sort_album_artist', None) or getattr(track, 'sort_artist', None) or ""

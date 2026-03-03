@@ -20,11 +20,11 @@ chunk_type_map = {
     # Their child chunk reuses the 'mhli' magic (same as ArtworkDB's image
     # list, but here it is a generic item list — different semantics).
     # We skip their contents but must recognise them to avoid crashing.
-    6: "mhsd_type_6",   # Genius suggestions list
+    6: "mhsd_type_6",   # Empty mhlt stub (purpose unknown, written by libgpod/iTunes)
     7: "mhsd_type_7",   # (reserved, rarely seen)
-    8: "mhsd_type_8",   # (reserved, rarely seen)
+    8: "mhsd_type_8",   # Artist list (mhli with mhii children, MHOD type 300)
     9: "mhsd_type_9",   # Genius Chill list
-    10: "mhsd_type_10",  # Genius Mix list
+    10: "mhsd_type_10",  # Empty mhlt stub (purpose unknown, written by libgpod/iTunes)
 }
 
 # maps the database version to an iTunes version
@@ -123,8 +123,10 @@ identifier_readable_map = {
     "mhlt": "Track List",
     "mhlp": "Playlist or Podcast List",
     "mhla": "Album List",
+    "mhli": "Artist List",
     "mhsp": "Smart Playlist List",
     "mhia": "Album Item",
+    "mhii": "Artist Item",
     "mhit": "Track Item",
     "mhyp": "Playlist",
     "mhod": "Data Object",
@@ -199,7 +201,9 @@ mhod_type_map = {
     201: "Artist (Used by Album Item)",
     202: "Sort Artist (Used by Album Item)",
     203: "Podcast URL (Used by Album Item)",
-    204: "Show (Used by Album Item)"
+    204: "Show (Used by Album Item)",
+    # Types 300+: Artist item string MHODs (MHSD type 8)
+    300: "Artist (Used by Artist Item)",
 }
 
 

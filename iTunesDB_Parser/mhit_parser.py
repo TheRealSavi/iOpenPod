@@ -351,6 +351,20 @@ def parse_trackItem(data, offset, header_length, chunk_length) -> dict:
         track["mhiiLink"] = 0
 
     # ============================================================
+    # Artist & composer links (added in header >= 0x248 / modern MHIT)
+    # libgpod: part of the 584-byte (0x248) header written by mk_mhit().
+    # ============================================================
+    if header_length >= 0x248:
+        track["artistId"] = struct.unpack("<I", data[offset + 0x1E0:offset + 0x1E4])[0]
+        # 0x1E0: Artist ID linking to MHII in the artist list (MHSD type 8).
+
+        track["composerId"] = struct.unpack("<I", data[offset + 0x1F4:offset + 0x1F8])[0]
+        # 0x1F4: Composer ID (per-track; NOT deduplicated across tracks).
+    else:
+        track["artistId"] = 0
+        track["composerId"] = 0
+
+    # ============================================================
     # Parse child MHODs (strings: title, artist, album, etc.)
     # ============================================================
     next_offset = offset + header_length

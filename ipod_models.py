@@ -264,7 +264,19 @@ _ART_NANO_4G = (
 
 _ART_NANO_5G = (
     ArtworkFormat(1073, 240, 240, 480, "RGB565_LE", "cover_large", "Nano 5G album art large"),
+    ArtworkFormat(1056, 128, 128, 256, "RGB565_LE", "cover_medium", "Nano 5G album art medium"),
     ArtworkFormat(1078, 80, 80, 160, "RGB565_LE", "cover_small", "Nano 4G/5G album art small"),
+    ArtworkFormat(1074, 50, 50, 100, "RGB565_LE", "cover_xsmall", "Nano 4G/5G album art tiny"),
+)
+
+# Nano 6G uses different format IDs than Nano 5G.  Dimensions extracted from
+# a real Nano 6G ArtworkDB (written by iTunes).  libgpod has no hardcoded
+# table for Nano 6G and relies on SysInfoExtended; these match the device.
+_ART_NANO_6G = (
+    ArtworkFormat(1073, 240, 240, 480, "RGB565_LE", "cover_large", "Nano 6G album art large"),
+    ArtworkFormat(1085, 88, 88, 176, "RGB565_LE", "cover_medium", "Nano 6G album art medium"),
+    ArtworkFormat(1089, 58, 58, 116, "RGB565_LE", "cover_small", "Nano 6G album art small"),
+    ArtworkFormat(1074, 50, 50, 100, "RGB565_LE", "cover_xsmall", "Nano 6G album art tiny"),
 )
 
 
@@ -312,7 +324,7 @@ to identify image formats by correlation ID, and by the writer to
 validate format IDs.
 """
 for _group in (_ART_PHOTO, _ART_NANO_1G2G, _ART_VIDEO, _ART_CLASSIC,
-               _ART_NANO_4G, _ART_NANO_5G, _EXTRA_FORMATS):
+               _ART_NANO_4G, _ART_NANO_5G, _ART_NANO_6G, _EXTRA_FORMATS):
     for _af in _group:
         if _af.format_id not in ITHMB_FORMAT_MAP:
             ITHMB_FORMAT_MAP[_af.format_id] = _af
@@ -552,7 +564,7 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         supports_artwork=True,
         supports_sparse_artwork=True,
         supports_compressed_db=True,
-        cover_art_formats=_ART_NANO_5G,  # reuses 5G formats
+        cover_art_formats=_ART_NANO_6G,
         music_dirs=20,
         db_version=0x30,
     ),
@@ -565,7 +577,7 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         supports_artwork=True,
         supports_sparse_artwork=True,
         supports_compressed_db=True,
-        cover_art_formats=_ART_NANO_5G,  # assumed same as 5G/6G
+        cover_art_formats=_ART_NANO_6G,  # assumed same as 6G; no SysInfoExtended data
         music_dirs=20,
         db_version=0x30,
     ),

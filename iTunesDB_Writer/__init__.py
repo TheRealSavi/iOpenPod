@@ -52,6 +52,7 @@ from .mhit_writer import (
     MEDIA_TYPE_RINGTONE,
 )
 from .mhyp_writer import PlaylistInfo, write_playlist, write_mhyp
+from .mhli_writer import write_mhli, write_mhii_artist, write_mhli_empty
 from .mhod_spl_writer import (
     SmartPlaylistPrefs,
     SmartPlaylistRules,
@@ -131,6 +132,10 @@ __all__ = [
     'write_mhbd',
     'write_itunesdb',
     'extract_db_info',
+    # Artist list
+    'write_mhli',
+    'write_mhii_artist',
+    'write_mhli_empty',
     # Playlists
     'PlaylistInfo',
     'write_playlist',

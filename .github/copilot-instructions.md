@@ -34,12 +34,16 @@ Both parsers follow the **same recursive chunk-based pattern**:
 
 ### iTunesDB Chunk Hierarchy
 ```
-mhbd (Database) → mhsd (DataSet, type 1-5) → 
+mhbd (Database) → mhsd (DataSet, type 1-10) → 
   type 1: mhlt (TrackList) → mhit (Track) → mhod (strings)
   type 2: mhlp (PlaylistList) → mhyp (Playlist) → mhip (PlaylistItem)
   type 3: mhlp (PodcastList)
   type 4: mhla (AlbumList) → mhia (AlbumItem) → mhod
   type 5: mhlp (SmartPlaylistList)
+  type 6: mhlt (empty stub, 0 children)
+  type 8: mhli (ArtistList) → mhii (ArtistItem) → mhod type 300
+  type 9: Genius CUID (raw string, no sub-chunks)
+  type 10: mhlt (empty stub, 0 children)
 ```
 
 ### Critical mhit (Track Item) Fields - Currently Unimplemented
@@ -68,6 +72,8 @@ mhbd (Database) → mhsd (DataSet, type 1-5) →
 | 258 | gapless_album_flag | 2 | |
 | 288 | album_id | 4 | links to mhia (u32 per libgpod) |
 | 352 | mhii_link | 4 | links to ArtworkDB mhii entry |
+| 480 (0x1E0) | artist_id | 4 | links to mhii in artist list (MHSD type 8) |
+| 500 (0x1F4) | composer_id | 4 | per-track composer ID |
 
 ### Play Counts File Format
 Read this file on sync to get actual play counts (iPod updates this, not iTunesDB):
@@ -362,10 +368,10 @@ Quick reference per generation family:
 | iPod Mini | 1G–2G | NONE | No | No | No | No | No |
 | iPod Nano | 1G–2G | NONE | No | No | 42+100 | No | No |
 | iPod Nano | 3G | HASH58 | Yes | Yes | 56+128+320 | No | No |
-| iPod Nano | 4G | HASH58 | Yes | Yes | 50+80+128+240 | No | No |
+| iPod Nano | 4G | HASH58 | Yes | Yes | 50+80+240 | No | No |
 | iPod Nano | 5G | HASH72 | Yes | Yes | 50+80+128+240 | Yes | No |
-| iPod Nano | 6G | HASHAB | No | Yes | (5G fmt) | Yes | No |
-| iPod Nano | 7G | HASHAB | Yes | Yes | (5G fmt) | Yes | No |
+| iPod Nano | 6G | HASHAB | No | Yes | 50+58+88+240 | Yes | No |
+| iPod Nano | 7G | HASHAB | Yes | Yes | 50+58+88+240 | Yes | No |
 | iPod Shuffle | 1G–2G | NONE | No | No | No | No | v1 |
 | iPod Shuffle | 3G–4G | NONE | No | No | No | No | v2 |
 
@@ -502,12 +508,15 @@ Parsers expect iPod database files. JSON outputs (`idb.json`, `artdb.json`) shou
 ### Adding New MHOD Types
 1. Add entry to `constants.py` → `mhod_type_map`
 2. Update `mhod_parser.py` if type needs special handling (most are strings)
-3. Types 50/51 (smart playlists) have complex binary formats, not strings
+3. For string MHODs, add the type number to `STRING_MHOD_TYPES` in `mhod_parser.py`
+4. Types 50/51 (smart playlists) have complex binary formats, not strings
+5. Type 300 (artist name) is used by artist items in MHSD type 8 — it shares the standard string sub-header format with types 200–204
 
 ### Adding New Chunk Types
 1. Add case to `chunk_parser.py` match statement
 2. Create `mh*_parser.py` following existing patterns
 3. Return `{"nextOffset": offset + chunk_length, "result": {...}}`
+4. Existing examples: `mhli_parser.py` (artist list), `mhii_parser.py` (artist item), `mhia_parser.py` (album item)
 
 ## External References
 - iPodLinux wiki (archived): https://web.archive.org/web/20081006030946/http://ipodlinux.org/wiki/ITunesDB

@@ -62,6 +62,7 @@ STRING_MHOD_TYPES = (
     | set(range(18, 32))  # 18..31
     | set(range(33, 45))  # 33..44
     | set(range(200, 205))  # 200..204
+    | {300}                   # artist item name (MHSD type 8)
 )
 
 # Podcast URL types — UTF-8/ASCII string directly at offset 24, no sub-header.

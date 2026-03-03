@@ -80,6 +80,21 @@ def parse_chunk(data, offset) -> dict[str, Any]:
             from .mhia_parser import parse_albumItem
             result = parse_albumItem(data, offset, header_length, chunk_length)
             return result
+        case "mhli":
+            # Artist list — child of MHSD type 8.
+            # Contains mhii (artist item) children.  chunk_length is the
+            # item count (same convention as mhla/mhlt/mhlp).
+            # NOTE: MHSD types 6/10 use mhlt (empty track list), NOT mhli.
+            from .mhli_parser import parse_artistList
+            result = parse_artistList(data, offset, header_length, chunk_length)
+            return result
+        case "mhii":
+            # Artist Item — child of MHLI in MHSD type 8.
+            # NOTE: shares the 'mhii' magic with ArtworkDB image items,
+            # but in the iTunesDB context these are artist entries.
+            from .mhii_parser import parse_artistItem
+            result = parse_artistItem(data, offset, header_length, chunk_length)
+            return result
         case _:
             # Unknown chunk — skip gracefully.  The parent (MHSD) uses its
             # own total_length so an imprecise nextOffset here is harmless.

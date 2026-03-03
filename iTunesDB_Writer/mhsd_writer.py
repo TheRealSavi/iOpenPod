@@ -1,7 +1,7 @@
 """MHSD Writer — Write dataset chunks for iTunesDB.
 
 MHSD (dataset) chunks are containers for different types of data.
-Each MHSD wraps exactly one child list chunk (mhlt, mhlp, or mhla).
+Each MHSD wraps exactly one child list chunk (mhlt, mhlp, mhla, or mhli).
 
 Header layout (MHSD_HEADER_SIZE = 96 bytes):
     +0x00: 'mhsd' magic (4B)
@@ -13,6 +13,9 @@ Header layout (MHSD_HEADER_SIZE = 96 bytes):
            3 = Podcast list (mhlp) — same content as type 2
            4 = Album list (mhla)
            5 = Smart playlist list (mhlp)
+           6 = Empty stub (mhlt with 0 children)
+           8 = Artist list (mhli with mhii children)
+           10 = Empty stub (mhlt with 0 children)
 
 Cross-referenced against:
   - iTunesDB_Parser/mhsd_parser.py
@@ -31,6 +34,9 @@ MHSD_TYPE_PLAYLISTS = 2
 MHSD_TYPE_PODCASTS = 3
 MHSD_TYPE_ALBUMS = 4
 MHSD_TYPE_SMART_PLAYLISTS = 5
+MHSD_TYPE_EMPTY_6 = 6
+MHSD_TYPE_ARTISTS = 8
+MHSD_TYPE_EMPTY_10 = 10
 
 
 def write_mhsd(dataset_type: int, child_data: bytes) -> bytes:
@@ -90,3 +96,30 @@ def write_mhsd_albums(album_list_data: bytes) -> bytes:
 def write_mhsd_smart_playlists(smart_playlist_data: bytes) -> bytes:
     """Write a Type 5 MHSD containing smart playlist list."""
     return write_mhsd(MHSD_TYPE_SMART_PLAYLISTS, smart_playlist_data)
+
+
+def write_mhsd_artists(artist_list_data: bytes) -> bytes:
+    """Write a Type 8 MHSD containing artist list (mhli)."""
+    return write_mhsd(MHSD_TYPE_ARTISTS, artist_list_data)
+
+
+def write_mhsd_empty_stub(dataset_type: int) -> bytes:
+    """Write a stub MHSD containing an empty MHLT (0 children).
+
+    Used for types 6 and 10 which libgpod writes as empty track-list
+    stubs.  The child is a minimal MHLT header with count = 0.
+
+    Args:
+        dataset_type: The MHSD type (6 or 10).
+
+    Returns:
+        Complete MHSD + empty MHLT bytes.
+    """
+    # Build an empty MHLT child (92-byte header, 0 tracks)
+    MHLT_HEADER_SIZE = 92
+    mhlt = bytearray(MHLT_HEADER_SIZE)
+    mhlt[0:4] = b'mhlt'
+    struct.pack_into('<I', mhlt, 4, MHLT_HEADER_SIZE)
+    struct.pack_into('<I', mhlt, 8, 0)  # track_count = 0
+
+    return write_mhsd(dataset_type, bytes(mhlt))

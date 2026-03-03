@@ -1,18 +1,15 @@
 """MHBD Writer — Write complete iTunesDB database files.
 
 This is the top-level writer that assembles all components into
-a valid iTunesDB file.
+a valid iTunesDB (or iTunesCDB for Nano 5G+) file.
 
-Database structure (order matches iTunes-generated databases):
+Dataset write order (matches libgpod):
   mhbd (database header, 244 bytes)
-    mhsd type 4 (albums dataset)
-      mhla (album list)
-        mhia (album item) × N
     mhsd type 1 (tracks dataset)
       mhlt (track list)
         mhit (track) × N
           mhod (string) × M
-    mhsd type 3 (podcasts dataset)
+    mhsd type 3 (podcasts dataset) — MUST appear between types 1 and 2
       mhlp (playlist list) — same data as type 2
     mhsd type 2 (playlists dataset)
       mhlp (playlist list)
@@ -20,6 +17,15 @@ Database structure (order matches iTunes-generated databases):
           mhod types 52/53 (library indices)
           mhip (track ref) × N
         mhyp (user playlist) × M
+    mhsd type 4 (albums dataset)
+      mhla (album list)
+        mhia (album item) × N
+    mhsd type 8 (artist list)
+      mhli (artist list)
+        mhii (artist item) × N
+          mhod type 300 (artist name)
+    mhsd type 6 (empty stub — mhlt with 0 children)
+    mhsd type 10 (empty stub — mhlt with 0 children)
     mhsd type 5 (smart playlists dataset)
       mhlp (smart playlist list)
 
@@ -62,9 +68,15 @@ import logging
 from typing import List, Optional
 
 from .mhlt_writer import write_mhlt
-from .mhsd_writer import write_mhsd_tracks, write_mhsd_playlists, write_mhsd_albums, write_mhsd_podcasts, write_mhsd_smart_playlists
+from .mhsd_writer import (
+    write_mhsd_tracks, write_mhsd_playlists, write_mhsd_albums,
+    write_mhsd_podcasts, write_mhsd_smart_playlists,
+    write_mhsd_artists, write_mhsd_empty_stub,
+    MHSD_TYPE_EMPTY_6, MHSD_TYPE_EMPTY_10,
+)
 from .mhlp_writer import write_mhlp_with_playlists, write_mhlp_smart
 from .mhla_writer import write_mhla
+from .mhli_writer import write_mhli
 from .mhit_writer import TrackInfo
 from .mhyp_writer import PlaylistInfo
 from ipod_models import ChecksumType, DeviceCapabilities
@@ -128,19 +140,18 @@ def extract_db_info(itdb_path: str) -> dict:
 
 
 def extract_preserved_mhsd_blobs(itdb_data: bytes) -> list[bytes]:
-    """Extract raw MHSD blobs for dataset types we don't generate (6+).
+    """Extract raw MHSD blobs for dataset types we don't generate.
 
     iTunes 9+ writes additional MHSD children for Genius features
-    (types 6-10).  Their internal structure uses 'mhli' chunks that
-    we don't parse or generate.  To preserve Genius functionality
-    across rewrites, we capture these datasets as opaque byte blobs
-    and append them verbatim when writing a new database.
+    (types 6-10).  We now generate types 6, 8, and 10 ourselves
+    (empty stubs for 6/10, artist list for 8), so we only preserve
+    types we don't generate: 7 and 9 (Genius Chill).
 
     Args:
         itdb_data: Complete original iTunesDB file bytes.
 
     Returns:
-        List of raw MHSD byte blobs for dataset types > 5,
+        List of raw MHSD byte blobs for dataset types we don't generate,
         in the order they appeared in the original database.
     """
     if len(itdb_data) < 24 or itdb_data[:4] != b'mhbd':
@@ -148,6 +159,9 @@ def extract_preserved_mhsd_blobs(itdb_data: bytes) -> list[bytes]:
 
     header_length = struct.unpack('<I', itdb_data[4:8])[0]
     children_count = struct.unpack('<I', itdb_data[0x14:0x18])[0]
+
+    # Types we now generate ourselves — don't preserve these
+    GENERATED_TYPES = {1, 2, 3, 4, 5, 6, 8, 10}
 
     blobs: list[bytes] = []
     offset = header_length
@@ -161,7 +175,7 @@ def extract_preserved_mhsd_blobs(itdb_data: bytes) -> list[bytes]:
         mhsd_total = struct.unpack('<I', itdb_data[offset + 8:offset + 12])[0]
         mhsd_type = struct.unpack('<I', itdb_data[offset + 12:offset + 16])[0]
 
-        if mhsd_type > 5:
+        if mhsd_type not in GENERATED_TYPES:
             blob = itdb_data[offset:offset + mhsd_total]
             blobs.append(bytes(blob))
             logger.debug("Preserved MHSD type %d blob (%d bytes)", mhsd_type, mhsd_total)
@@ -226,12 +240,20 @@ def write_mhbd(
     mhla_data, album_map = write_mhla(tracks)
     mhsd_albums = write_mhsd_albums(mhla_data)
 
-    # Assign album_id to each track based on album_map
+    # Build artist list to get artist IDs for tracks (Type 8 dataset)
+    mhli_data, artist_map = write_mhli(tracks)
+    mhsd_artists = write_mhsd_artists(mhli_data)
+
+    # Assign album_id and artist_id to each track
+    from .mhla_writer import _album_key
     for track in tracks:
-        album_name = track.album or ""
-        album_artist = track.album_artist or track.artist or ""
-        key = (album_name, album_artist)
+        key = _album_key(track)
         track.album_id = album_map.get(key, 0)
+
+        # Artist ID from the artist list (case-insensitive lookup)
+        artist_name = track.artist or ""
+        if artist_name:
+            track.artist_id = artist_map.get(artist_name.lower(), 0)
 
     # Build track list (Type 1 dataset)
     # This also returns next_track_id which tells us track IDs used
@@ -301,8 +323,8 @@ def write_mhbd(
     mhsd_smart = write_mhsd_smart_playlists(mhlp_smart)
 
     # Concatenate all datasets
-    # Order MUST match libgpod: Type 1, 3, 2, 4, 5
-    # (tracks, podcasts, playlists, albums, smart playlists)
+    # Order MUST match libgpod: Type 1, 3, 2, 4, 8, 6, 10, 5
+    # (tracks, podcasts, playlists, albums, artists, empty6, empty10, smart playlists)
     #
     # This ordering is critical for iPod firmware compatibility:
     #   - Type 3 MUST appear between types 1 and 2 for podcast support
@@ -310,13 +332,30 @@ def write_mhbd(
     #   - Type 1 MUST be first — older iPod firmware (Video 5G, Nano 1G-2G)
     #     may assume dataset[0] is the track list.  Placing type 4 (albums)
     #     first causes the firmware to fail to load any tracks.
-    #   - Types 4 and 5 come after the core 1-3-2 triple, matching libgpod.
-    all_datasets = mhsd_tracks + mhsd_podcasts + mhsd_playlists + mhsd_albums + mhsd_smart
+    #   - Types 8, 6, 10 come between albums (4) and smart playlists (5),
+    #     matching libgpod's write_mhsd_artists / empty stub order.
+    #   - Type 6 and 10 are empty MHLT stubs (per libgpod).
+    mhsd_empty_6 = write_mhsd_empty_stub(MHSD_TYPE_EMPTY_6)
+    mhsd_empty_10 = write_mhsd_empty_stub(MHSD_TYPE_EMPTY_10)
+
+    all_datasets = (
+        mhsd_tracks
+        + mhsd_podcasts
+        + mhsd_playlists
+        + mhsd_albums
+        + mhsd_artists
+        + mhsd_empty_6
+        + mhsd_empty_10
+        + mhsd_smart
+    )
 
     # Number of child datasets
-    child_count = 5 if include_podcasts else 4
+    # Base: 1(tracks) + 2(playlists) + 4(albums) + 8(artists) + 6(stub) + 10(stub) + 5(smart) = 7
+    # Plus optional type 3 (podcasts) = 8
+    child_count = 8 if include_podcasts else 7
 
-    # Append preserved MHSD blobs (Genius data, types 6+) from original database
+    # Append preserved MHSD blobs (Genius data, type 9 etc.) from original database.
+    # Types 6, 8, 10 are generated above; only types we DON'T generate are preserved.
     extra_blobs = preserved_mhsd_blobs or []
     for blob in extra_blobs:
         all_datasets += blob
@@ -489,7 +528,11 @@ def write_itunesdb(
     Returns:
         True if successful
     """
-    itdb_path = os.path.join(ipod_path, "iPod_Control", "iTunes", "iTunesDB")
+    from device_info import resolve_itdb_path, itdb_write_filename
+
+    # Determine the correct database filename for this device (iTunesDB or iTunesCDB)
+    db_filename = itdb_write_filename(ipod_path)
+    itdb_path = os.path.join(ipod_path, "iPod_Control", "iTunes", db_filename)
 
     # Auto-detect capabilities from the centralized device store
     if capabilities is None:
@@ -516,10 +559,14 @@ def write_itunesdb(
             logger.debug("Could not auto-detect capabilities: %s", e)
 
     # Read existing database for reference (for db_id and hash info extraction)
+    # Check both iTunesCDB and iTunesDB — the existing database may be under
+    # either name, and we may be switching filenames (e.g. first iOpenPod write
+    # to a device that previously only had iTunesCDB from iTunes).
     existing_itdb = None
-    if os.path.exists(itdb_path):
+    existing_itdb_path = resolve_itdb_path(ipod_path)
+    if existing_itdb_path:
         try:
-            with open(itdb_path, 'rb') as f:
+            with open(existing_itdb_path, 'rb') as f:
                 existing_itdb = f.read()
         except Exception:
             pass
@@ -812,8 +859,8 @@ def write_itunesdb(
         if firewire_id:
             try:
                 write_hashab(itdb_data, firewire_id)
-                # Set hashing_scheme to 4 (HASHAB wire value)
-                struct.pack_into('<H', itdb_data, 0x30, 4)
+                # Set hashing_scheme to 3 (matches iTunes-written HASHAB databases)
+                struct.pack_into('<H', itdb_data, 0x30, 3)
                 logger.info("HASHAB signature computed with FireWire ID: %s",
                             firewire_id.hex())
             except ImportError as e:
@@ -837,23 +884,62 @@ def write_itunesdb(
         # ChecksumType.NONE or UNKNOWN - set hash_scheme to 0
         struct.pack_into('<H', itdb_data, 0x30, 0)
 
-    # Backup existing file
-    if backup and os.path.exists(itdb_path):
-        backup_path = itdb_path + ".backup"
-        try:
-            shutil.copy2(itdb_path, backup_path)
-        except Exception as e:
-            logger.warning("Could not backup iTunesDB: %s", e)
+    # Backup existing file(s)
+    if backup:
+        for _bpath in (itdb_path, existing_itdb_path):
+            if _bpath and os.path.exists(_bpath):
+                try:
+                    shutil.copy2(_bpath, _bpath + ".backup")
+                except Exception as e:
+                    logger.warning("Could not backup %s: %s", os.path.basename(_bpath), e)
+
+    # ── Compress for iTunesCDB if needed ──────────────────────────────
+    #   The on-disk format is: uncompressed mhbd header (244 bytes) +
+    #   zlib-compressed payload (all mhsd children).  The total_length
+    #   field in the header is patched to reflect the compressed file size.
+    #
+    #   libgpod uses Z_BEST_SPEED (level 1) and sets unk_0xA8 to 1
+    #   to signal that the file is compressed.
+    write_data: bytes | bytearray = itdb_data
+    if db_filename == "iTunesCDB":
+        import zlib
+        hdr_len = struct.unpack_from('<I', itdb_data, 4)[0]
+        payload = bytes(itdb_data[hdr_len:])
+        compressed = zlib.compress(payload, 1)  # Z_BEST_SPEED — matches libgpod/iTunes
+        cdb_header = bytearray(itdb_data[:hdr_len])
+        # Patch total_length to compressed file size
+        struct.pack_into('<I', cdb_header, 8, hdr_len + len(compressed))
+        # Set unk_0xA8 = 1 to indicate compressed payload (per libgpod)
+        struct.pack_into('<H', cdb_header, 0xA8, 1)
+        write_data = bytes(cdb_header) + compressed
+        logger.info("Compressed %d -> %d bytes for iTunesCDB (level 1)",
+                    len(itdb_data), len(write_data))
 
     # Write atomically — os.replace is atomic on NTFS and POSIX
     temp_path = itdb_path + ".tmp"
     try:
         with open(temp_path, 'wb') as f:
-            f.write(itdb_data)
+            f.write(write_data)
             f.flush()
             os.fsync(f.fileno())
 
         os.replace(temp_path, itdb_path)
+
+        # Truncate the stale database file to 0 bytes if the filename changed
+        # (e.g. migrating from iTunesDB → iTunesCDB or vice versa).
+        # libgpod truncates rather than deletes because some firmwares may
+        # check for the file's existence and behave unexpectedly if it's gone.
+        if existing_itdb_path and existing_itdb_path != itdb_path:
+            try:
+                with open(existing_itdb_path, 'wb') as f:
+                    f.truncate(0)
+                logger.info("Truncated stale %s to 0 bytes (now using %s)",
+                            os.path.basename(existing_itdb_path), db_filename)
+            except Exception as e:
+                logger.warning("Could not truncate stale %s: %s",
+                               os.path.basename(existing_itdb_path), e)
+
+        logger.info("Wrote %s (%d bytes)", db_filename, len(itdb_data))
         return True
 
     except Exception as e:
