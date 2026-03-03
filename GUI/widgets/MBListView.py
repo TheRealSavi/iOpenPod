@@ -763,11 +763,9 @@ class MusicBrowserList(QFrame):
 
     def _cancel_population(self) -> None:
         """Cancel any in-progress population."""
-        old_id = self._load_id
         self._load_id += 1
         self._pending_rows = []
         self._is_populating = False
-        log.debug(f"_cancel_population: {old_id} -> {self._load_id}")
 
     def _populate_table(self) -> None:
         """Populate the table with current tracks."""
@@ -786,8 +784,6 @@ class MusicBrowserList(QFrame):
             load_id = self._load_id
             tracks = self._tracks
             columns = self._columns
-
-            log.debug(f"_populate_table: load_id={load_id}, tracks={len(tracks)}")
 
             # Minimal setup - no setRowCount to avoid blocking!
             self.table.setSortingEnabled(False)
@@ -825,7 +821,6 @@ class MusicBrowserList(QFrame):
             QTimer.singleShot(0, self._populate_next_batch)
 
         except RuntimeError:
-            log.debug("_populate_table: RuntimeError (widget deleted)")
             pass  # Widget deleted
 
     def _populate_next_batch(self) -> None:
@@ -833,12 +828,10 @@ class MusicBrowserList(QFrame):
         try:
             # Check for cancellation FIRST
             if self._current_load_id != self._load_id:
-                log.debug(f"_populate_next_batch: cancelled (current={self._current_load_id}, load={self._load_id})")
                 self._is_populating = False
                 return
 
             if not self._pending_rows:
-                log.debug("_populate_next_batch: no pending rows, finishing")
                 self._is_populating = False
                 self._finish_population()
                 return
@@ -877,11 +870,11 @@ class MusicBrowserList(QFrame):
                     self._finish_population()
 
         except RuntimeError as e:
-            log.debug(f"_populate_next_batch: RuntimeError: {e}")
+            log.warning(f"_populate_next_batch: RuntimeError: {e}")
             self._is_populating = False
             self._pending_rows = []
         except Exception as e:
-            log.debug(f"_populate_next_batch: Exception: {e}")
+            log.warning(f"_populate_next_batch: Exception: {e}")
             self._is_populating = False
             self._pending_rows = []
 
@@ -1065,7 +1058,7 @@ class MusicBrowserList(QFrame):
                 break
             result = find_image_by_imgId(artworkdb_data, artwork_folder, link, imgid_index)
             if result is not None:
-                pil_img, _dcol = result
+                pil_img, _dcol, _album_colors = result
                 pil_img = pil_img.convert("RGBA")
                 results[link] = (pil_img.width, pil_img.height, pil_img.tobytes("raw", "RGBA"))
             else:

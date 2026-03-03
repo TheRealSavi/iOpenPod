@@ -133,25 +133,21 @@ class MusicBrowser(QFrame):
 
     def updateCategory(self, category: str):
         """Update the display for the selected category."""
-        log.debug(f"updateCategory() called: {category}")
         self._current_category = category
         self._refreshCurrentCategory()
 
     def _refreshCurrentCategory(self):
         """Refresh display based on current category and cache state."""
-        log.debug(f"_refreshCurrentCategory() called: {self._current_category}")
         from ..app import iTunesDBCache
         cache = iTunesDBCache.get_instance()
 
         # Don't do anything if cache isn't ready yet
         if not cache.is_ready():
-            log.debug("  Cache not ready, returning")
             return
 
         category = self._current_category
 
         if category == "Tracks":
-            log.debug("  Showing Tracks view")
             self.stack.setCurrentIndex(0)
             # Hide grid, show all tracks
             self.browserGridScroll.hide()
@@ -162,7 +158,6 @@ class MusicBrowser(QFrame):
             self.trackListTitleBar.setTitle("All Tracks")
             self.trackListTitleBar.resetColor()
         elif category == "Playlists":
-            log.debug("  Showing Playlists view")
             self.stack.setCurrentIndex(1)
             self.playlistBrowser.loadPlaylists()
         elif category in ("Podcasts", "Audiobooks"):
@@ -188,7 +183,6 @@ class MusicBrowser(QFrame):
                 "TV Shows": 0x40,      # MEDIA_TYPE_TV_SHOW
                 "Music Videos": 0x20,  # MEDIA_TYPE_MUSIC_VIDEO
             }
-            log.debug(f"  Showing video category: {category}")
             self.stack.setCurrentIndex(0)
             self.browserGridScroll.hide()
             self.browserGrid.clearGrid()
@@ -198,7 +192,6 @@ class MusicBrowser(QFrame):
             self.trackListTitleBar.setTitle(category)
             self.trackListTitleBar.resetColor()
         else:
-            log.debug(f"  Showing grid view for: {category}")
             self.stack.setCurrentIndex(0)
             # Show grid for Albums, Artists, Genres
             self.browserGridScroll.show()
@@ -212,7 +205,6 @@ class MusicBrowser(QFrame):
 
     def _onGridItemSelected(self, item_data: dict):
         """Handle when a grid item is clicked."""
-        log.debug(f"_onGridItemSelected: {item_data.get('title', 'unknown')}")
         category = item_data.get("category", "Albums")
         title = item_data.get("title", "")
         filter_key = item_data.get("filter_key")
@@ -223,13 +215,15 @@ class MusicBrowser(QFrame):
         dominant_color = item_data.get("dominant_color")
         if dominant_color:
             r, g, b = dominant_color
-            self.trackListTitleBar.setColor(r, g, b)
+            album_colors = item_data.get("album_colors", {})
+            text = album_colors.get("text")
+            text_sec = album_colors.get("text_secondary")
+            self.trackListTitleBar.setColor(r, g, b, text=text, text_secondary=text_sec)
         else:
             self.trackListTitleBar.resetColor()
 
         # Apply filter to track list
         if filter_key and filter_value:
-            log.debug(f"  Applying filter: {filter_key}={filter_value}")
             self.browserTrack.applyFilter(item_data)
         elif category == "Albums":
             album = item_data.get("album") or title

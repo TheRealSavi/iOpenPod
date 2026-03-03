@@ -62,7 +62,6 @@ class MusicBrowserGrid(QFrame):
 
     def populateGrid(self, items):
         """Populate the grid with items."""
-        log.debug(f"populateGrid() called with {len(items)} items")
         # Clear existing items first
         self.clearGrid()
 
@@ -181,16 +180,12 @@ class MusicBrowserGrid(QFrame):
 
     def clearGrid(self):
         """Clear all grid items to prepare for reloading."""
-        log.debug(f"clearGrid() called, current items: {len(self.gridItems)}, load_id: {self._load_id}")
         self.timerActive = False
         self.pendingItems = deque()
         # Increment load_id to invalidate any pending timer callbacks
         self._load_id += 1
-        log.debug(f"  New load_id: {self._load_id}")
 
         # Remove all widgets from layout
-        widget_count = self.gridLayout.count()
-        log.debug(f"  Removing {widget_count} widgets from layout")
         while self.gridLayout.count():
             item = self.gridLayout.takeAt(0)
             if item:
@@ -200,7 +195,6 @@ class MusicBrowserGrid(QFrame):
                     if isinstance(widget, MusicBrowserGridItem):
                         widget.cleanup()
                     widget.deleteLater()
-        log.debug("  clearGrid() complete")
 
         self.gridItems = []
 

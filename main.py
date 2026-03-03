@@ -62,7 +62,7 @@ def _configure_logging() -> str:
         backupCount=3,
         encoding="utf-8",
     )
-    file_handler.setLevel(logging.DEBUG)
+    file_handler.setLevel(logging.INFO)
     file_handler.setFormatter(logging.Formatter(
         "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",

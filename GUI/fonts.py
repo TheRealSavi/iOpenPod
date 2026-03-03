@@ -66,7 +66,6 @@ def load_bundled_fonts() -> list[str]:
         if expected_family in families:
             if expected_family not in loaded_families:
                 loaded_families.append(expected_family)
-            log.debug("Loaded bundled font: %s → %s", filename, expected_family)
         else:
             log.warning(
                 "Font %s registered unexpected families: %s (expected %s)",

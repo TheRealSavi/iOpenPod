@@ -5,7 +5,9 @@ from PyQt6.QtGui import QFont
 from ..styles import FONT_FAMILY
 
 
-def _title_bar_css(r1: int, g1: int, b1: int, r2: int, g2: int, b2: int) -> str:
+def _title_bar_css(r1: int, g1: int, b1: int, r2: int, g2: int, b2: int,
+                   text_color: str = "white",
+                   text_secondary: str = "rgba(255,255,255,180)") -> str:
     """Generate the title bar stylesheet for given gradient colors."""
     return f"""
         QFrame {{
@@ -17,13 +19,13 @@ def _title_bar_css(r1: int, g1: int, b1: int, r2: int, g2: int, b2: int) -> str:
         QLabel {{
             font-weight: 600;
             font-size: 12px;
-            color: white;
+            color: {text_color};
             background: transparent;
         }}
         QPushButton {{
             background-color: transparent;
             border: none;
-            color: rgba(255,255,255,180);
+            color: {text_secondary};
             font-size: 14px;
             font-weight: bold;
             width: 26px;
@@ -83,15 +85,20 @@ class TrackListTitleBar(QFrame):
         """Set the title text."""
         self.title.setText(title)
 
-    def setColor(self, r: int, g: int, b: int):
-        """Set the title bar gradient to the given RGB color."""
+    def setColor(self, r: int, g: int, b: int,
+                 text: tuple | None = None, text_secondary: tuple | None = None):
+        """Set the title bar gradient to the given RGB color with optional text colors."""
         r2 = min(255, r + 25)
         g2 = min(255, g + 25)
         b2 = min(255, b + 25)
         r3 = max(0, r - 25)
         g3 = max(0, g - 25)
         b3 = max(0, b - 25)
-        self.setStyleSheet(_title_bar_css(r2, g2, b2, r3, g3, b3))
+        txt = f"rgb({text[0]},{text[1]},{text[2]})" if text else "white"
+        txt_sec = f"rgba({text_secondary[0]},{text_secondary[1]},{text_secondary[2]},180)" if text_secondary else "rgba(255,255,255,180)"
+        self.setStyleSheet(_title_bar_css(r2, g2, b2, r3, g3, b3,
+                                          text_color=txt,
+                                          text_secondary=txt_sec))
 
     def resetColor(self):
         """Reset to the default blue gradient."""
