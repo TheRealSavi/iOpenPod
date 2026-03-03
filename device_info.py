@@ -55,8 +55,8 @@ class DeviceInfo:
     color: str = ""                   # e.g. "Black"
 
     # ── Hardware / Identifiers ────────────────────────────────────────
-    firewire_guid: str = ""           # Hex string (no 0x prefix)
-    serial: str = ""
+    firewire_guid: str = ""           # 16 hex chars (8 bytes), used for hash signing
+    serial: str = ""                  # Apple serial (e.g. "YM0350TRVQ5"), NOT the FW GUID
     firmware: str = ""
     board: str = ""                   # BoardHwName from SysInfo
     usb_pid: int = 0
@@ -79,6 +79,7 @@ class DeviceInfo:
 
     # ── Provenance ────────────────────────────────────────────────────
     identification_method: str = "unknown"
+    _field_sources: dict[str, str] = field(default_factory=dict, init=False, repr=False)
 
     # ── Computed helpers ──────────────────────────────────────────────
 
@@ -142,6 +143,60 @@ class DeviceInfo:
 # ──────────────────────────────────────────────────────────────────────
 # Utility functions (used by multiple modules)
 # ──────────────────────────────────────────────────────────────────────
+
+def resolve_itdb_path(ipod_path: str) -> str | None:
+    """Return the path to the iTunesDB (or iTunesCDB) on the iPod.
+
+    Newer iPods (Nano 5G+) use ``iTunesCDB`` instead of ``iTunesDB``.
+    iTunesCDB is **zlib-compressed**: the mhbd header is stored
+    uncompressed, followed by a zlib stream containing all mhsd children.
+    The parser transparently decompresses it; the writer compresses when
+    ``DeviceCapabilities.supports_compressed_db`` is True.  The firmware
+    on those devices reads ``iTunesCDB`` and ignores ``iTunesDB``.
+
+    Check order:
+
+    1. ``iTunesCDB`` — used by devices with ``supports_compressed_db``
+    2. ``iTunesDB``  — used by all other devices
+
+    Returns the path to whichever file exists, or ``None`` if neither is
+    present.
+    """
+    itunes_dir = os.path.join(ipod_path, "iPod_Control", "iTunes")
+    cdb = os.path.join(itunes_dir, "iTunesCDB")
+    if os.path.exists(cdb):
+        return cdb
+    db = os.path.join(itunes_dir, "iTunesDB")
+    if os.path.exists(db):
+        return db
+    return None
+
+
+def itdb_write_filename(ipod_path: str) -> str:
+    """Return the filename to use when **writing** the iTunesDB.
+
+    Uses the device capabilities (``supports_compressed_db``) when
+    available.  Falls back to whichever file already exists on disk, and
+    finally defaults to ``"iTunesDB"``.
+    """
+    # 1. Ask the device store
+    try:
+        dev = get_current_device()
+        if dev and dev.model_family and dev.generation:
+            from ipod_models import capabilities_for_family_gen
+            caps = capabilities_for_family_gen(dev.model_family, dev.generation)
+            if caps and caps.supports_compressed_db:
+                return "iTunesCDB"
+    except Exception:
+        pass
+
+    # 2. If an iTunesCDB already exists on disk, keep using it
+    cdb = os.path.join(ipod_path, "iPod_Control", "iTunes", "iTunesCDB")
+    if os.path.exists(cdb):
+        return "iTunesCDB"
+
+    return "iTunesDB"
+
 
 def read_sysinfo(ipod_path: str) -> dict:
     """Parse the SysInfo file from an iPod.
@@ -246,9 +301,14 @@ def set_current_device(info: DeviceInfo | None) -> None:
     _Store._get().current = info
     if info is not None:
         logger.info(
-            "Device stored: %s %s (%s) checksum=%s formats=%s",
+            "Device stored: %s %s (%s) serial=…%s fwguid=%s "
+            "checksum=%s method=%s capacity=%s formats=%s",
             info.model_family, info.generation, info.model_number,
+            info.serial[-3:] if info.serial else "none",
+            info.firewire_guid or "none",
             info.checksum_type,
+            info.identification_method,
+            info.capacity or "unknown",
             list(info.artwork_formats.keys()) if info.artwork_formats else "none",
         )
     else:
@@ -394,144 +454,157 @@ def get_firewire_id(ipod_path: str, *, known_guid: str | None = None) -> bytes:
 # ──────────────────────────────────────────────────────────────────────
 
 def enrich(info: DeviceInfo) -> None:
-    """Fill in derived fields by probing **every available source**.
+    """Fill in derived fields by probing sources in authority order.
 
     This is the ONE place in the entire codebase that touches hardware,
-    reads files from the device, queries the OS, etc.  It tries multiple
-    sources in priority order and never overwrites an already-filled field.
+    reads files from the device, queries the OS, etc.
 
-    Sources tried (in order):
-      1. SysInfo text file on the device
-      2. SysInfoExtended XML plist on the device
-      3. Windows PnP device-tree walk (live USB introspection)
-      4. Windows registry (persists from previous USB connections)
-      5. iTunesDB header (hashing scheme, db version)
-      6. ArtworkDB format-ID scan
-      7. Disk size via OS
+    The authority file determines the strategy:
+
+    * **HIGH authority** (all fields sourced from live hardware on a
+      previous run) → trust SysInfo / SysInfoExtended values, skip
+      expensive hardware and VPD probes.
+    * **LOW authority** (any field sourced from a guess, or no authority
+      file yet) → probe from highest authority to lowest, filling gaps
+      as each source is tried:
+
+      1. Hardware probe (IOCTL / IOKit / sysfs)
+      2. USB VPD query (SCSI inquiry — gets Apple serial + model)
+      3. SysInfoExtended XML plist
+      4. SysInfo text file
+      5. Windows registry fallback
+
+    After all identification, ``update_sysinfo()`` writes the gathered
+    data back to SysInfo and updates the authority file + hashes.
     """
 
-    # ── 1. SysInfo (text key:value file) ──────────────────────────────
+    # ── 0. Load SysInfo dict (always — needed for reference) ──────────
     if info.path and not info.sysinfo:
         try:
             info.sysinfo = read_sysinfo(info.path)
-            logger.debug("enrich: SysInfo loaded (%d keys)", len(info.sysinfo))
+            logger.info("enrich: SysInfo loaded (%d keys)", len(info.sysinfo))
         except FileNotFoundError:
-            logger.debug("enrich: no SysInfo at %s", info.path)
+            logger.info("enrich: no SysInfo at %s", info.path)
         except Exception as exc:
-            logger.debug("enrich: SysInfo read failed: %s", exc)
+            logger.info("enrich: SysInfo read failed: %s", exc)
 
-    if not info.board and info.sysinfo:
-        info.board = info.sysinfo.get("BoardHwName", "")
-    # Apple serial from SysInfo always overrides — the scanner often
-    # pre-fills info.serial with the FireWire GUID (ioreg USB serial),
-    # which is NOT the real Apple serial needed for model lookup.
-    if info.sysinfo:
-        apple_serial = info.sysinfo.get("pszSerialNumber", "")
-        if apple_serial and apple_serial != info.firewire_guid:
-            info.serial = apple_serial
-    if not info.firmware and info.sysinfo:
-        fw_ver = info.sysinfo.get("visibleBuildID", "")
-        if fw_ver:
-            info.firmware = fw_ver
-
-    # FireWire GUID from SysInfo
-    if not info.firewire_guid and info.sysinfo:
-        guid = info.sysinfo.get("FirewireGuid", "")
-        if guid:
-            if guid.startswith(("0x", "0X")):
-                guid = guid[2:]
-            if guid and guid != "0" * len(guid):
-                info.firewire_guid = guid
-                logger.debug("enrich: FW GUID from SysInfo: %s", guid)
-
-    # Model number from SysInfo
-    if not info.model_number and info.sysinfo:
-        try:
-            from ipod_models import extract_model_number
-            raw = info.sysinfo.get("ModelNumStr", "")
-            if raw:
-                mn = extract_model_number(raw)
-                if mn:
-                    info.model_number = mn
-                    logger.debug("enrich: model from SysInfo: %s", mn)
-        except ImportError:
-            pass
-
-    # ── 2. SysInfoExtended (XML plist — has FireWireGUID + more) ──────
+    # ── 1. Authority coverage check ───────────────────────────────────
+    _authority_is_high = False
     if info.path:
-        _enrich_from_sysinfo_extended(info)
+        try:
+            from sysinfo_authority import check_authority_coverage
+            _all_tracked, _auth_sources = check_authority_coverage(info.path)
+            if _all_tracked:
+                _authority_is_high = True
+                # Pre-populate _field_sources from authority so the rest
+                # of the pipeline sees the correct provenance.
+                for _field, _source in _auth_sources.items():
+                    if _field not in info._field_sources:
+                        info._field_sources[_field] = _source
+                logger.info(
+                    "enrich: authority covers all core fields — "
+                    "trusting SysInfo, skipping hardware/VPD probes",
+                )
+            elif _auth_sources:
+                logger.info(
+                    "enrich: authority has untracked core fields — "
+                    "probing highest → lowest authority",
+                )
+        except Exception as exc:
+            logger.debug("enrich: authority check failed: %s", exc)
 
-    # ── 3. Hardware probe (IOCTL + PnP device tree + USB PID) ─────────
-    #   This is the big one on Windows.  It queries the physical device via
-    #   IOCTL_STORAGE_QUERY_PROPERTY (gets serial, firmware, vendor/product),
-    #   walks the PnP device tree (gets FW GUID, USB PID), and maps the PID
-    #   to a model family.  On macOS/Linux the platform-specific probers run.
-    _enrich_from_hardware_probe(info)
+    if _authority_is_high:
+        # ── HIGH authority path: SysInfo is trustworthy ───────────────
+        _populate_fields_from_sysinfo(info)
+        if info.path:
+            _enrich_from_sysinfo_extended(info)
+    else:
+        # ── LOW authority path: probe highest → lowest ────────────────
+        #   Each source fills only gaps (if not info.X guards), so the
+        #   first source to provide a value wins — which is the highest
+        #   authority source.
 
-    # ── 3b. USB VPD query (if SysInfo is missing/empty) ───────────────
-    #   After hardware probe gives us usb_pid + firewire_guid,
-    #   if we still don't have a SysInfo dict, query the iPod firmware
-    #   via SCSI VPD pages and write SysInfo to disk for future runs.
-    #   This gets the real Apple serial (→ exact model) and FamilyID.
-    if info.path and not info.sysinfo:
-        _enrich_from_usb_vpd(info)
+        # 2a. Hardware probe (IOCTL + device tree + USB PID)
+        _enrich_from_hardware_probe(info)
 
-    # ── 4. Windows registry (USB serial persists after disconnect) ────
-    if not info.firewire_guid:
-        _enrich_from_windows_registry(info)
+        # 2b. USB VPD query (highest authority — Apple serial + model)
+        #   Runs even if SysInfo exists, because low-authority SysInfo
+        #   values should be upgraded with VPD data when possible.
+        if info.path:
+            _enrich_from_usb_vpd(info)
 
-    # ── 5. Model lookup (map model_number → family/gen/capacity/color) ─
-    if info.model_number and info.model_family == "iPod":
+        # 2c. SysInfoExtended (fills gaps)
+        if info.path:
+            _enrich_from_sysinfo_extended(info)
+
+        # 2d. SysInfo (fills remaining gaps — lowest useful authority)
+        _populate_fields_from_sysinfo(info)
+
+        # 2e. Windows registry fallback for FW GUID
+        if not info.firewire_guid:
+            _enrich_from_windows_registry(info)
+
+    # ── 3. Model lookup (map model_number → family/gen/capacity/color) ─
+    #   This is a cheap dict lookup — always run it to fill derived fields.
+    #   Uses the model_number's source as provenance for derived fields,
+    #   since they are deterministically derived from it.
+    if info.model_number and info.model_family in ("iPod", ""):
         try:
             from ipod_models import get_model_info
             mi = get_model_info(info.model_number)
             if mi:
+                _mn_source = info._field_sources.get("model_number", "unknown")
                 info.model_family = mi[0]
+                info._field_sources.setdefault("model_family", _mn_source)
                 info.generation = mi[1]
+                info._field_sources.setdefault("generation", _mn_source)
                 if not info.capacity:
                     info.capacity = mi[2]
+                    info._field_sources.setdefault("capacity", _mn_source)
                 if not info.color:
                     info.color = mi[3]
-                logger.debug("enrich: model DB → %s %s", mi[0], mi[1])
+                    info._field_sources.setdefault("color", _mn_source)
+                logger.info("enrich: model DB → %s %s %s %s",
+                            mi[0], mi[1], mi[2], mi[3])
         except ImportError:
             pass
 
-    # ── 5b. Serial-last-3 model lookup ────────────────────────────────
+    # ── 3b. Serial-last-3 model lookup ────────────────────────────────
     #   Very reliable — the last 3 chars of the serial encode the exact
-    #   model (incl. capacity and color).  Higher confidence than USB PID.
-    #   Always run when we have a serial but no model_number yet.
-    if info.serial and not info.model_number:
+    #   model (incl. capacity and color).  Always run when the serial is
+    #   available and ANY of model_number, capacity, or color is still
+    #   missing — serial lookup is higher confidence than USB PID and
+    #   provides the exact variant including color/revision.
+    if info.serial and (
+        not info.model_number or not info.capacity or not info.color
+    ):
         _enrich_from_serial_lookup(info)
 
-    # ── 5d. Persist ModelNumStr to SysInfo for future scans ───────────
-    #   After model resolution (steps 5/5b), write ModelNumStr back to
-    #   SysInfo so the scanner can use Layer 1 (fastest) on next launch.
-    if info.model_number and info.path:
-        _persist_model_to_sysinfo(info)
-
-    # ── 5c. USB PID-based family/generation (if nothing else worked) ──
-    if info.usb_pid and info.model_family == "iPod":
+    # ── 3c. USB PID-based family/generation (if nothing else worked) ──
+    if info.usb_pid and info.model_family in ("iPod", ""):
         try:
             from ipod_models import USB_PID_TO_MODEL
             pid_info = USB_PID_TO_MODEL.get(info.usb_pid)
             if pid_info:
                 info.model_family = pid_info[0]
+                info._field_sources.setdefault("model_family", "usb_pid")
                 if not info.generation and pid_info[1]:
                     info.generation = pid_info[1]
+                    info._field_sources.setdefault("generation", "usb_pid")
                 logger.debug("enrich: USB PID 0x%04X → %s %s",
                              info.usb_pid, pid_info[0], pid_info[1])
         except ImportError:
             pass
 
-    # ── 6. iTunesDB header (hashing scheme, version) ─────────────────
+    # ── 4. iTunesDB header (hashing scheme, version) ─────────────────
     if info.path and info.hashing_scheme == -1:
         _enrich_from_itunesdb_header(info)
 
-    # ── 7. Checksum type ──────────────────────────────────────────────
+    # ── 5. Checksum type ──────────────────────────────────────────────
     if info.checksum_type == 99:
         _resolve_checksum_type(info)
 
-    # ── 8. HashInfo (cryptographic material for HASH72 signing) ───────
+    # ── 6. HashInfo (cryptographic material for HASH72 signing) ───────
     if not info.hash_info_iv and info.path:
         hi_path = os.path.join(
             info.path, "iPod_Control", "Device", "HashInfo",
@@ -548,7 +621,7 @@ def enrich(info: DeviceInfo) -> None:
         except Exception as exc:
             logger.debug("enrich: HashInfo read failed: %s", exc)
 
-    # ── 9. Artwork formats ────────────────────────────────────────────
+    # ── 7. Artwork formats ────────────────────────────────────────────
     # Try model-based lookup first
     if not info.artwork_formats and info.model_family and info.generation:
         try:
@@ -556,8 +629,8 @@ def enrich(info: DeviceInfo) -> None:
             table = ithmb_formats_for_device(info.model_family, info.generation)
             if table:
                 info.artwork_formats = dict(table)
-                logger.debug("enrich: artwork formats from model: %s",
-                             list(info.artwork_formats.keys()))
+                logger.info("enrich: artwork formats from model: %s",
+                            list(info.artwork_formats.keys()))
         except ImportError:
             pass
 
@@ -565,7 +638,7 @@ def enrich(info: DeviceInfo) -> None:
     if not info.artwork_formats and info.path:
         _enrich_artwork_from_artworkdb(info)
 
-    # ── 10. Disk size ─────────────────────────────────────────────────
+    # ── 8. Disk size ─────────────────────────────────────────────────
     if info.disk_size_gb == 0.0 and info.path:
         try:
             import shutil
@@ -577,17 +650,47 @@ def enrich(info: DeviceInfo) -> None:
         except Exception as exc:
             logger.debug("enrich: disk_usage failed: %s", exc)
 
-    # ── 11. Capacity from disk size (if still unknown) ────────────────
+    # ── 9. Capacity from disk size (if still unknown) ────────────────
     if not info.capacity and info.disk_size_gb > 0:
         info.capacity = _estimate_capacity_from_disk_size(info.disk_size_gb)
         if info.capacity:
-            logger.debug("enrich: capacity from disk size: %s", info.capacity)
+            logger.info("enrich: capacity from disk size: %s", info.capacity)
+
+    # ── 10. Backfill _field_sources for derived fields ───────────────────
+    #   The scanner's _resolve_model may have set model_family/generation/
+    #   capacity/color/usb_pid without tracking sources.  Before writing
+    #   authority, ensure every populated field has a source entry.
+    #   Derived fields inherit from the identification method that resolved
+    #   them (model_number's source, or the identification_method itself).
+    _derived_fields = ("model_family", "generation", "capacity", "color", "usb_pid")
+    _backfill_src = info._field_sources.get(
+        "model_number",
+        info.identification_method if info.identification_method != "unknown" else "unknown",
+    )
+    for _df in _derived_fields:
+        if getattr(info, _df, None) and _df not in info._field_sources:
+            info._field_sources[_df] = _backfill_src
+
+    # ── 11. SysInfo authority update ───────────────────────────────────────
+    #   After all identification and enrichment is complete, reconcile our
+    #   gathered data with the on-disk SysInfo file via the authority system.
+    if info.path:
+        try:
+            from sysinfo_authority import update_sysinfo as _update_sysinfo
+            _update_sysinfo(info)
+        except Exception as exc:
+            logger.warning("enrich: SysInfo authority update failed: %s", exc)
 
     logger.info(
-        "DeviceInfo enriched: %s %s (%s), checksum=%s, fw=%s, formats=%s, "
-        "disk=%.1fGB",
+        "DeviceInfo enriched: %s %s (%s), serial=%s, fwguid=%s, "
+        "checksum=%s, scheme=%s, method=%s, capacity=%s, "
+        "formats=%s, disk=%.1fGB",
         info.model_family, info.generation, info.model_number,
-        info.checksum_type, info.firewire_guid or "none",
+        info.serial[-3:] if info.serial else "none",
+        info.firewire_guid or "none",
+        info.checksum_type, info.hashing_scheme,
+        info.identification_method,
+        info.capacity or "unknown",
         list(info.artwork_formats.keys()) if info.artwork_formats else "none",
         info.disk_size_gb,
     )
@@ -596,6 +699,114 @@ def enrich(info: DeviceInfo) -> None:
 # ──────────────────────────────────────────────────────────────────────
 # Private enrichment helpers — each probes ONE source
 # ──────────────────────────────────────────────────────────────────────
+
+def _populate_fields_from_sysinfo(info: DeviceInfo) -> None:
+    """Fill empty DeviceInfo fields from the cached SysInfo dict.
+
+    Only fills fields that are **not already populated**, and uses
+    ``setdefault`` for ``_field_sources`` so higher-authority source
+    annotations from earlier probes are preserved.
+
+    Called at different points depending on authority level:
+
+    * **HIGH** authority → called early (before probes), so all fields
+      are still empty and get filled from the trusted SysInfo.
+    * **LOW** authority → called late (after probes), so only the gaps
+      that the hardware/VPD probes couldn't fill get patched from SysInfo.
+    """
+    if not info.sysinfo:
+        return
+
+    if not info.board:
+        _board = info.sysinfo.get("BoardHwName", "")
+        if _board:
+            info.board = _board
+            info._field_sources.setdefault("board", "sysinfo")
+
+    if not info.serial:
+        apple_serial = info.sysinfo.get("pszSerialNumber", "")
+        if apple_serial and apple_serial != info.firewire_guid:
+            info.serial = apple_serial
+            info._field_sources.setdefault("serial", "sysinfo")
+            logger.info("enrich: serial (Apple) from SysInfo: %s", apple_serial)
+        elif apple_serial and apple_serial == info.firewire_guid:
+            logger.warning(
+                "enrich: SysInfo pszSerialNumber equals FW GUID (%s) "
+                "— not a real Apple serial, skipping",
+                apple_serial,
+            )
+
+    if not info.firmware:
+        fw_ver = info.sysinfo.get("visibleBuildID", "")
+        if fw_ver:
+            info.firmware = fw_ver
+            info._field_sources.setdefault("firmware", "sysinfo")
+            logger.info("enrich: firmware from SysInfo: %s", fw_ver)
+
+    if not info.firewire_guid:
+        guid = info.sysinfo.get("FirewireGuid", "")
+        if guid:
+            if guid.startswith(("0x", "0X")):
+                guid = guid[2:]
+            if guid and guid != "0" * len(guid):
+                info.firewire_guid = guid
+                info._field_sources.setdefault("firewire_guid", "sysinfo")
+                logger.info("enrich: FW GUID from SysInfo: %s", guid)
+
+    if not info.model_number:
+        try:
+            from ipod_models import extract_model_number
+            raw = info.sysinfo.get("ModelNumStr", "")
+            if raw:
+                mn = extract_model_number(raw)
+                if mn:
+                    info.model_number = mn
+                    info._field_sources.setdefault("model_number", "sysinfo")
+                    logger.info("enrich: model from SysInfo: %s", mn)
+        except ImportError:
+            pass
+
+    # ── Derived / resolved fields (written by iOpenPod) ───────────────
+    # These are only present if a previous iOpenPod run cached them.
+    # model_family default is "iPod" (sentinel), so only replace it with
+    # a more specific value.
+    _mf = info.sysinfo.get("ModelFamily", "")
+    if _mf and _mf != "iPod" and info.model_family in ("iPod", ""):
+        info.model_family = _mf
+        info._field_sources.setdefault("model_family", "sysinfo")
+        logger.info("enrich: model_family from SysInfo: %s", _mf)
+
+    if not info.generation:
+        _gen = info.sysinfo.get("Generation", "")
+        if _gen:
+            info.generation = _gen
+            info._field_sources.setdefault("generation", "sysinfo")
+            logger.info("enrich: generation from SysInfo: %s", _gen)
+
+    if not info.capacity:
+        _cap = info.sysinfo.get("Capacity", "")
+        if _cap:
+            info.capacity = _cap
+            info._field_sources.setdefault("capacity", "sysinfo")
+            logger.info("enrich: capacity from SysInfo: %s", _cap)
+
+    if not info.color:
+        _col = info.sysinfo.get("Color", "")
+        if _col:
+            info.color = _col
+            info._field_sources.setdefault("color", "sysinfo")
+            logger.info("enrich: color from SysInfo: %s", _col)
+
+    if not info.usb_pid:
+        _pid_str = info.sysinfo.get("USBProductID", "")
+        if _pid_str:
+            try:
+                info.usb_pid = int(_pid_str, 0)  # handles "0x1261" and "4705"
+                info._field_sources.setdefault("usb_pid", "sysinfo")
+                logger.info("enrich: usb_pid from SysInfo: 0x%04X", info.usb_pid)
+            except ValueError:
+                pass
+
 
 def _enrich_from_sysinfo_extended(info: DeviceInfo) -> None:
     """Read SysInfoExtended XML plist for FireWireGUID and model info."""
@@ -609,7 +820,7 @@ def _enrich_from_sysinfo_extended(info: DeviceInfo) -> None:
         with open(sysinfo_ex_path, "r", errors="ignore") as f:
             content = f.read()
     except Exception as exc:
-        logger.debug("enrich: SysInfoExtended read failed: %s", exc)
+        logger.info("enrich: SysInfoExtended read failed: %s", exc)
         return
 
     import re as _re
@@ -626,7 +837,8 @@ def _enrich_from_sysinfo_extended(info: DeviceInfo) -> None:
                 guid_hex = guid_hex[2:]
             if guid_hex and guid_hex != "0" * len(guid_hex):
                 info.firewire_guid = guid_hex
-                logger.debug("enrich: FW GUID from SysInfoExtended: %s", guid_hex)
+                info._field_sources["firewire_guid"] = "sysinfo_extended"
+                logger.info("enrich: FW GUID from SysInfoExtended: %s", guid_hex)
 
     # Serial number
     if not info.serial:
@@ -636,6 +848,8 @@ def _enrich_from_sysinfo_extended(info: DeviceInfo) -> None:
         )
         if m:
             info.serial = m.group(1).strip()
+            info._field_sources["serial"] = "sysinfo_extended"
+            logger.info("enrich: serial from SysInfoExtended: %s", info.serial)
 
     # Model number (ProductType or ModelNumStr)
     if not info.model_number:
@@ -649,7 +863,8 @@ def _enrich_from_sysinfo_extended(info: DeviceInfo) -> None:
                 mn = extract_model_number(m.group(1).strip())
                 if mn:
                     info.model_number = mn
-                    logger.debug("enrich: model from SysInfoExtended: %s", mn)
+                    info._field_sources["model_number"] = "sysinfo_extended"
+                    logger.info("enrich: model from SysInfoExtended: %s", mn)
             except ImportError:
                 pass
 
@@ -661,6 +876,83 @@ def _enrich_from_sysinfo_extended(info: DeviceInfo) -> None:
         )
         if m:
             info.board = m.group(1).strip()
+            info._field_sources["board"] = "sysinfo_extended"
+            logger.info("enrich: board from SysInfoExtended: %s", info.board)
+
+    # ── Artwork formats from SysInfoExtended (Nano 6G/7G) ─────────
+    # Newer iPods (especially Nano 6G+) define their artwork formats in the
+    # SysInfoExtended XML plist rather than relying on hardcoded tables.
+    # libgpod's itdb_sysinfo.c parses these for cover-art format discovery.
+    if not info.artwork_formats:
+        try:
+            artwork_fmts = _parse_sysinfo_artwork_formats(content)
+            if artwork_fmts:
+                info.artwork_formats = artwork_fmts
+                info._field_sources["artwork_formats"] = "sysinfo_extended"
+                logger.info("enrich: artwork formats from SysInfoExtended: %s",
+                            list(artwork_fmts.keys()))
+        except Exception as exc:
+            logger.debug("enrich: SysInfoExtended artwork parse failed: %s", exc)
+
+
+def _parse_sysinfo_artwork_formats(content: str) -> dict[int, tuple[int, int]]:
+    """Extract artwork format definitions from SysInfoExtended XML plist.
+
+    Newer iPods (Nano 6G/7G) embed their artwork capabilities in
+    SysInfoExtended under keys like ``AlbumArt`` or ``ArtworkFormats``.
+    Each entry is a dict with at least ``FormatId``, ``RenderWidth``,
+    ``RenderHeight``.  libgpod calls ``itdb_sysinfo_properties_get_cover_art_formats``
+    to parse these.
+
+    Returns:
+        ``{correlation_id: (width, height)}`` — same format as
+        ``ithmb_formats_for_device()``.  Empty dict if nothing found.
+    """
+    import plistlib
+
+    # SysInfoExtended is an XML plist.  Parse it properly.
+    try:
+        plist = plistlib.loads(content.encode("utf-8"))
+    except Exception:
+        return {}
+
+    if not isinstance(plist, dict):
+        return {}
+
+    # Look for artwork format arrays under various known keys.
+    # libgpod checks: AlbumArt, ArtworkFormats, CoverArt
+    artwork_entries: list[dict] = []
+    for key in ("AlbumArt", "AlbumArt2", "ArtworkFormats", "CoverArt",
+                "ArtworkCoverArtFormats"):
+        val = plist.get(key)
+        if isinstance(val, list):
+            artwork_entries.extend(val)
+
+    if not artwork_entries:
+        return {}
+
+    formats: dict[int, tuple[int, int]] = {}
+    for entry in artwork_entries:
+        if not isinstance(entry, dict):
+            continue
+
+        # FormatId / CorrelationID
+        fmt_id = entry.get("FormatId") or entry.get("CorrelationID")
+        if fmt_id is None:
+            continue
+        fmt_id = int(fmt_id)
+
+        # RenderWidth / Width, RenderHeight / Height
+        w = entry.get("RenderWidth") or entry.get("Width")
+        h = entry.get("RenderHeight") or entry.get("Height")
+        if w is None or h is None:
+            continue
+        w, h = int(w), int(h)
+
+        if fmt_id > 0 and w > 0 and h > 0:
+            formats[fmt_id] = (w, h)
+
+    return formats
 
 
 def _enrich_from_hardware_probe(info: DeviceInfo) -> None:
@@ -677,6 +969,7 @@ def _enrich_from_hardware_probe(info: DeviceInfo) -> None:
 
     import sys as _sys
 
+    _hw_method = ""
     try:
         if _sys.platform == "win32":
             drive_letter = info.drive_letter
@@ -692,12 +985,16 @@ def _enrich_from_hardware_probe(info: DeviceInfo) -> None:
             )
             _setup_win32_prototypes()
             hw = _identify_via_direct_ioctl(drive_letter)
+            if hw:
+                _hw_method = "ioctl"
 
             if not hw:
                 # Fallback: WMI (slower, subprocess)
                 try:
                     from GUI.device_scanner import _identify_via_usb_for_drive
                     hw = _identify_via_usb_for_drive(drive_letter)
+                    if hw:
+                        _hw_method = "wmi"
                 except ImportError:
                     hw = None
 
@@ -707,12 +1004,14 @@ def _enrich_from_hardware_probe(info: DeviceInfo) -> None:
         elif _sys.platform == "darwin":
             from GUI.device_scanner import _probe_hardware_macos
             hw = _probe_hardware_macos(info.path)
+            _hw_method = "ioreg"
             if not hw:
                 return
 
         else:  # Linux
             from GUI.device_scanner import _probe_hardware_linux
             hw = _probe_hardware_linux(info.path)
+            _hw_method = "sysfs"
             if not hw:
                 return
 
@@ -720,26 +1019,34 @@ def _enrich_from_hardware_probe(info: DeviceInfo) -> None:
         logger.debug("enrich: hardware probe failed: %s", exc)
         return
 
+    # On Windows, FW GUID comes from the device tree walk specifically
+    _fw_source = "device_tree" if _hw_method in ("ioctl", "wmi") else _hw_method
+
     # Merge hardware results into DeviceInfo (never overwrite existing)
     if not info.firewire_guid and hw.get("firewire_guid"):
         guid_hex = hw["firewire_guid"]
         if guid_hex != "0" * len(guid_hex):
             info.firewire_guid = guid_hex
-            logger.debug("enrich: FW GUID from hardware: %s", guid_hex)
+            info._field_sources["firewire_guid"] = _fw_source
+            logger.info("enrich: FW GUID from hardware: %s", guid_hex)
 
     if not info.serial and hw.get("serial"):
         info.serial = hw["serial"]
-        logger.debug("enrich: serial from hardware: %s", info.serial)
+        info._field_sources["serial"] = _hw_method
+        logger.info("enrich: serial from hardware: %s", info.serial)
 
     if not info.firmware and hw.get("firmware"):
         info.firmware = hw["firmware"]
-        logger.debug("enrich: firmware from hardware: %s", info.firmware)
+        info._field_sources["firmware"] = _hw_method
+        logger.info("enrich: firmware from hardware: %s", info.firmware)
 
     if not info.usb_pid and hw.get("usb_pid"):
         info.usb_pid = hw["usb_pid"]
+        logger.info("enrich: USB PID from hardware: 0x%04X", info.usb_pid)
 
     if not info.model_number and hw.get("model_number"):
         info.model_number = hw["model_number"]
+        logger.info("enrich: model_number from hardware: %s", info.model_number)
 
     if info.identification_method == "unknown":
         info.identification_method = "hardware"
@@ -750,8 +1057,11 @@ def _enrich_from_usb_vpd(info: DeviceInfo) -> None:
 
     Delegates to :func:`ipod_usb_query.identify_via_vpd` which handles all
     platforms (IOKit on macOS, pyusb on Linux/Windows), resolves the exact
-    model via serial-last-3 lookup, writes SysInfo to the iPod, and handles
-    post-query remount on Linux/macOS.
+    model via serial-last-3 lookup, and handles post-query remount on
+    Linux/macOS.
+
+    SysInfo writing is NOT done here — the authority module handles it
+    after all identification is complete.
     """
     try:
         from ipod_usb_query import identify_via_vpd
@@ -763,6 +1073,7 @@ def _enrich_from_usb_vpd(info: DeviceInfo) -> None:
         mount_path=info.path,
         usb_pid=info.usb_pid or 0,
         firewire_guid=info.firewire_guid or "",
+        write_sysinfo_to_device=False,
     )
     if result is None:
         return
@@ -770,36 +1081,35 @@ def _enrich_from_usb_vpd(info: DeviceInfo) -> None:
     # Apply VPD-derived fields to DeviceInfo
     if result["serial"]:
         info.serial = result["serial"]
+        info._field_sources["serial"] = "vpd"
     if not info.firewire_guid and result["firewire_guid"]:
         info.firewire_guid = result["firewire_guid"]
+        info._field_sources["firewire_guid"] = "vpd"
     if result["firmware"]:
         info.firmware = result["firmware"]
+        info._field_sources["firmware"] = "vpd"
     if result["model_number"]:
         info.model_number = result["model_number"]
         info.model_family = result["model_family"]
         info.generation = result["generation"]
+        info._field_sources["model_number"] = "vpd"
         if not info.capacity:
             info.capacity = result["capacity"]
         if not info.color:
             info.color = result["color"]
+
+    # Extract board from VPD raw data (previously obtained via SysInfo re-read)
+    vpd_raw = result.get("vpd_info") or {}
+    if not info.board and vpd_raw.get("BoardHwName"):
+        info.board = vpd_raw["BoardHwName"]
+        info._field_sources["board"] = "vpd"
+        logger.info("enrich: board from VPD: %s", info.board)
 
     # Update mount path if pyusb caused a remount to a different location
     if result["mount_path"] and result["mount_path"] != info.path:
         logger.info("enrich: mount path changed %s → %s",
                     info.path, result["mount_path"])
         info.path = result["mount_path"]
-
-    # Re-read SysInfo now that it's been written
-    if info.path and not info.sysinfo and result["sysinfo_written"]:
-        try:
-            info.sysinfo = read_sysinfo(info.path)
-            if info.sysinfo:
-                logger.debug("enrich: SysInfo re-read after VPD (%d keys)",
-                             len(info.sysinfo))
-                if not info.board:
-                    info.board = info.sysinfo.get("BoardHwName", "")
-        except Exception:
-            pass
 
     if info.serial:
         info.identification_method = "usb_vpd"
@@ -809,7 +1119,13 @@ def _enrich_from_serial_lookup(info: DeviceInfo) -> None:
     """Look up exact model from serial number's last 3 characters.
 
     This is very high confidence — the last 3 chars encode the exact model
-    including capacity and color.
+    including capacity, color, and hardware revision.  Always fills gaps
+    even when ``model_number`` is already known, because serial-last-3
+    provides exact variant resolution that generic model lookup may miss.
+
+    The derived fields inherit the serial number's authority source, since
+    the lookup is a deterministic mapping — the trust of the output equals
+    the trust of the input.
     """
     if not info.serial or len(info.serial) < 3:
         return
@@ -824,52 +1140,47 @@ def _enrich_from_serial_lookup(info: DeviceInfo) -> None:
         return
 
     model_num, model_info = result
+
+    # Inherit the serial's source — the derived values are exactly as
+    # trustworthy as the serial they came from.
+    _src = info._field_sources.get("serial", "serial_lookup")
+
     if not info.model_number:
         info.model_number = model_num
-    info.model_family = model_info[0]
-    info.generation = model_info[1]
+        info._field_sources.setdefault("model_number", _src)
+
+    # Serial lookup is authoritative for family/gen — always set these
+    # (unless a higher-authority source already has them).
+    from sysinfo_authority import SOURCE_RANK, _WORST_RANK
+    _serial_rank = SOURCE_RANK.get(_src, _WORST_RANK)
+
+    _cur_family_rank = SOURCE_RANK.get(
+        info._field_sources.get("model_family", "unknown"), _WORST_RANK,
+    )
+    if _serial_rank <= _cur_family_rank:
+        info.model_family = model_info[0]
+        info._field_sources["model_family"] = _src
+
+    _cur_gen_rank = SOURCE_RANK.get(
+        info._field_sources.get("generation", "unknown"), _WORST_RANK,
+    )
+    if _serial_rank <= _cur_gen_rank:
+        info.generation = model_info[1]
+        info._field_sources["generation"] = _src
+
     if not info.capacity:
         info.capacity = model_info[2]
+        info._field_sources.setdefault("capacity", _src)
+
     if not info.color:
         info.color = model_info[3]
+        info._field_sources.setdefault("color", _src)
+
     if info.identification_method in ("unknown", "hardware"):
         info.identification_method = "serial"
-    logger.debug("enrich: serial-last-3 '%s' → %s %s %s %s",
+    logger.debug("enrich: serial-last-3 '%s' → %s %s %s %s (source: %s)",
                  info.serial[-3:], model_info[0], model_info[1],
-                 model_info[2], model_info[3])
-
-
-def _persist_model_to_sysinfo(info: DeviceInfo) -> None:
-    """Append ModelNumStr to SysInfo if it's missing.
-
-    After serial-based model resolution determines the model_number,
-    write it back to the SysInfo file so the scanner's Layer 1 (fast
-    SysInfo lookup) works on future launches — no serial lookup needed.
-    """
-    if not info.path or not info.model_number:
-        return
-
-    sysinfo_path = os.path.join(
-        info.path, "iPod_Control", "Device", "SysInfo",
-    )
-    if not os.path.exists(sysinfo_path):
-        return
-
-    try:
-        with open(sysinfo_path, "r", errors="replace") as fh:
-            content = fh.read()
-        if "ModelNumStr" in content:
-            return  # already present
-
-        # Append ModelNumStr in the format the scanner expects
-        with open(sysinfo_path, "a") as fh:
-            fh.write(f"ModelNumStr: x{info.model_number[1:]}\n")
-        logger.info("enrich: appended ModelNumStr to SysInfo (%s)",
-                    info.model_number)
-    except OSError as exc:
-        logger.debug("enrich: failed to persist ModelNumStr: %s", exc)
-    except Exception as exc:
-        logger.debug("enrich: failed to persist ModelNumStr (unexpected): %s", exc)
+                 model_info[2], model_info[3], _src)
 
 
 def _enrich_from_windows_registry(info: DeviceInfo) -> None:
@@ -982,11 +1293,11 @@ def _enrich_from_windows_registry(info: DeviceInfo) -> None:
 
 
 def _enrich_from_itunesdb_header(info: DeviceInfo) -> None:
-    """Read the iTunesDB mhbd header for hashing_scheme and db_id."""
+    """Read the iTunesDB/iTunesCDB mhbd header for hashing_scheme and db_id."""
     import struct
 
-    itdb_path = os.path.join(info.path, "iPod_Control", "iTunes", "iTunesDB")
-    if not os.path.exists(itdb_path):
+    itdb_path = resolve_itdb_path(info.path)
+    if not itdb_path:
         return
 
     try:

@@ -17,8 +17,8 @@ Detection pipeline:
 
   **Phase 3 — Model resolution** (pure computation, per-field priority):
     - model_number:  SysInfo ModelNumStr → IPOD_MODELS  >  serial last-3 → IPOD_MODELS
-    - firewire_guid: device tree  >  SysInfoExtended  >  SysInfo  >  IOCTL serial (if 16 hex)
-    - serial:        IOCTL (Apple serial)  >  SysInfo (skip RAND-*)
+    - firewire_guid: device tree  >  SysInfoExtended  >  SysInfo  >  USB serial (always 16 hex chars on iPods)
+    - serial:        SysInfo pszSerialNumber (Apple serial)  >  IOCTL (only if non-GUID)
     - firmware:      IOCTL revision  >  SysInfo visibleBuildID
     - usb_pid:       device tree USB parent  >  WMI fallback
     - model_family:  IPOD_MODELS  >  USB PID table (with disk-size sanity check)  >  hashing_scheme
@@ -340,7 +340,7 @@ def _probe_hardware_macos(mount_path: str) -> dict:
         target_dev = dev_map.get(serial_key)
         if target_dev:
             logger.debug(
-                "macOS probe: %s → %s → serial %s → PID 0x%04X",
+                "macOS probe: %s → %s → FW GUID %s → PID 0x%04X",
                 mount_path, bsd_whole_disk, serial_key,
                 target_dev.get("idProduct", 0),
             )
@@ -365,14 +365,17 @@ def _probe_hardware_macos(mount_path: str) -> dict:
             result["model_family"] = model_info[0]
             result["generation"] = model_info[1]
 
-    serial = (target_dev.get("USB Serial Number", "") or target_dev.get("kUSBSerialNumberString", ""))
-    if serial:
-        result["serial"] = serial
-        clean = serial.replace(" ", "").strip()
+    # The USB serial number for iPods is the FireWire GUID (16 hex
+    # chars), NOT the Apple serial number.  Store it only as
+    # firewire_guid — the real Apple serial comes from SysInfo.
+    usb_serial = (target_dev.get("USB Serial Number", "") or target_dev.get("kUSBSerialNumberString", ""))
+    if usb_serial:
+        clean = usb_serial.replace(" ", "").strip()
         if len(clean) == 16:
             try:
                 bytes.fromhex(clean)
                 result["firewire_guid"] = clean.upper()
+                logger.debug("macOS probe: USB serial is FW GUID: %s", clean.upper())
             except ValueError:
                 pass
 
@@ -441,18 +444,19 @@ def _probe_hardware_linux(mount_path: str) -> dict:
                         except ValueError:
                             pass
 
-                    # Read serial number
+                    # Read USB serial — on iPods this is the FireWire
+                    # GUID (16 hex chars), not the Apple serial number.
                     serial_file = os.path.join(current, "serial")
                     if os.path.exists(serial_file):
                         with open(serial_file) as sf:
-                            serial = sf.read().strip()
-                        if serial:
-                            result["serial"] = serial
-                            clean = serial.replace(" ", "")
+                            usb_serial = sf.read().strip()
+                        if usb_serial:
+                            clean = usb_serial.replace(" ", "")
                             if len(clean) == 16:
                                 try:
                                     bytes.fromhex(clean)
                                     result["firewire_guid"] = clean.upper()
+                                    logger.debug("Linux probe: USB serial is FW GUID: %s", clean.upper())
                                 except ValueError:
                                     pass
                     break
@@ -517,9 +521,22 @@ def _identify_via_usb_for_drive(drive_letter: str) -> Optional[dict]:
             if line.startswith("PNP:"):
                 pnp_id = line[4:]
             elif line.startswith("SERIAL:"):
-                serial = line[7:].strip()
-                if serial:
-                    result["serial"] = serial
+                wmi_serial = line[7:].strip()
+                if wmi_serial:
+                    # WMI disk serial for iPods is the FireWire GUID
+                    # (16 hex chars), not the Apple serial.
+                    wmi_clean = wmi_serial.replace(" ", "")
+                    if len(wmi_clean) == 16:
+                        try:
+                            bytes.fromhex(wmi_clean)
+                            result.setdefault("firewire_guid", wmi_clean.upper())
+                            logger.info("WMI: serial is FW GUID: %s", wmi_clean.upper())
+                        except ValueError:
+                            result["serial"] = wmi_serial
+                            logger.info("WMI: non-hex serial (Apple?): %s", wmi_serial)
+                    else:
+                        result["serial"] = wmi_serial
+                        logger.info("WMI: non-GUID serial (Apple?): %s", wmi_serial)
             elif line.startswith("MODEL:"):
                 pass  # Just confirms it's an iPod
 
@@ -550,6 +567,7 @@ def _identify_via_usb_for_drive(drive_letter: str) -> Optional[dict]:
             guid = _extract_guid_from_instance_id(instance_id)
             if guid:
                 result["firewire_guid"] = guid
+                logger.info("WMI USBSTOR: FW GUID from instance ID: %s", guid)
 
     # ── Step 3: Find the USB PID for THIS specific device ──
     # Cross-reference the USBSTOR instance to its parent USB device.
@@ -771,16 +789,23 @@ def _identify_via_direct_ioctl(drive_letter: str) -> Optional[dict]:
             result["firmware"] = revision
 
         if serial:
-            result["serial"] = serial
             # The IOCTL serial for iPods is typically the FireWire GUID
-            # (16 hex chars) or the USB instance ID (same thing)
+            # (16 hex chars), NOT the Apple serial number.  Store as
+            # firewire_guid only — the real Apple serial comes from SysInfo.
             clean = serial.replace(" ", "").strip()
             if len(clean) == 16:
                 try:
                     bytes.fromhex(clean)
                     result["firewire_guid"] = clean.upper()
+                    logger.info("Direct IOCTL: serial is FW GUID: %s", clean.upper())
                 except ValueError:
-                    pass
+                    # Not a hex string — might be a real Apple serial
+                    result["serial"] = serial
+                    logger.info("Direct IOCTL: non-hex serial (Apple?): %s", serial)
+            else:
+                # Non-16-char serial — could be an actual Apple serial
+                result["serial"] = serial
+                logger.info("Direct IOCTL: non-GUID serial (Apple?): %s", serial)
 
     finally:
         ctypes.windll.kernel32.CloseHandle(handle)  # type: ignore[attr-defined]
@@ -793,6 +818,8 @@ def _identify_via_direct_ioctl(drive_letter: str) -> Optional[dict]:
     if tree_info:
         if tree_info.get("firewire_guid"):
             result["firewire_guid"] = tree_info["firewire_guid"]
+            logger.info("Drive %s: FW GUID from device tree: %s",
+                        drive_letter, tree_info["firewire_guid"])
         if tree_info.get("usb_pid"):
             result["usb_pid"] = tree_info["usb_pid"]
         if tree_info.get("model_family"):
@@ -1085,7 +1112,7 @@ def _walk_device_tree(drive_letter: str) -> dict:
         return result
 
     usbstor_id = dev_id_buf.value
-    logger.debug("Drive %s: USBSTOR instance = %s", drive_letter, usbstor_id)
+    logger.info("Drive %s: USBSTOR instance = %s", drive_letter, usbstor_id)
 
     if "USBSTOR" in usbstor_id.upper():
         parts = usbstor_id.split("\\")
@@ -1093,6 +1120,8 @@ def _walk_device_tree(drive_letter: str) -> dict:
             guid = _extract_guid_from_instance_id(parts[2])
             if guid:
                 result["firewire_guid"] = guid
+                logger.info("Drive %s: FW GUID from USBSTOR instance: %s",
+                            drive_letter, guid)
 
     # ── Step 4: Walk up to USB parent → extract PID ────────────────────
     # For simple USB devices the parent is the USB device node:
@@ -1162,6 +1191,11 @@ def _walk_device_tree(drive_letter: str) -> dict:
                                     )
                                     if gp_guid:
                                         result["firewire_guid"] = gp_guid
+                                        logger.debug(
+                                            "Drive %s: FW GUID from USB "
+                                            "grandparent: %s",
+                                            drive_letter, gp_guid,
+                                        )
 
     return result
 
@@ -1180,9 +1214,10 @@ def _probe_hardware(mount_path: str, mount_name: str) -> dict:
 
     Returns a dict that may contain any of:
         vendor, product, serial, firmware, bus_type, firewire_guid,
-        usb_pid, model_family, generation
+        usb_pid, model_family, generation, _sources
     """
     result: dict = {}
+    _hw_method = ""
 
     if sys.platform == "win32":
         # On Windows, mount_name is "D:" — extract the drive letter
@@ -1194,6 +1229,7 @@ def _probe_hardware(mount_path: str, mount_name: str) -> dict:
         ioctl_info = _identify_via_direct_ioctl(drive_letter)
         if ioctl_info:
             result.update(ioctl_info)
+            _hw_method = "ioctl"
             logger.debug("Hardware probe (direct): %s", result)
 
         # ── Fallback: WMI (only if direct gave us nothing useful) ──────
@@ -1205,17 +1241,33 @@ def _probe_hardware(mount_path: str, mount_name: str) -> dict:
             wmi_info = _identify_via_usb_for_drive(drive_letter)
             if wmi_info:
                 result.update(wmi_info)
-                logger.debug("Hardware probe (WMI fallback): %s", result)
+                _hw_method = "wmi"
+                logger.info("Hardware probe (WMI fallback): %s", result)
 
     elif sys.platform == "darwin":
         result = _probe_hardware_macos(mount_path)
+        _hw_method = "ioreg"
         if result:
-            logger.debug("Hardware probe (macOS): %s", result)
+            logger.info("Hardware probe (macOS): %s", result)
 
     else:
         result = _probe_hardware_linux(mount_path)
+        _hw_method = "sysfs"
         if result:
             logger.debug("Hardware probe (Linux): %s", result)
+
+    # Annotate per-field data sources for authority tracking
+    if result and _hw_method:
+        sources = result.setdefault("_sources", {})
+        if result.get("firewire_guid"):
+            # On Windows, FW GUID comes from device tree walk specifically
+            sources["firewire_guid"] = (
+                "device_tree" if _hw_method in ("ioctl", "wmi") else _hw_method
+            )
+        if result.get("serial"):
+            sources["serial"] = _hw_method
+        if result.get("firmware"):
+            sources["firmware"] = _hw_method
 
     return result
 
@@ -1263,36 +1315,60 @@ def _resolve_model(
 
     Returns the resolved fields: model_number, model_family, generation,
     capacity, color, firewire_guid, serial, firmware, usb_pid, hashing_scheme,
-    identification_method.
+    identification_method, _sources.
     """
     from ipod_models import get_model_info
 
     resolved: dict = {}
+    hw_sources = hw.get("_sources", {})
+    fs_sources = fs.get("_sources", {})
+    sources: dict[str, str] = {}
+    resolved["_sources"] = sources  # reference — mutations visible in resolved
 
     # ── FireWire GUID ──────────────────────────────────────────────────
     # Priority: device tree > SysInfoExtended/SysInfo > IOCTL serial
     # (The device tree USBSTOR instance is the most authoritative because
     # it's guaranteed to be for the currently-connected device at this
     # specific drive letter.  SysInfo can be stale or missing.)
-    resolved["firewire_guid"] = hw.get("firewire_guid") or fs.get("firewire_guid") or ""
-
-    # ── Serial ─────────────────────────────────────────────────────────
-    # Priority: IOCTL serial > SysInfo serial (but skip "RAND-*" serials)
-    hw_serial = hw.get("serial", "")
-    fs_serial = fs.get("serial", "")
-    if hw_serial and not hw_serial.startswith("RAND"):
-        resolved["serial"] = hw_serial
-    elif fs_serial and not fs_serial.startswith("RAND"):
-        resolved["serial"] = fs_serial
+    if hw.get("firewire_guid"):
+        resolved["firewire_guid"] = hw["firewire_guid"]
+        sources["firewire_guid"] = hw_sources.get("firewire_guid", "hardware")
+    elif fs.get("firewire_guid"):
+        resolved["firewire_guid"] = fs["firewire_guid"]
+        sources["firewire_guid"] = fs_sources.get("firewire_guid", "sysinfo")
     else:
-        resolved["serial"] = hw_serial or fs_serial or ""
+        resolved["firewire_guid"] = ""
+
+    # ── Serial (Apple serial number, NOT the USB/FireWire GUID) ────────
+    # Only the filesystem layer (SysInfo pszSerialNumber) provides the real
+    # Apple serial.  Hardware probing returns the USB serial which is always
+    # the FireWire GUID on iPods — that's stored in firewire_guid above.
+    fs_serial = fs.get("serial", "")
+    hw_serial = hw.get("serial", "")  # rare: non-GUID serial from IOCTL
+    if fs_serial and not fs_serial.startswith("RAND"):
+        resolved["serial"] = fs_serial
+        sources["serial"] = fs_sources.get("serial", "sysinfo")
+    elif hw_serial and not hw_serial.startswith("RAND"):
+        resolved["serial"] = hw_serial
+        sources["serial"] = hw_sources.get("serial", "hardware")
+    else:
+        resolved["serial"] = ""
 
     # ── Firmware ───────────────────────────────────────────────────────
     # Priority: IOCTL revision > SysInfo visibleBuildID
-    resolved["firmware"] = hw.get("firmware") or fs.get("firmware") or ""
+    if hw.get("firmware"):
+        resolved["firmware"] = hw["firmware"]
+        sources["firmware"] = hw_sources.get("firmware", "hardware")
+    elif fs.get("firmware"):
+        resolved["firmware"] = fs["firmware"]
+        sources["firmware"] = fs_sources.get("firmware", "sysinfo")
+    else:
+        resolved["firmware"] = ""
 
     # ── USB PID ────────────────────────────────────────────────────────
     resolved["usb_pid"] = hw.get("usb_pid", 0)
+    if resolved["usb_pid"]:
+        sources.setdefault("usb_pid", hw_sources.get("usb_pid", "hardware"))
 
     # ── Hashing scheme ─────────────────────────────────────────────────
     resolved["hashing_scheme"] = fs.get("hashing_scheme", -1)
@@ -1309,16 +1385,19 @@ def _resolve_model(
             resolved["capacity"] = info[2]
             resolved["color"] = info[3]
             resolved["identification_method"] = "sysinfo"
+            _mn_src = fs_sources.get("model_number", "sysinfo")
+            sources["model_number"] = _mn_src
+            sources.setdefault("model_family", _mn_src)
+            sources.setdefault("generation", _mn_src)
+            sources.setdefault("capacity", _mn_src)
+            sources.setdefault("color", _mn_src)
             return resolved
 
     # Layer 2: Serial last-3-char → IPOD_MODELS (very reliable)
-    # Try the resolved serial first (usually HW serial).  On macOS the HW
-    # serial is often the FireWire GUID, not the Apple serial, so also try
-    # the FS serial (from SysInfo pszSerialNumber) if the first attempt
-    # doesn't produce a match.
+    # The resolved serial is now always the Apple serial (from SysInfo),
+    # never the FireWire GUID, so a single lookup suffices.
     serial = resolved["serial"]
-    fs_serial = fs.get("serial", "")
-    for candidate in (serial, fs_serial):
+    for candidate in (serial,):
         if not candidate:
             continue
         serial_info = _identify_via_serial_lookup(candidate)
@@ -1330,6 +1409,14 @@ def _resolve_model(
             resolved["capacity"] = serial_info.get("capacity", "")
             resolved["color"] = serial_info.get("color", "")
             resolved["identification_method"] = "serial"
+            # Derived fields inherit the serial's authority source,
+            # since the lookup is a deterministic mapping from the serial.
+            _serial_src = sources.get("serial", "serial_lookup")
+            sources["model_number"] = "serial_lookup"
+            sources.setdefault("model_family", _serial_src)
+            sources.setdefault("generation", _serial_src)
+            sources.setdefault("capacity", _serial_src)
+            sources.setdefault("color", _serial_src)
             return resolved
 
     # Layer 3: USB PID → family/generation (coarse)
@@ -1341,6 +1428,9 @@ def _resolve_model(
         resolved["model_family"] = pid_family
         resolved["generation"] = pid_gen
         resolved["identification_method"] = "usb_pid"
+        sources.setdefault("model_family", "usb_pid")
+        if pid_gen:
+            sources.setdefault("generation", "usb_pid")
 
     # Layer 4: Hashing scheme → generation class (coarsest)
     if resolved.get("model_family", "iPod") == "iPod":
@@ -1365,6 +1455,7 @@ def _identify_via_sysinfo(ipod_path: str) -> Optional[dict]:
     """Try to identify via SysInfo / SysInfoExtended files."""
 
     result: dict = {}
+    result["_sources"] = {}
 
     # Try SysInfoExtended first
     sie_path = os.path.join(ipod_path, "iPod_Control", "Device", "SysInfoExtended")
@@ -1377,6 +1468,8 @@ def _identify_via_sysinfo(ipod_path: str) -> Optional[dict]:
             )
             if serial_match:
                 result["serial"] = serial_match.group(1)
+                result["_sources"]["serial"] = "sysinfo_extended"
+                logger.debug("SysInfoExtended: Apple serial: %s", serial_match.group(1))
             guid_match = re.search(
                 r"<key>FireWireGUID</key>\s*<string>([0-9A-Fa-f]+)</string>", content
             )
@@ -1385,6 +1478,8 @@ def _identify_via_sysinfo(ipod_path: str) -> Optional[dict]:
                 if guid.startswith(("0x", "0X")):
                     guid = guid[2:]
                 result["firewire_guid"] = guid
+                result["_sources"]["firewire_guid"] = "sysinfo_extended"
+                logger.debug("SysInfoExtended: FW GUID: %s", guid)
         except Exception:
             pass
 
@@ -1403,6 +1498,7 @@ def _identify_via_sysinfo(ipod_path: str) -> Optional[dict]:
                         model_num = extract_model_number(val)
                         if model_num:
                             result["model_number"] = model_num
+                            result["_sources"]["model_number"] = "sysinfo"
                             mi = get_model_info(model_num)
                             if mi:
                                 result["model_family"] = mi[0]
@@ -1411,13 +1507,20 @@ def _identify_via_sysinfo(ipod_path: str) -> Optional[dict]:
                                 result["color"] = mi[3]
                     elif key == "pszSerialNumber" and val:
                         result.setdefault("serial", val)
+                        result["_sources"].setdefault("serial", "sysinfo")
+                        if "serial" in result and result["serial"] == val:
+                            logger.debug("SysInfo: Apple serial: %s", val)
                     elif key == "FirewireGuid" and val:
                         guid = val
                         if guid.startswith(("0x", "0X")):
                             guid = guid[2:]
                         result.setdefault("firewire_guid", guid)
+                        result["_sources"].setdefault("firewire_guid", "sysinfo")
+                        if "firewire_guid" in result and result["firewire_guid"] == guid:
+                            logger.debug("SysInfo: FW GUID: %s", guid)
                     elif key == "visibleBuildID" and val:
                         result["firmware"] = val
+                        result["_sources"]["firmware"] = "sysinfo"
         except Exception:
             pass
 
@@ -1430,62 +1533,91 @@ def _extract_ipod_name(ipod_path: str) -> str:
     playlist title in the iTunesDB binary.  Uses buffered positional reads
     so only a few KB are transferred over USB — never reads the whole file.
 
+    For iTunesCDB files (Nano 5G+), the entire file must be read and
+    decompressed first — but these are typically small (< 200 KB compressed).
+
     Returns the name string, or empty string if extraction fails.
     """
-    itdb_path = os.path.join(ipod_path, "iPod_Control", "iTunes", "iTunesDB")
-    if not os.path.exists(itdb_path):
+    from device_info import resolve_itdb_path
+    itdb_path = resolve_itdb_path(ipod_path)
+    if not itdb_path:
         return ""
     try:
+        # For iTunesCDB, we need to decompress the whole file first.
+        # Check if it's a CDB by reading the header.
         with open(itdb_path, "rb") as f:
-            # ── Helper: read exactly *n* bytes at current position ──────
-            def _read(n: int) -> bytes:
-                buf = f.read(n)
-                if len(buf) < n:
-                    raise EOFError("Unexpected end of iTunesDB")
-                return buf
+            peek = f.read(16)
+            if len(peek) < 16 or peek[:4] != b"mhbd":
+                return ""
+            unk_0x0c = struct.unpack("<I", peek[12:16])[0]
 
-            hdr = _read(24)
-            if hdr[:4] != b"mhbd":
+        if unk_0x0c == 2:
+            # Compressed CDB — read and decompress the full file, then
+            # use the parser's decompression to get the full data.
+            from iTunesDB_Parser.parser import _decompress_itunescdb
+            with open(itdb_path, "rb") as f:
+                raw = f.read()
+            data = _decompress_itunescdb(raw)
+            if len(data) < 24 or data[:4] != b"mhbd":
+                return ""
+            return _ipod_name_from_data(data)
+        else:
+            # Standard iTunesDB — use positional reads
+            with open(itdb_path, "rb") as f:
+                return _ipod_name_from_stream(f)
+
+    except (EOFError, OSError, struct.error) as e:
+        logger.debug("iPod name extraction failed: %s", e)
+    return ""
+
+
+def _ipod_name_from_data(data: bytes) -> str:
+    """Extract iPod name from a fully in-memory (decompressed) database."""
+    import io
+    return _ipod_name_from_stream(io.BytesIO(data))
+
+
+def _ipod_name_from_stream(f) -> str:
+    """Extract iPod name from an open file-like object (positional reads)."""
+    def _read(n: int) -> bytes:
+        buf = f.read(n)
+        if len(buf) < n:
+            raise EOFError("Unexpected end of iTunesDB")
+        return buf
+
+    try:
+        hdr = _read(24)
+        if hdr[:4] != b"mhbd":
+            return ""
+
+        mhbd_header_len = struct.unpack("<I", hdr[4:8])[0]
+        mhbd_children = struct.unpack("<I", hdr[20:24])[0]
+
+        def _name_from_mhsd(mhsd_pos: int, mhsd_hdr_len: int) -> str:
+            """Try to read iPod name from the master playlist in an mhsd."""
+            mhlp_pos = mhsd_pos + mhsd_hdr_len
+            f.seek(mhlp_pos)
+            mhlp_hdr = _read(12)
+            if mhlp_hdr[:4] != b"mhlp":
+                return ""
+            mhlp_hdr_len = struct.unpack("<I", mhlp_hdr[4:8])[0]
+            pl_count = struct.unpack("<I", mhlp_hdr[8:12])[0]
+            if pl_count == 0:
                 return ""
 
-            mhbd_header_len = struct.unpack("<I", hdr[4:8])[0]
-            mhbd_children = struct.unpack("<I", hdr[20:24])[0]
+            # Walk playlists looking for the master (hidden=1)
+            mhyp_pos = mhlp_pos + mhlp_hdr_len
+            for _ in range(min(pl_count, 16)):
+                f.seek(mhyp_pos)
+                mhyp_hdr = _read(24)
+                if mhyp_hdr[:4] != b"mhyp":
+                    return ""
+                mhyp_hdr_len = struct.unpack("<I", mhyp_hdr[4:8])[0]
+                mhyp_total = struct.unpack("<I", mhyp_hdr[8:12])[0]
+                mhod_count = struct.unpack("<I", mhyp_hdr[12:16])[0]
+                pl_type = mhyp_hdr[20]  # 1 = master/hidden
 
-            # Walk mhsd children to find dataset type 2 (playlist list)
-            pos = mhbd_header_len
-            for _ in range(mhbd_children):
-                f.seek(pos)
-                mhsd_hdr = _read(16)
-                if mhsd_hdr[:4] != b"mhsd":
-                    break
-                mhsd_hdr_len = struct.unpack("<I", mhsd_hdr[4:8])[0]
-                mhsd_total_len = struct.unpack("<I", mhsd_hdr[8:12])[0]
-                ds_type = struct.unpack("<I", mhsd_hdr[12:16])[0]
-
-                if ds_type == 2:
-                    # Found playlist dataset — its child is an mhlp
-                    mhlp_pos = pos + mhsd_hdr_len
-                    f.seek(mhlp_pos)
-                    mhlp_hdr = _read(12)
-                    if mhlp_hdr[:4] != b"mhlp":
-                        break
-                    mhlp_hdr_len = struct.unpack("<I", mhlp_hdr[4:8])[0]
-                    pl_count = struct.unpack("<I", mhlp_hdr[8:12])[0]
-                    if pl_count == 0:
-                        break
-
-                    # First mhyp is the master playlist
-                    mhyp_pos = mhlp_pos + mhlp_hdr_len
-                    f.seek(mhyp_pos)
-                    mhyp_hdr = _read(24)
-                    if mhyp_hdr[:4] != b"mhyp":
-                        break
-                    mhyp_hdr_len = struct.unpack("<I", mhyp_hdr[4:8])[0]
-                    mhod_count = struct.unpack("<I", mhyp_hdr[12:16])[0]
-                    pl_type = mhyp_hdr[20]
-                    if pl_type != 1:
-                        break  # Not the master playlist
-
+                if pl_type == 1:
                     # Walk child MHODs to find type 1 (title)
                     mhod_pos = mhyp_pos + mhyp_hdr_len
                     for _ in range(min(mhod_count, 64)):
@@ -1499,7 +1631,6 @@ def _extract_ipod_name(ipod_path: str) -> str:
                         if mhod_type == 1:
                             enc = struct.unpack("<I", mhod_hdr[24:28])[0]
                             slen = struct.unpack("<I", mhod_hdr[28:32])[0]
-                            # Sanity-cap the string length (iPod names are short)
                             if slen > 1024:
                                 break
                             sdata = _read(slen)
@@ -1509,9 +1640,42 @@ def _extract_ipod_name(ipod_path: str) -> str:
                                 return sdata.decode("utf-16-le", errors="replace")
 
                         mhod_pos += mhod_total
-                    break  # Done with dataset type 2
+                    return ""  # Had the master but couldn't read name
 
-                pos += mhsd_total_len
+                mhyp_pos += mhyp_total
+            return ""
+
+        # Walk mhsd children — try type 2 first (classic), fall back to
+        # type 3 (Nano 5G+ / newer iTunes omit type 2 entirely and put
+        # the master playlist in type 3 instead).
+        type3_pos: int | None = None
+        type3_hdr_len: int = 0
+        pos = mhbd_header_len
+        for _ in range(mhbd_children):
+            f.seek(pos)
+            mhsd_hdr = _read(16)
+            if mhsd_hdr[:4] != b"mhsd":
+                break
+            mhsd_hdr_len = struct.unpack("<I", mhsd_hdr[4:8])[0]
+            mhsd_total_len = struct.unpack("<I", mhsd_hdr[8:12])[0]
+            ds_type = struct.unpack("<I", mhsd_hdr[12:16])[0]
+
+            if ds_type == 2:
+                name = _name_from_mhsd(pos, mhsd_hdr_len)
+                if name:
+                    return name
+                break  # type 2 existed but couldn't extract — don't fallback
+            elif ds_type == 3 and type3_pos is None:
+                type3_pos = pos
+                type3_hdr_len = mhsd_hdr_len
+
+            pos += mhsd_total_len
+
+        # Type 2 wasn't found — try type 3
+        if type3_pos is not None:
+            name = _name_from_mhsd(type3_pos, type3_hdr_len)
+            if name:
+                return name
 
     except (EOFError, OSError, struct.error) as e:
         logger.debug("Could not extract iPod name: %s", e)
@@ -1526,8 +1690,9 @@ def _identify_via_hashing_scheme(ipod_path: str) -> Optional[dict]:
 
     This is a fallback — it tells us the generation class but not the exact model.
     """
-    itdb_path = os.path.join(ipod_path, "iPod_Control", "iTunes", "iTunesDB")
-    if not os.path.exists(itdb_path):
+    from device_info import resolve_itdb_path
+    itdb_path = resolve_itdb_path(ipod_path)
+    if not itdb_path:
         return None
 
     try:
@@ -1593,8 +1758,10 @@ def _try_vpd_identification(ipod: DeviceInfo) -> None:
     """Attempt full VPD-based identification for an incompletely resolved iPod.
 
     Delegates to :func:`ipod_usb_query.identify_via_vpd` which handles all
-    platforms (IOKit on macOS, pyusb on Linux/Windows) and writes SysInfo
-    so future scans are instant.
+    platforms (IOKit on macOS, pyusb on Linux/Windows).
+
+    SysInfo writing is NOT done here — the authority module handles it
+    after all identification is complete.
     """
     try:
         from ipod_usb_query import identify_via_vpd
@@ -1605,6 +1772,7 @@ def _try_vpd_identification(ipod: DeviceInfo) -> None:
         mount_path=ipod.path,
         usb_pid=ipod.usb_pid,
         firewire_guid=ipod.firewire_guid,
+        write_sysinfo_to_device=False,
     )
     if result is None:
         return
@@ -1617,13 +1785,17 @@ def _try_vpd_identification(ipod: DeviceInfo) -> None:
         ipod.capacity = result["capacity"]
         ipod.color = result["color"]
         ipod.identification_method = "usb_vpd"
+        ipod._field_sources["model_number"] = "vpd"
 
     if not ipod.serial and result["serial"]:
         ipod.serial = result["serial"]
+        ipod._field_sources["serial"] = "vpd"
     if not ipod.firewire_guid and result["firewire_guid"]:
         ipod.firewire_guid = result["firewire_guid"]
+        ipod._field_sources["firewire_guid"] = "vpd"
     if not ipod.firmware and result["firmware"]:
         ipod.firmware = result["firmware"]
+        ipod._field_sources["firmware"] = "vpd"
 
     # Update mount path in case pyusb caused a remount to a different path
     if result["mount_path"] and result["mount_path"] != ipod.path:
@@ -1690,6 +1862,11 @@ def scan_for_ipods() -> list[DeviceInfo]:
         ipod.usb_pid = resolved.get("usb_pid", 0)
         ipod.hashing_scheme = resolved.get("hashing_scheme", -1)
         ipod.identification_method = resolved.get("identification_method", "filesystem")
+
+        # Apply per-field provenance from the resolution phase
+        resolved_sources = resolved.get("_sources", {})
+        if resolved_sources:
+            ipod._field_sources.update(resolved_sources)
 
         # ── Phase 4: Inline VPD for incomplete identification ──────────
         if not ipod.model_number and ipod.usb_pid:
