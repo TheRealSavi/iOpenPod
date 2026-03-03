@@ -4,7 +4,7 @@ MHIT Writer — Write track item chunks for iTunesDB.
 MHIT chunks contain all metadata for a single track, plus child MHOD
 chunks for strings (title, artist, path, etc.).
 
-Header layout (MHIT_HEADER_SIZE = 0x248 / 584 bytes, matching libgpod):
+Header layout (MHIT_HEADER_SIZE = 0x270 / 624 bytes, matching iTunes):
     +0x00: 'mhit' magic (4B)
     +0x04: header_length (4B)
     +0x08: total_length (4B) — header + all child MHODs
@@ -245,8 +245,11 @@ class TrackInfo:
 
 
 # MHIT header size - must match what we write
-# libgpod uses 0x248 (584 bytes) for modern databases
-MHIT_HEADER_SIZE = 0x248  # 584 bytes
+# iTunes writes 0x270 (624 bytes) on Nano 6G and modern iPods.
+# We use 0x270 to match; extra bytes above our last field (0x1F4+4 = 0x1F8)
+# are left as zero padding, which is safe since the firmware reads
+# header_length to locate child MHODs.
+MHIT_HEADER_SIZE = 0x270  # 624 bytes
 
 
 def write_mhit(track: TrackInfo, track_id: int, id_0x24: int = 0,

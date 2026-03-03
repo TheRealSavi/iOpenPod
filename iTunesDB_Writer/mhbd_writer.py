@@ -323,36 +323,63 @@ def write_mhbd(
     mhsd_smart = write_mhsd_smart_playlists(mhlp_smart)
 
     # Concatenate all datasets
-    # Order MUST match libgpod: Type 1, 3, 2, 4, 8, 6, 10, 5
-    # (tracks, podcasts, playlists, albums, artists, empty6, empty10, smart playlists)
     #
-    # This ordering is critical for iPod firmware compatibility:
+    # Default order matches libgpod: Type 1, 3, 2, 4, 8, 6, 10, 5
     #   - Type 3 MUST appear between types 1 and 2 for podcast support
-    #     (documented on iPodLinux wiki and in libgpod source)
     #   - Type 1 MUST be first — older iPod firmware (Video 5G, Nano 1G-2G)
-    #     may assume dataset[0] is the track list.  Placing type 4 (albums)
-    #     first causes the firmware to fail to load any tracks.
-    #   - Types 8, 6, 10 come between albums (4) and smart playlists (5),
-    #     matching libgpod's write_mhsd_artists / empty stub order.
-    #   - Type 6 and 10 are empty MHLT stubs (per libgpod).
+    #     may assume dataset[0] is the track list.
+    #   - Types 8, 6, 10 come between albums (4) and smart playlists (5).
+    #
+    # When a reference database is available, we match its exact dataset
+    # types.  For example, iTunes on Nano 6G writes only [4,8,1,3,5]
+    # (no playlist type 2 or empty stubs 6/10).  Including types the
+    # firmware doesn't expect can cause it to reject or mis-parse the
+    # database.  We still keep the libgpod order to stay compatible
+    # with devices where no reference is available.
+
+    # Determine which MHSD types the reference database uses (if any)
+    ref_types: set[int] | None = None
+    if reference_info and 'mhsd_types' in reference_info:
+        rt = reference_info['mhsd_types']
+        # Only use ref_types if extraction found meaningful data (at least type 1)
+        if rt and 1 in rt:
+            ref_types = rt
+        logger.debug("Reference MHSD types: %s", sorted(ref_types) if ref_types else "none (fallback to all)")
+
+    # Build the candidate datasets in priority order
+    # Each entry: (type_number, data_bytes, required_flag)
     mhsd_empty_6 = write_mhsd_empty_stub(MHSD_TYPE_EMPTY_6)
     mhsd_empty_10 = write_mhsd_empty_stub(MHSD_TYPE_EMPTY_10)
 
-    all_datasets = (
-        mhsd_tracks
-        + mhsd_podcasts
-        + mhsd_playlists
-        + mhsd_albums
-        + mhsd_artists
-        + mhsd_empty_6
-        + mhsd_empty_10
-        + mhsd_smart
-    )
+    # When ref_types is available, only include types that are present in it.
+    # Otherwise, include all types (libgpod-compatible default).
+    def _include(dtype: int, required: bool = False) -> bool:
+        if required:
+            return True
+        if ref_types is None:
+            return True  # no reference → include everything
+        return dtype in ref_types
 
-    # Number of child datasets
-    # Base: 1(tracks) + 2(playlists) + 4(albums) + 8(artists) + 6(stub) + 10(stub) + 5(smart) = 7
-    # Plus optional type 3 (podcasts) = 8
-    child_count = 8 if include_podcasts else 7
+    # Assemble datasets in libgpod order, skipping those not in the reference
+    dataset_entries: list[tuple[int, bytes]] = []
+    dataset_entries.append((1, mhsd_tracks))  # always required
+    if include_podcasts and _include(3):
+        dataset_entries.append((3, mhsd_podcasts))
+    if _include(2):
+        dataset_entries.append((2, mhsd_playlists))
+    dataset_entries.append((4, mhsd_albums))  # always required
+    dataset_entries.append((8, mhsd_artists))  # always required
+    if _include(6):
+        dataset_entries.append((6, mhsd_empty_6))
+    if _include(10):
+        dataset_entries.append((10, mhsd_empty_10))
+    if _include(5):
+        dataset_entries.append((5, mhsd_smart))
+
+    all_datasets = b''.join(data for _, data in dataset_entries)
+    child_count = len(dataset_entries)
+    logger.debug("Writing %d MHSD datasets: %s", child_count,
+                 [t for t, _ in dataset_entries])
 
     # Append preserved MHSD blobs (Genius data, type 9 etc.) from original database.
     # Types 6, 8, 10 are generated above; only types we DON'T generate are preserved.
@@ -383,9 +410,16 @@ def write_mhbd(
     unk_0x0c = 2 if (capabilities and capabilities.supports_compressed_db) else 1
     struct.pack_into('<I', header, 0x0C, unk_0x0c)
 
-    # +0x10: Version — use device-specific db_version when available
-    db_version = capabilities.db_version if capabilities else DATABASE_VERSION_DEFAULT
+    # +0x10: Version — use the highest of reference, device-specific, or default.
+    # The reference version reflects what was actually working on this device
+    # (e.g. iTunes wrote 0x6F on Nano 6G).  We take max() to avoid regressing
+    # when the reference is our own previous (possibly too-low) write.
+    ref_version = reference_info.get('version', 0) if reference_info else 0
+    cap_version = capabilities.db_version if capabilities else 0
+    db_version = max(ref_version, cap_version, DATABASE_VERSION_DEFAULT)
     struct.pack_into('<I', header, 0x10, db_version)
+    logger.debug("Using db_version=0x%X (ref=0x%X, cap=0x%X, default=0x%X)",
+                 db_version, ref_version, cap_version, DATABASE_VERSION_DEFAULT)
 
     # +0x14: Child count (number of MHSDs)
     struct.pack_into('<I', header, 0x14, child_count)
@@ -588,10 +622,30 @@ def write_itunesdb(
     reference_info = None
     source_itdb = reference_itdb or existing_itdb
     if source_itdb and source_itdb[:4] == b'mhbd' and len(source_itdb) >= 244:
+        # Decompress iTunesCDB payload if needed — the MHBD header is always
+        # uncompressed, but MHSD children (needed for type extraction) are
+        # in the zlib-compressed payload.
+        source_itdb_full = source_itdb  # uncompressed view for MHSD parsing
+        hdr_len_ref = struct.unpack('<I', source_itdb[4:8])[0]
+        # Check if unk_0xA8 == 1 (compressed indicator) and payload starts with
+        # zlib header (0x78) — if so, decompress for structural inspection.
+        if (len(source_itdb) > hdr_len_ref + 2
+                and struct.unpack('<H', source_itdb[0xA8:0xAA])[0] == 1
+                and source_itdb[hdr_len_ref] == 0x78):
+            try:
+                import zlib as _zlib
+                decompressed = _zlib.decompress(source_itdb[hdr_len_ref:])
+                source_itdb_full = source_itdb[:hdr_len_ref] + decompressed
+                logger.debug("Decompressed reference iTunesCDB for structural inspection: "
+                             "%d → %d bytes", len(source_itdb), len(source_itdb_full))
+            except Exception as e:
+                logger.debug("Could not decompress reference CDB: %s", e)
+
         try:
             # Create a temp file to use extract_db_info or manually extract
             reference_info = {
                 'db_id': struct.unpack('<Q', source_itdb[0x18:0x20])[0],
+                'version': struct.unpack('<I', source_itdb[0x10:0x14])[0],
                 'platform': struct.unpack('<H', source_itdb[0x20:0x22])[0],
                 'unk_0x22': struct.unpack('<H', source_itdb[0x22:0x24])[0],
                 'id_0x24': struct.unpack('<Q', source_itdb[0x24:0x2C])[0],
@@ -608,8 +662,48 @@ def write_itunesdb(
                 'unk_0xa6': struct.unpack('<H', source_itdb[0xA6:0xA8])[0],
                 'unk_0xa8': struct.unpack('<H', source_itdb[0xA8:0xAA])[0],
             }
-            logger.debug("Using reference database fields: id_0x24=%016X, lib_pid=%016X",
-                         reference_info['id_0x24'], reference_info['lib_persistent_id'])
+            # Extract reference MHSD types to match dataset structure
+            # Use the decompressed view so we can see the MHSD children
+            ref_mhsd_types: set[int] = set()
+            ref_hdr_len = struct.unpack('<I', source_itdb_full[4:8])[0]
+            ref_cc = struct.unpack('<I', source_itdb_full[0x14:0x18])[0]
+            ref_off = ref_hdr_len
+            for _i in range(ref_cc):
+                if ref_off + 16 > len(source_itdb_full):
+                    break
+                if source_itdb_full[ref_off:ref_off + 4] != b'mhsd':
+                    break
+                ref_mhsd_type = struct.unpack('<I', source_itdb_full[ref_off + 12:ref_off + 16])[0]
+                ref_mhsd_types.add(ref_mhsd_type)
+                ref_mhsd_total = struct.unpack('<I', source_itdb_full[ref_off + 8:ref_off + 12])[0]
+                ref_off += ref_mhsd_total
+            reference_info['mhsd_types'] = ref_mhsd_types
+
+            # Extract reference MHIT header size for matching
+            for _i in range(ref_cc):
+                _off = ref_hdr_len
+                for _j in range(ref_cc):
+                    if _off + 16 > len(source_itdb_full):
+                        break
+                    _stotal = struct.unpack('<I', source_itdb_full[_off + 8:_off + 12])[0]
+                    _dtype = struct.unpack('<I', source_itdb_full[_off + 12:_off + 16])[0]
+                    if _dtype == 1:  # tracks dataset
+                        _mhlt_off = _off + struct.unpack('<I', source_itdb_full[_off + 4:_off + 8])[0]
+                        _mhlt_hdr = struct.unpack('<I', source_itdb_full[_mhlt_off + 4:_mhlt_off + 8])[0]
+                        _tc = struct.unpack('<I', source_itdb_full[_mhlt_off + 8:_mhlt_off + 12])[0]
+                        if _tc > 0:
+                            _mhit_off = _mhlt_off + _mhlt_hdr
+                            reference_info['mhit_header_size'] = struct.unpack('<I', source_itdb_full[_mhit_off + 4:_mhit_off + 8])[0]
+                        break
+                    _off += _stotal
+                break  # only one pass needed
+
+            logger.debug("Using reference database fields: id_0x24=%016X, lib_pid=%016X, "
+                         "version=0x%X, mhsd_types=%s, mhit_hdr=%s",
+                         reference_info['id_0x24'], reference_info['lib_persistent_id'],
+                         reference_info.get('version', 0),
+                         sorted(ref_mhsd_types),
+                         hex(reference_info.get('mhit_header_size', 0)))
         except Exception as e:
             logger.warning("Could not extract reference info: %s", e)
             reference_info = None
