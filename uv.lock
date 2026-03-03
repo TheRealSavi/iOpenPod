@@ -3,26 +3,20 @@ revision = 3
 requires-python = ">=3.13"
 
 [[package]]
-name = "dearpygui"
-version = "2.1.1"
+name = "certifi"
+version = "2026.2.25"
 source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/af/2d/7bf41579a8986e348fa033a31cdd0e4121114f6bce2457e8876010b092dd/certifi-2026.2.25.tar.gz", hash = "sha256:e887ab5cee78ea814d3472169153c2d12cd43b14bd03329a39a9c6e2e80bfba7", size = 155029, upload-time = "2026-02-25T02:54:17.342Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/68/3d/69e1204f84e7153b52483c48f28bbc5d6a3996dca5de1a1d5e4904059b6b/dearpygui-2.1.1-cp313-cp313-macosx_10_6_x86_64.whl", hash = "sha256:5bab324eb6d61213e74a1937b501eff8ca713e7478d5bd6465b6456921194ca0", size = 2101382, upload-time = "2025-11-14T14:47:40.666Z" },
-    { url = "https://files.pythonhosted.org/packages/3c/79/f28074174bd4ea2193213fcc099fa576568129ad805fc51a066f8502dedc/dearpygui-2.1.1-cp313-cp313-macosx_13_0_arm64.whl", hash = "sha256:958a794ed9c622842c70d80548fa943162f8b9f56c27f9a9a32eff5beef10945", size = 1895619, upload-time = "2025-11-14T14:47:49.231Z" },
-    { url = "https://files.pythonhosted.org/packages/0c/46/afdbc98c35b1bb6bcac815489955c1a891dc44c5b6a00ac859cc11bd0ff5/dearpygui-2.1.1-cp313-cp313-manylinux1_x86_64.whl", hash = "sha256:ce692d9531d797cf31c85439e774d27fa67c5918e21e7e18d64987d1cb65ff2c", size = 2641406, upload-time = "2025-11-14T14:47:56.269Z" },
-    { url = "https://files.pythonhosted.org/packages/6b/3a/5a71ab350e580cf88e1669f2d27bdc698df7bcda665edc459a9fe217234d/dearpygui-2.1.1-cp313-cp313-win_amd64.whl", hash = "sha256:0901c6ba9c717599df9469576184ca851de6cde242b2d9f9ab10bc35a7219656", size = 1808916, upload-time = "2025-11-14T14:47:30.363Z" },
-    { url = "https://files.pythonhosted.org/packages/2c/bd/d41500cae7d4b204f4474df1953a1735a7be232711fa33692fe176a88824/dearpygui-2.1.1-cp314-cp314-macosx_10_6_x86_64.whl", hash = "sha256:6d8f807ea0c75d64407926db442255b609c6883dfcc85559acfd8f66569f7d61", size = 2101737, upload-time = "2025-11-14T14:47:41.67Z" },
-    { url = "https://files.pythonhosted.org/packages/97/52/00cd59bf2cca1f76dff39370fd47dffe0cd116639e9a957bbf7dbedea369/dearpygui-2.1.1-cp314-cp314-macosx_13_0_arm64.whl", hash = "sha256:16cba0c621914c28abc056940143900677d964c60fe2432aeb45c4054cb84adc", size = 1895685, upload-time = "2025-11-14T14:47:50.303Z" },
-    { url = "https://files.pythonhosted.org/packages/62/f8/305f9edc94601924f399d8381509763b3398300b012389ff4d1ebcdbdb9b/dearpygui-2.1.1-cp314-cp314-manylinux1_x86_64.whl", hash = "sha256:8a71dfb779772cd36b56858c15e333fb2487fb19a9319d796896cb0cd0efcd2c", size = 2641463, upload-time = "2025-11-14T14:47:57.792Z" },
-    { url = "https://files.pythonhosted.org/packages/25/d5/1780c1165c435afe4b35aa664ae48881101bdb32476efeae5588d520bcb2/dearpygui-2.1.1-cp314-cp314-win_amd64.whl", hash = "sha256:7c719adbc382f688c84c576e8d752cfe861b41b9d83ed1fd065e20944c11afbf", size = 1866074, upload-time = "2025-11-14T14:47:31.897Z" },
+    { url = "https://files.pythonhosted.org/packages/9a/3c/c17fb3ca2d9c3acff52e30b309f538586f9f5b9c9cf454f3845fc9af4881/certifi-2026.2.25-py3-none-any.whl", hash = "sha256:027692e4402ad994f1c42e52a4997a9763c646b73e4096e4d5d6db8af1d6f0fa", size = 153684, upload-time = "2026-02-25T02:54:15.766Z" },
 ]
 
 [[package]]
 name = "iopenpod"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
-    { name = "dearpygui" },
+    { name = "certifi" },
     { name = "mutagen" },
     { name = "numpy" },
     { name = "pillow" },
@@ -34,7 +28,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "dearpygui", specifier = ">=2.0.0,<3.0.0" },
+    { name = "certifi", specifier = ">=2024.0.0" },
     { name = "mutagen", specifier = ">=1.47.0,<2.0.0" },
     { name = "numpy", specifier = ">=2.3.0,<3.0.0" },
     { name = "pillow", specifier = ">=11.2.1,<12.0.0" },

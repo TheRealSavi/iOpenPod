@@ -37,7 +37,7 @@ python main.py
 **Manual pip install (if the above fails):**
 
 ```bash
-pip install PyQt6 numpy Pillow pycryptodome mutagen pyusb wasmtime dearpygui
+pip install PyQt6 numpy Pillow pycryptodome mutagen pyusb wasmtime certifi
 python main.py
 ```
 

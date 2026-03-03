@@ -27,7 +27,6 @@ classifiers = [
     "Topic :: Multimedia :: Sound/Audio :: Players",
 ]
 dependencies = [
-    "dearpygui>=2.0.0,<3.0.0",
     "pyqt6>=6.9.1,<7.0.0",
     "numpy>=2.3.0,<3.0.0",
     "pillow>=11.2.1,<12.0.0",
@@ -35,7 +34,11 @@ dependencies = [
     "mutagen>=1.47.0,<2.0.0",
     "pyusb>=1.3.1",
     "wasmtime>=30.0.0",
+    "certifi>=2024.0.0",
 ]
+
+[project.scripts]
+iopenpod = "main:main"
 
 [dependency-groups]
 dev = []

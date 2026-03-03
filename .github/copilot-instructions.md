@@ -494,7 +494,7 @@ uv run python main.py  # Launch PyQt6 GUI
 ```
 
 ### Dependencies
-PyQt6, NumPy, Pillow, DearPyGui (see `pyproject.toml`). Uses **uv** for dependency management.
+PyQt6, NumPy, Pillow (see `pyproject.toml`). Uses **uv** for dependency management.
 
 ### Test Data
 Parsers expect iPod database files. JSON outputs (`idb.json`, `artdb.json`) should be in the project root. Artwork `.ithmb` files go in `testData/Artwork/`. Paths are computed relative to project root in `GUI/app.py`.
