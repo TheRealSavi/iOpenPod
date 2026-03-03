@@ -490,6 +490,16 @@ class SettingsPage(QWidget):
         )
         layout.addWidget(self.write_back)
 
+        self.rating_strategy = ComboRow(
+            "Rating Conflict Strategy",
+            "How to resolve rating conflicts when iPod and PC ratings differ. "
+            "iPod/PC Wins uses that source (falling back to the other if zero). "
+            "Highest/Lowest picks the max/min non-zero value. Average rounds to the nearest star.",
+            options=["iPod Wins", "PC Wins", "Highest", "Lowest", "Average"],
+            current="iPod Wins",
+        )
+        layout.addWidget(self.rating_strategy)
+
         # ── TRANSCODING section ─────────────────────────────────────────────
         layout.addWidget(self._section_label("TRANSCODING"))
 
@@ -502,13 +512,22 @@ class SettingsPage(QWidget):
         )
         layout.addWidget(self.aac_bitrate)
 
-        self.transcode_timeout = ComboRow(
-            "Transcode Timeout",
-            "Maximum time to wait for FFmpeg per file. Increase for large FLAC files on slower machines.",
-            options=["2 minutes", "5 minutes", "10 minutes", "30 minutes"],
-            current="5 minutes",
+        self.video_crf = ComboRow(
+            "Video Quality (CRF)",
+            "Quality level for H.264 video transcodes. Lower CRF = better quality but larger files. "
+            "Resolution and codec are always forced to iPod-compatible values.",
+            options=["18 (High)", "20 (Good)", "23 (Balanced)", "26 (Low)", "28 (Very Low)"],
+            current="23 (Balanced)",
         )
-        layout.addWidget(self.transcode_timeout)
+        layout.addWidget(self.video_crf)
+
+        self.video_preset = ComboRow(
+            "Video Encode Speed",
+            "Slower presets produce slightly better quality at the same CRF, but take much longer.",
+            options=["ultrafast", "veryfast", "fast", "medium", "slow"],
+            current="fast",
+        )
+        layout.addWidget(self.video_preset)
 
         self.sync_workers = ComboRow(
             "Parallel Workers",
@@ -546,6 +565,13 @@ class SettingsPage(QWidget):
         )
         layout.addWidget(self.settings_dir)
 
+        self.log_dir = FolderRow(
+            "Log Location",
+            "Where iOpenPod writes log files and crash reports. "
+            "Leave empty for the platform default. Takes effect on next launch.",
+        )
+        layout.addWidget(self.log_dir)
+
         self.reset_cache_dir_btn = QPushButton("Reset to Default")
         self.reset_cache_dir_btn.setFont(QFont(FONT_FAMILY, 9))
         self.reset_cache_dir_btn.setFixedWidth(130)
@@ -558,7 +584,7 @@ class SettingsPage(QWidget):
             border=f"1px solid {Colors.BORDER}",
             padding="4px 8px",
         ))
-        self.reset_cache_dir_btn.setToolTip("Clear both custom paths and use platform defaults")
+        self.reset_cache_dir_btn.setToolTip("Clear all custom paths and use platform defaults")
         self.reset_cache_dir_btn.clicked.connect(self._reset_storage_defaults)
         layout.addWidget(self.reset_cache_dir_btn, alignment=Qt.AlignmentFlag.AlignRight)
 
@@ -606,9 +632,21 @@ class SettingsPage(QWidget):
 
         self.music_folder.value = s.music_folder
         self.write_back.value = s.write_back_to_pc
+
+        # Rating conflict strategy
+        strategy_display = {
+            "ipod_wins": "iPod Wins", "pc_wins": "PC Wins",
+            "highest": "Highest", "lowest": "Lowest", "average": "Average",
+        }
+        rs_text = strategy_display.get(s.rating_conflict_strategy, "iPod Wins")
+        idx = self.rating_strategy.combo.findText(rs_text)
+        if idx >= 0:
+            self.rating_strategy.combo.setCurrentIndex(idx)
+
         self.show_art.value = s.show_art_in_tracklist
         self.transcode_cache_dir.value = s.transcode_cache_dir
         self.settings_dir.value = s.settings_dir
+        self.log_dir.value = s.log_dir
         self.ffmpeg_path.value = s.ffmpeg_path
         self.fpcalc_path.value = s.fpcalc_path
 
@@ -632,12 +670,17 @@ class SettingsPage(QWidget):
         if idx >= 0:
             self.aac_bitrate.combo.setCurrentIndex(idx)
 
-        # Transcode timeout → combo text
-        timeout_map = {120: "2 minutes", 300: "5 minutes", 600: "10 minutes", 1800: "30 minutes"}
-        tt_text = timeout_map.get(s.transcode_timeout, "5 minutes")
-        idx = self.transcode_timeout.combo.findText(tt_text)
+        # Video CRF → combo text
+        crf_map = {18: "18 (High)", 20: "20 (Good)", 23: "23 (Balanced)", 26: "26 (Low)", 28: "28 (Very Low)"}
+        crf_text = crf_map.get(s.video_crf, "23 (Balanced)")
+        idx = self.video_crf.combo.findText(crf_text)
         if idx >= 0:
-            self.transcode_timeout.combo.setCurrentIndex(idx)
+            self.video_crf.combo.setCurrentIndex(idx)
+
+        # Video preset → combo text
+        idx = self.video_preset.combo.findText(s.video_preset)
+        if idx >= 0:
+            self.video_preset.combo.setCurrentIndex(idx)
 
         # Sync workers → combo text
         workers_map = {0: "Auto", 1: "1", 2: "2", 4: "4", 6: "6", 8: "8"}
@@ -651,12 +694,15 @@ class SettingsPage(QWidget):
             self._signals_connected = True
             self.music_folder.changed.connect(self._save)
             self.write_back.changed.connect(self._save)
+            self.rating_strategy.changed.connect(self._save)
             self.aac_bitrate.changed.connect(self._save)
-            self.transcode_timeout.changed.connect(self._save)
+            self.video_crf.changed.connect(self._save)
+            self.video_preset.changed.connect(self._save)
             self.sync_workers.changed.connect(self._save)
             self.show_art.changed.connect(self._save)
             self.transcode_cache_dir.changed.connect(self._save)
             self.settings_dir.changed.connect(self._save)
+            self.log_dir.changed.connect(self._save)
             self.ffmpeg_path.changed.connect(self._save_and_refresh_tools)
             self.fpcalc_path.changed.connect(self._save_and_refresh_tools)
             self.backup_dir.changed.connect(self._save)
@@ -670,9 +716,18 @@ class SettingsPage(QWidget):
 
         s.music_folder = self.music_folder.value
         s.write_back_to_pc = self.write_back.value
+
+        # Rating conflict strategy
+        strategy_keys = {
+            "iPod Wins": "ipod_wins", "PC Wins": "pc_wins",
+            "Highest": "highest", "Lowest": "lowest", "Average": "average",
+        }
+        s.rating_conflict_strategy = strategy_keys.get(self.rating_strategy.value, "ipod_wins")
+
         s.show_art_in_tracklist = self.show_art.value
         s.transcode_cache_dir = self.transcode_cache_dir.value
         s.settings_dir = self.settings_dir.value
+        s.log_dir = self.log_dir.value
         s.ffmpeg_path = self.ffmpeg_path.value
         s.fpcalc_path = self.fpcalc_path.value
         s.backup_dir = self.backup_dir.value
@@ -686,10 +741,15 @@ class SettingsPage(QWidget):
         br_text = self.aac_bitrate.value
         s.aac_bitrate = int(br_text.split()[0]) if br_text else 256
 
-        # Parse timeout
-        tt_text = self.transcode_timeout.value
-        timeout_values = {"2 minutes": 120, "5 minutes": 300, "10 minutes": 600, "30 minutes": 1800}
-        s.transcode_timeout = timeout_values.get(tt_text, 300)
+        # Parse video CRF (extract leading integer)
+        crf_text = self.video_crf.value
+        try:
+            s.video_crf = int(crf_text.split()[0])
+        except (ValueError, IndexError):
+            s.video_crf = 23
+
+        # Video preset (stored as-is)
+        s.video_preset = self.video_preset.value or "fast"
 
         # Parse sync workers
         sw_text = self.sync_workers.value
@@ -701,6 +761,7 @@ class SettingsPage(QWidget):
         """Clear custom storage paths and revert to platform defaults."""
         self.transcode_cache_dir.value = ""
         self.settings_dir.value = ""
+        self.log_dir.value = ""
         self.backup_dir.value = ""
         self._save()
 

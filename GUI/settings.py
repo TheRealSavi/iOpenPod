@@ -16,7 +16,7 @@ import json
 import threading
 import os
 import sys
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from typing import Optional
 
 
@@ -72,6 +72,9 @@ class AppSettings:
     # Custom transcode cache directory (empty = ~/.iopenpod/transcode_cache).
     transcode_cache_dir: str = ""
 
+    # Custom log directory (empty = platform default log location).
+    log_dir: str = ""
+
     # ── Sync ────────────────────────────────────────────────────────────────
     # Default PC music folder for sync (remembered between sessions)
     music_folder: str = ""
@@ -79,6 +82,10 @@ class AppSettings:
     # Write play counts and ratings back to PC source files after sync.
     # Off by default — users must opt in to having source files modified.
     write_back_to_pc: bool = False
+
+    # Rating conflict strategy when iPod and PC ratings differ.
+    # Options: ipod_wins, pc_wins, highest, lowest, average.
+    rating_conflict_strategy: str = "ipod_wins"
 
     # ── External Tools ────────────────────────────────────────────────────
     # Custom path to ffmpeg binary. Empty = auto-detect (bundled → system PATH).
@@ -92,8 +99,13 @@ class AppSettings:
     # Common values: 128, 192, 256, 320. Higher = better quality, more space.
     aac_bitrate: int = 256
 
-    # FFmpeg timeout in seconds per file.
-    transcode_timeout: int = 300
+    # Video quality (CRF) for H.264 transcodes. Lower = better quality.
+    # 18=high, 20=good, 23=balanced, 26=low, 28=very low.
+    video_crf: int = 23
+
+    # x264 encode speed preset for video transcodes.
+    # Slower presets produce better quality at the same CRF.
+    video_preset: str = "fast"
 
     # Number of parallel transcode/copy workers.
     # 0 = auto (CPU count), 1 = sequential (legacy behaviour).
@@ -106,6 +118,14 @@ class AppSettings:
     # ── Appearance ──────────────────────────────────────────────────────────
     # Show album art in the track list view
     show_art_in_tracklist: bool = True
+
+    # Remembered window dimensions (not exposed in settings UI).
+    window_width: int = 1280
+    window_height: int = 720
+
+    # Remembered splitter sizes for grid/track split (not exposed in UI).
+    # Empty list = use default 60/40 split.
+    splitter_sizes: list = field(default_factory=list)
 
     # ── Backups ─────────────────────────────────────────────────────────────
     # Custom backup directory (empty = ~/iOpenPod_Backups/).

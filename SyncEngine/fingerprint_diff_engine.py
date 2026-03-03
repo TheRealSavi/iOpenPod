@@ -617,14 +617,31 @@ class FingerprintDiffEngine:
                     description=desc,
                 ))
 
-            # Rating: last-write-wins
+            # Rating: resolve conflicts using configured strategy
             ipod_rating = ipod_track.get("rating", 0)
             pc_rating = pc_track.rating or 0
             if ipod_rating != pc_rating and (ipod_rating > 0 or pc_rating > 0):
-                # Determine winner: whichever was modified more recently
-                # Since we can't track rating mtime reliably, use iPod as winner
-                # (user most recently used the device)
-                new_rating = ipod_rating if ipod_rating > 0 else pc_rating
+                # Read user's preferred conflict strategy
+                try:
+                    from GUI.settings import get_settings
+                    strategy = get_settings().rating_conflict_strategy
+                except Exception:
+                    strategy = "ipod_wins"
+
+                if strategy == "pc_wins":
+                    new_rating = pc_rating if pc_rating > 0 else ipod_rating
+                elif strategy == "highest":
+                    new_rating = max(ipod_rating, pc_rating)
+                elif strategy == "lowest":
+                    non_zero = [r for r in (ipod_rating, pc_rating) if r > 0]
+                    new_rating = min(non_zero) if non_zero else 0
+                elif strategy == "average":
+                    avg = (ipod_rating + pc_rating) / 2
+                    new_rating = round(avg / 20) * 20  # snap to nearest star step
+                    new_rating = max(0, min(100, new_rating))
+                else:  # ipod_wins (default)
+                    new_rating = ipod_rating if ipod_rating > 0 else pc_rating
+
                 plan.to_sync_rating.append(SyncItem(
                     action=SyncAction.SYNC_RATING,
                     fingerprint=fp,

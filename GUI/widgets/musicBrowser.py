@@ -86,8 +86,19 @@ class MusicBrowser(QFrame):
             }}
         """)
 
-        # Set initial sizes (60% grid, 40% tracks)
-        self.gridTrackSplitter.setSizes([600, 400])
+        # Set initial sizes (60% grid, 40% tracks) or restore from settings
+        try:
+            from ..settings import get_settings
+            saved = get_settings().splitter_sizes
+            if isinstance(saved, list) and len(saved) == 2:
+                self.gridTrackSplitter.setSizes([int(saved[0]), int(saved[1])])
+            else:
+                self.gridTrackSplitter.setSizes([600, 400])
+        except Exception:
+            self.gridTrackSplitter.setSizes([600, 400])
+
+        # Persist splitter position on change
+        self.gridTrackSplitter.splitterMoved.connect(self._save_splitter_sizes)
 
         # Playlist browser (shown when Playlists category is active)
         self.playlistBrowser = PlaylistBrowser()
@@ -105,6 +116,16 @@ class MusicBrowser(QFrame):
         self.browserTrack.clearTable()
         self.playlistBrowser.clear()
         # Data will be loaded when cache emits data_ready
+
+    def _save_splitter_sizes(self):
+        """Persist the current splitter sizes to settings."""
+        try:
+            from ..settings import get_settings
+            s = get_settings()
+            s.splitter_sizes = list(self.gridTrackSplitter.sizes())
+            s.save()
+        except Exception:
+            pass
 
     def onDataReady(self):
         """Called when iTunesDB cache is loaded. Refresh current view."""

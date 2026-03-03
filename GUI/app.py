@@ -984,7 +984,11 @@ class MainWindow(QMainWindow):
         super().__init__()
 
         self.setWindowTitle("iOpenPod")
-        self.setGeometry(100, 100, 1280, 720)
+
+        # Restore remembered window size (position is left to the OS)
+        from GUI.settings import get_settings as _get_settings
+        _s = _get_settings()
+        self.resize(_s.window_width, _s.window_height)
 
         # Central widget with stacked layout for main/sync views
         self.centralStack = QStackedWidget()
@@ -1666,6 +1670,16 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, a0):
         """Ensure all threads are stopped when the window is closed."""
+        # Persist window dimensions
+        try:
+            from GUI.settings import get_settings as _get_settings
+            _s = _get_settings()
+            _s.window_width = self.width()
+            _s.window_height = self.height()
+            _s.save()
+        except Exception:
+            pass
+
         # Clean up system tray notification icon
         Notifier.shutdown()
 
