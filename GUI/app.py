@@ -1335,7 +1335,7 @@ class MainWindow(QMainWindow):
         logger.info("Renaming iPod to '%s'", new_name)
 
         # Write the full database to persist the rename
-        self._rename_worker = _DeviceRenameWorker(device.device_path)
+        self._rename_worker = _DeviceRenameWorker(device.device_path, new_name)
         self._rename_worker.finished_ok.connect(self._onRenameDone)
         self._rename_worker.failed.connect(self._onRenameFailed)
         self._rename_worker.start()
@@ -1734,9 +1734,10 @@ class _DeviceRenameWorker(QThread):
     finished_ok = pyqtSignal()
     failed = pyqtSignal(str)
 
-    def __init__(self, ipod_path: str):
+    def __init__(self, ipod_path: str, new_name: str):
         super().__init__()
         self._ipod_path = ipod_path
+        self._new_name = new_name
 
     def run(self):
         try:
@@ -1752,15 +1753,17 @@ class _DeviceRenameWorker(QThread):
                 executor._track_dict_to_info(t) for t in existing_tracks_data
             ]
 
-            playlists, smart_playlists = executor._build_and_evaluate_playlists(
+            _master_name, playlists, smart_playlists = executor._build_and_evaluate_playlists(
                 existing_tracks_data, all_tracks,
                 existing_playlists_raw, existing_smart_raw,
             )
 
+            # Use the explicitly requested name, NOT the one read from disk.
             success = executor._write_database(
                 all_tracks,
                 playlists=playlists,
                 smart_playlists=smart_playlists,
+                master_playlist_name=self._new_name,
             )
 
             if success:

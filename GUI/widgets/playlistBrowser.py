@@ -1224,7 +1224,7 @@ class _PlaylistWriteWorker(QThread):
                 pass
 
             # Build and evaluate all playlists
-            playlists, smart_playlists = executor._build_and_evaluate_playlists(
+            _master_name, playlists, smart_playlists = executor._build_and_evaluate_playlists(
                 existing_tracks_data, all_tracks,
                 existing_playlists_raw, existing_smart_raw,
             )
@@ -1246,6 +1246,7 @@ class _PlaylistWriteWorker(QThread):
                 all_tracks,
                 playlists=playlists,
                 smart_playlists=smart_playlists,
+                master_playlist_name=_master_name,
             )
 
             if success:
@@ -1338,7 +1339,7 @@ class _PlaylistDeleteWorker(QThread):
                 pass
 
             # Build and evaluate all playlists
-            playlists, smart_playlists = executor._build_and_evaluate_playlists(
+            master_name, playlists, smart_playlists = executor._build_and_evaluate_playlists(
                 existing_tracks_data, all_tracks,
                 existing_playlists_raw, existing_smart_raw,
             )
@@ -1348,6 +1349,7 @@ class _PlaylistDeleteWorker(QThread):
                 all_tracks,
                 playlists=playlists,
                 smart_playlists=smart_playlists,
+                master_playlist_name=master_name,
             )
 
             if success:

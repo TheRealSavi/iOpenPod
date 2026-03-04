@@ -24,6 +24,21 @@ Both parsers follow the **same recursive chunk-based pattern**:
 2. JSON → GUI loads via `AlbumLoaderThread`/`TrackLoaderThread` workers
 3. Artwork: `mhiiLink` in track data references `imgId` in ArtworkDB → `.ithmb` file offset
 
+### SQLite Database Writer (`SQLiteDB_Writer/`)
+iPod Nano 6G/7G ignore binary iTunesCDB and read from SQLite databases in
+`/iPod_Control/iTunes/iTunes Library.itlp/`.
+
+- `sqlite_writer.py` — Orchestrates writing all 5 databases + cbk checksum
+- `library_writer.py` — Library.itdb (tracks, albums, artists, composers, playlists, genres, avformat_info)
+- `locations_writer.py` — Locations.itdb (file path mappings: item_pid → Fxx/filename)
+- `dynamic_writer.py` — Dynamic.itdb (play counts, ratings, bookmarks)
+- `extras_writer.py` — Extras.itdb (lyrics, chapters)
+- `genius_writer.py` — Genius.itdb (empty tables)
+- `cbk_writer.py` — Locations.itdb.cbk (HASHAB-signed SHA1 block checksums)
+
+Activated when `DeviceCapabilities.uses_sqlite_db` is True (Nano 6G/7G only).
+Timestamps use Core Data epoch (seconds since 2001-01-01, adjusted for timezone).
+
 ## iPod Database Format Reference
 
 ### File Locations on iPod
@@ -334,6 +349,38 @@ def read_sysinfo(ipod_path: str) -> dict:
 # firewire_id = bytes.fromhex(sysinfo.get("FirewireGuid", ""))
 ```
 
+### macOS Auto-Management Protection
+
+On macOS Catalina+ (10.15+), Finder and Apple Music replace iTunes for iPod
+management.  These processes detect connected iPods and may **silently overwrite
+the iTunesDB** if they believe they "own" the device.  Symptoms include the
+library being wiped and the iPod name reverting to a default like "AudioBook".
+
+**Three defences are required** (all implemented):
+
+1. **MHBD `platform` field (offset 0x20)**: ALWAYS write `2` (Windows).
+   If set to `1` (Mac), Finder claims ownership of the iPod.  Since the
+   `lib_persistent_id` won't match an Apple Music library, Finder reinitialises
+   the database.  Setting `2` makes macOS treat the device as "synced with
+   another library" — it shows a dialog instead of silently overwriting.
+   The iPod firmware does **not** check this field.
+
+2. **MHBD `lib_persistent_id` (offset 0x48)**: Must match the
+   `library_link_id` written to iTunesPrefs by `protect_from_itunes()`.
+   Both use `generate_library_id()` — a deterministic 8-byte SHA-256 hash of
+   `"iOpenPod:{hostname}"`.  This ensures the MHBD header and iTunesPrefs
+   agree on which library synced the iPod, preventing macOS from detecting a
+   mismatch and deciding to take ownership.  **Never preserve the old
+   `lib_persistent_id` from a reference database** — it may match an Apple
+   Music library on the user's Mac.
+
+3. **iTunesPrefs binary protection** (`protect_from_itunes()`):
+   - `sync_mode` = Manual (byte 10 = 0x00)
+   - `auto_open` = OFF (byte 9 = 0x00)
+   - `setup_done` = TRUE (byte 8 = 0x01)
+   - `enable_disk_use` = TRUE (byte 31 = 0x01)
+   - Sync history entry with current username@hostname (offset 384+)
+
 ## Key Conventions
 
 ### Device Capabilities (`ipod_models.py`)
@@ -346,6 +393,7 @@ writing device-specific data.**
 | `checksum` | Hash algorithm for mhbd signing |
 | `is_shuffle` / `shadow_db_version` | Whether to write iTunesSD (v1 or v2) |
 | `supports_compressed_db` | Write iTunesCDB (zlib) instead of raw iTunesDB |
+| `uses_sqlite_db` | Write SQLite databases to `iTunes Library.itlp/` (Nano 6G/7G) |
 | `supports_video` | Allow video mediatype tracks |
 | `supports_podcast` | Include mhsd type 3 (podcast list) |
 | `supports_gapless` | Populate pregap/postgap/samplecount in mhit |
@@ -357,23 +405,23 @@ writing device-specific data.**
 
 Quick reference per generation family:
 
-| Family | Gens | Checksum | Video | Gapless | Artwork | Compressed DB | Shuffle |
-|--------|------|----------|-------|---------|---------|---------------|---------|
-| iPod | 1G–3G | NONE | No | No | No | No | No |
-| iPod | 4G | NONE | No | No | No | No | No |
-| iPod Photo | 4G | NONE | No | No | 56+140 | No | No |
-| iPod Video | 5G | NONE | Yes | No | 100+200 | No | No |
-| iPod Video | 5.5G | NONE | Yes | Yes | 100+200 | No | No |
-| iPod Classic | 1G–3G | HASH58 | Yes | Yes | 56+128+320 | No | No |
-| iPod Mini | 1G–2G | NONE | No | No | No | No | No |
-| iPod Nano | 1G–2G | NONE | No | No | 42+100 | No | No |
-| iPod Nano | 3G | HASH58 | Yes | Yes | 56+128+320 | No | No |
-| iPod Nano | 4G | HASH58 | Yes | Yes | 50+80+240 | No | No |
-| iPod Nano | 5G | HASH72 | Yes | Yes | 50+80+128+240 | Yes | No |
-| iPod Nano | 6G | HASHAB | No | Yes | 50+58+88+240 | Yes | No |
-| iPod Nano | 7G | HASHAB | Yes | Yes | 50+58+88+240 | Yes | No |
-| iPod Shuffle | 1G–2G | NONE | No | No | No | No | v1 |
-| iPod Shuffle | 3G–4G | NONE | No | No | No | No | v2 |
+| Family | Gens | Checksum | Video | Gapless | Artwork | Compressed DB | SQLite | Shuffle |
+|--------|------|----------|-------|---------|---------|---------------|--------|---------|
+| iPod | 1G–3G | NONE | No | No | No | No | No | No |
+| iPod | 4G | NONE | No | No | No | No | No | No |
+| iPod Photo | 4G | NONE | No | No | 56+140 | No | No | No |
+| iPod Video | 5G | NONE | Yes | No | 100+200 | No | No | No |
+| iPod Video | 5.5G | NONE | Yes | Yes | 100+200 | No | No | No |
+| iPod Classic | 1G–3G | HASH58 | Yes | Yes | 56+128+320 | No | No | No |
+| iPod Mini | 1G–2G | NONE | No | No | No | No | No | No |
+| iPod Nano | 1G–2G | NONE | No | No | 42+100 | No | No | No |
+| iPod Nano | 3G | HASH58 | Yes | Yes | 56+128+320 | No | No | No |
+| iPod Nano | 4G | HASH58 | Yes | Yes | 50+80+240 | No | No | No |
+| iPod Nano | 5G | HASH72 | Yes | Yes | 50+80+128+240 | Yes | No | No |
+| iPod Nano | 6G | HASHAB | No | Yes | 50+58+88+240 | Yes | Yes | No |
+| iPod Nano | 7G | HASHAB | Yes | Yes | 50+58+88+240 | Yes | Yes | No |
+| iPod Shuffle | 1G–2G | NONE | No | No | No | No | No | v1 |
+| iPod Shuffle | 3G–4G | NONE | No | No | No | No | No | v2 |
 
 ### Binary Parsing
 - Use `struct.unpack("<I", data[offset:offset+4])[0]` for 32-bit LE integers
