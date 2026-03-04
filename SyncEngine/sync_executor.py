@@ -194,6 +194,38 @@ class SyncExecutor:
             except OSError as e:
                 logger.warning(f"Could not check disk space: {e}")
 
+        # ===== Pre-flight: Writability check =====
+        # On Linux the iPod may be auto-mounted read-only (e.g. dirty VFAT,
+        # missing write permissions).  Detect this early and give a clear
+        # error instead of dozens of individual copy failures.
+        if not dry_run:
+            import tempfile
+            import errno
+            probe_dir = self.ipod_path / "iPod_Control" / "iTunes"
+            try:
+                fd, probe_path = tempfile.mkstemp(
+                    prefix=".iOpenPod_write_test_", dir=str(probe_dir)
+                )
+                import os as _os
+                _os.close(fd)
+                _os.unlink(probe_path)
+            except OSError as e:
+                if e.errno in (errno.EROFS, errno.EACCES):
+                    hint = (
+                        "The iPod filesystem is mounted read-only. "
+                        "On Linux, try remounting with write access:\n"
+                        "  sudo mount -o remount,rw /media/…/iPod\n"
+                        "If the filesystem is dirty, run:\n"
+                        "  sudo fsck.vfat -a /dev/sdXN\n"
+                        "then re-mount."
+                    )
+                    logger.error("iPod is read-only: %s", e)
+                    result.errors.append(("read-only", hint))
+                    result.success = False
+                    return result
+                else:
+                    logger.warning("Writability probe failed (non-fatal): %s", e)
+
         # Load existing tracks and playlists from iPod database
         existing_db = self._read_existing_database()
         existing_tracks_data = existing_db["tracks"]

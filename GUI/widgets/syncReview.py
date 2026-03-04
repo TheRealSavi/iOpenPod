@@ -1773,6 +1773,10 @@ class SyncReviewWidget(QWidget):
             self.result_icon.setText("✅")
             self.result_title.setText("Sync Complete")
             self.result_title.setStyleSheet(f"color: {Colors.SUCCESS}; font-size: 18px; font-weight: bold;")
+        elif not success:
+            self.result_icon.setText("❌")
+            self.result_title.setText("Sync Failed")
+            self.result_title.setStyleSheet(f"color: {Colors.DANGER}; font-size: 18px; font-weight: bold;")
         elif errors:
             self.result_icon.setText("⚠️")
             self.result_title.setText("Sync Completed with Errors")
