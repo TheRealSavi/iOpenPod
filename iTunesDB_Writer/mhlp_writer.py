@@ -21,6 +21,7 @@ Cross-referenced against:
 
 from __future__ import annotations
 
+import logging
 import struct
 from typing import List, Optional, TYPE_CHECKING
 
@@ -29,6 +30,8 @@ if TYPE_CHECKING:
     from .mhyp_writer import PlaylistInfo
 
 from .mhyp_writer import write_master_playlist, write_playlist
+
+logger = logging.getLogger(__name__)
 
 
 # MHLP header size - libgpod uses 92 bytes
@@ -124,11 +127,23 @@ def write_mhlp_with_playlists(
     )
     chunks.append(master)
 
-    # User playlists (regular and smart).
-    # Discard any hidden entries — the master is already auto-generated above.
+    # Sanity: strip rogue master flags from dataset-2 user playlists.
+    # Only the auto-generated master above should have master=True.
+    # Dataset 5 built-in categories (mhsd5_type != 0) legitimately
+    # need master=True, so we never touch those — even if they end up
+    # here by accident.
+    for p in playlists:
+        if p.master and not p.mhsd5_type:
+            logger.warning(
+                "Stripped master flag from user playlist '%s' — "
+                "master is auto-generated for dataset 2",
+                p.name,
+            )
+            p.master = False
+
+    # Write all user playlists (regular and smart).
     for pl in playlists:
-        if not pl.hidden:
-            chunks.append(write_playlist(pl, id_0x24=id_0x24))
+        chunks.append(write_playlist(pl, id_0x24=id_0x24))
 
     return write_mhlp(chunks)
 
@@ -143,6 +158,17 @@ def write_mhlp_smart(
     These playlists define iPod built-in browse categories (Music, Movies,
     TV Shows, Audiobooks, Podcasts, Rentals). Each has a mhsd5_type value
     and smart rules that filter by media type.
+
+    **Master flag semantics for dataset 5:**
+    All built-in categories legitimately have ``master=True`` which writes
+    ``type=1`` at MHYP offset +0x14.  This is the SAME byte used by the
+    master playlist in dataset 2, but the meaning differs:
+
+    - Dataset 2 ``type=1``: "this is the master playlist" (exactly one)
+    - Dataset 5 ``type=1``: "this is a built-in system category" (all of them)
+
+    No single-master constraint is enforced here — every ds5 category
+    needs ``master=True`` for the iPod firmware to recognise it.
 
     Args:
         playlists: List of PlaylistInfo objects (smart playlists only)

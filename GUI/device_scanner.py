@@ -1605,7 +1605,7 @@ def _ipod_name_from_stream(f) -> str:
             if pl_count == 0:
                 return ""
 
-            # Walk playlists looking for the master (hidden=1)
+            # Walk playlists looking for the master (type=1)
             mhyp_pos = mhlp_pos + mhlp_hdr_len
             for _ in range(min(pl_count, 16)):
                 f.seek(mhyp_pos)
@@ -1615,7 +1615,7 @@ def _ipod_name_from_stream(f) -> str:
                 mhyp_hdr_len = struct.unpack("<I", mhyp_hdr[4:8])[0]
                 mhyp_total = struct.unpack("<I", mhyp_hdr[8:12])[0]
                 mhod_count = struct.unpack("<I", mhyp_hdr[12:16])[0]
-                pl_type = mhyp_hdr[20]  # 1 = master/hidden
+                pl_type = mhyp_hdr[20]  # 1 = master playlist
 
                 if pl_type == 1:
                     # Walk child MHODs to find type 1 (title)

@@ -277,9 +277,9 @@ class PlaylistInfoCard(QFrame):
         flag2 = playlist.get("flag2", 0)
         flag3 = playlist.get("flag3", 0)
 
-        # libgpod: type byte 1 = master/hidden, 0 = visible user playlist
+        # libgpod: type byte 1 = master playlist, 0 = normal user playlist
         if pl_type == 1:
-            type_str = "Master (hidden)"
+            type_str = "Master"
         else:
             type_str = "Normal (visible)"
         self._add_detail_row("Playlist Type", type_str)

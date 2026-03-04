@@ -79,7 +79,7 @@ class AppSettings:
     # Default PC music folder for sync (remembered between sessions)
     music_folder: str = ""
 
-    # Write play counts and ratings back to PC source files after sync.
+    # Write ratings back to PC source files after sync.
     # Off by default — users must opt in to having source files modified.
     write_back_to_pc: bool = False
 
@@ -132,6 +132,17 @@ class AppSettings:
     # Remembered splitter sizes for grid/track split (not exposed in UI).
     # Empty list = use default 60/40 split.
     splitter_sizes: list = field(default_factory=list)
+
+    # ── Scrobbling ──────────────────────────────────────────────────────────
+    # Submit iPod play counts to ListenBrainz after each sync.
+    scrobble_on_sync: bool = True
+
+    # ListenBrainz user token (copied from listenbrainz.org/settings).
+    # Empty = disabled.
+    listenbrainz_token: str = ""
+
+    # ListenBrainz username (stored for display, populated on token validation).
+    listenbrainz_username: str = ""
 
     # ── Backups ─────────────────────────────────────────────────────────────
     # Custom backup directory (empty = ~/iOpenPod_Backups/).

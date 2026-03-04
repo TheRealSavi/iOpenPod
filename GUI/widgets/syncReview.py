@@ -5,7 +5,7 @@ Shows the diff between PC library and iPod with:
 - Tracks to add (on PC, not on iPod)
 - Tracks to remove (on iPod, not on PC)
 - Tracks to update (PC file changed)
-- Play counts to sync back
+- New iPod plays to scrobble
 """
 
 from PyQt6.QtCore import Qt, pyqtSignal, QThread, QTimer
@@ -469,23 +469,51 @@ class SyncTrackRow(QFrame):
 
         elif item.action == SyncAction.SYNC_RATING:
             is_gui_edit = track is None
-            old_stars = _rating_to_stars(item.ipod_rating)
-            new_stars = _rating_to_stars(item.new_rating)
+            ipod_stars = _rating_to_stars(item.ipod_rating)
+            pc_stars = _rating_to_stars(item.pc_rating)
+            result_stars = _rating_to_stars(item.new_rating)
             if track:
                 self.title_label.setText(track.title or track.filename)
                 artist = track.artist or "Unknown"
+                album = track.album or "Unknown"
                 self.badge_label.setText(_format_duration(track.duration_ms))
             elif ipod:
                 self.title_label.setText(ipod.get("Title", "Unknown"))
                 artist = ipod.get("Artist", "Unknown")
+                album = ipod.get("Album", "Unknown")
                 self.badge_label.setText(_format_duration(ipod.get("length", 0)))
             else:
                 self.title_label.setText("Unknown")
                 artist = "Unknown"
-            source = "iOpenPod" if is_gui_edit else "PC"
+                album = "Unknown"
+
+            # Strategy display name
+            _strat_labels = {
+                "ipod_wins": "iPod wins",
+                "pc_wins": "PC wins",
+                "highest": "Highest",
+                "lowest": "Lowest",
+                "average": "Average",
+            }
+            source = "iOpenPod" if is_gui_edit else _strat_labels.get(item.rating_strategy, item.rating_strategy or "iPod wins")
+
+            # Determine which side "won"
+            gold = _CAT_COLORS["rating"]
+            dim = Colors.TEXT_TERTIARY
+            pc_clr = gold if item.new_rating == item.pc_rating else dim
+            ipod_clr = gold if item.new_rating == item.ipod_rating else dim
+
             self.detail_label.setText(
-                f"{artist}  ·  [{source}]  {old_stars}  →  {new_stars}"
+                f'<span style="color:{dim}">{artist} · {album}</span>'
+                f'<br/>'
+                f'<span style="color:{pc_clr}">PC {pc_stars}</span>'
+                f'<span style="color:{dim}">  ·  </span>'
+                f'<span style="color:{ipod_clr}">iPod {ipod_stars}</span>'
+                f'<span style="color:{dim}">  →  </span>'
+                f'<span style="color:{gold}">{result_stars}</span>'
+                f'<span style="color:{dim}">  ({source})</span>'
             )
+            self.detail_label.setTextFormat(Qt.TextFormat.RichText)
             self.detail_label.setFont(QFont(FONT_FAMILY, 10))
 
         # Tooltip
@@ -1226,12 +1254,14 @@ class SyncReviewWidget(QWidget):
         "update_file": "Re-syncing changed files",
         "update_metadata": "Updating metadata",
         "quality_change": "Re-syncing quality changes",
-        "sync_playcount": "Syncing play counts",
+        "sound_check": "Computing Sound Check",
+        "sync_playcount": "Recording iPod play counts",
         "sync_rating": "Syncing ratings",
         "playlists": "Updating playlists",
         "write_database": "Writing iPod database",
         "backup": "Creating pre-sync backup",
         "transcode": "Transcoding",
+        "scrobble": "Scrobbling to ListenBrainz",
     }
 
     def _friendly_stage(self, stage: str) -> str:
@@ -1521,9 +1551,9 @@ class SyncReviewWidget(QWidget):
 
         # ── Sync play counts ────────────────────────────────────────
         if plan.to_sync_playcount:
-            card = SyncCategoryCard("🎵", "Sync Play Counts", len(plan.to_sync_playcount),
+            card = SyncCategoryCard("🎵", "iPod Play Counts", len(plan.to_sync_playcount),
                                     _CAT_COLORS["playcount"], start_expanded=False,
-                                    subtitle="New plays on iPod — will be written back to PC files",
+                                    subtitle="New plays detected on iPod — will be scrobbled to ListenBrainz",
                                     parent=self._cards_container)
             for item in plan.to_sync_playcount:
                 card.add_track_row(item)
@@ -1533,9 +1563,25 @@ class SyncReviewWidget(QWidget):
 
         # ── Sync ratings ────────────────────────────────────────────
         if plan.to_sync_rating:
-            card = SyncCategoryCard("⭐", "Sync Ratings", len(plan.to_sync_rating),
+            # Show active strategy in subtitle
+            _strat_subtitles = {
+                "ipod_wins": "iPod rating wins when different",
+                "pc_wins": "PC rating wins when different",
+                "highest": "Highest rating is kept",
+                "lowest": "Lowest rating is kept",
+                "average": "Ratings are averaged",
+            }
+            try:
+                from ..settings import get_settings
+                strat = get_settings().rating_conflict_strategy
+            except Exception:
+                strat = "ipod_wins"
+            subtitle = _strat_subtitles.get(strat, "Rating differs between PC and iPod")
+            subtitle += "  ·  Change strategy in Settings"
+
+            card = SyncCategoryCard("⭐", "Rating Sync", len(plan.to_sync_rating),
                                     _CAT_COLORS["rating"], start_expanded=False,
-                                    subtitle="Rating differs between PC and iPod — most recent wins",
+                                    subtitle=subtitle,
                                     parent=self._cards_container)
             for item in plan.to_sync_rating:
                 card.add_track_row(item)
@@ -1804,7 +1850,10 @@ class SyncReviewWidget(QWidget):
         if updated_meta:
             lines.append(f"<span style='color: #70a0e0;'>Updated metadata for {updated_meta} track{'s' if updated_meta != 1 else ''}</span>")
         if playcounts:
-            lines.append(f"<span style='color: #70a0e0;'>Synced play counts for {playcounts} track{'s' if playcounts != 1 else ''}</span>")
+            lines.append(f"<span style='color: #70a0e0;'>Recorded play counts for {playcounts} track{'s' if playcounts != 1 else ''}</span>")
+        scrobbles = getattr(result, 'scrobbles_submitted', 0)
+        if scrobbles:
+            lines.append(f"<span style='color: #74c0fc;'>Scrobbled {scrobbles} play{'s' if scrobbles != 1 else ''} to ListenBrainz</span>")
         if ratings:
             lines.append(f"<span style='color: #e0b050;'>Synced ratings for {ratings} track{'s' if ratings != 1 else ''}</span>")
 

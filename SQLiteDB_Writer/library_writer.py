@@ -580,7 +580,7 @@ def write_library_itdb(
         tracks: List of TrackInfo objects (with dbid already assigned).
         playlists: User playlists (master is auto-generated).
         smart_playlists: Smart playlists for dataset 5.
-        master_playlist_name: Name for the master (hidden) playlist.
+        master_playlist_name: Name for the master playlist.
         db_pid: Database persistent ID (from mhbd db_id).
         tz_offset: Timezone offset in seconds (positive = east of UTC).
     """
@@ -1013,7 +1013,7 @@ def write_library_itdb(
                 (total_mv_size,))
 
     # ── Write containers (playlists) ───────────────────────────────────
-    # Master playlist: distinguished_kind=0, is_hidden=1, smart fields=NULL
+    # Master playlist: distinguished_kind=0, is_hidden=1 (SQLite schema), smart fields=NULL
     # (matches iTunes reference — NOT distinguished_kind=2)
     container_pos = 0
     cur.execute(
@@ -1115,6 +1115,11 @@ def write_library_itdb(
         # media_kinds: 1=music, 0=audiobooks (from ref)
         spl_media_kinds = 1 if dk == 4 else (0 if dk == 5 else 1)
 
+        # is_hidden maps from PlaylistInfo.master:
+        #   - For ds5 built-in categories (Music, Audiobooks, ...),
+        #     master=True → is_hidden=1.  This matches Apple's reference
+        #     SQLite databases where system categories are hidden.
+        #   - For regular user smart playlists, master=False → is_hidden=0.
         cur.execute(
             """INSERT INTO container (
                 pid, distinguished_kind, date_created, date_modified,
@@ -1130,7 +1135,7 @@ def write_library_itdb(
                       ?, NULL)""",
             (_s64(spl_pid), dk, now_cd, now_cd, spl.name,
              (container_pos + 1) * 100, spl_media_kinds,
-             1 if spl.hidden else 0,
+             1 if spl.master else 0,
              spl_is_limited, spl_limit_kind, spl_limit_order,
              spl_eval_order, spl_limit_value, spl_reverse,
              spl_criteria)

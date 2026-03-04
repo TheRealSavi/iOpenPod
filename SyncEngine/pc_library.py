@@ -99,7 +99,8 @@ def compute_sound_check(file_path: str, ffmpeg_path: str | None = None) -> int:
             "-f", "null", "-",
         ]
         proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=120,
+            cmd, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=120,
         )
         # Parse integrated loudness from stderr
         # The line looks like: "    I:         -14.3 LUFS"

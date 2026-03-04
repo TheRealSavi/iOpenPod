@@ -488,7 +488,7 @@ class iTunesDBCache(QObject):
         #    Only add if not already seen, and tag as podcast only when
         #    podcastFlag is actually set.
         #    When type 2 provided a master playlist, force isMaster=False
-        #    on type 3 entries (they duplicate the hidden flag).  But when
+        #    on type 3 entries (they duplicate the master flag).  But when
         #    type 2 is absent (Nano 5G+, newer iTunes), honour isMaster
         #    from type 3 — that's where the master playlist actually lives.
         for pl in data.get("mhlp_podcast", []):
@@ -503,9 +503,9 @@ class iTunesDBCache(QObject):
 
         # 3. Smart playlists (mhlp_smart / dataset type 5)
         #    isMaster is forced False — dataset 5 MHYP entries reuse the
-        #    same type byte at offset 0x14 (1=hidden), but "hidden" here
-        #    means an iPod built-in category (Music, Movies, etc.), NOT
-        #    the master playlist.  Only dataset 2 or 3 has the real master.
+        #    same type byte at offset 0x14 (1=master), but for dataset 5
+        #    it denotes an iPod built-in category (Music, Movies, etc.),
+        #    NOT the master playlist.  Only dataset 2 or 3 has the real master.
         for pl in data.get("mhlp_smart", []):
             pid = pl.get("playlistID", 0)
             if pid in seen_ids:

@@ -9,6 +9,7 @@ from PyQt6.QtCore import pyqtSignal, pyqtSlot, Qt
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QCheckBox, QComboBox, QFrame, QScrollArea, QFileDialog,
+    QLineEdit,
 )
 from PyQt6.QtGui import QFont
 from pathlib import Path
@@ -51,6 +52,7 @@ class SettingRow(QFrame):
             text_layout.addWidget(self.desc_label)
 
         self._layout.addLayout(text_layout, stretch=1)
+        self._text_layout = text_layout
 
     def add_control(self, widget: QWidget):
         """Add a control widget to the right side of the row."""
@@ -381,6 +383,136 @@ class ToolRow(SettingRow):
         self.status_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
 
 
+class _TokenRow(SettingRow):
+    """Setting row with a token text input, validate button, and status."""
+
+    token_changed = pyqtSignal(str)
+
+    def __init__(self, title: str, description: str = "", link_url: str = ""):
+        super().__init__(title, description)
+
+        # Add a "Get token" link below the description if URL provided
+        if link_url:
+            from PyQt6.QtGui import QDesktopServices
+            from PyQt6.QtCore import QUrl
+
+            link_btn = QPushButton("Get token ↗")
+            link_btn.setFont(QFont(FONT_FAMILY, 9))
+            link_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            link_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background: transparent;
+                    border: none;
+                    color: {Colors.ACCENT};
+                    padding: 0;
+                    text-align: left;
+                }}
+                QPushButton:hover {{ color: {Colors.ACCENT_LIGHT}; text-decoration: underline; }}
+            """)
+            link_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(link_url)))
+            # Insert into the left-side text layout (after title + description)
+            self._text_layout.addWidget(link_btn)
+
+        right_layout = QHBoxLayout()
+        right_layout.setSpacing(8)
+
+        self.status_label = QLabel("")
+        self.status_label.setFont(QFont(FONT_FAMILY, 9))
+        self.status_label.setStyleSheet(
+            f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;"
+        )
+        right_layout.addWidget(self.status_label)
+
+        self.token_input = QLineEdit()
+        self.token_input.setPlaceholderText("Paste token here…")
+        self.token_input.setFixedWidth(220)
+        self.token_input.setFont(QFont(FONT_FAMILY, 9))
+        self.token_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.token_input.setStyleSheet(f"""
+            QLineEdit {{
+                background: {Colors.SURFACE_RAISED};
+                border: 1px solid {Colors.BORDER};
+                border-radius: {Metrics.BORDER_RADIUS_SM}px;
+                color: white;
+                padding: 5px 8px;
+            }}
+            QLineEdit:focus {{
+                border: 1px solid {Colors.BORDER_FOCUS};
+            }}
+        """)
+        right_layout.addWidget(self.token_input)
+
+        self.save_btn = QPushButton("Connect")
+        self.save_btn.setFont(QFont(FONT_FAMILY, 9))
+        self.save_btn.setFixedWidth(80)
+        self.save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.save_btn.setStyleSheet(btn_css(
+            bg=Colors.ACCENT,
+            bg_hover=Colors.ACCENT_LIGHT,
+            bg_press=Colors.ACCENT,
+            fg="#000000",
+            border="none",
+            padding="4px 8px",
+        ))
+        self.save_btn.clicked.connect(self._on_save)
+        right_layout.addWidget(self.save_btn)
+
+        self.clear_btn = QPushButton("✕")
+        self.clear_btn.setFont(QFont(FONT_FAMILY, 9))
+        self.clear_btn.setFixedWidth(28)
+        self.clear_btn.setToolTip("Disconnect")
+        self.clear_btn.setStyleSheet(btn_css(
+            bg="transparent",
+            bg_hover=Colors.SURFACE_ACTIVE,
+            bg_press=Colors.SURFACE_ALT,
+            fg=Colors.TEXT_TERTIARY,
+            border="none",
+            padding="2px",
+        ))
+        self.clear_btn.clicked.connect(self._on_clear)
+        self.clear_btn.hide()
+        right_layout.addWidget(self.clear_btn)
+
+        container = QWidget()
+        container.setLayout(right_layout)
+        self.add_control(container)
+
+    def set_connected(self, username: str):
+        """Show connected state with username."""
+        self.status_label.setText(f"✓ Connected as {username}")
+        self.status_label.setStyleSheet(
+            f"color: {Colors.SUCCESS}; background: transparent; border: none;"
+        )
+        self.token_input.hide()
+        self.save_btn.hide()
+        self.clear_btn.show()
+
+    def set_disconnected(self):
+        """Show disconnected state with input visible."""
+        self.status_label.setText("")
+        self.token_input.setText("")
+        self.token_input.show()
+        self.save_btn.show()
+        self.clear_btn.hide()
+        self.save_btn.setText("Connect")
+
+    def set_error(self, message: str):
+        """Show an error after validation fails."""
+        self.status_label.setText(f"✗ {message}")
+        self.status_label.setStyleSheet(
+            f"color: {Colors.WARNING}; background: transparent; border: none;"
+        )
+
+    def _on_save(self):
+        token = self.token_input.text().strip()
+        if token:
+            self.token_changed.emit(token)
+
+    def _on_clear(self):
+        self.set_disconnected()
+        self.token_changed.emit("")
+
+
 # ── Main settings page ─────────────────────────────────────────────────────
 
 class SettingsPage(QWidget):
@@ -390,7 +522,7 @@ class SettingsPage(QWidget):
 
     def __init__(self):
         super().__init__()
-
+        self._pending_lb_result: tuple[str, str] = ("", "")
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
 
@@ -485,8 +617,8 @@ class SettingsPage(QWidget):
 
         self.write_back = ToggleRow(
             "Write Back to PC",
-            "After syncing, write play counts and ratings from iPod back into your PC music files. "
-            "When off, play counts and ratings only update on the iPod.",
+            "While synging, write ratings and sound check values into your PC music files. "
+            "When off, no changes are made to your PC files.",
         )
         layout.addWidget(self.write_back)
 
@@ -507,6 +639,26 @@ class SettingsPage(QWidget):
             current="iPod Wins",
         )
         layout.addWidget(self.rating_strategy)
+
+        # ── SCROBBLING section ──────────────────────────────────────────────
+        layout.addWidget(self._section_label("SCROBBLING"))
+
+        self.scrobble_on_sync = ToggleRow(
+            "Scrobble on Sync",
+            "Automatically scrobble new iPod plays to ListenBrainz when you sync. "
+            "Requires ListenBrainz to be connected below.",
+            checked=True,
+        )
+        layout.addWidget(self.scrobble_on_sync)
+
+        self.listenbrainz_token_row = _TokenRow(
+            "ListenBrainz",
+            "Connect your ListenBrainz account to scrobble iPod plays. "
+            "Copy your user token from the link below.",
+            link_url="https://listenbrainz.org/settings/",
+        )
+        self.listenbrainz_token_row.token_changed.connect(self._on_listenbrainz_token_changed)
+        layout.addWidget(self.listenbrainz_token_row)
 
         # ── TRANSCODING section ─────────────────────────────────────────────
         layout.addWidget(self._section_label("TRANSCODING"))
@@ -652,6 +804,13 @@ class SettingsPage(QWidget):
         if idx >= 0:
             self.rating_strategy.combo.setCurrentIndex(idx)
 
+        # Scrobbling
+        self.scrobble_on_sync.value = s.scrobble_on_sync
+        if s.listenbrainz_token and s.listenbrainz_username:
+            self.listenbrainz_token_row.set_connected(s.listenbrainz_username)
+        else:
+            self.listenbrainz_token_row.set_disconnected()
+
         self.show_art.value = s.show_art_in_tracklist
         self.transcode_cache_dir.value = s.transcode_cache_dir
         self.settings_dir.value = s.settings_dir
@@ -718,6 +877,7 @@ class SettingsPage(QWidget):
             self.backup_dir.changed.connect(self._save)
             self.backup_before_sync.changed.connect(self._save)
             self.max_backups.changed.connect(self._save)
+            self.scrobble_on_sync.changed.connect(self._save)
 
     def _save(self, *_args):
         """Read all controls back into AppSettings and persist."""
@@ -734,6 +894,8 @@ class SettingsPage(QWidget):
             "Highest": "highest", "Lowest": "lowest", "Average": "average",
         }
         s.rating_conflict_strategy = strategy_keys.get(self.rating_strategy.value, "ipod_wins")
+
+        s.scrobble_on_sync = self.scrobble_on_sync.value
 
         s.show_art_in_tracklist = self.show_art.value
         s.transcode_cache_dir = self.transcode_cache_dir.value
@@ -842,3 +1004,55 @@ class SettingsPage(QWidget):
         self._refresh_tool_status()
         self.fpcalc_tool.download_btn.setEnabled(True)
         self.fpcalc_tool.download_btn.setText("Download")
+
+    # ── Scrobbling handlers ──────────────────────────────────────────────
+
+    def _on_listenbrainz_token_changed(self, token: str):
+        """Handle ListenBrainz token save/clear."""
+        from ..settings import get_settings
+        s = get_settings()
+
+        if not token:
+            # Disconnect
+            s.listenbrainz_token = ""
+            s.listenbrainz_username = ""
+            s.save()
+            return
+
+        # Validate the token in a background thread
+        self.listenbrainz_token_row.save_btn.setEnabled(False)
+        self.listenbrainz_token_row.save_btn.setText("Validating…")
+
+        import threading
+
+        def _do_validate():
+            from SyncEngine.scrobbler import listenbrainz_validate_token
+            username = listenbrainz_validate_token(token)
+            # Stash result so the slot can read it
+            self._pending_lb_result = (token, username or "")
+            from PyQt6.QtCore import QMetaObject, Qt as QtCore_Qt
+            QMetaObject.invokeMethod(
+                self, "_on_listenbrainz_validate_result",
+                QtCore_Qt.ConnectionType.QueuedConnection,
+            )
+
+        threading.Thread(target=_do_validate, daemon=True).start()
+
+    @pyqtSlot()
+    def _on_listenbrainz_validate_result(self):
+        """Called on main thread after ListenBrainz token validation."""
+        token, username = self._pending_lb_result
+        self.listenbrainz_token_row.save_btn.setEnabled(True)
+        self.listenbrainz_token_row.save_btn.setText("Connect")
+
+        if not username:
+            self.listenbrainz_token_row.set_error("Invalid token")
+            return
+
+        from ..settings import get_settings
+        s = get_settings()
+        s.listenbrainz_token = token
+        s.listenbrainz_username = username
+        s.save()
+
+        self.listenbrainz_token_row.set_connected(username)

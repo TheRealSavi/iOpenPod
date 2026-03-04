@@ -54,7 +54,7 @@ class SyncAction(Enum):
     UPDATE_METADATA = auto()  # Metadata changed on PC, update iPod DB
     UPDATE_FILE = auto()  # Source file changed, re-copy/transcode
     UPDATE_ARTWORK = auto()  # Embedded art changed, re-extract
-    SYNC_PLAYCOUNT = auto()  # iPod has new plays, write-back to PC
+    SYNC_PLAYCOUNT = auto()  # iPod has new plays to scrobble
     SYNC_RATING = auto()  # Rating differs, last-write-wins
     NO_ACTION = auto()  # Track is in sync
 
@@ -77,13 +77,14 @@ class SyncItem:
     metadata_changes: dict = field(default_factory=dict)
 
     # For SYNC_PLAYCOUNT
-    play_count_delta: int = 0
-    skip_count_delta: int = 0
+    play_count_delta: int = 0       # iPod plays since last sync (from Play Counts file)
+    skip_count_delta: int = 0       # iPod skips since last sync (from Play Counts file)
 
     # For SYNC_RATING — last-write-wins
     ipod_rating: int = 0  # 0-100 (stars × 20)
     pc_rating: int = 0  # 0-100 (stars × 20)
     new_rating: int = 0  # The winner
+    rating_strategy: str = ""  # e.g. "ipod_wins", "pc_wins", "highest", etc.
 
     # For UPDATE_ARTWORK
     old_art_hash: Optional[str] = None
@@ -442,39 +443,6 @@ class FingerprintDiffEngine:
 
         plan.total_pc_tracks = len(pc_tracks)
 
-        # ── Compute Sound Check for files missing loudness tags ──────
-        # Only runs when the user has enabled the "Compute Sound Check" setting.
-        try:
-            from GUI.settings import get_settings as _gs
-            _compute_sc = _gs().compute_sound_check
-            _write_back = _gs().write_back_to_pc
-        except Exception:
-            _compute_sc = False
-            _write_back = False
-
-        if _compute_sc:
-            from SyncEngine.pc_library import compute_sound_check, write_sound_check_tag
-            need_sc = [t for t in pc_tracks if not t.sound_check and not t.is_video]
-            if need_sc:
-                if progress_callback:
-                    progress_callback("sound_check", 0, len(need_sc),
-                                      f"Computing Sound Check for {len(need_sc)} files...")
-                for sc_idx, track in enumerate(need_sc):
-                    if is_cancelled and is_cancelled():
-                        break
-                    sc_val = compute_sound_check(track.path)
-                    if sc_val:
-                        # Update the in-memory PCTrack so it syncs to iPod
-                        object.__setattr__(track, "sound_check", sc_val)
-                        # Persist the tag into the PC file only if write-back is on
-                        if _write_back:
-                            write_sound_check_tag(track.path, sc_val)
-                    if progress_callback:
-                        progress_callback("sound_check", sc_idx + 1, len(need_sc),
-                                          f"Sound Check: {track.filename}")
-                logger.info("Computed Sound Check for %d / %d files",
-                            sum(1 for t in need_sc if t.sound_check), len(need_sc))
-
         # fingerprint → list[PCTrack]  (to detect PC-side duplicates)
         pc_by_fp: dict[str, list[PCTrack]] = {}
         seen_fps: set[str] = set()
@@ -672,20 +640,20 @@ class FingerprintDiffEngine:
                     description=f"Art missing on iPod: {pc_track.artist or 'Unknown'} - {pc_track.title or pc_track.filename}",
                 ))
 
-            # Play count: additive (iPod→PC)
-            # Deltas come from the Play Counts file (merged into the track
-            # dict by _read_existing_database → merge_playcounts).
-            # "recent_playcount" = plays since last sync (from Play Counts file)
-            # "recent_skipcount" = skips since last sync (from Play Counts file)
-            plays_since_sync = ipod_track.get("recent_playcount", 0)
-            skips_since_sync = ipod_track.get("recent_skipcount", 0)
-            if plays_since_sync > 0 or skips_since_sync > 0:
-                # Build a readable description
+            # Play count: scrobble iPod deltas from Play Counts file.
+            # iPod plays belong to the iPod, PC plays belong to the PC.
+            # We never sync play counts between the two — we just scrobble
+            # the iPod delta so the user's ListenBrainz stays up to date.
+            #
+            ipod_play_delta = ipod_track.get("recent_playcount", 0)
+            ipod_skip_delta = ipod_track.get("recent_skipcount", 0)
+
+            if ipod_play_delta > 0 or ipod_skip_delta > 0:
                 parts = []
-                if plays_since_sync > 0:
-                    parts.append(f"+{plays_since_sync} play{'s' if plays_since_sync != 1 else ''}")
-                if skips_since_sync > 0:
-                    parts.append(f"+{skips_since_sync} skip{'s' if skips_since_sync != 1 else ''}")
+                if ipod_play_delta > 0:
+                    parts.append(f"+{ipod_play_delta} play{'s' if ipod_play_delta != 1 else ''}")
+                if ipod_skip_delta > 0:
+                    parts.append(f"+{ipod_skip_delta} skip{'s' if ipod_skip_delta != 1 else ''}")
                 track_name = f"{pc_track.artist or 'Unknown'} - {pc_track.title or pc_track.filename}"
                 desc = f"{', '.join(parts)}: {track_name}"
 
@@ -695,8 +663,8 @@ class FingerprintDiffEngine:
                     pc_track=pc_track,
                     dbid=dbid,
                     ipod_track=ipod_track,
-                    play_count_delta=plays_since_sync,
-                    skip_count_delta=skips_since_sync,
+                    play_count_delta=ipod_play_delta,
+                    skip_count_delta=ipod_skip_delta,
                     description=desc,
                 ))
 
@@ -734,6 +702,7 @@ class FingerprintDiffEngine:
                     ipod_rating=ipod_rating,
                     pc_rating=pc_rating,
                     new_rating=new_rating,
+                    rating_strategy=strategy,
                     description=f"Rating: {pc_track.artist or 'Unknown'} - {pc_track.title or pc_track.filename}",
                 ))
 

@@ -65,7 +65,7 @@ def write_sqlite_databases(
         tracks: List of TrackInfo objects (dbid must already be assigned).
         playlists: User playlists (master is auto-generated).
         smart_playlists: Smart playlists.
-        master_playlist_name: Name for the master (hidden) playlist.
+        master_playlist_name: Name for the master playlist.
         db_pid: Database persistent ID (from mhbd db_id).
         capabilities: Device capabilities.
         firewire_id: 8-byte FireWire GUID for signing.

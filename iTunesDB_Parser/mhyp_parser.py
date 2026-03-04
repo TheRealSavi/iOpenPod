@@ -38,7 +38,7 @@ def parse_playlist(data, offset, header_length, chunk_length) -> dict:
         +0x08: total_length (4 bytes) — header + all children
         +0x0C: mhod_count (4 bytes) — number of MHOD children
         +0x10: mhip_count (4 bytes) — number of MHIP (playlist item) children
-        +0x14: hidden (4 bytes) — 1 = master playlist (hidden), 0 = visible
+        +0x14: master (4 bytes) — 1 = master playlist, 0 = normal
         +0x18: timestamp (4 bytes) — Mac timestamp
         +0x1C: playlist_id (8 bytes) — unique 64-bit playlist ID
         +0x24: unk1 (4 bytes)

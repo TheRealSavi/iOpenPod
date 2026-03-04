@@ -5,7 +5,7 @@ MHYP chunks define playlists. Every iTunesDB MUST have at least one
 playlist — the Master Playlist (MPL) which references all tracks.
 
 Supports three kinds of playlists:
-- Master Playlist (hidden=True): references all tracks, includes library indices
+- Master Playlist (master=True): references all tracks, includes library indices
 - Regular playlists: user-created playlists with explicit track lists
 - Smart playlists: rule-based playlists with MHOD types 50 (prefs) and 51 (rules)
 
@@ -15,7 +15,7 @@ Header layout (MHYP_HEADER_SIZE = 184 bytes):
     +0x08: total_length (4B) — header + all children
     +0x0C: mhod_count (4B)
     +0x10: mhip_count (4B)
-    +0x14: type (1B) + flag1 (1B) + flag2 (1B) + flag3 (1B) — hidden/master flag
+    +0x14: type (1B) + flag1 (1B) + flag2 (1B) + flag3 (1B) — master playlist flag
     +0x18: timestamp (4B Mac)
     +0x1C: playlist_id (8B)
     +0x24: unk1 (4B)
@@ -91,7 +91,14 @@ class PlaylistInfo:
 
     # Identity
     playlist_id: Optional[int] = None   # 64-bit; generated if None
-    hidden: bool = False                 # True for master playlist only
+    master: bool = False                 # Sets type byte at +0x14 to 1.
+    #   Dataset 2: True for the master playlist only (exactly one).
+    #   Dataset 5: True for ALL built-in categories (Music, Movies, etc.).
+    #   In both cases this controls: (a) the type byte at +0x14,
+    #   (b) whether library indices are generated (only when tracks
+    #       are also provided), and (c) whether id_0x24/playlist_id
+    #       are written at the extended offsets +0x3C/+0x44 (skipped
+    #       when master=True, matching libgpod behaviour).
     sortorder: int = 0                   # 0=default, 1=manual, 3=title ...
     podcast_flag: int = 0                # 0x2A: 0=normal, 1=podcast playlist
     group_flag: int = 0                  # 0x2B: 0=normal, 1=grouping playlist
@@ -136,9 +143,9 @@ def unix_to_mac_timestamp(unix_timestamp: int) -> int:
 def write_mhyp(
     name: str,
     track_ids: List[int],
-    playlist_type: int = PLAYLIST_TYPE_NORMAL,  # DEPRECATED: use hidden param instead
+    playlist_type: int = PLAYLIST_TYPE_NORMAL,  # DEPRECATED: use master param instead
     playlist_id: Optional[int] = None,
-    hidden: bool = False,
+    master: bool = False,
     timestamp: Optional[int] = None,
     sortorder: int = 0,
     podcast_flag: int = 0,
@@ -169,11 +176,18 @@ def write_mhyp(
     Args:
         name: Playlist name
         track_ids: List of track IDs to include in this playlist
-        playlist_type: DEPRECATED - playlist type is determined by 'hidden' param.
-                       For Master Playlist, use hidden=True.
+        playlist_type: DEPRECATED - playlist type is determined by 'master' param.
+                       For Master Playlist, use master=True.
         playlist_id: Playlist ID (generated if not provided)
-        hidden: Whether playlist is hidden (True for Master Playlist, False for normal)
-                The 'type' byte at offset 0x14 is set to 1 if hidden=True (MPL).
+        master: Whether the type byte at +0x14 should be set to 1.
+                For dataset 2 this means "master playlist" (exactly one).
+                For dataset 5 this means "built-in system category" (all
+                categories have master=True).  The behavioural effects are:
+                (a) type byte at +0x14 is written as 1,
+                (b) library indices are generated IF *tracks* is also
+                    provided (ds5 never passes tracks, so this is safe),
+                (c) id_0x24 and playlist_id are NOT written at +0x3C/+0x44
+                    (matches libgpod, which zeros these for type=1).
         timestamp: Creation timestamp (now if not provided)
         sortorder: Sort order (0 = manual)
         podcast_flag: 0x2A — 0=normal playlist, 1=podcast playlist.
@@ -229,7 +243,7 @@ def write_mhyp(
     # These are REQUIRED for iPod Classic to build its browsing views
     library_indices_data = b''
     library_indices_count = 0
-    if hidden and tracks:
+    if master and tracks:
         library_indices_data, library_indices_count = write_library_indices(tracks, capabilities=capabilities)
 
     # Build MHIP entries for each track
@@ -277,8 +291,8 @@ def write_mhyp(
     # +0x10: Number of MHIPs (tracks in playlist)
     struct.pack_into('<I', header, 0x10, len(track_ids))
 
-    # +0x14: Hidden flag (0 = visible, 1 = hidden)
-    struct.pack_into('<I', header, 0x14, 1 if hidden else 0)
+    # +0x14: Master flag (0 = normal, 1 = master playlist)
+    struct.pack_into('<I', header, 0x14, 1 if master else 0)
 
     # +0x18: Timestamp (Mac format)
     struct.pack_into('<I', header, 0x18, unix_to_mac_timestamp(timestamp))
@@ -303,16 +317,19 @@ def write_mhyp(
 
     # +0x30-0xB7: Extended header fields (184-byte iTunes format)
     #
-    # For NON-MASTER playlists, iTunes writes:
+    # For NON-MASTER playlists (master=False), iTunes writes:
     #   0x3C: id_0x24 from MHBD (u64) - database identity validation
     #   0x44: playlist_id again (u64) - redundant copy
     #
-    # For the MASTER playlist:
-    #   0x58: Mac timestamp (u32) - creation/modification time
+    # For playlists with master=True (both the ds2 master playlist AND
+    # ds5 built-in categories), these fields are left zeroed.  This
+    # matches libgpod, which writes put32_n0(cts, 15) for regular
+    # playlists and put32_n0(cts, 8) for dataset 5 — neither fills
+    # offsets 0x3C/0x44 when type == 1.
     #
     # These are NOT written by libgpod (which uses 108-byte headers), but since
     # we use 184-byte headers to match iTunes, the iPod firmware may parse them.
-    if not hidden:
+    if not master:
         # Non-master playlist: write id_0x24 and playlist_id in extended area
         struct.pack_into('<Q', header, 0x3C, id_0x24)
         struct.pack_into('<Q', header, 0x44, playlist_id)
@@ -432,9 +449,15 @@ def write_playlist(
     playlist: "PlaylistInfo",
     id_0x24: int = 0,
 ) -> bytes:
-    """Write a regular or smart playlist from a PlaylistInfo dataclass.
+    """Write a playlist from a PlaylistInfo dataclass.
 
-    This is the high-level API for writing any non-master playlist.
+    Handles regular playlists, smart playlists, AND dataset 5 built-in
+    categories.  For dataset 5, PlaylistInfo.master will be True (setting
+    the type byte at +0x14 to 1) and track_ids will be empty (the iPod
+    firmware evaluates smart rules at runtime).
+
+    The *master playlist* for dataset 2 is NOT written through this
+    function — use write_master_playlist() instead.
 
     Args:
         playlist: A PlaylistInfo instance.
@@ -447,7 +470,7 @@ def write_playlist(
         name=playlist.name,
         track_ids=playlist.track_ids,
         playlist_id=playlist.playlist_id,
-        hidden=playlist.hidden,
+        master=playlist.master,
         sortorder=playlist.sortorder,
         podcast_flag=playlist.podcast_flag,
         group_flag=playlist.group_flag,
@@ -484,13 +507,13 @@ def write_master_playlist(
     Returns:
         Complete MHYP chunk for master playlist
     """
-    # Master playlist MUST have hidden=True (0x14 field = 1)
+    # Master playlist MUST have master=True (0x14 field = 1)
     # This is how iTunes/iPod identifies the master playlist
     return write_mhyp(
         name=name,
         track_ids=track_ids,
         playlist_type=PLAYLIST_TYPE_MASTER,
-        hidden=True,  # CRITICAL: Master playlist must have hidden=1
+        master=True,  # CRITICAL: Master playlist must have type=1
         sortorder=5,  # Match iTunes default sort order
         tracks=tracks,
         id_0x24=id_0x24,
