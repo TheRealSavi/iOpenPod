@@ -501,12 +501,12 @@ class iTunesDBCache(QObject):
             seen_ids.add(pid)
             result.append(pl)
 
-        # 3. Smart playlists (mhsp / dataset type 5)
+        # 3. Smart playlists (mhlp_smart / dataset type 5)
         #    isMaster is forced False — dataset 5 MHYP entries reuse the
         #    same type byte at offset 0x14 (1=hidden), but "hidden" here
         #    means an iPod built-in category (Music, Movies, etc.), NOT
         #    the master playlist.  Only dataset 2 or 3 has the real master.
-        for pl in data.get("mhsp", []):
+        for pl in data.get("mhlp_smart", []):
             pid = pl.get("playlistID", 0)
             if pid in seen_ids:
                 continue
@@ -1528,7 +1528,7 @@ class MainWindow(QMainWindow):
                 pid = pl.get("playlistID", 0)
                 if pid:
                     existing_ids.add(pid)
-            for pl in data.get("mhsp", []):
+            for pl in data.get("mhlp_smart", []):
                 pid = pl.get("playlistID", 0)
                 if pid:
                     existing_ids.add(pid)

@@ -39,7 +39,6 @@ from iTunesDB_Writer.mhit_writer import (
 from iTunesDB_Writer.mhyp_writer import PlaylistInfo, PlaylistItemMeta
 from iTunesDB_Writer.mhod_spl_writer import (
     prefs_from_parsed, rules_from_parsed,
-    SmartPlaylistPrefs, SmartPlaylistRule, SmartPlaylistRules,
 )
 
 logger = logging.getLogger(__name__)
@@ -1446,8 +1445,8 @@ class SyncExecutor:
                     seen_ids.add(pid)
                     playlists.append(pl)
 
-            # Dataset 5: smart playlists for browsing (mhsp)
-            smart_playlists = result.get("mhsp", [])
+            # Dataset 5: smart playlists for browsing (mhlp_smart)
+            smart_playlists = result.get("mhlp_smart", [])
 
             logger.info(
                 "Parsed iPod database: %d tracks, %d playlists, %d smart playlists",
@@ -1881,58 +1880,11 @@ class SyncExecutor:
             len(smart_playlists),
         )
 
-        # ── Auto-generate video browsing playlists (dataset 5) ───────
-        # iPods often already have these from iTunes.  Only add if missing
-        # by checking mhsd5_type of existing playlists.
-        existing_mhsd5_types = {sp.mhsd5_type for sp in smart_playlists}
-
-        # Video browsing playlists: (mhsd5_type, name, media_type_bitmask)
-        _VIDEO_BROWSING = [
-            (2, "Movies", MEDIA_TYPE_VIDEO),
-            (3, "TV Shows", MEDIA_TYPE_TV_SHOW),
-            (4, "Music Videos", MEDIA_TYPE_MUSIC_VIDEO),
-        ]
-
-        # Podcast and Audiobook browsing playlists
-        _MEDIA_BROWSING = [
-            (5, "Podcasts", MEDIA_TYPE_PODCAST),
-            (6, "Audiobooks", MEDIA_TYPE_AUDIOBOOK),
-        ]
-
-        for mhsd5, name, media_mask in _VIDEO_BROWSING + _MEDIA_BROWSING:
-            if mhsd5 in existing_mhsd5_types:
-                logger.debug(
-                    "Browsing playlist '%s' (mhsd5_type=%d) already exists, skipping",
-                    name, mhsd5,
-                )
-                continue
-
-            # Build a smart playlist rule: mediaType includes <mask>
-            rule = SmartPlaylistRule(
-                field_id=0x3C,           # mediaType
-                action_id=0x00000400,    # binary AND (includes)
-                from_value=media_mask,
-            )
-            prefs = SmartPlaylistPrefs(
-                live_update=True,
-                check_rules=True,
-                check_limits=False,
-            )
-            rules = SmartPlaylistRules(conjunction="AND", rules=[rule])
-
-            info = PlaylistInfo(
-                name=name,
-                hidden=True,           # Browsing playlists are hidden
-                mhsd5_type=mhsd5,
-                smart_prefs=prefs,
-                smart_rules=rules,
-                track_ids=[],          # iPod evaluates at runtime
-            )
-            smart_playlists.append(info)
-            logger.info(
-                "Auto-generated browsing playlist '%s' (mhsd5_type=%d)",
-                name, mhsd5,
-            )
+        # NOTE: We do NOT auto-generate browsing playlists (Movies, TV Shows,
+        # Audiobooks, etc.).  The iPod firmware creates these itself during
+        # its initial restore, and re-adding them causes duplicates with
+        # incorrect master/hidden flags.  We only round-trip whatever smart
+        # playlists already exist on the device.
 
         return master_playlist_name, playlists, smart_playlists
 

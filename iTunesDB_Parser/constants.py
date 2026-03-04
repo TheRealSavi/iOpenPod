@@ -15,7 +15,7 @@ chunk_type_map = {
                         # NOTE: Type 3 MHSD MUST come between type 1 and type 2
                         # for the iPod to list podcasts correctly.
     4: "mhla",  # Album list (iTunes 7.1+; contains MHIA children)
-    5: "mhsp",  # Smart playlist list (iTunes 7.3+; contains MHYP children)
+    5: "mhlp_smart",  # Smart playlist list (iTunes 7.3+; contains MHYP children)
     # Types 6–10 were added in iTunes 9+ for Genius and other features.
     # Their child chunk reuses the 'mhli' magic (same as ArtworkDB's image
     # list, but here it is a generic item list — different semantics).
@@ -124,7 +124,7 @@ identifier_readable_map = {
     "mhlp": "Playlist or Podcast List",
     "mhla": "Album List",
     "mhli": "Artist List",
-    "mhsp": "Smart Playlist List",
+    "mhlp_smart": "Smart Playlist List",
     "mhia": "Album Item",
     "mhii": "Artist Item",
     "mhit": "Track Item",
