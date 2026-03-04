@@ -10,7 +10,6 @@ Header layout (MHLP_HEADER_SIZE = 92 bytes):
     +0x08: playlist_count (4B)
 
 Supports:
-- Master playlist only (write_mhlp_with_master)
 - Master + user playlists (write_mhlp_with_playlists)
 - Dataset 3 podcast playlists (podcast clone of dataset 2)
 - Dataset 5 smart playlists (write_mhlp_smart)
@@ -39,7 +38,7 @@ def write_mhlp_empty() -> bytes:
     Write an empty MHLP (playlist list) chunk.
 
     Note: An empty MHLP means NO playlists, which may cause issues
-    on some iPods. Use write_mhlp_with_master() for a valid database.
+    on some iPods. Use write_mhlp_with_playlists() for a valid database.
 
     Returns:
         MHLP header with 0 playlists
@@ -85,43 +84,13 @@ def write_mhlp(playlist_chunks: List[bytes]) -> bytes:
     return bytes(header) + playlists_data
 
 
-def write_mhlp_with_master(
-    track_ids: List[int],
-    device_name: str = "iPod",
-    tracks: Optional[List["TrackInfo"]] = None,
-    id_0x24: int = 0,
-) -> bytes:
-    """
-    Write an MHLP chunk with the required Master Playlist.
-
-    The Master Playlist is REQUIRED for a valid iTunesDB. It must:
-    - Be the first playlist
-    - Have type = 1 (master)
-    - Reference ALL tracks in the database
-
-    Args:
-        track_ids: List of ALL track IDs in the database
-        device_name: Name for the master playlist (default "iPod")
-        tracks: List of ALL TrackInfo objects (needed for library indices)
-        id_0x24: Database-wide ID from MHBD offset 0x24
-
-    Returns:
-        Complete MHLP chunk with master playlist
-    """
-    # Create the master playlist
-    master = write_master_playlist(track_ids, name=device_name, tracks=tracks, id_0x24=id_0x24)
-
-    # Wrap in MHLP
-    return write_mhlp([master])
-
-
 def write_mhlp_with_playlists(
     track_ids: List[int],
-    playlists: List["PlaylistInfo"],
-    device_name: str = "iPod",
-    tracks: Optional[List["TrackInfo"]] = None,
-    id_0x24: int = 0,
+    playlists: List[PlaylistInfo],
+    id_0x24,
+    tracks: Optional[List[TrackInfo]] = None,
     capabilities=None,
+    master_playlist_name: str = "iPod",
 ) -> bytes:
     """
     Write an MHLP chunk with the master playlist + user playlists.
@@ -129,13 +98,17 @@ def write_mhlp_with_playlists(
     The master playlist is always first, followed by regular/smart playlists.
     This is used for MHSD type 2 (playlists dataset).
 
+    The master playlist is auto-generated from the full track list; its
+    display name is controlled by *master_playlist_name*.  The *playlists*
+    list should contain only user playlists (no master).
+
     Args:
         track_ids: List of ALL track IDs in the database (for master playlist)
-        playlists: List of PlaylistInfo objects for user playlists
-        device_name: Name for the master playlist (default "iPod")
+        playlists: List of user PlaylistInfo objects (master is NOT included)
         tracks: List of ALL TrackInfo objects (needed for library indices)
         id_0x24: Database-wide ID from MHBD offset 0x24
         capabilities: Optional DeviceCapabilities for video sort indices.
+        master_playlist_name: Display name for the auto-generated master playlist.
 
     Returns:
         Complete MHLP chunk
@@ -143,18 +116,23 @@ def write_mhlp_with_playlists(
     chunks = []
 
     # Master playlist MUST be first
-    master = write_master_playlist(track_ids, name=device_name, tracks=tracks, id_0x24=id_0x24, capabilities=capabilities)
+    master = write_master_playlist(
+        track_ids, tracks=tracks, id_0x24=id_0x24,
+        capabilities=capabilities, name=master_playlist_name,
+    )
     chunks.append(master)
 
-    # User playlists (regular and smart)
+    # User playlists (regular and smart).
+    # Discard any hidden entries — the master is already auto-generated above.
     for pl in playlists:
-        chunks.append(write_playlist(pl, id_0x24=id_0x24))
+        if not pl.hidden:
+            chunks.append(write_playlist(pl, id_0x24=id_0x24))
 
     return write_mhlp(chunks)
 
 
 def write_mhlp_smart(
-    playlists: List["PlaylistInfo"],
+    playlists: List[PlaylistInfo],
     id_0x24: int = 0,
 ) -> bytes:
     """

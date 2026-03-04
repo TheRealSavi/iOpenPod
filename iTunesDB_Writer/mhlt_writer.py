@@ -23,46 +23,7 @@ from .mhit_writer import write_mhit, TrackInfo
 MHLT_HEADER_SIZE = 92
 
 
-def _assign_artist_composer_ids(tracks: List[TrackInfo], start_track_id: int) -> None:
-    """
-    Assign artist_id and composer_id to each track using a global counter.
-
-    iTunes uses a single incrementing ID counter for ALL entities
-    (albums, tracks, artists, composers). We allocate IDs sequentially
-    after the track IDs to avoid collisions.
-
-    Args:
-        tracks: List of TrackInfo objects (modified in place)
-        start_track_id: First track ID (artist/composer IDs start after last track ID)
-    """
-    # Start assigning after the last track ID
-    next_id = start_track_id + len(tracks)
-
-    # Map unique artists to IDs (fallback only — normally set by write_mhli)
-    artist_ids: dict[str, int] = {}
-
-    for track in tracks:
-        # Artist ID — only assign if not already set by the MHSD type 8
-        # artist list (write_mhli + write_mhbd).  When write_mhbd() builds
-        # the artist list it sets track.artist_id to match the MHII entries;
-        # overwriting it here with a different numbering scheme would break
-        # the cross-reference and make tracks invisible in the Artists view.
-        if track.artist_id == 0:
-            artist_key = (track.artist or "").lower()
-            if artist_key not in artist_ids:
-                artist_ids[artist_key] = next_id
-                next_id += 1
-            track.artist_id = artist_ids[artist_key]
-
-        # Composer ID (each track gets its own in clean DB, even if same composer)
-        # Matching observed iTunes behavior: composer_id is per-track, NOT deduped
-        track.composer_id = next_id
-        next_id += 1
-
-
-def write_mhlt(tracks: List[TrackInfo], start_track_id: int = 1,
-               id_0x24: int = 0,
-               capabilities=None) -> tuple[bytes, int]:
+def write_mhlt(tracks: List[TrackInfo], start_track_id: int, id_0x24: int, capabilities=None) -> tuple[bytes, int]:
     """
     Write a complete MHLT chunk with all tracks.
 
@@ -75,12 +36,6 @@ def write_mhlt(tracks: List[TrackInfo], start_track_id: int = 1,
     Returns:
         Tuple of (complete MHLT chunk bytes, next available track ID)
     """
-    # Assign artist_id and composer_id using a global counter
-    # iTunes uses a single incrementing counter for ALL IDs (album, track, artist, composer)
-    # We allocate artist/composer IDs starting after the album IDs + track IDs range
-    # Since we don't control the global counter here, we use a separate sequence
-    # that won't conflict with track IDs (start high enough)
-    _assign_artist_composer_ids(tracks, start_track_id)
 
     # Build all track chunks first
     track_chunks = []

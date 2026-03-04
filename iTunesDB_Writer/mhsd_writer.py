@@ -28,23 +28,13 @@ import struct
 # MHSD header size
 MHSD_HEADER_SIZE = 96
 
-# Dataset types
-MHSD_TYPE_TRACKS = 1
-MHSD_TYPE_PLAYLISTS = 2
-MHSD_TYPE_PODCASTS = 3
-MHSD_TYPE_ALBUMS = 4
-MHSD_TYPE_SMART_PLAYLISTS = 5
-MHSD_TYPE_EMPTY_6 = 6
-MHSD_TYPE_ARTISTS = 8
-MHSD_TYPE_EMPTY_10 = 10
-
 
 def write_mhsd(dataset_type: int, child_data: bytes) -> bytes:
     """
     Write a MHSD (dataset) chunk.
 
     Args:
-        dataset_type: Type of dataset (1=tracks, 2=playlists, etc.)
+        dataset_type: Type of dataset
         child_data: Child chunk data (mhlt, mhlp, or mhla)
 
     Returns:
@@ -73,34 +63,34 @@ def write_mhsd(dataset_type: int, child_data: bytes) -> bytes:
     return bytes(header) + child_data
 
 
-def write_mhsd_tracks(track_list_data: bytes) -> bytes:
+def write_mhsd_type1(track_list_data: bytes) -> bytes:
     """Write a Type 1 MHSD containing track list."""
-    return write_mhsd(MHSD_TYPE_TRACKS, track_list_data)
+    return write_mhsd(1, track_list_data)
 
 
-def write_mhsd_playlists(playlist_list_data: bytes) -> bytes:
+def write_mhsd_type2(playlist_list_data: bytes) -> bytes:
     """Write a Type 2 MHSD containing playlist list."""
-    return write_mhsd(MHSD_TYPE_PLAYLISTS, playlist_list_data)
+    return write_mhsd(2, playlist_list_data)
 
 
-def write_mhsd_podcasts(podcast_list_data: bytes) -> bytes:
+def write_mhsd_type3(podcast_list_data: bytes) -> bytes:
     """Write a Type 3 MHSD containing podcast list."""
-    return write_mhsd(MHSD_TYPE_PODCASTS, podcast_list_data)
+    return write_mhsd(3, podcast_list_data)
 
 
-def write_mhsd_albums(album_list_data: bytes) -> bytes:
+def write_mhsd_type4(album_list_data: bytes) -> bytes:
     """Write a Type 4 MHSD containing album list."""
-    return write_mhsd(MHSD_TYPE_ALBUMS, album_list_data)
+    return write_mhsd(4, album_list_data)
 
 
-def write_mhsd_smart_playlists(smart_playlist_data: bytes) -> bytes:
+def write_mhsd_smart_type5(smart_playlist_data: bytes) -> bytes:
     """Write a Type 5 MHSD containing smart playlist list."""
-    return write_mhsd(MHSD_TYPE_SMART_PLAYLISTS, smart_playlist_data)
+    return write_mhsd(5, smart_playlist_data)
 
 
-def write_mhsd_artists(artist_list_data: bytes) -> bytes:
+def write_mhsd_type8(artist_list_data: bytes) -> bytes:
     """Write a Type 8 MHSD containing artist list (mhli)."""
-    return write_mhsd(MHSD_TYPE_ARTISTS, artist_list_data)
+    return write_mhsd(8, artist_list_data)
 
 
 def write_mhsd_empty_stub(dataset_type: int) -> bytes:

@@ -193,12 +193,16 @@ def _write_spl_rule(rule: SmartPlaylistRule) -> bytes:
         # Non-string: fixed 0x44 (68) byte data section
         data_length = 0x44
         data_section = bytearray(0x44)
-        struct.pack_into('>Q', data_section, 0x00, rule.from_value)
+        # from_value, to_value, from_units, to_units use unsigned '>Q' format
+        # but can be negative for date-relative rules (e.g. "in the last N days").
+        # Apply two's complement conversion so struct.pack doesn't raise.
+        _mask = 0xFFFFFFFFFFFFFFFF
+        struct.pack_into('>Q', data_section, 0x00, rule.from_value & _mask)
         struct.pack_into('>q', data_section, 0x08, rule.from_date)
-        struct.pack_into('>Q', data_section, 0x10, rule.from_units)
-        struct.pack_into('>Q', data_section, 0x18, rule.to_value)
+        struct.pack_into('>Q', data_section, 0x10, rule.from_units & _mask)
+        struct.pack_into('>Q', data_section, 0x18, rule.to_value & _mask)
         struct.pack_into('>q', data_section, 0x20, rule.to_date)
-        struct.pack_into('>Q', data_section, 0x28, rule.to_units)
+        struct.pack_into('>Q', data_section, 0x28, rule.to_units & _mask)
         struct.pack_into('>I', data_section, 0x30, rule.unk052)
         struct.pack_into('>I', data_section, 0x34, rule.unk056)
         struct.pack_into('>I', data_section, 0x38, rule.unk060)

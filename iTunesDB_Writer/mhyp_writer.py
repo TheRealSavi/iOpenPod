@@ -458,9 +458,9 @@ def write_playlist(
 
 def write_master_playlist(
     track_ids: List[int],
+    id_0x24: int,
     name: str = "iPod",
     tracks: Optional[List["TrackInfo"]] = None,
-    id_0x24: int = 0,
     capabilities=None,
 ) -> bytes:
     """

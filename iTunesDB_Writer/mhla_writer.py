@@ -136,7 +136,7 @@ def write_mhia(album_id: int, album_name: str, album_artist: str,
     return bytes(header) + bytes(children)
 
 
-def write_mhla(tracks: list["TrackInfo"]) -> tuple[bytes, dict[tuple[str, str], int]]:
+def write_mhla(tracks: list["TrackInfo"], starting_index_for_album_id) -> tuple[bytes, dict[tuple[str, str], int], int]:
     """
     Write an MHLA (album list) chunk with albums derived from tracks.
 
@@ -180,7 +180,7 @@ def write_mhla(tracks: list["TrackInfo"]) -> tuple[bytes, dict[tuple[str, str], 
             if show_name:
                 album_show_names[key] = show_name
 
-    album_id = 1  # Start album IDs at 1
+    album_id = starting_index_for_album_id
     for (album_name, album_artist) in sorted(album_tracks.keys()):
         album_map[(album_name, album_artist)] = album_id
         sort_artist = album_sort_artists.get((album_name, album_artist), "")
@@ -206,7 +206,7 @@ def write_mhla(tracks: list["TrackInfo"]) -> tuple[bytes, dict[tuple[str, str], 
     # Album count
     struct.pack_into('<I', header, 8, album_count)
 
-    return bytes(header) + bytes(album_items), album_map
+    return bytes(header) + bytes(album_items), album_map, album_id
 
 
 def write_mhla_empty() -> bytes:

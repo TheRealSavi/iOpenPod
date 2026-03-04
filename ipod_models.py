@@ -208,6 +208,13 @@ class DeviceCapabilities:
     """Number of ``Fxx`` directories under ``iPod_Control/Music/``.
     Varies 0–50 depending on model and storage capacity."""
 
+    # ── SQLite database ────────────────────────────────────────────────
+    uses_sqlite_db: bool = False
+    """If True, device uses SQLite databases in
+    ``iTunes Library.itlp/`` instead of (or alongside) binary
+    iTunesDB/iTunesCDB.  The firmware on Nano 6G/7G reads the SQLite
+    databases and ignores iTunesCDB completely."""
+
     # ── Writer parameters ──────────────────────────────────────────────
     db_version: int = 0x30
     """iTunesDB version to write in mhbd header.  Older iPods need
@@ -564,6 +571,7 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         supports_artwork=True,
         supports_sparse_artwork=True,
         supports_compressed_db=True,
+        uses_sqlite_db=True,    # Firmware reads SQLite, ignores iTunesCDB
         cover_art_formats=_ART_NANO_6G,
         music_dirs=20,
         db_version=0x30,
@@ -577,6 +585,7 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         supports_artwork=True,
         supports_sparse_artwork=True,
         supports_compressed_db=True,
+        uses_sqlite_db=True,    # Firmware reads SQLite, ignores iTunesCDB
         cover_art_formats=_ART_NANO_6G,  # assumed same as 6G; no SysInfoExtended data
         music_dirs=20,
         db_version=0x30,

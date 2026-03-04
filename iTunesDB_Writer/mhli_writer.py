@@ -96,7 +96,7 @@ def write_mhii_artist(artist_id: int, artist_name: str) -> bytes:
     return bytes(header) + bytes(children)
 
 
-def write_mhli(tracks: list["TrackInfo"]) -> tuple[bytes, dict[str, int]]:
+def write_mhli(tracks: list["TrackInfo"], starting_index_for_artist_id: int) -> tuple[bytes, dict[str, int], int]:
     """
     Write an MHLI (artist list) chunk with artists derived from tracks.
 
@@ -124,7 +124,7 @@ def write_mhli(tracks: list["TrackInfo"]) -> tuple[bytes, dict[str, int]]:
     artist_items = bytearray()
     artist_map: dict[str, int] = {}  # lowercase artist → artist_id
 
-    artist_id = 1  # Start artist IDs at 1
+    artist_id = starting_index_for_artist_id
     for key in sorted(artist_display.keys()):
         display_name = artist_display[key]
         artist_map[key] = artist_id
@@ -145,7 +145,7 @@ def write_mhli(tracks: list["TrackInfo"]) -> tuple[bytes, dict[str, int]]:
     # Artist count
     struct.pack_into('<I', header, 8, artist_count)
 
-    return bytes(header) + bytes(artist_items), artist_map
+    return bytes(header) + bytes(artist_items), artist_map, artist_id
 
 
 def write_mhli_empty() -> bytes:

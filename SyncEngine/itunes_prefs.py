@@ -481,6 +481,30 @@ def protect_from_itunes(
     buf[_OFF_ENABLE_DISK] = 0x01
     prefs.enable_disk_use = True
 
+    # Write sync history entry for iOpenPod.
+    # macOS Finder/Music checks the sync history to see which computer last
+    # synced the iPod.  If the history is empty or stale, macOS may treat the
+    # iPod as "new" and reinitialise it.  Writing our entry tells macOS that
+    # a known host recently synced this device.
+    HISTORY_START = 384
+    BLOCK_SIZE = 128  # 64-byte username + 64-byte hostname
+    try:
+        import getpass
+        _username = getpass.getuser()
+    except Exception:
+        _username = "iOpenPod"
+    _hostname = socket.gethostname()
+
+    # Ensure buf is large enough for at least one history entry
+    min_len = HISTORY_START + BLOCK_SIZE
+    if len(buf) < min_len:
+        buf.extend(b'\x00' * (min_len - len(buf)))
+
+    # Write our entry as the first (most recent) sync history block
+    _write_padded_string(buf, HISTORY_START, _username, 64)
+    _write_padded_string(buf, HISTORY_START + 64, _hostname, 64)
+    prefs.sync_history = [SyncHistoryEntry(_username, _hostname)]
+
     # Write binary atomically
     try:
         itunes_dir.mkdir(parents=True, exist_ok=True)

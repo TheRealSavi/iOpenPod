@@ -315,7 +315,7 @@ def write_mhit(track: TrackInfo, track_id: int, id_0x24: int = 0,
     # Total chunk length = header + all MHODs
     total_length = MHIT_HEADER_SIZE + len(mhod_data)
 
-    # Build the header buffer (388 bytes)
+    # Build the header buffer (624 bytes / 0x270)
     header = bytearray(MHIT_HEADER_SIZE)
 
     # Magic and lengths
