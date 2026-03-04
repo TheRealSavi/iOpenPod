@@ -19,6 +19,8 @@ Cross-referenced against:
   - libgpod itdb_itunesdb.c: mk_mhlp()
 """
 
+from __future__ import annotations
+
 import struct
 from typing import List, Optional, TYPE_CHECKING
 
