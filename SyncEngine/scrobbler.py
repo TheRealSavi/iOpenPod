@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import logging
+import ssl
 import time
 import urllib.error
 import urllib.parse
@@ -37,6 +38,15 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+
+def _ssl_context() -> ssl.SSLContext:
+    """Build an SSL context that works in PyInstaller bundles."""
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        return ssl.create_default_context()
 
 # ── ListenBrainz constants ──────────────────────────────────────────────────
 
@@ -164,7 +174,7 @@ def _make_request(
             req.add_header("Authorization", f"Token {token}")
 
         try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
+            with urllib.request.urlopen(req, timeout=timeout, context=_ssl_context()) as resp:
                 rl = RateLimitInfo.from_headers(resp.headers)
                 data = json.loads(resp.read().decode("utf-8"))
                 return data, rl
