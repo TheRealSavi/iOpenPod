@@ -285,11 +285,38 @@ def _read_qt_chapters_ffprobe(file_path: str) -> list[dict] | None:
     """Use ffprobe to extract QuickTime chapter tracks."""
     import subprocess
     import json as _json
+    import sys as _sys
+
+    # Resolve ffprobe via the same search cascade as the transcoder
+    ffprobe_bin: str | None = None
+    try:
+        from SyncEngine.transcoder import find_ffmpeg
+        ffmpeg = find_ffmpeg()
+        if ffmpeg:
+            from pathlib import Path as _Path
+            candidate = _Path(ffmpeg).parent / (
+                "ffprobe.exe" if _sys.platform == "win32" else "ffprobe"
+            )
+            if candidate.exists():
+                ffprobe_bin = str(candidate)
+    except Exception:
+        pass
+    if not ffprobe_bin:
+        import shutil as _shutil
+        ffprobe_bin = _shutil.which("ffprobe")
+    if not ffprobe_bin:
+        return None
+
+    _sp_kwargs: dict = (
+        {"creationflags": subprocess.CREATE_NO_WINDOW} if _sys.platform == "win32" else {}
+    )
+
     try:
         proc = subprocess.run(
-            ["ffprobe", "-v", "quiet", "-print_format", "json",
+            [ffprobe_bin, "-v", "quiet", "-print_format", "json",
              "-show_chapters", file_path],
             capture_output=True, text=True, timeout=10,
+            **_sp_kwargs,
         )
         if proc.returncode != 0:
             return None

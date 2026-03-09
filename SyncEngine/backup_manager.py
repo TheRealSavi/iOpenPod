@@ -635,7 +635,7 @@ class BackupManager:
                 if not blob_path.exists():
                     return rel_path, False, f"missing blob {file_hash[:16]}…"
                 try:
-                    shutil.copy2(str(blob_path), str(dest_path))
+                    shutil.copyfile(str(blob_path), str(dest_path))
                     return rel_path, True, ""
                 except (OSError, PermissionError) as exc:
                     return rel_path, False, str(exc)

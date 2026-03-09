@@ -99,31 +99,12 @@ _FPCALC_URLS = {
 # ── Download helpers ────────────────────────────────────────────────────────
 
 
-def _make_ssl_context():
-    """Create an SSL context that works on macOS with the official Python installer.
-
-    The official macOS Python installer ships its own OpenSSL that does NOT
-    trust the system certificate store, causing CERTIFICATE_VERIFY_FAILED on
-    HTTPS downloads.  We try, in order:
-      1. certifi CA bundle (pip-installable, often already present)
-      2. Default system context (works on Linux, Homebrew Python, etc.)
-    """
-    import ssl
-    try:
-        import certifi
-        return ssl.create_default_context(cafile=certifi.where())
-    except ImportError:
-        pass
-    return ssl.create_default_context()
-
-
 def _download(url: str, dest: Path, progress_callback=None) -> bool:
     """Download a URL to a file. Returns True on success."""
     logger.info(f"Downloading {url}")
     try:
-        ctx = _make_ssl_context()
         req = Request(url, headers={"User-Agent": "iOpenPod/1.0.0"})
-        with urlopen(req, timeout=120, context=ctx) as resp:
+        with urlopen(req, timeout=120) as resp:
             total = int(resp.headers.get("Content-Length", 0))
             downloaded = 0
             with open(dest, "wb") as f:

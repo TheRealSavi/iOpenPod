@@ -197,7 +197,7 @@ def write_sqlite_databases(
             for fname, src_path in files_to_move:
                 dst_path = os.path.join(itlp_path, fname)
                 try:
-                    shutil.copy2(src_path, dst_path)
+                    shutil.copyfile(src_path, dst_path)
                 except Exception as e:
                     logger.error("Failed to copy %s to iPod: %s", fname, e)
                     raise

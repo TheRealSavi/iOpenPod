@@ -25,7 +25,6 @@ import os
 import platform
 import re
 import shutil
-import ssl
 import stat
 import subprocess
 import sys
@@ -62,15 +61,7 @@ class UpdateResult:
     error: str = ""
 
 
-# ── SSL / HTTP helpers ──────────────────────────────────────────────────────
-
-
-def _ssl_context() -> ssl.SSLContext:
-    try:
-        import certifi
-        return ssl.create_default_context(cafile=certifi.where())
-    except ImportError:
-        return ssl.create_default_context()
+# ── HTTP helpers ────────────────────────────────────────────────────────────
 
 
 def _get_json(url: str) -> dict:
@@ -79,7 +70,7 @@ def _get_json(url: str) -> dict:
         "Accept": "application/vnd.github+json",
         "User-Agent": "iOpenPod-Updater",
     })
-    with urlopen(req, timeout=15, context=_ssl_context()) as resp:
+    with urlopen(req, timeout=15) as resp:
         return json.loads(resp.read())
 
 
@@ -167,7 +158,7 @@ def download_update(
 
     try:
         req = Request(url, headers={"User-Agent": "iOpenPod-Updater"})
-        with urlopen(req, timeout=300, context=_ssl_context()) as resp:
+        with urlopen(req, timeout=300) as resp:
             total = int(resp.headers.get("Content-Length", 0))
             downloaded = 0
             with open(dest, "wb") as f:
@@ -192,7 +183,7 @@ def verify_checksum(archive_path: Path, checksum_url: str) -> bool:
     """Download the .sha256 file and verify *archive_path* against it."""
     try:
         req = Request(checksum_url, headers={"User-Agent": "iOpenPod-Updater"})
-        with urlopen(req, timeout=15, context=_ssl_context()) as resp:
+        with urlopen(req, timeout=15) as resp:
             text = resp.read().decode("utf-8").strip()
         expected_hash = text.split()[0].lower()
     except (URLError, OSError) as exc:

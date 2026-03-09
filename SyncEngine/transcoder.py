@@ -514,11 +514,11 @@ def transcode(
         base_name = source_path.stem
 
     if target == TranscodeTarget.COPY:
-        # No transcoding needed - just copy
+        # No transcoding needed - just copy (copyfile avoids xattr issues on FAT32)
         output_path = output_dir / (base_name + source_path.suffix)
         try:
             output_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source_path, output_path)
+            shutil.copyfile(source_path, output_path)
             return TranscodeResult(
                 success=True,
                 source_path=source_path,

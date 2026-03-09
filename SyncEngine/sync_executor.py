@@ -407,7 +407,9 @@ class SyncExecutor:
                     logger.error("Database write returned failure — skipping mapping save")
                     if progress_callback:
                         progress_callback(SyncProgress("write_database", 1, 1, message="Database write FAILED"))
-                    return
+                    result.success = False
+                    result.errors.append(("database", "Database write failed"))
+                    return result
                 if progress_callback:
                     progress_callback(SyncProgress("write_database", 1, 1, message=f"Database written with {len(all_tracks)} tracks"))
 
@@ -620,12 +622,12 @@ class SyncExecutor:
         completed_lock = threading.Lock()
         total = len(plan.to_update_file)
 
-        def _do_copy(item: SyncItem) -> tuple[SyncItem, bool, Optional[Path], bool]:
+        def _do_copy(item: SyncItem) -> tuple[SyncItem, bool, Optional[Path], bool, str]:
             """Transcode/copy a single track. Runs in worker thread."""
             # Defensive check - should never fail as we pre-filtered items
             if item.pc_track is None:
                 logger.error(f"_do_copy called with None pc_track for {item.description}")
-                return (item, False, None, False)
+                return (item, False, None, False, "No source track")
             source_path = Path(item.pc_track.path)
             need_transcode = needs_transcoding(source_path)
 
@@ -644,12 +646,12 @@ class SyncExecutor:
 
                 tc_progress = _make_tc_cb(filename)
 
-            success, ipod_path, was_transcoded = self._copy_to_ipod(
+            success, ipod_path, was_transcoded, err_msg = self._copy_to_ipod(
                 source_path, need_transcode, fingerprint=item.fingerprint,
                 aac_bitrate=aac_bitrate,
                 transcode_progress=tc_progress,
             )
-            return (item, success, ipod_path, was_transcoded)
+            return (item, success, ipod_path, was_transcoded, err_msg)
 
         workers = self._max_workers
         logger.info(f"Re-syncing {len(items_to_process)} files with {workers} workers")
@@ -670,7 +672,7 @@ class SyncExecutor:
 
                 idx = future_to_idx[future]
                 try:
-                    item, success, ipod_path, was_transcoded = future.result()
+                    item, success, ipod_path, was_transcoded, err_msg = future.result()
                 except _OutOfSpaceError as e:
                     logger.error(str(e))
                     result.errors.append(("storage", str(e)))
@@ -695,7 +697,8 @@ class SyncExecutor:
                     progress_callback(SyncProgress("update_file", completed_count, total, item, item.description))
 
                 if not success or ipod_path is None:
-                    result.errors.append((item.description, "Failed to re-sync"))
+                    detail = f"Failed to re-sync: {err_msg}" if err_msg else "Failed to re-sync"
+                    result.errors.append((item.description, detail))
                     continue
 
                 ipod_location = ":" + str(ipod_path.relative_to(self.ipod_path)).replace("\\", ":").replace("/", ":")
@@ -942,12 +945,12 @@ class SyncExecutor:
         completed_lock = threading.Lock()
         total = len(plan.to_add)
 
-        def _do_copy(item: SyncItem) -> tuple[SyncItem, bool, Optional[Path], bool]:
+        def _do_copy(item: SyncItem) -> tuple[SyncItem, bool, Optional[Path], bool, str]:
             """Transcode/copy a single track. Runs in worker thread."""
             # Defensive check - should never fail as we pre-filtered items
             if item.pc_track is None:
                 logger.error(f"_do_copy called with None pc_track for {item.description}")
-                return (item, False, None, False)
+                return (item, False, None, False, "No source track")
             source_path = Path(item.pc_track.path)
             need_transcode = needs_transcoding(source_path)
 
@@ -966,12 +969,12 @@ class SyncExecutor:
 
                 tc_progress = _make_tc_cb(filename)
 
-            success, ipod_path, was_transcoded = self._copy_to_ipod(
+            success, ipod_path, was_transcoded, err_msg = self._copy_to_ipod(
                 source_path, need_transcode, fingerprint=item.fingerprint,
                 aac_bitrate=aac_bitrate,
                 transcode_progress=tc_progress,
             )
-            return (item, success, ipod_path, was_transcoded)
+            return (item, success, ipod_path, was_transcoded, err_msg)
 
         workers = self._max_workers
         logger.info(f"Adding {len(items_to_process)} tracks with {workers} workers")
@@ -995,7 +998,7 @@ class SyncExecutor:
 
                 idx = future_to_idx[future]
                 try:
-                    item, success, ipod_path, was_transcoded = future.result()
+                    item, success, ipod_path, was_transcoded, err_msg = future.result()
                 except _OutOfSpaceError as e:
                     logger.error(str(e))
                     result.errors.append(("storage", str(e)))
@@ -1020,7 +1023,8 @@ class SyncExecutor:
                     progress_callback(SyncProgress("add", completed_count, total, item, item.description))
 
                 if not success or ipod_path is None:
-                    result.errors.append((item.description, "Failed to copy/transcode"))
+                    detail = f"Failed to copy/transcode: {err_msg}" if err_msg else "Failed to copy/transcode"
+                    result.errors.append((item.description, detail))
                     continue
 
                 ipod_location = ":" + str(ipod_path.relative_to(self.ipod_path)).replace("\\", ":").replace("/", ":")
@@ -1300,7 +1304,7 @@ class SyncExecutor:
         fingerprint: Optional[str] = None,
         aac_bitrate: int = 256,
         transcode_progress: Optional[Callable[[float], None]] = None,
-    ) -> tuple[bool, Optional[Path], bool]:
+    ) -> tuple[bool, Optional[Path], bool, str]:
         """
         Copy or transcode a file to iPod, using cache when possible.
 
@@ -1308,7 +1312,7 @@ class SyncExecutor:
             transcode_progress: Optional callback receiving 0.0-1.0 fraction
                 for transcode progress (forwarded to ffmpeg).
 
-        Returns: (success, ipod_path, was_transcoded)
+        Returns: (success, ipod_path, was_transcoded, error_message)
         """
         dest_folder = self._get_next_music_folder()
         source_size = source_path.stat().st_size
@@ -1340,9 +1344,9 @@ class SyncExecutor:
                     new_name = self._generate_ipod_filename(source_path.stem, ext, dest_folder)
                     final_path = dest_folder / new_name
                     try:
-                        shutil.copy2(cached_path, final_path)
+                        shutil.copyfile(cached_path, final_path)
                         logger.info(f"Used cached transcode: {source_path.name}")
-                        return True, final_path, True
+                        return True, final_path, True, ""
                     except Exception as e:
                         logger.warning(f"Cache copy failed, will transcode: {e}")
 
@@ -1368,20 +1372,21 @@ class SyncExecutor:
                         bitrate=bitrate,
                     )
 
-                return True, final_path, True
+                return True, final_path, True, ""
             else:
                 logger.error(f"Transcode failed: {result.error_message}")
-                return False, None, True
+                return False, None, True, result.error_message or "Transcode failed"
         else:
-            # Direct copy
+            # Direct copy — use copyfile (data only) to avoid macOS xattr/ACL
+            # issues when writing to FAT32-formatted iPods
             new_name = self._generate_ipod_filename(source_path.stem, source_path.suffix, dest_folder)
             dest_path = dest_folder / new_name
             try:
-                shutil.copy2(source_path, dest_path)
-                return True, dest_path, False
+                shutil.copyfile(source_path, dest_path)
+                return True, dest_path, False, ""
             except Exception as e:
                 logger.error(f"Copy failed: {e}")
-                return False, None, False
+                return False, None, False, str(e)
 
     def _delete_from_ipod(self, ipod_path: str | Path) -> bool:
         """Delete a file from iPod."""

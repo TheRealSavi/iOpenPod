@@ -66,6 +66,27 @@ _log_file_path = _configure_logging()
 logger = logging.getLogger(__name__)
 
 
+def _install_certifi_ssl():
+    """Set Python's default HTTPS context to use the certifi CA bundle.
+
+    PyInstaller bundles ship their own OpenSSL which does NOT trust the
+    system certificate store.  This patches ssl globally so every
+    ``urllib.request.urlopen`` call (and anything else using
+    ``ssl.create_default_context``) automatically finds certificates.
+    """
+    try:
+        import certifi
+        import ssl
+        ssl._create_default_https_context = lambda: ssl.create_default_context(
+            cafile=certifi.where()
+        )
+    except ImportError:
+        pass  # certifi not installed → rely on system certs
+
+
+_install_certifi_ssl()
+
+
 def _get_crash_log_path() -> str:
     """Get path for crash log file."""
     return os.path.join(_get_log_dir(), "crash.log")
