@@ -66,13 +66,22 @@ jobs:
       - name: Ad-hoc codesign (macOS)
         if: runner.os == 'macOS'
         run: |
-          # Sign every .so/.dylib and the main executable, then the .app bundle
-          find dist/iOpenPod.app -type f \( -name '*.so' -o -name '*.dylib' \) \
-            -exec codesign --force --sign - --options runtime --entitlements entitlements.plist {} \;
-          codesign --force --sign - --options runtime --entitlements entitlements.plist \
-            dist/iOpenPod.app/Contents/MacOS/iOpenPod
-          codesign --force --sign - --options runtime --entitlements entitlements.plist \
-            dist/iOpenPod.app
+          # Re-sign every Mach-O binary inside the bundle (inside-out).
+          # --options runtime is intentionally omitted: Hardened Runtime
+          # triggers strict PAC checks in CoreFoundation on macOS 26+
+          # that crash PyInstaller-frozen Qt apps during bundle init.
+          # Hardened Runtime is only needed for notarization (we don't notarize).
+          find dist/iOpenPod.app/Contents/Frameworks \
+               dist/iOpenPod.app/Contents/Resources \
+               -type f -perm +111 -print0 \
+            | xargs -0 file \
+            | grep -i 'mach-o' \
+            | cut -d: -f1 \
+            | while read f; do
+                codesign --force --sign - "$f"
+              done
+          codesign --force --sign - dist/iOpenPod.app/Contents/MacOS/iOpenPod
+          codesign --force --sign - dist/iOpenPod.app
           # Verify
           codesign --verify --deep --strict dist/iOpenPod.app
           echo "Code signing verified OK"
