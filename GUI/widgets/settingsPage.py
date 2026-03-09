@@ -1296,6 +1296,10 @@ class SettingsPage(QWidget):
             )
             progress.setWindowTitle("iOpenPod Update")
             progress.setMinimumDuration(0)
+            progress.setAutoClose(False)
+            progress.setAutoReset(False)
+            # Keep a reference so it isn't garbage-collected
+            self._update_progress = progress
 
             checksum_url = result.download_url + ".sha256"
             downloader = UpdateDownloader(result.download_url, checksum_url, self)
@@ -1308,7 +1312,14 @@ class SettingsPage(QWidget):
                 progress.setValue(pct)
 
             def _on_finished(path_str: str):
+                # Disconnect cancel so closing the dialog doesn't kill
+                # the already-finished downloader or interfere with staging.
+                try:
+                    progress.canceled.disconnect()
+                except TypeError:
+                    pass
                 progress.close()
+                self._update_progress = None
                 if not path_str:
                     QMessageBox.warning(
                         self, "Download Failed",
