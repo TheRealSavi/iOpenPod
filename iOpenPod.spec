@@ -27,7 +27,7 @@ a = Analysis(
     ],
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=['pyi_rth_macos_nsapp.py'] if sys.platform == 'darwin' else [],
     excludes=[],
     noarchive=False,
     optimize=0,
