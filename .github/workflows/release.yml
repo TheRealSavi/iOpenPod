@@ -26,21 +26,25 @@ jobs:
             artifact: iOpenPod-Windows
             archive_cmd: Compress-Archive -Path dist\iOpenPod\* -DestinationPath iOpenPod-Windows.zip
             archive_name: iOpenPod-Windows.zip
+            shell: pwsh
 
           - os: macos-13          # Intel runner (x86_64)
             artifact: iOpenPod-macOS-Intel
             archive_cmd: cd dist && zip -r ../iOpenPod-macOS-Intel.zip iOpenPod.app/
             archive_name: iOpenPod-macOS-Intel.zip
+            shell: bash
 
           - os: macos-14          # Apple Silicon runner (arm64)
             artifact: iOpenPod-macOS-AppleSilicon
             archive_cmd: cd dist && zip -r ../iOpenPod-macOS-AppleSilicon.zip iOpenPod.app/
             archive_name: iOpenPod-macOS-AppleSilicon.zip
+            shell: bash
 
           - os: ubuntu-22.04
             artifact: iOpenPod-Linux
             archive_cmd: cd dist && tar czf ../iOpenPod-Linux.tar.gz iOpenPod/
             archive_name: iOpenPod-Linux.tar.gz
+            shell: bash
 
     runs-on: ${{ matrix.os }}
 
@@ -72,7 +76,7 @@ jobs:
       # ── Package archive ─────────────────────────────────────────────
       - name: Create archive
         run: ${{ matrix.archive_cmd }}
-        shell: ${{ runner.os == 'Windows' && 'pwsh' || 'bash' }}
+        shell: ${{ matrix.shell }}
 
       # ── Checksums ───────────────────────────────────────────────────
       - name: Generate SHA-256 checksum
