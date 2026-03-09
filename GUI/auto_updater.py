@@ -94,9 +94,7 @@ def _platform_asset_pattern() -> re.Pattern:
     if system == "win32":
         return re.compile(r"iOpenPod-Windows\.zip$", re.I)
     elif system == "darwin":
-        if machine in ("arm64", "aarch64"):
-            return re.compile(r"iOpenPod-macOS-AppleSilicon\.zip$", re.I)
-        return re.compile(r"iOpenPod-macOS-Intel\.zip$", re.I)
+        return re.compile(r"iOpenPod-macOS\.zip$", re.I)
     else:
         return re.compile(r"iOpenPod-Linux\.tar\.gz$", re.I)
 

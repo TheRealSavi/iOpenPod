@@ -26,13 +26,9 @@ jobs:
             artifact: iOpenPod-Windows
             archive_name: iOpenPod-Windows.zip
 
-          - os: macos-13          # Intel runner (x86_64)
-            artifact: iOpenPod-macOS-Intel
-            archive_name: iOpenPod-macOS-Intel.zip
-
-          - os: macos-14          # Apple Silicon runner (arm64)
-            artifact: iOpenPod-macOS-AppleSilicon
-            archive_name: iOpenPod-macOS-AppleSilicon.zip
+          - os: macos-14          # Apple Silicon (arm64); Intel Macs use Rosetta 2
+            artifact: iOpenPod-macOS
+            archive_name: iOpenPod-macOS.zip
 
           - os: ubuntu-22.04
             artifact: iOpenPod-Linux
