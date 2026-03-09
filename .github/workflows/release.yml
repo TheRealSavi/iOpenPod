@@ -93,7 +93,7 @@ jobs:
 
       - name: Create archive (macOS)
         if: runner.os == 'macOS'
-        run: cd dist && zip -r ../${{ matrix.archive_name }} iOpenPod.app/
+        run: cd dist && ditto -c -k --keepParent --sequesterRsrc iOpenPod.app ../${{ matrix.archive_name }}
 
       - name: Create archive (Linux)
         if: runner.os == 'Linux'
