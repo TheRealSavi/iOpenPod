@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>iOpenPod — Sync Your iPod Without iTunes</title>
-    <meta name="description" content="Ditch iTunes. iOpenPod syncs music, play counts, ratings, and album art to your iPod Classic directly. Open-source, cross-platform, plays nice with FLAC.">
-    <meta name="keywords" content="iPod sync tool, iPod Classic manager, iTunes alternative, iTunesDB, iPod music sync, open source iPod, iPod Linux, iPod Windows, iPod manager without iTunes, FLAC to iPod">
+    <meta name="description" content="Ditch iTunes. iOpenPod is a free app that syncs music, podcasts, audiobooks, play counts, and album art to your iPod. Download for Windows, macOS, or Linux — no Python required.">
+    <meta name="keywords" content="iPod sync tool, iPod Classic manager, iTunes alternative, iTunesDB, iPod music sync, open source iPod, iPod Linux, iPod Windows, iPod manager without iTunes, FLAC to iPod, iPod Nano sync, iPod podcast manager, download iPod manager">
     <meta name="author" content="John Gibbons">
 
     <!-- Open Graph / Social -->
@@ -13,13 +13,13 @@
     <meta property="og:title" content="iOpenPod — Sync Your iPod Without iTunes">
     <meta property="og:description" content="Ditch iTunes. iOpenPod syncs music, play counts, ratings, and album art to your iPod Classic directly. Open-source and cross-platform.">
     <meta property="og:url" content="https://therealsavi.github.io/iOpenPod/">
-    <meta property="og:image" content="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/screenshots/albums.png">
+    <meta property="og:image" content="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/assets/screenshots/hero.png">
 
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="iOpenPod — Sync Your iPod Without iTunes">
-    <meta name="twitter:description" content="Open-source iPod sync. Handles FLAC, play counts, album art, playlists. No iTunes required.">
-    <meta name="twitter:image" content="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/screenshots/albums.png">
+    <meta name="twitter:description" content="Free iPod sync app. Music, podcasts, audiobooks, scrobbling, and drag-and-drop. No iTunes required.">
+    <meta name="twitter:image" content="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/assets/screenshots/hero.png">
 
     <link rel="canonical" href="https://therealsavi.github.io/iOpenPod/">
     <link rel="sitemap" type="application/xml" href="/iOpenPod/sitemap.xml">
@@ -357,10 +357,11 @@
         "@context": "https://schema.org",
         "@type": "SoftwareApplication",
         "name": "iOpenPod",
-        "description": "Open-source iPod sync tool. Manages music, play counts, ratings, and album art on iPod Classic and Nano without iTunes.",
+        "description": "Free, open-source iPod sync tool. Manage music, podcasts, audiobooks, play counts, ratings, and album art on iPod Classic and Nano without iTunes. Download for Windows, macOS, and Linux.",
         "applicationCategory": "MultimediaApplication",
         "operatingSystem": "Windows, macOS, Linux",
-        "screenshot": "https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/screenshots/albums.png",
+        "screenshot": "https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/assets/screenshots/hero.png",
+        "downloadUrl": "https://github.com/TheRealSavi/iOpenPod/releases/latest",
         "offers": {
             "@type": "Offer",
             "price": "0",
@@ -384,7 +385,7 @@
                 "name": "How do I sync my iPod without iTunes?",
                 "acceptedAnswer": {
                     "@type": "Answer",
-                    "text": "Install iOpenPod, connect your iPod via USB, select your music folder, and click sync. iOpenPod writes directly to the iPod's database — no iTunes needed."
+                    "text": "Download iOpenPod from the releases page, extract it, and run it. Connect your iPod via USB, select your music folder, and click sync. No Python or iTunes needed."
                 }
             },
             {
@@ -400,7 +401,7 @@
                 "name": "Does iOpenPod work on Linux and macOS?",
                 "acceptedAnswer": {
                     "@type": "Answer",
-                    "text": "Yes. iOpenPod is built with Python and PyQt6 and runs on Windows, macOS, and Linux. Just mount your iPod as a drive and go."
+                    "text": "Yes. Precompiled binaries are available for Windows, macOS, and Linux. Just download, extract, and run — no Python installation required."
                 }
             },
             {
@@ -408,7 +409,7 @@
                 "name": "Which iPod models are supported?",
                 "acceptedAnswer": {
                     "@type": "Answer",
-                    "text": "All iPod Classic generations, iPod Mini, iPod Photo, and iPod Nano 1G through 7G have full read and write support."
+                    "text": "All iPod Classic generations, iPod Mini, iPod Photo, and iPod Nano 1G through 7G have full read and write support. Shuffle support is coming soon."
                 }
             },
             {
@@ -417,6 +418,14 @@
                 "acceptedAnswer": {
                     "@type": "Answer",
                     "text": "No. iOpenPod shows you exactly what will change before anything is written, and automatically backs up your database before every sync. You can roll back with one click."
+                }
+            },
+            {
+                "@type": "Question",
+                "name": "Do I need Python to use iOpenPod?",
+                "acceptedAnswer": {
+                    "@type": "Answer",
+                    "text": "No. The releases page provides precompiled binaries for Windows, macOS, and Linux. Just download, extract, and run. Python is only needed if you want to contribute to development."
                 }
             }
         ]
@@ -433,18 +442,17 @@
 
             <div class="badges">
                 <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="MIT License">
-                <img src="https://img.shields.io/badge/Python-3.13%2B-3776AB.svg" alt="Python 3.13+">
-                <img src="https://img.shields.io/badge/GUI-PyQt6-41CD52.svg" alt="PyQt6">
                 <img src="https://img.shields.io/badge/Platform-Win%20%7C%20Mac%20%7C%20Linux-lightgrey.svg" alt="Cross-platform">
+                <img src="https://img.shields.io/github/v/release/TheRealSavi/iOpenPod" alt="Latest Release">
             </div>
 
             <div class="cta">
-                <a href="https://github.com/TheRealSavi/iOpenPod" class="btn btn-primary">View on GitHub</a>
-                <a href="#install" class="btn btn-secondary">Get Started</a>
+                <a href="https://github.com/TheRealSavi/iOpenPod/releases/latest" class="btn btn-primary">Download Now</a>
+                <a href="https://github.com/TheRealSavi/iOpenPod" class="btn btn-secondary">View on GitHub</a>
             </div>
 
             <div class="hero-screenshot">
-                <img src="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/screenshots/albums.png" alt="iOpenPod — open source iPod Classic sync tool showing album grid with artwork on Windows">
+                <img src="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/assets/screenshots/hero.png" alt="iOpenPod — open source iPod Classic sync tool showing album grid with artwork on Windows">
             </div>
         </div>
     </header>
@@ -452,6 +460,7 @@
     <main class="container">
         <section>
             <h2>What It Does</h2>
+            <p>Everything you need to keep your iPod alive — no iTunes, no hassle.</p>
             <div class="feature-grid">
                 <div class="feature-card">
                     <span class="icon">🎵</span>
@@ -459,29 +468,59 @@
                     <p>FLAC, OGG, WMA, MP3, AAC — drop in whatever you have. Non-native formats get transcoded to ALAC or AAC automatically.</p>
                 </div>
                 <div class="feature-card">
-                    <span class="icon">🔍</span>
-                    <h3>Fingerprint-Based Matching</h3>
-                    <p>Tracks are identified by how they sound, not filenames or tags. Re-encode a file or fix a typo — it still matches.</p>
+                    <span class="icon">📻</span>
+                    <h3>Podcasts Built In</h3>
+                    <p>Search, subscribe, and download podcast episodes right inside iOpenPod. Sync them to your iPod without a separate app.</p>
+                </div>
+                <div class="feature-card">
+                    <span class="icon">🎧</span>
+                    <h3>ListenBrainz Scrobbling</h3>
+                    <p>Sign into ListenBrainz and your listening history scrobbles automatically every time you sync. Keep your music profile current.</p>
+                </div>
+                <div class="feature-card">
+                    <span class="icon">📚</span>
+                    <h3>More Than Music</h3>
+                    <p>Audiobooks, movies, and TV shows are all supported. Your iPod sorts them into the right categories automatically.</p>
+                </div>
+                <div class="feature-card">
+                    <span class="icon">🖱️</span>
+                    <h3>Drag and Drop</h3>
+                    <p>Don't need full sync? Just drag files into the app and they'll land on your iPod — no setup, no fuss.</p>
                 </div>
                 <div class="feature-card">
                     <span class="icon">📊</span>
-                    <h3>Play Counts Come Back</h3>
+                    <h3>Play Counts &amp; Ratings</h3>
                     <p>Listen on your iPod, plug it in, and your play counts, ratings, and skip counts sync back to your PC library.</p>
                 </div>
                 <div class="feature-card">
                     <span class="icon">🖼️</span>
                     <h3>Album Art Included</h3>
-                    <p>Art is pulled from your files, resized, and written in the iPod's native format. No extra steps.</p>
+                    <p>Art is pulled from your files, resized, and written in the iPod's native format. No extra steps required.</p>
                 </div>
                 <div class="feature-card">
                     <span class="icon">✅</span>
                     <h3>Review Before Syncing</h3>
-                    <p>Every sync shows you exactly what's changing — adds, removes, metadata updates — with checkboxes for each track.</p>
+                    <p>Every sync shows you exactly what's changing — adds, removes, updates — with checkboxes for each item.</p>
                 </div>
                 <div class="feature-card">
                     <span class="icon">🛡️</span>
-                    <h3>Backup & Rollback</h3>
+                    <h3>Backup &amp; Rollback</h3>
                     <p>Your iPod database is snapshotted before every sync. One click to undo if something goes wrong.</p>
+                </div>
+                <div class="feature-card">
+                    <span class="icon">📋</span>
+                    <h3>Playlists &amp; Smart Playlists</h3>
+                    <p>Browse, create, and manage playlists. Smart playlists with rule-based filtering are supported too.</p>
+                </div>
+                <div class="feature-card">
+                    <span class="icon">🌗</span>
+                    <h3>Light &amp; Dark Mode</h3>
+                    <p>Choose your theme. The UI scales beautifully on high-DPI retina displays and low-res monitors alike.</p>
+                </div>
+                <div class="feature-card">
+                    <span class="icon">🔄</span>
+                    <h3>Auto-Updater</h3>
+                    <p>iOpenPod checks for updates automatically and can update itself right from the app. Always stay current.</p>
                 </div>
             </div>
         </section>
@@ -490,56 +529,90 @@
             <h2>See It In Action</h2>
             <div class="screenshot-gallery">
                 <div class="screenshot-item">
-                    <img src="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/screenshots/syncreview.png" alt="iPod sync review — see tracks being added and removed before syncing without iTunes">
+                    <img src="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/assets/screenshots/syncreview.png" alt="iPod sync review — see tracks being added and removed before syncing without iTunes">
                     <div class="caption">Review every change before it hits your iPod</div>
                 </div>
                 <div class="screenshot-item">
-                    <img src="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/screenshots/devicepicker.png" alt="iPod device detection — auto-detect iPod Classic and Nano models on Windows, Mac, Linux">
+                    <img src="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/assets/screenshots/devicepicker.png" alt="iPod device detection — auto-detect iPod Classic and Nano models on Windows, Mac, Linux">
                     <div class="caption">Detect and pick your connected iPod</div>
                 </div>
                 <div class="screenshot-item">
-                    <img src="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/screenshots/playlists.png" alt="iPod playlist manager — browse and edit playlists without iTunes">
+                    <img src="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/assets/screenshots/podcasts.png" alt="Podcast manager — search, subscribe, and sync podcasts to your iPod">
+                    <div class="caption">Built-in podcast manager</div>
+                </div>
+                <div class="screenshot-item">
+                    <img src="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/assets/screenshots/managetracks.png" alt="Drag and drop tracks onto your iPod without a full sync">
+                    <div class="caption">Drag and drop tracks onto your iPod</div>
+                </div>
+                <div class="screenshot-item">
+                    <img src="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/assets/screenshots/playlists.png" alt="iPod playlist manager — browse and edit playlists without iTunes">
                     <div class="caption">Browse and manage playlists</div>
                 </div>
                 <div class="screenshot-item">
-                    <img src="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/screenshots/smartplaylists.png" alt="iPod smart playlists — rule-based playlist filtering for iPod Classic">
+                    <img src="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/assets/screenshots/smartplaylist.png" alt="iPod smart playlists — rule-based playlist filtering for iPod Classic">
                     <div class="caption">Smart playlists with rule-based filtering</div>
                 </div>
                 <div class="screenshot-item">
-                    <img src="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/screenshots/backups.png" alt="iPod database backup and restore — one-click rollback for safe syncing">
-                    <div class="caption">One-click backup and restore</div>
+                    <img src="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/assets/screenshots/lightmode.png" alt="iOpenPod light mode — choose between dark and light themes">
+                    <div class="caption">Light mode for a brighter look</div>
                 </div>
                 <div class="screenshot-item">
-                    <img src="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/screenshots/settings.png" alt="iOpenPod settings — configure FLAC to ALAC transcoding and sync options">
-                    <div class="caption">Configure transcoding, sync behavior, and more</div>
+                    <img src="https://raw.githubusercontent.com/TheRealSavi/iOpenPod/main/assets/screenshots/backup.png" alt="iPod database backup and restore — one-click rollback for safe syncing">
+                    <div class="caption">One-click backup and restore</div>
                 </div>
             </div>
         </section>
 
         <section>
             <h2>Supported iPods</h2>
-            <p>Works with every click-wheel iPod that Apple ever made.</p>
+            <p>Works with every click-wheel iPod Apple ever made. Shuffle support coming soon!</p>
             <table>
                 <thead>
-                    <tr><th>Device</th><th>Read</th><th>Write</th><th>Notes</th></tr>
+                    <tr><th>Device</th><th>Status</th><th>Notes</th></tr>
                 </thead>
                 <tbody>
-                    <tr><td>iPod 1G–5G, Mini, Photo</td><td>✅</td><td>✅</td><td>No hash required</td></tr>
-                    <tr><td>iPod Classic (all gens)</td><td>✅</td><td>✅</td><td>Uses FireWire ID</td></tr>
-                    <tr><td>iPod Nano 1G–2G</td><td>✅</td><td>✅</td><td>No hash required</td></tr>
-                    <tr><td>iPod Nano 3G–4G</td><td>✅</td><td>✅</td><td>Uses FireWire ID</td></tr>
-                    <tr><td>iPod Nano 5G</td><td>✅</td><td>✅</td><td>Needs one iTunes sync first</td></tr>
-                    <tr><td>iPod Nano 6G–7G</td><td>✅</td><td>✅</td><td>Uses FireWire ID (WASM)</td></tr>
+                    <tr><td>iPod 1G–5G, Mini, Photo</td><td>✅ Fully supported</td><td>No hash required</td></tr>
+                    <tr><td>iPod Classic (all gens)</td><td>✅ Fully supported</td><td>Uses FireWire ID</td></tr>
+                    <tr><td>iPod Nano 1G–2G</td><td>✅ Fully supported</td><td>No hash required</td></tr>
+                    <tr><td>iPod Nano 3G–4G</td><td>✅ Fully supported</td><td>Uses FireWire ID</td></tr>
+                    <tr><td>iPod Nano 5G</td><td>✅ Fully supported</td><td>Needs one iTunes sync first</td></tr>
+                    <tr><td>iPod Nano 6G–7G</td><td>✅ Fully supported</td><td>Uses FireWire ID (WASM)</td></tr>
+                    <tr><td>iPod Shuffle</td><td>🔜 Coming soon</td><td></td></tr>
                 </tbody>
             </table>
         </section>
 
         <section id="install">
-            <h2>Get Started</h2>
+            <h2>Download &amp; Install</h2>
+            <p>No Python needed. Just download, extract, and run.</p>
+            <div style="text-align: center; margin-bottom: 24px;">
+                <a href="https://github.com/TheRealSavi/iOpenPod/releases/latest" class="btn btn-primary" style="font-size: 1.1rem; padding: 14px 36px;">Download Latest Release</a>
+            </div>
+            <table style="max-width: 600px; margin: 0 auto;">
+                <thead>
+                    <tr><th>Platform</th><th>File</th><th>Instructions</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td><strong>Windows</strong></td><td>iOpenPod-windows.zip</td><td>Extract the zip, run iOpenPod.exe</td></tr>
+                    <tr><td><strong>macOS</strong></td><td>iOpenPod-macos.tar.gz</td><td>Extract, right-click iOpenPod.app → Open</td></tr>
+                    <tr><td><strong>Linux</strong></td><td>iOpenPod-linux.tar.gz</td><td>Extract, run ./iOpenPod</td></tr>
+                </tbody>
+            </table>
+            <p class="prereqs" style="margin-top: 20px;">
+                <strong>Optional extras:</strong>
+                <a href="https://ffmpeg.org/">FFmpeg</a> for transcoding (FLAC&nbsp;→&nbsp;ALAC, etc.) and
+                <a href="https://acoustid.org/chromaprint">Chromaprint</a> for acoustic fingerprinting.
+            </p>
+            <p class="prereqs" style="margin-top: 8px;">
+                Once installed, iOpenPod checks for updates automatically and can update itself right from the app.
+            </p>
+        </section>
+
+        <section id="developers">
+            <h2>For Developers</h2>
+            <p>Want to hack on iOpenPod? Clone the repo and get running in seconds.</p>
             <p class="prereqs">
                 Requires <strong>Python 3.13+</strong> and <a href="https://docs.astral.sh/uv/">uv</a>.
-                For transcoding: <a href="https://ffmpeg.org/">FFmpeg</a>.
-                For fingerprinting: <a href="https://acoustid.org/chromaprint">Chromaprint</a>.
             </p>
             <div class="install-steps">
                 <code>git clone https://github.com/TheRealSavi/iOpenPod.git</code>
@@ -547,13 +620,21 @@
                 <code>uv sync</code>
                 <code>uv run python main.py</code>
             </div>
+            <p class="prereqs" style="margin-top: 16px;">
+                That's it. <code style="color: var(--accent);">uv sync</code> installs all dependencies into a virtual environment automatically.
+            </p>
         </section>
+
         <section>
             <h2>Frequently Asked Questions</h2>
             <div class="faq-list">
                 <details>
                     <summary>How do I sync my iPod without iTunes?</summary>
-                    <p>Install iOpenPod, connect your iPod via USB, select your music folder, and click sync. iOpenPod writes directly to the iPod's database — no iTunes needed.</p>
+                    <p>Download iOpenPod from the releases page, extract it, and run it. Connect your iPod via USB, select your music folder, and click sync — no iTunes or Python needed.</p>
+                </details>
+                <details>
+                    <summary>Do I need Python to use iOpenPod?</summary>
+                    <p>No. The releases page provides precompiled binaries for Windows, macOS, and Linux. Just download, extract, and run. Python is only needed if you want to contribute to development.</p>
                 </details>
                 <details>
                     <summary>Can I put FLAC files on an iPod?</summary>
@@ -561,15 +642,19 @@
                 </details>
                 <details>
                     <summary>Does it work on Linux and macOS?</summary>
-                    <p>Yes. It's built with Python and PyQt6 — runs on Windows, macOS, and Linux. Just mount your iPod as a drive and go.</p>
+                    <p>Yes. Precompiled downloads are available for Windows, macOS, and Linux. Just extract and run.</p>
                 </details>
                 <details>
                     <summary>Which iPod models are supported?</summary>
-                    <p>All iPod Classic generations, iPod Mini, iPod Photo, and iPod Nano 1G–7G have full read/write support.</p>
+                    <p>All iPod Classic generations, iPod Mini, iPod Photo, and iPod Nano 1G–7G have full read/write support. Shuffle support is coming soon.</p>
                 </details>
                 <details>
                     <summary>Will syncing erase my iPod?</summary>
                     <p>No. iOpenPod shows you exactly what will change before writing anything, and backs up your database before every sync. Roll back with one click.</p>
+                </details>
+                <details>
+                    <summary>Can I just drag files onto my iPod without syncing?</summary>
+                    <p>No, the iPod needs to have its database updated. But you can drag and drop files into iOpenPod and they'll be added to your iPod. No sync setup required.</p>
                 </details>
             </div>
         </section>
