@@ -270,36 +270,43 @@ def _write_windows_bootstrap(
     exe_name: str,
 ) -> Path:
     """Write a .cmd batch script that swaps the update after we exit."""
-    script = app_dir.parent / "_iopenpod_update.cmd"
+    # Write to temp dir — app_dir.parent may be read-only (Program Files, etc.)
+    script = Path(tempfile.gettempdir()) / "_iopenpod_update.cmd"
     script.write_text(
         f'@echo off\r\n'
         f'setlocal EnableDelayedExpansion\r\n'
+        f'title iOpenPod Updater\r\n'
+        f'echo Waiting for iOpenPod to exit...\r\n'
         f':wait\r\n'
         f'tasklist /FI "PID eq {pid}" 2>NUL | find /I "{pid}" >NUL\r\n'
         f'if not errorlevel 1 (\r\n'
-        f'    timeout /t 1 /nobreak >NUL\r\n'
+        f'    ping -n 2 127.0.0.1 >NUL\r\n'
         f'    goto wait\r\n'
         f')\r\n'
         f'\r\n'
-        f'rem Brief delay for file handles to fully release\r\n'
-        f'timeout /t 2 /nobreak >NUL\r\n'
+        f'echo Applying update...\r\n'
+        f'ping -n 3 127.0.0.1 >NUL\r\n'
         f'\r\n'
         f'if exist "{app_dir}.bak" rmdir /s /q "{app_dir}.bak"\r\n'
         f'\r\n'
-        f'rem Retry move up to 10 times (file locks may linger)\r\n'
         f'set "retries=0"\r\n'
         f':retry_move\r\n'
         f'move "{app_dir}" "{app_dir}.bak" >NUL 2>&1\r\n'
         f'if errorlevel 1 (\r\n'
         f'    set /a retries+=1\r\n'
+        f'    echo Waiting for file locks to release (attempt !retries! of 10)...\r\n'
         f'    if !retries! lss 10 (\r\n'
-        f'        timeout /t 2 /nobreak >NUL\r\n'
+        f'        ping -n 3 127.0.0.1 >NUL\r\n'
         f'        goto retry_move\r\n'
         f'    )\r\n'
+        f'    echo ERROR: Could not move old version aside after 10 attempts.\r\n'
+        f'    echo You can manually extract the update from: {staged_dir}\r\n'
+        f'    pause\r\n'
         f'    exit /b 1\r\n'
         f')\r\n'
         f'\r\n'
         f'xcopy "{staged_dir}\\*" "{app_dir}\\" /E /I /Q /Y >NUL\r\n'
+        f'echo Starting updated iOpenPod...\r\n'
         f'start "" "{app_dir}\\{exe_name}"\r\n'
         f'rmdir /s /q "{app_dir}.bak" 2>NUL\r\n'
         f'rmdir /s /q "{staged_dir.parent}" 2>NUL\r\n'
@@ -361,16 +368,11 @@ def launch_bootstrap_and_exit(staged_dir: Path) -> bool:
     try:
         if sys.platform == "win32":
             script = _write_windows_bootstrap(pid, app_dir, staged_dir, exe_name)
-            # CREATE_NO_WINDOW gives cmd.exe a hidden console so
-            # commands like 'timeout' and 'tasklist' work correctly.
-            # DETACHED_PROCESS creates NO console at all, which causes
-            # timeout to fail immediately and the script to malfunction.
-            subprocess.Popen(
-                ["cmd.exe", "/c", str(script)],
-                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
-                | subprocess.CREATE_NO_WINDOW,
-                close_fds=True,
-            )
+            # os.startfile uses ShellExecute — the launched process is
+            # completely detached from Python.  Unlike subprocess.Popen,
+            # it cannot be killed when the parent process exits.
+            # A console window will briefly appear (acceptable).
+            os.startfile(str(script))
         else:
             script = _write_unix_bootstrap(pid, app_dir, staged_dir, exe_name)
             subprocess.Popen(
