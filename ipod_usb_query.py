@@ -876,10 +876,12 @@ def _find_mount_linux(usb_serial: str) -> Optional[str]:
                     except Exception:
                         break
                     if serial == serial_upper:
-                        # Unescape octal sequences in mount point
-                        # (e.g. /media/JOHNG\047S\ IPO)
-                        mp = mount_point.encode("utf-8").decode(
-                            "unicode_escape", errors="replace"
+                        # Decode octal escapes from /proc/mounts
+                        # (e.g. \040 → space, \011 → tab)
+                        mp = re.sub(
+                            r"\\([0-7]{3})",
+                            lambda _m: chr(int(_m.group(1), 8)),
+                            mount_point,
                         )
                         return mp
                 break

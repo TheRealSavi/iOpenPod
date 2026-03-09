@@ -5,6 +5,15 @@ Provides consistent human-readable formatting for sizes, durations, ratings, etc
 Import these instead of defining local static _format_* methods.
 """
 
+from iTunesDB_Shared.mhod_defs import (
+    SPL_ACTION_MAP,
+    SPL_FIELD_MAP,
+    SPL_LIMIT_SORT_MAP,
+    SPL_LIMIT_TYPE_MAP,
+    SPL_DATE_UNITS_MAP,
+    spl_get_field_type,
+)
+
 
 def format_size(bytes_val: int) -> str:
     """Format bytes as human-readable string (B, KB, MB, GB)."""
@@ -91,6 +100,11 @@ _SORT_ORDER_MAP = {
 }
 
 
+def format_sort_order(sort_order: int) -> str:
+    """Format playlist sort order as human-readable name."""
+    return _SORT_ORDER_MAP.get(sort_order, f"Unknown ({sort_order})")
+
+
 # MHSD type 5 playlist browsing category names.
 # When a smart playlist lives in dataset type 5, the MHYP field at offset
 # 0x50 (mhsd5Type) tells the iPod which built-in browsing category it
@@ -105,11 +119,6 @@ _MHSD5_TYPE_MAP = {
     6: "Podcasts",
     7: "Rentals",
 }
-
-
-def format_sort_order(sort_order: int) -> str:
-    """Format playlist sort order as human-readable name."""
-    return _SORT_ORDER_MAP.get(sort_order, f"Unknown ({sort_order})")
 
 
 def format_mhsd5_type(mhsd5_type: int) -> str:
@@ -157,45 +166,51 @@ def _decode_mediatype(value: int) -> str:
 def format_smart_rule(rule: dict) -> str:
     """Format a single smart playlist rule as human-readable text.
 
-    Expected keys from the MHOD 51 parser: field, action, fieldType,
-    stringValue (for strings), fromValue/toValue (for ints/dates),
-    fromValueStars/toValueStars (for ratings), unitsName (for dates).
+    Accepts raw parser output (field_id/action_id as ints) and resolves them
+    to human-readable names via the SPL maps in mhod_defs.
     """
-    field = rule.get("field", "Unknown")
-    action = rule.get("action", "?")
-    field_type = rule.get("fieldType", 0)
+    field_id = rule.get("field_id", 0)
+    action_id = rule.get("action_id", 0)
+    field = SPL_FIELD_MAP.get(field_id, f"Field 0x{field_id:02X}")
+    action = SPL_ACTION_MAP.get(action_id, f"action 0x{action_id:08X}")
+    field_type = spl_get_field_type(field_id)
 
     # String rules
     if field_type == 1:  # SPLFT_STRING
-        value = rule.get("stringValue", "")
+        value = rule.get("string_value", "")
         return f"{field} {action} \"{value}\""
 
     # Rating special case — show stars
-    field_id = rule.get("fieldID", 0)
     if field_id == 0x19:  # Rating
-        from_stars = rule.get("fromValueStars", 0)
-        to_stars = rule.get("toValueStars", 0)
+        from_stars = rule.get("from_value_stars", 0)
+        to_stars = rule.get("to_value_stars", 0)
         star_str = "★" * from_stars + "☆" * (5 - from_stars)
         if "range" in action.lower():
             to_star_str = "★" * to_stars + "☆" * (5 - to_stars)
-            return f"{field} is in the range {star_str} – {to_star_str}"
+            return f"{field} is in the range {star_str} - {to_star_str}"
         return f"{field} {action} {star_str}"
 
     # Date rules with relative units
     if field_type == 4:  # SPLFT_DATE
-        from_val = rule.get("fromValue", 0)
-        units_name = rule.get("unitsName", "")
+        from_val = rule.get("from_value", 0)
+        # Resolve raw unit seconds to human name
+        from_units = rule.get("from_units", 0)
+        units_name = rule.get("units_name", "") or SPL_DATE_UNITS_MAP.get(from_units, "")
         if units_name and from_val:
+            # Convert seconds-based value to the unit count
+            if from_units and from_units > 0:
+                count = abs(from_val) // from_units
+                return f"{field} {action} {count} {units_name}"
             return f"{field} {action} {from_val} {units_name}"
         if from_val:
             return f"{field} {action} {from_val}"
         return f"{field} {action}"
 
     # Range rules (int)
-    from_val = rule.get("fromValue", 0)
-    to_val = rule.get("toValue", 0)
+    from_val = rule.get("from_value", 0)
+    to_val = rule.get("to_value", 0)
     if "range" in action.lower():
-        return f"{field} is in the range {from_val} – {to_val}"
+        return f"{field} is in the range {from_val} - {to_val}"
 
     # Boolean rules
     if field_type == 3:  # SPLFT_BOOLEAN
@@ -204,12 +219,12 @@ def format_smart_rule(rule: dict) -> str:
 
     # Playlist rules
     if field_type == 5:  # SPLFT_PLAYLIST
-        playlist_id = rule.get("playlistID", from_val)
-        return f"{field} {action} (ID: {playlist_id})"
+        playlist_id = rule.get("playlist_id", from_val)
+        return f"{field} {action} (Playlist ID: {playlist_id})"
 
     # Binary AND rules (media type bitmask)
     if field_type == 7:  # SPLFT_BINARY_AND
-        from_val = rule.get("fromValue", 0)
+        from_val = rule.get("from_value", 0)
         decoded = _decode_mediatype(from_val)
         action_lower = action.lower()
         if "not" in action_lower:
@@ -229,8 +244,8 @@ def format_smart_rules_summary(rules_data: dict | None, prefs_data: dict | None)
     """Build a list of human-readable lines summarizing smart playlist rules.
 
     Args:
-        rules_data: Parsed MHOD type 51 data (smartPlaylistRules)
-        prefs_data: Parsed MHOD type 50 data (smartPlaylistData)
+        rules_data: Parsed MHOD type 51 data (smart_playlist_rules)
+        prefs_data: Parsed MHOD type 50 data (smart_playlist_data)
 
     Returns:
         List of display strings, one per logical section.
@@ -240,22 +255,28 @@ def format_smart_rules_summary(rules_data: dict | None, prefs_data: dict | None)
     # Preferences summary
     if prefs_data:
         parts = []
-        if prefs_data.get("liveUpdate"):
+        if prefs_data.get("live_update"):
             parts.append("Live updating")
-        if prefs_data.get("matchCheckedOnly"):
+        if prefs_data.get("match_checked_only"):
             parts.append("Checked items only")
         if parts:
             lines.append(" · ".join(parts))
 
-        if prefs_data.get("checkLimits"):
-            limit_val = prefs_data.get("limitValue", 0)
-            limit_type = prefs_data.get("limitTypeName", "items")
-            limit_sort = prefs_data.get("limitSortName", "random")
+        if prefs_data.get("check_limits"):
+            limit_val = prefs_data.get("limit_value", 0)
+            limit_type_id = prefs_data.get("limit_type", 0)
+            limit_sort_id = prefs_data.get("limit_sort", 0)
+            limit_type = prefs_data.get("limit_type_name") or SPL_LIMIT_TYPE_MAP.get(limit_type_id, "items")
+            limit_sort = prefs_data.get("limit_sort_name") or SPL_LIMIT_SORT_MAP.get(limit_sort_id, "random")
             lines.append(f"Limit to {limit_val} {limit_type}, selected by {limit_sort}")
 
     # Rules
     if rules_data:
-        conjunction = rules_data.get("conjunction", "AND")
+        raw_conj = rules_data.get("conjunction", "AND")
+        if isinstance(raw_conj, int):
+            conjunction = "ANY" if raw_conj == 1 else "ALL"
+        else:
+            conjunction = "ANY" if str(raw_conj).upper() == "OR" else "ALL"
         rules = rules_data.get("rules", [])
         if rules:
             lines.append(f"Match {conjunction} of the following:")

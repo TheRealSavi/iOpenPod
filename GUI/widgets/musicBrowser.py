@@ -4,8 +4,9 @@ from PyQt6.QtWidgets import QScrollArea, QFrame, QSplitter, QVBoxLayout, QSizePo
 from .MBGridView import MusicBrowserGrid
 from .MBListView import MusicBrowserList
 from .playlistBrowser import PlaylistBrowser
+from .podcastBrowser import PodcastBrowser
 from .trackListTitleBar import TrackListTitleBar
-from ..styles import Colors
+from ..styles import Colors, scaled
 
 log = logging.getLogger(__name__)
 
@@ -70,7 +71,7 @@ class MusicBrowser(QFrame):
             handle.setEnabled(True)
         self.gridTrackSplitter.setCollapsible(0, True)
         self.gridTrackSplitter.setCollapsible(1, True)
-        self.gridTrackSplitter.setHandleWidth(3)
+        self.gridTrackSplitter.setHandleWidth(scaled(3))
         self.gridTrackSplitter.setStretchFactor(0, 2)
         self.gridTrackSplitter.setStretchFactor(1, 1)
         self.gridTrackSplitter.setMinimumSize(0, 0)
@@ -103,10 +104,14 @@ class MusicBrowser(QFrame):
         # Playlist browser (shown when Playlists category is active)
         self.playlistBrowser = PlaylistBrowser()
 
+        # Podcast browser (shown when Podcasts category is active)
+        self.podcastBrowser = PodcastBrowser()
+
         # Use a stacked widget to toggle between grid/track and playlist views
         self.stack = QStackedWidget()
         self.stack.addWidget(self.gridTrackSplitter)   # index 0
         self.stack.addWidget(self.playlistBrowser)      # index 1
+        self.stack.addWidget(self.podcastBrowser)       # index 2
 
         self.mainLayout.addWidget(self.stack)
 
@@ -115,6 +120,7 @@ class MusicBrowser(QFrame):
         self.browserGrid.clearGrid()
         self.browserTrack.clearTable()
         self.playlistBrowser.clear()
+        self.podcastBrowser.clear()
         # Data will be loaded when cache emits data_ready
 
     def _save_splitter_sizes(self):
@@ -160,19 +166,19 @@ class MusicBrowser(QFrame):
         elif category == "Playlists":
             self.stack.setCurrentIndex(1)
             self.playlistBrowser.loadPlaylists()
-        elif category in ("Podcasts", "Audiobooks"):
+        elif category == "Podcasts":
+            # Podcast manager — full subscription browser
+            self.stack.setCurrentIndex(2)
+            self._ensure_podcast_device()
+        elif category == "Audiobooks":
             # Non-music audio categories
-            _NOMUSIC_FILTER = {
-                "Podcasts": 0x04,      # MEDIA_TYPE_PODCAST (includes video podcast 0x06)
-                "Audiobooks": 0x08,    # MEDIA_TYPE_AUDIOBOOK
-            }
             log.debug(f"  Showing {category} view")
             self.stack.setCurrentIndex(0)
             self.browserGridScroll.hide()
             self.browserGrid.clearGrid()
             self.browserTrack.clearTable()
             self.browserTrack.clearFilter()
-            self.browserTrack.loadTracks(media_type_filter=_NOMUSIC_FILTER[category])
+            self.browserTrack.loadTracks(media_type_filter=0x08)  # MEDIA_TYPE_AUDIOBOOK
             self.trackListTitleBar.setTitle(category)
             self.trackListTitleBar.resetColor()
         elif category in ("Videos", "Movies", "TV Shows", "Music Videos"):
@@ -233,3 +239,16 @@ class MusicBrowser(QFrame):
             self.browserTrack.filterByArtist(title)
         elif category == "Genres":
             self.browserTrack.filterByGenre(title)
+
+    def _ensure_podcast_device(self):
+        """Bind the podcast browser to the current iPod device if not done."""
+        from ..app import DeviceManager
+        from device_info import get_current_device
+
+        dm = DeviceManager.get_instance()
+        if not dm.device_path:
+            return
+
+        device = get_current_device()
+        serial = (device.serial or device.firewire_guid or "_default") if device else "_default"
+        self.podcastBrowser.set_device(serial, dm.device_path)

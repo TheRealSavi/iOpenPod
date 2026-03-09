@@ -128,7 +128,7 @@ def write_dynamic_itdb(
                 track.play_count,
                 date_skipped, track.skip_count,
                 float(track.bookmark_time), float(track.bookmark_time),
-                track.rating, track.rating,
+                track.rating, track.app_rating,
                 track.play_count, track.skip_count,
             )
         )
@@ -139,7 +139,7 @@ def write_dynamic_itdb(
         cur.execute(
             "INSERT INTO container_ui (container_pid, play_order, is_reversed, "
             "album_field_order, repeat_mode, shuffle_items, has_been_shuffled) "
-            "VALUES (?, 0, 0, 0, 0, 0, 0)",
+            "VALUES (?, 0, 0, 1, 0, 0, 0)",
             (_s64(master_pid),)
         )
 
@@ -148,7 +148,7 @@ def write_dynamic_itdb(
         cur.execute(
             "INSERT INTO container_ui (container_pid, play_order, is_reversed, "
             "album_field_order, repeat_mode, shuffle_items, has_been_shuffled) "
-            "VALUES (?, 0, 0, 0, 0, 0, 0)",
+            "VALUES (?, 0, 0, 1, 0, 0, 0)",
             (_s64(pl_pid),)
         )
         pl_pid += 1
@@ -157,7 +157,7 @@ def write_dynamic_itdb(
         cur.execute(
             "INSERT INTO container_ui (container_pid, play_order, is_reversed, "
             "album_field_order, repeat_mode, shuffle_items, has_been_shuffled) "
-            "VALUES (?, 0, 0, 0, 0, 0, 0)",
+            "VALUES (?, 0, 0, 1, 0, 0, 0)",
             (_s64(pl_pid),)
         )
         pl_pid += 1

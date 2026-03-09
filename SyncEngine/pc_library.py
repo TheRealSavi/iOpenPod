@@ -380,6 +380,10 @@ class PCTrack:
     is_audiobook: bool = False   # True if stik=2 or .m4b extension
     category: Optional[str] = None  # Podcast/audiobook category (from catg atom)
     podcast_url: Optional[str] = None  # Podcast feed URL (from purl atom)
+    podcast_enclosure_url: Optional[str] = None  # Per-episode audio URL (enclosure)
+
+    # Chapter markers (list of {"startpos": ms, "title": str})
+    chapters: Optional[list] = None
 
     # Computed
     needs_transcoding: bool = False  # True if format not iPod-native

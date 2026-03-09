@@ -89,6 +89,29 @@ mhbd (Database) → mhsd (DataSet, type 1-10) →
 | 352 | mhii_link | 4 | links to ArtworkDB mhii entry |
 | 480 (0x1E0) | artist_id | 4 | links to mhii in artist list (MHSD type 8) |
 | 500 (0x1F4) | composer_id | 4 | per-track composer ID |
+| 360 (0x168) | unk_flag | 4 | always 1 in all tested databases (libgpod writes 1) |
+
+### Discovered mhip (Playlist Item) Fields
+| Offset | Field | Size | Notes |
+|--------|-------|------|-------|
+| 0x0C | child_count | 4 | |
+| 0x10 | podcast_group_flag | 2 | 0x000=normal, 0x100=podcast group |
+| 0x14 | group_id | 4 | unique MHIP identifier |
+| 0x18 | track_id | 4 | references mhit track_id |
+| 0x1C | timestamp | 4 | Mac timestamp |
+| 0x20 | group_id_ref | 4 | references another MHIP's group_id |
+| 0x2C | track_persistent_id | 8 | track's db_id — **100% match verified** across Photo (382), Nano1 (368), iPod3 (386) |
+| 0x3C | mhip_persistent_id | 8 | per-track persistent ID, same value in all playlists for same track; absent in older iTunes versions |
+
+### Discovered mhia (Album Item) Fields
+| Offset | Field | Size | Notes |
+|--------|-------|------|-------|
+| 0x0C | child_count | 4 | |
+| 0x10 | album_id | 4 | links to mhit.album_id |
+| 0x14 | sql_id | 8 | internal SQLite DB id (must be non-zero) |
+| 0x1C | platform_flag | 2 | always 2 (Windows) |
+| 0x1E | album_compilation_flag | 2 | 0=normal, 1=compilation |
+| 0x20 | album_track_db_id | 8 | db_id of a representative track in this album; only populated by some iTunes versions (verified 92/92 non-zero in Photo) |
 
 ### Play Counts File Format
 Read this file on sync to get actual play counts (iPod updates this, not iTunesDB):

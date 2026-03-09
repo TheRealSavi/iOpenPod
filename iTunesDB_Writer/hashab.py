@@ -35,15 +35,16 @@ import hashlib
 import logging
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+from iTunesDB_Shared.mhbd_defs import (
+    MHBD_OFFSET_DB_ID as OFFSET_DB_ID,
+    MHBD_OFFSET_HASHING_SCHEME as OFFSET_HASHING_SCHEME,
+    MHBD_OFFSET_UNK_0x32 as OFFSET_UNK_0x32,
+    MHBD_OFFSET_HASH58 as OFFSET_HASH58,
+    MHBD_OFFSET_HASH72 as OFFSET_HASH72,
+    MHBD_OFFSET_HASHAB as OFFSET_HASHAB,
+)
 
-# Header offsets (same as hash58/hash72 — shared mhbd layout)
-OFFSET_DB_ID = 0x18          # 8 bytes — zeroed before hashing
-OFFSET_HASHING_SCHEME = 0x30  # 2 bytes
-OFFSET_UNK_0x32 = 0x32      # 20 bytes — zeroed for HASHAB (like HASH58)
-OFFSET_HASH58 = 0x58         # 20 bytes — zeroed before hashing
-OFFSET_HASH72 = 0x72         # 46 bytes — zeroed before hashing
-OFFSET_HASHAB = 0xAB         # 57 bytes — the HASHAB signature lives here
+logger = logging.getLogger(__name__)
 
 HASHAB_SIZE = 57
 ITDB_CHECKSUM_HASHAB = 4     # hashing_scheme value for HASHAB

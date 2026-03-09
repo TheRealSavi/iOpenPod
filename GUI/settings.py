@@ -17,7 +17,21 @@ import threading
 import os
 import sys
 from dataclasses import dataclass, asdict, field
+from importlib.metadata import version as _pkg_version
 from typing import Optional
+
+
+def get_version() -> str:
+    """Return the app version from pyproject.toml metadata."""
+    try:
+        return _pkg_version("iopenpod")
+    except Exception:
+        return "1.0.0"
+
+
+def _default_data_dir() -> str:
+    """Base directory for all iOpenPod user data: ~/iOpenPod."""
+    return os.path.join(os.path.expanduser("~"), "iOpenPod")
 
 
 def _default_settings_dir() -> str:
@@ -69,11 +83,15 @@ class AppSettings:
     # Changing this moves settings storage to the new location.
     settings_dir: str = ""
 
-    # Custom transcode cache directory (empty = ~/.iopenpod/transcode_cache).
+    # Custom transcode cache directory (empty = ~/iOpenPod/cache).
     transcode_cache_dir: str = ""
 
-    # Custom log directory (empty = platform default log location).
+    # Custom log directory (empty = ~/iOpenPod/logs). Covers both app logs
+    # and crash reports.
     log_dir: str = ""
+
+    # Custom backup directory (empty = ~/iOpenPod/backups).
+    backup_dir: str = ""
 
     # ── Sync ────────────────────────────────────────────────────────────────
     # Default PC music folder for sync (remembered between sessions)
@@ -124,7 +142,13 @@ class AppSettings:
     # ── Appearance ──────────────────────────────────────────────────────────
     # Show album art in the track list view
     show_art_in_tracklist: bool = True
-
+    # UI scaling override.  "auto" = derive from screen resolution.
+    # Any other value is a float multiplier (e.g. "1.0", "0.8", "1.25").
+    ui_scale: str = "auto"
+    # Theme: "dark", "light", or "system" (follow OS preference).
+    theme: str = "dark"
+    # Increased contrast: "off", "on", or "system" (follow OS accessibility).
+    high_contrast: str = "off"
     # Remembered window dimensions (not exposed in settings UI).
     window_width: int = 1280
     window_height: int = 720
@@ -145,14 +169,20 @@ class AppSettings:
     listenbrainz_username: str = ""
 
     # ── Backups ─────────────────────────────────────────────────────────────
-    # Custom backup directory (empty = ~/iOpenPod_Backups/).
-    backup_dir: str = ""
-
     # Automatically create a full device backup before each sync.
     backup_before_sync: bool = True
 
     # Maximum number of backup snapshots to retain per device (0 = unlimited).
     max_backups: int = 10
+
+    # ── Podcasts ────────────────────────────────────────────────────────────
+    # Default number of latest episodes to auto-sync per subscribed feed.
+    # 0 = manual only (user selects episodes individually).
+    podcast_auto_sync_count: int = 0
+
+    # Maximum downloaded episodes to keep per feed (0 = unlimited).
+    # Oldest episodes beyond this limit are deleted on refresh.
+    podcast_max_downloaded: int = 0
 
     def save(self) -> None:
         """Write settings to the active settings directory.

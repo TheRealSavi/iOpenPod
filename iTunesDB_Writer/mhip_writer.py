@@ -3,27 +3,25 @@
 MHIP chunks are playlist entries that reference tracks by their ID.
 Each playlist (MHYP) contains MHIP entries for each track in the playlist.
 
-Header layout (MHIP_HEADER_SIZE = 76 bytes):
-    +0x00: 'mhip' magic (4B)
-    +0x04: header_length (4B)
-    +0x08: total_length (4B) — header + children
-    +0x0C: child_count (4B) — number of MHOD children (0 or 1)
-    +0x10: podcast_group_flag (4B) — 0=normal, 0x100=podcast group header
-    +0x14: mhip_id (4B) — unique MHIP identifier (groupID)
-    +0x18: track_id (4B) — references MHIT trackID
-    +0x1C: timestamp (4B Mac)
-    +0x20: podcast_group_ref (4B) — references another MHIP's groupID
+The binary layout of the header is defined declaratively in
+``iTunesDB_Shared.field_defs.MHIP_FIELDS``.
 
 Cross-referenced against:
+  - iTunesDB_Shared/field_defs.py (single source of truth for offsets)
   - iTunesDB_Parser/mhip_parser.py parse_playlistItem()
-  - libgpod itdb_itunesdb.c: mk_mhip()
+  - libgpod itdb_itunesdb.c: mk_mhip(), write_podcast_mhips()
 """
 
 import struct
 
-
-# MHIP header size - libgpod uses 76 bytes
-MHIP_HEADER_SIZE = 76
+from iTunesDB_Shared.field_base import write_fields, write_generic_header
+from iTunesDB_Shared.mhip_defs import MHIP_HEADER_SIZE
+from iTunesDB_Shared.mhod_defs import (
+    MHOD_HEADER_SIZE as _MHOD_HEADER_SIZE,
+    MHOD100_POSITION_BODY_SIZE,
+    write_mhod_header,
+)
+from iTunesDB_Shared.constants import MHOD_TYPE_TITLE
 
 
 def write_mhip(
@@ -33,6 +31,8 @@ def write_mhip(
     timestamp: int = 0,
     podcast_group_flag: int = 0,
     podcast_group_ref: int = 0,
+    track_persistent_id: int = 0,
+    mhip_persistent_id: int = 0,
 ) -> bytes:
     """
     Write an MHIP (playlist item) chunk.
@@ -49,47 +49,27 @@ def write_mhip(
         timestamp: Mac timestamp (usually 0)
         podcast_group_flag: For podcast grouping (usually 0)
         podcast_group_ref: For podcast grouping (usually 0)
+        track_persistent_id: The track's db_id (persistent identifier)
+        mhip_persistent_id: Per-track persistent ID for this playlist item
 
     Returns:
         Complete MHIP chunk bytes
     """
-    # MHIP has one MHOD child (type 100 with position)
     mhod_position = write_mhod_position(position)
-
     total_length = MHIP_HEADER_SIZE + len(mhod_position)
 
-    # Build MHIP header
     header = bytearray(MHIP_HEADER_SIZE)
-
-    # +0x00: Magic
-    header[0:4] = b'mhip'
-
-    # +0x04: Header length
-    struct.pack_into('<I', header, 0x04, MHIP_HEADER_SIZE)
-
-    # +0x08: Total length
-    struct.pack_into('<I', header, 0x08, total_length)
-
-    # +0x0C: Number of MHOD children (always 1)
-    struct.pack_into('<I', header, 0x0C, 1)
-
-    # +0x10: Podcast group flag
-    struct.pack_into('<I', header, 0x10, podcast_group_flag)
-
-    # +0x14: MHIP unique ID (libgpod calls this podcastgroupid but it's
-    #        actually a unique playlist item identifier used for all playlists)
-    struct.pack_into('<I', header, 0x14, mhip_id)
-
-    # +0x18: Track ID - references the MHIT
-    struct.pack_into('<I', header, 0x18, track_id)
-
-    # +0x1C: Timestamp
-    struct.pack_into('<I', header, 0x1C, timestamp)
-
-    # +0x20: Podcast group reference
-    struct.pack_into('<I', header, 0x20, podcast_group_ref)
-
-    # Rest is padding (zeros)
+    write_generic_header(header, 0, b'mhip', MHIP_HEADER_SIZE, total_length)
+    write_fields(header, 0, 'mhip', {
+        'child_count': 1,
+        'podcast_group_flag': podcast_group_flag,
+        'group_id': mhip_id,
+        'track_id': track_id,
+        'timestamp': timestamp,
+        'group_id_ref': podcast_group_ref,
+        'track_persistent_id': track_persistent_id,
+        'mhip_persistent_id': mhip_persistent_id,
+    }, MHIP_HEADER_SIZE)
 
     return bytes(header) + mhod_position
 
@@ -107,25 +87,52 @@ def write_mhod_position(position: int) -> bytes:
     Returns:
         MHOD chunk bytes
     """
-    # MHOD type 100 structure:
-    # Header (24 bytes) + data (20 bytes)
-    header_len = 24
-    total_len = 44  # header + data
+    total_len = _MHOD_HEADER_SIZE + MHOD100_POSITION_BODY_SIZE
+    header = write_mhod_header(100, total_len)
 
-    # Build header
-    header = struct.pack(
-        '<4sIIIII',
-        b'mhod',
-        header_len,
-        total_len,
-        100,  # MHOD type = playlist position
-        0,    # unk1
-        0,    # unk2
-    )
-
-    # Data section (20 bytes)
-    # +0x00: Position (track_pos in libgpod)
-    # +0x04-0x13: Padding (zeros)
+    # Data section: position(4) + padding(16)
     data = struct.pack('<I', position) + (b'\x00' * 16)
 
     return header + data
+
+
+def write_mhip_podcast_group(album_name: str, group_id: int) -> bytes:
+    """Write a podcast group header MHIP.
+
+    In the type 3 (podcast) MHSD dataset, episodes are grouped under
+    their podcast show.  Each show gets a "group header" MHIP that
+    serves as a parent node.  Child episode MHIPs reference it via
+    ``group_id_ref``.
+
+    Group header MHIPs differ from regular MHIPs:
+      - ``podcast_group_flag`` = 256 (0x100)
+      - ``track_id`` = 0 (no track reference)
+      - Contains an MHOD type 1 (title) with the album/show name
+        instead of an MHOD type 100 (position)
+
+    This matches libgpod's ``write_one_podcast_group()`` in
+    ``itdb_itunesdb.c``.
+
+    Args:
+        album_name: Podcast show / album name for the group header
+        group_id:   Unique identifier for this group (child MHIPs
+                    reference this value in their ``group_id_ref`` field)
+
+    Returns:
+        Complete MHIP chunk bytes (header + MHOD title)
+    """
+    from .mhod_writer import write_mhod_string
+
+    mhod_title = write_mhod_string(MHOD_TYPE_TITLE, album_name)
+    total_length = MHIP_HEADER_SIZE + len(mhod_title)
+
+    header = bytearray(MHIP_HEADER_SIZE)
+    write_generic_header(header, 0, b'mhip', MHIP_HEADER_SIZE, total_length)
+    write_fields(header, 0, 'mhip', {
+        'child_count': 1,
+        'podcast_group_flag': 256,  # 0x100 = podcast group header
+        'group_id': group_id,
+        'track_id': 0,             # group headers don't reference a track
+    }, MHIP_HEADER_SIZE)
+
+    return bytes(header) + mhod_title

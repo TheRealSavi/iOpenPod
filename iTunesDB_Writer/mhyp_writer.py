@@ -20,8 +20,7 @@ Header layout (MHYP_HEADER_SIZE = 184 bytes):
     +0x1C: playlist_id (8B)
     +0x24: unk1 (4B)
     +0x28: string_mhod_count (2B)
-    +0x2A: podcast_flag (1B) — 0=normal, 1=podcast playlist
-    +0x2B: group_flag (1B) — 0=normal, 1=grouping playlist
+    +0x2A: podcast_flag (2B) — 0=normal, 1=podcast playlist (u16, libgpod podcastflag)
     +0x2C: sort_order (4B)
     +0x3C: id_0x24 (8B) — MHBD database ID reference (non-master)
     +0x44: playlist_id_copy (8B)
@@ -34,8 +33,8 @@ Cross-referenced against:
   - iPodLinux wiki MHYP documentation
 """
 
-import struct
 import random
+import struct
 import time
 from dataclasses import dataclass, field
 from typing import List, Optional, TYPE_CHECKING
@@ -43,8 +42,15 @@ from typing import List, Optional, TYPE_CHECKING
 if TYPE_CHECKING:
     from .mhit_writer import TrackInfo
 
-from .mhod_writer import write_mhod_string, MHOD_TYPE_TITLE
-from .mhip_writer import write_mhip
+from iTunesDB_Shared.constants import MHOD_TYPE_TITLE
+from iTunesDB_Shared.field_base import write_fields, write_generic_header
+from iTunesDB_Shared.mhyp_defs import MHYP_HEADER_SIZE
+from iTunesDB_Shared.mhod_defs import (
+    MHOD_HEADER_SIZE as _MHOD_HEADER_SIZE,
+    write_mhod_header,
+)
+from .mhod_writer import write_mhod_string
+from .mhip_writer import write_mhip, write_mhip_podcast_group
 from .mhod52_writer import write_library_indices
 from .mhod_spl_writer import (
     SmartPlaylistPrefs,
@@ -55,15 +61,6 @@ from .mhod_spl_writer import (
 )
 
 
-# Playlist type constants
-PLAYLIST_TYPE_MASTER = 1  # Master playlist (contains all tracks)
-PLAYLIST_TYPE_NORMAL = 0  # Regular user playlist
-
-
-# MHYP header size - iTunes uses 184 bytes (libgpod uses 108, but iPod Classic rejects it)
-MHYP_HEADER_SIZE = 184
-
-
 @dataclass
 class PlaylistItemMeta:
     """Per-item metadata preserved from parsed MHIP entries for round-trip fidelity.
@@ -72,10 +69,14 @@ class PlaylistItemMeta:
       +0x10: podcast_group_flag (4B)
       +0x14: group_id (4B) — unique MHIP identifier (libgpod: podcastgroupid)
       +0x20: podcast_group_ref (4B) — references another MHIP's group_id
+      +0x2C: track_persistent_id (8B) — track's db_id
+      +0x3C: mhip_persistent_id (8B) — per-track persistent ID
     """
     podcast_group_flag: int = 0
     group_id: int = 0
     podcast_group_ref: int = 0
+    track_persistent_id: int = 0
+    mhip_persistent_id: int = 0
 
 
 @dataclass
@@ -100,15 +101,14 @@ class PlaylistInfo:
     #       are written at the extended offsets +0x3C/+0x44 (skipped
     #       when master=True, matching libgpod behaviour).
     sortorder: int = 0                   # 0=default, 1=manual, 3=title ...
-    podcast_flag: int = 0                # 0x2A: 0=normal, 1=podcast playlist
-    group_flag: int = 0                  # 0x2B: 0=normal, 1=grouping playlist
+    podcast_flag: int = 0                # 0x2A: 0=normal, 1=podcast playlist (u16)
 
     # Smart playlist fields (both must be set for a smart playlist)
     smart_prefs: Optional[SmartPlaylistPrefs] = None
     smart_rules: Optional[SmartPlaylistRules] = None
 
     # mhsd5Type: browsing category for dataset 5 smart playlists
-    # (1=Music, 2=Movies, 3=TV Shows, 4=Music Video, 5=Audiobooks, 6=Podcasts, 7=Rentals)
+    # (per libgpod: 0=None, 2=Movies, 3=TV Shows, 4=Music, 5=Audiobooks, 6=Ringtones, 7=MovieRentals)
     mhsd5_type: int = 0
 
     # Opaque blobs preserved from parsed data for round-trip fidelity
@@ -129,27 +129,14 @@ def generate_playlist_id() -> int:
     return random.getrandbits(64)
 
 
-# Mac HFS+ epoch starts 1904-01-01, Unix epoch 1970-01-01
-MAC_EPOCH_OFFSET = 2082844800
-
-
-def unix_to_mac_timestamp(unix_timestamp: int) -> int:
-    """Convert Unix timestamp to Mac HFS+ timestamp."""
-    if unix_timestamp == 0:
-        return 0
-    return unix_timestamp + MAC_EPOCH_OFFSET
-
-
 def write_mhyp(
     name: str,
     track_ids: List[int],
-    playlist_type: int = PLAYLIST_TYPE_NORMAL,  # DEPRECATED: use master param instead
     playlist_id: Optional[int] = None,
     master: bool = False,
     timestamp: Optional[int] = None,
     sortorder: int = 0,
     podcast_flag: int = 0,
-    group_flag: int = 0,
     tracks: Optional[List["TrackInfo"]] = None,
     id_0x24: int = 0,
     smart_prefs: Optional[SmartPlaylistPrefs] = None,
@@ -159,6 +146,9 @@ def write_mhyp(
     raw_mhod102: Optional[bytes] = None,
     item_metadata: Optional[List[PlaylistItemMeta]] = None,
     capabilities=None,
+    podcast_grouping: bool = False,
+    track_album_map: Optional[dict[int, str]] = None,
+    next_mhip_id_start: int = 1,
 ) -> bytes:
     """
     Write a complete MHYP (playlist) chunk with MHODs and MHIPs.
@@ -176,8 +166,6 @@ def write_mhyp(
     Args:
         name: Playlist name
         track_ids: List of track IDs to include in this playlist
-        playlist_type: DEPRECATED - playlist type is determined by 'master' param.
-                       For Master Playlist, use master=True.
         playlist_id: Playlist ID (generated if not provided)
         master: Whether the type byte at +0x14 should be set to 1.
                 For dataset 2 this means "master playlist" (exactly one).
@@ -190,8 +178,8 @@ def write_mhyp(
                     (matches libgpod, which zeros these for type=1).
         timestamp: Creation timestamp (now if not provided)
         sortorder: Sort order (0 = manual)
-        podcast_flag: 0x2A — 0=normal playlist, 1=podcast playlist.
-        group_flag: 0x2B — 0=normal playlist, 1=grouping playlist (iTunes 7).
+        podcast_flag: 0x2A — 0=normal playlist, 1=podcast playlist (u16,
+                     matching libgpod podcastflag).
         tracks: List of TrackInfo objects (required for Master Playlist to
                 generate library index MHODs type 52/53)
         id_0x24: Database-wide ID from MHBD offset 0x24. Written at MHYP offset
@@ -203,6 +191,14 @@ def write_mhyp(
         raw_mhod100: If provided, use this raw body for MHOD type 100 instead
                      of generating a default one.
         raw_mhod102: If provided, write an MHOD type 102 with this raw body.
+        podcast_grouping: When True and this is a podcast playlist, generate
+                     grouped MHIPs (libgpod write_podcast_mhips style) where
+                     episodes are nested under their podcast show by album.
+        track_album_map: Mapping of track_id → album name.  Required when
+                     podcast_grouping is True.
+        next_mhip_id_start: Starting ID for generated MHIP group_id values
+                     (podcast grouping assigns unique IDs to group headers
+                     and child MHIPs).
 
     Returns:
         Complete MHYP chunk bytes
@@ -247,23 +243,30 @@ def write_mhyp(
         library_indices_data, library_indices_count = write_library_indices(tracks, capabilities=capabilities)
 
     # Build MHIP entries for each track
-    # libgpod's write_playlist_mhips() uses:
-    # - podcastgroupid = 0 (MHIP offset 0x14)
-    # - MHOD type 100 contains the position index (0, 1, 2, ...)
-    #
-    # When item_metadata is provided (round-trip from parsed data), we
-    # preserve per-MHIP fields: podcastGroupFlag, groupID, podcastGroupRef.
-    mhips = []
-    for i, track_id in enumerate(track_ids):
-        meta = item_metadata[i] if item_metadata and i < len(item_metadata) else None
-        mhip = write_mhip(
-            track_id, position=i,
-            mhip_id=meta.group_id if meta else 0,
-            podcast_group_flag=meta.podcast_group_flag if meta else 0,
-            podcast_group_ref=meta.podcast_group_ref if meta else 0,
+    mhip_count: int
+    if podcast_grouping and track_album_map is not None:
+        # Podcast grouping: group tracks by album (libgpod write_podcast_mhips)
+        mhip_data, mhip_count = _build_podcast_grouped_mhips(
+            track_ids, track_album_map, next_mhip_id_start,
         )
-        mhips.append(mhip)
-    mhip_data = b''.join(mhips)
+    else:
+        # Standard flat MHIP list (write_playlist_mhips)
+        # When item_metadata is provided (round-trip from parsed data), we
+        # preserve per-MHIP fields: podcastGroupFlag, groupID, podcastGroupRef.
+        mhips = []
+        for i, track_id in enumerate(track_ids):
+            meta = item_metadata[i] if item_metadata and i < len(item_metadata) else None
+            mhip = write_mhip(
+                track_id, position=i,
+                mhip_id=meta.group_id if meta else 0,
+                podcast_group_flag=meta.podcast_group_flag if meta else 0,
+                podcast_group_ref=meta.podcast_group_ref if meta else 0,
+                track_persistent_id=meta.track_persistent_id if meta else 0,
+                mhip_persistent_id=meta.mhip_persistent_id if meta else 0,
+            )
+            mhips.append(mhip)
+        mhip_data = b''.join(mhips)
+        mhip_count = len(track_ids)
 
     # Count MHODs (title + playlist prefs + smart + settings + library indices)
     mhod_count = 2 + smart_mhod_count + settings_count + library_indices_count
@@ -273,86 +276,105 @@ def write_mhyp(
         MHYP_HEADER_SIZE + len(mhod_title) + len(mhod_playlist) + len(mhod_smart) + len(mhod_settings) + len(library_indices_data) + len(mhip_data)
     )
 
-    # Build MHYP header (108 bytes)
+    # Build MHYP header
     header = bytearray(MHYP_HEADER_SIZE)
+    write_generic_header(header, 0, b'mhyp', MHYP_HEADER_SIZE, total_length)
 
-    # +0x00: Magic
-    header[0:4] = b'mhyp'
+    # Build values dict for write_fields.
+    # Timestamps are Unix epoch — write_transform (unix_to_mac) handles conversion.
+    values: dict[str, int] = {
+        'mhod_child_count': mhod_count,
+        'mhip_child_count': mhip_count,
+        'master_flag': 1 if master else 0,
+        'timestamp': timestamp,
+        'playlist_id': playlist_id,
+        'string_mhod_child_count': 1,
+        'podcast_flag': podcast_flag,
+        'sort_order': sortorder,
+        'timestamp_2': timestamp,
+    }
 
-    # +0x04: Header length
-    struct.pack_into('<I', header, 0x04, MHYP_HEADER_SIZE)
-
-    # +0x08: Total length
-    struct.pack_into('<I', header, 0x08, total_length)
-
-    # +0x0C: Number of MHODs
-    struct.pack_into('<I', header, 0x0C, mhod_count)
-
-    # +0x10: Number of MHIPs (tracks in playlist)
-    struct.pack_into('<I', header, 0x10, len(track_ids))
-
-    # +0x14: Master flag (0 = normal, 1 = master playlist)
-    struct.pack_into('<I', header, 0x14, 1 if master else 0)
-
-    # +0x18: Timestamp (Mac format)
-    struct.pack_into('<I', header, 0x18, unix_to_mac_timestamp(timestamp))
-
-    # +0x1C: Playlist ID (64-bit)
-    struct.pack_into('<Q', header, 0x1C, playlist_id)
-
-    # +0x24: Unknown (always 0?)
-    struct.pack_into('<I', header, 0x24, 0)
-
-    # +0x28: String MHOD count (usually 1 for title)
-    struct.pack_into('<H', header, 0x28, 1)
-
-    # +0x2A: Podcast flag (1 byte) — 0=normal, 1=podcast playlist
-    # +0x2B: Group flag (1 byte) — 0=normal, 1=grouping playlist
-    # Parser reads these as two separate bytes; previous writer used <H (2B).
-    header[0x2A] = podcast_flag & 0xFF
-    header[0x2B] = group_flag & 0xFF
-
-    # +0x2C: Sort order
-    struct.pack_into('<I', header, 0x2C, sortorder)
-
-    # +0x30-0xB7: Extended header fields (184-byte iTunes format)
-    #
-    # For NON-MASTER playlists (master=False), iTunes writes:
-    #   0x3C: id_0x24 from MHBD (u64) - database identity validation
-    #   0x44: playlist_id again (u64) - redundant copy
-    #
-    # For playlists with master=True (both the ds2 master playlist AND
-    # ds5 built-in categories), these fields are left zeroed.  This
-    # matches libgpod, which writes put32_n0(cts, 15) for regular
-    # playlists and put32_n0(cts, 8) for dataset 5 — neither fills
-    # offsets 0x3C/0x44 when type == 1.
-    #
-    # These are NOT written by libgpod (which uses 108-byte headers), but since
-    # we use 184-byte headers to match iTunes, the iPod firmware may parse them.
+    # Non-master playlists write id_0x24 and playlist_id at extended offsets.
+    # For master=True (ds2 master and ds5 built-in categories), these stay
+    # zeroed — matching libgpod behaviour.
     if not master:
-        # Non-master playlist: write id_0x24 and playlist_id in extended area
-        struct.pack_into('<Q', header, 0x3C, id_0x24)
-        struct.pack_into('<Q', header, 0x44, playlist_id)
+        values['db_id_2'] = id_0x24
+        values['playlist_id_2'] = playlist_id
 
-    # Both master and non-master get a timestamp at 0x58
-    struct.pack_into('<I', header, 0x58, unix_to_mac_timestamp(timestamp))
-
-    # +0x50: mhsd5_type — browsing category for dataset 5 smart playlists
-    # libgpod writes two consecutive put16lint calls (no gap):
-    #   +0x50: mhsd5_type (u16)
-    #   +0x52: mhsd5_type (u16, duplicate)
-    #   +0x54: special flag (u32) — 1 for MOVIE_RENTALS/RINGTONES, 0 otherwise
+    # mhsd5_type — browsing category for dataset 5 smart playlists.
+    # libgpod writes the same value at +0x50 and +0x52, plus a
+    # special flag at +0x54 for RINGTONES(6) and MOVIE_RENTALS(7).
     if mhsd5_type:
-        struct.pack_into('<H', header, 0x50, mhsd5_type)
-        struct.pack_into('<H', header, 0x52, mhsd5_type)
-        if mhsd5_type in (6, 7):  # RINGTONES=6, MOVIE_RENTALS=7
-            struct.pack_into('<I', header, 0x54, 1)
+        values['mhsd5_type'] = mhsd5_type
+        values['mhsd5_type_2'] = mhsd5_type
+        if mhsd5_type in (6, 7):
+            values['mhsd5_special_flag'] = 0x200
 
-    # Rest is padding (already zero-initialized)
+    write_fields(header, 0, 'mhyp', values, MHYP_HEADER_SIZE)
 
     return (
         bytes(header) + mhod_title + mhod_playlist + mhod_smart + mhod_settings + library_indices_data + mhip_data
     )
+
+
+def _build_podcast_grouped_mhips(
+    track_ids: List[int],
+    track_album_map: dict[int, str],
+    next_id: int,
+) -> tuple[bytes, int]:
+    """Build podcast-grouped MHIP entries for the type 3 MHSD dataset.
+
+    Groups tracks by album name.  For each album group, emits:
+      1. A group header MHIP (``podcast_group_flag=256``, ``track_id=0``,
+         MHOD type 1 with the album name)
+      2. One child MHIP per track (``podcast_group_flag=0``,
+         ``group_id_ref`` pointing to the parent group header's ``group_id``,
+         MHOD type 100 with the child's own unique ``mhip_id`` as position)
+
+    This matches libgpod's ``write_podcast_mhips()`` +
+    ``write_one_podcast_group()`` in ``itdb_itunesdb.c``.
+
+    Args:
+        track_ids: Sequential track IDs for the podcast playlist
+        track_album_map: track_id → album name ('' if unknown)
+        next_id: Starting value for unique MHIP group_id / mhip_id
+
+    Returns:
+        (mhip_bytes, mhip_count) — concatenated MHIPs and the total
+        MHIP count (= number of tracks + number of album groups).
+    """
+    from collections import OrderedDict
+
+    # Group tracks by album, preserving insertion order
+    album_groups: OrderedDict[str, list[int]] = OrderedDict()
+    for tid in track_ids:
+        album = track_album_map.get(tid, "")
+        album_groups.setdefault(album, []).append(tid)
+
+    parts: list[bytes] = []
+    cur_id = next_id
+    total_mhip_count = 0
+
+    for album, tids in album_groups.items():
+        # Group header MHIP
+        group_id = cur_id
+        cur_id += 1
+        parts.append(write_mhip_podcast_group(album or "Unknown", group_id))
+        total_mhip_count += 1
+
+        # Child MHIPs — one per track in this album group
+        for tid in tids:
+            mhip_id = cur_id
+            cur_id += 1
+            parts.append(write_mhip(
+                tid, position=mhip_id,
+                mhip_id=mhip_id,
+                podcast_group_flag=0,
+                podcast_group_ref=group_id,
+            ))
+            total_mhip_count += 1
+
+    return b''.join(parts), total_mhip_count
 
 
 def write_mhod_playlist_prefs() -> bytes:
@@ -367,19 +389,14 @@ def write_mhod_playlist_prefs() -> bytes:
     # libgpod mk_long_mhod_id_playlist() writes exactly 0x288 bytes
     # This is critical for proper playlist recognition
 
-    header_len = 0x18  # 24 bytes
     total_len = 0x288  # 648 bytes - exactly what libgpod writes
 
     # Build complete MHOD type 100
     data = bytearray(total_len)
 
-    # Header
-    data[0:4] = b'mhod'
-    struct.pack_into('<I', data, 4, header_len)  # header length
-    struct.pack_into('<I', data, 8, total_len)   # total length
-    struct.pack_into('<I', data, 12, 100)        # type = 100 (MHOD_ID_PLAYLIST)
-    struct.pack_into('<I', data, 16, 0)          # unknown1
-    struct.pack_into('<I', data, 20, 0)          # unknown2
+    # Header (24 bytes) — use shared helper, then overlay onto data buffer
+    hdr = write_mhod_header(100, total_len)
+    data[:_MHOD_HEADER_SIZE] = hdr
 
     # Body data - based on libgpod mk_long_mhod_id_playlist()
     # Offset 0x18 (after header):
@@ -429,25 +446,16 @@ def _write_mhod100_raw(raw_body: bytes) -> bytes:
     Returns:
         Complete MHOD type 100 chunk.
     """
-    header_len = 24
-    total_len = header_len + len(raw_body)
-
-    header = struct.pack(
-        '<4sIIIII',
-        b'mhod',
-        header_len,
-        total_len,
-        100,  # type
-        0,    # unk1
-        0,    # unk2
-    )
-
-    return header + raw_body
+    total_len = _MHOD_HEADER_SIZE + len(raw_body)
+    return write_mhod_header(100, total_len) + raw_body
 
 
 def write_playlist(
     playlist: "PlaylistInfo",
     id_0x24: int = 0,
+    podcast_grouping: bool = False,
+    track_album_map: Optional[dict[int, str]] = None,
+    next_mhip_id_start: int = 1,
 ) -> bytes:
     """Write a playlist from a PlaylistInfo dataclass.
 
@@ -462,10 +470,18 @@ def write_playlist(
     Args:
         playlist: A PlaylistInfo instance.
         id_0x24: Database-wide ID from MHBD offset 0x24.
+        podcast_grouping: When True and playlist.podcast_flag is set,
+                     generate grouped MHIPs for podcast episodes.
+        track_album_map: track_id → album name (required when
+                     podcast_grouping applies).
+        next_mhip_id_start: Starting ID for generated MHIP identifiers
+                     during podcast grouping.
 
     Returns:
         Complete MHYP chunk bytes.
     """
+    # Only apply podcast grouping to actual podcast playlists
+    use_grouping = podcast_grouping and bool(playlist.podcast_flag)
     return write_mhyp(
         name=playlist.name,
         track_ids=playlist.track_ids,
@@ -473,7 +489,6 @@ def write_playlist(
         master=playlist.master,
         sortorder=playlist.sortorder,
         podcast_flag=playlist.podcast_flag,
-        group_flag=playlist.group_flag,
         id_0x24=id_0x24,
         smart_prefs=playlist.smart_prefs,
         smart_rules=playlist.smart_rules,
@@ -481,6 +496,9 @@ def write_playlist(
         raw_mhod100=playlist.raw_mhod100,
         raw_mhod102=playlist.raw_mhod102,
         item_metadata=playlist.item_metadata,
+        podcast_grouping=use_grouping,
+        track_album_map=track_album_map,
+        next_mhip_id_start=next_mhip_id_start,
     )
 
 
@@ -490,6 +508,7 @@ def write_master_playlist(
     name: str = "iPod",
     tracks: Optional[List["TrackInfo"]] = None,
     capabilities=None,
+    playlist_id: Optional[int] = None,
 ) -> bytes:
     """
     Write the Master Playlist (MPL).
@@ -512,7 +531,7 @@ def write_master_playlist(
     return write_mhyp(
         name=name,
         track_ids=track_ids,
-        playlist_type=PLAYLIST_TYPE_MASTER,
+        playlist_id=playlist_id,
         master=True,  # CRITICAL: Master playlist must have type=1
         sortorder=5,  # Match iTunes default sort order
         tracks=tracks,

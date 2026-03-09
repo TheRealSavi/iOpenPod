@@ -28,7 +28,7 @@ def get_ipod_image(
     generation: str,
     size: int = 80,
     color: str = "",
-) -> QPixmap | None:
+) -> QPixmap:
     """
     Return a scaled QPixmap of the iPod product image.
 
@@ -54,7 +54,7 @@ def get_ipod_image(
 
     pixmap = QPixmap(str(path))
     if pixmap.isNull():
-        return None
+        return QPixmap()  # Return empty pixmap if loading failed
 
     return pixmap.scaled(
         size, size,

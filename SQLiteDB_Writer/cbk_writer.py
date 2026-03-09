@@ -7,7 +7,7 @@ HASHAB.
 File format:
     [57 bytes]  HASHAB signature of final_sha1 (or 20 bytes for HASH58/72)
     [20 bytes]  final_sha1 = SHA1(all_block_sha1s concatenated)
-    [N×20 bytes] SHA1 of each 1024-byte block of Locations.itdb
+    [Nx20 bytes] SHA1 of each 1024-byte block of Locations.itdb
 
 For HASHAB (Nano 6G/7G), the header is 57 bytes.
 For HASH58, the header would be 20 bytes.

@@ -41,7 +41,7 @@ from .hashab import (
 )
 
 from .mhit_writer import TrackInfo, write_mhit
-from .mhit_writer import (
+from iTunesDB_Shared.constants import (
     MEDIA_TYPE_AUDIO,
     MEDIA_TYPE_VIDEO,
     MEDIA_TYPE_PODCAST,

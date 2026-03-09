@@ -22,20 +22,16 @@ Cross-referenced against:
 from __future__ import annotations
 
 import logging
-import struct
 from typing import List, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .mhit_writer import TrackInfo
     from .mhyp_writer import PlaylistInfo
 
+from iTunesDB_Shared.field_base import MHLP_HEADER_SIZE, write_generic_header
 from .mhyp_writer import write_master_playlist, write_playlist
 
 logger = logging.getLogger(__name__)
-
-
-# MHLP header size - libgpod uses 92 bytes
-MHLP_HEADER_SIZE = 92
 
 
 def write_mhlp_empty() -> bytes:
@@ -49,15 +45,7 @@ def write_mhlp_empty() -> bytes:
         MHLP header with 0 playlists
     """
     header = bytearray(MHLP_HEADER_SIZE)
-
-    # Magic
-    header[0:4] = b'mhlp'
-
-    # Header length
-    struct.pack_into('<I', header, 4, MHLP_HEADER_SIZE)
-
-    # Playlist count = 0
-    struct.pack_into('<I', header, 8, 0)
+    write_generic_header(header, 0, b'mhlp', MHLP_HEADER_SIZE, 0)
 
     return bytes(header)
 
@@ -76,15 +64,7 @@ def write_mhlp(playlist_chunks: List[bytes]) -> bytes:
     playlists_data = b''.join(playlist_chunks)
 
     header = bytearray(MHLP_HEADER_SIZE)
-
-    # Magic
-    header[0:4] = b'mhlp'
-
-    # Header length
-    struct.pack_into('<I', header, 4, MHLP_HEADER_SIZE)
-
-    # Playlist count
-    struct.pack_into('<I', header, 8, len(playlist_chunks))
+    write_generic_header(header, 0, b'mhlp', MHLP_HEADER_SIZE, len(playlist_chunks))
 
     return bytes(header) + playlists_data
 
@@ -96,6 +76,7 @@ def write_mhlp_with_playlists(
     tracks: Optional[List[TrackInfo]] = None,
     capabilities=None,
     master_playlist_name: str = "iPod",
+    master_playlist_id: Optional[int] = None,
 ) -> bytes:
     """
     Write an MHLP chunk with the master playlist + user playlists.
@@ -124,6 +105,7 @@ def write_mhlp_with_playlists(
     master = write_master_playlist(
         track_ids, tracks=tracks, id_0x24=id_0x24,
         capabilities=capabilities, name=master_playlist_name,
+        playlist_id=master_playlist_id,
     )
     chunks.append(master)
 
@@ -144,6 +126,75 @@ def write_mhlp_with_playlists(
     # Write all user playlists (regular and smart).
     for pl in playlists:
         chunks.append(write_playlist(pl, id_0x24=id_0x24))
+
+    return write_mhlp(chunks)
+
+
+def write_mhlp_with_playlists_type3(
+    track_ids: List[int],
+    playlists: List["PlaylistInfo"],
+    id_0x24: int,
+    track_album_map: dict[int, str],
+    tracks: Optional[List["TrackInfo"]] = None,
+    capabilities=None,
+    master_playlist_name: str = "iPod",
+    next_mhip_id_start: int = 1,
+    master_playlist_id: Optional[int] = None,
+) -> bytes:
+    """Write an MHLP for MHSD type 3 with podcast grouping.
+
+    Identical to :func:`write_mhlp_with_playlists` **except** that playlist
+    entries marked as podcast (``podcast_flag == 1``) use the grouped
+    MHIP structure described by libgpod's ``write_podcast_mhips()``.
+
+    In the grouped structure, podcast episodes are nested under their
+    podcast show (album).  Each show gets a group-header MHIP
+    (``podcast_group_flag=256``, MHOD title = album name) followed by
+    child episode MHIPs whose ``group_id_ref`` points back to the header.
+
+    Non-podcast playlists are written with the standard flat MHIP layout,
+    identical to type 2.
+
+    Args:
+        track_ids: ALL track IDs in the database (for the master playlist)
+        playlists: User playlist list (same objects as type 2; master is
+                   auto-generated)
+        id_0x24: Database-wide ID from MHBD offset 0x24
+        track_album_map: track_id → album name for podcast grouping
+        tracks: TrackInfo list (needed for master playlist library indices)
+        capabilities: DeviceCapabilities (for video sort indices etc.)
+        master_playlist_name: Display name for the master playlist.
+        next_mhip_id_start: Starting ID for generated MHIP identifiers.
+
+    Returns:
+        Complete MHLP chunk bytes.
+    """
+    chunks = []
+
+    # Master playlist — identical to type 2
+    master = write_master_playlist(
+        track_ids, tracks=tracks, id_0x24=id_0x24,
+        capabilities=capabilities, name=master_playlist_name,
+        playlist_id=master_playlist_id,
+    )
+    chunks.append(master)
+
+    for p in playlists:
+        if p.master and not p.mhsd5_type:
+            logger.warning(
+                "Stripped master flag from user playlist '%s' — "
+                "master is auto-generated for dataset 3",
+                p.name,
+            )
+            p.master = False
+
+    for pl in playlists:
+        chunks.append(write_playlist(
+            pl, id_0x24=id_0x24,
+            podcast_grouping=True,
+            track_album_map=track_album_map,
+            next_mhip_id_start=next_mhip_id_start,
+        ))
 
     return write_mhlp(chunks)
 

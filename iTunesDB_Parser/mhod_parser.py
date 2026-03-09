@@ -1,487 +1,243 @@
-"""
-MHOD (Data Object) parser.
+"""MHOD (Data Object) parser.
 
-MHODs are the most varied chunk type in the iTunesDB.  They carry per-track
-strings (title, artist, album ...), playlist metadata, smart-playlist rules,
-library sort indices, and various binary blobs.
+MHODs are the most varied chunk type in the iTunesDB.  They are always
+leaf nodes (no sub-chunks) but have a ``type`` field at offset 0x0C that
+determines how the body should be decoded.
 
-All MHOD chunks share a common 24-byte header:
-    +0x00: 'mhod' magic (4 bytes)
-    +0x04: header_length (4 bytes) — always 0x18 (24)
-    +0x08: total_length (4 bytes) — header + body
-    +0x0C: type (4 bytes) — determines body layout (see constants.mhod_type_map)
-    +0x10: unk1 (4 bytes) — usually 0
-    +0x14: unk2 (4 bytes) — usually 0
+Body layouts by type family:
 
-Body layout depends on type:
+- **String types** (1-14, 18-31, 33-44, 200-204, 300):
+  Standard sub-header at +0x18 with encoding + string_length, then
+  UTF-16LE or UTF-8 string data starting at +0x28.
 
-  Types 1–14, 18–31, 33–44, 200–204  — String MHODs
-    Sub-header at +0x18:
-      +0x18 (24): position/encoding (4B) — 1=UTF-16LE (standard), 2=UTF-8
-      +0x1C (28): string_length (4B)
-      +0x20 (32): unk (4B)
-      +0x24 (36): unk (4B)
-      +0x28 (40): string data (string_length bytes)
+- **Podcast URL types** (15, 16):
+  UTF-8 string directly after the 24-byte MHOD header (no sub-header).
 
-  Types 15–16  — Podcast Enclosure / RSS URL
-    String directly at +0x18, NO sub-header.  UTF-8/ASCII only.
-    Length = total_length − header_length.
+- **Chapter data** (17):
+  Big-endian atom tree (sean → chap → name) after 12-byte preamble.
+  Contains chapter titles and start positions for audiobooks/podcasts.
 
-  Type 17  — Chapter Data
-    Big-endian atom-based binary blob (sean/chap/name/hedr atoms).
-    Stored as raw bytes; full atom parsing is out of scope.
+- **Binary blob types** (32=video track data):
+  Raw binary stored as hex string for JSON round-tripping.
 
-  Type 32  — Unknown Video Track Data
-    Binary field (not a string despite being in the 1–44 range).
+- **Smart playlist types** (50=SPLPref, 51=SLst rules):
+  Dedicated binary formats.  SLst is the **only** big-endian section
+  in the entire iTunesDB (besides chapter data atoms).
 
-  Type 50  — Smart Playlist Preferences (SPLPref)
-  Type 51  — Smart Playlist Rules (SLst — BIG-endian!)
-  Type 52  — Library Playlist Sorted Index
-  Type 53  — Library Playlist Jump Table
-  Type 100 — Playlist column prefs / item position
-  Type 102 — Playlist settings (post-iTunes 7)
+- **Index types** (52=sorted index, 53=jump table):
+  Library playlist indexing data.
 
-Cross-referenced against:
-  - iPodLinux wiki: https://web.archive.org/web/20081006030946/http://ipodlinux.org/wiki/ITunesDB
-  - libgpod itdb_itunesdb.c: get_mhod() / mk_mhod()
+- **Playlist settings** (100=position/preferences, 102=binary prefs):
+  Context-dependent layout based on parent chunk (MHIP vs MHYP).
 """
 
+from __future__ import annotations
+
+import logging
 import struct
+from typing import Any
+
+import iTunesDB_Shared as idb
+from ._parsing import UINT16_LE, UINT32_LE, ParseResult
+
+logger = logging.getLogger(__name__)
 
 
-# String MHOD types that use the standard sub-header at offset 24.
-# Types 1-14, 18-31, 33-44 are track/item string metadata.
-# Types 200-204 are album item strings.
-#
-# EXCLUDED from this set (handled separately):
-#   15-16: Podcast URLs — UTF-8 string with NO sub-header
-#   17:    Chapter data — big-endian atom blob
-#   32:    Video track data — binary, not a string
-STRING_MHOD_TYPES = (
-    set(range(1, 15))   # 1..14
-    | set(range(18, 32))  # 18..31
-    | set(range(33, 45))  # 33..44
-    | set(range(200, 205))  # 200..204
-    | {300}                   # artist item name (MHSD type 8)
-)
+# ────────────────────────────────────────────────────────────────────
+# Common MHOD header (24 bytes at +0x00..+0x18)
+# ────────────────────────────────────────────────────────────────────
 
-# Podcast URL types — UTF-8/ASCII string directly at offset 24, no sub-header.
-PODCAST_URL_MHOD_TYPES = {15, 16}
-
-# Binary / atom-based MHOD types — stored as raw bytes.
-BINARY_BLOB_MHOD_TYPES = {17, 32}
-
-# Non-string MHOD types with dedicated binary formats
-NON_STRING_MHOD_TYPES = {50, 51, 52, 53, 100, 102}
+def _parse_mhod_header(
+    data: bytes | bytearray,
+    offset: int,
+) -> dict[str, Any]:
+    """Parse the common 24-byte MHOD header fields."""
+    return idb.read_fields(data, offset, "mhod")
 
 
-def parse_mhod(data, offset, header_length, chunk_length) -> dict:
-    mhod_type = struct.unpack("<I", data[offset + 12:offset + 16])[0]
+# ────────────────────────────────────────────────────────────────────
+# Top-level dispatcher
+# ────────────────────────────────────────────────────────────────────
 
-    # Dispatch non-string MHOD types to dedicated parsers
-    if mhod_type in NON_STRING_MHOD_TYPES:
-        parsed_data = _parse_nonstring_mhod(data, offset, header_length, chunk_length, mhod_type)
-        return {"nextOffset": offset + chunk_length, "result": {"mhodType": mhod_type, "data": parsed_data}}
+def parse_mhod(
+    data: bytes | bytearray,
+    offset: int,
+    header_length: int,
+    chunk_length: int,
+) -> ParseResult:
+    """Parse a complete MHOD chunk, dispatching by type to the appropriate decoder."""
+    mhod: dict[str, Any] = _parse_mhod_header(data, offset)
+    mhod_type: int = mhod["mhod_type"]
 
-    # Podcast URL types (15, 16): UTF-8/ASCII string directly at offset 24,
-    # with NO sub-header (no position/length fields).  Per iPodLinux wiki:
-    # "Note: this is either a UTF-8 or ASCII encoded string (NOT UTF-16).
-    #  Also, there is no mhod::length value for this type."
-    if mhod_type in PODCAST_URL_MHOD_TYPES:
+    if mhod_type in idb.mhod_defs.NON_STRING_MHOD_TYPES:
+        body_offset = offset + header_length
+        body_length = chunk_length - header_length
+        mhod["data"] = _parse_nonstring_mhod(data, body_offset, body_length, mhod_type)
+
+    elif mhod_type in idb.mhod_defs.PODCAST_URL_MHOD_TYPES:
+        # Podcast URL types (15, 16): UTF-8/ASCII string directly after
+        # header, with NO sub-header.
         url_length = chunk_length - header_length
         if url_length > 0:
-            url_data = data[offset + header_length:offset + header_length + url_length]
-            url_string = url_data.decode("utf-8", errors="replace").rstrip("\x00")
+            raw = data[offset + header_length:offset + header_length + url_length]
+            mhod["string"] = raw.decode("utf-8", errors="replace").rstrip("\x00")
         else:
-            url_string = ""
-        return {"nextOffset": offset + chunk_length, "result": {"mhodType": mhod_type, "string": url_string}}
+            mhod["string"] = ""
 
-    # Binary blob types (17=chapter data, 32=video track data):
-    # Store as raw hex string for JSON serialization.  Chapter data (type 17)
-    # uses big-endian atom format (sean/chap/name/hedr) internally.
-    if mhod_type in BINARY_BLOB_MHOD_TYPES:
+    elif mhod_type in idb.mhod_defs.CHAPTER_DATA_MHOD_TYPES:
+        body_offset = offset + header_length
+        body_length = chunk_length - header_length
+        mhod["data"] = _parse_chapter_data(data, body_offset, body_length)
+
+    elif mhod_type in idb.mhod_defs.BINARY_BLOB_MHOD_TYPES:
+        # Binary blob types (32=video track data).
         blob_length = chunk_length - header_length
         blob = data[offset + header_length:offset + header_length + blob_length]
-        return {"nextOffset": offset + chunk_length, "result": {"mhodType": mhod_type, "string": blob.hex()}}
+        mhod["string"] = blob.hex()
 
-    # Only attempt string parsing for known string MHOD types
-    if mhod_type not in STRING_MHOD_TYPES:
-        # Unknown non-string MHOD — return stub
-        return {"nextOffset": offset + chunk_length, "result": {"mhodType": mhod_type, "string": ""}}
+    elif mhod_type in idb.mhod_defs.STRING_MHOD_TYPES:
+        _parse_string_mhod(data, offset, mhod)
 
-    # --- Standard string MHOD with sub-header at offset 24 ---
-    string_length = struct.unpack("<I", data[offset + 28:offset + 32])[0]
-
-    # The field at offset 24 is called "position" in the iPodLinux wiki.
-    # It doubles as an encoding indicator:
-    #   1 (or 0) = UTF-16LE (standard iPod, little-endian strings)
-    #   2        = UTF-8 (mobile-phone iTunesDBs, inversed endian)
-    # libgpod checks this same field to decide encoding.
-    position = struct.unpack("<I", data[offset + 24:offset + 28])[0]
-    string_data = data[offset + 40:offset + 40 + string_length]
-
-    string_decode = ""
-    if position == 2:
-        string_decode = string_data.decode("utf-8", errors="replace")
     else:
-        # position 0 or 1 = UTF-16LE (most common on iPod)
-        string_decode = string_data.decode("utf-16-le", errors="replace")
+        # Unknown MHOD type — return stub.
+        mhod["string"] = ""
 
-    return {"nextOffset": offset + chunk_length, "result": {"mhodType": mhod_type, "string": string_decode}}
+    return {"next_offset": offset + chunk_length, "data": mhod}
 
 
-# ============================================================
+# ────────────────────────────────────────────────────────────────────
+# String MHOD decoder
+# ────────────────────────────────────────────────────────────────────
+
+def _parse_string_mhod(
+    data: bytes | bytearray,
+    offset: int,
+    mhod: dict[str, Any],
+) -> None:
+    """Decode a standard string MHOD (sub-header at +0x18) into *mhod* in-place."""
+    encoding = idb.mhod_defs.mhod_string_encoding(data, offset)
+    string_length = idb.mhod_defs.mhod_string_length(data, offset)
+    mhod["unk_0x20"] = idb.mhod_defs.mhod_string_unk0x20(data, offset)
+    mhod["unk_0x24"] = idb.mhod_defs.mhod_string_unk0x24(data, offset)
+
+    # String data starts after 24-byte header + 16-byte sub-header.
+    string_start = offset + idb.mhod_defs.MHOD_STRING_DATA_OFFSET
+    string_data = data[string_start:string_start + string_length]
+
+    if encoding == 2:
+        mhod["string"] = string_data.decode("utf-8", errors="replace")
+    else:
+        # encoding 0 or 1 = UTF-16LE (most common on iPod).
+        mhod["string"] = string_data.decode("utf-16-le", errors="replace")
+
+
+# ────────────────────────────────────────────────────────────────────
 # Non-string MHOD dispatcher
-# ============================================================
+# ────────────────────────────────────────────────────────────────────
 
-def _parse_nonstring_mhod(data, offset, header_length, chunk_length, mhod_type) -> dict:
-    """Route non-string MHODs to their specific parsers."""
-    body_offset = offset + 24  # All non-string MHODs start body at offset 24
-
+def _parse_nonstring_mhod(
+    data: bytes | bytearray,
+    body_offset: int,
+    body_length: int,
+    mhod_type: int,
+) -> dict[str, Any]:
+    """Route non-string MHODs to their specific decoders."""
     match mhod_type:
         case 50:
-            return _parse_mhod50_smart_playlist_data(data, body_offset, chunk_length - 24)
+            return _parse_mhod50(data, body_offset, body_length)
         case 51:
-            return _parse_mhod51_smart_playlist_rules(data, body_offset, chunk_length - 24)
+            return _parse_mhod51(data, body_offset, body_length)
         case 52:
-            return _parse_mhod52_library_index(data, body_offset, chunk_length - 24)
+            return _parse_mhod52(data, body_offset, body_length)
         case 53:
-            return _parse_mhod53_jump_table(data, body_offset, chunk_length - 24)
+            return _parse_mhod53(data, body_offset, body_length)
         case 100:
-            return _parse_mhod100_playlist_prefs(data, body_offset, chunk_length - 24)
+            return _parse_mhod100(data, body_offset, body_length)
         case 102:
-            return _parse_mhod102_playlist_settings(data, body_offset, chunk_length - 24)
+            return _parse_mhod102(data, body_offset, body_length)
         case _:
             return {}
 
 
-# ============================================================
+# ────────────────────────────────────────────────────────────────────
 # MHOD Type 50 — Smart Playlist Preferences (SPLPref)
-# ============================================================
-#
-# Based on libgpod's SPLPref struct (itdb_spl.c) and the iPodLinux wiki.
-#
-# The data section immediately follows the 24-byte MHOD header.
-# Layout (offset from body start):
-#   +0x00: liveupdate (1 byte) — 1 = auto-update when library changes
-#   +0x01: checkrules (1 byte) — 1 = limit by rules (match checked items)
-#   +0x02: checklimits (1 byte) — 1 = limit by size/count/time
-#   +0x03: limittype (1 byte) — what the limit applies to:
-#          0x01=minutes, 0x02=MB, 0x03=songs, 0x04=hours, 0x05=GB
-#          (libgpod ItdbLimitType enum)
-#   +0x04: limitsort (1 byte) — how to choose items when limited:
-#          0x02=random, 0x03=song_name, 0x04=album, 0x05=artist,
-#          0x07=genre, 0x10=most_recently_added, 0x14=most_often_played,
-#          0x15=most_recently_played, 0x17=highest_rating
-#          (libgpod ItdbLimitSort enum; high bit 0x80000000 set via
-#           reverse flag at +0x0D for "least"/"lowest" variants)
-#   +0x05: pad (3 bytes)
-#   +0x08: limitvalue (4 bytes) — the limit value (songs/MB/min/etc.)
-#   +0x0C: matchCheckedOnly (1 byte) — 1 = only match checked items
-#   +0x0D: pad (119 bytes) to total 132 bytes
+# ────────────────────────────────────────────────────────────────────
 
-# Limit type names (from libgpod ItdbLimitType)
-SPL_LIMIT_TYPE_MAP = {
-    0x01: "minutes",
-    0x02: "MB",
-    0x03: "songs",
-    0x04: "hours",
-    0x05: "GB",
-}
+def _parse_mhod50(
+    data: bytes | bytearray,
+    body_offset: int,
+    body_length: int,
+) -> dict[str, Any]:
+    """Parse SPLPref (Smart Playlist Preferences) from MHOD type 50.
 
-# Limit sort names (from libgpod ItdbLimitSort)
-# The 0x80000000 bit is the "reverse" flag, stored separately at SPLPref +13.
-# Values here include the combined flag for lookup convenience.
-SPL_LIMIT_SORT_MAP = {
-    0x02: "random",
-    0x03: "song_name",
-    0x04: "album",
-    0x05: "artist",
-    0x07: "genre",
-    0x10: "most_recently_added",
-    0x80000010: "least_recently_added",
-    0x14: "most_often_played",
-    0x80000014: "least_often_played",
-    0x15: "most_recently_played",
-    0x80000015: "least_recently_played",
-    0x17: "highest_rating",
-    0x80000017: "lowest_rating",
-}
+    Binary layout (relative to body_offset)::
 
-
-def _parse_mhod50_smart_playlist_data(data, body_offset, body_length) -> dict:
-    """Parse SPLPref (Smart Playlist Preferences) from MHOD type 50."""
+        +0x00  liveUpdate     (u8)
+        +0x01  checkRules     (u8)
+        +0x02  checkLimits    (u8)
+        +0x03  limitType      (u8)
+        +0x04  limitSort      (u8) + 3 padding bytes
+        +0x08  limitValue     (u32 LE)
+        +0x0C  matchCheckedOnly (u8)  — optional
+        +0x0D  reverseSort    (u8)  — optional
+    """
     if body_length < 12:
         return {"error": "SPLPref too short"}
 
-    result = {}
-    result["liveUpdate"] = bool(data[body_offset])
-    result["checkRules"] = bool(data[body_offset + 1])
-    result["checkLimits"] = bool(data[body_offset + 2])
-
-    limit_type = data[body_offset + 3]
-    result["limitType"] = limit_type
-    result["limitTypeName"] = SPL_LIMIT_TYPE_MAP.get(limit_type, f"unknown({limit_type})")
-
-    # limitsort lower byte at +4; reverse flag at +13
-    limit_sort_raw = data[body_offset + 4]
-
-    # 3 bytes padding at offset 5
-
-    result["limitValue"] = struct.unpack("<I", data[body_offset + 8:body_offset + 12])[0]
+    defs = idb.mhod_defs
+    result: dict[str, Any] = {
+        "live_update": defs.mhod_spl_live_update(data, body_offset),
+        "check_rules": defs.mhod_spl_check_rules(data, body_offset),
+        "check_limits": defs.mhod_spl_check_limits(data, body_offset),
+        "limit_type": defs.mhod_spl_limit_type(data, body_offset),
+        "limit_sort": defs.mhod_spl_limit_sort_raw(data, body_offset),
+        "limit_value": defs.mhod_spl_limit_value(data, body_offset),
+    }
 
     if body_length >= 13:
-        result["matchCheckedOnly"] = bool(data[body_offset + 12])
-    else:
-        result["matchCheckedOnly"] = False
-
-    # Reverse sort flag at +13 (libgpod: if get8int(cts, seek+13) then limitsort |= 0x80000000)
-    if body_length >= 14 and data[body_offset + 13]:
-        limit_sort = limit_sort_raw | 0x80000000
-    else:
-        limit_sort = limit_sort_raw
-
-    result["limitSort"] = limit_sort
-    result["limitSortName"] = SPL_LIMIT_SORT_MAP.get(limit_sort, f"unknown(0x{limit_sort:X})")
+        result["match_checked_only"] = defs.mhod_spl_match_checked_only(data, body_offset)
+    if body_length >= 14:
+        result["reverse_sort"] = defs.mhod_spl_reverse_sort(data, body_offset)
 
     return result
 
 
-# ============================================================
-# MHOD Type 51 — Smart Playlist Rules (SPLRules / SLst)
-# ============================================================
-#
-# Based on libgpod's SPLRules / SPLRule structs and the definitive
-# get_mhod() / mk_mhod() functions in itdb_itunesdb.c.
-#
-# CRITICAL: The SLst blob is the ONLY part of the iTunesDB that uses
-# big-endian encoding (including UTF-16 strings). All multi-byte integers
-# within the SLst must be read as big-endian.
-#
-# SLst header (136 bytes):
-#   +0x00: 'SLst' magic (4 bytes)
-#   +0x04: unk004 (4 bytes BE) — usually 0
-#   +0x08: rule_count (4 bytes BE)
-#   +0x0C: conjunction (4 bytes BE) — 0=AND (match all), 1=OR (match any)
-#   +0x10: padding (120 bytes, zeros)
-#
-# Each rule (variable length):
-#   +0x00: field (4 bytes BE) — what field to match (see SPL_FIELD_MAP)
-#   +0x04: action (4 bytes BE) — comparison operator (see SPL_ACTION_MAP)
-#   +0x08: padding (44 bytes, zeros)
-#   +0x34: length (4 bytes BE) — byte length of following data
-#   +0x38: data (length bytes):
-#
-#   For STRING rules (field type = STRING):
-#     data = UTF-16 BE string (length bytes)
-#
-#   For non-STRING rules (INT/DATE/BOOLEAN/PLAYLIST/BINARY_AND):
-#     length = 0x44 (68 bytes), containing:
-#     +0x00: fromvalue  (8 bytes BE, unsigned 64-bit — guint64)
-#     +0x08: fromdate   (8 bytes BE, signed 64-bit — gint64)
-#     +0x10: fromunits  (8 bytes BE, unsigned 64-bit — guint64)
-#     +0x18: tovalue    (8 bytes BE, unsigned 64-bit — guint64)
-#     +0x20: todate     (8 bytes BE, signed 64-bit — gint64)
-#     +0x28: tounits    (8 bytes BE, unsigned 64-bit — guint64)
-#     +0x30: unk052     (4 bytes BE)
-#     +0x34: unk056     (4 bytes BE)
-#     +0x38: unk060     (4 bytes BE)
-#     +0x3C: unk064     (4 bytes BE)
-#     +0x40: unk068     (4 bytes BE)
-#
-# Total rule size = 56 + length (NOT 136 + string_length!)
-#   Non-string rule:  56 + 0x44 = 124 bytes
-#   String rule:      56 + string_byte_length
+# ────────────────────────────────────────────────────────────────────
+# MHOD Type 51 — Smart Playlist Rules (SLst)
+# ────────────────────────────────────────────────────────────────────
 
-# Field ID → human-readable name (from libgpod ItdbSPLField enum in itdb.h)
-SPL_FIELD_MAP = {
-    0x02: "Song Name",
-    0x03: "Album",
-    0x04: "Artist",
-    0x05: "Bitrate",
-    0x06: "Sample Rate",
-    0x07: "Year",
-    0x08: "Genre",
-    0x09: "Kind",
-    0x0A: "Date Modified",
-    0x0B: "Track Number",
-    0x0C: "Size",
-    0x0D: "Time",
-    0x0E: "Comment",
-    0x10: "Date Added",
-    0x12: "Composer",
-    0x16: "Play Count",
-    0x17: "Last Played",
-    0x18: "Disc Number",
-    0x19: "Rating",
-    0x1F: "Compilation",
-    0x23: "BPM",
-    0x27: "Grouping",
-    0x28: "Playlist",
-    0x29: "Purchased",
-    0x36: "Description",
-    0x37: "Category",
-    0x39: "Podcast",
-    0x3C: "Media Type",
-    0x3E: "TV Show",
-    0x3F: "Season Number",
-    0x44: "Skip Count",
-    0x45: "Last Skipped",
-    0x47: "Album Artist",
-    0x4E: "Sort Song Name",
-    0x4F: "Sort Album",
-    0x50: "Sort Artist",
-    0x51: "Sort Album Artist",
-    0x52: "Sort Composer",
-    0x53: "Sort TV Show",
-    0x5A: "Album Rating",
-}
+def _parse_mhod51(
+    data: bytes | bytearray,
+    body_offset: int,
+    body_length: int,
+) -> dict[str, Any]:
+    """Parse SPLRules (Smart Playlist Rules) from MHOD type 51.
 
-# Action ID → human-readable name (from libgpod ItdbSPLAction enum in itdb.h;
-# confirmed against iPodLinux wiki).
-# Actions are 32-bit bitmapped values, NOT small sequential integers.
-# Byte layout:
-#   Bits 24-25: 0x00=int/date, 0x01=string, 0x02=negated int, 0x03=negated string
-#   Bits 0-10:  comparison operator flags
-SPL_ACTION_MAP = {
-    # Integer / date comparisons (0x00xxxxxx)
-    0x00000001: "is",
-    0x00000010: "is greater than",
-    0x00000020: "is greater than or equal to",  # not in iTunes UI
-    0x00000040: "is less than",
-    0x00000080: "is less than or equal to",  # not in iTunes UI
-    0x00000100: "is in the range",
-    0x00000200: "is in the last",
-    0x00000400: "binary AND",  # used for Media Type / Video Kind
-    0x00000800: "binary unknown1",
-    # String comparisons (0x01xxxxxx)
-    0x01000001: "is (string)",
-    0x01000002: "contains",
-    0x01000004: "starts with",
-    0x01000008: "ends with",
-    # Negated integer / date (0x02xxxxxx)
-    0x02000001: "is not",
-    0x02000010: "is not greater than",  # not in iTunes UI
-    0x02000020: "is not greater than or equal to",  # not in iTunes UI
-    0x02000040: "is not less than",  # not in iTunes UI
-    0x02000080: "is not less than or equal to",  # not in iTunes UI
-    0x02000100: "is not in the range",  # not in iTunes UI
-    0x02000200: "is not in the last",
-    0x02000400: "not binary AND",
-    0x02000800: "binary unknown2",
-    # Negated string (0x03xxxxxx)
-    0x03000001: "is not (string)",
-    0x03000002: "does not contain",
-    0x03000004: "does not start with",  # not in iTunes UI
-    0x03000008: "does not end with",  # not in iTunes UI
-}
-
-# Field type enum (from libgpod ItdbSPLFieldType — values start at 1)
-SPLFT_STRING = 1
-SPLFT_INT = 2
-SPLFT_BOOLEAN = 3
-SPLFT_DATE = 4
-SPLFT_PLAYLIST = 5
-SPLFT_UNKNOWN = 6
-SPLFT_BINARY_AND = 7
-
-# Map field ID → field type (equivalent to libgpod's itdb_splr_get_field_type)
-# This is how libgpod determines how to parse the rule data — NOT from a binary field.
-SPL_FIELD_TYPE_MAP = {
-    # String fields
-    0x02: SPLFT_STRING,    # Song Name
-    0x03: SPLFT_STRING,    # Album
-    0x04: SPLFT_STRING,    # Artist
-    0x08: SPLFT_STRING,    # Genre
-    0x09: SPLFT_STRING,    # Kind
-    0x0E: SPLFT_STRING,    # Comment
-    0x12: SPLFT_STRING,    # Composer
-    0x27: SPLFT_STRING,    # Grouping
-    0x36: SPLFT_STRING,    # Description
-    0x37: SPLFT_STRING,    # Category
-    0x3E: SPLFT_STRING,    # TV Show
-    0x47: SPLFT_STRING,    # Album Artist
-    0x4E: SPLFT_STRING,    # Sort Song Name
-    0x4F: SPLFT_STRING,    # Sort Album
-    0x50: SPLFT_STRING,    # Sort Artist
-    0x51: SPLFT_STRING,    # Sort Album Artist
-    0x52: SPLFT_STRING,    # Sort Composer
-    0x53: SPLFT_STRING,    # Sort TV Show
-    # Integer fields
-    0x05: SPLFT_INT,       # Bitrate
-    0x06: SPLFT_INT,       # Sample Rate
-    0x07: SPLFT_INT,       # Year
-    0x0B: SPLFT_INT,       # Track Number
-    0x0C: SPLFT_INT,       # Size
-    0x0D: SPLFT_INT,       # Time
-    0x16: SPLFT_INT,       # Play Count
-    0x18: SPLFT_INT,       # Disc Number
-    0x19: SPLFT_INT,       # Rating
-    0x23: SPLFT_INT,       # BPM
-    0x3F: SPLFT_INT,       # Season Number
-    0x44: SPLFT_INT,       # Skip Count
-    0x5A: SPLFT_INT,       # Album Rating
-    # Date fields
-    0x0A: SPLFT_DATE,      # Date Modified
-    0x10: SPLFT_DATE,      # Date Added
-    0x17: SPLFT_DATE,      # Last Played
-    0x45: SPLFT_DATE,      # Last Skipped
-    # Boolean fields
-    0x1F: SPLFT_BOOLEAN,   # Compilation
-    0x29: SPLFT_BOOLEAN,   # Purchased
-    0x39: SPLFT_INT,       # Podcast
-    # Playlist field
-    0x28: SPLFT_PLAYLIST,  # Playlist
-    # Binary AND
-    0x3C: SPLFT_BINARY_AND,  # Video Kind
-}
-
-# Date units for relative date rules
-SPL_DATE_UNITS_MAP = {
-    1: "seconds",
-    60: "minutes",
-    3600: "hours",
-    86400: "days",
-    604800: "weeks",
-    2628000: "months",  # ~30.4 days
-}
-
-
-def _parse_mhod51_smart_playlist_rules(data, body_offset, body_length) -> dict:
-    """
-    Parse SPLRules (Smart Playlist Rules) from MHOD type 51.
-
-    The SLst blob uses BIG-ENDIAN encoding for ALL multi-byte integers.
-    This is the only part of the iTunesDB that is big-endian.
-    The SLst header is 136 bytes, followed by variable-length rules.
+    CRITICAL: The SLst blob uses BIG-ENDIAN encoding for ALL multi-byte
+    integers — the only part of the iTunesDB that does so.
     """
     if body_length < 16:
         return {"error": "SPLRules too short"}
 
-    # SLst header
-    slst_magic = data[body_offset:body_offset + 4]
+    slst_magic = idb.mhod_defs.mhod_slst_magic(data, body_offset)
     if slst_magic != b'SLst':
         return {"error": f"Expected SLst magic, got {slst_magic!r}"}
 
-    result = {}
-    # All SLst fields are BIG-endian
-    result["unk004"] = struct.unpack(">I", data[body_offset + 4:body_offset + 8])[0]
-    rule_count = struct.unpack(">I", data[body_offset + 8:body_offset + 12])[0]
-    conjunction = struct.unpack(">I", data[body_offset + 12:body_offset + 16])[0]
+    defs = idb.mhod_defs
+    rule_count = defs.mhod_slst_rule_count(data, body_offset)
+    result: dict[str, Any] = {
+        "unk004": defs.mhod_slst_unk004(data, body_offset),
+        "rule_count": rule_count,
+        "conjunction": defs.mhod_slst_conjunction(data, body_offset),
+    }
 
-    result["ruleCount"] = rule_count
-    result["conjunction"] = "OR" if conjunction else "AND"
+    # Parse individual rules (start after 136-byte SLst header).
+    rules: list[dict[str, Any]] = []
+    rule_offset = body_offset + defs.SLST_HEADER_SIZE
 
-    # Parse individual rules (start after 136-byte SLst header)
-    SLST_HEADER_SIZE = 136
-    rules = []
-    rule_offset = body_offset + SLST_HEADER_SIZE
-
-    for i in range(rule_count):
-        # Minimum rule size is 56 bytes (header + length field, no data)
-        if rule_offset + 56 > body_offset + body_length:
+    for _ in range(rule_count):
+        if rule_offset + defs.SPL_RULE_HEADER_SIZE > body_offset + body_length:
             break
-
         rule, rule_total_size = _parse_spl_rule(data, rule_offset)
         rules.append(rule)
         rule_offset += rule_total_size
@@ -490,194 +246,137 @@ def _parse_mhod51_smart_playlist_rules(data, body_offset, body_length) -> dict:
     return result
 
 
-def _get_field_type(field_id: int) -> int:
-    """Determine field type from field ID (equivalent to libgpod's itdb_splr_get_field_type)."""
-    return SPL_FIELD_TYPE_MAP.get(field_id, SPLFT_UNKNOWN)
-
-
-def _parse_spl_rule(data, rule_offset) -> tuple[dict, int]:
-    """Parse a single SPL rule starting at rule_offset.
+def _parse_spl_rule(
+    data: bytes | bytearray,
+    rule_offset: int,
+) -> tuple[dict[str, Any], int]:
+    """Parse a single SPL rule starting at *rule_offset*.
 
     All multi-byte integers within SLst rules are BIG-ENDIAN.
 
-    Rule binary layout:
-        +0x00: field     (4 bytes BE)
-        +0x04: action    (4 bytes BE)
-        +0x08: padding   (44 bytes)
-        +0x34: length    (4 bytes BE) — byte length of following data
-        +0x38: data      (length bytes)
-
-    Total rule size = 56 + length.
-
     Returns:
-        Tuple of (rule dict, total_rule_size_in_bytes).
+        Tuple of ``(rule_dict, total_rule_size_in_bytes)``.
     """
-    rule = {}
+    defs = idb.mhod_defs
+    rule: dict[str, Any] = {}
 
-    # All SLst rule fields are BIG-endian
-    field_id = struct.unpack(">I", data[rule_offset:rule_offset + 4])[0]
-    action_id = struct.unpack(">I", data[rule_offset + 4:rule_offset + 8])[0]
+    field_id = defs.mhod_spl_rule_field(data, rule_offset)
+    rule["field_id"] = field_id
+    rule["action_id"] = defs.mhod_spl_rule_action(data, rule_offset)
 
-    rule["fieldID"] = field_id
-    rule["field"] = SPL_FIELD_MAP.get(field_id, f"unknown(0x{field_id:02X})")
+    data_length = defs.mhod_spl_rule_data_length(data, rule_offset)
+    rule["data_length"] = data_length
 
-    rule["actionID"] = action_id
-    rule["action"] = SPL_ACTION_MAP.get(action_id, f"unknown(0x{action_id:08X})")
-
-    # Length of data section at +0x34 (BE)
-    data_length = struct.unpack(">I", data[rule_offset + 0x34:rule_offset + 0x38])[0]
-
-    # Determine field type from the field ID (NOT from binary data)
-    field_type = _get_field_type(field_id)
-    rule["fieldType"] = field_type
-
-    # Data starts at +0x38
+    # Rule data starts at rule_offset + 0x38 (56 bytes header).
     data_offset = rule_offset + 0x38
 
-    if field_type == SPLFT_STRING:
-        # String rule: data is a UTF-16 BE string
+    field_type = defs.spl_get_field_type(field_id)
+
+    if field_type == defs.SPLFT_STRING:
+        # SLst strings are UTF-16 BIG-endian.
         if data_length > 0:
-            string_data = data[data_offset:data_offset + data_length]
-            # SLst strings are UTF-16 BIG-endian (unlike the rest of iTunesDB)
-            rule["stringValue"] = string_data.decode("utf-16-be", errors="replace")
+            raw = data[data_offset:data_offset + data_length]
+            rule["string_value"] = raw.decode("utf-16-be", errors="replace")
         else:
-            rule["stringValue"] = ""
-
+            rule["string_value"] = ""
     else:
-        # Non-string rule: INT, DATE, BOOLEAN, PLAYLIST, BINARY_AND, UNKNOWN
-        # libgpod expects length == 0x44 for these
-        if data_length != 0x44:
-            rule["warning"] = f"Expected data_length=0x44 for non-string rule, got 0x{data_length:X}"
+        # Numeric rule data (INT, DATE, BOOLEAN, PLAYLIST, BINARY_AND).
+        rule["from_value"] = defs.mhod_spl_rule_from_value(data, data_offset)
+        rule["from_date"] = defs.mhod_spl_rule_from_date(data, data_offset)
+        rule["from_units"] = defs.mhod_spl_rule_from_units(data, data_offset)
+        rule["to_value"] = defs.mhod_spl_rule_to_value(data, data_offset)
+        rule["to_date"] = defs.mhod_spl_rule_to_date(data, data_offset)
+        rule["to_units"] = defs.mhod_spl_rule_to_units(data, data_offset)
+        rule["unk052"] = defs.mhod_spl_rule_unk052(data, data_offset)
+        rule["unk056"] = defs.mhod_spl_rule_unk056(data, data_offset)
+        rule["unk060"] = defs.mhod_spl_rule_unk060(data, data_offset)
+        rule["unk064"] = defs.mhod_spl_rule_unk064(data, data_offset)
+        rule["unk068"] = defs.mhod_spl_rule_unk068(data, data_offset)
 
-        # 6 big-endian 64-bit values (signedness matches libgpod C struct types:
-        # fromvalue/fromunits/tovalue/tounits = guint64, fromdate/todate = gint64)
-        rule["fromValue"] = struct.unpack(">Q", data[data_offset:data_offset + 8])[0]
-        rule["fromDate"] = struct.unpack(">q", data[data_offset + 8:data_offset + 16])[0]
-        rule["fromUnits"] = struct.unpack(">Q", data[data_offset + 16:data_offset + 24])[0]
-        rule["toValue"] = struct.unpack(">Q", data[data_offset + 24:data_offset + 32])[0]
-        rule["toDate"] = struct.unpack(">q", data[data_offset + 32:data_offset + 40])[0]
-        rule["toUnits"] = struct.unpack(">Q", data[data_offset + 40:data_offset + 48])[0]
-
-        # 5 unknown 32-bit BE values (libgpod's unk052-unk068)
-        rule["unk052"] = struct.unpack(">I", data[data_offset + 48:data_offset + 52])[0]
-        rule["unk056"] = struct.unpack(">I", data[data_offset + 52:data_offset + 56])[0]
-        rule["unk060"] = struct.unpack(">I", data[data_offset + 56:data_offset + 60])[0]
-        rule["unk064"] = struct.unpack(">I", data[data_offset + 60:data_offset + 64])[0]
-        rule["unk068"] = struct.unpack(">I", data[data_offset + 64:data_offset + 68])[0]
-
-        # Field-type-specific annotations
-        if field_type == SPLFT_DATE:
-            # For relative dates, fromUnits is seconds per unit
-            if rule["fromUnits"] != 0:
-                abs_units = abs(rule["fromUnits"])
-                rule["unitsName"] = SPL_DATE_UNITS_MAP.get(
-                    abs_units, f"{abs_units} seconds"
-                )
-
-        elif field_type == SPLFT_INT:
-            # For rating fields, convert from internal (0-100) to stars (0-5)
-            if field_id == 0x19:  # Rating
-                rule["fromValueStars"] = rule["fromValue"] // 20
-                rule["toValueStars"] = rule["toValue"] // 20
-
-        elif field_type == SPLFT_PLAYLIST:
-            rule["playlistID"] = rule["fromValue"]
-
-    # Total rule size = 56 bytes (field+action+padding+length) + data_length
-    total_size = 56 + data_length
+    total_size = defs.SPL_RULE_HEADER_SIZE + data_length
     return rule, total_size
 
 
-# ============================================================
+# ────────────────────────────────────────────────────────────────────
 # MHOD Type 52 — Library Playlist Index
-# ============================================================
-#
-# Based on libgpod's mk_mhod52() in itdb_itunesdb.c
-#
-# Body layout (after 24-byte MHOD header):
-#   +0x00: sort_type (4 bytes) — 3=title, 4=album, 5=artist, 7=genre, 18=composer
-#   +0x04: count (4 bytes) — number of index entries
-#   +0x08: padding (40 bytes)
-#   +0x30: indices (count × 4 bytes) — sorted track positions
+# ────────────────────────────────────────────────────────────────────
 
-SORT_TYPE_MAP = {
-    0x03: "title",
-    0x04: "album",          # then disc/track number, then title
-    0x05: "artist",         # then album, then disc/track number, then title
-    0x07: "genre",          # then artist, then album, then disc/track number, then title
-    0x12: "composer",       # then title
-    0x1D: "show",           # iTunes 7.2+; secondary sort TBD
-    0x1E: "season_number",  # iTunes 7.2+; secondary sort TBD
-    0x1F: "episode_number",  # iTunes 7.2+; secondary sort TBD
-    0x23: "album_artist",   # then artist (ignoring sort-artist), then album, disc/track, title
-    0x24: "artist_nosort",  # artist (ignoring sort-artist), then album, disc/track, title
-}
+def _parse_mhod52(
+    data: bytes | bytearray,
+    body_offset: int,
+    body_length: int,
+) -> dict[str, Any]:
+    """Parse library playlist sorted index from MHOD type 52.
 
+    Layout::
 
-def _parse_mhod52_library_index(data, body_offset, body_length) -> dict:
-    """Parse library playlist index from MHOD type 52."""
+        +0x00  sort_type  (u32 LE)
+        +0x04  count      (u32 LE)
+        +0x08  padding    (40 bytes)
+        +0x30  indices    (count x u32 LE) — sorted track positions
+    """
     if body_length < 8:
         return {"error": "MHOD52 too short"}
 
-    result = {}
-    sort_type = struct.unpack("<I", data[body_offset:body_offset + 4])[0]
-    count = struct.unpack("<I", data[body_offset + 4:body_offset + 8])[0]
+    defs = idb.mhod_defs
+    count = defs.mhod52_count(data, body_offset)
+    result: dict[str, Any] = {
+        "sort_type": defs.mhod52_sort_type(data, body_offset),
+        "count": count,
+    }
 
-    result["sortType"] = sort_type
-    result["sortTypeName"] = SORT_TYPE_MAP.get(sort_type, f"unknown(0x{sort_type:02X})")
-    result["count"] = count
-
-    # Parse actual indices (each is a u32 track position)
-    # They start at offset 48 (sort_type + count + 40 bytes padding)
-    indices_offset = body_offset + 48
-    indices = []
+    # Indices start at body_offset + 48 (sort_type + count + 40 padding).
+    indices_start = body_offset + 48
+    indices: list[int] = []
     for i in range(count):
-        idx_off = indices_offset + i * 4
-        if idx_off + 4 <= body_offset + body_length:
-            indices.append(struct.unpack("<I", data[idx_off:idx_off + 4])[0])
+        pos = indices_start + i * 4
+        if pos + 4 <= body_offset + body_length:
+            indices.append(UINT32_LE.unpack_from(data, pos)[0])
     result["indices"] = indices
 
     return result
 
 
-# ============================================================
+# ────────────────────────────────────────────────────────────────────
 # MHOD Type 53 — Library Playlist Jump Table
-# ============================================================
-#
-# Based on libgpod's mk_mhod53() in itdb_itunesdb.c
-#
-# Body layout (after 24-byte MHOD header):
-#   +0x00: sort_type (4 bytes) — must match corresponding type 52
-#   +0x04: count (4 bytes) — number of jump entries
-#   +0x08: padding (8 bytes)
-#   +0x10: entries (count × 12 bytes):
-#          letter (2 bytes, UTF-16) + pad (2 bytes) + start (4 bytes) + count (4 bytes)
+# ────────────────────────────────────────────────────────────────────
 
-def _parse_mhod53_jump_table(data, body_offset, body_length) -> dict:
-    """Parse library playlist jump table from MHOD type 53."""
+def _parse_mhod53(
+    data: bytes | bytearray,
+    body_offset: int,
+    body_length: int,
+) -> dict[str, Any]:
+    """Parse library playlist jump table from MHOD type 53.
+
+    Layout::
+
+        +0x00  sort_type  (u32 LE)
+        +0x04  count      (u32 LE)
+        +0x08  padding    (8 bytes)
+        +0x10  entries    (count x 12 bytes each):
+               letter (u16 LE) + pad(2) + start(u32 LE) + count(u32 LE)
+    """
     if body_length < 8:
         return {"error": "MHOD53 too short"}
 
-    result = {}
-    sort_type = struct.unpack("<I", data[body_offset:body_offset + 4])[0]
-    count = struct.unpack("<I", data[body_offset + 4:body_offset + 8])[0]
+    defs = idb.mhod_defs
+    count = defs.mhod53_count(data, body_offset)
+    result: dict[str, Any] = {
+        "sort_type": defs.mhod53_sort_type(data, body_offset),
+        "count": count,
+    }
 
-    result["sortType"] = sort_type
-    result["sortTypeName"] = SORT_TYPE_MAP.get(sort_type, f"unknown(0x{sort_type:02X})")
-    result["count"] = count
-
-    # Jump entries start at offset 16 (sort_type + count + 8 padding)
-    entries_offset = body_offset + 16
-    entries = []
+    # Jump entries start at body_offset + 16.
+    entries_start = body_offset + 16
+    entries: list[dict[str, int]] = []
     for i in range(count):
-        entry_off = entries_offset + i * 12
-        if entry_off + 12 <= body_offset + body_length:
-            letter_code = struct.unpack("<H", data[entry_off:entry_off + 2])[0]
-            # pad 2 bytes
-            start = struct.unpack("<I", data[entry_off + 4:entry_off + 8])[0]
-            entry_count = struct.unpack("<I", data[entry_off + 8:entry_off + 12])[0]
+        pos = entries_start + i * 12
+        if pos + 12 <= body_offset + body_length:
+            letter_code = UINT16_LE.unpack_from(data, pos)[0]
+            start = UINT32_LE.unpack_from(data, pos + 4)[0]
+            entry_count = UINT32_LE.unpack_from(data, pos + 8)[0]
             entries.append({
-                "letter": chr(letter_code) if letter_code > 0 else "",
+                "letter_code": letter_code,
                 "start": start,
                 "count": entry_count,
             })
@@ -686,56 +385,40 @@ def _parse_mhod53_jump_table(data, body_offset, body_length) -> dict:
     return result
 
 
-# ============================================================
+# ────────────────────────────────────────────────────────────────────
 # MHOD Type 100 — Playlist Position / Preferences
-# ============================================================
+# ────────────────────────────────────────────────────────────────────
 #
 # Type 100 appears in two contexts:
-# 1. As a child of MHIP: contains track position (small, ~20-byte body)
+# 1. As a child of MHIP: contains track position (small, <=20-byte body)
 # 2. As a child of MHYP: contains playlist display preferences (large, ~624-byte body)
-#
-# MHIP context (body = 20 bytes):
-#   +0x00: position (4 bytes) — 0-based track position in playlist
-#   +0x04: padding (16 bytes)
-#
-# MHYP context (body = ~624 bytes):
-#   Column/view preference blob.  libgpod calls this the "Preferences
-#   mhod" and writes canned defaults via mk_long_mhod_id_playlist().
-#   iTunes writes a very sparse version — typically only 2-3 nonzero
-#   bytes in the entire 624-byte body.  We scan for all nonzero u8/u16/u32
-#   values and return them keyed by hex offset.
-#
-#   Known structure (from libgpod + real-device observation):
-#     +0x00-0x0F : 16 bytes padding (always zero on iTunes-created DBs)
-#     +0x10      : u32 — first column descriptor (libgpod: 0x010084)
-#                        iTunes typically writes 0x00010000 (byte 0x12=1)
-#     +0x14      : u32 — second column descriptor (libgpod: 0x05)
-#                        iTunes typically writes 0x01
-#     +0x18-0x21F: column entries / spacing — mostly zero on iTunes
-#     +0x220     : u32 — optional value (observed: 0x8C=140 on non-master lists)
-#     +0x224-end : trailing zeros
 
-def _parse_mhod100_playlist_prefs(data, body_offset, body_length) -> dict:
+def _parse_mhod100(
+    data: bytes | bytearray,
+    body_offset: int,
+    body_length: int,
+) -> dict[str, Any]:
     """Parse playlist position or preferences from MHOD type 100."""
-    result = {}
+    result: dict[str, Any] = {}
 
     if body_length <= 20:
-        # MHIP context: simple position field
+        # MHIP context: simple position field.
         if body_length >= 4:
-            result["position"] = struct.unpack("<I", data[body_offset:body_offset + 4])[0]
-        result["context"] = "playlist_item"
+            result["position"] = idb.mhod_defs.mhod100_position(data, body_offset)
     else:
-        # MHYP context: playlist display preferences
-        result["context"] = "playlist_prefs"
-        result["bodyLength"] = body_length
+        # MHYP context: playlist display preferences.
         result["fields"] = _scan_nonzero_fields(data, body_offset, body_length)
-        # Preserve raw bytes for round-trip fidelity
-        result["rawBody"] = bytes(data[body_offset:body_offset + body_length])
+        # Preserve raw bytes for round-trip fidelity.
+        result["raw_body"] = bytes(data[body_offset:body_offset + body_length])
 
     return result
 
 
-def _scan_nonzero_fields(data, body_offset, body_length) -> dict:
+def _scan_nonzero_fields(
+    data: bytes | bytearray,
+    body_offset: int,
+    body_length: int,
+) -> dict[str, int]:
     """Scan a binary body for all nonzero bytes, grouped into u32 values.
 
     Returns a dict mapping hex-offset strings to integer values.
@@ -743,50 +426,177 @@ def _scan_nonzero_fields(data, body_offset, body_length) -> dict:
     merged into a single LE u32 entry.  Isolated single bytes are
     returned as-is.
     """
-    fields = {}
+    fields: dict[str, int] = {}
     body = data[body_offset:body_offset + body_length]
-    visited = set()
+    visited: set[int] = set()
 
     for i in range(len(body)):
         if body[i] != 0 and i not in visited:
-            # Try to read as aligned u32 if within bounds
+            # Try to read as aligned u32 if within bounds.
             aligned = (i // 4) * 4
             if aligned + 4 <= len(body):
-                val = struct.unpack("<I", body[aligned:aligned + 4])[0]
+                val = UINT32_LE.unpack_from(body, aligned)[0]
                 if val != 0:
                     fields[f"0x{aligned:03X}"] = val
                     visited.update(range(aligned, aligned + 4))
                     continue
-            # Fallback: single byte
+            # Fallback: single byte.
             fields[f"0x{i:03X}"] = body[i]
             visited.add(i)
 
     return fields
 
 
-# ============================================================
+# ────────────────────────────────────────────────────────────────────
 # MHOD Type 102 — Playlist Settings (binary, post-iTunes 7)
-# ============================================================
-#
-# MHOD type 102 appears on playlists created by newer iTunes versions.
-# It is a 356-byte (0x164 total, 332 body) binary blob containing
-# playlist view settings / column configuration.  The exact format is
-# undocumented in libgpod.
-#
-# From real-device observation (iTunes-written, all instances identical):
-#   +0x00: u32 = 1   — unknown flag
-#   +0x08: u32 = 1   — unknown flag
-#   +0x4C: u32 = 4   — possibly view type or column count
-#   +0x8C: u32 = 120 (0x78) — possibly column width in pixels
-#   All other bytes are zero.
+# ────────────────────────────────────────────────────────────────────
 
-def _parse_mhod102_playlist_settings(data, body_offset, body_length) -> dict:
-    """Parse MHOD type 102 — playlist settings."""
-    result = {
-        "context": "playlist_settings",
-        "bodyLength": body_length,
+def _parse_mhod102(
+    data: bytes | bytearray,
+    body_offset: int,
+    body_length: int,
+) -> dict[str, Any]:
+    """Parse MHOD type 102 — playlist settings (opaque binary blob)."""
+    return {
         "fields": _scan_nonzero_fields(data, body_offset, body_length),
-        # Preserve raw bytes for round-trip fidelity
-        "rawBody": bytes(data[body_offset:body_offset + body_length]),
+        # Preserve raw bytes for round-trip fidelity.
+        "raw_body": bytes(data[body_offset:body_offset + body_length]),
     }
+
+
+# ────────────────────────────────────────────────────────────────────
+# MHOD Type 17 — Chapter Data (big-endian atom tree)
+# ────────────────────────────────────────────────────────────────────
+#
+# Chapter data for audiobooks and enhanced podcasts.  The body
+# contains a 12-byte preamble (3 × u32 LE unknown fields) followed by
+# a big-endian atom tree: ``sean`` → ``chap`` × N → ``name`` + ``hedr``.
+#
+# This is the ONLY part of the iTunesDB (besides the SLst smart
+# playlist rules) that uses big-endian encoding for its atoms.
+#
+# Layout (from libgpod itdb_itunesdb.c and iPodLinux wiki):
+#
+#   Preamble (LE):
+#     +0x00  unk024 (u32)
+#     +0x04  unk028 (u32)
+#     +0x08  unk032 (u32)
+#
+#   sean atom (BE):
+#     +0x00  total_size (u32 BE)
+#     +0x04  "sean" (4 bytes)
+#     +0x08  unknown (u32 BE, always 1)
+#     +0x0C  child_count (u32 BE, = num_chapters + 1 for hedr)
+#     +0x10  unknown (u32 BE, always 0)
+#
+#   chap atom (BE), repeated per chapter:
+#     +0x00  total_size (u32 BE)
+#     +0x04  "chap" (4 bytes)
+#     +0x08  startpos (u32 BE, milliseconds)
+#     +0x0C  child_count (u32 BE, = 1 for name)
+#     +0x10  unknown (u32 BE, always 0)
+#     +0x14  name atom...
+#
+#   name atom (BE):
+#     +0x00  total_size (u32 BE)
+#     +0x04  "name" (4 bytes)
+#     +0x08  unknown (u32 BE, always 1)
+#     +0x0C  unknown (u32 BE, always 0)
+#     +0x10  unknown (u32 BE, always 0)
+#     +0x14  string_length (u16 BE, in UTF-16BE code units)
+#     +0x16  title (string_length × 2 bytes, UTF-16BE)
+#
+#   hedr atom (BE, 28 bytes):
+#     +0x00  size=28 (u32 BE)
+#     +0x04  "hedr" (4 bytes)
+#     +0x08  unknown (u32 BE, always 1)
+#     +0x0C  child_count=0 (u32 BE)
+#     +0x10  unknown (u32 BE, always 0)
+#     +0x14  unknown (u32 BE, always 0)
+#     +0x18  unknown (u32 BE, always 1)
+
+_UINT32_BE = struct.Struct(">I")
+_UINT16_BE = struct.Struct(">H")
+
+
+def _parse_chapter_data(
+    data: bytes | bytearray,
+    body_offset: int,
+    body_length: int,
+) -> dict[str, Any]:
+    """Parse chapter data atom tree from MHOD type 17.
+
+    Returns a dict with:
+      - ``unk024``, ``unk028``, ``unk032``: preamble unknowns
+      - ``chapters``: list of {``startpos``: int, ``title``: str}
+    """
+    defs = idb.mhod_defs
+    result: dict[str, Any] = {}
+
+    if body_length < defs.CHAPTER_PREAMBLE_SIZE:
+        result["error"] = "Chapter data too short for preamble"
+        return result
+
+    # Read 12-byte preamble (little-endian, like the rest of iTunesDB).
+    result["unk024"] = UINT32_LE.unpack_from(data, body_offset)[0]
+    result["unk028"] = UINT32_LE.unpack_from(data, body_offset + 4)[0]
+    result["unk032"] = UINT32_LE.unpack_from(data, body_offset + 8)[0]
+
+    seek = body_offset + defs.CHAPTER_PREAMBLE_SIZE
+    end = body_offset + body_length
+
+    # Check for "sean" atom.
+    if seek + 20 > end:
+        result["chapters"] = []
+        return result
+
+    _sean_size = _UINT32_BE.unpack_from(data, seek)[0]  # noqa: F841
+    sean_magic = data[seek + 4:seek + 8]
+    if sean_magic != defs.SEAN_ATOM:
+        logger.warning("Chapter data: expected 'sean' atom, got %r", sean_magic)
+        result["chapters"] = []
+        return result
+
+    num_children = _UINT32_BE.unpack_from(data, seek + 12)[0]
+    num_chapters = max(0, num_children - 1)  # subtract 1 for hedr
+    seek += 20  # skip sean header
+
+    chapters: list[dict[str, Any]] = []
+    for _ in range(num_chapters):
+        if seek + 20 > end:
+            break
+        chap_magic = data[seek + 4:seek + 8]
+        if chap_magic != defs.CHAP_ATOM:
+            break  # unexpected atom, stop parsing
+
+        chap_size = _UINT32_BE.unpack_from(data, seek)[0]
+        startpos = _UINT32_BE.unpack_from(data, seek + 8)[0]
+        children = _UINT32_BE.unpack_from(data, seek + 12)[0]
+        child_seek = seek + 20
+
+        title = ""
+        for _ in range(children):
+            if child_seek + 22 > end:
+                break
+            child_size = _UINT32_BE.unpack_from(data, child_seek)[0]
+            child_magic = data[child_seek + 4:child_seek + 8]
+            if child_magic == defs.NAME_ATOM:
+                str_len = _UINT16_BE.unpack_from(data, child_seek + 20)[0]
+                str_start = child_seek + 22
+                str_end = str_start + str_len * 2
+                if str_end <= end:
+                    title = data[str_start:str_end].decode("utf-16-be", errors="replace")
+            child_seek += child_size
+
+        chapters.append({"startpos": startpos, "title": title})
+        seek += chap_size
+
+    # Skip hedr atom if present.
+    if seek + 8 <= end:
+        hedr_magic = data[seek + 4:seek + 8]
+        if hedr_magic == defs.HEDR_ATOM:
+            hedr_size = _UINT32_BE.unpack_from(data, seek)[0]
+            seek += hedr_size
+
+    result["chapters"] = chapters
     return result

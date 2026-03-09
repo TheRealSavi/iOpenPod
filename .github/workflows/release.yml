@@ -1,0 +1,113 @@
+# Build multi-platform binaries and publish a GitHub Release on every tag.
+#
+# Trigger: push a tag like v1.0.0 (or v1.2.3-beta.1, etc.)
+#
+#   git tag v1.0.0
+#   git push origin v1.0.0
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write          # needed to create GitHub Releases
+
+jobs:
+  # ── Build matrix ────────────────────────────────────────────────────────
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: iOpenPod-Windows
+            archive_cmd: Compress-Archive -Path dist\iOpenPod\* -DestinationPath iOpenPod-Windows.zip
+            archive_name: iOpenPod-Windows.zip
+
+          - os: macos-13          # Intel runner (x86_64)
+            artifact: iOpenPod-macOS-Intel
+            archive_cmd: cd dist && zip -r ../iOpenPod-macOS-Intel.zip iOpenPod.app/
+            archive_name: iOpenPod-macOS-Intel.zip
+
+          - os: macos-14          # Apple Silicon runner (arm64)
+            artifact: iOpenPod-macOS-AppleSilicon
+            archive_cmd: cd dist && zip -r ../iOpenPod-macOS-AppleSilicon.zip iOpenPod.app/
+            archive_name: iOpenPod-macOS-AppleSilicon.zip
+
+          - os: ubuntu-22.04
+            artifact: iOpenPod-Linux
+            archive_cmd: cd dist && tar czf ../iOpenPod-Linux.tar.gz iOpenPod/
+            archive_name: iOpenPod-Linux.tar.gz
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Python + uv ─────────────────────────────────────────────────
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      # Linux: install Qt runtime deps (no display needed for build)
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libxkbcommon0 libdbus-1-3
+
+      - name: Install project dependencies
+        run: uv sync
+
+      # ── PyInstaller build ───────────────────────────────────────────
+      - name: Build with PyInstaller
+        run: uv run pyinstaller iOpenPod.spec --noconfirm
+
+      # ── Package archive ─────────────────────────────────────────────
+      - name: Create archive
+        run: ${{ matrix.archive_cmd }}
+        shell: ${{ runner.os == 'Windows' && 'pwsh' || 'bash' }}
+
+      # ── Checksums ───────────────────────────────────────────────────
+      - name: Generate SHA-256 checksum
+        run: |
+          python -c "
+          import hashlib, pathlib, sys
+          p = pathlib.Path('${{ matrix.archive_name }}')
+          h = hashlib.sha256(p.read_bytes()).hexdigest()
+          out = f'{h}  {p.name}\n'
+          pathlib.Path(p.name + '.sha256').write_text(out)
+          print(out.strip())
+          "
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            ${{ matrix.archive_name }}
+            ${{ matrix.archive_name }}.sha256
+
+  # ── Publish GitHub Release ──────────────────────────────────────────────
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            *.zip
+            *.tar.gz
+            *.sha256

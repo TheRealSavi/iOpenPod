@@ -1,93 +1,112 @@
 """
 iTunesDB / iTunesCDB entry-point parser.
 
-Accepts a file path (str) or file-like readable object pointing to
-an iPod's ``/iPod_Control/iTunes/iTunesDB`` (or ``iTunesCDB``) binary
-file.  Returns the fully-parsed database as a nested dict/list structure.
+This module provides the public parsing API for Apple's proprietary
+iTunesDB binary database format (and its zlib-compressed variant,
+iTunesCDB).  It accepts either a file path or a file-like object and
+returns a nested dict tree representing the full database hierarchy.
 
-iTunesCDB format (Nano 5G, 6G, 7G)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-The file begins with a standard 244-byte ``mhbd`` header (uncompressed)
-followed by a **zlib-compressed** payload containing all the ``mhsd``
-children.  The ``total_length`` field in the mhbd header equals the
-*compressed* file size, not the decompressed size.
+Typical usage::
 
-This parser transparently decompresses the payload and reconstructs a
-standard in-memory representation that the rest of the parsing pipeline
-can process unchanged.
+    from iTunesDB_Parser import parse_itunesdb
 
-Usage::
-
-    from iTunesDB_Parser.parser import parse_itunesdb
-    db = parse_itunesdb("/Volumes/IPOD/iPod_Control/iTunes/iTunesCDB")
+    db = parse_itunesdb("/media/ipod/iPod_Control/iTunes/iTunesDB")
 """
 
+from __future__ import annotations
+
 import logging
-import struct
+import os
 import zlib
+from typing import Any, BinaryIO, Union
+
+from ._parsing import UINT32_LE
+from .exceptions import CorruptHeaderError
 
 logger = logging.getLogger(__name__)
 
+# Recognized mhbd magic at file offset 0.
+_MHBD_MAGIC = b"mhbd"
 
-def _decompress_itunescdb(data: bytes) -> bytes:
-    """If *data* is an iTunesCDB (compressed), decompress and return a
-    standard iTunesDB byte stream.  If it's already uncompressed, return
-    as-is.
+# Minimum length to contain the mhbd generic header (magic + header_len + total_len + compressed).
+_MIN_MHBD_HEADER = 16
 
-    Detection: the mhbd header's ``unk_0x0C`` field is 2 for compressed-DB
-    capable devices, and the first byte after the header is 0x78 (zlib magic).
+# iTunesCDB compressed-flag value (mhbd offset 0x0C).
+_COMPRESSED_DB_FLAG = 0x02
+
+
+def decompress_itunescdb(data: bytes | bytearray) -> bytes | bytearray:
+    """Transparently decompress an iTunesCDB into a standard iTunesDB stream.
+
+    If *data* is already an uncompressed iTunesDB (or is too short / has the
+    wrong magic), it is returned as-is.
+
+    Detection logic: the mhbd ``compressed`` field at offset 0x0C is ``2`` for
+    compressed-DB-capable devices, and the payload after the header is a zlib
+    stream.
+
+    Args:
+        data: Raw bytes of an iTunesDB or iTunesCDB file.
+
+    Returns:
+        Decompressed iTunesDB byte stream (original header preserved).
     """
-    if len(data) < 16 or data[:4] != b"mhbd":
-        return data  # not even a valid mhbd
-
-    header_len = struct.unpack_from("<I", data, 4)[0]
-    unk_0x0c = struct.unpack_from("<I", data, 0x0C)[0]
-
-    # Quick check: is there a zlib stream immediately after the header?
-    if unk_0x0c != 2 or header_len >= len(data):
-        return data
-    if data[header_len] != 0x78:  # zlib magic byte
+    if len(data) < _MIN_MHBD_HEADER or data[:4] != _MHBD_MAGIC:
         return data
 
-    # Decompress the payload
+    header_length = UINT32_LE.unpack_from(data, 0x04)[0]
+    compressed_flag = UINT32_LE.unpack_from(data, 0x0C)[0]
+
+    if compressed_flag != _COMPRESSED_DB_FLAG:
+        return data
+
     try:
-        decompressed = zlib.decompress(data[header_len:])
+        decompressed = zlib.decompress(data[header_length:])
     except zlib.error:
-        return data  # not actually compressed, return as-is
+        return data  # not actually compressed — return as-is
 
-    # Reconstruct: original header + decompressed children
-    header = bytearray(data[:header_len])
-
-    # Fix total_length to reflect the full uncompressed size
-    full_size = header_len + len(decompressed)
-    struct.pack_into("<I", header, 8, full_size)
-
-    # Clear unk_0xA8 (compression flag) to 0, matching libgpod's read path.
-    # This ensures the in-memory representation looks like a standard iTunesDB.
-    struct.pack_into("<H", header, 0xA8, 0)
-
-    logger.debug(
-        "iTunesCDB decompressed: %d bytes → %d bytes (header=%d, payload=%d)",
-        len(data), full_size, header_len, len(decompressed),
-    )
-    return bytes(header) + decompressed
+    # Reconstruct: original (unmodified) header + decompressed children.
+    # Header's total_length (offset 8) and compression flag are preserved
+    # as-is.  MHBD children are parsed by child_count so the stale
+    # total_length is harmless.
+    logger.debug("iTunesCDB decompressed: %d -> %d payload bytes",
+                 len(data) - header_length, len(decompressed))
+    return data[:header_length] + decompressed
 
 
-def parse_itunesdb(file) -> dict:
+def parse_itunesdb(file: Union[str, os.PathLike[str], BinaryIO]) -> dict[str, Any]:
+    """Parse an iTunesDB (or iTunesCDB) file into a nested dict tree.
+
+    Args:
+        file: A filesystem path (``str`` or ``os.PathLike``) or an open
+              binary file-like object positioned at the start of the data.
+
+    Returns:
+        Dict representation of the mhbd root chunk and all children.
+
+    Raises:
+        TypeError: If *file* is not a path or file-like object.
+        ITunesDBParseError: If the binary data cannot be parsed.
+        OSError: If a file path cannot be read.
+    """
     from .chunk_parser import parse_chunk
 
-    if isinstance(file, str):  # If it's a file path, open the file
-        with open(file, "rb") as f:
-            data = f.read()
-    elif hasattr(file, "read"):  # If it's a file-like object, read it directly
+    if isinstance(file, (str, os.PathLike)):
+        with open(file, "rb") as fh:
+            data: bytes | bytearray = fh.read()
+    elif hasattr(file, "read"):
         data = file.read()
     else:
-        raise TypeError("file must be a path (str) or a file-like object")
+        raise TypeError(
+            f"file must be a path (str/PathLike) or a file-like object, "
+            f"got {type(file).__name__}"
+        )
+
+    if not data:
+        raise CorruptHeaderError(0, "empty file")
 
     # Transparently handle iTunesCDB (compressed database)
-    data = _decompress_itunescdb(data)
+    data = decompress_itunescdb(data)
 
-    result = parse_chunk(data, 0)
-
-    # Return just the parsed data, not the wrapper with nextOffset
-    return result.get("result", result)
+    parsed, _chunk_type = parse_chunk(data, 0)
+    return parsed["data"]

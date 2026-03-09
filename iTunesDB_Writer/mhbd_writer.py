@@ -82,11 +82,17 @@ from ipod_models import ChecksumType, DeviceCapabilities
 from device_info import detect_checksum_type
 from .hash58 import write_hash58
 from .hashab import write_hashab
+from iTunesDB_Shared.field_base import (
+    read_fields,
+    write_fields,
+    write_generic_header,
+)
+from iTunesDB_Shared.mhbd_defs import (
+    MHBD_HEADER_SIZE,
+    MHBD_OFFSET_HASHING_SCHEME,
+)
 
 logger = logging.getLogger(__name__)
-
-# MHBD header size (version 0x4F+)
-MHBD_HEADER_SIZE = 244
 
 # Default database version — 0x4F (79) works for iPod Classic / Nano 3G+.
 # For older devices, callers should pass `db_version` from
@@ -100,42 +106,26 @@ def extract_db_info(itdb_path: str) -> dict:
 
     This can be used to get:
     - db_id: To preserve identity across rewrites
-    - hash_scheme: What hash type is used
+    - hashing_scheme: What hash type is used
     - hash58/hash72: The actual hash values
+
+    All keys use canonical ``field_defs`` names (e.g. ``'db_id_2'`` not
+    ``'id_0x24'``, ``'timezone_offset'`` not ``'timezone'``).
 
     Args:
         itdb_path: Path to iTunesDB file
 
     Returns:
-        Dictionary with extracted information
+        Dictionary with extracted information (field_defs key names)
     """
     with open(itdb_path, 'rb') as f:
-        data = f.read(244)  # Read header
+        data = f.read(MHBD_HEADER_SIZE)
 
     if data[:4] != b'mhbd':
         raise ValueError(f"Not an iTunesDB file: {itdb_path}")
 
-    return {
-        'db_id': struct.unpack('<Q', data[0x18:0x20])[0],
-        'platform': struct.unpack('<H', data[0x20:0x22])[0],
-        'unk_0x22': struct.unpack('<H', data[0x22:0x24])[0],
-        'id_0x24': struct.unpack('<Q', data[0x24:0x2C])[0],
-        'hash_scheme': struct.unpack('<H', data[0x30:0x32])[0],
-        'unk_0x32': data[0x32:0x46],
-        'language': data[0x46:0x48].decode('utf-8', errors='ignore'),
-        'lib_persistent_id': struct.unpack('<Q', data[0x48:0x50])[0],
-        'unk_0x50': struct.unpack('<I', data[0x50:0x54])[0],
-        'unk_0x54': struct.unpack('<I', data[0x54:0x58])[0],
-        'hash58': data[0x58:0x6C],
-        'timezone': struct.unpack('<i', data[0x6C:0x70])[0],
-        'unk_0x70': struct.unpack('<H', data[0x70:0x72])[0],
-        'hash72': data[0x72:0xA0],
-        'audio_language': struct.unpack('<H', data[0xA0:0xA2])[0],
-        'subtitle_language': struct.unpack('<H', data[0xA2:0xA4])[0],
-        'unk_0xa4': struct.unpack('<H', data[0xA4:0xA6])[0],
-        'unk_0xa6': struct.unpack('<H', data[0xA6:0xA8])[0],
-        'unk_0xa8': struct.unpack('<H', data[0xA8:0xAA])[0],
-    }
+    header_length = struct.unpack_from('<I', data, 4)[0]
+    return read_fields(data, 0, 'mhbd', header_length)
 
 
 def extract_preserved_mhsd_blobs(itdb_data: bytes) -> list[bytes]:
@@ -326,25 +316,54 @@ def write_mhbd(
     # Build playlist list WITH master playlist (Type 2 dataset)
     # The master playlist is REQUIRED and must reference ALL tracks
     # Pass tracks so master playlist can generate library index MHODs (type 52/53)
+    #
+    # Generate a single master playlist_id shared by DS2 and DS3 so that
+    # the GUI dedup logic (by playlist_id) correctly collapses the two
+    # copies of the master playlist into one.
+    from .mhyp_writer import generate_playlist_id
+    master_playlist_id = generate_playlist_id()
+
     remapped_playlists_type2 = [_remap_playlist(pl) for pl in (playlists_type2 or [])]
     mhsd_type2_data = write_mhlp_with_playlists(
         track_ids, playlists=remapped_playlists_type2,
         tracks=tracks, id_0x24=id_0x24, capabilities=capabilities,
         master_playlist_name=master_playlist_name,
+        master_playlist_id=master_playlist_id,
     )
     mhsd_type2 = write_mhsd_type2(mhsd_type2_data)
 
     # Build podcast list (Type 3 dataset)
-    # libgpod writes type 3 with the SAME playlist data as type 2,
-    # just with the MHSD type byte set to 3. An empty podcast section
-    # causes the iPod Classic to reject the database.
+    # libgpod writes type 3 with the SAME playlists as type 2, but the
+    # podcast playlist uses grouped MHIPs where episodes are nested
+    # under their podcast show (album).  Non-podcast playlists are
+    # written identically to type 2.
 
     # Pre-podcast devices (iPod 1G-3G, Mini 1G-2G, Shuffle 1G-2G)
     # don't understand type 3; skip it when capabilities say so.
     include_podcasts = True
     if capabilities is not None and not capabilities.supports_podcast:
         include_podcasts = False
-    mhsd_type3 = write_mhsd_type3(mhsd_type2_data) if include_podcasts else b''
+
+    if include_podcasts:
+        # Build track_id → album map for podcast grouping.
+        # Sequential track IDs start after last_id (same as track_ids range).
+        track_album_map: dict[int, str] = {}
+        for i, track in enumerate(tracks):
+            seq_id = i + last_id + 1
+            track_album_map[seq_id] = track.album or ""
+
+        from .mhlp_writer import write_mhlp_with_playlists_type3
+        mhsd_type3_data = write_mhlp_with_playlists_type3(
+            track_ids, playlists=remapped_playlists_type2,
+            id_0x24=id_0x24, track_album_map=track_album_map,
+            tracks=tracks, capabilities=capabilities,
+            master_playlist_name=master_playlist_name,
+            next_mhip_id_start=next_track_id,
+            master_playlist_id=master_playlist_id,
+        )
+        mhsd_type3 = write_mhsd_type3(mhsd_type3_data)
+    else:
+        mhsd_type3 = b''
 
     # Build smart playlist list (Type 5 dataset) — same non-mutating remap
     remapped_playlists_type5 = [_remap_playlist(pl) for pl in (playlists_type5 or [])]
@@ -419,141 +438,88 @@ def write_mhbd(
     # Total file length
     total_length = MHBD_HEADER_SIZE + len(all_datasets)
 
-    # Build MHBD header
-    # Layout based on libgpod mk_mhbd() and MhbdHeader struct
-    header = bytearray(MHBD_HEADER_SIZE)
+    # ── Compute all field values before writing ──────────────────────
 
-    # +0x00: Magic
-    header[0:4] = b'mhbd'
-
-    # +0x04: Header length
-    struct.pack_into('<I', header, 0x04, MHBD_HEADER_SIZE)
-
-    # +0x08: Total length (entire file)
-    struct.pack_into('<I', header, 0x08, total_length)
-
-    # +0x0C: 1 for most iPods, 2 for devices with compressed iTunesDB
-    # (Nano 5G+, iPhone 3.0+).  iPod Classic 3G won't work if set to 2.
-    # See libgpod mk_mhbd(): itdb_device_supports_compressed_itunesdb().
-    unk_0x0c = 2 if (capabilities and capabilities.supports_compressed_db) else 1
-    struct.pack_into('<I', header, 0x0C, unk_0x0c)
+    # +0x0C: compressed — 2 for devices with iTunesCDB, 1 otherwise
+    compressed = 2 if (capabilities and capabilities.supports_compressed_db) else 1
 
     # +0x10: Version — highest of reference and device capabilities.
-    # Falls back to DATABASE_VERSION_DEFAULT (0x4F) when capabilities
-    # are absent.  Never 0.
     ref_version = reference_info.get('version', 0) if reference_info else 0
     cap_version = capabilities.db_version if capabilities else DATABASE_VERSION_DEFAULT
     db_version = max(ref_version, cap_version) or DATABASE_VERSION_DEFAULT
-    struct.pack_into('<I', header, 0x10, db_version)
     logger.debug("Using db_version=0x%X (ref=0x%X, cap=0x%X, default=0x%X)",
                  db_version, ref_version, cap_version, DATABASE_VERSION_DEFAULT)
 
-    # +0x14: Child count (number of MHSDs)
-    struct.pack_into('<I', header, 0x14, child_count)
-
-    # +0x18: Database ID (64-bit)
-    struct.pack_into('<Q', header, 0x18, db_id)
-
-    # +0x20: Platform (1 = Mac, 2 = Windows)
-    # TODO: Keep an eye on this, set to 2 for now, may need to be adjusted.
-    platform_id = 2
-    struct.pack_into('<H', header, 0x20, platform_id)
-
-    # +0x22: unk_0x22 — unknown, preserved from reference.
-    # libgpod round-trips this without interpretation.
-    struct.pack_into('<H', header, 0x22, reference_info.get('unk_0x22', 611) if reference_info else 611)
-
-    # +0x24: id_0x24 (8 bytes) - secondary 64-bit ID
-    # Already generated above and written into every MHIT at offset 0x124
-    struct.pack_into('<Q', header, 0x24, id_0x24)
-
-    # +0x2C: unk_0x2c
-    struct.pack_into('<I', header, 0x2C, 0)
-
-    # +0x30: hashing_scheme (0=none, 1=hash58, 2=hash72, 4=hashAB)
-    # Observed 3 = HashAB as well
-    # Default to 0 (none).  write_itunesdb() sets the correct value
-    # after detecting/computing the checksum.  Baking in 1 here would
-    # break pre-2007 iPods that don't use hashing.
-    struct.pack_into('<H', header, 0x30, 0)
-
-    # +0x32: unk_0x32[20] - preserve from reference if available (libgpod does this)
-    if reference_info and 'unk_0x32' in reference_info:
-        raw = reference_info['unk_0x32']
+    # +0x32: unk0x32 — preserve from reference (libgpod does this)
+    unk0x32 = b'\x00' * 20
+    if reference_info and 'unk0x32' in reference_info:
+        raw = reference_info['unk0x32']
         if isinstance(raw, (bytes, bytearray)) and len(raw) == 20:
-            header[0x32:0x46] = raw
+            unk0x32 = bytes(raw)
 
     # +0x46: Language ID (2 bytes, e.g. "en")
     if reference_info and 'language' in reference_info:
-        lang_bytes = reference_info['language'].encode('utf-8')[:2].ljust(2, b'\x00')
+        lang_val = reference_info['language']
+        if isinstance(lang_val, str):
+            lang_val = lang_val.encode('utf-8')[:2].ljust(2, b'\x00')
     else:
-        lang_bytes = language.encode('utf-8')[:2].ljust(2, b'\x00')
-    header[0x46:0x48] = lang_bytes
+        lang_val = language.encode('utf-8')[:2].ljust(2, b'\x00')
 
-    # +0x48: Library Persistent ID (64-bit)
-    # CRITICAL: Must match the library_link_id in iTunesPrefs (written by
-    # protect_from_itunes).  If these differ, macOS Finder/Music sees a
-    # mismatch and may reinitialise the iPod.
-    #
-    # We use our deterministic iOpenPod library ID so:
-    #   1. Both MHBD and iTunesPrefs share the same value
-    #   2. The ID won't accidentally match an Apple Music library
-    #   3. macOS treats the iPod as "synced with another library"
+    # +0x48: Library Persistent ID — must match iTunesPrefs (macOS protection)
     try:
         from SyncEngine.itunes_prefs import generate_library_id
-        _lib_id_bytes = generate_library_id()
-        lib_pid = struct.unpack('<Q', _lib_id_bytes)[0]
+        lib_pid = struct.unpack('<Q', generate_library_id())[0]
     except Exception:
-        # Fallback: reference or db_id
-        if reference_info and 'lib_persistent_id' in reference_info:
-            lib_pid = reference_info['lib_persistent_id']
-        else:
-            lib_pid = db_id
-    struct.pack_into('<Q', header, 0x48, lib_pid)
+        lib_pid = reference_info.get('db_persistent_id', db_id) if reference_info else db_id
 
-    # +0x50: unk_0x50 - observed value 1 in working databases
-    struct.pack_into('<I', header, 0x50, reference_info.get('unk_0x50', 1) if reference_info else 1)
-
-    # +0x54: unk_0x54 - observed value 15 in working databases
-    struct.pack_into('<I', header, 0x54, reference_info.get('unk_0x54', 15) if reference_info else 15)
-
-    # +0x58: hash58[20] - will be filled by write_checksum()
-    # Leave zeros
-
-    # +0x6C: timezone_offset (signed) - observed -18000 (-5 hours EST)
-    # Use reference timezone if available (device-specific setting)
-    if reference_info and 'timezone' in reference_info:
-        tz_offset = reference_info['timezone']
+    # +0x6C: timezone_offset (signed)
+    if reference_info and 'timezone_offset' in reference_info:
+        tz_offset = reference_info['timezone_offset']
     else:
-        # Get local timezone offset in seconds
-        if time.daylight:
-            tz_offset = -time.altzone
-        else:
-            tz_offset = -time.timezone
-    struct.pack_into('<i', header, 0x6C, tz_offset)
+        tz_offset = -time.altzone if time.daylight else -time.timezone
 
-    # +0x70: unk_0x70 - libgpod sets this based on checksum type:
-    #   HASHAB → 4, HASH72 → 2, default → 0.
+    # +0x70: hash_type_indicator — HASHAB→4, HASH72→2, default→0
     if reference_info:
-        unk_0x70 = reference_info.get('unk_0x70', 0)
+        hash_type_ind = reference_info.get('hash_type_indicator', 0)
     elif capabilities:
-        _ck_to_0x70 = {ChecksumType.HASHAB: 4, ChecksumType.HASH72: 2}
-        unk_0x70 = _ck_to_0x70.get(capabilities.checksum, 0)
+        _ck_to_ind = {ChecksumType.HASHAB: 4, ChecksumType.HASH72: 2}
+        hash_type_ind = _ck_to_ind.get(capabilities.checksum, 0)
     else:
-        unk_0x70 = 0
-    struct.pack_into('<H', header, 0x70, unk_0x70)
+        hash_type_ind = 0
 
-    # +0x72: hash72[46] - will be filled by write_checksum()
-    # Leave zeros
+    # ── Build the header using shared field definitions ──────────────
 
-    # +0xA0: audio_language, subtitle_language, etc.
-    # Copy from reference if available - these seem device-specific
+    header = bytearray(MHBD_HEADER_SIZE)
+    write_generic_header(header, 0, b'mhbd', MHBD_HEADER_SIZE, total_length)
+
+    values: dict = {
+        'compressed': compressed,
+        'version': db_version,
+        'child_count': child_count,
+        'db_id': db_id,
+        'platform': 2,
+        'unk0x22': reference_info.get('unk0x22', 611) if reference_info else 611,
+        'db_id_2': id_0x24,
+        'unk0x2c': 0,
+        'hashing_scheme': 0,  # write_itunesdb() patches after checksum
+        'unk0x32': unk0x32,
+        'language': lang_val,
+        'db_persistent_id': lib_pid,
+        'unk0x50': reference_info.get('unk0x50', 1) if reference_info else 1,
+        'unk0x54': reference_info.get('unk0x54', 15) if reference_info else 15,
+        # hash58, hash72 left as defaults (zeros) — filled by write_itunesdb
+        'timezone_offset': tz_offset,
+        'hash_type_indicator': hash_type_ind,
+    }
+
+    # Extended fields — preserved from reference if available
     if reference_info:
-        struct.pack_into('<H', header, 0xA0, reference_info.get('audio_language', 0))
-        struct.pack_into('<H', header, 0xA2, reference_info.get('subtitle_language', 0))
-        struct.pack_into('<H', header, 0xA4, reference_info.get('unk_0xa4', 0))
-        struct.pack_into('<H', header, 0xA6, reference_info.get('unk_0xa6', 0))
-        struct.pack_into('<H', header, 0xA8, reference_info.get('unk_0xa8', 0))
+        for key in ('audio_language', 'subtitle_language',
+                    'unk0xa4', 'unk0xa6', 'cdb_flag'):
+            if key in reference_info:
+                values[key] = reference_info[key]
+
+    write_fields(header, 0, 'mhbd', values, MHBD_HEADER_SIZE)
 
     return bytes(header) + all_datasets
 
@@ -683,26 +649,9 @@ def write_itunesdb(
                 logger.debug("Could not decompress reference CDB: %s", e)
 
         try:
-            # Create a temp file to use extract_db_info or manually extract
-            reference_info = {
-                'db_id': struct.unpack('<Q', source_itdb[0x18:0x20])[0],
-                'version': struct.unpack('<I', source_itdb[0x10:0x14])[0],
-                'platform': struct.unpack('<H', source_itdb[0x20:0x22])[0],
-                'unk_0x22': struct.unpack('<H', source_itdb[0x22:0x24])[0],
-                'id_0x24': struct.unpack('<Q', source_itdb[0x24:0x2C])[0],
-                'unk_0x32': bytes(source_itdb[0x32:0x46]),
-                'language': source_itdb[0x46:0x48].decode('utf-8', errors='ignore'),
-                'lib_persistent_id': struct.unpack('<Q', source_itdb[0x48:0x50])[0],
-                'unk_0x50': struct.unpack('<I', source_itdb[0x50:0x54])[0],
-                'unk_0x54': struct.unpack('<I', source_itdb[0x54:0x58])[0],
-                'timezone': struct.unpack('<i', source_itdb[0x6C:0x70])[0],
-                'unk_0x70': struct.unpack('<H', source_itdb[0x70:0x72])[0],
-                'audio_language': struct.unpack('<H', source_itdb[0xA0:0xA2])[0],
-                'subtitle_language': struct.unpack('<H', source_itdb[0xA2:0xA4])[0],
-                'unk_0xa4': struct.unpack('<H', source_itdb[0xA4:0xA6])[0],
-                'unk_0xa6': struct.unpack('<H', source_itdb[0xA6:0xA8])[0],
-                'unk_0xa8': struct.unpack('<H', source_itdb[0xA8:0xAA])[0],
-            }
+            # Use read_fields() for MHBD header extraction (field_defs names)
+            reference_info = read_fields(source_itdb, 0, 'mhbd', hdr_len_ref)
+
             # Extract reference MHSD types to match dataset structure
             # Use the decompressed view so we can see the MHSD children
             ref_mhsd_types: set[int] = set()
@@ -737,9 +686,9 @@ def write_itunesdb(
                     break
                 _off += _stotal
 
-            logger.debug("Using reference database fields: id_0x24=%016X, lib_pid=%016X, "
+            logger.debug("Using reference database fields: db_id_2=%016X, lib_pid=%016X, "
                          "version=0x%X, mhsd_types=%s, mhit_hdr=%s",
-                         reference_info['id_0x24'], reference_info['lib_persistent_id'],
+                         reference_info['db_id_2'], reference_info['db_persistent_id'],
                          reference_info.get('version', 0),
                          sorted(ref_mhsd_types),
                          hex(reference_info.get('mhit_header_size', 0)))
@@ -756,6 +705,7 @@ def write_itunesdb(
             track.dbid = generate_dbid()
 
     # --- Write ArtworkDB if PC file paths provided ---
+    pending_artwork = None  # PendingArtworkWrite if defer_commit used
     if pc_file_paths:
         logger.debug("ART: pc_file_paths has %d entries, tracks has %d tracks",
                      len(pc_file_paths), len(tracks))
@@ -794,16 +744,25 @@ def write_itunesdb(
         logger.debug("ART: %d/%d tracks have a PC source path", matched, len(tracks))
 
         try:
-            from ArtworkDB_Writer import write_artworkdb
+            from ArtworkDB_Writer.artwork_writer import write_artworkdb, PendingArtworkWrite
             ref_artdb = os.path.join(ipod_path, "iPod_Control", "Artwork", "ArtworkDB")
             ref_artdb_path = ref_artdb if os.path.exists(ref_artdb) else None
 
-            dbid_to_imgid = write_artworkdb(
+            art_result = write_artworkdb(
                 ipod_path=ipod_path,
                 tracks=tracks,
                 pc_file_paths=pc_file_paths,
                 reference_artdb_path=ref_artdb_path,
+                defer_commit=True,
             )
+
+            # Extract the mapping — works for both deferred and immediate results
+            if isinstance(art_result, PendingArtworkWrite):
+                pending_artwork = art_result
+                dbid_to_imgid = art_result.dbid_to_art_info
+            else:
+                pending_artwork = None
+                dbid_to_imgid = art_result
 
             if dbid_to_imgid:
                 # Update mhii_link and artwork_size on tracks
@@ -945,7 +904,7 @@ def write_itunesdb(
             logger.error("No FireWire ID and no reference hash58 — database will be rejected!")
 
         # Set hashing_scheme to 1 (hash58 is the primary scheme)
-        struct.pack_into('<H', itdb_data, 0x30, 1)
+        struct.pack_into('<H', itdb_data, MHBD_OFFSET_HASHING_SCHEME, 1)
 
     elif checksum_type == ChecksumType.HASH72:
         # Try to get hash info from centralized store first, then fall back to disk
@@ -989,7 +948,7 @@ def write_itunesdb(
                     itdb_data[0x72:0x72 + 46] = signature
                     # Set hash_scheme=1 to match iTunes behavior
                     # (iTunes writes both hash58 and hash72, with hash_scheme=1)
-                    struct.pack_into('<H', itdb_data, 0x30, 1)
+                    struct.pack_into('<H', itdb_data, MHBD_OFFSET_HASHING_SCHEME, 1)
                     logger.info("HASH72 signature written successfully")
                 else:
                     logger.warning("Could not extract hash info from reference database")
@@ -1001,7 +960,7 @@ def write_itunesdb(
             signature = _hash_generate(sha1, hash_info.iv, hash_info.rndpart)
             itdb_data[0x72:0x72 + 46] = signature
             # Set hash_scheme=1 to match iTunes behavior
-            struct.pack_into('<H', itdb_data, 0x30, 1)
+            struct.pack_into('<H', itdb_data, MHBD_OFFSET_HASHING_SCHEME, 1)
             logger.info("HASH72 signature written from HashInfo file")
 
     elif checksum_type == ChecksumType.HASHAB:
@@ -1018,14 +977,18 @@ def write_itunesdb(
             try:
                 write_hashab(itdb_data, firewire_id)
                 # Set hashing_scheme to 3 (matches iTunes-written HASHAB databases)
-                struct.pack_into('<H', itdb_data, 0x30, 3)
+                struct.pack_into('<H', itdb_data, MHBD_OFFSET_HASHING_SCHEME, 3)
                 logger.info("HASHAB signature computed with FireWire ID: %s",
                             firewire_id.hex())
             except ImportError as e:
                 logger.error("HASHAB dependency missing: %s", e)
+                if pending_artwork:
+                    pending_artwork.abort()
                 return False
             except FileNotFoundError as e:
                 logger.error("HASHAB WASM module missing: %s", e)
+                if pending_artwork:
+                    pending_artwork.abort()
                 return False
         else:
             logger.error(
@@ -1033,14 +996,18 @@ def write_itunesdb(
                 "Ensure the iPod is connected so the FireWire GUID can be "
                 "read from USB serial number."
             )
+            if pending_artwork:
+                pending_artwork.abort()
             return False
 
     elif checksum_type == ChecksumType.UNSUPPORTED:
         logger.error("Device requires an unsupported hashing scheme")
+        if pending_artwork:
+            pending_artwork.abort()
         return False
     else:
         # ChecksumType.NONE or UNKNOWN - set hash_scheme to 0
-        struct.pack_into('<H', itdb_data, 0x30, 0)
+        struct.pack_into('<H', itdb_data, MHBD_OFFSET_HASHING_SCHEME, 0)
 
     # Backup existing file(s)
     if backup:
@@ -1058,6 +1025,12 @@ def write_itunesdb(
             f.write(itdb_data)
             f.flush()
             os.fsync(f.fileno())
+
+        # Commit ArtworkDB and ithmb files FIRST (before swapping CDB),
+        # then swap CDB.  Both happen here to ensure they stay in sync.
+        if pending_artwork:
+            pending_artwork.commit()
+            logger.info("ART: committed ArtworkDB + ithmb files")
 
         os.replace(temp_path, itdb_path)
 
@@ -1083,4 +1056,9 @@ def write_itunesdb(
         logger.error("Error writing iTunesDB: %s", e)
         if os.path.exists(temp_path):
             os.remove(temp_path)
+        # Note: if we reached this point, pending_artwork was already
+        # committed (it happens before os.replace for the CDB).  A CDB
+        # write failure after artwork commit is unlikely (same filesystem)
+        # but if it happens the artwork is still in sync with the CDB
+        # data that was built from the same track list.
         return False

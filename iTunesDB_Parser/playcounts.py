@@ -38,15 +38,14 @@ Reference: libgpod ``itdb_itunesdb.c`` → ``playcounts_read()``.
 from __future__ import annotations
 
 import logging
-import struct
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-logger = logging.getLogger(__name__)
+from ._parsing import UINT32_LE
+from iTunesDB_Shared.field_base import MAC_EPOCH_OFFSET
 
-# Mac timestamp epoch offset (seconds between 1904-01-01 and 1970-01-01)
-MAC_EPOCH_OFFSET = 2_082_844_800
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -115,9 +114,9 @@ def parse_playcounts(path: str | Path) -> Optional[list[PlayCountEntry]]:
         logger.warning("Play Counts file bad magic: %r (expected b'mhdp')", magic)
         return None
 
-    header_len = struct.unpack_from("<I", data, 4)[0]
-    entry_len = struct.unpack_from("<I", data, 8)[0]
-    entry_count = struct.unpack_from("<I", data, 12)[0]
+    header_len = UINT32_LE.unpack_from(data, 4)[0]
+    entry_len = UINT32_LE.unpack_from(data, 8)[0]
+    entry_count = UINT32_LE.unpack_from(data, 12)[0]
 
     expected_size = header_len + entry_len * entry_count
     if len(data) < expected_size:
@@ -138,16 +137,16 @@ def parse_playcounts(path: str | Path) -> Optional[list[PlayCountEntry]]:
         entry = PlayCountEntry()
 
         # Minimum fields (always present)
-        entry.play_count = struct.unpack_from("<I", data, offset)[0]
+        entry.play_count = UINT32_LE.unpack_from(data, offset)[0]
 
         if entry_len >= 8:
-            entry.last_played = struct.unpack_from("<I", data, offset + 4)[0]
+            entry.last_played = UINT32_LE.unpack_from(data, offset + 4)[0]
 
         if entry_len >= 12:
-            entry.bookmark_time = struct.unpack_from("<I", data, offset + 8)[0]
+            entry.bookmark_time = UINT32_LE.unpack_from(data, offset + 8)[0]
 
         if entry_len >= 16:
-            raw_rating = struct.unpack_from("<I", data, offset + 12)[0]
+            raw_rating = UINT32_LE.unpack_from(data, offset + 12)[0]
             # Convention: rating=0 in the Play Counts file means "no change"
             # when the track had no user interaction.  The iPod firmware
             # initialises all entries to zero.  We treat 0 as "unchanged"
@@ -165,10 +164,10 @@ def parse_playcounts(path: str | Path) -> Optional[list[PlayCountEntry]]:
         # entry_len >= 20: unk16 / podcast flag — skipped
 
         if entry_len >= 24:
-            entry.skip_count = struct.unpack_from("<I", data, offset + 20)[0]
+            entry.skip_count = UINT32_LE.unpack_from(data, offset + 20)[0]
 
         if entry_len >= 28:
-            entry.last_skipped = struct.unpack_from("<I", data, offset + 24)[0]
+            entry.last_skipped = UINT32_LE.unpack_from(data, offset + 24)[0]
 
         entries.append(entry)
 
@@ -186,12 +185,12 @@ def merge_playcounts(
 
     After calling this:
 
-    - ``track["playCount"]`` is the **new cumulative** play count
-    - ``track["skipCount"]`` is the **new cumulative** skip count
+    - ``track["play_count_1"]`` is the **new cumulative** play count
+    - ``track["skip_count"]`` is the **new cumulative** skip count
     - ``track["recent_playcount"]`` is the delta from this session
     - ``track["recent_skipcount"]`` is the delta from this session
     - ``track["rating"]`` may be updated if the user rated on the iPod
-    - ``track["lastPlayed"]`` / ``track["lastSkipped"]`` may be updated
+    - ``track["last_played"]`` / ``track["last_skipped"]`` may be updated
 
     This mirrors libgpod's ``get_mhit()`` merge logic.
     """
@@ -213,13 +212,13 @@ def merge_playcounts(
 
         # --- Play count (additive) ---
         track["recent_playcount"] = entry.play_count
-        track["playCount"] = track.get("playCount", 0) + entry.play_count
+        track["play_count_1"] = track.get("play_count_1", 0) + entry.play_count
         if entry.play_count > 0:
             merged_plays += 1
 
         # --- Skip count (additive) ---
         track["recent_skipcount"] = entry.skip_count
-        track["skipCount"] = track.get("skipCount", 0) + entry.skip_count
+        track["skip_count"] = track.get("skip_count", 0) + entry.skip_count
         if entry.skip_count > 0:
             merged_skips += 1
 
@@ -233,22 +232,22 @@ def merge_playcounts(
 
         # --- Bookmark (override — iPod always has the latest position) ---
         if entry.bookmark_time > 0:
-            track["bookmarkTime"] = entry.bookmark_time
+            track["bookmark_time"] = entry.bookmark_time
 
         # --- Timestamps (use more-recent value) ---
-        # IMPORTANT: track["lastPlayed"] is a Unix timestamp (mhit_parser
-        # converts from Mac), but entry.last_played is a raw Mac timestamp.
+        # IMPORTANT: track["last_played"] is a Unix timestamp (converted by
+        # _load_data from Mac), but entry.last_played is a raw Mac timestamp.
         # Use the .last_played_unix / .last_skipped_unix properties to
         # compare in the same unit and avoid double-conversion downstream.
         if entry.last_played > 0:
             unix_ts = entry.last_played_unix
-            if unix_ts > track.get("lastPlayed", 0):
-                track["lastPlayed"] = unix_ts
+            if unix_ts > track.get("last_played", 0):
+                track["last_played"] = unix_ts
 
         if entry.last_skipped > 0:
             unix_ts = entry.last_skipped_unix
-            if unix_ts > track.get("lastSkipped", 0):
-                track["lastSkipped"] = unix_ts
+            if unix_ts > track.get("last_skipped", 0):
+                track["last_skipped"] = unix_ts
 
     # Tracks beyond the Play Counts entries get zero deltas
     for i in range(count, len(tracks)):

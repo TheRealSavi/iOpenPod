@@ -1,34 +1,19 @@
-"""
-MHLT (Track List) parser.
+"""MHLT (Track List) parser.
 
-MHLT is the container for all track items in the database.
-Its third header field (offset 8) is the number of MHIT children,
-NOT a total byte length — same convention as MHLP and MHLA.
-
-Field layout:
-    +0x00 (0):  'mhlt' magic (4B)
-    +0x04 (4):  header_length (4B)
-    +0x08 (8):  track_count (4B) — total number of MHIT children
-    Rest of header is zero-padded.
-
-Cross-referenced against:
-  - iPodLinux wiki § TrackList
-  - libgpod itdb_itunesdb.c
+A pure-list container whose children are MHIT (Track Item) chunks.
+The third generic-header field is ``child_count`` (number of tracks).
 """
 
-from typing import Any
+from __future__ import annotations
+
+from ._parsing import ParseResult, parse_child_list
 
 
-def parse_trackList(data, offset, header_length, trackCount) -> dict[str, Any]:
-    from .chunk_parser import parse_chunk
-
-    trackList = []
-
-    # Parse Children
-    next_offset = offset + header_length
-    for i in range(trackCount):
-        response = parse_chunk(data, next_offset)
-        next_offset = response["nextOffset"]
-        trackList.append(response["result"])
-
-    return {"nextOffset": next_offset, "result": trackList}
+def parse_track_list(
+    data: bytes | bytearray,
+    offset: int,
+    header_length: int,
+    child_count: int,
+) -> ParseResult:
+    """Parse an MHLT chunk by iterating its MHIT children."""
+    return parse_child_list(data, offset, header_length, child_count)

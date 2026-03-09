@@ -1,34 +1,19 @@
-"""
-MHLA (Album List) parser.
+"""MHLA (Album List) parser.
 
-MHLA is the container for all album items, introduced with iTunes 7.1.
-Its third header field (offset 8) is the number of MHIA children,
-NOT a total byte length — same convention as MHLT and MHLP.
-
-Field layout:
-    +0x00 (0):  'mhla' magic (4B)
-    +0x04 (4):  header_length (4B)
-    +0x08 (8):  album_count (4B) — number of MHIA children
-    Rest of header is zero-padded.
-
-Cross-referenced against:
-  - iPodLinux wiki § Album List
-  - libgpod itdb_itunesdb.c
+A pure-list container whose children are MHIA (Album Item) chunks.
+Present in MHSD type 4 (iTunes 7.1+).
 """
 
-from typing import Any
+from __future__ import annotations
+
+from ._parsing import ParseResult, parse_child_list
 
 
-def parse_albumList(data, offset, header_length, albumCount) -> dict[str, Any]:
-    from .chunk_parser import parse_chunk
-
-    albumList = []
-
-    # Parse Children
-    next_offset = offset + header_length
-    for i in range(albumCount):
-        response = parse_chunk(data, next_offset)
-        next_offset = response["nextOffset"]
-        albumList.append(response["result"])
-
-    return {"nextOffset": next_offset, "result": albumList}
+def parse_album_list(
+    data: bytes | bytearray,
+    offset: int,
+    header_length: int,
+    child_count: int,
+) -> ParseResult:
+    """Parse an MHLA chunk by iterating its MHIA children."""
+    return parse_child_list(data, offset, header_length, child_count)

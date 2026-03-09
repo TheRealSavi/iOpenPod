@@ -31,6 +31,13 @@ import hashlib
 import os
 from typing import Optional
 
+from iTunesDB_Shared.mhbd_defs import (
+    MHBD_OFFSET_DB_ID as OFFSET_DB_ID,
+    MHBD_OFFSET_HASHING_SCHEME as OFFSET_HASHING_SCHEME,
+    MHBD_OFFSET_HASH58 as OFFSET_HASH58,
+    MHBD_OFFSET_HASH72 as OFFSET_HASH72,
+)
+
 # AES-128 key (from libgpod itdb_hash72.c line 40)
 AES_KEY = bytes([
     0x61, 0x8c, 0xa1, 0x0d, 0xc7, 0xf5, 0x7f, 0xd3,
@@ -39,13 +46,6 @@ AES_KEY = bytes([
 
 # Hash scheme identifier for HASH72
 ITDB_CHECKSUM_HASH72 = 2
-
-# Header offsets
-OFFSET_DB_ID = 0x18       # 8 bytes
-OFFSET_UNK_0x32 = 0x32    # 20 bytes
-OFFSET_HASHING_SCHEME = 0x30  # 2 bytes (was 0x46 - wrong!)
-OFFSET_HASH58 = 0x58      # 20 bytes
-OFFSET_HASH72 = 0x72      # 46 bytes (NOT at 0x58!)
 
 # HashInfo file structure
 HASHINFO_HEADER = b"HASHv0"

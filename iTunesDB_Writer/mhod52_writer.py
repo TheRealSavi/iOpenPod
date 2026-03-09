@@ -26,24 +26,25 @@ import struct
 import unicodedata
 from typing import TYPE_CHECKING
 
+from iTunesDB_Shared.mhod_defs import (
+    MHOD_HEADER_SIZE,
+    MHOD52_BODY_HEADER_SIZE,
+    MHOD53_BODY_HEADER_SIZE,
+    MHOD53_ENTRY_SIZE,
+    SORT_TITLE,
+    SORT_ALBUM,
+    SORT_ARTIST,
+    SORT_GENRE,
+    SORT_COMPOSER,
+    SORT_SHOW,
+    SORT_SEASON,
+    SORT_EPISODE,
+    SORT_ALBUM_ARTIST,
+    write_mhod_header,
+)
+
 if TYPE_CHECKING:
     from .mhit_writer import TrackInfo
-
-
-# Sort type constants (from libgpod enum MHOD52_SORTTYPE)
-SORT_TITLE = 0x03
-SORT_ALBUM = 0x04
-SORT_ARTIST = 0x05
-SORT_GENRE = 0x07
-SORT_COMPOSER = 0x12
-
-# Video sort types (written when device supports video)
-SORT_SHOW = 0x1D
-SORT_SEASON = 0x1E
-SORT_EPISODE = 0x1F
-
-# Album artist sort (written for modern iPods)
-SORT_ALBUM_ARTIST = 0x23
 
 # Base sort types — always written
 BASE_SORT_TYPES = [SORT_TITLE, SORT_ALBUM, SORT_ARTIST, SORT_GENRE, SORT_COMPOSER]
@@ -227,20 +228,13 @@ def write_mhod_type52(tracks: list["TrackInfo"], sort_type: int) -> tuple[bytes,
         jump_entries[-1] = (letter_val, start, count + 1)
 
     # Build MHOD type 52 binary data
-    # Header: 24 bytes
     # Body: sort_type(4) + count(4) + padding(40) + indices(count*4)
-    total_len = 4 * num_tracks + 72  # matches libgpod formula
+    total_len = 4 * num_tracks + MHOD_HEADER_SIZE + MHOD52_BODY_HEADER_SIZE
 
-    header = bytearray(24)
-    header[0:4] = b'mhod'
-    struct.pack_into('<I', header, 4, 24)         # header length
-    struct.pack_into('<I', header, 8, total_len)  # total length
-    struct.pack_into('<I', header, 12, 52)        # type
-    struct.pack_into('<I', header, 16, 0)         # unk1
-    struct.pack_into('<I', header, 20, 0)         # unk2
+    header = write_mhod_header(52, total_len)
 
     # Body header
-    body_header = bytearray(48)  # 4 + 4 + 40 padding
+    body_header = bytearray(MHOD52_BODY_HEADER_SIZE)
     struct.pack_into('<I', body_header, 0, sort_type)    # sort type
     struct.pack_into('<I', body_header, 4, num_tracks)   # number of entries
     # Remaining 40 bytes are zero padding
@@ -266,28 +260,22 @@ def write_mhod_type53(sort_type: int, jump_entries: list[tuple[int, int, int]]) 
     """
     num_entries = len(jump_entries)
 
-    # Header: 24 bytes
+    # Build MHOD type 53 binary data
     # Body: sort_type(4) + count(4) + padding(8) + entries(count*12)
-    total_len = 12 * num_entries + 40  # matches libgpod formula
+    total_len = MHOD53_ENTRY_SIZE * num_entries + MHOD_HEADER_SIZE + MHOD53_BODY_HEADER_SIZE
 
-    header = bytearray(24)
-    header[0:4] = b'mhod'
-    struct.pack_into('<I', header, 4, 24)         # header length
-    struct.pack_into('<I', header, 8, total_len)  # total length
-    struct.pack_into('<I', header, 12, 53)        # type
-    struct.pack_into('<I', header, 16, 0)         # unk1
-    struct.pack_into('<I', header, 20, 0)         # unk2
+    header = write_mhod_header(53, total_len)
 
     # Body header
-    body_header = bytearray(16)  # 4 + 4 + 8 padding
+    body_header = bytearray(MHOD53_BODY_HEADER_SIZE)
     struct.pack_into('<I', body_header, 0, sort_type)     # sort type
     struct.pack_into('<I', body_header, 4, num_entries)    # number of entries
     # 8 bytes zero padding
 
     # Jump table entries: each is letter(u16) + pad(u16) + start(u32) + count(u32)
-    entries_data = bytearray(12 * num_entries)
+    entries_data = bytearray(MHOD53_ENTRY_SIZE * num_entries)
     for i, (letter, start, count) in enumerate(jump_entries):
-        offset = i * 12
+        offset = i * MHOD53_ENTRY_SIZE
         struct.pack_into('<H', entries_data, offset, letter)       # letter (UTF-16)
         struct.pack_into('<H', entries_data, offset + 2, 0)        # padding
         struct.pack_into('<I', entries_data, offset + 4, start)    # start index

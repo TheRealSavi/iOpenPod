@@ -1,14 +1,98 @@
 import logging
 from collections import deque
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-from PyQt6.QtWidgets import QFrame, QGridLayout, QSizePolicy
+from PyQt6.QtCore import QRect, QSize, QTimer, pyqtSignal
+from PyQt6.QtWidgets import QFrame, QLayout, QLayoutItem, QSizePolicy
 from .MBGridViewItem import MusicBrowserGridItem
 from ..styles import Metrics
 
 log = logging.getLogger(__name__)
 
-# Grid calculation constants
-_CELL_W = Metrics.GRID_ITEM_W + Metrics.GRID_SPACING
+
+# ── Flow layout ──────────────────────────────────────────────────────────────
+# Lays out fixed-size children left-to-right, wrapping to the next row.
+# Items are always left-aligned; no centering hack needed.
+
+class _FlowLayout(QLayout):
+    """Left-aligned, wrapping flow layout for fixed-size grid items."""
+
+    def __init__(self, parent=None, spacing: int = 0):
+        super().__init__(parent)
+        self._items: list[QLayoutItem] = []
+        self._spacing = spacing
+
+    # -- QLayout API --
+
+    def addItem(self, a0: QLayoutItem | None):
+        if a0 is not None:
+            self._items.append(a0)
+
+    def count(self) -> int:
+        return len(self._items)
+
+    def itemAt(self, index: int) -> QLayoutItem | None:
+        if 0 <= index < len(self._items):
+            return self._items[index]
+        return None
+
+    def takeAt(self, index: int) -> QLayoutItem | None:
+        if 0 <= index < len(self._items):
+            return self._items.pop(index)
+        return None
+
+    def spacing(self) -> int:
+        return self._spacing
+
+    def setSpacing(self, a0: int):
+        self._spacing = a0
+
+    def hasHeightForWidth(self) -> bool:
+        return True
+
+    def heightForWidth(self, a0: int) -> int:
+        return self._do_layout(a0, dry_run=True)
+
+    def sizeHint(self) -> QSize:
+        return self.minimumSize()
+
+    def minimumSize(self) -> QSize:
+        # Minimum: one item wide
+        w = h = 0
+        for item in self._items:
+            sz = item.sizeHint()
+            w = max(w, sz.width())
+            h = max(h, sz.height())
+        m = self.contentsMargins()
+        return QSize(w + m.left() + m.right(), h + m.top() + m.bottom())
+
+    def setGeometry(self, a0):
+        super().setGeometry(a0)
+        self._do_layout(a0.width(), dry_run=False)
+
+    # -- Layout engine --
+
+    def _do_layout(self, width: int, *, dry_run: bool) -> int:
+        m = self.contentsMargins()
+        x = m.left()
+        y = m.top()
+        right_edge = width - m.right()
+        row_height = 0
+        sp = self._spacing
+
+        for item in self._items:
+            sz = item.sizeHint()
+            # Wrap to next row if this item exceeds the right edge
+            if x + sz.width() > right_edge and x > m.left():
+                x = m.left()
+                y += row_height + sp
+                row_height = 0
+
+            if not dry_run:
+                item.setGeometry(QRect(x, y, sz.width(), sz.height()))
+
+            x += sz.width() + sp
+            row_height = max(row_height, sz.height())
+
+        return y + row_height + m.bottom()
 
 
 class MusicBrowserGrid(QFrame):
@@ -17,24 +101,20 @@ class MusicBrowserGrid(QFrame):
 
     def __init__(self):
         super().__init__()
-        self.gridLayout = QGridLayout(self)
-        self.gridLayout.setContentsMargins(Metrics.GRID_SPACING, Metrics.GRID_SPACING,
-                                           Metrics.GRID_SPACING, Metrics.GRID_SPACING)
-        self.gridLayout.setSpacing(Metrics.GRID_SPACING)
-        self.gridLayout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self._flow = _FlowLayout(self, spacing=Metrics.GRID_SPACING)
+        self._flow.setContentsMargins(Metrics.GRID_SPACING, Metrics.GRID_SPACING,
+                                      Metrics.GRID_SPACING, Metrics.GRID_SPACING)
 
-        # Allow the widget to shrink below the layout's natural minimum.
-        # Without this, QGridLayout prevents shrinking inside a QScrollArea,
-        # so resizeEvent never fires when the window gets narrower.
+        # Allow the widget to shrink inside a QScrollArea.
         self.setMinimumWidth(0)
         self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
 
-        self.gridItems = []  # Already added items
-        self.pendingItems: deque = deque()  # Items waiting to be added
-        self.timerActive = False  # Prevent duplicate timers
-        self.columnCount = 1  # Default column count
-        self._current_category = "Albums"  # Current display category
-        self._load_id = 0  # Incremented on each load to invalidate stale timers
+        self.gridItems: list[MusicBrowserGridItem] = []
+        self.pendingItems: deque = deque()
+        self.timerActive = False
+        self.columnCount = 1  # kept for external compat, not used by layout
+        self._current_category = "Albums"
+        self._load_id = 0
 
     def loadCategory(self, category: str):
         """Load and display items for the specified category."""
@@ -46,9 +126,8 @@ class MusicBrowserGrid(QFrame):
 
         cache = iTunesDBCache.get_instance()
         if not cache.is_ready():
-            return  # Data not ready yet
+            return
 
-        # Get the appropriate data for this category
         if category == "Albums":
             items = build_album_list(cache)
         elif category == "Artists":
@@ -62,32 +141,18 @@ class MusicBrowserGrid(QFrame):
 
     def populateGrid(self, items):
         """Populate the grid with items."""
-        # Clear existing items first
         self.clearGrid()
-
-        # Increment load ID to invalidate any pending timers from previous loads
         self._load_id += 1
         current_load_id = self._load_id
 
-        # Recalculate column count
-        self.columnCount = max(1, self._get_available_width() // _CELL_W)
-        self._update_margins()
-
-        # Reset pendingItems for fresh load
         self.pendingItems = deque(enumerate(items))
 
-        # Start incremental loading if not active
         if self.pendingItems and not self.timerActive:
             self.timerActive = True
-            self._startAddingItems(current_load_id)
-
-    def _startAddingItems(self, load_id: int):
-        """Start the incremental item adding process."""
-        self._addNextItem(load_id)
+            self._addNextItem(current_load_id)
 
     def _addNextItem(self, load_id: int):
-        """Add the next item, checking if this load is still valid."""
-        # Check if this load has been superseded by a new one
+        """Add the next batch of items."""
         if load_id != self._load_id:
             self.timerActive = False
             return
@@ -96,27 +161,22 @@ class MusicBrowserGrid(QFrame):
             self.timerActive = False
             return
 
-        # Add items in small batches for better performance
         batch_size = 5
         for _ in range(batch_size):
             if not self.pendingItems:
                 break
 
             i, item = self.pendingItems.popleft()
-            row = i // self.columnCount
-            col = i % self.columnCount
 
             if isinstance(item, dict):
-                # Support both old format (album/artist) and new format (title/subtitle)
                 title = item.get("title") or item.get("album", "Unknown")
                 subtitle = item.get("subtitle") or item.get("artist", "")
-                mhiiLink = item.get("mhiiLink")
+                mhiiLink = item.get("artwork_id_ref")
 
-                # Build item_data for click handling
                 item_data = {
                     "title": title,
                     "subtitle": subtitle,
-                    "mhiiLink": mhiiLink,
+                    "artwork_id_ref": mhiiLink,
                     "category": item.get("category", "Albums"),
                     "filter_key": item.get("filter_key", "Album"),
                     "filter_value": item.get("filter_value", title),
@@ -131,11 +191,10 @@ class MusicBrowserGrid(QFrame):
                 gridItem = item
                 gridItem.clicked.connect(self._onItemClicked)
             else:
-                continue  # Skip invalid items instead of raising
+                continue
 
-            self.gridLayout.addWidget(gridItem, row, col)
+            self._flow.addWidget(gridItem)
 
-        # Schedule next batch if there are more items and load is still valid
         if self.pendingItems and load_id == self._load_id:
             QTimer.singleShot(8, lambda: self._addNextItem(load_id))
         else:
@@ -145,53 +204,21 @@ class MusicBrowserGrid(QFrame):
         """Handle grid item click."""
         self.item_selected.emit(item_data)
 
-    def _get_available_width(self) -> int:
-        """Get the available width for column calculations.
-
-        When inside a QScrollArea, the grid widget's own width may not
-        decrease (the layout minimum holds it), but the viewport always
-        reflects the actual available space.
-        """
-        parent = self.parent()
-        if parent and hasattr(parent, 'width'):
-            return parent.width()  # type: ignore[union-attr]
-        return self.width()
-
-    def _update_margins(self):
-        """Distribute leftover horizontal space as side padding so items stay centered."""
-        available = self._get_available_width()
-        used = self.columnCount * Metrics.GRID_ITEM_W + max(0, self.columnCount - 1) * Metrics.GRID_SPACING
-        leftover = max(0, available - used)
-        side = leftover // 2
-        self.gridLayout.setContentsMargins(side, Metrics.GRID_SPACING, side, Metrics.GRID_SPACING)
-
     def rearrangeGrid(self):
-        """Rearrange grid items based on the new column count without clearing them."""
-        if not self.gridItems:
-            return
-
-        self.columnCount = max(1, self._get_available_width() // _CELL_W)
-        self._update_margins()
-
-        for i, gridItem in enumerate(self.gridItems):
-            row = i // self.columnCount
-            col = i % self.columnCount
-            self.gridLayout.addWidget(gridItem, row, col)
+        """Trigger a re-layout (flow layout handles this automatically)."""
+        self._flow.activate()
 
     def clearGrid(self):
         """Clear all grid items to prepare for reloading."""
         self.timerActive = False
         self.pendingItems = deque()
-        # Increment load_id to invalidate any pending timer callbacks
         self._load_id += 1
 
-        # Remove all widgets from layout
-        while self.gridLayout.count():
-            item = self.gridLayout.takeAt(0)
+        while self._flow.count():
+            item = self._flow.takeAt(0)
             if item:
                 widget = item.widget()
                 if widget:
-                    # Call cleanup to mark destroyed and disconnect signals
                     if isinstance(widget, MusicBrowserGridItem):
                         widget.cleanup()
                     widget.deleteLater()
@@ -199,10 +226,4 @@ class MusicBrowserGrid(QFrame):
         self.gridItems = []
 
     def resizeEvent(self, a0):
-        newCols = max(1, self._get_available_width() // _CELL_W)
-        if self.columnCount != newCols:
-            self.rearrangeGrid()
-        else:
-            self._update_margins()
-
         super().resizeEvent(a0)

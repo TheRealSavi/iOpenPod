@@ -21,6 +21,13 @@ Usage:
 import hashlib
 from math import gcd
 
+from iTunesDB_Shared.mhbd_defs import (
+    MHBD_OFFSET_DB_ID as OFFSET_DB_ID,
+    MHBD_OFFSET_HASHING_SCHEME as OFFSET_HASHING_SCHEME,
+    MHBD_OFFSET_UNK_0x32 as OFFSET_UNK_0x32,
+    MHBD_OFFSET_HASH58 as OFFSET_HASH58,
+)
+
 # AES S-Box (from libgpod itdb_hash58.c lines 45-76)
 TABLE1 = bytes([
     0x63, 0x7C, 0x77, 0x7B, 0xF2, 0x6B, 0x6F, 0xC5,
@@ -101,12 +108,6 @@ FIXED = bytes([
 
 # Hash scheme identifier for HASH58
 ITDB_CHECKSUM_HASH58 = 1
-
-# Header offsets
-OFFSET_DB_ID = 0x18       # 8 bytes
-OFFSET_UNK_0x32 = 0x32    # 20 bytes
-OFFSET_HASHING_SCHEME = 0x30  # 2 bytes (hashing_scheme in MhbdHeader struct)
-OFFSET_HASH58 = 0x58      # 20 bytes
 
 
 def _lcm(a: int, b: int) -> int:

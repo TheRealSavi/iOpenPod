@@ -13,14 +13,10 @@ Cross-referenced against:
   - libgpod itdb_itunesdb.c: mk_mhlt()
 """
 
-import struct
 from typing import List
 
+from iTunesDB_Shared.field_base import MHLT_HEADER_SIZE, write_generic_header
 from .mhit_writer import write_mhit, TrackInfo
-
-
-# MHLT header size
-MHLT_HEADER_SIZE = 92
 
 
 def write_mhlt(tracks: List[TrackInfo], start_track_id: int, id_0x24: int, capabilities=None) -> tuple[bytes, int]:
@@ -50,16 +46,6 @@ def write_mhlt(tracks: List[TrackInfo], start_track_id: int, id_0x24: int, capab
     all_tracks_data = b''.join(track_chunks)
 
     header = bytearray(MHLT_HEADER_SIZE)
-
-    # Magic
-    header[0:4] = b'mhlt'
-
-    # Header length
-    struct.pack_into('<I', header, 4, MHLT_HEADER_SIZE)
-
-    # Track count
-    struct.pack_into('<I', header, 8, len(tracks))
-
-    # Rest is padding/reserved
+    write_generic_header(header, 0, b'mhlt', MHLT_HEADER_SIZE, len(tracks))
 
     return bytes(header) + all_tracks_data, track_id

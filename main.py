@@ -3,13 +3,13 @@ import sys
 import logging
 import logging.handlers
 import traceback
-from PyQt6.QtGui import QPalette, QColor
 from PyQt6.QtWidgets import QApplication, QMessageBox
+from PyQt6.QtGui import QIcon
 from GUI.app import MainWindow
 
 
 def _get_log_dir() -> str:
-    """Get platform-appropriate log directory, creating it if needed."""
+    """Get log directory, defaulting to ~/iOpenPod/logs."""
     # Check for user-configured log directory in settings
     try:
         from GUI.settings import AppSettings
@@ -20,16 +20,8 @@ def _get_log_dir() -> str:
     except Exception:
         pass
 
-    if sys.platform == "win32":
-        base = os.environ.get("APPDATA", os.path.expanduser("~"))
-    elif sys.platform == "darwin":
-        base = os.path.join(os.path.expanduser("~"), "Library", "Logs")
-    else:
-        base = os.environ.get(
-            "XDG_STATE_HOME",
-            os.path.join(os.path.expanduser("~"), ".local", "state"),
-        )
-    log_dir = os.path.join(base, "iOpenPod")
+    from GUI.settings import _default_data_dir
+    log_dir = os.path.join(_default_data_dir(), "logs")
     os.makedirs(log_dir, exist_ok=True)
     return log_dir
 
@@ -144,30 +136,31 @@ def run_pyqt_app():
 
     # Use custom proxy style for dark scrollbars (CSS scrollbar styling is
     # unreliable on Windows with Fusion — this paints them directly).
-    from GUI.styles import DarkScrollbarStyle
+    from GUI.styles import Colors, DarkScrollbarStyle, Metrics, build_palette
     app.setStyle(DarkScrollbarStyle("Fusion"))
 
-    # Set a dark palette so Fusion's fallback colors aren't bright grey/blue
-    palette = QPalette()
-    palette.setColor(QPalette.ColorRole.Window, QColor(26, 26, 46))
-    palette.setColor(QPalette.ColorRole.WindowText, QColor(255, 255, 255))
-    palette.setColor(QPalette.ColorRole.Base, QColor(22, 22, 36))
-    palette.setColor(QPalette.ColorRole.AlternateBase, QColor(30, 30, 48))
-    palette.setColor(QPalette.ColorRole.Text, QColor(255, 255, 255))
-    palette.setColor(QPalette.ColorRole.Button, QColor(30, 30, 48))
-    palette.setColor(QPalette.ColorRole.ButtonText, QColor(255, 255, 255))
-    palette.setColor(QPalette.ColorRole.Highlight, QColor(64, 156, 255))
-    palette.setColor(QPalette.ColorRole.HighlightedText, QColor(255, 255, 255))
-    palette.setColor(QPalette.ColorRole.Mid, QColor(30, 30, 48))
-    palette.setColor(QPalette.ColorRole.Dark, QColor(18, 18, 30))
-    palette.setColor(QPalette.ColorRole.Midlight, QColor(40, 40, 60))
-    palette.setColor(QPalette.ColorRole.Shadow, QColor(0, 0, 0))
-    palette.setColor(QPalette.ColorRole.Light, QColor(50, 50, 70))
-    app.setPalette(palette)
+    # Scale all pixel metrics to match the current screen size / DPI.
+    Metrics.apply_scaling()
 
-    # Apply global stylesheet
-    from GUI.styles import APP_STYLESHEET
-    app.setStyleSheet(APP_STYLESHEET)
+    # Apply the selected color theme (reads settings; must come after
+    # QApplication exists so system-theme detection works).
+    from GUI.settings import get_settings
+    _s = get_settings()
+    Colors.apply_theme(_s.theme, _s.high_contrast)
+
+    # Build a palette from the active Colors and apply it.
+    app.setPalette(build_palette())
+
+    # App icon (window title bar, taskbar, system tray)
+    _icon_dir = os.path.join(os.path.dirname(__file__), "assets", "icons")
+    app_icon = QIcon()
+    for _sz in (16, 24, 32, 48, 64, 128, 256):
+        app_icon.addFile(os.path.join(_icon_dir, f"icon-{_sz}.png"))
+    app.setWindowIcon(app_icon)
+
+    # Apply global stylesheet (built after scaling so pixel values are correct)
+    from GUI.styles import app_stylesheet
+    app.setStyleSheet(app_stylesheet())
 
     window = MainWindow()
 

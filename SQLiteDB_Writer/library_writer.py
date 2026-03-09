@@ -12,7 +12,8 @@ import time
 import logging
 from typing import Optional
 
-from iTunesDB_Writer.mhit_writer import TrackInfo, FILETYPE_CODES
+from iTunesDB_Writer.mhit_writer import TrackInfo
+from iTunesDB_Shared.constants import FILETYPE_CODES
 from iTunesDB_Writer.mhyp_writer import PlaylistInfo
 
 logger = logging.getLogger(__name__)
@@ -538,8 +539,11 @@ def _compute_sort_orders(tracks: list[TrackInfo]) -> dict:
         'album': lambda t: t.sort_album or t.album,
         'genre': lambda t: t.genre,
         'composer': lambda t: t.sort_composer or t.composer,
-        'album_artist': lambda t: (t.sort_album_artist or t.album_artist
-                                   or t.sort_artist or t.artist),
+        # libgpod ORDER_ALBUM_ARTIST: sort_artist → artist (simple)
+        'album_artist': lambda t: t.sort_artist or t.artist,
+        # libgpod ORDER_ALBUM_BY_ARTIST: sort_albumartist → albumartist → sort_artist → artist
+        'album_by_artist': lambda t: (t.sort_album_artist or t.album_artist
+                                      or t.sort_artist or t.artist),
     }
 
     orders: dict[str, dict[str, int]] = {}
@@ -881,8 +885,10 @@ def write_library_itdb(
         genre_order = _lookup_order(orders, 'genre', track.genre)
         composer_order = _lookup_order(orders, 'composer', track.sort_composer or track.composer)
         aa_order = _lookup_order(orders, 'album_artist',
-                                 track.sort_album_artist or track.album_artist
-                                 or track.sort_artist or track.artist)
+                                 track.sort_artist or track.artist)
+        aba_order = _lookup_order(orders, 'album_by_artist',
+                                  track.sort_album_artist or track.album_artist
+                                  or track.sort_artist or track.artist)
 
         cur.execute(
             """INSERT INTO item (
@@ -936,7 +942,7 @@ def write_library_itdb(
                 ?, ?,
                 ?, ?, ?,
                 ?, ?,
-                ?, NULL,
+                ?, ?,
                 ?,
                 ?, ?,
                 ?, NULL,
@@ -967,7 +973,7 @@ def write_library_itdb(
                 sort_aa, sort_composer,
                 title_order, artist_order, album_order,
                 genre_order, composer_order,
-                aa_order,
+                aa_order, aba_order,
                 100,
                 track.comment, track.grouping,
                 track.description,
@@ -983,8 +989,10 @@ def write_library_itdb(
         # AAC caps at ~330 kbps)
         if ft in ('m4a', 'm4b') and track.bitrate > 500:
             audio_format = AUDIO_FORMAT_ALAC
-        # Duration in avformat_info is in SAMPLES, not milliseconds
-        duration_samples = int(track.length * track.sample_rate / 1000) if track.sample_rate else track.length
+        # Duration in avformat_info is in SAMPLES, not milliseconds.
+        # libgpod writes 0 ("iTunes sometimes set it to 0"); we compute
+        # when sample_rate is available, else 0.
+        duration_samples = int(track.length * track.sample_rate / 1000) if track.sample_rate else 0
 
         cur.execute(
             """INSERT INTO avformat_info (
@@ -994,11 +1002,12 @@ def write_library_itdb(
                 gapless_encoding_drain, gapless_last_frame_resynch,
                 analysis_inhibit_flags, audio_fingerprint,
                 volume_normalization_energy
-            ) VALUES (?, 0, ?, ?, 0, ?, ?, 0, ?, ?, 0, 0, 0, ?)""",
+            ) VALUES (?, 0, ?, ?, 0, ?, ?, ?, ?, ?, ?, 0, 0, ?)""",
             (
                 _s64(track.dbid), audio_format, track.bitrate,
                 float(track.sample_rate), duration_samples,
-                track.pregap, track.postgap,
+                track.gapless_track_flag, track.pregap, track.postgap,
+                track.gapless_data,
                 track.sound_check,
             )
         )

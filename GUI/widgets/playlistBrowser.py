@@ -1,20 +1,5 @@
 """
 PlaylistBrowser — Dedicated playlist browsing widget.
-
-Layout:
-    ┌─────────────────────┐ ┌──────────────────────────────────────┐
-    │  PLAYLISTS           │ │  PlaylistInfoCard                    │
-    │  📋 My Mix           │ │  Title, type, stats, smart rules     │
-    │  📋 Road Trip        │ ├──────────────────────────────────────┤
-    │                      │ │  TrackListTitleBar                   │
-    │  SMART PLAYLISTS     │ │  MusicBrowserList (tracks)           │
-    │  🧠 Top Rated        │ │                                      │
-    │                      │ │                                      │
-    │  PODCASTS            │ │                                      │
-    │  🎙 My Podcast       │ │                                      │
-    │                      │ │                                      │
-    │  ░ Library (Master)  │ │                                      │
-    └─────────────────────┘ └──────────────────────────────────────┘
 """
 
 from __future__ import annotations
@@ -30,7 +15,13 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from ..styles import Colors, FONT_FAMILY, MONO_FONT_FAMILY, Metrics, btn_css
+from ..styles import (
+    Colors, FONT_FAMILY, Metrics, btn_css, scaled,
+    sidebar_nav_css, sidebar_nav_selected_css,
+    LABEL_SECONDARY,
+    make_detail_row, make_separator, make_section_header,
+)
+from ..glyphs import glyph_icon
 from .formatters import (
     format_duration_human,
     format_mhsd5_type,
@@ -45,10 +36,10 @@ from .trackListTitleBar import TrackListTitleBar
 log = logging.getLogger(__name__)
 
 # Icons for each playlist type
-_ICON_REGULAR = "📋"
-_ICON_SMART = "🧠"
-_ICON_PODCAST = "🎙"
-_ICON_MASTER = "📚"
+_ICON_REGULAR = "annotation-dots"
+_ICON_SMART = "filter"
+_ICON_PODCAST = "broadcast"
+_ICON_MASTER = "home"
 
 
 # =============================================================================
@@ -75,14 +66,14 @@ class PlaylistInfoCard(QFrame):
 
         # ── Title row ───────────────────────────────────────────
         self.title_label = QLabel("Select a playlist")
-        self.title_label.setFont(QFont(FONT_FAMILY, 16, QFont.Weight.Bold))
+        self.title_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_PAGE_TITLE, QFont.Weight.Bold))
         self.title_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent; border: none;")
         self.title_label.setWordWrap(True)
         self._layout.addWidget(self.title_label)
 
         # ── Type badge ──────────────────────────────────────────
         self.type_label = QLabel("")
-        self.type_label.setFont(QFont(FONT_FAMILY, 10))
+        self.type_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
         self.type_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
         self._layout.addWidget(self.type_label)
 
@@ -92,9 +83,13 @@ class PlaylistInfoCard(QFrame):
         btn_row.setSpacing(6)
         btn_row.addStretch()
 
-        self.edit_btn = QPushButton("✎ Edit")
-        self.edit_btn.setFont(QFont(FONT_FAMILY, 9))
+        self.edit_btn = QPushButton("Edit")
+        self.edit_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.edit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        _ed_ic = glyph_icon("edit", scaled(14), Colors.ACCENT)
+        if _ed_ic:
+            self.edit_btn.setIcon(_ed_ic)
+            self.edit_btn.setIconSize(QSize(scaled(14), scaled(14)))
         self.edit_btn.setStyleSheet(btn_css(
             bg="transparent",
             bg_hover=Colors.ACCENT_DIM,
@@ -106,29 +101,33 @@ class PlaylistInfoCard(QFrame):
         self.edit_btn.hide()
         btn_row.addWidget(self.edit_btn)
 
-        self.delete_btn = QPushButton("🗑 Delete")
-        self.delete_btn.setFont(QFont(FONT_FAMILY, 9))
+        self.delete_btn = QPushButton("Delete")
+        self.delete_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.delete_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.delete_btn.setStyleSheet(btn_css(
             bg="transparent",
-            bg_hover="rgba(220,60,60,40)",
-            bg_press="rgba(220,60,60,60)",
-            fg="#dc3c3c",
-            border="1px solid rgba(220,60,60,80)",
+            bg_hover=Colors.DANGER_DIM,
+            bg_press=Colors.DANGER_HOVER,
+            fg=Colors.DANGER,
+            border=f"1px solid {Colors.DANGER_BORDER}",
             padding="3px 12px",
         ))
         self.delete_btn.hide()
         btn_row.addWidget(self.delete_btn)
 
-        self.evaluate_btn = QPushButton("▶ Evaluate Now")
-        self.evaluate_btn.setFont(QFont(FONT_FAMILY, 9))
+        self.evaluate_btn = QPushButton("Evaluate Now")
+        self.evaluate_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.evaluate_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        _eval_ic = glyph_icon("check-circle", scaled(14), Colors.SUCCESS)
+        if _eval_ic:
+            self.evaluate_btn.setIcon(_eval_ic)
+            self.evaluate_btn.setIconSize(QSize(scaled(14), scaled(14)))
         self.evaluate_btn.setStyleSheet(btn_css(
             bg="transparent",
-            bg_hover="rgba(80,180,80,40)",
-            bg_press="rgba(80,180,80,60)",
-            fg="#50b450",
-            border="1px solid rgba(80,180,80,80)",
+            bg_hover=Colors.SUCCESS_DIM,
+            bg_press=Colors.SUCCESS_HOVER,
+            fg=Colors.SUCCESS,
+            border=f"1px solid {Colors.SUCCESS_BORDER}",
             padding="3px 12px",
         ))
         self.evaluate_btn.setToolTip(
@@ -141,15 +140,12 @@ class PlaylistInfoCard(QFrame):
         self._layout.addLayout(btn_row)
 
         # ── Separator ──────────────────────────────────────────
-        sep = QFrame()
-        sep.setFixedHeight(1)
-        sep.setStyleSheet(f"background-color: {Colors.BORDER_SUBTLE}; border: none;")
-        self._layout.addWidget(sep)
+        self._layout.addWidget(make_separator())
 
         # ── Stats rows ──────────────────────────────────────────
         self.stats_label = QLabel("")
-        self.stats_label.setFont(QFont(FONT_FAMILY, 10))
-        self.stats_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
+        self.stats_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
+        self.stats_label.setStyleSheet(LABEL_SECONDARY())
         self.stats_label.setWordWrap(True)
         self._layout.addWidget(self.stats_label)
 
@@ -183,9 +179,9 @@ class PlaylistInfoCard(QFrame):
         self._clear_details()
 
         title = playlist.get("Title", "Untitled")
-        is_master = playlist.get("isMaster", False)
-        is_smart = playlist.get("isSmartPlaylist", False)
-        is_podcast = playlist.get("podcastFlag", 0) == 1
+        is_master = bool(playlist.get("master_flag"))
+        is_smart = bool(playlist.get("smart_playlist_data"))
+        is_podcast = playlist.get("podcast_flag", 0) == 1
         source = playlist.get("_source", "regular")
 
         # ── Title ──
@@ -193,13 +189,13 @@ class PlaylistInfoCard(QFrame):
 
         # ── Type badge ──
         if is_master:
-            self.type_label.setText(f"{_ICON_MASTER}  Master Library Playlist")
+            self.type_label.setText("Master Library Playlist")
         elif is_smart:
-            self.type_label.setText(f"{_ICON_SMART}  Smart Playlist")
+            self.type_label.setText("Smart Playlist")
         elif is_podcast or source == "podcast":
-            self.type_label.setText(f"{_ICON_PODCAST}  Podcast Playlist")
+            self.type_label.setText("Podcast Playlist")
         else:
-            self.type_label.setText(f"{_ICON_REGULAR}  Playlist")
+            self.type_label.setText("Playlist")
 
         # Show edit button for user-created playlists (smart or regular, not iPod browsing-category ones)
         editable = not is_master and source != "smart" and not is_podcast
@@ -211,7 +207,16 @@ class PlaylistInfoCard(QFrame):
         self.evaluate_btn.setVisible(is_smart and not is_master)
         self._current_playlist = playlist
 
-        # ── Stats line ──
+        self._populate_stats(playlist, resolved_tracks, source)
+        self._populate_ids_flags(playlist, is_master, is_podcast)
+        self._populate_extra_mhods(playlist)
+        self._populate_track_stats(resolved_tracks)
+        self._populate_smart_rules(playlist, is_smart)
+
+        self.details_layout.addStretch()
+
+    def _populate_stats(self, playlist: dict, resolved_tracks: list[dict], source: str) -> None:
+        """Populate stats line and basic detail rows."""
         track_count = len(resolved_tracks)
         total_ms = sum(t.get("length", 0) for t in resolved_tracks)
         total_size = sum(t.get("size", 0) for t in resolved_tracks)
@@ -223,164 +228,145 @@ class PlaylistInfoCard(QFrame):
             stat_parts.append(format_size(total_size))
         self.stats_label.setText(" · ".join(stat_parts))
 
-        # ── Detail rows ──
         details: list[tuple[str, str]] = []
+        details.append(("Sort Order", format_sort_order(playlist.get("sort_order", 0))))
 
-        # Sort order
-        sort_order = playlist.get("sortOrder", 0)
-        details.append(("Sort Order", format_sort_order(sort_order)))
+        for ts_key, label in (("timestamp", "Created"), ("timestamp_2", "Modified")):
+            ts = playlist.get(ts_key, 0)
+            if ts and ts > 0:
+                try:
+                    details.append((label, datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")))
+                except (ValueError, OSError):
+                    pass
 
-        # Timestamps
-        ts = playlist.get("timestamp", 0)
-        if ts and ts > 0:
-            try:
-                details.append(("Created", datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")))
-            except (ValueError, OSError):
-                pass
-
-        ts2 = playlist.get("timestamp2", 0)
-        if ts2 and ts2 > 0:
-            try:
-                details.append(("Modified", datetime.fromtimestamp(ts2).strftime("%Y-%m-%d %H:%M")))
-            except (ValueError, OSError):
-                pass
-
-        # Dataset source
         details.append(("Dataset Source", source))
 
-        # MHSD5 type (smart playlist browsing category)
-        mhsd5 = playlist.get("mhsd5Type")
+        mhsd5 = playlist.get("mhsd5_type")
         if mhsd5 is not None and mhsd5 != 0:
             details.append(("iPod Category", format_mhsd5_type(mhsd5)))
 
         for label_text, value_text in details:
             self._add_detail_row(label_text, value_text)
 
-        # ── IDs & Flags section ──
+    def _populate_ids_flags(self, playlist: dict, is_master: bool, is_podcast: bool) -> None:
+        """Populate identifiers and flags section."""
         self._add_section_header("Identifiers & Flags")
 
-        pl_id = playlist.get("playlistID", 0)
+        pl_id = playlist.get("playlist_id", 0)
         if pl_id:
             self._add_detail_row("Playlist ID", f"0x{pl_id:016X}")
 
-        pl_id_copy = playlist.get("playlistIDCopy", 0)
+        pl_id_copy = playlist.get("playlist_id_2", 0)
         if pl_id_copy:
             self._add_detail_row("Playlist ID Copy", f"0x{pl_id_copy:016X}")
 
-        db_id = playlist.get("dbId_0x24", 0)
+        db_id = playlist.get("unk0x24", 0)
         if db_id:
             self._add_detail_row("Database ID", f"0x{db_id:016X}")
 
-        # Type / flag bytes — show human-readable visibility
-        pl_type = playlist.get("type", 0)
         flag1 = playlist.get("flag1", 0)
         flag2 = playlist.get("flag2", 0)
         flag3 = playlist.get("flag3", 0)
 
-        # libgpod: type byte 1 = master playlist, 0 = normal user playlist
-        if pl_type == 1:
-            type_str = "Master"
-        else:
-            type_str = "Normal (visible)"
+        type_str = "Master" if is_master else "Normal (visible)"
         self._add_detail_row("Playlist Type", type_str)
 
-        # Only show flag bytes if any are nonzero (usually all zero)
         if flag1 or flag2 or flag3:
             self._add_detail_row("Flag Bytes", f"f1={flag1}  f2={flag2}  f3={flag3}")
 
         if is_podcast:
             self._add_detail_row("Podcast Flag", "Yes")
-        string_mhod_count = playlist.get("stringMhodCount", 0)
+        string_mhod_count = playlist.get("string_mhod_child_count", 0)
         self._add_detail_row("String MHODs", str(string_mhod_count))
 
-        # Library indices (master playlist typically has many)
-        lib_indices = playlist.get("libraryIndices", [])
+        db_id_2 = playlist.get("db_id_2", 0)
+        if db_id_2:
+            self._add_detail_row("DB ID 2", f"0x{db_id_2:016X}")
+
+        lib_indices = playlist.get("library_indices", [])
         if lib_indices:
             idx_summary = ", ".join(
-                f"type {li.get('type', '?')} (sort={li.get('sortType', '?')}, n={li.get('count', '?')})"
+                f"sort={li.get('sort_type', '?')} (n={li.get('count', '?')})"  # sort_type was sortType
                 for li in lib_indices
             )
             self._add_detail_row("Library Indices", f"{len(lib_indices)} entries")
             self._add_detail_text(idx_summary)
 
-        # ── Extra MHOD data ──
-        # MHOD 100 (playlistPrefs) and 102 (playlistSettings) are opaque
-        # iTunes view-settings blobs that the iPod firmware ignores.
-        # libgpod writes canned defaults and marks every field with "/* ? */".
-        # We show their presence/size but not the meaningless hex offsets.
+    def _populate_extra_mhods(self, playlist: dict) -> None:
+        """Populate extra MHOD fields section."""
         extra_binary = {k: v for k, v in playlist.items()
-                        if k in ("playlistPrefs", "playlistSettings")}
+                        if k in ("playlist_prefs", "playlist_settings")}
         extra_strings = {k: v for k, v in playlist.items()
                          if k.startswith("unknown_mhod_")}
         known_extra = {**extra_binary, **extra_strings}
-        if known_extra:
-            self._add_section_header("Extra MHOD Fields")
-            for k, v in known_extra.items():
-                if isinstance(v, dict):
-                    ctx = v.get("context", "binary")
-                    bl = v.get("bodyLength", "?")
-                    display_val = f"{ctx} — {bl} bytes (opaque iTunes view settings)"
-                elif isinstance(v, str):
-                    display_val = v if v else "(empty)"
-                else:
-                    display_val = repr(v)[:80]
-                self._add_detail_row(k, display_val)
+        if not known_extra:
+            return
 
-        # ── Track statistics (computed from resolved tracks) ──
-        if resolved_tracks:
-            self._add_section_header("Track Statistics")
+        self._add_section_header("Extra MHOD Fields")
+        for k, v in known_extra.items():
+            if isinstance(v, dict):
+                ctx = v.get("context", "binary")
+                bl = v.get("bodyLength", "?")
+                display_val = f"{ctx} — {bl} bytes (opaque iTunes view settings)"
+            elif isinstance(v, str):
+                display_val = v if v else "(empty)"
+            else:
+                display_val = repr(v)[:80]
+            self._add_detail_row(k, display_val)
 
-            # Average bitrate
-            bitrates = [t.get("bitrate", 0) for t in resolved_tracks if t.get("bitrate", 0) > 0]
-            if bitrates:
-                avg_br = sum(bitrates) / len(bitrates)
-                self._add_detail_row("Avg Bitrate", f"{avg_br:.0f} kbps")
+    def _populate_track_stats(self, resolved_tracks: list[dict]) -> None:
+        """Populate track statistics section."""
+        if not resolved_tracks:
+            return
 
-            # Average rating
-            ratings = [t.get("rating", 0) for t in resolved_tracks if t.get("rating", 0) > 0]
-            if ratings:
-                avg_rating = sum(ratings) / len(ratings) / 20.0
-                self._add_detail_row("Avg Rating", f"{avg_rating:.1f} / 5 ★")
+        self._add_section_header("Track Statistics")
 
-            # Unique artists / albums / genres
-            artists = {t.get("Artist", "") for t in resolved_tracks if t.get("Artist")}
-            albums = {t.get("Album", "") for t in resolved_tracks if t.get("Album")}
-            genres = {t.get("Genre", "") for t in resolved_tracks if t.get("Genre")}
-            if artists:
-                self._add_detail_row("Unique Artists", str(len(artists)))
-            if albums:
-                self._add_detail_row("Unique Albums", str(len(albums)))
-            if genres:
-                self._add_detail_row("Unique Genres", str(len(genres)))
+        bitrates = [t.get("bitrate", 0) for t in resolved_tracks if t.get("bitrate", 0) > 0]
+        if bitrates:
+            avg_br = sum(bitrates) / len(bitrates)
+            self._add_detail_row("Avg Bitrate", f"{avg_br:.0f} kbps")
 
-            # File types
-            filetypes: dict[str, int] = {}
-            for t in resolved_tracks:
-                ft = t.get("filetype", "")
-                if ft:
-                    filetypes[ft] = filetypes.get(ft, 0) + 1
-            if filetypes:
-                ft_str = ", ".join(f"{k.strip()}: {v}" for k, v in sorted(filetypes.items(), key=lambda x: -x[1]))
-                self._add_detail_row("File Types", ft_str)
+        ratings = [t.get("rating", 0) for t in resolved_tracks if t.get("rating", 0) > 0]
+        if ratings:
+            avg_rating = sum(ratings) / len(ratings) / 20.0
+            self._add_detail_row("Avg Rating", f"{avg_rating:.1f} / 5 ★")
 
-            # Year range
-            years = [t.get("year", 0) for t in resolved_tracks if t.get("year", 0) > 0]
-            if years:
-                min_y, max_y = min(years), max(years)
-                yr_str = str(min_y) if min_y == max_y else f"{min_y}–{max_y}"
-                self._add_detail_row("Year Range", yr_str)
+        artists = {t.get("Artist", "") for t in resolved_tracks if t.get("Artist")}
+        albums = {t.get("Album", "") for t in resolved_tracks if t.get("Album")}
+        genres = {t.get("Genre", "") for t in resolved_tracks if t.get("Genre")}
+        if artists:
+            self._add_detail_row("Unique Artists", str(len(artists)))
+        if albums:
+            self._add_detail_row("Unique Albums", str(len(albums)))
+        if genres:
+            self._add_detail_row("Unique Genres", str(len(genres)))
 
-        # ── Smart playlist rules ──
-        if is_smart:
-            prefs = playlist.get("smartPlaylistData")
-            rules = playlist.get("smartPlaylistRules")
-            rule_lines = format_smart_rules_summary(rules, prefs)
-            if rule_lines:
-                self._add_section_header("Smart Rules")
-                for line in rule_lines:
-                    self._add_detail_text(line)
+        filetypes: dict[str, int] = {}
+        for t in resolved_tracks:
+            ft = t.get("filetype", "")
+            if ft:
+                filetypes[ft] = filetypes.get(ft, 0) + 1
+        if filetypes:
+            ft_str = ", ".join(f"{k.strip()}: {v}" for k, v in sorted(filetypes.items(), key=lambda x: -x[1]))
+            self._add_detail_row("File Types", ft_str)
 
-        self.details_layout.addStretch()
+        years = [t.get("year", 0) for t in resolved_tracks if t.get("year", 0) > 0]
+        if years:
+            min_y, max_y = min(years), max(years)
+            yr_str = str(min_y) if min_y == max_y else f"{min_y}–{max_y}"
+            self._add_detail_row("Year Range", yr_str)
+
+    def _populate_smart_rules(self, playlist: dict, is_smart: bool) -> None:
+        """Populate smart playlist rules section."""
+        if not is_smart:
+            return
+        prefs = playlist.get("smart_playlist_data")
+        rules = playlist.get("smart_playlist_rules")
+        rule_lines = format_smart_rules_summary(rules, prefs)
+        if rule_lines:
+            self._add_section_header("Smart Rules")
+            for line in rule_lines:
+                self._add_detail_text(line)
 
     def showEmpty(self) -> None:
         """Show default empty state."""
@@ -412,46 +398,24 @@ class PlaylistInfoCard(QFrame):
 
     def _add_detail_row(self, label: str, value: str) -> None:
         """Add a key-value row to details."""
-        row = QWidget()
-        row.setStyleSheet("background: transparent; border: none;")
-        hl = QHBoxLayout(row)
-        hl.setContentsMargins(0, 1, 0, 1)
-        hl.setSpacing(8)
-
-        lbl = QLabel(label)
-        lbl.setFont(QFont(FONT_FAMILY, 9))
-        lbl.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent; border: none;")
-        hl.addWidget(lbl)
-
-        hl.addStretch()
-
-        val = QLabel(value)
-        val.setFont(QFont(MONO_FONT_FAMILY, 9))
-        val.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
-        val.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        hl.addWidget(val)
-
+        row = make_detail_row(label, value)
         self.details_layout.addWidget(row)
         self._detail_labels.append(row)
 
     def _add_section_header(self, text: str) -> None:
         """Add a small section header label."""
-        sep = QFrame()
-        sep.setFixedHeight(1)
-        sep.setStyleSheet(f"background-color: {Colors.BORDER_SUBTLE}; border: none;")
+        sep = make_separator()
         self.details_layout.addWidget(sep)
         self._detail_labels.append(sep)
 
-        lbl = QLabel(text.upper())
-        lbl.setFont(QFont(FONT_FAMILY, 8, QFont.Weight.Bold))
-        lbl.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent; border: none; padding-top: 4px;")
+        lbl = make_section_header(text)
         self.details_layout.addWidget(lbl)
         self._detail_labels.append(lbl)
 
     def _add_detail_text(self, text: str) -> None:
         """Add a plain text line to details (used for rule summaries)."""
         lbl = QLabel(text)
-        lbl.setFont(QFont(FONT_FAMILY, 9))
+        lbl.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         lbl.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
         lbl.setWordWrap(True)
         self.details_layout.addWidget(lbl)
@@ -477,7 +441,7 @@ class PlaylistListPanel(QFrame):
             }}
         """)
         self.setObjectName("playlistListPanel")
-        self.setFixedWidth(210)
+        self.setFixedWidth(scaled(210))
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -493,12 +457,13 @@ class PlaylistListPanel(QFrame):
         self._inner = QWidget()
         self._inner.setStyleSheet("background: transparent;")
         self._inner_layout = QVBoxLayout(self._inner)
-        self._inner_layout.setContentsMargins(8, 10, 8, 10)
+        self._inner_layout.setContentsMargins(scaled(8), scaled(10), scaled(8), scaled(10))
         self._inner_layout.setSpacing(2)
         self._inner_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self._scroll.setWidget(self._inner)
 
         self._buttons: list[QPushButton] = []
+        self._button_icons: dict[int, str] = {}  # button index -> icon name
         self._selected_btn: QPushButton | None = None
         self._playlist_map: dict[int, dict] = {}  # button index -> playlist dict
 
@@ -512,9 +477,9 @@ class PlaylistListPanel(QFrame):
 
         # ── New Playlist button (always at top) ──
         self._new_btn = QPushButton("＋  New Playlist")
-        self._new_btn.setFont(QFont(FONT_FAMILY, 10, QFont.Weight.Bold))
+        self._new_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.Bold))
         self._new_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._new_btn.setMinimumHeight(34)
+        self._new_btn.setMinimumHeight(scaled(34))
         self._new_btn.setStyleSheet(btn_css(
             bg=Colors.ACCENT_DIM,
             bg_hover=Colors.ACCENT_HOVER,
@@ -539,11 +504,11 @@ class PlaylistListPanel(QFrame):
         master: dict | None = None
 
         for pl in playlists:
-            if pl.get("isMaster"):
+            if pl.get("master_flag"):
                 master = pl
-            elif pl.get("isSmartPlaylist") or pl.get("_source") == "smart":
+            elif pl.get("smart_playlist_data") or pl.get("_source") == "smart":
                 smart.append(pl)
-            elif pl.get("podcastFlag", 0) == 1 or pl.get("_source") == "podcast":
+            elif pl.get("podcast_flag", 0) == 1 or pl.get("_source") == "podcast":
                 podcast.append(pl)
             else:
                 regular.append(pl)
@@ -572,7 +537,7 @@ class PlaylistListPanel(QFrame):
         # Empty state
         if not regular and not smart and not podcast and master is None:
             empty = QLabel("No playlists on this iPod")
-            empty.setFont(QFont(FONT_FAMILY, 10))
+            empty.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
             empty.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent; border: none; padding: 20px;")
             empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
             empty.setWordWrap(True)
@@ -590,6 +555,7 @@ class PlaylistListPanel(QFrame):
 
     def _clear(self) -> None:
         self._buttons.clear()
+        self._button_icons.clear()
         self._selected_btn = None
         self._playlist_map.clear()
         while self._inner_layout.count():
@@ -607,44 +573,41 @@ class PlaylistListPanel(QFrame):
             self._inner_layout.addWidget(spacer)
             return
         lbl = QLabel(text)
-        lbl.setFont(QFont(FONT_FAMILY, 8, QFont.Weight.Bold))
+        lbl.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS, QFont.Weight.Bold))
         lbl.setStyleSheet(
             f"color: {Colors.TEXT_TERTIARY}; background: transparent; "
             f"border: none; padding: 8px 4px 3px 4px;"
         )
         self._inner_layout.addWidget(lbl)
 
-    def _add_playlist_button(self, playlist: dict, icon: str, dimmed: bool = False) -> None:
+    def _add_playlist_button(self, playlist: dict, icon_name: str, dimmed: bool = False) -> None:
         title = playlist.get("Title", "Untitled")
-        count = playlist.get("trackCount", 0)
-        is_master = playlist.get("isMaster", False)
+        count = playlist.get("mhip_child_count", 0)
+        is_master = bool(playlist.get("master_flag"))
 
         display_title = title
         if is_master:
             display_title = "Library (Master)"
 
-        btn_text = f"{icon}  {display_title}"
+        btn_text = display_title
         if count > 0:
             btn_text += f"  ({count})"
 
         btn = QPushButton(btn_text)
-        btn.setFont(QFont(FONT_FAMILY, 10))
-        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
         btn.setToolTip(f"{title}\n{count} tracks")
 
         fg = Colors.TEXT_DISABLED if dimmed else Colors.TEXT_PRIMARY
-        btn.setStyleSheet(btn_css(
-            bg="transparent",
-            bg_hover=Colors.SURFACE_HOVER,
-            bg_press=Colors.SURFACE_ACTIVE,
-            fg=fg,
-            radius=Metrics.BORDER_RADIUS_SM,
-            padding="7px 8px",
-            extra="text-align: left;",
-        ))
+        ic = glyph_icon(icon_name, scaled(20), fg)
+        if ic:
+            btn.setIcon(ic)
+            btn.setIconSize(QSize(scaled(20), scaled(20)))
+
+        btn.setStyleSheet(sidebar_nav_css())
 
         idx = len(self._buttons)
         self._playlist_map[idx] = playlist
+        self._button_icons[idx] = icon_name
         btn.clicked.connect(lambda checked, i=idx: self._on_click(i))
 
         self._inner_layout.addWidget(btn)
@@ -661,29 +624,25 @@ class PlaylistListPanel(QFrame):
     def _on_click(self, index: int) -> None:
         # Reset previous selection
         if self._selected_btn is not None:
-            pl = self._playlist_map.get(self._buttons.index(self._selected_btn))
-            dimmed = pl.get("isMaster", False) if pl else False
-            fg = Colors.TEXT_DISABLED if dimmed else Colors.TEXT_PRIMARY
-            self._selected_btn.setStyleSheet(btn_css(
-                bg="transparent",
-                bg_hover=Colors.SURFACE_HOVER,
-                bg_press=Colors.SURFACE_ACTIVE,
-                fg=fg,
-                radius=Metrics.BORDER_RADIUS_SM,
-                padding="7px 8px",
-                extra="text-align: left;",
-            ))
+            prev_idx = self._buttons.index(self._selected_btn)
+            self._selected_btn.setStyleSheet(sidebar_nav_css())
+            prev_icon = self._button_icons.get(prev_idx)
+            if prev_icon:
+                pl = self._playlist_map.get(prev_idx)
+                dimmed = bool(pl.get("master_flag")) if pl else False
+                fg = Colors.TEXT_DISABLED if dimmed else Colors.TEXT_SECONDARY
+                ic = glyph_icon(prev_icon, scaled(20), fg)
+                if ic:
+                    self._selected_btn.setIcon(ic)
 
         # Highlight new selection
         btn = self._buttons[index]
-        btn.setStyleSheet(btn_css(
-            bg=Colors.ACCENT,
-            bg_hover="rgba(64,156,255,200)",
-            bg_press="rgba(64,156,255,160)",
-            radius=Metrics.BORDER_RADIUS_SM,
-            padding="7px 8px",
-            extra="text-align: left;",
-        ))
+        btn.setStyleSheet(sidebar_nav_selected_css())
+        icon_name = self._button_icons.get(index)
+        if icon_name:
+            ic = glyph_icon(icon_name, scaled(20), Colors.ACCENT)
+            if ic:
+                btn.setIcon(ic)
         self._selected_btn = btn
 
         playlist = self._playlist_map.get(index)
@@ -769,7 +728,7 @@ class PlaylistBrowser(QFrame):
         # Splitter styling
         self.rightSplitter.setCollapsible(0, True)
         self.rightSplitter.setCollapsible(1, True)
-        self.rightSplitter.setHandleWidth(3)
+        self.rightSplitter.setHandleWidth(scaled(3))
         self.rightSplitter.setStretchFactor(0, 1)
         self.rightSplitter.setStretchFactor(1, 3)
         self.rightSplitter.setSizes([250, 600])
@@ -859,7 +818,7 @@ class PlaylistBrowser(QFrame):
 
         # Resolve track IDs from MHIP items
         items = playlist.get("items", [])
-        track_ids = [item.get("trackID", 0) for item in items]
+        track_ids = [item.get("track_id", 0) for item in items]
         resolved_tracks = [track_id_index[tid] for tid in track_ids if tid in track_id_index]
 
         # Update info card
@@ -867,16 +826,16 @@ class PlaylistBrowser(QFrame):
 
         # Update title bar
         title = playlist.get("Title", "Untitled")
-        if playlist.get("isMaster"):
+        if playlist.get("master_flag"):
             title = "Library (Master)"
         self.trackTitleBar.setTitle(title)
 
         # Color the title bar based on playlist type
-        if playlist.get("isSmartPlaylist"):
+        if playlist.get("smart_playlist_data"):
             self.trackTitleBar.setColor(128, 90, 213)   # purple for smart
-        elif playlist.get("podcastFlag", 0) == 1 or playlist.get("_source") == "podcast":
+        elif playlist.get("podcast_flag", 0) == 1 or playlist.get("_source") == "podcast":
             self.trackTitleBar.setColor(46, 160, 67)     # green for podcast
-        elif playlist.get("isMaster"):
+        elif playlist.get("master_flag"):
             self.trackTitleBar.setColor(100, 100, 120)   # grey for master
         else:
             self.trackTitleBar.resetColor()               # default blue for regular
@@ -906,17 +865,17 @@ class PlaylistBrowser(QFrame):
         """Handle the Edit button on the info card."""
         if not self._current_playlist:
             return
-        if self._current_playlist.get("isSmartPlaylist"):
+        if self._current_playlist.get("smart_playlist_data"):
             self.editor.edit_playlist(self._current_playlist)
             self._switchToEditor(1)
-        elif not self._current_playlist.get("isMaster"):
+        elif not self._current_playlist.get("master_flag"):
             self.regularEditor.edit_playlist(self._current_playlist)
             self._switchToEditor(2)
 
     def _onDeleteClicked(self) -> None:
         """Handle the Delete button — confirm, remove from cache, rewrite DB."""
         playlist = self._current_playlist
-        if not playlist or playlist.get("isMaster"):
+        if not playlist or playlist.get("master_flag"):
             return
 
         title = playlist.get("Title", "Untitled")
@@ -942,9 +901,8 @@ class PlaylistBrowser(QFrame):
         from ..app import iTunesDBCache
 
         # Tag smart playlists appropriately
-        if playlist_data.get("isSmartPlaylist"):
+        if playlist_data.get("smart_playlist_data"):
             playlist_data.setdefault("_source", "regular")
-            playlist_data["isSmartPlaylist"] = True
 
         cache = iTunesDBCache.get_instance()
         cache.save_user_playlist(playlist_data)
@@ -961,13 +919,13 @@ class PlaylistBrowser(QFrame):
 
         title = playlist_data.get("Title", "Untitled")
         self.trackTitleBar.setTitle(title)
-        if playlist_data.get("isSmartPlaylist"):
+        if playlist_data.get("smart_playlist_data"):
             self.trackTitleBar.setColor(128, 90, 213)
         else:
             self.trackTitleBar.resetColor()
 
         log.info("Playlist saved to cache: '%s' (id=0x%X)",
-                 title, playlist_data.get("playlistID", 0))
+                 title, playlist_data.get("playlist_id", 0))
 
         # ── Write to iPod immediately ──
         self._writePlaylistToIPod(playlist_data)
@@ -1000,7 +958,7 @@ class PlaylistBrowser(QFrame):
         from ..app import iTunesDBCache
 
         cache = iTunesDBCache.get_instance()
-        pid = playlist.get("playlistID", 0)
+        pid = playlist.get("playlist_id", 0)
 
         # Remove from user playlists cache (if it was user-created)
         cache.remove_user_playlist(pid)
@@ -1057,7 +1015,7 @@ class PlaylistBrowser(QFrame):
         # Show a saving indicator on the info card
         self.infoCard.edit_btn.setEnabled(False)
         self.infoCard.evaluate_btn.setEnabled(False)
-        self.infoCard.evaluate_btn.setText("⏳ Writing…")
+        self.infoCard.evaluate_btn.setText("Writing…")
         self.infoCard.evaluate_btn.setVisible(True)
 
         self._eval_worker = _PlaylistWriteWorker(playlist)
@@ -1069,12 +1027,12 @@ class PlaylistBrowser(QFrame):
         """Playlist write completed successfully."""
         self.infoCard.edit_btn.setEnabled(True)
         self.infoCard.evaluate_btn.setEnabled(True)
-        self.infoCard.evaluate_btn.setText("▶ Evaluate Now")
+        self.infoCard.evaluate_btn.setText("Evaluate Now")
         # Re-evaluate visibility (evaluate is only for smart playlists)
-        if self._current_playlist and not self._current_playlist.get("isSmartPlaylist"):
+        if self._current_playlist and not self._current_playlist.get("smart_playlist_data"):
             self.infoCard.evaluate_btn.setVisible(False)
 
-        is_smart = self._current_playlist and self._current_playlist.get("isSmartPlaylist")
+        is_smart = self._current_playlist and self._current_playlist.get("smart_playlist_data")
 
         if is_smart:
             log.info("Playlist '%s': %d tracks matched → written to iPod",
@@ -1104,8 +1062,8 @@ class PlaylistBrowser(QFrame):
         """Playlist write failed."""
         self.infoCard.edit_btn.setEnabled(True)
         self.infoCard.evaluate_btn.setEnabled(True)
-        self.infoCard.evaluate_btn.setText("▶ Evaluate Now")
-        if self._current_playlist and not self._current_playlist.get("isSmartPlaylist"):
+        self.infoCard.evaluate_btn.setText("Evaluate Now")
+        if self._current_playlist and not self._current_playlist.get("smart_playlist_data"):
             self.infoCard.evaluate_btn.setVisible(False)
 
         log.error("Playlist write failed: %s", error_msg)
@@ -1121,11 +1079,11 @@ class PlaylistBrowser(QFrame):
     def _onEvaluateNow(self) -> None:
         """Evaluate the current smart playlist and write to iPod."""
         playlist = self._current_playlist
-        if not playlist or not playlist.get("isSmartPlaylist"):
+        if not playlist or not playlist.get("smart_playlist_data"):
             return
 
-        prefs_data = playlist.get("smartPlaylistData")
-        rules_data = playlist.get("smartPlaylistRules")
+        prefs_data = playlist.get("smart_playlist_data")
+        rules_data = playlist.get("smart_playlist_rules")
         if not prefs_data or not rules_data:
             QMessageBox.warning(
                 self, "Cannot Evaluate",
@@ -1185,16 +1143,16 @@ class _PlaylistWriteWorker(QThread):
                 all_tracks.append(executor._track_dict_to_info(t))
 
             # Update the target playlist in the raw lists
-            target_pid = playlist.get("playlistID", 0)
+            target_pid = playlist.get("playlist_id", 0)
             replaced = False
             for i, epl in enumerate(existing_playlists_raw):
-                if epl.get("playlistID") == target_pid:
+                if epl.get("playlist_id") == target_pid:
                     existing_playlists_raw[i] = playlist
                     replaced = True
                     break
             if not replaced:
                 for i, epl in enumerate(existing_smart_raw):
-                    if epl.get("playlistID") == target_pid:
+                    if epl.get("playlist_id") == target_pid:
                         existing_smart_raw[i] = playlist
                         replaced = True
                         break
@@ -1205,7 +1163,7 @@ class _PlaylistWriteWorker(QThread):
             # Also merge other pending user playlists
             try:
                 for upl in cache.get_user_playlists():
-                    uid = upl.get("playlistID", 0)
+                    uid = upl.get("playlist_id", 0)
                     if uid == target_pid:
                         continue  # already handled above
                     is_new = upl.get("_isNew", False)
@@ -1214,7 +1172,7 @@ class _PlaylistWriteWorker(QThread):
                     else:
                         ureplaced = False
                         for i, epl in enumerate(existing_playlists_raw):
-                            if epl.get("playlistID") == uid:
+                            if epl.get("playlist_id") == uid:
                                 existing_playlists_raw[i] = upl
                                 ureplaced = True
                                 break
@@ -1293,7 +1251,7 @@ class _PlaylistDeleteWorker(QThread):
 
             playlist = self._playlist
             name = playlist.get("Title", "Untitled")
-            target_pid = playlist.get("playlistID", 0)
+            target_pid = playlist.get("playlist_id", 0)
 
             executor = SyncExecutor(ipod_path)
 
@@ -1305,11 +1263,11 @@ class _PlaylistDeleteWorker(QThread):
             # Remove the target playlist from the raw lists
             existing_playlists_raw = [
                 p for p in existing_playlists_raw
-                if p.get("playlistID") != target_pid
+                if p.get("playlist_id") != target_pid
             ]
             existing_smart_raw = [
                 p for p in existing_smart_raw
-                if p.get("playlistID") != target_pid
+                if p.get("playlist_id") != target_pid
             ]
 
             # Convert tracks to TrackInfo objects
@@ -1320,7 +1278,7 @@ class _PlaylistDeleteWorker(QThread):
             # Merge remaining user playlists (excluding the deleted one)
             try:
                 for upl in cache.get_user_playlists():
-                    uid = upl.get("playlistID", 0)
+                    uid = upl.get("playlist_id", 0)
                     if uid == target_pid:
                         continue
                     is_new = upl.get("_isNew", False)
@@ -1329,7 +1287,7 @@ class _PlaylistDeleteWorker(QThread):
                     else:
                         ureplaced = False
                         for i, epl in enumerate(existing_playlists_raw):
-                            if epl.get("playlistID") == uid:
+                            if epl.get("playlist_id") == uid:
                                 existing_playlists_raw[i] = upl
                                 ureplaced = True
                                 break

@@ -28,8 +28,8 @@ from iTunesDB_Writer.mhod_spl_writer import (
     SmartPlaylistPrefs,
     SmartPlaylistRule,
     SmartPlaylistRules,
-    _FIELD_TYPE_MAP,
 )
+from iTunesDB_Shared.mhod_defs import SPL_FIELD_TYPE_MAP as _FIELD_TYPE_MAP
 
 
 # ────────────────────────────────────────────────────────────
@@ -46,54 +46,52 @@ _STRING_FIELD_KEY: dict[int, str] = {
     0x0E: "Comment",         # Comment
     0x12: "Composer",        # Composer
     0x27: "Grouping",        # Grouping
-    0x36: "Description",     # Description
+    0x36: "Description Text",  # Description
     0x37: "Category",        # Category
-    0x3E: "TVShow",          # TV Show
+    0x3E: "Show",            # TV Show
     0x47: "Album Artist",    # Album Artist
     0x4E: "Sort Title",      # Sort Song Name
     0x4F: "Sort Album",      # Sort Album
     0x50: "Sort Artist",     # Sort Artist
     0x51: "Sort Album Artist",  # Sort Album Artist
     0x52: "Sort Composer",   # Sort Composer
-    0x53: "Sort TV Show",    # Sort TV Show
+    0x53: "Sort Show",       # Sort TV Show
 }
 
 # Integer fields — track dict key
 _INT_FIELD_KEY: dict[int, str] = {
     0x05: "bitrate",         # Bitrate (kbps)
-    0x06: "sampleRate",      # Sample Rate (Hz)
+    0x06: "sample_rate_1",   # Sample Rate (Hz)
     0x07: "year",            # Year
-    0x0B: "trackNumber",     # Track Number
+    0x0B: "track_number",    # Track Number
     0x0C: "size",            # Size (bytes)
     0x0D: "length",          # Time (milliseconds)
-    0x16: "playCount",       # Play Count
-    0x18: "discNumber",      # Disc Number
+    0x16: "play_count_1",    # Play Count
+    0x18: "disc_number",     # Disc Number
     0x19: "rating",          # Rating (0-100, stars×20)
     0x23: "bpm",             # BPM
-    0x3F: "seasonNumber",    # Season Number
-    0x40: "episodeNumber",   # Episode Number
-    0x44: "skipCount",       # Skip Count
-    0x5A: "albumRating",     # Album Rating (not always present)
-    0x39: "podcast",         # Podcast flag (not always present)
+    0x3F: "season_number",   # Season Number
+    0x40: "episode_number",  # Episode Number
+    0x44: "skip_count",      # Skip Count
+    0x39: "podcast_flag",    # Podcast flag
 }
 
 # Date fields — track dict key (values are Unix timestamps)
 _DATE_FIELD_KEY: dict[int, str] = {
-    0x0A: "dateModified",    # Date Modified (not always in parsed data)
-    0x10: "dateAdded",       # Date Added
-    0x17: "lastPlayed",      # Last Played
-    0x45: "lastSkipped",     # Last Skipped
+    0x0A: "last_modified",   # Date Modified
+    0x10: "date_added",      # Date Added
+    0x17: "last_played",     # Last Played
+    0x45: "last_skipped",    # Last Skipped
 }
 
 # Boolean fields
 _BOOL_FIELD_KEY: dict[int, str] = {
-    0x1F: "compilation",     # Compilation
-    0x29: "purchased",       # Purchased (not always present)
+    0x1F: "compilation_flag",  # Compilation
 }
 
 # Binary AND field
 _BINARY_AND_FIELD_KEY: dict[int, str] = {
-    0x3C: "mediaType",       # Media Type (bitmask)
+    0x3C: "media_type",      # Media Type (bitmask)
 }
 
 
@@ -307,7 +305,7 @@ def _eval_playlist(
 
     playlist_id = rule.from_value
     member_set = playlist_lookup.get(playlist_id, set())
-    track_id = track.get("trackID", 0)
+    track_id = track.get("track_id", 0)
 
     action = rule.action_id
     match action:
@@ -380,14 +378,14 @@ def _sort_key(limit_sort: int):
             return (lambda t: (t.get("Artist", "") or "").casefold()), False
         case 0x07:  # Genre
             return (lambda t: (t.get("Genre", "") or "").casefold()), False
-        case 0x10:  # Most recently added → sort by dateAdded descending
+        case 0x10:  # Most recently added → sort by date_added descending
             # When NOT reversed (0x10): most recent first → reverse=True
             # When reversed (0x80000010): least recent first → reverse=False
-            return (lambda t: t.get("dateAdded", 0)), not reverse
+            return (lambda t: t.get("date_added", 0)), not reverse
         case 0x14:  # Most often played
-            return (lambda t: t.get("playCount", 0)), not reverse
+            return (lambda t: t.get("play_count_1", 0)), not reverse
         case 0x15:  # Most recently played
-            return (lambda t: t.get("lastPlayed", 0)), not reverse
+            return (lambda t: t.get("last_played", 0)), not reverse
         case 0x17:  # Highest rating
             return (lambda t: t.get("rating", 0)), not reverse
         case _:
@@ -445,7 +443,7 @@ def spl_update(
     for track in tracks:
         # Skip unchecked tracks if match_checked_only is set
         # (checked=0 means checked, checked=1 means unchecked in the parser)
-        if prefs.match_checked_only and track.get("checked", 0) != 0:
+        if prefs.match_checked_only and track.get("checked_flag", 0) != 0:
             continue
 
         if prefs.check_rules and rules.rules:
@@ -501,7 +499,7 @@ def spl_update(
         selected = limited
 
     # Phase 3: extract track IDs
-    return [t["trackID"] for t in selected if "trackID" in t]
+    return [t["track_id"] for t in selected if "track_id" in t]
 
 
 def spl_update_from_parsed(
@@ -512,7 +510,7 @@ def spl_update_from_parsed(
 ) -> list[int]:
     """Convenience wrapper that accepts parsed dicts directly from the parser.
 
-    Takes the raw smartPlaylistData / smartPlaylistRules dicts and converts
+    Takes the raw smart_playlist_data / smart_playlist_rules dicts and converts
     them to dataclasses before evaluation.
     """
     from iTunesDB_Writer.mhod_spl_writer import prefs_from_parsed, rules_from_parsed
@@ -532,7 +530,7 @@ def spl_update_all(
     Args:
         playlists: List of parsed playlist dicts (from mhyp_parser).
         tracks: List of parsed track dicts (from mhit_parser).
-        live_only: If True, only update playlists where liveUpdate=True.
+        live_only: If True, only update playlists where live_update=True.
 
     Returns:
         Dict mapping playlist Title → list of matching track IDs.
@@ -540,25 +538,25 @@ def spl_update_all(
     # Build playlist lookup for "is in playlist" rules
     playlist_lookup: dict[int, set[int]] = {}
     for pl in playlists:
-        pl_id = pl.get("playlistID", 0)
+        pl_id = pl.get("playlist_id", 0)
         items = pl.get("items", [])
         if items:
             playlist_lookup[pl_id] = {
-                item.get("trackID", 0) for item in items
+                item.get("track_id", 0) for item in items
             }
 
     results: dict[str, list[int]] = {}
 
     for pl in playlists:
-        if not pl.get("isSmartPlaylist", False):
+        if not pl.get("smart_playlist_data"):  # was smartPlaylistData
             continue
 
-        prefs_data = pl.get("smartPlaylistData")
-        rules_data = pl.get("smartPlaylistRules")
+        prefs_data = pl.get("smart_playlist_data")  # was smartPlaylistData
+        rules_data = pl.get("smart_playlist_rules")  # was smartPlaylistRules
         if prefs_data is None or rules_data is None:
             continue
 
-        if live_only and not prefs_data.get("liveUpdate", False):
+        if live_only and not prefs_data.get("live_update", False):  # was liveUpdate
             continue
 
         name = pl.get("Title", "?")

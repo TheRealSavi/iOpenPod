@@ -255,16 +255,16 @@ METADATA_FIELDS: dict[str, str] = {
     "album_artist": "Album Artist",
     "genre": "Genre",
     "year": "year",
-    "track_number": "trackNumber",
-    "track_total": "totalTracks",
-    "disc_number": "discNumber",
-    "disc_total": "totalDiscs",
+    "track_number": "track_number",
+    "track_total": "total_tracks",
+    "disc_number": "disc_number",
+    "disc_total": "total_discs",
     "composer": "Composer",
     "comment": "Comment",
     "grouping": "Grouping",
     "bpm": "bpm",
-    "compilation": "compilation",
-    "explicit_flag": "explicitFlag",
+    "compilation": "compilation_flag",
+    "explicit_flag": "explicit_flag",
     # Sort fields
     "sort_name": "Sort Title",
     "sort_artist": "Sort Artist",
@@ -274,18 +274,19 @@ METADATA_FIELDS: dict[str, str] = {
     "sort_show": "Sort Show",
     # Video/TV show fields
     "show_name": "Show",
-    "season_number": "seasonNumber",
-    "episode_number": "episodeNumber",
+    "season_number": "season_number",
+    "episode_number": "episode_number",
     "description": "Description Text",
     "episode_id": "Episode",
     "network_name": "TV Network",
     # Podcast / extra string fields
     "category": "Category",
     "subtitle": "Subtitle",
-    "podcast_url": "Podcast Enclosure URL",
+    "podcast_url": "Podcast RSS URL",
+    "podcast_enclosure_url": "Podcast Enclosure URL",
     "lyrics": "Lyrics",
     # Volume normalization
-    "sound_check": "soundCheck",
+    "sound_check": "sound_check",
 }
 
 # Writer defaults for fields where "empty" on PC becomes a non-zero value
@@ -384,7 +385,7 @@ class FingerprintDiffEngine:
         # re-reads the full iTunesDB from disk — so without a REMOVE action
         # they'd be written straight back.
         for ghost_track in integrity_report.missing_files:
-            ghost_dbid = ghost_track.get("dbid")
+            ghost_dbid = ghost_track.get("db_id")
             plan.to_remove.append(SyncItem(
                 action=SyncAction.REMOVE_FROM_IPOD,
                 fingerprint=None,
@@ -401,7 +402,7 @@ class FingerprintDiffEngine:
         # Rebuild dbid lookup in case integrity check removed some tracks
         ipod_by_dbid = {}
         for track in ipod_tracks:
-            dbid = track.get("dbid")
+            dbid = track.get("db_id")
             if dbid:
                 ipod_by_dbid[dbid] = track
         plan.total_ipod_tracks = len(ipod_by_dbid)
@@ -625,7 +626,7 @@ class FingerprintDiffEngine:
                     new_art_hash=pc_art_hash,
                     description=f"Art {'removed' if not pc_art_hash else 'changed'}: {pc_track.artist or 'Unknown'} - {pc_track.title or pc_track.filename}",
                 ))
-            elif pc_art_hash and (ipod_track.get("artworkCount", 0) == 0 or ipod_track.get("mhiiLink", 0) == 0):
+            elif pc_art_hash and (ipod_track.get("artwork_count", 0) == 0 or ipod_track.get("artwork_id_ref", 0) == 0):
                 # PC has art and mapping agrees (hash matches) but iPod
                 # doesn't actually have it — previous ArtworkDB write may
                 # have failed.  Emit an artwork update so it gets retried.
@@ -961,7 +962,7 @@ class FingerprintDiffEngine:
                 tn_matches = []
                 for entry in album_matches:
                     ipod_track = ipod_by_dbid.get(entry.dbid)
-                    if ipod_track and ipod_track.get("trackNumber", 0) == pc_track_num:
+                    if ipod_track and ipod_track.get("track_number", 0) == pc_track_num:
                         tn_matches.append(entry)
                 if len(tn_matches) == 1:
                     return tn_matches[0]

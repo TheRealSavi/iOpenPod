@@ -2,10 +2,11 @@ import logging
 import os
 import sys
 import traceback
+from pathlib import Path
 from PyQt6.QtCore import QRunnable, pyqtSignal, pyqtSlot, QObject, QThreadPool, QThread, Qt, QTimer
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
-    QWidget, QMainWindow, QHBoxLayout, QMessageBox, QStackedWidget,
+    QApplication, QWidget, QMainWindow, QHBoxLayout, QMessageBox, QStackedWidget,
     QDialog, QVBoxLayout, QLabel, QPushButton, QProgressBar,
 )
 from GUI.widgets.musicBrowser import MusicBrowser
@@ -13,9 +14,11 @@ from GUI.widgets.sidebar import Sidebar
 from GUI.widgets.syncReview import SyncReviewWidget, SyncWorker, PCFolderDialog, SyncExecuteWorker
 from GUI.widgets.settingsPage import SettingsPage
 from GUI.widgets.backupBrowser import BackupBrowserWidget
+from GUI.widgets.dropOverlay import DropOverlayWidget
 from GUI.settings import get_settings
 from GUI.notifications import Notifier
-from GUI.styles import Colors, FONT_FAMILY, btn_css
+from GUI.styles import Colors, FONT_FAMILY, Metrics, btn_css, scaled, font_scaled
+from GUI.glyphs import glyph_pixmap
 import threading
 
 logger = logging.getLogger(__name__)
@@ -38,32 +41,37 @@ class _MissingToolsDialog(QDialog):
     ):
         super().__init__(parent)
         self.setWindowTitle("Missing Tools")
-        self.setFixedWidth(420)
+        self.setFixedWidth(scaled(420))
         self.setStyleSheet(f"""
             QDialog {{
-                background: #222233;
-                color: white;
+                background: {Colors.DIALOG_BG};
+                color: {Colors.TEXT_PRIMARY};
             }}
         """)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(28, 24, 28, 24)
-        layout.setSpacing(10)
+        layout.setContentsMargins(scaled(28), scaled(24), scaled(28), scaled(24))
+        layout.setSpacing(scaled(10))
 
         # Icon + title row
-        icon_label = QLabel("⚠️")
-        icon_label.setFont(QFont(FONT_FAMILY, 22))
+        icon_label = QLabel()
+        _warnpx = glyph_pixmap("warning-triangle", font_scaled(22), Colors.WARNING)
+        if _warnpx:
+            icon_label.setPixmap(_warnpx)
+        else:
+            icon_label.setText("△")
+            icon_label.setFont(QFont(FONT_FAMILY, font_scaled(22)))
         icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(icon_label)
 
         title = QLabel(f"{tool_list} Not Found")
-        title.setFont(QFont(FONT_FAMILY, 14, QFont.Weight.Bold))
+        title.setFont(QFont(FONT_FAMILY, Metrics.FONT_TITLE, QFont.Weight.Bold))
         title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setWordWrap(True)
         layout.addWidget(title)
 
-        layout.addSpacing(4)
+        layout.addSpacing(scaled(4))
 
         if can_download:
             body = QLabel(
@@ -72,23 +80,23 @@ class _MissingToolsDialog(QDialog):
             )
         else:
             body = QLabel(detail_lines)
-        body.setFont(QFont(FONT_FAMILY, 10))
+        body.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
         body.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
         body.setAlignment(Qt.AlignmentFlag.AlignCenter)
         body.setWordWrap(True)
         layout.addWidget(body)
 
-        layout.addSpacing(12)
+        layout.addSpacing(scaled(12))
 
         # Buttons
         btn_row = QHBoxLayout()
-        btn_row.setSpacing(12)
+        btn_row.setSpacing(scaled(12))
 
         if can_download:
             no_btn = QPushButton("Not Now")
-            no_btn.setFont(QFont(FONT_FAMILY, 11))
+            no_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
             no_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            no_btn.setMinimumHeight(40)
+            no_btn.setMinimumHeight(scaled(40))
             no_btn.setStyleSheet(btn_css(
                 bg=Colors.SURFACE_RAISED,
                 bg_hover=Colors.SURFACE_HOVER,
@@ -100,9 +108,9 @@ class _MissingToolsDialog(QDialog):
             btn_row.addWidget(no_btn)
 
             yes_btn = QPushButton("Download")
-            yes_btn.setFont(QFont(FONT_FAMILY, 11))
+            yes_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
             yes_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            yes_btn.setMinimumHeight(40)
+            yes_btn.setMinimumHeight(scaled(40))
             yes_btn.setStyleSheet(btn_css(
                 bg=Colors.ACCENT_DIM,
                 bg_hover=Colors.ACCENT_HOVER,
@@ -114,9 +122,9 @@ class _MissingToolsDialog(QDialog):
             btn_row.addWidget(yes_btn)
         else:
             ok_btn = QPushButton("OK")
-            ok_btn.setFont(QFont(FONT_FAMILY, 11))
+            ok_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
             ok_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            ok_btn.setMinimumHeight(40)
+            ok_btn.setMinimumHeight(scaled(40))
             ok_btn.setStyleSheet(btn_css(
                 bg=Colors.SURFACE_RAISED,
                 bg_hover=Colors.SURFACE_HOVER,
@@ -141,9 +149,9 @@ class _MissingToolsDialog(QDialog):
         row_layout = btn_row_item.layout() if btn_row_item else None
         if row_layout is not None:
             cont_btn = QPushButton("Continue Anyway")
-            cont_btn.setFont(QFont(FONT_FAMILY, 11))
+            cont_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
             cont_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            cont_btn.setMinimumHeight(40)
+            cont_btn.setMinimumHeight(scaled(40))
             cont_btn.setStyleSheet(btn_css(
                 bg=Colors.ACCENT_DIM,
                 bg_hover=Colors.ACCENT_HOVER,
@@ -161,7 +169,7 @@ class _DownloadProgressDialog(QDialog):
     def __init__(self, parent: QWidget):
         super().__init__(parent)
         self.setWindowTitle("Downloading")
-        self.setFixedSize(380, 180)
+        self.setFixedSize(scaled(380), scaled(180))
         self.setModal(True)
         self.setWindowFlags(
             self.windowFlags()
@@ -169,40 +177,40 @@ class _DownloadProgressDialog(QDialog):
         )
         self.setStyleSheet(f"""
             QDialog {{
-                background: #222233;
-                color: white;
+                background: {Colors.DIALOG_BG};
+                color: {Colors.TEXT_PRIMARY};
             }}
         """)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(28, 24, 28, 24)
-        layout.setSpacing(14)
+        layout.setContentsMargins(scaled(28), scaled(24), scaled(28), scaled(24))
+        layout.setSpacing(scaled(14))
 
         title = QLabel("Downloading Tools…")
-        title.setFont(QFont(FONT_FAMILY, 13, QFont.Weight.Bold))
+        title.setFont(QFont(FONT_FAMILY, Metrics.FONT_XXL, QFont.Weight.Bold))
         title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
         self._status = QLabel("Preparing download…")
-        self._status.setFont(QFont(FONT_FAMILY, 10))
+        self._status.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
         self._status.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
         self._status.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self._status)
 
         bar = QProgressBar()
         bar.setRange(0, 0)  # indeterminate
-        bar.setFixedHeight(6)
+        bar.setFixedHeight(scaled(6))
         bar.setTextVisible(False)
         bar.setStyleSheet(f"""
             QProgressBar {{
                 background: {Colors.SURFACE};
                 border: none;
-                border-radius: 3px;
+                border-radius: {scaled(3)}px;
             }}
             QProgressBar::chunk {{
                 background: {Colors.ACCENT};
-                border-radius: 3px;
+                border-radius: {scaled(3)}px;
             }}
         """)
         layout.addWidget(bar)
@@ -476,52 +484,52 @@ class iTunesDBCache(QObject):
         # 1. Regular playlists (mhlp / dataset type 2) — always preferred
         has_type2_master = False
         for pl in data.get("mhlp", []):
-            pl["_source"] = "regular"
-            pid = pl.get("playlistID", 0)
+            pl = {**pl, "_source": "regular"}
+            pid = pl.get("playlist_id", 0)
             if pid not in seen_ids:
                 seen_ids.add(pid)
                 result.append(pl)
-                if pl.get("isMaster"):
+                if pl.get("master_flag"):
                     has_type2_master = True
 
         # 2. Podcast playlists (mhlp_podcast / dataset type 3)
         #    Only add if not already seen, and tag as podcast only when
         #    podcastFlag is actually set.
-        #    When type 2 provided a master playlist, force isMaster=False
+        #    When type 2 provided a master playlist, force master_flag=False
         #    on type 3 entries (they duplicate the master flag).  But when
-        #    type 2 is absent (Nano 5G+, newer iTunes), honour isMaster
+        #    type 2 is absent (Nano 5G+, newer iTunes), honour master_flag
         #    from type 3 — that's where the master playlist actually lives.
         for pl in data.get("mhlp_podcast", []):
-            pid = pl.get("playlistID", 0)
+            pid = pl.get("playlist_id", 0)
             if pid in seen_ids:
                 continue  # duplicate of a regular playlist
-            pl["_source"] = "podcast" if pl.get("podcastFlag", 0) == 1 else "regular"
+            source = "podcast" if pl.get("podcast_flag", 0) == 1 else "regular"
+            pl = {**pl, "_source": source}
             if has_type2_master:
-                pl["isMaster"] = False
+                pl["master_flag"] = 0
             seen_ids.add(pid)
             result.append(pl)
 
         # 3. Smart playlists (mhlp_smart / dataset type 5)
-        #    isMaster is forced False — dataset 5 MHYP entries reuse the
+        #    master_flag is forced 0 — dataset 5 MHYP entries reuse the
         #    same type byte at offset 0x14 (1=master), but for dataset 5
         #    it denotes an iPod built-in category (Music, Movies, etc.),
         #    NOT the master playlist.  Only dataset 2 or 3 has the real master.
         for pl in data.get("mhlp_smart", []):
-            pid = pl.get("playlistID", 0)
+            pid = pl.get("playlist_id", 0)
             if pid in seen_ids:
                 continue
-            pl["_source"] = "smart"
-            pl["isMaster"] = False
+            pl = {**pl, "_source": "smart", "master_flag": 0}
             seen_ids.add(pid)
             result.append(pl)
 
         # 4. User-created/edited playlists (from GUI, pending sync)
         with self._lock:
             for upl in self._user_playlists:
-                pid = upl.get("playlistID", 0)
+                pid = upl.get("playlist_id", 0)
                 if pid in seen_ids:
                     # Replace the existing entry with the edited version
-                    result = [upl if r.get("playlistID") == pid else r for r in result]
+                    result = [upl if r.get("playlist_id") == pid else r for r in result]
                 else:
                     seen_ids.add(pid)
                     result.append(upl)
@@ -542,17 +550,17 @@ class iTunesDBCache(QObject):
         import random
 
         with self._lock:
-            pid = playlist.get("playlistID", 0)
+            pid = playlist.get("playlist_id", 0)
 
-            # Assign a new playlistID if this is a brand-new playlist
+            # Assign a new playlist_id if this is a brand-new playlist
             if not pid:
                 pid = random.getrandbits(64)
-                playlist["playlistID"] = pid
+                playlist["playlist_id"] = pid
 
             # Replace existing or append
             replaced = False
             for i, upl in enumerate(self._user_playlists):
-                if upl.get("playlistID") == pid:
+                if upl.get("playlist_id") == pid:
                     self._user_playlists[i] = playlist
                     replaced = True
                     break
@@ -566,12 +574,12 @@ class iTunesDBCache(QObject):
         self.playlists_changed.emit()
 
     def remove_user_playlist(self, playlist_id: int) -> bool:
-        """Remove a user playlist by playlistID. Returns True if found."""
+        """Remove a user playlist by playlist_id. Returns True if found."""
         with self._lock:
             before = len(self._user_playlists)
             self._user_playlists = [
                 p for p in self._user_playlists
-                if p.get("playlistID") != playlist_id
+                if p.get("playlist_id") != playlist_id
             ]
             removed = len(self._user_playlists) < before
         if removed:
@@ -602,11 +610,11 @@ class iTunesDBCache(QObject):
         Args:
             tracks:  List of track dicts (from the parsed iTunesDB).
             changes: Field→value mapping, e.g.
-                     ``{"skipWhenShuffling": 1, "compilation": 0}``.
+                     ``{"skip_when_shuffling": 1, "compilation_flag": 0}``.
         """
         with self._lock:
             for track in tracks:
-                dbid = track.get("dbid", 0)
+                dbid = track.get("db_id", 0)
                 if not dbid:
                     continue
                 edits = self._track_edits.setdefault(dbid, {})
@@ -653,15 +661,15 @@ class iTunesDBCache(QObject):
 
         tracks = list(data.get("mhlt", []))
         for track in tracks:
-            tid = track.get("trackID")
+            tid = track.get("track_id")
             if tid is not None:
                 track_id_index[tid] = track
 
             # Only include audio tracks in album/artist/genre indices.
             # Video, podcast, audiobook etc. tracks belong in their own
             # sidebar categories and should not pollute the music views.
-            # mediaType 0 ("Audio/Video") appears in both menus per iTunes.
-            mt = track.get("mediaType", 1)
+            # media_type 0 ("Audio/Video") appears in both menus per iTunes.
+            mt = track.get("media_type", 1)
             if mt != 0 and not (mt & 0x01):
                 continue
 
@@ -732,10 +740,64 @@ class iTunesDBCache(QObject):
     def _load_data(self, device_path: str, itunesdb_path: str) -> tuple:
         """Background thread: parse the iTunesDB and merge Play Counts."""
         from iTunesDB_Parser.parser import parse_itunesdb
+        from iTunesDB_Shared.constants import (
+            extract_datasets, extract_mhod_strings, extract_playlist_extras,
+            mac_to_unix_timestamp, filetype_to_string, sample_rate_to_hz,
+        )
         if not itunesdb_path or not os.path.exists(itunesdb_path):
             return (None, device_path)
         try:
-            data = parse_itunesdb(itunesdb_path)
+            raw = parse_itunesdb(itunesdb_path)
+            data = extract_datasets(raw)
+
+            # Inline MHOD strings and convert values for tracks
+            for track in data.get("mhlt", []):
+                strings = extract_mhod_strings(track.pop("children", []))
+                track.update(strings)
+                # filetype u32 → ASCII
+                ft = track.get("filetype")
+                if isinstance(ft, int) and ft > 0:
+                    track["filetype"] = filetype_to_string(ft)
+                # sample_rate 16.16 → Hz
+                sr = track.get("sample_rate_1")
+                if isinstance(sr, int) and sr > 65535:
+                    track["sample_rate_1"] = sample_rate_to_hz(sr)
+                # Mac timestamps → Unix
+                for ts_key in ("date_added", "date_released", "last_modified",
+                               "last_played", "last_skipped"):
+                    val = track.get(ts_key, 0)
+                    if isinstance(val, int) and val > 0:
+                        track[ts_key] = mac_to_unix_timestamp(val)
+
+            # Inline MHOD strings for albums
+            for album in data.get("mhla", []):
+                strings = extract_mhod_strings(album.pop("children", []))
+                album.update(strings)
+
+            # Inline MHOD strings + extras for playlists
+            for key in ("mhlp", "mhlp_podcast", "mhlp_smart"):
+                for pl in data.get(key, []):
+                    mhod_children = pl.pop("mhod_children", [])
+                    strings = extract_mhod_strings(mhod_children)
+                    pl.update(strings)
+                    extras = extract_playlist_extras(mhod_children)
+                    pl.update(extras)
+                    # Flatten MHIP children → items list
+                    items = []
+                    for mhip in pl.pop("mhip_children", []):
+                        mhip_data = mhip.get("data", {}) if isinstance(mhip, dict) and "data" in mhip else mhip
+                        items.append({"track_id": mhip_data.get("track_id", 0)})
+                    pl["items"] = items
+                    # Mac timestamps → Unix
+                    for ts_key in ("timestamp", "timestamp_2"):
+                        val = pl.get(ts_key, 0)
+                        if isinstance(val, int) and val > 0:
+                            pl[ts_key] = mac_to_unix_timestamp(val)
+
+            # Inline MHOD strings for artists (mhsd type 8)
+            for artist in data.get("mhsd_type_8", []):
+                strings = extract_mhod_strings(artist.pop("children", []))
+                artist.update(strings)
 
             # Merge Play Counts file so the GUI shows accurate play/skip
             # counts (the iPod firmware records deltas there, not in the
@@ -760,7 +822,8 @@ class iTunesDBCache(QObject):
         data, device_path = result
         # Verify this is still the current device
         if device_path != DeviceManager.get_instance().device_path:
-            return  # Device changed, ignore
+            self.set_loading(False)  # Reset so future loads aren't blocked
+            return
         if data:
             self.set_data(data, device_path)
         else:
@@ -768,17 +831,17 @@ class iTunesDBCache(QObject):
 
 
 category_glyphs = {
-    "Albums": "💿",
-    "Artists": "🧑‍🎤",
-    "Tracks": "🎵",
-    "Playlists": "📂",
-    "Genres": "📜",
-    "Podcasts": "🎙️",
-    "Audiobooks": "📖",
-    "Videos": "📹",
-    "Movies": "🎬",
-    "TV Shows": "📺",
-    "Music Videos": "🎤",
+    "Albums": "music",
+    "Artists": "user",
+    "Tracks": "music",
+    "Playlists": "annotation-dots",
+    "Genres": "grid",
+    "Podcasts": "broadcast",
+    "Audiobooks": "book",
+    "Videos": "video",
+    "Movies": "film",
+    "TV Shows": "monitor",
+    "Music Videos": "video",
 }
 
 
@@ -890,7 +953,7 @@ def build_album_list(cache: iTunesDBCache) -> list:
         total_length_ms = 0
 
         if track_count > 0:
-            mhiiLink = matching_tracks[0].get("mhiiLink")
+            mhiiLink = matching_tracks[0].get("artwork_id_ref")
             # Get year from first track that has it
             year = next((t.get("year") for t in matching_tracks if t.get("year")), None)
             # Calculate total album duration
@@ -913,7 +976,7 @@ def build_album_list(cache: iTunesDBCache) -> list:
             "album": album,
             "artist": artist,
             "year": year,
-            "mhiiLink": mhiiLink,
+            "artwork_id_ref": mhiiLink,
             "category": "Albums",
             "filter_key": "Album",
             "filter_value": album,
@@ -935,11 +998,11 @@ def build_artist_list(cache: iTunesDBCache) -> list:
     for artist, tracks in artist_index.items():
         track_count = len(tracks)
         # Get first available artwork
-        mhiiLink = next((t.get("mhiiLink") for t in tracks if t.get("mhiiLink")), None)
+        mhiiLink = next((t.get("artwork_id_ref") for t in tracks if t.get("artwork_id_ref")), None)
         # Count unique albums
         album_count = len(set(t.get("Album", "") for t in tracks))
         # Total plays
-        total_plays = sum(t.get("playCount", 0) for t in tracks)
+        total_plays = sum(t.get("play_count_1", 0) for t in tracks)
 
         # Build subtitle: "N albums · M tracks" or add plays if any
         subtitle_parts = []
@@ -953,7 +1016,7 @@ def build_artist_list(cache: iTunesDBCache) -> list:
         items.append({
             "title": artist,
             "subtitle": subtitle,
-            "mhiiLink": mhiiLink,
+            "artwork_id_ref": mhiiLink,
             "category": "Artists",
             "filter_key": "Artist",
             "filter_value": artist,
@@ -976,7 +1039,7 @@ def build_genre_list(cache: iTunesDBCache) -> list:
     for genre, tracks in genre_index.items():
         track_count = len(tracks)
         # Get first available artwork
-        mhiiLink = next((t.get("mhiiLink") for t in tracks if t.get("mhiiLink")), None)
+        mhiiLink = next((t.get("artwork_id_ref") for t in tracks if t.get("artwork_id_ref")), None)
         # Count unique artists
         artist_count = len(set(t.get("Artist", "") for t in tracks))
         # Total duration
@@ -994,7 +1057,7 @@ def build_genre_list(cache: iTunesDBCache) -> list:
         items.append({
             "title": genre,
             "subtitle": " · ".join(subtitle_parts),
-            "mhiiLink": mhiiLink,
+            "artwork_id_ref": mhiiLink,
             "category": "Genres",
             "filter_key": "Genre",
             "filter_value": genre,
@@ -1021,35 +1084,6 @@ class MainWindow(QMainWindow):
         self.centralStack = QStackedWidget()
         self.setCentralWidget(self.centralStack)
 
-        # Main browsing view
-        self.mainWidget = QWidget()
-        self.mainLayout = QHBoxLayout(self.mainWidget)
-        self.mainLayout.setContentsMargins(0, 0, 0, 0)
-
-        self.sidebar = Sidebar()
-        self.mainLayout.addWidget(self.sidebar)
-
-        self.musicBrowser = MusicBrowser()
-        self.mainLayout.addWidget(self.musicBrowser)
-
-        self.centralStack.addWidget(self.mainWidget)  # Index 0
-
-        # Sync review view
-        self.syncReview = SyncReviewWidget()
-        self.syncReview.cancelled.connect(self.hideSyncReview)
-        self.syncReview.sync_requested.connect(self.executeSyncPlan)
-        self.centralStack.addWidget(self.syncReview)  # Index 1
-
-        # Settings view
-        self.settingsPage = SettingsPage()
-        self.settingsPage.closed.connect(self.hideSettings)
-        self.centralStack.addWidget(self.settingsPage)  # Index 2
-
-        # Backup browser view
-        self.backupBrowser = BackupBrowserWidget()
-        self.backupBrowser.closed.connect(self.hideBackupBrowser)
-        self.centralStack.addWidget(self.backupBrowser)  # Index 3
-
         # Sync worker reference
         self._sync_worker = None
         self._sync_execute_worker = None
@@ -1062,26 +1096,15 @@ class MainWindow(QMainWindow):
         settings = get_settings()
         self._last_pc_folder = settings.music_folder or os.path.join(os.path.expanduser("~"), "Music")
 
-        self.sidebar.category_changed.connect(
-            self.musicBrowser.updateCategory)  # Connect the signal to the slot
+        # Drag-and-drop support
+        self.setAcceptDrops(True)
+        self._drop_worker = None
 
-        # Connect device rename
-        self.sidebar.device_renamed.connect(self._onDeviceRenamed)
+        # Build all child widgets and connect signals
+        self._build_ui()
 
-        # Connect device button to folder picker
-        self.sidebar.deviceButton.clicked.connect(self.selectDevice)
-
-        # Connect rescan button to rebuild cache
-        self.sidebar.rescanButton.clicked.connect(self.resyncDevice)
-
-        # Connect sync button to PC sync
-        self.sidebar.syncButton.clicked.connect(self.startPCSync)
-
-        # Connect settings button
-        self.sidebar.settingsButton.clicked.connect(self.showSettings)
-
-        # Connect backup button
-        self.sidebar.backupButton.clicked.connect(self.showBackupBrowser)
+        # Drop overlay (created after _build_ui so it sits on top)
+        self._drop_overlay = DropOverlayWidget(self)
 
         # Connect device manager to reload data when device changes
         DeviceManager.get_instance().device_changed.connect(self.onDeviceChanged)
@@ -1126,6 +1149,95 @@ class MainWindow(QMainWindow):
                     self.sidebar.updateDeviceButton(
                         os.path.basename(settings.last_device_path) or settings.last_device_path
                     )
+
+    def _build_ui(self):
+        """Create child widgets and wire up signals.
+
+        Called once from ``__init__`` and again by ``_on_theme_changed``
+        to rebuild the UI with fresh themed styles.
+        """
+        # Main browsing view
+        self.mainWidget = QWidget()
+        self.mainLayout = QHBoxLayout(self.mainWidget)
+        self.mainLayout.setContentsMargins(0, 0, 0, 0)
+
+        self.sidebar = Sidebar()
+        self.mainLayout.addWidget(self.sidebar)
+
+        self.musicBrowser = MusicBrowser()
+        self.mainLayout.addWidget(self.musicBrowser)
+
+        self.centralStack.addWidget(self.mainWidget)  # Index 0
+
+        # Sync review view
+        self.syncReview = SyncReviewWidget()
+        self.syncReview.cancelled.connect(self.hideSyncReview)
+        self.syncReview.sync_requested.connect(self.executeSyncPlan)
+        self.centralStack.addWidget(self.syncReview)  # Index 1
+
+        # Settings view
+        self.settingsPage = SettingsPage()
+        self.settingsPage.closed.connect(self.hideSettings)
+        self.settingsPage.theme_changed.connect(self._on_theme_changed)
+        self.centralStack.addWidget(self.settingsPage)  # Index 2
+
+        # Backup browser view
+        self.backupBrowser = BackupBrowserWidget()
+        self.backupBrowser.closed.connect(self.hideBackupBrowser)
+        self.centralStack.addWidget(self.backupBrowser)  # Index 3
+
+        self.sidebar.category_changed.connect(
+            self.musicBrowser.updateCategory)
+
+        # Podcast sync → goes through the standard sync review pipeline
+        self.musicBrowser.podcastBrowser.podcast_sync_requested.connect(
+            self._onPodcastSyncRequested)
+
+        # Connect device rename
+        self.sidebar.device_renamed.connect(self._onDeviceRenamed)
+
+        # Connect device button to folder picker
+        self.sidebar.deviceButton.clicked.connect(self.selectDevice)
+
+        # Connect rescan button to rebuild cache
+        self.sidebar.rescanButton.clicked.connect(self.resyncDevice)
+
+        # Connect sync button to PC sync
+        self.sidebar.syncButton.clicked.connect(self.startPCSync)
+
+        # Connect settings button
+        self.sidebar.settingsButton.clicked.connect(self.showSettings)
+
+        # Connect backup button
+        self.sidebar.backupButton.clicked.connect(self.showBackupBrowser)
+
+    def _on_theme_changed(self):
+        """Rebuild the entire UI after a live theme switch."""
+        from GUI.styles import build_palette, app_stylesheet
+
+        app = QApplication.instance()
+        if isinstance(app, QApplication):
+            app.setPalette(build_palette())
+            app.setStyleSheet(app_stylesheet())
+
+        # Tear down existing widgets
+        while self.centralStack.count():
+            w = self.centralStack.widget(0)
+            if w is not None:
+                self.centralStack.removeWidget(w)
+                w.deleteLater()
+
+        # Rebuild with new theme colours
+        self._build_ui()
+
+        # Switch to settings page (where the user just changed the theme)
+        self.settingsPage.load_from_settings()
+        self.centralStack.setCurrentIndex(2)
+
+        # If a device is loaded, refresh the sidebar with cached data
+        cache = iTunesDBCache.get_instance()
+        if cache.get_tracks():
+            self.onDataReady()
 
     def selectDevice(self):
         """Open device picker dialog to scan and select an iPod."""
@@ -1173,7 +1285,6 @@ class MainWindow(QMainWindow):
 
     def onDataReady(self):
         """Called when iTunesDB data is loaded and ready."""
-        # Update sidebar with device stats
         cache = iTunesDBCache.get_instance()
         device = DeviceManager.get_instance()
 
@@ -1181,80 +1292,96 @@ class MainWindow(QMainWindow):
         albums = cache.get_albums()
         db_data = cache.get_data()
 
-        # Compute stats for audio tracks only (music section).
-        # mediaType 0 ("Audio/Video") counts as audio per iTunes behaviour.
-        audio_tracks = [t for t in tracks if t.get("mediaType", 1) in (0,) or t.get("mediaType", 1) & 0x01]
-        video_tracks = [t for t in tracks
-                        if (t.get("mediaType", 1) & 0x62)
-                        and not (t.get("mediaType", 1) & 0x01)
-                        and t.get("mediaType", 1) != 0]
-        podcast_tracks = [t for t in tracks if t.get("mediaType", 1) & 0x04]
-        audiobook_tracks = [t for t in tracks if t.get("mediaType", 1) & 0x08]
-        total_size = sum(t.get("size", 0) for t in audio_tracks)
-        total_duration = sum(t.get("length", 0) for t in audio_tracks)
+        classified = self._classify_tracks(tracks)
+        device_name, model = self._resolve_device_identity(cache, device)
+        db_version_hex, db_version_name, db_id = self._extract_db_info(db_data)
 
-        # Get device name from master playlist title (the iPod's user name)
+        self.sidebar.updateDeviceInfo(
+            name=device_name,
+            model=model,
+            tracks=len(classified["audio"]),
+            albums=len(albums),
+            size_bytes=sum(t.get("size", 0) for t in classified["audio"]),
+            duration_ms=sum(t.get("length", 0) for t in classified["audio"]),
+            db_version_hex=db_version_hex,
+            db_version_name=db_version_name,
+            db_id=db_id,
+            videos=len(classified["video"]),
+            podcasts=len(classified["podcast"]),
+            audiobooks=len(classified["audiobook"]),
+        )
+
+        self._update_sidebar_visibility(classified)
+        self.musicBrowser.onDataReady()
+
+        # Run deferred podcast status update on freshly-parsed data
+        if getattr(self, '_pending_podcast_status_update', False):
+            self._pending_podcast_status_update = False
+            self._update_podcast_statuses()
+
+    # ── onDataReady helpers ─────────────────────────────────────
+
+    @staticmethod
+    def _classify_tracks(tracks: list) -> dict[str, list]:
+        """Partition tracks by media type into audio/video/podcast/audiobook."""
+        audio, video, podcast, audiobook = [], [], [], []
+        for t in tracks:
+            mt = t.get("media_type", 1)
+            if mt in (0,) or mt & 0x01:
+                audio.append(t)
+            if (mt & 0x62) and not (mt & 0x01) and mt != 0:
+                video.append(t)
+            if mt & 0x04:
+                podcast.append(t)
+            if mt & 0x08:
+                audiobook.append(t)
+        return {"audio": audio, "video": video, "podcast": podcast, "audiobook": audiobook}
+
+    @staticmethod
+    def _resolve_device_identity(cache: "iTunesDBCache", device: "DeviceManager") -> tuple[str, str]:
+        """Return (device_name, model) from playlists and DeviceInfo."""
         device_name = ""
-        playlists = cache.get_playlists()
-        for pl in playlists:
-            if pl.get("isMaster"):
+        for pl in cache.get_playlists():
+            if pl.get("master_flag"):
                 device_name = pl.get("Title", "")
                 break
         if not device_name:
             device_name = os.path.basename(device.device_path) if device.device_path else "iPod"
 
-        # Store iPod name in centralized DeviceInfo
-        try:
-            from device_info import get_current_device
-            dev = get_current_device()
-            if dev and not dev.ipod_name:
-                dev.ipod_name = device_name
-        except Exception:
-            pass
-
-        # Get model name from centralised DeviceInfo store
-        model = "iPod"  # Default
+        model = "iPod"
         try:
             from device_info import get_current_device
             dev = get_current_device()
             if dev:
+                if not dev.ipod_name:
+                    dev.ipod_name = device_name
                 model = dev.display_name
         except Exception as e:
             logger.warning("Could not get device info: %s", e)
 
-        # Get database version info
-        db_version_hex = ""
+        return device_name, model
+
+    @staticmethod
+    def _extract_db_info(db_data: dict | None) -> tuple[str, str, int]:
+        """Extract version hex, version name, and database ID."""
+        if not db_data:
+            return "", "", 0
+        db_version_hex = db_data.get('VersionHex', '')
+        db_id = db_data.get('DatabaseID', 0)
         db_version_name = ""
-        db_id = 0
-        if db_data:
-            db_version_hex = db_data.get('VersionHex', '')
-            db_id = db_data.get('DatabaseID', 0)
-            if db_version_hex:
-                try:
-                    from iTunesDB_Parser.constants import get_version_name
-                    db_version_name = get_version_name(db_version_hex)
-                except Exception:
-                    db_version_name = "Unknown"
+        if db_version_hex:
+            try:
+                from iTunesDB_Shared.constants import get_version_name
+                db_version_name = get_version_name(db_version_hex)
+            except Exception:
+                db_version_name = "Unknown"
+        return db_version_hex, db_version_name, db_id
 
-        self.sidebar.updateDeviceInfo(
-            name=device_name,
-            model=model,
-            tracks=len(audio_tracks),
-            albums=len(albums),
-            size_bytes=total_size,
-            duration_ms=total_duration,
-            db_version_hex=db_version_hex,
-            db_version_name=db_version_name,
-            db_id=db_id,
-            videos=len(video_tracks),
-            podcasts=len(podcast_tracks),
-            audiobooks=len(audiobook_tracks),
-        )
-
-        # Show/hide video sidebar categories based on device capabilities
-        supports_video = len(video_tracks) > 0  # If there are videos, definitely show
-        supports_podcast = len(podcast_tracks) > 0
-        supports_audiobook = len(audiobook_tracks) > 0
+    def _update_sidebar_visibility(self, classified: dict[str, list]) -> None:
+        """Show/hide sidebar categories based on tracks and device capabilities."""
+        supports_video = len(classified["video"]) > 0
+        supports_podcast = len(classified["podcast"]) > 0
+        supports_audiobook = len(classified["audiobook"]) > 0
         if not supports_video or not supports_podcast:
             try:
                 from device_info import get_current_device
@@ -1266,7 +1393,6 @@ class MainWindow(QMainWindow):
                         supports_video = bool(caps and caps.supports_video)
                     if not supports_podcast:
                         supports_podcast = bool(caps and caps.supports_podcast)
-                    # Show audiobooks if podcasts are supported (same era devices)
                     if not supports_audiobook:
                         supports_audiobook = bool(caps and caps.supports_podcast)
             except Exception:
@@ -1274,9 +1400,6 @@ class MainWindow(QMainWindow):
         self.sidebar.setVideoVisible(supports_video)
         self.sidebar.setPodcastVisible(supports_podcast)
         self.sidebar.setAudiobookVisible(supports_audiobook)
-
-        # Refresh the current view with the loaded data
-        self.musicBrowser.onDataReady()
 
     def resyncDevice(self):
         """Rebuild the cache from the current device."""
@@ -1323,7 +1446,7 @@ class MainWindow(QMainWindow):
         playlists = cache.get_playlists()
         master_pl = None
         for pl in playlists:
-            if pl.get("isMaster"):
+            if pl.get("master_flag"):
                 pl["Title"] = new_name
                 master_pl = pl
                 break
@@ -1346,7 +1469,7 @@ class MainWindow(QMainWindow):
         Notifier.get_instance().notify("iPod Renamed", "Device name updated successfully")
         # Reload the database to reflect changes
         cache = iTunesDBCache.get_instance()
-        cache.invalidate()
+        cache.clear()
         cache.start_loading()
 
     def _onRenameFailed(self, error_msg: str):
@@ -1494,6 +1617,20 @@ class MainWindow(QMainWindow):
         # Re-run sync now that tools should be available
         self.startPCSync()
 
+    def _onPodcastSyncRequested(self, plan):
+        """Handle podcast sync plan from PodcastBrowser.
+
+        Receives a SyncPlan with podcast episodes as to_add items and
+        sends it through the standard sync review pipeline.
+        """
+        self._plan = plan
+        cache = iTunesDBCache.get_instance()
+        self.syncReview._ipod_tracks_cache = cache.get_tracks() or []
+
+        # Switch to sync review view and show the plan
+        self.centralStack.setCurrentIndex(1)
+        self.syncReview.show_plan(plan)
+
     def _onSyncDiffComplete(self, plan):
         """Called when sync diff calculation is complete."""
         self._plan = plan  # Store for executeSyncPlan to access matched_pc_paths
@@ -1521,20 +1658,20 @@ class MainWindow(QMainWindow):
         data = cache.get_data()
         if data:
             for pl in data.get("mhlp", []):
-                pid = pl.get("playlistID", 0)
+                pid = pl.get("playlist_id", 0)
                 if pid:
                     existing_ids.add(pid)
             for pl in data.get("mhlp_podcast", []):
-                pid = pl.get("playlistID", 0)
+                pid = pl.get("playlist_id", 0)
                 if pid:
                     existing_ids.add(pid)
             for pl in data.get("mhlp_smart", []):
-                pid = pl.get("playlistID", 0)
+                pid = pl.get("playlist_id", 0)
                 if pid:
                     existing_ids.add(pid)
 
         for upl in user_playlists:
-            pid = upl.get("playlistID", 0)
+            pid = upl.get("playlist_id", 0)
             is_new = upl.get("_isNew", False)
             if is_new or pid not in existing_ids:
                 plan.playlists_to_add.append(upl)
@@ -1657,13 +1794,48 @@ class MainWindow(QMainWindow):
                 errors=len(getattr(result, 'errors', [])),
             )
 
+        # Schedule podcast status update after the database reload so it
+        # reads freshly-parsed data instead of the stale pre-sync cache.
+        self._pending_podcast_status_update = getattr(result, 'tracks_added', 0) > 0
+
         # Reload the database to show changes (delay lets OS flush writes)
         QTimer.singleShot(500, self._rescanAfterSync)
+
+    def _update_podcast_statuses(self):
+        """Mark synced podcast episodes as 'on_ipod' in the subscription store."""
+        try:
+            browser = self.musicBrowser.podcastBrowser
+            store = browser._store
+            if not store:
+                return
+
+            cache = iTunesDBCache.get_instance()
+            ipod_tracks = cache.get_tracks() or []
+
+            from PodcastManager.podcast_sync import match_ipod_tracks
+            for feed in store.get_feeds():
+                match_ipod_tracks(feed, ipod_tracks)
+                store.update_feed(feed)
+        except Exception as e:
+            logger.debug("Could not update podcast statuses: %s", e)
 
     def _rescanAfterSync(self):
         """Rescan the iPod database after a short post-write delay."""
         cache = iTunesDBCache.get_instance()
-        cache.invalidate()
+        # Use clear() (not invalidate()) to fully reset the cache state.
+        # invalidate() does not reset _is_loading, so if a prior load is
+        # still in-flight start_loading() would silently bail out and the
+        # UI would never refresh.
+        cache.clear()
+
+        # Clear artwork cache — sync may have added/changed album art
+        from .imgMaker import clear_artworkdb_cache
+        clear_artworkdb_cache()
+
+        # Clear UI so the reload starts from a clean slate
+        self.musicBrowser.browserGrid.clearGrid()
+        self.musicBrowser.browserTrack.clearTable()
+
         cache.start_loading()
 
     def _disconnect_skip_signal(self):
@@ -1692,6 +1864,107 @@ class MainWindow(QMainWindow):
 
         QMessageBox.critical(self, "Sync Error", msg)
         self.hideSyncReview()
+
+    # ── Drag-and-drop support ──────────────────────────────────────────────
+
+    def resizeEvent(self, a0):
+        super().resizeEvent(a0)
+        if hasattr(self, '_drop_overlay') and self._drop_overlay.isVisible():
+            self._drop_overlay.setGeometry(self.rect())
+
+    def dragEnterEvent(self, a0):
+        if a0 is None:
+            return
+        # Reject drops when no device is selected or sync is executing
+        device = DeviceManager.get_instance()
+        if not device.device_path:
+            a0.ignore()
+            return
+        if self._sync_execute_worker and self._sync_execute_worker.isRunning():
+            a0.ignore()
+            return
+
+        mime = a0.mimeData()
+        if mime and mime.hasUrls():
+            from SyncEngine.pc_library import MEDIA_EXTENSIONS
+            for url in mime.urls():
+                if url.isLocalFile():
+                    p = Path(url.toLocalFile())
+                    if p.is_dir() or p.suffix.lower() in MEDIA_EXTENSIONS:
+                        a0.acceptProposedAction()
+                        self._drop_overlay.show_overlay()
+                        return
+        a0.ignore()
+
+    def dragMoveEvent(self, a0):
+        if a0:
+            a0.acceptProposedAction()
+
+    def dragLeaveEvent(self, a0):
+        self._drop_overlay.hide_overlay()
+
+    def dropEvent(self, a0):
+        self._drop_overlay.hide_overlay()
+        if a0 is None:
+            return
+        mime = a0.mimeData()
+        if not mime or not mime.hasUrls():
+            return
+
+        paths: list[Path] = []
+        for url in mime.urls():
+            if url.isLocalFile():
+                paths.append(Path(url.toLocalFile()))
+
+        if paths:
+            a0.acceptProposedAction()
+            self._on_files_dropped(paths)
+
+    def _on_files_dropped(self, paths: list[Path]):
+        """Process dropped files/folders in a background thread."""
+        from SyncEngine.pc_library import MEDIA_EXTENSIONS
+
+        # Collect all file paths (recurse folders)
+        file_paths: list[Path] = []
+        for p in paths:
+            if p.is_dir():
+                for root, _, files in os.walk(p):
+                    for fname in files:
+                        fp = Path(root) / fname
+                        if fp.suffix.lower() in MEDIA_EXTENSIONS:
+                            file_paths.append(fp)
+            elif p.is_file() and p.suffix.lower() in MEDIA_EXTENSIONS:
+                file_paths.append(p)
+
+        if not file_paths:
+            return
+
+        # Remember whether we already have a plan to merge into
+        self._drop_merge = (
+            self._plan is not None
+            and self.centralStack.currentIndex() == 1
+        )
+
+        # Switch to sync review and show loading
+        self.centralStack.setCurrentIndex(1)
+        self.syncReview.show_loading()
+        self.syncReview.loading_label.setText("Reading dropped files...")
+
+        # Run metadata reading in background thread
+        self._drop_worker = _DropScanWorker(file_paths)
+        self._drop_worker.finished.connect(self._on_drop_scan_complete)
+        self._drop_worker.error.connect(self._onSyncError)
+        self._drop_worker.start()
+
+    def _on_drop_scan_complete(self, plan):
+        """Merge dropped-file plan into any existing plan, then show."""
+        if self._drop_merge and self._plan is not None:
+            self._plan.to_add.extend(plan.to_add)
+            self._plan.storage.bytes_to_add += plan.storage.bytes_to_add
+            self.syncReview.show_plan(self._plan)
+        else:
+            self._plan = plan
+            self.syncReview.show_plan(plan)
 
     def closeEvent(self, a0):
         """Ensure all threads are stopped when the window is closed."""
@@ -1775,3 +2048,53 @@ class _DeviceRenameWorker(QThread):
             import traceback
             traceback.print_exc()
             self.failed.emit(str(e))
+
+
+# =============================================================================
+# _DropScanWorker — background thread for reading dropped files metadata
+# =============================================================================
+
+class _DropScanWorker(QThread):
+    """Read metadata from dropped files and build a SyncPlan."""
+
+    finished = pyqtSignal(object)  # SyncPlan
+    error = pyqtSignal(str)
+
+    def __init__(self, file_paths: list):
+        super().__init__()
+        self._file_paths = file_paths
+
+    def run(self):
+        try:
+            from SyncEngine.pc_library import PCLibrary
+            from SyncEngine.fingerprint_diff_engine import (
+                SyncPlan, SyncItem, SyncAction, StorageSummary,
+            )
+
+            items: list[SyncItem] = []
+            total_bytes = 0
+
+            for fp in self._file_paths:
+                if self.isInterruptionRequested():
+                    return
+                try:
+                    # Use a temporary PCLibrary rooted at the file's parent
+                    lib = PCLibrary(fp.parent)
+                    track = lib._read_track(fp)
+                    if track:
+                        items.append(SyncItem(
+                            action=SyncAction.ADD_TO_IPOD,
+                            pc_track=track,
+                            description=f"{track.artist} — {track.title}",
+                        ))
+                        total_bytes += track.size
+                except Exception as e:
+                    logger.warning("Failed to read dropped file %s: %s", fp, e)
+
+            plan = SyncPlan(
+                to_add=items,
+                storage=StorageSummary(bytes_to_add=total_bytes),
+            )
+            self.finished.emit(plan)
+        except Exception as e:
+            self.error.emit(str(e))

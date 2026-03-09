@@ -23,9 +23,9 @@ Steps to reproduce the behavior:
 What you expected to happen.
 
 **Screenshots / logs**
-If applicable, add screenshots or paste the crash log from `%APPDATA%/iOpenPod/crash_*.log`.
+If applicable, add screenshots or paste the logs from `~/iOpenPod/`.
 
 **Environment**
 - OS: [e.g., Windows 11, Ubuntu 24.04, macOS 15]
 - Python version: [e.g., 3.13.1]
-- iOpenPod version/commit: [e.g., v0.1.0 or commit hash]
+- iOpenPod version/commit: [e.g., v1.0.0 or commit hash]

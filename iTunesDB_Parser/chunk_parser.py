@@ -1,109 +1,108 @@
 """
-Chunk dispatcher / router for iTunesDB binary parsing.
+Generic chunk dispatcher for iTunesDB chunks.
 
-Every chunk in the iTunesDB starts with the same 12-byte header:
-    +0x00: chunk_type (4B)      — ASCII identifier (e.g. 'mhbd', 'mhit', 'mhod')
-    +0x04: header_length (4B)   — bytes to end of type-specific header
-    +0x08: total_length (4B)    — header + all children (or child count for mhlt/mhlp)
+Every chunk in the iTunesDB starts with the same 12-byte generic header::
 
-The total_length field has two interpretations:
-    • Most chunks: byte offset to end of this chunk and all its children.
-    • mhlt / mhlp / mhla: number of child items (tracks / playlists / albums),
-      NOT a byte length.  The actual end must be discovered by parsing children.
+    +0x00  chunk_type           (4 bytes ASCII)  e.g. ``mhbd``, ``mhit``
+    +0x04  header_length        (u32 LE)         bytes to end of header
+    +0x08  length_or_children   (u32 LE)         total length *or* child count
 
-This module reads the 12-byte header and dispatches to the appropriate parser
-based on chunk_type via a match statement.  Each parser returns:
-    {"nextOffset": int, "result": dict/list}
+This module reads the generic header via :func:`_parsing.read_generic_header`,
+then dispatches to the appropriate ``mh*_parser`` module.
 
-Cross-referenced against:
-  - iPodLinux wiki § Chunk Encoding
-  - libgpod itdb_itunesdb.c: parse_tracks() etc.
+Every parser returns::
+
+    {"next_offset": int, "data": dict | list}
 """
 
-import struct
+from __future__ import annotations
+
+import logging
 from typing import Any
 
+from ._parsing import read_generic_header
 
-def parse_chunk(data, offset) -> dict[str, Any]:
-    chunk_type = data[offset:offset + 4].decode("utf-8")
-    header_length = struct.unpack("<I", data[offset + 4:offset + 8])[0]
-    chunk_length = struct.unpack("<I", data[offset + 8:offset + 12])[0]
+logger = logging.getLogger(__name__)
+
+
+def parse_chunk(
+    data: bytes | bytearray,
+    offset: int,
+) -> tuple[dict[str, Any], str]:
+    """Read the generic header at *offset* and delegate to the typed parser.
+
+    Args:
+        data: Full iTunesDB byte buffer.
+        offset: Byte position of the chunk to parse.
+
+    Returns:
+        Tuple of ``(result_dict, chunk_type)`` where *result_dict* contains
+        ``"next_offset"`` and ``"data"`` keys.
+    """
+    chunk_type, header_length, length_or_children = read_generic_header(data, offset)
 
     match chunk_type:
         case "mhbd":
-            # database
             from .mhbd_parser import parse_db
-            result = parse_db(data, offset, header_length, chunk_length)
-            return result
+            result = parse_db(data, offset, header_length, length_or_children)
         case "mhsd":
-            # dataset
             from .mhsd_parser import parse_dataset
-            result = parse_dataset(data, offset, header_length, chunk_length)
-            return result
+            result = parse_dataset(data, offset, header_length, length_or_children)
         case "mhlt":
-            # track list
-            from .mhlt_parser import parse_trackList
-            result = parse_trackList(data, offset, header_length, chunk_length)
-            return result
+            from .mhlt_parser import parse_track_list
+            result = parse_track_list(data, offset, header_length, length_or_children)
         case "mhit":
-            # Track Item
-            from .mhit_parser import parse_trackItem
-            result = parse_trackItem(data, offset, header_length, chunk_length)
-            return result
+            from .mhit_parser import parse_track_item
+            result = parse_track_item(data, offset, header_length, length_or_children)
         case "mhlp":
-            # playlist list
-            from .mhlp_parser import parse_playlistList
-            result = parse_playlistList(data, offset, header_length, chunk_length)
-            return result
+            from .mhlp_parser import parse_playlist_list
+            result = parse_playlist_list(data, offset, header_length, length_or_children)
         case "mhyp":
-            # playlist
             from .mhyp_parser import parse_playlist
-            result = parse_playlist(data, offset, header_length, chunk_length)
-            return result
+            result = parse_playlist(data, offset, header_length, length_or_children)
         case "mhip":
-            # playlist item
-            from .mhip_parser import parse_playlistItem
-            result = parse_playlistItem(data, offset, header_length, chunk_length)
-            return result
+            from .mhip_parser import parse_playlist_item
+            result = parse_playlist_item(data, offset, header_length, length_or_children)
         case "mhod":
-            # data object
             from .mhod_parser import parse_mhod
-            result = parse_mhod(data, offset, header_length, chunk_length)
-            return result
+            result = parse_mhod(data, offset, header_length, length_or_children)
         case "mhla":
-            # Album List
-            from .mhla_parser import parse_albumList
-            result = parse_albumList(data, offset, header_length, chunk_length)
-            return result
+            from .mhla_parser import parse_album_list
+            result = parse_album_list(data, offset, header_length, length_or_children)
         case "mhia":
-            # Album Item
-            from .mhia_parser import parse_albumItem
-            result = parse_albumItem(data, offset, header_length, chunk_length)
-            return result
+            from .mhia_parser import parse_album_item
+            result = parse_album_item(data, offset, header_length, length_or_children)
         case "mhli":
-            # Artist list — child of MHSD type 8.
-            # Contains mhii (artist item) children.  chunk_length is the
-            # item count (same convention as mhla/mhlt/mhlp).
-            # NOTE: MHSD types 6/10 use mhlt (empty track list), NOT mhli.
-            from .mhli_parser import parse_artistList
-            result = parse_artistList(data, offset, header_length, chunk_length)
-            return result
+            from .mhli_parser import parse_artist_list
+            result = parse_artist_list(data, offset, header_length, length_or_children)
         case "mhii":
-            # Artist Item — child of MHLI in MHSD type 8.
             # NOTE: shares the 'mhii' magic with ArtworkDB image items,
-            # but in the iTunesDB context these are artist entries.
-            from .mhii_parser import parse_artistItem
-            result = parse_artistItem(data, offset, header_length, chunk_length)
-            return result
+            # but in iTunesDB context this is an artist item.
+            from .mhii_parser import parse_artist_item
+            result = parse_artist_item(data, offset, header_length, length_or_children)
         case _:
-            # Unknown chunk — skip gracefully.  The parent (MHSD) uses its
-            # own total_length so an imprecise nextOffset here is harmless.
-            import logging
-            logging.getLogger(__name__).warning(
-                "Skipping unknown iTunesDB chunk type: %s at offset 0x%X",
+            logger.warning(
+                "Skipping unknown iTunesDB chunk type %r at offset 0x%X",
                 chunk_type, offset,
             )
+            # NOTE: length_or_children may be a child count rather than
+            # a byte length.  For unknown types we naively treat it as a
+            # length — the worst case is skipping too little, which the
+            # parent's child loop will catch on the next iteration.
             return {
-                "nextOffset": offset + chunk_length,
-                "result": {"chunkType": chunk_type, "skipped": True},
-            }
+                "next_offset": offset + length_or_children,
+                "data": {
+                    "chunk_type": chunk_type,
+                    "header": bytes(data[offset:offset + header_length]),
+                    "body": bytes(data[offset + header_length:offset + length_or_children]),
+                },
+            }, chunk_type
+
+    # Attach raw header bytes for data-collection / analysis of
+    # uninspected regions.  Only for dict-shaped results (item/container
+    # chunks); list-shaped results (mhlt, mhlp, mhla, mhli) have
+    # trivial 12-byte headers already fully described by the generic header.
+    if isinstance(result.get("data"), dict):
+        result["data"]["_raw_header"] = bytes(data[offset:offset + header_length])
+
+    return result, chunk_type

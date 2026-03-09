@@ -1,7 +1,7 @@
 """
 Dependency Manager - Auto-download FFmpeg and Chromaprint (fpcalc) binaries.
 
-Downloads platform-appropriate static binaries to ~/.iopenpod/bin/ so users
+Downloads platform-appropriate static binaries to ~/iOpenPod/bin/ so users
 don't need to install them system-wide or add them to PATH.
 
 Supports:
@@ -11,7 +11,6 @@ Supports:
 """
 
 import logging
-import os
 import platform
 import shutil
 import stat
@@ -42,11 +41,7 @@ def get_bin_dir() -> Path:
         pass
 
     # Fallback if settings module isn't available
-    if sys.platform == "win32":
-        base = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
-    else:
-        base = os.path.expanduser("~")
-    return Path(base) / ".iopenpod" / "bin"
+    return Path.home() / "iOpenPod" / "bin"
 
 
 def _ensure_bin_dir() -> Path:
@@ -127,7 +122,7 @@ def _download(url: str, dest: Path, progress_callback=None) -> bool:
     logger.info(f"Downloading {url}")
     try:
         ctx = _make_ssl_context()
-        req = Request(url, headers={"User-Agent": "iOpenPod/1.0"})
+        req = Request(url, headers={"User-Agent": "iOpenPod/1.0.0"})
         with urlopen(req, timeout=120, context=ctx) as resp:
             total = int(resp.headers.get("Content-Length", 0))
             downloaded = 0

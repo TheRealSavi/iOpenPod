@@ -32,7 +32,7 @@ from typing import Optional, Callable
 logger = logging.getLogger(__name__)
 
 # Default backup directory
-_DEFAULT_BACKUP_DIR = os.path.join(os.path.expanduser("~"), "iOpenPod_Backups")
+_DEFAULT_BACKUP_DIR = os.path.join(os.path.expanduser("~"), "iOpenPod", "backups")
 
 # Number of worker threads for parallel I/O.
 # iPod is on USB (single bus) so diminishing returns above ~4,
@@ -182,6 +182,7 @@ class BackupManager:
         manifest_files: dict[str, dict] = {}
         total_size = 0
         new_blobs = 0
+        skipped_files = 0
         processed = 0
 
         # Pre-stat and partition into cached vs uncached
@@ -229,6 +230,7 @@ class BackupManager:
                 }
                 total_size += fsize
             except (OSError, PermissionError) as e:
+                skipped_files += 1
                 logger.warning(f"Backup: could not store cached {rel_path}: {e}")
 
         # 2b. Parallel hash + store for uncached files
@@ -276,6 +278,8 @@ class BackupManager:
 
                     except (OSError, PermissionError) as e:
                         rp = futures[future]
+                        with lock:
+                            skipped_files += 1
                         logger.warning(f"Backup: could not process {rp}: {e}")
 
         # Phase 2c: Check for duplicate — skip saving if nothing changed
@@ -354,15 +358,24 @@ class BackupManager:
             total_size=total_size,
         )
 
-        logger.info(
-            f"Backup complete: {len(manifest_files)} files, "
-            f"{total_size / (1024**3):.2f} GB, {new_blobs} new blobs"
-        )
+        if skipped_files:
+            logger.warning(
+                f"Backup complete with {skipped_files} skipped files: "
+                f"{len(manifest_files)} files stored, "
+                f"{total_size / (1024**3):.2f} GB, {new_blobs} new blobs"
+            )
+        else:
+            logger.info(
+                f"Backup complete: {len(manifest_files)} files, "
+                f"{total_size / (1024**3):.2f} GB, {new_blobs} new blobs"
+            )
 
         if progress_callback:
+            msg = f"Backup complete — {len(manifest_files)} files, {new_blobs} new"
+            if skipped_files:
+                msg += f" ({skipped_files} files could not be read)"
             progress_callback(BackupProgress(
-                "complete", total_files, total_files,
-                message=f"Backup complete — {len(manifest_files)} files, {new_blobs} new"
+                "complete", total_files, total_files, message=msg
             ))
 
         return info
@@ -555,16 +568,21 @@ class BackupManager:
                 ))
             return True
 
-        # Phase 3: Delete removed + replaced files
+        # Phase 3: Delete files that are NOT in the snapshot.
+        # Files being *replaced* (same path, different hash) are NOT deleted
+        # here — Phase 4's shutil.copy2 overwrites them in place.  This
+        # avoids a dangerous window where a replaced file has been deleted
+        # but its new version hasn't been copied yet (USB disconnect, disk
+        # full, power loss would leave the iPod missing those files).
 
-        if to_remove or to_replace:
+        if to_remove:
             if progress_callback:
                 progress_callback(BackupProgress(
                     "cleaning", 0, 0,
-                    message=f"Removing {len(to_remove) + len(to_replace)} files…"
+                    message=f"Removing {len(to_remove)} files…"
                 ))
 
-            for rel_path in to_remove | to_replace:
+            for rel_path in to_remove:
                 if is_cancelled and is_cancelled():
                     logger.warning("Restore cancelled — iPod may be in incomplete state!")
                     return False

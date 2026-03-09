@@ -388,80 +388,235 @@ def _probe_hardware_macos(mount_path: str) -> dict:
     return result
 
 
+def _linux_find_block_device(mount_path: str) -> str | None:
+    """Resolve a mount path to its block device (e.g. ``/dev/sdb1``).
+
+    Tries three strategies in order:
+
+    1. ``findmnt`` — present on all modern distros (util-linux), handles
+       paths with spaces, special characters, and bind mounts correctly.
+    2. ``/proc/mounts`` with octal-escape decoding — the kernel escapes
+       spaces as ``\\040``, tabs as ``\\011``, etc.  Previous code compared
+       the raw escaped field to the unescaped *mount_path*, which failed for
+       mount points containing spaces
+    3. ``lsblk --json`` — robust JSON output, handles spaces in mount points.
+    """
+    import re as _re
+
+    # ── Strategy 1: findmnt (best, handles all edge cases) ─────────
+    try:
+        cp = subprocess.run(
+            ["findmnt", "-n", "-o", "SOURCE", "--target", mount_path],
+            capture_output=True, text=True, timeout=5,
+        )
+        if cp.returncode == 0:
+            dev = cp.stdout.strip().split("\n")[0].strip()
+            if dev.startswith("/dev/"):
+                logger.debug("Linux block device via findmnt: %s", dev)
+                return dev
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+
+    # ── Strategy 2: /proc/mounts with octal-escape decode ──────────
+    def _decode_mount_octal(field: str) -> str:
+        """Decode octal escapes (\\040 → space, \\011 → tab, etc.)."""
+        return _re.sub(
+            r"\\([0-7]{3})",
+            lambda m: chr(int(m.group(1), 8)),
+            field,
+        )
+
+    try:
+        with open("/proc/mounts", "r") as f:
+            for line in f:
+                parts = line.split()
+                if len(parts) >= 2:
+                    decoded_mount = _decode_mount_octal(parts[1])
+                    if decoded_mount == mount_path:
+                        dev = parts[0]
+                        if dev.startswith("/dev/"):
+                            logger.debug("Linux block device via /proc/mounts: %s", dev)
+                            return dev
+    except OSError:
+        pass
+
+    # ── Strategy 3: lsblk JSON ─────────────────────────────────────
+    try:
+        import json as _json
+        cp = subprocess.run(
+            ["lsblk", "-J", "-o", "NAME,MOUNTPOINT"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if cp.returncode == 0:
+            data = _json.loads(cp.stdout)
+            for dev_entry in data.get("blockdevices", []):
+                for child in dev_entry.get("children", []):
+                    mp = child.get("mountpoint") or ""
+                    if mp == mount_path:
+                        name = child.get("name", "")
+                        if name:
+                            logger.debug("Linux block device via lsblk: /dev/%s", name)
+                            return f"/dev/{name}"
+    except (FileNotFoundError, subprocess.TimeoutExpired, ValueError):
+        pass
+
+    return None
+
+
+def _linux_usb_info_from_udevadm(device: str) -> dict:
+    """Extract USB identity fields via ``udevadm info``.
+
+    Returns a dict that may contain *usb_pid*, *firewire_guid*,
+    *model_family*, and *generation*.  Non-destructive — does not detach
+    drivers or require root.
+    """
+    result: dict = {}
+    try:
+        cp = subprocess.run(
+            ["udevadm", "info", "--query=property", "--name", device],
+            capture_output=True, text=True, timeout=5,
+        )
+        if cp.returncode != 0:
+            return result
+
+        props: dict[str, str] = {}
+        for line in cp.stdout.splitlines():
+            if "=" in line:
+                k, _, v = line.partition("=")
+                props[k.strip()] = v.strip()
+
+        # Vendor check — only proceed for Apple devices
+        id_vendor = props.get("ID_VENDOR_ID", "")
+        if id_vendor != "05ac":
+            return result
+
+        # USB PID
+        id_model = props.get("ID_MODEL_ID", "")
+        if id_model:
+            try:
+                pid = int(id_model, 16)
+                result["usb_pid"] = pid
+                model_info = USB_PID_TO_MODEL.get(pid)
+                if model_info:
+                    result["model_family"] = model_info[0]
+                    result["generation"] = model_info[1]
+            except ValueError:
+                pass
+
+        # USB serial — on iPods this is the 16-hex-char FireWire GUID
+        usb_serial = props.get("ID_SERIAL_SHORT", "")
+        if usb_serial:
+            clean = usb_serial.replace(" ", "")
+            if len(clean) == 16:
+                try:
+                    bytes.fromhex(clean)
+                    result["firewire_guid"] = clean.upper()
+                except ValueError:
+                    pass
+
+        if result:
+            logger.debug("Linux udevadm info: %s", result)
+
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+
+    return result
+
+
+def _linux_usb_info_from_sysfs(base_disk: str) -> dict:
+    """Walk sysfs from a block device up to the USB ancestor.
+
+    Returns a dict that may contain *usb_pid*, *firewire_guid*,
+    *model_family*, and *generation*.
+    """
+    result: dict = {}
+
+    sysfs_path = f"/sys/block/{base_disk}/device"
+    if not os.path.exists(sysfs_path):
+        return result
+
+    current = os.path.realpath(sysfs_path)
+    for _ in range(8):
+        vendor_file = os.path.join(current, "idVendor")
+        if os.path.exists(vendor_file):
+            with open(vendor_file) as vf:
+                vendor = vf.read().strip()
+            if vendor == "05ac":  # Apple
+                # Read product ID
+                product_file = os.path.join(current, "idProduct")
+                if os.path.exists(product_file):
+                    with open(product_file) as pf:
+                        product = pf.read().strip()
+                    try:
+                        pid = int(product, 16)
+                        result["usb_pid"] = pid
+                        model_info = USB_PID_TO_MODEL.get(pid)
+                        if model_info:
+                            result["model_family"] = model_info[0]
+                            result["generation"] = model_info[1]
+                    except ValueError:
+                        pass
+
+                # Read USB serial — on iPods this is the FireWire
+                # GUID (16 hex chars), not the Apple serial number.
+                serial_file = os.path.join(current, "serial")
+                if os.path.exists(serial_file):
+                    with open(serial_file) as sf:
+                        usb_serial = sf.read().strip()
+                    if usb_serial:
+                        clean = usb_serial.replace(" ", "")
+                        if len(clean) == 16:
+                            try:
+                                bytes.fromhex(clean)
+                                result["firewire_guid"] = clean.upper()
+                                logger.debug("Linux sysfs: USB serial is FW GUID: %s", clean.upper())
+                            except ValueError:
+                                pass
+                break
+
+        current = os.path.dirname(current)
+
+    return result
+
+
 def _probe_hardware_linux(mount_path: str) -> dict:
     """
-    Linux hardware probing via sysfs.
+    Linux hardware probing via sysfs / udevadm / findmnt.
 
-    Traces the mount point → block device → USB device through sysfs
-    to extract the USB PID, serial number, and FireWire GUID.
+    Traces the mount point → block device → USB device through multiple
+    strategies to extract the USB PID, serial number, and FireWire GUID.
+
+    Strategies (tried in order for each sub-task):
+
+    Block device lookup:
+      1. ``findmnt`` — handles paths with spaces and bind mounts
+      2. ``/proc/mounts`` with octal-escape decoding
+      3. ``lsblk --json``
+
+    USB identity extraction:
+      1. ``udevadm info`` — structured key=value output, no root required
+      2. sysfs walk — manual traversal from block device to USB ancestor
     """
     import re as _re
 
     result: dict = {}
 
     try:
-        # Find the device for this mount point from /proc/mounts
-        device = None
-        with open("/proc/mounts", "r") as f:
-            for line in f:
-                parts = line.split()
-                if len(parts) >= 2 and parts[1] == mount_path:
-                    device = parts[0]  # e.g., /dev/sdb1
-                    break
-
-        if not device or not device.startswith("/dev/"):
+        device = _linux_find_block_device(mount_path)
+        if not device:
+            logger.debug("Linux probe: could not resolve block device for %s", mount_path)
             return result
 
         # Get the base disk name (e.g., sdb from /dev/sdb1)
         dev_name = os.path.basename(device)
         base_disk = _re.sub(r"\d+$", "", dev_name)  # sdb1 → sdb
 
-        # Navigate sysfs to find USB device info
-        sysfs_path = f"/sys/block/{base_disk}/device"
-        if not os.path.exists(sysfs_path):
-            return result
+        # ── Strategy 1: udevadm info (structured, reliable) ───────
+        result = _linux_usb_info_from_udevadm(device)
 
-        # Walk up the sysfs tree to find the USB device with idVendor/idProduct
-        current = os.path.realpath(sysfs_path)
-        for _ in range(8):
-            vendor_file = os.path.join(current, "idVendor")
-            if os.path.exists(vendor_file):
-                with open(vendor_file) as vf:
-                    vendor = vf.read().strip()
-                if vendor == "05ac":  # Apple
-                    # Read product ID
-                    product_file = os.path.join(current, "idProduct")
-                    if os.path.exists(product_file):
-                        with open(product_file) as pf:
-                            product = pf.read().strip()
-                        try:
-                            pid = int(product, 16)
-                            result["usb_pid"] = pid
-                            model_info = USB_PID_TO_MODEL.get(pid)
-                            if model_info:
-                                result["model_family"] = model_info[0]
-                                result["generation"] = model_info[1]
-                        except ValueError:
-                            pass
-
-                    # Read USB serial — on iPods this is the FireWire
-                    # GUID (16 hex chars), not the Apple serial number.
-                    serial_file = os.path.join(current, "serial")
-                    if os.path.exists(serial_file):
-                        with open(serial_file) as sf:
-                            usb_serial = sf.read().strip()
-                        if usb_serial:
-                            clean = usb_serial.replace(" ", "")
-                            if len(clean) == 16:
-                                try:
-                                    bytes.fromhex(clean)
-                                    result["firewire_guid"] = clean.upper()
-                                    logger.debug("Linux probe: USB serial is FW GUID: %s", clean.upper())
-                                except ValueError:
-                                    pass
-                    break
-
-            current = os.path.dirname(current)
+        # ── Strategy 2: sysfs walk (fallback if udevadm unavailable) ──
+        if not result:
+            result = _linux_usb_info_from_sysfs(base_disk)
 
     except Exception as e:
         logger.debug("Linux hardware probe failed: %s", e)
@@ -1554,10 +1709,10 @@ def _extract_ipod_name(ipod_path: str) -> str:
         if unk_0x0c == 2:
             # Compressed CDB — read and decompress the full file, then
             # use the parser's decompression to get the full data.
-            from iTunesDB_Parser.parser import _decompress_itunescdb
+            from iTunesDB_Parser.parser import decompress_itunescdb
             with open(itdb_path, "rb") as f:
                 raw = f.read()
-            data = _decompress_itunescdb(raw)
+            data = decompress_itunescdb(raw)
             if len(data) < 24 or data[:4] != b"mhbd":
                 return ""
             return _ipod_name_from_data(data)

@@ -1,13 +1,14 @@
-from PyQt6.QtCore import Qt, QPoint
+from PyQt6.QtCore import Qt, QPoint, QSize
 from PyQt6.QtWidgets import QHBoxLayout, QFrame, QLabel, QPushButton, QWidget
 from PyQt6.QtGui import QFont
 
-from ..styles import FONT_FAMILY
+from ..styles import Colors, FONT_FAMILY, Metrics, scaled
+from ..glyphs import glyph_icon
 
 
 def _title_bar_css(r1: int, g1: int, b1: int, r2: int, g2: int, b2: int,
-                   text_color: str = "white",
-                   text_secondary: str = "rgba(255,255,255,180)") -> str:
+                   text_color: str = Colors.TEXT_ON_ACCENT,
+                   text_secondary: str = Colors.TEXT_PRIMARY) -> str:
     """Generate the title bar stylesheet for given gradient colors."""
     return f"""
         QFrame {{
@@ -17,8 +18,8 @@ def _title_bar_css(r1: int, g1: int, b1: int, r2: int, g2: int, b2: int,
             border-radius: 0px;
         }}
         QLabel {{
-            font-weight: 600;
-            font-size: 12px;
+            font-weight: 700;
+            font-size: {Metrics.FONT_TITLE}px;
             color: {text_color};
             background: transparent;
         }}
@@ -26,24 +27,24 @@ def _title_bar_css(r1: int, g1: int, b1: int, r2: int, g2: int, b2: int,
             background-color: transparent;
             border: none;
             color: {text_secondary};
-            font-size: 14px;
+            font-size: {Metrics.FONT_TITLE}px;
             font-weight: bold;
-            width: 26px;
-            height: 26px;
-            border-radius: 4px;
+            width: {scaled(30)}px;
+            height: {scaled(30)}px;
+            border-radius: {scaled(4)}px;
         }}
         QPushButton:hover {{
-            background-color: rgba(255,255,255,25);
-            color: white;
+            background-color: rgba(255,255,255,40);
         }}
         QPushButton:pressed {{
-            background-color: rgba(0,0,0,25);
+            background-color: rgba(255,255,255,25);
         }}
     """
 
 
-# Default blue gradient
-_DEFAULT_CSS = _title_bar_css(64, 156, 255, 40, 110, 200)
+# Default blue gradient — call at runtime since scaled values aren't ready at import time
+def _default_css() -> str:
+    return _title_bar_css(64, 156, 255, 40, 110, 200)
 
 
 class TrackListTitleBar(QFrame):
@@ -56,23 +57,36 @@ class TrackListTitleBar(QFrame):
         self.dragStartPos = QPoint()
         self.setMouseTracking(True)
         self.titleBarLayout = QHBoxLayout(self)
-        self.titleBarLayout.setContentsMargins(12, 0, 8, 0)
+        self.titleBarLayout.setContentsMargins(scaled(14), 0, scaled(10), 0)
         self.splitter.splitterMoved.connect(self.enforceMinHeight)
 
-        self.setMinimumHeight(34)
-        self.setMaximumHeight(34)
-        self.setFixedHeight(34)
+        self.setMinimumHeight(scaled(40))
+        self.setMaximumHeight(scaled(40))
+        self.setFixedHeight(scaled(40))
 
-        self.setStyleSheet(_DEFAULT_CSS)
+        self.setStyleSheet(_default_css())
 
         self.title = QLabel("Tracks")
-        self.title.setFont(QFont(FONT_FAMILY, 12, QFont.Weight.DemiBold))
+        self.title.setFont(QFont(FONT_FAMILY, Metrics.FONT_TITLE, QFont.Weight.Bold))
 
-        self.button1 = QPushButton("▼")
+        self.button1 = QPushButton()
+        _ic_sz = QSize(scaled(18), scaled(18))
+        _ic_dn = glyph_icon("chevron-down", scaled(18), Colors.TEXT_ON_ACCENT)
+        if _ic_dn:
+            self.button1.setIcon(_ic_dn)
+            self.button1.setIconSize(_ic_sz)
+        else:
+            self.button1.setText("▼")
         self.button1.setToolTip("Minimize")
         self.button1.clicked.connect(self._toggleMinimize)
 
-        self.button2 = QPushButton("▲")
+        self.button2 = QPushButton()
+        _ic_up = glyph_icon("chevron-up", scaled(18), Colors.TEXT_ON_ACCENT)
+        if _ic_up:
+            self.button2.setIcon(_ic_up)
+            self.button2.setIconSize(_ic_sz)
+        else:
+            self.button2.setText("▲")
         self.button2.setToolTip("Maximize")
         self.button2.clicked.connect(self._toggleMaximize)
 
@@ -94,15 +108,25 @@ class TrackListTitleBar(QFrame):
         r3 = max(0, r - 25)
         g3 = max(0, g - 25)
         b3 = max(0, b - 25)
-        txt = f"rgb({text[0]},{text[1]},{text[2]})" if text else "white"
-        txt_sec = f"rgba({text_secondary[0]},{text_secondary[1]},{text_secondary[2]},180)" if text_secondary else "rgba(255,255,255,180)"
+        txt = f"rgb({text[0]},{text[1]},{text[2]})" if text else Colors.TEXT_ON_ACCENT
+        txt_sec = f"rgba({text_secondary[0]},{text_secondary[1]},{text_secondary[2]},180)" if text_secondary else Colors.TEXT_PRIMARY
         self.setStyleSheet(_title_bar_css(r2, g2, b2, r3, g3, b3,
                                           text_color=txt,
                                           text_secondary=txt_sec))
+        self._set_handle_color(f"rgba({r2},{g2},{b2},220)")
 
     def resetColor(self):
         """Reset to the default blue gradient."""
-        self.setStyleSheet(_DEFAULT_CSS)
+        self.setStyleSheet(_default_css())
+        self._set_handle_color("rgba(64,156,255,220)")
+
+    def _set_handle_color(self, color: str):
+        """Update the splitter handle to match the title bar color."""
+        self.splitter.setStyleSheet(f"""
+            QSplitter::handle {{
+                background: {color};
+            }}
+        """)
 
     def _toggleMinimize(self):
         """Minimize the track list panel."""

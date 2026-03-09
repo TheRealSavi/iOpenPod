@@ -7,6 +7,14 @@ Cross-referenced against:
   - libgpod itdb_itunesdb.c, itdb.h
 """
 
+from .field_base import MAC_EPOCH_OFFSET, mac_to_unix, unix_to_mac  # noqa: F401
+
+# Legacy aliases — callers (GUI/app.py, SyncEngine/sync_executor.py) import
+# these names.  The canonical definitions live in field_base.py.
+mac_to_unix_timestamp = mac_to_unix
+unix_to_mac_timestamp = unix_to_mac
+
+
 # maps the id used in mhsd to the proper header marker
 chunk_type_map = {
     1: "mhlt",  # Track list (contains MHIT children)
@@ -173,6 +181,7 @@ mhod_type_map = {
     23: "Sort Artist",
     24: "Track Keywords",
     25: "Show Locale",
+    26: "iTunes Store Asset Info",
     27: "Sort Title",
     28: "Sort Album",
     29: "Sort Album Artist",
@@ -188,7 +197,7 @@ mhod_type_map = {
     39: "Copyright",
     40: "Unknown (40)",
     41: "Unknown (41)",
-    42: "Unknown (42)",
+    42: "Encoding Quality Descriptor",
     43: "Purchase Account",
     44: "Purchaser Name",
     50: "Smart Playlist Data",
@@ -277,3 +286,217 @@ EXPLICIT_FLAG_MAP = {
     1: "explicit",
     2: "clean",
 }
+
+
+# ============================================================
+# MHOD Type Integer Constants
+# Previously duplicated in mhod_writer.py; now shared.
+# ============================================================
+MHOD_TYPE_TITLE = 1
+MHOD_TYPE_LOCATION = 2
+MHOD_TYPE_ALBUM = 3
+MHOD_TYPE_ARTIST = 4
+MHOD_TYPE_GENRE = 5
+MHOD_TYPE_FILETYPE = 6
+MHOD_TYPE_EQ_SETTING = 7
+MHOD_TYPE_COMMENT = 8
+MHOD_TYPE_CATEGORY = 9
+MHOD_TYPE_LYRICS = 10
+MHOD_TYPE_COMPOSER = 12
+MHOD_TYPE_GROUPING = 13
+MHOD_TYPE_DESCRIPTION = 14
+MHOD_TYPE_PODCAST_ENCLOSURE_URL = 15
+MHOD_TYPE_PODCAST_RSS_URL = 16
+MHOD_TYPE_CHAPTER_DATA = 17
+MHOD_TYPE_SUBTITLE = 18
+MHOD_TYPE_SHOW_NAME = 19
+MHOD_TYPE_EPISODE_ID = 20
+MHOD_TYPE_NETWORK_NAME = 21
+MHOD_TYPE_ALBUM_ARTIST = 22
+MHOD_TYPE_SORT_ARTIST = 23
+MHOD_TYPE_KEYWORDS = 24
+MHOD_TYPE_SHOW_LOCALE = 25
+MHOD_TYPE_SORT_NAME = 27
+MHOD_TYPE_SORT_ALBUM = 28
+MHOD_TYPE_SORT_ALBUM_ARTIST = 29
+MHOD_TYPE_SORT_COMPOSER = 30
+MHOD_TYPE_SORT_SHOW = 31
+MHOD_TYPE_SMART_PLAYLIST_DATA = 50
+MHOD_TYPE_SMART_PLAYLIST_RULES = 51
+MHOD_TYPE_LIBRARY_PLAYLIST_INDEX = 52
+MHOD_TYPE_LIBRARY_PLAYLIST_JUMP_TABLE = 53
+MHOD_TYPE_COLUMN_SIZE_OR_ORDER = 100
+MHOD_TYPE_PLAYLIST_SETTINGS = 102
+# Album item string types
+MHOD_TYPE_ALBUM_ALBUM = 200
+MHOD_TYPE_ALBUM_ARTIST_ITEM = 201
+MHOD_TYPE_ALBUM_SORT_ARTIST = 202
+MHOD_TYPE_ALBUM_PODCAST_URL = 203
+MHOD_TYPE_ALBUM_SHOW = 204
+# Artist item string type
+MHOD_TYPE_ARTIST_NAME = 300
+
+
+# ============================================================
+# File Type Codes (big-endian ASCII stored as LE u32)
+# Previously only in mhit_writer.py; now shared.
+# ============================================================
+FILETYPE_CODES: dict[str, int] = {
+    'mp3': 0x4D503320,  # "MP3 "
+    'm4a': 0x4D344120,  # "M4A "
+    'm4p': 0x4D345020,  # "M4P "
+    'm4b': 0x4D344220,  # "M4B "
+    'm4v': 0x4D345620,  # "M4V "
+    'mp4': 0x4D503420,  # "MP4 "
+    'wav': 0x57415620,  # "WAV "
+    'aif': 0x41494646,  # "AIFF"
+    'aiff': 0x41494646,  # "AIFF"
+    'aac': 0x41414320,  # "AAC "
+}
+
+
+# ============================================================
+# Media Type Integer Constants (from libgpod Itdb_Mediatype)
+# Previously duplicated in mhit_writer.py; now shared.
+# ============================================================
+MEDIA_TYPE_AUDIO = 0x01
+MEDIA_TYPE_VIDEO = 0x02
+MEDIA_TYPE_PODCAST = 0x04
+MEDIA_TYPE_VIDEO_PODCAST = 0x06
+MEDIA_TYPE_AUDIOBOOK = 0x08
+MEDIA_TYPE_MUSIC_VIDEO = 0x20
+MEDIA_TYPE_TV_SHOW = 0x40
+MEDIA_TYPE_RINGTONE = 0x4000
+
+
+# ============================================================
+# Audio Format Flag map (MHIT offset 0x7E)
+# Maps filetype → codec hint value for the audio_format_flag field.
+# 0xFFFF = default (MP3/AAC/ALAC), 0x0000 = lossless (WAV/AIFF),
+# 0x0001 = Audible (M4B audiobooks).
+# ============================================================
+AUDIO_FORMAT_FLAG_MAP: dict[str, int] = {
+    'wav': 0x0000,
+    'aif': 0x0000,
+    'aiff': 0x0000,
+    'm4b': 0x0001,
+}
+AUDIO_FORMAT_FLAG_DEFAULT: int = 0xFFFF
+
+
+# ============================================================
+# Shared extraction / conversion utilities
+# ============================================================
+
+def filetype_to_string(val: int) -> str:
+    """Convert a u32 filetype code to its ASCII representation.
+
+    e.g. 0x4D503320 → "MP3", 0x4D344120 → "M4A"
+    """
+    if not isinstance(val, int) or val <= 0:
+        return ""
+    try:
+        return val.to_bytes(4, "big").decode("ascii").rstrip("\x00").strip()
+    except (OverflowError, UnicodeDecodeError):
+        return str(val)
+
+
+def sample_rate_to_hz(val: int) -> int:
+    """Convert a 16.16 fixed-point sample rate to Hz.
+
+    e.g. 0xAC440000 → 44100
+    """
+    if isinstance(val, int) and val > 65535:
+        return val >> 16
+    return val
+
+
+def extract_datasets(mhbd: dict) -> dict:
+    """Walk the MHBD children and extract datasets into a flat dict.
+
+    Returns a dict with:
+      - All MHBD header fields (excluding 'children')
+      - "mhlt", "mhlp", "mhlp_podcast", "mhla", "mhlp_smart", etc.
+        mapped from MHSD dataset_type via chunk_type_map
+      - Each value is the list of item dicts from the list chunk
+    """
+    result = {}
+    for key, value in mhbd.items():
+        if key != "children":
+            result[key] = value
+
+    for mhsd_wrapper in mhbd.get("children", []):
+        mhsd_data = mhsd_wrapper.get("data", {})
+        dataset_type = mhsd_data.get("dataset_type")
+        result_key = chunk_type_map.get(dataset_type)
+        if result_key is None:
+            continue
+
+        mhsd_children = mhsd_data.get("children", [])
+        if not mhsd_children:
+            result[result_key] = []
+            continue
+
+        # The MHSD has one child: the list chunk (mhlt, mhlp, mhla, mhli)
+        list_chunk = mhsd_children[0]
+        items = list_chunk.get("data", [])
+
+        # Extract items from their wrapper dicts
+        flat_items = []
+        for item in items:
+            if isinstance(item, dict) and "data" in item:
+                flat_items.append(item["data"])
+            else:
+                flat_items.append(item)
+        result[result_key] = flat_items
+
+    return result
+
+
+def extract_mhod_strings(children: list) -> dict:
+    """Extract MHOD string values from a chunk's children list.
+
+    Args:
+        children: The 'children' list from a parsed track/album/artist/playlist.
+
+    Returns:
+        dict mapping mhod_type_map names to string values,
+        e.g. {"Title": "My Song", "Artist": "Foo"}
+    """
+    strings = {}
+    for wrapper in children:
+        mhod_data = wrapper.get("data", {})
+        mhod_type = mhod_data.get("mhod_type")
+        if mhod_type is None:
+            continue
+        field_name = mhod_type_map.get(mhod_type)
+        if field_name and "string" in mhod_data:
+            strings[field_name] = mhod_data["string"]
+    return strings
+
+
+def extract_playlist_extras(mhod_children: list) -> dict:
+    """Extract non-string MHOD data from playlist children.
+
+    Returns dict with optional keys:
+      - "smart_playlist_data": SPL prefs dict (from MHOD type 50)
+      - "smart_playlist_rules": SPL rules dict (from MHOD type 51)
+      - "library_indices": sorted index data (from MHOD type 52)
+      - "playlist_prefs": column prefs (from MHOD type 100)
+      - "playlist_settings": settings blob (from MHOD type 102)
+    """
+    extras = {}
+    for wrapper in mhod_children:
+        mhod_data = wrapper.get("data", {})
+        mhod_type = mhod_data.get("mhod_type")
+        if mhod_type == 50 and "data" in mhod_data:
+            extras["smart_playlist_data"] = mhod_data["data"]
+        elif mhod_type == 51 and "data" in mhod_data:
+            extras["smart_playlist_rules"] = mhod_data["data"]
+        elif mhod_type == 52 and "data" in mhod_data:
+            extras.setdefault("library_indices", []).append(mhod_data["data"])
+        elif mhod_type == 100 and "data" in mhod_data:
+            extras["playlist_prefs"] = mhod_data["data"]
+        elif mhod_type == 102 and "data" in mhod_data:
+            extras["playlist_settings"] = mhod_data["data"]
+    return extras

@@ -6,7 +6,7 @@ for the user to select. Includes a manual folder picker fallback.
 """
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QFont, QPixmap, QPainter, QColor
+from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QWidget, QGridLayout, QFileDialog, QMessageBox, QFrame,
@@ -16,7 +16,7 @@ from PyQt6.QtWidgets import (
 from device_info import DeviceInfo
 from ..device_scanner import scan_for_ipods
 from ..ipod_images import get_ipod_image
-from ..styles import Colors, FONT_FAMILY, Metrics, btn_css
+from ..styles import Colors, FONT_FAMILY, Metrics, btn_css, scaled
 
 
 class _ScanThread(QThread):
@@ -26,173 +26,6 @@ class _ScanThread(QThread):
     def run(self):
         ipods = scan_for_ipods()
         self.finished.emit(ipods)
-
-
-def _make_ipod_icon(family: str, color_hint: str, size: int = 80) -> QPixmap:
-    """
-    Render a simple iPod silhouette icon as a QPixmap.
-
-    Uses different shapes for Classic vs Nano vs Shuffle vs Mini.
-    """
-    pixmap = QPixmap(size, size)
-    pixmap.fill(Qt.GlobalColor.transparent)
-
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-    family_lower = family.lower()
-    # Pick accent color from device color hint
-    color_map = {
-        "black": QColor(60, 60, 60),
-        "silver": QColor(180, 185, 190),
-        "white": QColor(220, 220, 225),
-        "blue": QColor(80, 130, 200),
-        "green": QColor(80, 180, 100),
-        "pink": QColor(220, 130, 160),
-        "red": QColor(200, 60, 60),
-        "purple": QColor(140, 80, 180),
-        "orange": QColor(230, 140, 50),
-        "yellow": QColor(220, 200, 60),
-        "gold": QColor(200, 170, 80),
-        "graphite": QColor(90, 90, 95),
-        "space gray": QColor(80, 80, 85),
-        "slate": QColor(70, 75, 80),
-    }
-    accent = color_map.get(color_hint.lower(), QColor(180, 185, 190))
-
-    margin = 8
-    w = size - margin * 2
-    h = size - margin * 2
-
-    if "classic" in family_lower or "video" in family_lower or "photo" in family_lower:
-        # Rounded rectangle body with a circle (click wheel)
-        body_h = int(h * 0.92)
-        body_w = int(w * 0.72)
-        x = (size - body_w) // 2
-        y = (size - body_h) // 2
-
-        # Body
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(accent)
-        painter.drawRoundedRect(x, y, body_w, body_h, 8, 8)
-
-        # Screen
-        screen_w = int(body_w * 0.75)
-        screen_h = int(body_h * 0.38)
-        sx = x + (body_w - screen_w) // 2
-        sy = y + int(body_h * 0.08)
-        painter.setBrush(QColor(40, 50, 65))
-        painter.drawRoundedRect(sx, sy, screen_w, screen_h, 3, 3)
-
-        # Click wheel
-        wheel_r = int(body_w * 0.32)
-        cx = x + body_w // 2
-        cy = y + int(body_h * 0.70)
-        painter.setBrush(accent.lighter(115))
-        painter.drawEllipse(cx - wheel_r, cy - wheel_r, wheel_r * 2, wheel_r * 2)
-
-        # Center button
-        btn_r = int(wheel_r * 0.42)
-        painter.setBrush(accent.lighter(130))
-        painter.drawEllipse(cx - btn_r, cy - btn_r, btn_r * 2, btn_r * 2)
-
-    elif "nano" in family_lower:
-        # Taller, narrower body
-        body_h = int(h * 0.95)
-        body_w = int(w * 0.55)
-        x = (size - body_w) // 2
-        y = (size - body_h) // 2
-
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(accent)
-        painter.drawRoundedRect(x, y, body_w, body_h, 6, 6)
-
-        # Screen
-        screen_w = int(body_w * 0.80)
-        screen_h = int(body_h * 0.42)
-        sx = x + (body_w - screen_w) // 2
-        sy = y + int(body_h * 0.06)
-        painter.setBrush(QColor(40, 50, 65))
-        painter.drawRoundedRect(sx, sy, screen_w, screen_h, 3, 3)
-
-        # Small click wheel
-        wheel_r = int(body_w * 0.28)
-        cx = x + body_w // 2
-        cy = y + int(body_h * 0.73)
-        painter.setBrush(accent.lighter(110))
-        painter.drawEllipse(cx - wheel_r, cy - wheel_r, wheel_r * 2, wheel_r * 2)
-
-    elif "shuffle" in family_lower:
-        # Small square-ish body with a circle
-        body_s = int(min(w, h) * 0.65)
-        x = (size - body_s) // 2
-        y = (size - body_s) // 2
-
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(accent)
-        painter.drawRoundedRect(x, y, body_s, body_s, 8, 8)
-
-        # Circle control
-        cr = int(body_s * 0.32)
-        cx = x + body_s // 2
-        cy = y + body_s // 2
-        painter.setBrush(accent.lighter(120))
-        painter.drawEllipse(cx - cr, cy - cr, cr * 2, cr * 2)
-
-    elif "mini" in family_lower:
-        # Slightly narrower and taller
-        body_h = int(h * 0.88)
-        body_w = int(w * 0.62)
-        x = (size - body_w) // 2
-        y = (size - body_h) // 2
-
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(accent)
-        painter.drawRoundedRect(x, y, body_w, body_h, 7, 7)
-
-        # Screen
-        screen_w = int(body_w * 0.72)
-        screen_h = int(body_h * 0.30)
-        sx = x + (body_w - screen_w) // 2
-        sy = y + int(body_h * 0.08)
-        painter.setBrush(QColor(45, 55, 50))
-        painter.drawRoundedRect(sx, sy, screen_w, screen_h, 3, 3)
-
-        # Scroll wheel (different from classic — no center button display)
-        wheel_r = int(body_w * 0.30)
-        cx = x + body_w // 2
-        cy = y + int(body_h * 0.66)
-        painter.setBrush(accent.lighter(115))
-        painter.drawEllipse(cx - wheel_r, cy - wheel_r, wheel_r * 2, wheel_r * 2)
-
-    else:
-        # Generic iPod shape (1G-4G: taller, no click wheel — scroll)
-        body_h = int(h * 0.90)
-        body_w = int(w * 0.68)
-        x = (size - body_w) // 2
-        y = (size - body_h) // 2
-
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(accent)
-        painter.drawRoundedRect(x, y, body_w, body_h, 8, 8)
-
-        # Screen
-        screen_w = int(body_w * 0.75)
-        screen_h = int(body_h * 0.35)
-        sx = x + (body_w - screen_w) // 2
-        sy = y + int(body_h * 0.08)
-        painter.setBrush(QColor(50, 60, 55))
-        painter.drawRoundedRect(sx, sy, screen_w, screen_h, 3, 3)
-
-        # Scroll wheel
-        wheel_r = int(body_w * 0.30)
-        cx = x + body_w // 2
-        cy = y + int(body_h * 0.68)
-        painter.setBrush(accent.lighter(110))
-        painter.drawEllipse(cx - wheel_r, cy - wheel_r, wheel_r * 2, wheel_r * 2)
-
-    painter.end()
-    return pixmap
 
 
 class DeviceCard(QFrame):
@@ -205,32 +38,29 @@ class DeviceCard(QFrame):
         self.ipod = ipod
         self._selected = False
 
-        self.setFixedSize(200, 200)
+        self.setFixedSize(scaled(200), scaled(200))
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self._apply_style(False)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 16, 12, 12)
-        layout.setSpacing(6)
+        layout.setContentsMargins(scaled(12), scaled(16), scaled(12), scaled(12))
+        layout.setSpacing(scaled(6))
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        # Icon — try real product photo first, fall back to silhouette
+        # Icon — try real product photo first, fall back to generic icon
         icon_label = QLabel()
         icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         icon_label.setStyleSheet("background: transparent; border: none;")
-        photo = get_ipod_image(ipod.model_family, ipod.generation, 80, ipod.color)
-        if photo and not photo.isNull():
-            icon_label.setPixmap(photo)
-        else:
-            icon_label.setPixmap(
-                _make_ipod_icon(ipod.model_family, ipod.color or "silver", 80)
-            )
+        photo = get_ipod_image(ipod.model_family, ipod.generation, scaled(80), ipod.color)
+
+        icon_label.setPixmap(photo)
+
         layout.addWidget(icon_label)
 
         # iPod name (user-assigned name from master playlist)
         if ipod.ipod_name:
             ipod_name_label = QLabel(ipod.ipod_name)
-            ipod_name_label.setFont(QFont(FONT_FAMILY, 11, QFont.Weight.Bold))
+            ipod_name_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG, QFont.Weight.Bold))
             ipod_name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             ipod_name_label.setWordWrap(True)
             ipod_name_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent; border: none;")
@@ -238,7 +68,7 @@ class DeviceCard(QFrame):
 
         # Model name
         name_label = QLabel(ipod.display_name)
-        name_font_size = 9 if ipod.ipod_name else 11
+        name_font_size = Metrics.FONT_SM if ipod.ipod_name else Metrics.FONT_LG
         name_font_weight = QFont.Weight.Normal if ipod.ipod_name else QFont.Weight.Bold
         name_label.setFont(QFont(FONT_FAMILY, name_font_size, name_font_weight))
         name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -252,7 +82,7 @@ class DeviceCard(QFrame):
             self.setStyleSheet(f"""
                 DeviceCard {{
                     background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                        stop:0 rgba(64,156,255,100), stop:1 rgba(40,100,200,100));
+                        stop:0 {Colors.ACCENT_BORDER}, stop:1 {Colors.ACCENT_DARK});
                     border: 2px solid {Colors.ACCENT};
                     border-radius: {Metrics.BORDER_RADIUS_XL}px;
                 }}
@@ -278,7 +108,7 @@ class DeviceCard(QFrame):
         self._selected = selected
         self._apply_style(False)
 
-    def enterEvent(self, event):  # type: ignore[override]
+    def enterEvent(self, event):
         if not self._selected:
             self._apply_style(True)
         super().enterEvent(event)
@@ -326,17 +156,17 @@ class DevicePickerDialog(QDialog):
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 16)
-        layout.setSpacing(16)
+        layout.setContentsMargins(scaled(20), scaled(20), scaled(20), scaled(16))
+        layout.setSpacing(scaled(16))
 
         # Title
         title = QLabel("Select your iPod")
-        title.setFont(QFont(FONT_FAMILY, 16, QFont.Weight.Bold))
+        title.setFont(QFont(FONT_FAMILY, Metrics.FONT_PAGE_TITLE, QFont.Weight.Bold))
         title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
         layout.addWidget(title)
 
         subtitle = QLabel("Scanning for connected iPods...")
-        subtitle.setFont(QFont(FONT_FAMILY, 10))
+        subtitle.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
         subtitle.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
         self._subtitle = subtitle
         layout.addWidget(subtitle)
@@ -353,7 +183,7 @@ class DevicePickerDialog(QDialog):
         self._grid_container.setStyleSheet("background: transparent;")
         self._grid_layout = QGridLayout(self._grid_container)
         self._grid_layout.setContentsMargins(0, 0, 0, 0)
-        self._grid_layout.setSpacing(16)
+        self._grid_layout.setSpacing(scaled(16))
         scroll.setWidget(self._grid_container)
         layout.addWidget(scroll, 1)
 
@@ -363,7 +193,7 @@ class DevicePickerDialog(QDialog):
             "Make sure your iPod is connected and shows as a drive letter.\n"
             "You can also use the button below to select a folder manually."
         )
-        self._no_devices_label.setFont(QFont(FONT_FAMILY, 10))
+        self._no_devices_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
         self._no_devices_label.setStyleSheet(f"color: {Colors.TEXT_TERTIARY};")
         self._no_devices_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._no_devices_label.setWordWrap(True)
@@ -378,10 +208,10 @@ class DevicePickerDialog(QDialog):
 
         # Bottom buttons
         btn_layout = QHBoxLayout()
-        btn_layout.setSpacing(10)
+        btn_layout.setSpacing(scaled(10))
 
-        self._manual_btn = QPushButton("📁  Browse Manually...")
-        self._manual_btn.setFont(QFont(FONT_FAMILY, 10))
+        self._manual_btn = QPushButton("Browse Manually")
+        self._manual_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
         self._manual_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._manual_btn.setStyleSheet(btn_css(
             bg=Colors.SURFACE_RAISED,
@@ -394,8 +224,8 @@ class DevicePickerDialog(QDialog):
         self._manual_btn.clicked.connect(self._browse_manually)
         btn_layout.addWidget(self._manual_btn)
 
-        self._rescan_btn = QPushButton("🔃  Rescan")
-        self._rescan_btn.setFont(QFont(FONT_FAMILY, 10))
+        self._rescan_btn = QPushButton("Rescan")
+        self._rescan_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
         self._rescan_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._rescan_btn.setStyleSheet(btn_css(
             bg=Colors.SURFACE_RAISED,
@@ -411,7 +241,7 @@ class DevicePickerDialog(QDialog):
         btn_layout.addStretch()
 
         self._select_btn = QPushButton("Select")
-        self._select_btn.setFont(QFont(FONT_FAMILY, 10, QFont.Weight.DemiBold))
+        self._select_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.DemiBold))
         self._select_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._select_btn.setEnabled(False)
         self._select_btn.setStyleSheet(f"""
@@ -419,8 +249,8 @@ class DevicePickerDialog(QDialog):
                 background: {Colors.ACCENT_DIM};
                 border: 1px solid {Colors.ACCENT_BORDER};
                 border-radius: {Metrics.BORDER_RADIUS_SM}px;
-                color: white;
-                padding: 7px 24px;
+                color: {Colors.TEXT_ON_ACCENT};
+                padding: {scaled(7)}px {scaled(24)}px;
             }}
             QPushButton:hover {{
                 background: {Colors.ACCENT_HOVER};
@@ -435,7 +265,7 @@ class DevicePickerDialog(QDialog):
         btn_layout.addWidget(self._select_btn)
 
         cancel_btn = QPushButton("Cancel")
-        cancel_btn.setFont(QFont(FONT_FAMILY, 10))
+        cancel_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
         cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         cancel_btn.setStyleSheet(btn_css(
             bg=Colors.SURFACE_RAISED,

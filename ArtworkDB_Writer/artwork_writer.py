@@ -50,6 +50,38 @@ class ArtworkEntry:
     track_dbids: list = field(default_factory=list)
 
 
+@dataclass
+class PendingArtworkWrite:
+    """Result of a deferred write_artworkdb call.
+
+    Holds the dbid→imgId mapping and temp file paths.  The caller must
+    call ``commit()`` after the iTunesDB/CDB is also ready to ensure both
+    databases are updated atomically.  Call ``abort()`` to clean up temp
+    files without committing.
+    """
+    dbid_to_art_info: dict          # dbid → (imgId, src_img_size)
+    _pending_renames: list = field(default_factory=list)  # [(temp, final), ...]
+    _committed: bool = False
+
+    def commit(self) -> None:
+        """Atomically replace all temp files with final paths."""
+        if self._committed:
+            return
+        for temp, final in self._pending_renames:
+            os.replace(temp, final)
+        self._committed = True
+
+    def abort(self) -> None:
+        """Remove all temp files without committing."""
+        if self._committed:
+            return
+        for temp, _final in self._pending_renames:
+            try:
+                os.remove(temp)
+            except OSError:
+                pass
+
+
 def _write_mhod_string(mhod_type: int, string: str) -> bytes:
     """Write an ArtworkDB MHOD string (type 1 or 3).
 
@@ -439,7 +471,8 @@ def write_artworkdb(
     start_img_id: int = 100,
     reference_artdb_path: Optional[str] = None,
     artwork_formats: Optional[dict[int, tuple[int, int]]] = None,
-) -> dict:
+    defer_commit: bool = False,
+) -> dict | PendingArtworkWrite:
     """
     Write ArtworkDB and ithmb files for an iPod.
 
@@ -447,9 +480,15 @@ def write_artworkdb(
     1. Extracts album art from PC source files
     2. Preserves existing art for tracks without PC source files
     3. Converts art to RGB565 at multiple sizes
-    4. Writes ithmb files (pixel data)
-    5. Writes ArtworkDB binary (metadata)
+    4. Writes ithmb files (pixel data) to temp paths
+    5. Writes ArtworkDB binary (metadata) to temp path
     6. Returns a mapping of track dbid → imgId for iTunesDB mhiiLink
+
+    When ``defer_commit=True``, files are written to temp paths but NOT
+    renamed to their final locations.  The caller receives a
+    ``PendingArtworkWrite`` object and must call ``.commit()`` after the
+    iTunesDB is also ready, or ``.abort()`` on failure.  This ensures
+    both databases are updated atomically.
 
     Args:
         ipod_path: iPod mount point (e.g., "E:" or "/media/ipod")
@@ -460,11 +499,15 @@ def write_artworkdb(
         reference_artdb_path: Path to existing ArtworkDB for copying header fields
         artwork_formats: Device-specific format table {correlationID: (w,h)}.
                          If None, auto-detected from existing ArtworkDB / SysInfo.
+        defer_commit: If True, return a PendingArtworkWrite instead of committing
+                      immediately.
 
     Returns:
-        Dict mapping track dbid (int) → (imgId, src_img_size) tuple for
-        setting mhiiLink and artworkSize on MHIT, or empty dict if no
-        artwork found
+        If ``defer_commit=False`` (default): dict mapping track dbid →
+        (imgId, src_img_size), or empty dict if no artwork found.
+
+        If ``defer_commit=True``: a ``PendingArtworkWrite`` with the
+        mapping in ``.dbid_to_art_info`` and a ``.commit()`` method.
     """
     artwork_dir = os.path.join(ipod_path, "iPod_Control", "Artwork")
     os.makedirs(artwork_dir, exist_ok=True)
@@ -582,22 +625,41 @@ def write_artworkdb(
     tracks_preserved = 0
 
     if existing_art:
+        # Build reverse index: song_id → img_id for the authoritative lookup.
+        # The MHII song_id is the dbid of the track it was written for — this
+        # is always correct even if the track's mhii_link got out of sync
+        # (e.g. after a partial write where ArtworkDB updated but CDB didn't).
+        existing_by_song_id: dict[int, int] = {}
+        for img_id, entry in existing_art.items():
+            sid = entry.get('song_id', 0)
+            if sid:
+                existing_by_song_id[sid] = img_id
+
         for track in tracks:
             dbid = _get_track_field(track, 'dbid')
             if not dbid or dbid in track_art:
                 continue  # Already has new art from PC extraction
 
-            # Check if this track had existing art via mhii_link
-            mhii_link = _get_track_field(track, 'mhii_link')
-            if not mhii_link:
-                mhii_link = _get_track_field(track, 'mhiiLink')
-            if not mhii_link or mhii_link not in existing_art:
+            # Primary lookup: find MHII whose song_id matches this track's dbid
+            resolved_img_id = existing_by_song_id.get(dbid)
+
+            if resolved_img_id is None:
+                # Fallback: try the track's mhii_link field directly
+                mhii_link = _get_track_field(track, 'mhii_link')
+                if not mhii_link:
+                    mhii_link = _get_track_field(track, 'mhiiLink')
+                if not mhii_link:
+                    mhii_link = _get_track_field(track, 'artwork_id_ref')
+                if mhii_link and mhii_link in existing_art:
+                    resolved_img_id = mhii_link
+
+            if resolved_img_id is None:
                 continue
 
             # Preserve this existing art entry
-            preserve_key = f"__preserved_{mhii_link}"
+            preserve_key = f"__preserved_{resolved_img_id}"
             if preserve_key not in preserved_art:
-                preserved_art[preserve_key] = existing_art[mhii_link]
+                preserved_art[preserve_key] = existing_art[resolved_img_id]
             track_art[dbid] = preserve_key
             tracks_preserved += 1
 
@@ -777,21 +839,38 @@ def write_artworkdb(
     # --- Atomic commit: all temp files are complete, swap them in ---
     # os.replace is atomic on NTFS and POSIX — old files are only removed
     # when the new file is fully in place.
+
+    # --- Step 5: Build dbid → (imgId, src_img_size) mapping ---
+    # Each entry already has a unique img_id and a single song_id (dbid).
+    dbid_to_art_info: dict[int, tuple[int, int]] = {}
+    for entry in entries:
+        dbid_to_art_info[entry.song_id] = (entry.img_id, entry.src_img_size)
+
+    # Collect all pending renames (ithmb temps + artworkdb temp)
+    pending_renames = []
+    for fmt_id in format_ids:
+        pending_renames.append((ithmb_temp_paths[fmt_id], ithmb_final_paths[fmt_id]))
+    pending_renames.append((artdb_temp, artdb_path))
+
+    if defer_commit:
+        logger.info(f"ART: prepared {len(art_hash_written)} unique images, "
+                    f"{len(entries)} MHII entries (per-track) — commit deferred")
+        return PendingArtworkWrite(
+            dbid_to_art_info=dbid_to_art_info,
+            _pending_renames=pending_renames,
+        )
+
+    # Immediate commit (legacy behaviour)
     try:
-        for fmt_id in format_ids:
-            os.replace(ithmb_temp_paths[fmt_id], ithmb_final_paths[fmt_id])
-        os.replace(artdb_temp, artdb_path)
+        for temp, final in pending_renames:
+            os.replace(temp, final)
     except Exception:
         # If any replace fails, clean up remaining temps
-        for tp in ithmb_temp_paths.values():
+        for temp, _final in pending_renames:
             try:
-                os.remove(tp)
+                os.remove(temp)
             except OSError:
                 pass
-        try:
-            os.remove(artdb_temp)
-        except OSError:
-            pass
         raise
 
     logger.info(f"Wrote ithmb files: {len(art_hash_written)} unique images, "
@@ -799,12 +878,6 @@ def write_artworkdb(
     for fmt_id in format_ids:
         size = os.path.getsize(ithmb_final_paths[fmt_id])
         logger.info(f"  F{fmt_id}_1.ithmb: {size} bytes")
-
-    # --- Step 5: Build dbid → (imgId, src_img_size) mapping ---
-    # Each entry already has a unique img_id and a single song_id (dbid).
-    dbid_to_art_info: dict[int, tuple[int, int]] = {}
-    for entry in entries:
-        dbid_to_art_info[entry.song_id] = (entry.img_id, entry.src_img_size)
 
     return dbid_to_art_info
 

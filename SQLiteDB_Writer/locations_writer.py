@@ -13,7 +13,8 @@ import sqlite3
 import time
 import logging
 
-from iTunesDB_Writer.mhit_writer import TrackInfo, FILETYPE_CODES
+from iTunesDB_Writer.mhit_writer import TrackInfo
+from iTunesDB_Shared.constants import FILETYPE_CODES
 
 logger = logging.getLogger(__name__)
 

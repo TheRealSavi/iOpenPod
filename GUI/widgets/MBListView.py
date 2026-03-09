@@ -24,7 +24,7 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem,
     QVBoxLayout,
 )
-from ..styles import Colors, FONT_FAMILY
+from ..styles import Colors, FONT_FAMILY, Metrics, table_css
 
 log = logging.getLogger(__name__)
 
@@ -70,7 +70,7 @@ def format_date(unix_timestamp: int) -> str:
 
 def format_media_type(value: int) -> str:
     """Format media type bitmask as human-readable string."""
-    from iTunesDB_Parser.constants import MEDIA_TYPE_MAP
+    from iTunesDB_Shared.constants import MEDIA_TYPE_MAP
     if value in MEDIA_TYPE_MAP:
         return MEDIA_TYPE_MAP[value]
     # Fallback: decode known bits
@@ -173,38 +173,40 @@ COLUMN_CONFIG: dict[str, tuple[str, Callable[[int], str] | None]] = {
     "Comment": ("Comment", None),
     "Grouping": ("Grouping", None),
     "year": ("Year", None),
-    "trackNumber": ("Track #", None),
-    "totalTracks": ("Track Total", None),
-    "discNumber": ("Disc #", None),
-    "totalDiscs": ("Disc Total", None),
-    "compilation": ("Compilation", format_compilation),
+    "track_number": ("Track #", None),
+    "total_tracks": ("Track Total", None),
+    "disc_number": ("Disc #", None),
+    "total_discs": ("Disc Total", None),
+    "compilation_flag": ("Compilation", format_compilation),
     "bpm": ("BPM", None),
     # ── Playback ──
     "length": ("Time", format_duration),
     "rating": ("Rating", format_rating),
-    "playCount": ("Plays", None),
-    "skipCount": ("Skips", None),
-    "lastPlayed": ("Last Played", format_date),
-    "lastSkipped": ("Last Skipped", format_date),
-    "startTime": ("Start Time", format_duration),
-    "stopTime": ("Stop Time", format_duration),
-    "bookmarkTime": ("Bookmark", format_duration),
-    "checked": ("Checked", format_checked),
-    "playedMark": ("Played", format_bool_flag),
-    "soundCheck": ("Sound Check", format_sound_check),
+    "play_count_1": ("Plays", None),
+    "play_count_2": ("Plays (iPod)", None),
+    "skip_count": ("Skips", None),
+    "last_played": ("Last Played", format_date),
+    "last_skipped": ("Last Skipped", format_date),
+    "start_time": ("Start Time", format_duration),
+    "stop_time": ("Stop Time", format_duration),
+    "bookmark_time": ("Bookmark Time", format_duration),
+    "checked_flag": ("Checked", format_checked),
+    "not_played_flag": ("Played", format_bool_flag),
+    "sound_check": ("Sound Check", format_sound_check),
     "volume": ("Volume Adj.", format_volume),
     # ── File / encoding info ──
     "filetype": ("Format", None),
     "bitrate": ("Bitrate", format_bitrate),
-    "sampleRate": ("Sample Rate", format_sample_rate),
+    "sample_rate_1": ("Sample Rate", format_sample_rate),
     "size": ("Size", format_size),
-    "vbr": ("VBR", format_bool_flag),
-    "mediaType": ("Media Type", format_media_type),
-    "explicitFlag": ("Explicit", format_explicit),
+    "vbr_flag": ("VBR", format_bool_flag),
+    "media_type": ("Media Type", format_media_type),
+    "explicit_flag": ("Explicit", format_explicit),
+    "encoder": ("Encoder", None),
     # ── Dates ──
-    "dateAdded": ("Date Added", format_date),
-    "lastModified": ("Date Modified", format_date),
-    "dateReleased": ("Release Date", format_date),
+    "date_added": ("Date Added", format_date),
+    "last_modified": ("Date Modified", format_date),
+    "date_released": ("Release Date", format_date),
     # ── Sort override fields ──
     "Sort Title": ("Sort Title", None),
     "Sort Artist": ("Sort Artist", None),
@@ -214,8 +216,8 @@ COLUMN_CONFIG: dict[str, tuple[str, Callable[[int], str] | None]] = {
     "Sort Show": ("Sort Show", None),
     # ── Video / TV Show ──
     "Show": ("Show", None),
-    "seasonNumber": ("Season", None),
-    "episodeNumber": ("Episode #", None),
+    "season_number": ("Season", None),
+    "episode_number": ("Episode #", None),
     "Episode": ("Episode ID", None),
     "TV Network": ("Network", None),
     "Description Text": ("Description", None),
@@ -224,25 +226,35 @@ COLUMN_CONFIG: dict[str, tuple[str, Callable[[int], str] | None]] = {
     "Category": ("Category", None),
     "Podcast Enclosure URL": ("Enclosure URL", None),
     "Podcast RSS URL": ("RSS URL", None),
-    "podcastFlag": ("Podcast", format_bool_flag),
+    "podcast_flag": ("Podcast", format_bool_flag),
     # ── Gapless ──
-    "gaplessTrackFlag": ("Gapless", format_bool_flag),
-    "gaplessAlbumFlag": ("Gapless Album", format_bool_flag),
+    "gapless_track_flag": ("Gapless", format_bool_flag),
+    "gapless_album_flag": ("Gapless Album", format_bool_flag),
     "pregap": ("Pre-gap", format_samples),
     "postgap": ("Post-gap", format_samples),
-    "sampleCount": ("Sample Count", format_samples),
+    "sample_count": ("Sample Count", format_samples),
+    "gapless_audio_payload_size": ("Gapless Payload", format_samples),
     # ── Flags ──
-    "skipWhenShuffling": ("Skip Shuffle", format_bool_flag),
-    "rememberPosition": ("Remember Pos.", format_bool_flag),
-    "lyricsFlag": ("Has Lyrics", format_bool_flag),
+    "skip_when_shuffling": ("Skip Shuffle", format_bool_flag),
+    "remember_position": ("Remember Pos.", format_bool_flag),
+    "lyrics_flag": ("Has Lyrics", format_bool_flag),
     # ── Artwork ──
-    "artworkCount": ("Art Count", None),
+    "artwork_count": ("Art Count", None),
+    "artwork_id_ref": ("Artwork Ref", None),
     # ── Identifiers (diagnostic) ──
-    "trackID": ("Track ID", None),
-    "dbid": ("DBID", format_dbid),
-    "albumID": ("Album ID", None),
+    "track_id": ("Track ID", None),
+    "db_id": ("DBID", format_dbid),
+    "album_id": ("Album ID", None),
+    "artist_id_ref": ("Artist Ref", None),
+    "composer_id": ("Composer ID", None),
     # ── EQ ──
     "EQ Setting": ("Equalizer", None),
+    # ── File path ──
+    "Location": ("Location", None),
+    # ── Extra string tags ──
+    "Lyrics": ("Lyrics", None),
+    "Track Keywords": ("Keywords", None),
+    "Show Locale": ("Locale", None),
 }
 
 # Preferred column order — controls the order columns appear when auto-
@@ -252,41 +264,45 @@ COLUMN_CONFIG: dict[str, tuple[str, Callable[[int], str] | None]] = {
 PREFERRED_COLUMN_ORDER = [
     # Core identity
     "Title", "Artist", "Album", "Album Artist", "Genre", "Composer",
-    "year", "trackNumber", "totalTracks", "discNumber", "totalDiscs",
-    "compilation", "bpm",
+    "year", "track_number", "total_tracks", "disc_number", "total_discs",
+    "compilation_flag", "bpm",
     # Playback / stats
-    "length", "rating", "playCount", "skipCount",
-    "lastPlayed", "lastSkipped", "checked", "playedMark",
+    "length", "rating", "play_count_1", "play_count_2", "skip_count",
+    "last_played", "last_skipped", "checked_flag", "not_played_flag",
     # Audio quality
-    "filetype", "bitrate", "sampleRate", "size", "vbr",
+    "filetype", "bitrate", "sample_rate_1", "size", "vbr_flag", "encoder",
     # Volume / normalization
-    "soundCheck", "volume",
+    "sound_check", "volume",
     # Dates
-    "dateAdded", "lastModified", "dateReleased",
+    "date_added", "last_modified", "date_released",
     # Tags
-    "Comment", "Grouping", "explicitFlag",
+    "Comment", "Grouping", "explicit_flag",
     # Sort overrides
     "Sort Title", "Sort Artist", "Sort Album",
     "Sort Album Artist", "Sort Composer", "Sort Show",
     # Video / TV
-    "mediaType", "Show", "seasonNumber", "episodeNumber",
+    "media_type", "Show", "season_number", "episode_number",
     "Episode", "TV Network", "Description Text", "Subtitle",
     # Podcast
-    "Category", "podcastFlag",
+    "Category", "podcast_flag",
     "Podcast Enclosure URL", "Podcast RSS URL",
     # Playback range
-    "startTime", "stopTime", "bookmarkTime",
+    "start_time", "stop_time", "bookmark_time",
     # Gapless
-    "gaplessTrackFlag", "gaplessAlbumFlag",
-    "pregap", "postgap", "sampleCount",
+    "gapless_track_flag", "gapless_album_flag",
+    "pregap", "postgap", "sample_count", "gapless_audio_payload_size",
     # Flags
-    "skipWhenShuffling", "rememberPosition", "lyricsFlag",
+    "skip_when_shuffling", "remember_position", "lyrics_flag",
     # Artwork
-    "artworkCount",
+    "artwork_count", "artwork_id_ref",
     # Identifiers
-    "trackID", "dbid", "albumID",
+    "track_id", "db_id", "album_id", "artist_id_ref", "composer_id",
     # EQ
     "EQ Setting",
+    # File path
+    "Location",
+    # Extra tags
+    "Lyrics", "Track Keywords", "Show Locale",
 ]
 
 # ── Per-media-type default column sets ────────────────────────────────────────
@@ -294,37 +310,37 @@ PREFERRED_COLUMN_ORDER = [
 # Music (default)
 DEFAULT_COLUMNS = [
     "Title", "Artist", "Album", "Genre", "year",
-    "trackNumber", "length", "rating", "playCount",
-    "dateAdded",
+    "track_number", "length", "rating", "play_count_1",
+    "date_added",
 ]
 
 # Music videos / Movies
 DEFAULT_VIDEO_COLUMNS = [
     "Title", "Artist", "Album", "length",
-    "mediaType", "size", "bitrate", "dateAdded",
-    "rating", "playCount",
+    "media_type", "size", "bitrate", "date_added",
+    "rating", "play_count_1",
 ]
 
 # Podcasts
 DEFAULT_PODCAST_COLUMNS = [
     "Title", "Artist", "Album", "length",
-    "dateReleased", "playCount", "playedMark",
-    "Description Text", "dateAdded",
+    "date_released", "play_count_1", "not_played_flag",
+    "Description Text", "date_added",
 ]
 
 # Audiobooks
 DEFAULT_AUDIOBOOK_COLUMNS = [
     "Title", "Artist", "Album", "length",
-    "bookmarkTime", "playCount", "rating", "dateAdded",
+    "bookmark_time", "play_count_1", "rating", "date_added",
 ]
 
 # Columns that should be right-aligned (numeric)
 NUMERIC_COLUMNS = frozenset({
-    "_pl_pos", "year", "trackNumber", "totalTracks", "discNumber", "totalDiscs",
-    "bpm", "playCount", "skipCount", "volume",
-    "seasonNumber", "episodeNumber", "artworkCount",
-    "trackID", "albumID",
-    "pregap", "postgap", "sampleCount",
+    "_pl_pos", "year", "track_number", "total_tracks", "disc_number", "total_discs",
+    "bpm", "play_count_1", "play_count_2", "skip_count", "volume",
+    "season_number", "episode_number", "artwork_count", "artwork_id_ref",
+    "track_id", "album_id", "artist_id_ref", "composer_id",
+    "pregap", "postgap", "sample_count", "gapless_audio_payload_size",
 })
 
 # Columns whose raw value should be stored in UserRole for correct numeric sorting.
@@ -332,26 +348,27 @@ NUMERIC_COLUMNS = frozenset({
 SORTABLE_NUMERIC_KEYS = frozenset({
     "_pl_pos",
     # Core numeric
-    "year", "trackNumber", "totalTracks", "discNumber", "totalDiscs",
-    "bpm", "compilation",
+    "year", "track_number", "total_tracks", "disc_number", "total_discs",
+    "bpm", "compilation_flag",
     # Playback stats
-    "length", "rating", "playCount", "skipCount",
-    "startTime", "stopTime", "bookmarkTime",
-    "checked", "playedMark", "soundCheck", "volume",
+    "length", "rating", "play_count_1", "play_count_2", "skip_count",
+    "start_time", "stop_time", "bookmark_time",
+    "checked_flag", "not_played_flag", "sound_check", "volume",
     # File info
-    "bitrate", "size", "sampleRate", "vbr",
-    "mediaType", "explicitFlag",
+    "bitrate", "size", "sample_rate_1", "vbr_flag",
+    "media_type", "explicit_flag",
     # Dates
-    "dateAdded", "lastPlayed", "lastModified", "lastSkipped", "dateReleased",
+    "date_added", "last_played", "last_modified", "last_skipped", "date_released",
     # Video/Podcast
-    "seasonNumber", "episodeNumber", "podcastFlag",
+    "season_number", "episode_number", "podcast_flag",
     # Gapless
-    "gaplessTrackFlag", "gaplessAlbumFlag",
-    "pregap", "postgap", "sampleCount",
+    "gapless_track_flag", "gapless_album_flag",
+    "pregap", "postgap", "sample_count", "gapless_audio_payload_size",
     # Flags
-    "skipWhenShuffling", "rememberPosition", "lyricsFlag",
+    "skip_when_shuffling", "remember_position", "lyrics_flag",
     # Artwork / IDs
-    "artworkCount", "trackID", "dbid", "albumID",
+    "artwork_count", "artwork_id_ref",
+    "track_id", "db_id", "album_id", "artist_id_ref", "composer_id",
 })
 
 # Batch size for incremental population (rows per timer tick)
@@ -405,7 +422,7 @@ class MusicBrowserList(QFrame):
 
         # Status bar (track count)
         self._status_label = QLabel()
-        self._status_label.setFont(QFont(FONT_FAMILY, 9))
+        self._status_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self._status_label.setStyleSheet(
             f"color: {Colors.TEXT_SECONDARY}; padding: 3px 8px;"
         )
@@ -432,7 +449,7 @@ class MusicBrowserList(QFrame):
         self._art_pending: set[int] = set()         # mhiiLinks currently being loaded
 
         # Shared resources (created once, reused)
-        self._font = QFont(FONT_FAMILY, 10)
+        self._font = QFont(FONT_FAMILY, Metrics.FONT_MD)
 
         # Column visibility state: keys the user has explicitly hidden
         self._hidden_columns: set[str] = set()
@@ -493,49 +510,7 @@ class MusicBrowserList(QFrame):
         t.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         t.customContextMenuRequested.connect(self._on_track_context_menu)
 
-        t.setStyleSheet(f"""
-            QTableWidget {{
-                background-color: rgba(0,0,0,20);
-                alternate-background-color: rgba(255,255,255,4);
-                border: none;
-                color: {Colors.TEXT_PRIMARY};
-                gridline-color: {Colors.GRIDLINE};
-                selection-background-color: {Colors.SELECTION};
-                outline: none;
-            }}
-            QTableWidget::item {{
-                padding: 6px 8px;
-                border-bottom: 1px solid {Colors.BORDER_SUBTLE};
-            }}
-            QTableWidget::item:selected {{
-                background-color: {Colors.SELECTION};
-            }}
-            QTableWidget::item:hover {{
-                background-color: rgba(255,255,255,6);
-            }}
-            QHeaderView::section {{
-                background-color: {Colors.SURFACE_ALT};
-                color: {Colors.TEXT_SECONDARY};
-                padding: 6px 8px;
-                border: none;
-                border-bottom: 1px solid {Colors.BORDER};
-                font-weight: 600;
-                font-size: 11px;
-            }}
-            QHeaderView::section:hover {{
-                background-color: {Colors.SURFACE_RAISED};
-                color: {Colors.TEXT_PRIMARY};
-            }}
-            QHeaderView::section:pressed {{
-                background-color: {Colors.SURFACE_ACTIVE};
-            }}
-            /* Corner button (top-left) */
-            QTableCornerButton::section {{
-                background-color: {Colors.SURFACE_ALT};
-                border: none;
-                border-bottom: 1px solid {Colors.BORDER};
-            }}
-        """)
+        t.setStyleSheet(table_css())
 
         vh = t.verticalHeader()
         if vh:
@@ -585,8 +560,8 @@ class MusicBrowserList(QFrame):
         if media_type_filter is not None:
             self._all_tracks = [
                 t for t in self._all_tracks
-                if t.get("mediaType", 1) == 0  # type 0 = "Audio/Video", shows everywhere
-                or (t.get("mediaType", 1) & media_type_filter)
+                if t.get("media_type", 1) == 0  # type 0 = "Audio/Video", shows everywhere
+                or (t.get("media_type", 1) & media_type_filter)
             ]
 
         if self._current_filter:
@@ -713,8 +688,8 @@ class MusicBrowserList(QFrame):
                 if mf is not None:
                     self._all_tracks = [
                         t for t in self._all_tracks
-                        if t.get("mediaType", 1) == 0
-                        or (t.get("mediaType", 1) & mf)
+                        if t.get("media_type", 1) == 0
+                        or (t.get("media_type", 1) & mf)
                     ]
 
     def _setup_columns(self) -> None:
@@ -891,8 +866,8 @@ class MusicBrowserList(QFrame):
             art_item.setFlags(Qt.ItemFlag.ItemIsEnabled)  # not selectable/editable
             self.table.setItem(row, 0, art_item)
 
-            # Request artwork load for this track's mhiiLink
-            mhii_link = track.get("mhiiLink")
+            # Request artwork load for this track's artwork_id_ref
+            mhii_link = track.get("artwork_id_ref")
             if mhii_link is not None:
                 if mhii_link in self._art_cache:
                     art_item.setIcon(QIcon(self._art_cache[mhii_link]))
@@ -1285,30 +1260,104 @@ class MusicBrowserList(QFrame):
                 hide_act.triggered.connect(lambda _=False, k=clicked_key: self._hide_column(k))
             menu.addSeparator()
 
-        # ── "Add Column" cascade ──
+        # ── "Add Column" cascade with grouped sub-menus ──
         add_menu = menu.addMenu("Add Column")
         if add_menu:
             add_menu.setStyleSheet(menu.styleSheet())
 
-            # Gather columns that are currently hidden or not shown
             shown = set(self._columns)
-            available = []
-            for key in PREFERRED_COLUMN_ORDER:
-                if key not in shown and key in COLUMN_CONFIG:
-                    available.append(key)
-            for key in COLUMN_CONFIG:
-                if key not in shown and key not in available:
-                    available.append(key)
 
-            if available:
-                for key in available:
-                    display_name = COLUMN_CONFIG[key][0]
-                    # Disambiguate duplicate display names
-                    label = f"{display_name}  ({key})" if key != display_name else display_name
-                    act = add_menu.addAction(label)
-                    if act:
-                        act.triggered.connect(lambda _=False, k=key: self._show_column(k))
-            else:
+            # Groups map column keys to a human-readable category.
+            # Order here controls the sub-menu order.
+            _COLUMN_GROUPS: list[tuple[str, list[str]]] = [
+                ("Core Metadata", [
+                    "Title", "Artist", "Album", "Album Artist",
+                    "Genre", "Composer", "Comment", "Grouping",
+                    "year", "track_number", "total_tracks",
+                    "disc_number", "total_discs", "compilation_flag", "bpm",
+                ]),
+                ("Playback & Stats", [
+                    "length", "rating", "play_count_1", "play_count_2",
+                    "skip_count", "last_played", "last_skipped",
+                    "checked_flag", "not_played_flag",
+                    "start_time", "stop_time", "bookmark_time",
+                ]),
+                ("Audio Quality", [
+                    "filetype", "bitrate", "sample_rate_1", "size",
+                    "vbr_flag", "encoder", "sound_check", "volume",
+                ]),
+                ("Dates", [
+                    "date_added", "last_modified", "date_released",
+                ]),
+                ("Sort Overrides", [
+                    "Sort Title", "Sort Artist", "Sort Album",
+                    "Sort Album Artist", "Sort Composer", "Sort Show",
+                ]),
+                ("Video & TV", [
+                    "media_type", "Show", "season_number",
+                    "episode_number", "Episode", "TV Network",
+                    "Description Text", "Subtitle",
+                ]),
+                ("Podcast", [
+                    "Category", "podcast_flag",
+                    "Podcast Enclosure URL", "Podcast RSS URL",
+                ]),
+                ("Gapless", [
+                    "gapless_track_flag", "gapless_album_flag",
+                    "pregap", "postgap", "sample_count",
+                    "gapless_audio_payload_size",
+                ]),
+                ("Flags", [
+                    "skip_when_shuffling", "remember_position",
+                    "lyrics_flag", "explicit_flag",
+                ]),
+                ("Artwork", [
+                    "artwork_count", "artwork_id_ref",
+                ]),
+                ("Identifiers", [
+                    "track_id", "db_id", "album_id",
+                    "artist_id_ref", "composer_id",
+                ]),
+                ("Other", [
+                    "EQ Setting", "Location", "Lyrics",
+                    "Track Keywords", "Show Locale", "_pl_pos",
+                ]),
+            ]
+
+            any_available = False
+            grouped_keys: set[str] = set()
+            for group_name, keys in _COLUMN_GROUPS:
+                avail = [k for k in keys if k not in shown and k in COLUMN_CONFIG]
+                grouped_keys.update(keys)
+                if not avail:
+                    continue
+                any_available = True
+                sub = add_menu.addMenu(group_name)
+                if sub:
+                    sub.setStyleSheet(menu.styleSheet())
+                    for key in avail:
+                        display_name = COLUMN_CONFIG[key][0]
+                        act = sub.addAction(display_name)
+                        if act:
+                            act.triggered.connect(lambda _=False, k=key: self._show_column(k))
+
+            # Catch any columns not listed in a group (future-proofing)
+            ungrouped = [
+                k for k in COLUMN_CONFIG
+                if k not in shown and k not in grouped_keys
+            ]
+            if ungrouped:
+                any_available = True
+                sub = add_menu.addMenu("Other")
+                if sub:
+                    sub.setStyleSheet(menu.styleSheet())
+                    for key in ungrouped:
+                        display_name = COLUMN_CONFIG[key][0]
+                        act = sub.addAction(display_name)
+                        if act:
+                            act.triggered.connect(lambda _=False, k=key: self._show_column(k))
+
+            if not any_available:
                 no_act = add_menu.addAction("(all columns shown)")
                 if no_act:
                     no_act.setEnabled(False)
@@ -1437,7 +1486,7 @@ class MusicBrowserList(QFrame):
             # Filter to regular (non-master, non-smart, non-podcast) playlists
             regular = [
                 pl for pl in playlists
-                if not pl.get("isMaster") and not pl.get("isSmartPlaylist") and pl.get("_source") != "smart" and pl.get("podcastFlag", 0) != 1 and pl.get("_source") != "podcast"
+                if not pl.get("master_flag") and not pl.get("smart_playlist_data") and pl.get("_source") != "smart" and pl.get("podcast_flag", 0) != 1 and pl.get("_source") != "podcast"  # smart_playlist_data was smartPlaylistData
             ]
 
             add_menu = menu.addMenu("Add to Playlist")
@@ -1447,7 +1496,7 @@ class MusicBrowserList(QFrame):
                 if regular:
                     for pl in regular:
                         title = pl.get("Title", "Untitled")
-                        act = add_menu.addAction(f"📋  {title}")
+                        act = add_menu.addAction(title)
                         if act:
                             act.triggered.connect(
                                 lambda _=False, p=pl: self._add_selected_to_playlist(p)
@@ -1459,10 +1508,10 @@ class MusicBrowserList(QFrame):
 
         # ── "Remove from Playlist" (only for editable regular playlists) ──
         if (self._is_playlist_mode and self._current_playlist
-                and not self._current_playlist.get("isMaster")
-                and not self._current_playlist.get("isSmartPlaylist")
+                and not self._current_playlist.get("master_flag")
+                and not self._current_playlist.get("smart_playlist_data")  # was smartPlaylistData
                 and self._current_playlist.get("_source") not in ("smart", "podcast")
-                and self._current_playlist.get("podcastFlag", 0) != 1):
+                and self._current_playlist.get("podcast_flag", 0) != 1):
             menu.addSeparator()
             n = len(selected)
             label = f"Remove {n} Track{'s' if n != 1 else ''} from Playlist"
@@ -1499,11 +1548,11 @@ class MusicBrowserList(QFrame):
         # Standard boolean flags (0=off, 1=on)
         FLAG_DEFS: list[tuple[str, str, str]] = [
             # (track_dict_key, menu_label, description)
-            ("compilation", "Compilation", "Part of a compilation album"),
-            ("skipWhenShuffling", "Skip When Shuffling", "Skip this track in shuffle mode"),
-            ("rememberPosition", "Remember Playback Position", "Resume from last position (audiobooks)"),
-            ("gaplessTrackFlag", "Gapless Track", "Enable gapless playback for this track"),
-            ("gaplessAlbumFlag", "Gapless Album", "Enable gapless playback for this album"),
+            ("compilation_flag", "Compilation", "Part of a compilation album"),
+            ("skip_when_shuffling", "Skip When Shuffling", "Skip this track in shuffle mode"),
+            ("remember_position", "Remember Playback Position", "Resume from last position (audiobooks)"),
+            ("gapless_track_flag", "Gapless Track", "Enable gapless playback for this track"),
+            ("gapless_album_flag", "Gapless Album", "Enable gapless playback for this album"),
         ]
 
         for key, label, _tip in FLAG_DEFS:
@@ -1545,7 +1594,7 @@ class MusicBrowserList(QFrame):
             )
 
         # ── Played Mark (for podcasts: 0=not played, 2=played) ──
-        played_count = sum(1 for t in selected if t.get("playedMark", 0) != 0)
+        played_count = sum(1 for t in selected if t.get("not_played_flag", 0) != 0)  # was playedMark
         if played_count == total:
             prefix = "✓  "
             new_val = 0  # mark as unplayed
@@ -1558,7 +1607,7 @@ class MusicBrowserList(QFrame):
         act = menu.addAction(f"{prefix}Mark as Played")
         if act:
             act.triggered.connect(
-                lambda _=False, v=new_val: self._set_track_flag("playedMark", v)
+                lambda _=False, v=new_val: self._set_track_flag("not_played_flag", v)  # was playedMark
             )
 
     def _build_rating_menu(self, menu: QMenu, style: str, selected: list[dict], cache) -> None:
@@ -1628,7 +1677,7 @@ class MusicBrowserList(QFrame):
         if start_menu:
             start_menu.setStyleSheet(style)
             # Current value display (if unanimous across selection)
-            start_vals = {t.get("startTime", 0) for t in selected}
+            start_vals = {t.get("start_time", 0) for t in selected}  # was startTime
             if len(start_vals) == 1:
                 val = start_vals.pop()
                 if val:
@@ -1639,21 +1688,21 @@ class MusicBrowserList(QFrame):
             act_set = start_menu.addAction("Set Start Time…")
             if act_set:
                 act_set.triggered.connect(
-                    lambda _=False: self._prompt_time("startTime", selected)
+                    lambda _=False: self._prompt_time("start_time", selected)  # was startTime
                 )
-            has_start = any(t.get("startTime", 0) for t in selected)
+            has_start = any(t.get("start_time", 0) for t in selected)  # was startTime
             if has_start:
                 act_clear = start_menu.addAction("Clear Start Time")
                 if act_clear:
                     act_clear.triggered.connect(
-                        lambda _=False: self._set_track_flag("startTime", 0)
+                        lambda _=False: self._set_track_flag("start_time", 0)  # was startTime
                     )
 
         # ── Stop Time ─────────────────────────────────────────────────
         stop_menu = menu.addMenu("Stop Time")
         if stop_menu:
             stop_menu.setStyleSheet(style)
-            stop_vals = {t.get("stopTime", 0) for t in selected}
+            stop_vals = {t.get("stop_time", 0) for t in selected}  # was stopTime
             if len(stop_vals) == 1:
                 val = stop_vals.pop()
                 if val:
@@ -1664,21 +1713,21 @@ class MusicBrowserList(QFrame):
             act_set = stop_menu.addAction("Set Stop Time…")
             if act_set:
                 act_set.triggered.connect(
-                    lambda _=False: self._prompt_time("stopTime", selected)
+                    lambda _=False: self._prompt_time("stop_time", selected)  # was stopTime
                 )
-            has_stop = any(t.get("stopTime", 0) for t in selected)
+            has_stop = any(t.get("stop_time", 0) for t in selected)  # was stopTime
             if has_stop:
                 act_clear = stop_menu.addAction("Clear Stop Time")
                 if act_clear:
                     act_clear.triggered.connect(
-                        lambda _=False: self._set_track_flag("stopTime", 0)
+                        lambda _=False: self._set_track_flag("stop_time", 0)  # was stopTime
                     )
 
     def _prompt_time(self, key: str, selected: list[dict]) -> None:
         """Show a dialog to set start or stop time in mm:ss format."""
         from PyQt6.QtWidgets import QInputDialog
 
-        label = "Start Time" if key == "startTime" else "Stop Time"
+        label = "Start Time" if key == "start_time" else "Stop Time"  # was startTime/stopTime
 
         # Pre-fill with current value if all selected tracks agree
         vals = {t.get(key, 0) for t in selected}
@@ -1802,13 +1851,13 @@ class MusicBrowserList(QFrame):
 
         # Gather existing trackIDs in the playlist to avoid duplicates
         items = list(playlist.get("items", []))
-        existing_ids = {item.get("trackID", 0) for item in items}
+        existing_ids = {item.get("track_id", 0) for item in items}
 
         added = 0
         for track in selected:
-            tid = track.get("trackID")
+            tid = track.get("track_id")
             if tid is not None and tid not in existing_ids:
-                items.append({"trackID": tid})
+                items.append({"track_id": tid})
                 existing_ids.add(tid)
                 added += 1
 
@@ -1825,7 +1874,7 @@ class MusicBrowserList(QFrame):
 
         title = playlist.get("Title", "Untitled")
         log.info("Added %d track(s) to playlist '%s' (id=0x%X)",
-                 added, title, playlist.get("playlistID", 0))
+                 added, title, playlist.get("playlist_id", 0))
 
     def _remove_selected_from_playlist(self) -> None:
         """Remove selected tracks from the current playlist and save it."""
@@ -1843,9 +1892,9 @@ class MusicBrowserList(QFrame):
         if not cache.is_ready():
             return
 
-        remove_ids = {t.get("trackID") for t in selected}
+        remove_ids = {t.get("track_id") for t in selected}
         items = list(playlist.get("items", []))
-        new_items = [item for item in items if item.get("trackID") not in remove_ids]
+        new_items = [item for item in items if item.get("track_id") not in remove_ids]
         removed = len(items) - len(new_items)
 
         if removed == 0:
@@ -1857,7 +1906,7 @@ class MusicBrowserList(QFrame):
 
         # Refresh the displayed track list
         track_id_index = cache.get_track_id_index()
-        track_ids = [item.get("trackID", 0) for item in new_items]
+        track_ids = [item.get("track_id", 0) for item in new_items]
         self._current_filter = {"type": "playlist"}
         self._is_playlist_mode = True
         self._current_playlist = playlist
@@ -1871,7 +1920,7 @@ class MusicBrowserList(QFrame):
 
         title = playlist.get("Title", "Untitled")
         log.info("Removed %d track(s) from playlist '%s' (id=0x%X)",
-                 removed, title, playlist.get("playlistID", 0))
+                 removed, title, playlist.get("playlist_id", 0))
 
     # -------------------------------------------------------------------------
     # Keyboard Shortcuts

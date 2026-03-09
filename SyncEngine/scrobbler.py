@@ -45,7 +45,7 @@ LISTENBRAINZ_API_ROOT = "https://api.listenbrainz.org"
 # Submission client identity — included in every listen payload so
 # ListenBrainz can attribute the source.
 SUBMISSION_CLIENT = "iOpenPod"
-SUBMISSION_CLIENT_VERSION = "0.1.0"
+SUBMISSION_CLIENT_VERSION = "1.0.0"
 MEDIA_PLAYER = "iPod"
 
 # The minimum acceptable value for listened_at (from LB source).
@@ -440,9 +440,9 @@ def build_scrobble_entries(
         artist = (pc.artist if pc else None) or ipod.get("Artist", "")
         track_name = (pc.title if pc else None) or ipod.get("Title", "")
         album = (pc.album if pc else None) or ipod.get("Album", "")
-        album_artist = (pc.album_artist if pc else None) or ipod.get("AlbumArtist", "")
-        track_number = (pc.track_number if pc else None) or ipod.get("trackNumber", 0) or 0
-        disc_number = (pc.disc_number if pc else None) or ipod.get("discNumber", 0) or 0
+        album_artist = (pc.album_artist if pc else None) or ipod.get("Album Artist", "")
+        track_number = (pc.track_number if pc else None) or ipod.get("track_number", 0) or 0
+        disc_number = (pc.disc_number if pc else None) or ipod.get("disc_number", 0) or 0
         genre = (pc.genre if pc else None) or ipod.get("Genre", "") or ""
 
         # Duration in milliseconds
@@ -458,7 +458,7 @@ def build_scrobble_entries(
             continue
 
         # Get last_played timestamp (Unix epoch)
-        last_played = ipod.get("lastPlayed", 0)
+        last_played = ipod.get("last_played", 0)
         if last_played <= 0:
             last_played = int(time.time())
 

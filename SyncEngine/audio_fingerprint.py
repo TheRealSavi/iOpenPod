@@ -55,7 +55,7 @@ def find_fpcalc() -> Optional[str]:
 
     Search order:
     1. User-configured path in settings
-    2. Bundled binary (auto-downloaded to ~/.iopenpod/bin/)
+    2. Bundled binary (auto-downloaded to ~/iOpenPod/bin/)
     3. System PATH
     4. Common installation directories
     """

@@ -15,7 +15,7 @@ MHIA header layout (MHIA_HEADER_SIZE = 88 bytes):
     +0x0C: child_count (4B)
     +0x10: album_id (4B) — links to MHIT.albumID
     +0x14: sql_id (8B) — internal iPod DB id (must be non-zero)
-    +0x1C: unk3 (4B) — always 2
+    +0x1C: platform_flag (2B, always 2) + album_compilation_flag (2B, 0=normal, 1=compilation)
 
     Children: MHOD types 200 (album name), 201 (artist), 202 (sort artist)
 
@@ -24,13 +24,18 @@ Cross-referenced against:
   - libgpod itdb_itunesdb.c: mk_mhia()
 """
 
-import struct
 import random
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .mhit_writer import TrackInfo
 
+from iTunesDB_Shared.field_base import (
+    MHLA_HEADER_SIZE,
+    write_fields,
+    write_generic_header,
+)
+from iTunesDB_Shared.mhia_defs import MHIA_HEADER_SIZE
 from .mhod_writer import write_mhod_string
 
 
@@ -51,16 +56,11 @@ def _album_key(track: "TrackInfo") -> tuple[str, str]:
     return (album_name, album_artist)
 
 
-# MHLA header size
-MHLA_HEADER_SIZE = 92
-
-# MHIA header size (from libgpod)
-MHIA_HEADER_SIZE = 88
-
-
 def write_mhia(album_id: int, album_name: str, album_artist: str,
                sort_album_artist: str = "",
-               podcast_url: str = "", show_name: str = "") -> bytes:
+               podcast_url: str = "", show_name: str = "",
+               is_compilation: bool = False,
+               album_track_db_id: int = 0) -> bytes:
     """
     Write an MHIA (album item) chunk.
 
@@ -71,6 +71,8 @@ def write_mhia(album_id: int, album_name: str, album_artist: str,
         sort_album_artist: Sort album artist (for proper alphabetical sorting)
         podcast_url: Podcast RSS URL (MHOD type 203)
         show_name: Show/series name (MHOD type 204)
+        is_compilation: True for Various Artists / compilation albums
+        album_track_db_id: db_id of a representative track in this album
 
     Returns:
         Complete MHIA chunk with MHODs
@@ -109,29 +111,18 @@ def write_mhia(album_id: int, album_name: str, album_artist: str,
 
     # Build header
     header = bytearray(MHIA_HEADER_SIZE)
+    write_generic_header(header, 0, b'mhia', MHIA_HEADER_SIZE, total_length)
 
-    # +0x00: Magic
-    header[0:4] = b'mhia'
-
-    # +0x04: Header length
-    struct.pack_into('<I', header, 0x04, MHIA_HEADER_SIZE)
-
-    # +0x08: Total length
-    struct.pack_into('<I', header, 0x08, total_length)
-
-    # +0x0C: Child count (number of MHODs)
-    struct.pack_into('<I', header, 0x0C, child_count)
-
-    # +0x10: Album ID (links to track's album_id field)
-    struct.pack_into('<I', header, 0x10, album_id)
-
-    # +0x14: SQL ID (64-bit) - used by iPod's internal SQLite database
-    # CRITICAL: Must be non-zero! Clean iTunes DBs have random u64 values here.
+    # CRITICAL: sql_id must be non-zero! Clean iTunes DBs have random u64 values here.
     sql_id = random.getrandbits(64)
-    struct.pack_into('<Q', header, 0x14, sql_id)
-
-    # +0x1C: Unknown (always 2 according to parser)
-    struct.pack_into('<I', header, 0x1C, 2)
+    write_fields(header, 0, 'mhia', {
+        'child_count': child_count,
+        'album_id': album_id,
+        'sql_id': sql_id,
+        'platform_flag': 2,
+        'album_compilation_flag': 1 if is_compilation else 0,
+        'album_track_db_id': album_track_db_id,
+    }, MHIA_HEADER_SIZE)
 
     return bytes(header) + bytes(children)
 
@@ -186,9 +177,19 @@ def write_mhla(tracks: list["TrackInfo"], starting_index_for_album_id) -> tuple[
         sort_artist = album_sort_artists.get((album_name, album_artist), "")
         podcast_url = album_podcast_urls.get((album_name, album_artist), "")
         show_name = album_show_names.get((album_name, album_artist), "")
+        # Album is a compilation if any track in it has compilation=True
+        is_compilation = any(
+            getattr(t, "compilation", False)
+            for t in album_tracks[(album_name, album_artist)]
+        )
+        # Use first track's db_id as the representative track for this album
+        rep_tracks = album_tracks[(album_name, album_artist)]
+        rep_db_id = getattr(rep_tracks[0], "db_id", 0) if rep_tracks else 0
         album_items.extend(write_mhia(
             album_id, album_name, album_artist, sort_artist,
             podcast_url=podcast_url, show_name=show_name,
+            is_compilation=is_compilation,
+            album_track_db_id=rep_db_id,
         ))
         album_id += 1
 
@@ -196,15 +197,7 @@ def write_mhla(tracks: list["TrackInfo"], starting_index_for_album_id) -> tuple[
 
     # Build header
     header = bytearray(MHLA_HEADER_SIZE)
-
-    # Magic
-    header[0:4] = b'mhla'
-
-    # Header length
-    struct.pack_into('<I', header, 4, MHLA_HEADER_SIZE)
-
-    # Album count
-    struct.pack_into('<I', header, 8, album_count)
+    write_generic_header(header, 0, b'mhla', MHLA_HEADER_SIZE, album_count)
 
     return bytes(header) + bytes(album_items), album_map, album_id
 
@@ -217,14 +210,6 @@ def write_mhla_empty() -> bytes:
         MHLA header with 0 albums
     """
     header = bytearray(MHLA_HEADER_SIZE)
-
-    # Magic
-    header[0:4] = b'mhla'
-
-    # Header length
-    struct.pack_into('<I', header, 4, MHLA_HEADER_SIZE)
-
-    # Album count = 0
-    struct.pack_into('<I', header, 8, 0)
+    write_generic_header(header, 0, b'mhla', MHLA_HEADER_SIZE, 0)
 
     return bytes(header)

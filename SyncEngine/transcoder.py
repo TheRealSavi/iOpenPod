@@ -110,7 +110,7 @@ def find_ffmpeg() -> Optional[str]:
 
     Search order:
     1. User-configured path in settings
-    2. Bundled binary (auto-downloaded to ~/.iopenpod/bin/)
+    2. Bundled binary (auto-downloaded to ~/iOpenPod/bin/)
     3. System PATH
     4. Common installation directories
     """
@@ -716,11 +716,14 @@ def copy_metadata(source_path: str | Path, dest_path: str | Path) -> bool:
         if source is None or dest is None:
             return False
 
-        # Copy common tags
+        # Copy common tags (skip keys the destination format doesn't support)
         for tag in ["title", "artist", "album", "albumartist", "genre",
                     "date", "tracknumber", "discnumber", "composer"]:
             if tag in source:
-                dest[tag] = source[tag]
+                try:
+                    dest[tag] = source[tag]
+                except (KeyError, ValueError):
+                    pass
 
         dest.save()
 
@@ -742,6 +745,7 @@ def copy_metadata(source_path: str | Path, dest_path: str | Path) -> bool:
         if isinstance(src_tags, MP4Tags) and isinstance(dst_tags, MP4Tags):
             # Podcast atoms
             _MP4_COPY_KEYS = [
+                "\xa9wrt",     # Composer (not in EasyMP4Tags)
                 "pcst",        # Podcast flag
                 "catg",        # Category
                 "purl",        # Podcast URL

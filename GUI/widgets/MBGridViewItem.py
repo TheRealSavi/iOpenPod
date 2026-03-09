@@ -3,7 +3,8 @@ from PyQt6.QtCore import Qt, QSize, pyqtSignal
 from PyQt6.QtWidgets import QLabel, QFrame, QVBoxLayout
 from PyQt6.QtGui import QFont, QPixmap, QCursor, QImage
 from ..imgMaker import find_image_by_imgId, get_artworkdb_cached
-from ..styles import Colors, FONT_FAMILY, Metrics
+from ..styles import Colors, FONT_FAMILY, Metrics, scaled, font_scaled
+from ..glyphs import glyph_pixmap
 from .scrollingLabel import ScrollingLabel
 
 log = logging.getLogger(__name__)
@@ -18,7 +19,7 @@ class MusicBrowserGridItem(QFrame):
         self.title_text = title
         self.subtitle_text = subtitle
         self.mhiiLink = mhiiLink
-        self.item_data = item_data or {"title": title, "subtitle": subtitle, "mhiiLink": mhiiLink}
+        self.item_data = item_data or {"title": title, "subtitle": subtitle, "artwork_id_ref": mhiiLink}
         self._destroyed = False  # Track if widget is being destroyed
 
         self.setFixedSize(QSize(Metrics.GRID_ITEM_W, Metrics.GRID_ITEM_H))
@@ -26,8 +27,8 @@ class MusicBrowserGridItem(QFrame):
         self._setupStyle()
 
         self.gridItemLayout = QVBoxLayout(self)
-        self.gridItemLayout.setContentsMargins(10, 10, 10, 8)
-        self.gridItemLayout.setSpacing(6)
+        self.gridItemLayout.setContentsMargins(scaled(10), scaled(10), scaled(10), scaled(8))
+        self.gridItemLayout.setSpacing(scaled(6))
 
         self.worker = None
         self._cancellation_token = None
@@ -38,7 +39,7 @@ class MusicBrowserGridItem(QFrame):
         self.img_label.setFixedSize(QSize(Metrics.GRID_ART_SIZE, Metrics.GRID_ART_SIZE))
         self.img_label.setStyleSheet(f"""
             border: none;
-            background: rgba(0,0,0,25);
+            background: {Colors.SHADOW_LIGHT};
             border-radius: {Metrics.BORDER_RADIUS}px;
         """)
         self.gridItemLayout.addWidget(self.img_label)
@@ -50,18 +51,18 @@ class MusicBrowserGridItem(QFrame):
 
         # Title
         self.title_label = ScrollingLabel(title)
-        self.title_label.setFont(QFont(FONT_FAMILY, 10, QFont.Weight.DemiBold))
+        self.title_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.DemiBold))
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.title_label.setStyleSheet(f"border: none; background: transparent; color: {Colors.TEXT_PRIMARY};")
-        self.title_label.setFixedHeight(20)
+        self.title_label.setFixedHeight(scaled(20))
         self.gridItemLayout.addWidget(self.title_label)
 
         # Subtitle
         self.subtitle_label = ScrollingLabel(subtitle)
-        self.subtitle_label.setFont(QFont(FONT_FAMILY, 9))
+        self.subtitle_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.subtitle_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.subtitle_label.setStyleSheet(f"border: none; background: transparent; color: {Colors.TEXT_SECONDARY};")
-        self.subtitle_label.setFixedHeight(18)
+        self.subtitle_label.setFixedHeight(scaled(18))
         self.gridItemLayout.addWidget(self.subtitle_label)
 
     def _setupStyle(self):
@@ -70,7 +71,7 @@ class MusicBrowserGridItem(QFrame):
                 background-color: {Colors.SURFACE_ALT};
                 border: 1px solid {Colors.BORDER_SUBTLE};
                 border-radius: {Metrics.BORDER_RADIUS_XL}px;
-                color: white;
+                color: {Colors.TEXT_PRIMARY};
             }}
             QFrame:hover {{
                 background-color: {Colors.SURFACE_HOVER};
@@ -80,13 +81,17 @@ class MusicBrowserGridItem(QFrame):
 
     def _setPlaceholderImage(self):
         """Set a placeholder when no artwork is available."""
-        self.img_label.setText("🎵")
-        self.img_label.setFont(QFont(FONT_FAMILY, 40))
+        px = glyph_pixmap("music", font_scaled(40), Colors.TEXT_TERTIARY)
+        if px:
+            self.img_label.setPixmap(px)
+        else:
+            self.img_label.setText("♪")
+            self.img_label.setFont(QFont(FONT_FAMILY, font_scaled(40)))
         self.img_label.setStyleSheet(f"""
             border: none;
-            background: rgba(64,156,255,35);
+            background: {Colors.ACCENT_MUTED};
             border-radius: {Metrics.BORDER_RADIUS}px;
-            color: rgba(255,255,255,80);
+            color: {Colors.TEXT_TERTIARY};
         """)
 
     def mousePressEvent(self, a0):
@@ -147,7 +152,7 @@ class MusicBrowserGridItem(QFrame):
         result = find_image_by_imgId(artworkdb_data, artwork_folder, mhiiLink, imgid_index)
 
         if result is None:
-            return {"error": True, "mhiiLink": mhiiLink}
+            return {"error": True, "artwork_id_ref": mhiiLink}
 
         pil_image, dcol, album_colors = result
         return {"pil_image": pil_image, "dcol": dcol, "album_colors": album_colors}
@@ -212,7 +217,7 @@ class MusicBrowserGridItem(QFrame):
                         background-color: rgba({r}, {g}, {b}, 30);
                         border: 1px solid rgba({r}, {g}, {b}, 25);
                         border-radius: {Metrics.BORDER_RADIUS_XL}px;
-                        color: white;
+                        color: {Colors.TEXT_PRIMARY};
                     }}
                     QFrame:hover {{
                         background-color: rgba({r}, {g}, {b}, 55);

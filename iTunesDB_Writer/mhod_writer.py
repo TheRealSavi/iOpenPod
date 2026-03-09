@@ -1,62 +1,74 @@
 """
-MHOD Writer — Write string/data chunks for iTunesDB.
+MHOD String Writer — Write string, podcast URL, and chapter data MHOD chunks.
 
-MHOD chunks store strings (track titles, artist names, paths) and
-other metadata in the iTunesDB. Each MHOD has a type that indicates
-what kind of data it contains.
+String MHODs (types 1-14, 18-31, 33-44, 200-204, 300) have:
+  - Common MHOD header (24 bytes)
+  - String sub-header (16 bytes): encoding + string_length + unk0x20 + unk0x24
+  - UTF-16LE encoded string data
 
-String MHODs (types 1–14, 18–31, 33–44, 200–204):
-    Standard layout: header(24) + type_header(16) + UTF-16LE string.
-    The type_header has: encoding(4B), string_length(4B), unk(4B), unk(4B).
+Podcast URL MHODs (types 15, 16) have:
+  - Common MHOD header (24 bytes)
+  - UTF-8 encoded string directly (NO sub-header)
 
-Podcast URL MHODs (types 15–16):
-    Different layout: header(24) + raw UTF-8 string.  NO type sub-header.
-    Per iPodLinux wiki: "this is either a UTF-8 or ASCII encoded string
-    (NOT UTF-16). Also, there is no mhod::length value for this type."
+Chapter Data MHOD (type 17) has:
+  - Common MHOD header (24 bytes)
+  - 12-byte preamble (3 × u32 LE)
+  - Big-endian atom tree: sean → chap × N → name + hedr
 
 Cross-referenced against:
-  - iTunesDB_Parser/mhod_parser.py
-  - libgpod itdb_itunesdb.c: mk_mhod() / get_mhod_string()
-  - iPodLinux wiki MHOD documentation
+  - iTunesDB_Shared/mhod_defs.py (field definitions and constants)
+  - iTunesDB_Parser/mhod_parser.py _parse_string_mhod(), _parse_chapter_data()
+  - libgpod itdb_itunesdb.c: mk_mhod(), itdb_chapterdata_build_chapter_blob_internal()
 """
 
 import struct
 from typing import Optional
 
+from iTunesDB_Shared.constants import (
+    MHOD_TYPE_ALBUM,
+    MHOD_TYPE_ALBUM_ARTIST,
+    MHOD_TYPE_ARTIST,
+    MHOD_TYPE_CATEGORY,
+    MHOD_TYPE_CHAPTER_DATA,
+    MHOD_TYPE_COMMENT,
+    MHOD_TYPE_COMPOSER,
+    MHOD_TYPE_DESCRIPTION,
+    MHOD_TYPE_EPISODE_ID,
+    MHOD_TYPE_EQ_SETTING,
+    MHOD_TYPE_FILETYPE,
+    MHOD_TYPE_GENRE,
+    MHOD_TYPE_GROUPING,
+    MHOD_TYPE_KEYWORDS,
+    MHOD_TYPE_LOCATION,
+    MHOD_TYPE_LYRICS,
+    MHOD_TYPE_NETWORK_NAME,
+    MHOD_TYPE_PODCAST_ENCLOSURE_URL,
+    MHOD_TYPE_PODCAST_RSS_URL,
+    MHOD_TYPE_SHOW_LOCALE,
+    MHOD_TYPE_SHOW_NAME,
+    MHOD_TYPE_SORT_ALBUM,
+    MHOD_TYPE_SORT_ALBUM_ARTIST,
+    MHOD_TYPE_SORT_ARTIST,
+    MHOD_TYPE_SORT_COMPOSER,
+    MHOD_TYPE_SORT_NAME,
+    MHOD_TYPE_SORT_SHOW,
+    MHOD_TYPE_SUBTITLE,
+    MHOD_TYPE_TITLE,
+)
+from iTunesDB_Shared.mhod_defs import (
+    CHAP_ATOM,
+    HEDR_ATOM,
+    HEDR_SIZE,
+    MHOD_HEADER_SIZE,
+    MHOD_STRING_SUBHEADER_SIZE,
+    NAME_ATOM,
+    SEAN_ATOM,
+    write_mhod_header,
+)
 
-# MHOD type constants (from iTunesDB_Parser/constants.py)
-MHOD_TYPE_TITLE = 1
-MHOD_TYPE_LOCATION = 2
-MHOD_TYPE_ALBUM = 3
-MHOD_TYPE_ARTIST = 4
-MHOD_TYPE_GENRE = 5
-MHOD_TYPE_FILETYPE = 6
-MHOD_TYPE_EQ_SETTING = 7
-MHOD_TYPE_COMMENT = 8
-MHOD_TYPE_CATEGORY = 9
-MHOD_TYPE_LYRICS = 10
-MHOD_TYPE_COMPOSER = 12
-MHOD_TYPE_GROUPING = 13
-MHOD_TYPE_DESCRIPTION = 14
-MHOD_TYPE_PODCAST_ENCLOSURE_URL = 15
-MHOD_TYPE_PODCAST_RSS_URL = 16
-MHOD_TYPE_CHAPTER_DATA = 17
-MHOD_TYPE_SUBTITLE = 18
-MHOD_TYPE_SHOW_NAME = 19
-MHOD_TYPE_EPISODE_ID = 20
-MHOD_TYPE_NETWORK_NAME = 21
-MHOD_TYPE_ALBUM_ARTIST = 22
-MHOD_TYPE_SORT_ARTIST = 23
-MHOD_TYPE_KEYWORDS = 24
-MHOD_TYPE_SHOW_LOCALE = 25
-MHOD_TYPE_SORT_NAME = 27
-MHOD_TYPE_SORT_ALBUM = 28
-MHOD_TYPE_SORT_ALBUM_ARTIST = 29
-MHOD_TYPE_SORT_COMPOSER = 30
-MHOD_TYPE_SORT_SHOW = 31
 
-
-def write_mhod_string(mhod_type: int, value: str) -> bytes:
+def write_mhod_string(mhod_type: int, value: str,
+                      unk_0x20: int = 1, unk_0x24: int = 0) -> bytes:
     """
     Write a string MHOD chunk.
 
@@ -68,6 +80,8 @@ def write_mhod_string(mhod_type: int, value: str) -> bytes:
     Args:
         mhod_type: MHOD type (1=title, 2=location, etc.)
         value: String value to encode
+        unk_0x20: Sub-header unknown at offset 0x20 (preserved from parser).
+        unk_0x24: Sub-header unknown at offset 0x24 (preserved from parser).
 
     Returns:
         Complete MHOD chunk as bytes
@@ -75,46 +89,16 @@ def write_mhod_string(mhod_type: int, value: str) -> bytes:
     if not value:
         return b''
 
-    # Encode string as UTF-16LE (iPod format)
-    # Location paths use colon separators and need special handling
     string_data = value.encode('utf-16-le')
     string_len = len(string_data)
 
-    # MHOD header (24 bytes)
-    # Offset 0: 'mhod' magic
-    # Offset 4: header length (24)
-    # Offset 8: total length (header + type header + string)
-    # Offset 12: mhod type
-    # Offset 16: unk1 (0)
-    # Offset 20: unk2 (0)
+    total_len = MHOD_HEADER_SIZE + MHOD_STRING_SUBHEADER_SIZE + string_len
 
-    header_len = 24
-    type_header_len = 16  # String type header
-    total_len = header_len + type_header_len + string_len
+    header = write_mhod_header(mhod_type, total_len)
 
-    header = struct.pack(
-        '<4sIIIII',
-        b'mhod',      # magic
-        header_len,   # header length
-        total_len,    # total length
-        mhod_type,    # type
-        0,            # unk1
-        0,            # unk2
-    )
-
-    # String type header (16 bytes)
-    # Offset 0: encoding (1 = UTF-16LE, 2 = UTF-8) — per libgpod get_mhod_string()
-    # Offset 4: string length in bytes
-    # Offset 8: unknown (always 1)
-    # Offset 12: unknown (always 0)
-
-    type_header = struct.pack(
-        '<IIII',
-        1,            # encoding (1 = UTF-16LE)
-        string_len,   # string length
-        1,            # unknown (always 1)
-        0,            # unknown (always 0)
-    )
+    # String sub-header: encoding(4) + string_length(4) + unk0x20(4) + unk0x24(4)
+    # encoding=1 means UTF-16LE
+    type_header = struct.pack('<IIII', 1, string_len, unk_0x20, unk_0x24)
 
     return header + type_header + string_data
 
@@ -136,57 +120,46 @@ def write_mhod_location(path: str) -> bytes:
 
 
 def write_mhod_title(title: str) -> bytes:
-    """Write a title MHOD (type 1)."""
     return write_mhod_string(MHOD_TYPE_TITLE, title)
 
 
 def write_mhod_artist(artist: str) -> bytes:
-    """Write an artist MHOD (type 4)."""
     return write_mhod_string(MHOD_TYPE_ARTIST, artist)
 
 
 def write_mhod_album(album: str) -> bytes:
-    """Write an album MHOD (type 3)."""
     return write_mhod_string(MHOD_TYPE_ALBUM, album)
 
 
 def write_mhod_genre(genre: str) -> bytes:
-    """Write a genre MHOD (type 5)."""
     return write_mhod_string(MHOD_TYPE_GENRE, genre)
 
 
 def write_mhod_album_artist(album_artist: str) -> bytes:
-    """Write an album artist MHOD (type 22)."""
     return write_mhod_string(MHOD_TYPE_ALBUM_ARTIST, album_artist)
 
 
 def write_mhod_composer(composer: str) -> bytes:
-    """Write a composer MHOD (type 12)."""
     return write_mhod_string(MHOD_TYPE_COMPOSER, composer)
 
 
 def write_mhod_comment(comment: str) -> bytes:
-    """Write a comment MHOD (type 8)."""
     return write_mhod_string(MHOD_TYPE_COMMENT, comment)
 
 
 def write_mhod_filetype(filetype: str) -> bytes:
-    """Write a filetype description MHOD (type 6)."""
     return write_mhod_string(MHOD_TYPE_FILETYPE, filetype)
 
 
 def write_mhod_sort_artist(sort_artist: str) -> bytes:
-    """Write a sort artist MHOD (type 23)."""
     return write_mhod_string(MHOD_TYPE_SORT_ARTIST, sort_artist)
 
 
 def write_mhod_sort_name(sort_name: str) -> bytes:
-    """Write a sort name MHOD (type 27)."""
     return write_mhod_string(MHOD_TYPE_SORT_NAME, sort_name)
 
 
 def write_mhod_sort_album(sort_album: str) -> bytes:
-    """Write a sort album MHOD (type 28)."""
     return write_mhod_string(MHOD_TYPE_SORT_ALBUM, sort_album)
 
 
@@ -215,20 +188,86 @@ def write_mhod_podcast_url(mhod_type: int, url: str) -> bytes:
         raise ValueError(f"write_mhod_podcast_url only supports types 15 and 16, got {mhod_type}")
 
     string_data = url.encode('utf-8')
-    header_len = 24
-    total_len = header_len + len(string_data)
+    total_len = MHOD_HEADER_SIZE + len(string_data)
 
-    header = struct.pack(
-        '<4sIIIII',
-        b'mhod',
-        header_len,
-        total_len,
-        mhod_type,
-        0,  # unk1
-        0,  # unk2
-    )
+    header = write_mhod_header(mhod_type, total_len)
 
     return header + string_data
+
+
+def write_mhod_chapter_data(
+    chapters: list[dict],
+    unk024: int = 0,
+    unk028: int = 0,
+    unk032: int = 0,
+) -> bytes:
+    """Write a chapter data MHOD (type 17).
+
+    Chapter data uses big-endian atom tree encoding, matching libgpod's
+    ``itdb_chapterdata_build_chapter_blob_internal()``.
+
+    Args:
+        chapters: List of chapter dicts, each with ``startpos`` (int, ms)
+            and ``title`` (str).
+        unk024, unk028, unk032: Preamble unknown fields (preserved from
+            parser, default 0).
+
+    Returns:
+        Complete MHOD type 17 chunk as bytes, or b'' if chapters is empty.
+    """
+    if not chapters:
+        return b''
+
+    # Build the atom tree body (all big-endian).
+    atoms = bytearray()
+
+    for ch in chapters:
+        title = ch.get("title", "")
+        startpos = ch.get("startpos", 0)
+        title_utf16 = title.encode("utf-16-be")
+        title_units = len(title_utf16) // 2
+
+        # name atom: size(4) + "name"(4) + unk=1(4) + unk=0(4) + unk=0(4) + strlen(2) + string
+        name_size = 22 + len(title_utf16)
+        name_atom = struct.pack(">I", name_size)
+        name_atom += NAME_ATOM
+        name_atom += struct.pack(">III", 1, 0, 0)
+        name_atom += struct.pack(">H", title_units)
+        name_atom += title_utf16
+
+        # chap atom: size(4) + "chap"(4) + startpos(4) + children=1(4) + unk=0(4) + name_atom
+        chap_size = 20 + name_size
+        chap_atom = struct.pack(">I", chap_size)
+        chap_atom += CHAP_ATOM
+        chap_atom += struct.pack(">III", startpos, 1, 0)
+        chap_atom += name_atom
+
+        atoms.extend(chap_atom)
+
+    # hedr terminator atom (28 bytes)
+    hedr_atom = struct.pack(">I", HEDR_SIZE)
+    hedr_atom += HEDR_ATOM
+    hedr_atom += struct.pack(">IIIII", 1, 0, 0, 0, 1)
+    atoms.extend(hedr_atom)
+
+    # sean atom header wraps everything
+    num_children = len(chapters) + 1  # chapters + hedr
+    sean_size = 20 + len(atoms)
+    sean_header = struct.pack(">I", sean_size)
+    sean_header += SEAN_ATOM
+    sean_header += struct.pack(">III", 1, num_children, 0)
+
+    # Preamble (little-endian, 12 bytes)
+    preamble = struct.pack("<III", unk024, unk028, unk032)
+
+    # Complete body = preamble + sean_header + atoms
+    body = preamble + sean_header + bytes(atoms)
+
+    # MHOD header + body
+    total_length = MHOD_HEADER_SIZE + len(body)
+    header = write_mhod_header(MHOD_TYPE_CHAPTER_DATA, total_length)
+
+    return header + body
 
 
 def write_track_mhods(
@@ -260,6 +299,7 @@ def write_track_mhods(
     lyrics: Optional[str] = None,
     eq_setting: Optional[str] = None,
     show_locale: Optional[str] = None,
+    chapter_data: Optional[dict] = None,
 ) -> tuple[bytes, int]:
     """
     Write all MHODs for a track.
@@ -290,77 +330,84 @@ def write_track_mhods(
         keywords: Keywords (type 24)
         sort_show: Sort show name (type 31)
         category: Podcast/audiobook category (type 9)
+        chapter_data: Chapter data dict with ``chapters`` list (type 17)
 
     Returns:
         Tuple of (concatenated MHOD bytes, count of MHODs)
     """
-    mhods = []
+    chunks: list[bytes] = []
 
     # Required MHODs
-    mhods.append(write_mhod_title(title))
-    mhods.append(write_mhod_location(location))
+    chunks.append(write_mhod_title(title))
+    chunks.append(write_mhod_location(location))
 
-    # Optional MHODs — standard string types (UTF-16LE with sub-header)
+    # Optional string MHODs
     if artist:
-        mhods.append(write_mhod_artist(artist))
+        chunks.append(write_mhod_artist(artist))
     if album:
-        mhods.append(write_mhod_album(album))
+        chunks.append(write_mhod_album(album))
     if genre:
-        mhods.append(write_mhod_genre(genre))
+        chunks.append(write_mhod_genre(genre))
     if album_artist:
-        mhods.append(write_mhod_album_artist(album_artist))
+        chunks.append(write_mhod_album_artist(album_artist))
     if composer:
-        mhods.append(write_mhod_composer(composer))
+        chunks.append(write_mhod_composer(composer))
     if comment:
-        mhods.append(write_mhod_comment(comment))
+        chunks.append(write_mhod_comment(comment))
     if filetype_desc:
-        mhods.append(write_mhod_filetype(filetype_desc))
+        chunks.append(write_mhod_filetype(filetype_desc))
     if category:
-        mhods.append(write_mhod_string(MHOD_TYPE_CATEGORY, category))
+        chunks.append(write_mhod_string(MHOD_TYPE_CATEGORY, category))
     if description:
-        mhods.append(write_mhod_string(MHOD_TYPE_DESCRIPTION, description))
+        chunks.append(write_mhod_string(MHOD_TYPE_DESCRIPTION, description))
     if subtitle:
-        mhods.append(write_mhod_string(MHOD_TYPE_SUBTITLE, subtitle))
+        chunks.append(write_mhod_string(MHOD_TYPE_SUBTITLE, subtitle))
     if show_name:
-        mhods.append(write_mhod_string(MHOD_TYPE_SHOW_NAME, show_name))
+        chunks.append(write_mhod_string(MHOD_TYPE_SHOW_NAME, show_name))
     if episode_id:
-        mhods.append(write_mhod_string(MHOD_TYPE_EPISODE_ID, episode_id))
+        chunks.append(write_mhod_string(MHOD_TYPE_EPISODE_ID, episode_id))
     if network_name:
-        mhods.append(write_mhod_string(MHOD_TYPE_NETWORK_NAME, network_name))
+        chunks.append(write_mhod_string(MHOD_TYPE_NETWORK_NAME, network_name))
     if keywords:
-        mhods.append(write_mhod_string(MHOD_TYPE_KEYWORDS, keywords))
+        chunks.append(write_mhod_string(MHOD_TYPE_KEYWORDS, keywords))
+
+    # Sort MHODs
     if sort_artist:
-        mhods.append(write_mhod_sort_artist(sort_artist))
+        chunks.append(write_mhod_sort_artist(sort_artist))
     if sort_name:
-        mhods.append(write_mhod_sort_name(sort_name))
+        chunks.append(write_mhod_sort_name(sort_name))
     if sort_album:
-        mhods.append(write_mhod_sort_album(sort_album))
+        chunks.append(write_mhod_sort_album(sort_album))
     if sort_album_artist:
-        mhods.append(write_mhod_string(MHOD_TYPE_SORT_ALBUM_ARTIST, sort_album_artist))
+        chunks.append(write_mhod_string(MHOD_TYPE_SORT_ALBUM_ARTIST, sort_album_artist))
     if sort_composer:
-        mhods.append(write_mhod_string(MHOD_TYPE_SORT_COMPOSER, sort_composer))
+        chunks.append(write_mhod_string(MHOD_TYPE_SORT_COMPOSER, sort_composer))
     if sort_show:
-        mhods.append(write_mhod_string(MHOD_TYPE_SORT_SHOW, sort_show))
+        chunks.append(write_mhod_string(MHOD_TYPE_SORT_SHOW, sort_show))
     if show_locale:
-        mhods.append(write_mhod_string(MHOD_TYPE_SHOW_LOCALE, show_locale))
+        chunks.append(write_mhod_string(MHOD_TYPE_SHOW_LOCALE, show_locale))
     if grouping:
-        mhods.append(write_mhod_string(MHOD_TYPE_GROUPING, grouping))
+        chunks.append(write_mhod_string(MHOD_TYPE_GROUPING, grouping))
 
-    # Podcast URL types — DIFFERENT format: UTF-8, no sub-header
+    # Podcast URL MHODs (different format: UTF-8, no sub-header)
     if podcast_enclosure_url:
-        mhods.append(write_mhod_podcast_url(MHOD_TYPE_PODCAST_ENCLOSURE_URL, podcast_enclosure_url))
+        chunks.append(write_mhod_podcast_url(MHOD_TYPE_PODCAST_ENCLOSURE_URL, podcast_enclosure_url))
     if podcast_rss_url:
-        mhods.append(write_mhod_podcast_url(MHOD_TYPE_PODCAST_RSS_URL, podcast_rss_url))
+        chunks.append(write_mhod_podcast_url(MHOD_TYPE_PODCAST_RSS_URL, podcast_rss_url))
 
-    # EQ preset name (type 7) — standard string MHOD
+    # EQ and lyrics
     if eq_setting:
-        mhods.append(write_mhod_string(MHOD_TYPE_EQ_SETTING, eq_setting))
-
-    # Lyrics text (type 10) — standard string MHOD
+        chunks.append(write_mhod_string(MHOD_TYPE_EQ_SETTING, eq_setting))
     if lyrics:
-        mhods.append(write_mhod_string(MHOD_TYPE_LYRICS, lyrics))
+        chunks.append(write_mhod_string(MHOD_TYPE_LYRICS, lyrics))
 
-    # Filter out empty MHODs
-    mhods = [m for m in mhods if m]
+    # Chapter data (type 17, big-endian atom tree)
+    if chapter_data and chapter_data.get("chapters"):
+        chunks.append(write_mhod_chapter_data(
+            chapters=chapter_data["chapters"],
+            unk024=chapter_data.get("unk024", 0),
+            unk028=chapter_data.get("unk028", 0),
+            unk032=chapter_data.get("unk032", 0),
+        ))
 
-    return b''.join(mhods), len(mhods)
+    return b''.join(chunks), len(chunks)

@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QFrame, QHBoxLayout, QLabel,
@@ -20,7 +20,8 @@ from PyQt6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from ..styles import Colors, FONT_FAMILY, Metrics, btn_css, accent_btn_css
+from ..styles import Colors, FONT_FAMILY, Metrics, btn_css, accent_btn_css, scaled
+from ..glyphs import glyph_icon, glyph_pixmap
 
 log = logging.getLogger(__name__)
 
@@ -169,51 +170,54 @@ MEDIA_TYPE_FLAGS: list[tuple[int, str]] = [
 # Shared stylesheet helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
-_COMBO_CSS = f"""
+def _combo_css() -> str:
+    return f"""
     QComboBox {{
         background: {Colors.SURFACE_RAISED};
         border: 1px solid {Colors.BORDER_SUBTLE};
         border-radius: {Metrics.BORDER_RADIUS_SM}px;
         color: {Colors.TEXT_PRIMARY};
-        padding: 4px 8px;
+        padding: {scaled(4)}px {scaled(8)}px;
         font-family: {FONT_FAMILY};
-        font-size: 11px;
-        min-height: 22px;
+        font-size: {Metrics.FONT_LG}px;
+        min-height: {scaled(22)}px;
     }}
     QComboBox:hover {{
         border-color: {Colors.ACCENT};
     }}
     QComboBox::drop-down {{
         border: none;
-        width: 20px;
+        width: {scaled(20)}px;
     }}
     QComboBox::down-arrow {{
         image: none;
-        border-left: 4px solid transparent;
-        border-right: 4px solid transparent;
-        border-top: 5px solid {Colors.TEXT_SECONDARY};
-        margin-right: 6px;
+        border-left: {scaled(4)}px solid transparent;
+        border-right: {scaled(4)}px solid transparent;
+        border-top: {scaled(5)}px solid {Colors.TEXT_SECONDARY};
+        margin-right: {scaled(6)}px;
     }}
     QComboBox QAbstractItemView {{
-        background: #2a2d3a;
+        background: {Colors.DROPDOWN_BG};
         border: 1px solid {Colors.BORDER};
         color: {Colors.TEXT_PRIMARY};
         selection-background-color: {Colors.ACCENT};
-        selection-color: white;
-        padding: 2px;
+        selection-color: {Colors.TEXT_ON_ACCENT};
+        padding: {scaled(2)}px;
     }}
 """
 
-_INPUT_CSS = f"""
+
+def _input_css() -> str:
+    return f"""
     QLineEdit {{
         background: {Colors.SURFACE_RAISED};
         border: 1px solid {Colors.BORDER_SUBTLE};
         border-radius: {Metrics.BORDER_RADIUS_SM}px;
         color: {Colors.TEXT_PRIMARY};
-        padding: 4px 8px;
+        padding: {scaled(4)}px {scaled(8)}px;
         font-family: {FONT_FAMILY};
-        font-size: 11px;
-        min-height: 22px;
+        font-size: {Metrics.FONT_LG}px;
+        min-height: {scaled(22)}px;
     }}
     QLineEdit:hover {{
         border-color: {Colors.ACCENT};
@@ -223,16 +227,18 @@ _INPUT_CSS = f"""
     }}
 """
 
-_SPINBOX_CSS = f"""
+
+def _spinbox_css() -> str:
+    return f"""
     QSpinBox {{
         background: {Colors.SURFACE_RAISED};
         border: 1px solid {Colors.BORDER_SUBTLE};
         border-radius: {Metrics.BORDER_RADIUS_SM}px;
         color: {Colors.TEXT_PRIMARY};
-        padding: 4px 8px;
+        padding: {scaled(4)}px {scaled(8)}px;
         font-family: {FONT_FAMILY};
-        font-size: 11px;
-        min-height: 22px;
+        font-size: {Metrics.FONT_LG}px;
+        min-height: {scaled(22)}px;
     }}
     QSpinBox:hover {{
         border-color: {Colors.ACCENT};
@@ -240,32 +246,34 @@ _SPINBOX_CSS = f"""
     QSpinBox::up-button, QSpinBox::down-button {{
         background: {Colors.SURFACE_HOVER};
         border: none;
-        width: 16px;
+        width: {scaled(16)}px;
     }}
     QSpinBox::up-arrow {{
-        border-left: 3px solid transparent;
-        border-right: 3px solid transparent;
-        border-bottom: 4px solid {Colors.TEXT_SECONDARY};
+        border-left: {scaled(3)}px solid transparent;
+        border-right: {scaled(3)}px solid transparent;
+        border-bottom: {scaled(4)}px solid {Colors.TEXT_SECONDARY};
     }}
     QSpinBox::down-arrow {{
-        border-left: 3px solid transparent;
-        border-right: 3px solid transparent;
-        border-top: 4px solid {Colors.TEXT_SECONDARY};
+        border-left: {scaled(3)}px solid transparent;
+        border-right: {scaled(3)}px solid transparent;
+        border-top: {scaled(4)}px solid {Colors.TEXT_SECONDARY};
     }}
 """
 
-_CHECKBOX_CSS = f"""
+
+def _checkbox_css() -> str:
+    return f"""
     QCheckBox {{
         color: {Colors.TEXT_PRIMARY};
         font-family: {FONT_FAMILY};
-        font-size: 11px;
-        spacing: 6px;
+        font-size: {Metrics.FONT_LG}px;
+        spacing: {scaled(6)}px;
     }}
     QCheckBox::indicator {{
-        width: 16px;
-        height: 16px;
+        width: {scaled(16)}px;
+        height: {scaled(16)}px;
         border: 1px solid {Colors.BORDER_SUBTLE};
-        border-radius: 3px;
+        border-radius: {scaled(3)}px;
         background: {Colors.SURFACE_RAISED};
     }}
     QCheckBox::indicator:hover {{
@@ -277,19 +285,23 @@ _CHECKBOX_CSS = f"""
     }}
 """
 
-_SECTION_LABEL_STYLE = (
-    f"color: {Colors.TEXT_TERTIARY}; background: transparent; border: none; "
-    f"font-size: 9px; font-weight: bold;"
-)
 
-_REMOVE_BTN_CSS = btn_css(
-    bg="rgba(255,80,80,40)",
-    bg_hover="rgba(255,80,80,100)",
-    bg_press="rgba(255,80,80,60)",
-    fg="#ff5555",
-    radius=Metrics.BORDER_RADIUS_SM,
-    padding="2px 6px",
-)
+def _section_label_style() -> str:
+    return (
+        f"color: {Colors.TEXT_TERTIARY}; background: transparent; border: none; "
+        f"font-size: {Metrics.FONT_SM}px; font-weight: bold;"
+    )
+
+
+def _remove_btn_css() -> str:
+    return btn_css(
+        bg=Colors.DANGER_DIM,
+        bg_hover=Colors.DANGER_HOVER,
+        bg_press=Colors.DANGER_DIM,
+        fg=Colors.DANGER,
+        radius=Metrics.BORDER_RADIUS_SM,
+        padding=f"{scaled(2)}px {scaled(6)}px",
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -319,23 +331,23 @@ class SmartRuleRow(QFrame):
         self.setStyleSheet("QFrame { background: transparent; border: none; }")
 
         self._layout = QHBoxLayout(self)
-        self._layout.setContentsMargins(0, 2, 0, 2)
-        self._layout.setSpacing(6)
+        self._layout.setContentsMargins(0, scaled(2), 0, scaled(2))
+        self._layout.setSpacing(scaled(6))
 
         # ── Field selector ──
         self.field_combo = QComboBox()
-        self.field_combo.setStyleSheet(_COMBO_CSS)
-        self.field_combo.setMinimumWidth(120)
-        self.field_combo.setMaximumWidth(160)
+        self.field_combo.setStyleSheet(_combo_css())
+        self.field_combo.setMinimumWidth(scaled(120))
+        self.field_combo.setMaximumWidth(scaled(160))
         for fid, (name, _ftype) in sorted(FIELD_DEFS.items(), key=lambda x: x[1][0]):
             self.field_combo.addItem(name, fid)
         self._layout.addWidget(self.field_combo)
 
         # ── Action selector ──
         self.action_combo = QComboBox()
-        self.action_combo.setStyleSheet(_COMBO_CSS)
-        self.action_combo.setMinimumWidth(130)
-        self.action_combo.setMaximumWidth(180)
+        self.action_combo.setStyleSheet(_combo_css())
+        self.action_combo.setMinimumWidth(scaled(130))
+        self.action_combo.setMaximumWidth(scaled(180))
         self._layout.addWidget(self.action_combo)
 
         # ── Value area (container swapped based on field type) ──
@@ -343,13 +355,18 @@ class SmartRuleRow(QFrame):
         self._value_container.setStyleSheet("background: transparent; border: none;")
         self._value_layout = QHBoxLayout(self._value_container)
         self._value_layout.setContentsMargins(0, 0, 0, 0)
-        self._value_layout.setSpacing(4)
+        self._value_layout.setSpacing(scaled(4))
         self._layout.addWidget(self._value_container, stretch=1)
 
         # ── Remove button ──
-        self.remove_btn = QPushButton("✕")
-        self.remove_btn.setFixedSize(24, 24)
-        self.remove_btn.setStyleSheet(_REMOVE_BTN_CSS)
+        self.remove_btn = QPushButton()
+        _close_ic = glyph_icon("close", scaled(12), Colors.DANGER)
+        if _close_ic:
+            self.remove_btn.setIcon(_close_ic)
+        else:
+            self.remove_btn.setText("✕")
+        self.remove_btn.setFixedSize(scaled(24), scaled(24))
+        self.remove_btn.setStyleSheet(_remove_btn_css())
         self.remove_btn.setToolTip("Remove this rule")
         self.remove_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.remove_btn.clicked.connect(lambda: self.remove_clicked.emit(self))
@@ -373,59 +390,59 @@ class SmartRuleRow(QFrame):
     def get_rule_data(self) -> dict:
         """Return rule dict compatible with SmartPlaylistRule fields.
 
-        Includes both raw IDs (fieldID, actionID) for the writer and
-        human-readable keys (field, action, fieldType) for the formatter.
+        Includes both raw IDs (field_id, action_id) for the writer and
+        human-readable keys (field, action, field_type) for the formatter.
         """
         fid = self.field_combo.currentData()
         aid = self.action_combo.currentData()
         field_name, ft = FIELD_DEFS.get(fid, ("Unknown", SPLFT_STRING))
 
         data: dict = {
-            "fieldID": fid or 0x02,
-            "actionID": aid or 0x00000001,
+            "field_id": fid or 0x02,
+            "action_id": aid or 0x00000001,
             # Human-readable keys expected by format_smart_rule()
             "field": self.field_combo.currentText() or field_name,
             "action": self.action_combo.currentText() or "?",
-            "fieldType": ft,
-            "stringValue": None,
-            "fromValue": 0,
-            "toValue": 0,
-            "fromDate": 0,
-            "toDate": 0,
-            "fromUnits": 0,
-            "toUnits": 0,
+            "field_type": ft,
+            "string_value": None,
+            "from_value": 0,
+            "to_value": 0,
+            "from_date": 0,
+            "to_date": 0,
+            "from_units": 0,
+            "to_units": 0,
         }
 
         if ft == SPLFT_STRING:
             w: QLineEdit | None = self._find_widget(QLineEdit)  # type: ignore[assignment]
-            data["stringValue"] = w.text() if w else ""
+            data["string_value"] = w.text() if w else ""
         elif ft == SPLFT_INT:
             spins: list[QSpinBox] = self._find_widgets(QSpinBox)  # type: ignore[assignment]
             if spins:
-                data["fromValue"] = spins[0].value()
+                data["from_value"] = spins[0].value()
             if len(spins) > 1:
-                data["toValue"] = spins[1].value()
+                data["to_value"] = spins[1].value()
             # Rating special case — compute star values for formatter
             if fid == 0x19:  # Rating
-                data["fromValueStars"] = data["fromValue"]
-                data["toValueStars"] = data["toValue"]
+                data["from_value_stars"] = data["from_value"]
+                data["to_value_stars"] = data["to_value"]
         elif ft == SPLFT_DATE:
             spin: QSpinBox | None = self._find_widget(QSpinBox)  # type: ignore[assignment]
-            # date rule: fromValue = negative count, fromUnits = seconds-per-unit
+            # date rule: from_value = negative count, from_units = seconds-per-unit
             if spin:
-                data["fromValue"] = -abs(spin.value())
-                data["fromDate"] = -abs(spin.value())
+                data["from_value"] = -abs(spin.value())
+                data["from_date"] = -abs(spin.value())
             date_unit_combo = self._find_value_combo()
             if date_unit_combo:
-                data["fromUnits"] = date_unit_combo.currentData() or 86400
-                data["toUnits"] = date_unit_combo.currentData() or 86400
-                data["unitsName"] = date_unit_combo.currentText() or ""
+                data["from_units"] = date_unit_combo.currentData() or 86400
+                data["to_units"] = date_unit_combo.currentData() or 86400
+                data["units_name"] = date_unit_combo.currentText() or ""
         elif ft == SPLFT_BOOLEAN:
             pass  # no value
         elif ft == SPLFT_BINARY_AND:
             combo = self._find_value_combo()
             if combo:
-                data["fromValue"] = combo.currentData() or 0x01
+                data["from_value"] = combo.currentData() or 0x01
         elif ft == SPLFT_PLAYLIST:
             # Playlist rules store the playlist ID as fromValue
             # For now, just store 0 — will need playlist list hookup
@@ -435,8 +452,8 @@ class SmartRuleRow(QFrame):
 
     def set_rule_data(self, rule: dict) -> None:
         """Populate the row from a parsed rule dict."""
-        fid = rule.get("fieldID", 0x02)
-        aid = rule.get("actionID", 0x01000002)
+        fid = rule.get("field_id", 0x02)
+        aid = rule.get("action_id", 0x01000002)
 
         # Set field
         idx = self.field_combo.findData(fid)
@@ -453,27 +470,27 @@ class SmartRuleRow(QFrame):
         if ft == SPLFT_STRING:
             w_le: QLineEdit | None = self._find_widget(QLineEdit)  # type: ignore[assignment]
             if w_le:
-                w_le.setText(rule.get("stringValue", "") or "")
+                w_le.setText(rule.get("string_value", "") or "")
         elif ft == SPLFT_INT:
             spins_sb: list[QSpinBox] = self._find_widgets(QSpinBox)  # type: ignore[assignment]
             if spins_sb:
-                spins_sb[0].setValue(rule.get("fromValue", 0))
+                spins_sb[0].setValue(rule.get("from_value", 0))
             if len(spins_sb) > 1:
-                spins_sb[1].setValue(rule.get("toValue", 0))
+                spins_sb[1].setValue(rule.get("to_value", 0))
         elif ft == SPLFT_DATE:
             spin_sb: QSpinBox | None = self._find_widget(QSpinBox)  # type: ignore[assignment]
             if spin_sb:
-                spin_sb.setValue(abs(rule.get("fromValue", 0) or rule.get("fromDate", 0)))
+                spin_sb.setValue(abs(rule.get("from_value", 0) or rule.get("from_date", 0)))
             unit_combo = self._find_value_combo()
             if unit_combo:
-                units = rule.get("fromUnits", 86400) or 86400
+                units = rule.get("from_units", 86400) or 86400
                 idx = unit_combo.findData(units)
                 if idx >= 0:
                     unit_combo.setCurrentIndex(idx)
         elif ft == SPLFT_BINARY_AND:
             combo = self._find_value_combo()
             if combo:
-                val = rule.get("fromValue", 0x01)
+                val = rule.get("from_value", 0x01)
                 idx = combo.findData(val)
                 if idx >= 0:
                     combo.setCurrentIndex(idx)
@@ -504,16 +521,16 @@ class SmartRuleRow(QFrame):
         if ft == SPLFT_STRING:
             le = QLineEdit()
             le.setPlaceholderText("value")
-            le.setStyleSheet(_INPUT_CSS)
-            le.setMinimumWidth(120)
+            le.setStyleSheet(_input_css())
+            le.setMinimumWidth(scaled(120))
             le.textChanged.connect(lambda: self.changed.emit())
             self._add_value_widget(le)
 
         elif ft == SPLFT_INT:
             spin = QSpinBox()
             spin.setRange(-999999, 999999)
-            spin.setStyleSheet(_SPINBOX_CSS)
-            spin.setMinimumWidth(80)
+            spin.setStyleSheet(_spinbox_css())
+            spin.setMinimumWidth(scaled(80))
             spin.valueChanged.connect(lambda: self.changed.emit())
             self._add_value_widget(spin)
 
@@ -527,8 +544,8 @@ class SmartRuleRow(QFrame):
 
             spin2 = QSpinBox()
             spin2.setRange(-999999, 999999)
-            spin2.setStyleSheet(_SPINBOX_CSS)
-            spin2.setMinimumWidth(80)
+            spin2.setStyleSheet(_spinbox_css())
+            spin2.setMinimumWidth(scaled(80))
             spin2.setVisible(False)
             spin2.valueChanged.connect(lambda: self.changed.emit())
             self._add_value_widget(spin2)
@@ -540,13 +557,13 @@ class SmartRuleRow(QFrame):
             spin = QSpinBox()
             spin.setRange(1, 99999)
             spin.setValue(30)
-            spin.setStyleSheet(_SPINBOX_CSS)
-            spin.setMinimumWidth(70)
+            spin.setStyleSheet(_spinbox_css())
+            spin.setMinimumWidth(scaled(70))
             spin.valueChanged.connect(lambda: self.changed.emit())
             self._add_value_widget(spin)
 
             unit_combo = QComboBox()
-            unit_combo.setStyleSheet(_COMBO_CSS)
+            unit_combo.setStyleSheet(_combo_css())
             for uid, uname in DATE_UNITS:
                 unit_combo.addItem(uname, uid)
             unit_combo.currentIndexChanged.connect(lambda: self.changed.emit())
@@ -560,8 +577,8 @@ class SmartRuleRow(QFrame):
 
         elif ft == SPLFT_BINARY_AND:
             combo = QComboBox()
-            combo.setStyleSheet(_COMBO_CSS)
-            combo.setMinimumWidth(120)
+            combo.setStyleSheet(_combo_css())
+            combo.setMinimumWidth(scaled(120))
             for flag_val, flag_name in MEDIA_TYPE_FLAGS:
                 combo.addItem(flag_name, flag_val)
             combo.currentIndexChanged.connect(lambda: self.changed.emit())
@@ -569,8 +586,8 @@ class SmartRuleRow(QFrame):
 
         elif ft == SPLFT_PLAYLIST:
             combo = QComboBox()
-            combo.setStyleSheet(_COMBO_CSS)
-            combo.setMinimumWidth(120)
+            combo.setStyleSheet(_combo_css())
+            combo.setMinimumWidth(scaled(120))
             combo.addItem("(select playlist)", 0)
             # TODO: populate with actual playlists
             combo.currentIndexChanged.connect(lambda: self.changed.emit())
@@ -648,26 +665,7 @@ class SmartRuleRow(QFrame):
 # ─────────────────────────────────────────────────────────────────────────────
 
 class SmartPlaylistEditor(QFrame):
-    """Full smart playlist editor replacing the info card when editing.
-
-    Layout:
-        ┌───────────────────────────────────────────────────────┐
-        │  📝 Playlist Name: [________________]                 │
-        ├───────────────────────────────────────────────────────┤
-        │  Match [all ▼] of the following rules:                │
-        │  ┌─────────────────────────────────────────────────┐  │
-        │  │ [Artist ▼] [contains ▼] [_______] [×]          │  │
-        │  │ [Rating ▼] [> ▼]       [60     ] [×]           │  │
-        │  └─────────────────────────────────────────────────┘  │
-        │  [+ Add Rule]                                         │
-        ├───────────────────────────────────────────────────────┤
-        │  ☐ Limit to [25] [songs ▼] selected by [random ▼]   │
-        │  ☑ Live updating                                      │
-        │  ☐ Match only checked items                           │
-        ├───────────────────────────────────────────────────────┤
-        │                               [Cancel] [Save]         │
-        └───────────────────────────────────────────────────────┘
-    """
+    """Full smart playlist editor replacing the info card when editing."""
 
     saved = pyqtSignal(dict)      # emits the full playlist dict
     cancelled = pyqtSignal()
@@ -686,28 +684,33 @@ class SmartPlaylistEditor(QFrame):
         self._editing_playlist: Optional[dict] = None  # None → new playlist
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(16, 14, 16, 14)
-        root.setSpacing(10)
+        root.setContentsMargins(scaled(16), scaled(14), scaled(16), scaled(14))
+        root.setSpacing(scaled(10))
 
         # ── Header: Name ──────────────────────────────────────
         header = QHBoxLayout()
-        header.setSpacing(8)
-        icon = QLabel("🧠")
-        icon.setFont(QFont(FONT_FAMILY, 18))
+        header.setSpacing(scaled(8))
+        icon = QLabel()
+        _px = glyph_pixmap("filter", scaled(28), Colors.ACCENT)
+        if _px:
+            icon.setPixmap(_px)
+        else:
+            icon.setText("◇")
+            icon.setFont(QFont(FONT_FAMILY, Metrics.FONT_HERO))
         icon.setStyleSheet("background: transparent; border: none;")
         header.addWidget(icon)
 
         self.name_input = QLineEdit()
         self.name_input.setPlaceholderText("Playlist Name")
-        self.name_input.setFont(QFont(FONT_FAMILY, 14, QFont.Weight.Bold))
+        self.name_input.setFont(QFont(FONT_FAMILY, Metrics.FONT_TITLE, QFont.Weight.Bold))
         self.name_input.setStyleSheet(f"""
             QLineEdit {{
                 background: transparent;
                 border: none;
                 border-bottom: 2px solid {Colors.BORDER_SUBTLE};
                 color: {Colors.TEXT_PRIMARY};
-                padding: 4px 2px;
-                font-size: 14px;
+                padding: {scaled(4)}px {scaled(2)}px;
+                font-size: {Metrics.FONT_TITLE}px;
             }}
             QLineEdit:focus {{
                 border-bottom-color: {Colors.ACCENT};
@@ -718,22 +721,22 @@ class SmartPlaylistEditor(QFrame):
 
         # ── Conjunction row ───────────────────────────────────
         conj_row = QHBoxLayout()
-        conj_row.setSpacing(6)
+        conj_row.setSpacing(scaled(6))
 
         lbl = QLabel("Match")
-        lbl.setFont(QFont(FONT_FAMILY, 11))
+        lbl.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
         lbl.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent; border: none;")
         conj_row.addWidget(lbl)
 
         self.conjunction_combo = QComboBox()
-        self.conjunction_combo.setStyleSheet(_COMBO_CSS)
+        self.conjunction_combo.setStyleSheet(_combo_css())
         self.conjunction_combo.addItem("all", "AND")
         self.conjunction_combo.addItem("any", "OR")
-        self.conjunction_combo.setFixedWidth(70)
+        self.conjunction_combo.setFixedWidth(scaled(70))
         conj_row.addWidget(self.conjunction_combo)
 
         lbl2 = QLabel("of the following rules:")
-        lbl2.setFont(QFont(FONT_FAMILY, 11))
+        lbl2.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
         lbl2.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent; border: none;")
         conj_row.addWidget(lbl2)
         conj_row.addStretch()
@@ -745,12 +748,12 @@ class SmartPlaylistEditor(QFrame):
         self._rules_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._rules_scroll.setStyleSheet(f"""
             QScrollArea {{
-                background: rgba(0,0,0,30);
+                background: {Colors.SHADOW_LIGHT};
                 border: 1px solid {Colors.BORDER_SUBTLE};
                 border-radius: {Metrics.BORDER_RADIUS_SM}px;
             }}
         """)
-        self._rules_scroll.setMinimumHeight(80)
+        self._rules_scroll.setMinimumHeight(scaled(80))
         self._rules_scroll.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
@@ -758,8 +761,8 @@ class SmartPlaylistEditor(QFrame):
         self._rules_widget = QWidget()
         self._rules_widget.setStyleSheet("background: transparent;")
         self._rules_layout = QVBoxLayout(self._rules_widget)
-        self._rules_layout.setContentsMargins(8, 6, 8, 6)
-        self._rules_layout.setSpacing(2)
+        self._rules_layout.setContentsMargins(scaled(8), scaled(6), scaled(8), scaled(6))
+        self._rules_layout.setSpacing(scaled(2))
         self._rules_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self._rules_scroll.setWidget(self._rules_widget)
         root.addWidget(self._rules_scroll, stretch=1)
@@ -769,7 +772,7 @@ class SmartPlaylistEditor(QFrame):
         # ── Add Rule button ──────────────────────────────────
         add_row = QHBoxLayout()
         self.add_rule_btn = QPushButton("＋ Add Rule")
-        self.add_rule_btn.setFont(QFont(FONT_FAMILY, 10))
+        self.add_rule_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
         self.add_rule_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.add_rule_btn.setStyleSheet(btn_css(
             bg="transparent",
@@ -792,45 +795,45 @@ class SmartPlaylistEditor(QFrame):
 
         # ── Options area ─────────────────────────────────────
         opts = QVBoxLayout()
-        opts.setSpacing(8)
+        opts.setSpacing(scaled(8))
 
         # Limit row
         limit_row = QHBoxLayout()
-        limit_row.setSpacing(6)
+        limit_row.setSpacing(scaled(6))
 
         self.limit_check = QCheckBox("Limit to")
-        self.limit_check.setStyleSheet(_CHECKBOX_CSS)
+        self.limit_check.setStyleSheet(_checkbox_css())
         self.limit_check.toggled.connect(self._on_limit_toggled)
         limit_row.addWidget(self.limit_check)
 
         self.limit_value_spin = QSpinBox()
         self.limit_value_spin.setRange(1, 99999)
         self.limit_value_spin.setValue(25)
-        self.limit_value_spin.setStyleSheet(_SPINBOX_CSS)
-        self.limit_value_spin.setFixedWidth(80)
+        self.limit_value_spin.setStyleSheet(_spinbox_css())
+        self.limit_value_spin.setFixedWidth(scaled(80))
         self.limit_value_spin.setEnabled(False)
         limit_row.addWidget(self.limit_value_spin)
 
         self.limit_type_combo = QComboBox()
-        self.limit_type_combo.setStyleSheet(_COMBO_CSS)
+        self.limit_type_combo.setStyleSheet(_combo_css())
         for lt_id, lt_name in LIMIT_TYPES:
             self.limit_type_combo.addItem(lt_name, lt_id)
-        self.limit_type_combo.setFixedWidth(90)
+        self.limit_type_combo.setFixedWidth(scaled(90))
         self.limit_type_combo.setEnabled(False)
         limit_row.addWidget(self.limit_type_combo)
 
         self._selected_by_label = QLabel("selected by")
-        self._selected_by_label.setFont(QFont(FONT_FAMILY, 11))
+        self._selected_by_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
         self._selected_by_label.setStyleSheet(
             f"color: {Colors.TEXT_PRIMARY}; background: transparent; border: none;"
         )
         limit_row.addWidget(self._selected_by_label)
 
         self.limit_sort_combo = QComboBox()
-        self.limit_sort_combo.setStyleSheet(_COMBO_CSS)
+        self.limit_sort_combo.setStyleSheet(_combo_css())
         for ls_id, ls_name in LIMIT_SORTS:
             self.limit_sort_combo.addItem(ls_name, ls_id)
-        self.limit_sort_combo.setFixedWidth(170)
+        self.limit_sort_combo.setFixedWidth(scaled(170))
         self.limit_sort_combo.setEnabled(False)
         limit_row.addWidget(self.limit_sort_combo)
 
@@ -839,28 +842,28 @@ class SmartPlaylistEditor(QFrame):
 
         # Live updating
         self.live_update_check = QCheckBox("Live updating")
-        self.live_update_check.setStyleSheet(_CHECKBOX_CSS)
+        self.live_update_check.setStyleSheet(_checkbox_css())
         self.live_update_check.setChecked(True)
         opts.addWidget(self.live_update_check)
 
         # Match only checked
         self.match_checked_check = QCheckBox("Match only checked items")
-        self.match_checked_check.setStyleSheet(_CHECKBOX_CSS)
+        self.match_checked_check.setStyleSheet(_checkbox_css())
         opts.addWidget(self.match_checked_check)
 
         # Sort order
         sort_row = QHBoxLayout()
-        sort_row.setSpacing(6)
+        sort_row.setSpacing(scaled(6))
         sort_lbl = QLabel("Sort Order:")
-        sort_lbl.setFont(QFont(FONT_FAMILY, 10))
+        sort_lbl.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
         sort_lbl.setStyleSheet(
             f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;"
         )
         sort_row.addWidget(sort_lbl)
 
         self.sort_combo = QComboBox()
-        self.sort_combo.setStyleSheet(_COMBO_CSS)
-        self.sort_combo.setFixedWidth(170)
+        self.sort_combo.setStyleSheet(_combo_css())
+        self.sort_combo.setFixedWidth(scaled(170))
         for s_id, s_name in PLAYLIST_SORT_ORDERS:
             self.sort_combo.addItem(s_name, s_id)
         sort_row.addWidget(self.sort_combo)
@@ -877,11 +880,11 @@ class SmartPlaylistEditor(QFrame):
 
         # ── Button row ───────────────────────────────────────
         btn_row = QHBoxLayout()
-        btn_row.setSpacing(8)
+        btn_row.setSpacing(scaled(8))
         btn_row.addStretch()
 
         self.cancel_btn = QPushButton("Cancel")
-        self.cancel_btn.setFont(QFont(FONT_FAMILY, 10))
+        self.cancel_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
         self.cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.cancel_btn.setStyleSheet(btn_css(
             bg=Colors.SURFACE_RAISED,
@@ -894,7 +897,7 @@ class SmartPlaylistEditor(QFrame):
         btn_row.addWidget(self.cancel_btn)
 
         self.save_btn = QPushButton("Save Playlist")
-        self.save_btn.setFont(QFont(FONT_FAMILY, 10, QFont.Weight.Bold))
+        self.save_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.Bold))
         self.save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.save_btn.setStyleSheet(accent_btn_css())
         self.save_btn.clicked.connect(self._on_save)
@@ -925,8 +928,8 @@ class SmartPlaylistEditor(QFrame):
         self._editing_playlist = playlist
         self.name_input.setText(playlist.get("Title", ""))
 
-        prefs = playlist.get("smartPlaylistData", {})
-        rules = playlist.get("smartPlaylistRules", {})
+        prefs = playlist.get("smart_playlist_data", {})
+        rules = playlist.get("smart_playlist_rules", {})
 
         # Conjunction
         conj = rules.get("conjunction", "AND")
@@ -935,22 +938,22 @@ class SmartPlaylistEditor(QFrame):
             self.conjunction_combo.setCurrentIndex(idx)
 
         # Limits
-        check_limits = prefs.get("checkLimits", False)
+        check_limits = prefs.get("check_limits", False)
         self.limit_check.setChecked(check_limits)
-        self.limit_value_spin.setValue(prefs.get("limitValue", 25))
-        lt_idx = self.limit_type_combo.findData(prefs.get("limitType", 0x03))
+        self.limit_value_spin.setValue(prefs.get("limit_value", 25))
+        lt_idx = self.limit_type_combo.findData(prefs.get("limit_type", 0x03))
         if lt_idx >= 0:
             self.limit_type_combo.setCurrentIndex(lt_idx)
-        ls_idx = self.limit_sort_combo.findData(prefs.get("limitSort", 0x02))
+        ls_idx = self.limit_sort_combo.findData(prefs.get("limit_sort", 0x02))
         if ls_idx >= 0:
             self.limit_sort_combo.setCurrentIndex(ls_idx)
 
         # Live update & match checked
-        self.live_update_check.setChecked(prefs.get("liveUpdate", True))
-        self.match_checked_check.setChecked(prefs.get("matchCheckedOnly", False))
+        self.live_update_check.setChecked(prefs.get("live_update", True))
+        self.match_checked_check.setChecked(prefs.get("match_checked_only", False))
 
         # Sort order
-        sort_order = playlist.get("sortOrder", 1)
+        sort_order = playlist.get("sort_order", 1)
         so_idx = self.sort_combo.findData(sort_order)
         if so_idx >= 0:
             self.sort_combo.setCurrentIndex(so_idx)
@@ -974,26 +977,25 @@ class SmartPlaylistEditor(QFrame):
         """Build a dict representing the current editor state.
 
         Returns a dict with keys matching the parsed playlist format:
-            Title, isSmartPlaylist, smartPlaylistData, smartPlaylistRules, _isNew
+            Title, isSmartPlaylist, smart_playlist_data, smart_playlist_rules, _isNew
         """
         rules = [row.get_rule_data() for row in self._rule_rows]
 
         result = {
             "Title": self.name_input.text().strip() or "Untitled Playlist",
-            "isSmartPlaylist": True,
             "_isNew": self._editing_playlist is None,
             "_source": "regular",
-            "sortOrder": self.sort_combo.currentData() or 1,
-            "smartPlaylistData": {
-                "liveUpdate": self.live_update_check.isChecked(),
-                "checkRules": True,
-                "checkLimits": self.limit_check.isChecked(),
-                "limitType": self.limit_type_combo.currentData() or 0x03,
-                "limitSort": self.limit_sort_combo.currentData() or 0x02,
-                "limitValue": self.limit_value_spin.value(),
-                "matchCheckedOnly": self.match_checked_check.isChecked(),
+            "sort_order": self.sort_combo.currentData() or 1,
+            "smart_playlist_data": {
+                "live_update": self.live_update_check.isChecked(),
+                "check_rules": True,
+                "check_limits": self.limit_check.isChecked(),
+                "limit_type": self.limit_type_combo.currentData() or 0x03,
+                "limit_sort": self.limit_sort_combo.currentData() or 0x02,
+                "limit_value": self.limit_value_spin.value(),
+                "match_checked_only": self.match_checked_check.isChecked(),
             },
-            "smartPlaylistRules": {
+            "smart_playlist_rules": {
                 "conjunction": self.conjunction_combo.currentData() or "AND",
                 "rules": rules,
             },
@@ -1001,9 +1003,9 @@ class SmartPlaylistEditor(QFrame):
 
         # Preserve existing IDs when editing
         if self._editing_playlist:
-            for key in ("playlistID", "playlistIDCopy", "dbId_0x24",
-                        "timestamp", "timestamp2",
-                        "_source", "mhsd5Type"):
+            for key in ("playlist_id", "playlist_id_2", "unk0x24",
+                        "timestamp", "timestamp_2",
+                        "_source", "mhsd5_type"):
                 if key in self._editing_playlist:
                     result[key] = self._editing_playlist[key]
 
@@ -1113,28 +1115,33 @@ class RegularPlaylistEditor(QFrame):
         self._editing_playlist: Optional[dict] = None  # None → new playlist
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(16, 14, 16, 14)
-        root.setSpacing(12)
+        root.setContentsMargins(scaled(16), scaled(14), scaled(16), scaled(14))
+        root.setSpacing(scaled(12))
 
         # ── Header: Name ──────────────────────────────────────
         header = QHBoxLayout()
-        header.setSpacing(8)
-        icon = QLabel("📋")
-        icon.setFont(QFont(FONT_FAMILY, 18))
+        header.setSpacing(scaled(8))
+        icon = QLabel()
+        _px = glyph_pixmap("annotation-dots", scaled(28), Colors.ACCENT)
+        if _px:
+            icon.setPixmap(_px)
+        else:
+            icon.setText("≡")
+            icon.setFont(QFont(FONT_FAMILY, Metrics.FONT_HERO))
         icon.setStyleSheet("background: transparent; border: none;")
         header.addWidget(icon)
 
         self.name_input = QLineEdit()
         self.name_input.setPlaceholderText("Playlist Name")
-        self.name_input.setFont(QFont(FONT_FAMILY, 14, QFont.Weight.Bold))
+        self.name_input.setFont(QFont(FONT_FAMILY, Metrics.FONT_TITLE, QFont.Weight.Bold))
         self.name_input.setStyleSheet(f"""
             QLineEdit {{
                 background: transparent;
                 border: none;
                 border-bottom: 2px solid {Colors.BORDER_SUBTLE};
                 color: {Colors.TEXT_PRIMARY};
-                padding: 4px 2px;
-                font-size: 14px;
+                padding: {scaled(4)}px {scaled(2)}px;
+                font-size: {Metrics.FONT_TITLE}px;
             }}
             QLineEdit:focus {{
                 border-bottom-color: {Colors.ACCENT};
@@ -1151,29 +1158,29 @@ class RegularPlaylistEditor(QFrame):
 
         # ── Sort Order ────────────────────────────────────────
         sort_row = QHBoxLayout()
-        sort_row.setSpacing(8)
+        sort_row.setSpacing(scaled(8))
         sort_label = QLabel("Sort Order:")
-        sort_label.setFont(QFont(FONT_FAMILY, 10))
+        sort_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
         sort_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
         sort_row.addWidget(sort_label)
 
         self.sort_combo = QComboBox()
-        self.sort_combo.setFont(QFont(FONT_FAMILY, 10))
-        self.sort_combo.setMinimumWidth(180)
+        self.sort_combo.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
+        self.sort_combo.setMinimumWidth(scaled(180))
         self.sort_combo.setStyleSheet(f"""
             QComboBox {{
                 background: {Colors.SURFACE_RAISED};
                 color: {Colors.TEXT_PRIMARY};
                 border: 1px solid {Colors.BORDER_SUBTLE};
-                border-radius: 4px;
-                padding: 4px 8px;
+                border-radius: {scaled(4)}px;
+                padding: {scaled(4)}px {scaled(8)}px;
             }}
             QComboBox:hover {{
                 border-color: {Colors.ACCENT};
             }}
             QComboBox::drop-down {{
                 border: none;
-                width: 20px;
+                width: {scaled(20)}px;
             }}
             QComboBox QAbstractItemView {{
                 background: {Colors.SURFACE_RAISED};
@@ -1190,9 +1197,9 @@ class RegularPlaylistEditor(QFrame):
 
         # ── Info area (for future options) ────────────────────
         info_label = QLabel(
-            "💡 Tracks can be added to this playlist from the music browser."
+            "Tracks can be added to this playlist from the music browser."
         )
-        info_label.setFont(QFont(FONT_FAMILY, 9))
+        info_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         info_label.setStyleSheet(
             f"color: {Colors.TEXT_TERTIARY}; background: transparent; border: none;"
         )
@@ -1210,13 +1217,13 @@ class RegularPlaylistEditor(QFrame):
 
         # ── Buttons ───────────────────────────────────────────
         btn_row = QHBoxLayout()
-        btn_row.setSpacing(8)
+        btn_row.setSpacing(scaled(8))
         btn_row.addStretch()
 
         cancel_btn = QPushButton("Cancel")
-        cancel_btn.setFont(QFont(FONT_FAMILY, 10))
+        cancel_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
         cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        cancel_btn.setMinimumWidth(80)
+        cancel_btn.setMinimumWidth(scaled(80))
         cancel_btn.setStyleSheet(btn_css(
             bg=Colors.SURFACE_RAISED,
             bg_hover=Colors.SURFACE_HOVER,
@@ -1228,9 +1235,9 @@ class RegularPlaylistEditor(QFrame):
         btn_row.addWidget(cancel_btn)
 
         save_btn = QPushButton("Save")
-        save_btn.setFont(QFont(FONT_FAMILY, 10, QFont.Weight.Bold))
+        save_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.Bold))
         save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        save_btn.setMinimumWidth(80)
+        save_btn.setMinimumWidth(scaled(80))
         save_btn.setStyleSheet(accent_btn_css())
         save_btn.clicked.connect(self._on_save)
         btn_row.addWidget(save_btn)
@@ -1255,7 +1262,7 @@ class RegularPlaylistEditor(QFrame):
         self.name_input.setText(playlist.get("Title", ""))
 
         # Restore sort order
-        sort_order = playlist.get("sortOrder", 1)
+        sort_order = playlist.get("sort_order", 1)
         idx = self.sort_combo.findData(sort_order)
         if idx >= 0:
             self.sort_combo.setCurrentIndex(idx)
@@ -1272,18 +1279,16 @@ class RegularPlaylistEditor(QFrame):
         """
         result: dict = {
             "Title": self.name_input.text().strip() or "Untitled Playlist",
-            "isSmartPlaylist": False,
-            "isMaster": False,
             "_isNew": self._editing_playlist is None,
             "_source": "regular",
-            "sortOrder": self.sort_combo.currentData() or 1,
+            "sort_order": self.sort_combo.currentData() or 1,
             "items": [],
         }
 
         # Preserve existing IDs / items when editing
         if self._editing_playlist:
-            for key in ("playlistID", "playlistIDCopy", "dbId_0x24",
-                        "timestamp", "timestamp2", "items", "_source"):
+            for key in ("playlist_id", "playlist_id_2", "unk0x24",
+                        "timestamp", "timestamp_2", "items", "_source"):
                 if key in self._editing_playlist:
                     result[key] = self._editing_playlist[key]
 
@@ -1308,64 +1313,73 @@ class NewPlaylistDialog(QDialog):
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.setWindowTitle("New Playlist")
-        self.setFixedSize(320, 200)
+        self.setFixedSize(scaled(320), scaled(200))
         self.setStyleSheet(f"""
             QDialog {{
-                background: #222233;
-                color: white;
+                background: {Colors.DIALOG_BG};
+                color: {Colors.TEXT_PRIMARY};
             }}
         """)
 
         self._choice: Optional[str] = None
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 20, 24, 20)
-        layout.setSpacing(12)
+        layout.setContentsMargins(scaled(24), scaled(20), scaled(24), scaled(20))
+        layout.setSpacing(scaled(12))
 
         title = QLabel("Create New Playlist")
-        title.setFont(QFont(FONT_FAMILY, 14, QFont.Weight.Bold))
+        title.setFont(QFont(FONT_FAMILY, Metrics.FONT_TITLE, QFont.Weight.Bold))
         title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
         subtitle = QLabel("Choose a playlist type:")
-        subtitle.setFont(QFont(FONT_FAMILY, 10))
+        subtitle.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
         subtitle.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(subtitle)
 
-        layout.addSpacing(8)
+        layout.addSpacing(scaled(8))
 
         btn_row = QHBoxLayout()
-        btn_row.setSpacing(12)
+        btn_row.setSpacing(scaled(12))
+
+        _ic_sz = QSize(scaled(20), scaled(20))
 
         # Regular playlist button
-        self.regular_btn = QPushButton(f"{_ICON_REGULAR}  Regular")
-        self.regular_btn.setFont(QFont(FONT_FAMILY, 11))
-        self.regular_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.regular_btn.setMinimumHeight(44)
+        self.regular_btn = QPushButton("Regular")
+        self.regular_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
+        self.regular_btn.setMinimumHeight(scaled(44))
         self.regular_btn.setStyleSheet(btn_css(
             bg=Colors.SURFACE_RAISED,
             bg_hover=Colors.SURFACE_HOVER,
             bg_press=Colors.SURFACE_ACTIVE,
             border=f"1px solid {Colors.BORDER_SUBTLE}",
-            padding="10px 20px",
+            padding=f"{scaled(10)}px {scaled(20)}px",
         ))
+        _ic = glyph_icon(_ICON_REGULAR, scaled(20), Colors.TEXT_SECONDARY)
+        if _ic:
+            self.regular_btn.setIcon(_ic)
+            self.regular_btn.setIconSize(_ic_sz)
         self.regular_btn.clicked.connect(lambda: self._select("regular"))
         btn_row.addWidget(self.regular_btn)
 
         # Smart playlist button
-        self.smart_btn = QPushButton(f"{_ICON_SMART}  Smart")
-        self.smart_btn.setFont(QFont(FONT_FAMILY, 11))
-        self.smart_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.smart_btn.setMinimumHeight(44)
+        self.smart_btn = QPushButton("Smart")
+        self.smart_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
+        self.smart_btn.setMinimumHeight(scaled(44))
         self.smart_btn.setStyleSheet(btn_css(
             bg=Colors.ACCENT_DIM,
             bg_hover=Colors.ACCENT_HOVER,
             bg_press=Colors.ACCENT_PRESS,
+            fg=Colors.TEXT_ON_ACCENT,
             border=f"1px solid {Colors.ACCENT_BORDER}",
-            padding="10px 20px",
+            padding=f"{scaled(10)}px {scaled(20)}px",
         ))
+        _ic = glyph_icon(_ICON_SMART, scaled(20), Colors.TEXT_ON_ACCENT)
+        if _ic:
+            self.smart_btn.setIcon(_ic)
+            self.smart_btn.setIconSize(_ic_sz)
         self.smart_btn.clicked.connect(lambda: self._select("smart"))
         btn_row.addWidget(self.smart_btn)
 
@@ -1380,5 +1394,5 @@ class NewPlaylistDialog(QDialog):
 
 
 # Re-export icons used by playlist browser
-_ICON_REGULAR = "📋"
-_ICON_SMART = "🧠"
+_ICON_REGULAR = "annotation-dots"
+_ICON_SMART = "filter"

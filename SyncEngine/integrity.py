@@ -194,7 +194,7 @@ def _check_mapping_dbids(
     # Build set of valid dbids from the (already-cleaned) track list
     valid_dbids: set[int] = set()
     for track in ipod_tracks:
-        dbid = track.get("dbid")
+        dbid = track.get("db_id")
         if dbid:
             valid_dbids.add(dbid)
 

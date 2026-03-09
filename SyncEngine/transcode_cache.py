@@ -6,7 +6,7 @@ Benefits:
 - Re-sync: If iPod is wiped, cached files are still available
 - Quality upgrades: Only retranscode if source file changed
 
-Cache location: ~/.iopenpod/transcode_cache/ (cross-platform)
+Cache location: ~/iOpenPod/cache/ (cross-platform)
 
 Cache structure:
   index.json - Maps fingerprint → cached file info
@@ -26,7 +26,7 @@ from datetime import datetime, timezone
 logger = logging.getLogger(__name__)
 
 # Default cache location
-DEFAULT_CACHE_DIR = Path.home() / ".iopenpod" / "transcode_cache"
+DEFAULT_CACHE_DIR = Path.home() / "iOpenPod" / "cache"
 
 
 @dataclass
@@ -143,7 +143,7 @@ class TranscodeCache:
         Initialize cache.
 
         Args:
-            cache_dir: Cache directory (default: ~/.iopenpod/transcode_cache)
+            cache_dir: Cache directory (default: ~/iOpenPod/cache)
         """
         self.cache_dir = cache_dir or DEFAULT_CACHE_DIR
         self.files_dir = self.cache_dir / "files"

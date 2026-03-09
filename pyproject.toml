@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "iopenpod"
-version = "0.1.0"
+version = "1.0.0"
 description = "Open-source iPod Classic sync tool — manage your iPod music library without iTunes. Reads and writes iTunesDB directly."
 authors = [
     {name = "John Gibbons", email = "johngibbons167@gmail.com"}
@@ -35,22 +35,32 @@ dependencies = [
     "pyusb>=1.3.1",
     "wasmtime>=30.0.0",
     "certifi>=2024.0.0",
+    "feedparser>=6.0.10",
+    "requests>=2.31.0",
+    "packaging>=23.0",
 ]
 
 [project.scripts]
 iopenpod = "main:main"
 
 [dependency-groups]
-dev = []
+dev = [
+    "nuitka>=4.0.3",
+    "ordered-set>=4.1.0",
+    "pyinstaller>=6.19.0",
+    "zstandard>=0.25.0",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = [
     "GUI",
     "iTunesDB_Parser",
+    "iTunesDB_Shared",
     "iTunesDB_Writer",
     "ArtworkDB_Parser",
     "ArtworkDB_Writer",
     "SyncEngine",
+    "SQLiteDB_Writer",
 ]
 
 [tool.flake8]
