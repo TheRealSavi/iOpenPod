@@ -234,9 +234,18 @@ def stage_update(archive_path: Path) -> Optional[Path]:
             logger.error("Unknown archive format: %s", archive_path.name)
             return None
 
-        # The archive contains an iOpenPod/ folder at the top level
-        extracted_dirs = [d for d in staging.iterdir() if d.is_dir()]
-        source_dir = extracted_dirs[0] if extracted_dirs else staging
+        # Determine the actual root of the extracted update.
+        # Some archives wrap everything in a single top-level folder
+        # (e.g. macOS: iOpenPod.app/, Linux: iOpenPod/), while others
+        # have files directly at the root (e.g. Windows zip created
+        # with Compress-Archive -Path dist\iOpenPod\*).
+        entries = list(staging.iterdir())
+        if len(entries) == 1 and entries[0].is_dir():
+            # Single top-level folder — use it as the source
+            source_dir = entries[0]
+        else:
+            # Multiple entries at root — staging IS the source
+            source_dir = staging
 
         logger.info("Update staged at %s", source_dir)
         return source_dir
@@ -358,6 +367,17 @@ def launch_bootstrap_and_exit(staged_dir: Path) -> bool:
     pid = os.getpid()
     app_dir = Path(sys.executable).parent
     exe_name = Path(sys.executable).name
+
+    logger.info(
+        "Bootstrap: pid=%d, app_dir=%s, exe=%s, staged=%s",
+        pid, app_dir, exe_name, staged_dir,
+    )
+    # Log staged dir contents for debugging
+    try:
+        staged_contents = [p.name for p in staged_dir.iterdir()]
+        logger.info("Staged dir contents: %s", staged_contents)
+    except Exception:
+        pass
 
     # macOS .app bundle: replace the entire .app directory, not just
     # Contents/MacOS/.  The staged archive also contains an .app folder.
