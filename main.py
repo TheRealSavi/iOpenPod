@@ -3,9 +3,6 @@ import sys
 import logging
 import logging.handlers
 import traceback
-from PyQt6.QtWidgets import QApplication, QMessageBox
-from PyQt6.QtGui import QIcon
-from GUI.app import MainWindow
 
 
 def _get_log_dir() -> str:
@@ -108,6 +105,7 @@ def global_exception_handler(exc_type, exc_value, exc_tb):
 
     # Show user-friendly dialog if Qt app is running
     try:
+        from PyQt6.QtWidgets import QApplication, QMessageBox
         app = QApplication.instance()
         if app:
             error_msg = (
@@ -127,6 +125,9 @@ sys.excepthook = global_exception_handler
 
 def run_pyqt_app():
     logger.info("iOpenPod starting — log file: %s", _log_file_path)
+    from PyQt6.QtWidgets import QApplication
+    from PyQt6.QtGui import QIcon
+    from GUI.app import MainWindow
     app = QApplication([])
 
     # Register bundled Noto fonts so the UI renders correctly on systems
@@ -162,7 +163,7 @@ def run_pyqt_app():
     from GUI.styles import app_stylesheet
     app.setStyleSheet(app_stylesheet())
 
-    window = MainWindow()
+    window = MainWindow()  # noqa: F821 — imported at top of function
 
     window.show()
 
