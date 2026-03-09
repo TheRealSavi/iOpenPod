@@ -62,6 +62,21 @@ jobs:
         run: uv run pyinstaller iOpenPod.spec --noconfirm
 
       # ── Package archive ─────────────────────────────────────────────
+      # macOS: ad-hoc sign all binaries so Gatekeeper doesn't kill the app
+      - name: Ad-hoc codesign (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          # Sign every .so/.dylib and the main executable, then the .app bundle
+          find dist/iOpenPod.app -type f \( -name '*.so' -o -name '*.dylib' \) \
+            -exec codesign --force --sign - --options runtime --entitlements entitlements.plist {} \;
+          codesign --force --sign - --options runtime --entitlements entitlements.plist \
+            dist/iOpenPod.app/Contents/MacOS/iOpenPod
+          codesign --force --sign - --options runtime --entitlements entitlements.plist \
+            dist/iOpenPod.app
+          # Verify
+          codesign --verify --deep --strict dist/iOpenPod.app
+          echo "Code signing verified OK"
+
       - name: Create archive (Windows)
         if: runner.os == 'Windows'
         run: Compress-Archive -Path dist\iOpenPod\* -DestinationPath iOpenPod-Windows.zip

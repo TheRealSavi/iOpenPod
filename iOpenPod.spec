@@ -2,6 +2,15 @@
 import sys
 from PyInstaller.utils.hooks import copy_metadata
 
+# Read version from pyproject.toml so it stays in sync
+_version = "0.0.0"
+try:
+    import tomllib
+    with open("pyproject.toml", "rb") as _f:
+        _version = tomllib.load(_f)["project"]["version"]
+except Exception:
+    pass
+
 a = Analysis(
     ['main.py'],
     pathex=[],
@@ -40,7 +49,7 @@ exe = EXE(
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
-    entitlements_file=None,
+    entitlements_file='entitlements.plist' if sys.platform == 'darwin' else None,
     icon='assets/icons/icon.ico' if sys.platform == 'win32' else 'assets/icons/icon-256.png',
 )
 coll = COLLECT(
@@ -61,7 +70,10 @@ if sys.platform == 'darwin':
         icon='assets/icons/icon-256.png',
         bundle_identifier='com.iopenpod.app',
         info_plist={
-            'CFBundleShortVersionString': '1.0.1',
+            'CFBundleShortVersionString': _version,
+            'CFBundleVersion': _version,
             'NSHighResolutionCapable': True,
+            'LSMinimumSystemVersion': '10.15',
+            'NSRequiresAquaSystemAppearance': False,
         },
     )
