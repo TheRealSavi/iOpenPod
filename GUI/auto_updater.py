@@ -281,10 +281,27 @@ def _write_windows_bootstrap(
     """Write a .cmd batch script that swaps the update after we exit."""
     # Write to temp dir — app_dir.parent may be read-only (Program Files, etc.)
     script = Path(tempfile.gettempdir()) / "_iopenpod_update.cmd"
+    log_file = Path(tempfile.gettempdir()) / "_iopenpod_update.log"
+
+    # staged_dir may be the staging root itself (flat archive) or a
+    # subfolder (archive with single top-level dir).  Clean up the
+    # staging root in both cases.
+    staging_root = staged_dir
+    if staged_dir.parent.name.startswith("iopenpod-staging-"):
+        staging_root = staged_dir.parent
+
     script.write_text(
         f'@echo off\r\n'
         f'setlocal EnableDelayedExpansion\r\n'
         f'title iOpenPod Updater\r\n'
+        f'\r\n'
+        f'set "LOG={log_file}"\r\n'
+        f'echo [%date% %time%] iOpenPod updater starting >> "%LOG%"\r\n'
+        f'echo App dir:    {app_dir} >> "%LOG%"\r\n'
+        f'echo Staged dir: {staged_dir} >> "%LOG%"\r\n'
+        f'echo Exe name:   {exe_name} >> "%LOG%"\r\n'
+        f'echo PID:        {pid} >> "%LOG%"\r\n'
+        f'\r\n'
         f'echo Waiting for iOpenPod to exit...\r\n'
         f':wait\r\n'
         f'tasklist /FI "PID eq {pid}" 2>NUL | find /I "{pid}" >NUL\r\n'
@@ -292,33 +309,51 @@ def _write_windows_bootstrap(
         f'    ping -n 2 127.0.0.1 >NUL\r\n'
         f'    goto wait\r\n'
         f')\r\n'
+        f'echo Process exited. >> "%LOG%"\r\n'
         f'\r\n'
         f'echo Applying update...\r\n'
         f'ping -n 3 127.0.0.1 >NUL\r\n'
         f'\r\n'
-        f'if exist "{app_dir}.bak" rmdir /s /q "{app_dir}.bak"\r\n'
+        f'if exist "{app_dir}.bak" (\r\n'
+        f'    echo Removing old backup... >> "%LOG%"\r\n'
+        f'    rmdir /s /q "{app_dir}.bak"\r\n'
+        f')\r\n'
         f'\r\n'
+        f'echo Moving old version aside... >> "%LOG%"\r\n'
         f'set "retries=0"\r\n'
         f':retry_move\r\n'
-        f'move "{app_dir}" "{app_dir}.bak" >NUL 2>&1\r\n'
+        f'move "{app_dir}" "{app_dir}.bak"\r\n'
         f'if errorlevel 1 (\r\n'
         f'    set /a retries+=1\r\n'
-        f'    echo Waiting for file locks to release (attempt !retries! of 10)...\r\n'
+        f'    echo Move failed, attempt !retries! of 10 >> "%LOG%"\r\n'
+        f'    echo Waiting for file locks [attempt !retries! of 10]...\r\n'
         f'    if !retries! lss 10 (\r\n'
         f'        ping -n 3 127.0.0.1 >NUL\r\n'
         f'        goto retry_move\r\n'
         f'    )\r\n'
+        f'    echo ERROR: Could not move old version after 10 attempts >> "%LOG%"\r\n'
         f'    echo ERROR: Could not move old version aside after 10 attempts.\r\n'
-        f'    echo You can manually extract the update from: {staged_dir}\r\n'
+        f'    echo The update files are at: {staged_dir}\r\n'
         f'    pause\r\n'
         f'    exit /b 1\r\n'
         f')\r\n'
+        f'echo Move succeeded. >> "%LOG%"\r\n'
         f'\r\n'
-        f'xcopy "{staged_dir}\\*" "{app_dir}\\" /E /I /Q /Y >NUL\r\n'
+        f'echo Copying new version...\r\n'
+        f'echo Copying: "{staged_dir}\\*" to "{app_dir}\\" >> "%LOG%"\r\n'
+        f'xcopy "{staged_dir}\\*" "{app_dir}\\" /E /I /Q /Y\r\n'
+        f'echo xcopy exit code: %errorlevel% >> "%LOG%"\r\n'
+        f'\r\n'
         f'echo Starting updated iOpenPod...\r\n'
+        f'echo Launching: "{app_dir}\\{exe_name}" >> "%LOG%"\r\n'
         f'start "" "{app_dir}\\{exe_name}"\r\n'
+        f'echo start exit code: %errorlevel% >> "%LOG%"\r\n'
+        f'\r\n'
+        f'echo Cleaning up...\r\n'
         f'rmdir /s /q "{app_dir}.bak" 2>NUL\r\n'
-        f'rmdir /s /q "{staged_dir.parent}" 2>NUL\r\n'
+        f'rmdir /s /q "{staging_root}" 2>NUL\r\n'
+        f'echo [%date% %time%] Update complete. >> "%LOG%"\r\n'
+        f'ping -n 2 127.0.0.1 >NUL\r\n'
         f'del "%~f0"\r\n',
         encoding="utf-8",
     )
