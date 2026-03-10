@@ -118,7 +118,7 @@ def image_from_bytes(art_bytes: bytes) -> Optional[Image.Image]:
     try:
         img = Image.open(io.BytesIO(art_bytes))
         if img.mode != 'RGB':
-            img = img.convert('RGB')
+            img = img.convert('RGBA').convert('RGB')
         return img
     except Exception:
         return None

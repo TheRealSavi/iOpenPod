@@ -70,7 +70,27 @@ def write_extras_itdb(
             )
             lyrics_count += 1
 
+    # Insert chapter data for tracks that have chapters
+    chapter_count = 0
+    for track in tracks:
+        cd = track.chapter_data or {}
+        chapters = cd.get("chapters")
+        if chapters:
+            from iTunesDB_Writer.mhod_writer import build_chapter_blob
+            blob = build_chapter_blob(
+                chapters,
+                unk024=cd.get("unk024", 0),
+                unk028=cd.get("unk028", 0),
+                unk032=cd.get("unk032", 0),
+            )
+            if blob:
+                cur.execute(
+                    "INSERT INTO chapter (item_pid, data) VALUES (?, ?)",
+                    (_s64(track.dbid), blob)
+                )
+                chapter_count += 1
+
     conn.commit()
     conn.close()
 
-    logger.info("Wrote Extras.itdb: %d lyrics entries", lyrics_count)
+    logger.info("Wrote Extras.itdb: %d lyrics entries, %d chapter entries", lyrics_count, chapter_count)

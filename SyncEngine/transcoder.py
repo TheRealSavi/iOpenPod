@@ -368,6 +368,8 @@ def _probe_duration_us(filepath: str | Path) -> int:
             ],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=120,
             **_SP_KWARGS,
         )
@@ -619,7 +621,8 @@ def transcode(
         # Video transcoding may take significantly longer than audio
         timeout = 7200 if target == TranscodeTarget.VIDEO_H264 else 600
 
-        # Use streaming progress for video when a callback is provided
+        # Use streaming progress for video (takes minutes; progress is useful).
+        # Audio transcodes complete in seconds on local disk — no need.
         if progress_callback and target == TranscodeTarget.VIDEO_H264:
             duration_us = _probe_duration_us(source_path)
             returncode, stderr_text = _run_ffmpeg_with_progress(

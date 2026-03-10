@@ -79,7 +79,7 @@ class SyncWorker(QThread):
 
 class SyncExecuteWorker(QThread):
     """Background worker for executing sync plan."""
-    progress = pyqtSignal(str, int, int, str)  # stage, current, total, message
+    progress = pyqtSignal(object)  # SyncProgress
     finished = pyqtSignal(object)  # SyncResult
     error = pyqtSignal(str)
 
@@ -105,7 +105,7 @@ class SyncExecuteWorker(QThread):
             # ── Pre-sync backup ───────────────────────────────────────
             if not self.skip_backup:
                 try:
-                    self.progress.emit("backup", 0, 0, "Creating pre-sync backup…")
+                    self.progress.emit(SyncProgress("backup", 0, 0, message="Creating pre-sync backup…"))
                     from SyncEngine.backup_manager import (
                         BackupManager, get_device_identifier,
                         get_device_display_name,
@@ -125,9 +125,9 @@ class SyncExecuteWorker(QThread):
                     )
 
                     def on_backup_progress(prog):
-                        self.progress.emit(
-                            "backup", prog.current, prog.total, prog.message,
-                        )
+                        self.progress.emit(SyncProgress(
+                            "backup", prog.current, prog.total, message=prog.message,
+                        ))
 
                     snap = manager.create_backup(
                         ipod_path=self.ipod_path,
@@ -172,7 +172,7 @@ class SyncExecuteWorker(QThread):
 
             # Progress callback
             def on_progress(prog: SyncProgress):
-                self.progress.emit(prog.stage, prog.current, prog.total, prog.message)
+                self.progress.emit(prog)
 
             # Execute sync — executor saves mapping internally on success
             result = executor.execute(
@@ -311,7 +311,7 @@ class _StorageBarWidget(QWidget):
         self._sync_delta = sync_delta
         self.update()
 
-    def paintEvent(self, event):
+    def paintEvent(self, a0):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
 
@@ -1924,15 +1924,27 @@ class SyncReviewWidget(QWidget):
         self._skip_presync_backup = True
         self.sync_requested.emit(self._pending_sync_items)
 
-    def update_execute_progress(self, stage: str, current: int, total: int, message: str):
-        """Update progress during sync execution."""
+    def update_execute_progress(self, prog):
+        """Update progress during sync execution.
+
+        Args:
+            prog: SyncProgress object (or compatible) with stage, current,
+                  total, message, worker_lines, size_progress fields.
+        """
+        stage = prog.stage
+        current = prog.current
+        total = prog.total
+        message = getattr(prog, 'message', '') or ''
+        worker_lines = getattr(prog, 'worker_lines', None)
+        size_progress = getattr(prog, 'size_progress', None)
+
         # Transcode is a sub-stage — show its percentage without changing
         # the headline or stage history.
         if stage == "transcode":
             # Show transcode detail under the current stage label
             detail_parts = []
             for s in self._completed_stages[-4:]:
-                detail_parts.append(f"<span style='color: {Colors.TEXT_TERTIARY};'>✓ {s}</span>")
+                detail_parts.append(f"<span style='color: {Colors.TEXT_TERTIARY};'>\u2713 {s}</span>")
             if message:
                 detail_parts.append(f"<span style='color: {Colors.TEXT_PRIMARY};'>{message}</span>")
             self.progress_detail.setText("<br>".join(detail_parts))
@@ -1963,16 +1975,41 @@ class SyncReviewWidget(QWidget):
 
         self.loading_label.setText(friendly)
 
-        # Build detail text: completed stages + current progress
+        # Build detail text: completed stages + per-worker lines or message
         detail_parts = []
         for s in self._completed_stages[-4:]:  # Show last 4 completed stages
-            detail_parts.append(f"<span style='color: {Colors.TEXT_TERTIARY};'>✓ {s}</span>")
-        if message:
+            detail_parts.append(f"<span style='color: {Colors.TEXT_TERTIARY};'>\u2713 {s}</span>")
+
+        if worker_lines:
+            for line in worker_lines:
+                detail_parts.append(f"<span style='color: {Colors.TEXT_PRIMARY};'>{line}</span>")
+        elif message:
             detail_parts.append(f"<span style='color: {Colors.TEXT_PRIMARY};'>{message}</span>")
+
         self.progress_detail.setText("<br>".join(detail_parts))
         self.progress_detail.setTextFormat(Qt.TextFormat.RichText)
 
-        if total > 0:
+        # Use size-weighted progress for the bar when available
+        if size_progress is not None and total > 0:
+            self.progress_bar.setRange(0, 10000)
+            self.progress_bar.setValue(int(size_progress * 10000))
+            # ETA from elapsed time and overall fraction — stable because
+            # it doesn't depend on per-worker callback timing.
+            eta = ""
+            if size_progress > 0.01:
+                stats = self._eta_tracker.current_stage_stats
+                if stats is None:
+                    self._eta_tracker.update(stage, 0, 1)
+                    stats = self._eta_tracker.current_stage_stats
+                if stats:
+                    elapsed = stats.elapsed
+                    remaining = elapsed / size_progress * (1.0 - size_progress)
+                    eta = ETATracker._format_duration(remaining)
+            parts = [f"{current} of {total}"]
+            if eta:
+                parts.append(eta)
+            self.eta_label.setText(" \u00b7 ".join(parts))
+        elif total > 0:
             self.progress_bar.setRange(0, total)
             self.progress_bar.setValue(current)
             self._eta_tracker.update(stage, current, total)

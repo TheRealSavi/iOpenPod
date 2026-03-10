@@ -512,6 +512,15 @@ class PCLibrary:
         if ext == ".m4b" and not is_audiobook:
             is_audiobook = True
 
+        # Extract chapter markers from audiobooks and podcasts
+        chapters = None
+        if is_audiobook or is_podcast:
+            try:
+                from PodcastManager.downloader import extract_chapters
+                chapters = extract_chapters(str(file_path))
+            except Exception as e:
+                logging.debug(f"Chapter extraction failed for {file_path}: {e}")
+
         # Determine transcoding need
         if is_video:
             if ext in VIDEO_ALWAYS_TRANSCODE:
@@ -583,6 +592,7 @@ class PCLibrary:
             is_audiobook=is_audiobook,
             category=metadata.get("category"),
             podcast_url=metadata.get("podcast_url"),
+            chapters=chapters,
         )
 
     def _compute_art_hash(self, file_path: Path) -> Optional[str]:

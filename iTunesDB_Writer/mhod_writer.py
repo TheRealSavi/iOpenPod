@@ -270,6 +270,27 @@ def write_mhod_chapter_data(
     return header + body
 
 
+def build_chapter_blob(
+    chapters: list[dict],
+    unk024: int = 0,
+    unk028: int = 0,
+    unk032: int = 0,
+) -> bytes:
+    """Build the chapter atom blob (no MHOD header) for SQLite Extras.itdb.
+
+    Same atom tree format as MHOD type 17 but without the 24-byte MHOD header.
+    Used by ``SQLiteDB_Writer.extras_writer`` for the ``chapter.data`` BLOB.
+
+    Returns:
+        Raw chapter blob bytes, or b'' if chapters is empty.
+    """
+    full = write_mhod_chapter_data(chapters, unk024, unk028, unk032)
+    if not full:
+        return b''
+    # Strip the MHOD header to get just the atom tree
+    return full[MHOD_HEADER_SIZE:]
+
+
 def write_track_mhods(
     title: str,
     location: str,

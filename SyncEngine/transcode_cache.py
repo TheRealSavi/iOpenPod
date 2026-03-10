@@ -300,6 +300,62 @@ class TranscodeCache:
             logger.error(f"Failed to cache file: {e}")
             return None
 
+    def reserve(
+        self,
+        fingerprint: str,
+        target_format: str,
+        bitrate: Optional[int] = None,
+    ) -> Path:
+        """Return the cache file path for a fingerprint without creating an index entry.
+
+        The caller should write the transcoded file to this path, then call
+        :meth:`commit` to register it in the index.  This avoids a redundant
+        copy compared to :meth:`add`.
+        """
+        filename = self._fingerprint_to_filename(fingerprint, target_format, bitrate)
+        path = self.files_dir / filename
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def commit(
+        self,
+        fingerprint: str,
+        source_format: str,
+        target_format: str,
+        source_size: int,
+        bitrate: Optional[int] = None,
+    ) -> Optional[Path]:
+        """Register a previously-reserved cache file in the index.
+
+        The file at the path returned by :meth:`reserve` must already exist.
+        Returns the cached path on success, ``None`` on failure.
+        """
+        filename = self._fingerprint_to_filename(fingerprint, target_format, bitrate)
+        cached_path = self.files_dir / filename
+        if not cached_path.exists():
+            logger.error(f"Cannot commit non-existent cache file: {cached_path}")
+            return None
+
+        try:
+            with self._lock:
+                cached_file = CachedFile(
+                    fingerprint=fingerprint,
+                    source_format=source_format,
+                    target_format=target_format,
+                    filename=filename,
+                    size=cached_path.stat().st_size,
+                    created=datetime.now(timezone.utc).isoformat(),
+                    source_size=source_size,
+                    bitrate=bitrate,
+                )
+                self._index.add(cached_file)
+                self._save_index()
+            logger.info(f"Cached: {fingerprint[:20]}... \u2192 {filename}")
+            return cached_path
+        except Exception as e:
+            logger.error(f"Failed to commit cache entry: {e}")
+            return None
+
     def copy_from_cache(
         self,
         fingerprint: str,
