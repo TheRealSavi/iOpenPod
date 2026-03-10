@@ -1816,6 +1816,9 @@ class MainWindow(QMainWindow):
             for feed in store.get_feeds():
                 match_ipod_tracks(feed, ipod_tracks)
                 store.update_feed(feed)
+
+            # Refresh the podcast browser episode table so status is visible
+            browser.refresh_episodes()
         except Exception as e:
             logger.debug("Could not update podcast statuses: %s", e)
 

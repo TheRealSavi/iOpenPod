@@ -568,16 +568,20 @@ class PodcastBrowser(QFrame):
     # ── Episode context menu ─────────────────────────────────────────────
 
     def _on_episode_context_menu(self, pos) -> None:
-        """Right-click on episode rows → Add to iPod."""
+        """Right-click on episode rows → Add/Remove actions."""
         selected = self._get_selected_episodes()
         if not selected:
             return
 
-        from PodcastManager.models import STATUS_ON_IPOD
+        from PodcastManager.models import (
+            STATUS_DOWNLOADED, STATUS_DOWNLOADING, STATUS_ON_IPOD,
+        )
 
-        # Only show menu if there are episodes not yet on iPod
-        actionable = [ep for _, ep in selected if ep.status != STATUS_ON_IPOD]
-        if not actionable:
+        can_add = [ep for _, ep in selected if ep.status not in (STATUS_ON_IPOD, STATUS_DOWNLOADING)]
+        can_remove_dl = [ep for _, ep in selected if ep.status in (STATUS_DOWNLOADED,) and ep.downloaded_path]
+        can_remove_ipod = [ep for _, ep in selected if ep.status == STATUS_ON_IPOD and ep.ipod_dbid]
+
+        if not can_add and not can_remove_dl and not can_remove_ipod:
             return
 
         menu = QMenu(self)
@@ -598,16 +602,39 @@ class PodcastBrowser(QFrame):
             }}
         """)
 
-        n = len(actionable)
-        suffix = f" ({n})" if n > 1 else ""
-        add_action = menu.addAction(f"Add to iPod{suffix}")
+        add_action = remove_dl_action = remove_ipod_action = None
+
+        if can_add:
+            n = len(can_add)
+            suffix = f" ({n})" if n > 1 else ""
+            add_action = menu.addAction(f"Add to iPod{suffix}")
+
+        if can_remove_dl:
+            if add_action:
+                menu.addSeparator()
+            n = len(can_remove_dl)
+            suffix = f" ({n})" if n > 1 else ""
+            remove_dl_action = menu.addAction(f"Remove Download{suffix}")
+
+        if can_remove_ipod:
+            if add_action or remove_dl_action:
+                menu.addSeparator()
+            n = len(can_remove_ipod)
+            suffix = f" ({n})" if n > 1 else ""
+            remove_ipod_action = menu.addAction(f"Remove from iPod{suffix}")
 
         viewport = self._episode_table.viewport()
         if not viewport:
             return
         action = menu.exec(viewport.mapToGlobal(pos))
+        if action is None:
+            return
         if action == add_action:
             self._on_add_to_ipod()
+        elif action == remove_dl_action:
+            self._remove_downloads(can_remove_dl)
+        elif action == remove_ipod_action:
+            self._remove_from_ipod(can_remove_ipod)
 
     # ── Episode table ────────────────────────────────────────────────────
 
@@ -993,6 +1020,89 @@ class PodcastBrowser(QFrame):
         self._progress_bar.hide()
         _, value, _ = error_tuple
         self._set_action_status(f"Failed: {value}")
+
+    # ── Remove download / Remove from iPod ───────────────────────────────
+
+    def _remove_downloads(self, episodes: list) -> None:
+        """Delete downloaded files and reset episode status."""
+        import os
+        from PodcastManager.models import STATUS_NOT_DOWNLOADED
+
+        removed = 0
+        for ep in episodes:
+            if ep.downloaded_path and os.path.exists(ep.downloaded_path):
+                try:
+                    os.remove(ep.downloaded_path)
+                except OSError as exc:
+                    log.warning("Could not delete %s: %s", ep.downloaded_path, exc)
+                    continue
+            ep.downloaded_path = ""
+            ep.status = STATUS_NOT_DOWNLOADED
+            removed += 1
+
+        if self._store and self._selected_feed:
+            self._store.update_feed(self._selected_feed)
+
+        self._show_episodes(self._selected_feed)
+        self._refresh_feed_list()
+        self._set_action_status(f"Removed {removed} download{'s' if removed != 1 else ''}")
+
+    def _remove_from_ipod(self, episodes: list) -> None:
+        """Build a sync plan to remove episodes from the iPod."""
+        if not self._selected_feed or not self._ipod_path:
+            return
+
+        from SyncEngine.fingerprint_diff_engine import SyncPlan, SyncItem, SyncAction, StorageSummary
+
+        ipod_tracks: list[dict] = []
+        try:
+            from ..app import iTunesDBCache
+            cache = iTunesDBCache.get_instance()
+            ipod_tracks = cache.get_tracks() or []
+        except Exception:
+            pass
+
+        tracks_by_dbid = {t.get("dbid", 0): t for t in ipod_tracks if t.get("dbid")}
+
+        to_remove: list[SyncItem] = []
+        bytes_to_remove = 0
+        for ep in episodes:
+            ipod_track = tracks_by_dbid.get(ep.ipod_dbid)
+            if not ipod_track:
+                continue
+            to_remove.append(SyncItem(
+                action=SyncAction.REMOVE_FROM_IPOD,
+                ipod_track=ipod_track,
+                description=f"\U0001f399 {self._selected_feed.title} \u2014 {ep.title}",
+            ))
+            bytes_to_remove += ipod_track.get("size", 0)
+
+        if not to_remove:
+            self._set_action_status("Episodes not found on iPod")
+            return
+
+        plan = SyncPlan(
+            to_remove=to_remove,
+            storage=StorageSummary(bytes_to_remove=bytes_to_remove),
+        )
+        n = len(to_remove)
+        self._set_action_status(
+            f"Sending {n} removal{'s' if n != 1 else ''} to sync\u2026")
+        self.podcast_sync_requested.emit(plan)
+
+    def refresh_episodes(self) -> None:
+        """Public: refresh the episode table and feed list from store.
+
+        Called after sync completes so status changes (e.g. 'on_ipod')
+        are reflected in the UI.
+        """
+        if self._selected_feed and self._store:
+            # Re-read the feed from store (statuses may have been updated)
+            refreshed = self._store.get_feed(self._selected_feed.feed_url)
+            if refreshed:
+                self._selected_feed = refreshed
+            self._show_episodes(self._selected_feed)
+        self._refresh_feed_list()
 
     # ── Artwork loading ──────────────────────────────────────────────────
 

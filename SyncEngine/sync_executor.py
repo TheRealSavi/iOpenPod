@@ -620,9 +620,10 @@ class SyncExecutor:
 
         completed_count = 0
         completed_lock = threading.Lock()
+        worker_fractions: dict[int, float] = {}  # worker_id -> transcode fraction
         total = len(plan.to_update_file)
 
-        def _do_copy(item: SyncItem) -> tuple[SyncItem, bool, Optional[Path], bool, str]:
+        def _do_copy(item: SyncItem, worker_id: int) -> tuple[SyncItem, bool, Optional[Path], bool, str]:
             """Transcode/copy a single track. Runs in worker thread."""
             # Defensive check - should never fail as we pre-filtered items
             if item.pc_track is None:
@@ -631,20 +632,25 @@ class SyncExecutor:
             source_path = Path(item.pc_track.path)
             need_transcode = needs_transcoding(source_path)
 
-            # Build a transcode progress callback that emits UI updates
+            # Build a transcode progress callback that emits blended
+            # "update_file" progress so the bar moves during parallel transcodes.
             tc_progress: Optional[Callable[[float], None]] = None
             if progress_callback and need_transcode:
                 filename = source_path.name
 
-                def _make_tc_cb(_fn: str) -> Callable[[float], None]:
+                def _make_tc_cb(_fn: str, _wid: int) -> Callable[[float], None]:
                     def _cb(frac: float) -> None:
+                        with completed_lock:
+                            worker_fractions[_wid] = frac
+                            blended = completed_count + sum(worker_fractions.values())
                         pct = int(frac * 100)
                         progress_callback(SyncProgress(
-                            "transcode", pct, 100, message=f"Transcoding {_fn} \u2014 {pct}%",
+                            "update_file", min(int(blended), total), total,
+                            message=f"Transcoding {_fn} \u2014 {pct}%",
                         ))
                     return _cb
 
-                tc_progress = _make_tc_cb(filename)
+                tc_progress = _make_tc_cb(filename, worker_id)
 
             success, ipod_path, was_transcoded, err_msg = self._copy_to_ipod(
                 source_path, need_transcode, fingerprint=item.fingerprint,
@@ -661,7 +667,7 @@ class SyncExecutor:
             for idx, item in items_to_process:
                 if check_cancelled and check_cancelled():
                     return
-                fut = pool.submit(_do_copy, item)
+                fut = pool.submit(_do_copy, item, idx)
                 future_to_idx[fut] = idx
 
             for future in as_completed(future_to_idx):
@@ -686,12 +692,14 @@ class SyncExecutor:
                     logger.error(f"Worker exception for {item.description}: {e}")
                     with completed_lock:
                         completed_count += 1
+                        worker_fractions.pop(idx, None)
                     if progress_callback:
                         progress_callback(SyncProgress("update_file", completed_count, total, item, item.description))
                     continue
 
                 with completed_lock:
                     completed_count += 1
+                    worker_fractions.pop(idx, None)
 
                 if progress_callback:
                     progress_callback(SyncProgress("update_file", completed_count, total, item, item.description))
@@ -943,9 +951,10 @@ class SyncExecutor:
 
         completed_count = 0
         completed_lock = threading.Lock()
+        worker_fractions: dict[int, float] = {}  # worker_id -> transcode fraction
         total = len(plan.to_add)
 
-        def _do_copy(item: SyncItem) -> tuple[SyncItem, bool, Optional[Path], bool, str]:
+        def _do_copy(item: SyncItem, worker_id: int) -> tuple[SyncItem, bool, Optional[Path], bool, str]:
             """Transcode/copy a single track. Runs in worker thread."""
             # Defensive check - should never fail as we pre-filtered items
             if item.pc_track is None:
@@ -954,20 +963,25 @@ class SyncExecutor:
             source_path = Path(item.pc_track.path)
             need_transcode = needs_transcoding(source_path)
 
-            # Build a transcode progress callback that emits UI updates
+            # Build a transcode progress callback that emits blended
+            # "add" progress so the bar moves during parallel transcodes.
             tc_progress: Optional[Callable[[float], None]] = None
             if progress_callback and need_transcode:
                 filename = source_path.name
 
-                def _make_tc_cb(_fn: str) -> Callable[[float], None]:
+                def _make_tc_cb(_fn: str, _wid: int) -> Callable[[float], None]:
                     def _cb(frac: float) -> None:
+                        with completed_lock:
+                            worker_fractions[_wid] = frac
+                            blended = completed_count + sum(worker_fractions.values())
                         pct = int(frac * 100)
                         progress_callback(SyncProgress(
-                            "transcode", pct, 100, message=f"Transcoding {_fn} \u2014 {pct}%",
+                            "add", min(int(blended), total), total,
+                            message=f"Transcoding {_fn} \u2014 {pct}%",
                         ))
                     return _cb
 
-                tc_progress = _make_tc_cb(filename)
+                tc_progress = _make_tc_cb(filename, worker_id)
 
             success, ipod_path, was_transcoded, err_msg = self._copy_to_ipod(
                 source_path, need_transcode, fingerprint=item.fingerprint,
@@ -985,7 +999,7 @@ class SyncExecutor:
             for idx, item in items_to_process:
                 if check_cancelled and check_cancelled():
                     return
-                fut = pool.submit(_do_copy, item)
+                fut = pool.submit(_do_copy, item, idx)
                 future_to_idx[fut] = idx
 
             # Process results as they complete
@@ -1012,12 +1026,14 @@ class SyncExecutor:
                     logger.error(f"Worker exception for {item.description}: {e}")
                     with completed_lock:
                         completed_count += 1
+                        worker_fractions.pop(idx, None)
                     if progress_callback:
                         progress_callback(SyncProgress("add", completed_count, total, item, item.description))
                     continue
 
                 with completed_lock:
                     completed_count += 1
+                    worker_fractions.pop(idx, None)
 
                 if progress_callback:
                     progress_callback(SyncProgress("add", completed_count, total, item, item.description))
