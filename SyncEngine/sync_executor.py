@@ -632,30 +632,32 @@ class SyncExecutor:
             source_path = Path(item.pc_track.path)
             need_transcode = needs_transcoding(source_path)
 
-            # Build a transcode progress callback that emits blended
-            # "update_file" progress so the bar moves during parallel transcodes.
-            tc_progress: Optional[Callable[[float], None]] = None
-            if progress_callback and need_transcode:
+            # Build a progress callback that emits blended
+            # "update_file" progress so the bar moves during parallel operations.
+            io_progress: Optional[Callable[[float], None]] = None
+            if progress_callback:
                 filename = source_path.name
 
-                def _make_tc_cb(_fn: str, _wid: int) -> Callable[[float], None]:
+                def _make_io_cb(_fn: str, _wid: int, _is_transcode: bool) -> Callable[[float], None]:
                     def _cb(frac: float) -> None:
                         with completed_lock:
                             worker_fractions[_wid] = frac
                             blended = completed_count + sum(worker_fractions.values())
                         pct = int(frac * 100)
+                        verb = "Transcoding" if _is_transcode else "Copying"
                         progress_callback(SyncProgress(
                             "update_file", min(int(blended), total), total,
-                            message=f"Transcoding {_fn} \u2014 {pct}%",
+                            message=f"{verb} {_fn} \u2014 {pct}%",
                         ))
                     return _cb
 
-                tc_progress = _make_tc_cb(filename, worker_id)
+                io_progress = _make_io_cb(filename, worker_id, need_transcode)
 
             success, ipod_path, was_transcoded, err_msg = self._copy_to_ipod(
                 source_path, need_transcode, fingerprint=item.fingerprint,
                 aac_bitrate=aac_bitrate,
-                transcode_progress=tc_progress,
+                transcode_progress=io_progress if need_transcode else None,
+                copy_progress=io_progress if not need_transcode else None,
             )
             return (item, success, ipod_path, was_transcoded, err_msg)
 
@@ -963,30 +965,32 @@ class SyncExecutor:
             source_path = Path(item.pc_track.path)
             need_transcode = needs_transcoding(source_path)
 
-            # Build a transcode progress callback that emits blended
-            # "add" progress so the bar moves during parallel transcodes.
-            tc_progress: Optional[Callable[[float], None]] = None
-            if progress_callback and need_transcode:
+            # Build a progress callback that emits blended "add"
+            # progress so the bar moves during parallel operations.
+            io_progress: Optional[Callable[[float], None]] = None
+            if progress_callback:
                 filename = source_path.name
 
-                def _make_tc_cb(_fn: str, _wid: int) -> Callable[[float], None]:
+                def _make_io_cb(_fn: str, _wid: int, _is_transcode: bool) -> Callable[[float], None]:
                     def _cb(frac: float) -> None:
                         with completed_lock:
                             worker_fractions[_wid] = frac
                             blended = completed_count + sum(worker_fractions.values())
                         pct = int(frac * 100)
+                        verb = "Transcoding" if _is_transcode else "Copying"
                         progress_callback(SyncProgress(
                             "add", min(int(blended), total), total,
-                            message=f"Transcoding {_fn} \u2014 {pct}%",
+                            message=f"{verb} {_fn} \u2014 {pct}%",
                         ))
                     return _cb
 
-                tc_progress = _make_tc_cb(filename, worker_id)
+                io_progress = _make_io_cb(filename, worker_id, need_transcode)
 
             success, ipod_path, was_transcoded, err_msg = self._copy_to_ipod(
                 source_path, need_transcode, fingerprint=item.fingerprint,
                 aac_bitrate=aac_bitrate,
-                transcode_progress=tc_progress,
+                transcode_progress=io_progress if need_transcode else None,
+                copy_progress=io_progress if not need_transcode else None,
             )
             return (item, success, ipod_path, was_transcoded, err_msg)
 
@@ -1320,6 +1324,7 @@ class SyncExecutor:
         fingerprint: Optional[str] = None,
         aac_bitrate: int = 256,
         transcode_progress: Optional[Callable[[float], None]] = None,
+        copy_progress: Optional[Callable[[float], None]] = None,
     ) -> tuple[bool, Optional[Path], bool, str]:
         """
         Copy or transcode a file to iPod, using cache when possible.
@@ -1327,6 +1332,8 @@ class SyncExecutor:
         Args:
             transcode_progress: Optional callback receiving 0.0-1.0 fraction
                 for transcode progress (forwarded to ffmpeg).
+            copy_progress: Optional callback receiving 0.0-1.0 fraction
+                for direct file copy progress.
 
         Returns: (success, ipod_path, was_transcoded, error_message)
         """
@@ -1393,16 +1400,39 @@ class SyncExecutor:
                 logger.error(f"Transcode failed: {result.error_message}")
                 return False, None, True, result.error_message or "Transcode failed"
         else:
-            # Direct copy — use copyfile (data only) to avoid macOS xattr/ACL
-            # issues when writing to FAT32-formatted iPods
+            # Direct copy — chunked to report progress over USB.
+            # Uses raw open/read/write to avoid macOS xattr/ACL issues
+            # when writing to FAT32-formatted iPods.
             new_name = self._generate_ipod_filename(source_path.stem, source_path.suffix, dest_folder)
             dest_path = dest_folder / new_name
             try:
-                shutil.copyfile(source_path, dest_path)
+                self._copy_file_chunked(source_path, dest_path, copy_progress)
                 return True, dest_path, False, ""
             except Exception as e:
                 logger.error(f"Copy failed: {e}")
                 return False, None, False, str(e)
+
+    @staticmethod
+    def _copy_file_chunked(
+        src: Path, dst: Path,
+        progress: Optional[Callable[[float], None]] = None,
+        chunk_size: int = 256 * 1024,
+    ) -> None:
+        """Copy *src* to *dst* in chunks, calling *progress(0.0‒1.0)* periodically."""
+        total = src.stat().st_size
+        copied = 0
+        with open(src, "rb") as fsrc, open(dst, "wb") as fdst:
+            while True:
+                buf = fsrc.read(chunk_size)
+                if not buf:
+                    break
+                fdst.write(buf)
+                copied += len(buf)
+                if progress and total:
+                    progress(copied / total)
+        # Final callback in case total was 0 (empty file)
+        if progress:
+            progress(1.0)
 
     def _delete_from_ipod(self, ipod_path: str | Path) -> bool:
         """Delete a file from iPod."""
