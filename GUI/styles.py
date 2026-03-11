@@ -24,7 +24,7 @@ from PyQt6.QtWidgets import (
 )
 
 if TYPE_CHECKING:
-    from PyQt6.QtWidgets import QFrame, QLabel, QWidget
+    from PyQt6.QtWidgets import QFrame, QLabel, QScrollArea, QWidget
 
 # ── Cross-platform font ─────────────────────────────────────────────────────
 
@@ -205,6 +205,15 @@ class Colors:
     SYNC_MAGENTA = _DARK_PALETTE["SYNC_MAGENTA"]
     SYNC_ORANGE = _DARK_PALETTE["SYNC_ORANGE"]
 
+    # ── Semantic playlist / category color tuples (r, g, b) ──
+    PLAYLIST_SMART: tuple[int, int, int] = (128, 90, 213)
+    PLAYLIST_PODCAST: tuple[int, int, int] = (46, 160, 67)
+    PLAYLIST_MASTER: tuple[int, int, int] = (100, 100, 120)
+    PLAYLIST_REGULAR: tuple[int, int, int] = (64, 156, 255)
+
+    # Sync storage legend color (teal — distinct from SYNC_CYAN)
+    SYNC_FREED = "#66d9c2"
+
     @classmethod
     def _detect_system_dark(cls) -> bool:
         """Return True if the OS is in dark mode."""
@@ -359,6 +368,12 @@ class Metrics:
     FONT_PAGE_TITLE = 16  # Large page headings (Sync Review, empty states)
     FONT_HERO = 18     # Settings / backup page title
 
+    # ── Icon / glyph sizes (pt) — for large decorative text ──
+    FONT_ICON_SM = 15   # Small icon labels in cards
+    FONT_ICON_MD = 22   # Badge / backup list icons
+    FONT_ICON_LG = 40   # Grid item placeholder glyphs
+    FONT_ICON_XL = 48   # Empty-state decorative glyphs
+
     @classmethod
     def apply_scaling(cls) -> None:
         """Recompute all metrics based on primary screen geometry.
@@ -428,6 +443,12 @@ class Metrics:
         cls.FONT_PAGE_TITLE = max(12, round(16 * f))
         cls.FONT_HERO = max(14, round(18 * f))
 
+        # Icon / glyph sizes
+        cls.FONT_ICON_SM = max(10, round(15 * f))
+        cls.FONT_ICON_MD = max(14, round(22 * f))
+        cls.FONT_ICON_LG = max(24, round(40 * f))
+        cls.FONT_ICON_XL = max(30, round(48 * f))
+
 
 # ── Custom proxy style for scrollbar painting ───────────────────────────────
 
@@ -472,6 +493,29 @@ class DarkScrollbarStyle(QProxyStyle):
             return super().polish(arg)
         if isinstance(arg, self._CLICKABLE_TYPES):
             arg.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        # Widget-level stylesheet on the tooltip: highest priority.
+        # App-level QToolTip CSS is ignored because QStyleSheetStyle
+        # intercepts PE_PanelTipLabel before our proxy-style handler
+        # runs, and resolves the palette to black.  A widget-level
+        # stylesheet can't be overridden by app-level rules.
+        if arg.metaObject() and arg.metaObject().className() == "QTipLabel":
+            if not getattr(arg, "_iop_tooltip_styled", False):
+                arg._iop_tooltip_styled = True
+                try:
+                    arg.setAttribute(
+                        Qt.WidgetAttribute.WA_TranslucentBackground, True
+                    )
+                except TypeError:
+                    pass  # Some PyQt6 builds reject the enum via SIP
+                arg.setStyleSheet(
+                    f"background-color: {Colors.TOOLTIP_BG};"
+                    f"color: {Colors.TEXT_PRIMARY};"
+                    f"border: 1px solid {Colors.BORDER};"
+                    f"border-radius: {scaled(4)}px;"
+                    f"padding: {scaled(3)}px {scaled(6)}px;"
+                    f"font-family: {_CSS_FONT_STACK};"
+                    f"font-size: {Metrics.FONT_LG}px;"
+                )
         super().polish(arg)
 
     # -- Metrics: make scrollbars thin --
@@ -628,15 +672,6 @@ class DarkScrollbarStyle(QProxyStyle):
             QStyle.PrimitiveElement.PE_PanelScrollAreaCorner,
         ):
             return  # paint nothing — transparent corner
-        # Paint tooltip background from palette so the native window
-        # surface is never visible as a black flash on Windows.
-        if element == QStyle.PrimitiveElement.PE_PanelTipLabel:
-            if painter is not None and option is not None:
-                painter.save()
-                bg = option.palette.color(QPalette.ColorRole.ToolTipBase)
-                painter.fillRect(option.rect, bg)
-                painter.restore()
-            return
         super().drawPrimitive(element, option, painter, widget)
 
 
@@ -802,7 +837,7 @@ def sidebar_nav_css() -> str:
         bg_hover=Colors.SURFACE_ACTIVE,
         bg_press=Colors.SURFACE,
         radius=Metrics.BORDER_RADIUS_SM,
-        padding=f"{scaled(10)}px {scaled(14)}px",
+        padding=f"{scaled(7)}px {scaled(12)}px",
         extra="text-align: left;",
     )
 
@@ -814,7 +849,7 @@ def sidebar_nav_selected_css() -> str:
         bg_press=Colors.ACCENT_PRESS,
         fg=Colors.ACCENT,
         radius=Metrics.BORDER_RADIUS_SM,
-        padding=f"{scaled(10)}px {scaled(14)}px",
+        padding=f"{scaled(7)}px {scaled(12)}px",
         extra="text-align: left; font-weight: 600;",
     )
 
@@ -963,7 +998,7 @@ def make_detail_row(label: str, value: str) -> "QWidget":
     row = _QWidget()
     row.setStyleSheet("background: transparent; border: none;")
     hl = _QHBox(row)
-    hl.setContentsMargins(0, 1, 0, 1)
+    hl.setContentsMargins(0, scaled(3), 0, scaled(3))
     hl.setSpacing(8)
 
     lbl = _QLabel(label)
@@ -980,6 +1015,80 @@ def make_detail_row(label: str, value: str) -> "QWidget":
     hl.addWidget(val)
 
     return row
+
+
+def make_scroll_area(
+    *,
+    horizontal_off: bool = True,
+    vertical: str = "as_needed",
+    transparent: bool = True,
+    extra_css: str = "",
+) -> "QScrollArea":
+    """Create a standard QScrollArea with consistent styling.
+
+    Parameters
+    ----------
+    horizontal_off : bool
+        Disable horizontal scrollbar (default True).
+    vertical : str
+        ``"as_needed"`` (default), ``"always_on"``, or ``"always_off"``.
+    transparent : bool
+        Use transparent background with no border.
+    extra_css : str
+        Additional CSS to append.
+    """
+    from PyQt6.QtCore import Qt as _Qt
+    from PyQt6.QtWidgets import QFrame as _QFrame, QScrollArea as _QScrollArea
+
+    scroll = _QScrollArea()
+    scroll.setWidgetResizable(True)
+    scroll.setFrameShape(_QFrame.Shape.NoFrame)
+
+    if horizontal_off:
+        scroll.setHorizontalScrollBarPolicy(_Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+    vp = {
+        "always_on": _Qt.ScrollBarPolicy.ScrollBarAlwaysOn,
+        "always_off": _Qt.ScrollBarPolicy.ScrollBarAlwaysOff,
+    }.get(vertical)
+    if vp is not None:
+        scroll.setVerticalScrollBarPolicy(vp)
+
+    css = ""
+    if transparent:
+        css = "QScrollArea { background: transparent; border: none; }"
+    if extra_css:
+        css = f"{css}\n{extra_css}" if css else extra_css
+    if css:
+        scroll.setStyleSheet(css)
+
+    return scroll
+
+
+def card_css(
+    bg: str | None = None,
+    border: str | None = None,
+    radius: int | None = None,
+    padding: str | None = None,
+    extra: str = "",
+) -> str:
+    """Generate stylesheet for a card / raised panel.
+
+    All parameters have sensible defaults based on the current theme.
+    """
+    if bg is None:
+        bg = Colors.SURFACE
+    if border is None:
+        border = f"1px solid {Colors.BORDER_SUBTLE}"
+    if radius is None:
+        radius = Metrics.BORDER_RADIUS
+    if padding is None:
+        padding = f"{scaled(10)}px"
+    return (
+        f"background: {bg}; border: {border};"
+        f" border-radius: {radius}px; padding: {padding};"
+        f" {extra}"
+    )
 
 
 # ── Application-level stylesheet ────────────────────────────────────────────
@@ -1010,14 +1119,9 @@ def app_stylesheet() -> str:
     }}
 
     /* ── Tooltips ──────────────────────────────────────────────── */
-    QToolTip {{
-        background-color: {Colors.TOOLTIP_BG};
-        color: {Colors.TEXT_PRIMARY};
-        border: 1px solid {Colors.BORDER};
-        border-radius: {scaled(6)}px;
-        padding: {scaled(6)}px {scaled(10)}px;
-        font-size: {Metrics.FONT_MD}px;
-    }}
+    /* Tooltip styling is applied as a widget-level stylesheet in
+       DarkScrollbarStyle.polish() so it cannot be overridden by
+       app-level rules.  No QToolTip CSS needed here.             */
 
     /* ── Splitter handle ───────────────────────────────────────── */
     QSplitter::handle {{

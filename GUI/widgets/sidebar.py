@@ -52,10 +52,10 @@ class StatWidget(QWidget):
         self.setStyleSheet("background: transparent; border: none;")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(1)
+        layout.setSpacing(0)
 
         self.value_label = QLabel(value)
-        self.value_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG, QFont.Weight.DemiBold))
+        self.value_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_XXL, QFont.Weight.Bold))
         self.value_label.setStyleSheet(LABEL_PRIMARY())
         self.value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.value_label)
@@ -78,8 +78,8 @@ class TechInfoRow(QWidget):
         super().__init__()
         self.setStyleSheet("background: transparent; border: none;")
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 1, 0, 1)
-        layout.setSpacing(scaled(4))
+        layout.setContentsMargins(0, scaled(3), 0, scaled(3))
+        layout.setSpacing(scaled(6))
 
         self.label_widget = QLabel(label)
         self.label_widget.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS))
@@ -109,15 +109,14 @@ class DeviceInfoCard(QFrame):
         self._rename_edit: QLineEdit | None = None
         self.setStyleSheet(f"""
             QFrame {{
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 {Colors.ACCENT_PRESS}, stop:1 {Colors.ACCENT_DARK_DIM});
-                border: 1px solid {Colors.ACCENT_DIM};
+                background: {Colors.SURFACE_RAISED};
+                border: 1px solid {Colors.BORDER_SUBTLE};
                 border-radius: {Metrics.BORDER_RADIUS_LG}px;
             }}
         """)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(scaled(12), scaled(12), scaled(12), scaled(12))
+        layout.setContentsMargins(scaled(14), scaled(14), scaled(14), scaled(14))
         layout.setSpacing(scaled(8))
 
         # iPod icon and name row
@@ -166,8 +165,8 @@ class DeviceInfoCard(QFrame):
         stats_widget = QWidget()
         stats_widget.setStyleSheet("background: transparent; border: none;")
         stats_layout = QHBoxLayout(stats_widget)
-        stats_layout.setContentsMargins(0, scaled(4), 0, 0)
-        stats_layout.setSpacing(scaled(6))
+        stats_layout.setContentsMargins(0, scaled(6), 0, scaled(2))
+        stats_layout.setSpacing(scaled(8))
 
         self.items_stat = StatWidget("0", "items")
         self.size_stat = StatWidget("0 GB", "music")
@@ -205,8 +204,8 @@ class DeviceInfoCard(QFrame):
         self.tech_container.setStyleSheet("background: transparent; border: none;")
         self.tech_container.hide()  # Hidden by default
         tech_layout = QVBoxLayout(self.tech_container)
-        tech_layout.setContentsMargins(0, scaled(4), 0, 0)
-        tech_layout.setSpacing(scaled(2))
+        tech_layout.setContentsMargins(0, scaled(6), 0, 0)
+        tech_layout.setSpacing(0)
 
         # Technical info rows — identity
         self.model_num_row = TechInfoRow("Model #:", "—")
@@ -242,18 +241,17 @@ class DeviceInfoCard(QFrame):
 
         # Storage bar (optional, for when we have capacity info)
         self.storage_bar = QProgressBar()
-        self.storage_bar.setFixedHeight(scaled(5))
+        self.storage_bar.setFixedHeight(scaled(4))
         self.storage_bar.setTextVisible(False)
         self.storage_bar.setStyleSheet(f"""
             QProgressBar {{
                 background-color: {Colors.SHADOW};
                 border: none;
-                border-radius: 2px;
+                border-radius: {scaled(2)}px;
             }}
             QProgressBar::chunk {{
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 {Colors.ACCENT}, stop:1 {Colors.ACCENT_LIGHT});
-                border-radius: 2px;
+                background: {Colors.ACCENT};
+                border-radius: {scaled(2)}px;
             }}
         """)
         self.storage_bar.hide()  # Hidden until we have capacity data
@@ -494,7 +492,7 @@ class Sidebar(QFrame):
 
         self.sidebarLayout = QVBoxLayout(self)
         self.sidebarLayout.setContentsMargins(scaled(10), scaled(12), scaled(10), scaled(12))
-        self.sidebarLayout.setSpacing(scaled(8))
+        self.sidebarLayout.setSpacing(scaled(10))
         self.setFixedWidth(Metrics.SIDEBAR_WIDTH)
 
         # Device info card at top
@@ -564,10 +562,10 @@ class Sidebar(QFrame):
         lib_container.setStyleSheet("background: transparent;")
         lib_layout = QVBoxLayout(lib_container)
         lib_layout.setContentsMargins(0, 0, 0, 0)
-        lib_layout.setSpacing(scaled(2))
+        lib_layout.setSpacing(scaled(1))
 
         lib_label = make_section_header("Library")
-        lib_label.setStyleSheet(lib_label.styleSheet() + " padding-left: 4px;")
+        lib_label.setStyleSheet(lib_label.styleSheet() + f" padding-left: {scaled(4)}px;")
         lib_layout.addWidget(lib_label)
 
         self.buttons = {}
@@ -605,7 +603,7 @@ class Sidebar(QFrame):
             bg_hover=Colors.SURFACE_RAISED,
             bg_press=Colors.SURFACE,
             fg=Colors.TEXT_TERTIARY,
-            padding=f"{scaled(10)}px {scaled(14)}px",
+            padding=f"{scaled(7)}px {scaled(12)}px",
             extra="text-align: left;",
         ))
         _bi = glyph_icon("settings", scaled(20), Colors.TEXT_TERTIARY)

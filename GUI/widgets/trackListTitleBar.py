@@ -12,8 +12,7 @@ def _title_bar_css(r1: int, g1: int, b1: int, r2: int, g2: int, b2: int,
     """Generate the title bar stylesheet for given gradient colors."""
     return f"""
         QFrame {{
-            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                stop:0 rgba({r1},{g1},{b1},220), stop:1 rgba({r2},{g2},{b2},220));
+            background: rgba({r1},{g1},{b1},180);
             border: none;
             border-radius: 0px;
         }}
@@ -29,22 +28,23 @@ def _title_bar_css(r1: int, g1: int, b1: int, r2: int, g2: int, b2: int,
             color: {text_secondary};
             font-size: {Metrics.FONT_TITLE}px;
             font-weight: bold;
-            width: {scaled(30)}px;
-            height: {scaled(30)}px;
-            border-radius: {scaled(4)}px;
+            width: {scaled(28)}px;
+            height: {scaled(28)}px;
+            border-radius: {scaled(6)}px;
         }}
         QPushButton:hover {{
-            background-color: rgba(255,255,255,40);
+            background-color: rgba(255,255,255,30);
         }}
         QPushButton:pressed {{
-            background-color: rgba(255,255,255,25);
+            background-color: rgba(255,255,255,18);
         }}
     """
 
 
 # Default blue gradient — call at runtime since scaled values aren't ready at import time
 def _default_css() -> str:
-    return _title_bar_css(64, 156, 255, 40, 110, 200)
+    r, g, b = Colors.PLAYLIST_REGULAR
+    return _title_bar_css(r, g, b, max(0, r - 25), max(0, g - 25), max(0, b - 25))
 
 
 class TrackListTitleBar(QFrame):
@@ -113,12 +113,13 @@ class TrackListTitleBar(QFrame):
         self.setStyleSheet(_title_bar_css(r2, g2, b2, r3, g3, b3,
                                           text_color=txt,
                                           text_secondary=txt_sec))
-        self._set_handle_color(f"rgba({r2},{g2},{b2},220)")
+        self._set_handle_color(f"rgba({r2},{g2},{b2},180)")
 
     def resetColor(self):
         """Reset to the default blue gradient."""
         self.setStyleSheet(_default_css())
-        self._set_handle_color("rgba(64,156,255,220)")
+        r, g, b = Colors.PLAYLIST_REGULAR
+        self._set_handle_color(f"rgba({r},{g},{b},180)")
 
     def _set_handle_color(self, color: str):
         """Update the splitter handle to match the title bar color."""

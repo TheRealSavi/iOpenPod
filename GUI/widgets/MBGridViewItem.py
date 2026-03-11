@@ -3,7 +3,7 @@ from PyQt6.QtCore import Qt, QSize, pyqtSignal
 from PyQt6.QtWidgets import QLabel, QFrame, QVBoxLayout
 from PyQt6.QtGui import QFont, QPixmap, QCursor, QImage
 from ..imgMaker import find_image_by_imgId, get_artworkdb_cached
-from ..styles import Colors, FONT_FAMILY, Metrics, scaled, font_scaled
+from ..styles import Colors, FONT_FAMILY, Metrics, scaled
 from ..glyphs import glyph_pixmap
 from .scrollingLabel import ScrollingLabel
 
@@ -27,7 +27,7 @@ class MusicBrowserGridItem(QFrame):
         self._setupStyle()
 
         self.gridItemLayout = QVBoxLayout(self)
-        self.gridItemLayout.setContentsMargins(scaled(10), scaled(10), scaled(10), scaled(8))
+        self.gridItemLayout.setContentsMargins(scaled(10), scaled(10), scaled(10), scaled(10))
         self.gridItemLayout.setSpacing(scaled(6))
 
         self.worker = None
@@ -68,25 +68,25 @@ class MusicBrowserGridItem(QFrame):
     def _setupStyle(self):
         self.setStyleSheet(f"""
             QFrame {{
-                background-color: {Colors.SURFACE_ALT};
+                background-color: {Colors.SURFACE_RAISED};
                 border: 1px solid {Colors.BORDER_SUBTLE};
                 border-radius: {Metrics.BORDER_RADIUS_XL}px;
                 color: {Colors.TEXT_PRIMARY};
             }}
             QFrame:hover {{
-                background-color: {Colors.SURFACE_HOVER};
+                background-color: {Colors.SURFACE_ACTIVE};
                 border: 1px solid {Colors.BORDER};
             }}
         """)
 
     def _setPlaceholderImage(self):
         """Set a placeholder when no artwork is available."""
-        px = glyph_pixmap("music", font_scaled(40), Colors.TEXT_TERTIARY)
+        px = glyph_pixmap("music", Metrics.FONT_ICON_LG, Colors.TEXT_TERTIARY)
         if px:
             self.img_label.setPixmap(px)
         else:
             self.img_label.setText("♪")
-            self.img_label.setFont(QFont(FONT_FAMILY, font_scaled(40)))
+            self.img_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_ICON_LG))
         self.img_label.setStyleSheet(f"""
             border: none;
             background: {Colors.ACCENT_MUTED};

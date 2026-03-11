@@ -1,12 +1,12 @@
 import logging
 from PyQt6.QtCore import Qt, QSize
-from PyQt6.QtWidgets import QScrollArea, QFrame, QSplitter, QVBoxLayout, QSizePolicy, QStackedWidget
+from PyQt6.QtWidgets import QFrame, QSplitter, QVBoxLayout, QSizePolicy, QStackedWidget
 from .MBGridView import MusicBrowserGrid
 from .MBListView import MusicBrowserList
 from .playlistBrowser import PlaylistBrowser
 from .podcastBrowser import PodcastBrowser
 from .trackListTitleBar import TrackListTitleBar
-from ..styles import Colors, scaled
+from ..styles import Colors, scaled, make_scroll_area
 
 log = logging.getLogger(__name__)
 
@@ -28,21 +28,13 @@ class MusicBrowser(QFrame):
         self.browserGrid = MusicBrowserGrid()
         self.browserGrid.item_selected.connect(self._onGridItemSelected)
 
-        self.browserGridScroll = QScrollArea()
-        self.browserGridScroll.setWidgetResizable(True)
+        self.browserGridScroll = make_scroll_area()
         self.browserGridScroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self.browserGridScroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.browserGridScroll.setMinimumHeight(0)
         self.browserGridScroll.setMinimumWidth(0)
         self.browserGridScroll.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.browserGridScroll.minimumSizeHint = lambda: QSize(0, 0)
         self.browserGridScroll.setWidget(self.browserGrid)
-        self.browserGridScroll.setStyleSheet("""
-            QScrollArea {
-                background: transparent;
-                border: none;
-            }
-        """)
 
         self.gridTrackSplitter.addWidget(self.browserGridScroll)
 

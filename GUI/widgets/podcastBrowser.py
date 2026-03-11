@@ -125,7 +125,7 @@ class PodcastBrowser(QFrame):
         self._ipod_path = ipod_path
 
         from PodcastManager.subscription_store import SubscriptionStore
-        self._store = SubscriptionStore(self._device_serial)
+        self._store = SubscriptionStore(ipod_path)
         self._store.load()
         self._refresh_feed_list()
 
@@ -208,12 +208,12 @@ class PodcastBrowser(QFrame):
         layout.addStretch()
 
         icon_lbl = QLabel()
-        _px = glyph_pixmap("broadcast", font_scaled(48), Colors.TEXT_TERTIARY)
+        _px = glyph_pixmap("broadcast", Metrics.FONT_ICON_XL, Colors.TEXT_TERTIARY)
         if _px:
             icon_lbl.setPixmap(_px)
         else:
             icon_lbl.setText("◎")
-            icon_lbl.setFont(QFont(FONT_FAMILY, font_scaled(48)))
+            icon_lbl.setFont(QFont(FONT_FAMILY, Metrics.FONT_ICON_XL))
         icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         icon_lbl.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent;")
         layout.addWidget(icon_lbl)
@@ -540,18 +540,21 @@ class PodcastBrowser(QFrame):
         menu = QMenu(self)
         menu.setStyleSheet(f"""
             QMenu {{
-                background: {Colors.SURFACE_RAISED};
-                border: 1px solid {Colors.BORDER};
-                border-radius: {Metrics.BORDER_RADIUS_SM}px;
+                background: {Colors.MENU_BG};
                 color: {Colors.TEXT_PRIMARY};
-                padding: {scaled(4)}px;
+                border: 1px solid {Colors.BORDER};
+                padding: 4px 0;
             }}
             QMenu::item {{
-                padding: {scaled(6)}px {scaled(16)}px;
-                border-radius: {Metrics.BORDER_RADIUS_SM}px;
+                padding: 6px 24px 6px 12px;
             }}
             QMenu::item:selected {{
-                background: {Colors.SELECTION};
+                background: {Colors.ACCENT_DIM};
+            }}
+            QMenu::separator {{
+                height: 1px;
+                background: {Colors.BORDER_SUBTLE};
+                margin: 4px 8px;
             }}
         """)
 
@@ -587,18 +590,21 @@ class PodcastBrowser(QFrame):
         menu = QMenu(self)
         menu.setStyleSheet(f"""
             QMenu {{
-                background: {Colors.SURFACE_RAISED};
-                border: 1px solid {Colors.BORDER};
-                border-radius: {Metrics.BORDER_RADIUS_SM}px;
+                background: {Colors.MENU_BG};
                 color: {Colors.TEXT_PRIMARY};
-                padding: {scaled(4)}px;
+                border: 1px solid {Colors.BORDER};
+                padding: 4px 0;
             }}
             QMenu::item {{
-                padding: {scaled(6)}px {scaled(16)}px;
-                border-radius: {Metrics.BORDER_RADIUS_SM}px;
+                padding: 6px 24px 6px 12px;
             }}
             QMenu::item:selected {{
-                background: {Colors.SELECTION};
+                background: {Colors.ACCENT_DIM};
+            }}
+            QMenu::separator {{
+                height: 1px;
+                background: {Colors.BORDER_SUBTLE};
+                margin: 4px 8px;
             }}
         """)
 

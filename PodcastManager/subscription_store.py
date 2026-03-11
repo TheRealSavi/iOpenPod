@@ -1,9 +1,9 @@
 """Persistent storage for podcast subscriptions.
 
-Each iPod device gets its own subscription file so different iPods can
-have independent podcast libraries.  Data is stored as JSON at:
-    ~/iOpenPod/podcasts/<device_serial>/subscriptions.json
+Subscription data lives on the iPod itself at:
+    <iPod>/iPod_Control/iOpenPodPodcasts
 
+This keeps podcast state tied to the device rather than the PC.
 All writes use atomic temp-file + rename to prevent corruption.
 """
 
@@ -19,34 +19,27 @@ from .models import PodcastFeed
 log = logging.getLogger(__name__)
 
 
-def _default_podcast_dir() -> str:
-    """Base podcast storage directory: ~/iOpenPod/podcasts."""
-    return os.path.join(os.path.expanduser("~"), "iOpenPod", "podcasts")
-
-
 class SubscriptionStore:
     """Manages podcast subscriptions for a single iPod device.
 
     Args:
-        device_serial: Unique identifier for the iPod (e.g. FireWire GUID
-                       or serial number from SysInfo).  Used as directory name.
-        base_dir: Override the base podcast directory (for testing).
+        ipod_path: Mount root of the iPod (e.g. ``"D:\\"`` or
+                   ``"/Volumes/iPod"``).
     """
 
-    def __init__(self, device_serial: str, base_dir: str = ""):
-        if not device_serial:
-            device_serial = "_default"
-        self._device_serial = device_serial
-        self._base_dir = base_dir or _default_podcast_dir()
-        self._device_dir = os.path.join(self._base_dir, device_serial)
-        self._json_path = os.path.join(self._device_dir, "subscriptions.json")
+    def __init__(self, ipod_path: str):
+        self._ipod_path = ipod_path
+        self._podcast_dir = os.path.join(
+            ipod_path, "iPod_Control", "iOpenPodPodcasts",
+        )
+        self._json_path = os.path.join(self._podcast_dir, "subscriptions.json")
         self._feeds: list[PodcastFeed] = []
         self._loaded = False
 
     @property
-    def device_dir(self) -> str:
-        """The per-device podcast directory (for episode downloads)."""
-        return self._device_dir
+    def podcast_dir(self) -> str:
+        """The podcast directory on the iPod."""
+        return self._podcast_dir
 
     # ── Public API ───────────────────────────────────────────────────────
 
@@ -72,7 +65,7 @@ class SubscriptionStore:
 
     def save(self) -> None:
         """Write subscriptions to disk atomically."""
-        os.makedirs(self._device_dir, exist_ok=True)
+        os.makedirs(self._podcast_dir, exist_ok=True)
 
         payload = {
             "version": 1,
@@ -81,7 +74,7 @@ class SubscriptionStore:
 
         # Atomic write: temp file in same directory, then rename
         fd, tmp = tempfile.mkstemp(
-            dir=self._device_dir, suffix=".tmp", prefix="subs_",
+            dir=self._podcast_dir, suffix=".tmp", prefix="subs_",
         )
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
@@ -147,8 +140,19 @@ class SubscriptionStore:
         self.add_feed(feed)
 
     def feed_dir(self, feed: PodcastFeed) -> str:
-        """Return the download directory for a specific feed's episodes."""
-        # Use a filesystem-safe hash of the feed URL as directory name
+        """Return the PC-local download directory for a feed's episodes.
+
+        Episodes are downloaded here first, then copied to the iPod
+        during the sync process.  Uses the transcode cache directory
+        from settings, falling back to ~/iOpenPod/cache.
+        """
         import hashlib
         url_hash = hashlib.sha256(feed.feed_url.encode()).hexdigest()[:16]
-        return os.path.join(self._device_dir, url_hash)
+        try:
+            from GUI.settings import get_settings
+            base = get_settings().transcode_cache_dir
+        except Exception:
+            base = ""
+        if not base:
+            base = os.path.join(os.path.expanduser("~"), "iOpenPod", "cache")
+        return os.path.join(base, "podcasts", url_hash)

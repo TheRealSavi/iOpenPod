@@ -11,17 +11,17 @@ from PyQt6.QtCore import Qt, pyqtSignal, QSize, QThread, QTimer
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QDialog, QFrame, QHBoxLayout, QLabel, QMessageBox, QPushButton,
-    QScrollArea, QSizePolicy, QSplitter, QStackedWidget, QVBoxLayout,
+    QSizePolicy, QSplitter, QStackedWidget, QVBoxLayout,
     QWidget,
 )
 
 from ..styles import (
     Colors, FONT_FAMILY, Metrics, btn_css, scaled,
     sidebar_nav_css, sidebar_nav_selected_css,
-    LABEL_SECONDARY,
+    LABEL_SECONDARY, make_scroll_area,
     make_detail_row, make_separator, make_section_header,
 )
-from ..glyphs import glyph_icon
+from ..glyphs import glyph_icon, glyph_pixmap
 from .formatters import (
     format_duration_human,
     format_mhsd5_type,
@@ -61,8 +61,8 @@ class PlaylistInfoCard(QFrame):
         self.setObjectName("playlistInfoCard")
 
         self._layout = QVBoxLayout(self)
-        self._layout.setContentsMargins(16, 14, 16, 14)
-        self._layout.setSpacing(6)
+        self._layout.setContentsMargins(scaled(16), scaled(16), scaled(16), scaled(16))
+        self._layout.setSpacing(scaled(8))
 
         # ── Title row ───────────────────────────────────────────
         self.title_label = QLabel("Select a playlist")
@@ -150,10 +150,7 @@ class PlaylistInfoCard(QFrame):
         self._layout.addWidget(self.stats_label)
 
         # ── Details section (scrollable for long smart rules) ──
-        self.details_area = QScrollArea()
-        self.details_area.setWidgetResizable(True)
-        self.details_area.setStyleSheet("QScrollArea { background: transparent; border: none; }")
-        self.details_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.details_area = make_scroll_area()
         self.details_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.details_area.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.details_area.setMinimumHeight(0)
@@ -444,20 +441,34 @@ class PlaylistListPanel(QFrame):
         self.setFixedWidth(scaled(210))
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
-        outer.setSpacing(0)
+        outer.setContentsMargins(scaled(10), scaled(12), scaled(10), scaled(12))
+        outer.setSpacing(scaled(8))
 
-        # Scroll area wrapping inner content
-        self._scroll = QScrollArea()
-        self._scroll.setWidgetResizable(True)
-        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
-        outer.addWidget(self._scroll)
+        # ── New Playlist button (fixed, above scroll) ──
+        self._new_btn = QPushButton("＋  New Playlist")
+        self._new_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.Bold))
+        self._new_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._new_btn.setMinimumHeight(scaled(34))
+        self._new_btn.setStyleSheet(btn_css(
+            bg=Colors.ACCENT_DIM,
+            bg_hover=Colors.ACCENT_HOVER,
+            bg_press=Colors.ACCENT_PRESS,
+            fg=Colors.ACCENT,
+            border=f"1px solid {Colors.ACCENT_BORDER}",
+            radius=Metrics.BORDER_RADIUS_SM,
+            padding="6px 8px",
+        ))
+        self._new_btn.clicked.connect(self._on_new_playlist)
+        outer.addWidget(self._new_btn)
+
+        # Scroll area wrapping playlist sections
+        self._scroll = make_scroll_area()
+        outer.addWidget(self._scroll, 1)
 
         self._inner = QWidget()
         self._inner.setStyleSheet("background: transparent;")
         self._inner_layout = QVBoxLayout(self._inner)
-        self._inner_layout.setContentsMargins(scaled(8), scaled(10), scaled(8), scaled(10))
+        self._inner_layout.setContentsMargins(0, 0, 0, 0)
         self._inner_layout.setSpacing(2)
         self._inner_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self._scroll.setWidget(self._inner)
@@ -474,28 +485,6 @@ class PlaylistListPanel(QFrame):
     def loadPlaylists(self, playlists: list[dict]) -> None:
         """Populate the panel with playlists grouped by type."""
         self._clear()
-
-        # ── New Playlist button (always at top) ──
-        self._new_btn = QPushButton("＋  New Playlist")
-        self._new_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.Bold))
-        self._new_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._new_btn.setMinimumHeight(scaled(34))
-        self._new_btn.setStyleSheet(btn_css(
-            bg=Colors.ACCENT_DIM,
-            bg_hover=Colors.ACCENT_HOVER,
-            bg_press=Colors.ACCENT_PRESS,
-            fg=Colors.ACCENT,
-            border=f"1px solid {Colors.ACCENT_BORDER}",
-            radius=Metrics.BORDER_RADIUS_SM,
-            padding="6px 8px",
-        ))
-        self._new_btn.clicked.connect(self._on_new_playlist)
-        self._inner_layout.addWidget(self._new_btn)
-
-        spacer = QWidget()
-        spacer.setFixedHeight(6)
-        spacer.setStyleSheet("background: transparent; border: none;")
-        self._inner_layout.addWidget(spacer)
 
         # Categorize
         regular: list[dict] = []
@@ -531,17 +520,36 @@ class PlaylistListPanel(QFrame):
 
         # Master at bottom, dimmed
         if master:
-            self._add_section("")  # spacer
+            self._add_section("LIBRARY")
             self._add_playlist_button(master, _ICON_MASTER, dimmed=True)
 
         # Empty state
         if not regular and not smart and not podcast and master is None:
-            empty = QLabel("No playlists on this iPod")
-            empty.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
-            empty.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent; border: none; padding: 20px;")
-            empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            empty.setWordWrap(True)
-            self._inner_layout.addWidget(empty)
+            empty_container = QWidget()
+            empty_container.setStyleSheet("background: transparent; border: none;")
+            empty_vbox = QVBoxLayout(empty_container)
+            empty_vbox.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            empty_vbox.setSpacing(scaled(8))
+
+            empty_icon = QLabel()
+            _px = glyph_pixmap("annotation-dots", Metrics.FONT_ICON_LG, Colors.TEXT_TERTIARY)
+            if _px:
+                empty_icon.setPixmap(_px)
+            else:
+                empty_icon.setText("♫")
+                empty_icon.setFont(QFont(FONT_FAMILY, Metrics.FONT_ICON_LG))
+            empty_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            empty_icon.setStyleSheet("background: transparent; border: none;")
+            empty_vbox.addWidget(empty_icon)
+
+            empty_text = QLabel("No playlists on this iPod")
+            empty_text.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
+            empty_text.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent; border: none;")
+            empty_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            empty_text.setWordWrap(True)
+            empty_vbox.addWidget(empty_text)
+
+            self._inner_layout.addWidget(empty_container)
 
         self._inner_layout.addStretch()
 
@@ -669,7 +677,7 @@ class PlaylistBrowser(QFrame):
 
         main_layout = QHBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(6)
+        main_layout.setSpacing(scaled(8))
 
         # ── Left: playlist list panel ──
         self.listPanel = PlaylistListPanel()
@@ -832,13 +840,13 @@ class PlaylistBrowser(QFrame):
 
         # Color the title bar based on playlist type
         if playlist.get("smart_playlist_data"):
-            self.trackTitleBar.setColor(128, 90, 213)   # purple for smart
+            self.trackTitleBar.setColor(*Colors.PLAYLIST_SMART)
         elif playlist.get("podcast_flag", 0) == 1 or playlist.get("_source") == "podcast":
-            self.trackTitleBar.setColor(46, 160, 67)     # green for podcast
+            self.trackTitleBar.setColor(*Colors.PLAYLIST_PODCAST)
         elif playlist.get("master_flag"):
-            self.trackTitleBar.setColor(100, 100, 120)   # grey for master
+            self.trackTitleBar.setColor(*Colors.PLAYLIST_MASTER)
         else:
-            self.trackTitleBar.resetColor()               # default blue for regular
+            self.trackTitleBar.resetColor()
 
         # Load tracks into table
         if resolved_tracks:
@@ -852,7 +860,7 @@ class PlaylistBrowser(QFrame):
             self.editor.new_playlist()
             self._switchToEditor(1)
             self.trackTitleBar.setTitle("New Smart Playlist")
-            self.trackTitleBar.setColor(128, 90, 213)
+            self.trackTitleBar.setColor(*Colors.PLAYLIST_SMART)
             self.trackList.clearTable()
         else:
             self.regularEditor.new_playlist()
@@ -920,7 +928,7 @@ class PlaylistBrowser(QFrame):
         title = playlist_data.get("Title", "Untitled")
         self.trackTitleBar.setTitle(title)
         if playlist_data.get("smart_playlist_data"):
-            self.trackTitleBar.setColor(128, 90, 213)
+            self.trackTitleBar.setColor(*Colors.PLAYLIST_SMART)
         else:
             self.trackTitleBar.resetColor()
 

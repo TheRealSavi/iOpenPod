@@ -16,11 +16,11 @@ from PyQt6.QtCore import QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QFrame, QHBoxLayout, QLabel,
-    QLineEdit, QPushButton, QScrollArea, QSizePolicy, QSpinBox,
+    QLineEdit, QPushButton, QSizePolicy, QSpinBox,
     QVBoxLayout, QWidget,
 )
 
-from ..styles import Colors, FONT_FAMILY, Metrics, btn_css, accent_btn_css, scaled
+from ..styles import Colors, FONT_FAMILY, Metrics, btn_css, accent_btn_css, scaled, make_scroll_area
 from ..glyphs import glyph_icon, glyph_pixmap
 
 log = logging.getLogger(__name__)
@@ -743,16 +743,16 @@ class SmartPlaylistEditor(QFrame):
         root.addLayout(conj_row)
 
         # ── Rules area (scrollable) ──────────────────────────
-        self._rules_scroll = QScrollArea()
-        self._rules_scroll.setWidgetResizable(True)
-        self._rules_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._rules_scroll.setStyleSheet(f"""
-            QScrollArea {{
-                background: {Colors.SHADOW_LIGHT};
-                border: 1px solid {Colors.BORDER_SUBTLE};
-                border-radius: {Metrics.BORDER_RADIUS_SM}px;
-            }}
-        """)
+        self._rules_scroll = make_scroll_area(
+            transparent=False,
+            extra_css=f"""
+                QScrollArea {{
+                    background: {Colors.SHADOW_LIGHT};
+                    border: 1px solid {Colors.BORDER_SUBTLE};
+                    border-radius: {Metrics.BORDER_RADIUS_SM}px;
+                }}
+            """,
+        )
         self._rules_scroll.setMinimumHeight(scaled(80))
         self._rules_scroll.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding

@@ -28,19 +28,20 @@ class SettingRow(QFrame):
         super().__init__()
         self.setStyleSheet(f"""
             QFrame {{
-                background: {Colors.SURFACE_ALT};
-                border: 1px solid {Colors.BORDER_SUBTLE};
-                border-radius: {Metrics.BORDER_RADIUS}px;
+                background: {Colors.SURFACE};
+                border: none;
+                border-bottom: 1px solid {Colors.BORDER_SUBTLE};
+                border-radius: 0px;
             }}
         """)
 
         self._layout = QHBoxLayout(self)
-        self._layout.setContentsMargins(scaled(16), scaled(12), scaled(16), scaled(12))
+        self._layout.setContentsMargins(scaled(16), scaled(14), scaled(16), scaled(14))
         self._layout.setSpacing(scaled(16))
 
         # Left side: title + description
         text_layout = QVBoxLayout()
-        text_layout.setSpacing(2)
+        text_layout.setSpacing(scaled(3))
 
         self.title_label = QLabel(title)
         self.title_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG, QFont.Weight.DemiBold))
@@ -176,7 +177,7 @@ class FolderRow(SettingRow):
         right_layout.addWidget(self.path_label)
 
         self.browse_btn = QPushButton("Browse…")
-        self.browse_btn.setFont(QFont(FONT_FAMILY, 9))
+        self.browse_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.browse_btn.setFixedWidth(80)
         self.browse_btn.setStyleSheet(btn_css(
             bg=Colors.SURFACE_RAISED,

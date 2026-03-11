@@ -12,12 +12,12 @@ matches the backup's device."""
 from PyQt6.QtCore import Qt, pyqtSignal, QThread, QTimer
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QFrame, QScrollArea, QProgressBar, QMessageBox, QStackedWidget,
+    QFrame, QProgressBar, QMessageBox, QStackedWidget,
 )
 from PyQt6.QtGui import QDesktopServices, QFont
 from PyQt6.QtCore import QUrl
 
-from ..styles import Colors, FONT_FAMILY, MONO_FONT_FAMILY, Metrics, btn_css, accent_btn_css, danger_btn_css, scaled, font_scaled
+from ..styles import Colors, FONT_FAMILY, MONO_FONT_FAMILY, Metrics, btn_css, accent_btn_css, danger_btn_css, scaled, font_scaled, make_scroll_area
 from ..glyphs import glyph_pixmap
 from .formatters import format_size
 from SyncEngine.eta import ETATracker
@@ -134,7 +134,7 @@ class DeviceCard(QFrame):
             QFrame {{
                 background: {Colors.SURFACE_ALT};
                 border: 1px solid {Colors.BORDER_SUBTLE};
-                border-radius: {Metrics.BORDER_RADIUS}px;
+                border-radius: {Metrics.BORDER_RADIUS_LG}px;
             }}
             QFrame:hover {{
                 border: 1px solid {Colors.ACCENT};
@@ -143,11 +143,11 @@ class DeviceCard(QFrame):
         """)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(scaled(16), scaled(14), scaled(16), scaled(14))
+        layout.setContentsMargins(scaled(16), scaled(16), scaled(16), scaled(16))
         layout.setSpacing(scaled(12))
         # Icon TODO: replace with device photo if available (like in device picker), encode icon name into the backup folder name so we can show it here without needing to scan the device first
         icon = QLabel("\U0001F4F1")
-        icon.setFont(QFont(FONT_FAMILY, font_scaled(22)))
+        icon.setFont(QFont(FONT_FAMILY, Metrics.FONT_ICON_MD))
         icon.setStyleSheet("background: transparent; border: none;")
         icon.setFixedWidth(scaled(36))
         layout.addWidget(icon)
@@ -201,7 +201,7 @@ class SnapshotCard(QFrame):
             QFrame {{
                 background: {Colors.SURFACE_ALT};
                 border: 1px solid {border_color};
-                border-radius: {Metrics.BORDER_RADIUS}px;
+                border-radius: {Metrics.BORDER_RADIUS_LG}px;
             }}
             QFrame:hover {{
                 border: 1px solid {border_hover};
@@ -209,7 +209,7 @@ class SnapshotCard(QFrame):
         """)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(scaled(16), scaled(12), scaled(16), scaled(12))
+        layout.setContentsMargins(scaled(16), scaled(14), scaled(16), scaled(14))
         layout.setSpacing(scaled(12))
 
         # Left side: info
@@ -398,13 +398,7 @@ class BackupBrowserWidget(QWidget):
 
         list_layout.addSpacing(scaled(8))
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll.setStyleSheet("""
-            QScrollArea { background: transparent; border: none; }
-            QScrollArea > QWidget > QWidget { background: transparent; }
-        """)
+        scroll = make_scroll_area()
 
         self._scroll_content = QWidget()
         self._scroll_content.setStyleSheet("background: transparent;")
@@ -494,15 +488,17 @@ class BackupBrowserWidget(QWidget):
         empty_layout.addStretch()
 
         empty_icon = QLabel()
-        px = glyph_pixmap("archive", font_scaled(48), Colors.TEXT_TERTIARY)
+        px = glyph_pixmap("archive", Metrics.FONT_ICON_XL, Colors.TEXT_TERTIARY)
         if px:
             empty_icon.setPixmap(px)
         else:
             empty_icon.setText("●")
-            empty_icon.setFont(QFont(FONT_FAMILY, font_scaled(48)))
+            empty_icon.setFont(QFont(FONT_FAMILY, Metrics.FONT_ICON_XL))
         empty_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         empty_icon.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent;")
         empty_layout.addWidget(empty_icon)
+
+        empty_layout.addSpacing(scaled(12))
 
         self._empty_text = QLabel(
             "No backups yet.\n\n"
@@ -536,13 +532,7 @@ class BackupBrowserWidget(QWidget):
 
         dev_layout.addSpacing(scaled(12))
 
-        dev_scroll = QScrollArea()
-        dev_scroll.setWidgetResizable(True)
-        dev_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        dev_scroll.setStyleSheet("""
-            QScrollArea { background: transparent; border: none; }
-            QScrollArea > QWidget > QWidget { background: transparent; }
-        """)
+        dev_scroll = make_scroll_area()
 
         self._devices_scroll_content = QWidget()
         self._devices_scroll_content.setStyleSheet("background: transparent;")

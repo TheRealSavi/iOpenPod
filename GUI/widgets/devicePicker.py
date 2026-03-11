@@ -10,13 +10,12 @@ from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QWidget, QGridLayout, QFileDialog, QMessageBox, QFrame,
-    QScrollArea,
 )
 
 from device_info import DeviceInfo
 from ..device_scanner import scan_for_ipods
 from ..ipod_images import get_ipod_image
-from ..styles import Colors, FONT_FAMILY, Metrics, btn_css, scaled
+from ..styles import Colors, FONT_FAMILY, Metrics, btn_css, scaled, make_scroll_area
 
 
 class _ScanThread(QThread):
@@ -172,12 +171,7 @@ class DevicePickerDialog(QDialog):
         layout.addWidget(subtitle)
 
         # Scroll area for device grid
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setStyleSheet("""
-            QScrollArea { background: transparent; border: none; }
-        """)
+        scroll = make_scroll_area()
 
         self._grid_container = QWidget()
         self._grid_container.setStyleSheet("background: transparent;")

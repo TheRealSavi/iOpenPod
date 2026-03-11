@@ -17,7 +17,7 @@ from GUI.widgets.backupBrowser import BackupBrowserWidget
 from GUI.widgets.dropOverlay import DropOverlayWidget
 from GUI.settings import get_settings
 from GUI.notifications import Notifier
-from GUI.styles import Colors, FONT_FAMILY, Metrics, btn_css, scaled, font_scaled
+from GUI.styles import Colors, FONT_FAMILY, Metrics, btn_css, scaled
 from GUI.glyphs import glyph_pixmap
 import threading
 
@@ -55,12 +55,12 @@ class _MissingToolsDialog(QDialog):
 
         # Icon + title row
         icon_label = QLabel()
-        _warnpx = glyph_pixmap("warning-triangle", font_scaled(22), Colors.WARNING)
+        _warnpx = glyph_pixmap("warning-triangle", Metrics.FONT_ICON_MD, Colors.WARNING)
         if _warnpx:
             icon_label.setPixmap(_warnpx)
         else:
             icon_label.setText("△")
-            icon_label.setFont(QFont(FONT_FAMILY, font_scaled(22)))
+            icon_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_ICON_MD))
         icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(icon_label)
 
@@ -1382,19 +1382,25 @@ class MainWindow(QMainWindow):
         supports_video = len(classified["video"]) > 0
         supports_podcast = len(classified["podcast"]) > 0
         supports_audiobook = len(classified["audiobook"]) > 0
-        if not supports_video or not supports_podcast:
+        if not supports_video or not supports_podcast or not supports_audiobook:
             try:
                 from device_info import get_current_device
-                from ipod_models import capabilities_for_family_gen
+                from ipod_models import capabilities_for_family_gen, DeviceCapabilities
                 dev = get_current_device()
-                if dev and dev.model_family and dev.generation:
-                    caps = capabilities_for_family_gen(dev.model_family, dev.generation)
+                if dev and dev.model_family:
+                    caps = (capabilities_for_family_gen(dev.model_family, dev.generation)
+                            if dev.generation else None)
+                    # Fall back to DeviceCapabilities defaults when the exact
+                    # generation isn't known (e.g. iPod Classic shares one
+                    # USB PID across all gens so generation may be empty).
+                    if caps is None:
+                        caps = DeviceCapabilities()
                     if not supports_video:
-                        supports_video = bool(caps and caps.supports_video)
+                        supports_video = caps.supports_video
                     if not supports_podcast:
-                        supports_podcast = bool(caps and caps.supports_podcast)
+                        supports_podcast = caps.supports_podcast
                     if not supports_audiobook:
-                        supports_audiobook = bool(caps and caps.supports_podcast)
+                        supports_audiobook = caps.supports_podcast
             except Exception:
                 pass
         self.sidebar.setVideoVisible(supports_video)

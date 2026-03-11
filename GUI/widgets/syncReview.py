@@ -421,7 +421,7 @@ class SyncTrackRow(QFrame):
         self.setCursor(Qt.CursorShape.PointingHandCursor if checkable else Qt.CursorShape.ArrowCursor)
 
         row = QHBoxLayout(self)
-        row.setContentsMargins(scaled(12), scaled(6), scaled(14), scaled(6))
+        row.setContentsMargins(scaled(14), scaled(8), scaled(14), scaled(8))
         row.setSpacing(scaled(10))
 
         # Checkbox
@@ -446,7 +446,7 @@ class SyncTrackRow(QFrame):
         # Two-line text block
         text_col = QVBoxLayout()
         text_col.setContentsMargins(0, 0, 0, 0)
-        text_col.setSpacing(scaled(1))
+        text_col.setSpacing(scaled(2))
 
         self.title_label = QLabel(self)
         self.title_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
@@ -724,7 +724,7 @@ class SyncCategoryCard(QFrame):
                 background: {Colors.SURFACE};
                 border: 1px solid {Colors.BORDER_SUBTLE};
                 border-left: 3px solid {accent};
-                border-radius: {Metrics.BORDER_RADIUS}px;
+                border-radius: {Metrics.BORDER_RADIUS_LG}px;
             }}
         """)
 
@@ -772,7 +772,7 @@ class SyncCategoryCard(QFrame):
             icon_lbl.setPixmap(svg_px)
         else:
             icon_lbl.setText(icon)
-            icon_lbl.setFont(QFont(FONT_FAMILY, font_scaled(15)))
+            icon_lbl.setFont(QFont(FONT_FAMILY, Metrics.FONT_ICON_SM))
         icon_lbl.setStyleSheet("background:transparent;")
         hdr.addWidget(icon_lbl)
 
@@ -1109,7 +1109,7 @@ class SyncReviewWidget(QWidget):
         for color_hex, text in [
             (Colors.ACCENT, "Current"),
             (Colors.SUCCESS, "Sync adds"),
-            ("#66d9c2", "Freed"),
+            (Colors.SYNC_FREED, "Freed"),
         ]:
             dot = QLabel(f"<span style='color:{color_hex};'>●</span> {text}", self._storage_frame)
             dot.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
@@ -1161,9 +1161,10 @@ class SyncReviewWidget(QWidget):
         empty_widget = QWidget(self.stack)
         empty_layout = QVBoxLayout(empty_widget)
         empty_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        empty_layout.setSpacing(scaled(8))
 
         empty_icon = QLabel("✓", empty_widget)
-        empty_icon.setFont(QFont(FONT_FAMILY, font_scaled(48)))
+        empty_icon.setFont(QFont(FONT_FAMILY, Metrics.FONT_ICON_XL))
         empty_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         empty_icon.setStyleSheet(f"color: {Colors.SUCCESS}; background: transparent;")
         empty_layout.addWidget(empty_icon)
@@ -1188,7 +1189,7 @@ class SyncReviewWidget(QWidget):
         results_layout.setSpacing(scaled(12))
 
         self.result_icon = QLabel("", results_widget)
-        self.result_icon.setFont(QFont(FONT_FAMILY, font_scaled(48)))
+        self.result_icon.setFont(QFont(FONT_FAMILY, Metrics.FONT_ICON_XL))
         self.result_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         results_layout.addWidget(self.result_icon)
 
@@ -1213,12 +1214,12 @@ class SyncReviewWidget(QWidget):
         presync_layout.setSpacing(scaled(16))
 
         self._presync_icon = QLabel("", presync_widget)
-        _px = glyph_pixmap("download", font_scaled(48), Colors.ACCENT)
+        _px = glyph_pixmap("download", Metrics.FONT_ICON_XL, Colors.ACCENT)
         if _px:
             self._presync_icon.setPixmap(_px)
         else:
             self._presync_icon.setText("●")
-            self._presync_icon.setFont(QFont(FONT_FAMILY, font_scaled(48)))
+            self._presync_icon.setFont(QFont(FONT_FAMILY, Metrics.FONT_ICON_XL))
         self._presync_icon.setStyleSheet(f"color: {Colors.ACCENT}; background: transparent;")
         self._presync_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         presync_layout.addWidget(self._presync_icon)
@@ -2028,7 +2029,7 @@ class SyncReviewWidget(QWidget):
 
         # Title
         def _set_result(glyph_name: str, fallback: str, color: str, title: str) -> None:
-            px = glyph_pixmap(glyph_name, font_scaled(48), color)
+            px = glyph_pixmap(glyph_name, Metrics.FONT_ICON_XL, color)
             if px:
                 self.result_icon.setPixmap(px)
             else:
