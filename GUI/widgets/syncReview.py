@@ -28,7 +28,7 @@ from ..styles import Colors, FONT_FAMILY, Metrics, btn_css, scrollbar_css, scale
 
 import os
 import logging
-from typing import Optional
+from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -40,13 +40,18 @@ class SyncWorker(QThread):
     error = pyqtSignal(str)
 
     def __init__(self, pc_folder: str, ipod_tracks: list, ipod_path: str = "",
-                 supports_video: bool = True, supports_podcast: bool = True):
+                 supports_video: bool = True, supports_podcast: bool = True,
+                 *, track_edits: dict | None = None,
+                 sync_workers: int = 0, rating_strategy: str = "ipod_wins"):
         super().__init__()
         self.pc_folder = pc_folder
         self.ipod_tracks = ipod_tracks
         self.ipod_path = ipod_path
         self.supports_video = supports_video
         self.supports_podcast = supports_podcast
+        self.track_edits = track_edits
+        self.sync_workers = sync_workers
+        self.rating_strategy = rating_strategy
 
     def run(self):
         try:
@@ -65,6 +70,9 @@ class SyncWorker(QThread):
                 self.ipod_tracks,
                 progress_callback=lambda stage, cur, tot, msg: self.progress.emit(stage, cur, tot, msg),
                 is_cancelled=self.isInterruptionRequested,
+                track_edits=self.track_edits,
+                sync_workers=self.sync_workers,
+                rating_strategy=self.rating_strategy,
             )
 
             if not self.isInterruptionRequested():
@@ -83,12 +91,16 @@ class SyncExecuteWorker(QThread):
     finished = pyqtSignal(object)  # SyncResult
     error = pyqtSignal(str)
 
-    def __init__(self, ipod_path: str, plan, *, skip_backup: bool = False):
+    def __init__(self, ipod_path: str, plan, *, skip_backup: bool = False,
+                 user_playlists: list | None = None,
+                 on_sync_complete: Callable[[], None] | None = None):
         super().__init__()
         self.ipod_path = ipod_path
         self.plan = plan
         self.skip_backup = skip_backup
         self._skip_backup_requested = False
+        self.user_playlists = user_playlists
+        self.on_sync_complete = on_sync_complete
 
     def request_skip_backup(self):
         """Signal the worker to skip the in-progress backup and proceed to sync."""
@@ -182,7 +194,12 @@ class SyncExecuteWorker(QThread):
                 dry_run=False,
                 is_cancelled=self.isInterruptionRequested,
                 write_back_to_pc=settings.write_back_to_pc,
-                aac_bitrate=settings.aac_bitrate,
+                aac_quality=settings.aac_quality,
+                user_playlists=self.user_playlists,
+                on_sync_complete=self.on_sync_complete,
+                compute_sound_check=settings.compute_sound_check,
+                scrobble_on_sync=settings.scrobble_on_sync,
+                listenbrainz_token=settings.listenbrainz_token or "",
             )
 
             self.finished.emit(result)

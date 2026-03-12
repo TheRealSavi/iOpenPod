@@ -475,11 +475,21 @@ class Sidebar(QFrame):
     # Categories that only make sense when podcast support is present
     _PODCAST_CATEGORIES = frozenset({"Podcasts"})
 
-    # Audiobook categories (all iPods support audiobooks via media type)
-    _AUDIOBOOK_CATEGORIES = frozenset({"Audiobooks"})
+    category_glyphs = {
+        "Albums": "music",
+        "Artists": "user",
+        "Tracks": "music",
+        "Playlists": "annotation-dots",
+        "Genres": "grid",
+        "Podcasts": "broadcast",
+        "Audiobooks": "book",
+        "Videos": "video",
+        "Movies": "film",
+        "TV Shows": "monitor",
+        "Music Videos": "video",
+    }
 
     def __init__(self):
-        from ..app import category_glyphs
         super().__init__()
         self.setStyleSheet(f"""
             QFrame#sidebar {{
@@ -572,7 +582,7 @@ class Sidebar(QFrame):
         self._button_icons: dict[str, str] = {}
         _nav_icon_sz = QSize(scaled(20), scaled(20))
 
-        for category, icon_name in category_glyphs.items():
+        for category, icon_name in self.category_glyphs.items():
             btn = QPushButton(category)
             btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
             icon = glyph_icon(icon_name, scaled(20), Colors.TEXT_SECONDARY)
@@ -612,7 +622,7 @@ class Sidebar(QFrame):
             self.settingsButton.setIconSize(QSize(scaled(20), scaled(20)))
         self.sidebarLayout.addWidget(self.settingsButton)
 
-        self.selectedCategory = list(category_glyphs.keys())[0]
+        self.selectedCategory = list(self.category_glyphs.keys())[0]
         self.selectCategory(self.selectedCategory)
 
     def updateDeviceInfo(self, name: str, model: str, tracks: int, albums: int,
@@ -633,7 +643,6 @@ class Sidebar(QFrame):
         # Show all categories again when no device is selected
         self.setVideoVisible(True)
         self.setPodcastVisible(True)
-        self.setAudiobookVisible(True)
 
     def setVideoVisible(self, visible: bool):
         """Show or hide video-related sidebar categories.
@@ -662,23 +671,6 @@ class Sidebar(QFrame):
                 btn.setVisible(visible)
         if not visible and self.selectedCategory in self._PODCAST_CATEGORIES:
             self.selectCategory("Albums")
-
-    def setAudiobookVisible(self, visible: bool):
-        """Show or hide audiobook sidebar categories.
-
-        Audiobooks are hidden when the iPod has no audiobook tracks and the
-        device doesn't support podcast (a rough proxy for older models).
-        """
-        for cat in self._AUDIOBOOK_CATEGORIES:
-            btn = self.buttons.get(cat)
-            if btn:
-                btn.setVisible(visible)
-        if not visible and self.selectedCategory in self._AUDIOBOOK_CATEGORIES:
-            self.selectCategory("Albums")
-
-    def updateDeviceButton(self, device_name: str):
-        """Update the device button text to show selected device."""
-        self.deviceButton.setText("Device")
 
     def selectCategory(self, category):
         self._style_nav_btn(self.selectedCategory, selected=False)

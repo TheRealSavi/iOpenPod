@@ -328,6 +328,10 @@ class FingerprintDiffEngine:
         progress_callback: Optional[Callable[[str, int, int, str], None]] = None,
         write_fingerprints: bool = True,
         is_cancelled: Optional[Callable[[], bool]] = None,
+        *,
+        track_edits: Optional[dict[int, dict[str, tuple]]] = None,
+        sync_workers: int = 0,
+        rating_strategy: str = "ipod_wins",
     ) -> SyncPlan:
         """
         Compute the full sync plan.
@@ -338,6 +342,12 @@ class FingerprintDiffEngine:
             write_fingerprints: Store computed fingerprints in PC file metadata
             is_cancelled: Optional callable returning True when the caller
                           wants to abort early.  Checked between stages.
+            track_edits: Pending GUI track edits: dbid → {field: (original, new)}.
+                         When provided, in-memory track dicts are reverted to
+                         originals before comparison, then edits are overlaid.
+            sync_workers: Number of parallel fingerprint workers (0 = auto).
+            rating_strategy: Conflict resolution for ratings: ipod_wins,
+                             pc_wins, highest, lowest, average.
 
         Returns:
             SyncPlan
@@ -411,12 +421,7 @@ class FingerprintDiffEngine:
         # update_track_flags() modifies the in-memory dicts for instant UI
         # feedback, but we need the originals for accurate PC-vs-iPod comparison.
         # Edits are stored as {dbid: {key: (original, new)}} — revert to originals.
-        try:
-            from GUI.app import iTunesDBCache
-            gui_cache = iTunesDBCache.get_instance()
-            gui_edits = gui_cache.get_track_edits()  # dbid → {key: (orig, new)}
-        except Exception:
-            gui_edits = {}
+        gui_edits = track_edits or {}
 
         if gui_edits:
             for dbid, field_edits in gui_edits.items():
@@ -451,12 +456,8 @@ class FingerprintDiffEngine:
         # Parallel fingerprinting — fpcalc is a subprocess so threading
         # scales well.  Respect the user's sync_workers setting.
         import os
-        try:
-            from GUI.settings import get_settings
-            _sw = get_settings().sync_workers
-            fp_workers = min(_sw or (os.cpu_count() or 4), 8)
-        except Exception:
-            fp_workers = min(os.cpu_count() or 4, 8)
+        _sw = sync_workers
+        fp_workers = min(_sw or (os.cpu_count() or 4), 8)
 
         completed = 0
         completed_lock = threading.Lock()
@@ -673,12 +674,7 @@ class FingerprintDiffEngine:
             ipod_rating = ipod_track.get("rating", 0)
             pc_rating = pc_track.rating or 0
             if ipod_rating != pc_rating and (ipod_rating > 0 or pc_rating > 0):
-                # Read user's preferred conflict strategy
-                try:
-                    from GUI.settings import get_settings
-                    strategy = get_settings().rating_conflict_strategy
-                except Exception:
-                    strategy = "ipod_wins"
+                strategy = rating_strategy
 
                 if strategy == "pc_wins":
                     new_rating = pc_rating if pc_rating > 0 else ipod_rating

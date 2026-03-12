@@ -23,8 +23,10 @@ For headless (non-GUI) use::
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
+import socket
 import threading
 from dataclasses import dataclass, field
 from typing import Optional
@@ -138,6 +140,16 @@ class DeviceInfo:
         elif "mini" in family:
             return "🎶"
         return "🎵"
+
+    @property
+    def capabilities(self):
+        """Return the DeviceCapabilities for this device, or defaults."""
+        from ipod_models import capabilities_for_family_gen, DeviceCapabilities
+        if self.model_family and self.generation:
+            caps = capabilities_for_family_gen(self.model_family, self.generation)
+            if caps:
+                return caps
+        return DeviceCapabilities()
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -1428,3 +1440,18 @@ def _enrich_artwork_from_artworkdb(info: DeviceInfo) -> None:
                              list(fmts.keys()))
     except Exception as exc:
         logger.debug("enrich: ArtworkDB scan failed: %s", exc)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Library ID generation (deterministic, hostname-based)
+# ──────────────────────────────────────────────────────────────────────
+
+def generate_library_id() -> bytes:
+    """Generate a deterministic 8-byte library ID for iOpenPod.
+
+    Based on a hash of ``"iOpenPod"`` + hostname so the same computer
+    always produces the same ID, but different computers produce
+    different IDs.
+    """
+    identity = f"iOpenPod:{socket.gethostname()}".encode("utf-8")
+    return hashlib.sha256(identity).digest()[:8]

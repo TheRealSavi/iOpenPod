@@ -467,7 +467,7 @@ def write_mhbd(
 
     # +0x48: Library Persistent ID — must match iTunesPrefs (macOS protection)
     try:
-        from SyncEngine.itunes_prefs import generate_library_id
+        from device_info import generate_library_id
         lib_pid = struct.unpack('<Q', generate_library_id())[0]
     except Exception:
         lib_pid = reference_info.get('db_persistent_id', db_id) if reference_info else db_id

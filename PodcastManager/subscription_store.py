@@ -149,7 +149,7 @@ class SubscriptionStore:
         import hashlib
         url_hash = hashlib.sha256(feed.feed_url.encode()).hexdigest()[:16]
         try:
-            from GUI.settings import get_settings
+            from settings import get_settings
             base = get_settings().transcode_cache_dir
         except Exception:
             base = ""

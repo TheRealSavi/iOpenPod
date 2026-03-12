@@ -23,11 +23,851 @@ import threading
 
 logger = logging.getLogger(__name__)
 
-# Paths relative to project root
-_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+
+        self.setWindowTitle("iOpenPod")
+
+        # Load users settings
+        settings = get_settings()
+
+        # Restore remembered window size
+        self.resize(settings.window_width, settings.window_height)
+
+        # Initialize system notifications
+        self._notifier = Notifier.get_instance(self)
+
+        # Drag-and-drop support
+        self.setAcceptDrops(True)
+        self._drop_worker = None
+
+        # Sync worker reference
+        self._sync_worker = None
+        self._sync_execute_worker = None
+        self._plan = None
+
+        # Central widget with stacked layout for main/sync views
+        self.centralStack = QStackedWidget()
+        self.setCentralWidget(self.centralStack)
+
+        # Build all child widgets and connect signals
+        self._build_ui()
+
+        # Drop overlay (created after _build_ui so it sits on top)
+        self._drop_overlay = DropOverlayWidget(self)
+
+        # Connect device manager to reload data when device changes
+        DeviceManager.get_instance().device_changed.connect(self.onDeviceChanged)
+
+        # Connect cache ready signal to refresh UI
+        iTunesDBCache.get_instance().data_ready.connect(self.onDataReady)
+
+        # Restore last device path if it still looks like a real iPod
+        if settings.last_device_path:
+            device_manager = DeviceManager.get_instance()
+            if device_manager.is_valid_ipod_root(settings.last_device_path):
+                # Run a quick scan so discovered_ipod is populated
+                # (needed for FireWire GUID, model info, etc.)
+                try:
+                    from GUI.device_scanner import scan_for_ipods
+                    found_ipod = False
+                    for ipod in scan_for_ipods():
+                        if os.path.normpath(ipod.path) == os.path.normpath(settings.last_device_path):
+                            device_manager.discovered_ipod = ipod
+                            device_manager.device_path = settings.last_device_path
+                            found_ipod = True
+                            break
+                    if not found_ipod:
+                        logger.warning("Last device path '%s' not discovered during auto-restore scan", settings.last_device_path)
+                except Exception as e:
+                    logger.warning("Auto-restore scan failed: %s", e)
+
+    def _build_ui(self):
+        """Create child widgets and wire up signals.
+
+        Called once from ``__init__`` and again by ``_on_theme_changed``
+        to rebuild the UI with fresh themed styles.
+        """
+        # Main browsing page
+        self.mainWidget = QWidget()
+        self.mainLayout = QHBoxLayout(self.mainWidget)
+        self.mainLayout.setContentsMargins(0, 0, 0, 0)
+
+        self.musicBrowser = MusicBrowser()
+        self.musicBrowser.podcastBrowser.podcast_sync_requested.connect(self._onPodcastSyncRequested)
+
+        self.sidebar = Sidebar()
+        self.sidebar.category_changed.connect(self.musicBrowser.updateCategory)
+        self.sidebar.device_renamed.connect(self._onDeviceRenamed)
+        self.sidebar.deviceButton.clicked.connect(self.selectDevice)
+        self.sidebar.rescanButton.clicked.connect(self.resyncDevice)
+        self.sidebar.syncButton.clicked.connect(self.startPCSync)
+        self.sidebar.settingsButton.clicked.connect(self.showSettings)
+        self.sidebar.backupButton.clicked.connect(self.showBackupBrowser)
+
+        self.mainLayout.addWidget(self.sidebar)
+        self.mainLayout.addWidget(self.musicBrowser)
+        self.centralStack.addWidget(self.mainWidget)  # Index 0
+
+        # Sync review page
+        self.syncReview = SyncReviewWidget()
+        self.syncReview.cancelled.connect(self.hideSyncReview)
+        self.syncReview.sync_requested.connect(self.executeSyncPlan)
+        self.centralStack.addWidget(self.syncReview)  # Index 1
+
+        # Settings page
+        self.settingsPage = SettingsPage()
+        self.settingsPage.closed.connect(self.hideSettings)
+        self.settingsPage.theme_changed.connect(self._on_theme_changed)
+        self.centralStack.addWidget(self.settingsPage)  # Index 2
+
+        # Backup browser page
+        self.backupBrowser = BackupBrowserWidget()
+        self.backupBrowser.closed.connect(self.hideBackupBrowser)
+        self.centralStack.addWidget(self.backupBrowser)  # Index 3
+
+    def _on_theme_changed(self):
+        """Rebuild the entire UI after a live theme switch."""
+        from GUI.styles import build_palette, app_stylesheet
+
+        app = QApplication.instance()
+        if isinstance(app, QApplication):
+            app.setPalette(build_palette())
+            app.setStyleSheet(app_stylesheet())
+
+        # Tear down existing widgets
+        while self.centralStack.count():
+            w = self.centralStack.widget(0)
+            if w is not None:
+                self.centralStack.removeWidget(w)
+                w.deleteLater()
+
+        # Rebuild with newly set styles
+        self._build_ui()
+
+        # Switch to settings page (where the user just changed the theme)
+        self.settingsPage.load_from_settings()
+        self.centralStack.setCurrentIndex(2)
+
+        # If cache is loaded, reload UI from cache
+        cache = iTunesDBCache.get_instance()
+        if cache.get_tracks():
+            self.onDataReady()
+
+    def selectDevice(self):
+        """Open device picker dialog to scan and select an iPod."""
+        from GUI.widgets.devicePicker import DevicePickerDialog
+
+        dialog = DevicePickerDialog(self)
+        if dialog.exec() and dialog.selected_path:
+            folder = dialog.selected_path
+            device_manager = DeviceManager.get_instance()
+            if device_manager.is_valid_ipod_root(folder):
+                device_manager.discovered_ipod = dialog.selected_ipod
+                device_manager.device_path = folder
+                # Persist selection
+                settings = get_settings()
+                settings.last_device_path = folder
+                settings.save()
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Invalid iPod Folder",
+                    "The selected folder does not appear to be a valid iPod root.\n\n"
+                    "Expected structure:\n"
+                    "  <selected folder>/iPod_Control/iTunes/\n\n"
+                    "Please select the root folder of your iPod."
+                )
+
+    def onDeviceChanged(self, path: str):
+        """Handle device selection - start loading data."""
+        # Clear the thread pool of pending tasks
+        thread_pool = ThreadPoolSingleton.get_instance()
+        thread_pool.clear()
+
+        self.musicBrowser.browserGrid.clearGrid()
+        self.musicBrowser.browserTrack.clearTable()
+
+        from .imgMaker import clear_artworkdb_cache
+        clear_artworkdb_cache()
+
+        if path:
+            # Start loading data (will emit data_ready when done)
+            iTunesDBCache.get_instance().start_loading()
+
+    def resyncDevice(self):
+        """Rebuild the cache from the current device."""
+        device = DeviceManager.get_instance()
+        if not device.device_path:
+            return
+        iTunesDBCache.get_instance().clear()
+        self.onDeviceChanged(device.device_path)
+
+    def onDataReady(self):
+        """Called when iTunesDB data is loaded and ready."""
+        cache = iTunesDBCache.get_instance()
+
+        tracks = cache.get_tracks()
+        albums = cache.get_albums()
+        db_data = cache.get_data()
+        classified = self._classify_tracks(tracks)
+
+        from device_info import get_current_device
+        from iTunesDB_Shared.constants import get_version_name
+        dev = get_current_device()
+
+        device_name = dev.ipod_name if dev else "Unk iPod"
+        model = dev.display_name if dev else "Unk iPod"
+
+        db_version_hex = db_data.get('VersionHex', '') if db_data else ''
+        db_version_name = get_version_name(db_version_hex) if db_version_hex else ''
+        db_id = db_data.get('DatabaseID', 0) if db_data else 0
+
+        self.sidebar.updateDeviceInfo(
+            name=device_name,
+            model=model,
+            tracks=len(tracks),
+            albums=len(albums),
+            size_bytes=sum(t.get("size", 0) for t in tracks),
+            duration_ms=sum(t.get("length", 0) for t in tracks),
+            db_version_hex=db_version_hex,
+            db_version_name=db_version_name,
+            db_id=db_id,
+            videos=len(classified["video"]),
+            podcasts=len(classified["podcast"]),
+            audiobooks=len(classified["audiobook"]),
+        )
+        self._update_sidebar_visibility(classified)
+        self._update_podcast_statuses()
+        self.musicBrowser.onDataReady()
+
+    @staticmethod
+    def _classify_tracks(tracks: list) -> dict[str, list]:
+        """Partition tracks by media type into audio/video/podcast/audiobook."""
+        from iTunesDB_Shared.constants import (
+            MEDIA_TYPE_AUDIO, MEDIA_TYPE_PODCAST, MEDIA_TYPE_AUDIOBOOK,
+            MEDIA_TYPE_VIDEO_MASK,
+        )
+        audio, video, podcast, audiobook = [], [], [], []
+        for t in tracks:
+            mt = t.get("media_type", 1)
+            if mt == 0 or mt & MEDIA_TYPE_AUDIO:
+                audio.append(t)
+            if (mt & MEDIA_TYPE_VIDEO_MASK) and not (mt & MEDIA_TYPE_AUDIO) and mt != 0:
+                video.append(t)
+            if mt & MEDIA_TYPE_PODCAST:
+                podcast.append(t)
+            if mt & MEDIA_TYPE_AUDIOBOOK:
+                audiobook.append(t)
+        return {"audio": audio, "video": video, "podcast": podcast, "audiobook": audiobook}
+
+    def _update_sidebar_visibility(self, classified: dict[str, list]) -> None:
+        """Show/hide sidebar categories based on tracks and device capabilities."""
+        from device_info import get_current_device
+        dev = get_current_device()
+        caps = dev.capabilities if dev else None
+
+        has_video = len(classified["video"]) > 0
+        has_podcast = len(classified["podcast"]) > 0
+
+        self.sidebar.setVideoVisible(has_video or (caps.supports_video if caps else False))
+        self.sidebar.setPodcastVisible(has_podcast or (caps.supports_podcast if caps else False))
+
+    def _onDeviceRenamed(self, new_name: str):
+        """Handle device rename from sidebar — update master playlist and write to iPod."""
+        device = DeviceManager.get_instance()
+        if not device.device_path:
+            return
+
+        cache = iTunesDBCache.get_instance()
+        data = cache.get_data()
+        if not data:
+            return
+
+        # Update DeviceInfo.ipod_name
+        try:
+            from device_info import get_current_device
+            dev = get_current_device()
+            if dev:
+                dev.ipod_name = new_name
+        except Exception:
+            pass
+
+        # Update master playlist Title in the cache
+        playlists = cache.get_playlists()
+        master_pl = None
+        for pl in playlists:
+            if pl.get("master_flag"):
+                pl["Title"] = new_name
+                master_pl = pl
+                break
+
+        if not master_pl:
+            logger.warning("Could not find master playlist to rename")
+            return
+
+        logger.info("Renaming iPod to '%s'", new_name)
+
+        # Write the full database to persist the rename
+        self._rename_worker = _DeviceRenameWorker(device.device_path, new_name)
+        self._rename_worker.finished_ok.connect(self._onRenameDone)
+        self._rename_worker.failed.connect(self._onRenameFailed)
+        self._rename_worker.start()
+
+    def _onRenameDone(self):
+        """Device rename write completed."""
+        logger.info("iPod renamed successfully")
+        Notifier.get_instance().notify("iPod Renamed", "Device name updated successfully")
+        # Reload the database to reflect changes
+        cache = iTunesDBCache.get_instance()
+        cache.clear()
+        cache.start_loading()
+
+    def _onRenameFailed(self, error_msg: str):
+        """Device rename write failed."""
+        logger.error("iPod rename failed: %s", error_msg)
+        QMessageBox.critical(
+            self, "Rename Failed",
+            f"Failed to rename iPod:\n{error_msg}"
+        )
+
+    def startPCSync(self):
+        """Start the PC to iPod sync process."""
+        device = DeviceManager.get_instance()
+        if not device.device_path:
+            QMessageBox.warning(
+                self,
+                "No Device",
+                "Please select an iPod device first."
+            )
+            return
+
+        # Pre-flight: check for required external tools
+        from SyncEngine.audio_fingerprint import is_fpcalc_available
+        from SyncEngine.transcoder import is_ffmpeg_available
+        from SyncEngine.dependency_manager import is_platform_supported
+
+        missing_fpcalc = not is_fpcalc_available()
+        missing_ffmpeg = not is_ffmpeg_available()
+
+        if missing_fpcalc or missing_ffmpeg:
+            names = []
+            if missing_fpcalc:
+                names.append("fpcalc (Chromaprint)")
+            if missing_ffmpeg:
+                names.append("FFmpeg")
+            tool_list = " and ".join(names)
+
+            if is_platform_supported():
+                dlg = _MissingToolsDialog(self, tool_list, can_download=True)
+                if dlg.exec() == QDialog.DialogCode.Accepted:
+                    self._download_missing_tools_then_sync(missing_ffmpeg, missing_fpcalc)
+                    return
+                elif missing_fpcalc:
+                    return
+                # ffmpeg missing but user declined — let them continue with MP3/M4A only
+            else:
+                # Platform doesn't support auto-download
+                lines = ""
+                if missing_fpcalc:
+                    lines += "fpcalc is required for sync.\nInstall from: https://acoustid.org/chromaprint\n\n"
+                if missing_ffmpeg:
+                    lines += "FFmpeg is needed for transcoding.\nInstall from: https://ffmpeg.org\n\n"
+                lines += "You can also set custom paths in\nSettings → External Tools."
+
+                dlg = _MissingToolsDialog(
+                    self, tool_list, can_download=False, detail_lines=lines,
+                )
+                if not missing_fpcalc:
+                    dlg.add_continue_option()
+
+                if dlg.exec() != QDialog.DialogCode.Accepted:
+                    return
+                # User clicked Continue Anyway (only possible when fpcalc is present)
+
+        # Show folder selection dialog
+        dialog = PCFolderDialog(self, self._last_pc_folder)
+        if dialog.exec() != dialog.DialogCode.Accepted:
+            return
+
+        self._last_pc_folder = dialog.selected_folder
+        # Persist the folder choice
+        settings = get_settings()
+        settings.music_folder = dialog.selected_folder
+        settings.save()
+
+        # Switch to sync review view
+        self.centralStack.setCurrentIndex(1)
+        self.syncReview.show_loading()
+
+        # Check device video capability
+        from device_info import get_current_device
+        dev = get_current_device()
+        caps = dev.capabilities if dev else None
+        supports_video = bool(caps and caps.supports_video)
+        supports_podcast = bool(caps and caps.supports_podcast)
+
+        # Gather GUI state to pass forward (not pulled by SyncEngine)
+        cache = iTunesDBCache.get_instance()
+        ipod_tracks = cache.get_tracks()
+
+        track_edits = cache.get_track_edits()
+        try:
+            sync_workers = settings.sync_workers
+            rating_strategy = settings.rating_conflict_strategy
+        except Exception:
+            sync_workers = 0  # auto
+            rating_strategy = "ipod_wins"
+
+        device_manager = DeviceManager.get_instance()
+
+        self._sync_worker = SyncWorker(
+            pc_folder=self._last_pc_folder,
+            ipod_tracks=ipod_tracks,
+            ipod_path=device_manager.device_path or "",
+            supports_video=supports_video,
+            supports_podcast=supports_podcast,
+            track_edits=track_edits,
+            sync_workers=sync_workers,
+            rating_strategy=rating_strategy,
+        )
+        self._sync_worker.progress.connect(self.syncReview.update_progress)
+        self._sync_worker.finished.connect(self._onSyncDiffComplete)
+        self._sync_worker.error.connect(self._onSyncError)
+        self._sync_worker.start()
+
+    def _download_missing_tools_then_sync(self, need_ffmpeg: bool, need_fpcalc: bool):
+        """Download missing tools in a background thread, then restart sync."""
+        progress = _DownloadProgressDialog(self)
+        progress.show()
+
+        # Keep a reference so it isn't garbage collected
+        self._dl_progress = progress
+
+        import threading
+
+        def _do():
+            from SyncEngine.dependency_manager import download_ffmpeg, download_fpcalc
+            if need_fpcalc:
+                download_fpcalc()
+            if need_ffmpeg:
+                download_ffmpeg()
+
+            from PyQt6.QtCore import QMetaObject, Qt as QtCore_Qt
+            QMetaObject.invokeMethod(
+                self, "_on_tools_downloaded",
+                QtCore_Qt.ConnectionType.QueuedConnection,
+            )
+
+        threading.Thread(target=_do, daemon=True).start()
+
+    @pyqtSlot()
+    def _on_tools_downloaded(self):
+        """Called on main thread after tool downloads finish."""
+        if hasattr(self, '_dl_progress') and self._dl_progress:
+            self._dl_progress.close()
+            self._dl_progress = None
+        # Re-run sync now that tools should be available
+        self.startPCSync()
+
+    def _onPodcastSyncRequested(self, plan):
+        """Handle podcast sync plan from PodcastBrowser.
+
+        Receives a SyncPlan with podcast episodes as to_add items and
+        sends it through the standard sync review pipeline.
+        """
+        self._plan = plan
+        cache = iTunesDBCache.get_instance()
+        self.syncReview._ipod_tracks_cache = cache.get_tracks() or []
+
+        # Switch to sync review view and show the plan
+        self.centralStack.setCurrentIndex(1)
+        self.syncReview.show_plan(plan)
+
+    def _onSyncDiffComplete(self, plan):
+        """Called when sync diff calculation is complete."""
+        self._plan = plan  # Store for executeSyncPlan to access matched_pc_paths
+        # Provide iPod tracks cache so the review widget can list artwork-missing tracks
+        cache = iTunesDBCache.get_instance()
+        self.syncReview._ipod_tracks_cache = cache.get_tracks() or []
+
+        # ── Populate playlist change info on the plan ──────────────
+        self._populate_playlist_changes(plan, cache)
+
+        self.syncReview.show_plan(plan)
+
+    def _populate_playlist_changes(self, plan, cache: 'iTunesDBCache'):
+        """Compute playlist add/edit/remove lists for the sync plan.
+
+        Compares user-created/edited playlists (pending in cache) against
+        the existing iPod playlists to categorize changes.
+        """
+        user_playlists = cache.get_user_playlists()
+        if not user_playlists:
+            return
+
+        # Build set of existing iPod playlist IDs (from parsed DB)
+        existing_ids: set[int] = set()
+        data = cache.get_data()
+        if data:
+            for pl in data.get("mhlp", []):
+                pid = pl.get("playlist_id", 0)
+                if pid:
+                    existing_ids.add(pid)
+            for pl in data.get("mhlp_podcast", []):
+                pid = pl.get("playlist_id", 0)
+                if pid:
+                    existing_ids.add(pid)
+            for pl in data.get("mhlp_smart", []):
+                pid = pl.get("playlist_id", 0)
+                if pid:
+                    existing_ids.add(pid)
+
+        for upl in user_playlists:
+            pid = upl.get("playlist_id", 0)
+            is_new = upl.get("_isNew", False)
+            if is_new or pid not in existing_ids:
+                plan.playlists_to_add.append(upl)
+            else:
+                plan.playlists_to_edit.append(upl)
+
+    def _onSyncError(self, error_msg: str):
+        """Called when sync diff fails."""
+        self.syncReview.show_error(error_msg)
+
+    def hideSyncReview(self):
+        """Return to the main browsing view, stopping any background scan."""
+        # Request interruption so SyncWorker / SyncExecuteWorker can bail out
+        if self._sync_worker is not None and self._sync_worker.isRunning():
+            self._sync_worker.requestInterruption()
+        if self._sync_execute_worker is not None and self._sync_execute_worker.isRunning():
+            self._sync_execute_worker.requestInterruption()
+        self.centralStack.setCurrentIndex(0)
+
+    def showSettings(self):
+        """Show the settings page."""
+        self.settingsPage.load_from_settings()
+        self.centralStack.setCurrentIndex(2)
+
+    def hideSettings(self):
+        """Return from settings to the main browsing view."""
+        # Re-read persisted settings to pick up changes
+        settings = get_settings()
+        self._last_pc_folder = settings.music_folder or self._last_pc_folder
+        self.centralStack.setCurrentIndex(0)
+
+    def showBackupBrowser(self):
+        """Show the backup browser page."""
+        self.backupBrowser.refresh()
+        self.centralStack.setCurrentIndex(3)
+
+    def hideBackupBrowser(self):
+        """Return from backup browser to the main browsing view."""
+        self.centralStack.setCurrentIndex(0)
+
+    def executeSyncPlan(self, selected_items):
+        """Execute the selected sync actions."""
+        from SyncEngine.fingerprint_diff_engine import SyncAction, SyncPlan
+
+        # Get device path
+        device_manager = DeviceManager.get_instance()
+        if not device_manager.device_path:
+            QMessageBox.warning(self, "No Device", "No iPod device selected.")
+            return
+
+        # Filter items by action type
+        add_items = [s for s in selected_items if s.action == SyncAction.ADD_TO_IPOD]
+        remove_items = [s for s in selected_items if s.action == SyncAction.REMOVE_FROM_IPOD]
+        meta_items = [s for s in selected_items if s.action == SyncAction.UPDATE_METADATA]
+        file_items = [s for s in selected_items if s.action == SyncAction.UPDATE_FILE]
+        art_items = [s for s in selected_items if s.action == SyncAction.UPDATE_ARTWORK]
+        playcount_items = [s for s in selected_items if s.action == SyncAction.SYNC_PLAYCOUNT]
+        rating_items = [s for s in selected_items if s.action == SyncAction.SYNC_RATING]
+
+        # Create filtered plan
+        # Carry matched_pc_paths, artwork info, and playlist changes from the original plan
+        original_plan = self._plan  # stored in _onSyncDiffComplete
+
+        # Playlists: only include if the playlist card's checkbox is checked
+        pl_card = getattr(self.syncReview, '_playlist_card', None)
+        include_playlists = (
+            pl_card is not None and pl_card._select_all_cb.isChecked()
+        ) if pl_card else True  # default to True if no card exists
+
+        filtered_plan = SyncPlan(
+            to_add=add_items,
+            to_remove=remove_items,
+            to_update_metadata=meta_items,
+            to_update_file=file_items,
+            to_update_artwork=art_items,
+            to_sync_playcount=playcount_items,
+            to_sync_rating=rating_items,
+            matched_pc_paths=original_plan.matched_pc_paths if original_plan else {},
+            _stale_mapping_entries=original_plan._stale_mapping_entries if original_plan else [],
+            mapping=original_plan.mapping if original_plan else None,
+            playlists_to_add=original_plan.playlists_to_add if (original_plan and include_playlists) else [],
+            playlists_to_edit=original_plan.playlists_to_edit if (original_plan and include_playlists) else [],
+            playlists_to_remove=original_plan.playlists_to_remove if (original_plan and include_playlists) else [],
+        )
+
+        if not filtered_plan.has_changes:
+            return
+
+        # Show progress in sync review widget
+        self.syncReview.show_executing()
+
+        # Respect the user's pre-sync backup choice from the prompt
+        skip_backup = getattr(self.syncReview, '_skip_presync_backup', False)
+
+        # Gather GUI state to pass to executor (instead of it pulling from GUI)
+        cache = iTunesDBCache.get_instance()
+        user_playlists = cache.get_user_playlists()
+
+        def _on_sync_complete():
+            """Called by executor after successful DB write to clear pending state."""
+            c = iTunesDBCache.get_instance()
+            if c.has_pending_playlists():
+                c._user_playlists.clear()
+            if c.has_pending_track_edits():
+                c.clear_track_edits()
+
+        # Start sync execution worker
+        self._sync_execute_worker = SyncExecuteWorker(
+            ipod_path=device_manager.device_path,
+            plan=filtered_plan,
+            skip_backup=skip_backup,
+            user_playlists=user_playlists,
+            on_sync_complete=_on_sync_complete,
+        )
+        self._sync_execute_worker.progress.connect(self.syncReview.update_execute_progress)
+        self._sync_execute_worker.finished.connect(self._onSyncExecuteComplete)
+        self._sync_execute_worker.error.connect(self._onSyncExecuteError)
+        # Allow the user to skip the in-progress backup from the progress screen
+        self.syncReview.skip_backup_signal.connect(self._sync_execute_worker.request_skip_backup)
+        self._sync_execute_worker.start()
+
+    def _onSyncExecuteComplete(self, result):
+        """Called when sync execution is complete."""
+        self._disconnect_skip_signal()
+        # Show styled results view instead of a plain message box
+        self.syncReview.show_result(result)
+
+        # Desktop notification if app is not focused
+        if not self.isActiveWindow():
+            self._notifier.notify_sync_complete(
+                added=getattr(result, 'tracks_added', 0),
+                removed=getattr(result, 'tracks_removed', 0),
+                updated=getattr(result, 'tracks_updated_metadata', 0) + getattr(result, 'tracks_updated_file', 0),
+                errors=len(getattr(result, 'errors', [])),
+            )
+
+        # Reload the database to show changes (delay lets OS flush writes)
+        QTimer.singleShot(500, self._rescanAfterSync)
+
+    def _update_podcast_statuses(self):
+        """Mark synced podcast episodes as 'on_ipod' in the subscription store."""
+        try:
+            browser = self.musicBrowser.podcastBrowser
+            store = browser._store
+            if not store:
+                return
+
+            cache = iTunesDBCache.get_instance()
+            ipod_tracks = cache.get_tracks() or []
+
+            from PodcastManager.podcast_sync import match_ipod_tracks
+            for feed in store.get_feeds():
+                match_ipod_tracks(feed, ipod_tracks)
+                store.update_feed(feed)
+
+            # Refresh the podcast browser episode table so status is visible
+            browser.refresh_episodes()
+        except Exception as e:
+            logger.debug("Could not update podcast statuses: %s", e)
+
+    def _rescanAfterSync(self):
+        """Rescan the iPod database after a short post-write delay."""
+        cache = iTunesDBCache.get_instance()
+        # Use clear() (not invalidate()) to fully reset the cache state.
+        # invalidate() does not reset _is_loading, so if a prior load is
+        # still in-flight start_loading() would silently bail out and the
+        # UI would never refresh.
+        cache.clear()
+
+        # Clear artwork cache — sync may have added/changed album art
+        from .imgMaker import clear_artworkdb_cache
+        clear_artworkdb_cache()
+
+        # Clear UI so the reload starts from a clean slate
+        self.musicBrowser.browserGrid.clearGrid()
+        self.musicBrowser.browserTrack.clearTable()
+
+        cache.start_loading()
+
+    def _disconnect_skip_signal(self):
+        """Disconnect skip_backup_signal from the finished worker."""
+        try:
+            self.syncReview.skip_backup_signal.disconnect()
+        except TypeError:
+            pass  # Already disconnected
+
+    def _onSyncExecuteError(self, error_msg: str):
+        """Called when sync execution fails."""
+        self._disconnect_skip_signal()
+        # Desktop notification if app is not focused
+        if not self.isActiveWindow():
+            self._notifier.notify_sync_error(error_msg)
+
+        from .settings import get_settings
+        settings = get_settings()
+
+        msg = f"Sync failed:\n\n{error_msg}"
+        if settings.backup_before_sync:
+            msg += (
+                "\n\nA backup was created before this sync. "
+                "You can restore it from the Backups page."
+            )
+
+        QMessageBox.critical(self, "Sync Error", msg)
+        self.hideSyncReview()
+
+    # ── Drag-and-drop support ──────────────────────────────────────────────
+
+    def resizeEvent(self, a0):
+        super().resizeEvent(a0)
+        if hasattr(self, '_drop_overlay') and self._drop_overlay.isVisible():
+            self._drop_overlay.setGeometry(self.rect())
+
+    def dragEnterEvent(self, a0):
+        if a0 is None:
+            return
+        # Reject drops when no device is selected or sync is executing
+        device = DeviceManager.get_instance()
+        if not device.device_path:
+            a0.ignore()
+            return
+        if self._sync_execute_worker and self._sync_execute_worker.isRunning():
+            a0.ignore()
+            return
+
+        mime = a0.mimeData()
+        if mime and mime.hasUrls():
+            from SyncEngine.pc_library import MEDIA_EXTENSIONS
+            for url in mime.urls():
+                if url.isLocalFile():
+                    p = Path(url.toLocalFile())
+                    if p.is_dir() or p.suffix.lower() in MEDIA_EXTENSIONS:
+                        a0.acceptProposedAction()
+                        self._drop_overlay.show_overlay()
+                        return
+        a0.ignore()
+
+    def dragMoveEvent(self, a0):
+        if a0:
+            a0.acceptProposedAction()
+
+    def dragLeaveEvent(self, a0):
+        self._drop_overlay.hide_overlay()
+
+    def dropEvent(self, a0):
+        self._drop_overlay.hide_overlay()
+        if a0 is None:
+            return
+        mime = a0.mimeData()
+        if not mime or not mime.hasUrls():
+            return
+
+        paths: list[Path] = []
+        for url in mime.urls():
+            if url.isLocalFile():
+                paths.append(Path(url.toLocalFile()))
+
+        if paths:
+            a0.acceptProposedAction()
+            self._on_files_dropped(paths)
+
+    def _on_files_dropped(self, paths: list[Path]):
+        """Process dropped files/folders in a background thread."""
+        from SyncEngine.pc_library import MEDIA_EXTENSIONS
+
+        # Collect all file paths (recurse folders)
+        file_paths: list[Path] = []
+        for p in paths:
+            if p.is_dir():
+                for root, _, files in os.walk(p):
+                    for fname in files:
+                        fp = Path(root) / fname
+                        if fp.suffix.lower() in MEDIA_EXTENSIONS:
+                            file_paths.append(fp)
+            elif p.is_file() and p.suffix.lower() in MEDIA_EXTENSIONS:
+                file_paths.append(p)
+
+        if not file_paths:
+            return
+
+        # Remember whether we already have a plan to merge into
+        self._drop_merge = (
+            self._plan is not None
+            and self.centralStack.currentIndex() == 1
+        )
+
+        # Switch to sync review and show loading
+        self.centralStack.setCurrentIndex(1)
+        self.syncReview.show_loading()
+        self.syncReview.loading_label.setText("Reading dropped files...")
+
+        # Run metadata reading in background thread
+        self._drop_worker = _DropScanWorker(file_paths)
+        self._drop_worker.finished.connect(self._on_drop_scan_complete)
+        self._drop_worker.error.connect(self._onSyncError)
+        self._drop_worker.start()
+
+    def _on_drop_scan_complete(self, plan):
+        """Merge dropped-file plan into any existing plan, then show."""
+        if self._drop_merge and self._plan is not None:
+            self._plan.to_add.extend(plan.to_add)
+            self._plan.storage.bytes_to_add += plan.storage.bytes_to_add
+            self.syncReview.show_plan(self._plan)
+        else:
+            self._plan = plan
+            self.syncReview.show_plan(plan)
+
+    def closeEvent(self, a0):
+        """Ensure all threads are stopped when the window is closed."""
+        # Persist window dimensions
+        try:
+            from GUI.settings import get_settings as _get_settings
+            _s = _get_settings()
+            _s.window_width = self.width()
+            _s.window_height = self.height()
+            _s.save()
+        except Exception:
+            pass
+
+        # Clean up system tray notification icon
+        Notifier.shutdown()
+
+        # Request graceful stop for sync workers
+        if self._sync_worker and self._sync_worker.isRunning():
+            self._sync_worker.requestInterruption()
+            self._sync_worker.wait(3000)
+        if self._sync_execute_worker and self._sync_execute_worker.isRunning():
+            self._sync_execute_worker.requestInterruption()
+            self._sync_execute_worker.wait(3000)
+
+        thread_pool = ThreadPoolSingleton.get_instance()
+        if thread_pool:
+            thread_pool.clear()  # Remove pending tasks
+            thread_pool.waitForDone(3000)  # Wait up to 3 seconds for running tasks
+        if a0:
+            a0.accept()
 
 
-# ── Styled Dialogs ──────────────────────────────────────────────────────────
+# ============================================================================
+# Dialogs
+# ============================================================================
 
 class _MissingToolsDialog(QDialog):
     """Dark-themed dialog prompting the user to download missing tools."""
@@ -222,6 +1062,10 @@ class _DownloadProgressDialog(QDialog):
         self._status.setText(text)
 
 
+# ============================================================================
+# Threading Utilities
+# ============================================================================
+
 class CancellationToken:
     """Thread-safe cancellation token for workers."""
 
@@ -237,6 +1081,89 @@ class CancellationToken:
     def reset(self):
         self._cancelled.clear()
 
+
+class ThreadPoolSingleton:
+    _instance: QThreadPool | None = None
+
+    @classmethod
+    def get_instance(cls) -> QThreadPool:
+        if cls._instance is None:
+            cls._instance = QThreadPool.globalInstance()
+        assert cls._instance is not None
+        return cls._instance
+
+
+class Worker(QRunnable):
+    """Generic background worker with error recovery.
+
+    Wraps a function to run in a thread pool with proper cancellation,
+    error handling, and cleanup support.
+    """
+
+    def __init__(self, fn, *args, **kwargs):
+        super().__init__()
+        self.fn = fn
+        self.args = args
+        self.kwargs = kwargs
+        self.signals = WorkerSignals()
+        # Capture the current cancellation token at creation time
+        self._cancellation_token = DeviceManager.get_instance().cancellation_token
+        self._is_cancelled = False
+        self._fn_name = getattr(fn, '__name__', str(fn))
+
+    def is_cancelled(self) -> bool:
+        """Check if this worker has been cancelled."""
+        return self._is_cancelled or self._cancellation_token.is_cancelled()
+
+    def cancel(self):
+        """Mark this worker as cancelled."""
+        self._is_cancelled = True
+
+    @pyqtSlot()
+    def run(self):
+        # Check cancellation before starting
+        if self.is_cancelled():
+            logger.debug(f"Worker {self._fn_name} cancelled before start")
+            try:
+                self.signals.finished.emit()
+            except RuntimeError:
+                pass
+            return
+
+        try:
+            result = self.fn(*self.args, **self.kwargs)
+            # Check cancellation before emitting result
+            if not self.is_cancelled():
+                try:
+                    self.signals.result.emit(result)
+                except RuntimeError:
+                    # Signal receiver was deleted
+                    logger.debug(f"Worker {self._fn_name} result signal receiver deleted")
+        except Exception as e:
+            if not self.is_cancelled():
+                logger.error(f"Worker {self._fn_name} failed: {e}", exc_info=True)
+                exectype, value = sys.exc_info()[:2]
+                try:
+                    self.signals.error.emit((exectype, value, traceback.format_exc()))
+                except RuntimeError:
+                    logger.debug(f"Worker {self._fn_name} error signal receiver deleted")
+        finally:
+            try:
+                self.signals.finished.emit()
+            except RuntimeError:
+                pass
+
+
+class WorkerSignals(QObject):
+    finished = pyqtSignal()
+    error = pyqtSignal(tuple)
+    result = pyqtSignal(object)
+    progress = pyqtSignal(int)
+
+
+# ============================================================================
+# State Management
+# ============================================================================
 
 class DeviceManager(QObject):
     """Manages the currently selected iPod device path."""
@@ -336,17 +1263,6 @@ class DeviceManager(QObject):
             return
 
         set_current_device(ipod)
-
-
-class ThreadPoolSingleton:
-    _instance: QThreadPool | None = None
-
-    @classmethod
-    def get_instance(cls) -> QThreadPool:
-        if cls._instance is None:
-            cls._instance = QThreadPool.globalInstance()
-        assert cls._instance is not None
-        return cls._instance
 
 
 class iTunesDBCache(QObject):
@@ -739,83 +1655,10 @@ class iTunesDBCache(QObject):
 
     def _load_data(self, device_path: str, itunesdb_path: str) -> tuple:
         """Background thread: parse the iTunesDB and merge Play Counts."""
-        from iTunesDB_Parser.parser import parse_itunesdb
-        from iTunesDB_Shared.constants import (
-            extract_datasets, extract_mhod_strings, extract_playlist_extras,
-            mac_to_unix_timestamp, filetype_to_string, sample_rate_to_hz,
-        )
-        if not itunesdb_path or not os.path.exists(itunesdb_path):
-            return (None, device_path)
-        try:
-            raw = parse_itunesdb(itunesdb_path)
-            data = extract_datasets(raw)
+        from iTunesDB_Parser.ipod_library import load_ipod_library
 
-            # Inline MHOD strings and convert values for tracks
-            for track in data.get("mhlt", []):
-                strings = extract_mhod_strings(track.pop("children", []))
-                track.update(strings)
-                # filetype u32 → ASCII
-                ft = track.get("filetype")
-                if isinstance(ft, int) and ft > 0:
-                    track["filetype"] = filetype_to_string(ft)
-                # sample_rate 16.16 → Hz
-                sr = track.get("sample_rate_1")
-                if isinstance(sr, int) and sr > 65535:
-                    track["sample_rate_1"] = sample_rate_to_hz(sr)
-                # Mac timestamps → Unix
-                for ts_key in ("date_added", "date_released", "last_modified",
-                               "last_played", "last_skipped"):
-                    val = track.get(ts_key, 0)
-                    if isinstance(val, int) and val > 0:
-                        track[ts_key] = mac_to_unix_timestamp(val)
-
-            # Inline MHOD strings for albums
-            for album in data.get("mhla", []):
-                strings = extract_mhod_strings(album.pop("children", []))
-                album.update(strings)
-
-            # Inline MHOD strings + extras for playlists
-            for key in ("mhlp", "mhlp_podcast", "mhlp_smart"):
-                for pl in data.get(key, []):
-                    mhod_children = pl.pop("mhod_children", [])
-                    strings = extract_mhod_strings(mhod_children)
-                    pl.update(strings)
-                    extras = extract_playlist_extras(mhod_children)
-                    pl.update(extras)
-                    # Flatten MHIP children → items list
-                    items = []
-                    for mhip in pl.pop("mhip_children", []):
-                        mhip_data = mhip.get("data", {}) if isinstance(mhip, dict) and "data" in mhip else mhip
-                        items.append({"track_id": mhip_data.get("track_id", 0)})
-                    pl["items"] = items
-                    # Mac timestamps → Unix
-                    for ts_key in ("timestamp", "timestamp_2"):
-                        val = pl.get(ts_key, 0)
-                        if isinstance(val, int) and val > 0:
-                            pl[ts_key] = mac_to_unix_timestamp(val)
-
-            # Inline MHOD strings for artists (mhsd type 8)
-            for artist in data.get("mhsd_type_8", []):
-                strings = extract_mhod_strings(artist.pop("children", []))
-                artist.update(strings)
-
-            # Merge Play Counts file so the GUI shows accurate play/skip
-            # counts (the iPod firmware records deltas there, not in the
-            # iTunesDB itself).
-            try:
-                from iTunesDB_Parser.playcounts import parse_playcounts, merge_playcounts
-                pc_path = os.path.join(os.path.dirname(itunesdb_path), "Play Counts")
-                entries = parse_playcounts(pc_path)
-                if entries is not None:
-                    tracks = data.get("mhlt", [])
-                    merge_playcounts(tracks, entries)
-            except Exception as e:
-                logger.debug("Play Counts merge skipped: %s", e)
-
-            return (data, device_path)
-        except Exception as e:
-            logger.error("Error parsing iTunesDB: %s", e)
-            return (None, device_path)
+        data = load_ipod_library(itunesdb_path)
+        return (data, device_path)
 
     def _on_load_complete(self, result: tuple):
         """Called when background load finishes."""
@@ -830,91 +1673,8 @@ class iTunesDBCache(QObject):
             self.set_loading(False)
 
 
-category_glyphs = {
-    "Albums": "music",
-    "Artists": "user",
-    "Tracks": "music",
-    "Playlists": "annotation-dots",
-    "Genres": "grid",
-    "Podcasts": "broadcast",
-    "Audiobooks": "book",
-    "Videos": "video",
-    "Movies": "film",
-    "TV Shows": "monitor",
-    "Music Videos": "video",
-}
-
-
-class Worker(QRunnable):
-    """Generic background worker with error recovery.
-
-    Wraps a function to run in a thread pool with proper cancellation,
-    error handling, and cleanup support.
-    """
-
-    def __init__(self, fn, *args, **kwargs):
-        super().__init__()
-        self.fn = fn
-        self.args = args
-        self.kwargs = kwargs
-        self.signals = WorkerSignals()
-        # Capture the current cancellation token at creation time
-        self._cancellation_token = DeviceManager.get_instance().cancellation_token
-        self._is_cancelled = False
-        self._fn_name = getattr(fn, '__name__', str(fn))
-
-    def is_cancelled(self) -> bool:
-        """Check if this worker has been cancelled."""
-        return self._is_cancelled or self._cancellation_token.is_cancelled()
-
-    def cancel(self):
-        """Mark this worker as cancelled."""
-        self._is_cancelled = True
-
-    @pyqtSlot()
-    def run(self):
-        # Check cancellation before starting
-        if self.is_cancelled():
-            logger.debug(f"Worker {self._fn_name} cancelled before start")
-            try:
-                self.signals.finished.emit()
-            except RuntimeError:
-                pass
-            return
-
-        try:
-            result = self.fn(*self.args, **self.kwargs)
-            # Check cancellation before emitting result
-            if not self.is_cancelled():
-                try:
-                    self.signals.result.emit(result)
-                except RuntimeError:
-                    # Signal receiver was deleted
-                    logger.debug(f"Worker {self._fn_name} result signal receiver deleted")
-        except Exception as e:
-            if not self.is_cancelled():
-                logger.error(f"Worker {self._fn_name} failed: {e}", exc_info=True)
-                exectype, value = sys.exc_info()[:2]
-                try:
-                    self.signals.error.emit((exectype, value, traceback.format_exc()))
-                except RuntimeError:
-                    logger.debug(f"Worker {self._fn_name} error signal receiver deleted")
-        finally:
-            try:
-                self.signals.finished.emit()
-            except RuntimeError:
-                pass
-
-
-class WorkerSignals(QObject):
-    finished = pyqtSignal()
-    error = pyqtSignal(tuple)
-    result = pyqtSignal(object)
-    progress = pyqtSignal(int)
-
-
 # ============================================================================
-# Data Transform Functions (convert cached data to UI-ready format)
+# Data Transform (convert cached state data to UI-ready format)
 # ============================================================================
 
 def build_album_list(cache: iTunesDBCache) -> list:
@@ -1011,11 +1771,10 @@ def build_artist_list(cache: iTunesDBCache) -> list:
         subtitle_parts.append(f"{track_count} tracks")
         if total_plays > 0:
             subtitle_parts.append(f"{total_plays} plays")
-        subtitle = " · ".join(subtitle_parts)
 
         items.append({
             "title": artist,
-            "subtitle": subtitle,
+            "subtitle": " · ".join(subtitle_parts),
             "artwork_id_ref": mhiiLink,
             "category": "Artists",
             "filter_key": "Artist",
@@ -1069,947 +1828,7 @@ def build_genre_list(cache: iTunesDBCache) -> list:
     return sorted(items, key=lambda x: x["title"].lower())
 
 
-class MainWindow(QMainWindow):
-    def __init__(self):
-        super().__init__()
-
-        self.setWindowTitle("iOpenPod")
-
-        # Restore remembered window size (position is left to the OS)
-        from GUI.settings import get_settings as _get_settings
-        _s = _get_settings()
-        self.resize(_s.window_width, _s.window_height)
-
-        # Central widget with stacked layout for main/sync views
-        self.centralStack = QStackedWidget()
-        self.setCentralWidget(self.centralStack)
-
-        # Sync worker reference
-        self._sync_worker = None
-        self._sync_execute_worker = None
-        self._plan = None
-
-        # Initialize system notifications
-        self._notifier = Notifier.get_instance(self)
-
-        # Load persisted settings
-        settings = get_settings()
-        self._last_pc_folder = settings.music_folder or os.path.join(os.path.expanduser("~"), "Music")
-
-        # Drag-and-drop support
-        self.setAcceptDrops(True)
-        self._drop_worker = None
-
-        # Build all child widgets and connect signals
-        self._build_ui()
-
-        # Drop overlay (created after _build_ui so it sits on top)
-        self._drop_overlay = DropOverlayWidget(self)
-
-        # Connect device manager to reload data when device changes
-        DeviceManager.get_instance().device_changed.connect(self.onDeviceChanged)
-
-        # Connect cache ready signal to refresh UI
-        iTunesDBCache.get_instance().data_ready.connect(self.onDataReady)
-
-        # Restore last device path — only if it still looks like a real
-        # iPod (not a leftover project test-data folder, etc.).
-        if settings.last_device_path:
-            device_manager = DeviceManager.get_instance()
-            if device_manager.is_valid_ipod_root(settings.last_device_path):
-                # Sanity-check: reject paths inside this project directory.
-                # ipodTestData passes is_valid_ipod_root but isn't a device.
-                try:
-                    import pathlib
-                    saved = pathlib.Path(settings.last_device_path).resolve()
-                    project = pathlib.Path(__file__).resolve().parent.parent
-                    if saved == project or project in saved.parents:
-                        logger.info(
-                            "Ignoring last_device_path inside project dir: %s",
-                            settings.last_device_path,
-                        )
-                        settings.last_device_path = ""
-                        settings.save()
-                        device_manager = None  # skip restore
-                except Exception:
-                    pass  # resolve() can fail on vanished drives; fall through
-
-                if device_manager is not None:
-                    # Run a quick scan so discovered_ipod is populated
-                    # (needed for FireWire GUID, model info, etc.)
-                    try:
-                        from GUI.device_scanner import scan_for_ipods
-                        for ipod in scan_for_ipods():
-                            if os.path.normpath(ipod.path) == os.path.normpath(settings.last_device_path):
-                                device_manager.discovered_ipod = ipod
-                                break
-                    except Exception as e:
-                        logger.warning("Auto-restore scan failed: %s", e)
-                    device_manager.device_path = settings.last_device_path
-                    self.sidebar.updateDeviceButton(
-                        os.path.basename(settings.last_device_path) or settings.last_device_path
-                    )
-
-    def _build_ui(self):
-        """Create child widgets and wire up signals.
-
-        Called once from ``__init__`` and again by ``_on_theme_changed``
-        to rebuild the UI with fresh themed styles.
-        """
-        # Main browsing view
-        self.mainWidget = QWidget()
-        self.mainLayout = QHBoxLayout(self.mainWidget)
-        self.mainLayout.setContentsMargins(0, 0, 0, 0)
-
-        self.sidebar = Sidebar()
-        self.mainLayout.addWidget(self.sidebar)
-
-        self.musicBrowser = MusicBrowser()
-        self.mainLayout.addWidget(self.musicBrowser)
-
-        self.centralStack.addWidget(self.mainWidget)  # Index 0
-
-        # Sync review view
-        self.syncReview = SyncReviewWidget()
-        self.syncReview.cancelled.connect(self.hideSyncReview)
-        self.syncReview.sync_requested.connect(self.executeSyncPlan)
-        self.centralStack.addWidget(self.syncReview)  # Index 1
-
-        # Settings view
-        self.settingsPage = SettingsPage()
-        self.settingsPage.closed.connect(self.hideSettings)
-        self.settingsPage.theme_changed.connect(self._on_theme_changed)
-        self.centralStack.addWidget(self.settingsPage)  # Index 2
-
-        # Backup browser view
-        self.backupBrowser = BackupBrowserWidget()
-        self.backupBrowser.closed.connect(self.hideBackupBrowser)
-        self.centralStack.addWidget(self.backupBrowser)  # Index 3
-
-        self.sidebar.category_changed.connect(
-            self.musicBrowser.updateCategory)
-
-        # Podcast sync → goes through the standard sync review pipeline
-        self.musicBrowser.podcastBrowser.podcast_sync_requested.connect(
-            self._onPodcastSyncRequested)
-
-        # Connect device rename
-        self.sidebar.device_renamed.connect(self._onDeviceRenamed)
-
-        # Connect device button to folder picker
-        self.sidebar.deviceButton.clicked.connect(self.selectDevice)
-
-        # Connect rescan button to rebuild cache
-        self.sidebar.rescanButton.clicked.connect(self.resyncDevice)
-
-        # Connect sync button to PC sync
-        self.sidebar.syncButton.clicked.connect(self.startPCSync)
-
-        # Connect settings button
-        self.sidebar.settingsButton.clicked.connect(self.showSettings)
-
-        # Connect backup button
-        self.sidebar.backupButton.clicked.connect(self.showBackupBrowser)
-
-    def _on_theme_changed(self):
-        """Rebuild the entire UI after a live theme switch."""
-        from GUI.styles import build_palette, app_stylesheet
-
-        app = QApplication.instance()
-        if isinstance(app, QApplication):
-            app.setPalette(build_palette())
-            app.setStyleSheet(app_stylesheet())
-
-        # Tear down existing widgets
-        while self.centralStack.count():
-            w = self.centralStack.widget(0)
-            if w is not None:
-                self.centralStack.removeWidget(w)
-                w.deleteLater()
-
-        # Rebuild with new theme colours
-        self._build_ui()
-
-        # Switch to settings page (where the user just changed the theme)
-        self.settingsPage.load_from_settings()
-        self.centralStack.setCurrentIndex(2)
-
-        # If a device is loaded, refresh the sidebar with cached data
-        cache = iTunesDBCache.get_instance()
-        if cache.get_tracks():
-            self.onDataReady()
-
-    def selectDevice(self):
-        """Open device picker dialog to scan and select an iPod."""
-        from GUI.widgets.devicePicker import DevicePickerDialog
-
-        dialog = DevicePickerDialog(self)
-        if dialog.exec() and dialog.selected_path:
-            folder = dialog.selected_path
-            device_manager = DeviceManager.get_instance()
-            if device_manager.is_valid_ipod_root(folder):
-                device_manager.discovered_ipod = dialog.selected_ipod
-                device_manager.device_path = folder
-                self.sidebar.updateDeviceButton(os.path.basename(folder) or folder)
-                # Persist selection
-                settings = get_settings()
-                settings.last_device_path = folder
-                settings.save()
-            else:
-                QMessageBox.warning(
-                    self,
-                    "Invalid iPod Folder",
-                    "The selected folder does not appear to be a valid iPod root.\n\n"
-                    "Expected structure:\n"
-                    "  <selected folder>/iPod_Control/iTunes/\n\n"
-                    "Please select the root folder of your iPod."
-                )
-
-    def onDeviceChanged(self, path: str):
-        """Handle device selection - start loading data."""
-        # Clear the thread pool of pending tasks
-        thread_pool = ThreadPoolSingleton.get_instance()
-        thread_pool.clear()
-
-        # Clear artwork cache when device changes
-        from .imgMaker import clear_artworkdb_cache
-        clear_artworkdb_cache()
-
-        # Clear UI immediately
-        self.musicBrowser.browserGrid.clearGrid()
-        self.musicBrowser.browserTrack.clearTable()
-
-        if path:
-            # Start loading data (will emit data_ready when done)
-            iTunesDBCache.get_instance().start_loading()
-
-    def onDataReady(self):
-        """Called when iTunesDB data is loaded and ready."""
-        cache = iTunesDBCache.get_instance()
-        device = DeviceManager.get_instance()
-
-        tracks = cache.get_tracks()
-        albums = cache.get_albums()
-        db_data = cache.get_data()
-
-        classified = self._classify_tracks(tracks)
-        device_name, model = self._resolve_device_identity(cache, device)
-        db_version_hex, db_version_name, db_id = self._extract_db_info(db_data)
-
-        self.sidebar.updateDeviceInfo(
-            name=device_name,
-            model=model,
-            tracks=len(classified["audio"]),
-            albums=len(albums),
-            size_bytes=sum(t.get("size", 0) for t in classified["audio"]),
-            duration_ms=sum(t.get("length", 0) for t in classified["audio"]),
-            db_version_hex=db_version_hex,
-            db_version_name=db_version_name,
-            db_id=db_id,
-            videos=len(classified["video"]),
-            podcasts=len(classified["podcast"]),
-            audiobooks=len(classified["audiobook"]),
-        )
-
-        self._update_sidebar_visibility(classified)
-        self.musicBrowser.onDataReady()
-
-        # Run deferred podcast status update on freshly-parsed data
-        if getattr(self, '_pending_podcast_status_update', False):
-            self._pending_podcast_status_update = False
-            self._update_podcast_statuses()
-
-    # ── onDataReady helpers ─────────────────────────────────────
-
-    @staticmethod
-    def _classify_tracks(tracks: list) -> dict[str, list]:
-        """Partition tracks by media type into audio/video/podcast/audiobook."""
-        audio, video, podcast, audiobook = [], [], [], []
-        for t in tracks:
-            mt = t.get("media_type", 1)
-            if mt in (0,) or mt & 0x01:
-                audio.append(t)
-            if (mt & 0x62) and not (mt & 0x01) and mt != 0:
-                video.append(t)
-            if mt & 0x04:
-                podcast.append(t)
-            if mt & 0x08:
-                audiobook.append(t)
-        return {"audio": audio, "video": video, "podcast": podcast, "audiobook": audiobook}
-
-    @staticmethod
-    def _resolve_device_identity(cache: "iTunesDBCache", device: "DeviceManager") -> tuple[str, str]:
-        """Return (device_name, model) from playlists and DeviceInfo."""
-        device_name = ""
-        for pl in cache.get_playlists():
-            if pl.get("master_flag"):
-                device_name = pl.get("Title", "")
-                break
-        if not device_name:
-            device_name = os.path.basename(device.device_path) if device.device_path else "iPod"
-
-        model = "iPod"
-        try:
-            from device_info import get_current_device
-            dev = get_current_device()
-            if dev:
-                if not dev.ipod_name:
-                    dev.ipod_name = device_name
-                model = dev.display_name
-        except Exception as e:
-            logger.warning("Could not get device info: %s", e)
-
-        return device_name, model
-
-    @staticmethod
-    def _extract_db_info(db_data: dict | None) -> tuple[str, str, int]:
-        """Extract version hex, version name, and database ID."""
-        if not db_data:
-            return "", "", 0
-        db_version_hex = db_data.get('VersionHex', '')
-        db_id = db_data.get('DatabaseID', 0)
-        db_version_name = ""
-        if db_version_hex:
-            try:
-                from iTunesDB_Shared.constants import get_version_name
-                db_version_name = get_version_name(db_version_hex)
-            except Exception:
-                db_version_name = "Unknown"
-        return db_version_hex, db_version_name, db_id
-
-    def _update_sidebar_visibility(self, classified: dict[str, list]) -> None:
-        """Show/hide sidebar categories based on tracks and device capabilities."""
-        supports_video = len(classified["video"]) > 0
-        supports_podcast = len(classified["podcast"]) > 0
-        supports_audiobook = len(classified["audiobook"]) > 0
-        if not supports_video or not supports_podcast or not supports_audiobook:
-            try:
-                from device_info import get_current_device
-                from ipod_models import capabilities_for_family_gen, DeviceCapabilities
-                dev = get_current_device()
-                if dev and dev.model_family:
-                    caps = (capabilities_for_family_gen(dev.model_family, dev.generation)
-                            if dev.generation else None)
-                    # Fall back to DeviceCapabilities defaults when the exact
-                    # generation isn't known (e.g. iPod Classic shares one
-                    # USB PID across all gens so generation may be empty).
-                    if caps is None:
-                        caps = DeviceCapabilities()
-                    if not supports_video:
-                        supports_video = caps.supports_video
-                    if not supports_podcast:
-                        supports_podcast = caps.supports_podcast
-                    if not supports_audiobook:
-                        supports_audiobook = caps.supports_podcast
-            except Exception:
-                pass
-        self.sidebar.setVideoVisible(supports_video)
-        self.sidebar.setPodcastVisible(supports_podcast)
-        self.sidebar.setAudiobookVisible(supports_audiobook)
-
-    def resyncDevice(self):
-        """Rebuild the cache from the current device."""
-        device = DeviceManager.get_instance()
-        if not device.device_path:
-            return
-
-        # Clear cache and reload
-        cache = iTunesDBCache.get_instance()
-        cache.clear()
-
-        # Clear artwork cache
-        from .imgMaker import clear_artworkdb_cache
-        clear_artworkdb_cache()
-
-        # Clear UI
-        self.musicBrowser.browserGrid.clearGrid()
-        self.musicBrowser.browserTrack.clearTable()
-
-        # Start loading (will emit data_ready when done)
-        cache.start_loading()
-
-    def _onDeviceRenamed(self, new_name: str):
-        """Handle device rename from sidebar — update master playlist and write to iPod."""
-        device = DeviceManager.get_instance()
-        if not device.device_path:
-            return
-
-        cache = iTunesDBCache.get_instance()
-        data = cache.get_data()
-        if not data:
-            return
-
-        # Update DeviceInfo.ipod_name
-        try:
-            from device_info import get_current_device
-            dev = get_current_device()
-            if dev:
-                dev.ipod_name = new_name
-        except Exception:
-            pass
-
-        # Update master playlist Title in the cache
-        playlists = cache.get_playlists()
-        master_pl = None
-        for pl in playlists:
-            if pl.get("master_flag"):
-                pl["Title"] = new_name
-                master_pl = pl
-                break
-
-        if not master_pl:
-            logger.warning("Could not find master playlist to rename")
-            return
-
-        logger.info("Renaming iPod to '%s'", new_name)
-
-        # Write the full database to persist the rename
-        self._rename_worker = _DeviceRenameWorker(device.device_path, new_name)
-        self._rename_worker.finished_ok.connect(self._onRenameDone)
-        self._rename_worker.failed.connect(self._onRenameFailed)
-        self._rename_worker.start()
-
-    def _onRenameDone(self):
-        """Device rename write completed."""
-        logger.info("iPod renamed successfully")
-        Notifier.get_instance().notify("iPod Renamed", "Device name updated successfully")
-        # Reload the database to reflect changes
-        cache = iTunesDBCache.get_instance()
-        cache.clear()
-        cache.start_loading()
-
-    def _onRenameFailed(self, error_msg: str):
-        """Device rename write failed."""
-        logger.error("iPod rename failed: %s", error_msg)
-        QMessageBox.critical(
-            self, "Rename Failed",
-            f"Failed to rename iPod:\n{error_msg}"
-        )
-
-    @pyqtSlot()
-    def startPCSync(self):
-        """Start the PC ↔ iPod sync process."""
-        device = DeviceManager.get_instance()
-        if not device.device_path:
-            QMessageBox.warning(
-                self,
-                "No Device",
-                "Please select an iPod device first."
-            )
-            return
-
-        # Pre-flight: check for required external tools
-        from SyncEngine.audio_fingerprint import is_fpcalc_available
-        from SyncEngine.transcoder import is_ffmpeg_available
-        from SyncEngine.dependency_manager import is_platform_supported
-
-        missing_fpcalc = not is_fpcalc_available()
-        missing_ffmpeg = not is_ffmpeg_available()
-
-        if missing_fpcalc or missing_ffmpeg:
-            names = []
-            if missing_fpcalc:
-                names.append("fpcalc (Chromaprint)")
-            if missing_ffmpeg:
-                names.append("FFmpeg")
-            tool_list = " and ".join(names)
-
-            if is_platform_supported():
-                dlg = _MissingToolsDialog(self, tool_list, can_download=True)
-                if dlg.exec() == QDialog.DialogCode.Accepted:
-                    self._download_missing_tools_then_sync(missing_ffmpeg, missing_fpcalc)
-                    return
-                elif missing_fpcalc:
-                    return
-                # ffmpeg missing but user declined — let them continue with MP3/M4A only
-            else:
-                # Platform doesn't support auto-download
-                lines = ""
-                if missing_fpcalc:
-                    lines += "fpcalc is required for sync.\nInstall from: https://acoustid.org/chromaprint\n\n"
-                if missing_ffmpeg:
-                    lines += "FFmpeg is needed for transcoding.\nInstall from: https://ffmpeg.org\n\n"
-                lines += "You can also set custom paths in\nSettings → External Tools."
-
-                dlg = _MissingToolsDialog(
-                    self, tool_list, can_download=False, detail_lines=lines,
-                )
-                if not missing_fpcalc:
-                    dlg.add_continue_option()
-
-                if dlg.exec() != QDialog.DialogCode.Accepted:
-                    return
-                # User clicked Continue Anyway (only possible when fpcalc is present)
-
-        # Show folder selection dialog
-        dialog = PCFolderDialog(self, self._last_pc_folder)
-        if dialog.exec() != dialog.DialogCode.Accepted:
-            return
-
-        self._last_pc_folder = dialog.selected_folder
-        # Persist the folder choice
-        settings = get_settings()
-        settings.music_folder = dialog.selected_folder
-        settings.save()
-
-        # Switch to sync review view
-        self.centralStack.setCurrentIndex(1)
-        self.syncReview.show_loading()
-
-        # Get iPod tracks from cache
-        cache = iTunesDBCache.get_instance()
-        ipod_tracks = cache.get_tracks()
-
-        # Start background worker
-        device_manager = DeviceManager.get_instance()
-
-        # Check device video capability
-        supports_video = False
-        supports_podcast = True
-        try:
-            from device_info import get_current_device
-            from ipod_models import capabilities_for_family_gen
-            dev = get_current_device()
-            if dev and dev.model_family and dev.generation:
-                caps = capabilities_for_family_gen(dev.model_family, dev.generation)
-                supports_video = bool(caps and caps.supports_video)
-                supports_podcast = bool(caps and caps.supports_podcast)
-        except Exception:
-            pass
-
-        self._sync_worker = SyncWorker(
-            pc_folder=self._last_pc_folder,
-            ipod_tracks=ipod_tracks,
-            ipod_path=device_manager.device_path or "",
-            supports_video=supports_video,
-            supports_podcast=supports_podcast,
-        )
-        self._sync_worker.progress.connect(self.syncReview.update_progress)
-        self._sync_worker.finished.connect(self._onSyncDiffComplete)
-        self._sync_worker.error.connect(self._onSyncError)
-        self._sync_worker.start()
-
-    def _download_missing_tools_then_sync(self, need_ffmpeg: bool, need_fpcalc: bool):
-        """Download missing tools in a background thread, then restart sync."""
-        progress = _DownloadProgressDialog(self)
-        progress.show()
-
-        # Keep a reference so it isn't garbage collected
-        self._dl_progress = progress
-
-        import threading
-
-        def _do():
-            from SyncEngine.dependency_manager import download_ffmpeg, download_fpcalc
-            if need_fpcalc:
-                download_fpcalc()
-            if need_ffmpeg:
-                download_ffmpeg()
-
-            from PyQt6.QtCore import QMetaObject, Qt as QtCore_Qt
-            QMetaObject.invokeMethod(
-                self, "_on_tools_downloaded",
-                QtCore_Qt.ConnectionType.QueuedConnection,
-            )
-
-        threading.Thread(target=_do, daemon=True).start()
-
-    @pyqtSlot()
-    def _on_tools_downloaded(self):
-        """Called on main thread after tool downloads finish."""
-        if hasattr(self, '_dl_progress') and self._dl_progress:
-            self._dl_progress.close()
-            self._dl_progress = None
-        # Re-run sync now that tools should be available
-        self.startPCSync()
-
-    def _onPodcastSyncRequested(self, plan):
-        """Handle podcast sync plan from PodcastBrowser.
-
-        Receives a SyncPlan with podcast episodes as to_add items and
-        sends it through the standard sync review pipeline.
-        """
-        self._plan = plan
-        cache = iTunesDBCache.get_instance()
-        self.syncReview._ipod_tracks_cache = cache.get_tracks() or []
-
-        # Switch to sync review view and show the plan
-        self.centralStack.setCurrentIndex(1)
-        self.syncReview.show_plan(plan)
-
-    def _onSyncDiffComplete(self, plan):
-        """Called when sync diff calculation is complete."""
-        self._plan = plan  # Store for executeSyncPlan to access matched_pc_paths
-        # Provide iPod tracks cache so the review widget can list artwork-missing tracks
-        cache = iTunesDBCache.get_instance()
-        self.syncReview._ipod_tracks_cache = cache.get_tracks() or []
-
-        # ── Populate playlist change info on the plan ──────────────
-        self._populate_playlist_changes(plan, cache)
-
-        self.syncReview.show_plan(plan)
-
-    def _populate_playlist_changes(self, plan, cache: 'iTunesDBCache'):
-        """Compute playlist add/edit/remove lists for the sync plan.
-
-        Compares user-created/edited playlists (pending in cache) against
-        the existing iPod playlists to categorize changes.
-        """
-        user_playlists = cache.get_user_playlists()
-        if not user_playlists:
-            return
-
-        # Build set of existing iPod playlist IDs (from parsed DB)
-        existing_ids: set[int] = set()
-        data = cache.get_data()
-        if data:
-            for pl in data.get("mhlp", []):
-                pid = pl.get("playlist_id", 0)
-                if pid:
-                    existing_ids.add(pid)
-            for pl in data.get("mhlp_podcast", []):
-                pid = pl.get("playlist_id", 0)
-                if pid:
-                    existing_ids.add(pid)
-            for pl in data.get("mhlp_smart", []):
-                pid = pl.get("playlist_id", 0)
-                if pid:
-                    existing_ids.add(pid)
-
-        for upl in user_playlists:
-            pid = upl.get("playlist_id", 0)
-            is_new = upl.get("_isNew", False)
-            if is_new or pid not in existing_ids:
-                plan.playlists_to_add.append(upl)
-            else:
-                plan.playlists_to_edit.append(upl)
-
-    def _onSyncError(self, error_msg: str):
-        """Called when sync diff fails."""
-        self.syncReview.show_error(error_msg)
-
-    def hideSyncReview(self):
-        """Return to the main browsing view, stopping any background scan."""
-        # Request interruption so SyncWorker / SyncExecuteWorker can bail out
-        if self._sync_worker is not None and self._sync_worker.isRunning():
-            self._sync_worker.requestInterruption()
-        if self._sync_execute_worker is not None and self._sync_execute_worker.isRunning():
-            self._sync_execute_worker.requestInterruption()
-        self.centralStack.setCurrentIndex(0)
-
-    def showSettings(self):
-        """Show the settings page."""
-        self.settingsPage.load_from_settings()
-        self.centralStack.setCurrentIndex(2)
-
-    def hideSettings(self):
-        """Return from settings to the main browsing view."""
-        # Re-read persisted settings to pick up changes
-        settings = get_settings()
-        self._last_pc_folder = settings.music_folder or self._last_pc_folder
-        self.centralStack.setCurrentIndex(0)
-
-    def showBackupBrowser(self):
-        """Show the backup browser page."""
-        self.backupBrowser.refresh()
-        self.centralStack.setCurrentIndex(3)
-
-    def hideBackupBrowser(self):
-        """Return from backup browser to the main browsing view."""
-        self.centralStack.setCurrentIndex(0)
-
-    def executeSyncPlan(self, selected_items):
-        """Execute the selected sync actions."""
-        from SyncEngine.fingerprint_diff_engine import SyncAction, SyncPlan
-
-        # Get device path
-        device_manager = DeviceManager.get_instance()
-        if not device_manager.device_path:
-            QMessageBox.warning(self, "No Device", "No iPod device selected.")
-            return
-
-        # Filter items by action type
-        add_items = [s for s in selected_items if s.action == SyncAction.ADD_TO_IPOD]
-        remove_items = [s for s in selected_items if s.action == SyncAction.REMOVE_FROM_IPOD]
-        meta_items = [s for s in selected_items if s.action == SyncAction.UPDATE_METADATA]
-        file_items = [s for s in selected_items if s.action == SyncAction.UPDATE_FILE]
-        art_items = [s for s in selected_items if s.action == SyncAction.UPDATE_ARTWORK]
-        playcount_items = [s for s in selected_items if s.action == SyncAction.SYNC_PLAYCOUNT]
-        rating_items = [s for s in selected_items if s.action == SyncAction.SYNC_RATING]
-
-        # Create filtered plan
-        # Carry matched_pc_paths, artwork info, and playlist changes from the original plan
-        original_plan = self._plan  # stored in _onSyncDiffComplete
-
-        # Playlists: only include if the playlist card's checkbox is checked
-        pl_card = getattr(self.syncReview, '_playlist_card', None)
-        include_playlists = (
-            pl_card is not None and pl_card._select_all_cb.isChecked()
-        ) if pl_card else True  # default to True if no card exists
-
-        filtered_plan = SyncPlan(
-            to_add=add_items,
-            to_remove=remove_items,
-            to_update_metadata=meta_items,
-            to_update_file=file_items,
-            to_update_artwork=art_items,
-            to_sync_playcount=playcount_items,
-            to_sync_rating=rating_items,
-            matched_pc_paths=original_plan.matched_pc_paths if original_plan else {},
-            _stale_mapping_entries=original_plan._stale_mapping_entries if original_plan else [],
-            mapping=original_plan.mapping if original_plan else None,
-            playlists_to_add=original_plan.playlists_to_add if (original_plan and include_playlists) else [],
-            playlists_to_edit=original_plan.playlists_to_edit if (original_plan and include_playlists) else [],
-            playlists_to_remove=original_plan.playlists_to_remove if (original_plan and include_playlists) else [],
-        )
-
-        if not filtered_plan.has_changes:
-            return
-
-        # Show progress in sync review widget
-        self.syncReview.show_executing()
-
-        # Respect the user's pre-sync backup choice from the prompt
-        skip_backup = getattr(self.syncReview, '_skip_presync_backup', False)
-
-        # Start sync execution worker
-        self._sync_execute_worker = SyncExecuteWorker(
-            ipod_path=device_manager.device_path,
-            plan=filtered_plan,
-            skip_backup=skip_backup,
-        )
-        self._sync_execute_worker.progress.connect(self.syncReview.update_execute_progress)
-        self._sync_execute_worker.finished.connect(self._onSyncExecuteComplete)
-        self._sync_execute_worker.error.connect(self._onSyncExecuteError)
-        # Allow the user to skip the in-progress backup from the progress screen
-        self.syncReview.skip_backup_signal.connect(self._sync_execute_worker.request_skip_backup)
-        self._sync_execute_worker.start()
-
-    def _onSyncExecuteComplete(self, result):
-        """Called when sync execution is complete."""
-        self._disconnect_skip_signal()
-        # Show styled results view instead of a plain message box
-        self.syncReview.show_result(result)
-
-        # Desktop notification if app is not focused
-        if not self.isActiveWindow():
-            self._notifier.notify_sync_complete(
-                added=getattr(result, 'tracks_added', 0),
-                removed=getattr(result, 'tracks_removed', 0),
-                updated=getattr(result, 'tracks_updated_metadata', 0) + getattr(result, 'tracks_updated_file', 0),
-                errors=len(getattr(result, 'errors', [])),
-            )
-
-        # Schedule podcast status update after the database reload so it
-        # reads freshly-parsed data instead of the stale pre-sync cache.
-        self._pending_podcast_status_update = getattr(result, 'tracks_added', 0) > 0
-
-        # Reload the database to show changes (delay lets OS flush writes)
-        QTimer.singleShot(500, self._rescanAfterSync)
-
-    def _update_podcast_statuses(self):
-        """Mark synced podcast episodes as 'on_ipod' in the subscription store."""
-        try:
-            browser = self.musicBrowser.podcastBrowser
-            store = browser._store
-            if not store:
-                return
-
-            cache = iTunesDBCache.get_instance()
-            ipod_tracks = cache.get_tracks() or []
-
-            from PodcastManager.podcast_sync import match_ipod_tracks
-            for feed in store.get_feeds():
-                match_ipod_tracks(feed, ipod_tracks)
-                store.update_feed(feed)
-
-            # Refresh the podcast browser episode table so status is visible
-            browser.refresh_episodes()
-        except Exception as e:
-            logger.debug("Could not update podcast statuses: %s", e)
-
-    def _rescanAfterSync(self):
-        """Rescan the iPod database after a short post-write delay."""
-        cache = iTunesDBCache.get_instance()
-        # Use clear() (not invalidate()) to fully reset the cache state.
-        # invalidate() does not reset _is_loading, so if a prior load is
-        # still in-flight start_loading() would silently bail out and the
-        # UI would never refresh.
-        cache.clear()
-
-        # Clear artwork cache — sync may have added/changed album art
-        from .imgMaker import clear_artworkdb_cache
-        clear_artworkdb_cache()
-
-        # Clear UI so the reload starts from a clean slate
-        self.musicBrowser.browserGrid.clearGrid()
-        self.musicBrowser.browserTrack.clearTable()
-
-        cache.start_loading()
-
-    def _disconnect_skip_signal(self):
-        """Disconnect skip_backup_signal from the finished worker."""
-        try:
-            self.syncReview.skip_backup_signal.disconnect()
-        except TypeError:
-            pass  # Already disconnected
-
-    def _onSyncExecuteError(self, error_msg: str):
-        """Called when sync execution fails."""
-        self._disconnect_skip_signal()
-        # Desktop notification if app is not focused
-        if not self.isActiveWindow():
-            self._notifier.notify_sync_error(error_msg)
-
-        from .settings import get_settings
-        settings = get_settings()
-
-        msg = f"Sync failed:\n\n{error_msg}"
-        if settings.backup_before_sync:
-            msg += (
-                "\n\nA backup was created before this sync. "
-                "You can restore it from the Backups page."
-            )
-
-        QMessageBox.critical(self, "Sync Error", msg)
-        self.hideSyncReview()
-
-    # ── Drag-and-drop support ──────────────────────────────────────────────
-
-    def resizeEvent(self, a0):
-        super().resizeEvent(a0)
-        if hasattr(self, '_drop_overlay') and self._drop_overlay.isVisible():
-            self._drop_overlay.setGeometry(self.rect())
-
-    def dragEnterEvent(self, a0):
-        if a0 is None:
-            return
-        # Reject drops when no device is selected or sync is executing
-        device = DeviceManager.get_instance()
-        if not device.device_path:
-            a0.ignore()
-            return
-        if self._sync_execute_worker and self._sync_execute_worker.isRunning():
-            a0.ignore()
-            return
-
-        mime = a0.mimeData()
-        if mime and mime.hasUrls():
-            from SyncEngine.pc_library import MEDIA_EXTENSIONS
-            for url in mime.urls():
-                if url.isLocalFile():
-                    p = Path(url.toLocalFile())
-                    if p.is_dir() or p.suffix.lower() in MEDIA_EXTENSIONS:
-                        a0.acceptProposedAction()
-                        self._drop_overlay.show_overlay()
-                        return
-        a0.ignore()
-
-    def dragMoveEvent(self, a0):
-        if a0:
-            a0.acceptProposedAction()
-
-    def dragLeaveEvent(self, a0):
-        self._drop_overlay.hide_overlay()
-
-    def dropEvent(self, a0):
-        self._drop_overlay.hide_overlay()
-        if a0 is None:
-            return
-        mime = a0.mimeData()
-        if not mime or not mime.hasUrls():
-            return
-
-        paths: list[Path] = []
-        for url in mime.urls():
-            if url.isLocalFile():
-                paths.append(Path(url.toLocalFile()))
-
-        if paths:
-            a0.acceptProposedAction()
-            self._on_files_dropped(paths)
-
-    def _on_files_dropped(self, paths: list[Path]):
-        """Process dropped files/folders in a background thread."""
-        from SyncEngine.pc_library import MEDIA_EXTENSIONS
-
-        # Collect all file paths (recurse folders)
-        file_paths: list[Path] = []
-        for p in paths:
-            if p.is_dir():
-                for root, _, files in os.walk(p):
-                    for fname in files:
-                        fp = Path(root) / fname
-                        if fp.suffix.lower() in MEDIA_EXTENSIONS:
-                            file_paths.append(fp)
-            elif p.is_file() and p.suffix.lower() in MEDIA_EXTENSIONS:
-                file_paths.append(p)
-
-        if not file_paths:
-            return
-
-        # Remember whether we already have a plan to merge into
-        self._drop_merge = (
-            self._plan is not None
-            and self.centralStack.currentIndex() == 1
-        )
-
-        # Switch to sync review and show loading
-        self.centralStack.setCurrentIndex(1)
-        self.syncReview.show_loading()
-        self.syncReview.loading_label.setText("Reading dropped files...")
-
-        # Run metadata reading in background thread
-        self._drop_worker = _DropScanWorker(file_paths)
-        self._drop_worker.finished.connect(self._on_drop_scan_complete)
-        self._drop_worker.error.connect(self._onSyncError)
-        self._drop_worker.start()
-
-    def _on_drop_scan_complete(self, plan):
-        """Merge dropped-file plan into any existing plan, then show."""
-        if self._drop_merge and self._plan is not None:
-            self._plan.to_add.extend(plan.to_add)
-            self._plan.storage.bytes_to_add += plan.storage.bytes_to_add
-            self.syncReview.show_plan(self._plan)
-        else:
-            self._plan = plan
-            self.syncReview.show_plan(plan)
-
-    def closeEvent(self, a0):
-        """Ensure all threads are stopped when the window is closed."""
-        # Persist window dimensions
-        try:
-            from GUI.settings import get_settings as _get_settings
-            _s = _get_settings()
-            _s.window_width = self.width()
-            _s.window_height = self.height()
-            _s.save()
-        except Exception:
-            pass
-
-        # Clean up system tray notification icon
-        Notifier.shutdown()
-
-        # Request graceful stop for sync workers
-        if self._sync_worker and self._sync_worker.isRunning():
-            self._sync_worker.requestInterruption()
-            self._sync_worker.wait(3000)
-        if self._sync_execute_worker and self._sync_execute_worker.isRunning():
-            self._sync_execute_worker.requestInterruption()
-            self._sync_execute_worker.wait(3000)
-
-        thread_pool = ThreadPoolSingleton.get_instance()
-        if thread_pool:
-            thread_pool.clear()  # Remove pending tasks
-            thread_pool.waitForDone(3000)  # Wait up to 3 seconds for running tasks
-        if a0:
-            a0.accept()
-
-
-# =============================================================================
 # _DeviceRenameWorker — background thread for iPod rename (full DB rewrite)
-# =============================================================================
-
 class _DeviceRenameWorker(QThread):
     """Rewrite the iTunesDB after renaming the iPod (master playlist title)."""
 
@@ -2023,7 +1842,8 @@ class _DeviceRenameWorker(QThread):
 
     def run(self):
         try:
-            from SyncEngine.sync_executor import SyncExecutor
+            from SyncEngine.sync_executor import SyncExecutor, _SyncContext
+            from SyncEngine.mapping import MappingFile
 
             executor = SyncExecutor(self._ipod_path)
             existing_db = executor._read_existing_database()
@@ -2035,14 +1855,27 @@ class _DeviceRenameWorker(QThread):
                 executor._track_dict_to_info(t) for t in existing_tracks_data
             ]
 
+            # Build a minimal context for _build_and_evaluate_playlists
+            ctx = _SyncContext(
+                plan=None,  # type: ignore[arg-type]
+                mapping=MappingFile(),
+                progress_callback=None,
+                dry_run=False,
+                aac_quality="normal",
+                write_back_to_pc=False,
+                _is_cancelled=None,
+            )
+            ctx.existing_tracks_data = existing_tracks_data
+            ctx.existing_playlists_raw = existing_playlists_raw
+            ctx.existing_smart_raw = existing_smart_raw
+
             _master_name, playlists, smart_playlists = executor._build_and_evaluate_playlists(
-                existing_tracks_data, all_tracks,
-                existing_playlists_raw, existing_smart_raw,
+                ctx, all_tracks,
             )
 
             # Use the explicitly requested name, NOT the one read from disk.
             success = executor._write_database(
-                all_tracks,
+                tracks=all_tracks,
                 playlists=playlists,
                 smart_playlists=smart_playlists,
                 master_playlist_name=self._new_name,
@@ -2059,10 +1892,7 @@ class _DeviceRenameWorker(QThread):
             self.failed.emit(str(e))
 
 
-# =============================================================================
-# _DropScanWorker — background thread for reading dropped files metadata
-# =============================================================================
-
+# _DropScanWorker - background thread for reading dropped files metadata
 class _DropScanWorker(QThread):
     """Read metadata from dropped files and build a SyncPlan."""
 

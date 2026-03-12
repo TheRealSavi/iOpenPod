@@ -411,6 +411,15 @@ class Metrics:
             avail = screen.availableGeometry()
             raw = avail.height() / 1440
 
+            # On HiDPI displays (macOS Retina, etc.), Qt reports logical
+            # coordinates that are already scaled by the OS.  The 1440
+            # reference assumes non-HiDPI, so a Retina MacBook
+            # (logical ~1007) would get 0.70x — far too small.
+            # Compensate by the square root of the device pixel ratio.
+            dpr = screen.devicePixelRatio()
+            if dpr > 1.0:
+                raw *= dpr ** 0.5
+
         _dpi_scale = max(0.55, min(2.0, raw))
         _font_scale = max(0.70, min(1.6, raw))
 

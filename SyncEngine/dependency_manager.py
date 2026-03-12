@@ -35,7 +35,7 @@ def get_bin_dir() -> Path:
     Always co-located with the active settings directory as ``<settings_dir>/bin/``.
     """
     try:
-        from GUI.settings import _get_settings_dir
+        from settings import _get_settings_dir
         return Path(_get_settings_dir()) / "bin"
     except Exception:
         pass

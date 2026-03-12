@@ -9,7 +9,7 @@ def _get_log_dir() -> str:
     """Get log directory, defaulting to ~/iOpenPod/logs."""
     # Check for user-configured log directory in settings
     try:
-        from GUI.settings import AppSettings
+        from settings import AppSettings
         custom = AppSettings.load().log_dir
         if custom:
             os.makedirs(custom, exist_ok=True)
@@ -17,7 +17,7 @@ def _get_log_dir() -> str:
     except Exception:
         pass
 
-    from GUI.settings import _default_data_dir
+    from settings import _default_data_dir
     log_dir = os.path.join(_default_data_dir(), "logs")
     os.makedirs(log_dir, exist_ok=True)
     return log_dir
@@ -166,7 +166,7 @@ def run_pyqt_app():
 
     # Apply the selected color theme (reads settings; must come after
     # QApplication exists so system-theme detection works).
-    from GUI.settings import get_settings
+    from settings import get_settings
     _s = get_settings()
     Colors.apply_theme(_s.theme, _s.high_contrast)
 

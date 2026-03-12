@@ -8,18 +8,16 @@ PyQt6 pixmap loading and caching.
 """
 
 from functools import lru_cache
-from pathlib import Path
-
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap
-
 from ipod_models import resolve_image_filename, GENERIC_IMAGE
+from GUI import PROJECT_ROOT
 
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent
-_IMAGE_DIR = _PROJECT_ROOT / "assets" / "ipod_images"
+
+_IMAGE_DIR = PROJECT_ROOT / "assets" / "ipod_images"
 
 
 @lru_cache(maxsize=128)

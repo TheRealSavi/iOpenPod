@@ -227,6 +227,14 @@ class DeviceCapabilities:
     has_screen: bool = True
     """Device has a display.  Shuffles have no screen."""
 
+    # ── Video encoding limits ──────────────────────────────────────────
+    max_video_width: int = 0
+    """Maximum H.264 decode width (pixels).  0 = no video support.
+    This is the firmware decode ceiling, not the screen resolution —
+    the device downscales to fit its screen."""
+    max_video_height: int = 0
+    """Maximum H.264 decode height (pixels).  0 = no video support."""
+
 
 # ──────────────────────────────────────────────────────────────────────────
 # Cover-art format sets — ithmb correlation IDs
@@ -424,6 +432,8 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         cover_art_formats=_ART_VIDEO,
         music_dirs=20,
         db_version=0x19,
+        max_video_width=640,
+        max_video_height=480,
     ),
 
     # ── iPod Video 5.5th Gen — first with gapless playback ───────────
@@ -435,6 +445,8 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         cover_art_formats=_ART_VIDEO,
         music_dirs=20,
         db_version=0x19,
+        max_video_width=640,
+        max_video_height=480,
     ),
 
     # ── iPod Video U2 editions (same hardware as their base) ─────────
@@ -445,6 +457,8 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         cover_art_formats=_ART_VIDEO,
         music_dirs=20,
         db_version=0x19,
+        max_video_width=640,
+        max_video_height=480,
     ),
     ("iPod Video U2", "5.5th Gen"): DeviceCapabilities(
         supports_video=True,
@@ -454,6 +468,8 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         cover_art_formats=_ART_VIDEO,
         music_dirs=20,
         db_version=0x19,
+        max_video_width=640,
+        max_video_height=480,
     ),
 
     # ── iPod Classic (all gens): HASH58, gapless, video ───────────────
@@ -468,6 +484,8 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         cover_art_formats=_ART_CLASSIC,
         music_dirs=50,
         db_version=0x30,
+        max_video_width=640,
+        max_video_height=480,
     ),
     ("iPod Classic", "2nd Gen"): DeviceCapabilities(
         checksum=ChecksumType.HASH58,
@@ -480,6 +498,8 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         cover_art_formats=_ART_CLASSIC,
         music_dirs=50,
         db_version=0x30,
+        max_video_width=640,
+        max_video_height=480,
     ),
     ("iPod Classic", "3rd Gen"): DeviceCapabilities(
         checksum=ChecksumType.HASH58,
@@ -492,6 +512,8 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         cover_art_formats=_ART_CLASSIC,
         music_dirs=50,
         db_version=0x30,
+        max_video_width=640,
+        max_video_height=480,
     ),
 
     # ── iPod Mini (no artwork, no video) ──────────────────────────────
@@ -533,6 +555,8 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         cover_art_formats=_ART_CLASSIC,  # shares Classic 1G formats
         music_dirs=20,
         db_version=0x30,
+        max_video_width=320,
+        max_video_height=240,
     ),
 
     # ── iPod Nano 4G: HASH58, rotated artwork (RGB565_LE_90) ─────────
@@ -547,6 +571,8 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         cover_art_formats=_ART_NANO_4G,
         music_dirs=20,
         db_version=0x30,
+        max_video_width=480,
+        max_video_height=320,
     ),
 
     # ── iPod Nano 5G: HASH72, camera, compressed DB ──────────────────
@@ -561,6 +587,8 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         cover_art_formats=_ART_NANO_5G,
         music_dirs=20,
         db_version=0x30,
+        max_video_width=640,
+        max_video_height=480,
     ),
 
     # ── iPod Nano 6G: HASHAB, square touchscreen, no video ───────────
@@ -589,6 +617,8 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         cover_art_formats=_ART_NANO_6G,  # assumed same as 6G; no SysInfoExtended data
         music_dirs=20,
         db_version=0x30,
+        max_video_width=720,
+        max_video_height=576,
     ),
 
     # ── iPod Shuffle 1G: iTunesSD v1, no screen, no artwork ──────────

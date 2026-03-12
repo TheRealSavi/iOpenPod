@@ -13,9 +13,13 @@ The database is always fully rewritten (not patched incrementally).
 """
 
 import base64
+import errno
 import logging
+import os
 import shutil
+import tempfile
 import threading
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed, Future
 from pathlib import Path
 from typing import Optional, Callable
@@ -43,9 +47,20 @@ from iTunesDB_Writer.mhod_spl_writer import (
 
 logger = logging.getLogger(__name__)
 
+# ── Constants ───────────────────────────────────────────────────────────────
+
+# Minimum free space (bytes) that must remain on the iPod after each file copy.
+_DISK_RESERVE_BYTES = 30 * 1024 * 1024   # 30 MB
+
+# Estimated overhead for the database files themselves.
+_DB_OVERHEAD_BYTES = 10 * 1024 * 1024    # 10 MB
+
+# Default number of Fxx music directories (most common across iPod models).
+_DEFAULT_MUSIC_DIRS = 20
+
 
 class _OutOfSpaceError(Exception):
-    """Raised when iPod disk space drops below the 30 MB safety reserve."""
+    """Raised when iPod disk space drops below the disk safety reserve."""
     pass
 
 
@@ -112,6 +127,67 @@ class SyncResult:
         return f"{status}:\n" + "\n".join(lines)
 
 
+@dataclass
+class _SyncContext:
+    """Shared mutable state flowing through all sync stages.
+
+    Created once by ``execute()`` and threaded through every ``_execute_*``
+    method, eliminating the 8-14 parameter explosion that previously made
+    each call site hard to read.
+    """
+
+    # ── Inputs (set once, read-only during sync) ────────────────────
+    plan: SyncPlan
+    mapping: MappingFile
+    progress_callback: Optional[Callable[["SyncProgress"], None]]
+    dry_run: bool
+    aac_quality: str
+    write_back_to_pc: bool
+    _is_cancelled: Optional[Callable[[], bool]]
+
+    # ── GUI-decoupled inputs (passed forward, not pulled from GUI) ──
+    user_playlists: list[dict] = field(default_factory=list)
+    on_sync_complete: Optional[Callable[[], None]] = None
+    compute_sound_check: bool = False
+    scrobble_on_sync: bool = False
+    listenbrainz_token: str = ""
+
+    # ── Result accumulator ──────────────────────────────────────────
+    result: SyncResult = field(default_factory=lambda: SyncResult(success=True))
+
+    # ── Existing iPod database (populated by _load_existing_database) ──
+    existing_tracks_data: list[dict] = field(default_factory=list)
+    existing_playlists_raw: list[dict] = field(default_factory=list)
+    existing_smart_raw: list[dict] = field(default_factory=list)
+
+    # ── Track state (mutated by stage methods) ──────────────────────
+    tracks_by_dbid: dict[int, TrackInfo] = field(default_factory=dict)
+    tracks_by_location: dict[str, TrackInfo] = field(default_factory=dict)
+    new_tracks: list[TrackInfo] = field(default_factory=list)
+
+    # ── Fingerprint/source tracking for new-track backpatch ─────────
+    new_track_fingerprints: dict[int, str] = field(default_factory=dict)
+    new_track_info: dict[int, tuple] = field(default_factory=dict)
+    pc_file_paths: dict[int, str] = field(default_factory=dict)
+
+    def cancelled(self) -> bool:
+        """Check if the user cancelled.  Updates *result* when True."""
+        if self._is_cancelled and self._is_cancelled():
+            self.result.errors.append(("cancelled", "Sync was cancelled by user"))
+            self.result.success = False
+            return True
+        return False
+
+    def progress(self, stage: str, current: int, total: int,
+                 current_item: Optional["SyncItem"] = None,
+                 message: str = "", **kwargs) -> None:
+        """Send a progress update (no-op when no callback is set)."""
+        if self.progress_callback:
+            self.progress_callback(
+                SyncProgress(stage, current, total, current_item, message, **kwargs)
+            )
+
+
 class SyncExecutor:
     """
     Executes a sync plan to synchronize PC library with iPod.
@@ -139,7 +215,6 @@ class SyncExecutor:
         self._folder_lock = threading.Lock()
 
         # 0 = auto (CPU count, capped at 8), 1 = sequential
-        import os
         if max_workers <= 0:
             self._max_workers = min(os.cpu_count() or 4, 8)
         else:
@@ -155,69 +230,101 @@ class SyncExecutor:
         dry_run: bool = False,
         is_cancelled: Optional[Callable[[], bool]] = None,
         write_back_to_pc: bool = False,
-        aac_bitrate: int = 256,
+        aac_quality: str = "normal",
+        *,
+        user_playlists: Optional[list[dict]] = None,
+        on_sync_complete: Optional[Callable[[], None]] = None,
+        compute_sound_check: bool = False,
+        scrobble_on_sync: bool = False,
+        listenbrainz_token: str = "",
     ) -> SyncResult:
-        """
-        Execute the sync plan.
-
-        Args:
-            plan: The computed sync plan.
-            mapping: The iPod mapping file.
-            progress_callback: Optional callback for progress updates.
-            dry_run: If True, simulate without making changes.
-            is_cancelled: Optional callback returning True if user cancelled.
-            write_back_to_pc: If True, write ratings back to
-                PC source files. Defaults to False for safety — users must
-                explicitly opt in to having their PC files modified.
-            aac_bitrate: Bitrate for lossy transcodes (default 256 kbps).
+        """Execute the sync plan.
 
         Flow:
-        1. Parse existing iTunesDB → dict[dbid, TrackInfo]
-        2. Remove tracks (delete files, remove from dict)
-        3. Update metadata (modify TrackInfo in dict)
-        4. Update files (delete old, copy new, update TrackInfo)
-        5. Add new tracks (copy/transcode, create TrackInfo)
-        6. Record play counts, sync ratings
-        7. Build final list[TrackInfo], call write_itunesdb() once
+        1. Pre-flight checks (storage, writability)
+        2. Load existing iPod database
+        3. Run stages 1-6 (remove → file update → metadata → artwork →
+           add → sound check → play counts → ratings)
+        4. Write database in one shot (stage 7)
         """
-        result = SyncResult(success=True)
+        self._aac_quality = aac_quality
 
-        # Store on instance so helper methods can access it
-        self._aac_bitrate = aac_bitrate
+        ctx = _SyncContext(
+            plan=plan,
+            mapping=mapping,
+            progress_callback=progress_callback,
+            dry_run=dry_run,
+            aac_quality=aac_quality,
+            write_back_to_pc=write_back_to_pc,
+            _is_cancelled=is_cancelled,
+            user_playlists=list(user_playlists) if user_playlists else [],
+            on_sync_complete=on_sync_complete,
+            compute_sound_check=compute_sound_check,
+            scrobble_on_sync=scrobble_on_sync,
+            listenbrainz_token=listenbrainz_token,
+        )
 
-        # ===== Pre-flight: Storage space check =====
-        if not dry_run and plan.storage.bytes_to_add > 0:
+        if not self._preflight_checks(ctx):
+            return ctx.result
+
+        self._load_existing_database_into(ctx)
+
+        # Run stages 1-6; bail on first failure.
+        stages = [
+            self._execute_removes,          # Stage 1
+            self._execute_file_updates,     # Stage 2
+            self._execute_metadata_updates,  # Stage 3
+            self._execute_artwork_updates,  # Stage 3b
+            self._execute_adds,             # Stage 4
+            self._execute_sound_check,      # Stage 4b
+            self._execute_playcount_sync,   # Stage 5
+            self._execute_rating_sync,      # Stage 6
+        ]
+        for stage in stages:
+            stage(ctx)
+            if not ctx.result.success:
+                return ctx.result
+
+        # Stage 7: write database (one shot)
+        if not ctx.dry_run:
+            self._execute_write_and_finalize(ctx)
+
+        ctx.result.success = not ctx.result.has_errors
+        return ctx.result
+
+    # ── Pre-flight & Loading ────────────────────────────────────────────────
+
+    def _preflight_checks(self, ctx: _SyncContext) -> bool:
+        """Return False (and populate ctx.result) if sync cannot proceed."""
+        if not ctx.dry_run and ctx.plan.storage.bytes_to_add > 0:
             try:
                 disk = shutil.disk_usage(self.ipod_path)
-                # Need space for new files plus some buffer (10 MB for database overhead)
-                needed = plan.storage.bytes_to_add - plan.storage.bytes_to_remove + (10 * 1024 * 1024)
+                needed = (ctx.plan.storage.bytes_to_add
+                          - ctx.plan.storage.bytes_to_remove
+                          + _DB_OVERHEAD_BYTES)
                 if needed > 0 and disk.free < needed:
                     free_mb = disk.free / (1024 * 1024)
                     need_mb = needed / (1024 * 1024)
-                    result.errors.append((
+                    ctx.result.errors.append((
                         "storage",
-                        f"Not enough space on iPod: {free_mb:.0f} MB free, {need_mb:.0f} MB needed"
+                        f"Not enough space on iPod: {free_mb:.0f} MB free, "
+                        f"{need_mb:.0f} MB needed",
                     ))
-                    result.success = False
-                    return result
+                    ctx.result.success = False
+                    return False
             except OSError as e:
-                logger.warning(f"Could not check disk space: {e}")
+                logger.warning("Could not check disk space: %s", e)
 
-        # ===== Pre-flight: Writability check =====
-        # On Linux the iPod may be auto-mounted read-only (e.g. dirty VFAT,
-        # missing write permissions).  Detect this early and give a clear
-        # error instead of dozens of individual copy failures.
-        if not dry_run:
-            import tempfile
-            import errno
+        # On Linux the iPod may be auto-mounted read-only (dirty VFAT,
+        # missing write permissions).  Detect early for a clear error.
+        if not ctx.dry_run:
             probe_dir = self.ipod_path / "iPod_Control" / "iTunes"
             try:
                 fd, probe_path = tempfile.mkstemp(
-                    prefix=".iOpenPod_write_test_", dir=str(probe_dir)
+                    prefix=".iOpenPod_write_test_", dir=str(probe_dir),
                 )
-                import os as _os
-                _os.close(fd)
-                _os.unlink(probe_path)
+                os.close(fd)
+                os.unlink(probe_path)
             except OSError as e:
                 if e.errno in (errno.EROFS, errno.EACCES):
                     hint = (
@@ -229,337 +336,186 @@ class SyncExecutor:
                         "then re-mount."
                     )
                     logger.error("iPod is read-only: %s", e)
-                    result.errors.append(("read-only", hint))
-                    result.success = False
-                    return result
+                    ctx.result.errors.append(("read-only", hint))
+                    ctx.result.success = False
+                    return False
                 else:
                     logger.warning("Writability probe failed (non-fatal): %s", e)
 
-        # Load existing tracks and playlists from iPod database
-        existing_db = self._read_existing_database()
-        existing_tracks_data = existing_db["tracks"]
-        existing_playlists_raw = existing_db["playlists"]
-        existing_smart_raw = existing_db["smart_playlists"]
+        return True
 
-        # Convert to TrackInfo objects, indexed by dbid
-        tracks_by_dbid: dict[int, TrackInfo] = {}
-        tracks_by_location: dict[str, TrackInfo] = {}
-        for t in existing_tracks_data:
+    def _load_existing_database_into(self, ctx: _SyncContext) -> None:
+        """Parse existing iPod database and populate ctx track/playlist state."""
+        existing_db = self._read_existing_database()
+        ctx.existing_tracks_data = existing_db["tracks"]
+        ctx.existing_playlists_raw = existing_db["playlists"]
+        ctx.existing_smart_raw = existing_db["smart_playlists"]
+
+        for t in ctx.existing_tracks_data:
             track_info = self._track_dict_to_info(t)
             if track_info.dbid:
-                tracks_by_dbid[track_info.dbid] = track_info
+                ctx.tracks_by_dbid[track_info.dbid] = track_info
             if track_info.location:
-                tracks_by_location[track_info.location] = track_info
+                ctx.tracks_by_location[track_info.location] = track_info
 
-        new_tracks: list[TrackInfo] = []
-        # Maps new TrackInfo object id → fingerprint (for dbid backpatch after write)
-        new_track_fingerprints: dict[int, str] = {}
-        # Maps new TrackInfo object id → (pc_track, ipod_path, was_transcoded) for mapping creation
-        new_track_info: dict[int, tuple] = {}
-        # PC source file paths for artwork extraction
-        pc_file_paths: dict[int, str] = dict(plan.matched_pc_paths)
-        logger.debug(f"ART: starting with {len(pc_file_paths)} matched PC paths from sync plan")
+        ctx.pc_file_paths = dict(ctx.plan.matched_pc_paths)
+        logger.debug("ART: starting with %d matched PC paths from sync plan",
+                     len(ctx.pc_file_paths))
 
-        def _check_cancelled() -> bool:
-            if is_cancelled and is_cancelled():
-                result.errors.append(("cancelled", "Sync was cancelled by user"))
-                result.success = False
-                return True
-            return False
+    def _execute_write_and_finalize(self, ctx: _SyncContext) -> None:
+        """Stage 7: assemble final track list, write database, backpatch and finalize."""
+        ctx.progress("write_database", 0, 1, message="Writing database...")
 
-        # ===== Stage 1: Remove deleted tracks =====
-        self._execute_removes(plan, mapping, tracks_by_dbid, tracks_by_location, result, progress_callback, dry_run, _check_cancelled)
-        if not result.success:
-            return result
+        all_tracks = list(ctx.tracks_by_dbid.values()) + ctx.new_tracks
 
-        # ===== Stage 2: Update files (re-copy/transcode changed files) =====
-        self._execute_file_updates(plan, mapping, tracks_by_dbid, tracks_by_location, pc_file_paths, result, progress_callback, dry_run, _check_cancelled, aac_bitrate)
-        if not result.success:
-            return result
+        # ── Pre-assign dbids for new tracks ──────────────────────
+        # New tracks arrive with dbid=0.  Assign now so
+        # _build_and_evaluate_playlists can build correct track lists.
+        from iTunesDB_Writer.mhit_writer import generate_dbid
+        for t in all_tracks:
+            if not t.dbid:
+                t.dbid = generate_dbid()
 
-        # ===== Stage 3: Update metadata =====
-        self._execute_metadata_updates(plan, mapping, tracks_by_dbid, result, progress_callback, dry_run, _check_cancelled)
-        if not result.success:
-            return result
+        # ── Auto-detect gapless_album_flag ────────────────────────
+        albums: dict[tuple[str, str], list[TrackInfo]] = defaultdict(list)
+        for t in all_tracks:
+            key = (t.album or "", t.album_artist or t.artist or "")
+            albums[key].append(t)
+        for album_tracks in albums.values():
+            if len(album_tracks) >= 2 and all(
+                t.gapless_track_flag for t in album_tracks
+            ):
+                for t in album_tracks:
+                    t.gapless_album_flag = 1
 
-        # ===== Stage 3b: Update artwork mapping entries =====
-        self._execute_artwork_updates(plan, mapping, dry_run)
+        logger.debug("ART: pc_file_paths total=%d, all_tracks=%d",
+                     len(ctx.pc_file_paths), len(all_tracks))
 
-        # ===== Stage 4: Add new tracks =====
-        self._execute_adds(plan, mapping, new_tracks, new_track_fingerprints, new_track_info, pc_file_paths, result, progress_callback, dry_run, _check_cancelled, aac_bitrate)
-        if not result.success:
-            return result
+        # ── Merge user-created playlists ──────────────────────────
+        self._merge_gui_playlists(ctx)
 
-        # ===== Stage 4b: Compute Sound Check for new/updated tracks =====
-        self._execute_sound_check(new_tracks, new_track_info, tracks_by_dbid, pc_file_paths, result, progress_callback, dry_run, _check_cancelled, write_back_to_pc)
-        if not result.success:
-            return result
+        # ── Build playlists and evaluate smart playlists ──────────
+        master_playlist_name, playlists, smart_playlists = (
+            self._build_and_evaluate_playlists(ctx, all_tracks)
+        )
 
-        # ===== Stage 5: Sync play counts (iPod already updated via merge) =====
-        self._execute_playcount_sync(plan, result, progress_callback, dry_run, _check_cancelled)
-        if not result.success:
-            return result
-
-        # ===== Stage 6: Sync ratings =====
-        self._execute_rating_sync(plan, tracks_by_dbid, result, progress_callback, dry_run, _check_cancelled, write_back_to_pc)
-        if not result.success:
-            return result
-
-        # ===== Stage 7: Write database (one shot) =====
-        if not dry_run:
-            if progress_callback:
-                progress_callback(SyncProgress("write_database", 0, 1, message="Writing database..."))
-
-            all_tracks = list(tracks_by_dbid.values()) + new_tracks
-
-            # ── Pre-assign dbids for new tracks ──────────────────────
-            # New tracks arrive with dbid=0.  The writer (write_mhit)
-            # would assign random dbids during write_mhlt, but playlists
-            # (especially the auto-created Podcasts playlist) reference
-            # tracks by dbid.  If we wait until write time, the playlist
-            # builder sees dbid=0 and can't match tracks.  Assign now so
-            # _build_and_evaluate_playlists can build correct track lists.
-            from iTunesDB_Writer.mhit_writer import generate_dbid
-            for t in all_tracks:
-                if not t.dbid:
-                    t.dbid = generate_dbid()
-
-            # ── Auto-detect gapless_album_flag ────────────────────────
-            # If ALL tracks in an album have gapless_track_flag set, mark
-            # them all with gapless_album_flag=1 (tells iPod to apply
-            # gapless playback across album transitions).
-            from collections import defaultdict
-            albums: dict[tuple[str, str], list[TrackInfo]] = defaultdict(list)
-            for t in all_tracks:
-                key = (t.album or "", t.album_artist or t.artist or "")
-                albums[key].append(t)
-            for album_tracks in albums.values():
-                if len(album_tracks) >= 2 and all(
-                    t.gapless_track_flag for t in album_tracks
-                ):
-                    for t in album_tracks:
-                        t.gapless_album_flag = 1
-
-            # pc_file_paths has mixed keys: dbid (int) for existing tracks,
-            # id(track_info) for new tracks.  mhbd_writer.py handles the
-            # obj-id → dbid remapping after assigning real dbids.
-
-            logger.debug(f"ART: pc_file_paths total={len(pc_file_paths)}, all_tracks={len(all_tracks)}")
-
-            # ── Merge user-created playlists from GUI cache ────────────
-            playlist_merge_count = 0
-            try:
-                from GUI.app import iTunesDBCache
-                cache = iTunesDBCache.get_instance()
-                user_pls = cache.get_user_playlists()
-                if user_pls and progress_callback:
-                    progress_callback(SyncProgress("playlists", 0, len(user_pls), message="Merging playlists..."))
-                for idx, upl in enumerate(user_pls):
-                    # Never merge the master playlist from GUI cache — it
-                    # is always auto-generated by the writer.
-                    if upl.get("master_flag"):
-                        logger.debug("Skipping master playlist from GUI cache (id=0x%X)",
-                                     upl.get("playlist_id", 0))
-                        continue
-                    is_new = upl.get("_isNew", False)
-                    pid = upl.get("playlist_id", 0)
-                    if is_new:
-                        # Brand-new playlist — add to the regular list
-                        # (smart playlists in dataset 2 are fully supported)
-                        existing_playlists_raw.append(upl)
-                    else:
-                        # Edited existing playlist — replace in-place
-                        replaced = False
-                        for i, epl in enumerate(existing_playlists_raw):
-                            if epl.get("playlist_id") == pid:
-                                existing_playlists_raw[i] = upl
-                                replaced = True
-                                break
-                        if not replaced:
-                            for i, epl in enumerate(existing_smart_raw):
-                                if epl.get("playlist_id") == pid:
-                                    existing_smart_raw[i] = upl
-                                    replaced = True
-                                    break
-                        if not replaced:
-                            existing_playlists_raw.append(upl)
-                    playlist_merge_count += 1
-                    logger.info("Merged user playlist '%s' (id=0x%X, new=%s)",
-                                upl.get("Title", "?"), pid, is_new)
-                    if progress_callback:
-                        progress_callback(SyncProgress("playlists", idx + 1, len(user_pls),
-                                                       message=f"Merged playlist: {upl.get('Title', '?')}"))
-            except Exception as e:
-                logger.debug("No GUI cache available (headless sync?): %s", e)
-
-            # ── Build playlists and evaluate smart playlists ──────────
-            master_playlist_name, playlists, smart_playlists = self._build_and_evaluate_playlists(
-                existing_tracks_data, all_tracks,
-                existing_playlists_raw, existing_smart_raw,
+        try:
+            db_ok = self._write_database(
+                all_tracks, pc_file_paths=ctx.pc_file_paths,
+                playlists=playlists, smart_playlists=smart_playlists,
+                master_playlist_name=master_playlist_name,
             )
+            if not db_ok:
+                logger.error("Database write returned failure — skipping mapping save")
+                ctx.progress("write_database", 1, 1, message="Database write FAILED")
+                ctx.result.success = False
+                ctx.result.errors.append(("database", "Database write failed"))
+                return
+            ctx.progress("write_database", 1, 1,
+                         message=f"Database written with {len(all_tracks)} tracks")
 
-            # Always write — even if all_tracks is empty (e.g. all tracks
-            # were removed).  Skipping the write would leave the old DB
-            # intact and ghost tracks would reappear on next sync.
-            try:
-                db_ok = self._write_database(
-                    all_tracks, pc_file_paths=pc_file_paths,
-                    playlists=playlists, smart_playlists=smart_playlists,
-                    master_playlist_name=master_playlist_name,
+            # ── Backpatch: new tracks now have real dbids ──
+            self._backpatch_new_tracks(ctx)
+
+            # Save mapping ONLY after successful DB write + backpatch.
+            self.mapping_manager.save(ctx.mapping)
+
+            self._clear_gui_cache(ctx)
+
+            self._apply_itunes_protections(ctx, all_tracks)
+            self._delete_playcounts_file()
+
+            # Scrobble AFTER DB write + Play Counts deletion
+            if ctx.plan.to_sync_playcount:
+                self._execute_scrobble(ctx)
+
+        except Exception as e:
+            ctx.result.errors.append(("database write", str(e)))
+            logger.error("Database write failed — mapping NOT saved to preserve consistency")
+
+    def _merge_gui_playlists(self, ctx: _SyncContext) -> None:
+        """Merge user-created playlists into ctx."""
+        user_pls = ctx.user_playlists
+        if not user_pls:
+            return
+        ctx.progress("playlists", 0, len(user_pls), message="Merging playlists...")
+        for idx, upl in enumerate(user_pls):
+            if upl.get("master_flag"):
+                logger.debug("Skipping master playlist from user playlists (id=0x%X)",
+                             upl.get("playlist_id", 0))
+                continue
+            is_new = upl.get("_isNew", False)
+            pid = upl.get("playlist_id", 0)
+            if is_new:
+                ctx.existing_playlists_raw.append(upl)
+            else:
+                replaced = False
+                for i, epl in enumerate(ctx.existing_playlists_raw):
+                    if epl.get("playlist_id") == pid:
+                        ctx.existing_playlists_raw[i] = upl
+                        replaced = True
+                        break
+                if not replaced:
+                    for i, epl in enumerate(ctx.existing_smart_raw):
+                        if epl.get("playlist_id") == pid:
+                            ctx.existing_smart_raw[i] = upl
+                            replaced = True
+                            break
+                if not replaced:
+                    ctx.existing_playlists_raw.append(upl)
+            logger.info("Merged user playlist '%s' (id=0x%X, new=%s)",
+                        upl.get("Title", "?"), pid, is_new)
+            ctx.progress("playlists", idx + 1, len(user_pls),
+                         message=f"Merged playlist: {upl.get('Title', '?')}")
+
+    def _backpatch_new_tracks(self, ctx: _SyncContext) -> None:
+        """Create mapping entries for newly added tracks (dbids now assigned)."""
+        for track in ctx.new_tracks:
+            obj_key = id(track)
+            fp = ctx.new_track_fingerprints.get(obj_key)
+            info = ctx.new_track_info.get(obj_key)
+            if fp and info and track.dbid != 0:
+                pc_track, ipod_dest, was_transcoded = info
+                ctx.mapping.add_track(
+                    fingerprint=fp,
+                    dbid=track.dbid,
+                    source_format=Path(pc_track.path).suffix.lstrip("."),
+                    ipod_format=ipod_dest.suffix.lstrip("."),
+                    source_size=pc_track.size,
+                    source_mtime=pc_track.mtime,
+                    was_transcoded=was_transcoded,
+                    source_path_hint=pc_track.relative_path,
+                    art_hash=getattr(pc_track, "art_hash", None),
                 )
-                if not db_ok:
-                    logger.error("Database write returned failure — skipping mapping save")
-                    if progress_callback:
-                        progress_callback(SyncProgress("write_database", 1, 1, message="Database write FAILED"))
-                    result.success = False
-                    result.errors.append(("database", "Database write failed"))
-                    return result
-                if progress_callback:
-                    progress_callback(SyncProgress("write_database", 1, 1, message=f"Database written with {len(all_tracks)} tracks"))
 
-                # ── Backpatch: new tracks now have real dbids assigned by writer ──
-                for track in new_tracks:
-                    obj_key = id(track)
-                    fp = new_track_fingerprints.get(obj_key)
-                    info = new_track_info.get(obj_key)
-                    if fp and info and track.dbid != 0:
-                        pc_track, ipod_dest, was_transcoded = info
-                        mapping.add_track(
-                            fingerprint=fp,
-                            dbid=track.dbid,
-                            source_format=Path(pc_track.path).suffix.lstrip("."),
-                            ipod_format=ipod_dest.suffix.lstrip("."),
-                            source_size=pc_track.size,
-                            source_mtime=pc_track.mtime,
-                            was_transcoded=was_transcoded,
-                            source_path_hint=pc_track.relative_path,
-                            art_hash=getattr(pc_track, "art_hash", None),
-                        )
-
-                # Save mapping ONLY after successful DB write + backpatch.
-                # If write fails, we must NOT save the mutated mapping
-                # (stages 1-6 already modified it), or the next sync will
-                # see mismatched state and create duplicates.
-                self.mapping_manager.save(mapping)
-
-                # Clear user playlists from cache — they've been written
-                try:
-                    from GUI.app import iTunesDBCache
-                    gui_cache = iTunesDBCache.get_instance()
-                    if gui_cache.has_pending_playlists():
-                        gui_cache._user_playlists.clear()
-                        logger.info("Cleared pending user playlists after successful write")
-                    if gui_cache.has_pending_track_edits():
-                        gui_cache.clear_track_edits()
-                        logger.info("Cleared pending track flag edits after successful write")
-                except Exception:
-                    pass
-
-                # ── Apply iTunes protections ────────────────────────────
-                # Compute totals from the final track list for the plist
-                # Break down by media type category for accurate reporting
-                music_bytes = music_secs = music_count = 0
-                video_bytes = video_secs = video_count = 0
-                podcast_bytes = podcast_secs = podcast_count = 0
-                audiobook_bytes = audiobook_secs = audiobook_count = 0
-                tv_bytes = tv_secs = tv_count = 0
-                mv_bytes = mv_secs = mv_count = 0
-                for t in all_tracks:
-                    mt = t.media_type
-                    if mt & 0x04:  # Podcast (including video podcast)
-                        podcast_bytes += t.size
-                        podcast_secs += t.length // 1000
-                        podcast_count += 1
-                    elif mt & 0x08:  # Audiobook
-                        audiobook_bytes += t.size
-                        audiobook_secs += t.length // 1000
-                        audiobook_count += 1
-                    elif mt & 0x40:  # TV Show
-                        tv_bytes += t.size
-                        tv_secs += t.length // 1000
-                        tv_count += 1
-                    elif mt & 0x20:  # Music Video
-                        mv_bytes += t.size
-                        mv_secs += t.length // 1000
-                        mv_count += 1
-                    elif mt & 0x02:  # Movie/Video (generic)
-                        video_bytes += t.size
-                        video_secs += t.length // 1000
-                        video_count += 1
-                    else:  # Music/Audio
-                        music_bytes += t.size
-                        music_secs += t.length // 1000
-                        music_count += 1
-                try:
-                    protect_from_itunes(
-                        self.ipod_path,
-                        track_count=music_count,
-                        total_music_bytes=music_bytes,
-                        total_music_seconds=music_secs,
-                        video_tracks=video_count,
-                        video_bytes=video_bytes,
-                        video_seconds=video_secs,
-                        podcast_tracks=podcast_count,
-                        podcast_bytes=podcast_bytes,
-                        podcast_seconds=podcast_secs,
-                        audiobook_tracks=audiobook_count,
-                        audiobook_bytes=audiobook_bytes,
-                        audiobook_seconds=audiobook_secs,
-                        tv_show_tracks=tv_count,
-                        tv_show_bytes=tv_bytes,
-                        tv_show_seconds=tv_secs,
-                        music_video_tracks=mv_count,
-                        music_video_bytes=mv_bytes,
-                        music_video_seconds=mv_secs,
-                    )
-                except Exception as e:
-                    # Non-fatal — database is already written + mapping saved
-                    logger.warning("iTunesPrefs protection failed (non-fatal): %s", e)
-
-                # ── Delete Play Counts file ─────────────────────────────
-                # The iPod firmware creates this file to record play/skip/
-                # rating deltas since the last sync.  Now that we've merged
-                # the deltas into the new iTunesDB, it must be deleted so
-                # the iPod creates a fresh one.  (Matches libgpod's
-                # playcounts_reset() behaviour.)
-                self._delete_playcounts_file()
-
-                # ── Scrobble new plays ──────────────────────────────────
-                # Must run AFTER DB write + Play Counts deletion so that:
-                #  - We only scrobble once the sync is committed
-                #  - If DB write failed, Play Counts file is preserved
-                #    and the next sync won't produce duplicate scrobbles
-                if plan.to_sync_playcount:
-                    self._execute_scrobble(plan, result, progress_callback)
-
-            except Exception as e:
-                result.errors.append(("database write", str(e)))
-                logger.error("Database write failed — mapping NOT saved to preserve consistency")
-
-        result.success = not result.has_errors
-        return result
+    @staticmethod
+    def _clear_gui_cache(ctx: _SyncContext) -> None:
+        """Notify caller that sync completed (so it can clear pending state)."""
+        if ctx.on_sync_complete:
+            try:
+                ctx.on_sync_complete()
+                logger.info("Sync-complete callback invoked")
+            except Exception:
+                pass
 
     # ── Stage Implementations ───────────────────────────────────────────────
 
-    def _execute_removes(self, plan, mapping, tracks_by_dbid, tracks_by_location, result, progress_callback, dry_run, check_cancelled=None):
-        if not plan.to_remove:
+    def _execute_removes(self, ctx: _SyncContext) -> None:
+        if not ctx.plan.to_remove:
             return
 
-        if progress_callback:
-            progress_callback(SyncProgress("remove", 0, len(plan.to_remove), message="Removing tracks..."))
+        ctx.progress("remove", 0, len(ctx.plan.to_remove), message="Removing tracks...")
 
-        for i, item in enumerate(plan.to_remove):
-            if check_cancelled and check_cancelled():
+        for i, item in enumerate(ctx.plan.to_remove):
+            if ctx.cancelled():
                 return
 
-            if progress_callback:
-                progress_callback(SyncProgress("remove", i + 1, len(plan.to_remove), item, item.description))
+            ctx.progress("remove", i + 1, len(ctx.plan.to_remove), item, item.description)
 
-            if dry_run:
-                result.tracks_removed += 1
+            if ctx.dry_run:
+                ctx.result.tracks_removed += 1
                 continue
 
-            # Delete file from iPod
             if item.ipod_track:
                 file_path = item.ipod_track.get("Location") or item.ipod_track.get("location")
                 if file_path:
@@ -567,45 +523,183 @@ class SyncExecutor:
                     full_path = self.ipod_path / relative_path
                     self._delete_from_ipod(full_path)
 
-                    if file_path in tracks_by_location:
-                        track_to_remove = tracks_by_location.pop(file_path)
-                        if track_to_remove.dbid in tracks_by_dbid:
-                            del tracks_by_dbid[track_to_remove.dbid]
+                    if file_path in ctx.tracks_by_location:
+                        track_to_remove = ctx.tracks_by_location.pop(file_path)
+                        if track_to_remove.dbid in ctx.tracks_by_dbid:
+                            del ctx.tracks_by_dbid[track_to_remove.dbid]
 
-            # Remove from mapping
             if item.fingerprint:
-                mapping.remove_track(item.fingerprint, dbid=item.dbid)
+                ctx.mapping.remove_track(item.fingerprint, dbid=item.dbid)
             elif item.dbid:
-                mapping.remove_by_dbid(item.dbid)
+                ctx.mapping.remove_by_dbid(item.dbid)
 
-            # Always ensure track is removed from tracks_by_dbid
-            if item.dbid and item.dbid in tracks_by_dbid:
-                del tracks_by_dbid[item.dbid]
+            if item.dbid and item.dbid in ctx.tracks_by_dbid:
+                del ctx.tracks_by_dbid[item.dbid]
 
-            result.tracks_removed += 1
+            ctx.result.tracks_removed += 1
 
-        # Clean stale mapping entries (dbid not in iTunesDB, nothing to remove from iPod)
-        for fp, dbid in getattr(plan, '_stale_mapping_entries', []):
-            mapping.remove_track(fp, dbid=dbid)
+        for fp, dbid in getattr(ctx.plan, '_stale_mapping_entries', []):
+            ctx.mapping.remove_track(fp, dbid=dbid)
 
-    def _execute_file_updates(self, plan, mapping, tracks_by_dbid, tracks_by_location, pc_file_paths, result, progress_callback, dry_run, check_cancelled=None, aac_bitrate=256):
-        if not plan.to_update_file:
+    def _parallel_copy_stage(
+        self,
+        ctx: _SyncContext,
+        stage_name: str,
+        items: list,
+        on_success: Callable,
+        error_prefix: str = "Failed",
+    ) -> None:
+        """Shared ThreadPoolExecutor loop for transcode/copy stages.
+
+        *on_success(item, ipod_path, was_transcoded)* is called for each
+        successfully copied track.
+        """
+        items_to_process = [(i, item) for i, item in enumerate(items) if item.pc_track is not None]
+        if not items_to_process:
             return
 
-        if progress_callback:
-            progress_callback(SyncProgress("update_file", 0, len(plan.to_update_file), message="Re-syncing changed files..."))
+        completed_count = 0
+        completed_lock = threading.Lock()
+        worker_fractions: dict[int, float] = {}
+        worker_sizes: dict[int, int] = {}
+        worker_status: dict[int, str] = {}
+        total = len(items)
 
-        if dry_run:
-            for i, item in enumerate(plan.to_update_file):
-                if check_cancelled and check_cancelled():
+        total_sync_bytes = sum(
+            item.pc_track.size for _, item in items_to_process if item.pc_track
+        ) or 1
+        completed_bytes = 0
+
+        def _build_progress() -> SyncProgress:
+            in_flight = sum(
+                worker_fractions.get(wid, 0.0) * worker_sizes.get(wid, 0)
+                for wid in worker_fractions
+            )
+            size_frac = min((completed_bytes + in_flight) / total_sync_bytes, 1.0)
+            lines = list(worker_status.values())
+            return SyncProgress(
+                stage_name, min(completed_count, total), total,
+                worker_lines=lines if lines else None,
+                size_progress=size_frac,
+            )
+
+        def _do_copy(item: SyncItem, worker_id: int) -> tuple[SyncItem, bool, Optional[Path], bool, str]:
+            if item.pc_track is None:
+                logger.error("_do_copy called with None pc_track for %s", item.description)
+                return (item, False, None, False, "No source track")
+            source_path = Path(item.pc_track.path)
+            need_transcode = needs_transcoding(source_path)
+
+            with completed_lock:
+                worker_sizes[worker_id] = item.pc_track.size
+                verb = "Transcoding" if need_transcode else "Copying"
+                worker_status[worker_id] = f"{verb} {source_path.name} \u2014 0%"
+                if ctx.progress_callback:
+                    ctx.progress_callback(_build_progress())
+
+            transcode_cb: Optional[Callable[[float], None]] = None
+            copy_cb: Optional[Callable[[float], None]] = None
+            if ctx.progress_callback:
+                filename = source_path.name
+
+                def _make_io_cb(_fn: str, _wid: int, _verb: str) -> Callable[[float], None]:
+                    def _cb(frac: float) -> None:
+                        pct = int(frac * 100)
+                        with completed_lock:
+                            worker_fractions[_wid] = frac
+                            worker_status[_wid] = f"{_verb} {_fn} \u2014 {pct}%"
+                            prog = _build_progress()
+                        ctx.progress_callback(prog)  # type: ignore[misc]
+                    return _cb
+
+                if need_transcode:
+                    transcode_cb = _make_io_cb(filename, worker_id, "Transcoding")
+                copy_cb = _make_io_cb(filename, worker_id, "Copying")
+
+            success, ipod_path, was_transcoded, err_msg = self._copy_to_ipod(
+                source_path, need_transcode, fingerprint=item.fingerprint,
+                aac_quality=ctx.aac_quality,
+                transcode_progress=transcode_cb,
+                copy_progress=copy_cb,
+            )
+            return (item, success, ipod_path, was_transcoded, err_msg)
+
+        workers = self._max_workers
+        logger.info("Stage '%s': processing %d items with %d workers", stage_name, len(items_to_process), workers)
+
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            future_to_idx: dict[Future, int] = {}
+            for idx, item in items_to_process:
+                if ctx.cancelled():
                     return
-                if progress_callback:
-                    progress_callback(SyncProgress("update_file", i + 1, len(plan.to_update_file), item, item.description))
-                result.tracks_updated_file += 1
+                fut = pool.submit(_do_copy, item, idx)
+                future_to_idx[fut] = idx
+
+            for future in as_completed(future_to_idx):
+                if ctx.cancelled():
+                    for f in future_to_idx:
+                        f.cancel()
+                    return
+
+                idx = future_to_idx[future]
+                try:
+                    item, success, ipod_path, was_transcoded, err_msg = future.result()
+                except _OutOfSpaceError as e:
+                    logger.error(str(e))
+                    ctx.result.errors.append(("storage", str(e)))
+                    ctx.result.success = False
+                    for f in future_to_idx:
+                        f.cancel()
+                    return
+                except Exception as e:
+                    item = items[idx]
+                    ctx.result.errors.append((item.description, f"Worker error: {e}"))
+                    logger.error("Worker exception for %s: %s", item.description, e)
+                    with completed_lock:
+                        completed_count += 1
+                        completed_bytes += worker_sizes.pop(idx, 0)
+                        worker_fractions.pop(idx, None)
+                        worker_status.pop(idx, None)
+                        prog = _build_progress()
+                    if ctx.progress_callback:
+                        ctx.progress_callback(prog)
+                    continue
+
+                with completed_lock:
+                    completed_count += 1
+                    completed_bytes += worker_sizes.pop(idx, 0)
+                    worker_fractions.pop(idx, None)
+                    worker_status.pop(idx, None)
+                    prog = _build_progress()
+
+                if ctx.progress_callback:
+                    ctx.progress_callback(prog)
+
+                if not success or ipod_path is None:
+                    detail = f"{error_prefix}: {err_msg}" if err_msg else error_prefix
+                    ctx.result.errors.append((item.description, detail))
+                    continue
+
+                on_success(item, ipod_path, was_transcoded)
+
+    def _execute_file_updates(self, ctx: _SyncContext) -> None:
+        if not ctx.plan.to_update_file:
+            return
+
+        ctx.progress("update_file", 0, len(ctx.plan.to_update_file),
+                     message="Re-syncing changed files...")
+
+        if ctx.dry_run:
+            for i, item in enumerate(ctx.plan.to_update_file):
+                if ctx.cancelled():
+                    return
+                ctx.progress("update_file", i + 1, len(ctx.plan.to_update_file),
+                             item, item.description)
+                ctx.result.tracks_updated_file += 1
             return
 
         # Pre-process: delete old files and invalidate cache (sequential, fast)
-        for item in plan.to_update_file:
+        for item in ctx.plan.to_update_file:
             if item.pc_track is None:
                 continue
             if item.ipod_track:
@@ -617,312 +711,165 @@ class SyncExecutor:
             if item.fingerprint:
                 self.transcode_cache.invalidate(item.fingerprint)
 
-        # ── Parallel transcode/copy ─────────────────────────────────────
-        items_to_process = [(i, item) for i, item in enumerate(plan.to_update_file) if item.pc_track is not None]
-        if not items_to_process:
-            return
-
-        completed_count = 0
-        completed_lock = threading.Lock()
-        worker_fractions: dict[int, float] = {}  # worker_id -> 0.0-1.0 fraction
-        worker_sizes: dict[int, int] = {}  # worker_id -> file size in bytes
-        worker_status: dict[int, str] = {}  # worker_id -> display text
-        total = len(plan.to_update_file)
-
-        # Pre-compute total sync bytes for size-weighted progress
-        total_sync_bytes = sum(
-            item.pc_track.size for _, item in items_to_process if item.pc_track
-        ) or 1
-        completed_bytes = 0
-
-        def _build_progress(stage_name: str) -> SyncProgress:
-            """Build a SyncProgress snapshot under completed_lock."""
-            in_flight = sum(
-                worker_fractions.get(wid, 0.0) * worker_sizes.get(wid, 0)
-                for wid in worker_fractions
-            )
-            size_frac = min((completed_bytes + in_flight) / total_sync_bytes, 1.0)
-            lines = list(worker_status.values())
-            return SyncProgress(
-                stage_name, min(completed_count, total), total,
-                worker_lines=lines if lines else None,
-                size_progress=size_frac,
-            )
-
-        def _do_copy(item: SyncItem, worker_id: int) -> tuple[SyncItem, bool, Optional[Path], bool, str]:
-            """Transcode/copy a single track. Runs in worker thread."""
-            # Defensive check - should never fail as we pre-filtered items
-            if item.pc_track is None:
-                logger.error(f"_do_copy called with None pc_track for {item.description}")
-                return (item, False, None, False, "No source track")
+        def _on_success(item: SyncItem, ipod_path: Path, was_transcoded: bool) -> None:
+            assert item.pc_track is not None  # guaranteed by _parallel_copy_stage filter
+            ipod_location = ":" + str(ipod_path.relative_to(self.ipod_path)).replace("\\", ":").replace("/", ":")
             source_path = Path(item.pc_track.path)
-            need_transcode = needs_transcoding(source_path)
 
-            # Register this worker's file size and emit initial status
-            with completed_lock:
-                worker_sizes[worker_id] = item.pc_track.size
-                verb = "Transcoding" if need_transcode else "Copying"
-                worker_status[worker_id] = f"{verb} {source_path.name} \u2014 0%"
-                if progress_callback:
-                    progress_callback(_build_progress("update_file"))
+            # Update existing TrackInfo
+            dbid = item.dbid
+            if dbid and dbid in ctx.tracks_by_dbid:
+                existing_track = ctx.tracks_by_dbid[dbid]
+                if existing_track.location in ctx.tracks_by_location:
+                    del ctx.tracks_by_location[existing_track.location]
+                existing_track.location = ipod_location
+                existing_track.size = ipod_path.stat().st_size if ipod_path.exists() else item.pc_track.size
 
-            # Build per-phase progress callbacks
-            transcode_cb: Optional[Callable[[float], None]] = None
-            copy_cb: Optional[Callable[[float], None]] = None
-            if progress_callback:
-                filename = source_path.name
+                ext = ipod_path.suffix.lower().lstrip(".")
+                if ext in ("m4a", "mp4"):
+                    existing_track.filetype = "m4a"
+                elif ext == "mp3":
+                    existing_track.filetype = "mp3"
+                elif ext == "wav":
+                    existing_track.filetype = "wav"
+                else:
+                    existing_track.filetype = ext
 
-                def _make_io_cb(_fn: str, _wid: int, _verb: str) -> Callable[[float], None]:
-                    def _cb(frac: float) -> None:
-                        pct = int(frac * 100)
-                        with completed_lock:
-                            worker_fractions[_wid] = frac
-                            worker_status[_wid] = f"{_verb} {_fn} \u2014 {pct}%"
-                            prog = _build_progress("update_file")
-                        progress_callback(prog)
-                    return _cb
+                if was_transcoded:
+                    if ext in ("m4a", "aac") and ext != "alac":
+                        from .transcoder import quality_to_nominal_bitrate
+                        existing_track.bitrate = quality_to_nominal_bitrate(ctx.aac_quality)
 
-                if need_transcode:
-                    transcode_cb = _make_io_cb(filename, worker_id, "Transcoding")
-                copy_cb = _make_io_cb(filename, worker_id, "Copying")
+                if item.pc_track.duration_ms:
+                    existing_track.length = item.pc_track.duration_ms
+                if item.pc_track.sample_rate:
+                    existing_track.sample_rate = item.pc_track.sample_rate
 
-            success, ipod_path, was_transcoded, err_msg = self._copy_to_ipod(
-                source_path, need_transcode, fingerprint=item.fingerprint,
-                aac_bitrate=aac_bitrate,
-                transcode_progress=transcode_cb,
-                copy_progress=copy_cb,
-            )
-            return (item, success, ipod_path, was_transcoded, err_msg)
+                ctx.tracks_by_location[ipod_location] = existing_track
 
-        workers = self._max_workers
-        logger.info(f"Re-syncing {len(items_to_process)} files with {workers} workers")
+            if dbid:
+                ctx.pc_file_paths[dbid] = str(source_path)
 
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            future_to_idx: dict[Future, int] = {}
-            for idx, item in items_to_process:
-                if check_cancelled and check_cancelled():
-                    return
-                fut = pool.submit(_do_copy, item, idx)
-                future_to_idx[fut] = idx
+            if item.fingerprint and ipod_path:
+                ctx.mapping.add_track(
+                    fingerprint=item.fingerprint,
+                    dbid=dbid or 0,
+                    source_format=source_path.suffix.lstrip("."),
+                    ipod_format=ipod_path.suffix.lstrip("."),
+                    source_size=item.pc_track.size,
+                    source_mtime=item.pc_track.mtime,
+                    was_transcoded=was_transcoded,
+                    source_path_hint=item.pc_track.relative_path,
+                    art_hash=getattr(item.pc_track, "art_hash", None),
+                )
 
-            for future in as_completed(future_to_idx):
-                if check_cancelled and check_cancelled():
-                    for f in future_to_idx:
-                        f.cancel()
-                    return
+            ctx.result.tracks_updated_file += 1
 
-                idx = future_to_idx[future]
-                try:
-                    item, success, ipod_path, was_transcoded, err_msg = future.result()
-                except _OutOfSpaceError as e:
-                    logger.error(str(e))
-                    result.errors.append(("storage", str(e)))
-                    result.success = False
-                    for f in future_to_idx:
-                        f.cancel()
-                    return
-                except Exception as e:
-                    item = plan.to_update_file[idx]
-                    result.errors.append((item.description, f"Worker error: {e}"))
-                    logger.error(f"Worker exception for {item.description}: {e}")
-                    with completed_lock:
-                        completed_count += 1
-                        completed_bytes += worker_sizes.pop(idx, 0)
-                        worker_fractions.pop(idx, None)
-                        worker_status.pop(idx, None)
-                        prog = _build_progress("update_file")
-                    if progress_callback:
-                        progress_callback(prog)
-                    continue
+        self._parallel_copy_stage(
+            ctx,
+            stage_name="update_file",
+            items=ctx.plan.to_update_file,
+            on_success=_on_success,
+            error_prefix="Failed to re-sync",
+        )
 
-                with completed_lock:
-                    completed_count += 1
-                    completed_bytes += worker_sizes.pop(idx, 0)
-                    worker_fractions.pop(idx, None)
-                    worker_status.pop(idx, None)
-                    prog = _build_progress("update_file")
+    # Metadata field name → (TrackInfo attribute, coercion).
+    # Coercion: None = pass-through, "int" = int-or-0, "int1" = int-or-1,
+    #           "bool" = bool().
+    _META_FIELD_MAP: dict[str, tuple[str, Optional[str]]] = {
+        # Core string fields
+        "title": ("title", None),
+        "artist": ("artist", None),
+        "album": ("album", None),
+        "album_artist": ("album_artist", None),
+        "genre": ("genre", None),
+        "composer": ("composer", None),
+        "comment": ("comment", None),
+        "grouping": ("grouping", None),
+        "lyrics": ("lyrics", None),
+        # Integer-or-zero fields
+        "year": ("year", "int"),
+        "track_number": ("track_number", "int"),
+        "track_total": ("total_tracks", "int"),
+        "disc_number": ("disc_number", "int"),
+        "disc_total": ("total_discs", "int1"),
+        "bpm": ("bpm", "int"),
+        "explicit_flag": ("explicit_flag", "int"),
+        "season_number": ("season_number", "int"),
+        "episode_number": ("episode_number", "int"),
+        "sound_check": ("sound_check", "int"),
+        "gapless_track_flag": ("gapless_track_flag", "int"),
+        "gapless_album_flag": ("gapless_album_flag", "int"),
+        "checked_flag": ("checked", "int"),
+        "not_played_flag": ("played_mark", "int"),
+        "volume": ("volume", "int"),
+        "start_time": ("start_time", "int"),
+        "stop_time": ("stop_time", "int"),
+        # Boolean fields
+        "compilation": ("compilation", "bool"),
+        "skip_when_shuffling": ("skip_when_shuffling", "bool"),
+        "remember_position": ("remember_position", "bool"),
+        # Sort fields
+        "sort_name": ("sort_name", None),
+        "sort_artist": ("sort_artist", None),
+        "sort_album": ("sort_album", None),
+        "sort_album_artist": ("sort_album_artist", None),
+        "sort_composer": ("sort_composer", None),
+        "sort_show": ("sort_show", None),
+        # Video/TV show fields
+        "show_name": ("show_name", None),
+        "description": ("description", None),
+        "episode_id": ("episode_id", None),
+        "network_name": ("network_name", None),
+        "subtitle": ("subtitle", None),
+        "category": ("category", None),
+        # Podcast fields (field_name ≠ attr_name)
+        "podcast_url": ("podcast_rss_url", None),
+        "podcast_enclosure_url": ("podcast_enclosure_url", None),
+    }
 
-                if progress_callback:
-                    progress_callback(prog)
-
-                if not success or ipod_path is None:
-                    detail = f"Failed to re-sync: {err_msg}" if err_msg else "Failed to re-sync"
-                    result.errors.append((item.description, detail))
-                    continue
-
-                ipod_location = ":" + str(ipod_path.relative_to(self.ipod_path)).replace("\\", ":").replace("/", ":")
-                source_path = Path(item.pc_track.path)
-
-                # Update existing TrackInfo
-                dbid = item.dbid
-                if dbid and dbid in tracks_by_dbid:
-                    existing_track = tracks_by_dbid[dbid]
-                    if existing_track.location in tracks_by_location:
-                        del tracks_by_location[existing_track.location]
-                    existing_track.location = ipod_location
-                    existing_track.size = ipod_path.stat().st_size if ipod_path.exists() else item.pc_track.size
-
-                    ext = ipod_path.suffix.lower().lstrip(".")
-                    if ext in ("m4a", "mp4"):
-                        existing_track.filetype = "m4a"
-                    elif ext == "mp3":
-                        existing_track.filetype = "mp3"
-                    elif ext == "wav":
-                        existing_track.filetype = "wav"
-                    else:
-                        existing_track.filetype = ext
-
-                    if was_transcoded:
-                        if ext in ("m4a", "aac") and ext != "alac":
-                            existing_track.bitrate = aac_bitrate
-
-                    if item.pc_track.duration_ms:
-                        existing_track.length = item.pc_track.duration_ms
-                    if item.pc_track.sample_rate:
-                        existing_track.sample_rate = item.pc_track.sample_rate
-
-                    tracks_by_location[ipod_location] = existing_track
-
-                if dbid:
-                    pc_file_paths[dbid] = str(source_path)
-
-                if item.fingerprint and ipod_path:
-                    mapping.add_track(
-                        fingerprint=item.fingerprint,
-                        dbid=dbid or 0,
-                        source_format=source_path.suffix.lstrip("."),
-                        ipod_format=ipod_path.suffix.lstrip("."),
-                        source_size=item.pc_track.size,
-                        source_mtime=item.pc_track.mtime,
-                        was_transcoded=was_transcoded,
-                        source_path_hint=item.pc_track.relative_path,
-                        art_hash=getattr(item.pc_track, "art_hash", None),
-                    )
-
-                result.tracks_updated_file += 1
-
-    def _execute_metadata_updates(self, plan, mapping, tracks_by_dbid, result, progress_callback, dry_run, check_cancelled=None):
-        if not plan.to_update_metadata:
+    def _execute_metadata_updates(self, ctx: _SyncContext) -> None:
+        if not ctx.plan.to_update_metadata:
             return
 
-        if progress_callback:
-            progress_callback(SyncProgress("update_metadata", 0, len(plan.to_update_metadata), message="Updating metadata..."))
+        ctx.progress("update_metadata", 0, len(ctx.plan.to_update_metadata),
+                     message="Updating metadata...")
 
-        for i, item in enumerate(plan.to_update_metadata):
-            if check_cancelled and check_cancelled():
+        for i, item in enumerate(ctx.plan.to_update_metadata):
+            if ctx.cancelled():
                 return
 
-            if progress_callback:
-                progress_callback(SyncProgress("update_metadata", i + 1, len(plan.to_update_metadata), item, item.description))
+            ctx.progress("update_metadata", i + 1, len(ctx.plan.to_update_metadata),
+                         item, item.description)
 
-            if dry_run:
-                result.tracks_updated_metadata += 1
+            if ctx.dry_run:
+                ctx.result.tracks_updated_metadata += 1
                 continue
 
             dbid = item.dbid
-            if dbid and dbid in tracks_by_dbid:
-                track = tracks_by_dbid[dbid]
+            if dbid and dbid in ctx.tracks_by_dbid:
+                track = ctx.tracks_by_dbid[dbid]
                 for field_name, (pc_value, _ipod_value) in item.metadata_changes.items():
-                    if field_name == "title":
-                        track.title = pc_value
-                    elif field_name == "artist":
-                        track.artist = pc_value
-                    elif field_name == "album":
-                        track.album = pc_value
-                    elif field_name == "album_artist":
-                        track.album_artist = pc_value
-                    elif field_name == "genre":
-                        track.genre = pc_value
-                    elif field_name == "year":
-                        track.year = pc_value if pc_value else 0
-                    elif field_name == "track_number":
-                        track.track_number = pc_value if pc_value else 0
-                    elif field_name == "track_total":
-                        track.total_tracks = pc_value if pc_value else 0
-                    elif field_name == "disc_number":
-                        track.disc_number = pc_value if pc_value else 0
-                    elif field_name == "disc_total":
-                        track.total_discs = pc_value if pc_value else 1
-                    elif field_name == "composer":
-                        track.composer = pc_value
-                    elif field_name == "comment":
-                        track.comment = pc_value
-                    elif field_name == "grouping":
-                        track.grouping = pc_value
-                    elif field_name == "bpm":
-                        track.bpm = pc_value if pc_value else 0
-                    elif field_name == "compilation":
-                        track.compilation = bool(pc_value)
-                    elif field_name == "explicit_flag":
-                        track.explicit_flag = pc_value if pc_value else 0
-                    # Sort fields
-                    elif field_name == "sort_name":
-                        track.sort_name = pc_value
-                    elif field_name == "sort_artist":
-                        track.sort_artist = pc_value
-                    elif field_name == "sort_album":
-                        track.sort_album = pc_value
-                    elif field_name == "sort_album_artist":
-                        track.sort_album_artist = pc_value
-                    elif field_name == "sort_composer":
-                        track.sort_composer = pc_value
-                    elif field_name == "sort_show":
-                        track.sort_show = pc_value
-                    # Video/TV show fields
-                    elif field_name == "show_name":
-                        track.show_name = pc_value
-                    elif field_name == "season_number":
-                        track.season_number = pc_value if pc_value else 0
-                    elif field_name == "episode_number":
-                        track.episode_number = pc_value if pc_value else 0
-                    elif field_name == "description":
-                        track.description = pc_value
-                    elif field_name == "episode_id":
-                        track.episode_id = pc_value
-                    elif field_name == "network_name":
-                        track.network_name = pc_value
-                    elif field_name == "sound_check":
-                        track.sound_check = pc_value if pc_value else 0
-                    elif field_name == "subtitle":
-                        track.subtitle = pc_value
-                    elif field_name == "category":
-                        track.category = pc_value
-                    elif field_name == "podcast_url":
-                        track.podcast_rss_url = pc_value
-                    elif field_name == "podcast_enclosure_url":
-                        track.podcast_enclosure_url = pc_value
-                    elif field_name == "lyrics":
-                        track.lyrics = pc_value
-                    elif field_name == "sort_show":
-                        track.sort_show = pc_value
-                    # ── iPod-only flags (from GUI edits) ──────────────
-                    elif field_name == "skip_when_shuffling":
-                        track.skip_when_shuffling = bool(pc_value)
-                    elif field_name == "remember_position":
-                        track.remember_position = bool(pc_value)
-                    elif field_name == "gapless_track_flag":
-                        track.gapless_track_flag = pc_value if pc_value else 0
-                    elif field_name == "gapless_album_flag":
-                        track.gapless_album_flag = pc_value if pc_value else 0
-                    elif field_name == "checked_flag":
-                        track.checked = pc_value if pc_value else 0
-                    elif field_name == "not_played_flag":
-                        track.played_mark = pc_value if pc_value else 0
-                    elif field_name == "volume":
-                        track.volume = pc_value if pc_value else 0
-                    elif field_name == "start_time":
-                        track.start_time = pc_value if pc_value else 0
-                    elif field_name == "stop_time":
-                        track.stop_time = pc_value if pc_value else 0
+                    mapping_entry = self._META_FIELD_MAP.get(field_name)
+                    if mapping_entry is not None:
+                        attr, coerce = mapping_entry
+                        if coerce == "int":
+                            setattr(track, attr, pc_value if pc_value else 0)
+                        elif coerce == "int1":
+                            setattr(track, attr, pc_value if pc_value else 1)
+                        elif coerce == "bool":
+                            setattr(track, attr, bool(pc_value))
+                        else:
+                            setattr(track, attr, pc_value)
 
             # Refresh mapping mtime/size so next sync doesn't see a spurious file change
-            if item.fingerprint and item.pc_track and not dry_run:
-                fp_result = mapping.get_by_dbid(dbid) if dbid else None
+            if item.fingerprint and item.pc_track and not ctx.dry_run:
+                fp_result = ctx.mapping.get_by_dbid(dbid) if dbid else None
                 if fp_result:
                     fp, existing = fp_result
-                    mapping.add_track(
+                    ctx.mapping.add_track(
                         fingerprint=fp,
-                        dbid=dbid,
+                        dbid=dbid or 0,
                         source_format=existing.source_format,
                         ipod_format=existing.ipod_format,
                         source_size=item.pc_track.size,
@@ -932,9 +879,9 @@ class SyncExecutor:
                         art_hash=existing.art_hash,
                     )
 
-            result.tracks_updated_metadata += 1
+            ctx.result.tracks_updated_metadata += 1
 
-    def _execute_artwork_updates(self, plan, mapping, dry_run):
+    def _execute_artwork_updates(self, ctx: _SyncContext) -> None:
         """Update mapping art_hash for tracks with changed artwork.
 
         The actual artwork re-encoding is handled by the full ArtworkDB rewrite
@@ -942,20 +889,18 @@ class SyncExecutor:
         only ensures the mapping stays in sync so we don't detect the same
         change again next sync.
         """
-        if not plan.to_update_artwork or dry_run:
+        if not ctx.plan.to_update_artwork or ctx.dry_run:
             return
 
-        for item in plan.to_update_artwork:
+        for item in ctx.plan.to_update_artwork:
             if not item.fingerprint:
                 continue
-            # Update mapping for both art changes AND art removals
-            # (new_art_hash=None means art was removed from PC file)
-            fp_result = mapping.get_by_dbid(item.dbid) if item.dbid else None
+            fp_result = ctx.mapping.get_by_dbid(item.dbid) if item.dbid else None
             if fp_result:
                 fp, existing = fp_result
-                mapping.add_track(
+                ctx.mapping.add_track(
                     fingerprint=fp,
-                    dbid=item.dbid,
+                    dbid=item.dbid or 0,
                     source_format=existing.source_format,
                     ipod_format=existing.ipod_format,
                     source_size=existing.source_size,
@@ -965,237 +910,71 @@ class SyncExecutor:
                     art_hash=item.new_art_hash,
                 )
 
-    def _execute_adds(self, plan, mapping, new_tracks, new_track_fingerprints, new_track_info, pc_file_paths, result, progress_callback, dry_run, check_cancelled=None, aac_bitrate=256):
-        if not plan.to_add:
+    def _execute_adds(self, ctx: _SyncContext) -> None:
+        if not ctx.plan.to_add:
             return
 
-        if progress_callback:
-            progress_callback(SyncProgress("add", 0, len(plan.to_add), message="Adding new tracks..."))
+        ctx.progress("add", 0, len(ctx.plan.to_add), message="Adding new tracks...")
 
-        if dry_run:
-            for i, item in enumerate(plan.to_add):
-                if check_cancelled and check_cancelled():
+        if ctx.dry_run:
+            for i, item in enumerate(ctx.plan.to_add):
+                if ctx.cancelled():
                     return
-                if progress_callback:
-                    progress_callback(SyncProgress("add", i + 1, len(plan.to_add), item, item.description))
+                ctx.progress("add", i + 1, len(ctx.plan.to_add), item, item.description)
                 if item.pc_track is not None:
-                    result.tracks_added += 1
+                    ctx.result.tracks_added += 1
             return
 
-        # ── Parallel transcode/copy ─────────────────────────────────────
-        # Submit all copy/transcode jobs to a thread pool, then process
-        # results sequentially for metadata, mapping, and progress updates.
+        def _on_success(item: SyncItem, ipod_path: Path, was_transcoded: bool) -> None:
+            assert item.pc_track is not None  # guaranteed by _parallel_copy_stage filter
+            ipod_location = ":" + str(ipod_path.relative_to(self.ipod_path)).replace("\\", ":").replace("/", ":")
+            track_info = self._pc_track_to_info(item.pc_track, ipod_location, was_transcoded, ipod_file_path=ipod_path)
+            ctx.new_tracks.append(track_info)
 
-        items_to_process = [(i, item) for i, item in enumerate(plan.to_add) if item.pc_track is not None]
-        if not items_to_process:
+            ctx.pc_file_paths[id(track_info)] = str(item.pc_track.path)
+
+            fingerprint = item.fingerprint
+            if not fingerprint:
+                fingerprint = get_or_compute_fingerprint(Path(item.pc_track.path))
+
+            if fingerprint:
+                ctx.new_track_fingerprints[id(track_info)] = fingerprint
+                ctx.new_track_info[id(track_info)] = (item.pc_track, ipod_path, was_transcoded)
+
+            ctx.result.tracks_added += 1
+
+        self._parallel_copy_stage(
+            ctx,
+            stage_name="add",
+            items=ctx.plan.to_add,
+            on_success=_on_success,
+            error_prefix="Failed to copy/transcode",
+        )
+
+    def _execute_sound_check(self, ctx: _SyncContext) -> None:
+        """Compute Sound Check (loudness normalization) for tracks missing it."""
+        if not ctx.compute_sound_check:
             return
 
-        completed_count = 0
-        completed_lock = threading.Lock()
-        worker_fractions: dict[int, float] = {}  # worker_id -> 0.0-1.0 fraction
-        worker_sizes: dict[int, int] = {}  # worker_id -> file size in bytes
-        worker_status: dict[int, str] = {}  # worker_id -> display text
-        total = len(plan.to_add)
-
-        # Pre-compute total sync bytes for size-weighted progress
-        total_sync_bytes = sum(
-            item.pc_track.size for _, item in items_to_process if item.pc_track
-        ) or 1  # avoid division by zero
-        completed_bytes = 0
-
-        def _build_progress(stage_name: str) -> SyncProgress:
-            """Build a SyncProgress snapshot under completed_lock."""
-            # Size-weighted progress
-            in_flight = sum(
-                worker_fractions.get(wid, 0.0) * worker_sizes.get(wid, 0)
-                for wid in worker_fractions
-            )
-            size_frac = min((completed_bytes + in_flight) / total_sync_bytes, 1.0)
-            lines = list(worker_status.values())
-            return SyncProgress(
-                stage_name, min(completed_count, total), total,
-                worker_lines=lines if lines else None,
-                size_progress=size_frac,
-            )
-
-        def _do_copy(item: SyncItem, worker_id: int) -> tuple[SyncItem, bool, Optional[Path], bool, str]:
-            """Transcode/copy a single track. Runs in worker thread."""
-            # Defensive check - should never fail as we pre-filtered items
-            if item.pc_track is None:
-                logger.error(f"_do_copy called with None pc_track for {item.description}")
-                return (item, False, None, False, "No source track")
-            source_path = Path(item.pc_track.path)
-            need_transcode = needs_transcoding(source_path)
-
-            # Register this worker's file size and emit initial status
-            with completed_lock:
-                worker_sizes[worker_id] = item.pc_track.size
-                verb = "Transcoding" if need_transcode else "Copying"
-                worker_status[worker_id] = f"{verb} {source_path.name} \u2014 0%"
-                if progress_callback:
-                    progress_callback(_build_progress("add"))
-
-            # Build per-phase progress callbacks
-            transcode_cb: Optional[Callable[[float], None]] = None
-            copy_cb: Optional[Callable[[float], None]] = None
-            if progress_callback:
-                filename = source_path.name
-
-                def _make_io_cb(_fn: str, _wid: int, _verb: str) -> Callable[[float], None]:
-                    def _cb(frac: float) -> None:
-                        pct = int(frac * 100)
-                        with completed_lock:
-                            worker_fractions[_wid] = frac
-                            worker_status[_wid] = f"{_verb} {_fn} \u2014 {pct}%"
-                            prog = _build_progress("add")
-                        progress_callback(prog)
-                    return _cb
-
-                if need_transcode:
-                    transcode_cb = _make_io_cb(filename, worker_id, "Transcoding")
-                copy_cb = _make_io_cb(filename, worker_id, "Copying")
-
-            success, ipod_path, was_transcoded, err_msg = self._copy_to_ipod(
-                source_path, need_transcode, fingerprint=item.fingerprint,
-                aac_bitrate=aac_bitrate,
-                transcode_progress=transcode_cb,
-                copy_progress=copy_cb,
-            )
-            return (item, success, ipod_path, was_transcoded, err_msg)
-
-        workers = self._max_workers
-        logger.info(f"Adding {len(items_to_process)} tracks with {workers} workers")
-
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            # Submit all jobs
-            future_to_idx: dict[Future, int] = {}
-            for idx, item in items_to_process:
-                if check_cancelled and check_cancelled():
-                    return
-                fut = pool.submit(_do_copy, item, idx)
-                future_to_idx[fut] = idx
-
-            # Process results as they complete
-            for future in as_completed(future_to_idx):
-                if check_cancelled and check_cancelled():
-                    # Cancel pending futures
-                    for f in future_to_idx:
-                        f.cancel()
-                    return
-
-                idx = future_to_idx[future]
-                try:
-                    item, success, ipod_path, was_transcoded, err_msg = future.result()
-                except _OutOfSpaceError as e:
-                    logger.error(str(e))
-                    result.errors.append(("storage", str(e)))
-                    result.success = False
-                    for f in future_to_idx:
-                        f.cancel()
-                    return
-                except Exception as e:
-                    item = plan.to_add[idx]
-                    result.errors.append((item.description, f"Worker error: {e}"))
-                    logger.error(f"Worker exception for {item.description}: {e}")
-                    with completed_lock:
-                        completed_count += 1
-                        completed_bytes += worker_sizes.pop(idx, 0)
-                        worker_fractions.pop(idx, None)
-                        worker_status.pop(idx, None)
-                        prog = _build_progress("add")
-                    if progress_callback:
-                        progress_callback(prog)
-                    continue
-
-                with completed_lock:
-                    completed_count += 1
-                    completed_bytes += worker_sizes.pop(idx, 0)
-                    worker_fractions.pop(idx, None)
-                    worker_status.pop(idx, None)
-                    prog = _build_progress("add")
-
-                if progress_callback:
-                    progress_callback(prog)
-
-                if not success or ipod_path is None:
-                    detail = f"Failed to copy/transcode: {err_msg}" if err_msg else "Failed to copy/transcode"
-                    result.errors.append((item.description, detail))
-                    continue
-
-                ipod_location = ":" + str(ipod_path.relative_to(self.ipod_path)).replace("\\", ":").replace("/", ":")
-                track_info = self._pc_track_to_info(item.pc_track, ipod_location, was_transcoded, ipod_file_path=ipod_path)
-                new_tracks.append(track_info)
-
-                # Track PC path for artwork extraction (keyed by obj id since dbid=0)
-                pc_file_paths[id(track_info)] = str(item.pc_track.path)
-
-                # Update mapping
-                fingerprint = item.fingerprint
-                if not fingerprint:
-                    fingerprint = get_or_compute_fingerprint(Path(item.pc_track.path))
-
-                # Remember fingerprint for this track so we can backpatch the real dbid later
-                if fingerprint:
-                    new_track_fingerprints[id(track_info)] = fingerprint
-                    new_track_info[id(track_info)] = (item.pc_track, ipod_path, was_transcoded)
-
-                # Note: mapping entry is NOT created here yet — dbid=0 is useless.
-                # Entry will be created after _write_database() assigns real dbids.
-
-                result.tracks_added += 1
-
-    def _execute_sound_check(
-        self,
-        new_tracks: list[TrackInfo],
-        new_track_info: dict[int, tuple],
-        tracks_by_dbid: dict[int, TrackInfo],
-        pc_file_paths: dict[int, str],
-        result: SyncResult,
-        progress_callback,
-        dry_run: bool,
-        check_cancelled,
-        write_back_to_pc: bool = False,
-    ):
-        """Compute Sound Check (loudness normalization) for tracks missing it.
-
-        Only runs when the user has enabled the "Compute Sound Check" setting.
-        Analyses only the tracks being synced (new + existing with a known PC
-        source), not the entire PC library.  Each track is analysed via ffmpeg
-        EBU R128 and the TrackInfo is updated in-place before the database
-        write in Stage 7.
-        """
-        try:
-            from GUI.settings import get_settings
-            settings = get_settings()
-            compute_sc = settings.compute_sound_check
-            write_back = write_back_to_pc and settings.write_back_to_pc
-        except Exception:
-            compute_sc = False
-            write_back = False
-
-        if not compute_sc:
-            return
+        write_back = ctx.write_back_to_pc
 
         VIDEO_TYPES = {
             MEDIA_TYPE_VIDEO, MEDIA_TYPE_MUSIC_VIDEO,
             MEDIA_TYPE_TV_SHOW, MEDIA_TYPE_VIDEO_PODCAST,
         }
 
-        # Collect (TrackInfo, pc_source_path) pairs that need analysis
         candidates: list[tuple[TrackInfo, str]] = []
 
-        # New tracks — source path comes from new_track_info
-        for t in new_tracks:
+        for t in ctx.new_tracks:
             if t.sound_check or t.media_type in VIDEO_TYPES:
                 continue
-            info = new_track_info.get(id(t))
+            info = ctx.new_track_info.get(id(t))
             if info:
                 pc_track, _ipod_path, _was_transcoded = info
                 candidates.append((t, pc_track.path))
 
-        # Existing tracks that were matched to a PC file
-        for dbid, pc_path in pc_file_paths.items():
-            t = tracks_by_dbid.get(dbid)
+        for dbid, pc_path in ctx.pc_file_paths.items():
+            t = ctx.tracks_by_dbid.get(dbid)
             if t and not t.sound_check and t.media_type not in VIDEO_TYPES:
                 candidates.append((t, pc_path))
 
@@ -1204,86 +983,65 @@ class SyncExecutor:
 
         from SyncEngine.pc_library import compute_sound_check, write_sound_check_tag
 
-        if progress_callback:
-            progress_callback(SyncProgress(
-                "sound_check", 0, len(candidates),
-                message=f"Computing Sound Check for {len(candidates)} tracks…",
-            ))
+        ctx.progress("sound_check", 0, len(candidates),
+                     message=f"Computing Sound Check for {len(candidates)} tracks…")
 
         computed = 0
         for idx, (track_info, pc_path) in enumerate(candidates):
-            if check_cancelled and check_cancelled():
+            if ctx.cancelled():
                 return
 
-            sc_val = compute_sound_check(pc_path) if not dry_run else 0
+            sc_val = compute_sound_check(pc_path) if not ctx.dry_run else 0
             if sc_val:
                 track_info.sound_check = sc_val
                 computed += 1
                 if write_back:
                     write_sound_check_tag(pc_path, sc_val)
 
-            if progress_callback:
-                label = track_info.title or Path(pc_path).stem
-                progress_callback(SyncProgress(
-                    "sound_check", idx + 1, len(candidates),
-                    message=f"Sound Check: {label}",
-                ))
+            label = track_info.title or Path(pc_path).stem
+            ctx.progress("sound_check", idx + 1, len(candidates),
+                         message=f"Sound Check: {label}")
 
-        result.sound_check_computed = computed
+        ctx.result.sound_check_computed = computed
         logger.info("Computed Sound Check for %d / %d tracks", computed, len(candidates))
 
-    def _execute_playcount_sync(self, plan, result, progress_callback, dry_run, check_cancelled=None):
-        """Report iPod play count deltas (merged in _read_existing_database).
-
-        The actual iPod play count update happens earlier: merge_playcounts()
-        folds Play Counts file deltas into the track dicts, which are then
-        written back to the iPod database in Stage 7.  This method exists
-        to provide progress reporting and to count updates for SyncResult.
-        The SYNC_PLAYCOUNT items are also used by _execute_scrobble().
-        """
-        if not plan.to_sync_playcount:
+    def _execute_playcount_sync(self, ctx: _SyncContext) -> None:
+        """Report iPod play count deltas (merged in _read_existing_database)."""
+        if not ctx.plan.to_sync_playcount:
             return
 
-        if progress_callback:
-            progress_callback(SyncProgress("sync_playcount", 0, len(plan.to_sync_playcount), message="Syncing play counts..."))
+        ctx.progress("sync_playcount", 0, len(ctx.plan.to_sync_playcount),
+                     message="Syncing play counts...")
 
-        for i, item in enumerate(plan.to_sync_playcount):
-            if check_cancelled and check_cancelled():
+        for i, item in enumerate(ctx.plan.to_sync_playcount):
+            if ctx.cancelled():
                 return
 
-            if progress_callback:
-                progress_callback(SyncProgress("sync_playcount", i + 1, len(plan.to_sync_playcount), item, item.description))
+            ctx.progress("sync_playcount", i + 1, len(ctx.plan.to_sync_playcount),
+                         item, item.description)
 
             logger.debug(
                 "Play count sync: %s  +%d plays  +%d skips",
                 item.description, item.play_count_delta, item.skip_count_delta,
             )
-            result.playcounts_synced += 1
+            ctx.result.playcounts_synced += 1
 
-    def _execute_scrobble(self, plan, result, progress_callback):
+    def _execute_scrobble(self, ctx: _SyncContext) -> None:
         """Submit new plays to ListenBrainz (non-fatal)."""
-        try:
-            from GUI.settings import get_settings
-            s = get_settings()
-        except Exception:
+        if not ctx.scrobble_on_sync:
             return
 
-        if not s.scrobble_on_sync:
-            return
-
-        lb_token = s.listenbrainz_token if s.listenbrainz_token else ""
-
+        lb_token = ctx.listenbrainz_token
         if not lb_token:
             return
 
-        if progress_callback:
-            progress_callback(SyncProgress("scrobble", 0, 1, message="Scrobbling plays..."))
+        ctx.progress("scrobble", 0, 1, message="Scrobbling plays...")
 
         try:
             from .scrobbler import scrobble_plays
 
             scrobble_results = scrobble_plays(
-                playcount_items=plan.to_sync_playcount,
+                playcount_items=ctx.plan.to_sync_playcount,
                 listenbrainz_token=lb_token,
             )
 
@@ -1293,44 +1051,41 @@ class SyncExecutor:
                 for err in sr.errors:
                     logger.warning("Scrobble error (%s): %s", sr.service, err)
 
-            result.scrobbles_submitted = total_accepted
+            ctx.result.scrobbles_submitted = total_accepted
             logger.info("Scrobbled %d plays total", total_accepted)
 
         except Exception as exc:
-            # Scrobbling is never fatal — don't block the sync
             logger.warning("Scrobbling failed (non-fatal): %s", exc)
 
-        if progress_callback:
-            progress_callback(SyncProgress("scrobble", 1, 1, message=f"Scrobbled {result.scrobbles_submitted} plays"))
+        ctx.progress("scrobble", 1, 1,
+                     message=f"Scrobbled {ctx.result.scrobbles_submitted} plays")
 
-    def _execute_rating_sync(self, plan, tracks_by_dbid, result, progress_callback, dry_run, check_cancelled=None, write_back_to_pc=False):
-        if not plan.to_sync_rating:
+    def _execute_rating_sync(self, ctx: _SyncContext) -> None:
+        if not ctx.plan.to_sync_rating:
             return
 
-        if progress_callback:
-            progress_callback(SyncProgress("sync_rating", 0, len(plan.to_sync_rating), message="Syncing ratings..."))
+        ctx.progress("sync_rating", 0, len(ctx.plan.to_sync_rating),
+                     message="Syncing ratings...")
 
-        for i, item in enumerate(plan.to_sync_rating):
-            if check_cancelled and check_cancelled():
+        for i, item in enumerate(ctx.plan.to_sync_rating):
+            if ctx.cancelled():
                 return
 
-            if progress_callback:
-                progress_callback(SyncProgress("sync_rating", i + 1, len(plan.to_sync_rating), item, item.description))
+            ctx.progress("sync_rating", i + 1, len(ctx.plan.to_sync_rating),
+                         item, item.description)
 
-            if dry_run:
-                result.ratings_synced += 1
+            if ctx.dry_run:
+                ctx.result.ratings_synced += 1
                 continue
 
-            # Apply the resolved rating (last-write-wins) to the iPod TrackInfo
             dbid = item.dbid
-            if dbid and dbid in tracks_by_dbid and item.new_rating is not None:
-                tracks_by_dbid[dbid].rating = item.new_rating
+            if dbid and dbid in ctx.tracks_by_dbid and item.new_rating is not None:
+                ctx.tracks_by_dbid[dbid].rating = item.new_rating
 
-            # Write rating to PC file metadata (only if user opted in)
-            if write_back_to_pc and item.pc_track and item.new_rating is not None:
+            if ctx.write_back_to_pc and item.pc_track and item.new_rating is not None:
                 self._write_rating_to_pc(item.pc_track.path, item.new_rating)
-            logger.debug(f"Rating sync: {item.description} → {item.new_rating}")
-            result.ratings_synced += 1
+            logger.debug("Rating sync: %s → %s", item.description, item.new_rating)
+            ctx.result.ratings_synced += 1
 
     # ── File Operations ─────────────────────────────────────────────────────
 
@@ -1341,7 +1096,7 @@ class SyncExecutor:
         20 (most common value) if device capabilities are unknown.
         """
         # Determine music_dirs from device capabilities
-        music_dirs = 20  # most common default across all non-Classic models
+        music_dirs = _DEFAULT_MUSIC_DIRS
         try:
             from device_info import get_current_device
             from ipod_models import capabilities_for_family_gen
@@ -1397,7 +1152,7 @@ class SyncExecutor:
         source_path: Path,
         needs_transcode: bool,
         fingerprint: Optional[str] = None,
-        aac_bitrate: int = 256,
+        aac_quality: str = "normal",
         transcode_progress: Optional[Callable[[float], None]] = None,
         copy_progress: Optional[Callable[[float], None]] = None,
     ) -> tuple[bool, Optional[Path], bool, str]:
@@ -1415,22 +1170,23 @@ class SyncExecutor:
         dest_folder = self._get_next_music_folder()
         source_size = source_path.stat().st_size
 
-        # Safety check: abort if writing this file would leave < 30 MB free
-        RESERVE_BYTES = 30 * 1024 * 1024  # 30 MB
+        # Safety check: abort if writing this file would leave below the reserve
         try:
             free = shutil.disk_usage(self.ipod_path).free
-            if free - source_size < RESERVE_BYTES:
+            if free - source_size < _DISK_RESERVE_BYTES:
                 free_mb = free / (1024 * 1024)
+                reserve_mb = _DISK_RESERVE_BYTES / (1024 * 1024)
                 raise _OutOfSpaceError(
                     f"iPod is out of space ({free_mb:.0f} MB remaining, "
-                    f"30 MB reserve required). Stopping file writes."
+                    f"{reserve_mb:.0f} MB reserve required). Stopping file writes."
                 )
         except OSError:
             pass  # Can't check — proceed and let the copy fail naturally
 
         if needs_transcode:
             target_format = self._get_target_format(source_path)
-            bitrate = aac_bitrate if target_format == "aac" else None
+            from .transcoder import quality_to_nominal_bitrate
+            bitrate = quality_to_nominal_bitrate(aac_quality) if target_format == "aac" else None
 
             # Check transcode cache
             if fingerprint:
@@ -1446,10 +1202,10 @@ class SyncExecutor:
                             cached_path, final_path,
                             copy_progress,
                         )
-                        logger.info(f"Used cached transcode: {source_path.name}")
+                        logger.info("Used cached transcode: %s", source_path.name)
                         return True, final_path, True, ""
                     except Exception as e:
-                        logger.warning(f"Cache copy failed, will transcode: {e}")
+                        logger.warning("Cache copy failed, will transcode: %s", e)
 
             # Transcode directly into the cache directory so ffmpeg writes
             # to local disk at full speed (8 workers truly parallel) and we
@@ -1468,7 +1224,7 @@ class SyncExecutor:
             result = transcode(
                 source_path, output_dir,
                 output_filename=output_filename,
-                aac_bitrate=aac_bitrate,
+                aac_quality=aac_quality,
                 progress_callback=transcode_progress,
             )
             if result.success and result.output_path:
@@ -1503,7 +1259,7 @@ class SyncExecutor:
 
                 return True, final_path, True, ""
             else:
-                logger.error(f"Transcode failed: {result.error_message}")
+                logger.error("Transcode failed: %s", result.error_message)
                 return False, None, True, result.error_message or "Transcode failed"
         else:
             # Direct copy — chunked to report progress over USB.
@@ -1515,7 +1271,7 @@ class SyncExecutor:
                 self._copy_file_chunked(source_path, dest_path, copy_progress)
                 return True, dest_path, False, ""
             except Exception as e:
-                logger.error(f"Copy failed: {e}")
+                logger.error("Copy failed: %s", e)
                 return False, None, False, str(e)
 
     @staticmethod
@@ -1546,10 +1302,10 @@ class SyncExecutor:
             path = Path(ipod_path)
             if path.exists():
                 path.unlink()
-                logger.debug(f"Deleted: {path}")
+                logger.debug("Deleted: %s", path)
             return True
         except Exception as e:
-            logger.error(f"Delete failed for {ipod_path}: {e}")
+            logger.error("Delete failed for %s: %s", ipod_path, e)
             return False
 
     # ── PC Write-Back ───────────────────────────────────────────────────────
@@ -1597,8 +1353,63 @@ class SyncExecutor:
 
             return True
         except Exception as e:
-            logger.warning(f"Could not write rating to {file_path}: {e}")
+            logger.warning("Could not write rating to %s: %s", file_path, e)
             return False
+
+    # ── iTunes protection ───────────────────────────────────────────────────
+
+    def _apply_itunes_protections(self, ctx: _SyncContext,
+                                  all_tracks: list[TrackInfo]) -> None:
+        """Compute media-type totals and write iTunesPrefs protection."""
+        # (media_type_mask, label) → (bytes, secs, count)
+        _MEDIA_BUCKETS: list[tuple[int, str]] = [
+            (0x04, "podcast"),
+            (0x08, "audiobook"),
+            (0x40, "tv"),
+            (0x20, "mv"),
+            (0x02, "video"),
+        ]
+
+        totals: dict[str, list[int]] = {
+            "music": [0, 0, 0], "video": [0, 0, 0], "podcast": [0, 0, 0],
+            "audiobook": [0, 0, 0], "tv": [0, 0, 0], "mv": [0, 0, 0],
+        }
+
+        for t in all_tracks:
+            mt = t.media_type
+            bucket = "music"
+            for mask, label in _MEDIA_BUCKETS:
+                if mt & mask:
+                    bucket = label
+                    break
+            totals[bucket][0] += t.size
+            totals[bucket][1] += t.length // 1000
+            totals[bucket][2] += 1
+
+        try:
+            protect_from_itunes(
+                self.ipod_path,
+                track_count=totals["music"][2],
+                total_music_bytes=totals["music"][0],
+                total_music_seconds=totals["music"][1],
+                video_tracks=totals["video"][2],
+                video_bytes=totals["video"][0],
+                video_seconds=totals["video"][1],
+                podcast_tracks=totals["podcast"][2],
+                podcast_bytes=totals["podcast"][0],
+                podcast_seconds=totals["podcast"][1],
+                audiobook_tracks=totals["audiobook"][2],
+                audiobook_bytes=totals["audiobook"][0],
+                audiobook_seconds=totals["audiobook"][1],
+                tv_show_tracks=totals["tv"][2],
+                tv_show_bytes=totals["tv"][0],
+                tv_show_seconds=totals["tv"][1],
+                music_video_tracks=totals["mv"][2],
+                music_video_bytes=totals["mv"][0],
+                music_video_seconds=totals["mv"][1],
+            )
+        except Exception as e:
+            logger.warning("iTunesPrefs protection failed (non-fatal): %s", e)
 
     # ── Play Counts cleanup ─────────────────────────────────────────────────
 
@@ -1731,28 +1542,26 @@ class SyncExecutor:
                 "smart_playlists": smart_playlists,
             }
         except Exception as e:
-            logger.error(f"Failed to parse iTunesDB: {e}")
+            logger.error("Failed to parse iTunesDB: %s", e)
             return empty
+
+    # Filetype string → writer filetype code.  Checked in order; first
+    # substring match wins.  Falls back to "mp3".
+    _FILETYPE_MAP: list[tuple[str, str]] = [
+        ("AAC", "m4a"), ("M4A", "m4a"), ("Lossless", "m4a"),
+        ("Protected", "m4p"), ("Audiobook", "m4b"),
+        ("WAV", "wav"), ("AIFF", "aiff"),
+        ("M4V", "m4v"), ("MP4", "mp4"),
+    ]
 
     def _track_dict_to_info(self, t: dict) -> TrackInfo:
         """Convert parsed track dict to TrackInfo for writing."""
         filetype = t.get("filetype", "MP3")
-        if "AAC" in filetype or "M4A" in filetype or "Lossless" in filetype:
-            filetype_code = "m4a"
-        elif "Protected" in filetype:
-            filetype_code = "m4p"
-        elif "Audiobook" in filetype:
-            filetype_code = "m4b"
-        elif "WAV" in filetype:
-            filetype_code = "wav"
-        elif "AIFF" in filetype:
-            filetype_code = "aiff"
-        elif "M4V" in filetype:
-            filetype_code = "m4v"
-        elif "MP4" in filetype:
-            filetype_code = "mp4"
-        else:
-            filetype_code = "mp3"
+        filetype_code = "mp3"
+        for needle, code in self._FILETYPE_MAP:
+            if needle in filetype:
+                filetype_code = code
+                break
 
         return TrackInfo(
             title=t.get("Title", "Unknown"),
@@ -1880,7 +1689,8 @@ class SyncExecutor:
             source_ext = pc_track.extension.lower().lstrip(".")
             is_lossless_source = source_ext in ("flac", "wav", "aif", "aiff")
             if filetype == "m4a" and not is_lossless_source:
-                bitrate = self._aac_bitrate  # user-configured AAC bitrate
+                from .transcoder import quality_to_nominal_bitrate
+                bitrate = quality_to_nominal_bitrate(self._aac_quality)
             # sample_rate is typically preserved by transcoder
 
         # ── Media type auto-detection ────────────────────────────────
@@ -2013,61 +1823,61 @@ class SyncExecutor:
 
     def _build_and_evaluate_playlists(
         self,
-        parsed_tracks: list[dict],
+        ctx: _SyncContext,
         all_track_infos: list[TrackInfo],
-        parsed_playlists: list[dict],
-        parsed_smart: list[dict],
     ) -> tuple[str, list[PlaylistInfo], list[PlaylistInfo]]:
         """Build PlaylistInfo lists and evaluate smart playlist rules.
-
-        Playlist *definitions* (names, rules, sort orders) come from the
-        existing iPod database, but smart playlist *evaluation* runs against
-        the NEW track list being written — so newly added tracks are
-        included and removed tracks are excluded.
 
         Returns (master_playlist_name, regular_playlists, smart_playlists)
         ready for write_itunesdb().
         """
         from .spl_evaluator import spl_update
 
-        # Map old track_id → db_id so we can remap regular playlist items
         old_tid_to_dbid: dict[int, int] = {}
-        for t in parsed_tracks:
+        for t in ctx.existing_tracks_data:
             tid = t.get("track_id", 0)
             dbid = t.get("db_id", 0)
             if tid and dbid:
                 old_tid_to_dbid[tid] = dbid
 
-        # Set of valid dbids in the final track list
         valid_dbids: set[int] = {t.dbid for t in all_track_infos if t.dbid}
-
-        # Convert the NEW TrackInfo list → evaluator-compatible dicts.
-        # The evaluator expects parsed-track-style dicts with keys like
-        # "track_id", "Title", "Artist", "rating", etc.
         eval_tracks = [self._trackinfo_to_eval_dict(t) for t in all_track_infos]
 
-        # ── Regular playlists (dataset 2) ────────────────────────────
-        # Extract the master playlist name and discard it from the list.
-        # The writer always auto-generates a master referencing all tracks;
-        # we only need to preserve its name.
-        #
-        # A playlist is the master only if master_flag is explicitly set.
-        # We do NOT use position-based heuristics ("first playlist = master")
-        # because user-created playlists merged from the GUI cache can end
-        # up at index 0, causing misidentification and data loss.
+        master_name, master_id, playlists = self._build_regular_playlists(
+            ctx, old_tid_to_dbid, valid_dbids, eval_tracks, spl_update,
+        )
+        self._sanitize_playlists(playlists, master_id)
+        self._rebuild_podcast_playlist(playlists, all_track_infos)
+
+        smart_playlists = self._build_smart_playlists(
+            ctx, valid_dbids, eval_tracks, spl_update,
+        )
+
+        self._reevaluate_live_update(
+            playlists, smart_playlists, valid_dbids, eval_tracks, spl_update,
+        )
+
+        return master_name, playlists, smart_playlists
+
+    def _build_regular_playlists(
+        self,
+        ctx: _SyncContext,
+        old_tid_to_dbid: dict[int, int],
+        valid_dbids: set[int],
+        eval_tracks: list[dict],
+        spl_update,
+    ) -> tuple[str, int | None, list[PlaylistInfo]]:
+        """Build dataset-2 playlists, returning (master_name, master_id, playlists)."""
         master_playlist_name = "iPod"
         master_playlist_id: int | None = None
         playlists: list[PlaylistInfo] = []
-        for idx, pl in enumerate(parsed_playlists):
-            is_master = bool(pl.get("master_flag"))
 
-            if is_master:
+        for pl in ctx.existing_playlists_raw:
+            if pl.get("master_flag"):
                 master_playlist_name = pl.get("Title", "iPod")
                 master_playlist_id = pl.get("playlist_id")
                 continue
 
-            # Resolve track IDs → dbids, filtering out removed tracks.
-            # Also preserve per-MHIP metadata for round-trip fidelity.
             items = pl.get("items", [])
             track_ids = []
             item_meta = []
@@ -2089,99 +1899,63 @@ class SyncExecutor:
                 master=False,
                 sortorder=pl.get("sort_order", 0),
                 podcast_flag=pl.get("podcast_flag", 0),
-                raw_mhod100=self._decode_raw_blob(pl.get("playlist_prefs")),  # was playlistPrefs
-                raw_mhod102=self._decode_raw_blob(pl.get("playlist_settings")),  # was playlistSettings
+                raw_mhod100=self._decode_raw_blob(pl.get("playlist_prefs")),
+                raw_mhod102=self._decode_raw_blob(pl.get("playlist_settings")),
                 item_metadata=item_meta if item_meta else None,
             )
 
-            # Smart playlist rules (dataset 2 smart playlists)
-            if pl.get("smart_playlist_data"):  # was smartPlaylistData
-                prefs_data = pl.get("smart_playlist_data")  # was smartPlaylistData
-                rules_data = pl.get("smart_playlist_rules")  # was smartPlaylistRules
-                if prefs_data and rules_data:
-                    info.smart_prefs = prefs_from_parsed(prefs_data)
-                    info.smart_rules = rules_from_parsed(rules_data)
-
-                    # Evaluate rules against the NEW track list
-                    matched_dbids = spl_update(
-                        info.smart_prefs, info.smart_rules, eval_tracks,
-                    )
-                    # Filter to valid dbids (should already be, but be safe)
-                    info.track_ids = [
-                        d for d in matched_dbids if d in valid_dbids
-                    ]
-                    # SPL evaluation replaced track_ids entirely — the old
-                    # per-MHIP item_metadata no longer corresponds, so clear it.
-                    info.item_metadata = None
-                    logger.debug(
-                        "SPL (ds2) '%s': %d tracks matched",
-                        info.name, len(info.track_ids),
-                    )
+            # Evaluate smart playlist rules (dataset 2 smart playlists)
+            prefs_data = pl.get("smart_playlist_data")
+            rules_data = pl.get("smart_playlist_rules")
+            if prefs_data and rules_data:
+                info.smart_prefs = prefs_from_parsed(prefs_data)
+                info.smart_rules = rules_from_parsed(rules_data)
+                matched_dbids = spl_update(
+                    info.smart_prefs, info.smart_rules, eval_tracks,
+                )
+                info.track_ids = [d for d in matched_dbids if d in valid_dbids]
+                info.item_metadata = None
+                logger.debug("SPL (ds2) '%s': %d tracks matched",
+                             info.name, len(info.track_ids))
 
             playlists.append(info)
 
-        logger.info(
-            "Prepared %d user playlists for writing", len(playlists)
-        )
+        logger.info("Prepared %d user playlists for writing", len(playlists))
+        return master_playlist_name, master_playlist_id, playlists
 
-        # ── Sanity: filter out any playlist that duplicates the master ─
-        # The master playlist is auto-generated by the writer; any copy
-        # that leaked through (e.g. from GUI cache or dataset 3 merge)
-        # must be removed to avoid duplication.
+    @staticmethod
+    def _sanitize_playlists(playlists: list[PlaylistInfo],
+                            master_playlist_id: int | None) -> None:
+        """Remove master duplicates and strip rogue master flags."""
         if master_playlist_id is not None:
             before = len(playlists)
-            playlists = [
-                p for p in playlists
-                if p.playlist_id != master_playlist_id
-            ]
+            playlists[:] = [p for p in playlists
+                            if p.playlist_id != master_playlist_id]
             dropped = before - len(playlists)
             if dropped:
-                logger.warning(
-                    "Dropped %d playlist(s) with master playlist_id=0x%X",
-                    dropped, master_playlist_id,
-                )
+                logger.warning("Dropped %d playlist(s) with master playlist_id=0x%X",
+                               dropped, master_playlist_id)
 
-        # ── Sanity: strip any rogue master flags from user playlists ─
-        # The master playlist is auto-generated by the writer from the
-        # full track list; no user playlist should carry master=True.
         master_count = sum(1 for p in playlists if p.master)
         if master_count:
-            logger.warning(
-                "Stripped master flag from %d user playlist(s) — "
-                "master is auto-generated", master_count,
-            )
+            logger.warning("Stripped master flag from %d user playlist(s) — "
+                           "master is auto-generated", master_count)
             for p in playlists:
                 p.master = False
 
-        # ── Rebuild "Podcasts" playlist from current podcast tracks ───
-        # The Podcasts playlist must always reflect the full set of
-        # podcast tracks in the database.  Simply preserving the old
-        # playlist from the previous sync would miss newly-added episodes
-        # (they have no old track_id so they can't appear in the old
-        # playlist's item list).
-        #
-        # Strategy: collect ALL current podcast dbids, then either
-        #   (a) replace the track_ids of the existing podcast playlist, or
-        #   (b) create a new one if none exists.
-        podcast_dbids = [
-            t.dbid for t in all_track_infos
-            if t.media_type & 0x04
-        ]
-
-        existing_podcast_pl = next(
-            (p for p in playlists if p.podcast_flag), None
-        )
+    @staticmethod
+    def _rebuild_podcast_playlist(playlists: list[PlaylistInfo],
+                                  all_track_infos: list[TrackInfo]) -> None:
+        """Ensure the Podcasts playlist reflects all current podcast tracks."""
+        podcast_dbids = [t.dbid for t in all_track_infos if t.media_type & 0x04]
+        existing_podcast_pl = next((p for p in playlists if p.podcast_flag), None)
 
         if podcast_dbids:
             if existing_podcast_pl is not None:
-                # Rebuild: keep identity (name, playlist_id, sortorder)
-                # but replace track list with the full current set.
                 existing_podcast_pl.track_ids = podcast_dbids
-                existing_podcast_pl.item_metadata = None  # fresh list
-                logger.info(
-                    "Rebuilt 'Podcasts' playlist with %d tracks",
-                    len(podcast_dbids),
-                )
+                existing_podcast_pl.item_metadata = None
+                logger.info("Rebuilt 'Podcasts' playlist with %d tracks",
+                            len(podcast_dbids))
             else:
                 from iTunesDB_Writer.mhyp_writer import generate_playlist_id
                 playlists.append(PlaylistInfo(
@@ -2190,92 +1964,71 @@ class SyncExecutor:
                     playlist_id=generate_playlist_id(),
                     podcast_flag=1,
                 ))
-                logger.info(
-                    "Auto-created 'Podcasts' playlist with %d tracks",
-                    len(podcast_dbids),
-                )
+                logger.info("Auto-created 'Podcasts' playlist with %d tracks",
+                            len(podcast_dbids))
         elif existing_podcast_pl is not None:
-            # No podcast tracks remain — remove the empty podcast playlist
             playlists.remove(existing_podcast_pl)
             logger.info("Removed empty 'Podcasts' playlist (no podcast tracks)")
 
-        # ── Smart playlists (dataset 5) ──────────────────────────────
+    def _build_smart_playlists(
+        self,
+        ctx: _SyncContext,
+        valid_dbids: set[int],
+        eval_tracks: list[dict],
+        spl_update,
+    ) -> list[PlaylistInfo]:
+        """Build dataset-5 smart playlists."""
         smart_playlists: list[PlaylistInfo] = []
-        for pl in parsed_smart:
-            prefs_data = pl.get("smart_playlist_data")  # was smartPlaylistData
-            rules_data = pl.get("smart_playlist_rules")  # was smartPlaylistRules
+        for pl in ctx.existing_smart_raw:
+            prefs_data = pl.get("smart_playlist_data")
+            rules_data = pl.get("smart_playlist_rules")
 
-            # For dataset 5, the parsed "type" byte at +0x14 is 1 for all
-            # built-in categories (Music, Movies, TV Shows, etc.).
-            # We preserve this via master=bool(type) so the writer sets
-            # the correct type byte.  This is NOT the ds2 "master playlist"
-            # flag — see PlaylistInfo.master docstring for the dual meaning.
             info = PlaylistInfo(
                 name=pl.get("Title", "Untitled"),
                 playlist_id=pl.get("playlist_id"),
                 master=bool(pl.get("master_flag", 0)),
                 sortorder=pl.get("sort_order", 0),
                 mhsd5_type=pl.get("mhsd5_type", 0),
-                raw_mhod100=self._decode_raw_blob(pl.get("playlist_prefs")),  # was playlistPrefs
-                raw_mhod102=self._decode_raw_blob(pl.get("playlist_settings")),  # was playlistSettings
+                raw_mhod100=self._decode_raw_blob(pl.get("playlist_prefs")),
+                raw_mhod102=self._decode_raw_blob(pl.get("playlist_settings")),
             )
 
             if prefs_data and rules_data:
                 info.smart_prefs = prefs_from_parsed(prefs_data)
                 info.smart_rules = rules_from_parsed(rules_data)
-
                 matched_dbids = spl_update(
                     info.smart_prefs, info.smart_rules, eval_tracks,
                 )
 
                 if info.mhsd5_type:
-                    # Built-in categories (Music, Movies, etc.) — iPod
-                    # evaluates these at runtime, so write 0 MHIPs.
-                    logger.debug(
-                        "SPL (ds5) '%s': %d tracks would match (iPod evaluates at runtime)",
-                        info.name, len(matched_dbids),
-                    )
+                    logger.debug("SPL (ds5) '%s': %d tracks would match "
+                                 "(iPod evaluates at runtime)",
+                                 info.name, len(matched_dbids))
                 elif info.smart_prefs.live_update:
-                    # User smart playlist with live_update — populate tracks
-                    info.track_ids = [
-                        d for d in matched_dbids if d in valid_dbids
-                    ]
+                    info.track_ids = [d for d in matched_dbids if d in valid_dbids]
                     info.item_metadata = None
-                    logger.debug(
-                        "SPL (ds5) '%s': %d tracks matched (live_update)",
-                        info.name, len(info.track_ids),
-                    )
+                    logger.debug("SPL (ds5) '%s': %d tracks matched (live_update)",
+                                 info.name, len(info.track_ids))
                 else:
-                    logger.debug(
-                        "SPL (ds5) '%s': %d tracks would match (live_update=False, keeping existing)",
-                        info.name, len(matched_dbids),
-                    )
+                    logger.debug("SPL (ds5) '%s': %d tracks would match "
+                                 "(live_update=False, keeping existing)",
+                                 info.name, len(matched_dbids))
 
             smart_playlists.append(info)
 
-        logger.info(
-            "Prepared %d smart playlists (dataset 5) for writing",
-            len(smart_playlists),
-        )
+        logger.info("Prepared %d smart playlists (dataset 5) for writing",
+                    len(smart_playlists))
+        return smart_playlists
 
-        # NOTE: Dataset 5 playlists re-use the type byte at +0x14 to mean
-        # "built-in system category" rather than "master playlist".  ALL
-        # built-in categories (Music, Movies, TV Shows, Audiobooks, etc.)
-        # legitimately have master=True, so we do NOT enforce a single-
-        # master constraint here — that only applies to dataset 2.
-
-        # NOTE: We do NOT auto-generate browsing playlists (Movies, TV Shows,
-        # Audiobooks, etc.).  The iPod firmware creates these itself during
-        # its initial restore, and re-adding them causes duplicates with
-        # incorrect master flags.  We only round-trip whatever smart
-        # playlists already exist on the device.
-
-        # ── Final pass: re-evaluate live-update smart playlists ──────
-        # Podcast tracks and other late additions may not have been in
-        # the track list when a smart playlist was first evaluated during
-        # the per-playlist loop above.  Re-evaluate all live-update SPLs
-        # (both DS2 and DS5, excluding built-in categories) against the
-        # final eval_tracks list so they pick up every track.
+    @staticmethod
+    def _reevaluate_live_update(
+        playlists: list[PlaylistInfo],
+        smart_playlists: list[PlaylistInfo],
+        valid_dbids: set[int],
+        eval_tracks: list[dict],
+        spl_update,
+    ) -> None:
+        """Re-evaluate all live-update SPLs against the final track list."""
         for info in list(playlists) + [s for s in smart_playlists if not s.mhsd5_type]:
             if info.smart_prefs and info.smart_rules and info.smart_prefs.live_update:
                 matched_dbids = spl_update(
@@ -2283,14 +2036,11 @@ class SyncExecutor:
                 )
                 new_ids = [d for d in matched_dbids if d in valid_dbids]
                 if new_ids != info.track_ids:
-                    logger.info(
-                        "SPL live-update '%s': %d → %d tracks after final re-evaluation",
-                        info.name, len(info.track_ids), len(new_ids),
-                    )
+                    logger.info("SPL live-update '%s': %d → %d tracks after "
+                                "final re-evaluation",
+                                info.name, len(info.track_ids), len(new_ids))
                     info.track_ids = new_ids
                     info.item_metadata = None
-
-        return master_playlist_name, playlists, smart_playlists
 
     @staticmethod
     def _trackinfo_to_eval_dict(t: TrackInfo) -> dict:
@@ -2370,8 +2120,8 @@ class SyncExecutor:
         """
         from iTunesDB_Writer import write_itunesdb
 
-        logger.debug(f"ART: _write_database called with {len(tracks)} tracks, "
-                     f"pc_file_paths={'None' if pc_file_paths is None else len(pc_file_paths)}")
+        logger.debug("ART: _write_database called with %d tracks, pc_file_paths=%s",
+                     len(tracks), 'None' if pc_file_paths is None else len(pc_file_paths))
         logger.debug(
             "DB: playlists=%s, smart_playlists=%s",
             len(playlists) if playlists else 0,
@@ -2402,9 +2152,7 @@ class SyncExecutor:
                 master_playlist_name=master_playlist_name,
             )
         except Exception as e:
-            logger.error(f"Failed to write iTunesDB: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.exception("Failed to write iTunesDB: %s", e)
             return False
 
         # ── SQLite databases for Nano 6G/7G ───────────────────────────
@@ -2434,9 +2182,7 @@ class SyncExecutor:
                     logger.error("SQLite database write failed")
                     return False
             except Exception as e:
-                logger.error(f"Failed to write SQLite databases: {e}")
-                import traceback
-                traceback.print_exc()
+                logger.exception("Failed to write SQLite databases: %s", e)
                 return False
 
         return ok

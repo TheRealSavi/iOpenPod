@@ -4,12 +4,14 @@ Settings page widget for iOpenPod.
 macOS Ventura-style two-panel layout: fixed sidebar with navigation items
 on the left, scrollable card-based content on the right.
 """
+from __future__ import annotations
 
 from PyQt6.QtCore import pyqtSignal, pyqtSlot, Qt, QUrl
+
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QCheckBox, QComboBox, QFrame, QScrollArea, QFileDialog,
-    QLineEdit, QStackedWidget,
+    QLineEdit, QStackedWidget, QProgressDialog,
 )
 from PyQt6.QtGui import QFont, QDesktopServices
 from pathlib import Path
@@ -568,6 +570,7 @@ class SettingsPage(QWidget):
         self._pending_lb_result: tuple[str, str] = ("", "")
         self._update_checker: object | None = None
         self._update_downloader: object | None = None
+        self._update_progress: QProgressDialog | None = None
 
         main = QHBoxLayout(self)
         main.setContentsMargins(0, 0, 0, 0)
@@ -831,12 +834,23 @@ class SettingsPage(QWidget):
         )
 
     def _build_transcoding_page(self) -> QScrollArea:
-        self.aac_bitrate = ComboRow(
-            "AAC Bitrate",
-            "Bitrate for lossy transcodes (OGG, Opus, WMA → AAC). "
-            "Higher values mean better quality but use more iPod storage.",
-            options=["128 kbps", "192 kbps", "256 kbps", "320 kbps"],
-            current="256 kbps",
+        self.aac_quality = ComboRow(
+            "AAC Quality",
+            "Quality preset for lossy transcodes (OGG, Opus, WMA → AAC). "
+            "Uses the best available encoder automatically (libfdk_aac > "
+            "AudioToolbox > built-in).",
+            options=[
+                "High (~320 kbps)",
+                "Normal (~256 kbps)",
+                "Compact (~128 kbps)",
+                "Spoken Word (~64 kbps)",
+            ],
+            current="Normal (~256 kbps)",
+        )
+        self.prefer_lossy = ToggleRow(
+            "Prefer Lossy Encoding",
+            "Encode lossless sources (FLAC, WAV, AIFF) as AAC instead of "
+            "ALAC. Saves iPod storage at the cost of quality.",
         )
         self.video_crf = ComboRow(
             "Video Quality (CRF)",
@@ -868,7 +882,8 @@ class SettingsPage(QWidget):
         return self._make_page(
             "Transcoding",
             _SettingsCard(
-                self.aac_bitrate,
+                self.aac_quality,
+                self.prefer_lossy,
                 self.video_crf,
                 self.video_preset,
                 self.sync_workers,
@@ -1079,12 +1094,18 @@ class SettingsPage(QWidget):
         if idx >= 0:
             self.max_backups.combo.setCurrentIndex(idx)
 
-        # AAC bitrate → combo text
-        bitrate_map = {128: "128 kbps", 192: "192 kbps", 256: "256 kbps", 320: "320 kbps"}
-        br_text = bitrate_map.get(s.aac_bitrate, "256 kbps")
-        idx = self.aac_bitrate.combo.findText(br_text)
+        # AAC quality → combo text
+        quality_map = {
+            "high": "High (~320 kbps)", "normal": "Normal (~256 kbps)",
+            "compact": "Compact (~128 kbps)", "spoken": "Spoken Word (~64 kbps)",
+        }
+        q_text = quality_map.get(s.aac_quality, "Normal (~256 kbps)")
+        idx = self.aac_quality.combo.findText(q_text)
         if idx >= 0:
-            self.aac_bitrate.combo.setCurrentIndex(idx)
+            self.aac_quality.combo.setCurrentIndex(idx)
+
+        # Prefer lossy toggle
+        self.prefer_lossy.value = s.prefer_lossy
 
         # Video CRF → combo text
         crf_map = {18: "18 (High)", 20: "20 (Good)", 23: "23 (Balanced)", 26: "26 (Low)", 28: "28 (Very Low)"}
@@ -1112,7 +1133,8 @@ class SettingsPage(QWidget):
             self.write_back.changed.connect(self._save)
             self.compute_sound_check.changed.connect(self._save)
             self.rating_strategy.changed.connect(self._save)
-            self.aac_bitrate.changed.connect(self._save)
+            self.aac_quality.changed.connect(self._save)
+            self.prefer_lossy.changed.connect(self._save)
             self.video_crf.changed.connect(self._save)
             self.video_preset.changed.connect(self._save)
             self.sync_workers.changed.connect(self._save)
@@ -1183,9 +1205,15 @@ class SettingsPage(QWidget):
         mb_text = self.max_backups.value
         s.max_backups = int(mb_text) if mb_text and mb_text != "Unlimited" else 0
 
-        # Parse AAC bitrate
-        br_text = self.aac_bitrate.value
-        s.aac_bitrate = int(br_text.split()[0]) if br_text else 256
+        # Parse AAC quality preset
+        quality_keys = {
+            "High (~320 kbps)": "high", "Normal (~256 kbps)": "normal",
+            "Compact (~128 kbps)": "compact", "Spoken Word (~64 kbps)": "spoken",
+        }
+        s.aac_quality = quality_keys.get(self.aac_quality.value, "normal")
+
+        # Prefer lossy toggle
+        s.prefer_lossy = self.prefer_lossy.value
 
         # Parse video CRF (extract leading integer)
         crf_text = self.video_crf.value

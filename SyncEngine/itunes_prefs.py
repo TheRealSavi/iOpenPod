@@ -28,11 +28,12 @@ Binary format (frpd):
 import logging
 import os
 import plistlib
-import hashlib
 import socket
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
+
+from device_info import generate_library_id  # noqa: F401  — canonical loc is device_info
 
 logger = logging.getLogger(__name__)
 
@@ -314,18 +315,6 @@ def _build_device_totals(
 
 
 # ── Public API ──────────────────────────────────────────────────────────────
-
-
-def generate_library_id() -> bytes:
-    """
-    Generate a deterministic 8-byte library ID for iOpenPod.
-
-    Based on a hash of "iOpenPod" + hostname so the same computer
-    always produces the same ID, but different computers produce
-    different IDs.
-    """
-    identity = f"iOpenPod:{socket.gethostname()}".encode("utf-8")
-    return hashlib.sha256(identity).digest()[:8]
 
 
 def read_prefs(ipod_path: str | Path) -> ITunesPrefs:

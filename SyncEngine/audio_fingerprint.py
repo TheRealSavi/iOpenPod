@@ -60,7 +60,7 @@ def find_fpcalc() -> Optional[str]:
     4. Common installation directories
     """
     try:
-        from GUI.settings import get_settings
+        from settings import get_settings
         custom = get_settings().fpcalc_path
         if custom and Path(custom).is_file():
             return custom

@@ -558,7 +558,8 @@ The user can cancel at any point during execution. The `is_cancelled` callback (
 |---------|---------|--------|
 | `music_folder` | — | Remembered PC folder path |
 | `write_back_to_pc` | `false` | When true, play counts and ratings are written to PC file metadata |
-| `aac_bitrate` | `256` | Bitrate for lossy transcodes (OGG/Opus/WMA → AAC) |
+| `aac_quality` | `"normal"` | Quality preset for lossy transcodes: high, normal, compact, spoken |
+| `prefer_lossy` | `false` | When true, lossless (FLAC/WAV/AIFF) encodes to AAC instead of ALAC |
 
 ---
 
