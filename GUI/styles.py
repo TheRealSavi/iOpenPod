@@ -498,9 +498,10 @@ class DarkScrollbarStyle(QProxyStyle):
         # intercepts PE_PanelTipLabel before our proxy-style handler
         # runs, and resolves the palette to black.  A widget-level
         # stylesheet can't be overridden by app-level rules.
-        if arg.metaObject() and arg.metaObject().className() == "QTipLabel":
-            if not getattr(arg, "_iop_tooltip_styled", False):
-                arg._iop_tooltip_styled = True
+        meta = arg.metaObject()
+        if meta is not None and meta.className() == "QTipLabel":
+            if not arg.property("_iop_tooltip_styled"):
+                arg.setProperty("_iop_tooltip_styled", True)
                 try:
                     arg.setAttribute(
                         Qt.WidgetAttribute.WA_TranslucentBackground, True

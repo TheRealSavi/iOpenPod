@@ -2051,22 +2051,15 @@ class SyncExecutor:
         # The writer always auto-generates a master referencing all tracks;
         # we only need to preserve its name.
         #
-        # A playlist is considered the master if master_flag is set OR if
-        # it is the very first playlist in the dataset (libgpod/iTunes
-        # always write the master first, and some older databases have
-        # master_flag=0 on the master).
+        # A playlist is the master only if master_flag is explicitly set.
+        # We do NOT use position-based heuristics ("first playlist = master")
+        # because user-created playlists merged from the GUI cache can end
+        # up at index 0, causing misidentification and data loss.
         master_playlist_name = "iPod"
         master_playlist_id: int | None = None
         playlists: list[PlaylistInfo] = []
         for idx, pl in enumerate(parsed_playlists):
             is_master = bool(pl.get("master_flag"))
-            # First playlist in dataset 2 is always the master per spec,
-            # even if master_flag is missing or 0.
-            if idx == 0 and not is_master:
-                # Heuristic: if it has no podcast_flag and no smart rules,
-                # treat the first playlist as the master.
-                if not pl.get("podcast_flag") and not pl.get("smart_playlist_data"):
-                    is_master = True
 
             if is_master:
                 master_playlist_name = pl.get("Title", "iPod")

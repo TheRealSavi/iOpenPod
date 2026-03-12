@@ -1216,6 +1216,11 @@ class _PlaylistWriteWorker(QThread):
             )
 
             if success:
+                # Clear pending playlists — they've been written
+                try:
+                    cache._user_playlists.clear()
+                except Exception:
+                    pass
                 self.finished_ok.emit(matched_count, name)
             else:
                 self.failed.emit("Database write returned False.")
@@ -1319,6 +1324,11 @@ class _PlaylistDeleteWorker(QThread):
             )
 
             if success:
+                # Clear pending playlists — they've been written
+                try:
+                    cache._user_playlists.clear()
+                except Exception:
+                    pass
                 self.finished_ok.emit(name)
             else:
                 self.failed.emit("Database write returned False.")
