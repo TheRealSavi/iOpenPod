@@ -742,7 +742,7 @@ class iTunesDBCache(QObject):
         from iTunesDB_Parser.parser import parse_itunesdb
         from iTunesDB_Shared.constants import (
             extract_datasets, extract_mhod_strings, extract_playlist_extras,
-            mac_to_unix_timestamp, filetype_to_string, sample_rate_to_hz,
+            filetype_to_string, sample_rate_to_hz,
         )
         if not itunesdb_path or not os.path.exists(itunesdb_path):
             return (None, device_path)
@@ -762,12 +762,6 @@ class iTunesDBCache(QObject):
                 sr = track.get("sample_rate_1")
                 if isinstance(sr, int) and sr > 65535:
                     track["sample_rate_1"] = sample_rate_to_hz(sr)
-                # Mac timestamps → Unix
-                for ts_key in ("date_added", "date_released", "last_modified",
-                               "last_played", "last_skipped"):
-                    val = track.get(ts_key, 0)
-                    if isinstance(val, int) and val > 0:
-                        track[ts_key] = mac_to_unix_timestamp(val)
 
             # Inline MHOD strings for albums
             for album in data.get("mhla", []):
@@ -788,11 +782,6 @@ class iTunesDBCache(QObject):
                         mhip_data = mhip.get("data", {}) if isinstance(mhip, dict) and "data" in mhip else mhip
                         items.append({"track_id": mhip_data.get("track_id", 0)})
                     pl["items"] = items
-                    # Mac timestamps → Unix
-                    for ts_key in ("timestamp", "timestamp_2"):
-                        val = pl.get(ts_key, 0)
-                        if isinstance(val, int) and val > 0:
-                            pl[ts_key] = mac_to_unix_timestamp(val)
 
             # Inline MHOD strings for artists (mhsd type 8)
             for artist in data.get("mhsd_type_8", []):
