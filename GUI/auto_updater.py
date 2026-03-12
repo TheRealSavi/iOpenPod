@@ -22,7 +22,6 @@ import hashlib
 import json
 import logging
 import os
-import platform
 import re
 import shutil
 import stat
@@ -80,7 +79,6 @@ def _get_json(url: str) -> dict:
 def _platform_asset_pattern() -> re.Pattern:
     """Return a regex that matches the release asset for this platform."""
     system = sys.platform
-    machine = platform.machine().lower()
 
     if system == "win32":
         return re.compile(r"iOpenPod-Windows\.zip$", re.I)

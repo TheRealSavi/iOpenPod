@@ -287,6 +287,9 @@ METADATA_FIELDS: dict[str, str] = {
     "lyrics": "Lyrics",
     # Volume normalization
     "sound_check": "sound_check",
+
+    # Dates
+    "date_released": "date_released",
 }
 
 # Writer defaults for fields where "empty" on PC becomes a non-zero value

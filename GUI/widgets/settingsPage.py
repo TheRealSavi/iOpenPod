@@ -16,7 +16,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtGui import QFont, QDesktopServices
 from pathlib import Path
 from ..styles import (
-    Colors, FONT_FAMILY, Metrics, btn_css, scrollbar_css, scaled,
+    Colors, FONT_FAMILY, Metrics, btn_css, scrollbar_css,
     sidebar_nav_css, sidebar_nav_selected_css,
 )
 
@@ -38,12 +38,12 @@ class SettingRow(QFrame):
         """)
 
         self._layout = QHBoxLayout(self)
-        self._layout.setContentsMargins(scaled(16), scaled(14), scaled(16), scaled(14))
-        self._layout.setSpacing(scaled(16))
+        self._layout.setContentsMargins(16, 14, 16, 14)
+        self._layout.setSpacing(16)
 
         # Left side: title + description
         text_layout = QVBoxLayout()
-        text_layout.setSpacing(scaled(3))
+        text_layout.setSpacing(3)
 
         self.title_label = QLabel(title)
         self.title_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG, QFont.Weight.DemiBold))
@@ -82,9 +82,9 @@ class ToggleRow(SettingRow):
                 border: none;
             }}
             QCheckBox::indicator {{
-                width: {scaled(38)}px;
-                height: {scaled(20)}px;
-                border-radius: {scaled(10)}px;
+                width: {(38)}px;
+                height: {(20)}px;
+                border-radius: {(10)}px;
                 background: {Colors.BORDER};
                 border: 1px solid {Colors.SURFACE_ACTIVE};
             }}
@@ -115,7 +115,7 @@ class ComboRow(SettingRow):
         super().__init__(title, description)
 
         self.combo = QComboBox()
-        self.combo.setFixedWidth(scaled(130))
+        self.combo.setFixedWidth((130))
         self.combo.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
         self.combo.setStyleSheet(f"""
             QComboBox {{
@@ -123,14 +123,14 @@ class ComboRow(SettingRow):
                 border: 1px solid {Colors.BORDER};
                 border-radius: {Metrics.BORDER_RADIUS_SM}px;
                 color: {Colors.TEXT_PRIMARY};
-                padding: {scaled(5)}px {scaled(10)}px;
+                padding: {(5)}px {(10)}px;
             }}
             QComboBox:hover {{
                 border: 1px solid {Colors.BORDER_FOCUS};
             }}
             QComboBox::drop-down {{
                 border: none;
-                width: {scaled(22)}px;
+                width: {(22)}px;
             }}
             QComboBox::down-arrow {{
                 image: none;
@@ -169,12 +169,12 @@ class FolderRow(SettingRow):
         super().__init__(title, description)
 
         right_layout = QHBoxLayout()
-        right_layout.setSpacing(scaled(8))
+        right_layout.setSpacing((8))
 
         self.path_label = QLabel(self._truncate(path) if path else "Not set")
         self.path_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.path_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
-        self.path_label.setMinimumWidth(scaled(120))
+        self.path_label.setMinimumWidth((120))
         self.path_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         right_layout.addWidget(self.path_label)
 
@@ -232,7 +232,7 @@ class ActionRow(SettingRow):
 
         self.action_btn = QPushButton(button_text)
         self.action_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        self.action_btn.setFixedWidth(scaled(100))
+        self.action_btn.setFixedWidth((100))
         self.action_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.action_btn.setStyleSheet(btn_css(
             bg=Colors.SURFACE_RAISED,
@@ -260,18 +260,18 @@ class FileRow(SettingRow):
         self._filter_str = filter_str
 
         right_layout = QHBoxLayout()
-        right_layout.setSpacing(scaled(8))
+        right_layout.setSpacing((8))
 
         self.path_label = QLabel(self._truncate(path) if path else "Auto-detect")
         self.path_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.path_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
-        self.path_label.setMinimumWidth(scaled(120))
+        self.path_label.setMinimumWidth((120))
         self.path_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         right_layout.addWidget(self.path_label)
 
         self.browse_btn = QPushButton("Browse…")
         self.browse_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        self.browse_btn.setFixedWidth(scaled(80))
+        self.browse_btn.setFixedWidth((80))
         self.browse_btn.setStyleSheet(btn_css(
             bg=Colors.SURFACE_RAISED,
             bg_hover=Colors.SURFACE_ACTIVE,
@@ -284,7 +284,7 @@ class FileRow(SettingRow):
 
         self.clear_btn = QPushButton("✕")
         self.clear_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        self.clear_btn.setFixedWidth(scaled(28))
+        self.clear_btn.setFixedWidth((28))
         self.clear_btn.setToolTip("Reset to auto-detect")
         self.clear_btn.setStyleSheet(btn_css(
             bg="transparent",
@@ -342,7 +342,7 @@ class ToolRow(SettingRow):
         super().__init__(title, description)
 
         right_layout = QHBoxLayout()
-        right_layout.setSpacing(scaled(8))
+        right_layout.setSpacing((8))
 
         self.status_label = QLabel("Checking…")
         self.status_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
@@ -351,7 +351,7 @@ class ToolRow(SettingRow):
 
         self.download_btn = QPushButton("Download")
         self.download_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        self.download_btn.setFixedWidth(scaled(90))
+        self.download_btn.setFixedWidth((90))
         self.download_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.download_btn.setStyleSheet(btn_css(
             bg=Colors.ACCENT,
@@ -417,7 +417,7 @@ class _TokenRow(SettingRow):
             self._text_layout.addWidget(link_btn)
 
         right_layout = QHBoxLayout()
-        right_layout.setSpacing(scaled(8))
+        right_layout.setSpacing((8))
 
         self.status_label = QLabel("")
         self.status_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
@@ -428,7 +428,7 @@ class _TokenRow(SettingRow):
 
         self.token_input = QLineEdit()
         self.token_input.setPlaceholderText("Paste token here…")
-        self.token_input.setFixedWidth(scaled(220))
+        self.token_input.setFixedWidth((220))
         self.token_input.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.token_input.setEchoMode(QLineEdit.EchoMode.Password)
         self.token_input.setStyleSheet(f"""
@@ -437,7 +437,7 @@ class _TokenRow(SettingRow):
                 border: 1px solid {Colors.BORDER};
                 border-radius: {Metrics.BORDER_RADIUS_SM}px;
                 color: {Colors.TEXT_PRIMARY};
-                padding: {scaled(5)}px {scaled(8)}px;
+                padding: {(5)}px {(8)}px;
             }}
             QLineEdit:focus {{
                 border: 1px solid {Colors.BORDER_FOCUS};
@@ -447,7 +447,7 @@ class _TokenRow(SettingRow):
 
         self.save_btn = QPushButton("Connect")
         self.save_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        self.save_btn.setFixedWidth(scaled(80))
+        self.save_btn.setFixedWidth((80))
         self.save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.save_btn.setStyleSheet(btn_css(
             bg=Colors.ACCENT,
@@ -462,7 +462,7 @@ class _TokenRow(SettingRow):
 
         self.clear_btn = QPushButton("✕")
         self.clear_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        self.clear_btn.setFixedWidth(scaled(28))
+        self.clear_btn.setFixedWidth((28))
         self.clear_btn.setToolTip("Disconnect")
         self.clear_btn.setStyleSheet(btn_css(
             bg="transparent",
@@ -599,7 +599,7 @@ class SettingsPage(QWidget):
     def _build_sidebar(self) -> QFrame:
         sidebar = QFrame()
         sidebar.setObjectName("settingsSidebar")
-        sidebar.setFixedWidth(scaled(240))
+        sidebar.setFixedWidth((240))
         sidebar.setStyleSheet(f"""
             QFrame#settingsSidebar {{
                 background: {Colors.SURFACE};
@@ -608,8 +608,8 @@ class SettingsPage(QWidget):
         """)
 
         layout = QVBoxLayout(sidebar)
-        layout.setContentsMargins(scaled(16), scaled(16), scaled(16), scaled(16))
-        layout.setSpacing(scaled(4))
+        layout.setContentsMargins((16), (16), (16), (16))
+        layout.setSpacing((4))
 
         # Back button
         back_btn = QPushButton("← Back")
@@ -620,7 +620,7 @@ class SettingsPage(QWidget):
                 background: transparent;
                 border: none;
                 color: {Colors.ACCENT};
-                padding: {scaled(4)}px 0;
+                padding: {(4)}px 0;
                 text-align: left;
             }}
             QPushButton:hover {{ color: {Colors.ACCENT_LIGHT}; }}
@@ -635,7 +635,7 @@ class SettingsPage(QWidget):
             f"color: {Colors.TEXT_PRIMARY}; background: transparent; border: none;"
         )
         layout.addWidget(title)
-        layout.addSpacing(scaled(12))
+        layout.addSpacing((12))
 
         # Navigation items
         self._nav_buttons: list[QPushButton] = []
@@ -681,7 +681,7 @@ class SettingsPage(QWidget):
         content = QWidget()
         content.setStyleSheet("background: transparent;")
         layout = QVBoxLayout(content)
-        layout.setContentsMargins(scaled(32), scaled(24), scaled(32), scaled(32))
+        layout.setContentsMargins((32), (24), (32), (32))
         layout.setSpacing(0)
 
         # Page title
@@ -693,7 +693,7 @@ class SettingsPage(QWidget):
             f"color: {Colors.TEXT_PRIMARY}; background: transparent; border: none;"
         )
         layout.addWidget(title_label)
-        layout.addSpacing(scaled(20))
+        layout.addSpacing((20))
 
         for item in items:
             if isinstance(item, str):
@@ -701,13 +701,13 @@ class SettingsPage(QWidget):
                 lbl.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS, QFont.Weight.Bold))
                 lbl.setStyleSheet(
                     f"color: {Colors.TEXT_TERTIARY}; background: transparent;"
-                    f" border: none; padding-left: {scaled(4)}px;"
+                    f" border: none; padding-left: {(4)}px;"
                 )
                 layout.addWidget(lbl)
-                layout.addSpacing(scaled(8))
+                layout.addSpacing((8))
             else:
                 layout.addWidget(item)
-                layout.addSpacing(scaled(20))
+                layout.addSpacing((20))
 
         layout.addStretch()
         scroll.setWidget(content)
@@ -738,14 +738,6 @@ class SettingsPage(QWidget):
             checked=True,
         )
 
-        self.ui_scale = ComboRow(
-            "UI Scale",
-            "Scale the entire interface. Auto derives the scale from your "
-            "screen resolution (1.0\u00d7 at 1440p). Requires restart.",
-            options=["Auto", "0.7", "0.8", "0.9", "1.0", "1.1", "1.25", "1.5"],
-            current="Auto",
-        )
-
         from ..settings import get_version
         self.version_row = ActionRow(
             f"iOpenPod v{get_version()}",
@@ -768,7 +760,7 @@ class SettingsPage(QWidget):
         return self._make_page(
             "General",
             "Appearance",
-            _SettingsCard(self.theme_combo, self.high_contrast, self.show_art, self.ui_scale),
+            _SettingsCard(self.theme_combo, self.high_contrast, self.show_art),
             "About",
             _SettingsCard(self.version_row, self.bug_report_row),
         )
@@ -1058,12 +1050,6 @@ class SettingsPage(QWidget):
         if idx >= 0:
             self.high_contrast.combo.setCurrentIndex(idx)
 
-        # UI scale
-        scale_text = s.ui_scale if s.ui_scale and s.ui_scale != "auto" else "Auto"
-        idx = self.ui_scale.combo.findText(scale_text)
-        if idx >= 0:
-            self.ui_scale.combo.setCurrentIndex(idx)
-
         self.transcode_cache_dir.value = s.transcode_cache_dir
         self.settings_dir.value = s.settings_dir
         self.log_dir.value = s.log_dir
@@ -1141,7 +1127,6 @@ class SettingsPage(QWidget):
             self.show_art.changed.connect(self._save)
             self.theme_combo.changed.connect(self._save)
             self.high_contrast.changed.connect(self._save)
-            self.ui_scale.changed.connect(self._save)
             self.transcode_cache_dir.changed.connect(self._save)
             self.settings_dir.changed.connect(self._save)
             self.log_dir.changed.connect(self._save)
@@ -1182,10 +1167,6 @@ class SettingsPage(QWidget):
         # High contrast
         hc_keys = {"Off": "off", "On": "on", "System": "system"}
         s.high_contrast = hc_keys.get(self.high_contrast.value, "off")
-
-        # UI scale
-        scale_val = self.ui_scale.value
-        s.ui_scale = scale_val.lower() if scale_val == "Auto" else scale_val
 
         s.transcode_cache_dir = self.transcode_cache_dir.value
         s.settings_dir = self.settings_dir.value

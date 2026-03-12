@@ -826,6 +826,7 @@ class SyncExecutor:
         # Podcast fields (field_name ≠ attr_name)
         "podcast_url": ("podcast_rss_url", None),
         "podcast_enclosure_url": ("podcast_enclosure_url", None),
+        "date_released": ("date_released", "int"),
     }
 
     def _execute_metadata_updates(self, ctx: _SyncContext) -> None:
@@ -1457,7 +1458,7 @@ class SyncExecutor:
         from iTunesDB_Parser.playcounts import parse_playcounts, merge_playcounts
         from iTunesDB_Shared.constants import (
             extract_datasets, extract_mhod_strings, extract_playlist_extras,
-            filetype_to_string, sample_rate_to_hz, mac_to_unix_timestamp,
+            filetype_to_string, sample_rate_to_hz,
         )
 
         empty = {"tracks": [], "playlists": [], "smart_playlists": []}
@@ -1480,10 +1481,6 @@ class SyncExecutor:
                     t["filetype"] = filetype_to_string(t["filetype"])
                 if "sample_rate_1" in t:
                     t["sample_rate_1"] = sample_rate_to_hz(t["sample_rate_1"])
-                for ts_key in ("date_added", "date_released", "last_modified",
-                               "last_played", "last_skipped"):
-                    if t.get(ts_key, 0) > 0:
-                        t[ts_key] = mac_to_unix_timestamp(t[ts_key])
 
             # ── Merge Play Counts file (iPod-generated deltas) ──────────
             pc_path = self.ipod_path / "iPod_Control" / "iTunes" / "Play Counts"
@@ -1507,9 +1504,6 @@ class SyncExecutor:
                     pl.update(extract_playlist_extras(mhod_children))
                     mhip_children = pl.pop("mhip_children", [])
                     pl["items"] = mhip_children
-                    for ts_key in ("timestamp", "timestamp_2"):
-                        if pl.get(ts_key, 0) > 0:
-                            pl[ts_key] = mac_to_unix_timestamp(pl[ts_key])
 
             # Dataset 2: regular + user playlists (mhlp)
             # libgpod prefers DS3 over DS2 and only reads ONE.  We prefer

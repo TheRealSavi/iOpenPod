@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import time
+import calendar
 
 import feedparser
 import requests
@@ -158,7 +159,7 @@ def _parse_episode(entry) -> PodcastEpisode | None:
     pub_date = 0.0
     if entry.get("published_parsed"):
         try:
-            pub_date = time.mktime(entry.published_parsed)
+            pub_date = calendar.timegm(entry.published_parsed)
         except (TypeError, OverflowError, ValueError):
             pass
 

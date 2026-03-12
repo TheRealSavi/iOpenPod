@@ -20,7 +20,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from ..styles import Colors, FONT_FAMILY, Metrics, btn_css, accent_btn_css, scaled, make_scroll_area
+from ..styles import Colors, FONT_FAMILY, Metrics, btn_css, accent_btn_css, make_scroll_area
 from ..glyphs import glyph_icon, glyph_pixmap
 
 log = logging.getLogger(__name__)
@@ -177,24 +177,24 @@ def _combo_css() -> str:
         border: 1px solid {Colors.BORDER_SUBTLE};
         border-radius: {Metrics.BORDER_RADIUS_SM}px;
         color: {Colors.TEXT_PRIMARY};
-        padding: {scaled(4)}px {scaled(8)}px;
+        padding: {(4)}px {(8)}px;
         font-family: {FONT_FAMILY};
         font-size: {Metrics.FONT_LG}px;
-        min-height: {scaled(22)}px;
+        min-height: {(22)}px;
     }}
     QComboBox:hover {{
         border-color: {Colors.ACCENT};
     }}
     QComboBox::drop-down {{
         border: none;
-        width: {scaled(20)}px;
+        width: {(20)}px;
     }}
     QComboBox::down-arrow {{
         image: none;
-        border-left: {scaled(4)}px solid transparent;
-        border-right: {scaled(4)}px solid transparent;
-        border-top: {scaled(5)}px solid {Colors.TEXT_SECONDARY};
-        margin-right: {scaled(6)}px;
+        border-left: {(4)}px solid transparent;
+        border-right: {(4)}px solid transparent;
+        border-top: {(5)}px solid {Colors.TEXT_SECONDARY};
+        margin-right: {(6)}px;
     }}
     QComboBox QAbstractItemView {{
         background: {Colors.DROPDOWN_BG};
@@ -202,7 +202,7 @@ def _combo_css() -> str:
         color: {Colors.TEXT_PRIMARY};
         selection-background-color: {Colors.ACCENT};
         selection-color: {Colors.TEXT_ON_ACCENT};
-        padding: {scaled(2)}px;
+        padding: {(2)}px;
     }}
 """
 
@@ -214,10 +214,10 @@ def _input_css() -> str:
         border: 1px solid {Colors.BORDER_SUBTLE};
         border-radius: {Metrics.BORDER_RADIUS_SM}px;
         color: {Colors.TEXT_PRIMARY};
-        padding: {scaled(4)}px {scaled(8)}px;
+        padding: {(4)}px {(8)}px;
         font-family: {FONT_FAMILY};
         font-size: {Metrics.FONT_LG}px;
-        min-height: {scaled(22)}px;
+        min-height: {(22)}px;
     }}
     QLineEdit:hover {{
         border-color: {Colors.ACCENT};
@@ -235,10 +235,10 @@ def _spinbox_css() -> str:
         border: 1px solid {Colors.BORDER_SUBTLE};
         border-radius: {Metrics.BORDER_RADIUS_SM}px;
         color: {Colors.TEXT_PRIMARY};
-        padding: {scaled(4)}px {scaled(8)}px;
+        padding: {(4)}px {(8)}px;
         font-family: {FONT_FAMILY};
         font-size: {Metrics.FONT_LG}px;
-        min-height: {scaled(22)}px;
+        min-height: {(22)}px;
     }}
     QSpinBox:hover {{
         border-color: {Colors.ACCENT};
@@ -246,17 +246,17 @@ def _spinbox_css() -> str:
     QSpinBox::up-button, QSpinBox::down-button {{
         background: {Colors.SURFACE_HOVER};
         border: none;
-        width: {scaled(16)}px;
+        width: {(16)}px;
     }}
     QSpinBox::up-arrow {{
-        border-left: {scaled(3)}px solid transparent;
-        border-right: {scaled(3)}px solid transparent;
-        border-bottom: {scaled(4)}px solid {Colors.TEXT_SECONDARY};
+        border-left: {(3)}px solid transparent;
+        border-right: {(3)}px solid transparent;
+        border-bottom: {(4)}px solid {Colors.TEXT_SECONDARY};
     }}
     QSpinBox::down-arrow {{
-        border-left: {scaled(3)}px solid transparent;
-        border-right: {scaled(3)}px solid transparent;
-        border-top: {scaled(4)}px solid {Colors.TEXT_SECONDARY};
+        border-left: {(3)}px solid transparent;
+        border-right: {(3)}px solid transparent;
+        border-top: {(4)}px solid {Colors.TEXT_SECONDARY};
     }}
 """
 
@@ -267,13 +267,13 @@ def _checkbox_css() -> str:
         color: {Colors.TEXT_PRIMARY};
         font-family: {FONT_FAMILY};
         font-size: {Metrics.FONT_LG}px;
-        spacing: {scaled(6)}px;
+        spacing: {(6)}px;
     }}
     QCheckBox::indicator {{
-        width: {scaled(16)}px;
-        height: {scaled(16)}px;
+        width: {(16)}px;
+        height: {(16)}px;
         border: 1px solid {Colors.BORDER_SUBTLE};
-        border-radius: {scaled(3)}px;
+        border-radius: {(3)}px;
         background: {Colors.SURFACE_RAISED};
     }}
     QCheckBox::indicator:hover {{
@@ -300,7 +300,7 @@ def _remove_btn_css() -> str:
         bg_press=Colors.DANGER_DIM,
         fg=Colors.DANGER,
         radius=Metrics.BORDER_RADIUS_SM,
-        padding=f"{scaled(2)}px {scaled(6)}px",
+        padding=f"{(2)}px {(6)}px",
     )
 
 
@@ -331,14 +331,14 @@ class SmartRuleRow(QFrame):
         self.setStyleSheet("QFrame { background: transparent; border: none; }")
 
         self._layout = QHBoxLayout(self)
-        self._layout.setContentsMargins(0, scaled(2), 0, scaled(2))
-        self._layout.setSpacing(scaled(6))
+        self._layout.setContentsMargins(0, (2), 0, (2))
+        self._layout.setSpacing((6))
 
         # ── Field selector ──
         self.field_combo = QComboBox()
         self.field_combo.setStyleSheet(_combo_css())
-        self.field_combo.setMinimumWidth(scaled(120))
-        self.field_combo.setMaximumWidth(scaled(160))
+        self.field_combo.setMinimumWidth((120))
+        self.field_combo.setMaximumWidth((160))
         for fid, (name, _ftype) in sorted(FIELD_DEFS.items(), key=lambda x: x[1][0]):
             self.field_combo.addItem(name, fid)
         self._layout.addWidget(self.field_combo)
@@ -346,8 +346,8 @@ class SmartRuleRow(QFrame):
         # ── Action selector ──
         self.action_combo = QComboBox()
         self.action_combo.setStyleSheet(_combo_css())
-        self.action_combo.setMinimumWidth(scaled(130))
-        self.action_combo.setMaximumWidth(scaled(180))
+        self.action_combo.setMinimumWidth((130))
+        self.action_combo.setMaximumWidth((180))
         self._layout.addWidget(self.action_combo)
 
         # ── Value area (container swapped based on field type) ──
@@ -355,17 +355,17 @@ class SmartRuleRow(QFrame):
         self._value_container.setStyleSheet("background: transparent; border: none;")
         self._value_layout = QHBoxLayout(self._value_container)
         self._value_layout.setContentsMargins(0, 0, 0, 0)
-        self._value_layout.setSpacing(scaled(4))
+        self._value_layout.setSpacing((4))
         self._layout.addWidget(self._value_container, stretch=1)
 
         # ── Remove button ──
         self.remove_btn = QPushButton()
-        _close_ic = glyph_icon("close", scaled(12), Colors.DANGER)
+        _close_ic = glyph_icon("close", (12), Colors.DANGER)
         if _close_ic:
             self.remove_btn.setIcon(_close_ic)
         else:
             self.remove_btn.setText("✕")
-        self.remove_btn.setFixedSize(scaled(24), scaled(24))
+        self.remove_btn.setFixedSize((24), (24))
         self.remove_btn.setStyleSheet(_remove_btn_css())
         self.remove_btn.setToolTip("Remove this rule")
         self.remove_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -522,7 +522,7 @@ class SmartRuleRow(QFrame):
             le = QLineEdit()
             le.setPlaceholderText("value")
             le.setStyleSheet(_input_css())
-            le.setMinimumWidth(scaled(120))
+            le.setMinimumWidth((120))
             le.textChanged.connect(lambda: self.changed.emit())
             self._add_value_widget(le)
 
@@ -530,7 +530,7 @@ class SmartRuleRow(QFrame):
             spin = QSpinBox()
             spin.setRange(-999999, 999999)
             spin.setStyleSheet(_spinbox_css())
-            spin.setMinimumWidth(scaled(80))
+            spin.setMinimumWidth((80))
             spin.valueChanged.connect(lambda: self.changed.emit())
             self._add_value_widget(spin)
 
@@ -545,7 +545,7 @@ class SmartRuleRow(QFrame):
             spin2 = QSpinBox()
             spin2.setRange(-999999, 999999)
             spin2.setStyleSheet(_spinbox_css())
-            spin2.setMinimumWidth(scaled(80))
+            spin2.setMinimumWidth((80))
             spin2.setVisible(False)
             spin2.valueChanged.connect(lambda: self.changed.emit())
             self._add_value_widget(spin2)
@@ -558,7 +558,7 @@ class SmartRuleRow(QFrame):
             spin.setRange(1, 99999)
             spin.setValue(30)
             spin.setStyleSheet(_spinbox_css())
-            spin.setMinimumWidth(scaled(70))
+            spin.setMinimumWidth((70))
             spin.valueChanged.connect(lambda: self.changed.emit())
             self._add_value_widget(spin)
 
@@ -578,7 +578,7 @@ class SmartRuleRow(QFrame):
         elif ft == SPLFT_BINARY_AND:
             combo = QComboBox()
             combo.setStyleSheet(_combo_css())
-            combo.setMinimumWidth(scaled(120))
+            combo.setMinimumWidth((120))
             for flag_val, flag_name in MEDIA_TYPE_FLAGS:
                 combo.addItem(flag_name, flag_val)
             combo.currentIndexChanged.connect(lambda: self.changed.emit())
@@ -587,7 +587,7 @@ class SmartRuleRow(QFrame):
         elif ft == SPLFT_PLAYLIST:
             combo = QComboBox()
             combo.setStyleSheet(_combo_css())
-            combo.setMinimumWidth(scaled(120))
+            combo.setMinimumWidth((120))
             combo.addItem("(select playlist)", 0)
             # TODO: populate with actual playlists
             combo.currentIndexChanged.connect(lambda: self.changed.emit())
@@ -684,14 +684,14 @@ class SmartPlaylistEditor(QFrame):
         self._editing_playlist: Optional[dict] = None  # None → new playlist
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(scaled(16), scaled(14), scaled(16), scaled(14))
-        root.setSpacing(scaled(10))
+        root.setContentsMargins((16), (14), (16), (14))
+        root.setSpacing((10))
 
         # ── Header: Name ──────────────────────────────────────
         header = QHBoxLayout()
-        header.setSpacing(scaled(8))
+        header.setSpacing((8))
         icon = QLabel()
-        _px = glyph_pixmap("filter", scaled(28), Colors.ACCENT)
+        _px = glyph_pixmap("filter", (28), Colors.ACCENT)
         if _px:
             icon.setPixmap(_px)
         else:
@@ -709,7 +709,7 @@ class SmartPlaylistEditor(QFrame):
                 border: none;
                 border-bottom: 2px solid {Colors.BORDER_SUBTLE};
                 color: {Colors.TEXT_PRIMARY};
-                padding: {scaled(4)}px {scaled(2)}px;
+                padding: {(4)}px {(2)}px;
                 font-size: {Metrics.FONT_TITLE}px;
             }}
             QLineEdit:focus {{
@@ -721,7 +721,7 @@ class SmartPlaylistEditor(QFrame):
 
         # ── Conjunction row ───────────────────────────────────
         conj_row = QHBoxLayout()
-        conj_row.setSpacing(scaled(6))
+        conj_row.setSpacing((6))
 
         lbl = QLabel("Match")
         lbl.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
@@ -732,7 +732,7 @@ class SmartPlaylistEditor(QFrame):
         self.conjunction_combo.setStyleSheet(_combo_css())
         self.conjunction_combo.addItem("all", "AND")
         self.conjunction_combo.addItem("any", "OR")
-        self.conjunction_combo.setFixedWidth(scaled(70))
+        self.conjunction_combo.setFixedWidth((70))
         conj_row.addWidget(self.conjunction_combo)
 
         lbl2 = QLabel("of the following rules:")
@@ -753,7 +753,7 @@ class SmartPlaylistEditor(QFrame):
                 }}
             """,
         )
-        self._rules_scroll.setMinimumHeight(scaled(80))
+        self._rules_scroll.setMinimumHeight((80))
         self._rules_scroll.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
@@ -761,8 +761,8 @@ class SmartPlaylistEditor(QFrame):
         self._rules_widget = QWidget()
         self._rules_widget.setStyleSheet("background: transparent;")
         self._rules_layout = QVBoxLayout(self._rules_widget)
-        self._rules_layout.setContentsMargins(scaled(8), scaled(6), scaled(8), scaled(6))
-        self._rules_layout.setSpacing(scaled(2))
+        self._rules_layout.setContentsMargins((8), (6), (8), (6))
+        self._rules_layout.setSpacing((2))
         self._rules_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self._rules_scroll.setWidget(self._rules_widget)
         root.addWidget(self._rules_scroll, stretch=1)
@@ -795,11 +795,11 @@ class SmartPlaylistEditor(QFrame):
 
         # ── Options area ─────────────────────────────────────
         opts = QVBoxLayout()
-        opts.setSpacing(scaled(8))
+        opts.setSpacing((8))
 
         # Limit row
         limit_row = QHBoxLayout()
-        limit_row.setSpacing(scaled(6))
+        limit_row.setSpacing((6))
 
         self.limit_check = QCheckBox("Limit to")
         self.limit_check.setStyleSheet(_checkbox_css())
@@ -810,7 +810,7 @@ class SmartPlaylistEditor(QFrame):
         self.limit_value_spin.setRange(1, 99999)
         self.limit_value_spin.setValue(25)
         self.limit_value_spin.setStyleSheet(_spinbox_css())
-        self.limit_value_spin.setFixedWidth(scaled(80))
+        self.limit_value_spin.setFixedWidth((80))
         self.limit_value_spin.setEnabled(False)
         limit_row.addWidget(self.limit_value_spin)
 
@@ -818,7 +818,7 @@ class SmartPlaylistEditor(QFrame):
         self.limit_type_combo.setStyleSheet(_combo_css())
         for lt_id, lt_name in LIMIT_TYPES:
             self.limit_type_combo.addItem(lt_name, lt_id)
-        self.limit_type_combo.setFixedWidth(scaled(90))
+        self.limit_type_combo.setFixedWidth((90))
         self.limit_type_combo.setEnabled(False)
         limit_row.addWidget(self.limit_type_combo)
 
@@ -833,7 +833,7 @@ class SmartPlaylistEditor(QFrame):
         self.limit_sort_combo.setStyleSheet(_combo_css())
         for ls_id, ls_name in LIMIT_SORTS:
             self.limit_sort_combo.addItem(ls_name, ls_id)
-        self.limit_sort_combo.setFixedWidth(scaled(170))
+        self.limit_sort_combo.setFixedWidth((170))
         self.limit_sort_combo.setEnabled(False)
         limit_row.addWidget(self.limit_sort_combo)
 
@@ -853,7 +853,7 @@ class SmartPlaylistEditor(QFrame):
 
         # Sort order
         sort_row = QHBoxLayout()
-        sort_row.setSpacing(scaled(6))
+        sort_row.setSpacing((6))
         sort_lbl = QLabel("Sort Order:")
         sort_lbl.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
         sort_lbl.setStyleSheet(
@@ -863,7 +863,7 @@ class SmartPlaylistEditor(QFrame):
 
         self.sort_combo = QComboBox()
         self.sort_combo.setStyleSheet(_combo_css())
-        self.sort_combo.setFixedWidth(scaled(170))
+        self.sort_combo.setFixedWidth((170))
         for s_id, s_name in PLAYLIST_SORT_ORDERS:
             self.sort_combo.addItem(s_name, s_id)
         sort_row.addWidget(self.sort_combo)
@@ -880,7 +880,7 @@ class SmartPlaylistEditor(QFrame):
 
         # ── Button row ───────────────────────────────────────
         btn_row = QHBoxLayout()
-        btn_row.setSpacing(scaled(8))
+        btn_row.setSpacing((8))
         btn_row.addStretch()
 
         self.cancel_btn = QPushButton("Cancel")
@@ -1115,14 +1115,14 @@ class RegularPlaylistEditor(QFrame):
         self._editing_playlist: Optional[dict] = None  # None → new playlist
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(scaled(16), scaled(14), scaled(16), scaled(14))
-        root.setSpacing(scaled(12))
+        root.setContentsMargins((16), (14), (16), (14))
+        root.setSpacing((12))
 
         # ── Header: Name ──────────────────────────────────────
         header = QHBoxLayout()
-        header.setSpacing(scaled(8))
+        header.setSpacing((8))
         icon = QLabel()
-        _px = glyph_pixmap("annotation-dots", scaled(28), Colors.ACCENT)
+        _px = glyph_pixmap("annotation-dots", (28), Colors.ACCENT)
         if _px:
             icon.setPixmap(_px)
         else:
@@ -1140,7 +1140,7 @@ class RegularPlaylistEditor(QFrame):
                 border: none;
                 border-bottom: 2px solid {Colors.BORDER_SUBTLE};
                 color: {Colors.TEXT_PRIMARY};
-                padding: {scaled(4)}px {scaled(2)}px;
+                padding: {(4)}px {(2)}px;
                 font-size: {Metrics.FONT_TITLE}px;
             }}
             QLineEdit:focus {{
@@ -1158,7 +1158,7 @@ class RegularPlaylistEditor(QFrame):
 
         # ── Sort Order ────────────────────────────────────────
         sort_row = QHBoxLayout()
-        sort_row.setSpacing(scaled(8))
+        sort_row.setSpacing((8))
         sort_label = QLabel("Sort Order:")
         sort_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
         sort_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
@@ -1166,21 +1166,21 @@ class RegularPlaylistEditor(QFrame):
 
         self.sort_combo = QComboBox()
         self.sort_combo.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
-        self.sort_combo.setMinimumWidth(scaled(180))
+        self.sort_combo.setMinimumWidth((180))
         self.sort_combo.setStyleSheet(f"""
             QComboBox {{
                 background: {Colors.SURFACE_RAISED};
                 color: {Colors.TEXT_PRIMARY};
                 border: 1px solid {Colors.BORDER_SUBTLE};
-                border-radius: {scaled(4)}px;
-                padding: {scaled(4)}px {scaled(8)}px;
+                border-radius: {(4)}px;
+                padding: {(4)}px {(8)}px;
             }}
             QComboBox:hover {{
                 border-color: {Colors.ACCENT};
             }}
             QComboBox::drop-down {{
                 border: none;
-                width: {scaled(20)}px;
+                width: {(20)}px;
             }}
             QComboBox QAbstractItemView {{
                 background: {Colors.SURFACE_RAISED};
@@ -1217,13 +1217,13 @@ class RegularPlaylistEditor(QFrame):
 
         # ── Buttons ───────────────────────────────────────────
         btn_row = QHBoxLayout()
-        btn_row.setSpacing(scaled(8))
+        btn_row.setSpacing((8))
         btn_row.addStretch()
 
         cancel_btn = QPushButton("Cancel")
         cancel_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
         cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        cancel_btn.setMinimumWidth(scaled(80))
+        cancel_btn.setMinimumWidth((80))
         cancel_btn.setStyleSheet(btn_css(
             bg=Colors.SURFACE_RAISED,
             bg_hover=Colors.SURFACE_HOVER,
@@ -1237,7 +1237,7 @@ class RegularPlaylistEditor(QFrame):
         save_btn = QPushButton("Save")
         save_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.Bold))
         save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        save_btn.setMinimumWidth(scaled(80))
+        save_btn.setMinimumWidth((80))
         save_btn.setStyleSheet(accent_btn_css())
         save_btn.clicked.connect(self._on_save)
         btn_row.addWidget(save_btn)
@@ -1313,7 +1313,7 @@ class NewPlaylistDialog(QDialog):
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.setWindowTitle("New Playlist")
-        self.setFixedSize(scaled(320), scaled(200))
+        self.setFixedSize((320), (200))
         self.setStyleSheet(f"""
             QDialog {{
                 background: {Colors.DIALOG_BG};
@@ -1324,8 +1324,8 @@ class NewPlaylistDialog(QDialog):
         self._choice: Optional[str] = None
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(scaled(24), scaled(20), scaled(24), scaled(20))
-        layout.setSpacing(scaled(12))
+        layout.setContentsMargins((24), (20), (24), (20))
+        layout.setSpacing((12))
 
         title = QLabel("Create New Playlist")
         title.setFont(QFont(FONT_FAMILY, Metrics.FONT_TITLE, QFont.Weight.Bold))
@@ -1339,25 +1339,25 @@ class NewPlaylistDialog(QDialog):
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(subtitle)
 
-        layout.addSpacing(scaled(8))
+        layout.addSpacing((8))
 
         btn_row = QHBoxLayout()
-        btn_row.setSpacing(scaled(12))
+        btn_row.setSpacing((12))
 
-        _ic_sz = QSize(scaled(20), scaled(20))
+        _ic_sz = QSize((20), (20))
 
         # Regular playlist button
         self.regular_btn = QPushButton("Regular")
         self.regular_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
-        self.regular_btn.setMinimumHeight(scaled(44))
+        self.regular_btn.setMinimumHeight((44))
         self.regular_btn.setStyleSheet(btn_css(
             bg=Colors.SURFACE_RAISED,
             bg_hover=Colors.SURFACE_HOVER,
             bg_press=Colors.SURFACE_ACTIVE,
             border=f"1px solid {Colors.BORDER_SUBTLE}",
-            padding=f"{scaled(10)}px {scaled(20)}px",
+            padding=f"{(10)}px {(20)}px",
         ))
-        _ic = glyph_icon(_ICON_REGULAR, scaled(20), Colors.TEXT_SECONDARY)
+        _ic = glyph_icon(_ICON_REGULAR, (20), Colors.TEXT_SECONDARY)
         if _ic:
             self.regular_btn.setIcon(_ic)
             self.regular_btn.setIconSize(_ic_sz)
@@ -1367,16 +1367,16 @@ class NewPlaylistDialog(QDialog):
         # Smart playlist button
         self.smart_btn = QPushButton("Smart")
         self.smart_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
-        self.smart_btn.setMinimumHeight(scaled(44))
+        self.smart_btn.setMinimumHeight((44))
         self.smart_btn.setStyleSheet(btn_css(
             bg=Colors.ACCENT_DIM,
             bg_hover=Colors.ACCENT_HOVER,
             bg_press=Colors.ACCENT_PRESS,
             fg=Colors.TEXT_ON_ACCENT,
             border=f"1px solid {Colors.ACCENT_BORDER}",
-            padding=f"{scaled(10)}px {scaled(20)}px",
+            padding=f"{(10)}px {(20)}px",
         ))
-        _ic = glyph_icon(_ICON_SMART, scaled(20), Colors.TEXT_ON_ACCENT)
+        _ic = glyph_icon(_ICON_SMART, (20), Colors.TEXT_ON_ACCENT)
         if _ic:
             self.smart_btn.setIcon(_ic)
             self.smart_btn.setIconSize(_ic_sz)

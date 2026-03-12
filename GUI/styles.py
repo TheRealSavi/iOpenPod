@@ -292,15 +292,6 @@ class Colors:
             setattr(cls, key, value)
 
 
-# ── DPI-aware scaling ────────────────────────────────────────────────────────
-
-_dpi_scale: float = 1.0
-"""Pixel scaling ratio.  Set by ``Metrics.apply_scaling()``."""
-
-_font_scale: float = 1.0
-"""Font-pt scaling ratio (floors higher than pixel scale)."""
-
-
 def build_palette() -> QPalette:
     """Build a QPalette from the current Colors state (call after apply_theme)."""
     pal = QPalette()
@@ -328,18 +319,8 @@ def build_palette() -> QPalette:
     return pal
 
 
-def scaled(px: int | float) -> int:
-    """Scale a pixel value by the current screen ratio."""
-    return max(1, round(px * _dpi_scale))
-
-
-def font_scaled(pt: int | float) -> int:
-    """Scale a font point size by the current screen ratio."""
-    return max(6, round(pt * _font_scale))
-
-
 class Metrics:
-    """Shared dimension constants (scaled in-place by ``apply_scaling``)."""
+    """Shared dimension constants ( in-place by ``apply_scaling``)."""
     BORDER_RADIUS = 8
     BORDER_RADIUS_SM = 6
     BORDER_RADIUS_LG = 10
@@ -374,90 +355,6 @@ class Metrics:
     FONT_ICON_LG = 40   # Grid item placeholder glyphs
     FONT_ICON_XL = 48   # Empty-state decorative glyphs
 
-    @classmethod
-    def apply_scaling(cls) -> None:
-        """Recompute all metrics based on primary screen geometry.
-
-        Call once, after QApplication is created.
-
-        If the user has set a manual UI scale in settings, that value is
-        used directly.  Otherwise the scale factor is derived from the
-        logical screen height relative to a 1440p reference (27" 1440p
-        = 1.0×).  Screens smaller than 1440p scale down; larger screens
-        scale up.
-        """
-        global _dpi_scale, _font_scale
-
-        # Check for a manual override in settings
-        override: float | None = None
-        try:
-            from .settings import get_settings
-            raw_val = get_settings().ui_scale
-            if raw_val and raw_val != "auto":
-                override = float(raw_val)
-        except Exception:
-            pass
-
-        if override is not None:
-            raw = max(0.55, min(2.0, override))
-        else:
-            from PyQt6.QtWidgets import QApplication
-            app = QApplication.instance()
-            if not isinstance(app, QApplication):
-                return
-            screen = app.primaryScreen()
-            if not screen:
-                return
-            avail = screen.availableGeometry()
-            raw = avail.height() / 1440
-
-            # On HiDPI displays (macOS Retina, etc.), Qt reports logical
-            # coordinates that are already scaled by the OS.  The 1440
-            # reference assumes non-HiDPI, so a Retina MacBook
-            # (logical ~1007) would get 0.70x — far too small.
-            # Compensate by the square root of the device pixel ratio.
-            dpr = screen.devicePixelRatio()
-            if dpr > 1.0:
-                raw *= dpr ** 0.5
-
-        _dpi_scale = max(0.55, min(2.0, raw))
-        _font_scale = max(0.70, min(1.6, raw))
-
-        s = _dpi_scale
-        f = _font_scale
-
-        # Pixel dimensions
-        cls.BORDER_RADIUS = round(8 * s)
-        cls.BORDER_RADIUS_SM = round(6 * s)
-        cls.BORDER_RADIUS_LG = round(10 * s)
-        cls.BORDER_RADIUS_XL = round(12 * s)
-        cls.GRID_ITEM_W = round(172 * s)
-        cls.GRID_ITEM_H = round(230 * s)
-        cls.GRID_ART_SIZE = round(152 * s)
-        cls.GRID_SPACING = round(14 * s)
-        cls.SIDEBAR_WIDTH = round(220 * s)
-        cls.SCROLLBAR_W = max(4, round(8 * s))
-        cls.SCROLLBAR_MIN_H = round(40 * s)
-        cls.BTN_PADDING_V = round(7 * s)
-        cls.BTN_PADDING_H = round(14 * s)
-
-        # Font sizes (less aggressive floor so text stays readable)
-        cls.FONT_XS = max(6, round(8 * f))
-        cls.FONT_SM = max(7, round(9 * f))
-        cls.FONT_MD = max(8, round(10 * f))
-        cls.FONT_LG = max(8, round(11 * f))
-        cls.FONT_XL = max(9, round(12 * f))
-        cls.FONT_XXL = max(10, round(13 * f))
-        cls.FONT_TITLE = max(10, round(14 * f))
-        cls.FONT_PAGE_TITLE = max(12, round(16 * f))
-        cls.FONT_HERO = max(14, round(18 * f))
-
-        # Icon / glyph sizes
-        cls.FONT_ICON_SM = max(10, round(15 * f))
-        cls.FONT_ICON_MD = max(14, round(22 * f))
-        cls.FONT_ICON_LG = max(24, round(40 * f))
-        cls.FONT_ICON_XL = max(30, round(48 * f))
-
 
 # ── Custom proxy style for scrollbar painting ───────────────────────────────
 
@@ -471,11 +368,11 @@ class DarkScrollbarStyle(QProxyStyle):
 
     @property
     def _THICKNESS(self):  # noqa: N802
-        return max(4, scaled(8))
+        return max(4, (8))
 
     @property
     def _MIN_HANDLE(self):  # noqa: N802
-        return scaled(36)
+        return (36)
     _TRACK = QColor(0, 0, 0, 0)           # invisible track
 
     @property
@@ -521,8 +418,8 @@ class DarkScrollbarStyle(QProxyStyle):
                     f"background-color: {Colors.TOOLTIP_BG};"
                     f"color: {Colors.TEXT_PRIMARY};"
                     f"border: 1px solid {Colors.BORDER};"
-                    f"border-radius: {scaled(4)}px;"
-                    f"padding: {scaled(3)}px {scaled(6)}px;"
+                    f"border-radius: {(4)}px;"
+                    f"padding: {(3)}px {(6)}px;"
                     f"font-family: {_CSS_FONT_STACK};"
                     f"font-size: {Metrics.FONT_LG}px;"
                 )
@@ -534,9 +431,9 @@ class DarkScrollbarStyle(QProxyStyle):
         if metric in (
             QStyle.PixelMetric.PM_ScrollBarExtent,
         ):
-            return max(4, scaled(8))
+            return max(4, (8))
         if metric == QStyle.PixelMetric.PM_ScrollBarSliderMin:
-            return scaled(36)
+            return (36)
         return super().pixelMetric(metric, option, widget)
 
     # -- Sub-control rectangles --
@@ -847,7 +744,7 @@ def sidebar_nav_css() -> str:
         bg_hover=Colors.SURFACE_ACTIVE,
         bg_press=Colors.SURFACE,
         radius=Metrics.BORDER_RADIUS_SM,
-        padding=f"{scaled(7)}px {scaled(12)}px",
+        padding=f"{(7)}px {(12)}px",
         extra="text-align: left;",
     )
 
@@ -859,7 +756,7 @@ def sidebar_nav_selected_css() -> str:
         bg_press=Colors.ACCENT_PRESS,
         fg=Colors.ACCENT,
         radius=Metrics.BORDER_RADIUS_SM,
-        padding=f"{scaled(7)}px {scaled(12)}px",
+        padding=f"{(7)}px {(12)}px",
         extra="text-align: left; font-weight: 600;",
     )
 
@@ -869,7 +766,7 @@ def toolbar_btn_css() -> str:
         bg=Colors.SURFACE_RAISED,
         bg_hover=Colors.SURFACE_ACTIVE,
         bg_press=Colors.SURFACE_ALT,
-        padding=f"{scaled(8)}px 0",
+        padding=f"{(8)}px 0",
     )
 
 
@@ -993,7 +890,7 @@ def make_section_header(text: str) -> "QLabel":
     lbl.setFont(_QFont(FONT_FAMILY, Metrics.FONT_XS, _QFont.Weight.Bold))
     lbl.setStyleSheet(
         f"color: {Colors.TEXT_TERTIARY}; background: transparent;"
-        f" border: none; padding-top: {scaled(6)}px;"
+        f" border: none; padding-top: {(6)}px;"
         f" letter-spacing: 1.2px;"
     )
     return lbl
@@ -1008,7 +905,7 @@ def make_detail_row(label: str, value: str) -> "QWidget":
     row = _QWidget()
     row.setStyleSheet("background: transparent; border: none;")
     hl = _QHBox(row)
-    hl.setContentsMargins(0, scaled(3), 0, scaled(3))
+    hl.setContentsMargins(0, (3), 0, (3))
     hl.setSpacing(8)
 
     lbl = _QLabel(label)
@@ -1093,7 +990,7 @@ def card_css(
     if radius is None:
         radius = Metrics.BORDER_RADIUS
     if padding is None:
-        padding = f"{scaled(10)}px"
+        padding = f"{(10)}px"
     return (
         f"background: {bg}; border: {border};"
         f" border-radius: {radius}px; padding: {padding};"
@@ -1104,7 +1001,7 @@ def card_css(
 # ── Application-level stylesheet ────────────────────────────────────────────
 
 def app_stylesheet() -> str:
-    """Build the global stylesheet with current (possibly scaled) metrics."""
+    """Build the global stylesheet with current (possibly ) metrics."""
     return f"""
     /* ── Base ──────────────────────────────────────────────────── */
     QMainWindow {{
@@ -1157,8 +1054,8 @@ def app_stylesheet() -> str:
         border: 1px solid {Colors.BORDER};
         border-radius: {Metrics.BORDER_RADIUS_SM}px;
         color: {Colors.TEXT_PRIMARY};
-        padding: {scaled(6)}px {scaled(20)}px;
-        min-width: {scaled(70)}px;
+        padding: {(6)}px {(20)}px;
+        min-width: {(70)}px;
     }}
     QMessageBox QPushButton:hover {{
         background: {Colors.SURFACE_HOVER};

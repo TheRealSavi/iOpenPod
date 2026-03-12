@@ -7,7 +7,7 @@ from PyQt6.QtCore import Qt, QRectF
 from PyQt6.QtGui import QPainter, QFont, QColor, QPen, QPainterPath
 from PyQt6.QtWidgets import QWidget
 
-from GUI.styles import Colors, FONT_FAMILY, scaled, font_scaled
+from GUI.styles import Colors, FONT_FAMILY
 from GUI.glyphs import glyph_pixmap
 
 
@@ -53,9 +53,9 @@ class DropOverlayWidget(QWidget):
         painter.fillRect(self.rect(), _qcolor(Colors.OVERLAY))
 
         # ── Inner rounded rectangle with dashed accent border ───────
-        margin = scaled(40)
+        margin = (40)
         inner = QRectF(margin, margin, w - 2 * margin, h - 2 * margin)
-        radius = scaled(20)
+        radius = (20)
 
         # Subtle accent-tinted fill inside the border
         accent = _qcolor(Colors.ACCENT)
@@ -66,9 +66,9 @@ class DropOverlayWidget(QWidget):
         painter.fillPath(path, inner_fill)
 
         # Dashed border
-        pen = QPen(_qcolor(Colors.ACCENT_BORDER), scaled(2.5))
+        pen = QPen(_qcolor(Colors.ACCENT_BORDER), (2.5))
         pen.setStyle(Qt.PenStyle.CustomDashLine)
-        pen.setDashPattern([scaled(8), scaled(5)])
+        pen.setDashPattern([(8), (5)])
         pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         painter.setPen(pen)
         painter.drawRoundedRect(inner, radius, radius)
@@ -78,29 +78,29 @@ class DropOverlayWidget(QWidget):
         cy = h / 2
 
         # Icon
-        icon_size = scaled(56)
+        icon_size = (56)
         icon_px = glyph_pixmap("music", icon_size, Colors.ACCENT)
         if icon_px:
             painter.drawPixmap(
                 int(cx - icon_size / 2),
-                int(cy - icon_size - scaled(16)),
+                int(cy - icon_size - (16)),
                 icon_px,
             )
 
         # Primary text
         painter.setPen(_qcolor(Colors.TEXT_PRIMARY))
-        primary_font = QFont(FONT_FAMILY, font_scaled(20))
+        primary_font = QFont(FONT_FAMILY, (20))
         primary_font.setWeight(QFont.Weight.DemiBold)
         painter.setFont(primary_font)
-        primary_rect = QRectF(inner.left(), cy + scaled(4), inner.width(), scaled(36))
+        primary_rect = QRectF(inner.left(), cy + (4), inner.width(), (36))
         painter.drawText(primary_rect, Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop,
                          "Drop files to add to iPod")
 
         # Secondary hint text
         painter.setPen(_qcolor(Colors.TEXT_SECONDARY))
-        hint_font = QFont(FONT_FAMILY, font_scaled(12))
+        hint_font = QFont(FONT_FAMILY, (12))
         painter.setFont(hint_font)
-        hint_rect = QRectF(inner.left(), cy + scaled(42), inner.width(), scaled(24))
+        hint_rect = QRectF(inner.left(), cy + (42), inner.width(), (24))
         painter.drawText(hint_rect, Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop,
                          "Audio files and folders supported")
 

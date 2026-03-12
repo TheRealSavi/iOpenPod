@@ -147,9 +147,7 @@ class AppSettings:
     # ── Appearance ──────────────────────────────────────────────────────────
     # Show album art in the track list view
     show_art_in_tracklist: bool = True
-    # UI scaling override.  "auto" = derive from screen resolution.
-    # Any other value is a float multiplier (e.g. "1.0", "0.8", "1.25").
-    ui_scale: str = "auto"
+
     # Theme: "dark", "light", or "system" (follow OS preference).
     theme: str = "dark"
     # Increased contrast: "off", "on", or "system" (follow OS accessibility).

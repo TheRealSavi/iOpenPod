@@ -24,7 +24,7 @@ from SyncEngine.eta import ETATracker
 
 from .formatters import format_size as _format_size, format_duration_mmss as _format_duration
 from ..glyphs import glyph_pixmap
-from ..styles import Colors, FONT_FAMILY, Metrics, btn_css, scrollbar_css, scaled, font_scaled
+from ..styles import Colors, FONT_FAMILY, Metrics, btn_css, scrollbar_css
 
 import os
 import logging
@@ -317,7 +317,7 @@ class _StorageBarWidget(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedHeight(scaled(10))
+        self.setFixedHeight((10))
         self._total: int = 1
         self._current_used: int = 0
         self._sync_delta: int = 0  # positive = adding, negative = removing
@@ -438,8 +438,8 @@ class SyncTrackRow(QFrame):
         self.setCursor(Qt.CursorShape.PointingHandCursor if checkable else Qt.CursorShape.ArrowCursor)
 
         row = QHBoxLayout(self)
-        row.setContentsMargins(scaled(14), scaled(8), scaled(14), scaled(8))
-        row.setSpacing(scaled(10))
+        row.setContentsMargins((14), (8), (14), (8))
+        row.setSpacing((10))
 
         # Checkbox
         self.cb = QCheckBox(self)
@@ -447,9 +447,9 @@ class SyncTrackRow(QFrame):
         self.cb.setVisible(checkable)
         self.cb.setStyleSheet(f"""
             QCheckBox::indicator {{
-                width: {scaled(16)}px; height: {scaled(16)}px;
+                width: {(16)}px; height: {(16)}px;
                 border: 2px solid {Colors.TEXT_DISABLED};
-                border-radius: {scaled(3)}px;
+                border-radius: {(3)}px;
                 background: transparent;
             }}
             QCheckBox::indicator:checked {{
@@ -463,7 +463,7 @@ class SyncTrackRow(QFrame):
         # Two-line text block
         text_col = QVBoxLayout()
         text_col.setContentsMargins(0, 0, 0, 0)
-        text_col.setSpacing(scaled(2))
+        text_col.setSpacing((2))
 
         self.title_label = QLabel(self)
         self.title_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
@@ -680,12 +680,12 @@ class _InfoRow(QFrame):
             }}
         """)
         row = QHBoxLayout(self)
-        row.setContentsMargins(scaled(40), scaled(4), scaled(14), scaled(4))
-        row.setSpacing(scaled(10))
+        row.setContentsMargins((40), (4), (14), (4))
+        row.setSpacing((10))
 
         text_col = QVBoxLayout()
         text_col.setContentsMargins(0, 0, 0, 0)
-        text_col.setSpacing(scaled(1))
+        text_col.setSpacing((1))
 
         t = QLabel(title, self)
         t.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
@@ -754,8 +754,8 @@ class SyncCategoryCard(QFrame):
         self._header_frame.setCursor(Qt.CursorShape.PointingHandCursor)
         self._header_frame.setStyleSheet("background: transparent; border: none;")
         hdr = QHBoxLayout(self._header_frame)
-        hdr.setContentsMargins(scaled(14), scaled(10), scaled(14), scaled(10))
-        hdr.setSpacing(scaled(10))
+        hdr.setContentsMargins((14), (10), (14), (10))
+        hdr.setSpacing((10))
 
         # Select-all checkbox (only for checkable cards)
         self._select_all_cb = QCheckBox(self._header_frame)
@@ -763,9 +763,9 @@ class SyncCategoryCard(QFrame):
         self._select_all_cb.setVisible(checkable)
         self._select_all_cb.setStyleSheet(f"""
             QCheckBox::indicator {{
-                width: {scaled(16)}px; height: {scaled(16)}px;
+                width: {(16)}px; height: {(16)}px;
                 border: 2px solid {Colors.TEXT_DISABLED};
-                border-radius: {scaled(3)}px;
+                border-radius: {(3)}px;
                 background: transparent;
             }}
             QCheckBox::indicator:checked {{
@@ -782,9 +782,9 @@ class SyncCategoryCard(QFrame):
 
         # Icon
         icon_lbl = QLabel(self._header_frame)
-        icon_lbl.setFixedSize(scaled(22), scaled(22))
+        icon_lbl.setFixedSize((22), (22))
         icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        svg_px = glyph_pixmap(icon, font_scaled(16), accent)
+        svg_px = glyph_pixmap(icon, (16), accent)
         if svg_px:
             icon_lbl.setPixmap(svg_px)
         else:
@@ -815,13 +815,13 @@ class SyncCategoryCard(QFrame):
         count_lbl = QLabel(str(count), self._header_frame)
         count_lbl.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.Bold))
         count_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        count_lbl.setFixedHeight(scaled(20))
-        count_lbl.setMinimumWidth(scaled(28))
+        count_lbl.setFixedHeight((20))
+        count_lbl.setMinimumWidth((28))
         count_lbl.setStyleSheet(f"""
             background: {accent};
             color: {Colors.BG_DARK};
-            border-radius: {scaled(10)}px;
-            padding: 0 {scaled(6)}px;
+            border-radius: {(10)}px;
+            padding: 0 {(6)}px;
         """)
         hdr.addWidget(count_lbl)
 
@@ -986,7 +986,7 @@ class SyncReviewWidget(QWidget):
             }}
         """)
         header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(scaled(16), scaled(12), scaled(16), scaled(12))
+        header_layout.setContentsMargins((16), (12), (16), (12))
 
         title = QLabel("Sync Review", header)
         title.setFont(QFont(FONT_FAMILY, Metrics.FONT_TITLE, QFont.Weight.Bold))
@@ -1016,18 +1016,18 @@ class SyncReviewWidget(QWidget):
         loading_layout.addWidget(self.loading_label)
 
         self.progress_bar = QProgressBar(loading_widget)
-        self.progress_bar.setFixedWidth(scaled(300))
+        self.progress_bar.setFixedWidth((300))
         self.progress_bar.setTextVisible(False)
         self.progress_bar.setStyleSheet(f"""
             QProgressBar {{
                 background: {Colors.BORDER_SUBTLE};
                 border: none;
-                border-radius: {scaled(4)}px;
-                height: {scaled(6)}px;
+                border-radius: {(4)}px;
+                height: {(6)}px;
             }}
             QProgressBar::chunk {{
                 background: {Colors.ACCENT};
-                border-radius: {scaled(3)}px;
+                border-radius: {(3)}px;
             }}
         """)
         loading_layout.addWidget(self.progress_bar, alignment=Qt.AlignmentFlag.AlignCenter)
@@ -1072,8 +1072,8 @@ class SyncReviewWidget(QWidget):
             }}
         """)
         stats_lay = QHBoxLayout(self._stats_bar)
-        stats_lay.setContentsMargins(scaled(16), scaled(8), scaled(16), scaled(8))
-        stats_lay.setSpacing(scaled(16))
+        stats_lay.setContentsMargins((16), (8), (16), (8))
+        stats_lay.setSpacing((16))
         self._stats_layout = stats_lay
         self._stats_pills: list[QLabel] = []
         stats_lay.addStretch()
@@ -1088,22 +1088,22 @@ class SyncReviewWidget(QWidget):
             }}
         """)
         storage_outer = QHBoxLayout(self._storage_frame)
-        storage_outer.setContentsMargins(scaled(16), scaled(8), scaled(16), scaled(8))
-        storage_outer.setSpacing(scaled(12))
+        storage_outer.setContentsMargins((16), (8), (16), (8))
+        storage_outer.setSpacing((12))
 
         # iPod image
         self._storage_ipod_img = QLabel(self._storage_frame)
-        self._storage_ipod_img.setFixedSize(scaled(32), scaled(32))
+        self._storage_ipod_img.setFixedSize((32), (32))
         self._storage_ipod_img.setStyleSheet("background: transparent;")
         storage_outer.addWidget(self._storage_ipod_img)
 
         # Right side: name + bar + detail text stacked vertically
         storage_right = QVBoxLayout()
-        storage_right.setSpacing(scaled(3))
+        storage_right.setSpacing((3))
 
         # Top row: iPod name on left, detail text on right
         storage_top = QHBoxLayout()
-        storage_top.setSpacing(scaled(8))
+        storage_top.setSpacing((8))
         self._storage_name = QLabel("iPod", self._storage_frame)
         self._storage_name.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
         self._storage_name.setStyleSheet(f"color:{Colors.TEXT_PRIMARY}; background:transparent;")
@@ -1121,7 +1121,7 @@ class SyncReviewWidget(QWidget):
 
         # Legend row beneath bar
         legend_row = QHBoxLayout()
-        legend_row.setSpacing(scaled(12))
+        legend_row.setSpacing((12))
         self._legend_labels: list[QLabel] = []
         for color_hex, text in [
             (Colors.ACCENT, "Current"),
@@ -1162,8 +1162,8 @@ class SyncReviewWidget(QWidget):
         self._cards_container = QWidget(self._scroll)
         self._cards_container.setStyleSheet("background: transparent;")
         self._cards_layout = QVBoxLayout(self._cards_container)
-        self._cards_layout.setContentsMargins(scaled(16), scaled(12), scaled(16), scaled(12))
-        self._cards_layout.setSpacing(scaled(10))
+        self._cards_layout.setContentsMargins((16), (12), (16), (12))
+        self._cards_layout.setSpacing((10))
         self._cards_layout.addStretch()  # push cards to top
 
         self._scroll.setWidget(self._cards_container)
@@ -1178,7 +1178,7 @@ class SyncReviewWidget(QWidget):
         empty_widget = QWidget(self.stack)
         empty_layout = QVBoxLayout(empty_widget)
         empty_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        empty_layout.setSpacing(scaled(8))
+        empty_layout.setSpacing((8))
 
         empty_icon = QLabel("✓", empty_widget)
         empty_icon.setFont(QFont(FONT_FAMILY, Metrics.FONT_ICON_XL))
@@ -1203,7 +1203,7 @@ class SyncReviewWidget(QWidget):
         results_widget = QWidget(self.stack)
         results_layout = QVBoxLayout(results_widget)
         results_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        results_layout.setSpacing(scaled(12))
+        results_layout.setSpacing((12))
 
         self.result_icon = QLabel("", results_widget)
         self.result_icon.setFont(QFont(FONT_FAMILY, Metrics.FONT_ICON_XL))
@@ -1219,7 +1219,7 @@ class SyncReviewWidget(QWidget):
         self.result_details.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: {Metrics.FONT_XXL}px;")
         self.result_details.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.result_details.setWordWrap(True)
-        self.result_details.setMaximumWidth(scaled(500))
+        self.result_details.setMaximumWidth((500))
         results_layout.addWidget(self.result_details, alignment=Qt.AlignmentFlag.AlignCenter)
 
         self.stack.addWidget(results_widget)  # Index 3
@@ -1228,7 +1228,7 @@ class SyncReviewWidget(QWidget):
         presync_widget = QWidget(self.stack)
         presync_layout = QVBoxLayout(presync_widget)
         presync_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        presync_layout.setSpacing(scaled(16))
+        presync_layout.setSpacing((16))
 
         self._presync_icon = QLabel("", presync_widget)
         _px = glyph_pixmap("download", Metrics.FONT_ICON_XL, Colors.ACCENT)
@@ -1251,13 +1251,13 @@ class SyncReviewWidget(QWidget):
         self._presync_text.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: {Metrics.FONT_XL}px;")
         self._presync_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._presync_text.setWordWrap(True)
-        self._presync_text.setMaximumWidth(scaled(460))
+        self._presync_text.setMaximumWidth((460))
         presync_layout.addWidget(self._presync_text, alignment=Qt.AlignmentFlag.AlignCenter)
 
-        presync_layout.addSpacing(scaled(8))
+        presync_layout.addSpacing((8))
 
         presync_btn_row = QHBoxLayout()
-        presync_btn_row.setSpacing(scaled(12))
+        presync_btn_row.setSpacing((12))
         presync_btn_row.addStretch()
 
         # "Skip Backup & Sync Now" / "Sync Without Backup" — secondary action
@@ -1282,7 +1282,7 @@ class SyncReviewWidget(QWidget):
                 border: none;
                 border-radius: {Metrics.BORDER_RADIUS_SM}px;
                 color: {Colors.TEXT_ON_ACCENT};
-                padding: {scaled(8)}px {scaled(24)}px;
+                padding: {(8)}px {(24)}px;
                 font-weight: bold;
             }}
             QPushButton:hover {{
@@ -1314,7 +1314,7 @@ class SyncReviewWidget(QWidget):
             }}
         """)
         footer_layout = QHBoxLayout(footer)
-        footer_layout.setContentsMargins(scaled(16), scaled(10), scaled(16), scaled(10))
+        footer_layout.setContentsMargins((16), (10), (16), (10))
 
         # Select all / none buttons
         self.select_all_btn = QPushButton("Select All", footer)
@@ -1359,7 +1359,7 @@ class SyncReviewWidget(QWidget):
         self.selection_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
         footer_layout.addWidget(self.selection_label)
 
-        footer_layout.addSpacing(scaled(20))
+        footer_layout.addSpacing((20))
 
         # Cancel and Apply buttons
         self.cancel_btn = QPushButton("Cancel", footer)
@@ -1381,7 +1381,7 @@ class SyncReviewWidget(QWidget):
                 border: none;
                 border-radius: {Metrics.BORDER_RADIUS_SM}px;
                 color: {Colors.TEXT_ON_ACCENT};
-                padding: {scaled(7)}px {scaled(24)}px;
+                padding: {(7)}px {(24)}px;
                 font-weight: bold;
             }}
             QPushButton:hover {{
@@ -1537,7 +1537,7 @@ class SyncReviewWidget(QWidget):
             pill.setStyleSheet(
                 f"color:{color}; background:rgba({SyncCategoryCard._rgb(color)},15); "
                 f"border:1px solid rgba({SyncCategoryCard._rgb(color)},40); "
-                f"border-radius:{scaled(10)}px; padding:{scaled(2)}px {scaled(10)}px;"
+                f"border-radius:{(10)}px; padding:{(2)}px {(10)}px;"
             )
             stats_lay.insertWidget(stats_lay.count() - 1, pill)  # before stretch
 
@@ -1841,7 +1841,7 @@ class SyncReviewWidget(QWidget):
             if ipod:
                 pix = get_ipod_image(
                     ipod.model_family, ipod.generation,
-                    size=scaled(32), color=ipod.color,
+                    size=(32), color=ipod.color,
                 )
                 if pix and not pix.isNull():
                     self._storage_ipod_img.setPixmap(pix)
@@ -2294,7 +2294,7 @@ class SyncReviewWidget(QWidget):
         # Styled confirmation dialog (matches dark theme)
         confirm = QDialog(self)
         confirm.setWindowTitle("Confirm Sync")
-        confirm.setMinimumWidth(scaled(420))
+        confirm.setMinimumWidth((420))
         confirm.setStyleSheet(f"""
             QDialog {{
                 background: {Colors.BG_DARK};
@@ -2306,8 +2306,8 @@ class SyncReviewWidget(QWidget):
             }}
         """)
         cl = QVBoxLayout(confirm)
-        cl.setContentsMargins(scaled(20), scaled(16), scaled(20), scaled(16))
-        cl.setSpacing(scaled(12))
+        cl.setContentsMargins((20), (16), (20), (16))
+        cl.setSpacing((12))
 
         confirm_title = QLabel("Confirm Sync", confirm)
         confirm_title.setFont(QFont(FONT_FAMILY, Metrics.FONT_TITLE, QFont.Weight.Bold))
@@ -2319,7 +2319,7 @@ class SyncReviewWidget(QWidget):
         confirm_body.setStyleSheet(f"color:{Colors.TEXT_SECONDARY}; background:transparent;")
         cl.addWidget(confirm_body)
 
-        cl.addSpacing(scaled(8))
+        cl.addSpacing((8))
         btn_row = QHBoxLayout()
         btn_row.addStretch()
         cancel_btn = QPushButton("Cancel", confirm)
@@ -2341,7 +2341,7 @@ class SyncReviewWidget(QWidget):
                 border: none;
                 border-radius: {Metrics.BORDER_RADIUS_SM}px;
                 color: {Colors.TEXT_ON_ACCENT};
-                padding: {scaled(8)}px {scaled(24)}px;
+                padding: {(8)}px {(24)}px;
                 font-weight: bold;
             }}
             QPushButton:hover {{
@@ -2381,7 +2381,7 @@ class PCFolderDialog(QDialog):
     def __init__(self, parent=None, last_folder: str = ""):
         super().__init__(parent)
         self.setWindowTitle("Select Music Folder")
-        self.setMinimumWidth(scaled(440))
+        self.setMinimumWidth((440))
         self.selected_folder = ""
         self.last_folder = last_folder
 
@@ -2400,7 +2400,7 @@ class PCFolderDialog(QDialog):
                 color: {Colors.TEXT_PRIMARY};
                 border: 1px solid {Colors.BORDER};
                 border-radius: {Metrics.BORDER_RADIUS_SM}px;
-                padding: {scaled(6)}px {scaled(14)}px;
+                padding: {(6)}px {(14)}px;
             }}
             QPushButton:hover {{
                 background: {Colors.SURFACE_ACTIVE};
@@ -2411,8 +2411,8 @@ class PCFolderDialog(QDialog):
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
-        layout.setSpacing(scaled(12))
-        layout.setContentsMargins(scaled(20), scaled(16), scaled(20), scaled(16))
+        layout.setSpacing((12))
+        layout.setContentsMargins((20), (16), (20), (16))
 
         # Title
         title = QLabel("Select Music Folder", self)
@@ -2441,7 +2441,7 @@ class PCFolderDialog(QDialog):
                 background: {Colors.SURFACE_RAISED};
                 border: 1px solid {Colors.BORDER};
                 border-radius: {Metrics.BORDER_RADIUS_SM}px;
-                padding: {scaled(8)}px;
+                padding: {(8)}px;
                 color: {Colors.TEXT_PRIMARY};
             }}
         """)
@@ -2456,7 +2456,7 @@ class PCFolderDialog(QDialog):
                 border: none;
                 border-radius: {Metrics.BORDER_RADIUS_SM}px;
                 color: {Colors.TEXT_ON_ACCENT};
-                padding: {scaled(6)}px {scaled(16)}px;
+                padding: {(6)}px {(16)}px;
                 font-weight: bold;
             }}
             QPushButton:hover {{
@@ -2467,7 +2467,7 @@ class PCFolderDialog(QDialog):
 
         layout.addLayout(folder_layout)
 
-        layout.addSpacing(scaled(8))
+        layout.addSpacing((8))
 
         # Buttons
         btn_row = QHBoxLayout()
@@ -2483,7 +2483,7 @@ class PCFolderDialog(QDialog):
                 border: none;
                 border-radius: {Metrics.BORDER_RADIUS_SM}px;
                 color: {Colors.TEXT_ON_ACCENT};
-                padding: {scaled(6)}px {scaled(20)}px;
+                padding: {(6)}px {(20)}px;
                 font-weight: bold;
             }}
             QPushButton:hover {{

@@ -2,7 +2,7 @@ import logging
 import os
 import threading
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageEnhance, ImageFilter
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +68,35 @@ def read_rgb565_pixels(img_data, fmt):
     return pixels
 
 
+def _enhance_decoded_artwork(img_pil):
+    """Apply mild post-processing to small decoded ithmb artwork."""
+    width, height = img_pil.size
+    min_dim = min(width, height)
+
+    if min_dim <= 0:
+        return img_pil
+
+    sharpen_percent = 105
+    contrast_factor = 1.03
+    color_factor = 1.02
+
+    if min_dim <= 80:
+        sharpen_percent = 120
+        contrast_factor = 1.05
+        color_factor = 1.03
+    elif min_dim <= 140:
+        sharpen_percent = 112
+        contrast_factor = 1.04
+        color_factor = 1.025
+
+    enhanced = img_pil.filter(
+        ImageFilter.UnsharpMask(radius=0.8, percent=sharpen_percent, threshold=3)
+    )
+    enhanced = ImageEnhance.Contrast(enhanced).enhance(contrast_factor)
+    enhanced = ImageEnhance.Color(enhanced).enhance(color_factor)
+    return enhanced
+
+
 def generate_image(ithmb_filename, image_info):
     """Generate image from the ithmb file based on image_info."""
     try:
@@ -108,7 +137,7 @@ def generate_image(ithmb_filename, image_info):
         if img_pil.size != (target_width, target_height):
             img_pil = img_pil.resize(
                 (target_width, target_height), Image.Resampling.LANCZOS)
-        return img_pil
+        return _enhance_decoded_artwork(img_pil)
 
     logger.warning("Unsupported image format: %s", fmt)
     return None
@@ -298,6 +327,33 @@ def getAlbumColors(image):
     return {"bg": bg, "text": text, "text_secondary": text_secondary}
 
 
+def _iter_entry_image_candidates(entry):
+    """Yield parsed MHNI results for all usable image containers on an entry."""
+    for container_name in ("Full Res Image", "Thumbnail Image", "UNK MHOD 6"):
+        container = entry.get(container_name)
+        if not isinstance(container, dict):
+            continue
+
+        child = container.get(container_name)
+        if not isinstance(child, dict):
+            continue
+
+        result = child.get("result")
+        if not isinstance(result, dict):
+            continue
+
+        required_keys = ("ithmbOffset", "imgSize", "image_format")
+        if not all(key in result for key in required_keys):
+            continue
+
+        image_format = result.get("image_format") or {}
+        width = image_format.get("width") or result.get("imageWidth") or 0
+        height = image_format.get("height") or result.get("imageHeight") or 0
+        area = int(width) * int(height)
+
+        yield area, result
+
+
 def find_image_by_imgId(artworkdb_data, ithmb_folder_path, imgId, imgid_index=None):
     """Find and return image for the given imgID.
 
@@ -308,7 +364,7 @@ def find_image_by_imgId(artworkdb_data, ithmb_folder_path, imgId, imgid_index=No
         imgid_index: Optional pre-built index for O(1) lookup
 
     Returns:
-        Tuple of (PIL.Image, dominant_color) or None if not found
+        Tuple of (PIL.Image, dominant_color, album_colors) or None if not found
     """
     if artworkdb_data is None:
         return None
@@ -324,26 +380,26 @@ def find_image_by_imgId(artworkdb_data, ithmb_folder_path, imgId, imgid_index=No
         entries = [e for e in artworkdb_data.get("mhli", []) if e.get("imgId") == imgId]
 
     for entry in entries:
-        try:
-            thumb_result = entry["Thumbnail Image"]["Thumbnail Image"]["result"]
-        except KeyError:
+        candidates = sorted(
+            _iter_entry_image_candidates(entry),
+            key=lambda item: item[0],
+            reverse=True,
+        )
+        if not candidates:
             continue
 
-        file_info = thumb_result.get("3", {})
-        ithmb_filename = file_info.get(
-            "File Name", f"F{thumb_result.get('correlationID')}_1.ithmb")
-        if ithmb_filename.startswith(":"):
-            ithmb_filename = ithmb_filename[1:]
-        ithmb_path = os.path.join(ithmb_folder_path, ithmb_filename)
+        for _area, image_result in candidates:
+            file_info = image_result.get("3", {})
+            ithmb_filename = file_info.get(
+                "File Name", f"F{image_result.get('correlationID')}_1.ithmb")
+            if ithmb_filename.startswith(":"):
+                ithmb_filename = ithmb_filename[1:]
+            ithmb_path = os.path.join(ithmb_folder_path, ithmb_filename)
 
-        required_keys = ["ithmbOffset", "imgSize", "image_format"]
-        if not all(key in thumb_result for key in required_keys):
-            continue
+            img = generate_image(ithmb_path, image_result)
+            if img is None:
+                continue
 
-        img = generate_image(ithmb_path, thumb_result)
-
-        if img is not None:
             dcol = getDominantColor(img)
             album_colors = getAlbumColors(img)
             return img, dcol, album_colors
-    return None

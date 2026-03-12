@@ -25,15 +25,14 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from ..hidpi import scale_pixmap_for_display
 from ..styles import (
     Colors,
     Metrics,
     FONT_FAMILY,
     accent_btn_css,
     btn_css,
-    font_scaled,
     make_label,
-    scaled,
     scrollbar_css,
     LABEL_SECONDARY,
 )
@@ -54,8 +53,8 @@ class PodcastSearchDialog(QDialog):
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.setWindowTitle("Search Podcasts")
-        self.setMinimumSize(scaled(560), scaled(480))
-        self.resize(scaled(620), scaled(540))
+        self.setMinimumSize((560), (480))
+        self.resize((620), (540))
         self.setStyleSheet(f"""
             QDialog {{
                 background: {Colors.DIALOG_BG};
@@ -69,23 +68,23 @@ class PodcastSearchDialog(QDialog):
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(scaled(16), scaled(16), scaled(16), scaled(16))
-        layout.setSpacing(scaled(12))
+        layout.setContentsMargins((16), (16), (16), (16))
+        layout.setSpacing((12))
 
         # ── Search bar ───────────────────────────────────────────────────
         search_row = QHBoxLayout()
-        search_row.setSpacing(scaled(8))
+        search_row.setSpacing((8))
 
         self._search_input = QLineEdit()
         self._search_input.setPlaceholderText("Search for podcasts…")
-        self._search_input.setFont(QFont(FONT_FAMILY, font_scaled(Metrics.FONT_MD)))
+        self._search_input.setFont(QFont(FONT_FAMILY, (Metrics.FONT_MD)))
         self._search_input.setStyleSheet(f"""
             QLineEdit {{
                 background: {Colors.SURFACE_ALT};
                 border: 1px solid {Colors.BORDER};
                 border-radius: {Metrics.BORDER_RADIUS_SM}px;
                 color: {Colors.TEXT_PRIMARY};
-                padding: {scaled(8)}px {scaled(12)}px;
+                padding: {(8)}px {(12)}px;
             }}
             QLineEdit:focus {{
                 border: 1px solid {Colors.BORDER_FOCUS};
@@ -95,9 +94,9 @@ class PodcastSearchDialog(QDialog):
         search_row.addWidget(self._search_input, stretch=1)
 
         self._search_btn = QPushButton("Search")
-        self._search_btn.setFont(QFont(FONT_FAMILY, font_scaled(Metrics.FONT_MD)))
+        self._search_btn.setFont(QFont(FONT_FAMILY, (Metrics.FONT_MD)))
         self._search_btn.setStyleSheet(accent_btn_css())
-        self._search_btn.setFixedHeight(scaled(36))
+        self._search_btn.setFixedHeight((36))
         self._search_btn.clicked.connect(self._on_search)
         search_row.addWidget(self._search_btn)
 
@@ -106,7 +105,7 @@ class PodcastSearchDialog(QDialog):
         # ── Status label ─────────────────────────────────────────────────
         self._status_label = make_label(
             "Enter a search term to find podcasts",
-            size=font_scaled(Metrics.FONT_SM),
+            size=(Metrics.FONT_SM),
             style=LABEL_SECONDARY(),
         )
         layout.addWidget(self._status_label)
@@ -115,7 +114,7 @@ class PodcastSearchDialog(QDialog):
         self._results_container = QWidget()
         self._results_layout = QVBoxLayout(self._results_container)
         self._results_layout.setContentsMargins(0, 0, 0, 0)
-        self._results_layout.setSpacing(scaled(4))
+        self._results_layout.setSpacing((4))
         self._results_layout.addStretch()
 
         scroll = QScrollArea()
@@ -134,25 +133,25 @@ class PodcastSearchDialog(QDialog):
 
         # ── Manual RSS row ───────────────────────────────────────────────
         rss_row = QHBoxLayout()
-        rss_row.setSpacing(scaled(8))
+        rss_row.setSpacing((8))
 
         rss_label = make_label(
             "Or paste RSS URL:",
-            size=font_scaled(Metrics.FONT_SM),
+            size=(Metrics.FONT_SM),
             style=LABEL_SECONDARY(),
         )
         rss_row.addWidget(rss_label)
 
         self._rss_input = QLineEdit()
         self._rss_input.setPlaceholderText("https://example.com/feed.xml")
-        self._rss_input.setFont(QFont(FONT_FAMILY, font_scaled(Metrics.FONT_SM)))
+        self._rss_input.setFont(QFont(FONT_FAMILY, (Metrics.FONT_SM)))
         self._rss_input.setStyleSheet(f"""
             QLineEdit {{
                 background: {Colors.SURFACE_ALT};
                 border: 1px solid {Colors.BORDER};
                 border-radius: {Metrics.BORDER_RADIUS_SM}px;
                 color: {Colors.TEXT_PRIMARY};
-                padding: {scaled(6)}px {scaled(10)}px;
+                padding: {(6)}px {(10)}px;
             }}
             QLineEdit:focus {{
                 border: 1px solid {Colors.BORDER_FOCUS};
@@ -162,9 +161,9 @@ class PodcastSearchDialog(QDialog):
         rss_row.addWidget(self._rss_input, stretch=1)
 
         self._rss_btn = QPushButton("Add Feed")
-        self._rss_btn.setFont(QFont(FONT_FAMILY, font_scaled(Metrics.FONT_SM)))
+        self._rss_btn.setFont(QFont(FONT_FAMILY, (Metrics.FONT_SM)))
         self._rss_btn.setStyleSheet(accent_btn_css())
-        self._rss_btn.setFixedHeight(scaled(32))
+        self._rss_btn.setFixedHeight((32))
         self._rss_btn.clicked.connect(self._on_add_rss)
         rss_row.addWidget(self._rss_btn)
 
@@ -172,9 +171,9 @@ class PodcastSearchDialog(QDialog):
 
         # ── Close button ─────────────────────────────────────────────────
         close_btn = QPushButton("Close")
-        close_btn.setFont(QFont(FONT_FAMILY, font_scaled(Metrics.FONT_MD)))
+        close_btn.setFont(QFont(FONT_FAMILY, (Metrics.FONT_MD)))
         close_btn.setStyleSheet(btn_css())
-        close_btn.setFixedHeight(scaled(36))
+        close_btn.setFixedHeight((36))
         close_btn.clicked.connect(self.close)
         layout.addWidget(close_btn, alignment=Qt.AlignmentFlag.AlignRight)
 
@@ -258,21 +257,21 @@ class _SearchResultCard(QFrame):
         """)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(scaled(10), scaled(8), scaled(10), scaled(8))
-        layout.setSpacing(scaled(10))
+        layout.setContentsMargins((10), (8), (10), (8))
+        layout.setSpacing((10))
 
         # Artwork placeholder
         self._art_label = QLabel()
-        self._art_label.setFixedSize(scaled(56), scaled(56))
+        self._art_label.setFixedSize((56), (56))
         self._art_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._art_label.setStyleSheet(f"""
             background: {Colors.SURFACE_RAISED};
             border-radius: {Metrics.BORDER_RADIUS_SM}px;
             color: {Colors.TEXT_TERTIARY};
-            font-size: {font_scaled(20)}px;
+            font-size: {(20)}px;
         """)
         self._art_label.setText("◎")
-        _search_px = glyph_pixmap("broadcast", scaled(24), Colors.TEXT_TERTIARY)
+        _search_px = glyph_pixmap("broadcast", (24), Colors.TEXT_TERTIARY)
         if _search_px:
             self._art_label.setPixmap(_search_px)
         layout.addWidget(self._art_label)
@@ -283,11 +282,11 @@ class _SearchResultCard(QFrame):
 
         # Info column
         info = QVBoxLayout()
-        info.setSpacing(scaled(2))
+        info.setSpacing((2))
 
         title_lbl = make_label(
             result.title,
-            size=font_scaled(Metrics.FONT_MD),
+            size=(Metrics.FONT_MD),
             weight=QFont.Weight.DemiBold,
         )
         title_lbl.setWordWrap(True)
@@ -303,7 +302,7 @@ class _SearchResultCard(QFrame):
             details += f"  ·  {result.track_count} episodes"
         detail_lbl = make_label(
             details,
-            size=font_scaled(Metrics.FONT_SM),
+            size=(Metrics.FONT_SM),
             style=LABEL_SECONDARY(),
         )
         detail_lbl.setSizePolicy(
@@ -315,9 +314,9 @@ class _SearchResultCard(QFrame):
 
         # Subscribe button
         sub_btn = QPushButton("Subscribe")
-        sub_btn.setFont(QFont(FONT_FAMILY, font_scaled(Metrics.FONT_SM)))
+        sub_btn.setFont(QFont(FONT_FAMILY, (Metrics.FONT_SM)))
         sub_btn.setStyleSheet(accent_btn_css())
-        sub_btn.setFixedSize(scaled(90), scaled(32))
+        sub_btn.setFixedSize((90), (32))
         sub_btn.clicked.connect(lambda: self.subscribe_clicked.emit(result.feed_url))
         layout.addWidget(sub_btn, alignment=Qt.AlignmentFlag.AlignVCenter)
 
@@ -338,10 +337,13 @@ class _SearchResultCard(QFrame):
     def _on_artwork_loaded(self, data: bytes):
         img = QImage()
         if img.loadFromData(data):
-            pm = QPixmap.fromImage(img).scaled(
-                scaled(56), scaled(56),
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
+            pm = scale_pixmap_for_display(
+                QPixmap.fromImage(img),
+                56,
+                56,
+                widget=self._art_label,
+                aspect_mode=Qt.AspectRatioMode.KeepAspectRatio,
+                transform_mode=Qt.TransformationMode.SmoothTransformation,
             )
             self._art_label.setPixmap(pm)
             self._art_label.setText("")

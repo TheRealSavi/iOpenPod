@@ -195,7 +195,7 @@ def _extract_video_frame(file_path: str) -> Optional[bytes]:
     """Extract a thumbnail frame from a video file using ffmpeg.
 
     Seeks to 10% of the duration (or 5 seconds if duration unknown) and
-    grabs a single JPEG frame scaled to fit within 320x320.  This provides
+    grabs a single JPEG frame  to fit within 320x320.  This provides
     a reasonable poster image for videos without embedded cover art.
 
     Returns raw JPEG bytes, or None if ffmpeg is unavailable or fails.

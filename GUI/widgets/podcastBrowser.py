@@ -45,17 +45,16 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from ..hidpi import scale_pixmap_for_display
 from ..styles import (
     Colors,
     Metrics,
     FONT_FAMILY,
     accent_btn_css,
     btn_css,
-    font_scaled,
     make_label,
     make_separator,
     scrollbar_css,
-    scaled,
     table_css,
     LABEL_SECONDARY,
 )
@@ -166,24 +165,24 @@ class PodcastBrowser(QFrame):
 
     def _build_toolbar(self) -> QWidget:
         bar = QFrame()
-        bar.setFixedHeight(scaled(44))
+        bar.setFixedHeight((44))
         bar.setStyleSheet(f"background: {Colors.SURFACE}; border: none;")
 
         layout = QHBoxLayout(bar)
-        layout.setContentsMargins(scaled(12), scaled(6), scaled(12), scaled(6))
-        layout.setSpacing(scaled(8))
+        layout.setContentsMargins((12), (6), (12), (6))
+        layout.setSpacing((8))
 
         self._add_btn = QPushButton("+ Add Podcast")
-        self._add_btn.setFont(QFont(FONT_FAMILY, font_scaled(Metrics.FONT_SM)))
+        self._add_btn.setFont(QFont(FONT_FAMILY, (Metrics.FONT_SM)))
         self._add_btn.setStyleSheet(accent_btn_css())
-        self._add_btn.setFixedHeight(scaled(30))
+        self._add_btn.setFixedHeight((30))
         self._add_btn.clicked.connect(self._on_search)
         layout.addWidget(self._add_btn)
 
         self._refresh_btn = QPushButton("↻  Refresh All")
-        self._refresh_btn.setFont(QFont(FONT_FAMILY, font_scaled(Metrics.FONT_SM)))
+        self._refresh_btn.setFont(QFont(FONT_FAMILY, (Metrics.FONT_SM)))
         self._refresh_btn.setStyleSheet(btn_css())
-        self._refresh_btn.setFixedHeight(scaled(30))
+        self._refresh_btn.setFixedHeight((30))
         self._refresh_btn.clicked.connect(self._on_refresh_all)
         layout.addWidget(self._refresh_btn)
 
@@ -191,7 +190,7 @@ class PodcastBrowser(QFrame):
 
         self._status_label = make_label(
             "",
-            size=font_scaled(Metrics.FONT_SM),
+            size=(Metrics.FONT_SM),
             style=LABEL_SECONDARY(),
         )
         layout.addWidget(self._status_label)
@@ -204,7 +203,7 @@ class PodcastBrowser(QFrame):
         page.setStyleSheet("background: transparent;")
 
         layout = QVBoxLayout(page)
-        layout.setContentsMargins(scaled(48), scaled(48), scaled(48), scaled(48))
+        layout.setContentsMargins((48), (48), (48), (48))
         layout.addStretch()
 
         icon_lbl = QLabel()
@@ -218,35 +217,35 @@ class PodcastBrowser(QFrame):
         icon_lbl.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent;")
         layout.addWidget(icon_lbl)
 
-        layout.addSpacing(scaled(12))
+        layout.addSpacing((12))
 
         heading = make_label(
             "No Podcast Subscriptions",
-            size=font_scaled(Metrics.FONT_PAGE_TITLE),
+            size=(Metrics.FONT_PAGE_TITLE),
             weight=QFont.Weight.DemiBold,
         )
         heading.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(heading)
 
-        layout.addSpacing(scaled(6))
+        layout.addSpacing((6))
 
         desc = make_label(
             "Search for podcasts or add an RSS feed to get started.\n"
             "Episodes can be downloaded and synced to your iPod.",
-            size=font_scaled(Metrics.FONT_LG),
+            size=(Metrics.FONT_LG),
             style=LABEL_SECONDARY(),
             wrap=True,
         )
         desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(desc)
 
-        layout.addSpacing(scaled(16))
+        layout.addSpacing((16))
 
         cta_btn = QPushButton("+ Add Your First Podcast")
-        cta_btn.setFont(QFont(FONT_FAMILY, font_scaled(Metrics.FONT_MD), QFont.Weight.DemiBold))
+        cta_btn.setFont(QFont(FONT_FAMILY, (Metrics.FONT_MD), QFont.Weight.DemiBold))
         cta_btn.setStyleSheet(accent_btn_css())
-        cta_btn.setFixedHeight(scaled(38))
-        cta_btn.setFixedWidth(scaled(240))
+        cta_btn.setFixedHeight((38))
+        cta_btn.setFixedWidth((240))
         cta_btn.clicked.connect(self._on_search)
         layout.addWidget(cta_btn, alignment=Qt.AlignmentFlag.AlignCenter)
 
@@ -256,7 +255,7 @@ class PodcastBrowser(QFrame):
     def _build_main_page(self) -> QWidget:
         """The main splitter containing feed list and episode panel."""
         splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.setHandleWidth(scaled(3))
+        splitter.setHandleWidth((3))
         splitter.setStyleSheet(f"""
             QSplitter::handle {{
                 background: {Colors.BORDER_SUBTLE};
@@ -271,7 +270,7 @@ class PodcastBrowser(QFrame):
         right = self._build_episode_panel()
         splitter.addWidget(right)
 
-        splitter.setSizes([scaled(240), scaled(600)])
+        splitter.setSizes([(240), (600)])
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
 
@@ -279,7 +278,7 @@ class PodcastBrowser(QFrame):
 
     def _build_feed_panel(self) -> QWidget:
         panel = QFrame()
-        panel.setMinimumWidth(scaled(200))
+        panel.setMinimumWidth((200))
         panel.setStyleSheet("background: transparent; border: none;")
 
         layout = QVBoxLayout(panel)
@@ -288,16 +287,16 @@ class PodcastBrowser(QFrame):
 
         header = make_label(
             "Subscriptions",
-            size=font_scaled(Metrics.FONT_SM),
+            size=(Metrics.FONT_SM),
             weight=QFont.Weight.DemiBold,
-            style=f"color: {Colors.TEXT_SECONDARY}; padding: {scaled(8)}px {scaled(12)}px;"
+            style=f"color: {Colors.TEXT_SECONDARY}; padding: {(8)}px {(12)}px;"
             f" background: transparent; border: none;",
         )
         layout.addWidget(header)
 
         self._feed_list = QListWidget()
-        self._feed_list.setIconSize(QSize(scaled(36), scaled(36)))
-        self._feed_list.setSpacing(scaled(2))
+        self._feed_list.setIconSize(QSize((36), (36)))
+        self._feed_list.setSpacing((2))
         self._feed_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._feed_list.customContextMenuRequested.connect(self._on_feed_context_menu)
         self._feed_list.currentRowChanged.connect(self._on_feed_selected)
@@ -308,7 +307,7 @@ class PodcastBrowser(QFrame):
                 outline: none;
             }}
             QListWidget::item {{
-                padding: {scaled(6)}px {scaled(8)}px;
+                padding: {(6)}px {(8)}px;
                 border-radius: {Metrics.BORDER_RADIUS_SM}px;
                 color: {Colors.TEXT_PRIMARY};
             }}
@@ -335,24 +334,24 @@ class PodcastBrowser(QFrame):
 
         # ── Feed info header ─────────────────────────────────────────────
         self._feed_header = QFrame()
-        self._feed_header.setFixedHeight(scaled(64))
+        self._feed_header.setFixedHeight((64))
         self._feed_header.setStyleSheet(f"background: {Colors.SURFACE}; border: none;")
 
         hdr_layout = QHBoxLayout(self._feed_header)
-        hdr_layout.setContentsMargins(scaled(14), scaled(10), scaled(14), scaled(10))
-        hdr_layout.setSpacing(scaled(12))
+        hdr_layout.setContentsMargins((14), (10), (14), (10))
+        hdr_layout.setSpacing((12))
 
         self._feed_art = QLabel()
-        art_size = scaled(44)
+        art_size = (44)
         self._feed_art.setFixedSize(art_size, art_size)
         self._feed_art.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._feed_art.setStyleSheet(f"""
             background: {Colors.SURFACE_RAISED};
             border-radius: {Metrics.BORDER_RADIUS_SM}px;
             color: {Colors.TEXT_TERTIARY};
-            font-size: {font_scaled(18)}px;
+            font-size: {(18)}px;
         """)
-        _art_px = glyph_pixmap("broadcast", scaled(24), Colors.TEXT_TERTIARY)
+        _art_px = glyph_pixmap("broadcast", (24), Colors.TEXT_TERTIARY)
         if _art_px:
             self._feed_art.setPixmap(_art_px)
         else:
@@ -360,17 +359,17 @@ class PodcastBrowser(QFrame):
         hdr_layout.addWidget(self._feed_art)
 
         hdr_text = QVBoxLayout()
-        hdr_text.setSpacing(scaled(2))
+        hdr_text.setSpacing((2))
         self._feed_title_label = make_label(
             "Select a podcast",
-            size=font_scaled(Metrics.FONT_XL),
+            size=(Metrics.FONT_XL),
             weight=QFont.Weight.DemiBold,
         )
         hdr_text.addWidget(self._feed_title_label)
 
         self._feed_detail_label = make_label(
             "",
-            size=font_scaled(Metrics.FONT_SM),
+            size=(Metrics.FONT_SM),
             style=LABEL_SECONDARY(),
         )
         hdr_text.addWidget(self._feed_detail_label)
@@ -395,7 +394,7 @@ class PodcastBrowser(QFrame):
         vh = self._episode_table.verticalHeader()
         if vh:
             vh.setVisible(False)
-            vh.setDefaultSectionSize(scaled(32))
+            vh.setDefaultSectionSize((32))
         self._episode_table.setShowGrid(False)
         self._episode_table.setAlternatingRowColors(True)
         self._episode_table.setSortingEnabled(False)
@@ -404,10 +403,10 @@ class PodcastBrowser(QFrame):
         # Column widths
         hh = self._episode_table.horizontalHeader()
         assert hh is not None
-        hh.setMinimumSectionSize(scaled(30))
-        hh.resizeSection(_COL_DURATION, scaled(70))
-        hh.resizeSection(_COL_DATE, scaled(90))
-        hh.resizeSection(_COL_STATUS, scaled(110))
+        hh.setMinimumSectionSize((30))
+        hh.resizeSection(_COL_DURATION, (70))
+        hh.resizeSection(_COL_DATE, (90))
+        hh.resizeSection(_COL_STATUS, (110))
         hh.setSectionResizeMode(_COL_TITLE, QHeaderView.ResizeMode.Stretch)
         self._episode_table.setStyleSheet(table_css())
 
@@ -415,7 +414,7 @@ class PodcastBrowser(QFrame):
 
         # ── Download progress bar (hidden by default) ────────────────────
         self._progress_bar = QProgressBar()
-        self._progress_bar.setFixedHeight(scaled(3))
+        self._progress_bar.setFixedHeight((3))
         self._progress_bar.setTextVisible(False)
         self._progress_bar.setRange(0, 100)
         self._progress_bar.setStyleSheet(f"""
@@ -433,19 +432,19 @@ class PodcastBrowser(QFrame):
 
         # ── Action bar ───────────────────────────────────────────────────
         action_bar = QFrame()
-        action_bar.setFixedHeight(scaled(44))
+        action_bar.setFixedHeight((44))
         action_bar.setStyleSheet(
             f"background: {Colors.SURFACE}; border-top: 1px solid {Colors.BORDER_SUBTLE};"
         )
 
         action_layout = QHBoxLayout(action_bar)
-        action_layout.setContentsMargins(scaled(12), scaled(6), scaled(12), scaled(6))
-        action_layout.setSpacing(scaled(8))
+        action_layout.setContentsMargins((12), (6), (12), (6))
+        action_layout.setSpacing((8))
 
         self._add_to_ipod_btn = QPushButton("Add to iPod")
-        self._add_to_ipod_btn.setFont(QFont(FONT_FAMILY, font_scaled(Metrics.FONT_SM)))
+        self._add_to_ipod_btn.setFont(QFont(FONT_FAMILY, (Metrics.FONT_SM)))
         self._add_to_ipod_btn.setStyleSheet(accent_btn_css())
-        self._add_to_ipod_btn.setFixedHeight(scaled(30))
+        self._add_to_ipod_btn.setFixedHeight((30))
         self._add_to_ipod_btn.clicked.connect(self._on_add_to_ipod)
         action_layout.addWidget(self._add_to_ipod_btn)
 
@@ -453,7 +452,7 @@ class PodcastBrowser(QFrame):
 
         self._action_status = make_label(
             "",
-            size=font_scaled(Metrics.FONT_SM),
+            size=(Metrics.FONT_SM),
             style=LABEL_SECONDARY(),
         )
         action_layout.addWidget(self._action_status)
@@ -491,7 +490,7 @@ class PodcastBrowser(QFrame):
             label = feed.title or "Untitled"
             item = QListWidgetItem(f"{label}  ({ep_count})")
             item.setData(Qt.ItemDataRole.UserRole, feed.feed_url)
-            item.setSizeHint(QSize(0, scaled(44)))
+            item.setSizeHint(QSize(0, (44)))
 
             # Feed artwork thumbnail in list
             if feed.artwork_url and feed.artwork_url in _artwork_cache:
@@ -651,7 +650,7 @@ class PodcastBrowser(QFrame):
         if not feed:
             self._feed_title_label.setText("Select a podcast")
             self._feed_detail_label.setText("")
-            _reset_px = glyph_pixmap("broadcast", scaled(24), Colors.TEXT_TERTIARY)
+            _reset_px = glyph_pixmap("broadcast", (24), Colors.TEXT_TERTIARY)
             if _reset_px:
                 self._feed_art.setPixmap(_reset_px)
             else:
@@ -1115,10 +1114,13 @@ class PodcastBrowser(QFrame):
     def _load_feed_artwork(self, url: str) -> None:
         """Load feed artwork for the header panel in background."""
         if url in _artwork_cache:
-            pm = _artwork_cache[url].scaled(
-                scaled(44), scaled(44),
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
+            pm = scale_pixmap_for_display(
+                _artwork_cache[url],
+                44,
+                44,
+                widget=self._feed_art,
+                aspect_mode=Qt.AspectRatioMode.KeepAspectRatio,
+                transform_mode=Qt.TransformationMode.SmoothTransformation,
             )
             self._feed_art.setPixmap(pm)
             self._feed_art.setText("")
@@ -1152,10 +1154,13 @@ class PodcastBrowser(QFrame):
 
         # Update header art if still showing the same feed
         if self._selected_feed and self._selected_feed.artwork_url == url:
-            pm = full_pm.scaled(
-                scaled(44), scaled(44),
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
+            pm = scale_pixmap_for_display(
+                full_pm,
+                44,
+                44,
+                widget=self._feed_art,
+                aspect_mode=Qt.AspectRatioMode.KeepAspectRatio,
+                transform_mode=Qt.TransformationMode.SmoothTransformation,
             )
             self._feed_art.setPixmap(pm)
             self._feed_art.setText("")
@@ -1196,10 +1201,13 @@ class PodcastBrowser(QFrame):
         """Set the icon for all feed list items whose artwork URL matches."""
         if not self._store:
             return
-        icon_pm = full_pm.scaled(
-            scaled(36), scaled(36),
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
+        icon_pm = scale_pixmap_for_display(
+            full_pm,
+            36,
+            36,
+            widget=self._feed_list,
+            aspect_mode=Qt.AspectRatioMode.KeepAspectRatio,
+            transform_mode=Qt.TransformationMode.SmoothTransformation,
         )
         icon = QIcon(icon_pm)
         feeds = self._store.get_feeds()

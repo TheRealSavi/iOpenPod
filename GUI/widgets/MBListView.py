@@ -24,6 +24,7 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem,
     QVBoxLayout,
 )
+from ..hidpi import scale_pixmap_for_display
 from ..styles import Colors, FONT_FAMILY, Metrics, table_css
 
 log = logging.getLogger(__name__)
@@ -445,7 +446,7 @@ class MusicBrowserList(QFrame):
 
         # Artwork state
         self._show_art = False      # Controlled by settings
-        self._art_cache: dict[int, QPixmap] = {}   # mhiiLink → scaled QPixmap
+        self._art_cache: dict[int, QPixmap] = {}   # mhiiLink →  QPixmap
         self._art_pending: set[int] = set()         # mhiiLinks currently being loaded
 
         # Shared resources (created once, reused)
@@ -1054,10 +1055,13 @@ class MusicBrowserList(QFrame):
                     continue
                 w, h, rgba = data
                 qimg = QImage(rgba, w, h, QImage.Format.Format_RGBA8888).copy()
-                pixmap = QPixmap.fromImage(qimg).scaled(
-                    ART_THUMB_SIZE, ART_THUMB_SIZE,
-                    Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.SmoothTransformation,
+                pixmap = scale_pixmap_for_display(
+                    QPixmap.fromImage(qimg),
+                    ART_THUMB_SIZE,
+                    ART_THUMB_SIZE,
+                    widget=self.table,
+                    aspect_mode=Qt.AspectRatioMode.KeepAspectRatio,
+                    transform_mode=Qt.TransformationMode.SmoothTransformation,
                 )
                 self._art_cache[link] = pixmap
 

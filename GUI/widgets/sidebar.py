@@ -9,7 +9,7 @@ from ..ipod_images import get_ipod_image
 from ..glyphs import glyph_icon, glyph_pixmap
 from ..styles import (
     Colors, FONT_FAMILY, MONO_FONT_FAMILY, Metrics,
-    btn_css, accent_btn_css, scaled, font_scaled,
+    btn_css, accent_btn_css,
     sidebar_nav_css, sidebar_nav_selected_css, toolbar_btn_css,
     LABEL_PRIMARY, LABEL_SECONDARY, LABEL_TERTIARY,
     make_separator, make_section_header,
@@ -78,8 +78,8 @@ class TechInfoRow(QWidget):
         super().__init__()
         self.setStyleSheet("background: transparent; border: none;")
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, scaled(3), 0, scaled(3))
-        layout.setSpacing(scaled(6))
+        layout.setContentsMargins(0, (3), 0, (3))
+        layout.setSpacing((6))
 
         self.label_widget = QLabel(label)
         self.label_widget.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS))
@@ -116,21 +116,21 @@ class DeviceInfoCard(QFrame):
         """)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(scaled(14), scaled(14), scaled(14), scaled(14))
-        layout.setSpacing(scaled(8))
+        layout.setContentsMargins((14), (14), (14), (14))
+        layout.setSpacing((8))
 
         # iPod icon and name row
         header_layout = QHBoxLayout()
-        header_layout.setSpacing(scaled(8))
+        header_layout.setSpacing((8))
 
         self.icon_label = QLabel()
-        px = glyph_pixmap("music", scaled(32), Colors.TEXT_SECONDARY)
+        px = glyph_pixmap("music", (32), Colors.TEXT_SECONDARY)
         if px:
             self.icon_label.setPixmap(px)
         else:
             self.icon_label.setText("♪")
-            self.icon_label.setFont(QFont(FONT_FAMILY, font_scaled(24)))
-        self.icon_label.setFixedSize(scaled(52), scaled(52))
+            self.icon_label.setFont(QFont(FONT_FAMILY, (24)))
+        self.icon_label.setFixedSize((52), (52))
         self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.icon_label.setStyleSheet("background: transparent; border: none;")
         header_layout.addWidget(self.icon_label)
@@ -165,8 +165,8 @@ class DeviceInfoCard(QFrame):
         stats_widget = QWidget()
         stats_widget.setStyleSheet("background: transparent; border: none;")
         stats_layout = QHBoxLayout(stats_widget)
-        stats_layout.setContentsMargins(0, scaled(6), 0, scaled(2))
-        stats_layout.setSpacing(scaled(8))
+        stats_layout.setContentsMargins(0, (6), 0, (2))
+        stats_layout.setSpacing((8))
 
         self.items_stat = StatWidget("0", "items")
         self.size_stat = StatWidget("0 GB", "music")
@@ -179,10 +179,10 @@ class DeviceInfoCard(QFrame):
 
         # Technical details section (collapsible)
         self.tech_toggle = QPushButton("Technical Details")
-        _chev = glyph_icon("chevron-right", scaled(12), Colors.TEXT_TERTIARY)
+        _chev = glyph_icon("chevron-right", (12), Colors.TEXT_TERTIARY)
         if _chev:
             self.tech_toggle.setIcon(_chev)
-            self.tech_toggle.setIconSize(QSize(scaled(12), scaled(12)))
+            self.tech_toggle.setIconSize(QSize((12), (12)))
         self.tech_toggle.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS))
         self.tech_toggle.setStyleSheet(f"""
             QPushButton {{
@@ -204,7 +204,7 @@ class DeviceInfoCard(QFrame):
         self.tech_container.setStyleSheet("background: transparent; border: none;")
         self.tech_container.hide()  # Hidden by default
         tech_layout = QVBoxLayout(self.tech_container)
-        tech_layout.setContentsMargins(0, scaled(6), 0, 0)
+        tech_layout.setContentsMargins(0, (6), 0, 0)
         tech_layout.setSpacing(0)
 
         # Technical info rows — identity
@@ -241,17 +241,17 @@ class DeviceInfoCard(QFrame):
 
         # Storage bar (optional, for when we have capacity info)
         self.storage_bar = QProgressBar()
-        self.storage_bar.setFixedHeight(scaled(4))
+        self.storage_bar.setFixedHeight((4))
         self.storage_bar.setTextVisible(False)
         self.storage_bar.setStyleSheet(f"""
             QProgressBar {{
                 background-color: {Colors.SHADOW};
                 border: none;
-                border-radius: {scaled(2)}px;
+                border-radius: {(2)}px;
             }}
             QProgressBar::chunk {{
                 background: {Colors.ACCENT};
-                border-radius: {scaled(2)}px;
+                border-radius: {(2)}px;
             }}
         """)
         self.storage_bar.hide()  # Hidden until we have capacity data
@@ -272,8 +272,8 @@ class DeviceInfoCard(QFrame):
                 color: {Colors.TEXT_PRIMARY};
                 background: {Colors.SHADOW_DEEP};
                 border: 1px solid {Colors.ACCENT};
-                border-radius: {scaled(4)}px;
-                padding: 1px {scaled(4)}px;
+                border-radius: {(4)}px;
+                padding: 1px {(4)}px;
             }}
         """)
         self._rename_edit.selectAll()
@@ -321,13 +321,13 @@ class DeviceInfoCard(QFrame):
         self._tech_expanded = not self._tech_expanded
         self.tech_container.setVisible(self._tech_expanded)
         chev = "chevron-down" if self._tech_expanded else "chevron-right"
-        icon = glyph_icon(chev, scaled(12), Colors.TEXT_TERTIARY)
+        icon = glyph_icon(chev, (12), Colors.TEXT_TERTIARY)
         if icon:
             self.tech_toggle.setIcon(icon)
 
     def _fit_name_font(self, text: str):
         """Shrink the device name font if the text is too wide for the card."""
-        max_w = scaled(130)  # approximate width available for the name
+        max_w = (130)  # approximate width available for the name
         for size in (Metrics.FONT_XXL, Metrics.FONT_XL, Metrics.FONT_LG, Metrics.FONT_MD):
             f = QFont(FONT_FAMILY, size, QFont.Weight.Bold)
             if QFontMetrics(f).horizontalAdvance(text) <= max_w:
@@ -358,13 +358,13 @@ class DeviceInfoCard(QFrame):
         if not family and model:
             family = model
 
-        photo = get_ipod_image(family, generation, scaled(48), color) if family else None
+        photo = get_ipod_image(family, generation, (48), color) if family else None
         if photo and not photo.isNull():
             self.icon_label.setPixmap(photo)
             self.icon_label.setFont(QFont())  # Clear emoji font
         else:
             # Fallback to SVG music icon
-            px = glyph_pixmap("music", scaled(32), Colors.TEXT_SECONDARY)
+            px = glyph_pixmap("music", (32), Colors.TEXT_SECONDARY)
             if px:
                 self.icon_label.setPixmap(px)
             else:
@@ -501,8 +501,8 @@ class Sidebar(QFrame):
         self.setObjectName("sidebar")
 
         self.sidebarLayout = QVBoxLayout(self)
-        self.sidebarLayout.setContentsMargins(scaled(10), scaled(12), scaled(10), scaled(12))
-        self.sidebarLayout.setSpacing(scaled(10))
+        self.sidebarLayout.setContentsMargins((10), (12), (10), (12))
+        self.sidebarLayout.setSpacing((10))
         self.setFixedWidth(Metrics.SIDEBAR_WIDTH)
 
         # Device info card at top
@@ -513,7 +513,7 @@ class Sidebar(QFrame):
         # Device select buttons - row 1
         self.deviceSelectLayout = QHBoxLayout()
         self.deviceSelectLayout.setContentsMargins(0, 0, 0, 0)
-        self.deviceSelectLayout.setSpacing(scaled(6))
+        self.deviceSelectLayout.setSpacing((6))
 
         self.deviceButton = QPushButton("Select")
         self.rescanButton = QPushButton("Rescan")
@@ -523,12 +523,12 @@ class Sidebar(QFrame):
         self.deviceButton.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG, QFont.Weight.DemiBold))
         self.rescanButton.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG, QFont.Weight.DemiBold))
 
-        _icon_sz = QSize(scaled(20), scaled(20))
-        _bi = glyph_icon("tablet", scaled(20), Colors.TEXT_SECONDARY)
+        _icon_sz = QSize((20), (20))
+        _bi = glyph_icon("tablet", (20), Colors.TEXT_SECONDARY)
         if _bi:
             self.deviceButton.setIcon(_bi)
             self.deviceButton.setIconSize(_icon_sz)
-        _bi = glyph_icon("refresh", scaled(20), Colors.TEXT_SECONDARY)
+        _bi = glyph_icon("refresh", (20), Colors.TEXT_SECONDARY)
         if _bi:
             self.rescanButton.setIcon(_bi)
             self.rescanButton.setIconSize(_icon_sz)
@@ -542,7 +542,7 @@ class Sidebar(QFrame):
         self.syncButton = QPushButton("Sync with PC")
         self.syncButton.setStyleSheet(accent_btn_css())
         self.syncButton.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG, QFont.Weight.DemiBold))
-        _bi = glyph_icon("download", scaled(20), Colors.TEXT_ON_ACCENT)
+        _bi = glyph_icon("download", (20), Colors.TEXT_ON_ACCENT)
         if _bi:
             self.syncButton.setIcon(_bi)
             self.syncButton.setIconSize(_icon_sz)
@@ -552,7 +552,7 @@ class Sidebar(QFrame):
         self.backupButton = QPushButton("Backups")
         self.backupButton.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
         self.backupButton.setStyleSheet(sidebar_nav_css())
-        _bi = glyph_icon("archive", scaled(20), Colors.TEXT_SECONDARY)
+        _bi = glyph_icon("archive", (20), Colors.TEXT_SECONDARY)
         if _bi:
             self.backupButton.setIcon(_bi)
             self.backupButton.setIconSize(_icon_sz)
@@ -572,20 +572,20 @@ class Sidebar(QFrame):
         lib_container.setStyleSheet("background: transparent;")
         lib_layout = QVBoxLayout(lib_container)
         lib_layout.setContentsMargins(0, 0, 0, 0)
-        lib_layout.setSpacing(scaled(1))
+        lib_layout.setSpacing((1))
 
         lib_label = make_section_header("Library")
-        lib_label.setStyleSheet(lib_label.styleSheet() + f" padding-left: {scaled(4)}px;")
+        lib_label.setStyleSheet(lib_label.styleSheet() + f" padding-left: {(4)}px;")
         lib_layout.addWidget(lib_label)
 
         self.buttons = {}
         self._button_icons: dict[str, str] = {}
-        _nav_icon_sz = QSize(scaled(20), scaled(20))
+        _nav_icon_sz = QSize((20), (20))
 
         for category, icon_name in self.category_glyphs.items():
             btn = QPushButton(category)
             btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
-            icon = glyph_icon(icon_name, scaled(20), Colors.TEXT_SECONDARY)
+            icon = glyph_icon(icon_name, (20), Colors.TEXT_SECONDARY)
             if icon:
                 btn.setIcon(icon)
                 btn.setIconSize(_nav_icon_sz)
@@ -613,13 +613,13 @@ class Sidebar(QFrame):
             bg_hover=Colors.SURFACE_RAISED,
             bg_press=Colors.SURFACE,
             fg=Colors.TEXT_TERTIARY,
-            padding=f"{scaled(7)}px {scaled(12)}px",
+            padding=f"{(7)}px {(12)}px",
             extra="text-align: left;",
         ))
-        _bi = glyph_icon("settings", scaled(20), Colors.TEXT_TERTIARY)
+        _bi = glyph_icon("settings", (20), Colors.TEXT_TERTIARY)
         if _bi:
             self.settingsButton.setIcon(_bi)
-            self.settingsButton.setIconSize(QSize(scaled(20), scaled(20)))
+            self.settingsButton.setIconSize(QSize((20), (20)))
         self.sidebarLayout.addWidget(self.settingsButton)
 
         self.selectedCategory = list(self.category_glyphs.keys())[0]
@@ -684,6 +684,6 @@ class Sidebar(QFrame):
         icon_name = self._button_icons.get(category)
         if icon_name:
             color = Colors.ACCENT if selected else Colors.TEXT_SECONDARY
-            icon = glyph_icon(icon_name, scaled(20), color)
+            icon = glyph_icon(icon_name, (20), color)
             if icon:
                 btn.setIcon(icon)

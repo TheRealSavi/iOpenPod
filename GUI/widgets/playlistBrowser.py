@@ -16,7 +16,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ..styles import (
-    Colors, FONT_FAMILY, Metrics, btn_css, scaled,
+    Colors, FONT_FAMILY, Metrics, btn_css,
     sidebar_nav_css, sidebar_nav_selected_css,
     LABEL_SECONDARY, make_scroll_area,
     make_detail_row, make_separator, make_section_header,
@@ -61,8 +61,8 @@ class PlaylistInfoCard(QFrame):
         self.setObjectName("playlistInfoCard")
 
         self._layout = QVBoxLayout(self)
-        self._layout.setContentsMargins(scaled(16), scaled(16), scaled(16), scaled(16))
-        self._layout.setSpacing(scaled(8))
+        self._layout.setContentsMargins((16), (16), (16), (16))
+        self._layout.setSpacing((8))
 
         # ── Title row ───────────────────────────────────────────
         self.title_label = QLabel("Select a playlist")
@@ -86,10 +86,10 @@ class PlaylistInfoCard(QFrame):
         self.edit_btn = QPushButton("Edit")
         self.edit_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.edit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        _ed_ic = glyph_icon("edit", scaled(14), Colors.ACCENT)
+        _ed_ic = glyph_icon("edit", (14), Colors.ACCENT)
         if _ed_ic:
             self.edit_btn.setIcon(_ed_ic)
-            self.edit_btn.setIconSize(QSize(scaled(14), scaled(14)))
+            self.edit_btn.setIconSize(QSize((14), (14)))
         self.edit_btn.setStyleSheet(btn_css(
             bg="transparent",
             bg_hover=Colors.ACCENT_DIM,
@@ -118,10 +118,10 @@ class PlaylistInfoCard(QFrame):
         self.evaluate_btn = QPushButton("Evaluate Now")
         self.evaluate_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.evaluate_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        _eval_ic = glyph_icon("check-circle", scaled(14), Colors.SUCCESS)
+        _eval_ic = glyph_icon("check-circle", (14), Colors.SUCCESS)
         if _eval_ic:
             self.evaluate_btn.setIcon(_eval_ic)
-            self.evaluate_btn.setIconSize(QSize(scaled(14), scaled(14)))
+            self.evaluate_btn.setIconSize(QSize((14), (14)))
         self.evaluate_btn.setStyleSheet(btn_css(
             bg="transparent",
             bg_hover=Colors.SUCCESS_DIM,
@@ -438,17 +438,17 @@ class PlaylistListPanel(QFrame):
             }}
         """)
         self.setObjectName("playlistListPanel")
-        self.setFixedWidth(scaled(210))
+        self.setFixedWidth((210))
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(scaled(10), scaled(12), scaled(10), scaled(12))
-        outer.setSpacing(scaled(8))
+        outer.setContentsMargins((10), (12), (10), (12))
+        outer.setSpacing((8))
 
         # ── New Playlist button (fixed, above scroll) ──
         self._new_btn = QPushButton("＋  New Playlist")
         self._new_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.Bold))
         self._new_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._new_btn.setMinimumHeight(scaled(34))
+        self._new_btn.setMinimumHeight((34))
         self._new_btn.setStyleSheet(btn_css(
             bg=Colors.ACCENT_DIM,
             bg_hover=Colors.ACCENT_HOVER,
@@ -529,7 +529,7 @@ class PlaylistListPanel(QFrame):
             empty_container.setStyleSheet("background: transparent; border: none;")
             empty_vbox = QVBoxLayout(empty_container)
             empty_vbox.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            empty_vbox.setSpacing(scaled(8))
+            empty_vbox.setSpacing((8))
 
             empty_icon = QLabel()
             _px = glyph_pixmap("annotation-dots", Metrics.FONT_ICON_LG, Colors.TEXT_TERTIARY)
@@ -606,10 +606,10 @@ class PlaylistListPanel(QFrame):
         btn.setToolTip(f"{title}\n{count} tracks")
 
         fg = Colors.TEXT_DISABLED if dimmed else Colors.TEXT_PRIMARY
-        ic = glyph_icon(icon_name, scaled(20), fg)
+        ic = glyph_icon(icon_name, (20), fg)
         if ic:
             btn.setIcon(ic)
-            btn.setIconSize(QSize(scaled(20), scaled(20)))
+            btn.setIconSize(QSize((20), (20)))
 
         btn.setStyleSheet(sidebar_nav_css())
 
@@ -639,7 +639,7 @@ class PlaylistListPanel(QFrame):
                 pl = self._playlist_map.get(prev_idx)
                 dimmed = bool(pl.get("master_flag")) if pl else False
                 fg = Colors.TEXT_DISABLED if dimmed else Colors.TEXT_SECONDARY
-                ic = glyph_icon(prev_icon, scaled(20), fg)
+                ic = glyph_icon(prev_icon, (20), fg)
                 if ic:
                     self._selected_btn.setIcon(ic)
 
@@ -648,7 +648,7 @@ class PlaylistListPanel(QFrame):
         btn.setStyleSheet(sidebar_nav_selected_css())
         icon_name = self._button_icons.get(index)
         if icon_name:
-            ic = glyph_icon(icon_name, scaled(20), Colors.ACCENT)
+            ic = glyph_icon(icon_name, (20), Colors.ACCENT)
             if ic:
                 btn.setIcon(ic)
         self._selected_btn = btn
@@ -677,7 +677,7 @@ class PlaylistBrowser(QFrame):
 
         main_layout = QHBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(scaled(8))
+        main_layout.setSpacing((8))
 
         # ── Left: playlist list panel ──
         self.listPanel = PlaylistListPanel()
@@ -736,7 +736,7 @@ class PlaylistBrowser(QFrame):
         # Splitter styling
         self.rightSplitter.setCollapsible(0, True)
         self.rightSplitter.setCollapsible(1, True)
-        self.rightSplitter.setHandleWidth(scaled(3))
+        self.rightSplitter.setHandleWidth((3))
         self.rightSplitter.setStretchFactor(0, 1)
         self.rightSplitter.setStretchFactor(1, 3)
         self.rightSplitter.setSizes([250, 600])

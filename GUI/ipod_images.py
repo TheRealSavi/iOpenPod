@@ -13,6 +13,8 @@ from PyQt6.QtGui import QPixmap
 from ipod_models import resolve_image_filename, GENERIC_IMAGE
 from GUI import PROJECT_ROOT
 
+from .hidpi import scale_pixmap_for_display
+
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
@@ -28,7 +30,7 @@ def get_ipod_image(
     color: str = "",
 ) -> QPixmap:
     """
-    Return a scaled QPixmap of the iPod product image.
+    Return a  QPixmap of the iPod product image.
 
     Lookup priority:
       1. Exact (family, generation, color) match
@@ -43,7 +45,7 @@ def get_ipod_image(
         color:      e.g. "Black", "Silver", "Blue" (optional)
 
     Returns:
-        QPixmap scaled to fit within sizexsize.
+        QPixmap  to fit within sizexsize.
     """
     filename = resolve_image_filename(family, generation, color)
     path = _IMAGE_DIR / filename
@@ -54,8 +56,10 @@ def get_ipod_image(
     if pixmap.isNull():
         return QPixmap()  # Return empty pixmap if loading failed
 
-    return pixmap.scaled(
-        size, size,
-        Qt.AspectRatioMode.KeepAspectRatio,
-        Qt.TransformationMode.SmoothTransformation,
+    return scale_pixmap_for_display(
+        pixmap,
+        size,
+        size,
+        aspect_mode=Qt.AspectRatioMode.KeepAspectRatio,
+        transform_mode=Qt.TransformationMode.SmoothTransformation,
     )

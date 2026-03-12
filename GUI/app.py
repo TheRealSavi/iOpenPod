@@ -17,7 +17,7 @@ from GUI.widgets.backupBrowser import BackupBrowserWidget
 from GUI.widgets.dropOverlay import DropOverlayWidget
 from GUI.settings import get_settings
 from GUI.notifications import Notifier
-from GUI.styles import Colors, FONT_FAMILY, Metrics, btn_css, scaled
+from GUI.styles import Colors, FONT_FAMILY, Metrics, btn_css
 from GUI.glyphs import glyph_pixmap
 import threading
 
@@ -881,7 +881,7 @@ class _MissingToolsDialog(QDialog):
     ):
         super().__init__(parent)
         self.setWindowTitle("Missing Tools")
-        self.setFixedWidth(scaled(420))
+        self.setFixedWidth((420))
         self.setStyleSheet(f"""
             QDialog {{
                 background: {Colors.DIALOG_BG};
@@ -890,8 +890,8 @@ class _MissingToolsDialog(QDialog):
         """)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(scaled(28), scaled(24), scaled(28), scaled(24))
-        layout.setSpacing(scaled(10))
+        layout.setContentsMargins((28), (24), (28), (24))
+        layout.setSpacing((10))
 
         # Icon + title row
         icon_label = QLabel()
@@ -911,7 +911,7 @@ class _MissingToolsDialog(QDialog):
         title.setWordWrap(True)
         layout.addWidget(title)
 
-        layout.addSpacing(scaled(4))
+        layout.addSpacing((4))
 
         if can_download:
             body = QLabel(
@@ -926,17 +926,17 @@ class _MissingToolsDialog(QDialog):
         body.setWordWrap(True)
         layout.addWidget(body)
 
-        layout.addSpacing(scaled(12))
+        layout.addSpacing((12))
 
         # Buttons
         btn_row = QHBoxLayout()
-        btn_row.setSpacing(scaled(12))
+        btn_row.setSpacing((12))
 
         if can_download:
             no_btn = QPushButton("Not Now")
             no_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
             no_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            no_btn.setMinimumHeight(scaled(40))
+            no_btn.setMinimumHeight((40))
             no_btn.setStyleSheet(btn_css(
                 bg=Colors.SURFACE_RAISED,
                 bg_hover=Colors.SURFACE_HOVER,
@@ -950,7 +950,7 @@ class _MissingToolsDialog(QDialog):
             yes_btn = QPushButton("Download")
             yes_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
             yes_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            yes_btn.setMinimumHeight(scaled(40))
+            yes_btn.setMinimumHeight((40))
             yes_btn.setStyleSheet(btn_css(
                 bg=Colors.ACCENT_DIM,
                 bg_hover=Colors.ACCENT_HOVER,
@@ -964,7 +964,7 @@ class _MissingToolsDialog(QDialog):
             ok_btn = QPushButton("OK")
             ok_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
             ok_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            ok_btn.setMinimumHeight(scaled(40))
+            ok_btn.setMinimumHeight((40))
             ok_btn.setStyleSheet(btn_css(
                 bg=Colors.SURFACE_RAISED,
                 bg_hover=Colors.SURFACE_HOVER,
@@ -991,7 +991,7 @@ class _MissingToolsDialog(QDialog):
             cont_btn = QPushButton("Continue Anyway")
             cont_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
             cont_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            cont_btn.setMinimumHeight(scaled(40))
+            cont_btn.setMinimumHeight((40))
             cont_btn.setStyleSheet(btn_css(
                 bg=Colors.ACCENT_DIM,
                 bg_hover=Colors.ACCENT_HOVER,
@@ -1009,7 +1009,7 @@ class _DownloadProgressDialog(QDialog):
     def __init__(self, parent: QWidget):
         super().__init__(parent)
         self.setWindowTitle("Downloading")
-        self.setFixedSize(scaled(380), scaled(180))
+        self.setFixedSize((380), (180))
         self.setModal(True)
         self.setWindowFlags(
             self.windowFlags()
@@ -1023,8 +1023,8 @@ class _DownloadProgressDialog(QDialog):
         """)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(scaled(28), scaled(24), scaled(28), scaled(24))
-        layout.setSpacing(scaled(14))
+        layout.setContentsMargins((28), (24), (28), (24))
+        layout.setSpacing((14))
 
         title = QLabel("Downloading Tools…")
         title.setFont(QFont(FONT_FAMILY, Metrics.FONT_XXL, QFont.Weight.Bold))
@@ -1040,17 +1040,17 @@ class _DownloadProgressDialog(QDialog):
 
         bar = QProgressBar()
         bar.setRange(0, 0)  # indeterminate
-        bar.setFixedHeight(scaled(6))
+        bar.setFixedHeight((6))
         bar.setTextVisible(False)
         bar.setStyleSheet(f"""
             QProgressBar {{
                 background: {Colors.SURFACE};
                 border: none;
-                border-radius: {scaled(3)}px;
+                border-radius: {(3)}px;
             }}
             QProgressBar::chunk {{
                 background: {Colors.ACCENT};
-                border-radius: {scaled(3)}px;
+                border-radius: {(3)}px;
             }}
         """)
         layout.addWidget(bar)

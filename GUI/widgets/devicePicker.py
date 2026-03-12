@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
 from device_info import DeviceInfo
 from ..device_scanner import scan_for_ipods
 from ..ipod_images import get_ipod_image
-from ..styles import Colors, FONT_FAMILY, Metrics, btn_css, scaled, make_scroll_area
+from ..styles import Colors, FONT_FAMILY, Metrics, btn_css, make_scroll_area
 
 
 class _ScanThread(QThread):
@@ -37,20 +37,20 @@ class DeviceCard(QFrame):
         self.ipod = ipod
         self._selected = False
 
-        self.setFixedSize(scaled(200), scaled(200))
+        self.setFixedSize((200), (200))
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self._apply_style(False)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(scaled(12), scaled(16), scaled(12), scaled(12))
-        layout.setSpacing(scaled(6))
+        layout.setContentsMargins((12), (16), (12), (12))
+        layout.setSpacing((6))
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         # Icon — try real product photo first, fall back to generic icon
         icon_label = QLabel()
         icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         icon_label.setStyleSheet("background: transparent; border: none;")
-        photo = get_ipod_image(ipod.model_family, ipod.generation, scaled(80), ipod.color)
+        photo = get_ipod_image(ipod.model_family, ipod.generation, (80), ipod.color)
 
         icon_label.setPixmap(photo)
 
@@ -155,8 +155,8 @@ class DevicePickerDialog(QDialog):
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(scaled(20), scaled(20), scaled(20), scaled(16))
-        layout.setSpacing(scaled(16))
+        layout.setContentsMargins((20), (20), (20), (16))
+        layout.setSpacing((16))
 
         # Title
         title = QLabel("Select your iPod")
@@ -177,7 +177,7 @@ class DevicePickerDialog(QDialog):
         self._grid_container.setStyleSheet("background: transparent;")
         self._grid_layout = QGridLayout(self._grid_container)
         self._grid_layout.setContentsMargins(0, 0, 0, 0)
-        self._grid_layout.setSpacing(scaled(16))
+        self._grid_layout.setSpacing((16))
         scroll.setWidget(self._grid_container)
         layout.addWidget(scroll, 1)
 
@@ -202,7 +202,7 @@ class DevicePickerDialog(QDialog):
 
         # Bottom buttons
         btn_layout = QHBoxLayout()
-        btn_layout.setSpacing(scaled(10))
+        btn_layout.setSpacing((10))
 
         self._manual_btn = QPushButton("Browse Manually")
         self._manual_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
@@ -244,7 +244,7 @@ class DevicePickerDialog(QDialog):
                 border: 1px solid {Colors.ACCENT_BORDER};
                 border-radius: {Metrics.BORDER_RADIUS_SM}px;
                 color: {Colors.TEXT_ON_ACCENT};
-                padding: {scaled(7)}px {scaled(24)}px;
+                padding: {(7)}px {(24)}px;
             }}
             QPushButton:hover {{
                 background: {Colors.ACCENT_HOVER};

@@ -2,7 +2,7 @@
 
 Loads 24x24 stroke-based SVG icons from assets/glyphs/, colorizes them by
 replacing ``currentColor`` with the requested CSS color, and renders to
-QIcon / QPixmap at DPI-scaled sizes via QSvgRenderer.
+QIcon / QPixmap at DPI- sizes via QSvgRenderer.
 """
 
 from __future__ import annotations
@@ -13,10 +13,13 @@ import re
 from PyQt6.QtCore import QByteArray, Qt
 from PyQt6.QtGui import QIcon, QPainter, QPixmap
 
+from .hidpi import effective_device_pixel_ratio, logical_to_physical
+
 try:
     from PyQt6.QtSvg import QSvgRenderer
     _HAS_SVG = True
 except ImportError:
+    QSvgRenderer = None
     _HAS_SVG = False
 
 _GLYPH_DIR = os.path.join(
@@ -68,6 +71,8 @@ def glyph_pixmap(name: str, size: int, color: str = "#ffffff") -> QPixmap | None
     raw = _load_svg(name)
     if raw is None:
         return None
+    if QSvgRenderer is None:
+        return None
     hex_color, opacity = _parse_color(color)
     colored = raw.replace(b"currentColor", hex_color.encode("ascii"))
     if opacity < 0.99:
@@ -77,11 +82,14 @@ def glyph_pixmap(name: str, size: int, color: str = "#ffffff") -> QPixmap | None
     renderer = QSvgRenderer(QByteArray(colored))
     if not renderer.isValid():
         return None
-    px = QPixmap(size, size)
+    dpr = effective_device_pixel_ratio()
+    pixel_size = logical_to_physical(size, dpr)
+    px = QPixmap(pixel_size, pixel_size)
     px.fill(Qt.GlobalColor.transparent)
     painter = QPainter(px)
     renderer.render(painter)
     painter.end()
+    px.setDevicePixelRatio(dpr)
     return px
 
 

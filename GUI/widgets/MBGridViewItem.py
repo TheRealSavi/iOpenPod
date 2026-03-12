@@ -3,7 +3,8 @@ from PyQt6.QtCore import Qt, QSize, pyqtSignal
 from PyQt6.QtWidgets import QLabel, QFrame, QVBoxLayout
 from PyQt6.QtGui import QFont, QPixmap, QCursor, QImage
 from ..imgMaker import find_image_by_imgId, get_artworkdb_cached
-from ..styles import Colors, FONT_FAMILY, Metrics, scaled
+from ..hidpi import scale_pixmap_for_display
+from ..styles import Colors, FONT_FAMILY, Metrics
 from ..glyphs import glyph_pixmap
 from .scrollingLabel import ScrollingLabel
 
@@ -27,8 +28,8 @@ class MusicBrowserGridItem(QFrame):
         self._setupStyle()
 
         self.gridItemLayout = QVBoxLayout(self)
-        self.gridItemLayout.setContentsMargins(scaled(10), scaled(10), scaled(10), scaled(10))
-        self.gridItemLayout.setSpacing(scaled(6))
+        self.gridItemLayout.setContentsMargins((10), (10), (10), (10))
+        self.gridItemLayout.setSpacing((6))
 
         self.worker = None
         self._cancellation_token = None
@@ -54,7 +55,7 @@ class MusicBrowserGridItem(QFrame):
         self.title_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.DemiBold))
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.title_label.setStyleSheet(f"border: none; background: transparent; color: {Colors.TEXT_PRIMARY};")
-        self.title_label.setFixedHeight(scaled(20))
+        self.title_label.setFixedHeight((20))
         self.gridItemLayout.addWidget(self.title_label)
 
         # Subtitle
@@ -62,7 +63,7 @@ class MusicBrowserGridItem(QFrame):
         self.subtitle_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.subtitle_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.subtitle_label.setStyleSheet(f"border: none; background: transparent; color: {Colors.TEXT_SECONDARY};")
-        self.subtitle_label.setFixedHeight(scaled(18))
+        self.subtitle_label.setFixedHeight((18))
         self.gridItemLayout.addWidget(self.subtitle_label)
 
     def _setupStyle(self):
@@ -189,11 +190,12 @@ class MusicBrowserGridItem(QFrame):
             qimage = QImage(data, pil_image.width, pil_image.height, QImage.Format.Format_RGBA8888)
             # Copy the QImage to own the data (prevents crash when data goes out of scope)
             qimage = qimage.copy()
-            pixmap = QPixmap.fromImage(qimage)
-            pixmap = pixmap.scaled(
+            pixmap = scale_pixmap_for_display(
+                QPixmap.fromImage(qimage),
                 Metrics.GRID_ART_SIZE, Metrics.GRID_ART_SIZE,
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation
+                widget=self.img_label,
+                aspect_mode=Qt.AspectRatioMode.KeepAspectRatio,
+                transform_mode=Qt.TransformationMode.SmoothTransformation,
             )
             self.img_label.setPixmap(pixmap)
             self.img_label.setStyleSheet(f"""

@@ -24,7 +24,6 @@ from iTunesDB_Shared.constants import (
     extract_datasets,
     extract_mhod_strings,
     extract_playlist_extras,
-    mac_to_unix_timestamp,
     filetype_to_string,
     sample_rate_to_hz,
 )
@@ -82,12 +81,6 @@ def _inline_track_strings(data: dict) -> None:
         sr = track.get("sample_rate_1")
         if isinstance(sr, int) and sr > 65535:
             track["sample_rate_1"] = sample_rate_to_hz(sr)
-        # Mac timestamps → Unix
-        for ts_key in ("date_added", "date_released", "last_modified",
-                       "last_played", "last_skipped"):
-            val = track.get(ts_key, 0)
-            if isinstance(val, int) and val > 0:
-                track[ts_key] = mac_to_unix_timestamp(val)
 
 
 def _inline_album_strings(data: dict) -> None:
@@ -112,11 +105,6 @@ def _inline_playlist_strings(data: dict) -> None:
                              else mhip)
                 items.append({"track_id": mhip_data.get("track_id", 0)})
             pl["items"] = items
-            # Mac timestamps → Unix
-            for ts_key in ("timestamp", "timestamp_2"):
-                val = pl.get(ts_key, 0)
-                if isinstance(val, int) and val > 0:
-                    pl[ts_key] = mac_to_unix_timestamp(val)
 
 
 def _inline_artist_strings(data: dict) -> None:

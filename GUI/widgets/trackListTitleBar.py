@@ -2,7 +2,7 @@ from PyQt6.QtCore import Qt, QPoint, QSize
 from PyQt6.QtWidgets import QHBoxLayout, QFrame, QLabel, QPushButton, QWidget
 from PyQt6.QtGui import QFont
 
-from ..styles import Colors, FONT_FAMILY, Metrics, scaled
+from ..styles import Colors, FONT_FAMILY, Metrics
 from ..glyphs import glyph_icon
 
 
@@ -28,9 +28,9 @@ def _title_bar_css(r1: int, g1: int, b1: int, r2: int, g2: int, b2: int,
             color: {text_secondary};
             font-size: {Metrics.FONT_TITLE}px;
             font-weight: bold;
-            width: {scaled(28)}px;
-            height: {scaled(28)}px;
-            border-radius: {scaled(6)}px;
+            width: {(28)}px;
+            height: {(28)}px;
+            border-radius: {(6)}px;
         }}
         QPushButton:hover {{
             background-color: rgba(255,255,255,30);
@@ -41,7 +41,7 @@ def _title_bar_css(r1: int, g1: int, b1: int, r2: int, g2: int, b2: int,
     """
 
 
-# Default blue gradient — call at runtime since scaled values aren't ready at import time
+# Default blue gradient — call at runtime since  values aren't ready at import time
 def _default_css() -> str:
     r, g, b = Colors.PLAYLIST_REGULAR
     return _title_bar_css(r, g, b, max(0, r - 25), max(0, g - 25), max(0, b - 25))
@@ -57,12 +57,12 @@ class TrackListTitleBar(QFrame):
         self.dragStartPos = QPoint()
         self.setMouseTracking(True)
         self.titleBarLayout = QHBoxLayout(self)
-        self.titleBarLayout.setContentsMargins(scaled(14), 0, scaled(10), 0)
+        self.titleBarLayout.setContentsMargins((14), 0, (10), 0)
         self.splitter.splitterMoved.connect(self.enforceMinHeight)
 
-        self.setMinimumHeight(scaled(40))
-        self.setMaximumHeight(scaled(40))
-        self.setFixedHeight(scaled(40))
+        self.setMinimumHeight((40))
+        self.setMaximumHeight((40))
+        self.setFixedHeight((40))
 
         self.setStyleSheet(_default_css())
 
@@ -70,8 +70,8 @@ class TrackListTitleBar(QFrame):
         self.title.setFont(QFont(FONT_FAMILY, Metrics.FONT_TITLE, QFont.Weight.Bold))
 
         self.button1 = QPushButton()
-        _ic_sz = QSize(scaled(18), scaled(18))
-        _ic_dn = glyph_icon("chevron-down", scaled(18), Colors.TEXT_ON_ACCENT)
+        _ic_sz = QSize((18), (18))
+        _ic_dn = glyph_icon("chevron-down", (18), Colors.TEXT_ON_ACCENT)
         if _ic_dn:
             self.button1.setIcon(_ic_dn)
             self.button1.setIconSize(_ic_sz)
@@ -81,7 +81,7 @@ class TrackListTitleBar(QFrame):
         self.button1.clicked.connect(self._toggleMinimize)
 
         self.button2 = QPushButton()
-        _ic_up = glyph_icon("chevron-up", scaled(18), Colors.TEXT_ON_ACCENT)
+        _ic_up = glyph_icon("chevron-up", (18), Colors.TEXT_ON_ACCENT)
         if _ic_up:
             self.button2.setIcon(_ic_up)
             self.button2.setIconSize(_ic_sz)

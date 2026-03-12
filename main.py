@@ -146,9 +146,14 @@ sys.excepthook = global_exception_handler
 
 def run_pyqt_app():
     logger.info("iOpenPod starting — log file: %s", _log_file_path)
+    from PyQt6.QtCore import Qt
     from PyQt6.QtWidgets import QApplication
     from PyQt6.QtGui import QIcon
     from GUI.app import MainWindow
+
+    QApplication.setHighDpiScaleFactorRoundingPolicy(
+        Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
+    )
     app = QApplication([])
 
     # Register bundled Noto fonts so the UI renders correctly on systems
@@ -158,11 +163,8 @@ def run_pyqt_app():
 
     # Use custom proxy style for dark scrollbars (CSS scrollbar styling is
     # unreliable on Windows with Fusion — this paints them directly).
-    from GUI.styles import Colors, DarkScrollbarStyle, Metrics, build_palette
+    from GUI.styles import Colors, DarkScrollbarStyle, build_palette
     app.setStyle(DarkScrollbarStyle("Fusion"))
-
-    # Scale all pixel metrics to match the current screen size / DPI.
-    Metrics.apply_scaling()
 
     # Apply the selected color theme (reads settings; must come after
     # QApplication exists so system-theme detection works).
