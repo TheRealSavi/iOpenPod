@@ -1054,11 +1054,14 @@ class MusicBrowserList(QFrame):
                     continue
                 w, h, rgba = data
                 qimg = QImage(rgba, w, h, QImage.Format.Format_RGBA8888).copy()
+                dpr = self.table.devicePixelRatio()
+                phys = round(ART_THUMB_SIZE * dpr)
                 pixmap = QPixmap.fromImage(qimg).scaled(
-                    ART_THUMB_SIZE, ART_THUMB_SIZE,
+                    phys, phys,
                     Qt.AspectRatioMode.KeepAspectRatio,
                     Qt.TransformationMode.SmoothTransformation,
                 )
+                pixmap.setDevicePixelRatio(dpr)
                 self._art_cache[link] = pixmap
 
             # Backfill rows

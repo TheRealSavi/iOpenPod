@@ -338,10 +338,13 @@ class _SearchResultCard(QFrame):
     def _on_artwork_loaded(self, data: bytes):
         img = QImage()
         if img.loadFromData(data):
+            dpr = self._art_label.devicePixelRatio()
+            phys = round(scaled(56) * dpr)
             pm = QPixmap.fromImage(img).scaled(
-                scaled(56), scaled(56),
+                phys, phys,
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation,
             )
+            pm.setDevicePixelRatio(dpr)
             self._art_label.setPixmap(pm)
             self._art_label.setText("")

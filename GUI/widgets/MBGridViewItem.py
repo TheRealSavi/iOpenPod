@@ -190,11 +190,14 @@ class MusicBrowserGridItem(QFrame):
             # Copy the QImage to own the data (prevents crash when data goes out of scope)
             qimage = qimage.copy()
             pixmap = QPixmap.fromImage(qimage)
+            dpr = self.img_label.devicePixelRatio()
+            phys = round(Metrics.GRID_ART_SIZE * dpr)
             pixmap = pixmap.scaled(
-                Metrics.GRID_ART_SIZE, Metrics.GRID_ART_SIZE,
+                phys, phys,
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation
             )
+            pixmap.setDevicePixelRatio(dpr)
             self.img_label.setPixmap(pixmap)
             self.img_label.setStyleSheet(f"""
                 border: none;

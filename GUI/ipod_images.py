@@ -23,6 +23,33 @@ _IMAGE_DIR = _PROJECT_ROOT / "assets" / "ipod_images"
 
 
 @lru_cache(maxsize=128)
+def _get_ipod_image_cached(
+    family: str,
+    generation: str,
+    size: int,
+    color: str,
+    dpr: float,
+) -> QPixmap:
+    """Internal cached loader — includes dpr in cache key."""
+    filename = resolve_image_filename(family, generation, color)
+    path = _IMAGE_DIR / filename
+    if not path.exists():
+        path = _IMAGE_DIR / GENERIC_IMAGE
+
+    pixmap = QPixmap(str(path))
+    if pixmap.isNull():
+        return QPixmap()
+
+    phys = round(size * dpr)
+    pixmap = pixmap.scaled(
+        phys, phys,
+        Qt.AspectRatioMode.KeepAspectRatio,
+        Qt.TransformationMode.SmoothTransformation,
+    )
+    pixmap.setDevicePixelRatio(dpr)
+    return pixmap
+
+
 def get_ipod_image(
     family: str,
     generation: str,
@@ -45,19 +72,9 @@ def get_ipod_image(
         color:      e.g. "Black", "Silver", "Blue" (optional)
 
     Returns:
-        QPixmap scaled to fit within sizexsize.
+        QPixmap scaled to fit within sizexsize (HiDPI-aware).
     """
-    filename = resolve_image_filename(family, generation, color)
-    path = _IMAGE_DIR / filename
-    if not path.exists():
-        path = _IMAGE_DIR / GENERIC_IMAGE
-
-    pixmap = QPixmap(str(path))
-    if pixmap.isNull():
-        return QPixmap()  # Return empty pixmap if loading failed
-
-    return pixmap.scaled(
-        size, size,
-        Qt.AspectRatioMode.KeepAspectRatio,
-        Qt.TransformationMode.SmoothTransformation,
-    )
+    from PyQt6.QtWidgets import QApplication
+    app = QApplication.instance()
+    dpr = app.primaryScreen().devicePixelRatio() if app and app.primaryScreen() else 1.0
+    return _get_ipod_image_cached(family, generation, size, color, dpr)

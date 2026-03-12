@@ -1115,11 +1115,14 @@ class PodcastBrowser(QFrame):
     def _load_feed_artwork(self, url: str) -> None:
         """Load feed artwork for the header panel in background."""
         if url in _artwork_cache:
+            dpr = self._feed_art.devicePixelRatio()
+            phys = round(scaled(44) * dpr)
             pm = _artwork_cache[url].scaled(
-                scaled(44), scaled(44),
+                phys, phys,
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation,
             )
+            pm.setDevicePixelRatio(dpr)
             self._feed_art.setPixmap(pm)
             self._feed_art.setText("")
             return
@@ -1152,11 +1155,14 @@ class PodcastBrowser(QFrame):
 
         # Update header art if still showing the same feed
         if self._selected_feed and self._selected_feed.artwork_url == url:
+            dpr = self._feed_art.devicePixelRatio()
+            phys = round(scaled(44) * dpr)
             pm = full_pm.scaled(
-                scaled(44), scaled(44),
+                phys, phys,
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation,
             )
+            pm.setDevicePixelRatio(dpr)
             self._feed_art.setPixmap(pm)
             self._feed_art.setText("")
 
@@ -1196,11 +1202,16 @@ class PodcastBrowser(QFrame):
         """Set the icon for all feed list items whose artwork URL matches."""
         if not self._store:
             return
+        from PyQt6.QtWidgets import QApplication
+        app = QApplication.instance()
+        dpr = app.primaryScreen().devicePixelRatio() if app and app.primaryScreen() else 1.0
+        phys = round(scaled(36) * dpr)
         icon_pm = full_pm.scaled(
-            scaled(36), scaled(36),
+            phys, phys,
             Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.SmoothTransformation,
         )
+        icon_pm.setDevicePixelRatio(dpr)
         icon = QIcon(icon_pm)
         feeds = self._store.get_feeds()
         for i, feed in enumerate(feeds):

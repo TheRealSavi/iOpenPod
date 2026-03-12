@@ -77,11 +77,17 @@ def glyph_pixmap(name: str, size: int, color: str = "#ffffff") -> QPixmap | None
     renderer = QSvgRenderer(QByteArray(colored))
     if not renderer.isValid():
         return None
-    px = QPixmap(size, size)
+    # Render at physical pixel size for crisp output on HiDPI/Retina displays
+    from PyQt6.QtWidgets import QApplication
+    app = QApplication.instance()
+    dpr = app.primaryScreen().devicePixelRatio() if app and app.primaryScreen() else 1.0
+    phys = round(size * dpr)
+    px = QPixmap(phys, phys)
     px.fill(Qt.GlobalColor.transparent)
     painter = QPainter(px)
     renderer.render(painter)
     painter.end()
+    px.setDevicePixelRatio(dpr)
     return px
 
 
