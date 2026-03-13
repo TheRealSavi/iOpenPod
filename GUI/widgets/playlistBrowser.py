@@ -1120,7 +1120,8 @@ class _PlaylistWriteWorker(QThread):
     def run(self):
         try:
             from ..app import iTunesDBCache, DeviceManager
-            from SyncEngine.sync_executor import SyncExecutor
+            from SyncEngine.sync_executor import SyncExecutor, _SyncContext
+            from SyncEngine.mapping import MappingFile
 
             cache = iTunesDBCache.get_instance()
             device = DeviceManager.get_instance()
@@ -1144,6 +1145,20 @@ class _PlaylistWriteWorker(QThread):
             existing_tracks_data = existing_db["tracks"]
             existing_playlists_raw = list(existing_db["playlists"])
             existing_smart_raw = list(existing_db["smart_playlists"])
+
+            # Build a minimal context for _build_and_evaluate_playlists
+            ctx = _SyncContext(
+                plan=None,  # type: ignore[arg-type]
+                mapping=MappingFile(),
+                progress_callback=None,
+                dry_run=False,
+                aac_quality="normal",
+                write_back_to_pc=False,
+                _is_cancelled=None,
+            )
+            ctx.existing_tracks_data = existing_tracks_data
+            ctx.existing_playlists_raw = existing_playlists_raw
+            ctx.existing_smart_raw = existing_smart_raw
 
             # Convert tracks to TrackInfo objects
             all_tracks = []
@@ -1191,8 +1206,7 @@ class _PlaylistWriteWorker(QThread):
 
             # Build and evaluate all playlists
             _master_name, playlists, smart_playlists = executor._build_and_evaluate_playlists(
-                existing_tracks_data, all_tracks,
-                existing_playlists_raw, existing_smart_raw,
+                ctx, all_tracks,
             )
 
             # Find how many tracks matched our target playlist
@@ -1248,7 +1262,8 @@ class _PlaylistDeleteWorker(QThread):
     def run(self):
         try:
             from ..app import iTunesDBCache, DeviceManager
-            from SyncEngine.sync_executor import SyncExecutor
+            from SyncEngine.sync_executor import SyncExecutor, _SyncContext
+            from SyncEngine.mapping import MappingFile
 
             cache = iTunesDBCache.get_instance()
             device = DeviceManager.get_instance()
@@ -1272,6 +1287,20 @@ class _PlaylistDeleteWorker(QThread):
             existing_tracks_data = existing_db["tracks"]
             existing_playlists_raw = list(existing_db["playlists"])
             existing_smart_raw = list(existing_db["smart_playlists"])
+
+            # Build a minimal context for _build_and_evaluate_playlists
+            ctx = _SyncContext(
+                plan=None,  # type: ignore[arg-type]
+                mapping=MappingFile(),
+                progress_callback=None,
+                dry_run=False,
+                aac_quality="normal",
+                write_back_to_pc=False,
+                _is_cancelled=None,
+            )
+            ctx.existing_tracks_data = existing_tracks_data
+            ctx.existing_playlists_raw = existing_playlists_raw
+            ctx.existing_smart_raw = existing_smart_raw
 
             # Remove the target playlist from the raw lists
             existing_playlists_raw = [
@@ -1311,8 +1340,7 @@ class _PlaylistDeleteWorker(QThread):
 
             # Build and evaluate all playlists
             master_name, playlists, smart_playlists = executor._build_and_evaluate_playlists(
-                existing_tracks_data, all_tracks,
-                existing_playlists_raw, existing_smart_raw,
+                ctx, all_tracks,
             )
 
             # Write the database

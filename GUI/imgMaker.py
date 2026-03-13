@@ -10,42 +10,42 @@ logger = logging.getLogger(__name__)
 # Cache for parsed ArtworkDB and index
 _artworkdb_cache = None
 _artworkdb_path_cache = None
-_imgid_index = None
+_img_id_index = None
 _cache_lock = threading.Lock()
 
 
-def _build_imgid_index(artworkdb_data):
-    """Build a dictionary index mapping imgId to entry for O(1) lookups."""
+def _build_img_id_index(artworkdb_data):
+    """Build a dictionary index mapping img_id to entry for O(1) lookups."""
     index = {}
     for entry in artworkdb_data.get("mhli", []):
-        imgId = entry.get("imgId")
-        if imgId is not None:
-            index[imgId] = entry
+        img_id = entry.get("img_id")
+        if img_id is not None:
+            index[img_id] = entry
     return index
 
 
 def get_artworkdb_cached(artworkdb_path):
     """Get cached artworkdb data, parsing only if needed. Thread-safe."""
-    global _artworkdb_cache, _artworkdb_path_cache, _imgid_index
+    global _artworkdb_cache, _artworkdb_path_cache, _img_id_index
 
     with _cache_lock:
         if _artworkdb_cache is not None and _artworkdb_path_cache == artworkdb_path:
-            return _artworkdb_cache, _imgid_index
+            return _artworkdb_cache, _img_id_index
 
         from ArtworkDB_Parser.parser import parse_artworkdb
         _artworkdb_cache = parse_artworkdb(artworkdb_path)
         _artworkdb_path_cache = artworkdb_path
-        _imgid_index = _build_imgid_index(_artworkdb_cache)
-        return _artworkdb_cache, _imgid_index
+        _img_id_index = _build_img_id_index(_artworkdb_cache)
+        return _artworkdb_cache, _img_id_index
 
 
 def clear_artworkdb_cache():
     """Clear the cache when device changes."""
-    global _artworkdb_cache, _artworkdb_path_cache, _imgid_index
+    global _artworkdb_cache, _artworkdb_path_cache, _img_id_index
     with _cache_lock:
         _artworkdb_cache = None
         _artworkdb_path_cache = None
-        _imgid_index = None
+        _img_id_index = None
 
 
 def rgb565_to_rgb888_vectorized(pixels):
@@ -354,14 +354,14 @@ def _iter_entry_image_candidates(entry):
         yield area, result
 
 
-def find_image_by_imgId(artworkdb_data, ithmb_folder_path, imgId, imgid_index=None):
-    """Find and return image for the given imgID.
+def find_image_by_img_id(artworkdb_data, ithmb_folder_path, img_id, img_id_index=None):
+    """Find and return image for the given img_id.
 
     Args:
         artworkdb_data: Parsed ArtworkDB dict (from parse_artworkdb)
         ithmb_folder_path: Path to the Artwork folder containing .ithmb files
-        imgId: The image ID to find
-        imgid_index: Optional pre-built index for O(1) lookup
+        img_id: The image ID to find
+        img_id_index: Optional pre-built index for O(1) lookup
 
     Returns:
         Tuple of (PIL.Image, dominant_color, album_colors) or None if not found
@@ -370,14 +370,14 @@ def find_image_by_imgId(artworkdb_data, ithmb_folder_path, imgId, imgid_index=No
         return None
 
     # Use index for O(1) lookup if available
-    if imgid_index is not None:
-        entry = imgid_index.get(imgId)
+    if img_id_index is not None:
+        entry = img_id_index.get(img_id)
         if entry is None:
             return None
         entries = [entry]
     else:
         # Fallback to linear search if no index provided
-        entries = [e for e in artworkdb_data.get("mhli", []) if e.get("imgId") == imgId]
+        entries = [e for e in artworkdb_data.get("mhli", []) if e.get("img_id") == img_id]
 
     for entry in entries:
         candidates = sorted(

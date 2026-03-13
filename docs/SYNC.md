@@ -14,7 +14,7 @@ Three sources of truth are kept consistent:
 |--------|----------|---------|
 | **Filesystem** | `/iPod_Control/Music/F00–F49/` | Actual audio files on iPod |
 | **iTunesDB** | `/iPod_Control/iTunes/iTunesDB` | Binary database the iPod firmware reads |
-| **iOpenPod.json** | `/iPod_Control/iTunes/iOpenPod.json` | Our mapping file (`fingerprint → dbid`) |
+| **iOpenPod.json** | `/iPod_Control/iTunes/iOpenPod.json` | Our mapping file (`fingerprint → db_id`) |
 
 ```mermaid
 flowchart LR
@@ -104,7 +104,7 @@ flowchart TD
     B --> C["Check C\nFilesystem → iTunesDB"]
 
     A -- "Track in DB but file missing" --> A_FIX["Remove from working set\n(diff engine won't see it)"]
-    B -- "Mapping dbid not in DB" --> B_FIX["Remove stale entry\nfrom iOpenPod.json"]
+    B -- "Mapping db_id not in DB" --> B_FIX["Remove stale entry\nfrom iOpenPod.json"]
     C -- "File on iPod not in DB" --> C_FIX["Delete orphan file\n(reclaim space)"]
 ```
 
@@ -114,7 +114,7 @@ For every track in iTunesDB with a `Location` field, verify the audio file exist
 
 ### Check B: Mapping → iTunesDB
 
-For every `dbid` in iOpenPod.json, verify it exists in the (already-cleaned) track list. Stale entries are removed from the mapping. If any stale entries are found, the cleaned mapping is saved immediately.
+For every `db_id` in iOpenPod.json, verify it exists in the (already-cleaned) track list. Stale entries are removed from the mapping. If any stale entries are found, the cleaned mapping is saved immediately.
 
 ### Check C: Filesystem → iTunesDB (Orphan Detection)
 
@@ -251,7 +251,7 @@ Two sources of removals:
 1. **Fingerprints entirely absent from PC** — every mapping entry for that fingerprint becomes a `REMOVE_FROM_IPOD` action.
 2. **Unclaimed mapping entries** — fingerprint still exists on PC but some mapping entries weren't claimed by any identity group (e.g., a song was removed from Greatest Hits but kept on the original album).
 
-Stale mapping entries (dbid in mapping but not in iTunesDB) are silently cleaned and not shown to the user.
+Stale mapping entries (db_id in mapping but not in iTunesDB) are silently cleaned and not shown to the user.
 
 ---
 
@@ -345,10 +345,10 @@ All stages run sequentially. Each checks for cancellation between items. The dat
 
 For each `REMOVE_FROM_IPOD` item:
 1. Delete the audio file from iPod (`/iPod_Control/Music/F**/...`)
-2. Remove the track from the in-memory `tracks_by_dbid` dictionary
+2. Remove the track from the in-memory `tracks_by_db_id` dictionary
 3. Remove the mapping entry from iOpenPod.json (in-memory)
 
-Also cleans stale mapping entries (dbid exists in mapping but not in iTunesDB).
+Also cleans stale mapping entries (db_id exists in mapping but not in iTunesDB).
 
 ### Stage 2: Re-sync Changed Files
 
@@ -379,7 +379,7 @@ For each `ADD_TO_IPOD` item:
 3. Track the fingerprint and PC metadata for post-write backpatching
 4. Record the PC file path for artwork extraction
 
-**Note**: Mapping entries for new tracks are NOT created yet — the dbid is 0 until the database is written.
+**Note**: Mapping entries for new tracks are NOT created yet — the db_id is 0 until the database is written.
 
 ### Stage 5: Sync Play Counts
 
@@ -443,7 +443,7 @@ flowchart TD
     HASH72 --> WRITE
     NONE --> WRITE
     WRITE["Atomic write\n(temp file → os.replace)"]
-    WRITE --> BACKPATCH["Backpatch new track dbids\n(writer assigned them)"]
+    WRITE --> BACKPATCH["Backpatch new track db_ids\n(writer assigned them)"]
     BACKPATCH --> SAVE_MAP["Save iOpenPod.json\n(mapping with new entries)"]
 ```
 
@@ -457,7 +457,7 @@ When PC file paths are available, the writer:
 3. Converts to RGB565 at multiple sizes (140×140, 56×56)
 4. Writes `.ithmb` pixel data files
 5. Writes the ArtworkDB binary metadata
-6. Returns `dbid → (imgId, src_image_size)` for linking tracks
+6. Returns `db_id → (img_id, src_image_size)` for linking tracks
 
 #### Database Structure Written
 
@@ -585,7 +585,7 @@ flowchart TB
         MUSIC["Music/F00–F49/\n(audio files)"]
         ITDB["iTunesDB\n(binary DB)"]
         ARTDB["ArtworkDB + ithmb\n(album art)"]
-        MAPPING["iOpenPod.json\n(fingerprint → dbid)"]
+        MAPPING["iOpenPod.json\n(fingerprint → db_id)"]
         SYSINFO["Device/SysInfo\n(FireWire GUID)"]
     end
 
@@ -636,7 +636,7 @@ flowchart TB
 | [SyncEngine/audio_fingerprint.py](SyncEngine/audio_fingerprint.py) | Compute/read/write Chromaprint fingerprints |
 | [SyncEngine/fingerprint_diff_engine.py](SyncEngine/fingerprint_diff_engine.py) | Compare PC library vs iPod, produce SyncPlan |
 | [SyncEngine/sync_executor.py](SyncEngine/sync_executor.py) | Execute the 7-stage sync plan |
-| [SyncEngine/mapping.py](SyncEngine/mapping.py) | Manage iOpenPod.json (fingerprint → dbid) |
+| [SyncEngine/mapping.py](SyncEngine/mapping.py) | Manage iOpenPod.json (fingerprint → db_id) |
 | [SyncEngine/integrity.py](SyncEngine/integrity.py) | Three-way consistency validation |
 | [SyncEngine/transcoder.py](SyncEngine/transcoder.py) | FFmpeg transcoding (FLAC→ALAC, etc.) |
 | [SyncEngine/transcode_cache.py](SyncEngine/transcode_cache.py) | Cache transcoded files across syncs/devices |

@@ -18,6 +18,9 @@ from typing import TYPE_CHECKING, Optional
 from .models import (
     PodcastEpisode,
     PodcastFeed,
+    STATUS_DOWNLOADED,
+    STATUS_DOWNLOADING,
+    STATUS_NOT_DOWNLOADED,
     STATUS_ON_IPOD,
 )
 
@@ -26,6 +29,78 @@ if TYPE_CHECKING:
     from SyncEngine.fingerprint_diff_engine import SyncPlan
 
 log = logging.getLogger(__name__)
+
+
+class PodcastTrackMatcher:
+    """Fast matcher for resolving podcast episodes against iPod tracks.
+
+    The matcher pre-indexes iPod podcast tracks once, then can reconcile
+    many feeds without rebuilding lookup maps for each feed.
+    """
+
+    def __init__(self, ipod_tracks: list[dict]):
+        self._by_enclosure: dict[str, dict] = {}
+        self._by_title_album: dict[tuple[str, str], dict] = {}
+
+        for track in ipod_tracks:
+            media_type = track.get("media_type", 0)
+            if not (media_type & 0x04):
+                continue
+
+            enc_url = track.get("Podcast Enclosure URL", "")
+            if enc_url:
+                self._by_enclosure[enc_url] = track
+
+            title = track.get("Title", "")
+            album = track.get("Album", "")
+            if title and album:
+                self._by_title_album[(title.lower(), album.lower())] = track
+
+    def match_feed(self, feed: PodcastFeed) -> bool:
+        """Reconcile one feed against indexed iPod tracks.
+
+        Returns:
+            True if any episode state changed, else False.
+        """
+        changed = False
+
+        for ep in feed.episodes:
+            matched_track = None
+            if ep.audio_url:
+                matched_track = self._by_enclosure.get(ep.audio_url)
+            if not matched_track and ep.title and feed.title:
+                matched_track = self._by_title_album.get(
+                    (ep.title.lower(), feed.title.lower())
+                )
+
+            if matched_track:
+                new_db_id = matched_track.get("db_id", 0)
+                if ep.ipod_db_id != new_db_id or ep.status != STATUS_ON_IPOD:
+                    ep.ipod_db_id = new_db_id
+                    ep.status = STATUS_ON_IPOD
+                    changed = True
+                continue
+
+            # No longer present on iPod: clear stale db link and derive local status.
+            if ep.ipod_db_id != 0:
+                ep.ipod_db_id = 0
+                changed = True
+
+            # Keep transient download state if a transfer is currently running.
+            if ep.status == STATUS_DOWNLOADING:
+                continue
+
+            has_local_file = bool(ep.downloaded_path and os.path.exists(ep.downloaded_path))
+            if not has_local_file and ep.downloaded_path:
+                ep.downloaded_path = ""
+                changed = True
+
+            next_status = STATUS_DOWNLOADED if has_local_file else STATUS_NOT_DOWNLOADED
+            if ep.status != next_status:
+                ep.status = next_status
+                changed = True
+
+        return changed
 
 
 def episode_to_pc_track(
@@ -200,44 +275,19 @@ def needs_transcode(episode: PodcastEpisode) -> bool:
 def match_ipod_tracks(
     feed: PodcastFeed,
     ipod_tracks: list[dict],
-) -> None:
+) -> bool:
     """Match existing iPod tracks to feed episodes.
 
     Scans the iPod's parsed track list for podcast tracks matching this
-    feed (by enclosure URL or title+album).  Updates episode.ipod_dbid
+    feed (by enclosure URL or title+album).  Updates episode.ipod_db_id
     and episode.status for matched episodes.
 
     Args:
         feed: A PodcastFeed with episodes.
         ipod_tracks: Parsed track dicts from iTunesDBCache.get_tracks().
+
+    Returns:
+        True if any episode state changed, otherwise False.
     """
-    by_enclosure: dict[str, dict] = {}
-    by_title_album: dict[tuple[str, str], dict] = {}
-
-    for t in ipod_tracks:
-        media_type = t.get("media_type", 0)
-        if not (media_type & 0x04):
-            continue
-        enc_url = t.get("Podcast Enclosure URL", "")
-        if enc_url:
-            by_enclosure[enc_url] = t
-        title = t.get("Title", "")
-        album = t.get("Album", "")
-        if title and album:
-            by_title_album[(title.lower(), album.lower())] = t
-
-    for ep in feed.episodes:
-        if ep.ipod_dbid:
-            continue
-
-        matched_track = None
-        if ep.audio_url:
-            matched_track = by_enclosure.get(ep.audio_url)
-        if not matched_track and ep.title and feed.title:
-            matched_track = by_title_album.get(
-                (ep.title.lower(), feed.title.lower())
-            )
-
-        if matched_track:
-            ep.ipod_dbid = matched_track.get("dbid", 0)
-            ep.status = STATUS_ON_IPOD
+    matcher = PodcastTrackMatcher(ipod_tracks)
+    return matcher.match_feed(feed)

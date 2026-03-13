@@ -41,6 +41,11 @@ class SubscriptionStore:
         """The podcast directory on the iPod."""
         return self._podcast_dir
 
+    def _ensure_loaded(self) -> None:
+        """Load subscriptions lazily on first access."""
+        if not self._loaded:
+            self.load()
+
     # ── Public API ───────────────────────────────────────────────────────
 
     def load(self) -> list[PodcastFeed]:
@@ -89,14 +94,12 @@ class SubscriptionStore:
 
     def get_feeds(self) -> list[PodcastFeed]:
         """Return the current feed list (loads from disk if needed)."""
-        if not self._loaded:
-            self.load()
+        self._ensure_loaded()
         return list(self._feeds)
 
     def get_feed(self, feed_url: str) -> PodcastFeed | None:
         """Look up a feed by URL."""
-        if not self._loaded:
-            self.load()
+        self._ensure_loaded()
         for f in self._feeds:
             if f.feed_url == feed_url:
                 return f
@@ -104,8 +107,7 @@ class SubscriptionStore:
 
     def add_feed(self, feed: PodcastFeed) -> None:
         """Add or replace a feed subscription.  Saves immediately."""
-        if not self._loaded:
-            self.load()
+        self._ensure_loaded()
         # Replace existing if same feed_url
         self._feeds = [f for f in self._feeds if f.feed_url != feed.feed_url]
         self._feeds.append(feed)
@@ -113,8 +115,7 @@ class SubscriptionStore:
 
     def remove_feed(self, feed_url: str) -> PodcastFeed | None:
         """Remove a feed subscription.  Returns the removed feed or None."""
-        if not self._loaded:
-            self.load()
+        self._ensure_loaded()
         removed = None
         new_feeds = []
         for f in self._feeds:
@@ -129,8 +130,7 @@ class SubscriptionStore:
 
     def update_feed(self, feed: PodcastFeed) -> None:
         """Update an existing feed in-place.  Saves immediately."""
-        if not self._loaded:
-            self.load()
+        self._ensure_loaded()
         for i, f in enumerate(self._feeds):
             if f.feed_url == feed.feed_url:
                 self._feeds[i] = feed
@@ -138,6 +138,35 @@ class SubscriptionStore:
                 return
         # Not found — add it instead
         self.add_feed(feed)
+
+    def update_feeds(self, feeds: list[PodcastFeed]) -> int:
+        """Batch-update multiple feeds and save once.
+
+        Returns:
+            Number of feed entries that changed.
+        """
+        self._ensure_loaded()
+        if not feeds:
+            return 0
+
+        by_url: dict[str, PodcastFeed] = {
+            feed.feed_url: feed for feed in self._feeds
+        }
+
+        changed = 0
+        for feed in feeds:
+            existing = by_url.get(feed.feed_url)
+            if existing != feed:
+                by_url[feed.feed_url] = feed
+                changed += 1
+
+        if changed:
+            # Keep insertion order stable for existing feeds;
+            # new feeds are appended at the end.
+            self._feeds = list(by_url.values())
+            self.save()
+
+        return changed
 
     def feed_dir(self, feed: PodcastFeed) -> str:
         """Return the PC-local download directory for a feed's episodes.

@@ -35,7 +35,7 @@ class PodcastEpisode:
     # Local state (not from RSS — managed by the app)
     status: str = STATUS_NOT_DOWNLOADED
     downloaded_path: str = ""          # Absolute path on disk when downloaded
-    ipod_dbid: int = 0                 # iTunesDB dbid when synced to iPod
+    ipod_db_id: int = 0                 # iTunesDB db_id when synced to iPod
 
     def to_dict(self) -> dict:
         return {
@@ -50,7 +50,7 @@ class PodcastEpisode:
             "season_number": self.season_number,
             "status": self.status,
             "downloaded_path": self.downloaded_path,
-            "ipod_dbid": self.ipod_dbid,
+            "ipod_db_id": self.ipod_db_id,
         }
 
     @classmethod
@@ -67,7 +67,7 @@ class PodcastEpisode:
             season_number=d.get("season_number"),
             status=d.get("status", STATUS_NOT_DOWNLOADED),
             downloaded_path=d.get("downloaded_path", ""),
-            ipod_dbid=d.get("ipod_dbid", 0),
+            ipod_db_id=d.get("ipod_db_id", 0),
         )
 
 
@@ -84,7 +84,6 @@ class PodcastFeed:
     category: str = ""
     language: str = ""
     last_refreshed: float = 0.0        # Unix timestamp of last refresh
-    auto_sync_count: int = 0           # 0 = manual, N = sync latest N episodes
 
     episodes: list[PodcastEpisode] = field(default_factory=list)
 
@@ -99,7 +98,6 @@ class PodcastFeed:
             "category": self.category,
             "language": self.language,
             "last_refreshed": self.last_refreshed,
-            "auto_sync_count": self.auto_sync_count,
             "episodes": [ep.to_dict() for ep in self.episodes],
         }
 
@@ -116,7 +114,6 @@ class PodcastFeed:
             category=d.get("category", ""),
             language=d.get("language", ""),
             last_refreshed=d.get("last_refreshed", 0.0),
-            auto_sync_count=d.get("auto_sync_count", 0),
             episodes=episodes,
         )
 

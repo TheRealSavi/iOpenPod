@@ -279,32 +279,32 @@ def write_mhbd(
     # Track IDs are sequential starting from 1
     track_ids = list(range(last_id + 1, next_track_id))
 
-    # Build dbid → sequential track_id map so playlists can reference
-    # tracks by their 32-bit MHIT trackID (not 64-bit dbid).
-    # The sync executor stores dbids in PlaylistInfo.track_ids because
-    # dbids are the stable identifier, but MHIP entries need 32-bit IDs.
-    dbid_to_track_id: dict[int, int] = {}
+    # Build db_id → sequential track_id map so playlists can reference
+    # tracks by their 32-bit MHIT trackID (not 64-bit db_id).
+    # The sync executor stores db_ids in PlaylistInfo.track_ids because
+    # db_ids are the stable identifier, but MHIP entries need 32-bit IDs.
+    db_id_to_track_id: dict[int, int] = {}
     for i, track in enumerate(tracks):
-        if track.dbid:
-            dbid_to_track_id[track.dbid] = i + last_id + 1
+        if track.db_id:
+            db_id_to_track_id[track.db_id] = i + last_id + 1
 
-    # Remap playlist track_ids from 64-bit dbid → 32-bit sequential track_id.
+    # Remap playlist track_ids from 64-bit db_id → 32-bit sequential track_id.
     #
-    # PlaylistInfo.track_ids stores dbids (the stable cross-session identifier),
+    # PlaylistInfo.track_ids stores db_ids (the stable cross-session identifier),
     # but MHIP entries in the iTunesDB need sequential track IDs assigned by
     # write_mhlt.  We build new PlaylistInfo copies with remapped IDs instead
     # of mutating the caller's objects — if write_mhbd() were retried (e.g.
-    # after an I/O error) the original dbid-based track_ids must still be intact.
+    # after an I/O error) the original db_id-based track_ids must still be intact.
     from dataclasses import replace as _dc_replace
 
     def _remap_playlist(pl: PlaylistInfo) -> PlaylistInfo:
-        """Return a copy of pl with thee dbids translated to track IDs."""
+        """Return a copy of pl with thee db_ids translated to track IDs."""
         new_ids: list[int] = []
         new_meta: list | None = [] if pl.item_metadata is not None else None
 
         meta = pl.item_metadata  # capture for type narrowing
-        for i, dbid in enumerate(pl.track_ids):
-            track_id = dbid_to_track_id.get(dbid)
+        for i, db_id in enumerate(pl.track_ids):
+            track_id = db_id_to_track_id.get(db_id)
             if track_id is None:
                 continue  # track not in this database — skip
             new_ids.append(track_id)
@@ -556,7 +556,7 @@ def write_itunesdb(
         firewire_id: 8-byte FireWire ID for HASH58 (can be extracted from existing database)
         reference_itdb_path: Path to a known-good iTunesDB to extract hash info from
                             (useful for devices with empty SysInfo)
-        pc_file_paths: Dict mapping track dbid (int) → PC source file path (str)
+        pc_file_paths: Dict mapping track db_id (int) → PC source file path (str)
                        for extracting embedded album art. If provided, ArtworkDB
                        and ithmb files will be written and mhii_link set on tracks.
         playlists: List of PlaylistInfo for user playlists (dataset 2).
@@ -696,13 +696,13 @@ def write_itunesdb(
             logger.warning("Could not extract reference info: %s", e)
             reference_info = None
 
-    # --- Generate dbids for all tracks BEFORE artwork ---
-    # write_mhit() generates dbids lazily, but we need them now so
+    # --- Generate db_ids for all tracks BEFORE artwork ---
+    # write_mhit() generates db_ids lazily, but we need them now so
     # write_artworkdb can match tracks to PC file paths.
-    from .mhit_writer import generate_dbid
+    from .mhit_writer import generate_db_id
     for track in tracks:
-        if track.dbid == 0:
-            track.dbid = generate_dbid()
+        if track.db_id == 0:
+            track.db_id = generate_db_id()
 
     # --- Write ArtworkDB if PC file paths provided ---
     pending_artwork = None  # PendingArtworkWrite if defer_commit used
@@ -711,36 +711,36 @@ def write_itunesdb(
                      len(pc_file_paths), len(tracks))
 
         # Remap pc_file_paths: the sync executor may have used id(track_info) as keys
-        # because dbids weren't assigned yet. Now that dbids are assigned, remap.
+        # because db_ids weren't assigned yet. Now that db_ids are assigned, remap.
         remapped_paths: dict[int, str] = {}
-        obj_id_to_dbid = {id(t): t.dbid for t in tracks}
+        obj_id_to_db_id = {id(t): t.db_id for t in tracks}
         remap_count = 0
         for key, path in pc_file_paths.items():
-            if key in obj_id_to_dbid:
-                # Key is an object id — remap to dbid
-                remapped_paths[obj_id_to_dbid[key]] = path
+            if key in obj_id_to_db_id:
+                # Key is an object id — remap to db_id
+                remapped_paths[obj_id_to_db_id[key]] = path
                 remap_count += 1
             elif isinstance(key, int) and key > 0:
-                # Key is already a dbid (from matched_pc_paths)
+                # Key is already a db_id (from matched_pc_paths)
                 remapped_paths[key] = path
 
-        logger.debug("ART: remapped %d new-track paths from object-id to dbid, "
-                     "%d existing-track paths kept by dbid",
+        logger.debug("ART: remapped %d new-track paths from object-id to db_id, "
+                     "%d existing-track paths kept by db_id",
                      remap_count, len(remapped_paths) - remap_count)
         pc_file_paths = remapped_paths
 
         # Log sample of pc_file_paths
-        for i, (dbid, path) in enumerate(list(pc_file_paths.items())[:5]):
-            # Find track title for this dbid
+        for i, (db_id, path) in enumerate(list(pc_file_paths.items())[:5]):
+            # Find track title for this db_id
             title = "?"
             for t in tracks:
-                if t.dbid == dbid:
+                if t.db_id == db_id:
                     title = t.title
                     break
-            logger.debug("ART:   [%d] dbid=%d title='%s' path=%s", i, dbid, title, path)
+            logger.debug("ART:   [%d] db_id=%d title='%s' path=%s", i, db_id, title, path)
 
         # Check how many tracks have matching pc_file_paths
-        matched = sum(1 for t in tracks if t.dbid in pc_file_paths)
+        matched = sum(1 for t in tracks if t.db_id in pc_file_paths)
         logger.debug("ART: %d/%d tracks have a PC source path", matched, len(tracks))
 
         try:
@@ -759,16 +759,16 @@ def write_itunesdb(
             # Extract the mapping — works for both deferred and immediate results
             if isinstance(art_result, PendingArtworkWrite):
                 pending_artwork = art_result
-                dbid_to_imgid = art_result.dbid_to_art_info
+                db_id_to_img_id = art_result.db_id_to_art_info
             else:
                 pending_artwork = None
-                dbid_to_imgid = art_result
+                db_id_to_img_id = art_result
 
-            if dbid_to_imgid:
+            if db_id_to_img_id:
                 # Update mhii_link and artwork_size on tracks
                 art_count = 0
                 for track in tracks:
-                    art_info = dbid_to_imgid.get(track.dbid)
+                    art_info = db_id_to_img_id.get(track.db_id)
                     if art_info:
                         img_id, src_img_size = art_info
                         track.mhii_link = img_id
@@ -777,12 +777,12 @@ def write_itunesdb(
                         art_count += 1
                     else:
                         # Clear stale art references — ArtworkDB was rewritten
-                        # so old imgIds no longer exist
+                        # so old img_ids no longer exist
                         track.mhii_link = 0
                         track.artwork_count = 0
                         track.artwork_size = 0
                 logger.debug("ART: linked %d/%d tracks to %d unique images",
-                             art_count, len(tracks), len(dbid_to_imgid))
+                             art_count, len(tracks), len(db_id_to_img_id))
                 for t in tracks[:5]:
                     logger.debug("ART:   '%s' mhii_link=%d artwork_count=%d artwork_size=%d",
                                  t.title, t.mhii_link, t.artwork_count, t.artwork_size)

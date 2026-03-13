@@ -142,8 +142,8 @@ def format_rating(stars_x20: int) -> str:
     return "★" * stars + "☆" * (5 - stars)
 
 
-def format_dbid(val: int) -> str:
-    """Format 64-bit dbid as hex."""
+def format_db_id(val: int) -> str:
+    """Format 64-bit db_id as hex."""
     if not val:
         return ""
     return f"0x{val:016X}"
@@ -244,7 +244,7 @@ COLUMN_CONFIG: dict[str, tuple[str, Callable[[int], str] | None]] = {
     "artwork_id_ref": ("Artwork Ref", None),
     # ── Identifiers (diagnostic) ──
     "track_id": ("Track ID", None),
-    "db_id": ("DBID", format_dbid),
+    "db_id": ("db_id", format_db_id),
     "album_id": ("Album ID", None),
     "artist_id_ref": ("Artist Ref", None),
     "composer_id": ("Composer ID", None),
@@ -1014,7 +1014,7 @@ class MusicBrowserList(QFrame):
         Returns dict mapping mhiiLink -> (width, height, rgba_bytes) or None.
         """
         from ..app import DeviceManager
-        from ..imgMaker import find_image_by_imgId, get_artworkdb_cached
+        from ..imgMaker import find_image_by_img_id, get_artworkdb_cached
         import os
 
         device = DeviceManager.get_instance()
@@ -1026,13 +1026,13 @@ class MusicBrowserList(QFrame):
         if not artworkdb_path or not os.path.exists(artworkdb_path):
             return {}
 
-        artworkdb_data, imgid_index = get_artworkdb_cached(artworkdb_path)
+        artworkdb_data, img_id_index = get_artworkdb_cached(artworkdb_path)
         results: dict[int, tuple[int, int, bytes] | None] = {}
 
         for link in links:
             if device.cancellation_token.is_cancelled():
                 break
-            result = find_image_by_imgId(artworkdb_data, artwork_folder, link, imgid_index)
+            result = find_image_by_img_id(artworkdb_data, artwork_folder, link, img_id_index)
             if result is not None:
                 pil_img, _dcol, _album_colors = result
                 pil_img = pil_img.convert("RGBA")

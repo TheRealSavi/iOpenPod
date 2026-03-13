@@ -5,7 +5,7 @@ Core components:
 - PCLibrary: Scans PC music folder, extracts metadata
 - FingerprintDiffEngine: Computes sync plan using acoustic fingerprints
 - SyncExecutor: Executes sync plan (copy, transcode, update mapping)
-- MappingManager: Tracks fingerprint → list[dbid] relationships
+- MappingManager: Tracks fingerprint → list[db_id] relationships
 - Transcoder: Converts non-iPod formats (FLAC, etc.) to ALAC/AAC
 
 """

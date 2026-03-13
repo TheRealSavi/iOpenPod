@@ -161,7 +161,7 @@ class _SyncContext:
     existing_smart_raw: list[dict] = field(default_factory=list)
 
     # ── Track state (mutated by stage methods) ──────────────────────
-    tracks_by_dbid: dict[int, TrackInfo] = field(default_factory=dict)
+    tracks_by_db_id: dict[int, TrackInfo] = field(default_factory=dict)
     tracks_by_location: dict[str, TrackInfo] = field(default_factory=dict)
     new_tracks: list[TrackInfo] = field(default_factory=list)
 
@@ -353,8 +353,8 @@ class SyncExecutor:
 
         for t in ctx.existing_tracks_data:
             track_info = self._track_dict_to_info(t)
-            if track_info.dbid:
-                ctx.tracks_by_dbid[track_info.dbid] = track_info
+            if track_info.db_id:
+                ctx.tracks_by_db_id[track_info.db_id] = track_info
             if track_info.location:
                 ctx.tracks_by_location[track_info.location] = track_info
 
@@ -366,15 +366,15 @@ class SyncExecutor:
         """Stage 7: assemble final track list, write database, backpatch and finalize."""
         ctx.progress("write_database", 0, 1, message="Writing database...")
 
-        all_tracks = list(ctx.tracks_by_dbid.values()) + ctx.new_tracks
+        all_tracks = list(ctx.tracks_by_db_id.values()) + ctx.new_tracks
 
-        # ── Pre-assign dbids for new tracks ──────────────────────
-        # New tracks arrive with dbid=0.  Assign now so
+        # ── Pre-assign db_ids for new tracks ──────────────────────
+        # New tracks arrive with db_id=0.  Assign now so
         # _build_and_evaluate_playlists can build correct track lists.
-        from iTunesDB_Writer.mhit_writer import generate_dbid
+        from iTunesDB_Writer.mhit_writer import generate_db_id
         for t in all_tracks:
-            if not t.dbid:
-                t.dbid = generate_dbid()
+            if not t.db_id:
+                t.db_id = generate_db_id()
 
         # ── Auto-detect gapless_album_flag ────────────────────────
         albums: dict[tuple[str, str], list[TrackInfo]] = defaultdict(list)
@@ -414,7 +414,7 @@ class SyncExecutor:
             ctx.progress("write_database", 1, 1,
                          message=f"Database written with {len(all_tracks)} tracks")
 
-            # ── Backpatch: new tracks now have real dbids ──
+            # ── Backpatch: new tracks now have real db_ids ──
             self._backpatch_new_tracks(ctx)
 
             # Save mapping ONLY after successful DB write + backpatch.
@@ -469,16 +469,16 @@ class SyncExecutor:
                          message=f"Merged playlist: {upl.get('Title', '?')}")
 
     def _backpatch_new_tracks(self, ctx: _SyncContext) -> None:
-        """Create mapping entries for newly added tracks (dbids now assigned)."""
+        """Create mapping entries for newly added tracks (db_ids now assigned)."""
         for track in ctx.new_tracks:
             obj_key = id(track)
             fp = ctx.new_track_fingerprints.get(obj_key)
             info = ctx.new_track_info.get(obj_key)
-            if fp and info and track.dbid != 0:
+            if fp and info and track.db_id != 0:
                 pc_track, ipod_dest, was_transcoded = info
                 ctx.mapping.add_track(
                     fingerprint=fp,
-                    dbid=track.dbid,
+                    db_id=track.db_id,
                     source_format=Path(pc_track.path).suffix.lstrip("."),
                     ipod_format=ipod_dest.suffix.lstrip("."),
                     source_size=pc_track.size,
@@ -525,21 +525,21 @@ class SyncExecutor:
 
                     if file_path in ctx.tracks_by_location:
                         track_to_remove = ctx.tracks_by_location.pop(file_path)
-                        if track_to_remove.dbid in ctx.tracks_by_dbid:
-                            del ctx.tracks_by_dbid[track_to_remove.dbid]
+                        if track_to_remove.db_id in ctx.tracks_by_db_id:
+                            del ctx.tracks_by_db_id[track_to_remove.db_id]
 
             if item.fingerprint:
-                ctx.mapping.remove_track(item.fingerprint, dbid=item.dbid)
-            elif item.dbid:
-                ctx.mapping.remove_by_dbid(item.dbid)
+                ctx.mapping.remove_track(item.fingerprint, db_id=item.db_id)
+            elif item.db_id:
+                ctx.mapping.remove_by_db_id(item.db_id)
 
-            if item.dbid and item.dbid in ctx.tracks_by_dbid:
-                del ctx.tracks_by_dbid[item.dbid]
+            if item.db_id and item.db_id in ctx.tracks_by_db_id:
+                del ctx.tracks_by_db_id[item.db_id]
 
             ctx.result.tracks_removed += 1
 
-        for fp, dbid in getattr(ctx.plan, '_stale_mapping_entries', []):
-            ctx.mapping.remove_track(fp, dbid=dbid)
+        for fp, db_id in getattr(ctx.plan, '_stale_mapping_entries', []):
+            ctx.mapping.remove_track(fp, db_id=db_id)
 
     def _parallel_copy_stage(
         self,
@@ -717,9 +717,9 @@ class SyncExecutor:
             source_path = Path(item.pc_track.path)
 
             # Update existing TrackInfo
-            dbid = item.dbid
-            if dbid and dbid in ctx.tracks_by_dbid:
-                existing_track = ctx.tracks_by_dbid[dbid]
+            db_id = item.db_id
+            if db_id and db_id in ctx.tracks_by_db_id:
+                existing_track = ctx.tracks_by_db_id[db_id]
                 if existing_track.location in ctx.tracks_by_location:
                     del ctx.tracks_by_location[existing_track.location]
                 existing_track.location = ipod_location
@@ -747,13 +747,13 @@ class SyncExecutor:
 
                 ctx.tracks_by_location[ipod_location] = existing_track
 
-            if dbid:
-                ctx.pc_file_paths[dbid] = str(source_path)
+            if db_id:
+                ctx.pc_file_paths[db_id] = str(source_path)
 
             if item.fingerprint and ipod_path:
                 ctx.mapping.add_track(
                     fingerprint=item.fingerprint,
-                    dbid=dbid or 0,
+                    db_id=db_id or 0,
                     source_format=source_path.suffix.lstrip("."),
                     ipod_format=ipod_path.suffix.lstrip("."),
                     source_size=item.pc_track.size,
@@ -847,9 +847,9 @@ class SyncExecutor:
                 ctx.result.tracks_updated_metadata += 1
                 continue
 
-            dbid = item.dbid
-            if dbid and dbid in ctx.tracks_by_dbid:
-                track = ctx.tracks_by_dbid[dbid]
+            db_id = item.db_id
+            if db_id and db_id in ctx.tracks_by_db_id:
+                track = ctx.tracks_by_db_id[db_id]
                 for field_name, (pc_value, _ipod_value) in item.metadata_changes.items():
                     mapping_entry = self._META_FIELD_MAP.get(field_name)
                     if mapping_entry is not None:
@@ -865,12 +865,12 @@ class SyncExecutor:
 
             # Refresh mapping mtime/size so next sync doesn't see a spurious file change
             if item.fingerprint and item.pc_track and not ctx.dry_run:
-                fp_result = ctx.mapping.get_by_dbid(dbid) if dbid else None
+                fp_result = ctx.mapping.get_by_db_id(db_id) if db_id else None
                 if fp_result:
                     fp, existing = fp_result
                     ctx.mapping.add_track(
                         fingerprint=fp,
-                        dbid=dbid or 0,
+                        db_id=db_id or 0,
                         source_format=existing.source_format,
                         ipod_format=existing.ipod_format,
                         source_size=item.pc_track.size,
@@ -896,12 +896,12 @@ class SyncExecutor:
         for item in ctx.plan.to_update_artwork:
             if not item.fingerprint:
                 continue
-            fp_result = ctx.mapping.get_by_dbid(item.dbid) if item.dbid else None
+            fp_result = ctx.mapping.get_by_db_id(item.db_id) if item.db_id else None
             if fp_result:
                 fp, existing = fp_result
                 ctx.mapping.add_track(
                     fingerprint=fp,
-                    dbid=item.dbid or 0,
+                    db_id=item.db_id or 0,
                     source_format=existing.source_format,
                     ipod_format=existing.ipod_format,
                     source_size=existing.source_size,
@@ -974,8 +974,8 @@ class SyncExecutor:
                 pc_track, _ipod_path, _was_transcoded = info
                 candidates.append((t, pc_track.path))
 
-        for dbid, pc_path in ctx.pc_file_paths.items():
-            t = ctx.tracks_by_dbid.get(dbid)
+        for db_id, pc_path in ctx.pc_file_paths.items():
+            t = ctx.tracks_by_db_id.get(db_id)
             if t and not t.sound_check and t.media_type not in VIDEO_TYPES:
                 candidates.append((t, pc_path))
 
@@ -1079,9 +1079,9 @@ class SyncExecutor:
                 ctx.result.ratings_synced += 1
                 continue
 
-            dbid = item.dbid
-            if dbid and dbid in ctx.tracks_by_dbid and item.new_rating is not None:
-                ctx.tracks_by_dbid[dbid].rating = item.new_rating
+            db_id = item.db_id
+            if db_id and db_id in ctx.tracks_by_db_id and item.new_rating is not None:
+                ctx.tracks_by_db_id[db_id].rating = item.new_rating
 
             if ctx.write_back_to_pc and item.pc_track and item.new_rating is not None:
                 self._write_rating_to_pc(item.pc_track.path, item.new_rating)
@@ -1609,7 +1609,7 @@ class SyncExecutor:
             last_played=t.get("last_played", 0),
             last_skipped=t.get("last_skipped", 0),
             last_modified=t.get("last_modified", 0),
-            dbid=t.get("db_id", 0),
+            db_id=t.get("db_id", 0),
             media_type=t.get("media_type", 1),
             movie_file_flag=t.get("movie_flag", 0),
             season_number=t.get("season_number", 0),
@@ -1827,28 +1827,28 @@ class SyncExecutor:
         """
         from .spl_evaluator import spl_update
 
-        old_tid_to_dbid: dict[int, int] = {}
+        old_tid_to_db_id: dict[int, int] = {}
         for t in ctx.existing_tracks_data:
             tid = t.get("track_id", 0)
-            dbid = t.get("db_id", 0)
-            if tid and dbid:
-                old_tid_to_dbid[tid] = dbid
+            db_id = t.get("db_id", 0)
+            if tid and db_id:
+                old_tid_to_db_id[tid] = db_id
 
-        valid_dbids: set[int] = {t.dbid for t in all_track_infos if t.dbid}
+        valid_db_ids: set[int] = {t.db_id for t in all_track_infos if t.db_id}
         eval_tracks = [self._trackinfo_to_eval_dict(t) for t in all_track_infos]
 
         master_name, master_id, playlists = self._build_regular_playlists(
-            ctx, old_tid_to_dbid, valid_dbids, eval_tracks, spl_update,
+            ctx, old_tid_to_db_id, valid_db_ids, eval_tracks, spl_update,
         )
         self._sanitize_playlists(playlists, master_id)
         self._rebuild_podcast_playlist(playlists, all_track_infos)
 
         smart_playlists = self._build_smart_playlists(
-            ctx, valid_dbids, eval_tracks, spl_update,
+            ctx, valid_db_ids, eval_tracks, spl_update,
         )
 
         self._reevaluate_live_update(
-            playlists, smart_playlists, valid_dbids, eval_tracks, spl_update,
+            playlists, smart_playlists, valid_db_ids, eval_tracks, spl_update,
         )
 
         return master_name, playlists, smart_playlists
@@ -1856,8 +1856,8 @@ class SyncExecutor:
     def _build_regular_playlists(
         self,
         ctx: _SyncContext,
-        old_tid_to_dbid: dict[int, int],
-        valid_dbids: set[int],
+        old_tid_to_db_id: dict[int, int],
+        valid_db_ids: set[int],
         eval_tracks: list[dict],
         spl_update,
     ) -> tuple[str, int | None, list[PlaylistInfo]]:
@@ -1877,9 +1877,9 @@ class SyncExecutor:
             item_meta = []
             for item in items:
                 tid = item.get("track_id", 0)
-                dbid = old_tid_to_dbid.get(tid, 0)
-                if dbid in valid_dbids:
-                    track_ids.append(dbid)
+                db_id = old_tid_to_db_id.get(tid, 0)
+                if db_id in valid_db_ids:
+                    track_ids.append(db_id)
                     item_meta.append(PlaylistItemMeta(
                         podcast_group_flag=item.get("podcast_group_flag", 0),
                         group_id=item.get("group_id", 0),
@@ -1904,10 +1904,10 @@ class SyncExecutor:
             if prefs_data and rules_data:
                 info.smart_prefs = prefs_from_parsed(prefs_data)
                 info.smart_rules = rules_from_parsed(rules_data)
-                matched_dbids = spl_update(
+                matched_db_ids = spl_update(
                     info.smart_prefs, info.smart_rules, eval_tracks,
                 )
-                info.track_ids = [d for d in matched_dbids if d in valid_dbids]
+                info.track_ids = [d for d in matched_db_ids if d in valid_db_ids]
                 info.item_metadata = None
                 logger.debug("SPL (ds2) '%s': %d tracks matched",
                              info.name, len(info.track_ids))
@@ -1941,25 +1941,25 @@ class SyncExecutor:
     def _rebuild_podcast_playlist(playlists: list[PlaylistInfo],
                                   all_track_infos: list[TrackInfo]) -> None:
         """Ensure the Podcasts playlist reflects all current podcast tracks."""
-        podcast_dbids = [t.dbid for t in all_track_infos if t.media_type & 0x04]
+        podcast_db_ids = [t.db_id for t in all_track_infos if t.media_type & 0x04]
         existing_podcast_pl = next((p for p in playlists if p.podcast_flag), None)
 
-        if podcast_dbids:
+        if podcast_db_ids:
             if existing_podcast_pl is not None:
-                existing_podcast_pl.track_ids = podcast_dbids
+                existing_podcast_pl.track_ids = podcast_db_ids
                 existing_podcast_pl.item_metadata = None
                 logger.info("Rebuilt 'Podcasts' playlist with %d tracks",
-                            len(podcast_dbids))
+                            len(podcast_db_ids))
             else:
                 from iTunesDB_Writer.mhyp_writer import generate_playlist_id
                 playlists.append(PlaylistInfo(
                     name="Podcasts",
-                    track_ids=podcast_dbids,
+                    track_ids=podcast_db_ids,
                     playlist_id=generate_playlist_id(),
                     podcast_flag=1,
                 ))
                 logger.info("Auto-created 'Podcasts' playlist with %d tracks",
-                            len(podcast_dbids))
+                            len(podcast_db_ids))
         elif existing_podcast_pl is not None:
             playlists.remove(existing_podcast_pl)
             logger.info("Removed empty 'Podcasts' playlist (no podcast tracks)")
@@ -1967,7 +1967,7 @@ class SyncExecutor:
     def _build_smart_playlists(
         self,
         ctx: _SyncContext,
-        valid_dbids: set[int],
+        valid_db_ids: set[int],
         eval_tracks: list[dict],
         spl_update,
     ) -> list[PlaylistInfo]:
@@ -1990,23 +1990,23 @@ class SyncExecutor:
             if prefs_data and rules_data:
                 info.smart_prefs = prefs_from_parsed(prefs_data)
                 info.smart_rules = rules_from_parsed(rules_data)
-                matched_dbids = spl_update(
+                matched_db_ids = spl_update(
                     info.smart_prefs, info.smart_rules, eval_tracks,
                 )
 
                 if info.mhsd5_type:
                     logger.debug("SPL (ds5) '%s': %d tracks would match "
                                  "(iPod evaluates at runtime)",
-                                 info.name, len(matched_dbids))
+                                 info.name, len(matched_db_ids))
                 elif info.smart_prefs.live_update:
-                    info.track_ids = [d for d in matched_dbids if d in valid_dbids]
+                    info.track_ids = [d for d in matched_db_ids if d in valid_db_ids]
                     info.item_metadata = None
                     logger.debug("SPL (ds5) '%s': %d tracks matched (live_update)",
                                  info.name, len(info.track_ids))
                 else:
                     logger.debug("SPL (ds5) '%s': %d tracks would match "
                                  "(live_update=False, keeping existing)",
-                                 info.name, len(matched_dbids))
+                                 info.name, len(matched_db_ids))
 
             smart_playlists.append(info)
 
@@ -2018,17 +2018,17 @@ class SyncExecutor:
     def _reevaluate_live_update(
         playlists: list[PlaylistInfo],
         smart_playlists: list[PlaylistInfo],
-        valid_dbids: set[int],
+        valid_db_ids: set[int],
         eval_tracks: list[dict],
         spl_update,
     ) -> None:
         """Re-evaluate all live-update SPLs against the final track list."""
         for info in list(playlists) + [s for s in smart_playlists if not s.mhsd5_type]:
             if info.smart_prefs and info.smart_rules and info.smart_prefs.live_update:
-                matched_dbids = spl_update(
+                matched_db_ids = spl_update(
                     info.smart_prefs, info.smart_rules, eval_tracks,
                 )
-                new_ids = [d for d in matched_dbids if d in valid_dbids]
+                new_ids = [d for d in matched_db_ids if d in valid_db_ids]
                 if new_ids != info.track_ids:
                     logger.info("SPL live-update '%s': %d → %d tracks after "
                                 "final re-evaluation",
@@ -2041,12 +2041,12 @@ class SyncExecutor:
         """Convert a TrackInfo to a dict the SPL evaluator can consume.
 
         The evaluator expects parsed-track-style dicts with keys matching
-        the accessor maps in spl_evaluator.py.  We use dbid as the
-        track_id so that spl_update() returns dbids directly.
+        the accessor maps in spl_evaluator.py.  We use db_id as the
+        track_id so that spl_update() returns db_ids directly.
         """
         d: dict = {
-            # Use dbid as track_id so evaluator returns dbids
-            "track_id": t.dbid,
+            # Use db_id as track_id so evaluator returns db_ids
+            "track_id": t.db_id,
             # String fields
             "Title": t.title or "",
             "Album": t.album or "",

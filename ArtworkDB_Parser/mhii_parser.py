@@ -9,13 +9,13 @@ def parse_imageItem(data, offset, header_length, chunk_length) -> dict:
 
     childCount = struct.unpack("<I", data[offset + 12: offset + 16])[0]
 
-    image["imgId"] = struct.unpack("<I", data[offset + 16: offset + 20])[0]
+    image["img_id"] = struct.unpack("<I", data[offset + 16: offset + 20])[0]
 
     # First mhii is 0x40, second is 0x41, ...
     # (on mobile phones the first mhii appears to be 0x64, second 0x65, ...)
 
     image["songId"] = struct.unpack("<Q", data[offset + 20: offset + 28])[0]
-    # unique ID that matches the dbid field in the iTunesDB Track Item record.
+    # unique ID that matches the db_id field in the iTunesDB Track Item record.
     # this is what is used to map the ArtworkDB items to iTunesDB Items.
 
     image["unk1"] = struct.unpack(

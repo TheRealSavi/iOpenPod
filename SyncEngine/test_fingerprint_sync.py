@@ -44,7 +44,7 @@ def test_mapping_file():
     # Add a track
     mapping.add_track(
         fingerprint="AQADtNQyRUkSRZEiJYqSKMmS",
-        dbid=0x1234567890ABCDEF,
+        db_id=0x1234567890ABCDEF,
         source_format="flac",
         ipod_format="alac",
         source_size=45000000,
@@ -57,13 +57,13 @@ def test_mapping_file():
     # Lookup by fingerprint
     track = mapping.get_single("AQADtNQyRUkSRZEiJYqSKMmS")
     if track:
-        print(f"Found track: dbid=0x{track.dbid:016X}, format={track.source_format}→{track.ipod_format}")
+        print(f"Found track: db_id=0x{track.db_id:016X}, format={track.source_format}→{track.ipod_format}")
 
-    # Lookup by dbid
-    result = mapping.get_by_dbid(0x1234567890ABCDEF)
+    # Lookup by db_id
+    result = mapping.get_by_db_id(0x1234567890ABCDEF)
     if result:
         fp, track = result
-        print(f"Found by dbid: fingerprint={fp[:20]}...")
+        print(f"Found by db_id: fingerprint={fp[:20]}...")
 
     # Serialize to dict
     data = mapping.to_dict()

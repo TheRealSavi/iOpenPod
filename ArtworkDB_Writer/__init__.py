@@ -7,8 +7,8 @@ file embedded album art.
 Usage:
     from ArtworkDB_Writer import write_artworkdb
 
-    # pc_file_paths maps track dbid → PC source file path
-    dbid_to_art = write_artworkdb(
+    # pc_file_paths maps track db_id → PC source file path
+    db_id_to_art = write_artworkdb(
         ipod_path="/media/ipod",
         tracks=track_list,
         pc_file_paths={12345: "/home/user/Music/song.mp3", ...},
@@ -16,7 +16,7 @@ Usage:
 
     # Then set mhiiLink and artworkSize on each track in iTunesDB
     for track in tracks:
-        art_info = dbid_to_art.get(track.dbid)
+        art_info = db_id_to_art.get(track.db_id)
         if art_info:
             img_id, src_size = art_info
             track.mhii_link = img_id

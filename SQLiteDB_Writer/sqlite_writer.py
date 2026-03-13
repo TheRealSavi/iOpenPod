@@ -62,7 +62,7 @@ def write_sqlite_databases(
 
     Args:
         ipod_path: Mount point of iPod (e.g. "E:\\")
-        tracks: List of TrackInfo objects (dbid must already be assigned).
+        tracks: List of TrackInfo objects (db_id must already be assigned).
         playlists: User playlists (master is auto-generated).
         smart_playlists: Smart playlists.
         master_playlist_name: Name for the master playlist.

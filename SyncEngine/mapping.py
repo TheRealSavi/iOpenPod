@@ -29,7 +29,7 @@ class TrackMapping:
     """Mapping info for a single track."""
 
     # iPod identifiers
-    dbid: int  # 64-bit database ID from iTunesDB
+    db_id: int  # 64-bit database ID from iTunesDB
 
     # Source file info (from PC at time of sync)
     source_format: str  # Original format: "flac", "mp3", etc.
@@ -57,7 +57,7 @@ class TrackMapping:
     def from_dict(cls, data: dict) -> "TrackMapping":
         """Create from dict (JSON parsing)."""
         return cls(
-            dbid=data["dbid"],
+            db_id=data["db_id"],
             source_format=data["source_format"],
             ipod_format=data["ipod_format"],
             source_size=data["source_size"],
@@ -83,7 +83,7 @@ class MappingFile:
     created: str = ""
     modified: str = ""
     _tracks: dict[str, list[TrackMapping]] | None = None
-    _dbid_index: dict[int, tuple[str, TrackMapping]] | None = None
+    _db_id_index: dict[int, tuple[str, TrackMapping]] | None = None
 
     def __post_init__(self):
         if self._tracks is None:
@@ -92,7 +92,7 @@ class MappingFile:
             self.created = datetime.now(timezone.utc).isoformat()
         if not self.modified:
             self.modified = self.created
-        self._dbid_index = None
+        self._db_id_index = None
 
     @property
     def tracks(self) -> dict[str, list[TrackMapping]]:
@@ -104,7 +104,7 @@ class MappingFile:
     def add_track(
         self,
         fingerprint: str,
-        dbid: int,
+        db_id: int,
         source_format: str,
         ipod_format: str,
         source_size: int,
@@ -115,13 +115,13 @@ class MappingFile:
     ) -> None:
         """Add or update a track mapping.
 
-        If entry with same dbid exists under this fingerprint, update it.
+        If entry with same db_id exists under this fingerprint, update it.
         Otherwise append a new entry.
         """
         now = datetime.now(timezone.utc).isoformat()
 
         new_mapping = TrackMapping(
-            dbid=dbid,
+            db_id=db_id,
             source_format=source_format,
             ipod_format=ipod_format,
             source_size=source_size,
@@ -134,20 +134,20 @@ class MappingFile:
 
         entries = self.tracks.get(fingerprint, [])
 
-        # Check if this dbid already exists in the list
+        # Check if this db_id already exists in the list
         for i, entry in enumerate(entries):
-            if entry.dbid == dbid:
+            if entry.db_id == db_id:
                 entries[i] = new_mapping
                 self.tracks[fingerprint] = entries
                 self.modified = now
-                self._dbid_index = None  # invalidate reverse index
+                self._db_id_index = None  # invalidate reverse index
                 return
 
         # New entry
         entries.append(new_mapping)
         self.tracks[fingerprint] = entries
         self.modified = now
-        self._dbid_index = None  # invalidate reverse index
+        self._db_id_index = None  # invalidate reverse index
 
     def get_entries(self, fingerprint: str) -> list[TrackMapping]:
         """Get all mapping entries for a fingerprint. Returns empty list if none."""
@@ -164,21 +164,21 @@ class MappingFile:
             return entries[0]
         return None
 
-    def get_by_dbid(self, dbid: int) -> Optional[tuple[str, TrackMapping]]:
-        """Get track mapping by dbid. Returns (fingerprint, mapping) or None."""
-        if self._dbid_index is None:
-            self._dbid_index = {}
+    def get_by_db_id(self, db_id: int) -> Optional[tuple[str, TrackMapping]]:
+        """Get track mapping by db_id. Returns (fingerprint, mapping) or None."""
+        if self._db_id_index is None:
+            self._db_id_index = {}
             for fp, entries in self.tracks.items():
                 for entry in entries:
-                    self._dbid_index[entry.dbid] = (fp, entry)
-        return self._dbid_index.get(dbid)
+                    self._db_id_index[entry.db_id] = (fp, entry)
+        return self._db_id_index.get(db_id)
 
-    def remove_track(self, fingerprint: str, dbid: Optional[int] = None) -> bool:
+    def remove_track(self, fingerprint: str, db_id: Optional[int] = None) -> bool:
         """Remove a track mapping.
 
-        If dbid is provided, remove only that specific entry (for collisions).
-        If dbid is None and only one entry exists, remove it.
-        If dbid is None and multiple entries exist, remove all.
+        If db_id is provided, remove only that specific entry (for collisions).
+        If db_id is None and only one entry exists, remove it.
+        If db_id is None and multiple entries exist, remove all.
 
         Returns True if anything was removed.
         """
@@ -186,10 +186,10 @@ class MappingFile:
         if not entries:
             return False
 
-        if dbid is not None:
-            new_entries = [e for e in entries if e.dbid != dbid]
+        if db_id is not None:
+            new_entries = [e for e in entries if e.db_id != db_id]
             if len(new_entries) == len(entries):
-                return False  # dbid not found
+                return False  # db_id not found
             if new_entries:
                 self.tracks[fingerprint] = new_entries
             else:
@@ -198,23 +198,23 @@ class MappingFile:
             del self.tracks[fingerprint]
 
         self.modified = datetime.now(timezone.utc).isoformat()
-        self._dbid_index = None  # invalidate reverse index
+        self._db_id_index = None  # invalidate reverse index
         return True
 
-    def remove_by_dbid(self, dbid: int) -> bool:
-        """Remove a track mapping by dbid (searches all fingerprints).
+    def remove_by_db_id(self, db_id: int) -> bool:
+        """Remove a track mapping by db_id (searches all fingerprints).
 
         Returns True if removed.
         """
         for fp, entries in list(self.tracks.items()):
-            new_entries = [e for e in entries if e.dbid != dbid]
+            new_entries = [e for e in entries if e.db_id != db_id]
             if len(new_entries) < len(entries):
                 if new_entries:
                     self.tracks[fp] = new_entries
                 else:
                     del self.tracks[fp]
                 self.modified = datetime.now(timezone.utc).isoformat()
-                self._dbid_index = None  # invalidate reverse index
+                self._db_id_index = None  # invalidate reverse index
                 return True
         return False
 
@@ -232,13 +232,13 @@ class MappingFile:
         """Get all fingerprints in mapping."""
         return set(self.tracks.keys())
 
-    def all_dbids(self) -> set[int]:
-        """Get all dbids in mapping."""
-        dbids: set[int] = set()
+    def all_db_ids(self) -> set[int]:
+        """Get all db_ids in mapping."""
+        db_ids: set[int] = set()
         for entries in self.tracks.values():
             for entry in entries:
-                dbids.add(entry.dbid)
-        return dbids
+                db_ids.add(entry.db_id)
+        return db_ids
 
     def all_entries(self) -> list[tuple[str, TrackMapping]]:
         """Return all (fingerprint, mapping) pairs flattened."""
@@ -294,7 +294,7 @@ class MappingManager:
     Usage:
         manager = MappingManager("/mnt/ipod")
         mapping = manager.load()
-        mapping.add_track(fingerprint, dbid, ...)
+        mapping.add_track(fingerprint, db_id, ...)
         manager.save(mapping)
     """
 

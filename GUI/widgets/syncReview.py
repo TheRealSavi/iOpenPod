@@ -536,7 +536,7 @@ class SyncTrackRow(QFrame):
                 self.badge_label.setText(_format_duration(ipod.get("length", 0)))
             else:
                 self.title_label.setText(item.description or "Unknown track")
-                self.detail_label.setText(f"Orphaned mapping (dbid={item.dbid})")
+                self.detail_label.setText(f"Orphaned mapping (db_id={item.db_id})")
 
         elif item.action == SyncAction.UPDATE_FILE and track:
             self.title_label.setText(track.title or track.filename)
@@ -1599,8 +1599,8 @@ class SyncReviewWidget(QWidget):
             for t in ir.missing_files:
                 card.add_info_row(t.get("Title", "Unknown"),
                                   f"{t.get('Artist', 'Unknown')} · File missing from iPod")
-            for fp, dbid in ir.stale_mappings:
-                card.add_info_row(f"Stale mapping (dbid={dbid})", "Removed from mapping")
+            for fp, db_id in ir.stale_mappings:
+                card.add_info_row(f"Stale mapping (db_id={db_id})", "Removed from mapping")
             for orphan in ir.orphan_files[:20]:
                 card.add_info_row(orphan.name, "Orphan file deleted")
             if len(ir.orphan_files) > 20:

@@ -110,7 +110,7 @@ def write_locations_itdb(
 
     Args:
         path: Output file path.
-        tracks: List of TrackInfo objects (with dbid and location set).
+        tracks: List of TrackInfo objects (with db_id and location set).
         tz_offset: Timezone offset in seconds (positive = east of UTC).
     """
     import os
@@ -150,7 +150,7 @@ def write_locations_itdb(
                 num_dir_levels_file, num_dir_levels_lib
             ) VALUES (?, 0, 1, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL)""",
             (
-                _s64(track.dbid), LOCATION_TYPE_FILE,
+                _s64(track.db_id), LOCATION_TYPE_FILE,
                 location, extension, kind_id,
                 date_cd, track.size,
             )

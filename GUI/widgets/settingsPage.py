@@ -793,23 +793,6 @@ class SettingsPage(QWidget):
             current="iPod Wins",
         )
 
-        # ── Podcast settings ─────────────────────────────────────────────
-        self.podcast_auto_sync = ComboRow(
-            "Auto-Sync Episodes",
-            "Automatically sync the latest N episodes of each subscribed "
-            "podcast to iPod during sync.  Set to Off for manual control.",
-            options=["Off", "1", "3", "5", "10", "25"],
-            current="Off",
-        )
-        self.podcast_max_downloaded = ComboRow(
-            "Max Downloaded Episodes",
-            "Limit how many episodes are kept downloaded per feed.  "
-            "Oldest episodes are deleted when the limit is exceeded.  "
-            "Unlimited keeps all downloaded episodes.",
-            options=["Unlimited", "10", "25", "50", "100"],
-            current="Unlimited",
-        )
-
         return self._make_page(
             "Sync",
             _SettingsCard(
@@ -817,11 +800,6 @@ class SettingsPage(QWidget):
                 self.write_back,
                 self.compute_sound_check,
                 self.rating_strategy,
-            ),
-            "Podcasts",
-            _SettingsCard(
-                self.podcast_auto_sync,
-                self.podcast_max_downloaded,
             ),
         )
 
@@ -1059,17 +1037,6 @@ class SettingsPage(QWidget):
         self.backup_dir.value = s.backup_dir
         self.backup_before_sync.value = s.backup_before_sync
 
-        # Podcast settings
-        auto_val = str(s.podcast_auto_sync_count) if s.podcast_auto_sync_count else "Off"
-        idx = self.podcast_auto_sync.combo.findText(auto_val)
-        if idx >= 0:
-            self.podcast_auto_sync.combo.setCurrentIndex(idx)
-
-        max_val = str(s.podcast_max_downloaded) if s.podcast_max_downloaded else "Unlimited"
-        idx = self.podcast_max_downloaded.combo.findText(max_val)
-        if idx >= 0:
-            self.podcast_max_downloaded.combo.setCurrentIndex(idx)
-
         # Refresh tool status indicators
         self._refresh_tool_status()
 
@@ -1136,8 +1103,6 @@ class SettingsPage(QWidget):
             self.backup_before_sync.changed.connect(self._save)
             self.max_backups.changed.connect(self._save)
             self.scrobble_on_sync.changed.connect(self._save)
-            self.podcast_auto_sync.changed.connect(self._save)
-            self.podcast_max_downloaded.changed.connect(self._save)
 
     def _save(self, *_args):
         """Read all controls back into AppSettings and persist."""
@@ -1175,12 +1140,6 @@ class SettingsPage(QWidget):
         s.fpcalc_path = self.fpcalc_path.value
         s.backup_dir = self.backup_dir.value
         s.backup_before_sync = self.backup_before_sync.value
-
-        # Podcast settings
-        auto_text = self.podcast_auto_sync.value
-        s.podcast_auto_sync_count = int(auto_text) if auto_text != "Off" else 0
-        max_text = self.podcast_max_downloaded.value
-        s.podcast_max_downloaded = int(max_text) if max_text != "Unlimited" else 0
 
         # Parse max backups
         mb_text = self.max_backups.value

@@ -178,15 +178,6 @@ class AppSettings:
     # Maximum number of backup snapshots to retain per device (0 = unlimited).
     max_backups: int = 10
 
-    # ── Podcasts ────────────────────────────────────────────────────────────
-    # Default number of latest episodes to auto-sync per subscribed feed.
-    # 0 = manual only (user selects episodes individually).
-    podcast_auto_sync_count: int = 0
-
-    # Maximum downloaded episodes to keep per feed (0 = unlimited).
-    # Oldest episodes beyond this limit are deleted on refresh.
-    podcast_max_downloaded: int = 0
-
     def save(self) -> None:
         """Write settings to the active settings directory.
 

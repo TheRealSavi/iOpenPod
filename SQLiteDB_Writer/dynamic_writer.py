@@ -124,7 +124,7 @@ def write_dynamic_itdb(
                 genius_id
             ) VALUES (?, ?, ?, ?, 0, ?, ?, 0, ?, ?, ?, ?, 0, ?, ?, 0)""",
             (
-                _s64(track.dbid), has_been_played, date_played,
+                _s64(track.db_id), has_been_played, date_played,
                 track.play_count,
                 date_skipped, track.skip_count,
                 float(track.bookmark_time), float(track.bookmark_time),

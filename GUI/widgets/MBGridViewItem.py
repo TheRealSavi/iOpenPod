@@ -2,7 +2,7 @@ import logging
 from PyQt6.QtCore import Qt, QSize, pyqtSignal
 from PyQt6.QtWidgets import QLabel, QFrame, QVBoxLayout
 from PyQt6.QtGui import QFont, QPixmap, QCursor, QImage
-from ..imgMaker import find_image_by_imgId, get_artworkdb_cached
+from ..imgMaker import find_image_by_img_id, get_artworkdb_cached
 from ..hidpi import scale_pixmap_for_display
 from ..styles import Colors, FONT_FAMILY, Metrics
 from ..glyphs import glyph_pixmap
@@ -145,12 +145,12 @@ class MusicBrowserGridItem(QFrame):
         if device.cancellation_token.is_cancelled():
             return None
 
-        artworkdb_data, imgid_index = get_artworkdb_cached(artworkdb_path)
+        artworkdb_data, img_id_index = get_artworkdb_cached(artworkdb_path)
 
         if device.cancellation_token.is_cancelled():
             return None
 
-        result = find_image_by_imgId(artworkdb_data, artwork_folder, mhiiLink, imgid_index)
+        result = find_image_by_img_id(artworkdb_data, artwork_folder, mhiiLink, img_id_index)
 
         if result is None:
             return {"error": True, "artwork_id_ref": mhiiLink}

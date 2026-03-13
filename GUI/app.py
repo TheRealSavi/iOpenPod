@@ -47,6 +47,7 @@ class MainWindow(QMainWindow):
         self._sync_worker = None
         self._sync_execute_worker = None
         self._plan = None
+        self._last_pc_folder = settings.music_folder or ""
 
         # Central widget with stacked layout for main/sync views
         self.centralStack = QStackedWidget()
@@ -670,17 +671,13 @@ class MainWindow(QMainWindow):
         """Mark synced podcast episodes as 'on_ipod' in the subscription store."""
         try:
             browser = self.musicBrowser.podcastBrowser
-            store = browser._store
-            if not store:
+            if not browser._store:
                 return
 
             cache = iTunesDBCache.get_instance()
             ipod_tracks = cache.get_tracks() or []
 
-            from PodcastManager.podcast_sync import match_ipod_tracks
-            for feed in store.get_feeds():
-                match_ipod_tracks(feed, ipod_tracks)
-                store.update_feed(feed)
+            browser.reconcile_ipod_statuses(ipod_tracks)
 
             # Refresh the podcast browser episode table so status is visible
             browser.refresh_episodes()
@@ -1287,7 +1284,7 @@ class iTunesDBCache(QObject):
         self._track_id_index: dict | None = None  # trackID -> track dict
         # User-created/edited playlists (persisted in memory until sync)
         self._user_playlists: list[dict] = []
-        # Pending track flag edits: dbid -> { field: (original, new), ... }
+        # Pending track flag edits: db_id -> { field: (original, new), ... }
         # Originals are captured on first edit so the diff engine can
         # revert in-memory track dicts before comparing.
         self._track_edits: dict[int, dict[str, tuple]] = {}
@@ -1530,10 +1527,10 @@ class iTunesDBCache(QObject):
         """
         with self._lock:
             for track in tracks:
-                dbid = track.get("db_id", 0)
-                if not dbid:
+                db_id = track.get("db_id", 0)
+                if not db_id:
                     continue
-                edits = self._track_edits.setdefault(dbid, {})
+                edits = self._track_edits.setdefault(db_id, {})
                 for key, value in changes.items():
                     if key in edits:
                         # Already edited — keep the *original* value, update new
@@ -1551,7 +1548,7 @@ class iTunesDBCache(QObject):
         self.tracks_changed.emit()
 
     def get_track_edits(self) -> dict[int, dict[str, tuple]]:
-        """Get all pending track flag edits: dbid → {field: (original, new)}."""
+        """Get all pending track flag edits: db_id → {field: (original, new)}."""
         with self._lock:
             return dict(self._track_edits)
 

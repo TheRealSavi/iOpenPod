@@ -83,7 +83,7 @@ def _merge_feed(
 ) -> PodcastFeed:
     """Merge newly parsed episodes into an existing feed.
 
-    Preserves local state (downloaded_path, status, ipod_dbid) for
+    Preserves local state (downloaded_path, status, ipod_db_id) for
     episodes that already exist (matched by guid).
     """
     existing_by_guid = {ep.guid: ep for ep in existing.episodes}
@@ -95,13 +95,13 @@ def _merge_feed(
             # Preserve local state, update RSS metadata
             ep.status = old.status
             ep.downloaded_path = old.downloaded_path
-            ep.ipod_dbid = old.ipod_dbid
+            ep.ipod_db_id = old.ipod_db_id
         merged.append(ep)
 
     # Keep any old episodes that disappeared from the feed but are
     # downloaded or on iPod (don't lose local data)
     for old_ep in existing_by_guid.values():
-        if old_ep.downloaded_path or old_ep.ipod_dbid:
+        if old_ep.downloaded_path or old_ep.ipod_db_id:
             merged.append(old_ep)
 
     existing.title = _get_text(feed_info, "title") or existing.title
@@ -198,15 +198,27 @@ def _parse_episode(entry) -> PodcastEpisode | None:
 
 def _get_text(obj, attr: str, default: str = "") -> str:
     """Safely get a text attribute from a feedparser object."""
-    val = getattr(obj, attr, None) or obj.get(attr) if hasattr(obj, 'get') else getattr(obj, attr, None)
+    val = _get_attr_or_key(obj, attr)
     return str(val).strip() if val else default
 
 
 def _get_itunes(obj, key: str, default: str = "") -> str:
     """Get an itunes: namespace value from a feedparser entry."""
     # feedparser stores itunes:X as itunes_X
-    val = obj.get(f"itunes_{key}") if hasattr(obj, 'get') else getattr(obj, f"itunes_{key}", None)
+    val = _get_attr_or_key(obj, f"itunes_{key}")
     return str(val).strip() if val else default
+
+
+def _get_attr_or_key(obj, name: str):
+    """Read a value from either mapping-style or attribute-style objects."""
+    if hasattr(obj, "get"):
+        try:
+            value = obj.get(name)
+            if value:
+                return value
+        except Exception:
+            pass
+    return getattr(obj, name, None)
 
 
 def _get_artwork_url(feed_info) -> str:

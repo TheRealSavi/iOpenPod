@@ -41,25 +41,23 @@ MHIF_HEADER_SIZE = 124
 class ArtworkEntry:
     """Represents a unique album art image for the ArtworkDB."""
     img_id: int
-    song_id: int          # dbid of one associated track
-    art_hash: str         # MD5 hash for deduplication
-    src_img_size: int     # Size of original source image
-    # Per-format converted data: {format_id: {data, width, height, size, ...}}
-    formats: dict = field(default_factory=dict)
-    # Track dbids that use this artwork
-    track_dbids: list = field(default_factory=list)
+    track_db_id: int  # db_id of one associated track
+    art_hash: str  # MD5 hash for deduplication
+    src_img_size: int  # Size of original source image
+    formats: dict = field(default_factory=dict)  # Per-format converted data: {format_id: {data, width, height, size, ...}}
+    track_db_ids: list = field(default_factory=list)  # Track db_ids that use this artwork
 
 
 @dataclass
 class PendingArtworkWrite:
     """Result of a deferred write_artworkdb call.
 
-    Holds the dbid→imgId mapping and temp file paths.  The caller must
+    Holds the db_id to img_id mapping and temp file paths.  The caller must
     call ``commit()`` after the iTunesDB/CDB is also ready to ensure both
     databases are updated atomically.  Call ``abort()`` to clean up temp
     files without committing.
     """
-    dbid_to_art_info: dict          # dbid → (imgId, src_img_size)
+    db_id_to_art_info: dict          # db_id → (img_id, src_img_size)
     _pending_renames: list = field(default_factory=list)  # [(temp, final), ...]
     _committed: bool = False
 
@@ -195,8 +193,8 @@ def _write_mhii(entry: ArtworkEntry, format_offsets: dict) -> bytes:
     struct.pack_into('<I', header, 4, MHII_HEADER_SIZE)
     struct.pack_into('<I', header, 8, total_len)
     struct.pack_into('<I', header, 12, len(children))   # child count
-    struct.pack_into('<I', header, 16, entry.img_id)     # imgId
-    struct.pack_into('<Q', header, 20, entry.song_id)    # songId (dbid of first track)
+    struct.pack_into('<I', header, 16, entry.img_id)
+    struct.pack_into('<Q', header, 20, entry.track_db_id)    # db_id of first track
     # offset 28: unk1 = 0
     # offset 32: rating = 0
     # offset 36: unk2 = 0
@@ -328,7 +326,7 @@ def _read_existing_artwork(artworkdb_path: str, artwork_dir: str) -> dict:
     ithmb files.
 
     Returns:
-        Dict mapping imgId → {
+        Dict mapping img_id → {
             'song_id': int,
             'src_img_size': int,
             'formats': {format_id: bytes},  # raw RGB565 pixel data
@@ -423,7 +421,7 @@ def _parse_mhii_existing(data: bytes, offset: int, artwork_dir: str) -> Optional
                         if len(pixel_data) == img_size:
                             formats[format_id] = pixel_data
                     except Exception as e:
-                        logger.debug(f"ART: failed to read ithmb data for imgId={img_id} "
+                        logger.debug(f"ART: failed to read ithmb data for img_id={img_id} "
                                      f"format={format_id}: {e}")
 
         child_offset += mhod_total
@@ -482,7 +480,7 @@ def write_artworkdb(
     3. Converts art to RGB565 at multiple sizes
     4. Writes ithmb files (pixel data) to temp paths
     5. Writes ArtworkDB binary (metadata) to temp path
-    6. Returns a mapping of track dbid → imgId for iTunesDB mhiiLink
+    6. Returns a mapping of track db_id to img_id for iTunesDB mhiiLink
 
     When ``defer_commit=True``, files are written to temp paths but NOT
     renamed to their final locations.  The caller receives a
@@ -492,8 +490,8 @@ def write_artworkdb(
 
     Args:
         ipod_path: iPod mount point (e.g., "E:" or "/media/ipod")
-        tracks: List of track dicts or TrackInfo objects with at least 'dbid' and 'album'
-        pc_file_paths: Dict mapping track dbid → PC source file path
+        tracks: List of track dicts or TrackInfo objects with at least 'db_id' and 'album'
+        pc_file_paths: Dict mapping track db_id → PC source file path
                        (if None, tries to extract art from iPod copies)
         start_img_id: Starting image ID (default 100, matching iTunes behavior)
         reference_artdb_path: Path to existing ArtworkDB for copying header fields
@@ -503,11 +501,11 @@ def write_artworkdb(
                       immediately.
 
     Returns:
-        If ``defer_commit=False`` (default): dict mapping track dbid →
-        (imgId, src_img_size), or empty dict if no artwork found.
+        If ``defer_commit=False`` (default): dict mapping track db_id →
+        (img_id, src_img_size), or empty dict if no artwork found.
 
         If ``defer_commit=True``: a ``PendingArtworkWrite`` with the
-        mapping in ``.dbid_to_art_info`` and a ``.commit()`` method.
+        mapping in ``.db_id_to_art_info`` and a ``.commit()`` method.
     """
     artwork_dir = os.path.join(ipod_path, "iPod_Control", "Artwork")
     os.makedirs(artwork_dir, exist_ok=True)
@@ -537,31 +535,31 @@ def write_artworkdb(
         logger.info(f"ART: read {len(existing_art)} existing image entries from ArtworkDB")
 
     # --- Step 1: Extract and deduplicate album art from PC files ---
-    # Each track gets its own MHII (with song_id = track dbid) but
+    # Each track gets its own MHII (with song_id = track db_id) but
     # identical images are written to ithmb only once.
     art_map = {}      # art_hash → art_bytes
-    track_art = {}    # dbid → art_hash (or preserve_key)
+    track_art = {}    # db_id → art_hash (or preserve_key)
 
     total_tracks = len(tracks)
-    tracks_with_dbid = 0
+    tracks_with_db_id = 0
     tracks_with_pc_path = 0
     tracks_pc_path_exists = 0
     tracks_art_extracted = 0
     tracks_no_art = 0
 
     for track in tracks:
-        dbid = _get_track_field(track, 'dbid')
-        if not dbid:
+        db_id = _get_track_field(track, 'db_id')
+        if not db_id:
             title = _get_track_field(track, 'title') or '?'
-            logger.warning(f"ART: track '{title}' has no dbid, skipping")
+            logger.warning(f"ART: track '{title}' has no db_id, skipping")
             continue
-        tracks_with_dbid += 1
+        tracks_with_db_id += 1
 
         # Try to get art from PC source file
         art_bytes = None
-        if pc_file_paths and dbid in pc_file_paths:
+        if pc_file_paths and db_id in pc_file_paths:
             tracks_with_pc_path += 1
-            pc_path = pc_file_paths[dbid]
+            pc_path = pc_file_paths[db_id]
             if os.path.exists(pc_path):
                 tracks_pc_path_exists += 1
                 art_bytes = extract_art(pc_path)
@@ -578,10 +576,10 @@ def write_artworkdb(
         if art_bytes is not None:
             h = art_hash(art_bytes)
             art_map[h] = art_bytes
-            track_art[dbid] = h
+            track_art[db_id] = h
 
     logger.info(f"ART STATS: {total_tracks} total tracks, "
-                f"{tracks_with_dbid} with dbid, "
+                f"{tracks_with_db_id} with db_id, "
                 f"{tracks_with_pc_path} with PC path, "
                 f"{tracks_pc_path_exists} PC files exist, "
                 f"{tracks_art_extracted} have art, "
@@ -590,30 +588,30 @@ def write_artworkdb(
     # --- Step 1a: Share art across album tracks ---
     # If any track in an album has embedded art, apply it to all tracks
     # in the same album that lack art. This matches iTunes behaviour.
-    album_groups: dict[tuple[str, str], list[int]] = {}   # (album, artist) → [dbid]
+    album_groups: dict[tuple[str, str], list[int]] = {}   # (album, artist) → [db_id]
     album_art_hash: dict[tuple[str, str], str] = {}       # (album, artist) → art_hash
 
     for track in tracks:
-        dbid = _get_track_field(track, 'dbid')
-        if not dbid:
+        db_id = _get_track_field(track, 'db_id')
+        if not db_id:
             continue
         album = _get_track_field(track, 'album') or ''
         if not album:
             continue  # can't group without album name
         album_artist = (_get_track_field(track, 'album_artist') or _get_track_field(track, 'artist') or '')
         key = (album, album_artist)
-        album_groups.setdefault(key, []).append(dbid)
-        if dbid in track_art and key not in album_art_hash:
-            album_art_hash[key] = track_art[dbid]
+        album_groups.setdefault(key, []).append(db_id)
+        if db_id in track_art and key not in album_art_hash:
+            album_art_hash[key] = track_art[db_id]
 
     tracks_shared = 0
-    for key, dbids in album_groups.items():
+    for key, db_ids in album_groups.items():
         h = album_art_hash.get(key)
         if not h:
             continue
-        for dbid in dbids:
-            if dbid not in track_art:
-                track_art[dbid] = h
+        for db_id in db_ids:
+            if db_id not in track_art:
+                track_art[db_id] = h
                 tracks_shared += 1
 
     if tracks_shared:
@@ -626,7 +624,7 @@ def write_artworkdb(
 
     if existing_art:
         # Build reverse index: song_id → img_id for the authoritative lookup.
-        # The MHII song_id is the dbid of the track it was written for — this
+        # The MHII song_id is the db_id of the track it was written for — this
         # is always correct even if the track's mhii_link got out of sync
         # (e.g. after a partial write where ArtworkDB updated but CDB didn't).
         existing_by_song_id: dict[int, int] = {}
@@ -636,12 +634,12 @@ def write_artworkdb(
                 existing_by_song_id[sid] = img_id
 
         for track in tracks:
-            dbid = _get_track_field(track, 'dbid')
-            if not dbid or dbid in track_art:
+            db_id = _get_track_field(track, 'db_id')
+            if not db_id or db_id in track_art:
                 continue  # Already has new art from PC extraction
 
-            # Primary lookup: find MHII whose song_id matches this track's dbid
-            resolved_img_id = existing_by_song_id.get(dbid)
+            # Primary lookup: find MHII whose song_id matches this track's db_id
+            resolved_img_id = existing_by_song_id.get(db_id)
 
             if resolved_img_id is None:
                 # Fallback: try the track's mhii_link field directly
@@ -660,7 +658,7 @@ def write_artworkdb(
             preserve_key = f"__preserved_{resolved_img_id}"
             if preserve_key not in preserved_art:
                 preserved_art[preserve_key] = existing_art[resolved_img_id]
-            track_art[dbid] = preserve_key
+            track_art[db_id] = preserve_key
             tracks_preserved += 1
 
     logger.info(f"ART STATS: {len(art_map)} new unique images, "
@@ -714,22 +712,22 @@ def write_artworkdb(
             }
 
     # --- Step 2b: Create per-track ArtworkEntry objects ---
-    # Each track gets its OWN MHII entry with song_id = track dbid.
+    # Each track gets its OWN MHII entry with song_id = track db_id.
     # The iPod firmware (especially Nano) checks song_id to match the
     # requesting track, so a shared MHII only works for one track.
     entries: list[ArtworkEntry] = []
     img_id = start_img_id
 
-    for dbid, h in track_art.items():
+    for db_id, h in track_art.items():
         if h not in unique_converted:
             continue
         uc = unique_converted[h]
         entry = ArtworkEntry(
             img_id=img_id,
-            song_id=dbid,
+            track_db_id=db_id,
             art_hash=h,
             src_img_size=uc['src_img_size'],
-            track_dbids=[dbid],
+            track_db_ids=[db_id],
         )
         entry.formats = uc['formats']
         entries.append(entry)
@@ -840,11 +838,11 @@ def write_artworkdb(
     # os.replace is atomic on NTFS and POSIX — old files are only removed
     # when the new file is fully in place.
 
-    # --- Step 5: Build dbid → (imgId, src_img_size) mapping ---
-    # Each entry already has a unique img_id and a single song_id (dbid).
-    dbid_to_art_info: dict[int, tuple[int, int]] = {}
+    # --- Step 5: Build db_id → (img_id, src_img_size) mapping ---
+    # Each entry already has a unique img_id and a single song_id (db_id).
+    db_id_to_art_info: dict[int, tuple[int, int]] = {}
     for entry in entries:
-        dbid_to_art_info[entry.song_id] = (entry.img_id, entry.src_img_size)
+        db_id_to_art_info[entry.track_db_id] = (entry.img_id, entry.src_img_size)
 
     # Collect all pending renames (ithmb temps + artworkdb temp)
     pending_renames = []
@@ -856,7 +854,7 @@ def write_artworkdb(
         logger.info(f"ART: prepared {len(art_hash_written)} unique images, "
                     f"{len(entries)} MHII entries (per-track) — commit deferred")
         return PendingArtworkWrite(
-            dbid_to_art_info=dbid_to_art_info,
+            db_id_to_art_info=db_id_to_art_info,
             _pending_renames=pending_renames,
         )
 
@@ -879,7 +877,7 @@ def write_artworkdb(
         size = os.path.getsize(ithmb_final_paths[fmt_id])
         logger.info(f"  F{fmt_id}_1.ithmb: {size} bytes")
 
-    return dbid_to_art_info
+    return db_id_to_art_info
 
 
 def _get_track_field(track, field: str):

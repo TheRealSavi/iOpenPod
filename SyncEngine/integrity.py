@@ -3,7 +3,7 @@ iPod Integrity Checker — validates consistency between three sources of truth:
 
   1. **Filesystem**: actual audio files under /iPod_Control/Music/F**/
   2. **iTunesDB**: the binary database the iPod firmware reads
-  3. **iOpenPod.json**: our mapping file (fingerprint → dbid)
+  3. **iOpenPod.json**: our mapping file (fingerprint → db_id)
 
 Run this BEFORE the diff engine so the sync plan is built on accurate data.
 Any discrepancies are repaired automatically (conservative: never delete files
@@ -17,7 +17,7 @@ A. iTunesDB → Filesystem
    diff engine doesn't think it's on the iPod.
 
 B. iOpenPod.json → iTunesDB
-   For every dbid in the mapping, verify the dbid exists in iTunesDB.
+   For every db_id in the mapping, verify the db_id exists in iTunesDB.
    If stale → remove from mapping so the diff engine treats the PC
    track as a fresh add.
 
@@ -50,8 +50,8 @@ class IntegrityReport:
     # Tracks in iTunesDB whose file is missing from the iPod filesystem
     missing_files: list[dict] = field(default_factory=list)
 
-    # Mapping entries whose dbid is not present in the iTunesDB
-    stale_mappings: list[tuple[str, int]] = field(default_factory=list)  # (fingerprint, dbid)
+    # Mapping entries whose db_id is not present in the iTunesDB
+    stale_mappings: list[tuple[str, int]] = field(default_factory=list)  # (fingerprint, db_id)
 
     # Files on iPod not referenced by any iTunesDB track
     orphan_files: list[Path] = field(default_factory=list)
@@ -92,7 +92,7 @@ def check_integrity(
     Run all three consistency checks and repair discrepancies.
 
     This mutates ``ipod_tracks`` (removes entries whose files are missing)
-    and ``mapping`` (removes stale dbids).  Orphan files are deleted from
+    and ``mapping`` (removes stale db_ids).  Orphan files are deleted from
     the iPod filesystem if *delete_orphans* is True.
 
     Args:
@@ -125,7 +125,7 @@ def check_integrity(
     if progress_callback:
         progress_callback("integrity", 0, 0, "Checking mapping against iTunesDB…")
 
-    _check_mapping_dbids(ipod_tracks, mapping, report)
+    _check_mapping_db_ids(ipod_tracks, mapping, report)
 
     if _cancelled():
         return report
@@ -182,32 +182,32 @@ def _check_db_files_exist(
         )
 
 
-# ── Check B: mapping dbids → iTunesDB ─────────────────────────────────────
+# ── Check B: mapping db_ids → iTunesDB ─────────────────────────────────────
 
 
-def _check_mapping_dbids(
+def _check_mapping_db_ids(
     ipod_tracks: list[dict],
     mapping: MappingFile,
     report: IntegrityReport,
 ) -> None:
-    """Remove mapping entries whose dbid is not in *ipod_tracks*."""
-    # Build set of valid dbids from the (already-cleaned) track list
-    valid_dbids: set[int] = set()
+    """Remove mapping entries whose db_id is not in *ipod_tracks*."""
+    # Build set of valid db_ids from the (already-cleaned) track list
+    valid_db_ids: set[int] = set()
     for track in ipod_tracks:
-        dbid = track.get("db_id")
-        if dbid:
-            valid_dbids.add(dbid)
+        db_id = track.get("db_id")
+        if db_id:
+            valid_db_ids.add(db_id)
 
-    mapping_dbids = mapping.all_dbids()
-    stale_dbids = mapping_dbids - valid_dbids
+    mapping_db_ids = mapping.all_db_ids()
+    stale_db_ids = mapping_db_ids - valid_db_ids
 
-    for dbid in stale_dbids:
-        result = mapping.get_by_dbid(dbid)
+    for db_id in stale_db_ids:
+        result = mapping.get_by_db_id(db_id)
         if result:
             fp, _entry = result
-            report.stale_mappings.append((fp, dbid))
-            mapping.remove_track(fp, dbid=dbid)
-            logger.warning(f"Integrity: removed stale mapping dbid={dbid} (fingerprint {fp[:20]}…)")
+            report.stale_mappings.append((fp, db_id))
+            mapping.remove_track(fp, db_id=db_id)
+            logger.warning(f"Integrity: removed stale mapping db_id={db_id} (fingerprint {fp[:20]}…)")
 
     if report.stale_mappings:
         logger.info(
