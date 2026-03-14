@@ -1685,7 +1685,11 @@ class SyncExecutor:
             if filetype == "m4a" and not is_lossless_source:
                 from .transcoder import quality_to_nominal_bitrate
                 bitrate = quality_to_nominal_bitrate(self._aac_quality)
-            # sample_rate is typically preserved by transcoder
+            # Transcoded audio is capped at IPOD_MAX_SAMPLE_RATE; reflect that
+            # in the stored sample_rate so iTunesDB is consistent with the file.
+            if filetype == "m4a":
+                from .transcoder import IPOD_MAX_SAMPLE_RATE as _MAX_SR
+                sample_rate = min(sample_rate, _MAX_SR)
 
         # ── Media type auto-detection ────────────────────────────────
         is_video = getattr(pc_track, "is_video", False)
@@ -1727,8 +1731,36 @@ class SyncExecutor:
         postgap = getattr(pc_track, "postgap", 0) or 0
         sample_count = getattr(pc_track, "sample_count", 0) or 0
         gapless_data = getattr(pc_track, "gapless_data", 0) or 0
-        # Auto-set gapless_track_flag when we have meaningful gapless data
-        gapless_track_flag = 1 if (pregap or postgap or sample_count) else 0
+        if was_transcoded:
+            # Prefer probing the actual output file — it gives us values at the
+            # correct sample rate with no floating-point error, and for files
+            # encoded by Apple's Core Audio (aac_at on macOS) we also get exact
+            # pregap/postgap from the iTunSMPB atom.
+            if ipod_file_path and ipod_file_path.exists():
+                from .pc_library import probe_gapless_info
+                probed = probe_gapless_info(ipod_file_path)
+                if probed.get("sample_rate"):
+                    sample_rate = probed["sample_rate"]
+                if probed.get("sample_count"):
+                    sample_count = probed["sample_count"]
+                    pregap = probed.get("pregap", 0)
+                    postgap = probed.get("postgap", 0)
+            else:
+                # Fallback: the output file isn't available yet (dry-run, etc.).
+                # Scale source values to the output sample rate to avoid the
+                # early-cutoff bug described in the transcoder fix.
+                src_sr = pc_track.sample_rate or 44100
+                if src_sr != sample_rate:
+                    ratio = sample_rate / src_sr
+                    if sample_count:
+                        sample_count = round(sample_count * ratio)
+                    if pregap:
+                        pregap = round(pregap * ratio)
+                    if postgap:
+                        postgap = round(postgap * ratio)
+        # Gapless playback flag is OFF by default.
+        # Only enable it when explicitly provided by metadata/user intent.
+        gapless_track_flag = int(getattr(pc_track, "gapless_track_flag", 0) or 0)
         # encoder_flag: set to 1 for MP3 (iPod needs this for LAME gapless)
         encoder_flag = 1 if filetype == "mp3" else 0
         # VBR detection from mutagen bitrate_mode

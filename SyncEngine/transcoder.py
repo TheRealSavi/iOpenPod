@@ -427,11 +427,21 @@ def _aac_quality_args(quality: str) -> list[str]:
 # ═══════════════════════════════════════════════════════════════════════════
 
 def _cmd_alac(ffmpeg: str, src: str, dst: str) -> list[str]:
+    # Only downsample when the source exceeds the iPod hardware limit.
+    # Unconditionally forcing -ar 48000 on a 44.1 kHz source upsamples the
+    # audio while leaving sample_count in iTunesDB at the 44.1 kHz value,
+    # causing the iPod to miscalculate the track end and skip ~20 s early.
+    props = probe_audio(src)
+    ar_args = (
+        ["-ar", str(IPOD_MAX_SAMPLE_RATE)]
+        if props.sample_rate == 0 or props.sample_rate > IPOD_MAX_SAMPLE_RATE
+        else []
+    )
     return [
         ffmpeg, "-i", src,
         "-vn",
         "-acodec", "alac",
-        "-ar", str(IPOD_MAX_SAMPLE_RATE),
+        *ar_args,
         "-sample_fmt", "s16p",
         "-ac", str(IPOD_MAX_CHANNELS),
         "-y", dst,
@@ -439,11 +449,18 @@ def _cmd_alac(ffmpeg: str, src: str, dst: str) -> list[str]:
 
 
 def _cmd_aac(ffmpeg: str, src: str, dst: str, quality: str) -> list[str]:
+    # Same rationale as _cmd_alac: preserve source rate unless it exceeds limits.
+    props = probe_audio(src)
+    ar_args = (
+        ["-ar", str(IPOD_MAX_SAMPLE_RATE)]
+        if props.sample_rate == 0 or props.sample_rate > IPOD_MAX_SAMPLE_RATE
+        else []
+    )
     return [
         ffmpeg, "-i", src,
         "-vn",
         "-acodec", _best_aac_encoder(),
-        "-ar", str(IPOD_MAX_SAMPLE_RATE),
+        *ar_args,
         "-ac", str(IPOD_MAX_CHANNELS),
         *_aac_quality_args(quality),
         "-y", dst,

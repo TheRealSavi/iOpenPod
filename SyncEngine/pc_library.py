@@ -13,6 +13,7 @@ Uses mutagen for metadata extraction. Supports:
 """
 
 import os
+import json
 from pathlib import Path
 from dataclasses import dataclass
 from typing import Optional, Iterator, Callable
@@ -185,6 +186,54 @@ def write_sound_check_tag(file_path: str, sound_check: int) -> bool:
         return False
 
 
+def _parse_itun_smpb(value: str) -> dict:
+    """Parse an iTunes iTunSMPB freeform atom into gapless components.
+
+    Format: " 00000000 {pregap_hex} {postgap_hex} {total_pcm_samples_hex} ..."
+    The first field is always 00000000 (reserved).  Fields 2/3/4 are the
+    encoder delay (pregap), encoder padding (postgap), and the net PCM sample
+    count of the actual audio content (excluding pregap + postgap).
+
+    Written by iTunes and Apple's Core Audio AAC/ALAC encoder (aac_at on
+    macOS).  Other FFmpeg encoders (libfdk_aac, built-in aac, alac) typically
+    do not write this atom.
+
+    Returns a dict with pregap, postgap, sample_count keys (only if valid).
+    """
+    parts = value.strip().split()
+    if len(parts) < 4:
+        return {}
+    try:
+        pregap = int(parts[1], 16)
+        postgap = int(parts[2], 16)
+        total_samples = int(parts[3], 16)
+        result = {}
+        if pregap >= 0:
+            result["pregap"] = pregap
+        if postgap >= 0:
+            result["postgap"] = postgap
+        if total_samples > 0:
+            result["sample_count"] = total_samples
+        return result
+    except (ValueError, IndexError):
+        return {}
+
+
+def _coerce_mp4_freeform_text(value) -> str:
+    """Convert mutagen MP4 freeform atom payload to plain text.
+
+    MP4 freeform atoms may be returned as bytes-like objects.  Decoding them
+    explicitly avoids ``str(bytes)`` representations like ``b'...`` which
+    break downstream parsers.
+    """
+    try:
+        if isinstance(value, (bytes, bytearray)):
+            return bytes(value).decode("utf-8", errors="replace")
+        return str(value)
+    except Exception:
+        return ""
+
+
 def _extract_gapless_info(audio) -> dict:
     """Extract gapless playback info from mutagen audio object.
 
@@ -195,22 +244,26 @@ def _extract_gapless_info(audio) -> dict:
     if info is None:
         return result
 
-    # Total samples (critical for gapless)
-    # mutagen exposes this as info.length * info.sample_rate for most formats
     sample_rate = getattr(info, "sample_rate", 0)
-    length = getattr(info, "length", 0)
-    if sample_rate and length:
-        result["sample_count"] = int(length * sample_rate)
+
+    # FLAC exposes an exact integer total_samples in STREAMINFO — prefer it
+    # over length × sample_rate which has floating-point rounding error.
+    total_samples = getattr(info, "total_samples", 0)
+    if total_samples:
+        result["sample_count"] = total_samples
+    else:
+        length = getattr(info, "length", 0)
+        if sample_rate and length:
+            # Use rounding to avoid systematic undercount from float truncation.
+            result["sample_count"] = round(length * sample_rate)
 
     # MP3-specific: encoder delay / padding (LAME header)
-    # mutagen stores this in info.encoder_info for LAME-encoded MP3s
+    # mutagen stores these in info for LAME-encoded MP3s.
     encoder_delay = getattr(info, "encoder_delay", 0)
     encoder_padding = getattr(info, "encoder_padding", 0)
     if encoder_delay:
         result["pregap"] = encoder_delay
     # encoder_padding maps to iPod's postgap field (0xC8 in MHIT).
-    # Previously we incorrectly stored this as gapless_data (0xF8),
-    # which is an opaque iTunes-computed field.
     if encoder_padding:
         result["postgap"] = encoder_padding
 
@@ -222,6 +275,111 @@ def _extract_gapless_info(audio) -> dict:
         result["vbr"] = int(bitrate_mode) >= 1
 
     return result
+
+
+def _probe_sample_count_ffprobe(path) -> int:
+    """Return sample_count from ffprobe stream timing when available.
+
+    For MP4/M4A/AAC this can be more reliable than ``length * sample_rate``
+    because it uses integer stream timing (duration_ts + time_base).
+    """
+    try:
+        from .transcoder import find_ffmpeg
+
+        ffmpeg = find_ffmpeg()
+        if not ffmpeg:
+            return 0
+        ffprobe = Path(ffmpeg).with_name("ffprobe")
+        if not ffprobe.exists():
+            return 0
+
+        proc = subprocess.run(
+            [
+                str(ffprobe),
+                "-v",
+                "quiet",
+                "-print_format",
+                "json",
+                "-select_streams",
+                "a:0",
+                "-show_entries",
+                "stream=duration_ts,time_base,sample_rate",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=10,
+        )
+        if proc.returncode != 0:
+            return 0
+
+        payload = json.loads(proc.stdout)
+        streams = payload.get("streams", [])
+        if not streams:
+            return 0
+        stream = streams[0]
+
+        duration_ts = int(stream.get("duration_ts", 0) or 0)
+        sample_rate = int(stream.get("sample_rate", 0) or 0)
+        time_base = str(stream.get("time_base", ""))
+        if duration_ts <= 0 or sample_rate <= 0 or "/" not in time_base:
+            return 0
+
+        num_s, den_s = time_base.split("/", 1)
+        num = int(num_s)
+        den = int(den_s)
+        if num <= 0 or den <= 0:
+            return 0
+
+        sample_count = round(duration_ts * sample_rate * num / den)
+        return sample_count if sample_count > 0 else 0
+    except Exception:
+        return 0
+
+
+def probe_gapless_info(path) -> dict:
+    """Probe an audio file and return its gapless playback info.
+
+    Works for any format mutagen supports.  For M4A files additionally parses
+    the ``iTunSMPB`` freeform atom when present (written by iTunes and Apple's
+    Core Audio AAC/ALAC encoder on macOS), which gives exact integer pregap,
+    postgap, and net PCM sample count values.
+
+    Returns a dict with any subset of: pregap, postgap, sample_count,
+    sample_rate.  Returns an empty dict on any read error.
+    """
+    if not MUTAGEN_AVAILABLE or mutagen is None:
+        return {}
+    try:
+        audio = mutagen.File(str(path))  # type: ignore[union-attr]
+        if audio is None:
+            return {}
+        result = _extract_gapless_info(audio)
+        # For M4A: iTunSMPB has exact integer values — prefer over float-math.
+        ext = Path(path).suffix.lower()
+        has_itun_smpb = False
+        if ext in (".m4a", ".m4b", ".m4p", ".aac") and audio.tags:
+            itun_smpb = audio.tags.get("----:com.apple.iTunes:iTunSMPB")
+            if itun_smpb and len(itun_smpb) > 0:
+                smpb = _parse_itun_smpb(_coerce_mp4_freeform_text(itun_smpb[0]))
+                if smpb:
+                    has_itun_smpb = True
+                    result.update(smpb)
+        # If iTunSMPB isn't present, use ffprobe stream timing for M4A/AAC.
+        if ext in (".m4a", ".m4b", ".m4p", ".aac") and not has_itun_smpb:
+            exact_samples = _probe_sample_count_ffprobe(path)
+            if exact_samples:
+                result["sample_count"] = exact_samples
+        info = getattr(audio, "info", None)
+        if info:
+            sr = getattr(info, "sample_rate", 0)
+            if sr:
+                result["sample_rate"] = sr
+        return result
+    except Exception:
+        return {}
 
 
 # Supported audio extensions
@@ -1146,6 +1304,14 @@ class PCLibrary:
             sosn = audio.tags.get("sosn")
             if sosn and len(sosn) > 0:
                 metadata["sort_show"] = str(sosn[0])
+
+            # iTunSMPB: gapless info written by iTunes / Core Audio (aac_at).
+            # Contains exact integer pregap, postgap, and net PCM sample count.
+            # Only present in files encoded by Apple's toolchain.
+            itun_smpb = audio.tags.get("----:com.apple.iTunes:iTunSMPB")
+            if itun_smpb and len(itun_smpb) > 0:
+                smpb = _parse_itun_smpb(_coerce_mp4_freeform_text(itun_smpb[0]))
+                metadata.update(smpb)
 
         return metadata
 
