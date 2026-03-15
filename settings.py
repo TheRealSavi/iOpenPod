@@ -26,7 +26,7 @@ def get_version() -> str:
     try:
         return _pkg_version("iopenpod")
     except Exception:
-        return "1.0.0"
+        return "1.0.28"
 
 
 def _default_data_dir() -> str:

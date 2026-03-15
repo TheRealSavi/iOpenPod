@@ -644,6 +644,13 @@ class Sidebar(QFrame):
         self.setVideoVisible(True)
         self.setPodcastVisible(True)
 
+    def setLibraryTabsVisible(self, visible: bool):
+        """Show or hide all library category tabs."""
+        for btn in self.buttons.values():
+            btn.setVisible(visible)
+        if visible and self.selectedCategory not in self.buttons:
+            self.selectCategory("Albums")
+
     def setVideoVisible(self, visible: bool):
         """Show or hide video-related sidebar categories.
 

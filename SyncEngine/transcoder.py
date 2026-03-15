@@ -137,14 +137,11 @@ def _find_ffprobe() -> Optional[str]:
 
 
 @lru_cache(maxsize=1)
-def _best_aac_encoder() -> str:
-    """Return the best available AAC encoder.
-
-    Preference: libfdk_aac (Fraunhofer) > aac_at (macOS AudioToolbox) > aac.
-    """
+def available_aac_encoders() -> set[str]:
+    """Return the set of AAC encoders exposed by the current ffmpeg build."""
     ffmpeg = find_ffmpeg()
     if not ffmpeg:
-        return "aac"
+        return set()
     try:
         r = subprocess.run(
             [ffmpeg, "-encoders"],
@@ -153,12 +150,26 @@ def _best_aac_encoder() -> str:
             timeout=10, **_SP_KWARGS,
         )
         out = r.stdout
+        available: set[str] = set()
         for encoder in ("libfdk_aac", "aac_at", "aac"):
             if f" {encoder} " in out:
-                logger.info("Using AAC encoder: %s", encoder)
-                return encoder
+                available.add(encoder)
+        return available
     except Exception:
-        pass
+        return set()
+
+
+@lru_cache(maxsize=1)
+def _best_aac_encoder() -> str:
+    """Return the best available AAC encoder.
+
+    Preference: libfdk_aac (Fraunhofer) > aac_at (macOS AudioToolbox) > aac.
+    """
+    available = available_aac_encoders()
+    for encoder in ("libfdk_aac", "aac_at", "aac"):
+        if encoder in available:
+            logger.info("Using AAC encoder: %s", encoder)
+            return encoder
     return "aac"
 
 

@@ -85,6 +85,9 @@ class MainWindow(QMainWindow):
                 except Exception as e:
                     logger.warning("Auto-restore scan failed: %s", e)
 
+            # Default to a no-device placeholder page until an iPod is selected.
+            self._show_default_page()
+
     def _build_ui(self):
         """Create child widgets and wire up signals.
 
@@ -108,8 +111,10 @@ class MainWindow(QMainWindow):
         self.sidebar.settingsButton.clicked.connect(self.showSettings)
         self.sidebar.backupButton.clicked.connect(self.showBackupBrowser)
 
+        self.mainContentStack = QStackedWidget()
+
         self.mainLayout.addWidget(self.sidebar)
-        self.mainLayout.addWidget(self.musicBrowser)
+        self.mainLayout.addWidget(self.mainContentStack)
         self.centralStack.addWidget(self.mainWidget)  # Index 0
 
         # Sync review page
@@ -128,6 +133,61 @@ class MainWindow(QMainWindow):
         self.backupBrowser = BackupBrowserWidget()
         self.backupBrowser.closed.connect(self.hideBackupBrowser)
         self.centralStack.addWidget(self.backupBrowser)  # Index 3
+
+        # No-device placeholder section (shown in content area; sidebar stays visible)
+        self.noDeviceWidget = QWidget()
+        no_device_layout = QVBoxLayout(self.noDeviceWidget)
+        no_device_layout.setContentsMargins((36), (36), (36), (36))
+        no_device_layout.setSpacing((12))
+
+        no_device_layout.addStretch(1)
+
+        title = QLabel("Select an iPod to continue")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setFont(QFont(FONT_FAMILY, Metrics.FONT_XXL, QFont.Weight.DemiBold))
+        title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent;")
+        no_device_layout.addWidget(title)
+
+        subtitle = QLabel(
+            "No device is currently selected.\n"
+            "Choose an iPod to access your library and sync tools."
+        )
+        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        subtitle.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
+        subtitle.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent;")
+        no_device_layout.addWidget(subtitle)
+
+        select_btn = QPushButton("Select Device")
+        select_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        select_btn.setFixedWidth((170))
+        select_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.DemiBold))
+        select_btn.setStyleSheet(btn_css(
+            bg=Colors.ACCENT,
+            bg_hover=Colors.ACCENT_LIGHT,
+            bg_press=Colors.ACCENT,
+            fg=Colors.TEXT_ON_ACCENT,
+            border="none",
+            padding="8px 14px",
+        ))
+        select_btn.clicked.connect(self.selectDevice)
+
+        select_row = QHBoxLayout()
+        select_row.addStretch(1)
+        select_row.addWidget(select_btn)
+        select_row.addStretch(1)
+        no_device_layout.addLayout(select_row)
+
+        no_device_layout.addStretch(2)
+
+        self.mainContentStack.addWidget(self.musicBrowser)   # Index 0
+        self.mainContentStack.addWidget(self.noDeviceWidget)  # Index 1
+
+    def _show_default_page(self):
+        """Show main page and switch content area by device selection state."""
+        has_device = bool(DeviceManager.get_instance().device_path)
+        self.sidebar.setLibraryTabsVisible(has_device)
+        self.mainContentStack.setCurrentIndex(0 if has_device else 1)
+        self.centralStack.setCurrentIndex(0)
 
     def _on_theme_changed(self):
         """Rebuild the entire UI after a live theme switch."""
@@ -195,8 +255,12 @@ class MainWindow(QMainWindow):
         clear_artworkdb_cache()
 
         if path:
+            self._show_default_page()
             # Start loading data (will emit data_ready when done)
             iTunesDBCache.get_instance().start_loading()
+        else:
+            self.sidebar.clearDeviceInfo()
+            self._show_default_page()
 
     def resyncDevice(self):
         """Rebuild the cache from the current device."""
@@ -545,7 +609,7 @@ class MainWindow(QMainWindow):
             self._sync_worker.requestInterruption()
         if self._sync_execute_worker is not None and self._sync_execute_worker.isRunning():
             self._sync_execute_worker.requestInterruption()
-        self.centralStack.setCurrentIndex(0)
+        self._show_default_page()
 
     def showSettings(self):
         """Show the settings page."""
@@ -557,7 +621,7 @@ class MainWindow(QMainWindow):
         # Re-read persisted settings to pick up changes
         settings = get_settings()
         self._last_pc_folder = settings.music_folder or self._last_pc_folder
-        self.centralStack.setCurrentIndex(0)
+        self._show_default_page()
 
     def showBackupBrowser(self):
         """Show the backup browser page."""
@@ -566,7 +630,7 @@ class MainWindow(QMainWindow):
 
     def hideBackupBrowser(self):
         """Return from backup browser to the main browsing view."""
-        self.centralStack.setCurrentIndex(0)
+        self._show_default_page()
 
     def executeSyncPlan(self, selected_items):
         """Execute the selected sync actions."""

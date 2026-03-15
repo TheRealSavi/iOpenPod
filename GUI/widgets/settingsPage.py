@@ -341,6 +341,30 @@ class ToolRow(SettingRow):
     def __init__(self, title: str, description: str = ""):
         super().__init__(title, description)
 
+        # Optional inline status pills (used by FFmpeg row).
+        self._aac_pills_wrap = QWidget()
+        pills_layout = QHBoxLayout(self._aac_pills_wrap)
+        pills_layout.setContentsMargins(0, 2, 0, 0)
+        pills_layout.setSpacing((6))
+
+        self._aac_pills: dict[str, QLabel] = {}
+        pill_labels = {
+            "base": "AAC (native)",
+            "at": "AAC AudioToolbox",
+            "fdk": "libfdk_aac",
+        }
+        for key in ("base", "at", "fdk"):
+            pill = QLabel(pill_labels[key])
+            pill.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+            pill.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            pill.setMinimumWidth((104))
+            self._aac_pills[key] = pill
+            pills_layout.addWidget(pill)
+        pills_layout.addStretch(1)
+
+        self._text_layout.addWidget(self._aac_pills_wrap)
+        self._aac_pills_wrap.hide()
+
         right_layout = QHBoxLayout()
         right_layout.setSpacing((8))
 
@@ -387,6 +411,38 @@ class ToolRow(SettingRow):
         self.download_btn.setText("Downloading…")
         self.status_label.setText("Downloading…")
         self.status_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
+
+    def set_aac_encoder_statuses(self, statuses: dict[str, bool]):
+        """Update AAC encoder pills (base/at/fdk) for FFmpeg rows."""
+        any_visible = False
+        for key, pill in self._aac_pills.items():
+            available = bool(statuses.get(key, False))
+            if available:
+                pill.setStyleSheet(
+                    f"""
+                    QLabel {{
+                        color: {Colors.SUCCESS};
+                        background: {Colors.SUCCESS_DIM};
+                        border: 1px solid {Colors.SUCCESS_BORDER};
+                        border-radius: {Metrics.BORDER_RADIUS_SM}px;
+                        padding: 2px 8px;
+                    }}
+                    """
+                )
+            else:
+                pill.setStyleSheet(
+                    f"""
+                    QLabel {{
+                        color: {Colors.TEXT_TERTIARY};
+                        background: {Colors.SURFACE_ALT};
+                        border: 1px solid {Colors.BORDER_SUBTLE};
+                        border-radius: {Metrics.BORDER_RADIUS_SM}px;
+                        padding: 2px 8px;
+                    }}
+                    """
+                )
+            any_visible = True
+        self._aac_pills_wrap.setVisible(any_visible)
 
 
 class _TokenRow(SettingRow):
@@ -1350,11 +1406,19 @@ class SettingsPage(QWidget):
 
     def _refresh_tool_status(self):
         """Check whether ffmpeg and fpcalc are reachable and update the UI."""
-        from SyncEngine.transcoder import find_ffmpeg
+        from SyncEngine.transcoder import find_ffmpeg, available_aac_encoders
         from SyncEngine.audio_fingerprint import find_fpcalc
 
         ffmpeg = find_ffmpeg()
         self.ffmpeg_tool.set_status(bool(ffmpeg), ffmpeg or "")
+        enc = available_aac_encoders() if ffmpeg else set()
+        self.ffmpeg_tool.set_aac_encoder_statuses(
+            {
+                "base": "aac" in enc,
+                "at": "aac_at" in enc,
+                "fdk": "libfdk_aac" in enc,
+            }
+        )
 
         fpcalc = find_fpcalc()
         self.fpcalc_tool.set_status(bool(fpcalc), fpcalc or "")
