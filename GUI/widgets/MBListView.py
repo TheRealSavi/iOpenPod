@@ -26,6 +26,8 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from GUI.widgets.playlistEditor import MEDIA_TYPE_FLAGS
 from ..hidpi import scale_pixmap_for_display
 from ..styles import Colors, FONT_FAMILY, Metrics, table_css
 
@@ -2098,6 +2100,9 @@ class MusicBrowserList(QFrame):
         # ── Track Flags ──
         menu.addSeparator()
         self._build_flag_menu(menu, menu_style, selected, cache)
+        
+        # ── Media Type ──
+        self._build_media_type_menu(menu, menu_style, selected, cache)
 
         # ── Rating ──
         self._build_rating_menu(menu, menu_style, selected, cache)
@@ -2195,6 +2200,43 @@ class MusicBrowserList(QFrame):
                 lambda _=False, v=new_val: self._set_track_flag("not_played_flag", v)  # was playedMark
             )
 
+    def _build_media_type_menu(
+        self,
+        menu: QMenu,
+        style: str,
+        selected: list[dict[str, object]],
+        _cache: object,
+    ) -> None:
+        """Add a Media Type submenu with options for video, audio, and other."""
+        media_type_menu = menu.addMenu("Media Type")
+        if not media_type_menu:
+            return
+        media_type_menu.setStyleSheet(style)
+
+        # Current media type (show check for unanimous value)
+        current_media_types: set[int] = set()
+        for t in selected:
+            raw = t.get("media_type", 0)
+            if isinstance(raw, int):
+                current_media_types.add(raw)
+            elif isinstance(raw, str):
+                try:
+                    current_media_types.add(int(raw))
+                except ValueError:
+                    current_media_types.add(0)
+            else:
+                current_media_types.add(0)
+        unanimous: int | None = current_media_types.pop() if len(current_media_types) == 1 else None
+        
+        for value, label in MEDIA_TYPE_FLAGS:
+            prefix = "✓ " if unanimous == value else "   "
+            act = media_type_menu.addAction(f"{prefix}{label}")
+            if act:
+                act.triggered.connect(
+                    lambda _=False, v=value: self._set_track_flag("media_type", v)
+                )
+    
+    
     def _build_rating_menu(self, menu: QMenu, style: str, selected: list[dict], cache) -> None:
         """Add a Rating submenu with 0-5 star options."""
         rating_menu = menu.addMenu("Rating")
