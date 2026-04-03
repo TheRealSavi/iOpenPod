@@ -289,7 +289,18 @@ class SyncExecutor:
         if not self._preflight_checks(ctx):
             return ctx.result
 
+        ctx.progress(
+            "load_database", 0, 1,
+            message="Reading iTunesDB and playlists from iPod…",
+        )
         self._load_existing_database_into(ctx)
+        ctx.progress(
+            "load_database", 1, 1,
+            message=(
+                f"Loaded {len(ctx.existing_tracks_data)} tracks, "
+                f"{len(ctx.existing_playlists_raw)} playlists"
+            ),
+        )
 
         # Run stages 1-6; bail on first failure.
         stages = [
@@ -975,8 +986,11 @@ class SyncExecutor:
         if not ctx.plan.to_update_file:
             return
 
-        ctx.progress("update_file", 0, len(ctx.plan.to_update_file),
-                     message="Re-syncing changed files...")
+        n_updates = len(ctx.plan.to_update_file)
+        ctx.progress(
+            "update_file", 0, n_updates,
+            message="Re-syncing changed files…",
+        )
 
         if ctx.dry_run:
             for i, item in enumerate(ctx.plan.to_update_file):
@@ -988,9 +1002,18 @@ class SyncExecutor:
             return
 
         # Pre-process: delete old files and invalidate cache (sequential, fast)
-        for item in ctx.plan.to_update_file:
+        for pi, item in enumerate(ctx.plan.to_update_file):
+            if ctx.cancelled():
+                return
             if item.pc_track is None:
                 continue
+            ctx.progress(
+                "update_file", 0, n_updates,
+                message=(
+                    f"Preparing re-sync ({pi + 1} of {n_updates}): "
+                    f"removing old iPod copy — {item.description}"
+                ),
+            )
             if item.ipod_track:
                 file_path = item.ipod_track.get("Location") or item.ipod_track.get("location")
                 if file_path:
@@ -1189,9 +1212,15 @@ class SyncExecutor:
         if not ctx.plan.to_update_artwork or ctx.dry_run:
             return
 
-        for item in ctx.plan.to_update_artwork:
-            if not item.fingerprint:
-                continue
+        work_art = [x for x in ctx.plan.to_update_artwork if x.fingerprint]
+        n_art = len(work_art)
+        for ai, item in enumerate(work_art):
+            if ctx.cancelled():
+                return
+            ctx.progress(
+                "update_artwork", ai + 1, n_art,
+                message=item.description or "Recording artwork change",
+            )
             fp_result = ctx.mapping.get_by_db_id(item.db_id) if item.db_id else None
             if fp_result:
                 fp, existing = fp_result
@@ -1233,7 +1262,7 @@ class SyncExecutor:
 
         ctx.progress(
             "podcast_download", 0, len(pending),
-            message=f"Downloading {len(pending)} podcast episodes...",
+            message=f"Downloading {len(pending)} podcast episodes…",
         )
 
         from PodcastManager.downloader import download_and_probe_episode
@@ -1252,7 +1281,7 @@ class SyncExecutor:
             title = pc.title or "Episode"
 
             ctx.progress(
-                "podcast_download", idx, len(pending),
+                "podcast_download", idx + 1, len(pending),
                 item, f"Downloading {title}",
             )
 
@@ -1450,7 +1479,10 @@ class SyncExecutor:
         if not lb_token:
             return
 
-        ctx.progress("scrobble", 0, 1, message="Scrobbling plays...")
+        ctx.progress(
+            "scrobble", 0, 1,
+            message="Submitting new plays to ListenBrainz…",
+        )
 
         try:
             from .scrobbler import scrobble_plays

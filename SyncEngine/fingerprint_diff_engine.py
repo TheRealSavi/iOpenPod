@@ -33,6 +33,7 @@ from enum import Enum, auto
 from pathlib import Path
 import logging
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .pc_library import PCLibrary, PCTrack
@@ -461,9 +462,24 @@ class FingerprintDiffEngine:
             return plan
 
         if progress_callback:
-            progress_callback("scan_pc", 0, 0, "Scanning PC library...")
+            progress_callback("scan_pc", 0, 0, "Counting media files in PC library…")
 
-        pc_tracks = list(self.pc_library.scan(include_video=self.supports_video))
+        total_media = self.pc_library.count_audio_files(
+            include_video=self.supports_video,
+        )
+
+        def _on_scan_progress(current: int, total: int, track: PCTrack) -> None:
+            if progress_callback:
+                label = track.relative_path or track.filename or str(track.path)
+                progress_callback("scan_pc", current, total, label)
+
+        pc_tracks = list(
+            self.pc_library.scan(
+                include_video=self.supports_video,
+                progress_callback=_on_scan_progress,
+                total_hint=total_media,
+            )
+        )
 
         # Filter out podcast tracks when the device doesn't support podcasts.
         # This mirrors the include_video filter: no point syncing content the
@@ -486,15 +502,50 @@ class FingerprintDiffEngine:
         completed = 0
         completed_lock = threading.Lock()
         total = len(pc_tracks)
+        worker_status: dict[int, str] = {}
+        status_lock = threading.Lock()
+        last_fp_emit = [0.0]
 
-        def _fingerprint_one(track: PCTrack) -> tuple[PCTrack, Optional[str]]:
-            fp = get_or_compute_fingerprint(track.path, write_to_file=write_fingerprints)
-            return (track, fp)
+        def _emit_fingerprint_progress(current: int) -> None:
+            if not progress_callback:
+                return
+            now = time.monotonic()
+            if (now - last_fp_emit[0]) < 0.05 and current < total:
+                return
+            last_fp_emit[0] = now
+            with status_lock:
+                lines = list(worker_status.values())
+            if lines:
+                # Show what each worker is doing while others run (reduces “silent” gaps).
+                body = "\n".join(lines[:fp_workers])
+                msg = f"{current} of {total} done\n{body}"
+            else:
+                msg = f"{current} of {total} done"
+            progress_callback("fingerprint", current, total, msg)
+
+        def _fingerprint_job(worker_id: int, track: PCTrack) -> tuple[PCTrack, Optional[str]]:
+            label = track.filename or track.relative_path or str(track.path)
+            with status_lock:
+                worker_status[worker_id] = f"Fingerprinting: {label}"
+            with completed_lock:
+                done_snapshot = completed
+            _emit_fingerprint_progress(done_snapshot)
+            try:
+                fp = get_or_compute_fingerprint(
+                    track.path, write_to_file=write_fingerprints,
+                )
+                return (track, fp)
+            finally:
+                with status_lock:
+                    worker_status.pop(worker_id, None)
 
         logger.info(f"Fingerprinting {total} tracks with {fp_workers} workers")
 
         with ThreadPoolExecutor(max_workers=fp_workers) as pool:
-            futures = {pool.submit(_fingerprint_one, t): t for t in pc_tracks}
+            futures = {
+                pool.submit(_fingerprint_job, i, t): t
+                for i, t in enumerate(pc_tracks)
+            }
 
             for future in as_completed(futures):
                 if is_cancelled and is_cancelled():
@@ -513,7 +564,7 @@ class FingerprintDiffEngine:
                 track, fp = future.result()
 
                 if progress_callback:
-                    progress_callback("fingerprint", current, total, track.filename)
+                    _emit_fingerprint_progress(current)
 
                 if not fp:
                     plan.fingerprint_errors.append((track.path, "Could not compute fingerprint"))
@@ -549,8 +600,12 @@ class FingerprintDiffEngine:
         if is_cancelled and is_cancelled():
             return plan
 
+        n_identity = len(identity_groups)
         if progress_callback:
-            progress_callback("diff", 0, 0, "Computing differences...")
+            progress_callback(
+                "diff", 0, max(n_identity, 1),
+                "Computing differences…",
+            )
 
         # For fingerprints with multiple album groups, we need to track which
         # mapping entries have already been claimed so each PC track gets its own.
@@ -572,10 +627,30 @@ class FingerprintDiffEngine:
             return 1  # no match → process after confident matches
 
         sorted_groups = sorted(identity_groups.items(), key=_album_match_priority)
+        n_groups = len(sorted_groups)
+        last_diff_emit = 0.0
+        emit_every = 1 if n_groups <= 600 else max(1, n_groups // 400)
 
-        for (fp, _album_key), pc_tracks_for_group in sorted_groups:
+        for gi, ((fp, _album_key), pc_tracks_for_group) in enumerate(sorted_groups):
             # Pick representative track (first one from this album group)
             pc_track = pc_tracks_for_group[0]
+            if progress_callback and n_groups:
+                now = time.monotonic()
+                if (
+                    gi % emit_every == 0
+                    or gi == n_groups - 1
+                    or (now - last_diff_emit) >= 0.25
+                ):
+                    last_diff_emit = now
+                    label = pc_track.filename or pc_track.relative_path or str(
+                        pc_track.path,
+                    )
+                    progress_callback(
+                        "diff",
+                        gi + 1,
+                        n_groups,
+                        f"Matching PC ↔ iPod ({gi + 1} of {n_groups}) — {label}",
+                    )
             mapping_entries = mapping.get_entries(fp)
 
             if not mapping_entries:

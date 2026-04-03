@@ -551,6 +551,8 @@ class PCLibrary:
         self,
         progress_callback: Optional[Callable[[int, int, PCTrack], None]] = None,
         include_video: bool = True,
+        *,
+        total_hint: Optional[int] = None,
     ) -> Iterator[PCTrack]:
         """
         Scan the library and yield PCTrack objects.
@@ -559,14 +561,22 @@ class PCLibrary:
             progress_callback: Optional callback(current, total, track) for progress updates
             include_video: When False, skip video files entirely.
                            Set to False when syncing to iPods that don't support video.
+            total_hint: When set with *progress_callback*, use this as the item total instead
+                        of running a separate full-tree count (avoids a long silent pass).
         """
         if not MUTAGEN_AVAILABLE:
             raise RuntimeError("mutagen is required for library scanning. Install with: pip install mutagen")
 
         extensions = MEDIA_EXTENSIONS if include_video else AUDIO_EXTENSIONS
 
-        # First count files for progress
-        total = self.count_audio_files(include_video=include_video) if progress_callback else 0
+        # Count files for progress unless the caller already counted (e.g. diff engine).
+        if progress_callback:
+            if total_hint is not None:
+                total = total_hint
+            else:
+                total = self.count_audio_files(include_video=include_video)
+        else:
+            total = 0
         current = 0
 
         for root, _, files in os.walk(self.root_path):

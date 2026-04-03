@@ -1108,12 +1108,14 @@ class SyncReviewWidget(QWidget):
 
         loading_layout.addSpacing(16)
 
-        # Detail — current item / worker lines
+        # Detail — current item / worker lines (multiline during parallel work)
         self.progress_detail = QLabel("", loading_widget)
         self.progress_detail.setStyleSheet(
             f"color: {Colors.TEXT_TERTIARY}; font-size: {Metrics.FONT_LG}px;"
         )
         self.progress_detail.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.progress_detail.setWordWrap(True)
+        self.progress_detail.setMaximumWidth(480)
         loading_layout.addWidget(self.progress_detail)
 
         # Hint label (shown only during automatic pre-sync backup stage)
@@ -1497,6 +1499,9 @@ class SyncReviewWidget(QWidget):
         "backup": "Creating pre-sync backup",
         "transcode": "Transcoding",
         "scrobble": "Scrobbling to ListenBrainz",
+        "load_database": "Loading iPod database",
+        "podcast_download": "Downloading podcasts",
+        "update_artwork": "Updating artwork records",
     }
 
     def _friendly_stage(self, stage: str) -> str:
@@ -2034,6 +2039,10 @@ class SyncReviewWidget(QWidget):
         message = getattr(prog, 'message', '') or ''
         worker_lines = getattr(prog, 'worker_lines', None)
         size_progress = getattr(prog, 'size_progress', None)
+        if not message:
+            current_item = getattr(prog, 'current_item', None)
+            if current_item is not None:
+                message = getattr(current_item, 'description', '') or ''
 
         # Transcode is a sub-stage — update the bar without changing
         # the headline.

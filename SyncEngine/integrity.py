@@ -30,6 +30,7 @@ from ._formats import MEDIA_EXTENSIONS as _MEDIA_EXTS
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
+import time
 from typing import Optional, Callable
 
 from .mapping import MappingFile
@@ -110,7 +111,9 @@ def check_integrity(
     if progress_callback:
         progress_callback("integrity", 0, 0, "Checking iTunesDB against filesystem…")
 
-    _check_db_files_exist(ipod_root, ipod_tracks, report)
+    _check_db_files_exist(
+        ipod_root, ipod_tracks, report, progress_callback=progress_callback,
+    )
 
     if _cancelled():
         return report
@@ -128,7 +131,10 @@ def check_integrity(
     if progress_callback:
         progress_callback("integrity", 0, 0, "Scanning for orphan files…")
 
-    _check_orphan_files(ipod_root, music_dir, ipod_tracks, report, delete_orphans, _cancelled)
+    _check_orphan_files(
+        ipod_root, music_dir, ipod_tracks, report, delete_orphans, _cancelled,
+        progress_callback=progress_callback,
+    )
 
     if not report.is_clean:
         logger.warning(report.summary)
@@ -145,11 +151,24 @@ def _check_db_files_exist(
     ipod_root: Path,
     ipod_tracks: list[dict],
     report: IntegrityReport,
+    *,
+    progress_callback: Optional[Callable] = None,
 ) -> None:
     """Remove tracks from *ipod_tracks* whose audio file is missing."""
     to_remove_indices: list[int] = []
+    total = len(ipod_tracks)
+    last_emit = 0.0
 
     for idx, track in enumerate(ipod_tracks):
+        if progress_callback and total > 0:
+            now = time.monotonic()
+            if idx == 0 or idx == total - 1 or idx % 64 == 0 or (now - last_emit) >= 0.2:
+                last_emit = now
+                title = track.get("Title") or track.get("Artist") or "track"
+                progress_callback(
+                    "integrity", idx + 1, total,
+                    f"Verifying iPod files ({idx + 1} of {total}) — {title}",
+                )
         location = track.get("Location")
         if not location:
             continue
@@ -219,6 +238,8 @@ def _check_orphan_files(
     report: IntegrityReport,
     delete_orphans: bool,
     is_cancelled: Callable[[], bool] = lambda: False,
+    *,
+    progress_callback: Optional[Callable] = None,
 ) -> None:
     """Find and optionally delete files in Music/F** not referenced by iTunesDB."""
     if not music_dir.exists():
@@ -240,14 +261,22 @@ def _check_orphan_files(
 
     # Scan F00–F## for actual audio files
     orphans: list[Path] = []
-    for folder in sorted(music_dir.iterdir()):
+    f_folders = sorted(
+        d for d in music_dir.iterdir()
+        if d.is_dir()
+        and len(d.name) >= 2
+        and d.name[0] == "F"
+        and d.name[1:].isdigit()
+    )
+    n_folders = len(f_folders)
+    for fi, folder in enumerate(f_folders):
         if is_cancelled():
             return
-        if not folder.is_dir():
-            continue
-        # Only look in F## folders
-        if not (len(folder.name) >= 2 and folder.name[0] == "F" and folder.name[1:].isdigit()):
-            continue
+        if progress_callback and n_folders:
+            progress_callback(
+                "integrity", fi + 1, n_folders,
+                f"Scanning {folder.name} for files not in iTunesDB…",
+            )
         for file in folder.iterdir():
             if is_cancelled():
                 return
@@ -269,7 +298,13 @@ def _check_orphan_files(
 
         if delete_orphans:
             deleted = 0
-            for orphan in orphans:
+            n_or = len(orphans)
+            for oi, orphan in enumerate(orphans):
+                if progress_callback and n_or and (oi % 32 == 0 or oi == n_or - 1):
+                    progress_callback(
+                        "integrity", oi + 1, n_or,
+                        f"Removing orphan file: {orphan.name}",
+                    )
                 try:
                     orphan.unlink()
                     deleted += 1
