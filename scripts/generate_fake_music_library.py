@@ -9,7 +9,8 @@ import shutil
 import sys
 import time
 import wave
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -74,7 +75,7 @@ DEFAULT_ART_SIZE = 640
 
 
 def _default_workers() -> int:
-    return max(1, min((os.cpu_count() or 4) * 2, 16))
+    return max(1, min(os.cpu_count() or 4, 8))
 
 
 @dataclass(frozen=True)
@@ -109,6 +110,7 @@ class MusicalRecipe:
     chord_degrees: tuple[int, ...]
     melody_degrees: tuple[int, ...]
     melody_rests: tuple[bool, ...]
+    signature_offsets: tuple[int, ...]
     bass_pattern: tuple[int, ...]
     kick_hits: tuple[float, ...]
     snare_hits: tuple[float, ...]
@@ -499,6 +501,12 @@ def _mix_u32(value: int) -> int:
     return value
 
 
+def _serial_chroma_signature(track_serial: int, length: int = 32) -> tuple[int, ...]:
+    # Encodes the serial in base-12 so every track gets a distinct pitch-class path.
+    serial_value = track_serial + 1
+    return tuple(((serial_value // (12**step)) + step * 5 + (step // 4) * 2) % 12 for step in range(length))
+
+
 def _build_music_recipe(track_serial: int) -> MusicalRecipe:
     seed = _mix_u32(track_serial + 1)
     modes = (
@@ -532,7 +540,7 @@ def _build_music_recipe(track_serial: int) -> MusicalRecipe:
 
     melody_degrees: list[int] = []
     melody_rests: list[bool] = []
-    intervals = (0, 1, 2, 4, 5, 7, 9, -1, -2)
+    intervals = (0, 1, 2, 3, 4, 5, -1, -2)
     for step in range(32):
         mixed = _mix_u32(seed + step * 0x45D9F3B)
         bar = (step // 8) % 4
@@ -558,6 +566,7 @@ def _build_music_recipe(track_serial: int) -> MusicalRecipe:
         chord_degrees=progression,
         melody_degrees=tuple(melody_degrees),
         melody_rests=tuple(melody_rests),
+        signature_offsets=_serial_chroma_signature(track_serial),
         bass_pattern=bass_patterns[(seed >> 17) % len(bass_patterns)],
         kick_hits=tuple(sorted(kick_hits)),
         snare_hits=tuple(snare_hits),
@@ -573,6 +582,14 @@ def _scale_midi(root_midi: int, mode: tuple[int, ...], degree: int, octave: int)
 
 def _midi_to_hz(midi_note: int) -> float:
     return 440.0 * (2.0 ** ((midi_note - 69) / 12.0))
+
+
+def _fit_midi_range(midi_note: int, low: int, high: int) -> int:
+    while midi_note < low:
+        midi_note += 12
+    while midi_note > high:
+        midi_note -= 12
+    return midi_note
 
 
 def _note_envelope(phase: float, *, attack: float, release: float) -> float:
@@ -603,15 +620,64 @@ def _noise(index: int, seed: int) -> float:
     return ((mixed & 0xFFFF) / 32767.5) - 1.0
 
 
-def _voice(hz: float, t: float, tone_color: int) -> float:
-    phase = math.tau * hz * t
-    if tone_color == 0:
-        return 0.72 * math.sin(phase) + 0.18 * math.sin(2.0 * phase) + 0.10 * math.sin(3.0 * phase)
-    if tone_color == 1:
-        return 0.65 * math.sin(phase) + 0.25 * math.sin(3.0 * phase) + 0.10 * math.sin(5.0 * phase)
-    if tone_color == 2:
-        return 0.58 * math.sin(phase) + 0.28 * math.sin(2.0 * phase) + 0.14 * math.sin(4.0 * phase)
-    return 0.80 * math.sin(phase) + 0.14 * math.sin(phase * 1.997) + 0.06 * math.sin(phase * 2.996)
+def _sine_stack(hz: float, t: float, partials: tuple[tuple[float, float], ...]) -> float:
+    total = 0.0
+    for harmonic, level in partials:
+        total += level * math.sin(math.tau * hz * harmonic * t)
+    return total
+
+
+def _warm_pad_voice(hz: float, t: float, tone_color: int) -> float:
+    detune = 1.0015 + tone_color * 0.0005
+    return (
+        _sine_stack(hz, t, ((1.0, 0.72), (2.0, 0.10), (3.0, 0.04)))
+        + _sine_stack(hz * detune, t, ((1.0, 0.14), (2.0, 0.03)))
+    )
+
+
+def _round_bass_voice(hz: float, t: float) -> float:
+    return _sine_stack(hz, t, ((0.5, 0.18), (1.0, 0.78), (2.0, 0.10), (3.0, 0.035)))
+
+
+def _clean_lead_voice(hz: float, t: float, note_phase: float, tone_color: int) -> float:
+    brightness = math.exp(-note_phase * (3.2 + tone_color * 0.2))
+    return _sine_stack(
+        hz,
+        t,
+        (
+            (1.0, 0.86),
+            (2.0, 0.08 + brightness * 0.045),
+            (3.0, brightness * 0.018),
+        ),
+    )
+
+
+def _smooth_noise(index: int, seed: int) -> float:
+    return (
+        _noise(index, seed) * 0.55
+        + _noise(index - 1, seed) * 0.30
+        + _noise(index - 2, seed) * 0.15
+    )
+
+
+def _kick_voice(t_since: float) -> float:
+    body_env = math.exp(-t_since / 0.16)
+    thump = math.sin(math.tau * 52.0 * t_since) * body_env
+    low_mid = math.sin(math.tau * 96.0 * t_since) * math.exp(-t_since / 0.045) * 0.14
+    return thump + low_mid
+
+
+def _snare_voice(index: int, t_since: float, seed: int) -> float:
+    noise_env = math.exp(-t_since / 0.10)
+    body_env = math.exp(-t_since / 0.065)
+    noise = _smooth_noise(index * 5, seed ^ 0x55AA55AA)
+    body = math.sin(math.tau * 175.0 * t_since) * 0.32
+    return noise * noise_env * 0.55 + body * body_env
+
+
+def _hat_voice(index: int, t_since: float, seed: int) -> float:
+    hat_env = math.exp(-t_since / 0.035)
+    return _smooth_noise(index * 13, seed ^ 0xA5A5A5A5) * hat_env
 
 
 def write_tone_wav(
@@ -642,23 +708,25 @@ def write_tone_wav(
             global_env = (frame_count - index - 1) / fade_frames
         global_env = max(global_env, 0.0)
 
-        chord_offsets = (0, 2, 4, 6)
+        chord_offsets = (0, 2, 4)
         pad_env = _bar_envelope(beat_in_bar)
         pulse = 1.0 - recipe.pulse_depth + recipe.pulse_depth * math.sin(math.tau * beat / 2.0) ** 2
         pad = 0.0
         for offset in chord_offsets:
             note = _scale_midi(recipe.root_midi, recipe.mode, chord_degree + offset, 2)
-            pad += _voice(_midi_to_hz(note), t, recipe.tone_color)
-        pad = (pad / len(chord_offsets)) * pad_env * pulse * 0.28
+            note = _fit_midi_range(note, 50, 70)
+            pad += _warm_pad_voice(_midi_to_hz(note), t, recipe.tone_color)
+        pad = (pad / len(chord_offsets)) * pad_env * pulse * 0.24
 
         bass_position = beat_in_loop * 2.0
         bass_step = int(bass_position)
         bass_phase = bass_position - bass_step
         bass_degree = chord_degree + recipe.bass_pattern[bass_step % len(recipe.bass_pattern)]
         bass_note = _scale_midi(recipe.root_midi, recipe.mode, bass_degree, 0)
+        bass_note = _fit_midi_range(bass_note, 36, 52)
         bass_env = _note_envelope(bass_phase, attack=0.05, release=0.42)
         bass_accent = 1.15 if bass_step % 8 in {0, 4} else 0.82
-        bass = _voice(_midi_to_hz(bass_note), t, 1) * bass_env * bass_accent * 0.34
+        bass = _round_bass_voice(_midi_to_hz(bass_note), t) * bass_env * bass_accent * 0.36
 
         melody_position = beat_in_loop * 2.0
         melody_step = int(melody_position)
@@ -666,34 +734,36 @@ def write_tone_wav(
         lead = 0.0
         if not recipe.melody_rests[melody_step % len(recipe.melody_rests)]:
             melody_degree = recipe.melody_degrees[melody_step % len(recipe.melody_degrees)]
-            lead_octave = 3 + ((melody_step // 8 + recipe.tone_color) % 2)
+            lead_octave = 2 + ((melody_step // 16 + recipe.tone_color) % 2)
             lead_note = _scale_midi(recipe.root_midi, recipe.mode, melody_degree, lead_octave)
-            vibrato = 1.0 + 0.0035 * math.sin(math.tau * (4.8 + recipe.tone_color * 0.4) * t)
-            lead_env = _note_envelope(melody_phase, attack=0.08, release=0.48)
-            lead = _voice(_midi_to_hz(lead_note) * vibrato, t, (recipe.tone_color + 2) % 4) * lead_env * 0.22
+            lead_note = _fit_midi_range(lead_note, 57, 76)
+            lead_env = _note_envelope(melody_phase, attack=0.09, release=0.62)
+            lead = _clean_lead_voice(_midi_to_hz(lead_note), t, melody_phase, recipe.tone_color) * lead_env * 0.16
+
+        signature_step = int(melody_position)
+        signature_phase = melody_position - signature_step
+        signature_offset = recipe.signature_offsets[signature_step % len(recipe.signature_offsets)]
+        signature_note = _fit_midi_range(recipe.root_midi + 24 + signature_offset, 55, 74)
+        signature_env = _note_envelope(signature_phase, attack=0.06, release=0.70)
+        signature_accent = 1.0 if signature_step % 4 in {0, 2} else 0.72
+        signature = _clean_lead_voice(_midi_to_hz(signature_note), t, signature_phase, recipe.tone_color) * signature_env * signature_accent * 0.095
 
         kick_delta = _recent_hit_delta(beat_in_loop, recipe.kick_hits, max_delta=0.55)
         kick = 0.0
         if kick_delta is not None:
-            kick_env = math.exp(-kick_delta / 0.16)
-            kick_hz = 44.0 + 88.0 * math.exp(-kick_delta / 0.05)
-            kick = math.sin(math.tau * kick_hz * t) * kick_env * 0.42
+            kick = _kick_voice(kick_delta / beats_per_second) * 0.43
 
         snare_delta = _recent_hit_delta(beat_in_loop, recipe.snare_hits, max_delta=0.35)
         snare = 0.0
         if snare_delta is not None:
-            snare_env = math.exp(-snare_delta / 0.07)
-            snare_noise = _noise(index * 3, recipe.seed) * 0.70
-            snare_tone = math.sin(math.tau * 185.0 * t) * 0.30
-            snare = (snare_noise + snare_tone) * snare_env * 0.23
+            snare = _snare_voice(index, snare_delta / beats_per_second, recipe.seed) * 0.16
 
         hat_delta = (beat_in_loop * 2.0) % 1.0 / 2.0
-        hat_env = math.exp(-hat_delta / 0.045)
-        hat_accent = 0.13 if int(beat_in_loop * 2.0) % 2 == 0 else 0.08
-        hat = _noise(index * 11, recipe.seed ^ 0xA5A5A5A5) * hat_env * hat_accent
+        hat_accent = 0.048 if int(beat_in_loop * 2.0) % 2 == 0 else 0.028
+        hat = _hat_voice(index, hat_delta / beats_per_second, recipe.seed) * hat_accent
 
-        sample = (pad + bass + lead + kick + snare + hat) * global_env
-        value = int(32767.0 * 0.82 * math.tanh(sample * 1.35))
+        sample = (pad + bass + lead + signature + kick + snare + hat) * global_env
+        value = int(32767.0 * 0.86 * math.tanh(sample * 1.08))
         frames.extend(value.to_bytes(2, byteorder="little", signed=True))
 
     with wave.open(str(path), "wb") as wav_file:
@@ -772,6 +842,59 @@ def generate_track_file(
         art_bytes=spec.art_bytes,
     )
     return spec.path
+
+
+def _generate_tracks_concurrently(
+    track_specs: list[TrackSpec],
+    *,
+    sample_rate: int,
+    duration: float,
+    worker_count: int,
+    track_bar,
+) -> dict[int, Path]:
+    created_by_serial: dict[int, Path] = {}
+    executor_class = ProcessPoolExecutor if worker_count > 1 else ThreadPoolExecutor
+    try:
+        with executor_class(max_workers=worker_count) as executor:
+            futures = {
+                executor.submit(
+                    generate_track_file,
+                    spec,
+                    sample_rate=sample_rate,
+                    duration=duration,
+                ): spec
+                for spec in track_specs
+            }
+            for future in as_completed(futures):
+                spec = futures[future]
+                created_path = future.result()
+                created_by_serial[spec.serial] = created_path
+                track_bar.set_postfix_str(created_path.name[:40], refresh=False)
+                track_bar.update(1)
+    except (BrokenProcessPool, RuntimeError, OSError):
+        if executor_class is ThreadPoolExecutor:
+            raise
+        track_bar.set_postfix_str("process workers unavailable; retrying with threads", refresh=True)
+        created_by_serial.clear()
+        track_bar.reset(total=len(track_specs))
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            futures = {
+                executor.submit(
+                    generate_track_file,
+                    spec,
+                    sample_rate=sample_rate,
+                    duration=duration,
+                ): spec
+                for spec in track_specs
+            }
+            for future in as_completed(futures):
+                spec = futures[future]
+                created_path = future.result()
+                created_by_serial[spec.serial] = created_path
+                track_bar.set_postfix_str(created_path.name[:40], refresh=False)
+                track_bar.update(1)
+        return created_by_serial
+    return created_by_serial
 
 
 def generate_library(
@@ -859,8 +982,8 @@ def generate_library(
             workers=0,
         )
 
-    worker_count = max(1, min(workers, len(track_specs)))
-    created_by_serial: dict[int, Path] = {}
+    cpu_count = os.cpu_count() or 1
+    worker_count = max(1, min(workers, len(track_specs), cpu_count))
     generation_started_at = time.perf_counter()
 
     with tqdm(
@@ -870,22 +993,15 @@ def generate_library(
         dynamic_ncols=True,
         mininterval=0.1,
     ) as track_bar:
-        with ThreadPoolExecutor(max_workers=worker_count) as executor:
-            futures = {
-                executor.submit(
-                    generate_track_file,
-                    spec,
-                    sample_rate=sample_rate,
-                    duration=duration,
-                ): spec
-                for spec in track_specs
-            }
-            for future in as_completed(futures):
-                spec = futures[future]
-                created_path = future.result()
-                created_by_serial[spec.serial] = created_path
-                track_bar.set_postfix_str(created_path.name[:40], refresh=False)
-                track_bar.update(1)
+        executor_label = "process" if worker_count > 1 else "thread"
+        track_bar.set_postfix_str(f"starting {worker_count} {executor_label} worker{'s' if worker_count != 1 else ''}", refresh=True)
+        created_by_serial = _generate_tracks_concurrently(
+            track_specs,
+            sample_rate=sample_rate,
+            duration=duration,
+            worker_count=worker_count,
+            track_bar=track_bar,
+        )
     generation_elapsed = time.perf_counter() - generation_started_at
 
     created = [created_by_serial[spec.serial] for spec in track_specs]
