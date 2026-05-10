@@ -276,6 +276,7 @@ The diff engine produces a `SyncPlan` containing all categorized actions:
 | Sync Ratings | `SYNC_RATING` | Gold |
 
 Additional informational sections (no checkboxes):
+
 - **Integrity Fixes** — auto-repaired issues from Phase 0
 - **Fingerprint Errors** — files that couldn't be fingerprinted
 - **Duplicates** — true duplicate groups showing all file paths
@@ -319,6 +320,7 @@ Shows a progress bar with friendly stage labels:
 ### Plan Review State
 
 A tree view groups actions by category. Each action item has:
+
 - **Checkbox** — include/exclude from sync (Select All / Select None buttons available)
 - **Title, Artist, Album** columns
 - **Size** or field-specific info (changed fields for metadata, play delta for play counts, star display for ratings)
@@ -344,6 +346,7 @@ All stages run sequentially. Each checks for cancellation between items. The dat
 ### Stage 1: Remove Tracks
 
 For each `REMOVE_FROM_IPOD` item:
+
 1. Delete the audio file from iPod (`/iPod_Control/Music/F**/...`)
 2. Remove the track from the in-memory `tracks_by_db_track_id` dictionary
 3. Remove the mapping entry from iOpenPod.json (in-memory)
@@ -353,6 +356,7 @@ Also cleans stale mapping entries (db_track_id exists in mapping but not in iTun
 ### Stage 2: Re-sync Changed Files
 
 For each `UPDATE_FILE` item:
+
 1. Delete the old file from iPod
 2. Invalidate the transcode cache entry for this fingerprint
 3. Copy or transcode the new file to iPod (see [File Copy & Transcoding](#file-copy--transcoding))
@@ -362,18 +366,21 @@ For each `UPDATE_FILE` item:
 ### Stage 3: Update Metadata
 
 For each `UPDATE_METADATA` item:
+
 - Apply changed fields to the `TrackInfo` object (title, artist, album, album_artist, genre, year, track_number, disc_number)
 - Refresh the mapping's `source_mtime` and `source_size` so next sync doesn't see a spurious file change
 
 ### Stage 3b: Update Artwork Mapping
 
 For each `UPDATE_ARTWORK` item:
+
 - Update the mapping's `art_hash` to the new value (or None if art was removed)
 - The actual artwork re-encoding is handled by the full ArtworkDB rewrite in Stage 7
 
 ### Stage 4: Add New Tracks
 
 For each `ADD_TO_IPOD` item:
+
 1. Copy or transcode the file to iPod (see [File Copy & Transcoding](#file-copy--transcoding))
 2. Create a `TrackInfo` object from PC metadata
 3. Track the fingerprint and PC metadata for post-write backpatching
@@ -390,6 +397,7 @@ Play counts use an **additive** strategy: iPod plays/skips add to PC totals.
 The iPod firmware does **not** modify iTunesDB directly.  Instead it creates a separate binary file at `/iPod_Control/iTunes/Play Counts` that records per-track deltas (play count, skip count, rating, timestamps) accumulated since the last sync.
 
 When reading the existing database (`_read_existing_database`), the executor:
+
 1. Parses the iTunesDB to get the track list
 2. Parses the Play Counts file (if present) via `iTunesDB_Parser.playcounts`
 3. Merges the deltas: `playCount += recent_plays`, `skipCount += recent_skips`
@@ -452,6 +460,7 @@ flowchart TD
 #### ArtworkDB Write
 
 When PC file paths are available, the writer:
+
 1. Extracts embedded album art from each PC source file via mutagen
 2. Deduplicates by image content hash (one MHII per unique image)
 3. Converts to RGB565 at multiple sizes (140×140, 56×56)
@@ -518,6 +527,7 @@ AAC bitrate is configurable in settings (default: 256 kbps).
 Located at `~/.iopenpod/transcode_cache/`. Keyed by `fingerprint:target_format[:bitrate]`.
 
 Benefits:
+
 - **Multiple iPods**: Transcode once, copy to all devices
 - **Re-sync**: If iPod is wiped, cached files skip re-transcoding
 - **Invalidation**: Cache entries are invalidated when the source file changes (size mismatch)

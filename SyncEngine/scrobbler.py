@@ -34,8 +34,8 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +49,7 @@ LISTENBRAINZ_API_ROOT = "https://api.listenbrainz.org"
 SUBMISSION_CLIENT = "iOpenPod"
 SUBMISSION_CLIENT_VERSION = "1.0.0"
 MEDIA_PLAYER = "iPod"
+IMPORT_SERVICE = "iopenpod"
 
 # The minimum acceptable value for listened_at (from LB source).
 LISTEN_MINIMUM_TS = 1033430400  # 2002-10-01 00:00:00 UTC
@@ -110,7 +111,7 @@ class RateLimitInfo:
     reset_in: float = 0.0  # seconds until the window resets
 
     @classmethod
-    def from_headers(cls, headers) -> "RateLimitInfo":
+    def from_headers(cls, headers) -> RateLimitInfo:
         """Parse X-RateLimit-* headers from an HTTP response."""
         def _int(name: str) -> int:
             try:
@@ -135,6 +136,21 @@ class ScrobbleAborted(Exception):
     """Raised when the user chooses to stop retrying scrobbles."""
 
 
+def _sleep_with_abort(
+    seconds: float,
+    should_abort: Callable[[], bool] | None = None,
+) -> None:
+    """Sleep in short increments so cancellation remains responsive."""
+    deadline = time.monotonic() + max(seconds, 0.0)
+    while True:
+        if should_abort and should_abort():
+            raise ScrobbleAborted("User gave up while connecting to ListenBrainz")
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return
+        time.sleep(min(remaining, 0.25))
+
+
 def _is_timeout_error(exc: BaseException) -> bool:
     """Return True when an exception represents a network timeout."""
     if isinstance(exc, TimeoutError | socket.timeout):
@@ -157,11 +173,11 @@ def _make_request(
     method: str,
     path: str,
     token: str = "",
-    body: Optional[bytes] = None,
-    params: Optional[dict[str, str]] = None,
+    body: bytes | None = None,
+    params: dict[str, str] | None = None,
     timeout: int = 30,
-    on_timeout: Optional[Callable[[float, int, int], None]] = None,
-    should_abort: Optional[Callable[[], bool]] = None,
+    on_timeout: Callable[[float, int, int], None] | None = None,
+    should_abort: Callable[[], bool] | None = None,
 ) -> tuple[dict, RateLimitInfo]:
     """Send an HTTP request to the ListenBrainz API.
 
@@ -210,7 +226,7 @@ def _make_request(
                     "ListenBrainz 429 rate-limited; sleeping %.1fs (attempt %d/%d)",
                     wait, rate_limit_attempt, MAX_RATE_LIMIT_RETRIES,
                 )
-                time.sleep(wait)
+                _sleep_with_abort(wait, should_abort)
                 continue
             raise
 
@@ -236,7 +252,7 @@ def _make_request(
 
 # ── Public API: token validation ────────────────────────────────────────────
 
-def listenbrainz_validate_token(token: str) -> Optional[str]:
+def listenbrainz_validate_token(token: str) -> str | None:
     """Validate a ListenBrainz user token.
 
     Returns:
@@ -253,7 +269,14 @@ def listenbrainz_validate_token(token: str) -> Optional[str]:
 
 # ── Public API: latest-import tracking ──────────────────────────────────────
 
-def get_latest_import(username: str, token: str = "") -> int:
+def get_latest_import(
+    username: str,
+    token: str = "",
+    service: str = IMPORT_SERVICE,
+    *,
+    on_timeout: Callable[[float, int, int], None] | None = None,
+    should_abort: Callable[[], bool] | None = None,
+) -> int:
     """Get the Unix timestamp of the newest listen previously imported.
 
     Returns 0 if the user has never imported.
@@ -262,29 +285,44 @@ def get_latest_import(username: str, token: str = "") -> int:
         data, _rl = _make_request(
             "GET", "/1/latest-import",
             token=token,
-            params={"user_name": username},
+            params={"user_name": username, "service": service},
             timeout=15,
+            on_timeout=on_timeout,
+            should_abort=should_abort,
         )
         return int(data.get("latest_import", 0))
+    except ScrobbleAborted:
+        raise
     except Exception as exc:
         logger.warning("Failed to get latest import timestamp: %s", exc)
         return 0
 
 
-def set_latest_import(ts: int, token: str) -> bool:
+def set_latest_import(
+    ts: int,
+    token: str,
+    service: str = IMPORT_SERVICE,
+    *,
+    on_timeout: Callable[[float, int, int], None] | None = None,
+    should_abort: Callable[[], bool] | None = None,
+) -> bool:
     """Update the latest-import timestamp for the authenticated user.
 
     Returns `True` on success.
     """
     try:
-        body = json.dumps({"ts": ts}).encode("utf-8")
+        body = json.dumps({"ts": ts, "service": service}).encode("utf-8")
         data, _rl = _make_request(
             "POST", "/1/latest-import",
             token=token,
             body=body,
             timeout=15,
+            on_timeout=on_timeout,
+            should_abort=should_abort,
         )
         return data.get("status") == "ok"
+    except ScrobbleAborted:
+        raise
     except Exception as exc:
         logger.warning("Failed to set latest import timestamp: %s", exc)
         return False
@@ -302,7 +340,6 @@ def _build_listen_payload(entry: ScrobbleEntry) -> dict:
         "submission_client": SUBMISSION_CLIENT,
         "submission_client_version": SUBMISSION_CLIENT_VERSION,
         "media_player": MEDIA_PLAYER,
-        "music_service_name": "iOpenPod",
     }
     if entry.duration_secs > 0:
         additional_info["duration_ms"] = entry.duration_secs * 1000
@@ -335,8 +372,9 @@ def scrobble_listenbrainz(
     entries: list[ScrobbleEntry],
     token: str,
     *,
-    on_timeout: Optional[Callable[[float, int, int], None]] = None,
-    should_abort: Optional[Callable[[], bool]] = None,
+    listenbrainz_username: str = "",
+    on_timeout: Callable[[float, int, int], None] | None = None,
+    should_abort: Callable[[], bool] | None = None,
 ) -> ScrobbleResult:
     """Submit listens to ListenBrainz.
 
@@ -355,6 +393,33 @@ def scrobble_listenbrainz(
         skipped = len(entries) - len(valid_entries)
         logger.info("Skipped %d entries with timestamp below LISTEN_MINIMUM_TS", skipped)
         result.ignored += skipped
+
+    if listenbrainz_username:
+        try:
+            latest_import = get_latest_import(
+                listenbrainz_username,
+                token,
+                service=IMPORT_SERVICE,
+                on_timeout=on_timeout,
+                should_abort=should_abort,
+            )
+        except ScrobbleAborted:
+            result.errors.append("User gave up while connecting to ListenBrainz")
+            logger.info("ListenBrainz latest-import lookup aborted by user")
+            return result
+        if latest_import > 0:
+            filtered_entries = [
+                entry for entry in valid_entries if entry.timestamp > latest_import
+            ]
+            skipped = len(valid_entries) - len(filtered_entries)
+            if skipped:
+                logger.info(
+                    "Skipped %d entries at or before latest-import %d",
+                    skipped,
+                    latest_import,
+                )
+                result.ignored += skipped
+            valid_entries = filtered_entries
 
     if not valid_entries:
         return result
@@ -394,7 +459,7 @@ def scrobble_listenbrainz(
             # If we're getting close to the rate limit, proactively sleep.
             if rl.remaining is not None and rl.remaining <= 1 and rl.reset_in > 0:
                 logger.debug("Proactive rate-limit sleep: %.1fs", rl.reset_in)
-                time.sleep(rl.reset_in)
+                _sleep_with_abort(rl.reset_in, should_abort)
 
         except urllib.error.HTTPError as exc:
             body_text = exc.read().decode("utf-8", errors="replace")
@@ -410,7 +475,24 @@ def scrobble_listenbrainz(
 
     # Update latest-import so LB knows how far we've gotten.
     if max_ts > 0:
-        set_latest_import(max_ts, token)
+        try:
+            if not set_latest_import(
+                max_ts,
+                token,
+                service=IMPORT_SERVICE,
+                on_timeout=on_timeout,
+                should_abort=should_abort,
+            ):
+                result.errors.append(
+                    "Latest-import timestamp could not be updated; "
+                    "future duplicate protection may be affected"
+                )
+        except ScrobbleAborted:
+            result.errors.append(
+                "Latest-import update aborted after submission; "
+                "future duplicate protection may be affected"
+            )
+            logger.info("ListenBrainz latest-import update aborted by user")
 
     logger.info(
         "ListenBrainz: %d submitted, %d accepted, %d ignored, %d errors",
@@ -425,8 +507,8 @@ def get_listens(
     username: str,
     token: str = "",
     *,
-    max_ts: Optional[int] = None,
-    min_ts: Optional[int] = None,
+    max_ts: int | None = None,
+    min_ts: int | None = None,
     count: int = 25,
 ) -> list[dict]:
     """Fetch listen history for a user.
@@ -478,7 +560,8 @@ def build_scrobble_entries(
     These are the plays that need to be scrobbled.
 
     For each play in the delta, a timestamp is generated by spacing
-    backwards from ``lastPlayed`` by the track's duration.
+    backwards from ``lastPlayed`` by the track's duration, using the
+    playback start time for ListenBrainz's ``listened_at`` field.
 
     Tracks shorter than 30 s or missing artist/title are skipped.
 
@@ -522,12 +605,14 @@ def build_scrobble_entries(
             last_played = int(time.time())
 
         # Generate timestamps for each play, spaced backwards by duration.
-        # Most recent play = last_played, earlier plays spaced by duration.
+        # ListenBrainz expects listened_at to be the playback start time,
+        # so shift each play back by one full play spacing from last_played.
+        play_spacing_secs = max(duration_secs, 180)
         for play_idx in range(delta):
-            ts = last_played - (play_idx * max(duration_secs, 180))
+            ts = last_played - ((play_idx + 1) * play_spacing_secs)
             # Ensure timestamp is positive and >= LISTEN_MINIMUM_TS
             if ts < LISTEN_MINIMUM_TS:
-                ts = int(time.time()) - (play_idx * max(duration_secs, 180))
+                ts = int(time.time()) - ((play_idx + 1) * play_spacing_secs)
 
             entries.append(ScrobbleEntry(
                 artist=artist,
@@ -550,8 +635,9 @@ def scrobble_plays(
     playcount_items: list,
     listenbrainz_token: str = "",
     *,
-    on_timeout: Optional[Callable[[float, int, int], None]] = None,
-    should_abort: Optional[Callable[[], bool]] = None,
+    listenbrainz_username: str = "",
+    on_timeout: Callable[[float, int, int], None] | None = None,
+    should_abort: Callable[[], bool] | None = None,
 ) -> list[ScrobbleResult]:
     """Submit scrobbles to ListenBrainz.
 
@@ -579,6 +665,7 @@ def scrobble_plays(
             r = scrobble_listenbrainz(
                 entries,
                 listenbrainz_token,
+                listenbrainz_username=listenbrainz_username,
                 on_timeout=on_timeout,
                 should_abort=should_abort,
             )

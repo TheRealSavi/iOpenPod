@@ -123,6 +123,7 @@ class _SyncContext:
     compute_sound_check: bool = False
     scrobble_on_sync: bool = False
     listenbrainz_token: str = ""
+    listenbrainz_username: str = ""
     _is_scrobble_cancelled: Callable[[], bool] | None = None
 
     # ── Result accumulator ──────────────────────────────────────────
@@ -266,6 +267,9 @@ class SyncExecutor:
         engine; app-core/UI orchestration should prefer this method so the sync
         boundary has one explicit contract.
         """
+        # Be tolerant of older callers that may still construct SyncRequest
+        # without the ListenBrainz username field.
+        listenbrainz_username = getattr(request, "listenbrainz_username", "")
         return self.execute(
             plan=request.plan,
             mapping=request.mapping,
@@ -278,6 +282,7 @@ class SyncExecutor:
             compute_sound_check=request.compute_sound_check,
             scrobble_on_sync=request.scrobble_on_sync,
             listenbrainz_token=request.listenbrainz_token,
+            listenbrainz_username=listenbrainz_username,
             is_scrobble_cancelled=request.is_scrobble_cancelled,
             on_cancel_with_partial=request.on_cancel_with_partial,
         )
@@ -296,6 +301,7 @@ class SyncExecutor:
         compute_sound_check: bool = False,
         scrobble_on_sync: bool = False,
         listenbrainz_token: str = "",
+        listenbrainz_username: str = "",
         is_scrobble_cancelled: Callable[[], bool] | None = None,
         on_cancel_with_partial: Callable[[int, int], bool] | None = None,
     ) -> SyncOutcome:
@@ -322,6 +328,7 @@ class SyncExecutor:
             compute_sound_check=compute_sound_check,
             scrobble_on_sync=scrobble_on_sync,
             listenbrainz_token=listenbrainz_token,
+            listenbrainz_username=listenbrainz_username,
             _is_scrobble_cancelled=is_scrobble_cancelled,
         )
 
@@ -769,11 +776,12 @@ class SyncExecutor:
                 ctx.final_photo_db = read_photo_db(self.ipod_path)
 
             self._apply_itunes_protections(ctx, all_tracks)
-            self._delete_playcounts_file()
 
-            # Scrobble AFTER DB write + Play Counts deletion
+            # Scrobble before deleting Play Counts so an interrupted
+            # submission doesn't discard pending listens before we even try.
             if ctx.plan.to_sync_playcount:
                 self._execute_scrobble(ctx)
+            self._delete_playcounts_file()
 
         except Exception as e:
             ctx.result.errors.append(("database write", str(e)))
@@ -1632,14 +1640,17 @@ class SyncExecutor:
             )
             ctx.result.playcounts_synced += 1
 
-    def _execute_scrobble(self, ctx: _SyncContext) -> None:
-        """Submit new plays to ListenBrainz (non-fatal)."""
+    def _execute_scrobble(self, ctx: _SyncContext) -> bool:
+        """Submit new plays to ListenBrainz.
+
+        Returns True when no scrobble errors occurred.
+        """
         if not ctx.scrobble_on_sync:
-            return
+            return True
 
         lb_token = ctx.listenbrainz_token
         if not lb_token:
-            return
+            return True
 
         ctx.progress("scrobble", 0, 1, message="Scrobbling plays...")
 
@@ -1662,8 +1673,8 @@ class SyncExecutor:
                     0,
                     1,
                     message=(
-                        "Connecting to ListenBrainz is taking a while. "
-                        "Still trying to connect. "
+                        "ListenBrainz is taking longer than usual to respond. "
+                        "iOpenPod will keep trying. "
                         f"Elapsed {_format_elapsed(elapsed)} "
                         f"(attempt {attempt}, request timeout {timeout_s}s)."
                     ),
@@ -1679,18 +1690,21 @@ class SyncExecutor:
             scrobble_results = scrobble_plays(
                 playcount_items=ctx.plan.to_sync_playcount,
                 listenbrainz_token=lb_token,
+                listenbrainz_username=ctx.listenbrainz_username,
                 on_timeout=_on_timeout,
                 should_abort=_should_abort_scrobble,
             )
 
             total_accepted = 0
             gave_up = False
+            scrobble_errors: list[str] = []
             for sr in scrobble_results:
                 total_accepted += sr.accepted
                 for err in sr.errors:
                     if "User gave up" in err:
                         gave_up = True
                     logger.warning("Scrobble error (%s): %s", sr.service, err)
+                    scrobble_errors.append(f"{sr.service}: {err}")
 
             ctx.result.scrobbles_submitted = total_accepted
             logger.info("Scrobbled %d plays total", total_accepted)
@@ -1701,17 +1715,56 @@ class SyncExecutor:
                     1,
                     1,
                     message=(
-                        "Stopped trying to connect to ListenBrainz. "
-                        "Sync is complete; you can retry scrobbling on the next sync."
+                        "Stopped retrying ListenBrainz. "
+                        "Your sync is complete, but those plays were not submitted."
                     ),
                 )
-                return
+            elif scrobble_errors:
+                if total_accepted:
+                    ctx.progress(
+                        "scrobble",
+                        1,
+                        1,
+                        message=(
+                            f"Submitted {total_accepted} play"
+                            f"{'s' if total_accepted != 1 else ''} to ListenBrainz, "
+                            f"with {len(scrobble_errors)} follow-up issue"
+                            f"{'s' if len(scrobble_errors) != 1 else ''}."
+                        ),
+                    )
+                else:
+                    ctx.progress(
+                        "scrobble",
+                        1,
+                        1,
+                        message="ListenBrainz did not accept any plays from this sync.",
+                    )
+            else:
+                ctx.progress(
+                    "scrobble",
+                    1,
+                    1,
+                    message=(
+                        f"Submitted {ctx.result.scrobbles_submitted} play"
+                        f"{'s' if ctx.result.scrobbles_submitted != 1 else ''} "
+                        "to ListenBrainz."
+                    ),
+                )
+
+            for error in scrobble_errors:
+                ctx.result.errors.append(("scrobble", error))
+            return not scrobble_errors
 
         except Exception as exc:
             logger.warning("Scrobbling failed (non-fatal): %s", exc)
-
-        ctx.progress("scrobble", 1, 1,
-                     message=f"Scrobbled {ctx.result.scrobbles_submitted} plays")
+            ctx.result.errors.append(("scrobble", str(exc)))
+            ctx.progress(
+                "scrobble",
+                1,
+                1,
+                message="ListenBrainz did not accept any plays from this sync.",
+            )
+            return False
 
     def _execute_rating_sync(self, ctx: _SyncContext) -> None:
         if not ctx.plan.to_sync_rating:

@@ -1650,6 +1650,7 @@ class SyncExecuteWorker(QThread):
                 compute_sound_check=settings.compute_sound_check,
                 scrobble_on_sync=settings.scrobble_on_sync,
                 listenbrainz_token=settings.listenbrainz_token or "",
+                listenbrainz_username=settings.listenbrainz_username or "",
                 is_scrobble_cancelled=lambda: self._give_up_scrobble_requested,
                 on_cancel_with_partial=_on_cancel_with_partial,
             )

@@ -110,5 +110,6 @@ class SyncRequest:
     compute_sound_check: bool = False
     scrobble_on_sync: bool = False
     listenbrainz_token: str = ""
+    listenbrainz_username: str = ""
     is_scrobble_cancelled: Callable[[], bool] | None = None
     on_cancel_with_partial: Callable[[int, int], bool] | None = None
