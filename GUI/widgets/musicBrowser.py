@@ -120,7 +120,7 @@ class MusicBrowser(QFrame):
             handle.setEnabled(True)
         self.gridTrackSplitter.setCollapsible(0, True)
         self.gridTrackSplitter.setCollapsible(1, True)
-        self.gridTrackSplitter.setHandleWidth(3)
+        self.gridTrackSplitter.setHandleWidth(0)
         self.gridTrackSplitter.setStretchFactor(0, 2)
         self.gridTrackSplitter.setStretchFactor(1, 1)
         self.gridTrackSplitter.setMinimumSize(0, 0)

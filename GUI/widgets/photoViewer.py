@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import (
     QHeaderView,
     QLabel,
     QPushButton,
+    QSizePolicy,
     QSplitter,
     QTreeWidget,
     QTreeWidgetItem,
@@ -42,6 +43,8 @@ class PhotoViewerPane(QFrame):
         self._empty_summary = empty_summary
         self._source_pixmap = QPixmap()
         self._preview_placeholder_text = "Select a photo"
+        self.setMinimumWidth(0)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
 
         self.setStyleSheet(f"""
             QFrame#photoViewer {{
@@ -121,7 +124,9 @@ class PhotoViewerPane(QFrame):
         preview_layout.setSpacing(0)
 
         self.preview_label = QLabel(preview_host)
-        self.preview_label.setMinimumSize(280, 280)
+        self.preview_label.setMinimumWidth(0)
+        self.preview_label.setMinimumHeight(280)
+        self.preview_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
         self.preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.preview_label.setStyleSheet(f"""
             QLabel {{

@@ -1,5 +1,5 @@
 from PyQt6.QtCore import QPoint, QSize, Qt
-from PyQt6.QtGui import QColor, QFont
+from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QWidget
 
 from ..glyphs import glyph_icon
@@ -38,19 +38,6 @@ def _css_rgba(rgb: tuple[int, int, int], alpha: int) -> str:
     return f"rgba({rgb[0]},{rgb[1]},{rgb[2]},{alpha})"
 
 
-def _composite_rgb(
-    foreground: tuple[int, int, int],
-    background: tuple[int, int, int],
-    alpha: int,
-) -> tuple[int, int, int]:
-    opacity = max(0.0, min(1.0, alpha / 255.0))
-    return (
-        int(round((background[0] * (1.0 - opacity)) + (foreground[0] * opacity))),
-        int(round((background[1] * (1.0 - opacity)) + (foreground[1] * opacity))),
-        int(round((background[2] * (1.0 - opacity)) + (foreground[2] * opacity))),
-    )
-
-
 def _title_bar_css(
     *,
     top_rgb: tuple[int, int, int],
@@ -74,8 +61,8 @@ def _title_bar_css(
             );
             border: none;
             border-bottom: 1px solid {_css_rgba(border_rgb, 130)};
-            border-top-left-radius: 8px;
-            border-top-right-radius: 8px;
+            border-top-left-radius: {_TITLE_BAR_CORNER_RADIUS}px;
+            border-top-right-radius: {_TITLE_BAR_CORNER_RADIUS}px;
             border-bottom-left-radius: 0px;
             border-bottom-right-radius: 0px;
         }}
@@ -193,19 +180,17 @@ class TrackListTitleBar(QFrame):
         """Reset to the default limited title-bar palette."""
         self._apply_palette(_resolve_bar_palette(Colors.PLAYLIST_REGULAR))
 
-    def _set_handle_color(self, color: str):
-        """Update the splitter handle to match the title bar color."""
-        self.splitter.setStyleSheet(f"""
+    def _set_handle_color(self):
+        """Keep the splitter handle invisible in every interaction state."""
+        self.splitter.setStyleSheet("""
             QSplitter::handle:vertical {{
-                background: {color};
-                margin-left: {_TITLE_BAR_CORNER_RADIUS}px;
-                margin-right: {_TITLE_BAR_CORNER_RADIUS}px;
+                background: transparent;
             }}
             QSplitter::handle:vertical:hover {{
-                background: {color};
+                background: transparent;
             }}
             QSplitter::handle:vertical:pressed {{
-                background: {color};
+                background: transparent;
             }}
         """)
 
@@ -219,13 +204,7 @@ class TrackListTitleBar(QFrame):
                 text_secondary_rgb=palette["text_secondary"],
             )
         )
-        bg = QColor(Colors.BG_DARK)
-        handle_rgb = _composite_rgb(
-            palette["top"],
-            (bg.red(), bg.green(), bg.blue()),
-            190,
-        )
-        self._set_handle_color(_css_rgb(handle_rgb))
+        self._set_handle_color()
         self._refresh_button_icons(palette["text_secondary"])
 
     def _refresh_button_icons(self, rgb: tuple[int, int, int]) -> None:

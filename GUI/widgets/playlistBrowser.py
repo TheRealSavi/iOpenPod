@@ -883,7 +883,7 @@ class PlaylistBrowser(QFrame):
         # Splitter styling
         self.rightSplitter.setCollapsible(0, True)
         self.rightSplitter.setCollapsible(1, True)
-        self.rightSplitter.setHandleWidth(3)
+        self.rightSplitter.setHandleWidth(0)
         self.rightSplitter.setStretchFactor(0, 1)
         self.rightSplitter.setStretchFactor(1, 3)
         self.rightSplitter.setSizes([250, 600])

@@ -281,7 +281,11 @@ class PooledCardGrid(QFrame):
 
             row = index // columns
             col = index % columns
-            x = margin + col * (Metrics.GRID_ITEM_W + Metrics.GRID_SPACING)
+            x = self._row_x_layout(
+                width=width,
+                column_count=columns,
+                column_index=col,
+            )
             y = margin + row * (Metrics.GRID_ITEM_H + Metrics.GRID_SPACING)
             widget.setGeometry(QRect(x, y, Metrics.GRID_ITEM_W, Metrics.GRID_ITEM_H))
             self._apply_widget_selection(widget, index == self._current_index)
@@ -309,6 +313,30 @@ class PooledCardGrid(QFrame):
         usable = max(1, width - (margin * 2))
         cell = Metrics.GRID_ITEM_W + Metrics.GRID_SPACING
         return max(1, (usable + Metrics.GRID_SPACING) // cell)
+
+    @staticmethod
+    def _row_x_layout(
+        *,
+        width: int,
+        column_count: int,
+        column_index: int,
+    ) -> int:
+        base_margin = Metrics.GRID_SPACING
+        base_gap = Metrics.GRID_SPACING
+
+        if column_count <= 0:
+            return base_margin
+
+        inner_width = max(0, width - (base_margin * 2))
+        min_content_width = (
+            column_count * Metrics.GRID_ITEM_W
+            + max(0, column_count - 1) * base_gap
+        )
+        extra_width = max(0, inner_width - min_content_width)
+
+        edge_padding = base_margin + (extra_width / (column_count * 2))
+        gap = base_gap + (extra_width / column_count) if column_count > 1 else 0.0
+        return int(round(edge_padding + column_index * (Metrics.GRID_ITEM_W + gap)))
 
     @staticmethod
     def _compute_visible_range(

@@ -4,7 +4,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSplitter, QVBoxLayout, QWidget
 
-from ..styles import Colors, FONT_FAMILY, Metrics, btn_css
+from ..styles import FONT_FAMILY, Colors, Metrics, btn_css
 
 
 def chrome_action_btn_css() -> str:
@@ -101,7 +101,8 @@ class BrowserPane(QFrame):
 
 
 def style_browser_splitter(splitter: QSplitter) -> None:
-    splitter.setHandleWidth(1)
+    if splitter.handleWidth() != 0:
+        splitter.setHandleWidth(1)
     splitter.setStyleSheet(f"""
         QSplitter::handle {{
             background: {Colors.BORDER_SUBTLE};
