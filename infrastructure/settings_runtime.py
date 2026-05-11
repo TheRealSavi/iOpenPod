@@ -57,6 +57,8 @@ def _coerce_setting_value(current_value, value):
         if isinstance(value, int) and not isinstance(value, bool):
             return value
         return None
+    if expected_type is dict:
+        return value if isinstance(value, dict) else None
     if expected_type is list:
         return value if isinstance(value, list) else None
     return value if isinstance(value, expected_type) else None

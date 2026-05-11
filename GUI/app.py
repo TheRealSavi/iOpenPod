@@ -243,6 +243,9 @@ class MainWindow(QMainWindow):
         )
         self.settingsPage.closed.connect(self.hideSettings)
         self.settingsPage.theme_changed.connect(self._on_theme_changed)
+        self.settingsPage.artwork_appearance_changed.connect(
+            self._on_artwork_appearance_changed
+        )
         self.centralStack.addWidget(self.settingsPage)  # Index 2
 
         # Backup browser page
@@ -420,6 +423,11 @@ class MainWindow(QMainWindow):
         self._rebuild_themed_ui(restore_page=2)
         if settings_scope == "device" and hasattr(self.settingsPage, "set_settings_scope"):
             self.settingsPage.set_settings_scope("device")
+
+    def _on_artwork_appearance_changed(self):
+        """Refresh visible artwork after UI-only artwork settings change."""
+        self.musicBrowser.refresh_artwork_appearance()
+        self.selectiveSyncBrowser.refresh_artwork_appearance()
 
     def selectDevice(self):
         """Open device picker dialog to scan and select an iPod."""

@@ -84,6 +84,9 @@ class AppSettings:
     last_device_path: str = ""
 
     show_art_in_tracklist: bool = True
+    rounded_artwork: bool = False
+    sharpen_artwork: bool = True
+    track_list_columns_by_content: dict[str, dict[str, int]] = field(default_factory=dict)
     theme: str = "dark"
     high_contrast: str = "off"
     font_scale: str = "100%"

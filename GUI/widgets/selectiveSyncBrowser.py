@@ -144,8 +144,8 @@ class PCMusicBrowserGrid(MusicBrowserGrid):
     """Subclass of MusicBrowserGrid that loads artwork from embedded tags
     (or folder images) instead of the iPod ArtworkDB."""
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, *, settings_service: SettingsService | None = None):
+        super().__init__(settings_service=settings_service)
         self._pc_art_map: dict[str, list[str]] = {}
         self._pc_mode = False
 
@@ -312,6 +312,7 @@ class _PCMusicBrowserList:
             settings_service=owner._settings_service,
             device_sessions=owner._device_sessions,
             show_art_override=False,
+            content_type_override="pc_tracks",
         )
 
         # Disable iPod-specific features
@@ -1319,7 +1320,7 @@ class SelectiveSyncBrowser(QWidget):
 
         for cat in ("Albums", "Artists", "Genres",
                     "Podcasts", "Audiobooks", "TV Shows", "Music Videos"):
-            grid = PCMusicBrowserGrid()
+            grid = PCMusicBrowserGrid(settings_service=self._settings_service)
             grid.item_selected.connect(self._on_grid_item_clicked)
             scroll = make_scroll_area()
             scroll.setVerticalScrollBarPolicy(
@@ -1398,6 +1399,11 @@ class SelectiveSyncBrowser(QWidget):
         root.addWidget(self._footer)
 
     # ── Public API ───────────────────────────────────────────────────────
+
+    def refresh_artwork_appearance(self) -> None:
+        """Refresh visible grid artwork for the current global appearance."""
+        for grid in self._grids.values():
+            grid.refresh_artwork_appearance()
 
     def _cleanup_scan_worker(self):
         """Disconnect and clean up the current scan worker, if any."""

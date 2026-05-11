@@ -29,6 +29,11 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from ..artwork_rendering import (
+    enhance_artwork_image,
+    nested_artwork_radius,
+    rounded_artwork_pixmap,
+)
 from ..glyphs import glyph_icon
 from ..hidpi import scale_pixmap_for_display
 from ..styles import FONT_FAMILY, Colors, Metrics, table_css
@@ -171,6 +176,13 @@ def format_samples(val: int) -> str:
     if not val:
         return ""
     return f"{val:,}"
+
+
+def _named_qcolor(value: str) -> QColor:
+    """Build a QColor from a CSS-style color string in a type-checker-friendly way."""
+    color = QColor()
+    color.setNamedColor(value)
+    return color
 
 
 def build_new_regular_playlist(
@@ -420,6 +432,40 @@ ART_LOAD_BATCH_SIZE = 20
 
 # Artwork thumbnail size in pixels for the track list
 ART_THUMB_SIZE = 32
+ART_THUMB_COLUMN_PADDING = 12
+COLUMN_LAYOUT_SAVE_DELAY_MS = 150
+
+
+def _art_column_width() -> int:
+    """Return the fixed artwork column width with enough room for Qt icon insets."""
+    return ART_THUMB_SIZE + ART_THUMB_COLUMN_PADDING
+
+
+def _column_width_map(value: object) -> dict[str, int]:
+    """Normalize a persisted compact column layout."""
+    if not isinstance(value, dict):
+        return {}
+    normalized: dict[str, int] = {}
+    for key, raw in value.items():
+        if isinstance(key, str) and isinstance(raw, int) and not isinstance(raw, bool):
+            normalized[key] = raw
+    return normalized
+
+
+def _normalize_column_layouts(value: object) -> dict[str, dict[str, int]]:
+    """Return compact per-content column layouts from settings."""
+    if not isinstance(value, dict):
+        return {}
+
+    normalized: dict[str, dict[str, int]] = {}
+    for content_key, raw_layout in value.items():
+        if not isinstance(content_key, str) or not isinstance(raw_layout, dict):
+            continue
+
+        layout = _column_width_map(raw_layout)
+        if layout:
+            normalized[content_key] = layout
+    return normalized
 
 
 class _SortableItem(QTableWidgetItem):
@@ -629,12 +675,14 @@ class MusicBrowserList(QFrame):
         *,
         library_cache: LibraryCacheLike | None = None,
         show_art_override: bool | None = None,
+        content_type_override: str | None = None,
     ):
         super().__init__()
         self._settings_service = settings_service
         self._device_sessions = device_sessions
         self._library_cache = library_cache
         self._show_art_override = show_art_override
+        self._content_type_override = content_type_override
 
         # Layout
         self._layout = QVBoxLayout(self)
@@ -673,19 +721,40 @@ class MusicBrowserList(QFrame):
 
         # Artwork state
         self._show_art = False      # Controlled by settings
-        self._art_cache: dict[int, QPixmap] = {}   # artwork_id -> QPixmap
+        self._art_cache: dict[int, QPixmap] = {}   # artwork_id -> scaled source pixmap
+        self._art_display_cache: dict[tuple[int, bool], QPixmap] = {}
         self._art_pending: set[int] = set()        # artwork_ids currently being loaded
 
         # Shared resources (created once, reused)
         self._font = QFont(FONT_FAMILY, Metrics.FONT_MD)
         self._advisory_icon_cache: dict[tuple[int, int], QIcon] = {}
 
-        # Column visibility state: keys the user has explicitly hidden
-        self._hidden_columns: set[str] = set()
         # Column widths the user has set (col_key → pixels)
         self._user_col_widths: dict[str, int] = {}
         # Column visual order set by user (logical index list)
         self._user_col_order: list[str] | None = None
+        self._column_layouts = _normalize_column_layouts(
+            getattr(
+                self._settings_service.get_global_settings(),
+                "track_list_columns_by_content",
+                {},
+            )
+        )
+        self._active_column_content_key: str | None = None
+        self._applying_column_layout = False
+        self._column_layout_dirty = False
+        self._header_interaction_signature: tuple[tuple[str, ...], tuple[tuple[str, int], ...]] | None = None
+        self._column_layout_save_timer = QTimer(self)
+        self._column_layout_save_timer.setSingleShot(True)
+        self._column_layout_save_timer.timeout.connect(
+            self.flush_pending_column_changes
+        )
+        # Separate debounce timer for width resizes (prevents spamming during drag)
+        self._width_resize_debounce_timer = QTimer(self)
+        self._width_resize_debounce_timer.setSingleShot(True)
+        self._width_resize_debounce_timer.timeout.connect(
+            self._on_width_resize_debounce_timeout
+        )
 
         # Middle-mouse grab-scroll state
         self._grab_scrolling = False
@@ -894,6 +963,9 @@ class MusicBrowserList(QFrame):
             header.setStretchLastSection(True)
             header.setDefaultSectionSize(150)
             header.setMinimumSectionSize(40)
+            header.sectionMoved.connect(self._on_header_section_moved)
+            header.sectionResized.connect(self._on_header_section_resized)
+            header.installEventFilter(self)
             vp = header.viewport()
             if vp:
                 vp.installEventFilter(self)
@@ -1029,6 +1101,15 @@ class MusicBrowserList(QFrame):
 
     def clearTable(self, clear_cache: bool = False) -> None:
         """Clear the table completely, cancelling any pending population."""
+        if (
+            self._active_column_content_key
+            and (
+                self._column_layout_dirty
+                or self._width_resize_debounce_timer.isActive()
+                or self._column_layout_save_timer.isActive()
+            )
+        ):
+            self._store_current_column_layout(self._active_column_content_key)
         self._cancel_population()
         self._all_tracks = []
         self._tracks = []
@@ -1038,6 +1119,7 @@ class MusicBrowserList(QFrame):
         self._current_playlist = None
         if clear_cache:
             self._art_cache.clear()
+            self._art_display_cache.clear()
         self._art_pending.clear()
 
         try:
@@ -1074,8 +1156,185 @@ class MusicBrowserList(QFrame):
                         or (t.get("media_type", 1) & mf)
                     ]
 
+    def _content_type_key(self) -> str:
+        """Return the current logical content type for column persistence."""
+        if self._content_type_override:
+            return self._content_type_override
+        if self._is_playlist_mode:
+            return "playlist"
+
+        mf = getattr(self, "_media_type_filter", None)
+        is_video = mf is not None and (mf & 0x62) and not (mf & 0x01)
+        is_podcast = mf is not None and (mf & 0x04) != 0 and not is_video
+        is_audiobook = mf is not None and (mf & 0x08) != 0 and not is_video
+
+        if is_video:
+            return "video"
+        if is_podcast:
+            return "podcast"
+        if is_audiobook:
+            return "audiobook"
+        return "music"
+
+    def _apply_saved_column_layout(self, content_key: str) -> None:
+        """Load the persisted ordered column widths for one content type."""
+        layout = self._column_layouts.get(content_key, {})
+        self._user_col_order = list(layout) or None
+        self._user_col_widths = dict(layout)
+
+    def _store_current_column_layout(self, content_key: str | None) -> None:
+        """Capture the current table layout into the per-content settings map."""
+        if not content_key:
+            return
+
+        if self.table.columnCount() > 0:
+            self._save_user_widths()
+
+        layout: dict[str, int] = {}
+        for key in list(self._user_col_order or self._columns):
+            width = self._user_col_widths.get(key)
+            if isinstance(width, int) and width > 0:
+                layout[key] = int(width)
+        self._column_layouts[content_key] = layout
+
+    def _ensure_column_layout_for_current_content(self) -> None:
+        """Swap in the saved layout when the list changes content type."""
+        content_key = self._content_type_key()
+        if content_key == self._active_column_content_key:
+            return
+
+        if (
+            self._active_column_content_key
+            and (
+                self._column_layout_dirty
+                or self._width_resize_debounce_timer.isActive()
+                or self._column_layout_save_timer.isActive()
+            )
+        ):
+            self.flush_pending_column_changes()
+        self._apply_saved_column_layout(content_key)
+        self._active_column_content_key = content_key
+
+    def _queue_column_layout_save(self) -> None:
+        """Persist per-content column settings on the next event loop."""
+        if self._applying_column_layout:
+            return
+        self._column_layout_dirty = True
+        self._column_layout_save_timer.start(COLUMN_LAYOUT_SAVE_DELAY_MS)
+
+    def _current_column_header_signature(
+        self,
+    ) -> tuple[tuple[str, ...], tuple[tuple[str, int], ...]]:
+        """Return the user-visible column order and widths for change detection."""
+        header = self.table.horizontalHeader()
+        if header is None:
+            return (), ()
+
+        visible_order: list[str] = []
+        widths: dict[str, int] = {}
+        for visual_index in range(self.table.columnCount()):
+            logical_index = header.logicalIndex(visual_index)
+            key = self._col_key_for_logical(logical_index)
+            if key is None:
+                continue
+            visible_order.append(key)
+            widths[key] = header.sectionSize(logical_index)
+
+        return tuple(visible_order), tuple(sorted(widths.items()))
+
+    def _begin_header_interaction(self) -> None:
+        """Snapshot header state before a real mouse-driven reorder/resize."""
+        if self._applying_column_layout:
+            return
+        self._header_interaction_signature = self._current_column_header_signature()
+
+    def _finish_header_interaction(self) -> None:
+        """Queue persistence after a real header mouse interaction settles."""
+        if self._applying_column_layout:
+            self._header_interaction_signature = None
+            return
+
+        previous = self._header_interaction_signature
+        self._header_interaction_signature = None
+        if previous is None or previous != self._current_column_header_signature():
+            self._queue_column_layout_save()
+
+    def flush_pending_column_changes(self, *, force: bool = False) -> None:
+        """Immediately save any pending column layout changes.
+
+        Call this before the view is destroyed or hidden to ensure
+        all column changes are persisted to settings.
+        """
+        if self._applying_column_layout:
+            return
+
+        should_persist = force or self._column_layout_dirty
+
+        # Stop the debounce timer and process any pending resize changes
+        if self._width_resize_debounce_timer.isActive():
+            self._width_resize_debounce_timer.stop()
+            self._save_user_widths()
+            should_persist = True
+        # Force the layout save timer to fire immediately
+        if self._column_layout_save_timer.isActive():
+            self._column_layout_save_timer.stop()
+            should_persist = True
+        if not should_persist:
+            return
+        self._persist_column_layout_settings()
+        self._column_layout_dirty = False
+
+    def _persist_column_layout_settings(self) -> None:
+        """Write per-content column layouts into the global settings payload."""
+        self._store_current_column_layout(self._active_column_content_key)
+        settings = self._settings_service.get_global_settings()
+        settings.track_list_columns_by_content = {
+            content_key: {
+                key: int(width)
+                for key, width in layout.items()
+                if isinstance(width, int) and width > 0
+            }
+            for content_key, layout in self._column_layouts.items()
+            if layout
+        }
+        self._settings_service.save_global_settings(settings)
+
+    def _on_header_section_moved(
+        self,
+        _logical_index: int,
+        _old_visual: int,
+        _new_visual: int,
+    ) -> None:
+        """Persist user-driven header reordering."""
+        if self._applying_column_layout:
+            return
+        # Stop any pending width resize debounce and process it first
+        if self._width_resize_debounce_timer.isActive():
+            self._width_resize_debounce_timer.stop()
+            self._save_user_widths()
+        self._queue_column_layout_save()
+
+    def _on_header_section_resized(
+        self,
+        _logical_index: int,
+        old_size: int,
+        new_size: int,
+    ) -> None:
+        """Debounce user-driven header width changes (prevents spam during drag)."""
+        if self._applying_column_layout or old_size == new_size:
+            return
+        # Restart debounce timer to batch resize events while dragging
+        self._width_resize_debounce_timer.start(50)  # 50ms to catch rapid resizes
+
+    def _on_width_resize_debounce_timeout(self) -> None:
+        """After resize drag finishes, save widths and queue settings update."""
+        self._save_user_widths()
+        self._queue_column_layout_save()
+
     def _setup_columns(self) -> None:
         """Determine which columns to display based on available data."""
+        self._ensure_column_layout_for_current_content()
+
         # Choose appropriate defaults based on media type filter
         mf = getattr(self, "_media_type_filter", None)
         is_video = mf is not None and (mf & 0x62) and not (mf & 0x01)
@@ -1090,8 +1349,10 @@ class MusicBrowserList(QFrame):
         else:
             defaults = DEFAULT_COLUMNS
 
+        using_saved_layout = self._user_col_order is not None
+
         if not self._tracks:
-            self._columns = [c for c in defaults if c not in self._hidden_columns]
+            self._columns = list(self._user_col_order or defaults)
             return
 
         # Sample tracks to find available keys
@@ -1099,19 +1360,20 @@ class MusicBrowserList(QFrame):
         for track in self._tracks[:100]:
             available_keys.update(track.keys())
 
-        # If user has a saved column order, respect it (filtering out unavailable)
-        if self._user_col_order is not None:
-            base = [k for k in self._user_col_order
-                    if k in available_keys and k not in self._hidden_columns]
+        # If the user has a saved compact layout, its keys are the visible columns.
+        if using_saved_layout:
+            base = [
+                k for k in self._user_col_order or []
+                if k in available_keys or (self._is_playlist_mode and k == "_pl_pos")
+            ]
         else:
             # Show only the media-type defaults (user can add more via header menu)
-            base = [k for k in defaults
-                    if k in available_keys and k not in self._hidden_columns]
+            base = [k for k in defaults if k in available_keys]
 
         self._columns = base
 
         # Prepend playlist position column when in playlist mode
-        if self._is_playlist_mode and "_pl_pos" not in self._columns and "_pl_pos" not in self._hidden_columns:
+        if not using_saved_layout and self._is_playlist_mode and "_pl_pos" not in self._columns:
             self._columns.insert(0, "_pl_pos")
 
     # -------------------------------------------------------------------------
@@ -1174,7 +1436,7 @@ class MusicBrowserList(QFrame):
                     h_item.setData(Qt.ItemDataRole.UserRole, key)
 
             if self._show_art:
-                self.table.setColumnWidth(0, ART_THUMB_SIZE + 8)
+                self.table.setColumnWidth(0, _art_column_width())
                 self.table.setIconSize(QSize(ART_THUMB_SIZE, ART_THUMB_SIZE))
 
             # Always use incremental population to keep UI responsive
@@ -1258,6 +1520,7 @@ class MusicBrowserList(QFrame):
 
             artwork_id = self._track_artwork_id(track)
             if artwork_id is not None:
+                art_item.setData(Qt.ItemDataRole.UserRole + 2, artwork_id)
                 self._link_to_rows.setdefault(artwork_id, []).append(row)
                 pixmap = self._thumbnail_for_artwork_id(artwork_id)
                 if pixmap is not None:
@@ -1284,7 +1547,7 @@ class MusicBrowserList(QFrame):
                 item.setData(Qt.ItemDataRole.UserRole, numeric)
 
             if key == "rating" and display:
-                item.setForeground(QColor(Colors.STAR))
+                item.setForeground(_named_qcolor(Colors.STAR))
             if key == "explicit_flag":
                 self._apply_explicit_cell_visuals(item, raw_value)
             if key in NUMERIC_COLUMNS:
@@ -1315,52 +1578,65 @@ class MusicBrowserList(QFrame):
             if header and self._columns:
                 start_col = 1 if self._show_art else 0
                 total_cols = self.table.columnCount()
+                self._applying_column_layout = True
+                try:
+                    # Art column: fixed width
+                    if self._show_art and total_cols > 0:
+                        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+                        self.table.setColumnWidth(0, _art_column_width())
 
-                # Art column: fixed width
-                if self._show_art and total_cols > 0:
-                    header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
-                    self.table.setColumnWidth(0, ART_THUMB_SIZE + 8)
+                    # Data columns: interactive (user-resizable)
+                    for i in range(start_col, total_cols):
+                        header.setSectionResizeMode(
+                            i, QHeaderView.ResizeMode.Interactive
+                        )
 
-                # Data columns: interactive (user-resizable)
-                for i in range(start_col, total_cols):
-                    header.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
+                    # Re-apply header interaction properties (defensive — survives
+                    # column-count changes and setSortingEnabled toggling)
+                    header.setSectionsMovable(True)
 
-                # Re-apply header interaction properties (defensive — survives
-                # column-count changes and setSortingEnabled toggling)
-                header.setSectionsMovable(True)
+                    # Apply saved column widths, or auto-size columns that have none
+                    for i in range(start_col, total_cols):
+                        col_key = self._col_key_for_logical(i)
+                        if col_key and col_key in self._user_col_widths:
+                            self.table.setColumnWidth(i, self._user_col_widths[col_key])
+                        else:
+                            self.table.resizeColumnToContents(i)
 
-                # Apply saved column widths, or auto-size columns that have none
-                for i in range(start_col, total_cols):
-                    col_key = self._col_key_at(i)
-                    if col_key and col_key in self._user_col_widths:
-                        self.table.setColumnWidth(i, self._user_col_widths[col_key])
+                    # Restore saved visual column order (from user drag-reorder)
+                    if self._user_col_order:
+                        # Build a map from column key → current logical index
+                        key_to_logical: dict[str, int] = {}
+                        for li in range(start_col, total_cols):
+                            k = self._col_key_for_logical(li)
+                            if k:
+                                key_to_logical[k] = li
+                        # Move sections to match the saved visual order
+                        for target_vis, key in enumerate(self._user_col_order):
+                            logical = key_to_logical.get(key)
+                            if logical is None:
+                                continue
+                            current_vis = header.visualIndex(logical)
+                            if current_vis != target_vis + start_col:
+                                header.moveSection(current_vis, target_vis + start_col)
                     else:
-                        self.table.resizeColumnToContents(i)
+                        if self._show_art and total_cols > 0 and header.visualIndex(0) != 0:
+                            header.moveSection(header.visualIndex(0), 0)
+                        for logical in range(start_col, total_cols):
+                            current_vis = header.visualIndex(logical)
+                            if current_vis != logical:
+                                header.moveSection(current_vis, logical)
 
-                # Restore saved visual column order (from user drag-reorder)
-                if self._user_col_order:
-                    # Build a map from column key → current logical index
-                    key_to_logical: dict[str, int] = {}
-                    for li in range(start_col, total_cols):
-                        k = self._col_key_at(li)
-                        if k:
-                            key_to_logical[k] = li
-                    # Move sections to match the saved visual order
-                    for target_vis, key in enumerate(self._user_col_order):
-                        logical = key_to_logical.get(key)
-                        if logical is None:
-                            continue
-                        current_vis = header.visualIndex(logical)
-                        if current_vis != target_vis + start_col:
-                            header.moveSection(current_vis, target_vis + start_col)
+                    # Stretch the last column
+                    header.setStretchLastSection(True)
 
-                # Stretch the last column
-                header.setStretchLastSection(True)
-
-                # Re-install event filter (defensive — survives population)
-                vp = header.viewport()
-                if vp:
-                    vp.installEventFilter(self)
+                    # Re-install event filter (defensive — survives population)
+                    header.installEventFilter(self)
+                    vp = header.viewport()
+                    if vp:
+                        vp.installEventFilter(self)
+                finally:
+                    self._applying_column_layout = False
 
             # Kick off async artwork loading
             if self._show_art:
@@ -1452,6 +1728,10 @@ class MusicBrowserList(QFrame):
                 break
             pil_img = get_artwork(int(artwork_id), mode="image_only")
             if pil_img is not None:
+                pil_img = enhance_artwork_image(
+                    pil_img,
+                    enabled=self._sharpen_artwork_enabled(),
+                )
                 pil_img = pil_img.convert("RGBA")
                 results[artwork_id] = (
                     pil_img.width,
@@ -1489,6 +1769,7 @@ class MusicBrowserList(QFrame):
                     transform_mode=Qt.TransformationMode.SmoothTransformation,
                 )
                 self._art_cache[artwork_id] = pixmap
+                self._invalidate_art_display_cache(artwork_id)
                 new_artwork_ids.add(artwork_id)
 
             if not new_artwork_ids:
@@ -1500,7 +1781,9 @@ class MusicBrowserList(QFrame):
                 if artwork_id not in self._link_to_rows:
                     continue
                 rows = self._link_to_rows[artwork_id]
-                pixmap = self._art_cache[artwork_id]
+                pixmap = self._display_thumbnail_for_artwork_id(artwork_id)
+                if pixmap is None:
+                    continue
                 icon = QIcon(pixmap)
                 for row in rows:
                     item = self.table.item(row, 0)
@@ -1547,7 +1830,7 @@ class MusicBrowserList(QFrame):
 
     def _thumbnail_for_artwork_id(self, artwork_id: int) -> QPixmap | None:
         """Return a cached/scaled thumbnail for *artwork_id* when available."""
-        pixmap = self._art_cache.get(artwork_id)
+        pixmap = self._display_thumbnail_for_artwork_id(artwork_id)
         if pixmap is not None:
             return pixmap
 
@@ -1561,6 +1844,10 @@ class MusicBrowserList(QFrame):
             return None
 
         pil_img, _dominant_color, _album_colors = cached
+        pil_img = enhance_artwork_image(
+            pil_img,
+            enabled=self._sharpen_artwork_enabled(),
+        )
         qimg = QImage(
             pil_img.convert("RGBA").tobytes("raw", "RGBA"),
             pil_img.width,
@@ -1576,7 +1863,82 @@ class MusicBrowserList(QFrame):
             transform_mode=Qt.TransformationMode.SmoothTransformation,
         )
         self._art_cache[artwork_id] = pixmap
+        self._invalidate_art_display_cache(artwork_id)
+        return self._display_thumbnail_for_artwork_id(artwork_id)
+
+    def _display_thumbnail_for_artwork_id(self, artwork_id: int) -> QPixmap | None:
+        """Return the UI-rendered thumbnail for *artwork_id*."""
+        raw_pixmap = self._art_cache.get(artwork_id)
+        if raw_pixmap is None:
+            return None
+
+        rounded = self._rounded_artwork_enabled()
+        cache_key = (artwork_id, rounded)
+        cached = self._art_display_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        pixmap = raw_pixmap
+        if rounded:
+            pixmap = rounded_artwork_pixmap(
+                raw_pixmap,
+                nested_artwork_radius(Metrics.BORDER_RADIUS_SM, 4),
+            )
+        self._art_display_cache[cache_key] = pixmap
         return pixmap
+
+    def _rounded_artwork_enabled(self) -> bool:
+        try:
+            return bool(self._settings_service.get_effective_settings().rounded_artwork)
+        except Exception:
+            return False
+
+    def _sharpen_artwork_enabled(self) -> bool:
+        try:
+            return bool(self._settings_service.get_effective_settings().sharpen_artwork)
+        except Exception:
+            return True
+
+    def _invalidate_art_display_cache(self, artwork_id: int) -> None:
+        for key in list(self._art_display_cache):
+            if key[0] == artwork_id:
+                self._art_display_cache.pop(key, None)
+
+    def refresh_artwork_appearance(self) -> None:
+        """Refresh the track list's artwork column for current appearance settings."""
+        desired_show_art = (
+            self._show_art_override
+            if self._show_art_override is not None
+            else bool(self._settings_service.get_effective_settings().show_art_in_tracklist)
+        )
+        self._art_display_cache.clear()
+
+        if desired_show_art != self._show_art:
+            self._populate_table()
+            return
+
+        if not self._show_art:
+            return
+
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, 0)
+            if item is None:
+                continue
+            artwork_id = item.data(Qt.ItemDataRole.UserRole + 2)
+            if not artwork_id:
+                continue
+            try:
+                art_id = int(artwork_id)
+            except (TypeError, ValueError):
+                continue
+            pixmap = self._display_thumbnail_for_artwork_id(art_id)
+            if pixmap is None:
+                continue
+            item.setIcon(QIcon(pixmap))
+
+        viewport = self.table.viewport()
+        if viewport is not None:
+            viewport.update()
 
     def _advisory_badge_icon(self, flag: int, size: int = 14) -> QIcon | None:
         """Create a compact badge icon for explicit/clean advisory values."""
@@ -1601,12 +1963,12 @@ class MusicBrowserList(QFrame):
             return svg_icon
 
         if flag == 1:
-            bg = QColor(Colors.DANGER)
-            border = QColor(Colors.DANGER_BORDER)
+            bg = _named_qcolor(Colors.DANGER)
+            border = _named_qcolor(Colors.DANGER_BORDER)
             glyph = "E"
         else:
-            bg = QColor(Colors.SUCCESS)
-            border = QColor(Colors.SUCCESS_BORDER)
+            bg = _named_qcolor(Colors.SUCCESS)
+            border = _named_qcolor(Colors.SUCCESS_BORDER)
             glyph = "C"
 
         px = QPixmap(size, size)
@@ -1622,7 +1984,7 @@ class MusicBrowserList(QFrame):
 
         font = QFont(FONT_FAMILY, max(7, size - 6), QFont.Weight.Bold)
         painter.setFont(font)
-        painter.setPen(QColor(Colors.TEXT_ON_ACCENT))
+        painter.setPen(_named_qcolor(Colors.TEXT_ON_ACCENT))
         painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, glyph)
         painter.end()
 
@@ -1640,7 +2002,7 @@ class MusicBrowserList(QFrame):
             icon = self._advisory_badge_icon(1)
             if icon is not None:
                 cell.setIcon(icon)
-            cell.setForeground(QColor(Colors.DANGER))
+            cell.setForeground(_named_qcolor(Colors.DANGER))
             cell.setToolTip("Content Advisory: Explicit")
             return
 
@@ -1648,11 +2010,11 @@ class MusicBrowserList(QFrame):
             icon = self._advisory_badge_icon(2)
             if icon is not None:
                 cell.setIcon(icon)
-            cell.setForeground(QColor(Colors.SUCCESS))
+            cell.setForeground(_named_qcolor(Colors.SUCCESS))
             cell.setToolTip("Content Advisory: Clean")
             return
 
-        cell.setForeground(QColor(Colors.TEXT_TERTIARY))
+        cell.setForeground(_named_qcolor(Colors.TEXT_TERTIARY))
 
     def _update_status(self) -> None:
         """Update the status label with track count info."""
@@ -1702,13 +2064,29 @@ class MusicBrowserList(QFrame):
 
         return str(value)
 
-    def _col_key_at(self, visual_col: int) -> str | None:
-        """Return the column key for a given visual column index."""
+    def _col_key_for_logical(self, logical_col: int) -> str | None:
+        """Return the column key for a logical header section index."""
+        header_item = self.table.horizontalHeaderItem(logical_col)
+        if header_item is not None:
+            key = header_item.data(Qt.ItemDataRole.UserRole)
+            if isinstance(key, str):
+                return key
+
         offset = 1 if self._show_art else 0
-        logical = visual_col - offset
-        if 0 <= logical < len(self._columns):
-            return self._columns[logical]
+        column_index = logical_col - offset
+        if 0 <= column_index < len(self._columns):
+            return self._columns[column_index]
         return None
+
+    def _col_key_at(self, visual_col: int) -> str | None:
+        """Return the column key for a visual column index."""
+        header = self.table.horizontalHeader()
+        if header is None:
+            return None
+        logical_col = header.logicalIndex(visual_col)
+        if logical_col < 0:
+            return None
+        return self._col_key_for_logical(logical_col)
 
     # -------------------------------------------------------------------------
     # Event Filter — catch right-click on header viewport
@@ -1737,12 +2115,30 @@ class MusicBrowserList(QFrame):
                 self._move_selected_rows(1)
                 return True
 
-        # ── Header viewport: right-click context menu ──
-        if header and obj is header.viewport():
-            if event.type() == QEvent.Type.MouseButtonPress:
-                if event.button() == Qt.MouseButton.RightButton:
-                    self._on_header_context_menu(event.pos())
+        # ── Header: context menu and human drag/resize persistence ──
+        header_vp = header.viewport() if header else None
+        if header and (obj is header or obj is header_vp):
+            etype = event.type()
+            if etype == QEvent.Type.MouseButtonPress:
+                me: QMouseEvent = event  # type: ignore[assignment]
+                if me.button() == Qt.MouseButton.RightButton:
+                    self._on_header_context_menu(me.pos())
                     return True
+                if me.button() == Qt.MouseButton.LeftButton:
+                    self._begin_header_interaction()
+            elif etype == QEvent.Type.MouseMove:
+                me = event  # type: ignore[assignment]
+                if (
+                    me.buttons() & Qt.MouseButton.LeftButton
+                    and self._header_interaction_signature is None
+                ):
+                    self._begin_header_interaction()
+            elif etype == QEvent.Type.MouseButtonRelease:
+                me = event  # type: ignore[assignment]
+                if me.button() == Qt.MouseButton.LeftButton:
+                    self._finish_header_interaction()
+            elif etype in {QEvent.Type.FocusOut, QEvent.Type.Hide}:
+                self._finish_header_interaction()
 
         # ── Table viewport: scroll & grab ──
         table_vp = self.table.viewport()
@@ -1838,6 +2234,16 @@ class MusicBrowserList(QFrame):
 
         return super().eventFilter(obj, event)
 
+    def hideEvent(self, event) -> None:  # type: ignore[override]
+        """Flush pending column changes when view is hidden."""
+        self.flush_pending_column_changes()
+        super().hideEvent(event)
+
+    def closeEvent(self, event) -> None:  # type: ignore[override]
+        """Flush pending column changes when view is closed."""
+        self.flush_pending_column_changes()
+        super().closeEvent(event)
+
     # -------------------------------------------------------------------------
     # Header Context Menu — hide / show / reorder columns
     # -------------------------------------------------------------------------
@@ -1848,8 +2254,8 @@ class MusicBrowserList(QFrame):
         if not header:
             return
 
-        clicked_visual = header.logicalIndexAt(pos)
-        clicked_key = self._col_key_at(clicked_visual)
+        clicked_logical = header.logicalIndexAt(pos)
+        clicked_key = self._col_key_for_logical(clicked_logical)
 
         menu = QMenu(self)
         menu.setStyleSheet(f"""
@@ -1996,26 +2402,28 @@ class MusicBrowserList(QFrame):
         if len(self._columns) <= 1:
             return
         self._save_user_widths()
-        self._hidden_columns.add(key)
         if key in self._columns:
             self._columns.remove(key)
+        self._user_col_order = list(self._columns)
+        self._queue_column_layout_save()
         self._repopulate_keeping_state()
 
     def _show_column(self, key: str) -> None:
-        """Show a previously hidden column."""
+        """Show a column by adding it to the explicit layout."""
         self._save_user_widths()
-        self._hidden_columns.discard(key)
         # Insert at end (user can drag to reorder)
         if key not in self._columns:
             self._columns.append(key)
+        self._user_col_order = list(self._columns)
+        self._queue_column_layout_save()
         self._repopulate_keeping_state()
 
     def _reset_columns(self) -> None:
         """Reset to default column set and widths."""
-        self._hidden_columns.clear()
         self._user_col_widths.clear()
         self._user_col_order = None
         self._setup_columns()
+        self._queue_column_layout_save()
         self._populate_table()
 
     def _save_user_widths(self) -> None:
@@ -2028,7 +2436,7 @@ class MusicBrowserList(QFrame):
 
         # Save widths
         for i in range(offset, col_count):
-            key = self._col_key_at(i)
+            key = self._col_key_for_logical(i)
             if key:
                 self._user_col_widths[key] = header.sectionSize(i)
 
@@ -2036,7 +2444,7 @@ class MusicBrowserList(QFrame):
         visual_keys: list[str] = []
         for vis in range(offset, col_count):
             logical = header.logicalIndex(vis)
-            key = self._col_key_at(logical)
+            key = self._col_key_for_logical(logical)
             if key:
                 visual_keys.append(key)
         if visual_keys:

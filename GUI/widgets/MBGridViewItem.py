@@ -7,6 +7,10 @@ from PyQt6.QtCore import QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QCursor, QFont, QImage, QPixmap
 from PyQt6.QtWidgets import QFrame, QLabel, QVBoxLayout
 
+from ..artwork_rendering import (
+    nested_artwork_radius,
+    rounded_artwork_pixmap,
+)
 from ..glyphs import glyph_pixmap
 from ..hidpi import scale_pixmap_for_display
 from ..styles import (
@@ -67,6 +71,7 @@ class MusicBrowserGridItem(QFrame):
         self._album_colors: dict[str, Any] | None = None
         self._render_state: GridItemRenderState | None = None
         self._applied_artwork_id: int | None = None
+        self._rounded_artwork = False
 
         self.setFixedSize(QSize(Metrics.GRID_ITEM_W, Metrics.GRID_ITEM_H))
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
@@ -188,6 +193,11 @@ class MusicBrowserGridItem(QFrame):
             aspect_mode=Qt.AspectRatioMode.KeepAspectRatio,
             transform_mode=Qt.TransformationMode.SmoothTransformation,
         )
+        if self._rounded_artwork:
+            pixmap = rounded_artwork_pixmap(
+                pixmap,
+                nested_artwork_radius(Metrics.BORDER_RADIUS_XL, 10),
+            )
         self.img_label.setPixmap(pixmap)
         self.img_label.setStyleSheet(f"""
             border: none;
@@ -307,6 +317,15 @@ class MusicBrowserGridItem(QFrame):
             self._clear_art_state()
 
         self._render_model()
+
+    def set_rounded_artwork(self, enabled: bool) -> None:
+        """Update whether artwork pixmaps should render with rounded corners."""
+        enabled = bool(enabled)
+        if self._rounded_artwork == enabled:
+            return
+        self._rounded_artwork = enabled
+        if self._model is not None:
+            self._render_model()
 
     def mousePressEvent(self, a0):
         if a0 and a0.button() == Qt.MouseButton.LeftButton:

@@ -1,20 +1,83 @@
-from PyQt6.QtCore import Qt, QPoint, QSize
-from PyQt6.QtWidgets import QHBoxLayout, QFrame, QLabel, QPushButton, QWidget
-from PyQt6.QtGui import QFont
+from PyQt6.QtCore import QPoint, QSize, Qt
+from PyQt6.QtGui import QColor, QFont
+from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QWidget
 
-from ..styles import Colors, FONT_FAMILY, Metrics
 from ..glyphs import glyph_icon
+from ..styles import (
+    FONT_FAMILY,
+    Colors,
+    Metrics,
+    display_accent_rgb,
+    text_rgb_for_background,
+)
+
+_TITLE_BAR_CONTRAST_TARGET = 2.95
+_TITLE_BAR_CORNER_RADIUS = 8
 
 
-def _title_bar_css(r1: int, g1: int, b1: int, r2: int, g2: int, b2: int,
-                   text_color: str = Colors.TEXT_ON_ACCENT,
-                   text_secondary: str = Colors.TEXT_PRIMARY) -> str:
-    """Generate the title bar stylesheet for given gradient colors."""
+def _mix_rgb(
+    left: tuple[int, int, int],
+    right: tuple[int, int, int],
+    amount: float,
+) -> tuple[int, int, int]:
+    amount = max(0.0, min(1.0, float(amount)))
+    left_red, left_green, left_blue = left
+    right_red, right_green, right_blue = right
+    return (
+        int(round((left_red * (1.0 - amount)) + (right_red * amount))),
+        int(round((left_green * (1.0 - amount)) + (right_green * amount))),
+        int(round((left_blue * (1.0 - amount)) + (right_blue * amount))),
+    )
+
+
+def _css_rgb(rgb: tuple[int, int, int]) -> str:
+    return f"rgb({rgb[0]},{rgb[1]},{rgb[2]})"
+
+
+def _css_rgba(rgb: tuple[int, int, int], alpha: int) -> str:
+    return f"rgba({rgb[0]},{rgb[1]},{rgb[2]},{alpha})"
+
+
+def _composite_rgb(
+    foreground: tuple[int, int, int],
+    background: tuple[int, int, int],
+    alpha: int,
+) -> tuple[int, int, int]:
+    opacity = max(0.0, min(1.0, alpha / 255.0))
+    return (
+        int(round((background[0] * (1.0 - opacity)) + (foreground[0] * opacity))),
+        int(round((background[1] * (1.0 - opacity)) + (foreground[1] * opacity))),
+        int(round((background[2] * (1.0 - opacity)) + (foreground[2] * opacity))),
+    )
+
+
+def _title_bar_css(
+    *,
+    top_rgb: tuple[int, int, int],
+    bottom_rgb: tuple[int, int, int],
+    border_rgb: tuple[int, int, int],
+    text_rgb: tuple[int, int, int],
+    text_secondary_rgb: tuple[int, int, int],
+) -> str:
+    """Generate a refined, contrast-limited title bar stylesheet."""
+    text_color = _css_rgb(text_rgb)
+    text_secondary = _css_rgba(text_secondary_rgb, 205)
+    button_bg = _css_rgba(text_rgb, 18)
+    button_hover = _css_rgba(text_rgb, 30)
+    button_press = _css_rgba(text_rgb, 24)
     return f"""
         QFrame {{
-            background: rgba({r1},{g1},{b1},180);
+            background: qlineargradient(
+                x1: 0, y1: 0, x2: 0, y2: 1,
+                stop: 0 {_css_rgba(top_rgb, 190)},
+                stop: 1 {_css_rgba(bottom_rgb, 178)}
+            );
             border: none;
-            border-radius: 0px;
+            border-bottom: 1px solid {_css_rgba(border_rgb, 130)};
+            border-top-left-radius: 8px;
+            border-top-right-radius: 8px;
+            border-bottom-left-radius: 0px;
+            border-bottom-right-radius: 0px;
         }}
         QLabel {{
             font-weight: 700;
@@ -23,7 +86,7 @@ def _title_bar_css(r1: int, g1: int, b1: int, r2: int, g2: int, b2: int,
             background: transparent;
         }}
         QPushButton {{
-            background-color: transparent;
+            background-color: {button_bg};
             border: none;
             color: {text_secondary};
             font-size: {Metrics.FONT_TITLE}px;
@@ -33,18 +96,39 @@ def _title_bar_css(r1: int, g1: int, b1: int, r2: int, g2: int, b2: int,
             border-radius: {(6)}px;
         }}
         QPushButton:hover {{
-            background-color: rgba(255,255,255,30);
+            background-color: {button_hover};
         }}
         QPushButton:pressed {{
-            background-color: rgba(255,255,255,18);
+            background-color: {button_press};
         }}
     """
 
 
-# Default blue gradient — call at runtime since  values aren't ready at import time
-def _default_css() -> str:
-    r, g, b = Colors.PLAYLIST_REGULAR
-    return _title_bar_css(r, g, b, max(0, r - 25), max(0, g - 25), max(0, b - 25))
+def _resolve_bar_palette(
+    base_rgb: tuple[int, int, int],
+    *,
+    text: tuple[int, int, int] | None = None,
+    text_secondary: tuple[int, int, int] | None = None,
+) -> dict[str, tuple[int, int, int]]:
+    """Limit and shape a title-bar palette so it sits comfortably in the app."""
+    bg = display_accent_rgb(
+        base_rgb,
+        background=Colors.BG_DARK,
+        target_ratio=_TITLE_BAR_CONTRAST_TARGET,
+    )
+    top = _mix_rgb(bg, (255, 255, 255), 0.08)
+    bottom = _mix_rgb(bg, (0, 0, 0), 0.16)
+    primary_text = text or text_rgb_for_background(bg)
+    secondary_text = text_secondary or _mix_rgb(primary_text, bg, 0.3)
+    border = _mix_rgb(bg, (0, 0, 0), 0.28)
+    return {
+        "bg": bg,
+        "top": top,
+        "bottom": bottom,
+        "border": border,
+        "text": primary_text,
+        "text_secondary": secondary_text,
+    }
 
 
 class TrackListTitleBar(QFrame):
@@ -61,33 +145,19 @@ class TrackListTitleBar(QFrame):
         self.titleBarLayout.setContentsMargins((14), 0, (10), 0)
         self.splitter.splitterMoved.connect(self.enforceMinHeight)
 
-        self.setMinimumHeight((40))
-        self.setMaximumHeight((40))
-        self.setFixedHeight((40))
-
-        self.setStyleSheet(_default_css())
+        self.setMinimumHeight(40)
+        self.setMaximumHeight(40)
+        self.setFixedHeight(40)
 
         self.title = QLabel("Tracks")
         self.title.setFont(QFont(FONT_FAMILY, Metrics.FONT_TITLE, QFont.Weight.Bold))
 
         self.button1 = QPushButton()
-        _ic_sz = QSize((18), (18))
-        _ic_dn = glyph_icon("chevron-down", (18), Colors.TEXT_ON_ACCENT)
-        if _ic_dn:
-            self.button1.setIcon(_ic_dn)
-            self.button1.setIconSize(_ic_sz)
-        else:
-            self.button1.setText("▼")
+        self._icon_size = QSize(18, 18)
         self.button1.setToolTip("Minimize")
         self.button1.clicked.connect(self._toggleMinimize)
 
         self.button2 = QPushButton()
-        _ic_up = glyph_icon("chevron-up", (18), Colors.TEXT_ON_ACCENT)
-        if _ic_up:
-            self.button2.setIcon(_ic_up)
-            self.button2.setIconSize(_ic_sz)
-        else:
-            self.button2.setText("▲")
         self.button2.setToolTip("Maximize")
         self.button2.clicked.connect(self._toggleMaximize)
 
@@ -96,25 +166,21 @@ class TrackListTitleBar(QFrame):
         self.titleBarLayout.addWidget(self.button1)
         self.titleBarLayout.addWidget(self.button2)
 
+        self.resetColor()
+
     def setTitle(self, title: str):
         """Set the title text."""
         self.title.setText(title)
 
     def setColor(self, r: int, g: int, b: int,
                  text: tuple | None = None, text_secondary: tuple | None = None):
-        """Set the title bar gradient to the given RGB color with optional text colors."""
-        r2 = min(255, r + 25)
-        g2 = min(255, g + 25)
-        b2 = min(255, b + 25)
-        r3 = max(0, r - 25)
-        g3 = max(0, g - 25)
-        b3 = max(0, b - 25)
-        txt = f"rgb({text[0]},{text[1]},{text[2]})" if text else Colors.TEXT_ON_ACCENT
-        txt_sec = f"rgba({text_secondary[0]},{text_secondary[1]},{text_secondary[2]},180)" if text_secondary else Colors.TEXT_PRIMARY
-        self.setStyleSheet(_title_bar_css(r2, g2, b2, r3, g3, b3,
-                                          text_color=txt,
-                                          text_secondary=txt_sec))
-        self._set_handle_color(f"rgba({r2},{g2},{b2},180)")
+        """Set the title bar color using a limited, contrast-aware palette."""
+        palette = _resolve_bar_palette(
+            (r, g, b),
+            text=text,
+            text_secondary=text_secondary,
+        )
+        self._apply_palette(palette)
 
     def setFullscreenMode(self, fullscreen: bool):
         """Enable/disable fullscreen mode. Hides buttons and disables dragging."""
@@ -124,19 +190,60 @@ class TrackListTitleBar(QFrame):
         self.unsetCursor()
 
     def resetColor(self):
-        """Reset to the default blue gradient."""
-        self.setStyleSheet(_default_css())
-        # Clear any per-album override so the app-level splitter style (with
-        # hover/pressed states) takes over again.
-        self.splitter.setStyleSheet("")
+        """Reset to the default limited title-bar palette."""
+        self._apply_palette(_resolve_bar_palette(Colors.PLAYLIST_REGULAR))
 
     def _set_handle_color(self, color: str):
         """Update the splitter handle to match the title bar color."""
         self.splitter.setStyleSheet(f"""
-            QSplitter::handle {{
+            QSplitter::handle:vertical {{
+                background: {color};
+                margin-left: {_TITLE_BAR_CORNER_RADIUS}px;
+                margin-right: {_TITLE_BAR_CORNER_RADIUS}px;
+            }}
+            QSplitter::handle:vertical:hover {{
+                background: {color};
+            }}
+            QSplitter::handle:vertical:pressed {{
                 background: {color};
             }}
         """)
+
+    def _apply_palette(self, palette: dict[str, tuple[int, int, int]]) -> None:
+        self.setStyleSheet(
+            _title_bar_css(
+                top_rgb=palette["top"],
+                bottom_rgb=palette["bottom"],
+                border_rgb=palette["border"],
+                text_rgb=palette["text"],
+                text_secondary_rgb=palette["text_secondary"],
+            )
+        )
+        bg = QColor(Colors.BG_DARK)
+        handle_rgb = _composite_rgb(
+            palette["top"],
+            (bg.red(), bg.green(), bg.blue()),
+            190,
+        )
+        self._set_handle_color(_css_rgb(handle_rgb))
+        self._refresh_button_icons(palette["text_secondary"])
+
+    def _refresh_button_icons(self, rgb: tuple[int, int, int]) -> None:
+        down_icon = glyph_icon("chevron-down", 18, _css_rgb(rgb))
+        if down_icon:
+            self.button1.setIcon(down_icon)
+            self.button1.setIconSize(self._icon_size)
+            self.button1.setText("")
+        else:
+            self.button1.setText("▼")
+
+        up_icon = glyph_icon("chevron-up", 18, _css_rgb(rgb))
+        if up_icon:
+            self.button2.setIcon(up_icon)
+            self.button2.setIconSize(self._icon_size)
+            self.button2.setText("")
+        else:
+            self.button2.setText("▲")
 
     def _toggleMinimize(self):
         """Minimize the track list panel."""

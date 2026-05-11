@@ -34,7 +34,7 @@ from collections import OrderedDict
 from typing import Any, Literal, overload
 
 import numpy as np
-from PIL import Image, ImageEnhance, ImageFilter
+from PIL import Image
 
 from ArtworkDB_Writer.ithmb_codecs import decode_pixels_for_format
 
@@ -251,35 +251,6 @@ def read_rgb565_pixels(img_data, fmt):
     return pixels
 
 
-def _enhance_decoded_artwork(img_pil):
-    """Apply mild post-processing to small decoded ithmb artwork."""
-    width, height = img_pil.size
-    min_dim = min(width, height)
-
-    if min_dim <= 0:
-        return img_pil
-
-    sharpen_percent = 105
-    contrast_factor = 1.03
-    color_factor = 1.02
-
-    if min_dim <= 80:
-        sharpen_percent = 120
-        contrast_factor = 1.05
-        color_factor = 1.03
-    elif min_dim <= 140:
-        sharpen_percent = 112
-        contrast_factor = 1.04
-        color_factor = 1.025
-
-    enhanced = img_pil.filter(
-        ImageFilter.UnsharpMask(radius=0.8, percent=sharpen_percent, threshold=3)
-    )
-    enhanced = ImageEnhance.Contrast(enhanced).enhance(contrast_factor)
-    enhanced = ImageEnhance.Color(enhanced).enhance(color_factor)
-    return enhanced
-
-
 def generate_image(ithmb_filename, image_info):
     """Generate image from the ithmb file based on image_info."""
     try:
@@ -413,7 +384,7 @@ def generate_image(ithmb_filename, image_info):
         if img_pil.size != (target_width, target_height):
             img_pil = img_pil.resize(
                 (target_width, target_height), Image.Resampling.LANCZOS)
-        return _enhance_decoded_artwork(img_pil)
+        return img_pil
 
     # Non-RGB565 formats (UYVY, I420, RGB555 variants, JPEG) go through
     # the shared format-aware decoder.
@@ -431,7 +402,7 @@ def generate_image(ithmb_filename, image_info):
             return None
         if decoded.size != (target_width, target_height):
             decoded = decoded.resize((target_width, target_height), Image.Resampling.LANCZOS)
-        return _enhance_decoded_artwork(decoded)
+        return decoded
 
     logger.warning("Unsupported image format: %s", fmt)
     return None

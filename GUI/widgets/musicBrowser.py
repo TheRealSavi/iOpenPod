@@ -62,6 +62,7 @@ class MusicBrowser(QFrame):
         self.browserGrid = MusicBrowserGrid(
             device_sessions=self._device_sessions,
             library_cache=self._library_cache,
+            settings_service=self._settings_service,
         )
         self.browserGrid.item_selected.connect(self._onGridItemSelected)
 
@@ -392,6 +393,12 @@ class MusicBrowser(QFrame):
             self.browserTrack.filterByArtist(title)
         elif category == "Genres":
             self.browserTrack.filterByGenre(title)
+
+    def refresh_artwork_appearance(self) -> None:
+        """Refresh list and grid artwork after an appearance setting changes."""
+        self.browserGrid.refresh_artwork_appearance()
+        self.browserTrack.refresh_artwork_appearance()
+        self.playlistBrowser.trackList.refresh_artwork_appearance()
 
     def _ensure_podcast_device(self):
         """Bind the podcast browser to the current iPod device if not done."""

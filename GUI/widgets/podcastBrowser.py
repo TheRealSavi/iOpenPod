@@ -228,6 +228,7 @@ class _PodcastEpisodeList:
             device_sessions=owner._device_sessions,
             library_cache=owner._library_cache,
             show_art_override=False,
+            content_type_override="podcast_episodes",
         )
 
         # Override the music-library defaults with podcast-appropriate columns

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, fields
 from typing import Any, Protocol, TypeGuard, runtime_checkable
 
@@ -65,6 +66,9 @@ class SettingsSnapshot:
     smart_quality_by_type: bool
     last_device_path: str
     show_art_in_tracklist: bool
+    rounded_artwork: bool
+    sharpen_artwork: bool
+    track_list_columns_by_content: dict[str, dict[str, int]]
     theme: str
     high_contrast: str
     font_scale: str
@@ -85,6 +89,8 @@ class SettingsSnapshot:
             value = getattr(settings, field_info.name)
             if field_info.name == "splitter_sizes":
                 value = tuple(value)
+            elif field_info.name == "track_list_columns_by_content":
+                value = copy.deepcopy(value)
             data[field_info.name] = value
         return cls(**data)
 

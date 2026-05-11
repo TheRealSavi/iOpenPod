@@ -1,17 +1,18 @@
 import difflib
 import logging
-from collections.abc import Hashable
+from collections.abc import Hashable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from PIL import Image
 from PyQt6.QtCore import pyqtSignal
 
+from ..artwork_rendering import virtual_artwork_payload
 from .MBGridViewItem import GridItemModel, MusicBrowserGridItem
 from .pooledCardGrid import PooledCardGrid
 
 if TYPE_CHECKING:
-    from app_core.services import DeviceSessionService, LibraryCacheLike
+    from app_core.services import DeviceSessionService, LibraryCacheLike, SettingsService
 
 # Fuzzy search: only attempt fuzzy matching for tokens at least this long,
 # and require a SequenceMatcher ratio above the threshold.
@@ -84,10 +85,12 @@ class MusicBrowserGrid(PooledCardGrid):
         *,
         device_sessions: "DeviceSessionService | None" = None,
         library_cache: "LibraryCacheLike | None" = None,
+        settings_service: "SettingsService | None" = None,
     ):
         super().__init__()
         self._device_sessions = device_sessions
         self._library_cache = library_cache
+        self._settings_service = settings_service
 
         self._current_category = "Albums"
 
@@ -128,7 +131,10 @@ class MusicBrowserGrid(PooledCardGrid):
 
         self._set_source_items(items, reset_scroll=True)
 
-    def populateGrid(self, items: list[dict[str, Any] | MusicBrowserGridItem]) -> None:
+    def populateGrid(
+        self,
+        items: Sequence[dict[str, Any] | MusicBrowserGridItem],
+    ) -> None:
         """Compatibility entry point for setting grid contents directly."""
         normalized_items: list[dict[str, Any]] = []
         for item in items:
@@ -233,6 +239,9 @@ class MusicBrowserGrid(PooledCardGrid):
         self._apply_filter_and_sort(reset_scroll=reset_scroll)
 
     def _apply_filter_and_sort(self, *, reset_scroll: bool) -> None:
+        # Any active artwork batch was bound to the previous viewport/load_id.
+        # Clear pending markers so filtered/re-sorted cards can request art again.
+        self._art_pending.clear()
         records = self._records
 
         if self._search_query:
@@ -302,6 +311,7 @@ class MusicBrowserGrid(PooledCardGrid):
     ) -> None:
         assert isinstance(widget, MusicBrowserGridItem)
         cached_artwork = self._lookup_cached_artwork(record)
+        widget.set_rounded_artwork(self._rounded_artwork_enabled())
         widget.set_model(self._model_for_record(record, cached_artwork))
 
     def _after_viewport_refresh(self) -> None:
@@ -344,7 +354,11 @@ class MusicBrowserGrid(PooledCardGrid):
         if cached is None:
             return _ART_CACHE_UNSET
 
-        image, dominant_color, album_colors = cached
+        image, _dominant_color, _album_colors = cached
+        image, dominant_color, album_colors = virtual_artwork_payload(
+            image,
+            sharpen=self._sharpen_artwork_enabled(),
+        )
         return ArtworkResult(image, dominant_color, album_colors)
 
     def _apply_art_to_widget(
@@ -423,8 +437,8 @@ class MusicBrowserGrid(PooledCardGrid):
             )
             pool.start(worker)
 
-    @staticmethod
     def _load_art_batch(
+        self,
         pairs: list[tuple[Hashable, int]],
         artworkdb_path: str,
         artwork_folder: str,
@@ -448,12 +462,15 @@ class MusicBrowserGrid(PooledCardGrid):
         for art_key, link in pairs:
             if cancellation_token.is_cancelled():
                 break
-            result = get_artwork(link, mode="with_colors")
-            if result is None:
+            image = get_artwork(link, mode="image_only")
+            if image is None:
                 results[art_key] = None
                 continue
 
-            pil_img, dominant_color, album_colors = result
+            pil_img, dominant_color, album_colors = virtual_artwork_payload(
+                image,
+                sharpen=self._sharpen_artwork_enabled(),
+            )
             pil_img = pil_img.convert("RGBA")
             results[art_key] = (
                 pil_img.width,
@@ -512,3 +529,26 @@ class MusicBrowserGrid(PooledCardGrid):
 
     def _onItemClicked(self, item_data: dict) -> None:
         self.item_selected.emit(item_data)
+
+    def refresh_artwork_appearance(self) -> None:
+        """Re-render visible artwork using the current UI appearance settings."""
+        rounded = self._rounded_artwork_enabled()
+        for widget in list(self._visible_widgets.values()):
+            if isinstance(widget, MusicBrowserGridItem):
+                widget.set_rounded_artwork(rounded)
+
+    def _rounded_artwork_enabled(self) -> bool:
+        if self._settings_service is None:
+            return False
+        try:
+            return bool(self._settings_service.get_effective_settings().rounded_artwork)
+        except Exception:
+            return False
+
+    def _sharpen_artwork_enabled(self) -> bool:
+        if self._settings_service is None:
+            return True
+        try:
+            return bool(self._settings_service.get_effective_settings().sharpen_artwork)
+        except Exception:
+            return True

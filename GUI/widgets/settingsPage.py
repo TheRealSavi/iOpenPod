@@ -880,6 +880,7 @@ class SettingsPage(QWidget):
 
     closed = pyqtSignal()  # Emitted when user closes settings
     theme_changed = pyqtSignal()  # Emitted when theme or contrast changes
+    artwork_appearance_changed = pyqtSignal()  # Emitted when artwork UI styling changes
 
     def __init__(
         self,
@@ -1143,6 +1144,19 @@ class SettingsPage(QWidget):
             "Show album art thumbnails next to tracks in the list view.",
             checked=True,
         )
+        self.rounded_artwork = ToggleRow(
+            "Rounded Artwork",
+            "Round album art corners in grid cards and track lists. "
+            "This only changes how artwork is drawn in iOpenPod and does not "
+            "modify anything written to your iPod.",
+            checked=False,
+        )
+        self.sharpen_artwork = ToggleRow(
+            "Sharpen Artwork",
+            "Apply a subtle display-only sharpening pass to album art in grid cards "
+            "and track lists. This does not modify artwork written to your iPod.",
+            checked=True,
+        )
 
         from infrastructure.version import get_version
         self.version_row = ActionRow(
@@ -1189,6 +1203,8 @@ class SettingsPage(QWidget):
             self.accent_color,
             self.font_scale,
             self.show_art,
+            self.rounded_artwork,
+            self.sharpen_artwork,
         )
         self._about_card = _SettingsCard(
             self.version_row,
@@ -1714,6 +1730,8 @@ class SettingsPage(QWidget):
         self._appearance_card.set_row_visible(self.theme_combo, not device_scope)
         self._appearance_card.set_row_visible(self.high_contrast, not device_scope)
         self._appearance_card.set_row_visible(self.font_scale, not device_scope)
+        self._appearance_card.set_row_visible(self.rounded_artwork, not device_scope)
+        self._appearance_card.set_row_visible(self.sharpen_artwork, not device_scope)
         self._about_card.setVisible(not device_scope)
         self._set_section_visible("General", "About", not device_scope)
 
@@ -1789,6 +1807,8 @@ class SettingsPage(QWidget):
             self.listenbrainz_token_row.set_disconnected()
 
         self.show_art.value = s.show_art_in_tracklist
+        self.rounded_artwork.value = s.rounded_artwork
+        self.sharpen_artwork.value = s.sharpen_artwork
 
         # Theme
         theme_display = {
@@ -1976,6 +1996,8 @@ class SettingsPage(QWidget):
             self.sync_workers.changed.connect(self._save)
             self.device_write_workers.changed.connect(self._save)
             self.show_art.changed.connect(self._save)
+            self.rounded_artwork.changed.connect(self._save)
+            self.sharpen_artwork.changed.connect(self._save)
             self.accent_color.changed.connect(self._save)
             self.theme_combo.changed.connect(self._save)
             self.high_contrast.changed.connect(self._save)
@@ -2192,6 +2214,8 @@ class SettingsPage(QWidget):
         s.show_art_in_tracklist = self.show_art.value
 
         if include_global_only:
+            s.rounded_artwork = self.rounded_artwork.value
+            s.sharpen_artwork = self.sharpen_artwork.value
             # Theme
             theme_keys = {
                 "Dark": "dark", "Light": "light", "System": "system",
@@ -2323,6 +2347,11 @@ class SettingsPage(QWidget):
             return
 
         effective_before = self._settings_service.get_effective_settings()
+        artwork_before = (
+            effective_before.show_art_in_tracklist,
+            effective_before.rounded_artwork,
+            effective_before.sharpen_artwork,
+        )
         theme_before = (
             effective_before.theme,
             effective_before.high_contrast,
@@ -2342,8 +2371,15 @@ class SettingsPage(QWidget):
                 use_global_settings=self.use_global_settings.value,
                 device_key=key,
             )
+            effective_after = self._settings_service.get_effective_settings()
             self._apply_scope_visibility()
             self._apply_theme_change_if_needed(theme_before)
+            if artwork_before != (
+                effective_after.show_art_in_tracklist,
+                effective_after.rounded_artwork,
+                effective_after.sharpen_artwork,
+            ):
+                self.artwork_appearance_changed.emit()
             return
 
         s = self._settings_service.get_global_settings()
@@ -2354,6 +2390,7 @@ class SettingsPage(QWidget):
             and (s.max_cache_size_gb == 0 or s.max_cache_size_gb < old_cache_limit)
         )
         self._settings_service.save_global_settings(s)
+        effective_after = self._settings_service.get_effective_settings()
 
         # If limit was lowered, evict immediately so cache stays within bounds.
         if limit_lowered:
@@ -2369,6 +2406,12 @@ class SettingsPage(QWidget):
                 pass
 
         self._apply_theme_change_if_needed(theme_before)
+        if artwork_before != (
+            effective_after.show_art_in_tracklist,
+            effective_after.rounded_artwork,
+            effective_after.sharpen_artwork,
+        ):
+            self.artwork_appearance_changed.emit()
 
     @staticmethod
     def _current_ipod_image() -> str:
