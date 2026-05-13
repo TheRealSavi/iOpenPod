@@ -7,12 +7,11 @@ from .artwork_presets import (
 from .capabilities import capabilities_for_family_gen
 
 ITHMB_FORMAT_MAP = ARTWORK_FORMATS_BY_ID
-"""Fallback lookup of ithmb correlation ID -> ``ArtworkFormat``.
+"""Primary global lookup of ithmb correlation ID -> ``ArtworkFormat``.
 
-Apple reused some correlation IDs for different device families, so this map
-is intentionally only a legacy/default lookup. Device-aware code should use
-``cover_art_format_definitions_for_device`` or
-``resolve_cover_art_format_definitions`` instead.
+Most artwork IDs are globally meaningful. Device-aware code can layer a small
+override set on top of this table for the few known conflicts, such as Nano
+7G's reinterpretation of ``1013``/``1015``/``1016``.
 """
 
 ITHMB_SIZE_MAP: dict[int, ArtworkFormat] = {}
@@ -51,10 +50,10 @@ def cover_art_format_definitions_for_device(
     capacity: str | None = None,
     model_number: str | None = None,
 ) -> dict[int, ArtworkFormat]:
-    """Return rich, device-specific cover-art format definitions.
+    """Return the device's required cover-art definitions.
 
-    This preserves device-specific meanings for reused IDs, such as Nano 7G
-    ``1015``/``1016`` and Classic ``1044``.
+    The normal case is the global registry. Devices with known conflicting IDs
+    expose a small explicit override set through their capability profile.
     """
 
     caps = capabilities_for_family_gen(
@@ -74,7 +73,11 @@ def _resolve_observed_format(
     height: int,
     preferred_defs: dict[int, ArtworkFormat],
 ) -> ArtworkFormat:
-    """Choose the best rich definition for an observed ``id -> dimensions``."""
+    """Resolve an observed ``id -> dimensions`` using overrides first, then global defaults.
+
+    If neither source matches the observed dimensions, fall back to a generic
+    RGB565 cover-art definition for that observed shape.
+    """
     for candidate in (
         preferred_defs.get(format_id),
         ARTWORK_FORMATS_BY_ID.get(format_id),
@@ -106,9 +109,9 @@ def resolve_cover_art_format_definitions(
     """Resolve the authoritative cover-art definitions for a device.
 
     ``observed_formats`` usually comes from SysInfoExtended or an existing
-    ArtworkDB. When present, its ID list is treated as authoritative while the
-    model profile supplies the richer pixel-format/role metadata for IDs whose
-    dimensions match.
+    ArtworkDB. When present, its ID list is authoritative, but each entry still
+    resolves through device overrides first and the global registry second. Only
+    unmatched dimensions fall back to a generic inferred definition.
     """
     preferred_defs = cover_art_format_definitions_for_device(
         family,

@@ -6,9 +6,10 @@ Sources:
   - cyianor/ithmbrdr README (1067 photo payload confirmation)
   - local iTunes-authored Nano 7G artwork dump (F1010/F1013/F1015/F1016)
 
-Entries not present in libgpod's older hardcoded tables are retained from
-newer iPod observations for compatibility with post-libgpod devices and
-databases seen in the wild.
+The global registry below is the default source of truth for artwork IDs.
+Only a very small number of device families are known to reinterpret IDs,
+so those conflicts are modeled as explicit overrides rather than treating
+the whole ID space as device-specific.
 """
 
 from dataclasses import dataclass
@@ -92,21 +93,25 @@ CLASSIC_COVER_ART_FORMATS = (
 """Cover-art formats used by click-wheel iPod Classic generations."""
 
 
-NANO_7G_COVER_ART_FORMATS = (
+NANO_7G_COVER_ART_OVERRIDES = (
     ARTWORK_FORMATS_BY_ID[1010],
     ArtworkFormat(1013, 50, 50, 100, "RGB565_LE", "cover_xsmall", "Nano 7G album art tiny"),
     ArtworkFormat(1015, 58, 58, 116, "RGB565_LE", "cover_small", "Nano 7G album art small"),
     ArtworkFormat(1016, 57, 57, 116, "RGB565_LE", "cover_small_alt", "Nano 7G album art small (aligned)"),
 )
-"""Nano 7G cover-art formats; several IDs intentionally collide with older formats."""
+"""Known Nano 7G overrides for a few globally-defined artwork IDs."""
+
+
+# Backward-compatible alias used by capability tables and existing imports.
+NANO_7G_COVER_ART_FORMATS = NANO_7G_COVER_ART_OVERRIDES
 
 
 def artwork_format_candidates() -> tuple[ArtworkFormat, ...]:
-    """Return every known format definition, including duplicate-ID variants."""
+    """Return the global registry plus the small set of known override variants."""
     candidates = [
         *ARTWORK_FORMATS_BY_ID.values(),
         *CLASSIC_COVER_ART_FORMATS,
-        *NANO_7G_COVER_ART_FORMATS,
+        *NANO_7G_COVER_ART_OVERRIDES,
     ]
     unique: dict[tuple[int, int, int, str], ArtworkFormat] = {}
     for fmt in candidates:

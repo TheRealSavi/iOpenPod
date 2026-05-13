@@ -2,20 +2,52 @@
 
 This module maps Apple correlation IDs to pixel codecs so callers can encode
 and decode artwork without assuming every format is RGB565 little-endian.
+
+Most IDs resolve through the global artwork registry. Known device-specific
+conflicts are supplied by callers through ``fmt_override``. The format-specific
+branches below are codec details; they should not be read as evidence that the
+overall artwork ID model is device-specific or unreliable.
 """
 
 from __future__ import annotations
 
 import io
+import logging
 
 import numpy as np
 from PIL import Image
 
 from ipod_device import ITHMB_FORMAT_MAP
 
+from .artwork_types import EncodedFormatPayload
+
+logger = logging.getLogger(__name__)
+
 
 def _fmt(format_id: int, fmt_override=None):
     return fmt_override if fmt_override is not None else ITHMB_FORMAT_MAP.get(format_id)
+
+
+def _rgb_image_from_array(rgb: np.ndarray) -> Image.Image:
+    """Build an RGB Pillow image without Pillow's deprecated explicit mode arg."""
+    return Image.fromarray(np.asarray(rgb, dtype=np.uint8))
+
+
+def _encoded_payload(
+    raw: bytes,
+    width: int,
+    height: int,
+    stride_pixels: int,
+    pixel_format: str,
+) -> EncodedFormatPayload:
+    return EncodedFormatPayload(
+        data=raw,
+        width=width,
+        height=height,
+        size=len(raw),
+        stride_pixels=stride_pixels,
+        pixel_format=pixel_format,
+    )
 
 
 def format_pixel_format(format_id: int, fmt_override=None) -> str:
@@ -131,6 +163,7 @@ def _resolve_packed_geometry(
     hpad: int,
     vpad: int,
     format_id: int | None = None,
+    fmt_override=None,
     *,
     require_even_width: bool = False,
 ) -> tuple[int, int]:
@@ -195,7 +228,7 @@ def _resolve_packed_geometry(
     if vis_w > 0 and (px_count % vis_w) == 0:
         add(vis_w, px_count // vis_w, 5)
 
-    fmt = _fmt(int(format_id)) if format_id is not None else None
+    fmt = _fmt(int(format_id), fmt_override=fmt_override) if format_id is not None else None
     if fmt is not None:
         fmt_w = max(1, int(fmt.width))
         fmt_h = max(1, int(fmt.height))
@@ -211,7 +244,58 @@ def _resolve_packed_geometry(
         if px_count % fmt_h == 0:
             add(px_count // fmt_h, fmt_h, 9)
 
+        # Generate additional candidates from row-byte alignment.
+        # Work backwards from visible dimensions + alignment padding to find
+        # candidates that match the actual payload byte count.
+        # This handles cases where imagery is stored with row stride padding
+        # for device-specific alignment requirements.
+        #
+        # Common alignment boundaries: 2, 4, 8, 16 pixels per row.
+        # For each alignment, try the resulting (aligned_width, visible_height)
+        # as a candidate if the byte math checks out.
+        #
+        # Use priority 1 to beat divisibility-based candidates (priority 3+).
+        # This ensures alignment-based geometry takes precedence when available.
+        for alignment in (2, 4, 8, 16):
+            # Calculate what width would result from aligning vis_w to this boundary
+            aligned_w = ((vis_w + alignment - 1) // alignment) * alignment
+
+            # For RGB565/555 (2 bytes/pixel) and RGB888/UYVY (4 bytes/pixel),
+            # check if this geometry produces the right byte count.
+            for bpp in (2, 4):
+                candidate_bytes = aligned_w * vis_h * bpp
+                if candidate_bytes == len(pixel_bytes):
+                    # This alignment produces exactly the payload size!
+                    add(aligned_w, vis_h, 1)
+
+                # Also try with format height in case visible height differs
+                candidate_bytes_fmt_h = aligned_w * fmt_h * bpp
+                if candidate_bytes_fmt_h == len(pixel_bytes):
+                    add(aligned_w, fmt_h, 1)
+
     if not candidates:
+        # Fallback: If no candidates found with exact payload size, try trimming
+        # trailing bytes in small increments to find alignment padding.
+        # This handles device alignment padding that's beyond the actual image data.
+        # Only try trimming if payload is close to expected (within 256 bytes);
+        # otherwise we risk accepting truly insufficient data.
+        if fmt is not None and fmt.row_bytes > 0:
+            expected_bytes = int(fmt.row_bytes) * max(1, int(fmt.height))
+            # Only trim if payload is slightly larger than expected (not smaller)
+            if len(pixel_bytes) > expected_bytes and (len(pixel_bytes) - expected_bytes) <= 256:
+                # Try exact expected size
+                trim_result = _resolve_packed_geometry(
+                    pixel_bytes[:expected_bytes],
+                    width,
+                    height,
+                    hpad,
+                    vpad,
+                    format_id=None,  # Don't recurse into format check
+                    fmt_override=None,
+                    require_even_width=require_even_width,
+                )
+                if trim_result != (0, 0):
+                    return trim_result
         return 0, 0
 
     _priority, _overflow, _pad_delta, stored_w, stored_h = min(candidates)
@@ -265,7 +349,8 @@ def _half_similarity(rgb: np.ndarray) -> tuple[float, float]:
 def _fix_1019_layout(rgb: np.ndarray, format_id: int) -> np.ndarray:
     """Resolve known 1019 UYVY layout artifacts deterministically.
 
-    Candidate layouts are scored by seam continuity first, then detail level.
+    This is a localized codec repair for one odd format. Candidate layouts are
+    scored by seam continuity first, then detail level.
     """
     if int(format_id) != 1019:
         return rgb
@@ -282,15 +367,15 @@ def _fix_1019_layout(rgb: np.ndarray, format_id: int) -> np.ndarray:
     mad, p95 = _half_similarity(rgb)
     if mad < 8.0 and p95 < 30.0:
         chosen = top if _detail_score(top) >= _detail_score(bottom) else bottom
-        restored = Image.fromarray(chosen, mode="RGB").resize((w, h), Image.Resampling.BILINEAR)
+        restored = _rgb_image_from_array(chosen).resize((w, h), Image.Resampling.BILINEAR)
         return np.array(restored, dtype=np.uint8)
 
     top_scaled = np.array(
-        Image.fromarray(top, mode="RGB").resize((w, h), Image.Resampling.BILINEAR),
+        _rgb_image_from_array(top).resize((w, h), Image.Resampling.BILINEAR),
         dtype=np.uint8,
     )
     bottom_scaled = np.array(
-        Image.fromarray(bottom, mode="RGB").resize((w, h), Image.Resampling.BILINEAR),
+        _rgb_image_from_array(bottom).resize((w, h), Image.Resampling.BILINEAR),
         dtype=np.uint8,
     )
     candidates = [
@@ -316,12 +401,13 @@ def _crop_visible_region(
     hpad: int,
     vpad: int,
     format_id: int,
+    fmt_override=None,
 ) -> np.ndarray:
     """Crop decoded pixels to the intended visible image rectangle.
 
-    Most formats use top-left anchored crops (width x height). Some photo
-    formats in Apple Photo Database store centered pad margins where hpad/vpad
-    represent per-side margins while width/height still include one margin.
+    Most formats use top-left anchored crops (width x height). A small number
+    of photo-oriented formats appear to store centered pad margins, so that
+    quirk stays localized here in the decoder instead of shaping writer policy.
     """
     stored_h, stored_w = rgb.shape[:2]
     visible_w = max(1, min(stored_w, int(width)))
@@ -329,7 +415,7 @@ def _crop_visible_region(
     crop_x = 0
     crop_y = 0
 
-    fmt = _fmt(int(format_id))
+    fmt = _fmt(int(format_id), fmt_override=fmt_override)
     role = (fmt.role if fmt is not None else "")
     if (hpad > 0 or vpad > 0) and role.startswith("photo"):
         # Empirical iPod photo DB behavior (e.g. 1007/1015/1024/1093):
@@ -361,7 +447,7 @@ def encode_image_for_format(
     target_width: int | None = None,
     target_height: int | None = None,
     fmt_override=None,
-) -> dict:
+) -> EncodedFormatPayload:
     pf = format_pixel_format(format_id, fmt_override=fmt_override)
     w, h = format_dimensions(
         format_id,
@@ -378,67 +464,32 @@ def encode_image_for_format(
         arr16 = _rgb565_array_from_image(rotated)
         arr16 = _pad_packed_rows(arr16, stride)
         raw = arr16.astype(">u2").tobytes()
-        return {
-            "data": raw,
-            "width": w,
-            "height": h,
-            "size": len(raw),
-            "stride_pixels": stride,
-            "pixel_format": pf,
-        }
+        return _encoded_payload(raw, w, h, stride, pf)
 
     if pf == "RGB565_BE":
         arr16 = _rgb565_array_from_image(base)
         arr16 = _pad_packed_rows(arr16, stride)
         raw = arr16.astype(">u2").tobytes()
-        return {
-            "data": raw,
-            "width": w,
-            "height": h,
-            "size": len(raw),
-            "stride_pixels": stride,
-            "pixel_format": pf,
-        }
+        return _encoded_payload(raw, w, h, stride, pf)
 
     if pf == "RGB555_BE":
         arr16 = _rgb555_array_from_image(base)
         arr16 = _pad_packed_rows(arr16, stride)
         raw = arr16.astype(">u2").tobytes()
-        return {
-            "data": raw,
-            "width": w,
-            "height": h,
-            "size": len(raw),
-            "stride_pixels": stride,
-            "pixel_format": pf,
-        }
+        return _encoded_payload(raw, w, h, stride, pf)
 
     if pf in ("RGB555_LE", "REC_RGB555_LE"):
         arr16 = _rgb555_array_from_image(base)
         arr16 = _pad_packed_rows(arr16, stride)
         raw = arr16.astype("<u2").tobytes()
-        return {
-            "data": raw,
-            "width": w,
-            "height": h,
-            "size": len(raw),
-            "stride_pixels": stride,
-            "pixel_format": pf,
-        }
+        return _encoded_payload(raw, w, h, stride, pf)
 
     if pf == "JPEG":
         out = io.BytesIO()
         # Use fixed quality to keep writes deterministic enough for debugging.
         base.save(out, format="JPEG", quality=92, optimize=False)
         raw = out.getvalue()
-        return {
-            "data": raw,
-            "width": w,
-            "height": h,
-            "size": len(raw),
-            "stride_pixels": stride,
-            "pixel_format": pf,
-        }
+        return _encoded_payload(raw, w, h, stride, pf)
 
     if pf == "UYVY":
         if w % 2 != 0:
@@ -460,14 +511,7 @@ def encode_image_for_format(
         packed[:, 2::4] = v2
         packed[:, 3::4] = y[:, 1::2]
         raw = packed.tobytes()
-        return {
-            "data": raw,
-            "width": w,
-            "height": h,
-            "size": len(raw),
-            "stride_pixels": stride,
-            "pixel_format": pf,
-        }
+        return _encoded_payload(raw, w, h, stride, pf)
 
     if pf == "I420_LE":
         w_even = w & ~1
@@ -486,14 +530,7 @@ def encode_image_for_format(
         u420 = ((u[0::2, 0::2] + u[0::2, 1::2] + u[1::2, 0::2] + u[1::2, 1::2]) * 0.25).astype(np.uint8)
         v420 = ((v[0::2, 0::2] + v[0::2, 1::2] + v[1::2, 0::2] + v[1::2, 1::2]) * 0.25).astype(np.uint8)
         raw = y.tobytes() + u420.tobytes() + v420.tobytes()
-        return {
-            "data": raw,
-            "width": w,
-            "height": h,
-            "size": len(raw),
-            "stride_pixels": stride,
-            "pixel_format": pf,
-        }
+        return _encoded_payload(raw, w, h, stride, pf)
 
     if pf == "UNKNOWN":
         raise ValueError(f"Unsupported unknown pixel format for format_id={format_id}")
@@ -502,14 +539,7 @@ def encode_image_for_format(
     arr16 = _rgb565_array_from_image(base)
     arr16 = _pad_packed_rows(arr16, stride)
     raw = arr16.astype("<u2").tobytes()
-    return {
-        "data": raw,
-        "width": w,
-        "height": h,
-        "size": len(raw),
-        "stride_pixels": stride,
-        "pixel_format": "RGB565_LE",
-    }
+    return _encoded_payload(raw, w, h, stride, "RGB565_LE")
 
 
 def decode_pixels_for_format(
@@ -519,8 +549,9 @@ def decode_pixels_for_format(
     height: int,
     hpad: int = 0,
     vpad: int = 0,
+    fmt_override=None,
 ) -> Image.Image | None:
-    pf = format_pixel_format(format_id)
+    pf = format_pixel_format(format_id, fmt_override=fmt_override)
     width = max(1, int(width))
     height = max(1, int(height))
     hpad = max(0, int(hpad))
@@ -534,6 +565,7 @@ def decode_pixels_for_format(
             hpad,
             vpad,
             format_id,
+            fmt_override=fmt_override,
         )
         if stored_w <= 0 or stored_h <= 0:
             return None
@@ -542,6 +574,16 @@ def decode_pixels_for_format(
         needed = stored_w * stored_h * 2
         if len(pixel_bytes) < needed:
             return None
+
+        # Allow trailing padding bytes (device alignment may add extra bytes)
+        if len(pixel_bytes) > needed:
+            excess = len(pixel_bytes) - needed
+            if excess > needed * 0.1:  # Warn if >10% excess
+                logger.warning(
+                    f"RGB565 {stored_w}x{stored_h}: payload has {excess} extra bytes "
+                    f"({excess / needed * 100:.1f}% padding), truncating"
+                )
+
         arr = np.frombuffer(pixel_bytes[:needed], dtype=dtype)
         if arr.size != stored_w * stored_h:
             return None
@@ -551,8 +593,16 @@ def decode_pixels_for_format(
         if pf == "RGB565_BE_90":
             rgb = np.rot90(rgb, k=1)
 
-        rgb = _crop_visible_region(rgb, width, height, hpad, vpad, format_id)
-        return Image.fromarray(rgb, mode="RGB")
+        rgb = _crop_visible_region(
+            rgb,
+            width,
+            height,
+            hpad,
+            vpad,
+            format_id,
+            fmt_override=fmt_override,
+        )
+        return _rgb_image_from_array(rgb)
 
     if pf in ("RGB555_LE", "RGB555_BE", "REC_RGB555_LE"):
         stored_w, stored_h = _resolve_packed_geometry(
@@ -562,6 +612,7 @@ def decode_pixels_for_format(
             hpad,
             vpad,
             format_id,
+            fmt_override=fmt_override,
         )
         if stored_w <= 0 or stored_h <= 0:
             return None
@@ -570,14 +621,32 @@ def decode_pixels_for_format(
         needed = stored_w * stored_h * 2
         if len(pixel_bytes) < needed:
             return None
+
+        # Allow trailing padding bytes (device alignment may add extra bytes)
+        if len(pixel_bytes) > needed:
+            excess = len(pixel_bytes) - needed
+            if excess > needed * 0.1:  # Warn if >10% excess
+                logger.warning(
+                    f"RGB555 {stored_w}x{stored_h}: payload has {excess} extra bytes "
+                    f"({excess / needed * 100:.1f}% padding), truncating"
+                )
+
         arr = np.frombuffer(pixel_bytes[:needed], dtype=dtype)
         if arr.size != stored_w * stored_h:
             return None
         arr = arr.reshape((stored_h, stored_w))
 
         rgb = _rgb555_to_rgb(arr)
-        rgb = _crop_visible_region(rgb, width, height, hpad, vpad, format_id)
-        return Image.fromarray(rgb, mode="RGB")
+        rgb = _crop_visible_region(
+            rgb,
+            width,
+            height,
+            hpad,
+            vpad,
+            format_id,
+            fmt_override=fmt_override,
+        )
+        return _rgb_image_from_array(rgb)
 
     if pf == "UYVY":
         stored_w, stored_h = _resolve_packed_geometry(
@@ -587,6 +656,7 @@ def decode_pixels_for_format(
             hpad,
             vpad,
             format_id,
+            fmt_override=fmt_override,
             require_even_width=True,
         )
         if stored_w <= 0 or stored_h <= 0:
@@ -594,6 +664,16 @@ def decode_pixels_for_format(
         needed = stored_w * stored_h * 2
         if len(pixel_bytes) < needed:
             return None
+
+        # Allow trailing padding bytes (device alignment may add extra bytes)
+        if len(pixel_bytes) > needed:
+            excess = len(pixel_bytes) - needed
+            if excess > needed * 0.1:  # Warn if >10% excess
+                logger.warning(
+                    f"UYVY {stored_w}x{stored_h}: payload has {excess} extra bytes "
+                    f"({excess / needed * 100:.1f}% padding), truncating"
+                )
+
         p = np.frombuffer(pixel_bytes[:needed], dtype=np.uint8).reshape((stored_h, stored_w * 2))
         u = p[:, 0::4].astype(np.float32)
         y0 = p[:, 1::4].astype(np.float32)
@@ -613,17 +693,37 @@ def decode_pixels_for_format(
         g = np.clip((298.082 * c - 100.291 * d - 208.120 * e) / 256.0, 0, 255).astype(np.uint8)
         b = np.clip((298.082 * c + 516.412 * d) / 256.0, 0, 255).astype(np.uint8)
         rgb = np.stack((r, g, b), axis=2)
-        rgb = _crop_visible_region(rgb, width, height, hpad, vpad, format_id)
+        rgb = _crop_visible_region(
+            rgb,
+            width,
+            height,
+            hpad,
+            vpad,
+            format_id,
+            fmt_override=fmt_override,
+        )
         rgb = _fix_1019_layout(rgb, format_id)
-        return Image.fromarray(rgb, mode="RGB")
+        return _rgb_image_from_array(rgb)
 
     if pf == "I420_LE":
         width &= ~1
         height &= ~1
         y_size = width * height
         uv_size = (width // 2) * (height // 2)
-        if len(pixel_bytes) < y_size + uv_size + uv_size:
+        needed = y_size + uv_size + uv_size
+
+        if len(pixel_bytes) < needed:
             return None
+
+        # Allow trailing padding bytes (device alignment may add extra bytes)
+        if len(pixel_bytes) > needed:
+            excess = len(pixel_bytes) - needed
+            if excess > needed * 0.1:  # Warn if >10% excess
+                logger.debug(
+                    f"I420_LE {width}x{height}: payload has {excess} extra bytes "
+                    f"({excess / needed * 100:.1f}% padding), truncating"
+                )
+
         y = np.frombuffer(pixel_bytes[:y_size], dtype=np.uint8).reshape((height, width)).astype(np.float32)
         u = np.frombuffer(pixel_bytes[y_size:y_size + uv_size], dtype=np.uint8).reshape((height // 2, width // 2)).astype(np.float32)
         v = np.frombuffer(pixel_bytes[y_size + uv_size:y_size + uv_size + uv_size], dtype=np.uint8).reshape((height // 2, width // 2)).astype(np.float32)
@@ -637,7 +737,7 @@ def decode_pixels_for_format(
         g = np.clip((298.082 * c - 100.291 * d - 208.120 * e) / 256.0, 0, 255).astype(np.uint8)
         b = np.clip((298.082 * c + 516.412 * d) / 256.0, 0, 255).astype(np.uint8)
         rgb = np.stack((r, g, b), axis=2)
-        return Image.fromarray(rgb, mode="RGB")
+        return _rgb_image_from_array(rgb)
 
     if pf == "JPEG":
         try:

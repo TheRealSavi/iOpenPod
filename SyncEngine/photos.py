@@ -2,17 +2,18 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import copy
 import hashlib
 import json
 import logging
 import math
 import os
-from pathlib import Path
 import re
 import struct
-from typing import BinaryIO, Callable, Mapping, Optional
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import BinaryIO
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 
@@ -217,8 +218,8 @@ class PhotoSyncPlan:
     thumb_bytes_to_add: int = 0
     thumb_bytes_to_remove: int = 0
     skipped_files: list[tuple[str, str]] = field(default_factory=list)
-    current_db: Optional[PhotoDB] = None
-    desired_library: Optional[PCPhotoLibrary] = None
+    current_db: PhotoDB | None = None
+    desired_library: PCPhotoLibrary | None = None
 
     @property
     def has_changes(self) -> bool:
@@ -238,7 +239,7 @@ def _load_photo_mapping(ipod_path: str | Path) -> dict[str, PhotoMappingEntry]:
     if not path.exists():
         return {}
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             data = json.load(f)
         if isinstance(data, dict):
             return data
@@ -261,7 +262,7 @@ def photo_sync_settings_from_settings(settings: object) -> dict[str, bool]:
 
 
 def _current_photo_sync_settings(
-    sync_settings: Optional[dict[str, bool]] = None,
+    sync_settings: Mapping[str, object] | None = None,
 ) -> dict[str, bool]:
     if sync_settings is None:
         return {
@@ -299,7 +300,7 @@ def _save_photo_mapping(
     ipod_path: str | Path,
     photodb: PhotoDB,
     *,
-    sync_settings: Optional[Mapping[str, object]] = None,
+    sync_settings: Mapping[str, object] | None = None,
 ) -> None:
     path = _photo_mapping_path(ipod_path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -406,7 +407,7 @@ def scan_pc_photos(sync_root: str | Path) -> PCPhotoLibrary:
     return library
 
 
-def _apply_photo_edits(library: PCPhotoLibrary, staged_edits: Optional[PhotoEditState]) -> PCPhotoLibrary:
+def _apply_photo_edits(library: PCPhotoLibrary, staged_edits: PhotoEditState | None) -> PCPhotoLibrary:
     if not staged_edits or not staged_edits.has_changes:
         return library
 
@@ -470,7 +471,7 @@ def _apply_photo_edits(library: PCPhotoLibrary, staged_edits: Optional[PhotoEdit
     return library
 
 
-def _decode_photo_image(entry: PhotoEntry, ipod_path: str | Path) -> Optional[Image.Image]:
+def _decode_photo_image(entry: PhotoEntry, ipod_path: str | Path) -> Image.Image | None:
     # Prefer iPod-rendered views first so previews reflect on-device output
     # (padding, letterboxing, and alpha flattening), then fall back to full-res.
     role_priority = {
@@ -481,15 +482,22 @@ def _decode_photo_image(entry: PhotoEntry, ipod_path: str | Path) -> Optional[Im
         "photo_thumb": 4,
         "photo_list": 5,
     }
+    format_defs = _photo_formats_for_current_device(ipod_path)
 
-    def _role_for_format(format_id: int) -> str:
-        fmt = ITHMB_FORMAT_MAP.get(int(format_id))
+    def _format_for_ref(ref: PhotoThumbRef) -> ArtworkFormat | None:
+        return (
+            format_defs.get(int(ref.format_id))
+            or ITHMB_FORMAT_MAP.get(int(ref.format_id))
+        )
+
+    def _role_for_ref(ref: PhotoThumbRef) -> str:
+        fmt = _format_for_ref(ref)
         return fmt.role if fmt is not None else ""
 
     candidates = sorted(
         entry.thumbs.values(),
         key=lambda ref: (
-            role_priority.get(_role_for_format(ref.format_id), 9),
+            role_priority.get(_role_for_ref(ref), 9),
             -(ref.width * ref.height),
             int(ref.format_id),
         ),
@@ -511,6 +519,7 @@ def _decode_photo_image(entry: PhotoEntry, ipod_path: str | Path) -> Optional[Im
                 ref.height,
                 ref.hpad,
                 ref.vpad,
+                fmt_override=_format_for_ref(ref),
             )
             if img is not None:
                 return img
@@ -531,7 +540,7 @@ def _decode_photo_format(
     entry: PhotoEntry,
     ipod_path: str | Path,
     format_id: int,
-) -> Optional[Image.Image]:
+) -> Image.Image | None:
     ref = entry.thumbs.get(int(format_id))
     if ref is None:
         return None
@@ -544,6 +553,11 @@ def _decode_photo_format(
         with open(thumb_path, "rb") as f:
             f.seek(ref.offset)
             payload = f.read(ref.size)
+        format_defs = _photo_formats_for_current_device(ipod_path)
+        fmt_override = (
+            format_defs.get(int(ref.format_id))
+            or ITHMB_FORMAT_MAP.get(int(ref.format_id))
+        )
         return decode_pixels_for_format(
             ref.format_id,
             payload,
@@ -551,6 +565,7 @@ def _decode_photo_format(
             ref.height,
             ref.hpad,
             ref.vpad,
+            fmt_override=fmt_override,
         )
     except OSError:
         return None
@@ -1202,6 +1217,13 @@ def _fit_photo_to_format(
     if fitted_h < target_h and ((target_h - fitted_h) % 2) != 0:
         fitted_h = max(1, fitted_h - 1)
 
+    # Log undersized photos for diagnostic purposes
+    if fit_thumbnails and (fitted_w < target_w or fitted_h < target_h):
+        logger.info(
+            f"Photo thumbnail undersized: {fitted_w}x{fitted_h} fit into "
+            f"{target_w}x{target_h} format (role={fmt.role}, id={fmt.format_id})"
+        )
+
     fitted = source.resize((fitted_w, fitted_h), Image.Resampling.LANCZOS)
     if fitted_w == target_w and fitted_h == target_h:
         return fitted, target_w, target_h, 0, 0
@@ -1241,12 +1263,18 @@ def _encode_photo_for_formats(
             fmt,
             fit_thumbnails=fit_thumbnails,
         )
-        meta = encode_image_for_format(prepared, fmt_id, int(fmt.width), int(fmt.height))
+        meta = encode_image_for_format(
+            prepared,
+            fmt_id,
+            int(fmt.width),
+            int(fmt.height),
+            fmt_override=fmt,
+        )
         encoded[fmt_id] = {
-            "data": meta["data"],
+            "data": meta.data,
             "width": int(mhni_w),
             "height": int(mhni_h),
-            "size": int(meta["size"]),
+            "size": int(meta.size),
             "hpad": int(hpad),
             "vpad": int(vpad),
             "filename": f"F{fmt_id}_1.ithmb",
@@ -1259,7 +1287,7 @@ def load_photo_preview(
     ipod_path: str | Path,
     *,
     format_id: int | None = None,
-) -> Optional[Image.Image]:
+) -> Image.Image | None:
     if format_id is not None:
         return _decode_photo_format(photo, ipod_path, format_id)
     # Default preview follows iPod output first (thumb formats), not raw source-like full-res.
@@ -1270,9 +1298,9 @@ def _write_photo_db_snapshot(
     ipod_path: str | Path,
     photodb: PhotoDB,
     source_images: dict[int, Image.Image],
-    progress_callback: Optional[Callable[[str, int, int, str], None]] = None,
-    is_cancelled: Optional[Callable[[], bool]] = None,
-    sync_settings: Optional[dict[str, bool]] = None,
+    progress_callback: Callable[[str, int, int, str], None] | None = None,
+    is_cancelled: Callable[[], bool] | None = None,
+    sync_settings: dict[str, bool] | None = None,
 ) -> None:
     ipod_path = Path(ipod_path)
     db_path = _photo_db_path(ipod_path)
@@ -1392,10 +1420,10 @@ def _write_photo_db_snapshot(
 def build_photo_sync_plan(
     pc_photos: PCPhotoLibrary,
     device_photos: PhotoDB,
-    staged_edits: Optional[PhotoEditState] = None,
+    staged_edits: PhotoEditState | None = None,
     *,
     ipod_path: str | Path | None = None,
-    sync_settings: Optional[dict[str, bool]] = None,
+    sync_settings: dict[str, bool] | None = None,
 ) -> PhotoSyncPlan:
     library = _apply_photo_edits(pc_photos, staged_edits)
     photodb = copy.deepcopy(device_photos)
@@ -1528,7 +1556,7 @@ def build_photo_sync_plan(
     return plan
 
 
-def merge_photo_sync_plan(current_db: PhotoDB, photo_plan: Optional[PhotoSyncPlan]) -> PhotoDB:
+def merge_photo_sync_plan(current_db: PhotoDB, photo_plan: PhotoSyncPlan | None) -> PhotoDB:
     """Apply a photo sync plan to a PhotoDB structure without rewriting image payloads."""
     if not photo_plan:
         return current_db
@@ -1621,7 +1649,7 @@ def write_photo_db_metadata_only(
     ipod_path: str | Path,
     photodb: PhotoDB,
     *,
-    sync_settings: Optional[Mapping[str, object]] = None,
+    sync_settings: Mapping[str, object] | None = None,
 ) -> None:
     """Rewrite only the photo database metadata, preserving existing image payload files."""
     ipod_path = Path(ipod_path)
@@ -1774,7 +1802,7 @@ def _initialize_thumb_file_sizes(
 
 def _load_sync_image_for_photo(
     photo: PhotoEntry,
-    prev: Optional[PhotoEntry],
+    prev: PhotoEntry | None,
     ipod_path: Path,
     *,
     is_new: bool,
@@ -1786,10 +1814,10 @@ def _load_sync_image_for_photo(
             )
         try:
             img = _load_pil_still_image(photo.source_path)
-        except (UnidentifiedImageError, OSError):
+        except (UnidentifiedImageError, OSError) as err:
             raise RuntimeError(
                 f"Could not load source image for new photo '{photo.display_name or photo.image_id}'",
-            )
+            ) from err
         timestamp = _source_timestamp(photo.source_path)
         photo.created_at = timestamp
         photo.digitized_at = timestamp
@@ -1811,7 +1839,7 @@ def _load_sync_image_for_photo(
 def _write_full_res_for_touched_photo(
     ipod_path: Path,
     photo: PhotoEntry,
-    prev: Optional[PhotoEntry],
+    prev: PhotoEntry | None,
     img: Image.Image,
     formats: Mapping[int, ArtworkFormat],
     *,
@@ -1883,8 +1911,8 @@ def _apply_touched_photo_changes(
     *,
     rotate_tall_photos: bool,
     fit_thumbnails: bool,
-    progress_callback: Optional[Callable[[str, int, int, str], None]] = None,
-    is_cancelled: Optional[Callable[[], bool]] = None,
+    progress_callback: Callable[[str, int, int, str], None] | None = None,
+    is_cancelled: Callable[[], bool] | None = None,
 ) -> None:
     thumbs_dir = _photo_thumbs_dir(ipod_path)
     current_by_id = {photo.image_id: photo for photo in merged_db.photos.values()}
@@ -1934,7 +1962,7 @@ def _apply_touched_photo_changes(
 def _compact_photo_thumb_payloads(
     ipod_path: Path,
     photodb: PhotoDB,
-    progress_callback: Optional[Callable[[str, int, int, str], None]] = None,
+    progress_callback: Callable[[str, int, int, str], None] | None = None,
 ) -> None:
     """Compact ithmb payloads by copying only currently referenced thumb blocks."""
     thumbs_dir = _photo_thumbs_dir(ipod_path)
@@ -2017,9 +2045,9 @@ def _apply_photo_sync_plan_incremental(
     ipod_path: Path,
     current_db: PhotoDB,
     photo_plan: PhotoSyncPlan,
-    progress_callback: Optional[Callable[[str, int, int, str], None]] = None,
-    is_cancelled: Optional[Callable[[], bool]] = None,
-    sync_settings: Optional[dict[str, bool]] = None,
+    progress_callback: Callable[[str, int, int, str], None] | None = None,
+    is_cancelled: Callable[[], bool] | None = None,
+    sync_settings: dict[str, bool] | None = None,
 ) -> PhotoDB:
     """Apply photo sync plan incrementally in three phases.
 
@@ -2072,10 +2100,10 @@ def _apply_photo_sync_plan_incremental(
 
 def apply_photo_sync_plan(
     ipod_path: str | Path,
-    photo_plan: Optional[PhotoSyncPlan],
-    progress_callback: Optional[Callable[[str, int, int, str], None]] = None,
-    is_cancelled: Optional[Callable[[], bool]] = None,
-    sync_settings: Optional[dict[str, bool]] = None,
+    photo_plan: PhotoSyncPlan | None,
+    progress_callback: Callable[[str, int, int, str], None] | None = None,
+    is_cancelled: Callable[[], bool] | None = None,
+    sync_settings: dict[str, bool] | None = None,
 ) -> PhotoDB:
     ipod_path = Path(ipod_path)
     current_db = copy.deepcopy(photo_plan.current_db if photo_plan and photo_plan.current_db else read_photo_db(ipod_path))

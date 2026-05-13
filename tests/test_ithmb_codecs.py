@@ -21,11 +21,42 @@ def test_nano_7g_small_alt_writes_padded_stride() -> None:
 
     encoded = encode_image_for_format(img, 1016, width, height, fmt_override=fmt_override)
 
-    assert encoded["stride_pixels"] == stride
-    assert encoded["size"] == stride * height * 2
-    assert len(encoded["data"]) == stride * height * 2
+    assert encoded.stride_pixels == stride
+    assert encoded.size == stride * height * 2
+    assert len(encoded.data) == stride * height * 2
 
-    decoded = decode_pixels_for_format(1016, encoded["data"], width, height)
+    decoded = decode_pixels_for_format(
+        1016,
+        encoded.data,
+        width,
+        height,
+        fmt_override=fmt_override,
+    )
 
     assert decoded is not None
     assert decoded.size == (width, height)
+
+
+def test_nano_7g_override_decode_uses_override_pixel_format() -> None:
+    fmt_override = resolve_cover_art_format_definitions("iPod Nano", "7th Gen")[1013]
+    img = Image.new("RGB", (fmt_override.width, fmt_override.height), (240, 16, 32))
+
+    encoded = encode_image_for_format(
+        img,
+        fmt_override.format_id,
+        fmt_override.width,
+        fmt_override.height,
+        fmt_override=fmt_override,
+    )
+    decoded = decode_pixels_for_format(
+        fmt_override.format_id,
+        encoded.data,
+        fmt_override.width,
+        fmt_override.height,
+        fmt_override=fmt_override,
+    )
+
+    assert decoded is not None
+    assert decoded.size == (fmt_override.width, fmt_override.height)
+    decoded_rgb = np.asarray(decoded.convert("RGB"), dtype=np.uint8)
+    assert int(decoded_rgb[0, 0, 0]) > 200

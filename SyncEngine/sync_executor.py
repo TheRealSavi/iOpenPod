@@ -785,7 +785,7 @@ class SyncExecutor:
 
         except Exception as e:
             ctx.result.errors.append(("database write", str(e)))
-            logger.error("Database write failed — mapping NOT saved to preserve consistency")
+            logger.exception("Database/post-write phase failed")
 
     def _merge_gui_playlists(self, ctx: _SyncContext) -> None:
         """Merge user-created playlists into ctx."""
