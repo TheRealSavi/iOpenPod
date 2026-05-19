@@ -48,6 +48,7 @@ from app_core.jobs import (
 )
 from app_core.runtime import (
     ThreadPoolSingleton,
+    build_album_list,
     same_device_path,
 )
 from app_core.sync_options import build_transcode_options
@@ -550,7 +551,7 @@ class MainWindow(QMainWindow):
             self._show_default_page()
 
         tracks = cache.get_tracks()
-        albums = cache.get_albums()
+        albums = build_album_list(cache)
         db_data = cache.get_data()
         classified = self._classify_tracks(tracks)
 

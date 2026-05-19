@@ -1546,6 +1546,10 @@ class SelectiveSyncBrowser(QWidget):
         # scans when the user switches folders.
         self._groups.clear()
 
+        from SyncEngine.unknown_metadata import apply_unknown_placeholders
+        apply_unknown_placeholders(buckets["music"])
+        apply_unknown_placeholders(buckets["music_video"])
+
         self._groups["Albums"] = self._build_music_albums(buckets["music"])
         self._groups["Artists"] = self._build_music_artists(buckets["music"])
         self._groups["Genres"] = self._build_music_genres(buckets["music"])

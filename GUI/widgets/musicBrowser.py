@@ -383,11 +383,11 @@ class MusicBrowser(QFrame):
             self.trackListTitleBar.resetColor()
 
         # Apply filter to track list
-        if filter_key and filter_value:
+        if filter_key is not None and filter_value is not None:
             self.browserTrack.applyFilter(item_data)
         elif category == "Albums":
             album = item_data.get("album") or title
-            artist = item_data.get("artist") or item_data.get("subtitle")
+            artist = item_data.get("artist") or ""
             self.browserTrack.filterByAlbum(album, artist)
         elif category == "Artists":
             self.browserTrack.filterByArtist(title)

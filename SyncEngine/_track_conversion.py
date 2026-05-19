@@ -5,9 +5,7 @@ flow control.  These are pure data-mapping functions with no side effects.
 """
 
 from pathlib import Path
-from typing import Optional
 
-from iTunesDB_Writer.mhit_writer import TrackInfo
 from iTunesDB_Shared.constants import (
     MEDIA_TYPE_AUDIO,
     MEDIA_TYPE_AUDIOBOOK,
@@ -17,6 +15,7 @@ from iTunesDB_Shared.constants import (
     MEDIA_TYPE_VIDEO,
     MEDIA_TYPE_VIDEO_PODCAST,
 )
+from iTunesDB_Writer.mhit_writer import TrackInfo
 
 # Filetype string → writer filetype code.  Checked in order; first
 # substring match wins.  Falls back to "mp3".
@@ -36,7 +35,6 @@ def track_dict_to_info(t: dict) -> TrackInfo:
         if needle in filetype:
             filetype_code = code
             break
-
     return TrackInfo(
         title=t.get("Title", "Unknown"),
         location=t.get("Location", ""),
@@ -92,6 +90,8 @@ def track_dict_to_info(t: dict) -> TrackInfo:
         db_track_id=t.get("db_track_id", t.get("db_id", 0)),
         media_type=t.get("media_type", 1),
         movie_file_flag=t.get("movie_flag", 0),
+        source_path=t.get("source_path") or t.get("Source Path"),
+        source_relative_path=t.get("source_relative_path") or t.get("Source Relative Path"),
         season_number=t.get("season_number", 0),
         episode_number=t.get("episode_number", 0),
         artwork_count=t.get("artwork_count", 0),
@@ -129,8 +129,8 @@ def pc_track_to_info(
     pc_track,
     ipod_location: str,
     was_transcoded: bool,
-    ipod_file_path: Optional[Path] = None,
-    existing_media_type: Optional[int] = None,
+    ipod_file_path: Path | None = None,
+    existing_media_type: int | None = None,
     transcode_options=None,
 ) -> TrackInfo:
     """Convert PCTrack to TrackInfo for writing.
@@ -173,7 +173,7 @@ def pc_track_to_info(
         source_ext = pc_track.extension.lower().lstrip(".")
         is_lossless_source = source_ext in ("flac", "wav", "aif", "aiff")
         if filetype == "m4a" and not is_lossless_source:
-            from .transcoder import resolve_transcode_plan, quality_to_nominal_bitrate
+            from .transcoder import quality_to_nominal_bitrate, resolve_transcode_plan
             plan = resolve_transcode_plan(pc_track.path)
             bitrate = quality_to_nominal_bitrate(plan.effective_quality)
         # Transcoded audio is capped at IPOD_MAX_SAMPLE_RATE; reflect that
@@ -237,7 +237,6 @@ def pc_track_to_info(
         from .transcoder import resolve_effective_encoder
         _target, _actual_encoder = resolve_effective_encoder(transcode_options)
         _is_manual = (transcode_options.lossy_encoder or "auto").lower() not in {"auto", ""}
-
         if filetype == "mp3":
             # encoder_flag=1 tells the iPod to look for a LAME gapless header.
             # libshine doesn't write one, so set 0 to avoid false gapless probing.
@@ -350,6 +349,8 @@ def pc_track_to_info(
         # Video fields
         media_type=media_type,
         movie_file_flag=movie_file_flag,
+        source_path=pc_track.path,
+        source_relative_path=pc_track.relative_path,
         season_number=pc_track.season_number or 0,
         episode_number=pc_track.episode_number or 0,
         show_name=pc_track.show_name,

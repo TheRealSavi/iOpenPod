@@ -17,7 +17,6 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +28,7 @@ except ImportError:
     logger.warning("mutagen not installed - art extraction disabled")
 
 
-def extract_art(file_path: str) -> Optional[bytes]:
+def extract_art(file_path: str) -> bytes | None:
     """
     Extract the first embedded album art image from a media file.
 
@@ -80,7 +79,7 @@ _FOLDER_ART_NAMES = (
 _IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp")
 
 
-def find_folder_art(file_path: str) -> Optional[str]:
+def find_folder_art(file_path: str) -> str | None:
     """Return the path of a folder artwork image next to *file_path*, or None."""
     directory = str(Path(file_path).parent)
     try:
@@ -95,7 +94,7 @@ def find_folder_art(file_path: str) -> Optional[str]:
     return None
 
 
-def extract_art_with_folder(file_path: str) -> Optional[bytes]:
+def extract_art_with_folder(file_path: str) -> bytes | None:
     """Like extract_art(), but falls back to folder artwork if no embedded art."""
     art = extract_art(file_path)
     if art is not None:
@@ -109,7 +108,7 @@ def extract_art_with_folder(file_path: str) -> Optional[bytes]:
     return None
 
 
-def _extract_mp3(path: str) -> Optional[bytes]:
+def _extract_mp3(path: str) -> bytes | None:
     """Extract art from MP3 (ID3v2 APIC frames)."""
     from mutagen.mp3 import MP3
 
@@ -126,7 +125,7 @@ def _extract_mp3(path: str) -> Optional[bytes]:
     return None
 
 
-def _extract_mp4(path: str) -> Optional[bytes]:
+def _extract_mp4(path: str) -> bytes | None:
     """Extract art from M4A/AAC (covr atom)."""
     from mutagen.mp4 import MP4
 
@@ -140,7 +139,7 @@ def _extract_mp4(path: str) -> Optional[bytes]:
     return None
 
 
-def _extract_flac(path: str) -> Optional[bytes]:
+def _extract_flac(path: str) -> bytes | None:
     """Extract art from FLAC (picture blocks)."""
     from mutagen.flac import FLAC
 
@@ -150,7 +149,7 @@ def _extract_flac(path: str) -> Optional[bytes]:
     return None
 
 
-def _extract_ogg(path: str) -> Optional[bytes]:
+def _extract_ogg(path: str) -> bytes | None:
     """Extract art from Ogg Vorbis (METADATA_BLOCK_PICTURE)."""
     from mutagen.oggvorbis import OggVorbis
 
@@ -158,7 +157,7 @@ def _extract_ogg(path: str) -> Optional[bytes]:
     return _extract_vorbis_picture(audio)
 
 
-def _extract_opus(path: str) -> Optional[bytes]:
+def _extract_opus(path: str) -> bytes | None:
     """Extract art from Opus (METADATA_BLOCK_PICTURE)."""
     from mutagen.oggopus import OggOpus
 
@@ -166,7 +165,7 @@ def _extract_opus(path: str) -> Optional[bytes]:
     return _extract_vorbis_picture(audio)
 
 
-def _extract_vorbis_picture(audio) -> Optional[bytes]:
+def _extract_vorbis_picture(audio) -> bytes | None:
     """Extract art from Vorbis comment METADATA_BLOCK_PICTURE."""
     import base64
 
@@ -181,7 +180,7 @@ def _extract_vorbis_picture(audio) -> Optional[bytes]:
     return None
 
 
-def _extract_aiff(path: str) -> Optional[bytes]:
+def _extract_aiff(path: str) -> bytes | None:
     """Extract art from AIFF (ID3v2 APIC frames)."""
     from mutagen.aiff import AIFF
 
@@ -194,7 +193,7 @@ def _extract_aiff(path: str) -> Optional[bytes]:
     return None
 
 
-def _extract_generic(path: str) -> Optional[bytes]:
+def _extract_generic(path: str) -> bytes | None:
     """Try generic mutagen extraction."""
     audio = mutagen.File(path)  # type: ignore[union-attr]
     if audio is None or audio.tags is None:
@@ -215,7 +214,7 @@ def _extract_generic(path: str) -> Optional[bytes]:
     return None
 
 
-def _find_ffmpeg() -> Optional[str]:
+def _find_ffmpeg() -> str | None:
     """Locate ffmpeg binary."""
     # Check SyncEngine's finder first (respects bundled ffmpeg)
     try:
@@ -228,7 +227,7 @@ def _find_ffmpeg() -> Optional[str]:
     return shutil.which("ffmpeg")
 
 
-def _extract_video_frame(file_path: str) -> Optional[bytes]:
+def _extract_video_frame(file_path: str) -> bytes | None:
     """Extract a thumbnail frame from a video file using ffmpeg.
 
     Seeks to 10% of the duration (or 5 seconds if duration unknown) and

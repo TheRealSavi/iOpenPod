@@ -15,6 +15,16 @@ from .services import DeviceInfoLike, LibraryCacheLike
 logger = logging.getLogger(__name__)
 
 
+def _is_music_browser_track(track: dict) -> bool:
+    """Return whether a track belongs in the music browser indexes."""
+
+    try:
+        media_type = int(track.get("media_type", 1) or 0)
+    except (TypeError, ValueError):
+        media_type = 1
+    return media_type == 0 or bool(media_type & 0x01)
+
+
 def same_device_path(left: str | None, right: str | None) -> bool:
     """Compare device paths using platform-normalized absolute paths."""
 
@@ -721,8 +731,7 @@ class iTunesDBCache(QObject):
             if track_id is not None:
                 track_id_index[track_id] = track
 
-            media_type = track.get("media_type", 1)
-            if media_type != 0 and not (media_type & 0x01):
+            if not _is_music_browser_track(track):
                 continue
 
             album = track.get("Album", "Unknown Album")
@@ -831,14 +840,24 @@ def build_album_list(cache: LibraryCacheLike) -> list:
     albums = cache.get_albums()
     album_index = cache.get_album_index()
     album_only_index = cache.get_album_only_index()
+    all_tracks = cache.get_tracks()
 
     items = []
     for album_entry in albums:
-        artist = album_entry.get("Artist (Used by Album Item)")
-        album = album_entry.get("Album (Used by Album Item)", "Unknown Album")
+        artist = album_entry.get("Artist (Used by Album Item)") or ""
+        album = album_entry.get("Album (Used by Album Item)") or ""
+        album_id = album_entry.get("album_id")
+        if album_id is None:
+            album_id = album_entry.get("Album ID")
 
         matching_tracks = []
-        if artist:
+        if album_id is not None:
+            matching_tracks = [
+                track
+                for track in all_tracks
+                if track.get("album_id") == album_id and _is_music_browser_track(track)
+            ]
+        elif artist:
             matching_tracks = album_index.get((album, artist), [])
 
         if not matching_tracks:
@@ -846,11 +865,9 @@ def build_album_list(cache: LibraryCacheLike) -> list:
             if matching_tracks and not artist:
                 artist = (
                     matching_tracks[0].get("Album Artist")
-                    or matching_tracks[0].get("Artist", "Unknown Artist")
+                    or matching_tracks[0].get("Artist")
+                    or ""
                 )
-
-        if not artist:
-            artist = "Unknown Artist"
 
         artwork_id_ref = None
         track_count = len(matching_tracks)
@@ -869,13 +886,16 @@ def build_album_list(cache: LibraryCacheLike) -> list:
             )
             total_length_ms = sum(track.get("length", 0) for track in matching_tracks)
 
-        subtitle_parts = [artist]
+        subtitle_parts = [artist] if artist else []
         if year and year > 0:
             subtitle_parts.append(str(year))
         subtitle_parts.append(f"{track_count} tracks")
 
         if track_count == 0:
             continue
+
+        filter_key = "album_id" if album_id is not None else "Album"
+        filter_value = album_id if album_id is not None else album
 
         items.append(
             {
@@ -886,8 +906,8 @@ def build_album_list(cache: LibraryCacheLike) -> list:
                 "year": year,
                 "artwork_id_ref": artwork_id_ref,
                 "category": "Albums",
-                "filter_key": "Album",
-                "filter_value": album,
+                "filter_key": filter_key,
+                "filter_value": filter_value,
                 "track_count": track_count,
                 "total_length_ms": total_length_ms,
             }

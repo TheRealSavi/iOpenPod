@@ -57,3 +57,9 @@ def test_scan_skips_appledouble_sidecars(tmp_path, monkeypatch):
     tracks = list(PCLibrary(tmp_path).scan(include_video=False))
 
     assert [track.filename for track in tracks] == ["track.mp3"]
+
+
+def test_metadata_text_falls_back_for_none_and_blank_values() -> None:
+    assert pc_library_module.PCLibrary._metadata_text({"title": None}, "title", "fallback") == "fallback"
+    assert pc_library_module.PCLibrary._metadata_text({"title": "   "}, "title", "fallback") == "fallback"
+    assert pc_library_module.PCLibrary._metadata_text({"title": " Song "}, "title", "fallback") == "Song"

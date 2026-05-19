@@ -27,20 +27,19 @@ Rating strategy: last-write-wins (NOT average).
 Play counts: additive (iPod→PC).
 """
 
-from dataclasses import dataclass, field
-from typing import Optional, Callable
-from enum import Enum, auto
-from pathlib import Path
 import logging
 import re
 import threading
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, field
+from enum import Enum, auto
+from pathlib import Path
 
-from .pc_library import PCLibrary, PCTrack
 from .audio_fingerprint import get_or_compute_fingerprint, is_fpcalc_available
-from .mapping import MappingManager, MappingFile, TrackMapping
 from .integrity import IntegrityReport
-from .transcoder import TranscodeOptions, resolve_transcode_plan
+from .mapping import MappingFile, MappingManager, TrackMapping
+from .pc_library import PCLibrary, PCTrack
 from .photos import (
     PCPhotoLibrary,
     PhotoEditState,
@@ -49,6 +48,7 @@ from .photos import (
     read_photo_db,
     scan_pc_photos,
 )
+from .transcoder import TranscodeOptions, resolve_transcode_plan
 
 logger = logging.getLogger(__name__)
 
@@ -95,18 +95,18 @@ class SyncItem:
     """A single item in the sync plan."""
 
     action: SyncAction
-    fingerprint: Optional[str] = None
+    fingerprint: str | None = None
 
     # For ADD/UPDATE actions — the source PC track
-    pc_track: Optional[PCTrack] = None
+    pc_track: PCTrack | None = None
 
     # For ADD/UPDATE actions — estimated size after transcode (bytes)
     # Set when the item is created; used for accurate storage estimates in UI
-    estimated_size: Optional[int] = None
+    estimated_size: int | None = None
 
     # For REMOVE/matched actions — iPod-side info
-    db_track_id: Optional[int] = None
-    ipod_track: Optional[dict] = None
+    db_track_id: int | None = None
+    ipod_track: dict | None = None
 
     # For UPDATE_METADATA: which fields changed  {field: (pc_val, ipod_val)}
     metadata_changes: dict = field(default_factory=dict)
@@ -122,19 +122,19 @@ class SyncItem:
     rating_strategy: str = ""  # e.g. "ipod_wins", "pc_wins", "highest", etc.
 
     # For UPDATE_ARTWORK
-    old_art_hash: Optional[str] = None
-    new_art_hash: Optional[str] = None
+    old_art_hash: str | None = None
+    new_art_hash: str | None = None
 
     # Human-readable description
     description: str = ""
 
     @property
-    def db_id(self) -> Optional[int]:
+    def db_id(self) -> int | None:
         """Backward-compatible alias for the iPod track persistent ID."""
         return self.db_track_id
 
     @db_id.setter
-    def db_id(self, value: Optional[int]) -> None:
+    def db_id(self, value: int | None) -> None:
         self.db_track_id = value
 
 
@@ -381,11 +381,20 @@ _WRITER_DEFAULTS: dict[str, int | str] = {
 }
 
 # Fields where a falsy/absent PC value must NOT overwrite a truthy iPod value.
-# Compilation is set intentionally by the user; if the PC file lacks the tag
-# (TCMP/cpil absent → defaults to 0), that absence should not strip the flag
-# from the iPod.  The flag can only be promoted (0→1) by an explicit PC tag,
-# never demoted (1→0) by an absent one.
-_PC_ABSENT_PRESERVES_IPOD: frozenset[str] = frozenset({"compilation"})
+# Compilation and Sound Check are only authoritative when explicitly present;
+# absent tags often scan as 0 and should not strip iPod-side values.
+_PC_ABSENT_PRESERVES_IPOD: frozenset[str] = frozenset({"compilation", "sound_check"})
+
+# Scanner defaults are not real tags.  They should not demote better metadata
+# already on the iPod, including folder-derived placeholders from a previous
+# write.  Real user-provided values still win normally.
+_PC_DEFAULT_TEXT_BY_FIELD: dict[str, tuple[str, ...]] = {
+    "title": ("unknown", "unknown title"),
+    "artist": ("unknown artist",),
+    "album": ("unknown album",),
+    "album_artist": ("unknown artist", "unknown album artist"),
+    "genre": ("unknown genre",),
+}
 
 # NOTE: media_type is intentionally NOT in METADATA_FIELDS to prevent it from
 # being compared or updated during UPDATE_METADATA operations.  The media_type
@@ -431,15 +440,15 @@ class FingerprintDiffEngine:
     def compute_diff(
         self,
         ipod_tracks: list[dict],
-        progress_callback: Optional[Callable[[str, int, int, str], None]] = None,
+        progress_callback: Callable[[str, int, int, str], None] | None = None,
         write_fingerprints: bool = True,
-        is_cancelled: Optional[Callable[[], bool]] = None,
+        is_cancelled: Callable[[], bool] | None = None,
         *,
-        track_edits: Optional[dict[int, dict[str, tuple]]] = None,
-        photo_edits: Optional[PhotoEditState] = None,
+        track_edits: dict[int, dict[str, tuple]] | None = None,
+        photo_edits: PhotoEditState | None = None,
         sync_workers: int = 0,
         rating_strategy: str = "ipod_wins",
-        allowed_paths: Optional[frozenset[str]] = None,
+        allowed_paths: frozenset[str] | None = None,
     ) -> SyncPlan:
         """
         Compute the full sync plan.
@@ -583,7 +592,7 @@ class FingerprintDiffEngine:
         completed_lock = threading.Lock()
         total = len(pc_tracks)
 
-        def _fingerprint_one(track: PCTrack) -> tuple[PCTrack, Optional[str]]:
+        def _fingerprint_one(track: PCTrack) -> tuple[PCTrack, str | None]:
             fp = get_or_compute_fingerprint(
                 track.path,
                 fpcalc_path=self.fpcalc_path,
@@ -1009,7 +1018,7 @@ class FingerprintDiffEngine:
         for item in plan.to_remove:
             if item.db_track_id:
                 accounted_db_track_ids.add(item.db_track_id)
-        for fp, db_track_id in plan._stale_mapping_entries:
+        for _fp, db_track_id in plan._stale_mapping_entries:
             accounted_db_track_ids.add(db_track_id)
 
         for db_track_id, ipod_track in ipod_by_db_track_id.items():
@@ -1190,8 +1199,8 @@ class FingerprintDiffEngine:
         self,
         pc_track: PCTrack,
         entries: list[TrackMapping],
-        ipod_by_db_track_id: Optional[dict] = None,
-    ) -> Optional[TrackMapping]:
+        ipod_by_db_track_id: dict | None = None,
+    ) -> TrackMapping | None:
         """
         Resolve a fingerprint collision (multiple mapping entries).
 
@@ -1252,8 +1261,8 @@ class FingerprintDiffEngine:
         ipod_by_db_track_id: dict[int, dict],
         pc_by_fp: dict[str, list[PCTrack]],
         *,
-        progress_callback: Optional[Callable[[str, int, int, str], None]] = None,
-        is_cancelled: Optional[Callable[[], bool]] = None,
+        progress_callback: Callable[[str, int, int, str], None] | None = None,
+        is_cancelled: Callable[[], bool] | None = None,
     ) -> tuple[int, int, set[int]]:
         """Seed mapping entries by fingerprinting unmapped iPod tracks.
 
@@ -1286,7 +1295,7 @@ class FingerprintDiffEngine:
         skipped_no_path = 0
         skipped_no_fp = 0
         skipped_no_pc_match = 0
-        sample_no_match_fp: Optional[str] = None
+        sample_no_match_fp: str | None = None
         for index, (db_track_id, ipod_track) in enumerate(bootstrap_candidates, start=1):
             if is_cancelled and is_cancelled():
                 break
@@ -1367,7 +1376,7 @@ class FingerprintDiffEngine:
 
         return added, total, protected_db_track_ids
 
-    def _ipod_track_file_path(self, ipod_track: dict) -> Optional[Path]:
+    def _ipod_track_file_path(self, ipod_track: dict) -> Path | None:
         """Resolve a track Location field to an on-disk path on the iPod.
 
         Supports:
@@ -1417,8 +1426,8 @@ class FingerprintDiffEngine:
         ipod_track: dict,
         pc_candidates: list[PCTrack],
         *,
-        used_paths: Optional[set[str]] = None,
-    ) -> Optional[PCTrack]:
+        used_paths: set[str] | None = None,
+    ) -> PCTrack | None:
         """Pick one PC candidate for a matched iPod fingerprint.
 
         Uses score-based disambiguation and deterministic tie-breaking.
@@ -1456,7 +1465,7 @@ class FingerprintDiffEngine:
         return scored[0][2]
 
     @staticmethod
-    def _norm_text(value: Optional[str]) -> str:
+    def _norm_text(value: str | None) -> str:
         """Normalize text for robust metadata comparison."""
         if not value:
             return ""
@@ -1527,6 +1536,21 @@ class FingerprintDiffEngine:
         except OSError:
             return pc_track.size, pc_track.mtime
 
+    @staticmethod
+    def _metadata_has_value(value) -> bool:
+        if value is None:
+            return False
+        if isinstance(value, str):
+            return bool(value.strip())
+        return bool(value)
+
+    @staticmethod
+    def _is_pc_default_text(pc_field: str, value) -> bool:
+        if not isinstance(value, str):
+            return False
+        text = value.strip().casefold()
+        return text in _PC_DEFAULT_TEXT_BY_FIELD.get(pc_field, ())
+
     def _compare_metadata(self, pc_track: PCTrack, ipod_track: dict) -> dict:
         """Compare metadata between PC and iPod track.
 
@@ -1554,6 +1578,15 @@ class FingerprintDiffEngine:
                 continue
             if pc_value == 0 and ipod_value == "":
                 continue
+
+            # Missing/default PC metadata should not erase a better value that
+            # already exists on the iPod.  This keeps a second sync from
+            # replacing folder-derived names with scanner defaults.
+            if self._metadata_has_value(ipod_value):
+                if pc_value == "":
+                    continue
+                if self._is_pc_default_text(pc_field, pc_value):
+                    continue
 
             # If PC is empty and iPod has the writer default for this field,
             # it's not a real change — the writer just filled in the default.

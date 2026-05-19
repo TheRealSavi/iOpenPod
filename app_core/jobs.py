@@ -588,6 +588,8 @@ class BackSyncWorker(QThread):
         super().__init__()
         self._request = request
         self._artwork_provider = artwork_provider
+        from SyncEngine.unknown_metadata import UnknownMetadataRegistry
+        self._unknown_registry = UnknownMetadataRegistry()
 
     @staticmethod
     def _short_label(value: str, limit: int = 72) -> str:
@@ -848,6 +850,10 @@ class BackSyncWorker(QThread):
         track: dict,
         src_path: Path,
     ) -> Path:
+        from SyncEngine.unknown_metadata import apply_unknown_placeholders_to_mapping
+
+        apply_unknown_placeholders_to_mapping(track, self._unknown_registry)
+
         artist = self._safe_component(
             track.get("Artist", "Unknown Artist"),
             "Unknown Artist",
@@ -896,6 +902,10 @@ class BackSyncWorker(QThread):
         track: dict,
         art_bytes: bytes | None,
     ) -> tuple[bool, bool]:
+        from SyncEngine.unknown_metadata import apply_unknown_placeholders_to_mapping
+
+        apply_unknown_placeholders_to_mapping(track, self._unknown_registry)
+
         ext = file_path.suffix.lower()
         wrote_meta = False
         wrote_art = False

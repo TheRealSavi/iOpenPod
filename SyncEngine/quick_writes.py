@@ -442,6 +442,9 @@ def _write_tracks_and_playlists(
     user_playlists: list[dict],
     master_playlist_name: str | None = None,
 ) -> bool:
+    from .unknown_metadata import apply_unknown_placeholders
+
+    apply_unknown_placeholders(all_tracks)
     current_master_name, playlists, smart_playlists = _evaluate_tracks_and_playlists(
         tracks_data=tracks_data,
         playlists_raw=playlists_raw,

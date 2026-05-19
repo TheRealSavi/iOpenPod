@@ -188,8 +188,8 @@ class MusicBrowserGrid(PooledCardGrid):
     @classmethod
     def _build_record(cls, item: dict[str, Any]) -> GridRecord:
         source = dict(item)
-        title = source.get("title") or source.get("album", "Unknown")
-        subtitle = source.get("subtitle") or source.get("artist", "")
+        title = source.get("title") or source.get("album") or ""
+        subtitle = source.get("subtitle") or source.get("artist") or ""
         artwork_id = source.get("artwork_id_ref")
         artwork_key = source.get("_grid_art_key", artwork_id)
 

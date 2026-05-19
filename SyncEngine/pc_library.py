@@ -660,10 +660,10 @@ class PCLibrary:
             extension=ext,
             mtime=stat.st_mtime,
             size=stat.st_size,
-            title=metadata.get("title", file_path.stem),
-            artist=metadata.get("artist", "Unknown Artist"),
-            album=metadata.get("album", "Unknown Album"),
-            album_artist=metadata.get("album_artist"),
+            title=self._metadata_text(metadata, "title", file_path.stem) or file_path.stem,
+            artist=self._metadata_text(metadata, "artist", "Unknown Artist") or "Unknown Artist",
+            album=self._metadata_text(metadata, "album", "Unknown Album") or "Unknown Album",
+            album_artist=self._metadata_text(metadata, "album_artist"),
             genre=metadata.get("genre"),
             year=metadata.get("year"),
             track_number=metadata.get("track_number"),
@@ -713,6 +713,14 @@ class PCLibrary:
             podcast_url=metadata.get("podcast_url"),
             chapters=chapters,
         )
+
+    @staticmethod
+    def _metadata_text(metadata: dict, key: str, fallback: str | None = None) -> str | None:
+        value = metadata.get(key)
+        if value is None:
+            return fallback
+        text = str(value).strip()
+        return text or fallback
 
     def _compute_art_hash(self, file_path: Path) -> str | None:
         """Compute MD5 hash of album art (embedded or folder image) for change detection."""

@@ -696,6 +696,9 @@ class SyncExecutor:
             if not t.db_track_id:
                 t.db_track_id = generate_db_track_id()
 
+        from .unknown_metadata import apply_unknown_placeholders
+        apply_unknown_placeholders(all_tracks)
+
         # ── Auto-detect gapless_album_flag ────────────────────────
         albums: dict[tuple[str, str], list[TrackInfo]] = defaultdict(list)
         for t in all_tracks:

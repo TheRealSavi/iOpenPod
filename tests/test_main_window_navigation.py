@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from typing import Any, cast
 
 from GUI.app import MainWindow
 
@@ -41,6 +42,12 @@ class _FakeCache:
 
     def get_albums(self) -> list:
         return []
+
+    def get_album_index(self) -> dict:
+        return {}
+
+    def get_album_only_index(self) -> dict:
+        return {}
 
     def get_data(self) -> dict:
         return {}
@@ -95,6 +102,10 @@ def _build_window_for_data_ready(
     return window
 
 
+def _call_on_data_ready(window: object) -> None:
+    MainWindow.onDataReady(cast(Any, window))
+
+
 def test_post_sync_rescan_refreshes_library_without_leaving_results():
     window = _build_window_for_data_ready(sync_results_visible=True)
     window._keep_sync_results_visible_after_rescan = True
@@ -104,7 +115,7 @@ def test_post_sync_rescan_refreshes_library_without_leaving_results():
         lambda restore_page=0: scheduled_rebuild_pages.append(restore_page)
     )
 
-    MainWindow.onDataReady(window)
+    _call_on_data_ready(window)
 
     assert window.centralStack.set_indices == []
     assert window.mainContentStack.set_indices == [0]
@@ -120,7 +131,7 @@ def test_data_ready_preserves_settings_page():
     window._keep_sync_results_visible_after_rescan = False
     window._apply_match_ipod_accent = lambda dev: False
 
-    MainWindow.onDataReady(window)
+    _call_on_data_ready(window)
 
     assert window.centralStack.set_indices == []
     assert window.mainContentStack.set_indices == [0]
@@ -135,7 +146,7 @@ def test_data_ready_updates_main_page_when_main_page_is_visible():
     window._keep_sync_results_visible_after_rescan = False
     window._apply_match_ipod_accent = lambda dev: False
 
-    MainWindow.onDataReady(window)
+    _call_on_data_ready(window)
 
     assert window.centralStack.set_indices == [0]
     assert window.mainContentStack.set_indices == [0]

@@ -1064,7 +1064,7 @@ class MusicBrowserList(QFrame):
         filter_key = filter_data.get("filter_key")
         filter_value = filter_data.get("filter_value")
 
-        if filter_key and filter_value:
+        if filter_key is not None and filter_value is not None:
             self._current_filter = filter_data
             self._tracks = [t for t in self._all_tracks if t.get(filter_key) == filter_value]
             self._setup_columns()

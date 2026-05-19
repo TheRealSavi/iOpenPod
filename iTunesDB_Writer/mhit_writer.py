@@ -126,6 +126,8 @@ class TrackInfo:
     artwork_size: int = 0
     mhii_link: int = 0  # Link to ArtworkDB
     album_id: int = 0  # Links to MHIA album entry
+    source_path: str | None = None  # PC source path; internal write-time helper context
+    source_relative_path: str | None = None  # PC path relative to library root, if known
 
     # Sorting
     sort_artist: str | None = None
