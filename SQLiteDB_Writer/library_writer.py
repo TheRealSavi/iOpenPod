@@ -7,14 +7,16 @@ Schema matches real iTunes-written databases on iPod Nano 6G.
 Reference: libgpod itdb_sqlite.c mk_Library()
 """
 
-import time
 import logging
-from typing import Optional
+import time
 
-from iTunesDB_Writer.mhit_writer import TrackInfo
 from iTunesDB_Shared.field_base import strip_article
+from iTunesDB_Writer.mhit_writer import TrackInfo
 from iTunesDB_Writer.mhyp_writer import PlaylistInfo
-from ._helpers import s64 as _s64, unix_to_coredata as _unix_to_coredata, open_db
+
+from ._helpers import open_db
+from ._helpers import s64 as _s64
+from ._helpers import unix_to_coredata as _unix_to_coredata
 
 logger = logging.getLogger(__name__)
 
@@ -504,7 +506,7 @@ CREATE INDEX IF NOT EXISTS item_to_container_physical_order_idx ON item_to_conta
 """
 
 
-def _sort_key(name: Optional[str]) -> str:
+def _sort_key(name: str | None) -> str:
     """Generate a collation key for sorting.
 
     Uses the article-stripped form, lowercased for case-insensitive sort.
@@ -552,7 +554,7 @@ def _compute_sort_orders(tracks: list[TrackInfo]) -> dict:
     return orders
 
 
-def _lookup_order(orders: dict, order_type: str, value: Optional[str]) -> int:
+def _lookup_order(orders: dict, order_type: str, value: str | None) -> int:
     """Look up the sort order rank for a value.  Returns 100 if not found."""
     if not value:
         return 100
@@ -563,8 +565,8 @@ def _lookup_order(orders: dict, order_type: str, value: Optional[str]) -> int:
 def write_library_itdb(
     path: str,
     tracks: list[TrackInfo],
-    playlists: Optional[list[PlaylistInfo]] = None,
-    smart_playlists: Optional[list[PlaylistInfo]] = None,
+    playlists: list[PlaylistInfo] | None = None,
+    smart_playlists: list[PlaylistInfo] | None = None,
     master_playlist_name: str = "iPod",
     db_pid: int = 0,
     tz_offset: int = 0,
@@ -662,7 +664,7 @@ def write_library_itdb(
             album_key = (track.album or "", aa)
             genre_artists.setdefault(g, set()).add(aa)
             genre_albums.setdefault(g, set()).add(album_key)
-            if track.compilation:
+            if track.compilation_flag:
                 genre_comp_albums.setdefault(g, set()).add(album_key)
 
         for genre_name, gid in genre_map.items():
@@ -732,7 +734,7 @@ def write_library_itdb(
             album_artist_name = track.album_artist or track.artist or ""
             key = (album_name, album_artist_name)
             album_item_counts[key] = album_item_counts.get(key, 0) + 1
-            if track.compilation:
+            if track.compilation_flag:
                 album_has_compilation[key] = True
             # Store album artist pid
             aa = track.album_artist or track.artist or ""
@@ -975,7 +977,7 @@ def write_library_itdb(
                     *_media_kind_flags(media_kind),
                     date_mod, track.year,
                     track.explicit_flag,
-                    1 if track.compilation else 0, 1 if track.checked else 0,
+                    1 if track.compilation_flag else 0, 1 if track.checked_flag else 0,
                     1 if track.remember_position else 0, 1 if track.skip_when_shuffling else 0,
                     1 if track.gapless_album_flag else 0,
                     art_status, art_cache_id,

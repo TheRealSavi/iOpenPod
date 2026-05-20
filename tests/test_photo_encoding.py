@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from PIL import Image
 
 import SyncEngine.photos as photos
@@ -114,3 +116,30 @@ def test_photo_decoder_passes_current_device_format_override(tmp_path, monkeypat
         "payload": b"\x00" * 8,
         "fmt_override": fmt,
     }
+
+
+def test_scan_pc_photos_records_decompression_bomb_with_source_path(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    bomb = Image.DecompressionBombError(
+        "Image size (200000000 pixels) exceeds limit of 178956970 pixels, could be decompression bomb DOS attack.",
+    )
+    image_path = tmp_path / "Booklet Scan.tif"
+    image_path.write_bytes(b"fake")
+
+    def fake_load(_path):
+        raise bomb
+
+    monkeypatch.setattr(photos, "_load_pil_still_image", fake_load)
+
+    library = photos.scan_pc_photos(tmp_path)
+
+    assert library.skipped == [(
+        str(image_path),
+        (
+            "Image size (200000000 pixels) exceeds limit of 178956970 pixels, "
+            "could be decompression bomb DOS attack. "
+            f"Offending image: {image_path}"
+        ),
+    )]

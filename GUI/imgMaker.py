@@ -31,6 +31,7 @@ import logging
 import os
 import threading
 from collections import OrderedDict
+from dataclasses import dataclass
 from typing import Any, Literal, overload
 
 import numpy as np
@@ -59,6 +60,30 @@ _IMAGE_CACHE_MAX = 500
 ArtworkColors = dict[str, tuple[int, int, int]]
 ArtworkResult = tuple[Image.Image, tuple[int, int, int], ArtworkColors]
 ArtworkMode = Literal["image_only", "with_colors", "cache_only"]
+ArtworkMetadataRows = tuple[tuple[str, str], ...]
+
+
+@dataclass(frozen=True)
+class ArtworkFormatPreview:
+    format_id: int
+    label: str
+    description: str
+    width: int
+    height: int
+    pixel_format: str
+    size: int
+    filename: str
+    offset: int
+    image: Image.Image
+    metadata: ArtworkMetadataRows = ()
+
+
+@dataclass(frozen=True)
+class TrackArtworkPreview:
+    img_id: int
+    song_id: int
+    variants: tuple[ArtworkFormatPreview, ...]
+    metadata: ArtworkMetadataRows = ()
 
 _image_cache: OrderedDict[int, ArtworkResult] = OrderedDict()
 _image_cache_lock = threading.Lock()
@@ -182,6 +207,59 @@ def get_artwork(
     return _find_artwork_result(artworkdb_data, artwork_folder_path, int(img_id), img_id_index)
 
 
+def get_track_artwork_previews(
+    tracks: dict[str, Any] | list[dict[str, Any]],
+    *,
+    artworkdb_data: dict[str, Any] | None = None,
+    artwork_folder_path: str | None = None,
+    img_id_index: dict[int, dict[str, Any]] | None = None,
+) -> list[TrackArtworkPreview]:
+    """Decode every assigned artwork entry and every available format variant."""
+    if isinstance(tracks, dict):
+        track_list = [tracks]
+    else:
+        track_list = tracks
+
+    if artworkdb_data is None:
+        artworkdb_data = _artworkdb_cache
+    if artwork_folder_path is None:
+        artwork_folder_path = _artwork_folder_cache
+    if artworkdb_data is None or not artwork_folder_path:
+        return []
+    if img_id_index is None:
+        img_id_index = _img_id_index or _build_img_id_index(artworkdb_data)
+
+    entries: list[dict[str, Any]] = []
+    seen_img_ids: set[int] = set()
+    for track in track_list:
+        for entry in _entries_for_track_artwork(track, artworkdb_data, img_id_index):
+            img_id = entry.get("img_id")
+            if img_id is None:
+                continue
+            try:
+                img_id_int = int(img_id)
+            except (TypeError, ValueError):
+                continue
+            if img_id_int in seen_img_ids:
+                continue
+            seen_img_ids.add(img_id_int)
+            entries.append(entry)
+
+    previews: list[TrackArtworkPreview] = []
+    for entry in entries:
+        variants = _decode_entry_format_previews(entry, artwork_folder_path)
+        if variants:
+            previews.append(
+                TrackArtworkPreview(
+                    img_id=int(entry.get("img_id") or 0),
+                    song_id=int(entry.get("songId") or entry.get("song_id") or 0),
+                    variants=tuple(variants),
+                    metadata=_artwork_entry_metadata(entry),
+                )
+            )
+    return previews
+
+
 def get_artwork_colors(image: Image.Image):
     """Return (dominant_color, album_colors) for an image."""
     dcol = getDominantColor(image)
@@ -211,6 +289,121 @@ def _build_img_id_index(artworkdb_data):
         if img_id is not None:
             index[img_id] = entry
     return index
+
+
+def _track_artwork_refs(track: dict[str, Any]) -> list[int]:
+    refs: list[int] = []
+    for key in ("artwork_id_ref", "mhii_link", "mhiiLink"):
+        value = track.get(key)
+        if value in (None, "", 0):
+            continue
+        try:
+            refs.append(int(value))
+        except (TypeError, ValueError):
+            continue
+    return refs
+
+
+def _entries_for_track_artwork(
+    track: dict[str, Any],
+    artworkdb_data: dict[str, Any],
+    img_id_index: dict[int, dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    seen_img_ids: set[int] = set()
+
+    def add_entry(entry: dict[str, Any] | None) -> None:
+        if not isinstance(entry, dict):
+            return
+        raw_img_id = entry.get("img_id")
+        if raw_img_id is None:
+            return
+        try:
+            img_id = int(raw_img_id)
+        except (TypeError, ValueError):
+            return
+        if img_id in seen_img_ids:
+            return
+        seen_img_ids.add(img_id)
+        entries.append(entry)
+
+    if img_id_index is not None:
+        for ref in _track_artwork_refs(track):
+            add_entry(img_id_index.get(ref))
+    else:
+        refs = set(_track_artwork_refs(track))
+        for entry in artworkdb_data.get("mhli", []):
+            raw_img_id = entry.get("img_id")
+            if raw_img_id is None:
+                continue
+            try:
+                if int(raw_img_id) in refs:
+                    add_entry(entry)
+            except (TypeError, ValueError):
+                continue
+
+    track_ids: set[int] = set()
+    for key in ("db_track_id", "track_id"):
+        value = track.get(key)
+        if value in (None, "", 0):
+            continue
+        try:
+            track_ids.add(int(value))
+        except (TypeError, ValueError):
+            continue
+
+    if track_ids:
+        for entry in artworkdb_data.get("mhli", []):
+            try:
+                song_id = int(entry.get("songId") or entry.get("song_id") or 0)
+            except (TypeError, ValueError):
+                continue
+            if song_id in track_ids:
+                add_entry(entry)
+
+    return entries
+
+
+def _metadata_value_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.hex()
+    if isinstance(value, (str, int, float, bool)):
+        return str(value)
+    return repr(value)
+
+
+def _flatten_metadata(value: Any, prefix: str = "") -> ArtworkMetadataRows:
+    rows: list[tuple[str, str]] = []
+
+    def visit(current: Any, path: str) -> None:
+        if isinstance(current, dict):
+            for key, child in current.items():
+                child_path = f"{path}.{key}" if path else str(key)
+                visit(child, child_path)
+            return
+        if isinstance(current, (list, tuple)):
+            if not current:
+                rows.append((path, "[]"))
+                return
+            for index, child in enumerate(current):
+                visit(child, f"{path}[{index}]")
+            return
+        rows.append((path, _metadata_value_text(current)))
+
+    visit(value, prefix)
+    return tuple((key, val) for key, val in rows if key)
+
+
+def _artwork_entry_metadata(entry: dict[str, Any]) -> ArtworkMetadataRows:
+    container_keys = {"_image_containers", "Thumbnail Image", "Full Res Image", "UNK MHOD 6"}
+    entry_fields = {
+        key: value
+        for key, value in entry.items()
+        if key not in container_keys
+    }
+    return _flatten_metadata(entry_fields)
 
 
 def get_artworkdb_cached(artworkdb_path):
@@ -602,31 +795,118 @@ def getAlbumColors(image, bg=None):
     return {"bg": bg, "text": text, "text_secondary": text_secondary}
 
 
+def _image_result_from_container(container: dict[str, Any]) -> dict[str, Any] | None:
+    container_name = None
+    for name in ("Full Res Image", "Thumbnail Image", "UNK MHOD 6"):
+        if name in container:
+            container_name = name
+            break
+    if container_name is None:
+        return None
+
+    child = container.get(container_name)
+    if not isinstance(child, dict):
+        return None
+
+    result = child.get("result")
+    return result if isinstance(result, dict) else None
+
+
 def _iter_entry_image_candidates(entry):
     """Yield parsed MHNI results for all usable image containers on an entry."""
+    containers = entry.get("_image_containers")
+    if isinstance(containers, list):
+        for container in containers:
+            if not isinstance(container, dict):
+                continue
+            result = _image_result_from_container(container)
+            if result is None:
+                continue
+            yield from _iter_image_result_candidate(result, container)
+        return
+
     for container_name in ("Full Res Image", "Thumbnail Image", "UNK MHOD 6"):
         container = entry.get(container_name)
         if not isinstance(container, dict):
             continue
+        result = _image_result_from_container(container)
+        if result is None:
+            continue
+        yield from _iter_image_result_candidate(result, container)
 
-        child = container.get(container_name)
-        if not isinstance(child, dict):
+
+def _iter_image_result_candidate(result: dict[str, Any], container: dict[str, Any]):
+    required_keys = ("ithmbOffset", "imgSize", "image_format")
+    if not all(key in result for key in required_keys):
+        return
+
+    image_format = result.get("image_format") or {}
+    width = image_format.get("width") or result.get("imageWidth") or 0
+    height = image_format.get("height") or result.get("imageHeight") or 0
+    area = int(width) * int(height)
+
+    yield area, result, container
+
+
+def _format_preview_label(format_id: int, width: int, height: int) -> str:
+    if width and height:
+        return f"{format_id} {width}x{height}"
+    return str(format_id)
+
+
+def _decode_entry_format_previews(entry: dict[str, Any], ithmb_folder_path: str) -> list[ArtworkFormatPreview]:
+    variants: list[ArtworkFormatPreview] = []
+    seen_locations: set[tuple[int, str, int]] = set()
+    candidates = sorted(
+        _iter_entry_image_candidates(entry),
+        key=lambda item: (item[0], int(item[1].get("correlationID") or 0)),
+        reverse=True,
+    )
+
+    for _area, image_result, container in candidates:
+        image_format = image_result.get("image_format") or {}
+        try:
+            format_id = int(image_result.get("correlationID") or image_format.get("format_id") or 0)
+            offset = int(image_result.get("ithmbOffset") or 0)
+        except (TypeError, ValueError):
+            continue
+        if format_id <= 0:
             continue
 
-        result = child.get("result")
-        if not isinstance(result, dict):
+        file_info = image_result.get("3", {})
+        ithmb_filename = file_info.get("File Name", f"F{format_id}_1.ithmb")
+        if ithmb_filename.startswith(":"):
+            ithmb_filename = ithmb_filename[1:]
+
+        location_key = (format_id, ithmb_filename, offset)
+        if location_key in seen_locations:
+            continue
+        seen_locations.add(location_key)
+
+        ithmb_path = os.path.join(ithmb_folder_path, ithmb_filename)
+        img = generate_image(ithmb_path, image_result)
+        if img is None:
             continue
 
-        required_keys = ("ithmbOffset", "imgSize", "image_format")
-        if not all(key in result for key in required_keys):
-            continue
+        width = int(image_format.get("width") or image_result.get("imageWidth") or img.width or 0)
+        height = int(image_format.get("height") or image_result.get("imageHeight") or img.height or 0)
+        variants.append(
+            ArtworkFormatPreview(
+                format_id=format_id,
+                label=_format_preview_label(format_id, width, height),
+                description=str(image_format.get("description") or ""),
+                width=width,
+                height=height,
+                pixel_format=str(image_format.get("format") or ""),
+                size=int(image_result.get("imgSize") or 0),
+                filename=ithmb_filename,
+                offset=offset,
+                image=img,
+                metadata=_flatten_metadata(container),
+            )
+        )
 
-        image_format = result.get("image_format") or {}
-        width = image_format.get("width") or result.get("imageWidth") or 0
-        height = image_format.get("height") or result.get("imageHeight") or 0
-        area = int(width) * int(height)
-
-        yield area, result
+    return variants
 
 
 def _decode_image_from_db(artworkdb_data, ithmb_folder_path, img_id, img_id_index=None):
@@ -653,8 +933,7 @@ def _decode_image_from_db(artworkdb_data, ithmb_folder_path, img_id, img_id_inde
         )
         if not candidates:
             continue
-
-        for _area, image_result in candidates:
+        for _area, image_result, _container in candidates:
             file_info = image_result.get("3", {})
             ithmb_filename = file_info.get(
                 "File Name", f"F{image_result.get('correlationID')}_1.ithmb")

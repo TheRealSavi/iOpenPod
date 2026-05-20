@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from PIL import Image
 
 from ArtworkDB_Writer import artwork_writer as aw
+from ArtworkDB_Writer import rgb565
 
 REQUIRED_FMT = 1055
 EXTRA_KNOWN_FMT = 1060
@@ -206,6 +207,27 @@ def test_classify_existing_entry_formats_keeps_known_format_with_unexpected_size
     assert set(classified.extra_known) == {EXTRA_KNOWN_FMT}
     assert classified.known_present == {EXTRA_KNOWN_FMT}
     assert "carrying forward on-device bytes" in caplog.text
+
+
+def test_image_from_bytes_reports_offending_artwork_source_path(monkeypatch) -> None:
+    bomb = Image.DecompressionBombError(
+        "Image size (200000000 pixels) exceeds limit of 178956970 pixels, could be decompression bomb DOS attack.",
+    )
+
+    def fake_open(_stream):
+        raise bomb
+
+    monkeypatch.setattr(rgb565.Image, "open", fake_open)
+
+    try:
+        rgb565.image_from_bytes(b"not-an-image", source_path="/music/Album/cover.tif")
+    except ValueError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("Expected decompression bomb error")
+
+    assert "Offending image: /music/Album/cover.tif" in message
+    assert "decompression bomb DOS attack" in message
 
 
 def test_collect_rewrite_targets_keeps_known_formats_owned_and_unknown_passthrough(

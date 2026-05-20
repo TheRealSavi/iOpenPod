@@ -109,3 +109,49 @@ def test_album_grid_ignores_movie_only_album_entries(monkeypatch) -> None:
 
     assert [album["title"] for album in albums] == ["Music Album"]
     assert albums[0]["track_count"] == 1
+
+
+def test_update_track_flags_records_canonical_track_fields(monkeypatch) -> None:
+    monkeypatch.setattr(
+        runtime.DeviceManager,
+        "get_instance",
+        classmethod(lambda cls: SimpleNamespace(device_path="/fake/ipod")),
+    )
+
+    track = {
+        "db_track_id": 123,
+        "Title": "Song",
+        "checked_flag": 0,
+        "compilation_flag": 0,
+        "eq_setting": "",
+    }
+    cache = runtime.iTunesDBCache()
+    cache.set_data(
+        {
+            "mhlt": [track],
+            "mhlp": [],
+            "mhlp_podcast": [],
+            "mhlp_smart": [],
+        },
+        "/fake/ipod",
+    )
+
+    cache.update_track_flags(
+        [track],
+        {
+            "checked_flag": 1,
+            "compilation_flag": 1,
+            "eq_setting": "Bass Booster",
+        },
+    )
+
+    assert track["checked_flag"] == 1
+    assert track["compilation_flag"] == 1
+    assert track["eq_setting"] == "Bass Booster"
+    assert cache.get_track_edits() == {
+        123: {
+            "checked_flag": (0, 1),
+            "compilation_flag": (0, 1),
+            "eq_setting": ("", "Bass Booster"),
+        }
+    }

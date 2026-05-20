@@ -411,7 +411,7 @@ class PlaylistInfoCard(QFrame):
                 filetypes[ft] = filetypes.get(ft, 0) + 1
         if filetypes:
             ft_str = ", ".join(f"{k.strip()}: {v}" for k, v in sorted(filetypes.items(), key=lambda x: -x[1]))
-            self._add_detail_row("File Types", ft_str)
+            self._add_detail_row("File Formats", ft_str)
 
         years = [t.get("year", 0) for t in resolved_tracks if t.get("year", 0) > 0]
         if years:

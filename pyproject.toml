@@ -41,6 +41,7 @@ dependencies = [
     "requests>=2.31.0",
     "packaging>=23.0",
     "tqdm>=4.67.3",
+    "python-dateutil>=2.9.0.post0",
 ]
 
 [project.scripts]

@@ -25,6 +25,37 @@ def _is_music_browser_track(track: dict) -> bool:
     return media_type == 0 or bool(media_type & 0x01)
 
 
+def _build_track_indexes(
+    tracks: list[dict],
+) -> tuple[dict, dict, dict, dict, dict]:
+    album_index = {}
+    album_only_index = {}
+    artist_index = {}
+    genre_index = {}
+    track_id_index = {}
+
+    for track in tracks:
+        track_id = track.get("track_id")
+        if track_id is not None:
+            track_id_index[track_id] = track
+
+        if not _is_music_browser_track(track):
+            continue
+
+        album = track.get("Album", "Unknown Album")
+        artist = track.get("Artist", "Unknown Artist")
+        album_artist = track.get("Album Artist") or artist
+        genre = track.get("Genre", "Unknown Genre")
+
+        album_key = (album, album_artist)
+        album_index.setdefault(album_key, []).append(track)
+        album_only_index.setdefault(album, []).append(track)
+        artist_index.setdefault(artist, []).append(track)
+        genre_index.setdefault(genre, []).append(track)
+
+    return album_index, album_only_index, artist_index, genre_index, track_id_index
+
+
 def same_device_path(left: str | None, right: str | None) -> bool:
     """Compare device paths using platform-normalized absolute paths."""
 
@@ -650,8 +681,17 @@ class iTunesDBCache(QObject):
                         edits[key] = (track.get(key), value)
                     track[key] = value
 
+            if self._data is not None:
+                (
+                    self._album_index,
+                    self._album_only_index,
+                    self._artist_index,
+                    self._genre_index,
+                    self._track_id_index,
+                ) = _build_track_indexes(list(self._data.get("mhlt", [])))
+
         logger.info(
-            "Track flags updated on %d track(s): %s",
+            "Track metadata updated on %d track(s): %s",
             len(tracks),
             ", ".join(f"{key}={value}" for key, value in changes.items()),
         )
@@ -726,31 +766,8 @@ class iTunesDBCache(QObject):
             return edits
 
     def set_data(self, data: dict, device_path: str) -> None:
-        album_index = {}
-        album_only_index = {}
-        artist_index = {}
-        genre_index = {}
-        track_id_index = {}
-
         tracks = list(data.get("mhlt", []))
-        for track in tracks:
-            track_id = track.get("track_id")
-            if track_id is not None:
-                track_id_index[track_id] = track
-
-            if not _is_music_browser_track(track):
-                continue
-
-            album = track.get("Album", "Unknown Album")
-            artist = track.get("Artist", "Unknown Artist")
-            album_artist = track.get("Album Artist") or artist
-            genre = track.get("Genre", "Unknown Genre")
-
-            album_key = (album, album_artist)
-            album_index.setdefault(album_key, []).append(track)
-            album_only_index.setdefault(album, []).append(track)
-            artist_index.setdefault(artist, []).append(track)
-            genre_index.setdefault(genre, []).append(track)
+        album_index, album_only_index, artist_index, genre_index, track_id_index = _build_track_indexes(tracks)
 
         with self._lock:
             self._data = data

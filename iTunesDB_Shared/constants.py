@@ -156,7 +156,7 @@ mhod_type_map = {
     4: "Artist",
     5: "Genre",
     6: "Filetype",
-    7: "EQ Setting",
+    7: "eq_setting",
     8: "Comment",
     9: "Category",
     10: "Lyrics",
@@ -331,7 +331,7 @@ MHOD_TYPE_ARTIST_NAME = 300
 
 
 # ============================================================
-# File Type Codes (big-endian ASCII stored as LE u32)
+# File Format Codes (big-endian ASCII stored as LE u32)
 # Shared by track and locations writers.
 # ============================================================
 FILETYPE_CODES: dict[str, int] = {

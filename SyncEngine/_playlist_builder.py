@@ -7,11 +7,10 @@ ready for write_itunesdb().
 
 import base64
 import logging
-from typing import Optional
 
 from iTunesDB_Writer.mhit_writer import TrackInfo
-from iTunesDB_Writer.mhyp_writer import PlaylistInfo, PlaylistItemMeta
 from iTunesDB_Writer.mhod_spl_writer import prefs_from_parsed, rules_from_parsed
+from iTunesDB_Writer.mhyp_writer import PlaylistInfo, PlaylistItemMeta
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +45,7 @@ _SORT_ORDER_KEYS: dict[int, list[tuple[str, bool, str | None]]] = {
     14: [("sample_rate_1", False, None)],
     15: [("Comment", True, None)],
     16: [("date_added", False, None)],
-    17: [("EQ Setting", True, None)],
+    17: [("eq_setting", True, None)],
     18: [("Composer", True, None)],
     20: [("play_count_1", False, None)],
     21: [("last_played", False, None)],
@@ -105,7 +104,7 @@ def _sort_key_for_trackinfo(ti: TrackInfo, keys: list[tuple[str, bool, str | Non
         "last_played": "last_played", "date_released": "release_date",
     }
     parts: list = []
-    for field, is_str, override in keys:
+    for field, is_str, _override in keys:
         # TrackInfo has no sort-override fields; just use the base attribute
         attr = _TI_ATTR.get(field, field)
         val = getattr(ti, attr, None)
@@ -140,7 +139,7 @@ def sort_trackinfos_by_order(
     return [tid for tid, _ in known] + unknown
 
 
-def decode_raw_blob(value) -> Optional[bytes]:
+def decode_raw_blob(value) -> bytes | None:
     """Decode a raw MHOD blob from parsed playlist data.
 
     The parser stores bytes, but mhbd_parser's replace_bytes_with_base64()
@@ -171,8 +170,8 @@ def build_and_evaluate_playlists(
     Returns (master_playlist_name, regular_playlists, smart_playlists)
     ready for write_itunesdb().
     """
-    from .spl_evaluator import spl_update
     from ._track_conversion import trackinfo_to_eval_dict
+    from .spl_evaluator import spl_update
 
     old_tid_to_db_track_id: dict[int, int] = {}
     for t in existing_tracks_data:

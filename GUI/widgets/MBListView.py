@@ -19,6 +19,7 @@ from PyQt6.QtGui import QColor, QCursor, QFont, QIcon, QImage, QKeyEvent, QMouse
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
+    QDialog,
     QFrame,
     QHeaderView,
     QLabel,
@@ -128,7 +129,7 @@ def format_explicit(flag: int) -> str:
 
 
 def format_checked(val: int) -> str:
-    """Format the 'checked' field (0=checked, 1=unchecked — inverted)."""
+    """Format the iTunes checked checkbox flag (0=checked, 1=unchecked)."""
     if val == 0:
         return "✓"
     return ""
@@ -249,7 +250,7 @@ COLUMN_CONFIG: dict[str, tuple[str, Callable[[int], str] | None]] = {
     "sound_check": ("Sound Check", format_sound_check),
     "volume": ("Volume Adj.", format_volume),
     # ── File / encoding info ──
-    "filetype": ("Format", None),
+    "filetype": ("File Format", None),
     "bitrate": ("Bitrate", format_bitrate),
     "sample_rate_1": ("Sample Rate", format_sample_rate),
     "size": ("Size", format_size),
@@ -302,7 +303,7 @@ COLUMN_CONFIG: dict[str, tuple[str, Callable[[int], str] | None]] = {
     "artist_id_ref": ("Artist Ref", None),
     "composer_id": ("Composer ID", None),
     # ── EQ ──
-    "EQ Setting": ("Equalizer", None),
+    "eq_setting": ("Equalizer", None),
     # ── File path ──
     "Location": ("Location", None),
     # ── Extra string tags ──
@@ -352,7 +353,7 @@ PREFERRED_COLUMN_ORDER = [
     # Identifiers
     "track_id", "db_track_id", "album_id", "artist_id_ref", "composer_id",
     # EQ
-    "EQ Setting",
+    "eq_setting",
     # File path
     "Location",
     # Extra tags
@@ -2345,7 +2346,7 @@ class MusicBrowserList(QFrame):
                     "artist_id_ref", "composer_id",
                 ]),
                 ("Other", [
-                    "EQ Setting", "Location", "Lyrics",
+                    "eq_setting", "Location", "Lyrics",
                     "Track Keywords", "Show Locale", "_pl_pos",
                 ]),
             ]
@@ -2474,6 +2475,20 @@ class MusicBrowserList(QFrame):
             if orig_idx is not None and 0 <= orig_idx < len(self._tracks):
                 tracks.append(self._tracks[orig_idx])
         return tracks
+
+    def _can_edit_selected_tracks(self, selected: list[dict]) -> bool:
+        """Return whether the current selection represents editable iPod tracks."""
+        if not selected:
+            return False
+        if self._content_type_override in {"pc_tracks", "podcast_episodes"}:
+            return False
+        cache = self._library_cache
+        if cache is None or not cache.is_ready():
+            return False
+        return all(track.get("db_track_id") or track.get("db_id") for track in selected)
+
+    def _edit_action_label(self, selected: list[dict]) -> str:
+        return f"Edit ({len(selected)})"
 
     def _start_file_drag(self) -> None:
         """Initiate an async Alt+drag export.
@@ -2642,6 +2657,18 @@ class MusicBrowserList(QFrame):
 
         cache = self._library_cache
 
+        # ── Edit metadata ──
+        if self._can_edit_selected_tracks(selected):
+            edit_act = menu.addAction(self._edit_action_label(selected))
+            if edit_act:
+                icon = glyph_icon("edit", 14, Colors.TEXT_PRIMARY)
+                if icon is not None:
+                    edit_act.setIcon(icon)
+                edit_act.triggered.connect(
+                    lambda _=False, sel=list(selected): self._edit_tracks(sel)
+                )
+            menu.addSeparator()
+
         # ── "Add to Playlist >" cascade ──
         if cache is not None and cache.is_ready():
             playlists = cache.get_playlists()
@@ -2779,8 +2806,8 @@ class MusicBrowserList(QFrame):
                     lambda _=False, k=key, v=new_val: self._set_track_flag(k, v)
                 )
 
-        # ── Inverted flag: 'checked' (0=checked, 1=unchecked) ──
-        checked_count = sum(1 for t in selected if t.get("checked", 0) == 0)
+        # ── Inverted iTunes checkbox flag: checked_flag (0=checked, 1=unchecked) ──
+        checked_count = sum(1 for t in selected if t.get("checked_flag", 0) == 0)
         total = len(selected)
         if checked_count == total:
             prefix = "✓  "
@@ -2794,7 +2821,7 @@ class MusicBrowserList(QFrame):
         act = menu.addAction(f"{prefix}Checked")
         if act:
             act.triggered.connect(
-                lambda _=False, v=new_val: self._set_track_flag("checked", v)
+                lambda _=False, v=new_val: self._set_track_flag("checked_flag", v)
             )
 
         # ── Played Mark (for podcasts: 0=not played, 2=played) ──
@@ -3020,10 +3047,35 @@ class MusicBrowserList(QFrame):
         if not cache.is_ready():
             return
 
-        cache.update_track_flags(selected, {key: value})
+        self._apply_track_edits(selected, {key: value})
 
-        # Refresh visible rows so the change is immediately visible
-        # (rating column, or future flag columns)
+    def _edit_tracks(self, selected: list[dict] | None = None) -> None:
+        """Open the multi-track metadata editor for the current selection."""
+        selected = selected or self._get_selected_tracks()
+        if not self._can_edit_selected_tracks(selected):
+            return
+
+        from .trackEditorDialog import TrackEditorDialog
+
+        dialog = TrackEditorDialog(list(selected), self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        changes = dialog.changes()
+        if changes:
+            self._apply_track_edits(selected, changes)
+
+    def _apply_track_edits(self, selected: list[dict], changes: dict[str, Any]) -> None:
+        """Apply metadata edits to selected tracks via the cache quick-write path."""
+        if not selected or not changes:
+            return
+
+        cache = self._library_cache
+        if cache is None:
+            return
+        if not cache.is_ready():
+            return
+
+        cache.update_track_flags(selected, changes)
         self._refresh_visible_rows()
 
     def _refresh_visible_rows(self) -> None:
@@ -3063,7 +3115,7 @@ class MusicBrowserList(QFrame):
 
                 # Use the same formatting logic as _format_value():
                 # skip only None/"", let 0 through to the formatter
-                # (0 is meaningful for fields like 'checked', 'explicitFlag')
+                # (0 is meaningful for fields like checked_flag, explicit_flag)
                 if raw is None or raw == "":
                     display_text = ""
                 elif formatter and isinstance(raw, (int, float)):

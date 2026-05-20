@@ -15,12 +15,12 @@ from __future__ import annotations
 import logging
 import math
 from collections import Counter, defaultdict
-from typing import Optional
+
+from iTunesDB_Shared.field_base import MAC_EPOCH_OFFSET as _MAC_EPOCH_OFFSET
 
 from .field_schema import FieldStatus, fields_for_chunk
 from .hypothesis_db import HypothesisDB
 from .models import ParsedDatabase, ValueObservation
-from iTunesDB_Shared.field_base import MAC_EPOCH_OFFSET as _MAC_EPOCH_OFFSET
 
 logger = logging.getLogger(__name__)
 
@@ -418,7 +418,7 @@ def _correlate_chunk_type(
                 continue
 
             # Test exact equality.
-            eq_count = sum(1 for a, b in zip(u_vals, k_vals) if a == b)
+            eq_count = sum(1 for a, b in zip(u_vals, k_vals, strict=True) if a == b)
             if eq_count >= n * 0.9:
                 hdb.upsert_correlation(
                     ct, u_off, u_len, k_name, "equal",
@@ -430,7 +430,7 @@ def _correlate_chunk_type(
 
             # Test U == K ± 1.
             for rel, label in [(1, "plus1"), (-1, "minus1")]:
-                match_count = sum(1 for a, b in zip(u_vals, k_vals) if a == b + rel)
+                match_count = sum(1 for a, b in zip(u_vals, k_vals, strict=True) if a == b + rel)
                 if match_count >= n * 0.9:
                     hdb.upsert_correlation(
                         ct, u_off, u_len, k_name, label,
@@ -442,7 +442,7 @@ def _correlate_chunk_type(
             # Test U == K * 2 / K / 2.
             for factor, label in [(2.0, "times2"), (0.5, "half")]:
                 match_count = sum(
-                    1 for a, b in zip(u_vals, k_vals)
+                    1 for a, b in zip(u_vals, k_vals, strict=True)
                     if b != 0 and abs(a - b * factor) < 0.5
                 )
                 if match_count >= n * 0.9:
@@ -453,7 +453,7 @@ def _correlate_chunk_type(
                     )
 
             # Co-null pattern: U is 0 when K is 0.
-            k_zeros = [(a, b) for a, b in zip(u_vals, k_vals) if b == 0.0]
+            k_zeros = [(a, b) for a, b in zip(u_vals, k_vals, strict=True) if b == 0.0]
             if len(k_zeros) >= 3:
                 co_null = sum(1 for a, _ in k_zeros if a == 0.0)
                 ratio = co_null / len(k_zeros)
@@ -546,7 +546,7 @@ def pass_d_version_stratified(dbs: list[ParsedDatabase], hdb: HypothesisDB) -> N
 # Pass E — Known Pattern Matching
 # ────────────────────────────────────────────────────────────────────
 
-# Known FourCC file type codes.
+# Known FourCC file format codes.
 _KNOWN_FOURCCS = {b"M4A ", b"MP3 ", b"AIFF", b"WAV ", b"M4B ", b"M4V ", b"M4P ", b"ALAC"}
 _KNOWN_FOURCCS_BE = {int.from_bytes(cc, "big") for cc in _KNOWN_FOURCCS}
 
@@ -573,7 +573,7 @@ def pass_e_known_patterns(dbs: list[ParsedDatabase], hdb: HypothesisDB) -> None:
         vals_u = [int.from_bytes(o.raw_bytes[:4], "little") for o in non_zero]
         n_total = len(obs_list)
 
-        # FourCC file type codes.
+        # FourCC file format codes.
         fourcc_matches = sum(1 for v in vals_u if v in _KNOWN_FOURCCS_BE)
         if fourcc_matches >= len(vals_u) * 0.5 and fourcc_matches > 0:
             hdb.upsert_hypothesis(
@@ -608,7 +608,7 @@ def pass_e_known_patterns(dbs: list[ParsedDatabase], hdb: HypothesisDB) -> None:
                 ct, off, 4, "u32", "gapless_data_candidate",
                 confidence=0.35,
                 supporting_files=n_total,
-                rationale=f"All values in 1000..100M range consistent with gapless fields",
+                rationale="All values in 1000..100M range consistent with gapless fields",
             )
 
 
@@ -653,7 +653,7 @@ def _byte_entropy(blobs: list[bytes]) -> float:
     return entropy
 
 
-def _pearson(xs: list[float], ys: list[float]) -> Optional[float]:
+def _pearson(xs: list[float], ys: list[float]) -> float | None:
     """Compute Pearson correlation coefficient. Returns None if insufficient variance."""
     n = len(xs)
     if n < 5:
@@ -663,7 +663,7 @@ def _pearson(xs: list[float], ys: list[float]) -> Optional[float]:
     sy = sum(ys)
     sxx = sum(x * x for x in xs)
     syy = sum(y * y for y in ys)
-    sxy = sum(x * y for x, y in zip(xs, ys))
+    sxy = sum(x * y for x, y in zip(xs, ys, strict=True))
 
     denom_x = n * sxx - sx * sx
     denom_y = n * syy - sy * sy

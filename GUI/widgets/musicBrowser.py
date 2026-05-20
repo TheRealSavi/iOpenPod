@@ -188,6 +188,7 @@ class MusicBrowser(QFrame):
         try:
             cache = self._library_cache
             cache.playlists_changed.connect(self._on_playlists_changed)
+            cache.tracks_changed.connect(self._on_tracks_changed)
             cache.photos_changed.connect(lambda: self._mark_tab_dirty("Photos"))
         except Exception:
             pass
@@ -198,6 +199,13 @@ class MusicBrowser(QFrame):
         if self._current_category == "Playlists" and self._tab_loaded["Playlists"]:
             self.playlistBrowser.refreshFromCache()
             self._tab_dirty["Playlists"] = False
+
+    def _on_tracks_changed(self) -> None:
+        """Refresh the active browser state after in-place track metadata edits."""
+        self._mark_tab_dirty("Playlists")
+        self._mark_tab_dirty("Podcasts")
+        if self._current_category != "Photos":
+            self._schedule_refresh_current_category()
 
     def _mark_tab_dirty(self, tab_name: str) -> None:
         if tab_name in self._tab_dirty:

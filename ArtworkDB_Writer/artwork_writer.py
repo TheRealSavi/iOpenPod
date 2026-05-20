@@ -28,7 +28,7 @@ from enum import StrEnum
 
 from ipod_device import ITHMB_FORMAT_MAP, ArtworkFormat
 
-from .art_extractor import art_hash, extract_art_with_folder
+from .art_extractor import art_hash, extract_art_with_source
 from .artwork_types import (
     ArtworkEntry,
     ArtworkFormatPayload,
@@ -166,6 +166,7 @@ class TrackArtworkDecision:
     asset_ref: ArtworkAssetRef | None = None
     art_bytes: bytes | None = None
     src_img_size: int = 0
+    source_path: str = ""
     existing_entry: dict | None = None
 
 
@@ -554,7 +555,7 @@ def _collect_track_artwork_decisions(
                 summary.cleared += 1
             continue
 
-        art_bytes = extract_art_with_folder(pc_path)
+        art_bytes, art_source_path = extract_art_with_source(pc_path)
         if art_bytes is None:
             decisions[db_track_id] = TrackArtworkDecision(
                 db_track_id=db_track_id,
@@ -573,6 +574,7 @@ def _collect_track_artwork_decisions(
             asset_ref=ArtworkAssetRef("pc", digest),
             art_bytes=art_bytes,
             src_img_size=len(art_bytes),
+            source_path=art_source_path or pc_path,
             existing_entry=existing_entry,
         )
         summary.reencoded += 1
@@ -590,12 +592,15 @@ def _convert_new_pc_art(
 ) -> dict[ArtworkAssetRef, ArtworkPayload]:
     """Convert only the PC-sourced artwork payloads that need re-encoding."""
     pc_art_map: dict[ArtworkAssetRef, bytes] = {}
+    pc_art_source_paths: dict[ArtworkAssetRef, str] = {}
     for decision in decisions.values():
         if decision.kind != ArtworkDecisionKind.NEW_FROM_PC:
             continue
         if decision.asset_ref is None or decision.art_bytes is None:
             continue
         pc_art_map[decision.asset_ref] = decision.art_bytes
+        if decision.source_path:
+            pc_art_source_paths[decision.asset_ref] = decision.source_path
 
     unique_converted: dict[ArtworkAssetRef, ArtworkPayload] = {}
     if not pc_art_map:
@@ -609,7 +614,10 @@ def _convert_new_pc_art(
     required_format_id_set = set(required_format_ids)
 
     def _convert_one(asset_ref: ArtworkAssetRef, art_bytes: bytes) -> tuple[ArtworkAssetRef, ArtworkPayload | None]:
-        img = image_from_bytes(art_bytes)
+        img = image_from_bytes(
+            art_bytes,
+            source_path=pc_art_source_paths.get(asset_ref, ""),
+        )
         if img is None:
             return asset_ref, None
         formats: dict[int, ArtworkFormatPayload] = {}

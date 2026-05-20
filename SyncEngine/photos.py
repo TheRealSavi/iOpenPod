@@ -57,6 +57,12 @@ _SUPPORTED_IMAGE_EXTENSIONS = {
     ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tif", ".tiff",
     ".webp", ".heic", ".heif",
 }
+_DECOMPRESSION_BOMB_ERROR = getattr(Image, "DecompressionBombError", None)
+_PIL_LOAD_ERRORS = tuple(
+    err
+    for err in (UnidentifiedImageError, OSError, _DECOMPRESSION_BOMB_ERROR)
+    if err is not None
+)
 
 
 def _photo_db_path(ipod_path: str | Path) -> Path:
@@ -369,6 +375,12 @@ def _source_timestamp(path: str | Path) -> int:
         return 0
 
 
+def _describe_image_load_error(path: str | Path, exc: BaseException) -> str:
+    if _DECOMPRESSION_BOMB_ERROR is not None and isinstance(exc, _DECOMPRESSION_BOMB_ERROR):
+        return f"{exc} Offending image: {path}"
+    return str(exc)
+
+
 def scan_pc_photos(sync_root: str | Path) -> PCPhotoLibrary:
     sync_root = str(sync_root)
     library = PCPhotoLibrary(sync_root=sync_root)
@@ -383,8 +395,8 @@ def scan_pc_photos(sync_root: str | Path) -> PCPhotoLibrary:
             continue
         try:
             img = _load_pil_still_image(file_path)
-        except (UnidentifiedImageError, OSError) as exc:
-            library.skipped.append((str(file_path), str(exc)))
+        except _PIL_LOAD_ERRORS as exc:
+            library.skipped.append((str(file_path), _describe_image_load_error(file_path, exc)))
             continue
 
         rel_parent = file_path.parent.relative_to(root)
@@ -415,8 +427,8 @@ def _apply_photo_edits(library: PCPhotoLibrary, staged_edits: PhotoEditState | N
     for source_path, album_name in staged_edits.imported_files:
         try:
             img = _load_pil_still_image(source_path)
-        except (UnidentifiedImageError, OSError) as exc:
-            library.skipped.append((source_path, str(exc)))
+        except _PIL_LOAD_ERRORS as exc:
+            library.skipped.append((source_path, _describe_image_load_error(source_path, exc)))
             continue
         visual_hash = _image_visual_hash(img)
         entry = library.photos.get(visual_hash)
@@ -531,7 +543,7 @@ def _decode_photo_image(entry: PhotoEntry, ipod_path: str | Path) -> Image.Image
         if full_res_path.exists():
             try:
                 return _load_pil_still_image(full_res_path)
-            except (UnidentifiedImageError, OSError):
+            except _PIL_LOAD_ERRORS:
                 pass
     return None
 
@@ -1814,9 +1826,11 @@ def _load_sync_image_for_photo(
             )
         try:
             img = _load_pil_still_image(photo.source_path)
-        except (UnidentifiedImageError, OSError) as err:
+        except _PIL_LOAD_ERRORS as err:
             raise RuntimeError(
-                f"Could not load source image for new photo '{photo.display_name or photo.image_id}'",
+                f"Could not load source image for new photo "
+                f"'{photo.display_name or photo.image_id}': "
+                f"{_describe_image_load_error(photo.source_path, err)}",
             ) from err
         timestamp = _source_timestamp(photo.source_path)
         photo.created_at = timestamp

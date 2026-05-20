@@ -94,18 +94,24 @@ def find_folder_art(file_path: str) -> str | None:
     return None
 
 
-def extract_art_with_folder(file_path: str) -> bytes | None:
-    """Like extract_art(), but falls back to folder artwork if no embedded art."""
+def extract_art_with_source(file_path: str) -> tuple[bytes | None, str | None]:
+    """Return artwork bytes plus the image path they came from."""
     art = extract_art(file_path)
     if art is not None:
-        return art
+        return art, file_path
     folder_img = find_folder_art(file_path)
     if folder_img:
         try:
-            return Path(folder_img).read_bytes()
+            return Path(folder_img).read_bytes(), folder_img
         except OSError:
             pass
-    return None
+    return None, None
+
+
+def extract_art_with_folder(file_path: str) -> bytes | None:
+    """Like extract_art(), but falls back to folder artwork if no embedded art."""
+    art, _source = extract_art_with_source(file_path)
+    return art
 
 
 def _extract_mp3(path: str) -> bytes | None:

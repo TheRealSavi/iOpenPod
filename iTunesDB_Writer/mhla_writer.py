@@ -30,26 +30,27 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .mhit_writer import TrackInfo
 
+from iTunesDB_Shared.constants import (
+    MHOD_TYPE_ALBUM_ALBUM,
+    MHOD_TYPE_ALBUM_ARTIST_ITEM,
+    MHOD_TYPE_ALBUM_PODCAST_URL,
+    MHOD_TYPE_ALBUM_SHOW,
+    MHOD_TYPE_ALBUM_SORT_ARTIST,
+)
 from iTunesDB_Shared.field_base import (
     MHLA_HEADER_SIZE,
     write_fields,
     write_generic_header,
 )
 from iTunesDB_Shared.mhia_defs import MHIA_HEADER_SIZE
-from iTunesDB_Shared.constants import (
-    MHOD_TYPE_ALBUM_ALBUM,
-    MHOD_TYPE_ALBUM_ARTIST_ITEM,
-    MHOD_TYPE_ALBUM_SORT_ARTIST,
-    MHOD_TYPE_ALBUM_PODCAST_URL,
-    MHOD_TYPE_ALBUM_SHOW,
-)
+
 from .mhod_writer import write_mhod_string
 
 
 def _album_key(track: "TrackInfo") -> tuple[str, str]:
     """Compute the album grouping key for a track.
 
-    Compilation albums (``track.compilation == True``) are grouped by album
+    Compilation albums (``track.compilation_flag == True``) are grouped by album
     name alone — the artist dimension is always ``""`` so that all tracks
     on a Various-Artists / compilation album share a single album ID.
 
@@ -57,7 +58,7 @@ def _album_key(track: "TrackInfo") -> tuple[str, str]:
     so that two artists who each have a "Greatest Hits" album remain separate.
     """
     album_name = track.album or ""
-    if track.compilation:
+    if track.compilation_flag:
         return (album_name, "")
     album_artist = track.album_artist or track.artist or ""
     return (album_name, album_artist)
@@ -179,9 +180,9 @@ def write_mhla(tracks: list["TrackInfo"], starting_index_for_album_id) -> tuple[
         sort_artist = album_sort_artists.get((album_name, album_artist), "")
         podcast_url = album_podcast_urls.get((album_name, album_artist), "")
         show_name = album_show_names.get((album_name, album_artist), "")
-        # Album is a compilation if any track in it has compilation=True
+        # Album is a compilation if any track in it has compilation_flag=True
         is_compilation = any(
-            t.compilation
+            t.compilation_flag
             for t in album_tracks[(album_name, album_artist)]
         )
         # Use first track's db_track_id as the representative track for this album

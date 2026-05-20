@@ -24,13 +24,12 @@ from __future__ import annotations
 import random
 import time
 
+from iTunesDB_Shared.mhod_defs import SPL_FIELD_TYPE_MAP as _FIELD_TYPE_MAP
 from iTunesDB_Writer.mhod_spl_writer import (
     SmartPlaylistPrefs,
     SmartPlaylistRule,
     SmartPlaylistRules,
 )
-from iTunesDB_Shared.mhod_defs import SPL_FIELD_TYPE_MAP as _FIELD_TYPE_MAP
-
 
 # ────────────────────────────────────────────────────────────
 # Field accessor: maps SPL field IDs → parsed track dict keys
@@ -442,7 +441,7 @@ def spl_update(
 
     for track in tracks:
         # Skip unchecked tracks if match_checked_only is set
-        # (checked=0 means checked, checked=1 means unchecked in the parser)
+        # (checked_flag=0 means checked, checked_flag=1 means unchecked in the parser)
         if prefs.match_checked_only and track.get("checked_flag", 0) != 0:
             continue
 

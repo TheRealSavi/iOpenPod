@@ -42,11 +42,15 @@ def parse_imageItem(data, offset, header_length, chunk_length) -> dict:
 
     # Parse Children
     next_offset = offset + header_length
-    for i in range(childCount):
+    for _i in range(childCount):
         response = parse_chunk(data, next_offset)
         next_offset = response["nextOffset"]
 
         mhodData = response["result"]
-        image[mhod_type_map[mhodData["mhodType"]]["name"]] = mhodData
+        mhod_type = mhodData["mhodType"]
+        name = mhod_type_map[mhod_type]["name"]
+        image[name] = mhodData
+        if mhod_type_map[mhod_type]["type"] == "Container":
+            image.setdefault("_image_containers", []).append(mhodData)
 
     return {"nextOffset": offset + chunk_length, "result": image}

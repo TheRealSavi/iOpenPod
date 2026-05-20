@@ -75,7 +75,7 @@ class TrackInfo:
     disc_number: int = 1
     total_discs: int = 1
     bpm: int = 0
-    compilation: bool = False
+    compilation_flag: bool = False
 
     # Playback
     rating: int = 0  # 0-100 (stars × 20)
@@ -86,7 +86,7 @@ class TrackInfo:
     stop_time: int = 0  # ms
     sound_check: int = 0  # Volume normalization value (from ReplayGain)
     bookmark_time: int = 0  # Resume position in ms (audiobooks/podcasts)
-    checked: int = 0  # 0 = checked/enabled, 1 = unchecked/disabled
+    checked_flag: int = 0  # 0 = checked/enabled, 1 = unchecked/disabled
 
     # Gapless playback
     gapless_data: int = 0  # Gapless playback encoder delay data
@@ -317,7 +317,7 @@ def write_mhit(track: TrackInfo, track_id: int, db_id_2: int = 0,
         'filetype': filetype_code,
         'vbr_flag': 1 if track.vbr else 0,
         'mp3_flag': 1 if ft == 'mp3' else 0,
-        'compilation_flag': 1 if track.compilation else 0,
+        'compilation_flag': 1 if track.compilation_flag else 0,
         'rating': track.rating,
         'last_modified': track.last_modified or track.date_added,
         'size': track.size,
@@ -340,7 +340,7 @@ def write_mhit(track: TrackInfo, track_id: int, db_id_2: int = 0,
         'date_added': track.date_added,
         'bookmark_time': track.bookmark_time,
         'db_track_id': track.db_track_id,
-        'checked_flag': track.checked,
+        'checked_flag': track.checked_flag,
         'app_rating': track.app_rating,
         'bpm': max(0, track.bpm) if track.bpm is not None else 0,
         'artwork_count': track.artwork_count,

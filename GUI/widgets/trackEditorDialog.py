@@ -1,0 +1,1861 @@
+"""Multi-track metadata editor for parsed iPod MHIT records."""
+
+from __future__ import annotations
+
+import ast
+import logging
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any
+
+from dateutil import parser as dateutil_parser
+from dateutil.parser import ParserError
+from PyQt6.QtCore import QSize, Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QFont, QPixmap
+from PyQt6.QtWidgets import (
+    QComboBox,
+    QDialog,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QMessageBox,
+    QPlainTextEdit,
+    QPushButton,
+    QSizePolicy,
+    QStackedWidget,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
+
+from iTunesDB_Shared.constants import MEDIA_TYPE_MAP
+from iTunesDB_Shared.mhit_defs import MHIT_FIELDS
+
+from ..imgMaker import TrackArtworkPreview, get_track_artwork_previews
+from ..styles import (
+    FONT_FAMILY,
+    Colors,
+    Metrics,
+    accent_btn_css,
+    btn_css,
+    make_scroll_area,
+)
+from .flowLayout import FlowLayout
+from .formatters import format_size
+from .photoViewer import pil_to_pixmap
+
+logger = logging.getLogger(__name__)
+
+
+class _MixedValue:
+    pass
+
+
+MIXED = _MixedValue()
+
+
+@dataclass(frozen=True)
+class TrackFieldSpec:
+    key: str
+    label: str
+    group: str
+    kind: str = "text"
+    editable: bool = True
+    help_text: str = ""
+    read_only_reason: str = ""
+
+
+_STRING_FIELDS: tuple[tuple[str, str], ...] = (
+    ("Title", "Metadata"),
+    ("Artist", "Metadata"),
+    ("Album", "Metadata"),
+    ("Album Artist", "Metadata"),
+    ("Genre", "Metadata"),
+    ("Composer", "Metadata"),
+    ("Grouping", "Metadata"),
+    ("Comment", "Metadata"),
+    ("Lyrics", "Metadata"),
+    ("eq_setting", "Playback"),
+    ("Sort Title", "Sorting"),
+    ("Sort Artist", "Sorting"),
+    ("Sort Album", "Sorting"),
+    ("Sort Album Artist", "Sorting"),
+    ("Sort Composer", "Sorting"),
+    ("Sort Show", "Sorting"),
+    ("Show", "Video"),
+    ("Episode", "Video"),
+    ("Subtitle", "Video"),
+    ("TV Network", "Video"),
+    ("Description Text", "Video"),
+    ("Track Keywords", "Video"),
+    ("Show Locale", "Video"),
+    ("Category", "Podcast"),
+    ("Podcast Enclosure URL", "Podcast"),
+    ("Podcast RSS URL", "Podcast"),
+    ("Location", "File"),
+    ("filetype", "File"),
+)
+
+_LONG_TEXT_FIELDS = frozenset(
+    {
+        "Comment",
+        "Description Text",
+        "Lyrics",
+        "Podcast Enclosure URL",
+        "Podcast RSS URL",
+        "Location",
+    }
+)
+
+_BOOL_FIELDS = frozenset(
+    {
+        "compilation_flag",
+        "skip_when_shuffling",
+        "remember_position",
+        "movie_flag",
+        "gapless_track_flag",
+        "gapless_album_flag",
+        "visible",
+        "vbr_flag",
+        "mp3_flag",
+        "lyrics_flag",
+        "purchased_aac_flag",
+        "podcast_flag",
+    }
+)
+
+_DATE_FIELD_KEYS = frozenset(
+    {
+        "date_added",
+        "last_modified",
+        "date_released",
+        "last_played",
+        "last_skipped",
+        "date_added_to_itunes",
+    }
+)
+
+_READ_ONLY_FIELDS = frozenset(
+    {
+        "Location",
+        "filetype",
+        "child_count",
+        "track_id",
+        "db_track_id",
+        "db_track_id_2",
+        "db_id_2_ref",
+        "album_id",
+        "artist_id_ref",
+        "composer_id",
+        "user_id",
+        "visible",
+        "vbr_flag",
+        "mp3_flag",
+        "lyrics_flag",
+        "purchased_aac_flag",
+        "length",
+        "size",
+        "size_2",
+        "bitrate",
+        "sample_rate_1",
+        "sample_rate_2",
+        "audio_format_flag",
+        "mpeg_audio_type",
+        "pregap",
+        "postgap",
+        "sample_count",
+        "encoder",
+        "gapless_audio_payload_size",
+        "play_count_2",
+        "app_rating",
+        "artwork_count",
+        "artwork_size",
+        "artwork_id_ref",
+        "has_artwork",
+        "store_track_id",
+        "store_encoder_version",
+        "store_artist_id",
+        "store_album_id",
+        "store_content_flag",
+        "source_path",
+        "source_relative_path",
+        "Source Path",
+        "Source Relative Path",
+        "podcast_flag",
+    }
+)
+
+_SAFE_EDITABLE_FIELDS = frozenset(
+    {
+        "Title",
+        "Artist",
+        "Album",
+        "Album Artist",
+        "Genre",
+        "Composer",
+        "Grouping",
+        "Comment",
+        "eq_setting",
+        "Sort Title",
+        "Sort Artist",
+        "Sort Album",
+        "Sort Album Artist",
+        "Sort Composer",
+        "Sort Show",
+        "Show",
+        "Episode",
+        "Subtitle",
+        "TV Network",
+        "Description Text",
+        "Category",
+        "Podcast Enclosure URL",
+        "Podcast RSS URL",
+        "Track Keywords",
+        "Show Locale",
+        "Lyrics",
+        "year",
+        "track_number",
+        "total_tracks",
+        "disc_number",
+        "total_discs",
+        "bpm",
+        "rating",
+        "play_count_1",
+        "skip_count",
+        "volume",
+        "sound_check",
+        "start_time",
+        "stop_time",
+        "bookmark_time",
+        "last_played",
+        "last_skipped",
+        "date_added",
+        "last_modified",
+        "date_released",
+        "date_added_to_itunes",
+        "checked_flag",
+        "explicit_flag",
+        "not_played_flag",
+        "compilation_flag",
+        "skip_when_shuffling",
+        "remember_position",
+        "gapless_track_flag",
+        "gapless_album_flag",
+        "movie_flag",
+        "use_podcast_now_playing_flag",
+        "media_type",
+        "season_number",
+        "episode_number",
+    }
+)
+
+_GROUP_OVERRIDES = {
+    "child_count": "Advanced",
+    "source_path": "File",
+    "source_relative_path": "File",
+    "Source Path": "File",
+    "Source Relative Path": "File",
+    "track_id": "Identifiers",
+    "db_track_id": "Identifiers",
+    "db_track_id_2": "Identifiers",
+    "db_id_2_ref": "Identifiers",
+    "album_id": "Identifiers",
+    "artist_id_ref": "Identifiers",
+    "composer_id": "Identifiers",
+    "user_id": "Identifiers",
+    "filetype": "File",
+    "visible": "Options",
+    "compilation_flag": "Options",
+    "checked_flag": "Options",
+    "explicit_flag": "Options",
+    "skip_when_shuffling": "Options",
+    "remember_position": "Options",
+    "lyrics_flag": "Options",
+    "gapless_track_flag": "Options",
+    "gapless_album_flag": "Options",
+    "podcast_flag": "Podcast",
+    "use_podcast_now_playing_flag": "Podcast",
+    "not_played_flag": "Podcast",
+    "movie_flag": "Video",
+    "rating": "Playback",
+    "length": "Playback",
+    "start_time": "Playback",
+    "stop_time": "Playback",
+    "sound_check": "Playback",
+    "play_count_1": "Playback",
+    "play_count_2": "Playback",
+    "bookmark_time": "Playback",
+    "skip_count": "Playback",
+    "volume": "Playback",
+    "vbr_flag": "File",
+    "mp3_flag": "File",
+    "purchased_aac_flag": "File",
+    "size": "File",
+    "bitrate": "File",
+    "sample_rate_1": "File",
+    "sample_rate_2": "File",
+    "audio_format_flag": "File",
+    "mpeg_audio_type": "File",
+    "size_2": "File",
+    "pregap": "File",
+    "postgap": "File",
+    "sample_count": "File",
+    "encoder": "File",
+    "media_type": "File",
+    "gapless_audio_payload_size": "File",
+    "artwork_count": "Artwork",
+    "artwork_size": "Artwork",
+    "artwork_id_ref": "Artwork",
+    "has_artwork": "Artwork",
+    "date_added": "Dates",
+    "last_modified": "Dates",
+    "date_released": "Dates",
+    "last_played": "Dates",
+    "last_skipped": "Dates",
+    "date_added_to_itunes": "Dates",
+    "app_rating": "Playback",
+    "year": "Metadata",
+    "track_number": "Metadata",
+    "total_tracks": "Metadata",
+    "disc_number": "Metadata",
+    "total_discs": "Metadata",
+    "bpm": "Metadata",
+    "season_number": "Video",
+    "episode_number": "Video",
+    "store_track_id": "Store",
+    "store_encoder_version": "Store",
+    "store_artist_id": "Store",
+    "store_album_id": "Store",
+    "store_content_flag": "Store",
+}
+
+_GROUP_ORDER = (
+    "Metadata",
+    "Sorting",
+    "Playback",
+    "Options",
+    "Video",
+    "Podcast",
+    "File",
+    "Artwork",
+    "Dates",
+    "Store",
+    "Identifiers",
+    "Advanced",
+    "Other",
+)
+
+_GROUP_TITLES = {
+    "Metadata": "Metadata",
+    "Sorting": "Sorting",
+    "Playback": "Playback",
+    "Options": "Playback Options",
+    "Video": "Video",
+    "Podcast": "Podcast",
+    "File": "File",
+    "Artwork": "Artwork",
+    "Dates": "Dates",
+    "Store": "Store",
+    "Identifiers": "IDs",
+    "Advanced": "Advanced",
+    "Other": "Other",
+}
+
+_GROUP_DESCRIPTIONS = {
+    "Metadata": "Titles, artists, albums, genres, and tags",
+    "Sorting": "Sort overrides used by the iPod library",
+    "Playback": "Rating, counts, timing, and playback position",
+    "Options": "Advisory, shuffle, resume, and gapless flags",
+    "Video": "Show, episode, and TV metadata",
+    "Podcast": "Podcast feeds, categories, and playback markers",
+    "File": "Location, format, media kind, and audio technical fields",
+    "Artwork": "Artwork counts and ArtworkDB references",
+    "Dates": "Added, modified, released, played, and skipped timestamps",
+    "Store": "iTunes Store metadata preserved from the database",
+    "Identifiers": "Track, album, artist, composer, and database IDs",
+    "Advanced": "Less common MHIT header fields",
+    "Other": "Additional parsed fields present on this selection",
+}
+
+_SUBGROUP_TITLES = {
+    "core": "Core Metadata",
+    "numbering": "Track & Disc",
+    "tags": "Tags",
+    "notes": "Notes & Lyrics",
+    "sort_overrides": "Sort Overrides",
+    "counts": "Rating & Counts",
+    "timing": "Timing",
+    "position": "Resume Position",
+    "levels": "Volume & Sound Check",
+    "equalizer": "Equalizer",
+    "advisory": "Advisory & Visibility",
+    "playback_flags": "Playback Flags",
+    "gapless_flags": "Gapless Flags",
+    "content_flags": "Content Flags",
+    "video_show": "Show Details",
+    "video_desc": "Descriptions",
+    "video_flags": "Video Flags",
+    "podcast_feed": "Feed",
+    "podcast_meta": "Category & Locale",
+    "podcast_flags": "Podcast Flags",
+    "location": "Location & Kind",
+    "sizes": "Sizes",
+    "encoding": "Encoding",
+    "format_flags": "Format Flags",
+    "samples": "Gapless Samples",
+    "artwork": "Artwork",
+    "dates": "Dates",
+    "store": "Store",
+    "ids": "Identifiers",
+    "advanced": "Advanced",
+    "other": "Other",
+}
+
+_SUBGROUP_ORDER = tuple(_SUBGROUP_TITLES)
+
+_SUBGROUP_BY_KEY = {
+    "Title": "core",
+    "Artist": "core",
+    "Album": "core",
+    "Album Artist": "core",
+    "Genre": "core",
+    "Composer": "core",
+    "Grouping": "tags",
+    "eq_setting": "equalizer",
+    "year": "tags",
+    "track_number": "numbering",
+    "total_tracks": "numbering",
+    "disc_number": "numbering",
+    "total_discs": "numbering",
+    "bpm": "tags",
+    "Comment": "notes",
+    "Lyrics": "notes",
+    "Sort Title": "sort_overrides",
+    "Sort Artist": "sort_overrides",
+    "Sort Album": "sort_overrides",
+    "Sort Album Artist": "sort_overrides",
+    "Sort Composer": "sort_overrides",
+    "Sort Show": "sort_overrides",
+    "rating": "counts",
+    "app_rating": "counts",
+    "play_count_1": "counts",
+    "play_count_2": "counts",
+    "skip_count": "counts",
+    "length": "timing",
+    "start_time": "timing",
+    "stop_time": "timing",
+    "bookmark_time": "position",
+    "volume": "levels",
+    "sound_check": "levels",
+    "checked_flag": "advisory",
+    "explicit_flag": "advisory",
+    "visible": "advisory",
+    "compilation_flag": "advisory",
+    "skip_when_shuffling": "playback_flags",
+    "remember_position": "playback_flags",
+    "gapless_track_flag": "gapless_flags",
+    "gapless_album_flag": "gapless_flags",
+    "lyrics_flag": "content_flags",
+    "vbr_flag": "format_flags",
+    "mp3_flag": "format_flags",
+    "purchased_aac_flag": "format_flags",
+    "movie_flag": "video_flags",
+    "Show": "video_show",
+    "season_number": "video_show",
+    "episode_number": "video_show",
+    "Episode": "video_show",
+    "TV Network": "video_show",
+    "Subtitle": "video_desc",
+    "Description Text": "video_desc",
+    "Category": "podcast_meta",
+    "Podcast Enclosure URL": "podcast_feed",
+    "Podcast RSS URL": "podcast_feed",
+    "Track Keywords": "video_show",
+    "Show Locale": "video_show",
+    "podcast_flag": "podcast_flags",
+    "use_podcast_now_playing_flag": "podcast_flags",
+    "not_played_flag": "podcast_flags",
+    "Location": "location",
+    "filetype": "format_flags",
+    "media_type": "location",
+    "size": "sizes",
+    "size_2": "sizes",
+    "source_path": "location",
+    "source_relative_path": "location",
+    "Source Path": "location",
+    "Source Relative Path": "location",
+    "bitrate": "encoding",
+    "sample_rate_1": "encoding",
+    "sample_rate_2": "encoding",
+    "audio_format_flag": "encoding",
+    "mpeg_audio_type": "encoding",
+    "encoder": "encoding",
+    "pregap": "samples",
+    "postgap": "samples",
+    "sample_count": "samples",
+    "gapless_audio_payload_size": "samples",
+    "artwork_count": "artwork",
+    "artwork_size": "artwork",
+    "artwork_id_ref": "artwork",
+    "has_artwork": "artwork",
+    "date_added": "dates",
+    "last_modified": "dates",
+    "date_released": "dates",
+    "last_played": "dates",
+    "last_skipped": "dates",
+    "date_added_to_itunes": "dates",
+    "store_track_id": "store",
+    "store_encoder_version": "store",
+    "store_artist_id": "store",
+    "store_album_id": "store",
+    "store_content_flag": "store",
+}
+
+_LABEL_OVERRIDES = {
+    "db_track_id": "Database Track ID",
+    "db_track_id_2": "Database Track ID 2",
+    "db_id_2_ref": "Database ID 2 Ref",
+    "checked_flag": "Checked",
+    "explicit_flag": "Content Advisory",
+    "not_played_flag": "Played Status",
+    "use_podcast_now_playing_flag": "Podcast Display",
+    "sample_rate_1": "Sample Rate",
+    "sample_rate_2": "Sample Rate Float",
+    "gapless_audio_payload_size": "Gapless Payload",
+    "artwork_id_ref": "Artwork Ref",
+    "has_artwork": "Artwork Presence",
+    "media_type": "Media Kind",
+    "filetype": "File Format",
+    "vbr_flag": "VBR",
+    "mp3_flag": "MP3 Marker",
+    "purchased_aac_flag": "Purchased AAC",
+    "audio_format_flag": "Audio Format",
+    "mpeg_audio_type": "MPEG Audio Type",
+    "app_rating": "Application Rating",
+    "play_count_1": "Play Count",
+    "play_count_2": "Play Count Delta",
+    "skip_count": "Skip Count",
+    "eq_setting": "Equalizer",
+    "date_added_to_itunes": "iTunes Date Added",
+}
+
+_RATING_OPTIONS = (
+    ("No Rating", 0),
+    ("1 star (20)", 20),
+    ("2 stars (40)", 40),
+    ("3 stars (60)", 60),
+    ("4 stars (80)", 80),
+    ("5 stars (100)", 100),
+)
+_EXPLICIT_OPTIONS = (("None", 0), ("Explicit", 1), ("Clean", 2))
+_CHECKED_OPTIONS = (("Checked (0)", 0), ("Unchecked (1)", 1))
+_BOOL_OPTIONS = (("No", 0), ("Yes", 1))
+_PLAYED_MARK_OPTIONS = (
+    ("Normal / unset (0)", 0),
+    ("Played (1)", 1),
+    ("Unplayed (2)", 2),
+)
+_PODCAST_DISPLAY_OPTIONS = (
+    ("Normal (0)", 0),
+    ("Podcast (1)", 1),
+    ("Podcast alternate (2)", 2),
+)
+_ARTWORK_PRESENCE_OPTIONS = (
+    ("Unset (0)", 0),
+    ("Has artwork (1)", 1),
+    ("No artwork (2)", 2),
+)
+_MEDIA_TYPE_OPTIONS = tuple(
+    (f"{label} ({value})", value) for value, label in sorted(MEDIA_TYPE_MAP.items())
+)
+
+_FIELD_HELP = {
+    "Title": "MHOD type 1. The display name shown by the iPod.",
+    "Artist": "MHOD type 4. Primary track artist.",
+    "Album": "MHOD type 3. Album title used for grouping.",
+    "Album Artist": "MHOD type 22. Album-level artist used by newer iTunes databases.",
+    "Genre": "MHOD type 5. Genre string used by the iPod browser.",
+    "Composer": "MHOD type 12. Composer metadata.",
+    "Grouping": "MHOD type 13. Grouping/work text.",
+    "eq_setting": "MHOD type 7. iTunes equalizer preset name.",
+    "Sort Title": "Sort override for title/name (MHOD type 27). Accepts legacy Sort Name on import.",
+    "Sort Artist": "Sort override for artist.",
+    "Sort Album": "Sort override for album.",
+    "Sort Album Artist": "Sort override for album artist.",
+    "Sort Composer": "Sort override for composer.",
+    "Sort Show": "Sort override for TV show.",
+    "Location": "iPod-internal file path. Changing it would require moving the media file too.",
+    "filetype": "File format/description used when the database is written.",
+    "rating": "iPod star rating stored as 0-100 in 20-point steps.",
+    "checked_flag": "Inverted iPod value: 0 means checked and 1 means unchecked. This is the iTunes checkbox state and does not control normal playback.",
+    "explicit_flag": "Content advisory: 0 none, 1 explicit, 2 clean.",
+    "not_played_flag": "Podcast-style played marker. 2 marks an item unplayed.",
+    "volume": "Signed per-track volume adjustment. Valid range is -255 to +255.",
+    "start_time": "Playback start offset in milliseconds.",
+    "stop_time": "Playback stop offset in milliseconds.",
+    "bookmark_time": "Resume/bookmark position in milliseconds.",
+    "sound_check": "ReplayGain/iTunes sound check normalization value.",
+    "media_type": "iPod media-kind bitfield that controls music/video/podcast/audiobook placement.",
+    "use_podcast_now_playing_flag": "Podcast display flag. libgpod treats 1 and 2 as podcast-style values.",
+    "has_artwork": "Not a plain boolean: libgpod writes 1 for artwork present and 2 for none.",
+    "artwork_id_ref": "Reference into ArtworkDB. It must match generated artwork entries.",
+    "gapless_track_flag": "Marks the track as having gapless playback data.",
+    "gapless_album_flag": "Marks the album as gapless.",
+    "gapless_audio_payload_size": "Raw gapless encoder-delay payload size.",
+    "pregap": "Raw encoder pregap sample count.",
+    "postgap": "Raw encoder padding/postgap sample count.",
+    "sample_count": "Total decoded sample count.",
+    "date_added": "When the item was added to the iPod library. Stored as a Unix timestamp and shown here as local date/time.",
+    "last_modified": "Source file modification date. Stored as a Unix timestamp and shown here as local date/time.",
+    "date_released": "Release date. Stored as a Unix timestamp and shown here as local date/time.",
+    "last_played": "Last play time. Stored as a Unix timestamp and shown here as local date/time.",
+    "last_skipped": "Last skip time. Stored as a Unix timestamp and shown here as local date/time.",
+    "date_added_to_itunes": "Original iTunes add date. Stored as a Unix timestamp and shown here as local date/time.",
+    "play_count_1": "Main play count stored in iTunesDB after Play Counts deltas are merged.",
+    "play_count_2": "Transient play count slot that is reset by the writer.",
+    "app_rating": "Application-computed/backup rating slot used by libgpod conventions.",
+    "store_track_id": "iTunes Store content identifier preserved from the database.",
+    "store_encoder_version": "iTunes Store encoder/version metadata preserved from the database.",
+    "store_artist_id": "iTunes Store artist identifier preserved from the database.",
+    "store_album_id": "iTunes Store album identifier preserved from the database.",
+    "store_content_flag": "iTunes Store content flag preserved from the database.",
+}
+
+_READ_ONLY_REASON_BY_KEY = {
+    "Location": "the database path must match the actual file on the iPod",
+    "filetype": "changing the codec marker without changing the file can make the track unplayable",
+    "visible": "the writer currently always emits visible tracks",
+    "play_count_2": "this slot is transient and reset during writes",
+    "has_artwork": "it is derived from ArtworkDB entries",
+}
+
+_MHIT_FIELD_MAP = {field.name: field for field in MHIT_FIELDS}
+_STRING_FIELD_KEYS = {key for key, _ in _STRING_FIELDS}
+
+
+def _normalize_sort_title_aliases(tracks: list[dict]) -> None:
+    for track in tracks:
+        if "Sort Name" not in track:
+            continue
+        sort_name = track.get("Sort Name")
+        if not track.get("Sort Title") and sort_name:
+            track["Sort Title"] = sort_name
+        track.pop("Sort Name", None)
+
+
+def _humanize_key(key: str) -> str:
+    if key in _LABEL_OVERRIDES:
+        return _LABEL_OVERRIDES[key]
+    text = key.replace("_", " ")
+    return " ".join(part.upper() if part in {"id", "db", "eq", "bpm"} else part.capitalize() for part in text.split())
+
+
+def _is_structural_key(key: str) -> bool:
+    return (
+        key.startswith("unk")
+        or key.startswith("hash_")
+        or key in {"sort_mhod_indicators"}
+    )
+
+
+def _is_field_editable(key: str) -> bool:
+    if key in _READ_ONLY_FIELDS or _is_structural_key(key):
+        return False
+    return key in _SAFE_EDITABLE_FIELDS
+
+
+def _read_only_reason_for_key(key: str) -> str:
+    if key in _READ_ONLY_REASON_BY_KEY:
+        return _READ_ONLY_REASON_BY_KEY[key]
+    if _is_structural_key(key):
+        return "this is an unknown or raw structural MHIT field"
+    if key in _GROUP_OVERRIDES and _GROUP_OVERRIDES[key] in {"Identifiers", "Store", "Artwork"}:
+        return "it is generated or preserved by the database writer"
+    if key in _READ_ONLY_FIELDS:
+        return "it is computed from the media file or another database"
+    return "this field is visible for inspection but is not safely editable yet"
+
+
+def _help_for_key(key: str, editable: bool) -> str:
+    help_text = _FIELD_HELP.get(key, "")
+    if editable:
+        return help_text
+    reason = _read_only_reason_for_key(key)
+    if help_text:
+        return f"{help_text}\nRead-only: {reason}."
+    return f"Read-only: {reason}."
+
+
+def _subgroup_for_key(key: str, group: str) -> str:
+    if key in _SUBGROUP_BY_KEY:
+        return _SUBGROUP_BY_KEY[key]
+    if group in {"Identifiers", "Advanced", "Other"}:
+        return group.lower()
+    return group.lower().replace(" & ", "_").replace(" ", "_")
+
+
+def _ordered_subgroups(specs: list[TrackFieldSpec]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for subgroup in _SUBGROUP_ORDER:
+        if any(_subgroup_for_key(spec.key, spec.group) == subgroup for spec in specs):
+            result.append(subgroup)
+            seen.add(subgroup)
+    for spec in specs:
+        subgroup = _subgroup_for_key(spec.key, spec.group)
+        if subgroup not in seen:
+            result.append(subgroup)
+            seen.add(subgroup)
+    return result
+
+
+def _selection_summary(tracks: list[dict]) -> str:
+    count = len(tracks)
+    if count != 1:
+        return f"{count} selected tracks"
+    track = tracks[0]
+    title = str(track.get("Title") or "Untitled")
+    artist = str(track.get("Artist") or "")
+    album = str(track.get("Album") or "")
+    pieces = [title]
+    if artist:
+        pieces.append(artist)
+    if album:
+        pieces.append(album)
+    return " • ".join(pieces)
+
+
+def _common_value(tracks: list[dict], key: str) -> Any:
+    values = [track.get(key) for track in tracks]
+    if not values:
+        return None
+    first = values[0]
+    for value in values[1:]:
+        if value != first:
+            return MIXED
+    return first
+
+
+def _infer_kind(key: str, sample: Any = None) -> str:
+    if key in _DATE_FIELD_KEYS:
+        return "date"
+    if key == "checked_flag":
+        return "checked_flag"
+    if key == "rating":
+        return "rating"
+    if key == "explicit_flag":
+        return "explicit"
+    if key == "not_played_flag":
+        return "played_mark"
+    if key == "use_podcast_now_playing_flag":
+        return "podcast_display"
+    if key == "has_artwork":
+        return "artwork_presence"
+    if key == "media_type":
+        return "media_type"
+    if key in _BOOL_FIELDS:
+        return "bool"
+    if key in _LONG_TEXT_FIELDS:
+        return "long_text"
+    if key in _STRING_FIELD_KEYS:
+        return "text"
+
+    field = _MHIT_FIELD_MAP.get(key)
+    if field is not None:
+        fmt = field.struct_format
+        if "s" in fmt:
+            return "literal"
+        if "f" in fmt:
+            return "float"
+        return "int"
+
+    if isinstance(sample, bool):
+        return "bool"
+    if isinstance(sample, int):
+        return "int"
+    if isinstance(sample, float):
+        return "float"
+    if isinstance(sample, (bytes, bytearray, list, tuple, dict)):
+        return "literal"
+    return "text"
+
+
+def build_track_field_specs(tracks: list[dict]) -> list[TrackFieldSpec]:
+    """Return ordered editable field specs for a selection of track dicts."""
+
+    specs: list[TrackFieldSpec] = []
+    seen: set[str] = set()
+
+    def add(key: str, group: str | None = None) -> None:
+        if key in seen:
+            return
+        seen.add(key)
+        sample = next((track.get(key) for track in tracks if key in track), None)
+        editable = _is_field_editable(key)
+        specs.append(
+            TrackFieldSpec(
+                key=key,
+                label=_humanize_key(key),
+                group=group or _GROUP_OVERRIDES.get(key, "Advanced"),
+                kind=_infer_kind(key, sample),
+                editable=editable,
+                help_text=_help_for_key(key, editable),
+                read_only_reason="" if editable else _read_only_reason_for_key(key),
+            )
+        )
+
+    for key, group in _STRING_FIELDS:
+        add(key, group)
+
+    for field in MHIT_FIELDS:
+        add(field.name, _GROUP_OVERRIDES.get(field.name))
+
+    ignored = {"children", "mhod_children", "mhip_children"}
+    for key in sorted({key for track in tracks for key in track}):
+        if key not in seen and key not in ignored:
+            add(key, "Advanced")
+
+    return specs
+
+
+class _TrackFieldRow(QFrame):
+    modifiedChanged = pyqtSignal()
+
+    def __init__(self, spec: TrackFieldSpec, value: Any, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.spec = spec
+        self._initializing = True
+        self._initial_value = value
+        self._mixed = value is MIXED
+        self._modified = False
+        self.setObjectName("trackFieldRow")
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 8, 10, 10)
+        layout.setSpacing(6)
+
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(8)
+        label = QLabel(spec.label)
+        label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
+        label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
+        if spec.help_text:
+            label.setToolTip(spec.help_text)
+        header.addWidget(label)
+        header.addStretch()
+
+        if not spec.editable:
+            read_only = QLabel("Read-only")
+            read_only.setObjectName("readOnlyPill")
+            read_only.setToolTip(spec.help_text)
+            read_only.setStyleSheet(
+                f"""
+                QLabel#readOnlyPill {{
+                    background: {Colors.SURFACE_ALT};
+                    border: 1px solid {Colors.BORDER_SUBTLE};
+                    border-radius: {Metrics.BORDER_RADIUS_SM}px;
+                    color: {Colors.TEXT_TERTIARY};
+                    padding: 2px 7px;
+                    font-family: {FONT_FAMILY};
+                    font-size: {Metrics.FONT_XS}px;
+                }}
+                """
+            )
+            header.addWidget(read_only)
+
+        self.reset_button = QPushButton("Reset")
+        self.reset_button.setObjectName("fieldResetButton")
+        self.reset_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.reset_button.setVisible(False)
+        self.reset_button.setFixedHeight(24)
+        self.reset_button.clicked.connect(self.reset)
+        self.reset_button.setStyleSheet(
+            f"""
+            QPushButton#fieldResetButton {{
+                background: transparent;
+                border: 1px solid {Colors.BORDER_SUBTLE};
+                border-radius: {Metrics.BORDER_RADIUS_SM}px;
+                color: {Colors.TEXT_SECONDARY};
+                padding: 2px 8px;
+                font-family: {FONT_FAMILY};
+                font-size: {Metrics.FONT_SM}px;
+            }}
+            QPushButton#fieldResetButton:hover {{
+                border-color: {Colors.BORDER_FOCUS};
+                color: {Colors.TEXT_PRIMARY};
+            }}
+            """
+        )
+        header.addWidget(self.reset_button)
+        layout.addLayout(header)
+
+        self.editor = self._build_editor(value)
+        if spec.help_text:
+            self.editor.setToolTip(spec.help_text)
+        layout.addWidget(self.editor)
+
+        self._initializing = False
+
+    def matches(self, query: str) -> bool:
+        haystack = (
+            f"{self.spec.label} {self.spec.key} {self.spec.group} "
+            f"{self.spec.help_text}"
+        ).lower()
+        return query.lower() in haystack
+
+    def is_modified(self) -> bool:
+        return self._modified
+
+    def value(self) -> Any:
+        return self._editor_value()
+
+    def reset(self) -> None:
+        self._set_editor_to_initial()
+        self._set_modified(False)
+
+    def _mark_modified(self) -> None:
+        if self._initializing or not self.spec.editable:
+            return
+        editor = self.editor
+        if isinstance(editor, QComboBox) and editor.currentData() is MIXED:
+            self._set_modified(False)
+            return
+        self._set_modified(True)
+
+    def _set_modified(self, modified: bool) -> None:
+        if modified and not self.spec.editable:
+            return
+        if self._modified == modified:
+            return
+        self._modified = modified
+        self.reset_button.setVisible(modified)
+        self.setProperty("modified", modified)
+        style = self.style()
+        if style is not None:
+            style.unpolish(self)
+            style.polish(self)
+        self.modifiedChanged.emit()
+
+    def _set_editor_to_initial(self) -> None:
+        self._initializing = True
+        try:
+            editor = self.editor
+            value = self._initial_value
+            mixed = value is MIXED
+            self._mixed = mixed
+            if isinstance(editor, QComboBox):
+                for index in range(editor.count()):
+                    data = editor.itemData(index)
+                    if (mixed and data is MIXED) or (not mixed and data == value):
+                        editor.setCurrentIndex(index)
+                        break
+            elif isinstance(editor, QPlainTextEdit):
+                editor.setPlaceholderText("Mixed values" if mixed else "")
+                editor.setPlainText("" if mixed or value is None else str(value))
+            elif isinstance(editor, QLineEdit):
+                editor.setPlaceholderText("Mixed values" if mixed else "")
+                editor.setText("" if mixed or value is None else self._format_value(value))
+        finally:
+            self._initializing = False
+
+    def _field_css(self) -> str:
+        return f"""
+            QLineEdit, QPlainTextEdit, QComboBox {{
+                background: {Colors.SURFACE_ALT};
+                border: 1px solid {Colors.BORDER_SUBTLE};
+                border-radius: {Metrics.BORDER_RADIUS_SM}px;
+                color: {Colors.TEXT_PRIMARY};
+                padding: 7px 9px;
+                font-family: {FONT_FAMILY};
+                font-size: {Metrics.FONT_SM}px;
+            }}
+            QLineEdit:focus, QPlainTextEdit:focus, QComboBox:focus {{
+                border-color: {Colors.BORDER_FOCUS};
+            }}
+            QLineEdit:read-only, QPlainTextEdit[readOnly="true"], QComboBox:disabled {{
+                background: {Colors.SURFACE};
+                color: {Colors.TEXT_SECONDARY};
+                border-color: {Colors.BORDER_SUBTLE};
+            }}
+            QComboBox QAbstractItemView {{
+                background: {Colors.DROPDOWN_BG};
+                color: {Colors.TEXT_PRIMARY};
+                selection-background-color: {Colors.ACCENT};
+                selection-color: {Colors.TEXT_ON_ACCENT};
+            }}
+        """
+
+    def _build_editor(self, value: Any) -> QWidget:
+        if self.spec.kind in {
+            "bool",
+            "checked_flag",
+            "rating",
+            "explicit",
+            "played_mark",
+            "podcast_display",
+            "artwork_presence",
+            "media_type",
+        }:
+            return self._build_combo(value)
+        if self.spec.kind == "long_text":
+            editor = QPlainTextEdit()
+            editor.setPlaceholderText("Mixed values" if self._mixed else "")
+            editor.setPlainText("" if self._mixed or value is None else str(value))
+            editor.setMinimumHeight(92)
+            editor.setStyleSheet(self._field_css())
+            editor.setReadOnly(not self.spec.editable)
+            editor.textChanged.connect(self._mark_modified)
+            return editor
+
+        editor = QLineEdit()
+        editor.setPlaceholderText("Mixed values" if self._mixed else "")
+        editor.setText("" if self._mixed or value is None else self._format_value(value))
+        editor.setStyleSheet(self._field_css())
+        editor.setMinimumHeight(34)
+        editor.setReadOnly(not self.spec.editable)
+        editor.textChanged.connect(self._mark_modified)
+        return editor
+
+    def _build_combo(self, value: Any) -> QComboBox:
+        combo = QComboBox()
+        combo.setStyleSheet(self._field_css())
+        combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        combo.setMinimumHeight(34)
+
+        options = self._combo_options(value)
+        if self._mixed:
+            combo.addItem("Mixed values", MIXED)
+        for label, data in options:
+            combo.addItem(label, data)
+
+        if not self._mixed:
+            found = False
+            for index in range(combo.count()):
+                if combo.itemData(index) == value:
+                    combo.setCurrentIndex(index)
+                    found = True
+                    break
+            if not found and value is not None:
+                combo.addItem(f"Current ({value})", value)
+                combo.setCurrentIndex(combo.count() - 1)
+
+        combo.currentIndexChanged.connect(self._mark_modified)
+        combo.setEnabled(self.spec.editable)
+        return combo
+
+    def _combo_options(self, value: Any) -> tuple[tuple[str, Any], ...]:
+        if self.spec.kind == "checked_flag":
+            return _CHECKED_OPTIONS
+        if self.spec.kind == "rating":
+            return _RATING_OPTIONS
+        if self.spec.kind == "explicit":
+            return _EXPLICIT_OPTIONS
+        if self.spec.kind == "played_mark":
+            return _PLAYED_MARK_OPTIONS
+        if self.spec.kind == "podcast_display":
+            return _PODCAST_DISPLAY_OPTIONS
+        if self.spec.kind == "artwork_presence":
+            return _ARTWORK_PRESENCE_OPTIONS
+        if self.spec.kind == "media_type":
+            if value is not MIXED and value is not None and all(data != value for _, data in _MEDIA_TYPE_OPTIONS):
+                return _MEDIA_TYPE_OPTIONS + ((f"Custom ({value})", value),)
+            return _MEDIA_TYPE_OPTIONS
+        return _BOOL_OPTIONS
+
+    def _format_value(self, value: Any) -> str:
+        if self.spec.kind == "date":
+            return _format_datetime_value(value)
+        if isinstance(value, bytes):
+            return value.hex()
+        return repr(value) if isinstance(value, (list, tuple, dict, bytearray)) else str(value)
+
+    def _editor_value(self) -> Any:
+        editor = self.editor
+        if isinstance(editor, QComboBox):
+            data = editor.currentData()
+            if data is MIXED:
+                raise ValueError(f"{self.spec.label} is still mixed")
+            return data
+        if isinstance(editor, QPlainTextEdit):
+            text = editor.toPlainText()
+        elif isinstance(editor, QLineEdit):
+            text = editor.text()
+        else:
+            return None
+
+        if self.spec.kind == "int":
+            return int(text.strip() or "0", 0)
+        if self.spec.kind == "float":
+            return float(text.strip() or "0")
+        if self.spec.kind == "date":
+            return _parse_datetime_text(text, self.spec.label)
+        if self.spec.kind == "literal":
+            return _parse_literal_text(text)
+        return text
+
+
+def _parse_literal_text(text: str) -> Any:
+    stripped = text.strip()
+    if not stripped:
+        return b""
+    try:
+        return ast.literal_eval(stripped)
+    except (SyntaxError, ValueError):
+        try:
+            return bytes.fromhex(stripped)
+        except ValueError:
+            return stripped
+
+
+def _format_datetime_value(unix_timestamp: Any) -> str:
+    if unix_timestamp in (None, ""):
+        return ""
+    try:
+        ts = int(unix_timestamp)
+    except (TypeError, ValueError):
+        return str(unix_timestamp)
+    if ts <= 0:
+        return ""
+    try:
+        return datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
+    except (OverflowError, OSError, ValueError):
+        return str(unix_timestamp)
+
+
+def _parse_datetime_text(text: str, label: str) -> int:
+    stripped = text.strip()
+    if not stripped:
+        return 0
+    try:
+        return int(stripped, 0)
+    except ValueError:
+        pass
+
+    normalized = stripped.replace("T", " ")
+    if normalized.endswith("Z"):
+        normalized = f"{normalized[:-1]}+00:00"
+    try:
+        dt = datetime.fromisoformat(normalized)
+    except ValueError:
+        try:
+            dt = dateutil_parser.parse(
+                stripped,
+                fuzzy=True,
+                default=datetime(1970, 1, 1, 0, 0, 0),
+            )
+        except (ParserError, OverflowError, TypeError, ValueError) as exc:
+            raise ValueError(
+                f"{label} must be a Unix timestamp or a recognizable date/time like 2024-03-09 17:00 or Mar 9 2024 5pm"
+            ) from exc
+    try:
+        return int(dt.timestamp())
+    except (OverflowError, OSError, ValueError) as exc:
+        raise ValueError(
+            f"{label} could not be converted into a valid Unix timestamp"
+        ) from exc
+
+
+class _ArtworkPreviewPanel(QFrame):
+    """Preview assigned track artwork and its decoded device format variants."""
+
+    def __init__(self, artworks: list[TrackArtworkPreview], parent: QWidget | None = None):
+        super().__init__(parent)
+        self._artworks = artworks
+        self._artwork_index = 0
+        self._format_index = 0
+        self._source_pixmap = QPixmap()
+        self._scale_queued = False
+        self.setObjectName("sectionPanel")
+
+        self.setStyleSheet(
+            f"""
+            QFrame#artworkPreviewRail, QFrame#artworkMetadataPanel {{
+                background: {Colors.SURFACE_ALT};
+                border: 1px solid {Colors.BORDER_SUBTLE};
+                border-radius: {Metrics.BORDER_RADIUS_SM}px;
+            }}
+            QLabel#artworkInspectorLabel {{
+                color: {Colors.TEXT_TERTIARY};
+                background: transparent;
+                text-transform: uppercase;
+            }}
+            """
+        )
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 9, 10, 10)
+        layout.setSpacing(8)
+
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(8)
+
+        title = QLabel("Assigned Artwork")
+        title.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.Bold))
+        title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
+        header.addWidget(title)
+        header.addStretch()
+
+        self._counter_label = QLabel("")
+        self._counter_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
+        self._counter_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
+        header.addWidget(self._counter_label)
+
+        self._prev_btn = QPushButton("<")
+        self._prev_btn.setStyleSheet(btn_css())
+        self._prev_btn.setFixedSize(30, 26)
+        self._prev_btn.setToolTip("Previous artwork")
+        self._prev_btn.clicked.connect(lambda: self._move_artwork(-1))
+        header.addWidget(self._prev_btn)
+
+        self._next_btn = QPushButton(">")
+        self._next_btn.setStyleSheet(btn_css())
+        self._next_btn.setFixedSize(30, 26)
+        self._next_btn.setToolTip("Next artwork")
+        self._next_btn.clicked.connect(lambda: self._move_artwork(1))
+        header.addWidget(self._next_btn)
+        layout.addLayout(header)
+
+        content = QHBoxLayout()
+        content.setContentsMargins(0, 0, 0, 0)
+        content.setSpacing(10)
+        layout.addLayout(content, 1)
+
+        preview_rail = QFrame()
+        preview_rail.setObjectName("artworkPreviewRail")
+        preview_rail.setMinimumWidth(250)
+        preview_rail.setMaximumWidth(320)
+        preview_rail.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        preview_layout = QVBoxLayout(preview_rail)
+        preview_layout.setContentsMargins(8, 8, 8, 8)
+        preview_layout.setSpacing(7)
+        content.addWidget(preview_rail, 0)
+
+        self._image_label = QLabel()
+        self._image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._image_label.setMinimumHeight(220)
+        self._image_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self._image_label.setStyleSheet(
+            f"""
+            QLabel {{
+                background: {Colors.SURFACE};
+                border: 1px solid {Colors.BORDER_SUBTLE};
+                border-radius: {Metrics.BORDER_RADIUS_SM}px;
+                color: {Colors.TEXT_TERTIARY};
+                padding: 8px;
+            }}
+            """
+        )
+        preview_layout.addWidget(self._image_label, 1)
+
+        self._meta_label = QLabel("")
+        self._meta_label.setWordWrap(True)
+        self._meta_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        self._meta_label.setStyleSheet(
+            f"""
+            QLabel {{
+                color: {Colors.TEXT_SECONDARY};
+                background: {Colors.SURFACE};
+                border: 1px solid {Colors.BORDER_SUBTLE};
+                border-radius: {Metrics.BORDER_RADIUS_SM}px;
+                padding: 6px 7px;
+            }}
+            """
+        )
+        preview_layout.addWidget(self._meta_label)
+
+        format_label = QLabel("Formats")
+        format_label.setObjectName("artworkInspectorLabel")
+        format_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS, QFont.Weight.Bold))
+        preview_layout.addWidget(format_label)
+
+        self._format_buttons_host = QWidget()
+        self._format_buttons_layout = FlowLayout(self._format_buttons_host, spacing=5)
+        self._format_buttons_layout.setContentsMargins(0, 0, 0, 0)
+        self._format_buttons_host.setMinimumHeight(32)
+        preview_layout.addWidget(self._format_buttons_host)
+
+        metadata_panel = QFrame()
+        metadata_panel.setObjectName("artworkMetadataPanel")
+        metadata_panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        metadata_layout = QVBoxLayout(metadata_panel)
+        metadata_layout.setContentsMargins(8, 8, 8, 8)
+        metadata_layout.setSpacing(6)
+        content.addWidget(metadata_panel, 1)
+
+        metadata_label = QLabel("ArtworkDB Fields")
+        metadata_label.setObjectName("artworkInspectorLabel")
+        metadata_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS, QFont.Weight.Bold))
+        metadata_layout.addWidget(metadata_label)
+
+        self._metadata_tree = QTreeWidget()
+        self._metadata_tree.setHeaderLabels(["ArtworkDB Field", "Value"])
+        self._metadata_tree.setRootIsDecorated(True)
+        self._metadata_tree.setAlternatingRowColors(True)
+        self._metadata_tree.setUniformRowHeights(False)
+        self._metadata_tree.setWordWrap(True)
+        self._metadata_tree.setAllColumnsShowFocus(True)
+        self._metadata_tree.setTextElideMode(Qt.TextElideMode.ElideNone)
+        self._metadata_tree.setMinimumHeight(290)
+        self._metadata_tree.setStyleSheet(
+            f"""
+            QTreeWidget {{
+                background: {Colors.SURFACE};
+                color: {Colors.TEXT_PRIMARY};
+                border: 1px solid {Colors.BORDER_SUBTLE};
+                border-radius: {Metrics.BORDER_RADIUS_SM}px;
+                padding: 3px;
+            }}
+            QTreeWidget::item {{
+                padding: 2px 2px;
+            }}
+            QTreeWidget::item:selected {{
+                background: {Colors.SURFACE_ACTIVE};
+                color: {Colors.TEXT_PRIMARY};
+            }}
+            QHeaderView::section {{
+                background: {Colors.SURFACE_RAISED};
+                color: {Colors.TEXT_SECONDARY};
+                border: none;
+                border-bottom: 1px solid {Colors.BORDER_SUBTLE};
+                padding: 6px;
+                font-weight: 600;
+            }}
+            """
+        )
+        header_view = self._metadata_tree.header()
+        if header_view is not None:
+            header_view.setStretchLastSection(True)
+            header_view.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+            header_view.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        metadata_layout.addWidget(self._metadata_tree, 1)
+
+        self._render()
+
+    def _move_artwork(self, delta: int) -> None:
+        if not self._artworks:
+            return
+        self._artwork_index = (self._artwork_index + delta) % len(self._artworks)
+        self._format_index = 0
+        self._render()
+
+    def _select_format(self, index: int) -> None:
+        self._format_index = index
+        self._render()
+
+    def _render(self) -> None:
+        if not self._artworks:
+            self._source_pixmap = QPixmap()
+            self._image_label.clear()
+            self._image_label.setText("No assigned artwork found")
+            self._meta_label.setText("ArtworkDB data is not available for this track, or this track has no assigned artwork.")
+            self._counter_label.setText("")
+            self._prev_btn.setEnabled(False)
+            self._next_btn.setEnabled(False)
+            self._set_format_buttons([])
+            self._set_metadata_sections([])
+            return
+
+        artwork = self._artworks[self._artwork_index]
+        variants = list(artwork.variants)
+        if not variants:
+            self._source_pixmap = QPixmap()
+            self._image_label.clear()
+            self._image_label.setText("No decodable artwork formats")
+            self._meta_label.setText(f"Artwork ID {artwork.img_id}")
+            self._counter_label.setText(f"{self._artwork_index + 1} of {len(self._artworks)}")
+            self._prev_btn.setEnabled(len(self._artworks) > 1)
+            self._next_btn.setEnabled(len(self._artworks) > 1)
+            self._set_format_buttons([])
+            self._set_metadata_sections([
+                ("ArtworkDB Image Item", artwork.metadata),
+            ])
+            return
+
+        self._format_index = max(0, min(self._format_index, len(variants) - 1))
+        variant = variants[self._format_index]
+        self._source_pixmap = pil_to_pixmap(variant.image)
+        self._counter_label.setText(f"{self._artwork_index + 1} of {len(self._artworks)}")
+        self._prev_btn.setEnabled(len(self._artworks) > 1)
+        self._next_btn.setEnabled(len(self._artworks) > 1)
+
+        detail_parts = [
+            f"Artwork ID {artwork.img_id}",
+            f"Format {variant.format_id}",
+        ]
+        if variant.width and variant.height:
+            detail_parts.append(f"{variant.width}x{variant.height}")
+        if variant.pixel_format:
+            detail_parts.append(variant.pixel_format)
+        if variant.size:
+            detail_parts.append(format_size(variant.size))
+        if variant.filename:
+            detail_parts.append(variant.filename)
+        self._meta_label.setText(" - ".join(detail_parts))
+        self._set_format_buttons(variants)
+        self._set_metadata_sections([
+            ("ArtworkDB Image Item", artwork.metadata),
+            ("Selected Format Container", variant.metadata),
+        ])
+        self._queue_scaled_pixmap()
+
+    def _set_metadata_sections(self, sections: list[tuple[str, tuple[tuple[str, str], ...]]]) -> None:
+        self._metadata_tree.clear()
+        has_rows = False
+        for section_title, rows in sections:
+            clean_rows = [(key, value) for key, value in rows if key]
+            if not clean_rows:
+                continue
+
+            has_rows = True
+            section_item = QTreeWidgetItem([section_title, ""])
+            section_font = section_item.font(0)
+            section_font.setBold(True)
+            section_item.setFont(0, section_font)
+            section_item.setFont(1, section_font)
+            section_item.setFlags(section_item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+
+            for key, value in clean_rows:
+                row_item = QTreeWidgetItem([key, value])
+                row_item.setToolTip(0, key)
+                row_item.setToolTip(1, value)
+                section_item.addChild(row_item)
+
+            self._metadata_tree.addTopLevelItem(section_item)
+            section_item.setExpanded(True)
+
+        if not has_rows:
+            placeholder = QTreeWidgetItem(["No ArtworkDB metadata available", ""])
+            placeholder.setFlags(Qt.ItemFlag.NoItemFlags)
+            self._metadata_tree.addTopLevelItem(placeholder)
+
+    def _set_format_buttons(self, variants: list[Any]) -> None:
+        while self._format_buttons_layout.count():
+            item = self._format_buttons_layout.takeAt(0)
+            widget = item.widget() if item is not None else None
+            if widget is not None:
+                widget.deleteLater()
+
+        if not variants:
+            return
+
+        chip_css = f"""
+            QPushButton {{
+                background: {Colors.SURFACE_RAISED};
+                color: {Colors.TEXT_SECONDARY};
+                border: 1px solid {Colors.BORDER_SUBTLE};
+                border-radius: 999px;
+                padding: 4px 8px;
+                font-family: {FONT_FAMILY};
+                font-size: {Metrics.FONT_XS}px;
+            }}
+            QPushButton:hover {{
+                background: {Colors.SURFACE_HOVER};
+                color: {Colors.TEXT_PRIMARY};
+                border-color: {Colors.BORDER};
+            }}
+            QPushButton:checked {{
+                background: {Colors.ACCENT_MUTED};
+                color: {Colors.TEXT_PRIMARY};
+                border-color: {Colors.ACCENT_BORDER};
+            }}
+        """
+        for index, variant in enumerate(variants):
+            btn = QPushButton(variant.label)
+            btn.setCheckable(True)
+            btn.setChecked(index == self._format_index)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setFixedHeight(25)
+            btn.setStyleSheet(chip_css)
+            btn.clicked.connect(lambda _checked=False, index=index: self._select_format(index))
+            self._format_buttons_layout.addWidget(btn)
+
+    def resizeEvent(self, a0) -> None:
+        super().resizeEvent(a0)
+        self._queue_scaled_pixmap()
+
+    def showEvent(self, a0) -> None:
+        super().showEvent(a0)
+        self._queue_scaled_pixmap()
+
+    def _queue_scaled_pixmap(self) -> None:
+        if self._source_pixmap.isNull() or self._scale_queued:
+            return
+        self._scale_queued = True
+        QTimer.singleShot(0, self._apply_scaled_pixmap)
+
+    def _apply_scaled_pixmap(self) -> None:
+        self._scale_queued = False
+        if self._source_pixmap.isNull():
+            return
+        self._image_label.setText("")
+        target_size = self._image_label.contentsRect().size()
+        if target_size.width() <= 0 or target_size.height() <= 0:
+            target_size = self._image_label.size()
+        if target_size.width() <= 32 or target_size.height() <= 32:
+            target_size = QSize(
+                max(220, self._image_label.minimumWidth()),
+                max(220, self._image_label.minimumHeight()),
+            )
+        self._image_label.setPixmap(
+            self._source_pixmap.scaled(
+                target_size,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        )
+
+
+class TrackEditorDialog(QDialog):
+    """iTunes-style metadata editor that applies fields edited by the user."""
+
+    def __init__(self, tracks: list[dict], parent: QWidget | None = None):
+        super().__init__(parent)
+        _normalize_sort_title_aliases(tracks)
+        self._tracks = tracks
+        self._rows: list[_TrackFieldRow] = []
+        self._changes: dict[str, Any] = {}
+        self._page_rows: dict[str, list[_TrackFieldRow]] = {}
+        self._page_items: dict[str, QListWidgetItem] = {}
+        self._page_indices: dict[str, int] = {}
+        self._section_rows: list[tuple[QFrame, list[_TrackFieldRow]]] = []
+
+        count = len(tracks)
+        self.setWindowTitle(f"Edit {count} Track{'s' if count != 1 else ''}")
+        self.setMinimumSize(860, 660)
+        self.resize(980, 740)
+        self.setStyleSheet(
+            f"""
+            QDialog {{
+                background: {Colors.DIALOG_BG};
+            }}
+            QFrame#editorHeader {{
+                background: {Colors.SURFACE};
+                border: 1px solid {Colors.BORDER_SUBTLE};
+                border-radius: {Metrics.BORDER_RADIUS_SM}px;
+            }}
+            QListWidget#sectionNav {{
+                background: {Colors.SURFACE};
+                border: 1px solid {Colors.BORDER_SUBTLE};
+                border-radius: {Metrics.BORDER_RADIUS_SM}px;
+                padding: 6px;
+            }}
+            QListWidget#sectionNav::item {{
+                color: {Colors.TEXT_SECONDARY};
+                border-radius: {Metrics.BORDER_RADIUS_SM}px;
+                padding: 8px 10px;
+                margin: 1px 0;
+            }}
+            QListWidget#sectionNav::item:selected {{
+                background: {Colors.ACCENT_MUTED};
+                color: {Colors.TEXT_PRIMARY};
+                border: 1px solid {Colors.ACCENT_BORDER};
+            }}
+            QListWidget#sectionNav::item:hover {{
+                background: {Colors.SURFACE_HOVER};
+                color: {Colors.TEXT_PRIMARY};
+            }}
+            QFrame#sectionPanel {{
+                background: {Colors.SURFACE};
+                border: 1px solid {Colors.BORDER_SUBTLE};
+                border-radius: {Metrics.BORDER_RADIUS_SM}px;
+            }}
+            QFrame#trackFieldRow {{
+                background: transparent;
+                border: 1px solid transparent;
+                border-radius: {Metrics.BORDER_RADIUS_SM}px;
+            }}
+            QFrame#trackFieldRow[modified="true"] {{
+                background: {Colors.ACCENT_MUTED};
+                border: 1px solid {Colors.ACCENT_BORDER};
+            }}
+            """
+        )
+
+        self._build_ui()
+
+    def changes(self) -> dict[str, Any]:
+        if self._changes:
+            return dict(self._changes)
+        return dict(self._collect_changes())
+
+    def accept(self) -> None:
+        try:
+            self._changes = self._collect_changes()
+        except ValueError as exc:
+            QMessageBox.warning(self, "Invalid Track Edit", str(exc))
+            return
+        super().accept()
+
+    def _build_ui(self) -> None:
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(16, 16, 16, 16)
+        outer.setSpacing(12)
+
+        header = QFrame()
+        header.setObjectName("editorHeader")
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(14, 12, 14, 12)
+        header_layout.setSpacing(12)
+
+        title_wrap = QVBoxLayout()
+        title_wrap.setContentsMargins(0, 0, 0, 0)
+        title_wrap.setSpacing(3)
+
+        title = QLabel(self.windowTitle())
+        title.setFont(QFont(FONT_FAMILY, Metrics.FONT_TITLE, QFont.Weight.Bold))
+        title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
+        title_wrap.addWidget(title)
+
+        subtitle = QLabel(_selection_summary(self._tracks))
+        subtitle.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        subtitle.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
+        title_wrap.addWidget(subtitle)
+
+        header_layout.addLayout(title_wrap, 1)
+
+        self._search = QLineEdit()
+        self._search.setPlaceholderText("Filter fields")
+        self._search.setStyleSheet(
+            f"""
+            QLineEdit {{
+                background: {Colors.SURFACE_ALT};
+                border: 1px solid {Colors.BORDER};
+                border-radius: {Metrics.BORDER_RADIUS_SM}px;
+                color: {Colors.TEXT_PRIMARY};
+                padding: 8px 10px;
+                font-family: {FONT_FAMILY};
+                font-size: {Metrics.FONT_SM}px;
+            }}
+            QLineEdit:focus {{
+                border-color: {Colors.BORDER_FOCUS};
+            }}
+            """
+        )
+        self._search.textChanged.connect(self._apply_filter)
+        self._search.setFixedWidth(260)
+        header_layout.addWidget(self._search, 0, Qt.AlignmentFlag.AlignVCenter)
+        outer.addWidget(header)
+
+        content = QHBoxLayout()
+        content.setContentsMargins(0, 0, 0, 0)
+        content.setSpacing(12)
+
+        self._nav = QListWidget()
+        self._nav.setObjectName("sectionNav")
+        self._nav.setFixedWidth(178)
+        self._nav.setSpacing(2)
+        self._nav.currentRowChanged.connect(self._on_nav_changed)
+        content.addWidget(self._nav)
+
+        self._stack = QStackedWidget()
+        content.addWidget(self._stack, 1)
+        outer.addLayout(content, 1)
+
+        grouped: dict[str, list[TrackFieldSpec]] = {}
+        for spec in build_track_field_specs(self._tracks):
+            grouped.setdefault(spec.group, []).append(spec)
+
+        for group in _GROUP_ORDER:
+            specs = grouped.get(group)
+            if specs:
+                self._add_group_page(group, specs)
+        if self._nav.count() > 0:
+            self._nav.setCurrentRow(0)
+
+        button_row = QHBoxLayout()
+        button_row.setSpacing(8)
+        self._change_label = QLabel("No changes")
+        self._change_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        self._change_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
+        button_row.addWidget(self._change_label)
+
+        self._reset_all_btn = QPushButton("Reset Changes")
+        self._reset_all_btn.setStyleSheet(btn_css())
+        self._reset_all_btn.setEnabled(False)
+        self._reset_all_btn.clicked.connect(self._reset_all_changes)
+        button_row.addWidget(self._reset_all_btn)
+
+        button_row.addStretch()
+
+        cancel = QPushButton("Cancel")
+        cancel.setStyleSheet(btn_css())
+        cancel.clicked.connect(self.reject)
+        button_row.addWidget(cancel)
+
+        apply = QPushButton("Apply")
+        apply.setStyleSheet(accent_btn_css())
+        apply.clicked.connect(self.accept)
+        button_row.addWidget(apply)
+
+        outer.addLayout(button_row)
+
+    def _add_group_page(self, group: str, specs: list[TrackFieldSpec]) -> None:
+        page = QWidget()
+        page_layout = QVBoxLayout(page)
+        page_layout.setContentsMargins(0, 0, 0, 0)
+
+        body = QWidget()
+        body_layout = QVBoxLayout(body)
+        body_layout.setContentsMargins(0, 0, 0, 0)
+        body_layout.setSpacing(12)
+
+        page_header = QFrame()
+        page_header.setObjectName("sectionPanel")
+        page_header_layout = QVBoxLayout(page_header)
+        page_header_layout.setContentsMargins(14, 12, 14, 12)
+        page_header_layout.setSpacing(3)
+        heading = QLabel(_GROUP_TITLES.get(group, group))
+        heading.setFont(QFont(FONT_FAMILY, Metrics.FONT_XL, QFont.Weight.Bold))
+        heading.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
+        page_header_layout.addWidget(heading)
+        description = QLabel(_GROUP_DESCRIPTIONS.get(group, ""))
+        description.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        description.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
+        page_header_layout.addWidget(description)
+        body_layout.addWidget(page_header)
+
+        if group == "Artwork":
+            try:
+                artworks = get_track_artwork_previews(self._tracks)
+            except Exception as exc:
+                logger.warning("Failed to load track artwork previews: %s", exc)
+                artworks = []
+            body_layout.addWidget(_ArtworkPreviewPanel(artworks, body))
+
+        page_rows: list[_TrackFieldRow] = []
+        for subgroup in _ordered_subgroups(specs):
+            subgroup_specs = [
+                spec for spec in specs
+                if _subgroup_for_key(spec.key, spec.group) == subgroup
+            ]
+            if not subgroup_specs:
+                continue
+
+            panel = QFrame()
+            panel.setObjectName("sectionPanel")
+            panel_layout = QVBoxLayout(panel)
+            panel_layout.setContentsMargins(12, 10, 12, 12)
+            panel_layout.setSpacing(10)
+
+            section_title = QLabel(_SUBGROUP_TITLES.get(subgroup, _humanize_key(subgroup)))
+            section_title.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.Bold))
+            section_title.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
+            panel_layout.addWidget(section_title)
+
+            grid = QGridLayout()
+            grid.setContentsMargins(0, 0, 0, 0)
+            grid.setHorizontalSpacing(10)
+            grid.setVerticalSpacing(10)
+            row_index = 0
+            col_index = 0
+            subsection_rows: list[_TrackFieldRow] = []
+            for spec in subgroup_specs:
+                field = _TrackFieldRow(spec, _common_value(self._tracks, spec.key), panel)
+                field.modifiedChanged.connect(self._update_change_summary)
+                self._rows.append(field)
+                page_rows.append(field)
+                subsection_rows.append(field)
+
+                is_wide = spec.kind == "long_text" or spec.key in {"Location", "Podcast Enclosure URL", "Podcast RSS URL"}
+                if is_wide and col_index == 1:
+                    row_index += 1
+                    col_index = 0
+                if is_wide:
+                    grid.addWidget(field, row_index, 0, 1, 2)
+                    row_index += 1
+                    col_index = 0
+                else:
+                    grid.addWidget(field, row_index, col_index)
+                    col_index += 1
+                    if col_index >= 2:
+                        row_index += 1
+                        col_index = 0
+            grid.setColumnStretch(0, 1)
+            grid.setColumnStretch(1, 1)
+            panel_layout.addLayout(grid)
+            self._section_rows.append((panel, subsection_rows))
+            body_layout.addWidget(panel)
+
+        body_layout.addStretch()
+
+        scroll = make_scroll_area()
+        scroll.setWidget(body)
+        page_layout.addWidget(scroll)
+        index = self._stack.addWidget(page)
+        self._page_indices[group] = index
+        self._page_rows[group] = page_rows
+
+        item = QListWidgetItem(_GROUP_TITLES.get(group, group))
+        item.setData(Qt.ItemDataRole.UserRole, group)
+        self._nav.addItem(item)
+        self._page_items[group] = item
+
+    def _on_nav_changed(self, row: int) -> None:
+        item = self._nav.item(row)
+        if item is None:
+            return
+        group = item.data(Qt.ItemDataRole.UserRole)
+        if not isinstance(group, str):
+            return
+        index = self._page_indices.get(group)
+        if index is not None:
+            self._stack.setCurrentIndex(index)
+
+    def _reset_all_changes(self) -> None:
+        for row in self._rows:
+            if row.is_modified():
+                row.reset()
+        self._update_change_summary()
+
+    def _update_change_summary(self) -> None:
+        count = sum(1 for row in self._rows if row.is_modified())
+        if count == 0:
+            self._change_label.setText("No changes")
+            self._reset_all_btn.setEnabled(False)
+        else:
+            self._change_label.setText(f"{count} changed field{'s' if count != 1 else ''}")
+            self._reset_all_btn.setEnabled(True)
+
+    def _apply_filter(self, text: str) -> None:
+        query = text.strip()
+        visible_groups: list[str] = []
+        for group, rows in self._page_rows.items():
+            group_has_visible_rows = False
+            for row in rows:
+                visible = not query or row.matches(query)
+                row.setVisible(visible)
+                group_has_visible_rows = group_has_visible_rows or visible
+
+            item = self._page_items.get(group)
+            if item is not None:
+                item.setHidden(bool(query) and not group_has_visible_rows)
+            if group_has_visible_rows:
+                visible_groups.append(group)
+
+        for panel, rows in self._section_rows:
+            # Use each row's explicit hidden state here instead of effective
+            # visibility. Once a parent panel is hidden, child rows report
+            # not visible even after being matched again by a new filter.
+            panel.setVisible(any(not row.isHidden() for row in rows))
+
+        current = self._nav.currentItem()
+        if visible_groups and (current is None or current.isHidden()):
+            first_visible = self._page_items.get(visible_groups[0])
+            if first_visible is not None:
+                self._nav.setCurrentItem(first_visible)
+
+    def _collect_changes(self) -> dict[str, Any]:
+        changes: dict[str, Any] = {}
+        for row in self._rows:
+            if not row.spec.editable or not row.is_modified():
+                continue
+            changes[row.spec.key] = row.value()
+        return changes

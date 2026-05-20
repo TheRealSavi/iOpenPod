@@ -7,8 +7,8 @@ sync flow control.
 import logging
 import os
 import struct
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Optional
 
 from iTunesDB_Writer.mhit_writer import TrackInfo
 from iTunesDB_Writer.mhyp_writer import PlaylistInfo
@@ -26,7 +26,7 @@ def read_existing_database(ipod_path: Path) -> dict:
     - ``rating`` may be overridden if the user rated on the iPod
     """
     from iTunesDB_Parser import parse_itunesdb
-    from iTunesDB_Parser.playcounts import parse_playcounts, merge_playcounts
+    from iTunesDB_Parser.playcounts import merge_playcounts, parse_playcounts
     from iTunesDB_Shared.extraction import (
         extract_datasets,
         extract_mhod_strings,
@@ -131,11 +131,12 @@ def read_existing_database(ipod_path: Path) -> dict:
 def write_database(
     ipod_path: Path,
     tracks: list[TrackInfo],
-    pc_file_paths: Optional[dict] = None,
-    playlists: Optional[list[PlaylistInfo]] = None,
-    smart_playlists: Optional[list[PlaylistInfo]] = None,
+    pc_file_paths: dict | None = None,
+    playlists: list[PlaylistInfo] | None = None,
+    smart_playlists: list[PlaylistInfo] | None = None,
     master_playlist_name: str = "iPod",
-    progress_callback: Optional[Callable[[str], None]] = None,
+    progress_callback: Callable[[str], None] | None = None,
+    raise_on_error: bool = False,
 ) -> bool:
     """Write tracks to iTunesDB (and ArtworkDB if pc_file_paths provided).
 
@@ -160,8 +161,7 @@ def write_database(
     # Resolve capabilities once for the writer
     capabilities = None
     try:
-        from ipod_device import get_current_device
-        from ipod_device import capabilities_for_family_gen
+        from ipod_device import capabilities_for_family_gen, get_current_device
         dev = get_current_device()
         if dev and dev.model_family:
             capabilities = capabilities_for_family_gen(
@@ -183,6 +183,8 @@ def write_database(
         )
     except Exception as e:
         logger.exception("Failed to write iTunesDB: %s", e)
+        if raise_on_error:
+            raise
         return False
 
     # ── SQLite databases (Nano 5G/6G/7G) ─────────────────────────
@@ -236,9 +238,13 @@ def write_database(
             )
             if not sqlite_ok:
                 logger.error("SQLite database write failed")
+                if raise_on_error:
+                    raise RuntimeError("SQLite database write failed")
                 return False
         except Exception as e:
             logger.exception("Failed to write SQLite databases: %s", e)
+            if raise_on_error:
+                raise
             return False
 
     return ok

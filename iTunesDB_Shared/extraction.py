@@ -57,7 +57,7 @@ def extract_mhod_strings(children: list) -> dict:
         children: The 'children' list from a parsed track/album/artist/playlist.
 
     Returns:
-        dict mapping mhod_type_map names to string values,
+        dict mapping mhod_type_map field keys to string values,
         e.g. {"Title": "My Song", "Artist": "Foo"}
     """
     strings = {}

@@ -2349,7 +2349,7 @@ class SyncReviewWidget(QWidget):
         if unresolved:
             skipped_parts.append(f"{unresolved:,} missing file path{'s' if unresolved != 1 else ''}")
         if unsupported:
-            skipped_parts.append(f"{unsupported:,} unsupported file type{'s' if unsupported != 1 else ''}")
+            skipped_parts.append(f"{unsupported:,} unsupported file format{'s' if unsupported != 1 else ''}")
         if skipped_parts:
             lines.append("")
             lines.append(

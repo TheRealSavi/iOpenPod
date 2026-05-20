@@ -341,6 +341,7 @@ METADATA_FIELDS: dict[str, str] = {
     "composer": "Composer",
     "comment": "Comment",
     "grouping": "Grouping",
+    "eq_setting": "eq_setting",
     "bpm": "bpm",
     "compilation": "compilation_flag",
     "explicit_flag": "explicit_flag",

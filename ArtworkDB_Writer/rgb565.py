@@ -8,18 +8,17 @@ RGB565 encoding: 5 bits red | 6 bits green | 5 bits blue (16 bits per pixel)
 """
 
 import io
+
 import numpy as np
 from PIL import Image
-from typing import Optional
 
 from ipod_device import (
-    ArtworkFormat,
     ITHMB_FORMAT_MAP,
+    ArtworkFormat,
     ithmb_formats_for_device,
     resolve_cover_art_format_definitions,
     resolve_cover_art_format_definitions_for_device,
 )
-
 
 # ── Artwork format tables ─────────────────────────────────────────────────
 # All canonical format definitions now live in ipod_device.
@@ -45,6 +44,13 @@ IPOD_NANO_5G_FORMATS = ithmb_formats_for_device("iPod Nano", "5th Gen")
 
 # Stride override: format_id → stride in pixels (when stride != width)
 IPOD_STRIDE_OVERRIDE: dict[int, int] = {}
+
+
+def _format_decompression_bomb_message(source_path: str, exc: Exception) -> str:
+    base = f"Artwork image exceeds Pillow safety limit: {exc}"
+    if source_path:
+        return f"{base} Offending image: {source_path}"
+    return base
 
 
 def get_artwork_format_definitions(ipod_path: str) -> dict[int, ArtworkFormat]:
@@ -123,7 +129,7 @@ def _extract_format_ids(data: bytes) -> list[int]:
     return result
 
 
-def image_from_bytes(art_bytes: bytes) -> Optional[Image.Image]:
+def image_from_bytes(art_bytes: bytes, *, source_path: str = "") -> Image.Image | None:
     """
     Load an image from raw bytes (JPEG/PNG/etc).
 
@@ -138,6 +144,8 @@ def image_from_bytes(art_bytes: bytes) -> Optional[Image.Image]:
         if img.mode != 'RGB':
             img = img.convert('RGBA').convert('RGB')
         return img
+    except Image.DecompressionBombError as exc:
+        raise ValueError(_format_decompression_bomb_message(source_path, exc)) from exc
     except Exception:
         return None
 
@@ -171,7 +179,7 @@ def resize_for_format(img: Image.Image, format_id: int) -> Image.Image:
 
 
 def rgb888_to_rgb565(img: Image.Image, format_width: int, format_height: int,
-                     stride: Optional[int] = None) -> bytes:
+                     stride: int | None = None) -> bytes:
     """
     Convert an RGB888 image to RGB565 little-endian pixel data.
 
@@ -216,7 +224,7 @@ def rgb888_to_rgb565(img: Image.Image, format_width: int, format_height: int,
     return rgb565.astype('<u2').tobytes()
 
 
-def convert_art_for_ipod(art_bytes: bytes, format_id: int) -> Optional[dict]:
+def convert_art_for_ipod(art_bytes: bytes, format_id: int) -> dict | None:
     """
     Convert album art to iPod RGB565 format for a specific size.
 

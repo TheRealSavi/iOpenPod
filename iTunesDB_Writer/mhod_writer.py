@@ -22,7 +22,6 @@ Cross-referenced against:
 """
 
 import struct
-from typing import Optional
 
 from iTunesDB_Shared.constants import (
     MHOD_TYPE_ALBUM,
@@ -294,33 +293,33 @@ def build_chapter_blob(
 def write_track_mhods(
     title: str,
     location: str,
-    artist: Optional[str] = None,
-    album: Optional[str] = None,
-    genre: Optional[str] = None,
-    album_artist: Optional[str] = None,
-    composer: Optional[str] = None,
-    comment: Optional[str] = None,
-    filetype_desc: Optional[str] = None,
-    sort_artist: Optional[str] = None,
-    sort_name: Optional[str] = None,
-    sort_album: Optional[str] = None,
-    sort_album_artist: Optional[str] = None,
-    sort_composer: Optional[str] = None,
-    grouping: Optional[str] = None,
-    description: Optional[str] = None,
-    podcast_enclosure_url: Optional[str] = None,
-    podcast_rss_url: Optional[str] = None,
-    subtitle: Optional[str] = None,
-    show_name: Optional[str] = None,
-    episode_id: Optional[str] = None,
-    network_name: Optional[str] = None,
-    keywords: Optional[str] = None,
-    sort_show: Optional[str] = None,
-    category: Optional[str] = None,
-    lyrics: Optional[str] = None,
-    eq_setting: Optional[str] = None,
-    show_locale: Optional[str] = None,
-    chapter_data: Optional[dict] = None,
+    artist: str | None = None,
+    album: str | None = None,
+    genre: str | None = None,
+    album_artist: str | None = None,
+    composer: str | None = None,
+    comment: str | None = None,
+    filetype_desc: str | None = None,
+    sort_artist: str | None = None,
+    sort_name: str | None = None,
+    sort_album: str | None = None,
+    sort_album_artist: str | None = None,
+    sort_composer: str | None = None,
+    grouping: str | None = None,
+    description: str | None = None,
+    podcast_enclosure_url: str | None = None,
+    podcast_rss_url: str | None = None,
+    subtitle: str | None = None,
+    show_name: str | None = None,
+    episode_id: str | None = None,
+    network_name: str | None = None,
+    keywords: str | None = None,
+    sort_show: str | None = None,
+    category: str | None = None,
+    lyrics: str | None = None,
+    eq_setting: str | None = None,
+    show_locale: str | None = None,
+    chapter_data: dict | None = None,
 ) -> tuple[bytes, int]:
     """
     Write all MHODs for a track.
@@ -334,7 +333,7 @@ def write_track_mhods(
         album_artist: Album artist (for compilations)
         composer: Composer
         comment: Comment/notes
-        filetype_desc: File type description (e.g., "MPEG audio file")
+        filetype_desc: File format description (e.g., "MPEG audio file")
         sort_artist: Sort artist name
         sort_name: Sort title
         sort_album: Sort album name

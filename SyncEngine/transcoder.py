@@ -15,6 +15,7 @@ iPod hardware limits enforced on every output:
 
 import json as _json
 import logging
+import math
 import shutil
 import subprocess
 import sys
@@ -107,6 +108,13 @@ _VALID_X264_PRESETS: frozenset[str] = frozenset({
     "ultrafast", "superfast", "veryfast", "faster", "fast", "medium",
     "slow", "slower", "veryslow",
 })
+
+_AUDIO_TRANSCODE_TIMEOUT_FLOOR_S = 10 * 60
+_AUDIO_TRANSCODE_TIMEOUT_PADDING_S = 10 * 60
+_AUDIO_TRANSCODE_TIMEOUT_CEILING_S = 12 * 60 * 60
+_VIDEO_TRANSCODE_TIMEOUT_FLOOR_S = 2 * 60 * 60
+_VIDEO_TRANSCODE_TIMEOUT_PADDING_S = 30 * 60
+_VIDEO_TRANSCODE_TIMEOUT_CEILING_S = 24 * 60 * 60
 
 
 def _read_setting_str(settings: object, key: str, default: str) -> str:
@@ -755,6 +763,33 @@ def _probe_duration_us(filepath: str | Path) -> int:
         return int(float(info.get("format", {}).get("duration", 0)) * 1_000_000)
     except (ValueError, TypeError):
         return 0
+
+
+def _transcode_timeout_seconds(
+    target: TranscodeTarget,
+    duration_us: int,
+) -> int:
+    """Return a duration-aware transcode timeout in seconds.
+
+    Audio jobs used to share a hard 10-minute timeout, which is too small for
+    long spoken-word files such as audiobooks. Scale the timeout with source
+    duration while keeping lower/upper bounds so wedged ffmpeg processes still
+    get reaped eventually.
+    """
+    if target == TranscodeTarget.VIDEO_H264:
+        floor_s = _VIDEO_TRANSCODE_TIMEOUT_FLOOR_S
+        padding_s = _VIDEO_TRANSCODE_TIMEOUT_PADDING_S
+        ceiling_s = _VIDEO_TRANSCODE_TIMEOUT_CEILING_S
+    else:
+        floor_s = _AUDIO_TRANSCODE_TIMEOUT_FLOOR_S
+        padding_s = _AUDIO_TRANSCODE_TIMEOUT_PADDING_S
+        ceiling_s = _AUDIO_TRANSCODE_TIMEOUT_CEILING_S
+
+    if duration_us <= 0:
+        return floor_s
+
+    duration_s = math.ceil(duration_us / 1_000_000)
+    return max(floor_s, min(ceiling_s, duration_s + padding_s))
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1413,12 +1448,12 @@ def _run_transcode(
     """Run an ffmpeg command and return a TranscodeResult."""
     try:
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        timeout = 7200 if target == TranscodeTarget.VIDEO_H264 else 600
+        duration_us = _probe_duration_us(source_path)
+        timeout = _transcode_timeout_seconds(target, duration_us)
 
         if progress_callback and target == TranscodeTarget.VIDEO_H264:
-            dur = _probe_duration_us(source_path)
             returncode, stderr = _run_ffmpeg_with_progress(
-                cmd, dur, progress_callback, timeout,
+                cmd, duration_us, progress_callback, timeout,
                 is_cancelled=is_cancelled,
             )
             progress_callback(1.0)

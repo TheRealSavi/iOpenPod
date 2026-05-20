@@ -613,7 +613,7 @@ class PCLibrary:
             except Exception as e:
                 logging.debug(f"mutagen failed on {file_path}: {e}")
 
-        # Extract metadata based on file type
+        # Extract metadata based on file format
         metadata = self._extract_metadata(audio, ext, file_path)
 
         # Extract art hash for artwork change detection
