@@ -10,6 +10,7 @@ unchecks individual tracks, then submits only the selected paths for sync.
 from __future__ import annotations
 
 import logging
+import os
 from collections import defaultdict, deque
 from typing import TYPE_CHECKING
 
@@ -114,25 +115,60 @@ def _extract_art_for_group(file_paths: list[str]) -> tuple | None:
     return (img, dcol, album_colors)
 
 
+def _normalize_folder_list(folders: object) -> list[str]:
+    if not folders:
+        return []
+    if isinstance(folders, str):
+        candidates = [folders]
+    else:
+        try:
+            candidates = list(folders)  # type: ignore[arg-type]
+        except TypeError:
+            candidates = [folders]
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        folder = str(candidate or "").strip()
+        if not folder:
+            continue
+        key = os.path.normcase(os.path.abspath(os.path.expanduser(folder)))
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append(folder)
+    return normalized
+
+
+def _folder_label(folders: list[str]) -> str:
+    if not folders:
+        return "No folders selected"
+    if len(folders) == 1:
+        display = folders[0]
+        return "\u2026" + display[-57:] if len(display) > 60 else display
+    names = [os.path.basename(os.path.normpath(folder)) or folder for folder in folders[:3]]
+    suffix = "" if len(folders) <= 3 else f" + {len(folders) - 3} more"
+    return f"{len(folders)} folders: {', '.join(names)}{suffix}"
+
+
 # ── Background workers ──────────────────────────────────────────────────────
 
 
 class _PCLibScanWorker(QThread):
-    """Scan a folder with PCLibrary and emit the track list."""
+    """Scan media folders with PCLibrary and emit the track list."""
     finished = pyqtSignal(object)  # {"tracks": list[PCTrack], "photos": PCPhotoLibrary}
     error = pyqtSignal(str)
 
-    def __init__(self, folder: str, include_video: bool = True):
+    def __init__(self, folders: object, include_video: bool = True):
         super().__init__()
-        self._folder = folder
+        self._folders = _normalize_folder_list(folders)
         self._include_video = include_video
 
     def run(self):
         try:
             from SyncEngine.pc_library import PCLibrary
-            lib = PCLibrary(self._folder)
+            lib = PCLibrary(self._folders)
             tracks = list(lib.scan(include_video=self._include_video))
-            photos = scan_pc_photos(self._folder)
+            photos = scan_pc_photos(self._folders)
             self.finished.emit({"tracks": tracks, "photos": photos})
         except Exception as e:
             self.error.emit(str(e))
@@ -1140,8 +1176,8 @@ _LIST_MODES = {"All Tracks", "Movies", "Photos"}
 
 
 class SelectiveSyncBrowser(QWidget):
-    """Full-page widget for browsing a PC media folder and selecting tracks."""
-    selection_done = pyqtSignal(str, object)  # (folder, frozenset[str])
+    """Full-page widget for browsing PC media folders and selecting tracks."""
+    selection_done = pyqtSignal(object, object)  # (folders, {"tracks": frozenset[str], "photos": tuple})
     cancelled = pyqtSignal()
 
     def __init__(
@@ -1154,6 +1190,7 @@ class SelectiveSyncBrowser(QWidget):
         self._settings_service = settings_service
         self._device_sessions = device_sessions
         self._folder = ""
+        self._folders: list[str] = []
         self._all_tracks: list = []
         self._photo_library = PCPhotoLibrary(sync_root="")
         self._all_photos: list[PCPhoto] = []
@@ -1423,11 +1460,12 @@ class SelectiveSyncBrowser(QWidget):
         self._scan_worker.deleteLater()
         self._scan_worker = None
 
-    def load(self, folder: str):
-        """Start scanning *folder* and prepare the browser."""
-        self._folder = folder
+    def load(self, folder: object):
+        """Start scanning one or more folders and prepare the browser."""
+        self._folders = _normalize_folder_list(folder)
+        self._folder = self._folders[0] if self._folders else ""
         self._all_tracks = []
-        self._photo_library = PCPhotoLibrary(sync_root=folder)
+        self._photo_library = PCPhotoLibrary(sync_root=os.pathsep.join(self._folders))
         self._all_photos = []
         self._groups.clear()
         self._buckets.clear()
@@ -1442,11 +1480,7 @@ class SelectiveSyncBrowser(QWidget):
             grid._art_pending.clear()
             grid._art_seen.clear()
 
-        # Truncate long paths for the header
-        display = folder
-        if len(display) > 60:
-            display = "\u2026" + display[-57:]
-        self._folder_label.setText(display)
+        self._folder_label.setText(_folder_label(self._folders))
 
         self._content.setCurrentIndex(0)  # loading
         self._update_footer()
@@ -1455,7 +1489,7 @@ class SelectiveSyncBrowser(QWidget):
         # Stop and clean up any prior worker
         self._cleanup_scan_worker()
 
-        self._scan_worker = _PCLibScanWorker(folder)
+        self._scan_worker = _PCLibScanWorker(self._folders)
         self._scan_worker.finished.connect(self._on_scan_complete)
         self._scan_worker.error.connect(self._on_scan_error)
         self._scan_worker.start()
@@ -1465,10 +1499,10 @@ class SelectiveSyncBrowser(QWidget):
     def _on_scan_complete(self, tracks: list):
         if isinstance(tracks, dict):
             self._all_tracks = list(tracks.get("tracks", []))
-            self._photo_library = tracks.get("photos") or PCPhotoLibrary(sync_root=self._folder)
+            self._photo_library = tracks.get("photos") or PCPhotoLibrary(sync_root=os.pathsep.join(self._folders))
         else:
             self._all_tracks = list(tracks)
-            self._photo_library = PCPhotoLibrary(sync_root=self._folder)
+            self._photo_library = PCPhotoLibrary(sync_root=os.pathsep.join(self._folders))
         self._all_photos = sorted(
             self._photo_library.photos.values(),
             key=lambda photo: (photo.display_name or photo.source_path).lower(),
@@ -1485,7 +1519,7 @@ class SelectiveSyncBrowser(QWidget):
                 self._show_mode(mode)
                 return
         # Nothing to show — leave loading label.
-        self._loading_label.setText("No music or photos found in this folder.")
+        self._loading_label.setText("No music or photos found in these folders.")
 
     def _on_scan_error(self, msg: str):
         self._loading_label.setText(f"Scan failed: {msg}")
@@ -2041,7 +2075,7 @@ class SelectiveSyncBrowser(QWidget):
                 selected_photo_imports.extend((photo.source_path, album_name) for album_name in album_names)
             else:
                 selected_photo_imports.append((photo.source_path, ""))
-        self.selection_done.emit(self._folder, {
+        self.selection_done.emit(list(self._folders), {
             "tracks": selected_track_paths,
             "photos": tuple(selected_photo_imports),
         })

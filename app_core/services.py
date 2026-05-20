@@ -37,6 +37,7 @@ class SettingsSnapshot:
     log_dir: str
     backup_dir: str
     media_folder: str
+    media_folders: tuple[str, ...]
     write_back_to_pc: bool
     compute_sound_check: bool
     rotate_tall_photos_for_device: bool
@@ -87,7 +88,7 @@ class SettingsSnapshot:
         data = {}
         for field_info in fields(cls):
             value = getattr(settings, field_info.name)
-            if field_info.name == "splitter_sizes":
+            if field_info.name in {"media_folders", "splitter_sizes"}:
                 value = tuple(value)
             elif field_info.name == "track_list_columns_by_content":
                 value = copy.deepcopy(value)

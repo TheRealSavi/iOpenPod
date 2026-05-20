@@ -9,6 +9,7 @@ from infrastructure.settings_schema import AppSettings
 def test_settings_snapshot_copies_values_and_freezes_lists() -> None:
     settings = AppSettings(
         media_folder="C:/Music",
+        media_folders=["C:/Music", "D:/Audiobooks"],
         theme="light",
         accent_color="#123456",
         rounded_artwork=True,
@@ -25,6 +26,7 @@ def test_settings_snapshot_copies_values_and_freezes_lists() -> None:
     snapshot = SettingsSnapshot.from_settings(settings)
 
     assert snapshot.media_folder == "C:/Music"
+    assert snapshot.media_folders == ("C:/Music", "D:/Audiobooks")
     assert snapshot.theme == "light"
     assert snapshot.accent_color == "#123456"
     assert snapshot.rounded_artwork is True
@@ -39,6 +41,8 @@ def test_settings_snapshot_copies_values_and_freezes_lists() -> None:
 
     settings.track_list_columns_by_content["music"]["year"] = 120
     assert "year" not in snapshot.track_list_columns_by_content["music"]
+    settings.media_folders.append("E:/Podcasts")
+    assert snapshot.media_folders == ("C:/Music", "D:/Audiobooks")
 
     with pytest.raises(FrozenInstanceError):
         snapshot.theme = "dark"  # type: ignore[misc]

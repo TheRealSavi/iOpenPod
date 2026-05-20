@@ -498,6 +498,7 @@ class SyncDiffRequest:
 
     pc_folder: str
     ipod_tracks: list
+    pc_folders: tuple[str, ...] = ()
     ipod_path: str = ""
     supports_video: bool = True
     supports_podcast: bool = True
@@ -522,13 +523,20 @@ class SyncDiffWorker(QThread):
         super().__init__()
         self._request = request
 
+    @staticmethod
+    def _pc_folders(request: SyncDiffRequest) -> tuple[str, ...]:
+        folders = tuple(path for path in request.pc_folders if str(path).strip())
+        if folders:
+            return folders
+        return (request.pc_folder,) if request.pc_folder else ()
+
     def run(self) -> None:
         try:
             from SyncEngine.fingerprint_diff_engine import FingerprintDiffEngine
             from SyncEngine.pc_library import PCLibrary
 
             request = self._request
-            pc_library = PCLibrary(request.pc_folder)
+            pc_library = PCLibrary(self._pc_folders(request))
             diff_engine = FingerprintDiffEngine(
                 pc_library,
                 request.ipod_path,
@@ -571,6 +579,7 @@ class BackSyncRequest:
     pc_folder: str
     ipod_tracks: list
     ipod_path: str
+    pc_folders: tuple[str, ...] = ()
 
 
 class BackSyncWorker(QThread):
@@ -612,7 +621,10 @@ class BackSyncWorker(QThread):
                 0,
                 "Looking through your PC library for tracks that are already here.",
             )
-            pc_library = PCLibrary(request.pc_folder)
+            pc_folders = tuple(path for path in request.pc_folders if str(path).strip())
+            if not pc_folders and request.pc_folder:
+                pc_folders = (request.pc_folder,)
+            pc_library = PCLibrary(pc_folders)
             pc_tracks = list(pc_library.scan(include_video=True))
             total_pc = len(pc_tracks)
 
@@ -716,7 +728,7 @@ class BackSyncWorker(QThread):
                     ),
                 )
 
-            output_root = Path(request.pc_folder) / "iOpenPod Back Sync"
+            output_root = Path(pc_folders[0]) / "iOpenPod Back Sync"
             output_root.mkdir(parents=True, exist_ok=True)
 
             exported = 0

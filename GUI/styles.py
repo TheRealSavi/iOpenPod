@@ -368,8 +368,8 @@ class Colors:
     _active_hc: bool = False
 
     # Initialise with dark palette defaults
-    ACCENT = _DARK_PALETTE["ACCENT"]
-    ACCENT_LIGHT = _DARK_PALETTE["ACCENT_LIGHT"]
+    ACCENT: str = _DARK_PALETTE["ACCENT"]
+    ACCENT_LIGHT: str = _DARK_PALETTE["ACCENT_LIGHT"]
     ACCENT_DIM = _DARK_PALETTE["ACCENT_DIM"]
     ACCENT_HOVER = _DARK_PALETTE["ACCENT_HOVER"]
     ACCENT_PRESS = _DARK_PALETTE["ACCENT_PRESS"]

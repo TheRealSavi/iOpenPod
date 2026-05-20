@@ -16,7 +16,7 @@ import json
 import logging
 import os
 import sys
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -507,12 +507,49 @@ class PCTrack:
         return (self.artist.lower(), self.album.lower(), self.title.lower(), self.duration_ms)
 
 
+LibraryRoot = str | os.PathLike[str]
+
+
+def _path_key(path: Path) -> str:
+    """Stable key for duplicate detection across overlapping roots."""
+
+    return os.path.normcase(str(path.resolve()))
+
+
+def _coerce_root_paths(root_path: LibraryRoot | Iterable[LibraryRoot]) -> tuple[Path, ...]:
+    if isinstance(root_path, (str, os.PathLike)):
+        raw_roots = [root_path]
+    else:
+        raw_roots = list(root_path)
+    if not raw_roots:
+        raise ValueError("At least one library path is required")
+
+    roots: list[Path] = []
+    seen: set[str] = set()
+    for raw_root in raw_roots:
+        path = Path(raw_root).expanduser().resolve()
+        if not path.exists():
+            raise ValueError(f"Library path does not exist: {path}")
+        if not path.is_dir():
+            raise ValueError(f"Library path is not a directory: {path}")
+        key = _path_key(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        roots.append(path)
+
+    if not roots:
+        raise ValueError("At least one library path is required")
+    return tuple(roots)
+
+
 class PCLibrary:
     """
-    Scanner for PC media library.
+    Scanner for one or more PC media library roots.
 
     Usage:
         library = PCLibrary("D:/Music")
+        library = PCLibrary(["D:/Music", "E:/Audiobooks"])
 
         # Scan all tracks
         for track in library.scan():
@@ -528,12 +565,9 @@ class PCLibrary:
         tracks = list(library.scan(progress_callback=on_progress))
     """
 
-    def __init__(self, root_path: str | Path):
-        self.root_path = Path(root_path).resolve()
-        if not self.root_path.exists():
-            raise ValueError(f"Library path does not exist: {self.root_path}")
-        if not self.root_path.is_dir():
-            raise ValueError(f"Library path is not a directory: {self.root_path}")
+    def __init__(self, root_path: LibraryRoot | Iterable[LibraryRoot]):
+        self.root_paths = _coerce_root_paths(root_path)
+        self.root_path = self.root_paths[0]
 
     @staticmethod
     def _should_skip_library_file(filename: str) -> bool:
@@ -548,13 +582,57 @@ class PCLibrary:
         """
         extensions = MEDIA_EXTENSIONS if include_video else AUDIO_EXTENSIONS
         count = 0
-        for _root, _, files in os.walk(self.root_path):
-            for filename in files:
-                if self._should_skip_library_file(filename):
-                    continue
-                if Path(filename).suffix.lower() in extensions:
+        seen_files: set[str] = set()
+        for root_path in self.root_paths:
+            for _root, _, files in os.walk(root_path):
+                for filename in files:
+                    if self._should_skip_library_file(filename):
+                        continue
+                    if Path(filename).suffix.lower() not in extensions:
+                        continue
+                    file_path = Path(_root) / filename
+                    key = _path_key(file_path)
+                    if key in seen_files:
+                        continue
+                    seen_files.add(key)
                     count += 1
         return count
+
+    def _root_for_file(self, file_path: Path) -> Path:
+        resolved = file_path.resolve()
+        matches = [root for root in self.root_paths if resolved.is_relative_to(root)]
+        if not matches:
+            return self.root_path
+        return max(matches, key=lambda root: len(root.parts))
+
+    def _relative_path_for(self, file_path: Path) -> str:
+        root = getattr(self, "_active_scan_root", None)
+        if root is None:
+            root = self._root_for_file(file_path)
+        try:
+            return str(file_path.relative_to(root))
+        except ValueError:
+            return file_path.name
+
+    def _scan_media_files(self, include_video: bool = True) -> Iterator[tuple[Path, Path]]:
+        """Yield unique media file paths with the root that supplied them."""
+
+        extensions = MEDIA_EXTENSIONS if include_video else AUDIO_EXTENSIONS
+        seen_files: set[str] = set()
+        for library_root in self.root_paths:
+            for root, _, files in os.walk(library_root):
+                for filename in files:
+                    if self._should_skip_library_file(filename):
+                        continue
+                    ext = Path(filename).suffix.lower()
+                    if ext not in extensions:
+                        continue
+                    file_path = Path(root) / filename
+                    key = _path_key(file_path)
+                    if key in seen_files:
+                        continue
+                    seen_files.add(key)
+                    yield file_path, library_root
 
     def scan(
         self,
@@ -572,32 +650,33 @@ class PCLibrary:
         if not MUTAGEN_AVAILABLE:
             raise RuntimeError("mutagen is required for library scanning. Install with: pip install mutagen")
 
-        extensions = MEDIA_EXTENSIONS if include_video else AUDIO_EXTENSIONS
-
         # First count files for progress
         total = self.count_audio_files(include_video=include_video) if progress_callback else 0
         current = 0
 
-        for root, _, files in os.walk(self.root_path):
-            for filename in files:
-                if self._should_skip_library_file(filename):
-                    continue
-                ext = Path(filename).suffix.lower()
-                if ext not in extensions:
-                    continue
-
-                file_path = Path(root) / filename
-                try:
-                    track = self._read_track(file_path)
-                    if track:
-                        current += 1
-                        if progress_callback:
-                            progress_callback(current, total, track)
-                        yield track
-                except Exception as e:
-                    logging.warning(f"Failed to read {file_path}: {e}")
+        for file_path, library_root in self._scan_media_files(include_video=include_video):
+            had_active_root = hasattr(self, "_active_scan_root")
+            previous_active_root = getattr(self, "_active_scan_root", None)
+            try:
+                self._active_scan_root = library_root
+                track = self._read_track(file_path)
+                if track:
                     current += 1
-                    continue
+                    if progress_callback:
+                        progress_callback(current, total, track)
+                    yield track
+            except Exception as e:
+                logging.warning(f"Failed to read {file_path}: {e}")
+                current += 1
+                continue
+            finally:
+                if had_active_root:
+                    self._active_scan_root = previous_active_root
+                else:
+                    try:
+                        delattr(self, "_active_scan_root")
+                    except AttributeError:
+                        pass
 
     def _read_track(self, file_path: Path) -> PCTrack | None:
         """Read metadata from a single audio or video file."""
@@ -655,7 +734,7 @@ class PCLibrary:
 
         return PCTrack(
             path=str(file_path),
-            relative_path=str(file_path.relative_to(self.root_path)),
+            relative_path=self._relative_path_for(file_path),
             filename=file_path.name,
             extension=ext,
             mtime=stat.st_mtime,

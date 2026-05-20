@@ -2711,17 +2711,18 @@ class SyncReviewWidget(QWidget):
 
 
 class PCFolderDialog(QDialog):
-    """Dialog to select PC media folder for syncing."""
+    """Dialog to select one or more PC media folders for syncing."""
 
-    def __init__(self, parent=None, last_folder: str = ""):
+    def __init__(self, parent=None, last_folder: str | list[str] | tuple[str, ...] = ""):
         super().__init__(parent)
-        self.setWindowTitle("Select Media Folder")
-        self.setMinimumWidth(440)
+        self.setWindowTitle("Select Media Folders")
+        self.setMinimumSize(560, 460)
         self.selected_folder = ""
+        self.selected_folders: list[str] = []
         self.sync_mode = ""  # "full" | "selective" | "back_sync"
-        self.last_folder = last_folder
+        self.last_folders = self._normalize_folders(last_folder)
+        self._folders = list(self.last_folders)
 
-        # Dark theme stylesheet
         self.setStyleSheet(f"""
             QDialog {{
                 background: {Colors.BG_DARK};
@@ -2744,80 +2745,134 @@ class PCFolderDialog(QDialog):
         """)
 
         self._setup_ui()
+        self._render_folders()
+
+    @staticmethod
+    def _folder_key(folder: str) -> str:
+        return os.path.normcase(os.path.abspath(os.path.expanduser(folder)))
+
+    @classmethod
+    def _normalize_folders(cls, folders: object) -> list[str]:
+        if not folders:
+            return []
+        if isinstance(folders, str):
+            candidates = [folders]
+        else:
+            try:
+                candidates = list(folders)  # type: ignore[arg-type]
+            except TypeError:
+                candidates = [folders]
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for candidate in candidates:
+            folder = str(candidate or "").strip()
+            if not folder:
+                continue
+            key = cls._folder_key(folder)
+            if key in seen:
+                continue
+            seen.add(key)
+            normalized.append(folder)
+        return normalized
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
-        layout.setSpacing(12)
-        layout.setContentsMargins((20), (16), (20), (16))
+        layout.setSpacing(14)
+        layout.setContentsMargins((22), (18), (22), (18))
 
-        # Title
-        title = QLabel("Select Media Folder", self)
-        title.setFont(QFont(FONT_FAMILY, Metrics.FONT_TITLE, QFont.Weight.Bold))
+        title = QLabel("Choose Media Folders", self)
+        title.setFont(QFont(FONT_FAMILY, Metrics.FONT_PAGE_TITLE, QFont.Weight.Bold))
         layout.addWidget(title)
 
-        # Instructions
         label = QLabel(
-            "Select the folder containing your media library.\n"
-            "This folder will be compared with your iPod to find:\n"
-            "• New media to add\n"
-            "• Removed media to delete\n"
-            "• Updated media to re-sync"
+            "Add every directory you want iOpenPod to treat as your PC library. "
+            "During sync, tracks and photos from all selected folders are scanned together."
         )
         label.setWordWrap(True)
         label.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
         label.setStyleSheet(f"color:{Colors.TEXT_SECONDARY}; background:transparent;")
         layout.addWidget(label)
 
-        # Folder selection
-        folder_layout = QHBoxLayout()
+        summary_row = QHBoxLayout()
+        self.summary_label = QLabel(self)
+        self.summary_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.DemiBold))
+        self.summary_label.setStyleSheet(f"color:{Colors.TEXT_SECONDARY};")
+        summary_row.addWidget(self.summary_label, 1)
 
-        self.folder_edit = QLabel(self.last_folder or "No folder selected")
-        self.folder_edit.setStyleSheet(f"""
-            QLabel {{
-                background: {Colors.SURFACE_RAISED};
-                border: 1px solid {Colors.BORDER};
-                border-radius: {Metrics.BORDER_RADIUS_SM}px;
-                padding: {(8)}px;
-                color: {Colors.TEXT_PRIMARY};
-            }}
-        """)
-        self.folder_edit.setWordWrap(True)
-        folder_layout.addWidget(self.folder_edit, 1)
-
-        browse_btn = QPushButton("Browse...", self)
-        browse_btn.clicked.connect(self._browse)
-        browse_btn.setStyleSheet(f"""
+        add_btn = QPushButton("Add Folder...", self)
+        add_btn.clicked.connect(self._browse)
+        add_btn.setStyleSheet(f"""
             QPushButton {{
                 background: {Colors.ACCENT};
                 border: none;
                 border-radius: {Metrics.BORDER_RADIUS_SM}px;
                 color: {Colors.TEXT_ON_ACCENT};
-                padding: {(6)}px {(16)}px;
+                padding: {(7)}px {(18)}px;
                 font-weight: bold;
             }}
             QPushButton:hover {{
                 background: {Colors.ACCENT_LIGHT};
             }}
         """)
-        folder_layout.addWidget(browse_btn)
+        summary_row.addWidget(add_btn)
 
-        layout.addLayout(folder_layout)
+        clear_btn = QPushButton("Clear", self)
+        clear_btn.clicked.connect(self._clear_folders)
+        summary_row.addWidget(clear_btn)
+        layout.addLayout(summary_row)
 
-        layout.addSpacing(8)
+        list_shell = QFrame(self)
+        list_shell.setStyleSheet(f"""
+            QFrame {{
+                background: {Colors.SURFACE};
+                border: 1px solid {Colors.BORDER};
+                border-radius: {Metrics.BORDER_RADIUS_MD}px;
+            }}
+        """)
+        list_shell_layout = QVBoxLayout(list_shell)
+        list_shell_layout.setContentsMargins(0, 0, 0, 0)
+        list_shell_layout.setSpacing(0)
 
-        # Buttons
+        self._folder_list_widget = QWidget()
+        self._folder_list_widget.setStyleSheet("background: transparent; border: none;")
+        self._folder_list_layout = QVBoxLayout(self._folder_list_widget)
+        self._folder_list_layout.setContentsMargins(10, 10, 10, 10)
+        self._folder_list_layout.setSpacing(8)
+
+        scroll = make_scroll_area(transparent=True)
+        scroll.setMinimumHeight(170)
+        scroll.setWidget(self._folder_list_widget)
+        list_shell_layout.addWidget(scroll)
+        layout.addWidget(list_shell, 1)
+
+        hint = QLabel("Tip: select a parent folder once instead of adding many of its subfolders.")
+        hint.setWordWrap(True)
+        hint.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        hint.setStyleSheet(f"color:{Colors.TEXT_TERTIARY};")
+        layout.addWidget(hint)
+
         btn_row = QHBoxLayout()
-        btn_row.addStretch()
+        btn_row = QHBoxLayout()
+
+        # Cancel anchored left
         cancel_btn = QPushButton("Cancel", self)
         cancel_btn.clicked.connect(self.reject)
         btn_row.addWidget(cancel_btn)
 
+        btn_row.addStretch()
+
         selective_btn = QPushButton("Selective Sync", self)
         selective_btn.clicked.connect(self._accept_selective)
+        selective_btn.setToolTip(
+            "Selective Sync: Browse your PC files and pick what to add to your iPod"
+        )
         btn_row.addWidget(selective_btn)
 
         back_sync_btn = QPushButton("Back Sync", self)
         back_sync_btn.clicked.connect(self._accept_back_sync)
+        back_sync_btn.setToolTip(
+            "Back Sync: Takes what's on your iPod and moves it onto your PC"
+        )
         btn_row.addWidget(back_sync_btn)
 
         full_btn = QPushButton("Full Sync", self)
@@ -2835,45 +2890,151 @@ class PCFolderDialog(QDialog):
             }}
         """)
         full_btn.clicked.connect(self._accept_full)
+        full_btn.setToolTip(
+            "Full Sync: Takes everything on your PC and adds it to your iPod"
+        )
         btn_row.addWidget(full_btn)
         layout.addLayout(btn_row)
 
+    def _render_folders(self):
+        while self._folder_list_layout.count():
+            item = self._folder_list_layout.takeAt(0)
+            if item is None:
+                continue
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+        count = len(self._folders)
+        if count == 1:
+            self.summary_label.setText("1 directory selected")
+        else:
+            self.summary_label.setText(f"{count} directories selected")
+
+        if not self._folders:
+            empty = QLabel("No folders added yet. Add as many library directories as you need.")
+            empty.setWordWrap(True)
+            empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            empty.setMinimumHeight(108)
+            empty.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
+            empty.setStyleSheet(f"color:{Colors.TEXT_TERTIARY}; border:none;")
+            self._folder_list_layout.addWidget(empty)
+            self._folder_list_layout.addStretch()
+            return
+
+        for index, folder in enumerate(self._folders, start=1):
+            row = QFrame(self._folder_list_widget)
+            row.setStyleSheet(f"""
+                QFrame {{
+                    background: {Colors.SURFACE_RAISED};
+                    border: 1px solid {Colors.BORDER_SUBTLE};
+                    border-radius: {Metrics.BORDER_RADIUS_SM}px;
+                }}
+            """)
+            row_layout = QHBoxLayout(row)
+            row_layout.setContentsMargins(10, 8, 8, 8)
+            row_layout.setSpacing(10)
+
+            number = QLabel(str(index))
+            number.setFixedWidth(24)
+            number.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            number.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.Bold))
+            number.setStyleSheet(f"""
+                QLabel {{
+                    color: {Colors.TEXT_ON_ACCENT};
+                    background: {Colors.ACCENT_DIM};
+                    border: none;
+                    border-radius: 12px;
+                    padding: 3px;
+                }}
+            """)
+            row_layout.addWidget(number)
+
+            path_label = QLabel(folder)
+            path_label.setWordWrap(True)
+            path_label.setToolTip(folder)
+            path_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+            path_label.setStyleSheet(f"color:{Colors.TEXT_PRIMARY}; border:none;")
+            row_layout.addWidget(path_label, 1)
+
+            remove_btn = QPushButton("Remove", row)
+            remove_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+            remove_btn.clicked.connect(lambda _checked=False, f=folder: self._remove_folder(f))
+            row_layout.addWidget(remove_btn)
+
+            self._folder_list_layout.addWidget(row)
+        self._folder_list_layout.addStretch()
+
     def _browse(self):
+        start_folder = self._folders[-1] if self._folders else os.path.expanduser("~")
         folder = QFileDialog.getExistingDirectory(
             self,
-            "Select Media Folder",
-            self.last_folder,
+            "Add Media Folder",
+            start_folder,
             QFileDialog.Option.ShowDirsOnly
         )
         if folder:
-            self.selected_folder = folder
-            self.folder_edit.setText(folder)
+            self._add_folder(folder)
 
-    def _validate_folder(self) -> bool:
-        if not self.selected_folder and self.last_folder:
-            self.selected_folder = self.last_folder
-        if not self.selected_folder:
-            QMessageBox.warning(self, "No Folder", "Please select a media folder.")
+    def _add_folder(self, folder: str):
+        key = self._folder_key(folder)
+        if any(self._folder_key(existing) == key for existing in self._folders):
+            return
+        self._folders.append(folder)
+        self._render_folders()
+
+    def _remove_folder(self, folder: str):
+        key = self._folder_key(folder)
+        self._folders = [
+            existing
+            for existing in self._folders
+            if self._folder_key(existing) != key
+        ]
+        self._render_folders()
+
+    def _clear_folders(self):
+        if not self._folders:
+            return
+        self._folders = []
+        self._render_folders()
+
+    def _validate_folders(self) -> bool:
+        folders = self._normalize_folders(self._folders)
+        if not folders:
+            QMessageBox.warning(self, "No Folders", "Please add at least one media folder.")
             return False
-        if not os.path.isdir(self.selected_folder):
-            QMessageBox.warning(self, "Invalid Folder", "The selected folder does not exist.")
+
+        missing = [folder for folder in folders if not os.path.isdir(folder)]
+        if missing:
+            preview = "\n".join(missing[:4])
+            if len(missing) > 4:
+                preview += f"\n...and {len(missing) - 4} more"
+            QMessageBox.warning(
+                self,
+                "Invalid Folders",
+                f"These selected folders do not exist:\n\n{preview}",
+            )
             return False
+
+        self._folders = folders
+        self.selected_folders = list(folders)
+        self.selected_folder = folders[0]
         return True
 
     def _accept_full(self):
-        if not self._validate_folder():
+        if not self._validate_folders():
             return
         self.sync_mode = "full"
         self.accept()
 
     def _accept_selective(self):
-        if not self._validate_folder():
+        if not self._validate_folders():
             return
         self.sync_mode = "selective"
         self.accept()
 
     def _accept_back_sync(self):
-        if not self._validate_folder():
+        if not self._validate_folders():
             return
         self.sync_mode = "back_sync"
         self.accept()

@@ -35,6 +35,7 @@ def test_settings_persistence_round_trip(monkeypatch) -> None:
 
         settings = AppSettings(
             media_folder="C:/Music",
+            media_folders=["C:/Music", "D:/Audiobooks"],
             rounded_artwork=True,
             sharpen_artwork=False,
             track_list_columns_by_content={
@@ -48,6 +49,7 @@ def test_settings_persistence_round_trip(monkeypatch) -> None:
         loaded = load_app_settings()
 
     assert loaded.media_folder == "C:/Music"
+    assert loaded.media_folders == ["C:/Music", "D:/Audiobooks"]
     assert loaded.rounded_artwork is True
     assert loaded.sharpen_artwork is False
     assert loaded.track_list_columns_by_content == {

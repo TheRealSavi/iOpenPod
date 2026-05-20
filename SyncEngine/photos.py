@@ -10,7 +10,7 @@ import math
 import os
 import re
 import struct
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import BinaryIO
@@ -381,41 +381,66 @@ def _describe_image_load_error(path: str | Path, exc: BaseException) -> str:
     return str(exc)
 
 
-def scan_pc_photos(sync_root: str | Path) -> PCPhotoLibrary:
-    sync_root = str(sync_root)
-    library = PCPhotoLibrary(sync_root=sync_root)
-    root = Path(sync_root)
-    if not root.exists():
+def _coerce_photo_roots(sync_root: str | Path | Iterable[str | Path]) -> tuple[Path, ...]:
+    if isinstance(sync_root, (str, os.PathLike)):
+        raw_roots = [sync_root]
+    else:
+        raw_roots = list(sync_root)
+    roots: list[Path] = []
+    seen: set[str] = set()
+    for raw_root in raw_roots:
+        root = Path(raw_root).expanduser().resolve()
+        if not root.exists() or not root.is_dir():
+            continue
+        key = os.path.normcase(str(root))
+        if key in seen:
+            continue
+        seen.add(key)
+        roots.append(root)
+    return tuple(roots)
+
+
+def scan_pc_photos(sync_root: str | Path | Iterable[str | Path]) -> PCPhotoLibrary:
+    roots = _coerce_photo_roots(sync_root)
+    sync_root_label = os.pathsep.join(str(root) for root in roots)
+    library = PCPhotoLibrary(sync_root=sync_root_label)
+    if not roots:
         return library
 
-    for file_path in root.rglob("*"):
-        if not file_path.is_file():
-            continue
-        if file_path.suffix.lower() not in _SUPPORTED_IMAGE_EXTENSIONS:
-            continue
-        try:
-            img = _load_pil_still_image(file_path)
-        except _PIL_LOAD_ERRORS as exc:
-            library.skipped.append((str(file_path), _describe_image_load_error(file_path, exc)))
-            continue
+    seen_files: set[str] = set()
+    for root in roots:
+        for file_path in root.rglob("*"):
+            if not file_path.is_file():
+                continue
+            if file_path.suffix.lower() not in _SUPPORTED_IMAGE_EXTENSIONS:
+                continue
+            file_key = os.path.normcase(str(file_path.resolve()))
+            if file_key in seen_files:
+                continue
+            seen_files.add(file_key)
+            try:
+                img = _load_pil_still_image(file_path)
+            except _PIL_LOAD_ERRORS as exc:
+                library.skipped.append((str(file_path), _describe_image_load_error(file_path, exc)))
+                continue
 
-        rel_parent = file_path.parent.relative_to(root)
-        album_name = rel_parent.as_posix() if rel_parent.parts else ""
-        if album_name:
-            library.albums.add(album_name)
+            rel_parent = file_path.parent.relative_to(root)
+            album_name = rel_parent.as_posix() if rel_parent.parts else ""
+            if album_name:
+                library.albums.add(album_name)
 
-        size = file_path.stat().st_size
-        visual_hash = _image_visual_hash(img)
-        entry = library.photos.get(visual_hash)
-        if entry is None:
-            entry = PCPhoto(
-                visual_hash=visual_hash,
-                display_name=file_path.name,
-                source_path=str(file_path),
-                size=size,
-            )
-            library.photos[visual_hash] = entry
-        entry.album_names.add(album_name)
+            size = file_path.stat().st_size
+            visual_hash = _image_visual_hash(img)
+            entry = library.photos.get(visual_hash)
+            if entry is None:
+                entry = PCPhoto(
+                    visual_hash=visual_hash,
+                    display_name=file_path.name,
+                    source_path=str(file_path),
+                    size=size,
+                )
+                library.photos[visual_hash] = entry
+            entry.album_names.add(album_name)
     return library
 
 
