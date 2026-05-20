@@ -6,6 +6,7 @@ from ipod_device.artwork import ITHMB_FORMAT_MAP, resolve_cover_art_format_defin
 def test_standard_device_resolves_formats_from_global_registry() -> None:
     resolved = resolve_cover_art_format_definitions("iPod Classic", "1st Gen")
 
+    assert list(resolved) == [1055, 1060, 1061, 1068]
     assert resolved[1055] == ITHMB_FORMAT_MAP[1055]
 
 

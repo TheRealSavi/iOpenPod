@@ -710,6 +710,16 @@ def detect_checksum_type(ipod_path: str):
     if device is not None and device.checksum_type != 99:
         return ChecksumType(device.checksum_type)
 
+    try:
+        from .virtual import has_virtual_ipod_info, load_virtual_ipod_info
+
+        if has_virtual_ipod_info(ipod_path):
+            virtual = load_virtual_ipod_info(ipod_path)
+            if virtual.checksum_type != 99:
+                return ChecksumType(virtual.checksum_type)
+    except Exception:
+        pass
+
     # Fallback: probe from scratch
     try:
         sysinfo = read_sysinfo(ipod_path)
@@ -775,6 +785,18 @@ def get_firewire_id(ipod_path: str, *, known_guid: str | None = None) -> bytes:
         fwid = device.firewire_id_bytes
         if fwid:
             return fwid
+
+    # Source 1b: virtual iPod metadata
+    try:
+        from .virtual import has_virtual_ipod_info, load_virtual_ipod_info
+
+        if has_virtual_ipod_info(ipod_path):
+            virtual = load_virtual_ipod_info(ipod_path)
+            fwid = virtual.firewire_id_bytes
+            if fwid:
+                return fwid
+    except Exception:
+        pass
 
     # Source 2: SysInfo
     try:

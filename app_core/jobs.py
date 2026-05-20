@@ -1073,7 +1073,17 @@ class AutoRestoreDeviceWorker(QThread):
         try:
             ipod_control = os.path.join(path, "iPod_Control")
             itunes_folder = os.path.join(ipod_control, "iTunes")
-            if not os.path.isdir(ipod_control) or not os.path.isdir(itunes_folder):
+            is_virtual = False
+            try:
+                from ipod_device import has_virtual_ipod_info
+
+                is_virtual = has_virtual_ipod_info(path)
+            except Exception:
+                is_virtual = False
+            if (
+                not is_virtual
+                and (not os.path.isdir(ipod_control) or not os.path.isdir(itunes_folder))
+            ):
                 self.not_found.emit(path)
                 return
 

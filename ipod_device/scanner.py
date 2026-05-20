@@ -2327,6 +2327,9 @@ def identify_ipod_at_path(
         mount_path = drive + "\\"
     else:
         mount_path = os.path.abspath(expanded_path)
+    virtual = _load_virtual_ipod_mount_if_present(mount_path)
+    if virtual is not None:
+        return virtual
     if not _has_ipod_control(mount_path):
         logger.info("Selected path is not an iPod root: %s", mount_path)
         return None
@@ -2341,6 +2344,10 @@ def identify_ipod_at_path(
 def _identify_ipod_mount(mount_path: str, display_name: str) -> DeviceInfo:
     """Run the full identification pipeline for one already-discovered mount."""
     from .info import enrich
+
+    virtual = _load_virtual_ipod_mount_if_present(mount_path)
+    if virtual is not None:
+        return virtual
 
     ipod = DeviceInfo(path=mount_path, mount_name=display_name)
     ipod.disk_size_gb, ipod.free_space_gb = _get_disk_info(mount_path)
@@ -2451,6 +2458,25 @@ def _identify_ipod_mount(mount_path: str, display_name: str) -> DeviceInfo:
     )
 
     return ipod
+
+
+def _load_virtual_ipod_mount_if_present(mount_path: str) -> DeviceInfo | None:
+    """Load root-level iPodInfo.json metadata when this is a virtual iPod."""
+
+    try:
+        from .virtual import (
+            ensure_virtual_itunes_database,
+            has_virtual_ipod_info,
+            load_virtual_ipod_info,
+        )
+
+        if not has_virtual_ipod_info(mount_path):
+            return None
+        ensure_virtual_itunes_database(mount_path)
+        return load_virtual_ipod_info(mount_path)
+    except Exception as exc:
+        logger.warning("Virtual iPod metadata could not be loaded: %s", exc)
+        return None
 
 
 def scan_for_ipods() -> list[DeviceInfo]:

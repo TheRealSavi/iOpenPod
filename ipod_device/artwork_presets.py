@@ -84,11 +84,10 @@ ARTWORK_FORMATS_BY_ID: dict[int, ArtworkFormat] = {
 
 
 CLASSIC_COVER_ART_FORMATS = (
-    ARTWORK_FORMATS_BY_ID[1061],
-    ARTWORK_FORMATS_BY_ID[1044],
     ARTWORK_FORMATS_BY_ID[1055],
-    ARTWORK_FORMATS_BY_ID[1068],
     ARTWORK_FORMATS_BY_ID[1060],
+    ARTWORK_FORMATS_BY_ID[1061],
+    ARTWORK_FORMATS_BY_ID[1068],
 )
 """Cover-art formats used by click-wheel iPod Classic generations."""
 

@@ -328,6 +328,13 @@ class DeviceManager(QObject):
         return os.path.join(self._device_path, "iPod_Control", "Artwork")
 
     def is_valid_ipod_root(self, path: str) -> bool:
+        try:
+            from ipod_device import has_virtual_ipod_info
+
+            if has_virtual_ipod_info(path):
+                return True
+        except Exception:
+            pass
         ipod_control = os.path.join(path, "iPod_Control")
         itunes_folder = os.path.join(ipod_control, "iTunes")
         return os.path.isdir(ipod_control) and os.path.isdir(itunes_folder)

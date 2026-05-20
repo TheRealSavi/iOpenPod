@@ -98,6 +98,17 @@ from .sysinfo import (
     parse_sysinfo_text,
 )
 
+# ── virtual iPods ─────────────────────────────────────────────────────
+from .virtual import (
+    VIRTUAL_IPOD_INFO_FILENAME,
+    available_virtual_ipod_models,
+    create_virtual_ipod,
+    ensure_virtual_itunes_database,
+    has_virtual_ipod_info,
+    load_virtual_ipod_info,
+    virtual_ipod_info_path,
+)
+
 # ── checksum ─────────────────────────────────────────────────────────
 from .vpd_libusb import (
     identify_via_vpd,

@@ -12,7 +12,6 @@ import re
 import sys
 from typing import TYPE_CHECKING
 
-from app_core.device_identity import resolve_ipod_image_color
 from PyQt6.QtCore import QRect, Qt
 from PyQt6.QtGui import QColor, QCursor, QPainter, QPalette
 from PyQt6.QtWidgets import (
@@ -25,6 +24,8 @@ from PyQt6.QtWidgets import (
     QStyleOptionSlider,
     QTabBar,
 )
+
+from app_core.device_identity import resolve_ipod_image_color
 
 if TYPE_CHECKING:
     from PyQt6.QtWidgets import QFrame, QLabel, QScrollArea, QWidget
@@ -441,9 +442,9 @@ class Colors:
     def _detect_system_dark(cls) -> bool:
         """Return True if the OS is in dark mode."""
         try:
-            from PyQt6.QtWidgets import QApplication
-            from PyQt6.QtGui import QPalette as _QPalette
             from PyQt6.QtCore import Qt
+            from PyQt6.QtGui import QPalette as _QPalette
+            from PyQt6.QtWidgets import QApplication
             app = QApplication.instance()
             if isinstance(app, QApplication):
                 hints = app.styleHints()
@@ -464,8 +465,8 @@ class Colors:
     def _detect_system_hc(cls) -> bool:
         """Return True if OS has increased-contrast / high-contrast enabled."""
         try:
-            from PyQt6.QtWidgets import QApplication
             from PyQt6.QtGui import QPalette as _QPalette
+            from PyQt6.QtWidgets import QApplication
             app = QApplication.instance()
             if isinstance(app, QApplication):
                 pal = app.palette()
@@ -829,6 +830,7 @@ class Metrics:
     """Shared dimension constants ( in-place by ``apply_scaling``)."""
     BORDER_RADIUS = 8
     BORDER_RADIUS_SM = 6
+    BORDER_RADIUS_MD = 8
     BORDER_RADIUS_LG = 10
     BORDER_RADIUS_XL = 12
 
@@ -1512,11 +1514,11 @@ def make_label(
     wrap: bool = False,
     mono: bool = False,
     selectable: bool = False,
-) -> "QLabel":
+) -> QLabel:
     """Create a styled QLabel. Import-safe (uses late import)."""
+    from PyQt6.QtCore import Qt as _Qt
     from PyQt6.QtGui import QFont as _QFont
     from PyQt6.QtWidgets import QLabel as _QLabel
-    from PyQt6.QtCore import Qt as _Qt
 
     if style is None:
         style = LABEL_PRIMARY()
@@ -1534,7 +1536,7 @@ def make_label(
     return lbl
 
 
-def make_separator() -> "QFrame":
+def make_separator() -> QFrame:
     """Create a 1px horizontal separator line."""
     from PyQt6.QtWidgets import QFrame as _QFrame
 
@@ -1544,7 +1546,7 @@ def make_separator() -> "QFrame":
     return sep
 
 
-def make_section_header(text: str) -> "QLabel":
+def make_section_header(text: str) -> QLabel:
     """Create a small uppercase section header label."""
     from PyQt6.QtGui import QFont as _QFont
     from PyQt6.QtWidgets import QLabel as _QLabel
@@ -1559,11 +1561,13 @@ def make_section_header(text: str) -> "QLabel":
     return lbl
 
 
-def make_detail_row(label: str, value: str) -> "QWidget":
+def make_detail_row(label: str, value: str) -> QWidget:
     """Create a key–value row: left-aligned label, right-aligned mono value."""
-    from PyQt6.QtGui import QFont as _QFont
     from PyQt6.QtCore import Qt as _Qt
-    from PyQt6.QtWidgets import QWidget as _QWidget, QHBoxLayout as _QHBox, QLabel as _QLabel
+    from PyQt6.QtGui import QFont as _QFont
+    from PyQt6.QtWidgets import QHBoxLayout as _QHBox
+    from PyQt6.QtWidgets import QLabel as _QLabel
+    from PyQt6.QtWidgets import QWidget as _QWidget
 
     row = _QWidget()
     row.setStyleSheet("background: transparent; border: none;")
@@ -1593,7 +1597,7 @@ def make_scroll_area(
     vertical: str = "as_needed",
     transparent: bool = True,
     extra_css: str = "",
-) -> "QScrollArea":
+) -> QScrollArea:
     """Create a standard QScrollArea with consistent styling.
 
     Parameters
@@ -1608,8 +1612,10 @@ def make_scroll_area(
         Additional CSS to append.
     """
     from PyQt6.QtCore import Qt as _Qt
-    from PyQt6.QtGui import QPalette as _QPalette, QColor as _QColor
-    from PyQt6.QtWidgets import QFrame as _QFrame, QScrollArea as _QScrollArea
+    from PyQt6.QtGui import QColor as _QColor
+    from PyQt6.QtGui import QPalette as _QPalette
+    from PyQt6.QtWidgets import QFrame as _QFrame
+    from PyQt6.QtWidgets import QScrollArea as _QScrollArea
 
     scroll = _QScrollArea()
     scroll.setWidgetResizable(True)

@@ -14,16 +14,200 @@ from typing import Any
 from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QWidget, QGridLayout, QFileDialog, QMessageBox, QFrame,
+    QApplication,
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QFileDialog,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
 )
 
 from app_core.jobs import DeviceScanWorker
 
 from ..ipod_images import get_ipod_image
-from ..styles import Colors, FONT_FAMILY, Metrics, btn_css, accent_btn_css, make_scroll_area
+from ..styles import FONT_FAMILY, Colors, Metrics, accent_btn_css, btn_css, make_scroll_area
 
 logger = logging.getLogger(__name__)
+
+
+class VirtualIPodDialog(QDialog):
+    """Create a virtual iPod folder from a known iPod model profile."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Create Virtual iPod")
+        self.setMinimumWidth(520)
+
+        self.selected_path: str = ""
+        self.selected_ipod: Any | None = None
+        self._models: list[dict[str, str]] = []
+
+        self._setup_ui()
+        self._load_models()
+
+    def _setup_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 16)
+        layout.setSpacing(14)
+
+        title = QLabel("Create Virtual iPod")
+        title.setFont(QFont(FONT_FAMILY, Metrics.FONT_XL, QFont.Weight.Bold))
+        title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
+        layout.addWidget(title)
+
+        self._model_combo = QComboBox()
+        self._model_combo.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
+        self._model_combo.setStyleSheet(
+            f"""
+            QComboBox {{
+                background: {Colors.SURFACE_RAISED};
+                color: {Colors.TEXT_PRIMARY};
+                border: 1px solid {Colors.BORDER};
+                border-radius: {Metrics.BORDER_RADIUS_MD}px;
+                padding: 7px 10px;
+            }}
+            QComboBox QAbstractItemView {{
+                background: {Colors.SURFACE_RAISED};
+                color: {Colors.TEXT_PRIMARY};
+                selection-background-color: {Colors.SURFACE_ACTIVE};
+            }}
+            """
+        )
+        model_label = QLabel("iPod Model")
+        model_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
+        model_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
+        layout.addWidget(model_label)
+        layout.addWidget(self._model_combo)
+
+        directory_row = QHBoxLayout()
+        directory_row.setSpacing(8)
+
+        self._directory_edit = QLineEdit()
+        self._directory_edit.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
+        self._directory_edit.setPlaceholderText("Choose a folder")
+        self._directory_edit.setStyleSheet(
+            f"""
+            QLineEdit {{
+                background: {Colors.SURFACE_RAISED};
+                color: {Colors.TEXT_PRIMARY};
+                border: 1px solid {Colors.BORDER};
+                border-radius: {Metrics.BORDER_RADIUS_MD}px;
+                padding: 7px 10px;
+            }}
+            """
+        )
+        directory_row.addWidget(self._directory_edit, 1)
+
+        browse_btn = QPushButton("Browse")
+        browse_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
+        browse_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        browse_btn.setStyleSheet(btn_css(
+            bg=Colors.SURFACE_RAISED,
+            bg_hover=Colors.SURFACE_ACTIVE,
+            bg_press=Colors.SURFACE_ALT,
+            fg=Colors.TEXT_SECONDARY,
+            border=f"1px solid {Colors.BORDER}",
+            padding="7px 16px",
+        ))
+        browse_btn.clicked.connect(self._browse_directory)
+        directory_row.addWidget(browse_btn)
+
+        directory_label = QLabel("Directory")
+        directory_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
+        directory_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
+        layout.addWidget(directory_label)
+        layout.addLayout(directory_row)
+
+        self._button_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Cancel
+            | QDialogButtonBox.StandardButton.Ok
+        )
+        create_btn = self._button_box.button(QDialogButtonBox.StandardButton.Ok)
+        if create_btn is None:
+            raise RuntimeError("Dialog OK button was not created")
+        create_btn.setText("Create")
+        create_btn.setStyleSheet(accent_btn_css())
+        cancel_btn = self._button_box.button(QDialogButtonBox.StandardButton.Cancel)
+        if cancel_btn is None:
+            raise RuntimeError("Dialog cancel button was not created")
+        cancel_btn.setStyleSheet(btn_css(
+            bg=Colors.SURFACE_RAISED,
+            bg_hover=Colors.SURFACE_ACTIVE,
+            bg_press=Colors.SURFACE_ALT,
+            fg=Colors.TEXT_SECONDARY,
+            border=f"1px solid {Colors.BORDER}",
+            padding="7px 20px",
+        ))
+        self._button_box.accepted.connect(self._create)
+        self._button_box.rejected.connect(self.reject)
+        layout.addWidget(self._button_box)
+
+    def _load_models(self) -> None:
+        from ipod_device import available_virtual_ipod_models
+
+        self._models = available_virtual_ipod_models()
+        for row in self._models:
+            self._model_combo.addItem(row["display_name"], row["model_number"])
+
+    def _browse_directory(self) -> None:
+        folder = QFileDialog.getExistingDirectory(
+            self,
+            "Select Virtual iPod Folder",
+            "",
+            QFileDialog.Option.ShowDirsOnly,
+        )
+        if folder:
+            self._directory_edit.setText(folder)
+
+    def _create(self) -> None:
+        import os
+
+        folder = self._directory_edit.text().strip()
+        model_number = str(self._model_combo.currentData() or "")
+        if not folder:
+            QMessageBox.warning(self, "Missing Folder", "Choose a folder first.")
+            return
+        if not os.path.isdir(folder):
+            QMessageBox.warning(self, "Invalid Folder", "The selected folder does not exist.")
+            return
+
+        try:
+            from ipod_device import VIRTUAL_IPOD_INFO_FILENAME
+
+            has_existing_data = (
+                os.path.exists(os.path.join(folder, VIRTUAL_IPOD_INFO_FILENAME))
+                or os.path.isdir(os.path.join(folder, "iPod_Control"))
+            )
+            if has_existing_data:
+                answer = QMessageBox.question(
+                    self,
+                    "Use Existing Folder",
+                    "This folder already contains iPod data. Create virtual iPod metadata there?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,
+                )
+                if answer != QMessageBox.StandardButton.Yes:
+                    return
+
+            from ipod_device import create_virtual_ipod
+
+            ipod = create_virtual_ipod(folder, model_number)
+        except Exception as exc:
+            logger.exception("Failed to create virtual iPod")
+            QMessageBox.critical(self, "Virtual iPod Failed", str(exc))
+            return
+
+        self.selected_path = str(getattr(ipod, "path", "") or folder)
+        self.selected_ipod = ipod
+        self.accept()
 
 
 class _DriveWatcher(QThread):
@@ -55,7 +239,11 @@ class _DriveWatcher(QThread):
     @staticmethod
     def _volumes_windows() -> set[str]:
         import ctypes
-        bitmask = ctypes.windll.kernel32.GetLogicalDrives()
+        windll = getattr(ctypes, "windll", None)
+        kernel32 = getattr(windll, "kernel32", None)
+        if kernel32 is None:
+            return set()
+        bitmask = kernel32.GetLogicalDrives()
         drives: set[str] = set()
         for letter_idx in range(26):
             if bitmask & (1 << letter_idx):
@@ -117,7 +305,7 @@ class DeviceCard(QFrame):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins((12), (16), (12), (12))
-        layout.setSpacing((6))
+        layout.setSpacing(6)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         # Icon — try real product photo first, fall back to generic icon
@@ -241,7 +429,7 @@ class DevicePickerDialog(QDialog):
     def _setup_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins((20), (20), (20), (16))
-        layout.setSpacing((16))
+        layout.setSpacing(16)
 
         # Title
         title = QLabel("Select your iPod")
@@ -262,7 +450,7 @@ class DevicePickerDialog(QDialog):
         self._grid_container.setStyleSheet("background: transparent;")
         self._grid_layout = QGridLayout(self._grid_container)
         self._grid_layout.setContentsMargins(0, 0, 0, 0)
-        self._grid_layout.setSpacing((16))
+        self._grid_layout.setSpacing(16)
         scroll.setWidget(self._grid_container)
         layout.addWidget(scroll, 1)
 
@@ -287,7 +475,7 @@ class DevicePickerDialog(QDialog):
 
         # Bottom buttons
         btn_layout = QHBoxLayout()
-        btn_layout.setSpacing((10))
+        btn_layout.setSpacing(10)
 
         self._manual_btn = QPushButton("Browse Manually")
         self._manual_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
@@ -414,6 +602,10 @@ class DevicePickerDialog(QDialog):
 
     def _browse_manually(self):
         """Open a standard folder picker dialog."""
+        if QApplication.keyboardModifiers() & Qt.KeyboardModifier.ShiftModifier:
+            self._create_virtual_ipod()
+            return
+
         folder = QFileDialog.getExistingDirectory(
             self,
             "Select iPod Root Folder",
@@ -423,8 +615,11 @@ class DevicePickerDialog(QDialog):
         if folder:
             # Validate the selection
             import os
+
+            from ipod_device import has_virtual_ipod_info
+
             ipod_control = os.path.join(folder, "iPod_Control")
-            if os.path.isdir(ipod_control):
+            if os.path.isdir(ipod_control) or has_virtual_ipod_info(folder):
                 self.selected_path = folder
                 self.accept()
             else:
@@ -436,6 +631,14 @@ class DevicePickerDialog(QDialog):
                     "  <selected folder>/iPod_Control/iTunes/\n\n"
                     "Please select the root folder of your iPod.",
                 )
+
+    def _create_virtual_ipod(self) -> None:
+        """Open the virtual iPod creation dialog."""
+        dialog = VirtualIPodDialog(self)
+        if dialog.exec() and dialog.selected_path:
+            self.selected_path = dialog.selected_path
+            self.selected_ipod = dialog.selected_ipod
+            self.accept()
 
     def done(self, a0):
         """Stop the drive watcher before closing the dialog."""
