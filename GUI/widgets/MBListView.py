@@ -2751,9 +2751,6 @@ class MusicBrowserList(QFrame):
         # ── Volume Adjustment ──
         self._build_volume_menu(menu, menu_style, selected)
 
-        # ── Start/Stop Time ──
-        self._build_start_stop_menu(menu, menu_style, selected)
-
         # ── Copy ──
         menu.addSeparator()
         copy_text_act = menu.addAction(f"Copy as Text\t{_CTRL}+C")
@@ -2781,9 +2778,6 @@ class MusicBrowserList(QFrame):
             # (track_dict_key, menu_label, description)
             ("compilation_flag", "Compilation", "Part of a compilation album"),
             ("skip_when_shuffling", "Skip When Shuffling", "Skip this track in shuffle mode"),
-            ("remember_position", "Remember Playback Position", "Resume from last position (audiobooks)"),
-            ("gapless_track_flag", "Gapless Track", "Enable gapless playback for this track"),
-            ("gapless_album_flag", "Gapless Album", "Enable gapless playback for this album"),
         ]
 
         for key, label, _tip in FLAG_DEFS:
@@ -2822,23 +2816,6 @@ class MusicBrowserList(QFrame):
         if act:
             act.triggered.connect(
                 lambda _=False, v=new_val: self._set_track_flag("checked_flag", v)
-            )
-
-        # ── Played Mark (for podcasts: 0=not played, 2=played) ──
-        played_count = sum(1 for t in selected if t.get("not_played_flag", 0) != 0)  # was playedMark
-        if played_count == total:
-            prefix = "✓  "
-            new_val = 0  # mark as unplayed
-        elif played_count == 0:
-            prefix = "    "
-            new_val = 2  # mark as played
-        else:
-            prefix = "–  "
-            new_val = 2  # mixed → played
-        act = menu.addAction(f"{prefix}Mark as Played")
-        if act:
-            act.triggered.connect(
-                lambda _=False, v=new_val: self._set_track_flag("not_played_flag", v)  # was playedMark
             )
 
     def _build_rating_menu(self, menu: QMenu, style: str, selected: list[dict], cache) -> None:
@@ -2937,103 +2914,6 @@ class MusicBrowserList(QFrame):
                 act.triggered.connect(
                     lambda _=False, v=value: self._set_track_flag("volume", v)
                 )
-
-    def _build_start_stop_menu(self, menu: QMenu, style: str, selected: list[dict]) -> None:
-        """Add Start/Stop Time submenu with Set and Clear actions."""
-        menu.addSeparator()
-
-        # ── Start Time ────────────────────────────────────────────────
-        start_menu = menu.addMenu("Start Time")
-        if start_menu:
-            start_menu.setStyleSheet(style)
-            # Current value display (if unanimous across selection)
-            start_vals = {t.get("start_time", 0) for t in selected}  # was startTime
-            if len(start_vals) == 1:
-                val = start_vals.pop()
-                if val:
-                    info_act = start_menu.addAction(f"Current: {format_duration(val)}")
-                    if info_act:
-                        info_act.setEnabled(False)
-
-            act_set = start_menu.addAction("Set Start Time…")
-            if act_set:
-                act_set.triggered.connect(
-                    lambda _=False: self._prompt_time("start_time", selected)  # was startTime
-                )
-            has_start = any(t.get("start_time", 0) for t in selected)  # was startTime
-            if has_start:
-                act_clear = start_menu.addAction("Clear Start Time")
-                if act_clear:
-                    act_clear.triggered.connect(
-                        lambda _=False: self._set_track_flag("start_time", 0)  # was startTime
-                    )
-
-        # ── Stop Time ─────────────────────────────────────────────────
-        stop_menu = menu.addMenu("Stop Time")
-        if stop_menu:
-            stop_menu.setStyleSheet(style)
-            stop_vals = {t.get("stop_time", 0) for t in selected}  # was stopTime
-            if len(stop_vals) == 1:
-                val = stop_vals.pop()
-                if val:
-                    info_act = stop_menu.addAction(f"Current: {format_duration(val)}")
-                    if info_act:
-                        info_act.setEnabled(False)
-
-            act_set = stop_menu.addAction("Set Stop Time…")
-            if act_set:
-                act_set.triggered.connect(
-                    lambda _=False: self._prompt_time("stop_time", selected)  # was stopTime
-                )
-            has_stop = any(t.get("stop_time", 0) for t in selected)  # was stopTime
-            if has_stop:
-                act_clear = stop_menu.addAction("Clear Stop Time")
-                if act_clear:
-                    act_clear.triggered.connect(
-                        lambda _=False: self._set_track_flag("stop_time", 0)  # was stopTime
-                    )
-
-    def _prompt_time(self, key: str, selected: list[dict]) -> None:
-        """Show a dialog to set start or stop time in mm:ss format."""
-        from PyQt6.QtWidgets import QInputDialog
-
-        label = "Start Time" if key == "start_time" else "Stop Time"  # was startTime/stopTime
-
-        # Pre-fill with current value if all selected tracks agree
-        vals = {t.get(key, 0) for t in selected}
-        default_text = ""
-        if len(vals) == 1:
-            ms = vals.pop()
-            if ms:
-                total_sec = ms // 1000
-                m, s = divmod(total_sec, 60)
-                default_text = f"{m}:{s:02d}"
-
-        text, ok = QInputDialog.getText(
-            self, f"Set {label}",
-            f"Enter {label.lower()} (m:ss or mm:ss):",
-            text=default_text,
-        )
-        if not ok or not text.strip():
-            return
-
-        # Parse mm:ss or m:ss or just seconds
-        text = text.strip()
-        try:
-            if ":" in text:
-                parts = text.split(":")
-                minutes = int(parts[0])
-                seconds = int(parts[1])
-            else:
-                minutes = 0
-                seconds = int(text)
-            ms = (minutes * 60 + seconds) * 1000
-            if ms < 0:
-                return
-        except (ValueError, IndexError):
-            return
-
-        self._set_track_flag(key, ms)
 
     def _set_track_flag(self, key: str, value: int) -> None:
         """Apply a flag/field change to all selected tracks via the cache."""
