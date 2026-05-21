@@ -621,6 +621,9 @@ class DevicePickerDialog(QDialog):
             ipod_control = os.path.join(folder, "iPod_Control")
             if os.path.isdir(ipod_control) or has_virtual_ipod_info(folder):
                 self.selected_path = folder
+                # Clear any prior card selection so the caller re-identifies
+                # the manual path instead of reusing a stale device object.
+                self.selected_ipod = None
                 self.accept()
             else:
                 QMessageBox.warning(

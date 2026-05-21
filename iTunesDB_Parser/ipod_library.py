@@ -52,6 +52,9 @@ def load_ipod_library(itunesdb_path: str,
         data = extract_datasets(raw)
 
         _inline_track_strings(data)
+        from .artwork_links import hydrate_track_artwork_refs
+
+        hydrate_track_artwork_refs(data.get("mhlt", []), itunesdb_path)
         _inline_album_strings(data)
         _inline_playlist_strings(data)
         _inline_artist_strings(data)

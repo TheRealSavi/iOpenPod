@@ -55,6 +55,10 @@ def read_existing_database(ipod_path: Path) -> dict:
             # sample_rate_1 is already converted from 16.16 fixed-point
             # to Hz by the read_transform in mhit_defs.py
 
+        from iTunesDB_Parser.artwork_links import hydrate_track_artwork_refs
+
+        hydrate_track_artwork_refs(tracks, itdb_path)
+
         # ── Merge Play Counts file (iPod-generated deltas) ──────────
         pc_path = ipod_path / "iPod_Control" / "iTunes" / "Play Counts"
         pc_entries = parse_playcounts(pc_path)

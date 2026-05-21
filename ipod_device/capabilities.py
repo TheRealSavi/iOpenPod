@@ -579,6 +579,38 @@ def capabilities_for_family_gen(
     return None
 
 
+def cover_art_formats_for_family_gen(
+    family: str,
+    generation: str,
+    *,
+    capacity: str | None = None,
+    model_number: str | None = None,
+) -> tuple[ArtworkFormat, ...]:
+    """Return cover-art formats for a family/generation pair.
+
+    This is intentionally narrower than ``capabilities_for_family_gen``. Some
+    families have generations with different playback capabilities but the same
+    ArtworkDB cover formats, so a full capability fallback would be ambiguous
+    while artwork generation is still safe.
+    """
+    _ = capacity, model_number
+
+    caps = _FAMILY_GEN_CAPABILITIES.get((family, generation))
+    if caps is not None:
+        return caps.cover_art_formats if caps.supports_artwork else ()
+
+    if family and not generation:
+        family_formats = [
+            c.cover_art_formats if c.supports_artwork else ()
+            for (f, _g), c in _FAMILY_GEN_CAPABILITIES.items()
+            if f == family
+        ]
+        if family_formats and all(formats == family_formats[0] for formats in family_formats):
+            return family_formats[0]
+
+    return ()
+
+
 def checksum_type_for_family_gen(
     family: str,
     generation: str,

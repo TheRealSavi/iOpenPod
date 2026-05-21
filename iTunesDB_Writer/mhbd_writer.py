@@ -847,7 +847,11 @@ def write_itunesdb(
                 logger.debug("ART:   '%s' mhii_link=%d artwork_count=%d artwork_size=%d",
                              t.title, t.mhii_link, t.artwork_count, t.artwork_size)
         except Exception as e:
+            if pending_artwork:
+                pending_artwork.abort()
+                pending_artwork = None
             logger.error("ART: ArtworkDB write failed: %s", e, exc_info=True)
+            raise
     else:
         _progress("Skipping artwork (no sources)")
         logger.debug("ART: pc_file_paths is %s — skipping ArtworkDB",

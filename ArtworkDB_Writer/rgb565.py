@@ -61,6 +61,8 @@ def get_artwork_format_definitions(ipod_path: str) -> dict[int, ArtworkFormat]:
     resolved = resolve_cover_art_format_definitions_for_device(device)
     if resolved:
         return resolved
+    if device is not None:
+        return {}
 
     return resolve_cover_art_format_definitions("iPod Classic", "1st Gen")
 
@@ -69,16 +71,28 @@ def get_artwork_formats(ipod_path: str) -> dict[int, tuple[int, int]]:
     """Return the correct format table for the connected iPod.
 
     Reads from the centralised DeviceInfo store (populated when the device
-    was selected).  Falls back to the model capabilities table, and finally
-    to iPod Classic formats as a safe default.
+    was selected). Falls back to the model capabilities table. Only code paths
+    without an identified current device use iPod Classic as a legacy default.
     """
     import logging
     _log = logging.getLogger(__name__)
+
+    from ipod_device import get_current_device
 
     defs = get_artwork_format_definitions(ipod_path)
     if defs:
         _log.info("ART: using resolved format definitions: %s", list(defs.keys()))
         return {fid: (int(fmt.width), int(fmt.height)) for fid, fmt in defs.items()}
+
+    device = get_current_device()
+    if device is not None:
+        _log.warning(
+            "ART: no artwork definitions available for identified device %s %s; "
+            "refusing to default to unrelated formats",
+            getattr(device, "model_family", "") or "unknown",
+            getattr(device, "generation", "") or "",
+        )
+        return {}
 
     _log.info(
         "ART: no artwork definitions available — defaulting to iPod Classic formats"

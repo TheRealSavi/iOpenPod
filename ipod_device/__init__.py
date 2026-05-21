@@ -36,6 +36,7 @@ from .capabilities import (
     DeviceCapabilities,
     capabilities_for_family_gen,
     checksum_type_for_family_gen,
+    cover_art_formats_for_family_gen,
 )
 from .checksum import (
     CHECKSUM_MHBD_SCHEME,

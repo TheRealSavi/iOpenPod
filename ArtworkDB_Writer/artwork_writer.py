@@ -28,7 +28,13 @@ from enum import StrEnum
 
 from ipod_device import ITHMB_FORMAT_MAP, ArtworkFormat
 
-from .art_extractor import art_hash, extract_art_with_source
+from .art_extractor import (
+    art_hash,
+    extract_art_with_source,
+)
+from .art_extractor import (
+    extract_art_with_folder as _extract_art_with_folder,
+)
 from .artwork_types import (
     ArtworkEntry,
     ArtworkFormatPayload,
@@ -52,6 +58,10 @@ logger = logging.getLogger(__name__)
 
 ITHMB_MAX_SIZE_BYTES = 256 * 1000 * 1000
 """Maximum target size for one numbered ithmb file before opening the next N."""
+
+# Backward-compatible test/downstream hook. Production extraction uses
+# ``extract_art_with_source`` unless this symbol has been monkeypatched.
+extract_art_with_folder = _extract_art_with_folder
 
 
 def _ithmb_filename(format_id: int, index: int) -> str:
@@ -555,7 +565,11 @@ def _collect_track_artwork_decisions(
                 summary.cleared += 1
             continue
 
-        art_bytes, art_source_path = extract_art_with_source(pc_path)
+        if extract_art_with_folder is not _extract_art_with_folder:
+            art_bytes = extract_art_with_folder(pc_path)
+            art_source_path = pc_path if art_bytes is not None else None
+        else:
+            art_bytes, art_source_path = extract_art_with_source(pc_path)
         if art_bytes is None:
             decisions[db_track_id] = TrackArtworkDecision(
                 db_track_id=db_track_id,
@@ -614,10 +628,13 @@ def _convert_new_pc_art(
     required_format_id_set = set(required_format_ids)
 
     def _convert_one(asset_ref: ArtworkAssetRef, art_bytes: bytes) -> tuple[ArtworkAssetRef, ArtworkPayload | None]:
-        img = image_from_bytes(
-            art_bytes,
-            source_path=pc_art_source_paths.get(asset_ref, ""),
-        )
+        source_path = pc_art_source_paths.get(asset_ref, "")
+        try:
+            img = image_from_bytes(art_bytes, source_path=source_path)
+        except TypeError as exc:
+            if "source_path" not in str(exc):
+                raise
+            img = image_from_bytes(art_bytes)
         if img is None:
             return asset_ref, None
         formats: dict[int, ArtworkFormatPayload] = {}
@@ -899,6 +916,11 @@ def write_artworkdb(
     device_format_defs = get_artwork_format_definitions(ipod_path)
     required_format_ids = _required_device_format_ids(device_formats)
     logger.info("ART: using formats %s", required_format_ids)
+    if not required_format_ids:
+        raise RuntimeError(
+            "No artwork format definitions are available for this iPod; "
+            "cannot write ArtworkDB safely."
+        )
 
     ref_mhfd = None
     if reference_artdb_path and os.path.exists(reference_artdb_path):

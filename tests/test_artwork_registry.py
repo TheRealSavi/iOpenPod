@@ -10,6 +10,14 @@ def test_standard_device_resolves_formats_from_global_registry() -> None:
     assert resolved[1055] == ITHMB_FORMAT_MAP[1055]
 
 
+def test_ipod_video_unknown_generation_resolves_shared_video_formats() -> None:
+    resolved = resolve_cover_art_format_definitions("iPod Video", "")
+
+    assert list(resolved) == [1028, 1029]
+    assert resolved[1028] == ITHMB_FORMAT_MAP[1028]
+    assert resolved[1029] == ITHMB_FORMAT_MAP[1029]
+
+
 def test_nano_7g_conflicting_ids_use_explicit_overrides() -> None:
     resolved = resolve_cover_art_format_definitions("iPod Nano", "7th Gen")
 

@@ -4,7 +4,7 @@ from .artwork_presets import (
     ARTWORK_FORMATS_BY_ID,
     ArtworkFormat,
 )
-from .capabilities import capabilities_for_family_gen
+from .capabilities import capabilities_for_family_gen, cover_art_formats_for_family_gen
 
 ITHMB_FORMAT_MAP = ARTWORK_FORMATS_BY_ID
 """Primary global lookup of ithmb correlation ID -> ``ArtworkFormat``.
@@ -62,7 +62,16 @@ def cover_art_format_definitions_for_device(
         capacity=capacity,
         model_number=model_number,
     )
-    if caps is None or not caps.supports_artwork:
+    if caps is None:
+        return _format_dict(
+            cover_art_formats_for_family_gen(
+                family,
+                generation,
+                capacity=capacity,
+                model_number=model_number,
+            )
+        )
+    if not caps.supports_artwork:
         return {}
     return _format_dict(caps.cover_art_formats)
 
