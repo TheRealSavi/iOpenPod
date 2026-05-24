@@ -158,17 +158,27 @@ class _PCLibScanWorker(QThread):
     finished = pyqtSignal(object)  # {"tracks": list[PCTrack], "photos": PCPhotoLibrary}
     error = pyqtSignal(str)
 
-    def __init__(self, folders: object, include_video: bool = True):
+    def __init__(
+        self,
+        folders: object,
+        include_video: bool = True,
+        include_photo: bool = True,
+    ):
         super().__init__()
         self._folders = _normalize_folder_list(folders)
         self._include_video = include_video
+        self._include_photo = include_photo
 
     def run(self):
         try:
             from SyncEngine.pc_library import PCLibrary
             lib = PCLibrary(self._folders)
             tracks = list(lib.scan(include_video=self._include_video))
-            photos = scan_pc_photos(self._folders)
+            photos = (
+                scan_pc_photos(self._folders)
+                if self._include_photo
+                else PCPhotoLibrary(sync_root=os.pathsep.join(self._folders))
+            )
             self.finished.emit({"tracks": tracks, "photos": photos})
         except Exception as e:
             self.error.emit(str(e))
@@ -1198,6 +1208,9 @@ class SelectiveSyncBrowser(QWidget):
         self._buckets: dict[str, list] = {}  # media_type -> tracks
         self._selected_tracks: dict[str, bool] = {}
         self._selected_photos: dict[str, bool] = {}
+        self._device_supports_video = True
+        self._device_supports_photo = True
+        self._device_supports_podcast = True
         self._current_mode = "Albums"
         self._current_group: str | None = None
         self._current_group_tracks: list = []
@@ -1464,6 +1477,16 @@ class SelectiveSyncBrowser(QWidget):
         """Start scanning one or more folders and prepare the browser."""
         self._folders = _normalize_folder_list(folder)
         self._folder = self._folders[0] if self._folders else ""
+        caps = self._device_sessions.current_session().capabilities
+        self._device_supports_video = (
+            bool(caps.supports_video) if caps is not None else True
+        )
+        self._device_supports_photo = (
+            bool(caps.supports_photo) if caps is not None else True
+        )
+        self._device_supports_podcast = (
+            bool(caps.supports_podcast) if caps is not None else True
+        )
         self._all_tracks = []
         self._photo_library = PCPhotoLibrary(sync_root=os.pathsep.join(self._folders))
         self._all_photos = []
@@ -1489,7 +1512,11 @@ class SelectiveSyncBrowser(QWidget):
         # Stop and clean up any prior worker
         self._cleanup_scan_worker()
 
-        self._scan_worker = _PCLibScanWorker(self._folders)
+        self._scan_worker = _PCLibScanWorker(
+            self._folders,
+            include_video=self._device_supports_video,
+            include_photo=self._device_supports_photo,
+        )
         self._scan_worker.finished.connect(self._on_scan_complete)
         self._scan_worker.error.connect(self._on_scan_error)
         self._scan_worker.start()
@@ -1503,10 +1530,20 @@ class SelectiveSyncBrowser(QWidget):
         else:
             self._all_tracks = list(tracks)
             self._photo_library = PCPhotoLibrary(sync_root=os.pathsep.join(self._folders))
+        if not self._device_supports_podcast:
+            self._all_tracks = [
+                track for track in self._all_tracks
+                if not getattr(track, "is_podcast", False)
+            ]
+        if not self._device_supports_video:
+            self._all_tracks = [
+                track for track in self._all_tracks
+                if not getattr(track, "is_video", False)
+            ]
         self._all_photos = sorted(
             self._photo_library.photos.values(),
             key=lambda photo: (photo.display_name or photo.source_path).lower(),
-        )
+        ) if self._device_supports_photo else []
         self._selected_tracks = {t.path: True for t in self._all_tracks}
         self._selected_photos = {photo.source_path: True for photo in self._all_photos}
         self._build_groups()

@@ -21,7 +21,11 @@ from .sync_options import build_transcode_options
 if TYPE_CHECKING:
     from infrastructure.settings_schema import AppSettings
 
-    from .services import DeviceIdentitySnapshot, LibraryCacheLike
+    from .services import (
+        DeviceCapabilitySnapshot,
+        DeviceIdentitySnapshot,
+        LibraryCacheLike,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -111,21 +115,26 @@ class ToolDownloadWorker(QThread):
             self.error.emit(str(exc))
 
 
-def is_media_drop_candidate(path: Path) -> bool:
+def is_media_drop_candidate(path: Path, *, include_video: bool = True) -> bool:
     """Return whether a path should activate the media drop overlay."""
 
-    return path.is_dir() or is_supported_media_file(path)
+    return path.is_dir() or is_supported_media_file(path, include_video=include_video)
 
 
-def is_supported_media_file(path: Path) -> bool:
+def is_supported_media_file(path: Path, *, include_video: bool = True) -> bool:
     """Return whether a path is a supported media file."""
 
-    from SyncEngine._formats import MEDIA_EXTENSIONS
+    from SyncEngine._formats import AUDIO_EXTENSIONS, MEDIA_EXTENSIONS
 
-    return path.is_file() and path.suffix.lower() in MEDIA_EXTENSIONS
+    extensions = MEDIA_EXTENSIONS if include_video else AUDIO_EXTENSIONS
+    return path.is_file() and path.suffix.lower() in extensions
 
 
-def collect_media_file_paths(paths: list[Path]) -> list[Path]:
+def collect_media_file_paths(
+    paths: list[Path],
+    *,
+    include_video: bool = True,
+) -> list[Path]:
     """Expand dropped files/folders into supported media file paths."""
 
     file_paths: list[Path] = []
@@ -134,9 +143,12 @@ def collect_media_file_paths(paths: list[Path]) -> list[Path]:
             for root, _, files in os.walk(path):
                 for filename in sorted(files):
                     candidate = Path(root) / filename
-                    if is_supported_media_file(candidate):
+                    if is_supported_media_file(
+                        candidate,
+                        include_video=include_video,
+                    ):
                         file_paths.append(candidate)
-        elif is_supported_media_file(path):
+        elif is_supported_media_file(path, include_video=include_video):
             file_paths.append(path)
     return file_paths
 
@@ -160,10 +172,16 @@ def build_podcast_plan_for_sync(
     ipod_tracks: list,
     store: Any,
     *,
+    supports_podcast: bool = True,
     fetch_feed_fn: Callable[..., Any] | None = None,
     build_plan_fn: Callable[..., Any] | None = None,
 ) -> Any:
     """Refresh podcast feeds and build the managed podcast sync plan."""
+
+    if not supports_podcast:
+        from SyncEngine.fingerprint_diff_engine import SyncPlan
+
+        return SyncPlan()
 
     fetcher = fetch_feed_fn
     if fetcher is None:
@@ -215,6 +233,7 @@ class PodcastPlanRequest:
     feeds: list[Any]
     ipod_tracks: list
     store: Any
+    supports_podcast: bool = True
 
 
 class PodcastPlanWorker(QThread):
@@ -234,6 +253,7 @@ class PodcastPlanWorker(QThread):
                 request.feeds,
                 request.ipod_tracks,
                 request.store,
+                supports_podcast=request.supports_podcast,
             )
             if not self.isInterruptionRequested():
                 self.finished.emit(plan)
@@ -515,6 +535,7 @@ class SyncDiffRequest:
     ipod_path: str = ""
     supports_video: bool = True
     supports_podcast: bool = True
+    supports_photo: bool = True
     track_edits: dict | None = None
     photo_edits: Any = None
     sync_workers: int = 0
@@ -555,6 +576,7 @@ class SyncDiffWorker(QThread):
                 request.ipod_path,
                 supports_video=request.supports_video,
                 supports_podcast=request.supports_podcast,
+                supports_photo=request.supports_photo,
                 fpcalc_path=request.fpcalc_path,
                 photo_sync_settings=request.photo_sync_settings,
                 transcode_options=request.transcode_options,
@@ -1601,6 +1623,7 @@ class SyncExecuteWorker(QThread):
         skip_backup: bool = False,
         user_playlists: list | None = None,
         device_info: DeviceIdentitySnapshot | None = None,
+        device_capabilities: DeviceCapabilitySnapshot | None = None,
         on_sync_complete: Callable[[], None] | None = None,
     ):
         super().__init__()
@@ -1611,6 +1634,7 @@ class SyncExecuteWorker(QThread):
         self.user_playlists = user_playlists
         self.settings = settings
         self.device_info = device_info
+        self.device_capabilities = device_capabilities
         self.on_sync_complete = on_sync_complete
         self._give_up_scrobble_requested = False
         self._partial_save_event: threading.Event | None = None
@@ -1666,6 +1690,7 @@ class SyncExecuteWorker(QThread):
                 fpcalc_path=settings.fpcalc_path,
                 transcode_options=build_transcode_options(settings),
                 device_info=self.device_info,
+                device_capabilities=self.device_capabilities,
                 photo_sync_settings={
                     "rotate_tall_photos_for_device": (
                         settings.rotate_tall_photos_for_device
@@ -1774,12 +1799,21 @@ class DropScanWorker(QThread):
     finished = pyqtSignal(object)
     error = pyqtSignal(str)
 
-    def __init__(self, file_paths: list[Path]):
+    def __init__(
+        self,
+        file_paths: list[Path],
+        *,
+        supports_video: bool = True,
+        supports_podcast: bool = True,
+    ):
         super().__init__()
         self._file_paths = file_paths
+        self._supports_video = supports_video
+        self._supports_podcast = supports_podcast
 
     def run(self) -> None:
         try:
+            from SyncEngine.capability_filter import is_track_supported_by_device
             from SyncEngine.fingerprint_diff_engine import (
                 StorageSummary,
                 SyncAction,
@@ -1797,7 +1831,11 @@ class DropScanWorker(QThread):
                 try:
                     library = PCLibrary(path.parent)
                     track = library._read_track(path)
-                    if track:
+                    if track and is_track_supported_by_device(
+                        track,
+                        supports_video=self._supports_video,
+                        supports_podcast=self._supports_podcast,
+                    ):
                         items.append(
                             SyncItem(
                                 action=SyncAction.ADD_TO_IPOD,

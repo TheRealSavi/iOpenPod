@@ -423,6 +423,7 @@ class FingerprintDiffEngine:
         ipod_path: str | Path,
         supports_video: bool = True,
         supports_podcast: bool = True,
+        supports_photo: bool = True,
         fpcalc_path: str = "",
         photo_sync_settings: dict[str, bool] | None = None,
         transcode_options: TranscodeOptions | None = None,
@@ -431,6 +432,7 @@ class FingerprintDiffEngine:
         self.ipod_path = Path(ipod_path)
         self.supports_video = supports_video
         self.supports_podcast = supports_podcast
+        self.supports_photo = supports_photo
         self.fpcalc_path = fpcalc_path
         self.photo_sync_settings = photo_sync_settings
         self.transcode_options = transcode_options or TranscodeOptions()
@@ -1160,29 +1162,32 @@ class FingerprintDiffEngine:
 
         # Attach the mapping so the executor can reuse it instead of
         # loading from disk a second time.
-        try:
-            device_photos = read_photo_db(self.ipod_path)
-            if allowed_paths is None:
-                if progress_callback:
-                    progress_callback("scan_photos", 0, 0, "Scanning photos...")
-                pc_photos = scan_pc_photos(self.pc_library.root_paths)
-                plan.photo_plan = build_photo_sync_plan(
-                    pc_photos,
-                    device_photos,
-                    photo_edits,
-                    ipod_path=self.ipod_path,
-                    sync_settings=self.photo_sync_settings,
-                )
-            elif photo_edits and photo_edits.has_changes:
-                plan.photo_plan = build_photo_sync_plan(
-                    PCPhotoLibrary(sync_root=str(self.pc_library.root_path)),
-                    device_photos,
-                    photo_edits,
-                    ipod_path=self.ipod_path,
-                    sync_settings=self.photo_sync_settings,
-                )
-        except Exception as exc:
-            logger.warning("Photo sync planning failed: %s", exc)
+        if self.supports_photo:
+            try:
+                device_photos = read_photo_db(self.ipod_path)
+                if allowed_paths is None:
+                    if progress_callback:
+                        progress_callback("scan_photos", 0, 0, "Scanning photos...")
+                    pc_photos = scan_pc_photos(self.pc_library.root_paths)
+                    plan.photo_plan = build_photo_sync_plan(
+                        pc_photos,
+                        device_photos,
+                        photo_edits,
+                        ipod_path=self.ipod_path,
+                        sync_settings=self.photo_sync_settings,
+                    )
+                elif photo_edits and photo_edits.has_changes:
+                    plan.photo_plan = build_photo_sync_plan(
+                        PCPhotoLibrary(sync_root=str(self.pc_library.root_path)),
+                        device_photos,
+                        photo_edits,
+                        ipod_path=self.ipod_path,
+                        sync_settings=self.photo_sync_settings,
+                    )
+            except Exception as exc:
+                logger.warning("Photo sync planning failed: %s", exc)
+        elif photo_edits and photo_edits.has_changes:
+            logger.info("Skipping photo sync plan: device does not support photos")
 
         if plan.photo_plan is not None:
             # Include photo transfer deltas in the shared storage estimate so

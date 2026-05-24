@@ -1048,6 +1048,7 @@ class MainWindow(QMainWindow):
         caps = self.device_session_service.current_session().capabilities
         supports_video = bool(caps and caps.supports_video)
         supports_podcast = bool(caps and caps.supports_podcast)
+        supports_photo = bool(caps and caps.supports_photo)
 
         # Gather GUI state to pass forward (not pulled by SyncEngine)
         cache = self.library_cache
@@ -1074,6 +1075,7 @@ class MainWindow(QMainWindow):
                 ipod_path=device_manager.device_path or "",
                 supports_video=supports_video,
                 supports_podcast=supports_podcast,
+                supports_photo=supports_photo,
                 track_edits=track_edits,
                 photo_edits=photo_edits,
                 sync_workers=sync_workers,
@@ -1139,6 +1141,14 @@ class MainWindow(QMainWindow):
         Receives a SyncPlan with podcast episodes as to_add items and
         sends it through the standard sync review pipeline.
         """
+        caps = self.device_session_service.current_session().capabilities
+        if caps is not None and not caps.supports_podcast and getattr(plan, "to_add", None):
+            QMessageBox.warning(
+                self,
+                "Unsupported iPod",
+                "This iPod does not support podcasts.",
+            )
+            return
         self._plan = plan
         cache = self.library_cache
         self.syncReview._ipod_tracks_cache = cache.get_tracks() or []
@@ -1178,8 +1188,10 @@ class MainWindow(QMainWindow):
         browser = self.musicBrowser.podcastBrowser
         store = browser._store
         feeds = store.get_feeds() if store else []
+        caps = self.device_session_service.current_session().capabilities
+        supports_podcast = bool(caps and caps.supports_podcast)
 
-        if not feeds:
+        if not feeds or not supports_podcast:
             self.syncReview.show_plan(plan)
             return
 
@@ -1190,6 +1202,7 @@ class MainWindow(QMainWindow):
                 feeds=feeds,
                 ipod_tracks=ipod_tracks,
                 store=store,
+                supports_podcast=supports_podcast,
             )
         )
         self._podcast_plan_worker = worker
@@ -1283,6 +1296,7 @@ class MainWindow(QMainWindow):
         caps = self.device_session_service.current_session().capabilities
         supports_video = bool(caps and caps.supports_video)
         supports_podcast = bool(caps and caps.supports_podcast)
+        supports_photo = bool(caps and caps.supports_photo)
 
         cache = self.library_cache
         ipod_tracks = cache.get_tracks()
@@ -1293,7 +1307,11 @@ class MainWindow(QMainWindow):
             selected_track_paths = frozenset(selected_paths.get("tracks", ()))
             selected_photo_imports = tuple(selected_paths.get("photos", ()))
 
-        photo_edits = build_imported_photo_edit_state(selected_photo_imports)
+        photo_edits = (
+            build_imported_photo_edit_state(selected_photo_imports)
+            if supports_photo
+            else None
+        )
         settings = self.settings_service.get_effective_settings()
         try:
             sync_workers = settings.sync_workers
@@ -1313,6 +1331,7 @@ class MainWindow(QMainWindow):
                 ipod_path=device_manager.device_path or "",
                 supports_video=supports_video,
                 supports_podcast=supports_podcast,
+                supports_photo=supports_photo,
                 track_edits=track_edits,
                 photo_edits=photo_edits,
                 sync_workers=sync_workers,
@@ -1479,6 +1498,7 @@ class MainWindow(QMainWindow):
             skip_backup=skip_backup,
             user_playlists=user_playlists,
             device_info=device_session.identity,
+            device_capabilities=device_session.capabilities,
             on_sync_complete=_on_sync_complete,
         )
         self._sync_execute_worker.progress.connect(self.syncReview.update_execute_progress)
@@ -1630,9 +1650,14 @@ class MainWindow(QMainWindow):
 
         mime = a0.mimeData()
         if mime and mime.hasUrls():
+            caps = self.device_session_service.current_session().capabilities
+            include_video = bool(caps.supports_video) if caps is not None else True
             for url in mime.urls():
                 if url.isLocalFile():
-                    if is_media_drop_candidate(Path(url.toLocalFile())):
+                    if is_media_drop_candidate(
+                        Path(url.toLocalFile()),
+                        include_video=include_video,
+                    ):
                         a0.acceptProposedAction()
                         self._drop_overlay.show_overlay()
                         return
@@ -1664,7 +1689,10 @@ class MainWindow(QMainWindow):
 
     def _on_files_dropped(self, paths: list[Path]):
         """Process dropped files/folders in a background thread."""
-        file_paths = collect_media_file_paths(paths)
+        caps = self.device_session_service.current_session().capabilities
+        supports_video = bool(caps.supports_video) if caps is not None else True
+        supports_podcast = bool(caps.supports_podcast) if caps is not None else True
+        file_paths = collect_media_file_paths(paths, include_video=supports_video)
         if not file_paths:
             return
 
@@ -1680,7 +1708,11 @@ class MainWindow(QMainWindow):
         self.syncReview.loading_label.setText("Reading dropped files...")
 
         # Run metadata reading in background thread
-        self._drop_worker = DropScanWorker(file_paths)
+        self._drop_worker = DropScanWorker(
+            file_paths,
+            supports_video=supports_video,
+            supports_podcast=supports_podcast,
+        )
         self._drop_worker.finished.connect(self._on_drop_scan_complete)
         self._drop_worker.error.connect(self._onSyncError)
         self._drop_worker.start()

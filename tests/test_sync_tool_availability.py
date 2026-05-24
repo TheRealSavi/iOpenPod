@@ -89,3 +89,15 @@ def test_collect_media_file_paths_expands_supported_files(tmp_path) -> None:
         video,
         standalone,
     ]
+
+
+def test_collect_media_file_paths_can_exclude_videos(tmp_path) -> None:
+    media_dir = tmp_path / "album"
+    media_dir.mkdir()
+    track = media_dir / "song.mp3"
+    video = media_dir / "clip.m4v"
+    for path in (track, video):
+        path.write_text("x", encoding="utf-8")
+
+    assert is_media_drop_candidate(video, include_video=False) is False
+    assert collect_media_file_paths([media_dir], include_video=False) == [track]

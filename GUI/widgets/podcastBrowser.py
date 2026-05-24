@@ -2180,6 +2180,10 @@ class PodcastBrowser(QFrame):
         """
         if not self._store:
             return
+        caps = self._device_sessions.current_session().capabilities
+        if caps is not None and not caps.supports_podcast:
+            self._set_status("This iPod does not support podcasts")
+            return
 
         feeds = self._store.get_feeds()
         if not feeds:
@@ -2423,6 +2427,10 @@ class PodcastBrowser(QFrame):
         2. Builds a sync plan (includes pending episodes)
         3. Emits plan for sync review
         """
+        caps = self._device_sessions.current_session().capabilities
+        if caps is not None and not caps.supports_podcast:
+            self._set_action_status("This iPod does not support podcasts")
+            return
         selected = self._get_selected_episode_refs()
         if not selected:
             self._set_action_status("Select episodes first")

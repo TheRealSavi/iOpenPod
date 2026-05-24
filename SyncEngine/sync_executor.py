@@ -36,6 +36,10 @@ from iTunesDB_Writer.mhit_writer import TrackInfo
 from iTunesDB_Writer.mhyp_writer import PlaylistInfo
 
 from .audio_fingerprint import get_or_compute_fingerprint
+from .capability_filter import (
+    is_track_supported_by_device,
+    unsupported_track_reason,
+)
 from .contracts import SyncOutcome, SyncProgress, SyncRequest
 from .fingerprint_diff_engine import SyncItem, SyncPlan
 from .itunes_prefs import protect_from_itunes
@@ -206,6 +210,7 @@ class SyncExecutor:
         photo_sync_settings: dict[str, bool] | None = None,
         transcode_options: TranscodeOptions | None = None,
         device_info: object | None = None,
+        device_capabilities: object | None = None,
     ):
         from .transcode_cache import TranscodeCache
 
@@ -220,6 +225,7 @@ class SyncExecutor:
         self.photo_sync_settings = photo_sync_settings
         self.transcode_options = transcode_options or TranscodeOptions()
         self.device_info = device_info
+        self.device_capabilities = device_capabilities
 
         self._folder_counter = 0
         self._folder_lock = threading.Lock()
@@ -345,6 +351,11 @@ class SyncExecutor:
             listenbrainz_username=listenbrainz_username,
             _is_scrobble_cancelled=is_scrobble_cancelled,
         )
+
+        self._apply_device_capability_filters(ctx)
+        if not ctx.plan.has_changes:
+            ctx.result.success = not ctx.result.has_errors
+            return ctx.result
 
         logger.info(
             "Sync executor using %d overall workers and %d device write workers",
@@ -494,6 +505,107 @@ class SyncExecutor:
 
         ctx.result.success = not ctx.result.has_errors
         return ctx.result
+
+    def _current_device_capabilities(self) -> object | None:
+        if self.device_capabilities is not None:
+            return self.device_capabilities
+        try:
+            capabilities = getattr(self.device_info, "capabilities", None)
+        except Exception:
+            capabilities = None
+        if capabilities is not None:
+            return capabilities
+        try:
+            from ipod_device import get_current_device
+
+            device = get_current_device()
+            return getattr(device, "capabilities", None) if device is not None else None
+        except Exception:
+            return None
+
+    def _capability_flag(self, field_name: str, default: bool = True) -> bool:
+        capabilities = self._current_device_capabilities()
+        if capabilities is None:
+            return default
+        return bool(getattr(capabilities, field_name, default))
+
+    @staticmethod
+    def _sync_item_size(item: SyncItem) -> int:
+        if item.estimated_size is not None:
+            try:
+                return int(item.estimated_size or 0)
+            except (TypeError, ValueError):
+                return 0
+        pc_track = item.pc_track
+        if pc_track is None:
+            return 0
+        try:
+            return int(getattr(pc_track, "size", 0) or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    def _apply_device_capability_filters(self, ctx: _SyncContext) -> None:
+        """Drop plan entries that would write unsupported media types."""
+
+        supports_video = self._capability_flag("supports_video", True)
+        supports_podcast = self._capability_flag("supports_podcast", True)
+        supports_photo = self._capability_flag("supports_photo", True)
+
+        skipped: list[str] = []
+
+        def _filter_items(items: list[SyncItem], storage_field: str) -> list[SyncItem]:
+            kept: list[SyncItem] = []
+            for item in items:
+                pc_track = item.pc_track
+                if pc_track is None or is_track_supported_by_device(
+                    pc_track,
+                    supports_video=supports_video,
+                    supports_podcast=supports_podcast,
+                ):
+                    kept.append(item)
+                    continue
+                reason = unsupported_track_reason(
+                    pc_track,
+                    supports_video=supports_video,
+                    supports_podcast=supports_podcast,
+                )
+                label = getattr(pc_track, "title", None) or getattr(pc_track, "filename", None) or item.description or "track"
+                skipped.append(f"{label}: {reason}")
+                setattr(
+                    ctx.plan.storage,
+                    storage_field,
+                    max(0, getattr(ctx.plan.storage, storage_field) - self._sync_item_size(item)),
+                )
+            return kept
+
+        ctx.plan.to_add = _filter_items(ctx.plan.to_add, "bytes_to_add")
+        ctx.plan.to_update_file = _filter_items(
+            ctx.plan.to_update_file,
+            "bytes_to_update",
+        )
+
+        if not supports_photo and ctx.plan.photo_plan is not None:
+            photo_plan = ctx.plan.photo_plan
+            if bool(getattr(photo_plan, "has_changes", False)):
+                skipped.append("photos: photos are not supported by this iPod")
+            ctx.plan.storage.bytes_to_add = max(
+                0,
+                ctx.plan.storage.bytes_to_add
+                - int(getattr(photo_plan, "thumb_bytes_to_add", 0) or 0),
+            )
+            ctx.plan.storage.bytes_to_remove = max(
+                0,
+                ctx.plan.storage.bytes_to_remove
+                - int(getattr(photo_plan, "thumb_bytes_to_remove", 0) or 0),
+            )
+            ctx.plan.photo_plan = None
+
+        if skipped:
+            detail = "; ".join(skipped[:5])
+            remaining = len(skipped) - 5
+            if remaining > 0:
+                detail += f"; and {remaining} more"
+            ctx.result.errors.append(("device capabilities", f"Skipped unsupported media: {detail}"))
 
     def quick_write_playlists(
         self,

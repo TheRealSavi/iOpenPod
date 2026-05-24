@@ -63,3 +63,26 @@ def test_build_podcast_plan_falls_back_to_existing_feed_on_refresh_failure() -> 
     assert plan.to_add == ["episode"]
     assert store.updated_feeds == [original]
     assert seen["build"] == ([original], [], store)
+
+
+def test_build_podcast_plan_skips_when_device_lacks_podcast_support() -> None:
+    original = SimpleNamespace(feed_url="https://example.test/feed", title="Show")
+    store = _Store()
+
+    def fetch_feed(*_args, **_kwargs):
+        raise AssertionError("feed refresh should not run")
+
+    def build_plan(*_args, **_kwargs):
+        raise AssertionError("plan builder should not run")
+
+    plan = build_podcast_plan_for_sync(
+        [original],
+        [],
+        store,
+        supports_podcast=False,
+        fetch_feed_fn=fetch_feed,
+        build_plan_fn=build_plan,
+    )
+
+    assert plan.has_changes is False
+    assert store.updated_feeds is None
