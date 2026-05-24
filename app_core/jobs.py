@@ -1237,22 +1237,50 @@ class QuickMetadataWorker(QThread):
     finished_ok = pyqtSignal()
     failed = pyqtSignal(str)
 
-    def __init__(self, ipod_path: str, track_edits: dict[int, dict[str, tuple]]):
+    def __init__(
+        self,
+        ipod_path: str,
+        track_edits: dict[int, dict[str, tuple]],
+        artwork_edits: dict[int, str] | None = None,
+    ):
         super().__init__()
         self._ipod_path = ipod_path
         self._track_edits = track_edits
+        self._artwork_edits = artwork_edits or {}
 
     def run(self) -> None:
+        write_ok = False
+        error_msg: str | None = None
         try:
             from SyncEngine.quick_writes import write_track_metadata_edits
 
-            if write_track_metadata_edits(self._ipod_path, self._track_edits):
-                self.finished_ok.emit()
-            else:
-                self.failed.emit("Database write returned False.")
+            write_ok = write_track_metadata_edits(
+                self._ipod_path,
+                self._track_edits,
+                artwork_edits=self._artwork_edits,
+            )
+            if not write_ok:
+                error_msg = "Database write returned False."
         except Exception as exc:
             logger.exception("QuickMetadataWorker failed")
-            self.failed.emit(str(exc))
+            error_msg = str(exc)
+        finally:
+            self._cleanup_temp_artwork_files()
+
+        if write_ok:
+            self.finished_ok.emit()
+        else:
+            self.failed.emit(error_msg or "Unknown quick metadata write error")
+
+    def _cleanup_temp_artwork_files(self) -> None:
+        for path in set(self._artwork_edits.values()):
+            name = os.path.basename(path)
+            if not name.startswith("iopenpod-artwork-"):
+                continue
+            try:
+                os.remove(path)
+            except OSError:
+                pass
 
 
 class QuickPlaylistSyncWorker(QThread):
@@ -1543,8 +1571,10 @@ class PlaylistImportWorker(QThread):
                         self.progress.emit(progress.current or 0, add_count, message)
 
                 fresh_mapping = MappingManager(self._ipod_path).load()
+                plan = SyncPlan()
+                plan.to_add.extend(to_add)
                 request = SyncRequest(
-                    plan=SyncPlan(to_add=to_add),
+                    plan=plan,
                     mapping=fresh_mapping,
                     progress_callback=_on_sync_progress,
                 )
@@ -1847,10 +1877,9 @@ class DropScanWorker(QThread):
                 except Exception as exc:
                     logger.warning("Failed to read dropped file %s: %s", path, exc)
 
-            plan = SyncPlan(
-                to_add=items,
-                storage=StorageSummary(bytes_to_add=total_bytes),
-            )
+            plan = SyncPlan()
+            plan.to_add.extend(items)
+            plan.storage = StorageSummary(bytes_to_add=total_bytes)
             self.finished.emit(plan)
         except Exception as exc:
             self.error.emit(str(exc))

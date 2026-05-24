@@ -15,6 +15,20 @@ from .services import DeviceInfoLike, LibraryCacheLike
 logger = logging.getLogger(__name__)
 
 
+def _is_iopenpod_temp_artwork_path(path: str) -> bool:
+    return os.path.basename(path).startswith("iopenpod-artwork-")
+
+
+def _cleanup_temp_artwork_paths(paths: list[str]) -> None:
+    for path in set(paths):
+        if not _is_iopenpod_temp_artwork_path(path):
+            continue
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
 def _is_music_browser_track(track: dict) -> bool:
     """Return whether a track belongs in the music browser indexes."""
 
@@ -405,6 +419,7 @@ class iTunesDBCache(QObject):
         self._photo_db = None
         self._user_playlists: list[dict] = []
         self._track_edits: dict[int, dict[str, tuple]] = {}
+        self._track_artwork_edits: dict[int, str] = {}
         from SyncEngine.photos import PhotoEditState
 
         self._photo_edits = PhotoEditState()
@@ -427,7 +442,9 @@ class iTunesDBCache(QObject):
             self._track_id_index = None
             self._photo_db = None
             self._user_playlists.clear()
+            _cleanup_temp_artwork_paths(list(self._track_artwork_edits.values()))
             self._track_edits.clear()
+            self._track_artwork_edits.clear()
             from SyncEngine.photos import PhotoEditState
 
             self._photo_edits = PhotoEditState()
@@ -697,17 +714,45 @@ class iTunesDBCache(QObject):
         )
         self.tracks_changed.emit()
 
+    def update_track_artwork(self, tracks: list[dict], image_path: str) -> None:
+        with self._lock:
+            edited = 0
+            for track in tracks:
+                db_track_id = track.get("db_track_id", track.get("db_id", 0))
+                if not db_track_id:
+                    continue
+                db_track_id = int(db_track_id)
+                previous = self._track_artwork_edits.get(db_track_id)
+                if previous and previous != image_path:
+                    still_used = any(
+                        path == previous
+                        for other_id, path in self._track_artwork_edits.items()
+                        if other_id != db_track_id
+                    )
+                    if not still_used:
+                        _cleanup_temp_artwork_paths([previous])
+                self._track_artwork_edits[db_track_id] = image_path
+                track["_iop_pending_artwork_path"] = image_path
+                track["artwork_count"] = 1
+                track["has_artwork"] = 1
+                edited += 1
+
+        logger.info("Track artwork updated on %d track(s): %s", edited, image_path)
+        self.tracks_changed.emit()
+
     def get_track_edits(self) -> dict[int, dict[str, tuple]]:
         with self._lock:
             return dict(self._track_edits)
 
     def has_pending_track_edits(self) -> bool:
         with self._lock:
-            return len(self._track_edits) > 0
+            return len(self._track_edits) > 0 or len(self._track_artwork_edits) > 0
 
     def clear_track_edits(self) -> None:
         with self._lock:
+            _cleanup_temp_artwork_paths(list(self._track_artwork_edits.values()))
             self._track_edits.clear()
+            self._track_artwork_edits.clear()
 
     def get_photo_edits(self):
         with self._lock:
@@ -763,6 +808,12 @@ class iTunesDBCache(QObject):
         with self._lock:
             edits = dict(self._track_edits)
             self._track_edits.clear()
+            return edits
+
+    def pop_track_artwork_edits(self) -> dict[int, str]:
+        with self._lock:
+            edits = dict(self._track_artwork_edits)
+            self._track_artwork_edits.clear()
             return edits
 
     def set_data(self, data: dict, device_path: str) -> None:

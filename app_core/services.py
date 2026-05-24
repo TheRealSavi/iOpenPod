@@ -417,6 +417,9 @@ class LibraryCacheLike(Protocol):
     ) -> None:
         ...
 
+    def update_track_artwork(self, tracks: list[dict], image_path: str) -> None:
+        ...
+
     def get_user_playlists(self) -> list[dict]:
         ...
 
@@ -427,6 +430,9 @@ class LibraryCacheLike(Protocol):
         ...
 
     def pop_track_edits(self) -> dict[int, dict[str, tuple]]:
+        ...
+
+    def pop_track_artwork_edits(self) -> dict[int, str]:
         ...
 
     def has_pending_track_edits(self) -> bool:

@@ -204,16 +204,22 @@ class QuickWriteController(QObject):
             return
 
         edits = self._library_cache.pop_track_edits()
-        if not edits:
+        artwork_edits = self._library_cache.pop_track_artwork_edits()
+        if not edits and not artwork_edits:
             return
 
-        logger.info("Quick metadata write: %d track(s) edited", len(edits))
+        logger.info(
+            "Quick metadata write: %d track(s) edited, %d artwork edit(s)",
+            len(edits),
+            len(artwork_edits),
+        )
         self.save_status_changed.emit("saving")
 
-        worker = QuickMetadataWorker(ipod_path, edits)
+        worker = QuickMetadataWorker(ipod_path, edits, artwork_edits)
         self._metadata_worker = worker
         worker.finished_ok.connect(self._on_metadata_ok)
         worker.failed.connect(self._on_metadata_failed)
+        worker.finished.connect(self._on_metadata_worker_finished)
         worker.start()
 
     def schedule_playlist_sync(self) -> None:
@@ -300,19 +306,21 @@ class QuickWriteController(QObject):
     @pyqtSlot()
     def _on_metadata_ok(self) -> None:
         logger.info("Quick metadata write completed successfully")
-        if self._metadata_worker is not None:
-            self._metadata_worker.deleteLater()
-            self._metadata_worker = None
         self.save_status_changed.emit("saved")
 
     @pyqtSlot(str)
     def _on_metadata_failed(self, error_msg: str) -> None:
         logger.error("Quick metadata write failed: %s", error_msg)
-        if self._metadata_worker is not None:
-            self._metadata_worker.deleteLater()
-            self._metadata_worker = None
         self.save_status_changed.emit("error")
         self.metadata_failed.emit(error_msg)
+
+    @pyqtSlot()
+    def _on_metadata_worker_finished(self) -> None:
+        worker = self.sender()
+        if isinstance(worker, QThread):
+            worker.deleteLater()
+        if worker is self._metadata_worker:
+            self._metadata_worker = None
 
     @pyqtSlot(object)
     def _on_playlist_done(self, result) -> None:

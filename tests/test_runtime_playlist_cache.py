@@ -155,3 +155,34 @@ def test_update_track_flags_records_canonical_track_fields(monkeypatch) -> None:
             "eq_setting": ("", "Bass Booster"),
         }
     }
+
+
+def test_update_track_artwork_records_pending_artwork(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(
+        runtime.DeviceManager,
+        "get_instance",
+        classmethod(lambda cls: SimpleNamespace(device_path="/fake/ipod")),
+    )
+
+    artwork_path = tmp_path / "iopenpod-artwork-test.png"
+    artwork_path.write_bytes(b"png")
+    track = {"db_track_id": 123, "Title": "Song", "artwork_count": 0}
+    cache = runtime.iTunesDBCache()
+    cache.set_data(
+        {
+            "mhlt": [track],
+            "mhlp": [],
+            "mhlp_podcast": [],
+            "mhlp_smart": [],
+        },
+        "/fake/ipod",
+    )
+
+    cache.update_track_artwork([track], str(artwork_path))
+
+    assert track["artwork_count"] == 1
+    assert track["has_artwork"] == 1
+    assert track["_iop_pending_artwork_path"] == str(artwork_path)
+    assert cache.has_pending_track_edits()
+    assert cache.pop_track_artwork_edits() == {123: str(artwork_path)}
+    assert not cache.has_pending_track_edits()

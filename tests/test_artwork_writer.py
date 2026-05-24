@@ -8,12 +8,20 @@ from PIL import Image
 
 from ArtworkDB_Writer import artwork_writer as aw
 from ArtworkDB_Writer import rgb565
+from ArtworkDB_Writer.art_extractor import extract_art
 
 REQUIRED_FMT = 1055
 EXTRA_KNOWN_FMT = 1060
 UNKNOWN_FMT = 9999
 VIDEO_SMALL_FMT = 1028
 VIDEO_LARGE_FMT = 1029
+
+
+def test_extract_art_accepts_direct_image_file(tmp_path) -> None:
+    image_path = tmp_path / "manual.png"
+    Image.new("RGB", (4, 4), (12, 34, 56)).save(image_path)
+
+    assert extract_art(str(image_path)) == image_path.read_bytes()
 
 
 def _make_ipod_root(tmp_path: Path) -> tuple[Path, Path]:

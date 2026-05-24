@@ -18,7 +18,14 @@ from app_core.services import DeviceCapabilitySnapshot, DeviceIdentitySnapshot, 
 from GUI import imgMaker
 from GUI.imgMaker import ArtworkFormatPreview, TrackArtworkPreview, get_track_artwork_previews
 from GUI.widgets.MBListView import MusicBrowserList, build_new_regular_playlist
-from GUI.widgets.trackEditorDialog import TrackEditorDialog, _ArtworkPreviewPanel, _format_datetime_value, _parse_datetime_text, _subgroup_for_key
+from GUI.widgets.trackEditorDialog import (
+    TrackEditorDialog,
+    _ArtworkPreviewPanel,
+    _format_datetime_value,
+    _parse_datetime_text,
+    _SquareCropCanvas,
+    _subgroup_for_key,
+)
 from infrastructure import settings_persistence
 from infrastructure.settings_runtime import SettingsRuntime
 from infrastructure.settings_schema import AppSettings, DeviceSettingsState
@@ -926,6 +933,18 @@ def test_track_editor_dialog_artwork_panel_switches_formats_and_artworks(qtbot, 
     assert panel._counter_label.text() == "2 of 2"
     assert "Format 103" in panel._meta_label.text()
     assert _tree_child_text(panel._metadata_tree, 0, 0, 1) == "101"
+
+
+def test_square_crop_canvas_returns_square_output(qtbot) -> None:
+    canvas = _SquareCropCanvas(Image.new("RGB", (320, 180), (255, 0, 0)))
+    qtbot.addWidget(canvas)
+    canvas.resize(420, 420)
+    canvas.reset_view()
+    canvas.set_zoom_fraction(0.5)
+
+    cropped = canvas.cropped_image()
+
+    assert cropped.size == (1200, 1200)
 
 
 def test_track_editor_dialog_marks_structural_fields_read_only(qtbot) -> None:

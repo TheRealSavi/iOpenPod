@@ -2941,8 +2941,11 @@ class MusicBrowserList(QFrame):
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         changes = dialog.changes()
+        artwork_path = dialog.artwork_path()
         if changes:
             self._apply_track_edits(selected, changes)
+        if artwork_path:
+            self._apply_track_artwork_edit(selected, artwork_path)
 
     def _apply_track_edits(self, selected: list[dict], changes: dict[str, Any]) -> None:
         """Apply metadata edits to selected tracks via the cache quick-write path."""
@@ -2956,6 +2959,20 @@ class MusicBrowserList(QFrame):
             return
 
         cache.update_track_flags(selected, changes)
+        self._refresh_visible_rows()
+
+    def _apply_track_artwork_edit(self, selected: list[dict], artwork_path: str) -> None:
+        """Apply a cropped artwork image to selected tracks via the quick-write path."""
+        if not selected or not artwork_path:
+            return
+
+        cache = self._library_cache
+        if cache is None:
+            return
+        if not cache.is_ready():
+            return
+
+        cache.update_track_artwork(selected, artwork_path)
         self._refresh_visible_rows()
 
     def _refresh_visible_rows(self) -> None:

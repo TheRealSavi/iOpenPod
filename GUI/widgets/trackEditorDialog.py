@@ -4,17 +4,32 @@ from __future__ import annotations
 
 import ast
 import logging
+import os
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
 from dateutil import parser as dateutil_parser
 from dateutil.parser import ParserError
-from PyQt6.QtCore import QSize, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QFont, QPixmap
+from PIL import Image, ImageOps, UnidentifiedImageError
+from PyQt6.QtCore import QPointF, QRectF, QSize, Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import (
+    QColor,
+    QFont,
+    QMouseEvent,
+    QPainter,
+    QPaintEvent,
+    QPen,
+    QPixmap,
+    QResizeEvent,
+    QShowEvent,
+    QWheelEvent,
+)
 from PyQt6.QtWidgets import (
     QComboBox,
     QDialog,
+    QFileDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -27,6 +42,7 @@ from PyQt6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QSizePolicy,
+    QSlider,
     QStackedWidget,
     QTreeWidget,
     QTreeWidgetItem,
@@ -1162,8 +1178,326 @@ def _parse_datetime_text(text: str, label: str) -> int:
         ) from exc
 
 
+_ARTWORK_CROP_OUTPUT_SIZE = 1200
+_ARTWORK_TEMP_PREFIX = "iopenpod-artwork-"
+
+
+class _SquareCropCanvas(QWidget):
+    """Interactive square crop surface for album artwork images."""
+
+    scaleChanged = pyqtSignal(float)
+
+    def __init__(self, image: Image.Image, parent: QWidget | None = None):
+        super().__init__(parent)
+        self._image = image.convert("RGB")
+        self._pixmap = pil_to_pixmap(self._image)
+        self._scale = 1.0
+        self._min_scale = 1.0
+        self._max_scale = 5.0
+        self._center = QPointF()
+        self._drag_start: QPointF | None = None
+        self._drag_center = QPointF()
+        self._view_initialized = False
+        self.setMinimumSize(420, 420)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.setCursor(Qt.CursorShape.OpenHandCursor)
+
+    def zoom_fraction(self) -> float:
+        span = self._max_scale - self._min_scale
+        if span <= 0:
+            return 0.0
+        return (self._scale - self._min_scale) / span
+
+    def set_zoom_fraction(self, fraction: float) -> None:
+        fraction = max(0.0, min(1.0, fraction))
+        self._update_scale_bounds()
+        self._scale = self._min_scale + (self._max_scale - self._min_scale) * fraction
+        self._clamp_center()
+        self.scaleChanged.emit(self.zoom_fraction())
+        self.update()
+
+    def reset_view(self) -> None:
+        self._update_scale_bounds()
+        self._scale = self._min_scale
+        self._center = self._crop_rect().center()
+        self._view_initialized = True
+        self._clamp_center()
+        self.scaleChanged.emit(self.zoom_fraction())
+        self.update()
+
+    def cropped_image(self) -> Image.Image:
+        self._update_scale_bounds()
+        self._clamp_center()
+        crop = self._crop_rect()
+        image_rect = self._image_rect()
+        scale = max(self._scale, 0.0001)
+        left = (crop.left() - image_rect.left()) / scale
+        top = (crop.top() - image_rect.top()) / scale
+        right = (crop.right() - image_rect.left()) / scale
+        bottom = (crop.bottom() - image_rect.top()) / scale
+
+        width, height = self._image.size
+        left = max(0.0, min(float(width), left))
+        top = max(0.0, min(float(height), top))
+        right = max(left + 1.0, min(float(width), right))
+        bottom = max(top + 1.0, min(float(height), bottom))
+
+        box = (
+            int(round(left)),
+            int(round(top)),
+            int(round(right)),
+            int(round(bottom)),
+        )
+        cropped = self._image.crop(box)
+        if cropped.width != cropped.height:
+            side = min(cropped.width, cropped.height)
+            cropped = cropped.crop((0, 0, side, side))
+        if cropped.size != (_ARTWORK_CROP_OUTPUT_SIZE, _ARTWORK_CROP_OUTPUT_SIZE):
+            cropped = cropped.resize(
+                (_ARTWORK_CROP_OUTPUT_SIZE, _ARTWORK_CROP_OUTPUT_SIZE),
+                Image.Resampling.LANCZOS,
+            )
+        return cropped
+
+    def paintEvent(self, a0: QPaintEvent | None) -> None:
+        super().paintEvent(a0)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+        painter.fillRect(self.rect(), QColor(18, 20, 24))
+
+        if not self._view_initialized:
+            self.reset_view()
+
+        image_rect = self._image_rect()
+        painter.drawPixmap(image_rect, self._pixmap, QRectF(self._pixmap.rect()))
+
+        crop = self._crop_rect()
+        overlay = QColor(0, 0, 0, 150)
+        painter.fillRect(QRectF(0, 0, self.width(), crop.top()), overlay)
+        painter.fillRect(
+            QRectF(0, crop.bottom(), self.width(), self.height() - crop.bottom()),
+            overlay,
+        )
+        painter.fillRect(QRectF(0, crop.top(), crop.left(), crop.height()), overlay)
+        painter.fillRect(
+            QRectF(crop.right(), crop.top(), self.width() - crop.right(), crop.height()),
+            overlay,
+        )
+
+        grid_pen = QPen(QColor(255, 255, 255, 95))
+        grid_pen.setWidth(1)
+        painter.setPen(grid_pen)
+        third = crop.width() / 3.0
+        for index in (1, 2):
+            x = int(round(crop.left() + third * index))
+            y = int(round(crop.top() + third * index))
+            painter.drawLine(x, int(crop.top()), x, int(crop.bottom()))
+            painter.drawLine(int(crop.left()), y, int(crop.right()), y)
+
+        border_pen = QPen(QColor(255, 255, 255, 235))
+        border_pen.setWidth(2)
+        painter.setPen(border_pen)
+        painter.drawRect(crop)
+
+    def resizeEvent(self, a0: QResizeEvent | None) -> None:
+        super().resizeEvent(a0)
+        old_fraction = self.zoom_fraction()
+        self._update_scale_bounds()
+        if not self._view_initialized:
+            self.reset_view()
+            return
+        self._scale = self._min_scale + (self._max_scale - self._min_scale) * old_fraction
+        self._clamp_center()
+
+    def wheelEvent(self, a0: QWheelEvent | None) -> None:
+        if a0 is None:
+            return
+        delta = a0.angleDelta().y()
+        if delta == 0:
+            return
+        self.set_zoom_fraction(self.zoom_fraction() + (delta / 120.0) * 0.06)
+        a0.accept()
+
+    def mousePressEvent(self, a0: QMouseEvent | None) -> None:
+        if a0 is None:
+            return
+        if a0.button() == Qt.MouseButton.LeftButton:
+            self._drag_start = a0.position()
+            self._drag_center = QPointF(self._center)
+            self.setCursor(Qt.CursorShape.ClosedHandCursor)
+            a0.accept()
+            return
+        super().mousePressEvent(a0)
+
+    def mouseMoveEvent(self, a0: QMouseEvent | None) -> None:
+        if a0 is None:
+            return
+        if self._drag_start is None:
+            super().mouseMoveEvent(a0)
+            return
+        delta = a0.position() - self._drag_start
+        self._center = self._drag_center + delta
+        self._clamp_center()
+        self.update()
+        a0.accept()
+
+    def mouseReleaseEvent(self, a0: QMouseEvent | None) -> None:
+        if a0 is None:
+            return
+        if a0.button() == Qt.MouseButton.LeftButton and self._drag_start is not None:
+            self._drag_start = None
+            self.setCursor(Qt.CursorShape.OpenHandCursor)
+            a0.accept()
+            return
+        super().mouseReleaseEvent(a0)
+
+    def _crop_rect(self) -> QRectF:
+        side = max(160.0, min(float(self.width()), float(self.height())) - 32.0)
+        side = min(side, float(self.width()), float(self.height()))
+        return QRectF(
+            (self.width() - side) / 2.0,
+            (self.height() - side) / 2.0,
+            side,
+            side,
+        )
+
+    def _image_rect(self) -> QRectF:
+        width, height = self._image.size
+        draw_w = width * self._scale
+        draw_h = height * self._scale
+        return QRectF(
+            self._center.x() - draw_w / 2.0,
+            self._center.y() - draw_h / 2.0,
+            draw_w,
+            draw_h,
+        )
+
+    def _update_scale_bounds(self) -> None:
+        crop = self._crop_rect()
+        width, height = self._image.size
+        self._min_scale = max(crop.width() / width, crop.height() / height)
+        self._max_scale = max(self._min_scale * 5.0, self._min_scale + 0.01)
+        self._scale = max(self._min_scale, min(self._max_scale, self._scale))
+
+    def _clamp_center(self) -> None:
+        crop = self._crop_rect()
+        width, height = self._image.size
+        draw_w = width * self._scale
+        draw_h = height * self._scale
+
+        min_x = crop.right() - draw_w / 2.0
+        max_x = crop.left() + draw_w / 2.0
+        min_y = crop.bottom() - draw_h / 2.0
+        max_y = crop.top() + draw_h / 2.0
+
+        if min_x > max_x:
+            clamped_x = crop.center().x()
+        else:
+            clamped_x = max(min_x, min(max_x, self._center.x()))
+        if min_y > max_y:
+            clamped_y = crop.center().y()
+        else:
+            clamped_y = max(min_y, min(max_y, self._center.y()))
+        self._center = QPointF(clamped_x, clamped_y)
+
+
+class _ArtworkCropDialog(QDialog):
+    """Modal cropper that returns a square PIL image."""
+
+    def __init__(self, image_path: str, parent: QWidget | None = None):
+        super().__init__(parent)
+        self._image_path = image_path
+        self._cropped_image: Image.Image | None = None
+        with Image.open(image_path) as source:
+            image = ImageOps.exif_transpose(source).convert("RGB")
+
+        self.setWindowTitle("Crop Artwork")
+        self.setMinimumSize(560, 650)
+        self.resize(660, 740)
+        self.setStyleSheet(
+            f"""
+            QDialog {{
+                background: {Colors.DIALOG_BG};
+            }}
+            QLabel {{
+                color: {Colors.TEXT_SECONDARY};
+                font-family: {FONT_FAMILY};
+                font-size: {Metrics.FONT_SM}px;
+            }}
+            QSlider::groove:horizontal {{
+                background: {Colors.SURFACE_ALT};
+                border: 1px solid {Colors.BORDER_SUBTLE};
+                height: 6px;
+                border-radius: 3px;
+            }}
+            QSlider::handle:horizontal {{
+                background: {Colors.ACCENT};
+                border: 1px solid {Colors.ACCENT_BORDER};
+                width: 16px;
+                height: 16px;
+                margin: -6px 0;
+                border-radius: 8px;
+            }}
+            """
+        )
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        self._canvas = _SquareCropCanvas(image, self)
+        layout.addWidget(self._canvas, 1)
+
+        scale_row = QHBoxLayout()
+        scale_row.setContentsMargins(0, 0, 0, 0)
+        scale_row.setSpacing(10)
+        scale_label = QLabel("Scale")
+        scale_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
+        scale_row.addWidget(scale_label)
+        self._scale_slider = QSlider(Qt.Orientation.Horizontal)
+        self._scale_slider.setRange(0, 100)
+        self._scale_slider.setValue(0)
+        self._scale_slider.valueChanged.connect(
+            lambda value: self._canvas.set_zoom_fraction(value / 100.0)
+        )
+        self._canvas.scaleChanged.connect(self._sync_scale_slider)
+        scale_row.addWidget(self._scale_slider, 1)
+        reset_btn = QPushButton("Reset")
+        reset_btn.setStyleSheet(btn_css())
+        reset_btn.clicked.connect(self._canvas.reset_view)
+        scale_row.addWidget(reset_btn)
+        layout.addLayout(scale_row)
+
+        buttons = QHBoxLayout()
+        buttons.setContentsMargins(0, 0, 0, 0)
+        buttons.addStretch()
+        cancel = QPushButton("Cancel")
+        cancel.setStyleSheet(btn_css())
+        cancel.clicked.connect(self.reject)
+        buttons.addWidget(cancel)
+        use = QPushButton("Use Artwork")
+        use.setStyleSheet(accent_btn_css())
+        use.clicked.connect(self.accept)
+        buttons.addWidget(use)
+        layout.addLayout(buttons)
+
+    def cropped_image(self) -> Image.Image | None:
+        return self._cropped_image
+
+    def accept(self) -> None:
+        self._cropped_image = self._canvas.cropped_image()
+        super().accept()
+
+    def _sync_scale_slider(self, fraction: float) -> None:
+        self._scale_slider.blockSignals(True)
+        self._scale_slider.setValue(int(round(max(0.0, min(1.0, fraction)) * 100)))
+        self._scale_slider.blockSignals(False)
+
+
 class _ArtworkPreviewPanel(QFrame):
     """Preview assigned track artwork and its decoded device format variants."""
+
+    changeArtworkRequested = pyqtSignal()
 
     def __init__(self, artworks: list[TrackArtworkPreview], parent: QWidget | None = None):
         super().__init__(parent)
@@ -1171,6 +1505,8 @@ class _ArtworkPreviewPanel(QFrame):
         self._artwork_index = 0
         self._format_index = 0
         self._source_pixmap = QPixmap()
+        self._pending_pixmap = QPixmap()
+        self._pending_metadata: tuple[tuple[str, str], ...] = ()
         self._scale_queued = False
         self.setObjectName("sectionPanel")
 
@@ -1197,11 +1533,18 @@ class _ArtworkPreviewPanel(QFrame):
         header.setContentsMargins(0, 0, 0, 0)
         header.setSpacing(8)
 
-        title = QLabel("Assigned Artwork")
-        title.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.Bold))
-        title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
-        header.addWidget(title)
+        self._title_label = QLabel("Assigned Artwork")
+        self._title_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.Bold))
+        self._title_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
+        header.addWidget(self._title_label)
         header.addStretch()
+
+        self._change_btn = QPushButton("Change Artwork")
+        self._change_btn.setStyleSheet(btn_css())
+        self._change_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._change_btn.setToolTip("Choose a new artwork image")
+        self._change_btn.clicked.connect(self.changeArtworkRequested.emit)
+        header.addWidget(self._change_btn)
 
         self._counter_label = QLabel("")
         self._counter_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
@@ -1339,6 +1682,21 @@ class _ArtworkPreviewPanel(QFrame):
 
         self._render()
 
+    def set_pending_artwork(self, image: Image.Image, source_path: str) -> None:
+        self._pending_pixmap = pil_to_pixmap(image)
+        source_name = os.path.basename(source_path) or source_path
+        self._pending_metadata = (
+            ("Source", source_name),
+            ("Cropped Size", f"{image.width}x{image.height}"),
+            ("Final Shape", "Square"),
+        )
+        self._render()
+
+    def clear_pending_artwork(self) -> None:
+        self._pending_pixmap = QPixmap()
+        self._pending_metadata = ()
+        self._render()
+
     def _move_artwork(self, delta: int) -> None:
         if not self._artworks:
             return
@@ -1351,6 +1709,28 @@ class _ArtworkPreviewPanel(QFrame):
         self._render()
 
     def _render(self) -> None:
+        if not self._pending_pixmap.isNull():
+            self._title_label.setText("New Artwork")
+            self._source_pixmap = self._pending_pixmap
+            self._image_label.clear()
+            size_text = next(
+                (value for key, value in self._pending_metadata if key == "Cropped Size"),
+                "",
+            )
+            self._meta_label.setText(
+                "New artwork - pending apply"
+                if not size_text
+                else f"New artwork - {size_text} - pending apply"
+            )
+            self._counter_label.setText("Pending")
+            self._prev_btn.setEnabled(False)
+            self._next_btn.setEnabled(False)
+            self._set_format_buttons([])
+            self._set_metadata_sections([("Pending Image", self._pending_metadata)])
+            self._queue_scaled_pixmap()
+            return
+
+        self._title_label.setText("Assigned Artwork")
         if not self._artworks:
             self._source_pixmap = QPixmap()
             self._image_label.clear()
@@ -1477,11 +1857,11 @@ class _ArtworkPreviewPanel(QFrame):
             btn.clicked.connect(lambda _checked=False, index=index: self._select_format(index))
             self._format_buttons_layout.addWidget(btn)
 
-    def resizeEvent(self, a0) -> None:
+    def resizeEvent(self, a0: QResizeEvent | None) -> None:
         super().resizeEvent(a0)
         self._queue_scaled_pixmap()
 
-    def showEvent(self, a0) -> None:
+    def showEvent(self, a0: QShowEvent | None) -> None:
         super().showEvent(a0)
         self._queue_scaled_pixmap()
 
@@ -1526,6 +1906,9 @@ class TrackEditorDialog(QDialog):
         self._page_items: dict[str, QListWidgetItem] = {}
         self._page_indices: dict[str, int] = {}
         self._section_rows: list[tuple[QFrame, list[_TrackFieldRow]]] = []
+        self._artwork_panel: _ArtworkPreviewPanel | None = None
+        self._pending_artwork_path: str | None = None
+        self._accepted = False
 
         count = len(tracks)
         self.setWindowTitle(f"Edit {count} Track{'s' if count != 1 else ''}")
@@ -1586,13 +1969,21 @@ class TrackEditorDialog(QDialog):
             return dict(self._changes)
         return dict(self._collect_changes())
 
+    def artwork_path(self) -> str | None:
+        return self._pending_artwork_path if self._accepted else None
+
     def accept(self) -> None:
         try:
             self._changes = self._collect_changes()
         except ValueError as exc:
             QMessageBox.warning(self, "Invalid Track Edit", str(exc))
             return
+        self._accepted = True
         super().accept()
+
+    def reject(self) -> None:
+        self._discard_pending_artwork()
+        super().reject()
 
     def _build_ui(self) -> None:
         outer = QVBoxLayout(self)
@@ -1728,7 +2119,9 @@ class TrackEditorDialog(QDialog):
             except Exception as exc:
                 logger.warning("Failed to load track artwork previews: %s", exc)
                 artworks = []
-            body_layout.addWidget(_ArtworkPreviewPanel(artworks, body))
+            self._artwork_panel = _ArtworkPreviewPanel(artworks, body)
+            self._artwork_panel.changeArtworkRequested.connect(self._choose_artwork)
+            body_layout.addWidget(self._artwork_panel)
 
         page_rows: list[_TrackFieldRow] = []
         for subgroup in _ordered_subgroups(specs):
@@ -1813,15 +2206,30 @@ class TrackEditorDialog(QDialog):
         for row in self._rows:
             if row.is_modified():
                 row.reset()
+        if self._pending_artwork_path:
+            self._discard_pending_artwork()
+            if self._artwork_panel is not None:
+                self._artwork_panel.clear_pending_artwork()
         self._update_change_summary()
 
     def _update_change_summary(self) -> None:
-        count = sum(1 for row in self._rows if row.is_modified())
+        field_count = sum(1 for row in self._rows if row.is_modified())
+        artwork_changed = self._pending_artwork_path is not None
+        count = field_count + (1 if artwork_changed else 0)
         if count == 0:
             self._change_label.setText("No changes")
             self._reset_all_btn.setEnabled(False)
         else:
-            self._change_label.setText(f"{count} changed field{'s' if count != 1 else ''}")
+            if artwork_changed and field_count:
+                self._change_label.setText(
+                    f"{field_count} changed field{'s' if field_count != 1 else ''} + artwork"
+                )
+            elif artwork_changed:
+                self._change_label.setText("Artwork changed")
+            else:
+                self._change_label.setText(
+                    f"{field_count} changed field{'s' if field_count != 1 else ''}"
+                )
             self._reset_all_btn.setEnabled(True)
 
     def _apply_filter(self, text: str) -> None:
@@ -1859,3 +2267,67 @@ class TrackEditorDialog(QDialog):
                 continue
             changes[row.spec.key] = row.value()
         return changes
+
+    def _choose_artwork(self) -> None:
+        file_path, _selected_filter = QFileDialog.getOpenFileName(
+            self,
+            "Choose Artwork",
+            "",
+            "Images (*.png *.jpg *.jpeg *.bmp *.gif *.webp *.tif *.tiff);;All Files (*)",
+        )
+        if not file_path:
+            return
+
+        try:
+            crop_dialog = _ArtworkCropDialog(file_path, self)
+        except (OSError, UnidentifiedImageError) as exc:
+            QMessageBox.warning(
+                self,
+                "Artwork Image",
+                f"Could not open that image:\n\n{exc}",
+            )
+            return
+
+        if crop_dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        cropped = crop_dialog.cropped_image()
+        if cropped is None:
+            return
+
+        try:
+            temp_path = self._save_cropped_artwork(cropped)
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                "Artwork Image",
+                f"Could not prepare cropped artwork:\n\n{exc}",
+            )
+            return
+
+        self._discard_pending_artwork()
+        self._pending_artwork_path = temp_path
+        if self._artwork_panel is not None:
+            self._artwork_panel.set_pending_artwork(cropped, file_path)
+        self._update_change_summary()
+
+    def _save_cropped_artwork(self, image: Image.Image) -> str:
+        fd, path = tempfile.mkstemp(prefix=_ARTWORK_TEMP_PREFIX, suffix=".png")
+        os.close(fd)
+        try:
+            image.save(path, "PNG")
+        except Exception:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+            raise
+        return path
+
+    def _discard_pending_artwork(self) -> None:
+        if not self._pending_artwork_path:
+            return
+        try:
+            os.remove(self._pending_artwork_path)
+        except OSError:
+            pass
+        self._pending_artwork_path = None

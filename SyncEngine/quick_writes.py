@@ -49,8 +49,9 @@ def rename_master_playlist(ipod_path: str | Path, new_name: str) -> bool:
 def write_track_metadata_edits(
     ipod_path: str | Path,
     track_edits: dict[int, dict[str, tuple]],
+    artwork_edits: dict[int, str] | None = None,
 ) -> bool:
-    """Apply pending track metadata/flag edits and rewrite the database."""
+    """Apply pending track metadata/artwork edits and rewrite the database."""
 
     state = _load_database_state(ipod_path)
     if state is None:
@@ -64,6 +65,11 @@ def write_track_metadata_edits(
                 track[field] = new_val
 
     all_tracks = _tracks_to_infos(tracks_data, require_db_track_id=False)
+    artwork_sources = {
+        int(db_track_id): str(path)
+        for db_track_id, path in (artwork_edits or {}).items()
+        if db_track_id and path
+    }
     return _write_tracks_and_playlists(
         ipod_path,
         tracks_data=tracks_data,
@@ -71,6 +77,7 @@ def write_track_metadata_edits(
         smart_raw=smart_raw,
         all_tracks=all_tracks,
         user_playlists=[],
+        pc_file_paths=artwork_sources or None,
     )
 
 
@@ -441,6 +448,7 @@ def _write_tracks_and_playlists(
     all_tracks: list[TrackInfo],
     user_playlists: list[dict],
     master_playlist_name: str | None = None,
+    pc_file_paths: dict[int, str] | None = None,
 ) -> bool:
     from .unknown_metadata import apply_unknown_placeholders
 
@@ -458,6 +466,7 @@ def _write_tracks_and_playlists(
         playlists=playlists,
         smart_playlists=smart_playlists,
         master_playlist_name=master_playlist_name or current_master_name,
+        pc_file_paths=pc_file_paths,
     )
 
 
@@ -468,12 +477,14 @@ def _write_evaluated_database(
     playlists: list[Any],
     smart_playlists: list[Any],
     master_playlist_name: str,
+    pc_file_paths: dict[int, str] | None = None,
 ) -> bool:
     from ._db_io import write_database
 
     db_ok = write_database(
         Path(ipod_path),
         all_tracks,
+        pc_file_paths=pc_file_paths,
         playlists=playlists,
         smart_playlists=smart_playlists,
         master_playlist_name=master_playlist_name,

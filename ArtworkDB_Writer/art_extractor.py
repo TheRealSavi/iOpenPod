@@ -38,13 +38,14 @@ def extract_art(file_path: str) -> bytes | None:
     Returns:
         Raw image bytes (JPEG/PNG) or None if no art found
     """
-    if not MUTAGEN_AVAILABLE:
-        return None
-
     path = Path(file_path)
     ext = path.suffix.lower()
 
     try:
+        if ext in _IMAGE_EXTS:
+            return path.read_bytes()
+        if not MUTAGEN_AVAILABLE:
+            return None
         if ext == '.mp3':
             return _extract_mp3(file_path)
         elif ext in ('.m4a', '.m4p', '.m4b', '.aac', '.alac'):
