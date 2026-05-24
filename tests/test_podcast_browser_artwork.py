@@ -6,7 +6,7 @@ from typing import cast
 
 from PyQt6.QtCore import QPoint, Qt
 from PyQt6.QtGui import QColor, QContextMenuEvent, QPixmap
-from PyQt6.QtWidgets import QApplication, QLabel, QPushButton, QWidget
+from PyQt6.QtWidgets import QApplication, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from GUI.widgets.podcastBrowser import (
     _COMBINED_FEED_COLUMNS,
@@ -349,3 +349,68 @@ def test_episode_list_context_menu_signal_is_connected(qtbot) -> None:
     episode_list.table.customContextMenuRequested.emit(pos)
 
     assert owner.positions == [pos]
+
+
+def test_episode_list_uses_app_scrollbar_style_path(qtbot) -> None:
+    class _Owner(QWidget):
+        def _on_episode_context_menu(self, _pos: QPoint) -> None:
+            pass
+
+    owner = _Owner()
+    qtbot.addWidget(owner)
+    episode_list = _PodcastEpisodeList(cast(PodcastBrowser, owner))
+    qtbot.addWidget(episode_list)
+
+    table = episode_list.table
+
+    assert table.styleSheet() == ""
+    assert table.frameShape() == table.Shape.NoFrame
+    assert table.verticalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAsNeeded
+    assert table.horizontalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+    viewport = table.viewport()
+    assert viewport is not None
+    assert viewport.autoFillBackground() is False
+
+
+def test_episode_list_resets_scroll_when_rows_change(qtbot) -> None:
+    class _Owner(QWidget):
+        def _on_episode_context_menu(self, _pos: QPoint) -> None:
+            pass
+
+        def _artwork_placeholder_pixmap(self, _size: int) -> None:
+            return None
+
+    def _rows(prefix: str) -> list[dict]:
+        return [
+            {
+                "Title": f"{prefix} Episode {i}",
+                "Description Text": "Description",
+                "ep_status": "",
+                "length": 0,
+                "date_added": i,
+                "size": 0,
+                "_ep_guid": f"{prefix}-{i}",
+                "_ep_key": f"{prefix}-{i}",
+            }
+            for i in range(40)
+        ]
+
+    owner = _Owner()
+    qtbot.addWidget(owner)
+    layout = QVBoxLayout(owner)
+    layout.setContentsMargins(0, 0, 0, 0)
+    episode_list = _PodcastEpisodeList(cast(PodcastBrowser, owner))
+    layout.addWidget(episode_list)
+    owner.resize(500, 240)
+    owner.show()
+
+    episode_list.set_rows(_rows("first"), _PODCAST_EPISODE_COLUMNS)
+    bar = episode_list.table.verticalScrollBar()
+    assert bar is not None
+    qtbot.waitUntil(lambda: bar.maximum() > 0, timeout=2000)
+    bar.setValue(bar.maximum())
+    assert bar.value() > 0
+
+    episode_list.set_rows(_rows("second"), _PODCAST_EPISODE_COLUMNS)
+
+    assert bar.value() == 0

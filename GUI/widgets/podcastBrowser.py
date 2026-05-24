@@ -49,6 +49,7 @@ from PyQt6.QtGui import (
     QImage,
     QMouseEvent,
     QPainter,
+    QPalette,
     QPixmap,
     QResizeEvent,
 )
@@ -703,7 +704,15 @@ class _PodcastEpisodeScrollArea(QScrollArea):
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.setStyleSheet("background: transparent; border: none;")
+        self.setAutoFillBackground(False)
+        pal = self.palette()
+        pal.setColor(QPalette.ColorRole.Window, QColor(0, 0, 0, 0))
+        pal.setColor(QPalette.ColorRole.Base, QColor(0, 0, 0, 0))
+        self.setPalette(pal)
+        viewport = self.viewport()
+        if viewport is not None:
+            viewport.setPalette(pal)
+            viewport.setAutoFillBackground(False)
 
     def rowAt(self, y: int) -> int:
         return self._episode_list.row_at_viewport_y(y)
@@ -779,6 +788,7 @@ class _PodcastEpisodeList(QFrame):
         self._expanded_text_cache.clear()
         self._requested_artwork_sources.clear()
         self._rebuild_heights()
+        self._reset_scroll_position()
         self.schedule_viewport_refresh(force=True)
 
     def selected_rows(self) -> list[int]:
@@ -802,6 +812,11 @@ class _PodcastEpisodeList(QFrame):
         bar = self.table.verticalScrollBar()
         scroll = bar.value() if bar is not None else 0
         return self._row_at_content_y(scroll + y)
+
+    def _reset_scroll_position(self) -> None:
+        bar = self.table.verticalScrollBar()
+        if bar is not None:
+            bar.setValue(0)
 
     def schedule_viewport_refresh(self, *, force: bool = False) -> None:
         if force:
