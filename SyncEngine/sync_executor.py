@@ -71,6 +71,16 @@ _DB_OVERHEAD_BYTES = 10 * 1024 * 1024    # 10 MB
 _DEFAULT_MUSIC_DIRS = 20
 
 
+def _format_bytes(val: int) -> str:
+    """Format bytes as compact human-readable text for progress messages."""
+    value = float(max(0, val))
+    for unit in ("B", "KB", "MB", "GB"):
+        if value < 1024:
+            return f"{value:.1f} {unit}"
+        value /= 1024
+    return f"{value:.1f} TB"
+
+
 class _OutOfSpaceError(Exception):
     """Raised when iPod disk space drops below the disk safety reserve."""
     pass
@@ -156,6 +166,10 @@ class _SyncContext:
                 self.result.success = False
             return True
         return False
+
+    def is_cancelled(self) -> bool:
+        """CancelToken-compatible alias used by streaming downloads."""
+        return self.cancelled()
 
     def progress(self, stage: str, current: int, total: int,
                  current_item: Optional["SyncItem"] = None,
@@ -1437,6 +1451,10 @@ class SyncExecutor:
         if not ctx.plan.to_add:
             return
 
+        # Existing podcast cache files may still need artwork embedded or
+        # their art hash refreshed before the final ArtworkDB pass.
+        existing: list[SyncItem] = []
+
         # Identify podcast add items whose source file is missing
         pending: list[SyncItem] = []
         for item in ctx.plan.to_add:
@@ -1446,23 +1464,102 @@ class SyncExecutor:
                 continue
             source = Path(item.pc_track.path) if item.pc_track.path else None
             if source and source.exists():
+                existing.append(item)
                 continue
             if item.pc_track.podcast_enclosure_url:
                 pending.append(item)
 
-        if not pending:
+        if not pending and not existing:
             return
 
-        ctx.progress(
-            "podcast_download", 0, len(pending),
-            message=f"Downloading {len(pending)} podcast episodes...",
-        )
-
-        from PodcastManager.downloader import download_and_probe_episode
+        from PodcastManager.artwork import resolve_feed_artwork_source
+        from PodcastManager.downloader import download_and_probe_episode, probe_episode_file
 
         from ._formats import IPOD_NATIVE_AUDIO
 
         failed_items: list[SyncItem] = []
+        artwork_source_cache: dict[str, str] = {}
+
+        def _artwork_source(feed_url: str) -> str:
+            if feed_url in artwork_source_cache:
+                return artwork_source_cache[feed_url]
+            source = ""
+            try:
+                from PodcastManager.subscription_store import SubscriptionStore
+                if self.ipod_path:
+                    _store = SubscriptionStore(str(self.ipod_path))
+                    _feed = _store.get_feed(feed_url)
+                    if _feed:
+                        source = resolve_feed_artwork_source(_feed, _store.podcast_dir)
+            except Exception:
+                pass
+            artwork_source_cache[feed_url] = source
+            return source
+
+        def _apply_episode_info(pc, info) -> None:
+            pc.path = info.path
+            pc.size = info.size
+            pc.mtime = info.mtime
+            pc.filename = Path(info.path).name
+            pc.relative_path = Path(info.path).name
+            pc.extension = info.extension
+            if info.bitrate is not None:
+                pc.bitrate = info.bitrate
+            if info.sample_rate is not None:
+                pc.sample_rate = info.sample_rate
+            if info.duration_ms is not None:
+                pc.duration_ms = info.duration_ms
+            if info.art_hash is not None or not getattr(pc, "art_hash", None):
+                pc.art_hash = info.art_hash
+            pc.needs_transcoding = pc.extension not in IPOD_NATIVE_AUDIO
+
+        pending_estimates = [
+            max(
+                int(item.estimated_size or 0),
+                int(getattr(item.pc_track, "size", 0) or 0),
+            )
+            for item in pending
+        ]
+        completed_download_bytes = 0
+
+        def _download_total(current_idx: int, current_downloaded: int) -> int:
+            total = completed_download_bytes
+            for idx, estimate in enumerate(pending_estimates):
+                if idx < current_idx:
+                    continue
+                if idx == current_idx:
+                    total += max(estimate, current_downloaded)
+                else:
+                    total += estimate
+            return total
+
+        if pending:
+            initial_total = sum(pending_estimates)
+            ctx.progress(
+                "podcast_download",
+                0,
+                initial_total,
+                message=(
+                    f"Downloading {len(pending)} podcast episode"
+                    f"{'s' if len(pending) != 1 else ''}..."
+                ),
+                size_progress=0.0 if initial_total > 0 else None,
+            )
+
+        for item in existing:
+            pc = item.pc_track
+            assert pc is not None
+            source = Path(pc.path) if pc.path else None
+            if not source or not source.exists():
+                continue
+            try:
+                info = probe_episode_file(
+                    str(source),
+                    artwork_url=_artwork_source(pc.podcast_url or ""),
+                )
+                _apply_episode_info(pc, info)
+            except Exception as exc:
+                logger.debug("Could not prepare existing podcast file %s: %s", source, exc)
 
         for idx, item in enumerate(pending):
             if ctx.cancelled():
@@ -1474,11 +1571,6 @@ class SyncExecutor:
             feed_url = pc.podcast_url or ""
             title = pc.title or "Episode"
 
-            ctx.progress(
-                "podcast_download", idx, len(pending),
-                item, f"Downloading {title}",
-            )
-
             # Determine download destination directory
             dest_dir = str(Path(pc.path).parent) if pc.path else ""
             if not dest_dir:
@@ -1487,40 +1579,78 @@ class SyncExecutor:
                 base = str(self.transcode_cache.cache_dir)
                 dest_dir = str(Path(base) / "podcasts" / url_hash)
 
-            # Look up cached feed artwork from the subscription store.
-            artwork_source = ""
             try:
-                from PodcastManager.subscription_store import SubscriptionStore
-                if self.ipod_path:
-                    _store = SubscriptionStore(str(self.ipod_path))
-                    _feed = _store.get_feed(feed_url)
-                    if _feed:
-                        artwork_source = _feed.artwork_path or _feed.artwork_url
-            except Exception:
-                pass
+                last_downloaded = 0
+                last_report = 0.0
+                download_base = completed_download_bytes
 
-            try:
+                def _on_download_progress(
+                    downloaded: int,
+                    total_bytes: int,
+                    *,
+                    _idx: int = idx,
+                    _item: SyncItem = item,
+                    _title: str = title,
+                    _base: int = download_base,
+                ) -> None:
+                    nonlocal last_downloaded, last_report
+                    last_downloaded = max(0, int(downloaded or 0))
+                    if total_bytes and total_bytes > 0:
+                        pending_estimates[_idx] = int(total_bytes)
+
+                    stage_total = _download_total(_idx, last_downloaded)
+                    current = _base + last_downloaded
+                    now = time.monotonic()
+                    if current < stage_total and now - last_report < 0.05:
+                        return
+                    last_report = now
+
+                    progress_fraction = (
+                        min(current / stage_total, 1.0)
+                        if stage_total > 0
+                        else None
+                    )
+                    if stage_total > 0:
+                        progress_text = (
+                            f"{_format_bytes(current)} / {_format_bytes(stage_total)}"
+                        )
+                    else:
+                        progress_text = _format_bytes(current)
+                    ctx.progress(
+                        "podcast_download",
+                        current,
+                        stage_total,
+                        _item,
+                        f"Downloading {_title} ({progress_text})",
+                        size_progress=progress_fraction,
+                    )
+
                 info = download_and_probe_episode(
                     audio_url=enc_url,
                     title=title,
                     dest_dir=dest_dir,
-                    artwork_url=artwork_source,
+                    artwork_url=_artwork_source(feed_url),
+                    progress_cb=_on_download_progress,
+                    cancel_token=ctx,
                 )
-
-                # Update the PCTrack with real file info
-                pc.path = info.path
-                pc.size = info.size
-                pc.mtime = info.mtime
-                pc.filename = Path(info.path).name
-                pc.relative_path = Path(info.path).name
-                pc.extension = info.extension
-                if info.bitrate is not None:
-                    pc.bitrate = info.bitrate
-                if info.sample_rate is not None:
-                    pc.sample_rate = info.sample_rate
-                if info.duration_ms is not None:
-                    pc.duration_ms = info.duration_ms
-                pc.needs_transcoding = pc.extension not in IPOD_NATIVE_AUDIO
+                _apply_episode_info(pc, info)
+                completed_download_bytes += max(
+                    int(info.size or 0),
+                    last_downloaded,
+                )
+                final_total = _download_total(idx + 1, 0)
+                ctx.progress(
+                    "podcast_download",
+                    completed_download_bytes,
+                    final_total,
+                    item,
+                    f"Downloaded {title}",
+                    size_progress=(
+                        min(completed_download_bytes / final_total, 1.0)
+                        if final_total > 0
+                        else None
+                    ),
+                )
 
                 logger.info("Downloaded podcast: %s", title)
 
@@ -1536,10 +1666,19 @@ class SyncExecutor:
                 if id(item) not in failed_set
             ]
 
-        ctx.progress(
-            "podcast_download", len(pending), len(pending),
-            message=f"Downloaded {len(pending) - len(failed_items)} podcast episodes",
-        )
+        if pending:
+            final_total = max(completed_download_bytes, sum(pending_estimates))
+            ctx.progress(
+                "podcast_download",
+                completed_download_bytes,
+                final_total,
+                message=f"Downloaded {len(pending) - len(failed_items)} podcast episodes",
+                size_progress=(
+                    min(completed_download_bytes / final_total, 1.0)
+                    if final_total > 0
+                    else None
+                ),
+            )
 
     def _execute_adds(self, ctx: _SyncContext) -> None:
         if not ctx.plan.to_add:

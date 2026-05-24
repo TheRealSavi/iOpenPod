@@ -10,57 +10,57 @@ Core components:
 
 """
 
-from .pc_library import PCLibrary, PCTrack
-from .fingerprint_diff_engine import (
-    FingerprintDiffEngine,
-    SyncAction,
-    SyncPlan,
-    SyncItem,
-    StorageSummary,
-)
-from .contracts import SyncOutcome, SyncProgress, SyncRequest
-from .sync_executor import SyncExecutor
+from ._formats import IPOD_NATIVE_FORMATS
 from .audio_fingerprint import (
     compute_fingerprint,
-    read_fingerprint,
-    write_fingerprint,
     get_or_compute_fingerprint,
     is_fpcalc_available,
+    read_fingerprint,
+    write_fingerprint,
 )
-from .mapping import MappingManager, MappingFile, TrackMapping
-from .integrity import check_integrity, IntegrityReport
+from .backup_manager import BackupManager, BackupProgress, SnapshotInfo, get_device_display_name, get_device_identifier
+from .contracts import SyncOutcome, SyncProgress, SyncRequest
+from .fingerprint_diff_engine import (
+    FingerprintDiffEngine,
+    StorageSummary,
+    SyncAction,
+    SyncItem,
+    SyncPlan,
+)
+from .integrity import IntegrityReport, check_integrity
 from .itunes_prefs import (
-    read_prefs,
-    protect_from_itunes,
+    DeviceTotals,
+    ITunesPrefs,
+    SyncHistoryEntry,
     check_library_owner,
     generate_library_id,
-    ITunesPrefs,
-    DeviceTotals,
-    SyncHistoryEntry,
+    protect_from_itunes,
+    read_prefs,
 )
-from .transcoder import (
-    transcode,
-    needs_transcoding,
-    is_ffmpeg_available,
-    TranscodeTarget,
-    TranscodeResult,
-)
-from ._formats import IPOD_NATIVE_FORMATS
-from .transcode_cache import TranscodeCache, CachedFile, CacheIndex
-from .backup_manager import BackupManager, SnapshotInfo, BackupProgress, get_device_identifier, get_device_display_name
-from .spl_evaluator import spl_update, spl_update_from_parsed, spl_update_all
+from .mapping import MappingFile, MappingManager, TrackMapping
+from .pc_library import PCLibrary, PCTrack
 from .photos import (
-    PhotoDB,
-    PhotoAlbum,
-    PhotoEntry,
     PCPhotoLibrary,
+    PhotoAlbum,
+    PhotoDB,
     PhotoEditState,
+    PhotoEntry,
     PhotoSyncPlan,
-    scan_pc_photos,
-    read_photo_db,
-    build_photo_sync_plan,
     apply_photo_sync_plan,
+    build_photo_sync_plan,
     load_photo_preview,
+    read_photo_db,
+    scan_pc_photos,
+)
+from .spl_evaluator import spl_update, spl_update_all, spl_update_from_parsed
+from .sync_executor import SyncExecutor
+from .transcode_cache import CachedFile, CacheIndex, TranscodeCache
+from .transcoder import (
+    TranscodeResult,
+    TranscodeTarget,
+    is_ffmpeg_available,
+    needs_transcoding,
+    transcode,
 )
 
 __all__ = [

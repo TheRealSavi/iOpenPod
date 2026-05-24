@@ -7,8 +7,10 @@ including Apple's itunes: namespace extensions.
 from __future__ import annotations
 
 import calendar
+import gzip
 import logging
 import time
+import zlib
 
 import feedparser
 import requests
@@ -18,6 +20,59 @@ from .models import PodcastEpisode, PodcastFeed, normalize_artwork_url
 log = logging.getLogger(__name__)
 
 _TIMEOUT = 20  # seconds
+
+
+def _fetch_feed_bytes(url: str) -> bytes:
+    """Fetch feed bytes without trusting server content-encoding headers.
+
+    Some podcast CDNs advertise gzip while returning plain XML or malformed
+    compressed bytes.  Reading ``Response.content`` lets urllib3 eagerly decode
+    and fail before feedparser can parse the feed.  Read the wire bytes instead,
+    then decode only when the payload is actually decodable.
+    """
+    resp = requests.get(
+        url,
+        timeout=_TIMEOUT,
+        stream=True,
+        headers={
+            "User-Agent": "iOpenPod (Podcast Manager)",
+            "Accept": (
+                "application/rss+xml, application/atom+xml, "
+                "application/xml, text/xml, */*;q=0.8"
+            ),
+            "Accept-Encoding": "identity",
+        },
+    )
+    try:
+        resp.raise_for_status()
+        resp.raw.decode_content = False
+        data = resp.raw.read() or b""
+        return _decode_feed_bytes(data, resp.headers.get("Content-Encoding", ""))
+    finally:
+        resp.close()
+
+
+def _decode_feed_bytes(data: bytes, content_encoding: str) -> bytes:
+    """Decode compressed feed bytes, falling back to raw bytes on bad headers."""
+    encoding = (content_encoding or "").lower()
+    if not data:
+        return data
+
+    if "gzip" in encoding:
+        try:
+            return gzip.decompress(data)
+        except (OSError, zlib.error) as exc:
+            log.debug("Ignoring invalid gzip content-encoding on podcast feed: %s", exc)
+            return data
+
+    if "deflate" in encoding:
+        try:
+            return zlib.decompress(data)
+        except zlib.error as exc:
+            log.debug("Ignoring invalid deflate content-encoding on podcast feed: %s", exc)
+            return data
+
+    return data
 
 
 def fetch_feed(url: str, existing: PodcastFeed | None = None) -> PodcastFeed:
@@ -37,12 +92,7 @@ def fetch_feed(url: str, existing: PodcastFeed | None = None) -> PodcastFeed:
         requests.RequestException: On network errors.
         ValueError: If the feed contains no entries or is unparseable.
     """
-    resp = requests.get(url, timeout=_TIMEOUT, headers={
-        "User-Agent": "iOpenPod (Podcast Manager)",
-    })
-    resp.raise_for_status()
-
-    parsed = feedparser.parse(resp.content)
+    parsed = feedparser.parse(_fetch_feed_bytes(url))
 
     if parsed.bozo and not parsed.entries:
         raise ValueError(f"Feed parse error: {parsed.bozo_exception}")

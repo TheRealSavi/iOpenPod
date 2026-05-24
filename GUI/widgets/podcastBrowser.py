@@ -21,20 +21,38 @@ Select episodes → click "Add to iPod" → automatic download + sync.
 
 from __future__ import annotations
 
-import hashlib
+import html
 import logging
 import os
 import re
 from collections.abc import Callable
 from datetime import UTC
 from pathlib import Path
-from typing import TYPE_CHECKING
-from urllib.parse import unquote, urlparse
+from typing import TYPE_CHECKING, cast
 
-from PyQt6.QtCore import QSize, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QIcon, QImage, QPainter, QPixmap
+from PyQt6.QtCore import (
+    QEvent,
+    QObject,
+    QPoint,
+    QRect,
+    QSize,
+    Qt,
+    QTimer,
+    pyqtSignal,
+)
+from PyQt6.QtGui import (
+    QColor,
+    QContextMenuEvent,
+    QFont,
+    QFontMetrics,
+    QIcon,
+    QImage,
+    QMouseEvent,
+    QPainter,
+    QPixmap,
+    QResizeEvent,
+)
 from PyQt6.QtWidgets import (
-    QAbstractItemView,
     QComboBox,
     QFrame,
     QHBoxLayout,
@@ -44,6 +62,8 @@ from PyQt6.QtWidgets import (
     QMenu,
     QProgressBar,
     QPushButton,
+    QScrollArea,
+    QSizePolicy,
     QSpinBox,
     QSplitter,
     QStackedWidget,
@@ -81,6 +101,7 @@ if TYPE_CHECKING:
         LibraryService,
         SettingsService,
     )
+    from PodcastManager.models import PodcastFeed
 
 
 # ── Column definitions ───────────────────────────────────────────────────────
@@ -114,151 +135,958 @@ def _fmt_date(ts: float) -> str:
 
 # ── Podcast episode list ─────────────────────────────────────────────────────
 
-_PODCAST_EPISODE_COLUMNS = ["Title", "ep_status", "length", "date_added", "size"]
+_PODCAST_EPISODE_COLUMNS = [
+    "Title",
+    "Description Text",
+    "ep_status",
+    "length",
+    "date_added",
+    "size",
+]
+_COMBINED_FEED_COLUMNS = [
+    "Title",
+    "podcast_feed_title",
+    "Description Text",
+    "ep_status",
+    "length",
+    "date_added",
+    "size",
+]
+_COMBINED_FEED_KEY = "__iopenpod_combined_feed__"
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+_CSS_RGBA_RE = re.compile(r"rgba?\((\d+),(\d+),(\d+)(?:,(\d+))?\)")
+_EPISODE_DESCRIPTION_MAX_CHARS = 1600
+_EPISODE_CARD_MARGIN_X = 12
+_EPISODE_CARD_MARGIN_Y = 6
+_EPISODE_CARD_PADDING = 14
+_EPISODE_CARD_RADIUS = 8
+_EPISODE_CARD_ARTWORK_SIZE = 54
+_EPISODE_CARD_VPAD = 10
+_EPISODE_CARD_SPACING = 4
+_EPISODE_TOP_ROW_GAP = 10
+_EPISODE_TITLE_LABEL_GAP = 2
+_EPISODE_ACTION_ROW_HEIGHT = 24
+_EPISODE_DESC_COLLAPSED_LINES = 2
+_EPISODE_COLLAPSED_HEIGHT = 158
+_EPISODE_ARTWORK_COLLAPSED_HEIGHT = 174
+_EPISODE_EXPANDED_MAX_LINES = 14
+_EPISODE_ROW_GAP = 8
+_EPISODE_ROW_BUFFER = 4
+
+
+def _episode_description_text(description: str) -> str:
+    """Return compact plain text suitable for the episode table."""
+    text = _HTML_TAG_RE.sub(" ", str(description or ""))
+    text = html.unescape(text)
+    text = " ".join(text.split())
+    if len(text) > _EPISODE_DESCRIPTION_MAX_CHARS:
+        return f"{text[:_EPISODE_DESCRIPTION_MAX_CHARS - 3].rstrip()}..."
+    return text
+
+
+def _episode_key(feed, episode) -> str:
+    """Stable table key for an episode within a feed."""
+    return f"{getattr(feed, 'feed_url', '')}\0{getattr(episode, 'guid', '')}"
+
+
+def _qcolor(value: str) -> QColor:
+    """Parse theme CSS colors for direct QPainter usage."""
+    text = str(value or "").replace(" ", "")
+    match = _CSS_RGBA_RE.fullmatch(text)
+    if match:
+        r, g, b, a = match.groups()
+        return QColor(int(r), int(g), int(b), int(a or 255))
+    return QColor(value)
 
 
 def _is_remote_artwork_source(source: str) -> bool:
-    parsed = urlparse(str(source or "").strip())
-    return parsed.scheme.lower() in {"http", "https"}
+    from PodcastManager.artwork import is_remote_artwork_source
+
+    return is_remote_artwork_source(source)
 
 
 def _resolve_local_artwork_path(source: str) -> Path | None:
-    text = str(source or "").strip()
-    if not text:
-        return None
+    from PodcastManager.artwork import resolve_local_artwork_path
 
-    parsed = urlparse(text)
-    scheme = parsed.scheme.lower()
-    if scheme in {"http", "https"}:
-        return None
-
-    if scheme == "file":
-        path_text = unquote(parsed.path or "")
-        if (
-            os.name == "nt"
-            and path_text.startswith("/")
-            and len(path_text) > 2
-            and path_text[2] == ":"
-        ):
-            path_text = path_text[1:]
-        if parsed.netloc and parsed.netloc.lower() != "localhost" and path_text:
-            if os.name == "nt":
-                return Path("\\\\" + parsed.netloc + path_text.replace("/", "\\"))
-            return Path("//" + parsed.netloc + path_text)
-        return Path(path_text)
-
-    if re.match(r"^[a-zA-Z]:[\\/]", text):
-        return Path(text)
-
-    if text.startswith("\\\\") or text.startswith("//"):
-        return Path(text)
-
-    return Path(text)
+    return resolve_local_artwork_path(source)
 
 
 def _read_local_artwork_bytes(source: str) -> bytes | None:
-    path = _resolve_local_artwork_path(source)
-    if path is None:
-        return None
-    try:
-        if not path.exists() or not path.is_file():
-            return b""
-        return path.read_bytes()
-    except OSError:
-        return b""
+    from PodcastManager.artwork import read_local_artwork_bytes
+
+    return read_local_artwork_bytes(source)
 
 
 def _load_artwork_bytes(source: str) -> bytes | None:
-    local_bytes = _read_local_artwork_bytes(source)
-    if local_bytes is not None:
-        return local_bytes or None
+    from PodcastManager.artwork import load_artwork_bytes
 
-    if not _is_remote_artwork_source(source):
-        return None
-
-    import requests
-
-    resp = requests.get(
-        source,
-        timeout=10,
-        headers={
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/124.0.0.0 Safari/537.36"
-            ),
-            "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
-        },
-    )
-    resp.raise_for_status()
-    return resp.content or None
+    return load_artwork_bytes(source)
 
 
-def _colorize_ep_status(bl) -> None:
-    """Apply per-row colors to the ep_status column after population."""
-    if "ep_status" not in bl._columns:
-        return
-    col_idx = bl._columns.index("ep_status")
-    t = bl.table
-    for row in range(t.rowCount()):
-        item = t.item(row, col_idx)
-        if not item:
+def _status_accent(status: str) -> str:
+    if status == "On iPod":
+        return Colors.SUCCESS
+    if status == "Downloaded":
+        return Colors.ACCENT
+    if "Downloading" in status:
+        return Colors.WARNING
+    return Colors.TEXT_TERTIARY
+
+
+def _is_state_status(status: str) -> bool:
+    return status in {"On iPod", "Downloaded"} or "Downloading" in status
+
+
+def _episode_meta_text(row: dict) -> str:
+    parts = []
+    date_text = _fmt_date(float(row.get("date_added") or 0))
+    if date_text:
+        parts.append(date_text)
+    duration_ms = int(row.get("length") or 0)
+    if duration_ms > 0:
+        parts.append(_fmt_duration(duration_ms // 1000))
+    size = int(row.get("size") or 0)
+    if size > 0:
+        parts.append(format_size(size))
+    status = str(row.get("ep_status") or "")
+    if status and not _is_state_status(status) and status not in parts:
+        parts.append(status)
+    return "  |  ".join(parts) if parts else "Episode"
+
+
+def _wrap_lines(
+    text: str,
+    metrics: QFontMetrics,
+    width: int,
+    max_lines: int | None = None,
+) -> tuple[list[str], bool]:
+    """Word-wrap plain text into measured lines."""
+    clean = " ".join(str(text or "").split())
+    if not clean or width <= 0:
+        return [], False
+    if max_lines is not None and max_lines <= 0:
+        return [], True
+
+    words = clean.split(" ")
+    lines: list[str] = []
+    line = ""
+    truncated = False
+
+    for idx, word in enumerate(words):
+        candidate = word if not line else f"{line} {word}"
+        if metrics.horizontalAdvance(candidate) <= width:
+            line = candidate
             continue
-        text = item.text()
-        if text == "On iPod":
-            item.setForeground(QColor(Colors.SUCCESS))
-        elif text == "Downloaded":
-            item.setForeground(QColor(Colors.ACCENT))
-        elif "Downloading" in text:
-            item.setForeground(QColor(Colors.WARNING))
+
+        if line:
+            lines.append(line)
+            line = word
+        else:
+            lines.append(metrics.elidedText(word, Qt.TextElideMode.ElideRight, width))
+            line = ""
+
+        if max_lines is not None and len(lines) >= max_lines:
+            rest = " ".join(([line] if line else []) + words[idx + 1:])
+            if rest:
+                lines[-1] = metrics.elidedText(
+                    f"{lines[-1]} {rest}",
+                    Qt.TextElideMode.ElideRight,
+                    width,
+                )
+                truncated = True
+            return lines[:max_lines], truncated
+
+    if line:
+        lines.append(line)
+
+    if max_lines is not None and len(lines) > max_lines:
+        visible = lines[:max_lines]
+        visible[-1] = metrics.elidedText(
+            " ".join(lines[max_lines - 1:]),
+            Qt.TextElideMode.ElideRight,
+            width,
+        )
+        return visible, True
+
+    return lines, truncated
 
 
-class _PodcastEpisodeList:
-    """Adapts MusicBrowserList for podcast episode display."""
+class _PodcastCardMouseButton(QPushButton):
+    """Button that does not steal the row's selection state."""
+
+    def mousePressEvent(self, e: QMouseEvent | None) -> None:
+        if e is not None:
+            e.accept()
+        super().mousePressEvent(e)
+
+
+class _PodcastEpisodeCard(QFrame):
+    clicked = pyqtSignal(int, object)
+    more_requested = pyqtSignal(int)
+    context_requested = pyqtSignal(int, QPoint)
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._row_index = -1
+        self._row_key = ""
+        self._artwork_source = ""
+        self._selected = False
+
+        self.setObjectName("podcastEpisodeCard")
+        self.setMouseTracking(True)
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._emit_context_menu)
+
+        self._art_label = QLabel(self)
+        self._art_label.setObjectName("podcastEpisodeArtwork")
+        self._art_label.setFixedSize(
+            _EPISODE_CARD_ARTWORK_SIZE,
+            _EPISODE_CARD_ARTWORK_SIZE,
+        )
+        self._art_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._art_label.setStyleSheet(f"""
+            QLabel#podcastEpisodeArtwork {{
+                background: {Colors.SURFACE};
+                border: 1px solid {Colors.BORDER_SUBTLE};
+                border-radius: 7px;
+            }}
+        """)
+        self._art_label.hide()
+
+        self._podcast_label = make_label(
+            "",
+            size=Metrics.FONT_SM,
+            weight=QFont.Weight.DemiBold,
+            style=f"color: {Colors.ACCENT_LIGHT};",
+        )
+        self._podcast_label.setParent(self)
+        self._podcast_label.setObjectName("podcastEpisodePodcast")
+        self._podcast_label.setWordWrap(False)
+
+        self._title_label = make_label(
+            "",
+            size=Metrics.FONT_MD,
+            weight=QFont.Weight.DemiBold,
+        )
+        self._title_label.setParent(self)
+        self._title_label.setObjectName("podcastEpisodeTitle")
+        self._title_label.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
+        )
+        self._title_label.setWordWrap(True)
+        self._title_label.setMaximumHeight(42)
+
+        self._status_label = make_label(
+            "",
+            size=Metrics.FONT_SM,
+            weight=QFont.Weight.DemiBold,
+        )
+        self._status_label.setParent(self)
+        self._status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._status_label.setMinimumWidth(86)
+        self._status_label.setMaximumWidth(132)
+
+        self._meta_label = make_label("", size=Metrics.FONT_SM, style=LABEL_SECONDARY())
+        self._meta_label.setParent(self)
+        self._meta_label.setObjectName("podcastEpisodeMeta")
+        self._meta_label.setWordWrap(False)
+        self._meta_label.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
+        )
+        self._meta_label.setFixedHeight(QFontMetrics(self._meta_label.font()).lineSpacing())
+
+        self._description_label = make_label(
+            "",
+            size=Metrics.FONT_SM,
+            style=LABEL_SECONDARY(),
+            wrap=True,
+        )
+        self._description_label.setParent(self)
+        self._description_label.setObjectName("podcastEpisodeDescription")
+        self._description_label.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
+        )
+        self._description_label.setSizePolicy(
+            QSizePolicy.Policy.Ignored,
+            QSizePolicy.Policy.Expanding,
+        )
+
+        self._action_row = QWidget(self)
+        self._action_row.setObjectName("podcastEpisodeActionRow")
+        self._action_row.setFixedHeight(_EPISODE_ACTION_ROW_HEIGHT)
+        self._more_btn = _PodcastCardMouseButton("More", self._action_row)
+        self._more_btn.setObjectName("podcastEpisodeMoreButton")
+        self._more_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
+        self._more_btn.setStyleSheet(
+            btn_css(padding="3px 10px", radius=Metrics.BORDER_RADIUS_SM)
+        )
+        btn_metrics = QFontMetrics(self._more_btn.font())
+        self._more_btn.setFixedSize(
+            max(
+                btn_metrics.horizontalAdvance("More"),
+                btn_metrics.horizontalAdvance("Show less"),
+            )
+            + 24,
+            _EPISODE_ACTION_ROW_HEIGHT,
+        )
+        self._more_btn.clicked.connect(lambda: self.more_requested.emit(self._row_index))
+
+        self._install_child_event_filters()
+        self._apply_style()
+
+    def _install_child_event_filters(self) -> None:
+        for child in (
+            self._art_label,
+            self._podcast_label,
+            self._title_label,
+            self._status_label,
+            self._meta_label,
+            self._description_label,
+            self._action_row,
+            self._more_btn,
+        ):
+            child.installEventFilter(self)
+
+    def bind(
+        self,
+        *,
+        row_index: int,
+        row: dict,
+        row_key: str,
+        selected: bool,
+        expanded: bool,
+        description_text: str,
+        show_more: bool,
+        show_artwork: bool,
+        artwork_source: str,
+        artwork_pixmap: QPixmap | None,
+    ) -> None:
+        self._row_index = row_index
+        self._row_key = row_key
+        self._artwork_source = artwork_source if show_artwork else ""
+        self._selected = selected
+
+        self._art_label.setVisible(show_artwork)
+        if show_artwork:
+            if artwork_pixmap is not None:
+                self._set_artwork_pixmap(artwork_pixmap)
+            else:
+                self._art_label.clear()
+                self._art_label.setText("◎")
+        else:
+            self._art_label.clear()
+            self._art_label.setText("")
+
+        podcast_title = str(row.get("podcast_feed_title") or "")
+        self._podcast_label.setText(podcast_title)
+        self._podcast_label.setVisible(bool(podcast_title))
+        self._title_label.setText(str(row.get("Title") or "Untitled Episode"))
+        self._meta_label.setText(_episode_meta_text(row))
+        self._description_label.setText(description_text or "No description available.")
+        self._set_description_height(description_text, expanded)
+
+        status = str(row.get("ep_status") or "")
+        if _is_state_status(status):
+            self._status_label.setText(status)
+            self._status_label.show()
+        else:
+            self._status_label.hide()
+
+        self._more_btn.setText("Show less" if expanded else "More")
+        self._more_btn.setVisible(show_more)
+        self._update_card_layout()
+        self._apply_style()
+
+    def set_artwork(self, source: str, pixmap: QPixmap) -> None:
+        if not self._art_label.isVisible() or source != self._artwork_source:
+            return
+        self._set_artwork_pixmap(pixmap)
+
+    def _set_artwork_pixmap(self, pixmap: QPixmap) -> None:
+        size = _EPISODE_CARD_ARTWORK_SIZE
+        pm = scale_pixmap_for_display(
+            pixmap,
+            size,
+            size,
+            widget=self._art_label,
+            aspect_mode=Qt.AspectRatioMode.KeepAspectRatio,
+            transform_mode=Qt.TransformationMode.SmoothTransformation,
+        )
+        self._art_label.setPixmap(pm)
+        self._art_label.setText("")
+
+    def _set_description_height(self, text: str, expanded: bool) -> None:
+        metrics = QFontMetrics(self._description_label.font())
+        if expanded:
+            line_count = max(
+                1,
+                min(_EPISODE_EXPANDED_MAX_LINES, str(text or "").count("\n") + 1),
+            )
+        else:
+            line_count = _EPISODE_DESC_COLLAPSED_LINES
+        self._description_label.setMinimumHeight(line_count * metrics.lineSpacing())
+        self._description_label.setMaximumHeight(16777215)
+
+    def _title_height_for_width(self, width: int) -> int:
+        metrics = QFontMetrics(self._title_label.font())
+        if width <= 0:
+            return metrics.lineSpacing()
+        text = self._title_label.text() or "Untitled Episode"
+        bounds = metrics.boundingRect(
+            QRect(0, 0, width, 200),
+            Qt.TextFlag.TextWordWrap,
+            text,
+        )
+        return min(
+            max(metrics.lineSpacing(), bounds.height()),
+            max(metrics.lineSpacing(), self._title_label.maximumHeight()),
+        )
+
+    def _update_card_layout(self) -> None:
+        left = _EPISODE_CARD_PADDING
+        top = _EPISODE_CARD_VPAD
+        width = max(1, self.width() - 2 * _EPISODE_CARD_PADDING)
+
+        art_visible = not self._art_label.isHidden()
+        art_size = _EPISODE_CARD_ARTWORK_SIZE if art_visible else 0
+        if art_visible:
+            self._art_label.setGeometry(left, top, art_size, art_size)
+            title_x = left + art_size + _EPISODE_TOP_ROW_GAP
+        else:
+            self._art_label.setGeometry(left, top, 0, 0)
+            title_x = left
+
+        status_visible = not self._status_label.isHidden()
+        status_w = self._status_label.maximumWidth() if status_visible else 0
+        status_gap = _EPISODE_TOP_ROW_GAP if status_visible else 0
+        title_w = max(1, left + width - title_x - status_gap - status_w)
+
+        podcast_visible = not self._podcast_label.isHidden()
+        podcast_h = (
+            QFontMetrics(self._podcast_label.font()).lineSpacing()
+            if podcast_visible
+            else 0
+        )
+        title_h = self._title_height_for_width(title_w)
+        title_y = top
+        if podcast_visible:
+            self._podcast_label.setGeometry(title_x, top, title_w, podcast_h)
+            title_y = top + podcast_h + _EPISODE_TITLE_LABEL_GAP
+        else:
+            self._podcast_label.setGeometry(title_x, top, title_w, 0)
+        self._title_label.setGeometry(title_x, title_y, title_w, title_h)
+
+        if status_visible:
+            status_h = self._status_label.sizeHint().height()
+            self._status_label.setGeometry(
+                left + width - status_w,
+                top,
+                status_w,
+                status_h,
+            )
+        else:
+            self._status_label.setGeometry(left + width, top, 0, 0)
+
+        title_block_h = (
+            podcast_h
+            + (_EPISODE_TITLE_LABEL_GAP if podcast_visible else 0)
+            + title_h
+        )
+        top_h = max(art_size, title_block_h)
+
+        meta_y = top + top_h + _EPISODE_CARD_SPACING
+        meta_h = self._meta_label.minimumHeight()
+        self._meta_label.setGeometry(left, meta_y, width, meta_h)
+
+        desc_y = meta_y + meta_h + _EPISODE_CARD_SPACING
+        action_y = max(
+            desc_y + self._description_label.minimumHeight() + _EPISODE_CARD_SPACING,
+            self.height() - _EPISODE_CARD_VPAD - _EPISODE_ACTION_ROW_HEIGHT,
+        )
+        self._action_row.setGeometry(
+            left,
+            action_y,
+            width,
+            _EPISODE_ACTION_ROW_HEIGHT,
+        )
+        self._more_btn.setGeometry(
+            max(0, width - self._more_btn.width()),
+            0,
+            self._more_btn.width(),
+            _EPISODE_ACTION_ROW_HEIGHT,
+        )
+
+        desc_h = max(
+            self._description_label.minimumHeight(),
+            action_y - desc_y - _EPISODE_CARD_SPACING,
+        )
+        self._description_label.setGeometry(left, desc_y, width, desc_h)
+
+    def _apply_style(self) -> None:
+        bg = Colors.ACCENT_MUTED if self._selected else Colors.SURFACE_RAISED
+        border = Colors.ACCENT_BORDER if self._selected else Colors.BORDER_SUBTLE
+        self.setStyleSheet(f"""
+            QFrame#podcastEpisodeCard {{
+                background: {bg};
+                border: 1px solid {border};
+                border-radius: {_EPISODE_CARD_RADIUS}px;
+            }}
+        """)
+
+        status = self._status_label.text()
+        accent = _status_accent(status)
+        self._status_label.setStyleSheet(f"""
+            QLabel {{
+                color: {accent};
+                background: {Colors.SURFACE};
+                border: 1px solid {accent};
+                border-radius: 7px;
+                padding: 2px 8px;
+            }}
+        """)
+
+    def resizeEvent(self, a0: QResizeEvent | None) -> None:
+        super().resizeEvent(a0)
+        self._update_card_layout()
+
+    def contextMenuEvent(self, a0: QContextMenuEvent | None) -> None:
+        if a0 is not None:
+            self._emit_context_menu(a0.pos())
+            a0.accept()
+            return
+        super().contextMenuEvent(a0)
+
+    def eventFilter(self, a0: QObject | None, a1: QEvent | None) -> bool:
+        if a1 is None:
+            return super().eventFilter(a0, a1)
+
+        if a1.type() == QEvent.Type.ContextMenu:
+            context_event = cast(QContextMenuEvent, a1)
+            if isinstance(a0, QWidget):
+                pos = self.mapFromGlobal(context_event.globalPos())
+            else:
+                pos = context_event.pos()
+            self._emit_context_menu(pos)
+            context_event.accept()
+            return True
+
+        if a1.type() == QEvent.Type.MouseButtonPress:
+            mouse_event = cast(QMouseEvent, a1)
+            if a0 is self._more_btn:
+                return super().eventFilter(a0, a1)
+            if mouse_event.button() == Qt.MouseButton.LeftButton:
+                self.clicked.emit(self._row_index, mouse_event.modifiers())
+                mouse_event.accept()
+                return True
+
+        return super().eventFilter(a0, a1)
+
+    def mousePressEvent(self, a0: QMouseEvent | None) -> None:
+        if a0 is not None and a0.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit(self._row_index, a0.modifiers())
+            a0.accept()
+            return
+        super().mousePressEvent(a0)
+
+    def _emit_context_menu(self, pos: QPoint) -> None:
+        self.context_requested.emit(self._row_index, pos)
+
+
+class _PodcastEpisodeScrollArea(QScrollArea):
+    """Compatibility wrapper around the pooled episode renderer."""
+
+    def __init__(self, episode_list: _PodcastEpisodeList) -> None:
+        super().__init__(episode_list)
+        self._episode_list = episode_list
+        self.setWidgetResizable(False)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.setStyleSheet("background: transparent; border: none;")
+
+    def rowAt(self, y: int) -> int:
+        return self._episode_list.row_at_viewport_y(y)
+
+    def resizeEvent(self, a0: QResizeEvent | None) -> None:
+        super().resizeEvent(a0)
+        self._episode_list.schedule_viewport_refresh(force=True)
+
+
+class _PodcastEpisodeContent(QWidget):
+    def __init__(self) -> None:
+        super().__init__()
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        self.setMinimumWidth(0)
+
+
+class _PodcastEpisodeList(QFrame):
+    """Pooled, lazy episode card list with in-card description expansion."""
+
+    def __init__(self, owner: PodcastBrowser):
+        super().__init__(owner)
+        self._owner = owner
+        self._columns = _PODCAST_EPISODE_COLUMNS.copy()
+        self._all_tracks: list[dict] = []
+        self._tracks: list[dict] = []
+        self._is_playlist_mode = False
+        self._current_filter = None
+        self._load_id = 0
+
+        self._expanded_keys: set[str] = set()
+        self._selected_rows: set[int] = set()
+        self._row_heights: list[int] = []
+        self._row_offsets: list[int] = [0]
+        self._expanded_text_cache: dict[tuple[str, int], tuple[str, int]] = {}
+
+        self._widget_pool: list[_PodcastEpisodeCard] = []
+        self._visible_widgets: dict[int, _PodcastEpisodeCard] = {}
+        self._refresh_scheduled = False
+        self._refresh_force = False
+        self._last_visible_range: tuple[int, int, int] | None = None
+        self._requested_artwork_sources: set[str] = set()
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        self.table = _PodcastEpisodeScrollArea(self)
+        self._content = _PodcastEpisodeContent()
+        self.table.setWidget(self._content)
+        self.table.customContextMenuRequested.connect(owner._on_episode_context_menu)
+        layout.addWidget(self.table)
+
+        bar = self.table.verticalScrollBar()
+        if bar is not None:
+            bar.valueChanged.connect(lambda _value: self.schedule_viewport_refresh())
 
     @staticmethod
-    def create(owner: PodcastBrowser):
-        from .MBListView import COLUMN_CONFIG, MusicBrowserList
+    def build(owner: PodcastBrowser) -> _PodcastEpisodeList:
+        return _PodcastEpisodeList(owner)
 
-        # Register the podcast-only status column if not already present
-        COLUMN_CONFIG.setdefault("ep_status", ("Status", None))
+    def set_rows(self, rows: list[dict], columns: list[str]) -> None:
+        self._columns = columns.copy()
+        self._all_tracks = rows
+        self._tracks = rows
+        self._is_playlist_mode = False
+        self._current_filter = None
+        self._load_id += 1
+        valid_keys = {self._row_key(row) for row in rows}
+        self._expanded_keys.intersection_update(valid_keys)
+        self._selected_rows = {
+            row for row in self._selected_rows if 0 <= row < len(rows)
+        }
+        self._expanded_text_cache.clear()
+        self._requested_artwork_sources.clear()
+        self._rebuild_heights()
+        self.schedule_viewport_refresh(force=True)
 
-        bl = MusicBrowserList(
-            settings_service=owner._settings_service,
-            device_sessions=owner._device_sessions,
-            library_cache=owner._library_cache,
-            show_art_override=False,
-            content_type_override="podcast_episodes",
+    def selected_rows(self) -> list[int]:
+        return sorted(row for row in self._selected_rows if row < len(self._tracks))
+
+    def clear_selection(self) -> None:
+        if not self._selected_rows:
+            return
+        old_rows = set(self._selected_rows)
+        self._selected_rows.clear()
+        self._update_selection_for_rows(old_rows)
+
+    def select_row(self, row: int) -> None:
+        if not (0 <= row < len(self._tracks)):
+            return
+        old_rows = set(self._selected_rows)
+        self._selected_rows = {row}
+        self._update_selection_for_rows(old_rows | {row})
+
+    def row_at_viewport_y(self, y: int) -> int:
+        bar = self.table.verticalScrollBar()
+        scroll = bar.value() if bar is not None else 0
+        return self._row_at_content_y(scroll + y)
+
+    def schedule_viewport_refresh(self, *, force: bool = False) -> None:
+        if force:
+            self._refresh_force = True
+            self._last_visible_range = None
+        if self._refresh_scheduled:
+            return
+        self._refresh_scheduled = True
+        QTimer.singleShot(0, self._refresh_viewport)
+
+    def _row_key(self, row: dict) -> str:
+        return str(row.get("_ep_key") or row.get("_ep_guid") or id(row))
+
+    def _shows_podcast_artwork(self) -> bool:
+        return "podcast_feed_title" in self._columns
+
+    def _collapsed_height_for_row(self, _row: dict) -> int:
+        if self._shows_podcast_artwork():
+            return _EPISODE_ARTWORK_COLLAPSED_HEIGHT
+        return _EPISODE_COLLAPSED_HEIGHT
+
+    def _rebuild_heights(self) -> None:
+        self._row_heights = [
+            self._collapsed_height_for_row(row) for row in self._tracks
+        ]
+        for i, row in enumerate(self._tracks):
+            if self._row_key(row) in self._expanded_keys:
+                self._row_heights[i] = self._height_for_row(i, row)
+        self._row_offsets = [0]
+        total = 0
+        for height in self._row_heights:
+            total += height + _EPISODE_ROW_GAP
+            self._row_offsets.append(total)
+        self._content.setMinimumHeight(total)
+        self._content.resize(self._content_width(), total)
+
+    def _content_width(self) -> int:
+        viewport = self.table.viewport()
+        width = viewport.width() if viewport is not None else self.width()
+        return max(240, width)
+
+    def _card_width(self) -> int:
+        return max(180, self._content_width() - 2 * _EPISODE_CARD_MARGIN_X)
+
+    def _height_for_row(self, _index: int, row: dict) -> int:
+        key = self._row_key(row)
+        if key not in self._expanded_keys:
+            return self._collapsed_height_for_row(row)
+        _text, height = self._expanded_description(row, self._card_width())
+        return height
+
+    def _expanded_description(self, row: dict, card_width: int) -> tuple[str, int]:
+        key = self._row_key(row)
+        text_width = max(80, card_width - 2 * _EPISODE_CARD_PADDING)
+        cache_key = (key, text_width)
+        cached = self._expanded_text_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        metrics = QFontMetrics(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        lines, truncated = _wrap_lines(
+            row.get("Description Text", ""),
+            metrics,
+            text_width,
+            max_lines=_EPISODE_EXPANDED_MAX_LINES,
         )
-
-        # Override the music-library defaults with podcast-appropriate columns
-        bl._columns = _PODCAST_EPISODE_COLUMNS.copy()
-
-        # Row-based multi-selection; no drag
-        bl.table.setSelectionBehavior(
-            QAbstractItemView.SelectionBehavior.SelectRows
+        display = "\n".join(lines)
+        if truncated and display and not display.endswith("..."):
+            display = f"{display.rstrip()}..."
+        line_count = max(1, len(lines))
+        base_height = self._collapsed_height_for_row(row)
+        height = max(
+            base_height,
+            116 + line_count * (metrics.height() + 3),
         )
-        bl.table.setSelectionMode(
-            QAbstractItemView.SelectionMode.ExtendedSelection
+        height = min(height, 420)
+        cached = (display, height)
+        self._expanded_text_cache[cache_key] = cached
+        return cached
+
+    def _collapsed_description(self, row: dict, card_width: int) -> tuple[str, bool]:
+        text_width = max(80, card_width - 2 * _EPISODE_CARD_PADDING)
+        metrics = QFontMetrics(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        lines, truncated = _wrap_lines(
+            row.get("Description Text", ""),
+            metrics,
+            text_width,
+            max_lines=_EPISODE_DESC_COLLAPSED_LINES,
         )
-        bl.table.setDragEnabled(False)
+        return "\n".join(lines), truncated
 
-        # Replace iPod track context menu with episode context menu
-        try:
-            bl.table.customContextMenuRequested.disconnect()
-        except (TypeError, RuntimeError):
-            pass
-        bl.table.customContextMenuRequested.connect(owner._on_episode_context_menu)
+    def _row_at_content_y(self, y: int) -> int:
+        import bisect
 
-        _orig_finish = bl._finish_population
+        if not self._tracks:
+            return -1
+        index = bisect.bisect_right(self._row_offsets, max(0, y)) - 1
+        return min(max(index, 0), len(self._tracks) - 1)
 
-        def _patched_finish():
-            _orig_finish()
-            _colorize_ep_status(bl)
+    def _visible_range(self) -> tuple[int, int]:
+        if not self._tracks:
+            return 0, 0
+        bar = self.table.verticalScrollBar()
+        scroll = bar.value() if bar is not None else 0
+        viewport = self.table.viewport()
+        viewport_height = viewport.height() if viewport is not None else self.height()
+        start = max(0, self._row_at_content_y(scroll) - _EPISODE_ROW_BUFFER)
+        end = min(
+            len(self._tracks),
+            self._row_at_content_y(scroll + viewport_height) + _EPISODE_ROW_BUFFER + 1,
+        )
+        return start, end
 
-        bl._finish_population = _patched_finish
+    def _refresh_viewport(self) -> None:
+        self._refresh_scheduled = False
+        width = self._content_width()
+        total_height = self._row_offsets[-1] if self._row_offsets else 0
+        if self._content.width() != width:
+            self._expanded_text_cache.clear()
+            self._rebuild_heights()
+            width = self._content_width()
+            total_height = self._row_offsets[-1] if self._row_offsets else 0
+        self._content.resize(width, total_height)
 
-        return bl
+        start, end = self._visible_range()
+        view_state = (start, end, width)
+        if self._last_visible_range == view_state and not self._refresh_force:
+            return
+        self._last_visible_range = view_state
+        self._refresh_force = False
+
+        needed = set(range(start, end))
+        for row_index in list(self._visible_widgets.keys()):
+            if row_index not in needed:
+                self._release_widget(row_index)
+
+        card_width = self._card_width()
+        for row_index in range(start, end):
+            row = self._tracks[row_index]
+            widget = self._visible_widgets.get(row_index)
+            if widget is None:
+                widget = self._acquire_widget()
+                self._visible_widgets[row_index] = widget
+            self._bind_widget(widget, row_index, row)
+            widget.setGeometry(
+                QRect(
+                    _EPISODE_CARD_MARGIN_X,
+                    self._row_offsets[row_index] + _EPISODE_CARD_MARGIN_Y,
+                    card_width,
+                    max(1, self._row_heights[row_index] - _EPISODE_ROW_GAP),
+                )
+            )
+            widget.show()
+
+    def _acquire_widget(self) -> _PodcastEpisodeCard:
+        if self._widget_pool:
+            widget = self._widget_pool.pop()
+            widget.setParent(self._content)
+            return widget
+        widget = _PodcastEpisodeCard(self._content)
+        widget.clicked.connect(self._on_card_clicked)
+        widget.more_requested.connect(self._toggle_expanded)
+        widget.context_requested.connect(self._on_card_context_menu)
+        return widget
+
+    def _release_widget(self, row_index: int) -> None:
+        widget = self._visible_widgets.pop(row_index, None)
+        if widget is None:
+            return
+        widget.hide()
+        self._widget_pool.append(widget)
+
+    def _bind_widget(self, widget: _PodcastEpisodeCard, row_index: int, row: dict) -> None:
+        key = self._row_key(row)
+        expanded = key in self._expanded_keys
+        card_width = self._card_width()
+        if expanded:
+            description_text, _height = self._expanded_description(row, card_width)
+            show_more = True
+        else:
+            description_text, show_more = self._collapsed_description(row, card_width)
+        show_artwork = self._shows_podcast_artwork()
+        artwork_source = (
+            str(row.get("_podcast_artwork_source") or "") if show_artwork else ""
+        )
+        artwork_pixmap = None
+        if show_artwork:
+            artwork_pixmap = _artwork_cache.get(artwork_source)
+            if artwork_pixmap is None:
+                artwork_pixmap = self._owner._artwork_placeholder_pixmap(
+                    _EPISODE_CARD_ARTWORK_SIZE,
+                )
+        widget.bind(
+            row_index=row_index,
+            row=row,
+            row_key=key,
+            selected=row_index in self._selected_rows,
+            expanded=expanded,
+            description_text=description_text,
+            show_more=show_more or expanded,
+            show_artwork=show_artwork,
+            artwork_source=artwork_source,
+            artwork_pixmap=artwork_pixmap,
+        )
+        if (
+            show_artwork
+            and artwork_source
+            and artwork_source not in _artwork_cache
+            and artwork_source not in self._requested_artwork_sources
+        ):
+            self._requested_artwork_sources.add(artwork_source)
+            self._owner._request_artwork(
+                artwork_source,
+                self._apply_artwork_to_visible_cards,
+            )
+
+    def _apply_artwork_to_visible_cards(self, source: str, pixmap: QPixmap) -> None:
+        for widget in self._visible_widgets.values():
+            widget.set_artwork(source, pixmap)
+
+    def _toggle_expanded(self, row_index: int) -> None:
+        if not (0 <= row_index < len(self._tracks)):
+            return
+        key = self._row_key(self._tracks[row_index])
+        if key in self._expanded_keys:
+            self._expanded_keys.remove(key)
+        else:
+            self._expanded_keys.add(key)
+        old_height = self._row_heights[row_index]
+        new_height = self._height_for_row(row_index, self._tracks[row_index])
+        if new_height != old_height:
+            delta = new_height - old_height
+            self._row_heights[row_index] = new_height
+            for i in range(row_index + 1, len(self._row_offsets)):
+                self._row_offsets[i] += delta
+            total_height = self._row_offsets[-1] if self._row_offsets else 0
+            self._content.setMinimumHeight(total_height)
+            self._content.resize(self._content_width(), total_height)
+        self.schedule_viewport_refresh(force=True)
+
+    def _on_card_clicked(
+        self,
+        row_index: int,
+        modifiers: Qt.KeyboardModifier,
+    ) -> None:
+        if not (0 <= row_index < len(self._tracks)):
+            return
+        old_rows = set(self._selected_rows)
+        ctrl = bool(
+            modifiers
+            & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.MetaModifier)
+        )
+        shift = bool(modifiers & Qt.KeyboardModifier.ShiftModifier)
+        if shift and self._selected_rows:
+            anchor = min(self._selected_rows)
+            lo, hi = sorted((anchor, row_index))
+            self._selected_rows = set(range(lo, hi + 1))
+        elif ctrl:
+            if row_index in self._selected_rows:
+                self._selected_rows.remove(row_index)
+            else:
+                self._selected_rows.add(row_index)
+        else:
+            self._selected_rows = {row_index}
+        self._update_selection_for_rows(old_rows | self._selected_rows)
+
+    def _on_card_context_menu(self, row_index: int, pos: QPoint) -> None:
+        widget = self._visible_widgets.get(row_index)
+        if widget is None:
+            return
+        viewport = self.table.viewport()
+        if viewport is None:
+            return
+        viewport_pos = viewport.mapFromGlobal(widget.mapToGlobal(pos))
+        self.table.customContextMenuRequested.emit(viewport_pos)
+
+    def _update_selection_for_rows(self, rows: set[int]) -> None:
+        for row in rows:
+            widget = self._visible_widgets.get(row)
+            if widget is not None and 0 <= row < len(self._tracks):
+                self._bind_widget(widget, row, self._tracks[row])
+
+    def _recycle_all_visible_widgets(self) -> None:
+        for row_index in list(self._visible_widgets):
+            self._release_widget(row_index)
 
 
 # ── Feed artwork cache ───────────────────────────────────────────────────────
@@ -291,8 +1119,10 @@ class PodcastBrowser(QFrame):
         self._ipod_path: str = ""
         self._store = None          # SubscriptionStore (lazy)
         self._selected_feed = None  # Current PodcastFeed
+        self._showing_combined_feed = False
         self._deferred_reconcile_tracks: list[dict] | None = None
         self._episode_by_guid: dict[str, object] = {}
+        self._episode_feed_by_key: dict[str, object] = {}
         self._episode_dicts: list[dict] = []
         self._artwork_inflight: dict[str, list[Callable[[str, QPixmap], None]]] = {}
 
@@ -363,12 +1193,14 @@ class PodcastBrowser(QFrame):
 
         self._store = None
         self._selected_feed = None
+        self._showing_combined_feed = False
         self._deferred_reconcile_tracks = None
         self._episode_by_guid.clear()
+        self._episode_feed_by_key.clear()
         if hasattr(self, '_session_refreshed'):
             self._session_refreshed.clear()
         self._feed_list.clear()
-        self._episode_list.table.setRowCount(0)
+        self._episode_list.set_rows([], _PODCAST_EPISODE_COLUMNS)
         self._episode_dicts = []
         self._status_label.setText("")
         self._stack.setCurrentIndex(0)
@@ -409,6 +1241,10 @@ class PodcastBrowser(QFrame):
             refreshed = self._store.get_feed(self._selected_feed.feed_url)
             if refreshed:
                 self._selected_feed = refreshed
+        if self._showing_combined_feed:
+            self._show_combined_feed()
+        elif self._selected_feed:
+            self._show_episodes(self._selected_feed)
 
     # ── UI construction ──────────────────────────────────────────────────
 
@@ -787,8 +1623,8 @@ class PodcastBrowser(QFrame):
 
         layout.addWidget(self._feed_header)
 
-        # ── Episode list (MusicBrowserList-based) ────────────────────────
-        self._episode_list = _PodcastEpisodeList.create(self)
+        # ── Episode list ────────────────────────────────────────────────
+        self._episode_list = _PodcastEpisodeList.build(self)
         layout.addWidget(self._episode_list, stretch=1)
 
         # ── Download progress bar (hidden by default) ────────────────────
@@ -834,7 +1670,11 @@ class PodcastBrowser(QFrame):
             return
 
         self._feed_list.blockSignals(True)
-        prev_url = self._selected_feed.feed_url if self._selected_feed else None
+        prev_url = (
+            _COMBINED_FEED_KEY
+            if self._showing_combined_feed
+            else self._selected_feed.feed_url if self._selected_feed else None
+        )
         self._feed_list.clear()
 
         feeds = self._store.get_feeds()
@@ -844,11 +1684,20 @@ class PodcastBrowser(QFrame):
             self._stack.setCurrentIndex(0)
             self._feed_list.blockSignals(False)
             self._selected_feed = None
+            self._showing_combined_feed = False
             self._show_episodes(None)
             return
         self._stack.setCurrentIndex(1)
 
-        select_row = -1
+        feed_item = QListWidgetItem("Feed")
+        feed_item.setData(Qt.ItemDataRole.UserRole, _COMBINED_FEED_KEY)
+        feed_item.setSizeHint(QSize(0, (44)))
+        feed_icon = self._artwork_placeholder_pixmap(36)
+        if feed_icon:
+            feed_item.setIcon(QIcon(feed_icon))
+        self._feed_list.addItem(feed_item)
+
+        select_row = 0 if prev_url in (None, _COMBINED_FEED_KEY) else -1
 
         for i, feed in enumerate(feeds):
             ep_count = len(feed.episodes)
@@ -871,11 +1720,11 @@ class PodcastBrowser(QFrame):
                 )
                 item.setIcon(QIcon(icon_pm))
             elif artwork_source:
-                self._load_feed_list_artwork(artwork_source, i)
+                self._load_feed_list_artwork(artwork_source, i + 1)
 
             self._feed_list.addItem(item)
             if feed.feed_url == prev_url:
-                select_row = i
+                select_row = i + 1
 
         self._feed_list.blockSignals(False)
 
@@ -885,11 +1734,13 @@ class PodcastBrowser(QFrame):
             self._feed_list.setCurrentRow(0)
         else:
             self._selected_feed = None
+            self._showing_combined_feed = False
             self._show_episodes(None)
 
     def _on_feed_selected(self, row: int) -> None:
         if row < 0 or not self._store:
             self._selected_feed = None
+            self._showing_combined_feed = False
             self._show_episodes(None)
             return
 
@@ -898,7 +1749,14 @@ class PodcastBrowser(QFrame):
             return
 
         feed_url = item.data(Qt.ItemDataRole.UserRole)
+        if feed_url == _COMBINED_FEED_KEY:
+            self._selected_feed = None
+            self._showing_combined_feed = True
+            self._show_combined_feed()
+            return
+
         self._selected_feed = self._store.get_feed(feed_url)
+        self._showing_combined_feed = False
         self._show_episodes(self._selected_feed)
 
         # Auto-refresh from RSS if this feed only has persisted episodes
@@ -923,6 +1781,8 @@ class PodcastBrowser(QFrame):
             return
 
         feed_url = item.data(Qt.ItemDataRole.UserRole)
+        if feed_url == _COMBINED_FEED_KEY:
+            return
         feed = self._store.get_feed(feed_url)
         if not feed:
             return
@@ -966,12 +1826,12 @@ class PodcastBrowser(QFrame):
         # If right-clicked row is not already selected, target that row only.
         row = t.rowAt(pos.y())
         if row >= 0:
-            selected_rows = {idx.row() for idx in t.selectedIndexes()}
+            selected_rows = set(self._episode_list.selected_rows())
             if row not in selected_rows:
-                t.clearSelection()
-                t.selectRow(row)
+                self._episode_list.clear_selection()
+                self._episode_list.select_row(row)
 
-        selected = self._get_selected_episodes()
+        selected = self._get_selected_episode_refs()
         if not selected:
             return
 
@@ -981,9 +1841,21 @@ class PodcastBrowser(QFrame):
             STATUS_ON_IPOD,
         )
 
-        can_add = [ep for _, ep in selected if ep.status not in (STATUS_ON_IPOD, STATUS_DOWNLOADING)]
-        can_remove_dl = [ep for _, ep in selected if ep.status in (STATUS_DOWNLOADED,) and ep.downloaded_path]
-        can_remove_ipod = [ep for _, ep in selected if ep.status == STATUS_ON_IPOD and ep.ipod_db_track_id]
+        can_add = [
+            (row, ep, feed)
+            for row, ep, feed in selected
+            if ep.status not in (STATUS_ON_IPOD, STATUS_DOWNLOADING)
+        ]
+        can_remove_dl = [
+            (row, ep, feed)
+            for row, ep, feed in selected
+            if ep.status in (STATUS_DOWNLOADED,) and ep.downloaded_path
+        ]
+        can_remove_ipod = [
+            (row, ep, feed)
+            for row, ep, feed in selected
+            if ep.status == STATUS_ON_IPOD and ep.ipod_db_track_id
+        ]
 
         if not can_add and not can_remove_dl and not can_remove_ipod:
             return
@@ -1037,33 +1909,75 @@ class PodcastBrowser(QFrame):
         if action is None:
             return
         if action == add_action:
-            self._on_add_to_ipod()
+            self._build_and_emit_refs(can_add)
         elif action == remove_dl_action:
-            self._remove_downloads(can_remove_dl)
+            self._remove_download_refs(can_remove_dl)
         elif action == remove_ipod_action:
-            self._remove_from_ipod(can_remove_ipod)
+            self._remove_from_ipod_refs(can_remove_ipod)
 
     # ── Episode table ────────────────────────────────────────────────────
 
     @staticmethod
-    def _ep_to_dict(ep, status_text: str) -> dict:
+    def _ep_to_dict(ep, status_text: str, feed=None) -> dict:
         """Convert a PodcastEpisode to a MusicBrowserList-compatible dict."""
+        ep_key = _episode_key(feed, ep) if feed is not None else ep.guid
         return {
             "Title": ep.title or ep.guid or "",
+            "podcast_feed_title": getattr(feed, "title", "") if feed is not None else "",
+            "Description Text": _episode_description_text(ep.description),
             "ep_status": status_text,
             "length": (ep.duration_seconds or 0) * 1000,
             "date_added": int(ep.pub_date or 0),
             "size": ep.size_bytes or 0,
             "_ep_guid": ep.guid,
+            "_ep_key": ep_key,
         }
+
+    def _set_episode_rows(self, rows: list[dict], columns: list[str]) -> None:
+        self._episode_list.set_rows(rows, columns)
+
+    def _show_combined_feed(self) -> None:
+        """Show all subscribed episodes as one plain chronological feed."""
+        if not self._store:
+            self._show_episodes(None)
+            return
+
+        self._selected_feed = None
+        self._showing_combined_feed = True
+        self._feed_header.hide()
+        self._episode_by_guid.clear()
+        self._episode_feed_by_key.clear()
+
+        episode_refs = []
+        for feed in self._store.get_feeds():
+            for ep in feed.episodes:
+                episode_refs.append((feed, ep))
+
+        episode_refs.sort(key=lambda ref: ref[1].pub_date or 0, reverse=True)
+        rows = []
+        artwork_sources: dict[str, str] = {}
+        for feed, ep in episode_refs:
+            key = _episode_key(feed, ep)
+            self._episode_by_guid[key] = ep
+            self._episode_feed_by_key[key] = feed
+            feed_key = str(getattr(feed, "feed_url", "") or id(feed))
+            if feed_key not in artwork_sources:
+                artwork_sources[feed_key] = self._feed_artwork_source(feed)
+            row = self._ep_to_dict(ep, self._episode_status_display(ep)[0], feed)
+            row["_podcast_artwork_source"] = artwork_sources[feed_key]
+            rows.append(row)
+
+        self._episode_dicts = rows
+        self._set_episode_rows(rows, _COMBINED_FEED_COLUMNS)
 
     def _show_episodes(self, feed) -> None:
         """Populate the episode list for the given feed."""
-        bl = self._episode_list
         self._episode_by_guid.clear()
+        self._episode_feed_by_key.clear()
         self._episode_dicts = []
 
         if not feed:
+            self._feed_header.show()
             self._feed_title_label.setText("Select a podcast")
             self._feed_author_label.setText("")
             self._feed_description_label.setText("")
@@ -1074,12 +1988,11 @@ class PodcastBrowser(QFrame):
             self._feed_stat_extra.setText("")
             self._load_feed_settings(None)
             self._set_feed_art_placeholder()
-            bl._all_tracks = []
-            bl._tracks = []
-            bl._load_id += 1
-            bl._populate_table()
+            self._set_episode_rows([], _PODCAST_EPISODE_COLUMNS)
             return
 
+        self._showing_combined_feed = False
+        self._feed_header.show()
         self._feed_title_label.setText(feed.title or "Untitled Podcast")
         self._feed_author_label.setText(feed.author or "Unknown Author")
 
@@ -1118,19 +2031,15 @@ class PodcastBrowser(QFrame):
             self._load_feed_artwork(artwork_source)
 
         # Populate episodes (newest first)
-        episodes = sorted(feed.episodes, key=lambda e: e.pub_date, reverse=True)
-        self._episode_by_guid = {ep.guid: ep for ep in episodes}
-        self._episode_dicts = [
-            self._ep_to_dict(ep, self._episode_status_display(ep)[0])
-            for ep in episodes
-        ]
-
-        bl._all_tracks = self._episode_dicts
-        bl._tracks = self._episode_dicts
-        bl._is_playlist_mode = False
-        bl._current_filter = None
-        bl._load_id += 1
-        bl._populate_table()
+        episodes = sorted(feed.episodes, key=lambda e: e.pub_date or 0, reverse=True)
+        rows = []
+        for ep in episodes:
+            key = _episode_key(feed, ep)
+            self._episode_by_guid[key] = ep
+            self._episode_feed_by_key[key] = feed
+            rows.append(self._ep_to_dict(ep, self._episode_status_display(ep)[0], feed))
+        self._episode_dicts = rows
+        self._set_episode_rows(rows, _PODCAST_EPISODE_COLUMNS)
 
     @staticmethod
     def _episode_status_display(ep):
@@ -1176,6 +2085,7 @@ class PodcastBrowser(QFrame):
             return
 
         from app_core.runtime import ThreadPoolSingleton, Worker
+        from PodcastManager.artwork import cache_feed_artwork
         from PodcastManager.feed_parser import fetch_feed
 
         store = self._store
@@ -1184,7 +2094,9 @@ class PodcastBrowser(QFrame):
             refreshed_feeds = []
             for feed in feeds:
                 try:
-                    refreshed_feeds.append(fetch_feed(feed.feed_url, existing=feed))
+                    refreshed = fetch_feed(feed.feed_url, existing=feed)
+                    cache_feed_artwork(refreshed, store.podcast_dir)
+                    refreshed_feeds.append(refreshed)
                 except Exception as exc:
                     log.warning("Background refresh failed for %s: %s", feed.title, exc)
             return store.update_feeds(refreshed_feeds)
@@ -1208,6 +2120,7 @@ class PodcastBrowser(QFrame):
         self._set_status(f"Refreshing {len(feeds)} feeds…")
 
         from app_core.runtime import ThreadPoolSingleton, Worker
+        from PodcastManager.artwork import cache_feed_artwork
         from PodcastManager.feed_parser import fetch_feed
 
         store = self._store
@@ -1216,7 +2129,9 @@ class PodcastBrowser(QFrame):
             refreshed_feeds = []
             for feed in feeds:
                 try:
-                    refreshed_feeds.append(fetch_feed(feed.feed_url, existing=feed))
+                    refreshed = fetch_feed(feed.feed_url, existing=feed)
+                    cache_feed_artwork(refreshed, store.podcast_dir)
+                    refreshed_feeds.append(refreshed)
                 except Exception as exc:
                     log.warning("Failed to refresh %s: %s", feed.title, exc)
             return store.update_feeds(refreshed_feeds)
@@ -1243,7 +2158,9 @@ class PodcastBrowser(QFrame):
         self._refresh_feed_list()
 
         # Re-display the currently selected feed's episodes with full catalog
-        if self._selected_feed and self._store:
+        if self._showing_combined_feed and self._store:
+            self._show_combined_feed()
+        elif self._selected_feed and self._store:
             updated = self._store.get_feed(self._selected_feed.feed_url)
             if updated:
                 self._selected_feed = updated
@@ -1273,6 +2190,7 @@ class PodcastBrowser(QFrame):
         self._set_status("Refreshing feeds for sync…", timeout_ms=0)
 
         from app_core.runtime import ThreadPoolSingleton, Worker
+        from PodcastManager.artwork import cache_feed_artwork
         from PodcastManager.feed_parser import fetch_feed
 
         store = self._store
@@ -1282,7 +2200,9 @@ class PodcastBrowser(QFrame):
             refreshed = []
             for feed in feeds:
                 try:
-                    refreshed.append(fetch_feed(feed.feed_url, existing=feed))
+                    refreshed_feed = fetch_feed(feed.feed_url, existing=feed)
+                    cache_feed_artwork(refreshed_feed, store.podcast_dir)
+                    refreshed.append(refreshed_feed)
                 except Exception as exc:
                     log.warning("Failed to refresh %s: %s", feed.title, exc)
                     refreshed.append(feed)  # Keep existing data
@@ -1314,6 +2234,13 @@ class PodcastBrowser(QFrame):
         # on disk was stale (e.g. NOT_DOWNLOADED episodes from RSS that
         # were synced but never persisted with ON_IPOD status).
         self.reconcile_ipod_statuses(ipod_tracks)
+        if self._showing_combined_feed:
+            self._show_combined_feed()
+        elif self._selected_feed:
+            updated = self._store.get_feed(self._selected_feed.feed_url)
+            if updated:
+                self._selected_feed = updated
+                self._show_episodes(updated)
 
         from PodcastManager.podcast_sync import build_podcast_managed_plan
 
@@ -1364,47 +2291,31 @@ class PodcastBrowser(QFrame):
         ThreadPoolSingleton.get_instance().start(worker)
 
     def _fetch_subscribed_feed(self, feed_url: str, artwork_url: str = ""):
+        from PodcastManager.artwork import cache_feed_artwork
         from PodcastManager.feed_parser import fetch_feed
+        from PodcastManager.models import normalize_artwork_url
 
         feed = fetch_feed(feed_url)
-        if artwork_url and self._store:
-            cached_path = self._cache_artwork_file(feed_url, artwork_url)
-            if cached_path:
-                feed.artwork_path = cached_path
+        fallback_url = normalize_artwork_url(artwork_url)
+        if fallback_url and not feed.artwork_url:
+            feed.artwork_url = fallback_url
+        if self._store:
+            cache_feed_artwork(
+                feed,
+                self._store.podcast_dir,
+                fallback_urls=[fallback_url] if fallback_url else [],
+            )
         return feed
 
     def _cache_artwork_file(self, feed_url: str, artwork_url: str) -> str:
         if not self._store or not artwork_url:
             return ""
 
-        cache_dir = os.path.join(self._store.podcast_dir, "artwork-cache")
-        os.makedirs(cache_dir, exist_ok=True)
+        from PodcastManager.artwork import cache_feed_artwork
+        from PodcastManager.models import PodcastFeed
 
-        suffix = Path(urlparse(artwork_url).path).suffix.lower() or ".jpg"
-        key = hashlib.sha256(f"{feed_url}|{artwork_url}".encode()).hexdigest()[:24]
-        cache_path = os.path.join(cache_dir, f"{key}{suffix}")
-        if os.path.exists(cache_path) and os.path.getsize(cache_path) > 0:
-            return cache_path
-
-        try:
-            import requests
-
-            resp = requests.get(
-                artwork_url,
-                timeout=15,
-                headers={
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                    "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
-                    "Referer": "https://www.buzzsprout.com/",
-                },
-            )
-            resp.raise_for_status()
-            with open(cache_path, "wb") as f:
-                f.write(resp.content)
-            return cache_path
-        except Exception as exc:
-            log.debug("Failed to cache podcast artwork from %s: %s", artwork_url, exc)
-            return ""
+        feed = PodcastFeed(feed_url=feed_url, artwork_url=artwork_url)
+        return cache_feed_artwork(feed, self._store.podcast_dir)
 
     def _on_feed_fetched(self, feed) -> None:
         if not self._store:
@@ -1412,6 +2323,7 @@ class PodcastBrowser(QFrame):
         self._store.add_feed(feed)
         self._mark_feed_refreshed(feed.feed_url)
         self._set_status(f"Subscribed to {feed.title}")
+        self._showing_combined_feed = False
         self._refresh_feed_list()
 
         # Select the new feed
@@ -1434,6 +2346,7 @@ class PodcastBrowser(QFrame):
         self._store.remove_feed(feed.feed_url)
         self._set_status(f"Unsubscribed from {feed.title}")
         self._selected_feed = None
+        self._showing_combined_feed = False
         self._refresh_feed_list()
 
     def _refresh_single_feed(self, feed) -> None:
@@ -1441,10 +2354,14 @@ class PodcastBrowser(QFrame):
         self._set_status(f"Refreshing {feed.title}…")
 
         from app_core.runtime import ThreadPoolSingleton, Worker
+        from PodcastManager.artwork import cache_feed_artwork
         from PodcastManager.feed_parser import fetch_feed
 
         def _do():
-            return fetch_feed(feed.feed_url, existing=feed)
+            refreshed = fetch_feed(feed.feed_url, existing=feed)
+            if self._store:
+                cache_feed_artwork(refreshed, self._store.podcast_dir)
+            return refreshed
 
         worker = Worker(_do)
         worker.signals.result.connect(self._on_single_feed_refreshed)
@@ -1457,36 +2374,41 @@ class PodcastBrowser(QFrame):
         self._store.update_feed(feed)
         self._mark_feed_refreshed(feed.feed_url)
         self._set_status(f"Refreshed {feed.title}")
+        was_combined = self._showing_combined_feed
         self._refresh_feed_list()
 
         # Re-display episodes for the selected feed — _refresh_feed_list
         # restores the selection but setCurrentRow won't emit if the row
         # index didn't change, so the episode table wouldn't update.
-        if self._selected_feed and self._selected_feed.feed_url == feed.feed_url:
+        if was_combined:
+            self._show_combined_feed()
+        elif self._selected_feed and self._selected_feed.feed_url == feed.feed_url:
             self._selected_feed = feed
             self._show_episodes(feed)
 
     # ── Episode selection ────────────────────────────────────────────────
 
-    def _get_selected_episodes(self):
-        """Return list of (row, episode) for the currently selected table rows."""
-        if not self._selected_feed:
+    def _get_selected_episode_refs(self):
+        """Return list of (row, episode, feed) for selected episode rows."""
+        if not self._selected_feed and not self._showing_combined_feed:
             return []
 
-        t = self._episode_list.table
-        selected_rows = sorted({idx.row() for idx in t.selectedIndexes()})
         result = []
-        for row in selected_rows:
-            # Anchor item at column 0 (Title) stores original dict index in UserRole+1
-            anchor = t.item(row, 0)
-            if anchor:
-                orig_idx = anchor.data(Qt.ItemDataRole.UserRole + 1)
-                if orig_idx is not None and 0 <= orig_idx < len(self._episode_dicts):
-                    guid = self._episode_dicts[orig_idx].get("_ep_guid")
-                    ep = self._episode_by_guid.get(guid)
-                    if ep is not None:
-                        result.append((row, ep))
+        for row in self._episode_list.selected_rows():
+            if 0 <= row < len(self._episode_dicts):
+                row_data = self._episode_dicts[row]
+                key = str(row_data.get("_ep_key") or row_data.get("_ep_guid") or "")
+                if not key:
+                    continue
+                ep = self._episode_by_guid.get(key)
+                feed = self._episode_feed_by_key.get(key) or self._selected_feed
+                if ep is not None and feed is not None:
+                    result.append((row, ep, feed))
         return result
+
+    def _get_selected_episodes(self):
+        """Return list of (row, episode) for compatibility with callers/tests."""
+        return [(row, ep) for row, ep, _feed in self._get_selected_episode_refs()]
 
     # ── Add to iPod (download + sync in one step) ──────────────────
 
@@ -1501,12 +2423,9 @@ class PodcastBrowser(QFrame):
         2. Builds a sync plan (includes pending episodes)
         3. Emits plan for sync review
         """
-        selected = self._get_selected_episodes()
+        selected = self._get_selected_episode_refs()
         if not selected:
             self._set_action_status("Select episodes first")
-            return
-        if not self._selected_feed:
-            self._set_action_status("No feed selected")
             return
         if not self._ipod_path:
             self._set_action_status("No iPod connected")
@@ -1516,17 +2435,15 @@ class PodcastBrowser(QFrame):
 
         # Filter out episodes already on iPod
         actionable = [
-            ep for _, ep in selected
+            (row, ep, feed) for row, ep, feed in selected
             if ep.status != STATUS_ON_IPOD
         ]
         if not actionable:
             self._set_action_status("Selected episodes are already on iPod")
             return
 
-        feed = self._selected_feed
-
         # Build sync plan directly (pending episodes will download during sync)
-        self._build_and_emit_plan(actionable, feed)
+        self._build_and_emit_refs(actionable)
 
     def _build_and_emit_plan(self, actionable_episodes, feed) -> None:
         """Build a SyncPlan from actionable episodes and emit to main app.
@@ -1538,7 +2455,17 @@ class PodcastBrowser(QFrame):
             actionable_episodes: List of PodcastEpisodes (not yet on iPod)
             feed: Parent PodcastFeed
         """
-        episodes_for_plan = [(ep, feed) for ep in actionable_episodes]
+        self._build_and_emit_refs(
+            [(0, ep, feed) for ep in actionable_episodes]
+        )
+
+    def _build_and_emit_refs(self, actionable_refs) -> None:
+        """Build a SyncPlan from ``(row, episode, feed)`` references."""
+        episodes_for_plan = [
+            (ep, feed)
+            for _row, ep, feed in actionable_refs
+            if ep is not None and feed is not None
+        ]
 
         if not episodes_for_plan:
             self._set_action_status("No episodes to sync")
@@ -1568,13 +2495,21 @@ class PodcastBrowser(QFrame):
     # ── Remove download / Remove from iPod ───────────────────────────────
 
     def _remove_downloads(self, episodes: list) -> None:
+        """Delete downloaded files from the selected feed."""
+        if not self._selected_feed:
+            return
+        self._remove_download_refs(
+            [(0, ep, self._selected_feed) for ep in episodes]
+        )
+
+    def _remove_download_refs(self, episode_refs: list) -> None:
         """Delete downloaded files and reset episode status."""
-        import os
 
         from PodcastManager.models import STATUS_NOT_DOWNLOADED
 
         removed = 0
-        for ep in episodes:
+        changed_feeds: dict[str, PodcastFeed] = {}
+        for _row, ep, feed in episode_refs:
             if ep.downloaded_path and os.path.exists(ep.downloaded_path):
                 try:
                     os.remove(ep.downloaded_path)
@@ -1583,30 +2518,65 @@ class PodcastBrowser(QFrame):
                     continue
             ep.downloaded_path = ""
             ep.status = STATUS_NOT_DOWNLOADED
+            if feed is not None:
+                changed_feeds[getattr(feed, "feed_url", str(id(feed)))] = cast(
+                    "PodcastFeed",
+                    feed,
+                )
             removed += 1
 
-        if self._store and self._selected_feed:
-            self._store.update_feed(self._selected_feed)
+        if self._store and changed_feeds:
+            self._store.update_feeds(list(changed_feeds.values()))
 
-        self._show_episodes(self._selected_feed)
+        if self._showing_combined_feed:
+            self._show_combined_feed()
+        else:
+            self._show_episodes(self._selected_feed)
         self._refresh_feed_list()
         self._set_action_status(f"Removed {removed} download{'s' if removed != 1 else ''}")
 
     def _remove_from_ipod(self, episodes: list) -> None:
         """Build a sync plan to remove episodes from the iPod."""
-        if not self._selected_feed or not self._ipod_path:
+        if not self._selected_feed:
+            return
+        self._remove_from_ipod_refs(
+            [(0, ep, self._selected_feed) for ep in episodes]
+        )
+
+    def _remove_from_ipod_refs(self, episode_refs: list) -> None:
+        """Build a sync plan to remove episode/feed refs from the iPod."""
+        if not self._ipod_path:
             return
 
         from app_core.sync_plan_builder import build_podcast_removal_sync_plan
+        from SyncEngine.fingerprint_diff_engine import StorageSummary, SyncPlan
 
         ipod_tracks = self._current_ipod_tracks() or []
-        plan = build_podcast_removal_sync_plan(
-            episodes,
-            ipod_tracks,
-            self._selected_feed.title,
-        )
+        episodes_by_feed: dict[str, tuple[object, list]] = {}
+        for _row, ep, feed in episode_refs:
+            if feed is None:
+                continue
+            key = getattr(feed, "feed_url", "") or str(id(feed))
+            if key not in episodes_by_feed:
+                episodes_by_feed[key] = (feed, [])
+            episodes_by_feed[key][1].append(ep)
 
-        if plan is None:
+        plan = SyncPlan(
+            storage=StorageSummary(),
+            removals_pre_checked=True,
+        )
+        for feed, episodes in episodes_by_feed.values():
+            partial = build_podcast_removal_sync_plan(
+                episodes,
+                ipod_tracks,
+                getattr(feed, "title", "") or "Podcast",
+            )
+            if partial is None:
+                continue
+            plan.to_remove.extend(partial.to_remove)
+            plan.storage.bytes_to_remove += partial.storage.bytes_to_remove
+
+        if not plan.to_remove:
             self._set_action_status("Episodes not found on iPod")
             return
 
@@ -1621,6 +2591,7 @@ class PodcastBrowser(QFrame):
         Called after sync completes so status changes (e.g. 'on_ipod')
         are reflected in the UI.
         """
+        was_combined = self._showing_combined_feed
         if self._selected_feed and self._store:
             # Re-read the feed from store (statuses may have been updated)
             refreshed = self._store.get_feed(self._selected_feed.feed_url)
@@ -1628,6 +2599,8 @@ class PodcastBrowser(QFrame):
                 self._selected_feed = refreshed
             self._show_episodes(self._selected_feed)
         self._refresh_feed_list()
+        if was_combined and self._store:
+            self._show_combined_feed()
 
     # ── Artwork loading ──────────────────────────────────────────────────
 
@@ -1895,7 +2868,10 @@ class PodcastBrowser(QFrame):
             btn.setStyleSheet(_default_css)
 
     def _feed_artwork_source(self, feed) -> str:
-        return getattr(feed, "artwork_path", "") or getattr(feed, "artwork_url", "")
+        from PodcastManager.artwork import resolve_feed_artwork_source
+
+        podcast_dir = self._store.podcast_dir if self._store else ""
+        return resolve_feed_artwork_source(feed, podcast_dir)
 
     def _request_artwork(
         self,
@@ -2003,7 +2979,7 @@ class PodcastBrowser(QFrame):
         feeds = self._store.get_feeds()
         for i, feed in enumerate(feeds):
             if self._feed_artwork_source(feed) == url:
-                item = self._feed_list.item(i)
+                item = self._feed_list.item(i + 1)
                 if item:
                     item.setIcon(icon)
 

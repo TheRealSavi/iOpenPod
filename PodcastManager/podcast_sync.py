@@ -13,20 +13,20 @@ import logging
 import os
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from .models import (
-    PodcastEpisode,
-    PodcastFeed,
     STATUS_DOWNLOADED,
     STATUS_DOWNLOADING,
     STATUS_NOT_DOWNLOADED,
     STATUS_ON_IPOD,
+    PodcastEpisode,
+    PodcastFeed,
 )
 
 if TYPE_CHECKING:
-    from SyncEngine.pc_library import PCTrack
     from SyncEngine.fingerprint_diff_engine import SyncPlan
+    from SyncEngine.pc_library import PCTrack
 
 log = logging.getLogger(__name__)
 
@@ -107,7 +107,7 @@ def episode_to_pc_track(
     episode: PodcastEpisode,
     feed: PodcastFeed,
     store: object | None = None,
-) -> 'PCTrack':
+) -> PCTrack:
     """Convert a podcast episode into a PCTrack for the sync pipeline.
 
     Works for both downloaded and not-yet-downloaded episodes.  For
@@ -139,6 +139,11 @@ def episode_to_pc_track(
                 dest_dir = store.feed_dir(feed)
                 from .downloader import _safe_filename
                 path = os.path.join(dest_dir, _safe_filename(episode))
+                if os.path.exists(path):
+                    has_file = True
+                    episode.downloaded_path = path
+                    if episode.status != STATUS_ON_IPOD:
+                        episode.status = STATUS_DOWNLOADED
 
     # Derive extension from path or audio URL
     if path:
@@ -153,8 +158,8 @@ def episode_to_pc_track(
         ext = ".mp3"
 
     # Read real audio metadata from the downloaded file
-    bitrate: Optional[int] = None
-    sample_rate: Optional[int] = 44100
+    bitrate: int | None = None
+    sample_rate: int | None = 44100
     duration_ms = episode.duration_seconds * 1000
     vbr = False
 
@@ -179,6 +184,17 @@ def episode_to_pc_track(
         file_size = Path(path).stat().st_size
     else:
         file_size = episode.size_bytes
+
+    art_hash: str | None = None
+    if has_file:
+        try:
+            from ArtworkDB_Writer import art_extractor
+
+            art_bytes = art_extractor.extract_art_with_folder(path)
+            if art_bytes:
+                art_hash = art_extractor.art_hash(art_bytes)
+        except Exception as exc:
+            log.debug("Could not read artwork hash for %s: %s", path, exc)
 
     # iPod-native formats
     native = {".mp3", ".m4a", ".m4b", ".aac", ".wav", ".aif", ".aiff"}
@@ -222,6 +238,7 @@ def episode_to_pc_track(
         episode_number=episode.episode_number,
         season_number=episode.season_number,
         is_podcast=True,
+        art_hash=art_hash,
         show_name=feed.title or None,
         category=feed.category or None,
         podcast_url=feed.feed_url or None,
@@ -235,7 +252,7 @@ def build_podcast_sync_plan(
     episodes: list[tuple[PodcastEpisode, PodcastFeed]],
     ipod_tracks: list[dict],
     store: object | None = None,
-) -> 'SyncPlan':
+) -> SyncPlan:
     """Build a SyncPlan for podcast episodes to add to iPod.
 
     Filters out episodes already on iPod (matched by enclosure URL or
@@ -253,7 +270,7 @@ def build_podcast_sync_plan(
     Returns:
         A SyncPlan ready for the SyncReview widget.
     """
-    from SyncEngine.fingerprint_diff_engine import SyncPlan, SyncItem, SyncAction, StorageSummary
+    from SyncEngine.fingerprint_diff_engine import StorageSummary, SyncAction, SyncItem, SyncPlan
 
     # Build lookup of existing podcast tracks on iPod
     by_enclosure: dict[str, dict] = {}
@@ -406,7 +423,7 @@ def build_podcast_managed_plan(
     feeds: list[PodcastFeed],
     ipod_tracks: list[dict],
     store: object | None = None,
-) -> 'SyncPlan':
+) -> SyncPlan:
     """Build a SyncPlan that applies per-feed podcast settings.
 
     Evaluates each feed's slot management settings against the current
@@ -429,7 +446,10 @@ def build_podcast_managed_plan(
         A SyncPlan with adds and removes ready for the SyncReview.
     """
     from SyncEngine.fingerprint_diff_engine import (
-        SyncPlan, SyncItem, SyncAction, StorageSummary,
+        StorageSummary,
+        SyncAction,
+        SyncItem,
+        SyncPlan,
     )
 
     now = time.time()

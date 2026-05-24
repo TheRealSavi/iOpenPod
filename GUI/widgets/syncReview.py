@@ -1969,6 +1969,7 @@ class SyncReviewWidget(QWidget):
     # item counts.  For these we show the progress bar but hide the "X of Y"
     # counter since "3 of 8" is meaningless to the user.
     _SUBSTEP_STAGES = frozenset({"write_database", "backup"})
+    _BYTE_COUNT_STAGES = frozenset({"podcast_download"})
 
     def update_execute_progress(self, prog):
         """Update progress during sync execution.
@@ -2062,7 +2063,10 @@ class SyncReviewWidget(QWidget):
                     elapsed = stats.elapsed
                     remaining = elapsed / size_progress * (1.0 - size_progress)
                     eta = ETATracker._format_duration(remaining)
-            parts = [f"{current} of {total}"]
+            if stage in self._BYTE_COUNT_STAGES:
+                parts = [f"{_format_size(current)} of {_format_size(total)}"]
+            else:
+                parts = [f"{current} of {total}"]
             if eta:
                 parts.append(eta)
             self.eta_label.setText(" \u00b7 ".join(parts))
@@ -2072,6 +2076,13 @@ class SyncReviewWidget(QWidget):
             if is_substep:
                 # Sub-step stages: bar moves but don't show "3 of 8"
                 self.eta_label.setText("")
+            elif stage in self._BYTE_COUNT_STAGES:
+                self._eta_tracker.update(stage, current, total)
+                eta = self._eta_tracker.format_eta()
+                parts = [f"{_format_size(current)} of {_format_size(total)}"]
+                if eta:
+                    parts.append(eta)
+                self.eta_label.setText(" - ".join(parts))
             else:
                 self._eta_tracker.update(stage, current, total)
                 self.eta_label.setText(self._eta_tracker.format_stage_progress(stage, current, total))

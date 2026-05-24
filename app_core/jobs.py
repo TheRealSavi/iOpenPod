@@ -180,9 +180,22 @@ def build_podcast_plan_for_sync(
         builder = build_podcast_managed_plan
 
     refreshed = []
+    podcast_dir = getattr(store, "podcast_dir", "")
+    cache_artwork = None
+    if podcast_dir:
+        try:
+            from PodcastManager.artwork import cache_feed_artwork
+
+            cache_artwork = cache_feed_artwork
+        except Exception:
+            cache_artwork = None
+
     for feed in feeds:
         try:
-            refreshed.append(fetcher(feed.feed_url, existing=feed))
+            refreshed_feed = fetcher(feed.feed_url, existing=feed)
+            if cache_artwork is not None:
+                cache_artwork(refreshed_feed, podcast_dir)
+            refreshed.append(refreshed_feed)
         except Exception as exc:
             logger.warning(
                 "Podcast refresh failed for %s: %s",

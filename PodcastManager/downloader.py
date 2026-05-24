@@ -152,6 +152,9 @@ def embed_feed_artwork(file_path: str, artwork_url: str) -> bool:
             with open(artwork_url, "rb") as f:
                 art_data = f.read()
         else:
+            parsed = urlparse(artwork_url)
+            if parsed.scheme.lower() not in {"http", "https"}:
+                return False
             # Download the artwork image
             resp = requests.get(
                 artwork_url, timeout=15,
@@ -159,14 +162,14 @@ def embed_feed_artwork(file_path: str, artwork_url: str) -> bool:
             )
             resp.raise_for_status()
             art_data = resp.content
-        if len(art_data) < 256:
-            return False
 
-        # Detect MIME type
-        if art_data[:8].startswith(b"\x89PNG"):
-            mime = "image/png"
-        else:
-            mime = "image/jpeg"
+        from PodcastManager.artwork import prepare_artwork_bytes
+
+        prepared = prepare_artwork_bytes(art_data)
+        if not prepared:
+            return False
+        art_data = prepared
+        mime = "image/jpeg"
 
         if ext == ".mp3":
             from mutagen.id3 import APIC, PictureType  # type: ignore[attr-defined]
@@ -183,6 +186,8 @@ def embed_feed_artwork(file_path: str, artwork_url: str) -> bool:
         else:
             # M4A / AAC / M4B
             from mutagen.mp4 import MP4Cover
+            if audio.tags is None:
+                audio.add_tags()
             fmt = MP4Cover.FORMAT_PNG if mime == "image/png" else MP4Cover.FORMAT_JPEG
             audio.tags["covr"] = [MP4Cover(art_data, imageformat=fmt)]
             audio.save()
@@ -205,6 +210,7 @@ class DownloadedEpisodeInfo:
     bitrate: int | None = None
     sample_rate: int | None = None
     duration_ms: int | None = None
+    art_hash: str | None = None
 
 
 def download_and_probe_episode(
@@ -214,6 +220,8 @@ def download_and_probe_episode(
     *,
     feed_url: str = "",
     artwork_url: str = "",
+    progress_cb: Callable[[int, int], None] | None = None,
+    cancel_token: CancelToken | None = None,
 ) -> DownloadedEpisodeInfo:
     """Download an episode, embed artwork, and probe its audio metadata.
 
@@ -227,6 +235,9 @@ def download_and_probe_episode(
         dest_dir: Directory to save the file into.
         feed_url: Feed URL (unused here, reserved for future use).
         artwork_url: Feed artwork URL to embed into the file.
+        progress_cb: Called with (bytes_downloaded, total_bytes) while
+                     downloading. total_bytes is 0 when unknown.
+        cancel_token: Optional cancellation token checked during download.
 
     Returns:
         DownloadedEpisodeInfo with file info and probed metadata.
@@ -235,15 +246,28 @@ def download_and_probe_episode(
         Same exceptions as download_episode.
     """
     ep = PodcastEpisode(guid=audio_url, title=title, audio_url=audio_url)
-    path = download_episode(ep, dest_dir)
+    path = download_episode(
+        ep,
+        dest_dir,
+        progress_cb=progress_cb,
+        cancel_token=cancel_token,
+    )
+    return probe_episode_file(path, artwork_url=artwork_url)
 
+
+def probe_episode_file(
+    file_path: str,
+    *,
+    artwork_url: str = "",
+) -> DownloadedEpisodeInfo:
+    """Embed missing feed artwork if available, then probe file metadata."""
     if artwork_url:
-        embed_feed_artwork(path, artwork_url)
+        embed_feed_artwork(file_path, artwork_url)
 
-    real_path = Path(path)
+    real_path = Path(file_path)
     st = real_path.stat()
     info = DownloadedEpisodeInfo(
-        path=path,
+        path=file_path,
         size=st.st_size,
         mtime=st.st_mtime,
         extension=real_path.suffix.lower(),
@@ -252,7 +276,7 @@ def download_and_probe_episode(
     # Probe audio metadata
     try:
         from mutagen import File as MutagenFile  # type: ignore[import-untyped]
-        audio = MutagenFile(path)
+        audio = MutagenFile(file_path)
         if audio and audio.info:
             if hasattr(audio.info, 'bitrate') and audio.info.bitrate:
                 info.bitrate = int(audio.info.bitrate / 1000)
@@ -260,6 +284,15 @@ def download_and_probe_episode(
                 info.sample_rate = audio.info.sample_rate
             if hasattr(audio.info, 'length') and audio.info.length:
                 info.duration_ms = int(audio.info.length * 1000)
+    except Exception:
+        pass
+
+    try:
+        from ArtworkDB_Writer.art_extractor import art_hash, extract_art_with_folder
+
+        art_bytes = extract_art_with_folder(file_path)
+        if art_bytes:
+            info.art_hash = art_hash(art_bytes)
     except Exception:
         pass
 
