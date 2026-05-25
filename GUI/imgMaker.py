@@ -49,6 +49,7 @@ logger = logging.getLogger(__name__)
 # Cache for parsed ArtworkDB and index
 _artworkdb_cache = None
 _artworkdb_path_cache = None
+_artworkdb_signature_cache = None
 _img_id_index = None
 _artwork_folder_cache = None
 _cache_lock = threading.Lock()
@@ -117,20 +118,32 @@ def clear_image_cache():
 # PUBLIC API — SIMPLE ARTWORK INTERFACE
 # ============================================================================
 
+def _artworkdb_signature(artworkdb_path: str):
+    normalized_path = os.path.normcase(os.path.abspath(os.fspath(artworkdb_path)))
+    try:
+        stat = os.stat(normalized_path)
+    except OSError:
+        return (normalized_path, None, None)
+    return (normalized_path, stat.st_mtime_ns, stat.st_size)
+
+
 def configure_artwork_api(artworkdb_path: str, artwork_folder_path: str | None = None):
     """Configure and warm the shared ArtworkDB context.
 
     Simple API entrypoint for callers that want one-time setup and then
     repeated `get_artwork` calls.
     """
-    global _artworkdb_cache, _artworkdb_path_cache, _img_id_index, _artwork_folder_cache
+    global _artworkdb_cache, _artworkdb_path_cache, _artworkdb_signature_cache, _img_id_index, _artwork_folder_cache
 
+    signature = _artworkdb_signature(artworkdb_path)
     with _cache_lock:
-        if _artworkdb_cache is None or _artworkdb_path_cache != artworkdb_path:
+        if _artworkdb_cache is None or _artworkdb_signature_cache != signature:
             from ArtworkDB_Parser.parser import parse_artworkdb
             _artworkdb_cache = parse_artworkdb(artworkdb_path)
             _artworkdb_path_cache = artworkdb_path
+            _artworkdb_signature_cache = signature
             _img_id_index = _build_img_id_index(_artworkdb_cache)
+            clear_image_cache()
 
     if artwork_folder_path is not None:
         _artwork_folder_cache = artwork_folder_path
@@ -268,10 +281,11 @@ def get_artwork_colors(image: Image.Image):
 
 def clear_artwork_api():
     """Clear configured artwork context and all shared artwork caches."""
-    global _artworkdb_cache, _artworkdb_path_cache, _img_id_index, _artwork_folder_cache
+    global _artworkdb_cache, _artworkdb_path_cache, _artworkdb_signature_cache, _img_id_index, _artwork_folder_cache
     with _cache_lock:
         _artworkdb_cache = None
         _artworkdb_path_cache = None
+        _artworkdb_signature_cache = None
         _img_id_index = None
         _artwork_folder_cache = None
     clear_image_cache()

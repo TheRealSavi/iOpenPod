@@ -131,7 +131,10 @@ def _split_cached_playlists(
         if isinstance(items, list):
             row["mhip_child_count"] = len(items)
 
-        if row.get("smart_playlist_data") or row.get("_source") == "smart":
+        if row.get("smart_playlist_data") or row.get("_source") in (
+            "smart",
+            "category",
+        ):
             smart_raw.append(row)
         else:
             playlists_raw.append(row)

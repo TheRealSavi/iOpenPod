@@ -102,6 +102,7 @@ def test_write_cached_itunesdb_splits_smart_playlists(monkeypatch) -> None:
         playlists_data=[
             {"playlist_id": 1, "Title": "Regular", "_source": "regular"},
             {"playlist_id": 2, "Title": "Smart", "_source": "smart"},
+            {"playlist_id": 3, "Title": "Music", "_source": "category"},
         ],
     )
 
@@ -110,7 +111,8 @@ def test_write_cached_itunesdb_splits_smart_playlists(monkeypatch) -> None:
         {"playlist_id": 1, "Title": "Regular", "_source": "regular"}
     ]
     assert captured["smart_raw"] == [
-        {"playlist_id": 2, "Title": "Smart", "_source": "smart"}
+        {"playlist_id": 2, "Title": "Smart", "_source": "smart"},
+        {"playlist_id": 3, "Title": "Music", "_source": "category"},
     ]
 
 

@@ -164,15 +164,25 @@ class MusicBrowserGrid(PooledCardGrid):
 
     def clearGrid(self, preserve_all_items: bool = False) -> None:
         """Clear all rendered widgets and cancel pending artwork work."""
-        self._art_pending.clear()
-        self._art_seen.clear()
+        self.invalidate_artwork_cache(clear_visible=False)
         self._visible_records = []
 
         if not preserve_all_items:
             self._all_items = []
             self._records = []
-            self._art_cache.clear()
         super().clearGrid(preserve_all_items=False)
+
+    def invalidate_artwork_cache(self, *, clear_visible: bool = True) -> None:
+        """Drop cached artwork payloads and force visible cards to rebind."""
+        self._art_cache.clear()
+        self._art_pending.clear()
+        self._art_seen.clear()
+        self._bound_widget_state.clear()
+
+        if clear_visible:
+            for widget in list(self._visible_widgets.values()):
+                if isinstance(widget, MusicBrowserGridItem):
+                    widget.apply_image_result(None, None, None)
 
     @staticmethod
     def _item_key(item: dict[str, Any]) -> tuple[Any, ...]:
@@ -233,9 +243,9 @@ class MusicBrowserGrid(PooledCardGrid):
         *,
         reset_scroll: bool,
     ) -> None:
+        self.invalidate_artwork_cache()
         self._all_items = [dict(item) for item in items]
         self._records = [self._build_record(item) for item in self._all_items]
-        self._art_pending.clear()
         self._apply_filter_and_sort(reset_scroll=reset_scroll)
 
     def _apply_filter_and_sort(self, *, reset_scroll: bool) -> None:

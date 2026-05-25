@@ -897,7 +897,17 @@ class Sidebar(QFrame):
 
         self.sidebarLayout.addWidget(make_separator())
 
-        # ── Scrollable library section ──────────────────────────────
+        # ── Library section ───────────────────────────────────────
+        library_section = QWidget()
+        library_layout = QVBoxLayout(library_section)
+        library_layout.setContentsMargins(0, 0, 0, 0)
+        library_layout.setSpacing((1))
+
+        lib_label = make_section_header("Library")
+        lib_label.setStyleSheet(lib_label.styleSheet() + f" padding-left: {(4)}px;")
+        library_layout.addWidget(lib_label)
+
+        # Only the category buttons scroll; the section header stays fixed.
         lib_scroll = make_scroll_area()
 
         lib_container = QWidget()
@@ -905,10 +915,6 @@ class Sidebar(QFrame):
         lib_layout = QVBoxLayout(lib_container)
         lib_layout.setContentsMargins(0, 0, 0, 0)
         lib_layout.setSpacing((1))
-
-        lib_label = make_section_header("Library")
-        lib_label.setStyleSheet(lib_label.styleSheet() + f" padding-left: {(4)}px;")
-        lib_layout.addWidget(lib_label)
 
         self.buttons = {}
         self._button_icons: dict[str, str] = {}
@@ -933,7 +939,8 @@ class Sidebar(QFrame):
 
         lib_layout.addStretch()
         lib_scroll.setWidget(lib_container)
-        self.sidebarLayout.addWidget(lib_scroll, 1)  # stretch factor 1
+        library_layout.addWidget(lib_scroll, 1)  # stretch factor 1
+        self.sidebarLayout.addWidget(library_section, 1)
 
         self.sidebarLayout.addWidget(make_separator())
 

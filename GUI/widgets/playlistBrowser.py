@@ -85,6 +85,30 @@ _ICON_MASTER = "home"
 _ICON_CATEGORY = "grid"
 
 
+def _mhsd5_type_value(playlist: dict | None) -> int:
+    if not playlist:
+        return 0
+    try:
+        return int(playlist.get("mhsd5_type", 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _is_ipod_category_playlist(playlist: dict | None) -> bool:
+    return bool(
+        playlist
+        and (playlist.get("_source") == "category" or _mhsd5_type_value(playlist))
+    )
+
+
+def _is_user_smart_playlist(playlist: dict | None) -> bool:
+    return bool(
+        playlist
+        and playlist.get("smart_playlist_data")
+        and not _is_ipod_category_playlist(playlist)
+    )
+
+
 # =============================================================================
 # PlaylistInfoCard — right-hand info panel above the track list
 # =============================================================================
@@ -239,10 +263,10 @@ class PlaylistInfoCard(QFrame):
 
         title = playlist.get("Title", "Untitled")
         is_master = bool(playlist.get("master_flag"))
-        is_smart = bool(playlist.get("smart_playlist_data"))
+        is_smart = _is_user_smart_playlist(playlist)
         is_podcast = playlist.get("podcast_flag", 0) == 1
-        is_category = playlist.get("_source") == "smart"
-        source = playlist.get("_source", "regular")
+        is_category = _is_ipod_category_playlist(playlist)
+        source = "category" if is_category else playlist.get("_source", "regular")
 
         # ── Title ──
         self.title_label.setText(title)
@@ -304,8 +328,8 @@ class PlaylistInfoCard(QFrame):
 
         details.append(("Dataset Source", source))
 
-        mhsd5 = playlist.get("mhsd5_type")
-        if mhsd5 is not None and mhsd5 != 0:
+        mhsd5 = _mhsd5_type_value(playlist)
+        if mhsd5:
             details.append(("iPod Category", format_mhsd5_type(mhsd5)))
 
         for label_text, value_text in details:
@@ -538,10 +562,9 @@ class PlaylistListPanel(QFrame):
         for pl in playlists:
             if pl.get("master_flag"):
                 master = pl
-            elif pl.get("_source") == "smart":
-                # All dataset 5 playlists are iPod browsing categories
+            elif _is_ipod_category_playlist(pl):
                 category.append(pl)
-            elif pl.get("smart_playlist_data"):
+            elif _is_user_smart_playlist(pl):
                 smart.append(pl)
             elif pl.get("podcast_flag", 0) == 1 or pl.get("_source") == "podcast":
                 podcast.append(pl)
@@ -1028,7 +1051,9 @@ class PlaylistBrowser(QFrame):
         self.trackTitleBar.setTitle(title)
 
         # Color the title bar based on playlist type
-        if playlist.get("smart_playlist_data"):
+        if _is_ipod_category_playlist(playlist):
+            self.trackTitleBar.resetColor()
+        elif _is_user_smart_playlist(playlist):
             self.trackTitleBar.setColor(*Colors.PLAYLIST_SMART)
         elif playlist.get("podcast_flag", 0) == 1 or playlist.get("_source") == "podcast":
             self.trackTitleBar.setColor(*Colors.PLAYLIST_PODCAST)
@@ -1062,7 +1087,9 @@ class PlaylistBrowser(QFrame):
         """Handle the Edit button on the info card."""
         if not self._current_playlist:
             return
-        if self._current_playlist.get("smart_playlist_data"):
+        if _is_ipod_category_playlist(self._current_playlist):
+            return
+        if _is_user_smart_playlist(self._current_playlist):
             self.editor.edit_playlist(self._current_playlist)
             self._switchToEditor(1)
         elif not self._current_playlist.get("master_flag"):
@@ -1072,7 +1099,7 @@ class PlaylistBrowser(QFrame):
     def _onDeleteClicked(self) -> None:
         """Handle the Delete button — confirm, remove from cache, rewrite DB."""
         playlist = self._current_playlist
-        if not playlist or playlist.get("master_flag"):
+        if not playlist or playlist.get("master_flag") or _is_ipod_category_playlist(playlist):
             return
 
         title = playlist.get("Title", "Untitled")
@@ -1114,7 +1141,7 @@ class PlaylistBrowser(QFrame):
 
         title = playlist_data.get("Title", "Untitled")
         self.trackTitleBar.setTitle(title)
-        if playlist_data.get("smart_playlist_data"):
+        if _is_user_smart_playlist(playlist_data):
             self.trackTitleBar.setColor(*Colors.PLAYLIST_SMART)
         else:
             self.trackTitleBar.resetColor()
@@ -1227,10 +1254,10 @@ class PlaylistBrowser(QFrame):
         self.infoCard.evaluate_btn.setEnabled(True)
         self.infoCard.evaluate_btn.setText("Evaluate Now")
         # Re-evaluate visibility (evaluate is only for smart playlists)
-        if self._current_playlist and not self._current_playlist.get("smart_playlist_data"):
+        if not _is_user_smart_playlist(self._current_playlist):
             self.infoCard.evaluate_btn.setVisible(False)
 
-        is_smart = self._current_playlist and self._current_playlist.get("smart_playlist_data")
+        is_smart = _is_user_smart_playlist(self._current_playlist)
 
         if is_smart:
             log.info("Playlist '%s': %d tracks matched → written to iPod",
@@ -1251,7 +1278,7 @@ class PlaylistBrowser(QFrame):
         self.infoCard.edit_btn.setEnabled(True)
         self.infoCard.evaluate_btn.setEnabled(True)
         self.infoCard.evaluate_btn.setText("Evaluate Now")
-        if self._current_playlist and not self._current_playlist.get("smart_playlist_data"):
+        if not _is_user_smart_playlist(self._current_playlist):
             self.infoCard.evaluate_btn.setVisible(False)
 
         log.error("Playlist write failed: %s", error_msg)
@@ -1267,7 +1294,7 @@ class PlaylistBrowser(QFrame):
     def _onEvaluateNow(self) -> None:
         """Evaluate the current smart playlist and write to iPod."""
         playlist = self._current_playlist
-        if not playlist or not playlist.get("smart_playlist_data"):
+        if not playlist or not _is_user_smart_playlist(playlist):
             return
 
         prefs_data = playlist.get("smart_playlist_data")

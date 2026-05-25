@@ -125,6 +125,57 @@ def test_remove_user_playlist_rejects_master_playlist(monkeypatch) -> None:
     assert cache.get_playlists()[0]["master_flag"] == 1
 
 
+def test_get_playlists_distinguishes_dataset5_smart_playlists_from_categories(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        runtime.DeviceManager,
+        "get_instance",
+        classmethod(lambda cls: SimpleNamespace(device_path="/fake/ipod")),
+    )
+
+    cache = runtime.iTunesDBCache()
+    cache.set_data(
+        {
+            "mhlt": [],
+            "mhlp": [],
+            "mhlp_podcast": [],
+            "mhlp_smart": [
+                {
+                    "playlist_id": 2,
+                    "Title": "Recently Added",
+                    "mhsd5_type": 0,
+                    "smart_playlist_data": {"live_update": True},
+                },
+                {
+                    "playlist_id": 3,
+                    "Title": "Music",
+                    "mhsd5_type": 1,
+                    "smart_playlist_data": {"live_update": True},
+                },
+                {
+                    "playlist_id": 4,
+                    "Title": "String Zero Smart",
+                    "mhsd5_type": "0",
+                    "smart_playlist_data": {"live_update": True},
+                },
+            ],
+        },
+        "/fake/ipod",
+    )
+
+    playlists = {
+        playlist["playlist_id"]: playlist
+        for playlist in cache.get_playlists()
+    }
+
+    assert playlists[2]["_source"] == "smart"
+    assert playlists[2]["master_flag"] == 0
+    assert playlists[3]["_source"] == "category"
+    assert playlists[3]["master_flag"] == 0
+    assert playlists[4]["_source"] == "smart"
+
+
 def test_album_grid_ignores_movie_only_album_entries(monkeypatch) -> None:
     monkeypatch.setattr(
         runtime.DeviceManager,

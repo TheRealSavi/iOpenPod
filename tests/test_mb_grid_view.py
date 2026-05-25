@@ -187,3 +187,38 @@ def test_search_requeues_artwork_after_pending_request_is_invalidated(qtbot, mon
 
     assert art_key not in grid._art_pending
     assert needed_keys == [art_key]
+
+
+def test_source_reload_invalidates_grid_artwork_for_same_album_identity(
+    qtbot,
+    monkeypatch,
+):
+    monkeypatch.setattr(img_maker, "get_artwork", lambda *args, **kwargs: None)
+
+    _scroll, grid = _mount_grid(qtbot)
+    items = _build_items(50, with_art=True)
+
+    grid.populateGrid(items)
+    qtbot.waitUntil(lambda: len(grid.gridItems) > 0, timeout=2000)
+
+    art_key = items[0]["artwork_id_ref"]
+    assert art_key is not None
+
+    grid._on_art_loaded({art_key: _art_result((1, 2, 3))}, grid._load_id)
+    qtbot.waitUntil(
+        lambda: _grid_items(grid)[0].item_data.get("dominant_color") == (1, 2, 3),
+        timeout=2000,
+    )
+
+    grid.populateGrid(items)
+    qtbot.waitUntil(
+        lambda: _grid_items(grid)
+        and _grid_items(grid)[0].item_data.get("dominant_color") != (1, 2, 3),
+        timeout=2000,
+    )
+
+    grid._on_art_loaded({art_key: _art_result((4, 5, 6))}, grid._load_id)
+    qtbot.waitUntil(
+        lambda: _grid_items(grid)[0].item_data.get("dominant_color") == (4, 5, 6),
+        timeout=2000,
+    )

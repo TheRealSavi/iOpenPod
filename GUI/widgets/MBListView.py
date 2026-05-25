@@ -210,6 +210,17 @@ def build_new_regular_playlist(
     }
 
 
+def _is_ipod_category_playlist(playlist: dict | None) -> bool:
+    if not playlist:
+        return False
+    if playlist.get("_source") == "category":
+        return True
+    try:
+        return int(playlist.get("mhsd5_type", 0) or 0) != 0
+    except (TypeError, ValueError):
+        return False
+
+
 # =============================================================================
 # Column Configuration
 # =============================================================================
@@ -814,7 +825,11 @@ class MusicBrowserList(QFrame):
         pl = self._current_playlist
         if pl.get("master_flag"):
             return False
-        if pl.get("smart_playlist_data") or pl.get("_source") in ("smart", "podcast"):
+        if (
+            pl.get("smart_playlist_data")
+            or _is_ipod_category_playlist(pl)
+            or pl.get("_source") in ("smart", "podcast")
+        ):
             return False
         if pl.get("podcast_flag", 0) == 1:
             return False
@@ -2676,7 +2691,11 @@ class MusicBrowserList(QFrame):
             # Filter to regular (non-master, non-smart, non-podcast) playlists
             regular = [
                 pl for pl in playlists
-                if not pl.get("master_flag") and not pl.get("smart_playlist_data") and pl.get("_source") != "smart" and pl.get("podcast_flag", 0) != 1 and pl.get("_source") != "podcast"  # smart_playlist_data was smartPlaylistData
+                if not pl.get("master_flag")
+                and not pl.get("smart_playlist_data")
+                and not _is_ipod_category_playlist(pl)
+                and pl.get("_source") not in ("smart", "category", "podcast")
+                and pl.get("podcast_flag", 0) != 1
             ]
 
             add_menu = menu.addMenu("Add to Playlist")
@@ -2704,7 +2723,12 @@ class MusicBrowserList(QFrame):
         if (self._is_playlist_mode and self._current_playlist
                 and not self._current_playlist.get("master_flag")
                 and not self._current_playlist.get("smart_playlist_data")  # was smartPlaylistData
-                and self._current_playlist.get("_source") not in ("smart", "podcast")
+                and not _is_ipod_category_playlist(self._current_playlist)
+                and self._current_playlist.get("_source") not in (
+                    "smart",
+                    "category",
+                    "podcast",
+                )
                 and self._current_playlist.get("podcast_flag", 0) != 1):
             menu.addSeparator()
             n = len(selected)

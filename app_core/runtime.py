@@ -39,6 +39,17 @@ def _is_music_browser_track(track: dict) -> bool:
     return media_type == 0 or bool(media_type & 0x01)
 
 
+def _mhsd5_type_value(playlist: dict) -> int:
+    try:
+        return int(playlist.get("mhsd5_type", 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _smart_bucket_source(playlist: dict) -> str:
+    return "category" if _mhsd5_type_value(playlist) else "smart"
+
+
 def _build_track_indexes(
     tracks: list[dict],
 ) -> tuple[dict, dict, dict, dict, dict]:
@@ -557,7 +568,11 @@ class iTunesDBCache(QObject):
             playlist_id = playlist.get("playlist_id", 0)
             if playlist_id in seen_ids:
                 continue
-            playlist = {**playlist, "_source": "smart", "master_flag": 0}
+            playlist = {
+                **playlist,
+                "_source": _smart_bucket_source(playlist),
+                "master_flag": 0,
+            }
             seen_ids.add(playlist_id)
             result.append(playlist)
 
@@ -698,7 +713,10 @@ class iTunesDBCache(QObject):
                 if isinstance(items, list):
                     row["mhip_child_count"] = len(items)
 
-                if row.get("smart_playlist_data") or row.get("_source") == "smart":
+                if (
+                    row.get("smart_playlist_data")
+                    or row.get("_source") in ("smart", "category")
+                ):
                     target = smart
                 elif row.get("podcast_flag", 0) == 1 or row.get("_source") == "podcast":
                     target = podcast
