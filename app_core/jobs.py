@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import copy
 import logging
 import os
+import random
 import re
 import shutil
 import threading
@@ -1207,116 +1209,57 @@ class EjectDeviceWorker(QThread):
             self.failed.emit(str(exc))
 
 
-class DeviceRenameWorker(QThread):
-    """Rewrite the iTunesDB after renaming the iPod master playlist."""
-
-    finished_ok = pyqtSignal()
-    failed = pyqtSignal(str)
-
-    def __init__(self, ipod_path: str, new_name: str):
-        super().__init__()
-        self._ipod_path = ipod_path
-        self._new_name = new_name
-
-    def run(self) -> None:
-        try:
-            from SyncEngine.quick_writes import rename_master_playlist
-
-            if rename_master_playlist(self._ipod_path, self._new_name):
-                self.finished_ok.emit()
-            else:
-                self.failed.emit("Database write returned False.")
-        except Exception as exc:
-            logger.exception("DeviceRenameWorker failed")
-            self.failed.emit(str(exc))
+def _reload_after_itunesdb_write(cache: LibraryCacheLike) -> None:
+    cache.reload_after_itunesdb_write()
 
 
-class QuickMetadataWorker(QThread):
-    """Write pending track-flag edits directly to the iPod."""
-
-    finished_ok = pyqtSignal()
-    failed = pyqtSignal(str)
-
-    def __init__(
-        self,
-        ipod_path: str,
-        track_edits: dict[int, dict[str, tuple]],
-        artwork_edits: dict[int, str] | None = None,
-    ):
-        super().__init__()
-        self._ipod_path = ipod_path
-        self._track_edits = track_edits
-        self._artwork_edits = artwork_edits or {}
-
-    def run(self) -> None:
-        write_ok = False
-        error_msg: str | None = None
-        try:
-            from SyncEngine.quick_writes import write_track_metadata_edits
-
-            write_ok = write_track_metadata_edits(
-                self._ipod_path,
-                self._track_edits,
-                artwork_edits=self._artwork_edits,
-            )
-            if not write_ok:
-                error_msg = "Database write returned False."
-        except Exception as exc:
-            logger.exception("QuickMetadataWorker failed")
-            error_msg = str(exc)
-        finally:
-            self._cleanup_temp_artwork_files()
-
-        if write_ok:
-            self.finished_ok.emit()
-        else:
-            self.failed.emit(error_msg or "Unknown quick metadata write error")
-
-    def _cleanup_temp_artwork_files(self) -> None:
-        for path in set(self._artwork_edits.values()):
-            name = os.path.basename(path)
-            if not name.startswith("iopenpod-artwork-"):
-                continue
-            try:
-                os.remove(path)
-            except OSError:
-                pass
+def _snapshot_cache_for_itunesdb_write(
+    cache: LibraryCacheLike,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[int, str]]:
+    tracks = copy.deepcopy(cache.get_tracks())
+    artwork_sources = copy.deepcopy(cache.get_track_artwork_edits())
+    for track in tracks:
+        track.pop("_iop_pending_artwork_path", None)
+    playlists = copy.deepcopy(cache.get_playlists())
+    return tracks, playlists, artwork_sources
 
 
-class QuickPlaylistSyncWorker(QThread):
-    """Background worker for instant playlist-only database rewrite."""
+class QuickWriteWorker(QThread):
+    """Background worker that dumps the current cached iTunesDB snapshot."""
 
-    progress = pyqtSignal(str)
     completed = pyqtSignal(object)
     error = pyqtSignal(str)
 
     def __init__(
         self,
         ipod_path: str,
-        user_playlists: list[dict],
-        on_complete: Callable[[], None] | None = None,
+        cache: LibraryCacheLike,
     ):
         super().__init__()
-        self.ipod_path = ipod_path
-        self.user_playlists = user_playlists
-        self.on_complete = on_complete
+        self._ipod_path = ipod_path
+        self._cache = cache
+        (
+            self._tracks_data,
+            self._playlists_data,
+            self._artwork_sources,
+        ) = _snapshot_cache_for_itunesdb_write(cache)
 
     def run(self) -> None:
         try:
-            from SyncEngine.quick_writes import quick_write_playlists
+            from SyncEngine.quick_writes import write_cached_itunesdb
 
-            def on_progress(prog) -> None:
-                self.progress.emit(prog.message)
-
-            result = quick_write_playlists(
-                self.ipod_path,
-                self.user_playlists,
-                progress_callback=on_progress,
-                on_complete=self.on_complete,
+            result = write_cached_itunesdb(
+                self._ipod_path,
+                tracks_data=self._tracks_data,
+                playlists_data=self._playlists_data,
+                artwork_sources=self._artwork_sources,
             )
+
+            _reload_after_itunesdb_write(self._cache)
             self.completed.emit(result)
         except Exception as exc:
-            logger.exception("QuickPlaylistSyncWorker failed")
+            logger.exception("QuickWriteWorker failed")
+            _reload_after_itunesdb_write(self._cache)
             self.error.emit(str(exc))
 
 
@@ -1334,29 +1277,40 @@ class PlaylistWriteWorker(QThread):
 
     def run(self) -> None:
         try:
-            from SyncEngine.quick_writes import write_user_playlist
+            from SyncEngine.quick_writes import write_cached_itunesdb
 
             if not self._ipod_path:
+                _reload_after_itunesdb_write(self._cache)
                 self.failed.emit("No iPod connected.")
                 return
             if not self._cache.get_data():
+                _reload_after_itunesdb_write(self._cache)
                 self.failed.emit("No iPod database loaded.")
                 return
 
-            result = write_user_playlist(
+            tracks_data, playlists_data, artwork_sources = (
+                _snapshot_cache_for_itunesdb_write(self._cache)
+            )
+            result = write_cached_itunesdb(
                 self._ipod_path,
-                self._playlist,
-                self._cache.get_user_playlists(),
+                tracks_data=tracks_data,
+                playlists_data=playlists_data,
+                artwork_sources=artwork_sources,
             )
             if not result.success:
+                _reload_after_itunesdb_write(self._cache)
                 self.failed.emit(result.error or "Database write failed.")
                 return
 
-            self._cache.clear_pending_playlists()
             _delete_imported_otg_files(self._ipod_path)
-            self.finished_ok.emit(result.matched_count, result.playlist_name)
+            playlist_id = int(self._playlist.get("playlist_id", 0) or 0)
+            matched_count = result.playlist_counts.get(playlist_id, 0)
+            playlist_name = str(self._playlist.get("Title", "Untitled"))
+            _reload_after_itunesdb_write(self._cache)
+            self.finished_ok.emit(matched_count, playlist_name)
         except Exception as exc:
             logger.exception("PlaylistWriteWorker failed")
+            _reload_after_itunesdb_write(self._cache)
             self.failed.emit(str(exc))
 
 
@@ -1374,28 +1328,36 @@ class PlaylistDeleteWorker(QThread):
 
     def run(self) -> None:
         try:
-            from SyncEngine.quick_writes import delete_playlist
+            from SyncEngine.quick_writes import write_cached_itunesdb
 
             if not self._ipod_path:
+                _reload_after_itunesdb_write(self._cache)
                 self.failed.emit("No iPod connected.")
                 return
             if not self._cache.get_data():
+                _reload_after_itunesdb_write(self._cache)
                 self.failed.emit("No iPod database loaded.")
                 return
 
-            result = delete_playlist(
+            tracks_data, playlists_data, artwork_sources = (
+                _snapshot_cache_for_itunesdb_write(self._cache)
+            )
+            result = write_cached_itunesdb(
                 self._ipod_path,
-                self._playlist,
-                self._cache.get_user_playlists(),
+                tracks_data=tracks_data,
+                playlists_data=playlists_data,
+                artwork_sources=artwork_sources,
             )
             if not result.success:
+                _reload_after_itunesdb_write(self._cache)
                 self.failed.emit(result.error or "Database write failed.")
                 return
 
-            self._cache.clear_pending_playlists()
-            self.finished_ok.emit(result.playlist_name)
+            _reload_after_itunesdb_write(self._cache)
+            self.finished_ok.emit(str(self._playlist.get("Title", "Untitled")))
         except Exception as exc:
             logger.exception("PlaylistDeleteWorker failed")
+            _reload_after_itunesdb_write(self._cache)
             self.failed.emit(str(exc))
 
 
@@ -1420,6 +1382,7 @@ class PlaylistImportWorker(QThread):
         self._cache = cache
 
     def run(self) -> None:
+        cache_mutated = False
         try:
             from SyncEngine.audio_fingerprint import get_or_compute_fingerprint
             from SyncEngine.contracts import SyncRequest
@@ -1434,9 +1397,7 @@ class PlaylistImportWorker(QThread):
                 parse_playlist,
                 resolve_existing_playlist_path,
             )
-            from SyncEngine.quick_writes import (
-                write_imported_playlist_from_db_track_ids,
-            )
+            from SyncEngine.quick_writes import write_cached_itunesdb
             from SyncEngine.sync_executor import SyncExecutor
 
             self.progress.emit(0, 0, "Parsing playlist file...")
@@ -1605,17 +1566,48 @@ class PlaylistImportWorker(QThread):
                 return
 
             self.progress.emit(0, 0, f"Writing playlist '{playlist_name}'...")
-            write_result = write_imported_playlist_from_db_track_ids(
+
+            playlist_items = [
+                {"db_track_id": int(db_track_id)}
+                for db_track_id in playlist_db_track_ids
+                if db_track_id
+            ]
+            if not playlist_items:
+                self.failed.emit("No tracks could be mapped to iPod database IDs.")
+                return
+
+            playlist_id = random.getrandbits(64)
+            playlist = {
+                "Title": playlist_name,
+                "playlist_id": playlist_id,
+                "_isNew": True,
+                "_source": "regular",
+                "items": playlist_items,
+            }
+            self._cache.save_user_playlist(playlist)
+            cache_mutated = True
+
+            tracks_data, playlists_data, artwork_sources = (
+                _snapshot_cache_for_itunesdb_write(self._cache)
+            )
+            if to_add:
+                from SyncEngine._db_io import read_existing_database
+
+                fresh_db = read_existing_database(Path(self._ipod_path))
+                tracks_data = copy.deepcopy(fresh_db.get("tracks", []))
+                playlists_data = copy.deepcopy(self._cache.get_playlists())
+            write_result = write_cached_itunesdb(
                 self._ipod_path,
-                playlist_name,
-                playlist_db_track_ids,
-                self._cache.get_user_playlists(),
+                tracks_data=tracks_data,
+                playlists_data=playlists_data,
+                artwork_sources=artwork_sources,
             )
             if not write_result.success:
+                _reload_after_itunesdb_write(self._cache)
                 self.failed.emit(write_result.error or "Database write failed.")
                 return
 
-            self._cache.clear_pending_playlists()
+            _reload_after_itunesdb_write(self._cache)
             self.finished_ok.emit(
                 playlist_name,
                 len(to_add),
@@ -1624,6 +1616,8 @@ class PlaylistImportWorker(QThread):
             )
         except Exception as exc:
             logger.exception("PlaylistImportWorker failed")
+            if cache_mutated:
+                _reload_after_itunesdb_write(self._cache)
             self.failed.emit(str(exc))
 
 

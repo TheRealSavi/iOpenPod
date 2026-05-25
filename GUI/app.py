@@ -32,11 +32,11 @@ from app_core.device_identity import (
 from app_core.jobs import (
     BackSyncRequest,
     BackSyncWorker,
-    DeviceRenameWorker,
     DropScanWorker,
     EjectDeviceWorker,
     PodcastPlanRequest,
     PodcastPlanWorker,
+    QuickWriteWorker,
     SyncDiffRequest,
     SyncDiffWorker,
     SyncExecuteWorker,
@@ -186,6 +186,9 @@ class MainWindow(QMainWindow):
         self._quick_write_controller.metadata_failed.connect(
             self._on_quick_meta_failed
         )
+        self._quick_write_controller.playlist_failed.connect(
+            self._on_quick_meta_failed
+        )
 
         # Drop overlay (created after _build_ui so it sits on top)
         self._drop_overlay = DropOverlayWidget(self)
@@ -223,6 +226,13 @@ class MainWindow(QMainWindow):
         from GUI.auto_updater import UpdateChecker
 
         return UpdateChecker(parent)
+
+    @staticmethod
+    def _device_name_from_playlists(playlists: list[dict]) -> str:
+        for playlist in playlists:
+            if playlist.get("master_flag"):
+                return str(playlist.get("Title") or "").strip()
+        return ""
 
     def _build_ui(self):
         """Create child widgets and wire up signals.
@@ -584,6 +594,7 @@ class MainWindow(QMainWindow):
 
         tracks = cache.get_tracks()
         albums = build_album_list(cache)
+        playlists = cache.get_playlists()
         db_data = cache.get_data()
         classified = self._classify_tracks(tracks)
 
@@ -599,7 +610,11 @@ class MainWindow(QMainWindow):
         # Refresh disk usage so the storage bar reflects post-sync changes
         refresh_device_disk_usage(self.device_manager.discovered_ipod)
 
-        device_name = device_identity.ipod_name if device_identity else "Unk iPod"
+        device_name = (
+            MainWindow._device_name_from_playlists(playlists)
+            or (device_identity.ipod_name if device_identity else "")
+            or "Unk iPod"
+        )
         model = device_identity.display_name if device_identity else "Unk iPod"
 
         db_version_hex = db_data.get('VersionHex', '') if db_data else ''
@@ -726,40 +741,24 @@ class MainWindow(QMainWindow):
         if not data:
             return
 
-        dev = device.discovered_ipod
-        if dev is not None:
-            from typing import cast
-            cast(Any, dev).ipod_name = new_name
-
-        # Update master playlist Title in the cache
-        playlists = cache.get_playlists()
-        master_pl = None
-        for pl in playlists:
-            if pl.get("master_flag"):
-                pl["Title"] = new_name
-                master_pl = pl
-                break
-
-        if not master_pl:
+        if not cache.rename_master_playlist(new_name):
             logger.warning("Could not find master playlist to rename")
             return
 
         logger.info("Renaming iPod to '%s'", new_name)
 
-        # Write the full database to persist the rename
-        self._rename_worker = DeviceRenameWorker(device.device_path, new_name)
-        self._rename_worker.finished_ok.connect(self._onRenameDone)
-        self._rename_worker.failed.connect(self._onRenameFailed)
+        self._rename_worker = QuickWriteWorker(device.device_path, cache)
+        self._rename_worker.completed.connect(self._onRenameDone)
+        self._rename_worker.error.connect(self._onRenameFailed)
         self._rename_worker.start()
 
-    def _onRenameDone(self):
+    def _onRenameDone(self, result):
         """Device rename write completed."""
+        if not result.success:
+            self._onRenameFailed(result.error or "Database write failed.")
+            return
         logger.info("iPod renamed successfully")
         Notifier.get_instance().notify("iPod Renamed", "Device name updated successfully")
-        # Reload the database to reflect changes
-        cache = self.library_cache
-        cache.clear()
-        cache.start_loading()
 
     def _onRenameFailed(self, error_msg: str):
         """Device rename write failed."""
@@ -885,13 +884,10 @@ class MainWindow(QMainWindow):
         )
 
     def _on_quick_meta_failed(self, error_msg: str):
-        # Re-queue edits: they were already popped, so the worker's snapshot is
-        # now lost.  Inform the user so they can re-edit or do a full sync.
         QMessageBox.warning(
             self, "Save Failed",
-            f"Could not save track changes to iPod:\n{error_msg}\n\n"
-            "Your edits are lost for this session. "
-            "You can re-apply them and sync again."
+            f"Could not save quick changes to iPod:\n{error_msg}\n\n"
+            "iOpenPod is reloading the device view from the iPod."
         )
 
     def _create_back_sync_artwork_provider(self, ipod_path: str):

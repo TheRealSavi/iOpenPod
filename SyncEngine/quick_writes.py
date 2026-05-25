@@ -1,418 +1,150 @@
-"""Public helpers for small iPod database rewrites without full sync."""
+"""Public helpers for dumping cached iTunesDB state without a full sync."""
 
 from __future__ import annotations
 
 import logging
-import random
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from iTunesDB_Writer.mhit_writer import TrackInfo
 
 if TYPE_CHECKING:
-    from .contracts import SyncOutcome, SyncProgress
+    from .contracts import SyncProgress
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
-class PlaylistWriteResult:
-    """Outcome for a small playlist database rewrite."""
+@dataclass
+class QuickWriteResult:
+    """Outcome from writing a cached iTunesDB snapshot."""
 
     success: bool
-    playlist_name: str = ""
-    matched_count: int = 0
     error: str = ""
+    errors: list[tuple[str, str]] = field(default_factory=list)
+    playlist_counts: dict[int, int] = field(default_factory=dict)
+    master_playlist_name: str = ""
+    track_count: int = 0
+
+    @classmethod
+    def failed(cls, stage: str, message: str) -> QuickWriteResult:
+        return cls(success=False, error=message, errors=[(stage, message)])
 
 
-def rename_master_playlist(ipod_path: str | Path, new_name: str) -> bool:
-    """Rewrite the database with a new master playlist name."""
-
-    state = _load_database_state(ipod_path)
-    if state is None:
-        return False
-
-    tracks_data, playlists_raw, smart_raw, all_tracks = state
-    return _write_tracks_and_playlists(
-        ipod_path,
-        tracks_data=tracks_data,
-        playlists_raw=playlists_raw,
-        smart_raw=smart_raw,
-        all_tracks=all_tracks,
-        user_playlists=[],
-        master_playlist_name=new_name,
-    )
-
-
-def write_track_metadata_edits(
+def write_cached_itunesdb(
     ipod_path: str | Path,
-    track_edits: dict[int, dict[str, tuple]],
-    artwork_edits: dict[int, str] | None = None,
-) -> bool:
-    """Apply pending track metadata/artwork edits and rewrite the database."""
-
-    state = _load_database_state(ipod_path)
-    if state is None:
-        return False
-
-    tracks_data, playlists_raw, smart_raw, _all_tracks = state
-    for track in tracks_data:
-        db_track_id = track.get("db_track_id", track.get("db_id", 0))
-        if db_track_id in track_edits:
-            for field, (_, new_val) in track_edits[db_track_id].items():
-                track[field] = new_val
-
-    all_tracks = _tracks_to_infos(tracks_data, require_db_track_id=False)
-    artwork_sources = {
-        int(db_track_id): str(path)
-        for db_track_id, path in (artwork_edits or {}).items()
-        if db_track_id and path
-    }
-    return _write_tracks_and_playlists(
-        ipod_path,
-        tracks_data=tracks_data,
-        playlists_raw=playlists_raw,
-        smart_raw=smart_raw,
-        all_tracks=all_tracks,
-        user_playlists=[],
-        pc_file_paths=artwork_sources or None,
-    )
-
-
-def quick_write_playlists(
-    ipod_path: str | Path,
-    user_playlists: list[dict],
+    *,
+    tracks_data: list[dict[str, Any]],
+    playlists_data: list[dict[str, Any]],
+    artwork_sources: Mapping[int, str] | None = None,
     progress_callback: Callable[[SyncProgress], None] | None = None,
-    on_complete: Callable[[], None] | None = None,
-) -> SyncOutcome:
-    """Rewrite the iPod database with only playlist changes."""
+) -> QuickWriteResult:
+    """Write the supplied cached tracks/playlists as the device iTunesDB.
 
-    from .contracts import SyncOutcome, SyncProgress
+    Callers own cache mutation. This function does not know why the cache
+    changed; it converts the current cache snapshot, evaluates playlists, and
+    writes the final iTunesDB/SQLite/iTunesPrefs state. If artwork_sources
+    are provided, the ArtworkDB and ithmb outputs are updated alongside
+    the iTunesDB write.
+    """
 
-    result = SyncOutcome(success=True)
+    from .contracts import SyncProgress
+    from .unknown_metadata import apply_unknown_placeholders
 
-    def _progress(stage: str, cur: int, total: int, message: str = "") -> None:
-        if progress_callback:
-            progress_callback(SyncProgress(stage, cur, total, message=message))
+    def _progress(current: int, total: int, message: str) -> None:
+        if progress_callback is not None:
+            progress_callback(
+                SyncProgress("quick_write", current, total, message=message)
+            )
 
-    _progress("playlist_sync", 0, 3, "Reading iPod database...")
-    state = _load_database_state(ipod_path, require_db_track_id=True)
-    if state is None:
-        result.success = False
-        result.errors.append(("playlist_sync", "No existing database found on iPod"))
-        return result
-
-    tracks_data, playlists_raw, smart_raw, all_tracks = state
-
-    _progress("playlist_sync", 1, 3, "Merging playlists...")
-    _merge_user_playlists(playlists_raw, smart_raw, user_playlists)
-
-    _progress("playlist_sync", 2, 3, "Writing database...")
-    db_ok = _write_tracks_and_playlists(
-        ipod_path,
-        tracks_data=tracks_data,
-        playlists_raw=playlists_raw,
-        smart_raw=smart_raw,
-        all_tracks=all_tracks,
-        user_playlists=user_playlists,
-    )
-    if not db_ok:
-        result.success = False
-        result.errors.append(("playlist_sync", "Database write failed"))
-        return result
-
-    if on_complete:
-        try:
-            on_complete()
-        except Exception as exc:
-            logger.debug("Quick playlist completion callback failed: %s", exc)
-
-    _progress("playlist_sync", 3, 3, "Playlists synced")
-    return result
-
-
-def write_user_playlist(
-    ipod_path: str | Path,
-    playlist: dict,
-    user_playlists: list[dict],
-) -> PlaylistWriteResult:
-    """Write one edited/saved playlist plus any other pending playlist edits."""
-
-    state = _load_database_state(ipod_path)
-    if state is None:
-        return PlaylistWriteResult(
-            success=False,
-            playlist_name=str(playlist.get("Title", "Untitled")),
-            error="No existing database found on iPod.",
-        )
-
-    tracks_data, playlists_raw, smart_raw, all_tracks = state
-    target_pid = playlist.get("playlist_id", 0)
-    playlist_name = str(playlist.get("Title", "Untitled"))
-
-    _merge_playlist(playlists_raw, smart_raw, playlist)
-    pending = [
-        pending_playlist
-        for pending_playlist in user_playlists
-        if pending_playlist.get("playlist_id", 0) != target_pid
-    ]
-    _merge_user_playlists(playlists_raw, smart_raw, pending)
-
-    master_name, playlists, smart_playlists = _evaluate_tracks_and_playlists(
-        tracks_data=tracks_data,
-        playlists_raw=playlists_raw,
-        smart_raw=smart_raw,
-        all_tracks=all_tracks,
-        user_playlists=[],
-    )
-    matched_count = _playlist_track_count(playlists, smart_playlists, target_pid)
-    if not _write_evaluated_database(
-        ipod_path,
-        all_tracks=all_tracks,
-        playlists=playlists,
-        smart_playlists=smart_playlists,
-        master_playlist_name=master_name,
-    ):
-        return PlaylistWriteResult(
-            success=False,
-            playlist_name=playlist_name,
-            matched_count=matched_count,
-            error="Database write returned False.",
-        )
-
-    return PlaylistWriteResult(
-        success=True,
-        playlist_name=playlist_name,
-        matched_count=matched_count,
-    )
-
-
-def delete_playlist(
-    ipod_path: str | Path,
-    playlist: dict,
-    user_playlists: list[dict],
-) -> PlaylistWriteResult:
-    """Remove one playlist and rewrite the database."""
-
-    if playlist.get("master_flag"):
-        return PlaylistWriteResult(
-            success=False,
-            playlist_name=str(playlist.get("Title", "Untitled")),
-            error="The master playlist cannot be deleted.",
-        )
-
-    state = _load_database_state(ipod_path)
-    if state is None:
-        return PlaylistWriteResult(
-            success=False,
-            playlist_name=str(playlist.get("Title", "Untitled")),
-            error="No existing database found on iPod.",
-        )
-
-    tracks_data, playlists_raw, smart_raw, all_tracks = state
-    target_pid = playlist.get("playlist_id", 0)
-    playlist_name = str(playlist.get("Title", "Untitled"))
-    playlists_raw = [
-        existing
-        for existing in playlists_raw
-        if existing.get("playlist_id") != target_pid
-    ]
-    smart_raw = [
-        existing
-        for existing in smart_raw
-        if existing.get("playlist_id") != target_pid
-    ]
-    pending = [
-        pending_playlist
-        for pending_playlist in user_playlists
-        if pending_playlist.get("playlist_id", 0) != target_pid
-    ]
-    _merge_user_playlists(playlists_raw, smart_raw, pending)
-
-    master_name, playlists, smart_playlists = _evaluate_tracks_and_playlists(
-        tracks_data=tracks_data,
-        playlists_raw=playlists_raw,
-        smart_raw=smart_raw,
-        all_tracks=all_tracks,
-        user_playlists=[],
-    )
-    if not _write_evaluated_database(
-        ipod_path,
-        all_tracks=all_tracks,
-        playlists=playlists,
-        smart_playlists=smart_playlists,
-        master_playlist_name=master_name,
-    ):
-        return PlaylistWriteResult(
-            success=False,
-            playlist_name=playlist_name,
-            error="Database write returned False.",
-        )
-
-    return PlaylistWriteResult(success=True, playlist_name=playlist_name)
-
-
-def write_imported_playlist_from_db_track_ids(
-    ipod_path: str | Path,
-    playlist_name: str,
-    db_track_ids: list[int],
-    user_playlists: list[dict],
-    playlist_id: int | None = None,
-) -> PlaylistWriteResult:
-    """Create a regular playlist from iPod database track IDs."""
-
-    state = _load_database_state(ipod_path)
-    if state is None:
-        return PlaylistWriteResult(
-            success=False,
-            playlist_name=playlist_name,
-            error="No existing database found on iPod.",
-        )
-
-    tracks_data, playlists_raw, smart_raw, all_tracks = state
-    db_track_id_to_tid: dict[int, int] = {}
-    for track in tracks_data:
-        tid = track.get("track_id", 0)
-        db_track_id = track.get("db_track_id", track.get("db_id", 0))
-        if tid and db_track_id:
-            db_track_id_to_tid[int(db_track_id)] = int(tid)
-
-    playlist_items = []
-    for db_track_id in db_track_ids:
-        tid = db_track_id_to_tid.get(db_track_id)
-        if tid:
-            playlist_items.append({"track_id": tid})
-
-    if not playlist_items:
-        return PlaylistWriteResult(
-            success=False,
-            playlist_name=playlist_name,
-            error="No tracks could be mapped to iPod database IDs.",
-        )
-
-    target_pid = playlist_id if playlist_id is not None else random.getrandbits(64)
-    playlist = {
-        "Title": playlist_name,
-        "playlist_id": target_pid,
-        "_isNew": True,
-        "_source": "regular",
-        "items": playlist_items,
-    }
-    playlists_raw.append(playlist)
-    _merge_user_playlists(playlists_raw, smart_raw, user_playlists)
-
-    master_name, playlists, smart_playlists = _evaluate_tracks_and_playlists(
-        tracks_data=tracks_data,
-        playlists_raw=playlists_raw,
-        smart_raw=smart_raw,
-        all_tracks=all_tracks,
-        user_playlists=[],
-    )
-    matched_count = _playlist_track_count(playlists, smart_playlists, target_pid)
-    if not _write_evaluated_database(
-        ipod_path,
-        all_tracks=all_tracks,
-        playlists=playlists,
-        smart_playlists=smart_playlists,
-        master_playlist_name=master_name,
-    ):
-        return PlaylistWriteResult(
-            success=False,
-            playlist_name=playlist_name,
-            matched_count=matched_count,
-            error="Database write returned False.",
-        )
-
-    return PlaylistWriteResult(
-        success=True,
-        playlist_name=playlist_name,
-        matched_count=matched_count,
-    )
-
-
-def _load_database_state(
-    ipod_path: str | Path,
-    *,
-    require_db_track_id: bool = False,
-) -> tuple[list[dict], list[dict], list[dict], list[TrackInfo]] | None:
-    from ._db_io import read_existing_database
-
-    existing_db = read_existing_database(Path(ipod_path))
-    tracks_data = existing_db["tracks"]
     if not tracks_data:
-        return None
+        return QuickWriteResult.failed(
+            "quick_write",
+            "No cached tracks available to write.",
+        )
 
-    all_tracks = _tracks_to_infos(
-        tracks_data,
-        require_db_track_id=require_db_track_id,
+    total_steps = 3
+    _progress(0, total_steps, "Preparing cached database...")
+    all_tracks = _tracks_to_infos(tracks_data)
+    apply_unknown_placeholders(all_tracks)
+    playlists_raw, smart_raw = _split_cached_playlists(playlists_data)
+
+    _progress(1, total_steps, "Building playlists...")
+    master_name, playlists, smart_playlists = _evaluate_tracks_and_playlists(
+        tracks_data=tracks_data,
+        playlists_raw=playlists_raw,
+        smart_raw=smart_raw,
+        all_tracks=all_tracks,
     )
-    return (
-        tracks_data,
-        list(existing_db["playlists"]),
-        list(existing_db["smart_playlists"]),
-        all_tracks,
+    playlist_counts = _playlist_counts(playlists, smart_playlists)
+
+    _progress(2, total_steps, "Writing database...")
+    if not _write_evaluated_database(
+        ipod_path,
+        all_tracks=all_tracks,
+        playlists=playlists,
+        smart_playlists=smart_playlists,
+        master_playlist_name=master_name,
+        pc_file_paths=dict(artwork_sources) if artwork_sources else None,
+    ):
+        return QuickWriteResult.failed(
+            "quick_write",
+            "Database write returned False.",
+        )
+
+    _progress(3, total_steps, "Quick write complete")
+    return QuickWriteResult(
+        success=True,
+        playlist_counts=playlist_counts,
+        master_playlist_name=master_name,
+        track_count=len(all_tracks),
     )
 
 
-def _tracks_to_infos(
-    tracks_data: list[dict],
-    *,
-    require_db_track_id: bool,
-) -> list[TrackInfo]:
+def _tracks_to_infos(tracks_data: list[dict[str, Any]]) -> list[TrackInfo]:
     from ._track_conversion import track_dict_to_info
 
     track_infos: list[TrackInfo] = []
     for track in tracks_data:
         track_info = track_dict_to_info(track)
-        if require_db_track_id and not track_info.db_track_id:
-            continue
         track_infos.append(track_info)
     return track_infos
 
 
-def _merge_user_playlists(
-    playlists_raw: list[dict],
-    smart_raw: list[dict],
-    user_playlists: list[dict],
-) -> None:
-    for user_playlist in user_playlists:
-        if user_playlist.get("master_flag"):
+def _split_cached_playlists(
+    playlists_data: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    playlists_raw: list[dict[str, Any]] = []
+    smart_raw: list[dict[str, Any]] = []
+    seen_ids: set[int] = set()
+
+    for playlist in playlists_data:
+        playlist_id = int(playlist.get("playlist_id", 0) or 0)
+        if playlist_id and playlist_id in seen_ids:
             continue
-        _merge_playlist(playlists_raw, smart_raw, user_playlist)
+        if playlist_id:
+            seen_ids.add(playlist_id)
 
+        row = dict(playlist)
+        items = row.get("items")
+        if isinstance(items, list):
+            row["mhip_child_count"] = len(items)
 
-def _merge_playlist(
-    playlists_raw: list[dict],
-    smart_raw: list[dict],
-    playlist: dict,
-) -> None:
-    playlist_id = playlist.get("playlist_id", 0)
-    if playlist.get("_isNew", False):
-        playlists_raw.append(playlist)
-        return
+        if row.get("smart_playlist_data") or row.get("_source") == "smart":
+            smart_raw.append(row)
+        else:
+            playlists_raw.append(row)
 
-    for idx, existing_playlist in enumerate(playlists_raw):
-        if existing_playlist.get("playlist_id") == playlist_id:
-            playlists_raw[idx] = playlist
-            return
-
-    for idx, existing_playlist in enumerate(smart_raw):
-        if existing_playlist.get("playlist_id") == playlist_id:
-            smart_raw[idx] = playlist
-            return
-
-    playlists_raw.append(playlist)
+    return playlists_raw, smart_raw
 
 
 def _evaluate_tracks_and_playlists(
     *,
-    tracks_data: list[dict],
-    playlists_raw: list[dict],
-    smart_raw: list[dict],
+    tracks_data: list[dict[str, Any]],
+    playlists_raw: list[dict[str, Any]],
+    smart_raw: list[dict[str, Any]],
     all_tracks: list[TrackInfo],
-    user_playlists: list[dict],
 ) -> tuple[str, list[Any], list[Any]]:
     from ._playlist_builder import build_and_evaluate_playlists
 
@@ -421,53 +153,20 @@ def _evaluate_tracks_and_playlists(
         playlists_raw,
         smart_raw,
         all_tracks,
-        user_playlists,
+        [],
     )
 
 
-def _playlist_track_count(
+def _playlist_counts(
     playlists: list[Any],
     smart_playlists: list[Any],
-    playlist_id: int,
-) -> int:
-    for playlist in playlists:
-        if playlist.playlist_id == playlist_id:
-            return len(playlist.track_ids)
-    for playlist in smart_playlists:
-        if playlist.playlist_id == playlist_id:
-            return len(playlist.track_ids)
-    return 0
-
-
-def _write_tracks_and_playlists(
-    ipod_path: str | Path,
-    *,
-    tracks_data: list[dict],
-    playlists_raw: list[dict],
-    smart_raw: list[dict],
-    all_tracks: list[TrackInfo],
-    user_playlists: list[dict],
-    master_playlist_name: str | None = None,
-    pc_file_paths: dict[int, str] | None = None,
-) -> bool:
-    from .unknown_metadata import apply_unknown_placeholders
-
-    apply_unknown_placeholders(all_tracks)
-    current_master_name, playlists, smart_playlists = _evaluate_tracks_and_playlists(
-        tracks_data=tracks_data,
-        playlists_raw=playlists_raw,
-        smart_raw=smart_raw,
-        all_tracks=all_tracks,
-        user_playlists=user_playlists,
-    )
-    return _write_evaluated_database(
-        ipod_path,
-        all_tracks=all_tracks,
-        playlists=playlists,
-        smart_playlists=smart_playlists,
-        master_playlist_name=master_playlist_name or current_master_name,
-        pc_file_paths=pc_file_paths,
-    )
+) -> dict[int, int]:
+    counts: dict[int, int] = {}
+    for playlist in [*playlists, *smart_playlists]:
+        playlist_id = int(getattr(playlist, "playlist_id", 0) or 0)
+        if playlist_id:
+            counts[playlist_id] = len(getattr(playlist, "track_ids", []) or [])
+    return counts
 
 
 def _write_evaluated_database(
@@ -477,14 +176,14 @@ def _write_evaluated_database(
     playlists: list[Any],
     smart_playlists: list[Any],
     master_playlist_name: str,
-    pc_file_paths: dict[int, str] | None = None,
+    pc_file_paths: Mapping[int, str] | None = None,
 ) -> bool:
     from ._db_io import write_database
 
     db_ok = write_database(
         Path(ipod_path),
         all_tracks,
-        pc_file_paths=pc_file_paths,
+        pc_file_paths=dict(pc_file_paths) if pc_file_paths else None,
         playlists=playlists,
         smart_playlists=smart_playlists,
         master_playlist_name=master_playlist_name,

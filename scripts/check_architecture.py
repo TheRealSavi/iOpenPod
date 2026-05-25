@@ -61,7 +61,6 @@ LEGACY_SETTINGS_RUNTIME_GLOBALS = (
 )
 SYNC_REVIEW_FORBIDDEN_WORKERS = (
     "BackSyncWorker",
-    "QuickPlaylistSyncWorker",
     "SyncExecuteWorker",
     "SyncWorker",
 )

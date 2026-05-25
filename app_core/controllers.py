@@ -8,7 +8,7 @@ from typing import Any
 
 from PyQt6.QtCore import QObject, QThread, QTimer, pyqtSignal, pyqtSlot
 
-from .jobs import AutoRestoreDeviceWorker, QuickMetadataWorker, QuickPlaylistSyncWorker
+from .jobs import AutoRestoreDeviceWorker, QuickWriteWorker
 from .services import DeviceManagerLike, LibraryCacheLike, is_device_info_like
 
 logger = logging.getLogger(__name__)
@@ -174,18 +174,19 @@ class QuickWriteController(QObject):
         self._device_manager = device_manager
         self._library_cache = library_cache
         self._is_sync_running = is_sync_running
-        self._metadata_worker: QuickMetadataWorker | None = None
-        self._playlist_worker: QuickPlaylistSyncWorker | None = None
+        self._quick_worker: QThread | None = None
+        self._active_write_has_track_edits = False
+        self._active_write_has_playlists = False
 
         self._metadata_timer = QTimer(self)
         self._metadata_timer.setSingleShot(True)
         self._metadata_timer.setInterval(1500)
-        self._metadata_timer.timeout.connect(self.start_metadata_write)
+        self._metadata_timer.timeout.connect(self.start_quick_write)
 
         self._playlist_timer = QTimer(self)
         self._playlist_timer.setSingleShot(True)
         self._playlist_timer.setInterval(1500)
-        self._playlist_timer.timeout.connect(self.start_playlist_sync)
+        self._playlist_timer.timeout.connect(self.start_quick_write)
 
     def schedule_metadata_write(self) -> None:
         if self._is_sync_running() or not self._device_manager.device_path:
@@ -193,34 +194,7 @@ class QuickWriteController(QObject):
         self._metadata_timer.start()
 
     def start_metadata_write(self) -> None:
-        if self._is_sync_running():
-            return
-        if self._metadata_worker is not None and self._metadata_worker.isRunning():
-            self._metadata_timer.start()
-            return
-
-        ipod_path = self._device_manager.device_path
-        if not ipod_path:
-            return
-
-        edits = self._library_cache.pop_track_edits()
-        artwork_edits = self._library_cache.pop_track_artwork_edits()
-        if not edits and not artwork_edits:
-            return
-
-        logger.info(
-            "Quick metadata write: %d track(s) edited, %d artwork edit(s)",
-            len(edits),
-            len(artwork_edits),
-        )
-        self.save_status_changed.emit("saving")
-
-        worker = QuickMetadataWorker(ipod_path, edits, artwork_edits)
-        self._metadata_worker = worker
-        worker.finished_ok.connect(self._on_metadata_ok)
-        worker.failed.connect(self._on_metadata_failed)
-        worker.finished.connect(self._on_metadata_worker_finished)
-        worker.start()
+        self.start_quick_write()
 
     def schedule_playlist_sync(self) -> None:
         if self._is_sync_running() or not self._device_manager.device_path:
@@ -228,40 +202,56 @@ class QuickWriteController(QObject):
         self._playlist_timer.start()
 
     def start_playlist_sync(self) -> None:
+        self.start_quick_write()
+
+    def start_quick_write(self) -> None:
         if self._is_sync_running():
             return
-        if not self._library_cache.has_pending_playlists():
+        if self._quick_worker is not None and self._quick_worker.isRunning():
+            self._metadata_timer.start()
+            return
+
+        has_track_edits = self._library_cache.has_pending_track_edits()
+        has_playlists = self._library_cache.has_pending_playlists()
+        if not has_track_edits and not has_playlists:
             return
 
         ipod_path = self._device_manager.device_path
         if not ipod_path:
             return
 
-        if self._playlist_worker is not None and self._playlist_worker.isRunning():
-            self._playlist_timer.start()
-            return
-        if self._metadata_worker is not None and self._metadata_worker.isRunning():
-            self._playlist_timer.start()
-            return
-
+        edits = self._library_cache.get_track_edits()
+        artwork_edits = self._library_cache.get_track_artwork_edits()
         user_playlists = self._library_cache.get_user_playlists()
-        self.save_status_changed.emit("saving")
+        if not edits and not artwork_edits and not user_playlists:
+            return
 
-        worker = QuickPlaylistSyncWorker(
-            ipod_path=ipod_path,
-            user_playlists=user_playlists,
+        logger.info(
+            "Quick write: %d track edit(s), %d artwork edit(s), %d playlist edit(s)",
+            len(edits),
+            len(artwork_edits),
+            len(user_playlists),
         )
-        self._playlist_worker = worker
-        worker.completed.connect(self._on_playlist_done)
-        worker.error.connect(self._on_playlist_error)
+        self.save_status_changed.emit("saving")
+        self._active_write_has_track_edits = bool(edits or artwork_edits)
+        self._active_write_has_playlists = bool(user_playlists)
+
+        worker = QuickWriteWorker(
+            ipod_path=ipod_path,
+            cache=self._library_cache,
+        )
+        self._quick_worker = worker
+        worker.completed.connect(self._on_quick_write_done)
+        worker.error.connect(self._on_quick_write_error)
         worker.start()
 
     def prepare_for_full_sync(self, timeout_ms: int = 5000) -> None:
         """Pause quick metadata writes before a full sync starts."""
 
         self._metadata_timer.stop()
-        if self._metadata_worker is not None and self._metadata_worker.isRunning():
-            self._metadata_worker.wait(timeout_ms)
+        self._playlist_timer.stop()
+        if self._quick_worker is not None and self._quick_worker.isRunning():
+            self._quick_worker.wait(timeout_ms)
 
     def flush_before_eject(self, timeout_ms: int = 30000) -> tuple[bool, str | None]:
         """Finish queued quick writes before ejecting the device."""
@@ -269,33 +259,28 @@ class QuickWriteController(QObject):
         self._metadata_timer.stop()
         self._playlist_timer.stop()
 
-        if not self._wait_for_worker(self._metadata_worker, timeout_ms):
-            return False, "track changes"
-
-        if self._library_cache.has_pending_track_edits():
-            self.start_metadata_write()
-            if not self._wait_for_worker(self._metadata_worker, timeout_ms):
-                return False, "track changes"
-
-        had_playlist_worker = (
-            self._playlist_worker is not None and self._playlist_worker.isRunning()
+        had_worker = (
+            self._quick_worker is not None and self._quick_worker.isRunning()
         )
-        if had_playlist_worker:
-            if not self._wait_for_worker(self._playlist_worker, timeout_ms):
-                return False, "playlist changes"
+        if not self._wait_for_worker(self._quick_worker, timeout_ms):
+            return False, "quick changes"
+        if had_worker:
+            return True, None
 
-        if self._library_cache.has_pending_playlists() and not had_playlist_worker:
-            self.start_playlist_sync()
-            if not self._wait_for_worker(self._playlist_worker, timeout_ms):
-                return False, "playlist changes"
+        if (
+            self._library_cache.has_pending_track_edits()
+            or self._library_cache.has_pending_playlists()
+        ):
+            self.start_quick_write()
+            if not self._wait_for_worker(self._quick_worker, timeout_ms):
+                return False, "quick changes"
 
         return True, None
 
     def shutdown(self, timeout_ms: int = 3000) -> None:
         self._metadata_timer.stop()
         self._playlist_timer.stop()
-        self._wait_for_worker(self._metadata_worker, timeout_ms)
-        self._wait_for_worker(self._playlist_worker, timeout_ms)
+        self._wait_for_worker(self._quick_worker, timeout_ms)
 
     @staticmethod
     def _wait_for_worker(worker: QThread | None, timeout_ms: int) -> bool:
@@ -303,47 +288,48 @@ class QuickWriteController(QObject):
             return True
         return bool(worker.wait(timeout_ms))
 
-    @pyqtSlot()
-    def _on_metadata_ok(self) -> None:
-        logger.info("Quick metadata write completed successfully")
-        self.save_status_changed.emit("saved")
-
-    @pyqtSlot(str)
-    def _on_metadata_failed(self, error_msg: str) -> None:
-        logger.error("Quick metadata write failed: %s", error_msg)
-        self.save_status_changed.emit("error")
-        self.metadata_failed.emit(error_msg)
-
-    @pyqtSlot()
-    def _on_metadata_worker_finished(self) -> None:
-        worker = self.sender()
-        if isinstance(worker, QThread):
-            worker.deleteLater()
-        if worker is self._metadata_worker:
-            self._metadata_worker = None
-
     @pyqtSlot(object)
-    def _on_playlist_done(self, result) -> None:
-        if self._playlist_worker is not None:
-            self._playlist_worker.wait()
-            self._playlist_worker.deleteLater()
-            self._playlist_worker = None
+    def _on_quick_write_done(self, result) -> None:
+        had_track_edits = self._active_write_has_track_edits
+        had_playlists = self._active_write_has_playlists
+        self._clear_active_write_flags()
+        if self._quick_worker is not None:
+            self._quick_worker.wait()
+            self._quick_worker.deleteLater()
+            self._quick_worker = None
         if result.success:
-            logger.info("Quick playlist sync completed successfully")
-            self._library_cache.commit_user_playlists()
+            logger.info("Quick write completed successfully")
             self.save_status_changed.emit("saved")
         else:
-            errors = "; ".join(msg for _, msg in result.errors)
-            logger.error("Quick playlist sync failed: %s", errors)
+            errors = "; ".join(msg for _, msg in getattr(result, "errors", []))
+            if not errors:
+                errors = getattr(result, "error", "") or "Database write failed"
+            logger.error("Quick write failed: %s", errors)
             self.save_status_changed.emit("error")
-            self.playlist_failed.emit(errors)
+            if had_playlists and not had_track_edits:
+                self.playlist_failed.emit(errors)
+            else:
+                self.metadata_failed.emit(errors)
 
     @pyqtSlot(str)
-    def _on_playlist_error(self, error_msg: str) -> None:
-        if self._playlist_worker is not None:
-            self._playlist_worker.wait()
-            self._playlist_worker.deleteLater()
-            self._playlist_worker = None
-        logger.error("Quick playlist sync error: %s", error_msg)
+    def _on_quick_write_error(
+        self,
+        error_msg: str,
+    ) -> None:
+        had_track_edits = self._active_write_has_track_edits
+        had_playlists = self._active_write_has_playlists
+        self._clear_active_write_flags()
+        if self._quick_worker is not None:
+            self._quick_worker.wait()
+            self._quick_worker.deleteLater()
+            self._quick_worker = None
+        logger.error("Quick write error: %s", error_msg)
         self.save_status_changed.emit("error")
-        self.playlist_failed.emit(error_msg)
+        if had_playlists and not had_track_edits:
+            self.playlist_failed.emit(error_msg)
+        else:
+            self.metadata_failed.emit(error_msg)
+
+    def _clear_active_write_flags(self) -> None:
+        self._active_write_has_track_edits = False
+        self._active_write_has_playlists = False

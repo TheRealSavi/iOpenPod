@@ -236,6 +236,12 @@ def _build_regular_playlists(
         for item in items:
             tid = item.get("track_id", 0)
             db_track_id = old_tid_to_db_track_id.get(tid, 0)
+            if not db_track_id:
+                db_track_id = item.get("db_track_id", item.get("db_id", 0))
+            try:
+                db_track_id = int(db_track_id or 0)
+            except (TypeError, ValueError):
+                db_track_id = 0
             if db_track_id in valid_db_track_ids:
                 track_ids.append(db_track_id)
                 item_meta.append(PlaylistItemMeta(

@@ -56,6 +56,75 @@ def test_commit_user_playlists_hydrates_pending_playlist_into_live_cache(
     assert playlists[1]["mhip_child_count"] == 2
 
 
+def test_rename_master_playlist_updates_live_cache(monkeypatch) -> None:
+    monkeypatch.setattr(
+        runtime.DeviceManager,
+        "get_instance",
+        classmethod(lambda cls: SimpleNamespace(device_path="/fake/ipod")),
+    )
+
+    cache = runtime.iTunesDBCache()
+    cache.set_data(
+        {
+            "mhlt": [],
+            "mhlp": [{"playlist_id": 1, "Title": "Old", "master_flag": 1}],
+            "mhlp_podcast": [],
+            "mhlp_smart": [],
+        },
+        "/fake/ipod",
+    )
+
+    assert cache.rename_master_playlist("New") is True
+    assert cache.get_playlists()[0]["Title"] == "New"
+
+
+def test_remove_user_playlist_removes_live_playlist(monkeypatch) -> None:
+    monkeypatch.setattr(
+        runtime.DeviceManager,
+        "get_instance",
+        classmethod(lambda cls: SimpleNamespace(device_path="/fake/ipod")),
+    )
+
+    cache = runtime.iTunesDBCache()
+    cache.set_data(
+        {
+            "mhlt": [],
+            "mhlp": [
+                {"playlist_id": 1, "Title": "Keep"},
+                {"playlist_id": 2, "Title": "Remove"},
+            ],
+            "mhlp_podcast": [],
+            "mhlp_smart": [],
+        },
+        "/fake/ipod",
+    )
+
+    assert cache.remove_user_playlist(2) is True
+    assert [playlist["playlist_id"] for playlist in cache.get_playlists()] == [1]
+
+
+def test_remove_user_playlist_rejects_master_playlist(monkeypatch) -> None:
+    monkeypatch.setattr(
+        runtime.DeviceManager,
+        "get_instance",
+        classmethod(lambda cls: SimpleNamespace(device_path="/fake/ipod")),
+    )
+
+    cache = runtime.iTunesDBCache()
+    cache.set_data(
+        {
+            "mhlt": [],
+            "mhlp": [{"playlist_id": 1, "Title": "iPod", "master_flag": 1}],
+            "mhlp_podcast": [],
+            "mhlp_smart": [],
+        },
+        "/fake/ipod",
+    )
+
+    assert cache.remove_user_playlist(1) is False
+    assert cache.get_playlists()[0]["master_flag"] == 1
+
+
 def test_album_grid_ignores_movie_only_album_entries(monkeypatch) -> None:
     monkeypatch.setattr(
         runtime.DeviceManager,
@@ -180,9 +249,86 @@ def test_update_track_artwork_records_pending_artwork(monkeypatch, tmp_path) -> 
 
     cache.update_track_artwork([track], str(artwork_path))
 
-    assert track["artwork_count"] == 1
-    assert track["has_artwork"] == 1
+    assert track["artwork_count"] == 0
+    assert "has_artwork" not in track
     assert track["_iop_pending_artwork_path"] == str(artwork_path)
     assert cache.has_pending_track_edits()
     assert cache.pop_track_artwork_edits() == {123: str(artwork_path)}
     assert not cache.has_pending_track_edits()
+
+
+def test_discard_quick_write_state_preserves_photo_edits(monkeypatch) -> None:
+    monkeypatch.setattr(
+        runtime.DeviceManager,
+        "get_instance",
+        classmethod(lambda cls: SimpleNamespace(device_path="/fake/ipod")),
+    )
+
+    track = {"db_track_id": 123, "Title": "Song", "checked_flag": 0}
+    cache = runtime.iTunesDBCache()
+    cache.set_data(
+        {
+            "mhlt": [track],
+            "mhlp": [],
+            "mhlp_podcast": [],
+            "mhlp_smart": [],
+        },
+        "/fake/ipod",
+    )
+
+    cache.update_track_flags([track], {"checked_flag": 1})
+    cache.save_user_playlist(
+        {
+            "playlist_id": 2,
+            "Title": "Pending",
+            "_source": "regular",
+            "items": [],
+        }
+    )
+    cache.stage_photo_import("/tmp/photo.jpg", "Album")
+    cache.update_track_artwork([track], "/tmp/iopenpod-artwork-test.png")
+
+    cache.discard_quick_write_state()
+
+    assert not cache.has_pending_track_edits()
+    assert not cache.has_pending_playlists()
+    assert cache.pop_track_artwork_edits() == {}
+    assert cache.has_pending_photo_edits()
+
+
+def test_reload_after_itunesdb_write_clears_quick_state_and_starts_load(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        runtime.DeviceManager,
+        "get_instance",
+        classmethod(lambda cls: SimpleNamespace(device_path="/fake/ipod")),
+    )
+
+    load_calls = 0
+    track = {"db_track_id": 123, "Title": "Song", "checked_flag": 0}
+    cache = runtime.iTunesDBCache()
+    cache.set_data(
+        {
+            "mhlt": [track],
+            "mhlp": [],
+            "mhlp_podcast": [],
+            "mhlp_smart": [],
+        },
+        "/fake/ipod",
+    )
+    cache.update_track_flags([track], {"checked_flag": 1})
+    cache.stage_photo_import("/tmp/photo.jpg", "Album")
+
+    def fake_start_loading() -> None:
+        nonlocal load_calls
+        load_calls += 1
+
+    monkeypatch.setattr(cache, "start_loading", fake_start_loading)
+
+    cache.reload_after_itunesdb_write()
+
+    assert load_calls == 1
+    assert cache.get_data() is None
+    assert not cache.has_pending_track_edits()
+    assert cache.has_pending_photo_edits()

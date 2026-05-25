@@ -608,6 +608,18 @@ class iTunesDBCache(QObject):
 
     def remove_user_playlist(self, playlist_id: int) -> bool:
         with self._lock:
+            data = self._data
+            candidates = list(self._user_playlists)
+            if data is not None:
+                for key in ("mhlp", "mhlp_podcast", "mhlp_smart"):
+                    candidates.extend(data.get(key, []))
+            for playlist in candidates:
+                if (
+                    playlist.get("playlist_id") == playlist_id
+                    and playlist.get("master_flag")
+                ):
+                    return False
+
             before = len(self._user_playlists)
             self._user_playlists = [
                 playlist
@@ -615,9 +627,38 @@ class iTunesDBCache(QObject):
                 if playlist.get("playlist_id") != playlist_id
             ]
             removed = len(self._user_playlists) < before
+            if data is not None:
+                for key in ("mhlp", "mhlp_podcast", "mhlp_smart"):
+                    bucket = data.get(key, [])
+                    kept = [
+                        playlist
+                        for playlist in bucket
+                        if playlist.get("playlist_id") != playlist_id
+                    ]
+                    if len(kept) != len(bucket):
+                        data[key] = kept
+                        removed = True
         if removed:
             self.playlists_changed.emit()
         return removed
+
+    def rename_master_playlist(self, new_name: str) -> bool:
+        with self._lock:
+            data = self._data
+            if data is None:
+                return False
+            renamed = False
+            for key in ("mhlp", "mhlp_podcast"):
+                for playlist in data.get(key, []):
+                    if playlist.get("master_flag"):
+                        playlist["Title"] = new_name
+                        renamed = True
+                        break
+                if renamed:
+                    break
+        if renamed:
+            self.playlists_changed.emit()
+        return renamed
 
     def get_user_playlists(self) -> list[dict]:
         with self._lock:
@@ -733,8 +774,6 @@ class iTunesDBCache(QObject):
                         _cleanup_temp_artwork_paths([previous])
                 self._track_artwork_edits[db_track_id] = image_path
                 track["_iop_pending_artwork_path"] = image_path
-                track["artwork_count"] = 1
-                track["has_artwork"] = 1
                 edited += 1
 
         logger.info("Track artwork updated on %d track(s): %s", edited, image_path)
@@ -744,9 +783,13 @@ class iTunesDBCache(QObject):
         with self._lock:
             return dict(self._track_edits)
 
+    def get_track_artwork_edits(self) -> dict[int, str]:
+        with self._lock:
+            return dict(self._track_artwork_edits)
+
     def has_pending_track_edits(self) -> bool:
         with self._lock:
-            return len(self._track_edits) > 0 or len(self._track_artwork_edits) > 0
+            return bool(self._track_edits) or bool(self._track_artwork_edits)
 
     def clear_track_edits(self) -> None:
         with self._lock:
@@ -769,6 +812,28 @@ class iTunesDBCache(QObject):
         self.clear_pending_playlists()
         self.clear_track_edits()
         self.clear_photo_edits()
+
+    def discard_quick_write_state(self) -> None:
+        """Discard iTunesDB quick-write edits while keeping other staging."""
+        with self._lock:
+            _cleanup_temp_artwork_paths(list(self._track_artwork_edits.values()))
+            self._user_playlists.clear()
+            self._track_edits.clear()
+            self._track_artwork_edits.clear()
+
+    def reload_after_itunesdb_write(self) -> None:
+        """Clear committed iTunesDB staging and reload the device database."""
+        self.discard_quick_write_state()
+        with self._lock:
+            self._data = None
+            self._is_loading = False
+            self._album_index = None
+            self._album_only_index = None
+            self._artist_index = None
+            self._genre_index = None
+            self._track_id_index = None
+            self._photo_db = None
+        self.start_loading()
 
     def has_pending_photo_edits(self) -> bool:
         with self._lock:

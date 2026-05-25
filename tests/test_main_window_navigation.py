@@ -52,6 +52,9 @@ class _FakeCache:
     def get_data(self) -> dict:
         return {}
 
+    def get_playlists(self) -> list:
+        return []
+
 
 def _build_window_for_data_ready(
     *,

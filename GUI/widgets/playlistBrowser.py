@@ -8,7 +8,7 @@ import logging
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from PyQt6.QtCore import QSize, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QDialog,
@@ -1185,9 +1185,6 @@ class PlaylistBrowser(QFrame):
         self.trackTitleBar.setTitle("Select a playlist")
         self.trackTitleBar.resetColor()
 
-        # Rescan after a short delay
-        QTimer.singleShot(500, self._rescanAfterWrite)
-
     def _onDeleteFailed(self, error_msg: str) -> None:
         """Playlist deletion write failed."""
         self.infoCard.edit_btn.setEnabled(True)
@@ -1248,15 +1245,6 @@ class PlaylistBrowser(QFrame):
                 self, "Playlist Saved",
                 f"'{playlist_name}' saved to iPod."
             )
-
-        # Small delay before rescanning so the OS flushes the file to disk
-        QTimer.singleShot(500, self._rescanAfterWrite)
-
-    def _rescanAfterWrite(self) -> None:
-        """Rescan the iPod database after a short post-write delay."""
-        cache = self._library_cache
-        cache.invalidate()
-        cache.start_loading()
 
     def _onWriteFailed(self, error_msg: str) -> None:
         """Playlist write failed."""
@@ -1405,7 +1393,6 @@ class PlaylistBrowser(QFrame):
             self, "Import Complete",
             f"Playlist '{playlist_name}' imported.\n\n{summary}",
         )
-        QTimer.singleShot(500, self._rescanAfterWrite)
 
     def _onImportFailed(self, error_msg: str) -> None:
         self._set_import_busy(False)

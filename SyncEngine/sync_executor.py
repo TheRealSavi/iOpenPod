@@ -607,23 +607,6 @@ class SyncExecutor:
                 detail += f"; and {remaining} more"
             ctx.result.errors.append(("device capabilities", f"Skipped unsupported media: {detail}"))
 
-    def quick_write_playlists(
-        self,
-        user_playlists: list[dict],
-        progress_callback: Callable[["SyncProgress"], None] | None = None,
-        on_complete: Callable[[], None] | None = None,
-    ) -> SyncOutcome:
-        """Rewrite the iPod database with only playlist changes (no file ops)."""
-
-        from .quick_writes import quick_write_playlists
-
-        return quick_write_playlists(
-            self.ipod_path,
-            user_playlists,
-            progress_callback=progress_callback,
-            on_complete=on_complete,
-        )
-
     def _apply_itunes_protections_from_tracks(self, all_tracks: list[TrackInfo]) -> None:
         """Lightweight iTunesPrefs update from a track list (no _SyncContext)."""
 

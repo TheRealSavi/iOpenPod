@@ -410,6 +410,9 @@ class LibraryCacheLike(Protocol):
     def remove_user_playlist(self, playlist_id: int) -> bool:
         ...
 
+    def rename_master_playlist(self, new_name: str) -> bool:
+        ...
+
     def update_track_flags(
         self,
         tracks: list[dict],
@@ -424,6 +427,9 @@ class LibraryCacheLike(Protocol):
         ...
 
     def get_track_edits(self) -> dict[int, dict[str, tuple]]:
+        ...
+
+    def get_track_artwork_edits(self) -> dict[int, str]:
         ...
 
     def get_photo_edits(self) -> Any:
@@ -445,6 +451,12 @@ class LibraryCacheLike(Protocol):
         ...
 
     def clear_pending_sync_state(self) -> None:
+        ...
+
+    def discard_quick_write_state(self) -> None:
+        ...
+
+    def reload_after_itunesdb_write(self) -> None:
         ...
 
     def clear_pending_playlists(self) -> None:
