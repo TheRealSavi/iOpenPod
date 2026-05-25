@@ -51,7 +51,7 @@ class AppSettings:
     backup_dir: str = ""
 
     media_folder: str = ""
-    media_folders: list[str] = field(default_factory=list)
+    media_folders: list[dict[str, object]] = field(default_factory=list)
     write_back_to_pc: bool = False
     compute_sound_check: bool = False
     rotate_tall_photos_for_device: bool = False

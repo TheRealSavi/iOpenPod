@@ -16,7 +16,7 @@ import os
 import shutil
 from typing import TYPE_CHECKING, Any
 
-from PyQt6.QtCore import QRectF, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QRectF, QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QPainter
 from PyQt6.QtWidgets import (
     QCheckBox,
@@ -47,8 +47,15 @@ from app_core.sync_review_model import (
     is_sync_action,
     sync_item_size_delta,
 )
+from infrastructure.media_folders import (
+    MEDIA_TYPE_MUSIC,
+    MEDIA_TYPE_PHOTO,
+    MEDIA_TYPE_VIDEO,
+    media_folder_entries_to_settings,
+    media_folder_paths,
+)
 
-from ..glyphs import glyph_pixmap
+from ..glyphs import glyph_icon, glyph_pixmap
 from ..styles import FONT_FAMILY, Colors, Metrics, btn_css, make_scroll_area
 from .formatters import format_duration_mmss as _format_duration
 from .formatters import format_size as _format_size
@@ -2724,15 +2731,17 @@ class SyncReviewWidget(QWidget):
 class PCFolderDialog(QDialog):
     """Dialog to select one or more PC media folders for syncing."""
 
-    def __init__(self, parent=None, last_folder: str | list[str] | tuple[str, ...] = ""):
+    def __init__(self, parent=None, last_folder: object = ""):
         super().__init__(parent)
         self.setWindowTitle("Select Media Folders")
         self.setMinimumSize(560, 460)
         self.selected_folder = ""
+        self.selected_folder_entries: list[dict[str, object]] = []
         self.selected_folders: list[str] = []
         self.sync_mode = ""  # "full" | "selective" | "back_sync"
         self.last_folders = self._normalize_folders(last_folder)
         self._folders = list(self.last_folders)
+        self._expanded_folder_keys: set[str] = set()
 
         self.setStyleSheet(f"""
             QDialog {{
@@ -2763,28 +2772,22 @@ class PCFolderDialog(QDialog):
         return os.path.normcase(os.path.abspath(os.path.expanduser(folder)))
 
     @classmethod
-    def _normalize_folders(cls, folders: object) -> list[str]:
-        if not folders:
-            return []
-        if isinstance(folders, str):
-            candidates = [folders]
-        else:
-            try:
-                candidates = list(folders)  # type: ignore[arg-type]
-            except TypeError:
-                candidates = [folders]
-        normalized: list[str] = []
-        seen: set[str] = set()
-        for candidate in candidates:
-            folder = str(candidate or "").strip()
-            if not folder:
-                continue
-            key = cls._folder_key(folder)
-            if key in seen:
-                continue
-            seen.add(key)
-            normalized.append(folder)
-        return normalized
+    def _normalize_folders(cls, folders: object) -> list[dict[str, object]]:
+        return media_folder_entries_to_settings(folders)
+
+    @staticmethod
+    def _entry_directory(entry: dict[str, object]) -> str:
+        return str(entry.get("directory", "") or "")
+
+    @staticmethod
+    def _entry_media_types(entry: dict[str, object]) -> set[str]:
+        raw = entry.get("media_types", ())
+        if isinstance(raw, str):
+            return {raw}
+        try:
+            return {str(value) for value in raw}  # type: ignore[arg-type]
+        except TypeError:
+            return {str(raw)}
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -2907,6 +2910,73 @@ class PCFolderDialog(QDialog):
         btn_row.addWidget(full_btn)
         layout.addLayout(btn_row)
 
+    def _make_folder_icon_button(
+        self,
+        glyph: str,
+        tooltip: str,
+        color: str = Colors.TEXT_SECONDARY,
+    ) -> QPushButton:
+        btn = QPushButton("")
+        btn.setFixedSize(30, 30)
+        btn.setIconSize(QSize(18, 18))
+        icon = glyph_icon(glyph, 18, color)
+        if icon:
+            btn.setIcon(icon)
+        btn.setToolTip(tooltip)
+        btn.setStyleSheet(btn_css(
+            bg="transparent",
+            bg_hover=Colors.SURFACE_ACTIVE,
+            bg_press=Colors.SURFACE,
+            padding="4px",
+            extra="min-width: 0; max-width: 30px;",
+        ))
+        return btn
+
+    def _replace_folder_entry(self, folder: str, **updates: object) -> None:
+        key = self._folder_key(folder)
+        for index, entry in enumerate(self._folders):
+            if self._folder_key(self._entry_directory(entry)) != key:
+                continue
+            updated = dict(entry)
+            updated.update(updates)
+            normalized = media_folder_entries_to_settings([updated])
+            if normalized:
+                self._folders[index] = normalized[0]
+            return
+
+    def _toggle_folder_settings(self, folder: str) -> None:
+        key = self._folder_key(folder)
+        if key in self._expanded_folder_keys:
+            self._expanded_folder_keys.remove(key)
+        else:
+            self._expanded_folder_keys.add(key)
+        self._render_folders()
+
+    def _set_folder_recurse(self, folder: str, recurse: bool) -> None:
+        self._replace_folder_entry(folder, recurse=bool(recurse))
+
+    def _set_folder_media_type(self, folder: str, media_type: str, enabled: bool) -> None:
+        current = self._entry_media_types(
+            next(
+                (
+                    entry
+                    for entry in self._folders
+                    if self._folder_key(self._entry_directory(entry)) == self._folder_key(folder)
+                ),
+                {},
+            )
+        )
+        if enabled:
+            current.add(media_type)
+        else:
+            current.discard(media_type)
+        ordered = [
+            value
+            for value in (MEDIA_TYPE_MUSIC, MEDIA_TYPE_VIDEO, MEDIA_TYPE_PHOTO)
+            if value in current
+        ]
+        self._replace_folder_entry(folder, media_types=ordered)
+
     def _render_folders(self):
         while self._folder_list_layout.count():
             item = self._folder_list_layout.takeAt(0)
@@ -2933,7 +3003,10 @@ class PCFolderDialog(QDialog):
             self._folder_list_layout.addStretch()
             return
 
-        for index, folder in enumerate(self._folders, start=1):
+        for index, entry in enumerate(self._folders, start=1):
+            folder = self._entry_directory(entry)
+            folder_key = self._folder_key(folder)
+            expanded = folder_key in self._expanded_folder_keys
             row = QFrame(self._folder_list_widget)
             row.setStyleSheet(f"""
                 QFrame {{
@@ -2942,9 +3015,13 @@ class PCFolderDialog(QDialog):
                     border-radius: {Metrics.BORDER_RADIUS_SM}px;
                 }}
             """)
-            row_layout = QHBoxLayout(row)
+            row_layout = QVBoxLayout(row)
             row_layout.setContentsMargins(10, 8, 8, 8)
-            row_layout.setSpacing(10)
+            row_layout.setSpacing(8)
+
+            header_layout = QHBoxLayout()
+            header_layout.setContentsMargins(0, 0, 0, 0)
+            header_layout.setSpacing(10)
 
             number = QLabel(str(index))
             number.setFixedWidth(24)
@@ -2959,25 +3036,102 @@ class PCFolderDialog(QDialog):
                     padding: 3px;
                 }}
             """)
-            row_layout.addWidget(number)
+            header_layout.addWidget(number)
 
             path_label = QLabel(folder)
             path_label.setWordWrap(True)
             path_label.setToolTip(folder)
             path_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
             path_label.setStyleSheet(f"color:{Colors.TEXT_PRIMARY}; border:none;")
-            row_layout.addWidget(path_label, 1)
+            header_layout.addWidget(path_label, 1)
 
-            remove_btn = QPushButton("Remove", row)
-            remove_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+            settings_btn = self._make_folder_icon_button(
+                "settings-sliders",
+                "Folder scan settings",
+                Colors.ACCENT if expanded else Colors.TEXT_SECONDARY,
+            )
+            settings_btn.clicked.connect(
+                lambda _checked=False, f=folder: self._toggle_folder_settings(f)
+            )
+            header_layout.addWidget(settings_btn)
+
+            remove_btn = self._make_folder_icon_button(
+                "trash",
+                "Remove folder",
+                Colors.DANGER,
+            )
             remove_btn.clicked.connect(lambda _checked=False, f=folder: self._remove_folder(f))
-            row_layout.addWidget(remove_btn)
+            header_layout.addWidget(remove_btn)
+
+            row_layout.addLayout(header_layout)
+
+            if expanded:
+                settings_frame = QFrame(row)
+                settings_frame.setObjectName("folderEntrySettings")
+                settings_frame.setStyleSheet(f"""
+                    QFrame#folderEntrySettings {{
+                        background: transparent;
+                        border: none;
+                    }}
+                    QFrame#folderEntrySettings QCheckBox {{
+                        color: {Colors.TEXT_SECONDARY};
+                        background: transparent;
+                        border: none;
+                        spacing: 6px;
+                    }}
+                    QFrame#folderEntrySettings QLabel {{
+                        color: {Colors.TEXT_TERTIARY};
+                        background: transparent;
+                        border: none;
+                    }}
+                """)
+                settings_layout = QVBoxLayout(settings_frame)
+                settings_layout.setContentsMargins(34, 2, 2, 2)
+                settings_layout.setSpacing(8)
+
+                recurse_cb = QCheckBox("Recurse subfolders", settings_frame)
+                recurse_cb.setChecked(bool(entry.get("recurse", True)))
+                recurse_cb.toggled.connect(
+                    lambda checked, f=folder: self._set_folder_recurse(f, checked)
+                )
+                settings_layout.addWidget(recurse_cb)
+
+                media_row = QHBoxLayout()
+                media_row.setContentsMargins(0, 0, 0, 0)
+                media_row.setSpacing(12)
+                media_label = QLabel("Scan", settings_frame)
+                media_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
+                media_row.addWidget(media_label)
+
+                media_types = self._entry_media_types(entry)
+                for label, media_type in (
+                    ("Music", MEDIA_TYPE_MUSIC),
+                    ("Video", MEDIA_TYPE_VIDEO),
+                    ("Photo", MEDIA_TYPE_PHOTO),
+                ):
+                    cb = QCheckBox(label, settings_frame)
+                    cb.setChecked(media_type in media_types)
+                    cb.toggled.connect(
+                        lambda checked, f=folder, mt=media_type: self._set_folder_media_type(
+                            f,
+                            mt,
+                            checked,
+                        )
+                    )
+                    media_row.addWidget(cb)
+                media_row.addStretch()
+                settings_layout.addLayout(media_row)
+                row_layout.addWidget(settings_frame)
 
             self._folder_list_layout.addWidget(row)
         self._folder_list_layout.addStretch()
 
     def _browse(self):
-        start_folder = self._folders[-1] if self._folders else os.path.expanduser("~")
+        start_folder = (
+            self._entry_directory(self._folders[-1])
+            if self._folders
+            else os.path.expanduser("~")
+        )
         folder = QFileDialog.getExistingDirectory(
             self,
             "Add Media Folder",
@@ -2989,9 +3143,11 @@ class PCFolderDialog(QDialog):
 
     def _add_folder(self, folder: str):
         key = self._folder_key(folder)
-        if any(self._folder_key(existing) == key for existing in self._folders):
+        if any(self._folder_key(self._entry_directory(existing)) == key for existing in self._folders):
             return
-        self._folders.append(folder)
+        entries = media_folder_entries_to_settings(folder)
+        if entries:
+            self._folders.append(entries[0])
         self._render_folders()
 
     def _remove_folder(self, folder: str):
@@ -2999,14 +3155,16 @@ class PCFolderDialog(QDialog):
         self._folders = [
             existing
             for existing in self._folders
-            if self._folder_key(existing) != key
+            if self._folder_key(self._entry_directory(existing)) != key
         ]
+        self._expanded_folder_keys.discard(key)
         self._render_folders()
 
     def _clear_folders(self):
         if not self._folders:
             return
         self._folders = []
+        self._expanded_folder_keys.clear()
         self._render_folders()
 
     def _validate_folders(self) -> bool:
@@ -3015,7 +3173,8 @@ class PCFolderDialog(QDialog):
             QMessageBox.warning(self, "No Folders", "Please add at least one media folder.")
             return False
 
-        missing = [folder for folder in folders if not os.path.isdir(folder)]
+        paths = media_folder_paths(folders)
+        missing = [folder for folder in paths if not os.path.isdir(folder)]
         if missing:
             preview = "\n".join(missing[:4])
             if len(missing) > 4:
@@ -3028,8 +3187,9 @@ class PCFolderDialog(QDialog):
             return False
 
         self._folders = folders
-        self.selected_folders = list(folders)
-        self.selected_folder = folders[0]
+        self.selected_folder_entries = list(folders)
+        self.selected_folders = paths
+        self.selected_folder = paths[0]
         return True
 
     def _accept_full(self):

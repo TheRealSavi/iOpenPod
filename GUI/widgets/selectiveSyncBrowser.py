@@ -35,6 +35,10 @@ from ArtworkDB_Writer.art_extractor import (
     extract_art,
     find_folder_art,
 )
+from infrastructure.media_folders import (
+    media_folder_entries_to_settings,
+    media_folder_paths,
+)
 from SyncEngine.photos import PCPhoto, PCPhotoLibrary, scan_pc_photos
 
 from ..glyphs import glyph_icon
@@ -115,28 +119,8 @@ def _extract_art_for_group(file_paths: list[str]) -> tuple | None:
     return (img, dcol, album_colors)
 
 
-def _normalize_folder_list(folders: object) -> list[str]:
-    if not folders:
-        return []
-    if isinstance(folders, str):
-        candidates = [folders]
-    else:
-        try:
-            candidates = list(folders)  # type: ignore[arg-type]
-        except TypeError:
-            candidates = [folders]
-    normalized: list[str] = []
-    seen: set[str] = set()
-    for candidate in candidates:
-        folder = str(candidate or "").strip()
-        if not folder:
-            continue
-        key = os.path.normcase(os.path.abspath(os.path.expanduser(folder)))
-        if key in seen:
-            continue
-        seen.add(key)
-        normalized.append(folder)
-    return normalized
+def _normalize_folder_entries(folders: object) -> list[dict[str, object]]:
+    return media_folder_entries_to_settings(folders)
 
 
 def _folder_label(folders: list[str]) -> str:
@@ -165,17 +149,18 @@ class _PCLibScanWorker(QThread):
         include_photo: bool = True,
     ):
         super().__init__()
-        self._folders = _normalize_folder_list(folders)
+        self._folder_entries = _normalize_folder_entries(folders)
+        self._folders = media_folder_paths(self._folder_entries)
         self._include_video = include_video
         self._include_photo = include_photo
 
     def run(self):
         try:
             from SyncEngine.pc_library import PCLibrary
-            lib = PCLibrary(self._folders)
+            lib = PCLibrary(self._folder_entries)
             tracks = list(lib.scan(include_video=self._include_video))
             photos = (
-                scan_pc_photos(self._folders)
+                scan_pc_photos(self._folder_entries)
                 if self._include_photo
                 else PCPhotoLibrary(sync_root=os.pathsep.join(self._folders))
             )
@@ -1200,6 +1185,7 @@ class SelectiveSyncBrowser(QWidget):
         self._settings_service = settings_service
         self._device_sessions = device_sessions
         self._folder = ""
+        self._folder_entries: list[dict[str, object]] = []
         self._folders: list[str] = []
         self._all_tracks: list = []
         self._photo_library = PCPhotoLibrary(sync_root="")
@@ -1475,7 +1461,8 @@ class SelectiveSyncBrowser(QWidget):
 
     def load(self, folder: object):
         """Start scanning one or more folders and prepare the browser."""
-        self._folders = _normalize_folder_list(folder)
+        self._folder_entries = _normalize_folder_entries(folder)
+        self._folders = media_folder_paths(self._folder_entries)
         self._folder = self._folders[0] if self._folders else ""
         caps = self._device_sessions.current_session().capabilities
         self._device_supports_video = (
@@ -1513,7 +1500,7 @@ class SelectiveSyncBrowser(QWidget):
         self._cleanup_scan_worker()
 
         self._scan_worker = _PCLibScanWorker(
-            self._folders,
+            self._folder_entries,
             include_video=self._device_supports_video,
             include_photo=self._device_supports_photo,
         )
@@ -2112,7 +2099,7 @@ class SelectiveSyncBrowser(QWidget):
                 selected_photo_imports.extend((photo.source_path, album_name) for album_name in album_names)
             else:
                 selected_photo_imports.append((photo.source_path, ""))
-        self.selection_done.emit(list(self._folders), {
+        self.selection_done.emit(list(self._folder_entries), {
             "tracks": selected_track_paths,
             "photos": tuple(selected_photo_imports),
         })

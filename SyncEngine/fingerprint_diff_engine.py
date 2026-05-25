@@ -1168,7 +1168,7 @@ class FingerprintDiffEngine:
                 if allowed_paths is None:
                     if progress_callback:
                         progress_callback("scan_photos", 0, 0, "Scanning photos...")
-                    pc_photos = scan_pc_photos(self.pc_library.root_paths)
+                    pc_photos = scan_pc_photos(self.pc_library.root_entries)
                     plan.photo_plan = build_photo_sync_plan(
                         pc_photos,
                         device_photos,

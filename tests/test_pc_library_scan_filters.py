@@ -17,6 +17,35 @@ def test_count_audio_files_skips_appledouble_sidecars(tmp_path):
     assert library.count_audio_files(include_video=False) == 2
 
 
+def test_count_audio_files_respects_nonrecursive_folder_entry(tmp_path):
+    nested = tmp_path / "Nested"
+    nested.mkdir()
+    (tmp_path / "top.mp3").write_bytes(b"audio")
+    (nested / "deep.mp3").write_bytes(b"audio")
+
+    library = PCLibrary([{
+        "directory": str(tmp_path),
+        "recurse": False,
+        "media_types": ["music"],
+    }])
+
+    assert library.count_audio_files(include_video=False) == 1
+
+
+def test_count_audio_files_respects_media_type_allowlist(tmp_path):
+    (tmp_path / "song.mp3").write_bytes(b"audio")
+    (tmp_path / "clip.mp4").write_bytes(b"video")
+
+    video_only = PCLibrary([{
+        "directory": str(tmp_path),
+        "recurse": True,
+        "media_types": ["video"],
+    }])
+
+    assert video_only.count_audio_files(include_video=True) == 1
+    assert video_only.count_audio_files(include_video=False) == 0
+
+
 def test_scan_skips_appledouble_sidecars(tmp_path, monkeypatch):
     album = tmp_path / "Album"
     album.mkdir()

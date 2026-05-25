@@ -20,9 +20,15 @@ from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
+from infrastructure.media_folders import (
+    MEDIA_TYPE_MUSIC,
+    MEDIA_TYPE_VIDEO,
+    MediaFolderEntry,
+    normalize_media_folder_entries,
+)
+
 from ._formats import (
     AUDIO_EXTENSIONS,
-    MEDIA_EXTENSIONS,
     NEEDS_TRANSCODING,
     VIDEO_ALWAYS_TRANSCODE,
     VIDEO_EXTENSIONS,
@@ -507,7 +513,7 @@ class PCTrack:
         return (self.artist.lower(), self.album.lower(), self.title.lower(), self.duration_ms)
 
 
-LibraryRoot = str | os.PathLike[str]
+LibraryRoot = str | os.PathLike[str] | dict[str, object] | MediaFolderEntry
 
 
 def _path_key(path: Path) -> str:
@@ -516,18 +522,17 @@ def _path_key(path: Path) -> str:
     return os.path.normcase(str(path.resolve()))
 
 
-def _coerce_root_paths(root_path: LibraryRoot | Iterable[LibraryRoot]) -> tuple[Path, ...]:
-    if isinstance(root_path, (str, os.PathLike)):
-        raw_roots = [root_path]
-    else:
-        raw_roots = list(root_path)
-    if not raw_roots:
+def _coerce_root_entries(
+    root_path: LibraryRoot | Iterable[LibraryRoot],
+) -> tuple[MediaFolderEntry, ...]:
+    raw_entries = normalize_media_folder_entries(root_path)
+    if not raw_entries:
         raise ValueError("At least one library path is required")
 
-    roots: list[Path] = []
+    entries: list[MediaFolderEntry] = []
     seen: set[str] = set()
-    for raw_root in raw_roots:
-        path = Path(raw_root).expanduser().resolve()
+    for entry in raw_entries:
+        path = Path(entry.directory).expanduser().resolve()
         if not path.exists():
             raise ValueError(f"Library path does not exist: {path}")
         if not path.is_dir():
@@ -536,11 +541,43 @@ def _coerce_root_paths(root_path: LibraryRoot | Iterable[LibraryRoot]) -> tuple[
         if key in seen:
             continue
         seen.add(key)
-        roots.append(path)
+        entries.append(
+            MediaFolderEntry(
+                directory=str(path),
+                recurse=entry.recurse,
+                media_types=entry.media_types,
+            )
+        )
 
-    if not roots:
+    if not entries:
         raise ValueError("At least one library path is required")
-    return tuple(roots)
+    return tuple(entries)
+
+
+def _audio_video_extensions_for(
+    entry: MediaFolderEntry,
+    *,
+    include_video: bool,
+) -> frozenset[str]:
+    extensions: set[str] = set()
+    media_types = set(entry.media_types)
+    if MEDIA_TYPE_MUSIC in media_types:
+        extensions.update(AUDIO_EXTENSIONS)
+    if include_video and MEDIA_TYPE_VIDEO in media_types:
+        extensions.update(VIDEO_EXTENSIONS)
+    return frozenset(extensions)
+
+
+def _iter_root_files(root_path: Path, *, recurse: bool) -> Iterator[tuple[Path, str]]:
+    if recurse:
+        for root, _, files in os.walk(root_path):
+            for filename in files:
+                yield Path(root), filename
+        return
+
+    for child in root_path.iterdir():
+        if child.is_file():
+            yield root_path, child.name
 
 
 class PCLibrary:
@@ -566,7 +603,8 @@ class PCLibrary:
     """
 
     def __init__(self, root_path: LibraryRoot | Iterable[LibraryRoot]):
-        self.root_paths = _coerce_root_paths(root_path)
+        self.root_entries = _coerce_root_entries(root_path)
+        self.root_paths = tuple(Path(entry.directory) for entry in self.root_entries)
         self.root_path = self.root_paths[0]
 
     @staticmethod
@@ -580,22 +618,27 @@ class PCLibrary:
         Args:
             include_video: When False, only count audio files (skip VIDEO_EXTENSIONS).
         """
-        extensions = MEDIA_EXTENSIONS if include_video else AUDIO_EXTENSIONS
         count = 0
         seen_files: set[str] = set()
-        for root_path in self.root_paths:
-            for _root, _, files in os.walk(root_path):
-                for filename in files:
-                    if self._should_skip_library_file(filename):
-                        continue
-                    if Path(filename).suffix.lower() not in extensions:
-                        continue
-                    file_path = Path(_root) / filename
-                    key = _path_key(file_path)
-                    if key in seen_files:
-                        continue
-                    seen_files.add(key)
-                    count += 1
+        for entry in self.root_entries:
+            root_path = Path(entry.directory)
+            extensions = _audio_video_extensions_for(
+                entry,
+                include_video=include_video,
+            )
+            if not extensions:
+                continue
+            for root, filename in _iter_root_files(root_path, recurse=entry.recurse):
+                if self._should_skip_library_file(filename):
+                    continue
+                if Path(filename).suffix.lower() not in extensions:
+                    continue
+                file_path = root / filename
+                key = _path_key(file_path)
+                if key in seen_files:
+                    continue
+                seen_files.add(key)
+                count += 1
         return count
 
     def _root_for_file(self, file_path: Path) -> Path:
@@ -617,22 +660,30 @@ class PCLibrary:
     def _scan_media_files(self, include_video: bool = True) -> Iterator[tuple[Path, Path]]:
         """Yield unique media file paths with the root that supplied them."""
 
-        extensions = MEDIA_EXTENSIONS if include_video else AUDIO_EXTENSIONS
         seen_files: set[str] = set()
-        for library_root in self.root_paths:
-            for root, _, files in os.walk(library_root):
-                for filename in files:
-                    if self._should_skip_library_file(filename):
-                        continue
-                    ext = Path(filename).suffix.lower()
-                    if ext not in extensions:
-                        continue
-                    file_path = Path(root) / filename
-                    key = _path_key(file_path)
-                    if key in seen_files:
-                        continue
-                    seen_files.add(key)
-                    yield file_path, library_root
+        for entry in self.root_entries:
+            library_root = Path(entry.directory)
+            extensions = _audio_video_extensions_for(
+                entry,
+                include_video=include_video,
+            )
+            if not extensions:
+                continue
+            for root, filename in _iter_root_files(
+                library_root,
+                recurse=entry.recurse,
+            ):
+                if self._should_skip_library_file(filename):
+                    continue
+                ext = Path(filename).suffix.lower()
+                if ext not in extensions:
+                    continue
+                file_path = root / filename
+                key = _path_key(file_path)
+                if key in seen_files:
+                    continue
+                seen_files.add(key)
+                yield file_path, library_root
 
     def scan(
         self,

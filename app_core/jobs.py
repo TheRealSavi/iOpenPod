@@ -18,6 +18,8 @@ from typing import TYPE_CHECKING, Any
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
+from infrastructure.media_folders import media_folder_paths
+
 from .sync_options import build_transcode_options
 
 if TYPE_CHECKING:
@@ -533,7 +535,7 @@ class SyncDiffRequest:
 
     pc_folder: str
     ipod_tracks: list
-    pc_folders: tuple[str, ...] = ()
+    pc_folders: tuple[Any, ...] = ()
     ipod_path: str = ""
     supports_video: bool = True
     supports_podcast: bool = True
@@ -560,7 +562,7 @@ class SyncDiffWorker(QThread):
         self._request = request
 
     @staticmethod
-    def _pc_folders(request: SyncDiffRequest) -> tuple[str, ...]:
+    def _pc_folders(request: SyncDiffRequest) -> tuple[Any, ...]:
         folders = tuple(path for path in request.pc_folders if str(path).strip())
         if folders:
             return folders
@@ -616,7 +618,7 @@ class BackSyncRequest:
     pc_folder: str
     ipod_tracks: list
     ipod_path: str
-    pc_folders: tuple[str, ...] = ()
+    pc_folders: tuple[Any, ...] = ()
 
 
 class BackSyncWorker(QThread):
@@ -765,7 +767,9 @@ class BackSyncWorker(QThread):
                     ),
                 )
 
-            output_root = Path(pc_folders[0]) / "iOpenPod Back Sync"
+            pc_folder_paths = media_folder_paths(pc_folders)
+            output_parent = pc_folder_paths[0] if pc_folder_paths else request.pc_folder
+            output_root = Path(output_parent) / "iOpenPod Back Sync"
             output_root.mkdir(parents=True, exist_ok=True)
 
             exported = 0

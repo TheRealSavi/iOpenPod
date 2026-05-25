@@ -18,6 +18,11 @@ from typing import BinaryIO
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 from ArtworkDB_Writer.ithmb_codecs import decode_pixels_for_format, encode_image_for_format
+from infrastructure.media_folders import (
+    MEDIA_TYPE_PHOTO,
+    MediaFolderEntry,
+    normalize_media_folder_entries,
+)
 from ipod_device import ITHMB_FORMAT_MAP, photo_formats_for_device
 from ipod_device.capabilities import ArtworkFormat
 
@@ -381,35 +386,53 @@ def _describe_image_load_error(path: str | Path, exc: BaseException) -> str:
     return str(exc)
 
 
-def _coerce_photo_roots(sync_root: str | Path | Iterable[str | Path]) -> tuple[Path, ...]:
-    if isinstance(sync_root, (str, os.PathLike)):
-        raw_roots = [sync_root]
-    else:
-        raw_roots = list(sync_root)
-    roots: list[Path] = []
+def _coerce_photo_entries(
+    sync_root: str | Path | Iterable[str | Path | dict[str, object] | MediaFolderEntry],
+) -> tuple[tuple[Path, MediaFolderEntry], ...]:
+    raw_entries = normalize_media_folder_entries(sync_root)
+    entries: list[tuple[Path, MediaFolderEntry]] = []
     seen: set[str] = set()
-    for raw_root in raw_roots:
-        root = Path(raw_root).expanduser().resolve()
+    for entry in raw_entries:
+        if MEDIA_TYPE_PHOTO not in entry.media_types:
+            continue
+        root = Path(entry.directory).expanduser().resolve()
         if not root.exists() or not root.is_dir():
             continue
         key = os.path.normcase(str(root))
         if key in seen:
             continue
         seen.add(key)
-        roots.append(root)
-    return tuple(roots)
+        entries.append((
+            root,
+            MediaFolderEntry(
+                directory=str(root),
+                recurse=entry.recurse,
+                media_types=entry.media_types,
+            ),
+        ))
+    return tuple(entries)
 
 
-def scan_pc_photos(sync_root: str | Path | Iterable[str | Path]) -> PCPhotoLibrary:
-    roots = _coerce_photo_roots(sync_root)
+def _iter_photo_files(root: Path, *, recurse: bool):
+    if recurse:
+        yield from root.rglob("*")
+        return
+    yield from root.iterdir()
+
+
+def scan_pc_photos(
+    sync_root: str | Path | Iterable[str | Path | dict[str, object] | MediaFolderEntry],
+) -> PCPhotoLibrary:
+    root_entries = _coerce_photo_entries(sync_root)
+    roots = tuple(root for root, _entry in root_entries)
     sync_root_label = os.pathsep.join(str(root) for root in roots)
     library = PCPhotoLibrary(sync_root=sync_root_label)
     if not roots:
         return library
 
     seen_files: set[str] = set()
-    for root in roots:
-        for file_path in root.rglob("*"):
+    for root, entry in root_entries:
+        for file_path in _iter_photo_files(root, recurse=entry.recurse):
             if not file_path.is_file():
                 continue
             if file_path.suffix.lower() not in _SUPPORTED_IMAGE_EXTENSIONS:

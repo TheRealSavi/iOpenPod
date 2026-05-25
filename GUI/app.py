@@ -68,6 +68,10 @@ from GUI.widgets.syncReview import (
     PCFolderDialog,
     SyncReviewWidget,
 )
+from infrastructure.media_folders import (
+    media_folder_entries_to_settings,
+    media_folder_paths,
+)
 
 if TYPE_CHECKING:
     from app_core.context import AppContext
@@ -76,36 +80,15 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _normalize_media_folders(*folder_groups: object) -> list[str]:
-    folders: list[str] = []
-    seen: set[str] = set()
-    for group in folder_groups:
-        if not group:
-            continue
-        if isinstance(group, (str, Path)):
-            candidates = [group]
-        else:
-            try:
-                candidates = list(group)  # type: ignore[arg-type]
-            except TypeError:
-                candidates = [group]
-        for candidate in candidates:
-            path = str(candidate or "").strip()
-            if not path:
-                continue
-            key = str(Path(path).expanduser().resolve()).casefold()
-            if key in seen:
-                continue
-            seen.add(key)
-            folders.append(path)
-    return folders
+def _normalize_media_folder_settings(*folder_groups: object) -> list[dict[str, object]]:
+    return media_folder_entries_to_settings(*folder_groups)
 
 
-def _media_folders_from_settings(settings: Any) -> list[str]:
-    folders = _normalize_media_folders(getattr(settings, "media_folders", ()))
-    if folders:
-        return folders
-    return _normalize_media_folders(getattr(settings, "media_folder", ""))
+def _media_folder_entries_from_settings(settings: Any) -> list[dict[str, object]]:
+    entries = _normalize_media_folder_settings(getattr(settings, "media_folders", ()))
+    if entries:
+        return entries
+    return _normalize_media_folder_settings(getattr(settings, "media_folder", ""))
 
 
 class MainWindow(QMainWindow):
@@ -142,7 +125,8 @@ class MainWindow(QMainWindow):
         self._tool_download_worker = None
         self._keep_sync_results_visible_after_rescan = False
         self._plan = None
-        self._last_pc_folders = _media_folders_from_settings(settings)
+        self._last_pc_folder_entries = _media_folder_entries_from_settings(settings)
+        self._last_pc_folders = media_folder_paths(self._last_pc_folder_entries)
         self._last_device_path = settings.last_device_path or ""
         self._startup_restore = StartupDeviceRestoreController(
             self.device_manager,
@@ -988,23 +972,24 @@ class MainWindow(QMainWindow):
                 # User clicked Continue Anyway (only possible when fpcalc is present)
 
         # Show folder selection dialog
-        dialog = PCFolderDialog(self, self._last_pc_folders)
+        dialog = PCFolderDialog(self, self._last_pc_folder_entries)
         if dialog.exec() != dialog.DialogCode.Accepted:
             return
 
+        self._last_pc_folder_entries = dialog.selected_folder_entries
         self._last_pc_folders = dialog.selected_folders
         primary_pc_folder = dialog.selected_folder
         # Persist the folder choice
         global_settings = self.settings_service.get_global_settings()
         global_settings.media_folder = primary_pc_folder
-        global_settings.media_folders = list(self._last_pc_folders)
+        global_settings.media_folders = list(self._last_pc_folder_entries)
         self.settings_service.save_global_settings(global_settings)
         settings = self.settings_service.get_effective_settings()
 
         # Branch: selective sync opens the PC library browser first
         if dialog.sync_mode == "selective":
             self.centralStack.setCurrentIndex(4)
-            self.selectiveSyncBrowser.load(self._last_pc_folders)
+            self.selectiveSyncBrowser.load(self._last_pc_folder_entries)
             return
 
         # Branch: Back Sync runs outside the regular sync-plan flow.
@@ -1019,7 +1004,7 @@ class MainWindow(QMainWindow):
             self._back_sync_worker = BackSyncWorker(
                 BackSyncRequest(
                     pc_folder=primary_pc_folder,
-                    pc_folders=tuple(self._last_pc_folders),
+                    pc_folders=tuple(self._last_pc_folder_entries),
                     ipod_tracks=ipod_tracks,
                     ipod_path=device_manager.device_path or "",
                 ),
@@ -1066,7 +1051,7 @@ class MainWindow(QMainWindow):
         self._sync_worker = SyncDiffWorker(
             SyncDiffRequest(
                 pc_folder=primary_pc_folder,
-                pc_folders=tuple(self._last_pc_folders),
+                pc_folders=tuple(self._last_pc_folder_entries),
                 ipod_tracks=ipod_tracks,
                 ipod_path=device_manager.device_path or "",
                 supports_video=supports_video,
@@ -1283,7 +1268,9 @@ class MainWindow(QMainWindow):
 
     def _onSelectiveSyncDone(self, folder: object, selected_paths):
         """User finished picking tracks in selective sync; run diff on selection."""
-        selected_folders = _normalize_media_folders(folder)
+        selected_folder_entries = _normalize_media_folder_settings(folder)
+        selected_folders = media_folder_paths(selected_folder_entries)
+        self._last_pc_folder_entries = selected_folder_entries
         self._last_pc_folders = selected_folders
         primary_pc_folder = selected_folders[0] if selected_folders else ""
         self.centralStack.setCurrentIndex(1)
@@ -1322,7 +1309,7 @@ class MainWindow(QMainWindow):
         self._sync_worker = SyncDiffWorker(
             SyncDiffRequest(
                 pc_folder=primary_pc_folder,
-                pc_folders=tuple(selected_folders),
+                pc_folders=tuple(selected_folder_entries),
                 ipod_tracks=ipod_tracks,
                 ipod_path=device_manager.device_path or "",
                 supports_video=supports_video,
@@ -1429,9 +1416,10 @@ class MainWindow(QMainWindow):
         """Return from settings to the main browsing view."""
         # Re-read persisted settings to pick up changes
         settings = self.settings_service.get_global_settings()
-        folders = _media_folders_from_settings(settings)
-        if folders:
-            self._last_pc_folders = folders
+        entries = _media_folder_entries_from_settings(settings)
+        if entries:
+            self._last_pc_folder_entries = entries
+            self._last_pc_folders = media_folder_paths(entries)
         self._show_default_page()
 
     def showBackupBrowser(self):

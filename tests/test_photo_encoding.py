@@ -143,3 +143,34 @@ def test_scan_pc_photos_records_decompression_bomb_with_source_path(
             f"Offending image: {image_path}"
         ),
     )]
+
+
+def test_scan_pc_photos_respects_folder_entry_options(monkeypatch, tmp_path: Path) -> None:
+    nested = tmp_path / "Nested"
+    nested.mkdir()
+    top = tmp_path / "top.jpg"
+    deep = nested / "deep.jpg"
+    top.write_bytes(b"fake")
+    deep.write_bytes(b"fake")
+
+    def fake_load(path):
+        shade = 20 if Path(path).name == "top.jpg" else 40
+        return Image.new("RGB", (2, 2), (shade, 0, 0))
+
+    monkeypatch.setattr(photos, "_load_pil_still_image", fake_load)
+
+    library = photos.scan_pc_photos([{
+        "directory": str(tmp_path),
+        "recurse": False,
+        "media_types": ["photo"],
+    }])
+
+    assert [photo.display_name for photo in library.photos.values()] == ["top.jpg"]
+
+    disabled = photos.scan_pc_photos([{
+        "directory": str(tmp_path),
+        "recurse": True,
+        "media_types": ["music"],
+    }])
+
+    assert disabled.photos == {}

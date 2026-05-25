@@ -6,6 +6,7 @@ import copy
 from dataclasses import dataclass, fields
 from typing import Any, Protocol, TypeGuard, runtime_checkable
 
+from infrastructure.media_folders import media_folder_entries_to_settings
 from infrastructure.settings_schema import AppSettings, DeviceSettingsState
 
 
@@ -37,7 +38,7 @@ class SettingsSnapshot:
     log_dir: str
     backup_dir: str
     media_folder: str
-    media_folders: tuple[str, ...]
+    media_folders: tuple[dict[str, object], ...]
     write_back_to_pc: bool
     compute_sound_check: bool
     rotate_tall_photos_for_device: bool
@@ -88,7 +89,9 @@ class SettingsSnapshot:
         data = {}
         for field_info in fields(cls):
             value = getattr(settings, field_info.name)
-            if field_info.name in {"media_folders", "splitter_sizes"}:
+            if field_info.name == "media_folders":
+                value = tuple(media_folder_entries_to_settings(copy.deepcopy(value)))
+            elif field_info.name == "splitter_sizes":
                 value = tuple(value)
             elif field_info.name == "track_list_columns_by_content":
                 value = copy.deepcopy(value)

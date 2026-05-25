@@ -6,6 +6,7 @@ import json
 import os
 from dataclasses import asdict
 
+from .media_folders import media_folder_entries_to_settings
 from .settings_paths import (
     default_settings_dir,
     get_settings_path,
@@ -67,6 +68,8 @@ def load_app_settings() -> AppSettings:
                 expected_type = type(getattr(settings, key))
                 if isinstance(value, int) and expected_type is float:
                     value = float(value)
+                if key == "media_folders" and isinstance(value, list):
+                    value = media_folder_entries_to_settings(value)
                 if isinstance(value, expected_type):
                     setattr(settings, key, value)
 
