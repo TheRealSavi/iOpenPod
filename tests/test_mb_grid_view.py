@@ -3,7 +3,9 @@ from __future__ import annotations
 from typing import Any, cast
 
 from PIL import Image
-from PyQt6.QtWidgets import QScrollArea, QScrollBar
+from PyQt6.QtCore import QPoint, Qt
+from PyQt6.QtGui import QContextMenuEvent
+from PyQt6.QtWidgets import QApplication, QScrollArea, QScrollBar
 
 import GUI.imgMaker as img_maker
 from GUI.widgets.MBGridView import MusicBrowserGrid
@@ -34,10 +36,16 @@ def _build_items(
     return items
 
 
-def _mount_grid(qtbot, *, width: int = 920, height: int = 620) -> tuple[QScrollArea, MusicBrowserGrid]:
+def _mount_grid(
+    qtbot,
+    *,
+    width: int = 920,
+    height: int = 620,
+    multi_select: bool = False,
+) -> tuple[QScrollArea, MusicBrowserGrid]:
     scroll = QScrollArea()
     scroll.setWidgetResizable(True)
-    grid = MusicBrowserGrid()
+    grid = MusicBrowserGrid(multi_select_enabled=multi_select)
     scroll.setWidget(grid)
     grid.attachScrollArea(scroll)
 
@@ -56,6 +64,20 @@ def _scroll_bar(scroll: QScrollArea) -> QScrollBar:
     bar = scroll.verticalScrollBar()
     assert bar is not None
     return bar
+
+
+def _selected_titles(grid: MusicBrowserGrid) -> list[str]:
+    return [str(item.get("title")) for item in grid.selectedItemData()]
+
+
+def _send_context_menu(widget: MusicBrowserGridItem) -> None:
+    pos = widget.rect().center() if widget.rect().isValid() else QPoint(8, 8)
+    event = QContextMenuEvent(
+        QContextMenuEvent.Reason.Mouse,
+        pos,
+        widget.mapToGlobal(pos),
+    )
+    QApplication.sendEvent(widget, event)
 
 
 def _art_result(rgb: tuple[int, int, int]) -> tuple[int, int, bytes, tuple[int, int, int], dict]:
@@ -97,6 +119,128 @@ def test_grid_uses_bounded_widget_pool_and_recycles_on_scroll(qtbot):
     assert len(scrolled_widgets) < 100
     assert len(initial_widget_ids & scrolled_widget_ids) >= len(initial_widget_ids) // 2
     assert len(scrolled_widgets) == len(grid.gridItems) + len(grid._widget_pool)
+
+
+def test_grid_modifier_clicks_select_without_opening(qtbot):
+    _scroll, grid = _mount_grid(qtbot, multi_select=True)
+    grid.populateGrid(_build_items(20))
+    qtbot.waitUntil(lambda: len(grid.gridItems) >= 4, timeout=2000)
+
+    opened: list[str] = []
+    grid.item_selected.connect(lambda item: opened.append(str(item.get("title"))))
+    items = _grid_items(grid)
+
+    qtbot.mouseClick(
+        items[0],
+        Qt.MouseButton.LeftButton,
+        modifier=Qt.KeyboardModifier.ControlModifier,
+    )
+    assert opened == []
+    assert _selected_titles(grid) == ["Album 0000"]
+    assert items[0].isSelected()
+
+    qtbot.mouseClick(
+        items[2],
+        Qt.MouseButton.LeftButton,
+        modifier=Qt.KeyboardModifier.ShiftModifier,
+    )
+    assert opened == []
+    assert _selected_titles(grid) == ["Album 0000", "Album 0001", "Album 0002"]
+    assert [item.isSelected() for item in _grid_items(grid)[:3]] == [True, True, True]
+
+    qtbot.mouseClick(
+        items[1],
+        Qt.MouseButton.LeftButton,
+        modifier=Qt.KeyboardModifier.ControlModifier,
+    )
+    assert opened == []
+    assert _selected_titles(grid) == ["Album 0000", "Album 0002"]
+
+    qtbot.mouseClick(items[3], Qt.MouseButton.LeftButton)
+    assert opened == ["Album 0003"]
+    assert _selected_titles(grid) == ["Album 0000", "Album 0002"]
+
+
+def test_grid_modifier_click_opens_when_multi_select_is_disabled(qtbot):
+    _scroll, grid = _mount_grid(qtbot)
+    grid.populateGrid(_build_items(4))
+    qtbot.waitUntil(lambda: len(grid.gridItems) >= 1, timeout=2000)
+
+    opened: list[str] = []
+    grid.item_selected.connect(lambda item: opened.append(str(item.get("title"))))
+
+    qtbot.mouseClick(
+        _grid_items(grid)[0],
+        Qt.MouseButton.LeftButton,
+        modifier=Qt.KeyboardModifier.ControlModifier,
+    )
+
+    assert opened == ["Album 0000"]
+    assert _selected_titles(grid) == []
+
+
+def test_grid_context_menu_targets_selected_items_or_clicked_item(qtbot):
+    _scroll, grid = _mount_grid(qtbot, multi_select=True)
+    grid.populateGrid(_build_items(20))
+    qtbot.waitUntil(lambda: len(grid.gridItems) >= 4, timeout=2000)
+    first, second, third, fourth = _grid_items(grid)[:4]
+
+    captured: list[list[str]] = []
+    grid.item_context_requested.connect(
+        lambda items, _pos: captured.append(
+            [str(item.get("title")) for item in items]
+        )
+    )
+
+    qtbot.mouseClick(
+        first,
+        Qt.MouseButton.LeftButton,
+        modifier=Qt.KeyboardModifier.ControlModifier,
+    )
+    qtbot.mouseClick(
+        third,
+        Qt.MouseButton.LeftButton,
+        modifier=Qt.KeyboardModifier.ShiftModifier,
+    )
+
+    _send_context_menu(second)
+    assert captured[-1] == ["Album 0000", "Album 0001", "Album 0002"]
+
+    _send_context_menu(fourth)
+    assert captured[-1] == ["Album 0003"]
+    assert _selected_titles(grid) == ["Album 0003"]
+
+
+def test_grid_selection_survives_widget_recycling_without_leaking(qtbot):
+    scroll, grid = _mount_grid(qtbot, height=260, multi_select=True)
+    grid.populateGrid(_build_items(220))
+    qtbot.waitUntil(lambda: len(grid.gridItems) > 0, timeout=2000)
+
+    first = _grid_items(grid)[0]
+    qtbot.mouseClick(
+        first,
+        Qt.MouseButton.LeftButton,
+        modifier=Qt.KeyboardModifier.ControlModifier,
+    )
+    assert _selected_titles(grid) == ["Album 0000"]
+    assert first.isSelected()
+
+    bar = _scroll_bar(scroll)
+    bar.setValue(bar.maximum())
+    qtbot.waitUntil(
+        lambda: _grid_items(grid)
+        and _grid_items(grid)[0].item_data.get("title") != "Album 0000",
+        timeout=2000,
+    )
+    assert not any(item.isSelected() for item in _grid_items(grid))
+
+    bar.setValue(0)
+    qtbot.waitUntil(
+        lambda: _grid_items(grid)
+        and _grid_items(grid)[0].item_data.get("title") == "Album 0000",
+        timeout=2000,
+    )
+    assert _grid_items(grid)[0].isSelected()
 
 
 def test_grid_rebinds_cleanly_for_search_and_sort(qtbot):

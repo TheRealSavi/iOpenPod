@@ -101,3 +101,31 @@ def test_selective_sync_movie_only_folders_do_not_create_music_albums():
 
     assert set(browser._groups["Albums"]) == {"Music Album"}
     assert [track.title for track in browser._buckets["movie"]] == ["Movie"]
+
+
+def test_selective_sync_grid_item_actions_resolve_and_toggle_tracks():
+    tracks = [
+        _track("Song 1", "Album A/01 Song 1.mp3"),
+        _track("Song 2", "Album A/02 Song 2.mp3"),
+        _track("Song 3", "Album B/01 Song 3.mp3"),
+    ]
+    browser = _browser_with_tracks(tracks)
+    browser._current_mode = "Albums"
+    browser._selected_tracks = {track.path: True for track in tracks}
+
+    footer_updates: list[bool] = []
+    browser._update_footer = lambda: footer_updates.append(True)
+    browser._build_groups()
+
+    resolved = browser._tracks_for_grid_items([
+        {"title": "Album A"},
+        {"title": "Album B"},
+    ])
+    assert [track.title for track in resolved] == ["Song 1", "Song 2", "Song 3"]
+
+    browser._set_grid_tracks_checked(resolved[:2], False)
+
+    assert browser._selected_tracks[tracks[0].path] is False
+    assert browser._selected_tracks[tracks[1].path] is False
+    assert browser._selected_tracks[tracks[2].path] is True
+    assert footer_updates == [True]

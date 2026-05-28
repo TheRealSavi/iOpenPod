@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from PIL import Image
-from PyQt6.QtCore import QSize, Qt, pyqtSignal
+from PyQt6.QtCore import QPoint, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QCursor, QFont, QImage, QPixmap
 from PyQt6.QtWidgets import QFrame, QLabel, QVBoxLayout
 
@@ -56,6 +56,7 @@ class GridItemRenderState:
 class MusicBrowserGridItem(QFrame):
     """Reusable, clickable grid card for albums, artists, and genres."""
     clicked = pyqtSignal(dict)
+    context_requested = pyqtSignal(dict, QPoint)
 
     def __init__(self):
         """Initialize an empty widget that can be populated and recycled."""
@@ -72,6 +73,7 @@ class MusicBrowserGridItem(QFrame):
         self._render_state: GridItemRenderState | None = None
         self._applied_artwork_id: int | None = None
         self._rounded_artwork = False
+        self._selected = False
 
         self.setFixedSize(QSize(Metrics.GRID_ITEM_W, Metrics.GRID_ITEM_H))
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
@@ -146,6 +148,21 @@ class MusicBrowserGridItem(QFrame):
         self._applied_artwork_id = None
 
     def _setupStyle(self) -> None:
+        if self._selected:
+            self.setStyleSheet(f"""
+                QFrame {{
+                    background-color: {Colors.ACCENT_MUTED};
+                    border: 2px solid {Colors.ACCENT_BORDER};
+                    border-radius: {Metrics.BORDER_RADIUS_XL}px;
+                    color: {Colors.TEXT_PRIMARY};
+                }}
+                QFrame:hover {{
+                    background-color: {Colors.ACCENT_DIM};
+                    border: 2px solid {Colors.ACCENT_BORDER};
+                }}
+            """)
+            return
+
         self.setStyleSheet(f"""
             QFrame {{
                 background-color: {Colors.SURFACE_RAISED};
@@ -207,6 +224,10 @@ class MusicBrowserGridItem(QFrame):
 
     def _apply_color_theme(self, render_state: GridItemRenderState) -> None:
         """Apply theme styling derived from the artwork."""
+        if self._selected:
+            self._setupStyle()
+            return
+
         if not render_state.display_dominant_color:
             return
 
@@ -327,7 +348,28 @@ class MusicBrowserGridItem(QFrame):
         if self._model is not None:
             self._render_model()
 
+    def setSelected(self, selected: bool) -> None:
+        """Update the visual selected state for file-browser style grids."""
+        selected = bool(selected)
+        if self._selected == selected:
+            return
+        self._selected = selected
+        if self._model is not None:
+            self._render_model()
+        else:
+            self._setupStyle()
+
+    def isSelected(self) -> bool:
+        return self._selected
+
     def mousePressEvent(self, a0):
         if a0 and a0.button() == Qt.MouseButton.LeftButton:
             self.clicked.emit(self.item_data)
         super().mousePressEvent(a0)
+
+    def contextMenuEvent(self, a0):
+        if a0:
+            self.context_requested.emit(self.item_data, a0.globalPos())
+            a0.accept()
+            return
+        super().contextMenuEvent(a0)

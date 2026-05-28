@@ -2,10 +2,11 @@ import difflib
 import logging
 from collections.abc import Hashable, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from PIL import Image
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import QPoint, Qt, pyqtSignal
+from PyQt6.QtWidgets import QApplication
 
 from ..artwork_rendering import virtual_artwork_payload
 from .MBGridViewItem import GridItemModel, MusicBrowserGridItem
@@ -54,7 +55,7 @@ class GridRecord:
     """Normalized grid data used by the pooled viewport."""
 
     source: dict[str, Any]
-    key: tuple[Any, ...]
+    key: Hashable
     title: str
     subtitle: str
     payload: dict[str, Any]
@@ -79,6 +80,8 @@ class MusicBrowserGrid(PooledCardGrid):
     """Grid view that displays albums, artists, or genres as clickable items."""
 
     item_selected = pyqtSignal(dict)
+    item_context_requested = pyqtSignal(object, QPoint)
+    item_selection_changed = pyqtSignal(object)
 
     def __init__(
         self,
@@ -86,11 +89,13 @@ class MusicBrowserGrid(PooledCardGrid):
         device_sessions: "DeviceSessionService | None" = None,
         library_cache: "LibraryCacheLike | None" = None,
         settings_service: "SettingsService | None" = None,
+        multi_select_enabled: bool = False,
     ):
         super().__init__()
         self._device_sessions = device_sessions
         self._library_cache = library_cache
         self._settings_service = settings_service
+        self._multi_select_enabled = multi_select_enabled
 
         self._current_category = "Albums"
 
@@ -104,6 +109,8 @@ class MusicBrowserGrid(PooledCardGrid):
         self._art_cache: dict[Hashable, ArtworkResult | None] = {}
         self._art_pending: set[Hashable] = set()
         self._art_seen: set[Hashable] = set()
+        self._selected_record_keys: set[Hashable] = set()
+        self._selection_anchor_key: Hashable | None = None
 
     def loadCategory(self, category: str) -> None:
         """Load and display items for the specified category."""
@@ -170,6 +177,7 @@ class MusicBrowserGrid(PooledCardGrid):
         if not preserve_all_items:
             self._all_items = []
             self._records = []
+            self._clear_item_selection(emit_signal=False)
         super().clearGrid(preserve_all_items=False)
 
     def invalidate_artwork_cache(self, *, clear_visible: bool = True) -> None:
@@ -185,15 +193,15 @@ class MusicBrowserGrid(PooledCardGrid):
                     widget.apply_image_result(None, None, None)
 
     @staticmethod
-    def _item_key(item: dict[str, Any]) -> tuple[Any, ...]:
-        return (
+    def _item_key(item: dict[str, Any]) -> Hashable:
+        return cast(Hashable, (
             item.get("category", ""),
             item.get("album") or "",
             item.get("artist") or "",
             item.get("title") or "",
             item.get("filter_key") or "",
             item.get("filter_value") or "",
-        )
+        ))
 
     @classmethod
     def _build_record(cls, item: dict[str, Any]) -> GridRecord:
@@ -273,12 +281,133 @@ class MusicBrowserGrid(PooledCardGrid):
             key=_key_fn,
             reverse=self._sort_reverse,
         )
+        selection_changed = self._prune_item_selection_to(self._visible_records)
         self._set_viewport_records(
             self._visible_records,
             reset_scroll=reset_scroll,
             preserve_selection=False,
             fallback_index=-1,
         )
+        if selection_changed:
+            self.item_selection_changed.emit(self.selectedItemData())
+
+    def selectedItemData(self) -> list[dict[str, Any]]:
+        """Return selected item payloads in the current visible grid order."""
+        if not self._selected_record_keys:
+            return []
+        return [
+            dict(record.payload)
+            for record in self._visible_records
+            if record.key in self._selected_record_keys
+        ]
+
+    def clearItemSelection(self) -> None:
+        """Clear file-browser style grid selection."""
+        self._clear_item_selection(emit_signal=True)
+
+    def _clear_item_selection(self, *, emit_signal: bool) -> None:
+        if not self._selected_record_keys and self._selection_anchor_key is None:
+            return
+        self._selected_record_keys.clear()
+        self._selection_anchor_key = None
+        self._sync_visible_selection()
+        if emit_signal:
+            self.item_selection_changed.emit([])
+
+    def _prune_item_selection_to(self, records: Sequence[GridRecord]) -> bool:
+        if not self._selected_record_keys and self._selection_anchor_key is None:
+            return False
+
+        valid_keys = {record.key for record in records}
+        next_keys = self._selected_record_keys & valid_keys
+        changed = next_keys != self._selected_record_keys
+        self._selected_record_keys = next_keys
+
+        if self._selection_anchor_key not in valid_keys:
+            if self._selection_anchor_key is not None:
+                changed = True
+            self._selection_anchor_key = None
+
+        return changed
+
+    def _set_item_selection_keys(
+        self,
+        keys: set[Hashable],
+        *,
+        anchor_key: Hashable | None,
+    ) -> None:
+        valid_keys = {record.key for record in self._visible_records}
+        next_keys = keys & valid_keys
+        next_anchor = anchor_key if anchor_key in valid_keys else None
+        if (
+            self._selected_record_keys == next_keys
+            and self._selection_anchor_key == next_anchor
+        ):
+            return
+
+        self._selected_record_keys = next_keys
+        self._selection_anchor_key = next_anchor
+        self._sync_visible_selection()
+        self.item_selection_changed.emit(self.selectedItemData())
+
+    def _record_index_for_item_data(self, item_data: dict[str, Any]) -> int | None:
+        key = self._item_key(item_data)
+        for index, record in enumerate(self._visible_records):
+            if record.key == key:
+                return index
+        return None
+
+    def _selection_anchor_index(self) -> int | None:
+        if self._selection_anchor_key is None:
+            return None
+        for index, record in enumerate(self._visible_records):
+            if record.key == self._selection_anchor_key:
+                return index
+        return None
+
+    def _apply_selection_click(
+        self,
+        record_index: int,
+        modifiers: Any,
+    ) -> bool:
+        if not self._multi_select_enabled:
+            return False
+
+        ctrl = bool(
+            modifiers
+            & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.MetaModifier)
+        )
+        shift = bool(modifiers & Qt.KeyboardModifier.ShiftModifier)
+        if not ctrl and not shift:
+            return False
+        if not (0 <= record_index < len(self._visible_records)):
+            return True
+
+        clicked_key = self._visible_records[record_index].key
+        selected = set(self._selected_record_keys)
+        anchor_key = self._selection_anchor_key
+
+        if shift:
+            anchor_index = self._selection_anchor_index()
+            if anchor_index is None:
+                anchor_index = record_index
+                anchor_key = clicked_key
+
+            lo, hi = sorted((anchor_index, record_index))
+            range_keys = {
+                self._visible_records[index].key
+                for index in range(lo, hi + 1)
+            }
+            selected = selected | range_keys if ctrl else range_keys
+        elif ctrl:
+            if clicked_key in selected:
+                selected.remove(clicked_key)
+            else:
+                selected.add(clicked_key)
+            anchor_key = clicked_key
+
+        self._set_item_selection_keys(selected, anchor_key=anchor_key)
+        return True
 
     def _model_for_record(
         self,
@@ -312,6 +441,7 @@ class MusicBrowserGrid(PooledCardGrid):
     def _connect_widget(self, widget) -> None:
         if isinstance(widget, MusicBrowserGridItem):
             widget.clicked.connect(self._onItemClicked)
+            widget.context_requested.connect(self._onItemContextRequested)
 
     def _bind_widget(
         self,
@@ -323,6 +453,19 @@ class MusicBrowserGrid(PooledCardGrid):
         cached_artwork = self._lookup_cached_artwork(record)
         widget.set_rounded_artwork(self._rounded_artwork_enabled())
         widget.set_model(self._model_for_record(record, cached_artwork))
+
+    def _apply_widget_selection(self, widget, selected: bool) -> None:
+        if not isinstance(widget, MusicBrowserGridItem):
+            return
+        if not self._multi_select_enabled:
+            widget.setSelected(False)
+            return
+        record_index = self._record_index_for_widget(widget)
+        if record_index is None or not (0 <= record_index < len(self._visible_records)):
+            widget.setSelected(False)
+            return
+        record = self._visible_records[record_index]
+        widget.setSelected(record.key in self._selected_record_keys)
 
     def _after_viewport_refresh(self) -> None:
         self._load_art_async()
@@ -538,7 +681,30 @@ class MusicBrowserGrid(PooledCardGrid):
             self._apply_art_to_widget(widget, record)
 
     def _onItemClicked(self, item_data: dict) -> None:
+        record_index = self._record_index_for_item_data(item_data)
+        if record_index is not None and self._apply_selection_click(
+            record_index,
+            QApplication.keyboardModifiers(),
+        ):
+            return
         self.item_selected.emit(item_data)
+
+    def _onItemContextRequested(self, item_data: dict, global_pos: QPoint) -> None:
+        if not self._multi_select_enabled:
+            self.item_context_requested.emit([dict(item_data)], global_pos)
+            return
+
+        record_index = self._record_index_for_item_data(item_data)
+        if record_index is None:
+            return
+
+        clicked_key = self._visible_records[record_index].key
+        if clicked_key not in self._selected_record_keys:
+            self._set_item_selection_keys({clicked_key}, anchor_key=clicked_key)
+
+        targets = self.selectedItemData()
+        if targets:
+            self.item_context_requested.emit(targets, global_pos)
 
     def refresh_artwork_appearance(self) -> None:
         """Re-render visible artwork using the current UI appearance settings."""

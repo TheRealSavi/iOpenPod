@@ -15,13 +15,14 @@ from collections import defaultdict, deque
 from typing import TYPE_CHECKING
 
 from PIL import Image, ImageOps
-from PyQt6.QtCore import QSize, Qt, QThread, QTimer, pyqtSignal
+from PyQt6.QtCore import QPoint, QSize, Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QCursor, QFont, QImage, QPixmap
 from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QMenu,
     QPushButton,
     QSplitter,
     QStackedWidget,
@@ -176,7 +177,10 @@ class PCMusicBrowserGrid(MusicBrowserGrid):
     (or folder images) instead of the iPod ArtworkDB."""
 
     def __init__(self, *, settings_service: SettingsService | None = None):
-        super().__init__(settings_service=settings_service)
+        super().__init__(
+            settings_service=settings_service,
+            multi_select_enabled=True,
+        )
         self._pc_art_map: dict[str, list[str]] = {}
         self._pc_mode = False
 
@@ -1358,6 +1362,7 @@ class SelectiveSyncBrowser(QWidget):
                     "Podcasts", "Audiobooks", "TV Shows", "Music Videos"):
             grid = PCMusicBrowserGrid(settings_service=self._settings_service)
             grid.item_selected.connect(self._on_grid_item_clicked)
+            grid.item_context_requested.connect(self._on_grid_item_context_requested)
             scroll = make_scroll_area()
             scroll.setVerticalScrollBarPolicy(
                 Qt.ScrollBarPolicy.ScrollBarAsNeeded
@@ -1489,6 +1494,7 @@ class SelectiveSyncBrowser(QWidget):
             grid._art_cache.clear()
             grid._art_pending.clear()
             grid._art_seen.clear()
+            grid.clearItemSelection()
 
         self._folder_label.setText(_folder_label(self._folders))
 
@@ -2003,6 +2009,81 @@ class SelectiveSyncBrowser(QWidget):
         self._track_list.setBackVisible(True)
         self._track_list.setTracks(tracks, self._selected_tracks)
         self._content.setCurrentIndex(2)
+
+    def _on_grid_item_context_requested(self, item_data_list: object, global_pos: QPoint):
+        items = [
+            dict(item)
+            for item in item_data_list
+            if isinstance(item, dict)
+        ] if isinstance(item_data_list, list) else []
+        tracks = self._tracks_for_grid_items(items)
+        if not tracks:
+            return
+
+        multi = len(items) > 1
+        add_label = "Add Selected to Queue" if multi else "Add to Queue"
+        remove_label = "Remove Selected from Queue" if multi else "Remove from Queue"
+
+        menu = QMenu(self)
+        menu.setStyleSheet(f"""
+            QMenu {{
+                background: {Colors.MENU_BG};
+                color: {Colors.TEXT_PRIMARY};
+                border: 1px solid {Colors.BORDER};
+                padding: 4px 0;
+            }}
+            QMenu::item {{
+                padding: 6px 24px 6px 12px;
+            }}
+            QMenu::item:selected {{
+                background: {Colors.ACCENT_DIM};
+            }}
+            QMenu::separator {{
+                height: 1px;
+                background: {Colors.BORDER_SUBTLE};
+                margin: 4px 8px;
+            }}
+        """)
+        add_action = menu.addAction(add_label)
+        remove_action = menu.addAction(remove_label)
+
+        action = menu.exec(global_pos)
+        if action == add_action:
+            self._set_grid_tracks_checked(tracks, True)
+        elif action == remove_action:
+            self._set_grid_tracks_checked(tracks, False)
+
+    def _tracks_for_grid_items(self, items: list[dict]) -> list:
+        groups = self._groups.get(self._current_mode, {})
+        tracks: list = []
+        seen_paths: set[str] = set()
+        for item in items:
+            key = item.get("title", "")
+            group = groups.get(key)
+            if group is None:
+                continue
+            for track in group.get("tracks", []):
+                path = getattr(track, "path", "")
+                if path in seen_paths:
+                    continue
+                seen_paths.add(path)
+                tracks.append(track)
+        return tracks
+
+    def _set_grid_tracks_checked(self, tracks: list, checked: bool):
+        changed = False
+        for track in tracks:
+            path = getattr(track, "path", "")
+            if not path:
+                continue
+            if self._selected_tracks.get(path, True) != checked:
+                changed = True
+            self._selected_tracks[path] = checked
+        content = self.__dict__.get("_content")
+        if isinstance(content, QStackedWidget) and content.currentIndex() == 2:
+            self._track_list.updateCheckStates(self._selected_tracks)
+        if changed:
+            self._update_footer()
 
     def _on_track_back(self):
         self._current_group = None
