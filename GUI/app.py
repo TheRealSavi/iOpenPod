@@ -43,7 +43,7 @@ from app_core.jobs import (
     ToolDownloadWorker,
     build_imported_photo_edit_state,
     check_sync_tool_availability,
-    collect_media_file_paths,
+    collect_import_file_paths,
     is_media_drop_candidate,
 )
 from app_core.runtime import (
@@ -1466,8 +1466,17 @@ class MainWindow(QMainWindow):
         skip_backup = getattr(self.syncReview, '_skip_presync_backup', False)
 
         # Gather GUI state to pass to executor (instead of it pulling from GUI)
-        cache = self.library_cache
-        user_playlists = cache.get_user_playlists()
+        user_playlists: list[dict] = []
+        seen_playlist_ids: set[object] = set()
+        for playlist in (
+            filtered_plan.playlists_to_add + filtered_plan.playlists_to_edit
+        ):
+            playlist_id = playlist.get("playlist_id")
+            if playlist_id and playlist_id in seen_playlist_ids:
+                continue
+            if playlist_id:
+                seen_playlist_ids.add(playlist_id)
+            user_playlists.append(playlist)
 
         def _on_sync_complete():
             """Called by executor after successful DB write to clear pending state."""
@@ -1636,11 +1645,13 @@ class MainWindow(QMainWindow):
         if mime and mime.hasUrls():
             caps = self.device_session_service.current_session().capabilities
             include_video = bool(caps.supports_video) if caps is not None else True
+            include_photo = bool(caps.supports_photo) if caps is not None else True
             for url in mime.urls():
                 if url.isLocalFile():
                     if is_media_drop_candidate(
                         Path(url.toLocalFile()),
                         include_video=include_video,
+                        include_photo=include_photo,
                     ):
                         a0.acceptProposedAction()
                         self._drop_overlay.show_overlay()
@@ -1648,8 +1659,10 @@ class MainWindow(QMainWindow):
         a0.ignore()
 
     def dragMoveEvent(self, a0):
-        if a0:
+        if a0 and self._drop_overlay.isVisible():
             a0.acceptProposedAction()
+        elif a0:
+            a0.ignore()
 
     def dragLeaveEvent(self, a0):
         self._drop_overlay.hide_overlay()
@@ -1676,8 +1689,14 @@ class MainWindow(QMainWindow):
         caps = self.device_session_service.current_session().capabilities
         supports_video = bool(caps.supports_video) if caps is not None else True
         supports_podcast = bool(caps.supports_podcast) if caps is not None else True
-        file_paths = collect_media_file_paths(paths, include_video=supports_video)
-        if not file_paths:
+        supports_photo = bool(caps.supports_photo) if caps is not None else True
+        dropped_files = collect_import_file_paths(
+            paths,
+            include_video=supports_video,
+            include_photo=supports_photo,
+            include_playlist=True,
+        )
+        if not dropped_files.has_files:
             return
 
         # Remember whether we already have a plan to merge into
@@ -1690,12 +1709,24 @@ class MainWindow(QMainWindow):
         self.centralStack.setCurrentIndex(1)
         self.syncReview.show_loading()
         self.syncReview.loading_label.setText("Reading dropped files...")
+        settings = self.settings_service.get_effective_settings()
+        device_manager = self.device_manager
 
         # Run metadata reading in background thread
         self._drop_worker = DropScanWorker(
-            file_paths,
+            list(dropped_files.track_paths),
+            photo_imports=dropped_files.photo_imports,
+            playlist_paths=dropped_files.playlist_paths,
+            ipod_path=device_manager.device_path or "",
             supports_video=supports_video,
             supports_podcast=supports_podcast,
+            supports_photo=supports_photo,
+            photo_sync_settings={
+                "rotate_tall_photos_for_device": (
+                    settings.rotate_tall_photos_for_device
+                ),
+                "fit_photo_thumbnails": settings.fit_photo_thumbnails,
+            },
         )
         self._drop_worker.finished.connect(self._on_drop_scan_complete)
         self._drop_worker.error.connect(self._onSyncError)
@@ -1705,7 +1736,11 @@ class MainWindow(QMainWindow):
         """Merge dropped-file plan into any existing plan, then show."""
         if self._drop_merge and self._plan is not None:
             self._plan.to_add.extend(plan.to_add)
+            self._plan.playlists_to_add.extend(plan.playlists_to_add)
             self._plan.storage.bytes_to_add += plan.storage.bytes_to_add
+            self._plan.storage.bytes_to_remove += plan.storage.bytes_to_remove
+            if plan.photo_plan is not None and self._plan.photo_plan is None:
+                self._plan.photo_plan = plan.photo_plan
             self.syncReview.show_plan(self._plan)
         else:
             self._plan = plan

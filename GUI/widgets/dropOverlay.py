@@ -3,12 +3,12 @@ Drop overlay widget — shows a translucent overlay with centered text
 when files are dragged over the main window.
 """
 
-from PyQt6.QtCore import Qt, QRectF
-from PyQt6.QtGui import QPainter, QFont, QColor, QPen, QPainterPath
+from PyQt6.QtCore import QRectF, Qt
+from PyQt6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
 from PyQt6.QtWidgets import QWidget
 
-from GUI.styles import Colors, FONT_FAMILY
 from GUI.glyphs import glyph_pixmap
+from GUI.styles import FONT_FAMILY, Colors
 
 
 def _qcolor(css: str) -> QColor:
@@ -28,7 +28,7 @@ class DropOverlayWidget(QWidget):
 
     def __init__(self, parent: QWidget):
         super().__init__(parent)
-        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.setAcceptDrops(False)  # Parent handles drop events
         self.hide()
 
@@ -79,7 +79,7 @@ class DropOverlayWidget(QWidget):
 
         # Icon
         icon_size = (56)
-        icon_px = glyph_pixmap("music", icon_size, Colors.ACCENT)
+        icon_px = glyph_pixmap("download", icon_size, Colors.ACCENT)
         if icon_px:
             painter.drawPixmap(
                 int(cx - icon_size / 2),
@@ -94,14 +94,19 @@ class DropOverlayWidget(QWidget):
         painter.setFont(primary_font)
         primary_rect = QRectF(inner.left(), cy + (4), inner.width(), (36))
         painter.drawText(primary_rect, Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop,
-                         "Drop files to add to iPod")
+                         "Drop files to import")
 
         # Secondary hint text
         painter.setPen(_qcolor(Colors.TEXT_SECONDARY))
         hint_font = QFont(FONT_FAMILY, (12))
         painter.setFont(hint_font)
-        hint_rect = QRectF(inner.left(), cy + (42), inner.width(), (24))
-        painter.drawText(hint_rect, Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop,
-                         "Audio files and folders supported")
+        hint_rect = QRectF(inner.left(), cy + (42), inner.width(), (44))
+        painter.drawText(
+            hint_rect,
+            Qt.AlignmentFlag.AlignHCenter
+            | Qt.AlignmentFlag.AlignTop
+            | Qt.TextFlag.TextWordWrap,
+            "Music, videos, photos, audiobooks, playlists, and folders",
+        )
 
         painter.end()

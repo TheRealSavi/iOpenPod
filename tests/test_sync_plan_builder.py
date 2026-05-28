@@ -138,6 +138,49 @@ def test_build_filtered_sync_plan_can_exclude_playlists() -> None:
     assert filtered.playlists_to_remove == []
 
 
+def test_build_filtered_sync_plan_recomputes_selected_storage() -> None:
+    add = SyncItem(
+        action=SyncAction.ADD_TO_IPOD,
+        estimated_size=100,
+    )
+    file_update = SyncItem(
+        action=SyncAction.UPDATE_FILE,
+        estimated_size=200,
+    )
+    remove = SyncItem(
+        action=SyncAction.REMOVE_FROM_IPOD,
+        ipod_track={"size": 50},
+    )
+    photo_plan = PhotoSyncPlan()
+    photo_plan.photos_to_add = [PhotoSyncItem("hash-a", "A")]
+    photo_plan.thumb_bytes_to_add = 300
+
+    filtered = build_filtered_sync_plan(
+        SyncPlan(),
+        [add, file_update, remove],
+        selected_photo_plan=photo_plan,
+    )
+
+    assert filtered.storage.bytes_to_add == 400
+    assert filtered.storage.bytes_to_update == 200
+    assert filtered.storage.bytes_to_remove == 50
+
+
+def test_build_filtered_sync_plan_accepts_single_pass_iterables() -> None:
+    add = SyncItem(
+        action=SyncAction.ADD_TO_IPOD,
+        estimated_size=100,
+    )
+
+    filtered = build_filtered_sync_plan(
+        SyncPlan(),
+        (item for item in [add]),
+    )
+
+    assert filtered.to_add == [add]
+    assert filtered.storage.bytes_to_add == 100
+
+
 def test_build_selected_photo_plan_filters_checked_groups() -> None:
     desired_library = PCPhotoLibrary(sync_root="C:/Photos")
     original = PhotoSyncPlan(

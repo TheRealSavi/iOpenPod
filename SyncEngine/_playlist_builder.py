@@ -7,6 +7,8 @@ ready for write_itunesdb().
 
 import base64
 import logging
+import os
+from pathlib import Path
 
 from iTunesDB_Writer.mhit_writer import TrackInfo
 from iTunesDB_Writer.mhod_spl_writer import prefs_from_parsed, rules_from_parsed
@@ -158,12 +160,20 @@ def decode_raw_blob(value) -> bytes | None:
     return None
 
 
+def _source_path_key(path: str) -> str:
+    try:
+        return os.path.normcase(str(Path(path).expanduser().resolve()))
+    except OSError:
+        return os.path.normcase(str(Path(path).expanduser()))
+
+
 def build_and_evaluate_playlists(
     existing_tracks_data: list[dict],
     existing_playlists_raw: list[dict],
     existing_smart_raw: list[dict],
     all_track_infos: list[TrackInfo],
     user_playlists: list[dict],
+    source_path_to_db_track_id: dict[str, int] | None = None,
 ) -> tuple[str, list[PlaylistInfo], list[PlaylistInfo]]:
     """Build PlaylistInfo lists and evaluate smart playlist rules.
 
@@ -183,9 +193,15 @@ def build_and_evaluate_playlists(
     valid_db_track_ids: set[int] = {t.db_track_id for t in all_track_infos if t.db_track_id}
     eval_tracks = [trackinfo_to_eval_dict(t) for t in all_track_infos]
 
+    source_lookup = {
+        _source_path_key(path): db_track_id
+        for path, db_track_id in (source_path_to_db_track_id or {}).items()
+    }
+
     master_name, master_id, playlists = _build_regular_playlists(
         existing_playlists_raw, old_tid_to_db_track_id,
         valid_db_track_ids, eval_tracks, spl_update,
+        source_lookup,
     )
     _sanitize_playlists(playlists, master_id)
     _rebuild_podcast_playlist(playlists, all_track_infos)
@@ -218,6 +234,7 @@ def _build_regular_playlists(
     valid_db_track_ids: set[int],
     eval_tracks: list[dict],
     spl_update,
+    source_path_to_db_track_id: dict[str, int],
 ) -> tuple[str, int | None, list[PlaylistInfo]]:
     """Build dataset-2 playlists, returning (master_name, master_id, playlists)."""
     master_playlist_name = "iPod"
@@ -238,6 +255,13 @@ def _build_regular_playlists(
             db_track_id = old_tid_to_db_track_id.get(tid, 0)
             if not db_track_id:
                 db_track_id = item.get("db_track_id", item.get("db_id", 0))
+            if not db_track_id:
+                source_path = item.get("source_path") or item.get("_source_path")
+                if source_path:
+                    db_track_id = source_path_to_db_track_id.get(
+                        _source_path_key(str(source_path)),
+                        0,
+                    )
             try:
                 db_track_id = int(db_track_id or 0)
             except (TypeError, ValueError):

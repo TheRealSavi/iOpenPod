@@ -112,6 +112,20 @@ def test_scan_accepts_multiple_library_roots(tmp_path, monkeypatch):
     }
 
 
+def test_scan_marks_audible_containers_as_audiobooks(tmp_path, monkeypatch):
+    book = tmp_path / "book.aax"
+    book.write_bytes(b"audio")
+
+    monkeypatch.setattr(pc_library_module, "MUTAGEN_AVAILABLE", True)
+    monkeypatch.setattr(PCLibrary, "_extract_metadata", lambda self, audio, ext, file_path=None: {})
+    monkeypatch.setattr(PCLibrary, "_compute_art_hash", lambda self, file_path: None)
+
+    tracks = list(PCLibrary(tmp_path).scan(include_video=False))
+
+    assert len(tracks) == 1
+    assert tracks[0].is_audiobook is True
+
+
 def test_scan_deduplicates_overlapping_library_roots(tmp_path, monkeypatch):
     album = tmp_path / "Music" / "Album"
     album.mkdir(parents=True)

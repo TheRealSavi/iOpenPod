@@ -31,12 +31,24 @@ NON_NATIVE_LOSSLESS: frozenset[str] = frozenset({
 
 # Lossy non-native → AAC
 NON_NATIVE_LOSSY: frozenset[str] = frozenset({
-    ".ogg", ".opus", ".wma",
+    ".ogg", ".opus", ".wma", ".aa", ".aax",
 })
 
 # Non-native video → H.264/AAC re-encode
 NON_NATIVE_VIDEO: frozenset[str] = frozenset({
-    ".mov", ".mkv", ".avi",
+    ".mov", ".mkv", ".avi", ".webm", ".wmv", ".mpg", ".mpeg", ".3gp",
+    ".3g2", ".flv", ".mts", ".m2ts", ".ts", ".ogv",
+})
+
+# Still images that can be imported into the iPod photo database.
+PHOTO_EXTENSIONS: frozenset[str] = frozenset({
+    ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tif", ".tiff",
+    ".webp", ".heic", ".heif",
+})
+
+# Playlist formats parsed by SyncEngine.playlist_parser.
+PLAYLIST_EXTENSIONS: frozenset[str] = frozenset({
+    ".m3u", ".m3u8", ".pls", ".xspf",
 })
 
 # All extensions that always require transcoding (audio)
@@ -58,3 +70,8 @@ VIDEO_EXTENSIONS: frozenset[str] = IPOD_NATIVE_VIDEO | NON_NATIVE_VIDEO
 
 # All supported media extensions (used for scanning / orphan detection)
 MEDIA_EXTENSIONS: frozenset[str] = AUDIO_EXTENSIONS | VIDEO_EXTENSIONS
+
+# All extensions accepted by drag-and-drop import.
+IMPORT_EXTENSIONS: frozenset[str] = (
+    MEDIA_EXTENSIONS | PHOTO_EXTENSIONS | PLAYLIST_EXTENSIONS
+)

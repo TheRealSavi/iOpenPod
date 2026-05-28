@@ -705,6 +705,13 @@ class SyncExecutor:
                      len(ctx.pc_file_paths))
 
     @staticmethod
+    def _source_path_key(path: str) -> str:
+        try:
+            return os.path.normcase(str(Path(path).expanduser().resolve()))
+        except OSError:
+            return os.path.normcase(str(Path(path).expanduser()))
+
+    @staticmethod
     def _normalize_artwork_pc_paths(
         ctx: _SyncContext,
         all_tracks: list[TrackInfo],
@@ -2521,12 +2528,19 @@ class SyncExecutor:
     ) -> tuple[str, list[PlaylistInfo], list[PlaylistInfo]]:
         """Build PlaylistInfo lists and evaluate smart playlist rules."""
         from ._playlist_builder import build_and_evaluate_playlists
+
+        source_path_to_db_track_id = {
+            self._source_path_key(track.source_path): track.db_track_id
+            for track in all_track_infos
+            if track.source_path and track.db_track_id
+        }
         return build_and_evaluate_playlists(
             ctx.existing_tracks_data,
             ctx.existing_playlists_raw,
             ctx.existing_smart_raw,
             all_track_infos,
             ctx.user_playlists,
+            source_path_to_db_track_id,
         )
 
     @staticmethod

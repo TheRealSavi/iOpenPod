@@ -104,7 +104,11 @@ def build_filtered_sync_plan(
 ) -> Any:
     """Build the executable plan from checked sync-review items."""
 
-    from SyncEngine.fingerprint_diff_engine import SyncAction, SyncPlan
+    from SyncEngine.fingerprint_diff_engine import StorageSummary, SyncAction, SyncPlan
+
+    from .sync_review_model import sync_item_size_delta
+
+    selected_items = tuple(selected_items)
 
     grouped: dict[Any, list[Any]] = {
         SyncAction.ADD_TO_IPOD: [],
@@ -120,6 +124,21 @@ def build_filtered_sync_plan(
         bucket = grouped.get(item.action)
         if bucket is not None:
             bucket.append(item)
+
+    bytes_to_add = 0
+    bytes_to_remove = 0
+    bytes_to_update = 0
+    for item in selected_items:
+        add_delta, remove_delta = sync_item_size_delta(item)
+        if item.action == SyncAction.UPDATE_FILE:
+            bytes_to_update += add_delta
+        else:
+            bytes_to_add += add_delta
+        bytes_to_remove += remove_delta
+
+    if selected_photo_plan is not None:
+        bytes_to_add += int(getattr(selected_photo_plan, "thumb_bytes_to_add", 0) or 0)
+        bytes_to_remove += int(getattr(selected_photo_plan, "thumb_bytes_to_remove", 0) or 0)
 
     return SyncPlan(
         to_add=grouped[SyncAction.ADD_TO_IPOD],
@@ -137,6 +156,11 @@ def build_filtered_sync_plan(
         if original_plan
         else [],
         mapping=original_plan.mapping if original_plan else None,
+        storage=StorageSummary(
+            bytes_to_add=bytes_to_add,
+            bytes_to_remove=bytes_to_remove,
+            bytes_to_update=bytes_to_update,
+        ),
         playlists_to_add=(
             original_plan.playlists_to_add
             if original_plan and include_playlists

@@ -210,3 +210,33 @@ def test_cached_playlist_items_can_reference_db_track_ids() -> None:
 
     imported = next(playlist for playlist in playlists if playlist.playlist_id == 2)
     assert imported.track_ids == [100]
+
+
+def test_cached_playlist_items_can_reference_source_paths(tmp_path) -> None:
+    source = tmp_path / "Imported.mp3"
+    source.write_bytes(b"audio")
+    track = TrackInfo(
+        title="Imported",
+        location=":iPod_Control:Music:F00:IMPT.mp3",
+        db_track_id=100,
+        source_path=str(source),
+    )
+
+    _master_name, playlists, _smart_playlists = build_and_evaluate_playlists(
+        [],
+        [
+            {"playlist_id": 1, "Title": "iPod", "master_flag": 1},
+            {
+                "playlist_id": 2,
+                "Title": "Imported",
+                "items": [{"source_path": str(source)}],
+            },
+        ],
+        [],
+        [track],
+        [],
+        {str(source): 100},
+    )
+
+    imported = next(playlist for playlist in playlists if playlist.playlist_id == 2)
+    assert imported.track_ids == [100]

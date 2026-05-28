@@ -26,6 +26,8 @@ from infrastructure.media_folders import (
 from ipod_device import ITHMB_FORMAT_MAP, photo_formats_for_device
 from ipod_device.capabilities import ArtworkFormat
 
+from ._formats import PHOTO_EXTENSIONS
+
 logger = logging.getLogger(__name__)
 
 _PHOTO_DB_RELATIVE = Path("Photos") / "Photo Database"
@@ -58,10 +60,7 @@ _ROTATABLE_PHOTO_ROLES = frozenset({"photo_full", "photo_preview", "photo_large"
 _FULL_RES_ROTATION_ROLES = frozenset({"photo_full", "photo_preview", "photo_large"})
 PhotoMappingEntry = dict[str, object]
 _THUMBNAIL_PHOTO_ROLES = frozenset({"photo_thumb", "photo_list"})
-_SUPPORTED_IMAGE_EXTENSIONS = {
-    ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tif", ".tiff",
-    ".webp", ".heic", ".heif",
-}
+_SUPPORTED_IMAGE_EXTENSIONS = PHOTO_EXTENSIONS
 _DECOMPRESSION_BOMB_ERROR = getattr(Image, "DecompressionBombError", None)
 _PIL_LOAD_ERRORS = tuple(
     err

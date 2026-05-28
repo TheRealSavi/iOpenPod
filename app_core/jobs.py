@@ -119,10 +119,34 @@ class ToolDownloadWorker(QThread):
             self.error.emit(str(exc))
 
 
-def is_media_drop_candidate(path: Path, *, include_video: bool = True) -> bool:
+@dataclass(frozen=True)
+class DroppedImportFiles:
+    """Dropped files grouped by the importer that will handle them."""
+
+    track_paths: tuple[Path, ...] = ()
+    photo_imports: tuple[tuple[str, str], ...] = ()
+    playlist_paths: tuple[Path, ...] = ()
+
+    @property
+    def has_files(self) -> bool:
+        return bool(self.track_paths or self.photo_imports or self.playlist_paths)
+
+
+def is_media_drop_candidate(
+    path: Path,
+    *,
+    include_video: bool = True,
+    include_photo: bool = True,
+    include_playlist: bool = True,
+) -> bool:
     """Return whether a path should activate the media drop overlay."""
 
-    return path.is_dir() or is_supported_media_file(path, include_video=include_video)
+    return path.is_dir() or has_supported_import_extension(
+        path,
+        include_video=include_video,
+        include_photo=include_photo,
+        include_playlist=include_playlist,
+    )
 
 
 def is_supported_media_file(path: Path, *, include_video: bool = True) -> bool:
@@ -134,6 +158,99 @@ def is_supported_media_file(path: Path, *, include_video: bool = True) -> bool:
     return path.is_file() and path.suffix.lower() in extensions
 
 
+def has_supported_media_extension(path: Path, *, include_video: bool = True) -> bool:
+    """Return whether a path name looks like a supported media file."""
+
+    from SyncEngine._formats import AUDIO_EXTENSIONS, MEDIA_EXTENSIONS
+
+    extensions = MEDIA_EXTENSIONS if include_video else AUDIO_EXTENSIONS
+    return path.suffix.lower() in extensions
+
+
+def is_supported_photo_file(path: Path) -> bool:
+    """Return whether a path is a supported photo import file."""
+
+    from SyncEngine._formats import PHOTO_EXTENSIONS
+
+    return path.is_file() and path.suffix.lower() in PHOTO_EXTENSIONS
+
+
+def has_supported_photo_extension(path: Path) -> bool:
+    """Return whether a path name looks like a supported photo import file."""
+
+    from SyncEngine._formats import PHOTO_EXTENSIONS
+
+    return path.suffix.lower() in PHOTO_EXTENSIONS
+
+
+def is_supported_playlist_file(path: Path) -> bool:
+    """Return whether a path is a supported playlist import file."""
+
+    from SyncEngine._formats import PLAYLIST_EXTENSIONS
+
+    return path.is_file() and path.suffix.lower() in PLAYLIST_EXTENSIONS
+
+
+def has_supported_playlist_extension(path: Path) -> bool:
+    """Return whether a path name looks like a supported playlist import file."""
+
+    from SyncEngine._formats import PLAYLIST_EXTENSIONS
+
+    return path.suffix.lower() in PLAYLIST_EXTENSIONS
+
+
+def is_supported_import_file(
+    path: Path,
+    *,
+    include_video: bool = True,
+    include_photo: bool = True,
+    include_playlist: bool = True,
+) -> bool:
+    """Return whether a path is any supported drag-and-drop import file."""
+
+    return (
+        is_supported_media_file(path, include_video=include_video)
+        or (include_photo and is_supported_photo_file(path))
+        or (include_playlist and is_supported_playlist_file(path))
+    )
+
+
+def has_supported_import_extension(
+    path: Path,
+    *,
+    include_video: bool = True,
+    include_photo: bool = True,
+    include_playlist: bool = True,
+) -> bool:
+    """Return whether a path name looks like any supported import file.
+
+    Drag-enter must be generous: Windows Explorer may present paths before the
+    target process can stat them, so acceptance is based on the name. The drop
+    scan still validates the file before importing it.
+    """
+
+    return (
+        has_supported_media_extension(path, include_video=include_video)
+        or (include_photo and has_supported_photo_extension(path))
+        or (include_playlist and has_supported_playlist_extension(path))
+    )
+
+
+def _path_key(path: Path) -> str:
+    try:
+        return os.path.normcase(str(path.resolve()))
+    except OSError:
+        return os.path.normcase(str(path))
+
+
+def _append_unique_path(paths: list[Path], seen: set[str], path: Path) -> None:
+    key = _path_key(path)
+    if key in seen:
+        return
+    seen.add(key)
+    paths.append(path)
+
+
 def collect_media_file_paths(
     paths: list[Path],
     *,
@@ -141,20 +258,110 @@ def collect_media_file_paths(
 ) -> list[Path]:
     """Expand dropped files/folders into supported media file paths."""
 
-    file_paths: list[Path] = []
+    return list(
+        collect_import_file_paths(
+            paths,
+            include_video=include_video,
+            include_photo=False,
+            include_playlist=False,
+        ).track_paths
+    )
+
+
+def collect_import_file_paths(
+    paths: list[Path],
+    *,
+    include_video: bool = True,
+    include_photo: bool = True,
+    include_playlist: bool = True,
+) -> DroppedImportFiles:
+    """Expand dropped files/folders into grouped import file paths."""
+
+    track_paths: list[Path] = []
+    photo_imports: list[tuple[str, str]] = []
+    playlist_paths: list[Path] = []
+    seen_tracks: set[str] = set()
+    seen_photos: set[str] = set()
+    seen_playlists: set[str] = set()
+
+    def _add_candidate(candidate: Path, album_name: str = "") -> None:
+        if is_supported_media_file(candidate, include_video=include_video):
+            _append_unique_path(track_paths, seen_tracks, candidate)
+            return
+        if include_photo and is_supported_photo_file(candidate):
+            key = _path_key(candidate)
+            if key not in seen_photos:
+                seen_photos.add(key)
+                photo_imports.append((str(candidate), album_name))
+            return
+        if include_playlist and is_supported_playlist_file(candidate):
+            _append_unique_path(playlist_paths, seen_playlists, candidate)
+
     for path in paths:
         if path.is_dir():
-            for root, _, files in os.walk(path):
+            for root, dirs, files in os.walk(path):
+                dirs.sort()
+                root_path = Path(root)
+                try:
+                    rel_parent = root_path.relative_to(path)
+                except ValueError:
+                    rel_parent = Path()
+                album_name = rel_parent.as_posix() if rel_parent.parts else ""
                 for filename in sorted(files):
-                    candidate = Path(root) / filename
-                    if is_supported_media_file(
-                        candidate,
-                        include_video=include_video,
-                    ):
-                        file_paths.append(candidate)
-        elif is_supported_media_file(path, include_video=include_video):
-            file_paths.append(path)
-    return file_paths
+                    _add_candidate(root_path / filename, album_name)
+        else:
+            _add_candidate(path)
+
+    return DroppedImportFiles(
+        track_paths=tuple(track_paths),
+        photo_imports=tuple(photo_imports),
+        playlist_paths=tuple(playlist_paths),
+    )
+
+
+def build_dropped_playlist_imports(
+    playlist_paths: Iterable[Path],
+    *,
+    include_video: bool = True,
+) -> tuple[list[Path], list[dict]]:
+    """Parse dropped playlist files into media paths and pending playlists."""
+
+    from SyncEngine.playlist_parser import parse_playlist, resolve_existing_playlist_path
+
+    media_paths: list[Path] = []
+    playlists: list[dict] = []
+    seen_media: set[str] = set()
+
+    for playlist_path in playlist_paths:
+        try:
+            raw_paths, playlist_name = parse_playlist(playlist_path)
+        except Exception as exc:
+            logger.warning("Failed to parse dropped playlist %s: %s", playlist_path, exc)
+            continue
+
+        items: list[dict] = []
+        for raw_path in raw_paths:
+            resolved_path = resolve_existing_playlist_path(raw_path)
+            if resolved_path is None:
+                continue
+            path = Path(resolved_path)
+            if not is_supported_media_file(path, include_video=include_video):
+                continue
+            _append_unique_path(media_paths, seen_media, path)
+            items.append({"source_path": str(path)})
+
+        if items:
+            playlists.append(
+                {
+                    "Title": playlist_name,
+                    "playlist_id": random.getrandbits(64),
+                    "_isNew": True,
+                    "_source": "regular",
+                    "items": items,
+                }
+            )
+
+    return media_paths, playlists
 
 
 def build_imported_photo_edit_state(imported_files: Iterable[Any] | None) -> Any | None:
@@ -1831,13 +2038,23 @@ class DropScanWorker(QThread):
         self,
         file_paths: list[Path],
         *,
+        photo_imports: Iterable[tuple[str, str]] | None = None,
+        playlist_paths: Iterable[Path] | None = None,
+        ipod_path: str = "",
         supports_video: bool = True,
         supports_podcast: bool = True,
+        supports_photo: bool = True,
+        photo_sync_settings: dict[str, bool] | None = None,
     ):
         super().__init__()
         self._file_paths = file_paths
+        self._photo_imports = tuple(photo_imports or ())
+        self._playlist_paths = tuple(playlist_paths or ())
+        self._ipod_path = ipod_path
         self._supports_video = supports_video
         self._supports_podcast = supports_podcast
+        self._supports_photo = supports_photo
+        self._photo_sync_settings = photo_sync_settings
 
     def run(self) -> None:
         try:
@@ -1852,8 +2069,16 @@ class DropScanWorker(QThread):
 
             items: list[SyncItem] = []
             total_bytes = 0
+            playlist_media_paths, playlists_to_add = build_dropped_playlist_imports(
+                self._playlist_paths,
+                include_video=self._supports_video,
+            )
+            media_paths: list[Path] = []
+            seen_media: set[str] = set()
+            for path in (*self._file_paths, *playlist_media_paths):
+                _append_unique_path(media_paths, seen_media, path)
 
-            for path in self._file_paths:
+            for path in media_paths:
                 if self.isInterruptionRequested():
                     return
                 try:
@@ -1877,7 +2102,35 @@ class DropScanWorker(QThread):
 
             plan = SyncPlan()
             plan.to_add.extend(items)
+            plan.playlists_to_add.extend(playlists_to_add)
             plan.storage = StorageSummary(bytes_to_add=total_bytes)
+            if (
+                self._supports_photo
+                and self._photo_imports
+                and self._ipod_path
+            ):
+                from SyncEngine.photos import (
+                    build_photo_library_from_device,
+                    build_photo_sync_plan,
+                    ensure_photo_visual_hashes,
+                    read_photo_db,
+                )
+
+                photo_edits = build_imported_photo_edit_state(self._photo_imports)
+                if photo_edits is not None:
+                    device_photos = read_photo_db(self._ipod_path)
+                    ensure_photo_visual_hashes(device_photos, self._ipod_path)
+                    desired_library = build_photo_library_from_device(device_photos)
+                    plan.photo_plan = build_photo_sync_plan(
+                        desired_library,
+                        device_photos,
+                        photo_edits,
+                        ipod_path=self._ipod_path,
+                        sync_settings=self._photo_sync_settings,
+                    )
+                    if plan.photo_plan is not None:
+                        plan.storage.bytes_to_add += plan.photo_plan.thumb_bytes_to_add
+                        plan.storage.bytes_to_remove += plan.photo_plan.thumb_bytes_to_remove
             self.finished.emit(plan)
         except Exception as exc:
             self.error.emit(str(exc))

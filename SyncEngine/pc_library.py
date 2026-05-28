@@ -757,8 +757,8 @@ class PCLibrary:
         # Detect podcast and audiobook content
         is_podcast = metadata.get("is_podcast", False)
         is_audiobook = metadata.get("is_audiobook", False)
-        # .m4b extension is always an audiobook container
-        if ext == ".m4b" and not is_audiobook:
+        # Dedicated audiobook containers should land in the Audiobooks section.
+        if ext in {".m4b", ".aa", ".aax"} and not is_audiobook:
             is_audiobook = True
 
         # Extract chapter markers from audiobooks and podcasts
