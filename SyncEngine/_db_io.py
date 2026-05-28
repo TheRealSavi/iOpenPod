@@ -31,6 +31,7 @@ def read_existing_database(ipod_path: Path) -> dict:
         extract_datasets,
         extract_mhod_strings,
         extract_playlist_extras,
+        extract_track_extras,
     )
     from iTunesDB_Shared.field_base import filetype_to_string
 
@@ -50,6 +51,7 @@ def read_existing_database(ipod_path: Path) -> dict:
         for t in tracks:
             children = t.pop("children", [])
             t.update(extract_mhod_strings(children))
+            t.update(extract_track_extras(children))
             if "filetype" in t:
                 t["filetype"] = filetype_to_string(t["filetype"])
             # sample_rate_1 is already converted from 16.16 fixed-point

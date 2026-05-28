@@ -86,7 +86,7 @@ def test_settings_snapshot_copies_values_and_freezes_lists() -> None:
 
 
 def test_settings_snapshot_upgrades_legacy_media_folder_strings() -> None:
-    settings = AppSettings(media_folders=["C:/Music"])
+    settings = AppSettings(media_folders=["C:/Music"])  # type: ignore
 
     snapshot = SettingsSnapshot.from_settings(settings)
 

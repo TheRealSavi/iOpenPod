@@ -179,6 +179,66 @@ def format_samples(val: int) -> str:
     return f"{val:,}"
 
 
+def format_chapter_count(val: int) -> str:
+    """Format a chapter count for table display."""
+    if not val:
+        return ""
+    noun = "chapter" if val == 1 else "chapters"
+    return f"{val} {noun}"
+
+
+def _chapter_entries(chapter_data: object) -> list[dict]:
+    if not isinstance(chapter_data, dict):
+        return []
+    chapters = chapter_data.get("chapters") or []
+    if not isinstance(chapters, list):
+        return []
+    return [chapter for chapter in chapters if isinstance(chapter, dict)]
+
+
+def _chapter_title(chapter: dict, index: int) -> str:
+    title = str(chapter.get("title") or "").strip()
+    return title or f"Chapter {index + 1}"
+
+
+def chapter_count_from_data(chapter_data: object) -> int:
+    """Return the display chapter count from parsed MHOD type 17 data."""
+    return len(_chapter_entries(chapter_data))
+
+
+def chapter_summary_from_data(chapter_data: object, max_titles: int = 3) -> str:
+    """Return a compact display summary from parsed MHOD type 17 data."""
+    chapters = _chapter_entries(chapter_data)
+    titles = [_chapter_title(chapter, index) for index, chapter in enumerate(chapters)]
+    if not titles:
+        return ""
+    shown = titles[:max_titles]
+    summary = ", ".join(shown)
+    remaining = len(titles) - len(shown)
+    if remaining > 0:
+        summary = f"{summary}, +{remaining} more"
+    return summary
+
+
+_CHAPTER_COLUMN_KEYS = frozenset({"chapter_count", "chapter_summary"})
+
+
+def _column_available_from_keys(key: str, available_keys: set[str], *, playlist_mode: bool) -> bool:
+    if key in available_keys:
+        return True
+    if playlist_mode and key == "_pl_pos":
+        return True
+    return key in _CHAPTER_COLUMN_KEYS and "chapter_data" in available_keys
+
+
+def _track_column_raw_value(track: dict, key: str):
+    if key == "chapter_count":
+        return chapter_count_from_data(track.get("chapter_data"))
+    if key == "chapter_summary":
+        return chapter_summary_from_data(track.get("chapter_data"))
+    return track.get(key, "")
+
+
 def _named_qcolor(value: str) -> QColor:
     """Build a QColor from a CSS-style color string in a type-checker-friendly way."""
     color = QColor()
@@ -293,6 +353,9 @@ COLUMN_CONFIG: dict[str, tuple[str, Callable[[int], str] | None]] = {
     "Podcast Enclosure URL": ("Enclosure URL", None),
     "Podcast RSS URL": ("RSS URL", None),
     "podcast_flag": ("Podcast", format_bool_flag),
+    # ── Chapters ──
+    "chapter_count": ("Chapters", format_chapter_count),
+    "chapter_summary": ("Chapter Titles", None),
     # ── Gapless ──
     "gapless_track_flag": ("Gapless", format_bool_flag),
     "gapless_album_flag": ("Gapless Album", format_bool_flag),
@@ -352,6 +415,8 @@ PREFERRED_COLUMN_ORDER = [
     # Podcast
     "Category", "podcast_flag",
     "Podcast Enclosure URL", "Podcast RSS URL",
+    # Chapters
+    "chapter_count", "chapter_summary",
     # Playback range
     "start_time", "stop_time", "bookmark_time",
     # Gapless
@@ -390,14 +455,14 @@ DEFAULT_VIDEO_COLUMNS = [
 # Podcasts
 DEFAULT_PODCAST_COLUMNS = [
     "Title", "Artist", "Album", "length",
-    "date_released", "play_count_1", "not_played_flag",
+    "chapter_count", "date_released", "play_count_1", "not_played_flag",
     "Description Text", "date_added",
 ]
 
 # Audiobooks
 DEFAULT_AUDIOBOOK_COLUMNS = [
     "Title", "Artist", "Album", "length",
-    "bookmark_time", "play_count_1", "rating", "date_added",
+    "chapter_count", "bookmark_time", "play_count_1", "rating", "date_added",
 ]
 
 # Columns that should be right-aligned (numeric)
@@ -407,6 +472,7 @@ NUMERIC_COLUMNS = frozenset({
     "season_number", "episode_number", "artwork_count", "artwork_id_ref",
     "track_id", "album_id", "artist_id_ref", "composer_id",
     "pregap", "postgap", "sample_count", "gapless_audio_payload_size",
+    "chapter_count",
 })
 
 # Columns whose raw value should be stored in UserRole for correct numeric sorting.
@@ -426,7 +492,7 @@ SORTABLE_NUMERIC_KEYS = frozenset({
     # Dates
     "date_added", "last_played", "last_modified", "last_skipped", "date_released",
     # Video/Podcast
-    "season_number", "episode_number", "podcast_flag",
+    "season_number", "episode_number", "podcast_flag", "chapter_count",
     # Gapless
     "gapless_track_flag", "gapless_album_flag",
     "pregap", "postgap", "sample_count", "gapless_audio_payload_size",
@@ -1380,11 +1446,22 @@ class MusicBrowserList(QFrame):
         if using_saved_layout:
             base = [
                 k for k in self._user_col_order or []
-                if k in available_keys or (self._is_playlist_mode and k == "_pl_pos")
+                if _column_available_from_keys(
+                    k,
+                    available_keys,
+                    playlist_mode=self._is_playlist_mode,
+                )
             ]
         else:
             # Show only the media-type defaults (user can add more via header menu)
-            base = [k for k in defaults if k in available_keys]
+            base = [
+                k for k in defaults
+                if _column_available_from_keys(
+                    k,
+                    available_keys,
+                    playlist_mode=self._is_playlist_mode,
+                )
+            ]
 
         self._columns = base
 
@@ -1551,7 +1628,7 @@ class MusicBrowserList(QFrame):
                 display = str(row + 1)
                 raw_value: int | float | str = row + 1
             else:
-                raw_value = track.get(key, "")
+                raw_value = _track_column_raw_value(track, key)
                 display = self._format_value(key, raw_value)
 
             item = _SortableItem(display)
@@ -2344,6 +2421,9 @@ class MusicBrowserList(QFrame):
                     "Category", "podcast_flag",
                     "Podcast Enclosure URL", "Podcast RSS URL",
                 ]),
+                ("Chapters", [
+                    "chapter_count", "chapter_summary",
+                ]),
                 ("Gapless", [
                     "gapless_track_flag", "gapless_album_flag",
                     "pregap", "postgap", "sample_count",
@@ -3030,7 +3110,7 @@ class MusicBrowserList(QFrame):
                 if key is None:
                     continue
 
-                raw = track.get(key, "")
+                raw = _track_column_raw_value(track, key)
                 cfg = COLUMN_CONFIG.get(key)
                 formatter = cfg[1] if cfg else None
 

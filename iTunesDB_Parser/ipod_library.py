@@ -22,6 +22,7 @@ from iTunesDB_Shared.extraction import (
     extract_datasets,
     extract_mhod_strings,
     extract_playlist_extras,
+    extract_track_extras,
 )
 from iTunesDB_Shared.field_base import filetype_to_string
 
@@ -81,8 +82,10 @@ def load_ipod_library(itunesdb_path: str,
 
 def _inline_track_strings(data: dict) -> None:
     for track in data.get("mhlt", []):
-        strings = extract_mhod_strings(track.pop("children", []))
+        children = track.pop("children", [])
+        strings = extract_mhod_strings(children)
         track.update(strings)
+        track.update(extract_track_extras(children))
         # filetype u32 → ASCII
         ft = track.get("filetype")
         if isinstance(ft, int) and ft > 0:

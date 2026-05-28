@@ -7,10 +7,10 @@ Import these instead of defining local static _format_* methods.
 
 from iTunesDB_Shared.mhod_defs import (
     SPL_ACTION_MAP,
+    SPL_DATE_UNITS_MAP,
     SPL_FIELD_MAP,
     SPL_LIMIT_SORT_MAP,
     SPL_LIMIT_TYPE_MAP,
-    SPL_DATE_UNITS_MAP,
     spl_get_field_type,
 )
 
@@ -163,6 +163,29 @@ def _decode_mediatype(value: int) -> str:
     return " | ".join(names) if names else str(value)
 
 
+DATE_RELATIVE_ACTION_IDS = {0x00000200, 0x02000200}
+
+
+def _signed_i64(value: int) -> int:
+    value = int(value or 0)
+    if value >= (1 << 63):
+        return value - (1 << 64)
+    return value
+
+
+def _relative_date_count(rule: dict) -> int:
+    raw_date = int(rule.get("from_date", 0) or 0)
+    if raw_date:
+        return abs(raw_date)
+
+    raw_value = _signed_i64(rule.get("from_value", 0) or 0)
+    count = abs(raw_value)
+    from_units = int(rule.get("from_units", 0) or 0)
+    if from_units > 1 and count >= from_units and count % from_units == 0:
+        return count // from_units
+    return count
+
+
 def format_smart_rule(rule: dict) -> str:
     """Format a single smart playlist rule as human-readable text.
 
@@ -192,16 +215,17 @@ def format_smart_rule(rule: dict) -> str:
 
     # Date rules with relative units
     if field_type == 4:  # SPLFT_DATE
-        from_val = rule.get("from_value", 0)
         # Resolve raw unit seconds to human name
         from_units = rule.get("from_units", 0)
         units_name = rule.get("units_name", "") or SPL_DATE_UNITS_MAP.get(from_units, "")
-        if units_name and from_val:
-            # Convert seconds-based value to the unit count
-            if from_units and from_units > 0:
-                count = abs(from_val) // from_units
+        if action_id in DATE_RELATIVE_ACTION_IDS:
+            count = _relative_date_count(rule)
+            if units_name and count:
                 return f"{field} {action} {count} {units_name}"
-            return f"{field} {action} {from_val} {units_name}"
+            if count:
+                return f"{field} {action} {count}"
+            return f"{field} {action}"
+        from_val = rule.get("from_value", 0)
         if from_val:
             return f"{field} {action} {from_val}"
         return f"{field} {action}"

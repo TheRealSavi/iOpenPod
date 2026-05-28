@@ -10,18 +10,26 @@ Provides:
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from PyQt6.QtCore import QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QFrame, QHBoxLayout, QLabel,
-    QLineEdit, QPushButton, QSizePolicy, QSpinBox,
-    QVBoxLayout, QWidget,
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QSizePolicy,
+    QSpinBox,
+    QVBoxLayout,
+    QWidget,
 )
 
-from ..styles import Colors, FONT_FAMILY, Metrics, btn_css, accent_btn_css, make_scroll_area
 from ..glyphs import glyph_icon, glyph_pixmap
+from ..styles import FONT_FAMILY, Colors, Metrics, accent_btn_css, btn_css, make_scroll_area
 
 log = logging.getLogger(__name__)
 
@@ -164,6 +172,26 @@ MEDIA_TYPE_FLAGS: list[tuple[int, str]] = [
     (0x40, "TV Show"),
     (0x100, "Ringtone"),
 ]
+
+
+def _signed_i64(value: int) -> int:
+    value = int(value or 0)
+    if value >= (1 << 63):
+        return value - (1 << 64)
+    return value
+
+
+def _relative_date_count(rule: dict) -> int:
+    raw_date = int(rule.get("from_date", 0) or 0)
+    if raw_date:
+        return abs(raw_date)
+
+    raw_value = _signed_i64(rule.get("from_value", 0) or 0)
+    count = abs(raw_value)
+    from_units = int(rule.get("from_units", 0) or 0)
+    if from_units > 1 and count >= from_units and count % from_units == 0:
+        return count // from_units
+    return count
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -312,19 +340,19 @@ class SmartRuleRow(QFrame):
     remove_clicked = pyqtSignal(object)  # emits self
     changed = pyqtSignal()               # any field changed
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setStyleSheet("QFrame { background: transparent; border: none; }")
 
         self._layout = QHBoxLayout(self)
         self._layout.setContentsMargins(0, (2), 0, (2))
-        self._layout.setSpacing((6))
+        self._layout.setSpacing(6)
 
         # ── Field selector ──
         self.field_combo = QComboBox()
         self.field_combo.setStyleSheet(_combo_css())
-        self.field_combo.setMinimumWidth((120))
-        self.field_combo.setMaximumWidth((160))
+        self.field_combo.setMinimumWidth(120)
+        self.field_combo.setMaximumWidth(160)
         for fid, (name, _ftype) in sorted(FIELD_DEFS.items(), key=lambda x: x[1][0]):
             self.field_combo.addItem(name, fid)
         self._layout.addWidget(self.field_combo)
@@ -332,8 +360,8 @@ class SmartRuleRow(QFrame):
         # ── Action selector ──
         self.action_combo = QComboBox()
         self.action_combo.setStyleSheet(_combo_css())
-        self.action_combo.setMinimumWidth((130))
-        self.action_combo.setMaximumWidth((180))
+        self.action_combo.setMinimumWidth(130)
+        self.action_combo.setMaximumWidth(180)
         self._layout.addWidget(self.action_combo)
 
         # ── Value area (container swapped based on field type) ──
@@ -341,12 +369,12 @@ class SmartRuleRow(QFrame):
         self._value_container.setStyleSheet("background: transparent; border: none;")
         self._value_layout = QHBoxLayout(self._value_container)
         self._value_layout.setContentsMargins(0, 0, 0, 0)
-        self._value_layout.setSpacing((4))
+        self._value_layout.setSpacing(4)
         self._layout.addWidget(self._value_container, stretch=1)
 
         # ── Remove button ──
         self.remove_btn = QPushButton()
-        _close_ic = glyph_icon("close", (12), Colors.DANGER)
+        _close_ic = glyph_icon("close", 12, Colors.DANGER)
         if _close_ic:
             self.remove_btn.setIcon(_close_ic)
         else:
@@ -414,9 +442,8 @@ class SmartRuleRow(QFrame):
                 data["to_value_stars"] = data["to_value"]
         elif ft == SPLFT_DATE:
             spin: QSpinBox | None = self._find_widget(QSpinBox)  # type: ignore[assignment]
-            # date rule: from_value = negative count, from_units = seconds-per-unit
+            # Relative date rules store the signed count in from_date; from_value is unsigned.
             if spin:
-                data["from_value"] = -abs(spin.value())
                 data["from_date"] = -abs(spin.value())
             date_unit_combo = self._find_value_combo()
             if date_unit_combo:
@@ -468,8 +495,8 @@ class SmartRuleRow(QFrame):
         elif ft == SPLFT_DATE:
             spin_sb: QSpinBox | None = self._find_widget(QSpinBox)  # type: ignore[assignment]
             if spin_sb:
-                raw = abs(rule.get("from_value", 0) or rule.get("from_date", 0))
-                spin_sb.setValue(min(raw, spin_sb.maximum()))
+                raw = _relative_date_count(rule)
+                spin_sb.setValue(max(spin_sb.minimum(), min(raw, spin_sb.maximum())))
             unit_combo = self._find_value_combo()
             if unit_combo:
                 units = rule.get("from_units", 86400) or 86400
@@ -511,7 +538,7 @@ class SmartRuleRow(QFrame):
             le = QLineEdit()
             le.setPlaceholderText("value")
             le.setStyleSheet(_input_css())
-            le.setMinimumWidth((120))
+            le.setMinimumWidth(120)
             le.textChanged.connect(lambda: self.changed.emit())
             self._add_value_widget(le)
 
@@ -519,7 +546,7 @@ class SmartRuleRow(QFrame):
             spin = QSpinBox()
             spin.setRange(-999999, 999999)
             spin.setStyleSheet(_spinbox_css())
-            spin.setMinimumWidth((80))
+            spin.setMinimumWidth(80)
             spin.valueChanged.connect(lambda: self.changed.emit())
             self._add_value_widget(spin)
 
@@ -534,7 +561,7 @@ class SmartRuleRow(QFrame):
             spin2 = QSpinBox()
             spin2.setRange(-999999, 999999)
             spin2.setStyleSheet(_spinbox_css())
-            spin2.setMinimumWidth((80))
+            spin2.setMinimumWidth(80)
             spin2.setVisible(False)
             spin2.valueChanged.connect(lambda: self.changed.emit())
             self._add_value_widget(spin2)
@@ -547,7 +574,7 @@ class SmartRuleRow(QFrame):
             spin.setRange(1, 99999)
             spin.setValue(30)
             spin.setStyleSheet(_spinbox_css())
-            spin.setMinimumWidth((70))
+            spin.setMinimumWidth(70)
             spin.valueChanged.connect(lambda: self.changed.emit())
             self._add_value_widget(spin)
 
@@ -567,7 +594,7 @@ class SmartRuleRow(QFrame):
         elif ft == SPLFT_BINARY_AND:
             combo = QComboBox()
             combo.setStyleSheet(_combo_css())
-            combo.setMinimumWidth((120))
+            combo.setMinimumWidth(120)
             for flag_val, flag_name in MEDIA_TYPE_FLAGS:
                 combo.addItem(flag_name, flag_val)
             combo.currentIndexChanged.connect(lambda: self.changed.emit())
@@ -576,7 +603,7 @@ class SmartRuleRow(QFrame):
         elif ft == SPLFT_PLAYLIST:
             combo = QComboBox()
             combo.setStyleSheet(_combo_css())
-            combo.setMinimumWidth((120))
+            combo.setMinimumWidth(120)
             combo.addItem("(select playlist)", 0)
             # TODO: populate with actual playlists
             combo.currentIndexChanged.connect(lambda: self.changed.emit())
@@ -607,13 +634,20 @@ class SmartRuleRow(QFrame):
 
     def _actions_for_type(self, ft: int) -> list[tuple[int, str]]:
         match ft:
-            case 1: return STRING_ACTIONS
-            case 2: return INT_ACTIONS
-            case 3: return BOOLEAN_ACTIONS
-            case 4: return DATE_ACTIONS
-            case 5: return PLAYLIST_ACTIONS
-            case 7: return BINARY_AND_ACTIONS
-            case _: return INT_ACTIONS
+            case 1:
+                return STRING_ACTIONS
+            case 2:
+                return INT_ACTIONS
+            case 3:
+                return BOOLEAN_ACTIONS
+            case 4:
+                return DATE_ACTIONS
+            case 5:
+                return PLAYLIST_ACTIONS
+            case 7:
+                return BINARY_AND_ACTIONS
+            case _:
+                return INT_ACTIONS
 
     def _clear_value_widgets(self) -> None:
         # Disconnect the range visibility slot if it was connected
@@ -641,7 +675,7 @@ class SmartRuleRow(QFrame):
     def _find_widgets(self, cls: type) -> list:
         return [w for w in self._value_widgets if isinstance(w, cls)]
 
-    def _find_value_combo(self) -> Optional[QComboBox]:
+    def _find_value_combo(self) -> QComboBox | None:
         """Find the value combo box (not field_combo or action_combo)."""
         for w in self._value_widgets:
             if isinstance(w, QComboBox):
@@ -659,7 +693,7 @@ class SmartPlaylistEditor(QFrame):
     saved = pyqtSignal(dict)      # emits the full playlist dict
     cancelled = pyqtSignal()
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setObjectName("smartPlaylistEditor")
         self.setStyleSheet(f"""
@@ -670,17 +704,17 @@ class SmartPlaylistEditor(QFrame):
             }}
         """)
 
-        self._editing_playlist: Optional[dict] = None  # None → new playlist
+        self._editing_playlist: dict | None = None  # None → new playlist
 
         root = QVBoxLayout(self)
         root.setContentsMargins((16), (14), (16), (14))
-        root.setSpacing((10))
+        root.setSpacing(10)
 
         # ── Header: Name ──────────────────────────────────────
         header = QHBoxLayout()
-        header.setSpacing((8))
+        header.setSpacing(8)
         icon = QLabel()
-        _px = glyph_pixmap("filter", (28), Colors.ACCENT)
+        _px = glyph_pixmap("filter", 28, Colors.ACCENT)
         if _px:
             icon.setPixmap(_px)
         else:
@@ -710,7 +744,7 @@ class SmartPlaylistEditor(QFrame):
 
         # ── Conjunction row ───────────────────────────────────
         conj_row = QHBoxLayout()
-        conj_row.setSpacing((6))
+        conj_row.setSpacing(6)
 
         lbl = QLabel("Match")
         lbl.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
@@ -721,7 +755,7 @@ class SmartPlaylistEditor(QFrame):
         self.conjunction_combo.setStyleSheet(_combo_css())
         self.conjunction_combo.addItem("all", "AND")
         self.conjunction_combo.addItem("any", "OR")
-        self.conjunction_combo.setFixedWidth((70))
+        self.conjunction_combo.setFixedWidth(70)
         conj_row.addWidget(self.conjunction_combo)
 
         lbl2 = QLabel("of the following rules:")
@@ -742,7 +776,7 @@ class SmartPlaylistEditor(QFrame):
                 }}
             """,
         )
-        self._rules_scroll.setMinimumHeight((80))
+        self._rules_scroll.setMinimumHeight(80)
         self._rules_scroll.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
@@ -751,7 +785,7 @@ class SmartPlaylistEditor(QFrame):
         self._rules_widget.setStyleSheet("background: transparent;")
         self._rules_layout = QVBoxLayout(self._rules_widget)
         self._rules_layout.setContentsMargins((8), (6), (8), (6))
-        self._rules_layout.setSpacing((2))
+        self._rules_layout.setSpacing(2)
         self._rules_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self._rules_scroll.setWidget(self._rules_widget)
         root.addWidget(self._rules_scroll, stretch=1)
@@ -784,11 +818,11 @@ class SmartPlaylistEditor(QFrame):
 
         # ── Options area ─────────────────────────────────────
         opts = QVBoxLayout()
-        opts.setSpacing((8))
+        opts.setSpacing(8)
 
         # Limit row
         limit_row = QHBoxLayout()
-        limit_row.setSpacing((6))
+        limit_row.setSpacing(6)
 
         self.limit_check = QCheckBox("Limit to")
         self.limit_check.setStyleSheet(_checkbox_css())
@@ -799,7 +833,7 @@ class SmartPlaylistEditor(QFrame):
         self.limit_value_spin.setRange(1, 99999)
         self.limit_value_spin.setValue(25)
         self.limit_value_spin.setStyleSheet(_spinbox_css())
-        self.limit_value_spin.setFixedWidth((80))
+        self.limit_value_spin.setFixedWidth(80)
         self.limit_value_spin.setEnabled(False)
         limit_row.addWidget(self.limit_value_spin)
 
@@ -807,7 +841,7 @@ class SmartPlaylistEditor(QFrame):
         self.limit_type_combo.setStyleSheet(_combo_css())
         for lt_id, lt_name in LIMIT_TYPES:
             self.limit_type_combo.addItem(lt_name, lt_id)
-        self.limit_type_combo.setFixedWidth((90))
+        self.limit_type_combo.setFixedWidth(90)
         self.limit_type_combo.setEnabled(False)
         limit_row.addWidget(self.limit_type_combo)
 
@@ -822,7 +856,7 @@ class SmartPlaylistEditor(QFrame):
         self.limit_sort_combo.setStyleSheet(_combo_css())
         for ls_id, ls_name in LIMIT_SORTS:
             self.limit_sort_combo.addItem(ls_name, ls_id)
-        self.limit_sort_combo.setFixedWidth((170))
+        self.limit_sort_combo.setFixedWidth(170)
         self.limit_sort_combo.setEnabled(False)
         limit_row.addWidget(self.limit_sort_combo)
 
@@ -842,7 +876,7 @@ class SmartPlaylistEditor(QFrame):
 
         # Sort order
         sort_row = QHBoxLayout()
-        sort_row.setSpacing((6))
+        sort_row.setSpacing(6)
         sort_lbl = QLabel("Sort Order:")
         sort_lbl.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
         sort_lbl.setStyleSheet(
@@ -852,7 +886,7 @@ class SmartPlaylistEditor(QFrame):
 
         self.sort_combo = QComboBox()
         self.sort_combo.setStyleSheet(_combo_css())
-        self.sort_combo.setFixedWidth((170))
+        self.sort_combo.setFixedWidth(170)
         for s_id, s_name in PLAYLIST_SORT_ORDERS:
             self.sort_combo.addItem(s_name, s_id)
         sort_row.addWidget(self.sort_combo)
@@ -869,7 +903,7 @@ class SmartPlaylistEditor(QFrame):
 
         # ── Button row ───────────────────────────────────────
         btn_row = QHBoxLayout()
-        btn_row.setSpacing((8))
+        btn_row.setSpacing(8)
         btn_row.addStretch()
 
         self.cancel_btn = QPushButton("Cancel")
@@ -1090,7 +1124,7 @@ class RegularPlaylistEditor(QFrame):
     saved = pyqtSignal(dict)
     cancelled = pyqtSignal()
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setObjectName("regularPlaylistEditor")
         self.setStyleSheet(f"""
@@ -1101,15 +1135,15 @@ class RegularPlaylistEditor(QFrame):
             }}
         """)
 
-        self._editing_playlist: Optional[dict] = None  # None → new playlist
+        self._editing_playlist: dict | None = None  # None → new playlist
 
         root = QVBoxLayout(self)
         root.setContentsMargins((16), (14), (16), (14))
-        root.setSpacing((12))
+        root.setSpacing(12)
 
         # ── Header: Name ──────────────────────────────────────
         header = QHBoxLayout()
-        header.setSpacing((8))
+        header.setSpacing(8)
         icon = QLabel()
         _px = glyph_pixmap("annotation-dots", (28), Colors.ACCENT)
         if _px:
@@ -1147,7 +1181,7 @@ class RegularPlaylistEditor(QFrame):
 
         # ── Sort Order ────────────────────────────────────────
         sort_row = QHBoxLayout()
-        sort_row.setSpacing((8))
+        sort_row.setSpacing(8)
         sort_label = QLabel("Sort Order:")
         sort_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
         sort_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
@@ -1155,7 +1189,7 @@ class RegularPlaylistEditor(QFrame):
 
         self.sort_combo = QComboBox()
         self.sort_combo.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
-        self.sort_combo.setMinimumWidth((180))
+        self.sort_combo.setMinimumWidth(180)
         self.sort_combo.setStyleSheet(f"""
             QComboBox {{
                 background: {Colors.SURFACE_RAISED};
@@ -1206,13 +1240,13 @@ class RegularPlaylistEditor(QFrame):
 
         # ── Buttons ───────────────────────────────────────────
         btn_row = QHBoxLayout()
-        btn_row.setSpacing((8))
+        btn_row.setSpacing(8)
         btn_row.addStretch()
 
         cancel_btn = QPushButton("Cancel")
         cancel_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
         cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        cancel_btn.setMinimumWidth((80))
+        cancel_btn.setMinimumWidth(80)
         cancel_btn.setStyleSheet(btn_css(
             bg=Colors.SURFACE_RAISED,
             bg_hover=Colors.SURFACE_HOVER,
@@ -1226,7 +1260,7 @@ class RegularPlaylistEditor(QFrame):
         save_btn = QPushButton("Save")
         save_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.Bold))
         save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        save_btn.setMinimumWidth((80))
+        save_btn.setMinimumWidth(80)
         save_btn.setStyleSheet(accent_btn_css())
         save_btn.clicked.connect(self._on_save)
         btn_row.addWidget(save_btn)
@@ -1299,7 +1333,7 @@ class RegularPlaylistEditor(QFrame):
 class NewPlaylistDialog(QDialog):
     """Small dialog to choose what type of playlist to create."""
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setWindowTitle("New Playlist")
         self.setFixedSize((320), (200))
@@ -1310,11 +1344,11 @@ class NewPlaylistDialog(QDialog):
             }}
         """)
 
-        self._choice: Optional[str] = None
+        self._choice: str | None = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins((24), (20), (24), (20))
-        layout.setSpacing((12))
+        layout.setSpacing(12)
 
         title = QLabel("Create New Playlist")
         title.setFont(QFont(FONT_FAMILY, Metrics.FONT_TITLE, QFont.Weight.Bold))
@@ -1328,17 +1362,17 @@ class NewPlaylistDialog(QDialog):
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(subtitle)
 
-        layout.addSpacing((8))
+        layout.addSpacing(8)
 
         btn_row = QHBoxLayout()
-        btn_row.setSpacing((12))
+        btn_row.setSpacing(12)
 
         _ic_sz = QSize((20), (20))
 
         # Regular playlist button
         self.regular_btn = QPushButton("Regular")
         self.regular_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
-        self.regular_btn.setMinimumHeight((44))
+        self.regular_btn.setMinimumHeight(44)
         self.regular_btn.setStyleSheet(btn_css(
             bg=Colors.SURFACE_RAISED,
             bg_hover=Colors.SURFACE_HOVER,
@@ -1356,7 +1390,7 @@ class NewPlaylistDialog(QDialog):
         # Smart playlist button
         self.smart_btn = QPushButton("Smart")
         self.smart_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
-        self.smart_btn.setMinimumHeight((44))
+        self.smart_btn.setMinimumHeight(44)
         self.smart_btn.setStyleSheet(btn_css(
             bg=Colors.ACCENT_DIM,
             bg_hover=Colors.ACCENT_HOVER,
@@ -1378,7 +1412,7 @@ class NewPlaylistDialog(QDialog):
         self._choice = choice
         self.accept()
 
-    def get_choice(self) -> Optional[str]:
+    def get_choice(self) -> str | None:
         return self._choice
 
 

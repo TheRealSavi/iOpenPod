@@ -14,18 +14,20 @@ and the parser in iTunesDB_Parser/mhod_parser.py.
 
 import struct
 from dataclasses import dataclass, field
-from typing import Optional
 
 from iTunesDB_Shared.mhod_defs import (
     MHOD_HEADER_SIZE,
-    SPLPREF_BODY_SIZE,
     SLST_HEADER_SIZE,
-    SPL_RULE_HEADER_SIZE,
     SPL_RULE_DATA_SIZE,
+    SPL_RULE_HEADER_SIZE,
+    SPLFT_DATE,
     SPLFT_STRING,
+    SPLPREF_BODY_SIZE,
     spl_get_field_type,
     write_mhod_header,
 )
+
+DATE_RELATIVE_ACTION_IDS = {0x00000200, 0x02000200}
 
 
 # ────────────────────────────────────────────────────────────
@@ -58,7 +60,7 @@ class SmartPlaylistRule:
     action_id: int = 0x01000002  # e.g. 0x01000002 = "contains"
 
     # For STRING rules
-    string_value: Optional[str] = None
+    string_value: str | None = None
 
     # For non-string rules (INT/DATE/BOOLEAN/PLAYLIST/BINARY_AND)
     from_value: int = 0
@@ -85,6 +87,32 @@ class SmartPlaylistRules:
     conjunction: str = "AND"  # "AND" or "OR"
     rules: list[SmartPlaylistRule] = field(default_factory=list)
     unk004: int = 0  # SLst header +0x04, usually 0 (preserved for round-trip)
+
+
+def _signed_i64(value: int) -> int:
+    value = int(value or 0)
+    if value >= (1 << 63):
+        return value - (1 << 64)
+    return value
+
+
+def _normalize_relative_date_fields(
+    from_value: int,
+    from_date: int,
+    from_units: int = 0,
+) -> tuple[int, int]:
+    signed_from_value = _signed_i64(from_value)
+    normalized_from_date = int(from_date or 0)
+    if normalized_from_date:
+        normalized_from_date = -abs(normalized_from_date)
+    elif signed_from_value:
+        amount = abs(signed_from_value)
+        units = int(from_units or 0)
+        if units > 1 and amount >= units and amount % units == 0:
+            normalized_from_date = -(amount // units)
+        else:
+            normalized_from_date = -amount
+    return 0, normalized_from_date
 
 
 # ────────────────────────────────────────────────────────────
@@ -148,12 +176,19 @@ def _write_spl_rule(rule: SmartPlaylistRule) -> bytes:
         # Non-string: fixed SPL_RULE_DATA_SIZE (68) byte data section
         data_length = SPL_RULE_DATA_SIZE
         data_section = bytearray(SPL_RULE_DATA_SIZE)
-        # from_value, to_value, from_units, to_units use unsigned '>Q' format
-        # but can be negative for date-relative rules (e.g. "in the last N days").
-        # Apply two's complement conversion so struct.pack doesn't raise.
+        from_value = rule.from_value
+        from_date = rule.from_date
+        if ft == SPLFT_DATE and rule.action_id in DATE_RELATIVE_ACTION_IDS:
+            from_value, from_date = _normalize_relative_date_fields(
+                from_value,
+                from_date,
+                rule.from_units,
+            )
+        # from_value, to_value, from_units, to_units use unsigned '>Q' format.
+        # Mask defensively so legacy in-memory rules with signed values still pack.
         _mask = 0xFFFFFFFFFFFFFFFF
-        struct.pack_into('>Q', data_section, 0x00, rule.from_value & _mask)
-        struct.pack_into('>q', data_section, 0x08, rule.from_date)
+        struct.pack_into('>Q', data_section, 0x00, from_value & _mask)
+        struct.pack_into('>q', data_section, 0x08, from_date)
         struct.pack_into('>Q', data_section, 0x10, rule.from_units & _mask)
         struct.pack_into('>Q', data_section, 0x18, rule.to_value & _mask)
         struct.pack_into('>q', data_section, 0x20, rule.to_date)
@@ -252,13 +287,24 @@ def rules_from_parsed(parsed: dict) -> SmartPlaylistRules:
     """
     rules = []
     for r in parsed.get("rules", []):
+        field_id = r.get("field_id", 0)
+        action_id = r.get("action_id", 0)
+        from_value = r.get("from_value", 0)
+        from_date = r.get("from_date", 0)
+        from_units = r.get("from_units", 0)
+        if spl_get_field_type(field_id) == SPLFT_DATE and action_id in DATE_RELATIVE_ACTION_IDS:
+            from_value, from_date = _normalize_relative_date_fields(
+                from_value,
+                from_date,
+                from_units,
+            )
         rule = SmartPlaylistRule(
-            field_id=r.get("field_id", 0),
-            action_id=r.get("action_id", 0),
+            field_id=field_id,
+            action_id=action_id,
             string_value=r.get("string_value"),
-            from_value=r.get("from_value", 0),
-            from_date=r.get("from_date", 0),
-            from_units=r.get("from_units", 0),
+            from_value=from_value,
+            from_date=from_date,
+            from_units=from_units,
             to_value=r.get("to_value", 0),
             to_date=r.get("to_date", 0),
             to_units=r.get("to_units", 0),

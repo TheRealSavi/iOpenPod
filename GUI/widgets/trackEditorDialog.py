@@ -63,7 +63,7 @@ from ..styles import (
     make_scroll_area,
 )
 from .flowLayout import FlowLayout
-from .formatters import format_size
+from .formatters import format_duration_mmss, format_size
 from .photoViewer import pil_to_pixmap
 
 logger = logging.getLogger(__name__)
@@ -161,6 +161,7 @@ _READ_ONLY_FIELDS = frozenset(
     {
         "Location",
         "filetype",
+        "chapter_data",
         "child_count",
         "track_id",
         "db_track_id",
@@ -298,6 +299,7 @@ _GROUP_OVERRIDES = {
     "podcast_flag": "Podcast",
     "use_podcast_now_playing_flag": "Podcast",
     "not_played_flag": "Podcast",
+    "chapter_data": "Chapters",
     "movie_flag": "Video",
     "rating": "Playback",
     "length": "Playback",
@@ -358,6 +360,7 @@ _GROUP_ORDER = (
     "Options",
     "Video",
     "Podcast",
+    "Chapters",
     "File",
     "Artwork",
     "Dates",
@@ -374,6 +377,7 @@ _GROUP_TITLES = {
     "Options": "Playback Options",
     "Video": "Video",
     "Podcast": "Podcast",
+    "Chapters": "Chapters",
     "File": "File",
     "Artwork": "Artwork",
     "Dates": "Dates",
@@ -390,6 +394,7 @@ _GROUP_DESCRIPTIONS = {
     "Options": "Advisory, shuffle, resume, and gapless flags",
     "Video": "Show, episode, and TV metadata",
     "Podcast": "Podcast feeds, categories, and playback markers",
+    "Chapters": "Chapter markers stored in the iPod database",
     "File": "Location, format, media kind, and audio technical fields",
     "Artwork": "Artwork counts and ArtworkDB references",
     "Dates": "Added, modified, released, played, and skipped timestamps",
@@ -420,6 +425,7 @@ _SUBGROUP_TITLES = {
     "podcast_feed": "Feed",
     "podcast_meta": "Category & Locale",
     "podcast_flags": "Podcast Flags",
+    "chapters": "Chapter Timeline",
     "location": "Location & Kind",
     "sizes": "Sizes",
     "encoding": "Encoding",
@@ -497,6 +503,7 @@ _SUBGROUP_BY_KEY = {
     "podcast_flag": "podcast_flags",
     "use_podcast_now_playing_flag": "podcast_flags",
     "not_played_flag": "podcast_flags",
+    "chapter_data": "chapters",
     "Location": "location",
     "filetype": "format_flags",
     "media_type": "location",
@@ -559,6 +566,7 @@ _LABEL_OVERRIDES = {
     "skip_count": "Skip Count",
     "eq_setting": "Equalizer",
     "date_added_to_itunes": "iTunes Date Added",
+    "chapter_data": "Chapter Timeline",
 }
 
 _RATING_OPTIONS = (
@@ -641,6 +649,7 @@ _FIELD_HELP = {
     "store_artist_id": "iTunes Store artist identifier preserved from the database.",
     "store_album_id": "iTunes Store album identifier preserved from the database.",
     "store_content_flag": "iTunes Store content flag preserved from the database.",
+    "chapter_data": "MHOD type 17 chapter timeline. The raw parsed data is preserved for database rewrites.",
 }
 
 _READ_ONLY_REASON_BY_KEY = {
@@ -649,6 +658,7 @@ _READ_ONLY_REASON_BY_KEY = {
     "visible": "the writer currently always emits visible tracks",
     "play_count_2": "this slot is transient and reset during writes",
     "has_artwork": "it is derived from ArtworkDB entries",
+    "chapter_data": "chapter editing is not safely implemented yet",
 }
 
 _MHIT_FIELD_MAP = {field.name: field for field in MHIT_FIELDS}
@@ -758,7 +768,38 @@ def _common_value(tracks: list[dict], key: str) -> Any:
     return first
 
 
+def _format_chapter_time(value: Any) -> str:
+    try:
+        milliseconds = int(value or 0)
+    except (TypeError, ValueError):
+        return ""
+    if milliseconds <= 0:
+        return "0:00"
+    return format_duration_mmss(milliseconds)
+
+
+def _format_chapter_data(value: Any) -> str:
+    if not isinstance(value, dict):
+        return ""
+
+    chapters = value.get("chapters") or []
+    if not isinstance(chapters, list) or not chapters:
+        return ""
+
+    width = max(2, len(str(len(chapters))))
+    lines: list[str] = []
+    for index, chapter in enumerate(chapters):
+        if not isinstance(chapter, dict):
+            continue
+        title = str(chapter.get("title") or "").strip() or f"Chapter {index + 1}"
+        start = _format_chapter_time(chapter.get("startpos", 0))
+        lines.append(f"{index + 1:0{width}d}  {start:>7}  {title}")
+    return "\n".join(lines)
+
+
 def _infer_kind(key: str, sample: Any = None) -> str:
+    if key == "chapter_data":
+        return "chapters"
     if key in _DATE_FIELD_KEYS:
         return "date"
     if key == "checked_flag":
@@ -828,6 +869,10 @@ def build_track_field_specs(tracks: list[dict]) -> list[TrackFieldSpec]:
 
     for key, group in _STRING_FIELDS:
         add(key, group)
+
+    for key in ("chapter_data",):
+        if any(key in track for track in tracks):
+            add(key, "Chapters")
 
     for field in MHIT_FIELDS:
         add(field.name, _GROUP_OVERRIDES.get(field.name))
@@ -974,7 +1019,7 @@ class _TrackFieldRow(QFrame):
                         break
             elif isinstance(editor, QPlainTextEdit):
                 editor.setPlaceholderText("Mixed values" if mixed else "")
-                editor.setPlainText("" if mixed or value is None else str(value))
+                editor.setPlainText("" if mixed or value is None else self._format_value(value))
             elif isinstance(editor, QLineEdit):
                 editor.setPlaceholderText("Mixed values" if mixed else "")
                 editor.setText("" if mixed or value is None else self._format_value(value))
@@ -1028,6 +1073,14 @@ class _TrackFieldRow(QFrame):
             editor.setStyleSheet(self._field_css())
             editor.setReadOnly(not self.spec.editable)
             editor.textChanged.connect(self._mark_modified)
+            return editor
+        if self.spec.kind == "chapters":
+            editor = QPlainTextEdit()
+            editor.setPlaceholderText("Mixed values" if self._mixed else "")
+            editor.setPlainText("" if self._mixed or value is None else self._format_value(value))
+            editor.setMinimumHeight(160)
+            editor.setStyleSheet(self._field_css())
+            editor.setReadOnly(True)
             return editor
 
         editor = QLineEdit()
@@ -1086,6 +1139,8 @@ class _TrackFieldRow(QFrame):
         return _BOOL_OPTIONS
 
     def _format_value(self, value: Any) -> str:
+        if self.spec.kind == "chapters":
+            return _format_chapter_data(value)
         if self.spec.kind == "date":
             return _format_datetime_value(value)
         if isinstance(value, bytes):
@@ -1114,6 +1169,8 @@ class _TrackFieldRow(QFrame):
             return _parse_datetime_text(text, self.spec.label)
         if self.spec.kind == "literal":
             return _parse_literal_text(text)
+        if self.spec.kind == "chapters":
+            return self._initial_value
         return text
 
 
@@ -2157,7 +2214,7 @@ class TrackEditorDialog(QDialog):
                 page_rows.append(field)
                 subsection_rows.append(field)
 
-                is_wide = spec.kind == "long_text" or spec.key in {"Location", "Podcast Enclosure URL", "Podcast RSS URL"}
+                is_wide = spec.kind in {"long_text", "chapters"} or spec.key in {"Location", "Podcast Enclosure URL", "Podcast RSS URL"}
                 if is_wide and col_index == 1:
                     row_index += 1
                     col_index = 0

@@ -23,7 +23,13 @@ from GUI.widgets.podcastBrowser import (
     _resolve_local_artwork_path,
 )
 from PodcastManager.artwork import cache_feed_artwork, resolve_feed_artwork_source
-from PodcastManager.models import PodcastEpisode, PodcastFeed
+from PodcastManager.models import (
+    STATUS_DOWNLOADED,
+    STATUS_DOWNLOADING,
+    STATUS_ON_IPOD,
+    PodcastEpisode,
+    PodcastFeed,
+)
 
 
 def test_http_artwork_source_is_remote() -> None:
@@ -161,6 +167,32 @@ def test_episode_dict_includes_feed_identity_for_combined_feed() -> None:
     assert row["_ep_key"] == _episode_key(feed, episode)
 
 
+def test_episode_dict_marks_card_ipod_actions() -> None:
+    episode = PodcastEpisode(
+        guid="episode-guid",
+        title="Episode",
+        status=STATUS_DOWNLOADED,
+    )
+
+    row = PodcastBrowser._ep_to_dict(episode, "Downloaded")
+
+    assert row["_can_add_to_ipod"] is True
+    assert row["_can_remove_from_ipod"] is False
+
+    episode.status = STATUS_DOWNLOADING
+    row = PodcastBrowser._ep_to_dict(episode, "Downloading...")
+
+    assert row["_can_add_to_ipod"] is False
+    assert row["_can_remove_from_ipod"] is False
+
+    episode.status = STATUS_ON_IPOD
+    episode.ipod_db_track_id = 42
+    row = PodcastBrowser._ep_to_dict(episode, "On iPod")
+
+    assert row["_can_add_to_ipod"] is False
+    assert row["_can_remove_from_ipod"] is True
+
+
 def test_episode_card_artwork_only_shows_for_combined_feed(qtbot) -> None:
     card = _PodcastEpisodeCard()
     qtbot.addWidget(card)
@@ -206,6 +238,74 @@ def test_episode_card_artwork_only_shows_for_combined_feed(qtbot) -> None:
     )
 
     assert not art_label.isVisibleTo(card)
+
+
+def test_episode_card_shows_and_emits_ipod_action_buttons(qtbot) -> None:
+    card = _PodcastEpisodeCard()
+    qtbot.addWidget(card)
+    card.resize(900, _EPISODE_ARTWORK_COLLAPSED_HEIGHT - _EPISODE_ROW_GAP)
+    card.show()
+
+    add_seen: list[int] = []
+    remove_seen: list[int] = []
+    card.add_requested.connect(add_seen.append)
+    card.remove_requested.connect(remove_seen.append)
+
+    row = {
+        "Title": "Episode",
+        "podcast_feed_title": "Example Show",
+        "Description Text": "Description",
+        "ep_status": "Downloaded",
+        "_can_add_to_ipod": True,
+        "_can_remove_from_ipod": False,
+    }
+    card.bind(
+        row_index=7,
+        row=row,
+        row_key="row-7",
+        selected=False,
+        expanded=False,
+        description_text="Description",
+        show_more=True,
+        show_artwork=True,
+        artwork_source="cover",
+        artwork_pixmap=QPixmap(4, 4),
+    )
+
+    add_button = card.findChild(QPushButton, "podcastEpisodeAddButton")
+    remove_button = card.findChild(QPushButton, "podcastEpisodeRemoveButton")
+    assert add_button is not None
+    assert remove_button is not None
+    assert add_button.isVisibleTo(card)
+    assert not remove_button.isVisibleTo(card)
+
+    qtbot.mouseClick(add_button, Qt.MouseButton.LeftButton)
+
+    assert add_seen == [7]
+    assert remove_seen == []
+
+    row["_can_add_to_ipod"] = False
+    row["_can_remove_from_ipod"] = True
+    card.bind(
+        row_index=8,
+        row=row,
+        row_key="row-8",
+        selected=False,
+        expanded=False,
+        description_text="Description",
+        show_more=True,
+        show_artwork=True,
+        artwork_source="cover",
+        artwork_pixmap=QPixmap(4, 4),
+    )
+
+    assert not add_button.isVisibleTo(card)
+    assert remove_button.isVisibleTo(card)
+
+    qtbot.mouseClick(remove_button, Qt.MouseButton.LeftButton)
+
+    assert add_seen == [7]
+    assert remove_seen == [8]
 
 
 def test_episode_card_description_toggle_keeps_spacing_stable(qtbot) -> None:

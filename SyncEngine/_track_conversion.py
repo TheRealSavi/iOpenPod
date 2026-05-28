@@ -132,6 +132,7 @@ def track_dict_to_info(t: dict) -> TrackInfo:
         album_id=t.get("album_id", 0),
         artist_id=t.get("artist_id_ref", t.get("artist_id", 0)),
         composer_id=t.get("composer_id", 0),
+        chapter_data=t.get("chapter_data"),
     )
 
 

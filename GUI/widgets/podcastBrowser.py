@@ -167,6 +167,8 @@ _EPISODE_CARD_SPACING = 4
 _EPISODE_TOP_ROW_GAP = 10
 _EPISODE_TITLE_LABEL_GAP = 2
 _EPISODE_ACTION_ROW_HEIGHT = 24
+_EPISODE_ACTION_BUTTON_GAP = 6
+_EPISODE_ACTION_ICON_BUTTON_WIDTH = 30
 _EPISODE_DESC_COLLAPSED_LINES = 2
 _EPISODE_COLLAPSED_HEIGHT = 158
 _EPISODE_ARTWORK_COLLAPSED_HEIGHT = 174
@@ -324,6 +326,8 @@ class _PodcastCardMouseButton(QPushButton):
 class _PodcastEpisodeCard(QFrame):
     clicked = pyqtSignal(int, object)
     more_requested = pyqtSignal(int)
+    add_requested = pyqtSignal(int)
+    remove_requested = pyqtSignal(int)
     context_requested = pyqtSignal(int, QPoint)
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -415,6 +419,74 @@ class _PodcastEpisodeCard(QFrame):
         self._action_row = QWidget(self)
         self._action_row.setObjectName("podcastEpisodeActionRow")
         self._action_row.setFixedHeight(_EPISODE_ACTION_ROW_HEIGHT)
+
+        self._add_btn = _PodcastCardMouseButton("Add to iPod", self._action_row)
+        self._add_btn.setObjectName("podcastEpisodeAddButton")
+        self._add_btn.setToolTip("Add this episode to iPod")
+        self._add_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
+        self._add_btn.setStyleSheet(
+            btn_css(
+                bg=Colors.ACCENT_DIM,
+                bg_hover=Colors.ACCENT_HOVER,
+                bg_press=Colors.ACCENT_PRESS,
+                fg=Colors.TEXT_ON_ACCENT,
+                border=f"1px solid {Colors.ACCENT_BORDER}",
+                padding="3px 9px",
+                radius=Metrics.BORDER_RADIUS_SM,
+            )
+        )
+        add_icon = glyph_icon("plus", 13, Colors.TEXT_ON_ACCENT)
+        if add_icon:
+            self._add_btn.setIcon(add_icon)
+            self._add_btn.setIconSize(QSize(13, 13))
+        add_metrics = QFontMetrics(self._add_btn.font())
+        self._add_btn_full_text = "Add to iPod"
+        self._add_btn_full_width = add_metrics.horizontalAdvance(
+            self._add_btn_full_text
+        ) + 34
+        self._add_btn.setFixedSize(
+            self._add_btn_full_width,
+            _EPISODE_ACTION_ROW_HEIGHT,
+        )
+        self._add_btn.clicked.connect(lambda: self.add_requested.emit(self._row_index))
+
+        self._remove_btn = _PodcastCardMouseButton(
+            "Remove from iPod",
+            self._action_row,
+        )
+        self._remove_btn.setObjectName("podcastEpisodeRemoveButton")
+        self._remove_btn.setToolTip("Remove this episode from iPod")
+        self._remove_btn.setFont(
+            QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold)
+        )
+        self._remove_btn.setStyleSheet(
+            btn_css(
+                bg="transparent",
+                bg_hover=Colors.DANGER_DIM,
+                bg_press=Colors.DANGER_HOVER,
+                fg=Colors.DANGER,
+                border=f"1px solid {Colors.DANGER_BORDER}",
+                padding="3px 9px",
+                radius=Metrics.BORDER_RADIUS_SM,
+            )
+        )
+        remove_icon = glyph_icon("minus", 13, Colors.DANGER)
+        if remove_icon:
+            self._remove_btn.setIcon(remove_icon)
+            self._remove_btn.setIconSize(QSize(13, 13))
+        remove_metrics = QFontMetrics(self._remove_btn.font())
+        self._remove_btn_full_text = "Remove from iPod"
+        self._remove_btn_full_width = remove_metrics.horizontalAdvance(
+            self._remove_btn_full_text
+        ) + 34
+        self._remove_btn.setFixedSize(
+            self._remove_btn_full_width,
+            _EPISODE_ACTION_ROW_HEIGHT,
+        )
+        self._remove_btn.clicked.connect(
+            lambda: self.remove_requested.emit(self._row_index)
+        )
+
         self._more_btn = _PodcastCardMouseButton("More", self._action_row)
         self._more_btn.setObjectName("podcastEpisodeMoreButton")
         self._more_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
@@ -444,6 +516,8 @@ class _PodcastEpisodeCard(QFrame):
             self._meta_label,
             self._description_label,
             self._action_row,
+            self._add_btn,
+            self._remove_btn,
             self._more_btn,
         ):
             child.installEventFilter(self)
@@ -495,6 +569,8 @@ class _PodcastEpisodeCard(QFrame):
 
         self._more_btn.setText("Show less" if expanded else "More")
         self._more_btn.setVisible(show_more)
+        self._add_btn.setVisible(bool(row.get("_can_add_to_ipod")))
+        self._remove_btn.setVisible(bool(row.get("_can_remove_from_ipod")))
         self._update_card_layout()
         self._apply_style()
 
@@ -610,6 +686,45 @@ class _PodcastEpisodeCard(QFrame):
             width,
             _EPISODE_ACTION_ROW_HEIGHT,
         )
+
+        more_visible = not self._more_btn.isHidden()
+        more_w = self._more_btn.width() if more_visible else 0
+        action_limit = width
+        if more_visible:
+            action_limit = max(0, width - more_w - _EPISODE_ACTION_BUTTON_GAP)
+
+        action_x = 0
+        for button, full_text, full_width in (
+            (self._add_btn, self._add_btn_full_text, self._add_btn_full_width),
+            (
+                self._remove_btn,
+                self._remove_btn_full_text,
+                self._remove_btn_full_width,
+            ),
+        ):
+            if button.isHidden():
+                button.setGeometry(0, 0, 0, 0)
+                continue
+            compact = (
+                action_x + full_width > action_limit
+                and not button.icon().isNull()
+            )
+            target_text = "" if compact else full_text
+            target_w = (
+                _EPISODE_ACTION_ICON_BUTTON_WIDTH if compact else full_width
+            )
+            if button.text() != target_text:
+                button.setText(target_text)
+            if button.width() != target_w:
+                button.setFixedWidth(target_w)
+            button.setGeometry(
+                action_x,
+                0,
+                target_w,
+                _EPISODE_ACTION_ROW_HEIGHT,
+            )
+            action_x += target_w + _EPISODE_ACTION_BUTTON_GAP
+
         self._more_btn.setGeometry(
             max(0, width - self._more_btn.width()),
             0,
@@ -673,7 +788,7 @@ class _PodcastEpisodeCard(QFrame):
 
         if a1.type() == QEvent.Type.MouseButtonPress:
             mouse_event = cast(QMouseEvent, a1)
-            if a0 is self._more_btn:
+            if a0 in (self._add_btn, self._remove_btn, self._more_btn):
                 return super().eventFilter(a0, a1)
             if mouse_event.button() == Qt.MouseButton.LeftButton:
                 self.clicked.emit(self._row_index, mouse_event.modifiers())
@@ -979,6 +1094,12 @@ class _PodcastEpisodeList(QFrame):
         widget = _PodcastEpisodeCard(self._content)
         widget.clicked.connect(self._on_card_clicked)
         widget.more_requested.connect(self._toggle_expanded)
+        add_handler = getattr(self._owner, "_on_episode_card_add_to_ipod", None)
+        if callable(add_handler):
+            widget.add_requested.connect(add_handler)
+        remove_handler = getattr(self._owner, "_on_episode_card_remove_from_ipod", None)
+        if callable(remove_handler):
+            widget.remove_requested.connect(remove_handler)
         widget.context_requested.connect(self._on_card_context_menu)
         return widget
 
@@ -1924,7 +2045,7 @@ class PodcastBrowser(QFrame):
         if action is None:
             return
         if action == add_action:
-            self._build_and_emit_refs(can_add)
+            self._add_to_ipod_refs(can_add)
         elif action == remove_dl_action:
             self._remove_download_refs(can_remove_dl)
         elif action == remove_ipod_action:
@@ -1935,7 +2056,10 @@ class PodcastBrowser(QFrame):
     @staticmethod
     def _ep_to_dict(ep, status_text: str, feed=None) -> dict:
         """Convert a PodcastEpisode to a MusicBrowserList-compatible dict."""
+        from PodcastManager.models import STATUS_DOWNLOADING, STATUS_ON_IPOD
+
         ep_key = _episode_key(feed, ep) if feed is not None else ep.guid
+        status = str(getattr(ep, "status", ""))
         return {
             "Title": ep.title or ep.guid or "",
             "podcast_feed_title": getattr(feed, "title", "") if feed is not None else "",
@@ -1946,6 +2070,11 @@ class PodcastBrowser(QFrame):
             "size": ep.size_bytes or 0,
             "_ep_guid": ep.guid,
             "_ep_key": ep_key,
+            "_can_add_to_ipod": status not in (STATUS_ON_IPOD, STATUS_DOWNLOADING),
+            "_can_remove_from_ipod": (
+                status == STATUS_ON_IPOD
+                and bool(getattr(ep, "ipod_db_track_id", 0))
+            ),
         }
 
     def _set_episode_rows(self, rows: list[dict], columns: list[str]) -> None:
@@ -2414,16 +2543,23 @@ class PodcastBrowser(QFrame):
 
         result = []
         for row in self._episode_list.selected_rows():
-            if 0 <= row < len(self._episode_dicts):
-                row_data = self._episode_dicts[row]
-                key = str(row_data.get("_ep_key") or row_data.get("_ep_guid") or "")
-                if not key:
-                    continue
-                ep = self._episode_by_guid.get(key)
-                feed = self._episode_feed_by_key.get(key) or self._selected_feed
-                if ep is not None and feed is not None:
-                    result.append((row, ep, feed))
+            ref = self._episode_ref_at_row(row)
+            if ref is not None:
+                result.append(ref)
         return result
+
+    def _episode_ref_at_row(self, row: int):
+        if not (0 <= row < len(self._episode_dicts)):
+            return None
+        row_data = self._episode_dicts[row]
+        key = str(row_data.get("_ep_key") or row_data.get("_ep_guid") or "")
+        if not key:
+            return None
+        ep = self._episode_by_guid.get(key)
+        feed = self._episode_feed_by_key.get(key) or self._selected_feed
+        if ep is None or feed is None:
+            return None
+        return row, ep, feed
 
     def _get_selected_episodes(self):
         """Return list of (row, episode) for compatibility with callers/tests."""
@@ -2442,27 +2578,39 @@ class PodcastBrowser(QFrame):
         2. Builds a sync plan (includes pending episodes)
         3. Emits plan for sync review
         """
-        caps = self._device_sessions.current_session().capabilities
-        if caps is not None and not caps.supports_podcast:
-            self._set_action_status("This iPod does not support podcasts")
-            return
         selected = self._get_selected_episode_refs()
         if not selected:
             self._set_action_status("Select episodes first")
+            return
+        self._add_to_ipod_refs(selected)
+
+    def _on_episode_card_add_to_ipod(self, row_index: int) -> None:
+        ref = self._episode_ref_at_row(row_index)
+        if ref is None:
+            return
+        self._add_to_ipod_refs([ref])
+
+    def _add_to_ipod_refs(self, episode_refs: list) -> None:
+        caps = self._device_sessions.current_session().capabilities
+        if caps is not None and not caps.supports_podcast:
+            self._set_action_status("This iPod does not support podcasts")
             return
         if not self._ipod_path:
             self._set_action_status("No iPod connected")
             return
 
-        from PodcastManager.models import STATUS_ON_IPOD
+        from PodcastManager.models import STATUS_DOWNLOADING, STATUS_ON_IPOD
 
         # Filter out episodes already on iPod
         actionable = [
-            (row, ep, feed) for row, ep, feed in selected
-            if ep.status != STATUS_ON_IPOD
+            (row, ep, feed) for row, ep, feed in episode_refs
+            if ep.status not in (STATUS_ON_IPOD, STATUS_DOWNLOADING)
         ]
         if not actionable:
-            self._set_action_status("Selected episodes are already on iPod")
+            if all(ep.status == STATUS_ON_IPOD for _row, ep, _feed in episode_refs):
+                self._set_action_status("Selected episodes are already on iPod")
+            else:
+                self._set_action_status("Selected episodes cannot be added yet")
             return
 
         # Build sync plan directly (pending episodes will download during sync)
@@ -2566,9 +2714,16 @@ class PodcastBrowser(QFrame):
             [(0, ep, self._selected_feed) for ep in episodes]
         )
 
+    def _on_episode_card_remove_from_ipod(self, row_index: int) -> None:
+        ref = self._episode_ref_at_row(row_index)
+        if ref is None:
+            return
+        self._remove_from_ipod_refs([ref])
+
     def _remove_from_ipod_refs(self, episode_refs: list) -> None:
         """Build a sync plan to remove episode/feed refs from the iPod."""
         if not self._ipod_path:
+            self._set_action_status("No iPod connected")
             return
 
         from app_core.sync_plan_builder import build_podcast_removal_sync_plan

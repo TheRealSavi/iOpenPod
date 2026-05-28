@@ -72,6 +72,27 @@ def extract_mhod_strings(children: list) -> dict:
     return strings
 
 
+def extract_track_extras(mhod_children: list) -> dict:
+    """Extract non-string MHOD data from track children.
+
+    Returns dict with optional keys:
+      - "chapter_data": parsed MHOD type 17 data
+    """
+    extras = {}
+    for wrapper in mhod_children:
+        mhod_data = wrapper.get("data", {})
+        if mhod_data.get("mhod_type") != 17 or "data" not in mhod_data:
+            continue
+
+        raw_chapter_data = mhod_data["data"]
+        if not isinstance(raw_chapter_data, dict):
+            continue
+
+        extras["chapter_data"] = raw_chapter_data
+
+    return extras
+
+
 def extract_playlist_extras(mhod_children: list) -> dict:
     """Extract non-string MHOD data from playlist children.
 

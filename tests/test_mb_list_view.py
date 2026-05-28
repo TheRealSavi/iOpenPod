@@ -11,13 +11,22 @@ import pytest
 from PIL import Image
 from PyQt6.QtCore import QPoint, Qt
 from PyQt6.QtTest import QTest
-from PyQt6.QtWidgets import QComboBox, QHeaderView, QLineEdit, QPushButton, QTreeWidget
+from PyQt6.QtWidgets import QComboBox, QHeaderView, QLineEdit, QPlainTextEdit, QPushButton, QTreeWidget
 
 from app_core.context import RuntimeSettingsService
 from app_core.services import DeviceCapabilitySnapshot, DeviceIdentitySnapshot, DeviceManagerLike, DeviceSession, SettingsService, SettingsSnapshot
 from GUI import imgMaker
 from GUI.imgMaker import ArtworkFormatPreview, TrackArtworkPreview, get_track_artwork_previews
-from GUI.widgets.MBListView import MusicBrowserList, build_new_regular_playlist
+from GUI.widgets.MBListView import (
+    COLUMN_CONFIG,
+    DEFAULT_AUDIOBOOK_COLUMNS,
+    DEFAULT_PODCAST_COLUMNS,
+    MusicBrowserList,
+    SORTABLE_NUMERIC_KEYS,
+    build_new_regular_playlist,
+    chapter_count_from_data,
+    chapter_summary_from_data,
+)
 from GUI.widgets.trackEditorDialog import (
     TrackEditorDialog,
     _ArtworkPreviewPanel,
@@ -681,6 +690,60 @@ def test_build_new_regular_playlist_returns_none_without_valid_track_ids() -> No
     assert build_new_regular_playlist([{"Title": "Missing ID"}, {"track_id": 0}]) is None
 
 
+def test_chapter_columns_are_available_for_spoken_word_views() -> None:
+    chapter_data = {
+        "chapters": [
+            {"startpos": 0, "title": "Intro"},
+            {"startpos": 60_000, "title": "Part One"},
+            {"startpos": 120_000, "title": "Part Two"},
+            {"startpos": 180_000, "title": "Credits"},
+        ]
+    }
+
+    assert COLUMN_CONFIG["chapter_count"][0] == "Chapters"
+    assert COLUMN_CONFIG["chapter_summary"][0] == "Chapter Titles"
+    assert "chapter_count" in SORTABLE_NUMERIC_KEYS
+    assert "chapter_count" in DEFAULT_PODCAST_COLUMNS
+    assert "chapter_count" in DEFAULT_AUDIOBOOK_COLUMNS
+    assert "chapter_summary" not in DEFAULT_PODCAST_COLUMNS
+    assert chapter_count_from_data(chapter_data) == 4
+    assert chapter_summary_from_data(chapter_data) == "Intro, Part One, Part Two, +1 more"
+
+
+def test_chapter_count_column_formats_in_podcast_view(qtbot) -> None:
+    view = _mount_list(qtbot)
+    tracks = [
+        {
+            "Title": "Episode A",
+            "Artist": "Show A",
+            "Album": "Podcast A",
+            "length": 120_000,
+            "media_type": 0x04,
+            "chapter_data": {
+                "chapters": [
+                    {"startpos": 0, "title": "Intro"},
+                    {"startpos": 60_000, "title": "Main"},
+                ]
+            },
+        }
+    ]
+
+    _load_content(qtbot, view, tracks=tracks, media_type_filter=0x04)
+
+    chapter_col = view._columns.index("chapter_count")
+    item = view.table.item(0, chapter_col)
+    assert item is not None
+    assert item.text() == "2 chapters"
+    assert item.data(Qt.ItemDataRole.UserRole) == 2
+
+    view._show_column("chapter_summary")
+    summary_col = view._columns.index("chapter_summary")
+    qtbot.waitUntil(lambda: view.table.item(0, summary_col) is not None, timeout=2000)
+    summary_item = view.table.item(0, summary_col)
+    assert summary_item is not None
+    assert summary_item.text() == "Intro, Main"
+
+
 def test_edit_action_label_includes_selection_count(qtbot) -> None:
     view = _mount_list(qtbot)
 
@@ -976,6 +1039,47 @@ def test_track_editor_dialog_marks_structural_fields_read_only(qtbot) -> None:
     assert size_editor.isReadOnly()
     assert not artwork_combo.isEnabled()
     assert artwork_combo.currentData() == 1
+
+
+def test_track_editor_dialog_shows_chapters_read_only(qtbot) -> None:
+    chapter_data = {
+        "unk024": 0,
+        "unk028": 0,
+        "unk032": 0,
+        "chapters": [
+            {"startpos": 0, "title": "Intro"},
+            {"startpos": 61_000, "title": "Act One"},
+        ],
+    }
+    dialog = TrackEditorDialog(
+        [
+            {
+                "db_track_id": 1,
+                "Title": "Chaptered Album",
+                "chapter_data": chapter_data,
+            },
+        ]
+    )
+    qtbot.addWidget(dialog)
+
+    chapter_rows = [row for row in dialog._rows if row.spec.group == "Chapters"]
+    keys = {row.spec.key for row in chapter_rows}
+    assert keys == {"chapter_data"}
+
+    data_row = next(row for row in chapter_rows if row.spec.key == "chapter_data")
+    timeline = cast(QPlainTextEdit, data_row.editor)
+
+    assert not data_row.spec.editable
+    assert data_row.spec.kind == "chapters"
+    assert timeline.isReadOnly()
+    assert "chapter editing is not safely implemented yet" in data_row.spec.help_text
+    assert "01" in timeline.toPlainText()
+    assert "0:00" in timeline.toPlainText()
+    assert "Intro" in timeline.toPlainText()
+    assert "02" in timeline.toPlainText()
+    assert "1:01" in timeline.toPlainText()
+    assert "Act One" in timeline.toPlainText()
+    assert dialog.changes() == {}
 
 
 def test_track_editor_dialog_uses_eq_setting_field_key(qtbot) -> None:
