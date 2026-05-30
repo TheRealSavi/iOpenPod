@@ -70,6 +70,7 @@ from collections.abc import Callable
 from dataclasses import replace as _dc_replace
 
 from ipod_device import ChecksumType, DeviceCapabilities, detect_checksum_type
+from iTunesDB_Shared.album_identity import album_identity_from_track
 from iTunesDB_Shared.field_base import (
     read_fields,
     write_fields,
@@ -284,10 +285,13 @@ def write_mhbd(
     last_id = composer_id - 1 if composer_map else last_id
 
     # Assign album_id, artist_id, and composer_id to each track
-    from .mhla_writer import _album_key
     for track in tracks:
-        key = _album_key(track)
-        track.album_id = album_map.get(key, 0)
+        if not track.album_id:
+            identity = album_identity_from_track(track)
+            album_name = identity.album or ""
+            album_artist = identity.album_artist or identity.artist or ""
+            key = (album_name, album_artist)
+            track.album_id = album_map.get(key, 0)
 
         # Artist ID from the artist list (artist_map is keyed by lowercase)
         artist_name = track.artist or ""

@@ -10,6 +10,8 @@ import traceback
 
 from PyQt6.QtCore import QObject, QRunnable, QThread, QThreadPool, pyqtSignal, pyqtSlot
 
+from iTunesDB_Shared.album_identity import album_identity_from_mapping
+
 from .services import DeviceInfoLike, LibraryCacheLike
 
 logger = logging.getLogger(__name__)
@@ -67,9 +69,10 @@ def _build_track_indexes(
         if not _is_music_browser_track(track):
             continue
 
-        album = track.get("Album", "Unknown Album")
-        artist = track.get("Artist", "Unknown Artist")
-        album_artist = track.get("Album Artist") or artist
+        identity = album_identity_from_mapping(track)
+        album = identity.album or "Unknown Album"
+        artist = identity.artist or "Unknown Artist"
+        album_artist = identity.album_artist or artist
         genre = track.get("Genre", "Unknown Genre")
 
         album_key = (album, album_artist)
@@ -1052,8 +1055,8 @@ def build_album_list(cache: LibraryCacheLike) -> list:
         if track_count == 0:
             continue
 
-        filter_key = "album_id" if album_id is not None else "Album"
-        filter_value = album_id if album_id is not None else album
+        filter_key = "album_id" if album_id is not None else None
+        filter_value = album_id if album_id is not None else None
 
         items.append(
             {

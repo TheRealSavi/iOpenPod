@@ -19,7 +19,7 @@ import shutil
 import tempfile
 import threading
 import time
-from collections import Counter, defaultdict
+from collections import Counter
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
@@ -861,11 +861,13 @@ class SyncExecutor:
         apply_unknown_placeholders(all_tracks)
 
         # ── Auto-detect gapless_album_flag ────────────────────────
-        albums: dict[tuple[str, str], list[TrackInfo]] = defaultdict(list)
-        for t in all_tracks:
-            key = (t.album or "", t.album_artist or t.artist or "")
-            albums[key].append(t)
-        for album_tracks in albums.values():
+        from iTunesDB_Shared.album_identity import (
+            album_identity_from_track,
+            group_tracks_by_album_identity,
+        )
+        albums = group_tracks_by_album_identity(all_tracks, album_identity_from_track)
+        for group in albums:
+            album_tracks = group.tracks
             if len(album_tracks) >= 2 and all(
                 t.gapless_track_flag for t in album_tracks
             ):

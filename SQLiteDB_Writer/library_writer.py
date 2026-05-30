@@ -10,6 +10,7 @@ Reference: libgpod itdb_sqlite.c mk_Library()
 import logging
 import time
 
+from iTunesDB_Shared.album_identity import album_identity_from_track
 from iTunesDB_Shared.field_base import strip_article
 from iTunesDB_Writer.mhit_writer import TrackInfo
 from iTunesDB_Writer.mhyp_writer import PlaylistInfo
@@ -80,6 +81,14 @@ _MEDIA_KIND_FLAGS = (
 def _media_kind_flags(mk: int) -> tuple[int, ...]:
     """Return (is_song, is_audio_book, is_music_video, is_movie, is_tv_show, is_ringtone, is_podcast)."""
     return tuple(int(mk == k) for k in _MEDIA_KIND_FLAGS)
+
+
+def _album_identity_fields(track: TrackInfo) -> tuple[str, str, str]:
+    identity = album_identity_from_track(track)
+    album_name = identity.album or ""
+    album_artist = identity.album_artist or identity.artist or ""
+    show_name = identity.show_name or ""
+    return album_name, album_artist, show_name
 
 
 _CONTAINER_INSERT_SQL = """\
@@ -660,9 +669,9 @@ def write_library_itdb(
             g = track.genre or ""
             if not g:
                 continue
-            aa = track.album_artist or track.artist or ""
-            album_key = (track.album or "", aa)
-            genre_artists.setdefault(g, set()).add(aa)
+            album_name, album_artist_name, show_name = _album_identity_fields(track)
+            album_key = (album_name, album_artist_name, show_name)
+            genre_artists.setdefault(g, set()).add(album_artist_name)
             genre_albums.setdefault(g, set()).add(album_key)
             if track.compilation_flag:
                 genre_comp_albums.setdefault(g, set()).add(album_key)
@@ -681,8 +690,8 @@ def write_library_itdb(
 
         # ── Collect albums, artists, composers ─────────────────────────────
         # We use stable PIDs based on name hashing.
-        # Album key: (album_name, album_artist or artist)
-        album_map: dict[tuple[str, str], int] = {}   # (album, artist) → pid
+        # Album key: (album_name, album_artist or artist, show_name)
+        album_map: dict[tuple[str, str, str], int] = {}   # (album, artist, show) → pid
         artist_map: dict[str, int] = {}               # artist_name → pid
         track_artist_map: dict[str, int] = {}         # track_artist_name → pid
         composer_map: dict[str, int] = {}             # composer_name → pid
@@ -695,18 +704,16 @@ def write_library_itdb(
             db_track_id_to_track_idx[track.db_track_id] = idx
 
             # Album
-            album_name = track.album or ""
-            album_artist_name = track.album_artist or track.artist or ""
-            album_key = (album_name, album_artist_name)
+            album_name, album_artist_name, show_name = _album_identity_fields(track)
+            album_key = (album_name, album_artist_name, show_name)
             if album_key not in album_map:
                 pid_counter += 1
                 album_map[album_key] = pid_counter
 
             # Artist (album artist)
-            aa = track.album_artist or track.artist or ""
-            if aa and aa not in artist_map:
+            if album_artist_name and album_artist_name not in artist_map:
                 pid_counter += 1
-                artist_map[aa] = pid_counter
+                artist_map[album_artist_name] = pid_counter
 
             # Track artist
             ta = track.artist or ""
@@ -722,24 +729,22 @@ def write_library_itdb(
 
         # ── Write albums ───────────────────────────────────────────────────
         # Count items per album for item_count, determine if compilation
-        album_item_counts: dict[tuple[str, str], int] = {}
-        album_has_compilation: dict[tuple[str, str], bool] = {}
-        album_artist_pids: dict[tuple[str, str], int] = {}
-        album_artwork_pids: dict[tuple[str, str], int] = {}
-        album_feed_urls: dict[tuple[str, str], str] = {}
+        album_item_counts: dict[tuple[str, str, str], int] = {}
+        album_has_compilation: dict[tuple[str, str, str], bool] = {}
+        album_artist_pids: dict[tuple[str, str, str], int] = {}
+        album_artwork_pids: dict[tuple[str, str, str], int] = {}
+        album_feed_urls: dict[tuple[str, str, str], str] = {}
         artist_artwork_album_pids: dict[str, int] = {}  # artist_name → album_pid with art
 
         for track in tracks:
-            album_name = track.album or ""
-            album_artist_name = track.album_artist or track.artist or ""
-            key = (album_name, album_artist_name)
+            album_name, album_artist_name, show_name = _album_identity_fields(track)
+            key = (album_name, album_artist_name, show_name)
             album_item_counts[key] = album_item_counts.get(key, 0) + 1
             if track.compilation_flag:
                 album_has_compilation[key] = True
             # Store album artist pid
-            aa = track.album_artist or track.artist or ""
-            if aa and aa in artist_map:
-                album_artist_pids[key] = artist_map[aa]
+            if album_artist_name and album_artist_name in artist_map:
+                album_artist_pids[key] = artist_map[album_artist_name]
             # Store artwork item pid (first track in album with artwork)
             if track.mhii_link and key not in album_artwork_pids:
                 album_artwork_pids[key] = track.db_track_id
@@ -748,17 +753,17 @@ def write_library_itdb(
                 album_feed_urls[key] = track.podcast_rss_url
 
         # Compute album sort orders: name_order = rank by sort_name, sort_order = same
-        album_sort_names: dict[tuple[str, str], str] = {}
+        album_sort_names: dict[tuple[str, str, str], str] = {}
         for key in album_map:
             album_sort_names[key] = strip_article(key[0]) if key[0] else key[0]
         album_sorted = sorted(album_map.keys(),
                               key=lambda k: _sort_key(k[0]))
-        album_name_orders: dict[tuple[str, str], int] = {
+        album_name_orders: dict[tuple[str, str, str], int] = {
             k: (i + 1) * 100 for i, k in enumerate(album_sorted)
         }
 
-        for (album_name, album_artist_name), album_pid in album_map.items():
-            key = (album_name, album_artist_name)
+        for (album_name, album_artist_name, show_name), album_pid in album_map.items():
+            key = (album_name, album_artist_name, show_name)
             is_compilation = 1 if album_has_compilation.get(key, False) else 0
             artwork_pid = album_artwork_pids.get(key, 0)
             a_pid = album_artist_pids.get(key, 0)
@@ -854,13 +859,11 @@ def write_library_itdb(
 
         for idx, track in enumerate(tracks):
             # Resolve foreign keys
-            album_name = track.album or ""
-            album_artist_name = track.album_artist or track.artist or ""
-            album_key = (album_name, album_artist_name)
+            album_name, album_artist_name, show_name = _album_identity_fields(track)
+            album_key = (album_name, album_artist_name, show_name)
             album_pid = album_map.get(album_key, 0)
 
-            aa = track.album_artist or track.artist or ""
-            artist_pid = artist_map.get(aa, 0)
+            artist_pid = artist_map.get(album_artist_name, 0)
 
             ta = track.artist or ""
             ta_pid = track_artist_map.get(ta, 0)

@@ -30,6 +30,10 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .mhit_writer import TrackInfo
 
+from iTunesDB_Shared.album_identity import (
+    album_identity_from_track,
+    group_tracks_by_album_identity,
+)
 from iTunesDB_Shared.constants import (
     MHOD_TYPE_ALBUM_ALBUM,
     MHOD_TYPE_ALBUM_ARTIST_ITEM,
@@ -45,23 +49,6 @@ from iTunesDB_Shared.field_base import (
 from iTunesDB_Shared.mhia_defs import MHIA_HEADER_SIZE
 
 from .mhod_writer import write_mhod_string
-
-
-def _album_key(track: "TrackInfo") -> tuple[str, str]:
-    """Compute the album grouping key for a track.
-
-    Compilation albums (``track.compilation_flag == True``) are grouped by album
-    name alone — the artist dimension is always ``""`` so that all tracks
-    on a Various-Artists / compilation album share a single album ID.
-
-    Non-compilation albums fall back through ``album_artist`` then ``artist``
-    so that two artists who each have a "Greatest Hits" album remain separate.
-    """
-    album_name = track.album or ""
-    if track.compilation_flag:
-        return (album_name, "")
-    album_artist = track.album_artist or track.artist or ""
-    return (album_name, album_artist)
 
 
 def write_mhia(album_id: int, album_name: str, album_artist: str,
@@ -130,7 +117,18 @@ def write_mhia(album_id: int, album_name: str, album_artist: str,
     return bytes(header) + bytes(children)
 
 
-def write_mhla(tracks: list["TrackInfo"], starting_index_for_album_id) -> tuple[bytes, dict[tuple[str, str], int], int]:
+def _pick_first(tracks: list["TrackInfo"], attr: str) -> str:
+    for track in tracks:
+        value = getattr(track, attr, None) or ""
+        if value:
+            return value
+    return ""
+
+
+def write_mhla(
+    tracks: list["TrackInfo"],
+    starting_index_for_album_id,
+) -> tuple[bytes, dict[tuple[str, str], int], int]:
     """
     Write an MHLA (album list) chunk with albums derived from tracks.
 
@@ -140,54 +138,37 @@ def write_mhla(tracks: list["TrackInfo"], starting_index_for_album_id) -> tuple[
     Returns:
         Tuple of (MHLA chunk bytes, album_map dict mapping (album, artist) to album_id)
     """
-    # Collect unique albums: (album_name, album_artist) -> list of tracks
-    # Compilation albums use ("", "") for the artist dimension so that
-    # Various-Artists compilations stay grouped under a single album ID.
-    album_tracks: dict[tuple[str, str], list] = {}
-    for track in tracks:
-        key = _album_key(track)
-        if key not in album_tracks:
-            album_tracks[key] = []
-        album_tracks[key].append(track)
+    groups = group_tracks_by_album_identity(tracks, album_identity_from_track)
 
     # Build album items
     album_items = bytearray()
     album_map: dict[tuple[str, str], int] = {}  # (album, artist) -> album_id
 
-    # Collect sort artist, podcast URL, and show name per album key
-    album_sort_artists: dict[tuple[str, str], str] = {}
-    album_podcast_urls: dict[tuple[str, str], str] = {}
-    album_show_names: dict[tuple[str, str], str] = {}
-    for track in tracks:
-        key = _album_key(track)
-        if key not in album_sort_artists:
-            # Use sort_albumartist from track first, fall back to sort_artist (per libgpod mk_mhia)
-            sort_artist = track.sort_album_artist or track.sort_artist or ""
-            if sort_artist:
-                album_sort_artists[key] = sort_artist
-        if key not in album_podcast_urls:
-            podcast_url = track.podcast_rss_url or ""
-            if podcast_url:
-                album_podcast_urls[key] = podcast_url
-        if key not in album_show_names:
-            show_name = track.show_name or ""
-            if show_name:
-                album_show_names[key] = show_name
+    def _album_sort_key(group):
+        identity = group.identity
+        album_name = identity.album or ""
+        album_artist = identity.album_artist or identity.artist or ""
+        show_name = identity.show_name or ""
+        return (album_name, album_artist, show_name)
 
     album_id = starting_index_for_album_id
-    for (album_name, album_artist) in sorted(album_tracks.keys()):
+    for group in sorted(groups, key=_album_sort_key):
+        identity = group.identity
+        album_name = identity.album or ""
+        album_artist = identity.album_artist or identity.artist or ""
         album_map[(album_name, album_artist)] = album_id
-        sort_artist = album_sort_artists.get((album_name, album_artist), "")
-        podcast_url = album_podcast_urls.get((album_name, album_artist), "")
-        show_name = album_show_names.get((album_name, album_artist), "")
+        # Use sort_albumartist from track first, fall back to sort_artist (per libgpod mk_mhia)
+        sort_artist = _pick_first(group.tracks, "sort_album_artist")
+        if not sort_artist:
+            sort_artist = _pick_first(group.tracks, "sort_artist")
+        podcast_url = _pick_first(group.tracks, "podcast_rss_url")
+        show_name = identity.show_name or _pick_first(group.tracks, "show_name")
         # Album is a compilation if any track in it has compilation_flag=True
-        is_compilation = any(
-            t.compilation_flag
-            for t in album_tracks[(album_name, album_artist)]
-        )
+        is_compilation = any(t.compilation_flag for t in group.tracks)
         # Use first track's db_track_id as the representative track for this album
-        rep_tracks = album_tracks[(album_name, album_artist)]
-        rep_db_track_id = rep_tracks[0].db_track_id if rep_tracks else 0
+        rep_db_track_id = group.tracks[0].db_track_id if group.tracks else 0
+        for track in group.tracks:
+            track.album_id = album_id
         album_items.extend(write_mhia(
             album_id, album_name, album_artist, sort_artist,
             podcast_url=podcast_url, show_name=show_name,

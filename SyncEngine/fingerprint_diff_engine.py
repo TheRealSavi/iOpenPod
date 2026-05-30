@@ -724,6 +724,8 @@ class FingerprintDiffEngine:
         for fp, tracks in pc_by_fp.items():
             by_album: dict[str, list[PCTrack]] = {}
             for t in tracks:
+                # Note: album-only grouping here is intentional for fingerprint dedupe,
+                # and is kept separate from iPod album identity rules.
                 album_key = (t.album or "").strip().lower()
                 by_album.setdefault(album_key, []).append(t)
 
