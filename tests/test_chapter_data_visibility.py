@@ -5,6 +5,7 @@ from iTunesDB_Shared.extraction import extract_track_extras
 from iTunesDB_Shared.mhod_defs import MHOD_HEADER_SIZE
 from iTunesDB_Writer.mhod_writer import write_mhod_chapter_data
 from SyncEngine._track_conversion import track_dict_to_info
+from SyncEngine.sync_executor import SyncExecutor
 
 
 def _chapter_data() -> dict[str, object]:
@@ -64,3 +65,23 @@ def test_track_dict_to_info_preserves_chapter_data() -> None:
     )
 
     assert info.chapter_data == chapter_data
+
+
+def test_track_dict_to_info_preserves_chapter_data_for_mp3() -> None:
+    chapter_data = _chapter_data()
+
+    info = track_dict_to_info(
+        {
+            "Title": "Chaptered MP3",
+            "Location": ":iPod_Control:Music:F00:ALBM.mp3",
+            "filetype": "MPEG audio file",
+            "chapter_data": chapter_data,
+        }
+    )
+
+    assert info.filetype == "mp3"
+    assert info.chapter_data == chapter_data
+
+
+def test_sync_executor_can_apply_chapter_data_metadata_updates() -> None:
+    assert SyncExecutor._META_FIELD_MAP["chapter_data"] == ("chapter_data", None)

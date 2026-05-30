@@ -128,6 +128,14 @@ class SyncItem:
     # Human-readable description
     description: str = ""
 
+    # Album conversion replacement metadata.  Deferred removals are held until
+    # the matching generated album track has been copied successfully.
+    conversion_group_id: str | None = None
+    conversion_group_add_count: int = 0
+    defer_removal_until_after_add: bool = False
+    conversion_source_fingerprints: tuple[str, ...] = ()
+    conversion_source_path_hints: tuple[str, ...] = ()
+
     @property
     def db_id(self) -> int | None:
         """Backward-compatible alias for the iPod track persistent ID."""
@@ -1557,6 +1565,33 @@ class FingerprintDiffEngine:
         text = value.strip().casefold()
         return text in _PC_DEFAULT_TEXT_BY_FIELD.get(pc_field, ())
 
+    @staticmethod
+    def _chapter_data_from_pc_track(pc_track: PCTrack) -> dict | None:
+        chapters = getattr(pc_track, "chapters", None)
+        if not chapters:
+            return None
+        return {"chapters": chapters}
+
+    @staticmethod
+    def _normalized_chapter_entries(chapter_data) -> list[tuple[int, str]]:
+        if not isinstance(chapter_data, dict):
+            return []
+        chapters = chapter_data.get("chapters")
+        if not isinstance(chapters, list):
+            return []
+
+        normalized: list[tuple[int, str]] = []
+        for chapter in chapters:
+            if not isinstance(chapter, dict):
+                continue
+            try:
+                startpos = int(chapter.get("startpos") or 0)
+            except (TypeError, ValueError):
+                startpos = 0
+            title = str(chapter.get("title") or "").strip()
+            normalized.append((startpos, title))
+        return normalized
+
     def _compare_metadata(self, pc_track: PCTrack, ipod_track: dict) -> dict:
         """Compare metadata between PC and iPod track.
 
@@ -1613,6 +1648,22 @@ class FingerprintDiffEngine:
                     changes[pc_field] = (pc_value, ipod_value)
             elif pc_value != ipod_value:
                 changes[pc_field] = (pc_value, ipod_value)
+
+        # Chapter timelines are iTunesDB-side metadata, not AAC/M4A-only file
+        # metadata.  When the PC source exposes embedded chapters, sync them to
+        # the DB for any matched audio file type; absent PC chapters do not
+        # erase existing iPod-side chapter data.
+        pc_chapter_data = self._chapter_data_from_pc_track(pc_track)
+        if pc_chapter_data is not None:
+            ipod_chapter_data = ipod_track.get("chapter_data")
+            if (
+                self._normalized_chapter_entries(pc_chapter_data)
+                != self._normalized_chapter_entries(ipod_chapter_data)
+            ):
+                changes["chapter_data"] = (
+                    pc_chapter_data,
+                    ipod_chapter_data or {"chapters": []},
+                )
 
         return changes
 

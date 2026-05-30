@@ -27,6 +27,7 @@ from PyQt6.QtGui import (
     QWheelEvent,
 )
 from PyQt6.QtWidgets import (
+    QAbstractItemView,
     QComboBox,
     QDialog,
     QFileDialog,
@@ -44,6 +45,8 @@ from PyQt6.QtWidgets import (
     QSizePolicy,
     QSlider,
     QStackedWidget,
+    QTableWidget,
+    QTableWidgetItem,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -161,7 +164,6 @@ _READ_ONLY_FIELDS = frozenset(
     {
         "Location",
         "filetype",
-        "chapter_data",
         "child_count",
         "track_id",
         "db_track_id",
@@ -269,6 +271,7 @@ _SAFE_EDITABLE_FIELDS = frozenset(
         "media_type",
         "season_number",
         "episode_number",
+        "chapter_data",
     }
 )
 
@@ -649,7 +652,7 @@ _FIELD_HELP = {
     "store_artist_id": "iTunes Store artist identifier preserved from the database.",
     "store_album_id": "iTunes Store album identifier preserved from the database.",
     "store_content_flag": "iTunes Store content flag preserved from the database.",
-    "chapter_data": "MHOD type 17 chapter timeline. The raw parsed data is preserved for database rewrites.",
+    "chapter_data": "MHOD type 17 chapter timeline. Edit chapter titles and start times; existing raw preamble fields are preserved.",
 }
 
 _READ_ONLY_REASON_BY_KEY = {
@@ -658,7 +661,6 @@ _READ_ONLY_REASON_BY_KEY = {
     "visible": "the writer currently always emits visible tracks",
     "play_count_2": "this slot is transient and reset during writes",
     "has_artwork": "it is derived from ArtworkDB entries",
-    "chapter_data": "chapter editing is not safely implemented yet",
 }
 
 _MHIT_FIELD_MAP = {field.name: field for field in MHIT_FIELDS}
@@ -797,6 +799,83 @@ def _format_chapter_data(value: Any) -> str:
     return "\n".join(lines)
 
 
+def _format_chapter_time_for_editor(value: Any) -> str:
+    try:
+        milliseconds = max(0, int(value or 0))
+    except (TypeError, ValueError):
+        milliseconds = 0
+
+    seconds_total, ms_remainder = divmod(milliseconds, 1000)
+    hours, remainder = divmod(seconds_total, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    second_text = f"{seconds:02d}"
+    if ms_remainder:
+        second_text = f"{second_text}.{ms_remainder:03d}".rstrip("0").rstrip(".")
+    if hours:
+        return f"{hours}:{minutes:02d}:{second_text}"
+    return f"{minutes}:{second_text}"
+
+
+def _parse_chapter_time_text(text: str, label: str = "Chapter time") -> int:
+    stripped = text.strip().lower()
+    if not stripped:
+        raise ValueError(f"{label} needs a start time.")
+
+    try:
+        if stripped.endswith("ms"):
+            value = int(float(stripped[:-2].strip()))
+        elif stripped.endswith("s") and ":" not in stripped:
+            value = int(round(float(stripped[:-1].strip()) * 1000))
+        elif ":" in stripped:
+            parts = stripped.split(":")
+            if len(parts) not in (2, 3):
+                raise ValueError
+            seconds = float(parts[-1])
+            minutes = int(parts[-2])
+            hours = int(parts[0]) if len(parts) == 3 else 0
+            if minutes < 0 or minutes >= 60 or seconds < 0 or seconds >= 60:
+                raise ValueError
+            value = int(round(((hours * 3600) + (minutes * 60) + seconds) * 1000))
+        elif "." in stripped:
+            value = int(round(float(stripped) * 1000))
+        else:
+            value = int(stripped, 0)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"{label} must be a time like 0:00, 1:23, 1:02:03.500, 83s, or raw milliseconds."
+        ) from exc
+
+    if value < 0:
+        raise ValueError(f"{label} cannot be negative.")
+    return value
+
+
+def _chapter_entries_from_data(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, dict):
+        return []
+    chapters = value.get("chapters") or []
+    if not isinstance(chapters, list):
+        return []
+
+    entries: list[dict[str, Any]] = []
+    for index, chapter in enumerate(chapters):
+        if not isinstance(chapter, dict):
+            continue
+        try:
+            startpos = max(0, int(chapter.get("startpos") or 0))
+        except (TypeError, ValueError):
+            startpos = 0
+        title = str(chapter.get("title") or "").strip() or f"Chapter {index + 1}"
+        entries.append({"startpos": startpos, "title": title})
+    return entries
+
+
+def _chapter_data_with_entries(value: Any, chapters: list[dict[str, Any]]) -> dict[str, Any]:
+    data = dict(value) if isinstance(value, dict) else {}
+    data["chapters"] = chapters
+    return data
+
+
 def _infer_kind(key: str, sample: Any = None) -> str:
     if key == "chapter_data":
         return "chapters"
@@ -870,9 +949,7 @@ def build_track_field_specs(tracks: list[dict]) -> list[TrackFieldSpec]:
     for key, group in _STRING_FIELDS:
         add(key, group)
 
-    for key in ("chapter_data",):
-        if any(key in track for track in tracks):
-            add(key, "Chapters")
+    add("chapter_data", "Chapters")
 
     for field in MHIT_FIELDS:
         add(field.name, _GROUP_OVERRIDES.get(field.name))
@@ -883,6 +960,298 @@ def build_track_field_specs(tracks: list[dict]) -> list[TrackFieldSpec]:
             add(key, "Advanced")
 
     return specs
+
+
+class _ChapterTimelineEditor(QFrame):
+    """Editable chapter timeline widget for MHOD type 17 chapter data."""
+
+    modifiedChanged = pyqtSignal()
+
+    def __init__(
+        self,
+        value: Any,
+        *,
+        mixed: bool = False,
+        editable: bool = True,
+        parent: QWidget | None = None,
+    ):
+        super().__init__(parent)
+        self._initial_value = value
+        self._mixed = mixed
+        self._editable = editable
+        self._loading = False
+        self.setObjectName("chapterTimelineEditor")
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        toolbar = QHBoxLayout()
+        toolbar.setContentsMargins(0, 0, 0, 0)
+        toolbar.setSpacing(8)
+        self._summary = QLabel("")
+        self._summary.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        self._summary.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
+        toolbar.addWidget(self._summary)
+        toolbar.addStretch()
+
+        self._add_btn = QPushButton("Add Chapter")
+        self._add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._add_btn.setStyleSheet(accent_btn_css())
+        self._add_btn.clicked.connect(self.add_chapter)
+        toolbar.addWidget(self._add_btn)
+
+        self._delete_btn = QPushButton("Delete")
+        self._delete_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._delete_btn.setStyleSheet(btn_css())
+        self._delete_btn.clicked.connect(self.delete_selected_chapters)
+        toolbar.addWidget(self._delete_btn)
+
+        self._sort_btn = QPushButton("Sort by Time")
+        self._sort_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._sort_btn.setStyleSheet(btn_css())
+        self._sort_btn.clicked.connect(self.sort_by_time)
+        toolbar.addWidget(self._sort_btn)
+        layout.addLayout(toolbar)
+
+        self._table = QTableWidget(0, 2)
+        self._table.setHorizontalHeaderLabels(["Start", "Title"])
+        self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self._table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self._table.setEditTriggers(
+            QAbstractItemView.EditTrigger.DoubleClicked
+            | QAbstractItemView.EditTrigger.SelectedClicked
+            | QAbstractItemView.EditTrigger.EditKeyPressed
+        )
+        self._table.setAlternatingRowColors(True)
+        self._table.setMinimumHeight(190)
+        self._table.setShowGrid(False)
+        vertical_header = self._table.verticalHeader()
+        if vertical_header is not None:
+            vertical_header.setVisible(False)
+        header = self._table.horizontalHeader()
+        if header is not None:
+            header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self._table.itemChanged.connect(self._on_item_changed)
+        self._table.itemSelectionChanged.connect(self._sync_actions)
+        self._table.setStyleSheet(
+            f"""
+            QTableWidget {{
+                background: {Colors.SURFACE_ALT};
+                color: {Colors.TEXT_PRIMARY};
+                border: 1px solid {Colors.BORDER_SUBTLE};
+                border-radius: {Metrics.BORDER_RADIUS_SM}px;
+                selection-background-color: {Colors.ACCENT_MUTED};
+                selection-color: {Colors.TEXT_PRIMARY};
+                font-family: {FONT_FAMILY};
+                font-size: {Metrics.FONT_SM}px;
+            }}
+            QTableWidget::item {{
+                padding: 7px 8px;
+            }}
+            QTableWidget::item:selected {{
+                background: {Colors.ACCENT_MUTED};
+                color: {Colors.TEXT_PRIMARY};
+            }}
+            QHeaderView::section {{
+                background: {Colors.SURFACE_RAISED};
+                color: {Colors.TEXT_SECONDARY};
+                border: none;
+                border-bottom: 1px solid {Colors.BORDER_SUBTLE};
+                padding: 7px 8px;
+                font-family: {FONT_FAMILY};
+                font-size: {Metrics.FONT_XS}px;
+                font-weight: 700;
+            }}
+            """
+        )
+        layout.addWidget(self._table)
+
+        self.set_chapter_data(value, mixed=mixed)
+        self._set_editable(editable)
+
+    def set_chapter_data(self, value: Any, *, mixed: bool = False) -> None:
+        self._loading = True
+        try:
+            self._initial_value = value
+            self._mixed = mixed
+            self._table.setRowCount(0)
+            if not mixed:
+                for chapter in _chapter_entries_from_data(value):
+                    self._append_row(chapter["startpos"], str(chapter["title"]))
+        finally:
+            self._loading = False
+        self._sync_actions()
+        self._sync_summary()
+
+    def chapter_data(self) -> dict[str, Any]:
+        chapters = self._chapters_from_table(validate_order=True)
+        return _chapter_data_with_entries(self._initial_value, chapters)
+
+    def add_chapter(self) -> None:
+        if not self._editable:
+            return
+        selected_rows = self._selected_rows()
+        insert_at = (selected_rows[-1] + 1) if selected_rows else self._table.rowCount()
+        startpos = self._suggest_start_for_insert(insert_at)
+        self._insert_row(insert_at, startpos, f"Chapter {insert_at + 1}")
+        self._renumber_default_titles()
+        self._mixed = False
+        self._table.selectRow(insert_at)
+        self._emit_modified()
+
+    def delete_selected_chapters(self) -> None:
+        if not self._editable:
+            return
+        rows = self._selected_rows()
+        if not rows:
+            return
+        self._loading = True
+        try:
+            for row in reversed(rows):
+                self._table.removeRow(row)
+        finally:
+            self._loading = False
+        self._renumber_default_titles()
+        self._emit_modified()
+
+    def sort_by_time(self) -> None:
+        if not self._editable:
+            return
+        try:
+            chapters = self._chapters_from_table(validate_order=False)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Invalid Chapter Time", str(exc))
+            return
+        chapters.sort(key=lambda chapter: int(chapter["startpos"]))
+        self._loading = True
+        try:
+            self._table.setRowCount(0)
+            for chapter in chapters:
+                self._append_row(int(chapter["startpos"]), str(chapter["title"]))
+        finally:
+            self._loading = False
+        self._emit_modified()
+
+    def _set_editable(self, editable: bool) -> None:
+        self._editable = editable
+        self._add_btn.setEnabled(editable)
+        self._sort_btn.setEnabled(editable)
+        self._table.setEditTriggers(
+            QAbstractItemView.EditTrigger.DoubleClicked
+            | QAbstractItemView.EditTrigger.SelectedClicked
+            | QAbstractItemView.EditTrigger.EditKeyPressed
+            if editable
+            else QAbstractItemView.EditTrigger.NoEditTriggers
+        )
+        self._sync_actions()
+
+    def _chapters_from_table(self, *, validate_order: bool) -> list[dict[str, Any]]:
+        chapters: list[dict[str, Any]] = []
+        previous_start: int | None = None
+        for row in range(self._table.rowCount()):
+            start_item = self._table.item(row, 0)
+            title_item = self._table.item(row, 1)
+            start_text = start_item.text() if start_item is not None else ""
+            title_text = title_item.text() if title_item is not None else ""
+            startpos = _parse_chapter_time_text(start_text, f"Chapter {row + 1} start")
+            if validate_order and previous_start is not None and startpos <= previous_start:
+                raise ValueError("Chapter start times must be in ascending order with no duplicates.")
+            previous_start = startpos
+            title = title_text.strip() or f"Chapter {row + 1}"
+            chapters.append({"startpos": startpos, "title": title})
+        return chapters
+
+    def _append_row(self, startpos: int, title: str) -> None:
+        self._insert_row(self._table.rowCount(), startpos, title)
+
+    def _insert_row(self, row: int, startpos: int, title: str) -> None:
+        self._loading = True
+        try:
+            self._table.insertRow(row)
+            time_item = QTableWidgetItem(_format_chapter_time_for_editor(startpos))
+            title_item = QTableWidgetItem(title)
+            flags = (
+                Qt.ItemFlag.ItemIsEnabled
+                | Qt.ItemFlag.ItemIsSelectable
+                | Qt.ItemFlag.ItemIsEditable
+            )
+            time_item.setFlags(flags)
+            title_item.setFlags(flags)
+            time_item.setToolTip("Start time accepts M:SS, H:MM:SS.mmm, seconds, or milliseconds")
+            title_item.setToolTip("Chapter title")
+            self._table.setItem(row, 0, time_item)
+            self._table.setItem(row, 1, title_item)
+        finally:
+            self._loading = False
+        self._sync_actions()
+        self._sync_summary()
+
+    def _suggest_start_for_insert(self, row: int) -> int:
+        chapters: list[dict[str, Any]]
+        try:
+            chapters = self._chapters_from_table(validate_order=False)
+        except ValueError:
+            return max(0, row) * 60_000
+        if not chapters:
+            return 0
+
+        previous = chapters[row - 1]["startpos"] if row > 0 else 0
+        next_start = chapters[row]["startpos"] if row < len(chapters) else None
+        previous = int(previous)
+        if next_start is not None:
+            next_start = int(next_start)
+            if next_start > previous + 1000:
+                return previous + ((next_start - previous) // 2)
+        return previous + 60_000
+
+    def _selected_rows(self) -> list[int]:
+        return sorted({index.row() for index in self._table.selectedIndexes()})
+
+    @staticmethod
+    def _is_default_title(text: str) -> bool:
+        stripped = text.strip()
+        return stripped.startswith("Chapter ") and stripped.removeprefix("Chapter ").isdigit()
+
+    def _renumber_default_titles(self) -> None:
+        self._loading = True
+        try:
+            for row in range(self._table.rowCount()):
+                item = self._table.item(row, 1)
+                if item is not None and (
+                    not item.text().strip() or self._is_default_title(item.text())
+                ):
+                    item.setText(f"Chapter {row + 1}")
+        finally:
+            self._loading = False
+
+    def _on_item_changed(self, _item: QTableWidgetItem) -> None:
+        self._mixed = False
+        self._emit_modified()
+
+    def _emit_modified(self) -> None:
+        if self._loading:
+            return
+        self._sync_actions()
+        self._sync_summary()
+        self.modifiedChanged.emit()
+
+    def _sync_actions(self) -> None:
+        rows = self._selected_rows()
+        self._delete_btn.setEnabled(self._editable and bool(rows))
+        self._sort_btn.setEnabled(self._editable and self._table.rowCount() > 1)
+
+    def _sync_summary(self) -> None:
+        if self._mixed and self._table.rowCount() == 0:
+            self._summary.setText("Mixed chapter values")
+            return
+        count = self._table.rowCount()
+        if count == 0:
+            self._summary.setText("No chapters")
+            return
+        noun = "chapter" if count == 1 else "chapters"
+        self._summary.setText(f"{count} {noun}")
 
 
 class _TrackFieldRow(QFrame):
@@ -1023,6 +1392,8 @@ class _TrackFieldRow(QFrame):
             elif isinstance(editor, QLineEdit):
                 editor.setPlaceholderText("Mixed values" if mixed else "")
                 editor.setText("" if mixed or value is None else self._format_value(value))
+            elif isinstance(editor, _ChapterTimelineEditor):
+                editor.set_chapter_data(value, mixed=mixed)
         finally:
             self._initializing = False
 
@@ -1075,12 +1446,12 @@ class _TrackFieldRow(QFrame):
             editor.textChanged.connect(self._mark_modified)
             return editor
         if self.spec.kind == "chapters":
-            editor = QPlainTextEdit()
-            editor.setPlaceholderText("Mixed values" if self._mixed else "")
-            editor.setPlainText("" if self._mixed or value is None else self._format_value(value))
-            editor.setMinimumHeight(160)
-            editor.setStyleSheet(self._field_css())
-            editor.setReadOnly(True)
+            editor = _ChapterTimelineEditor(
+                value,
+                mixed=self._mixed,
+                editable=self.spec.editable,
+            )
+            editor.modifiedChanged.connect(self._mark_modified)
             return editor
 
         editor = QLineEdit()
@@ -1154,6 +1525,8 @@ class _TrackFieldRow(QFrame):
             if data is MIXED:
                 raise ValueError(f"{self.spec.label} is still mixed")
             return data
+        if isinstance(editor, _ChapterTimelineEditor):
+            return editor.chapter_data()
         if isinstance(editor, QPlainTextEdit):
             text = editor.toPlainText()
         elif isinstance(editor, QLineEdit):
@@ -1169,8 +1542,6 @@ class _TrackFieldRow(QFrame):
             return _parse_datetime_text(text, self.spec.label)
         if self.spec.kind == "literal":
             return _parse_literal_text(text)
-        if self.spec.kind == "chapters":
-            return self._initial_value
         return text
 
 

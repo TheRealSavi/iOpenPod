@@ -11,7 +11,7 @@ import pytest
 from PIL import Image
 from PyQt6.QtCore import QPoint, Qt
 from PyQt6.QtTest import QTest
-from PyQt6.QtWidgets import QComboBox, QHeaderView, QLineEdit, QPlainTextEdit, QPushButton, QTreeWidget
+from PyQt6.QtWidgets import QComboBox, QHeaderView, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QTreeWidget
 
 from app_core.context import RuntimeSettingsService
 from app_core.services import DeviceCapabilitySnapshot, DeviceIdentitySnapshot, DeviceManagerLike, DeviceSession, SettingsService, SettingsSnapshot
@@ -21,8 +21,8 @@ from GUI.widgets.MBListView import (
     COLUMN_CONFIG,
     DEFAULT_AUDIOBOOK_COLUMNS,
     DEFAULT_PODCAST_COLUMNS,
-    MusicBrowserList,
     SORTABLE_NUMERIC_KEYS,
+    MusicBrowserList,
     build_new_regular_playlist,
     chapter_count_from_data,
     chapter_summary_from_data,
@@ -30,6 +30,7 @@ from GUI.widgets.MBListView import (
 from GUI.widgets.trackEditorDialog import (
     TrackEditorDialog,
     _ArtworkPreviewPanel,
+    _ChapterTimelineEditor,
     _format_datetime_value,
     _parse_datetime_text,
     _SquareCropCanvas,
@@ -48,6 +49,12 @@ def _tree_child_text(tree: QTreeWidget, section_index: int, child_index: int, co
     child = section.child(child_index)
     assert child is not None
     return child.text(column)
+
+
+def _table_item(table: QTableWidget, row: int, column: int) -> QTableWidgetItem:
+    item = table.item(row, column)
+    assert item is not None
+    return item
 
 
 @dataclass
@@ -1041,7 +1048,7 @@ def test_track_editor_dialog_marks_structural_fields_read_only(qtbot) -> None:
     assert artwork_combo.currentData() == 1
 
 
-def test_track_editor_dialog_shows_chapters_read_only(qtbot) -> None:
+def test_track_editor_dialog_edits_existing_chapters(qtbot) -> None:
     chapter_data = {
         "unk024": 0,
         "unk028": 0,
@@ -1067,19 +1074,93 @@ def test_track_editor_dialog_shows_chapters_read_only(qtbot) -> None:
     assert keys == {"chapter_data"}
 
     data_row = next(row for row in chapter_rows if row.spec.key == "chapter_data")
-    timeline = cast(QPlainTextEdit, data_row.editor)
+    timeline = cast(_ChapterTimelineEditor, data_row.editor)
 
-    assert not data_row.spec.editable
+    assert data_row.spec.editable
     assert data_row.spec.kind == "chapters"
-    assert timeline.isReadOnly()
-    assert "chapter editing is not safely implemented yet" in data_row.spec.help_text
-    assert "01" in timeline.toPlainText()
-    assert "0:00" in timeline.toPlainText()
-    assert "Intro" in timeline.toPlainText()
-    assert "02" in timeline.toPlainText()
-    assert "1:01" in timeline.toPlainText()
-    assert "Act One" in timeline.toPlainText()
+    assert timeline._table.rowCount() == 2
+    assert _table_item(timeline._table, 0, 0).text() == "0:00"
+    assert _table_item(timeline._table, 0, 1).text() == "Intro"
+    assert _table_item(timeline._table, 1, 0).text() == "1:01"
+    assert _table_item(timeline._table, 1, 1).text() == "Act One"
     assert dialog.changes() == {}
+
+    _table_item(timeline._table, 1, 0).setText("1:02.500")
+    _table_item(timeline._table, 1, 1).setText("Act I")
+
+    assert data_row.is_modified()
+    assert dialog.changes() == {
+        "chapter_data": {
+            "unk024": 0,
+            "unk028": 0,
+            "unk032": 0,
+            "chapters": [
+                {"startpos": 0, "title": "Intro"},
+                {"startpos": 62_500, "title": "Act I"},
+            ],
+        }
+    }
+
+
+def test_track_editor_dialog_adds_and_deletes_chapters(qtbot) -> None:
+    dialog = TrackEditorDialog(
+        [
+            {
+                "db_track_id": 1,
+                "Title": "Plain Track",
+            },
+        ]
+    )
+    qtbot.addWidget(dialog)
+
+    data_row = next(row for row in dialog._rows if row.spec.key == "chapter_data")
+    timeline = cast(_ChapterTimelineEditor, data_row.editor)
+
+    assert timeline._table.rowCount() == 0
+    timeline._add_btn.click()
+    assert timeline._table.rowCount() == 1
+    _table_item(timeline._table, 0, 0).setText("0:30")
+    _table_item(timeline._table, 0, 1).setText("Opening")
+
+    timeline._add_btn.click()
+    _table_item(timeline._table, 1, 0).setText("1:30")
+    _table_item(timeline._table, 1, 1).setText("Main Part")
+
+    timeline._table.selectRow(0)
+    timeline._delete_btn.click()
+
+    assert dialog.changes() == {
+        "chapter_data": {
+            "chapters": [
+                {"startpos": 90_000, "title": "Main Part"},
+            ],
+        }
+    }
+
+
+def test_track_editor_dialog_rejects_out_of_order_chapters(qtbot) -> None:
+    dialog = TrackEditorDialog(
+        [
+            {
+                "db_track_id": 1,
+                "Title": "Chaptered Album",
+                "chapter_data": {
+                    "chapters": [
+                        {"startpos": 0, "title": "Intro"},
+                        {"startpos": 61_000, "title": "Act One"},
+                    ],
+                },
+            },
+        ]
+    )
+    qtbot.addWidget(dialog)
+
+    data_row = next(row for row in dialog._rows if row.spec.key == "chapter_data")
+    timeline = cast(_ChapterTimelineEditor, data_row.editor)
+    _table_item(timeline._table, 1, 0).setText("0:00")
+
+    with pytest.raises(ValueError, match="ascending order"):
+        data_row.value()
 
 
 def test_track_editor_dialog_uses_eq_setting_field_key(qtbot) -> None:

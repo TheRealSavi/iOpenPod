@@ -174,7 +174,7 @@ class TrackInfo:
     artist_id: int = 0   # Links to artist entry (assigned by writer)
     composer_id: int = 0  # Links to composer entry (assigned by writer)
 
-    # Chapter data (MHOD type 17) — list of {"startpos": ms, "title": str}
+    # Chapter data (MHOD type 17) lives in iTunesDB, independent of filetype.
     chapter_data: dict | None = None
 
     # Internal sync hint (transient, not written to database)

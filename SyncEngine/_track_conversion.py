@@ -376,6 +376,7 @@ def pc_track_to_info(
         category=pc_track.category,
         podcast_rss_url=pc_track.podcast_url,
         podcast_enclosure_url=pc_track.podcast_enclosure_url,
+        # iTunesDB chapters are DB-side and not limited to AAC/M4A files.
         chapter_data={"chapters": pc_track.chapters} if pc_track.chapters else None,
     )
 

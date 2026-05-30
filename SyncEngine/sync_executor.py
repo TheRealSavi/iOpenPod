@@ -19,7 +19,7 @@ import shutil
 import tempfile
 import threading
 import time
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
@@ -156,6 +156,9 @@ class _SyncContext:
     # ── Fingerprint/source tracking for new-track backpatch ─────────
     new_track_fingerprints: dict[int, str] = field(default_factory=dict)
     new_track_info: dict[int, tuple] = field(default_factory=dict)
+    conversion_group_add_counts: dict[str, int] = field(default_factory=dict)
+    conversion_group_success_counts: dict[str, int] = field(default_factory=dict)
+    completed_conversion_groups: set[str] = field(default_factory=set)
     pc_file_paths: dict[int, str] = field(default_factory=dict)
     final_photo_db: object | None = None
 
@@ -353,6 +356,7 @@ class SyncExecutor:
         )
 
         self._apply_device_capability_filters(ctx)
+        self._prepare_conversion_group_counts(ctx)
         if not ctx.plan.has_changes:
             ctx.result.success = not ctx.result.has_errors
             return ctx.result
@@ -379,6 +383,7 @@ class SyncExecutor:
             self._execute_artwork_updates,   # Stage 3b
             self._download_podcast_episodes,  # Stage 3c (podcast prep)
             self._execute_adds,              # Stage 4
+            self._execute_deferred_replacement_removes,  # Stage 4c
             self._execute_sound_check,       # Stage 4b
             self._execute_playcount_sync,    # Stage 5
             self._execute_rating_sync,       # Stage 6
@@ -614,6 +619,36 @@ class SyncExecutor:
 
         apply_itunes_protections_from_tracks(self.ipod_path, all_tracks)
 
+    @staticmethod
+    def _prepare_conversion_group_counts(ctx: _SyncContext) -> None:
+        counts = Counter(
+            item.conversion_group_id
+            for item in ctx.plan.to_add
+            if item.conversion_group_id
+        )
+        for item in ctx.plan.to_add:
+            group_id = item.conversion_group_id
+            if not group_id:
+                continue
+            expected = int(item.conversion_group_add_count or 0)
+            if expected:
+                counts[group_id] = max(counts[group_id], expected)
+        ctx.conversion_group_add_counts = dict(counts)
+        ctx.conversion_group_success_counts = {}
+        ctx.completed_conversion_groups = set()
+
+    @staticmethod
+    def _record_conversion_group_add_success(ctx: _SyncContext, item: SyncItem) -> None:
+        group_id = item.conversion_group_id
+        if not group_id:
+            return
+        ctx.conversion_group_success_counts[group_id] = (
+            ctx.conversion_group_success_counts.get(group_id, 0) + 1
+        )
+        expected = ctx.conversion_group_add_counts.get(group_id, 1)
+        if ctx.conversion_group_success_counts[group_id] >= expected:
+            ctx.completed_conversion_groups.add(group_id)
+
     # ── Pre-flight & Loading ────────────────────────────────────────────────
 
     def _preflight_checks(self, ctx: _SyncContext) -> bool:
@@ -640,8 +675,18 @@ class SyncExecutor:
                     if est > old_size:
                         update_growth += est - old_size
 
+                deferred_remove_bytes = sum(
+                    self._sync_item_size(item)
+                    for item in ctx.plan.to_remove
+                    if getattr(item, "defer_removal_until_after_add", False)
+                )
+                removable_credit = max(
+                    0,
+                    ctx.plan.storage.bytes_to_remove - deferred_remove_bytes,
+                )
+
                 needed = (ctx.plan.storage.bytes_to_add
-                          - ctx.plan.storage.bytes_to_remove
+                          - removable_credit
                           + update_growth
                           + _DB_OVERHEAD_BYTES)
                 if needed > 0 and disk.free < needed:
@@ -1048,7 +1093,10 @@ class SyncExecutor:
     def _execute_removes(self, ctx: _SyncContext) -> None:
         # Combine user-selected removals with mandatory integrity removals
         # (ghost tracks whose files are missing from iPod).
-        all_removes = list(ctx.plan.to_remove)
+        all_removes = [
+            item for item in ctx.plan.to_remove
+            if not getattr(item, "defer_removal_until_after_add", False)
+        ]
         integrity_removals = getattr(ctx.plan, '_integrity_removals', [])
         if integrity_removals:
             # Deduplicate by db_track_id in case any overlap
@@ -1058,16 +1106,34 @@ class SyncExecutor:
                     all_removes.append(item)
                     existing_db_track_ids.add(item.db_track_id)
 
-        if not all_removes:
+        self._execute_remove_items(
+            ctx,
+            all_removes,
+            stage_name="remove",
+            start_message="Removing tracks...",
+        )
+
+        for fp, db_track_id in getattr(ctx.plan, '_stale_mapping_entries', []):
+            ctx.mapping.remove_track(fp, db_track_id=db_track_id)
+
+    def _execute_remove_items(
+        self,
+        ctx: _SyncContext,
+        items: list[SyncItem],
+        *,
+        stage_name: str,
+        start_message: str,
+    ) -> None:
+        if not items:
             return
 
-        ctx.progress("remove", 0, len(all_removes), message="Removing tracks...")
+        ctx.progress(stage_name, 0, len(items), message=start_message)
 
-        for i, item in enumerate(all_removes):
+        for i, item in enumerate(items):
             if ctx.cancelled():
                 return
 
-            ctx.progress("remove", i + 1, len(all_removes), item, item.description)
+            ctx.progress(stage_name, i + 1, len(items), item, item.description)
 
             if ctx.dry_run:
                 ctx.result.tracks_removed += 1
@@ -1095,8 +1161,21 @@ class SyncExecutor:
 
             ctx.result.tracks_removed += 1
 
-        for fp, db_track_id in getattr(ctx.plan, '_stale_mapping_entries', []):
-            ctx.mapping.remove_track(fp, db_track_id=db_track_id)
+    def _execute_deferred_replacement_removes(self, ctx: _SyncContext) -> None:
+        deferred = [
+            item for item in ctx.plan.to_remove
+            if (
+                getattr(item, "defer_removal_until_after_add", False)
+                and getattr(item, "conversion_group_id", None)
+                in ctx.completed_conversion_groups
+            )
+        ]
+        self._execute_remove_items(
+            ctx,
+            deferred,
+            stage_name="replace_remove",
+            start_message="Removing replaced album tracks...",
+        )
 
     def _parallel_copy_stage(
         self,
@@ -1345,6 +1424,8 @@ class SyncExecutor:
                     existing_track.length = item.pc_track.duration_ms
                 if item.pc_track.sample_rate:
                     existing_track.sample_rate = item.pc_track.sample_rate
+                if item.pc_track.chapters:
+                    existing_track.chapter_data = {"chapters": item.pc_track.chapters}
 
                 # IMPORTANT: Preserve media_type from the existing iPod track.
                 # Don't recalculate it from the current file's metadata (stik atom),
@@ -1460,6 +1541,8 @@ class SyncExecutor:
         "podcast_url": ("podcast_rss_url", None),
         "podcast_enclosure_url": ("podcast_enclosure_url", None),
         "date_released": ("date_released", "int"),
+        # iTunesDB chapter data is DB-side and applies regardless of filetype.
+        "chapter_data": ("chapter_data", None),
     }
 
     def _execute_metadata_updates(self, ctx: _SyncContext) -> None:
@@ -1794,6 +1877,7 @@ class SyncExecutor:
                     return
                 ctx.progress("add", i + 1, len(ctx.plan.to_add), item, item.description)
                 if item.pc_track is not None:
+                    self._record_conversion_group_add_success(ctx, item)
                     ctx.result.tracks_added += 1
             return
 
@@ -1815,6 +1899,8 @@ class SyncExecutor:
             if fingerprint:
                 ctx.new_track_fingerprints[id(track_info)] = fingerprint
                 ctx.new_track_info[id(track_info)] = (item.pc_track, ipod_path, was_transcoded)
+
+            self._record_conversion_group_add_success(ctx, item)
 
             ctx.result.tracks_added += 1
 

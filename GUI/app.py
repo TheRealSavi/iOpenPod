@@ -30,8 +30,12 @@ from app_core.device_identity import (
     resolve_device_image_filename,
 )
 from app_core.jobs import (
+    AlbumConversionRequest,
+    AlbumConversionWorker,
     BackSyncRequest,
     BackSyncWorker,
+    ChapterSplitRequest,
+    ChapterSplitWorker,
     DropScanWorker,
     EjectDeviceWorker,
     PodcastPlanRequest,
@@ -121,6 +125,8 @@ class MainWindow(QMainWindow):
         self._sync_worker = None
         self._back_sync_worker = None
         self._podcast_plan_worker = None
+        self._album_conversion_worker = None
+        self._chapter_split_worker = None
         self._sync_execute_worker = None
         self._tool_download_worker = None
         self._keep_sync_results_visible_after_rescan = False
@@ -235,7 +241,10 @@ class MainWindow(QMainWindow):
             libraries=self.library_service,
         )
         self.musicBrowser.podcastBrowser.podcast_sync_requested.connect(self._onPodcastSyncRequested)
+        self.musicBrowser.album_conversion_requested.connect(self._onAlbumConversionRequested)
+        self.musicBrowser.browserTrack.split_chapters_requested.connect(self._onChapterSplitRequested)
         self.musicBrowser.browserTrack.remove_from_ipod_requested.connect(self._onRemoveFromIpod)
+        self.musicBrowser.playlistBrowser.trackList.split_chapters_requested.connect(self._onChapterSplitRequested)
         self.musicBrowser.playlistBrowser.trackList.remove_from_ipod_requested.connect(self._onRemoveFromIpod)
 
         self.sidebar = Sidebar()
@@ -864,6 +873,10 @@ class MainWindow(QMainWindow):
                 self._podcast_plan_worker is not None
                 and self._podcast_plan_worker.isRunning()
             )
+            or (
+                self._album_conversion_worker is not None
+                and self._album_conversion_worker.isRunning()
+            )
             or (self._sync_execute_worker is not None and self._sync_execute_worker.isRunning())
         )
 
@@ -1138,6 +1151,230 @@ class MainWindow(QMainWindow):
         self.centralStack.setCurrentIndex(1)
         self.syncReview.show_plan(plan)
 
+    def _onAlbumConversionRequested(self, album_items: list[dict]) -> None:
+        """Prepare a chaptered-album conversion plan from an Albums grid item."""
+        if not album_items:
+            return
+        if self._is_sync_running():
+            QMessageBox.information(
+                self,
+                "Sync Running",
+                "Please wait for the current sync to finish before converting an album.",
+            )
+            return
+
+        device_manager = self.device_manager
+        if not device_manager.device_path:
+            QMessageBox.warning(self, "No Device", "Please select an iPod device first.")
+            return
+
+        cache = self.library_cache
+        if not cache.is_ready():
+            QMessageBox.information(self, "Library Loading", "Please wait for the iPod library to finish loading.")
+            return
+
+        album_item = dict(album_items[0])
+        try:
+            from SyncEngine.album_chapters import resolve_album_tracks
+
+            album_tracks = resolve_album_tracks(album_item, cache.get_tracks())
+        except Exception as exc:
+            logger.debug("Album track resolution failed", exc_info=True)
+            QMessageBox.warning(self, "Album Conversion", str(exc))
+            return
+
+        if len(album_tracks) < 2:
+            QMessageBox.information(
+                self,
+                "Album Conversion",
+                "Choose an album with at least two tracks.",
+            )
+            return
+
+        settings = self.settings_service.get_effective_settings()
+        pc_folders = tuple(self._last_pc_folder_entries)
+        if not pc_folders:
+            pc_folders = tuple(_media_folder_entries_from_settings(settings))
+
+        self.centralStack.setCurrentIndex(1)
+        self.syncReview.show_loading()
+        self.syncReview.update_progress(
+            "album_conversion",
+            0,
+            len(album_tracks),
+            "Preparing chaptered album...",
+        )
+
+        worker = AlbumConversionWorker(
+            AlbumConversionRequest(
+                album_item=album_item,
+                album_tracks=album_tracks,
+                pc_folders=pc_folders,
+                ipod_path=device_manager.device_path or "",
+                settings=settings,
+                artwork_bytes=self._album_conversion_artwork_bytes(
+                    album_item,
+                    album_tracks,
+                ),
+            )
+        )
+        self._album_conversion_worker = worker
+        worker.progress.connect(self.syncReview.update_progress)
+        worker.finished.connect(self._onAlbumConversionComplete)
+        worker.error.connect(self._onAlbumConversionError)
+        worker.finished.connect(lambda _: setattr(self, "_album_conversion_worker", None))
+        worker.error.connect(lambda _: setattr(self, "_album_conversion_worker", None))
+        worker.start()
+
+    def _album_conversion_artwork_bytes(
+        self,
+        album_item: dict,
+        album_tracks: list[dict],
+    ) -> bytes | None:
+        artwork_id = album_item.get("artwork_id_ref")
+        if not artwork_id:
+            artwork_id = next(
+                (
+                    track.get("artwork_id_ref")
+                    for track in album_tracks
+                    if track.get("artwork_id_ref")
+                ),
+                None,
+            )
+        return self._artwork_bytes_for_id(artwork_id, "album conversion")
+
+    def _track_artwork_bytes(self, track: dict) -> bytes | None:
+        artwork_id = (
+            track.get("artwork_id_ref")
+            or track.get("mhii_link")
+            or track.get("mhiiLink")
+        )
+        return self._artwork_bytes_for_id(artwork_id, "chapter split")
+
+    def _artwork_bytes_for_id(self, artwork_id: object, context: str) -> bytes | None:
+        if artwork_id is None:
+            return None
+        artwork_int: int | None = None
+        if isinstance(artwork_id, int):
+            artwork_int = artwork_id
+        elif isinstance(artwork_id, (str, bytes, bytearray)):
+            try:
+                artwork_int = int(artwork_id)
+            except (TypeError, ValueError):
+                return None
+        if not artwork_int:
+            return None
+        try:
+            import io
+
+            from .imgMaker import get_artwork
+
+            image = get_artwork(artwork_int, mode="image_only")
+            if image is None:
+                return None
+            image = image.convert("RGB")
+            buf = io.BytesIO()
+            image.save(buf, format="JPEG", quality=90)
+            return buf.getvalue()
+        except Exception:
+            logger.debug("Could not read %s artwork", context, exc_info=True)
+            return None
+
+    def _onAlbumConversionComplete(self, result) -> None:
+        self._plan = result.plan
+        self.syncReview._ipod_tracks_cache = self.library_cache.get_tracks() or []
+        self.syncReview.show_plan(result.plan)
+        warnings = getattr(result, "warnings", ()) or ()
+        if warnings:
+            logger.debug(
+                "Album conversion used iPod source files for %d tracks",
+                len(warnings),
+            )
+
+    def _onAlbumConversionError(self, error_msg: str) -> None:
+        self.syncReview.show_error(error_msg)
+
+    def _onChapterSplitRequested(self, tracks: list[dict]) -> None:
+        """Prepare a chapter-split sync plan from one chaptered track."""
+        if not tracks:
+            return
+        if self._is_sync_running():
+            QMessageBox.information(
+                self,
+                "Sync Running",
+                "Please wait for the current sync to finish before splitting chapters.",
+            )
+            return
+
+        device_manager = self.device_manager
+        if not device_manager.device_path:
+            QMessageBox.warning(self, "No Device", "Please select an iPod device first.")
+            return
+
+        cache = self.library_cache
+        if not cache.is_ready():
+            QMessageBox.information(
+                self,
+                "Library Loading",
+                "Please wait for the iPod library to finish loading.",
+            )
+            return
+
+        track = dict(tracks[0])
+        try:
+            from SyncEngine.album_chapters import build_chapter_split_segments
+
+            segments = build_chapter_split_segments(track)
+        except Exception as exc:
+            logger.debug("Chapter split validation failed", exc_info=True)
+            QMessageBox.warning(self, "Chapter Split", str(exc))
+            return
+
+        settings = self.settings_service.get_effective_settings()
+        pc_folders = tuple(self._last_pc_folder_entries)
+        if not pc_folders:
+            pc_folders = tuple(_media_folder_entries_from_settings(settings))
+
+        self.centralStack.setCurrentIndex(1)
+        self.syncReview.show_loading()
+        self.syncReview.update_progress(
+            "chapter_split",
+            0,
+            len(segments),
+            "Preparing chapter split...",
+        )
+
+        worker = ChapterSplitWorker(
+            ChapterSplitRequest(
+                track=track,
+                pc_folders=pc_folders,
+                ipod_path=device_manager.device_path or "",
+                settings=settings,
+                artwork_bytes=self._track_artwork_bytes(track),
+            )
+        )
+        self._chapter_split_worker = worker
+        worker.progress.connect(self.syncReview.update_progress)
+        worker.finished.connect(self._onChapterSplitComplete)
+        worker.error.connect(self._onChapterSplitError)
+        worker.finished.connect(lambda _: setattr(self, "_chapter_split_worker", None))
+        worker.error.connect(lambda _: setattr(self, "_chapter_split_worker", None))
+        worker.start()
+
+    def _onChapterSplitComplete(self, result) -> None:
+        self._plan = result.plan
+        self.syncReview._ipod_tracks_cache = self.library_cache.get_tracks() or []
+        self.syncReview.show_plan(result.plan)
+        warnings = getattr(result, "warnings", ()) or ()
+        if warnings:
+            logger.debug(
+                "Chapter split used iPod source file for %d tracks",
+                len(warnings),
+            )
+
+    def _onChapterSplitError(self, error_msg: str) -> None:
+        self.syncReview.show_error(error_msg)
+
     def _onRemoveFromIpod(self, tracks: list):
         """Build a removal-only SyncPlan for the selected tracks and show sync review."""
         if not tracks:
@@ -1354,6 +1591,12 @@ class MainWindow(QMainWindow):
         ):
             self._podcast_plan_worker.requestInterruption()
             return
+        if (
+            self._album_conversion_worker is not None
+            and self._album_conversion_worker.isRunning()
+        ):
+            self._album_conversion_worker.requestInterruption()
+            return
 
         if self._sync_execute_worker is not None and self._sync_execute_worker.isRunning():
             self._sync_execute_worker.requestInterruption()
@@ -1368,6 +1611,8 @@ class MainWindow(QMainWindow):
         if self._back_sync_worker is not None and self._back_sync_worker.isRunning():
             self._back_sync_worker.requestInterruption()
         self._cleanup_podcast_plan_worker()
+        if self._album_conversion_worker is not None and self._album_conversion_worker.isRunning():
+            self._album_conversion_worker.requestInterruption()
         self._cleanup_sync_execute_worker()
         self._show_default_page()
 
@@ -1769,6 +2014,9 @@ class MainWindow(QMainWindow):
         if self._podcast_plan_worker and self._podcast_plan_worker.isRunning():
             self._podcast_plan_worker.requestInterruption()
             self._podcast_plan_worker.wait(3000)
+        if self._album_conversion_worker and self._album_conversion_worker.isRunning():
+            self._album_conversion_worker.requestInterruption()
+            self._album_conversion_worker.wait(3000)
         if self._sync_execute_worker and self._sync_execute_worker.isRunning():
             self._sync_execute_worker.requestInterruption()
             self._sync_execute_worker.wait(3000)

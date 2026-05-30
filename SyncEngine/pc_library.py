@@ -29,6 +29,7 @@ from infrastructure.media_folders import (
 
 from ._formats import (
     AUDIO_EXTENSIONS,
+    MEDIA_EXTENSIONS,
     NEEDS_TRANSCODING,
     VIDEO_ALWAYS_TRANSCODE,
     VIDEO_EXTENSIONS,
@@ -761,9 +762,11 @@ class PCLibrary:
         if ext in {".m4b", ".aa", ".aax"} and not is_audiobook:
             is_audiobook = True
 
-        # Extract chapter markers from audiobooks and podcasts
+        # Extract embedded chapter markers from any supported media file.
+        # iPod DB chapter timelines are format-agnostic; embedded chapters are
+        # only a source/import convenience when the container exposes them.
         chapters = None
-        if is_audiobook or is_podcast:
+        if ext in MEDIA_EXTENSIONS:
             try:
                 from PodcastManager.downloader import extract_chapters
                 chapters = extract_chapters(str(file_path))

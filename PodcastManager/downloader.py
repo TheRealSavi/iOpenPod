@@ -300,11 +300,14 @@ def probe_episode_file(
 
 
 def extract_chapters(file_path: str) -> list[dict] | None:
-    """Extract chapter markers from a downloaded podcast file.
+    """Extract embedded chapter markers from a media file.
 
-    Supports:
+    The iPod database chapter timeline is separate from file metadata and can
+    be written for any track.  This helper only imports chapters when a source
+    file/container exposes them.  Supports:
       - MP4/M4A/M4B: Nero chapters (``chpl`` atom) and QuickTime chapter tracks
       - MP3: ID3v2 CHAP frames
+      - Any ffprobe-readable container with chapter entries
 
     Returns a list of ``{"startpos": ms, "title": str}`` dicts sorted by
     start position, or None if no chapters found.
@@ -316,8 +319,9 @@ def extract_chapters(file_path: str) -> list[dict] | None:
     try:
         if ext in (".m4a", ".m4b", ".mp4", ".aac"):
             return _chapters_from_mp4(file_path)
-        elif ext == ".mp3":
-            return _chapters_from_mp3(file_path)
+        if ext == ".mp3":
+            return _chapters_from_mp3(file_path) or _read_ffprobe_chapters(file_path)
+        return _read_ffprobe_chapters(file_path)
     except Exception as exc:
         log.debug("Chapter extraction failed for %s: %s", file_path, exc)
     return None
@@ -334,7 +338,7 @@ def _chapters_from_mp4(file_path: str) -> list[dict] | None:
 
     # --- QuickTime chapter track (text track referenced by chap tref) ---
     # mutagen doesn't expose chapter tracks, but ffprobe can.
-    chapters = _read_qt_chapters_ffprobe(file_path)
+    chapters = _read_ffprobe_chapters(file_path)
     if chapters:
         return chapters
 
@@ -391,8 +395,8 @@ def _read_nero_chapters(file_path: str) -> list[dict] | None:
     return chapters if chapters else None
 
 
-def _read_qt_chapters_ffprobe(file_path: str) -> list[dict] | None:
-    """Use ffprobe to extract QuickTime chapter tracks."""
+def _read_ffprobe_chapters(file_path: str) -> list[dict] | None:
+    """Use ffprobe to extract container chapter entries."""
     import json as _json
     import subprocess
     import sys as _sys

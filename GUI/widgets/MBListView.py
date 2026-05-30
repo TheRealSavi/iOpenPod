@@ -745,6 +745,7 @@ class MusicBrowserList(QFrame):
     """
 
     remove_from_ipod_requested = pyqtSignal(list)
+    split_chapters_requested = pyqtSignal(list)
 
     def __init__(
         self,
@@ -2761,6 +2762,17 @@ class MusicBrowserList(QFrame):
                     edit_act.setIcon(icon)
                 edit_act.triggered.connect(
                     lambda _=False, sel=list(selected): self._edit_tracks(sel)
+                )
+            menu.addSeparator()
+
+        if len(selected) == 1 and chapter_count_from_data(selected[0].get("chapter_data")) >= 2:
+            split_act = menu.addAction("Split chapters into individual tracks")
+            if split_act:
+                icon = glyph_icon("chaptered-track", 14, Colors.TEXT_PRIMARY)
+                if icon is not None:
+                    split_act.setIcon(icon)
+                split_act.triggered.connect(
+                    lambda _=False, sel=list(selected): self.split_chapters_requested.emit(sel)
                 )
             menu.addSeparator()
 

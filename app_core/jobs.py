@@ -8,6 +8,7 @@ import os
 import random
 import re
 import shutil
+import tempfile
 import threading
 import traceback
 from collections.abc import Callable, Iterable
@@ -117,6 +118,328 @@ class ToolDownloadWorker(QThread):
         except Exception as exc:
             logger.exception("Tool download failed")
             self.error.emit(str(exc))
+
+
+@dataclass(frozen=True)
+class AlbumConversionRequest:
+    """Typed request for converting one iPod album into a chaptered track."""
+
+    album_item: dict
+    album_tracks: list[dict]
+    pc_folders: tuple[Any, ...]
+    ipod_path: str
+    settings: AppSettings
+    artwork_bytes: bytes | None = None
+
+
+@dataclass(frozen=True)
+class AlbumConversionResult:
+    """Result returned after preparing a chaptered album sync plan."""
+
+    plan: Any
+    output_path: str
+    warnings: tuple[str, ...] = ()
+
+
+class AlbumConversionWorker(QThread):
+    """Build a chaptered album file and return a normal sync plan."""
+
+    progress = pyqtSignal(str, int, int, str)
+    finished = pyqtSignal(object)
+    error = pyqtSignal(str)
+
+    def __init__(self, request: AlbumConversionRequest):
+        super().__init__()
+        self._request = request
+
+    def run(self) -> None:
+        try:
+            from SyncEngine.album_chapters import (
+                convert_album_to_chaptered_track,
+                resolve_album_sources,
+            )
+            from SyncEngine.fingerprint_diff_engine import (
+                StorageSummary,
+                SyncAction,
+                SyncItem,
+                SyncPlan,
+            )
+            from SyncEngine.mapping import MappingManager
+
+            request = self._request
+            if len(request.album_tracks) < 2:
+                raise ValueError("Choose an album with at least two tracks.")
+
+            self.progress.emit(
+                "album_conversion",
+                0,
+                len(request.album_tracks),
+                "Resolving album source files...",
+            )
+            mapping = MappingManager(request.ipod_path).load()
+            sources, source_warnings = resolve_album_sources(
+                request.album_tracks,
+                pc_folders=request.pc_folders,
+                ipod_path=request.ipod_path,
+                mapping=mapping,
+                fpcalc_path=getattr(request.settings, "fpcalc_path", ""),
+            )
+            if self.isInterruptionRequested():
+                return
+
+            self.progress.emit(
+                "album_conversion",
+                1,
+                3,
+                "Encoding chaptered album...",
+            )
+            converted = convert_album_to_chaptered_track(
+                album_item=request.album_item,
+                tracks=request.album_tracks,
+                sources=sources,
+                output_dir=self._output_dir(request.settings),
+                settings=request.settings,
+                artwork_bytes=request.artwork_bytes,
+            )
+            if self.isInterruptionRequested():
+                return
+
+            group_id = f"album-{random.getrandbits(64):016x}"
+            output_size = converted.output_path.stat().st_size
+            album_title = (
+                request.album_item.get("album")
+                or request.album_item.get("title")
+                or converted.pc_track.title
+            )
+            add_item = SyncItem(
+                action=SyncAction.ADD_TO_IPOD,
+                fingerprint=None,
+                pc_track=converted.pc_track,
+                estimated_size=output_size,
+                description=f"Chaptered album: {album_title}",
+                conversion_group_id=group_id,
+                conversion_group_add_count=1,
+                conversion_source_fingerprints=converted.source_fingerprints,
+                conversion_source_path_hints=converted.source_path_hints,
+            )
+
+            remove_items = []
+            bytes_to_remove = 0
+            for track, source in zip(request.album_tracks, sources, strict=False):
+                db_track_id = track.get("db_track_id", track.get("db_id"))
+                title = track.get("Title", "Unknown")
+                artist = track.get("Artist", "")
+                size = int(track.get("size", track.get("Size", 0)) or 0)
+                remove_items.append(
+                    SyncItem(
+                        action=SyncAction.REMOVE_FROM_IPOD,
+                        fingerprint=source.fingerprint,
+                        db_track_id=db_track_id,
+                        ipod_track=track,
+                        description=(
+                            f"Replace with chapter: {artist} - {title}"
+                            if artist
+                            else f"Replace with chapter: {title}"
+                        ),
+                        conversion_group_id=group_id,
+                        defer_removal_until_after_add=True,
+                    )
+                )
+                bytes_to_remove += size
+
+            plan = SyncPlan(
+                to_add=[add_item],
+                to_remove=remove_items,
+                storage=StorageSummary(
+                    bytes_to_add=output_size,
+                    bytes_to_remove=bytes_to_remove,
+                ),
+                removals_pre_checked=True,
+                mapping=mapping,
+            )
+
+            self.progress.emit(
+                "album_conversion",
+                3,
+                3,
+                "Chaptered album is ready for review.",
+            )
+            self.finished.emit(
+                AlbumConversionResult(
+                    plan=plan,
+                    output_path=str(converted.output_path),
+                    warnings=tuple(source_warnings),
+                )
+            )
+        except Exception as exc:
+            if self.isInterruptionRequested():
+                return
+            logger.exception("AlbumConversionWorker failed")
+            self.error.emit(str(exc))
+
+    @staticmethod
+    def _output_dir(settings: AppSettings) -> Path:
+        base = (
+            Path(settings.transcode_cache_dir)
+            if getattr(settings, "transcode_cache_dir", "")
+            else Path(getattr(settings, "settings_dir", "") or tempfile.gettempdir())
+        )
+        return base / "album-conversions"
+
+
+@dataclass(frozen=True)
+class ChapterSplitRequest:
+    """Typed request for splitting one chaptered iPod track."""
+
+    track: dict
+    pc_folders: tuple[Any, ...]
+    ipod_path: str
+    settings: AppSettings
+    artwork_bytes: bytes | None = None
+
+
+@dataclass(frozen=True)
+class ChapterSplitResult:
+    """Result returned after preparing a chapter-split sync plan."""
+
+    plan: Any
+    output_paths: tuple[str, ...]
+    warnings: tuple[str, ...] = ()
+
+
+class ChapterSplitWorker(QThread):
+    """Build individual chapter files and return a normal sync plan."""
+
+    progress = pyqtSignal(str, int, int, str)
+    finished = pyqtSignal(object)
+    error = pyqtSignal(str)
+
+    def __init__(self, request: ChapterSplitRequest):
+        super().__init__()
+        self._request = request
+
+    def run(self) -> None:
+        try:
+            from SyncEngine.album_chapters import (
+                build_chapter_split_segments,
+                resolve_track_source,
+                split_track_into_chapter_tracks,
+            )
+            from SyncEngine.fingerprint_diff_engine import (
+                StorageSummary,
+                SyncAction,
+                SyncItem,
+                SyncPlan,
+            )
+            from SyncEngine.mapping import MappingManager
+
+            request = self._request
+            segments = build_chapter_split_segments(request.track)
+            self.progress.emit(
+                "chapter_split",
+                0,
+                len(segments),
+                "Resolving chaptered track source...",
+            )
+            mapping = MappingManager(request.ipod_path).load()
+            source, source_warnings = resolve_track_source(
+                request.track,
+                pc_folders=request.pc_folders,
+                ipod_path=request.ipod_path,
+                mapping=mapping,
+                fpcalc_path=getattr(request.settings, "fpcalc_path", ""),
+            )
+            if self.isInterruptionRequested():
+                return
+
+            self.progress.emit(
+                "chapter_split",
+                1,
+                len(segments),
+                "Splitting chapters into tracks...",
+            )
+            split = split_track_into_chapter_tracks(
+                track=request.track,
+                source=source,
+                output_dir=self._output_dir(request.settings),
+                settings=request.settings,
+                artwork_bytes=request.artwork_bytes,
+            )
+            if self.isInterruptionRequested():
+                return
+
+            group_id = f"chapter-split-{random.getrandbits(64):016x}"
+            add_items: list[SyncItem] = []
+            bytes_to_add = 0
+            for pc_track, output_path in zip(split.pc_tracks, split.output_paths, strict=False):
+                output_size = output_path.stat().st_size
+                bytes_to_add += output_size
+                add_items.append(
+                    SyncItem(
+                        action=SyncAction.ADD_TO_IPOD,
+                        fingerprint=None,
+                        pc_track=pc_track,
+                        estimated_size=output_size,
+                        description=f"Split chapter: {pc_track.title}",
+                        conversion_group_id=group_id,
+                        conversion_group_add_count=len(split.pc_tracks),
+                        conversion_source_fingerprints=(
+                            (source.fingerprint,) if source.fingerprint else ()
+                        ),
+                        conversion_source_path_hints=(str(source.source_path),),
+                    )
+                )
+
+            original_title = request.track.get("Title") or "chaptered track"
+            remove_size = int(request.track.get("size", request.track.get("Size", 0)) or 0)
+            remove_item = SyncItem(
+                action=SyncAction.REMOVE_FROM_IPOD,
+                fingerprint=source.fingerprint,
+                db_track_id=request.track.get("db_track_id", request.track.get("db_id")),
+                ipod_track=request.track,
+                description=f"Replace chaptered track: {original_title}",
+                conversion_group_id=group_id,
+                defer_removal_until_after_add=True,
+            )
+
+            plan = SyncPlan(
+                to_add=add_items,
+                to_remove=[remove_item],
+                storage=StorageSummary(
+                    bytes_to_add=bytes_to_add,
+                    bytes_to_remove=remove_size,
+                ),
+                removals_pre_checked=True,
+                mapping=mapping,
+            )
+
+            self.progress.emit(
+                "chapter_split",
+                len(segments),
+                len(segments),
+                "Chapter tracks are ready for review.",
+            )
+            self.finished.emit(
+                ChapterSplitResult(
+                    plan=plan,
+                    output_paths=tuple(str(path) for path in split.output_paths),
+                    warnings=tuple(source_warnings),
+                )
+            )
+        except Exception as exc:
+            if self.isInterruptionRequested():
+                return
+            logger.exception("ChapterSplitWorker failed")
+            self.error.emit(str(exc))
+
+    @staticmethod
+    def _output_dir(settings: AppSettings) -> Path:
+        base = (
+            Path(settings.transcode_cache_dir)
+            if getattr(settings, "transcode_cache_dir", "")
+            else Path(getattr(settings, "settings_dir", "") or tempfile.gettempdir())
+        )
+        return base / "chapter-splits"
 
 
 @dataclass(frozen=True)

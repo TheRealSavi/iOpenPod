@@ -9,6 +9,7 @@ def _track(
     album: str = "Unknown Album",
     album_artist: str | None = None,
     sound_check: int = 0,
+    chapters: list[dict] | None = None,
 ) -> PCTrack:
     return PCTrack(
         path="/music/Song.mp3",
@@ -32,6 +33,7 @@ def _track(
         sample_rate=None,
         rating=None,
         sound_check=sound_check,
+        chapters=chapters,
     )
 
 
@@ -88,3 +90,36 @@ def test_metadata_compare_keeps_real_pc_metadata_authoritative() -> None:
     assert changes["album"] == ("Real Album", "Folder Album")
     assert changes["album_artist"] == ("Real Album Artist", "Folder Artist")
     assert changes["sound_check"] == (987654, 123456)
+
+
+def test_metadata_compare_syncs_pc_chapters_for_any_filetype() -> None:
+    chapters = [{"startpos": 0, "title": "Intro"}]
+
+    changes = _engine()._compare_metadata(
+        _track(chapters=chapters),
+        {
+            "Title": "Song",
+            "Artist": "Unknown Artist",
+            "Album": "Unknown Album",
+            "filetype": "MPEG audio file",
+        },
+    )
+
+    assert changes["chapter_data"] == (
+        {"chapters": chapters},
+        {"chapters": []},
+    )
+
+
+def test_metadata_compare_does_not_remove_ipod_chapters_when_pc_has_none() -> None:
+    changes = _engine()._compare_metadata(
+        _track(),
+        {
+            "Title": "Song",
+            "Artist": "Unknown Artist",
+            "Album": "Unknown Album",
+            "chapter_data": {"chapters": [{"startpos": 0, "title": "Intro"}]},
+        },
+    )
+
+    assert "chapter_data" not in changes

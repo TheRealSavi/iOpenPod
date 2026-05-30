@@ -14,6 +14,7 @@ Chapter Data MHOD (type 17) has:
   - Common MHOD header (24 bytes)
   - 12-byte preamble (3 × u32 LE)
   - Big-endian atom tree: sean → chap × N → name + hedr
+  - Stored in iTunesDB, so it is not tied to an AAC/M4A source file
 
 Cross-referenced against:
   - iTunesDB_Shared/mhod_defs.py (field definitions and constants)

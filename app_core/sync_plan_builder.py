@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+from collections import Counter
 from collections.abc import Iterable, Sequence
 from typing import Any
 
@@ -125,10 +126,48 @@ def build_filtered_sync_plan(
         if bucket is not None:
             bucket.append(item)
 
+    original_conversion_counts = Counter(
+        getattr(item, "conversion_group_id", None)
+        for item in (original_plan.to_add if original_plan else [])
+        if getattr(item, "conversion_group_id", None)
+    )
+    for item in (original_plan.to_add if original_plan else ()):
+        group_id = getattr(item, "conversion_group_id", None)
+        if not group_id:
+            continue
+        expected = int(getattr(item, "conversion_group_add_count", 0) or 0)
+        if expected:
+            original_conversion_counts[group_id] = max(
+                original_conversion_counts[group_id],
+                expected,
+            )
+    selected_conversion_counts = Counter(
+        getattr(item, "conversion_group_id", None)
+        for item in grouped[SyncAction.ADD_TO_IPOD]
+        if getattr(item, "conversion_group_id", None)
+    )
+    complete_conversion_groups = {
+        group_id
+        for group_id, selected_count in selected_conversion_counts.items()
+        if selected_count >= original_conversion_counts.get(group_id, selected_count)
+    }
+    grouped[SyncAction.REMOVE_FROM_IPOD] = [
+        item for item in grouped[SyncAction.REMOVE_FROM_IPOD]
+        if (
+            not getattr(item, "defer_removal_until_after_add", False)
+            or getattr(item, "conversion_group_id", None) in complete_conversion_groups
+        )
+    ]
+
     bytes_to_add = 0
     bytes_to_remove = 0
     bytes_to_update = 0
-    for item in selected_items:
+    filtered_items = tuple(
+        item
+        for bucket in grouped.values()
+        for item in bucket
+    )
+    for item in filtered_items:
         add_delta, remove_delta = sync_item_size_delta(item)
         if item.action == SyncAction.UPDATE_FILE:
             bytes_to_update += add_delta

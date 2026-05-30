@@ -3,9 +3,10 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from PyQt6.QtCore import QSize, Qt, QTimer
-from PyQt6.QtWidgets import QFrame, QSizePolicy, QSplitter, QStackedWidget, QVBoxLayout
+from PyQt6.QtCore import QSize, Qt, QTimer, pyqtSignal
+from PyQt6.QtWidgets import QFrame, QMenu, QSizePolicy, QSplitter, QStackedWidget, QVBoxLayout
 
+from ..glyphs import glyph_icon
 from ..styles import Colors, make_scroll_area
 from .gridHeaderBar import GridHeaderBar
 from .MBGridView import MusicBrowserGrid
@@ -28,6 +29,8 @@ if TYPE_CHECKING:
 
 class MusicBrowser(QFrame):
     """Main browser widget with grid and track list views."""
+
+    album_conversion_requested = pyqtSignal(list)
 
     def __init__(
         self,
@@ -65,6 +68,7 @@ class MusicBrowser(QFrame):
             settings_service=self._settings_service,
         )
         self.browserGrid.item_selected.connect(self._onGridItemSelected)
+        self.browserGrid.item_context_requested.connect(self._onGridItemContextRequested)
 
         self.browserGridScroll = make_scroll_area()
         self.browserGridScroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
@@ -401,6 +405,37 @@ class MusicBrowser(QFrame):
             self.browserTrack.filterByArtist(title)
         elif category == "Genres":
             self.browserTrack.filterByGenre(title)
+
+    def _onGridItemContextRequested(self, items: object, global_pos) -> None:
+        """Show the Albums-grid context menu."""
+        if self._current_category != "Albums":
+            return
+        if not isinstance(items, list):
+            return
+
+        album_items = [
+            dict(item)
+            for item in items
+            if isinstance(item, dict) and item.get("category", "Albums") == "Albums"
+        ]
+        if not album_items:
+            return
+
+        menu = QMenu(self)
+        action = menu.addAction("Convert to a single chaptered track")
+        if action is None:
+            return
+
+        icon = glyph_icon("chaptered-track", 14, Colors.TEXT_PRIMARY)
+        if icon is not None:
+            action.setIcon(icon)
+
+        if any(int(item.get("track_count", 0) or 0) < 2 for item in album_items):
+            action.setEnabled(False)
+
+        chosen = menu.exec(global_pos)
+        if chosen == action and action.isEnabled():
+            self.album_conversion_requested.emit(album_items)
 
     def refresh_artwork_appearance(self) -> None:
         """Refresh list and grid artwork after an appearance setting changes."""
