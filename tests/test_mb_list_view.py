@@ -17,6 +17,7 @@ from app_core.context import RuntimeSettingsService
 from app_core.services import DeviceCapabilitySnapshot, DeviceIdentitySnapshot, DeviceManagerLike, DeviceSession, SettingsService, SettingsSnapshot
 from GUI import imgMaker
 from GUI.imgMaker import ArtworkFormatPreview, TrackArtworkPreview, get_track_artwork_previews
+from GUI.styles import Colors
 from GUI.widgets.MBListView import (
     COLUMN_CONFIG,
     DEFAULT_AUDIOBOOK_COLUMNS,
@@ -1100,6 +1101,59 @@ def test_track_editor_dialog_edits_existing_chapters(qtbot) -> None:
             ],
         }
     }
+
+
+def test_chapter_table_editor_is_opaque_and_selects_current_text(qtbot) -> None:
+    timeline = _ChapterTimelineEditor(
+        {
+            "chapters": [
+                {"startpos": 0, "title": "Intro"},
+            ],
+        }
+    )
+    qtbot.addWidget(timeline)
+    timeline.show()
+
+    title_item = _table_item(timeline._table, 0, 1)
+    timeline._table.setCurrentItem(title_item)
+    timeline._table.editItem(title_item)
+
+    qtbot.waitUntil(lambda: timeline._table.findChild(QLineEdit) is not None, timeout=1000)
+    editor = timeline._table.findChild(QLineEdit)
+    assert editor is not None
+    assert f"background-color: {Colors.DROPDOWN_BG}" in editor.styleSheet()
+    assert Colors.SURFACE_ALT not in editor.styleSheet()
+    qtbot.waitUntil(lambda: editor.selectedText() == "Intro", timeout=1000)
+
+
+def test_chapter_table_time_entry_shows_format_hints_and_has_room(qtbot) -> None:
+    timeline = _ChapterTimelineEditor(
+        {
+            "chapters": [
+                {"startpos": 3_723_500, "title": "Deep Cut"},
+            ],
+        }
+    )
+    qtbot.addWidget(timeline)
+    timeline.show()
+
+    assert "62500ms" in timeline._time_hint.text()
+    assert timeline._table.columnWidth(0) >= 150
+    start_header = timeline._table.horizontalHeaderItem(0)
+    assert start_header is not None
+    assert start_header.text() == "Start Time"
+    assert "offsets from the beginning" in start_header.toolTip()
+
+    start_item = _table_item(timeline._table, 0, 0)
+    timeline._table.setCurrentItem(start_item)
+    timeline._table.editItem(start_item)
+
+    qtbot.waitUntil(lambda: timeline._table.findChild(QLineEdit) is not None, timeout=1000)
+    editor = timeline._table.findChild(QLineEdit)
+    assert editor is not None
+    assert editor.placeholderText() == "0:00, 1:23.500, 62500ms"
+    assert "1:02:03" in editor.toolTip()
+    assert editor.minimumWidth() >= 150
 
 
 def test_track_editor_dialog_adds_and_deletes_chapters(qtbot) -> None:

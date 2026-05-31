@@ -13,7 +13,7 @@ from typing import Any
 from dateutil import parser as dateutil_parser
 from dateutil.parser import ParserError
 from PIL import Image, ImageOps, UnidentifiedImageError
-from PyQt6.QtCore import QPointF, QRectF, QSize, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QAbstractItemModel, QModelIndex, QPointF, QRectF, QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import (
     QColor,
     QFont,
@@ -45,6 +45,8 @@ from PyQt6.QtWidgets import (
     QSizePolicy,
     QSlider,
     QStackedWidget,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
     QTableWidget,
     QTableWidgetItem,
     QTreeWidget,
@@ -962,6 +964,57 @@ def build_track_field_specs(tracks: list[dict]) -> list[TrackFieldSpec]:
     return specs
 
 
+class _ChapterCellDelegate(QStyledItemDelegate):
+    """Opaque inline editor for chapter table cells."""
+
+    def createEditor(self, parent: QWidget | None, option: QStyleOptionViewItem, index: QModelIndex) -> QWidget | None:
+        editor = QLineEdit(parent)
+        editor.setAutoFillBackground(True)
+        if index.column() == 0:
+            editor.setPlaceholderText(_CHAPTER_TIME_PLACEHOLDER)
+            editor.setToolTip(_CHAPTER_TIME_HINT)
+            editor.setMinimumWidth(_CHAPTER_TIME_COLUMN_WIDTH)
+        else:
+            editor.setPlaceholderText("Chapter title")
+        editor.setStyleSheet(
+            f"""
+            QLineEdit {{
+                background-color: {Colors.DROPDOWN_BG};
+                color: {Colors.TEXT_PRIMARY};
+                border: 1px solid {Colors.BORDER_FOCUS};
+                border-radius: {Metrics.BORDER_RADIUS_SM}px;
+                padding: 0 6px;
+                font-family: {FONT_FAMILY};
+                font-size: {Metrics.FONT_SM}px;
+                selection-background-color: {Colors.ACCENT};
+                selection-color: {Colors.TEXT_ON_ACCENT};
+            }}
+            """
+        )
+        return editor
+
+    def setEditorData(self, editor: QWidget | None, index: QModelIndex) -> None:
+        if isinstance(editor, QLineEdit):
+            editor.setText(str(index.data(Qt.ItemDataRole.EditRole) or ""))
+            QTimer.singleShot(0, editor.selectAll)
+            return
+        super().setEditorData(editor, index)
+
+    def setModelData(self, editor: QWidget | None, model: QAbstractItemModel | None, index: QModelIndex) -> None:
+        if isinstance(editor, QLineEdit) and model is not None:
+            model.setData(index, editor.text(), Qt.ItemDataRole.EditRole)
+            return
+        super().setModelData(editor, model, index)
+
+
+_CHAPTER_TIME_COLUMN_WIDTH = 156
+_CHAPTER_TIME_PLACEHOLDER = "0:00, 1:23.500, 62500ms"
+_CHAPTER_TIME_HINT = (
+    "Start times are offsets from the beginning of the track. "
+    "Use 0:00, 1:23.500, 1:02:03, 83s, or 62500ms."
+)
+
+
 class _ChapterTimelineEditor(QFrame):
     """Editable chapter timeline widget for MHOD type 17 chapter data."""
 
@@ -1014,8 +1067,22 @@ class _ChapterTimelineEditor(QFrame):
         toolbar.addWidget(self._sort_btn)
         layout.addLayout(toolbar)
 
+        self._time_hint = QLabel(_CHAPTER_TIME_HINT)
+        self._time_hint.setObjectName("chapterTimeHint")
+        self._time_hint.setWordWrap(True)
+        self._time_hint.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS))
+        self._time_hint.setStyleSheet(f"color: {Colors.TEXT_TERTIARY};")
+        layout.addWidget(self._time_hint)
+
         self._table = QTableWidget(0, 2)
-        self._table.setHorizontalHeaderLabels(["Start", "Title"])
+        self._table.setHorizontalHeaderLabels(["Start Time", "Title"])
+        start_header = self._table.horizontalHeaderItem(0)
+        if start_header is not None:
+            start_header.setToolTip(_CHAPTER_TIME_HINT)
+        title_header = self._table.horizontalHeaderItem(1)
+        if title_header is not None:
+            title_header.setToolTip("Chapter title shown on the iPod")
+        self._table.setItemDelegate(_ChapterCellDelegate(self._table))
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self._table.setEditTriggers(
@@ -1031,8 +1098,10 @@ class _ChapterTimelineEditor(QFrame):
             vertical_header.setVisible(False)
         header = self._table.horizontalHeader()
         if header is not None:
-            header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+            header.setMinimumSectionSize(96)
+            header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
             header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self._table.setColumnWidth(0, _CHAPTER_TIME_COLUMN_WIDTH)
         self._table.itemChanged.connect(self._on_item_changed)
         self._table.itemSelectionChanged.connect(self._sync_actions)
         self._table.setStyleSheet(
@@ -1179,7 +1248,7 @@ class _ChapterTimelineEditor(QFrame):
             )
             time_item.setFlags(flags)
             title_item.setFlags(flags)
-            time_item.setToolTip("Start time accepts M:SS, H:MM:SS.mmm, seconds, or milliseconds")
+            time_item.setToolTip(_CHAPTER_TIME_HINT)
             title_item.setToolTip("Chapter title")
             self._table.setItem(row, 0, time_item)
             self._table.setItem(row, 1, title_item)
