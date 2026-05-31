@@ -38,7 +38,7 @@ from ..artwork_rendering import (
 )
 from ..glyphs import glyph_icon
 from ..hidpi import scale_pixmap_for_display
-from ..styles import FONT_FAMILY, Colors, Metrics, table_css
+from ..styles import FONT_FAMILY, Colors, Metrics, context_menu_css, table_css
 from .formatters import format_duration_mmss, format_size
 
 log = logging.getLogger(__name__)
@@ -2426,25 +2426,7 @@ class MusicBrowserList(QFrame):
         clicked_key = self._col_key_for_logical(clicked_logical)
 
         menu = QMenu(self)
-        menu.setStyleSheet(f"""
-            QMenu {{
-                background: {Colors.MENU_BG};
-                color: {Colors.TEXT_PRIMARY};
-                border: 1px solid {Colors.BORDER};
-                padding: 4px 0;
-            }}
-            QMenu::item {{
-                padding: 6px 24px 6px 12px;
-            }}
-            QMenu::item:selected {{
-                background: {Colors.ACCENT_DIM};
-            }}
-            QMenu::separator {{
-                height: 1px;
-                background: {Colors.BORDER_SUBTLE};
-                margin: 4px 8px;
-            }}
-        """)
+        menu.setStyleSheet(context_menu_css())
 
         # ── "Hide <column>" action ──
         if clicked_key and clicked_key in COLUMN_CONFIG:
@@ -2875,25 +2857,7 @@ class MusicBrowserList(QFrame):
             return
 
         menu = QMenu(self)
-        menu_style = f"""
-            QMenu {{
-                background: {Colors.MENU_BG};
-                color: {Colors.TEXT_PRIMARY};
-                border: 1px solid {Colors.BORDER};
-                padding: 4px 0;
-            }}
-            QMenu::item {{
-                padding: 6px 24px 6px 12px;
-            }}
-            QMenu::item:selected {{
-                background: {Colors.ACCENT_DIM};
-            }}
-            QMenu::separator {{
-                height: 1px;
-                background: {Colors.BORDER_SUBTLE};
-                margin: 4px 8px;
-            }}
-        """
+        menu_style = context_menu_css()
         menu.setStyleSheet(menu_style)
 
         cache = self._library_cache

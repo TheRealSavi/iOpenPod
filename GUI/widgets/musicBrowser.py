@@ -7,7 +7,7 @@ from PyQt6.QtCore import QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import QFrame, QMenu, QSizePolicy, QSplitter, QStackedWidget, QVBoxLayout
 
 from ..glyphs import glyph_icon
-from ..styles import Colors, make_scroll_area
+from ..styles import Colors, context_menu_css, make_scroll_area
 from .gridHeaderBar import GridHeaderBar
 from .MBGridView import MusicBrowserGrid
 from .MBListView import MusicBrowserList
@@ -422,6 +422,7 @@ class MusicBrowser(QFrame):
             return
 
         menu = QMenu(self)
+        menu.setStyleSheet(context_menu_css())
         action = menu.addAction("Convert to a single chaptered track")
         if action is None:
             return

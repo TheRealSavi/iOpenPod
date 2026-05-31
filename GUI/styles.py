@@ -1480,6 +1480,37 @@ def table_css() -> str:
         }}
     """
 
+
+def context_menu_css() -> str:
+    """Shared stylesheet for right-click context menus."""
+    return f"""
+        QMenu {{
+            background: {Colors.MENU_BG};
+            color: {Colors.TEXT_PRIMARY};
+            border: 1px solid {Colors.BORDER};
+            padding: 4px 6px;
+        }}
+        QMenu::item {{
+            padding: 6px 24px 6px 12px;
+        }}
+        QMenu::item:selected {{
+            background: {Colors.ACCENT_DIM};
+        }}
+        QMenu::item:disabled {{
+            color: {Colors.TEXT_DISABLED};
+            background: transparent;
+        }}
+        QMenu::item:disabled:selected {{
+            color: {Colors.TEXT_DISABLED};
+            background: {Colors.SURFACE};
+        }}
+        QMenu::separator {{
+            height: 1px;
+            background: {Colors.BORDER_SUBTLE};
+            margin: 4px 8px;
+        }}
+    """
+
 # ── Shared label style strings ───────────────────────────────────────────────
 
 
