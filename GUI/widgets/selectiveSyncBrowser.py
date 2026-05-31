@@ -40,6 +40,10 @@ from infrastructure.media_folders import (
     media_folder_entries_to_settings,
     media_folder_paths,
 )
+from iTunesDB_Shared.album_identity import (
+    album_identity_from_track,
+    group_tracks_by_album_identity,
+)
 from SyncEngine.photos import PCPhoto, PCPhotoLibrary, scan_pc_photos
 
 from ..glyphs import glyph_icon
@@ -366,9 +370,9 @@ class _PCMusicBrowserList:
         # our patched finish injects it.
         owner._has_checkbox_col = False
 
-        def _patched_populate():
+        def _patched_populate(*, preserve_column_layout: bool = True) -> None:
             owner._has_checkbox_col = False
-            _orig_populate()
+            _orig_populate(preserve_column_layout=preserve_column_layout)
 
         def _patched_finish():
             _orig_finish()
@@ -1626,17 +1630,27 @@ class SelectiveSyncBrowser(QWidget):
     # ── Per-type group builders ──────────────────────────────────────────
 
     def _build_music_albums(self, tracks: list) -> dict[str, dict]:
-        album_raw: dict[tuple[str, str], list] = defaultdict(list)
-        for t in tracks:
-            album_artist = getattr(t, "album_artist", None) or t.artist or "Unknown Artist"
-            album_raw[(album_artist, t.album or "Unknown Album")].append(t)
+        album_groups = group_tracks_by_album_identity(tracks, album_identity_from_track)
 
-        _by_name: dict[str, list[tuple[str, str]]] = defaultdict(list)
-        for artist, album in album_raw:
-            _by_name[album].append((artist, album))
+        _by_name: dict[str, list[str]] = defaultdict(list)
+        for album_group in album_groups:
+            album = album_group.identity.album or "Unknown Album"
+            artist = (
+                album_group.identity.album_artist
+                or album_group.identity.artist
+                or "Unknown Artist"
+            )
+            _by_name[album].append(artist)
 
         out: dict[str, dict] = {}
-        for (artist, album), group in album_raw.items():
+        for album_group in album_groups:
+            group = album_group.tracks
+            album = album_group.identity.album or "Unknown Album"
+            artist = (
+                album_group.identity.album_artist
+                or album_group.identity.artist
+                or "Unknown Artist"
+            )
             year = next((getattr(t, "year", 0) or 0 for t in group
                          if getattr(t, "year", 0) or 0), 0)
             sub_parts = [artist]

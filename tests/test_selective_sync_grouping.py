@@ -6,6 +6,9 @@ def _track(
     title: str,
     relative_path: str,
     *,
+    artist: str = "Unknown Artist",
+    album: str = "Unknown Album",
+    album_artist: str | None = None,
     is_video: bool = False,
     video_kind: str = "",
 ) -> PCTrack:
@@ -18,9 +21,9 @@ def _track(
         mtime=0,
         size=1,
         title=title,
-        artist="Unknown Artist",
-        album="Unknown Album",
-        album_artist=None,
+        artist=artist,
+        album=album,
+        album_artist=album_artist,
         genre=None,
         year=None,
         track_number=None,
@@ -82,6 +85,32 @@ def test_selective_sync_unknown_artist_view_uses_parent_folder_artist():
     assert set(artists) == {"Artist A", "Artist B"}
     assert [t.title for t in artists["Artist A"]["tracks"]] == ["Song 1", "Song 2"]
     assert [t.title for t in artists["Artist B"]["tracks"]] == ["Song 3"]
+
+
+def test_selective_sync_album_groups_use_shared_album_identity_rules():
+    browser = _browser_with_tracks(
+        [
+            _track(
+                "Song 1",
+                "Compilation/01 Song 1.mp3",
+                artist="Artist",
+                album="Compilation",
+                album_artist="Various Artists",
+            ),
+            _track(
+                "Song 2",
+                "Compilation/02 Song 2.mp3",
+                artist="Artist",
+                album="Compilation",
+                album_artist=None,
+            ),
+        ]
+    )
+
+    albums = browser._build_music_albums(browser._all_tracks)
+    assert set(albums) == {"Compilation"}
+    assert albums["Compilation"]["artist"] == "Various Artists"
+    assert [t.title for t in albums["Compilation"]["tracks"]] == ["Song 1", "Song 2"]
 
 
 def test_selective_sync_movie_only_folders_do_not_create_music_albums():

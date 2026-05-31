@@ -1,17 +1,12 @@
 from pathlib import Path
 from types import SimpleNamespace
 
-from SyncEngine.contracts import SyncOutcome
-from SyncEngine.fingerprint_diff_engine import (
-    FingerprintDiffEngine,
-    StorageSummary,
-    SyncAction,
-    SyncItem,
-    SyncPlan,
-)
+from SyncEngine.fingerprint_diff_engine import FingerprintDiffEngine, StorageSummary, SyncAction, SyncItem, SyncPlan
 from SyncEngine.integrity import IntegrityReport
+from SyncEngine.mapping import MappingFile
+from SyncEngine.pc_library import PCLibrary, PCTrack
 from SyncEngine.photos import PhotoSyncItem, PhotoSyncPlan
-from SyncEngine.sync_executor import SyncExecutor
+from SyncEngine.sync_executor import SyncExecutor, _SyncContext
 
 
 def _track(
@@ -21,12 +16,29 @@ def _track(
     extension: str,
     is_video: bool = False,
     is_podcast: bool = False,
-):
-    return SimpleNamespace(
-        title=title,
-        filename=f"{title}{extension}",
-        size=size,
+) -> PCTrack:
+    filename = f"{title}{extension}"
+    return PCTrack(
+        path=f"/tmp/{filename}",
+        relative_path=filename,
+        filename=filename,
         extension=extension,
+        mtime=0.0,
+        size=size,
+        title=title,
+        artist="Artist",
+        album="Album",
+        album_artist=None,
+        genre=None,
+        year=None,
+        track_number=None,
+        track_total=None,
+        disc_number=None,
+        disc_total=None,
+        duration_ms=1000,
+        bitrate=None,
+        sample_rate=None,
+        rating=None,
         is_video=is_video,
         is_podcast=is_podcast,
     )
@@ -56,7 +68,14 @@ def test_executor_filters_unsupported_video_podcast_and_photo(tmp_path: Path) ->
         photo_plan=photo_plan,
         storage=StorageSummary(bytes_to_add=160),
     )
-    ctx = SimpleNamespace(plan=plan, result=SyncOutcome(success=True))
+    ctx = _SyncContext(
+        plan=plan,
+        mapping=MappingFile(),
+        progress_callback=None,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+    )
 
     executor = SyncExecutor(
         tmp_path,
@@ -82,11 +101,11 @@ def test_diff_engine_skips_photo_planning_when_device_lacks_photo_support(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    class EmptyLibrary:
-        root_path = tmp_path
-        root_paths = (tmp_path,)
+    class EmptyLibrary(PCLibrary):
+        def __init__(self, root_path: Path):
+            super().__init__(root_path)
 
-        def scan(self, *, include_video: bool = True):
+        def scan(self, progress_callback=None, include_video: bool = True):
             return iter(())
 
     monkeypatch.setattr(
@@ -111,7 +130,7 @@ def test_diff_engine_skips_photo_planning_when_device_lacks_photo_support(
     )
 
     engine = FingerprintDiffEngine(
-        EmptyLibrary(),
+        EmptyLibrary(tmp_path),
         tmp_path,
         supports_photo=False,
     )

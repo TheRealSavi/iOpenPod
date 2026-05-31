@@ -1,7 +1,10 @@
 from __future__ import annotations
 
-from PyQt6.QtWidgets import QScrollArea
+from typing import cast
 
+from PyQt6.QtWidgets import QScrollArea, QWidget
+
+from GUI.widgets.photoTile import PhotoGridTile
 from GUI.widgets.pooledPhotoGrid import PhotoTileModel, PooledPhotoGridView
 
 
@@ -36,6 +39,11 @@ def _build_records(count: int) -> list[PhotoTileModel]:
     ]
 
 
+def _as_photo_tile(widget: QWidget) -> PhotoGridTile:
+    assert isinstance(widget, PhotoGridTile)
+    return widget
+
+
 def test_pooled_photo_grid_recycles_widgets_on_scroll(qtbot):
     scroll, grid = _mount_grid(qtbot)
     records = _build_records(3000)
@@ -43,19 +51,22 @@ def test_pooled_photo_grid_recycles_widgets_on_scroll(qtbot):
     grid.setRecords(records, fallback_index=0)
     qtbot.waitUntil(lambda: len(grid.gridItems) > 0, timeout=2000)
 
-    initial_widget_ids = {id(widget) for widget in grid.findChildren(type(grid.gridItems[0]))}
-    initial_titles = [widget.title_label.text() for widget in grid.gridItems]
+    initial_widget_ids = {id(widget) for widget in grid.findChildren(PhotoGridTile)}
+    initial_tiles = [cast(PhotoGridTile, widget) for widget in grid.gridItems]
+    initial_titles = [tile.title_label.text() for tile in initial_tiles]
 
     assert len(initial_widget_ids) < 100
 
     bar = scroll.verticalScrollBar()
+    assert bar is not None
     bar.setValue(max(1, bar.maximum() // 2))
     qtbot.waitUntil(
-        lambda: grid.gridItems and grid.gridItems[0].title_label.text() not in initial_titles,
+        lambda: grid.gridItems
+        and cast(PhotoGridTile, grid.gridItems[0]).title_label.text() not in initial_titles,
         timeout=2000,
     )
 
-    scrolled_widget_ids = {id(widget) for widget in grid.findChildren(type(grid.gridItems[0]))}
+    scrolled_widget_ids = {id(widget) for widget in grid.findChildren(PhotoGridTile)}
     assert len(scrolled_widget_ids) < 100
     assert len(initial_widget_ids & scrolled_widget_ids) >= len(initial_widget_ids) // 2
 
@@ -72,5 +83,7 @@ def test_pooled_photo_grid_preserves_checked_state_by_record_key(qtbot):
 
     assert first is not None
     assert first.checked is True
-    assert grid.gridItems[0].checkbox is not None
-    assert grid.gridItems[0].checkbox.isChecked() is True
+    tile = _as_photo_tile(grid.gridItems[0])
+    checkbox = tile.checkbox
+    assert checkbox is not None
+    assert checkbox.isChecked() is True

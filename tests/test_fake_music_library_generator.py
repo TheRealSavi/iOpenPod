@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from scripts.generate_fake_music_library import _build_track_recipe
+from scripts.generate_fake_music_library import _serial_chroma_signature
 
 
-def test_track_recipes_are_unique_by_design():
-    recipes = {
-        tuple(_build_track_recipe(track_serial, 8))
+def test_track_signatures_are_unique_by_design():
+    signatures = {
+        _serial_chroma_signature(track_serial, 8)
         for track_serial in range(200)
     }
-    assert len(recipes) == 200
+    assert len(signatures) == 200

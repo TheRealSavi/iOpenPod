@@ -28,19 +28,19 @@ from typing import TYPE_CHECKING
 
 from iTunesDB_Shared.field_base import strip_article
 from iTunesDB_Shared.mhod_defs import (
-    MHOD_HEADER_SIZE,
     MHOD52_BODY_HEADER_SIZE,
     MHOD53_BODY_HEADER_SIZE,
     MHOD53_ENTRY_SIZE,
-    SORT_TITLE,
+    MHOD_HEADER_SIZE,
     SORT_ALBUM,
-    SORT_ARTIST,
-    SORT_GENRE,
-    SORT_COMPOSER,
-    SORT_SHOW,
-    SORT_SEASON,
-    SORT_EPISODE,
     SORT_ALBUM_ARTIST,
+    SORT_ARTIST,
+    SORT_COMPOSER,
+    SORT_EPISODE,
+    SORT_GENRE,
+    SORT_SEASON,
+    SORT_SHOW,
+    SORT_TITLE,
     write_mhod_header,
 )
 

@@ -434,6 +434,49 @@ def _resize_header_section(
     return header.sectionSize(visual_index)
 
 
+def test_default_column_width_uses_distribution_not_single_outlier(qtbot):
+    view = _mount_list(qtbot)
+    tracks = [
+        {
+            "Title": f"Song {idx:02d}",
+            "Artist": "Artist",
+            "Album": "Album",
+            "Genre": "Rock",
+            "year": 2001,
+            "track_number": idx + 1,
+            "length": 180000,
+            "rating": 80,
+            "play_count_1": 5,
+            "date_added": 1710000000,
+        }
+        for idx in range(80)
+    ]
+    outlier_title = "A very long live bootleg title with extra venue notes " * 18
+    tracks.append(
+        {
+            "Title": outlier_title,
+            "Artist": "Artist",
+            "Album": "Album",
+            "Genre": "Rock",
+            "year": 2001,
+            "track_number": 81,
+            "length": 180000,
+            "rating": 80,
+            "play_count_1": 5,
+            "date_added": 1710000000,
+        }
+    )
+
+    _load_content(qtbot, view, tracks=tracks, media_type_filter=0x01)
+
+    title_col = view._columns.index("Title")
+    title_width = view.table.columnWidth(title_col)
+    outlier_width = view.table.fontMetrics().horizontalAdvance(outlier_title)
+
+    assert title_width >= view.table.fontMetrics().horizontalAdvance("Song 00")
+    assert title_width < outlier_width * 0.6
+
+
 def test_column_layout_persists_per_content_type(qtbot):
     view = _mount_list(qtbot)
 
@@ -497,6 +540,81 @@ def test_column_layout_persists_per_content_type(qtbot):
     assert view._user_col_order[:3] == ["Title", "Album", "Artist"]
     assert view._user_col_widths is not None
     assert view._user_col_widths["Title"] == 260
+
+
+def test_reset_columns_removes_saved_widths_and_recalculates(qtbot):
+    view = _mount_list(qtbot)
+    _load_content(qtbot, view, tracks=_tracks_for_music(), media_type_filter=0x01)
+
+    view.table.setColumnWidth(0, 260)
+    view._on_header_section_resized(0, 100, 260)
+    qtbot.waitUntil(
+        lambda: (
+            view._settings_service.get_global_settings()
+            .track_list_columns_by_content.get("music", {})
+            .get("Title")
+        )
+        == 260,
+        timeout=2000,
+    )
+
+    view._reset_columns()
+    qtbot.waitUntil(lambda: view.table.rowCount() == 1, timeout=2000)
+
+    settings = view._settings_service.get_global_settings()
+    assert "music" not in settings.track_list_columns_by_content
+    assert view._user_col_order is None
+    assert view._user_col_widths == {}
+    assert view.table.columnWidth(0) != 260
+
+
+def test_resize_single_column_to_fit_recalculates_only_that_column(qtbot):
+    view = _mount_list(qtbot)
+    _load_content(qtbot, view, tracks=_tracks_for_music(), media_type_filter=0x01)
+
+    title_col = view._columns.index("Title")
+    artist_col = view._columns.index("Artist")
+    view.table.setColumnWidth(title_col, 420)
+    view.table.setColumnWidth(artist_col, 333)
+
+    view._resize_column_to_current_content(title_col)
+
+    qtbot.waitUntil(
+        lambda: (
+            view._settings_service.get_global_settings()
+            .track_list_columns_by_content.get("music", {})
+            .get("Title")
+        )
+        == view.table.columnWidth(title_col),
+        timeout=2000,
+    )
+
+    assert view.table.columnWidth(title_col) != 420
+    assert view.table.columnWidth(artist_col) == 333
+
+
+def test_resize_all_columns_to_fit_recalculates_current_columns(qtbot):
+    view = _mount_list(qtbot)
+    _load_content(qtbot, view, tracks=_tracks_for_music(), media_type_filter=0x01)
+
+    title_col = view._columns.index("Title")
+    artist_col = view._columns.index("Artist")
+    view.table.setColumnWidth(title_col, 420)
+    view.table.setColumnWidth(artist_col, 333)
+
+    view._resize_all_columns_to_current_content()
+
+    qtbot.waitUntil(
+        lambda: "music"
+        in view._settings_service.get_global_settings().track_list_columns_by_content,
+        timeout=2000,
+    )
+
+    saved_music = view._settings_service.get_global_settings().track_list_columns_by_content["music"]
+    assert view.table.columnWidth(title_col) != 420
+    assert view.table.columnWidth(artist_col) != 333
+    assert saved_music["Title"] == view.table.columnWidth(title_col)
+    assert saved_music["Artist"] == view.table.columnWidth(artist_col)
 
 
 def test_album_navigation_preserves_user_column_order(qtbot):

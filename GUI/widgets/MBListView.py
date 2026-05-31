@@ -9,13 +9,14 @@ robust against rapid user interactions (spam-clicking).
 from __future__ import annotations
 
 import logging
+import math
 import random
 import sys as _sys
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from PyQt6.QtCore import QEvent, QPoint, QSize, Qt, QThread, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QCursor, QFont, QIcon, QImage, QKeyEvent, QMouseEvent, QPainter, QPixmap, QWheelEvent
+from PyQt6.QtGui import QColor, QCursor, QFont, QFontMetrics, QIcon, QImage, QKeyEvent, QMouseEvent, QPainter, QPixmap, QWheelEvent
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -512,6 +513,12 @@ ART_LOAD_BATCH_SIZE = 20
 ART_THUMB_SIZE = 32
 ART_THUMB_COLUMN_PADDING = 12
 COLUMN_LAYOUT_SAVE_DELAY_MS = 150
+DEFAULT_COLUMN_WIDTH_STDDEVS = 2.0
+DEFAULT_COLUMN_CELL_PADDING = 24
+DEFAULT_COLUMN_HEADER_PADDING = 32
+DEFAULT_COLUMN_MIN_WIDTH = 48
+DEFAULT_COLUMN_MAX_WIDTH = 640
+DEFAULT_COLUMN_WIDTH_SAMPLE_LIMIT = 2_000
 
 
 def _art_column_width() -> int:
@@ -1367,9 +1374,10 @@ class MusicBrowserList(QFrame):
         self._persist_column_layout_settings()
         self._column_layout_dirty = False
 
-    def _persist_column_layout_settings(self) -> None:
+    def _persist_column_layout_settings(self, *, store_current: bool = True) -> None:
         """Write per-content column layouts into the global settings payload."""
-        self._store_current_column_layout(self._active_column_content_key)
+        if store_current:
+            self._store_current_column_layout(self._active_column_content_key)
         settings = self._settings_service.get_global_settings()
         settings.track_list_columns_by_content = {
             content_key: {
@@ -1481,13 +1489,13 @@ class MusicBrowserList(QFrame):
         self._is_populating = False
         self._art_pending.clear()
 
-    def _populate_table(self) -> None:
+    def _populate_table(self, *, preserve_column_layout: bool = True) -> None:
         """Populate the table with current tracks."""
         try:
             self._cancel_population()
 
             # Capture current column state before clearing (preserves drag order & widths)
-            if self.table.columnCount() > 0:
+            if preserve_column_layout and self.table.columnCount() > 0:
                 self._save_user_widths()
 
             # Check artwork setting, with callers able to force list-only modes.
@@ -1656,6 +1664,69 @@ class MusicBrowserList(QFrame):
         if anchor:
             anchor.setData(Qt.ItemDataRole.UserRole + 1, row)
 
+    @staticmethod
+    def _sampled_row_indexes(row_count: int) -> range | list[int]:
+        """Return representative row indexes for column width measurement."""
+        if row_count <= DEFAULT_COLUMN_WIDTH_SAMPLE_LIMIT:
+            return range(row_count)
+
+        step = (row_count - 1) / (DEFAULT_COLUMN_WIDTH_SAMPLE_LIMIT - 1)
+        return [round(i * step) for i in range(DEFAULT_COLUMN_WIDTH_SAMPLE_LIMIT)]
+
+    def _smart_default_column_width(self, logical_col: int) -> int:
+        """Estimate a useful default width without letting one outlier dominate."""
+        header = self.table.horizontalHeader()
+        header_item = self.table.horizontalHeaderItem(logical_col)
+        header_text = header_item.text() if header_item is not None else ""
+        header_metrics = header.fontMetrics() if header else self.table.fontMetrics()
+        header_width = (
+            header_metrics.horizontalAdvance(header_text)
+            + DEFAULT_COLUMN_HEADER_PADDING
+        )
+
+        row_count = self.table.rowCount()
+        if row_count <= 0:
+            return max(DEFAULT_COLUMN_MIN_WIDTH, min(DEFAULT_COLUMN_MAX_WIDTH, header_width))
+
+        measured_widths: list[int] = []
+        metrics_by_font: dict[str, QFontMetrics] = {}
+        for row in self._sampled_row_indexes(row_count):
+            item = self.table.item(row, logical_col)
+            if item is None:
+                measured_widths.append(0)
+                continue
+
+            font = item.font()
+            font_key = font.toString()
+            metrics = metrics_by_font.get(font_key)
+            if metrics is None:
+                metrics = QFontMetrics(font)
+                metrics_by_font[font_key] = metrics
+
+            text_width = metrics.horizontalAdvance(item.text()) if item.text() else 0
+            if not item.icon().isNull():
+                text_width += 20
+            measured_widths.append(text_width)
+
+        if measured_widths:
+            mean_width = sum(measured_widths) / len(measured_widths)
+            variance = sum(
+                (width - mean_width) ** 2 for width in measured_widths
+            ) / len(measured_widths)
+            data_width = min(
+                max(measured_widths),
+                mean_width + DEFAULT_COLUMN_WIDTH_STDDEVS * math.sqrt(variance),
+            )
+            content_width = math.ceil(data_width + DEFAULT_COLUMN_CELL_PADDING)
+        else:
+            content_width = 0
+
+        desired_width = max(header_width, content_width)
+        return max(
+            DEFAULT_COLUMN_MIN_WIDTH,
+            min(DEFAULT_COLUMN_MAX_WIDTH, math.ceil(desired_width)),
+        )
+
     def _finish_population(self) -> None:
         """Complete table population - enable sorting, apply column widths, load art."""
         try:
@@ -1695,7 +1766,10 @@ class MusicBrowserList(QFrame):
                         if col_key and col_key in self._user_col_widths:
                             self.table.setColumnWidth(i, self._user_col_widths[col_key])
                         else:
-                            self.table.resizeColumnToContents(i)
+                            self.table.setColumnWidth(
+                                i,
+                                self._smart_default_column_width(i),
+                            )
 
                     # Restore saved visual column order (from user drag-reorder)
                     if self._user_col_order:
@@ -2380,6 +2454,18 @@ class MusicBrowserList(QFrame):
                 hide_act.triggered.connect(lambda _=False, k=clicked_key: self._hide_column(k))
             menu.addSeparator()
 
+        # ── Column sizing actions ──
+        if clicked_key:
+            resize_act = menu.addAction("Resize Column to Fit")
+            if resize_act:
+                resize_act.triggered.connect(
+                    lambda _=False, col=clicked_logical: self._resize_column_to_current_content(col)
+                )
+        resize_all_act = menu.addAction("Resize All Columns to Fit")
+        if resize_all_act:
+            resize_all_act.triggered.connect(self._resize_all_columns_to_current_content)
+        menu.addSeparator()
+
         # ── "Add Column" cascade with grouped sub-menus ──
         add_menu = menu.addMenu("Add Column")
         if add_menu:
@@ -2515,13 +2601,72 @@ class MusicBrowserList(QFrame):
         self._queue_column_layout_save()
         self._repopulate_keeping_state()
 
+    def _resize_column_to_current_content(self, logical_col: int) -> None:
+        """Recalculate one visible data column's width from current rows."""
+        header = self.table.horizontalHeader()
+        if header is None or not (0 <= logical_col < self.table.columnCount()):
+            return
+        if self._col_key_for_logical(logical_col) is None:
+            return
+
+        self._width_resize_debounce_timer.stop()
+        self._column_layout_save_timer.stop()
+        self._applying_column_layout = True
+        previous_stretch = header.stretchLastSection()
+        try:
+            header.setStretchLastSection(False)
+            header.setSectionResizeMode(logical_col, QHeaderView.ResizeMode.Interactive)
+            self.table.setColumnWidth(
+                logical_col,
+                self._smart_default_column_width(logical_col),
+            )
+        finally:
+            header.setStretchLastSection(previous_stretch)
+            self._applying_column_layout = False
+
+        self._save_user_widths()
+        self._queue_column_layout_save()
+
+    def _resize_all_columns_to_current_content(self) -> None:
+        """Recalculate widths for every currently visible data column."""
+        header = self.table.horizontalHeader()
+        if header is None:
+            return
+
+        self._width_resize_debounce_timer.stop()
+        self._column_layout_save_timer.stop()
+        self._applying_column_layout = True
+        previous_stretch = header.stretchLastSection()
+        try:
+            header.setStretchLastSection(False)
+            for visual_col in range(self.table.columnCount()):
+                logical_col = header.logicalIndex(visual_col)
+                if logical_col < 0 or self._col_key_for_logical(logical_col) is None:
+                    continue
+                header.setSectionResizeMode(logical_col, QHeaderView.ResizeMode.Interactive)
+                self.table.setColumnWidth(
+                    logical_col,
+                    self._smart_default_column_width(logical_col),
+                )
+        finally:
+            header.setStretchLastSection(previous_stretch)
+            self._applying_column_layout = False
+
+        self._save_user_widths()
+        self._queue_column_layout_save()
+
     def _reset_columns(self) -> None:
         """Reset to default column set and widths."""
+        content_key = self._active_column_content_key or self._content_type_key()
+        self._width_resize_debounce_timer.stop()
+        self._column_layout_save_timer.stop()
         self._user_col_widths.clear()
         self._user_col_order = None
+        self._column_layouts.pop(content_key, None)
         self._setup_columns()
-        self._queue_column_layout_save()
-        self._populate_table()
+        self._populate_table(preserve_column_layout=False)
+        self._persist_column_layout_settings(store_current=False)
+        self._column_layout_dirty = False
 
     def _save_user_widths(self) -> None:
         """Snapshot current column widths and visual order before repopulating."""
