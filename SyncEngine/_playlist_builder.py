@@ -167,6 +167,13 @@ def _source_path_key(path: str) -> str:
         return os.path.normcase(str(Path(path).expanduser()))
 
 
+def _mhsd5_type_value(playlist: dict) -> int:
+    try:
+        return int(playlist.get("mhsd5_type", 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def build_and_evaluate_playlists(
     existing_tracks_data: list[dict],
     existing_playlists_raw: list[dict],
@@ -198,8 +205,21 @@ def build_and_evaluate_playlists(
         for path, db_track_id in (source_path_to_db_track_id or {}).items()
     }
 
+    migrated_smart_raw, category_smart_raw = _partition_dataset5_playlists(
+        existing_smart_raw,
+    )
+    if migrated_smart_raw:
+        logger.info(
+            "Migrating %d dataset-5 user smart playlist(s) to the visible playlist dataset",
+            len(migrated_smart_raw),
+        )
+    visible_playlists_raw = _merge_visible_playlist_rows(
+        existing_playlists_raw,
+        migrated_smart_raw,
+    )
+
     master_name, master_id, playlists = _build_regular_playlists(
-        existing_playlists_raw, old_tid_to_db_track_id,
+        visible_playlists_raw, old_tid_to_db_track_id,
         valid_db_track_ids, eval_tracks, spl_update,
         source_lookup,
     )
@@ -207,7 +227,7 @@ def build_and_evaluate_playlists(
     _rebuild_podcast_playlist(playlists, all_track_infos)
 
     smart_playlists = _build_smart_playlists(
-        existing_smart_raw, valid_db_track_ids, eval_tracks, spl_update,
+        category_smart_raw, valid_db_track_ids, eval_tracks, spl_update,
     )
 
     _reevaluate_live_update(
@@ -226,6 +246,44 @@ def build_and_evaluate_playlists(
             pl.item_metadata = None
 
     return master_name, playlists, smart_playlists
+
+
+def _partition_dataset5_playlists(
+    playlists: list[dict],
+) -> tuple[list[dict], list[dict]]:
+    """Split user smart playlists from firmware browse categories."""
+
+    user_smart: list[dict] = []
+    categories: list[dict] = []
+    for playlist in playlists:
+        if _mhsd5_type_value(playlist):
+            categories.append(playlist)
+        else:
+            user_smart.append(playlist)
+    return user_smart, categories
+
+
+def _merge_visible_playlist_rows(
+    regular_playlists: list[dict],
+    migrated_smart_playlists: list[dict],
+) -> list[dict]:
+    if not migrated_smart_playlists:
+        return regular_playlists
+
+    visible = list(regular_playlists)
+    seen_ids = {
+        playlist_id
+        for playlist_id in (playlist.get("playlist_id", 0) for playlist in visible)
+        if playlist_id
+    }
+    for playlist in migrated_smart_playlists:
+        playlist_id = playlist.get("playlist_id", 0)
+        if playlist_id and playlist_id in seen_ids:
+            continue
+        if playlist_id:
+            seen_ids.add(playlist_id)
+        visible.append(playlist)
+    return visible
 
 
 def _build_regular_playlists(
@@ -364,13 +422,14 @@ def _build_smart_playlists(
     for pl in existing_smart_raw:
         prefs_data = pl.get("smart_playlist_data")
         rules_data = pl.get("smart_playlist_rules")
+        mhsd5_type = _mhsd5_type_value(pl)
 
         info = PlaylistInfo(
             name=pl.get("Title", "Untitled"),
             playlist_id=pl.get("playlist_id"),
-            master=bool(pl.get("master_flag", 0)),
+            master=bool(pl.get("master_flag", 0)) or bool(mhsd5_type),
             sortorder=pl.get("sort_order", 0),
-            mhsd5_type=pl.get("mhsd5_type", 0),
+            mhsd5_type=mhsd5_type,
             raw_mhod100=decode_raw_blob(pl.get("playlist_prefs")),
             raw_mhod102=decode_raw_blob(pl.get("playlist_settings")),
         )

@@ -6,7 +6,27 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
 
-from SyncEngine.sync_executor import SyncExecutor
+from SyncEngine.fingerprint_diff_engine import SyncPlan
+from SyncEngine.mapping import MappingFile
+from SyncEngine.sync_executor import SyncExecutor, _SyncContext
+
+
+def _make_sync_ctx(
+    user_playlists: list[dict],
+    existing_playlists_raw: list[dict],
+    existing_smart_raw: list[dict],
+) -> _SyncContext:
+    return _SyncContext(
+        plan=SyncPlan(),
+        mapping=MappingFile(),
+        progress_callback=None,
+        dry_run=True,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+        user_playlists=user_playlists,
+        existing_playlists_raw=existing_playlists_raw,
+        existing_smart_raw=existing_smart_raw,
+    )
 
 
 def test_auto_write_workers_use_hdd_safe_default_for_classic(tmp_path: Path) -> None:
@@ -143,3 +163,56 @@ def test_device_write_limit_allows_multiple_parallel_writes_when_configured(
 
     assert all(success for success, _path, _was_transcoded, _err in results)
     assert 1 < max_active <= 2
+
+
+def test_merge_gui_playlists_moves_user_smart_playlist_to_visible_bucket(
+    tmp_path: Path,
+) -> None:
+    executor = SyncExecutor(tmp_path)
+    user_playlist = {
+        "playlist_id": 42,
+        "Title": "Recently Played",
+        "_source": "smart",
+        "smart_playlist_data": {"live_update": True},
+        "smart_playlist_rules": {"rules": []},
+    }
+    ctx = _make_sync_ctx(
+        user_playlists=[user_playlist],
+        existing_playlists_raw=[],
+        existing_smart_raw=[
+            {
+                "playlist_id": 42,
+                "Title": "Old Smart Bucket Copy",
+                "_source": "smart",
+                "smart_playlist_data": {"live_update": True},
+                "smart_playlist_rules": {"rules": []},
+            }
+        ],
+    )
+
+    executor._merge_gui_playlists(ctx)
+
+    assert ctx.existing_playlists_raw == [user_playlist]
+    assert ctx.existing_smart_raw == []
+
+
+def test_merge_gui_playlists_leaves_ipod_categories_in_smart_bucket(
+    tmp_path: Path,
+) -> None:
+    executor = SyncExecutor(tmp_path)
+    category = {
+        "playlist_id": 43,
+        "Title": "Music",
+        "_source": "category",
+        "mhsd5_type": 4,
+    }
+    ctx = _make_sync_ctx(
+        user_playlists=[category],
+        existing_playlists_raw=[],
+        existing_smart_raw=[],
+    )
+
+    executor._merge_gui_playlists(ctx)
+
+    assert ctx.existing_playlists_raw == []
+    assert ctx.existing_smart_raw == [category]

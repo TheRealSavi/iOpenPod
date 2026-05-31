@@ -1134,7 +1134,7 @@ def write_library_itdb(
             # Distinguished kind for smart playlists (from ref):
             #   4 = Music, 5 = Audiobooks
             dk = 0
-            if spl.mhsd5_type == 1:   # music
+            if spl.mhsd5_type == 4:   # music
                 dk = 4
             elif spl.mhsd5_type == 5:  # audiobooks
                 dk = 5

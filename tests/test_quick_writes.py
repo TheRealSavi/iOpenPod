@@ -83,7 +83,7 @@ def test_write_cached_itunesdb_uses_master_name_from_cache(monkeypatch) -> None:
     assert captured["write"]["master_playlist_name"] == "Renamed iPod"
 
 
-def test_write_cached_itunesdb_splits_smart_playlists(monkeypatch) -> None:
+def test_write_cached_itunesdb_splits_categories_from_visible_playlists(monkeypatch) -> None:
     captured: dict[str, Any] = {}
     all_tracks = [SimpleNamespace(artist="", album="", album_artist="")]
 
@@ -101,18 +101,50 @@ def test_write_cached_itunesdb_splits_smart_playlists(monkeypatch) -> None:
         tracks_data=[{"track_id": 10, "db_track_id": 100}],
         playlists_data=[
             {"playlist_id": 1, "Title": "Regular", "_source": "regular"},
-            {"playlist_id": 2, "Title": "Smart", "_source": "smart"},
-            {"playlist_id": 3, "Title": "Music", "_source": "category"},
+            {
+                "playlist_id": 2,
+                "Title": "Smart",
+                "_source": "smart",
+                "smart_playlist_data": {"live_update": True},
+            },
+            {
+                "playlist_id": 3,
+                "Title": "Music",
+                "_source": "category",
+                "smart_playlist_data": {"live_update": True},
+            },
+            {
+                "playlist_id": 4,
+                "Title": "Movies",
+                "_source": "smart",
+                "mhsd5_type": 2,
+            },
         ],
     )
 
     assert result.success
     assert captured["playlists_raw"] == [
-        {"playlist_id": 1, "Title": "Regular", "_source": "regular"}
+        {"playlist_id": 1, "Title": "Regular", "_source": "regular"},
+        {
+            "playlist_id": 2,
+            "Title": "Smart",
+            "_source": "smart",
+            "smart_playlist_data": {"live_update": True},
+        },
     ]
     assert captured["smart_raw"] == [
-        {"playlist_id": 2, "Title": "Smart", "_source": "smart"},
-        {"playlist_id": 3, "Title": "Music", "_source": "category"},
+        {
+            "playlist_id": 3,
+            "Title": "Music",
+            "_source": "category",
+            "smart_playlist_data": {"live_update": True},
+        },
+        {
+            "playlist_id": 4,
+            "Title": "Movies",
+            "_source": "smart",
+            "mhsd5_type": 2,
+        },
     ]
 
 
@@ -240,3 +272,107 @@ def test_cached_playlist_items_can_reference_source_paths(tmp_path) -> None:
 
     imported = next(playlist for playlist in playlists if playlist.playlist_id == 2)
     assert imported.track_ids == [100]
+
+
+def test_user_smart_playlist_in_visible_bucket_is_evaluated() -> None:
+    track = TrackInfo(
+        title="Song",
+        location=":iPod_Control:Music:F00:SONG.mp3",
+        track_id=10,
+        db_track_id=100,
+    )
+
+    _master_name, playlists, smart_playlists = build_and_evaluate_playlists(
+        [{"track_id": 10, "db_track_id": 100, "Title": "Song"}],
+        [
+            {"playlist_id": 1, "Title": "iPod", "master_flag": 1},
+            {
+                "playlist_id": 2,
+                "Title": "User Smart",
+                "_source": "smart",
+                "smart_playlist_data": {
+                    "live_update": True,
+                    "check_rules": True,
+                    "check_limits": False,
+                },
+                "smart_playlist_rules": {"conjunction": "AND", "rules": []},
+            },
+        ],
+        [],
+        [track],
+        [],
+    )
+
+    user_smart = next(playlist for playlist in playlists if playlist.playlist_id == 2)
+    assert user_smart.is_smart
+    assert user_smart.track_ids == [100]
+    assert smart_playlists == []
+
+
+def test_existing_dataset5_user_smart_playlist_is_migrated_to_visible_bucket() -> None:
+    track = TrackInfo(
+        title="Song",
+        location=":iPod_Control:Music:F00:SONG.mp3",
+        track_id=10,
+        db_track_id=100,
+    )
+
+    _master_name, playlists, smart_playlists = build_and_evaluate_playlists(
+        [{"track_id": 10, "db_track_id": 100, "Title": "Song"}],
+        [{"playlist_id": 1, "Title": "iPod", "master_flag": 1}],
+        [
+            {
+                "playlist_id": 2,
+                "Title": "Old Smart Bucket Copy",
+                "mhsd5_type": 0,
+                "smart_playlist_data": {
+                    "live_update": True,
+                    "check_rules": True,
+                    "check_limits": False,
+                },
+                "smart_playlist_rules": {"conjunction": "AND", "rules": []},
+            }
+        ],
+        [track],
+        [],
+    )
+
+    migrated = next(playlist for playlist in playlists if playlist.playlist_id == 2)
+    assert migrated.is_smart
+    assert migrated.track_ids == [100]
+    assert smart_playlists == []
+
+
+def test_dataset5_category_keeps_firmware_marker_from_ui_cache() -> None:
+    track = TrackInfo(
+        title="Song",
+        location=":iPod_Control:Music:F00:SONG.mp3",
+        track_id=10,
+        db_track_id=100,
+    )
+
+    _master_name, _playlists, smart_playlists = build_and_evaluate_playlists(
+        [{"track_id": 10, "db_track_id": 100, "Title": "Song"}],
+        [{"playlist_id": 1, "Title": "iPod", "master_flag": 1}],
+        [
+            {
+                "playlist_id": 3,
+                "Title": "Music",
+                "_source": "category",
+                "master_flag": 0,
+                "mhsd5_type": "4",
+                "smart_playlist_data": {
+                    "live_update": True,
+                    "check_rules": True,
+                    "check_limits": False,
+                },
+                "smart_playlist_rules": {"conjunction": "AND", "rules": []},
+            }
+        ],
+        [track],
+        [],
+    )
+
+    assert len(smart_playlists) == 1
+    assert smart_playlists[0].master is True
+    assert smart_playlists[0].mhsd5_type == 4

@@ -56,6 +56,91 @@ def test_commit_user_playlists_hydrates_pending_playlist_into_live_cache(
     assert playlists[1]["mhip_child_count"] == 2
 
 
+def test_commit_user_playlists_keeps_user_smart_playlists_visible(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        runtime.DeviceManager,
+        "get_instance",
+        classmethod(lambda cls: SimpleNamespace(device_path="/fake/ipod")),
+    )
+
+    cache = runtime.iTunesDBCache()
+    cache.set_data(
+        {
+            "mhlt": [],
+            "mhlp": [],
+            "mhlp_podcast": [],
+            "mhlp_smart": [
+                {
+                    "playlist_id": 2,
+                    "Title": "Old Smart Bucket Copy",
+                    "_source": "smart",
+                    "smart_playlist_data": {"live_update": True},
+                    "smart_playlist_rules": {"rules": []},
+                }
+            ],
+        },
+        "/fake/ipod",
+    )
+
+    cache.save_user_playlist(
+        {
+            "playlist_id": 2,
+            "Title": "Recently Played",
+            "_source": "smart",
+            "smart_playlist_data": {"live_update": True},
+            "smart_playlist_rules": {"rules": []},
+        }
+    )
+
+    cache.commit_user_playlists()
+
+    data = cache.get_data()
+    assert data is not None
+    assert [playlist["playlist_id"] for playlist in data["mhlp"]] == [2]
+    assert data["mhlp"][0]["Title"] == "Recently Played"
+    assert data["mhlp_smart"] == []
+
+
+def test_commit_user_playlists_keeps_categories_in_smart_bucket(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        runtime.DeviceManager,
+        "get_instance",
+        classmethod(lambda cls: SimpleNamespace(device_path="/fake/ipod")),
+    )
+
+    cache = runtime.iTunesDBCache()
+    cache.set_data(
+        {
+            "mhlt": [],
+            "mhlp": [],
+            "mhlp_podcast": [],
+            "mhlp_smart": [],
+        },
+        "/fake/ipod",
+    )
+
+    cache.save_user_playlist(
+        {
+            "playlist_id": 3,
+            "Title": "Music",
+            "_source": "category",
+            "mhsd5_type": 4,
+            "smart_playlist_data": {"live_update": True},
+        }
+    )
+
+    cache.commit_user_playlists()
+
+    data = cache.get_data()
+    assert data is not None
+    assert data["mhlp"] == []
+    assert [playlist["playlist_id"] for playlist in data["mhlp_smart"]] == [3]
+
+
 def test_rename_master_playlist_updates_live_cache(monkeypatch) -> None:
     monkeypatch.setattr(
         runtime.DeviceManager,
@@ -150,7 +235,7 @@ def test_get_playlists_distinguishes_dataset5_smart_playlists_from_categories(
                 {
                     "playlist_id": 3,
                     "Title": "Music",
-                    "mhsd5_type": 1,
+                    "mhsd5_type": 4,
                     "smart_playlist_data": {"live_update": True},
                 },
                 {

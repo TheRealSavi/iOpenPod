@@ -52,6 +52,10 @@ def _smart_bucket_source(playlist: dict) -> str:
     return "category" if _mhsd5_type_value(playlist) else "smart"
 
 
+def _is_ipod_category_playlist(playlist: dict) -> bool:
+    return playlist.get("_source") == "category" or bool(_mhsd5_type_value(playlist))
+
+
 def _build_track_indexes(
     tracks: list[dict],
 ) -> tuple[dict, dict, dict, dict, dict]:
@@ -716,10 +720,7 @@ class iTunesDBCache(QObject):
                 if isinstance(items, list):
                     row["mhip_child_count"] = len(items)
 
-                if (
-                    row.get("smart_playlist_data")
-                    or row.get("_source") in ("smart", "category")
-                ):
+                if _is_ipod_category_playlist(row):
                     target = smart
                 elif row.get("podcast_flag", 0) == 1 or row.get("_source") == "podcast":
                     target = podcast

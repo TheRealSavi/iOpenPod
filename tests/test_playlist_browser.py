@@ -22,7 +22,7 @@ def test_dataset5_browsing_category_is_not_treated_as_user_smart_playlist() -> N
     playlist = {
         "Title": "Music",
         "_source": "category",
-        "mhsd5_type": 1,
+        "mhsd5_type": 4,
         "smart_playlist_data": {"live_update": True},
     }
 

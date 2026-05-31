@@ -75,6 +75,17 @@ _DB_OVERHEAD_BYTES = 10 * 1024 * 1024    # 10 MB
 _DEFAULT_MUSIC_DIRS = 20
 
 
+def _mhsd5_type_value(playlist: dict) -> int:
+    try:
+        return int(playlist.get("mhsd5_type", 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _is_ipod_category_playlist(playlist: dict) -> bool:
+    return playlist.get("_source") == "category" or bool(_mhsd5_type_value(playlist))
+
+
 def _format_bytes(val: int) -> str:
     """Format bytes as compact human-readable text for progress messages."""
     value = float(max(0, val))
@@ -966,23 +977,32 @@ class SyncExecutor:
                 continue
             is_new = upl.get("_isNew", False)
             pid = upl.get("playlist_id", 0)
-            if is_new:
-                ctx.existing_playlists_raw.append(upl)
-            else:
-                replaced = False
-                for i, epl in enumerate(ctx.existing_playlists_raw):
+            target = (
+                ctx.existing_smart_raw
+                if _is_ipod_category_playlist(upl)
+                else ctx.existing_playlists_raw
+            )
+            other = (
+                ctx.existing_playlists_raw
+                if target is ctx.existing_smart_raw
+                else ctx.existing_smart_raw
+            )
+
+            replaced = False
+            if not is_new:
+                for i, epl in enumerate(target):
                     if epl.get("playlist_id") == pid:
-                        ctx.existing_playlists_raw[i] = upl
+                        target[i] = upl
                         replaced = True
                         break
-                if not replaced:
-                    for i, epl in enumerate(ctx.existing_smart_raw):
-                        if epl.get("playlist_id") == pid:
-                            ctx.existing_smart_raw[i] = upl
-                            replaced = True
-                            break
-                if not replaced:
-                    ctx.existing_playlists_raw.append(upl)
+
+            if pid:
+                other[:] = [
+                    epl for epl in other if epl.get("playlist_id") != pid
+                ]
+
+            if not replaced:
+                target.append(upl)
             logger.info("Merged user playlist '%s' (id=%s, new=%s)",
                         upl.get("Title", "?"),
                         (f"0x{pid:X}") if pid is not None else "new",

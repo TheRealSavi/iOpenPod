@@ -131,15 +131,30 @@ def _split_cached_playlists(
         if isinstance(items, list):
             row["mhip_child_count"] = len(items)
 
-        if row.get("smart_playlist_data") or row.get("_source") in (
-            "smart",
-            "category",
-        ):
+        if _is_ipod_category_playlist(row):
             smart_raw.append(row)
         else:
             playlists_raw.append(row)
 
     return playlists_raw, smart_raw
+
+
+def _mhsd5_type_value(playlist: dict[str, Any]) -> int:
+    try:
+        return int(playlist.get("mhsd5_type", 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _is_ipod_category_playlist(playlist: dict[str, Any]) -> bool:
+    """Return whether a playlist belongs in MHSD type 5.
+
+    User-created smart playlists must remain in the normal playlist dataset so
+    the iPod firmware shows them under Playlists.  Dataset 5 is reserved here
+    for built-in browse categories such as Music, Movies, and Audiobooks.
+    """
+
+    return playlist.get("_source") == "category" or bool(_mhsd5_type_value(playlist))
 
 
 def _evaluate_tracks_and_playlists(
