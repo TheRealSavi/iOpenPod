@@ -67,6 +67,15 @@ from ..styles import (
     btn_css,
     make_scroll_area,
 )
+from .artworkUnifier import (
+    ArtworkUnifyContext,
+    UnifyArtworkDialog,
+    artwork_compare_hash,
+    build_track_artwork_unify_context,
+    representative_artwork_variant,
+    save_unified_artwork_temp,
+    track_artwork_id,
+)
 from .flowLayout import FlowLayout
 from .formatters import format_duration_mmss, format_size
 from .photoViewer import pil_to_pixmap
@@ -79,6 +88,8 @@ class _MixedValue:
 
 
 MIXED = _MixedValue()
+_MIXED_ARTWORK_METADATA_VALUE = "mixed value"
+_MISSING_ARTWORK_METADATA = object()
 
 
 @dataclass(frozen=True)
@@ -1995,11 +2006,23 @@ class _ArtworkPreviewPanel(QFrame):
     """Preview assigned track artwork and its decoded device format variants."""
 
     changeArtworkRequested = pyqtSignal()
+    unifyArtworkRequested = pyqtSignal()
 
-    def __init__(self, artworks: list[TrackArtworkPreview], parent: QWidget | None = None):
+    def __init__(
+        self,
+        artworks: list[TrackArtworkPreview],
+        tracks: list[dict] | None = None,
+        parent: QWidget | None = None,
+    ):
         super().__init__(parent)
-        self._artworks = artworks
-        self._artwork_index = 0
+        self._all_previews = list(artworks)
+        self._tracks = list(tracks or [])
+        self._artworks, self._has_multiple_images = self._aggregate_artworks(artworks)
+        self._has_mixed_artwork_presence = self._mixed_artwork_presence(
+            self._tracks,
+            artworks,
+        )
+        self._unify_context = self._build_unify_context()
         self._format_index = 0
         self._source_pixmap = QPixmap()
         self._pending_pixmap = QPixmap()
@@ -2043,24 +2066,13 @@ class _ArtworkPreviewPanel(QFrame):
         self._change_btn.clicked.connect(self.changeArtworkRequested.emit)
         header.addWidget(self._change_btn)
 
-        self._counter_label = QLabel("")
-        self._counter_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
-        self._counter_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
-        header.addWidget(self._counter_label)
+        self._unify_btn = QPushButton("Unify Artwork")
+        self._unify_btn.setStyleSheet(btn_css())
+        self._unify_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._unify_btn.setToolTip("Pick one selected artwork image for all selected tracks")
+        self._unify_btn.clicked.connect(self.unifyArtworkRequested.emit)
+        header.addWidget(self._unify_btn)
 
-        self._prev_btn = QPushButton("<")
-        self._prev_btn.setStyleSheet(btn_css())
-        self._prev_btn.setFixedSize(30, 26)
-        self._prev_btn.setToolTip("Previous artwork")
-        self._prev_btn.clicked.connect(lambda: self._move_artwork(-1))
-        header.addWidget(self._prev_btn)
-
-        self._next_btn = QPushButton(">")
-        self._next_btn.setStyleSheet(btn_css())
-        self._next_btn.setFixedSize(30, 26)
-        self._next_btn.setToolTip("Next artwork")
-        self._next_btn.clicked.connect(lambda: self._move_artwork(1))
-        header.addWidget(self._next_btn)
         layout.addLayout(header)
 
         content = QHBoxLayout()
@@ -2179,6 +2191,164 @@ class _ArtworkPreviewPanel(QFrame):
 
         self._render()
 
+    @classmethod
+    def _track_has_artwork(
+        cls,
+        track: dict,
+        preview_img_ids: set[int],
+        preview_song_ids: set[int],
+    ) -> bool:
+        if track.get("_iop_pending_artwork_path"):
+            return True
+        artwork_id = track_artwork_id(track)
+        if artwork_id is not None and artwork_id in preview_img_ids:
+            return True
+        for key in ("db_track_id", "track_id"):
+            try:
+                track_id = int(track.get(key) or 0)
+            except (TypeError, ValueError):
+                track_id = 0
+            if track_id and track_id in preview_song_ids:
+                return True
+        return False
+
+    @classmethod
+    def _mixed_artwork_presence(
+        cls,
+        tracks: list[dict],
+        artworks: list[TrackArtworkPreview],
+    ) -> bool:
+        if len(tracks) < 2:
+            return False
+        preview_img_ids = {
+            int(artwork.img_id)
+            for artwork in artworks
+            if int(artwork.img_id or 0) > 0
+        }
+        preview_song_ids = {
+            int(artwork.song_id)
+            for artwork in artworks
+            if int(artwork.song_id or 0) > 0
+        }
+        presence = [
+            cls._track_has_artwork(track, preview_img_ids, preview_song_ids)
+            for track in tracks
+        ]
+        return any(presence) and not all(presence)
+
+    @classmethod
+    def _aggregate_artworks(
+        cls,
+        artworks: list[TrackArtworkPreview],
+    ) -> tuple[list[TrackArtworkPreview], bool]:
+        unique_by_hash: dict[str, TrackArtworkPreview] = {}
+        fallback_without_decodable_image: list[TrackArtworkPreview] = []
+
+        for artwork in artworks:
+            variant = representative_artwork_variant(artwork)
+            if variant is None:
+                fallback_without_decodable_image.append(artwork)
+                continue
+            digest = artwork_compare_hash(variant.image)
+            unique_by_hash.setdefault(digest, artwork)
+
+        if len(unique_by_hash) > 1:
+            return [], True
+        if len(unique_by_hash) == 1:
+            return [next(iter(unique_by_hash.values()))], False
+        return fallback_without_decodable_image[:1], False
+
+    @staticmethod
+    def _metadata_rows_to_map(rows: tuple[tuple[str, str], ...]) -> dict[str, str]:
+        mapped: dict[str, str] = {}
+        for key, value in rows:
+            key_text = str(key).strip()
+            if not key_text:
+                continue
+            value_text = str(value)
+            existing = mapped.get(key_text)
+            if existing is not None and existing != value_text:
+                mapped[key_text] = _MIXED_ARTWORK_METADATA_VALUE
+            else:
+                mapped[key_text] = value_text
+        return mapped
+
+    @classmethod
+    def _aggregate_metadata_rows(
+        cls,
+        observations: list[tuple[tuple[str, str], ...]],
+        *,
+        include_missing_observation: bool = False,
+    ) -> tuple[tuple[str, str], ...]:
+        metadata_maps = [cls._metadata_rows_to_map(rows) for rows in observations]
+        key_order: list[str] = []
+        seen_keys: set[str] = set()
+        for metadata in metadata_maps:
+            for key in metadata:
+                if key in seen_keys:
+                    continue
+                seen_keys.add(key)
+                key_order.append(key)
+
+        aggregated: list[tuple[str, str]] = []
+        for key in key_order:
+            values: list[str | object] = [
+                metadata.get(key, _MISSING_ARTWORK_METADATA)
+                for metadata in metadata_maps
+            ]
+            if include_missing_observation:
+                values.append(_MISSING_ARTWORK_METADATA)
+
+            present_values = [value for value in values if isinstance(value, str)]
+            if len(present_values) == len(values) and len(set(present_values)) == 1:
+                aggregated.append((key, present_values[0]))
+            else:
+                aggregated.append((key, _MIXED_ARTWORK_METADATA_VALUE))
+        return tuple(aggregated)
+
+    def _aggregate_artwork_metadata_sections(
+        self,
+        *,
+        include_missing_observation: bool,
+    ) -> list[tuple[str, tuple[tuple[str, str], ...]]]:
+        image_rows = self._aggregate_metadata_rows(
+            [artwork.metadata for artwork in self._all_previews],
+            include_missing_observation=include_missing_observation,
+        )
+
+        format_observations: list[tuple[tuple[str, str], ...]] = []
+        missing_format_observation = include_missing_observation
+        for artwork in self._all_previews:
+            variant = representative_artwork_variant(artwork)
+            if variant is None:
+                missing_format_observation = True
+                continue
+            format_observations.append(variant.metadata)
+
+        format_rows = self._aggregate_metadata_rows(
+            format_observations,
+            include_missing_observation=missing_format_observation,
+        )
+
+        sections: list[tuple[str, tuple[tuple[str, str], ...]]] = []
+        if image_rows:
+            sections.append(("ArtworkDB Image Item", image_rows))
+        if format_rows:
+            sections.append(("Representative Format Container", format_rows))
+        return sections
+
+    def _build_unify_context(self) -> ArtworkUnifyContext | None:
+        if not (self._has_mixed_artwork_presence or self._has_multiple_images):
+            return None
+        return build_track_artwork_unify_context(
+            "Selected Tracks",
+            self._tracks,
+            self._all_previews,
+        )
+
+    def unify_context(self) -> ArtworkUnifyContext | None:
+        return self._unify_context
+
     def set_pending_artwork(self, image: Image.Image, source_path: str) -> None:
         self._pending_pixmap = pil_to_pixmap(image)
         source_name = os.path.basename(source_path) or source_path
@@ -2194,18 +2364,14 @@ class _ArtworkPreviewPanel(QFrame):
         self._pending_metadata = ()
         self._render()
 
-    def _move_artwork(self, delta: int) -> None:
-        if not self._artworks:
-            return
-        self._artwork_index = (self._artwork_index + delta) % len(self._artworks)
-        self._format_index = 0
-        self._render()
-
     def _select_format(self, index: int) -> None:
         self._format_index = index
         self._render()
 
     def _render(self) -> None:
+        self._unify_btn.setVisible(
+            self._pending_pixmap.isNull() and self._unify_context is not None
+        )
         if not self._pending_pixmap.isNull():
             self._title_label.setText("New Artwork")
             self._source_pixmap = self._pending_pixmap
@@ -2215,41 +2381,58 @@ class _ArtworkPreviewPanel(QFrame):
                 "",
             )
             self._meta_label.setText(
-                "New artwork - pending apply"
+                "New artwork: pending apply"
                 if not size_text
-                else f"New artwork - {size_text} - pending apply"
+                else f"New artwork: {size_text}, pending apply"
             )
-            self._counter_label.setText("Pending")
-            self._prev_btn.setEnabled(False)
-            self._next_btn.setEnabled(False)
             self._set_format_buttons([])
             self._set_metadata_sections([("Pending Image", self._pending_metadata)])
             self._queue_scaled_pixmap()
             return
 
         self._title_label.setText("Assigned Artwork")
+        if self._has_mixed_artwork_presence:
+            self._source_pixmap = QPixmap()
+            self._image_label.clear()
+            self._image_label.setText("Multiple values")
+            self._meta_label.setText("Some selected tracks have artwork and some do not.")
+            self._set_format_buttons([])
+            self._set_metadata_sections(
+                self._aggregate_artwork_metadata_sections(
+                    include_missing_observation=True,
+                )
+            )
+            return
+
+        if self._has_multiple_images:
+            self._source_pixmap = QPixmap()
+            self._image_label.clear()
+            self._image_label.setText("Multiple images")
+            self._meta_label.setText("Selected tracks have different assigned artwork.")
+            self._set_format_buttons([])
+            self._set_metadata_sections(
+                self._aggregate_artwork_metadata_sections(
+                    include_missing_observation=False,
+                )
+            )
+            return
+
         if not self._artworks:
             self._source_pixmap = QPixmap()
             self._image_label.clear()
             self._image_label.setText("No assigned artwork found")
             self._meta_label.setText("ArtworkDB data is not available for this track, or this track has no assigned artwork.")
-            self._counter_label.setText("")
-            self._prev_btn.setEnabled(False)
-            self._next_btn.setEnabled(False)
             self._set_format_buttons([])
             self._set_metadata_sections([])
             return
 
-        artwork = self._artworks[self._artwork_index]
+        artwork = self._artworks[0]
         variants = list(artwork.variants)
         if not variants:
             self._source_pixmap = QPixmap()
             self._image_label.clear()
             self._image_label.setText("No decodable artwork formats")
             self._meta_label.setText(f"Artwork ID {artwork.img_id}")
-            self._counter_label.setText(f"{self._artwork_index + 1} of {len(self._artworks)}")
-            self._prev_btn.setEnabled(len(self._artworks) > 1)
-            self._next_btn.setEnabled(len(self._artworks) > 1)
             self._set_format_buttons([])
             self._set_metadata_sections([
                 ("ArtworkDB Image Item", artwork.metadata),
@@ -2259,9 +2442,6 @@ class _ArtworkPreviewPanel(QFrame):
         self._format_index = max(0, min(self._format_index, len(variants) - 1))
         variant = variants[self._format_index]
         self._source_pixmap = pil_to_pixmap(variant.image)
-        self._counter_label.setText(f"{self._artwork_index + 1} of {len(self._artworks)}")
-        self._prev_btn.setEnabled(len(self._artworks) > 1)
-        self._next_btn.setEnabled(len(self._artworks) > 1)
 
         detail_parts = [
             f"Artwork ID {artwork.img_id}",
@@ -2616,8 +2796,9 @@ class TrackEditorDialog(QDialog):
             except Exception as exc:
                 logger.warning("Failed to load track artwork previews: %s", exc)
                 artworks = []
-            self._artwork_panel = _ArtworkPreviewPanel(artworks, body)
+            self._artwork_panel = _ArtworkPreviewPanel(artworks, self._tracks, body)
             self._artwork_panel.changeArtworkRequested.connect(self._choose_artwork)
+            self._artwork_panel.unifyArtworkRequested.connect(self._unify_artwork)
             body_layout.addWidget(self._artwork_panel)
 
         page_rows: list[_TrackFieldRow] = []
@@ -2805,6 +2986,36 @@ class TrackEditorDialog(QDialog):
         self._pending_artwork_path = temp_path
         if self._artwork_panel is not None:
             self._artwork_panel.set_pending_artwork(cropped, file_path)
+        self._update_change_summary()
+
+    def _unify_artwork(self) -> None:
+        if self._artwork_panel is None:
+            return
+        context = self._artwork_panel.unify_context()
+        if context is None:
+            return
+
+        dialog = UnifyArtworkDialog(context, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        choice = dialog.selected_choice()
+        if choice is None:
+            return
+
+        try:
+            temp_path = save_unified_artwork_temp(choice.image)
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                "Unify Artwork",
+                f"Could not prepare artwork:\n\n{exc}",
+            )
+            return
+
+        self._discard_pending_artwork()
+        self._pending_artwork_path = temp_path
+        self._artwork_panel.set_pending_artwork(choice.image, choice.source_label)
         self._update_change_summary()
 
     def _save_cropped_artwork(self, image: Image.Image) -> str:

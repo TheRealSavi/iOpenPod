@@ -61,6 +61,7 @@ from app_core.sync_plan_builder import (
     build_removal_sync_plan,
 )
 from GUI.glyphs import glyph_pixmap
+from GUI.internal_drag import is_iopenpod_export_drag
 from GUI.notifications import Notifier
 from GUI.styles import FONT_FAMILY, Colors, Metrics, btn_css
 from GUI.widgets.backupBrowser import BackupBrowserWidget
@@ -1877,6 +1878,11 @@ class MainWindow(QMainWindow):
     def dragEnterEvent(self, a0):
         if a0 is None:
             return
+        mime = a0.mimeData()
+        if is_iopenpod_export_drag(mime):
+            self._drop_overlay.hide_overlay()
+            a0.ignore()
+            return
         # Reject drops when no device is selected or sync is executing
         device = self.device_manager
         if not device.device_path:
@@ -1886,7 +1892,6 @@ class MainWindow(QMainWindow):
             a0.ignore()
             return
 
-        mime = a0.mimeData()
         if mime and mime.hasUrls():
             caps = self.device_session_service.current_session().capabilities
             include_video = bool(caps.supports_video) if caps is not None else True
@@ -1904,7 +1909,10 @@ class MainWindow(QMainWindow):
         a0.ignore()
 
     def dragMoveEvent(self, a0):
-        if a0 and self._drop_overlay.isVisible():
+        if a0 and is_iopenpod_export_drag(a0.mimeData()):
+            self._drop_overlay.hide_overlay()
+            a0.ignore()
+        elif a0 and self._drop_overlay.isVisible():
             a0.acceptProposedAction()
         elif a0:
             a0.ignore()
@@ -1917,6 +1925,9 @@ class MainWindow(QMainWindow):
         if a0 is None:
             return
         mime = a0.mimeData()
+        if is_iopenpod_export_drag(mime):
+            a0.ignore()
+            return
         if not mime or not mime.hasUrls():
             return
 

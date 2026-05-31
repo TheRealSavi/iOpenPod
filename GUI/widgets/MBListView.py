@@ -22,13 +22,16 @@ from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
     QFrame,
+    QHBoxLayout,
     QHeaderView,
     QLabel,
     QMenu,
+    QSlider,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
+    QWidgetAction,
 )
 
 from ..artwork_rendering import (
@@ -38,6 +41,7 @@ from ..artwork_rendering import (
 )
 from ..glyphs import glyph_icon
 from ..hidpi import scale_pixmap_for_display
+from ..internal_drag import IOP_EXPORT_DRAG_MIME
 from ..styles import FONT_FAMILY, Colors, Metrics, context_menu_css, table_css
 from .formatters import format_duration_mmss, format_size
 
@@ -54,6 +58,8 @@ if TYPE_CHECKING:
 _CTRL = "⌘" if _sys.platform == "darwin" else "Ctrl"
 _ALT = "⌥" if _sys.platform == "darwin" else "Alt"
 del _sys
+
+_VOLUME_ZERO_MAGNET_THRESHOLD = 12
 
 
 # =============================================================================
@@ -2276,6 +2282,9 @@ class MusicBrowserList(QFrame):
             if ke.modifiers() == ctrl and ke.key() == Qt.Key.Key_C:
                 self._copy_selection()
                 return True
+            if ke.modifiers() == ctrl and ke.key() == Qt.Key.Key_E:
+                self._edit_tracks()
+                return True
             if ke.modifiers() == ctrl and ke.key() == Qt.Key.Key_Up:
                 self._move_selected_rows(-1)
                 return True
@@ -2793,6 +2802,7 @@ class MusicBrowserList(QFrame):
         temp_dir = os.path.dirname(urls[0].toLocalFile()) if urls else ""
 
         mime = QMimeData()
+        mime.setData(IOP_EXPORT_DRAG_MIME, b"1")
         mime.setUrls(urls)
         drag = QDrag(self.table)
         drag.setMimeData(mime)
@@ -2864,7 +2874,7 @@ class MusicBrowserList(QFrame):
 
         # ── Edit metadata ──
         if self._can_edit_selected_tracks(selected):
-            edit_act = menu.addAction(self._edit_action_label(selected))
+            edit_act = menu.addAction(f"{self._edit_action_label(selected)}\t{_CTRL}+E")
             if edit_act:
                 icon = glyph_icon("edit", 14, Colors.TEXT_PRIMARY)
                 if icon is not None:
@@ -2944,6 +2954,9 @@ class MusicBrowserList(QFrame):
         remove_ipod_label = f"Remove {n_sel} Track{'s' if n_sel != 1 else ''} from iPod"
         remove_ipod_act = menu.addAction(remove_ipod_label)
         if remove_ipod_act:
+            icon = glyph_icon("minus", 14, Colors.TEXT_PRIMARY)
+            if icon is not None:
+                remove_ipod_act.setIcon(icon)
             remove_ipod_act.triggered.connect(
                 lambda _=False, sel=selected: self.remove_from_ipod_requested.emit(sel)
             )
@@ -3054,6 +3067,12 @@ class MusicBrowserList(QFrame):
         current_ratings = {t.get("rating", 0) for t in selected}
         unanimous = current_ratings.pop() if len(current_ratings) == 1 else None
 
+        if unanimous is None and len(selected) > 1:
+            mixed = rating_menu.addAction("(mixed selection)")
+            if mixed:
+                mixed.setEnabled(False)
+            rating_menu.addSeparator()
+
         stars = [
             (0, "No Rating"),
             (20, "★"),
@@ -3110,35 +3129,166 @@ class MusicBrowserList(QFrame):
                 )
 
     def _build_volume_menu(self, menu: QMenu, style: str, selected: list[dict]) -> None:
-        """Add a Volume Adjustment submenu with common presets (-100% to +100%)."""
+        """Add a Volume Adjustment submenu with a continuous slider."""
         vol_menu = menu.addMenu("Volume Adjustment")
         if not vol_menu:
             return
         vol_menu.setStyleSheet(style)
 
-        # Current volume (show check for unanimous value)
-        current_vols = {t.get("volume", 0) for t in selected}
+        current_vols = {self._coerce_volume_value(t.get("volume", 0)) for t in selected}
         unanimous = current_vols.pop() if len(current_vols) == 1 else None
 
-        # iPod volume range: -255 to +255.  Show as percentage.
-        presets = [
-            (-255, "−100%"),
-            (-191, "−75%"),
-            (-128, "−50%"),
-            (-64, "−25%"),
-            (0, "None (0%)"),
-            (64, "+25%"),
-            (128, "+50%"),
-            (191, "+75%"),
-            (255, "+100%"),
-        ]
-        for value, label in presets:
-            prefix = "✓ " if unanimous == value else "   "
-            act = vol_menu.addAction(f"{prefix}{label}")
-            if act:
-                act.triggered.connect(
-                    lambda _=False, v=value: self._set_track_flag("volume", v)
+        slider_widget = self._volume_slider_widget(selected, unanimous)
+        slider_action = QWidgetAction(vol_menu)
+        slider_action.setDefaultWidget(slider_widget)
+        vol_menu.addAction(slider_action)
+
+    @staticmethod
+    def _coerce_volume_value(value: object) -> int:
+        raw_value: Any = value
+        if raw_value in (None, ""):
+            raw_value = 0
+        try:
+            volume = int(raw_value)
+        except (TypeError, ValueError):
+            volume = 0
+        return max(-255, min(255, volume))
+
+    @staticmethod
+    def _volume_adjustment_label(value: int) -> str:
+        if value == 0:
+            return "No adjustment (0%)"
+        return format_volume(value)
+
+    @classmethod
+    def _magnetized_volume_value(cls, value: object) -> int:
+        volume = cls._coerce_volume_value(value)
+        if abs(volume) <= _VOLUME_ZERO_MAGNET_THRESHOLD:
+            return 0
+        return volume
+
+    def _volume_slider_widget(
+        self,
+        selected: list[dict],
+        unanimous: int | None,
+    ) -> QWidget:
+        widget = QWidget()
+        widget.setObjectName("volumeAdjustmentWidget")
+        widget.setMinimumWidth(230)
+        widget.setStyleSheet(
+            f"""
+            QWidget#volumeAdjustmentWidget {{
+                background: {Colors.SURFACE};
+                color: {Colors.TEXT_PRIMARY};
+            }}
+            QLabel {{
+                color: {Colors.TEXT_SECONDARY};
+                background: transparent;
+                font-family: {FONT_FAMILY};
+                font-size: {Metrics.FONT_XS}px;
+            }}
+            QLabel#volumeAdjustmentValueLabel {{
+                color: {Colors.TEXT_PRIMARY};
+                font-size: {Metrics.FONT_SM}px;
+                font-weight: 600;
+            }}
+            QSlider::groove:horizontal {{
+                height: 4px;
+                border-radius: 2px;
+                background: {Colors.BORDER};
+            }}
+            QSlider::sub-page:horizontal {{
+                border-radius: 2px;
+                background: {Colors.ACCENT};
+            }}
+            QSlider::handle:horizontal {{
+                width: 14px;
+                height: 14px;
+                margin: -5px 0;
+                border-radius: 7px;
+                background: {Colors.TEXT_PRIMARY};
+                border: 1px solid {Colors.BORDER};
+            }}
+            QSlider::handle:horizontal:hover {{
+                background: {Colors.TEXT_ON_ACCENT};
+                border-color: {Colors.ACCENT_BORDER};
+            }}
+            """
+        )
+
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(8)
+
+        value_label = QLabel(
+            "Mixed values"
+            if unanimous is None
+            else self._volume_adjustment_label(unanimous)
+        )
+        value_label.setObjectName("volumeAdjustmentValueLabel")
+        value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(value_label)
+
+        slider = QSlider(Qt.Orientation.Horizontal)
+        slider.setObjectName("volumeAdjustmentSlider")
+        slider.setRange(-255, 255)
+        slider.setSingleStep(1)
+        slider.setPageStep(16)
+        slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        slider.setTickInterval(64)
+        slider.setTracking(False)
+        slider.setValue(unanimous if unanimous is not None else 0)
+        layout.addWidget(slider)
+
+        scale = QHBoxLayout()
+        scale.setContentsMargins(0, 0, 0, 0)
+        scale.setSpacing(6)
+        low = QLabel("−100%")
+        mid = QLabel("0%")
+        high = QLabel("+100%")
+        low.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        mid.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        high.setAlignment(Qt.AlignmentFlag.AlignRight)
+        scale.addWidget(low)
+        scale.addWidget(mid, 1)
+        scale.addWidget(high)
+        layout.addLayout(scale)
+
+        selected_snapshot = list(selected)
+        last_applied: dict[str, int | None] = {"value": None}
+
+        def update_label(value: int) -> None:
+            value_label.setText(
+                self._volume_adjustment_label(
+                    self._magnetized_volume_value(value),
                 )
+            )
+
+        def handle_slider_moved(value: int) -> None:
+            volume = self._magnetized_volume_value(value)
+            if volume == 0 and value != 0:
+                slider.blockSignals(True)
+                slider.setSliderPosition(0)
+                slider.blockSignals(False)
+            value_label.setText(self._volume_adjustment_label(volume))
+
+        def commit_value(value: int) -> None:
+            volume = self._magnetized_volume_value(value)
+            if slider.value() != volume:
+                slider.blockSignals(True)
+                slider.setValue(volume)
+                slider.setSliderPosition(volume)
+                slider.blockSignals(False)
+            update_label(volume)
+            if last_applied["value"] == volume:
+                return
+            last_applied["value"] = volume
+            self._apply_track_edits(selected_snapshot, {"volume": volume})
+
+        slider.sliderMoved.connect(handle_slider_moved)
+        slider.valueChanged.connect(commit_value)
+        slider.sliderReleased.connect(lambda: commit_value(slider.value()))
+        return widget
 
     def _set_track_flag(self, key: str, value: int) -> None:
         """Apply a flag/field change to all selected tracks via the cache."""

@@ -1,9 +1,15 @@
 from types import SimpleNamespace
 from typing import Any, cast
 
+from PIL import Image
 from PyQt6.QtCore import QPoint
 
 from GUI.styles import Colors, context_menu_css
+from GUI.widgets import artworkUnifier as artwork_unifier_module
+from GUI.widgets.artworkUnifier import (
+    artwork_compare_hash,
+    build_album_artwork_unify_context,
+)
 from GUI.widgets.musicBrowser import MusicBrowser
 
 
@@ -95,6 +101,7 @@ def test_album_grid_context_menu_uses_shared_menu_style(monkeypatch) -> None:
     emitted: list[list[dict]] = []
     browser = SimpleNamespace(
         _current_category="Albums",
+        _album_artwork_unify_context=lambda _item: None,
         album_conversion_requested=SimpleNamespace(emit=emitted.append),
     )
 
@@ -109,3 +116,133 @@ def test_album_grid_context_menu_uses_shared_menu_style(monkeypatch) -> None:
     assert _Menu.last.styleSheet() == context_menu_css()
     assert _Menu.last.exec_pos == pos
     assert emitted == []
+
+
+def test_album_grid_context_menu_edit_opens_album_tracks(monkeypatch) -> None:
+    class _Action:
+        def __init__(self, label: str) -> None:
+            self.label = label
+            self._enabled = True
+
+        def setIcon(self, _icon) -> None:
+            pass
+
+        def setEnabled(self, enabled: bool) -> None:
+            self._enabled = enabled
+
+        def isEnabled(self) -> bool:
+            return self._enabled
+
+    class _Menu:
+        def __init__(self, _parent) -> None:
+            self.actions: list[_Action] = []
+
+        def setStyleSheet(self, _style: str) -> None:
+            pass
+
+        def addAction(self, label: str) -> _Action:
+            action = _Action(label)
+            self.actions.append(action)
+            return action
+
+        def exec(self, _pos: QPoint):
+            return next(action for action in self.actions if action.label == "Edit")
+
+    monkeypatch.setattr("GUI.widgets.musicBrowser.QMenu", _Menu)
+    monkeypatch.setattr("GUI.widgets.musicBrowser.glyph_icon", lambda *_args: None)
+
+    edited: list[dict] = []
+    browser = SimpleNamespace(
+        _current_category="Albums",
+        _album_artwork_unify_context=lambda _item: None,
+        _edit_album_tracks=edited.append,
+        album_conversion_requested=SimpleNamespace(emit=lambda _items: None),
+    )
+    album_item = {"category": "Albums", "track_count": 3, "title": "Album"}
+
+    MusicBrowser._onGridItemContextRequested(
+        cast(Any, browser),
+        [album_item],
+        QPoint(12, 34),
+    )
+
+    assert edited == [album_item]
+
+
+def test_unify_artwork_hash_dedupes_matching_rgba_pixels() -> None:
+    rgb = Image.new("RGB", (8, 8), (200, 40, 20))
+    rgba = Image.new("RGBA", (8, 8), (200, 40, 20, 255))
+    different = Image.new("RGBA", (8, 8), (20, 40, 200, 255))
+
+    assert artwork_compare_hash(rgb) == artwork_compare_hash(rgba)
+    assert artwork_compare_hash(rgb) != artwork_compare_hash(different)
+
+
+def test_unify_artwork_context_collapses_duplicate_visual_images(monkeypatch) -> None:
+    red = Image.new("RGBA", (12, 12), (220, 30, 30, 255))
+    blue = Image.new("RGBA", (12, 12), (30, 60, 220, 255))
+    tracks = [
+        {"db_track_id": 1, "Title": "A"},
+        {"db_track_id": 2, "Title": "B"},
+        {"db_track_id": 3, "Title": "C"},
+    ]
+    images = {1: red, 2: red.copy(), 3: blue}
+
+    monkeypatch.setattr(
+        "GUI.imgMaker.configure_artwork_api",
+        lambda *_args, **_kwargs: ({}, {}),
+    )
+    monkeypatch.setattr(
+        artwork_unifier_module,
+        "_track_artwork_image_for_unify",
+        lambda track, **_kwargs: (
+            images[int(track["db_track_id"])],
+            int(track["db_track_id"]) + 100,
+            "Artwork",
+        ),
+    )
+
+    context = build_album_artwork_unify_context(
+        {"title": "Album"},
+        tracks,
+        artworkdb_path="/fake/ArtworkDB",
+        artwork_folder_path="/fake/Artwork",
+    )
+
+    assert context is not None
+    assert len(context.choices) == 2
+    assert [choice.track_count for choice in context.choices] == [2, 1]
+    assert context.missing_count == 0
+
+
+def test_unify_artwork_context_available_for_missing_artwork(monkeypatch) -> None:
+    green = Image.new("RGBA", (12, 12), (30, 180, 80, 255))
+    tracks = [
+        {"db_track_id": 1, "Title": "A"},
+        {"db_track_id": 2, "Title": "B"},
+    ]
+
+    monkeypatch.setattr(
+        "GUI.imgMaker.configure_artwork_api",
+        lambda *_args, **_kwargs: ({}, {}),
+    )
+    monkeypatch.setattr(
+        artwork_unifier_module,
+        "_track_artwork_image_for_unify",
+        lambda track, **_kwargs: (
+            (green, 101, "Artwork")
+            if int(track["db_track_id"]) == 1
+            else None
+        ),
+    )
+
+    context = build_album_artwork_unify_context(
+        {"title": "Album"},
+        tracks,
+        artworkdb_path="/fake/ArtworkDB",
+        artwork_folder_path="/fake/Artwork",
+    )
+
+    assert context is not None
+    assert len(context.choices) == 1
+    assert context.missing_count == 1

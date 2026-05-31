@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 from GUI.app import MainWindow
+from GUI.internal_drag import IOP_EXPORT_DRAG_MIME
 
 
 class _FakeStack:
@@ -31,6 +32,55 @@ class _FakeSidebar:
 
     def updateDeviceInfo(self, **kwargs) -> None:
         self.device_info_updates.append(kwargs)
+
+
+class _FakeDropOverlay:
+    def __init__(self, *, visible: bool = False):
+        self._visible = visible
+        self.show_count = 0
+        self.hide_count = 0
+
+    def isVisible(self) -> bool:
+        return self._visible
+
+    def show_overlay(self) -> None:
+        self.show_count += 1
+        self._visible = True
+
+    def hide_overlay(self) -> None:
+        self.hide_count += 1
+        self._visible = False
+
+
+class _FakeMime:
+    def __init__(self, *, formats: set[str] | None = None, urls: list | None = None):
+        self._formats = formats or set()
+        self._urls = urls or []
+
+    def hasFormat(self, name: str) -> bool:
+        return name in self._formats
+
+    def hasUrls(self) -> bool:
+        return bool(self._urls)
+
+    def urls(self) -> list:
+        return self._urls
+
+
+class _FakeDropEvent:
+    def __init__(self, mime: _FakeMime):
+        self._mime = mime
+        self.accepted = False
+        self.ignored = False
+
+    def mimeData(self) -> _FakeMime:
+        return self._mime
+
+    def acceptProposedAction(self) -> None:
+        self.accepted = True
+
+    def ignore(self) -> None:
+        self.ignored = True
 
 
 class _FakeCache:
@@ -105,6 +155,19 @@ def _build_window_for_data_ready(
     return window
 
 
+def _build_window_for_drop_events(*, overlay_visible: bool = False):
+    window = SimpleNamespace()
+    window._drop_overlay = _FakeDropOverlay(visible=overlay_visible)
+    window.device_manager = SimpleNamespace(device_path="E:/iPod")
+    window._sync_execute_worker = None
+    window.device_session_service = SimpleNamespace(
+        current_session=lambda: SimpleNamespace(capabilities=None),
+    )
+    window.dropped_paths = []
+    window._on_files_dropped = lambda paths: window.dropped_paths.extend(paths)
+    return window
+
+
 def _call_on_data_ready(window: object) -> None:
     MainWindow.onDataReady(cast(Any, window))
 
@@ -153,3 +216,27 @@ def test_data_ready_updates_main_page_when_main_page_is_visible():
 
     assert window.centralStack.set_indices == [0]
     assert window.mainContentStack.set_indices == [0]
+
+
+def test_own_export_drag_is_ignored_for_sync_drag_enter():
+    window = _build_window_for_drop_events()
+    event = _FakeDropEvent(_FakeMime(formats={IOP_EXPORT_DRAG_MIME}))
+
+    MainWindow.dragEnterEvent(cast(Any, window), cast(Any, event))
+
+    assert event.ignored
+    assert not event.accepted
+    assert window._drop_overlay.hide_count == 1
+    assert window._drop_overlay.show_count == 0
+
+
+def test_own_export_drag_is_ignored_for_sync_drop():
+    window = _build_window_for_drop_events(overlay_visible=True)
+    event = _FakeDropEvent(_FakeMime(formats={IOP_EXPORT_DRAG_MIME}))
+
+    MainWindow.dropEvent(cast(Any, window), cast(Any, event))
+
+    assert event.ignored
+    assert not event.accepted
+    assert window.dropped_paths == []
+    assert window._drop_overlay.hide_count == 1

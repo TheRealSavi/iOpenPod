@@ -11,7 +11,7 @@ import pytest
 from PIL import Image
 from PyQt6.QtCore import QPoint, Qt
 from PyQt6.QtTest import QTest
-from PyQt6.QtWidgets import QComboBox, QHeaderView, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QTreeWidget
+from PyQt6.QtWidgets import QComboBox, QDialog, QHeaderView, QLabel, QLineEdit, QMenu, QPushButton, QSlider, QTableWidget, QTableWidgetItem, QTreeWidget
 
 from app_core.context import RuntimeSettingsService
 from app_core.services import DeviceCapabilitySnapshot, DeviceIdentitySnapshot, DeviceManagerLike, DeviceSession, SettingsService, SettingsSnapshot
@@ -50,6 +50,17 @@ def _tree_child_text(tree: QTreeWidget, section_index: int, child_index: int, co
     child = section.child(child_index)
     assert child is not None
     return child.text(column)
+
+
+def _tree_child_value_for_key(tree: QTreeWidget, section_index: int, key: str) -> str:
+    section = tree.topLevelItem(section_index)
+    assert section is not None
+    for index in range(section.childCount()):
+        child = section.child(index)
+        assert child is not None
+        if child.text(0) == key:
+            return child.text(1)
+    raise AssertionError(f"Missing metadata key {key!r}")
 
 
 def _table_item(table: QTableWidget, row: int, column: int) -> QTableWidgetItem:
@@ -888,6 +899,139 @@ def test_edit_action_is_only_available_for_ready_ipod_tracks(qtbot) -> None:
     assert not pc_view._can_edit_selected_tracks([{"db_track_id": 1, "Title": "PC Track"}])
 
 
+def test_rating_context_menu_shows_mixed_selection_header(qtbot) -> None:
+    cache = _LibraryCache()
+    view = _mount_list(qtbot, library_cache=cache)
+    tracks = [
+        {"db_track_id": 1, "Title": "One", "rating": 20},
+        {"db_track_id": 2, "Title": "Two", "rating": 80},
+    ]
+
+    menu = QMenu(view)
+    view._build_rating_menu(menu, "", tracks, cache)
+    rating_menu = menu.actions()[0].menu()
+    assert rating_menu is not None
+
+    actions = rating_menu.actions()
+    assert actions[0].text() == "(mixed selection)"
+    assert not actions[0].isEnabled()
+    assert actions[1].isSeparator()
+    assert actions[2].text() == "   No Rating"
+
+
+def test_rating_context_menu_omits_mixed_header_for_unanimous_selection(qtbot) -> None:
+    cache = _LibraryCache()
+    view = _mount_list(qtbot, library_cache=cache)
+    tracks = [
+        {"db_track_id": 1, "Title": "One", "rating": 80},
+        {"db_track_id": 2, "Title": "Two", "rating": 80},
+    ]
+
+    menu = QMenu(view)
+    view._build_rating_menu(menu, "", tracks, cache)
+    rating_menu = menu.actions()[0].menu()
+    assert rating_menu is not None
+
+    actions = rating_menu.actions()
+    assert actions[0].text() == "   No Rating"
+    assert actions[4].text() == "✓ ★★★★"
+
+
+def test_volume_context_menu_uses_slider_widget(qtbot) -> None:
+    cache = _LibraryCache()
+    view = _mount_list(qtbot, library_cache=cache)
+    tracks = [
+        {"db_track_id": 1, "Title": "One", "volume": 64},
+        {"db_track_id": 2, "Title": "Two", "volume": 64},
+    ]
+
+    menu = QMenu(view)
+    view._build_volume_menu(menu, "", tracks)
+
+    volume_menu = menu.actions()[0].menu()
+    assert volume_menu is not None
+    assert volume_menu.title() == "Volume Adjustment"
+    assert len(volume_menu.actions()) == 1
+
+    widget = cast(Any, volume_menu.actions()[0]).defaultWidget()
+    assert widget is not None
+    slider = widget.findChild(QSlider, "volumeAdjustmentSlider")
+    value_label = widget.findChild(QLabel, "volumeAdjustmentValueLabel")
+    assert slider is not None
+    assert value_label is not None
+    assert slider.minimum() == -255
+    assert slider.maximum() == 255
+    assert slider.value() == 64
+    assert value_label.text() == "+25%"
+
+    slider.setValue(128)
+
+    assert value_label.text() == "+50%"
+    assert cache.updated[-1] == (tracks, {"volume": 128})
+
+
+def test_volume_context_menu_mixed_selection_can_commit_zero(qtbot) -> None:
+    cache = _LibraryCache()
+    view = _mount_list(qtbot, library_cache=cache)
+    tracks = [
+        {"db_track_id": 1, "Title": "One", "volume": -64},
+        {"db_track_id": 2, "Title": "Two", "volume": 64},
+    ]
+
+    menu = QMenu(view)
+    view._build_volume_menu(menu, "", tracks)
+    volume_menu = menu.actions()[0].menu()
+    assert volume_menu is not None
+    widget = cast(Any, volume_menu.actions()[0]).defaultWidget()
+    assert widget is not None
+    slider = widget.findChild(QSlider, "volumeAdjustmentSlider")
+    value_label = widget.findChild(QLabel, "volumeAdjustmentValueLabel")
+    assert slider is not None
+    assert value_label is not None
+
+    assert slider.value() == 0
+    assert value_label.text() == "Mixed values"
+
+    slider.sliderReleased.emit()
+
+    assert value_label.text() == "No adjustment (0%)"
+    assert cache.updated[-1] == (tracks, {"volume": 0})
+
+
+def test_volume_context_menu_slider_zero_is_magnetic(qtbot) -> None:
+    cache = _LibraryCache()
+    view = _mount_list(qtbot, library_cache=cache)
+    tracks = [{"db_track_id": 1, "Title": "One", "volume": 64}]
+
+    menu = QMenu(view)
+    view._build_volume_menu(menu, "", tracks)
+    volume_menu = menu.actions()[0].menu()
+    assert volume_menu is not None
+    widget = cast(Any, volume_menu.actions()[0]).defaultWidget()
+    assert widget is not None
+    slider = widget.findChild(QSlider, "volumeAdjustmentSlider")
+    value_label = widget.findChild(QLabel, "volumeAdjustmentValueLabel")
+    assert slider is not None
+    assert value_label is not None
+
+    slider.sliderMoved.emit(8)
+
+    assert slider.sliderPosition() == 0
+    assert value_label.text() == "No adjustment (0%)"
+    assert cache.updated == []
+
+    slider.setValue(8)
+
+    assert slider.value() == 0
+    assert cache.updated[-1] == (tracks, {"volume": 0})
+
+    slider.setValue(13)
+
+    assert slider.value() == 13
+    assert value_label.text() == "+5%"
+    assert cache.updated[-1] == (tracks, {"volume": 13})
+
+
 def test_apply_track_edits_updates_cache_and_visible_row(qtbot) -> None:
     cache = _LibraryCache()
     view = _mount_list(qtbot, library_cache=cache)
@@ -1075,10 +1219,9 @@ def test_track_artwork_previews_collect_assigned_artwork_and_formats(tmp_path, m
     assert [variant.format_id for variant in previews[1].variants] == [103]
 
 
-def test_track_editor_dialog_artwork_panel_switches_formats_and_artworks(qtbot, monkeypatch) -> None:
+def test_track_editor_dialog_artwork_panel_collapses_matching_artworks(qtbot, monkeypatch) -> None:
     red = Image.new("RGBA", (20, 20), (255, 0, 0, 255))
     blue = Image.new("RGBA", (30, 30), (0, 0, 255, 255))
-    green = Image.new("RGBA", (40, 40), (0, 255, 0, 255))
     previews = [
         TrackArtworkPreview(
             img_id=100,
@@ -1093,7 +1236,7 @@ def test_track_editor_dialog_artwork_panel_switches_formats_and_artworks(qtbot, 
             img_id=101,
             song_id=1,
             variants=(
-                ArtworkFormatPreview(103, "103 40x40", "Other", 40, 40, "RGB565_LE", 3200, "F103_1.ithmb", 20, green, (("Thumbnail Image.result.correlationID", "103"),)),
+                ArtworkFormatPreview(103, "103 30x30", "Other", 30, 30, "RGB565_LE", 1800, "F103_1.ithmb", 20, blue.copy(), (("Thumbnail Image.result.correlationID", "103"),)),
             ),
             metadata=(("img_id", "101"), ("songId", "1")),
         ),
@@ -1108,7 +1251,9 @@ def test_track_editor_dialog_artwork_panel_switches_formats_and_artworks(qtbot, 
 
     panel = dialog.findChild(_ArtworkPreviewPanel)
     assert panel is not None
-    assert panel._counter_label.text() == "1 of 2"
+    assert not hasattr(panel, "_prev_btn")
+    assert not hasattr(panel, "_next_btn")
+    assert not hasattr(panel, "_counter_label")
     assert "Format 101" in panel._meta_label.text()
     assert _tree_child_text(panel._metadata_tree, 0, 0, 0) == "img_id"
     assert _tree_child_text(panel._metadata_tree, 0, 0, 1) == "100"
@@ -1118,10 +1263,119 @@ def test_track_editor_dialog_artwork_panel_switches_formats_and_artworks(qtbot, 
     assert "Format 102" in panel._meta_label.text()
     assert _tree_child_text(panel._metadata_tree, 1, 0, 1) == "102"
 
-    panel._next_btn.click()
-    assert panel._counter_label.text() == "2 of 2"
-    assert "Format 103" in panel._meta_label.text()
-    assert _tree_child_text(panel._metadata_tree, 0, 0, 1) == "101"
+
+def test_track_editor_dialog_artwork_panel_shows_multiple_images_for_different_art(qtbot, monkeypatch) -> None:
+    red = Image.new("RGBA", (20, 20), (255, 0, 0, 255))
+    blue = Image.new("RGBA", (20, 20), (0, 0, 255, 255))
+    previews = [
+        TrackArtworkPreview(
+            img_id=100,
+            song_id=1,
+            variants=(
+                ArtworkFormatPreview(101, "101 20x20", "Small", 20, 20, "RGB565_LE", 800, "F101_1.ithmb", 0, red, (("Thumbnail Image.result.correlationID", "101"), ("format", "Small"))),
+            ),
+            metadata=(("img_id", "100"), ("songId", "1"), ("kind", "Cover")),
+        ),
+        TrackArtworkPreview(
+            img_id=101,
+            song_id=2,
+            variants=(
+                ArtworkFormatPreview(102, "102 20x20", "Small", 20, 20, "RGB565_LE", 800, "F102_1.ithmb", 0, blue, (("Thumbnail Image.result.correlationID", "102"), ("format", "Small"))),
+            ),
+            metadata=(("img_id", "101"), ("songId", "2"), ("kind", "Cover")),
+        ),
+    ]
+    monkeypatch.setattr(
+        "GUI.widgets.trackEditorDialog.get_track_artwork_previews",
+        lambda _tracks: previews,
+    )
+
+    dialog = TrackEditorDialog([
+        {"db_track_id": 1, "Title": "One", "artwork_id_ref": 100},
+        {"db_track_id": 2, "Title": "Two", "artwork_id_ref": 101},
+    ])
+    qtbot.addWidget(dialog)
+
+    panel = dialog.findChild(_ArtworkPreviewPanel)
+    assert panel is not None
+    assert panel._image_label.text() == "Multiple images"
+    assert panel._image_label.pixmap().isNull()
+    assert "different assigned artwork" in panel._meta_label.text()
+    assert not panel._unify_btn.isHidden()
+    context = panel.unify_context()
+    assert context is not None
+    assert len(context.choices) == 2
+    assert _tree_child_value_for_key(panel._metadata_tree, 0, "img_id") == "mixed value"
+    assert _tree_child_value_for_key(panel._metadata_tree, 0, "kind") == "Cover"
+    assert _tree_child_value_for_key(panel._metadata_tree, 1, "Thumbnail Image.result.correlationID") == "mixed value"
+    assert _tree_child_value_for_key(panel._metadata_tree, 1, "format") == "Small"
+    assert not any(button.text().startswith(("101", "102")) for button in panel.findChildren(QPushButton))
+
+
+def test_track_editor_dialog_artwork_panel_shows_multiple_values_for_artwork_presence_mix(qtbot, monkeypatch, tmp_path) -> None:
+    red = Image.new("RGBA", (20, 20), (255, 0, 0, 255))
+    previews = [
+        TrackArtworkPreview(
+            img_id=100,
+            song_id=1,
+            variants=(
+                ArtworkFormatPreview(101, "101 20x20", "Small", 20, 20, "RGB565_LE", 800, "F101_1.ithmb", 0, red, (("Thumbnail Image.result.correlationID", "101"), ("format", "Small"))),
+            ),
+            metadata=(("img_id", "100"), ("songId", "1"), ("kind", "Cover")),
+        ),
+    ]
+    monkeypatch.setattr(
+        "GUI.widgets.trackEditorDialog.get_track_artwork_previews",
+        lambda _tracks: previews,
+    )
+
+    dialog = TrackEditorDialog([
+        {"db_track_id": 1, "Title": "One", "artwork_id_ref": 100},
+        {"db_track_id": 2, "Title": "Two", "has_artwork": 1, "artwork_count": 1},
+    ])
+    qtbot.addWidget(dialog)
+
+    panel = dialog.findChild(_ArtworkPreviewPanel)
+    assert panel is not None
+    assert panel._image_label.text() == "Multiple values"
+    assert panel._image_label.pixmap().isNull()
+    assert "have artwork and some do not" in panel._meta_label.text()
+    assert not panel._unify_btn.isHidden()
+    context = panel.unify_context()
+    assert context is not None
+    assert len(context.choices) == 1
+    assert context.missing_count == 1
+    assert _tree_child_value_for_key(panel._metadata_tree, 0, "img_id") == "mixed value"
+    assert _tree_child_value_for_key(panel._metadata_tree, 0, "kind") == "mixed value"
+    assert _tree_child_value_for_key(panel._metadata_tree, 1, "format") == "mixed value"
+    assert not any(button.text().startswith("101") for button in panel.findChildren(QPushButton))
+
+    staged_path = tmp_path / "unified.png"
+    staged_path.write_bytes(b"image")
+
+    class _Dialog:
+        def __init__(self, context, _parent=None) -> None:
+            self._context = context
+
+        def exec(self):
+            return QDialog.DialogCode.Accepted
+
+        def selected_choice(self):
+            return self._context.choices[0]
+
+    monkeypatch.setattr("GUI.widgets.trackEditorDialog.UnifyArtworkDialog", _Dialog)
+    monkeypatch.setattr(
+        "GUI.widgets.trackEditorDialog.save_unified_artwork_temp",
+        lambda _image: str(staged_path),
+    )
+
+    dialog._unify_artwork()
+
+    assert dialog.artwork_path() is None
+    assert dialog._pending_artwork_path == str(staged_path)
+    assert panel._title_label.text() == "New Artwork"
+    assert "pending apply" in panel._meta_label.text()
+    assert panel._unify_btn.isHidden()
 
 
 def test_square_crop_canvas_returns_square_output(qtbot) -> None:
