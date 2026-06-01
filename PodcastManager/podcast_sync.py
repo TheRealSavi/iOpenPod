@@ -329,6 +329,7 @@ def needs_transcode(episode: PodcastEpisode) -> bool:
 # ── Age threshold helpers ─────────────────────────────────────────────────────
 
 _AGE_THRESHOLDS: dict[str, int] = {
+    "immediate": 0,
     "1_day": 86400,
     "3_days": 86400 * 3,
     "1_week": 86400 * 7,
@@ -368,13 +369,19 @@ def _pick_candidates(
     feed: PodcastFeed,
     on_ipod_guids: set[str],
     count: int,
+    *,
+    restart_when_no_newer: bool = True,
 ) -> list[PodcastEpisode]:
     """Pick episodes to fill empty slots based on fill_mode.
 
     Args:
         feed: The feed with a full episode catalog (after RSS refresh).
-        on_ipod_guids: GUIDs of episodes staying on iPod (not cleared).
+        on_ipod_guids: GUIDs of episodes currently used as the on-iPod
+            position when choosing the next episode.
         count: Number of slots to fill.
+        restart_when_no_newer: In ``next`` mode, fall back to the oldest
+            available episode when nothing newer exists. Replacement clears
+            disable this so older episodes are not treated as replacements.
 
     Returns:
         List of episodes to add, up to *count*.
@@ -410,6 +417,8 @@ def _pick_candidates(
             after = [ep for ep in available if ep.pub_date > latest_on_ipod]
             if after:
                 return after[:count]
+            if not restart_when_no_newer:
+                return []
 
         # No on-iPod episodes or none newer: start from the oldest available
         return available[:count]
@@ -502,6 +511,10 @@ def build_podcast_managed_plan(
                 staying.append((ep, track))
 
         staying_guids = {ep.guid for ep, _ in staying}
+        # In replace mode, "next" should be measured from the current iPod
+        # position, including episodes marked for clearing. Otherwise an
+        # older unplayed episode can be mistaken for a replacement.
+        current_on_ipod_guids = {ep.guid for ep, _ in on_ipod}
 
         # ── Fill phase: pick episodes for empty slots ─────────────────
         slots_after_clear = len(staying)
@@ -512,7 +525,12 @@ def build_podcast_managed_plan(
         candidate_count = slots_to_fill
         if feed.clear_method == "replace" and len(to_clear) > candidate_count:
             candidate_count = len(to_clear)
-        candidates = _pick_candidates(feed, staying_guids, candidate_count)
+        candidates = _pick_candidates(
+            feed,
+            current_on_ipod_guids if feed.clear_method == "replace" else staying_guids,
+            candidate_count,
+            restart_when_no_newer=feed.clear_method != "replace",
+        )
 
         # ── Apply clear method ────────────────────────────────────────
         # "remove"  → remove cleared episodes unconditionally

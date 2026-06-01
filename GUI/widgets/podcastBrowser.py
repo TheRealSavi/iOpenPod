@@ -92,6 +92,7 @@ from .browserChrome import (
     style_browser_splitter,
 )
 from .formatters import format_size
+from .podcastStates import PodcastStatePanel
 
 log = logging.getLogger(__name__)
 
@@ -1261,6 +1262,7 @@ class PodcastBrowser(QFrame):
         self._episode_feed_by_key: dict[str, object] = {}
         self._episode_dicts: list[dict] = []
         self._artwork_inflight: dict[str, list[Callable[[str, QPixmap], None]]] = {}
+        self._episode_state_retry: Callable[[], None] | None = None
 
         self._build_ui()
 
@@ -1738,7 +1740,7 @@ class PodcastBrowser(QFrame):
             ["Remove Immediately", "Mark for Replacement"], width=140)
         self._feed_clear_listened = _make_setting_combo(["Yes", "No"], width=70)
         self._feed_clear_older = _make_setting_combo([
-            "1 Day", "3 Days", "1 Week", "2 Weeks",
+            "Immediately", "1 Day", "3 Days", "1 Week", "2 Weeks",
             "1 Month", "2 Months", "3 Months", "Never",
         ])
 
@@ -1761,7 +1763,15 @@ class PodcastBrowser(QFrame):
 
         # ── Episode list ────────────────────────────────────────────────
         self._episode_list = _PodcastEpisodeList.build(self)
-        layout.addWidget(self._episode_list, stretch=1)
+        self._episode_stack = QStackedWidget()
+        self._episode_stack.setStyleSheet("background: transparent; border: none;")
+        self._episode_stack.addWidget(self._episode_list)  # index 0: list
+
+        self._episode_state = PodcastStatePanel()
+        self._episode_state.action_clicked.connect(self._retry_episode_state)
+        self._episode_stack.addWidget(self._episode_state)  # index 1: visual state
+        self._episode_stack.setCurrentIndex(0)
+        layout.addWidget(self._episode_stack, stretch=1)
 
         # ── Download progress bar (hidden by default) ────────────────────
         self._progress_bar = QProgressBar()
@@ -1797,6 +1807,47 @@ class PodcastBrowser(QFrame):
         layout.addWidget(self._status_toast)
 
         return panel
+
+    # ── Episode state visuals ───────────────────────────────────────────
+
+    def _show_episode_content(self) -> None:
+        self._episode_state_retry = None
+        if hasattr(self, "_episode_stack"):
+            self._episode_stack.setCurrentIndex(0)
+
+    def _show_episode_loading(self, title: str, message: str) -> None:
+        self._episode_state_retry = None
+        self._episode_state.show_loading(title, message)
+        self._episode_stack.setCurrentIndex(1)
+
+    def _show_episode_empty(self, title: str, message: str) -> None:
+        self._episode_state_retry = None
+        self._episode_state.show_empty(title, message)
+        self._episode_stack.setCurrentIndex(1)
+
+    def _show_episode_error(
+        self,
+        error: BaseException,
+        *,
+        action: str,
+        retry: Callable[[], None] | None = None,
+    ) -> None:
+        from PodcastManager.network_errors import describe_podcast_error
+
+        info = describe_podcast_error(error, action=action)
+        self._episode_state_retry = retry
+        self._episode_state.show_error(
+            info.title,
+            info.message,
+            code=info.code,
+            action_text="Try Again" if retry else "",
+        )
+        self._episode_stack.setCurrentIndex(1)
+
+    def _retry_episode_state(self) -> None:
+        retry = self._episode_state_retry
+        if retry is not None:
+            retry()
 
     # ── Feed list management ─────────────────────────────────────────────
 
@@ -2113,6 +2164,13 @@ class PodcastBrowser(QFrame):
 
         self._episode_dicts = rows
         self._set_episode_rows(rows, _COMBINED_FEED_COLUMNS)
+        if rows:
+            self._show_episode_content()
+        else:
+            self._show_episode_empty(
+                "Waiting for episodes",
+                "Subscribed shows will appear here after their feeds refresh.",
+            )
 
     def _show_episodes(self, feed) -> None:
         """Populate the episode list for the given feed."""
@@ -2133,6 +2191,7 @@ class PodcastBrowser(QFrame):
             self._load_feed_settings(None)
             self._set_feed_art_placeholder()
             self._set_episode_rows([], _PODCAST_EPISODE_COLUMNS)
+            self._show_episode_content()
             return
 
         self._showing_combined_feed = False
@@ -2184,6 +2243,13 @@ class PodcastBrowser(QFrame):
             rows.append(self._ep_to_dict(ep, self._episode_status_display(ep)[0], feed))
         self._episode_dicts = rows
         self._set_episode_rows(rows, _PODCAST_EPISODE_COLUMNS)
+        if rows:
+            self._show_episode_content()
+        else:
+            self._show_episode_empty(
+                "No episodes found",
+                "This podcast loaded, but its feed did not list any episodes.",
+            )
 
     @staticmethod
     def _episode_status_display(ep):
@@ -2228,6 +2294,12 @@ class PodcastBrowser(QFrame):
         if not feeds:
             return
 
+        if not self._episode_dicts:
+            self._show_episode_loading(
+                "Loading episodes…",
+                "",
+            )
+
         from app_core.runtime import ThreadPoolSingleton, Worker
         from PodcastManager.artwork import cache_feed_artwork
         from PodcastManager.feed_parser import fetch_feed
@@ -2236,6 +2308,7 @@ class PodcastBrowser(QFrame):
 
         def _refresh():
             refreshed_feeds = []
+            failures = []
             for feed in feeds:
                 try:
                     refreshed = fetch_feed(feed.feed_url, existing=feed)
@@ -2243,7 +2316,8 @@ class PodcastBrowser(QFrame):
                     refreshed_feeds.append(refreshed)
                 except Exception as exc:
                     log.warning("Background refresh failed for %s: %s", feed.title, exc)
-            return store.update_feeds(refreshed_feeds)
+                    failures.append((feed.title, exc))
+            return store.update_feeds(refreshed_feeds), failures
 
         worker = Worker(_refresh)
         worker.signals.result.connect(self._on_refresh_done)
@@ -2262,6 +2336,11 @@ class PodcastBrowser(QFrame):
 
         self._refresh_btn.setEnabled(False)
         self._set_status(f"Refreshing {len(feeds)} feeds…")
+        self._show_episode_loading(
+            "Refreshing podcasts…",
+            "Checking subscribed feeds for new episodes.",
+        )
+        self._episode_state_retry = self._on_refresh_all
 
         from app_core.runtime import ThreadPoolSingleton, Worker
         from PodcastManager.artwork import cache_feed_artwork
@@ -2271,6 +2350,7 @@ class PodcastBrowser(QFrame):
 
         def _refresh_all():
             refreshed_feeds = []
+            failures = []
             for feed in feeds:
                 try:
                     refreshed = fetch_feed(feed.feed_url, existing=feed)
@@ -2278,7 +2358,8 @@ class PodcastBrowser(QFrame):
                     refreshed_feeds.append(refreshed)
                 except Exception as exc:
                     log.warning("Failed to refresh %s: %s", feed.title, exc)
-            return store.update_feeds(refreshed_feeds)
+                    failures.append((feed.title, exc))
+            return store.update_feeds(refreshed_feeds), failures
 
         worker = Worker(_refresh_all)
         worker.signals.result.connect(self._on_refresh_done)
@@ -2286,7 +2367,14 @@ class PodcastBrowser(QFrame):
         worker.signals.finished.connect(lambda: self._refresh_btn.setEnabled(True))
         ThreadPoolSingleton.get_instance().start(worker)
 
-    def _on_refresh_done(self, count: int) -> None:
+    def _on_refresh_done(self, result) -> None:
+        if isinstance(result, tuple):
+            count = int(result[0] or 0)
+            failures = list(result[1] or [])
+        else:
+            count = int(result or 0)
+            failures = []
+
         # Mark all feeds as refreshed this session
         if self._store:
             for f in self._store.get_feeds():
@@ -2310,9 +2398,31 @@ class PodcastBrowser(QFrame):
                 self._selected_feed = updated
                 self._show_episodes(updated)
 
+        if failures:
+            if count:
+                self._set_status(
+                    f"Refreshed {count}; {len(failures)} feed"
+                    f"{'s' if len(failures) != 1 else ''} could not update"
+                )
+            elif not self._episode_dicts:
+                _feed_title, error = failures[0]
+                self._show_episode_error(
+                    error,
+                    action="refresh podcasts",
+                    retry=self._on_refresh_all,
+                )
+                self._set_status("Podcasts could not refresh")
+            else:
+                self._set_status("Some podcasts could not refresh")
+
     def _on_refresh_error(self, error_tuple) -> None:
         _, value, _ = error_tuple
-        self._set_status(f"Refresh failed: {value}")
+        self._show_episode_error(
+            value,
+            action="refresh podcasts",
+            retry=self._episode_state_retry or self._on_refresh_all,
+        )
+        self._set_status("Refresh failed")
 
     # ── Managed podcast sync ─────────────────────────────────────────────
 
@@ -2336,6 +2446,11 @@ class PodcastBrowser(QFrame):
 
         self._sync_btn.setEnabled(False)
         self._set_status("Refreshing feeds for sync…", timeout_ms=0)
+        self._show_episode_loading(
+            "Preparing podcast sync…",
+            "Refreshing feeds before building the sync plan.",
+        )
+        self._episode_state_retry = self._on_sync_podcasts
 
         from app_core.runtime import ThreadPoolSingleton, Worker
         from PodcastManager.artwork import cache_feed_artwork
@@ -2414,7 +2529,12 @@ class PodcastBrowser(QFrame):
     def _on_sync_error(self, error_tuple) -> None:
         self._progress_bar.hide()
         _, value, _ = error_tuple
-        self._set_status(f"Sync failed: {value}")
+        self._show_episode_error(
+            value,
+            action="prepare podcast sync",
+            retry=self._episode_state_retry or self._on_sync_podcasts,
+        )
+        self._set_status("Sync failed")
         self._sync_btn.setEnabled(True)
 
     # ── Subscribe / unsubscribe ──────────────────────────────────────────
@@ -2430,6 +2550,17 @@ class PodcastBrowser(QFrame):
             return
 
         self._set_status("Fetching feed…")
+        self._stack.setCurrentIndex(1)
+        self._show_episode_loading(
+            "Adding podcast…",
+            "Fetching the feed and latest episodes.",
+        )
+        self._episode_state_retry = (
+            lambda feed_url=feed_url, artwork_url=artwork_url: self._subscribe_to_feed(
+                feed_url,
+                artwork_url,
+            )
+        )
 
         from app_core.runtime import ThreadPoolSingleton, Worker
 
@@ -2486,7 +2617,12 @@ class PodcastBrowser(QFrame):
 
     def _on_subscribe_error(self, error_tuple) -> None:
         _, value, _ = error_tuple
-        self._set_status(f"Subscribe failed: {value}")
+        self._show_episode_error(
+            value,
+            action="add podcast",
+            retry=self._episode_state_retry,
+        )
+        self._set_status("Could not add podcast")
 
     def _unsubscribe_feed(self, feed) -> None:
         if not self._store:
@@ -2500,6 +2636,11 @@ class PodcastBrowser(QFrame):
     def _refresh_single_feed(self, feed) -> None:
         """Refresh a single feed in the background."""
         self._set_status(f"Refreshing {feed.title}…")
+        self._show_episode_loading(
+            "Refreshing this podcast…",
+            "Checking the feed for the latest episodes.",
+        )
+        self._episode_state_retry = lambda feed=feed: self._refresh_single_feed(feed)
 
         from app_core.runtime import ThreadPoolSingleton, Worker
         from PodcastManager.artwork import cache_feed_artwork
@@ -2817,6 +2958,7 @@ class PodcastBrowser(QFrame):
                 self._feed_clear_listened.setCurrentIndex(idx)
 
             _older_display = {
+                "immediate": "Immediately",
                 "1_day": "1 Day", "3_days": "3 Days",
                 "1_week": "1 Week", "2_weeks": "2 Weeks",
                 "1_month": "1 Month", "2_months": "2 Months",
@@ -2861,6 +3003,7 @@ class PodcastBrowser(QFrame):
         _fill_keys = {"Newest Episode": "newest", "Next Episode": "next"}
         _cl_keys = {"Yes": True, "No": False}
         _older_keys = {
+            "Immediately": "immediate",
             "1 Day": "1_day", "3 Days": "3_days",
             "1 Week": "1_week", "2 Weeks": "2_weeks",
             "1 Month": "1_month", "2 Months": "2_months",

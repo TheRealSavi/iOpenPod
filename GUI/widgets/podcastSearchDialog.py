@@ -8,10 +8,9 @@ responsive.
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QFont, QPixmap, QImage
+from PyQt6.QtGui import QFont, QImage, QPixmap
 from PyQt6.QtWidgets import (
     QDialog,
     QFrame,
@@ -24,18 +23,19 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from ..glyphs import glyph_pixmap
 from ..hidpi import scale_pixmap_for_display
 from ..styles import (
+    FONT_FAMILY,
+    LABEL_SECONDARY,
     Colors,
     Metrics,
-    FONT_FAMILY,
     accent_btn_css,
     btn_css,
     make_label,
     make_scroll_area,
-    LABEL_SECONDARY,
 )
-from ..glyphs import glyph_pixmap
+from .podcastStates import PodcastStatePanel
 
 log = logging.getLogger(__name__)
 
@@ -49,7 +49,7 @@ class PodcastSearchDialog(QDialog):
 
     subscribed = pyqtSignal(str, str)  # feed_url, artwork_url
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setWindowTitle("Search Podcasts")
         self.setMinimumSize((560), (480))
@@ -68,11 +68,11 @@ class PodcastSearchDialog(QDialog):
     def _build_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins((16), (16), (16), (16))
-        layout.setSpacing((12))
+        layout.setSpacing(12)
 
         # ── Search bar ───────────────────────────────────────────────────
         search_row = QHBoxLayout()
-        search_row.setSpacing((8))
+        search_row.setSpacing(8)
 
         self._search_input = QLineEdit()
         self._search_input.setPlaceholderText("Search for podcasts…")
@@ -95,7 +95,7 @@ class PodcastSearchDialog(QDialog):
         self._search_btn = QPushButton("Search")
         self._search_btn.setFont(QFont(FONT_FAMILY, (Metrics.FONT_MD)))
         self._search_btn.setStyleSheet(accent_btn_css())
-        self._search_btn.setFixedHeight((36))
+        self._search_btn.setFixedHeight(36)
         self._search_btn.clicked.connect(self._on_search)
         search_row.addWidget(self._search_btn)
 
@@ -113,7 +113,14 @@ class PodcastSearchDialog(QDialog):
         self._results_container = QWidget()
         self._results_layout = QVBoxLayout(self._results_container)
         self._results_layout.setContentsMargins(0, 0, 0, 0)
-        self._results_layout.setSpacing((4))
+        self._results_layout.setSpacing(4)
+        self._state_panel = PodcastStatePanel(compact=True)
+        self._state_panel.show_empty(
+            "Find podcasts",
+            "Search by show name, or paste an RSS feed below.",
+        )
+        self._state_panel.action_clicked.connect(self._on_search)
+        self._results_layout.addWidget(self._state_panel)
         self._results_layout.addStretch()
 
         scroll = make_scroll_area(extra_css=f"""
@@ -127,7 +134,7 @@ class PodcastSearchDialog(QDialog):
 
         # ── Manual RSS row ───────────────────────────────────────────────
         rss_row = QHBoxLayout()
-        rss_row.setSpacing((8))
+        rss_row.setSpacing(8)
 
         rss_label = make_label(
             "Or paste RSS URL:",
@@ -157,7 +164,7 @@ class PodcastSearchDialog(QDialog):
         self._rss_btn = QPushButton("Add Feed")
         self._rss_btn.setFont(QFont(FONT_FAMILY, (Metrics.FONT_SM)))
         self._rss_btn.setStyleSheet(accent_btn_css())
-        self._rss_btn.setFixedHeight((32))
+        self._rss_btn.setFixedHeight(32)
         self._rss_btn.clicked.connect(self._on_add_rss)
         rss_row.addWidget(self._rss_btn)
 
@@ -167,7 +174,7 @@ class PodcastSearchDialog(QDialog):
         close_btn = QPushButton("Close")
         close_btn.setFont(QFont(FONT_FAMILY, (Metrics.FONT_MD)))
         close_btn.setStyleSheet(btn_css())
-        close_btn.setFixedHeight((36))
+        close_btn.setFixedHeight(36)
         close_btn.clicked.connect(self.close)
         layout.addWidget(close_btn, alignment=Qt.AlignmentFlag.AlignRight)
 
@@ -180,11 +187,17 @@ class PodcastSearchDialog(QDialog):
 
         self._search_btn.setEnabled(False)
         self._status_label.setText("Searching…")
+        self._clear_results()
+        self._state_panel.show()
+        self._state_panel.show_loading(
+            "Searching for podcasts…",
+            "Checking podcast results now.",
+        )
 
         from app_core.runtime import ThreadPoolSingleton, Worker
         from PodcastManager.itunes_search import search_podcasts
 
-        worker = Worker(search_podcasts, query)
+        worker = Worker(search_podcasts, query, raise_on_error=True)
         worker.signals.result.connect(self._on_search_results)
         worker.signals.error.connect(self._on_search_error)
         worker.signals.finished.connect(lambda: self._search_btn.setEnabled(True))
@@ -196,9 +209,15 @@ class PodcastSearchDialog(QDialog):
 
         if not results:
             self._status_label.setText("No podcasts found")
+            self._state_panel.show()
+            self._state_panel.show_empty(
+                "No podcasts found",
+                "Try a different show name, or paste the RSS feed directly.",
+            )
             return
 
         self._status_label.setText(f"Found {len(results)} podcast{'s' if len(results) != 1 else ''}")
+        self._state_panel.hide()
 
         for result in results:
             card = _SearchResultCard(result, self)
@@ -210,7 +229,13 @@ class PodcastSearchDialog(QDialog):
 
     def _on_search_error(self, error_tuple):
         _, value, _ = error_tuple
-        self._status_label.setText(f"Search failed: {value}")
+        from PodcastManager.network_errors import describe_podcast_error
+
+        info = describe_podcast_error(value, action="search podcasts")
+        self._status_label.setText(info.title)
+        self._clear_results()
+        self._state_panel.show()
+        self._state_panel.show_error(info.title, info.message, code=info.code)
         self._search_btn.setEnabled(True)
 
     def _on_subscribe(self, feed_url: str, artwork_url: str):
@@ -223,12 +248,15 @@ class PodcastSearchDialog(QDialog):
             self._rss_input.clear()
 
     def _clear_results(self):
-        while self._results_layout.count() > 1:  # Keep the stretch
-            item = self._results_layout.takeAt(0)
-            if item is not None:
-                widget = item.widget()
-                if widget:
-                    widget.deleteLater()
+        for index in range(self._results_layout.count() - 1, -1, -1):
+            item = self._results_layout.itemAt(index)
+            if item is None:
+                continue
+            widget = item.widget()
+            if widget is None or widget is self._state_panel:
+                continue
+            self._results_layout.takeAt(index)
+            widget.deleteLater()
 
 
 class _SearchResultCard(QFrame):
@@ -252,7 +280,7 @@ class _SearchResultCard(QFrame):
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins((10), (8), (10), (8))
-        layout.setSpacing((10))
+        layout.setSpacing(10)
 
         # Artwork placeholder
         self._art_label = QLabel()
@@ -276,7 +304,7 @@ class _SearchResultCard(QFrame):
 
         # Info column
         info = QVBoxLayout()
-        info.setSpacing((2))
+        info.setSpacing(2)
 
         title_lbl = make_label(
             result.title,
@@ -321,8 +349,9 @@ class _SearchResultCard(QFrame):
 
     def _load_artwork(self, url: str):
         """Load artwork thumbnail in background."""
-        from app_core.runtime import ThreadPoolSingleton, Worker
         import requests
+
+        from app_core.runtime import ThreadPoolSingleton, Worker
 
         def _fetch():
             resp = requests.get(url, timeout=10)
