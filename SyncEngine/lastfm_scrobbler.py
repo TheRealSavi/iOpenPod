@@ -1,9 +1,6 @@
 """
 Scrobbling support for Last.fm.
 
-Scrobbling records what you've listened to on your iPod. After syncing
-play counts from the iPod, this module submits the plays to Last.fm.
-
 API reference:
   https://www.last.fm/api/show/track.scrobble
 
@@ -128,6 +125,26 @@ def _sign_request(params: dict[str, str], api_secret: str) -> str:
     keys = sorted([k for k in params.keys() if k not in ("format", "callback")])
     string_to_sign = "".join(f"{k}{params[k]}" for k in keys) + api_secret
     return hashlib.md5(string_to_sign.encode("utf-8")).hexdigest()
+
+
+def _is_lastfm_api_key_valid(api_key: str, api_secret: str) -> bool:
+    """Check if the Last.fm API Key and Secret are valid by making a simple request."""
+    params = {
+        "method": "chart.getTopArtists",
+        "api_key": api_key,
+    }
+    try:
+        _make_lastfm_request(params, api_secret=api_secret, method="GET", timeout=10)
+        return True
+    except RuntimeError as exc:
+        # Last.fm returns error code 4 for invalid API key/secret
+        if "HTTP 403: Forbidden" in str(exc) or "HTTP 400: Bad Request" in str(exc): # Specifically check for HTTP 403 or 400 for API key issues
+            logger.warning("Last.fm API Key/Secret validation failed: %s", exc)
+            return False
+        raise # Re-raise other runtime errors
+    except Exception as exc:
+        logger.error("Last.fm API Key/Secret validation failed: %s", exc)
+        return False
 
 
 # ── Low-level HTTP helpers ──────────────────────────────────────────────────
