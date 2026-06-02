@@ -802,11 +802,15 @@ class _LastFmAuthRow(SettingRow):
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignRight)
         right_layout.addWidget(self.status_label)
 
+        row_layout = QHBoxLayout()
+        row_layout.setAlignment(Qt.AlignmentFlag.AlignRight)
+        row_layout.setSpacing(8)
+
         # Inputs container
         self.inputs_widget = QWidget()
-        inputs_layout = QVBoxLayout(self.inputs_widget)
+        inputs_layout = QHBoxLayout(self.inputs_widget)
         inputs_layout.setContentsMargins(0, 0, 0, 0)
-        inputs_layout.setSpacing(4)
+        inputs_layout.setSpacing(8)
 
         self.api_key_input = QLineEdit()
         self.api_key_input.setPlaceholderText("API Key")
@@ -823,13 +827,10 @@ class _LastFmAuthRow(SettingRow):
         self.api_secret_input.setStyleSheet(input_css())
         inputs_layout.addWidget(self.api_secret_input)
 
-        right_layout.addWidget(self.inputs_widget)
+        row_layout.addWidget(self.inputs_widget)
 
-        # Buttons container
-        btn_layout = QHBoxLayout()
-        btn_layout.setAlignment(Qt.AlignmentFlag.AlignRight)
-
-        self.connect_btn = QPushButton("Connect in Browser")
+        # Buttons
+        self.connect_btn = QPushButton("Connect")
         self.connect_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.connect_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.connect_btn.setStyleSheet(btn_css(
@@ -837,7 +838,7 @@ class _LastFmAuthRow(SettingRow):
             fg=Colors.TEXT_ON_ACCENT, border="none", padding="4px 12px"
         ))
         self.connect_btn.clicked.connect(self._start_auth_flow)
-        btn_layout.addWidget(self.connect_btn)
+        row_layout.addWidget(self.connect_btn)
 
         self.cancel_btn = QPushButton("Cancel")
         self.cancel_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
@@ -848,7 +849,7 @@ class _LastFmAuthRow(SettingRow):
         ))
         self.cancel_btn.clicked.connect(self._cancel_auth)
         self.cancel_btn.hide()
-        btn_layout.addWidget(self.cancel_btn)
+        row_layout.addWidget(self.cancel_btn)
 
         self.clear_btn = QPushButton("✕ Disconnect")
         self.clear_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
@@ -859,9 +860,9 @@ class _LastFmAuthRow(SettingRow):
         ))
         self.clear_btn.clicked.connect(self._on_clear)
         self.clear_btn.hide()
-        btn_layout.addWidget(self.clear_btn)
+        row_layout.addWidget(self.clear_btn)
 
-        right_layout.addLayout(btn_layout)
+        right_layout.addLayout(row_layout)
 
         container = QWidget()
         container.setLayout(right_layout)
