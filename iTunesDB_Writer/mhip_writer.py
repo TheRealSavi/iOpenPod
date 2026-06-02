@@ -14,14 +14,16 @@ Cross-referenced against:
 
 import struct
 
+from iTunesDB_Shared.constants import MHOD_TYPE_TITLE
 from iTunesDB_Shared.field_base import write_fields, write_generic_header
 from iTunesDB_Shared.mhip_defs import MHIP_HEADER_SIZE
 from iTunesDB_Shared.mhod_defs import (
-    MHOD_HEADER_SIZE as _MHOD_HEADER_SIZE,
     MHOD100_POSITION_BODY_SIZE,
     write_mhod_header,
 )
-from iTunesDB_Shared.constants import MHOD_TYPE_TITLE
+from iTunesDB_Shared.mhod_defs import (
+    MHOD_HEADER_SIZE as _MHOD_HEADER_SIZE,
+)
 
 
 def write_mhip(

@@ -1,7 +1,8 @@
 from pathlib import Path
 from types import SimpleNamespace
 
-from SyncEngine.fingerprint_diff_engine import FingerprintDiffEngine, StorageSummary, SyncAction, SyncItem, SyncPlan
+from SyncEngine.contracts import StorageSummary, SyncAction, SyncItem, SyncPlan
+from SyncEngine.fingerprint_diff_engine import FingerprintDiffEngine
 from SyncEngine.integrity import IntegrityReport
 from SyncEngine.mapping import MappingFile
 from SyncEngine.pc_library import PCLibrary, PCTrack

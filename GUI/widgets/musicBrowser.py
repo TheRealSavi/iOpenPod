@@ -16,6 +16,15 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
+from iTunesDB_Shared.constants import (
+    MEDIA_TYPE_AUDIO,
+    MEDIA_TYPE_AUDIOBOOK,
+    MEDIA_TYPE_MUSIC_VIDEO,
+    MEDIA_TYPE_TV_SHOW,
+    MEDIA_TYPE_VIDEO,
+    MEDIA_TYPE_VIDEO_MASK,
+)
+
 from ..glyphs import glyph_icon
 from ..styles import Colors, context_menu_css, make_scroll_area
 from .artworkUnifier import (
@@ -316,7 +325,7 @@ class MusicBrowser(QFrame):
             self.browserGrid.clearGrid()  # Clear grid to cancel pending image loads
             self.browserTrack.clearTable()  # Clear track list before reloading
             self.browserTrack.clearFilter()
-            self.browserTrack.loadTracks(media_type_filter=0x01)  # Audio only
+            self.browserTrack.loadTracks(media_type_filter=MEDIA_TYPE_AUDIO)
             self.trackListTitleBar.setTitle("All Tracks")
             self.trackListTitleBar.resetColor()
             self.trackListTitleBar.setFullscreenMode(True)
@@ -350,17 +359,17 @@ class MusicBrowser(QFrame):
             self.browserGrid.clearGrid()
             self.browserTrack.clearTable()
             self.browserTrack.clearFilter()
-            self.browserTrack.loadTracks(media_type_filter=0x08)  # MEDIA_TYPE_AUDIOBOOK
+            self.browserTrack.loadTracks(media_type_filter=MEDIA_TYPE_AUDIOBOOK)
             self.trackListTitleBar.setTitle(category)
             self.trackListTitleBar.resetColor()
             self.trackListTitleBar.setFullscreenMode(True)
         elif category in ("Videos", "Movies", "TV Shows", "Music Videos"):
             # Video categories: hide entire grid container for fullscreen tracklist
             _MEDIA_TYPE_FILTER = {
-                "Videos": 0x62,        # All video (VIDEO|MUSIC_VIDEO|TV_SHOW)
-                "Movies": 0x02,        # MEDIA_TYPE_VIDEO
-                "TV Shows": 0x40,      # MEDIA_TYPE_TV_SHOW
-                "Music Videos": 0x20,  # MEDIA_TYPE_MUSIC_VIDEO
+                "Videos": MEDIA_TYPE_VIDEO_MASK,
+                "Movies": MEDIA_TYPE_VIDEO,
+                "TV Shows": MEDIA_TYPE_TV_SHOW,
+                "Music Videos": MEDIA_TYPE_MUSIC_VIDEO,
             }
             self.stack.setCurrentIndex(0)
             self.gridContainer.hide()
@@ -382,7 +391,7 @@ class MusicBrowser(QFrame):
             self.browserGrid.loadCategory(category)
             # Pre-load audio-only tracks so filterByAlbum/Artist/Genre
             # won't include video tracks in results.
-            self.browserTrack.loadTracks(media_type_filter=0x01)
+            self.browserTrack.loadTracks(media_type_filter=MEDIA_TYPE_AUDIO)
             self.browserTrack.clearFilter()
             self.trackListTitleBar.setTitle(f"Select a{'n' if category[0] in 'AE' else ''} {category[:-1]}")
             self.trackListTitleBar.resetColor()

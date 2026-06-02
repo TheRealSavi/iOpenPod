@@ -27,7 +27,9 @@ from pathlib import Path
 from typing import Optional
 
 from iTunesDB_Shared.constants import (
+    MEDIA_TYPE_AUDIOBOOK,
     MEDIA_TYPE_MUSIC_VIDEO,
+    MEDIA_TYPE_PODCAST,
     MEDIA_TYPE_TV_SHOW,
     MEDIA_TYPE_VIDEO,
     MEDIA_TYPE_VIDEO_PODCAST,
@@ -187,51 +189,8 @@ class _SyncContext:
 
     _cancel_recorded: bool = False
 
-    def __init__(
-        self,
-        plan: SyncPlan,
-        mapping: MappingFile,
-        progress_callback: Callable[["SyncProgress"], None] | None,
-        dry_run: bool,
-        write_back_to_pc: bool,
-        _is_cancelled: Callable[[], bool] | None,
-        user_playlists: list[dict] | None = None,
-        on_sync_complete: Callable[[], None] | None = None,
-        compute_sound_check: bool = False,
-        scrobble_on_sync: bool = False,
-        listenbrainz_token: str = "",
-        listenbrainz_username: str = "",
-        _is_scrobble_cancelled: Callable[[], bool] | None = None,
-    ) -> None:
-        self.plan = plan
-        self.mapping = mapping
-        self.progress_callback = progress_callback
-        self.dry_run = dry_run
-        self.write_back_to_pc = write_back_to_pc
-        self._is_cancelled = _is_cancelled
-        self.user_playlists = list(user_playlists or [])
-        self.on_sync_complete = on_sync_complete
-        self.compute_sound_check = compute_sound_check
-        self.scrobble_on_sync = scrobble_on_sync
-        self.listenbrainz_token = listenbrainz_token
-        self.listenbrainz_username = listenbrainz_username
-        self._is_scrobble_cancelled = _is_scrobble_cancelled
-
-        self.result = SyncOutcome(success=True)
-        self.existing_tracks_data = []
-        self.existing_playlists_raw = []
-        self.existing_smart_raw = []
-        self.tracks_by_db_track_id = {}
-        self.tracks_by_location = {}
-        self.new_tracks = []
-        self.new_track_fingerprints = {}
-        self.new_track_info = {}
-        self.conversion_group_add_counts = {}
-        self.conversion_group_success_counts = {}
-        self.completed_conversion_groups = set()
-        self.pc_file_paths = {}
-        self.final_photo_db = None
-        self._cancel_recorded = False
+    def __post_init__(self) -> None:
+        self.user_playlists = list(self.user_playlists or [])
 
     def cancelled(self) -> bool:
         """Check if the user cancelled.  Updates *result* once."""
@@ -1119,7 +1078,7 @@ class SyncExecutor:
 
         # Mark added podcast episodes as on_ipod with their db_track_id
         for track in ctx.new_tracks:
-            if not (track.media_type & 0x04):
+            if not (track.media_type & MEDIA_TYPE_PODCAST):
                 continue
             enc_url = track.podcast_enclosure_url or ""
             if not enc_url:
@@ -1141,7 +1100,7 @@ class SyncExecutor:
             ipod_track = item.ipod_track
             if not ipod_track:
                 continue
-            if not (ipod_track.get("media_type", 0) & 0x04):
+            if not (ipod_track.get("media_type", 0) & MEDIA_TYPE_PODCAST):
                 continue
             enc_url = ipod_track.get("Podcast Enclosure URL", "")
             if not enc_url:
@@ -2578,11 +2537,11 @@ class SyncExecutor:
         """Compute media-type totals and write iTunesPrefs protection."""
         # (media_type_mask, label) → (bytes, secs, count)
         _MEDIA_BUCKETS: list[tuple[int, str]] = [
-            (0x04, "podcast"),
-            (0x08, "audiobook"),
-            (0x40, "tv"),
-            (0x20, "mv"),
-            (0x02, "video"),
+            (MEDIA_TYPE_PODCAST, "podcast"),
+            (MEDIA_TYPE_AUDIOBOOK, "audiobook"),
+            (MEDIA_TYPE_TV_SHOW, "tv"),
+            (MEDIA_TYPE_MUSIC_VIDEO, "mv"),
+            (MEDIA_TYPE_VIDEO, "video"),
         ]
 
         totals: dict[str, list[int]] = {

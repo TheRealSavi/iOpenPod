@@ -279,3 +279,10 @@ def bad(executor: SyncExecutor):
         assert violations == {
             "GUI/view.py": ["_SyncContext", "_write_database"]
         }
+
+
+def test_sync_contracts_do_not_import_diff_engine() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    contracts = repo_root / "SyncEngine" / "contracts.py"
+
+    assert "fingerprint_diff_engine" not in contracts.read_text(encoding="utf-8")

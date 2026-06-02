@@ -8,7 +8,7 @@ def parse_mhli(data, offset, header_length, imageCount) -> dict[str, Any]:
 
     # Parse Children
     next_offset = offset + header_length
-    for i in range(imageCount):
+    for _i in range(imageCount):
         response = parse_chunk(data, next_offset)
         next_offset = response["nextOffset"]
         imageList.append(response["result"])

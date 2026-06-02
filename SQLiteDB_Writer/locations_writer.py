@@ -9,12 +9,14 @@ Schema:
 Reference: libgpod itdb_sqlite.c mk_Locations()
 """
 
-import time
 import logging
+import time
 
-from iTunesDB_Writer.mhit_writer import TrackInfo
 from iTunesDB_Shared.constants import FILETYPE_CODES
-from ._helpers import s64 as _s64, unix_to_coredata, open_db
+from iTunesDB_Writer.mhit_writer import TrackInfo
+
+from ._helpers import open_db, unix_to_coredata
+from ._helpers import s64 as _s64
 
 logger = logging.getLogger(__name__)
 

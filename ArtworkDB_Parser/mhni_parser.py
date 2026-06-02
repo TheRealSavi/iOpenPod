@@ -188,7 +188,7 @@ def parse_mhni(data, offset, header_length, chunk_length) -> dict:
 
     # parse children
     next_offset = offset + header_length
-    for i in range(childCount):
+    for _i in range(childCount):
         response = parse_chunk(data, next_offset)
         next_offset = response["nextOffset"]
         imageName[response["result"]["mhodType"]] = response["result"]

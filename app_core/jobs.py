@@ -158,7 +158,7 @@ class AlbumConversionWorker(QThread):
                 convert_album_to_chaptered_track,
                 resolve_album_sources,
             )
-            from SyncEngine.fingerprint_diff_engine import (
+            from SyncEngine.contracts import (
                 StorageSummary,
                 SyncAction,
                 SyncItem,
@@ -325,7 +325,7 @@ class ChapterSplitWorker(QThread):
                 resolve_track_source,
                 split_track_into_chapter_tracks,
             )
-            from SyncEngine.fingerprint_diff_engine import (
+            from SyncEngine.contracts import (
                 StorageSummary,
                 SyncAction,
                 SyncItem,
@@ -713,7 +713,7 @@ def build_podcast_plan_for_sync(
     """Refresh podcast feeds and build the managed podcast sync plan."""
 
     if not supports_podcast:
-        from SyncEngine.fingerprint_diff_engine import SyncPlan
+        from SyncEngine.contracts import SyncPlan
 
         return SyncPlan()
 
@@ -1919,11 +1919,11 @@ class PlaylistImportWorker(QThread):
         cache_mutated = False
         try:
             from SyncEngine.audio_fingerprint import get_or_compute_fingerprint
-            from SyncEngine.contracts import SyncRequest
-            from SyncEngine.fingerprint_diff_engine import (
+            from SyncEngine.contracts import (
                 SyncAction,
                 SyncItem,
                 SyncPlan,
+                SyncRequest,
             )
             from SyncEngine.mapping import MappingManager
             from SyncEngine.pc_library import PCLibrary
@@ -2382,7 +2382,7 @@ class DropScanWorker(QThread):
     def run(self) -> None:
         try:
             from SyncEngine.capability_filter import is_track_supported_by_device
-            from SyncEngine.fingerprint_diff_engine import (
+            from SyncEngine.contracts import (
                 StorageSummary,
                 SyncAction,
                 SyncItem,

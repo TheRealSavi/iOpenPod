@@ -7,13 +7,13 @@ lives in app-core so GUI modules do not import the iPod device package.
 
 from functools import lru_cache
 
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QPixmap
+
 from app_core.device_identity import (
     generic_ipod_image_filename,
     resolve_ipod_product_image_filename,
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QPixmap
-
 from GUI import PROJECT_ROOT
 
 from .hidpi import scale_pixmap_for_display

@@ -26,6 +26,7 @@ from iTunesDB_Shared.field_base import (
     MHLT_HEADER_SIZE,
     write_fields,
     write_generic_header,
+    write_list_header,
 )
 from iTunesDB_Shared.mhsd_defs import MHSD_HEADER_SIZE
 
@@ -94,8 +95,4 @@ def write_mhsd_empty_stub(dataset_type: int) -> bytes:
     Returns:
         Complete MHSD + empty MHLT bytes.
     """
-    # Build an empty MHLT child (92-byte header, 0 tracks)
-    mhlt = bytearray(MHLT_HEADER_SIZE)
-    write_generic_header(mhlt, 0, b'mhlt', MHLT_HEADER_SIZE, 0)
-
-    return write_mhsd(dataset_type, bytes(mhlt))
+    return write_mhsd(dataset_type, write_list_header(b'mhlt', MHLT_HEADER_SIZE, 0))

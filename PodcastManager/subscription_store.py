@@ -59,7 +59,7 @@ class SubscriptionStore:
             return self._feeds
 
         try:
-            with open(self._json_path, "r", encoding="utf-8") as f:
+            with open(self._json_path, encoding="utf-8") as f:
                 data = json.load(f)
         except (json.JSONDecodeError, OSError) as exc:
             log.warning("Failed to load subscriptions: %s", exc)

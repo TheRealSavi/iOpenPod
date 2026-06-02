@@ -2868,7 +2868,7 @@ class PodcastBrowser(QFrame):
             return
 
         from app_core.sync_plan_builder import build_podcast_removal_sync_plan
-        from SyncEngine.fingerprint_diff_engine import StorageSummary, SyncPlan
+        from SyncEngine.contracts import StorageSummary, SyncPlan
 
         ipod_tracks = self._current_ipod_tracks() or []
         episodes_by_feed: dict[str, tuple[object, list]] = {}

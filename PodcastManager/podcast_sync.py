@@ -25,7 +25,7 @@ from .models import (
 )
 
 if TYPE_CHECKING:
-    from SyncEngine.fingerprint_diff_engine import SyncPlan
+    from SyncEngine.contracts import SyncPlan
     from SyncEngine.pc_library import PCTrack
 
 log = logging.getLogger(__name__)
@@ -270,7 +270,7 @@ def build_podcast_sync_plan(
     Returns:
         A SyncPlan ready for the SyncReview widget.
     """
-    from SyncEngine.fingerprint_diff_engine import StorageSummary, SyncAction, SyncItem, SyncPlan
+    from SyncEngine.contracts import StorageSummary, SyncAction, SyncItem, SyncPlan
 
     # Build lookup of existing podcast tracks on iPod
     by_enclosure: dict[str, dict] = {}
@@ -454,7 +454,7 @@ def build_podcast_managed_plan(
     Returns:
         A SyncPlan with adds and removes ready for the SyncReview.
     """
-    from SyncEngine.fingerprint_diff_engine import (
+    from SyncEngine.contracts import (
         StorageSummary,
         SyncAction,
         SyncItem,

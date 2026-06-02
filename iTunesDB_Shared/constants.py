@@ -210,8 +210,12 @@ mhod_type_map = {
 
 
 # ============================================================
-# Media Type bitmask values (MHIT offset 208 / 0xD0)
-# From libgpod ItdbMediatype enum and iPodLinux wiki.
+# Media Type bitmask values (MHIT offset 208 / 0xD0).
+#
+# libgpod's ItdbMediatype enum defines Audio, Movie, Podcast,
+# Audiobook, Music Video, and TV Show.  Its track docs also list
+# observed composite values 0x00, 0x06, and 0x60.  The higher values
+# below are extended iTunesDB values not present in libgpod's enum.
 # ============================================================
 MEDIA_TYPE_MAP = {
     0x00000000: "Audio/Video",    # shows in both audio and video menus
@@ -223,11 +227,13 @@ MEDIA_TYPE_MAP = {
     0x00000020: "Music Video",
     0x00000040: "TV Show",
     0x00000060: "TV Show (alt)",
-    0x00000100: "Ringtone",        # libgpod ITDB_MEDIATYPE_RINGTONE (1 << 8)
-    0x00000200: "Rental",         # iTunes rental movie
-    0x00004000: "Ringtone (alt)",  # Alternate ringtone value (some firmware)
-    0x00040000: "iTunes Pass",
-    0x00060000: "Memo / Voice Memo",
+    0x00004000: "Ringtone",
+    0x00008000: "Rental",
+    0x00010000: "iTunes Extra",
+    0x00100000: "Memo",
+    0x00200000: "iTunes U",
+    0x00400000: "EPUB Book",
+    0x00800000: "PDF Book",
 }
 
 
@@ -265,9 +271,6 @@ PLAYLIST_SORT_ORDER_MAP = {
     26: "grouping",
     27: "category",
     28: "description",
-    29: "show",
-    30: "season",
-    31: "episode number",
 }
 
 
@@ -349,9 +352,10 @@ FILETYPE_CODES: dict[str, int] = {
 
 
 # ============================================================
-# Media Type Integer Constants (from libgpod Itdb_Mediatype)
+# Media Type Integer Constants.
 # Shared by track conversion and writer code.
 # ============================================================
+MEDIA_TYPE_AUDIO_VIDEO = 0x00
 MEDIA_TYPE_AUDIO = 0x01
 MEDIA_TYPE_VIDEO = 0x02
 MEDIA_TYPE_PODCAST = 0x04
@@ -359,7 +363,14 @@ MEDIA_TYPE_VIDEO_PODCAST = 0x06
 MEDIA_TYPE_AUDIOBOOK = 0x08
 MEDIA_TYPE_MUSIC_VIDEO = 0x20
 MEDIA_TYPE_TV_SHOW = 0x40
+MEDIA_TYPE_TV_SHOW_ALT = 0x60
 MEDIA_TYPE_RINGTONE = 0x4000
+MEDIA_TYPE_RENTAL = 0x8000
+MEDIA_TYPE_ITUNES_EXTRA = 0x10000
+MEDIA_TYPE_MEMO = 0x100000
+MEDIA_TYPE_ITUNES_U = 0x200000
+MEDIA_TYPE_EPUB_BOOK = 0x400000
+MEDIA_TYPE_PDF_BOOK = 0x800000
 MEDIA_TYPE_VIDEO_MASK = MEDIA_TYPE_VIDEO | MEDIA_TYPE_MUSIC_VIDEO | MEDIA_TYPE_TV_SHOW
 
 

@@ -12,15 +12,15 @@ re-running fpcalc when a file's path/mtime/size haven't changed.
 """
 
 import json
+import logging
 import os
+import re
+import shutil
 import subprocess
 import sys
-import logging
 import threading
-import re
 from pathlib import Path
-from typing import Optional, Any
-import shutil
+from typing import Any, Optional
 
 # Prevents console windows from flashing on Windows during subprocess calls
 _SP_KWARGS: dict = (
@@ -30,12 +30,12 @@ _SP_KWARGS: dict = (
 try:
     import mutagen
     import mutagen.id3
+    from mutagen.flac import FLAC
     from mutagen.id3 import ID3
     from mutagen.id3._frames import TXXX
     from mutagen.mp4 import MP4
-    from mutagen.flac import FLAC
-    from mutagen.oggvorbis import OggVorbis
     from mutagen.oggopus import OggOpus
+    from mutagen.oggvorbis import OggVorbis
 
     MUTAGEN_AVAILABLE = True
 except ImportError:
@@ -78,7 +78,7 @@ class FingerprintCache:
     def _load(self):
         if self._path.exists():
             try:
-                with open(self._path, "r", encoding="utf-8") as f:
+                with open(self._path, encoding="utf-8") as f:
                     raw = json.load(f)
                 if isinstance(raw, dict):
                     self._data = raw
@@ -87,7 +87,7 @@ class FingerprintCache:
                 logger.warning("Could not load fingerprint cache: %s", e)
                 self._data = {}
 
-    def lookup(self, filepath: Path) -> Optional[str]:
+    def lookup(self, filepath: Path) -> str | None:
         key = str(filepath)
         entry = self._data.get(key)
         if entry is None:
@@ -146,7 +146,7 @@ class FingerprintCache:
             cls._instance = None
 
 
-def find_fpcalc(fpcalc_path: Optional[str] = None) -> Optional[str]:
+def find_fpcalc(fpcalc_path: str | None = None) -> str | None:
     """Find the fpcalc binary.
 
     Search order:
@@ -191,7 +191,7 @@ def find_fpcalc(fpcalc_path: Optional[str] = None) -> Optional[str]:
     return None
 
 
-def compute_fingerprint(filepath: str | Path, fpcalc_path: Optional[str] = None) -> Optional[str]:
+def compute_fingerprint(filepath: str | Path, fpcalc_path: str | None = None) -> str | None:
     """
     Compute acoustic fingerprint using Chromaprint's fpcalc.
 
@@ -248,7 +248,7 @@ def compute_fingerprint(filepath: str | Path, fpcalc_path: Optional[str] = None)
         return None
 
 
-def read_fingerprint(filepath: str | Path) -> Optional[str]:
+def read_fingerprint(filepath: str | Path) -> str | None:
     """
     Read stored fingerprint from file metadata.
 
@@ -370,9 +370,9 @@ def write_fingerprint(filepath: str | Path, fingerprint: str) -> bool:
 
 def get_or_compute_fingerprint(
     filepath: str | Path,
-    fpcalc_path: Optional[str] = None,
+    fpcalc_path: str | None = None,
     write_to_file: bool = True,
-) -> Optional[str]:
+) -> str | None:
     """
     Get fingerprint from file metadata, or compute and optionally store it.
 
@@ -449,6 +449,6 @@ def get_or_compute_fingerprint(
     return fingerprint
 
 
-def is_fpcalc_available(fpcalc_path: Optional[str] = None) -> bool:
+def is_fpcalc_available(fpcalc_path: str | None = None) -> bool:
     """Check if fpcalc is available on this system."""
     return find_fpcalc(fpcalc_path) is not None

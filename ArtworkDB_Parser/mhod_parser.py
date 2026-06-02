@@ -2,8 +2,8 @@ import struct
 
 
 def parse_mhod(data, offset, header_length, chunk_length) -> dict:
-    from .constants import mhod_type_map
     from .chunk_parser import parse_chunk
+    from .constants import mhod_type_map
 
     dataObject = {}
 

@@ -37,11 +37,21 @@ from pathlib import Path
 
 from iTunesDB_Shared.mhbd_defs import (
     MHBD_OFFSET_DB_ID as OFFSET_DB_ID,
-    MHBD_OFFSET_HASHING_SCHEME as OFFSET_HASHING_SCHEME,
-    MHBD_OFFSET_UNK_0x32 as OFFSET_UNK_0x32,
+)
+from iTunesDB_Shared.mhbd_defs import (
     MHBD_OFFSET_HASH58 as OFFSET_HASH58,
+)
+from iTunesDB_Shared.mhbd_defs import (
     MHBD_OFFSET_HASH72 as OFFSET_HASH72,
+)
+from iTunesDB_Shared.mhbd_defs import (
     MHBD_OFFSET_HASHAB as OFFSET_HASHAB,
+)
+from iTunesDB_Shared.mhbd_defs import (
+    MHBD_OFFSET_HASHING_SCHEME as OFFSET_HASHING_SCHEME,
+)
+from iTunesDB_Shared.mhbd_defs import (
+    MHBD_OFFSET_UNK_0x32 as OFFSET_UNK_0x32,
 )
 
 logger = logging.getLogger(__name__)

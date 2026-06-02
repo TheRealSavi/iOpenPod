@@ -13,13 +13,12 @@ Cross-referenced against:
   - libgpod itdb_itunesdb.c: mk_mhlt()
 """
 
-from typing import List
+from iTunesDB_Shared.field_base import MHLT_HEADER_SIZE, write_list_chunk
 
-from iTunesDB_Shared.field_base import MHLT_HEADER_SIZE, write_generic_header
-from .mhit_writer import write_mhit, TrackInfo
+from .mhit_writer import TrackInfo, write_mhit
 
 
-def write_mhlt(tracks: List[TrackInfo], start_track_id: int, db_id_2: int,
+def write_mhlt(tracks: list[TrackInfo], start_track_id: int, db_id_2: int,
                capabilities=None, db_version: int = 0) -> tuple[bytes, int]:
     """
     Write a complete MHLT chunk with all tracks.
@@ -50,10 +49,4 @@ def write_mhlt(tracks: List[TrackInfo], start_track_id: int, db_id_2: int,
         track_chunks.append(mhit_data)
         track_id += 1
 
-    # Concatenate all track data
-    all_tracks_data = b''.join(track_chunks)
-
-    header = bytearray(MHLT_HEADER_SIZE)
-    write_generic_header(header, 0, b'mhlt', MHLT_HEADER_SIZE, len(tracks))
-
-    return bytes(header) + all_tracks_data, track_id
+    return write_list_chunk(b'mhlt', MHLT_HEADER_SIZE, track_chunks), track_id

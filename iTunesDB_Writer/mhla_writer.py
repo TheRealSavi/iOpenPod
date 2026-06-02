@@ -45,6 +45,7 @@ from iTunesDB_Shared.field_base import (
     MHLA_HEADER_SIZE,
     write_fields,
     write_generic_header,
+    write_list_header,
 )
 from iTunesDB_Shared.mhia_defs import MHIA_HEADER_SIZE
 
@@ -179,11 +180,8 @@ def write_mhla(
 
     album_count = len(album_map)
 
-    # Build header
-    header = bytearray(MHLA_HEADER_SIZE)
-    write_generic_header(header, 0, b'mhla', MHLA_HEADER_SIZE, album_count)
-
-    return bytes(header) + bytes(album_items), album_map, album_id
+    mhla = write_list_header(b'mhla', MHLA_HEADER_SIZE, album_count) + bytes(album_items)
+    return mhla, album_map, album_id
 
 
 def write_mhla_empty() -> bytes:
@@ -193,7 +191,4 @@ def write_mhla_empty() -> bytes:
     Returns:
         MHLA header with 0 albums
     """
-    header = bytearray(MHLA_HEADER_SIZE)
-    write_generic_header(header, 0, b'mhla', MHLA_HEADER_SIZE, 0)
-
-    return bytes(header)
+    return write_list_header(b'mhla', MHLA_HEADER_SIZE, 0)

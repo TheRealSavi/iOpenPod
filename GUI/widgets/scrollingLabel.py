@@ -1,7 +1,14 @@
-from PyQt6.QtCore import Qt, QPropertyAnimation, QAbstractAnimation, QEasingCurve, QSequentialAnimationGroup, QPauseAnimation
-from PyQt6.QtCore import pyqtProperty  # type: ignore[attr-defined]
+from PyQt6.QtCore import (
+    QAbstractAnimation,
+    QEasingCurve,
+    QPauseAnimation,
+    QPropertyAnimation,
+    QSequentialAnimationGroup,
+    Qt,
+    pyqtProperty,  # type: ignore[attr-defined]
+)
+from PyQt6.QtGui import QEnterEvent, QFontMetrics, QPainter
 from PyQt6.QtWidgets import QLabel
-from PyQt6.QtGui import QPainter, QFontMetrics, QEnterEvent
 
 
 class ScrollingLabel(QLabel):

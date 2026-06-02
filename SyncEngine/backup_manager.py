@@ -25,11 +25,11 @@ import shutil
 import sys
 import tempfile
 import threading
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -150,10 +150,10 @@ class BackupManager:
     def create_backup(
         self,
         ipod_path: str | Path,
-        progress_callback: Optional[Callable[[BackupProgress], None]] = None,
-        is_cancelled: Optional[Callable[[], bool]] = None,
+        progress_callback: Callable[[BackupProgress], None] | None = None,
+        is_cancelled: Callable[[], bool] | None = None,
         max_backups: int = 10,
-    ) -> Optional[SnapshotInfo]:
+    ) -> SnapshotInfo | None:
         """
         Create a full backup of the iPod device.
 
@@ -418,8 +418,8 @@ class BackupManager:
         self,
         snapshot_id: str,
         ipod_path: str | Path,
-        progress_callback: Optional[Callable[[BackupProgress], None]] = None,
-        is_cancelled: Optional[Callable[[], bool]] = None,
+        progress_callback: Callable[[BackupProgress], None] | None = None,
+        is_cancelled: Callable[[], bool] | None = None,
     ) -> bool:
         """
         Restore a snapshot to the iPod device using **delta transfer**.
@@ -783,11 +783,11 @@ class BackupManager:
         # then discards the file dict.  At most TWO file dicts are
         # in memory at once.
         snapshots: list[SnapshotInfo] = []
-        prev_files: Optional[dict] = None   # files dict of the "newer" snapshot
+        prev_files: dict | None = None   # files dict of the "newer" snapshot
 
         for mf in manifest_paths:
             try:
-                with open(mf, "r", encoding="utf-8") as f:
+                with open(mf, encoding="utf-8") as f:
                     data = json.load(f)
             except (json.JSONDecodeError, UnicodeDecodeError, OSError) as e:
                 logger.warning(f"Could not read snapshot {mf.name}: {e}")
@@ -865,7 +865,7 @@ class BackupManager:
         if self.snapshots_dir.exists():
             for mf in self.snapshots_dir.glob("*.json"):
                 try:
-                    with open(mf, "r", encoding="utf-8") as f:
+                    with open(mf, encoding="utf-8") as f:
                         data = json.load(f)
                 except (json.JSONDecodeError, UnicodeDecodeError, OSError):
                     continue
@@ -919,7 +919,7 @@ class BackupManager:
             device_name = child.name
             device_meta: dict = {}
             try:
-                with open(manifests[0], "r", encoding="utf-8") as f:
+                with open(manifests[0], encoding="utf-8") as f:
                     data = json.load(f)
                 device_name = data.get("device_name", child.name)
                 device_meta = data.get("device_meta", {})
@@ -937,7 +937,7 @@ class BackupManager:
 
     # ── Internal helpers ────────────────────────────────────────────────────
 
-    def _get_latest_snapshot_files(self) -> Optional[dict]:
+    def _get_latest_snapshot_files(self) -> dict | None:
         """Load the files dict from the most recent snapshot, or None."""
         if not self.snapshots_dir.exists():
             return None
@@ -949,7 +949,7 @@ class BackupManager:
         if not manifests:
             return None
         try:
-            with open(manifests[0], "r", encoding="utf-8") as f:
+            with open(manifests[0], encoding="utf-8") as f:
                 data = json.load(f)
             return data.get("files")
         except (json.JSONDecodeError, UnicodeDecodeError, OSError):
@@ -1037,13 +1037,13 @@ class BackupManager:
                 pass
             raise
 
-    def _load_manifest(self, snapshot_id: str) -> Optional[dict]:
+    def _load_manifest(self, snapshot_id: str) -> dict | None:
         """Load a snapshot manifest by its ID."""
         manifest_path = self.snapshots_dir / f"{snapshot_id}.json"
         if not manifest_path.exists():
             return None
         try:
-            with open(manifest_path, "r", encoding="utf-8") as f:
+            with open(manifest_path, encoding="utf-8") as f:
                 return json.load(f)
         except (json.JSONDecodeError, UnicodeDecodeError, OSError) as e:
             logger.error(f"Could not read snapshot {snapshot_id}: {e}")
@@ -1054,7 +1054,7 @@ class BackupManager:
         if not self.hashcache_path.exists():
             return {}
         try:
-            with open(self.hashcache_path, "r", encoding="utf-8") as f:
+            with open(self.hashcache_path, encoding="utf-8") as f:
                 return json.load(f)
         except (json.JSONDecodeError, UnicodeDecodeError, OSError):
             return {}
@@ -1147,7 +1147,7 @@ class BackupManager:
                 continue
             for mf in snap_dir.glob("*.json"):
                 try:
-                    with open(mf, "r", encoding="utf-8") as f:
+                    with open(mf, encoding="utf-8") as f:
                         data = json.load(f)
                 except (json.JSONDecodeError, UnicodeDecodeError, OSError):
                     continue

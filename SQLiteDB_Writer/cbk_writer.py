@@ -102,8 +102,10 @@ def write_locations_cbk(
 
     elif checksum_type == ChecksumType.HASH72:
         from iTunesDB_Writer.hash72 import (
-            read_hash_info, extract_hash_info_to_dict,
-            _hash_generate, HashInfo,
+            HashInfo,
+            _hash_generate,
+            extract_hash_info_to_dict,
+            read_hash_info,
         )
 
         # Try centralized store first

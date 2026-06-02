@@ -6,6 +6,16 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from iTunesDB_Shared.constants import (
+    MEDIA_TYPE_AUDIO,
+    MEDIA_TYPE_AUDIO_VIDEO,
+    MEDIA_TYPE_AUDIOBOOK,
+    MEDIA_TYPE_MUSIC_VIDEO,
+    MEDIA_TYPE_PODCAST,
+    MEDIA_TYPE_TV_SHOW,
+    MEDIA_TYPE_VIDEO,
+)
+
 ACTION_ADD_TO_IPOD = "ADD_TO_IPOD"
 ACTION_REMOVE_FROM_IPOD = "REMOVE_FROM_IPOD"
 ACTION_UPDATE_METADATA = "UPDATE_METADATA"
@@ -87,18 +97,18 @@ def classify_media_type(item: Any) -> str:
         return "music"
 
     if ipod is not None:
-        media_type = _int_value(ipod.get("media_type", 1))
-        if media_type & 0x04:
+        media_type = _int_value(ipod.get("media_type", MEDIA_TYPE_AUDIO))
+        if media_type & MEDIA_TYPE_PODCAST:
             return "podcast"
-        if media_type & 0x08:
+        if media_type & MEDIA_TYPE_AUDIOBOOK:
             return "audiobook"
-        if media_type & 0x40:
+        if media_type & MEDIA_TYPE_TV_SHOW:
             return "tv_show"
-        if media_type & 0x20:
+        if media_type & MEDIA_TYPE_MUSIC_VIDEO:
             return "music_video"
-        if media_type & 0x02:
+        if media_type & MEDIA_TYPE_VIDEO:
             return "video"
-        if media_type == 0 or media_type & 0x01:
+        if media_type == MEDIA_TYPE_AUDIO_VIDEO or media_type & MEDIA_TYPE_AUDIO:
             return "music"
 
     return "music"

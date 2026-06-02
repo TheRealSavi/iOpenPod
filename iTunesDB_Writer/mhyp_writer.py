@@ -37,19 +37,21 @@ import random
 import struct
 import time
 from dataclasses import dataclass, field
-from typing import List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .mhit_writer import TrackInfo
 
 from iTunesDB_Shared.constants import MHOD_TYPE_TITLE
 from iTunesDB_Shared.field_base import write_fields, write_generic_header
-from iTunesDB_Shared.mhyp_defs import MHYP_HEADER_SIZE
 from iTunesDB_Shared.mhod_defs import (
     MHOD_HEADER_SIZE as _MHOD_HEADER_SIZE,
+)
+from iTunesDB_Shared.mhod_defs import (
     write_mhod_header,
 )
-from .mhod_writer import write_mhod_string
+from iTunesDB_Shared.mhyp_defs import MHYP_HEADER_SIZE
+
 from .mhip_writer import write_mhip, write_mhip_podcast_group
 from .mhod52_writer import write_library_indices
 from .mhod_spl_writer import (
@@ -59,6 +61,7 @@ from .mhod_spl_writer import (
     write_mhod51,
     write_mhod102,
 )
+from .mhod_writer import write_mhod_string
 
 
 @dataclass
@@ -88,10 +91,10 @@ class PlaylistInfo:
     and does not need a PlaylistInfo.
     """
     name: str
-    track_ids: List[int] = field(default_factory=list)
+    track_ids: list[int] = field(default_factory=list)
 
     # Identity
-    playlist_id: Optional[int] = None   # 64-bit; generated if None
+    playlist_id: int | None = None   # 64-bit; generated if None
     master: bool = False                 # Sets type byte at +0x14 to 1.
     #   Dataset 2: True for the master playlist only (exactly one).
     #   Dataset 5: True for ALL built-in categories (Music, Movies, etc.).
@@ -104,20 +107,20 @@ class PlaylistInfo:
     podcast_flag: int = 0                # 0x2A: 0=normal, 1=podcast playlist (u16)
 
     # Smart playlist fields (both must be set for a smart playlist)
-    smart_prefs: Optional[SmartPlaylistPrefs] = None
-    smart_rules: Optional[SmartPlaylistRules] = None
+    smart_prefs: SmartPlaylistPrefs | None = None
+    smart_rules: SmartPlaylistRules | None = None
 
     # mhsd5Type: browsing category for dataset 5 smart playlists
     # (per libgpod: 0=None, 2=Movies, 3=TV Shows, 4=Music, 5=Audiobooks, 6=Ringtones, 7=MovieRentals)
     mhsd5_type: int = 0
 
     # Opaque blobs preserved from parsed data for round-trip fidelity
-    raw_mhod100: Optional[bytes] = None   # Playlist prefs (type 100 body)
-    raw_mhod102: Optional[bytes] = None   # Playlist settings (type 102 body)
+    raw_mhod100: bytes | None = None   # Playlist prefs (type 100 body)
+    raw_mhod102: bytes | None = None   # Playlist settings (type 102 body)
 
     # Per-MHIP metadata preserved from parsed data for round-trip fidelity.
     # When provided, must be the same length as track_ids and in the same order.
-    item_metadata: Optional[List[PlaylistItemMeta]] = None
+    item_metadata: list[PlaylistItemMeta] | None = None
 
     @property
     def is_smart(self) -> bool:
@@ -131,23 +134,23 @@ def generate_playlist_id() -> int:
 
 def write_mhyp(
     name: str,
-    track_ids: List[int],
-    playlist_id: Optional[int] = None,
+    track_ids: list[int],
+    playlist_id: int | None = None,
     master: bool = False,
-    timestamp: Optional[int] = None,
+    timestamp: int | None = None,
     sortorder: int = 0,
     podcast_flag: int = 0,
-    tracks: Optional[List["TrackInfo"]] = None,
+    tracks: list["TrackInfo"] | None = None,
     db_id_2: int = 0,
-    smart_prefs: Optional[SmartPlaylistPrefs] = None,
-    smart_rules: Optional[SmartPlaylistRules] = None,
+    smart_prefs: SmartPlaylistPrefs | None = None,
+    smart_rules: SmartPlaylistRules | None = None,
     mhsd5_type: int = 0,
-    raw_mhod100: Optional[bytes] = None,
-    raw_mhod102: Optional[bytes] = None,
-    item_metadata: Optional[List[PlaylistItemMeta]] = None,
+    raw_mhod100: bytes | None = None,
+    raw_mhod102: bytes | None = None,
+    item_metadata: list[PlaylistItemMeta] | None = None,
     capabilities=None,
     podcast_grouping: bool = False,
-    track_album_map: Optional[dict[int, str]] = None,
+    track_album_map: dict[int, str] | None = None,
     next_mhip_id_start: int = 1,
 ) -> bytes:
     """
@@ -316,7 +319,7 @@ def write_mhyp(
 
 
 def _build_podcast_grouped_mhips(
-    track_ids: List[int],
+    track_ids: list[int],
     track_album_map: dict[int, str],
     next_id: int,
 ) -> tuple[bytes, int]:
@@ -452,7 +455,7 @@ def write_playlist(
     playlist: "PlaylistInfo",
     db_id_2: int = 0,
     podcast_grouping: bool = False,
-    track_album_map: Optional[dict[int, str]] = None,
+    track_album_map: dict[int, str] | None = None,
     next_mhip_id_start: int = 1,
 ) -> bytes:
     """Write a playlist from a PlaylistInfo dataclass.
@@ -501,12 +504,12 @@ def write_playlist(
 
 
 def write_master_playlist(
-    track_ids: List[int],
+    track_ids: list[int],
     db_id_2: int,
     name: str = "iPod",
-    tracks: Optional[List["TrackInfo"]] = None,
+    tracks: list["TrackInfo"] | None = None,
     capabilities=None,
-    playlist_id: Optional[int] = None,
+    playlist_id: int | None = None,
 ) -> bytes:
     """
     Write the Master Playlist (MPL).

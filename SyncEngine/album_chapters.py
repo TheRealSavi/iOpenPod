@@ -12,7 +12,12 @@ from pathlib import Path
 from typing import Any
 
 from infrastructure.media_folders import media_folder_paths
-from iTunesDB_Shared.constants import MEDIA_TYPE_AUDIOBOOK, MEDIA_TYPE_PODCAST
+from iTunesDB_Shared.constants import (
+    MEDIA_TYPE_AUDIO,
+    MEDIA_TYPE_AUDIO_VIDEO,
+    MEDIA_TYPE_AUDIOBOOK,
+    MEDIA_TYPE_PODCAST,
+)
 
 from .mapping import MappingFile
 from .pc_library import PCLibrary, PCTrack
@@ -85,10 +90,10 @@ def is_music_track(track: dict) -> bool:
     """Return whether a parsed iPod track belongs to the music browser."""
 
     try:
-        media_type = int(track.get("media_type", 1) or 0)
+        media_type = int(track.get("media_type", MEDIA_TYPE_AUDIO) or 0)
     except (TypeError, ValueError):
-        media_type = 1
-    return media_type == 0 or bool(media_type & 0x01)
+        media_type = MEDIA_TYPE_AUDIO
+    return media_type == MEDIA_TYPE_AUDIO_VIDEO or bool(media_type & MEDIA_TYPE_AUDIO)
 
 
 def resolve_album_tracks(album_item: dict, all_tracks: list[dict]) -> list[dict]:
