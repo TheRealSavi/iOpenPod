@@ -12,10 +12,9 @@ Location on iPod: /iPod_Control/iTunes/iOpenPod.json
 
 import json
 import logging
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from pathlib import Path
-from dataclasses import dataclass, asdict
-from typing import Optional
-from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -42,10 +41,13 @@ class TrackMapping:
     was_transcoded: bool  # True if format conversion was needed
 
     # Optional: path hint for disambiguation (not used as primary key)
-    source_path_hint: Optional[str] = None
+    source_path_hint: str | None = None
 
     # Artwork hash for change detection (MD5 of embedded image bytes)
-    art_hash: Optional[str] = None
+    art_hash: str | None = None
+
+    # Metadata-insensitive source content hash when available.
+    source_hash: str | None = None
 
     @property
     def db_id(self) -> int:
@@ -75,6 +77,7 @@ class TrackMapping:
             was_transcoded=data["was_transcoded"],
             source_path_hint=data.get("source_path_hint"),
             art_hash=data.get("art_hash"),
+            source_hash=data.get("source_hash"),
         )
 
 
@@ -88,7 +91,7 @@ class MappingFile:
     the same song appears on multiple albums (same acoustic fingerprint).
     """
 
-    version: int = 3  # v3: track IDs stored as db_track_id
+    version: int = 4  # v4: optional source content hash for change detection
     created: str = ""
     modified: str = ""
     _tracks: dict[str, list[TrackMapping]] | None = None
@@ -98,7 +101,7 @@ class MappingFile:
         if self._tracks is None:
             self._tracks = {}
         if not self.created:
-            self.created = datetime.now(timezone.utc).isoformat()
+            self.created = datetime.now(UTC).isoformat()
         if not self.modified:
             self.modified = self.created
         self._db_track_id_index = None
@@ -119,15 +122,16 @@ class MappingFile:
         source_size: int,
         source_mtime: float,
         was_transcoded: bool,
-        source_path_hint: Optional[str] = None,
-        art_hash: Optional[str] = None,
+        source_path_hint: str | None = None,
+        art_hash: str | None = None,
+        source_hash: str | None = None,
     ) -> None:
         """Add or update a track mapping.
 
         If entry with same db_track_id exists under this fingerprint, update it.
         Otherwise append a new entry.
         """
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
 
         new_mapping = TrackMapping(
             db_track_id=db_track_id,
@@ -139,6 +143,7 @@ class MappingFile:
             was_transcoded=was_transcoded,
             source_path_hint=source_path_hint,
             art_hash=art_hash,
+            source_hash=source_hash,
         )
 
         entries = self.tracks.get(fingerprint, [])
@@ -162,7 +167,7 @@ class MappingFile:
         """Get all mapping entries for a fingerprint. Returns empty list if none."""
         return self.tracks.get(fingerprint, [])
 
-    def get_single(self, fingerprint: str) -> Optional[TrackMapping]:
+    def get_single(self, fingerprint: str) -> TrackMapping | None:
         """Get mapping for a fingerprint that has exactly one entry.
 
         Returns None if fingerprint not found or has multiple entries.
@@ -173,7 +178,7 @@ class MappingFile:
             return entries[0]
         return None
 
-    def get_by_db_track_id(self, db_track_id: int) -> Optional[tuple[str, TrackMapping]]:
+    def get_by_db_track_id(self, db_track_id: int) -> tuple[str, TrackMapping] | None:
         """Get track mapping by db_track_id. Returns (fingerprint, mapping) or None."""
         if self._db_track_id_index is None:
             self._db_track_id_index = {}
@@ -182,11 +187,11 @@ class MappingFile:
                     self._db_track_id_index[entry.db_track_id] = (fp, entry)
         return self._db_track_id_index.get(db_track_id)
 
-    def get_by_db_id(self, db_id: int) -> Optional[tuple[str, TrackMapping]]:
+    def get_by_db_id(self, db_id: int) -> tuple[str, TrackMapping] | None:
         """Backward-compatible alias for get_by_db_track_id()."""
         return self.get_by_db_track_id(db_id)
 
-    def remove_track(self, fingerprint: str, db_track_id: Optional[int] = None) -> bool:
+    def remove_track(self, fingerprint: str, db_track_id: int | None = None) -> bool:
         """Remove a track mapping.
 
         If db_track_id is provided, remove only that specific entry (for collisions).
@@ -210,7 +215,7 @@ class MappingFile:
         else:
             del self.tracks[fingerprint]
 
-        self.modified = datetime.now(timezone.utc).isoformat()
+        self.modified = datetime.now(UTC).isoformat()
         self._db_track_id_index = None  # invalidate reverse index
         return True
 
@@ -226,7 +231,7 @@ class MappingFile:
                     self.tracks[fp] = new_entries
                 else:
                     del self.tracks[fp]
-                self.modified = datetime.now(timezone.utc).isoformat()
+                self.modified = datetime.now(UTC).isoformat()
                 self._db_track_id_index = None  # invalidate reverse index
                 return True
         return False
@@ -285,7 +290,8 @@ class MappingFile:
     def from_dict(cls, data: dict) -> "MappingFile":
         """Create from dict (JSON parsing).
 
-        Handles v1 (single entry), v2 (list entries), and v3 (db_track_id key) formats.
+        Handles v1 (single entry), v2 (list entries), v3 (db_track_id key),
+        and v4 (source_hash) formats.
         """
         version = data.get("version", 1)
         tracks: dict[str, list[TrackMapping]] = {}
@@ -301,7 +307,7 @@ class MappingFile:
                 logger.warning(f"Unexpected track data format for {fp}: {type(track_data)}")
 
         return cls(
-            version=3,  # Always upgrade to current format
+            version=4,  # Always upgrade to current format
             created=data.get("created", ""),
             modified=data.get("modified", ""),
             _tracks=tracks,
@@ -335,7 +341,7 @@ class MappingManager:
             return MappingFile()
 
         try:
-            with open(self.mapping_file, "r", encoding="utf-8") as f:
+            with open(self.mapping_file, encoding="utf-8") as f:
                 data = json.load(f)
             mapping = MappingFile.from_dict(data)
             logger.info(f"Loaded mapping with {mapping.track_count} tracks "
@@ -357,7 +363,7 @@ class MappingManager:
         """Save mapping file to iPod atomically."""
         try:
             self.mapping_dir.mkdir(parents=True, exist_ok=True)
-            mapping.modified = datetime.now(timezone.utc).isoformat()
+            mapping.modified = datetime.now(UTC).isoformat()
 
             temp_file = self.mapping_file.with_suffix(".json.tmp")
             with open(temp_file, "w", encoding="utf-8") as f:
@@ -371,7 +377,7 @@ class MappingManager:
             logger.error(f"Error saving mapping file: {e}")
             return False
 
-    def backup(self) -> Optional[Path]:
+    def backup(self) -> Path | None:
         """Create a timestamped backup of the mapping file."""
         if not self.mapping_file.exists():
             return None

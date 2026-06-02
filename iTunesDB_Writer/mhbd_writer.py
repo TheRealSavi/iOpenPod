@@ -790,6 +790,25 @@ def write_itunesdb(
     # --- Write ArtworkDB if the caller requested artwork reconciliation ---
     pending_artwork = None  # PendingArtworkWrite if defer_commit used
     if pc_file_paths is not None:
+        artwork_formats = None
+        if capabilities is not None and not capabilities.supports_artwork:
+            try:
+                from ipod_device import ITHMB_FORMAT_MAP
+
+                fallback_format_id = 1060
+                fallback = ITHMB_FORMAT_MAP.get(fallback_format_id)
+                if fallback is not None:
+                    artwork_formats = {
+                        fallback_format_id: (int(fallback.width), int(fallback.height))
+                    }
+                    _progress("Artwork — generating iOpenPod-only artwork")
+                    logger.info(
+                        "ART: device reports no artwork support; writing fallback format %d for iOpenPod view",
+                        fallback_format_id,
+                    )
+            except Exception as exc:
+                logger.warning("ART: could not resolve fallback artwork format: %s", exc)
+
         logger.debug("ART: pc_file_paths has %d entries, tracks has %d tracks",
                      len(pc_file_paths), len(tracks))
 
@@ -817,6 +836,7 @@ def write_itunesdb(
                 tracks=tracks,
                 pc_file_paths=pc_file_paths,
                 reference_artdb_path=ref_artdb_path,
+                artwork_formats=artwork_formats,
                 defer_commit=True,
                 progress_callback=_progress,
             )

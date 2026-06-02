@@ -7,6 +7,7 @@ import os
 import sys
 import threading
 import traceback
+from pathlib import Path
 
 from PyQt6.QtCore import QObject, QRunnable, QThread, QThreadPool, pyqtSignal, pyqtSlot
 
@@ -950,7 +951,20 @@ class iTunesDBCache(QObject):
         try:
             from iTunesDB_Parser.ipod_library import load_ipod_library
 
-            parsed = load_ipod_library(itunesdb_path) or {}
+            committed_playcounts = False
+            try:
+                from SyncEngine._db_io import commit_playcounts_if_needed
+
+                committed_playcounts = commit_playcounts_if_needed(
+                    Path(device_path),
+                )
+            except Exception:
+                logger.warning("Play Counts auto-commit failed", exc_info=True)
+
+            parsed = load_ipod_library(
+                itunesdb_path,
+                merge_playcounts=not committed_playcounts,
+            ) or {}
             if isinstance(parsed, dict):
                 data = parsed
             else:

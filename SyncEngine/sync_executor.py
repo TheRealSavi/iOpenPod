@@ -45,9 +45,11 @@ from .fingerprint_diff_engine import SyncItem, SyncPlan
 from .itunes_prefs import protect_from_itunes
 from .mapping import MappingFile, MappingManager
 from .photos import apply_photo_sync_plan, read_photo_db
+from .source_identity import source_content_hash
 from .transcoder import (
     TranscodeOptions,
-    needs_transcoding,
+    TranscodePlan,
+    TranscodeTarget,
     quality_to_nominal_bitrate,
     resolve_transcode_plan,
     transcode,
@@ -125,6 +127,16 @@ def _current_source_stat(pc_track) -> tuple[int, float]:
         return pc_track.size, pc_track.mtime
 
 
+def _current_source_identity(pc_track) -> tuple[int, float, str | None]:
+    """Return current source size, mtime, and metadata-insensitive content hash."""
+    source_size, source_mtime = _current_source_stat(pc_track)
+    try:
+        source_hash = source_content_hash(pc_track.path)
+    except OSError:
+        source_hash = None
+    return source_size, source_mtime, source_hash
+
+
 @dataclass
 class _SyncContext:
     """Shared mutable state flowing through all sync stages.
@@ -174,6 +186,52 @@ class _SyncContext:
     final_photo_db: object | None = None
 
     _cancel_recorded: bool = False
+
+    def __init__(
+        self,
+        plan: SyncPlan,
+        mapping: MappingFile,
+        progress_callback: Callable[["SyncProgress"], None] | None,
+        dry_run: bool,
+        write_back_to_pc: bool,
+        _is_cancelled: Callable[[], bool] | None,
+        user_playlists: list[dict] | None = None,
+        on_sync_complete: Callable[[], None] | None = None,
+        compute_sound_check: bool = False,
+        scrobble_on_sync: bool = False,
+        listenbrainz_token: str = "",
+        listenbrainz_username: str = "",
+        _is_scrobble_cancelled: Callable[[], bool] | None = None,
+    ) -> None:
+        self.plan = plan
+        self.mapping = mapping
+        self.progress_callback = progress_callback
+        self.dry_run = dry_run
+        self.write_back_to_pc = write_back_to_pc
+        self._is_cancelled = _is_cancelled
+        self.user_playlists = list(user_playlists or [])
+        self.on_sync_complete = on_sync_complete
+        self.compute_sound_check = compute_sound_check
+        self.scrobble_on_sync = scrobble_on_sync
+        self.listenbrainz_token = listenbrainz_token
+        self.listenbrainz_username = listenbrainz_username
+        self._is_scrobble_cancelled = _is_scrobble_cancelled
+
+        self.result = SyncOutcome(success=True)
+        self.existing_tracks_data = []
+        self.existing_playlists_raw = []
+        self.existing_smart_raw = []
+        self.tracks_by_db_track_id = {}
+        self.tracks_by_location = {}
+        self.new_tracks = []
+        self.new_track_fingerprints = {}
+        self.new_track_info = {}
+        self.conversion_group_add_counts = {}
+        self.conversion_group_success_counts = {}
+        self.completed_conversion_groups = set()
+        self.pc_file_paths = {}
+        self.final_photo_db = None
+        self._cancel_recorded = False
 
     def cancelled(self) -> bool:
         """Check if the user cancelled.  Updates *result* once."""
@@ -1022,7 +1080,7 @@ class SyncExecutor:
                 # size/mtime.  The fingerprinting phase may have written
                 # the acoustic fingerprint tag back into the source file,
                 # changing its size and mtime after the initial scan.
-                source_size, source_mtime = _current_source_stat(pc_track)
+                source_size, source_mtime, source_hash = _current_source_identity(pc_track)
                 ctx.mapping.add_track(
                     fingerprint=fp,
                     db_track_id=track.db_track_id,
@@ -1033,6 +1091,7 @@ class SyncExecutor:
                     was_transcoded=was_transcoded,
                     source_path_hint=pc_track.relative_path,
                     art_hash=pc_track.art_hash,
+                    source_hash=source_hash,
                 )
 
     def _update_podcast_subscriptions(self, ctx: _SyncContext) -> None:
@@ -1111,6 +1170,24 @@ class SyncExecutor:
                 pass
 
     # ── Stage Implementations ───────────────────────────────────────────────
+
+    def _transcode_plan_for_item(
+        self,
+        item: SyncItem,
+        source_path: Path,
+    ) -> TranscodePlan:
+        planned = getattr(item, "transcode_plan", None)
+        if planned is not None:
+            try:
+                if Path(planned.source_path) == source_path:
+                    return planned
+            except Exception:
+                pass
+            logger.debug(
+                "Ignoring stale transcode plan for %s; resolving from executor settings",
+                source_path.name,
+            )
+        return resolve_transcode_plan(source_path, options=self.transcode_options)
 
     def _execute_removes(self, ctx: _SyncContext) -> None:
         # Combine user-selected removals with mandatory integrity removals
@@ -1246,10 +1323,8 @@ class SyncExecutor:
                 logger.error("_do_copy called with None pc_track for %s", item.description)
                 return (item, False, None, False, "No source track")
             source_path = Path(item.pc_track.path)
-            need_transcode = needs_transcoding(
-                source_path,
-                prefer_lossy=self.transcode_options.prefer_lossy,
-            )
+            transcode_plan = self._transcode_plan_for_item(item, source_path)
+            need_transcode = transcode_plan.target != TranscodeTarget.COPY
             expected_write_bytes = item.estimated_size if item.estimated_size and item.estimated_size > 0 else item.pc_track.size
 
             with completed_lock:
@@ -1289,7 +1364,7 @@ class SyncExecutor:
                 copy_cb = _make_io_cb(filename, worker_id, "Copying")
 
             success, ipod_path, was_transcoded, err_msg = self._copy_to_ipod(
-                source_path, need_transcode, fingerprint=item.fingerprint,
+                source_path, transcode_plan, fingerprint=item.fingerprint,
                 transcode_progress=transcode_cb,
                 copy_progress=copy_cb,
                 is_cancelled=ctx._is_cancelled,
@@ -1393,15 +1468,6 @@ class SyncExecutor:
                 ctx.result.tracks_updated_file += 1
             return
 
-        # Pre-process: invalidate cache only.
-        # Old iPod files are deleted only after replacement copy succeeds,
-        # so failed updates cannot leave the DB pointing at missing files.
-        for item in ctx.plan.to_update_file:
-            if item.pc_track is None:
-                continue
-            if item.fingerprint:
-                self.transcode_cache.invalidate(item.fingerprint)
-
         def _on_success(item: SyncItem, ipod_path: Path, was_transcoded: bool) -> None:
             assert item.pc_track is not None  # guaranteed by _parallel_copy_stage filter
             ipod_location = ":" + str(ipod_path.relative_to(self.ipod_path)).replace("\\", ":").replace("/", ":")
@@ -1429,10 +1495,7 @@ class SyncExecutor:
 
                 if was_transcoded:
                     if ext in ("m4a", "aac", "mp3") and ext != "alac":
-                        plan = resolve_transcode_plan(
-                            source_path,
-                            options=self.transcode_options,
-                        )
+                        plan = self._transcode_plan_for_item(item, source_path)
                         existing_track.bitrate = (
                             plan.cache_bitrate_kbps
                             if plan.cache_bitrate_kbps is not None
@@ -1469,7 +1532,7 @@ class SyncExecutor:
                 ctx.pc_file_paths[db_track_id] = str(source_path)
 
             if item.fingerprint and ipod_path:
-                source_size, source_mtime = _current_source_stat(item.pc_track)
+                source_size, source_mtime, source_hash = _current_source_identity(item.pc_track)
                 ctx.mapping.add_track(
                     fingerprint=item.fingerprint,
                     db_track_id=db_track_id or 0,
@@ -1480,6 +1543,7 @@ class SyncExecutor:
                     was_transcoded=was_transcoded,
                     source_path_hint=item.pc_track.relative_path,
                     art_hash=getattr(item.pc_track, "art_hash", None),
+                    source_hash=source_hash,
                 )
 
             ctx.result.tracks_updated_file += 1
@@ -1606,7 +1670,7 @@ class SyncExecutor:
                 fp_result = ctx.mapping.get_by_db_track_id(db_track_id) if db_track_id else None
                 if fp_result:
                     fp, existing = fp_result
-                    source_size, source_mtime = _current_source_stat(item.pc_track)
+                    source_size, source_mtime, source_hash = _current_source_identity(item.pc_track)
                     ctx.mapping.add_track(
                         fingerprint=fp,
                         db_track_id=db_track_id or 0,
@@ -1617,6 +1681,7 @@ class SyncExecutor:
                         was_transcoded=existing.was_transcoded,
                         source_path_hint=item.pc_track.relative_path,
                         art_hash=existing.art_hash,
+                        source_hash=source_hash,
                     )
 
             ctx.result.tracks_updated_metadata += 1
@@ -1638,16 +1703,26 @@ class SyncExecutor:
             fp_result = ctx.mapping.get_by_db_track_id(item.db_track_id) if item.db_track_id else None
             if fp_result:
                 fp, existing = fp_result
+                source_size = existing.source_size
+                source_mtime = existing.source_mtime
+                source_hash = existing.source_hash
+                source_path_hint = existing.source_path_hint
+                if item.pc_track:
+                    source_size, source_mtime, source_hash = _current_source_identity(
+                        item.pc_track
+                    )
+                    source_path_hint = item.pc_track.relative_path
                 ctx.mapping.add_track(
                     fingerprint=fp,
                     db_track_id=item.db_track_id or 0,
                     source_format=existing.source_format,
                     ipod_format=existing.ipod_format,
-                    source_size=existing.source_size,
-                    source_mtime=existing.source_mtime,
+                    source_size=source_size,
+                    source_mtime=source_mtime,
                     was_transcoded=existing.was_transcoded,
-                    source_path_hint=existing.source_path_hint,
+                    source_path_hint=source_path_hint,
                     art_hash=item.new_art_hash,
+                    source_hash=source_hash,
                 )
 
     def _download_podcast_episodes(self, ctx: _SyncContext) -> None:
@@ -2007,6 +2082,10 @@ class SyncExecutor:
                 "Play count sync: %s  +%d plays  +%d skips",
                 item.description, item.play_count_delta, item.skip_count_delta,
             )
+            if item.db_track_id:
+                track_info = ctx.tracks_by_db_track_id.get(item.db_track_id)
+                if track_info is not None:
+                    track_info.play_count_2 = 0
             ctx.result.playcounts_synced += 1
 
     def _execute_scrobble(self, ctx: _SyncContext) -> bool:
@@ -2220,7 +2299,7 @@ class SyncExecutor:
     def _copy_to_ipod(
         self,
         source_path: Path,
-        needs_transcode: bool,
+        transcode_plan: TranscodePlan,
         fingerprint: str | None = None,
         transcode_progress: Callable[[float], None] | None = None,
         copy_progress: Callable[[float], None] | None = None,
@@ -2255,11 +2334,9 @@ class SyncExecutor:
         except OSError:
             pass  # Can't check — proceed and let the copy fail naturally
 
+        needs_transcode = transcode_plan.target != TranscodeTarget.COPY
         if needs_transcode:
-            plan = resolve_transcode_plan(
-                source_path,
-                options=self.transcode_options,
-            )
+            plan = transcode_plan
             target_format = plan.cache_target_format
             bitrate = plan.cache_bitrate_kbps
             cache_source_hash = None
@@ -2319,6 +2396,7 @@ class SyncExecutor:
                 output_filename=output_filename,
                 progress_callback=transcode_progress,
                 options=self.transcode_options,
+                plan=plan,
                 is_cancelled=is_cancelled,
             )
             if result.success and result.output_path:
@@ -2582,24 +2660,9 @@ class SyncExecutor:
         - ``PlayCounts.plist``
         - ``OTGPlaylistInfo`` (On-The-Go playlists created on device)
         """
-        itunes_dir = self.ipod_path / "iPod_Control" / "iTunes"
-        for name in ("Play Counts", "iTunesStats", "PlayCounts.plist"):
-            path = itunes_dir / name
-            if path.exists():
-                try:
-                    path.unlink()
-                    logger.info("Deleted %s", path)
-                except OSError as exc:
-                    # Non-fatal — the file will be re-read next sync but
-                    # that just means the same deltas get applied again
-                    # (idempotent for play/skip counts since they're additive
-                    # and the cumulative was already written).
-                    logger.warning("Could not delete %s: %s", path, exc)
-        # Delete all OTGPlaylistInfo files (base + numbered variants).
-        # OTG playlists were imported into the iTunesDB above, so these
-        # files are no longer needed.
-        from iTunesDB_Parser.otg import delete_otg_files
-        delete_otg_files(str(itunes_dir))
+        from ._db_io import delete_playcounts_files
+
+        delete_playcounts_files(self.ipod_path)
 
     # ── Track Conversion ────────────────────────────────────────────────────
 

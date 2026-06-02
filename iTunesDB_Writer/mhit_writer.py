@@ -80,6 +80,7 @@ class TrackInfo:
     # Playback
     rating: int = 0  # 0-100 (stars × 20)
     play_count: int = 0
+    play_count_2: int = 0
     skip_count: int = 0
     volume: int = 0  # -255 to +255
     start_time: int = 0  # ms
@@ -332,7 +333,7 @@ def write_mhit(track: TrackInfo, track_id: int, db_id_2: int = 0,
         'stop_time': track.stop_time,
         'sound_check': track.sound_check,
         'play_count_1': track.play_count,
-        'play_count_2': 0,  # reset after sync
+        'play_count_2': track.play_count_2,
         'last_played': track.last_played,
         'disc_number': track.disc_number,
         'total_discs': track.total_discs,

@@ -48,9 +48,12 @@ from .photos import (
     read_photo_db,
     scan_pc_photos,
 )
-from .transcoder import TranscodeOptions, resolve_transcode_plan
+from .source_identity import source_content_hash
+from .transcoder import TranscodeOptions, TranscodePlan, resolve_transcode_plan
 
 logger = logging.getLogger(__name__)
+
+_MP4_CONTAINER_EXTS = {".m4a", ".m4b", ".mp4", ".m4v", ".mov"}
 
 
 # ─── Storage Estimation ───────────────────────────────────────────────────────
@@ -67,11 +70,21 @@ def estimate_transcode_size(
 
     Returns the estimated bytes on the iPod after transcode.
     """
+    plan, estimated_size = resolve_track_transcode_plan(pc_track, options)
+    return estimated_size
+
+
+def resolve_track_transcode_plan(
+    pc_track: PCTrack,
+    options: TranscodeOptions | None = None,
+) -> tuple[TranscodePlan, int]:
+    """Resolve transfer policy and estimated output size for a PC track."""
     plan = resolve_transcode_plan(pc_track.path, options=options)
-    return plan.estimate_output_size(
+    estimated_size = plan.estimate_output_size(
         source_size=pc_track.size,
         duration_ms=pc_track.duration_ms,
     )
+    return plan, estimated_size
 
 
 # ─── Enums & Data Classes ─────────────────────────────────────────────────────
@@ -104,6 +117,10 @@ class SyncItem:
     # Set when the item is created; used for accurate storage estimates in UI
     estimated_size: int | None = None
 
+    # For ADD/UPDATE actions — resolved during planning so execution performs
+    # the same copy/transcode decision that the review UI estimated.
+    transcode_plan: TranscodePlan | None = None
+
     # For REMOVE/matched actions — iPod-side info
     db_track_id: int | None = None
     ipod_track: dict | None = None
@@ -135,6 +152,54 @@ class SyncItem:
     defer_removal_until_after_add: bool = False
     conversion_source_fingerprints: tuple[str, ...] = ()
     conversion_source_path_hints: tuple[str, ...] = ()
+
+    def __init__(
+        self,
+        action: SyncAction,
+        fingerprint: str | None = None,
+        pc_track: PCTrack | None = None,
+        estimated_size: int | None = None,
+        transcode_plan: TranscodePlan | None = None,
+        db_track_id: int | None = None,
+        ipod_track: dict | None = None,
+        metadata_changes: dict | None = None,
+        play_count_delta: int = 0,
+        skip_count_delta: int = 0,
+        ipod_rating: int = 0,
+        pc_rating: int = 0,
+        new_rating: int = 0,
+        rating_strategy: str = "",
+        old_art_hash: str | None = None,
+        new_art_hash: str | None = None,
+        description: str = "",
+        conversion_group_id: str | None = None,
+        conversion_group_add_count: int = 0,
+        defer_removal_until_after_add: bool = False,
+        conversion_source_fingerprints: tuple[str, ...] = (),
+        conversion_source_path_hints: tuple[str, ...] = (),
+    ) -> None:
+        self.action = action
+        self.fingerprint = fingerprint
+        self.pc_track = pc_track
+        self.estimated_size = estimated_size
+        self.transcode_plan = transcode_plan
+        self.db_track_id = db_track_id
+        self.ipod_track = ipod_track
+        self.metadata_changes = metadata_changes or {}
+        self.play_count_delta = play_count_delta
+        self.skip_count_delta = skip_count_delta
+        self.ipod_rating = ipod_rating
+        self.pc_rating = pc_rating
+        self.new_rating = new_rating
+        self.rating_strategy = rating_strategy
+        self.old_art_hash = old_art_hash
+        self.new_art_hash = new_art_hash
+        self.description = description
+        self.conversion_group_id = conversion_group_id
+        self.conversion_group_add_count = conversion_group_add_count
+        self.defer_removal_until_after_add = defer_removal_until_after_add
+        self.conversion_source_fingerprints = conversion_source_fingerprints
+        self.conversion_source_path_hints = conversion_source_path_hints
 
     @property
     def db_id(self) -> int | None:
@@ -771,12 +836,16 @@ class FingerprintDiffEngine:
 
             if not mapping_entries:
                 # NEW TRACK: Not in mapping → Add
-                estimated_size = estimate_transcode_size(pc_track, self.transcode_options)
+                transcode_plan, estimated_size = resolve_track_transcode_plan(
+                    pc_track,
+                    self.transcode_options,
+                )
                 plan.to_add.append(SyncItem(
                     action=SyncAction.ADD_TO_IPOD,
                     fingerprint=fp,
                     pc_track=pc_track,
                     estimated_size=estimated_size,
+                    transcode_plan=transcode_plan,
                     description=f"New: {pc_track.artist or 'Unknown'} - {pc_track.title or pc_track.filename}",
                 ))
                 plan.storage.bytes_to_add += estimated_size
@@ -788,12 +857,16 @@ class FingerprintDiffEngine:
             if not available_entries:
                 # All mapping entries for this fingerprint are claimed by other
                 # album groups → this is a new album variant (greatest hits case)
-                estimated_size = estimate_transcode_size(pc_track, self.transcode_options)
+                transcode_plan, estimated_size = resolve_track_transcode_plan(
+                    pc_track,
+                    self.transcode_options,
+                )
                 plan.to_add.append(SyncItem(
                     action=SyncAction.ADD_TO_IPOD,
                     fingerprint=fp,
                     pc_track=pc_track,
                     estimated_size=estimated_size,
+                    transcode_plan=transcode_plan,
                     description=f"New (album variant): {pc_track.artist or 'Unknown'} - {pc_track.title or pc_track.filename} [{pc_track.album or 'Unknown'}]",
                 ))
                 plan.storage.bytes_to_add += estimated_size
@@ -815,12 +888,16 @@ class FingerprintDiffEngine:
             if ipod_track is None:
                 # Mapping exists but track missing from iTunesDB (stale mapping)
                 logger.warning(f"Mapping for {fp} points to missing db_track_id {db_track_id}")
-                estimated_size = estimate_transcode_size(pc_track, self.transcode_options)
+                transcode_plan, estimated_size = resolve_track_transcode_plan(
+                    pc_track,
+                    self.transcode_options,
+                )
                 plan.to_add.append(SyncItem(
                     action=SyncAction.ADD_TO_IPOD,
                     fingerprint=fp,
                     pc_track=pc_track,
                     estimated_size=estimated_size,
+                    transcode_plan=transcode_plan,
                     description=f"Re-add (stale mapping): {pc_track.artist or 'Unknown'} - {pc_track.title or pc_track.filename}",
                 ))
                 plan.storage.bytes_to_add += estimated_size
@@ -835,7 +912,10 @@ class FingerprintDiffEngine:
 
             # File change: size+mtime gate
             if self._source_file_changed(pc_track, matched_entry):
-                estimated_size = estimate_transcode_size(pc_track, self.transcode_options)
+                transcode_plan, estimated_size = resolve_track_transcode_plan(
+                    pc_track,
+                    self.transcode_options,
+                )
                 plan.to_update_file.append(SyncItem(
                     action=SyncAction.UPDATE_FILE,
                     fingerprint=fp,
@@ -843,6 +923,7 @@ class FingerprintDiffEngine:
                     db_track_id=db_track_id,
                     ipod_track=ipod_track,
                     estimated_size=estimated_size,
+                    transcode_plan=transcode_plan,
                     description=f"File changed: {pc_track.artist or 'Unknown'} - {pc_track.title or pc_track.filename}",
                 ))
                 plan.storage.bytes_to_update += estimated_size
@@ -894,7 +975,11 @@ class FingerprintDiffEngine:
             # We never sync play counts between the two — we just scrobble
             # the iPod delta so the user's ListenBrainz stays up to date.
             #
-            ipod_play_delta = ipod_track.get("recent_playcount", 0)
+            # Prefer the iTunesDB play_count_2 slot; fall back to the
+            # Play Counts file-derived delta when present.
+            ipod_play_delta = ipod_track.get("play_count_2", 0)
+            if not ipod_play_delta:
+                ipod_play_delta = ipod_track.get("recent_playcount", 0)
             ipod_skip_delta = ipod_track.get("recent_skipcount", 0)
 
             if ipod_play_delta > 0 or ipod_skip_delta > 0:
@@ -1358,6 +1443,10 @@ class FingerprintDiffEngine:
             source_size, source_mtime = self._current_pc_track_stat(pc_track)
             source_ext = Path(pc_track.path).suffix.lstrip(".").lower()
             ipod_ext = ipod_path.suffix.lstrip(".").lower()
+            try:
+                source_hash = source_content_hash(pc_track.path)
+            except OSError:
+                source_hash = None
             mapping.add_track(
                 fingerprint=fp,
                 db_track_id=db_track_id,
@@ -1368,6 +1457,7 @@ class FingerprintDiffEngine:
                 was_transcoded=(source_ext != ipod_ext),
                 source_path_hint=pc_track.relative_path,
                 art_hash=pc_track.art_hash,
+                source_hash=source_hash,
             )
             added += 1
 
@@ -1672,17 +1762,42 @@ class FingerprintDiffEngine:
     def _source_file_changed(self, pc_track: PCTrack, mapping: TrackMapping) -> bool:
         """Check if the source file has changed since last sync.
 
-        Uses size+mtime as a fast gate.
+        Uses size/mtime as a fast gate, then source content hashes when
+        available.  MP4-family source files are special: tag/art edits can
+        rewrite container metadata and change file size without changing the
+        audio payload, so old mappings without a content hash do not treat MP4
+        container churn as an audio-file replacement.
         """
-        # Significant size change (>10 KB or >1% of file size)
         size_diff = abs(pc_track.size - mapping.source_size)
+        mtime_changed = pc_track.mtime != mapping.source_mtime
+        if size_diff == 0 and not mtime_changed:
+            return False
+
+        current_hash = None
+        if mapping.source_hash:
+            try:
+                current_hash = source_content_hash(pc_track.path)
+            except OSError:
+                current_hash = None
+            if current_hash:
+                return current_hash != mapping.source_hash
+
+        source_ext = (pc_track.extension or Path(pc_track.path).suffix).lower()
+        if source_ext in _MP4_CONTAINER_EXTS:
+            logger.debug(
+                "Ignoring MP4-family container size/mtime change without stored source hash: %s",
+                pc_track.filename,
+            )
+            return False
+
+        # Significant size change (>10 KB or >1% of file size)
         size_pct = size_diff / max(mapping.source_size, 1)
 
         if size_diff > 10_240 or size_pct > 0.01:
             return True
 
         # mtime changed AND size changed (rules out metadata-only tag edits)
-        if pc_track.mtime != mapping.source_mtime and size_diff > 0:
+        if mtime_changed and size_diff > 0:
             return True
 
         return False

@@ -1376,6 +1376,7 @@ def transcode(
     *,
     prefer_lossy: bool | None = None,
     options: TranscodeOptions | None = None,
+    plan: TranscodePlan | None = None,
     is_cancelled: Callable[[], bool] | None = None,
 ) -> TranscodeResult:
     """Transcode (or copy) *source_path* into *output_dir*.
@@ -1394,12 +1395,13 @@ def transcode(
             error_message=f"Source file not found: {source_path}",
         )
 
-    plan = resolve_transcode_plan(
-        source_path,
-        aac_quality=aac_quality,
-        prefer_lossy=prefer_lossy,
-        options=options,
-    )
+    if plan is None:
+        plan = resolve_transcode_plan(
+            source_path,
+            aac_quality=aac_quality,
+            prefer_lossy=prefer_lossy,
+            options=options,
+        )
     target = plan.target
     base_name = output_filename or source_path.stem
 

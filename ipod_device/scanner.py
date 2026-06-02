@@ -136,6 +136,14 @@ def _get_disk_info(drive_path: str) -> tuple[float, float]:
         return 0.0, 0.0
 
 
+def _canonical_mount_path(path: str) -> str:
+    """Return a stable path identity for mount alias detection."""
+    try:
+        return os.path.realpath(path)
+    except OSError:
+        return os.path.abspath(path)
+
+
 def _find_ipod_volumes() -> list[tuple[str, str]]:
     """
     Find mounted volumes that contain an iPod_Control directory.
@@ -172,8 +180,8 @@ def _find_ipod_volumes() -> list[tuple[str, str]]:
         import getpass
         user = getpass.getuser()
         search_dirs = [
-            f"/media/{user}",
             f"/run/media/{user}",
+            f"/media/{user}",
             "/mnt",
         ]
         # Also check /media/* for distros that mount directly under /media
@@ -196,9 +204,10 @@ def _find_ipod_volumes() -> list[tuple[str, str]]:
                 continue
             for name in entries:
                 vol_path = os.path.join(search_dir, name)
-                if vol_path in seen or not os.path.isdir(vol_path):
+                canonical_path = _canonical_mount_path(vol_path)
+                if canonical_path in seen or not os.path.isdir(vol_path):
                     continue
-                seen.add(vol_path)
+                seen.add(canonical_path)
                 try:
                     if _has_ipod_control(vol_path):
                         candidates.append((vol_path, name))
@@ -212,6 +221,60 @@ def _find_ipod_volumes() -> list[tuple[str, str]]:
         ", ".join(display for _path, display in candidates) or "none",
     )
     return candidates
+
+
+def _identity_dedup_key(ipod: DeviceInfo) -> tuple[str, str] | None:
+    """Return a strong duplicate key for one physical device, if available."""
+    try:
+        from .sysinfo import normalize_guid
+    except Exception:
+        normalize_guid = None
+
+    for field in ("firewire_guid", "usb_serial"):
+        value = getattr(ipod, field, "")
+        normalized = (
+            normalize_guid(value)
+            if normalize_guid is not None
+            else str(value or "").strip().upper()
+        )
+        if normalized:
+            return "guid", normalized
+
+    serial = str(getattr(ipod, "serial", "") or "").strip().upper()
+    if serial:
+        return "serial", serial
+
+    path = str(getattr(ipod, "path", "") or "")
+    if path:
+        return "path", _canonical_mount_path(path)
+
+    return None
+
+
+def _deduplicate_ipods(ipods: list[DeviceInfo]) -> list[DeviceInfo]:
+    """Collapse duplicate mount aliases that identify as the same iPod."""
+    deduped: list[DeviceInfo] = []
+    seen: dict[tuple[str, str], DeviceInfo] = {}
+    for ipod in ipods:
+        key = _identity_dedup_key(ipod)
+        if key is None:
+            deduped.append(ipod)
+            continue
+
+        existing = seen.get(key)
+        if existing is not None:
+            logger.debug(
+                "Skipping duplicate iPod mount alias: kept=%s skipped=%s key=%s:%s",
+                existing.path,
+                ipod.path,
+                key[0],
+                key[1],
+            )
+            continue
+
+        seen[key] = ipod
+        deduped.append(ipod)
+    return deduped
 
 
 # ── macOS: BSD name → USB serial mapping via ioreg text parsing ────────
@@ -2515,6 +2578,14 @@ def scan_for_ipods() -> list[DeviceInfo]:
         candidates = _find_ipod_volumes()
         for mount_path, display_name in candidates:
             ipods.append(_identify_ipod_mount(mount_path, display_name))
+        deduped_ipods = _deduplicate_ipods(ipods)
+        if len(deduped_ipods) != len(ipods):
+            logger.info(
+                "Deduplicated iPod scan results: before=%d after=%d",
+                len(ipods),
+                len(deduped_ipods),
+            )
+        ipods = deduped_ipods
     finally:
         # Clear the macOS ioreg caches so they're fresh on the next rescan.
         _clear_macos_usb_cache()

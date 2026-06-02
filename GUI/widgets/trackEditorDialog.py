@@ -658,7 +658,7 @@ _FIELD_HELP = {
     "last_skipped": "Last skip time. Stored as a Unix timestamp and shown here as local date/time.",
     "date_added_to_itunes": "Original iTunes add date. Stored as a Unix timestamp and shown here as local date/time.",
     "play_count_1": "Main play count stored in iTunesDB after Play Counts deltas are merged.",
-    "play_count_2": "Transient play count slot that is reset by the writer.",
+    "play_count_2": "Transient iPod play delta slot used for scrobbling; cleared after sync.",
     "app_rating": "Application-computed/backup rating slot used by libgpod conventions.",
     "store_track_id": "iTunes Store content identifier preserved from the database.",
     "store_encoder_version": "iTunes Store encoder/version metadata preserved from the database.",
@@ -672,7 +672,7 @@ _READ_ONLY_REASON_BY_KEY = {
     "Location": "the database path must match the actual file on the iPod",
     "filetype": "changing the codec marker without changing the file can make the track unplayable",
     "visible": "the writer currently always emits visible tracks",
-    "play_count_2": "this slot is transient and reset during writes",
+    "play_count_2": "this slot is transient and cleared after play-count sync",
     "has_artwork": "it is derived from ArtworkDB entries",
 }
 

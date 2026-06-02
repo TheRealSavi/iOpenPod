@@ -16,10 +16,12 @@ Cache structure:
   files/     — Actual transcoded files, named by cache identity hash
 
 Change detection (layered, fastest first):
-  1. Source file size differs         → immediately invalid, no IO needed
-  2. Source file mtime changed        → compute SHA-256 to confirm
-  3. SHA-256 hash matches stored hash → still valid (e.g. copy with same content)
-  4. SHA-256 differs                  → invalidate and retranscode
+  1. Source identity differs          → invalid for this source
+  2. Cached file is missing           → prune index entry
+  3. Source file size differs         → invalid unless content hash matches
+  4. Source mtime changed             → recompute content hash to confirm
+  5. Content hash matches stored hash → still valid (e.g. M4A tag-only edit)
+  6. Content hash differs             → invalidate and retranscode
 
 LRU eviction:
   When a new file would push the cache past max_cache_size_gb, the least-recently-
@@ -37,6 +39,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Optional
 
+from .source_identity import hash_source_file, source_content_identity
+
 logger = logging.getLogger(__name__)
 
 # Default cache location (XDG-aware on Linux)
@@ -51,21 +55,6 @@ def _resolve_default_cache_dir() -> Path:
 
 
 DEFAULT_CACHE_DIR = _resolve_default_cache_dir()
-
-
-# ── Helpers ──────────────────────────────────────────────────────────────────
-
-def hash_source_file(path: str | Path) -> str:
-    """Return the SHA-256 hex digest of a file's full content.
-
-    Reads in 64 KB chunks to keep memory usage flat on large files.
-    Typical cost: ~100–300 ms for a 30–100 MB FLAC on spinning disk.
-    """
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(65_536), b""):
-            h.update(chunk)
-    return h.hexdigest()
 
 
 # ── Data classes ─────────────────────────────────────────────────────────────
@@ -397,8 +386,8 @@ class TranscodeCache:
         Validation layers (fastest → most expensive):
           1. Index miss          → None immediately
           2. File missing on disk→ prune index entry, return None
-          3. Size mismatch       → invalidate, return None
-          4. mtime changed       → recompute SHA-256 to confirm content change
+          3. Size mismatch       → invalidate unless content hash matches
+          4. mtime changed       → recompute content hash to confirm change
           5. Hash mismatch       → invalidate, return None
           6. All checks pass     → update ``last_accessed``, return path
         """
@@ -437,17 +426,32 @@ class TranscodeCache:
                 self._save_index()
                 return None
 
-            # Layer 3: size
+            same_source_hash = bool(
+                source_hash
+                and cached.source_hash
+                and cached.source_hash == source_hash
+            )
+
+            # Layer 3: size.  A metadata-insensitive source hash match wins over
+            # container size changes (for example M4A tag/art edits).
             if source_size is not None and cached.source_size != source_size:
-                logger.debug("Source size changed (%d → %d), invalidating", cached.source_size, source_size)
-                self._invalidate_entry(
-                    fingerprint,
-                    target_format,
-                    bitrate,
-                    cached_path,
-                    cached.source_hash if cached.source_hash else source_hash,
-                )
-                return None
+                if same_source_hash:
+                    logger.debug(
+                        "Source size changed (%d → %d) but content hash matched",
+                        cached.source_size,
+                        source_size,
+                    )
+                    cached.source_size = source_size
+                else:
+                    logger.debug("Source size changed (%d → %d), invalidating", cached.source_size, source_size)
+                    self._invalidate_entry(
+                        fingerprint,
+                        target_format,
+                        bitrate,
+                        cached_path,
+                        cached.source_hash if cached.source_hash else source_hash,
+                    )
+                    return None
 
             # Layers 4–5: mtime + hash (only when source_path is provided)
             if source_path is not None:
@@ -816,16 +820,10 @@ class TranscodeCache:
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
 def _probe_source_meta(source_path: Path | None) -> tuple[str | None, float]:
-    """Return ``(sha256_hex_or_None, mtime_or_0)`` for a source file.
+    """Return ``(content_hash_or_None, mtime_or_0)`` for a source file.
 
-    Computes the full SHA-256 hash.  Returns ``(None, 0.0)`` if
-    *source_path* is None or the file cannot be read.
+    MP4-family files hash media data payloads so tag/container-only edits keep
+    cache identity.  Other formats currently use full-file SHA-256.  Returns
+    ``(None, 0.0)`` if *source_path* is None or the file cannot be read.
     """
-    if source_path is None:
-        return None, 0.0
-    try:
-        mtime = source_path.stat().st_mtime
-        sha = hash_source_file(source_path)
-        return sha, mtime
-    except OSError:
-        return None, 0.0
+    return source_content_identity(source_path)
