@@ -85,11 +85,11 @@ def _get_wasm_instance():
 
     try:
         import wasmtime
-    except ImportError:
+    except ImportError as err:
         raise ImportError(
             "wasmtime is required for HASHAB (iPod Nano 6G/7G). "
             "Install with: uv add wasmtime   or   pip install wasmtime"
-        )
+        ) from err
 
     if not _WASM_PATH.exists():
         raise FileNotFoundError(

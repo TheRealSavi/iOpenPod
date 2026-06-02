@@ -1,9 +1,10 @@
 import struct
 
+from ArtworkDB_Shared.mhod import decode_mhod_string_body, mhod_type_info
+
 
 def parse_mhod(data, offset, header_length, chunk_length) -> dict:
     from .chunk_parser import parse_chunk
-    from .constants import mhod_type_map
 
     dataObject = {}
 
@@ -21,38 +22,24 @@ def parse_mhod(data, offset, header_length, chunk_length) -> dict:
     # MHOD type 2 contain a MHNI that cotains a MHOD type 3 with a thmbnl ref
     # MHOD type 5 contain a MHNI that cotains a MHOD type 3 with a fulrez ref
 
-    if dataObject["mhodType"] not in mhod_type_map:
+    type_info = mhod_type_info(dataObject["mhodType"])
+    if type_info is None:
         return {
             "nextOffset": offset + chunk_length,
             "result": {"mhodType": dataObject["mhodType"], "_unknown": True},
         }
 
-    match mhod_type_map[dataObject["mhodType"]]["type"]:
+    match type_info["type"]:
         case "String":
             content_offset = offset + header_length
 
-            stringByteLength = struct.unpack(
-                "<I", data[content_offset: content_offset + 4])[0]
+            string_decode = decode_mhod_string_body(
+                data,
+                content_offset,
+                offset + chunk_length,
+            ) or ""
 
-            # Encoding byte at content_offset+4 (ArtworkDB_MhodHeaderString.encoding)
-            # Per libgpod db-itunes-parser.h: 0,1 = UTF-8; 2 = UTF-16-LE
-            encoding = data[content_offset + 4]
-
-            # content_offset+8: unknown (always 0)
-
-            stringContent = data[
-                content_offset + 12: content_offset + 12 + stringByteLength]
-
-            # padding would be offset+stringByteLength:offset+paddingLength
-            # but for the purposes of parsing it is not needed.
-
-            if encoding == 2:
-                string_decode = stringContent.decode("utf-16-le", errors="replace")
-            else:
-                string_decode = stringContent.decode("utf-8", errors="replace")
-
-            dataObject[mhod_type_map[dataObject["mhodType"]]
-                       ["name"]] = string_decode
+            dataObject[type_info["name"]] = string_decode
 
             return {"nextOffset": offset + chunk_length, "result": dataObject}
         case "Container":
@@ -61,8 +48,7 @@ def parse_mhod(data, offset, header_length, chunk_length) -> dict:
             next_offset = offset + header_length
             childResult = parse_chunk(data, next_offset)
 
-            dataObject[mhod_type_map[dataObject["mhodType"]]
-                       ["name"]] = childResult
+            dataObject[type_info["name"]] = childResult
 
             return {"nextOffset": offset + chunk_length, "result": dataObject}
 

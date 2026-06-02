@@ -26,6 +26,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from ArtworkDB_Shared.ithmb_paths import ithmb_filename, ithmb_filename_from_path
 from ipod_device import ITHMB_FORMAT_MAP, ArtworkFormat
 
 from .art_extractor import (
@@ -65,12 +66,11 @@ extract_art_with_folder = _extract_art_with_folder
 
 
 def _ithmb_filename(format_id: int, index: int) -> str:
-    return f"F{int(format_id)}_{int(index)}.ithmb"
+    return ithmb_filename(format_id, index)
 
 
 def _ithmb_filename_from_path(path: str, format_id: int) -> str:
-    name = (path or "").replace("\\", "/").rsplit("/", 1)[-1]
-    return name or _ithmb_filename(format_id, 1)
+    return ithmb_filename_from_path(path, format_id)
 
 
 @dataclass

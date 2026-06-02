@@ -17,6 +17,12 @@ import logging
 import numpy as np
 from PIL import Image
 
+from ArtworkDB_Shared.mhni import (
+    default_stride_pixels_for_format,
+)
+from ArtworkDB_Shared.mhni import (
+    expected_size_bytes as shared_expected_size_bytes,
+)
 from ipod_device import ITHMB_FORMAT_MAP
 
 from .artwork_types import EncodedFormatPayload
@@ -64,18 +70,7 @@ def format_dimensions(format_id: int, fallback_w: int, fallback_h: int, fmt_over
 
 def default_stride_pixels(format_id: int, width: int, fmt_override=None) -> int:
     fmt = _fmt(format_id, fmt_override)
-    if fmt is None:
-        return width
-
-    pf = fmt.pixel_format
-    if pf in ("RGB565_LE", "RGB565_BE", "RGB565_BE_90", "RGB555_LE", "RGB555_BE"):
-        return max(width, int(fmt.row_bytes // 2) if fmt.row_bytes else width)
-    if pf.startswith("REC_RGB555"):
-        return max(width, int(fmt.row_bytes // 2) if fmt.row_bytes else width)
-    if pf == "UYVY":
-        return max(width, int(fmt.row_bytes // 2) if fmt.row_bytes else width)
-
-    return width
+    return default_stride_pixels_for_format(fmt, width)
 
 
 def expected_size_bytes(
@@ -85,33 +80,13 @@ def expected_size_bytes(
     stride_pixels: int | None = None,
     fmt_override=None,
 ) -> int:
-    pf = format_pixel_format(format_id, fmt_override=fmt_override)
-    stride = stride_pixels if stride_pixels is not None else default_stride_pixels(
+    return shared_expected_size_bytes(
         format_id,
         width,
+        height,
+        stride_pixels=stride_pixels,
         fmt_override=fmt_override,
     )
-
-    if pf in (
-        "RGB565_LE",
-        "RGB565_BE",
-        "RGB565_BE_90",
-        "RGB555_LE",
-        "RGB555_BE",
-        "UYVY",
-    ) or pf.startswith("REC_RGB555"):
-        return int(stride) * int(height) * 2
-    if pf == "I420_LE":
-        w = int(width) & ~1
-        h = int(height) & ~1
-        return (w * h * 3) // 2
-    if pf == "JPEG":
-        # Variable-size payload by design.
-        return 0
-    if pf == "UNKNOWN":
-        return 0
-
-    return int(stride) * int(height) * 2
 
 
 def _rgb565_array_from_image(img: Image.Image) -> np.ndarray:

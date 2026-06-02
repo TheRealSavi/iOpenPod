@@ -197,11 +197,11 @@ def _hash_generate(sha1: bytes, iv: bytes, rndpart: bytes) -> bytes:
     except ImportError:
         try:
             from Cryptodome.Cipher import AES  # type: ignore[import-not-found]
-        except ImportError:
+        except ImportError as err:
             raise ImportError(
                 "PyCryptodome is required for HASH72. "
                 "Install with: pip install pycryptodome"
-            )
+            ) from err
 
     # Plaintext: sha1 (20 bytes) + rndpart (12 bytes) = 32 bytes
     plaintext = sha1 + rndpart
@@ -258,11 +258,11 @@ def _hash_extract(signature: bytes, sha1: bytes) -> tuple | None:
     except ImportError:
         try:
             from Cryptodome.Cipher import AES  # type: ignore[import-not-found]
-        except ImportError:
+        except ImportError as err:
             raise ImportError(
                 "PyCryptodome is required for HASH72. "
                 "Install with: pip install pycryptodome"
-            )
+            ) from err
 
     if len(signature) < 46 or signature[0] != 0x01 or signature[1] != 0x00:
         return None
