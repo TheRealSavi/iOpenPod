@@ -6,7 +6,7 @@ The executor takes a SyncPlan (from FingerprintDiffEngine) and:
 2. Removes deleted tracks from iPod
 3. Updates metadata for changed tracks
 4. Re-copies files that changed on PC
-5. Records play counts from iPod, scrobbles to ListenBrainz
+5. Records play counts from iPod, scrobbles to ListenBrainz/Last.fm
 6. Builds a final list[TrackInfo] and calls write_itunesdb() ONCE
 
 The database is always fully rewritten (not patched incrementally).
@@ -149,6 +149,10 @@ class _SyncContext:
     scrobble_on_sync: bool = False
     listenbrainz_token: str = ""
     listenbrainz_username: str = ""
+    lastfm_api_key: str = ""
+    lastfm_api_secret: str = ""
+    lastfm_session_key: str = ""
+    lastfm_username: str = ""
     _is_scrobble_cancelled: Callable[[], bool] | None = None
 
     # ── Result accumulator ──────────────────────────────────────────
@@ -304,6 +308,11 @@ class SyncExecutor:
         # Be tolerant of older callers that may still construct SyncRequest
         # without the ListenBrainz username field.
         listenbrainz_username = getattr(request, "listenbrainz_username", "")
+        lastfm_api_key = getattr(request, "lastfm_api_key", "")
+        lastfm_api_secret = getattr(request, "lastfm_api_secret", "")
+        lastfm_session_key = getattr(request, "lastfm_session_key", "")
+        lastfm_username = getattr(request, "lastfm_username", "")
+        
         return self.execute(
             plan=request.plan,
             mapping=request.mapping,
@@ -317,6 +326,10 @@ class SyncExecutor:
             scrobble_on_sync=request.scrobble_on_sync,
             listenbrainz_token=request.listenbrainz_token,
             listenbrainz_username=listenbrainz_username,
+            lastfm_api_key=lastfm_api_key,
+            lastfm_api_secret=lastfm_api_secret,
+            lastfm_session_key=lastfm_session_key,
+            lastfm_username=lastfm_username,
             is_scrobble_cancelled=request.is_scrobble_cancelled,
             on_cancel_with_partial=request.on_cancel_with_partial,
         )
@@ -336,6 +349,10 @@ class SyncExecutor:
         scrobble_on_sync: bool = False,
         listenbrainz_token: str = "",
         listenbrainz_username: str = "",
+        lastfm_api_key: str = "",
+        lastfm_api_secret: str = "",
+        lastfm_session_key: str = "",
+        lastfm_username: str = "",
         is_scrobble_cancelled: Callable[[], bool] | None = None,
         on_cancel_with_partial: Callable[[int, int], bool] | None = None,
     ) -> SyncOutcome:
@@ -363,6 +380,10 @@ class SyncExecutor:
             scrobble_on_sync=scrobble_on_sync,
             listenbrainz_token=listenbrainz_token,
             listenbrainz_username=listenbrainz_username,
+            lastfm_api_key=lastfm_api_key,
+            lastfm_api_secret=lastfm_api_secret,
+            lastfm_session_key=lastfm_session_key,
+            lastfm_username=lastfm_username,
             _is_scrobble_cancelled=is_scrobble_cancelled,
         )
 
@@ -2010,22 +2031,24 @@ class SyncExecutor:
             ctx.result.playcounts_synced += 1
 
     def _execute_scrobble(self, ctx: _SyncContext) -> bool:
-        """Submit new plays to ListenBrainz.
-
+        """Submit new plays to ListenBrainz/Last.fm).
         Returns True when no scrobble errors occurred.
         """
         if not ctx.scrobble_on_sync:
+            logger.info("Scrobbling aborted: 'Scrobble on Sync' is disabled in settings.")
             return True
 
         lb_token = ctx.listenbrainz_token
-        if not lb_token:
+        lf_session = ctx.lastfm_session_key
+        
+        if not lb_token and not lf_session:
+            logger.info("Scrobbling aborted: No service credentials found in sync context.")
             return True
 
-        ctx.progress("scrobble", 0, 1, message="Scrobbling plays...")
+        logger.info("Items to scrobble: %d", len(ctx.plan.to_sync_playcount))
+        ctx.progress("scrobble", 0, 1, message="Scrobbling plays to connected services...")
 
         try:
-            from .scrobbler import scrobble_plays
-
             def _format_elapsed(seconds: float) -> str:
                 total = max(int(seconds), 0)
                 mins, secs = divmod(total, 60)
@@ -2056,17 +2079,52 @@ class SyncExecutor:
                     return True
                 return False
 
-            scrobble_results = scrobble_plays(
-                playcount_items=ctx.plan.to_sync_playcount,
-                listenbrainz_token=lb_token,
-                listenbrainz_username=ctx.listenbrainz_username,
-                on_timeout=_on_timeout,
-                should_abort=_should_abort_scrobble,
-            )
+            scrobble_results = []
+            
+            # 1. ListenBrainz Scrobbling
+            if lb_token:
+                try:
+                    logger.info("Invoking ListenBrainz scrobbler module...")
+                    from .scrobbler import scrobble_plays as scrobble_lb
+                    lb_results = scrobble_lb(
+                        playcount_items=ctx.plan.to_sync_playcount,
+                        listenbrainz_token=lb_token,
+                        listenbrainz_username=ctx.listenbrainz_username,
+                        on_timeout=_on_timeout,
+                        should_abort=_should_abort_scrobble,
+                    )
+                    scrobble_results.extend(lb_results)
+                    logger.info("ListenBrainz scrobbler module returned %d results", len(lb_results))
+                except Exception as exc:
+                    logger.error("ListenBrainz execution failed: %s", exc, exc_info=True)
+
+            # 2. Last.fm Scrobbling
+            if lf_session:
+                try:
+                    logger.info("Invoking Last.fm scrobbler module...")
+                    from .lastfm_scrobbler import scrobble_plays as scrobble_lf
+                    lf_results = scrobble_lf(
+                        playcount_items=ctx.plan.to_sync_playcount,
+                        api_key=ctx.lastfm_api_key,
+                        api_secret=ctx.lastfm_api_secret,
+                        session_key=lf_session,
+                        on_timeout=_on_timeout,
+                        should_abort=_should_abort_scrobble,
+                    )
+                    scrobble_results.extend(lf_results)
+                    logger.info("Last.fm scrobbler module returned %d results", len(lf_results))
+                except Exception as exc:
+                    logger.error("Last.fm execution failed: %s", exc, exc_info=True)
 
             total_accepted = 0
             gave_up = False
             scrobble_errors: list[str] = []
+            
+            services_attempted = []
+            if lb_token: services_attempted.append("ListenBrainz")
+            if lf_session: services_attempted.append("Last.fm")
+            services_str = " and ".join(services_attempted)
+
             for sr in scrobble_results:
                 total_accepted += sr.accepted
                 for err in sr.errors:
@@ -2084,7 +2142,7 @@ class SyncExecutor:
                     1,
                     1,
                     message=(
-                        "Stopped retrying ListenBrainz. "
+                        "Stopped retrying scrobble. "
                         "Your sync is complete, but those plays were not submitted."
                     ),
                 )
@@ -2096,7 +2154,7 @@ class SyncExecutor:
                         1,
                         message=(
                             f"Submitted {total_accepted} play"
-                            f"{'s' if total_accepted != 1 else ''} to ListenBrainz, "
+                            f"{'s' if total_accepted != 1 else ''} to {services_str}, "
                             f"with {len(scrobble_errors)} follow-up issue"
                             f"{'s' if len(scrobble_errors) != 1 else ''}."
                         ),
@@ -2106,7 +2164,7 @@ class SyncExecutor:
                         "scrobble",
                         1,
                         1,
-                        message="ListenBrainz did not accept any plays from this sync.",
+                        message=f"{services_str} did not accept any plays from this sync.",
                     )
             else:
                 ctx.progress(
@@ -2116,7 +2174,7 @@ class SyncExecutor:
                     message=(
                         f"Submitted {ctx.result.scrobbles_submitted} play"
                         f"{'s' if ctx.result.scrobbles_submitted != 1 else ''} "
-                        "to ListenBrainz."
+                        f"to {services_str}."
                     ),
                 )
 
@@ -2125,13 +2183,13 @@ class SyncExecutor:
             return not scrobble_errors
 
         except Exception as exc:
-            logger.warning("Scrobbling failed (non-fatal): %s", exc)
+            logger.error("Scrobbling orchestrator failed (non-fatal): %s", exc, exc_info=True)
             ctx.result.errors.append(("scrobble", str(exc)))
             ctx.progress(
                 "scrobble",
                 1,
                 1,
-                message="ListenBrainz did not accept any plays from this sync.",
+                message="Connected services did not accept any plays from this sync.",
             )
             return False
 
