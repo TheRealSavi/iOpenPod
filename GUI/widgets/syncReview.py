@@ -2154,7 +2154,7 @@ class SyncReviewWidget(QWidget):
             lines.append(f"<span style='color: {Colors.INFO};'>Recorded play counts for {playcounts} track{'s' if playcounts != 1 else ''}</span>")
         scrobbles = getattr(result, 'scrobbles_submitted', 0)
         if scrobbles:
-            lines.append(f"<span style='color: {Colors.INFO};'>Scrobbled {scrobbles} play{'s' if scrobbles != 1 else ''} to ListenBrainz</span>")
+            lines.append(f"<span style='color: {Colors.INFO};'>Scrobbled {scrobbles} play{'s' if scrobbles != 1 else ''} to ListenBrainz/Last.fm</span>")
         if ratings:
             lines.append(f"<span style='color: {Colors.WARNING};'>Synced ratings for {ratings} track{'s' if ratings != 1 else ''}</span>")
         if photos_added:
