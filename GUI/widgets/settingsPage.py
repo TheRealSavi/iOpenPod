@@ -6,10 +6,16 @@ on the left, scrollable card-based content on the right.
 """
 from __future__ import annotations
 
+import hashlib
+import json
+import threading
+import urllib.error
+import urllib.parse
+import urllib.request
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from PyQt6.QtCore import Qt, QUrl, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import Qt, QTimer, QUrl, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QDesktopServices, QFont
 from PyQt6.QtWidgets import (
     QCheckBox,
@@ -746,6 +752,285 @@ class _TokenRow(SettingRow):
         self.token_changed.emit("")
 
 
+def _sign_lastfm_params(params: dict[str, str], secret: str) -> str:
+    """Generate an MD5 API signature for Last.fm API requests."""
+    keys = sorted(k for k in params.keys() if k not in ("format", "callback"))
+    string_to_sign = "".join(f"{k}{params[k]}" for k in keys) + secret
+    return hashlib.md5(string_to_sign.encode("utf-8")).hexdigest()
+
+class _LastFmAuthRow(SettingRow):
+    """Setting row with Last.fm inputs, automatic browser auth, and status."""
+
+    credentials_changed = pyqtSignal(str, str, str, str)
+
+    _token_fetched_sig = pyqtSignal(str)
+    _token_error_sig = pyqtSignal(str)
+    _session_success_sig = pyqtSignal(str, str)
+    _session_waiting_sig = pyqtSignal()
+    _session_error_sig = pyqtSignal(str)
+
+    def __init__(self, title: str, description: str = "", link_url: str = ""):
+        super().__init__(title, description)
+
+        self._polling_timer = QTimer(self)
+        self._polling_timer.setInterval(3000)
+        self._polling_timer.timeout.connect(self._poll_session)
+        self._current_token = ""
+        self._is_polling = False
+
+        self._token_fetched_sig.connect(self._on_token_fetched)
+        self._token_error_sig.connect(self._on_token_error)
+        self._session_success_sig.connect(self._on_session_success)
+        self._session_waiting_sig.connect(self._on_session_waiting)
+        self._session_error_sig.connect(self._on_session_error)
+
+        if link_url:
+            link_btn = QPushButton("Get API keys ↗")
+            link_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+            link_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            link_btn.setStyleSheet(link_btn_css())
+            link_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(link_url)))
+            self._text_layout.addWidget(link_btn)
+
+        right_layout = QVBoxLayout()
+        right_layout.setSpacing(8)
+        right_layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight)
+
+        self.status_label = QLabel("")
+        self.status_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        self.status_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        right_layout.addWidget(self.status_label)
+
+        row_layout = QHBoxLayout()
+        row_layout.setAlignment(Qt.AlignmentFlag.AlignRight)
+        row_layout.setSpacing(8)
+
+        # Inputs container
+        self.inputs_widget = QWidget()
+        inputs_layout = QHBoxLayout(self.inputs_widget)
+        inputs_layout.setContentsMargins(0, 0, 0, 0)
+        inputs_layout.setSpacing(8)
+
+        self.api_key_input = QLineEdit()
+        self.api_key_input.setPlaceholderText("API Key")
+        self.api_key_input.setFixedWidth(220)
+        self.api_key_input.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        self.api_key_input.setStyleSheet(input_css())
+        inputs_layout.addWidget(self.api_key_input)
+
+        self.api_secret_input = QLineEdit()
+        self.api_secret_input.setPlaceholderText("API Secret")
+        self.api_secret_input.setFixedWidth(220)
+        self.api_secret_input.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        self.api_secret_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.api_secret_input.setStyleSheet(input_css())
+        inputs_layout.addWidget(self.api_secret_input)
+
+        row_layout.addWidget(self.inputs_widget)
+
+        # Buttons
+        self.connect_btn = QPushButton("Connect")
+        self.connect_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        self.connect_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.connect_btn.setStyleSheet(btn_css(
+            bg=Colors.ACCENT, bg_hover=Colors.ACCENT_LIGHT, bg_press=Colors.ACCENT,
+            fg=Colors.TEXT_ON_ACCENT, border="none", padding="4px 12px"
+        ))
+        self.connect_btn.clicked.connect(self._start_auth_flow)
+        row_layout.addWidget(self.connect_btn)
+
+        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        self.cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.cancel_btn.setStyleSheet(btn_css(
+            bg="transparent", bg_hover=Colors.SURFACE_ACTIVE, bg_press=Colors.SURFACE_ALT,
+            fg=Colors.TEXT_TERTIARY, border="none", padding="4px 8px"
+        ))
+        self.cancel_btn.clicked.connect(self._cancel_auth)
+        self.cancel_btn.hide()
+        row_layout.addWidget(self.cancel_btn)
+
+        self.clear_btn = QPushButton("✕ Disconnect")
+        self.clear_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        self.clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.clear_btn.setStyleSheet(btn_css(
+            bg="transparent", bg_hover=Colors.SURFACE_ACTIVE, bg_press=Colors.SURFACE_ALT,
+            fg=Colors.TEXT_TERTIARY, border="none", padding="4px 8px"
+        ))
+        self.clear_btn.clicked.connect(self._on_clear)
+        self.clear_btn.hide()
+        row_layout.addWidget(self.clear_btn)
+
+        right_layout.addLayout(row_layout)
+
+        container = QWidget()
+        container.setLayout(right_layout)
+        self.add_control(container)
+
+    def set_connected(self, username: str):
+        self.status_label.setText(f"✓ Connected as {username}")
+        self.status_label.setStyleSheet(f"color: {Colors.SUCCESS}; background: transparent; border: none;")
+        self.inputs_widget.hide()
+        self.connect_btn.hide()
+        self.cancel_btn.hide()
+        self.clear_btn.show()
+        self._polling_timer.stop()
+
+    def set_disconnected(self, api_key: str = "", api_secret: str = ""):
+        self.status_label.setText("")
+        if api_key: 
+            self.api_key_input.setText(api_key)
+        if api_secret: 
+            self.api_secret_input.setText(api_secret)
+        self.api_key_input.setEnabled(True)
+        self.api_secret_input.setEnabled(True)
+        self.inputs_widget.show()
+        self.connect_btn.show()
+        self.connect_btn.setEnabled(True)
+        self.cancel_btn.hide()
+        self.clear_btn.hide()
+        self._polling_timer.stop()
+
+    def set_error(self, message: str):
+        self.status_label.setText(f"✗ {message}")
+        self.status_label.setStyleSheet(f"color: {Colors.WARNING}; background: transparent; border: none;")
+
+    def _start_auth_flow(self):
+        api_key = self.api_key_input.text().strip()
+        api_secret = self.api_secret_input.text().strip()
+        
+        if not api_key or not api_secret:
+            self.set_error("API Key and Secret required")
+            return
+
+        self.status_label.setText("Fetching token...")
+        self.status_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
+        self.api_key_input.setEnabled(False)
+        self.api_secret_input.setEnabled(False)
+        self.connect_btn.hide()
+        self.cancel_btn.show()
+
+        def _fetch_task():
+            try:
+                params = {"method": "auth.getToken", "api_key": api_key}
+                params["api_sig"] = _sign_lastfm_params(params, api_secret)
+                params["format"] = "json"
+                url = "https://ws.audioscrobbler.com/2.0/?" + urllib.parse.urlencode(params)
+                with urllib.request.urlopen(url, timeout=10) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    self._token_fetched_sig.emit(data["token"])
+            except Exception as e:
+                self._token_error_sig.emit(str(e))
+        
+        threading.Thread(target=_fetch_task, daemon=True).start()
+
+    @pyqtSlot(str)
+    def _on_token_fetched(self, token: str):
+        if not self.cancel_btn.isVisible():
+            return
+        self._current_token = token
+        api_key = self.api_key_input.text().strip()
+        auth_url = f"http://www.last.fm/api/auth/?api_key={api_key}&token={token}"
+        QDesktopServices.openUrl(QUrl(auth_url))
+        
+        self.status_label.setText("Waiting for browser approval...")
+        self.status_label.setStyleSheet(f"color: {Colors.ACCENT}; background: transparent; border: none;")
+        self._is_polling = False
+        self._polling_timer.start()
+
+    @pyqtSlot(str)
+    def _on_token_error(self, err: str):
+        if not self.cancel_btn.isVisible():
+            return
+        self.set_error(f"Token fetch failed: {err}")
+        self.cancel_btn.hide()
+        self.connect_btn.show()
+        self.api_key_input.setEnabled(True)
+        self.api_secret_input.setEnabled(True)
+
+    def _poll_session(self):
+        if self._is_polling:
+            return
+        self._is_polling = True
+        
+        api_key = self.api_key_input.text().strip()
+        api_secret = self.api_secret_input.text().strip()
+        token = self._current_token
+
+        def _poll_task():
+            try:
+                params = {"method": "auth.getSession", "api_key": api_key, "token": token}
+                params["api_sig"] = _sign_lastfm_params(params, api_secret)
+                params["format"] = "json"
+                url = "https://ws.audioscrobbler.com/2.0/?" + urllib.parse.urlencode(params)
+                with urllib.request.urlopen(url, timeout=10) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    # THE FIX: We are now grabbing "name" from the JSON and emitting both!
+                    self._session_success_sig.emit(data["session"]["key"], data["session"]["name"])
+            except urllib.error.HTTPError as e:
+                body = e.read().decode("utf-8", errors="replace")
+                try:
+                    err_data = json.loads(body)
+                    if err_data.get("error") == 14:
+                        # Error 14: This token has not been authorized
+                        self._session_waiting_sig.emit()
+                        return
+                except Exception:
+                    pass
+                self._session_error_sig.emit(f"HTTP {e.code}")
+            except Exception as e:
+                self._session_error_sig.emit(str(e))
+
+        threading.Thread(target=_poll_task, daemon=True).start()
+
+    @pyqtSlot(str, str)
+    def _on_session_success(self, session_key: str, username: str):
+        if not self.cancel_btn.isVisible():
+            return
+        self._polling_timer.stop()
+        self._is_polling = False
+        
+        api_key = self.api_key_input.text().strip()
+        api_secret = self.api_secret_input.text().strip()
+        self.cancel_btn.hide() 
+        
+        # Emit all 4 arguments here!
+        self.credentials_changed.emit(api_key, api_secret, session_key, username)
+
+    @pyqtSlot()
+    def _on_session_waiting(self):
+        if not self.cancel_btn.isVisible():
+            return
+        self._is_polling = False
+        
+    @pyqtSlot(str)
+    def _on_session_error(self, err: str):
+        if not self.cancel_btn.isVisible():
+            return
+        self._polling_timer.stop()
+        self._is_polling = False
+        self.set_error(f"Auth failed: {err}")
+        self.cancel_btn.hide()
+        self.connect_btn.show()
+        self.api_key_input.setEnabled(True)
+        self.api_secret_input.setEnabled(True)
+
+    def _cancel_auth(self):
+        self._polling_timer.stop()
+        self._is_polling = False
+        self.status_label.setText("Canceled")
+        self.status_label.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent; border: none;")
+        self.cancel_btn.hide()
+        self.connect_btn.show()
+        self.api_key_input.setEnabled(True)
+        self.api_secret_input.setEnabled(True)
+
+    def _on_clear(self):
+        self.set_disconnected()
+        self.credentials_changed.emit("", "", "", "")
+
+
 # ── Card container ──────────────────────────────────────────────────────────
 
 class _CacheSizeRow(SettingRow):
@@ -891,6 +1176,7 @@ class SettingsPage(QWidget):
         self._settings_service = settings_service
         self._device_sessions = device_sessions
         self._pending_lb_result: tuple[str, str, str, str, str, bool] = ("", "", "global", "", "", False)
+        self._pending_lastfm_result: tuple[str, str, str, str, str, str, str, bool] = ("", "", "", "", "global", "", "", False)
         self._update_checker: object | None = None
         self._update_downloader: object | None = None
         self._update_progress: QProgressDialog | None = None
@@ -1497,8 +1783,8 @@ class SettingsPage(QWidget):
     def _build_scrobbling_page(self) -> QScrollArea:
         self.scrobble_on_sync = ToggleRow(
             "Scrobble on Sync",
-            "Automatically scrobble new iPod plays to ListenBrainz when "
-            "you sync. Requires ListenBrainz to be connected below.",
+            "Automatically scrobble new iPod plays to connected services when "
+            "you sync.",
             checked=True,
         )
         self.listenbrainz_token_row = _TokenRow(
@@ -1511,11 +1797,26 @@ class SettingsPage(QWidget):
             self._on_listenbrainz_token_changed
         )
 
+        self.lastfm_auth_row = _LastFmAuthRow(
+            "Last.fm",
+            "Connect your Last.fm account to scrobble iPod plays. "
+            "You will need to provide your Last.fm API Key and API Secret.",
+            link_url="https://www.last.fm/api/account/create",
+        )
+        self.lastfm_auth_row.credentials_changed.connect(
+            self._on_lastfm_credentials_changed
+        )
+
         return self._make_page(
             "Scrobbling",
+            "General",
             _SettingsCard(
                 self.scrobble_on_sync,
+            ),
+            "Services",
+            _SettingsCard(
                 self.listenbrainz_token_row,
+                self.lastfm_auth_row,
             ),
         )
 
@@ -1678,6 +1979,7 @@ class SettingsPage(QWidget):
             self.device_write_workers,
             self.scrobble_on_sync,
             self.listenbrainz_token_row,
+            self.lastfm_auth_row,
             self.backup_before_sync,
         ]
         for row in rows:
@@ -1698,6 +2000,7 @@ class SettingsPage(QWidget):
             self.video_crf, self.video_preset, self.sync_workers,
             self.device_write_workers,
             self.scrobble_on_sync, self.listenbrainz_token_row,
+            self.lastfm_auth_row,
             self.backup_before_sync,
         ]
 
@@ -1801,10 +2104,16 @@ class SettingsPage(QWidget):
 
         # Scrobbling
         self.scrobble_on_sync.value = s.scrobble_on_sync
+        
         if s.listenbrainz_token and s.listenbrainz_username:
             self.listenbrainz_token_row.set_connected(s.listenbrainz_username)
         else:
             self.listenbrainz_token_row.set_disconnected()
+            
+        if s.lastfm_session_key and s.lastfm_username:
+            self.lastfm_auth_row.set_connected(s.lastfm_username)
+        else:
+            self.lastfm_auth_row.set_disconnected(s.lastfm_api_key, s.lastfm_api_secret)
 
         self.show_art.value = s.show_art_in_tracklist
         self.rounded_artwork.value = s.rounded_artwork
@@ -2684,7 +2993,7 @@ class SettingsPage(QWidget):
         self.fpcalc_tool.download_btn.setEnabled(True)
         self.fpcalc_tool.download_btn.setText("Download")
 
-    # ── Scrobbling handlers ──────────────────────────────────────────────
+    # ── ListenBrainz Scrobbling handlers ───────────────────────────────────
 
     def _save_listenbrainz_credentials(
         self,
@@ -2787,3 +3096,103 @@ class SettingsPage(QWidget):
         )
 
         self.listenbrainz_token_row.set_connected(username)
+
+    # ── Last.fm Scrobbling handlers ────────────────────────────────────────
+
+    def _save_lastfm_credentials(
+        self,
+        api_key: str,
+        api_secret: str,
+        session_key: str,
+        username: str,
+        scope: str | None = None,
+        root: str | None = None,
+        key: str | None = None,
+        use_global: bool | None = None,
+    ) -> None:
+        if scope is None:
+            ctx = self._current_device_context() if self._settings_scope == "device" else None
+            if ctx:
+                root, key = ctx
+                scope = "device"
+            else:
+                scope = "global"
+
+        if scope == "device" and root and key:
+            state = self._settings_service.get_device_settings_for_edit(root, key)
+            s = state.settings
+            s.lastfm_api_key = api_key
+            s.lastfm_api_secret = api_secret
+            s.lastfm_session_key = session_key
+            s.lastfm_username = username
+            self._settings_service.save_device_settings(
+                root,
+                s,
+                use_global_settings=self.use_global_settings.value if use_global is None else use_global,
+                device_key=key,
+            )
+            return
+
+        s = self._settings_service.get_global_settings()
+        s.lastfm_api_key = api_key
+        s.lastfm_api_secret = api_secret
+        s.lastfm_session_key = session_key
+        s.lastfm_username = username
+        self._settings_service.save_global_settings(s)
+
+    def _on_lastfm_credentials_changed(self, api_key: str, api_secret: str, session_key: str, username: str):
+        """Handle Last.fm credentials save/clear."""
+        # If session_key is empty, the user clicked "Disconnect"
+        if not session_key:
+            # We still save the API key & secret so they don't have to type them again later
+            self._save_lastfm_credentials(api_key, api_secret, "", "")
+            self.lastfm_auth_row.set_disconnected(api_key, api_secret)
+            return
+
+        ctx = self._current_device_context() if self._settings_scope == "device" else None
+        if ctx:
+            root, key = ctx
+            scope = "device"
+            use_global = self.use_global_settings.value
+        else:
+            root, key = "", ""
+            scope = "global"
+            use_global = False
+
+        # Save the successfully fetched session key and username
+        self._save_lastfm_credentials(
+            api_key,
+            api_secret,
+            session_key,
+            username,
+            scope=scope,
+            root=root,
+            key=key,
+            use_global=use_global,
+        )
+        self.lastfm_auth_row.set_connected(username)
+
+    @pyqtSlot()
+    def _on_lastfm_validate_result(self):
+        """Called on main thread after Last.fm session validation."""
+        pending = self._pending_lastfm_result
+        api_key, api_secret, session_key, username, scope, root, key, use_global = pending
+        self.lastfm_auth_row.save_btn.setEnabled(True)
+        self.lastfm_auth_row.save_btn.setText("Connect")
+
+        if not username:
+            self.lastfm_auth_row.set_error("Invalid session or credentials")
+            return
+
+        self._save_lastfm_credentials(
+            api_key,
+            api_secret,
+            session_key,
+            username,
+            scope=scope,
+            root=root,
+            key=key,
+            use_global=use_global,
+        )
+
+        self.lastfm_auth_row.set_connected(username)

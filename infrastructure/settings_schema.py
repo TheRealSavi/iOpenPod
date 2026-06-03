@@ -35,9 +35,13 @@ DEVICE_SETTING_KEYS = (
     "scrobble_on_sync",
     "listenbrainz_token",
     "listenbrainz_username",
+    "lastfm_api_key",
+    "lastfm_api_secret",
+    "lastfm_session_key",
+    "lastfm_username",
     "backup_before_sync",
 )
-DEVICE_SECRET_KEYS = {"listenbrainz_token"}
+DEVICE_SECRET_KEYS = {"listenbrainz_token", "lastfm_api_key", "lastfm_api_secret", "lastfm_session_key"}
 
 
 @dataclass
@@ -99,6 +103,11 @@ class AppSettings:
     scrobble_on_sync: bool = True
     listenbrainz_token: str = ""
     listenbrainz_username: str = ""
+
+    lastfm_api_key: str = ""
+    lastfm_api_secret: str = ""
+    lastfm_session_key: str = ""
+    lastfm_username: str = ""
 
     backup_before_sync: bool = True
     max_backups: int = 10
