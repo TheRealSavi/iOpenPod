@@ -56,7 +56,7 @@ def test_scan_skips_appledouble_sidecars(tmp_path, monkeypatch):
 
     monkeypatch.setattr(pc_library_module, "MUTAGEN_AVAILABLE", True)
 
-    def fake_read_track(self, file_path: Path):
+    def fake_read_track(self, file_path: Path, library_root: Path | None = None):
         return PCTrack(
             path=str(file_path),
             relative_path=file_path.name,

@@ -28,6 +28,7 @@ Play counts: additive (iPod→PC).
 """
 
 import logging
+import os
 import re
 import threading
 from collections.abc import Callable
@@ -333,7 +334,24 @@ class FingerprintDiffEngine:
         if progress_callback:
             progress_callback("scan_pc", 0, 0, "Scanning PC library...")
 
-        pc_tracks = list(self.pc_library.scan(include_video=self.supports_video))
+        # Run the scan with the same worker count as fingerprinting
+        scan_workers = min(sync_workers or (os.cpu_count() or 4), 8)
+
+        def _scan_progress(current: int, total: int, track) -> None:
+            if progress_callback:
+                progress_callback("scan_pc", current, total, track.filename)
+
+        pc_tracks = list(
+            self.pc_library.scan(
+                progress_callback=_scan_progress,
+                include_video=self.supports_video,
+                max_workers=scan_workers,
+                is_cancelled=is_cancelled,
+            )
+        )
+
+        if is_cancelled and is_cancelled():
+            return plan
 
         # Filter to only user-selected paths (selective sync mode).
         if allowed_paths is not None:
@@ -353,9 +371,7 @@ class FingerprintDiffEngine:
 
         # Parallel fingerprinting — fpcalc is a subprocess so threading
         # scales well.  Respect the user's sync_workers setting.
-        import os
-        _sw = sync_workers
-        fp_workers = min(_sw or (os.cpu_count() or 4), 8)
+        fp_workers = min(sync_workers or (os.cpu_count() or 4), 8)
 
         completed = 0
         completed_lock = threading.Lock()
