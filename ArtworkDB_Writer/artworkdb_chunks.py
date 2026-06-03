@@ -7,6 +7,28 @@ import os
 import struct
 from collections.abc import Mapping
 
+from ArtworkDB_Shared.binary import read_chunk_header, read_u16, read_u32, read_u64, total_length_is_valid
+from ArtworkDB_Shared.constants import (
+    MHFD_HEADER_SIZE,
+    MHIF_HEADER_SIZE,
+    MHII_HEADER_SIZE,
+    MHLA_HEADER_SIZE,
+    MHLF_HEADER_SIZE,
+    MHLI_HEADER_SIZE,
+    MHNI_HEADER_SIZE,
+    MHOD_HEADER_SIZE,
+    MHSD_HEADER_SIZE,
+    ArtworkDatasetType,
+    ArtworkMhodType,
+)
+from ArtworkDB_Shared.ithmb_paths import (
+    ithmb_filename,
+    ithmb_path_for_filename,
+    normalize_ithmb_filename,
+)
+from ArtworkDB_Shared.mhni import read_mhni_fields
+from ArtworkDB_Shared.mhod import decode_mhod_string_chunk, encode_mhod_string_body
+
 from .artwork_types import ArtworkEntry, ArtworkFormatPayload, ExistingFormatRef, IthmbLocation
 from .ithmb_codecs import expected_size_bytes
 
@@ -14,34 +36,18 @@ logger = logging.getLogger(__name__)
 
 IthmbLocationInput = IthmbLocation | tuple[str, int] | int | None
 
-# Header sizes (from real iPod Classic ArtworkDB)
-MHFD_HEADER_SIZE = 132
-MHSD_HEADER_SIZE = 96
-MHLI_HEADER_SIZE = 92
-MHLA_HEADER_SIZE = 92
-MHLF_HEADER_SIZE = 92
-MHII_HEADER_SIZE = 152
-MHOD_HEADER_SIZE = 24
-MHNI_HEADER_SIZE = 76
-MHIF_HEADER_SIZE = 124
-
 
 def _default_ithmb_filename(format_id: int) -> str:
-    return f"F{int(format_id)}_1.ithmb"
+    return ithmb_filename(format_id)
 
 
 def _normalize_ithmb_filename(format_id: int, filename: str | None) -> str:
     """Return the basename stored in an ArtworkDB ithmb filename MHOD."""
-    name = (filename or "").strip().replace("\\", "/")
-    if ":" in name:
-        name = name.split(":")[-1]
-    if "/" in name:
-        name = name.rsplit("/", 1)[-1]
-    return name or _default_ithmb_filename(format_id)
+    return normalize_ithmb_filename(format_id, filename)
 
 
 def _ithmb_path_for_filename(artwork_dir: str, format_id: int, filename: str | None) -> str:
-    return os.path.join(artwork_dir, _normalize_ithmb_filename(format_id, filename))
+    return ithmb_path_for_filename(artwork_dir, format_id, filename)
 
 
 def _coerce_ithmb_location(format_id: int, location: IthmbLocationInput) -> IthmbLocation:
@@ -59,23 +65,7 @@ def _coerce_ithmb_location(format_id: int, location: IthmbLocationInput) -> Ithm
 
 def _write_mhod_string(mhod_type: int, string: str) -> bytes:
     """Write an ArtworkDB MHOD string (type 1 or 3)."""
-    if mhod_type == 3:
-        encoded = string.encode("utf-16-le")
-        encoding_byte = 2
-    else:
-        encoded = string.encode("utf-8")
-        encoding_byte = 1
-
-    str_len = len(encoded)
-    padding = (4 - (str_len % 4)) % 4
-
-    body = struct.pack("<I", str_len)
-    body += struct.pack("<B", encoding_byte)
-    body += b"\x00" * 3
-    body += b"\x00" * 4
-    body += encoded
-    body += b"\x00" * padding
-
+    body = encode_mhod_string_body(mhod_type, string)
     total_len = MHOD_HEADER_SIZE + len(body)
     header = bytearray(MHOD_HEADER_SIZE)
     header[0:4] = b"mhod"
@@ -148,7 +138,7 @@ def _write_mhii(entry: ArtworkEntry, format_locations: Mapping[int, IthmbLocatio
     for fmt_id in sorted(entry.formats.keys()):
         payload = entry.formats[fmt_id]
         location = _coerce_ithmb_location(fmt_id, format_locations.get(fmt_id, 0))
-        children.append(_write_mhod_container(2, _write_mhni(fmt_id, location, payload)))
+        children.append(_write_mhod_container(ArtworkMhodType.THUMBNAIL_IMAGE, _write_mhni(fmt_id, location, payload)))
 
     children_data = b"".join(children)
     total_len = MHII_HEADER_SIZE + len(children_data)
@@ -250,9 +240,9 @@ def build_artworkdb(
     reference_mhfd: bytes | None = None,
 ) -> bytes:
     """Serialize a complete ArtworkDB binary."""
-    ds1 = _write_mhsd(1, _write_mhli(entries, format_locations_map))
-    ds2 = _write_mhsd(2, _write_mhla())
-    ds3 = _write_mhsd(3, _write_mhlf(format_ids, image_sizes))
+    ds1 = _write_mhsd(ArtworkDatasetType.IMAGE_LIST, _write_mhli(entries, format_locations_map))
+    ds2 = _write_mhsd(ArtworkDatasetType.PHOTO_ALBUM_LIST, _write_mhla())
+    ds3 = _write_mhsd(ArtworkDatasetType.FILE_LIST, _write_mhlf(format_ids, image_sizes))
     return _write_mhfd([ds1, ds2, ds3], next_mhii_id, reference_mhfd)
 
 
@@ -272,8 +262,9 @@ def read_existing_artwork(artworkdb_path: str, artwork_dir: str) -> dict[int, di
         return {}
 
     entries = {}
-    mhfd_header_size = struct.unpack_from("<I", data, 4)[0]
-    child_count = struct.unpack_from("<I", data, 20)[0]
+    mhfd_header = read_chunk_header(data, 0)
+    mhfd_header_size = mhfd_header.header_size
+    child_count = read_u32(data, 20)
     if mhfd_header_size < 32 or mhfd_header_size > len(data):
         logger.warning("ART: invalid ArtworkDB mhfd header size %d", mhfd_header_size)
         return {}
@@ -282,19 +273,21 @@ def read_existing_artwork(artworkdb_path: str, artwork_dir: str) -> dict[int, di
     for _ in range(child_count):
         if offset + 14 > len(data) or data[offset:offset + 4] != b"mhsd":
             break
-        mhsd_header = struct.unpack_from("<I", data, offset + 4)[0]
-        mhsd_total = struct.unpack_from("<I", data, offset + 8)[0]
-        ds_type = struct.unpack_from("<H", data, offset + 12)[0]
-        if mhsd_header < 14 or mhsd_total < mhsd_header or offset + mhsd_total > len(data):
+        mhsd_chunk = read_chunk_header(data, offset)
+        mhsd_header = mhsd_chunk.header_size
+        mhsd_total = mhsd_chunk.length_or_count
+        ds_type = read_u16(data, offset + 12)
+        if not total_length_is_valid(data, offset, mhsd_header, mhsd_total, 14):
             logger.warning("ART: invalid ArtworkDB mhsd chunk at offset %d", offset)
             break
 
-        if ds_type == 1:
+        if ds_type == ArtworkDatasetType.IMAGE_LIST:
             dataset_end = offset + mhsd_total
             mhli_offset = offset + mhsd_header
             if mhli_offset + 12 <= dataset_end and data[mhli_offset:mhli_offset + 4] == b"mhli":
-                mhli_header = struct.unpack_from("<I", data, mhli_offset + 4)[0]
-                mhii_count = struct.unpack_from("<I", data, mhli_offset + 8)[0]
+                mhli_chunk = read_chunk_header(data, mhli_offset)
+                mhli_header = mhli_chunk.header_size
+                mhii_count = mhli_chunk.length_or_count
                 if mhli_header < 12 or mhli_offset + mhli_header > dataset_end:
                     logger.warning("ART: invalid ArtworkDB mhli chunk at offset %d", mhli_offset)
                     break
@@ -302,7 +295,7 @@ def read_existing_artwork(artworkdb_path: str, artwork_dir: str) -> dict[int, di
                 for _ in range(mhii_count):
                     if mhii_offset + 52 > dataset_end or data[mhii_offset:mhii_offset + 4] != b"mhii":
                         break
-                    mhii_total = struct.unpack_from("<I", data, mhii_offset + 8)[0]
+                    mhii_total = read_u32(data, mhii_offset + 8)
                     if mhii_total < 52 or mhii_offset + mhii_total > dataset_end:
                         logger.warning("ART: invalid ArtworkDB mhii chunk at offset %d", mhii_offset)
                         break
@@ -322,11 +315,11 @@ def _parse_mhii_existing(data: bytes, offset: int, total_len: int, artwork_dir: 
     if offset + 52 > entry_end:
         return None
 
-    header_size = struct.unpack_from("<I", data, offset + 4)[0]
-    child_count = struct.unpack_from("<I", data, offset + 12)[0]
-    img_id = struct.unpack_from("<I", data, offset + 16)[0]
-    song_id = struct.unpack_from("<Q", data, offset + 20)[0]
-    src_img_size = struct.unpack_from("<I", data, offset + 48)[0]
+    header_size = read_u32(data, offset + 4)
+    child_count = read_u32(data, offset + 12)
+    img_id = read_u32(data, offset + 16)
+    song_id = read_u64(data, offset + 20)
+    src_img_size = read_u32(data, offset + 48)
     if header_size < 52 or header_size > total_len:
         logger.warning("ART: invalid ArtworkDB mhii header size %d at offset %d", header_size, offset)
         return None
@@ -336,20 +329,22 @@ def _parse_mhii_existing(data: bytes, offset: int, total_len: int, artwork_dir: 
     for _ in range(child_count):
         if child_offset + 14 > entry_end or data[child_offset:child_offset + 4] != b"mhod":
             break
-        mhod_header = struct.unpack_from("<I", data, child_offset + 4)[0]
-        mhod_total = struct.unpack_from("<I", data, child_offset + 8)[0]
-        mhod_type = struct.unpack_from("<H", data, child_offset + 12)[0]
-        if mhod_header < 14 or mhod_total < mhod_header or child_offset + mhod_total > entry_end:
+        mhod_chunk = read_chunk_header(data, child_offset)
+        mhod_header = mhod_chunk.header_size
+        mhod_total = mhod_chunk.length_or_count
+        mhod_type = read_u16(data, child_offset + 12)
+        if not total_length_is_valid(data, child_offset, mhod_header, mhod_total, 14, entry_end):
             logger.warning("ART: invalid ArtworkDB mhod chunk at offset %d", child_offset)
             break
 
-        if mhod_type == 2:
+        if mhod_type == ArtworkMhodType.THUMBNAIL_IMAGE:
             mhni_offset = child_offset + mhod_header
             child_end = child_offset + mhod_total
             if mhni_offset + MHNI_HEADER_SIZE <= child_end and data[mhni_offset:mhni_offset + 4] == b"mhni":
-                format_id = struct.unpack_from("<I", data, mhni_offset + 16)[0]
-                ithmb_offset = struct.unpack_from("<I", data, mhni_offset + 20)[0]
-                img_size = struct.unpack_from("<I", data, mhni_offset + 24)[0]
+                fields = read_mhni_fields(data, mhni_offset)
+                format_id = fields.format_id
+                ithmb_offset = fields.ithmb_offset
+                img_size = fields.image_size
                 ithmb_filename = _parse_mhni_filename(data, mhni_offset, child_end)
                 ithmb_filename = _normalize_ithmb_filename(format_id, ithmb_filename)
                 ithmb_path = _ithmb_path_for_filename(artwork_dir, format_id, ithmb_filename)
@@ -358,10 +353,10 @@ def _parse_mhii_existing(data: bytes, offset: int, total_len: int, artwork_dir: 
                         path=ithmb_path,
                         ithmb_offset=ithmb_offset,
                         size=img_size,
-                        width=max(1, int(struct.unpack_from("<H", data, mhni_offset + 34)[0])),
-                        height=max(1, int(struct.unpack_from("<H", data, mhni_offset + 32)[0])),
-                        hpad=max(0, int(struct.unpack_from("<h", data, mhni_offset + 30)[0])),
-                        vpad=max(0, int(struct.unpack_from("<h", data, mhni_offset + 28)[0])),
+                        width=max(1, int(fields.image_width)),
+                        height=max(1, int(fields.image_height)),
+                        hpad=max(0, int(fields.horizontal_padding)),
+                        vpad=max(0, int(fields.vertical_padding)),
                         ithmb_filename=ithmb_filename,
                     )
 
@@ -380,35 +375,16 @@ def _parse_mhii_existing(data: bytes, offset: int, total_len: int, artwork_dir: 
 
 def _parse_mhod_string(data: bytes, offset: int, total_len: int) -> str | None:
     """Parse an ArtworkDB string MHOD body."""
-    if offset + MHOD_HEADER_SIZE + 12 > offset + total_len:
-        return None
-    header_size = struct.unpack_from("<I", data, offset + 4)[0]
-    if header_size < MHOD_HEADER_SIZE or header_size > total_len:
-        return None
-    body_offset = offset + header_size
-    body_end = offset + total_len
-    if body_offset + 12 > body_end:
-        return None
-
-    str_len = struct.unpack_from("<I", data, body_offset)[0]
-    encoding_byte = data[body_offset + 4]
-    raw_start = body_offset + 12
-    raw_end = min(body_end, raw_start + str_len)
-    raw = data[raw_start:raw_end]
-    try:
-        if encoding_byte == 2:
-            return raw.decode("utf-16-le", errors="replace").rstrip("\x00")
-        return raw.decode("utf-8", errors="replace").rstrip("\x00")
-    except UnicodeError:
-        return None
+    return decode_mhod_string_chunk(data, offset, total_len)
 
 
 def _parse_mhni_filename(data: bytes, mhni_offset: int, container_end: int) -> str | None:
     """Read the MHOD type=3 filename child from an MHNI chunk."""
     if mhni_offset + 12 > container_end:
         return None
-    mhni_header = struct.unpack_from("<I", data, mhni_offset + 4)[0]
-    mhni_total = struct.unpack_from("<I", data, mhni_offset + 8)[0]
+    mhni_chunk = read_chunk_header(data, mhni_offset)
+    mhni_header = mhni_chunk.header_size
+    mhni_total = mhni_chunk.length_or_count
     if mhni_header < MHNI_HEADER_SIZE:
         mhni_header = MHNI_HEADER_SIZE
     mhni_end = min(container_end, mhni_offset + mhni_total)
@@ -417,14 +393,15 @@ def _parse_mhni_filename(data: bytes, mhni_offset: int, container_end: int) -> s
     while child_offset + MHOD_HEADER_SIZE <= mhni_end:
         if data[child_offset:child_offset + 4] != b"mhod":
             break
-        mhod_header = struct.unpack_from("<I", data, child_offset + 4)[0]
-        mhod_total = struct.unpack_from("<I", data, child_offset + 8)[0]
-        mhod_type = struct.unpack_from("<H", data, child_offset + 12)[0]
+        mhod_chunk = read_chunk_header(data, child_offset)
+        mhod_header = mhod_chunk.header_size
+        mhod_total = mhod_chunk.length_or_count
+        mhod_type = read_u16(data, child_offset + 12)
         if mhod_header < MHOD_HEADER_SIZE or mhod_total < mhod_header:
             break
         if child_offset + mhod_total > mhni_end:
             break
-        if mhod_type == 3:
+        if mhod_type == ArtworkMhodType.FILE_NAME:
             return _parse_mhod_string(data, child_offset, mhod_total)
         child_offset += mhod_total
 

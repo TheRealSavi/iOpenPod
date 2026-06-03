@@ -22,13 +22,18 @@ Cross-referenced against:
 from __future__ import annotations
 
 import logging
-from typing import List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .mhit_writer import TrackInfo
     from .mhyp_writer import PlaylistInfo
 
-from iTunesDB_Shared.field_base import MHLP_HEADER_SIZE, write_generic_header
+from iTunesDB_Shared.field_base import (
+    MHLP_HEADER_SIZE,
+    write_list_chunk,
+    write_list_header,
+)
+
 from .mhyp_writer import write_master_playlist, write_playlist
 
 logger = logging.getLogger(__name__)
@@ -44,13 +49,10 @@ def write_mhlp_empty() -> bytes:
     Returns:
         MHLP header with 0 playlists
     """
-    header = bytearray(MHLP_HEADER_SIZE)
-    write_generic_header(header, 0, b'mhlp', MHLP_HEADER_SIZE, 0)
-
-    return bytes(header)
+    return write_list_header(b'mhlp', MHLP_HEADER_SIZE, 0)
 
 
-def write_mhlp(playlist_chunks: List[bytes]) -> bytes:
+def write_mhlp(playlist_chunks: list[bytes]) -> bytes:
     """
     Write a MHLP chunk with playlists.
 
@@ -60,23 +62,17 @@ def write_mhlp(playlist_chunks: List[bytes]) -> bytes:
     Returns:
         Complete MHLP chunk
     """
-    # Concatenate all playlist data
-    playlists_data = b''.join(playlist_chunks)
-
-    header = bytearray(MHLP_HEADER_SIZE)
-    write_generic_header(header, 0, b'mhlp', MHLP_HEADER_SIZE, len(playlist_chunks))
-
-    return bytes(header) + playlists_data
+    return write_list_chunk(b'mhlp', MHLP_HEADER_SIZE, playlist_chunks)
 
 
 def write_mhlp_with_playlists(
-    track_ids: List[int],
-    playlists: List[PlaylistInfo],
+    track_ids: list[int],
+    playlists: list[PlaylistInfo],
     db_id_2,
-    tracks: Optional[List[TrackInfo]] = None,
+    tracks: list[TrackInfo] | None = None,
     capabilities=None,
     master_playlist_name: str = "iPod",
-    master_playlist_id: Optional[int] = None,
+    master_playlist_id: int | None = None,
 ) -> bytes:
     """
     Write an MHLP chunk with the master playlist + user playlists.
@@ -131,15 +127,15 @@ def write_mhlp_with_playlists(
 
 
 def write_mhlp_with_playlists_type3(
-    track_ids: List[int],
-    playlists: List["PlaylistInfo"],
+    track_ids: list[int],
+    playlists: list[PlaylistInfo],
     db_id_2: int,
     track_album_map: dict[int, str],
-    tracks: Optional[List["TrackInfo"]] = None,
+    tracks: list[TrackInfo] | None = None,
     capabilities=None,
     master_playlist_name: str = "iPod",
     next_mhip_id_start: int = 1,
-    master_playlist_id: Optional[int] = None,
+    master_playlist_id: int | None = None,
 ) -> bytes:
     """Write an MHLP for MHSD type 3 with podcast grouping.
 
@@ -200,7 +196,7 @@ def write_mhlp_with_playlists_type3(
 
 
 def write_mhlp_smart(
-    playlists: List[PlaylistInfo],
+    playlists: list[PlaylistInfo],
     db_id_2: int = 0,
 ) -> bytes:
     """

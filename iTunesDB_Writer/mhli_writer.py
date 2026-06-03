@@ -31,13 +31,15 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .mhit_writer import TrackInfo
 
+from iTunesDB_Shared.constants import MHOD_TYPE_ARTIST_NAME
 from iTunesDB_Shared.field_base import (
     MHLI_HEADER_SIZE,
     write_fields,
     write_generic_header,
+    write_list_header,
 )
 from iTunesDB_Shared.mhii_defs import MHII_HEADER_SIZE
-from iTunesDB_Shared.constants import MHOD_TYPE_ARTIST_NAME
+
 from .mhod_writer import write_mhod_string
 
 
@@ -116,11 +118,8 @@ def write_mhli(tracks: list["TrackInfo"], starting_index_for_artist_id: int) -> 
 
     artist_count = len(artist_map)
 
-    # Build header
-    header = bytearray(MHLI_HEADER_SIZE)
-    write_generic_header(header, 0, b'mhli', MHLI_HEADER_SIZE, artist_count)
-
-    return bytes(header) + bytes(artist_items), artist_map, artist_id
+    mhli = write_list_header(b'mhli', MHLI_HEADER_SIZE, artist_count) + bytes(artist_items)
+    return mhli, artist_map, artist_id
 
 
 def write_mhli_empty() -> bytes:
@@ -130,7 +129,4 @@ def write_mhli_empty() -> bytes:
     Returns:
         MHLI header with 0 artists
     """
-    header = bytearray(MHLI_HEADER_SIZE)
-    write_generic_header(header, 0, b'mhli', MHLI_HEADER_SIZE, 0)
-
-    return bytes(header)
+    return write_list_header(b'mhli', MHLI_HEADER_SIZE, 0)

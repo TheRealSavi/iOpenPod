@@ -19,48 +19,44 @@ Usage:
     success = write_checksum(itdb_data, ipod_path)
 """
 
-from ipod_device import ChecksumType
-from ipod_device import detect_checksum_type, get_firewire_id
+from ipod_device import ChecksumType, detect_checksum_type, get_firewire_id
+from iTunesDB_Shared.constants import (
+    MEDIA_TYPE_AUDIO,
+    MEDIA_TYPE_AUDIOBOOK,
+    MEDIA_TYPE_MUSIC_VIDEO,
+    MEDIA_TYPE_PODCAST,
+    MEDIA_TYPE_RINGTONE,
+    MEDIA_TYPE_TV_SHOW,
+    MEDIA_TYPE_VIDEO,
+    MEDIA_TYPE_VIDEO_PODCAST,
+)
 
 from .hash58 import (
     compute_hash58,
     write_hash58,
 )
-
 from .hash72 import (
     compute_hash72,
-    write_hash72,
-    read_hash_info,
     extract_hash_info,
     extract_hash_info_to_dict,
+    read_hash_info,
+    write_hash72,
 )
-
 from .hashab import (
     compute_hashab,
     write_hashab,
 )
-
+from .mhbd_writer import extract_db_info, write_itunesdb, write_mhbd
 from .mhit_writer import TrackInfo, write_mhit
-from iTunesDB_Shared.constants import (
-    MEDIA_TYPE_AUDIO,
-    MEDIA_TYPE_VIDEO,
-    MEDIA_TYPE_PODCAST,
-    MEDIA_TYPE_VIDEO_PODCAST,
-    MEDIA_TYPE_AUDIOBOOK,
-    MEDIA_TYPE_MUSIC_VIDEO,
-    MEDIA_TYPE_TV_SHOW,
-    MEDIA_TYPE_RINGTONE,
-)
-from .mhyp_writer import PlaylistInfo, write_playlist, write_mhyp
-from .mhli_writer import write_mhli, write_mhii_artist, write_mhli_empty
+from .mhli_writer import write_mhii_artist, write_mhli, write_mhli_empty
 from .mhod_spl_writer import (
     SmartPlaylistPrefs,
-    SmartPlaylistRules,
     SmartPlaylistRule,
+    SmartPlaylistRules,
     prefs_from_parsed,
     rules_from_parsed,
 )
-from .mhbd_writer import write_itunesdb, write_mhbd, extract_db_info
+from .mhyp_writer import PlaylistInfo, write_mhyp, write_playlist
 
 
 def write_checksum(itdb_data: bytearray, ipod_path: str) -> bool:

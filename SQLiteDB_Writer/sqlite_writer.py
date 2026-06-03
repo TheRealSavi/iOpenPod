@@ -19,25 +19,23 @@ Usage:
     )
 """
 
+import logging
 import os
 import random
 import shutil
-import time
-import logging
 import tempfile
-from typing import Optional
+import time
 
+from ipod_device import ChecksumType, DeviceCapabilities, detect_checksum_type, get_firewire_id
 from iTunesDB_Writer.mhit_writer import TrackInfo
 from iTunesDB_Writer.mhyp_writer import PlaylistInfo
-from ipod_device import ChecksumType, DeviceCapabilities
-from ipod_device import detect_checksum_type, get_firewire_id
 
-from .library_writer import write_library_itdb
-from .locations_writer import write_locations_itdb
+from .cbk_writer import write_locations_cbk
 from .dynamic_writer import write_dynamic_itdb
 from .extras_writer import write_extras_itdb
 from .genius_writer import write_genius_itdb
-from .cbk_writer import write_locations_cbk
+from .library_writer import write_library_itdb
+from .locations_writer import write_locations_itdb
 
 logger = logging.getLogger(__name__)
 
@@ -48,12 +46,12 @@ ITLP_DIR = os.path.join("iPod_Control", "iTunes", "iTunes Library.itlp")
 def write_sqlite_databases(
     ipod_path: str,
     tracks: list[TrackInfo],
-    playlists: Optional[list[PlaylistInfo]] = None,
-    smart_playlists: Optional[list[PlaylistInfo]] = None,
+    playlists: list[PlaylistInfo] | None = None,
+    smart_playlists: list[PlaylistInfo] | None = None,
     master_playlist_name: str = "iPod",
     db_pid: int = 0,
-    capabilities: Optional[DeviceCapabilities] = None,
-    firewire_id: Optional[bytes] = None,
+    capabilities: DeviceCapabilities | None = None,
+    firewire_id: bytes | None = None,
     backup: bool = True,
 ) -> bool:
     """Write all SQLite databases for iPod Nano 6G/7G.

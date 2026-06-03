@@ -13,13 +13,19 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING
 
-from PyQt6.QtCore import Qt, pyqtSignal, QTimer
-from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QFrame, QProgressBar, QMessageBox, QStackedWidget,
-)
+from PyQt6.QtCore import Qt, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import QDesktopServices, QFont
-from PyQt6.QtCore import QUrl
+from PyQt6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QProgressBar,
+    QPushButton,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
 from app_core.device_identity import (
     resolve_ipod_image_color,
@@ -38,11 +44,18 @@ from app_core.jobs import (
 )
 from app_core.progress import ETATracker
 
-from ..styles import (
-    Colors, FONT_FAMILY, MONO_FONT_FAMILY, Metrics,
-    accent_btn_css, back_btn_css, btn_css, danger_btn_css, make_scroll_area,
-)
 from ..glyphs import glyph_pixmap
+from ..styles import (
+    FONT_FAMILY,
+    MONO_FONT_FAMILY,
+    Colors,
+    Metrics,
+    accent_btn_css,
+    back_btn_css,
+    btn_css,
+    danger_btn_css,
+    make_scroll_area,
+)
 from .browserChrome import chrome_action_btn_css
 from .formatters import format_size
 

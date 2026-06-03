@@ -12,6 +12,7 @@ import logging
 import requests
 
 from .models import SearchResult
+from .network_errors import PodcastErrorInfo, PodcastNetworkError, podcast_network_error
 
 log = logging.getLogger(__name__)
 
@@ -24,6 +25,8 @@ def search_podcasts(
     query: str,
     limit: int = 25,
     country: str = "US",
+    *,
+    raise_on_error: bool = False,
 ) -> list[SearchResult]:
     """Search for podcasts by name.
 
@@ -31,9 +34,11 @@ def search_podcasts(
         query: Search term (e.g. "Serial", "Joe Rogan").
         limit: Maximum results to return (1–200).
         country: ISO 3166-1 alpha-2 country code for store region.
+        raise_on_error: Raise a user-friendly PodcastNetworkError for UI callers.
 
     Returns:
-        List of SearchResult objects.  Empty list on error.
+        List of SearchResult objects.  Empty list on error unless
+        ``raise_on_error`` is true.
     """
     if not query.strip():
         return []
@@ -52,9 +57,18 @@ def search_podcasts(
         data = resp.json()
     except requests.RequestException as exc:
         log.warning("iTunes Search API error: %s", exc)
+        if raise_on_error:
+            raise podcast_network_error(exc, action="search podcasts") from exc
         return []
     except ValueError as exc:
         log.warning("iTunes Search API JSON decode error: %s", exc)
+        if raise_on_error:
+            raise PodcastNetworkError(
+                PodcastErrorInfo(
+                    title="Podcast search answered strangely",
+                    message="The search service answered, but iOpenPod could not read the results.",
+                )
+            ) from exc
         return []
 
     results: list[SearchResult] = []

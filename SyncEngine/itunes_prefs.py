@@ -31,7 +31,6 @@ import plistlib
 import socket
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 from ipod_device import generate_library_id
 
@@ -112,14 +111,14 @@ class ITunesPrefs:
     checked_only: bool = False
 
     # Plist data
-    device_totals: Optional[DeviceTotals] = None
+    device_totals: DeviceTotals | None = None
 
     # Sync history (embedded in binary at offset 384+)
     sync_history: list[SyncHistoryEntry] = field(default_factory=list)
 
     # Raw data for round-trip fidelity
-    _raw_binary: Optional[bytearray] = field(default=None, repr=False)
-    _raw_plist: Optional[dict] = field(default=None, repr=False)
+    _raw_binary: bytearray | None = field(default=None, repr=False)
+    _raw_plist: dict | None = field(default=None, repr=False)
 
 
 def _read_padded_string(data: bytes, offset: int, length: int = 64) -> str:
@@ -175,7 +174,7 @@ def _parse_binary(data: bytes) -> ITunesPrefs:
     return prefs
 
 
-def _parse_plist(plist_data: dict) -> Optional[DeviceTotals]:
+def _parse_plist(plist_data: dict) -> DeviceTotals | None:
     """Parse EstimatedDeviceTotals from the plist."""
     edt = plist_data.get("EstimatedDeviceTotals")
     if not edt or not isinstance(edt, dict):
@@ -382,7 +381,7 @@ def read_prefs(ipod_path: str | Path) -> ITunesPrefs:
     return prefs
 
 
-def check_library_owner(prefs: ITunesPrefs) -> Optional[str]:
+def check_library_owner(prefs: ITunesPrefs) -> str | None:
     """
     Check if the iPod was synced by a different iTunes library
     since our last sync.

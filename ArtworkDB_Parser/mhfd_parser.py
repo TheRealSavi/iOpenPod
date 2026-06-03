@@ -38,7 +38,7 @@ def parse_mhfd(data, offset, header_length, chunk_length) -> dict[str, Any]:
 
     # parse children
     next_offset = offset + header_length
-    for i in range(datafile["childCount"]):
+    for _i in range(datafile["childCount"]):
         childResult = parse_chunk(data, next_offset)
         next_offset = childResult["nextOffset"]
         resultData = childResult["result"]

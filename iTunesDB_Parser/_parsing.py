@@ -15,6 +15,8 @@ from __future__ import annotations
 import struct
 from typing import Any
 
+from iTunesDB_Shared.field_base import GENERIC_HEADER_SIZE, GENERIC_HEADER_STRUCT
+
 from .exceptions import CorruptHeaderError, InsufficientDataError
 
 # ── Pre-compiled struct objects ──────────────────────────────────────
@@ -27,13 +29,6 @@ UINT32_LE = struct.Struct("<I")
 UINT64_LE = struct.Struct("<Q")
 INT32_LE = struct.Struct("<i")
 FLOAT32_LE = struct.Struct("<f")
-
-# The generic chunk header shared by every iTunesDB chunk:
-#   +0x00  chunk_type  (4 bytes ASCII)
-#   +0x04  header_len  (u32 LE)
-#   +0x08  length_or_child_count  (u32 LE)
-_GENERIC_HEADER = struct.Struct("<4sII")
-GENERIC_HEADER_SIZE = _GENERIC_HEADER.size  # 12 bytes
 
 ParseResult = dict[str, Any]
 """Return type of every chunk parser: ``{"next_offset": int, "data": ...}``."""
@@ -56,7 +51,10 @@ def read_generic_header(
     if end > len(data):
         raise InsufficientDataError(offset, GENERIC_HEADER_SIZE, len(data) - offset)
 
-    raw_type, header_length, length_or_children = _GENERIC_HEADER.unpack_from(data, offset)
+    raw_type, header_length, length_or_children = GENERIC_HEADER_STRUCT.unpack_from(
+        data,
+        offset,
+    )
 
     try:
         chunk_type = raw_type.decode("ascii")

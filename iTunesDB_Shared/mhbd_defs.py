@@ -5,7 +5,7 @@ the iTunesDB file.  Both the parser and writer derive their behaviour
 from these definitions.
 """
 
-from .field_base import FieldDef, _u32, _i32, _u16, _u64, _raw
+from .field_base import FieldDef, _i32, _raw, _u16, _u32, _u64
 
 _S = "mhbd"
 

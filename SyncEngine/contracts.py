@@ -4,9 +4,242 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from enum import Enum, auto
+from typing import TYPE_CHECKING
 
-from .fingerprint_diff_engine import SyncItem, SyncPlan
 from .mapping import MappingFile
+
+if TYPE_CHECKING:
+    from .integrity import IntegrityReport
+    from .pc_library import PCTrack
+    from .photos import PhotoSyncPlan
+    from .transcoder import TranscodePlan
+
+
+def _fmt_bytes(val: int) -> str:
+    """Format bytes as human-readable string."""
+    v = float(abs(val))
+    for unit in ["B", "KB", "MB", "GB"]:
+        if v < 1024:
+            return f"{v:.1f} {unit}"
+        v /= 1024
+    return f"{v:.1f} TB"
+
+
+class SyncAction(Enum):
+    """Type of sync action needed."""
+
+    ADD_TO_IPOD = auto()  # New track, copy to iPod
+    REMOVE_FROM_IPOD = auto()  # Track not on PC, remove from iPod
+    UPDATE_METADATA = auto()  # Metadata changed on PC, update iPod DB
+    UPDATE_FILE = auto()  # Source file changed, re-copy/transcode
+    UPDATE_ARTWORK = auto()  # Embedded art changed, re-extract
+    SYNC_PLAYCOUNT = auto()  # iPod has new plays to scrobble
+    SYNC_RATING = auto()  # Rating differs, last-write-wins
+    NO_ACTION = auto()  # Track is in sync
+
+
+@dataclass
+class SyncItem:
+    """A single item in the sync plan."""
+
+    action: SyncAction
+    fingerprint: str | None = None
+    pc_track: PCTrack | None = None
+    estimated_size: int | None = None
+    transcode_plan: TranscodePlan | None = None
+    db_track_id: int | None = None
+    ipod_track: dict | None = None
+    metadata_changes: dict = field(default_factory=dict)
+    play_count_delta: int = 0
+    skip_count_delta: int = 0
+    ipod_rating: int = 0
+    pc_rating: int = 0
+    new_rating: int = 0
+    rating_strategy: str = ""
+    old_art_hash: str | None = None
+    new_art_hash: str | None = None
+    description: str = ""
+    conversion_group_id: str | None = None
+    conversion_group_add_count: int = 0
+    defer_removal_until_after_add: bool = False
+    conversion_source_fingerprints: tuple[str, ...] = ()
+    conversion_source_path_hints: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.metadata_changes is None:
+            self.metadata_changes = {}
+
+    @property
+    def db_id(self) -> int | None:
+        """Backward-compatible alias for the iPod track persistent ID."""
+        return self.db_track_id
+
+    @db_id.setter
+    def db_id(self, value: int | None) -> None:
+        self.db_track_id = value
+
+
+@dataclass
+class StorageSummary:
+    """iPod storage estimate for the sync plan."""
+
+    bytes_to_add: int = 0
+    bytes_to_remove: int = 0
+    bytes_to_update: int = 0
+
+    @property
+    def net_change(self) -> int:
+        return self.bytes_to_add + self.bytes_to_update - self.bytes_to_remove
+
+    def format(self) -> str:
+        parts = []
+        if self.bytes_to_add > 0:
+            parts.append(f"+{_fmt_bytes(self.bytes_to_add)}")
+        if self.bytes_to_remove > 0:
+            parts.append(f"-{_fmt_bytes(self.bytes_to_remove)}")
+        if self.bytes_to_update > 0:
+            parts.append(f"~{_fmt_bytes(self.bytes_to_update)} re-sync")
+        if parts:
+            net = self.net_change
+            sign = "+" if net >= 0 else "-"
+            parts.append(f"(net {sign}{_fmt_bytes(abs(net))})")
+        return " ".join(parts) if parts else "0 B"
+
+
+@dataclass
+class SyncPlan:
+    """Complete sync plan with all actions needed."""
+
+    to_add: list[SyncItem] = field(default_factory=list)
+    to_remove: list[SyncItem] = field(default_factory=list)
+    to_update_metadata: list[SyncItem] = field(default_factory=list)
+    to_update_file: list[SyncItem] = field(default_factory=list)
+    to_update_artwork: list[SyncItem] = field(default_factory=list)
+    to_sync_playcount: list[SyncItem] = field(default_factory=list)
+    to_sync_rating: list[SyncItem] = field(default_factory=list)
+    matched_pc_paths: dict[int, str] = field(default_factory=dict)
+    fingerprint_errors: list[tuple[str, str]] = field(default_factory=list)
+    unresolved_collisions: list[tuple[str, list[PCTrack]]] = field(default_factory=list)
+    duplicates: dict[str, list[PCTrack]] = field(default_factory=dict)
+    _stale_mapping_entries: list[tuple[str, int]] = field(default_factory=list)
+    _integrity_removals: list[SyncItem] = field(default_factory=list)
+    mapping: MappingFile | None = None
+    integrity_report: IntegrityReport | None = None
+    total_pc_tracks: int = 0
+    total_ipod_tracks: int = 0
+    matched_tracks: int = 0
+    playlists_to_add: list[dict] = field(default_factory=list)
+    playlists_to_edit: list[dict] = field(default_factory=list)
+    playlists_to_remove: list[dict] = field(default_factory=list)
+    storage: StorageSummary = field(default_factory=StorageSummary)
+    photo_plan: PhotoSyncPlan | None = None
+    removals_pre_checked: bool = False
+
+    @property
+    def has_changes(self) -> bool:
+        return any([
+            self.to_add,
+            self.to_remove,
+            self.to_update_metadata,
+            self.to_update_file,
+            self.to_update_artwork,
+            self.to_sync_playcount,
+            self.to_sync_rating,
+            self._integrity_removals,
+            self.playlists_to_add,
+            self.playlists_to_edit,
+            self.playlists_to_remove,
+            self.photo_plan and self.photo_plan.has_changes,
+        ])
+
+    @property
+    def has_duplicates(self) -> bool:
+        return bool(self.duplicates)
+
+    @property
+    def duplicate_count(self) -> int:
+        return sum(len(t) - 1 for t in self.duplicates.values())
+
+    @property
+    def summary(self) -> str:
+        track_add_bytes = sum(
+            (
+                item.estimated_size
+                if item.estimated_size is not None
+                else (item.pc_track.size if item.pc_track else 0)
+            )
+            for item in self.to_add
+        )
+        track_remove_bytes = sum(
+            (item.ipod_track.get("size", 0) if item.ipod_track else 0)
+            for item in self.to_remove
+        )
+        track_update_bytes = sum(
+            (
+                item.estimated_size
+                if item.estimated_size is not None
+                else (item.pc_track.size if item.pc_track else 0)
+            )
+            for item in self.to_update_file
+        )
+
+        lines = []
+        if self.to_add:
+            lines.append(f"  📥 {len(self.to_add)} tracks to add ({_fmt_bytes(track_add_bytes)})")
+        if self.to_remove:
+            lines.append(f"  🗑️  {len(self.to_remove)} tracks to remove ({_fmt_bytes(track_remove_bytes)})")
+        if self.to_update_file:
+            lines.append(f"  🔄 {len(self.to_update_file)} tracks to re-sync ({_fmt_bytes(track_update_bytes)})")
+        if self.to_update_metadata:
+            lines.append(f"  📝 {len(self.to_update_metadata)} tracks with metadata updates")
+        if self.to_update_artwork:
+            lines.append(f"  🎨 {len(self.to_update_artwork)} tracks with artwork updates")
+        if self.to_sync_playcount:
+            lines.append(f"  🎵 {len(self.to_sync_playcount)} tracks with new play counts")
+        if self.to_sync_rating:
+            lines.append(f"  ⭐ {len(self.to_sync_rating)} tracks with rating changes")
+        if self.fingerprint_errors:
+            lines.append(f"  ⚠️  {len(self.fingerprint_errors)} files could not be fingerprinted")
+        if self.playlists_to_add:
+            lines.append(f"  🎶 {len(self.playlists_to_add)} playlists to add")
+        if self.playlists_to_edit:
+            lines.append(f"  📝 {len(self.playlists_to_edit)} playlists to update")
+        if self.playlists_to_remove:
+            lines.append(f"  🗑️  {len(self.playlists_to_remove)} playlists to remove")
+        if self.photo_plan:
+            if self.photo_plan.photos_to_add:
+                lines.append(f"  🖼️  {len(self.photo_plan.photos_to_add)} photos to add")
+            if self.photo_plan.photos_to_remove:
+                lines.append(f"  🗑️  {len(self.photo_plan.photos_to_remove)} photos to remove")
+            if self.photo_plan.albums_to_add:
+                lines.append(f"  📚 {len(self.photo_plan.albums_to_add)} photo albums to add")
+            if self.photo_plan.albums_to_remove:
+                lines.append(f"  🗂️  {len(self.photo_plan.albums_to_remove)} photo albums to remove")
+        if self.duplicates:
+            lines.append(f"  ⚠️  {len(self.duplicates)} duplicate groups ({self.duplicate_count} extra files skipped)")
+        if self.unresolved_collisions:
+            lines.append(f"  ❓ {len(self.unresolved_collisions)} unresolved fingerprint collisions")
+
+        integrity_lines = []
+        if self.integrity_report and not self.integrity_report.is_clean:
+            ir = self.integrity_report
+            if ir.missing_files:
+                integrity_lines.append(f"  🔧 {len(ir.missing_files)} DB tracks had missing files (cleaned)")
+            if ir.stale_mappings:
+                integrity_lines.append(f"  🔧 {len(ir.stale_mappings)} stale mapping entries (cleaned)")
+            if ir.orphan_files:
+                integrity_lines.append(f"  🔧 {len(ir.orphan_files)} orphan files removed from iPod")
+
+        if not lines and not integrity_lines:
+            return "✅ Everything is in sync!"
+
+        header = (
+            f"Sync Plan ({self.matched_tracks} matched, "
+            f"{self.total_pc_tracks} PC, {self.total_ipod_tracks} iPod):"
+        )
+        all_lines = integrity_lines + lines
+        return header + "\n" + "\n".join(all_lines)
 
 
 @dataclass

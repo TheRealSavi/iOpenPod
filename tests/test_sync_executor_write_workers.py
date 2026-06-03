@@ -6,9 +6,11 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
 
-from SyncEngine.fingerprint_diff_engine import SyncPlan
+from SyncEngine.fingerprint_diff_engine import SyncAction, SyncItem, SyncPlan
 from SyncEngine.mapping import MappingFile
+from SyncEngine.pc_library import PCTrack
 from SyncEngine.sync_executor import SyncExecutor, _SyncContext
+from SyncEngine.transcoder import resolve_transcode_plan
 
 
 def _make_sync_ctx(
@@ -16,7 +18,7 @@ def _make_sync_ctx(
     existing_playlists_raw: list[dict],
     existing_smart_raw: list[dict],
 ) -> _SyncContext:
-    return _SyncContext(
+    ctx = _SyncContext(
         plan=SyncPlan(),
         mapping=MappingFile(),
         progress_callback=None,
@@ -24,8 +26,34 @@ def _make_sync_ctx(
         write_back_to_pc=False,
         _is_cancelled=None,
         user_playlists=user_playlists,
-        existing_playlists_raw=existing_playlists_raw,
-        existing_smart_raw=existing_smart_raw,
+    )
+    ctx.existing_playlists_raw = existing_playlists_raw
+    ctx.existing_smart_raw = existing_smart_raw
+    return ctx
+
+
+def _make_pc_track(source: Path) -> PCTrack:
+    return PCTrack(
+        path=str(source),
+        relative_path=source.name,
+        filename=source.name,
+        extension=source.suffix.lower(),
+        mtime=0.0,
+        size=source.stat().st_size,
+        title=source.stem,
+        artist="Unknown Artist",
+        album="Unknown Album",
+        album_artist=None,
+        genre=None,
+        year=None,
+        track_number=None,
+        track_total=None,
+        disc_number=None,
+        disc_total=None,
+        duration_ms=1000,
+        bitrate=None,
+        sample_rate=None,
+        rating=None,
     )
 
 
@@ -107,10 +135,11 @@ def test_device_write_limit_serializes_final_ipod_writes(monkeypatch, tmp_path: 
                 active -= 1
 
     monkeypatch.setattr(executor, "_copy_file_chunked", fake_copy_file_chunked)
+    transcode_plan = resolve_transcode_plan(source, options=executor.transcode_options)
 
     with ThreadPoolExecutor(max_workers=4) as pool:
         futures = [
-            pool.submit(executor._copy_to_ipod, source, False)
+            pool.submit(executor._copy_to_ipod, source, transcode_plan)
             for _ in range(4)
         ]
         results = [future.result() for future in futures]
@@ -153,16 +182,103 @@ def test_device_write_limit_allows_multiple_parallel_writes_when_configured(
                 active -= 1
 
     monkeypatch.setattr(executor, "_copy_file_chunked", fake_copy_file_chunked)
+    transcode_plan = resolve_transcode_plan(source, options=executor.transcode_options)
 
     with ThreadPoolExecutor(max_workers=4) as pool:
         futures = [
-            pool.submit(executor._copy_to_ipod, source, False)
+            pool.submit(executor._copy_to_ipod, source, transcode_plan)
             for _ in range(4)
         ]
         results = [future.result() for future in futures]
 
     assert all(success for success, _path, _was_transcoded, _err in results)
     assert 1 < max_active <= 2
+
+
+def test_copy_stage_uses_planned_transcode_decision(monkeypatch, tmp_path: Path) -> None:
+    ipod_root = tmp_path / "ipod"
+    source = tmp_path / "source.mp3"
+    ipod_root.mkdir()
+    source.write_bytes(b"source-bytes")
+
+    executor = SyncExecutor(
+        ipod_root,
+        max_workers=1,
+        max_device_write_workers=1,
+    )
+    transcode_plan = resolve_transcode_plan(source, options=executor.transcode_options)
+    item = SyncItem(
+        action=SyncAction.ADD_TO_IPOD,
+        pc_track=_make_pc_track(source),
+        estimated_size=source.stat().st_size,
+        transcode_plan=transcode_plan,
+    )
+    ctx = _SyncContext(
+        plan=SyncPlan(to_add=[item]),
+        mapping=MappingFile(),
+        progress_callback=None,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+    )
+    copied: list[tuple[Path, bool]] = []
+
+    def fail_resolve(*_args, **_kwargs):
+        raise AssertionError("executor should use the SyncItem transcode_plan")
+
+    monkeypatch.setattr(
+        "SyncEngine.sync_executor.resolve_transcode_plan",
+        fail_resolve,
+    )
+
+    executor._parallel_copy_stage(
+        ctx,
+        stage_name="add",
+        items=[item],
+        on_success=lambda _item, ipod_path, was_transcoded: copied.append(
+            (ipod_path, was_transcoded)
+        ),
+    )
+
+    assert len(copied) == 1
+    assert copied[0][0].exists()
+    assert copied[0][1] is False
+
+
+def test_file_updates_do_not_preinvalidate_transcode_cache(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    executor = SyncExecutor(tmp_path)
+    source = tmp_path / "source.m4a"
+    source.write_bytes(b"x")
+    pc_track = _make_pc_track(source)
+    item = SyncItem(
+        action=SyncAction.UPDATE_FILE,
+        fingerprint="123,456,789",
+        pc_track=pc_track,
+        estimated_size=pc_track.size,
+    )
+    ctx = _SyncContext(
+        plan=SyncPlan(to_update_file=[item]),
+        mapping=MappingFile(),
+        progress_callback=None,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+    )
+
+    def fail_invalidate(*_args, **_kwargs):
+        raise AssertionError("cache should validate on lookup, not pre-invalidate")
+
+    monkeypatch.setattr(executor.transcode_cache, "invalidate", fail_invalidate)
+    monkeypatch.setattr(
+        executor,
+        "_parallel_copy_stage",
+        lambda *_args, **_kwargs: None,
+    )
+
+    executor._execute_file_updates(ctx)
 
 
 def test_merge_gui_playlists_moves_user_smart_playlist_to_visible_bucket(

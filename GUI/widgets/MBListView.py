@@ -34,6 +34,14 @@ from PyQt6.QtWidgets import (
     QWidgetAction,
 )
 
+from iTunesDB_Shared.constants import (
+    MEDIA_TYPE_AUDIO,
+    MEDIA_TYPE_AUDIO_VIDEO,
+    MEDIA_TYPE_AUDIOBOOK,
+    MEDIA_TYPE_PODCAST,
+    MEDIA_TYPE_VIDEO_MASK,
+)
+
 from ..artwork_rendering import (
     enhance_artwork_image,
     nested_artwork_radius,
@@ -104,17 +112,19 @@ def format_media_type(value: int) -> str:
     from iTunesDB_Shared.constants import MEDIA_TYPE_MAP
     if value in MEDIA_TYPE_MAP:
         return MEDIA_TYPE_MAP[value]
-    # Fallback: decode known bits
     names = []
-    _BITS = {
-        0x01: "Audio", 0x02: "Video", 0x04: "Podcast",
-        0x06: "Video Podcast", 0x08: "Audiobook",
-        0x20: "Music Video", 0x40: "TV Show",
-        0x4000: "Ringtone",
+    single_bit_types = {
+        bit: label
+        for bit, label in MEDIA_TYPE_MAP.items()
+        if bit and bit & (bit - 1) == 0
     }
-    for bit, name in _BITS.items():
-        if value & bit:
+    remaining = value
+    for bit, name in sorted(single_bit_types.items()):
+        if remaining & bit:
             names.append(name)
+            remaining &= ~bit
+    if remaining:
+        names.append(f"0x{remaining:X}")
     return " | ".join(names) if names else str(value) if value else ""
 
 
@@ -1248,8 +1258,8 @@ class MusicBrowserList(QFrame):
                 if mf is not None:
                     self._all_tracks = [
                         t for t in self._all_tracks
-                        if t.get("media_type", 1) == 0
-                        or (t.get("media_type", 1) & mf)
+                        if t.get("media_type", MEDIA_TYPE_AUDIO) == MEDIA_TYPE_AUDIO_VIDEO
+                        or (t.get("media_type", MEDIA_TYPE_AUDIO) & mf)
                     ]
 
     def _content_type_key(self) -> str:
@@ -1260,9 +1270,13 @@ class MusicBrowserList(QFrame):
             return "playlist"
 
         mf = getattr(self, "_media_type_filter", None)
-        is_video = mf is not None and (mf & 0x62) and not (mf & 0x01)
-        is_podcast = mf is not None and (mf & 0x04) != 0 and not is_video
-        is_audiobook = mf is not None and (mf & 0x08) != 0 and not is_video
+        is_video = (
+            mf is not None
+            and (mf & MEDIA_TYPE_VIDEO_MASK)
+            and not (mf & MEDIA_TYPE_AUDIO)
+        )
+        is_podcast = mf is not None and (mf & MEDIA_TYPE_PODCAST) != 0 and not is_video
+        is_audiobook = mf is not None and (mf & MEDIA_TYPE_AUDIOBOOK) != 0 and not is_video
 
         if is_video:
             return "video"
@@ -1434,9 +1448,13 @@ class MusicBrowserList(QFrame):
 
         # Choose appropriate defaults based on media type filter
         mf = getattr(self, "_media_type_filter", None)
-        is_video = mf is not None and (mf & 0x62) and not (mf & 0x01)
-        is_podcast = mf is not None and (mf & 0x04) != 0 and not is_video
-        is_audiobook = mf is not None and (mf & 0x08) != 0 and not is_video
+        is_video = (
+            mf is not None
+            and (mf & MEDIA_TYPE_VIDEO_MASK)
+            and not (mf & MEDIA_TYPE_AUDIO)
+        )
+        is_podcast = mf is not None and (mf & MEDIA_TYPE_PODCAST) != 0 and not is_video
+        is_audiobook = mf is not None and (mf & MEDIA_TYPE_AUDIOBOOK) != 0 and not is_video
         if is_video:
             defaults = DEFAULT_VIDEO_COLUMNS
         elif is_podcast:
@@ -2196,11 +2214,15 @@ class MusicBrowserList(QFrame):
         total = len(self._all_tracks)
         # Determine context-appropriate noun from media type filter
         mf = getattr(self, "_media_type_filter", None)
-        if mf is not None and mf & 0x62 and not (mf & 0x01):
+        if (
+            mf is not None
+            and mf & MEDIA_TYPE_VIDEO_MASK
+            and not (mf & MEDIA_TYPE_AUDIO)
+        ):
             noun = "video"
-        elif mf is not None and mf == 0x04:
+        elif mf is not None and mf == MEDIA_TYPE_PODCAST:
             noun = "episode"  # Podcast episodes
-        elif mf is not None and mf == 0x08:
+        elif mf is not None and mf == MEDIA_TYPE_AUDIOBOOK:
             noun = "audiobook"
         elif mf is not None and mf == 0x01:
             noun = "song"

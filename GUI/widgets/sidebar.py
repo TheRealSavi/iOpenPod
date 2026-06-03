@@ -1,22 +1,30 @@
-from PyQt6.QtCore import pyqtSignal, Qt, QRegularExpression, QSize, QTimer
-from PyQt6.QtWidgets import (
-    QFrame, QPushButton, QVBoxLayout, QHBoxLayout,
-    QLabel, QWidget, QProgressBar, QLineEdit, QSizePolicy
-)
-from PyQt6.QtGui import QFont, QCursor, QFontMetrics, QRegularExpressionValidator
+from PyQt6.QtCore import QRegularExpression, QSize, Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QCursor, QFont, QFontMetrics, QRegularExpressionValidator
+from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QProgressBar, QPushButton, QSizePolicy, QVBoxLayout, QWidget
+
 from app_core.device_identity import format_checksum_type_name
 
-from .formatters import format_size, format_duration_human as format_duration
-from ..ipod_images import get_ipod_image
 from ..glyphs import glyph_icon, glyph_pixmap
+from ..ipod_images import get_ipod_image
 from ..styles import (
-    Colors, FONT_FAMILY, MONO_FONT_FAMILY, Metrics,
-    btn_css, accent_btn_css,
-    sidebar_nav_css, sidebar_nav_selected_css, toolbar_btn_css,
-    LABEL_PRIMARY, LABEL_SECONDARY, LABEL_TERTIARY,
-    make_separator, make_section_header, make_scroll_area,
+    FONT_FAMILY,
+    LABEL_PRIMARY,
+    LABEL_SECONDARY,
+    LABEL_TERTIARY,
+    MONO_FONT_FAMILY,
+    Colors,
+    Metrics,
+    accent_btn_css,
+    btn_css,
+    make_scroll_area,
+    make_section_header,
+    make_separator,
+    sidebar_nav_css,
+    sidebar_nav_selected_css,
+    toolbar_btn_css,
 )
-
+from .formatters import format_duration_human as format_duration
+from .formatters import format_size
 
 # iTunes enforces 63 characters for iPod names; MHOD strings are UTF-16-LE
 # so only printable Unicode is allowed (no control characters).
