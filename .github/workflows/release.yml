@@ -11,6 +11,7 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
 
 permissions:
   actions: write           # needed to dispatch the Flatpak workflow
