@@ -17,6 +17,7 @@ import logging
 import os
 import sys
 from collections.abc import Callable, Iterable, Iterator
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -649,10 +650,12 @@ class PCLibrary:
             return self.root_path
         return max(matches, key=lambda root: len(root.parts))
 
-    def _relative_path_for(self, file_path: Path) -> str:
-        root = getattr(self, "_active_scan_root", None)
-        if root is None:
-            root = self._root_for_file(file_path)
+    def _relative_path_for(
+        self,
+        file_path: Path,
+        library_root: Path | None = None,
+    ) -> str:
+        root = library_root if library_root is not None else self._root_for_file(file_path)
         try:
             return str(file_path.relative_to(root))
         except ValueError:
@@ -686,10 +689,17 @@ class PCLibrary:
                 seen_files.add(key)
                 yield file_path, library_root
 
+    @staticmethod
+    def _default_scan_workers() -> int:
+        """Pick a sensible default worker count for parallel scans."""
+        return min(os.cpu_count() or 4, 8)
+
     def scan(
         self,
         progress_callback: Callable[[int, int, PCTrack], None] | None = None,
         include_video: bool = True,
+        max_workers: int | None = None,
+        is_cancelled: Callable[[], bool] | None = None,
     ) -> Iterator[PCTrack]:
         """
         Scan the library and yield PCTrack objects.
@@ -698,40 +708,102 @@ class PCLibrary:
             progress_callback: Optional callback(current, total, track) for progress updates
             include_video: When False, skip video files entirely.
                            Set to False when syncing to iPods that don't support video.
+            max_workers: Number of worker threads for metadata extraction. ``None``
+                         picks ``min(cpu_count, 8)``. Pass ``1`` for serial scanning
+                         (preserves directory-walk yield order).
+            is_cancelled: Optional callback returning True to abort the scan early.
+                          Pending futures are cancelled; in-flight workers finish.
+
+        Note:
+            With ``max_workers > 1`` tracks are yielded in completion order, not
+            directory-walk order. All current consumers materialise the result via
+            ``list(...)`` so order doesn't matter; if you need a stable order, sort
+            the result yourself or pass ``max_workers=1``.
         """
         if not MUTAGEN_AVAILABLE:
             raise RuntimeError("mutagen is required for library scanning. Install with: pip install mutagen")
 
-        # First count files for progress
-        total = self.count_audio_files(include_video=include_video) if progress_callback else 0
-        current = 0
+        # Materialise the file list once. This replaces the previous double walk
+        # (count_audio_files + _scan_media_files) and gives us `total` for free.
+        files = list(self._scan_media_files(include_video=include_video))
+        total = len(files)
 
-        for file_path, library_root in self._scan_media_files(include_video=include_video):
-            had_active_root = hasattr(self, "_active_scan_root")
-            previous_active_root = getattr(self, "_active_scan_root", None)
+        if max_workers is None:
+            max_workers = self._default_scan_workers()
+        # Clamp: at least 1, at most 8 (matches the fingerprint phase ceiling).
+        max_workers = max(1, min(max_workers, 8))
+
+        # Serial fast path — preserves legacy yield order and avoids
+        # ThreadPoolExecutor overhead for tiny libraries / single-file callers.
+        if max_workers == 1 or total <= 1:
+            current = 0
+            for file_path, library_root in files:
+                if is_cancelled and is_cancelled():
+                    return
+                try:
+                    track = self._read_track(file_path, library_root=library_root)
+                except Exception as e:
+                    logging.warning(f"Failed to read {file_path}: {e}")
+                    current += 1
+                    continue
+                if track is None:
+                    continue
+                current += 1
+                if progress_callback:
+                    progress_callback(current, total, track)
+                yield track
+            return
+
+        # Parallel path — mutagen reads are dominated by file I/O and release
+        # the GIL, so threading scales linearly until disk bandwidth saturates.
+        # Subprocess calls (ffprobe, art extraction) are also thread-safe.
+        logging.info("PC scan: reading %d files with %d worker threads", total, max_workers)
+        current = 0
+        with ThreadPoolExecutor(
+            max_workers=max_workers,
+            thread_name_prefix="pc-scan",
+        ) as pool:
+            futures = {pool.submit(self._read_track, file_path, library_root=library_root): file_path for file_path, library_root in files}
             try:
-                self._active_scan_root = library_root
-                track = self._read_track(file_path)
-                if track:
+                for future in as_completed(futures):
+                    if is_cancelled and is_cancelled():
+                        for pending in futures:
+                            pending.cancel()
+                        return
+                    file_path = futures[future]
+                    try:
+                        track = future.result()
+                    except Exception as e:
+                        logging.warning(f"Failed to read {file_path}: {e}")
+                        current += 1
+                        continue
+                    if track is None:
+                        continue
                     current += 1
                     if progress_callback:
                         progress_callback(current, total, track)
                     yield track
-            except Exception as e:
-                logging.warning(f"Failed to read {file_path}: {e}")
-                current += 1
-                continue
-            finally:
-                if had_active_root:
-                    self._active_scan_root = previous_active_root
-                else:
-                    try:
-                        delattr(self, "_active_scan_root")
-                    except AttributeError:
-                        pass
+            except GeneratorExit:
+                # Caller stopped iterating — cancel pending futures so the
+                # ThreadPoolExecutor shutdown returns promptly instead of
+                # waiting for every queued read to complete.
+                for pending in futures:
+                    pending.cancel()
+                raise
 
-    def _read_track(self, file_path: Path) -> PCTrack | None:
-        """Read metadata from a single audio or video file."""
+    def _read_track(
+        self,
+        file_path: Path,
+        library_root: Path | None = None,
+    ) -> PCTrack | None:
+        """Read metadata from a single audio or video file.
+
+        ``library_root`` is the library root that supplied this file; passing it
+        explicitly avoids ``_root_for_file``'s ``Path.resolve()`` and is required
+        for thread-safe parallel scans (no shared mutable state on ``self``).
+        When ``None``, the root is inferred from ``self.root_paths`` — useful
+        for ad-hoc callers that read a single file outside of ``scan()``.
+        """
         stat = file_path.stat()
         ext = file_path.suffix.lower()
         is_video = ext in VIDEO_EXTENSIONS
@@ -788,7 +860,7 @@ class PCLibrary:
 
         return PCTrack(
             path=str(file_path),
-            relative_path=self._relative_path_for(file_path),
+            relative_path=self._relative_path_for(file_path, library_root=library_root),
             filename=file_path.name,
             extension=ext,
             mtime=stat.st_mtime,
