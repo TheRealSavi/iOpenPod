@@ -8,9 +8,9 @@ Falls back gracefully if tray icon is not supported.
 import logging
 from typing import Optional
 
-from PyQt6.QtWidgets import QSystemTrayIcon, QApplication
-from PyQt6.QtGui import QIcon
 from PyQt6.QtCore import QObject
+from PyQt6.QtGui import QIcon
+from PyQt6.QtWidgets import QApplication, QSystemTrayIcon
 
 logger = logging.getLogger(__name__)
 
@@ -26,9 +26,9 @@ class Notifier(QObject):
 
     _instance: Optional["Notifier"] = None
 
-    def __init__(self, parent: Optional[QObject] = None):
+    def __init__(self, parent: QObject | None = None):
         super().__init__(parent)
-        self._tray: Optional[QSystemTrayIcon] = None
+        self._tray: QSystemTrayIcon | None = None
         self._available = False
         self._setup()
 
@@ -47,7 +47,7 @@ class Notifier(QObject):
         self._available = True
 
     @classmethod
-    def get_instance(cls, parent: Optional[QObject] = None) -> "Notifier":
+    def get_instance(cls, parent: QObject | None = None) -> "Notifier":
         if cls._instance is None:
             cls._instance = Notifier(parent)
         return cls._instance

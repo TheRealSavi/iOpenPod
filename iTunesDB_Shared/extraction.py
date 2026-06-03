@@ -5,7 +5,16 @@ parser and extract them into flat, easy-to-consume dictionaries.  They are
 used by ``iTunesDB_Parser.ipod_library`` and ``SyncEngine.sync_executor``.
 """
 
-from .constants import chunk_type_map, mhod_type_map
+from .constants import (
+    MHOD_TYPE_CHAPTER_DATA,
+    MHOD_TYPE_COLUMN_SIZE_OR_ORDER,
+    MHOD_TYPE_LIBRARY_PLAYLIST_INDEX,
+    MHOD_TYPE_PLAYLIST_SETTINGS,
+    MHOD_TYPE_SMART_PLAYLIST_DATA,
+    MHOD_TYPE_SMART_PLAYLIST_RULES,
+    chunk_type_map,
+    mhod_type_map,
+)
 
 
 def extract_datasets(mhbd: dict) -> dict:
@@ -81,7 +90,10 @@ def extract_track_extras(mhod_children: list) -> dict:
     extras = {}
     for wrapper in mhod_children:
         mhod_data = wrapper.get("data", {})
-        if mhod_data.get("mhod_type") != 17 or "data" not in mhod_data:
+        if (
+            mhod_data.get("mhod_type") != MHOD_TYPE_CHAPTER_DATA
+            or "data" not in mhod_data
+        ):
             continue
 
         raw_chapter_data = mhod_data["data"]
@@ -107,14 +119,14 @@ def extract_playlist_extras(mhod_children: list) -> dict:
     for wrapper in mhod_children:
         mhod_data = wrapper.get("data", {})
         mhod_type = mhod_data.get("mhod_type")
-        if mhod_type == 50 and "data" in mhod_data:
+        if mhod_type == MHOD_TYPE_SMART_PLAYLIST_DATA and "data" in mhod_data:
             extras["smart_playlist_data"] = mhod_data["data"]
-        elif mhod_type == 51 and "data" in mhod_data:
+        elif mhod_type == MHOD_TYPE_SMART_PLAYLIST_RULES and "data" in mhod_data:
             extras["smart_playlist_rules"] = mhod_data["data"]
-        elif mhod_type == 52 and "data" in mhod_data:
+        elif mhod_type == MHOD_TYPE_LIBRARY_PLAYLIST_INDEX and "data" in mhod_data:
             extras.setdefault("library_indices", []).append(mhod_data["data"])
-        elif mhod_type == 100 and "data" in mhod_data:
+        elif mhod_type == MHOD_TYPE_COLUMN_SIZE_OR_ORDER and "data" in mhod_data:
             extras["playlist_prefs"] = mhod_data["data"]
-        elif mhod_type == 102 and "data" in mhod_data:
+        elif mhod_type == MHOD_TYPE_PLAYLIST_SETTINGS and "data" in mhod_data:
             extras["playlist_settings"] = mhod_data["data"]
     return extras

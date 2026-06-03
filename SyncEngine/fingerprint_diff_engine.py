@@ -32,25 +32,27 @@ import re
 import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
-from enum import Enum, auto
 from pathlib import Path
 
+from iTunesDB_Shared.constants import MEDIA_TYPE_PODCAST
+
 from .audio_fingerprint import get_or_compute_fingerprint, is_fpcalc_available
-from .integrity import IntegrityReport
+from .contracts import SyncAction, SyncItem, SyncPlan
 from .mapping import MappingFile, MappingManager, TrackMapping
 from .pc_library import PCLibrary, PCTrack
 from .photos import (
     PCPhotoLibrary,
     PhotoEditState,
-    PhotoSyncPlan,
     build_photo_sync_plan,
     read_photo_db,
     scan_pc_photos,
 )
-from .transcoder import TranscodeOptions, resolve_transcode_plan
+from .source_identity import source_content_hash
+from .transcoder import TranscodeOptions, TranscodePlan, resolve_transcode_plan
 
 logger = logging.getLogger(__name__)
+
+_MP4_CONTAINER_EXTS = {".m4a", ".m4b", ".mp4", ".m4v", ".mov"}
 
 
 # ─── Storage Estimation ───────────────────────────────────────────────────────
@@ -67,269 +69,21 @@ def estimate_transcode_size(
 
     Returns the estimated bytes on the iPod after transcode.
     """
+    plan, estimated_size = resolve_track_transcode_plan(pc_track, options)
+    return estimated_size
+
+
+def resolve_track_transcode_plan(
+    pc_track: PCTrack,
+    options: TranscodeOptions | None = None,
+) -> tuple[TranscodePlan, int]:
+    """Resolve transfer policy and estimated output size for a PC track."""
     plan = resolve_transcode_plan(pc_track.path, options=options)
-    return plan.estimate_output_size(
+    estimated_size = plan.estimate_output_size(
         source_size=pc_track.size,
         duration_ms=pc_track.duration_ms,
     )
-
-
-# ─── Enums & Data Classes ─────────────────────────────────────────────────────
-
-
-class SyncAction(Enum):
-    """Type of sync action needed."""
-
-    ADD_TO_IPOD = auto()  # New track, copy to iPod
-    REMOVE_FROM_IPOD = auto()  # Track not on PC, remove from iPod
-    UPDATE_METADATA = auto()  # Metadata changed on PC, update iPod DB
-    UPDATE_FILE = auto()  # Source file changed, re-copy/transcode
-    UPDATE_ARTWORK = auto()  # Embedded art changed, re-extract
-    SYNC_PLAYCOUNT = auto()  # iPod has new plays to scrobble
-    SYNC_RATING = auto()  # Rating differs, last-write-wins
-    NO_ACTION = auto()  # Track is in sync
-
-
-@dataclass
-class SyncItem:
-    """A single item in the sync plan."""
-
-    action: SyncAction
-    fingerprint: str | None = None
-
-    # For ADD/UPDATE actions — the source PC track
-    pc_track: PCTrack | None = None
-
-    # For ADD/UPDATE actions — estimated size after transcode (bytes)
-    # Set when the item is created; used for accurate storage estimates in UI
-    estimated_size: int | None = None
-
-    # For REMOVE/matched actions — iPod-side info
-    db_track_id: int | None = None
-    ipod_track: dict | None = None
-
-    # For UPDATE_METADATA: which fields changed  {field: (pc_val, ipod_val)}
-    metadata_changes: dict = field(default_factory=dict)
-
-    # For SYNC_PLAYCOUNT
-    play_count_delta: int = 0       # iPod plays since last sync (from Play Counts file)
-    skip_count_delta: int = 0       # iPod skips since last sync (from Play Counts file)
-
-    # For SYNC_RATING — last-write-wins
-    ipod_rating: int = 0  # 0-100 (stars × 20)
-    pc_rating: int = 0  # 0-100 (stars × 20)
-    new_rating: int = 0  # The winner
-    rating_strategy: str = ""  # e.g. "ipod_wins", "pc_wins", "highest", etc.
-
-    # For UPDATE_ARTWORK
-    old_art_hash: str | None = None
-    new_art_hash: str | None = None
-
-    # Human-readable description
-    description: str = ""
-
-    # Album conversion replacement metadata.  Deferred removals are held until
-    # the matching generated album track has been copied successfully.
-    conversion_group_id: str | None = None
-    conversion_group_add_count: int = 0
-    defer_removal_until_after_add: bool = False
-    conversion_source_fingerprints: tuple[str, ...] = ()
-    conversion_source_path_hints: tuple[str, ...] = ()
-
-    @property
-    def db_id(self) -> int | None:
-        """Backward-compatible alias for the iPod track persistent ID."""
-        return self.db_track_id
-
-    @db_id.setter
-    def db_id(self, value: int | None) -> None:
-        self.db_track_id = value
-
-
-@dataclass
-class StorageSummary:
-    """iPod storage estimate for the sync plan."""
-
-    bytes_to_add: int = 0
-    bytes_to_remove: int = 0
-    bytes_to_update: int = 0  # File updates (re-copy)
-
-    @property
-    def net_change(self) -> int:
-        return self.bytes_to_add + self.bytes_to_update - self.bytes_to_remove
-
-    def format(self) -> str:
-        parts = []
-        if self.bytes_to_add > 0:
-            parts.append(f"+{_fmt_bytes(self.bytes_to_add)}")
-        if self.bytes_to_remove > 0:
-            parts.append(f"-{_fmt_bytes(self.bytes_to_remove)}")
-        if self.bytes_to_update > 0:
-            parts.append(f"~{_fmt_bytes(self.bytes_to_update)} re-sync")
-        if parts:
-            net = self.net_change
-            sign = "+" if net >= 0 else "-"
-            parts.append(f"(net {sign}{_fmt_bytes(abs(net))})")
-        return " ".join(parts) if parts else "0 B"
-
-
-@dataclass
-class SyncPlan:
-    """Complete sync plan with all actions needed."""
-
-    # Grouped action lists
-    to_add: list[SyncItem] = field(default_factory=list)
-    to_remove: list[SyncItem] = field(default_factory=list)
-    to_update_metadata: list[SyncItem] = field(default_factory=list)
-    to_update_file: list[SyncItem] = field(default_factory=list)
-    to_update_artwork: list[SyncItem] = field(default_factory=list)
-    to_sync_playcount: list[SyncItem] = field(default_factory=list)
-    to_sync_rating: list[SyncItem] = field(default_factory=list)
-
-    # PC file paths for ALL matched tracks (db_track_id → absolute PC path)
-    # Used by artwork writer to extract embedded art for *every* track
-    matched_pc_paths: dict[int, str] = field(default_factory=dict)
-
-    # Errors during fingerprinting
-    fingerprint_errors: list[tuple[str, str]] = field(default_factory=list)
-
-    # Fingerprint collisions that couldn't be auto-resolved
-    unresolved_collisions: list[tuple[str, list[PCTrack]]] = field(default_factory=list)
-
-    # PC duplicates: display_key → list[PCTrack] with same song AND same album
-    # True duplicates only — same fingerprint + same album.
-    # Same song on different albums is NOT a duplicate (greatest hits case).
-    duplicates: dict[str, list[PCTrack]] = field(default_factory=dict)
-
-    # Stale mapping entries: (fingerprint, db_track_id) pairs where db_track_id is not in iTunesDB.
-    # Cleaned from mapping during execution, not shown to user.
-    _stale_mapping_entries: list[tuple[str, int]] = field(default_factory=list)
-
-    # Integrity removals: tracks whose files are missing from the iPod.
-    # Always executed (not subject to user checkbox selection).  Kept
-    # separate from to_remove so they don't appear in the "Remove" card.
-    _integrity_removals: list[SyncItem] = field(default_factory=list)
-
-    # Mapping file loaded during compute_diff — carried through to executor
-    # so we don't load it twice.
-    mapping: MappingFile | None = None
-
-    # Integrity report from pre-flight check (None if not run)
-    integrity_report: IntegrityReport | None = None
-
-    # Stats
-    total_pc_tracks: int = 0
-    total_ipod_tracks: int = 0
-    matched_tracks: int = 0
-
-    # Playlist changes (populated by GUI before showing plan)
-    playlists_to_add: list[dict] = field(default_factory=list)
-    playlists_to_edit: list[dict] = field(default_factory=list)
-    playlists_to_remove: list[dict] = field(default_factory=list)
-
-    # Storage
-    storage: StorageSummary = field(default_factory=StorageSummary)
-
-    # Photo sync plan
-    photo_plan: PhotoSyncPlan | None = None
-
-    # When True, removal cards in sync review start checked (used by "Remove from iPod" context menu)
-    removals_pre_checked: bool = False
-
-    @property
-    def has_changes(self) -> bool:
-        return any([
-            self.to_add,
-            self.to_remove,
-            self.to_update_metadata,
-            self.to_update_file,
-            self.to_update_artwork,
-            self.to_sync_playcount,
-            self.to_sync_rating,
-            self._integrity_removals,
-            self.playlists_to_add,
-            self.playlists_to_edit,
-            self.playlists_to_remove,
-            self.photo_plan and self.photo_plan.has_changes,
-        ])
-
-    @property
-    def has_duplicates(self) -> bool:
-        return bool(self.duplicates)
-
-    @property
-    def duplicate_count(self) -> int:
-        return sum(len(t) - 1 for t in self.duplicates.values())
-
-    @property
-    def summary(self) -> str:
-        track_add_bytes = sum(
-            (item.estimated_size if item.estimated_size is not None else (item.pc_track.size if item.pc_track else 0))
-            for item in self.to_add
-        )
-        track_remove_bytes = sum(
-            (item.ipod_track.get("size", 0) if item.ipod_track else 0)
-            for item in self.to_remove
-        )
-        track_update_bytes = sum(
-            (item.estimated_size if item.estimated_size is not None else (item.pc_track.size if item.pc_track else 0))
-            for item in self.to_update_file
-        )
-
-        lines = []
-        if self.to_add:
-            lines.append(f"  📥 {len(self.to_add)} tracks to add ({_fmt_bytes(track_add_bytes)})")
-        if self.to_remove:
-            lines.append(f"  🗑️  {len(self.to_remove)} tracks to remove ({_fmt_bytes(track_remove_bytes)})")
-        if self.to_update_file:
-            lines.append(f"  🔄 {len(self.to_update_file)} tracks to re-sync ({_fmt_bytes(track_update_bytes)})")
-        if self.to_update_metadata:
-            lines.append(f"  📝 {len(self.to_update_metadata)} tracks with metadata updates")
-        if self.to_update_artwork:
-            lines.append(f"  🎨 {len(self.to_update_artwork)} tracks with artwork updates")
-        if self.to_sync_playcount:
-            lines.append(f"  🎵 {len(self.to_sync_playcount)} tracks with new play counts")
-        if self.to_sync_rating:
-            lines.append(f"  ⭐ {len(self.to_sync_rating)} tracks with rating changes")
-        if self.fingerprint_errors:
-            lines.append(f"  ⚠️  {len(self.fingerprint_errors)} files could not be fingerprinted")
-        if self.playlists_to_add:
-            lines.append(f"  🎶 {len(self.playlists_to_add)} playlists to add")
-        if self.playlists_to_edit:
-            lines.append(f"  📝 {len(self.playlists_to_edit)} playlists to update")
-        if self.playlists_to_remove:
-            lines.append(f"  🗑️  {len(self.playlists_to_remove)} playlists to remove")
-        if self.photo_plan:
-            if self.photo_plan.photos_to_add:
-                lines.append(f"  🖼️  {len(self.photo_plan.photos_to_add)} photos to add")
-            if self.photo_plan.photos_to_remove:
-                lines.append(f"  🗑️  {len(self.photo_plan.photos_to_remove)} photos to remove")
-            if self.photo_plan.albums_to_add:
-                lines.append(f"  📚 {len(self.photo_plan.albums_to_add)} photo albums to add")
-            if self.photo_plan.albums_to_remove:
-                lines.append(f"  🗂️  {len(self.photo_plan.albums_to_remove)} photo albums to remove")
-        if self.duplicates:
-            lines.append(f"  ⚠️  {len(self.duplicates)} duplicate groups ({self.duplicate_count} extra files skipped)")
-        if self.unresolved_collisions:
-            lines.append(f"  ❓ {len(self.unresolved_collisions)} unresolved fingerprint collisions")
-
-        # Show integrity fixes at the top if any were found
-        integrity_lines = []
-        if self.integrity_report and not self.integrity_report.is_clean:
-            ir = self.integrity_report
-            if ir.missing_files:
-                integrity_lines.append(f"  🔧 {len(ir.missing_files)} DB tracks had missing files (cleaned)")
-            if ir.stale_mappings:
-                integrity_lines.append(f"  🔧 {len(ir.stale_mappings)} stale mapping entries (cleaned)")
-            if ir.orphan_files:
-                integrity_lines.append(f"  🔧 {len(ir.orphan_files)} orphan files removed from iPod")
-
-        if not lines and not integrity_lines:
-            return "✅ Everything is in sync!"
-
-        header = f"Sync Plan ({self.matched_tracks} matched, {self.total_pc_tracks} PC, {self.total_ipod_tracks} iPod):"
-        all_lines = integrity_lines + lines
-        return header + "\n" + "\n".join(all_lines)
+    return plan, estimated_size
 
 
 # ─── Metadata Comparison ──────────────────────────────────────────────────────
@@ -654,7 +408,10 @@ class FingerprintDiffEngine:
         unmapped_db_count = sum(
             1
             for db_track_id, ipod_track in ipod_by_db_track_id.items()
-            if db_track_id not in mapped_db_track_ids and not (ipod_track.get("media_type", 0) & 0x04)
+            if (
+                db_track_id not in mapped_db_track_ids
+                and not (ipod_track.get("media_type", 0) & MEDIA_TYPE_PODCAST)
+            )
         )
 
         logger.info(
@@ -771,12 +528,16 @@ class FingerprintDiffEngine:
 
             if not mapping_entries:
                 # NEW TRACK: Not in mapping → Add
-                estimated_size = estimate_transcode_size(pc_track, self.transcode_options)
+                transcode_plan, estimated_size = resolve_track_transcode_plan(
+                    pc_track,
+                    self.transcode_options,
+                )
                 plan.to_add.append(SyncItem(
                     action=SyncAction.ADD_TO_IPOD,
                     fingerprint=fp,
                     pc_track=pc_track,
                     estimated_size=estimated_size,
+                    transcode_plan=transcode_plan,
                     description=f"New: {pc_track.artist or 'Unknown'} - {pc_track.title or pc_track.filename}",
                 ))
                 plan.storage.bytes_to_add += estimated_size
@@ -788,12 +549,16 @@ class FingerprintDiffEngine:
             if not available_entries:
                 # All mapping entries for this fingerprint are claimed by other
                 # album groups → this is a new album variant (greatest hits case)
-                estimated_size = estimate_transcode_size(pc_track, self.transcode_options)
+                transcode_plan, estimated_size = resolve_track_transcode_plan(
+                    pc_track,
+                    self.transcode_options,
+                )
                 plan.to_add.append(SyncItem(
                     action=SyncAction.ADD_TO_IPOD,
                     fingerprint=fp,
                     pc_track=pc_track,
                     estimated_size=estimated_size,
+                    transcode_plan=transcode_plan,
                     description=f"New (album variant): {pc_track.artist or 'Unknown'} - {pc_track.title or pc_track.filename} [{pc_track.album or 'Unknown'}]",
                 ))
                 plan.storage.bytes_to_add += estimated_size
@@ -815,12 +580,16 @@ class FingerprintDiffEngine:
             if ipod_track is None:
                 # Mapping exists but track missing from iTunesDB (stale mapping)
                 logger.warning(f"Mapping for {fp} points to missing db_track_id {db_track_id}")
-                estimated_size = estimate_transcode_size(pc_track, self.transcode_options)
+                transcode_plan, estimated_size = resolve_track_transcode_plan(
+                    pc_track,
+                    self.transcode_options,
+                )
                 plan.to_add.append(SyncItem(
                     action=SyncAction.ADD_TO_IPOD,
                     fingerprint=fp,
                     pc_track=pc_track,
                     estimated_size=estimated_size,
+                    transcode_plan=transcode_plan,
                     description=f"Re-add (stale mapping): {pc_track.artist or 'Unknown'} - {pc_track.title or pc_track.filename}",
                 ))
                 plan.storage.bytes_to_add += estimated_size
@@ -835,7 +604,10 @@ class FingerprintDiffEngine:
 
             # File change: size+mtime gate
             if self._source_file_changed(pc_track, matched_entry):
-                estimated_size = estimate_transcode_size(pc_track, self.transcode_options)
+                transcode_plan, estimated_size = resolve_track_transcode_plan(
+                    pc_track,
+                    self.transcode_options,
+                )
                 plan.to_update_file.append(SyncItem(
                     action=SyncAction.UPDATE_FILE,
                     fingerprint=fp,
@@ -843,6 +615,7 @@ class FingerprintDiffEngine:
                     db_track_id=db_track_id,
                     ipod_track=ipod_track,
                     estimated_size=estimated_size,
+                    transcode_plan=transcode_plan,
                     description=f"File changed: {pc_track.artist or 'Unknown'} - {pc_track.title or pc_track.filename}",
                 ))
                 plan.storage.bytes_to_update += estimated_size
@@ -894,7 +667,11 @@ class FingerprintDiffEngine:
             # We never sync play counts between the two — we just scrobble
             # the iPod delta so the user's ListenBrainz stays up to date.
             #
-            ipod_play_delta = ipod_track.get("recent_playcount", 0)
+            # Prefer the iTunesDB play_count_2 slot; fall back to the
+            # Play Counts file-derived delta when present.
+            ipod_play_delta = ipod_track.get("play_count_2", 0)
+            if not ipod_play_delta:
+                ipod_play_delta = ipod_track.get("recent_playcount", 0)
             ipod_skip_delta = ipod_track.get("recent_skipcount", 0)
 
             if ipod_play_delta > 0 or ipod_skip_delta > 0:
@@ -972,7 +749,7 @@ class FingerprintDiffEngine:
                 # Skip podcast tracks — managed by PodcastManager, not
                 # the PC-folder sync.  Their fingerprints won't appear
                 # in the PC scan so they'd always look "orphaned".
-                if ipod_track.get("media_type", 0) & 0x04:
+                if ipod_track.get("media_type", 0) & MEDIA_TYPE_PODCAST:
                     continue
 
                 plan.to_remove.append(SyncItem(
@@ -1005,7 +782,7 @@ class FingerprintDiffEngine:
                     continue
 
                 # Skip podcast tracks (same reason as 4a).
-                if ipod_track.get("media_type", 0) & 0x04:
+                if ipod_track.get("media_type", 0) & MEDIA_TYPE_PODCAST:
                     continue
 
                 plan.to_remove.append(SyncItem(
@@ -1039,7 +816,7 @@ class FingerprintDiffEngine:
                 continue
             # Skip podcast tracks — they are managed by the podcast
             # subsystem (PodcastManager), not the PC-folder sync.
-            if ipod_track.get("media_type", 0) & 0x04:
+            if ipod_track.get("media_type", 0) & MEDIA_TYPE_PODCAST:
                 continue
             # This track exists in iTunesDB but has no mapping entry and
             # was not matched to any PC track → it should be removed.
@@ -1299,7 +1076,7 @@ class FingerprintDiffEngine:
                 continue
             # Podcast tracks are managed by PodcastManager and are excluded
             # from normal PC-folder matching/removal logic.
-            if ipod_track.get("media_type", 0) & 0x04:
+            if ipod_track.get("media_type", 0) & MEDIA_TYPE_PODCAST:
                 continue
             bootstrap_candidates.append((db_track_id, ipod_track))
 
@@ -1358,6 +1135,10 @@ class FingerprintDiffEngine:
             source_size, source_mtime = self._current_pc_track_stat(pc_track)
             source_ext = Path(pc_track.path).suffix.lstrip(".").lower()
             ipod_ext = ipod_path.suffix.lstrip(".").lower()
+            try:
+                source_hash = source_content_hash(pc_track.path)
+            except OSError:
+                source_hash = None
             mapping.add_track(
                 fingerprint=fp,
                 db_track_id=db_track_id,
@@ -1368,6 +1149,7 @@ class FingerprintDiffEngine:
                 was_transcoded=(source_ext != ipod_ext),
                 source_path_hint=pc_track.relative_path,
                 art_hash=pc_track.art_hash,
+                source_hash=source_hash,
             )
             added += 1
 
@@ -1672,30 +1454,42 @@ class FingerprintDiffEngine:
     def _source_file_changed(self, pc_track: PCTrack, mapping: TrackMapping) -> bool:
         """Check if the source file has changed since last sync.
 
-        Uses size+mtime as a fast gate.
+        Uses size/mtime as a fast gate, then source content hashes when
+        available.  MP4-family source files are special: tag/art edits can
+        rewrite container metadata and change file size without changing the
+        audio payload, so old mappings without a content hash do not treat MP4
+        container churn as an audio-file replacement.
         """
-        # Significant size change (>10 KB or >1% of file size)
         size_diff = abs(pc_track.size - mapping.source_size)
+        mtime_changed = pc_track.mtime != mapping.source_mtime
+        if size_diff == 0 and not mtime_changed:
+            return False
+
+        current_hash = None
+        if mapping.source_hash:
+            try:
+                current_hash = source_content_hash(pc_track.path)
+            except OSError:
+                current_hash = None
+            if current_hash:
+                return current_hash != mapping.source_hash
+
+        source_ext = (pc_track.extension or Path(pc_track.path).suffix).lower()
+        if source_ext in _MP4_CONTAINER_EXTS:
+            logger.debug(
+                "Ignoring MP4-family container size/mtime change without stored source hash: %s",
+                pc_track.filename,
+            )
+            return False
+
+        # Significant size change (>10 KB or >1% of file size)
         size_pct = size_diff / max(mapping.source_size, 1)
 
         if size_diff > 10_240 or size_pct > 0.01:
             return True
 
         # mtime changed AND size changed (rules out metadata-only tag edits)
-        if pc_track.mtime != mapping.source_mtime and size_diff > 0:
+        if mtime_changed and size_diff > 0:
             return True
 
         return False
-
-
-# ─── Helpers ───────────────────────────────────────────────────────────────────
-
-
-def _fmt_bytes(val: int) -> str:
-    """Format bytes as human-readable string."""
-    v = float(abs(val))
-    for unit in ["B", "KB", "MB", "GB"]:
-        if v < 1024:
-            return f"{v:.1f} {unit}"
-        v /= 1024
-    return f"{v:.1f} TB"

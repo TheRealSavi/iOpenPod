@@ -216,31 +216,53 @@ def mhod_spl_reverse_sort(data, body_offset) -> int:
     return data[body_offset + 13]
 
 
-# Limit type names (from libgpod ItdbLimitType)
+# Limit type values (from libgpod ItdbLimitType)
+SPL_LIMIT_TYPE_MINUTES = 0x01
+SPL_LIMIT_TYPE_MB = 0x02
+SPL_LIMIT_TYPE_SONGS = 0x03
+SPL_LIMIT_TYPE_HOURS = 0x04
+SPL_LIMIT_TYPE_GB = 0x05
+
+# Limit type names.
 SPL_LIMIT_TYPE_MAP = {
-    0x01: "minutes",
-    0x02: "MB",
-    0x03: "songs",
-    0x04: "hours",
-    0x05: "GB",
+    SPL_LIMIT_TYPE_MINUTES: "minutes",
+    SPL_LIMIT_TYPE_MB: "MB",
+    SPL_LIMIT_TYPE_SONGS: "songs",
+    SPL_LIMIT_TYPE_HOURS: "hours",
+    SPL_LIMIT_TYPE_GB: "GB",
 }
 
-# Limit sort names (from libgpod ItdbLimitSort).
+# Limit sort values (from libgpod ItdbLimitSort).
+SPL_LIMIT_SORT_RANDOM = 0x02
+SPL_LIMIT_SORT_SONG_NAME = 0x03
+SPL_LIMIT_SORT_ALBUM = 0x04
+SPL_LIMIT_SORT_ARTIST = 0x05
+SPL_LIMIT_SORT_GENRE = 0x07
+SPL_LIMIT_SORT_MOST_RECENTLY_ADDED = 0x10
+SPL_LIMIT_SORT_LEAST_RECENTLY_ADDED = 0x80000010
+SPL_LIMIT_SORT_MOST_OFTEN_PLAYED = 0x14
+SPL_LIMIT_SORT_LEAST_OFTEN_PLAYED = 0x80000014
+SPL_LIMIT_SORT_MOST_RECENTLY_PLAYED = 0x15
+SPL_LIMIT_SORT_LEAST_RECENTLY_PLAYED = 0x80000015
+SPL_LIMIT_SORT_HIGHEST_RATING = 0x17
+SPL_LIMIT_SORT_LOWEST_RATING = 0x80000017
+
+# Limit sort names.
 # The 0x80000000 bit is the "reverse" flag, stored separately at SPLPref +13.
 SPL_LIMIT_SORT_MAP = {
-    0x02: "random",
-    0x03: "song_name",
-    0x04: "album",
-    0x05: "artist",
-    0x07: "genre",
-    0x10: "most_recently_added",
-    0x80000010: "least_recently_added",
-    0x14: "most_often_played",
-    0x80000014: "least_often_played",
-    0x15: "most_recently_played",
-    0x80000015: "least_recently_played",
-    0x17: "highest_rating",
-    0x80000017: "lowest_rating",
+    SPL_LIMIT_SORT_RANDOM: "random",
+    SPL_LIMIT_SORT_SONG_NAME: "song_name",
+    SPL_LIMIT_SORT_ALBUM: "album",
+    SPL_LIMIT_SORT_ARTIST: "artist",
+    SPL_LIMIT_SORT_GENRE: "genre",
+    SPL_LIMIT_SORT_MOST_RECENTLY_ADDED: "most_recently_added",
+    SPL_LIMIT_SORT_LEAST_RECENTLY_ADDED: "least_recently_added",
+    SPL_LIMIT_SORT_MOST_OFTEN_PLAYED: "most_often_played",
+    SPL_LIMIT_SORT_LEAST_OFTEN_PLAYED: "least_often_played",
+    SPL_LIMIT_SORT_MOST_RECENTLY_PLAYED: "most_recently_played",
+    SPL_LIMIT_SORT_LEAST_RECENTLY_PLAYED: "least_recently_played",
+    SPL_LIMIT_SORT_HIGHEST_RATING: "highest_rating",
+    SPL_LIMIT_SORT_LOWEST_RATING: "lowest_rating",
 }
 
 
@@ -450,6 +472,8 @@ SPL_ACTION_MAP = {
     0x03000004: "does not start with",  # not in iTunes UI
     0x03000008: "does not end with",  # not in iTunes UI
 }
+
+SPL_DATE_RELATIVE_ACTION_IDS = {0x00000200, 0x02000200}
 
 # Field type enum (from libgpod ItdbSPLFieldType — values start at 1)
 SPLFT_STRING = 1

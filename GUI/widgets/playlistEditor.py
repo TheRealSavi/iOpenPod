@@ -28,6 +28,49 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from iTunesDB_Shared.constants import (
+    MEDIA_TYPE_AUDIO,
+    MEDIA_TYPE_AUDIOBOOK,
+    MEDIA_TYPE_MUSIC_VIDEO,
+    MEDIA_TYPE_PODCAST,
+    MEDIA_TYPE_RINGTONE,
+    MEDIA_TYPE_TV_SHOW,
+    MEDIA_TYPE_VIDEO,
+    MEDIA_TYPE_VIDEO_PODCAST,
+    PLAYLIST_SORT_ORDER_MAP,
+)
+from iTunesDB_Shared.mhod_defs import (
+    SPL_DATE_UNITS_MAP,
+    SPL_FIELD_MAP,
+    SPL_FIELD_TYPE_MAP,
+    SPL_LIMIT_SORT_ALBUM,
+    SPL_LIMIT_SORT_ARTIST,
+    SPL_LIMIT_SORT_GENRE,
+    SPL_LIMIT_SORT_HIGHEST_RATING,
+    SPL_LIMIT_SORT_LEAST_OFTEN_PLAYED,
+    SPL_LIMIT_SORT_LEAST_RECENTLY_ADDED,
+    SPL_LIMIT_SORT_LEAST_RECENTLY_PLAYED,
+    SPL_LIMIT_SORT_LOWEST_RATING,
+    SPL_LIMIT_SORT_MAP,
+    SPL_LIMIT_SORT_MOST_OFTEN_PLAYED,
+    SPL_LIMIT_SORT_MOST_RECENTLY_ADDED,
+    SPL_LIMIT_SORT_MOST_RECENTLY_PLAYED,
+    SPL_LIMIT_SORT_RANDOM,
+    SPL_LIMIT_SORT_SONG_NAME,
+    SPL_LIMIT_TYPE_GB,
+    SPL_LIMIT_TYPE_HOURS,
+    SPL_LIMIT_TYPE_MAP,
+    SPL_LIMIT_TYPE_MB,
+    SPL_LIMIT_TYPE_MINUTES,
+    SPL_LIMIT_TYPE_SONGS,
+    SPLFT_BINARY_AND,
+    SPLFT_BOOLEAN,
+    SPLFT_DATE,
+    SPLFT_INT,
+    SPLFT_PLAYLIST,
+    SPLFT_STRING,
+)
+
 from ..glyphs import glyph_icon, glyph_pixmap
 from ..styles import FONT_FAMILY, Colors, Metrics, accent_btn_css, btn_css, make_scroll_area
 
@@ -35,54 +78,27 @@ log = logging.getLogger(__name__)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Constants for dropdowns (mirrored from iTunesDB_Parser/mhod_parser.py)
+# Dropdown data derived from iTunesDB_Shared definitions
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Field type enum
-SPLFT_STRING = 1
-SPLFT_INT = 2
-SPLFT_BOOLEAN = 3
-SPLFT_DATE = 4
-SPLFT_PLAYLIST = 5
-SPLFT_BINARY_AND = 7
+_FIELD_OPTION_IDS = (
+    0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+    0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x10, 0x12, 0x16,
+    0x17, 0x18, 0x19, 0x1F, 0x23, 0x27, 0x28, 0x29,
+    0x36, 0x37, 0x39, 0x3C, 0x3E, 0x3F, 0x44,
+    0x45, 0x47, 0x5A,
+)
+_FIELD_LABEL_OVERRIDES = {
+    0x02: "Name",
+    0x3E: "Video Show",
+}
 
-# Field ID → (display name, field type)
 FIELD_DEFS: dict[int, tuple[str, int]] = {
-    0x02: ("Name", SPLFT_STRING),
-    0x03: ("Album", SPLFT_STRING),
-    0x04: ("Artist", SPLFT_STRING),
-    0x05: ("Bitrate", SPLFT_INT),
-    0x06: ("Sample Rate", SPLFT_INT),
-    0x07: ("Year", SPLFT_INT),
-    0x08: ("Genre", SPLFT_STRING),
-    0x09: ("Kind", SPLFT_STRING),
-    0x0A: ("Date Modified", SPLFT_DATE),
-    0x0B: ("Track Number", SPLFT_INT),
-    0x0C: ("Size", SPLFT_INT),
-    0x0D: ("Time", SPLFT_INT),
-    0x0E: ("Comment", SPLFT_STRING),
-    0x10: ("Date Added", SPLFT_DATE),
-    0x12: ("Composer", SPLFT_STRING),
-    0x16: ("Play Count", SPLFT_INT),
-    0x17: ("Last Played", SPLFT_DATE),
-    0x18: ("Disc Number", SPLFT_INT),
-    0x19: ("Rating", SPLFT_INT),
-    0x1F: ("Compilation", SPLFT_BOOLEAN),
-    0x23: ("BPM", SPLFT_INT),
-    0x27: ("Grouping", SPLFT_STRING),
-    0x28: ("Playlist", SPLFT_PLAYLIST),
-    0x29: ("Has Video", SPLFT_BOOLEAN),
-    0x36: ("Description", SPLFT_STRING),
-    0x37: ("Category", SPLFT_STRING),
-    0x39: ("Video Kind", SPLFT_INT),
-    0x3C: ("Media Type", SPLFT_BINARY_AND),
-    0x3E: ("Video Show", SPLFT_STRING),
-    0x3F: ("Season Number", SPLFT_INT),
-    0x40: ("Episode Number", SPLFT_INT),
-    0x44: ("Skip Count", SPLFT_INT),
-    0x45: ("Last Skipped", SPLFT_DATE),
-    0x47: ("Album Artist", SPLFT_STRING),
-    0x5A: ("Album Rating", SPLFT_INT),
+    field_id: (
+        _FIELD_LABEL_OVERRIDES.get(field_id, SPL_FIELD_MAP[field_id]),
+        SPL_FIELD_TYPE_MAP[field_id],
+    )
+    for field_id in _FIELD_OPTION_IDS
 }
 
 # Actions grouped by field type
@@ -126,51 +142,58 @@ PLAYLIST_ACTIONS: list[tuple[int, str]] = [
     (0x02000001, "is not"),
 ]
 
-# Date units for relative dates
 DATE_UNITS: list[tuple[int, str]] = [
-    (86400, "days"),
-    (604800, "weeks"),
-    (2628000, "months"),
-    (3600, "hours"),
-    (60, "minutes"),
+    (unit, SPL_DATE_UNITS_MAP[unit])
+    for unit in (86400, 604800, 2628000, 3600, 60)
 ]
 
-# Limit types
 LIMIT_TYPES: list[tuple[int, str]] = [
-    (0x03, "items"),
-    (0x01, "minutes"),
-    (0x04, "hours"),
-    (0x02, "MB"),
-    (0x05, "GB"),
+    (
+        limit_type,
+        "items" if limit_type == SPL_LIMIT_TYPE_SONGS else SPL_LIMIT_TYPE_MAP[limit_type],
+    )
+    for limit_type in (
+        SPL_LIMIT_TYPE_SONGS,
+        SPL_LIMIT_TYPE_MINUTES,
+        SPL_LIMIT_TYPE_HOURS,
+        SPL_LIMIT_TYPE_MB,
+        SPL_LIMIT_TYPE_GB,
+    )
 ]
 
-# Limit sort options
 LIMIT_SORTS: list[tuple[int, str]] = [
-    (0x02, "random"),
-    (0x03, "name"),
-    (0x04, "album"),
-    (0x07, "artist"),
-    (0x09, "genre"),
-    (0x14, "most recently added"),
-    (0x80000014, "least recently added"),
-    (0x15, "most often played"),
-    (0x80000015, "least often played"),
-    (0x17, "most recently played"),
-    (0x80000017, "least recently played"),
-    (0x05, "highest rating"),
-    (0x80000005, "lowest rating"),
+    (
+        limit_sort,
+        "name"
+        if limit_sort == SPL_LIMIT_SORT_SONG_NAME
+        else SPL_LIMIT_SORT_MAP[limit_sort].replace("_", " "),
+    )
+    for limit_sort in (
+        SPL_LIMIT_SORT_RANDOM,
+        SPL_LIMIT_SORT_SONG_NAME,
+        SPL_LIMIT_SORT_ALBUM,
+        SPL_LIMIT_SORT_ARTIST,
+        SPL_LIMIT_SORT_GENRE,
+        SPL_LIMIT_SORT_MOST_RECENTLY_ADDED,
+        SPL_LIMIT_SORT_LEAST_RECENTLY_ADDED,
+        SPL_LIMIT_SORT_MOST_OFTEN_PLAYED,
+        SPL_LIMIT_SORT_LEAST_OFTEN_PLAYED,
+        SPL_LIMIT_SORT_MOST_RECENTLY_PLAYED,
+        SPL_LIMIT_SORT_LEAST_RECENTLY_PLAYED,
+        SPL_LIMIT_SORT_HIGHEST_RATING,
+        SPL_LIMIT_SORT_LOWEST_RATING,
+    )
 ]
 
-# Media type bitmask flags for the Binary AND field
 MEDIA_TYPE_FLAGS: list[tuple[int, str]] = [
-    (0x01, "Music"),
-    (0x02, "Video"),
-    (0x04, "Podcast"),
-    (0x06, "Video Podcast"),
-    (0x08, "Audiobook"),
-    (0x20, "Music Video"),
-    (0x40, "TV Show"),
-    (0x100, "Ringtone"),
+    (MEDIA_TYPE_AUDIO, "Music"),
+    (MEDIA_TYPE_VIDEO, "Video"),
+    (MEDIA_TYPE_PODCAST, "Podcast"),
+    (MEDIA_TYPE_VIDEO_PODCAST, "Video Podcast"),
+    (MEDIA_TYPE_AUDIOBOOK, "Audiobook"),
+    (MEDIA_TYPE_MUSIC_VIDEO, "Music Video"),
+    (MEDIA_TYPE_TV_SHOW, "TV Show"),
+    (MEDIA_TYPE_RINGTONE, "Ringtone"),
 ]
 
 
@@ -1075,32 +1098,24 @@ class SmartPlaylistEditor(QFrame):
 # RegularPlaylistEditor — simple editor for normal (non-smart) playlists
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Sort order options for regular playlists (from libgpod ItdbPlaylistSortOrder)
+_PLAYLIST_SORT_OPTION_IDS = (
+    1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
+    14, 15, 16, 17, 18, 20, 21, 22, 23, 24, 25, 26,
+)
+_PLAYLIST_SORT_LABEL_OVERRIDES = {
+    1: "Manual",
+    23: "Rating",
+}
+
 PLAYLIST_SORT_ORDERS: list[tuple[int, str]] = [
-    (1, "Manual"),
-    (3, "Title"),
-    (4, "Album"),
-    (5, "Artist"),
-    (6, "Bitrate"),
-    (7, "Genre"),
-    (8, "Kind"),
-    (9, "Date Modified"),
-    (10, "Track Number"),
-    (11, "Size"),
-    (12, "Time"),
-    (13, "Year"),
-    (14, "Sample Rate"),
-    (15, "Comment"),
-    (16, "Date Added"),
-    (17, "Equalizer"),
-    (18, "Composer"),
-    (20, "Play Count"),
-    (21, "Last Played"),
-    (22, "Disc Number"),
-    (23, "Rating"),
-    (24, "Release Date"),
-    (25, "BPM"),
-    (26, "Grouping"),
+    (
+        sort_order,
+        _PLAYLIST_SORT_LABEL_OVERRIDES.get(
+            sort_order,
+            PLAYLIST_SORT_ORDER_MAP[sort_order].title(),
+        ),
+    )
+    for sort_order in _PLAYLIST_SORT_OPTION_IDS
 ]
 
 

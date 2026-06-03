@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from iTunesDB_Shared.mhod_defs import (
     MHOD_HEADER_SIZE,
     SLST_HEADER_SIZE,
+    SPL_DATE_RELATIVE_ACTION_IDS,
     SPL_RULE_DATA_SIZE,
     SPL_RULE_HEADER_SIZE,
     SPLFT_DATE,
@@ -27,12 +28,10 @@ from iTunesDB_Shared.mhod_defs import (
     write_mhod_header,
 )
 
-DATE_RELATIVE_ACTION_IDS = {0x00000200, 0x02000200}
-
-
 # ────────────────────────────────────────────────────────────
 # Data classes
 # ────────────────────────────────────────────────────────────
+
 
 @dataclass
 class SmartPlaylistPrefs:
@@ -178,7 +177,7 @@ def _write_spl_rule(rule: SmartPlaylistRule) -> bytes:
         data_section = bytearray(SPL_RULE_DATA_SIZE)
         from_value = rule.from_value
         from_date = rule.from_date
-        if ft == SPLFT_DATE and rule.action_id in DATE_RELATIVE_ACTION_IDS:
+        if ft == SPLFT_DATE and rule.action_id in SPL_DATE_RELATIVE_ACTION_IDS:
             from_value, from_date = _normalize_relative_date_fields(
                 from_value,
                 from_date,
@@ -292,7 +291,7 @@ def rules_from_parsed(parsed: dict) -> SmartPlaylistRules:
         from_value = r.get("from_value", 0)
         from_date = r.get("from_date", 0)
         from_units = r.get("from_units", 0)
-        if spl_get_field_type(field_id) == SPLFT_DATE and action_id in DATE_RELATIVE_ACTION_IDS:
+        if spl_get_field_type(field_id) == SPLFT_DATE and action_id in SPL_DATE_RELATIVE_ACTION_IDS:
             from_value, from_date = _normalize_relative_date_fields(
                 from_value,
                 from_date,

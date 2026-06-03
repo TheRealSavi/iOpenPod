@@ -4,7 +4,7 @@ Declarative :class:`FieldDef` list for the MHIP chunk — a playlist
 entry that references a track by ``track_id``.
 """
 
-from .field_base import FieldDef, _u32, _u16, _u64, mac_to_unix, unix_to_mac
+from .field_base import FieldDef, _u16, _u32, _u64, mac_to_unix, unix_to_mac
 
 _S = "mhip"
 

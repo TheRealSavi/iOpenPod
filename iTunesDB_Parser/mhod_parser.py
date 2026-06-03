@@ -43,22 +43,6 @@ from ._parsing import UINT16_LE, UINT32_LE, ParseResult
 
 logger = logging.getLogger(__name__)
 
-# ── Local layout constants ─────────────────────────────────────────
-# Binary offsets not already defined in iTunesDB_Shared.mhod_defs.
-# Each is derived from the layout documented in the per-type docstrings.
-
-# MHOD52 (sorted index): sort_type(4) + count(4) + padding(40) = 48
-_MHOD52_INDICES_OFFSET = 48
-
-# MHOD53 (jump table): sort_type(4) + count(4) + padding(8) = 16
-_MHOD53_ENTRIES_OFFSET = 16
-_MHOD53_ENTRY_SIZE = 12  # letter(2) + pad(2) + start(4) + count(4)
-
-# MHOD100: bodies ≤ 20 bytes are MHIP-context (position);
-# larger bodies are MHYP-context (playlist display preferences).
-_MHOD100_MHIP_MAX_BODY = 20
-
-
 # ────────────────────────────────────────────────────────────────────
 # Top-level dispatcher
 # ────────────────────────────────────────────────────────────────────
@@ -332,7 +316,7 @@ def _parse_mhod52(
         "count": count,
     }
 
-    indices_start = body_offset + _MHOD52_INDICES_OFFSET
+    indices_start = body_offset + defs.MHOD52_BODY_HEADER_SIZE
     indices: list[int] = []
     for i in range(count):
         pos = indices_start + i * 4
@@ -373,11 +357,11 @@ def _parse_mhod53(
         "count": count,
     }
 
-    entries_start = body_offset + _MHOD53_ENTRIES_OFFSET
+    entries_start = body_offset + defs.MHOD53_BODY_HEADER_SIZE
     entries: list[dict[str, int]] = []
     for i in range(count):
-        pos = entries_start + i * _MHOD53_ENTRY_SIZE
-        if pos + _MHOD53_ENTRY_SIZE <= body_offset + body_length:
+        pos = entries_start + i * defs.MHOD53_ENTRY_SIZE
+        if pos + defs.MHOD53_ENTRY_SIZE <= body_offset + body_length:
             letter_code = UINT16_LE.unpack_from(data, pos)[0]
             start = UINT32_LE.unpack_from(data, pos + 4)[0]
             entry_count = UINT32_LE.unpack_from(data, pos + 8)[0]
@@ -407,7 +391,7 @@ def _parse_mhod100(
     """Parse playlist position or preferences from MHOD type 100."""
     result: dict[str, Any] = {}
 
-    if body_length <= _MHOD100_MHIP_MAX_BODY:
+    if body_length <= idb.mhod_defs.MHOD100_POSITION_BODY_SIZE:
         # MHIP context: simple position field.
         if body_length >= 4:
             result["position"] = idb.mhod_defs.mhod100_position(data, body_offset)

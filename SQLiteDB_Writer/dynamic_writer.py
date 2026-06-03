@@ -7,10 +7,11 @@ Reference: libgpod itdb_sqlite.c mk_Dynamic()
 """
 
 import logging
-from typing import Optional
 
 from iTunesDB_Writer.mhit_writer import TrackInfo
-from ._helpers import s64 as _s64, unix_to_coredata, open_db
+
+from ._helpers import open_db, unix_to_coredata
+from ._helpers import s64 as _s64
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +63,7 @@ CREATE TABLE IF NOT EXISTS rental_info (
 def write_dynamic_itdb(
     path: str,
     tracks: list[TrackInfo],
-    playlist_pids: Optional[list[int]] = None,
+    playlist_pids: list[int] | None = None,
     tz_offset: int = 0,
 ) -> None:
     """Write Dynamic.itdb SQLite database.

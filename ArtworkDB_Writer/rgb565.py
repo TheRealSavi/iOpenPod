@@ -12,6 +12,7 @@ import io
 import numpy as np
 from PIL import Image
 
+from ArtworkDB_Shared.mhlf import extract_format_ids
 from ipod_device import (
     ITHMB_FORMAT_MAP,
     ArtworkFormat,
@@ -102,45 +103,7 @@ def get_artwork_formats(ipod_path: str) -> dict[int, tuple[int, int]]:
 
 def _extract_format_ids(data: bytes) -> list[int]:
     """Extract correlation IDs from mhif entries in an ArtworkDB binary."""
-    import struct
-    result = []
-    mhfd_hdr = struct.unpack('<I', data[4:8])[0]
-    child_count = struct.unpack('<I', data[20:24])[0]
-    offset = mhfd_hdr
-    for _ in range(child_count):
-        if offset + 14 > len(data) or data[offset:offset + 4] != b'mhsd':
-            break
-        mhsd_hdr = struct.unpack('<I', data[offset + 4:offset + 8])[0]
-        mhsd_total = struct.unpack('<I', data[offset + 8:offset + 12])[0]
-        ds_type = struct.unpack('<H', data[offset + 12:offset + 14])[0]
-        if ds_type == 3:  # file list
-            mhlf_off = offset + mhsd_hdr
-            if (
-                mhlf_off + 12 <= len(data)
-                and data[mhlf_off:mhlf_off + 4] == b'mhlf'
-            ):
-                mhlf_hdr = struct.unpack('<I', data[mhlf_off + 4:mhlf_off + 8])[0]
-                mhif_count = struct.unpack('<I', data[mhlf_off + 8:mhlf_off + 12])[0]
-                mhif_off = mhlf_off + mhlf_hdr
-                for _ in range(mhif_count):
-                    if (
-                        mhif_off + 20 <= len(data)
-                        and data[mhif_off:mhif_off + 4] == b'mhif'
-                    ):
-                        mhif_size = struct.unpack(
-                            '<I',
-                            data[mhif_off + 4:mhif_off + 8],
-                        )[0]
-                        corr_id = struct.unpack(
-                            '<I',
-                            data[mhif_off + 16:mhif_off + 20],
-                        )[0]
-                        result.append(corr_id)
-                        mhif_off += mhif_size
-                    else:
-                        break
-        offset += mhsd_total
-    return result
+    return extract_format_ids(data)
 
 
 def image_from_bytes(art_bytes: bytes, *, source_path: str = "") -> Image.Image | None:

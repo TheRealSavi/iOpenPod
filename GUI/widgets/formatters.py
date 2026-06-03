@@ -1,12 +1,9 @@
-"""
-Shared formatting utilities for the GUI.
+"""Shared formatting utilities for the GUI."""
 
-Provides consistent human-readable formatting for sizes, durations, ratings, etc.
-Import these instead of defining local static _format_* methods.
-"""
-
+from iTunesDB_Shared.constants import MEDIA_TYPE_MAP, PLAYLIST_SORT_ORDER_MAP
 from iTunesDB_Shared.mhod_defs import (
     SPL_ACTION_MAP,
+    SPL_DATE_RELATIVE_ACTION_IDS,
     SPL_DATE_UNITS_MAP,
     SPL_FIELD_MAP,
     SPL_LIMIT_SORT_MAP,
@@ -62,41 +59,14 @@ def format_rating(rating: int) -> str:
 
 # ── Playlist formatters ────────────────────────────────────────────────────
 
-# Sort order names from libgpod ItdbPlaylistSortOrder enum.
-# NOTE: libgpod defines 1=Manual (ITDB_PSO_MANUAL), NOT 0.
-_SORT_ORDER_MAP = {
+_SORT_ORDER_LABEL_OVERRIDES = {
     0: "Default",
     1: "Manual",
-    2: "Unknown (2)",
-    3: "Title",
-    4: "Album",
-    5: "Artist",
-    6: "Bitrate",
-    7: "Genre",
-    8: "Kind",
-    9: "Date Modified",
-    10: "Track Number",
-    11: "Size",
-    12: "Time",
-    13: "Year",
-    14: "Sample Rate",
-    15: "Comment",
-    16: "Date Added",
-    17: "Equalizer",
-    18: "Composer",
-    19: "Unknown (19)",
-    20: "Play Count",
-    21: "Last Played",
-    22: "Disc Number",
     23: "Rating",
-    24: "Release Date",
-    25: "BPM",
-    26: "Grouping",
-    27: "Category",
-    28: "Description",
-    29: "Show",
-    30: "Season",
-    31: "Episode Number",
+}
+_SORT_ORDER_MAP = {
+    sort_order: _SORT_ORDER_LABEL_OVERRIDES.get(sort_order, label.title())
+    for sort_order, label in PLAYLIST_SORT_ORDER_MAP.items()
 }
 
 
@@ -128,23 +98,10 @@ def format_mhsd5_type(mhsd5_type: int) -> str:
 
 # ── Media type bitmask for smart playlist rules ─────────────────────────────
 
-# From libgpod ItdbMediatype enum — bitmask flags used by smart playlist
-# "Media Type" (field 0x3C) rules with BINARY_AND actions.
-_MEDIATYPE_FLAGS = {
-    0x00000001: "Music",
-    0x00000002: "Movie",
-    0x00000004: "Podcast",
-    0x00000006: "Video Podcast",
-    0x00000008: "Audiobook",
-    0x00000020: "Music Video",
-    0x00000040: "TV Show",
-    0x00000100: "Ringtone",
-    0x00000400: "Rental",
-    0x00008000: "iTunes Extra",
-    0x00010000: "Memo",
-    0x00100000: "iTunes U",
-    0x00200000: "EPUB Book",
-    0x00400000: "PDF Book",
+_SINGLE_BIT_MEDIA_TYPES = {
+    value: label
+    for value, label in MEDIA_TYPE_MAP.items()
+    if value and value & (value - 1) == 0
 }
 
 
@@ -152,18 +109,17 @@ def _decode_mediatype(value: int) -> str:
     """Decode a media type bitmask into human-readable flag names."""
     if value == 0:
         return "None"
+    if value in MEDIA_TYPE_MAP:
+        return MEDIA_TYPE_MAP[value]
     names = []
     remaining = value
-    for bit, name in sorted(_MEDIATYPE_FLAGS.items()):
-        if value & bit:
+    for bit, name in sorted(_SINGLE_BIT_MEDIA_TYPES.items()):
+        if remaining & bit:
             names.append(name)
             remaining &= ~bit
     if remaining:
         names.append(f"0x{remaining:X}")
     return " | ".join(names) if names else str(value)
-
-
-DATE_RELATIVE_ACTION_IDS = {0x00000200, 0x02000200}
 
 
 def _signed_i64(value: int) -> int:
@@ -218,7 +174,7 @@ def format_smart_rule(rule: dict) -> str:
         # Resolve raw unit seconds to human name
         from_units = rule.get("from_units", 0)
         units_name = rule.get("units_name", "") or SPL_DATE_UNITS_MAP.get(from_units, "")
-        if action_id in DATE_RELATIVE_ACTION_IDS:
+        if action_id in SPL_DATE_RELATIVE_ACTION_IDS:
             count = _relative_date_count(rule)
             if units_name and count:
                 return f"{field} {action} {count} {units_name}"

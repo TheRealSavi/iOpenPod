@@ -30,12 +30,10 @@ import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
-from packaging.version import Version, InvalidVersion
-
+from packaging.version import InvalidVersion, Version
 from PyQt6.QtCore import QThread, pyqtSignal
 
 logger = logging.getLogger(__name__)
@@ -137,9 +135,9 @@ def check_for_update() -> UpdateResult:
 
 def download_update(
     url: str,
-    dest_dir: Optional[Path] = None,
+    dest_dir: Path | None = None,
     progress_callback=None,
-) -> Optional[Path]:
+) -> Path | None:
     """Download the release archive to *dest_dir* (default: temp dir).
 
     *progress_callback(bytes_downloaded, total_bytes)* is called periodically.
@@ -198,7 +196,7 @@ def verify_checksum(archive_path: Path, checksum_url: str) -> bool:
                     break
                 hasher.update(chunk)
         actual_hash = hasher.hexdigest().lower()
-    except (OSError, IOError) as exc:
+    except OSError as exc:
         logger.error("Failed to read archive for checksum: %s", exc)
         return False
     ok = actual_hash == expected_hash
@@ -212,15 +210,15 @@ def verify_checksum(archive_path: Path, checksum_url: str) -> bool:
 # ── Update staging (extract to a staging directory) ─────────────────────────
 
 
-def stage_update(archive_path: Path) -> Optional[Path]:
+def stage_update(archive_path: Path) -> Path | None:
     """Extract the archive into a staging directory.
 
     Returns the path to the staging directory containing the extracted
     update, or ``None`` on failure.  The caller is responsible for
     launching the bootstrap installer and exiting.
     """
-    import zipfile
     import tarfile
+    import zipfile
 
     staging = Path(tempfile.mkdtemp(prefix="iopenpod-staging-"))
 

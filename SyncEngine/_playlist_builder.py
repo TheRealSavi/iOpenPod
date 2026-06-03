@@ -10,6 +10,7 @@ import logging
 import os
 from pathlib import Path
 
+from iTunesDB_Shared.constants import MEDIA_TYPE_PODCAST
 from iTunesDB_Writer.mhit_writer import TrackInfo
 from iTunesDB_Writer.mhod_spl_writer import prefs_from_parsed, rules_from_parsed
 from iTunesDB_Writer.mhyp_writer import PlaylistInfo, PlaylistItemMeta
@@ -387,7 +388,9 @@ def _sanitize_playlists(playlists: list[PlaylistInfo],
 def _rebuild_podcast_playlist(playlists: list[PlaylistInfo],
                               all_track_infos: list[TrackInfo]) -> None:
     """Ensure the Podcasts playlist reflects all current podcast tracks."""
-    podcast_db_track_ids = [t.db_track_id for t in all_track_infos if t.media_type & 0x04]
+    podcast_db_track_ids = [
+        t.db_track_id for t in all_track_infos if t.media_type & MEDIA_TYPE_PODCAST
+    ]
     existing_podcast_pl = next((p for p in playlists if p.podcast_flag), None)
 
     if podcast_db_track_ids:

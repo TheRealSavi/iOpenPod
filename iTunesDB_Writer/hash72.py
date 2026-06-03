@@ -29,13 +29,18 @@ Usage:
 
 import hashlib
 import os
-from typing import Optional
 
 from iTunesDB_Shared.mhbd_defs import (
     MHBD_OFFSET_DB_ID as OFFSET_DB_ID,
-    MHBD_OFFSET_HASHING_SCHEME as OFFSET_HASHING_SCHEME,
+)
+from iTunesDB_Shared.mhbd_defs import (
     MHBD_OFFSET_HASH58 as OFFSET_HASH58,
+)
+from iTunesDB_Shared.mhbd_defs import (
     MHBD_OFFSET_HASH72 as OFFSET_HASH72,
+)
+from iTunesDB_Shared.mhbd_defs import (
+    MHBD_OFFSET_HASHING_SCHEME as OFFSET_HASHING_SCHEME,
 )
 
 # AES-128 key (from libgpod itdb_hash72.c line 40)
@@ -69,7 +74,7 @@ def _get_hash_info_path(ipod_path: str) -> str:
     return os.path.join(ipod_path, "iPod_Control", "Device", "HashInfo")
 
 
-def read_hash_info(ipod_path: str) -> Optional[HashInfo]:
+def read_hash_info(ipod_path: str) -> HashInfo | None:
     """
     Read and parse HashInfo file from iPod.
 
@@ -192,11 +197,11 @@ def _hash_generate(sha1: bytes, iv: bytes, rndpart: bytes) -> bytes:
     except ImportError:
         try:
             from Cryptodome.Cipher import AES  # type: ignore[import-not-found]
-        except ImportError:
+        except ImportError as err:
             raise ImportError(
                 "PyCryptodome is required for HASH72. "
                 "Install with: pip install pycryptodome"
-            )
+            ) from err
 
     # Plaintext: sha1 (20 bytes) + rndpart (12 bytes) = 32 bytes
     plaintext = sha1 + rndpart
@@ -215,7 +220,7 @@ def _hash_generate(sha1: bytes, iv: bytes, rndpart: bytes) -> bytes:
     return bytes(signature)
 
 
-def _hash_extract(signature: bytes, sha1: bytes) -> Optional[tuple]:
+def _hash_extract(signature: bytes, sha1: bytes) -> tuple | None:
     """
     Extract IV and random bytes from a valid signature.
 
@@ -253,11 +258,11 @@ def _hash_extract(signature: bytes, sha1: bytes) -> Optional[tuple]:
     except ImportError:
         try:
             from Cryptodome.Cipher import AES  # type: ignore[import-not-found]
-        except ImportError:
+        except ImportError as err:
             raise ImportError(
                 "PyCryptodome is required for HASH72. "
                 "Install with: pip install pycryptodome"
-            )
+            ) from err
 
     if len(signature) < 46 or signature[0] != 0x01 or signature[1] != 0x00:
         return None

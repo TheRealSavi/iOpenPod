@@ -11,7 +11,7 @@ from typing import Any
 def build_removal_sync_plan(tracks: Sequence[dict]) -> Any:
     """Build a removal-only SyncPlan for tracks selected in the UI."""
 
-    from SyncEngine.fingerprint_diff_engine import (
+    from SyncEngine.contracts import (
         StorageSummary,
         SyncAction,
         SyncItem,
@@ -53,7 +53,7 @@ def build_podcast_removal_sync_plan(
 ) -> Any | None:
     """Build a removal-only SyncPlan for podcast episodes already on the iPod."""
 
-    from SyncEngine.fingerprint_diff_engine import (
+    from SyncEngine.contracts import (
         StorageSummary,
         SyncAction,
         SyncItem,
@@ -105,7 +105,7 @@ def build_filtered_sync_plan(
 ) -> Any:
     """Build the executable plan from checked sync-review items."""
 
-    from SyncEngine.fingerprint_diff_engine import StorageSummary, SyncAction, SyncPlan
+    from SyncEngine.contracts import StorageSummary, SyncAction, SyncPlan
 
     from .sync_review_model import sync_item_size_delta
 

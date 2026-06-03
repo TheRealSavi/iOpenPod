@@ -37,6 +37,8 @@ from typing import Any, Literal, overload
 import numpy as np
 from PIL import Image
 
+from ArtworkDB_Shared.constants import IMAGE_CONTAINER_NAMES
+from ArtworkDB_Shared.ithmb_paths import normalize_ithmb_filename
 from ArtworkDB_Writer.ithmb_codecs import decode_pixels_for_format
 
 logger = logging.getLogger(__name__)
@@ -411,7 +413,7 @@ def _flatten_metadata(value: Any, prefix: str = "") -> ArtworkMetadataRows:
 
 
 def _artwork_entry_metadata(entry: dict[str, Any]) -> ArtworkMetadataRows:
-    container_keys = {"_image_containers", "Thumbnail Image", "Full Res Image", "UNK MHOD 6"}
+    container_keys = {"_image_containers", *IMAGE_CONTAINER_NAMES}
     entry_fields = {
         key: value
         for key, value in entry.items()
@@ -811,7 +813,7 @@ def getAlbumColors(image, bg=None):
 
 def _image_result_from_container(container: dict[str, Any]) -> dict[str, Any] | None:
     container_name = None
-    for name in ("Full Res Image", "Thumbnail Image", "UNK MHOD 6"):
+    for name in IMAGE_CONTAINER_NAMES:
         if name in container:
             container_name = name
             break
@@ -839,7 +841,7 @@ def _iter_entry_image_candidates(entry):
             yield from _iter_image_result_candidate(result, container)
         return
 
-    for container_name in ("Full Res Image", "Thumbnail Image", "UNK MHOD 6"):
+    for container_name in IMAGE_CONTAINER_NAMES:
         container = entry.get(container_name)
         if not isinstance(container, dict):
             continue
@@ -888,9 +890,7 @@ def _decode_entry_format_previews(entry: dict[str, Any], ithmb_folder_path: str)
             continue
 
         file_info = image_result.get("3", {})
-        ithmb_filename = file_info.get("File Name", f"F{format_id}_1.ithmb")
-        if ithmb_filename.startswith(":"):
-            ithmb_filename = ithmb_filename[1:]
+        ithmb_filename = normalize_ithmb_filename(format_id, file_info.get("File Name"))
 
         location_key = (format_id, ithmb_filename, offset)
         if location_key in seen_locations:
@@ -949,10 +949,10 @@ def _decode_image_from_db(artworkdb_data, ithmb_folder_path, img_id, img_id_inde
             continue
         for _area, image_result, _container in candidates:
             file_info = image_result.get("3", {})
-            ithmb_filename = file_info.get(
-                "File Name", f"F{image_result.get('correlationID')}_1.ithmb")
-            if ithmb_filename.startswith(":"):
-                ithmb_filename = ithmb_filename[1:]
+            ithmb_filename = normalize_ithmb_filename(
+                int(image_result.get("correlationID") or 0),
+                file_info.get("File Name"),
+            )
             ithmb_path = os.path.join(ithmb_folder_path, ithmb_filename)
 
             img = generate_image(ithmb_path, image_result)

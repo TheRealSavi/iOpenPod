@@ -19,13 +19,17 @@ from .audio_fingerprint import (
     write_fingerprint,
 )
 from .backup_manager import BackupManager, BackupProgress, SnapshotInfo, get_device_display_name, get_device_identifier
-from .contracts import SyncOutcome, SyncProgress, SyncRequest
-from .fingerprint_diff_engine import (
-    FingerprintDiffEngine,
+from .contracts import (
     StorageSummary,
     SyncAction,
     SyncItem,
+    SyncOutcome,
     SyncPlan,
+    SyncProgress,
+    SyncRequest,
+)
+from .fingerprint_diff_engine import (
+    FingerprintDiffEngine,
 )
 from .integrity import IntegrityReport, check_integrity
 from .itunes_prefs import (

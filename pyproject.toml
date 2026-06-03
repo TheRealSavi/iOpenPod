@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "iopenpod"
-version = "1.0.54"
+version = "1.0.55"
 description = "Open-source iPod Classic sync tool — manage your iPod media library without iTunes. Reads and writes iTunesDB directly."
 authors = [
     {name = "John Gibbons", email = "johngibbons167@gmail.com"}
@@ -70,6 +70,7 @@ only-include = [
     "iTunesDB_Parser",
     "iTunesDB_Shared",
     "iTunesDB_Writer",
+    "ArtworkDB_Shared",
     "ArtworkDB_Parser",
     "ArtworkDB_Writer",
     "SyncEngine",

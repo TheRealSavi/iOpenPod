@@ -8,6 +8,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from iTunesDB_Shared.constants import (
+    MEDIA_TYPE_AUDIOBOOK,
+    MEDIA_TYPE_MUSIC_VIDEO,
+    MEDIA_TYPE_PODCAST,
+    MEDIA_TYPE_TV_SHOW,
+    MEDIA_TYPE_VIDEO,
+)
 from iTunesDB_Writer.mhit_writer import TrackInfo
 
 if TYPE_CHECKING:
@@ -225,11 +232,11 @@ def apply_itunes_protections_from_tracks(
     from .itunes_prefs import protect_from_itunes
 
     media_buckets = [
-        (0x04, "podcast"),
-        (0x08, "audiobook"),
-        (0x40, "tv"),
-        (0x20, "mv"),
-        (0x02, "video"),
+        (MEDIA_TYPE_PODCAST, "podcast"),
+        (MEDIA_TYPE_AUDIOBOOK, "audiobook"),
+        (MEDIA_TYPE_TV_SHOW, "tv"),
+        (MEDIA_TYPE_MUSIC_VIDEO, "mv"),
+        (MEDIA_TYPE_VIDEO, "video"),
     ]
     totals: dict[str, list[int]] = {
         key: [0, 0, 0]

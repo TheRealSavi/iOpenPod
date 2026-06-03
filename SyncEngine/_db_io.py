@@ -22,7 +22,8 @@ def read_existing_database(ipod_path: Path) -> dict:
     Also reads the Play Counts file (if present) and merges per-track
     deltas into the track dicts.  After merging:
     - ``play_count_1`` / ``skip_count`` are the new cumulative values
-    - ``recent_playcount`` / ``recent_skipcount`` are the deltas
+    - ``play_count_2`` is the transient iPod play delta slot
+    - ``recent_playcount`` / ``recent_skipcount`` are the Play Counts deltas
     - ``rating`` may be overridden if the user rated on the iPod
     """
     from iTunesDB_Parser import parse_itunesdb
@@ -254,3 +255,59 @@ def write_database(
             return False
 
     return ok
+
+
+def delete_playcounts_files(ipod_path: Path) -> None:
+    """Delete Play Counts (and related) files after committing deltas."""
+    itunes_dir = ipod_path / "iPod_Control" / "iTunes"
+    for name in ("Play Counts", "iTunesStats", "PlayCounts.plist"):
+        path = itunes_dir / name
+        if path.exists():
+            try:
+                path.unlink()
+                logger.info("Deleted %s", path)
+            except OSError as exc:
+                logger.warning("Could not delete %s: %s", path, exc)
+
+    from iTunesDB_Parser.otg import delete_otg_files
+
+    delete_otg_files(str(itunes_dir))
+
+
+def commit_playcounts_if_needed(ipod_path: Path) -> bool:
+    """Merge Play Counts into the database immediately when present."""
+    from iTunesDB_Parser.playcounts import parse_playcounts
+
+    pc_path = ipod_path / "iPod_Control" / "iTunes" / "Play Counts"
+    entries = parse_playcounts(pc_path)
+    if entries is None or not any(entry.has_data for entry in entries):
+        return False
+
+    existing = read_existing_database(ipod_path)
+    tracks_data = existing.get("tracks", [])
+    if not tracks_data:
+        return False
+
+    from ._playlist_builder import build_and_evaluate_playlists
+    from ._track_conversion import track_dict_to_info
+
+    all_tracks = [track_dict_to_info(t) for t in tracks_data]
+    master_name, playlists, smart_playlists = build_and_evaluate_playlists(
+        tracks_data,
+        existing.get("playlists", []),
+        existing.get("smart_playlists", []),
+        all_tracks,
+        [],
+    )
+
+    if not write_database(
+        ipod_path,
+        all_tracks,
+        playlists=playlists,
+        smart_playlists=smart_playlists,
+        master_playlist_name=master_name,
+    ):
+        return False
+
+    delete_playcounts_files(ipod_path)
+    return True

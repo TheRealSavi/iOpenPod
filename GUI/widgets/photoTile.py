@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt, QSize, pyqtSignal
+from PyQt6.QtCore import QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QCursor, QFont, QPixmap
 from PyQt6.QtWidgets import QCheckBox, QFrame, QHBoxLayout, QLabel, QVBoxLayout
 
 from ..glyphs import glyph_pixmap
 from ..hidpi import scale_pixmap_for_display
-from ..styles import Colors, FONT_FAMILY, Metrics
+from ..styles import FONT_FAMILY, Colors, Metrics
 from .scrollingLabel import ScrollingLabel
 
 _PHOTO_TILE_W = Metrics.GRID_ITEM_W

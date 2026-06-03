@@ -12,7 +12,7 @@ import time by :mod:`iTunesDB_Shared.__init__` from those modules.
 from __future__ import annotations
 
 import struct
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any
 
@@ -161,6 +161,13 @@ class FieldDef:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  3b. List-container header sizes
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# The generic header shared by every iTunesDB chunk:
+#   +0x00  chunk_type  (4 bytes ASCII)
+#   +0x04  header_len  (u32 LE)
+#   +0x08  length_or_child_count  (u32 LE)
+GENERIC_HEADER_STRUCT = struct.Struct("<4sII")
+GENERIC_HEADER_SIZE: int = GENERIC_HEADER_STRUCT.size
+
 # Simple list chunks (mhlt, mhla, mhli, mhlp) have only the 12-byte
 # generic header padded to 92 bytes.  They don't carry FieldDef lists.
 
@@ -410,6 +417,32 @@ def write_generic_header(
         total_length_or_count: Value for +0x08 (total_length for item
             chunks, child_count for list chunks).
     """
-    buffer[offset:offset + 4] = tag
-    struct.pack_into("<I", buffer, offset + 4, header_length)
-    struct.pack_into("<I", buffer, offset + 8, total_length_or_count)
+    GENERIC_HEADER_STRUCT.pack_into(
+        buffer,
+        offset,
+        tag,
+        header_length,
+        total_length_or_count,
+    )
+
+
+def write_list_header(tag: bytes, header_length: int, child_count: int) -> bytes:
+    """Build a padded list-container header.
+
+    Simple list chunks such as ``mhlt``, ``mhla``, ``mhli``, and ``mhlp``
+    store their child count in the generic header's third field and keep
+    the rest of their 92-byte header zero-filled.
+    """
+    header = bytearray(header_length)
+    write_generic_header(header, 0, tag, header_length, child_count)
+    return bytes(header)
+
+
+def write_list_chunk(
+    tag: bytes,
+    header_length: int,
+    child_chunks: Iterable[bytes],
+) -> bytes:
+    """Build a simple list-container chunk from its child chunks."""
+    chunks = tuple(child_chunks)
+    return write_list_header(tag, header_length, len(chunks)) + b"".join(chunks)

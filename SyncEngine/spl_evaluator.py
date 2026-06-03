@@ -24,7 +24,25 @@ from __future__ import annotations
 import random
 import time
 
-from iTunesDB_Shared.mhod_defs import SPL_FIELD_TYPE_MAP as _FIELD_TYPE_MAP
+from iTunesDB_Shared.mhod_defs import (
+    SPL_FIELD_TYPE_MAP as _FIELD_TYPE_MAP,
+)
+from iTunesDB_Shared.mhod_defs import (
+    SPL_LIMIT_SORT_ALBUM,
+    SPL_LIMIT_SORT_ARTIST,
+    SPL_LIMIT_SORT_GENRE,
+    SPL_LIMIT_SORT_HIGHEST_RATING,
+    SPL_LIMIT_SORT_MOST_OFTEN_PLAYED,
+    SPL_LIMIT_SORT_MOST_RECENTLY_ADDED,
+    SPL_LIMIT_SORT_MOST_RECENTLY_PLAYED,
+    SPL_LIMIT_SORT_RANDOM,
+    SPL_LIMIT_SORT_SONG_NAME,
+    SPL_LIMIT_TYPE_GB,
+    SPL_LIMIT_TYPE_HOURS,
+    SPL_LIMIT_TYPE_MB,
+    SPL_LIMIT_TYPE_MINUTES,
+    SPL_LIMIT_TYPE_SONGS,
+)
 from iTunesDB_Writer.mhod_spl_writer import (
     SmartPlaylistPrefs,
     SmartPlaylistRule,
@@ -70,7 +88,6 @@ _INT_FIELD_KEY: dict[int, str] = {
     0x19: "rating",          # Rating (0-100, stars×20)
     0x23: "bpm",             # BPM
     0x3F: "season_number",   # Season Number
-    0x40: "episode_number",  # Episode Number
     0x44: "skip_count",      # Skip Count
     0x39: "podcast_flag",    # Podcast flag
 }
@@ -92,32 +109,6 @@ _BOOL_FIELD_KEY: dict[int, str] = {
 _BINARY_AND_FIELD_KEY: dict[int, str] = {
     0x3C: "media_type",      # Media Type (bitmask)
 }
-
-
-# ────────────────────────────────────────────────────────────
-# Limit sort constants (from libgpod ItdbLimitSort)
-# ────────────────────────────────────────────────────────────
-
-LIMITSORT_RANDOM = 0x02
-LIMITSORT_SONG_NAME = 0x03
-LIMITSORT_ALBUM = 0x04
-LIMITSORT_ARTIST = 0x05
-LIMITSORT_GENRE = 0x07
-LIMITSORT_MOST_RECENTLY_ADDED = 0x10
-LIMITSORT_LEAST_RECENTLY_ADDED = 0x80000010
-LIMITSORT_MOST_OFTEN_PLAYED = 0x14
-LIMITSORT_LEAST_OFTEN_PLAYED = 0x80000014
-LIMITSORT_MOST_RECENTLY_PLAYED = 0x15
-LIMITSORT_LEAST_RECENTLY_PLAYED = 0x80000015
-LIMITSORT_HIGHEST_RATING = 0x17
-LIMITSORT_LOWEST_RATING = 0x80000017
-
-# Limit type constants
-LIMITTYPE_MINUTES = 0x01
-LIMITTYPE_MB = 0x02
-LIMITTYPE_SONGS = 0x03
-LIMITTYPE_HOURS = 0x04
-LIMITTYPE_GB = 0x05
 
 
 # ────────────────────────────────────────────────────────────
@@ -366,29 +357,25 @@ def _sort_key(limit_sort: int):
     base = limit_sort & 0x7FFFFFFF
     reverse = bool(limit_sort & 0x80000000)
 
-    match base:
-        case 0x02:  # Random
-            return None, False  # handled specially
-        case 0x03:  # Song Name
-            return (lambda t: (t.get("Title", "") or "").casefold()), False
-        case 0x04:  # Album
-            return (lambda t: (t.get("Album", "") or "").casefold()), False
-        case 0x05:  # Artist
-            return (lambda t: (t.get("Artist", "") or "").casefold()), False
-        case 0x07:  # Genre
-            return (lambda t: (t.get("Genre", "") or "").casefold()), False
-        case 0x10:  # Most recently added → sort by date_added descending
-            # When NOT reversed (0x10): most recent first → reverse=True
-            # When reversed (0x80000010): least recent first → reverse=False
-            return (lambda t: t.get("date_added", 0)), not reverse
-        case 0x14:  # Most often played
-            return (lambda t: t.get("play_count_1", 0)), not reverse
-        case 0x15:  # Most recently played
-            return (lambda t: t.get("last_played", 0)), not reverse
-        case 0x17:  # Highest rating
-            return (lambda t: t.get("rating", 0)), not reverse
-        case _:
-            return (lambda t: 0), False
+    if base == SPL_LIMIT_SORT_RANDOM:
+        return None, False  # handled specially
+    if base == SPL_LIMIT_SORT_SONG_NAME:
+        return (lambda t: (t.get("Title", "") or "").casefold()), False
+    if base == SPL_LIMIT_SORT_ALBUM:
+        return (lambda t: (t.get("Album", "") or "").casefold()), False
+    if base == SPL_LIMIT_SORT_ARTIST:
+        return (lambda t: (t.get("Artist", "") or "").casefold()), False
+    if base == SPL_LIMIT_SORT_GENRE:
+        return (lambda t: (t.get("Genre", "") or "").casefold()), False
+    if base == SPL_LIMIT_SORT_MOST_RECENTLY_ADDED:
+        return (lambda t: t.get("date_added", 0)), not reverse
+    if base == SPL_LIMIT_SORT_MOST_OFTEN_PLAYED:
+        return (lambda t: t.get("play_count_1", 0)), not reverse
+    if base == SPL_LIMIT_SORT_MOST_RECENTLY_PLAYED:
+        return (lambda t: t.get("last_played", 0)), not reverse
+    if base == SPL_LIMIT_SORT_HIGHEST_RATING:
+        return (lambda t: t.get("rating", 0)), not reverse
+    return (lambda t: 0), False
 
 
 def _track_limit_value(track: dict, limit_type: int) -> float:
@@ -396,19 +383,17 @@ def _track_limit_value(track: dict, limit_type: int) -> float:
 
     Returns the track's contribution in the unit specified by limit_type.
     """
-    match limit_type:
-        case 0x01:  # Minutes
-            return track.get("length", 0) / (60 * 1000)
-        case 0x02:  # MB
-            return track.get("size", 0) / (1024 * 1024)
-        case 0x03:  # Songs
-            return 1.0
-        case 0x04:  # Hours
-            return track.get("length", 0) / (60 * 60 * 1000)
-        case 0x05:  # GB
-            return track.get("size", 0) / (1024 * 1024 * 1024)
-        case _:
-            return 1.0
+    if limit_type == SPL_LIMIT_TYPE_MINUTES:
+        return track.get("length", 0) / (60 * 1000)
+    if limit_type == SPL_LIMIT_TYPE_MB:
+        return track.get("size", 0) / (1024 * 1024)
+    if limit_type == SPL_LIMIT_TYPE_SONGS:
+        return 1.0
+    if limit_type == SPL_LIMIT_TYPE_HOURS:
+        return track.get("length", 0) / (60 * 60 * 1000)
+    if limit_type == SPL_LIMIT_TYPE_GB:
+        return track.get("size", 0) / (1024 * 1024 * 1024)
+    return 1.0
 
 
 # ────────────────────────────────────────────────────────────

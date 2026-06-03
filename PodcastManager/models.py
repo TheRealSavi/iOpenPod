@@ -9,8 +9,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from urllib.parse import urlsplit, urlunsplit
-from typing import Optional
-
 
 # ── Episode status constants ────────────────────────────────────────────────
 STATUS_NOT_DOWNLOADED = "not_downloaded"
@@ -53,8 +51,8 @@ class PodcastEpisode:
     pub_date: float = 0.0              # Unix timestamp
     duration_seconds: int = 0          # Parsed from itunes:duration
     size_bytes: int = 0                # From enclosure length attribute
-    episode_number: Optional[int] = None
-    season_number: Optional[int] = None
+    episode_number: int | None = None
+    season_number: int | None = None
 
     # Local state (not from RSS — managed by the app)
     status: str = STATUS_NOT_DOWNLOADED
@@ -156,8 +154,9 @@ class PodcastFeed:
     clear_older_than: str = "never"
     """Auto-clear episodes older than a threshold (by date added to iPod).
 
-    One of: ``"1_day"``, ``"3_days"``, ``"1_week"``, ``"2_weeks"``,
-    ``"1_month"``, ``"2_months"``, ``"3_months"``, ``"never"``.
+    One of: ``"immediate"``, ``"1_day"``, ``"3_days"``, ``"1_week"``,
+    ``"2_weeks"``, ``"1_month"``, ``"2_months"``, ``"3_months"``,
+    ``"never"``.
     """
 
     clear_method: str = "remove"

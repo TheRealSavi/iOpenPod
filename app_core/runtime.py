@@ -7,10 +7,12 @@ import os
 import sys
 import threading
 import traceback
+from pathlib import Path
 
 from PyQt6.QtCore import QObject, QRunnable, QThread, QThreadPool, pyqtSignal, pyqtSlot
 
 from iTunesDB_Shared.album_identity import album_identity_from_mapping
+from iTunesDB_Shared.constants import MEDIA_TYPE_AUDIO, MEDIA_TYPE_AUDIO_VIDEO
 
 from .services import DeviceInfoLike, LibraryCacheLike
 
@@ -35,10 +37,10 @@ def _is_music_browser_track(track: dict) -> bool:
     """Return whether a track belongs in the music browser indexes."""
 
     try:
-        media_type = int(track.get("media_type", 1) or 0)
+        media_type = int(track.get("media_type", MEDIA_TYPE_AUDIO) or 0)
     except (TypeError, ValueError):
-        media_type = 1
-    return media_type == 0 or bool(media_type & 0x01)
+        media_type = MEDIA_TYPE_AUDIO
+    return media_type == MEDIA_TYPE_AUDIO_VIDEO or bool(media_type & MEDIA_TYPE_AUDIO)
 
 
 def _mhsd5_type_value(playlist: dict) -> int:
@@ -950,7 +952,20 @@ class iTunesDBCache(QObject):
         try:
             from iTunesDB_Parser.ipod_library import load_ipod_library
 
-            parsed = load_ipod_library(itunesdb_path) or {}
+            committed_playcounts = False
+            try:
+                from SyncEngine._db_io import commit_playcounts_if_needed
+
+                committed_playcounts = commit_playcounts_if_needed(
+                    Path(device_path),
+                )
+            except Exception:
+                logger.warning("Play Counts auto-commit failed", exc_info=True)
+
+            parsed = load_ipod_library(
+                itunesdb_path,
+                merge_playcounts=not committed_playcounts,
+            ) or {}
             if isinstance(parsed, dict):
                 data = parsed
             else:

@@ -7,11 +7,17 @@ import re
 import subprocess
 import tempfile
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 from infrastructure.media_folders import media_folder_paths
-from iTunesDB_Shared.constants import MEDIA_TYPE_AUDIOBOOK, MEDIA_TYPE_PODCAST
+from iTunesDB_Shared.constants import (
+    MEDIA_TYPE_AUDIO,
+    MEDIA_TYPE_AUDIO_VIDEO,
+    MEDIA_TYPE_AUDIOBOOK,
+    MEDIA_TYPE_PODCAST,
+)
 
 from .mapping import MappingFile
 from .pc_library import PCLibrary, PCTrack
@@ -84,10 +90,10 @@ def is_music_track(track: dict) -> bool:
     """Return whether a parsed iPod track belongs to the music browser."""
 
     try:
-        media_type = int(track.get("media_type", 1) or 0)
+        media_type = int(track.get("media_type", MEDIA_TYPE_AUDIO) or 0)
     except (TypeError, ValueError):
-        media_type = 1
-    return media_type == 0 or bool(media_type & 0x01)
+        media_type = MEDIA_TYPE_AUDIO
+    return media_type == MEDIA_TYPE_AUDIO_VIDEO or bool(media_type & MEDIA_TYPE_AUDIO)
 
 
 def resolve_album_tracks(album_item: dict, all_tracks: list[dict]) -> list[dict]:
@@ -203,6 +209,7 @@ def resolve_album_sources(
     roots = [Path(path) for path in media_folder_paths(pc_folders)]
     warnings: list[str] = []
     resolved: list[ResolvedAlbumSource] = []
+    missing: list[dict[str, str]] = []
 
     for track in tracks:
         db_track_id = _coerce_int(track.get("db_track_id", track.get("db_id")))
@@ -210,10 +217,12 @@ def resolve_album_sources(
         source = None
         source_kind = "pc"
 
+        source_hint = ""
         if mapping is not None and db_track_id:
             mapped = mapping.get_by_db_track_id(db_track_id)
             if mapped is not None:
                 fingerprint, entry = mapped
+                source_hint = str(entry.source_path_hint or "")
                 source = _resolve_hint(entry.source_path_hint, roots)
 
         if source is None:
@@ -233,7 +242,15 @@ def resolve_album_sources(
 
         if source is None:
             title = track.get("Title") or "Unknown"
-            raise FileNotFoundError(f"Could not resolve audio source for {title}")
+            missing.append(
+                {
+                    "title": str(title),
+                    "db_track_id": str(db_track_id or ""),
+                    "source_hint": source_hint,
+                    "location": str(track.get("Location") or track.get("location") or ""),
+                }
+            )
+            continue
 
         if fingerprint is None and fpcalc_path:
             try:
@@ -254,6 +271,9 @@ def resolve_album_sources(
                 fingerprint=fingerprint,
             )
         )
+
+    if missing:
+        raise FileNotFoundError(_format_missing_sources(missing))
 
     return resolved, tuple(warnings)
 
@@ -570,7 +590,11 @@ def _format_timestamp(ms: int) -> str:
 def _resolve_hint(hint: str | None, roots: list[Path]) -> Path | None:
     if not hint:
         return None
-    raw = Path(str(hint)).expanduser()
+    normalized = str(hint).replace("\\", "/")
+    if len(normalized) >= 2 and normalized[1] == ":" and normalized[0].isalpha():
+        normalized = normalized[2:]
+    normalized = normalized.lstrip("/")
+    raw = Path(normalized).expanduser()
     if raw.is_absolute() and raw.exists() and raw.is_file():
         return raw
     for root in roots:
@@ -582,8 +606,15 @@ def _resolve_hint(hint: str | None, roots: list[Path]) -> Path | None:
 
 def _resolve_ipod_location(track: dict, ipod_path: str) -> Path | None:
     location = str(track.get("Location") or track.get("location") or "")
+    location = location.split("\x00", 1)[0].strip()
     if not location or not ipod_path:
         return None
+    if location.lower().startswith("file://"):
+        from urllib.parse import unquote, urlparse
+
+        parsed = urlparse(location)
+        location = unquote(parsed.path or "")
+        location = location.split("\x00", 1)[0].strip()
     direct = Path(location)
     if direct.exists() and direct.is_file():
         return direct
@@ -591,7 +622,57 @@ def _resolve_ipod_location(track: dict, ipod_path: str) -> Path | None:
     candidate = Path(ipod_path) / rel
     if candidate.exists() and candidate.is_file():
         return candidate
+    filename = Path(rel).name if rel else ""
+    if filename:
+        index_by_name, index_by_stem = _ipod_music_index(ipod_path)
+        match = index_by_name.get(filename.lower())
+        if match is None:
+            stem = Path(filename).stem.lower()
+            if stem:
+                match = index_by_stem.get(stem)
+        if match is not None and match.is_file():
+            return match
     return None
+
+
+@lru_cache(maxsize=8)
+def _ipod_music_index(ipod_path: str) -> tuple[dict[str, Path], dict[str, Path]]:
+    music_root = Path(ipod_path) / "iPod_Control" / "Music"
+    if not music_root.is_dir():
+        return {}, {}
+    index_by_name: dict[str, Path] = {}
+    index_by_stem: dict[str, Path] = {}
+    for item in music_root.rglob("*"):
+        if item.is_file():
+            name_key = item.name.lower()
+            if name_key not in index_by_name:
+                index_by_name[name_key] = item
+            stem_key = item.stem.lower()
+            if stem_key and stem_key not in index_by_stem:
+                index_by_stem[stem_key] = item
+    return index_by_name, index_by_stem
+
+
+def _format_missing_sources(missing: list[dict[str, str]]) -> str:
+    titles = ", ".join(entry.get("title") or "Unknown" for entry in missing)
+    details = []
+    for entry in missing:
+        detail = entry.get("title") or "Unknown"
+        parts = []
+        if entry.get("db_track_id"):
+            parts.append(f"db_track_id={entry['db_track_id']}")
+        if entry.get("source_hint"):
+            parts.append(f"hint={entry['source_hint']}")
+        if entry.get("location"):
+            parts.append(f"location={entry['location']}")
+        if parts:
+            detail = f"{detail} ({'; '.join(parts)})"
+        details.append(detail)
+    detail_text = "\n".join(details)
+    return (
+        "Could not resolve audio source for one or more tracks: "
+        f"{titles}\n{detail_text}"
+    )
 
 
 def _safe_filename(value: str) -> str:

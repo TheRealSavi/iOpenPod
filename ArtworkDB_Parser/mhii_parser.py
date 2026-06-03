@@ -1,9 +1,10 @@
 import struct
 
+from ArtworkDB_Shared.mhod import is_mhod_container, mhod_type_name
+
 
 def parse_imageItem(data, offset, header_length, chunk_length) -> dict:
     from .chunk_parser import parse_chunk
-    from .constants import mhod_type_map
 
     image = {}
 
@@ -48,9 +49,12 @@ def parse_imageItem(data, offset, header_length, chunk_length) -> dict:
 
         mhodData = response["result"]
         mhod_type = mhodData["mhodType"]
-        name = mhod_type_map[mhod_type]["name"]
+        name = mhod_type_name(mhod_type)
+        if name is None:
+            image.setdefault("_unknown_mhods", []).append(mhodData)
+            continue
         image[name] = mhodData
-        if mhod_type_map[mhod_type]["type"] == "Container":
+        if is_mhod_container(mhod_type):
             image.setdefault("_image_containers", []).append(mhodData)
 
     return {"nextOffset": offset + chunk_length, "result": image}

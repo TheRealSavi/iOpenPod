@@ -23,9 +23,15 @@ from math import gcd
 
 from iTunesDB_Shared.mhbd_defs import (
     MHBD_OFFSET_DB_ID as OFFSET_DB_ID,
-    MHBD_OFFSET_HASHING_SCHEME as OFFSET_HASHING_SCHEME,
-    MHBD_OFFSET_UNK_0x32 as OFFSET_UNK_0x32,
+)
+from iTunesDB_Shared.mhbd_defs import (
     MHBD_OFFSET_HASH58 as OFFSET_HASH58,
+)
+from iTunesDB_Shared.mhbd_defs import (
+    MHBD_OFFSET_HASHING_SCHEME as OFFSET_HASHING_SCHEME,
+)
+from iTunesDB_Shared.mhbd_defs import (
+    MHBD_OFFSET_UNK_0x32 as OFFSET_UNK_0x32,
 )
 
 # AES S-Box (from libgpod itdb_hash58.c lines 45-76)
