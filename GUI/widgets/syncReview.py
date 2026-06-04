@@ -1624,7 +1624,7 @@ class SyncReviewWidget(QWidget):
         if plan.to_sync_playcount:
             card = SyncCategoryCard("music", "iPod Play Counts", len(plan.to_sync_playcount),
                                     _CAT_COLORS["playcount"], start_expanded=False,
-                                    subtitle="New plays detected on iPod — will be scrobbled to ListenBrainz",
+                                    subtitle="New plays detected on iPod — will be scrobbled to ListenBrainz/Last.fm",
                                     parent=self._cards_container)
             for item in plan.to_sync_playcount:
                 card.add_track_row(item)
