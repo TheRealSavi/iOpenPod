@@ -11,6 +11,7 @@ import os
 import re
 import struct
 from collections.abc import Callable, Iterable, Mapping
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import BinaryIO
@@ -419,8 +420,15 @@ def _iter_photo_files(root: Path, *, recurse: bool):
     yield from root.iterdir()
 
 
+def _default_photo_workers() -> int:
+    return min(os.cpu_count() or 4, 8)
+
+
 def scan_pc_photos(
     sync_root: str | Path | Iterable[str | Path | dict[str, object] | MediaFolderEntry],
+    progress_callback: Callable[[int, int, str], None] | None = None,
+    max_workers: int | None = None,
+    is_cancelled: Callable[[], bool] | None = None,
 ) -> PCPhotoLibrary:
     root_entries = _coerce_photo_entries(sync_root)
     roots = tuple(root for root, _entry in root_entries)
@@ -430,6 +438,7 @@ def scan_pc_photos(
         return library
 
     seen_files: set[str] = set()
+    files: list[tuple[Path, Path]] = []
     for root, entry in root_entries:
         for file_path in _iter_photo_files(root, recurse=entry.recurse):
             if not file_path.is_file():
@@ -440,29 +449,72 @@ def scan_pc_photos(
             if file_key in seen_files:
                 continue
             seen_files.add(file_key)
+            files.append((file_path, root))
+
+    total = len(files)
+    if max_workers is None:
+        max_workers = _default_photo_workers()
+    max_workers = max(1, min(max_workers, 8))
+
+    def _record_photo(file_path: Path, root: Path, img: Image.Image) -> None:
+        rel_parent = file_path.parent.relative_to(root)
+        album_name = rel_parent.as_posix() if rel_parent.parts else ""
+        if album_name:
+            library.albums.add(album_name)
+
+        size = file_path.stat().st_size
+        visual_hash = _image_visual_hash(img)
+        entry = library.photos.get(visual_hash)
+        if entry is None:
+            entry = PCPhoto(
+                visual_hash=visual_hash,
+                display_name=file_path.name,
+                source_path=str(file_path),
+                size=size,
+            )
+            library.photos[visual_hash] = entry
+        entry.album_names.add(album_name)
+
+    current = 0
+    if max_workers == 1 or total <= 1:
+        for file_path, root in files:
+            if is_cancelled and is_cancelled():
+                return library
             try:
                 img = _load_pil_still_image(file_path)
             except _PIL_LOAD_ERRORS as exc:
                 library.skipped.append((str(file_path), _describe_image_load_error(file_path, exc)))
+                img = None
+            current += 1
+            if progress_callback:
+                progress_callback(current, total, file_path.name)
+            if img is None:
                 continue
+            _record_photo(file_path, root, img)
+        return library
 
-            rel_parent = file_path.parent.relative_to(root)
-            album_name = rel_parent.as_posix() if rel_parent.parts else ""
-            if album_name:
-                library.albums.add(album_name)
+    def _load_photo(file_path: Path) -> Image.Image:
+        return _load_pil_still_image(file_path)
 
-            size = file_path.stat().st_size
-            visual_hash = _image_visual_hash(img)
-            entry = library.photos.get(visual_hash)
-            if entry is None:
-                entry = PCPhoto(
-                    visual_hash=visual_hash,
-                    display_name=file_path.name,
-                    source_path=str(file_path),
-                    size=size,
-                )
-                library.photos[visual_hash] = entry
-            entry.album_names.add(album_name)
+    with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="photo-scan") as pool:
+        futures = {pool.submit(_load_photo, file_path): (file_path, root) for file_path, root in files}
+        for future in as_completed(futures):
+            if is_cancelled and is_cancelled():
+                for pending in futures:
+                    pending.cancel()
+                return library
+            file_path, root = futures[future]
+            try:
+                img = future.result()
+            except _PIL_LOAD_ERRORS as exc:
+                library.skipped.append((str(file_path), _describe_image_load_error(file_path, exc)))
+                img = None
+            current += 1
+            if progress_callback:
+                progress_callback(current, total, file_path.name)
+            if img is None:
+                continue
+            _record_photo(file_path, root, img)
     return library
 
 

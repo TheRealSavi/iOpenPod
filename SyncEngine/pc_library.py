@@ -598,8 +598,8 @@ class PCLibrary:
         count = library.count_audio_files()
 
         # Scan with progress callback
-        def on_progress(current, total, track):
-            print(f"{current}/{total}: {track.title}")
+        def on_progress(current, total, filename):
+            print(f"{current}/{total}: {filename}")
 
         tracks = list(library.scan(progress_callback=on_progress))
     """
@@ -696,7 +696,7 @@ class PCLibrary:
 
     def scan(
         self,
-        progress_callback: Callable[[int, int, PCTrack], None] | None = None,
+        progress_callback: Callable[[int, int, str], None] | None = None,
         include_video: bool = True,
         max_workers: int | None = None,
         is_cancelled: Callable[[], bool] | None = None,
@@ -705,7 +705,7 @@ class PCLibrary:
         Scan the library and yield PCTrack objects.
 
         Args:
-            progress_callback: Optional callback(current, total, track) for progress updates
+            progress_callback: Optional callback(current, total, filename) for progress updates
             include_video: When False, skip video files entirely.
                            Set to False when syncing to iPods that don't support video.
             max_workers: Number of worker threads for metadata extraction. ``None``
@@ -718,7 +718,8 @@ class PCLibrary:
             With ``max_workers > 1`` tracks are yielded in completion order, not
             directory-walk order. All current consumers materialise the result via
             ``list(...)`` so order doesn't matter; if you need a stable order, sort
-            the result yourself or pass ``max_workers=1``.
+            the result yourself or pass ``max_workers=1``. Progress counts files
+            processed, even if a file fails to parse.
         """
         if not MUTAGEN_AVAILABLE:
             raise RuntimeError("mutagen is required for library scanning. Install with: pip install mutagen")
@@ -744,13 +745,12 @@ class PCLibrary:
                     track = self._read_track(file_path, library_root=library_root)
                 except Exception as e:
                     logging.warning(f"Failed to read {file_path}: {e}")
-                    current += 1
-                    continue
-                if track is None:
-                    continue
+                    track = None
                 current += 1
                 if progress_callback:
-                    progress_callback(current, total, track)
+                    progress_callback(current, total, file_path.name)
+                if track is None:
+                    continue
                 yield track
             return
 
@@ -775,13 +775,12 @@ class PCLibrary:
                         track = future.result()
                     except Exception as e:
                         logging.warning(f"Failed to read {file_path}: {e}")
-                        current += 1
-                        continue
-                    if track is None:
-                        continue
+                        track = None
                     current += 1
                     if progress_callback:
-                        progress_callback(current, total, track)
+                        progress_callback(current, total, file_path.name)
+                    if track is None:
+                        continue
                     yield track
             except GeneratorExit:
                 # Caller stopped iterating — cancel pending futures so the
