@@ -45,6 +45,7 @@ from app_core.sync_review_model import (
     count_sync_actions,
     group_by_media_type,
     is_sync_action,
+    metadata_change_parts,
     sync_item_size_delta,
 )
 from infrastructure.media_folders import (
@@ -298,8 +299,11 @@ class SyncTrackRow(QFrame):
         self._populate(item)
 
     def _populate(self, item: Any):
-        track = item.pc_track
-        ipod = item.ipod_track
+        track = getattr(item, "pc_track", None)
+        ipod = getattr(item, "ipod_track", None)
+        if not isinstance(ipod, dict):
+            ipod = None
+        description = str(getattr(item, "description", "") or "")
 
         if is_sync_action(item, ACTION_ADD_TO_IPOD) and track:
             self.title_label.setText(track.title or track.filename)
@@ -340,7 +344,7 @@ class SyncTrackRow(QFrame):
                 elif mt & 0x02:
                     parts.append("Movie")
                 # Show removal reason from the description
-                reason = item.description or ""
+                reason = description
                 if reason:
                     # Extract the reason prefix (before the colon + name)
                     reason_short = reason.split(":")[0] if ":" in reason else reason
@@ -348,34 +352,56 @@ class SyncTrackRow(QFrame):
                 self.detail_label.setText(" · ".join(parts))
                 self.badge_label.setText(_format_duration(ipod.get("length", 0)))
             else:
-                self.title_label.setText(item.description or "Unknown track")
-                self.detail_label.setText(f"Orphaned mapping (db_track_id={item.db_track_id})")
+                self.title_label.setText(description or "Unknown track")
+                self.detail_label.setText(
+                    f"Orphaned mapping (db_track_id={getattr(item, 'db_track_id', None)})"
+                )
 
-        elif is_sync_action(item, ACTION_UPDATE_FILE) and track:
-            self.title_label.setText(track.title or track.filename)
-            parts = [track.artist or "Unknown", track.album or "Unknown"]
-            if track.size:
-                parts.append(f"PC: {_format_size(track.size)}")
-            if item.estimated_size is not None:
-                parts.append(f"iPod est: {_format_size(item.estimated_size)}")
-            self.detail_label.setText(" · ".join(parts))
-            self.badge_label.setText(_format_duration(track.duration_ms))
+        elif is_sync_action(item, ACTION_UPDATE_FILE):
+            if track:
+                self.title_label.setText(track.title or track.filename or description or "File update")
+                parts = [track.artist or "Unknown", track.album or "Unknown"]
+                if track.size:
+                    parts.append(f"PC: {_format_size(track.size)}")
+                if item.estimated_size is not None:
+                    parts.append(f"iPod est: {_format_size(item.estimated_size)}")
+                self.detail_label.setText(" · ".join(parts))
+                self.badge_label.setText(_format_duration(track.duration_ms))
+            elif ipod:
+                self.title_label.setText(ipod.get("Title") or description or "File update")
+                parts = [ipod.get("Artist", "Unknown"), ipod.get("Album", "Unknown")]
+                if item.estimated_size is not None:
+                    parts.append(f"iPod est: {_format_size(item.estimated_size)}")
+                if description:
+                    parts.append(description)
+                self.detail_label.setText(" · ".join(parts))
+                self.badge_label.setText(_format_duration(ipod.get("length", 0)))
+            else:
+                self.title_label.setText(description or "File update")
+                self.detail_label.setText(description or "File will be re-synced")
 
         elif is_sync_action(item, ACTION_UPDATE_METADATA):
             is_gui_edit = track is None  # GUI edits have no pc_track
             if track:
-                self.title_label.setText(track.title or track.filename)
+                self.title_label.setText(
+                    track.title or track.filename or description or "Metadata update"
+                )
                 self.badge_label.setText(_format_duration(track.duration_ms))
             elif ipod:
-                self.title_label.setText(ipod.get("Title", "Unknown"))
+                self.title_label.setText(
+                    ipod.get("Title") or description or "Metadata update"
+                )
                 self.badge_label.setText(_format_duration(ipod.get("length", 0)))
-            changes = item.metadata_changes
-            diff_parts = []
+            else:
+                self.title_label.setText(description or "Metadata update")
             source = "iOpenPod" if is_gui_edit else "PC"
-            for field_name, (pc_val, ipod_val) in changes.items():
-                diff_parts.append(f'{field_name}: "{ipod_val}" → "{pc_val}"')
+            diff_parts = metadata_change_parts(item)
+            if getattr(item, "aggregate_kind", None) == "chaptered_album" and description:
+                diff_parts = [description, *diff_parts]
             prefix = f"[{source}]  " if diff_parts else ""
-            self.detail_label.setText(prefix + ("  |  ".join(diff_parts) if diff_parts else "metadata changed"))
+            fallback = description or "metadata changed"
+            self.detail_label.setTextFormat(Qt.TextFormat.PlainText)
+            self.detail_label.setText(prefix + ("  |  ".join(diff_parts) if diff_parts else fallback))
 
         elif is_sync_action(item, ACTION_UPDATE_ARTWORK) and track:
             self.title_label.setText(track.title or track.filename)
@@ -469,6 +495,16 @@ class SyncTrackRow(QFrame):
                 f"Artist: {ipod.get('Artist', 'Unknown')}",
                 f"iPod Location: {ipod.get('Location', 'Unknown')}",
             ]
+        if is_sync_action(item, ACTION_UPDATE_METADATA):
+            if not self.title_label.text().strip():
+                self.title_label.setText(description or "Metadata update")
+            if not self.detail_label.text().strip():
+                diff_parts = metadata_change_parts(item)
+                self.detail_label.setTextFormat(Qt.TextFormat.PlainText)
+                self.detail_label.setText(
+                    "  |  ".join(diff_parts)
+                    if diff_parts else description or "metadata changed"
+                )
         self.setToolTip("\n".join(tt_lines))
 
     def is_checked(self) -> bool:

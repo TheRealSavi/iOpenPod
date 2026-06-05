@@ -61,6 +61,7 @@ _OS_EXCLUDE_LOWER = frozenset({
     ".fseventsd",
     ".spotlight-v100",
     ".ds_store",
+    ".metadata_never_index",
     "thumbs.db",
     "desktop.ini",
 })
@@ -68,7 +69,8 @@ _OS_EXCLUDE_LOWER = frozenset({
 
 def _is_excluded(name: str) -> bool:
     """Check if a filename/dirname should be excluded (case-insensitive)."""
-    return name.lower() in _OS_EXCLUDE_LOWER
+    lower = name.lower()
+    return lower in _OS_EXCLUDE_LOWER or lower.startswith("._")
 
 
 # SHA-256 read buffer
@@ -210,6 +212,7 @@ class BackupManager:
         total_size = 0
         new_blobs = 0
         skipped_files = 0
+        skipped_samples: list[str] = []
         processed = 0
 
         # Pre-stat and partition into cached vs uncached
@@ -229,7 +232,9 @@ class BackupManager:
                 else:
                     uncached.append((rel_path, full_path, st.st_size, st.st_mtime_ns))
             except (OSError, PermissionError) as e:
-                logger.warning(f"Backup: could not stat {rel_path}: {e}")
+                skipped_files += 1
+                if len(skipped_samples) < 5:
+                    skipped_samples.append(f"{rel_path} ({e})")
 
         logger.info(
             f"Backup: {len(cached_hits)} cached, {len(uncached)} need hashing"
@@ -258,7 +263,8 @@ class BackupManager:
                 total_size += fsize
             except (OSError, PermissionError) as e:
                 skipped_files += 1
-                logger.warning(f"Backup: could not store cached {rel_path}: {e}")
+                if len(skipped_samples) < 5:
+                    skipped_samples.append(f"{rel_path} ({e})")
 
         if progress_callback and uncached:
             progress_callback(BackupProgress(
@@ -313,7 +319,8 @@ class BackupManager:
                         rp = futures[future]
                         with lock:
                             skipped_files += 1
-                        logger.warning(f"Backup: could not process {rp}: {e}")
+                            if len(skipped_samples) < 5:
+                                skipped_samples.append(f"{rp} ({e})")
 
         # Phase 2c: Check for duplicate — skip saving if nothing changed
         latest_snap = self._get_latest_snapshot_files()
@@ -393,10 +400,12 @@ class BackupManager:
         )
 
         if skipped_files:
+            examples = "; examples: " + ", ".join(skipped_samples) if skipped_samples else ""
             logger.warning(
                 f"Backup complete with {skipped_files} skipped files: "
                 f"{len(manifest_files)} files stored, "
                 f"{total_size / (1024**3):.2f} GB, {new_blobs} new blobs"
+                f"{examples}"
             )
         else:
             logger.info(

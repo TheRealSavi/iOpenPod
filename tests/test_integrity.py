@@ -110,3 +110,28 @@ def test_integrity_treats_directory_location_as_missing(tmp_path: Path) -> None:
 
     assert [track["Title"] for track in report.missing_files] == ["Directory"]
     assert tracks == []
+
+
+def test_integrity_ignores_appledouble_sidecar_orphans(tmp_path: Path) -> None:
+    ipod_root = tmp_path / "ipod"
+    real = _make_music_file(ipod_root, "F00", "LIVE.m4a")
+    sidecar = _make_music_file(ipod_root, "F00", "._LIVE.m4a")
+    tracks = [
+        {
+            "db_track_id": 1,
+            "Title": "Live",
+            "Location": ":iPod_Control:Music:F00:LIVE.m4a",
+        }
+    ]
+
+    report = check_integrity(
+        ipod_root,
+        tracks,
+        MappingFile(),
+        delete_orphans=True,
+    )
+
+    assert report.orphan_files == []
+    assert report.errors == []
+    assert real.is_file()
+    assert sidecar.is_file()

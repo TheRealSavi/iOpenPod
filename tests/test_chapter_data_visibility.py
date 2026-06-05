@@ -37,6 +37,28 @@ def test_chapter_mhod_round_trips_through_writer_and_parser() -> None:
     assert parsed["data"] == source
 
 
+def test_chapter_mhod_clamps_invalid_unsigned_fields() -> None:
+    blob = write_mhod_chapter_data(
+        [
+            {"startpos": -10, "title": "Before"},
+            {"startpos": 2**40, "title": "After"},
+        ],
+        unk024=-1,
+        unk028=2**40,
+        unk032="bad",  # type: ignore[arg-type]
+    )
+
+    parsed = parse_mhod(blob, 0, MHOD_HEADER_SIZE, len(blob))["data"]["data"]
+
+    assert parsed["unk024"] == 0
+    assert parsed["unk028"] == 0xFFFFFFFF
+    assert parsed["unk032"] == 0
+    assert parsed["chapters"] == [
+        {"startpos": 0, "title": "Before"},
+        {"startpos": 0xFFFFFFFF, "title": "After"},
+    ]
+
+
 def test_extract_track_extras_preserves_only_chapter_data() -> None:
     chapter_data = _chapter_data()
     children = [{"data": {"mhod_type": 17, "data": chapter_data}}]

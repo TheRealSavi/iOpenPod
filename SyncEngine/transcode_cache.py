@@ -671,7 +671,7 @@ class TranscodeCache:
                 )
                 self._index.add(cached_file)
                 self._save_index()
-            logger.info("Committed: %s… → %s", fingerprint[:20], filename)
+            # logger.info("Committed: %s… → %s", fingerprint[:20], filename)
             return cached_path
         except Exception as exc:
             logger.error("Failed to commit cache entry: %s", exc)

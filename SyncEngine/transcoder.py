@@ -789,6 +789,8 @@ def _transcode_timeout_seconds(
         return floor_s
 
     duration_s = math.ceil(duration_us / 1_000_000)
+    if target == TranscodeTarget.VIDEO_H264:
+        return min(ceiling_s, max(floor_s, duration_s) + padding_s)
     return max(floor_s, min(ceiling_s, duration_s + padding_s))
 
 
@@ -1531,7 +1533,7 @@ def _run_transcode(
                 target_format=target, was_transcoded=True,
                 error_message="Output file not created",
             )
-        logger.info("Transcoded %s → %s", source_path.name, output_path.name)
+        # logger.info("Transcoded %s → %s", source_path.name, output_path.name)
         return TranscodeResult(
             success=True, source_path=source_path, output_path=output_path,
             target_format=target, was_transcoded=True,

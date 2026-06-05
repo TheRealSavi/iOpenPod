@@ -36,7 +36,11 @@ from pathlib import Path
 
 from iTunesDB_Shared.constants import MEDIA_TYPE_PODCAST
 
-from .audio_fingerprint import get_or_compute_fingerprint, is_fpcalc_available
+from .audio_fingerprint import (
+    get_or_compute_fingerprint,
+    get_or_compute_fingerprint_with_status,
+    is_fpcalc_available,
+)
 from .contracts import SyncAction, SyncItem, SyncPlan
 from .mapping import MappingFile, MappingManager, TrackMapping
 from .pc_library import PCLibrary, PCTrack
@@ -357,13 +361,21 @@ class FingerprintDiffEngine:
         completed_lock = threading.Lock()
         total = len(pc_tracks)
 
-        def _fingerprint_one(track: PCTrack) -> tuple[PCTrack, str | None]:
-            fp = get_or_compute_fingerprint(
+        fingerprint_counts = {
+            "cache": 0,
+            "tag": 0,
+            "computed": 0,
+            "failed": 0,
+        }
+        fingerprint_failure_samples: list[str] = []
+
+        def _fingerprint_one(track: PCTrack) -> tuple[PCTrack, str | None, str]:
+            fp, status = get_or_compute_fingerprint_with_status(
                 track.path,
                 fpcalc_path=self.fpcalc_path,
                 write_to_file=write_fingerprints,
             )
-            return (track, fp)
+            return (track, fp, status)
 
         logger.info(f"Fingerprinting {total} tracks with {fp_workers} workers")
 
@@ -384,13 +396,16 @@ class FingerprintDiffEngine:
                     completed += 1
                     current = completed
 
-                track, fp = future.result()
+                track, fp, fp_status = future.result()
+                fingerprint_counts[fp_status] = fingerprint_counts.get(fp_status, 0) + 1
 
                 if progress_callback:
                     progress_callback("fingerprint", current, total, track.filename)
 
                 if not fp:
                     plan.fingerprint_errors.append((track.path, "Could not compute fingerprint"))
+                    if len(fingerprint_failure_samples) < 5:
+                        fingerprint_failure_samples.append(track.path)
                     continue
 
                 pc_by_fp.setdefault(fp, []).append(track)
@@ -399,6 +414,21 @@ class FingerprintDiffEngine:
         # Persist the fingerprint cache so the next sync is fast
         from SyncEngine.audio_fingerprint import FingerprintCache
         FingerprintCache.get_instance().save()
+
+        summary = (
+            "Fingerprinting complete: "
+            f"{total} tracks, "
+            f"{fingerprint_counts.get('cache', 0)} cache hits, "
+            f"{fingerprint_counts.get('tag', 0)} tag reads, "
+            f"{fingerprint_counts.get('computed', 0)} computed, "
+            f"{fingerprint_counts.get('failed', 0)} failed"
+        )
+        if fingerprint_failure_samples:
+            summary += "; examples: " + ", ".join(fingerprint_failure_samples)
+        if fingerprint_counts.get("failed", 0):
+            logger.warning(summary)
+        else:
+            logger.info(summary)
 
         # Bootstrap unmapped iPod tracks:
         # Fingerprint any iPod tracks that are not yet represented in mapping
@@ -493,6 +523,16 @@ class FingerprintDiffEngine:
                     display_key = f"{album_tracks[0].artist or 'Unknown'}|{album_tracks[0].album or 'Unknown'}|{album_tracks[0].title or 'Unknown'}"
                     plan.duplicates[display_key] = album_tracks
 
+        represented_by_aggregate, detached_from_aggregate, claimed_aggregate_db_ids = (
+            self._plan_chaptered_aggregate_updates(
+                plan,
+                mapping,
+                pc_by_fp,
+                ipod_by_db_track_id,
+                seen_fps,
+            )
+        )
+
         # ===== Phase 3: Match & Diff =====
         if is_cancelled and is_cancelled():
             return plan
@@ -524,6 +564,12 @@ class FingerprintDiffEngine:
         for (fp, _album_key), pc_tracks_for_group in sorted_groups:
             # Pick representative track (first one from this album group)
             pc_track = pc_tracks_for_group[0]
+            if fp in represented_by_aggregate and fp not in detached_from_aggregate:
+                aggregate_db_track_id = represented_by_aggregate[fp].db_track_id
+                claimed_db_track_ids.add(aggregate_db_track_id)
+                plan.matched_tracks += 1
+                continue
+
             mapping_entries = mapping.get_entries(fp)
 
             if not mapping_entries:
@@ -732,11 +778,16 @@ class FingerprintDiffEngine:
             return plan
 
         # 4a: Fingerprints entirely absent from PC → all entries are removals
+        aggregate_mapping_fps = {
+            aggregate_fp for aggregate_fp, _entry in mapping.aggregate_entries()
+        }
         mapping_fps = mapping.all_fingerprints()
         orphaned_fps = mapping_fps - seen_fps
 
         for fp in orphaned_fps:
             for entry in mapping.get_entries(fp):
+                if fp in aggregate_mapping_fps:
+                    continue
                 db_track_id = entry.db_track_id
                 if db_track_id in bootstrap_protected_db_track_ids:
                     continue
@@ -770,6 +821,8 @@ class FingerprintDiffEngine:
         # Greatest Hits but kept on original album).
         for fp in seen_fps & mapping_fps:
             for entry in mapping.get_entries(fp):
+                if fp in aggregate_mapping_fps:
+                    continue
                 if entry.db_track_id in claimed_db_track_ids:
                     continue
                 db_track_id = entry.db_track_id
@@ -804,6 +857,7 @@ class FingerprintDiffEngine:
         # These are invisible to 4a/4b which only iterate mapping entries.
         # Collect all db_track_ids already accounted for by matches or removals.
         accounted_db_track_ids = claimed_db_track_ids.copy()
+        accounted_db_track_ids.update(claimed_aggregate_db_ids)
         accounted_db_track_ids.update(bootstrap_protected_db_track_ids)
         for item in plan.to_remove:
             if item.db_track_id:
@@ -1325,6 +1379,291 @@ class FingerprintDiffEngine:
             score += 2
 
         return score
+
+    @staticmethod
+    def _album_key_for_pc_track(pc_track: PCTrack) -> str:
+        """Return the aggregate membership key for a PC track."""
+        return str(pc_track.album or "").strip().lower()
+
+    @staticmethod
+    def _track_dict_from_pc_track(pc_track: PCTrack, index: int) -> dict:
+        """Build the album conversion track dict shape from a PCTrack."""
+        return {
+            "Title": pc_track.title or f"Track {index}",
+            "Artist": pc_track.artist or "",
+            "Album": pc_track.album or "",
+            "Album Artist": pc_track.album_artist or pc_track.artist or "",
+            "Genre": pc_track.genre or "",
+            "year": pc_track.year or 0,
+            "track_number": pc_track.track_number or index,
+            "total_tracks": pc_track.track_total or 0,
+            "disc_number": pc_track.disc_number or 1,
+            "total_discs": pc_track.disc_total or 1,
+            "length": pc_track.duration_ms or 0,
+        }
+
+    def _contained_source_from_pc_track(
+        self,
+        pc_track: PCTrack,
+        fingerprint: str,
+        chapter: dict,
+        index: int,
+    ) -> dict:
+        source_size, source_mtime = self._current_pc_track_stat(pc_track)
+        source_hash = None
+        try:
+            source_hash = source_content_hash(pc_track.path)
+        except OSError:
+            pass
+        return {
+            "fingerprint": fingerprint,
+            "source_path_hint": str(pc_track.path),
+            "source_size": source_size,
+            "source_mtime": source_mtime,
+            "source_hash": source_hash,
+            "album_key": self._album_key_for_pc_track(pc_track),
+            "title": str(pc_track.title or ""),
+            "artist": str(pc_track.artist or ""),
+            "album": str(pc_track.album or ""),
+            "disc_number": int(pc_track.disc_number or 1),
+            "track_number": int(pc_track.track_number or index),
+            "startpos": int(chapter.get("startpos") or 0),
+            "endpos": int(chapter.get("endpos") or 0),
+        }
+
+    def _source_identity_changed(
+        self,
+        pc_track: PCTrack,
+        source_meta: dict,
+        *,
+        fingerprint_unchanged: bool = False,
+    ) -> bool:
+        """Return whether a contained source needs the aggregate file rebuilt."""
+        try:
+            mapped_size = int(source_meta.get("source_size") or 0)
+        except (TypeError, ValueError):
+            mapped_size = 0
+        try:
+            mapped_mtime = float(source_meta.get("source_mtime") or 0)
+        except (TypeError, ValueError):
+            mapped_mtime = 0
+
+        current_size, current_mtime = self._current_pc_track_stat(pc_track)
+        if mapped_size == current_size and mapped_mtime == current_mtime:
+            return False
+        if not mapped_size and not mapped_mtime:
+            return False
+        mapped_hash = str(source_meta.get("source_hash") or "").strip()
+        if mapped_hash:
+            if fingerprint_unchanged and not mapped_hash.startswith("mp4-mdat-sha256:"):
+                return False
+            try:
+                current_hash = source_content_hash(pc_track.path)
+            except OSError:
+                current_hash = None
+            if current_hash:
+                return current_hash != mapped_hash
+        if fingerprint_unchanged:
+            return False
+        return True
+
+    def _plan_chaptered_aggregate_updates(
+        self,
+        plan: SyncPlan,
+        mapping: MappingFile,
+        pc_by_fp: dict[str, list[PCTrack]],
+        ipod_by_db_track_id: dict[int, dict],
+        seen_fps: set[str],
+    ) -> tuple[dict[str, TrackMapping], set[str], set[int]]:
+        """Plan updates for chaptered-album tracks that contain source tracks."""
+        from .album_chapters import build_chapter_timeline
+
+        represented: dict[str, TrackMapping] = {}
+        detached: set[str] = set()
+        claimed_db_track_ids: set[int] = set()
+
+        for aggregate_fp, entry in mapping.aggregate_entries():
+            if entry.aggregate_kind != "chaptered_album":
+                continue
+            db_track_id = entry.db_track_id
+            ipod_track = ipod_by_db_track_id.get(db_track_id)
+            if not ipod_track:
+                continue
+
+            source_rows = list(entry.contains_sources or [])
+            if not source_rows:
+                source_rows = [
+                    {"fingerprint": fp}
+                    for fp in (entry.contains_fingerprints or [])
+                    if fp
+                ]
+            if not source_rows:
+                continue
+
+            claimed_db_track_ids.add(db_track_id)
+            retained: list[tuple[str, dict, PCTrack]] = []
+            removed_rows: list[dict] = []
+            moved_rows: list[tuple[str, dict, PCTrack]] = []
+            changed_audio = False
+
+            for row in source_rows:
+                fp = str(row.get("fingerprint") or "").strip()
+                if not fp:
+                    continue
+                pc_track = (pc_by_fp.get(fp) or [None])[0]
+                if pc_track is None:
+                    removed_rows.append(row)
+                    continue
+
+                represented[fp] = entry
+                stored_album_key = str(row.get("album_key") or "").strip().lower()
+                current_album_key = self._album_key_for_pc_track(pc_track)
+                if stored_album_key and stored_album_key != current_album_key:
+                    moved_rows.append((fp, row, pc_track))
+                    detached.add(fp)
+                    continue
+
+                if self._source_identity_changed(
+                    pc_track,
+                    row,
+                    fingerprint_unchanged=True,
+                ):
+                    changed_audio = True
+                retained.append((fp, row, pc_track))
+
+            if not removed_rows and not moved_rows and not retained:
+                continue
+
+            if not retained:
+                if removed_rows or moved_rows:
+                    plan.to_remove.append(
+                        SyncItem(
+                            action=SyncAction.REMOVE_FROM_IPOD,
+                            fingerprint=aggregate_fp,
+                            db_track_id=db_track_id,
+                            ipod_track=ipod_track,
+                            description=(
+                                "Remove chaptered album: "
+                                f"{ipod_track.get('Title') or ipod_track.get('Location') or db_track_id}"
+                            ),
+                            aggregate_kind="chaptered_album",
+                        )
+                    )
+                    plan.storage.bytes_to_remove += int(ipod_track.get("size", 0) or 0)
+                continue
+
+            if len(retained) < 2 and (removed_rows or moved_rows):
+                for fp, _row, _pc_track in retained:
+                    detached.add(fp)
+                plan.to_remove.append(
+                    SyncItem(
+                        action=SyncAction.REMOVE_FROM_IPOD,
+                        fingerprint=aggregate_fp,
+                        db_track_id=db_track_id,
+                        ipod_track=ipod_track,
+                        description=(
+                            "Remove chaptered album: "
+                            f"{ipod_track.get('Title') or ipod_track.get('Location') or db_track_id}"
+                        ),
+                        aggregate_kind="chaptered_album",
+                    )
+                )
+                plan.storage.bytes_to_remove += int(ipod_track.get("size", 0) or 0)
+                continue
+
+            track_dicts = [
+                self._track_dict_from_pc_track(pc_track, index)
+                for index, (_fp, _row, pc_track) in enumerate(retained, start=1)
+            ]
+            chapters = build_chapter_timeline(track_dicts)
+            new_sources = tuple(
+                self._contained_source_from_pc_track(pc_track, fp, chapter, index)
+                for index, ((fp, _row, pc_track), chapter) in enumerate(
+                    zip(retained, chapters, strict=False),
+                    start=1,
+                )
+            )
+            new_fps = tuple(source["fingerprint"] for source in new_sources)
+            retained_tracks = tuple(pc_track for _fp, _row, pc_track in retained)
+
+            if removed_rows or moved_rows:
+                removed_names = [
+                    str(row.get("title") or row.get("fingerprint") or "chapter")
+                    for row in removed_rows
+                ] + [
+                    pc_track.title or fp
+                    for fp, _row, pc_track in moved_rows
+                ]
+                display_name = ", ".join(removed_names[:3])
+                if len(removed_names) > 3:
+                    display_name += f", +{len(removed_names) - 3} more"
+                partial_ipod_track = dict(ipod_track)
+                partial_ipod_track["size"] = 0
+                plan.to_remove.append(
+                    SyncItem(
+                        action=SyncAction.REMOVE_FROM_IPOD,
+                        fingerprint=aggregate_fp,
+                        db_track_id=db_track_id,
+                        ipod_track=partial_ipod_track,
+                        description=f"Remove chapter from chaptered album: {display_name}",
+                        aggregate_kind="chaptered_album",
+                        aggregate_contains_fingerprints=new_fps,
+                        aggregate_contains_sources=new_sources,
+                        aggregate_rebuild_pc_tracks=retained_tracks,
+                        aggregate_removed_fingerprint=str(
+                            (removed_rows[0].get("fingerprint") if removed_rows else moved_rows[0][0])
+                            or ""
+                        ),
+                    )
+                )
+                continue
+
+            new_chapter_data = {"chapters": chapters}
+            old_chapter_data = ipod_track.get("chapter_data") or {"chapters": []}
+            if changed_audio:
+                estimated_size = sum(max(0, pc_track.size) for pc_track in retained_tracks)
+                plan.to_update_file.append(
+                    SyncItem(
+                        action=SyncAction.UPDATE_FILE,
+                        fingerprint=aggregate_fp,
+                        db_track_id=db_track_id,
+                        ipod_track=ipod_track,
+                        estimated_size=estimated_size,
+                        description=(
+                            "Rebuild chaptered album: "
+                            f"{ipod_track.get('Title') or ipod_track.get('Location') or db_track_id}"
+                        ),
+                        aggregate_kind="chaptered_album",
+                        aggregate_contains_fingerprints=new_fps,
+                        aggregate_contains_sources=new_sources,
+                        aggregate_rebuild_pc_tracks=retained_tracks,
+                    )
+                )
+                plan.storage.bytes_to_update += estimated_size
+            elif (
+                self._normalized_chapter_entries(new_chapter_data)
+                != self._normalized_chapter_entries(old_chapter_data)
+            ):
+                plan.to_update_metadata.append(
+                    SyncItem(
+                        action=SyncAction.UPDATE_METADATA,
+                        fingerprint=aggregate_fp,
+                        db_track_id=db_track_id,
+                        ipod_track=ipod_track,
+                        metadata_changes={
+                            "chapter_data": (new_chapter_data, old_chapter_data),
+                        },
+                        description=(
+                            "Update chapter titles: "
+                            f"{ipod_track.get('Title') or ipod_track.get('Location') or db_track_id}"
+                        ),
+                        aggregate_kind="chaptered_album",
+                        aggregate_contains_fingerprints=new_fps,
+                        aggregate_contains_sources=new_sources,
+                    )
+                )
+
+        return represented, detached, claimed_db_track_ids
 
     def _current_pc_track_stat(self, pc_track: PCTrack) -> tuple[int, float]:
         """Return current source size/mtime, falling back to scan-time values."""

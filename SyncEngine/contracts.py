@@ -65,6 +65,13 @@ class SyncItem:
     defer_removal_until_after_add: bool = False
     conversion_source_fingerprints: tuple[str, ...] = ()
     conversion_source_path_hints: tuple[str, ...] = ()
+    conversion_source_metadata: tuple[dict, ...] = ()
+    mapping_source_metadata: dict | None = None
+    aggregate_kind: str | None = None
+    aggregate_contains_fingerprints: tuple[str, ...] = ()
+    aggregate_contains_sources: tuple[dict, ...] = ()
+    aggregate_rebuild_pc_tracks: tuple[PCTrack, ...] = ()
+    aggregate_removed_fingerprint: str | None = None
 
     def __post_init__(self) -> None:
         if self.metadata_changes is None:

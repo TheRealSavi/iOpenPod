@@ -224,7 +224,15 @@ def compute_fingerprint(filepath: str | Path, fpcalc_path: str | None = None) ->
         )
 
         if result.returncode != 0:
-            logger.error(f"fpcalc failed for {filepath}: {result.stderr}")
+            stderr = (result.stderr or "").strip()
+            if "Empty fingerprint" in stderr:
+                logger.warning(
+                    "Fingerprint unavailable for %s: fpcalc returned no audio fingerprint "
+                    "(silent, empty, or unsupported media).",
+                    filepath.name,
+                )
+            else:
+                logger.error(f"fpcalc failed for {filepath}: {stderr}")
             return None
 
         # Parse output: DURATION=123\nFINGERPRINT=abc123...
@@ -235,7 +243,10 @@ def compute_fingerprint(filepath: str | Path, fpcalc_path: str | None = None) ->
                 break
 
         if not fingerprint:
-            logger.error(f"No fingerprint in fpcalc output for {filepath}")
+            logger.warning(
+                "Fingerprint unavailable for %s: fpcalc produced no fingerprint output",
+                filepath.name,
+            )
             return None
 
         return fingerprint
@@ -363,16 +374,19 @@ def write_fingerprint(filepath: str | Path, fingerprint: str) -> bool:
             logger.warning(f"Unsupported format for fingerprint storage: {suffix}")
             return False
 
+    except UnicodeError as e:
+        logger.debug(f"Could not write fingerprint to {filepath}: {e}")
+        return False
     except Exception as e:
         logger.error(f"Failed to write fingerprint to {filepath}: {e}")
         return False
 
 
-def get_or_compute_fingerprint(
+def get_or_compute_fingerprint_with_status(
     filepath: str | Path,
     fpcalc_path: str | None = None,
     write_to_file: bool = True,
-) -> str | None:
+) -> tuple[str | None, str]:
     """
     Get fingerprint from file metadata, or compute and optionally store it.
 
@@ -389,7 +403,8 @@ def get_or_compute_fingerprint(
         write_to_file: If True, store computed fingerprint in file metadata
 
     Returns:
-        Fingerprint string, or None if unavailable
+        Tuple of ``(fingerprint, status)``. Status is one of ``cache``,
+        ``tag``, ``computed``, or ``failed``.
     """
 
     def _is_raw_fingerprint(value: str) -> bool:
@@ -411,8 +426,7 @@ def get_or_compute_fingerprint(
     cached = cache.lookup(filepath)
     if cached:
         if _is_raw_fingerprint(cached):
-            logger.debug(f"Cache hit for {filepath.name}")
-            return cached
+            return cached, "cache"
         logger.debug(
             "Legacy cached fingerprint format for %s; recomputing raw fingerprint",
             filepath.name,
@@ -422,30 +436,48 @@ def get_or_compute_fingerprint(
     fingerprint = read_fingerprint(filepath)
     if fingerprint:
         if _is_raw_fingerprint(fingerprint):
-            logger.debug(f"Read existing fingerprint for {filepath.name}")
             cache.store(filepath, fingerprint)
-            return fingerprint
+            return fingerprint, "tag"
         logger.debug(
             "Legacy tagged fingerprint format for %s; recomputing raw fingerprint",
             filepath.name,
         )
 
     # 3. Compute new fingerprint
-    logger.debug(f"Computing fingerprint for {filepath.name}")
     fingerprint = compute_fingerprint(filepath, fpcalc_path)
     if not fingerprint:
-        return None
+        return None, "failed"
 
     # Optionally store in file metadata
     if write_to_file:
         if write_fingerprint(filepath, fingerprint):
-            logger.debug(f"Stored fingerprint in {filepath.name}")
+            pass
         else:
-            logger.warning(f"Could not store fingerprint in {filepath.name}")
+            logger.debug(f"Could not store fingerprint in {filepath.name}; using cache only")
 
     # Update cache with current file stats (post-write if applicable)
     cache.store(filepath, fingerprint)
 
+    return fingerprint, "computed"
+
+
+def get_or_compute_fingerprint(
+    filepath: str | Path,
+    fpcalc_path: str | None = None,
+    write_to_file: bool = True,
+) -> str | None:
+    """
+    Get fingerprint from file metadata, or compute and optionally store it.
+
+    This compatibility wrapper returns only the fingerprint. Use
+    :func:`get_or_compute_fingerprint_with_status` when batch callers need
+    cache/tag/computed/failed counts for summary logging.
+    """
+    fingerprint, _status = get_or_compute_fingerprint_with_status(
+        filepath,
+        fpcalc_path=fpcalc_path,
+        write_to_file=write_to_file,
+    )
     return fingerprint
 
 

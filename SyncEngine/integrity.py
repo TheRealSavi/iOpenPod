@@ -38,6 +38,11 @@ from .mapping import MappingFile
 logger = logging.getLogger(__name__)
 
 
+def _is_appledouble_sidecar(path: Path) -> bool:
+    """Return True for macOS AppleDouble metadata files like ._TRACK.m4a."""
+    return path.name.startswith("._")
+
+
 @dataclass
 class IntegrityReport:
     """Summary of what the integrity check found and fixed."""
@@ -259,6 +264,8 @@ def _check_orphan_files(
                 return
             if not file.is_file():
                 continue
+            if _is_appledouble_sidecar(file):
+                continue
             if file.suffix.lower() not in _MEDIA_EXTS:
                 continue
             if os.path.normcase(str(file)) not in referenced:
@@ -275,16 +282,29 @@ def _check_orphan_files(
 
         if delete_orphans:
             deleted = 0
+            delete_error_count = 0
+            delete_error_samples: list[str] = []
             for orphan in orphans:
                 try:
                     orphan.unlink()
                     deleted += 1
                     logger.debug(f"Integrity: deleted orphan {orphan}")
+                except FileNotFoundError:
+                    logger.debug("Integrity: orphan already gone %s", orphan)
                 except Exception as e:
-                    report.errors.append(f"Failed to delete orphan {orphan}: {e}")
-                    logger.error(f"Integrity: failed to delete orphan {orphan}: {e}")
+                    error_text = f"Failed to delete orphan {orphan}: {e}"
+                    report.errors.append(error_text)
+                    delete_error_count += 1
+                    if len(delete_error_samples) < 5:
+                        delete_error_samples.append(error_text)
 
             logger.info(f"Integrity: deleted {deleted}/{len(orphans)} orphan files")
+            if delete_error_samples:
+                logger.warning(
+                    "Integrity: failed to delete %d orphan file(s); examples: %s",
+                    delete_error_count,
+                    "; ".join(delete_error_samples),
+                )
 
 
 def _resolve_location_to_path(ipod_root: Path, location: str) -> Path | None:

@@ -23,6 +23,7 @@ Cross-referenced against:
 """
 
 import struct
+from typing import Any
 
 from iTunesDB_Shared.constants import (
     MHOD_TYPE_ALBUM,
@@ -65,6 +66,24 @@ from iTunesDB_Shared.mhod_defs import (
     SEAN_ATOM,
     write_mhod_header,
 )
+
+_U16_MAX = 0xFFFF
+_U32_MAX = 0xFFFFFFFF
+
+
+def _u32_or_zero(value: Any) -> int:
+    """Coerce arbitrary metadata to an unsigned 32-bit field value."""
+    try:
+        number = int(value or 0)
+    except (TypeError, ValueError, OverflowError):
+        return 0
+    return max(0, min(number, _U32_MAX))
+
+
+def _chapter_title(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value)
 
 
 def write_mhod_string(mhod_type: int, value: str,
@@ -221,10 +240,16 @@ def write_mhod_chapter_data(
     # Build the atom tree body (all big-endian).
     atoms = bytearray()
 
+    valid_chapter_count = 0
     for ch in chapters:
-        title = ch.get("title", "")
-        startpos = ch.get("startpos", 0)
+        if not isinstance(ch, dict):
+            continue
+        valid_chapter_count += 1
+        title = _chapter_title(ch.get("title", ""))
+        startpos = _u32_or_zero(ch.get("startpos", 0))
         title_utf16 = title.encode("utf-16-be")
+        if len(title_utf16) // 2 > _U16_MAX:
+            title_utf16 = title_utf16[:_U16_MAX * 2]
         title_units = len(title_utf16) // 2
 
         # name atom: size(4) + "name"(4) + unk=1(4) + unk=0(4) + unk=0(4) + strlen(2) + string
@@ -251,14 +276,22 @@ def write_mhod_chapter_data(
     atoms.extend(hedr_atom)
 
     # sean atom header wraps everything
-    num_children = len(chapters) + 1  # chapters + hedr
+    if not valid_chapter_count:
+        return b''
+
+    num_children = valid_chapter_count + 1  # chapters + hedr
     sean_size = 20 + len(atoms)
     sean_header = struct.pack(">I", sean_size)
     sean_header += SEAN_ATOM
     sean_header += struct.pack(">III", 1, num_children, 0)
 
     # Preamble (little-endian, 12 bytes)
-    preamble = struct.pack("<III", unk024, unk028, unk032)
+    preamble = struct.pack(
+        "<III",
+        _u32_or_zero(unk024),
+        _u32_or_zero(unk028),
+        _u32_or_zero(unk032),
+    )
 
     # Complete body = preamble + sean_header + atoms
     body = preamble + sean_header + bytes(atoms)

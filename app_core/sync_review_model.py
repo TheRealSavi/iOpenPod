@@ -143,6 +143,68 @@ def sync_item_size_delta(item: Any) -> tuple[int, int]:
     return 0, 0
 
 
+def _chapter_titles(value: Any) -> list[str]:
+    if not isinstance(value, Mapping):
+        return []
+    chapters = value.get("chapters")
+    if not isinstance(chapters, list):
+        return []
+    titles: list[str] = []
+    for chapter in chapters:
+        if not isinstance(chapter, Mapping):
+            continue
+        titles.append(str(chapter.get("title") or "").strip())
+    return titles
+
+
+def _chapter_change_summary(new_value: Any, old_value: Any) -> str:
+    new_titles = _chapter_titles(new_value)
+    old_titles = _chapter_titles(old_value)
+    changed: list[tuple[str, str]] = []
+    for old_title, new_title in zip(old_titles, new_titles, strict=False):
+        if old_title != new_title:
+            changed.append((old_title, new_title))
+
+    if len(changed) == 1:
+        old_title, new_title = changed[0]
+        return f'Chapter title: "{old_title}" -> "{new_title}"'
+    if changed:
+        return f"Chapter titles: {len(changed)} changed"
+    if len(old_titles) != len(new_titles):
+        return f"Chapters: {len(old_titles)} -> {len(new_titles)}"
+    return "Chapters changed"
+
+
+_METADATA_FIELD_LABELS = {
+    "chapter_data": "Chapters",
+    "title": "Title",
+    "artist": "Artist",
+    "album": "Album",
+    "album_artist": "Album Artist",
+    "genre": "Genre",
+}
+
+
+def metadata_change_parts(item: Any) -> list[str]:
+    """Return compact, user-facing metadata change summaries for a sync item."""
+    changes = getattr(item, "metadata_changes", None)
+    if not isinstance(changes, Mapping):
+        return []
+
+    parts: list[str] = []
+    for field_name, values in changes.items():
+        try:
+            pc_val, ipod_val = values
+        except (TypeError, ValueError):
+            continue
+        if field_name == "chapter_data":
+            parts.append(_chapter_change_summary(pc_val, ipod_val))
+            continue
+        label = _METADATA_FIELD_LABELS.get(str(field_name), str(field_name))
+        parts.append(f'{label}: "{ipod_val}" -> "{pc_val}"')
+    return parts
+
+
 def count_sync_actions(items: Iterable[Any]) -> SyncActionCounts:
     """Count selected sync items by action."""
 

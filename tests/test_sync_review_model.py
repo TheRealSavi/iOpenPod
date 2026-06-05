@@ -7,9 +7,12 @@ from app_core.sync_review_model import (
     ACTION_UPDATE_METADATA,
     count_sync_actions,
     group_by_media_type,
+    metadata_change_parts,
     sync_action_key,
     sync_item_size_delta,
 )
+from GUI.widgets.syncReview import SyncTrackRow
+from SyncEngine.contracts import SyncAction, SyncItem
 
 
 def _enum_like(name: str) -> SimpleNamespace:
@@ -79,3 +82,118 @@ def test_count_sync_actions_counts_known_actions() -> None:
     assert counts.remove_from_ipod == 1
     assert counts.update_metadata == 1
     assert counts.update_file == 0
+
+
+def test_metadata_change_parts_summarizes_single_chapter_title_change() -> None:
+    item = _item(
+        ACTION_UPDATE_METADATA,
+        metadata_changes={
+            "chapter_data": (
+                {
+                    "chapters": [
+                        {"startpos": 0, "title": "01. New Title"},
+                        {"startpos": 1000, "title": "02. Same"},
+                    ]
+                },
+                {
+                    "chapters": [
+                        {"startpos": 0, "title": "01. Old Title"},
+                        {"startpos": 1000, "title": "02. Same"},
+                    ]
+                },
+            )
+        },
+    )
+
+    assert metadata_change_parts(item) == [
+        'Chapter title: "01. Old Title" -> "01. New Title"'
+    ]
+
+
+def test_metadata_change_parts_summarizes_multiple_chapter_title_changes() -> None:
+    item = _item(
+        ACTION_UPDATE_METADATA,
+        metadata_changes={
+            "chapter_data": (
+                {
+                    "chapters": [
+                        {"startpos": 0, "title": "One"},
+                        {"startpos": 1000, "title": "Two"},
+                    ]
+                },
+                {
+                    "chapters": [
+                        {"startpos": 0, "title": "Old One"},
+                        {"startpos": 1000, "title": "Old Two"},
+                    ]
+                },
+            )
+        },
+    )
+
+    assert metadata_change_parts(item) == ["Chapter titles: 2 changed"]
+
+
+def test_sync_track_row_shows_chaptered_album_metadata_update_when_ipod_title_is_blank(qtbot) -> None:
+    item = SyncItem(
+        action=SyncAction.UPDATE_METADATA,
+        db_track_id=42,
+        ipod_track={"Title": "", "length": 120000},
+        metadata_changes={
+            "chapter_data": (
+                {"chapters": [{"startpos": 0, "title": "01. New Title"}]},
+                {"chapters": [{"startpos": 0, "title": "01. Old Title"}]},
+            )
+        },
+        description="Update chapter titles: Album",
+        aggregate_kind="chaptered_album",
+    )
+
+    row = SyncTrackRow(item, "#8844ff")
+    qtbot.addWidget(row)
+
+    assert row.title_label.text() == "Update chapter titles: Album"
+    assert "Update chapter titles: Album" in row.detail_label.text()
+    assert 'Chapter title: "01. Old Title" -> "01. New Title"' in row.detail_label.text()
+
+
+def test_sync_track_row_metadata_update_fallback_handles_loose_item(qtbot) -> None:
+    item = SimpleNamespace(
+        action=SyncAction.UPDATE_METADATA,
+        description="Update chapter titles: Album",
+        aggregate_kind="chaptered_album",
+        metadata_changes={
+            "chapter_data": (
+                {"chapters": [{"title": "New"}]},
+                {"chapters": [{"title": "Old"}]},
+            )
+        },
+    )
+
+    row = SyncTrackRow(item, "#8844ff")
+    qtbot.addWidget(row)
+
+    assert row.title_label.text() == "Update chapter titles: Album"
+    assert row.detail_label.text()
+
+
+def test_sync_track_row_shows_aggregate_file_update_without_pc_track(qtbot) -> None:
+    item = SyncItem(
+        action=SyncAction.UPDATE_FILE,
+        db_track_id=42,
+        ipod_track={
+            "Title": "",
+            "Artist": "Artist",
+            "Album": "Album",
+            "length": 120000,
+        },
+        estimated_size=123456,
+        description="Rebuild chaptered album: Album",
+        aggregate_kind="chaptered_album",
+    )
+
+    row = SyncTrackRow(item, "#8844ff")
+    qtbot.addWidget(row)
+
+    assert row.title_label.text() == "Rebuild chaptered album: Album"
+    assert "Rebuild chaptered album: Album" in row.detail_label.text()

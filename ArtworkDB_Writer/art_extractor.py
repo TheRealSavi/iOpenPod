@@ -68,6 +68,9 @@ def extract_art(file_path: str) -> bytes | None:
         else:
             # Try generic mutagen
             return _extract_generic(file_path)
+    except UnicodeError as e:
+        logger.debug(f"ART: Could not parse embedded art from {file_path}: {e}")
+        return None
     except Exception as e:
         logger.warning(f"ART: Failed to extract art from {file_path}: {e}")
         return None

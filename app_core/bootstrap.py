@@ -49,6 +49,17 @@ def _configure_logging(context: AppContext) -> str:
     root = logging.getLogger()
     root.setLevel(logging.DEBUG)
 
+    # Pillow emits very verbose TIFF/PNG tag traces at DEBUG when the root
+    # file handler captures debug logs. Keep third-party internals quiet unless
+    # a developer explicitly lowers these loggers during a diagnostic session.
+    for noisy_logger in (
+        "PIL",
+        "PIL.Image",
+        "PIL.PngImagePlugin",
+        "PIL.TiffImagePlugin",
+    ):
+        logging.getLogger(noisy_logger).setLevel(logging.WARNING)
+
     if not any(isinstance(handler, logging.StreamHandler) for handler in root.handlers):
         console = logging.StreamHandler()
         console.setLevel(logging.INFO)

@@ -37,6 +37,10 @@ from iTunesDB_Shared.constants import (
 from iTunesDB_Writer.mhit_writer import TrackInfo
 from iTunesDB_Writer.mhyp_writer import PlaylistInfo
 
+from .album_chapters import (
+    ResolvedAlbumSource,
+    convert_album_to_chaptered_track,
+)
 from .audio_fingerprint import get_or_compute_fingerprint
 from .capability_filter import (
     is_track_supported_by_device,
@@ -803,7 +807,7 @@ class SyncExecutor:
             track = new_track_by_obj.get(obj_key)
             if track is None or not track.db_track_id:
                 continue
-            pc_track, _ipod_path, _was_transcoded = info
+            pc_track = info[0]
             normalized[track.db_track_id] = str(pc_track.path)
 
         return normalized
@@ -1034,23 +1038,62 @@ class SyncExecutor:
             fp = ctx.new_track_fingerprints.get(obj_key)
             info = ctx.new_track_info.get(obj_key)
             if fp and info and track.db_track_id != 0:
-                pc_track, ipod_dest, was_transcoded = info
+                pc_track, ipod_dest, was_transcoded = info[:3]
                 # Re-stat the source file to capture post-fingerprint
                 # size/mtime.  The fingerprinting phase may have written
                 # the acoustic fingerprint tag back into the source file,
                 # changing its size and mtime after the initial scan.
                 source_size, source_mtime, source_hash = _current_source_identity(pc_track)
+                item = info[3] if len(info) > 3 else None
+                source_path_hint = pc_track.relative_path
+                source_format = Path(pc_track.path).suffix.lstrip(".")
+                if item is not None and item.mapping_source_metadata:
+                    source_meta = item.mapping_source_metadata
+                    try:
+                        source_size = int(source_meta.get("source_size") or source_size)
+                    except (TypeError, ValueError):
+                        pass
+                    try:
+                        source_mtime = float(source_meta.get("source_mtime") or source_mtime)
+                    except (TypeError, ValueError):
+                        pass
+                    source_path_hint = (
+                        str(source_meta.get("source_path_hint") or "").strip()
+                        or source_path_hint
+                    )
+                    source_format = (
+                        Path(source_path_hint).suffix.lstrip(".")
+                        or source_format
+                    )
+                    source_hash = source_meta.get("source_hash")
+                contains_fingerprints = None
+                contains_sources = None
+                aggregate_kind = None
+                if item is not None:
+                    aggregate_kind = getattr(item, "aggregate_kind", None)
+                    if aggregate_kind:
+                        contains_fingerprints = (
+                            getattr(item, "aggregate_contains_fingerprints", None)
+                            or getattr(item, "conversion_source_fingerprints", ())
+                        )
+                        contains_sources = (
+                            getattr(item, "aggregate_contains_sources", None)
+                            or getattr(item, "conversion_source_metadata", ())
+                        )
                 ctx.mapping.add_track(
                     fingerprint=fp,
                     db_track_id=track.db_track_id,
-                    source_format=Path(pc_track.path).suffix.lstrip("."),
+                    source_format=source_format,
                     ipod_format=ipod_dest.suffix.lstrip("."),
                     source_size=source_size,
                     source_mtime=source_mtime,
                     was_transcoded=was_transcoded,
-                    source_path_hint=pc_track.relative_path,
+                    source_path_hint=source_path_hint,
                     art_hash=pc_track.art_hash,
                     source_hash=source_hash,
+                    aggregate_kind=aggregate_kind,
+                    contains_fingerprints=contains_fingerprints,
+                    contains_sources=contains_sources,
                 )
 
     def _update_podcast_subscriptions(self, ctx: _SyncContext) -> None:
@@ -1164,9 +1207,25 @@ class SyncExecutor:
                     all_removes.append(item)
                     existing_db_track_ids.add(item.db_track_id)
 
+        aggregate_rebuilds = [
+            item for item in all_removes
+            if self._is_chaptered_aggregate_rebuild(item)
+        ]
+        normal_removes = [
+            item for item in all_removes
+            if not self._is_chaptered_aggregate_rebuild(item)
+        ]
+
+        self._execute_chaptered_aggregate_rebuild_items(
+            ctx,
+            aggregate_rebuilds,
+            stage_name="remove_chapter",
+            start_message="Rebuilding chaptered albums...",
+        )
+
         self._execute_remove_items(
             ctx,
-            all_removes,
+            normal_removes,
             stage_name="remove",
             start_message="Removing tracks...",
         )
@@ -1411,18 +1470,279 @@ class SyncExecutor:
         finally:
             pool.shutdown(wait=False, cancel_futures=True)
 
+    @staticmethod
+    def _is_chaptered_aggregate_rebuild(item: SyncItem) -> bool:
+        return (
+            getattr(item, "aggregate_kind", None) == "chaptered_album"
+            and bool(getattr(item, "aggregate_rebuild_pc_tracks", ()))
+            and bool(getattr(item, "db_track_id", None))
+        )
+
+    def _execute_chaptered_aggregate_rebuild_items(
+        self,
+        ctx: _SyncContext,
+        items: list[SyncItem],
+        *,
+        stage_name: str,
+        start_message: str,
+    ) -> None:
+        if not items:
+            return
+
+        ctx.progress(stage_name, 0, len(items), message=start_message)
+        for i, item in enumerate(items):
+            if ctx.cancelled():
+                return
+            ctx.progress(stage_name, i + 1, len(items), item, item.description)
+            if ctx.dry_run:
+                ctx.result.tracks_updated_file += 1
+                continue
+            if self._execute_chaptered_aggregate_rebuild(ctx, item):
+                ctx.result.tracks_updated_file += 1
+
+    @staticmethod
+    def _track_dict_from_pc_track(pc_track, index: int) -> dict:
+        return {
+            "Title": pc_track.title or f"Track {index}",
+            "Artist": pc_track.artist or "",
+            "Album": pc_track.album or "",
+            "Album Artist": pc_track.album_artist or pc_track.artist or "",
+            "Genre": pc_track.genre or "",
+            "year": pc_track.year or 0,
+            "track_number": pc_track.track_number or index,
+            "total_tracks": pc_track.track_total or 0,
+            "disc_number": pc_track.disc_number or 1,
+            "total_discs": pc_track.disc_total or 1,
+            "length": pc_track.duration_ms or 0,
+        }
+
+    @staticmethod
+    def _unique_rebuild_destination(path: Path, suffix: str) -> Path:
+        candidate = path.with_suffix(suffix)
+        if candidate == path or not candidate.exists():
+            return candidate
+        stem = candidate.stem
+        parent = candidate.parent
+        for index in range(1, 10_000):
+            numbered = parent / f"{stem} {index}{suffix}"
+            if not numbered.exists():
+                return numbered
+        raise RuntimeError(f"Could not choose rebuild destination for {path.name}")
+
+    @staticmethod
+    def _preserve_trackinfo_state(rebuilt: TrackInfo, existing: TrackInfo) -> None:
+        for attr in (
+            "track_id",
+            "db_track_id",
+            "rating",
+            "play_count",
+            "play_count_2",
+            "skip_count",
+            "last_played",
+            "last_skipped",
+            "date_added",
+            "date_added_to_itunes",
+            "bookmark_time",
+            "checked_flag",
+            "media_type",
+            "album_id",
+            "artwork_count",
+            "artwork_size",
+            "mhii_link",
+            "user_id",
+            "app_rating",
+            "store_track_id",
+            "store_artist_id",
+            "store_album_id",
+            "store_content_flag",
+        ):
+            if hasattr(existing, attr):
+                setattr(rebuilt, attr, getattr(existing, attr))
+
+    def _execute_chaptered_aggregate_rebuild(
+        self,
+        ctx: _SyncContext,
+        item: SyncItem,
+    ) -> bool:
+        db_track_id = item.db_track_id or 0
+        existing = ctx.tracks_by_db_track_id.get(db_track_id)
+        if existing is None:
+            ctx.result.errors.append((
+                item.description,
+                f"Chaptered album track {db_track_id} was not found in the iPod database",
+            ))
+            return False
+
+        old_location = existing.location
+        if not old_location:
+            ctx.result.errors.append((item.description, "Chaptered album has no iPod location"))
+            return False
+
+        old_full_path = self.ipod_path / old_location.replace(":", "/").lstrip("/")
+        track_dicts = [
+            self._track_dict_from_pc_track(pc_track, index)
+            for index, pc_track in enumerate(item.aggregate_rebuild_pc_tracks, start=1)
+        ]
+        album_item = {
+            "album": track_dicts[0].get("Album") or existing.album or existing.title,
+            "title": track_dicts[0].get("Album") or existing.album or existing.title,
+            "artist": track_dicts[0].get("Album Artist") or existing.album_artist or existing.artist or "",
+        }
+        source_fps = list(item.aggregate_contains_fingerprints or [])
+        sources = [
+            ResolvedAlbumSource(
+                track=track,
+                source_path=Path(pc_track.path),
+                source_kind="pc",
+                fingerprint=source_fps[index - 1] if index - 1 < len(source_fps) else None,
+            )
+            for index, (track, pc_track) in enumerate(
+                zip(track_dicts, item.aggregate_rebuild_pc_tracks, strict=False),
+                start=1,
+            )
+        ]
+
+        try:
+            with tempfile.TemporaryDirectory(prefix="iopenpod_rebuild_chaptered_") as tmp:
+                converted = convert_album_to_chaptered_track(
+                    album_item=album_item,
+                    tracks=track_dicts,
+                    sources=sources,
+                    output_dir=Path(tmp),
+                    settings=self.transcode_options,
+                    artwork_bytes=None,
+                )
+
+                destination = self._unique_rebuild_destination(
+                    old_full_path,
+                    converted.output_path.suffix,
+                )
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                tmp_destination = destination.with_name(
+                    f"{destination.name}.iopenpodtmp"
+                )
+                try:
+                    self._copy_file_to_device(
+                        converted.output_path,
+                        tmp_destination,
+                        is_cancelled=ctx._is_cancelled,
+                    )
+                    tmp_destination.replace(destination)
+                finally:
+                    try:
+                        tmp_destination.unlink(missing_ok=True)
+                    except OSError:
+                        pass
+
+                ipod_location = ":" + str(destination.relative_to(self.ipod_path)).replace("\\", ":").replace("/", ":")
+                rebuilt = self._pc_track_to_info(
+                    converted.pc_track,
+                    ipod_location,
+                    False,
+                    ipod_file_path=destination,
+                )
+                self._preserve_trackinfo_state(rebuilt, existing)
+                rebuilt.db_track_id = db_track_id
+                rebuilt.location = ipod_location
+                rebuilt.size = destination.stat().st_size
+                rebuilt.chapter_data = {"chapters": converted.chapters}
+
+                if old_location in ctx.tracks_by_location:
+                    del ctx.tracks_by_location[old_location]
+                ctx.tracks_by_location[ipod_location] = rebuilt
+                ctx.tracks_by_db_track_id[db_track_id] = rebuilt
+
+                if old_full_path != destination:
+                    self._delete_from_ipod(old_full_path)
+
+                new_fingerprint = get_or_compute_fingerprint(
+                    converted.output_path,
+                    fpcalc_path=self.fpcalc_path,
+                    write_to_file=False,
+                ) or item.fingerprint
+
+                existing_mapping = (
+                    ctx.mapping.get_by_db_track_id(db_track_id)
+                    if db_track_id else None
+                )
+                old_fingerprint = existing_mapping[0] if existing_mapping else item.fingerprint
+                if old_fingerprint and new_fingerprint != old_fingerprint:
+                    ctx.mapping.remove_track(old_fingerprint, db_track_id=db_track_id)
+                mapping_fingerprint = new_fingerprint or old_fingerprint
+                if not mapping_fingerprint:
+                    ctx.result.errors.append((
+                        item.description,
+                        "Rebuilt chaptered album, but could not determine its fingerprint",
+                    ))
+                    return False
+
+                source_hash = None
+                try:
+                    source_hash = source_content_hash(converted.output_path)
+                except OSError:
+                    pass
+                converted_stat = converted.output_path.stat()
+                ctx.mapping.add_track(
+                    fingerprint=mapping_fingerprint,
+                    db_track_id=db_track_id,
+                    source_format=converted.output_path.suffix.lstrip("."),
+                    ipod_format=destination.suffix.lstrip("."),
+                    source_size=converted_stat.st_size,
+                    source_mtime=converted_stat.st_mtime,
+                    was_transcoded=False,
+                    source_path_hint=(
+                        existing_mapping[1].source_path_hint
+                        if existing_mapping else None
+                    ),
+                    art_hash=(
+                        existing_mapping[1].art_hash
+                        if existing_mapping else None
+                    ),
+                    source_hash=source_hash,
+                    aggregate_kind="chaptered_album",
+                    contains_fingerprints=item.aggregate_contains_fingerprints,
+                    contains_sources=item.aggregate_contains_sources,
+                )
+                ctx.pc_file_paths[db_track_id] = str(destination)
+                return True
+        except (_CancelledError, _OutOfSpaceError):
+            raise
+        except Exception as exc:
+            ctx.result.errors.append((item.description, f"Failed to rebuild chaptered album: {exc}"))
+            logger.error("Failed to rebuild chaptered album %s: %s", db_track_id, exc)
+            return False
+
     def _execute_file_updates(self, ctx: _SyncContext) -> None:
         if not ctx.plan.to_update_file:
             return
 
-        ctx.progress("update_file", 0, len(ctx.plan.to_update_file),
+        aggregate_rebuilds = [
+            item for item in ctx.plan.to_update_file
+            if self._is_chaptered_aggregate_rebuild(item)
+        ]
+        regular_updates = [
+            item for item in ctx.plan.to_update_file
+            if not self._is_chaptered_aggregate_rebuild(item)
+        ]
+
+        self._execute_chaptered_aggregate_rebuild_items(
+            ctx,
+            aggregate_rebuilds,
+            stage_name="update_file",
+            start_message="Rebuilding changed chaptered albums...",
+        )
+
+        if not regular_updates:
+            return
+
+        ctx.progress("update_file", 0, len(regular_updates),
                      message="Re-syncing changed files...")
 
         if ctx.dry_run:
-            for i, item in enumerate(ctx.plan.to_update_file):
+            for i, item in enumerate(regular_updates):
                 if ctx.cancelled():
                     return
-                ctx.progress("update_file", i + 1, len(ctx.plan.to_update_file),
+                ctx.progress("update_file", i + 1, len(regular_updates),
                              item, item.description)
                 ctx.result.tracks_updated_file += 1
             return
@@ -1492,6 +1812,10 @@ class SyncExecutor:
 
             if item.fingerprint and ipod_path:
                 source_size, source_mtime, source_hash = _current_source_identity(item.pc_track)
+                existing = None
+                fp_result = ctx.mapping.get_by_db_track_id(db_track_id) if db_track_id else None
+                if fp_result:
+                    _old_fp, existing = fp_result
                 ctx.mapping.add_track(
                     fingerprint=item.fingerprint,
                     db_track_id=db_track_id or 0,
@@ -1503,6 +1827,18 @@ class SyncExecutor:
                     source_path_hint=item.pc_track.relative_path,
                     art_hash=getattr(item.pc_track, "art_hash", None),
                     source_hash=source_hash,
+                    aggregate_kind=(
+                        item.aggregate_kind
+                        or (existing.aggregate_kind if existing else None)
+                    ),
+                    contains_fingerprints=(
+                        item.aggregate_contains_fingerprints
+                        or (existing.contains_fingerprints if existing else None)
+                    ),
+                    contains_sources=(
+                        item.aggregate_contains_sources
+                        or (existing.contains_sources if existing else None)
+                    ),
                 )
 
             ctx.result.tracks_updated_file += 1
@@ -1510,7 +1846,7 @@ class SyncExecutor:
         self._parallel_copy_stage(
             ctx,
             stage_name="update_file",
-            items=ctx.plan.to_update_file,
+            items=regular_updates,
             on_success=_on_success,
             error_prefix="Failed to re-sync",
         )
@@ -1641,6 +1977,42 @@ class SyncExecutor:
                         source_path_hint=item.pc_track.relative_path,
                         art_hash=existing.art_hash,
                         source_hash=source_hash,
+                        aggregate_kind=(
+                            item.aggregate_kind or existing.aggregate_kind
+                        ),
+                        contains_fingerprints=(
+                            item.aggregate_contains_fingerprints
+                            or existing.contains_fingerprints
+                        ),
+                        contains_sources=(
+                            item.aggregate_contains_sources
+                            or existing.contains_sources
+                        ),
+                    )
+            elif item.aggregate_kind and item.fingerprint and db_track_id and not ctx.dry_run:
+                fp_result = ctx.mapping.get_by_db_track_id(db_track_id)
+                if fp_result:
+                    fp, existing = fp_result
+                    ctx.mapping.add_track(
+                        fingerprint=fp,
+                        db_track_id=db_track_id,
+                        source_format=existing.source_format,
+                        ipod_format=existing.ipod_format,
+                        source_size=existing.source_size,
+                        source_mtime=existing.source_mtime,
+                        was_transcoded=existing.was_transcoded,
+                        source_path_hint=existing.source_path_hint,
+                        art_hash=existing.art_hash,
+                        source_hash=existing.source_hash,
+                        aggregate_kind=item.aggregate_kind or existing.aggregate_kind,
+                        contains_fingerprints=(
+                            item.aggregate_contains_fingerprints
+                            or existing.contains_fingerprints
+                        ),
+                        contains_sources=(
+                            item.aggregate_contains_sources
+                            or existing.contains_sources
+                        ),
                     )
 
             ctx.result.tracks_updated_metadata += 1
@@ -1682,6 +2054,9 @@ class SyncExecutor:
                     source_path_hint=source_path_hint,
                     art_hash=item.new_art_hash,
                     source_hash=source_hash,
+                    aggregate_kind=existing.aggregate_kind,
+                    contains_fingerprints=existing.contains_fingerprints,
+                    contains_sources=existing.contains_sources,
                 )
 
     def _download_podcast_episodes(self, ctx: _SyncContext) -> None:
@@ -1954,7 +2329,7 @@ class SyncExecutor:
 
             if fingerprint:
                 ctx.new_track_fingerprints[id(track_info)] = fingerprint
-                ctx.new_track_info[id(track_info)] = (item.pc_track, ipod_path, was_transcoded)
+                ctx.new_track_info[id(track_info)] = (item.pc_track, ipod_path, was_transcoded, item)
 
             self._record_conversion_group_add_success(ctx, item)
 
@@ -1987,7 +2362,7 @@ class SyncExecutor:
                 continue
             info = ctx.new_track_info.get(id(t))
             if info:
-                pc_track, _ipod_path, _was_transcoded = info
+                pc_track, _ipod_path, _was_transcoded = info[:3]
                 candidates.append((t, pc_track.path))
 
         for db_track_id, pc_path in ctx.pc_file_paths.items():

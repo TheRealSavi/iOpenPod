@@ -7,6 +7,7 @@ from app_core.jobs import (
     ensure_backup_folder,
     list_backup_devices_for_view,
 )
+from SyncEngine.backup_manager import BackupManager
 
 
 def test_build_backup_device_context_sanitizes_identity_and_copies_meta() -> None:
@@ -83,3 +84,18 @@ def test_ensure_backup_folder_prefers_existing_device_subfolder(tmp_path) -> Non
 
     assert ensure_backup_folder(str(backup_dir), "DEVICE") == device_dir
     assert ensure_backup_folder(str(backup_dir), "MISSING") == backup_dir
+
+
+def test_backup_walk_skips_macos_metadata_files(tmp_path) -> None:
+    ipod_root = tmp_path / "ipod"
+    music_dir = ipod_root / "iPod_Control" / "Music" / "F00"
+    music_dir.mkdir(parents=True)
+    (music_dir / "TRACK.m4a").write_bytes(b"audio")
+    (music_dir / "._TRACK.m4a").write_bytes(b"sidecar")
+    (ipod_root / ".metadata_never_index").write_bytes(b"")
+
+    manager = BackupManager("DEVICE", backup_dir=str(tmp_path / "backups"))
+
+    assert manager._walk_device(ipod_root) == [
+        ("iPod_Control/Music/F00/TRACK.m4a", music_dir / "TRACK.m4a")
+    ]

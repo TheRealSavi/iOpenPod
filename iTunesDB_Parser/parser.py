@@ -89,7 +89,11 @@ def parse_itunesdb(file: str | os.PathLike[str] | BinaryIO) -> dict[str, Any]:
         ITunesDBParseError: If the binary data cannot be parsed.
         OSError: If a file path cannot be read.
     """
-    from .chunk_parser import parse_chunk
+    from .chunk_parser import (
+        log_unknown_chunk_summary,
+        parse_chunk,
+        reset_unknown_chunk_summary,
+    )
 
     if isinstance(file, (str, os.PathLike)):
         with open(file, "rb") as fh:
@@ -108,5 +112,7 @@ def parse_itunesdb(file: str | os.PathLike[str] | BinaryIO) -> dict[str, Any]:
     # Transparently handle iTunesCDB (compressed database)
     data = decompress_itunescdb(data)
 
+    reset_unknown_chunk_summary()
     parsed, _chunk_type = parse_chunk(data, 0)
+    log_unknown_chunk_summary()
     return parsed["data"]

@@ -189,7 +189,10 @@ def write_database(
             progress_callback=progress_callback,
         )
     except Exception as e:
-        logger.exception("Failed to write iTunesDB: %s", e)
+        logger.exception(
+            "Database write failed during iTunesDB serialization; output was not committed. Error: %s",
+            e,
+        )
         if raise_on_error:
             raise
         return False

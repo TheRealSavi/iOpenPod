@@ -23,11 +23,38 @@ that previously existed between ``_parsing`` and ``chunk_parser``.
 from __future__ import annotations
 
 import logging
+from collections import Counter
 from typing import Any
 
 from ._parsing import ParseResult, read_generic_header
 
 logger = logging.getLogger(__name__)
+
+_unknown_chunk_counts: Counter[tuple[str, int]] = Counter()
+
+
+def reset_unknown_chunk_summary() -> None:
+    """Start a fresh unknown-chunk summary for one top-level parse."""
+    _unknown_chunk_counts.clear()
+
+
+def log_unknown_chunk_summary() -> None:
+    """Emit a concise summary of unknown chunks seen during the parse."""
+    if not _unknown_chunk_counts:
+        return
+
+    total = sum(_unknown_chunk_counts.values())
+    examples = [
+        f"{chunk_type!r} at 0x{offset:X}"
+        for (chunk_type, offset), _count in _unknown_chunk_counts.most_common(5)
+    ]
+    suffix = "" if len(_unknown_chunk_counts) <= 5 else f"; +{len(_unknown_chunk_counts) - 5} more"
+    logger.warning(
+        "iTunesDB contained %d unknown chunk(s); ignored while parsing. Examples: %s%s",
+        total,
+        ", ".join(examples),
+        suffix,
+    )
 
 
 # ── Child-iteration helpers ──────────────────────────────────────────
@@ -123,10 +150,7 @@ def parse_chunk(
             from .mhii_parser import parse_artist_item
             result = parse_artist_item(data, offset, header_length, length_or_children)
         case _:
-            logger.warning(
-                "Skipping unknown iTunesDB chunk type %r at offset 0x%X",
-                chunk_type, offset,
-            )
+            _unknown_chunk_counts[(chunk_type, offset)] += 1
             # NOTE: length_or_children may be a child count rather than
             # a byte length.  For unknown types we naively treat it as a
             # length — the worst case is skipping too little, which the

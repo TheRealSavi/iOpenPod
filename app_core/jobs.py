@@ -165,6 +165,7 @@ class AlbumConversionWorker(QThread):
                 SyncPlan,
             )
             from SyncEngine.mapping import MappingManager
+            from SyncEngine.source_identity import source_content_hash
 
             request = self._request
             if len(request.album_tracks) < 2:
@@ -221,6 +222,29 @@ class AlbumConversionWorker(QThread):
                 conversion_group_add_count=1,
                 conversion_source_fingerprints=converted.source_fingerprints,
                 conversion_source_path_hints=converted.source_path_hints,
+                conversion_source_metadata=tuple(
+                    {
+                        "fingerprint": source.fingerprint,
+                        "source_path_hint": str(source.source_path),
+                        "source_size": source.source_path.stat().st_size,
+                        "source_mtime": source.source_path.stat().st_mtime,
+                        "source_hash": self._source_hash(source.source_path, source_content_hash),
+                        "album_key": str(track.get("Album") or "").strip().lower(),
+                        "title": str(track.get("Title") or ""),
+                        "artist": str(track.get("Artist") or ""),
+                        "album": str(track.get("Album") or ""),
+                        "disc_number": int(track.get("disc_number") or 1),
+                        "track_number": int(track.get("track_number") or index),
+                        "startpos": int(chapter.get("startpos") or 0),
+                        "endpos": int(chapter.get("endpos") or 0),
+                    }
+                    for index, (track, source, chapter) in enumerate(
+                        zip(request.album_tracks, sources, converted.chapters, strict=False),
+                        start=1,
+                    )
+                    if source.fingerprint
+                ),
+                aggregate_kind="chaptered_album",
             )
 
             remove_items = []
@@ -285,6 +309,13 @@ class AlbumConversionWorker(QThread):
             else Path(getattr(settings, "settings_dir", "") or tempfile.gettempdir())
         )
         return base / "album-conversions"
+
+    @staticmethod
+    def _source_hash(path: Path, source_content_hash_fn) -> str | None:
+        try:
+            return source_content_hash_fn(path)
+        except OSError:
+            return None
 
 
 @dataclass(frozen=True)
@@ -369,24 +400,38 @@ class ChapterSplitWorker(QThread):
                 return
 
             group_id = f"chapter-split-{random.getrandbits(64):016x}"
+            aggregate_mapping = self._aggregate_mapping_for_track(mapping, request.track)
+            aggregate_fp = aggregate_mapping[0] if aggregate_mapping else source.fingerprint
+            aggregate_source_rows = self._aggregate_source_rows_for_split(
+                aggregate_mapping,
+                len(split.pc_tracks),
+            )
             add_items: list[SyncItem] = []
             bytes_to_add = 0
-            for pc_track, output_path in zip(split.pc_tracks, split.output_paths, strict=False):
+            for index, (pc_track, output_path) in enumerate(
+                zip(split.pc_tracks, split.output_paths, strict=False)
+            ):
                 output_size = output_path.stat().st_size
                 bytes_to_add += output_size
+                source_meta = (
+                    aggregate_source_rows[index]
+                    if index < len(aggregate_source_rows)
+                    else None
+                )
+                source_fp = (
+                    str(source_meta.get("fingerprint") or "").strip()
+                    if source_meta else None
+                )
                 add_items.append(
                     SyncItem(
                         action=SyncAction.ADD_TO_IPOD,
-                        fingerprint=None,
+                        fingerprint=source_fp or None,
                         pc_track=pc_track,
                         estimated_size=output_size,
                         description=f"Split chapter: {pc_track.title}",
                         conversion_group_id=group_id,
                         conversion_group_add_count=len(split.pc_tracks),
-                        conversion_source_fingerprints=(
-                            (source.fingerprint,) if source.fingerprint else ()
-                        ),
-                        conversion_source_path_hints=(str(source.source_path),),
+                        mapping_source_metadata=source_meta,
                     )
                 )
 
@@ -394,7 +439,7 @@ class ChapterSplitWorker(QThread):
             remove_size = int(request.track.get("size", request.track.get("Size", 0)) or 0)
             remove_item = SyncItem(
                 action=SyncAction.REMOVE_FROM_IPOD,
-                fingerprint=source.fingerprint,
+                fingerprint=aggregate_fp,
                 db_track_id=request.track.get("db_track_id", request.track.get("db_id")),
                 ipod_track=request.track,
                 description=f"Replace chaptered track: {original_title}",
@@ -431,6 +476,37 @@ class ChapterSplitWorker(QThread):
                 return
             logger.exception("ChapterSplitWorker failed")
             self.error.emit(str(exc))
+
+    @staticmethod
+    def _aggregate_mapping_for_track(mapping, track: dict):
+        db_track_id = track.get("db_track_id", track.get("db_id"))
+        if not db_track_id:
+            return None
+        mapped = mapping.get_by_db_track_id(db_track_id)
+        if not mapped:
+            return None
+        _fp, entry = mapped
+        if entry.aggregate_kind != "chaptered_album":
+            return None
+        return mapped
+
+    @staticmethod
+    def _aggregate_source_rows_for_split(
+        aggregate_mapping,
+        segment_count: int,
+    ) -> tuple[dict, ...]:
+        if not aggregate_mapping:
+            return ()
+        _fp, entry = aggregate_mapping
+        rows = [dict(row) for row in (entry.contains_sources or [])]
+        if rows:
+            rows.sort(key=lambda row: int(row.get("startpos") or 0))
+            return tuple(rows) if len(rows) == segment_count else ()
+
+        fingerprints = [fp for fp in (entry.contains_fingerprints or []) if fp]
+        if len(fingerprints) != segment_count:
+            return ()
+        return tuple({"fingerprint": fp} for fp in fingerprints)
 
     @staticmethod
     def _output_dir(settings: AppSettings) -> Path:

@@ -49,6 +49,12 @@ class TrackMapping:
     # Metadata-insensitive source content hash when available.
     source_hash: str | None = None
 
+    # Aggregate/container metadata.  Chaptered album conversions use one iPod
+    # track to represent multiple source fingerprints.
+    aggregate_kind: str | None = None
+    contains_fingerprints: list[str] | None = None
+    contains_sources: list[dict] | None = None
+
     @property
     def db_id(self) -> int:
         """Backward-compatible alias for older mapping callers."""
@@ -61,6 +67,12 @@ class TrackMapping:
     def to_dict(self) -> dict:
         """Convert to JSON-serializable dict."""
         d = asdict(self)
+        contains_fingerprints = d.pop("contains_fingerprints", None)
+        contains_sources = d.pop("contains_sources", None)
+        if contains_fingerprints is not None:
+            d["containsFingerprints"] = contains_fingerprints
+        if contains_sources is not None:
+            d["containsSources"] = contains_sources
         # Omit None fields for cleaner JSON
         return {k: v for k, v in d.items() if v is not None}
 
@@ -78,6 +90,17 @@ class TrackMapping:
             source_path_hint=data.get("source_path_hint"),
             art_hash=data.get("art_hash"),
             source_hash=data.get("source_hash"),
+            aggregate_kind=data.get("aggregate_kind"),
+            contains_fingerprints=(
+                data.get("contains_fingerprints")
+                or data.get("containsFingerprints")
+                or None
+            ),
+            contains_sources=(
+                data.get("contains_sources")
+                or data.get("containsSources")
+                or None
+            ),
         )
 
 
@@ -91,7 +114,7 @@ class MappingFile:
     the same song appears on multiple albums (same acoustic fingerprint).
     """
 
-    version: int = 4  # v4: optional source content hash for change detection
+    version: int = 5  # v5: optional aggregate/container metadata
     created: str = ""
     modified: str = ""
     _tracks: dict[str, list[TrackMapping]] | None = None
@@ -125,6 +148,9 @@ class MappingFile:
         source_path_hint: str | None = None,
         art_hash: str | None = None,
         source_hash: str | None = None,
+        aggregate_kind: str | None = None,
+        contains_fingerprints: list[str] | tuple[str, ...] | None = None,
+        contains_sources: list[dict] | tuple[dict, ...] | None = None,
     ) -> None:
         """Add or update a track mapping.
 
@@ -144,6 +170,15 @@ class MappingFile:
             source_path_hint=source_path_hint,
             art_hash=art_hash,
             source_hash=source_hash,
+            aggregate_kind=aggregate_kind,
+            contains_fingerprints=(
+                list(contains_fingerprints)
+                if contains_fingerprints is not None else None
+            ),
+            contains_sources=(
+                [dict(source) for source in contains_sources]
+                if contains_sources is not None else None
+            ),
         )
 
         entries = self.tracks.get(fingerprint, [])
@@ -190,6 +225,22 @@ class MappingFile:
     def get_by_db_id(self, db_id: int) -> tuple[str, TrackMapping] | None:
         """Backward-compatible alias for get_by_db_track_id()."""
         return self.get_by_db_track_id(db_id)
+
+    def aggregate_entries(self) -> list[tuple[str, TrackMapping]]:
+        """Return all mappings that represent an aggregate/container track."""
+        return [
+            (fp, entry)
+            for fp, entry in self.all_entries()
+            if entry.aggregate_kind
+        ]
+
+    def aggregate_entries_by_contained_fingerprint(self) -> dict[str, tuple[str, TrackMapping]]:
+        """Map each contained source fingerprint to its aggregate mapping."""
+        result: dict[str, tuple[str, TrackMapping]] = {}
+        for fp, entry in self.aggregate_entries():
+            for contained_fp in entry.contains_fingerprints or []:
+                result[contained_fp] = (fp, entry)
+        return result
 
     def remove_track(self, fingerprint: str, db_track_id: int | None = None) -> bool:
         """Remove a track mapping.
@@ -291,7 +342,7 @@ class MappingFile:
         """Create from dict (JSON parsing).
 
         Handles v1 (single entry), v2 (list entries), v3 (db_track_id key),
-        and v4 (source_hash) formats.
+        v4 (source_hash), and v5 (aggregate metadata) formats.
         """
         version = data.get("version", 1)
         tracks: dict[str, list[TrackMapping]] = {}
@@ -307,7 +358,7 @@ class MappingFile:
                 logger.warning(f"Unexpected track data format for {fp}: {type(track_data)}")
 
         return cls(
-            version=4,  # Always upgrade to current format
+            version=5,  # Always upgrade to current format
             created=data.get("created", ""),
             modified=data.get("modified", ""),
             _tracks=tracks,
