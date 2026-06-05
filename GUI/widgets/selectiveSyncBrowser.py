@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from collections import defaultdict, deque
 from typing import TYPE_CHECKING
 
@@ -23,6 +24,7 @@ from PyQt6.QtWidgets import (
     QHeaderView,
     QLabel,
     QMenu,
+    QProgressBar,
     QPushButton,
     QSplitter,
     QStackedWidget,
@@ -32,6 +34,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from app_core.progress import ETATracker
 from ArtworkDB_Writer.art_extractor import (
     extract_art,
     find_folder_art,
@@ -145,6 +148,7 @@ def _folder_label(folders: list[str]) -> str:
 class _PCLibScanWorker(QThread):
     """Scan media folders with PCLibrary and emit the track list."""
     finished = pyqtSignal(object)  # {"tracks": list[PCTrack], "photos": PCPhotoLibrary}
+    progress = pyqtSignal(str, int, int, str)  # stage, current, total, filename
     error = pyqtSignal(str)
 
     def __init__(
@@ -152,23 +156,52 @@ class _PCLibScanWorker(QThread):
         folders: object,
         include_video: bool = True,
         include_photo: bool = True,
+        max_workers: int | None = None,
     ):
         super().__init__()
         self._folder_entries = _normalize_folder_entries(folders)
         self._folders = media_folder_paths(self._folder_entries)
         self._include_video = include_video
         self._include_photo = include_photo
+        self._max_workers = max_workers
+        self._cancel_event = threading.Event()
+
+    def cancel(self) -> None:
+        self._cancel_event.set()
+
+    def _is_cancelled(self) -> bool:
+        return self._cancel_event.is_set()
 
     def run(self):
         try:
             from SyncEngine.pc_library import PCLibrary
             lib = PCLibrary(self._folder_entries)
-            tracks = list(lib.scan(include_video=self._include_video))
-            photos = (
-                scan_pc_photos(self._folder_entries)
-                if self._include_photo
-                else PCPhotoLibrary(sync_root=os.pathsep.join(self._folders))
+
+            def _on_track_progress(current: int, total: int, filename: str) -> None:
+                self.progress.emit("scan_pc", current, total, filename)
+
+            tracks = list(
+                lib.scan(
+                    include_video=self._include_video,
+                    progress_callback=_on_track_progress,
+                    max_workers=self._max_workers,
+                    is_cancelled=self._is_cancelled,
+                )
             )
+            if self._include_photo:
+                self.progress.emit("scan_photos", 0, 0, "")
+
+                def _on_photo_progress(current: int, total: int, filename: str) -> None:
+                    self.progress.emit("scan_photos", current, total, filename)
+
+                photos = scan_pc_photos(
+                    self._folder_entries,
+                    progress_callback=_on_photo_progress,
+                    max_workers=self._max_workers,
+                    is_cancelled=self._is_cancelled,
+                )
+            else:
+                photos = PCPhotoLibrary(sync_root=os.pathsep.join(self._folders))
             self.finished.emit({"tracks": tracks, "photos": photos})
         except Exception as e:
             self.error.emit(str(e))
@@ -1209,6 +1242,7 @@ class SelectiveSyncBrowser(QWidget):
         self._current_group: str | None = None
         self._current_group_tracks: list = []
         self._scan_worker: _PCLibScanWorker | None = None
+        self._eta_tracker = ETATracker()
 
         self._build_ui()
 
@@ -1334,15 +1368,68 @@ class SelectiveSyncBrowser(QWidget):
         # --- Content area (stacked) ---
         self._content = QStackedWidget()
 
-        # Page 0: loading spinner
+        # Page 0: loading progress (match Sync Review style)
         loading_page = QWidget()
         lp_lay = QVBoxLayout(loading_page)
-        lp_lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._loading_label = QLabel("Scanning library\u2026")
-        self._loading_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_PAGE_TITLE))
-        self._loading_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
+        lp_lay.setContentsMargins(24, 0, 24, 0)
+        lp_lay.setSpacing(0)
+
+        lp_lay.addStretch(3)
+
+        # Stage headline
+        self._loading_label = QLabel("Scanning library...", loading_page)
+        self._loading_label.setStyleSheet(
+            f"color: {Colors.TEXT_PRIMARY}; font-size: {Metrics.FONT_HERO}px;"
+            f" font-weight: 500;"
+        )
         self._loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lp_lay.addWidget(self._loading_label)
+
+        lp_lay.addSpacing(16)
+
+        # Progress bar
+        self._progress_bar = QProgressBar(loading_page)
+        self._progress_bar.setFixedWidth(360)
+        self._progress_bar.setTextVisible(False)
+        self._progress_bar.setStyleSheet(f"""
+            QProgressBar {{
+                background: {Colors.BORDER_SUBTLE};
+                border: none;
+                border-radius: 4px;
+                height: 8px;
+            }}
+            QProgressBar::chunk {{
+                background: {Colors.ACCENT};
+                border-radius: 4px;
+            }}
+        """)
+        lp_lay.addWidget(self._progress_bar, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        lp_lay.addSpacing(10)
+
+        # ETA / counter
+        self._eta_label = QLabel("", loading_page)
+        self._eta_label.setStyleSheet(
+            f"color: {Colors.TEXT_TERTIARY}; font-size: {Metrics.FONT_MD}px;"
+        )
+        self._eta_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lp_lay.addWidget(self._eta_label)
+
+        lp_lay.addSpacing(16)
+
+        # Detail — current file
+        self._progress_detail = QLabel("", loading_page)
+        self._progress_detail.setStyleSheet(
+            f"color: {Colors.TEXT_TERTIARY}; font-size: {Metrics.FONT_LG}px;"
+        )
+        self._progress_detail.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._progress_detail.setWordWrap(False)
+        self._progress_detail.setMaximumWidth(560)
+        self._progress_detail.setMaximumHeight(200)
+        self._progress_detail.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
+        lp_lay.addWidget(self._progress_detail, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        lp_lay.addStretch(4)
         self._content.addWidget(loading_page)  # index 0
 
         # Page 1: grid header bar + per-category grid stack
@@ -1456,9 +1543,11 @@ class SelectiveSyncBrowser(QWidget):
             return
         try:
             self._scan_worker.finished.disconnect()
+            self._scan_worker.progress.disconnect()
             self._scan_worker.error.disconnect()
         except (TypeError, RuntimeError):
             pass
+        self._scan_worker.cancel()
         if self._scan_worker.isRunning():
             self._scan_worker.quit()
             self._scan_worker.wait(2000)
@@ -1503,22 +1592,56 @@ class SelectiveSyncBrowser(QWidget):
         self._folder_label.setText(_folder_label(self._folders))
 
         self._content.setCurrentIndex(0)  # loading
+        self._loading_label.setText("Scanning PC library")
+        self._progress_bar.setRange(0, 0)
+        self._eta_label.setText("")
+        self._progress_detail.setText("")
+        self._eta_tracker.start()
         self._update_footer()
         self._highlight_mode("Albums")
 
         # Stop and clean up any prior worker
         self._cleanup_scan_worker()
 
+        settings = self._settings_service.get_effective_settings()
+        try:
+            scan_workers = settings.sync_workers
+        except Exception:
+            scan_workers = 0
+        scan_workers = scan_workers or None
+
         self._scan_worker = _PCLibScanWorker(
             self._folder_entries,
             include_video=self._device_supports_video,
             include_photo=self._device_supports_photo,
+            max_workers=scan_workers,
         )
         self._scan_worker.finished.connect(self._on_scan_complete)
+        self._scan_worker.progress.connect(self._on_scan_progress)
         self._scan_worker.error.connect(self._on_scan_error)
         self._scan_worker.start()
 
     # ── Scan callbacks ───────────────────────────────────────────────────
+
+    def _on_scan_progress(self, stage: str, current: int, total: int, filename: str) -> None:
+        stage_label = {
+            "scan_pc": "Scanning PC library",
+            "scan_photos": "Scanning photos",
+        }.get(stage, stage.replace("_", " ").title())
+
+        self._loading_label.setText(stage_label)
+        self._progress_detail.setText(filename or "")
+        self._progress_detail.setTextFormat(Qt.TextFormat.PlainText)
+        if total > 0:
+            self._progress_bar.setRange(0, total)
+            self._progress_bar.setValue(current)
+            self._eta_tracker.update(stage, current, total)
+            self._eta_label.setText(
+                self._eta_tracker.format_stage_progress(stage, current, total)
+            )
+        else:
+            self._progress_bar.setRange(0, 0)
+            self._eta_label.setText("")
 
     def _on_scan_complete(self, tracks: list):
         if isinstance(tracks, dict):

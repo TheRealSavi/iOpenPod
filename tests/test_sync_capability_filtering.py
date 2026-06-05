@@ -106,7 +106,13 @@ def test_diff_engine_skips_photo_planning_when_device_lacks_photo_support(
         def __init__(self, root_path: Path):
             super().__init__(root_path)
 
-        def scan(self, progress_callback=None, include_video: bool = True):
+        def scan(
+            self,
+            progress_callback=None,
+            include_video: bool = True,
+            max_workers=None,
+            is_cancelled=None,
+        ):
             return iter(())
 
     monkeypatch.setattr(

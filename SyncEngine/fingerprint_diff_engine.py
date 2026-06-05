@@ -28,6 +28,7 @@ Play counts: additive (iPod→PC).
 """
 
 import logging
+import os
 import re
 import threading
 from collections.abc import Callable
@@ -333,7 +334,24 @@ class FingerprintDiffEngine:
         if progress_callback:
             progress_callback("scan_pc", 0, 0, "Scanning PC library...")
 
-        pc_tracks = list(self.pc_library.scan(include_video=self.supports_video))
+        # Run the scan with the same worker count as fingerprinting
+        scan_workers = min(sync_workers or (os.cpu_count() or 4), 8)
+
+        def _scan_progress(current: int, total: int, filename: str) -> None:
+            if progress_callback:
+                progress_callback("scan_pc", current, total, filename)
+
+        pc_tracks = list(
+            self.pc_library.scan(
+                progress_callback=_scan_progress,
+                include_video=self.supports_video,
+                max_workers=scan_workers,
+                is_cancelled=is_cancelled,
+            )
+        )
+
+        if is_cancelled and is_cancelled():
+            return plan
 
         # Filter to only user-selected paths (selective sync mode).
         if allowed_paths is not None:
@@ -353,9 +371,7 @@ class FingerprintDiffEngine:
 
         # Parallel fingerprinting — fpcalc is a subprocess so threading
         # scales well.  Respect the user's sync_workers setting.
-        import os
-        _sw = sync_workers
-        fp_workers = min(_sw or (os.cpu_count() or 4), 8)
+        fp_workers = min(sync_workers or (os.cpu_count() or 4), 8)
 
         completed = 0
         completed_lock = threading.Lock()
@@ -1009,7 +1025,19 @@ class FingerprintDiffEngine:
                 if allowed_paths is None:
                     if progress_callback:
                         progress_callback("scan_photos", 0, 0, "Scanning photos...")
-                    pc_photos = scan_pc_photos(self.pc_library.root_entries)
+
+                    def _photo_progress(current: int, total: int, filename: str) -> None:
+                        if progress_callback:
+                            progress_callback("scan_photos", current, total, filename)
+
+                    pc_photos = scan_pc_photos(
+                        self.pc_library.root_entries,
+                        progress_callback=_photo_progress,
+                        max_workers=scan_workers,
+                        is_cancelled=is_cancelled,
+                    )
+                    if is_cancelled and is_cancelled():
+                        return plan
                     plan.photo_plan = build_photo_sync_plan(
                         pc_photos,
                         device_photos,
@@ -1300,7 +1328,7 @@ class FingerprintDiffEngine:
         scored = [
             (
                 self._score_pc_to_ipod_track(pc_track, ipod_track),
-                (pc_track.relative_path or "").lower(),
+                (pc_track.path or "").lower(),
                 pc_track,
             )
             for pc_track in pool
@@ -1309,7 +1337,7 @@ class FingerprintDiffEngine:
 
         if len(scored) > 1 and scored[0][0] == scored[1][0]:
             logger.info(
-                "Bootstrap tie for iPod track '%s' (score=%d); selecting lexicographically first path",
+                "Bootstrap tie for iPod track '%s' (score=%d); selecting lexicographically first full path",
                 ipod_track.get("Title", "?"),
                 scored[0][0],
             )
@@ -1510,10 +1538,11 @@ class FingerprintDiffEngine:
                 fp = str(row.get("fingerprint") or "").strip()
                 if not fp:
                     continue
-                pc_track = (pc_by_fp.get(fp) or [None])[0]
-                if pc_track is None:
+                pc_candidates = pc_by_fp.get(fp) or []
+                if not pc_candidates:
                     removed_rows.append(row)
                     continue
+                pc_track = min(pc_candidates, key=lambda t: (t.path or "").lower())
 
                 represented[fp] = entry
                 stored_album_key = str(row.get("album_key") or "").strip().lower()
