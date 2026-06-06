@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+from iTunesDB_Writer.mhit_writer import TrackInfo
 from SyncEngine.fingerprint_diff_engine import SyncAction, SyncItem, SyncPlan
 from SyncEngine.lastfm_scrobbler import (
     ScrobbleEntry as LastFmScrobbleEntry,
@@ -171,6 +173,44 @@ def test_execute_scrobble_ignores_disconnected_lastfm_saved_api_keys(
     assert ok is True
     assert ctx.result.errors == []
     assert progress_log == []
+
+
+def test_each_scrobble_service_gets_original_playcount_delta(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    import SyncEngine.lastfm_scrobbler as lastfm_scrobbler
+    import SyncEngine.lb_scrobbler as lb_scrobbler
+
+    ctx = _build_scrobble_context()
+    ctx.plan.to_sync_playcount[0].play_count_delta = 2
+    ctx.plan.to_sync_playcount[0].ipod_track = {"play_count_2": 2}
+    ctx.lastfm_api_key = "api-key"
+    ctx.lastfm_api_secret = "api-secret"
+    ctx.lastfm_session_key = "session-key"
+    executor = SyncExecutor(tmp_path)
+
+    seen: list[tuple[str, int]] = []
+
+    def fake_listenbrainz(playcount_items, **_kwargs):
+        seen.append(("listenbrainz", playcount_items[0].play_count_delta))
+        playcount_items[0].play_count_delta = 0
+        playcount_items[0].ipod_track["play_count_2"] = 0
+        return [SimpleNamespace(accepted=2, errors=[])]
+
+    def fake_lastfm(playcount_items, **_kwargs):
+        seen.append(("lastfm", playcount_items[0].play_count_delta))
+        return [SimpleNamespace(accepted=2, errors=[])]
+
+    monkeypatch.setattr(lb_scrobbler, "scrobble_plays", fake_listenbrainz)
+    monkeypatch.setattr(lastfm_scrobbler, "scrobble_plays", fake_lastfm)
+
+    ok = executor._execute_scrobble(ctx)
+
+    assert ok is True
+    assert seen == [("listenbrainz", 2), ("lastfm", 2)]
+    assert ctx.plan.to_sync_playcount[0].play_count_delta == 2
+    assert ctx.plan.to_sync_playcount[0].ipod_track["play_count_2"] == 2
 
 
 def test_lastfm_request_reports_json_api_errors(monkeypatch) -> None:
@@ -438,3 +478,52 @@ def test_write_finalize_scrobbles_before_deleting_playcounts(
     executor._execute_write_and_finalize(ctx)
 
     assert order == ["scrobble", "delete"]
+
+
+def test_write_finalize_clears_playcount_after_scrobble_before_database_write(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    import SyncEngine.sync_executor as sync_executor
+
+    ctx = _build_scrobble_context()
+    ctx.plan.to_sync_playcount[0].db_track_id = 123
+    ctx.plan.to_sync_playcount[0].ipod_track = {
+        "play_count_2": 3,
+        "recent_playcount": 3,
+    }
+    track = TrackInfo(title="Song", location=":iPod_Control:Music:F00:ABCD.mp3")
+    track.db_track_id = 123
+    track.play_count_2 = 3
+    ctx.tracks_by_db_track_id[123] = track
+    executor = SyncExecutor(tmp_path)
+    order: list[str] = []
+
+    def fake_scrobble(scrobble_ctx):
+        order.append("scrobble")
+        assert track.play_count_2 == 3
+        assert scrobble_ctx.plan.to_sync_playcount[0].ipod_track["play_count_2"] == 3
+        return True
+
+    def fake_write_database(all_tracks, **_kwargs):
+        order.append("write")
+        assert all_tracks[0].play_count_2 == 0
+        return True
+
+    monkeypatch.setattr(executor, "_write_database", fake_write_database)
+    monkeypatch.setattr(executor, "_backpatch_new_tracks", lambda ctx: None)
+    monkeypatch.setattr(executor.mapping_manager, "save", lambda mapping: None)
+    monkeypatch.setattr(executor, "_update_podcast_subscriptions", lambda ctx: None)
+    monkeypatch.setattr(executor, "_clear_gui_cache", lambda ctx: None)
+    monkeypatch.setattr(executor, "_apply_itunes_protections", lambda ctx, tracks: None)
+    monkeypatch.setattr(executor, "_build_and_evaluate_playlists", lambda ctx, tracks: ("iPod", [], []))
+    monkeypatch.setattr(sync_executor, "read_photo_db", lambda path: None)
+    monkeypatch.setattr(executor, "_execute_scrobble", fake_scrobble)
+    monkeypatch.setattr(executor, "_delete_playcounts_file", lambda: order.append("delete"))
+
+    executor._execute_write_and_finalize(ctx)
+
+    assert order == ["scrobble", "write", "delete"]
+    assert track.play_count_2 == 0
+    assert ctx.plan.to_sync_playcount[0].play_count_delta == 1
+    assert ctx.plan.to_sync_playcount[0].ipod_track["play_count_2"] == 0

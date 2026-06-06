@@ -14,10 +14,10 @@ from .field_schema import (
 from .hypothesis_db import HypothesisDB
 from .models import ParsedDatabase
 
-
 # ────────────────────────────────────────────────────────────────────
 # 1. Schema Completion Report
 # ────────────────────────────────────────────────────────────────────
+
 
 def schema_completion(hdb: HypothesisDB, header_lengths: dict[str, int] | None = None) -> str:
     """Generate a Markdown table showing known/unknown coverage per chunk type.

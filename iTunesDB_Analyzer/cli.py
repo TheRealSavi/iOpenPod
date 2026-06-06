@@ -18,8 +18,8 @@ from __future__ import annotations
 
 import argparse
 import logging
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 from .bridge import ingest
 from .hypothesis_db import HypothesisDB
@@ -233,7 +233,7 @@ def _cmd_inspect(args: list[str], hdb: HypothesisDB) -> None:
     # Also show correlations.
     corrs = hdb.correlations_for(chunk_type=chunk_type, unknown_offset=offset)
     if corrs:
-        print(f"\nCorrelations:")
+        print("\nCorrelations:")
         for c in corrs:
             print(f"  {c['known_field']:24s} {c['relation']:8s}  "
                   f"strength={c['strength']:.2f}  ({c['sample_count']} samples)")

@@ -572,13 +572,19 @@ def _audio_video_extensions_for(
 
 def _iter_root_files(root_path: Path, *, recurse: bool) -> Iterator[tuple[Path, str]]:
     if recurse:
-        for root, _, files in os.walk(root_path):
+        for root, dirs, files in os.walk(root_path):
+            dirs[:] = [
+                dirname for dirname in dirs
+                if not PCLibrary._should_skip_library_dir(dirname)
+            ]
             for filename in files:
+                if PCLibrary._should_skip_library_file(filename):
+                    continue
                 yield Path(root), filename
         return
 
     for child in root_path.iterdir():
-        if child.is_file():
+        if child.is_file() and not PCLibrary._should_skip_library_file(child.name):
             yield root_path, child.name
 
 
@@ -612,7 +618,12 @@ class PCLibrary:
     @staticmethod
     def _should_skip_library_file(filename: str) -> bool:
         """Return True for filesystem sidecars that should never become tracks."""
-        return filename.startswith("._")
+        return filename.startswith("._") or filename == ".DS_Store"
+
+    @staticmethod
+    def _should_skip_library_dir(dirname: str) -> bool:
+        """Return True for macOS metadata directories that should not be walked."""
+        return dirname == ".AppleDouble"
 
     def count_audio_files(self, include_video: bool = True) -> int:
         """Count total media files in library (fast, no metadata reading).
@@ -631,8 +642,6 @@ class PCLibrary:
             if not extensions:
                 continue
             for root, filename in _iter_root_files(root_path, recurse=entry.recurse):
-                if self._should_skip_library_file(filename):
-                    continue
                 if Path(filename).suffix.lower() not in extensions:
                     continue
                 file_path = root / filename
@@ -677,8 +686,6 @@ class PCLibrary:
                 library_root,
                 recurse=entry.recurse,
             ):
-                if self._should_skip_library_file(filename):
-                    continue
                 ext = Path(filename).suffix.lower()
                 if ext not in extensions:
                     continue

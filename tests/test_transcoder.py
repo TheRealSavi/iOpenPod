@@ -1,4 +1,12 @@
-from SyncEngine.transcoder import TranscodeTarget, _transcode_timeout_seconds
+import logging
+
+import SyncEngine.transcoder as transcoder_module
+from SyncEngine.transcoder import (
+    AudioProperties,
+    TranscodeTarget,
+    _transcode_timeout_seconds,
+    get_transcode_target,
+)
 
 
 def test_audio_transcode_timeout_keeps_existing_floor_for_short_files() -> None:
@@ -19,3 +27,23 @@ def test_audio_transcode_timeout_is_capped_for_extreme_durations() -> None:
 def test_video_transcode_timeout_uses_longer_floor_and_padding() -> None:
     one_hour_video_us = 60 * 60 * 1_000_000
     assert _transcode_timeout_seconds(TranscodeTarget.VIDEO_H264, one_hour_video_us) == 9000
+
+
+def test_unprobeable_native_audio_copies_instead_of_lossy_fallback(monkeypatch, caplog) -> None:
+    monkeypatch.setattr(
+        transcoder_module,
+        "_resolve_lossy_target",
+        lambda options: TranscodeTarget.AAC,
+    )
+    monkeypatch.setattr(
+        transcoder_module,
+        "probe_audio",
+        lambda filepath: AudioProperties(probe_ok=False),
+    )
+
+    with caplog.at_level(logging.WARNING, logger="SyncEngine.transcoder"):
+        target = get_transcode_target("Café.m4a")
+
+    assert target == TranscodeTarget.COPY
+    assert "skipping transcode fallback; copying as-is" in caplog.text
+    assert "re-encoding to lossy codec as safe fallback" not in caplog.text

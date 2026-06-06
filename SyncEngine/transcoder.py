@@ -936,13 +936,14 @@ def get_transcode_target(
         props = probe_audio(filepath)
 
         # Probe failed: ffprobe couldn't parse this file.
-        # MP3 is safe to copy blind; M4A/AAC could be HE-AAC so re-encode.
+        # Do not transcode blind: a probe failure may be a filesystem sidecar
+        # or a corrupt file, and a lossy fallback would silently degrade valid
+        # lossless libraries.
         if not props.probe_ok:
-            if suffix in {".m4a", ".m4b", ".aac"}:
-                logger.warning("TRANSCODE: could not probe %s — re-encoding to lossy codec as safe fallback",
-                               Path(filepath).name)
-                return lossy_target
-            logger.warning("TRANSCODE: could not probe %s — copying as-is", Path(filepath).name)
+            logger.warning(
+                "TRANSCODE: could not probe %s — skipping transcode fallback; copying as-is",
+                Path(filepath).name,
+            )
             return TranscodeTarget.COPY
 
         if props.exceeds_ipod_limits():
@@ -1614,7 +1615,7 @@ def _run_ffmpeg_with_progress(
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Metadata copy
+# Metadata helpers
 # ═══════════════════════════════════════════════════════════════════════════
 
 _MP4_COPY_KEYS = [
@@ -1680,4 +1681,25 @@ def copy_metadata(source_path: str | Path, dest_path: str | Path) -> bool:
         return True
     except Exception as e:
         logger.warning("Could not copy metadata: %s", e)
+        return False
+
+
+def strip_metadata(file_path: str | Path) -> bool:
+    """Remove user-facing tags/artwork from a media file in place."""
+    try:
+        from mutagen._file import File as MutagenFile
+
+        audio = MutagenFile(file_path)
+        if audio is None:
+            return False
+        if audio.tags is None:
+            return True
+        if hasattr(audio, "delete"):
+            audio.delete()
+            return True
+        audio.tags.clear()
+        audio.save()
+        return True
+    except Exception as e:
+        logger.warning("Could not strip metadata from %s: %s", Path(file_path).name, e)
         return False

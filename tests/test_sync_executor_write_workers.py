@@ -3,6 +3,7 @@ from __future__ import annotations
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -10,7 +11,7 @@ from SyncEngine.fingerprint_diff_engine import SyncAction, SyncItem, SyncPlan
 from SyncEngine.mapping import MappingFile
 from SyncEngine.pc_library import PCTrack
 from SyncEngine.sync_executor import SyncExecutor, _SyncContext
-from SyncEngine.transcoder import resolve_transcode_plan
+from SyncEngine.transcoder import TranscodeResult, TranscodeTarget, resolve_transcode_plan
 
 
 def _make_sync_ctx(
@@ -243,6 +244,100 @@ def test_copy_stage_uses_planned_transcode_decision(monkeypatch, tmp_path: Path)
     assert len(copied) == 1
     assert copied[0][0].exists()
     assert copied[0][1] is False
+
+
+def test_direct_copy_writes_metadata_stripped_payload_without_touching_source(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    ipod_root = tmp_path / "ipod"
+    source = tmp_path / "source.mp3"
+    ipod_root.mkdir()
+    source.write_bytes(b"source-with-tags")
+
+    executor = SyncExecutor(
+        ipod_root,
+        max_workers=1,
+        max_device_write_workers=1,
+    )
+    transcode_plan = resolve_transcode_plan(source, options=executor.transcode_options)
+    copied_from: list[Path] = []
+
+    def fake_strip_metadata(path: Path) -> bool:
+        assert path != source
+        path.write_bytes(b"stripped")
+        return True
+
+    def fake_copy_file_chunked(src, dst, progress=None, chunk_size=256 * 1024, is_cancelled=None):
+        copied_from.append(Path(src))
+        Path(dst).write_bytes(Path(src).read_bytes())
+        if progress:
+            progress(1.0)
+
+    monkeypatch.setattr("SyncEngine.sync_executor.strip_metadata", fake_strip_metadata)
+    monkeypatch.setattr(executor, "_copy_file_chunked", fake_copy_file_chunked)
+
+    success, ipod_path, was_transcoded, err = executor._copy_to_ipod(source, transcode_plan)
+
+    assert success is True
+    assert err == ""
+    assert was_transcoded is False
+    assert ipod_path is not None
+    assert ipod_path.read_bytes() == b"stripped"
+    assert source.read_bytes() == b"source-with-tags"
+    assert copied_from and copied_from[0] != source
+    assert not copied_from[0].exists()
+
+
+def test_transcoded_file_is_stripped_before_device_write(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    ipod_root = tmp_path / "ipod"
+    source = tmp_path / "source.flac"
+    transcoded = tmp_path / "out.m4a"
+    ipod_root.mkdir()
+    source.write_bytes(b"source")
+    transcoded.write_bytes(b"transcoded-with-tags")
+
+    executor = SyncExecutor(
+        ipod_root,
+        max_workers=1,
+        max_device_write_workers=1,
+    )
+    transcode_plan = replace(
+        resolve_transcode_plan(source, options=executor.transcode_options),
+        target=TranscodeTarget.AAC,
+    )
+
+    def fake_transcode(*_args, **_kwargs):
+        return TranscodeResult(
+            success=True,
+            source_path=source,
+            output_path=transcoded,
+            target_format=TranscodeTarget.AAC,
+            was_transcoded=True,
+        )
+
+    stripped_inputs: list[Path] = []
+
+    def fake_strip_metadata(path: Path) -> bool:
+        assert path != transcoded
+        stripped_inputs.append(path)
+        path.write_bytes(b"stripped-transcode")
+        return True
+
+    monkeypatch.setattr("SyncEngine.sync_executor.transcode", fake_transcode)
+    monkeypatch.setattr("SyncEngine.sync_executor.strip_metadata", fake_strip_metadata)
+
+    success, ipod_path, was_transcoded, err = executor._copy_to_ipod(source, transcode_plan)
+
+    assert success is True
+    assert err == ""
+    assert was_transcoded is True
+    assert ipod_path is not None
+    assert ipod_path.read_bytes() == b"stripped-transcode"
+    assert stripped_inputs and not stripped_inputs[0].exists()
 
 
 def test_file_updates_do_not_preinvalidate_transcode_cache(

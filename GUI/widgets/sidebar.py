@@ -116,7 +116,7 @@ class TechInfoRow(QWidget):
         self.setStyleSheet("background: transparent; border: none;")
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, (3), 0, (3))
-        layout.setSpacing((6))
+        layout.setSpacing(6)
 
         self.label_widget = QLabel(label)
         self.label_widget.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS))
@@ -168,11 +168,11 @@ class DeviceInfoCard(QFrame):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins((14), (14), (14), (14))
-        layout.setSpacing((10))
+        layout.setSpacing(10)
 
         # ── Header: 40×40 icon + name + model ──
         header_layout = QHBoxLayout()
-        header_layout.setSpacing((10))
+        header_layout.setSpacing(10)
 
         self.icon_label = QLabel()
         self._set_default_icon()
@@ -182,7 +182,7 @@ class DeviceInfoCard(QFrame):
         header_layout.addWidget(self.icon_label, 0, Qt.AlignmentFlag.AlignVCenter)
 
         name_layout = QVBoxLayout()
-        name_layout.setSpacing((1))
+        name_layout.setSpacing(1)
         self._name_layout = name_layout
 
         self.name_label = QLabel("No Device")
@@ -207,7 +207,7 @@ class DeviceInfoCard(QFrame):
         self._capacity_widget.setStyleSheet("background: transparent; border: none;")
         cap_row = QHBoxLayout(self._capacity_widget)
         cap_row.setContentsMargins(0, 0, 0, 0)
-        cap_row.setSpacing((8))
+        cap_row.setSpacing(8)
 
         # Small icon-only eject button
         self.eject_button = QPushButton()
@@ -236,7 +236,7 @@ class DeviceInfoCard(QFrame):
         cap_info.setStyleSheet("background: transparent; border: none;")
         cap_info_layout = QVBoxLayout(cap_info)
         cap_info_layout.setContentsMargins(0, 0, 0, 0)
-        cap_info_layout.setSpacing((4))
+        cap_info_layout.setSpacing(4)
 
         self._capacity_label = QLabel("—")
         self._capacity_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
@@ -244,7 +244,7 @@ class DeviceInfoCard(QFrame):
         cap_info_layout.addWidget(self._capacity_label)
 
         self.storage_bar = QProgressBar()
-        self.storage_bar.setFixedHeight((6))
+        self.storage_bar.setFixedHeight(6)
         self.storage_bar.setTextVisible(False)
         self.storage_bar.setStyleSheet(f"""
             QProgressBar {{
@@ -269,7 +269,7 @@ class DeviceInfoCard(QFrame):
         inv_widget.setStyleSheet("background: transparent; border: none;")
         inv_layout = QHBoxLayout(inv_widget)
         inv_layout.setContentsMargins(0, (2), 0, (2))
-        inv_layout.setSpacing((10))
+        inv_layout.setSpacing(10)
 
         self._inv_songs = _InventoryCell("—", "Songs")
         self._inv_hours = _InventoryCell("—", "Hours")
@@ -846,7 +846,7 @@ class Sidebar(QFrame):
 
         self.sidebarLayout = QVBoxLayout(self)
         self.sidebarLayout.setContentsMargins((10), (12), (10), (12))
-        self.sidebarLayout.setSpacing((10))
+        self.sidebarLayout.setSpacing(10)
         self.setFixedWidth(Metrics.SIDEBAR_WIDTH)
 
         # Device info card at top
@@ -858,7 +858,7 @@ class Sidebar(QFrame):
         # Device select buttons - row 1
         self.deviceSelectLayout = QHBoxLayout()
         self.deviceSelectLayout.setContentsMargins(0, 0, 0, 0)
-        self.deviceSelectLayout.setSpacing((6))
+        self.deviceSelectLayout.setSpacing(6)
 
         self.deviceButton = QPushButton("Select")
         self.rescanButton = QPushButton("Rescan")
@@ -909,7 +909,7 @@ class Sidebar(QFrame):
         library_section = QWidget()
         library_layout = QVBoxLayout(library_section)
         library_layout.setContentsMargins(0, 0, 0, 0)
-        library_layout.setSpacing((1))
+        library_layout.setSpacing(1)
 
         lib_label = make_section_header("Library")
         lib_label.setStyleSheet(lib_label.styleSheet() + f" padding-left: {(4)}px;")
@@ -922,7 +922,7 @@ class Sidebar(QFrame):
         lib_container.setStyleSheet("background: transparent;")
         lib_layout = QVBoxLayout(lib_container)
         lib_layout.setContentsMargins(0, 0, 0, 0)
-        lib_layout.setSpacing((1))
+        lib_layout.setSpacing(1)
 
         self.buttons = {}
         self._button_icons: dict[str, str] = {}

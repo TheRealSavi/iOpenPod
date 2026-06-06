@@ -110,11 +110,11 @@ class BackupDeviceNavItem(QFrame):
         self._connected = connected
 
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setFixedHeight((64))
+        self.setFixedHeight(64)
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins((8), (8), (10), (8))
-        layout.setSpacing((8))
+        layout.setSpacing(8)
 
         self._icon = QLabel()
         self._icon.setFixedSize((38), (44))
@@ -130,7 +130,7 @@ class BackupDeviceNavItem(QFrame):
 
         text_col = QVBoxLayout()
         text_col.setContentsMargins(0, 0, 0, 0)
-        text_col.setSpacing((1))
+        text_col.setSpacing(1)
 
         self._name = QLabel(device_info.get("device_name") or self._device_id)
         self._name.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
@@ -215,15 +215,15 @@ class SnapshotCard(QFrame):
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins((16), (14), (16), (14))
-        layout.setSpacing((12))
+        layout.setSpacing(12)
 
         # Left side: info
         info_layout = QVBoxLayout()
-        info_layout.setSpacing((4))
+        info_layout.setSpacing(4)
 
         # Date/time row (with optional LATEST badge)
         date_row = QHBoxLayout()
-        date_row.setSpacing((8))
+        date_row.setSpacing(8)
 
         date_label = QLabel(snapshot_info.display_date)
         date_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG, QFont.Weight.DemiBold))
@@ -237,7 +237,7 @@ class SnapshotCard(QFrame):
                 f"color: {Colors.ACCENT}; background: {Colors.ACCENT_DIM}; "
                 f"border: none; border-radius: {(3)}px; padding: {(2)}px {(6)}px;"
             )
-            latest_badge.setFixedHeight((18))
+            latest_badge.setFixedHeight(18)
             date_row.addWidget(latest_badge)
 
         date_row.addStretch()
@@ -278,7 +278,7 @@ class SnapshotCard(QFrame):
 
         # Right side: buttons
         btn_layout = QVBoxLayout()
-        btn_layout.setSpacing((6))
+        btn_layout.setSpacing(6)
 
         _btn_w = (90)
 
@@ -350,7 +350,7 @@ class BackupBrowserWidget(QWidget):
         """)
         sidebar_layout = QVBoxLayout(self._sidebar)
         sidebar_layout.setContentsMargins((12), (14), (12), (12))
-        sidebar_layout.setSpacing((8))
+        sidebar_layout.setSpacing(8)
 
         back_btn = QPushButton("←")
         back_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
@@ -379,7 +379,7 @@ class BackupBrowserWidget(QWidget):
         self._devices_scroll_content.setStyleSheet("background: transparent;")
         self._devices_scroll_layout = QVBoxLayout(self._devices_scroll_content)
         self._devices_scroll_layout.setContentsMargins(0, 0, 0, 0)
-        self._devices_scroll_layout.setSpacing((4))
+        self._devices_scroll_layout.setSpacing(4)
         self._devices_scroll_layout.addStretch()
         dev_scroll.setWidget(self._devices_scroll_content)
         sidebar_layout.addWidget(dev_scroll, 1)
@@ -402,7 +402,7 @@ class BackupBrowserWidget(QWidget):
         """)
         hero_layout = QHBoxLayout(self._device_hero)
         hero_layout.setContentsMargins((24), (18), (24), (18))
-        hero_layout.setSpacing((18))
+        hero_layout.setSpacing(18)
 
         self._device_art = QLabel()
         self._device_art.setFixedSize((112), (112))
@@ -412,7 +412,7 @@ class BackupBrowserWidget(QWidget):
 
         hero_text = QVBoxLayout()
         hero_text.setContentsMargins(0, 2, 0, 0)
-        hero_text.setSpacing((4))
+        hero_text.setSpacing(4)
 
         self._title_label = QLabel("Device Backups")
         self._title_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_PAGE_TITLE, QFont.Weight.Bold))
@@ -438,7 +438,7 @@ class BackupBrowserWidget(QWidget):
         hero_text.addWidget(self._restore_status_label)
 
         hero_actions = QHBoxLayout()
-        hero_actions.setSpacing((8))
+        hero_actions.setSpacing(8)
 
         self._open_folder_btn = QPushButton("Open")
         self._open_folder_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
@@ -453,7 +453,7 @@ class BackupBrowserWidget(QWidget):
         self.backup_now_btn.clicked.connect(self._on_backup_now)
         hero_actions.addWidget(self.backup_now_btn)
         hero_actions.addStretch()
-        hero_text.addSpacing((6))
+        hero_text.addSpacing(6)
         hero_text.addLayout(hero_actions)
         hero_text.addStretch()
 
@@ -477,7 +477,7 @@ class BackupBrowserWidget(QWidget):
         self._scroll_content.setStyleSheet("background: transparent;")
         self._scroll_layout = QVBoxLayout(self._scroll_content)
         self._scroll_layout.setContentsMargins(0, 0, 0, 0)
-        self._scroll_layout.setSpacing((8))
+        self._scroll_layout.setSpacing(8)
         self._scroll_layout.addStretch()
 
         scroll.setWidget(self._scroll_content)
@@ -490,7 +490,7 @@ class BackupBrowserWidget(QWidget):
         self._progress_page.setStyleSheet("background: transparent;")
         prog_layout = QVBoxLayout(self._progress_page)
         prog_layout.setContentsMargins((48), (48), (48), (48))
-        prog_layout.setSpacing((16))
+        prog_layout.setSpacing(16)
         prog_layout.addStretch()
 
         self._progress_title = QLabel("Creating backup…")
@@ -500,7 +500,7 @@ class BackupBrowserWidget(QWidget):
         prog_layout.addWidget(self._progress_title)
 
         self._progress_bar = QProgressBar()
-        self._progress_bar.setFixedHeight((8))
+        self._progress_bar.setFixedHeight(8)
         self._progress_bar.setTextVisible(False)
         self._progress_bar.setStyleSheet(f"""
             QProgressBar {{
@@ -535,11 +535,11 @@ class BackupBrowserWidget(QWidget):
         self._progress_eta.setAlignment(Qt.AlignmentFlag.AlignCenter)
         prog_layout.addWidget(self._progress_eta)
 
-        prog_layout.addSpacing((8))
+        prog_layout.addSpacing(8)
 
         cancel_btn = QPushButton("Cancel")
         cancel_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
-        cancel_btn.setFixedWidth((120))
+        cancel_btn.setFixedWidth(120)
         cancel_btn.setStyleSheet(btn_css(
             bg=Colors.SURFACE_RAISED,
             bg_hover=Colors.SURFACE_ACTIVE,
@@ -571,7 +571,7 @@ class BackupBrowserWidget(QWidget):
         empty_icon.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent;")
         empty_layout.addWidget(empty_icon)
 
-        empty_layout.addSpacing((12))
+        empty_layout.addSpacing(12)
 
         self._empty_text = QLabel(
             "No backups yet.\n\n"

@@ -7,7 +7,7 @@ All intermediate representations flow through these classes:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 
 @dataclass
@@ -66,7 +66,7 @@ class ParsedDatabase:
         return sum(1 for c in self.all_chunks if c.chunk_type == "mhit")
 
     @property
-    def mhit_header_length(self) -> Optional[int]:
+    def mhit_header_length(self) -> int | None:
         """Header length of the first mhit (determines schema version)."""
         for c in self.all_chunks:
             if c.chunk_type == "mhit":
@@ -85,25 +85,25 @@ class ValueObservation:
     db_version: int
 
     @property
-    def as_u32_le(self) -> Optional[int]:
+    def as_u32_le(self) -> int | None:
         if self.length == 4:
             return int.from_bytes(self.raw_bytes, "little", signed=False)
         return None
 
     @property
-    def as_i32_le(self) -> Optional[int]:
+    def as_i32_le(self) -> int | None:
         if self.length == 4:
             return int.from_bytes(self.raw_bytes, "little", signed=True)
         return None
 
     @property
-    def as_u16_le(self) -> Optional[int]:
+    def as_u16_le(self) -> int | None:
         if self.length >= 2:
             return int.from_bytes(self.raw_bytes[:2], "little", signed=False)
         return None
 
     @property
-    def as_u64_le(self) -> Optional[int]:
+    def as_u64_le(self) -> int | None:
         if self.length == 8:
             return int.from_bytes(self.raw_bytes, "little", signed=False)
         return None

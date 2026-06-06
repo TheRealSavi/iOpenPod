@@ -22,7 +22,7 @@ import time
 from collections import Counter
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Optional
 
@@ -58,6 +58,7 @@ from .transcoder import (
     TranscodeTarget,
     quality_to_nominal_bitrate,
     resolve_transcode_plan,
+    strip_metadata,
     transcode,
 )
 from .transcoder import (
@@ -401,24 +402,24 @@ class SyncExecutor:
         _clear_transcoder_caches()
 
         ctx = _SyncContext(
-            plan=plan,
-            mapping=mapping,
-            progress_callback=progress_callback,
-            dry_run=dry_run,
-            write_back_to_pc=write_back_to_pc,
-            _is_cancelled=is_cancelled,
-            user_playlists=list(user_playlists) if user_playlists else [],
-            on_sync_complete=on_sync_complete,
-            compute_sound_check=compute_sound_check,
-            scrobble_on_sync=scrobble_on_sync,
-            listenbrainz_token=listenbrainz_token,
-            listenbrainz_username=listenbrainz_username,
-            lastfm_api_key=lastfm_api_key,
-            lastfm_api_secret=lastfm_api_secret,
-            lastfm_session_key=lastfm_session_key,
-            lastfm_username=lastfm_username,
-            _is_scrobble_cancelled=is_scrobble_cancelled,
+            plan,
+            mapping,
+            progress_callback,
+            dry_run,
+            write_back_to_pc,
+            is_cancelled,
         )
+        ctx.user_playlists = list(user_playlists) if user_playlists else []
+        ctx.on_sync_complete = on_sync_complete
+        ctx.compute_sound_check = compute_sound_check
+        ctx.scrobble_on_sync = scrobble_on_sync
+        ctx.listenbrainz_token = listenbrainz_token
+        ctx.listenbrainz_username = listenbrainz_username
+        ctx.lastfm_api_key = lastfm_api_key
+        ctx.lastfm_api_secret = lastfm_api_secret
+        ctx.lastfm_session_key = lastfm_session_key
+        ctx.lastfm_username = lastfm_username
+        ctx._is_scrobble_cancelled = is_scrobble_cancelled
 
         self._apply_device_capability_filters(ctx)
         self._prepare_conversion_group_counts(ctx)
@@ -910,6 +911,13 @@ class SyncExecutor:
         except OSError as e:
             logger.warning("Could not check disk space before DB write: %s", e)
 
+        # Scrobble before clearing transient play deltas or deleting Play
+        # Counts.  Each service receives its own snapshot of the original
+        # deltas, then the in-memory DB state is cleared once before write.
+        if ctx.plan.to_sync_playcount:
+            self._execute_scrobble(ctx)
+            self._clear_playcount_deltas(ctx)
+
         _advance("Preparing tracks")
 
         all_tracks = list(ctx.tracks_by_db_track_id.values()) + ctx.new_tracks
@@ -1008,10 +1016,6 @@ class SyncExecutor:
 
             self._apply_itunes_protections(ctx, all_tracks)
 
-            # Scrobble before deleting Play Counts so an interrupted
-            # submission doesn't discard pending listens before we even try.
-            if ctx.plan.to_sync_playcount:
-                self._execute_scrobble(ctx)
             self._delete_playcounts_file()
 
         except Exception as e:
@@ -1655,7 +1659,7 @@ class SyncExecutor:
                     f"{destination.name}.iopenpodtmp"
                 )
                 try:
-                    self._copy_file_to_device(
+                    self._copy_stripped_file_to_device(
                         converted.output_path,
                         tmp_destination,
                         is_cancelled=ctx._is_cancelled,
@@ -2449,10 +2453,6 @@ class SyncExecutor:
                 "Play count sync: %s  +%d plays  +%d skips",
                 item.description, item.play_count_delta, item.skip_count_delta,
             )
-            if item.db_track_id:
-                track_info = ctx.tracks_by_db_track_id.get(item.db_track_id)
-                if track_info is not None:
-                    track_info.play_count_2 = 0
             ctx.result.playcounts_synced += 1
 
     def _execute_scrobble(self, ctx: _SyncContext) -> bool:
@@ -2529,7 +2529,7 @@ class SyncExecutor:
             display_name="ListenBrainz",
             stage="scrobble_listenbrainz",
             submit=lambda on_timeout, should_abort: scrobble_plays(
-                playcount_items=ctx.plan.to_sync_playcount,
+                playcount_items=self._scrobble_playcount_snapshot(ctx),
                 listenbrainz_token=ctx.listenbrainz_token,
                 listenbrainz_username=ctx.listenbrainz_username,
                 on_timeout=on_timeout,
@@ -2546,7 +2546,7 @@ class SyncExecutor:
             display_name="Last.fm",
             stage="scrobble_lastfm",
             submit=lambda on_timeout, should_abort: scrobble_plays(
-                playcount_items=ctx.plan.to_sync_playcount,
+                playcount_items=self._scrobble_playcount_snapshot(ctx),
                 api_key=ctx.lastfm_api_key,
                 api_secret=ctx.lastfm_api_secret,
                 session_key=ctx.lastfm_session_key,
@@ -2554,6 +2554,32 @@ class SyncExecutor:
                 should_abort=should_abort,
             ),
         )
+
+    @staticmethod
+    def _scrobble_playcount_snapshot(ctx: _SyncContext) -> list[SyncItem]:
+        """Return independent play-count items for one scrobbling service."""
+        snapshot: list[SyncItem] = []
+        for item in ctx.plan.to_sync_playcount:
+            snapshot.append(
+                replace(
+                    item,
+                    ipod_track=dict(item.ipod_track) if item.ipod_track else None,
+                    metadata_changes=dict(item.metadata_changes),
+                )
+            )
+        return snapshot
+
+    @staticmethod
+    def _clear_playcount_deltas(ctx: _SyncContext) -> None:
+        """Clear transient iPod play deltas after every scrobble service has run."""
+        for item in ctx.plan.to_sync_playcount:
+            if item.db_track_id:
+                track_info = ctx.tracks_by_db_track_id.get(item.db_track_id)
+                if track_info is not None:
+                    track_info.play_count_2 = 0
+            if item.ipod_track is not None:
+                item.ipod_track["play_count_2"] = 0
+                item.ipod_track["recent_playcount"] = 0
 
     def _execute_scrobble_service(
         self,
@@ -2785,7 +2811,7 @@ class SyncExecutor:
                     new_name = self._generate_ipod_filename(source_path.stem, ext, dest_folder)
                     final_path = dest_folder / new_name
                     try:
-                        self._copy_file_to_device(
+                        self._copy_stripped_file_to_device(
                             cached_path, final_path,
                             copy_progress,
                             is_cancelled=is_cancelled,
@@ -2823,10 +2849,6 @@ class SyncExecutor:
                 is_cancelled=is_cancelled,
             )
             if result.success and result.output_path:
-                # Copy metadata tags that ffmpeg may not have preserved
-                from .transcoder import copy_metadata
-                copy_metadata(source_path, result.output_path)
-
                 # Register in cache index (file already in place)
                 if fingerprint:
                     self.transcode_cache.commit(
@@ -2845,7 +2867,7 @@ class SyncExecutor:
                     source_path.stem, result.output_path.suffix, dest_folder,
                 )
                 final_path = dest_folder / new_name
-                self._copy_file_to_device(
+                self._copy_stripped_file_to_device(
                     result.output_path,
                     final_path,
                     copy_progress,
@@ -2871,7 +2893,7 @@ class SyncExecutor:
             new_name = self._generate_ipod_filename(source_path.stem, source_path.suffix, dest_folder)
             dest_path = dest_folder / new_name
             try:
-                self._copy_file_to_device(
+                self._copy_stripped_file_to_device(
                     source_path,
                     dest_path,
                     copy_progress,
@@ -2883,6 +2905,36 @@ class SyncExecutor:
             except Exception as e:
                 logger.error("Copy failed: %s", e)
                 return False, None, False, str(e)
+
+    def _copy_stripped_file_to_device(
+        self,
+        src: Path,
+        dst: Path,
+        progress: Callable[[float], None] | None = None,
+        *,
+        is_cancelled: Callable[[], bool] | None = None,
+    ) -> None:
+        """Copy a metadata-stripped temporary payload to the iPod."""
+        with tempfile.TemporaryDirectory(prefix="iopenpod_stripped_") as tmp:
+            staged = Path(tmp) / src.name
+            shutil.copyfile(src, staged)
+            before_size = staged.stat().st_size
+            if strip_metadata(staged):
+                after_size = staged.stat().st_size
+                if after_size < before_size:
+                    logger.debug(
+                        "Stripped metadata from %s: saved %d bytes",
+                        src.name,
+                        before_size - after_size,
+                    )
+            else:
+                logger.warning("Could not strip metadata from %s; copying unmodified payload", src.name)
+            self._copy_file_to_device(
+                staged,
+                dst,
+                progress,
+                is_cancelled=is_cancelled,
+            )
 
     def _copy_file_to_device(
         self,

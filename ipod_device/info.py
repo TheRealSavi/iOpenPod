@@ -1312,7 +1312,9 @@ def _apply_live_result_to_cache(
     live_result: dict,
     live_source: str,
 ) -> None:
-    validated = DeviceInfo(path=path, mount_name=mount_name)
+    validated = DeviceInfo()
+    validated.path = path
+    validated.mount_name = mount_name
     validated.usb_pid = usb_pid
     if usb_pid:
         validated._field_sources["usb_pid"] = usb_pid_source or "unknown"
@@ -1386,19 +1388,18 @@ def _start_live_identity_validation(info: DeviceInfo) -> None:
         format_sources(info._field_sources, SOURCE_FIELDS),
     )
 
-    cached = DeviceInfo(
-        path=info.path,
-        mount_name=info.mount_name,
-        model_number=info.model_number,
-        model_family=info.model_family,
-        generation=info.generation,
-        capacity=info.capacity,
-        color=info.color,
-        firewire_guid=info.firewire_guid,
-        serial=info.serial,
-        firmware=info.firmware,
-        usb_pid=info.usb_pid,
-    )
+    cached = DeviceInfo()
+    cached.path = info.path
+    cached.mount_name = info.mount_name
+    cached.model_number = info.model_number
+    cached.model_family = info.model_family
+    cached.generation = info.generation
+    cached.capacity = info.capacity
+    cached.color = info.color
+    cached.firewire_guid = info.firewire_guid
+    cached.serial = info.serial
+    cached.firmware = info.firmware
+    cached.usb_pid = info.usb_pid
     cached._field_sources.update(info._field_sources)
 
     def _run() -> None:

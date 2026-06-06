@@ -10,10 +10,10 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator, Optional
-
+from typing import Any
 
 _SCHEMA_VERSION = 1
 
@@ -141,7 +141,7 @@ class HypothesisDB:
         db_version: int = 0,
         version_name: str = "",
         track_count: int = 0,
-        mhit_hl: Optional[int] = None,
+        mhit_hl: int | None = None,
     ) -> None:
         # Accept either a ParsedDatabase or explicit args.
         if not isinstance(file_path_or_db, str):
@@ -208,7 +208,7 @@ class HypothesisDB:
     def top_hypotheses(
         self,
         limit: int = 20,
-        chunk_type: Optional[str] = None,
+        chunk_type: str | None = None,
     ) -> list[dict[str, Any]]:
         if chunk_type:
             cur = self._conn.execute(
@@ -242,7 +242,7 @@ class HypothesisDB:
 
     def all_hypotheses(
         self,
-        chunk_type: Optional[str] = None,
+        chunk_type: str | None = None,
     ) -> list[dict[str, Any]]:
         if chunk_type:
             cur = self._conn.execute(
@@ -266,7 +266,7 @@ class HypothesisDB:
         summary: str,
         value_json: dict | str = "{}",
         file_count: int = 0,
-        db_version: Optional[int] = None,
+        db_version: int | None = None,
     ) -> None:
         now = time.time()
         vj = json.dumps(value_json) if isinstance(value_json, dict) else value_json
@@ -310,7 +310,7 @@ class HypothesisDB:
         relation: str,
         strength: float,
         sample_count: int = 0,
-        db_version: Optional[int] = None,
+        db_version: int | None = None,
         rationale: str = "",
     ) -> None:
         now = time.time()
@@ -332,9 +332,9 @@ class HypothesisDB:
 
     def correlations_for(
         self,
-        known_field: Optional[str] = None,
-        chunk_type: Optional[str] = None,
-        unknown_offset: Optional[int] = None,
+        known_field: str | None = None,
+        chunk_type: str | None = None,
+        unknown_offset: int | None = None,
         min_strength: float = 0.0,
     ) -> list[dict[str, Any]]:
         clauses = ["strength >= ?"]
@@ -363,8 +363,8 @@ class HypothesisDB:
         rel_offset: int,
         length: int,
         observation: str,
-        version_min: Optional[int] = None,
-        version_max: Optional[int] = None,
+        version_min: int | None = None,
+        version_max: int | None = None,
         detail: str = "",
     ) -> None:
         now = time.time()

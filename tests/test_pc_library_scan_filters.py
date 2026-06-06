@@ -17,6 +17,20 @@ def test_count_audio_files_skips_appledouble_sidecars(tmp_path):
     assert library.count_audio_files(include_video=False) == 2
 
 
+def test_count_audio_files_skips_macos_system_entries(tmp_path):
+    album = tmp_path / "Album"
+    apple_double = album / ".AppleDouble"
+    apple_double.mkdir(parents=True)
+    (album / "Café.m4a").write_bytes(b"audio")
+    (album / ".DS_Store").write_bytes(b"metadata")
+    (album / "._Café.m4a").write_bytes(b"sidecar")
+    (apple_double / "Café.m4a").write_bytes(b"sidecar")
+
+    library = PCLibrary(tmp_path)
+
+    assert library.count_audio_files(include_video=False) == 1
+
+
 def test_count_audio_files_respects_nonrecursive_folder_entry(tmp_path):
     nested = tmp_path / "Nested"
     nested.mkdir()
@@ -86,6 +100,50 @@ def test_scan_skips_appledouble_sidecars(tmp_path, monkeypatch):
     tracks = list(PCLibrary(tmp_path).scan(include_video=False))
 
     assert [track.filename for track in tracks] == ["track.mp3"]
+
+
+def test_scan_skips_macos_system_entries_and_keeps_unicode_names(tmp_path, monkeypatch):
+    album = tmp_path / "Album"
+    apple_double = album / ".AppleDouble"
+    apple_double.mkdir(parents=True)
+    real_track = album / "Café.m4a"
+    real_track.write_bytes(b"audio")
+    (album / ".DS_Store").write_bytes(b"metadata")
+    (album / "._Café.m4a").write_bytes(b"sidecar")
+    (apple_double / "Café.m4a").write_bytes(b"sidecar")
+
+    monkeypatch.setattr(pc_library_module, "MUTAGEN_AVAILABLE", True)
+
+    def fake_read_track(self, file_path: Path, library_root: Path | None = None):
+        return PCTrack(
+            path=str(file_path),
+            relative_path=file_path.name,
+            filename=file_path.name,
+            extension=file_path.suffix.lower(),
+            mtime=file_path.stat().st_mtime,
+            size=file_path.stat().st_size,
+            title=file_path.stem,
+            artist="Artist",
+            album="Album",
+            duration_ms=1000,
+            album_artist=None,
+            genre=None,
+            year=None,
+            track_number=None,
+            track_total=None,
+            disc_number=None,
+            disc_total=None,
+            bitrate=None,
+            sample_rate=None,
+            rating=None,
+            needs_transcoding=False,
+        )
+
+    monkeypatch.setattr(PCLibrary, "_read_track", fake_read_track)
+
+    tracks = list(PCLibrary(tmp_path).scan(include_video=False))
+
+    assert [track.filename for track in tracks] == ["Café.m4a"]
 
 
 def test_scan_accepts_multiple_library_roots(tmp_path, monkeypatch):
