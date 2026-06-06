@@ -32,6 +32,13 @@ def test_settings_snapshot_copies_values_and_freezes_lists() -> None:
         splitter_sizes=[300, 700],
         window_width=1440,
         window_height=900,
+        scrobble_on_sync=True,
+        listenbrainz_token="lb-token",
+        listenbrainz_username="lb-user",
+        lastfm_api_key="lf-key",
+        lastfm_api_secret="lf-secret",
+        lastfm_session_key="lf-session",
+        lastfm_username="lf-user",
     )
 
     snapshot = SettingsSnapshot.from_settings(settings)
@@ -60,6 +67,13 @@ def test_settings_snapshot_copies_values_and_freezes_lists() -> None:
     assert snapshot.splitter_sizes == (300, 700)
     assert snapshot.window_width == 1440
     assert snapshot.window_height == 900
+    assert snapshot.scrobble_on_sync is True
+    assert snapshot.listenbrainz_token == "lb-token"
+    assert snapshot.listenbrainz_username == "lb-user"
+    assert snapshot.lastfm_api_key == "lf-key"
+    assert snapshot.lastfm_api_secret == "lf-secret"
+    assert snapshot.lastfm_session_key == "lf-session"
+    assert snapshot.lastfm_username == "lf-user"
 
     settings.track_list_columns_by_content["music"]["year"] = 120
     assert "year" not in snapshot.track_list_columns_by_content["music"]

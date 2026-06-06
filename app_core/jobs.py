@@ -2285,7 +2285,7 @@ class SyncExecuteWorker(QThread):
         self._skip_backup_requested = True
 
     def request_give_up_scrobble(self) -> None:
-        """Signal the worker to stop retrying ListenBrainz scrobbles."""
+        """Signal the worker to stop retrying the active scrobbling service."""
         self._give_up_scrobble_requested = True
 
     def run(self) -> None:
@@ -2355,6 +2355,10 @@ class SyncExecuteWorker(QThread):
                 scrobble_on_sync=settings.scrobble_on_sync,
                 listenbrainz_token=settings.listenbrainz_token or "",
                 listenbrainz_username=settings.listenbrainz_username or "",
+                lastfm_api_key=getattr(settings, "lastfm_api_key", ""),
+                lastfm_api_secret=getattr(settings, "lastfm_api_secret", ""),
+                lastfm_session_key=getattr(settings, "lastfm_session_key", ""),
+                lastfm_username=getattr(settings, "lastfm_username", ""),
                 is_scrobble_cancelled=lambda: self._give_up_scrobble_requested,
                 on_cancel_with_partial=_on_cancel_with_partial,
             )

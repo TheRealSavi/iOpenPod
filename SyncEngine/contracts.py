@@ -353,3 +353,7 @@ class SyncRequest:
     listenbrainz_username: str = ""
     is_scrobble_cancelled: Callable[[], bool] | None = None
     on_cancel_with_partial: Callable[[int, int], bool] | None = None
+    lastfm_api_key: str = ""
+    lastfm_api_secret: str = ""
+    lastfm_session_key: str = ""
+    lastfm_username: str = ""

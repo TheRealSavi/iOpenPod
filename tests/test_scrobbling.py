@@ -3,10 +3,21 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from SyncEngine.fingerprint_diff_engine import SyncAction, SyncItem, SyncPlan
-from SyncEngine.mapping import MappingFile
-from SyncEngine.pc_library import PCTrack
-from SyncEngine.scrobbler import (
+from SyncEngine.lastfm_scrobbler import (
+    ScrobbleEntry as LastFmScrobbleEntry,
+)
+from SyncEngine.lastfm_scrobbler import (
+    ScrobbleResult as LastFmScrobbleResult,
+)
+from SyncEngine.lastfm_scrobbler import (
+    _build_scrobble_batch_params,
+    _make_lastfm_request,
+    scrobble_lastfm,
+)
+from SyncEngine.lb_scrobbler import (
     IMPORT_SERVICE,
     RateLimitInfo,
     ScrobbleAborted,
@@ -18,6 +29,8 @@ from SyncEngine.scrobbler import (
     scrobble_listenbrainz,
     set_latest_import,
 )
+from SyncEngine.mapping import MappingFile
+from SyncEngine.pc_library import PCTrack
 from SyncEngine.sync_executor import SyncExecutor, _SyncContext
 
 
@@ -85,7 +98,7 @@ def test_execute_scrobble_reports_listenbrainz_errors(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    import SyncEngine.scrobbler as scrobbler
+    import SyncEngine.lb_scrobbler as lb_scrobbler
 
     progress_log = []
     ctx = _build_scrobble_context(progress_log=progress_log)
@@ -94,19 +107,179 @@ def test_execute_scrobble_reports_listenbrainz_errors(
     def fake_scrobble_plays(*args, **kwargs):
         return [ScrobbleResult(errors=["HTTP 400: invalid payload"])]
 
-    monkeypatch.setattr(scrobbler, "scrobble_plays", fake_scrobble_plays)
+    monkeypatch.setattr(lb_scrobbler, "scrobble_plays", fake_scrobble_plays)
 
     ok = executor._execute_scrobble(ctx)
 
     assert ok is False
     assert ctx.result.scrobbles_submitted == 0
     assert ctx.result.errors == [
-        ("scrobble", "listenbrainz: HTTP 400: invalid payload")
+        ("listenbrainz", "HTTP 400: invalid payload")
     ]
-    assert progress_log[-1].stage == "scrobble"
+    assert progress_log[-1].stage == "scrobble_listenbrainz"
     assert progress_log[-1].message == (
         "ListenBrainz did not accept any plays from this sync."
     )
+
+
+def test_execute_scrobble_reports_lastfm_errors(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    import SyncEngine.lastfm_scrobbler as lastfm_scrobbler
+
+    progress_log = []
+    ctx = _build_scrobble_context(progress_log=progress_log)
+    ctx.listenbrainz_token = ""
+    ctx.listenbrainz_username = ""
+    ctx.lastfm_api_key = "api-key"
+    ctx.lastfm_api_secret = "api-secret"
+    ctx.lastfm_session_key = "session-key"
+    ctx.lastfm_username = "TheRealSavi"
+    executor = SyncExecutor(tmp_path)
+
+    def fake_scrobble_plays(*args, **kwargs):
+        return [LastFmScrobbleResult(errors=["Invalid session key"])]
+
+    monkeypatch.setattr(lastfm_scrobbler, "scrobble_plays", fake_scrobble_plays)
+
+    ok = executor._execute_scrobble(ctx)
+
+    assert ok is False
+    assert ctx.result.scrobbles_submitted == 0
+    assert ctx.result.errors == [("lastfm", "Invalid session key")]
+    assert progress_log[-1].stage == "scrobble_lastfm"
+    assert progress_log[-1].message == (
+        "Last.fm did not accept any plays from this sync."
+    )
+
+
+def test_execute_scrobble_ignores_disconnected_lastfm_saved_api_keys(
+    tmp_path: Path,
+) -> None:
+    progress_log = []
+    ctx = _build_scrobble_context(progress_log=progress_log)
+    ctx.listenbrainz_token = ""
+    ctx.listenbrainz_username = ""
+    ctx.lastfm_api_key = "api-key"
+    ctx.lastfm_api_secret = "api-secret"
+    ctx.lastfm_session_key = ""
+    executor = SyncExecutor(tmp_path)
+
+    ok = executor._execute_scrobble(ctx)
+
+    assert ok is True
+    assert ctx.result.errors == []
+    assert progress_log == []
+
+
+def test_lastfm_request_reports_json_api_errors(monkeypatch) -> None:
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return b'{"error": 9, "message": "Invalid session key"}'
+
+    monkeypatch.setattr(
+        "SyncEngine.lastfm_scrobbler.urllib.request.urlopen",
+        lambda *_args, **_kwargs: FakeResponse(),
+    )
+
+    with pytest.raises(RuntimeError, match="Last.fm API 9: Invalid session key"):
+        _make_lastfm_request(
+            {"method": "user.getInfo", "api_key": "api-key", "sk": "bad-session"},
+            api_secret="api-secret",
+            method="GET",
+        )
+
+
+def test_lastfm_request_retries_json_temporary_api_errors(monkeypatch) -> None:
+    class FakeResponse:
+        def __init__(self, body: bytes):
+            self._body = body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return self._body
+
+    responses = [
+        FakeResponse(b'{"error": 16, "message": "Temporary error"}'),
+        FakeResponse(b'{"user": {"name": "TheRealSavi"}}'),
+    ]
+    waits: list[float] = []
+
+    def fake_urlopen(*_args, **_kwargs):
+        return responses.pop(0)
+
+    monkeypatch.setattr(
+        "SyncEngine.lastfm_scrobbler.urllib.request.urlopen",
+        fake_urlopen,
+    )
+    monkeypatch.setattr(
+        "SyncEngine.lastfm_scrobbler._sleep_with_abort",
+        lambda seconds, should_abort=None: waits.append(seconds),
+    )
+
+    data = _make_lastfm_request(
+        {"method": "user.getInfo", "api_key": "api-key", "sk": "session-key"},
+        api_secret="api-secret",
+        method="GET",
+    )
+
+    assert data == {"user": {"name": "TheRealSavi"}}
+    assert waits == [5.0]
+
+
+def test_lastfm_scrobble_params_include_duration() -> None:
+    params = _build_scrobble_batch_params(
+        [
+            LastFmScrobbleEntry(
+                "Artist",
+                "Track",
+                "Album",
+                240,
+                1_700_000_100,
+                track_number=7,
+                album_artist="Album Artist",
+            )
+        ],
+        "api-key",
+        "session-key",
+    )
+
+    assert params["duration[0]"] == "240"
+    assert params["albumArtist[0]"] == "Album Artist"
+    assert params["trackNumber[0]"] == "7"
+
+
+def test_scrobble_lastfm_reports_json_api_errors(monkeypatch) -> None:
+    def fake_make_request(*_args, **_kwargs):
+        raise RuntimeError("Last.fm API 9: Invalid session key")
+
+    monkeypatch.setattr(
+        "SyncEngine.lastfm_scrobbler._make_lastfm_request",
+        fake_make_request,
+    )
+
+    result = scrobble_lastfm(
+        [LastFmScrobbleEntry("Artist", "Track", "Album", 240, 1_700_000_100)],
+        "api-key",
+        "api-secret",
+        "bad-session",
+    )
+
+    assert result.submitted == 1
+    assert result.accepted == 0
+    assert result.errors == ["Batch at index 0: Last.fm API 9: Invalid session key"]
 
 
 def test_build_listen_payload_omits_music_service_for_local_collection() -> None:
@@ -135,7 +308,7 @@ def test_latest_import_requests_are_scoped_to_iopenpod(monkeypatch) -> None:
             return {"latest_import": 123}, RateLimitInfo()
         return {"status": "ok"}, RateLimitInfo()
 
-    monkeypatch.setattr("SyncEngine.scrobbler._make_request", fake_make_request)
+    monkeypatch.setattr("SyncEngine.lb_scrobbler._make_request", fake_make_request)
 
     assert get_latest_import("TheRealSavi", "token") == 123
     assert set_latest_import(456, "token") is True
@@ -179,9 +352,9 @@ def test_scrobble_listenbrainz_skips_entries_covered_by_latest_import(
         submitted_payloads.append(json.loads(body.decode("utf-8"))["payload"])
         return {"status": "ok"}, RateLimitInfo(remaining=10, reset_in=0.0)
 
-    monkeypatch.setattr("SyncEngine.scrobbler.get_latest_import", fake_get_latest_import)
-    monkeypatch.setattr("SyncEngine.scrobbler.set_latest_import", fake_set_latest_import)
-    monkeypatch.setattr("SyncEngine.scrobbler._make_request", fake_make_request)
+    monkeypatch.setattr("SyncEngine.lb_scrobbler.get_latest_import", fake_get_latest_import)
+    monkeypatch.setattr("SyncEngine.lb_scrobbler.set_latest_import", fake_set_latest_import)
+    monkeypatch.setattr("SyncEngine.lb_scrobbler._make_request", fake_make_request)
 
     result = scrobble_listenbrainz(
         [
@@ -205,7 +378,7 @@ def test_scrobble_listenbrainz_returns_user_gave_up_when_latest_import_aborts(
     def fake_get_latest_import(*args, **kwargs):
         raise ScrobbleAborted("User gave up while connecting to ListenBrainz")
 
-    monkeypatch.setattr("SyncEngine.scrobbler.get_latest_import", fake_get_latest_import)
+    monkeypatch.setattr("SyncEngine.lb_scrobbler.get_latest_import", fake_get_latest_import)
 
     result = scrobble_listenbrainz(
         [ScrobbleEntry("Artist", "Track", "Album", 240, 1_700_000_100)],
@@ -226,8 +399,8 @@ def test_scrobble_listenbrainz_reports_latest_import_update_failure(
         assert path == "/1/submit-listens"
         return {"status": "ok"}, RateLimitInfo(remaining=10, reset_in=0.0)
 
-    monkeypatch.setattr("SyncEngine.scrobbler._make_request", fake_make_request)
-    monkeypatch.setattr("SyncEngine.scrobbler.set_latest_import", lambda *args, **kwargs: False)
+    monkeypatch.setattr("SyncEngine.lb_scrobbler._make_request", fake_make_request)
+    monkeypatch.setattr("SyncEngine.lb_scrobbler.set_latest_import", lambda *args, **kwargs: False)
 
     result = scrobble_listenbrainz(
         [ScrobbleEntry("Artist", "Track", "Album", 240, 1_700_000_100)],

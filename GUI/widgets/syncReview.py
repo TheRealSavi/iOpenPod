@@ -1310,7 +1310,9 @@ class SyncReviewWidget(QWidget):
         "write_database": "Writing iPod database",
         "backup": "Creating pre-sync backup",
         "transcode": "Transcoding",
-        "scrobble": "Scrobbling to ListenBrainz",
+        "scrobble": "Scrobbling plays",
+        "scrobble_listenbrainz": "Scrobbling to ListenBrainz",
+        "scrobble_lastfm": "Scrobbling to Last.fm",
         "scan_photos": "Scanning photos",
         "photo_prepare": "Preparing photos",
         "photo_write": "Writing photo database",
@@ -1660,7 +1662,7 @@ class SyncReviewWidget(QWidget):
         if plan.to_sync_playcount:
             card = SyncCategoryCard("music", "iPod Play Counts", len(plan.to_sync_playcount),
                                     _CAT_COLORS["playcount"], start_expanded=False,
-                                    subtitle="New plays detected on iPod — will be scrobbled to ListenBrainz",
+                                    subtitle="New plays detected on iPod — will be scrobbled to connected services.",
                                     parent=self._cards_container)
             for item in plan.to_sync_playcount:
                 card.add_track_row(item)
@@ -2049,10 +2051,12 @@ class SyncReviewWidget(QWidget):
 
         # During the backup stage, repurpose the footer cancel as "Skip"
         is_backup = (stage == "backup")
-        is_scrobble_timeout = (
-            stage == "scrobble"
-            and "keep trying" in message.lower()
-        )
+        is_scrobble_stage = stage in {
+            "scrobble",
+            "scrobble_listenbrainz",
+            "scrobble_lastfm",
+        }
+        is_scrobble_timeout = is_scrobble_stage and "keep trying" in message.lower()
         self._scrobble_timeout_retrying = is_scrobble_timeout
         self._backup_hint.setVisible(is_backup and self._is_auto_presync)
         if is_backup:
@@ -2190,7 +2194,7 @@ class SyncReviewWidget(QWidget):
             lines.append(f"<span style='color: {Colors.INFO};'>Recorded play counts for {playcounts} track{'s' if playcounts != 1 else ''}</span>")
         scrobbles = getattr(result, 'scrobbles_submitted', 0)
         if scrobbles:
-            lines.append(f"<span style='color: {Colors.INFO};'>Scrobbled {scrobbles} play{'s' if scrobbles != 1 else ''} to ListenBrainz</span>")
+            lines.append(f"<span style='color: {Colors.INFO};'>Scrobbled {scrobbles} play{'s' if scrobbles != 1 else ''} to connected services</span>")
         if ratings:
             lines.append(f"<span style='color: {Colors.WARNING};'>Synced ratings for {ratings} track{'s' if ratings != 1 else ''}</span>")
         if photos_added:
@@ -2211,7 +2215,59 @@ class SyncReviewWidget(QWidget):
             text = message.strip()
             if text.startswith("listenbrainz:"):
                 text = "ListenBrainz:" + text[len("listenbrainz:"):]
+            elif text.startswith("lastfm:"):
+                text = "Last.fm:" + text[len("lastfm:"):]
             return text
+
+        scrobble_error_keys = {"scrobble", "listenbrainz", "lastfm"}
+        scrobble_service_names = {
+            "listenbrainz": "ListenBrainz",
+            "lastfm": "Last.fm",
+            "scrobble": "Scrobbling",
+        }
+
+        def _group_scrobble_errors(raw_errors):
+            grouped: dict[str, list[str]] = {}
+            for desc, msg in raw_errors:
+                if desc not in scrobble_error_keys:
+                    continue
+                key = desc
+                text = str(msg)
+                lowered = text.lower()
+                if desc == "scrobble":
+                    if lowered.startswith("listenbrainz:"):
+                        key = "listenbrainz"
+                        text = text.split(":", 1)[1].strip()
+                    elif lowered.startswith("lastfm:"):
+                        key = "lastfm"
+                        text = text.split(":", 1)[1].strip()
+                grouped.setdefault(key, []).append(text)
+            return grouped
+
+        def _append_scrobble_error_sections(grouped, *, partial: bool) -> None:
+            limit = 3
+            for key in ("listenbrainz", "lastfm", "scrobble"):
+                messages = grouped.get(key, [])
+                if not messages:
+                    continue
+                name = scrobble_service_names[key]
+                lines.append("")
+                title = f"{name} needs attention." if partial else name
+                lines.append(
+                    f"<span style='color: {Colors.WARNING};'><b>{title}</b></span>"
+                )
+                for msg in messages[:limit]:
+                    lines.append(
+                        f"<span style='color: {Colors.TEXT_SECONDARY};'>"
+                        f"{_format_scrobble_message(msg)}</span>"
+                    )
+                if len(messages) > limit:
+                    remaining = len(messages) - limit
+                    lines.append(
+                        f"<span style='color: {Colors.TEXT_SECONDARY};'>"
+                        f"...and {remaining} more {name} issue"
+                        f"{'s' if remaining != 1 else ''}.</span>"
+                    )
 
         # Partial save banner — explain what happened and reassure the user
         if partial_save:
@@ -2219,9 +2275,9 @@ class SyncReviewWidget(QWidget):
             # Separate storage-full and cancelled into different messages
             storage_errors = [m for d, m in errors if d == "storage"]
             cancel_errors = [m for d, m in errors if d == "cancelled"]
-            scrobble_errors = [m for d, m in errors if d == "scrobble"]
+            scrobble_errors_by_service = _group_scrobble_errors(errors)
             other_errors = [(d, m) for d, m in errors
-                            if d not in ("storage", "cancelled", "scrobble")]
+                            if d not in ("storage", "cancelled", *scrobble_error_keys)]
             if storage_errors:
                 lines.append(
                     f"<span style='color: {Colors.WARNING};'>"
@@ -2264,43 +2320,17 @@ class SyncReviewWidget(QWidget):
                         f"<span style='color: {Colors.DANGER};'>"
                         f"  …and {len(other_errors) - 8} more</span>"
                     )
-            if scrobble_errors:
-                lines.append("")
-                lines.append(
-                    f"<span style='color: {Colors.WARNING};'>"
-                    f"<b>ListenBrainz needs attention.</b></span>"
-                )
-                for msg in scrobble_errors[:3]:
-                    lines.append(
-                        f"<span style='color: {Colors.TEXT_SECONDARY};'>"
-                        f"{_format_scrobble_message(msg)}</span>"
-                    )
-                if len(scrobble_errors) > 3:
-                    lines.append(
-                        f"<span style='color: {Colors.TEXT_SECONDARY};'>"
-                        f"…and {len(scrobble_errors) - 3} more ListenBrainz issue"
-                        f"{'s' if len(scrobble_errors) - 3 != 1 else ''}.</span>"
-                    )
+            if scrobble_errors_by_service:
+                _append_scrobble_error_sections(scrobble_errors_by_service, partial=True)
         elif errors:
-            scrobble_errors = [m for d, m in errors if d == "scrobble"]
-            other_errors = [(d, m) for d, m in errors if d != "scrobble"]
+            scrobble_errors_by_service = _group_scrobble_errors(errors)
+            other_errors = [
+                (d, m) for d, m in errors if d not in scrobble_error_keys
+            ]
             lines.append("")
             lines.append(f"<span style='color: {Colors.DANGER};'><b>{len(errors)} error{'s' if len(errors) != 1 else ''}:</b></span>")
-            if scrobble_errors:
-                lines.append(
-                    f"<span style='color: {Colors.WARNING};'><b>ListenBrainz</b></span>"
-                )
-                for msg in scrobble_errors[:3]:
-                    lines.append(
-                        f"<span style='color: {Colors.TEXT_SECONDARY};'>"
-                        f"{_format_scrobble_message(msg)}</span>"
-                    )
-                if len(scrobble_errors) > 3:
-                    lines.append(
-                        f"<span style='color: {Colors.TEXT_SECONDARY};'>"
-                        f"…and {len(scrobble_errors) - 3} more ListenBrainz issue"
-                        f"{'s' if len(scrobble_errors) - 3 != 1 else ''}.</span>"
-                    )
+            if scrobble_errors_by_service:
+                _append_scrobble_error_sections(scrobble_errors_by_service, partial=False)
             for desc, msg in other_errors[:10]:  # Show max 10
                 lines.append(f"<span style='color: {Colors.DANGER};'>  {desc}: {msg}</span>")
             if len(other_errors) > 10:
@@ -2471,7 +2501,14 @@ class SyncReviewWidget(QWidget):
                 self.cancel_btn.setEnabled(False)
                 self.cancel_btn.setText("Skipping backup…")
                 self.skip_backup_signal.emit()
-            elif self._current_exec_stage == "scrobble" and self._scrobble_timeout_retrying:
+            elif (
+                self._current_exec_stage in {
+                    "scrobble",
+                    "scrobble_listenbrainz",
+                    "scrobble_lastfm",
+                }
+                and self._scrobble_timeout_retrying
+            ):
                 self.cancel_btn.setEnabled(False)
                 self.cancel_btn.setText("Stopping retries…")
                 self.give_up_scrobble_signal.emit()

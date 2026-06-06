@@ -727,7 +727,7 @@ class FingerprintDiffEngine:
             # Play count: scrobble iPod deltas from Play Counts file.
             # iPod plays belong to the iPod, PC plays belong to the PC.
             # We never sync play counts between the two — we just scrobble
-            # the iPod delta so the user's ListenBrainz stays up to date.
+            # the iPod delta so the user's connected services stay up to date.
             #
             # Prefer the iTunesDB play_count_2 slot; fall back to the
             # Play Counts file-derived delta when present.
