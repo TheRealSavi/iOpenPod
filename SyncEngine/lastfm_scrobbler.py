@@ -82,6 +82,26 @@ class ScrobbleAborted(Exception):
     """Raised when the user chooses to stop retrying scrobbles."""
 
 
+class LastFmApiError(RuntimeError):
+    """Structured Last.fm API error returned in a JSON response body."""
+
+    def __init__(self, code: int, message: str):
+        self.code = code
+        self.message = message
+        super().__init__(f"Last.fm API {code}: {message}")
+
+
+def _lastfm_error_code(data: dict) -> int:
+    try:
+        return int(data.get("error", 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _lastfm_error_message(data: dict) -> str:
+    return str(data.get("message", "Unknown Last.fm API error"))
+
+
 def _sleep_with_abort(
     seconds: float,
     should_abort: Callable[[], bool] | None = None,
@@ -136,12 +156,16 @@ def _is_lastfm_api_key_valid(api_key: str, api_secret: str) -> bool:
     try:
         _make_lastfm_request(params, api_secret=api_secret, method="GET", timeout=10)
         return True
-    except RuntimeError as exc:
-        # Last.fm returns error code 4 for invalid API key/secret
-        if "HTTP 403: Forbidden" in str(exc) or "HTTP 400: Bad Request" in str(exc): # Specifically check for HTTP 403 or 400 for API key issues
+    except LastFmApiError as exc:
+        if exc.code in {4, 10, 13, 26}:
             logger.warning("Last.fm API Key/Secret validation failed: %s", exc)
             return False
-        raise # Re-raise other runtime errors
+        raise
+    except RuntimeError as exc:
+        if "Last.fm HTTP 403:" in str(exc):
+            logger.warning("Last.fm API Key/Secret validation failed: %s", exc)
+            return False
+        raise
     except Exception as exc:
         logger.error("Last.fm API Key/Secret validation failed: %s", exc)
         return False
@@ -186,20 +210,39 @@ def _make_lastfm_request(
 
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
-                return json.loads(resp.read().decode("utf-8"))
+                data = json.loads(resp.read().decode("utf-8"))
+                if isinstance(data, dict) and "error" in data:
+                    code = _lastfm_error_code(data)
+                    message = _lastfm_error_message(data)
+                    if code in (11, 16, 29) and retry_attempt < MAX_RETRIES:
+                        retry_attempt += 1
+                        wait = 5.0 * retry_attempt
+                        logger.warning(
+                            "Last.fm temporary API error %s; sleeping %.1fs",
+                            code,
+                            wait,
+                        )
+                        _sleep_with_abort(wait, should_abort)
+                        continue
+                    raise LastFmApiError(code, str(message))
+                return data
 
         except urllib.error.HTTPError as exc:
             body_text = exc.read().decode("utf-8", errors="replace")
             
             try:
                 err_data = json.loads(body_text)
+                code = _lastfm_error_code(err_data) if isinstance(err_data, dict) else 0
+                message = _lastfm_error_message(err_data) if isinstance(err_data, dict) else body_text
                 # Error 11: Service Offline, Error 16: Temporarily Unavailable, Error 29: Rate Limit
-                if err_data.get("error") in (11, 16, 29) and retry_attempt < MAX_RETRIES:
+                if code in (11, 16, 29) and retry_attempt < MAX_RETRIES:
                     retry_attempt += 1
                     wait = 5.0 * retry_attempt # Exponential-ish backoff
                     logger.warning("Last.fm temporary error/rate limit; sleeping %.1fs", wait)
                     _sleep_with_abort(wait, should_abort)
                     continue
+                if code:
+                    raise LastFmApiError(code, message) from exc
             except json.JSONDecodeError:
                 pass
 
@@ -263,6 +306,8 @@ def _build_scrobble_batch_params(batch: list[ScrobbleEntry], api_key: str, sessi
             params[f"album[{i}]"] = entry.album
         if entry.album_artist:
             params[f"albumArtist[{i}]"] = entry.album_artist
+        if entry.duration_secs > 0:
+            params[f"duration[{i}]"] = str(entry.duration_secs)
         if entry.track_number > 0:
             params[f"trackNumber[{i}]"] = str(entry.track_number)
         if entry.recording_mbid:

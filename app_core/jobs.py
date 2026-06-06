@@ -2209,7 +2209,7 @@ class SyncExecuteWorker(QThread):
         self._skip_backup_requested = True
 
     def request_give_up_scrobble(self) -> None:
-        """Signal the worker to stop retrying ListenBrainz scrobbles."""
+        """Signal the worker to stop retrying the active scrobbling service."""
         self._give_up_scrobble_requested = True
 
     def run(self) -> None:

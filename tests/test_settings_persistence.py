@@ -55,6 +55,13 @@ def test_settings_persistence_round_trip(monkeypatch) -> None:
             },
             window_width=1440,
             device_write_workers=2,
+            scrobble_on_sync=True,
+            listenbrainz_token="lb-token",
+            listenbrainz_username="lb-user",
+            lastfm_api_key="lf-key",
+            lastfm_api_secret="lf-secret",
+            lastfm_session_key="lf-session",
+            lastfm_username="lf-user",
         )
         save_app_settings(settings)
 
@@ -80,6 +87,13 @@ def test_settings_persistence_round_trip(monkeypatch) -> None:
     }
     assert loaded.window_width == 1440
     assert loaded.device_write_workers == 2
+    assert loaded.scrobble_on_sync is True
+    assert loaded.listenbrainz_token == "lb-token"
+    assert loaded.listenbrainz_username == "lb-user"
+    assert loaded.lastfm_api_key == "lf-key"
+    assert loaded.lastfm_api_secret == "lf-secret"
+    assert loaded.lastfm_session_key == "lf-session"
+    assert loaded.lastfm_username == "lf-user"
 
 
 def test_settings_persistence_upgrades_legacy_media_folder_strings(monkeypatch) -> None:

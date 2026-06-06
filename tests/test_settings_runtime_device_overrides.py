@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shutil
 from contextlib import contextmanager
 from pathlib import Path
@@ -30,11 +31,25 @@ def test_device_settings_round_trip_preserves_device_write_workers(monkeypatch) 
             sync_workers=6,
             device_write_workers=1,
             media_folder="C:/Music",
+            listenbrainz_token="lb-token",
+            listenbrainz_username="lb-user",
+            lastfm_api_key="lf-key",
+            lastfm_api_secret="lf-secret",
+            lastfm_session_key="lf-session",
+            lastfm_username="lf-user",
         )
         runtime.save_device_settings(
             str(tmp_path),
             device_settings,
             device_key="SERIAL123",
+        )
+        raw = json.loads(
+            (
+                tmp_path
+                / "iPod_Control"
+                / "iOpenPod"
+                / "settings.json"
+            ).read_text(encoding="utf-8")
         )
 
         loaded = runtime.load_device_settings(
@@ -45,3 +60,13 @@ def test_device_settings_round_trip_preserves_device_write_workers(monkeypatch) 
 
     assert loaded.settings.sync_workers == 6
     assert loaded.settings.device_write_workers == 1
+    assert loaded.settings.listenbrainz_token == "lb-token"
+    assert loaded.settings.listenbrainz_username == "lb-user"
+    assert loaded.settings.lastfm_api_key == "lf-key"
+    assert loaded.settings.lastfm_api_secret == "lf-secret"
+    assert loaded.settings.lastfm_session_key == "lf-session"
+    assert loaded.settings.lastfm_username == "lf-user"
+    assert raw["settings"]["lastfm_api_key"].startswith("xor1:")
+    assert raw["settings"]["lastfm_api_secret"].startswith("xor1:")
+    assert raw["settings"]["lastfm_session_key"].startswith("xor1:")
+    assert raw["settings"]["lastfm_username"] == "lf-user"

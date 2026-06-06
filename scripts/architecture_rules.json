@@ -26,7 +26,7 @@
     "GUI/widgets/settingsPage.py": [
       "SyncEngine.audio_fingerprint",
       "SyncEngine.dependency_manager",
-      "SyncEngine.scrobbler",
+      "SyncEngine.lb_scrobbler",
       "SyncEngine.transcode_cache",
       "SyncEngine.transcoder",
       "ipod_device"

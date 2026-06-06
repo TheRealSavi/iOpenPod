@@ -6,7 +6,7 @@ The executor takes a SyncPlan (from FingerprintDiffEngine) and:
 2. Removes deleted tracks from iPod
 3. Updates metadata for changed tracks
 4. Re-copies files that changed on PC
-5. Records play counts from iPod, scrobbles to ListenBrainz/Last.fm
+5. Records play counts from iPod, scrobbles to connected services
 6. Builds a final list[TrackInfo] and calls write_itunesdb() ONCE
 
 The database is always fully rewritten (not patched incrementally).
@@ -220,6 +220,18 @@ class _SyncContext:
             )
 
 
+@dataclass(slots=True)
+class _ScrobbleServiceOutcome:
+    """Executor-level result for one external scrobbling service."""
+
+    service_key: str
+    display_name: str
+    stage: str
+    accepted: int = 0
+    errors: list[str] = field(default_factory=list)
+    gave_up: bool = False
+
+
 class SyncExecutor:
     """
     Executes a sync plan to synchronize PC library with iPod.
@@ -329,7 +341,7 @@ class SyncExecutor:
         lastfm_api_secret = getattr(request, "lastfm_api_secret", "")
         lastfm_session_key = getattr(request, "lastfm_session_key", "")
         lastfm_username = getattr(request, "lastfm_username", "")
-        
+
         return self.execute(
             plan=request.plan,
             mapping=request.mapping,
@@ -2069,167 +2081,186 @@ class SyncExecutor:
             ctx.result.playcounts_synced += 1
 
     def _execute_scrobble(self, ctx: _SyncContext) -> bool:
-        """Submit new plays to ListenBrainz/Last.fm).
-        Returns True when no scrobble errors occurred.
-        """
+        """Submit new plays to each connected scrobbling service."""
         if not ctx.scrobble_on_sync:
-            logger.info("Scrobbling aborted: 'Scrobble on Sync' is disabled in settings.")
             return True
 
-        lb_token = ctx.listenbrainz_token
-        lf_session = ctx.lastfm_session_key
-        
-        if not lb_token and not lf_session:
-            logger.info("Scrobbling aborted: No service credentials found in sync context.")
+        listenbrainz_enabled = bool(ctx.listenbrainz_token)
+        lastfm_configured = bool(ctx.lastfm_session_key)
+        lastfm_enabled = all(
+            (
+                ctx.lastfm_api_key,
+                ctx.lastfm_api_secret,
+                ctx.lastfm_session_key,
+            )
+        )
+
+        if not listenbrainz_enabled and not lastfm_configured:
             return True
 
-        logger.info("Items to scrobble: %d", len(ctx.plan.to_sync_playcount))
-        ctx.progress("scrobble", 0, 1, message="Scrobbling plays to connected services...")
+        outcomes: list[_ScrobbleServiceOutcome] = []
+
+        if listenbrainz_enabled:
+            outcomes.append(self._execute_listenbrainz_scrobble(ctx))
+
+        if lastfm_enabled:
+            outcomes.append(self._execute_lastfm_scrobble(ctx))
+        elif lastfm_configured:
+            outcome = _ScrobbleServiceOutcome(
+                service_key="lastfm",
+                display_name="Last.fm",
+                stage="scrobble_lastfm",
+                errors=[
+                    "Last.fm credentials are incomplete. Reconnect Last.fm in Settings."
+                ],
+            )
+            self._finish_scrobble_service_progress(ctx, outcome)
+            outcomes.append(outcome)
+
+        total_accepted = sum(outcome.accepted for outcome in outcomes)
+        ctx.result.scrobbles_submitted = total_accepted
+        logger.info("Scrobbled %d plays across connected services", total_accepted)
+
+        for outcome in outcomes:
+            for error in outcome.errors:
+                ctx.result.errors.append((outcome.service_key, error))
+
+        return not any(outcome.errors for outcome in outcomes)
+
+    @staticmethod
+    def _format_scrobble_elapsed(seconds: float) -> str:
+        total = max(int(seconds), 0)
+        mins, secs = divmod(total, 60)
+        hrs, mins = divmod(mins, 60)
+        if hrs:
+            return f"{hrs}h {mins}m {secs}s"
+        if mins:
+            return f"{mins}m {secs}s"
+        return f"{secs}s"
+
+    def _scrobble_should_abort(self, ctx: _SyncContext) -> bool:
+        if ctx._is_scrobble_cancelled and ctx._is_scrobble_cancelled():
+            return True
+        if ctx._is_cancelled and ctx._is_cancelled():
+            return True
+        return False
+
+    def _execute_listenbrainz_scrobble(self, ctx: _SyncContext) -> _ScrobbleServiceOutcome:
+        from .lb_scrobbler import scrobble_plays
+
+        return self._execute_scrobble_service(
+            ctx,
+            service_key="listenbrainz",
+            display_name="ListenBrainz",
+            stage="scrobble_listenbrainz",
+            submit=lambda on_timeout, should_abort: scrobble_plays(
+                playcount_items=ctx.plan.to_sync_playcount,
+                listenbrainz_token=ctx.listenbrainz_token,
+                listenbrainz_username=ctx.listenbrainz_username,
+                on_timeout=on_timeout,
+                should_abort=should_abort,
+            ),
+        )
+
+    def _execute_lastfm_scrobble(self, ctx: _SyncContext) -> _ScrobbleServiceOutcome:
+        from .lastfm_scrobbler import scrobble_plays
+
+        return self._execute_scrobble_service(
+            ctx,
+            service_key="lastfm",
+            display_name="Last.fm",
+            stage="scrobble_lastfm",
+            submit=lambda on_timeout, should_abort: scrobble_plays(
+                playcount_items=ctx.plan.to_sync_playcount,
+                api_key=ctx.lastfm_api_key,
+                api_secret=ctx.lastfm_api_secret,
+                session_key=ctx.lastfm_session_key,
+                on_timeout=on_timeout,
+                should_abort=should_abort,
+            ),
+        )
+
+    def _execute_scrobble_service(
+        self,
+        ctx: _SyncContext,
+        *,
+        service_key: str,
+        display_name: str,
+        stage: str,
+        submit: Callable[
+            [Callable[[float, int, int], None], Callable[[], bool]],
+            list,
+        ],
+    ) -> _ScrobbleServiceOutcome:
+        outcome = _ScrobbleServiceOutcome(
+            service_key=service_key,
+            display_name=display_name,
+            stage=stage,
+        )
+
+        ctx.progress(stage, 0, 1, message=f"Submitting iPod plays to {display_name}...")
+
+        def _on_timeout(elapsed: float, attempt: int, timeout_s: int) -> None:
+            ctx.progress(
+                stage,
+                0,
+                1,
+                message=(
+                    f"{display_name} is taking longer than usual to respond. "
+                    "iOpenPod will keep trying. "
+                    f"Elapsed {self._format_scrobble_elapsed(elapsed)} "
+                    f"(attempt {attempt}, request timeout {timeout_s}s)."
+                ),
+            )
 
         try:
-            def _format_elapsed(seconds: float) -> str:
-                total = max(int(seconds), 0)
-                mins, secs = divmod(total, 60)
-                hrs, mins = divmod(mins, 60)
-                if hrs:
-                    return f"{hrs}h {mins}m {secs}s"
-                if mins:
-                    return f"{mins}m {secs}s"
-                return f"{secs}s"
-
-            def _on_timeout(elapsed: float, attempt: int, timeout_s: int) -> None:
-                ctx.progress(
-                    "scrobble",
-                    0,
-                    1,
-                    message=(
-                        "ListenBrainz is taking longer than usual to respond. "
-                        "iOpenPod will keep trying. "
-                        f"Elapsed {_format_elapsed(elapsed)} "
-                        f"(attempt {attempt}, request timeout {timeout_s}s)."
-                    ),
-                )
-
-            def _should_abort_scrobble() -> bool:
-                if ctx._is_scrobble_cancelled and ctx._is_scrobble_cancelled():
-                    return True
-                if ctx._is_cancelled and ctx._is_cancelled():
-                    return True
-                return False
-
-            scrobble_results = []
-            
-            # 1. ListenBrainz Scrobbling
-            if lb_token:
-                try:
-                    logger.info("Invoking ListenBrainz scrobbler module...")
-                    from .scrobbler import scrobble_plays as scrobble_lb
-                    lb_results = scrobble_lb(
-                        playcount_items=ctx.plan.to_sync_playcount,
-                        listenbrainz_token=lb_token,
-                        listenbrainz_username=ctx.listenbrainz_username,
-                        on_timeout=_on_timeout,
-                        should_abort=_should_abort_scrobble,
-                    )
-                    scrobble_results.extend(lb_results)
-                    logger.info("ListenBrainz scrobbler module returned %d results", len(lb_results))
-                except Exception as exc:
-                    logger.error("ListenBrainz execution failed: %s", exc, exc_info=True)
-
-            # 2. Last.fm Scrobbling
-            if lf_session:
-                try:
-                    logger.info("Invoking Last.fm scrobbler module...")
-                    from .lastfm_scrobbler import scrobble_plays as scrobble_lf
-                    lf_results = scrobble_lf(
-                        playcount_items=ctx.plan.to_sync_playcount,
-                        api_key=ctx.lastfm_api_key,
-                        api_secret=ctx.lastfm_api_secret,
-                        session_key=lf_session,
-                        on_timeout=_on_timeout,
-                        should_abort=_should_abort_scrobble,
-                    )
-                    scrobble_results.extend(lf_results)
-                    logger.info("Last.fm scrobbler module returned %d results", len(lf_results))
-                except Exception as exc:
-                    logger.error("Last.fm execution failed: %s", exc, exc_info=True)
-
-            total_accepted = 0
-            gave_up = False
-            scrobble_errors: list[str] = []
-            
-            services_attempted = []
-            if lb_token: services_attempted.append("ListenBrainz")
-            if lf_session: services_attempted.append("Last.fm")
-            services_str = " and ".join(services_attempted)
-
-            for sr in scrobble_results:
-                total_accepted += sr.accepted
-                for err in sr.errors:
-                    if "User gave up" in err:
-                        gave_up = True
-                    logger.warning("Scrobble error (%s): %s", sr.service, err)
-                    scrobble_errors.append(f"{sr.service}: {err}")
-
-            ctx.result.scrobbles_submitted = total_accepted
-            logger.info("Scrobbled %d plays total", total_accepted)
-
-            if gave_up:
-                ctx.progress(
-                    "scrobble",
-                    1,
-                    1,
-                    message=(
-                        "Stopped retrying scrobble. "
-                        "Your sync is complete, but those plays were not submitted."
-                    ),
-                )
-            elif scrobble_errors:
-                if total_accepted:
-                    ctx.progress(
-                        "scrobble",
-                        1,
-                        1,
-                        message=(
-                            f"Submitted {total_accepted} play"
-                            f"{'s' if total_accepted != 1 else ''} to {services_str}, "
-                            f"with {len(scrobble_errors)} follow-up issue"
-                            f"{'s' if len(scrobble_errors) != 1 else ''}."
-                        ),
-                    )
-                else:
-                    ctx.progress(
-                        "scrobble",
-                        1,
-                        1,
-                        message=f"{services_str} did not accept any plays from this sync.",
-                    )
-            else:
-                ctx.progress(
-                    "scrobble",
-                    1,
-                    1,
-                    message=(
-                        f"Submitted {ctx.result.scrobbles_submitted} play"
-                        f"{'s' if ctx.result.scrobbles_submitted != 1 else ''} "
-                        f"to {services_str}."
-                    ),
-                )
-
-            for error in scrobble_errors:
-                ctx.result.errors.append(("scrobble", error))
-            return not scrobble_errors
-
+            logger.info("Invoking %s scrobbler module...", display_name)
+            results = submit(_on_timeout, lambda: self._scrobble_should_abort(ctx))
+            logger.info("%s scrobbler module returned %d result(s)", display_name, len(results))
         except Exception as exc:
-            logger.error("Scrobbling orchestrator failed (non-fatal): %s", exc, exc_info=True)
-            ctx.result.errors.append(("scrobble", str(exc)))
-            ctx.progress(
-                "scrobble",
-                1,
-                1,
-                message="Connected services did not accept any plays from this sync.",
+            logger.error("%s scrobbling failed: %s", display_name, exc, exc_info=True)
+            outcome.errors.append(str(exc))
+            self._finish_scrobble_service_progress(ctx, outcome)
+            return outcome
+
+        for result in results:
+            outcome.accepted += int(getattr(result, "accepted", 0) or 0)
+            for error in list(getattr(result, "errors", []) or []):
+                if "User gave up" in error:
+                    outcome.gave_up = True
+                logger.warning("%s scrobble error: %s", display_name, error)
+                outcome.errors.append(str(error))
+
+        self._finish_scrobble_service_progress(ctx, outcome)
+        return outcome
+
+    def _finish_scrobble_service_progress(
+        self,
+        ctx: _SyncContext,
+        outcome: _ScrobbleServiceOutcome,
+    ) -> None:
+        accepted = outcome.accepted
+        play_word = "play" if accepted == 1 else "plays"
+
+        if outcome.gave_up:
+            message = (
+                f"Stopped retrying {outcome.display_name}. "
+                f"{outcome.display_name} did not receive the remaining iPod plays."
             )
-            return False
+        elif outcome.errors:
+            if accepted:
+                message = (
+                    f"{outcome.display_name} accepted {accepted} {play_word}, "
+                    "but needs attention."
+                )
+            else:
+                message = f"{outcome.display_name} did not accept any plays from this sync."
+        elif accepted:
+            message = f"{outcome.display_name} accepted {accepted} {play_word}."
+        else:
+            message = f"No qualifying iPod plays were submitted to {outcome.display_name}."
+
+        ctx.progress(outcome.stage, 1, 1, message=message)
 
     def _execute_rating_sync(self, ctx: _SyncContext) -> None:
         if not ctx.plan.to_sync_rating:

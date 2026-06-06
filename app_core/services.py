@@ -81,6 +81,10 @@ class SettingsSnapshot:
     scrobble_on_sync: bool
     listenbrainz_token: str
     listenbrainz_username: str
+    lastfm_api_key: str
+    lastfm_api_secret: str
+    lastfm_session_key: str
+    lastfm_username: str
     backup_before_sync: bool
     max_backups: int
 
