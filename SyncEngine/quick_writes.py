@@ -65,7 +65,7 @@ def write_cached_itunesdb(
                 SyncProgress("quick_write", current, total, message=message)
             )
 
-    if not tracks_data:
+    if not tracks_data and not playlists_data:
         return QuickWriteResult.failed(
             "quick_write",
             "No cached tracks available to write.",

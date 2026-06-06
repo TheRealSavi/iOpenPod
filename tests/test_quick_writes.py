@@ -159,6 +159,36 @@ def test_write_cached_itunesdb_reports_missing_tracks() -> None:
     assert result.error == "No cached tracks available to write."
 
 
+def test_write_cached_itunesdb_allows_empty_device_master_playlist(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+
+    monkeypatch.setattr(quick_writes, "_tracks_to_infos", lambda *_args, **_kwargs: [])
+
+    def fake_evaluate(**kwargs):
+        captured["evaluate"] = kwargs
+        return ("Dreamy", [FakePlaylistInfo(1, [])], [])
+
+    def fake_write(*args, **kwargs):
+        captured["write"] = kwargs
+        return True
+
+    monkeypatch.setattr(quick_writes, "_evaluate_tracks_and_playlists", fake_evaluate)
+    monkeypatch.setattr(quick_writes, "_write_evaluated_database", fake_write)
+
+    result = quick_writes.write_cached_itunesdb(
+        "I:/",
+        tracks_data=[],
+        playlists_data=[{"playlist_id": 1, "Title": "Dreamy", "master_flag": 1}],
+    )
+
+    assert result.success
+    assert result.track_count == 0
+    assert result.master_playlist_name == "Dreamy"
+    assert captured["evaluate"]["tracks_data"] == []
+    assert captured["write"]["all_tracks"] == []
+    assert captured["write"]["master_playlist_name"] == "Dreamy"
+
+
 def test_write_cached_itunesdb_passes_artwork_sources(monkeypatch) -> None:
     captured: dict[str, Any] = {}
     all_tracks = [SimpleNamespace(artist="", album="", album_artist="")]
