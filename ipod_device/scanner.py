@@ -314,6 +314,30 @@ def _build_macos_usb_cache() -> None:
 
     bsd_map: dict[str, str] = {}
     dev_map: dict[str, dict] = {}
+    ordered_serials: list[str] = []
+    ordered_bsd_disks: list[str] = []
+
+    def _collect_usb_devices(node: object) -> None:
+        if isinstance(node, list):
+            for item in node:
+                _collect_usb_devices(item)
+            return
+        if not isinstance(node, dict):
+            return
+
+        if node.get("idVendor", 0) == 0x05AC:
+            serial = (
+                node.get("USB Serial Number", "")
+                or node.get("kUSBSerialNumberString", "")
+            )
+            key = str(serial).replace(" ", "").strip().upper()
+            if key:
+                if key not in dev_map:
+                    ordered_serials.append(key)
+                dev_map[key] = node
+
+        for child in node.get("IORegistryEntryChildren") or []:
+            _collect_usb_devices(child)
 
     # ── 1. Text parse: map BSD whole-disk → USB serial ─────────────────
     #
@@ -329,56 +353,43 @@ def _build_macos_usb_cache() -> None:
     # "BSD Name" at a deeper indent, we know which USB device owns it.
     try:
         proc = subprocess.run(
-            ["ioreg", "-r", "-c", "IOUSBHostDevice", "-n", "iPod",
-             "-l", "-d", "20", "-w", "0"],
+            ["ioreg", "-r", "-c", "IOMedia"],
             capture_output=True, text=True,
             encoding="utf-8", errors="replace", timeout=8,
         )
         if proc.returncode == 0 and proc.stdout:
-            current_serial: str = ""
+            pending_serial: str = ""
             for line in proc.stdout.splitlines():
-                # USB Serial Number
-                m = _re.search(r'"USB Serial Number"\s*=\s*"([^"]+)"', line)
-                if m:
-                    current_serial = m.group(1).replace(" ", "").strip()
+                if "Apple iPod Media" in line:
+                    pending_serial = "media"
                     continue
                 # BSD Name on IOMedia child
                 m = _re.search(r'"BSD Name"\s*=\s*"(disk\d+)"', line)
-                if m and current_serial:
-                    bsd_map[m.group(1)] = current_serial.upper()
+                if m and pending_serial:
+                    ordered_bsd_disks.append(m.group(1))
+                    pending_serial = ""
     except subprocess.TimeoutExpired:
         logger.warning("macOS: ioreg text parse timed out")
     except Exception as e:
         logger.debug("macOS: ioreg text parse failed: %s", e)
 
+    # ── 2. Plist query: full device properties keyed by serial ─────────
+    try:
+        proc = subprocess.run(
+            ["ioreg", "-a", "-r", "-c", "IOUSBHostDevice"],
+            capture_output=True, timeout=10,
+        )
+        if proc.returncode == 0 and proc.stdout.strip():
+            parsed = plistlib.loads(proc.stdout)
+            _collect_usb_devices(parsed)
+    except Exception as e:
+        logger.debug("ioreg plist query failed: %s", e)
+
+    for disk_name, serial_key in zip(ordered_bsd_disks, ordered_serials, strict=True):
+        bsd_map[disk_name] = serial_key
+
     if bsd_map:
         logger.debug("macOS: BSD→serial map: %s", bsd_map)
-
-    # ── 2. Plist query: full device properties keyed by serial ─────────
-    for ioreg_args in [
-        ["ioreg", "-a", "-r", "-c", "IOUSBHostDevice", "-n", "iPod"],
-        ["ioreg", "-a", "-r", "-d", "1", "-c", "IOUSBHostDevice"],
-    ]:
-        if dev_map:
-            break
-        try:
-            proc = subprocess.run(
-                ioreg_args, capture_output=True, timeout=10,
-            )
-            if proc.returncode != 0 or not proc.stdout.strip():
-                continue
-            parsed = plistlib.loads(proc.stdout)
-            if not isinstance(parsed, list):
-                parsed = [parsed]
-            for dev in parsed:
-                if dev.get("idVendor", 0) != 0x05AC:
-                    continue
-                serial = (dev.get("USB Serial Number", "") or dev.get("kUSBSerialNumberString", ""))
-                key = serial.replace(" ", "").strip().upper()
-                if key:
-                    dev_map[key] = dev
-        except Exception as e:
-            logger.debug("ioreg plist query failed: %s", e)
 
     _macos_bsd_to_serial = bsd_map
     _macos_serial_to_dev = dev_map
