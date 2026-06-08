@@ -62,6 +62,7 @@ from .transcode_cache import CachedFile, CacheIndex, TranscodeCache
 from .transcoder import (
     TranscodeResult,
     TranscodeTarget,
+    find_ffprobe,
     is_ffmpeg_available,
     needs_transcoding,
     transcode,
@@ -107,6 +108,7 @@ __all__ = [
     "transcode",
     "needs_transcoding",
     "is_ffmpeg_available",
+    "find_ffprobe",
     "TranscodeTarget",
     "TranscodeResult",
     "IPOD_NATIVE_FORMATS",

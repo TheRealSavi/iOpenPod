@@ -1780,8 +1780,7 @@ class SettingsPage(QWidget):
     def _build_tools_page(self) -> QScrollArea:
         self.ffmpeg_tool = ToolRow(
             "FFmpeg",
-            "Required for transcoding FLAC, OGG, and other formats "
-            "to iPod-compatible audio.",
+            "Required for transcoding and media probing. Includes ffmpeg and ffprobe.",
         )
         self.ffmpeg_tool.download_clicked.connect(self._download_ffmpeg)
 
@@ -2956,11 +2955,15 @@ class SettingsPage(QWidget):
             available_aac_encoders,
             available_mp3_encoders,
             find_ffmpeg,
+            find_ffprobe,
         )
 
         settings = self._settings_service.get_effective_settings()
         ffmpeg = find_ffmpeg(settings.ffmpeg_path)
-        self.ffmpeg_tool.set_status(bool(ffmpeg), ffmpeg or "")
+        ffprobe = find_ffprobe(settings.ffmpeg_path) if ffmpeg else None
+        self.ffmpeg_tool.set_status(bool(ffmpeg and ffprobe), ffmpeg or "")
+        if ffmpeg and not ffprobe:
+            self.ffmpeg_tool.status_label.setText("ffprobe missing")
         aac_enc = available_aac_encoders(settings.ffmpeg_path) if ffmpeg else set()
         mp3_enc = available_mp3_encoders(settings.ffmpeg_path) if ffmpeg else set()
         self.ffmpeg_tool.set_lossy_encoder_statuses(

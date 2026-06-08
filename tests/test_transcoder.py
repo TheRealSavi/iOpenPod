@@ -5,6 +5,7 @@ from SyncEngine.transcoder import (
     AudioProperties,
     TranscodeTarget,
     _transcode_timeout_seconds,
+    find_ffprobe,
     get_transcode_target,
 )
 
@@ -47,3 +48,24 @@ def test_unprobeable_native_audio_copies_instead_of_lossy_fallback(monkeypatch, 
     assert target == TranscodeTarget.COPY
     assert "skipping transcode fallback; copying as-is" in caplog.text
     assert "re-encoding to lossy codec as safe fallback" not in caplog.text
+
+
+def test_find_ffprobe_uses_configured_ffmpeg_sibling(tmp_path, monkeypatch) -> None:
+    bin_dir = tmp_path / "tools"
+    bin_dir.mkdir()
+    ffmpeg = bin_dir / "ffmpeg"
+    ffprobe = bin_dir / "ffprobe"
+    ffmpeg.write_text("", encoding="utf-8")
+    ffprobe.write_text("", encoding="utf-8")
+
+    find_ffprobe.cache_clear()
+    monkeypatch.setattr(transcoder_module.shutil, "which", lambda _name: None)
+
+    assert find_ffprobe(str(ffmpeg)) == str(ffprobe)
+
+
+def test_ffmpeg_availability_requires_ffprobe(monkeypatch) -> None:
+    monkeypatch.setattr(transcoder_module, "find_ffmpeg", lambda _path=None: "/tmp/ffmpeg")
+    monkeypatch.setattr(transcoder_module, "find_ffprobe", lambda _path=None: None)
+
+    assert transcoder_module.is_ffmpeg_available() is False

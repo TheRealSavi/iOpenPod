@@ -74,7 +74,7 @@ class SyncToolAvailability:
             )
         if self.missing_ffmpeg:
             lines.append(
-                "FFmpeg is needed for transcoding.\n"
+                "FFmpeg and ffprobe are needed for transcoding and media probing.\n"
                 "Install from: https://ffmpeg.org"
             )
         lines.append("You can also set custom paths in\nSettings -> External Tools.")
@@ -913,9 +913,20 @@ def build_backup_device_meta(device_info: Any | None) -> dict[str, str]:
     }
 
 
+def backup_device_name_from_playlists(playlists: Iterable[dict]) -> str:
+    """Return the iPod name stored on the master playlist, if available."""
+
+    for playlist in playlists:
+        if playlist.get("master_flag"):
+            return str(playlist.get("Title") or "").strip()
+    return ""
+
+
 def build_backup_device_context(
     ipod_path: str,
     device_info: Any | None,
+    *,
+    device_name: str = "",
 ) -> BackupDeviceContext:
     """Return the sanitized backup identity for a connected device."""
 
@@ -928,7 +939,7 @@ def build_backup_device_context(
     raw_id = get_device_identifier(ipod_path, device_info)
     return BackupDeviceContext(
         device_id=BackupManager._sanitize_id(raw_id),
-        device_name=get_device_display_name(device_info),
+        device_name=device_name.strip() or get_device_display_name(device_info),
         device_meta=build_backup_device_meta(device_info),
     )
 
@@ -938,10 +949,25 @@ def list_backup_devices_for_view(
     *,
     connected_ipod_path: str = "",
     connected_ipod_info: Any | None = None,
+    connected_device_name: str = "",
 ) -> BackupDeviceInventory:
     """Return backup devices sorted for the backup browser sidebar."""
 
     from SyncEngine.backup_manager import BackupManager
+
+    connected_context: BackupDeviceContext | None = None
+    if connected_ipod_path:
+        connected_context = build_backup_device_context(
+            connected_ipod_path,
+            connected_ipod_info,
+            device_name=connected_device_name,
+        )
+        BackupManager(
+            device_id=connected_context.device_id,
+            backup_dir=backup_dir,
+            device_name=connected_context.device_name,
+            device_meta=connected_context.device_meta,
+        ).update_device_metadata()
 
     devices_by_id = {
         item["device_id"]: dict(item)
@@ -950,19 +976,18 @@ def list_backup_devices_for_view(
     connected_device_id = ""
     device_connected = bool(connected_ipod_path)
 
-    if connected_ipod_path:
-        context = build_backup_device_context(connected_ipod_path, connected_ipod_info)
-        connected_device_id = context.device_id
+    if connected_context:
+        connected_device_id = connected_context.device_id
         connected_info = devices_by_id.get(connected_device_id, {})
         connected_info.update(
             {
                 "device_id": connected_device_id,
-                "device_name": context.device_name,
+                "device_name": connected_context.device_name,
                 "snapshot_count": int(
                     connected_info.get("snapshot_count", 0) or 0
                 ),
                 "device_meta": (
-                    context.device_meta
+                    connected_context.device_meta
                     or connected_info.get("device_meta", {})
                 ),
             }
@@ -2256,6 +2281,7 @@ class SyncExecuteWorker(QThread):
         settings: AppSettings,
         skip_backup: bool = False,
         user_playlists: list | None = None,
+        backup_device_name: str = "",
         device_info: DeviceIdentitySnapshot | None = None,
         device_capabilities: DeviceCapabilitySnapshot | None = None,
         on_sync_complete: Callable[[], None] | None = None,
@@ -2266,6 +2292,7 @@ class SyncExecuteWorker(QThread):
         self.skip_backup = skip_backup
         self._skip_backup_requested = False
         self.user_playlists = user_playlists
+        self.backup_device_name = backup_device_name
         self.settings = settings
         self.device_info = device_info
         self.device_capabilities = device_capabilities
@@ -2380,7 +2407,11 @@ class SyncExecuteWorker(QThread):
             )
 
             device_id = get_device_identifier(self.ipod_path, self.device_info)
-            device_name = get_device_display_name(self.device_info)
+            device_name = (
+                self.backup_device_name.strip()
+                or backup_device_name_from_playlists(self.user_playlists or [])
+                or get_device_display_name(self.device_info)
+            )
             ipod = self.device_info
             device_meta = {}
             if ipod:

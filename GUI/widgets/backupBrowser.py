@@ -36,6 +36,7 @@ from app_core.jobs import (
     BackupCreateWorker,
     BackupRestoreRequest,
     BackupRestoreWorker,
+    backup_device_name_from_playlists,
     build_backup_device_context,
     delete_backup_snapshot,
     ensure_backup_folder,
@@ -591,6 +592,14 @@ class BackupBrowserWidget(QWidget):
 
     # ── Public API ──────────────────────────────────────────────────────
 
+    def _connected_device_name(self) -> str:
+        try:
+            return backup_device_name_from_playlists(
+                self._library_cache.get_playlists()
+            )
+        except Exception:
+            return ""
+
     def refresh(self):
         """Reload the backup browser.
 
@@ -603,6 +612,7 @@ class BackupBrowserWidget(QWidget):
             settings.backup_dir,
             connected_ipod_path=device.device_path or "",
             connected_ipod_info=device.discovered_ipod,
+            connected_device_name=self._connected_device_name(),
         )
         self._device_connected = inventory.device_connected
         self._connected_device_id = inventory.connected_device_id
@@ -914,6 +924,7 @@ class BackupBrowserWidget(QWidget):
         backup_context = build_backup_device_context(
             device.device_path,
             device.discovered_ipod,
+            device_name=self._connected_device_name(),
         )
 
         # Show progress page
@@ -1053,6 +1064,7 @@ class BackupBrowserWidget(QWidget):
         connected_context = build_backup_device_context(
             device.device_path,
             device.discovered_ipod,
+            device_name=self._connected_device_name(),
         )
         connected_id = connected_context.device_id
 

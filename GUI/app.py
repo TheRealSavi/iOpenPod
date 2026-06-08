@@ -1806,6 +1806,9 @@ class MainWindow(QMainWindow):
             settings=self.settings_service.get_effective_settings(),
             skip_backup=skip_backup,
             user_playlists=user_playlists,
+            backup_device_name=MainWindow._device_name_from_playlists(
+                self.library_cache.get_playlists()
+            ),
             device_info=device_session.identity,
             device_capabilities=device_session.capabilities,
             on_sync_complete=_on_sync_complete,

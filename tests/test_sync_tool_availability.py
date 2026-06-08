@@ -20,6 +20,7 @@ def test_sync_tool_availability_summarizes_missing_tools() -> None:
     assert availability.can_continue_without_download is False
     assert availability.tool_names == ("fpcalc (Chromaprint)", "FFmpeg")
     assert availability.tool_list == "fpcalc (Chromaprint) and FFmpeg"
+    assert "ffprobe" in availability.install_help_text
     assert "Settings -> External Tools" in availability.install_help_text
 
 
@@ -59,7 +60,9 @@ def test_check_sync_tool_availability_uses_configured_paths(monkeypatch) -> None
         lambda: False,
     )
 
-    settings = AppSettings(ffmpeg_path="missing-ffmpeg", fpcalc_path="fpcalc-ok")
+    settings = AppSettings()
+    settings.ffmpeg_path = "missing-ffmpeg"
+    settings.fpcalc_path = "fpcalc-ok"
 
     availability = check_sync_tool_availability(settings)
 

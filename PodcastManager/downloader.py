@@ -401,23 +401,12 @@ def _read_ffprobe_chapters(file_path: str) -> list[dict] | None:
     import subprocess
     import sys as _sys
 
-    # Resolve ffprobe via the same search cascade as the transcoder
-    ffprobe_bin: str | None = None
+    # Resolve ffprobe via the same search cascade as the transcoder.
     try:
-        from SyncEngine.transcoder import find_ffmpeg
-        ffmpeg = find_ffmpeg()
-        if ffmpeg:
-            from pathlib import Path as _Path
-            candidate = _Path(ffmpeg).parent / (
-                "ffprobe.exe" if _sys.platform == "win32" else "ffprobe"
-            )
-            if candidate.exists():
-                ffprobe_bin = str(candidate)
+        from SyncEngine.transcoder import find_ffprobe
+        ffprobe_bin = find_ffprobe()
     except Exception:
-        pass
-    if not ffprobe_bin:
-        import shutil as _shutil
-        ffprobe_bin = _shutil.which("ffprobe")
+        ffprobe_bin = None
     if not ffprobe_bin:
         return None
 

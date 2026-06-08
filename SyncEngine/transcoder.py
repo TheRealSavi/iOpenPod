@@ -489,7 +489,7 @@ class TranscodeResult:
 
 def clear_caches() -> None:
     """Clear cached settings/binary lookups. Call at the start of each sync."""
-    _find_ffprobe.cache_clear()
+    find_ffprobe.cache_clear()
     _best_aac_encoder.cache_clear()
     _best_mp3_encoder.cache_clear()
 
@@ -525,19 +525,43 @@ def find_ffmpeg(ffmpeg_path: str | None = None) -> str | None:
 
 
 def is_ffmpeg_available(ffmpeg_path: str | None = None) -> bool:
-    return find_ffmpeg(ffmpeg_path) is not None
+    return find_ffmpeg(ffmpeg_path) is not None and find_ffprobe(ffmpeg_path) is not None
 
 
-@lru_cache(maxsize=1)
-def _find_ffprobe() -> str | None:
-    """Locate ffprobe (sibling of ffmpeg, then PATH)."""
-    ffmpeg = find_ffmpeg()
+@lru_cache(maxsize=8)
+def find_ffprobe(ffmpeg_path: str | None = None) -> str | None:
+    """Locate ffprobe (sibling of ffmpeg, bundled, PATH, then common dirs)."""
+    ffmpeg = find_ffmpeg(ffmpeg_path)
     if ffmpeg:
         name = "ffprobe.exe" if sys.platform == "win32" else "ffprobe"
         candidate = Path(ffmpeg).parent / name
         if candidate.exists():
             return str(candidate)
-    return shutil.which("ffprobe")
+    try:
+        from .dependency_manager import get_bundled_ffprobe
+        bundled = get_bundled_ffprobe()
+        if bundled:
+            return bundled
+    except Exception:
+        pass
+    found = shutil.which("ffprobe")
+    if found:
+        return found
+    for p in (
+        r"C:\Program Files\ffmpeg\bin\ffprobe.exe",
+        r"C:\ffmpeg\bin\ffprobe.exe",
+        "/usr/local/bin/ffprobe",
+        "/opt/homebrew/bin/ffprobe",
+        "/usr/bin/ffprobe",
+    ):
+        if Path(p).exists():
+            return p
+    return None
+
+
+def _find_ffprobe() -> str | None:
+    """Locate ffprobe using the default discovery cascade."""
+    return find_ffprobe()
 
 
 @lru_cache(maxsize=8)

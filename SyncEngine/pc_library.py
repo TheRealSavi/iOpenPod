@@ -310,18 +310,15 @@ def _probe_sample_count_ffprobe(path) -> int:
     because it uses integer stream timing (duration_ts + time_base).
     """
     try:
-        from .transcoder import find_ffmpeg
+        from .transcoder import find_ffprobe
 
-        ffmpeg = find_ffmpeg()
-        if not ffmpeg:
-            return 0
-        ffprobe = Path(ffmpeg).with_name("ffprobe")
-        if not ffprobe.exists():
+        ffprobe = find_ffprobe()
+        if not ffprobe:
             return 0
 
         proc = subprocess.run(
             [
-                str(ffprobe),
+                ffprobe,
                 "-v",
                 "quiet",
                 "-print_format",
@@ -955,9 +952,10 @@ class PCLibrary:
                     import json
                     from subprocess import check_output
 
-                    from .transcoder import find_ffmpeg
-                    ffmpeg_path = find_ffmpeg()
-                    ffprobe_path = str(ffmpeg_path).replace("ffmpeg", "ffprobe")
+                    from .transcoder import find_ffprobe
+                    ffprobe_path = find_ffprobe()
+                    if not ffprobe_path:
+                        return metadata
                     cmd = [
                         ffprobe_path,
                         "-v", "quiet",

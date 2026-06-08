@@ -176,6 +176,7 @@ class BackupManager:
         # Ensure directories exist
         self.blobs_dir.mkdir(parents=True, exist_ok=True)
         self.snapshots_dir.mkdir(parents=True, exist_ok=True)
+        self.update_device_metadata()
 
         # Load hash cache for speed
         hash_cache = self._load_hash_cache()
@@ -397,6 +398,7 @@ class BackupManager:
             device_name=self.device_name,
             file_count=len(manifest_files),
             total_size=total_size,
+            device_meta=self.device_meta,
         )
 
         if skipped_files:
@@ -849,6 +851,66 @@ class BackupManager:
         # Garbage collect unreferenced blobs
         self._gc_blobs()
         return True
+
+    def update_device_metadata(
+        self,
+        *,
+        device_name: str | None = None,
+        device_meta: dict | None = None,
+    ) -> int:
+        """Refresh device display metadata in existing snapshot manifests.
+
+        Snapshot manifests store the display name so they can be shown without
+        the device connected. When the iPod's name changes, update those
+        manifests in place instead of waiting for the next content-changing
+        snapshot.
+
+        Returns the number of manifest files updated.
+        """
+        name = str(device_name if device_name is not None else self.device_name).strip()
+        meta = self.device_meta if device_meta is None else (device_meta or {})
+        should_update_meta = bool(meta)
+
+        if not name and not should_update_meta:
+            return 0
+        if not self.snapshots_dir.exists():
+            return 0
+
+        updated = 0
+        for manifest_path in sorted(self.snapshots_dir.glob("*.json")):
+            try:
+                with open(manifest_path, encoding="utf-8") as f:
+                    manifest = json.load(f)
+            except (json.JSONDecodeError, UnicodeDecodeError, OSError) as exc:
+                logger.warning("Could not read snapshot %s for metadata refresh: %s", manifest_path.name, exc)
+                continue
+
+            changed = False
+            if name and manifest.get("device_name") != name:
+                manifest["device_name"] = name
+                changed = True
+            if should_update_meta and manifest.get("device_meta", {}) != meta:
+                manifest["device_meta"] = meta
+                changed = True
+            if not changed:
+                continue
+
+            tmp_path = manifest_path.with_suffix(".tmp")
+            try:
+                with open(tmp_path, "w", encoding="utf-8") as f:
+                    json.dump(manifest, f, indent=2, ensure_ascii=False)
+                os.replace(str(tmp_path), str(manifest_path))
+                updated += 1
+            except OSError as exc:
+                logger.warning("Could not refresh metadata for snapshot %s: %s", manifest_path.name, exc)
+                try:
+                    tmp_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+
+        if updated:
+            logger.info("Updated device metadata in %s backup manifest(s) for %s", updated, self.device_id)
+        return updated
 
     def get_backup_size(self) -> int:
         """Get total size of this device's backup data.

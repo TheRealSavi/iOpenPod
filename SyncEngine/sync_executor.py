@@ -829,12 +829,19 @@ class SyncExecutor:
     ) -> dict[int, str]:
         """Normalize artwork source paths to db_track_id -> absolute source path."""
         normalized: dict[int, str] = {}
+        valid_db_track_ids = {
+            int(track.db_track_id)
+            for track in all_tracks
+            if track.db_track_id
+        }
 
         for db_track_id, path in ctx.pc_file_paths.items():
             try:
-                normalized[int(db_track_id)] = str(path)
+                normalized_id = int(db_track_id)
             except (TypeError, ValueError):
                 continue
+            if normalized_id in valid_db_track_ids:
+                normalized[normalized_id] = str(path)
 
         new_track_by_obj = {id(track): track for track in all_tracks}
         for obj_key, info in ctx.new_track_info.items():
@@ -2356,6 +2363,7 @@ class SyncExecutor:
             ctx.new_tracks.append(track_info)
 
             ctx.pc_file_paths[id(track_info)] = str(item.pc_track.path)
+            ctx.new_track_info[id(track_info)] = (item.pc_track, ipod_path, was_transcoded, item)
 
             fingerprint = item.fingerprint
             if not fingerprint:
@@ -2366,7 +2374,6 @@ class SyncExecutor:
 
             if fingerprint:
                 ctx.new_track_fingerprints[id(track_info)] = fingerprint
-                ctx.new_track_info[id(track_info)] = (item.pc_track, ipod_path, was_transcoded, item)
 
             self._record_conversion_group_add_success(ctx, item)
 
