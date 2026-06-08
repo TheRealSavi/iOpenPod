@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from PyQt6.QtCore import Qt, QTimer, pyqtSlot
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QColor, QFont, QPalette
 from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
@@ -83,6 +83,17 @@ if TYPE_CHECKING:
     from app_core.services import DeviceManagerLike, LibraryCacheLike
 
 logger = logging.getLogger(__name__)
+
+
+def _label_css(color: str) -> str:
+    return f"color: {color}; background: transparent; border: none;"
+
+
+def _apply_dialog_background(dialog: QDialog) -> None:
+    dialog.setAutoFillBackground(True)
+    palette = dialog.palette()
+    palette.setColor(QPalette.ColorRole.Window, QColor(Colors.DIALOG_BG))
+    dialog.setPalette(palette)
 
 
 def _normalize_media_folder_settings(*folder_groups: object) -> list[dict[str, object]]:
@@ -257,6 +268,7 @@ class MainWindow(QMainWindow):
         self.sidebar.syncButton.clicked.connect(self.startPCSync)
         self.sidebar.settingsButton.clicked.connect(self.showSettings)
         self.sidebar.backupButton.clicked.connect(self.showBackupBrowser)
+        self.sidebar.tag_fixes_requested.connect(self._onIpodTagFixesRequested)
 
         self.mainContentStack = QStackedWidget()
 
@@ -382,6 +394,7 @@ class MainWindow(QMainWindow):
         """Refresh the main browsing page state without changing pages."""
         has_device = bool(self.device_manager.device_path)
         self.sidebar.setLibraryTabsVisible(has_device)
+        self.sidebar.setTagFixesAvailable(has_device and self.library_cache.is_ready())
         if has_device:
             ready = self.library_cache.is_ready()
             self.mainContentStack.setCurrentIndex(0 if ready else 2)
@@ -630,10 +643,67 @@ class MainWindow(QMainWindow):
             audiobooks=len(classified["audiobook"]),
             device_info=self.device_manager.discovered_ipod,
         )
+        self.sidebar.setTagFixesAvailable(bool(tracks))
         self._update_sidebar_visibility(classified)
         self.musicBrowser.browserTrack.clearTable(clear_cache=True)
         self._update_podcast_statuses()
         self.musicBrowser.onDataReady()
+
+    def _onIpodTagFixesRequested(self) -> None:
+        cache = self.library_cache
+        if not cache.is_ready():
+            QMessageBox.information(
+                self,
+                "Normalize iPod Tags",
+                "Load an iPod library before running tag normalization.",
+            )
+            return
+
+        tracks = cache.get_tracks()
+        if not tracks:
+            QMessageBox.information(
+                self,
+                "Normalize iPod Tags",
+                "No tracks were found in this iPod library.",
+            )
+            return
+
+        from GUI.widgets.ipodTagFixDialog import IpodLibraryTagFixDialog
+        from GUI.widgets.ipodTagNormalizer import (
+            ipod_tag_profile,
+            suggest_ipod_library_tag_fixes,
+        )
+
+        session = self.device_session_service.current_session()
+        identity = session.identity
+        capabilities = session.capabilities
+        profile = ipod_tag_profile(
+            family=str(getattr(identity, "model_family", "") or ""),
+            generation=str(getattr(identity, "generation", "") or ""),
+            uses_sqlite_db=bool(getattr(capabilities, "uses_sqlite_db", False)),
+            is_shuffle=bool(getattr(capabilities, "is_shuffle", False)),
+        )
+        suggestion = suggest_ipod_library_tag_fixes(tracks, profile=profile)
+        if not suggestion.changes_by_track:
+            QMessageBox.information(
+                self,
+                "Normalize iPod Tags",
+                "No iPod-specific metadata fixes were found for this library.",
+            )
+            return
+
+        dialog = IpodLibraryTagFixDialog(tracks, suggestion, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        cache.update_track_flags_by_track(tracks, suggestion.changes_by_track)
+        changed_tracks = len(suggestion.changes_by_track)
+        changed_fields = sum(len(changes) for changes in suggestion.changes_by_track.values())
+        self._notifier.notify(
+            "iPod Tags Normalized",
+            f"Staged {changed_fields:,} field edit{'s' if changed_fields != 1 else ''} "
+            f"across {changed_tracks:,} track{'s' if changed_tracks != 1 else ''}.",
+        )
 
     def _schedule_themed_rebuild(self, restore_page: int = 0) -> None:
         """Queue a deferred themed UI rebuild if one is not already pending."""
@@ -1687,16 +1757,16 @@ class MainWindow(QMainWindow):
 
         original_plan = self._plan  # stored in _onSyncDiffComplete
 
-        # Playlists: only include if the playlist card's checkbox is checked
-        pl_card = getattr(self.syncReview, '_playlist_card', None)
-        include_playlists = (
-            pl_card is not None and pl_card._select_all_cb.isChecked()
-        ) if pl_card else True  # default to True if no card exists
+        selected_playlists = (
+            self.syncReview.get_selected_playlist_changes()
+            if original_plan
+            else None
+        )
 
         filtered_plan = build_filtered_sync_plan(
             original_plan,
             selected_items,
-            include_playlists=include_playlists,
+            selected_playlists=selected_playlists,
             selected_photo_plan=(
                 self.syncReview.get_selected_photo_plan() if original_plan else None
             ),
@@ -2058,12 +2128,7 @@ class _MissingToolsDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Missing Tools")
         self.setFixedWidth(420)
-        self.setStyleSheet(f"""
-            QDialog {{
-                background: {Colors.DIALOG_BG};
-                color: {Colors.TEXT_PRIMARY};
-            }}
-        """)
+        _apply_dialog_background(self)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins((28), (24), (28), (24))
@@ -2082,7 +2147,7 @@ class _MissingToolsDialog(QDialog):
 
         title = QLabel(f"{tool_list} Not Found")
         title.setFont(QFont(FONT_FAMILY, Metrics.FONT_TITLE, QFont.Weight.Bold))
-        title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
+        title.setStyleSheet(_label_css(Colors.TEXT_PRIMARY))
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setWordWrap(True)
         layout.addWidget(title)
@@ -2097,7 +2162,7 @@ class _MissingToolsDialog(QDialog):
         else:
             body = QLabel(detail_lines)
         body.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
-        body.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
+        body.setStyleSheet(_label_css(Colors.TEXT_SECONDARY))
         body.setAlignment(Qt.AlignmentFlag.AlignCenter)
         body.setWordWrap(True)
         layout.addWidget(body)
@@ -2191,12 +2256,7 @@ class _DownloadProgressDialog(QDialog):
             self.windowFlags()
             & ~Qt.WindowType.WindowCloseButtonHint  # type: ignore[operator]
         )
-        self.setStyleSheet(f"""
-            QDialog {{
-                background: {Colors.DIALOG_BG};
-                color: {Colors.TEXT_PRIMARY};
-            }}
-        """)
+        _apply_dialog_background(self)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins((28), (24), (28), (24))
@@ -2204,13 +2264,13 @@ class _DownloadProgressDialog(QDialog):
 
         title = QLabel("Downloading Tools…")
         title.setFont(QFont(FONT_FAMILY, Metrics.FONT_XXL, QFont.Weight.Bold))
-        title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
+        title.setStyleSheet(_label_css(Colors.TEXT_PRIMARY))
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
         self._status = QLabel("Preparing download…")
         self._status.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
-        self._status.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
+        self._status.setStyleSheet(_label_css(Colors.TEXT_SECONDARY))
         self._status.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self._status)
 

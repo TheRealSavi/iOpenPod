@@ -18,7 +18,11 @@ from typing import BinaryIO
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 
-from ArtworkDB_Writer.ithmb_codecs import decode_pixels_for_format, encode_image_for_format
+from ArtworkDB_Writer.ithmb_codecs import (
+    decode_pixels_for_format,
+    encode_image_for_format,
+    expected_size_bytes,
+)
 from infrastructure.media_folders import (
     MEDIA_TYPE_PHOTO,
     MediaFolderEntry,
@@ -192,6 +196,7 @@ class PhotoSyncItem:
     image_id: int = 0
     size: int = 0
     description: str = ""
+    estimated_size: int = 0
 
 
 @dataclass
@@ -1233,6 +1238,23 @@ def _photo_formats_for_current_device(ipod_path: str | Path | None = None) -> Ma
     return photo_formats_for_device("iPod Classic", "2nd Gen")
 
 
+def _estimated_photo_storage_bytes(formats: Mapping[int, ArtworkFormat]) -> int:
+    total = 0
+    for fmt_id, fmt in formats.items():
+        width = max(1, int(fmt.width or 0))
+        height = max(1, int(fmt.height or 0))
+        size = expected_size_bytes(
+            int(fmt_id),
+            width,
+            height,
+            fmt_override=fmt,
+        )
+        if size <= 0 and int(fmt.row_bytes or 0) > 0:
+            size = int(fmt.row_bytes) * height
+        total += max(0, int(size))
+    return total
+
+
 def _fit_dimensions(src_w: int, src_h: int, target_w: int, target_h: int) -> tuple[int, int]:
     width_scale = target_w / src_w
     height_scale = target_h / src_h
@@ -1551,6 +1573,7 @@ def build_photo_sync_plan(
     )
 
     plan = PhotoSyncPlan(current_db=photodb, desired_library=library, skipped_files=list(library.skipped))
+    estimated_add_bytes_per_photo = _estimated_photo_storage_bytes(_photo_formats_for_current_device(ipod_path))
 
     existing_by_hash: dict[str, PhotoEntry] = {}
     for photo in photodb.photos.values():
@@ -1574,6 +1597,7 @@ def build_photo_sync_plan(
 
     for visual_hash in sorted(desired_hashes - existing_hashes):
         photo = library.photos[visual_hash]
+        estimated_size = estimated_add_bytes_per_photo or photo.size
         plan.photos_to_add.append(PhotoSyncItem(
             visual_hash=visual_hash,
             display_name=photo.display_name,
@@ -1581,8 +1605,9 @@ def build_photo_sync_plan(
             source_path=photo.source_path,
             size=photo.size,
             description=f"Add photo {photo.display_name}",
+            estimated_size=estimated_size,
         ))
-        plan.thumb_bytes_to_add += photo.size
+        plan.thumb_bytes_to_add += estimated_size
 
     for visual_hash in sorted(existing_hashes - desired_hashes):
         photo = existing_by_hash[visual_hash]

@@ -25,10 +25,14 @@ class _FakeStack:
 class _FakeSidebar:
     def __init__(self):
         self.library_tabs_visible: list[bool] = []
+        self.tag_fixes_available: list[bool] = []
         self.device_info_updates: list[dict] = []
 
     def setLibraryTabsVisible(self, visible: bool) -> None:
         self.library_tabs_visible.append(visible)
+
+    def setTagFixesAvailable(self, available: bool) -> None:
+        self.tag_fixes_available.append(available)
 
     def updateDeviceInfo(self, **kwargs) -> None:
         self.device_info_updates.append(kwargs)

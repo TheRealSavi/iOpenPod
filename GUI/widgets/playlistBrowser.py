@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QColor, QFont, QPalette
 from PyQt6.QtWidgets import (
     QDialog,
     QFileDialog,
@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QSplitter,
     QStackedWidget,
@@ -39,13 +40,11 @@ from app_core.jobs import (
 from ..glyphs import glyph_icon, glyph_pixmap
 from ..styles import (
     FONT_FAMILY,
-    LABEL_SECONDARY,
     Colors,
     Metrics,
     btn_css,
     make_detail_row,
     make_scroll_area,
-    make_section_header,
     make_separator,
     sidebar_nav_css,
     sidebar_nav_selected_css,
@@ -83,6 +82,20 @@ _ICON_SMART = "filter"
 _ICON_PODCAST = "broadcast"
 _ICON_MASTER = "home"
 _ICON_CATEGORY = "grid"
+_ADD_TRACKS_NOTICE_TEXT = (
+    "To add tracks, right-click a library track and choose this playlist from Add to Playlist."
+)
+
+
+def _label_css(color: str) -> str:
+    return f"color: {color}; background: transparent; border: none;"
+
+
+def _subtle_label_css(color: str = Colors.TEXT_TERTIARY) -> str:
+    return (
+        f"color: {color}; background: transparent; border: none;"
+        " text-transform: uppercase;"
+    )
 
 
 def _mhsd5_type_value(playlist: dict | None) -> int:
@@ -109,6 +122,81 @@ def _is_user_smart_playlist(playlist: dict | None) -> bool:
     )
 
 
+def _is_regular_track_playlist(playlist: dict | None) -> bool:
+    if not playlist:
+        return False
+    if playlist.get("master_flag") or _is_ipod_category_playlist(playlist):
+        return False
+    if _is_user_smart_playlist(playlist):
+        return False
+    if playlist.get("podcast_flag", 0) == 1:
+        return False
+    if playlist.get("_source") in ("category", "podcast", "smart"):
+        return False
+    return True
+
+
+def _notice_frame_css(object_name: str) -> str:
+    return f"""
+    QFrame#{object_name} {{
+        background: {Colors.ACCENT_MUTED};
+        border: 1px solid {Colors.ACCENT_BORDER};
+        border-radius: {Metrics.BORDER_RADIUS_SM}px;
+    }}
+"""
+
+
+class _CompressibleScrollArea(QScrollArea):
+    """A scroll area that does not force its contents into splitter minima."""
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(0, 0)
+
+    def sizeHint(self) -> QSize:
+        return QSize(0, 72)
+
+
+class _CurrentPageStack(QStackedWidget):
+    """Report size hints from the visible page, not every stacked page."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.currentChanged.connect(lambda _index: self.updateGeometry())
+
+    def minimumSizeHint(self) -> QSize:
+        widget = self.currentWidget()
+        if widget is None:
+            return QSize(0, 0)
+        return widget.minimumSizeHint()
+
+    def sizeHint(self) -> QSize:
+        widget = self.currentWidget()
+        if widget is None:
+            return QSize(0, 0)
+        return widget.sizeHint()
+
+
+def _make_compressible_scroll_area() -> _CompressibleScrollArea:
+    scroll = _CompressibleScrollArea()
+    scroll.setWidgetResizable(True)
+    scroll.setFrameShape(QFrame.Shape.NoFrame)
+    scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+    scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+    scroll.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+    scroll.setMinimumHeight(0)
+
+    palette = scroll.palette()
+    palette.setColor(QPalette.ColorRole.Window, QColor(0, 0, 0, 0))
+    palette.setColor(QPalette.ColorRole.Base, QColor(0, 0, 0, 0))
+    scroll.setPalette(palette)
+    viewport = scroll.viewport()
+    if viewport is not None:
+        viewport.setPalette(palette)
+        viewport.setAutoFillBackground(False)
+
+    return scroll
+
+
 # =============================================================================
 # PlaylistInfoCard — right-hand info panel above the track list
 # =============================================================================
@@ -126,43 +214,63 @@ class PlaylistInfoCard(QFrame):
             }}
         """)
         self.setObjectName("playlistInfoCard")
+        self.setMinimumHeight(0)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
 
         self._layout = QVBoxLayout(self)
-        self._layout.setContentsMargins((16), (16), (16), (16))
-        self._layout.setSpacing(8)
+        self._layout.setContentsMargins(16, 14, 16, 14)
+        self._layout.setSpacing(10)
 
-        # ── Title row ───────────────────────────────────────────
+        # ── Identity + actions ─────────────────────────────────
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(10)
+
+        title_col = QVBoxLayout()
+        title_col.setContentsMargins(0, 0, 0, 0)
+        title_col.setSpacing(4)
+
         self.title_label = QLabel("Select a playlist")
         self.title_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_PAGE_TITLE, QFont.Weight.Bold))
-        self.title_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent; border: none;")
+        self.title_label.setStyleSheet(_label_css(Colors.TEXT_PRIMARY))
         self.title_label.setWordWrap(True)
-        self._layout.addWidget(self.title_label)
+        title_col.addWidget(self.title_label)
 
-        # ── Type badge ──────────────────────────────────────────
+        meta_row = QHBoxLayout()
+        meta_row.setContentsMargins(0, 0, 0, 0)
+        meta_row.setSpacing(6)
+
         self.type_label = QLabel("")
-        self.type_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
-        self.type_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
-        self._layout.addWidget(self.type_label)
+        self.type_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS, QFont.Weight.Bold))
+        self.type_label.setStyleSheet(_subtle_label_css(Colors.TEXT_SECONDARY))
+        self.type_label.hide()
+        meta_row.addWidget(self.type_label, 0, Qt.AlignmentFlag.AlignVCenter)
 
-        # ── Button row (Edit + Evaluate Now) ────────────────────
+        self._source_label = QLabel("")
+        self._source_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS))
+        self._source_label.setStyleSheet(_label_css(Colors.TEXT_TERTIARY))
+        meta_row.addWidget(self._source_label, 0, Qt.AlignmentFlag.AlignVCenter)
+        meta_row.addStretch()
+        title_col.addLayout(meta_row)
+        header.addLayout(title_col, 1)
+
         btn_row = QHBoxLayout()
         btn_row.setContentsMargins(0, 0, 0, 0)
         btn_row.setSpacing(6)
-        btn_row.addStretch()
 
         self.edit_btn = QPushButton("Edit")
         self.edit_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.edit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        _ed_ic = glyph_icon("edit", (14), Colors.ACCENT)
+        _ed_ic = glyph_icon("edit", (14), Colors.TEXT_SECONDARY)
         if _ed_ic:
             self.edit_btn.setIcon(_ed_ic)
             self.edit_btn.setIconSize(QSize((14), (14)))
         self.edit_btn.setStyleSheet(btn_css(
             bg="transparent",
-            bg_hover=Colors.ACCENT_DIM,
-            bg_press=Colors.ACCENT_PRESS,
-            fg=Colors.ACCENT,
-            border=f"1px solid {Colors.ACCENT_BORDER}",
+            bg_hover=Colors.SURFACE_HOVER,
+            bg_press=Colors.SURFACE_ACTIVE,
+            fg=Colors.TEXT_SECONDARY,
+            border=f"1px solid {Colors.BORDER}",
             padding="3px 12px",
         ))
         self.edit_btn.hide()
@@ -185,16 +293,16 @@ class PlaylistInfoCard(QFrame):
         self.evaluate_btn = QPushButton("Evaluate Now")
         self.evaluate_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.evaluate_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        _eval_ic = glyph_icon("check-circle", (14), Colors.SUCCESS)
+        _eval_ic = glyph_icon("check-circle", (14), Colors.TEXT_SECONDARY)
         if _eval_ic:
             self.evaluate_btn.setIcon(_eval_ic)
             self.evaluate_btn.setIconSize(QSize((14), (14)))
         self.evaluate_btn.setStyleSheet(btn_css(
             bg="transparent",
-            bg_hover=Colors.SUCCESS_DIM,
-            bg_press=Colors.SUCCESS_HOVER,
-            fg=Colors.SUCCESS,
-            border=f"1px solid {Colors.SUCCESS_BORDER}",
+            bg_hover=Colors.SURFACE_HOVER,
+            bg_press=Colors.SURFACE_ACTIVE,
+            fg=Colors.TEXT_SECONDARY,
+            border=f"1px solid {Colors.BORDER}",
             padding="3px 12px",
         ))
         self.evaluate_btn.setToolTip(
@@ -223,35 +331,113 @@ class PlaylistInfoCard(QFrame):
         self.export_btn.hide()
         btn_row.addWidget(self.export_btn)
 
-        self._layout.addLayout(btn_row)
+        header.addLayout(btn_row)
+        self._layout.addLayout(header)
 
         # ── Separator ──────────────────────────────────────────
         self._layout.addWidget(make_separator())
 
-        # ── Stats rows ──────────────────────────────────────────
+        # ── At-a-glance metrics ─────────────────────────────────
+        self._metrics_row = QHBoxLayout()
+        self._metrics_row.setContentsMargins(0, 0, 0, 0)
+        self._metrics_row.setSpacing(16)
+        self._track_metric = self._add_metric("Tracks")
+        self._duration_metric = self._add_metric("Duration")
+        self._size_metric = self._add_metric("Size")
+        self._sort_metric = self._add_metric("Sort")
+        self._metrics_row.addStretch()
+        self._layout.addLayout(self._metrics_row)
+
+        # Retained as a public-ish attribute for compatibility with older code paths.
         self.stats_label = QLabel("")
-        self.stats_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
-        self.stats_label.setStyleSheet(LABEL_SECONDARY())
-        self.stats_label.setWordWrap(True)
-        self._layout.addWidget(self.stats_label)
+        self.stats_label.hide()
 
-        # ── Details section (scrollable for long smart rules) ──
-        self.details_area = make_scroll_area()
-        self.details_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self.details_area.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.details_area.setMinimumHeight(0)
+        self._rules_panel = QFrame()
+        self._rules_panel.setMinimumHeight(0)
+        self._rules_panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
+        self._rules_panel.setStyleSheet(
+            f"background: {Colors.SURFACE_ALT};"
+            f"border: 1px solid {Colors.BORDER_SUBTLE};"
+            f"border-radius: {Metrics.BORDER_RADIUS_SM}px;"
+        )
+        rules_panel_layout = QVBoxLayout(self._rules_panel)
+        rules_panel_layout.setContentsMargins(10, 8, 10, 9)
+        rules_panel_layout.setSpacing(6)
 
+        rules_header = QHBoxLayout()
+        rules_header.setContentsMargins(0, 0, 0, 0)
+        rules_header.setSpacing(8)
+        rules_title = QLabel("Rules")
+        rules_title.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS, QFont.Weight.Bold))
+        rules_title.setStyleSheet(_subtle_label_css(Colors.TEXT_SECONDARY))
+        rules_header.addWidget(rules_title)
+
+        self._rules_summary_label = QLabel("")
+        self._rules_summary_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS))
+        self._rules_summary_label.setStyleSheet(_label_css(Colors.TEXT_TERTIARY))
+        rules_header.addWidget(self._rules_summary_label, 1)
+        rules_panel_layout.addLayout(rules_header)
+
+        self._rules_preview_layout = QVBoxLayout()
+        self._rules_preview_layout.setContentsMargins(0, 0, 0, 0)
+        self._rules_preview_layout.setSpacing(4)
+        rules_panel_layout.addLayout(self._rules_preview_layout)
+        self._layout.addWidget(self._rules_panel)
+        self._rules_panel.hide()
+        self._rules_preview_widgets: list[QWidget] = []
+
+        # ── Details section (compressible; scrolls before it blocks the track list)
+        self.details_area = _make_compressible_scroll_area()
         self.details_widget = QWidget()
         self.details_widget.setStyleSheet("background: transparent; border: none;")
-        self.details_layout = QVBoxLayout(self.details_widget)
+        details_outer_layout = QVBoxLayout(self.details_widget)
+        details_outer_layout.setContentsMargins(0, 0, 0, 0)
+        details_outer_layout.setSpacing(7)
+        details_outer_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        details_header_widget = QWidget(self.details_widget)
+        details_header_widget.setStyleSheet("background: transparent; border: none;")
+        details_header = QHBoxLayout(details_header_widget)
+        details_header.setContentsMargins(0, 0, 0, 0)
+        details_header.setSpacing(8)
+        details_label = QLabel("Details", details_header_widget)
+        details_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS, QFont.Weight.Bold))
+        details_label.setStyleSheet(_subtle_label_css(Colors.TEXT_SECONDARY))
+        details_header.addWidget(details_label)
+        details_header.addWidget(make_separator(), 1)
+        details_outer_layout.addWidget(details_header_widget)
+
+        self._details_rows = QWidget(self.details_widget)
+        self._details_rows.setStyleSheet("background: transparent; border: none;")
+        self.details_layout = QVBoxLayout(self._details_rows)
         self.details_layout.setContentsMargins(0, 0, 0, 0)
         self.details_layout.setSpacing(3)
         self.details_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        details_outer_layout.addWidget(self._details_rows)
         self.details_area.setWidget(self.details_widget)
-        self._layout.addWidget(self.details_area)
+        self._layout.addWidget(self.details_area, 1)
 
         self._detail_labels: list[QWidget] = []
         self._current_playlist: dict | None = None
+
+    def _add_metric(self, label: str) -> QLabel:
+        group = QVBoxLayout()
+        group.setContentsMargins(0, 0, 0, 0)
+        group.setSpacing(2)
+
+        label_widget = QLabel(label)
+        label_widget.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS, QFont.Weight.Bold))
+        label_widget.setStyleSheet(_subtle_label_css(Colors.TEXT_SECONDARY))
+        group.addWidget(label_widget)
+
+        value_widget = QLabel("—")
+        value_widget.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.DemiBold))
+        value_widget.setStyleSheet(_label_css(Colors.TEXT_PRIMARY))
+        value_widget.setMinimumWidth(72)
+        group.addWidget(value_widget)
+
+        self._metrics_row.addLayout(group)
+        return value_widget
 
     # ─────────────────────────────────────────────────────────────
     # Public API
@@ -282,6 +468,8 @@ class PlaylistInfoCard(QFrame):
             self.type_label.setText("Podcast Playlist")
         else:
             self.type_label.setText("Playlist")
+        self.type_label.show()
+        self._source_label.setText(self._source_summary(source, is_master, is_category))
 
         # Edit/delete: allowed for user playlists, blocked for master/category/podcast
         editable = not is_master and not is_category and not is_podcast
@@ -298,15 +486,122 @@ class PlaylistInfoCard(QFrame):
         self._populate_ids_flags(playlist, is_master, is_podcast)
         self._populate_extra_mhods(playlist)
         self._populate_track_stats(resolved_tracks)
-        self._populate_smart_rules(playlist, is_smart)
+        self._populate_smart_rules_preview(playlist, is_smart)
 
         self.details_layout.addStretch()
+
+    def _source_summary(self, source: str, is_master: bool, is_category: bool) -> str:
+        if is_master:
+            return "Full iPod library"
+        if is_category:
+            return "Built-in iPod browse view"
+        if source == "podcast":
+            return "Podcast subscription view"
+        if source == "smart":
+            return "Rule-based playlist"
+        return "User playlist"
+
+    def _populate_smart_rules_preview(self, playlist: dict, is_smart: bool) -> None:
+        self._clear_rules_preview()
+        if not is_smart:
+            self._rules_panel.hide()
+            return
+
+        prefs = playlist.get("smart_playlist_data")
+        rules = playlist.get("smart_playlist_rules")
+        rule_lines = format_smart_rules_summary(rules, prefs)
+        if not rule_lines:
+            self._rules_panel.hide()
+            return
+
+        self._rules_panel.show()
+        summary_parts: list[str] = []
+        rule_rows: list[str] = []
+        for line in rule_lines:
+            text = line.strip()
+            if not text:
+                continue
+            if text.startswith("•"):
+                rule_rows.append(text.removeprefix("•").strip())
+            elif text.startswith("Match "):
+                summary_parts.insert(0, text)
+            else:
+                summary_parts.append(text)
+
+        self._rules_summary_label.setText("  ·  ".join(summary_parts))
+
+        if rule_rows:
+            for row_text in rule_rows[:4]:
+                self._add_rule_preview_row(row_text)
+            extra_count = len(rule_rows) - 4
+            if extra_count > 0:
+                more = QLabel(f"+ {extra_count} more rule{'s' if extra_count != 1 else ''}")
+                more.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS))
+                more.setStyleSheet(_label_css(Colors.TEXT_TERTIARY))
+                self._rules_preview_layout.addWidget(more)
+                self._rules_preview_widgets.append(more)
+        else:
+            empty = QLabel("No explicit rules; this playlist is controlled by its smart preferences.")
+            empty.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+            empty.setStyleSheet(_label_css(Colors.TEXT_SECONDARY))
+            empty.setWordWrap(True)
+            self._rules_preview_layout.addWidget(empty)
+            self._rules_preview_widgets.append(empty)
+
+    def _add_rule_preview_row(self, text: str) -> None:
+        row = QWidget(self._rules_panel)
+        row.setStyleSheet("background: transparent; border: none;")
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(7)
+
+        bullet_slot = QWidget(row)
+        bullet_slot.setFixedWidth(5)
+        bullet_slot.setStyleSheet("background: transparent; border: none;")
+        bullet_layout = QVBoxLayout(bullet_slot)
+        bullet_layout.setContentsMargins(0, 5, 0, 0)
+        bullet_layout.setSpacing(0)
+
+        bullet = QFrame(bullet_slot)
+        bullet.setFixedSize(5, 5)
+        bullet.setStyleSheet(
+            f"background: {Colors.ACCENT_LIGHT};"
+            "border: none;"
+            "border-radius: 2px;"
+        )
+        bullet_layout.addWidget(bullet, 0, Qt.AlignmentFlag.AlignTop)
+        layout.addWidget(bullet_slot, 0, Qt.AlignmentFlag.AlignTop)
+
+        label = QLabel(text, row)
+        label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        label.setStyleSheet(_label_css(Colors.TEXT_PRIMARY))
+        label.setWordWrap(True)
+        layout.addWidget(label, 1)
+
+        self._rules_preview_layout.addWidget(row)
+        self._rules_preview_widgets.append(row)
+
+    def _clear_rules_preview(self) -> None:
+        while self._rules_preview_layout.count():
+            item = self._rules_preview_layout.takeAt(0)
+            widget = item.widget() if item else None
+            if widget is not None:
+                widget.setParent(None)
+                widget.deleteLater()
+        self._rules_preview_widgets.clear()
+        self._rules_summary_label.setText("")
 
     def _populate_stats(self, playlist: dict, resolved_tracks: list[dict], source: str) -> None:
         """Populate stats line and basic detail rows."""
         track_count = len(resolved_tracks)
         total_ms = sum(t.get("length", 0) for t in resolved_tracks)
         total_size = sum(t.get("size", 0) for t in resolved_tracks)
+        sort_order = format_sort_order(playlist.get("sort_order", 0))
+
+        self._track_metric.setText(f"{track_count:,}")
+        self._duration_metric.setText(format_duration_human(total_ms) if total_ms > 0 else "—")
+        self._size_metric.setText(format_size(total_size) if total_size > 0 else "—")
+        self._sort_metric.setText(sort_order)
 
         stat_parts = [f"{track_count} tracks"]
         if total_ms > 0:
@@ -316,7 +611,7 @@ class PlaylistInfoCard(QFrame):
         self.stats_label.setText(" · ".join(stat_parts))
 
         details: list[tuple[str, str]] = []
-        details.append(("Sort Order", format_sort_order(playlist.get("sort_order", 0))))
+        details.append(("Sort Order", sort_order))
 
         for ts_key, label in (("timestamp", "Created"), ("timestamp_2", "Modified")):
             ts = playlist.get(ts_key, 0)
@@ -443,24 +738,18 @@ class PlaylistInfoCard(QFrame):
             yr_str = str(min_y) if min_y == max_y else f"{min_y}–{max_y}"
             self._add_detail_row("Year Range", yr_str)
 
-    def _populate_smart_rules(self, playlist: dict, is_smart: bool) -> None:
-        """Populate smart playlist rules section."""
-        if not is_smart:
-            return
-        prefs = playlist.get("smart_playlist_data")
-        rules = playlist.get("smart_playlist_rules")
-        rule_lines = format_smart_rules_summary(rules, prefs)
-        if rule_lines:
-            self._add_section_header("Smart Rules")
-            for line in rule_lines:
-                self._add_detail_text(line)
-
     def showEmpty(self) -> None:
         """Show default empty state."""
         self._clear_details()
+        self._clear_rules_preview()
+        self._rules_panel.hide()
         self.title_label.setText("Select a playlist")
         self.type_label.setText("")
+        self.type_label.hide()
+        self._source_label.setText("Choose a playlist to inspect its tracks and database metadata")
         self.stats_label.setText("")
+        for metric in (self._track_metric, self._duration_metric, self._size_metric, self._sort_metric):
+            metric.setText("—")
         self.edit_btn.hide()
         self.delete_btn.hide()
         self.evaluate_btn.hide()
@@ -496,7 +785,13 @@ class PlaylistInfoCard(QFrame):
         self.details_layout.addWidget(sep)
         self._detail_labels.append(sep)
 
-        lbl = make_section_header(text)
+        lbl = QLabel(text.upper())
+        lbl.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS, QFont.Weight.Bold))
+        lbl.setStyleSheet(
+            f"color: {Colors.TEXT_SECONDARY}; background: transparent;"
+            f" border: none; padding-top: {(6)}px;"
+            f" letter-spacing: 1.2px;"
+        )
         self.details_layout.addWidget(lbl)
         self._detail_labels.append(lbl)
 
@@ -799,7 +1094,9 @@ class PlaylistBrowser(QFrame):
         self.rightSplitter = QSplitter(Qt.Orientation.Vertical)
 
         # Stacked widget: index 0 = info card, index 1 = editor
-        self._topStack = QStackedWidget()
+        self._topStack = _CurrentPageStack()
+        self._topStack.setMinimumHeight(0)
+        self._topStack.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
 
         # Info card (page 0)
         self.infoCard = PlaylistInfoCard()
@@ -890,6 +1187,10 @@ class PlaylistBrowser(QFrame):
         self.trackTitleBar = TrackListTitleBar(self.rightSplitter)
         self.trackContainerLayout.addWidget(self.trackTitleBar)
 
+        self.emptyRegularPlaylistNotice = self._build_empty_regular_playlist_notice()
+        self.emptyRegularPlaylistNotice.hide()
+        self.trackContainerLayout.addWidget(self.emptyRegularPlaylistNotice)
+
         self.trackList = MusicBrowserList(
             settings_service=self._settings_service,
             device_sessions=self._device_sessions,
@@ -917,6 +1218,42 @@ class PlaylistBrowser(QFrame):
         self._content_splitter.setStretchFactor(1, 1)
         self._content_splitter.setSizes([240, 760])
 
+    def _build_empty_regular_playlist_notice(self) -> QFrame:
+        notice = QFrame(self.trackContainer)
+        notice.setObjectName("emptyRegularPlaylistNotice")
+        notice.setStyleSheet(_notice_frame_css("emptyRegularPlaylistNotice"))
+        notice.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
+
+        layout = QHBoxLayout(notice)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(8)
+
+        icon = QLabel("?", notice)
+        icon.setFixedSize(18, 18)
+        icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS, QFont.Weight.Bold))
+        icon.setStyleSheet(
+            f"color: {Colors.ACCENT};"
+            "background: transparent;"
+            f"border: 1px solid {Colors.ACCENT_BORDER};"
+            "border-radius: 9px;"
+        )
+        layout.addWidget(icon, 0, Qt.AlignmentFlag.AlignTop)
+
+        text = QLabel(_ADD_TRACKS_NOTICE_TEXT, notice)
+        text.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        text.setStyleSheet(_label_css(Colors.TEXT_SECONDARY))
+        text.setWordWrap(True)
+        layout.addWidget(text, 1)
+        return notice
+
+    def _set_empty_regular_playlist_notice(self, playlist: dict | None, track_count: int) -> None:
+        self.emptyRegularPlaylistNotice.setVisible(
+            _is_regular_track_playlist(playlist)
+            and track_count == 0
+            and not (playlist or {}).get("items")
+        )
+
     # ─────────────────────────────────────────────────────────────
     # Public API
     # ─────────────────────────────────────────────────────────────
@@ -937,6 +1274,7 @@ class PlaylistBrowser(QFrame):
         self._switchToBrowse()
         self.infoCard.showEmpty()
         self.trackList.clearTable()
+        self._set_empty_regular_playlist_notice(None, 0)
         self.trackTitleBar.setTitle("Select a playlist")
         self.trackTitleBar.resetColor()
         self._current_playlist = None
@@ -965,6 +1303,7 @@ class PlaylistBrowser(QFrame):
         self.listPanel.clear()
         self.infoCard.showEmpty()
         self.trackList.clearTable(clear_cache=True)
+        self._set_empty_regular_playlist_notice(None, 0)
         self.trackTitleBar.setTitle("Select a playlist")
         self.trackTitleBar.resetColor()
         self._current_playlist = None
@@ -998,6 +1337,7 @@ class PlaylistBrowser(QFrame):
         """
         self._topStack.setCurrentIndex(page)
         self._editing = True
+        self._set_empty_regular_playlist_notice(None, 0)
         # Give the editor more room
         self.rightSplitter.setSizes([450, 400])
 
@@ -1032,6 +1372,7 @@ class PlaylistBrowser(QFrame):
         self._current_playlist = playlist
         cache = self._library_cache
         if not cache.is_ready():
+            self._set_empty_regular_playlist_notice(None, 0)
             return
 
         track_id_index = cache.get_track_id_index()
@@ -1067,6 +1408,7 @@ class PlaylistBrowser(QFrame):
             self.trackList.filterByPlaylist(track_ids, track_id_index, playlist)
         else:
             self.trackList.clearTable()
+        self._set_empty_regular_playlist_notice(playlist, len(resolved_tracks))
 
     def _onNewPlaylist(self, kind: str) -> None:
         """Handle the 'New Playlist' button from the list panel."""
@@ -1076,12 +1418,14 @@ class PlaylistBrowser(QFrame):
             self.trackTitleBar.setTitle("New Smart Playlist")
             self.trackTitleBar.setColor(*Colors.PLAYLIST_SMART)
             self.trackList.clearTable()
+            self._set_empty_regular_playlist_notice(None, 0)
         else:
             self.regularEditor.new_playlist()
             self._switchToEditor(2)
             self.trackTitleBar.setTitle("New Playlist")
             self.trackTitleBar.resetColor()
             self.trackList.clearTable()
+            self._set_empty_regular_playlist_notice(None, 0)
 
     def _onEditClicked(self) -> None:
         """Handle the Edit button on the info card."""
@@ -1143,8 +1487,10 @@ class PlaylistBrowser(QFrame):
         self.trackTitleBar.setTitle(title)
         if _is_user_smart_playlist(playlist_data):
             self.trackTitleBar.setColor(*Colors.PLAYLIST_SMART)
+            self._set_empty_regular_playlist_notice(None, 0)
         else:
             self.trackTitleBar.resetColor()
+            self._set_empty_regular_playlist_notice(playlist_data, 0)
 
         log.info("Playlist saved to cache: '%s' (id=0x%X)",
                  title, playlist_data.get("playlist_id", 0))
@@ -1209,6 +1555,7 @@ class PlaylistBrowser(QFrame):
         self._current_playlist = None
         self.infoCard.showEmpty()
         self.trackList.clearTable()
+        self._set_empty_regular_playlist_notice(None, 0)
         self.trackTitleBar.setTitle("Select a playlist")
         self.trackTitleBar.resetColor()
 

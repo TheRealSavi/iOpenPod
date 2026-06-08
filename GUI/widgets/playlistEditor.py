@@ -71,8 +71,16 @@ from iTunesDB_Shared.mhod_defs import (
     SPLFT_STRING,
 )
 
-from ..glyphs import glyph_icon, glyph_pixmap
-from ..styles import FONT_FAMILY, Colors, Metrics, accent_btn_css, btn_css, make_scroll_area
+from ..glyphs import glyph_icon
+from ..styles import (
+    FONT_FAMILY,
+    Colors,
+    Metrics,
+    accent_btn_css,
+    btn_css,
+    make_scroll_area,
+    make_separator,
+)
 
 log = logging.getLogger(__name__)
 
@@ -321,6 +329,73 @@ def _checkbox_css() -> str:
         border-color: {Colors.ACCENT};
     }}
 """
+
+
+def _label_css(color: str) -> str:
+    return f"color: {color}; background: transparent; border: none;"
+
+
+def _subtle_label_css(color: str = Colors.TEXT_TERTIARY) -> str:
+    return (
+        f"color: {color}; background: transparent; border: none;"
+        " text-transform: uppercase;"
+    )
+
+
+def _title_input_css() -> str:
+    return f"""
+    QLineEdit {{
+        background: transparent;
+        border: none;
+        border-bottom: 1px solid {Colors.BORDER_SUBTLE};
+        color: {Colors.TEXT_PRIMARY};
+        padding: 0 0 2px 0;
+        font-family: {FONT_FAMILY};
+        font-size: {Metrics.FONT_PAGE_TITLE}px;
+        font-weight: 700;
+    }}
+    QLineEdit:hover {{
+        border-bottom-color: {Colors.BORDER};
+    }}
+    QLineEdit:focus {{
+        border-bottom-color: {Colors.ACCENT};
+    }}
+"""
+
+
+def _editor_panel_css(object_name: str) -> str:
+    return f"""
+    QFrame#{object_name} {{
+        background: {Colors.SURFACE_ALT};
+        border: 1px solid {Colors.BORDER_SUBTLE};
+        border-radius: {Metrics.BORDER_RADIUS_SM}px;
+    }}
+"""
+
+
+def _editor_notice_css(object_name: str) -> str:
+    return f"""
+    QFrame#{object_name} {{
+        background: {Colors.ACCENT_MUTED};
+        border: 1px solid {Colors.ACCENT_BORDER};
+        border-radius: {Metrics.BORDER_RADIUS_SM}px;
+    }}
+"""
+
+
+def _section_header(text: str) -> QWidget:
+    widget = QWidget()
+    widget.setStyleSheet("background: transparent; border: none;")
+    layout = QHBoxLayout(widget)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(8)
+
+    label = QLabel(text, widget)
+    label.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS, QFont.Weight.Bold))
+    label.setStyleSheet(_subtle_label_css(Colors.TEXT_SECONDARY))
+    layout.addWidget(label)
+    layout.addWidget(make_separator(), 1)
+    return widget
 
 
 def _section_label_style() -> str:
@@ -730,48 +805,91 @@ class SmartPlaylistEditor(QFrame):
         self._editing_playlist: dict | None = None  # None → new playlist
 
         root = QVBoxLayout(self)
-        root.setContentsMargins((16), (14), (16), (14))
+        root.setContentsMargins(16, 14, 16, 14)
         root.setSpacing(10)
 
-        # ── Header: Name ──────────────────────────────────────
+        # ── Identity + actions ─────────────────────────────────
         header = QHBoxLayout()
-        header.setSpacing(8)
-        icon = QLabel()
-        _px = glyph_pixmap("filter", 28, Colors.ACCENT)
-        if _px:
-            icon.setPixmap(_px)
-        else:
-            icon.setText("◇")
-            icon.setFont(QFont(FONT_FAMILY, Metrics.FONT_HERO))
-        icon.setStyleSheet("background: transparent; border: none;")
-        header.addWidget(icon)
+        header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(10)
+
+        title_col = QVBoxLayout()
+        title_col.setContentsMargins(0, 0, 0, 0)
+        title_col.setSpacing(4)
 
         self.name_input = QLineEdit()
         self.name_input.setPlaceholderText("Playlist Name")
-        self.name_input.setFont(QFont(FONT_FAMILY, Metrics.FONT_TITLE, QFont.Weight.Bold))
-        self.name_input.setStyleSheet(f"""
-            QLineEdit {{
-                background: transparent;
-                border: none;
-                border-bottom: 2px solid {Colors.BORDER_SUBTLE};
-                color: {Colors.TEXT_PRIMARY};
-                padding: {(4)}px {(2)}px;
-                font-size: {Metrics.FONT_TITLE}px;
-            }}
-            QLineEdit:focus {{
-                border-bottom-color: {Colors.ACCENT};
-            }}
-        """)
-        header.addWidget(self.name_input, stretch=1)
-        root.addLayout(header)
+        self.name_input.setFont(QFont(FONT_FAMILY, Metrics.FONT_PAGE_TITLE, QFont.Weight.Bold))
+        self.name_input.setStyleSheet(_title_input_css())
+        title_col.addWidget(self.name_input)
 
-        # ── Conjunction row ───────────────────────────────────
+        meta_row = QHBoxLayout()
+        meta_row.setContentsMargins(0, 0, 0, 0)
+        meta_row.setSpacing(6)
+
+        type_label = QLabel("Smart Playlist Editor")
+        type_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS, QFont.Weight.Bold))
+        type_label.setStyleSheet(_subtle_label_css(Colors.TEXT_SECONDARY))
+        meta_row.addWidget(type_label, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        source_label = QLabel("Rule-based playlist")
+        source_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS))
+        source_label.setStyleSheet(_label_css(Colors.TEXT_TERTIARY))
+        meta_row.addWidget(source_label, 0, Qt.AlignmentFlag.AlignVCenter)
+        meta_row.addStretch()
+        title_col.addLayout(meta_row)
+        header.addLayout(title_col, 1)
+
+        btn_row = QHBoxLayout()
+        btn_row.setContentsMargins(0, 0, 0, 0)
+        btn_row.setSpacing(6)
+
+        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        self.cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.cancel_btn.setStyleSheet(btn_css(
+            bg="transparent",
+            bg_hover=Colors.SURFACE_HOVER,
+            bg_press=Colors.SURFACE_ACTIVE,
+            fg=Colors.TEXT_SECONDARY,
+            border=f"1px solid {Colors.BORDER}",
+            padding="3px 12px",
+        ))
+        self.cancel_btn.clicked.connect(self.cancelled.emit)
+        btn_row.addWidget(self.cancel_btn)
+
+        self.save_btn = QPushButton("Save Playlist")
+        self.save_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.Bold))
+        self.save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        _save_ic = glyph_icon("check-circle", 14, Colors.TEXT_ON_ACCENT)
+        if _save_ic:
+            self.save_btn.setIcon(_save_ic)
+            self.save_btn.setIconSize(QSize(14, 14))
+        self.save_btn.setStyleSheet(accent_btn_css())
+        self.save_btn.clicked.connect(self._on_save)
+        btn_row.addWidget(self.save_btn)
+
+        header.addLayout(btn_row)
+        root.addLayout(header)
+        root.addWidget(make_separator())
+
+        root.addWidget(_section_header("Rules"))
+
+        rules_panel = QFrame()
+        rules_panel.setObjectName("smartPlaylistRulesPanel")
+        rules_panel.setStyleSheet(_editor_panel_css("smartPlaylistRulesPanel"))
+        rules_panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        rules_panel_layout = QVBoxLayout(rules_panel)
+        rules_panel_layout.setContentsMargins(10, 8, 10, 9)
+        rules_panel_layout.setSpacing(7)
+
         conj_row = QHBoxLayout()
+        conj_row.setContentsMargins(0, 0, 0, 0)
         conj_row.setSpacing(6)
 
         lbl = QLabel("Match")
-        lbl.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
-        lbl.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent; border: none;")
+        lbl.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        lbl.setStyleSheet(_label_css(Colors.TEXT_SECONDARY))
         conj_row.addWidget(lbl)
 
         self.conjunction_combo = QComboBox()
@@ -781,21 +899,19 @@ class SmartPlaylistEditor(QFrame):
         self.conjunction_combo.setFixedWidth(70)
         conj_row.addWidget(self.conjunction_combo)
 
-        lbl2 = QLabel("of the following rules:")
-        lbl2.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
-        lbl2.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent; border: none;")
+        lbl2 = QLabel("of the following rules")
+        lbl2.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        lbl2.setStyleSheet(_label_css(Colors.TEXT_SECONDARY))
         conj_row.addWidget(lbl2)
         conj_row.addStretch()
-        root.addLayout(conj_row)
+        rules_panel_layout.addLayout(conj_row)
 
-        # ── Rules area (scrollable) ──────────────────────────
         self._rules_scroll = make_scroll_area(
             transparent=False,
-            extra_css=f"""
+            extra_css="""
                 QScrollArea {{
-                    background: {Colors.SHADOW_LIGHT};
-                    border: 1px solid {Colors.BORDER_SUBTLE};
-                    border-radius: {Metrics.BORDER_RADIUS_SM}px;
+                    background: transparent;
+                    border: none;
                 }}
             """,
         )
@@ -807,44 +923,49 @@ class SmartPlaylistEditor(QFrame):
         self._rules_widget = QWidget()
         self._rules_widget.setStyleSheet("background: transparent;")
         self._rules_layout = QVBoxLayout(self._rules_widget)
-        self._rules_layout.setContentsMargins((8), (6), (8), (6))
+        self._rules_layout.setContentsMargins(0, 0, 0, 0)
         self._rules_layout.setSpacing(2)
         self._rules_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self._rules_scroll.setWidget(self._rules_widget)
-        root.addWidget(self._rules_scroll, stretch=1)
+        rules_panel_layout.addWidget(self._rules_scroll, stretch=1)
 
         self._rule_rows: list[SmartRuleRow] = []
 
-        # ── Add Rule button ──────────────────────────────────
         add_row = QHBoxLayout()
-        self.add_rule_btn = QPushButton("＋ Add Rule")
-        self.add_rule_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
+        add_row.setContentsMargins(0, 0, 0, 0)
+        self.add_rule_btn = QPushButton("Add Rule")
+        self.add_rule_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.add_rule_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        _add_ic = glyph_icon("plus", 14, Colors.ACCENT)
+        if _add_ic:
+            self.add_rule_btn.setIcon(_add_ic)
+            self.add_rule_btn.setIconSize(QSize(14, 14))
         self.add_rule_btn.setStyleSheet(btn_css(
             bg="transparent",
-            bg_hover=Colors.ACCENT_DIM,
-            bg_press=Colors.ACCENT_PRESS,
+            bg_hover=Colors.SURFACE_HOVER,
+            bg_press=Colors.SURFACE_ACTIVE,
             fg=Colors.ACCENT,
             border=f"1px solid {Colors.ACCENT_BORDER}",
-            padding="5px 14px",
+            padding="3px 12px",
         ))
         self.add_rule_btn.clicked.connect(self._add_empty_rule)
         add_row.addWidget(self.add_rule_btn)
         add_row.addStretch()
-        root.addLayout(add_row)
+        rules_panel_layout.addLayout(add_row)
+        root.addWidget(rules_panel, stretch=1)
 
-        # ── Separator ────────────────────────────────────────
-        sep = QFrame()
-        sep.setFixedHeight(1)
-        sep.setStyleSheet(f"background-color: {Colors.BORDER_SUBTLE}; border: none;")
-        root.addWidget(sep)
+        root.addWidget(_section_header("Behavior"))
 
-        # ── Options area ─────────────────────────────────────
-        opts = QVBoxLayout()
+        opts_panel = QFrame()
+        opts_panel.setObjectName("smartPlaylistBehaviorPanel")
+        opts_panel.setStyleSheet(_editor_panel_css("smartPlaylistBehaviorPanel"))
+        opts = QVBoxLayout(opts_panel)
+        opts.setContentsMargins(10, 8, 10, 9)
         opts.setSpacing(8)
 
         # Limit row
         limit_row = QHBoxLayout()
+        limit_row.setContentsMargins(0, 0, 0, 0)
         limit_row.setSpacing(6)
 
         self.limit_check = QCheckBox("Limit to")
@@ -899,12 +1020,11 @@ class SmartPlaylistEditor(QFrame):
 
         # Sort order
         sort_row = QHBoxLayout()
+        sort_row.setContentsMargins(0, 0, 0, 0)
         sort_row.setSpacing(6)
-        sort_lbl = QLabel("Sort Order:")
-        sort_lbl.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
-        sort_lbl.setStyleSheet(
-            f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;"
-        )
+        sort_lbl = QLabel("Sort Order")
+        sort_lbl.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        sort_lbl.setStyleSheet(_label_css(Colors.TEXT_SECONDARY))
         sort_row.addWidget(sort_lbl)
 
         self.sort_combo = QComboBox()
@@ -916,40 +1036,7 @@ class SmartPlaylistEditor(QFrame):
         sort_row.addStretch()
         opts.addLayout(sort_row)
 
-        root.addLayout(opts)
-
-        # ── Separator ────────────────────────────────────────
-        sep2 = QFrame()
-        sep2.setFixedHeight(1)
-        sep2.setStyleSheet(f"background-color: {Colors.BORDER_SUBTLE}; border: none;")
-        root.addWidget(sep2)
-
-        # ── Button row ───────────────────────────────────────
-        btn_row = QHBoxLayout()
-        btn_row.setSpacing(8)
-        btn_row.addStretch()
-
-        self.cancel_btn = QPushButton("Cancel")
-        self.cancel_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
-        self.cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.cancel_btn.setStyleSheet(btn_css(
-            bg=Colors.SURFACE_RAISED,
-            bg_hover=Colors.SURFACE_HOVER,
-            bg_press=Colors.SURFACE_ACTIVE,
-            border=f"1px solid {Colors.BORDER_SUBTLE}",
-            padding="6px 20px",
-        ))
-        self.cancel_btn.clicked.connect(self.cancelled.emit)
-        btn_row.addWidget(self.cancel_btn)
-
-        self.save_btn = QPushButton("Save Playlist")
-        self.save_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.Bold))
-        self.save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.save_btn.setStyleSheet(accent_btn_css())
-        self.save_btn.clicked.connect(self._on_save)
-        btn_row.addWidget(self.save_btn)
-
-        root.addLayout(btn_row)
+        root.addWidget(opts_panel)
 
     # ─────────────────────────────────────────────────────────────
     # Public API
@@ -1153,134 +1240,133 @@ class RegularPlaylistEditor(QFrame):
         self._editing_playlist: dict | None = None  # None → new playlist
 
         root = QVBoxLayout(self)
-        root.setContentsMargins((16), (14), (16), (14))
-        root.setSpacing(12)
+        root.setContentsMargins(16, 14, 16, 14)
+        root.setSpacing(10)
 
-        # ── Header: Name ──────────────────────────────────────
+        # ── Identity + actions ─────────────────────────────────
         header = QHBoxLayout()
-        header.setSpacing(8)
-        icon = QLabel()
-        _px = glyph_pixmap("annotation-dots", (28), Colors.ACCENT)
-        if _px:
-            icon.setPixmap(_px)
-        else:
-            icon.setText("≡")
-            icon.setFont(QFont(FONT_FAMILY, Metrics.FONT_HERO))
-        icon.setStyleSheet("background: transparent; border: none;")
-        header.addWidget(icon)
+        header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(10)
+
+        title_col = QVBoxLayout()
+        title_col.setContentsMargins(0, 0, 0, 0)
+        title_col.setSpacing(4)
 
         self.name_input = QLineEdit()
         self.name_input.setPlaceholderText("Playlist Name")
-        self.name_input.setFont(QFont(FONT_FAMILY, Metrics.FONT_TITLE, QFont.Weight.Bold))
-        self.name_input.setStyleSheet(f"""
-            QLineEdit {{
-                background: transparent;
-                border: none;
-                border-bottom: 2px solid {Colors.BORDER_SUBTLE};
-                color: {Colors.TEXT_PRIMARY};
-                padding: {(4)}px {(2)}px;
-                font-size: {Metrics.FONT_TITLE}px;
-            }}
-            QLineEdit:focus {{
-                border-bottom-color: {Colors.ACCENT};
-            }}
-        """)
-        header.addWidget(self.name_input, stretch=1)
+        self.name_input.setFont(QFont(FONT_FAMILY, Metrics.FONT_PAGE_TITLE, QFont.Weight.Bold))
+        self.name_input.setStyleSheet(_title_input_css())
+        title_col.addWidget(self.name_input)
+
+        meta_row = QHBoxLayout()
+        meta_row.setContentsMargins(0, 0, 0, 0)
+        meta_row.setSpacing(6)
+
+        type_label = QLabel("Playlist Editor")
+        type_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS, QFont.Weight.Bold))
+        type_label.setStyleSheet(_subtle_label_css(Colors.TEXT_SECONDARY))
+        meta_row.addWidget(type_label, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        source_label = QLabel("Manual track playlist")
+        source_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS))
+        source_label.setStyleSheet(_label_css(Colors.TEXT_TERTIARY))
+        meta_row.addWidget(source_label, 0, Qt.AlignmentFlag.AlignVCenter)
+        meta_row.addStretch()
+        title_col.addLayout(meta_row)
+        header.addLayout(title_col, 1)
+
+        btn_row = QHBoxLayout()
+        btn_row.setContentsMargins(0, 0, 0, 0)
+        btn_row.setSpacing(6)
+
+        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        self.cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.cancel_btn.setStyleSheet(btn_css(
+            bg="transparent",
+            bg_hover=Colors.SURFACE_HOVER,
+            bg_press=Colors.SURFACE_ACTIVE,
+            fg=Colors.TEXT_SECONDARY,
+            border=f"1px solid {Colors.BORDER}",
+            padding="3px 12px",
+        ))
+        self.cancel_btn.clicked.connect(self.cancelled.emit)
+        btn_row.addWidget(self.cancel_btn)
+
+        self.save_btn = QPushButton("Save")
+        self.save_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.Bold))
+        self.save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        _save_ic = glyph_icon("check-circle", 14, Colors.TEXT_ON_ACCENT)
+        if _save_ic:
+            self.save_btn.setIcon(_save_ic)
+            self.save_btn.setIconSize(QSize(14, 14))
+        self.save_btn.setStyleSheet(accent_btn_css())
+        self.save_btn.clicked.connect(self._on_save)
+        btn_row.addWidget(self.save_btn)
+
+        header.addLayout(btn_row)
         root.addLayout(header)
+        root.addWidget(make_separator())
 
-        # ── Separator ─────────────────────────────────────────
-        sep1 = QFrame()
-        sep1.setFrameShape(QFrame.Shape.HLine)
-        sep1.setStyleSheet(f"color: {Colors.BORDER_SUBTLE}; background: transparent;")
-        root.addWidget(sep1)
+        root.addWidget(_section_header("Settings"))
 
-        # ── Sort Order ────────────────────────────────────────
+        settings_panel = QFrame()
+        settings_panel.setObjectName("regularPlaylistSettingsPanel")
+        settings_panel.setStyleSheet(_editor_panel_css("regularPlaylistSettingsPanel"))
+        settings_layout = QVBoxLayout(settings_panel)
+        settings_layout.setContentsMargins(10, 8, 10, 9)
+        settings_layout.setSpacing(8)
+
         sort_row = QHBoxLayout()
+        sort_row.setContentsMargins(0, 0, 0, 0)
         sort_row.setSpacing(8)
-        sort_label = QLabel("Sort Order:")
-        sort_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
-        sort_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
+        sort_label = QLabel("Sort Order")
+        sort_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        sort_label.setStyleSheet(_label_css(Colors.TEXT_SECONDARY))
         sort_row.addWidget(sort_label)
 
         self.sort_combo = QComboBox()
-        self.sort_combo.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
+        self.sort_combo.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.sort_combo.setMinimumWidth(180)
-        self.sort_combo.setStyleSheet(f"""
-            QComboBox {{
-                background: {Colors.SURFACE_RAISED};
-                color: {Colors.TEXT_PRIMARY};
-                border: 1px solid {Colors.BORDER_SUBTLE};
-                border-radius: {(4)}px;
-                padding: {(4)}px {(8)}px;
-            }}
-            QComboBox:hover {{
-                border-color: {Colors.ACCENT};
-            }}
-            QComboBox::drop-down {{
-                border: none;
-                width: {(20)}px;
-            }}
-            QComboBox QAbstractItemView {{
-                background: {Colors.SURFACE_RAISED};
-                color: {Colors.TEXT_PRIMARY};
-                selection-background-color: {Colors.ACCENT_DIM};
-                border: 1px solid {Colors.BORDER_SUBTLE};
-            }}
-        """)
+        self.sort_combo.setStyleSheet(_combo_css())
         for sort_id, sort_name in PLAYLIST_SORT_ORDERS:
             self.sort_combo.addItem(sort_name, sort_id)
         sort_row.addWidget(self.sort_combo)
         sort_row.addStretch()
-        root.addLayout(sort_row)
+        settings_layout.addLayout(sort_row)
 
-        # ── Info area (for future options) ────────────────────
-        info_label = QLabel(
-            "Tracks can be added to this playlist from the music browser."
-        )
-        info_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        info_label.setStyleSheet(
-            f"color: {Colors.TEXT_TERTIARY}; background: transparent; border: none;"
-        )
-        info_label.setWordWrap(True)
-        root.addWidget(info_label)
+        root.addWidget(settings_panel)
 
-        # ── Spacer to push buttons to bottom ──────────────────
+        add_tracks_note = QFrame()
+        add_tracks_note.setObjectName("regularPlaylistAddTracksNote")
+        add_tracks_note.setStyleSheet(_editor_notice_css("regularPlaylistAddTracksNote"))
+        note_layout = QHBoxLayout(add_tracks_note)
+        note_layout.setContentsMargins(10, 8, 10, 8)
+        note_layout.setSpacing(8)
+
+        note_icon = QLabel("?", add_tracks_note)
+        note_icon.setFixedSize(18, 18)
+        note_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        note_icon.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS, QFont.Weight.Bold))
+        note_icon.setStyleSheet(
+            f"color: {Colors.ACCENT};"
+            "background: transparent;"
+            f"border: 1px solid {Colors.ACCENT_BORDER};"
+            "border-radius: 9px;"
+        )
+        note_layout.addWidget(note_icon, 0, Qt.AlignmentFlag.AlignTop)
+
+        note_text = QLabel(
+            "To add tracks, right-click a library track and choose this playlist from Add to Playlist.",
+            add_tracks_note,
+        )
+        note_text.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        note_text.setStyleSheet(_label_css(Colors.TEXT_SECONDARY))
+        note_text.setWordWrap(True)
+        note_layout.addWidget(note_text, 1)
+
+        root.addWidget(add_tracks_note)
         root.addStretch()
-
-        # ── Separator ─────────────────────────────────────────
-        sep2 = QFrame()
-        sep2.setFrameShape(QFrame.Shape.HLine)
-        sep2.setStyleSheet(f"color: {Colors.BORDER_SUBTLE}; background: transparent;")
-        root.addWidget(sep2)
-
-        # ── Buttons ───────────────────────────────────────────
-        btn_row = QHBoxLayout()
-        btn_row.setSpacing(8)
-        btn_row.addStretch()
-
-        cancel_btn = QPushButton("Cancel")
-        cancel_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
-        cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        cancel_btn.setMinimumWidth(80)
-        cancel_btn.setStyleSheet(btn_css(
-            bg=Colors.SURFACE_RAISED,
-            bg_hover=Colors.SURFACE_HOVER,
-            bg_press=Colors.SURFACE_ACTIVE,
-            border=f"1px solid {Colors.BORDER_SUBTLE}",
-            padding="6px 16px",
-        ))
-        cancel_btn.clicked.connect(self.cancelled.emit)
-        btn_row.addWidget(cancel_btn)
-
-        save_btn = QPushButton("Save")
-        save_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.Bold))
-        save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        save_btn.setMinimumWidth(80)
-        save_btn.setStyleSheet(accent_btn_css())
-        save_btn.clicked.connect(self._on_save)
-        btn_row.addWidget(save_btn)
-
-        root.addLayout(btn_row)
 
     # ─────────────────────────────────────────────────────────────
     # Public API

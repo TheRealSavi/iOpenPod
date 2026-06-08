@@ -806,6 +806,7 @@ class Sidebar(QFrame):
     category_changed = pyqtSignal(str)
     device_renamed = pyqtSignal(str)  # emits new iPod name
     eject_requested = pyqtSignal()    # emitted when the Eject button is clicked
+    tag_fixes_requested = pyqtSignal()
 
     # Categories that only make sense on video-capable iPods
     _VIDEO_CATEGORIES = frozenset({"Videos", "Movies", "TV Shows", "Music Videos"})
@@ -903,6 +904,18 @@ class Sidebar(QFrame):
             self.backupButton.setIconSize(_icon_sz)
         self.sidebarLayout.addWidget(self.backupButton)
 
+        self.tagFixButton = QPushButton("Normalize Tags")
+        self.tagFixButton.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
+        self.tagFixButton.setStyleSheet(sidebar_nav_css())
+        self.tagFixButton.setToolTip("Preview and apply iPod-friendly tag fixes across the whole library.")
+        _bi = glyph_icon("check-circle", (20), Colors.TEXT_SECONDARY)
+        if _bi:
+            self.tagFixButton.setIcon(_bi)
+            self.tagFixButton.setIconSize(_icon_sz)
+        self.tagFixButton.setEnabled(False)
+        self.tagFixButton.clicked.connect(self.tag_fixes_requested.emit)
+        self.sidebarLayout.addWidget(self.tagFixButton)
+
         self.sidebarLayout.addWidget(make_separator())
 
         # ── Library section ───────────────────────────────────────
@@ -992,10 +1005,14 @@ class Sidebar(QFrame):
     def clearDeviceInfo(self):
         """Clear device info when no device is selected."""
         self.device_card.clear()
+        self.setTagFixesAvailable(False)
         # Show all categories again when no device is selected
         self.setVideoVisible(True)
         self.setPodcastVisible(True)
         self.setPhotoVisible(True)
+
+    def setTagFixesAvailable(self, available: bool) -> None:
+        self.tagFixButton.setEnabled(available)
 
     def _first_visible_category(self) -> str | None:
         preferred = self.buttons.get("Albums")

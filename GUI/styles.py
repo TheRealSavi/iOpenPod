@@ -930,8 +930,14 @@ class DarkScrollbarStyle(QProxyStyle):
         # stylesheet can't be overridden by app-level rules.
         meta = arg.metaObject()
         if meta is not None and meta.className() == "QTipLabel":
-            if not arg.property("_iop_tooltip_styled"):
-                arg.setProperty("_iop_tooltip_styled", True)
+            tooltip_style_key = (
+                Colors.TOOLTIP_BG,
+                Colors.TEXT_PRIMARY,
+                Colors.BORDER,
+                Metrics.FONT_LG,
+            )
+            if arg.property("_iop_tooltip_style_key") != tooltip_style_key:
+                arg.setProperty("_iop_tooltip_style_key", tooltip_style_key)
                 try:
                     arg.setAttribute(
                         Qt.WidgetAttribute.WA_TranslucentBackground, True
@@ -1755,8 +1761,14 @@ def app_stylesheet() -> str:
         background: {Colors.DIALOG_BG};
         color: {Colors.TEXT_PRIMARY};
     }}
+    QMessageBox QFrame {{
+        background: transparent;
+        border: none;
+    }}
     QMessageBox QLabel {{
         color: {Colors.TEXT_PRIMARY};
+        background: transparent;
+        border: none;
     }}
     QMessageBox QPushButton {{
         background: {Colors.SURFACE_RAISED};

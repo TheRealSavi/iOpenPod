@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import copy
 from collections import Counter
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
 
@@ -101,6 +101,7 @@ def build_filtered_sync_plan(
     selected_items: Iterable[Any],
     *,
     include_playlists: bool = True,
+    selected_playlists: Mapping[str, Iterable[dict]] | None = None,
     selected_photo_plan: Any | None = None,
 ) -> Any:
     """Build the executable plan from checked sync-review items."""
@@ -179,6 +180,27 @@ def build_filtered_sync_plan(
         bytes_to_add += int(getattr(selected_photo_plan, "thumb_bytes_to_add", 0) or 0)
         bytes_to_remove += int(getattr(selected_photo_plan, "thumb_bytes_to_remove", 0) or 0)
 
+    if selected_playlists is not None:
+        playlists_to_add = list(selected_playlists.get("playlists_to_add", ()))
+        playlists_to_edit = list(selected_playlists.get("playlists_to_edit", ()))
+        playlists_to_remove = list(selected_playlists.get("playlists_to_remove", ()))
+    else:
+        playlists_to_add = (
+            original_plan.playlists_to_add
+            if original_plan and include_playlists
+            else []
+        )
+        playlists_to_edit = (
+            original_plan.playlists_to_edit
+            if original_plan and include_playlists
+            else []
+        )
+        playlists_to_remove = (
+            original_plan.playlists_to_remove
+            if original_plan and include_playlists
+            else []
+        )
+
     return SyncPlan(
         to_add=grouped[SyncAction.ADD_TO_IPOD],
         to_remove=grouped[SyncAction.REMOVE_FROM_IPOD],
@@ -200,21 +222,9 @@ def build_filtered_sync_plan(
             bytes_to_remove=bytes_to_remove,
             bytes_to_update=bytes_to_update,
         ),
-        playlists_to_add=(
-            original_plan.playlists_to_add
-            if original_plan and include_playlists
-            else []
-        ),
-        playlists_to_edit=(
-            original_plan.playlists_to_edit
-            if original_plan and include_playlists
-            else []
-        ),
-        playlists_to_remove=(
-            original_plan.playlists_to_remove
-            if original_plan and include_playlists
-            else []
-        ),
+        playlists_to_add=playlists_to_add,
+        playlists_to_edit=playlists_to_edit,
+        playlists_to_remove=playlists_to_remove,
         photo_plan=selected_photo_plan if original_plan else None,
     )
 
@@ -222,8 +232,9 @@ def build_filtered_sync_plan(
 def build_selected_photo_plan(
     original_photo_plan: Any | None,
     included_keys: Iterable[str],
+    selected_items_by_key: Mapping[str, Iterable[Any]] | None = None,
 ) -> Any | None:
-    """Build a filtered PhotoSyncPlan from checked sync-review photo groups."""
+    """Build a filtered PhotoSyncPlan from checked sync-review photo rows."""
 
     if original_photo_plan is None:
         return None
@@ -231,6 +242,11 @@ def build_selected_photo_plan(
     from SyncEngine.photos import PhotoSyncPlan
 
     included = set(included_keys)
+    selected_by_key = (
+        {key: list(items) for key, items in selected_items_by_key.items()}
+        if selected_items_by_key is not None
+        else None
+    )
     selected = PhotoSyncPlan(
         skipped_files=list(original_photo_plan.skipped_files),
         current_db=original_photo_plan.current_db,
@@ -247,20 +263,31 @@ def build_selected_photo_plan(
         "album_membership_adds",
         "album_membership_removes",
     ):
+        if selected_by_key is not None:
+            value = copy.deepcopy(selected_by_key.get(key, []))
+        else:
+            value = copy.deepcopy(getattr(original_photo_plan, key)) if key in included else []
         setattr(
             selected,
             key,
-            copy.deepcopy(getattr(original_photo_plan, key)) if key in included else [],
+            value,
         )
 
-    selected.thumb_bytes_to_add = (
-        original_photo_plan.thumb_bytes_to_add
-        if "photos_to_add" in included
-        else 0
-    )
-    selected.thumb_bytes_to_remove = (
-        original_photo_plan.thumb_bytes_to_remove
-        if "photos_to_remove" in included
-        else 0
-    )
+    if selected_by_key is None:
+        selected.thumb_bytes_to_add = (
+            original_photo_plan.thumb_bytes_to_add
+            if "photos_to_add" in included
+            else 0
+        )
+        selected.thumb_bytes_to_remove = (
+            original_photo_plan.thumb_bytes_to_remove
+            if "photos_to_remove" in included
+            else 0
+        )
+    else:
+        selected.thumb_bytes_to_add = sum(
+            int(getattr(item, "estimated_size", 0) or getattr(item, "size", 0) or 0)
+            for item in selected.photos_to_add
+        )
+        selected.thumb_bytes_to_remove = sum(int(getattr(item, "size", 0) or 0) for item in selected.photos_to_remove)
     return selected if selected.has_changes else None

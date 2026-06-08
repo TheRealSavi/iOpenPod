@@ -7,6 +7,7 @@ import os
 import sys
 import threading
 import traceback
+from collections import Counter
 from pathlib import Path
 
 from PyQt6.QtCore import QObject, QRunnable, QThread, QThreadPool, pyqtSignal, pyqtSlot
@@ -778,6 +779,45 @@ class iTunesDBCache(QObject):
             ", ".join(f"{key}={value}" for key, value in changes.items()),
         )
         self.tracks_changed.emit()
+
+    def update_track_flags_by_track(self, tracks: list[dict], changes_by_track: dict[int, dict]) -> None:
+        with self._lock:
+            edited = 0
+            field_counts: Counter[str] = Counter()
+            for track in tracks:
+                db_track_id = track.get("db_track_id", track.get("db_id", 0))
+                if not db_track_id:
+                    continue
+                changes = changes_by_track.get(id(track), {})
+                if not changes:
+                    continue
+                edits = self._track_edits.setdefault(db_track_id, {})
+                for key, value in changes.items():
+                    if key in edits:
+                        original, _ = edits[key]
+                        edits[key] = (original, value)
+                    else:
+                        edits[key] = (track.get(key), value)
+                    track[key] = value
+                    field_counts[key] += 1
+                edited += 1
+
+            if self._data is not None:
+                (
+                    self._album_index,
+                    self._album_only_index,
+                    self._artist_index,
+                    self._genre_index,
+                    self._track_id_index,
+                ) = _build_track_indexes(list(self._data.get("mhlt", [])))
+
+        logger.info(
+            "Track metadata updated on %d track(s) with library tag fixes: %s",
+            edited,
+            ", ".join(f"{key}={count}" for key, count in sorted(field_counts.items())),
+        )
+        if edited:
+            self.tracks_changed.emit()
 
     def update_track_artwork(self, tracks: list[dict], image_path: str) -> None:
         with self._lock:

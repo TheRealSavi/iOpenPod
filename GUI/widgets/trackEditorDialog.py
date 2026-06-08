@@ -45,6 +45,7 @@ from PyQt6.QtWidgets import (
     QSizePolicy,
     QSlider,
     QStackedWidget,
+    QStyle,
     QStyledItemDelegate,
     QStyleOptionViewItem,
     QTableWidget,
@@ -1016,6 +1017,15 @@ class _ChapterCellDelegate(QStyledItemDelegate):
             model.setData(index, editor.text(), Qt.ItemDataRole.EditRole)
             return
         super().setModelData(editor, model, index)
+
+
+class _NoFocusItemDelegate(QStyledItemDelegate):
+    """Paint list items without Qt's dotted current-item focus rectangle."""
+
+    def paint(self, painter: QPainter | None, option: QStyleOptionViewItem, index: QModelIndex) -> None:
+        clean_option = QStyleOptionViewItem(option)
+        clean_option.state &= ~QStyle.StateFlag.State_HasFocus
+        super().paint(painter, clean_option, index)
 
 
 _CHAPTER_TIME_COLUMN_WIDTH = 156
@@ -2606,9 +2616,11 @@ class TrackEditorDialog(QDialog):
                 border: 1px solid {Colors.BORDER_SUBTLE};
                 border-radius: {Metrics.BORDER_RADIUS_SM}px;
                 padding: 6px;
+                outline: none;
             }}
             QListWidget#sectionNav::item {{
                 color: {Colors.TEXT_SECONDARY};
+                border: 1px solid transparent;
                 border-radius: {Metrics.BORDER_RADIUS_SM}px;
                 padding: 8px 10px;
                 margin: 1px 0;
@@ -2616,11 +2628,12 @@ class TrackEditorDialog(QDialog):
             QListWidget#sectionNav::item:selected {{
                 background: {Colors.ACCENT_MUTED};
                 color: {Colors.TEXT_PRIMARY};
-                border: 1px solid {Colors.ACCENT_BORDER};
+                border: 1px solid transparent;
             }}
             QListWidget#sectionNav::item:hover {{
                 background: {Colors.SURFACE_HOVER};
                 color: {Colors.TEXT_PRIMARY};
+                border: 1px solid transparent;
             }}
             QFrame#sectionPanel {{
                 background: {Colors.SURFACE};
@@ -2720,6 +2733,7 @@ class TrackEditorDialog(QDialog):
         self._nav.setObjectName("sectionNav")
         self._nav.setFixedWidth(178)
         self._nav.setSpacing(2)
+        self._nav.setItemDelegate(_NoFocusItemDelegate(self._nav))
         self._nav.currentRowChanged.connect(self._on_nav_changed)
         content.addWidget(self._nav)
 

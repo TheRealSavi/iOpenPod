@@ -427,6 +427,13 @@ class LibraryCacheLike(Protocol):
     ) -> None:
         ...
 
+    def update_track_flags_by_track(
+        self,
+        tracks: list[dict],
+        changes_by_track: dict[int, dict[str, Any]],
+    ) -> None:
+        ...
+
     def update_track_artwork(self, tracks: list[dict], image_path: str) -> None:
         ...
 

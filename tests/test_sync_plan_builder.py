@@ -138,6 +138,28 @@ def test_build_filtered_sync_plan_can_exclude_playlists() -> None:
     assert filtered.playlists_to_remove == []
 
 
+def test_build_filtered_sync_plan_can_filter_selected_playlists() -> None:
+    original = SyncPlan(
+        playlists_to_add=[{"name": "New A"}, {"name": "New B"}],
+        playlists_to_edit=[{"name": "Edit A"}, {"name": "Edit B"}],
+        playlists_to_remove=[{"name": "Remove A"}, {"name": "Remove B"}],
+    )
+
+    filtered = build_filtered_sync_plan(
+        original,
+        [_item(SyncAction.ADD_TO_IPOD, "add")],
+        selected_playlists={
+            "playlists_to_add": [original.playlists_to_add[1]],
+            "playlists_to_edit": [original.playlists_to_edit[0]],
+            "playlists_to_remove": [],
+        },
+    )
+
+    assert filtered.playlists_to_add == [{"name": "New B"}]
+    assert filtered.playlists_to_edit == [{"name": "Edit A"}]
+    assert filtered.playlists_to_remove == []
+
+
 def test_build_filtered_sync_plan_recomputes_selected_storage() -> None:
     add = SyncItem(
         action=SyncAction.ADD_TO_IPOD,
@@ -222,6 +244,44 @@ def test_build_selected_photo_plan_filters_checked_groups() -> None:
 
     original.photos_to_add[0].display_name = "Changed"
     assert selected.photos_to_add == [PhotoSyncItem("hash-a", "A")]
+
+
+def test_build_selected_photo_plan_filters_checked_rows() -> None:
+    original = PhotoSyncPlan()
+    add_a = PhotoSyncItem("hash-a", "A", size=111)
+    add_b = PhotoSyncItem("hash-b", "B", size=222, estimated_size=444)
+    remove_a = PhotoSyncItem("hash-c", "C", size=333)
+    album_a = PhotoAlbumChange(album_name="Album A")
+    membership_a = PhotoMembershipChange("hash-a", "Album A", "A")
+    membership_b = PhotoMembershipChange("hash-b", "Album B", "B")
+    original.photos_to_add = [add_a, add_b]
+    original.photos_to_remove = [remove_a]
+    original.albums_to_add = [album_a]
+    original.album_membership_adds = [membership_a, membership_b]
+    original.thumb_bytes_to_add = 999
+    original.thumb_bytes_to_remove = 888
+
+    selected = build_selected_photo_plan(
+        original,
+        (),
+        selected_items_by_key={
+            "photos_to_add": [add_b],
+            "photos_to_remove": [],
+            "albums_to_add": [album_a],
+            "album_membership_adds": [membership_b],
+        },
+    )
+
+    assert selected is not None
+    assert selected.photos_to_add == [add_b]
+    assert selected.photos_to_remove == []
+    assert selected.albums_to_add == [album_a]
+    assert selected.album_membership_adds == [membership_b]
+    assert selected.thumb_bytes_to_add == 444
+    assert selected.thumb_bytes_to_remove == 0
+
+    add_b.display_name = "Changed"
+    assert selected.photos_to_add == [PhotoSyncItem("hash-b", "B", size=222, estimated_size=444)]
 
 
 def test_build_selected_photo_plan_returns_none_without_selected_changes() -> None:

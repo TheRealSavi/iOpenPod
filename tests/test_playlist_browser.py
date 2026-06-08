@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from GUI.widgets.playlistBrowser import (
     _is_ipod_category_playlist,
+    _is_regular_track_playlist,
     _is_user_smart_playlist,
 )
 
@@ -40,3 +41,11 @@ def test_string_zero_mhsd5_type_stays_a_smart_playlist() -> None:
 
     assert not _is_ipod_category_playlist(playlist)
     assert _is_user_smart_playlist(playlist)
+
+
+def test_regular_track_playlist_excludes_generated_playlist_types() -> None:
+    assert _is_regular_track_playlist({"Title": "Manual", "_source": "regular"})
+    assert not _is_regular_track_playlist({"Title": "Library", "master_flag": 1})
+    assert not _is_regular_track_playlist({"Title": "Music", "_source": "category", "mhsd5_type": 4})
+    assert not _is_regular_track_playlist({"Title": "Smart", "smart_playlist_data": {"live_update": True}})
+    assert not _is_regular_track_playlist({"Title": "Podcasts", "_source": "podcast"})

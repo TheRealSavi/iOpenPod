@@ -10,6 +10,7 @@ from SyncEngine.photos import (
     PhotoThumbRef,
     _decode_photo_format,
     _encode_photo_for_formats,
+    _estimated_photo_storage_bytes,
 )
 
 
@@ -70,6 +71,29 @@ def test_photo_encoder_passes_format_override(monkeypatch):
 
     assert encoded[9998]["size"] == 240
     assert seen == {"format_id": 9998, "fmt_override": fmt}
+
+
+def test_estimated_photo_storage_sums_full_device_format_payloads():
+    rgb_fmt = ArtworkFormat(
+        9997,
+        12,
+        10,
+        24,
+        "RGB565_LE",
+        "photo_thumb",
+        "test rgb photo",
+    )
+    yuv_fmt = ArtworkFormat(
+        9996,
+        8,
+        6,
+        12,
+        "I420_LE",
+        "tv_out",
+        "test yuv photo",
+    )
+
+    assert _estimated_photo_storage_bytes({9997: rgb_fmt, 9996: yuv_fmt}) == 240 + 72
 
 
 def test_photo_decoder_passes_current_device_format_override(tmp_path, monkeypatch):
