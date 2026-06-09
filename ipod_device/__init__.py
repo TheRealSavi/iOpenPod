@@ -62,7 +62,6 @@ from .info import (
     clear_current_device,
     detect_checksum_type,
     enrich,
-    generate_library_id,
     get_current_device,
     get_firewire_id,
     itdb_write_filename,

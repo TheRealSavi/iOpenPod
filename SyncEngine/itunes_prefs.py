@@ -32,8 +32,6 @@ import socket
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ipod_device import generate_library_id
-
 logger = logging.getLogger(__name__)
 
 # ── Binary field offsets (frpd format) ──────────────────────────────────────
@@ -46,6 +44,7 @@ _OFF_SYNC_TYPE = 11  # 0x01 = Entire Library, 0x02 = Selected Playlists
 _OFF_LIBRARY_ID = 12  # 8 bytes
 _OFF_ENABLE_DISK = 31
 _OFF_CHECKED_ONLY = 34
+_ZERO_LIBRARY_ID = b"\x00" * 8
 
 
 @dataclass
@@ -138,6 +137,37 @@ def _write_padded_string(data: bytearray, offset: int, value: str, length: int =
     """Write a null-padded string into binary data."""
     encoded = value.encode("utf-8")[: length - 1]  # Leave room for null
     data[offset:offset + length] = encoded.ljust(length, b"\x00")
+
+
+def _read_existing_db_library_id(ipod_path: Path) -> bytes | None:
+    """Read the existing MHBD library persistent ID from disk, if present."""
+    try:
+        from ipod_device import resolve_itdb_path
+
+        db_path = resolve_itdb_path(str(ipod_path))
+        if not db_path:
+            return None
+        data = Path(db_path).read_bytes()
+        if len(data) < 0x50 or data[:4] != b"mhbd":
+            return None
+        library_id = bytes(data[0x48:0x50])
+        if len(library_id) != 8 or library_id == _ZERO_LIBRARY_ID:
+            return None
+        return library_id
+    except Exception:
+        return None
+
+
+def _resolve_library_link_id(ipod_path: Path, prefs: "ITunesPrefs") -> bytes:
+    """Preserve the original library ID from prefs or the existing database."""
+    if len(prefs.library_link_id) == 8 and prefs.library_link_id != _ZERO_LIBRARY_ID:
+        return prefs.library_link_id
+
+    existing_db_id = _read_existing_db_library_id(ipod_path)
+    if existing_db_id:
+        return existing_db_id
+
+    return _ZERO_LIBRARY_ID
 
 
 def _parse_binary(data: bytes) -> ITunesPrefs:
@@ -383,28 +413,18 @@ def read_prefs(ipod_path: str | Path) -> ITunesPrefs:
 
 def check_library_owner(prefs: ITunesPrefs) -> str | None:
     """
-    Check if the iPod was synced by a different iTunes library
-    since our last sync.
+    Legacy library ownership check.
 
-    Returns:
-        None if everything is fine (our ID or never synced).
-        Warning message string if a foreign library was detected.
+    When iOpenPod preserves the original library ID instead of writing a
+    host-derived replacement, the ID alone is no longer enough to infer
+    whether another library has synced the device since our last write.
     """
-    our_id = generate_library_id()
     their_id = prefs.library_link_id
 
     # All zeros = never synced / fresh iPod — that's fine
-    if their_id == b"\x00" * 8:
+    if their_id == _ZERO_LIBRARY_ID:
         return None
-
-    if their_id == our_id:
-        return None
-
-    return (
-        f"iPod was last synced by a different program/library "
-        f"(library ID: {their_id.hex()}). "
-        f"The database may have been modified externally."
-    )
+    return None
 
 
 def protect_from_itunes(
@@ -419,7 +439,7 @@ def protect_from_itunes(
 
     1. Set sync mode to Manual (prevents iTunes auto-sync)
     2. Set auto-open to NO (prevents iTunes launching on connect)
-    3. Write our library link ID (we can detect if iTunes synced later)
+    3. Preserve the original library link ID
     4. Update EstimatedDeviceTotals with current state
 
     Call this AFTER writing the iTunesDB successfully.
@@ -460,10 +480,11 @@ def protect_from_itunes(
     buf[_OFF_AUTO_OPEN] = 0x00
     prefs.auto_open = False
 
-    # Write our library link ID
-    our_id = generate_library_id()
-    buf[_OFF_LIBRARY_ID:_OFF_LIBRARY_ID + 8] = our_id
-    prefs.library_link_id = our_id
+    # Preserve the original library link ID so Finder/iTunes continue to see
+    # the device as belonging to the same library after iOpenPod syncs.
+    library_id = _resolve_library_link_id(ipod_path, prefs)
+    buf[_OFF_LIBRARY_ID:_OFF_LIBRARY_ID + 8] = library_id
+    prefs.library_link_id = library_id
 
     # Ensure setup_done is set (so iTunes doesn't show setup wizard)
     buf[_OFF_SETUP_DONE] = 0x01
@@ -506,7 +527,7 @@ def protect_from_itunes(
         logger.info(
             "iTunesPrefs: wrote protective settings "
             "(manual sync, no auto-open, library_id=%s)",
-            our_id.hex(),
+            library_id.hex(),
         )
     except Exception as e:
         logger.error("Failed to write iTunesPrefs: %s", e)

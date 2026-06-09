@@ -9,7 +9,6 @@ Core components:
 - Transcoder: Converts non-iPod formats (FLAC, etc.) to ALAC/AAC
 
 """
-
 from ._formats import IPOD_NATIVE_FORMATS
 from .audio_fingerprint import (
     compute_fingerprint,
@@ -37,7 +36,6 @@ from .itunes_prefs import (
     ITunesPrefs,
     SyncHistoryEntry,
     check_library_owner,
-    generate_library_id,
     protect_from_itunes,
     read_prefs,
 )
@@ -100,7 +98,6 @@ __all__ = [
     "read_prefs",
     "protect_from_itunes",
     "check_library_owner",
-    "generate_library_id",
     "ITunesPrefs",
     "DeviceTotals",
     "SyncHistoryEntry",

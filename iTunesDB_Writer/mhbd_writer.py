@@ -541,12 +541,12 @@ def write_mhbd(
     else:
         lang_val = language.encode('utf-8')[:2].ljust(2, b'\x00')
 
-    # +0x48: Library Persistent ID — must match iTunesPrefs (macOS protection)
-    try:
-        from ipod_device import generate_library_id
-        lib_pid = struct.unpack('<Q', generate_library_id())[0]
-    except Exception:
-        lib_pid = reference_info.get('db_persistent_id', db_id) if reference_info else db_id
+    # +0x48: Library Persistent ID — preserve the original device/library ID
+    # so it continues to match iTunesPrefs and the device's historical owner.
+    if reference_info and reference_info.get('db_persistent_id'):
+        lib_pid = reference_info['db_persistent_id']
+    else:
+        lib_pid = db_id
 
     # +0x6C: timezone_offset (signed)
     if reference_info and 'timezone_offset' in reference_info:

@@ -23,10 +23,8 @@ For headless (non-GUI) use::
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import os
-import socket
 import sys
 import threading
 from dataclasses import dataclass, field, replace
@@ -2419,18 +2417,3 @@ def _enrich_artwork_from_artworkdb(info: DeviceInfo) -> None:
                 )
     except Exception as exc:
         logger.debug("enrich: ArtworkDB scan failed: %s", exc)
-
-
-# ──────────────────────────────────────────────────────────────────────
-# Library ID generation (deterministic, hostname-based)
-# ──────────────────────────────────────────────────────────────────────
-
-def generate_library_id() -> bytes:
-    """Generate a deterministic 8-byte library ID for iOpenPod.
-
-    Based on a hash of ``"iOpenPod"`` + hostname so the same computer
-    always produces the same ID, but different computers produce
-    different IDs.
-    """
-    identity = f"iOpenPod:{socket.gethostname()}".encode()
-    return hashlib.sha256(identity).digest()[:8]
