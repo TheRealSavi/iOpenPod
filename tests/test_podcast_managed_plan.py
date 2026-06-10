@@ -143,3 +143,197 @@ def test_immediate_age_rule_replaces_with_newest_available_episode() -> None:
 
     assert [item.db_track_id for item in plan.to_remove] == [10]
     assert [item.pc_track.title for item in plan.to_add if item.pc_track] == ["Newer"]
+
+
+# ── newest + replace + immediately: set-diff rotation ──────────────────────
+# These cover the maintainer's recommended "always newest" preset from
+# https://github.com/TheRealSavi/iOpenPod/issues/86 — the iPod should hold
+# the top-N newest eligible episodes, swapping only what fell out of that
+# set, not tearing down and refilling from older back-catalog entries.
+
+
+def test_newest_replace_immediate_is_noop_when_already_holding_top_n() -> None:
+    """If the on-iPod set already equals the top-N newest, do nothing.
+
+    The pre-fix bug cleared all 5 and refilled from outside the on-iPod
+    set, causing rotation into the back catalog on every sync.
+    """
+    eps = [
+        _episode(f"e{i}", f"Ep {i}", pub_date=float(1000 - i),
+                 on_ipod=True, db_track_id=i + 1)
+        for i in range(5)
+    ]
+    feed = PodcastFeed(
+        feed_url="https://example.test/feed.xml",
+        title="Show",
+        episodes=eps,
+        episode_slots=5,
+        fill_mode="newest",
+        clear_when_listened=False,
+        clear_older_than="immediate",
+        clear_method="replace",
+    )
+    ipod_tracks = [_ipod_track(ep, feed) for ep in eps]
+
+    plan = build_podcast_managed_plan([feed], ipod_tracks)
+
+    assert plan.to_remove == []
+    assert plan.to_add == []
+
+
+def test_newest_replace_immediate_swaps_only_the_oldest_when_one_new_drops() -> None:
+    """A single new episode → swap only the oldest on-iPod, keep the rest.
+
+    This is the scenario from issue #86: with the broken algorithm,
+    a single new episode caused 5 removes + 5 adds (1 newest + 4 from
+    further down the feed).
+    """
+    on_ipod_eps = [
+        _episode(f"on{i}", f"On {i}", pub_date=float(100 + i),
+                 on_ipod=True, db_track_id=i + 1)
+        for i in range(5)
+    ]
+    new_ep = _episode("new", "Brand New", pub_date=200.0)
+    back_catalog = [
+        _episode(f"old{i}", f"Old {i}", pub_date=float(50 - i))
+        for i in range(5)
+    ]
+    feed = PodcastFeed(
+        feed_url="https://example.test/feed.xml",
+        title="Show",
+        episodes=[new_ep, *on_ipod_eps, *back_catalog],
+        episode_slots=5,
+        fill_mode="newest",
+        clear_when_listened=False,
+        clear_older_than="immediate",
+        clear_method="replace",
+    )
+
+    plan = build_podcast_managed_plan(
+        [feed],
+        [_ipod_track(ep, feed) for ep in on_ipod_eps],
+    )
+
+    assert [item.db_track_id for item in plan.to_remove] == [1]  # "On 0", pub 100
+    assert [item.pc_track.title for item in plan.to_add if item.pc_track] == ["Brand New"]
+
+
+def test_newest_replace_initial_sync_adds_top_n() -> None:
+    """First sync with an empty iPod → add the top-N newest episodes."""
+    eps = [
+        _episode(f"e{i}", f"Ep {i}", pub_date=float(100 - i))
+        for i in range(10)
+    ]
+    feed = PodcastFeed(
+        feed_url="https://example.test/feed.xml",
+        title="Show",
+        episodes=eps,
+        episode_slots=5,
+        fill_mode="newest",
+        clear_when_listened=False,
+        clear_older_than="immediate",
+        clear_method="replace",
+    )
+
+    plan = build_podcast_managed_plan([feed], [])
+
+    assert plan.to_remove == []
+    titles = [item.pc_track.title for item in plan.to_add if item.pc_track]
+    assert titles == ["Ep 0", "Ep 1", "Ep 2", "Ep 3", "Ep 4"]
+
+
+def test_newest_replace_trims_when_slot_count_is_reduced() -> None:
+    """If the user reduces episode_slots, trim down even without a new episode."""
+    on_ipod_eps = [
+        _episode(f"e{i}", f"Ep {i}", pub_date=float(100 - i),
+                 on_ipod=True, db_track_id=i + 1)
+        for i in range(5)
+    ]
+    feed = PodcastFeed(
+        feed_url="https://example.test/feed.xml",
+        title="Show",
+        episodes=on_ipod_eps,
+        episode_slots=3,
+        fill_mode="newest",
+        clear_when_listened=False,
+        clear_older_than="immediate",
+        clear_method="replace",
+    )
+    base = time.time()
+    ipod_tracks = [
+        _ipod_track(ep, feed, date_added=base - (5 - i))
+        for i, ep in enumerate(on_ipod_eps)
+    ]
+
+    plan = build_podcast_managed_plan([feed], ipod_tracks)
+
+    # Top-3 newest are Ep 0, Ep 1, Ep 2 (db_track_ids 1, 2, 3).
+    # Ep 3 and Ep 4 (ids 4, 5) fell out and should be removed.
+    assert sorted(item.db_track_id for item in plan.to_remove) == [4, 5]
+    assert plan.to_add == []
+
+
+def test_newest_replace_clear_when_listened_swaps_played_for_unheard() -> None:
+    """clear_when_listened skips played episodes from "wanted"."""
+    on_ipod_eps = [
+        _episode(f"e{i}", f"Ep {i}", pub_date=float(100 - i),
+                 on_ipod=True, db_track_id=i + 1)
+        for i in range(5)
+    ]
+    next_unheard = _episode("next", "Next Unheard", pub_date=10.0)
+    feed = PodcastFeed(
+        feed_url="https://example.test/feed.xml",
+        title="Show",
+        episodes=[*on_ipod_eps, next_unheard],
+        episode_slots=5,
+        fill_mode="newest",
+        clear_when_listened=True,
+        clear_older_than="never",
+        clear_method="replace",
+    )
+    # Mark the *newest* on-iPod episode as listened.
+    ipod_tracks = [
+        _ipod_track(ep, feed, play_count=1 if ep.guid == "e0" else 0)
+        for ep in on_ipod_eps
+    ]
+
+    plan = build_podcast_managed_plan([feed], ipod_tracks)
+
+    assert [item.db_track_id for item in plan.to_remove] == [1]  # "Ep 0"
+    assert [item.pc_track.title for item in plan.to_add if item.pc_track] == ["Next Unheard"]
+
+
+def test_newest_remove_immediate_is_noop_when_already_holding_top_n() -> None:
+    """Same bug also affected ``newest + remove + immediate``.
+
+    With set-diff semantics it becomes a no-op when the iPod already
+    holds the top-N newest, instead of removing all 5 and refilling
+    with the next 5 from the back catalog.
+    """
+    on_ipod_eps = [
+        _episode(f"e{i}", f"Ep {i}", pub_date=float(100 - i),
+                 on_ipod=True, db_track_id=i + 1)
+        for i in range(5)
+    ]
+    back_catalog = [
+        _episode(f"old{i}", f"Old {i}", pub_date=float(50 - i))
+        for i in range(5)
+    ]
+    feed = PodcastFeed(
+        feed_url="https://example.test/feed.xml",
+        title="Show",
+        episodes=[*on_ipod_eps, *back_catalog],
+        episode_slots=5,
+        fill_mode="newest",
+        clear_when_listened=False,
+        clear_older_than="immediate",
+        clear_method="remove",
+    )
+
+    plan = build_podcast_managed_plan(
+        [feed],
+        [_ipod_track(ep, feed) for ep in on_ipod_eps],
+    )
+
+    assert plan.to_remove == []
+    assert plan.to_add == []

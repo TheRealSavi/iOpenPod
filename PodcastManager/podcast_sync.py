@@ -25,7 +25,7 @@ from .models import (
 )
 
 if TYPE_CHECKING:
-    from SyncEngine.contracts import SyncPlan
+    from SyncEngine.contracts import SyncItem, SyncPlan
     from SyncEngine.pc_library import PCTrack
 
 log = logging.getLogger(__name__)
@@ -428,6 +428,200 @@ def _pick_candidates(
     return available[:count]
 
 
+def _plan_newest_mode(
+    feed: PodcastFeed,
+    on_ipod: list[tuple[PodcastEpisode, dict]],
+    store: object | None,
+) -> tuple[list[SyncItem], list[SyncItem]]:
+    """Plan add/remove actions for ``fill_mode="newest"`` using set-diff.
+
+    The iPod should hold the top-N newest eligible episodes. Episodes that
+    are already on the iPod *and* still in the top-N stay put — they
+    are not torn down and re-added. Only episodes that have actually
+    fallen out of the top-N (because newer ones were published, because
+    the user reduced the slot count, or because ``clear_when_listened``
+    skipped them) get removed; the gap is filled with the corresponding
+    newest-not-yet-on-iPod episodes.
+
+    ``clear_older_than`` is intentionally inert in this mode: the set-diff
+    handles "rotate when a newer episode is available" automatically,
+    which is what users reaching for ``immediate`` actually want. Per-feed
+    age-based forcing is a ``next`` mode concept.
+    """
+    from SyncEngine.contracts import SyncAction, SyncItem
+
+    eligible = sorted(
+        (ep for ep in feed.episodes if ep.audio_url),
+        key=lambda e: e.pub_date,
+        reverse=True,
+    )
+
+    on_ipod_track_by_guid = {ep.guid: track for ep, track in on_ipod}
+
+    wanted: list[PodcastEpisode] = []
+    seen_guids: set[str] = set()
+    for ep in eligible:
+        if len(wanted) >= feed.episode_slots:
+            break
+        if ep.guid in seen_guids:
+            continue
+        seen_guids.add(ep.guid)
+        if feed.clear_when_listened:
+            track = on_ipod_track_by_guid.get(ep.guid)
+            if track and track.get("play_count_1", 0) > 0:
+                continue
+        wanted.append(ep)
+
+    wanted_guids = {ep.guid for ep in wanted}
+    on_ipod_guids = {ep.guid for ep, _ in on_ipod}
+
+    to_remove_eps = [(ep, t) for ep, t in on_ipod if ep.guid not in wanted_guids]
+    to_add_eps = [ep for ep in wanted if ep.guid not in on_ipod_guids]
+
+    if feed.clear_method == "replace":
+        paired = min(len(to_remove_eps), len(to_add_eps))
+        free_slots = max(0, feed.episode_slots - len(on_ipod))
+        extra_adds = min(len(to_add_eps) - paired, free_slots)
+        # If on-iPod already exceeds the slot count (e.g. the user reduced
+        # episode_slots), force removes until we fit. Without this the
+        # "replace only with a partner" rule would let the iPod stay
+        # permanently over budget.
+        final_count_after_pairing = len(on_ipod) + extra_adds
+        overflow = max(0, final_count_after_pairing - feed.episode_slots)
+        extra_removes = min(len(to_remove_eps) - paired, overflow)
+
+        remove_list = to_remove_eps[:paired + extra_removes]
+        add_list = to_add_eps[:paired + extra_adds]
+        removed_suffix = " (replaced)"
+    else:
+        remove_list = to_remove_eps
+        add_list = to_add_eps
+        removed_suffix = " (cleared)"
+
+    feed_removes: list[SyncItem] = []
+    feed_adds: list[SyncItem] = []
+    for ep, track in remove_list:
+        feed_removes.append(SyncItem(
+            action=SyncAction.REMOVE_FROM_IPOD,
+            db_track_id=ep.ipod_db_track_id,
+            ipod_track=track,
+            description=(
+                f"\U0001f399 {feed.title} \u2014 {ep.title}{removed_suffix}"
+            ),
+        ))
+    for ep in add_list:
+        pc_track = episode_to_pc_track(ep, feed, store)
+        feed_adds.append(SyncItem(
+            action=SyncAction.ADD_TO_IPOD,
+            pc_track=pc_track,
+            description=(
+                f"\U0001f399 {feed.title} \u2014 {ep.title}"
+            ),
+        ))
+
+    return feed_removes, feed_adds
+
+
+def _plan_next_mode(
+    feed: PodcastFeed,
+    on_ipod: list[tuple[PodcastEpisode, dict]],
+    now: float,
+    store: object | None,
+) -> tuple[list[SyncItem], list[SyncItem]]:
+    """Plan add/remove actions for ``fill_mode="next"``.
+
+    Clears episodes that match ``clear_when_listened`` /
+    ``clear_older_than`` and fills the freed slots with the next unheard
+    episode after the latest one currently on the iPod.
+    """
+    from SyncEngine.contracts import SyncAction, SyncItem
+
+    # ── Clear phase: identify episodes to remove ──────────────────
+    to_clear: list[tuple[PodcastEpisode, dict]] = []
+    staying: list[tuple[PodcastEpisode, dict]] = []
+    for ep, track in on_ipod:
+        if _should_clear_episode(track, feed, now):
+            to_clear.append((ep, track))
+        else:
+            staying.append((ep, track))
+
+    staying_guids = {ep.guid for ep, _ in staying}
+    # In replace mode, "next" should be measured from the current iPod
+    # position, including episodes marked for clearing. Otherwise an
+    # older unplayed episode can be mistaken for a replacement.
+    current_on_ipod_guids = {ep.guid for ep, _ in on_ipod}
+
+    # ── Fill phase: pick episodes for empty slots ─────────────────
+    slots_after_clear = len(staying)
+    slots_to_fill = max(0, feed.episode_slots - slots_after_clear)
+
+    # In "replace" mode we also need candidates to swap with cleared
+    # episodes, even when slots are full (no empty slots).
+    candidate_count = slots_to_fill
+    if feed.clear_method == "replace" and len(to_clear) > candidate_count:
+        candidate_count = len(to_clear)
+    candidates = _pick_candidates(
+        feed,
+        current_on_ipod_guids if feed.clear_method == "replace" else staying_guids,
+        candidate_count,
+        restart_when_no_newer=feed.clear_method != "replace",
+    )
+
+    # ── Apply clear method ────────────────────────────────────────
+    # "remove"  → remove cleared episodes unconditionally
+    # "replace" → only remove if we have a replacement to add
+    feed_removes: list[SyncItem] = []
+    feed_adds: list[SyncItem] = []
+
+    if feed.clear_method == "replace":
+        paired = min(len(to_clear), len(candidates))
+        for i in range(paired):
+            ep, track = to_clear[i]
+            feed_removes.append(SyncItem(
+                action=SyncAction.REMOVE_FROM_IPOD,
+                db_track_id=ep.ipod_db_track_id,
+                ipod_track=track,
+                description=(
+                    f"\U0001f399 {feed.title} \u2014 {ep.title} (replaced)"
+                ),
+            ))
+        on_ipod_after = len(on_ipod) - paired
+        extra_room = max(0, feed.episode_slots - on_ipod_after)
+        add_count = paired + extra_room
+        for candidate in candidates[:add_count]:
+            pc_track = episode_to_pc_track(candidate, feed, store)
+            feed_adds.append(SyncItem(
+                action=SyncAction.ADD_TO_IPOD,
+                pc_track=pc_track,
+                description=(
+                    f"\U0001f399 {feed.title} \u2014 {candidate.title}"
+                ),
+            ))
+    else:
+        for ep, track in to_clear:
+            feed_removes.append(SyncItem(
+                action=SyncAction.REMOVE_FROM_IPOD,
+                db_track_id=ep.ipod_db_track_id,
+                ipod_track=track,
+                description=(
+                    f"\U0001f399 {feed.title} \u2014 {ep.title} (cleared)"
+                ),
+            ))
+        total_after = len(staying)
+        fill_count = max(0, feed.episode_slots - total_after)
+        for candidate in candidates[:fill_count]:
+            pc_track = episode_to_pc_track(candidate, feed, store)
+            feed_adds.append(SyncItem(
+                action=SyncAction.ADD_TO_IPOD,
+                pc_track=pc_track,
+                description=(
+                    f"\U0001f399 {feed.title} \u2014 {candidate.title}"
+                ),
+            ))
+
+    return feed_removes, feed_adds
+
+
 def build_podcast_managed_plan(
     feeds: list[PodcastFeed],
     ipod_tracks: list[dict],
@@ -435,15 +629,20 @@ def build_podcast_managed_plan(
 ) -> SyncPlan:
     """Build a SyncPlan that applies per-feed podcast settings.
 
-    Evaluates each feed's slot management settings against the current
-    iPod state and produces add/remove actions:
+    Dispatches per feed on ``fill_mode``:
 
-    1. **Clear phase** — identify on-iPod episodes that should be cleared
-       (listened, too old) based on feed settings.
-    2. **Fill phase** — fill empty slots with new episodes based on
-       ``fill_mode`` (newest or next).
-    3. **Clear method** — ``"remove"`` clears unconditionally;
-       ``"replace"`` only clears if a replacement episode is available.
+    - ``"newest"`` uses set-diff between the top-N newest eligible
+      episodes and what's currently on the iPod (see
+      ``_plan_newest_mode``). Already-on-iPod episodes that are still in
+      the top-N stay put rather than being rotated out for older
+      back-catalog episodes.
+    - ``"next"`` uses the slot-based clear/fill pipeline (see
+      ``_plan_next_mode``).
+
+    After per-feed planning, a final overflow trim caps the on-iPod count
+    at ``feed.episode_slots``. In practice this only fires for ``next``
+    mode under a freshly reduced slot count; ``newest`` mode handles
+    overflow internally.
 
     Args:
         feeds: All subscribed feeds (with full episode catalogs after
@@ -468,13 +667,11 @@ def build_podcast_managed_plan(
     bytes_to_remove = 0
 
     # Index all podcast tracks on iPod by enclosure URL and title+album
-    podcast_tracks: list[dict] = []
     by_enclosure: dict[str, dict] = {}
     by_title_album: dict[tuple[str, str], dict] = {}
     for t in ipod_tracks:
         if not (t.get("media_type", 0) & 0x04):
             continue
-        podcast_tracks.append(t)
         enc = t.get("Podcast Enclosure URL", "")
         if enc:
             by_enclosure[enc] = t
@@ -500,115 +697,26 @@ def build_podcast_managed_plan(
             if ipod_track:
                 on_ipod.append((ep, ipod_track))
 
-        # ── Clear phase: identify episodes to remove ──────────────────
-        to_clear: list[tuple[PodcastEpisode, dict]] = []
-        staying: list[tuple[PodcastEpisode, dict]] = []
-
-        for ep, track in on_ipod:
-            if _should_clear_episode(track, feed, now):
-                to_clear.append((ep, track))
-            else:
-                staying.append((ep, track))
-
-        staying_guids = {ep.guid for ep, _ in staying}
-        # In replace mode, "next" should be measured from the current iPod
-        # position, including episodes marked for clearing. Otherwise an
-        # older unplayed episode can be mistaken for a replacement.
-        current_on_ipod_guids = {ep.guid for ep, _ in on_ipod}
-
-        # ── Fill phase: pick episodes for empty slots ─────────────────
-        slots_after_clear = len(staying)
-        slots_to_fill = max(0, feed.episode_slots - slots_after_clear)
-
-        # In "replace" mode we also need candidates to swap with cleared
-        # episodes, even when slots are full (no empty slots).
-        candidate_count = slots_to_fill
-        if feed.clear_method == "replace" and len(to_clear) > candidate_count:
-            candidate_count = len(to_clear)
-        candidates = _pick_candidates(
-            feed,
-            current_on_ipod_guids if feed.clear_method == "replace" else staying_guids,
-            candidate_count,
-            restart_when_no_newer=feed.clear_method != "replace",
-        )
-
-        # ── Apply clear method ────────────────────────────────────────
-        # "remove"  → remove cleared episodes unconditionally
-        # "replace" → only remove if we have a replacement to add
-        feed_removes: list[SyncItem] = []
-        feed_adds: list[SyncItem] = []
-
-        if feed.clear_method == "replace":
-            # Pair each cleared episode with a candidate replacement.
-            # Only remove if there's something to replace it with.
-            paired = min(len(to_clear), len(candidates))
-            for i in range(paired):
-                ep, track = to_clear[i]
-                feed_removes.append(SyncItem(
-                    action=SyncAction.REMOVE_FROM_IPOD,
-                    db_track_id=ep.ipod_db_track_id,
-                    ipod_track=track,
-                    description=(
-                        f"\U0001f399 {feed.title} \u2014 {ep.title} "
-                        f"(replaced)"
-                    ),
-                ))
-            # Add the paired replacements, plus any truly empty slots.
-            # Un-removed to_clear episodes still occupy slots, so count
-            # them when calculating remaining room.
-            on_ipod_after = len(on_ipod) - paired  # still on device
-            extra_room = max(0, feed.episode_slots - on_ipod_after)
-            add_count = paired + extra_room
-            for candidate in candidates[:add_count]:
-                pc_track = episode_to_pc_track(candidate, feed, store)
-                feed_adds.append(SyncItem(
-                    action=SyncAction.ADD_TO_IPOD,
-                    pc_track=pc_track,
-                    description=(
-                        f"\U0001f399 {feed.title} \u2014 {candidate.title}"
-                    ),
-                ))
+        if feed.fill_mode == "newest":
+            feed_removes, feed_adds = _plan_newest_mode(feed, on_ipod, store)
         else:
-            # "remove" — clear unconditionally, then fill all empty slots
-            for ep, track in to_clear:
-                feed_removes.append(SyncItem(
-                    action=SyncAction.REMOVE_FROM_IPOD,
-                    db_track_id=ep.ipod_db_track_id,
-                    ipod_track=track,
-                    description=(
-                        f"\U0001f399 {feed.title} \u2014 {ep.title} "
-                        f"(cleared)"
-                    ),
-                ))
+            feed_removes, feed_adds = _plan_next_mode(feed, on_ipod, now, store)
 
-            # Recalculate available slots after removals
-            total_after = len(staying)
-            fill_count = max(0, feed.episode_slots - total_after)
-            for candidate in candidates[:fill_count]:
-                pc_track = episode_to_pc_track(candidate, feed, store)
-                feed_adds.append(SyncItem(
-                    action=SyncAction.ADD_TO_IPOD,
-                    pc_track=pc_track,
-                    description=(
-                        f"\U0001f399 {feed.title} \u2014 {candidate.title}"
-                    ),
-                ))
-
-        # Also cap total on-iPod count to episode_slots even if nothing
-        # was cleared (e.g. user reduced slot count after initial sync).
-        # Remove oldest-added episodes that exceed the slot limit.
-        # Use on_ipod (not staying) as the base so that un-removed
-        # to_clear episodes in "replace" mode are counted correctly.
-        total_after = len(on_ipod) - len(feed_removes) + len(feed_adds)
+        # Cap total on-iPod count to episode_slots even if nothing was
+        # cleared (e.g. user reduced slot count in "next" mode after an
+        # initial sync). "newest" mode handles overflow internally, so
+        # this trim is normally a no-op for it. Remove oldest-added
+        # episodes among those staying to bring the feed back in budget.
+        removed_db_ids = {item.db_track_id for item in feed_removes}
+        staying = [
+            (ep, t) for ep, t in on_ipod
+            if ep.ipod_db_track_id not in removed_db_ids
+        ]
+        total_after = len(staying) + len(feed_adds)
         if total_after > feed.episode_slots:
             overflow = total_after - feed.episode_slots
-            # Sort staying by date_added ascending (oldest first) to trim.
-            # Only trim from staying — to_clear episodes already had their
-            # chance to be removed in the clear phase above.
-            staying_sorted = sorted(
-                staying, key=lambda x: x[1].get("date_added", 0),
-            )
-            for ep, track in staying_sorted[:overflow]:
+            staying.sort(key=lambda x: x[1].get("date_added", 0))
+            for ep, track in staying[:overflow]:
                 feed_removes.append(SyncItem(
                     action=SyncAction.REMOVE_FROM_IPOD,
                     db_track_id=ep.ipod_db_track_id,
