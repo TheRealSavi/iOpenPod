@@ -301,6 +301,49 @@ def _clear_macos_usb_cache() -> None:
         _macos_serial_to_dev = None
 
 
+def _parse_macos_ioreg_bsd_serials(text: str) -> dict[str, str]:
+    """Pair iPod BSD whole-disk names with their owning USB serial numbers.
+
+    The text ioreg output for iPod nodes looks like::
+
+        +-o iPod@01130000  <class IOUSBHostDevice, ...>
+          |   "USB Serial Number" = "000A270018A1F847"
+          |   "idProduct" = 4704
+          ...
+          +-o Apple iPod Media  <class IOMedia, ...>
+          |   "BSD Name" = "disk4"
+
+    We track the most recent ``"USB Serial Number"`` seen.  When we hit an
+    ``"Apple iPod Media"`` entry followed by a ``"BSD Name"``, we pair the
+    disk with the remembered serial — the iPod media node is a descendant
+    of its owning USB device, so the iPod's serial is the latest one seen.
+
+    Only iPod media disks are paired; serials of unrelated Apple devices
+    (keyboards, AirPods receivers, iPhones, hubs) are ignored.
+    """
+    import re as _re
+
+    bsd_map: dict[str, str] = {}
+    current_serial: str = ""
+    pending_serial: str = ""
+    for line in text.splitlines():
+        m_serial = _re.search(r'"USB Serial Number"\s*=\s*"([^"]+)"', line)
+        if m_serial:
+            current_serial = (
+                m_serial.group(1).replace(" ", "").strip().upper()
+            )
+            continue
+        if "Apple iPod Media" in line:
+            pending_serial = current_serial
+            continue
+        # BSD Name on IOMedia child
+        m = _re.search(r'"BSD Name"\s*=\s*"(disk\d+)"', line)
+        if m and pending_serial:
+            bsd_map[m.group(1)] = pending_serial
+            pending_serial = ""
+    return bsd_map
+
+
 def _build_macos_usb_cache() -> None:
     """Build both caches from ioreg in one shot.
 
@@ -309,13 +352,10 @@ def _build_macos_usb_cache() -> None:
     global _macos_bsd_to_serial, _macos_serial_to_dev
 
     import plistlib
-    import re as _re
     import subprocess
 
     bsd_map: dict[str, str] = {}
     dev_map: dict[str, dict] = {}
-    ordered_serials: list[str] = []
-    ordered_bsd_disks: list[str] = []
 
     def _collect_usb_devices(node: object) -> None:
         if isinstance(node, list):
@@ -332,25 +372,12 @@ def _build_macos_usb_cache() -> None:
             )
             key = str(serial).replace(" ", "").strip().upper()
             if key:
-                if key not in dev_map:
-                    ordered_serials.append(key)
                 dev_map[key] = node
 
         for child in node.get("IORegistryEntryChildren") or []:
             _collect_usb_devices(child)
 
     # ── 1. Text parse: map BSD whole-disk → USB serial ─────────────────
-    #
-    # The text ioreg output for iPod nodes looks like:
-    #   +-o iPod@01130000  <class IOUSBHostDevice, ...>
-    #     |   "USB Serial Number" = "000A270018A1F847"
-    #     |   "idProduct" = 4704
-    #     ...
-    #     +-o Apple iPod Media  <class IOMedia, ...>
-    #     |   "BSD Name" = "disk4"
-    #
-    # We track the current USB serial as we scan lines.  When we hit a
-    # "BSD Name" at a deeper indent, we know which USB device owns it.
     try:
         proc = subprocess.run(
             ["ioreg", "-r", "-c", "IOMedia"],
@@ -358,16 +385,7 @@ def _build_macos_usb_cache() -> None:
             encoding="utf-8", errors="replace", timeout=8,
         )
         if proc.returncode == 0 and proc.stdout:
-            pending_serial: str = ""
-            for line in proc.stdout.splitlines():
-                if "Apple iPod Media" in line:
-                    pending_serial = "media"
-                    continue
-                # BSD Name on IOMedia child
-                m = _re.search(r'"BSD Name"\s*=\s*"(disk\d+)"', line)
-                if m and pending_serial:
-                    ordered_bsd_disks.append(m.group(1))
-                    pending_serial = ""
+            bsd_map = _parse_macos_ioreg_bsd_serials(proc.stdout)
     except subprocess.TimeoutExpired:
         logger.warning("macOS: ioreg text parse timed out")
     except Exception as e:
@@ -384,9 +402,6 @@ def _build_macos_usb_cache() -> None:
             _collect_usb_devices(parsed)
     except Exception as e:
         logger.debug("ioreg plist query failed: %s", e)
-
-    for disk_name, serial_key in zip(ordered_bsd_disks, ordered_serials, strict=True):
-        bsd_map[disk_name] = serial_key
 
     if bsd_map:
         logger.debug("macOS: BSD→serial map: %s", bsd_map)
