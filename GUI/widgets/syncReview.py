@@ -62,6 +62,7 @@ from ..glyphs import glyph_icon, glyph_pixmap
 from ..styles import FONT_FAMILY, Colors, Metrics, accent_btn_css, btn_css, make_scroll_area
 from .formatters import format_duration_mmss as _format_duration
 from .formatters import format_size as _format_size
+from .syncStagesPanel import DEFAULT_PIPELINE, SyncStagesPanel
 
 logger = logging.getLogger(__name__)
 
@@ -1258,16 +1259,32 @@ class SyncReviewWidget(QWidget):
         self.stack = QStackedWidget(self)
         layout.addWidget(self.stack, 1)
 
-        # Loading / executing state
+        # Loading / executing state.  The outer layout is horizontal so we
+        # can render the sync-stages checklist on the left of the view; the
+        # centered headline + progress bar lives in a column on the
+        # right.  The panel is hidden during scan/diff (it only describes
+        # the executor's pipeline) and shown when ``show_executing`` runs.
         loading_widget = QWidget(self.stack)
-        loading_layout = QVBoxLayout(loading_widget)
+        loading_outer = QHBoxLayout(loading_widget)
+        loading_outer.setContentsMargins(0, 0, 0, 0)
+        loading_outer.setSpacing(0)
+
+        self._stages_panel = SyncStagesPanel(DEFAULT_PIPELINE, loading_widget)
+        self._stages_panel.setMinimumWidth(260)
+        self._stages_panel.setMaximumWidth(300)
+        self._stages_panel.setVisible(False)
+        loading_outer.addWidget(self._stages_panel)
+
+        loading_center = QWidget(loading_widget)
+        loading_layout = QVBoxLayout(loading_center)
         loading_layout.setContentsMargins(24, 0, 24, 0)
         loading_layout.setSpacing(0)
+        loading_outer.addWidget(loading_center, 1)
 
         loading_layout.addStretch(3)
 
         # Stage headline
-        self.loading_label = QLabel("Scanning library...", loading_widget)
+        self.loading_label = QLabel("Scanning library...", loading_center)
         self.loading_label.setStyleSheet(
             f"color: {Colors.TEXT_PRIMARY}; font-size: {Metrics.FONT_HERO}px;"
             f" font-weight: 500;"
@@ -1278,7 +1295,7 @@ class SyncReviewWidget(QWidget):
         loading_layout.addSpacing(16)
 
         # Progress bar
-        self.progress_bar = QProgressBar(loading_widget)
+        self.progress_bar = QProgressBar(loading_center)
         self.progress_bar.setFixedWidth(360)
         self.progress_bar.setTextVisible(False)
         self.progress_bar.setStyleSheet(f"""
@@ -1298,7 +1315,7 @@ class SyncReviewWidget(QWidget):
         loading_layout.addSpacing(10)
 
         # ETA / counter
-        self.eta_label = QLabel("", loading_widget)
+        self.eta_label = QLabel("", loading_center)
         self.eta_label.setStyleSheet(
             f"color: {Colors.TEXT_TERTIARY}; font-size: {Metrics.FONT_MD}px;"
         )
@@ -1309,7 +1326,7 @@ class SyncReviewWidget(QWidget):
 
         # Detail — current item / worker lines.
         # Bounded size so a burst of active workers cannot grow the window.
-        self.progress_detail = QLabel("", loading_widget)
+        self.progress_detail = QLabel("", loading_center)
         self.progress_detail.setStyleSheet(
             f"color: {Colors.TEXT_TERTIARY}; font-size: {Metrics.FONT_LG}px;"
         )
@@ -1324,7 +1341,7 @@ class SyncReviewWidget(QWidget):
         self._backup_hint = QLabel(
             "Pre-sync backups are enabled. "
             "You can turn this off in Settings \u2192 Backups.",
-            loading_widget,
+            loading_center,
         )
         self._backup_hint.setStyleSheet(
             f"color: {Colors.TEXT_TERTIARY}; font-size: {Metrics.FONT_SM}px;"
@@ -1676,6 +1693,7 @@ class SyncReviewWidget(QWidget):
         "scan": "Scanning libraries",
         "scan_pc": "Scanning PC library",
         "scan_ipod": "Scanning iPod library",
+        "scan_playlists": "Scanning playlist files",
         "load_mapping": "Loading iPod mapping",
         "integrity": "Checking iPod integrity",
         "fingerprint": "Computing fingerprints",
@@ -1808,6 +1826,7 @@ class SyncReviewWidget(QWidget):
     def show_loading(self):
         """Show loading state."""
         self.stack.setCurrentIndex(0)
+        self._stages_panel.setVisible(False)
         self.loading_label.setText("Scanning library...")
         self.progress_bar.setRange(0, 0)  # Indeterminate
         self.eta_label.setText("")
@@ -1821,6 +1840,7 @@ class SyncReviewWidget(QWidget):
         """Show the Back Sync progress state."""
         self._cancelled = False
         self.stack.setCurrentIndex(0)
+        self._stages_panel.setVisible(False)
         self.loading_label.setText("Preparing Back Sync")
         self.progress_bar.setRange(0, 0)
         self.eta_label.setText("")
@@ -2542,6 +2562,9 @@ class SyncReviewWidget(QWidget):
         self._completed_stages = []
         self._current_exec_stage = ""
         self._eta_tracker.start()
+        # Reset and reveal the stages checklist on the left
+        self._stages_panel.reset_for_pipeline(DEFAULT_PIPELINE)
+        self._stages_panel.setVisible(True)
         self.stack.setCurrentIndex(0)  # Loading view
         self.loading_label.setText("Syncing")
         self.progress_detail.setText("")
@@ -2620,6 +2643,9 @@ class SyncReviewWidget(QWidget):
             if self._current_exec_stage:
                 self._completed_stages.append(self._friendly_stage(self._current_exec_stage))
             self._current_exec_stage = stage
+
+        # Forward every stage event to the left-rail checklist
+        self._stages_panel.notify_stage(stage)
 
         # During the backup stage, repurpose the footer cancel as "Skip"
         is_backup = (stage == "backup")
@@ -2716,6 +2742,8 @@ class SyncReviewWidget(QWidget):
         self.result_details.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
 
         success = getattr(result, 'success', True)
+        # End the checklist on the side, marking any todo rows as ok or failed depending on success
+        self._stages_panel.end_of_sync(failed=not success)
         errors = getattr(result, 'errors', [])
         partial_save = getattr(result, 'partial_save', False)
 
@@ -3054,6 +3082,7 @@ class SyncReviewWidget(QWidget):
 
     def show_error(self, message: str):
         """Show error message."""
+        self._stages_panel.end_of_sync(failed=True)
         QMessageBox.critical(self, "Sync Error", message)
         self.stack.setCurrentIndex(2)
         self.summary_label.setText("Error during scan")
