@@ -1191,7 +1191,7 @@ class PCPhotoListView(QWidget):
 # ── Main browser widget ─────────────────────────────────────────────────────
 
 _CATEGORY_GLYPHS = {
-    "Albums": "music",
+    "Albums": "album",
     "Artists": "user",
     "Genres": "grid",
     "All Tracks": "music",

@@ -92,6 +92,12 @@ def _mhsd5_type_value(playlist: dict) -> int:
 
 
 def _is_ipod_category_playlist(playlist: dict) -> bool:
+    try:
+        dataset_type = int(playlist.get("_mhsd_dataset_type", 0) or 0)
+    except (TypeError, ValueError):
+        dataset_type = 0
+    if dataset_type:
+        return dataset_type == 5
     return playlist.get("_source") == "category" or bool(_mhsd5_type_value(playlist))
 
 
@@ -179,8 +185,9 @@ class _SyncContext:
 
     # ── Existing iPod database (populated by _load_existing_database) ──
     existing_tracks_data: list[dict] = field(default_factory=list)
-    existing_playlists_raw: list[dict] = field(default_factory=list)
-    existing_smart_raw: list[dict] = field(default_factory=list)
+    existing_dataset2_standard_playlists_raw: list[dict] = field(default_factory=list)
+    existing_dataset3_podcast_playlists_raw: list[dict] = field(default_factory=list)
+    existing_dataset5_smart_playlists_raw: list[dict] = field(default_factory=list)
 
     # ── Track state (mutated by stage methods) ──────────────────────
     tracks_by_db_track_id: dict[int, TrackInfo] = field(default_factory=dict)
@@ -801,8 +808,15 @@ class SyncExecutor:
         """Parse existing iPod database and populate ctx track/playlist state."""
         existing_db = self._read_existing_database()
         ctx.existing_tracks_data = existing_db["tracks"]
-        ctx.existing_playlists_raw = existing_db["playlists"]
-        ctx.existing_smart_raw = existing_db["smart_playlists"]
+        ctx.existing_dataset2_standard_playlists_raw = existing_db[
+            "dataset2_standard_playlists"
+        ]
+        ctx.existing_dataset3_podcast_playlists_raw = existing_db[
+            "dataset3_podcast_playlists"
+        ]
+        ctx.existing_dataset5_smart_playlists_raw = existing_db[
+            "dataset5_smart_playlists"
+        ]
 
         for t in ctx.existing_tracks_data:
             track_info = self._track_dict_to_info(t)
@@ -964,7 +978,15 @@ class SyncExecutor:
 
         # ── Build playlists and evaluate smart playlists ──────────
         _advance("Building playlists")
-        master_playlist_name, playlists, smart_playlists = (
+        (
+            master_playlist_name,
+            master_playlist_id,
+            playlists,
+            podcast_master_playlist_name,
+            podcast_master_playlist_id,
+            podcast_playlists,
+            smart_playlists,
+        ) = (
             self._build_and_evaluate_playlists(ctx, all_tracks)
         )
 
@@ -978,8 +1000,13 @@ class SyncExecutor:
 
             db_ok = self._write_database(
                 all_tracks, pc_file_paths=normalized_pc_paths,
-                playlists=playlists, smart_playlists=smart_playlists,
+                playlists=playlists,
+                podcast_playlists=podcast_playlists,
+                smart_playlists=smart_playlists,
                 master_playlist_name=master_playlist_name,
+                master_playlist_id=master_playlist_id,
+                podcast_master_playlist_name=podcast_master_playlist_name,
+                podcast_master_playlist_id=podcast_master_playlist_id,
                 progress_callback=_db_progress,
             )
             if not db_ok:
@@ -1042,16 +1069,17 @@ class SyncExecutor:
                 continue
             is_new = upl.get("_isNew", False)
             pid = upl.get("playlist_id", 0)
-            target = (
-                ctx.existing_smart_raw
-                if _is_ipod_category_playlist(upl)
-                else ctx.existing_playlists_raw
-            )
-            other = (
-                ctx.existing_playlists_raw
-                if target is ctx.existing_smart_raw
-                else ctx.existing_smart_raw
-            )
+            try:
+                dataset_type = int(upl.get("_mhsd_dataset_type", 0) or 0)
+            except (TypeError, ValueError):
+                dataset_type = 0
+
+            if dataset_type == 3 or upl.get("_source") == "podcast":
+                target = ctx.existing_dataset3_podcast_playlists_raw
+            elif dataset_type == 5 or _is_ipod_category_playlist(upl):
+                target = ctx.existing_dataset5_smart_playlists_raw
+            else:
+                target = ctx.existing_dataset2_standard_playlists_raw
 
             replaced = False
             if not is_new:
@@ -1060,11 +1088,6 @@ class SyncExecutor:
                         target[i] = upl
                         replaced = True
                         break
-
-            if pid:
-                other[:] = [
-                    epl for epl in other if epl.get("playlist_id") != pid
-                ]
 
             if not replaced:
                 target.append(upl)
@@ -3178,7 +3201,15 @@ class SyncExecutor:
         self,
         ctx: _SyncContext,
         all_track_infos: list[TrackInfo],
-    ) -> tuple[str, list[PlaylistInfo], list[PlaylistInfo]]:
+    ) -> tuple[
+        str,
+        int | None,
+        list[PlaylistInfo],
+        str,
+        int | None,
+        list[PlaylistInfo],
+        list[PlaylistInfo],
+    ]:
         """Build PlaylistInfo lists and evaluate smart playlist rules."""
         from ._playlist_builder import build_and_evaluate_playlists
 
@@ -3189,8 +3220,9 @@ class SyncExecutor:
         }
         return build_and_evaluate_playlists(
             ctx.existing_tracks_data,
-            ctx.existing_playlists_raw,
-            ctx.existing_smart_raw,
+            ctx.existing_dataset2_standard_playlists_raw,
+            ctx.existing_dataset3_podcast_playlists_raw,
+            ctx.existing_dataset5_smart_playlists_raw,
             all_track_infos,
             ctx.user_playlists,
             source_path_to_db_track_id,
@@ -3207,8 +3239,12 @@ class SyncExecutor:
         tracks: list[TrackInfo],
         pc_file_paths: dict | None = None,
         playlists: list[PlaylistInfo] | None = None,
+        podcast_playlists: list[PlaylistInfo] | None = None,
         smart_playlists: list[PlaylistInfo] | None = None,
         master_playlist_name: str = "iPod",
+        master_playlist_id: int | None = None,
+        podcast_master_playlist_name: str | None = None,
+        podcast_master_playlist_id: int | None = None,
         progress_callback: Callable[[str], None] | None = None,
     ) -> bool:
         """Write tracks to iTunesDB (and ArtworkDB/SQLite if applicable)."""
@@ -3217,8 +3253,12 @@ class SyncExecutor:
             self.ipod_path, tracks,
             pc_file_paths=pc_file_paths,
             playlists=playlists,
+            podcast_playlists=podcast_playlists,
             smart_playlists=smart_playlists,
             master_playlist_name=master_playlist_name,
+            master_playlist_id=master_playlist_id,
+            podcast_master_playlist_name=podcast_master_playlist_name,
+            podcast_master_playlist_id=podcast_master_playlist_id,
             progress_callback=progress_callback,
             raise_on_error=True,
         )

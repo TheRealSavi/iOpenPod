@@ -10,7 +10,7 @@ Header layout (MHSD_HEADER_SIZE = 96 bytes):
     +0x0C: dataset_type (4B):
            1 = Track list (mhlt)
            2 = Playlist list (mhlp)
-           3 = Podcast list (mhlp) — same content as type 2
+           3 = Type-3 playlist list (mhlp), with podcast-aware grouping
            4 = Album list (mhla)
            5 = Smart playlist list (mhlp)
            6 = Empty stub (mhlt with 0 children)

@@ -22,6 +22,7 @@ from iTunesDB_Shared.extraction import (
     extract_datasets,
     extract_mhod_strings,
     extract_playlist_extras,
+    extract_playlist_item_extras,
     extract_track_extras,
 )
 from iTunesDB_Shared.field_base import filetype_to_string
@@ -106,7 +107,10 @@ def _inline_album_strings(data: dict) -> None:
 
 def _inline_playlist_strings(data: dict) -> None:
     for key in ("mhlp", "mhlp_podcast", "mhlp_smart"):
+        dataset_type = {"mhlp": 2, "mhlp_podcast": 3, "mhlp_smart": 5}[key]
         for pl in data.get(key, []):
+            pl.setdefault("_mhsd_dataset_type", dataset_type)
+            pl.setdefault("_mhsd_result_key", key)
             mhod_children = pl.pop("mhod_children", [])
             strings = extract_mhod_strings(mhod_children)
             pl.update(strings)
@@ -116,7 +120,10 @@ def _inline_playlist_strings(data: dict) -> None:
             # parse_children always returns {"chunk_type": ..., "data": {...}}.
             items = []
             for mhip in pl.pop("mhip_children", []):
-                items.append({"track_id": mhip["data"].get("track_id", 0)})
+                if "data" in mhip:
+                    item = mhip["data"]
+                    item.update(extract_playlist_item_extras(item.get("children", [])))
+                    items.append(item)
             pl["items"] = items
 
 

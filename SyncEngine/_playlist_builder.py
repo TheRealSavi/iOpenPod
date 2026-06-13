@@ -11,6 +11,10 @@ import os
 from pathlib import Path
 
 from iTunesDB_Shared.constants import MEDIA_TYPE_PODCAST
+from iTunesDB_Shared.playlist_properties import (
+    playlist_description_from_row,
+    playlist_property_raw_body_for_write,
+)
 from iTunesDB_Writer.mhit_writer import TrackInfo
 from iTunesDB_Writer.mhod_spl_writer import prefs_from_parsed, rules_from_parsed
 from iTunesDB_Writer.mhyp_writer import PlaylistInfo, PlaylistItemMeta
@@ -161,6 +165,15 @@ def decode_raw_blob(value) -> bytes | None:
     return None
 
 
+def _playlist_property_plist_raw(playlist: dict) -> bytes | None:
+    return playlist_property_raw_body_for_write(playlist)
+
+
+def _playlist_description(playlist: dict) -> str | None:
+    description = playlist_description_from_row(playlist)
+    return description if description or "playlist_description" in playlist else None
+
+
 def _source_path_key(path: str) -> str:
     try:
         return os.path.normcase(str(Path(path).expanduser().resolve()))
@@ -177,16 +190,26 @@ def _mhsd5_type_value(playlist: dict) -> int:
 
 def build_and_evaluate_playlists(
     existing_tracks_data: list[dict],
-    existing_playlists_raw: list[dict],
-    existing_smart_raw: list[dict],
+    dataset2_standard_playlists_raw: list[dict],
+    dataset3_podcast_playlists_raw: list[dict],
+    dataset5_smart_playlists_raw: list[dict],
     all_track_infos: list[TrackInfo],
     user_playlists: list[dict],
     source_path_to_db_track_id: dict[str, int] | None = None,
-) -> tuple[str, list[PlaylistInfo], list[PlaylistInfo]]:
+) -> tuple[
+    str,
+    int | None,
+    list[PlaylistInfo],
+    str,
+    int | None,
+    list[PlaylistInfo],
+    list[PlaylistInfo],
+]:
     """Build PlaylistInfo lists and evaluate smart playlist rules.
 
-    Returns (master_playlist_name, regular_playlists, smart_playlists)
-    ready for write_itunesdb().
+    Returns (dataset2_master_name, dataset2_master_id, dataset2_playlists,
+    dataset3_master_name, dataset3_master_id, dataset3_playlists,
+    dataset5_playlists) ready for write_itunesdb().
     """
     from ._track_conversion import trackinfo_to_eval_dict
     from .spl_evaluator import spl_update
@@ -205,39 +228,50 @@ def build_and_evaluate_playlists(
         _source_path_key(path): db_track_id
         for path, db_track_id in (source_path_to_db_track_id or {}).items()
     }
-
-    migrated_smart_raw, category_smart_raw = _partition_dataset5_playlists(
-        existing_smart_raw,
-    )
-    if migrated_smart_raw:
-        logger.info(
-            "Migrating %d dataset-5 user smart playlist(s) to the visible playlist dataset",
-            len(migrated_smart_raw),
-        )
-    visible_playlists_raw = _merge_visible_playlist_rows(
-        existing_playlists_raw,
-        migrated_smart_raw,
-    )
-
-    master_name, master_id, playlists = _build_regular_playlists(
-        visible_playlists_raw, old_tid_to_db_track_id,
-        valid_db_track_ids, eval_tracks, spl_update,
+    initial_playlist_lookup = _playlist_lookup_from_rows(
+        [
+            *dataset2_standard_playlists_raw,
+            *dataset3_podcast_playlists_raw,
+            *dataset5_smart_playlists_raw,
+        ],
+        old_tid_to_db_track_id,
+        valid_db_track_ids,
         source_lookup,
     )
-    _sanitize_playlists(playlists, master_id)
-    _rebuild_podcast_playlist(playlists, all_track_infos)
+
+    master_name, _master_id, playlists = _build_standard_dataset_playlists(
+        dataset2_standard_playlists_raw, old_tid_to_db_track_id,
+        valid_db_track_ids, eval_tracks, spl_update,
+        source_lookup, "dataset2", initial_playlist_lookup,
+    )
+    podcast_master_name, _podcast_master_id, podcast_playlists = _build_standard_dataset_playlists(
+        dataset3_podcast_playlists_raw, old_tid_to_db_track_id,
+        valid_db_track_ids, eval_tracks, spl_update,
+        source_lookup, "dataset3", initial_playlist_lookup,
+    )
 
     smart_playlists = _build_smart_playlists(
-        category_smart_raw, valid_db_track_ids, eval_tracks, spl_update,
+        dataset5_smart_playlists_raw,
+        old_tid_to_db_track_id,
+        valid_db_track_ids,
+        eval_tracks,
+        spl_update,
+        source_lookup,
+        initial_playlist_lookup,
     )
 
     _reevaluate_live_update(
-        playlists, smart_playlists, valid_db_track_ids, eval_tracks, spl_update,
+        playlists + podcast_playlists,
+        smart_playlists,
+        valid_db_track_ids,
+        eval_tracks,
+        spl_update,
     )
+    _sync_podcast_playlist_membership(playlists, podcast_playlists, all_track_infos)
 
     # ── Apply sort order to all playlists ─────────────────────
     db_track_id_to_info = {t.db_track_id: t for t in all_track_infos if t.db_track_id}
-    for pl in playlists + smart_playlists:
+    for pl in playlists + podcast_playlists + smart_playlists:
         if pl.sortorder not in (0, 1) and pl.track_ids:
             pl.track_ids = sort_trackinfos_by_order(
                 pl.track_ids, pl.sortorder, db_track_id_to_info,
@@ -246,92 +280,179 @@ def build_and_evaluate_playlists(
             # the writer generates fresh positional MHODs.
             pl.item_metadata = None
 
-    return master_name, playlists, smart_playlists
+    return (
+        master_name,
+        _master_id,
+        playlists,
+        podcast_master_name,
+        _podcast_master_id,
+        podcast_playlists,
+        smart_playlists,
+    )
 
 
-def _partition_dataset5_playlists(
-    playlists: list[dict],
-) -> tuple[list[dict], list[dict]]:
-    """Split user smart playlists from firmware browse categories."""
-
-    user_smart: list[dict] = []
-    categories: list[dict] = []
-    for playlist in playlists:
-        if _mhsd5_type_value(playlist):
-            categories.append(playlist)
-        else:
-            user_smart.append(playlist)
-    return user_smart, categories
+def _is_podcast_track(track: TrackInfo) -> bool:
+    return bool(
+        getattr(track, "media_type", 0) & MEDIA_TYPE_PODCAST
+        or getattr(track, "podcast_flag", 0)
+    )
 
 
-def _merge_visible_playlist_rows(
-    regular_playlists: list[dict],
-    migrated_smart_playlists: list[dict],
-) -> list[dict]:
-    if not migrated_smart_playlists:
-        return regular_playlists
+def _sync_podcast_playlist_membership(
+    playlists: list[PlaylistInfo],
+    podcast_playlists: list[PlaylistInfo],
+    all_track_infos: list[TrackInfo],
+) -> None:
+    """Keep the special Podcasts playlist aligned with podcast track contents."""
 
-    visible = list(regular_playlists)
-    seen_ids = {
-        playlist_id
-        for playlist_id in (playlist.get("playlist_id", 0) for playlist in visible)
-        if playlist_id
-    }
-    for playlist in migrated_smart_playlists:
-        playlist_id = playlist.get("playlist_id", 0)
-        if playlist_id and playlist_id in seen_ids:
+    podcast_db_track_ids = [
+        track.db_track_id
+        for track in all_track_infos
+        if track.db_track_id and _is_podcast_track(track)
+    ]
+    targets = [
+        playlist
+        for playlist in [*playlists, *podcast_playlists]
+        if playlist.podcast_flag
+    ]
+
+    if not targets and podcast_db_track_ids:
+        podcast_playlist = PlaylistInfo(
+            name="Podcasts",
+            track_ids=[],
+            podcast_flag=1,
+        )
+        podcast_playlists.append(podcast_playlist)
+        targets.append(podcast_playlist)
+
+    for playlist in targets:
+        if playlist.track_ids != podcast_db_track_ids:
+            logger.info(
+                "Podcast playlist '%s': synced to %d podcast track(s)",
+                playlist.name,
+                len(podcast_db_track_ids),
+            )
+            playlist.track_ids = list(podcast_db_track_ids)
+            playlist.item_metadata = None
+
+
+def _playlist_lookup_from_rows(
+    playlist_rows: list[dict],
+    old_tid_to_db_track_id: dict[int, int],
+    valid_db_track_ids: set[int],
+    source_path_to_db_track_id: dict[str, int],
+) -> dict[int, set[int]]:
+    playlist_lookup: dict[int, set[int]] = {}
+    for playlist in playlist_rows:
+        playlist_id = playlist.get("playlist_id")
+        if not playlist_id or playlist.get("master_flag"):
             continue
-        if playlist_id:
-            seen_ids.add(playlist_id)
-        visible.append(playlist)
-    return visible
+        try:
+            lookup_id = int(playlist_id)
+        except (TypeError, ValueError):
+            continue
+        track_ids, _item_meta = _playlist_track_ids_and_metadata(
+            playlist.get("items", []),
+            old_tid_to_db_track_id,
+            valid_db_track_ids,
+            source_path_to_db_track_id,
+        )
+        playlist_lookup.setdefault(lookup_id, set()).update(track_ids)
+    return playlist_lookup
 
 
-def _build_regular_playlists(
-    existing_playlists_raw: list[dict],
+def _playlist_lookup_from_infos(
+    playlist_groups: list[list[PlaylistInfo]],
+) -> dict[int, set[int]]:
+    playlist_lookup: dict[int, set[int]] = {}
+    for playlists in playlist_groups:
+        for playlist in playlists:
+            if playlist.playlist_id is None or playlist.master:
+                continue
+            playlist_lookup.setdefault(int(playlist.playlist_id), set()).update(
+                playlist.track_ids
+            )
+    return playlist_lookup
+
+
+def _playlist_track_ids_and_metadata(
+    items: list[dict],
+    old_tid_to_db_track_id: dict[int, int],
+    valid_db_track_ids: set[int],
+    source_path_to_db_track_id: dict[str, int],
+) -> tuple[list[int], list[PlaylistItemMeta] | None]:
+    """Resolve parsed MHIP rows to db_track_ids while preserving item metadata."""
+
+    track_ids: list[int] = []
+    item_meta: list[PlaylistItemMeta] = []
+    for item in items:
+        tid = item.get("track_id", 0)
+        db_track_id = old_tid_to_db_track_id.get(tid, 0)
+        if not db_track_id:
+            db_track_id = item.get("db_track_id", item.get("db_id", 0))
+        if not db_track_id:
+            source_path = item.get("source_path") or item.get("_source_path")
+            if source_path:
+                db_track_id = source_path_to_db_track_id.get(
+                    _source_path_key(str(source_path)),
+                    0,
+                )
+        try:
+            db_track_id = int(db_track_id or 0)
+        except (TypeError, ValueError):
+            db_track_id = 0
+        if db_track_id in valid_db_track_ids:
+            track_ids.append(db_track_id)
+            item_meta.append(PlaylistItemMeta(
+                podcast_group_flag=item.get("podcast_group_flag", 0),
+                group_id=item.get("group_id", 0),
+                podcast_group_ref=item.get("group_id_ref", 0),
+                track_persistent_id=item.get("track_persistent_id", 0),
+                mhip_persistent_id=item.get("mhip_persistent_id", 0),
+            ))
+
+    return track_ids, item_meta if item_meta else None
+
+
+def _build_standard_dataset_playlists(
+    selected_standard_playlist_rows: list[dict],
     old_tid_to_db_track_id: dict[int, int],
     valid_db_track_ids: set[int],
     eval_tracks: list[dict],
     spl_update,
     source_path_to_db_track_id: dict[str, int],
+    source_dataset_name: str,
+    playlist_lookup: dict[int, set[int]] | None,
 ) -> tuple[str, int | None, list[PlaylistInfo]]:
-    """Build dataset-2 playlists, returning (master_name, master_id, playlists)."""
+    """Build dataset-2/3 playlists, returning (master_name, master_id, rows).
+
+    The generated writer always emits one master row first for dataset 2/3.
+    Existing master rows therefore contribute their name and persistent ID; all
+    non-master rows are passed through without relocating or reclassifying them.
+    More than one master row is ambiguous and is treated as malformed input
+    rather than being guessed into shape.
+    """
     master_playlist_name = "iPod"
     master_playlist_id: int | None = None
     playlists: list[PlaylistInfo] = []
+    master_rows = [pl for pl in selected_standard_playlist_rows if pl.get("master_flag")]
+    if len(master_rows) > 1:
+        raise ValueError(
+            f"{source_dataset_name} contains {len(master_rows)} master_flag playlist rows"
+        )
 
-    for pl in existing_playlists_raw:
+    for pl in selected_standard_playlist_rows:
         if pl.get("master_flag"):
             master_playlist_name = pl.get("Title", "iPod")
             master_playlist_id = pl.get("playlist_id")
             continue
 
-        items = pl.get("items", [])
-        track_ids = []
-        item_meta = []
-        for item in items:
-            tid = item.get("track_id", 0)
-            db_track_id = old_tid_to_db_track_id.get(tid, 0)
-            if not db_track_id:
-                db_track_id = item.get("db_track_id", item.get("db_id", 0))
-            if not db_track_id:
-                source_path = item.get("source_path") or item.get("_source_path")
-                if source_path:
-                    db_track_id = source_path_to_db_track_id.get(
-                        _source_path_key(str(source_path)),
-                        0,
-                    )
-            try:
-                db_track_id = int(db_track_id or 0)
-            except (TypeError, ValueError):
-                db_track_id = 0
-            if db_track_id in valid_db_track_ids:
-                track_ids.append(db_track_id)
-                item_meta.append(PlaylistItemMeta(
-                    podcast_group_flag=item.get("podcast_group_flag", 0),
-                    group_id=item.get("group_id", 0),
-                    podcast_group_ref=item.get("group_id_ref", 0),
-                ))
+        track_ids, item_meta = _playlist_track_ids_and_metadata(
+            pl.get("items", []),
+            old_tid_to_db_track_id,
+            valid_db_track_ids,
+            source_path_to_db_track_id,
+        )
 
         info = PlaylistInfo(
             name=pl.get("Title", "Untitled"),
@@ -340,9 +461,12 @@ def _build_regular_playlists(
             master=False,
             sortorder=pl.get("sort_order", 0),
             podcast_flag=pl.get("podcast_flag", 0),
+            mhsd5_type=_mhsd5_type_value(pl),
             raw_mhod100=decode_raw_blob(pl.get("playlist_prefs")),
             raw_mhod102=decode_raw_blob(pl.get("playlist_settings")),
-            item_metadata=item_meta if item_meta else None,
+            raw_mhod55=_playlist_property_plist_raw(pl),
+            playlist_description=_playlist_description(pl),
+            item_metadata=item_meta,
         )
 
         # Evaluate smart playlist rules (dataset 2 smart playlists)
@@ -352,7 +476,10 @@ def _build_regular_playlists(
             info.smart_prefs = prefs_from_parsed(prefs_data)
             info.smart_rules = rules_from_parsed(rules_data)
             matched_db_track_ids = spl_update(
-                info.smart_prefs, info.smart_rules, eval_tracks,
+                info.smart_prefs,
+                info.smart_rules,
+                eval_tracks,
+                playlist_lookup,
             )
             info.track_ids = [d for d in matched_db_track_ids if d in valid_db_track_ids]
             info.item_metadata = None
@@ -361,103 +488,72 @@ def _build_regular_playlists(
 
         playlists.append(info)
 
-    logger.info("Prepared %d user playlists for writing", len(playlists))
+    logger.info(
+        "Prepared %d playlist row(s) from %s",
+        len(playlists),
+        source_dataset_name,
+    )
     return master_playlist_name, master_playlist_id, playlists
 
 
-def _sanitize_playlists(playlists: list[PlaylistInfo],
-                        master_playlist_id: int | None) -> None:
-    """Remove master duplicates and strip rogue master flags."""
-    if master_playlist_id is not None:
-        before = len(playlists)
-        playlists[:] = [p for p in playlists
-                        if p.playlist_id != master_playlist_id]
-        dropped = before - len(playlists)
-        if dropped:
-            logger.warning("Dropped %d playlist(s) with master playlist_id=0x%X",
-                           dropped, master_playlist_id)
-
-    master_count = sum(1 for p in playlists if p.master)
-    if master_count:
-        logger.warning("Stripped master flag from %d user playlist(s) — "
-                       "master is auto-generated", master_count)
-        for p in playlists:
-            p.master = False
-
-
-def _rebuild_podcast_playlist(playlists: list[PlaylistInfo],
-                              all_track_infos: list[TrackInfo]) -> None:
-    """Ensure the Podcasts playlist reflects all current podcast tracks."""
-    podcast_db_track_ids = [
-        t.db_track_id for t in all_track_infos if t.media_type & MEDIA_TYPE_PODCAST
-    ]
-    existing_podcast_pl = next((p for p in playlists if p.podcast_flag), None)
-
-    if podcast_db_track_ids:
-        if existing_podcast_pl is not None:
-            existing_podcast_pl.track_ids = podcast_db_track_ids
-            existing_podcast_pl.item_metadata = None
-            logger.info("Rebuilt 'Podcasts' playlist with %d tracks",
-                        len(podcast_db_track_ids))
-        else:
-            from iTunesDB_Writer.mhyp_writer import generate_playlist_id
-            playlists.append(PlaylistInfo(
-                name="Podcasts",
-                track_ids=podcast_db_track_ids,
-                playlist_id=generate_playlist_id(),
-                podcast_flag=1,
-            ))
-            logger.info("Auto-created 'Podcasts' playlist with %d tracks",
-                        len(podcast_db_track_ids))
-    elif existing_podcast_pl is not None:
-        playlists.remove(existing_podcast_pl)
-        logger.info("Removed empty 'Podcasts' playlist (no podcast tracks)")
-
-
 def _build_smart_playlists(
-    existing_smart_raw: list[dict],
+    dataset5_smart_playlist_rows: list[dict],
+    old_tid_to_db_track_id: dict[int, int],
     valid_db_track_ids: set[int],
     eval_tracks: list[dict],
     spl_update,
+    source_path_to_db_track_id: dict[str, int],
+    playlist_lookup: dict[int, set[int]] | None,
 ) -> list[PlaylistInfo]:
     """Build dataset-5 smart playlists."""
     smart_playlists: list[PlaylistInfo] = []
-    for pl in existing_smart_raw:
+    for pl in dataset5_smart_playlist_rows:
         prefs_data = pl.get("smart_playlist_data")
         rules_data = pl.get("smart_playlist_rules")
         mhsd5_type = _mhsd5_type_value(pl)
+        track_ids, item_meta = _playlist_track_ids_and_metadata(
+            pl.get("items", []),
+            old_tid_to_db_track_id,
+            valid_db_track_ids,
+            source_path_to_db_track_id,
+        )
 
         info = PlaylistInfo(
             name=pl.get("Title", "Untitled"),
             playlist_id=pl.get("playlist_id"),
-            master=bool(pl.get("master_flag", 0)) or bool(mhsd5_type),
+            # Preserve the dataset-5 type byte exactly as parsed. Older code
+            # inferred master=True from mhsd5_type, but that silently repairs
+            # missing category markers and loses evidence from device samples.
+            master=bool(pl.get("master_flag", 0)),
+            track_ids=track_ids,
             sortorder=pl.get("sort_order", 0),
             mhsd5_type=mhsd5_type,
             raw_mhod100=decode_raw_blob(pl.get("playlist_prefs")),
             raw_mhod102=decode_raw_blob(pl.get("playlist_settings")),
+            raw_mhod55=_playlist_property_plist_raw(pl),
+            playlist_description=_playlist_description(pl),
+            item_metadata=item_meta,
         )
 
         if prefs_data and rules_data:
             info.smart_prefs = prefs_from_parsed(prefs_data)
             info.smart_rules = rules_from_parsed(rules_data)
-            matched_db_track_ids = spl_update(
-                info.smart_prefs, info.smart_rules, eval_tracks,
-            )
-
-            if info.mhsd5_type:
-                info.track_ids = [d for d in matched_db_track_ids if d in valid_db_track_ids]
-                info.item_metadata = None
-                logger.debug("SPL (ds5) '%s': %d tracks matched and assigned",
-                             info.name, len(info.track_ids))
-            elif info.smart_prefs.live_update:
+            if not info.mhsd5_type and info.smart_prefs.live_update:
+                matched_db_track_ids = spl_update(
+                    info.smart_prefs,
+                    info.smart_rules,
+                    eval_tracks,
+                    playlist_lookup,
+                )
                 info.track_ids = [d for d in matched_db_track_ids if d in valid_db_track_ids]
                 info.item_metadata = None
                 logger.debug("SPL (ds5) '%s': %d tracks matched (live_update)",
                              info.name, len(info.track_ids))
             else:
-                logger.debug("SPL (ds5) '%s': %d tracks would match "
-                             "(live_update=False, keeping existing)",
-                             info.name, len(matched_db_track_ids))
+                logger.debug("SPL (ds5) '%s': keeping parsed membership "
+                             "(mhsd5_type=%d, live_update=%s)",
+                             info.name, info.mhsd5_type,
+                             bool(info.smart_prefs.live_update))
 
         smart_playlists.append(info)
 
@@ -476,8 +572,12 @@ def _reevaluate_live_update(
     """Re-evaluate all live-update SPLs against the final track list."""
     for info in list(playlists) + [s for s in smart_playlists if not s.mhsd5_type]:
         if info.smart_prefs and info.smart_rules and info.smart_prefs.live_update:
+            playlist_lookup = _playlist_lookup_from_infos([playlists, smart_playlists])
             matched_db_track_ids = spl_update(
-                info.smart_prefs, info.smart_rules, eval_tracks,
+                info.smart_prefs,
+                info.smart_rules,
+                eval_tracks,
+                playlist_lookup,
             )
             new_ids = [d for d in matched_db_track_ids if d in valid_db_track_ids]
             if new_ids != info.track_ids:

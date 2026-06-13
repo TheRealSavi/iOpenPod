@@ -85,6 +85,23 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _mhsd5_type_value(playlist: dict) -> int:
+    try:
+        return int(playlist.get("mhsd5_type", 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _is_ipod_category_playlist(playlist: dict) -> bool:
+    try:
+        dataset_type = int(playlist.get("_mhsd_dataset_type", 0) or 0)
+    except (TypeError, ValueError):
+        dataset_type = 0
+    if dataset_type:
+        return dataset_type == 5
+    return playlist.get("_source") == "category" or bool(_mhsd5_type_value(playlist))
+
+
 def _label_css(color: str) -> str:
     return f"color: {color}; background: transparent; border: none;"
 
@@ -232,7 +249,7 @@ class MainWindow(QMainWindow):
     @staticmethod
     def _device_name_from_playlists(playlists: list[dict]) -> str:
         for playlist in playlists:
-            if playlist.get("master_flag"):
+            if playlist.get("master_flag") and not _is_ipod_category_playlist(playlist):
                 return str(playlist.get("Title") or "").strip()
         return ""
 
@@ -1783,15 +1800,16 @@ class MainWindow(QMainWindow):
 
         # Gather GUI state to pass to executor (instead of it pulling from GUI)
         user_playlists: list[dict] = []
-        seen_playlist_ids: set[object] = set()
+        seen_playlist_keys: set[tuple[object, object]] = set()
         for playlist in (
             filtered_plan.playlists_to_add + filtered_plan.playlists_to_edit
         ):
             playlist_id = playlist.get("playlist_id")
-            if playlist_id and playlist_id in seen_playlist_ids:
+            playlist_key = (playlist_id, playlist.get("_mhsd_dataset_type") or 0)
+            if playlist_id and playlist_key in seen_playlist_keys:
                 continue
             if playlist_id:
-                seen_playlist_ids.add(playlist_id)
+                seen_playlist_keys.add(playlist_key)
             user_playlists.append(playlist)
 
         def _on_sync_complete():

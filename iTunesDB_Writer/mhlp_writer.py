@@ -11,7 +11,8 @@ Header layout (MHLP_HEADER_SIZE = 92 bytes):
 
 Supports:
 - Master + user playlists (write_mhlp_with_playlists)
-- Dataset 3 podcast playlists (podcast clone of dataset 2)
+- Dataset 3 playlist rows (explicit dataset-3 rows, or a dataset-2 clone only
+  when the caller has no dataset-3 rows to preserve)
 - Dataset 5 smart playlists (write_mhlp_smart)
 
 Cross-referenced against:
@@ -21,7 +22,6 @@ Cross-referenced against:
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -35,8 +35,6 @@ from iTunesDB_Shared.field_base import (
 )
 
 from .mhyp_writer import write_master_playlist, write_playlist
-
-logger = logging.getLogger(__name__)
 
 
 def write_mhlp_empty() -> bytes:
@@ -105,20 +103,6 @@ def write_mhlp_with_playlists(
     )
     chunks.append(master)
 
-    # Sanity: strip rogue master flags from dataset-2 user playlists.
-    # Only the auto-generated master above should have master=True.
-    # Dataset 5 built-in categories (mhsd5_type != 0) legitimately
-    # need master=True, so we never touch those — even if they end up
-    # here by accident.
-    for p in playlists:
-        if p.master and not p.mhsd5_type:
-            logger.warning(
-                "Stripped master flag from user playlist '%s' — "
-                "master is auto-generated for dataset 2",
-                p.name,
-            )
-            p.master = False
-
     # Write all user playlists (regular and smart).
     for pl in playlists:
         chunks.append(write_playlist(pl, db_id_2=db_id_2))
@@ -137,11 +121,13 @@ def write_mhlp_with_playlists_type3(
     next_mhip_id_start: int = 1,
     master_playlist_id: int | None = None,
 ) -> bytes:
-    """Write an MHLP for MHSD type 3 with podcast grouping.
+    """Write an MHLP for MHSD type 3 with podcast-aware grouping.
 
-    Identical to :func:`write_mhlp_with_playlists` **except** that playlist
-    entries marked as podcast (``podcast_flag == 1``) use the grouped
-    MHIP structure described by libgpod's ``write_podcast_mhips()``.
+    Dataset 3 is structurally another MHLP, but firmware treats it as the
+    type-3 playlist list. Playlist rows are not reclassified here;
+    the only dataset-3-specific write behavior is that entries marked as
+    podcast (``podcast_flag == 1``) use the grouped MHIP structure described
+    by libgpod's ``write_podcast_mhips()``.
 
     In the grouped structure, podcast episodes are nested under their
     podcast show (album).  Each show gets a group-header MHIP
@@ -153,8 +139,9 @@ def write_mhlp_with_playlists_type3(
 
     Args:
         track_ids: ALL track IDs in the database (for the master playlist)
-        playlists: User playlist list (same objects as type 2; master is
-                   auto-generated)
+        playlists: Dataset-3 playlist rows (or dataset-2 rows when the caller
+                   intentionally uses the libgpod-compatible clone fallback).
+                   The master row is auto-generated.
         db_id_2: Database-wide ID from MHBD offset 0x24
         track_album_map: track_id → album name for podcast grouping
         tracks: TrackInfo list (needed for master playlist library indices)
@@ -174,15 +161,6 @@ def write_mhlp_with_playlists_type3(
         playlist_id=master_playlist_id,
     )
     chunks.append(master)
-
-    for p in playlists:
-        if p.master and not p.mhsd5_type:
-            logger.warning(
-                "Stripped master flag from user playlist '%s' — "
-                "master is auto-generated for dataset 3",
-                p.name,
-            )
-            p.master = False
 
     for pl in playlists:
         chunks.append(write_playlist(
@@ -207,15 +185,16 @@ def write_mhlp_smart(
     and smart rules that filter by media type.
 
     **Master flag semantics for dataset 5:**
-    All built-in categories legitimately have ``master=True`` which writes
-    ``type=1`` at MHYP offset +0x14.  This is the SAME byte used by the
-    master playlist in dataset 2, but the meaning differs:
+    Built-in categories often have ``master=True`` which writes ``type=1`` at
+    MHYP offset +0x14.  This is the SAME byte used by the master playlist in
+    dataset 2, but the meaning differs:
 
     - Dataset 2 ``type=1``: "this is the master playlist" (exactly one)
     - Dataset 5 ``type=1``: "this is a built-in system category" (all of them)
 
-    No single-master constraint is enforced here — every ds5 category
-    needs ``master=True`` for the iPod firmware to recognise it.
+    No single-master constraint is enforced here, and this writer does not
+    synthesize the flag from ``mhsd5_type``. If a device sample carries a
+    surprising value, preserve it so the sample remains useful.
 
     Args:
         playlists: List of PlaylistInfo objects (smart playlists only)

@@ -38,6 +38,7 @@ import struct
 from typing import Any
 
 import iTunesDB_Shared as idb
+from iTunesDB_Shared.playlist_properties import parse_playlist_property_mhod55
 
 from ._parsing import UINT16_LE, UINT32_LE, ParseResult
 
@@ -139,6 +140,8 @@ def _parse_nonstring_mhod(
             return _parse_mhod52(data, body_offset, body_length)
         case 53:
             return _parse_mhod53(data, body_offset, body_length)
+        case 55:
+            return _parse_mhod55(data, body_offset, body_length)
         case 100:
             return _parse_mhod100(data, body_offset, body_length)
         case 102:
@@ -262,13 +265,18 @@ def _parse_spl_rule(
 
     field_type = defs.spl_get_field_type(field_id)
 
-    if field_type == defs.SPLFT_STRING:
+    string_action = bool(rule["action_id"] & 0x01000000)
+    if field_type == defs.SPLFT_STRING or (
+        field_type == defs.SPLFT_UNKNOWN and (data_length == 0 or string_action)
+    ):
         # SLst strings are UTF-16 BIG-endian.
         if data_length > 0:
             raw = data[data_offset:data_offset + data_length]
             rule["string_value"] = raw.decode("utf-16-be", errors="replace")
         else:
             rule["string_value"] = ""
+        if field_type == defs.SPLFT_UNKNOWN:
+            rule["inferred_field_type"] = "string"
     else:
         # Numeric rule data (INT, DATE, BOOLEAN, PLAYLIST, BINARY_AND).
         rule["from_value"] = defs.mhod_spl_rule_from_value(data, data_offset)
@@ -373,6 +381,26 @@ def _parse_mhod53(
     result["entries"] = entries
 
     return result
+
+
+# ────────────────────────────────────────────────────────────────────
+# MHOD Type 55 — Playlist property plist
+# ────────────────────────────────────────────────────────────────────
+
+def _parse_mhod55(
+    data: bytes | bytearray,
+    body_offset: int,
+    body_length: int,
+) -> dict[str, Any]:
+    """Parse MHOD type 55 as an opaque Apple binary plist.
+
+    The iPod video 5.5G sample carries this on user playlist MHYP rows as
+    ``bplist00`` with a ``description`` key. It is not playlist-folder data:
+    the same description also appears as an MHOD type-3 string child. Preserve
+    the body verbatim because other plist keys remain unsampled.
+    """
+    raw_body = bytes(data[body_offset:body_offset + body_length])
+    return parse_playlist_property_mhod55(raw_body)
 
 
 # ────────────────────────────────────────────────────────────────────

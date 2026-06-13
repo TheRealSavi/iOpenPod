@@ -36,6 +36,9 @@ from app_core.jobs import (
 from app_core.jobs import (
     PlaylistWriteWorker as _PlaylistWriteWorker,
 )
+from app_core.runtime import display_playlists_from_rows
+from iTunesDB_Shared.constants import MHOD_TYPE_TITLE
+from iTunesDB_Shared.playlist_properties import playlist_description_from_row
 
 from ..glyphs import glyph_icon, glyph_pixmap
 from ..styles import (
@@ -77,7 +80,7 @@ if TYPE_CHECKING:
     )
 
 # Icons for each playlist type
-_ICON_REGULAR = "annotation-dots"
+_ICON_REGULAR = "playlist"
 _ICON_SMART = "filter"
 _ICON_PODCAST = "broadcast"
 _ICON_MASTER = "home"
@@ -101,17 +104,22 @@ def _subtle_label_css(color: str = Colors.TEXT_TERTIARY) -> str:
 def _mhsd5_type_value(playlist: dict | None) -> int:
     if not playlist:
         return 0
-    try:
-        return int(playlist.get("mhsd5_type", 0) or 0)
-    except (TypeError, ValueError):
-        return 0
+    return _int_value(playlist.get("mhsd5_type"))
 
 
 def _is_ipod_category_playlist(playlist: dict | None) -> bool:
-    return bool(
-        playlist
-        and (playlist.get("_source") == "category" or _mhsd5_type_value(playlist))
-    )
+    if not playlist:
+        return False
+    dataset_type = _playlist_dataset_type(playlist)
+    if dataset_type:
+        return dataset_type == 5
+    return bool(playlist.get("_source") == "category" and dataset_type in (0, 5))
+
+
+def _playlist_dataset_type(playlist: dict | None) -> int:
+    if not playlist:
+        return 0
+    return _int_value(playlist.get("_mhsd_dataset_type"))
 
 
 def _is_user_smart_playlist(playlist: dict | None) -> bool:
@@ -127,13 +135,157 @@ def _is_regular_track_playlist(playlist: dict | None) -> bool:
         return False
     if playlist.get("master_flag") or _is_ipod_category_playlist(playlist):
         return False
+    if _is_display_merged_playlist(playlist):
+        return False
     if _is_user_smart_playlist(playlist):
         return False
     if playlist.get("podcast_flag", 0) == 1:
         return False
-    if playlist.get("_source") in ("category", "podcast", "smart"):
+    if playlist.get("_source") in ("category", "smart"):
         return False
     return True
+
+
+def _display_origin_types(playlist: dict | None) -> list[int]:
+    if not playlist:
+        return []
+    raw = playlist.get("_mhsd_display_types")
+    if isinstance(raw, list):
+        return [_int_value(value) for value in raw if _int_value(value)]
+    dataset_type = _playlist_dataset_type(playlist)
+    return [dataset_type] if dataset_type else []
+
+
+def _is_display_merged_playlist(playlist: dict | None) -> bool:
+    return bool(playlist and playlist.get("_mhsd_display_merged"))
+
+
+def _mhsd_type_label(playlist: dict | None) -> str:
+    types = _display_origin_types(playlist)
+    if not types:
+        return "MHSD type unknown"
+    return " + ".join(f"MHSD type {dataset_type}" for dataset_type in types)
+
+
+def _int_value(value: object) -> int:
+    if value is None:
+        return 0
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return 0
+        try:
+            return int(text)
+        except ValueError:
+            return 0
+    if isinstance(value, bytes | bytearray):
+        try:
+            return int(value)
+        except ValueError:
+            return 0
+    return 0
+
+
+def _mhip_title_from_children(item: dict) -> str:
+    for wrapper in item.get("children", []) or []:
+        if not isinstance(wrapper, dict):
+            continue
+        data = wrapper.get("data", {})
+        if (
+            isinstance(data, dict)
+            and data.get("mhod_type") == MHOD_TYPE_TITLE
+            and data.get("string")
+        ):
+            return str(data["string"])
+    return ""
+
+
+def _podcast_grouping_summary(
+    playlist: dict | None,
+    track_id_index: dict[int, dict] | None = None,
+) -> list[dict[str, object]]:
+    """Return parsed dataset-3 podcast groups without inventing hierarchy.
+
+    Type-3 podcast playlists may contain synthetic MHIP group-header rows
+    (``podcast_group_flag == 256``) followed by episode rows whose
+    ``group_id_ref`` points back to the header. That is not a general playlist
+    folder model; it is the podcast grouping libgpod writes for MHSD type 3.
+    """
+
+    if not playlist or _playlist_dataset_type(playlist) != 3:
+        return []
+
+    items = playlist.get("items", [])
+    if not isinstance(items, list):
+        return []
+
+    groups_by_id: dict[int, dict[str, object]] = {}
+    order: list[int] = []
+    ungrouped: list[dict] = []
+
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        if _int_value(item.get("podcast_group_flag")) != 256:
+            continue
+        group_id = _int_value(item.get("group_id"))
+        if not group_id:
+            continue
+        title = (
+            str(item.get("podcast_group_title") or "").strip()
+            or _mhip_title_from_children(item).strip()
+            or f"Group {group_id}"
+        )
+        groups_by_id[group_id] = {"group_id": group_id, "title": title, "items": []}
+        order.append(group_id)
+
+    if not groups_by_id:
+        return []
+
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        if _int_value(item.get("podcast_group_flag")) == 256:
+            continue
+        ref = _int_value(item.get("group_id_ref") or item.get("podcast_group_ref"))
+        target = groups_by_id.get(ref)
+        if target is None:
+            ungrouped.append(item)
+            continue
+        target_items = target["items"]
+        if isinstance(target_items, list):
+            target_items.append(item)
+
+    if ungrouped:
+        groups_by_id[0] = {"group_id": 0, "title": "Ungrouped", "items": ungrouped}
+        order.append(0)
+
+    summaries: list[dict[str, object]] = []
+    track_id_index = track_id_index or {}
+    for group_id in order:
+        group = groups_by_id[group_id]
+        group_items = group.get("items", [])
+        if not isinstance(group_items, list):
+            continue
+        titles: list[str] = []
+        for item in group_items:
+            track = track_id_index.get(_int_value(item.get("track_id")))
+            title = str((track or {}).get("Title") or item.get("Title") or "").strip()
+            if title:
+                titles.append(title)
+        summaries.append({
+            "group_id": group_id,
+            "title": group["title"],
+            "count": len(group_items),
+            "preview_titles": titles[:3],
+        })
+    return summaries
 
 
 def _notice_frame_css(object_name: str) -> str:
@@ -235,6 +387,13 @@ class PlaylistInfoCard(QFrame):
         self.title_label.setStyleSheet(_label_css(Colors.TEXT_PRIMARY))
         self.title_label.setWordWrap(True)
         title_col.addWidget(self.title_label)
+
+        self.description_label = QLabel("")
+        self.description_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        self.description_label.setStyleSheet(_label_css(Colors.TEXT_SECONDARY))
+        self.description_label.setWordWrap(True)
+        self.description_label.hide()
+        title_col.addWidget(self.description_label)
 
         meta_row = QHBoxLayout()
         meta_row.setContentsMargins(0, 0, 0, 0)
@@ -443,7 +602,12 @@ class PlaylistInfoCard(QFrame):
     # Public API
     # ─────────────────────────────────────────────────────────────
 
-    def showPlaylist(self, playlist: dict, resolved_tracks: list[dict]) -> None:
+    def showPlaylist(
+        self,
+        playlist: dict,
+        resolved_tracks: list[dict],
+        track_id_index: dict[int, dict] | None = None,
+    ) -> None:
         """Populate the card with data from a parsed playlist dict."""
         self._clear_details()
 
@@ -456,23 +620,34 @@ class PlaylistInfoCard(QFrame):
 
         # ── Title ──
         self.title_label.setText(title)
+        description = playlist_description_from_row(playlist)
+        self.description_label.setText(description)
+        self.description_label.setVisible(bool(description))
 
         # ── Type badge ──
-        if is_master:
-            self.type_label.setText("Master Library Playlist")
+        origin_label = _mhsd_type_label(playlist)
+        if _is_display_merged_playlist(playlist):
+            self.type_label.setText(f"{origin_label} Playlist")
         elif is_category:
-            self.type_label.setText("iPod Browsing Playlist")
+            self.type_label.setText(f"{origin_label} Internal Browsing Category")
+        elif is_master:
+            self.type_label.setText(f"{origin_label} Master Library Playlist")
         elif is_smart:
-            self.type_label.setText("Smart Playlist")
-        elif is_podcast or source == "podcast":
-            self.type_label.setText("Podcast Playlist")
+            self.type_label.setText(f"{origin_label} Smart Playlist")
         else:
-            self.type_label.setText("Playlist")
+            self.type_label.setText(f"{origin_label} Regular Playlist")
         self.type_label.show()
-        self._source_label.setText(self._source_summary(source, is_master, is_category))
+        self._source_label.setText(
+            self._source_summary(source, is_master, is_category, playlist)
+        )
 
-        # Edit/delete: allowed for user playlists, blocked for master/category/podcast
-        editable = not is_master and not is_category and not is_podcast
+        # Display-merged rows are editable as one logical playlist; cache saves
+        # fan out to each represented MHSD row.
+        editable = (
+            not is_master
+            and not is_category
+            and (_is_display_merged_playlist(playlist) or not is_podcast)
+        )
         self.edit_btn.setVisible(editable)
         deletable = not is_master and not is_category
         self.delete_btn.setVisible(deletable)
@@ -486,20 +661,28 @@ class PlaylistInfoCard(QFrame):
         self._populate_ids_flags(playlist, is_master, is_podcast)
         self._populate_extra_mhods(playlist)
         self._populate_track_stats(resolved_tracks)
+        self._populate_podcast_grouping(playlist, track_id_index)
         self._populate_smart_rules_preview(playlist, is_smart)
 
         self.details_layout.addStretch()
 
-    def _source_summary(self, source: str, is_master: bool, is_category: bool) -> str:
-        if is_master:
-            return "Full iPod library"
+    def _source_summary(
+        self,
+        source: str,
+        is_master: bool,
+        is_category: bool,
+        playlist: dict,
+    ) -> str:
+        dataset_label = _mhsd_type_label(playlist)
+        if _is_display_merged_playlist(playlist):
+            return f"{dataset_label} rows with the same playlist ID"
         if is_category:
-            return "Built-in iPod browse view"
-        if source == "podcast":
-            return "Podcast subscription view"
+            return f"{dataset_label} built-in browse view"
+        if is_master:
+            return f"{dataset_label} master playlist"
         if source == "smart":
-            return "Rule-based playlist"
-        return "User playlist"
+            return f"{dataset_label} smart playlist row"
+        return f"{dataset_label} playlist row"
 
     def _populate_smart_rules_preview(self, playlist: dict, is_smart: bool) -> None:
         self._clear_rules_preview()
@@ -612,6 +795,8 @@ class PlaylistInfoCard(QFrame):
 
         details: list[tuple[str, str]] = []
         details.append(("Sort Order", sort_order))
+        if description := playlist_description_from_row(playlist):
+            details.append(("Description", description))
 
         for ts_key, label in (("timestamp", "Created"), ("timestamp_2", "Modified")):
             ts = playlist.get(ts_key, 0)
@@ -621,7 +806,26 @@ class PlaylistInfoCard(QFrame):
                 except (ValueError, OSError):
                     pass
 
-        details.append(("Dataset Source", source))
+        details.append(("Dataset Type", _mhsd_type_label(playlist)))
+        if _is_display_merged_playlist(playlist):
+            details.append((
+                "Display Merge",
+                "Same playlist ID represented in multiple MHSD playlist datasets",
+            ))
+            origins = playlist.get("_mhsd_display_origins", [])
+            if isinstance(origins, list):
+                for origin in origins:
+                    if not isinstance(origin, dict):
+                        continue
+                    origin_type = _int_value(origin.get("dataset_type"))
+                    origin_title = str(origin.get("title") or "").strip()
+                    if origin_type:
+                        details.append((
+                            f"MHSD Type {origin_type}",
+                            origin_title or "Untitled",
+                        ))
+        else:
+            details.append(("Dataset Source", source))
 
         mhsd5 = _mhsd5_type_value(playlist)
         if mhsd5:
@@ -677,7 +881,11 @@ class PlaylistInfoCard(QFrame):
     def _populate_extra_mhods(self, playlist: dict) -> None:
         """Populate extra MHOD fields section."""
         extra_binary = {k: v for k, v in playlist.items()
-                        if k in ("playlist_prefs", "playlist_settings")}
+                        if k in (
+                            "playlist_prefs",
+                            "playlist_settings",
+                            "playlist_property_plist",
+                        )}
         extra_strings = {k: v for k, v in playlist.items()
                          if k.startswith("unknown_mhod_")}
         known_extra = {**extra_binary, **extra_strings}
@@ -686,7 +894,23 @@ class PlaylistInfoCard(QFrame):
 
         self._add_section_header("Extra MHOD Fields")
         for k, v in known_extra.items():
-            if isinstance(v, dict):
+            if k == "playlist_property_plist" and isinstance(v, dict):
+                raw_body = v.get("raw_body")
+                if isinstance(raw_body, (bytes, bytearray)):
+                    body_len = len(raw_body)
+                elif isinstance(raw_body, str):
+                    body_len = len(raw_body)
+                else:
+                    body_len = "?"
+                plist = v.get("plist")
+                if isinstance(plist, dict):
+                    keys = ", ".join(str(key) for key in plist.keys()) or "none"
+                elif "description" in v:
+                    keys = "description"
+                else:
+                    keys = "unknown"
+                display_val = f"binary plist — {body_len} bytes; keys: {keys}"
+            elif isinstance(v, dict):
                 ctx = v.get("context", "binary")
                 bl = v.get("bodyLength", "?")
                 display_val = f"{ctx} — {bl} bytes (opaque iTunes view settings)"
@@ -703,12 +927,20 @@ class PlaylistInfoCard(QFrame):
 
         self._add_section_header("Track Statistics")
 
-        bitrates = [t.get("bitrate", 0) for t in resolved_tracks if t.get("bitrate", 0) > 0]
+        bitrates = [
+            bitrate
+            for t in resolved_tracks
+            if (bitrate := _int_value(t.get("bitrate"))) > 0
+        ]
         if bitrates:
             avg_br = sum(bitrates) / len(bitrates)
             self._add_detail_row("Avg Bitrate", f"{avg_br:.0f} kbps")
 
-        ratings = [t.get("rating", 0) for t in resolved_tracks if t.get("rating", 0) > 0]
+        ratings = [
+            rating
+            for t in resolved_tracks
+            if (rating := _int_value(t.get("rating"))) > 0
+        ]
         if ratings:
             avg_rating = sum(ratings) / len(ratings) / 20.0
             self._add_detail_row("Avg Rating", f"{avg_rating:.1f} / 5 ★")
@@ -732,11 +964,43 @@ class PlaylistInfoCard(QFrame):
             ft_str = ", ".join(f"{k.strip()}: {v}" for k, v in sorted(filetypes.items(), key=lambda x: -x[1]))
             self._add_detail_row("File Formats", ft_str)
 
-        years = [t.get("year", 0) for t in resolved_tracks if t.get("year", 0) > 0]
+        years = [
+            year
+            for t in resolved_tracks
+            if (year := _int_value(t.get("year"))) > 0
+        ]
         if years:
             min_y, max_y = min(years), max(years)
             yr_str = str(min_y) if min_y == max_y else f"{min_y}–{max_y}"
             self._add_detail_row("Year Range", yr_str)
+
+    def _populate_podcast_grouping(
+        self,
+        playlist: dict,
+        track_id_index: dict[int, dict] | None,
+    ) -> None:
+        """Show parsed MHSD-3 podcast group headers and item links."""
+        groups = _podcast_grouping_summary(playlist, track_id_index)
+        if not groups:
+            return
+
+        self._add_section_header("Podcast Grouping")
+        total_items = sum(_int_value(group.get("count")) for group in groups)
+        self._add_detail_row("Group Headers", str(len(groups)))
+        self._add_detail_row("Linked Episodes", str(total_items))
+        for group in groups[:6]:
+            count = _int_value(group.get("count"))
+            label = f"{group.get('title', 'Group')} ({count})"
+            group_id = _int_value(group.get("group_id"))
+            if group_id:
+                label = f"{label}  id={group_id}"
+            self._add_detail_text(label)
+            preview_titles = group.get("preview_titles", [])
+            if isinstance(preview_titles, list) and preview_titles:
+                self._add_detail_text("  " + ", ".join(str(t) for t in preview_titles))
+        extra = len(groups) - 6
+        if extra > 0:
+            self._add_detail_text(f"+ {extra} more group{'s' if extra != 1 else ''}")
 
     def showEmpty(self) -> None:
         """Show default empty state."""
@@ -744,6 +1008,8 @@ class PlaylistInfoCard(QFrame):
         self._clear_rules_preview()
         self._rules_panel.hide()
         self.title_label.setText("Select a playlist")
+        self.description_label.setText("")
+        self.description_label.hide()
         self.type_label.setText("")
         self.type_label.hide()
         self._source_label.setText("Choose a playlist to inspect its tracks and database metadata")
@@ -847,28 +1113,30 @@ class PlaylistListPanel(QFrame):
         """Populate the panel with playlists grouped by type."""
         self._clear()
 
-        # Categorize
+        # Categorize by playlist contents. MHSD location is shown separately as
+        # type metadata, and type 5 rows with category markers are internal
+        # browsing categories.
         regular: list[dict] = []
         smart: list[dict] = []
-        category: list[dict] = []
         podcast: list[dict] = []
+        category: list[dict] = []
         master: dict | None = None
 
         for pl in playlists:
-            if pl.get("master_flag"):
-                master = pl
-            elif _is_ipod_category_playlist(pl):
+            if _is_ipod_category_playlist(pl):
                 category.append(pl)
+            elif pl.get("master_flag"):
+                master = pl
+            elif pl.get("podcast_flag", 0) == 1:
+                podcast.append(pl)
             elif _is_user_smart_playlist(pl):
                 smart.append(pl)
-            elif pl.get("podcast_flag", 0) == 1 or pl.get("_source") == "podcast":
-                podcast.append(pl)
             else:
                 regular.append(pl)
 
         # Build sections
         if regular:
-            self._add_section("PLAYLISTS")
+            self._add_section("REGULAR PLAYLISTS")
             for pl in regular:
                 self._add_playlist_button(pl, _ICON_REGULAR)
 
@@ -877,15 +1145,15 @@ class PlaylistListPanel(QFrame):
             for pl in smart:
                 self._add_playlist_button(pl, _ICON_SMART)
 
-        if category:
-            self._add_section("iPod CATEGORIES")
-            for pl in category:
-                self._add_playlist_button(pl, _ICON_CATEGORY, dimmed=True)
-
         if podcast:
-            self._add_section("PODCASTS")
+            self._add_section("PODCAST PLAYLISTS")
             for pl in podcast:
                 self._add_playlist_button(pl, _ICON_PODCAST)
+
+        if category:
+            self._add_section("INTERNAL BROWSE CATEGORIES")
+            for pl in category:
+                self._add_playlist_button(pl, _ICON_CATEGORY, dimmed=True)
 
         # Master at bottom, dimmed
         if master:
@@ -893,7 +1161,7 @@ class PlaylistListPanel(QFrame):
             self._add_playlist_button(master, _ICON_MASTER, dimmed=True)
 
         # Empty state
-        if not regular and not smart and not podcast and master is None:
+        if not regular and not smart and not podcast and not category and master is None:
             empty_container = QWidget()
             empty_container.setStyleSheet("background: transparent; border: none;")
             empty_vbox = QVBoxLayout(empty_container)
@@ -901,7 +1169,7 @@ class PlaylistListPanel(QFrame):
             empty_vbox.setSpacing(8)
 
             empty_icon = QLabel()
-            _px = glyph_pixmap("annotation-dots", Metrics.FONT_ICON_LG, Colors.TEXT_TERTIARY)
+            _px = glyph_pixmap("playlist", Metrics.FONT_ICON_LG, Colors.TEXT_TERTIARY)
             if _px:
                 empty_icon.setPixmap(_px)
             else:
@@ -926,10 +1194,17 @@ class PlaylistListPanel(QFrame):
         """Public clear."""
         self._clear()
 
-    def selectPlaylistById(self, playlist_id: int) -> bool:
-        """Select a playlist button by playlist ID if it is present."""
+    def selectPlaylistById(
+        self, playlist_id: int, dataset_type: int | None = None
+    ) -> bool:
+        """Select a playlist by ID and, when known, its source MHSD dataset."""
         for index, playlist in self._playlist_map.items():
-            if int(playlist.get("playlist_id", 0) or 0) == playlist_id:
+            if _int_value(playlist.get("playlist_id")) == playlist_id:
+                if (
+                    dataset_type is not None
+                    and _playlist_dataset_type(playlist) != dataset_type
+                ):
+                    continue
                 self._on_click(index)
                 return True
         return False
@@ -980,7 +1255,7 @@ class PlaylistListPanel(QFrame):
 
         btn = QPushButton(btn_text)
         btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
-        btn.setToolTip(f"{title}\n{count} tracks")
+        btn.setToolTip(f"{title}\n{count} tracks\n{_mhsd_type_label(playlist)}")
 
         fg = Colors.TEXT_DISABLED if dimmed else Colors.TEXT_PRIMARY
         ic = glyph_icon(icon_name, (20), fg)
@@ -1264,7 +1539,7 @@ class PlaylistBrowser(QFrame):
         if not cache.is_ready():
             return
 
-        playlists = cache.get_playlists()
+        playlists = display_playlists_from_rows(cache.get_playlists())
         signature = self._compute_playlist_signature(playlists)
         if signature == self._playlist_signature:
             return
@@ -1285,16 +1560,21 @@ class PlaylistBrowser(QFrame):
         if not cache.is_ready():
             return
 
-        playlists = cache.get_playlists()
+        playlists = display_playlists_from_rows(cache.get_playlists())
         signature = self._compute_playlist_signature(playlists)
-        current_pid = int((self._current_playlist or {}).get("playlist_id", 0) or 0)
+        current_pid = _int_value((self._current_playlist or {}).get("playlist_id"))
+        current_dataset = (
+            _playlist_dataset_type(self._current_playlist)
+            if self._current_playlist and not _is_display_merged_playlist(self._current_playlist)
+            else None
+        )
 
         if signature != self._playlist_signature:
             self.listPanel.loadPlaylists(playlists)
             self._playlist_signature = signature
 
         if current_pid:
-            if self.listPanel.selectPlaylistById(current_pid):
+            if self.listPanel.selectPlaylistById(current_pid, current_dataset):
                 return
 
     def clear(self) -> None:
@@ -1315,10 +1595,10 @@ class PlaylistBrowser(QFrame):
         return tuple(
             sorted(
                 (
-                    int(pl.get("playlist_id", 0) or 0),
+                    _int_value(pl.get("playlist_id")),
                     str(pl.get("Title", "")),
-                    int(pl.get("mhip_child_count", 0) or 0),
-                    int(pl.get("master_flag", 0) or 0),
+                    _int_value(pl.get("mhip_child_count")),
+                    _int_value(pl.get("master_flag")),
                     str(pl.get("_source", "")),
                 )
                 for pl in playlists
@@ -1383,11 +1663,11 @@ class PlaylistBrowser(QFrame):
         resolved_tracks = [track_id_index[tid] for tid in track_ids if tid in track_id_index]
 
         # Update info card
-        self.infoCard.showPlaylist(playlist, resolved_tracks)
+        self.infoCard.showPlaylist(playlist, resolved_tracks, track_id_index)
 
         # Update title bar
         title = playlist.get("Title", "Untitled")
-        if playlist.get("master_flag"):
+        if playlist.get("master_flag") and not _is_ipod_category_playlist(playlist):
             title = "Library (Master)"
         self.trackTitleBar.setTitle(title)
 
@@ -1396,7 +1676,7 @@ class PlaylistBrowser(QFrame):
             self.trackTitleBar.resetColor()
         elif _is_user_smart_playlist(playlist):
             self.trackTitleBar.setColor(*Colors.PLAYLIST_SMART)
-        elif playlist.get("podcast_flag", 0) == 1 or playlist.get("_source") == "podcast":
+        elif playlist.get("podcast_flag", 0) == 1:
             self.trackTitleBar.setColor(*Colors.PLAYLIST_PODCAST)
         elif playlist.get("master_flag"):
             self.trackTitleBar.setColor(*Colors.PLAYLIST_MASTER)
@@ -1413,6 +1693,9 @@ class PlaylistBrowser(QFrame):
     def _onNewPlaylist(self, kind: str) -> None:
         """Handle the 'New Playlist' button from the list panel."""
         if kind == "smart":
+            self.editor.set_playlist_options(
+                display_playlists_from_rows(self._library_cache.get_playlists())
+            )
             self.editor.new_playlist()
             self._switchToEditor(1)
             self.trackTitleBar.setTitle("New Smart Playlist")
@@ -1434,6 +1717,9 @@ class PlaylistBrowser(QFrame):
         if _is_ipod_category_playlist(self._current_playlist):
             return
         if _is_user_smart_playlist(self._current_playlist):
+            self.editor.set_playlist_options(
+                display_playlists_from_rows(self._library_cache.get_playlists())
+            )
             self.editor.edit_playlist(self._current_playlist)
             self._switchToEditor(1)
         elif not self._current_playlist.get("master_flag"):
@@ -1502,7 +1788,7 @@ class PlaylistBrowser(QFrame):
         """Reload the playlist list from cache."""
         cache = self._library_cache
         if cache.is_ready():
-            playlists = cache.get_playlists()
+            playlists = display_playlists_from_rows(cache.get_playlists())
             self.listPanel.loadPlaylists(playlists)
             self._playlist_signature = self._compute_playlist_signature(playlists)
 
@@ -1526,8 +1812,8 @@ class PlaylistBrowser(QFrame):
         cache = self._library_cache
         pid = playlist.get("playlist_id", 0)
 
-        # Remove from user playlists cache (if it was user-created)
-        cache.remove_user_playlist(pid)
+        dataset_type = None if _is_display_merged_playlist(playlist) else _playlist_dataset_type(playlist)
+        cache.remove_user_playlist(pid, dataset_type)
 
         # Disable buttons during write
         self.infoCard.edit_btn.setEnabled(False)
@@ -1779,7 +2065,7 @@ class PlaylistBrowser(QFrame):
         for track in tracks:
             title = track.get("Title") or "Unknown Title"
             artist = track.get("Artist") or track.get("Album Artist") or ""
-            duration_s = int((track.get("length") or 0) / 1000)
+            duration_s = _int_value(track.get("length")) // 1000
             extinf_title = f"{artist} - {title}" if artist else title
             lines.append(f"#EXTINF:{duration_s},{extinf_title}")
             lines.append(abs_path_fn(track))
@@ -1791,7 +2077,7 @@ class PlaylistBrowser(QFrame):
         for i, track in enumerate(tracks, 1):
             title = track.get("Title") or "Unknown Title"
             artist = track.get("Artist") or track.get("Album Artist") or ""
-            duration_s = int((track.get("length") or 0) / 1000)
+            duration_s = _int_value(track.get("length")) // 1000
             display = f"{artist} - {title}" if artist else title
             lines.append(f"File{i}={abs_path_fn(track)}")
             lines.append(f"Title{i}={display}")

@@ -10,12 +10,14 @@ Provides:
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 
-from PyQt6.QtCore import QSize, Qt, pyqtSignal
+from PyQt6.QtCore import QDate, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QDateEdit,
     QDialog,
     QFrame,
     QHBoxLayout,
@@ -28,18 +30,13 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from iTunesDB_Shared.constants import (
-    MEDIA_TYPE_AUDIO,
-    MEDIA_TYPE_AUDIOBOOK,
-    MEDIA_TYPE_MUSIC_VIDEO,
-    MEDIA_TYPE_PODCAST,
-    MEDIA_TYPE_RINGTONE,
-    MEDIA_TYPE_TV_SHOW,
-    MEDIA_TYPE_VIDEO,
-    MEDIA_TYPE_VIDEO_PODCAST,
-    PLAYLIST_SORT_ORDER_MAP,
-)
+from iTunesDB_Shared.constants import PLAYLIST_SORT_ORDER_MAP
+from iTunesDB_Shared.field_base import MAC_EPOCH_OFFSET
 from iTunesDB_Shared.mhod_defs import (
+    SPL_ACTION_MAP,
+    SPL_CHOICE_FIELD_IDS,
+    SPL_CHOICE_UNKNOWN_LABELS,
+    SPL_CHOICE_VALUE_MAP,
     SPL_DATE_UNITS_MAP,
     SPL_FIELD_MAP,
     SPL_FIELD_TYPE_MAP,
@@ -67,8 +64,12 @@ from iTunesDB_Shared.mhod_defs import (
     SPLFT_BOOLEAN,
     SPLFT_DATE,
     SPLFT_INT,
-    SPLFT_PLAYLIST,
     SPLFT_STRING,
+)
+from iTunesDB_Shared.playlist_lifecycle import playlist_edit_payload
+from iTunesDB_Shared.playlist_properties import (
+    playlist_description_from_row,
+    playlist_description_update_fields,
 )
 
 from ..glyphs import glyph_icon
@@ -92,14 +93,16 @@ log = logging.getLogger(__name__)
 _FIELD_OPTION_IDS = (
     0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
     0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x10, 0x12, 0x16,
-    0x17, 0x18, 0x19, 0x1F, 0x23, 0x27, 0x28, 0x29,
+    0x17, 0x18, 0x19, 0x1D, 0x1F, 0x23, 0x25, 0x27, 0x28, 0x29,
     0x36, 0x37, 0x39, 0x3C, 0x3E, 0x3F, 0x44,
-    0x45, 0x47, 0x5A,
+    0x45, 0x47, 0x4E, 0x4F, 0x50, 0x51, 0x52, 0x53,
+    0x59, 0x5A, 0x85, 0x86, 0x9A, 0x9C, 0x9F, 0xA0, 0xA1,
 )
 _FIELD_LABEL_OVERRIDES = {
     0x02: "Name",
     0x3E: "Video Show",
 }
+_UNSUPPORTED_FIELD_IDS = frozenset({0x39, 0x3E, 0x3F})
 
 FIELD_DEFS: dict[int, tuple[str, int]] = {
     field_id: (
@@ -115,10 +118,8 @@ STRING_ACTIONS: list[tuple[int, str]] = [
     (0x03000001, "is not"),
     (0x01000002, "contains"),
     (0x03000002, "does not contain"),
-    (0x01000004, "starts with"),
-    (0x03000004, "does not start with"),
+    (0x01000004, "begins with"),
     (0x01000008, "ends with"),
-    (0x03000008, "does not end with"),
 ]
 
 INT_ACTIONS: list[tuple[int, str]] = [
@@ -127,17 +128,21 @@ INT_ACTIONS: list[tuple[int, str]] = [
     (0x00000010, "is greater than"),
     (0x00000040, "is less than"),
     (0x00000100, "is in the range"),
-    (0x02000100, "is not in the range"),
 ]
 
 DATE_ACTIONS: list[tuple[int, str]] = [
+    (0x00000001, "is"),
+    (0x02000001, "is not"),
+    (0x00000010, "is after"),
+    (0x00000040, "is before"),
+    (0x00000100, "is in the range"),
     (0x00000200, "is in the last"),
     (0x02000200, "is not in the last"),
 ]
 
 BOOLEAN_ACTIONS: list[tuple[int, str]] = [
-    (0x00000001, "is set"),
-    (0x02000001, "is not set"),
+    (0x00000001, "is true"),
+    (0x02000001, "is false"),
 ]
 
 BINARY_AND_ACTIONS: list[tuple[int, str]] = [
@@ -150,9 +155,19 @@ PLAYLIST_ACTIONS: list[tuple[int, str]] = [
     (0x02000001, "is not"),
 ]
 
+CHOICE_ACTIONS: list[tuple[int, str]] = [
+    (0x00000001, "is"),
+    (0x02000001, "is not"),
+]
+
+LOCATION_CHOICE_ACTIONS: list[tuple[int, str]] = [
+    (0x00000400, "is"),
+    (0x02000400, "is not"),
+]
+
 DATE_UNITS: list[tuple[int, str]] = [
     (unit, SPL_DATE_UNITS_MAP[unit])
-    for unit in (86400, 604800, 2628000, 3600, 60)
+    for unit in (86400, 604800, 2628000)
 ]
 
 LIMIT_TYPES: list[tuple[int, str]] = [
@@ -193,17 +208,6 @@ LIMIT_SORTS: list[tuple[int, str]] = [
     )
 ]
 
-MEDIA_TYPE_FLAGS: list[tuple[int, str]] = [
-    (MEDIA_TYPE_AUDIO, "Music"),
-    (MEDIA_TYPE_VIDEO, "Video"),
-    (MEDIA_TYPE_PODCAST, "Podcast"),
-    (MEDIA_TYPE_VIDEO_PODCAST, "Video Podcast"),
-    (MEDIA_TYPE_AUDIOBOOK, "Audiobook"),
-    (MEDIA_TYPE_MUSIC_VIDEO, "Music Video"),
-    (MEDIA_TYPE_TV_SHOW, "TV Show"),
-    (MEDIA_TYPE_RINGTONE, "Ringtone"),
-]
-
 
 def _signed_i64(value: int) -> int:
     value = int(value or 0)
@@ -223,6 +227,45 @@ def _relative_date_count(rule: dict) -> int:
     if from_units > 1 and count >= from_units and count % from_units == 0:
         return count // from_units
     return count
+
+
+def _date_from_mac_timestamp(value: int) -> QDate:
+    if not value:
+        return QDate.currentDate()
+    unix_ts = max(0, int(value) - MAC_EPOCH_OFFSET)
+    dt = datetime.fromtimestamp(unix_ts, tz=UTC)
+    return QDate(dt.year, dt.month, dt.day)
+
+
+def _qdate_to_mac_start(date_value: QDate) -> int:
+    dt = datetime(
+        date_value.year(),
+        date_value.month(),
+        date_value.day(),
+        tzinfo=UTC,
+    )
+    return int(dt.timestamp()) + MAC_EPOCH_OFFSET
+
+
+def _qdate_to_mac_end(date_value: QDate) -> int:
+    return _qdate_to_mac_start(date_value) + 86399
+
+
+def _int_display_value(field_id: int, raw_value: int) -> int:
+    if field_id in (0x19, 0x5A):  # Rating / Album Rating, raw stars * 20
+        return max(0, min(5, int(raw_value) // 20))
+    if field_id == 0x0C:  # Size, raw bytes
+        return int(raw_value) // (1024 * 1024)
+    return int(raw_value)
+
+
+def _int_raw_value(field_id: int, display_value: int, *, upper_bound: bool = False) -> int:
+    if field_id in (0x19, 0x5A):
+        raw = max(0, min(5, int(display_value))) * 20
+        return raw + 9 if upper_bound and raw else raw
+    if field_id == 0x0C:
+        return max(0, int(display_value)) * 1024 * 1024
+    return int(display_value)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -430,7 +473,7 @@ class SmartRuleRow(QFrame):
      - String:     QLineEdit
      - Int:        QSpinBox (or two for range)
      - Date:       QSpinBox + unit combo
-     - Boolean:    (no value — is set / is not set)
+     - Boolean:    (no value; action carries true/false)
      - Binary AND: QComboBox with media type flags
      - Playlist:   QComboBox with playlist names
     """
@@ -438,9 +481,14 @@ class SmartRuleRow(QFrame):
     remove_clicked = pyqtSignal(object)  # emits self
     changed = pyqtSignal()               # any field changed
 
-    def __init__(self, parent: QWidget | None = None):
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        playlist_options: list[tuple[int, str]] | None = None,
+    ):
         super().__init__(parent)
         self.setStyleSheet("QFrame { background: transparent; border: none; }")
+        self._playlist_options = playlist_options or []
 
         self._layout = QHBoxLayout(self)
         self._layout.setContentsMargins(0, (2), 0, (2))
@@ -452,7 +500,14 @@ class SmartRuleRow(QFrame):
         self.field_combo.setMinimumWidth(120)
         self.field_combo.setMaximumWidth(160)
         for fid, (name, _ftype) in sorted(FIELD_DEFS.items(), key=lambda x: x[1][0]):
-            self.field_combo.addItem(name, fid)
+            label = f"{name} (unsupported)" if fid in _UNSUPPORTED_FIELD_IDS else name
+            self.field_combo.addItem(label, fid)
+            if fid in _UNSUPPORTED_FIELD_IDS:
+                self.field_combo.setItemData(
+                    self.field_combo.count() - 1,
+                    0,
+                    Qt.ItemDataRole.UserRole - 1,
+                )
         self._layout.addWidget(self.field_combo)
 
         # ── Action selector ──
@@ -499,6 +554,18 @@ class SmartRuleRow(QFrame):
     # Public API
     # ─────────────────────────────────────────────────────────────
 
+    def set_playlist_options(self, playlist_options: list[tuple[int, str]]) -> None:
+        self._playlist_options = playlist_options
+        if self.field_combo.currentData() == 0x28:
+            current_combo = self._find_value_combo()
+            current = current_combo.currentData() if current_combo else 0
+            self._on_field_changed()
+            combo = self._find_value_combo()
+            if combo:
+                idx = combo.findData(current)
+                if idx >= 0:
+                    combo.setCurrentIndex(idx)
+
     def get_rule_data(self) -> dict:
         """Return rule dict compatible with SmartPlaylistRule fields.
 
@@ -528,37 +595,50 @@ class SmartRuleRow(QFrame):
         if ft == SPLFT_STRING:
             w: QLineEdit | None = self._find_widget(QLineEdit)  # type: ignore[assignment]
             data["string_value"] = w.text() if w else ""
+        elif fid in SPL_CHOICE_FIELD_IDS:
+            combo = self._find_value_combo()
+            if combo:
+                value = combo.currentData()
+                data["from_value"] = int(value) if isinstance(value, int) else 0
+                data["to_value"] = data["from_value"]
+                data["from_units"] = 1
+                data["to_units"] = 1
         elif ft == SPLFT_INT:
             spins: list[QSpinBox] = self._find_widgets(QSpinBox)  # type: ignore[assignment]
             if spins:
-                data["from_value"] = spins[0].value()
+                data["from_value"] = _int_raw_value(fid, spins[0].value())
             if len(spins) > 1:
-                data["to_value"] = spins[1].value()
+                data["to_value"] = _int_raw_value(fid, spins[1].value(), upper_bound=True)
             # Rating special case — compute star values for formatter
             if fid == 0x19:  # Rating
-                data["from_value_stars"] = data["from_value"]
-                data["to_value_stars"] = data["to_value"]
+                data["from_value_stars"] = spins[0].value() if spins else 0
+                data["to_value_stars"] = spins[1].value() if len(spins) > 1 else 0
         elif ft == SPLFT_DATE:
-            spin: QSpinBox | None = self._find_widget(QSpinBox)  # type: ignore[assignment]
-            # Relative date rules store the signed count in from_date; from_value is unsigned.
-            if spin:
-                data["from_date"] = -abs(spin.value())
-            date_unit_combo = self._find_value_combo()
-            if date_unit_combo:
-                data["from_units"] = date_unit_combo.currentData() or 86400
-                data["to_units"] = date_unit_combo.currentData() or 86400
-                data["units_name"] = date_unit_combo.currentText() or ""
+            if aid in (0x00000200, 0x02000200):
+                spin: QSpinBox | None = self._find_widget(QSpinBox)  # type: ignore[assignment]
+                if spin:
+                    data["from_date"] = -abs(spin.value())
+                date_unit_combo = self._find_value_combo()
+                if date_unit_combo:
+                    data["from_units"] = date_unit_combo.currentData() or 86400
+                    data["to_units"] = date_unit_combo.currentData() or 86400
+                    data["units_name"] = date_unit_combo.currentText() or ""
+            else:
+                date_edits: list[QDateEdit] = self._find_widgets(QDateEdit)  # type: ignore[assignment]
+                if date_edits:
+                    data["from_value"] = _qdate_to_mac_start(date_edits[0].date())
+                    data["from_units"] = 1
+                    if aid == 0x00000100 and len(date_edits) > 1:
+                        data["to_value"] = _qdate_to_mac_end(date_edits[1].date())
+                    else:
+                        data["to_value"] = _qdate_to_mac_end(date_edits[0].date())
+                    data["to_units"] = 1
         elif ft == SPLFT_BOOLEAN:
             pass  # no value
         elif ft == SPLFT_BINARY_AND:
             combo = self._find_value_combo()
             if combo:
                 data["from_value"] = combo.currentData() or 0x01
-        elif ft == SPLFT_PLAYLIST:
-            # Playlist rules store the playlist ID as fromValue
-            # For now, just store 0 — will need playlist list hookup
-            pass
-
         return data
 
     def set_rule_data(self, rule: dict) -> None:
@@ -573,25 +653,40 @@ class SmartRuleRow(QFrame):
 
         # Set action (after field change triggers action list rebuild)
         idx = self.action_combo.findData(aid)
+        if idx < 0:
+            label = SPL_ACTION_MAP.get(aid, f"action 0x{aid:08X}")
+            self.action_combo.addItem(label, aid)
+            idx = self.action_combo.findData(aid)
         if idx >= 0:
             self.action_combo.setCurrentIndex(idx)
 
         # Set value
         ft = FIELD_DEFS.get(fid, ("", SPLFT_STRING))[1]
-        if ft == SPLFT_STRING:
+        if fid in SPL_CHOICE_FIELD_IDS:
+            combo = self._find_value_combo()
+            if combo:
+                val = rule.get("from_value", 0)
+                idx = combo.findData(val)
+                if idx < 0:
+                    combo.addItem(f"raw value {val}", val)
+                    idx = combo.findData(val)
+                if idx >= 0:
+                    combo.setCurrentIndex(idx)
+        elif ft == SPLFT_STRING:
             w_le: QLineEdit | None = self._find_widget(QLineEdit)  # type: ignore[assignment]
             if w_le:
                 w_le.setText(rule.get("string_value", "") or "")
         elif ft == SPLFT_INT:
             spins_sb: list[QSpinBox] = self._find_widgets(QSpinBox)  # type: ignore[assignment]
             if spins_sb:
-                v = rule.get("from_value", 0)
+                v = _int_display_value(fid, rule.get("from_value", 0))
                 spins_sb[0].setValue(max(spins_sb[0].minimum(), min(v, spins_sb[0].maximum())))
             if len(spins_sb) > 1:
-                v2 = rule.get("to_value", 0)
+                v2 = _int_display_value(fid, rule.get("to_value", 0))
                 spins_sb[1].setValue(max(spins_sb[1].minimum(), min(v2, spins_sb[1].maximum())))
         elif ft == SPLFT_DATE:
             spin_sb: QSpinBox | None = self._find_widget(QSpinBox)  # type: ignore[assignment]
+            date_edits: list[QDateEdit] = self._find_widgets(QDateEdit)  # type: ignore[assignment]
             if spin_sb:
                 raw = _relative_date_count(rule)
                 spin_sb.setValue(max(spin_sb.minimum(), min(raw, spin_sb.maximum())))
@@ -601,6 +696,11 @@ class SmartRuleRow(QFrame):
                 idx = unit_combo.findData(units)
                 if idx >= 0:
                     unit_combo.setCurrentIndex(idx)
+            if date_edits:
+                date_edits[0].setDate(_date_from_mac_timestamp(rule.get("from_value", 0)))
+                if len(date_edits) > 1:
+                    date_edits[1].setDate(_date_from_mac_timestamp(rule.get("to_value", 0)))
+            self._update_date_value_visibility()
         elif ft == SPLFT_BINARY_AND:
             combo = self._find_value_combo()
             if combo:
@@ -623,7 +723,7 @@ class SmartRuleRow(QFrame):
         # Rebuild actions
         self.action_combo.blockSignals(True)
         self.action_combo.clear()
-        actions = self._actions_for_type(ft)
+        actions = self._actions_for_field(fid, ft)
         for aid, label in actions:
             self.action_combo.addItem(label, aid)
         self.action_combo.blockSignals(False)
@@ -632,7 +732,15 @@ class SmartRuleRow(QFrame):
         self._clear_value_widgets()
         self._current_field_type = ft
 
-        if ft == SPLFT_STRING:
+        if fid in SPL_CHOICE_FIELD_IDS:
+            combo = QComboBox()
+            combo.setStyleSheet(_combo_css())
+            combo.setMinimumWidth(150)
+            self._populate_choice_combo(combo, fid)
+            combo.currentIndexChanged.connect(lambda: self.changed.emit())
+            self._add_value_widget(combo)
+
+        elif ft == SPLFT_STRING:
             le = QLineEdit()
             le.setPlaceholderText("value")
             le.setStyleSheet(_input_css())
@@ -642,7 +750,10 @@ class SmartRuleRow(QFrame):
 
         elif ft == SPLFT_INT:
             spin = QSpinBox()
-            spin.setRange(-999999, 999999)
+            max_value = 5 if fid in (0x19, 0x5A) else 999999
+            if fid == 0x0C:
+                max_value = 9999999
+            spin.setRange(0, max_value)
             spin.setStyleSheet(_spinbox_css())
             spin.setMinimumWidth(80)
             spin.valueChanged.connect(lambda: self.changed.emit())
@@ -657,7 +768,7 @@ class SmartRuleRow(QFrame):
             self._add_value_widget(self._range_label)
 
             spin2 = QSpinBox()
-            spin2.setRange(-999999, 999999)
+            spin2.setRange(0, max_value)
             spin2.setStyleSheet(_spinbox_css())
             spin2.setMinimumWidth(80)
             spin2.setVisible(False)
@@ -668,6 +779,26 @@ class SmartRuleRow(QFrame):
             self.action_combo.currentIndexChanged.connect(self._update_range_visibility)
 
         elif ft == SPLFT_DATE:
+            date_edit = QDateEdit()
+            date_edit.setCalendarPopup(True)
+            date_edit.setDate(QDate.currentDate())
+            date_edit.setStyleSheet(_combo_css())
+            date_edit.dateChanged.connect(lambda: self.changed.emit())
+            self._add_value_widget(date_edit)
+
+            self._range_label = QLabel("to")
+            self._range_label.setStyleSheet(
+                f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;"
+            )
+            self._add_value_widget(self._range_label)
+
+            date_edit_2 = QDateEdit()
+            date_edit_2.setCalendarPopup(True)
+            date_edit_2.setDate(QDate.currentDate())
+            date_edit_2.setStyleSheet(_combo_css())
+            date_edit_2.dateChanged.connect(lambda: self.changed.emit())
+            self._add_value_widget(date_edit_2)
+
             spin = QSpinBox()
             spin.setRange(1, 99999)
             spin.setValue(30)
@@ -683,8 +814,11 @@ class SmartRuleRow(QFrame):
             unit_combo.currentIndexChanged.connect(lambda: self.changed.emit())
             self._add_value_widget(unit_combo)
 
+            self.action_combo.currentIndexChanged.connect(self._update_date_value_visibility)
+            self._update_date_value_visibility()
+
         elif ft == SPLFT_BOOLEAN:
-            # No value needed — action is "is set" / "is not set"
+            # No value needed; the action ID carries true/false.
             placeholder = QLabel("")
             placeholder.setStyleSheet("background: transparent; border: none;")
             self._add_value_widget(placeholder)
@@ -693,17 +827,8 @@ class SmartRuleRow(QFrame):
             combo = QComboBox()
             combo.setStyleSheet(_combo_css())
             combo.setMinimumWidth(120)
-            for flag_val, flag_name in MEDIA_TYPE_FLAGS:
+            for flag_val, flag_name in SPL_CHOICE_VALUE_MAP.get(0x3C, ()):
                 combo.addItem(flag_name, flag_val)
-            combo.currentIndexChanged.connect(lambda: self.changed.emit())
-            self._add_value_widget(combo)
-
-        elif ft == SPLFT_PLAYLIST:
-            combo = QComboBox()
-            combo.setStyleSheet(_combo_css())
-            combo.setMinimumWidth(120)
-            combo.addItem("(select playlist)", 0)
-            # TODO: populate with actual playlists
             combo.currentIndexChanged.connect(lambda: self.changed.emit())
             self._add_value_widget(combo)
 
@@ -730,7 +855,30 @@ class SmartRuleRow(QFrame):
         except RuntimeError:
             pass  # widget already deleted
 
-    def _actions_for_type(self, ft: int) -> list[tuple[int, str]]:
+    def _update_date_value_visibility(self) -> None:
+        """Switch date rows between absolute-date and relative-count controls."""
+        action_id = self.action_combo.currentData()
+        is_relative = action_id in (0x00000200, 0x02000200)
+        is_range = action_id == 0x00000100
+
+        date_edits = self._find_widgets(QDateEdit)
+        spins = self._find_widgets(QSpinBox)
+        combo = self._find_value_combo()
+
+        for index, date_edit in enumerate(date_edits):
+            date_edit.setVisible(not is_relative and (index == 0 or is_range))
+        if hasattr(self, "_range_label"):
+            self._range_label.setVisible(not is_relative and is_range)
+        for spin in spins:
+            spin.setVisible(is_relative)
+        if combo is not None:
+            combo.setVisible(is_relative)
+
+    def _actions_for_field(self, fid: int, ft: int) -> list[tuple[int, str]]:
+        if fid == 0x85:
+            return LOCATION_CHOICE_ACTIONS
+        if fid in SPL_CHOICE_FIELD_IDS:
+            return CHOICE_ACTIONS
         match ft:
             case 1:
                 return STRING_ACTIONS
@@ -747,10 +895,28 @@ class SmartRuleRow(QFrame):
             case _:
                 return INT_ACTIONS
 
+    def _populate_choice_combo(self, combo: QComboBox, fid: int) -> None:
+        if fid == 0x28:
+            combo.addItem("(select playlist)", 0)
+            for playlist_id, title in self._playlist_options:
+                combo.addItem(title, playlist_id)
+            return
+
+        for raw_value, label in SPL_CHOICE_VALUE_MAP.get(fid, ()):
+            combo.addItem(label, raw_value)
+
+        for label in SPL_CHOICE_UNKNOWN_LABELS.get(fid, ()):
+            combo.addItem(f"{label} (raw value unknown)", None)
+            combo.setItemData(combo.count() - 1, 0, Qt.ItemDataRole.UserRole - 1)
+
     def _clear_value_widgets(self) -> None:
         # Disconnect the range visibility slot if it was connected
         try:
             self.action_combo.currentIndexChanged.disconnect(self._update_range_visibility)
+        except (TypeError, RuntimeError):
+            pass
+        try:
+            self.action_combo.currentIndexChanged.disconnect(self._update_date_value_visibility)
         except (TypeError, RuntimeError):
             pass
         if hasattr(self, "_range_label"):
@@ -803,6 +969,7 @@ class SmartPlaylistEditor(QFrame):
         """)
 
         self._editing_playlist: dict | None = None  # None → new playlist
+        self._playlist_options: list[tuple[int, str]] = []
 
         root = QVBoxLayout(self)
         root.setContentsMargins(16, 14, 16, 14)
@@ -822,6 +989,12 @@ class SmartPlaylistEditor(QFrame):
         self.name_input.setFont(QFont(FONT_FAMILY, Metrics.FONT_PAGE_TITLE, QFont.Weight.Bold))
         self.name_input.setStyleSheet(_title_input_css())
         title_col.addWidget(self.name_input)
+
+        self.description_input = QLineEdit()
+        self.description_input.setPlaceholderText("Playlist Description")
+        self.description_input.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        self.description_input.setStyleSheet(_input_css())
+        title_col.addWidget(self.description_input)
 
         meta_row = QHBoxLayout()
         meta_row.setContentsMargins(0, 0, 0, 0)
@@ -1042,11 +1215,29 @@ class SmartPlaylistEditor(QFrame):
     # Public API
     # ─────────────────────────────────────────────────────────────
 
+    def set_playlist_options(self, playlists: list[dict]) -> None:
+        options: list[tuple[int, str]] = []
+        seen: set[int] = set()
+        for playlist in playlists:
+            playlist_id = playlist.get("playlist_id")
+            if not isinstance(playlist_id, int) or playlist_id in seen:
+                continue
+            seen.add(playlist_id)
+            title = str(playlist.get("Title") or f"Playlist {playlist_id}")
+            dataset = playlist.get("_mhsd_dataset_type")
+            if dataset in (2, 3, 5):
+                title = f"{title} (MHSD {dataset})"
+            options.append((playlist_id, title))
+        self._playlist_options = options
+        for row in self._rule_rows:
+            row.set_playlist_options(options)
+
     def new_playlist(self) -> None:
         """Set up for creating a brand-new smart playlist."""
         self._editing_playlist = None
         self.name_input.setText("")
         self.name_input.setPlaceholderText("New Smart Playlist")
+        self.description_input.setText("")
         self.conjunction_combo.setCurrentIndex(0)  # all (AND)
         self.limit_check.setChecked(False)
         self.live_update_check.setChecked(True)
@@ -1060,6 +1251,7 @@ class SmartPlaylistEditor(QFrame):
         """Populate the editor from an existing parsed smart playlist dict."""
         self._editing_playlist = playlist
         self.name_input.setText(playlist.get("Title", ""))
+        self.description_input.setText(playlist_description_from_row(playlist))
 
         prefs = playlist.get("smart_playlist_data", {})
         rules = playlist.get("smart_playlist_rules", {})
@@ -1114,7 +1306,7 @@ class SmartPlaylistEditor(QFrame):
         """
         rules = [row.get_rule_data() for row in self._rule_rows]
 
-        result = {
+        changes = {
             "Title": self.name_input.text().strip() or "Untitled Playlist",
             "_isNew": self._editing_playlist is None,
             "_source": "regular",
@@ -1133,23 +1325,20 @@ class SmartPlaylistEditor(QFrame):
                 "rules": rules,
             },
         }
-
-        # Preserve existing IDs when editing
-        if self._editing_playlist:
-            for key in ("playlist_id", "playlist_id_2", "unk0x24",
-                        "timestamp", "timestamp_2",
-                        "_source", "mhsd5_type"):
-                if key in self._editing_playlist:
-                    result[key] = self._editing_playlist[key]
-
-        return result
+        changes.update(
+            playlist_description_update_fields(
+                self.description_input.text().strip(),
+                self._editing_playlist,
+            )
+        )
+        return playlist_edit_payload(self._editing_playlist, changes)
 
     # ─────────────────────────────────────────────────────────────
     # Internal
     # ─────────────────────────────────────────────────────────────
 
     def _add_empty_rule(self) -> SmartRuleRow:
-        row = SmartRuleRow()
+        row = SmartRuleRow(playlist_options=self._playlist_options)
         row.remove_clicked.connect(self._remove_rule)
         row.changed.connect(lambda: None)  # future: live preview
         self._rules_layout.addWidget(row)
@@ -1257,6 +1446,12 @@ class RegularPlaylistEditor(QFrame):
         self.name_input.setFont(QFont(FONT_FAMILY, Metrics.FONT_PAGE_TITLE, QFont.Weight.Bold))
         self.name_input.setStyleSheet(_title_input_css())
         title_col.addWidget(self.name_input)
+
+        self.description_input = QLineEdit()
+        self.description_input.setPlaceholderText("Playlist Description")
+        self.description_input.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        self.description_input.setStyleSheet(_input_css())
+        title_col.addWidget(self.description_input)
 
         meta_row = QHBoxLayout()
         meta_row.setContentsMargins(0, 0, 0, 0)
@@ -1377,6 +1572,7 @@ class RegularPlaylistEditor(QFrame):
         self._editing_playlist = None
         self.name_input.setText("")
         self.name_input.setPlaceholderText("New Playlist")
+        self.description_input.setText("")
         self.sort_combo.setCurrentIndex(0)  # Manual
         self.name_input.setFocus()
 
@@ -1384,6 +1580,7 @@ class RegularPlaylistEditor(QFrame):
         """Populate the editor from an existing regular playlist dict."""
         self._editing_playlist = playlist
         self.name_input.setText(playlist.get("Title", ""))
+        self.description_input.setText(playlist_description_from_row(playlist))
 
         # Restore sort order
         sort_order = playlist.get("sort_order", 1)
@@ -1401,22 +1598,21 @@ class RegularPlaylistEditor(QFrame):
 
         Returns a dict with keys matching the parsed playlist format.
         """
-        result: dict = {
+        changes: dict = {
             "Title": self.name_input.text().strip() or "Untitled Playlist",
             "_isNew": self._editing_playlist is None,
             "_source": "regular",
             "sort_order": self.sort_combo.currentData() or 1,
-            "items": [],
         }
-
-        # Preserve existing IDs / items when editing
-        if self._editing_playlist:
-            for key in ("playlist_id", "playlist_id_2", "unk0x24",
-                        "timestamp", "timestamp_2", "items", "_source"):
-                if key in self._editing_playlist:
-                    result[key] = self._editing_playlist[key]
-
-        return result
+        if self._editing_playlist is None:
+            changes["items"] = []
+        changes.update(
+            playlist_description_update_fields(
+                self.description_input.text().strip(),
+                self._editing_playlist,
+            )
+        )
+        return playlist_edit_payload(self._editing_playlist, changes)
 
     # ─────────────────────────────────────────────────────────────
     # Internal
@@ -1518,5 +1714,5 @@ class NewPlaylistDialog(QDialog):
 
 
 # Re-export icons used by playlist browser
-_ICON_REGULAR = "annotation-dots"
+_ICON_REGULAR = "playlist"
 _ICON_SMART = "filter"

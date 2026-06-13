@@ -9,11 +9,17 @@ from .constants import (
     MHOD_TYPE_CHAPTER_DATA,
     MHOD_TYPE_COLUMN_SIZE_OR_ORDER,
     MHOD_TYPE_LIBRARY_PLAYLIST_INDEX,
+    MHOD_TYPE_PLAYLIST_PROPERTY_PLIST,
     MHOD_TYPE_PLAYLIST_SETTINGS,
     MHOD_TYPE_SMART_PLAYLIST_DATA,
     MHOD_TYPE_SMART_PLAYLIST_RULES,
     chunk_type_map,
     mhod_type_map,
+)
+from .playlist_properties import (
+    PLAYLIST_DESCRIPTION_KEY,
+    PLAYLIST_PROPERTY_KEY,
+    playlist_description_from_row,
 )
 
 
@@ -39,6 +45,14 @@ def extract_datasets(mhbd: dict) -> dict:
             continue
 
         mhsd_children = mhsd_data.get("children", [])
+        if "raw_payload" in mhsd_data:
+            raw_payload = mhsd_data["raw_payload"]
+            result[result_key] = {
+                "raw_payload_hex": raw_payload.hex(),
+                "genius_cuid": mhsd_data.get("genius_cuid", ""),
+            }
+            continue
+
         if not mhsd_children:
             result[result_key] = []
             continue
@@ -51,9 +65,13 @@ def extract_datasets(mhbd: dict) -> dict:
         flat_items = []
         for item in items:
             if isinstance(item, dict) and "data" in item:
-                flat_items.append(item["data"])
+                row = item["data"]
             else:
-                flat_items.append(item)
+                row = item
+            if isinstance(row, dict):
+                row.setdefault("_mhsd_dataset_type", dataset_type)
+                row.setdefault("_mhsd_result_key", result_key)
+            flat_items.append(row)
         result[result_key] = flat_items
 
     return result
@@ -112,6 +130,8 @@ def extract_playlist_extras(mhod_children: list) -> dict:
       - "smart_playlist_data": SPL prefs dict (from MHOD type 50)
       - "smart_playlist_rules": SPL rules dict (from MHOD type 51)
       - "library_indices": sorted index data (from MHOD type 52)
+      - "playlist_property_plist": plist data (from MHOD type 55)
+      - "playlist_description": decoded description from MHOD type 55
       - "playlist_prefs": column prefs (from MHOD type 100)
       - "playlist_settings": settings blob (from MHOD type 102)
     """
@@ -125,8 +145,29 @@ def extract_playlist_extras(mhod_children: list) -> dict:
             extras["smart_playlist_rules"] = mhod_data["data"]
         elif mhod_type == MHOD_TYPE_LIBRARY_PLAYLIST_INDEX and "data" in mhod_data:
             extras.setdefault("library_indices", []).append(mhod_data["data"])
+        elif mhod_type == MHOD_TYPE_PLAYLIST_PROPERTY_PLIST and "data" in mhod_data:
+            data = mhod_data["data"]
+            extras[PLAYLIST_PROPERTY_KEY] = data
+            description = playlist_description_from_row({PLAYLIST_PROPERTY_KEY: data})
+            if description:
+                extras[PLAYLIST_DESCRIPTION_KEY] = description
         elif mhod_type == MHOD_TYPE_COLUMN_SIZE_OR_ORDER and "data" in mhod_data:
             extras["playlist_prefs"] = mhod_data["data"]
         elif mhod_type == MHOD_TYPE_PLAYLIST_SETTINGS and "data" in mhod_data:
             extras["playlist_settings"] = mhod_data["data"]
+    return extras
+
+
+def extract_playlist_item_extras(mhod_children: list) -> dict:
+    """Extract display metadata attached to an MHIP playlist item.
+
+    Dataset-3 podcast playlists use synthetic group-header MHIP rows. libgpod
+    writes the group name as a title MHOD child on that MHIP, so keep it with
+    the item instead of treating the playlist as a flat track-id list.
+    """
+
+    strings = extract_mhod_strings(mhod_children)
+    extras = {}
+    if "Title" in strings:
+        extras["podcast_group_title"] = strings["Title"]
     return extras

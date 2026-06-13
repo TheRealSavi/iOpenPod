@@ -124,7 +124,12 @@ class RuntimeLibraryService:
     def current_snapshot(self) -> LibrarySnapshot:
         cache = self.cache()
         data = cache.get_data() or {}
-        playlists = cache.get_playlists() if data else []
+        if data:
+            from app_core.runtime import display_playlists_from_rows
+
+            playlists = display_playlists_from_rows(cache.get_playlists())
+        else:
+            playlists = []
         return LibrarySnapshot(
             ready=cache.is_ready(),
             loading=cache.is_loading(),

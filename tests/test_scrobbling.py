@@ -470,7 +470,11 @@ def test_write_finalize_scrobbles_before_deleting_playcounts(
     monkeypatch.setattr(executor, "_update_podcast_subscriptions", lambda ctx: None)
     monkeypatch.setattr(executor, "_clear_gui_cache", lambda ctx: None)
     monkeypatch.setattr(executor, "_apply_itunes_protections", lambda ctx, tracks: None)
-    monkeypatch.setattr(executor, "_build_and_evaluate_playlists", lambda ctx, tracks: ("iPod", [], []))
+    monkeypatch.setattr(
+        executor,
+        "_build_and_evaluate_playlists",
+        lambda ctx, tracks: ("iPod", None, [], "iPod", None, [], []),
+    )
     monkeypatch.setattr(sync_executor, "read_photo_db", lambda path: None)
     monkeypatch.setattr(executor, "_execute_scrobble", lambda ctx: order.append("scrobble") or True)
     monkeypatch.setattr(executor, "_delete_playcounts_file", lambda: order.append("delete"))
@@ -516,7 +520,11 @@ def test_write_finalize_clears_playcount_after_scrobble_before_database_write(
     monkeypatch.setattr(executor, "_update_podcast_subscriptions", lambda ctx: None)
     monkeypatch.setattr(executor, "_clear_gui_cache", lambda ctx: None)
     monkeypatch.setattr(executor, "_apply_itunes_protections", lambda ctx, tracks: None)
-    monkeypatch.setattr(executor, "_build_and_evaluate_playlists", lambda ctx, tracks: ("iPod", [], []))
+    monkeypatch.setattr(
+        executor,
+        "_build_and_evaluate_playlists",
+        lambda ctx, tracks: ("iPod", None, [], "iPod", None, [], []),
+    )
     monkeypatch.setattr(sync_executor, "read_photo_db", lambda path: None)
     monkeypatch.setattr(executor, "_execute_scrobble", fake_scrobble)
     monkeypatch.setattr(executor, "_delete_playcounts_file", lambda: order.append("delete"))

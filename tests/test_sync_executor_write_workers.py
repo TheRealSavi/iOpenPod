@@ -16,8 +16,8 @@ from SyncEngine.transcoder import TranscodeResult, TranscodeTarget, resolve_tran
 
 def _make_sync_ctx(
     user_playlists: list[dict],
-    existing_playlists_raw: list[dict],
-    existing_smart_raw: list[dict],
+    existing_dataset2_standard_playlists_raw: list[dict],
+    existing_dataset5_smart_playlists_raw: list[dict],
 ) -> _SyncContext:
     ctx = _SyncContext(
         plan=SyncPlan(),
@@ -28,8 +28,10 @@ def _make_sync_ctx(
         _is_cancelled=None,
         user_playlists=user_playlists,
     )
-    ctx.existing_playlists_raw = existing_playlists_raw
-    ctx.existing_smart_raw = existing_smart_raw
+    ctx.existing_dataset2_standard_playlists_raw = (
+        existing_dataset2_standard_playlists_raw
+    )
+    ctx.existing_dataset5_smart_playlists_raw = existing_dataset5_smart_playlists_raw
     return ctx
 
 
@@ -376,7 +378,7 @@ def test_file_updates_do_not_preinvalidate_transcode_cache(
     executor._execute_file_updates(ctx)
 
 
-def test_merge_gui_playlists_moves_user_smart_playlist_to_visible_bucket(
+def test_merge_gui_playlists_does_not_remove_same_id_from_dataset5(
     tmp_path: Path,
 ) -> None:
     executor = SyncExecutor(tmp_path)
@@ -389,8 +391,8 @@ def test_merge_gui_playlists_moves_user_smart_playlist_to_visible_bucket(
     }
     ctx = _make_sync_ctx(
         user_playlists=[user_playlist],
-        existing_playlists_raw=[],
-        existing_smart_raw=[
+        existing_dataset2_standard_playlists_raw=[],
+        existing_dataset5_smart_playlists_raw=[
             {
                 "playlist_id": 42,
                 "Title": "Old Smart Bucket Copy",
@@ -403,8 +405,16 @@ def test_merge_gui_playlists_moves_user_smart_playlist_to_visible_bucket(
 
     executor._merge_gui_playlists(ctx)
 
-    assert ctx.existing_playlists_raw == [user_playlist]
-    assert ctx.existing_smart_raw == []
+    assert ctx.existing_dataset2_standard_playlists_raw == [user_playlist]
+    assert ctx.existing_dataset5_smart_playlists_raw == [
+        {
+            "playlist_id": 42,
+            "Title": "Old Smart Bucket Copy",
+            "_source": "smart",
+            "smart_playlist_data": {"live_update": True},
+            "smart_playlist_rules": {"rules": []},
+        }
+    ]
 
 
 def test_merge_gui_playlists_leaves_ipod_categories_in_smart_bucket(
@@ -419,11 +429,11 @@ def test_merge_gui_playlists_leaves_ipod_categories_in_smart_bucket(
     }
     ctx = _make_sync_ctx(
         user_playlists=[category],
-        existing_playlists_raw=[],
-        existing_smart_raw=[],
+        existing_dataset2_standard_playlists_raw=[],
+        existing_dataset5_smart_playlists_raw=[],
     )
 
     executor._merge_gui_playlists(ctx)
 
-    assert ctx.existing_playlists_raw == []
-    assert ctx.existing_smart_raw == [category]
+    assert ctx.existing_dataset2_standard_playlists_raw == []
+    assert ctx.existing_dataset5_smart_playlists_raw == [category]

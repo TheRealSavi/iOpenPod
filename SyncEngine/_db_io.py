@@ -32,11 +32,17 @@ def read_existing_database(ipod_path: Path) -> dict:
         extract_datasets,
         extract_mhod_strings,
         extract_playlist_extras,
+        extract_playlist_item_extras,
         extract_track_extras,
     )
     from iTunesDB_Shared.field_base import filetype_to_string
 
-    empty = {"tracks": [], "playlists": [], "smart_playlists": []}
+    empty = {
+        "tracks": [],
+        "dataset2_standard_playlists": [],
+        "dataset3_podcast_playlists": [],
+        "dataset5_smart_playlists": [],
+    }
     from ipod_device import resolve_itdb_path
     _resolved = resolve_itdb_path(str(ipod_path))
     itdb_path = Path(_resolved) if _resolved else ipod_path / "iPod_Control" / "iTunes" / "iTunesDB"
@@ -86,49 +92,55 @@ def read_existing_database(ipod_path: Path) -> dict:
                 # parse_children wraps each item as {"chunk_type": ..., "data": {...}}.
                 # Flatten to the inner data dict so _build_regular_playlists can
                 # access track_id, group_id, etc. directly via item.get().
-                pl["items"] = [c["data"] for c in mhip_children if "data" in c]
+                items = []
+                for child in mhip_children:
+                    if "data" not in child:
+                        continue
+                    item = child["data"]
+                    item.update(extract_playlist_item_extras(item.get("children", [])))
+                    items.append(item)
+                pl["items"] = items
 
-        # Dataset 2: regular + user playlists (mhlp)
-        # libgpod prefers DS3 over DS2 and only reads ONE.  We prefer
-        # DS2 when present, but fall back to DS3 ("mhlp_podcast") when
-        # DS2 is empty — some devices (Nano 5G+) only write type 3.
-        all_playlists = data.get("mhlp", [])
-        if not all_playlists:
-            all_playlists = data.get("mhlp_podcast", [])
-        _process_playlist_list(all_playlists)
-        # Deduplicate by playlist_id
-        seen_ids: set[int] = set()
-        playlists: list[dict] = []
-        for pl in all_playlists:
-            pid = pl.get("playlist_id", 0)
-            if pid not in seen_ids:
-                seen_ids.add(pid)
-                playlists.append(pl)
+        # Keep playlist datasets separate. Dataset 2 and dataset 3 are both
+        # MHLP lists, but they have different firmware semantics.
+        dataset2_standard_playlists = data.get("mhlp", [])
+        dataset3_podcast_playlists = data.get("mhlp_podcast", [])
+        dataset5_smart_playlists = data.get("mhlp_smart", [])
 
-        # Dataset 5: smart playlists for browsing (mhlp_smart)
-        smart_playlists = data.get("mhlp_smart", [])
-        _process_playlist_list(smart_playlists)
+        _process_playlist_list(dataset2_standard_playlists)
+        _process_playlist_list(dataset3_podcast_playlists)
+        _process_playlist_list(dataset5_smart_playlists)
+
+        dataset2_seen_ids: set[int] = {
+            int(pl.get("playlist_id", 0) or 0)
+            for pl in dataset2_standard_playlists
+            if pl.get("playlist_id", 0)
+        }
 
         # Import On-The-Go playlists from OTGPlaylistInfo files.
         # These are device-created playlists stored outside the iTunesDB; we
-        # inject them as regular playlists so they are committed to the
-        # iTunesDB on the next write.
+        # inject them into dataset 2 only, never into dataset 3 or 5.
         from iTunesDB_Parser.otg import load_otg_playlists
         itunes_dir = itdb_path.parent
         otg = load_otg_playlists(str(itunes_dir), tracks)
         for pl in otg:
-            if pl.get("playlist_id", 0) not in seen_ids:
-                seen_ids.add(pl["playlist_id"])
-                playlists.append(pl)
+            playlist_id = int(pl.get("playlist_id", 0) or 0)
+            if playlist_id and playlist_id not in dataset2_seen_ids:
+                dataset2_seen_ids.add(playlist_id)
+                dataset2_standard_playlists.append(pl)
 
         logger.info(
-            "Parsed iPod database: %d tracks, %d playlists, %d smart playlists",
-            len(tracks), len(playlists), len(smart_playlists),
+            "Parsed iPod database: %d tracks, ds2_playlists=%d, ds3_playlists=%d, ds5_playlists=%d",
+            len(tracks),
+            len(dataset2_standard_playlists),
+            len(dataset3_podcast_playlists),
+            len(dataset5_smart_playlists),
         )
         return {
             "tracks": tracks,
-            "playlists": playlists,
-            "smart_playlists": smart_playlists,
+            "dataset2_standard_playlists": dataset2_standard_playlists,
+            "dataset3_podcast_playlists": dataset3_podcast_playlists,
+            "dataset5_smart_playlists": dataset5_smart_playlists,
         }
     except Exception as e:
         logger.error("Failed to parse iTunesDB: %s", e)
@@ -140,8 +152,12 @@ def write_database(
     tracks: list[TrackInfo],
     pc_file_paths: dict | None = None,
     playlists: list[PlaylistInfo] | None = None,
+    podcast_playlists: list[PlaylistInfo] | None = None,
     smart_playlists: list[PlaylistInfo] | None = None,
     master_playlist_name: str = "iPod",
+    master_playlist_id: int | None = None,
+    podcast_master_playlist_name: str | None = None,
+    podcast_master_playlist_id: int | None = None,
     progress_callback: Callable[[str], None] | None = None,
     raise_on_error: bool = False,
 ) -> bool:
@@ -160,8 +176,9 @@ def write_database(
     logger.debug("ART: _write_database called with %d tracks, pc_file_paths=%s",
                  len(tracks), 'None' if pc_file_paths is None else len(pc_file_paths))
     logger.debug(
-        "DB: playlists=%s, smart_playlists=%s",
+        "DB: ds2_playlists=%s, ds3_playlists=%s, ds5_playlists=%s",
         len(playlists) if playlists else 0,
+        len(podcast_playlists) if podcast_playlists else 0,
         len(smart_playlists) if smart_playlists else 0,
     )
 
@@ -183,9 +200,13 @@ def write_database(
             tracks,
             pc_file_paths=pc_file_paths,
             playlists=playlists,
+            podcast_playlists=podcast_playlists,
             smart_playlists=smart_playlists,
             capabilities=capabilities,
             master_playlist_name=master_playlist_name,
+            master_playlist_id=master_playlist_id,
+            podcast_master_playlist_name=podcast_master_playlist_name,
+            podcast_master_playlist_id=podcast_master_playlist_id,
             progress_callback=progress_callback,
         )
     except Exception as e:
@@ -236,6 +257,11 @@ def write_database(
             except Exception as e:
                 logger.warning("Could not get FireWire ID for SQLite cbk: %s", e)
 
+            # SQLite-era devices do not expose MHSD 2/3/5 buckets directly;
+            # they use container tables. Today we write dataset-2-style
+            # playlists plus dataset-5 smart/category containers. Dataset-3
+            # podcast-list rows are intentionally not duplicated into SQLite
+            # until we have device samples that show a distinct SQLite analogue.
             sqlite_ok = write_sqlite_databases(
                 ipod_path=str(ipod_path),
                 tracks=tracks,
@@ -295,10 +321,19 @@ def commit_playcounts_if_needed(ipod_path: Path) -> bool:
     from ._track_conversion import track_dict_to_info
 
     all_tracks = [track_dict_to_info(t) for t in tracks_data]
-    master_name, playlists, smart_playlists = build_and_evaluate_playlists(
+    (
+        master_name,
+        master_playlist_id,
+        playlists,
+        podcast_master_name,
+        podcast_master_playlist_id,
+        podcast_playlists,
+        smart_playlists,
+    ) = build_and_evaluate_playlists(
         tracks_data,
-        existing.get("playlists", []),
-        existing.get("smart_playlists", []),
+        existing.get("dataset2_standard_playlists", []),
+        existing.get("dataset3_podcast_playlists", []),
+        existing.get("dataset5_smart_playlists", []),
         all_tracks,
         [],
     )
@@ -307,8 +342,12 @@ def commit_playcounts_if_needed(ipod_path: Path) -> bool:
         ipod_path,
         all_tracks,
         playlists=playlists,
+        podcast_playlists=podcast_playlists,
         smart_playlists=smart_playlists,
         master_playlist_name=master_name,
+        master_playlist_id=master_playlist_id,
+        podcast_master_playlist_name=podcast_master_name,
+        podcast_master_playlist_id=podcast_master_playlist_id,
     ):
         return False
 

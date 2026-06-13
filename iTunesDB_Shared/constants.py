@@ -11,12 +11,12 @@ Cross-referenced against:
 # maps the id used in mhsd to the proper header marker
 chunk_type_map = {
     1: "mhlt",  # Track list (contains MHIT children)
-    2: "mhlp",  # Playlist list (contains MHYP children) — regular playlists
-    3: "mhlp_podcast",  # Podcast list (same MHLP format, different dataset)
+    2: "mhlp",  # MHSD type 2 playlist list (contains MHYP children)
+    3: "mhlp_podcast",  # MHSD type 3 playlist list (podcast-aware MHIP grouping)
                         # NOTE: Type 3 MHSD MUST come between type 1 and type 2
                         # for the iPod to list podcasts correctly.
     4: "mhla",  # Album list (iTunes 7.1+; contains MHIA children)
-    5: "mhlp_smart",  # Smart playlist list (iTunes 7.3+; contains MHYP children)
+    5: "mhlp_smart",  # MHSD type 5 smart/category playlist list
     # Types 6–10 were added in iTunes 9+ for Genius and other features.
     # Their child chunk reuses the 'mhli' magic (same as ArtworkDB's image
     # list, but here it is a generic item list — different semantics).
@@ -146,6 +146,8 @@ identifier_readable_map = {
 # Type 51:      Smart playlist rules (SLst — BIG-endian binary)
 # Type 52:      Library playlist sorted index (binary)
 # Type 53:      Library playlist jump table (binary)
+# Type 55:      Playlist property plist. Seen on iTunes 7-era playlist rows
+#               carrying a binary plist with {"description": "..."}.
 # Type 100:     Playlist column prefs (MHYP child) or position (MHIP child)
 # Type 102:     Playlist settings (post-iTunes 7, binary blob)
 # Types 200-204: Album item string MHODs (standard sub-header)
@@ -197,6 +199,7 @@ mhod_type_map = {
     51: "Smart Playlist Rules",
     52: "Library Playlist Index",
     53: "Library Playlist Jump Table",
+    55: "Playlist Property Plist",
     100: "Column Size or Playlist Order",
     102: "Playlist Settings (binary)",
     200: "Album (Used by Album Item)",
@@ -321,6 +324,7 @@ MHOD_TYPE_SMART_PLAYLIST_DATA = 50
 MHOD_TYPE_SMART_PLAYLIST_RULES = 51
 MHOD_TYPE_LIBRARY_PLAYLIST_INDEX = 52
 MHOD_TYPE_LIBRARY_PLAYLIST_JUMP_TABLE = 53
+MHOD_TYPE_PLAYLIST_PROPERTY_PLIST = 55
 MHOD_TYPE_COLUMN_SIZE_OR_ORDER = 100
 MHOD_TYPE_PLAYLIST_SETTINGS = 102
 # Album item string types

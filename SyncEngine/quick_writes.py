@@ -75,24 +75,41 @@ def write_cached_itunesdb(
     _progress(0, total_steps, "Preparing cached database...")
     all_tracks = _tracks_to_infos(tracks_data)
     apply_unknown_placeholders(all_tracks)
-    playlists_raw, smart_raw = _split_cached_playlists(playlists_data)
+    (
+        dataset2_playlist_rows,
+        dataset3_playlist_rows,
+        dataset5_playlist_rows,
+    ) = _split_cached_playlists(playlists_data)
 
     _progress(1, total_steps, "Building playlists...")
-    master_name, playlists, smart_playlists = _evaluate_tracks_and_playlists(
+    (
+        master_name,
+        master_playlist_id,
+        playlists,
+        podcast_master_name,
+        podcast_master_playlist_id,
+        podcast_playlists,
+        smart_playlists,
+    ) = _evaluate_tracks_and_playlists(
         tracks_data=tracks_data,
-        playlists_raw=playlists_raw,
-        smart_raw=smart_raw,
+        dataset2_playlist_rows=dataset2_playlist_rows,
+        dataset3_playlist_rows=dataset3_playlist_rows,
+        dataset5_playlist_rows=dataset5_playlist_rows,
         all_tracks=all_tracks,
     )
-    playlist_counts = _playlist_counts(playlists, smart_playlists)
+    playlist_counts = _playlist_counts(playlists, podcast_playlists, smart_playlists)
 
     _progress(2, total_steps, "Writing database...")
     if not _write_evaluated_database(
         ipod_path,
         all_tracks=all_tracks,
         playlists=playlists,
+        podcast_playlists=podcast_playlists,
         smart_playlists=smart_playlists,
         master_playlist_name=master_name,
+        master_playlist_id=master_playlist_id,
+        podcast_master_playlist_name=podcast_master_name,
+        podcast_master_playlist_id=podcast_master_playlist_id,
         pc_file_paths=dict(artwork_sources) if artwork_sources else None,
     ):
         return QuickWriteResult.failed(
@@ -121,29 +138,32 @@ def _tracks_to_infos(tracks_data: list[dict[str, Any]]) -> list[TrackInfo]:
 
 def _split_cached_playlists(
     playlists_data: list[dict[str, Any]],
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    playlists_raw: list[dict[str, Any]] = []
-    smart_raw: list[dict[str, Any]] = []
-    seen_ids: set[int] = set()
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    dataset2_playlist_rows: list[dict[str, Any]] = []
+    dataset3_playlist_rows: list[dict[str, Any]] = []
+    dataset5_playlist_rows: list[dict[str, Any]] = []
 
     for playlist in playlists_data:
-        playlist_id = int(playlist.get("playlist_id", 0) or 0)
-        if playlist_id and playlist_id in seen_ids:
-            continue
-        if playlist_id:
-            seen_ids.add(playlist_id)
-
         row = dict(playlist)
         items = row.get("items")
         if isinstance(items, list):
             row["mhip_child_count"] = len(items)
 
-        if _is_ipod_category_playlist(row):
-            smart_raw.append(row)
+        dataset_type = _playlist_dataset_type(row)
+        if dataset_type == 3:
+            dataset3_playlist_rows.append(row)
+        elif dataset_type == 5 or _is_ipod_category_playlist(row):
+            dataset5_playlist_rows.append(row)
+        elif row.get("_source") == "podcast":
+            row.setdefault("_mhsd_dataset_type", 3)
+            row.setdefault("_mhsd_result_key", "mhlp_podcast")
+            dataset3_playlist_rows.append(row)
         else:
-            playlists_raw.append(row)
+            row.setdefault("_mhsd_dataset_type", 2)
+            row.setdefault("_mhsd_result_key", "mhlp")
+            dataset2_playlist_rows.append(row)
 
-    return playlists_raw, smart_raw
+    return dataset2_playlist_rows, dataset3_playlist_rows, dataset5_playlist_rows
 
 
 def _mhsd5_type_value(playlist: dict[str, Any]) -> int:
@@ -154,29 +174,41 @@ def _mhsd5_type_value(playlist: dict[str, Any]) -> int:
 
 
 def _is_ipod_category_playlist(playlist: dict[str, Any]) -> bool:
-    """Return whether a playlist belongs in MHSD type 5.
+    """Return whether an origin-less pending playlist should be written to MHSD 5.
 
-    User-created smart playlists must remain in the normal playlist dataset so
-    the iPod firmware shows them under Playlists.  Dataset 5 is reserved here
-    for built-in browse categories such as Music, Movies, and Audiobooks.
+    Parsed cache rows should already carry ``_mhsd_dataset_type`` and are routed
+    by that origin before this predicate runs. This helper only handles new UI
+    rows/imports that have not yet lived in an on-disk MHSD bucket.
     """
 
+    dataset_type = _playlist_dataset_type(playlist)
+    if dataset_type:
+        return dataset_type == 5
     return playlist.get("_source") == "category" or bool(_mhsd5_type_value(playlist))
+
+
+def _playlist_dataset_type(playlist: dict[str, Any]) -> int:
+    try:
+        return int(playlist.get("_mhsd_dataset_type", 0) or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _evaluate_tracks_and_playlists(
     *,
     tracks_data: list[dict[str, Any]],
-    playlists_raw: list[dict[str, Any]],
-    smart_raw: list[dict[str, Any]],
+    dataset2_playlist_rows: list[dict[str, Any]],
+    dataset3_playlist_rows: list[dict[str, Any]],
+    dataset5_playlist_rows: list[dict[str, Any]],
     all_tracks: list[TrackInfo],
-) -> tuple[str, list[Any], list[Any]]:
+) -> tuple[str, int | None, list[Any], str, int | None, list[Any], list[Any]]:
     from ._playlist_builder import build_and_evaluate_playlists
 
     return build_and_evaluate_playlists(
         tracks_data,
-        playlists_raw,
-        smart_raw,
+        dataset2_playlist_rows,
+        dataset3_playlist_rows,
+        dataset5_playlist_rows,
         all_tracks,
         [],
     )
@@ -184,10 +216,11 @@ def _evaluate_tracks_and_playlists(
 
 def _playlist_counts(
     playlists: list[Any],
+    podcast_playlists: list[Any],
     smart_playlists: list[Any],
 ) -> dict[int, int]:
     counts: dict[int, int] = {}
-    for playlist in [*playlists, *smart_playlists]:
+    for playlist in [*playlists, *podcast_playlists, *smart_playlists]:
         playlist_id = int(getattr(playlist, "playlist_id", 0) or 0)
         if playlist_id:
             counts[playlist_id] = len(getattr(playlist, "track_ids", []) or [])
@@ -199,8 +232,12 @@ def _write_evaluated_database(
     *,
     all_tracks: list[TrackInfo],
     playlists: list[Any],
+    podcast_playlists: list[Any],
     smart_playlists: list[Any],
     master_playlist_name: str,
+    master_playlist_id: int | None,
+    podcast_master_playlist_name: str,
+    podcast_master_playlist_id: int | None,
     pc_file_paths: Mapping[int, str] | None = None,
 ) -> bool:
     from ._db_io import write_database
@@ -210,8 +247,12 @@ def _write_evaluated_database(
         all_tracks,
         pc_file_paths=dict(pc_file_paths) if pc_file_paths else None,
         playlists=playlists,
+        podcast_playlists=podcast_playlists,
         smart_playlists=smart_playlists,
         master_playlist_name=master_playlist_name,
+        master_playlist_id=master_playlist_id,
+        podcast_master_playlist_name=podcast_master_playlist_name,
+        podcast_master_playlist_id=podcast_master_playlist_id,
     )
     if not db_ok:
         return False

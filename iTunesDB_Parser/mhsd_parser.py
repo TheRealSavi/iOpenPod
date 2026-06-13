@@ -25,6 +25,16 @@ def parse_dataset(
 ) -> ParseResult:
     """Parse an MHSD (DataSet) chunk and its single child."""
     mhsd: dict[str, Any] = idb.read_fields(data, offset, "mhsd", header_length)
+    if mhsd.get("dataset_type") == 9:
+        raw_payload = bytes(data[offset + header_length:offset + chunk_length])
+        mhsd["raw_payload"] = raw_payload
+        try:
+            mhsd["genius_cuid"] = raw_payload.decode("ascii")
+        except UnicodeDecodeError:
+            mhsd["genius_cuid"] = raw_payload.hex()
+        mhsd["children"] = []
+        return {"next_offset": offset + chunk_length, "data": mhsd}
+
     # MHSD always has exactly one child.
     mhsd["children"], _ = parse_children(data, offset + header_length, 1)
     return {"next_offset": offset + chunk_length, "data": mhsd}

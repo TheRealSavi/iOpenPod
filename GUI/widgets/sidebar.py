@@ -816,11 +816,11 @@ class Sidebar(QFrame):
     _PHOTO_CATEGORIES = frozenset({"Photos"})
 
     category_glyphs = {
-        "Albums": "music",
+        "Albums": "album",
         "Artists": "user",
         "Genres": "grid",
         "Tracks": "music",
-        "Playlists": "annotation-dots",
+        "Playlists": "playlist",
         "Photos": "photo",
         "Podcasts": "broadcast",
         "Audiobooks": "book",

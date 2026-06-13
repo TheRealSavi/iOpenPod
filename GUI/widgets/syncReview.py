@@ -2118,7 +2118,7 @@ class SyncReviewWidget(QWidget):
         # ── Playlist changes ────────────────────────────────────────
         pl_total = len(plan.playlists_to_add) + len(plan.playlists_to_edit) + len(plan.playlists_to_remove)
         if pl_total:
-            card = SyncCategoryCard("annotation-dots", "Playlists", pl_total,
+            card = SyncCategoryCard("playlist", "Playlists", pl_total,
                                     _CAT_COLORS["playlist"], checkable=True, start_expanded=True,
                                     subtitle="Ready to update on iPod",
                                     parent=self._cards_container)

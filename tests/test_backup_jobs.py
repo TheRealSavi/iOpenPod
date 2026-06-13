@@ -63,6 +63,20 @@ def test_backup_device_name_from_playlists_reads_master_playlist_title() -> None
     ) == "RoadPod"
 
 
+def test_backup_device_name_from_playlists_ignores_dataset5_category_master() -> None:
+    assert backup_device_name_from_playlists(
+        [
+            {
+                "master_flag": True,
+                "Title": "Rentals",
+                "_source": "category",
+                "mhsd5_type": 7,
+            },
+            {"master_flag": True, "Title": "RoadPod"},
+        ]
+    ) == "RoadPod"
+
+
 def test_build_backup_device_meta_skips_missing_device() -> None:
     assert build_backup_device_meta(None) == {}
 

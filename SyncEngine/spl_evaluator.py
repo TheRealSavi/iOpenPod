@@ -24,6 +24,7 @@ from __future__ import annotations
 import random
 import time
 
+from iTunesDB_Shared.field_base import MAC_EPOCH_OFFSET
 from iTunesDB_Shared.mhod_defs import (
     SPL_FIELD_TYPE_MAP as _FIELD_TYPE_MAP,
 )
@@ -73,6 +74,9 @@ _STRING_FIELD_KEY: dict[int, str] = {
     0x51: "Sort Album Artist",  # Sort Album Artist
     0x52: "Sort Composer",   # Sort Composer
     0x53: "Sort Show",       # Sort TV Show
+    0x59: "Video Rating",    # Video Rating / content rating text
+    0x9F: "Work",            # Work
+    0xA0: "Movement Name",   # Movement Name
 }
 
 # Integer fields — track dict key
@@ -90,6 +94,11 @@ _INT_FIELD_KEY: dict[int, str] = {
     0x3F: "season_number",   # Season Number
     0x44: "skip_count",      # Skip Count
     0x39: "podcast_flag",    # Podcast flag
+    0x3C: "media_type",      # Media Kind
+    0x86: "cloud_status",    # Cloud Status (sample-derived)
+    0x9A: "favorite_flag",   # Favorite / Suggest Less (sample-derived)
+    0x9C: "album_favorite_flag",  # Album Favorite / Suggest Less
+    0xA1: "movement_number", # Movement Number
 }
 
 # Date fields — track dict key (values are Unix timestamps)
@@ -102,12 +111,15 @@ _DATE_FIELD_KEY: dict[int, str] = {
 
 # Boolean fields
 _BOOL_FIELD_KEY: dict[int, str] = {
+    0x1D: "checked_flag",  # Checked (0 means checked in MHIT)
+    0x25: "has_artwork",   # Album Artwork
     0x1F: "compilation_flag",  # Compilation
+    0x29: "purchased_flag", # Purchased
 }
 
 # Binary AND field
 _BINARY_AND_FIELD_KEY: dict[int, str] = {
-    0x3C: "media_type",      # Media Type (bitmask)
+    0x85: "location_kind",   # Location (sample-derived)
 }
 
 
@@ -147,6 +159,16 @@ def _get_date_value(track: dict, field_id: int) -> int:
 
 def _get_bool_value(track: dict, field_id: int) -> bool:
     """Get the boolean value for a track field."""
+    if field_id == 0x1D:
+        return track.get("checked_flag", 0) == 0
+    if field_id == 0x25:
+        return bool(
+            track.get("has_artwork")
+            or track.get("artwork_count")
+            or track.get("artwork_id_ref")
+        )
+    if field_id == 0x29:
+        return bool(track.get("purchased_flag") or track.get("Purchased"))
     key = _BOOL_FIELD_KEY.get(field_id)
     if key is None:
         return False
@@ -170,9 +192,9 @@ def _eval_string(track_val: str, rule: SmartPlaylistRule) -> bool:
             return rule_val in track_val
         case 0x03000002:  # does not contain
             return rule_val not in track_val
-        case 0x01000004:  # starts with
+        case 0x01000004:  # begins with
             return track_val.startswith(rule_val)
-        case 0x03000004:  # does not start with
+        case 0x03000004:  # does not begin with
             return not track_val.startswith(rule_val)
         case 0x01000008:  # ends with
             return track_val.endswith(rule_val)
@@ -218,21 +240,21 @@ def _eval_date(track_val: int, rule: SmartPlaylistRule) -> bool:
     and from_units to compute a relative threshold.
     """
     action = rule.action_id
-    fv = rule.from_value
-    tv = rule.to_value
+    fv = _rule_date_to_unix(rule.from_value)
+    tv = _rule_date_to_unix(rule.to_value)
 
     match action:
         case 0x00000001:  # is
-            return track_val == fv
+            return fv <= track_val <= (tv or fv)
         case 0x02000001:  # is not
-            return track_val != fv
-        case 0x00000010:  # is greater than
+            return not (fv <= track_val <= (tv or fv))
+        case 0x00000010:  # is after
             return track_val > fv
-        case 0x02000010:  # is not greater than
+        case 0x02000010:  # is not after
             return track_val <= fv
-        case 0x00000040:  # is less than
+        case 0x00000040:  # is before
             return track_val < fv
-        case 0x02000040:  # is not less than
+        case 0x02000040:  # is not before
             return track_val >= fv
         case 0x00000200:  # is in the last
             # from_date is the count, from_units is the unit size in seconds
@@ -255,13 +277,20 @@ def _eval_date(track_val: int, rule: SmartPlaylistRule) -> bool:
             return False
 
 
+def _rule_date_to_unix(value: int) -> int:
+    value = int(value or 0)
+    if value > MAC_EPOCH_OFFSET:
+        return value - MAC_EPOCH_OFFSET
+    return value
+
+
 def _eval_boolean(track_val: bool, rule: SmartPlaylistRule) -> bool:
-    """Evaluate a boolean-type rule (is set / is not set)."""
+    """Evaluate a boolean-type rule (is true / is false)."""
     action = rule.action_id
     match action:
-        case 0x00000001:  # is (set)
+        case 0x00000001:  # is true
             return track_val
-        case 0x02000001:  # is not (not set)
+        case 0x02000001:  # is false
             return not track_val
         case _:
             return False
@@ -324,6 +353,9 @@ def eval_rule(
         True if the track matches the rule.
     """
     ft = _FIELD_TYPE_MAP.get(rule.field_id)
+
+    if rule.field_id == 0x3C and rule.action_id in (0x00000400, 0x02000400):
+        return _eval_binary_and(_get_int_value(track, rule.field_id), rule)
 
     match ft:
         case 1:  # SPLFT_STRING

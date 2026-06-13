@@ -474,7 +474,7 @@ When PC file paths are available, the writer:
 MHBD (database header, 244 bytes)
 ├── MHSD type 4 — Album list (MHLA → MHIA × N)
 ├── MHSD type 1 — Track list (MHLT → MHIT × N → MHOD strings)
-├── MHSD type 3 — Podcast list (copy of playlist data)
+├── MHSD type 3 — Playlist list with podcast-aware grouping
 ├── MHSD type 2 — Playlist list (MHLP → MHYP master → MHIP × N)
 └── MHSD type 5 — Smart playlist list (empty)
 ```

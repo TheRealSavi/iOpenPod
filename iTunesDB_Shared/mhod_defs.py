@@ -93,7 +93,7 @@ CHAPTER_DATA_MHOD_TYPES = {17}
 BINARY_BLOB_MHOD_TYPES = {32}
 
 # Non-string MHOD types with dedicated binary formats.
-NON_STRING_MHOD_TYPES = {50, 51, 52, 53, 100, 102}
+NON_STRING_MHOD_TYPES = {50, 51, 52, 53, 55, 100, 102}
 
 
 # ============================================================
@@ -395,7 +395,7 @@ SPL_FIELD_MAP = {
     0x02: "Song Name",
     0x03: "Album",
     0x04: "Artist",
-    0x05: "Bitrate",
+    0x05: "Bit Rate",
     0x06: "Sample Rate",
     0x07: "Year",
     0x08: "Genre",
@@ -407,22 +407,24 @@ SPL_FIELD_MAP = {
     0x0E: "Comment",
     0x10: "Date Added",
     0x12: "Composer",
-    0x16: "Play Count",
+    0x16: "Plays",
     0x17: "Last Played",
     0x18: "Disc Number",
     0x19: "Rating",
+    0x1D: "Checked",
     0x1F: "Compilation",
     0x23: "BPM",
+    0x25: "Album Artwork",
     0x27: "Grouping",
     0x28: "Playlist",
     0x29: "Purchased",
     0x36: "Description",
     0x37: "Category",
     0x39: "Podcast",
-    0x3C: "Media Type",
+    0x3C: "Media Kind",
     0x3E: "TV Show",
     0x3F: "Season Number",
-    0x44: "Skip Count",
+    0x44: "Skips",
     0x45: "Last Skipped",
     0x47: "Album Artist",
     0x4E: "Sort Song Name",
@@ -432,6 +434,16 @@ SPL_FIELD_MAP = {
     0x52: "Sort Composer",
     0x53: "Sort TV Show",
     0x5A: "Album Rating",
+    # iPod Video 5.5G "Every Rule" sample, entered alphabetically in iTunes.
+    # These extend beyond libgpod's public SPL field enum.
+    0x59: "Video Rating",
+    0x85: "Location",
+    0x86: "Cloud Status",
+    0x9A: "Favorite / Suggest Less",
+    0x9C: "Album Favorite / Suggest Less",
+    0x9F: "Work",
+    0xA0: "Movement Name",
+    0xA1: "Movement Number",
 }
 
 # Action ID → human-readable name (from libgpod ItdbSPLAction enum in itdb.h;
@@ -449,12 +461,12 @@ SPL_ACTION_MAP = {
     0x00000080: "is less than or equal to",  # not in iTunes UI
     0x00000100: "is in the range",
     0x00000200: "is in the last",
-    0x00000400: "binary AND",  # used for Media Type / Video Kind
+    0x00000400: "binary AND",  # used by Location and legacy media-kind rules
     0x00000800: "binary unknown1",
     # String comparisons (0x01xxxxxx)
     0x01000001: "is (string)",
     0x01000002: "contains",
-    0x01000004: "starts with",
+    0x01000004: "begins with",
     0x01000008: "ends with",
     # Negated integer / date (0x02xxxxxx)
     0x02000001: "is not",
@@ -469,7 +481,7 @@ SPL_ACTION_MAP = {
     # Negated string (0x03xxxxxx)
     0x03000001: "is not (string)",
     0x03000002: "does not contain",
-    0x03000004: "does not start with",  # not in iTunes UI
+    0x03000004: "does not begin with",  # not in older libgpod enum text
     0x03000008: "does not end with",  # not in iTunes UI
 }
 
@@ -506,6 +518,9 @@ SPL_FIELD_TYPE_MAP = {
     0x51: SPLFT_STRING,    # Sort Album Artist
     0x52: SPLFT_STRING,    # Sort Composer
     0x53: SPLFT_STRING,    # Sort TV Show
+    0x59: SPLFT_STRING,    # Video Rating
+    0x9F: SPLFT_STRING,    # Work
+    0xA0: SPLFT_STRING,    # Movement Name
     # Integer fields
     0x05: SPLFT_INT,       # Bitrate
     0x06: SPLFT_INT,       # Sample Rate
@@ -520,19 +535,85 @@ SPL_FIELD_TYPE_MAP = {
     0x3F: SPLFT_INT,       # Season Number
     0x44: SPLFT_INT,       # Skip Count
     0x5A: SPLFT_INT,       # Album Rating
+    0x86: SPLFT_INT,       # Cloud Status
+    0x9A: SPLFT_INT,       # Favorite / Suggest Less
+    0x9C: SPLFT_INT,       # Album Favorite / Suggest Less
+    0xA1: SPLFT_INT,       # Movement Number
     # Date fields
     0x0A: SPLFT_DATE,      # Date Modified
     0x10: SPLFT_DATE,      # Date Added
     0x17: SPLFT_DATE,      # Last Played
     0x45: SPLFT_DATE,      # Last Skipped
     # Boolean fields
+    0x1D: SPLFT_BOOLEAN,   # Checked
+    0x25: SPLFT_BOOLEAN,   # Album Artwork
     0x1F: SPLFT_BOOLEAN,   # Compilation
     0x29: SPLFT_BOOLEAN,   # Purchased
     0x39: SPLFT_INT,       # Podcast
     # Playlist field
     0x28: SPLFT_PLAYLIST,  # Playlist
     # Binary AND
-    0x3C: SPLFT_BINARY_AND,  # Video Kind
+    0x85: SPLFT_BINARY_AND,  # Location
+    0x3C: SPLFT_INT,       # Media Kind
+}
+
+# Smart playlist fields whose values are chosen from an iTunes menu instead of
+# typed freely. These still use the normal SLst numeric payload; the tables here
+# only describe the UI/formatting surface. Values marked below are based on the
+# iPod Video 5.5G "Every Rule" sample and existing iOpenPod media constants,
+# not a complete Apple specification.
+SPL_CHOICE_FIELD_IDS = frozenset({0x28, 0x3C, 0x85, 0x86, 0x9A, 0x9C})
+
+SPL_CHOICE_VALUE_MAP: dict[int, tuple[tuple[int, str], ...]] = {
+    # Favorite/Suggest Less: raw 2 is observed in the 5.5G sample. Raw values
+    # for Suggest Less and None are still provisional until we get samples.
+    0x9A: (
+        (2, "Favorite"),
+        (3, "Suggest Less"),
+        (0, "None"),
+    ),
+    0x9C: (
+        (2, "Favorite"),
+        (3, "Suggest Less"),
+        (0, "None"),
+    ),
+    # Cloud Status: raw 2 is observed for Matched in the 5.5G sample. The rest
+    # mirrors the apparent iTunes status order and remains sample-seeking.
+    0x86: (
+        (2, "Matched"),
+        (1, "Purchased"),
+        (3, "Uploaded"),
+        (4, "Ineligible"),
+        (5, "Removed"),
+        (6, "Error"),
+        (7, "Duplicate"),
+        (8, "Apple Music"),
+        (9, "No Longer Available"),
+        (10, "Not Uploaded"),
+    ),
+    # Location uses the binary action IDs on disk in the 5.5G sample, but the
+    # user-facing choice is still "is/is not" between these menu values.
+    0x85: (
+        (1, "on this computer"),
+        (2, "iCloud"),
+    ),
+    # Media Kind uses iPod media_type values where known. Home Video is an
+    # iTunes/Music choice, but we do not yet have a proven iTunesDB raw value for
+    # this smart-rule field, so it is intentionally not emitted for new writes.
+    0x3C: (
+        (0x00000001, "Music"),
+        (0x00000020, "Music Video"),
+        (0x00000002, "Movie"),
+        (0x00000040, "TV Show"),
+        (0x00000004, "Podcast"),
+        (0x00000008, "Audiobook"),
+        (0x00100000, "Voice Memo"),
+        (0x00010000, "iTunes Extras"),
+    ),
+}
+
+SPL_CHOICE_UNKNOWN_LABELS: dict[int, tuple[str, ...]] = {
+    0x3C: ("Home Video",),
 }
 
 # Date units for relative date rules

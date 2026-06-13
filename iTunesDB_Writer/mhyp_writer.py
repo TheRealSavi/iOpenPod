@@ -42,7 +42,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .mhit_writer import TrackInfo
 
-from iTunesDB_Shared.constants import MHOD_TYPE_TITLE
+from iTunesDB_Shared.constants import MHOD_TYPE_ALBUM, MHOD_TYPE_TITLE
 from iTunesDB_Shared.field_base import write_fields, write_generic_header
 from iTunesDB_Shared.mhod_defs import (
     MHOD_HEADER_SIZE as _MHOD_HEADER_SIZE,
@@ -59,6 +59,7 @@ from .mhod_spl_writer import (
     SmartPlaylistRules,
     write_mhod50,
     write_mhod51,
+    write_mhod55,
     write_mhod102,
 )
 from .mhod_writer import write_mhod_string
@@ -97,7 +98,7 @@ class PlaylistInfo:
     playlist_id: int | None = None   # 64-bit; generated if None
     master: bool = False                 # Sets type byte at +0x14 to 1.
     #   Dataset 2: True for the master playlist only (exactly one).
-    #   Dataset 5: True for ALL built-in categories (Music, Movies, etc.).
+    #   Dataset 5: sample-dependent category marker; preserve parsed input.
     #   In both cases this controls: (a) the type byte at +0x14,
     #   (b) whether library indices are generated (only when tracks
     #       are also provided), and (c) whether db_id_2/playlist_id
@@ -117,6 +118,8 @@ class PlaylistInfo:
     # Opaque blobs preserved from parsed data for round-trip fidelity
     raw_mhod100: bytes | None = None   # Playlist prefs (type 100 body)
     raw_mhod102: bytes | None = None   # Playlist settings (type 102 body)
+    raw_mhod55: bytes | None = None    # Playlist property plist (type 55 body)
+    playlist_description: str | None = None
 
     # Per-MHIP metadata preserved from parsed data for round-trip fidelity.
     # When provided, must be the same length as track_ids and in the same order.
@@ -147,6 +150,8 @@ def write_mhyp(
     mhsd5_type: int = 0,
     raw_mhod100: bytes | None = None,
     raw_mhod102: bytes | None = None,
+    raw_mhod55: bytes | None = None,
+    playlist_description: str | None = None,
     item_metadata: list[PlaylistItemMeta] | None = None,
     capabilities=None,
     podcast_grouping: bool = False,
@@ -159,10 +164,12 @@ def write_mhyp(
     The structure is:
     - MHYP header (184 bytes)
     - MHOD title (string)
+    - [Optional] MHOD type 3 playlist description string (iTunes quirk)
     - MHOD playlist data (type 100 preferences)
     - [Smart only] MHOD type 50 (smart playlist prefs)
     - [Smart only] MHOD type 51 (smart playlist rules / SLst)
-    - [Smart only] MHOD type 102 (playlist settings, if provided)
+    - [Optional] MHOD type 102 (playlist settings, if provided)
+    - [Optional] MHOD type 55 playlist property plist, if provided
     - [Master Playlist only] MHOD type 52/53 pairs (library indices)
     - MHIP entries (one per track)
 
@@ -172,8 +179,8 @@ def write_mhyp(
         playlist_id: Playlist ID (generated if not provided)
         master: Whether the type byte at +0x14 should be set to 1.
                 For dataset 2 this means "master playlist" (exactly one).
-                For dataset 5 this means "built-in system category" (all
-                categories have master=True).  The behavioural effects are:
+                For dataset 5 this is a sample-dependent category marker, not
+                proof that the row is a library master. The behavioural effects are:
                 (a) type byte at +0x14 is written as 1,
                 (b) library indices are generated IF *tracks* is also
                     provided (ds5 never passes tracks, so this is safe),
@@ -194,6 +201,9 @@ def write_mhyp(
         raw_mhod100: If provided, use this raw body for MHOD type 100 instead
                      of generating a default one.
         raw_mhod102: If provided, write an MHOD type 102 with this raw body.
+        raw_mhod55: If provided, write an MHOD type 55 property plist body.
+        playlist_description: If provided, write the playlist-description string
+                     observed as MHOD type 3 on iTunes-created playlist rows.
         podcast_grouping: When True and this is a podcast playlist, generate
                      grouped MHIPs (libgpod write_podcast_mhips style) where
                      episodes are nested under their podcast show by album.
@@ -215,6 +225,16 @@ def write_mhyp(
     # Build MHOD for title
     mhod_title = write_mhod_string(MHOD_TYPE_TITLE, name)
 
+    # On MHYP playlist rows, iTunes 7-era samples duplicate playlist
+    # description text: once as an MHOD type-3 string and again inside MHOD
+    # type 55's binary plist. Type 3 is "Album" for tracks, but in this
+    # context it is not an album and not a folder marker.
+    mhod_description = b''
+    description_count = 0
+    if playlist_description is not None:
+        mhod_description = write_mhod_string(MHOD_TYPE_ALBUM, playlist_description)
+        description_count = 1
+
     # Build MHOD for playlist preferences (type 100)
     if raw_mhod100 is not None:
         mhod_playlist = _write_mhod100_raw(raw_mhod100)
@@ -235,6 +255,13 @@ def write_mhyp(
     if raw_mhod102 is not None:
         mhod_settings = write_mhod102(raw_mhod102)
         settings_count = 1
+
+    # Optional MHOD type 55 (playlist property plist — opaque passthrough)
+    mhod_property_plist = b''
+    property_plist_count = 0
+    if raw_mhod55 is not None:
+        mhod_property_plist = write_mhod55(raw_mhod55)
+        property_plist_count = 1
 
     # Build library index MHODs for master playlist (type 52/53 pairs)
     # These are REQUIRED for iPod Classic to build its browsing views
@@ -269,12 +296,18 @@ def write_mhyp(
         mhip_data = b''.join(mhips)
         mhip_count = len(track_ids)
 
-    # Count MHODs (title + playlist prefs + smart + settings + library indices)
-    mhod_count = 2 + smart_mhod_count + settings_count + library_indices_count
+    # Count MHODs (title + description + playlist prefs + smart + settings +
+    # type-55 property plist + library indices)
+    mhod_count = (
+        2 + description_count + smart_mhod_count + settings_count
+        + property_plist_count + library_indices_count
+    )
 
     # Total chunk length
     total_length = (
-        MHYP_HEADER_SIZE + len(mhod_title) + len(mhod_playlist) + len(mhod_smart) + len(mhod_settings) + len(library_indices_data) + len(mhip_data)
+        MHYP_HEADER_SIZE + len(mhod_title) + len(mhod_description)
+        + len(mhod_playlist) + len(mhod_smart) + len(mhod_settings)
+        + len(mhod_property_plist) + len(library_indices_data) + len(mhip_data)
     )
 
     # Build MHYP header
@@ -289,32 +322,36 @@ def write_mhyp(
         'master_flag': 1 if master else 0,
         'timestamp': timestamp,
         'playlist_id': playlist_id,
-        'string_mhod_child_count': 1,
+        'string_mhod_child_count': 1 + description_count,
         'podcast_flag': podcast_flag,
         'sort_order': sortorder,
         'timestamp_2': timestamp,
     }
 
     # Non-master playlists write db_id_2 and playlist_id at extended offsets.
-    # For master=True (ds2 master and ds5 built-in categories), these stay
-    # zeroed — matching libgpod behaviour.
+    # For master=True (ds2 master and any ds5 category rows that parsed that
+    # way), these stay zeroed — matching libgpod behaviour.
     if not master:
         values['db_id_2'] = db_id_2
         values['playlist_id_2'] = playlist_id
 
     # mhsd5_type — browsing category for dataset 5 smart playlists.
-    # libgpod writes the same value at +0x50 and +0x52, plus a
-    # special flag at +0x54 for RINGTONES(6) and MOVIE_RENTALS(7).
+    # libgpod writes the same value at +0x50 and +0x52, plus a non-zero
+    # special flag at +0x54 for RINGTONES(6) and MOVIE_RENTALS(7). We follow
+    # libgpod's public mirror (1); older iOpenPod comments used 0x200, so keep
+    # this on the sample-validation list.
     if mhsd5_type:
         values['mhsd5_type'] = mhsd5_type
         values['mhsd5_type_2'] = mhsd5_type
         if mhsd5_type in (6, 7):
-            values['mhsd5_special_flag'] = 0x200
+            values['mhsd5_special_flag'] = 1
 
     write_fields(header, 0, 'mhyp', values, MHYP_HEADER_SIZE)
 
     return (
-        bytes(header) + mhod_title + mhod_playlist + mhod_smart + mhod_settings + library_indices_data + mhip_data
+        bytes(header) + mhod_title + mhod_description + mhod_playlist
+        + mhod_smart + mhod_settings + mhod_property_plist
+        + library_indices_data + mhip_data
     )
 
 
@@ -496,6 +533,8 @@ def write_playlist(
         mhsd5_type=playlist.mhsd5_type,
         raw_mhod100=playlist.raw_mhod100,
         raw_mhod102=playlist.raw_mhod102,
+        raw_mhod55=playlist.raw_mhod55,
+        playlist_description=playlist.playlist_description,
         item_metadata=playlist.item_metadata,
         podcast_grouping=use_grouping,
         track_album_map=track_album_map,

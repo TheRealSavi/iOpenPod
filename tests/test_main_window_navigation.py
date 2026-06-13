@@ -38,6 +38,20 @@ class _FakeSidebar:
         self.device_info_updates.append(kwargs)
 
 
+def test_main_window_device_name_ignores_dataset5_category_master() -> None:
+    assert MainWindow._device_name_from_playlists(
+        [
+            {
+                "master_flag": True,
+                "Title": "Rentals",
+                "_source": "category",
+                "mhsd5_type": 7,
+            },
+            {"master_flag": True, "Title": "RoadPod"},
+        ]
+    ) == "RoadPod"
+
+
 class _FakeDropOverlay:
     def __init__(self, *, visible: bool = False):
         self._visible = visible

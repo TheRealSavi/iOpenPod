@@ -9,15 +9,34 @@ import threading
 import traceback
 from collections import Counter
 from pathlib import Path
+from typing import TypeAlias
 
 from PyQt6.QtCore import QObject, QRunnable, QThread, QThreadPool, pyqtSignal, pyqtSlot
 
 from iTunesDB_Shared.album_identity import album_identity_from_mapping
 from iTunesDB_Shared.constants import MEDIA_TYPE_AUDIO, MEDIA_TYPE_AUDIO_VIDEO
+from iTunesDB_Shared.playlist_properties import (
+    normalize_playlist_description,
+)
 
 from .services import DeviceInfoLike, LibraryCacheLike
 
 logger = logging.getLogger(__name__)
+
+_PlaylistBucketKey: TypeAlias = str | None
+_PlaylistCandidate: TypeAlias = tuple[dict, _PlaylistBucketKey]
+_PLAYLIST_BUCKET_ORIGINS: dict[str, tuple[int, str]] = {
+    "mhlp": (2, "mhlp"),
+    "mhlp_podcast": (3, "mhlp_podcast"),
+    "mhlp_smart": (5, "mhlp_smart"),
+}
+_DISPLAY_MERGE_DATASETS = {2, 3}
+_DISPLAY_ONLY_PLAYLIST_KEYS = {
+    "_mhsd_display_origins",
+    "_mhsd_display_types",
+    "_mhsd_display_merged",
+    "_mhsd_display_label",
+}
 
 
 def _is_iopenpod_temp_artwork_path(path: str) -> bool:
@@ -56,7 +75,362 @@ def _smart_bucket_source(playlist: dict) -> str:
 
 
 def _is_ipod_category_playlist(playlist: dict) -> bool:
+    dataset_type = _playlist_dataset_type(playlist)
+    if dataset_type:
+        return dataset_type == 5
     return playlist.get("_source") == "category" or bool(_mhsd5_type_value(playlist))
+
+
+def _playlist_dataset_type(playlist: dict) -> int:
+    try:
+        return int(playlist.get("_mhsd_dataset_type", 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _playlist_source_for_dataset(playlist: dict, dataset_type: int) -> str:
+    if dataset_type == 5:
+        return _smart_bucket_source(playlist)
+    return "regular"
+
+
+def _playlist_origin_summary(playlist: dict) -> dict[str, object]:
+    try:
+        podcast_flag = int(playlist.get("podcast_flag", 0) or 0)
+    except (TypeError, ValueError):
+        podcast_flag = 0
+    try:
+        child_count = int(playlist.get("mhip_child_count", 0) or 0)
+    except (TypeError, ValueError):
+        child_count = 0
+    return {
+        "dataset_type": _playlist_dataset_type(playlist),
+        "result_key": str(playlist.get("_mhsd_result_key") or ""),
+        "source": str(playlist.get("_source") or ""),
+        "title": str(playlist.get("Title") or ""),
+        "podcast_flag": podcast_flag,
+        "mhip_child_count": child_count,
+    }
+
+
+def _has_podcast_group_headers(playlist: dict) -> bool:
+    items = playlist.get("items", [])
+    if not isinstance(items, list):
+        return False
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        try:
+            if int(item.get("podcast_group_flag", 0) or 0) == 256:
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
+
+
+def _real_playlist_item_count(playlist: dict) -> int:
+    items = playlist.get("items", [])
+    if not isinstance(items, list):
+        try:
+            return int(playlist.get("mhip_child_count", 0) or 0)
+        except (TypeError, ValueError):
+            return 0
+    count = 0
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        try:
+            track_id = int(item.get("track_id", 0) or 0)
+        except (TypeError, ValueError):
+            track_id = 0
+        if track_id > 0:
+            count += 1
+    return count
+
+
+def _display_playlist_rank(playlist: dict) -> tuple[int, int, int]:
+    dataset_type = _playlist_dataset_type(playlist)
+    return (
+        1 if dataset_type == 3 and _has_podcast_group_headers(playlist) else 0,
+        _real_playlist_item_count(playlist),
+        1 if dataset_type == 2 else 0,
+    )
+
+
+def _origin_dataset_type(origin: dict[str, object]) -> int:
+    value = origin.get("dataset_type", 0)
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return 0
+        try:
+            return int(text)
+        except ValueError:
+            return 0
+    if isinstance(value, bytes | bytearray):
+        try:
+            return int(value)
+        except ValueError:
+            return 0
+    return 0
+
+
+def _result_key_for_dataset(dataset_type: int) -> str:
+    return {2: "mhlp", 3: "mhlp_podcast", 5: "mhlp_smart"}.get(
+        dataset_type,
+        "mhlp",
+    )
+
+
+def _origin_result_key(origin: dict[str, object], dataset_type: int) -> str:
+    result_key = origin.get("result_key")
+    if isinstance(result_key, str) and result_key:
+        return result_key
+    return _result_key_for_dataset(dataset_type)
+
+
+def _without_display_playlist_keys(playlist: dict) -> dict:
+    return {
+        key: value
+        for key, value in playlist.items()
+        if key not in _DISPLAY_ONLY_PLAYLIST_KEYS
+    }
+
+
+def _find_live_playlist_for_origin(
+    data: dict | None,
+    playlist_id: object,
+    dataset_type: int,
+    result_key: str,
+) -> dict | None:
+    if data is None or not playlist_id:
+        return None
+    bucket = data.get(result_key, [])
+    if not isinstance(bucket, list):
+        return None
+    for playlist in bucket:
+        if not isinstance(playlist, dict):
+            continue
+        if playlist.get("playlist_id") != playlist_id:
+            continue
+        row_dataset = _playlist_dataset_type(playlist) or dataset_type
+        if row_dataset == dataset_type:
+            return playlist
+    return None
+
+
+def _display_origin_save_targets(playlist: dict, data: dict | None) -> list[dict]:
+    origins = playlist.get("_mhsd_display_origins")
+    if not isinstance(origins, list) or len(origins) <= 1:
+        return []
+
+    playlist_id = playlist.get("playlist_id", 0)
+    edited_fields = _without_display_playlist_keys(playlist)
+    rows: list[dict] = []
+    seen: set[tuple[int, str]] = set()
+    for origin in origins:
+        if not isinstance(origin, dict):
+            continue
+        dataset_type = _origin_dataset_type(origin)
+        if dataset_type not in (2, 3, 5):
+            continue
+        result_key = _origin_result_key(origin, dataset_type)
+        origin_key = (dataset_type, result_key)
+        if origin_key in seen:
+            continue
+        seen.add(origin_key)
+        live_row = _find_live_playlist_for_origin(
+            data,
+            playlist_id,
+            dataset_type,
+            result_key,
+        )
+        row = dict(live_row or {})
+        row.update(edited_fields)
+        row["playlist_id"] = playlist_id
+        row["_mhsd_dataset_type"] = dataset_type
+        row["_mhsd_result_key"] = result_key
+        row["_source"] = _playlist_source_for_dataset(row, dataset_type)
+        rows.append(_playlist_with_description(row))
+    return rows
+
+
+def _playlist_with_display_origins(playlist: dict, origins: list[dict[str, object]]) -> dict:
+    row = dict(playlist)
+    sorted_origins = sorted(
+        origins,
+        key=_origin_dataset_type,
+    )
+    represented_types = [
+        dataset_type
+        for origin in sorted_origins
+        if (dataset_type := _origin_dataset_type(origin))
+    ]
+    row["_mhsd_display_origins"] = sorted_origins
+    row["_mhsd_display_types"] = represented_types
+    row["_mhsd_display_merged"] = len(set(represented_types)) > 1
+    row["_mhsd_display_label"] = (
+        " + ".join(f"MHSD type {dataset_type}" for dataset_type in represented_types)
+        if represented_types
+        else "MHSD type unknown"
+    )
+    if row.get("_mhsd_display_merged"):
+        row["mhip_child_count"] = _real_playlist_item_count(row)
+    return row
+
+
+def display_playlists_from_rows(playlists: list[dict]) -> list[dict]:
+    """Return a UI projection that merges duplicate MHSD type 2/3 rows.
+
+    The raw cache intentionally preserves every parsed row for writes. This
+    helper is the final display projection: same-ID type 2/type 3 twins become
+    one visible playlist, while the returned row carries explicit origin
+    metadata so the UI can say which MHSD types it represents.
+    """
+
+    groups: dict[int, list[dict]] = {}
+    passthrough: list[dict] = []
+    for playlist in playlists:
+        dataset_type = _playlist_dataset_type(playlist)
+        try:
+            playlist_id = int(playlist.get("playlist_id", 0) or 0)
+        except (TypeError, ValueError):
+            playlist_id = 0
+        if playlist_id and dataset_type in _DISPLAY_MERGE_DATASETS:
+            groups.setdefault(playlist_id, []).append(playlist)
+        else:
+            passthrough.append(
+                _playlist_with_display_origins(
+                    playlist,
+                    [_playlist_origin_summary(playlist)],
+                )
+            )
+
+    result = list(passthrough)
+    for grouped in groups.values():
+        dataset_types = {_playlist_dataset_type(playlist) for playlist in grouped}
+        origins = [_playlist_origin_summary(playlist) for playlist in grouped]
+        if dataset_types == _DISPLAY_MERGE_DATASETS and len(grouped) > 1:
+            representative = max(grouped, key=_display_playlist_rank)
+            result.append(_playlist_with_display_origins(representative, origins))
+        else:
+            result.extend(
+                _playlist_with_display_origins(
+                    playlist,
+                    [_playlist_origin_summary(playlist)],
+                )
+                for playlist in grouped
+            )
+
+    return result
+
+
+def _playlist_with_description(playlist: dict) -> dict:
+    return normalize_playlist_description(playlist)
+
+
+def _playlist_with_origin(playlist: dict, dataset_type: int, result_key: str) -> dict:
+    row = {
+        **playlist,
+        "_mhsd_dataset_type": dataset_type,
+        "_mhsd_result_key": result_key,
+    }
+    row["_source"] = _playlist_source_for_dataset(row, dataset_type)
+    return _playlist_with_description(row)
+
+
+def _playlist_live_origins(
+    data: dict | None,
+    playlist_id: object,
+) -> list[tuple[int, str]]:
+    """Return the live MHSD origins currently using ``playlist_id``.
+
+    Dataset 2 and 3 rows commonly duplicate playlist IDs on classic iPods. That
+    duplication is meaningful, so callers must not collapse matches by ID alone.
+    """
+
+    if data is None or not playlist_id:
+        return []
+
+    matches: list[tuple[int, str]] = []
+    for bucket_key, (dataset_type, result_key) in _PLAYLIST_BUCKET_ORIGINS.items():
+        bucket = data.get(bucket_key, [])
+        if not isinstance(bucket, list):
+            continue
+        for playlist in bucket:
+            if not isinstance(playlist, dict):
+                continue
+            if playlist.get("playlist_id") == playlist_id:
+                matches.append((
+                    _playlist_dataset_type(playlist) or dataset_type,
+                    str(playlist.get("_mhsd_result_key") or result_key),
+                ))
+    return matches
+
+
+def _playlist_with_known_edit_origin(
+    playlist: dict,
+    data: dict | None,
+) -> dict | None:
+    """Keep existing playlist edits tied to their original MHSD location.
+
+    New playlists may be routed by their requested kind. Existing edits are
+    different: if the UI lost the parsed origin, choosing a bucket by flags would
+    manufacture a move the iPod database never asked for.
+    """
+
+    if _playlist_dataset_type(playlist):
+        return playlist
+    if playlist.get("_isNew") is not False:
+        return playlist
+
+    playlist_id = playlist.get("playlist_id")
+    matches = _playlist_live_origins(data, playlist_id)
+    unique_matches = sorted(set(matches))
+    if len(unique_matches) == 1:
+        dataset_type, result_key = unique_matches[0]
+        playlist["_mhsd_dataset_type"] = dataset_type
+        playlist["_mhsd_result_key"] = result_key
+        playlist.setdefault(
+            "_source",
+            _playlist_source_for_dataset(playlist, dataset_type),
+        )
+        logger.warning(
+            "Restored missing MHSD origin for playlist edit '%s' "
+            "(id=0x%016X, mhsd=%s, key=%s).",
+            playlist.get("Title", "?"),
+            int(playlist_id or 0),
+            dataset_type,
+            result_key,
+        )
+        return playlist
+
+    if unique_matches:
+        locations = ", ".join(
+            f"mhsd {dataset_type}/{result_key}"
+            for dataset_type, result_key in unique_matches
+        )
+        logger.error(
+            "Refusing playlist edit without MHSD origin: '%s' "
+            "(id=0x%016X) appears in %s.",
+            playlist.get("Title", "?"),
+            int(playlist_id or 0),
+            locations,
+        )
+    else:
+        logger.error(
+            "Refusing playlist edit without MHSD origin: '%s' "
+            "(id=0x%016X) has no matching live row.",
+            playlist.get("Title", "?"),
+            int(playlist_id or 0),
+        )
+    return None
 
 
 def _build_track_indexes(
@@ -548,108 +922,131 @@ class iTunesDBCache(QObject):
         if not data:
             return []
 
-        seen_ids: set[int] = set()
         result: list[dict] = []
 
-        has_type2_master = False
         for playlist in data.get("mhlp", []):
-            playlist = {**playlist, "_source": "regular"}
-            playlist_id = playlist.get("playlist_id", 0)
-            if playlist_id not in seen_ids:
-                seen_ids.add(playlist_id)
-                result.append(playlist)
-                if playlist.get("master_flag"):
-                    has_type2_master = True
+            result.append(_playlist_with_origin(playlist, 2, "mhlp"))
 
         for playlist in data.get("mhlp_podcast", []):
-            playlist_id = playlist.get("playlist_id", 0)
-            if playlist_id in seen_ids:
-                continue
-            source = (
-                "podcast" if playlist.get("podcast_flag", 0) == 1 else "regular"
-            )
-            playlist = {**playlist, "_source": source}
-            if has_type2_master:
-                playlist["master_flag"] = 0
-            seen_ids.add(playlist_id)
-            result.append(playlist)
+            result.append(_playlist_with_origin(playlist, 3, "mhlp_podcast"))
 
         for playlist in data.get("mhlp_smart", []):
-            playlist_id = playlist.get("playlist_id", 0)
-            if playlist_id in seen_ids:
-                continue
-            playlist = {
-                **playlist,
-                "_source": _smart_bucket_source(playlist),
-                "master_flag": 0,
-            }
-            seen_ids.add(playlist_id)
-            result.append(playlist)
+            result.append(_playlist_with_origin(playlist, 5, "mhlp_smart"))
 
         with self._lock:
             for user_playlist in self._user_playlists:
                 playlist_id = user_playlist.get("playlist_id", 0)
-                if playlist_id in seen_ids:
-                    result = [
-                        user_playlist
-                        if row.get("playlist_id") == playlist_id
-                        else row
-                        for row in result
-                    ]
-                else:
-                    seen_ids.add(playlist_id)
+                dataset_type = _playlist_dataset_type(user_playlist)
+                replaced = False
+                if playlist_id and dataset_type:
+                    for index, row in enumerate(result):
+                        if (
+                            row.get("playlist_id") == playlist_id
+                            and _playlist_dataset_type(row) == dataset_type
+                        ):
+                            result[index] = user_playlist
+                            replaced = True
+                            break
+                if not replaced:
                     result.append(user_playlist)
 
         return result
+
+    def get_display_playlists(self) -> list:
+        return display_playlists_from_rows(self.get_playlists())
 
     def save_user_playlist(self, playlist: dict) -> None:
         import random
 
         with self._lock:
+            playlist = _playlist_with_description(playlist)
             playlist_id = playlist.get("playlist_id", 0)
             if not playlist_id:
                 playlist_id = random.getrandbits(64)
                 playlist["playlist_id"] = playlist_id
-            items = playlist.get("items")
-            if isinstance(items, list):
-                playlist["mhip_child_count"] = len(items)
 
-            replaced = False
-            for index, user_playlist in enumerate(self._user_playlists):
-                if user_playlist.get("playlist_id") == playlist_id:
-                    self._user_playlists[index] = playlist
-                    replaced = True
-                    break
-            if not replaced:
-                self._user_playlists.append(playlist)
+            target_playlists = _display_origin_save_targets(playlist, self._data)
+            if not target_playlists:
+                resolved_playlist = _playlist_with_known_edit_origin(playlist, self._data)
+                if resolved_playlist is None:
+                    return
+                target_playlists = [resolved_playlist]
+
+            replaced_count = 0
+            for target_playlist in target_playlists:
+                items = target_playlist.get("items")
+                if isinstance(items, list):
+                    target_playlist["mhip_child_count"] = len(items)
+
+                replaced = False
+                target_dataset = _playlist_dataset_type(target_playlist)
+                for index, user_playlist in enumerate(self._user_playlists):
+                    same_origin = _playlist_dataset_type(user_playlist) == target_dataset
+                    if (
+                        user_playlist.get("playlist_id") == playlist_id
+                        and same_origin
+                    ):
+                        self._user_playlists[index] = target_playlist
+                        replaced = True
+                        replaced_count += 1
+                        break
+                if not replaced:
+                    self._user_playlists.append(target_playlist)
 
         logger.info(
-            "User playlist saved: '%s' (id=0x%016X, new=%s)",
+            "User playlist saved: '%s' (id=0x%016X, row_count=%d, new=%s)",
             playlist.get("Title", "?"),
             playlist_id,
-            not replaced,
+            len(target_playlists),
+            replaced_count < len(target_playlists),
         )
         self.playlists_changed.emit()
 
-    def remove_user_playlist(self, playlist_id: int) -> bool:
+    def remove_user_playlist(
+        self, playlist_id: int, dataset_type: int | None = None
+    ) -> bool:
+        """Remove one playlist without collapsing same IDs across MHSD buckets."""
+        target_dataset = int(dataset_type or 0)
+
+        def row_dataset(playlist: dict, bucket_key: str | None = None) -> int:
+            dataset = _playlist_dataset_type(playlist)
+            if dataset:
+                return dataset
+            return {"mhlp": 2, "mhlp_podcast": 3, "mhlp_smart": 5}.get(
+                bucket_key or "", 0
+            )
+
+        def matches(playlist: dict, bucket_key: str | None = None) -> bool:
+            if playlist.get("playlist_id") != playlist_id:
+                return False
+            if not target_dataset:
+                return True
+            return row_dataset(playlist, bucket_key) == target_dataset
+
         with self._lock:
             data = self._data
-            candidates = list(self._user_playlists)
+            candidates: list[_PlaylistCandidate] = [
+                (playlist, None) for playlist in self._user_playlists
+            ]
             if data is not None:
                 for key in ("mhlp", "mhlp_podcast", "mhlp_smart"):
-                    candidates.extend(data.get(key, []))
-            for playlist in candidates:
-                if (
-                    playlist.get("playlist_id") == playlist_id
-                    and playlist.get("master_flag")
-                ):
+                    bucket = data.get(key, [])
+                    if not isinstance(bucket, list):
+                        continue
+                    candidates.extend(
+                        (playlist, key)
+                        for playlist in bucket
+                        if isinstance(playlist, dict)
+                    )
+            for playlist, key in candidates:
+                if matches(playlist, key) and playlist.get("master_flag"):
                     return False
 
             before = len(self._user_playlists)
             self._user_playlists = [
                 playlist
                 for playlist in self._user_playlists
-                if playlist.get("playlist_id") != playlist_id
+                if not matches(playlist)
             ]
             removed = len(self._user_playlists) < before
             if data is not None:
@@ -658,7 +1055,7 @@ class iTunesDBCache(QObject):
                     kept = [
                         playlist
                         for playlist in bucket
-                        if playlist.get("playlist_id") != playlist_id
+                        if not matches(playlist, key)
                     ]
                     if len(kept) != len(bucket):
                         data[key] = kept
@@ -718,31 +1115,51 @@ class iTunesDBCache(QObject):
                 if not playlist_id or pending.get("master_flag"):
                     continue
 
-                row = dict(pending)
+                row = _playlist_with_description(dict(pending))
+                row = _playlist_with_known_edit_origin(row, data)
+                if row is None:
+                    continue
                 items = row.get("items")
                 if isinstance(items, list):
                     row["mhip_child_count"] = len(items)
 
-                if _is_ipod_category_playlist(row):
+                dataset_type = _playlist_dataset_type(row)
+                if dataset_type == 3:
+                    target = podcast
+                    row.setdefault("_mhsd_dataset_type", 3)
+                    row.setdefault("_mhsd_result_key", "mhlp_podcast")
+                elif dataset_type == 5 or _is_ipod_category_playlist(row):
                     target = smart
+                    row.setdefault("_mhsd_dataset_type", 5)
+                    row.setdefault("_mhsd_result_key", "mhlp_smart")
                 elif row.get("podcast_flag", 0) == 1 or row.get("_source") == "podcast":
                     target = podcast
+                    row.setdefault("_mhsd_dataset_type", 3)
+                    row.setdefault("_mhsd_result_key", "mhlp_podcast")
                 else:
                     target = regular
+                    row.setdefault("_mhsd_dataset_type", 2)
+                    row.setdefault("_mhsd_result_key", "mhlp")
 
+                dataset_type = _playlist_dataset_type(row)
+
+                found_in_target = False
                 for bucket in buckets:
                     for index, existing in enumerate(bucket):
-                        if existing.get("playlist_id") == playlist_id:
+                        if (
+                            existing.get("playlist_id") == playlist_id
+                            and _playlist_dataset_type(existing) in (0, dataset_type)
+                        ):
                             if bucket is target:
                                 bucket[index] = row
+                                found_in_target = True
                             else:
                                 del bucket[index]
                             break
                     else:
                         continue
-                    continue
 
-                if not any(existing.get("playlist_id") == playlist_id for existing in target):
+                if not found_in_target:
                     target.append(row)
 
             self._user_playlists.clear()
@@ -946,6 +1363,13 @@ class iTunesDBCache(QObject):
             return edits
 
     def set_data(self, data: dict, device_path: str) -> None:
+        for key in ("mhlp", "mhlp_podcast", "mhlp_smart"):
+            bucket = data.get(key, [])
+            if isinstance(bucket, list):
+                for playlist in bucket:
+                    if isinstance(playlist, dict):
+                        _playlist_with_description(playlist)
+
         tracks = list(data.get("mhlt", []))
         album_index, album_only_index, artist_index, genre_index, track_id_index = _build_track_indexes(tracks)
 

@@ -9,8 +9,8 @@ Dataset write order (matches libgpod):
       mhlt (track list)
         mhit (track) x N
           mhod (string) x M
-    mhsd type 3 (podcasts dataset) — MUST appear between types 1 and 2
-      mhlp (playlist list) — same data as type 2
+    mhsd type 3 (playlist dataset with podcast-aware grouping)
+      mhlp (playlist list) — often mirrors type 2, but remains distinct
     mhsd type 2 (playlists dataset)
       mhlp (playlist list)
         mhyp (master playlist) — REQUIRED, always first
@@ -217,10 +217,14 @@ def write_mhbd(
     language: str = "en",
     reference_info: dict | None = None,
     playlists_type2: list[PlaylistInfo] | None = None,
+    playlists_type3: list[PlaylistInfo] | None = None,
     playlists_type5: list[PlaylistInfo] | None = None,
     preserved_mhsd_blobs: list[bytes] | None = None,
     capabilities: DeviceCapabilities | None = None,
     master_playlist_name: str = "iPod",
+    master_playlist_id: int | None = None,
+    podcast_master_playlist_name: str | None = None,
+    podcast_master_playlist_id: int | None = None,
 ) -> bytes:
     """
     Write a complete iTunesDB database.
@@ -232,6 +236,11 @@ def write_mhbd(
         reference_info: Dict from extract_db_info() to copy device-specific fields
         playlists_type2: List of PlaylistInfo for user playlists (dataset 2).
                    Master playlist is auto-generated; does NOT belong in this list.
+        playlists_type3: List of PlaylistInfo for podcast-list playlists
+                         (dataset 3). If None, dataset 2 playlists are cloned
+                         for libgpod-compatible new-database output. Passing
+                         an empty list is meaningful: write dataset 3 with
+                         only its generated master playlist.
         playlists_type5: List of PlaylistInfo for dataset 5 smart playlists
                          (iPod browsing categories like Music, Movies, etc.)
         preserved_mhsd_blobs: Raw MHSD byte blobs (types 6+) extracted from
@@ -240,7 +249,11 @@ def write_mhbd(
                               preserve Genius and other iTunes-generated data.
         capabilities: Device capabilities from ``ipod_device``.  When provided,
                       ``db_version`` and ``supports_podcast`` are respected.
-        master_playlist_name: Display name for the auto-generated master playlist.
+        master_playlist_name: Display name for the dataset 2 master playlist.
+        master_playlist_id: Existing dataset 2 master playlist ID, if any.
+        podcast_master_playlist_name: Display name for the dataset 3 master
+                                      playlist. Defaults to master_playlist_name.
+        podcast_master_playlist_id: Existing dataset 3 master playlist ID, if any.
 
     Returns:
         Complete iTunesDB file content as bytes
@@ -365,12 +378,9 @@ def write_mhbd(
     # The master playlist is REQUIRED and must reference ALL tracks
     # Pass tracks so master playlist can generate library index MHODs (type 52/53)
     #
-    # Generate a single master playlist_id shared by DS2 and DS3 so that
-    # the GUI dedup logic (by playlist_id) correctly collapses the two
-    # copies of the master playlist into one.
-    master_playlist_id = generate_playlist_id()
-
     remapped_playlists_type2 = [_remap_playlist(pl) for pl in (playlists_type2 or [])]
+    if master_playlist_id is None:
+        master_playlist_id = generate_playlist_id()
     mhsd_type2_data = write_mhlp_with_playlists(
         track_ids, playlists=remapped_playlists_type2,
         tracks=tracks, db_id_2=db_id_2, capabilities=capabilities,
@@ -379,11 +389,11 @@ def write_mhbd(
     )
     mhsd_type2 = write_mhsd_type2(mhsd_type2_data)
 
-    # Build podcast list (Type 3 dataset)
-    # libgpod writes type 3 with the SAME playlists as type 2, but the
-    # podcast playlist uses grouped MHIPs where episodes are nested
-    # under their podcast show (album).  Non-podcast playlists are
-    # written identically to type 2.
+    # Build podcast list (Type 3 dataset). If an explicit list is supplied,
+    # preserve that dataset independently. Otherwise keep the historical
+    # libgpod-compatible behavior of cloning dataset 2 into dataset 3. The
+    # clone path is only for new/default writes; it is not evidence that parsed
+    # dataset-2 and dataset-3 rows are interchangeable.
 
     # Pre-podcast devices (iPod 1G-3G, Mini 1G-2G, Shuffle 1G-2G)
     # don't understand type 3; skip it when capabilities say so.
@@ -392,6 +402,14 @@ def write_mhbd(
         include_podcasts = False
 
     if include_podcasts:
+        source_playlists_type3 = (
+            playlists_type2 if playlists_type3 is None else playlists_type3
+        )
+        remapped_playlists_type3 = [
+            _remap_playlist(pl) for pl in (source_playlists_type3 or [])
+        ]
+        if podcast_master_playlist_id is None:
+            podcast_master_playlist_id = generate_playlist_id()
         # Build track_id → album map for podcast grouping.
         # Sequential track IDs start after last_id (same as track_ids range).
         track_album_map: dict[int, str] = {}
@@ -401,12 +419,12 @@ def write_mhbd(
 
         from .mhlp_writer import write_mhlp_with_playlists_type3
         mhsd_type3_data = write_mhlp_with_playlists_type3(
-            track_ids, playlists=remapped_playlists_type2,
+            track_ids, playlists=remapped_playlists_type3,
             db_id_2=db_id_2, track_album_map=track_album_map,
             tracks=tracks, capabilities=capabilities,
-            master_playlist_name=master_playlist_name,
+            master_playlist_name=podcast_master_playlist_name or master_playlist_name,
             next_mhip_id_start=next_track_id,
-            master_playlist_id=master_playlist_id,
+            master_playlist_id=podcast_master_playlist_id,
         )
         mhsd_type3 = write_mhsd_type3(mhsd_type3_data)
     else:
@@ -610,9 +628,13 @@ def write_itunesdb(
     reference_itdb_path: str | None = None,
     pc_file_paths: dict | None = None,
     playlists: list[PlaylistInfo] | None = None,
+    podcast_playlists: list[PlaylistInfo] | None = None,
     smart_playlists: list[PlaylistInfo] | None = None,
     capabilities: DeviceCapabilities | None = None,
     master_playlist_name: str = "iPod",
+    master_playlist_id: int | None = None,
+    podcast_master_playlist_name: str | None = None,
+    podcast_master_playlist_id: int | None = None,
     progress_callback: Callable[[str], None] | None = None,
 ) -> bool:
     """
@@ -638,10 +660,14 @@ def write_itunesdb(
                        and ithmb files will be written and mhii_link set on tracks.
         playlists: List of PlaylistInfo for user playlists (dataset 2).
                    Master playlist is auto-generated; does NOT belong in this list.
+        podcast_playlists: List of PlaylistInfo for dataset 3 playlists. If
+                           None, dataset 2 playlists are cloned into dataset 3.
+                           Pass [] to preserve an empty dataset-3 user list.
         smart_playlists: List of PlaylistInfo for dataset 5 smart playlists.
         capabilities: Device capabilities from ``ipod_device``.  Auto-detected
                       from the current device if not provided.
         master_playlist_name: Display name for the auto-generated master playlist.
+        master_playlist_id: Existing dataset 2 master playlist ID, if any.
 
     Returns:
         True if successful
@@ -891,10 +917,15 @@ def write_itunesdb(
     # Build database with reference info
     itdb_data = bytearray(write_mhbd(
         tracks, db_id, reference_info=reference_info,
-        playlists_type2=playlists, playlists_type5=smart_playlists,
+        playlists_type2=playlists,
+        playlists_type3=podcast_playlists,
+        playlists_type5=smart_playlists,
         preserved_mhsd_blobs=preserved_blobs,
         capabilities=capabilities,
         master_playlist_name=master_playlist_name,
+        master_playlist_id=master_playlist_id,
+        podcast_master_playlist_name=podcast_master_playlist_name,
+        podcast_master_playlist_id=podcast_master_playlist_id,
     ))
 
     # ── Compress for iTunesCDB if needed ──────────────────────────────

@@ -34,6 +34,7 @@ from PyQt6.QtWidgets import (
     QWidgetAction,
 )
 
+from app_core.runtime import display_playlists_from_rows
 from iTunesDB_Shared.constants import (
     MEDIA_TYPE_AUDIO,
     MEDIA_TYPE_AUDIO_VIDEO,
@@ -290,12 +291,32 @@ def build_new_regular_playlist(
 def _is_ipod_category_playlist(playlist: dict | None) -> bool:
     if not playlist:
         return False
-    if playlist.get("_source") == "category":
-        return True
+    dataset_type = _playlist_dataset_type(playlist)
+    if dataset_type:
+        return dataset_type == 5
+    return bool(playlist.get("_source") == "category" and dataset_type in (0, 5))
+
+
+def _playlist_dataset_type(playlist: dict | None) -> int:
+    if not playlist:
+        return 0
     try:
-        return int(playlist.get("mhsd5_type", 0) or 0) != 0
+        return int(playlist.get("_mhsd_dataset_type", 0) or 0)
     except (TypeError, ValueError):
-        return False
+        return 0
+
+
+def _mhsd5_type_value(playlist: dict | None) -> int:
+    if not playlist:
+        return 0
+    try:
+        return int(playlist.get("mhsd5_type", 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _is_display_merged_playlist(playlist: dict | None) -> bool:
+    return bool(playlist and playlist.get("_mhsd_display_merged"))
 
 
 # =============================================================================
@@ -918,10 +939,10 @@ class MusicBrowserList(QFrame):
         if (
             pl.get("smart_playlist_data")
             or _is_ipod_category_playlist(pl)
-            or pl.get("_source") in ("smart", "podcast")
+            or pl.get("_source") == "smart"
         ):
             return False
-        if pl.get("podcast_flag", 0) == 1:
+        if pl.get("podcast_flag", 0) == 1 and not _is_display_merged_playlist(pl):
             return False
         # Only allow manual reorder when sort_order is Manual (1) or Default (0)
         sort_order = pl.get("sort_order", 0)
@@ -2919,16 +2940,20 @@ class MusicBrowserList(QFrame):
 
         # ── "Add to Playlist >" cascade ──
         if cache is not None and cache.is_ready():
-            playlists = cache.get_playlists()
+            playlists = display_playlists_from_rows(cache.get_playlists())
 
-            # Filter to regular (non-master, non-smart, non-podcast) playlists
+            # Filter to editable regular playlists. Display-merged type 2/3 rows
+            # are valid edit targets; cache saves fan out to each physical row.
             regular = [
                 pl for pl in playlists
                 if not pl.get("master_flag")
                 and not pl.get("smart_playlist_data")
                 and not _is_ipod_category_playlist(pl)
-                and pl.get("_source") not in ("smart", "category", "podcast")
-                and pl.get("podcast_flag", 0) != 1
+                and pl.get("_source") not in ("smart", "category")
+                and (
+                    pl.get("podcast_flag", 0) != 1
+                    or _is_display_merged_playlist(pl)
+                )
             ]
 
             add_menu = menu.addMenu("Add to Playlist")
@@ -2960,9 +2985,11 @@ class MusicBrowserList(QFrame):
                 and self._current_playlist.get("_source") not in (
                     "smart",
                     "category",
-                    "podcast",
                 )
-                and self._current_playlist.get("podcast_flag", 0) != 1):
+                and (
+                    self._current_playlist.get("podcast_flag", 0) != 1
+                    or _is_display_merged_playlist(self._current_playlist)
+                )):
             menu.addSeparator()
             n = len(selected)
             label = f"Remove {n} Track{'s' if n != 1 else ''} from Playlist"

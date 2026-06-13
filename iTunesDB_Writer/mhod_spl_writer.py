@@ -254,6 +254,20 @@ def write_mhod102(raw_body: bytes) -> bytes:
 
 
 # ────────────────────────────────────────────────────────────
+# MHOD Type 55 — Playlist property plist passthrough
+# ────────────────────────────────────────────────────────────
+
+def write_mhod55(raw_body: bytes) -> bytes:
+    """Write MHOD type 55 (playlist property plist).
+
+    Seen on iTunes 7-era playlist rows as an Apple binary plist containing a
+    playlist ``description``. The body is opaque here; parsed samples are
+    preserved verbatim so unknown plist keys are not lost.
+    """
+    return write_mhod_header(55, MHOD_HEADER_SIZE + len(raw_body)) + raw_body
+
+
+# ────────────────────────────────────────────────────────────
 # Helpers for building from parsed data (round-trip)
 # ────────────────────────────────────────────────────────────
 

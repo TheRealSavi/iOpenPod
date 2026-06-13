@@ -917,9 +917,26 @@ def backup_device_name_from_playlists(playlists: Iterable[dict]) -> str:
     """Return the iPod name stored on the master playlist, if available."""
 
     for playlist in playlists:
-        if playlist.get("master_flag"):
+        if playlist.get("master_flag") and not _is_ipod_category_playlist(playlist):
             return str(playlist.get("Title") or "").strip()
     return ""
+
+
+def _mhsd5_type_value(playlist: dict) -> int:
+    try:
+        return int(playlist.get("mhsd5_type", 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _is_ipod_category_playlist(playlist: dict) -> bool:
+    try:
+        dataset_type = int(playlist.get("_mhsd_dataset_type", 0) or 0)
+    except (TypeError, ValueError):
+        dataset_type = 0
+    if dataset_type:
+        return dataset_type == 5
+    return playlist.get("_source") == "category" or bool(_mhsd5_type_value(playlist))
 
 
 def build_backup_device_context(

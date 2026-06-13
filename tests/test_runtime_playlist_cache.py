@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from types import SimpleNamespace
 
 from app_core import runtime
@@ -210,6 +211,284 @@ def test_remove_user_playlist_rejects_master_playlist(monkeypatch) -> None:
     assert cache.get_playlists()[0]["master_flag"] == 1
 
 
+def test_remove_user_playlist_can_target_same_id_by_dataset(monkeypatch) -> None:
+    monkeypatch.setattr(
+        runtime.DeviceManager,
+        "get_instance",
+        classmethod(lambda cls: SimpleNamespace(device_path="/fake/ipod")),
+    )
+
+    cache = runtime.iTunesDBCache()
+    cache.set_data(
+        {
+            "mhlt": [],
+            "mhlp": [
+                {"playlist_id": 2, "Title": "Dataset 2", "_mhsd_dataset_type": 2}
+            ],
+            "mhlp_podcast": [
+                {"playlist_id": 2, "Title": "Dataset 3", "_mhsd_dataset_type": 3}
+            ],
+            "mhlp_smart": [],
+        },
+        "/fake/ipod",
+    )
+
+    assert cache.remove_user_playlist(2, 3) is True
+    assert [(p["Title"], p["_mhsd_dataset_type"]) for p in cache.get_playlists()] == [
+        ("Dataset 2", 2)
+    ]
+
+
+def test_display_playlists_merge_duplicate_dataset2_and_dataset3_rows(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        runtime.DeviceManager,
+        "get_instance",
+        classmethod(lambda cls: SimpleNamespace(device_path="/fake/ipod")),
+    )
+
+    cache = runtime.iTunesDBCache()
+    cache.set_data(
+        {
+            "mhlt": [],
+            "mhlp": [
+                {
+                    "playlist_id": 2,
+                    "Title": "Favorites",
+                    "_mhsd_dataset_type": 2,
+                    "items": [{"track_id": 10}, {"track_id": 11}],
+                    "mhip_child_count": 2,
+                }
+            ],
+            "mhlp_podcast": [
+                {
+                    "playlist_id": 2,
+                    "Title": "Favorites",
+                    "_mhsd_dataset_type": 3,
+                    "items": [{"track_id": 10}, {"track_id": 11}],
+                    "mhip_child_count": 2,
+                }
+            ],
+            "mhlp_smart": [],
+        },
+        "/fake/ipod",
+    )
+
+    raw_playlists = cache.get_playlists()
+    display_playlists = runtime.display_playlists_from_rows(raw_playlists)
+
+    assert len(raw_playlists) == 2
+    assert len(display_playlists) == 1
+    assert display_playlists[0]["_mhsd_display_merged"] is True
+    assert display_playlists[0]["_mhsd_display_types"] == [2, 3]
+    assert display_playlists[0]["_mhsd_display_label"] == "MHSD type 2 + MHSD type 3"
+
+
+def test_display_playlists_keep_type3_only_playlist_as_single_regular_row(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        runtime.DeviceManager,
+        "get_instance",
+        classmethod(lambda cls: SimpleNamespace(device_path="/fake/ipod")),
+    )
+
+    cache = runtime.iTunesDBCache()
+    cache.set_data(
+        {
+            "mhlt": [],
+            "mhlp": [],
+            "mhlp_podcast": [
+                {
+                    "playlist_id": 3,
+                    "Title": "Type 3 Only",
+                    "_mhsd_dataset_type": 3,
+                    "items": [],
+                }
+            ],
+            "mhlp_smart": [],
+        },
+        "/fake/ipod",
+    )
+
+    display_playlists = runtime.display_playlists_from_rows(cache.get_playlists())
+
+    assert len(display_playlists) == 1
+    assert display_playlists[0]["_source"] == "regular"
+    assert display_playlists[0]["_mhsd_display_merged"] is False
+    assert display_playlists[0]["_mhsd_display_types"] == [3]
+
+
+def test_display_playlists_surface_dataset5_rows_even_without_mhsd5_marker(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        runtime.DeviceManager,
+        "get_instance",
+        classmethod(lambda cls: SimpleNamespace(device_path="/fake/ipod")),
+    )
+
+    cache = runtime.iTunesDBCache()
+    cache.set_data(
+        {
+            "mhlt": [],
+            "mhlp": [],
+            "mhlp_podcast": [],
+            "mhlp_smart": [
+                {
+                    "playlist_id": 5,
+                    "Title": "Browse Row",
+                    "mhsd5_type": 0,
+                    "smart_playlist_data": {"live_update": True},
+                }
+            ],
+        },
+        "/fake/ipod",
+    )
+
+    display_playlists = runtime.display_playlists_from_rows(cache.get_playlists())
+
+    assert len(display_playlists) == 1
+    assert display_playlists[0]["Title"] == "Browse Row"
+    assert display_playlists[0]["_mhsd_dataset_type"] == 5
+    assert display_playlists[0]["_mhsd_display_types"] == [5]
+
+
+def test_saving_display_merged_playlist_updates_all_duplicate_origins(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        runtime.DeviceManager,
+        "get_instance",
+        classmethod(lambda cls: SimpleNamespace(device_path="/fake/ipod")),
+    )
+
+    cache = runtime.iTunesDBCache()
+    cache.set_data(
+        {
+            "mhlt": [],
+            "mhlp": [
+                {
+                    "playlist_id": 2,
+                    "Title": "Old",
+                    "_mhsd_dataset_type": 2,
+                    "items": [{"track_id": 10}],
+                }
+            ],
+            "mhlp_podcast": [
+                {
+                    "playlist_id": 2,
+                    "Title": "Old",
+                    "_mhsd_dataset_type": 3,
+                    "items": [{"track_id": 10}],
+                }
+            ],
+            "mhlp_smart": [],
+        },
+        "/fake/ipod",
+    )
+    merged = runtime.display_playlists_from_rows(cache.get_playlists())[0]
+    merged["Title"] = "New"
+    merged["items"] = [{"track_id": 10}, {"track_id": 11}]
+
+    cache.save_user_playlist(merged)
+    pending = sorted(
+        cache.get_user_playlists(),
+        key=lambda playlist: playlist["_mhsd_dataset_type"],
+    )
+
+    assert [(row["Title"], row["_mhsd_dataset_type"]) for row in pending] == [
+        ("New", 2),
+        ("New", 3),
+    ]
+    assert pending[0]["items"] == [{"track_id": 10}, {"track_id": 11}]
+    assert pending[1]["items"] == [{"track_id": 10}, {"track_id": 11}]
+
+    cache.commit_user_playlists()
+    data = cache.get_data()
+    assert data is not None
+    assert data["mhlp"][0]["Title"] == "New"
+    assert data["mhlp_podcast"][0]["Title"] == "New"
+    assert data["mhlp"][0]["items"] == [{"track_id": 10}, {"track_id": 11}]
+    assert data["mhlp_podcast"][0]["items"] == [{"track_id": 10}, {"track_id": 11}]
+
+
+def test_removing_display_merged_playlist_deletes_all_duplicate_origins(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        runtime.DeviceManager,
+        "get_instance",
+        classmethod(lambda cls: SimpleNamespace(device_path="/fake/ipod")),
+    )
+
+    cache = runtime.iTunesDBCache()
+    cache.set_data(
+        {
+            "mhlt": [],
+            "mhlp": [
+                {"playlist_id": 2, "Title": "Duplicate", "_mhsd_dataset_type": 2}
+            ],
+            "mhlp_podcast": [
+                {"playlist_id": 2, "Title": "Duplicate", "_mhsd_dataset_type": 3}
+            ],
+            "mhlp_smart": [],
+        },
+        "/fake/ipod",
+    )
+
+    assert cache.remove_user_playlist(2, None) is True
+    data = cache.get_data()
+    assert data is not None
+    assert data["mhlp"] == []
+    assert data["mhlp_podcast"] == []
+
+
+def test_save_user_playlist_refuses_ambiguous_originless_existing_edit(
+    monkeypatch,
+    caplog,
+) -> None:
+    monkeypatch.setattr(
+        runtime.DeviceManager,
+        "get_instance",
+        classmethod(lambda cls: SimpleNamespace(device_path="/fake/ipod")),
+    )
+
+    cache = runtime.iTunesDBCache()
+    cache.set_data(
+        {
+            "mhlt": [],
+            "mhlp": [
+                {"playlist_id": 2, "Title": "Dataset 2", "_mhsd_dataset_type": 2}
+            ],
+            "mhlp_podcast": [
+                {"playlist_id": 2, "Title": "Dataset 3", "_mhsd_dataset_type": 3}
+            ],
+            "mhlp_smart": [],
+        },
+        "/fake/ipod",
+    )
+
+    with caplog.at_level(logging.ERROR):
+        cache.save_user_playlist(
+            {
+                "playlist_id": 2,
+                "Title": "Edited",
+                "_isNew": False,
+                "_source": "regular",
+                "playlist_description": "must not create a duplicate",
+            }
+        )
+
+    assert "Refusing playlist edit without MHSD origin" in caplog.text
+    assert cache.has_pending_playlists() is False
+    data = cache.get_data()
+    assert data is not None
+    assert data["mhlp"][0]["Title"] == "Dataset 2"
+    assert data["mhlp_podcast"][0]["Title"] == "Dataset 3"
+
+
 def test_get_playlists_distinguishes_dataset5_smart_playlists_from_categories(
     monkeypatch,
 ) -> None:
@@ -255,9 +534,9 @@ def test_get_playlists_distinguishes_dataset5_smart_playlists_from_categories(
     }
 
     assert playlists[2]["_source"] == "smart"
-    assert playlists[2]["master_flag"] == 0
+    assert "master_flag" not in playlists[2]
     assert playlists[3]["_source"] == "category"
-    assert playlists[3]["master_flag"] == 0
+    assert "master_flag" not in playlists[3]
     assert playlists[4]["_source"] == "smart"
 
 

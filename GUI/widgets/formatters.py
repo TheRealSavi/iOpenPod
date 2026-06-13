@@ -1,8 +1,13 @@
 """Shared formatting utilities for the GUI."""
 
+from datetime import UTC, datetime
+
 from iTunesDB_Shared.constants import MEDIA_TYPE_MAP, PLAYLIST_SORT_ORDER_MAP
+from iTunesDB_Shared.field_base import MAC_EPOCH_OFFSET
 from iTunesDB_Shared.mhod_defs import (
     SPL_ACTION_MAP,
+    SPL_CHOICE_FIELD_IDS,
+    SPL_CHOICE_VALUE_MAP,
     SPL_DATE_RELATIVE_ACTION_IDS,
     SPL_DATE_UNITS_MAP,
     SPL_FIELD_MAP,
@@ -142,6 +147,50 @@ def _relative_date_count(rule: dict) -> int:
     return count
 
 
+def _rule_date_label(value: int) -> str:
+    if not value:
+        return "0"
+    unix_ts = max(0, int(value) - MAC_EPOCH_OFFSET)
+    return datetime.fromtimestamp(unix_ts, tz=UTC).strftime("%Y-%m-%d")
+
+
+def _date_action_label(action_id: int) -> str:
+    return {
+        0x00000001: "is",
+        0x02000001: "is not",
+        0x00000010: "is after",
+        0x00000040: "is before",
+        0x00000100: "is in the range",
+        0x00000200: "is in the last",
+        0x02000200: "is not in the last",
+    }.get(action_id, SPL_ACTION_MAP.get(action_id, f"action 0x{action_id:08X}"))
+
+
+def _int_rule_display(field_id: int, value: int) -> str:
+    if field_id in (0x19, 0x5A):
+        stars = max(0, min(5, int(value) // 20))
+        return f"{stars} star{'s' if stars != 1 else ''}"
+    if field_id == 0x0C:
+        mb = int(value) // (1024 * 1024)
+        return f"{mb} MB"
+    return str(value)
+
+
+def _choice_action_label(action_id: int) -> str:
+    if action_id in (0x00000001, 0x00000400):
+        return "is"
+    if action_id in (0x02000001, 0x02000400):
+        return "is not"
+    return SPL_ACTION_MAP.get(action_id, f"action 0x{action_id:08X}")
+
+
+def _choice_value_label(field_id: int, value: int) -> str:
+    for raw_value, label in SPL_CHOICE_VALUE_MAP.get(field_id, ()):
+        if raw_value == value:
+            return label
+    return f"raw value {value}"
+
+
 def format_smart_rule(rule: dict) -> str:
     """Format a single smart playlist rule as human-readable text.
 
@@ -153,49 +202,61 @@ def format_smart_rule(rule: dict) -> str:
     field = SPL_FIELD_MAP.get(field_id, f"Field 0x{field_id:02X}")
     action = SPL_ACTION_MAP.get(action_id, f"action 0x{action_id:08X}")
     field_type = spl_get_field_type(field_id)
+    from_val = rule.get("from_value", 0)
+
+    if field_id in SPL_CHOICE_FIELD_IDS:
+        choice_action = _choice_action_label(action_id)
+        if field_id == 0x28:  # Playlist
+            playlist_name = rule.get("playlist_name") or rule.get("playlist_title")
+            if playlist_name:
+                return f"{field} {choice_action} {playlist_name}"
+            playlist_id = rule.get("playlist_id", from_val)
+            return f"{field} {choice_action} (Playlist ID: {playlist_id})"
+        return f"{field} {choice_action} {_choice_value_label(field_id, int(from_val or 0))}"
 
     # String rules
     if field_type == 1:  # SPLFT_STRING
         value = rule.get("string_value", "")
         return f"{field} {action} \"{value}\""
 
-    # Rating special case — show stars
-    if field_id == 0x19:  # Rating
-        from_stars = rule.get("from_value_stars", 0)
-        to_stars = rule.get("to_value_stars", 0)
-        star_str = "★" * from_stars + "☆" * (5 - from_stars)
-        if "range" in action.lower():
-            to_star_str = "★" * to_stars + "☆" * (5 - to_stars)
-            return f"{field} is in the range {star_str} - {to_star_str}"
-        return f"{field} {action} {star_str}"
-
     # Date rules with relative units
     if field_type == 4:  # SPLFT_DATE
+        date_action = _date_action_label(action_id)
         # Resolve raw unit seconds to human name
         from_units = rule.get("from_units", 0)
         units_name = rule.get("units_name", "") or SPL_DATE_UNITS_MAP.get(from_units, "")
         if action_id in SPL_DATE_RELATIVE_ACTION_IDS:
             count = _relative_date_count(rule)
             if units_name and count:
-                return f"{field} {action} {count} {units_name}"
+                return f"{field} {date_action} {count} {units_name}"
             if count:
-                return f"{field} {action} {count}"
-            return f"{field} {action}"
-        from_val = rule.get("from_value", 0)
+                return f"{field} {date_action} {count}"
+            return f"{field} {date_action}"
+        if action_id == 0x00000100:
+            return (
+                f"{field} {date_action} "
+                f"{_rule_date_label(from_val)} - {_rule_date_label(rule.get('to_value', 0))}"
+            )
         if from_val:
-            return f"{field} {action} {from_val}"
-        return f"{field} {action}"
+            return f"{field} {date_action} {_rule_date_label(from_val)}"
+        return f"{field} {date_action}"
 
     # Range rules (int)
-    from_val = rule.get("from_value", 0)
     to_val = rule.get("to_value", 0)
     if "range" in action.lower():
-        return f"{field} is in the range {from_val} - {to_val}"
+        return (
+            f"{field} is in the range "
+            f"{_int_rule_display(field_id, int(from_val or 0))} - "
+            f"{_int_rule_display(field_id, int(to_val or 0))}"
+        )
 
     # Boolean rules
     if field_type == 3:  # SPLFT_BOOLEAN
-        val = "True" if from_val else "False"
-        return f"{field} {action} {val}"
+        if action_id == 0x00000001:
+            return f"{field} is true"
+        if action_id == 0x02000001:
+            return f"{field} is false"
+        return f"{field} {action}"
 
     # Playlist rules
     if field_type == 5:  # SPLFT_PLAYLIST
@@ -214,8 +275,8 @@ def format_smart_rule(rule: dict) -> str:
         return f"{field} {verb} {decoded}"
 
     # Generic int rules
-    if from_val:
-        return f"{field} {action} {from_val}"
+    if field_type == 2:  # SPLFT_INT
+        return f"{field} {action} {_int_rule_display(field_id, int(from_val or 0))}"
 
     return f"{field} {action}"
 

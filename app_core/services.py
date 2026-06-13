@@ -411,10 +411,15 @@ class LibraryCacheLike(Protocol):
     def get_playlists(self) -> list:
         ...
 
+    def get_display_playlists(self) -> list:
+        ...
+
     def save_user_playlist(self, playlist: dict) -> None:
         ...
 
-    def remove_user_playlist(self, playlist_id: int) -> bool:
+    def remove_user_playlist(
+        self, playlist_id: int, dataset_type: int | None = None
+    ) -> bool:
         ...
 
     def rename_master_playlist(self, new_name: str) -> bool:
