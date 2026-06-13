@@ -5,9 +5,10 @@ Writes the ArtworkDB binary file and associated .ithmb image files.
 
 Artwork format ownership is deliberately conservative: required device
 formats and known extra formats already present on-device are the writer's
-normal rewrite targets, while unknown formats are logged and preserved
-without decoding or rewriting. Format IDs resolve global-first, with narrow
-device overrides supplied by the registry layer.
+normal rewrite targets when image data changes. Preserve-only passes keep
+valid existing offsets in place, while unknown formats are logged and
+preserved without decoding or rewriting. Format IDs resolve global-first,
+with narrow device overrides supplied by the registry layer.
 
 ArtworkDB structure:
     mhfd (file header)
@@ -201,7 +202,8 @@ class ExistingArtworkFormats:
     can be carried forward directly. ``known_present`` tracks all known IDs
     observed on the entry, including invalid refs, so they can be regenerated
     when possible. Unknown refs are passthrough only: we may reference them for
-    preserved artwork, but we never decode or rewrite their payloads.
+    preserved artwork, but we never decode or rewrite their payloads unless
+    a known-format repair is required.
     """
 
     required_known: dict[int, ExistingFormatRef] = field(default_factory=dict)
@@ -694,6 +696,8 @@ def _load_preserved_art_payloads(
     asset_passthrough_format_refs: Mapping[ArtworkAssetRef, dict[int, PassthroughFormatRef]],
     device_formats: dict[int, tuple[int, int]],
     device_format_defs: Mapping[int, ArtworkFormat],
+    *,
+    passthrough_known_formats: bool = False,
 ) -> tuple[dict[ArtworkAssetRef, ArtworkPayload], int, int]:
     """Load or salvage preserved on-device artwork for reuse."""
     preserve_entries: dict[ArtworkAssetRef, dict] = {}
@@ -725,10 +729,11 @@ def _load_preserved_art_payloads(
                 "fmt_meta": fmt_meta,
                 "src_img_size": int(decision.existing_entry.get("src_img_size", 0) or 0),
             }
-            for fmt_id, meta in fmt_meta.items():
-                ref_by_file_fmt[(meta.path, fmt_id)].append(
-                    (meta.ithmb_offset, decision.asset_ref, meta.size)
-                )
+            if not passthrough_known_formats:
+                for fmt_id, meta in fmt_meta.items():
+                    ref_by_file_fmt[(meta.path, fmt_id)].append(
+                        (meta.ithmb_offset, decision.asset_ref, meta.size)
+                    )
         preserve_refs[decision.asset_ref] = {
             "refs": decision.existing_entry.get("formats", {}),
             "src_img_size": int(decision.existing_entry.get("src_img_size", 0) or 0),
@@ -756,10 +761,14 @@ def _load_preserved_art_payloads(
             fmt_id: ref
             for fmt_id, ref in asset_passthrough_format_refs.get(asset_ref, {}).items()
         }
-        for fmt_id, dims in meta["fmt_meta"].items():
-            pixel_bytes = pixel_cache.get((asset_ref, fmt_id))
-            if pixel_bytes:
-                formats[fmt_id] = EncodedFormatPayload.from_existing_ref(dims, pixel_bytes)
+        if passthrough_known_formats:
+            for fmt_id, ref in meta["fmt_meta"].items():
+                formats[fmt_id] = PassthroughFormatRef.from_existing_ref(ref)
+        else:
+            for fmt_id, dims in meta["fmt_meta"].items():
+                pixel_bytes = pixel_cache.get((asset_ref, fmt_id))
+                if pixel_bytes:
+                    formats[fmt_id] = EncodedFormatPayload.from_existing_ref(dims, pixel_bytes)
         if formats:
             unique_converted[asset_ref] = ArtworkPayload(
                 formats=formats,
@@ -967,6 +976,7 @@ def write_artworkdb(
         asset_passthrough_format_refs,
         device_formats,
         device_format_defs,
+        passthrough_known_formats=decision_summary.reencoded == 0,
     )
     unique_converted.update(preserved_converted)
     decision_summary.salvaged = salvaged_preserved
@@ -1019,12 +1029,6 @@ def write_artworkdb(
         decision_summary.dropped_invalid,
     )
 
-    n_unique = len(set(entry_asset_keys.values()))
-    if n_unique:
-        _prog(f"Artwork — writing {n_unique} image{'s' if n_unique != 1 else ''} to device")
-    else:
-        _prog("Artwork — clearing device artwork")
-
     # --- Step 3: Write ithmb files ---
     format_ids = sorted({fmt_id for entry in entries for fmt_id in entry.formats.keys()})
     writable_format_ids = sorted(
@@ -1041,6 +1045,40 @@ def write_artworkdb(
             "ART: preserving passthrough-only formats without rewriting files: %s",
             passthrough_only_format_ids,
         )
+    protected_passthrough_filenames: dict[int, set[str]] = defaultdict(set)
+    for entry in entries:
+        for fmt_id, img_info in entry.formats.items():
+            if isinstance(img_info, PassthroughFormatRef):
+                filename = img_info.ithmb_filename or _ithmb_filename_from_path(img_info.path, fmt_id)
+                protected_passthrough_filenames[fmt_id].add(filename)
+
+    n_unique = len(set(entry_asset_keys.values()))
+    writable_asset_keys = {
+        entry_asset_keys[entry.img_id]
+        for entry in entries
+        if any(isinstance(img_info, EncodedFormatPayload) for img_info in entry.formats.values())
+    }
+    n_writable = len(writable_asset_keys)
+    n_preserved = max(0, n_unique - n_writable)
+    if n_writable and n_preserved:
+        _prog(
+            f"Artwork — writing {n_writable} changed/new image"
+            f"{'s' if n_writable != 1 else ''}, preserving {n_preserved} existing"
+        )
+    elif n_writable:
+        _prog(
+            f"Artwork — writing {n_writable} changed/new image"
+            f"{'s' if n_writable != 1 else ''}"
+        )
+    elif n_unique:
+        _prog(
+            f"Artwork — updating artwork index "
+            f"({n_unique} existing image{'s' if n_unique != 1 else ''}, no image data rewritten)"
+        )
+    elif decision_summary.cleared:
+        _prog("Artwork — updating artwork index (clearing artwork links)")
+    else:
+        _prog("Artwork — updating artwork index (no live artwork)")
     # Map entry img_id -> {format_id: IthmbLocation} for MHNI.
     # The filename matters: large libraries can span F{id}_1.ithmb,
     # F{id}_2.ithmb, ... and preserved refs may already live in any N.
@@ -1085,9 +1123,13 @@ def write_artworkdb(
     def _open_next_ithmb(fmt_id: int) -> None:
         _close_current_ithmb(fmt_id)
         state = ithmb_state[fmt_id]
-        state["index"] += 1
+        protected = protected_passthrough_filenames.get(fmt_id, set())
+        while True:
+            state["index"] += 1
+            filename = _ithmb_filename(fmt_id, state["index"])
+            if filename not in protected:
+                break
         state["offset"] = 0
-        filename = _ithmb_filename(fmt_id, state["index"])
         final = os.path.join(artwork_dir, filename)
         temp = final + ".tmp"
         ithmb_final_paths[(fmt_id, state["index"])] = final

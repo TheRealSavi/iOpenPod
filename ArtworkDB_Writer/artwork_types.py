@@ -63,7 +63,7 @@ class EncodedFormatPayload:
 
 @dataclass(frozen=True)
 class PassthroughFormatRef:
-    """Unknown format ref we can preserve in ArtworkDB but must not rewrite."""
+    """Existing format ref we can preserve in ArtworkDB without rewriting."""
 
     path: str
     ithmb_offset: int

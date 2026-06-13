@@ -343,6 +343,120 @@ def test_write_artworkdb_preserves_unchanged_art_without_reencoding(
     assert existing_ithmb.read_bytes() == b"OLD!"
 
 
+def test_write_artworkdb_preserve_only_does_not_replace_ithmb(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    ipod_root, artwork_dir = _make_ipod_root(tmp_path)
+    existing_ithmb = artwork_dir / f"F{REQUIRED_FMT}_1.ithmb"
+    existing_ithmb.write_bytes(b"OLD!")
+    progress: list[str] = []
+    replaced: list[str] = []
+    original_replace = aw.os.replace
+
+    monkeypatch.setattr(aw, "read_existing_artwork", lambda *_args, **_kwargs: _existing_art_entry(existing_ithmb))
+    monkeypatch.setattr(aw, "get_artwork_format_definitions", lambda _ipod_path: {})
+    monkeypatch.setattr(aw, "expected_size_bytes", lambda *_args, **_kwargs: 4)
+
+    def _record_replace(src: str, dst: str) -> None:
+        replaced.append(Path(dst).name)
+        original_replace(src, dst)
+
+    monkeypatch.setattr(aw.os, "replace", _record_replace)
+
+    result = aw.write_artworkdb(
+        str(ipod_root),
+        [_make_track(1, hint="preserve_existing")],
+        pc_file_paths={},
+        artwork_formats={REQUIRED_FMT: (1, 1)},
+        progress_callback=progress.append,
+    )
+
+    assert result[1] == (100, 99)
+    assert existing_ithmb.read_bytes() == b"OLD!"
+    assert f"F{REQUIRED_FMT}_1.ithmb" not in replaced
+    assert replaced == ["ArtworkDB"]
+    assert any("no image data rewritten" in message for message in progress)
+    assert not any("writing 1 image" in message for message in progress)
+
+
+def test_write_artworkdb_preserve_only_relinks_tracks_to_new_mhii_ids(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    ipod_root, artwork_dir = _make_ipod_root(tmp_path)
+    existing_ithmb = artwork_dir / f"F{REQUIRED_FMT}_1.ithmb"
+    existing_ithmb.write_bytes(b"ONE!TWO!")
+    parse_written_artworkdb = aw.read_existing_artwork
+    read_state = {"calls": 0}
+
+    def _existing(_artworkdb_path: str, _artwork_dir: str) -> dict[int, dict]:
+        if read_state["calls"] > 0:
+            return parse_written_artworkdb(_artworkdb_path, _artwork_dir)
+        read_state["calls"] += 1
+        return {
+            42: {
+                "song_id": 1,
+                "src_img_size": 99,
+                "formats": {
+                    REQUIRED_FMT: aw.ExistingFormatRef(
+                        path=str(existing_ithmb),
+                        ithmb_offset=0,
+                        size=4,
+                        width=1,
+                        height=1,
+                    ),
+                },
+            },
+            43: {
+                "song_id": 2,
+                "src_img_size": 88,
+                "formats": {
+                    REQUIRED_FMT: aw.ExistingFormatRef(
+                        path=str(existing_ithmb),
+                        ithmb_offset=4,
+                        size=4,
+                        width=1,
+                        height=1,
+                    ),
+                },
+            },
+        }
+
+    monkeypatch.setattr(aw, "read_existing_artwork", _existing)
+    monkeypatch.setattr(aw, "get_artwork_format_definitions", lambda _ipod_path: {})
+    monkeypatch.setattr(aw, "expected_size_bytes", lambda *_args, **_kwargs: 4)
+
+    result = aw.write_artworkdb(
+        str(ipod_root),
+        [_make_track(1, hint="preserve_existing"), _make_track(2, hint="preserve_existing")],
+        pc_file_paths={},
+        artwork_formats={REQUIRED_FMT: (1, 1)},
+        start_img_id=500,
+    )
+
+    assert result == {
+        1: (500, 99),
+        2: (501, 88),
+    }
+    assert existing_ithmb.read_bytes() == b"ONE!TWO!"
+
+    rewritten = aw.read_existing_artwork(str(artwork_dir / "ArtworkDB"), str(artwork_dir))
+    assert set(rewritten) == {500, 501}
+    assert {entry["song_id"]: img_id for img_id, entry in rewritten.items()} == {
+        1: 500,
+        2: 501,
+    }
+    refs_by_song_id = {
+        entry["song_id"]: entry["formats"][REQUIRED_FMT]
+        for entry in rewritten.values()
+    }
+    assert refs_by_song_id[1].ithmb_filename == f"F{REQUIRED_FMT}_1.ithmb"
+    assert refs_by_song_id[1].ithmb_offset == 0
+    assert refs_by_song_id[2].ithmb_filename == f"F{REQUIRED_FMT}_1.ithmb"
+    assert refs_by_song_id[2].ithmb_offset == 4
+
+
 def test_write_artworkdb_clears_removed_art_without_pruning_existing_ithmb(
     monkeypatch,
     tmp_path: Path,
