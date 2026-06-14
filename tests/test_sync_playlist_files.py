@@ -98,6 +98,35 @@ def test_build_sync_playlist_changes_adds_new_managed_playlist(tmp_path: Path) -
     assert adds[0]["items"] == [{"source_path": normalize_sync_playlist_path(track)}]
 
 
+def test_build_sync_playlist_changes_adds_known_ipod_ids_to_new_playlist(
+    tmp_path: Path,
+) -> None:
+    track = tmp_path / "song.mp3"
+    playlist = tmp_path / "mix.m3u8"
+    track.write_bytes(b"audio")
+    playlist.write_text("song.mp3\n", encoding="utf-8")
+    discovery = discover_sync_playlist_files(
+        [MediaFolderEntry(str(tmp_path))],
+        include_video=True,
+    )
+
+    adds, edits, removals = build_sync_playlist_changes(
+        discovery,
+        existing_playlists=[],
+        ipod_tracks=[],
+        source_path_to_db_track_id={normalize_sync_playlist_path(track): 101},
+        pending_add_source_paths=set(),
+        valid_source_paths={normalize_sync_playlist_path(track)},
+    )
+
+    assert len(adds) == 1
+    assert edits == []
+    assert removals == []
+    assert adds[0]["items"] == [
+        {"source_path": normalize_sync_playlist_path(track), "db_track_id": 101}
+    ]
+
+
 def test_build_sync_playlist_changes_skips_unchanged_existing_playlist(
     tmp_path: Path,
 ) -> None:
@@ -172,8 +201,8 @@ def test_build_sync_playlist_changes_edits_changed_existing_playlist(
     assert removals == []
     assert edits[0]["_isNew"] is False
     assert edits[0]["items"] == [
-        {"source_path": normalize_sync_playlist_path(first)},
-        {"source_path": normalize_sync_playlist_path(second)},
+        {"source_path": normalize_sync_playlist_path(first), "db_track_id": 101},
+        {"source_path": normalize_sync_playlist_path(second), "db_track_id": 202},
     ]
 
 
@@ -317,6 +346,44 @@ def test_playlist_builder_resolves_synced_playlist_source_paths(tmp_path: Path) 
         all_track_infos=[track],
         user_playlists=[],
         source_path_to_db_track_id={normalize_sync_playlist_path(source): 101},
+    )
+
+    assert len(playlists) == 1
+    assert playlists[0].track_ids == [101]
+
+
+def test_playlist_builder_prefers_sync_playlist_direct_db_track_ids(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "song.mp3"
+    source.write_bytes(b"audio")
+    track = TrackInfo(
+        title="Song",
+        location=":iPod_Control:Music:F00:Song.mp3",
+        db_track_id=101,
+        source_path="/missing/old/library/song.mp3",
+    )
+
+    _master_name, _master_id, playlists, *_rest = build_and_evaluate_playlists(
+        existing_tracks_data=[],
+        dataset2_standard_playlists_raw=[
+            {
+                "Title": "Mix",
+                "playlist_id": sync_playlist_file_id(tmp_path / "mix.m3u8"),
+                "_source": SYNC_PLAYLIST_SOURCE,
+                "items": [
+                    {
+                        "source_path": normalize_sync_playlist_path(source),
+                        "db_track_id": 101,
+                    }
+                ],
+            }
+        ],
+        dataset3_podcast_playlists_raw=[],
+        dataset5_smart_playlists_raw=[],
+        all_track_infos=[track],
+        user_playlists=[],
+        source_path_to_db_track_id={},
     )
 
     assert len(playlists) == 1

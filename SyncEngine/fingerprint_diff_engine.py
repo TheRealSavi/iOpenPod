@@ -421,7 +421,34 @@ class FingerprintDiffEngine:
 
         # Filter to only user-selected paths (selective sync mode).
         if allowed_paths is not None:
-            pc_tracks = [t for t in pc_tracks if t.path in allowed_paths]
+            allowed_path_keys = {
+                os.path.normcase(str(Path(path).expanduser().resolve()))
+                for path in allowed_paths
+            }
+            if playlist_discovery is not None and selected_playlist_source_keys is not None:
+                try:
+                    from .sync_playlist_files import normalize_sync_playlist_path
+
+                    for playlist in playlist_discovery.playlists:
+                        if (
+                            normalize_sync_playlist_path(playlist.source_path)
+                            not in selected_playlist_source_keys
+                        ):
+                            continue
+                        allowed_path_keys.update(
+                            normalize_sync_playlist_path(path)
+                            for path in playlist.media_paths
+                        )
+                except Exception:
+                    logger.warning(
+                        "Could not expand selected playlist track paths for selective sync",
+                        exc_info=True,
+                    )
+            pc_tracks = [
+                t for t in pc_tracks
+                if os.path.normcase(str(Path(t.path).expanduser().resolve()))
+                in allowed_path_keys
+            ]
 
         # Filter out podcast tracks when the device doesn't support podcasts.
         # This mirrors the include_video filter: no point syncing content the

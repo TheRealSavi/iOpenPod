@@ -15,7 +15,7 @@ from infrastructure.media_folders import (
 )
 
 from ._formats import AUDIO_EXTENSIONS, VIDEO_EXTENSIONS
-from .playlist_parser import parse_playlist, resolve_existing_playlist_path
+from .playlist_parser import PlaylistPathResolver, parse_playlist
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +81,8 @@ def discover_sync_playlist_files(
     playlists: list[SyncPlaylistFile] = []
     media_paths: list[str] = []
     seen_media: set[str] = set()
+    resolver = PlaylistPathResolver()
+    normalized_cache: dict[str, str] = {}
     source_playlist_ids = tuple(sync_playlist_file_id(path) for path in playlist_paths)
 
     for playlist_path in playlist_paths:
@@ -94,16 +96,17 @@ def discover_sync_playlist_files(
         playlist_media_paths: list[str] = []
         skipped = 0
         for raw_path in raw_paths:
-            resolved = resolve_existing_playlist_path(raw_path)
+            if not _is_supported_media_path(Path(raw_path), include_video=include_video):
+                skipped += 1
+                continue
+
+            resolved = resolver.resolve_existing_path(raw_path)
             if resolved is None:
                 skipped += 1
                 continue
             path = Path(resolved)
-            if not _is_supported_media_path(path, include_video=include_video):
-                skipped += 1
-                continue
 
-            normalized = normalize_sync_playlist_path(path)
+            normalized = _cached_normalize(path, normalized_cache)
             items.append({"source_path": normalized})
             playlist_media_paths.append(normalized)
             if normalized not in seen_media:
@@ -112,7 +115,7 @@ def discover_sync_playlist_files(
 
         playlists.append(
             SyncPlaylistFile(
-                source_path=normalize_sync_playlist_path(playlist_path),
+                source_path=_cached_normalize(playlist_path, normalized_cache),
                 playlist_id=sync_playlist_file_id(playlist_path),
                 title=playlist_name,
                 items=tuple(items),
@@ -167,7 +170,12 @@ def build_sync_playlist_changes(
             and normalize_sync_playlist_path(playlist.source_path) not in selected_playlist_keys
         ):
             continue
-        payload = _playlist_payload(playlist, valid_source_paths, aliases)
+        payload = _playlist_payload(
+            playlist,
+            valid_source_paths,
+            aliases,
+            source_path_to_db_track_id,
+        )
         existing = existing_by_id.get(playlist.playlist_id)
         if existing is None:
             to_add.append(payload)
@@ -247,17 +255,32 @@ def _is_supported_media_path(path: Path, *, include_video: bool) -> bool:
     return ext in AUDIO_EXTENSIONS or (include_video and ext in VIDEO_EXTENSIONS)
 
 
+def _cached_normalize(path: str | Path, cache: dict[str, str]) -> str:
+    key = os.fspath(path)
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+    normalized = normalize_sync_playlist_path(path)
+    cache[key] = normalized
+    return normalized
+
+
 def _playlist_payload(
     playlist: SyncPlaylistFile,
     valid_source_paths: set[str],
     source_path_aliases: dict[str, str],
+    source_path_to_db_track_id: dict[str, int],
 ) -> dict:
-    items: list[dict[str, str]] = []
+    items: list[dict[str, str | int]] = []
     for item in playlist.items:
         source_path = normalize_sync_playlist_path(item["source_path"])
         source_path = source_path_aliases.get(source_path, source_path)
         if source_path in valid_source_paths:
-            items.append({"source_path": source_path})
+            payload_item: dict[str, str | int] = {"source_path": source_path}
+            db_track_id = _coerce_int(source_path_to_db_track_id.get(source_path))
+            if db_track_id:
+                payload_item["db_track_id"] = db_track_id
+            items.append(payload_item)
     skipped = playlist.skipped_entries + (len(playlist.items) - len(items))
     return {
         "Title": playlist.title,
@@ -289,7 +312,9 @@ def _playlist_needs_update(
     for item in desired.get("items", []):
         source_path = item.get("source_path") or item.get("_source_path")
         source_key = normalize_sync_playlist_path(source_path or "")
-        db_track_id = source_path_to_db_track_id.get(source_key)
+        db_track_id = _coerce_int(item.get("db_track_id", item.get("db_id", 0)))
+        if not db_track_id:
+            db_track_id = source_path_to_db_track_id.get(source_key)
         if db_track_id:
             desired_ids.append(db_track_id)
         elif source_key in pending_add_source_paths:

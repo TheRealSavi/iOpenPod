@@ -725,11 +725,12 @@ def build_dropped_playlist_imports(
 ) -> tuple[list[Path], list[dict]]:
     """Parse dropped playlist files into media paths and pending playlists."""
 
-    from SyncEngine.playlist_parser import parse_playlist, resolve_existing_playlist_path
+    from SyncEngine.playlist_parser import PlaylistPathResolver, parse_playlist
 
     media_paths: list[Path] = []
     playlists: list[dict] = []
     seen_media: set[str] = set()
+    resolver = PlaylistPathResolver()
 
     for playlist_path in playlist_paths:
         try:
@@ -740,7 +741,7 @@ def build_dropped_playlist_imports(
 
         items: list[dict] = []
         for raw_path in raw_paths:
-            resolved_path = resolve_existing_playlist_path(raw_path)
+            resolved_path = resolver.resolve_existing_path(raw_path)
             if resolved_path is None:
                 continue
             path = Path(resolved_path)
@@ -2050,8 +2051,8 @@ class PlaylistImportWorker(QThread):
             from SyncEngine.mapping import MappingManager
             from SyncEngine.pc_library import PCLibrary
             from SyncEngine.playlist_parser import (
+                PlaylistPathResolver,
                 parse_playlist,
-                resolve_existing_playlist_path,
             )
             from SyncEngine.quick_writes import write_cached_itunesdb
             from SyncEngine.sync_executor import SyncExecutor
@@ -2069,8 +2070,9 @@ class PlaylistImportWorker(QThread):
 
             existing_paths: list[str] = []
             skipped = 0
+            resolver = PlaylistPathResolver()
             for raw_path in raw_paths:
-                resolved_path = resolve_existing_playlist_path(raw_path)
+                resolved_path = resolver.resolve_existing_path(raw_path)
                 if resolved_path is None:
                     skipped += 1
                     continue

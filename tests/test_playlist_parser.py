@@ -4,7 +4,11 @@ import os
 from pathlib import Path
 from urllib.parse import quote
 
-from SyncEngine.playlist_parser import parse_playlist, resolve_existing_playlist_path
+from SyncEngine.playlist_parser import (
+    PlaylistPathResolver,
+    parse_playlist,
+    resolve_existing_playlist_path,
+)
 
 
 def test_parse_playlist_decodes_local_file_uri(tmp_path: Path) -> None:
@@ -46,3 +50,26 @@ def test_resolve_existing_playlist_path_normalizes_backslashes_on_posix(
 
     expected = str(track) if os.name != "nt" else raw_path
     assert resolved == expected
+
+
+def test_playlist_path_resolver_caches_duplicate_entries(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    track = tmp_path / "Library" / "Track 04.mp3"
+    track.parent.mkdir()
+    track.write_bytes(b"audio")
+    calls: list[str] = []
+    real_isfile = os.path.isfile
+
+    def counted_isfile(path: str) -> bool:
+        calls.append(path)
+        return real_isfile(path)
+
+    monkeypatch.setattr(os.path, "isfile", counted_isfile)
+    resolver = PlaylistPathResolver()
+
+    assert resolver.resolve_existing_path(track) == str(track)
+    assert resolver.resolve_existing_path(track) == str(track)
+
+    assert calls == [str(track)]
