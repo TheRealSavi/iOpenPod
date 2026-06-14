@@ -63,6 +63,7 @@ def test_string_zero_mhsd5_type_stays_a_smart_playlist() -> None:
 
 def test_regular_track_playlist_excludes_generated_playlist_types() -> None:
     assert _is_regular_track_playlist({"Title": "Manual", "_source": "regular"})
+    assert _is_regular_track_playlist({"Title": "Parsed Manual"})
     assert not _is_regular_track_playlist({"Title": "Library", "master_flag": 1})
     assert not _is_regular_track_playlist({"Title": "Music", "_source": "category", "mhsd5_type": 4})
     assert not _is_regular_track_playlist({"Title": "Smart", "smart_playlist_data": {"live_update": True}})
@@ -72,6 +73,7 @@ def test_regular_track_playlist_excludes_generated_playlist_types() -> None:
         "_mhsd_dataset_type": 3,
     })
     assert not _is_regular_track_playlist({"Title": "Podcasts", "podcast_flag": 1})
+    assert not _is_regular_track_playlist({"Title": "Synced", "_source": "sync_playlist_file"})
 
 
 def test_category_playlist_requires_dataset5_location() -> None:

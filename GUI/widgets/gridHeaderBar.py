@@ -25,6 +25,11 @@ _SORTS = {
         ("Most Artists", "artist_count", True),
         ("Most Tracks", "track_count", True),
     ],
+    "Playlists": [
+        ("Name", "title", False),
+        ("Most Tracks", "track_count", True),
+        ("Most Skipped", "skipped_count", True),
+    ],
     "Photos": [
         ("Name", "title", False),
         ("Largest", "size", True),

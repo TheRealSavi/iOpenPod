@@ -108,6 +108,6 @@ def test_settings_snapshot_upgrades_legacy_media_folder_strings() -> None:
         {
             "directory": "C:/Music",
             "recurse": True,
-            "media_types": ["music", "video", "photo"],
+            "media_types": ["music", "video", "photo", "playlists"],
         },
     )

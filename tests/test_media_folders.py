@@ -9,7 +9,7 @@ def test_media_folder_entries_upgrade_legacy_strings() -> None:
         {
             "directory": "C:/Music",
             "recurse": True,
-            "media_types": ["music", "video", "photo"],
+            "media_types": ["music", "video", "photo", "playlists"],
         }
     ]
 
@@ -31,3 +31,14 @@ def test_media_folder_entries_preserve_dict_options_and_aliases() -> None:
         }
     ]
     assert media_folder_paths(entries) == ["C:/Media"]
+
+
+def test_media_folder_entries_preserve_playlist_media_type_aliases() -> None:
+    entries = media_folder_entries_to_settings([
+        {
+            "directory": "C:/Media",
+            "media": ["audio", "playlist_files", "playlists"],
+        }
+    ])
+
+    assert entries[0]["media_types"] == ["music", "playlists"]

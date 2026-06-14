@@ -52,6 +52,7 @@ from app_core.sync_review_model import (
 from infrastructure.media_folders import (
     MEDIA_TYPE_MUSIC,
     MEDIA_TYPE_PHOTO,
+    MEDIA_TYPE_PLAYLISTS,
     MEDIA_TYPE_VIDEO,
     media_folder_entries_to_settings,
     media_folder_paths,
@@ -2125,7 +2126,14 @@ class SyncReviewWidget(QWidget):
             card._selection_key = "playlists"
 
             def _playlist_kind(pl: dict[str, Any]) -> str:
+                if pl.get("_source") == "sync_playlist_file":
+                    return "Synced playlist file"
                 return "Smart playlist" if pl.get("smart_playlist_data") else "Regular playlist"
+
+            def _playlist_badge(pl: dict[str, Any], fallback: str) -> str:
+                if pl.get("_source") == "sync_playlist_file":
+                    return "Synced"
+                return fallback
 
             def _playlist_count_line(pl: dict[str, Any]) -> str:
                 count = pl.get("track_count")
@@ -2137,17 +2145,31 @@ class SyncReviewWidget(QWidget):
                         count = len(items)
                 return f"Tracks: {int(count):,}" if isinstance(count, int) else ""
 
+            def _playlist_skipped_line(pl: dict[str, Any]) -> str:
+                skipped = int(pl.get("_sync_playlist_skipped_count", 0) or 0)
+                if skipped <= 0:
+                    return ""
+                return f"Skipped entries: {skipped:,}"
+
             def _playlist_detail(pl: dict[str, Any], action: str) -> str:
                 kind = _playlist_kind(pl)
-                action_line = {
-                    "add": "Will create this playlist on the iPod.",
-                    "update": "Will update the playlist membership and settings on the iPod.",
-                    "remove": "Will remove this playlist from the iPod.",
-                }[action]
+                if pl.get("_source") == "sync_playlist_file":
+                    action_line = {
+                        "add": "Will create this playlist from the PC playlist file.",
+                        "update": "Will update this playlist from the PC playlist file.",
+                        "remove": "Will remove this playlist because its PC playlist file is gone.",
+                    }[action]
+                else:
+                    action_line = {
+                        "add": "Will create this playlist on the iPod.",
+                        "update": "Will update the playlist membership and settings on the iPod.",
+                        "remove": "Will remove this playlist from the iPod.",
+                    }[action]
                 return "\n".join(part for part in [
                     action_line,
                     f"Type: {kind}",
                     _playlist_count_line(pl),
+                    _playlist_skipped_line(pl),
                 ] if part)
 
             for pl in plan.playlists_to_add:
@@ -2155,14 +2177,14 @@ class SyncReviewWidget(QWidget):
                     pl,
                     pl.get("Title", "Untitled playlist"),
                     _playlist_detail(pl, "add"),
-                    badge="Smart" if pl.get("smart_playlist_data") else "Regular",
+                    badge=_playlist_badge(pl, "Smart" if pl.get("smart_playlist_data") else "Regular"),
                 )
             for pl in plan.playlists_to_edit:
                 card.add_item_row(
                     pl,
                     pl.get("Title", "Untitled playlist"),
                     _playlist_detail(pl, "update"),
-                    badge="Smart" if pl.get("smart_playlist_data") else "Regular",
+                    badge=_playlist_badge(pl, "Smart" if pl.get("smart_playlist_data") else "Regular"),
                 )
             for pl in plan.playlists_to_remove:
                 card.add_item_row(
@@ -3634,7 +3656,12 @@ class PCFolderDialog(QDialog):
             current.discard(media_type)
         ordered = [
             value
-            for value in (MEDIA_TYPE_MUSIC, MEDIA_TYPE_VIDEO, MEDIA_TYPE_PHOTO)
+            for value in (
+                MEDIA_TYPE_MUSIC,
+                MEDIA_TYPE_VIDEO,
+                MEDIA_TYPE_PHOTO,
+                MEDIA_TYPE_PLAYLISTS,
+            )
             if value in current
         ]
         self._replace_folder_entry(folder, media_types=ordered)
@@ -3770,6 +3797,7 @@ class PCFolderDialog(QDialog):
                     ("Music", MEDIA_TYPE_MUSIC),
                     ("Video", MEDIA_TYPE_VIDEO),
                     ("Photo", MEDIA_TYPE_PHOTO),
+                    ("Playlists", MEDIA_TYPE_PLAYLISTS),
                 ):
                     cb = QCheckBox(label, settings_frame)
                     cb.setChecked(media_type in media_types)

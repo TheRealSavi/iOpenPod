@@ -1193,6 +1193,8 @@ class SyncDiffRequest:
     sync_workers: int = 0
     rating_strategy: str = "ipod_wins"
     allowed_paths: frozenset[str] | None = None
+    selected_playlist_paths: frozenset[str] | None = None
+    existing_playlists: tuple[dict, ...] = ()
     fpcalc_path: str = ""
     photo_sync_settings: dict[str, bool] | None = None
     transcode_options: Any = None
@@ -1248,6 +1250,8 @@ class SyncDiffWorker(QThread):
                 sync_workers=request.sync_workers,
                 rating_strategy=request.rating_strategy,
                 allowed_paths=request.allowed_paths,
+                selected_playlist_paths=request.selected_playlist_paths,
+                existing_playlists=list(request.existing_playlists),
             )
 
             if not self.isInterruptionRequested():

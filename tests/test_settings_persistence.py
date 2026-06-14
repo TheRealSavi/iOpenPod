@@ -117,6 +117,6 @@ def test_settings_persistence_upgrades_legacy_media_folder_strings(monkeypatch) 
         {
             "directory": "C:/Music",
             "recurse": True,
-            "media_types": ["music", "video", "photo"],
+            "media_types": ["music", "video", "photo", "playlists"],
         }
     ]

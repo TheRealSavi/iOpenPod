@@ -219,6 +219,8 @@ class FingerprintDiffEngine:
         sync_workers: int = 0,
         rating_strategy: str = "ipod_wins",
         allowed_paths: frozenset[str] | None = None,
+        selected_playlist_paths: frozenset[str] | None = None,
+        existing_playlists: list[dict] | None = None,
     ) -> SyncPlan:
         """
         Compute the full sync plan.
@@ -235,6 +237,12 @@ class FingerprintDiffEngine:
             sync_workers: Number of parallel fingerprint workers (0 = auto).
             rating_strategy: Conflict resolution for ratings: ipod_wins,
                              pc_wins, highest, lowest, average.
+            selected_playlist_paths: In selective mode, playlist source files
+                                     eligible for managed add/update. Managed
+                                     removals still compare against every
+                                     discovered playlist file.
+            existing_playlists: Parsed iPod playlist rows used to plan managed
+                                media-folder playlist-file add/edit/remove.
 
         Returns:
             SyncPlan
@@ -352,6 +360,64 @@ class FingerprintDiffEngine:
 
         if is_cancelled and is_cancelled():
             return plan
+
+        playlist_discovery = None
+        selected_playlist_source_keys: set[str] | None = None
+        if allowed_paths is None or selected_playlist_paths is not None:
+            try:
+                from .sync_playlist_files import (
+                    discover_sync_playlist_files,
+                    normalize_sync_playlist_path,
+                )
+
+                if progress_callback:
+                    progress_callback("scan_playlists", 0, 0, "Scanning playlist files...")
+
+                playlist_discovery = discover_sync_playlist_files(
+                    self.pc_library.root_entries,
+                    include_video=self.supports_video,
+                )
+                if selected_playlist_paths is not None:
+                    selected_playlist_source_keys = {
+                        normalize_sync_playlist_path(path)
+                        for path in selected_playlist_paths
+                    }
+                existing_source_keys = {
+                    normalize_sync_playlist_path(track.path)
+                    for track in pc_tracks
+                }
+                playlist_media_paths = []
+                for playlist in playlist_discovery.playlists:
+                    if (
+                        selected_playlist_source_keys is not None
+                        and normalize_sync_playlist_path(playlist.source_path)
+                        not in selected_playlist_source_keys
+                    ):
+                        continue
+                    playlist_media_paths.extend(playlist.media_paths)
+                extra_media_paths = [
+                    path
+                    for path in playlist_media_paths
+                    if normalize_sync_playlist_path(path) not in existing_source_keys
+                ]
+                total_extra = len(extra_media_paths)
+                for index, raw_path in enumerate(extra_media_paths, start=1):
+                    if is_cancelled and is_cancelled():
+                        return plan
+                    path = Path(raw_path)
+                    if progress_callback:
+                        progress_callback("scan_playlists", index, total_extra, path.name)
+                    try:
+                        track = self.pc_library._read_track(path)
+                    except Exception as exc:
+                        logger.warning("Failed to read playlist-referenced track %s: %s", path, exc)
+                        continue
+                    if track is None:
+                        continue
+                    pc_tracks.append(track)
+                    existing_source_keys.add(normalize_sync_playlist_path(track.path))
+            except Exception as exc:
+                logger.warning("Playlist-file sync planning scan failed: %s", exc)
 
         # Filter to only user-selected paths (selective sync mode).
         if allowed_paths is not None:
@@ -559,6 +625,8 @@ class FingerprintDiffEngine:
         # For fingerprints with multiple album groups, we need to track which
         # mapping entries have already been claimed so each PC track gets its own.
         claimed_db_track_ids: set[int] = set()
+        source_path_to_db_track_id: dict[str, int] = {}
+        sync_playlist_source_aliases: dict[str, str] = {}
 
         # Sort identity groups so that groups whose album matches an existing
         # iPod mapping entry process first.  Without this, iteration order is
@@ -580,6 +648,16 @@ class FingerprintDiffEngine:
         for (fp, _album_key), pc_tracks_for_group in sorted_groups:
             # Pick representative track (first one from this album group)
             pc_track = pc_tracks_for_group[0]
+            try:
+                from .sync_playlist_files import normalize_sync_playlist_path
+
+                representative_source_key = normalize_sync_playlist_path(pc_track.path)
+                for duplicate_track in pc_tracks_for_group[1:]:
+                    sync_playlist_source_aliases[
+                        normalize_sync_playlist_path(duplicate_track.path)
+                    ] = representative_source_key
+            except Exception:
+                pass
             if fp in represented_by_aggregate and fp not in detached_from_aggregate:
                 aggregate_db_track_id = represented_by_aggregate[fp].db_track_id
                 claimed_db_track_ids.add(aggregate_db_track_id)
@@ -661,6 +739,14 @@ class FingerprintDiffEngine:
 
             # Record PC path for artwork extraction (all matched tracks)
             plan.matched_pc_paths[db_track_id] = str(pc_track.path)
+            try:
+                from .sync_playlist_files import normalize_sync_playlist_path
+
+                source_path_to_db_track_id[
+                    normalize_sync_playlist_path(pc_track.path)
+                ] = db_track_id
+            except Exception:
+                pass
 
             # ── Change detection ──
 
@@ -1016,6 +1102,46 @@ class FingerprintDiffEngine:
                     continue
                 for edit_key, (_orig_val, new_val) in field_edits.items():
                     ipod_track[edit_key] = new_val
+
+        if playlist_discovery is not None and existing_playlists is not None:
+            try:
+                from .sync_playlist_files import (
+                    build_sync_playlist_changes,
+                    normalize_sync_playlist_path,
+                )
+
+                valid_source_paths = {
+                    normalize_sync_playlist_path(track.path)
+                    for track in pc_tracks
+                }
+                pending_add_source_paths = {
+                    normalize_sync_playlist_path(item.pc_track.path)
+                    for item in plan.to_add
+                    if item.pc_track is not None
+                }
+                playlist_adds, playlist_edits, playlist_removals = (
+                    build_sync_playlist_changes(
+                        playlist_discovery,
+                        existing_playlists,
+                        ipod_tracks,
+                        source_path_to_db_track_id=source_path_to_db_track_id,
+                        pending_add_source_paths=pending_add_source_paths,
+                        valid_source_paths=valid_source_paths,
+                        source_path_aliases=sync_playlist_source_aliases,
+                        selected_playlist_source_paths=selected_playlist_source_keys,
+                    )
+                )
+                plan.playlists_to_add.extend(playlist_adds)
+                plan.playlists_to_edit.extend(playlist_edits)
+                plan.playlists_to_remove.extend(playlist_removals)
+                logger.info(
+                    "Playlist-file sync plan: %d add, %d edit, %d remove",
+                    len(playlist_adds),
+                    len(playlist_edits),
+                    len(playlist_removals),
+                )
+            except Exception as exc:
+                logger.warning("Playlist-file sync planning failed: %s", exc)
 
         # Attach the mapping so the executor can reuse it instead of
         # loading from disk a second time.

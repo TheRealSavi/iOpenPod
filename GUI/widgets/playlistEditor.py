@@ -13,7 +13,7 @@ import logging
 from datetime import UTC, datetime
 
 from PyQt6.QtCore import QDate, QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QWheelEvent
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -459,6 +459,30 @@ def _remove_btn_css() -> str:
     )
 
 
+class _RuleComboBox(QComboBox):
+    """Combo box that lets wheel events scroll the rule list."""
+
+    def wheelEvent(self, e: QWheelEvent | None) -> None:
+        if e is not None:
+            e.ignore()
+
+
+class _RuleSpinBox(QSpinBox):
+    """Spin box that lets wheel events scroll the rule list."""
+
+    def wheelEvent(self, e: QWheelEvent | None) -> None:
+        if e is not None:
+            e.ignore()
+
+
+class _RuleDateEdit(QDateEdit):
+    """Date edit that lets wheel events scroll the rule list."""
+
+    def wheelEvent(self, e: QWheelEvent | None) -> None:
+        if e is not None:
+            e.ignore()
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # SmartRuleRow — one editable rule
 # ─────────────────────────────────────────────────────────────────────────────
@@ -488,14 +512,16 @@ class SmartRuleRow(QFrame):
     ):
         super().__init__(parent)
         self.setStyleSheet("QFrame { background: transparent; border: none; }")
+        self.setMinimumHeight(40)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._playlist_options = playlist_options or []
 
         self._layout = QHBoxLayout(self)
-        self._layout.setContentsMargins(0, (2), 0, (2))
-        self._layout.setSpacing(6)
+        self._layout.setContentsMargins(0, 5, 0, 5)
+        self._layout.setSpacing(8)
 
         # ── Field selector ──
-        self.field_combo = QComboBox()
+        self.field_combo = _RuleComboBox()
         self.field_combo.setStyleSheet(_combo_css())
         self.field_combo.setMinimumWidth(120)
         self.field_combo.setMaximumWidth(160)
@@ -511,7 +537,7 @@ class SmartRuleRow(QFrame):
         self._layout.addWidget(self.field_combo)
 
         # ── Action selector ──
-        self.action_combo = QComboBox()
+        self.action_combo = _RuleComboBox()
         self.action_combo.setStyleSheet(_combo_css())
         self.action_combo.setMinimumWidth(130)
         self.action_combo.setMaximumWidth(180)
@@ -733,7 +759,7 @@ class SmartRuleRow(QFrame):
         self._current_field_type = ft
 
         if fid in SPL_CHOICE_FIELD_IDS:
-            combo = QComboBox()
+            combo = _RuleComboBox()
             combo.setStyleSheet(_combo_css())
             combo.setMinimumWidth(150)
             self._populate_choice_combo(combo, fid)
@@ -749,7 +775,7 @@ class SmartRuleRow(QFrame):
             self._add_value_widget(le)
 
         elif ft == SPLFT_INT:
-            spin = QSpinBox()
+            spin = _RuleSpinBox()
             max_value = 5 if fid in (0x19, 0x5A) else 999999
             if fid == 0x0C:
                 max_value = 9999999
@@ -767,7 +793,7 @@ class SmartRuleRow(QFrame):
             self._range_label.setVisible(False)
             self._add_value_widget(self._range_label)
 
-            spin2 = QSpinBox()
+            spin2 = _RuleSpinBox()
             spin2.setRange(0, max_value)
             spin2.setStyleSheet(_spinbox_css())
             spin2.setMinimumWidth(80)
@@ -779,7 +805,7 @@ class SmartRuleRow(QFrame):
             self.action_combo.currentIndexChanged.connect(self._update_range_visibility)
 
         elif ft == SPLFT_DATE:
-            date_edit = QDateEdit()
+            date_edit = _RuleDateEdit()
             date_edit.setCalendarPopup(True)
             date_edit.setDate(QDate.currentDate())
             date_edit.setStyleSheet(_combo_css())
@@ -792,14 +818,14 @@ class SmartRuleRow(QFrame):
             )
             self._add_value_widget(self._range_label)
 
-            date_edit_2 = QDateEdit()
+            date_edit_2 = _RuleDateEdit()
             date_edit_2.setCalendarPopup(True)
             date_edit_2.setDate(QDate.currentDate())
             date_edit_2.setStyleSheet(_combo_css())
             date_edit_2.dateChanged.connect(lambda: self.changed.emit())
             self._add_value_widget(date_edit_2)
 
-            spin = QSpinBox()
+            spin = _RuleSpinBox()
             spin.setRange(1, 99999)
             spin.setValue(30)
             spin.setStyleSheet(_spinbox_css())
@@ -807,7 +833,7 @@ class SmartRuleRow(QFrame):
             spin.valueChanged.connect(lambda: self.changed.emit())
             self._add_value_widget(spin)
 
-            unit_combo = QComboBox()
+            unit_combo = _RuleComboBox()
             unit_combo.setStyleSheet(_combo_css())
             for uid, uname in DATE_UNITS:
                 unit_combo.addItem(uname, uid)
@@ -824,7 +850,7 @@ class SmartRuleRow(QFrame):
             self._add_value_widget(placeholder)
 
         elif ft == SPLFT_BINARY_AND:
-            combo = QComboBox()
+            combo = _RuleComboBox()
             combo.setStyleSheet(_combo_css())
             combo.setMinimumWidth(120)
             for flag_val, flag_name in SPL_CHOICE_VALUE_MAP.get(0x3C, ()):
@@ -956,6 +982,8 @@ class SmartPlaylistEditor(QFrame):
 
     saved = pyqtSignal(dict)      # emits the full playlist dict
     cancelled = pyqtSignal()
+    _RULES_PANEL_MIN_HEIGHT = 220
+    _RULES_SCROLL_MIN_HEIGHT = 150
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -1051,10 +1079,11 @@ class SmartPlaylistEditor(QFrame):
         rules_panel = QFrame()
         rules_panel.setObjectName("smartPlaylistRulesPanel")
         rules_panel.setStyleSheet(_editor_panel_css("smartPlaylistRulesPanel"))
+        rules_panel.setMinimumHeight(self._RULES_PANEL_MIN_HEIGHT)
         rules_panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         rules_panel_layout = QVBoxLayout(rules_panel)
-        rules_panel_layout.setContentsMargins(10, 8, 10, 9)
-        rules_panel_layout.setSpacing(7)
+        rules_panel_layout.setContentsMargins(12, 10, 12, 12)
+        rules_panel_layout.setSpacing(8)
 
         conj_row = QHBoxLayout()
         conj_row.setContentsMargins(0, 0, 0, 0)
@@ -1065,7 +1094,7 @@ class SmartPlaylistEditor(QFrame):
         lbl.setStyleSheet(_label_css(Colors.TEXT_SECONDARY))
         conj_row.addWidget(lbl)
 
-        self.conjunction_combo = QComboBox()
+        self.conjunction_combo = _RuleComboBox()
         self.conjunction_combo.setStyleSheet(_combo_css())
         self.conjunction_combo.addItem("all", "AND")
         self.conjunction_combo.addItem("any", "OR")
@@ -1077,35 +1106,7 @@ class SmartPlaylistEditor(QFrame):
         lbl2.setStyleSheet(_label_css(Colors.TEXT_SECONDARY))
         conj_row.addWidget(lbl2)
         conj_row.addStretch()
-        rules_panel_layout.addLayout(conj_row)
 
-        self._rules_scroll = make_scroll_area(
-            transparent=False,
-            extra_css="""
-                QScrollArea {{
-                    background: transparent;
-                    border: none;
-                }}
-            """,
-        )
-        self._rules_scroll.setMinimumHeight(80)
-        self._rules_scroll.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
-        )
-
-        self._rules_widget = QWidget()
-        self._rules_widget.setStyleSheet("background: transparent;")
-        self._rules_layout = QVBoxLayout(self._rules_widget)
-        self._rules_layout.setContentsMargins(0, 0, 0, 0)
-        self._rules_layout.setSpacing(2)
-        self._rules_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        self._rules_scroll.setWidget(self._rules_widget)
-        rules_panel_layout.addWidget(self._rules_scroll, stretch=1)
-
-        self._rule_rows: list[SmartRuleRow] = []
-
-        add_row = QHBoxLayout()
-        add_row.setContentsMargins(0, 0, 0, 0)
         self.add_rule_btn = QPushButton("Add Rule")
         self.add_rule_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.add_rule_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -1122,9 +1123,33 @@ class SmartPlaylistEditor(QFrame):
             padding="3px 12px",
         ))
         self.add_rule_btn.clicked.connect(self._add_empty_rule)
-        add_row.addWidget(self.add_rule_btn)
-        add_row.addStretch()
-        rules_panel_layout.addLayout(add_row)
+        conj_row.addWidget(self.add_rule_btn, 0, Qt.AlignmentFlag.AlignRight)
+        rules_panel_layout.addLayout(conj_row)
+
+        self._rules_scroll = make_scroll_area(
+            transparent=False,
+            extra_css="""
+                QScrollArea {{
+                    background: transparent;
+                    border: none;
+                }}
+            """,
+        )
+        self._rules_scroll.setMinimumHeight(self._RULES_SCROLL_MIN_HEIGHT)
+        self._rules_scroll.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+
+        self._rules_widget = QWidget()
+        self._rules_widget.setStyleSheet("background: transparent;")
+        self._rules_layout = QVBoxLayout(self._rules_widget)
+        self._rules_layout.setContentsMargins(0, 2, 0, 2)
+        self._rules_layout.setSpacing(4)
+        self._rules_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self._rules_scroll.setWidget(self._rules_widget)
+        rules_panel_layout.addWidget(self._rules_scroll, stretch=1)
+
+        self._rule_rows: list[SmartRuleRow] = []
         root.addWidget(rules_panel, stretch=1)
 
         root.addWidget(_section_header("Behavior"))

@@ -101,6 +101,24 @@ def _is_ipod_category_playlist(playlist: dict) -> bool:
     return playlist.get("_source") == "category" or bool(_mhsd5_type_value(playlist))
 
 
+def _playlist_dataset_type(playlist: dict) -> int:
+    try:
+        dataset_type = int(playlist.get("_mhsd_dataset_type", 0) or 0)
+    except (TypeError, ValueError):
+        dataset_type = 0
+    if dataset_type:
+        return dataset_type
+    if playlist.get("_mhsd_result_key") == "mhlp_podcast":
+        return 3
+    if playlist.get("_mhsd_result_key") == "mhlp_smart":
+        return 5
+    if _is_ipod_category_playlist(playlist):
+        return 5
+    if playlist.get("podcast_flag", 0) == 1 or playlist.get("_source") == "podcast":
+        return 3
+    return 2 if playlist.get("playlist_id") else 0
+
+
 def _format_bytes(val: int) -> str:
     """Format bytes as compact human-readable text for progress messages."""
     value = float(max(0, val))
@@ -1059,13 +1077,71 @@ class SyncExecutor:
     def _merge_gui_playlists(self, ctx: _SyncContext) -> None:
         """Merge user-created playlists into ctx."""
         user_pls = ctx.user_playlists
-        if not user_pls:
+        remove_pls = list(ctx.plan.playlists_to_remove or [])
+        if not user_pls and not remove_pls:
             return
-        ctx.progress("playlists", 0, len(user_pls), message="Merging playlists...")
-        for idx, upl in enumerate(user_pls):
+        total = len(user_pls) + len(remove_pls)
+        current = 0
+        ctx.progress("playlists", 0, total, message="Updating playlists...")
+
+        def _remove_playlist(removal: dict) -> bool:
+            playlist_id = removal.get("playlist_id")
+            if not playlist_id:
+                return False
+            target_dataset = _playlist_dataset_type(removal)
+            buckets = (
+                (ctx.existing_dataset2_standard_playlists_raw, 2),
+                (ctx.existing_dataset3_podcast_playlists_raw, 3),
+                (ctx.existing_dataset5_smart_playlists_raw, 5),
+            )
+            removed = False
+            for bucket, bucket_dataset in buckets:
+                kept = []
+                for existing in bucket:
+                    existing_dataset = _playlist_dataset_type(existing) or bucket_dataset
+                    if (
+                        existing.get("playlist_id") == playlist_id
+                        and not existing.get("master_flag")
+                        and (
+                            not target_dataset
+                            or target_dataset == existing_dataset
+                            or target_dataset == bucket_dataset
+                        )
+                    ):
+                        removed = True
+                        continue
+                    kept.append(existing)
+                if len(kept) != len(bucket):
+                    bucket[:] = kept
+            return removed
+
+        for removal in remove_pls:
+            current += 1
+            removed = _remove_playlist(removal)
+            logger.info(
+                "Removed playlist '%s' (id=%s, removed=%s)",
+                removal.get("Title", "?"),
+                removal.get("playlist_id", 0),
+                removed,
+            )
+            ctx.progress(
+                "playlists",
+                current,
+                total,
+                message=f"Removed playlist: {removal.get('Title', '?')}",
+            )
+
+        for upl in user_pls:
+            current += 1
             if upl.get("master_flag"):
                 logger.debug("Skipping master playlist from user playlists (id=0x%X)",
                              upl.get("playlist_id", 0))
+                ctx.progress(
+                    "playlists",
+                    current,
+                    total,
+                    message=f"Skipped master playlist: {upl.get('Title', '?')}",
+                )
                 continue
             is_new = upl.get("_isNew", False)
             pid = upl.get("playlist_id", 0)
@@ -1095,7 +1171,7 @@ class SyncExecutor:
                         upl.get("Title", "?"),
                         (f"0x{pid:X}") if pid is not None else "new",
                         is_new)
-            ctx.progress("playlists", idx + 1, len(user_pls),
+            ctx.progress("playlists", current, total,
                          message=f"Merged playlist: {upl.get('Title', '?')}")
 
     def _backpatch_new_tracks(self, ctx: _SyncContext) -> None:
@@ -3218,6 +3294,20 @@ class SyncExecutor:
             for track in all_track_infos
             if track.source_path and track.db_track_id
         }
+        matched_pc_paths = {
+            **dict(getattr(ctx.plan, "matched_pc_paths", {}) or {}),
+            **ctx.pc_file_paths,
+        }
+        for db_track_id, pc_path in matched_pc_paths.items():
+            try:
+                normalized_id = int(db_track_id)
+            except (TypeError, ValueError):
+                continue
+            if normalized_id and pc_path:
+                source_path_to_db_track_id.setdefault(
+                    self._source_path_key(str(pc_path)),
+                    normalized_id,
+                )
         return build_and_evaluate_playlists(
             ctx.existing_tracks_data,
             ctx.existing_dataset2_standard_playlists_raw,

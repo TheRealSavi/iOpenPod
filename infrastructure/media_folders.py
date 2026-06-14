@@ -9,11 +9,13 @@ from dataclasses import dataclass
 MEDIA_TYPE_MUSIC = "music"
 MEDIA_TYPE_VIDEO = "video"
 MEDIA_TYPE_PHOTO = "photo"
+MEDIA_TYPE_PLAYLISTS = "playlists"
 
 MEDIA_TYPE_ORDER: tuple[str, ...] = (
     MEDIA_TYPE_MUSIC,
     MEDIA_TYPE_VIDEO,
     MEDIA_TYPE_PHOTO,
+    MEDIA_TYPE_PLAYLISTS,
 )
 DEFAULT_MEDIA_TYPES: tuple[str, ...] = MEDIA_TYPE_ORDER
 
@@ -35,6 +37,10 @@ _MEDIA_ALIASES = {
     "photos": MEDIA_TYPE_PHOTO,
     "picture": MEDIA_TYPE_PHOTO,
     "pictures": MEDIA_TYPE_PHOTO,
+    "playlist": MEDIA_TYPE_PLAYLISTS,
+    "playlists": MEDIA_TYPE_PLAYLISTS,
+    "playlist_file": MEDIA_TYPE_PLAYLISTS,
+    "playlist_files": MEDIA_TYPE_PLAYLISTS,
 }
 
 

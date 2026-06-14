@@ -92,6 +92,18 @@ def _mhsd5_type_value(playlist: dict) -> int:
         return 0
 
 
+def _existing_playlist_rows_for_sync(cache) -> tuple[dict, ...]:
+    data = cache.get_data() if cache else None
+    if not data:
+        return ()
+    rows: list[dict] = []
+    for key in ("mhlp", "mhlp_podcast", "mhlp_smart"):
+        for playlist in data.get(key, []):
+            if isinstance(playlist, dict):
+                rows.append(dict(playlist))
+    return tuple(rows)
+
+
 def _is_ipod_category_playlist(playlist: dict) -> bool:
     try:
         dataset_type = int(playlist.get("_mhsd_dataset_type", 0) or 0)
@@ -1162,6 +1174,7 @@ class MainWindow(QMainWindow):
                 photo_edits=photo_edits,
                 sync_workers=sync_workers,
                 rating_strategy=rating_strategy,
+                existing_playlists=_existing_playlist_rows_for_sync(cache),
                 fpcalc_path=fpcalc_path,
                 photo_sync_settings={
                     "rotate_tall_photos_for_device": (
@@ -1611,9 +1624,11 @@ class MainWindow(QMainWindow):
         track_edits = cache.get_track_edits()
         selected_track_paths = selected_paths
         selected_photo_imports = ()
+        selected_playlist_paths = None
         if isinstance(selected_paths, dict):
             selected_track_paths = frozenset(selected_paths.get("tracks", ()))
             selected_photo_imports = tuple(selected_paths.get("photos", ()))
+            selected_playlist_paths = frozenset(selected_paths.get("playlists", ()))
 
         photo_edits = (
             build_imported_photo_edit_state(selected_photo_imports)
@@ -1644,6 +1659,7 @@ class MainWindow(QMainWindow):
                 photo_edits=photo_edits,
                 sync_workers=sync_workers,
                 rating_strategy=rating_strategy,
+                existing_playlists=_existing_playlist_rows_for_sync(cache),
                 fpcalc_path=fpcalc_path,
                 photo_sync_settings={
                     "rotate_tall_photos_for_device": (
@@ -1653,6 +1669,7 @@ class MainWindow(QMainWindow):
                 },
                 transcode_options=build_transcode_options(settings),
                 allowed_paths=frozenset(selected_track_paths),
+                selected_playlist_paths=selected_playlist_paths,
             )
         )
         self._sync_worker.progress.connect(self.syncReview.update_progress)

@@ -7,6 +7,7 @@ from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
+from iTunesDB_Writer.mhit_writer import TrackInfo
 from SyncEngine.fingerprint_diff_engine import SyncAction, SyncItem, SyncPlan
 from SyncEngine.mapping import MappingFile
 from SyncEngine.pc_library import PCTrack
@@ -378,6 +379,42 @@ def test_file_updates_do_not_preinvalidate_transcode_cache(
     executor._execute_file_updates(ctx)
 
 
+def test_playlist_build_resolves_existing_tracks_from_matched_pc_paths(
+    tmp_path: Path,
+) -> None:
+    executor = SyncExecutor(tmp_path)
+    source = tmp_path / "song.mp3"
+    source.write_bytes(b"audio")
+    ctx = _SyncContext(
+        plan=SyncPlan(matched_pc_paths={101: str(source)}),
+        mapping=MappingFile(),
+        progress_callback=None,
+        dry_run=True,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+    )
+    ctx.existing_dataset2_standard_playlists_raw = [
+        {
+            "Title": "Synced Mix",
+            "playlist_id": 42,
+            "items": [{"source_path": str(source)}],
+        }
+    ]
+    existing_track = TrackInfo(
+        title="Song",
+        location=":iPod_Control:Music:F00:Song.mp3",
+        db_track_id=101,
+    )
+
+    _master_name, _master_id, playlists, *_rest = executor._build_and_evaluate_playlists(
+        ctx,
+        [existing_track],
+    )
+
+    assert len(playlists) == 1
+    assert playlists[0].track_ids == [101]
+
+
 def test_merge_gui_playlists_does_not_remove_same_id_from_dataset5(
     tmp_path: Path,
 ) -> None:
@@ -437,3 +474,28 @@ def test_merge_gui_playlists_leaves_ipod_categories_in_smart_bucket(
 
     assert ctx.existing_dataset2_standard_playlists_raw == []
     assert ctx.existing_dataset5_smart_playlists_raw == [category]
+
+
+def test_merge_gui_playlists_removes_reviewed_playlist_rows(tmp_path: Path) -> None:
+    executor = SyncExecutor(tmp_path)
+    remove_playlist = {
+        "playlist_id": 42,
+        "Title": "Synced Mix",
+        "_mhsd_dataset_type": 2,
+    }
+    kept_playlist = {
+        "playlist_id": 43,
+        "Title": "Manual Mix",
+        "_mhsd_dataset_type": 2,
+    }
+    ctx = _make_sync_ctx(
+        user_playlists=[],
+        existing_dataset2_standard_playlists_raw=[remove_playlist, kept_playlist],
+        existing_dataset5_smart_playlists_raw=[],
+    )
+    ctx.plan.playlists_to_remove = [remove_playlist]
+
+    executor._merge_gui_playlists(ctx)
+
+    assert ctx.existing_dataset2_standard_playlists_raw == [kept_playlist]
+    assert ctx.existing_dataset5_smart_playlists_raw == []

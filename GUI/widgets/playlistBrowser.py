@@ -85,9 +85,6 @@ _ICON_SMART = "filter"
 _ICON_PODCAST = "broadcast"
 _ICON_MASTER = "home"
 _ICON_CATEGORY = "grid"
-_ADD_TRACKS_NOTICE_TEXT = (
-    "To add tracks, right-click a library track and choose this playlist from Add to Playlist."
-)
 
 
 def _label_css(color: str) -> str:
@@ -132,6 +129,9 @@ def _is_user_smart_playlist(playlist: dict | None) -> bool:
 
 def _is_regular_track_playlist(playlist: dict | None) -> bool:
     if not playlist:
+        return False
+    source = str(playlist.get("_source") or "").strip()
+    if source and source != "regular":
         return False
     if playlist.get("master_flag") or _is_ipod_category_playlist(playlist):
         return False
@@ -286,16 +286,6 @@ def _podcast_grouping_summary(
             "preview_titles": titles[:3],
         })
     return summaries
-
-
-def _notice_frame_css(object_name: str) -> str:
-    return f"""
-    QFrame#{object_name} {{
-        background: {Colors.ACCENT_MUTED};
-        border: 1px solid {Colors.ACCENT_BORDER};
-        border-radius: {Metrics.BORDER_RADIUS_SM}px;
-    }}
-"""
 
 
 class _CompressibleScrollArea(QScrollArea):
@@ -1462,10 +1452,6 @@ class PlaylistBrowser(QFrame):
         self.trackTitleBar = TrackListTitleBar(self.rightSplitter)
         self.trackContainerLayout.addWidget(self.trackTitleBar)
 
-        self.emptyRegularPlaylistNotice = self._build_empty_regular_playlist_notice()
-        self.emptyRegularPlaylistNotice.hide()
-        self.trackContainerLayout.addWidget(self.emptyRegularPlaylistNotice)
-
         self.trackList = MusicBrowserList(
             settings_service=self._settings_service,
             device_sessions=self._device_sessions,
@@ -1493,41 +1479,12 @@ class PlaylistBrowser(QFrame):
         self._content_splitter.setStretchFactor(1, 1)
         self._content_splitter.setSizes([240, 760])
 
-    def _build_empty_regular_playlist_notice(self) -> QFrame:
-        notice = QFrame(self.trackContainer)
-        notice.setObjectName("emptyRegularPlaylistNotice")
-        notice.setStyleSheet(_notice_frame_css("emptyRegularPlaylistNotice"))
-        notice.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
-
-        layout = QHBoxLayout(notice)
-        layout.setContentsMargins(10, 8, 10, 8)
-        layout.setSpacing(8)
-
-        icon = QLabel("?", notice)
-        icon.setFixedSize(18, 18)
-        icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        icon.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS, QFont.Weight.Bold))
-        icon.setStyleSheet(
-            f"color: {Colors.ACCENT};"
-            "background: transparent;"
-            f"border: 1px solid {Colors.ACCENT_BORDER};"
-            "border-radius: 9px;"
-        )
-        layout.addWidget(icon, 0, Qt.AlignmentFlag.AlignTop)
-
-        text = QLabel(_ADD_TRACKS_NOTICE_TEXT, notice)
-        text.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        text.setStyleSheet(_label_css(Colors.TEXT_SECONDARY))
-        text.setWordWrap(True)
-        layout.addWidget(text, 1)
-        return notice
-
-    def _set_empty_regular_playlist_notice(self, playlist: dict | None, track_count: int) -> None:
-        self.emptyRegularPlaylistNotice.setVisible(
-            _is_regular_track_playlist(playlist)
-            and track_count == 0
-            and not (playlist or {}).get("items")
-        )
+    def _set_empty_regular_playlist_notice(
+        self,
+        _playlist: dict | None,
+        _track_count: int,
+    ) -> None:
+        return
 
     # ─────────────────────────────────────────────────────────────
     # Public API
@@ -1618,6 +1575,10 @@ class PlaylistBrowser(QFrame):
         self._topStack.setCurrentIndex(page)
         self._editing = True
         self._set_empty_regular_playlist_notice(None, 0)
+        current_page = self._topStack.currentWidget()
+        min_height = current_page.minimumSizeHint().height() if current_page else 0
+        self._topStack.setMinimumHeight(max(360, min_height))
+        self.rightSplitter.setCollapsible(0, False)
         # Give the editor more room
         self.rightSplitter.setSizes([450, 400])
 
@@ -1625,6 +1586,8 @@ class PlaylistBrowser(QFrame):
         """Show the info card (default view)."""
         self._topStack.setCurrentIndex(0)
         self._editing = False
+        self._topStack.setMinimumHeight(0)
+        self.rightSplitter.setCollapsible(0, True)
         self.rightSplitter.setSizes([250, 600])
 
     # ─────────────────────────────────────────────────────────────

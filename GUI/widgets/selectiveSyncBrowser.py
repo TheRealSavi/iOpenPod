@@ -13,6 +13,7 @@ import logging
 import os
 import threading
 from collections import defaultdict, deque
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from PIL import Image, ImageOps
@@ -147,7 +148,7 @@ def _folder_label(folders: list[str]) -> str:
 
 class _PCLibScanWorker(QThread):
     """Scan media folders with PCLibrary and emit the track list."""
-    finished = pyqtSignal(object)  # {"tracks": list[PCTrack], "photos": PCPhotoLibrary}
+    finished = pyqtSignal(object)  # {"tracks": list[PCTrack], "photos": PCPhotoLibrary, "playlists": SyncPlaylistDiscovery}
     progress = pyqtSignal(str, int, int, str)  # stage, current, total, filename
     error = pyqtSignal(str)
 
@@ -188,6 +189,44 @@ class _PCLibScanWorker(QThread):
                     is_cancelled=self._is_cancelled,
                 )
             )
+            playlist_discovery = None
+            try:
+                from SyncEngine.sync_playlist_files import (
+                    discover_sync_playlist_files,
+                    normalize_sync_playlist_path,
+                )
+
+                self.progress.emit("scan_playlists", 0, 0, "")
+                playlist_discovery = discover_sync_playlist_files(
+                    lib.root_entries,
+                    include_video=self._include_video,
+                )
+                existing_source_keys = {
+                    normalize_sync_playlist_path(track.path)
+                    for track in tracks
+                }
+                extra_media_paths = [
+                    path
+                    for path in playlist_discovery.media_paths
+                    if normalize_sync_playlist_path(path) not in existing_source_keys
+                ]
+                total_extra = len(extra_media_paths)
+                for index, raw_path in enumerate(extra_media_paths, start=1):
+                    if self._is_cancelled():
+                        return
+                    path = Path(raw_path)
+                    self.progress.emit("scan_playlists", index, total_extra, path.name)
+                    try:
+                        track = lib._read_track(path)
+                    except Exception as exc:
+                        log.warning("Failed to read playlist-referenced track %s: %s", path, exc)
+                        continue
+                    if track is None:
+                        continue
+                    tracks.append(track)
+                    existing_source_keys.add(normalize_sync_playlist_path(track.path))
+            except Exception as exc:
+                log.warning("Selective sync playlist scan failed: %s", exc)
             if self._include_photo:
                 self.progress.emit("scan_photos", 0, 0, "")
 
@@ -202,7 +241,11 @@ class _PCLibScanWorker(QThread):
                 )
             else:
                 photos = PCPhotoLibrary(sync_root=os.pathsep.join(self._folders))
-            self.finished.emit({"tracks": tracks, "photos": photos})
+            self.finished.emit({
+                "tracks": tracks,
+                "photos": photos,
+                "playlists": playlist_discovery,
+            })
         except Exception as e:
             self.error.emit(str(e))
 
@@ -635,7 +678,7 @@ class PCTrackListView(QWidget):
         self._sel_btn.setStyleSheet(_default_btn)
         self._desel_btn.setStyleSheet(_default_btn)
 
-    def setHeroArt(self, pixmap):
+    def setHeroArt(self, pixmap, fallback_glyph: str = "music"):
         """Set the hero artwork image from a QPixmap."""
         from ..hidpi import scale_pixmap_for_display
         if pixmap and not pixmap.isNull():
@@ -649,7 +692,7 @@ class PCTrackListView(QWidget):
         else:
             self._hero_art.clear()
             from ..glyphs import glyph_icon
-            icon = glyph_icon("music", 48, Colors.TEXT_TERTIARY)
+            icon = glyph_icon(fallback_glyph, 48, Colors.TEXT_TERTIARY)
             if icon:
                 self._hero_art.setPixmap(icon.pixmap(48, 48))
 
@@ -1195,6 +1238,7 @@ _CATEGORY_GLYPHS = {
     "Artists": "user",
     "Genres": "grid",
     "All Tracks": "music",
+    "Playlists": "playlist",
     "Photos": "photo",
     "Podcasts": "broadcast",
     "Audiobooks": "book",
@@ -1204,7 +1248,7 @@ _CATEGORY_GLYPHS = {
 }
 
 # Modes that use the grid → drill-in track-list pattern.
-_GRID_MODES = {"Albums", "Artists", "Genres", "Podcasts", "Audiobooks",
+_GRID_MODES = {"Albums", "Artists", "Genres", "Playlists", "Podcasts", "Audiobooks",
                "TV Shows", "Music Videos"}
 
 # Modes that go straight to the track list with no grouping.
@@ -1229,12 +1273,14 @@ class SelectiveSyncBrowser(QWidget):
         self._folder_entries: list[dict[str, object]] = []
         self._folders: list[str] = []
         self._all_tracks: list = []
+        self._playlist_discovery = None
         self._photo_library = PCPhotoLibrary(sync_root="")
         self._all_photos: list[PCPhoto] = []
         self._groups: dict[str, dict[str, dict]] = {}  # mode -> groups
         self._buckets: dict[str, list] = {}  # media_type -> tracks
         self._selected_tracks: dict[str, bool] = {}
         self._selected_photos: dict[str, bool] = {}
+        self._selected_playlists: dict[str, bool] = {}
         self._device_supports_video = True
         self._device_supports_photo = True
         self._device_supports_podcast = True
@@ -1321,6 +1367,7 @@ class SelectiveSyncBrowser(QWidget):
 
         _ordered_cats = [
             "Albums", "Artists", "Genres", "All Tracks",
+            "Playlists",
             "Photos",
             "__sep_media__",
             "Podcasts", "Audiobooks",
@@ -1449,7 +1496,7 @@ class SelectiveSyncBrowser(QWidget):
         self._grid_scrolls: dict[str, QWidget] = {}
         self._grid_loaded: set[str] = set()  # categories already populated
 
-        for cat in ("Albums", "Artists", "Genres",
+        for cat in ("Albums", "Artists", "Genres", "Playlists",
                     "Podcasts", "Audiobooks", "TV Shows", "Music Videos"):
             grid = PCMusicBrowserGrid(settings_service=self._settings_service)
             grid.item_selected.connect(self._on_grid_item_clicked)
@@ -1573,12 +1620,14 @@ class SelectiveSyncBrowser(QWidget):
             bool(caps.supports_podcast) if caps is not None else True
         )
         self._all_tracks = []
+        self._playlist_discovery = None
         self._photo_library = PCPhotoLibrary(sync_root=os.pathsep.join(self._folders))
         self._all_photos = []
         self._groups.clear()
         self._buckets.clear()
         self._selected_tracks.clear()
         self._selected_photos.clear()
+        self._selected_playlists.clear()
         self._current_mode = "Albums"
         self._grid_loaded.clear()
         self._current_group = None
@@ -1626,6 +1675,7 @@ class SelectiveSyncBrowser(QWidget):
     def _on_scan_progress(self, stage: str, current: int, total: int, filename: str) -> None:
         stage_label = {
             "scan_pc": "Scanning PC library",
+            "scan_playlists": "Scanning playlist files",
             "scan_photos": "Scanning photos",
         }.get(stage, stage.replace("_", " ").title())
 
@@ -1647,8 +1697,10 @@ class SelectiveSyncBrowser(QWidget):
         if isinstance(tracks, dict):
             self._all_tracks = list(tracks.get("tracks", []))
             self._photo_library = tracks.get("photos") or PCPhotoLibrary(sync_root=os.pathsep.join(self._folders))
+            self._playlist_discovery = tracks.get("playlists")
         else:
             self._all_tracks = list(tracks)
+            self._playlist_discovery = None
             self._photo_library = PCPhotoLibrary(sync_root=os.pathsep.join(self._folders))
         if not self._device_supports_podcast:
             self._all_tracks = [
@@ -1666,10 +1718,20 @@ class SelectiveSyncBrowser(QWidget):
         ) if self._device_supports_photo else []
         self._selected_tracks = {t.path: True for t in self._all_tracks}
         self._selected_photos = {photo.source_path: True for photo in self._all_photos}
+        playlists = (
+            getattr(self._playlist_discovery, "playlists", ())
+            if self._playlist_discovery is not None
+            else ()
+        )
+        self._selected_playlists = {
+            str(getattr(playlist, "source_path", "") or ""): True
+            for playlist in playlists
+            if getattr(playlist, "source_path", "")
+        }
         self._build_groups()
         self._apply_sidebar_visibility()
         # Pick the first mode that actually has content.
-        for mode in ("Albums", "Artists", "Genres", "All Tracks", "Photos",
+        for mode in ("Albums", "Artists", "Genres", "All Tracks", "Playlists", "Photos",
                      "Podcasts", "Audiobooks",
                      "TV Shows", "Movies", "Music Videos"):
             if self._mode_has_content(mode):
@@ -1744,6 +1806,7 @@ class SelectiveSyncBrowser(QWidget):
         self._groups["Albums"] = self._build_music_albums(buckets["music"])
         self._groups["Artists"] = self._build_music_artists(buckets["music"])
         self._groups["Genres"] = self._build_music_genres(buckets["music"])
+        self._groups["Playlists"] = self._build_playlist_groups()
         self._groups["Podcasts"] = self._build_podcast_shows(buckets["podcast"])
         self._groups["Audiobooks"] = self._build_audiobooks(buckets["audiobook"])
         self._groups["TV Shows"] = self._build_tv_shows(buckets["tv_show"])
@@ -1844,6 +1907,67 @@ class SelectiveSyncBrowser(QWidget):
                 "filter_value": genre,
                 "artist_count": artist_count,
                 "track_count": len(group),
+            }
+        return out
+
+    def _build_playlist_groups(self) -> dict[str, dict]:
+        discovery = self._playlist_discovery
+        playlists = getattr(discovery, "playlists", ()) if discovery is not None else ()
+        if not playlists:
+            return {}
+
+        try:
+            from SyncEngine.sync_playlist_files import normalize_sync_playlist_path
+        except Exception:
+            def normalize_sync_playlist_path(path):
+                return os.path.normcase(str(path))
+
+        track_by_source = {
+            normalize_sync_playlist_path(track.path): track
+            for track in self._all_tracks
+        }
+        title_counts: dict[str, int] = defaultdict(int)
+        for playlist in playlists:
+            title_counts[getattr(playlist, "title", "") or "Imported Playlist"] += 1
+
+        out: dict[str, dict] = {}
+        for playlist in playlists:
+            title = getattr(playlist, "title", "") or "Imported Playlist"
+            source_path = getattr(playlist, "source_path", "")
+            display_title = title
+            if title_counts[title] > 1 and source_path:
+                parent = os.path.basename(os.path.dirname(source_path)) or source_path
+                display_title = f"{title} ({parent})"
+
+            group_tracks = []
+            for item in getattr(playlist, "items", ()):
+                raw_path = item.get("source_path") if isinstance(item, dict) else ""
+                track = track_by_source.get(normalize_sync_playlist_path(raw_path or ""))
+                if track is not None:
+                    group_tracks.append(track)
+
+            skipped = int(getattr(playlist, "skipped_entries", 0) or 0)
+            skipped += max(0, len(getattr(playlist, "items", ())) - len(group_tracks))
+            total_entries = int(getattr(playlist, "total_entries", 0) or 0)
+            sub_parts = [
+                f"{len(group_tracks)} track{'s' if len(group_tracks) != 1 else ''}",
+            ]
+            if skipped:
+                sub_parts.append(f"{skipped} skipped")
+            if source_path:
+                sub_parts.append(os.path.basename(source_path))
+
+            out[display_title] = {
+                "tracks": group_tracks,
+                "subtitle": " \xb7 ".join(sub_parts),
+                "art_paths": self._art_candidates(group_tracks),
+                "category": "Playlists",
+                "filter_key": "playlist",
+                "filter_value": display_title,
+                "track_count": len(group_tracks),
+                "skipped_count": skipped,
+                "total_entries": total_entries,
+                "source_path": source_path,
             }
         return out
 
@@ -1978,8 +2102,9 @@ class SelectiveSyncBrowser(QWidget):
         for cat, btn in self._mode_buttons.items():
             btn.setVisible(has[cat])
 
-        music_section = any(has[c] for c in
-                            ("Albums", "Artists", "Genres", "All Tracks", "Photos"))
+        music_section = any(has[c] for c in (
+            "Albums", "Artists", "Genres", "All Tracks", "Playlists", "Photos"
+        ))
         non_music = any(has[c] for c in (
             "Podcasts", "Audiobooks", "TV Shows", "Movies", "Music Videos"
         ))
@@ -2119,6 +2244,12 @@ class SelectiveSyncBrowser(QWidget):
             meta_parts.append(format_duration_human(total_ms))
         if total_bytes:
             meta_parts.append(format_size(total_bytes))
+        skipped = int(group.get("skipped_count", 0) or 0)
+        if skipped:
+            meta_parts.append(f"{skipped} skipped entr{'y' if skipped == 1 else 'ies'}")
+        source_path = str(group.get("source_path", "") or "")
+        if source_path:
+            meta_parts.append(source_path)
         self._track_list.setMeta(" \u00b7 ".join(meta_parts))
 
         # Grab artwork pixmap from the grid item widget
@@ -2136,7 +2267,8 @@ class SelectiveSyncBrowser(QWidget):
                     dcol = gi.item_data.get("dominant_color")
                 break
 
-        self._track_list.setHeroArt(pixmap)
+        fallback_glyph = _CATEGORY_GLYPHS.get(group.get("category", ""), "music")
+        self._track_list.setHeroArt(pixmap, fallback_glyph=fallback_glyph)
         if dcol:
             self._track_list.setHeroColor(*dcol)
         else:
@@ -2186,8 +2318,10 @@ class SelectiveSyncBrowser(QWidget):
 
         action = menu.exec(global_pos)
         if action == add_action:
+            self._set_grid_playlists_checked(items, True)
             self._set_grid_tracks_checked(tracks, True)
         elif action == remove_action:
+            self._set_grid_playlists_checked(items, False)
             self._set_grid_tracks_checked(tracks, False)
 
     def _tracks_for_grid_items(self, items: list[dict]) -> list:
@@ -2222,6 +2356,41 @@ class SelectiveSyncBrowser(QWidget):
         if changed:
             self._update_footer()
 
+    def _set_grid_playlists_checked(self, items: list[dict], checked: bool):
+        if self._current_mode != "Playlists":
+            return
+        groups = self._groups.get("Playlists", {})
+        changed = False
+        for item in items:
+            key = item.get("title", "")
+            group = groups.get(key)
+            if group is None:
+                continue
+            source_path = str(group.get("source_path", "") or "")
+            if not source_path:
+                continue
+            if self._selected_playlists.get(source_path, True) != checked:
+                changed = True
+            self._selected_playlists[source_path] = checked
+        if changed:
+            self._update_footer()
+
+    def _current_playlist_source_path(self) -> str:
+        if self._current_mode != "Playlists" or not self._current_group:
+            return ""
+        group = self._groups.get("Playlists", {}).get(self._current_group, {})
+        return str(group.get("source_path", "") or "")
+
+    def _sync_current_playlist_selection_from_tracks(self) -> None:
+        source_path = self._current_playlist_source_path()
+        if not source_path:
+            return
+        any_selected = any(
+            self._selected_tracks.get(getattr(track, "path", ""), False)
+            for track in self._current_group_tracks
+        )
+        self._selected_playlists[source_path] = any_selected
+
     def _on_track_back(self):
         self._current_group = None
         self._current_group_tracks = []
@@ -2232,6 +2401,7 @@ class SelectiveSyncBrowser(QWidget):
 
     def _on_track_toggled(self, path: str, checked: bool):
         self._selected_tracks[path] = checked
+        self._sync_current_playlist_selection_from_tracks()
         self._update_footer()
 
     def _on_select_all(self):
@@ -2239,6 +2409,8 @@ class SelectiveSyncBrowser(QWidget):
             self._selected_tracks[path] = True
         for path in self._selected_photos:
             self._selected_photos[path] = True
+        for path in self._selected_playlists:
+            self._selected_playlists[path] = True
         # Refresh track list if visible
         if self._content.currentIndex() == 2:
             self._track_list.setAllChecked(True)
@@ -2251,6 +2423,8 @@ class SelectiveSyncBrowser(QWidget):
             self._selected_tracks[path] = False
         for path in self._selected_photos:
             self._selected_photos[path] = False
+        for path in self._selected_playlists:
+            self._selected_playlists[path] = False
         if self._content.currentIndex() == 2:
             self._track_list.setAllChecked(False)
         if self._content.currentIndex() == 3:
@@ -2261,6 +2435,9 @@ class SelectiveSyncBrowser(QWidget):
         """Select all tracks in the current drilled-in group."""
         for t in self._current_group_tracks:
             self._selected_tracks[t.path] = True
+        source_path = self._current_playlist_source_path()
+        if source_path:
+            self._selected_playlists[source_path] = True
         self._track_list.setAllChecked(True)
         self._update_footer()
 
@@ -2268,6 +2445,9 @@ class SelectiveSyncBrowser(QWidget):
         """Deselect all tracks in the current drilled-in group."""
         for t in self._current_group_tracks:
             self._selected_tracks[t.path] = False
+        source_path = self._current_playlist_source_path()
+        if source_path:
+            self._selected_playlists[source_path] = False
         self._track_list.setAllChecked(False)
         self._update_footer()
 
@@ -2294,19 +2474,28 @@ class SelectiveSyncBrowser(QWidget):
         checked_tracks = sum(1 for v in self._selected_tracks.values() if v)
         total_photos = len(self._selected_photos)
         checked_photos = sum(1 for v in self._selected_photos.values() if v)
+        total_playlists = len(self._selected_playlists)
+        checked_playlists = sum(1 for v in self._selected_playlists.values() if v)
         parts: list[str] = []
         if total_tracks:
             parts.append(f"{checked_tracks} of {total_tracks} tracks selected")
         if total_photos:
             parts.append(f"{checked_photos} of {total_photos} photos selected")
-        self._count_label.setText(" · ".join(parts) if parts else "No music or photos found")
-        self._done_btn.setEnabled((checked_tracks + checked_photos) > 0)
+        if total_playlists:
+            parts.append(f"{checked_playlists} of {total_playlists} playlists selected")
+        self._count_label.setText(
+            " · ".join(parts) if parts else "No music, photos, or playlists found"
+        )
+        self._done_btn.setEnabled((checked_tracks + checked_photos + checked_playlists) > 0)
 
     # ── Done / Cancel ────────────────────────────────────────────────────
 
     def _on_done(self):
         selected_track_paths = frozenset(
             path for path, checked in self._selected_tracks.items() if checked
+        )
+        selected_playlist_paths = frozenset(
+            path for path, checked in self._selected_playlists.items() if checked
         )
         selected_photo_imports: list[tuple[str, str]] = []
         for photo in self._all_photos:
@@ -2320,6 +2509,7 @@ class SelectiveSyncBrowser(QWidget):
         self.selection_done.emit(list(self._folder_entries), {
             "tracks": selected_track_paths,
             "photos": tuple(selected_photo_imports),
+            "playlists": selected_playlist_paths,
         })
 
     def _on_cancel(self):

@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 from GUI.widgets.selectiveSyncBrowser import SelectiveSyncBrowser
 from SyncEngine.pc_library import PCTrack
 
@@ -42,8 +44,10 @@ def _track(
 def _browser_with_tracks(tracks: list[PCTrack]) -> SelectiveSyncBrowser:
     browser = SelectiveSyncBrowser.__new__(SelectiveSyncBrowser)
     browser._all_tracks = tracks
+    browser._playlist_discovery = None
     browser._groups = {}
     browser._buckets = {}
+    browser._selected_playlists = {}
     def _art_candidates(track_list: list) -> list[str]:
         return []
 
@@ -158,3 +162,70 @@ def test_selective_sync_grid_item_actions_resolve_and_toggle_tracks():
     assert browser._selected_tracks[tracks[1].path] is False
     assert browser._selected_tracks[tracks[2].path] is True
     assert footer_updates == [True]
+
+
+def test_selective_sync_builds_playlist_groups_from_discovered_files():
+    tracks = [
+        _track("Song 1", "Album A/01 Song 1.mp3"),
+        _track("Song 2", "Album A/02 Song 2.mp3"),
+    ]
+    browser = _browser_with_tracks(tracks)
+    browser._playlist_discovery = SimpleNamespace(
+        playlists=(
+            SimpleNamespace(
+                title="Road Trip",
+                source_path="/music/playlists/road-trip.m3u8",
+                items=(
+                    {"source_path": tracks[1].path},
+                    {"source_path": tracks[0].path},
+                ),
+                total_entries=3,
+                skipped_entries=1,
+            ),
+        )
+    )
+
+    browser._build_groups()
+
+    playlists = browser._groups["Playlists"]
+    assert set(playlists) == {"Road Trip"}
+    assert [track.title for track in playlists["Road Trip"]["tracks"]] == [
+        "Song 2",
+        "Song 1",
+    ]
+    assert playlists["Road Trip"]["track_count"] == 2
+    assert playlists["Road Trip"]["skipped_count"] == 1
+    assert "1 skipped" in playlists["Road Trip"]["subtitle"]
+
+
+def test_selective_sync_grid_item_actions_resolve_playlist_tracks():
+    tracks = [
+        _track("Song 1", "Album A/01 Song 1.mp3"),
+        _track("Song 2", "Album A/02 Song 2.mp3"),
+    ]
+    browser = _browser_with_tracks(tracks)
+    browser._current_mode = "Playlists"
+    browser._selected_tracks = {track.path: True for track in tracks}
+    browser._selected_playlists = {"/music/playlists/road-trip.m3u8": True}
+    browser._update_footer = lambda: None
+    browser._playlist_discovery = SimpleNamespace(
+        playlists=(
+            SimpleNamespace(
+                title="Road Trip",
+                source_path="/music/playlists/road-trip.m3u8",
+                items=({"source_path": tracks[1].path},),
+                total_entries=1,
+                skipped_entries=0,
+            ),
+        )
+    )
+    browser._build_groups()
+
+    resolved = browser._tracks_for_grid_items([{"title": "Road Trip"}])
+    browser._set_grid_playlists_checked([{"title": "Road Trip"}], False)
+    browser._set_grid_tracks_checked(resolved, False)
+
+    assert [track.title for track in resolved] == ["Song 2"]
+    assert browser._selected_playlists["/music/playlists/road-trip.m3u8"] is False
+    assert browser._selected_tracks[tracks[0].path] is True
+    assert browser._selected_tracks[tracks[1].path] is False
