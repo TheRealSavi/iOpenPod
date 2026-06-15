@@ -1176,10 +1176,28 @@ class SyncExecutor:
 
     def _backpatch_new_tracks(self, ctx: _SyncContext) -> None:
         """Create mapping entries for newly added tracks (db_track_ids now assigned)."""
-        for track in ctx.new_tracks:
+        if not ctx.new_tracks:
+            return
+
+        total = len(ctx.new_tracks)
+        ctx.progress(
+            "backpatch",
+            0,
+            total,
+            message="Recording source file identities...",
+        )
+
+        for index, track in enumerate(ctx.new_tracks, start=1):
             obj_key = id(track)
             fp = ctx.new_track_fingerprints.get(obj_key)
             info = ctx.new_track_info.get(obj_key)
+            label = getattr(track, "title", "") or getattr(track, "location", "") or "track"
+            ctx.progress(
+                "backpatch",
+                index,
+                total,
+                message=f"Recording source identity for {label}",
+            )
             if fp and info and track.db_track_id != 0:
                 pc_track, ipod_dest, was_transcoded = info[:3]
                 # Re-stat the source file to capture post-fingerprint

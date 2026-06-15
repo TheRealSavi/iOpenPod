@@ -334,10 +334,13 @@ def test_backpatch_split_track_uses_original_source_mapping_without_aggregate_fi
             "source_hash": "source-hash",
         },
     )
+    progress_stages: list[tuple[str, int, int]] = []
     ctx = _SyncContext(
         plan=SyncPlan(),
         mapping=MappingFile(),
-        progress_callback=None,
+        progress_callback=lambda progress: progress_stages.append(
+            (progress.stage, progress.current, progress.total)
+        ),
         dry_run=False,
         write_back_to_pc=False,
         _is_cancelled=None,
@@ -358,6 +361,7 @@ def test_backpatch_split_track_uses_original_source_mapping_without_aggregate_fi
     assert entry.aggregate_kind is None
     assert entry.contains_fingerprints is None
     assert "containsFingerprints" not in entry.to_dict()
+    assert progress_stages == [("backpatch", 0, 1), ("backpatch", 1, 1)]
 
 
 def test_backpatch_split_track_does_not_use_generated_hash_for_original_source(tmp_path) -> None:

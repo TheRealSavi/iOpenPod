@@ -203,6 +203,14 @@ _GLYPH_FOR_STATUS: dict[StageStatus, str] = {
     StageStatus.FAILED: "✕",
 }
 
+_TOOLTIP_FOR_STATUS: dict[StageStatus, str] = {
+    StageStatus.PENDING: "Waiting",
+    StageStatus.CURRENT: "Running",
+    StageStatus.DONE: "Done",
+    StageStatus.SKIPPED: "No work needed",
+    StageStatus.FAILED: "Failed",
+}
+
 
 class _StageRow(QFrame):
     """Single checklist row: glyph + label."""
@@ -211,9 +219,10 @@ class _StageRow(QFrame):
         super().__init__(parent)
         self.setObjectName("stageRow")
         self._step = step
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 4, 0, 4)
+        layout.setContentsMargins(8, 5, 8, 5)
         layout.setSpacing(10)
 
         # Fixed-width glyph column so labels line up regardless of which
@@ -227,6 +236,7 @@ class _StageRow(QFrame):
         self._label = QLabel(step.label, self)
         self._label.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
         self._label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self._label.setWordWrap(True)
         layout.addWidget(self._label, 1)
 
         self.set_status(StageStatus.PENDING)
@@ -238,6 +248,16 @@ class _StageRow(QFrame):
     def set_status(self, status: StageStatus) -> None:
         self._glyph.setText(_GLYPH_FOR_STATUS[status])
         glyph_color, text_color, bold = _row_colors(status)
+        background, border_left = _row_frame_style(status)
+        self.setToolTip(f"{self._step.label}: {_TOOLTIP_FOR_STATUS[status]}")
+        self.setStyleSheet(
+            "QFrame#stageRow {"
+            f"background: {background};"
+            "border: 1px solid transparent;"
+            f"border-left: 3px solid {border_left};"
+            "border-radius: 6px;"
+            "}"
+        )
         self._glyph.setStyleSheet(f"color: {glyph_color}; background: transparent;")
         self._label.setStyleSheet(f"color: {text_color}; background: transparent;")
         font = self._label.font()
@@ -258,6 +278,15 @@ def _row_colors(status: StageStatus) -> tuple[str, str, bool]:
         return Colors.TEXT_DISABLED, Colors.TEXT_DISABLED, False
     # PENDING
     return Colors.TEXT_TERTIARY, Colors.TEXT_TERTIARY, False
+
+
+def _row_frame_style(status: StageStatus) -> tuple[str, str]:
+    """Return ``(background, left_border)`` for a row frame."""
+    if status == StageStatus.CURRENT:
+        return Colors.ACCENT_MUTED, Colors.ACCENT
+    if status == StageStatus.FAILED:
+        return Colors.DANGER_DIM, Colors.DANGER
+    return "transparent", "transparent"
 
 
 class SyncStagesPanel(QWidget):
@@ -293,12 +322,11 @@ class SyncStagesPanel(QWidget):
         self._outer.addWidget(self._title)
 
         self._rows_container = QWidget(self)
+        self._rows_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self._rows_layout = QVBoxLayout(self._rows_container)
         self._rows_layout.setContentsMargins(0, 0, 0, 0)
         self._rows_layout.setSpacing(2)
-        self._outer.addWidget(self._rows_container)
-
-        self._outer.addStretch(1)
+        self._outer.addWidget(self._rows_container, 1)
 
         self._pipeline: tuple[SyncStage, ...] = ()
         self._states: dict[str, StageStatus] = {}
@@ -323,7 +351,7 @@ class SyncStagesPanel(QWidget):
 
         for step in self._pipeline:
             row = _StageRow(step, self._rows_container)
-            self._rows_layout.addWidget(row)
+            self._rows_layout.addWidget(row, 1)
             self._rows[step.stage_id] = row
 
     def notify_stage(self, stage: str) -> None:
