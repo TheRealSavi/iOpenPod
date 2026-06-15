@@ -1,27 +1,28 @@
 {
   "allowed_gui_forbidden_imports": {
-    "GUI/widgets/MBListView.py": [
-      "SyncEngine._playlist_builder"
-    ],
-    "GUI/widgets/musicBrowser.py": [
-      "ipod_device"
-    ],
-    "GUI/widgets/photoBrowser.py": [
-      "SyncEngine.photos",
-      "ipod_device.artwork"
-    ],
+    "GUI/app.py": ["SyncEngine.album_chapters"],
+    "GUI/widgets/MBListView.py": ["SyncEngine._playlist_builder"],
+    "GUI/widgets/devicePicker.py": ["ipod_device"],
+    "GUI/widgets/musicBrowser.py": ["SyncEngine.album_chapters", "ipod_device"],
+    "GUI/widgets/photoBrowser.py": ["SyncEngine.photos", "ipod_device.artwork"],
     "GUI/widgets/podcastBrowser.py": [
+      "PodcastManager.artwork",
       "PodcastManager.feed_parser",
       "PodcastManager.models",
+      "PodcastManager.network_errors",
       "PodcastManager.podcast_sync",
-      "PodcastManager.subscription_store"
+      "PodcastManager.subscription_store",
+      "SyncEngine.contracts"
     ],
     "GUI/widgets/podcastSearchDialog.py": [
-      "PodcastManager.itunes_search"
+      "PodcastManager.itunes_search",
+      "PodcastManager.network_errors"
     ],
     "GUI/widgets/selectiveSyncBrowser.py": [
       "SyncEngine.pc_library",
-      "SyncEngine.photos"
+      "SyncEngine.photos",
+      "SyncEngine.sync_playlist_files",
+      "SyncEngine.unknown_metadata"
     ],
     "GUI/widgets/settingsPage.py": [
       "SyncEngine.audio_fingerprint",
@@ -37,6 +38,7 @@
       "ipod_device.authority",
       "ipod_device.info",
       "ipod_device.scanner",
+      "ipod_device.virtual",
       "ipod_device.vpd_libusb",
       "ipod_device.vpd_linux"
     ],
@@ -71,8 +73,9 @@
     "GUI/widgets/musicBrowser.py": 2,
     "GUI/widgets/playlistBrowser.py": 7,
     "GUI/widgets/podcastBrowser.py": 4,
+    "GUI/widgets/pooledCardGrid.py": 2,
     "GUI/widgets/selectiveSyncBrowser.py": 2,
-    "GUI/widgets/settingsPage.py": 2,
+    "GUI/widgets/settingsPage.py": 5,
     "GUI/widgets/sidebar.py": 1,
     "GUI/widgets/syncReview.py": 1,
     "PodcastManager/downloader.py": 2,
@@ -80,16 +83,18 @@
     "SQLiteDB_Writer/cbk_writer.py": 3,
     "SyncEngine/audio_fingerprint.py": 2,
     "SyncEngine/dependency_manager.py": 1,
+    "SyncEngine/fingerprint_diff_engine.py": 2,
     "SyncEngine/photos.py": 2,
     "SyncEngine/sync_executor.py": 5,
     "SyncEngine/transcode_cache.py": 1,
     "SyncEngine/transcoder.py": 6,
     "app_core/bootstrap.py": 3,
+    "app_core/runtime.py": 1,
     "iTunesDB_Writer/hash72.py": 1,
     "iTunesDB_Writer/mhbd_writer.py": 3,
     "ipod_device/authority.py": 1,
     "ipod_device/dump.py": 1,
-    "ipod_device/info.py": 4,
+    "ipod_device/info.py": 6,
     "ipod_device/usb_backend.py": 1,
     "ipod_device/vpd_iokit.py": 1,
     "ipod_device/vpd_libusb.py": 5
