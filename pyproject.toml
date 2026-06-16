@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "iopenpod"
-version = "1.0.58"
+version = "1.0.59"
 description = "Open-source iPod Classic sync tool — manage your iPod media library without iTunes. Reads and writes iTunesDB directly."
 authors = [
     {name = "John Gibbons", email = "johngibbons167@gmail.com"}
@@ -64,6 +64,7 @@ only-include = [
     "app_core",
     "infrastructure",
     "main.py",
+    "sync_progress_stages.py",
     "GUI",
     "PodcastManager",
     "ipod_device",
