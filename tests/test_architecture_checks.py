@@ -4,6 +4,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from scripts.check_architecture import (
+    check_rules,
     count_except_exception_passes,
     count_runtime_singleton_access,
     detect_app_core_sync_executor_private_usage,
@@ -78,6 +79,33 @@ import infrastructure.settings_runtime as settings
                 "infrastructure.settings_runtime",
             ]
         }
+
+
+def test_check_rules_allows_public_gui_import_seams() -> None:
+    with repo_temp_dir() as tmp_path:
+        write_file(
+            tmp_path / "GUI" / "view.py",
+            """
+from SyncEngine.contracts import SyncPlan
+from SyncEngine.review_selection import build_filtered_sync_plan
+""",
+        )
+
+        errors = check_rules(
+            tmp_path,
+            {
+                "allowed_gui_public_imports": [
+                    "SyncEngine.contracts",
+                    "SyncEngine.review_selection",
+                ],
+                "allowed_gui_forbidden_imports": {},
+                "allowed_import_cycles": [],
+                "allowed_runtime_singleton_access": {},
+                "allowed_except_exception_pass_counts": {},
+            },
+        )
+
+        assert errors == []
 
 
 def test_detect_import_cycles_finds_first_party_cycle() -> None:

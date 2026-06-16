@@ -56,10 +56,7 @@ from app_core.runtime import (
     same_device_path,
 )
 from app_core.sync_options import build_transcode_options
-from app_core.sync_plan_builder import (
-    build_filtered_sync_plan,
-    build_removal_sync_plan,
-)
+from app_core.sync_plan_builder import build_removal_sync_plan
 from GUI.glyphs import glyph_pixmap
 from GUI.internal_drag import is_iopenpod_export_drag
 from GUI.notifications import Notifier
@@ -77,6 +74,7 @@ from infrastructure.media_folders import (
     media_folder_entries_to_settings,
     media_folder_paths,
 )
+from SyncEngine.review_selection import build_filtered_sync_plan
 
 if TYPE_CHECKING:
     from app_core.context import AppContext

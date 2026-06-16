@@ -1,10 +1,8 @@
 from types import SimpleNamespace
 
 from app_core.sync_plan_builder import (
-    build_filtered_sync_plan,
     build_podcast_removal_sync_plan,
     build_removal_sync_plan,
-    build_selected_photo_plan,
 )
 from SyncEngine.fingerprint_diff_engine import SyncAction, SyncItem, SyncPlan
 from SyncEngine.photos import (
@@ -13,6 +11,10 @@ from SyncEngine.photos import (
     PhotoMembershipChange,
     PhotoSyncItem,
     PhotoSyncPlan,
+)
+from SyncEngine.review_selection import (
+    build_filtered_sync_plan,
+    build_selected_photo_plan,
 )
 
 
@@ -290,3 +292,4 @@ def test_build_selected_photo_plan_returns_none_without_selected_changes() -> No
     original.thumb_bytes_to_add = 111
 
     assert build_selected_photo_plan(original, set()) is None
+

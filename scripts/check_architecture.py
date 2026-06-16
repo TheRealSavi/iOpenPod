@@ -598,14 +598,15 @@ def check_rules(repo_root: Path, rules: dict) -> list[str]:
         for cycle in unexpected_cycles:
             errors.append(f"  - {' -> '.join(cycle)}")
 
+    allowed_gui_public_imports = set(rules.get("allowed_gui_public_imports", []))
     allowed_gui_imports = rules.get("allowed_gui_forbidden_imports", {})
     current_gui_imports = detect_gui_forbidden_imports(repo_root)
     unexpected_gui_imports: list[str] = []
     for path, imports in sorted(current_gui_imports.items()):
-        allowed = set(allowed_gui_imports.get(path, []))
+        allowed = allowed_gui_public_imports | set(allowed_gui_imports.get(path, []))
         unexpected = sorted(set(imports) - allowed)
-        if path not in allowed_gui_imports or unexpected:
-            detail = ", ".join(unexpected or imports)
+        if unexpected:
+            detail = ", ".join(unexpected)
             unexpected_gui_imports.append(f"  - {path}: {detail}")
     if unexpected_gui_imports:
         errors.append("Unexpected GUI cross-layer imports detected:")

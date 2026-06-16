@@ -66,6 +66,7 @@ from .photos import (
     read_photo_db,
     scan_pc_photos,
 )
+from .review_selection import build_filtered_sync_plan, build_selected_photo_plan
 from .spl_evaluator import spl_update, spl_update_all, spl_update_from_parsed
 from .sync_executor import SyncExecutor
 from .transcode_cache import CachedFile, CacheIndex, TranscodeCache
@@ -158,4 +159,7 @@ __all__ = [
     "build_photo_sync_plan",
     "apply_photo_sync_plan",
     "load_photo_preview",
+    # Review selection
+    "build_filtered_sync_plan",
+    "build_selected_photo_plan",
 ]

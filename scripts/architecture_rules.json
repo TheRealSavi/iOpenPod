@@ -1,4 +1,8 @@
 {
+  "allowed_gui_public_imports": [
+    "SyncEngine.contracts",
+    "SyncEngine.review_selection"
+  ],
   "allowed_gui_forbidden_imports": {
     "GUI/app.py": ["SyncEngine.album_chapters"],
     "GUI/widgets/MBListView.py": ["SyncEngine._playlist_builder"],
@@ -11,8 +15,7 @@
       "PodcastManager.models",
       "PodcastManager.network_errors",
       "PodcastManager.podcast_sync",
-      "PodcastManager.subscription_store",
-      "SyncEngine.contracts"
+      "PodcastManager.subscription_store"
     ],
     "GUI/widgets/podcastSearchDialog.py": [
       "PodcastManager.itunes_search",

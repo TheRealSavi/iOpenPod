@@ -58,6 +58,7 @@ from infrastructure.media_folders import (
     media_folder_paths,
 )
 from sync_progress_stages import friendly_stage_label
+from SyncEngine.review_selection import build_selected_photo_plan
 
 from ..glyphs import glyph_icon, glyph_pixmap
 from ..styles import FONT_FAMILY, Colors, Metrics, accent_btn_css, btn_css, make_scroll_area
@@ -3209,8 +3210,6 @@ class SyncReviewWidget(QWidget):
         return selected_items
 
     def get_selected_photo_plan(self):
-        from app_core.sync_plan_builder import build_selected_photo_plan
-
         if self._plan is None or self._plan.photo_plan is None:
             return None
 

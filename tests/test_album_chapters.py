@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from app_core.sync_plan_builder import build_filtered_sync_plan
 from SyncEngine.album_chapters import (
     _build_ffmpeg_concat_command,
     _build_ffmpeg_split_command,
@@ -12,6 +11,7 @@ from SyncEngine.album_chapters import (
 from SyncEngine.fingerprint_diff_engine import SyncAction, SyncItem, SyncPlan
 from SyncEngine.mapping import MappingFile
 from SyncEngine.pc_library import PCLibrary
+from SyncEngine.review_selection import build_filtered_sync_plan
 from SyncEngine.sync_executor import SyncExecutor, _SyncContext
 from SyncEngine.transcoder import TranscodeOptions, TranscodeTarget
 

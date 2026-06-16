@@ -62,7 +62,7 @@ from .services import (
     SettingsService,
     SettingsSnapshot,
 )
-from .sync_plan_builder import build_filtered_sync_plan, build_removal_sync_plan
+from .sync_plan_builder import build_removal_sync_plan
 
 __all__ = [
     "AppConfigurationError",
@@ -113,7 +113,6 @@ __all__ = [
     "build_backup_device_meta",
     "build_imported_photo_edit_state",
     "build_podcast_plan_for_sync",
-    "build_filtered_sync_plan",
     "build_removal_sync_plan",
     "check_sync_tool_availability",
     "collect_import_file_paths",
