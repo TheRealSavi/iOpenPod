@@ -32,6 +32,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from sync_progress_stages import PIPELINE_STAGE_ROWS
+
 from ..styles import FONT_FAMILY, Colors, Metrics
 
 # ── Pure data model ─────────────────────────────────────────────────────
@@ -69,39 +71,9 @@ class SyncStage:
 # Stages without an entry here are silently ignored by the state machine.
 # e.g. ``transcode``, which is a sub-stage of ``add``
 DEFAULT_PIPELINE: tuple[SyncStage, ...] = (
-    #         Internal ID, User Title, alias internal names
-    SyncStage("backup", "Pre-sync backup", frozenset({"backup"})),
-    SyncStage(
-        "remove",
-        "Remove obsolete tracks",
-        frozenset({"remove", "remove_chapter"}),
-    ),
-    SyncStage("update_file", "Re-sync changed files", frozenset({"update_file"})),
-    SyncStage("update_metadata", "Update metadata", frozenset({"update_metadata"})),
-    SyncStage("podcast_download", "Download podcasts", frozenset({"podcast_download"})),
-    SyncStage("add", "Copy new tracks", frozenset({"add"})),
-    SyncStage("replace_remove", "Clean up replaced tracks", frozenset({"replace_remove"})),
-    SyncStage("sound_check", "Compute Sound Check", frozenset({"sound_check"})),
-    SyncStage(
-        "playcount",
-        "Sync play counts & ratings",
-        frozenset({"sync_playcount", "sync_rating"}),
-    ),
-    SyncStage(
-        "scrobble",
-        "Scrobble plays",
-        frozenset({"scrobble", "scrobble_listenbrainz", "scrobble_lastfm"}),
-    ),
-    SyncStage(
-        "write_database",
-        "Write iPod database",
-        frozenset({"write_database", "playlists"}),
-    ),
-    SyncStage("backpatch", "Record source file identities", frozenset({"backpatch"})),
-    SyncStage(
-        "photo",
-        "Sync photos",
-        frozenset({"photo_prepare", "photo_write", "photo_compact", "scan_photos"}),
+    *(
+        SyncStage(row.stage_id, row.label, row.aliases)
+        for row in PIPELINE_STAGE_ROWS
     ),
 )
 

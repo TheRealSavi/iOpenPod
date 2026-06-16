@@ -22,7 +22,8 @@ import time
 from collections import Counter
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field, replace
+from copy import copy
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
@@ -50,7 +51,9 @@ from .contracts import SyncOutcome, SyncProgress, SyncRequest
 from .fingerprint_diff_engine import SyncItem, SyncPlan
 from .itunes_prefs import protect_from_itunes
 from .mapping import MappingFile, MappingManager
+from .path_identity import coerce_int, stable_path_key
 from .photos import apply_photo_sync_plan, read_photo_db
+from .plan_validator import validate_sync_plan
 from .source_identity import source_content_hash
 from .transcoder import (
     TranscodeOptions,
@@ -85,27 +88,18 @@ _DEFAULT_MUSIC_DIRS = 20
 
 
 def _mhsd5_type_value(playlist: dict) -> int:
-    try:
-        return int(playlist.get("mhsd5_type", 0) or 0)
-    except (TypeError, ValueError):
-        return 0
+    return coerce_int(playlist.get("mhsd5_type", 0))
 
 
 def _is_ipod_category_playlist(playlist: dict) -> bool:
-    try:
-        dataset_type = int(playlist.get("_mhsd_dataset_type", 0) or 0)
-    except (TypeError, ValueError):
-        dataset_type = 0
+    dataset_type = coerce_int(playlist.get("_mhsd_dataset_type", 0))
     if dataset_type:
         return dataset_type == 5
     return playlist.get("_source") == "category" or bool(_mhsd5_type_value(playlist))
 
 
 def _playlist_dataset_type(playlist: dict) -> int:
-    try:
-        dataset_type = int(playlist.get("_mhsd_dataset_type", 0) or 0)
-    except (TypeError, ValueError):
-        dataset_type = 0
+    dataset_type = coerce_int(playlist.get("_mhsd_dataset_type", 0))
     if dataset_type:
         return dataset_type
     if playlist.get("_mhsd_result_key") == "mhlp_podcast":
@@ -248,6 +242,76 @@ class _SyncContext:
             self.progress_callback(
                 SyncProgress(stage, current, total, current_item, message, **kwargs)
             )
+
+
+@dataclass(frozen=True, slots=True)
+class _FileMutationSummary:
+    """Completed file mutations that must be reflected in the database."""
+
+    added: int = 0
+    removed: int = 0
+    updated: int = 0
+
+    @property
+    def anything_done(self) -> bool:
+        return self.added > 0 or self.removed > 0 or self.updated > 0
+
+
+@dataclass(frozen=True, slots=True)
+class _ExecutionLifecycle:
+    """Callbacks and policy used while running one executor lifecycle."""
+
+    on_cancel_with_partial: Callable[[int, int], bool] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _ResolvedPlaylistCommitPayload:
+    """Final playlist state to serialize during database commit."""
+
+    master_playlist_name: str
+    master_playlist_id: int | None
+    standard_playlists: list[PlaylistInfo]
+    podcast_master_playlist_name: str
+    podcast_master_playlist_id: int | None
+    podcast_playlists: list[PlaylistInfo]
+    smart_playlists: list[PlaylistInfo]
+
+
+@dataclass(frozen=True, slots=True)
+class _DatabaseCommitInput:
+    """Resolved database-write payload after file mutations are complete."""
+
+    all_tracks: list[TrackInfo]
+    normalized_pc_paths: dict[int, str]
+    playlist_payload: _ResolvedPlaylistCommitPayload
+
+    @property
+    def master_playlist_name(self) -> str:
+        return self.playlist_payload.master_playlist_name
+
+    @property
+    def master_playlist_id(self) -> int | None:
+        return self.playlist_payload.master_playlist_id
+
+    @property
+    def playlists(self) -> list[PlaylistInfo]:
+        return self.playlist_payload.standard_playlists
+
+    @property
+    def podcast_master_playlist_name(self) -> str:
+        return self.playlist_payload.podcast_master_playlist_name
+
+    @property
+    def podcast_master_playlist_id(self) -> int | None:
+        return self.playlist_payload.podcast_master_playlist_id
+
+    @property
+    def podcast_playlists(self) -> list[PlaylistInfo]:
+        return self.playlist_payload.podcast_playlists
+
+    @property
+    def smart_playlists(self) -> list[PlaylistInfo]:
+        return self.playlist_payload.smart_playlists
 
 
 @dataclass(slots=True)
@@ -426,6 +490,59 @@ class SyncExecutor:
         """
         _clear_transcoder_caches()
 
+        ctx = self._build_sync_context(
+            plan=plan,
+            mapping=mapping,
+            progress_callback=progress_callback,
+            dry_run=dry_run,
+            is_cancelled=is_cancelled,
+            write_back_to_pc=write_back_to_pc,
+            user_playlists=user_playlists,
+            on_sync_complete=on_sync_complete,
+            compute_sound_check=compute_sound_check,
+            scrobble_on_sync=scrobble_on_sync,
+            listenbrainz_token=listenbrainz_token,
+            listenbrainz_username=listenbrainz_username,
+            lastfm_api_key=lastfm_api_key,
+            lastfm_api_secret=lastfm_api_secret,
+            lastfm_session_key=lastfm_session_key,
+            lastfm_username=lastfm_username,
+            is_scrobble_cancelled=is_scrobble_cancelled,
+        )
+        lifecycle = _ExecutionLifecycle(
+            on_cancel_with_partial=on_cancel_with_partial,
+        )
+
+        logger.info(
+            "Sync executor using %d overall workers and %d device write workers",
+            self._max_workers,
+            self._max_device_write_workers,
+        )
+
+        self._run_execution_lifecycle(ctx, lifecycle)
+        return ctx.result
+
+    def _build_sync_context(
+        self,
+        *,
+        plan: SyncPlan,
+        mapping: MappingFile,
+        progress_callback: Callable[[SyncProgress], None] | None,
+        dry_run: bool,
+        is_cancelled: Callable[[], bool] | None,
+        write_back_to_pc: bool,
+        user_playlists: list[dict] | None,
+        on_sync_complete: Callable[[], None] | None,
+        compute_sound_check: bool,
+        scrobble_on_sync: bool,
+        listenbrainz_token: str,
+        listenbrainz_username: str,
+        lastfm_api_key: str,
+        lastfm_api_secret: str,
+        lastfm_session_key: str,
+        lastfm_username: str,
+        is_scrobble_cancelled: Callable[[], bool] | None,
+    ) -> _SyncContext:
         ctx = _SyncContext(
             plan,
             mapping,
@@ -445,162 +562,296 @@ class SyncExecutor:
         ctx.lastfm_session_key = lastfm_session_key
         ctx.lastfm_username = lastfm_username
         ctx._is_scrobble_cancelled = is_scrobble_cancelled
+        return ctx
+
+    def _run_execution_lifecycle(
+        self,
+        ctx: _SyncContext,
+        lifecycle: _ExecutionLifecycle,
+    ) -> None:
+        """Run one sync in ordered phases from plan to database commit."""
+
+        if not self._prepare_execution_plan(ctx):
+            return
+        if not self._run_preflight_phase(ctx):
+            return
+
+        self._run_file_mutation_phase(ctx)
+        self._run_database_commit_phase(ctx, lifecycle)
+        ctx.result.success = not ctx.result.has_errors
+
+    def _prepare_execution_plan(self, ctx: _SyncContext) -> bool:
+        """Normalize plan inputs before touching the device."""
 
         self._apply_device_capability_filters(ctx)
+        validation = validate_sync_plan(ctx.plan, user_playlists=ctx.user_playlists)
+        for issue in validation.warnings:
+            logger.warning("Sync plan warning [%s]: %s", issue.code, issue.message)
+        if not validation.is_valid:
+            for issue in validation.errors:
+                ctx.result.errors.append((issue.code, issue.message))
+            ctx.result.success = False
+            logger.error(
+                "Sync plan validation failed with %d error(s)",
+                len(validation.errors),
+            )
+            return False
         self._prepare_conversion_group_counts(ctx)
-        if not ctx.plan.has_changes:
+        if not ctx.plan.has_changes and not ctx.user_playlists:
             ctx.result.success = not ctx.result.has_errors
-            return ctx.result
+            return False
+        return True
 
-        logger.info(
-            "Sync executor using %d overall workers and %d device write workers",
-            self._max_workers,
-            self._max_device_write_workers,
-        )
+    def _run_preflight_phase(self, ctx: _SyncContext) -> bool:
+        """Validate device state and load existing database records."""
 
         if not self._preflight_checks(ctx):
-            return ctx.result
-
+            return False
         self._load_existing_database_into(ctx)
+        if not self._validate_loaded_database_targets(ctx):
+            return False
+        return True
 
-        # Run stages 1-6.  Break on failure or cancellation rather than
-        # returning immediately so the DB write below always gets a chance
-        # to run — this keeps the iPod's file system and database consistent
-        # even when a sync stops early (storage full, user cancel, etc.).
-        stages = [
-            self._execute_removes,           # Stage 1
-            self._execute_file_updates,      # Stage 2
-            self._execute_metadata_updates,  # Stage 3
-            self._execute_artwork_updates,   # Stage 3b
-            self._download_podcast_episodes,  # Stage 3c (podcast prep)
-            self._execute_adds,              # Stage 4
-            self._execute_deferred_replacement_removes,  # Stage 4c
-            self._execute_sound_check,       # Stage 4b
-            self._execute_playcount_sync,    # Stage 5
-            self._execute_rating_sync,       # Stage 6
-        ]
-        for stage in stages:
+    def _validate_loaded_database_targets(self, ctx: _SyncContext) -> bool:
+        """Reject plans whose target database rows disappeared before execute."""
+
+        missing: list[tuple[str, str]] = []
+
+        def _check_db_items(bucket: str, items: list[SyncItem]) -> None:
+            for item in items:
+                db_track_id = coerce_int(item.db_track_id)
+                if db_track_id and db_track_id in ctx.tracks_by_db_track_id:
+                    continue
+                missing.append((
+                    bucket,
+                    (
+                        f"{item.display_label} targets db_track_id "
+                        f"{db_track_id or '?'} but that track is not in the "
+                        "current iPod database."
+                    ),
+                ))
+
+        _check_db_items("to_update_metadata", ctx.plan.to_update_metadata)
+        _check_db_items("to_update_file", ctx.plan.to_update_file)
+        _check_db_items("to_update_artwork", ctx.plan.to_update_artwork)
+        _check_db_items("to_sync_playcount", ctx.plan.to_sync_playcount)
+        _check_db_items("to_sync_rating", ctx.plan.to_sync_rating)
+
+        for bucket, items in (
+            ("to_remove", ctx.plan.to_remove),
+            ("_integrity_removals", getattr(ctx.plan, "_integrity_removals", [])),
+        ):
+            for item in items:
+                db_track_id = coerce_int(item.db_track_id)
+                location = item.ipod_location
+                if db_track_id and db_track_id in ctx.tracks_by_db_track_id:
+                    continue
+                if location and location in ctx.tracks_by_location:
+                    continue
+                missing.append((
+                    bucket,
+                    (
+                        f"{item.display_label} is planned for removal, but "
+                        "its target track is not in the current iPod database."
+                    ),
+                ))
+
+        if not missing:
+            return True
+
+        for code, message in missing:
+            ctx.result.errors.append((f"stale_plan_{code}", message))
+        ctx.result.success = False
+        logger.error("Sync plan targets disappeared before execution: %d", len(missing))
+        return False
+
+    def _run_file_mutation_phase(self, ctx: _SyncContext) -> None:
+        """Apply file and in-memory mutations before database commit."""
+
+        self._execute_file_mutation_phases(ctx)
+
+    def _run_database_commit_phase(
+        self,
+        ctx: _SyncContext,
+        lifecycle: _ExecutionLifecycle,
+    ) -> None:
+        """Persist database state required by completed mutations."""
+
+        self._commit_file_mutations(
+            ctx,
+            on_cancel_with_partial=lifecycle.on_cancel_with_partial,
+        )
+
+    def _execute_file_mutation_phases(self, ctx: _SyncContext) -> None:
+        """Run all pre-commit mutation phases in deterministic order."""
+
+        for stage in self._file_mutation_phases():
             if ctx.cancelled():
                 break
             stage(ctx)
             if not ctx.result.success:
                 break
 
-        # Stage 7: write database.
-        # Always runs as long as the database was loaded (i.e. we got past
-        # preflight).  On a partial sync, this saves whatever succeeded so
-        # the iPod isn't left with orphaned files or missing entries.
-        if not ctx.dry_run:
-            _was_cancelled = ctx.cancelled()
-            _had_failure = not ctx.result.success
-            _n_added = len(ctx.new_tracks)
-            _n_removed = ctx.result.tracks_removed
-            _n_updated = ctx.result.tracks_updated_file
-            _anything_done = _n_added > 0 or _n_removed > 0 or _n_updated > 0
+    def _file_mutation_phases(self) -> tuple[Callable[[_SyncContext], None], ...]:
+        """File and in-memory mutation stages that precede database commit."""
 
-            _should_write = True  # default: always write
+        return (
+            self._execute_removes,
+            self._execute_file_updates,
+            self._execute_metadata_updates,
+            self._execute_artwork_updates,
+            self._download_podcast_episodes,
+            self._execute_adds,
+            self._execute_deferred_replacement_removes,
+            self._execute_sound_check,
+            self._execute_playcount_sync,
+            self._execute_rating_sync,
+        )
 
-            if _was_cancelled and _anything_done:
-                # Ask the caller whether to write the partial database.
-                # on_cancel_with_partial(n_added, n_skipped) → True = save, False = discard.
-                # If no callback is provided, auto-save (safe default).
-                if on_cancel_with_partial is not None:
-                    n_planned = len(getattr(ctx.plan, "to_add", []))
-                    n_skipped = max(0, n_planned - _n_added)
-                    _should_write = on_cancel_with_partial(_n_added, n_skipped)
-                    logger.info(
-                        "User chose to %s partial sync results (%d added).",
-                        "save" if _should_write else "discard", _n_added,
-                    )
+    def _commit_file_mutations(
+        self,
+        ctx: _SyncContext,
+        *,
+        on_cancel_with_partial: Callable[[int, int], bool] | None,
+    ) -> None:
+        """Commit the database state required by completed file mutations."""
 
-            if _should_write and (_was_cancelled or _had_failure):
-                ctx.result.partial_save = True
+        if ctx.dry_run:
+            return
 
-                if _was_cancelled and not any(
-                    e[0] == "cancelled" for e in ctx.result.errors
-                ):
-                    # Build a summary of what actually completed
-                    _parts = []
-                    if _n_added > 0:
-                        _parts.append(f"{_n_added} track{'s' if _n_added != 1 else ''} copied")
-                    if _n_removed > 0:
-                        _parts.append(f"{_n_removed} track{'s' if _n_removed != 1 else ''} removed")
-                    if _n_updated > 0:
-                        _parts.append(f"{_n_updated} file{'s' if _n_updated != 1 else ''} updated")
+        was_cancelled = ctx.cancelled()
+        had_failure = not ctx.result.success
+        summary = self._file_mutation_summary(ctx)
+        should_write = True
 
-                    if _parts:
-                        ctx.result.errors.append((
-                            "cancelled",
-                            f"Sync was cancelled after {', '.join(_parts)}. "
-                            f"The database has been updated with those changes.",
-                        ))
-                    else:
-                        ctx.result.errors.append((
-                            "cancelled",
-                            "Sync was cancelled. No file changes had been made.",
-                        ))
+        if was_cancelled and summary.anything_done and on_cancel_with_partial is not None:
+            n_planned = len(getattr(ctx.plan, "to_add", []))
+            n_skipped = max(0, n_planned - summary.added)
+            should_write = on_cancel_with_partial(summary.added, n_skipped)
+            logger.info(
+                "User chose to %s partial sync results (%d added).",
+                "save" if should_write else "discard",
+                summary.added,
+            )
 
-                logger.info(
-                    "Sync stopped early — attempting partial database write "
-                    "(%d existing + %d newly added tracks).",
-                    len(ctx.tracks_by_db_track_id), _n_added,
-                )
-                self._execute_write_and_finalize(ctx)
+        if should_write and (was_cancelled or had_failure):
+            self._write_partial_database(ctx, summary, was_cancelled=was_cancelled)
+            return
 
-            elif not _should_write:
-                # User chose to discard — but if removes or file updates already
-                # happened, the database MUST be written or the iPod is left in
-                # an inconsistent state (DB references deleted files).
-                if _n_removed > 0 or _n_updated > 0:
-                    logger.info(
-                        "User chose discard, but %d removes and %d file updates "
-                        "already committed — writing DB anyway to stay consistent.",
-                        _n_removed, _n_updated,
-                    )
-                    ctx.result.partial_save = True
-                    ctx.result.errors.append((
-                        "cancelled",
-                        f"Sync was cancelled. New tracks were discarded, but "
-                        f"the database was updated to reflect "
-                        f"{_n_removed} removal{'s' if _n_removed != 1 else ''} "
-                        f"and {_n_updated} file update{'s' if _n_updated != 1 else ''} "
-                        f"that had already completed."
-                        if _n_removed > 0 and _n_updated > 0
-                        else (
-                            f"Sync was cancelled. New tracks were discarded, but "
-                            f"the database was updated to reflect "
-                            f"{_n_removed} removal{'s' if _n_removed != 1 else ''} "
-                            f"that had already completed."
-                            if _n_removed > 0
-                            else f"Sync was cancelled. New tracks were discarded, but "
-                            f"the database was updated to reflect "
-                            f"{_n_updated} file update{'s' if _n_updated != 1 else ''} "
-                            f"that had already completed."
-                        ),
-                    ))
-                    # Strip new_tracks so only removes/updates are saved
-                    ctx.new_tracks.clear()
-                    self._execute_write_and_finalize(ctx)
-                else:
-                    # Only adds happened — safe to truly discard
-                    ctx.result.errors.append((
-                        "cancelled",
-                        "Sync was cancelled. "
-                        + (
-                            f"{_n_added} track{'s' if _n_added != 1 else ''} were "
-                            f"copied to the iPod but the database was not updated — "
-                            f"they will be cleaned up automatically on the next sync."
-                            if _n_added > 0
-                            else "No changes were made."
-                        ),
-                    ))
+        if not should_write:
+            self._handle_discarded_partial_commit(ctx, summary)
+            return
 
-            else:
-                # Normal (non-cancelled, non-failed) path
-                self._execute_write_and_finalize(ctx)
+        self._execute_write_and_finalize(ctx)
 
-        ctx.result.success = not ctx.result.has_errors
-        return ctx.result
+    @staticmethod
+    def _file_mutation_summary(ctx: _SyncContext) -> _FileMutationSummary:
+        return _FileMutationSummary(
+            added=len(ctx.new_tracks),
+            removed=ctx.result.tracks_removed,
+            updated=ctx.result.tracks_updated_file,
+        )
+
+    def _write_partial_database(
+        self,
+        ctx: _SyncContext,
+        summary: _FileMutationSummary,
+        *,
+        was_cancelled: bool,
+    ) -> None:
+        ctx.result.partial_save = True
+
+        if was_cancelled and not any(e[0] == "cancelled" for e in ctx.result.errors):
+            ctx.result.errors.append((
+                "cancelled",
+                self._partial_commit_message(summary),
+            ))
+
+        logger.info(
+            "Sync stopped early — attempting partial database write "
+            "(%d existing + %d newly added tracks).",
+            len(ctx.tracks_by_db_track_id),
+            summary.added,
+        )
+        self._execute_write_and_finalize(ctx)
+
+    @staticmethod
+    def _partial_commit_message(summary: _FileMutationSummary) -> str:
+        parts = []
+        if summary.added > 0:
+            parts.append(f"{summary.added} track{'s' if summary.added != 1 else ''} copied")
+        if summary.removed > 0:
+            parts.append(f"{summary.removed} track{'s' if summary.removed != 1 else ''} removed")
+        if summary.updated > 0:
+            parts.append(f"{summary.updated} file{'s' if summary.updated != 1 else ''} updated")
+
+        if parts:
+            return (
+                f"Sync was cancelled after {', '.join(parts)}. "
+                "The database has been updated with those changes."
+            )
+        return "Sync was cancelled. No file changes had been made."
+
+    def _handle_discarded_partial_commit(
+        self,
+        ctx: _SyncContext,
+        summary: _FileMutationSummary,
+    ) -> None:
+        # User chose to discard — but if removes or file updates already
+        # happened, the database MUST be written or the iPod is left in
+        # an inconsistent state (DB references deleted files).
+        if summary.removed > 0 or summary.updated > 0:
+            logger.info(
+                "User chose discard, but %d removes and %d file updates "
+                "already committed — writing DB anyway to stay consistent.",
+                summary.removed,
+                summary.updated,
+            )
+            ctx.result.partial_save = True
+            ctx.result.errors.append((
+                "cancelled",
+                self._discarded_partial_commit_message(summary),
+            ))
+            # Strip new_tracks so only removes/updates are saved.
+            ctx.new_tracks.clear()
+            self._execute_write_and_finalize(ctx)
+            return
+
+        ctx.result.errors.append((
+            "cancelled",
+            "Sync was cancelled. "
+            + (
+                f"{summary.added} track{'s' if summary.added != 1 else ''} were "
+                "copied to the iPod but the database was not updated — "
+                "they will be cleaned up automatically on the next sync."
+                if summary.added > 0
+                else "No changes were made."
+            ),
+        ))
+
+    @staticmethod
+    def _discarded_partial_commit_message(summary: _FileMutationSummary) -> str:
+        if summary.removed > 0 and summary.updated > 0:
+            return (
+                "Sync was cancelled. New tracks were discarded, but "
+                "the database was updated to reflect "
+                f"{summary.removed} removal{'s' if summary.removed != 1 else ''} "
+                f"and {summary.updated} file update{'s' if summary.updated != 1 else ''} "
+                "that had already completed."
+            )
+        if summary.removed > 0:
+            return (
+                "Sync was cancelled. New tracks were discarded, but "
+                "the database was updated to reflect "
+                f"{summary.removed} removal{'s' if summary.removed != 1 else ''} "
+                "that had already completed."
+            )
+        return (
+            "Sync was cancelled. New tracks were discarded, but "
+            "the database was updated to reflect "
+            f"{summary.updated} file update{'s' if summary.updated != 1 else ''} "
+            "that had already completed."
+        )
 
     def _current_device_capabilities(self) -> object | None:
         if self.device_capabilities is not None:
@@ -627,18 +878,7 @@ class SyncExecutor:
 
     @staticmethod
     def _sync_item_size(item: SyncItem) -> int:
-        if item.estimated_size is not None:
-            try:
-                return int(item.estimated_size or 0)
-            except (TypeError, ValueError):
-                return 0
-        pc_track = item.pc_track
-        if pc_track is None:
-            return 0
-        try:
-            return int(getattr(pc_track, "size", 0) or 0)
-        except (TypeError, ValueError):
-            return 0
+        return item.planned_add_size
 
     def _apply_device_capability_filters(self, ctx: _SyncContext) -> None:
         """Drop plan entries that would write unsupported media types."""
@@ -665,7 +905,7 @@ class SyncExecutor:
                     supports_video=supports_video,
                     supports_podcast=supports_podcast,
                 )
-                label = getattr(pc_track, "title", None) or getattr(pc_track, "filename", None) or item.description or "track"
+                label = item.display_label
                 skipped.append(f"{label}: {reason}")
                 setattr(
                     ctx.plan.storage,
@@ -713,15 +953,15 @@ class SyncExecutor:
     @staticmethod
     def _prepare_conversion_group_counts(ctx: _SyncContext) -> None:
         counts = Counter(
-            item.conversion_group_id
+            item.conversion_group_key
             for item in ctx.plan.to_add
-            if item.conversion_group_id
+            if item.conversion_group_key
         )
         for item in ctx.plan.to_add:
-            group_id = item.conversion_group_id
+            group_id = item.conversion_group_key
             if not group_id:
                 continue
-            expected = int(item.conversion_group_add_count or 0)
+            expected = item.conversion_group_expected_count
             if expected:
                 counts[group_id] = max(counts[group_id], expected)
         ctx.conversion_group_add_counts = dict(counts)
@@ -730,7 +970,7 @@ class SyncExecutor:
 
     @staticmethod
     def _record_conversion_group_add_success(ctx: _SyncContext, item: SyncItem) -> None:
-        group_id = item.conversion_group_id
+        group_id = item.conversion_group_key
         if not group_id:
             return
         ctx.conversion_group_success_counts[group_id] = (
@@ -753,23 +993,12 @@ class SyncExecutor:
                 # instead of deleting/replacing tracks until space runs out.
                 update_growth = 0
                 for item in ctx.plan.to_update_file:
-                    est = item.estimated_size or 0
-                    if est <= 0:
-                        continue
-                    old_size_raw = 0
-                    if item.ipod_track is not None:
-                        old_size_raw = item.ipod_track.get("size", 0) or 0
-                    try:
-                        old_size = int(old_size_raw)
-                    except (TypeError, ValueError):
-                        old_size = 0
-                    if est > old_size:
-                        update_growth += est - old_size
+                    update_growth += item.planned_update_growth
 
                 deferred_remove_bytes = sum(
                     self._sync_item_size(item)
                     for item in ctx.plan.to_remove
-                    if getattr(item, "defer_removal_until_after_add", False)
+                    if item.is_deferred_removal
                 )
                 removable_credit = max(
                     0,
@@ -849,10 +1078,7 @@ class SyncExecutor:
 
     @staticmethod
     def _source_path_key(path: str) -> str:
-        try:
-            return os.path.normcase(str(Path(path).expanduser().resolve()))
-        except OSError:
-            return os.path.normcase(str(Path(path).expanduser()))
+        return stable_path_key(path)
 
     @staticmethod
     def _normalize_artwork_pc_paths(
@@ -916,6 +1142,102 @@ class SyncExecutor:
                     hint = "preserve_existing"
             track._iop_artwork_sync_hint = hint
 
+    def _prepare_database_commit_input(
+        self,
+        ctx: _SyncContext,
+        *,
+        advance: Callable[[str], None],
+    ) -> _DatabaseCommitInput:
+        """Prepare the fully resolved payload for the database writer."""
+
+        advance("Preparing tracks")
+        all_tracks = self._prepare_tracks_for_database_commit(ctx)
+        normalized_pc_paths = self._normalize_artwork_pc_paths(ctx, all_tracks)
+        self._annotate_artwork_sync_hints(ctx, all_tracks, normalized_pc_paths)
+        logger.debug(
+            "ART: normalized pc_file_paths total=%d, all_tracks=%d",
+            len(normalized_pc_paths),
+            len(all_tracks),
+        )
+
+        advance("Resolving playlists")
+        playlist_payload = self._prepare_playlist_commit_payload(ctx, all_tracks)
+        return _DatabaseCommitInput(
+            all_tracks=all_tracks,
+            normalized_pc_paths=normalized_pc_paths,
+            playlist_payload=playlist_payload,
+        )
+
+    def _prepare_tracks_for_database_commit(self, ctx: _SyncContext) -> list[TrackInfo]:
+        all_tracks = list(ctx.tracks_by_db_track_id.values()) + ctx.new_tracks
+        self._assign_missing_db_track_ids(all_tracks)
+
+        from .unknown_metadata import apply_unknown_placeholders
+        apply_unknown_placeholders(all_tracks)
+
+        self._apply_gapless_album_flags(all_tracks)
+        return all_tracks
+
+    @staticmethod
+    def _assign_missing_db_track_ids(all_tracks: list[TrackInfo]) -> None:
+        from iTunesDB_Writer.mhit_writer import generate_db_track_id
+
+        for track in all_tracks:
+            if not track.db_track_id:
+                track.db_track_id = generate_db_track_id()
+
+    @staticmethod
+    def _apply_gapless_album_flags(all_tracks: list[TrackInfo]) -> None:
+        from iTunesDB_Shared.album_identity import (
+            album_identity_from_track,
+            group_tracks_by_album_identity,
+        )
+
+        albums = group_tracks_by_album_identity(all_tracks, album_identity_from_track)
+        for group in albums:
+            album_tracks = group.tracks
+            if len(album_tracks) >= 2 and all(
+                track.gapless_track_flag for track in album_tracks
+            ):
+                for track in album_tracks:
+                    track.gapless_album_flag = 1
+
+    def _prepare_playlist_commit_payload(
+        self,
+        ctx: _SyncContext,
+        all_tracks: list[TrackInfo],
+    ) -> _ResolvedPlaylistCommitPayload:
+        """Apply playlist actions and resolve final playlist memberships."""
+
+        self._apply_playlist_commit_actions(ctx)
+        return self._resolve_playlist_commit_payload(ctx, all_tracks)
+
+    def _resolve_playlist_commit_payload(
+        self,
+        ctx: _SyncContext,
+        all_tracks: list[TrackInfo],
+    ) -> _ResolvedPlaylistCommitPayload:
+        """Resolve final playlist memberships after track IDs are assigned."""
+
+        (
+            master_playlist_name,
+            master_playlist_id,
+            playlists,
+            podcast_master_playlist_name,
+            podcast_master_playlist_id,
+            podcast_playlists,
+            smart_playlists,
+        ) = self._build_and_evaluate_playlists(ctx, all_tracks)
+        return _ResolvedPlaylistCommitPayload(
+            master_playlist_name=master_playlist_name,
+            master_playlist_id=master_playlist_id,
+            standard_playlists=playlists,
+            podcast_master_playlist_name=podcast_master_playlist_name,
+            podcast_master_playlist_id=podcast_master_playlist_id,
+            podcast_playlists=podcast_playlists,
+            smart_playlists=smart_playlists,
+        )
+
     def _execute_write_and_finalize(self, ctx: _SyncContext) -> None:
         """Stage 7: assemble final track list, write database, backpatch and finalize."""
         # Define sub-steps so the progress bar advances smoothly through
@@ -957,56 +1279,7 @@ class SyncExecutor:
             self._execute_scrobble(ctx)
             self._clear_playcount_deltas(ctx)
 
-        _advance("Preparing tracks")
-
-        all_tracks = list(ctx.tracks_by_db_track_id.values()) + ctx.new_tracks
-
-        # ── Pre-assign db_track_ids for new tracks ──────────────────────
-        # New tracks arrive with db_track_id=0.  Assign now so
-        # _build_and_evaluate_playlists can build correct track lists.
-        from iTunesDB_Writer.mhit_writer import generate_db_track_id
-        for t in all_tracks:
-            if not t.db_track_id:
-                t.db_track_id = generate_db_track_id()
-
-        from .unknown_metadata import apply_unknown_placeholders
-        apply_unknown_placeholders(all_tracks)
-
-        # ── Auto-detect gapless_album_flag ────────────────────────
-        from iTunesDB_Shared.album_identity import (
-            album_identity_from_track,
-            group_tracks_by_album_identity,
-        )
-        albums = group_tracks_by_album_identity(all_tracks, album_identity_from_track)
-        for group in albums:
-            album_tracks = group.tracks
-            if len(album_tracks) >= 2 and all(
-                t.gapless_track_flag for t in album_tracks
-            ):
-                for t in album_tracks:
-                    t.gapless_album_flag = 1
-
-        normalized_pc_paths = self._normalize_artwork_pc_paths(ctx, all_tracks)
-        self._annotate_artwork_sync_hints(ctx, all_tracks, normalized_pc_paths)
-        logger.debug("ART: normalized pc_file_paths total=%d, all_tracks=%d",
-                     len(normalized_pc_paths), len(all_tracks))
-
-        # ── Merge user-created playlists ──────────────────────────
-        self._merge_gui_playlists(ctx)
-
-        # ── Build playlists and evaluate smart playlists ──────────
-        _advance("Building playlists")
-        (
-            master_playlist_name,
-            master_playlist_id,
-            playlists,
-            podcast_master_playlist_name,
-            podcast_master_playlist_id,
-            podcast_playlists,
-            smart_playlists,
-        ) = (
-            self._build_and_evaluate_playlists(ctx, all_tracks)
-        )
+        commit_input = self._prepare_database_commit_input(ctx, advance=_advance)
 
         try:
             # The inner writer calls our callback to advance the bar
@@ -1017,14 +1290,19 @@ class SyncExecutor:
                 _step += 1
 
             db_ok = self._write_database(
-                all_tracks, pc_file_paths=normalized_pc_paths,
-                playlists=playlists,
-                podcast_playlists=podcast_playlists,
-                smart_playlists=smart_playlists,
-                master_playlist_name=master_playlist_name,
-                master_playlist_id=master_playlist_id,
-                podcast_master_playlist_name=podcast_master_playlist_name,
-                podcast_master_playlist_id=podcast_master_playlist_id,
+                commit_input.all_tracks,
+                pc_file_paths=commit_input.normalized_pc_paths,
+                playlists=commit_input.playlist_payload.standard_playlists,
+                podcast_playlists=commit_input.playlist_payload.podcast_playlists,
+                smart_playlists=commit_input.playlist_payload.smart_playlists,
+                master_playlist_name=commit_input.playlist_payload.master_playlist_name,
+                master_playlist_id=commit_input.playlist_payload.master_playlist_id,
+                podcast_master_playlist_name=(
+                    commit_input.playlist_payload.podcast_master_playlist_name
+                ),
+                podcast_master_playlist_id=(
+                    commit_input.playlist_payload.podcast_master_playlist_id
+                ),
                 progress_callback=_db_progress,
             )
             if not db_ok:
@@ -1035,7 +1313,7 @@ class SyncExecutor:
                 ctx.result.errors.append(("database", "Database write failed"))
                 return
             ctx.progress("write_database", _TOTAL_STEPS, _TOTAL_STEPS,
-                         message=f"Database written — {len(all_tracks)} tracks")
+                         message=f"Database written — {len(commit_input.all_tracks)} tracks")
 
             # ── Backpatch: new tracks now have real db_track_ids ──
             self._backpatch_new_tracks(ctx)
@@ -1066,7 +1344,7 @@ class SyncExecutor:
             else:
                 ctx.final_photo_db = read_photo_db(self.ipod_path)
 
-            self._apply_itunes_protections(ctx, all_tracks)
+            self._apply_itunes_protections(ctx, commit_input.all_tracks)
 
             self._delete_playcounts_file()
 
@@ -1074,9 +1352,14 @@ class SyncExecutor:
             ctx.result.errors.append(("database write", str(e)))
             logger.exception("Database/post-write phase failed")
 
-    def _merge_gui_playlists(self, ctx: _SyncContext) -> None:
-        """Merge user-created playlists into ctx."""
-        user_pls = ctx.user_playlists
+    def _apply_playlist_commit_actions(self, ctx: _SyncContext) -> None:
+        """Apply reviewed playlist add/edit/remove actions to commit sources."""
+
+        user_pls = [
+            *ctx.user_playlists,
+            *list(ctx.plan.playlists_to_add or []),
+            *list(ctx.plan.playlists_to_edit or []),
+        ]
         remove_pls = list(ctx.plan.playlists_to_remove or [])
         if not user_pls and not remove_pls:
             return
@@ -1085,7 +1368,7 @@ class SyncExecutor:
         ctx.progress("playlists", 0, total, message="Updating playlists...")
 
         def _remove_playlist(removal: dict) -> bool:
-            playlist_id = removal.get("playlist_id")
+            playlist_id = coerce_int(removal.get("playlist_id"))
             if not playlist_id:
                 return False
             target_dataset = _playlist_dataset_type(removal)
@@ -1100,7 +1383,7 @@ class SyncExecutor:
                 for existing in bucket:
                     existing_dataset = _playlist_dataset_type(existing) or bucket_dataset
                     if (
-                        existing.get("playlist_id") == playlist_id
+                        coerce_int(existing.get("playlist_id")) == playlist_id
                         and not existing.get("master_flag")
                         and (
                             not target_dataset
@@ -1144,11 +1427,8 @@ class SyncExecutor:
                 )
                 continue
             is_new = upl.get("_isNew", False)
-            pid = upl.get("playlist_id", 0)
-            try:
-                dataset_type = int(upl.get("_mhsd_dataset_type", 0) or 0)
-            except (TypeError, ValueError):
-                dataset_type = 0
+            pid = coerce_int(upl.get("playlist_id", 0))
+            dataset_type = coerce_int(upl.get("_mhsd_dataset_type", 0))
 
             if dataset_type == 3 or upl.get("_source") == "podcast":
                 target = ctx.existing_dataset3_podcast_playlists_raw
@@ -1158,9 +1438,9 @@ class SyncExecutor:
                 target = ctx.existing_dataset2_standard_playlists_raw
 
             replaced = False
-            if not is_new:
+            if pid:
                 for i, epl in enumerate(target):
-                    if epl.get("playlist_id") == pid:
+                    if coerce_int(epl.get("playlist_id")) == pid:
                         target[i] = upl
                         replaced = True
                         break
@@ -1173,6 +1453,11 @@ class SyncExecutor:
                         is_new)
             ctx.progress("playlists", current, total,
                          message=f"Merged playlist: {upl.get('Title', '?')}")
+
+    def _merge_gui_playlists(self, ctx: _SyncContext) -> None:
+        """Compatibility wrapper for older tests/extensions."""
+
+        self._apply_playlist_commit_actions(ctx)
 
     def _backpatch_new_tracks(self, ctx: _SyncContext) -> None:
         """Create mapping entries for newly added tracks (db_track_ids now assigned)."""
@@ -1357,7 +1642,7 @@ class SyncExecutor:
         # (ghost tracks whose files are missing from iPod).
         all_removes = [
             item for item in ctx.plan.to_remove
-            if not getattr(item, "defer_removal_until_after_add", False)
+            if not item.is_deferred_removal
         ]
         integrity_removals = getattr(ctx.plan, '_integrity_removals', [])
         if integrity_removals:
@@ -1417,17 +1702,25 @@ class SyncExecutor:
                 ctx.result.tracks_removed += 1
                 continue
 
-            if item.ipod_track:
-                file_path = item.ipod_track.get("Location") or item.ipod_track.get("location")
-                if file_path:
-                    relative_path = file_path.replace(":", "/").lstrip("/")
-                    full_path = self.ipod_path / relative_path
-                    self._delete_from_ipod(full_path)
+            file_path = item.ipod_location
+            if item.db_track_id:
+                current_track = ctx.tracks_by_db_track_id.get(item.db_track_id)
+                if current_track is not None and current_track.location:
+                    file_path = current_track.location
+            if file_path:
+                relative_path = file_path.replace(":", "/").lstrip("/")
+                full_path = self.ipod_path / relative_path
+                if not self._delete_from_ipod(full_path):
+                    ctx.result.errors.append((
+                        item.display_label,
+                        f"Could not delete iPod file {file_path}; "
+                        "the database entry will still be removed.",
+                    ))
 
-                    if file_path in ctx.tracks_by_location:
-                        track_to_remove = ctx.tracks_by_location.pop(file_path)
-                        if track_to_remove.db_track_id in ctx.tracks_by_db_track_id:
-                            del ctx.tracks_by_db_track_id[track_to_remove.db_track_id]
+                if file_path in ctx.tracks_by_location:
+                    track_to_remove = ctx.tracks_by_location.pop(file_path)
+                    if track_to_remove.db_track_id in ctx.tracks_by_db_track_id:
+                        del ctx.tracks_by_db_track_id[track_to_remove.db_track_id]
 
             if item.fingerprint:
                 ctx.mapping.remove_track(item.fingerprint, db_track_id=item.db_track_id)
@@ -1443,9 +1736,8 @@ class SyncExecutor:
         deferred = [
             item for item in ctx.plan.to_remove
             if (
-                getattr(item, "defer_removal_until_after_add", False)
-                and getattr(item, "conversion_group_id", None)
-                in ctx.completed_conversion_groups
+                item.is_deferred_replacement_removal
+                and item.conversion_group_key in ctx.completed_conversion_groups
             )
         ]
         self._execute_remove_items(
@@ -1468,7 +1760,9 @@ class SyncExecutor:
         *on_success(item, ipod_path, was_transcoded)* is called for each
         successfully copied track.
         """
-        items_to_process = [(i, item) for i, item in enumerate(items) if item.pc_track is not None]
+        items_to_process = [
+            (i, item) for i, item in enumerate(items) if item.has_pc_source
+        ]
         if not items_to_process:
             return
 
@@ -1480,7 +1774,7 @@ class SyncExecutor:
         total = len(items)
 
         total_sync_bytes = sum(
-            item.pc_track.size for _, item in items_to_process if item.pc_track
+            item.planned_add_size for _, item in items_to_process
         ) or 1
         completed_bytes = 0
 
@@ -1504,7 +1798,7 @@ class SyncExecutor:
             source_path = Path(item.pc_track.path)
             transcode_plan = self._transcode_plan_for_item(item, source_path)
             need_transcode = transcode_plan.target != TranscodeTarget.COPY
-            expected_write_bytes = item.estimated_size if item.estimated_size and item.estimated_size > 0 else item.pc_track.size
+            expected_write_bytes = item.planned_add_size
 
             with completed_lock:
                 worker_sizes[worker_id] = item.pc_track.size
@@ -1633,11 +1927,7 @@ class SyncExecutor:
 
     @staticmethod
     def _is_chaptered_aggregate_rebuild(item: SyncItem) -> bool:
-        return (
-            getattr(item, "aggregate_kind", None) == "chaptered_album"
-            and bool(getattr(item, "aggregate_rebuild_pc_tracks", ()))
-            and bool(getattr(item, "db_track_id", None))
-        )
+        return item.is_chaptered_aggregate_rebuild
 
     def _execute_chaptered_aggregate_rebuild_items(
         self,
@@ -2527,9 +2817,13 @@ class SyncExecutor:
                 candidates.append((t, pc_track.path))
 
         for db_track_id, pc_path in ctx.pc_file_paths.items():
-            t = ctx.tracks_by_db_track_id.get(db_track_id)
-            if t and not t.sound_check and t.media_type not in VIDEO_TYPES:
-                candidates.append((t, pc_path))
+            existing_track: TrackInfo | None = ctx.tracks_by_db_track_id.get(db_track_id)
+            if (
+                existing_track
+                and not existing_track.sound_check
+                and existing_track.media_type not in VIDEO_TYPES
+            ):
+                candidates.append((existing_track, pc_path))
 
         if not candidates:
             return
@@ -2684,13 +2978,10 @@ class SyncExecutor:
         """Return independent play-count items for one scrobbling service."""
         snapshot: list[SyncItem] = []
         for item in ctx.plan.to_sync_playcount:
-            snapshot.append(
-                replace(
-                    item,
-                    ipod_track=dict(item.ipod_track) if item.ipod_track else None,
-                    metadata_changes=dict(item.metadata_changes),
-                )
-            )
+            copied = copy(item)
+            copied.ipod_track = dict(item.ipod_track) if item.ipod_track else None
+            copied.metadata_changes = dict(item.metadata_changes)
+            snapshot.append(copied)
         return snapshot
 
     @staticmethod

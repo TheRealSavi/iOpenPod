@@ -57,6 +57,7 @@ from infrastructure.media_folders import (
     media_folder_entries_to_settings,
     media_folder_paths,
 )
+from sync_progress_stages import friendly_stage_label
 
 from ..glyphs import glyph_icon, glyph_pixmap
 from ..styles import FONT_FAMILY, Colors, Metrics, accent_btn_css, btn_css, make_scroll_area
@@ -1688,43 +1689,8 @@ class SyncReviewWidget(QWidget):
 
         layout.addWidget(footer)
 
-    # Map internal stage names → user-friendly labels
-    _STAGE_LABELS = {
-        "scan": "Scanning libraries",
-        "scan_pc": "Scanning PC library",
-        "scan_ipod": "Scanning iPod library",
-        "scan_playlists": "Scanning playlist files",
-        "load_mapping": "Loading iPod mapping",
-        "integrity": "Checking iPod integrity",
-        "fingerprint": "Computing fingerprints",
-        "duplicates": "Checking for duplicates",
-        "diff": "Comparing libraries",
-        "add": "Copying tracks to iPod",
-        "remove": "Removing tracks from iPod",
-        "update_file": "Re-syncing changed files",
-        "update_metadata": "Updating metadata",
-        "quality_change": "Re-syncing quality changes",
-        "sound_check": "Computing Sound Check",
-        "sync_playcount": "Recording iPod play counts",
-        "sync_rating": "Syncing ratings",
-        "playlists": "Updating playlists",
-        "write_database": "Writing iPod database",
-        "backup": "Creating pre-sync backup",
-        "transcode": "Transcoding",
-        "scrobble": "Scrobbling plays",
-        "scrobble_listenbrainz": "Scrobbling to ListenBrainz",
-        "scrobble_lastfm": "Scrobbling to Last.fm",
-        "scan_photos": "Scanning photos",
-        "photo_prepare": "Preparing photos",
-        "photo_write": "Writing photo database",
-        "backsync_scan_pc": "Back Sync: checking PC library",
-        "backsync_pc_fingerprint": "Back Sync: identifying PC tracks",
-        "backsync_ipod_fingerprint": "Back Sync: finding missing iPod tracks",
-        "backsync_copy": "Back Sync: exporting tracks",
-    }
-
     def _friendly_stage(self, stage: str) -> str:
-        return self._STAGE_LABELS.get(stage, stage.replace("_", " ").title())
+        return friendly_stage_label(stage)
 
     @staticmethod
     def _photo_change_count(photo_plan: Any | None) -> int:
@@ -3444,9 +3410,20 @@ class SyncReviewWidget(QWidget):
 class PCFolderDialog(QDialog):
     """Dialog to select one or more PC media folders for syncing."""
 
-    def __init__(self, parent=None, last_folder: object = ""):
+    foldersChanged = pyqtSignal(list)
+
+    def __init__(
+        self,
+        parent=None,
+        last_folder: object = "",
+        *,
+        sync_available: bool = True,
+    ):
         super().__init__(parent)
-        self.setWindowTitle("Select Media Folders")
+        self._sync_available = bool(sync_available)
+        self.setWindowTitle(
+            "Select Media Folders" if self._sync_available else "Media Folders"
+        )
         self.setMinimumSize(560, 460)
         self.selected_folder = ""
         self.selected_folder_entries: list[dict[str, object]] = []
@@ -3455,6 +3432,7 @@ class PCFolderDialog(QDialog):
         self.last_folders = self._normalize_folders(last_folder)
         self._folders = list(self.last_folders)
         self._expanded_folder_keys: set[str] = set()
+        self._sync_action_buttons: list[QPushButton] = []
 
         self.setStyleSheet(f"""
             QDialog {{
@@ -3474,6 +3452,14 @@ class PCFolderDialog(QDialog):
             }}
             QPushButton:hover {{
                 background: {Colors.SURFACE_ACTIVE};
+            }}
+            QPushButton:disabled {{
+                background: {Colors.SURFACE};
+                color: {Colors.TEXT_TERTIARY};
+                border-color: {Colors.BORDER_SUBTLE};
+            }}
+            QPushButton:disabled:hover {{
+                background: {Colors.SURFACE};
             }}
         """)
 
@@ -3511,10 +3497,19 @@ class PCFolderDialog(QDialog):
         title.setFont(QFont(FONT_FAMILY, Metrics.FONT_PAGE_TITLE, QFont.Weight.Bold))
         layout.addWidget(title)
 
-        label = QLabel(
-            "Add every directory you want iOpenPod to treat as your PC library. "
-            "During sync, tracks and photos from all selected folders are scanned together."
-        )
+        if self._sync_available:
+            description = (
+                "Add every directory you want iOpenPod to treat as your PC library. "
+                "During sync, tracks and photos from all selected folders are "
+                "scanned together."
+            )
+        else:
+            description = (
+                "Add every directory you want iOpenPod to treat as your PC library. "
+                "These settings are saved immediately; connect an iPod when "
+                "you are ready to sync."
+            )
+        label = QLabel(description)
         label.setWordWrap(True)
         label.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
         label.setStyleSheet(f"color:{Colors.TEXT_SECONDARY}; background:transparent;")
@@ -3539,6 +3534,11 @@ class PCFolderDialog(QDialog):
             }}
             QPushButton:hover {{
                 background: {Colors.ACCENT_LIGHT};
+            }}
+            QPushButton:disabled {{
+                background: {Colors.SURFACE};
+                color: {Colors.TEXT_TERTIARY};
+                border: 1px solid {Colors.BORDER_SUBTLE};
             }}
         """)
         summary_row.addWidget(add_btn)
@@ -3579,10 +3579,9 @@ class PCFolderDialog(QDialog):
         layout.addWidget(hint)
 
         btn_row = QHBoxLayout()
-        btn_row = QHBoxLayout()
 
         # Cancel anchored left
-        cancel_btn = QPushButton("Cancel", self)
+        cancel_btn = QPushButton("Cancel" if self._sync_available else "Close", self)
         cancel_btn.clicked.connect(self.reject)
         btn_row.addWidget(cancel_btn)
 
@@ -3615,12 +3614,22 @@ class PCFolderDialog(QDialog):
             QPushButton:hover {{
                 background: {Colors.ACCENT_LIGHT};
             }}
+            QPushButton:disabled {{
+                background: {Colors.SURFACE};
+                color: {Colors.TEXT_TERTIARY};
+                border: 1px solid {Colors.BORDER_SUBTLE};
+            }}
         """)
         full_btn.clicked.connect(self._accept_full)
         full_btn.setToolTip(
             "Full Sync: Takes everything on your PC and adds it to your iPod"
         )
         btn_row.addWidget(full_btn)
+        self._sync_action_buttons = [selective_btn, back_sync_btn, full_btn]
+        if not self._sync_available:
+            for button in self._sync_action_buttons:
+                button.setEnabled(False)
+                button.setToolTip("Connect an iPod to use sync actions.")
         layout.addLayout(btn_row)
 
     def _make_folder_icon_button(
@@ -3657,6 +3666,13 @@ class PCFolderDialog(QDialog):
                 self._folders[index] = normalized[0]
             return
 
+    def _current_folder_entries(self) -> list[dict[str, object]]:
+        return self._normalize_folders(self._folders)
+
+    def _emit_folders_changed(self) -> None:
+        self._folders = self._current_folder_entries()
+        self.foldersChanged.emit(list(self._folders))
+
     def _toggle_folder_settings(self, folder: str) -> None:
         key = self._folder_key(folder)
         if key in self._expanded_folder_keys:
@@ -3667,6 +3683,7 @@ class PCFolderDialog(QDialog):
 
     def _set_folder_recurse(self, folder: str, recurse: bool) -> None:
         self._replace_folder_entry(folder, recurse=bool(recurse))
+        self._emit_folders_changed()
 
     def _set_folder_media_type(self, folder: str, media_type: str, enabled: bool) -> None:
         current = self._entry_media_types(
@@ -3694,6 +3711,7 @@ class PCFolderDialog(QDialog):
             if value in current
         ]
         self._replace_folder_entry(folder, media_types=ordered)
+        self._emit_folders_changed()
 
     def _render_folders(self):
         while self._folder_list_layout.count():
@@ -3867,6 +3885,7 @@ class PCFolderDialog(QDialog):
         entries = media_folder_entries_to_settings(folder)
         if entries:
             self._folders.append(entries[0])
+        self._emit_folders_changed()
         self._render_folders()
 
     def _remove_folder(self, folder: str):
@@ -3877,6 +3896,7 @@ class PCFolderDialog(QDialog):
             if self._folder_key(self._entry_directory(existing)) != key
         ]
         self._expanded_folder_keys.discard(key)
+        self._emit_folders_changed()
         self._render_folders()
 
     def _clear_folders(self):
@@ -3884,6 +3904,7 @@ class PCFolderDialog(QDialog):
             return
         self._folders = []
         self._expanded_folder_keys.clear()
+        self._emit_folders_changed()
         self._render_folders()
 
     def _validate_folders(self) -> bool:

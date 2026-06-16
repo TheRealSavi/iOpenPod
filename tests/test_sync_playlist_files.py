@@ -7,12 +7,12 @@ from iTunesDB_Writer.mhit_writer import TrackInfo
 from SyncEngine._playlist_builder import build_and_evaluate_playlists
 from SyncEngine.sync_playlist_files import (
     SYNC_PLAYLIST_SOURCE,
-    build_sync_playlist_changes,
     discover_sync_playlist_files,
     is_managed_sync_playlist_id,
     normalize_sync_playlist_path,
     sync_playlist_file_id,
 )
+from SyncEngine.sync_playlist_planner import build_sync_playlist_changes
 
 
 def test_discover_sync_playlist_files_imports_outside_references_and_counts_skips(
@@ -206,6 +206,50 @@ def test_build_sync_playlist_changes_edits_changed_existing_playlist(
     ]
 
 
+def test_build_sync_playlist_changes_edits_playlist_when_source_removes_track(
+    tmp_path: Path,
+) -> None:
+    first = tmp_path / "first.mp3"
+    second = tmp_path / "second.mp3"
+    playlist = tmp_path / "mix.m3u8"
+    first.write_bytes(b"first")
+    second.write_bytes(b"second")
+    playlist.write_text("first.mp3\n", encoding="utf-8")
+    discovery = discover_sync_playlist_files(
+        [MediaFolderEntry(str(tmp_path))],
+        include_video=True,
+    )
+    playlist_id = sync_playlist_file_id(playlist)
+
+    adds, edits, removals = build_sync_playlist_changes(
+        discovery,
+        existing_playlists=[
+            {
+                "Title": "Mix",
+                "playlist_id": playlist_id,
+                "items": [{"db_track_id": 101}, {"db_track_id": 202}],
+            }
+        ],
+        ipod_tracks=[],
+        source_path_to_db_track_id={
+            normalize_sync_playlist_path(first): 101,
+            normalize_sync_playlist_path(second): 202,
+        },
+        pending_add_source_paths=set(),
+        valid_source_paths={
+            normalize_sync_playlist_path(first),
+            normalize_sync_playlist_path(second),
+        },
+    )
+
+    assert adds == []
+    assert len(edits) == 1
+    assert removals == []
+    assert edits[0]["items"] == [
+        {"source_path": normalize_sync_playlist_path(first), "db_track_id": 101}
+    ]
+
+
 def test_build_sync_playlist_changes_aliases_duplicate_sources_to_representative(
     tmp_path: Path,
 ) -> None:
@@ -236,6 +280,68 @@ def test_build_sync_playlist_changes_aliases_duplicate_sources_to_representative
     assert edits == []
     assert removals == []
     assert adds[0]["items"] == [{"source_path": normalize_sync_playlist_path(representative)}]
+
+
+def test_build_sync_playlist_changes_aliases_duplicate_source_to_representative_db_id(
+    tmp_path: Path,
+) -> None:
+    representative = tmp_path / "chosen.mp3"
+    duplicate = tmp_path / "duplicate.mp3"
+    playlist = tmp_path / "mix.m3u8"
+    representative.write_bytes(b"same")
+    duplicate.write_bytes(b"same")
+    playlist.write_text("duplicate.mp3\n", encoding="utf-8")
+    discovery = discover_sync_playlist_files(
+        [MediaFolderEntry(str(tmp_path))],
+        include_video=True,
+    )
+
+    adds, edits, removals = build_sync_playlist_changes(
+        discovery,
+        existing_playlists=[],
+        ipod_tracks=[],
+        source_path_to_db_track_id={normalize_sync_playlist_path(representative): 101},
+        pending_add_source_paths=set(),
+        valid_source_paths={normalize_sync_playlist_path(representative)},
+        source_path_aliases={
+            normalize_sync_playlist_path(duplicate): normalize_sync_playlist_path(representative)
+        },
+    )
+
+    assert len(adds) == 1
+    assert edits == []
+    assert removals == []
+    assert adds[0]["items"] == [
+        {"source_path": normalize_sync_playlist_path(representative), "db_track_id": 101}
+    ]
+
+
+def test_build_sync_playlist_changes_skips_unresolved_playlist_tracks(
+    tmp_path: Path,
+) -> None:
+    unresolved = tmp_path / "unresolved.mp3"
+    playlist = tmp_path / "mix.m3u8"
+    unresolved.write_bytes(b"audio")
+    playlist.write_text("unresolved.mp3\n", encoding="utf-8")
+    discovery = discover_sync_playlist_files(
+        [MediaFolderEntry(str(tmp_path))],
+        include_video=True,
+    )
+
+    adds, edits, removals = build_sync_playlist_changes(
+        discovery,
+        existing_playlists=[],
+        ipod_tracks=[],
+        source_path_to_db_track_id={},
+        pending_add_source_paths=set(),
+        valid_source_paths={normalize_sync_playlist_path(unresolved)},
+    )
+
+    assert len(adds) == 1
+    assert edits == []
+    assert removals == []
+    assert adds[0]["items"] == []
+    assert adds[0]["_sync_playlist_skipped_count"] == 1
 
 
 def test_build_sync_playlist_changes_removes_deleted_managed_playlist(
@@ -388,3 +494,47 @@ def test_playlist_builder_prefers_sync_playlist_direct_db_track_ids(
 
     assert len(playlists) == 1
     assert playlists[0].track_ids == [101]
+
+
+def test_pending_add_playlist_item_resolves_after_commit_assigns_db_track_id(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "new.mp3"
+    playlist = tmp_path / "mix.m3u8"
+    source.write_bytes(b"audio")
+    playlist.write_text("new.mp3\n", encoding="utf-8")
+    discovery = discover_sync_playlist_files(
+        [MediaFolderEntry(str(tmp_path))],
+        include_video=True,
+    )
+
+    adds, edits, removals = build_sync_playlist_changes(
+        discovery,
+        existing_playlists=[],
+        ipod_tracks=[],
+        source_path_to_db_track_id={},
+        pending_add_source_paths={normalize_sync_playlist_path(source)},
+        valid_source_paths={normalize_sync_playlist_path(source)},
+    )
+    assert edits == []
+    assert removals == []
+    assert adds[0]["items"] == [{"source_path": normalize_sync_playlist_path(source)}]
+
+    copied_track = TrackInfo(
+        title="New",
+        location=":iPod_Control:Music:F00:New.mp3",
+        db_track_id=909,
+        source_path=normalize_sync_playlist_path(source),
+    )
+    _master_name, _master_id, playlists, *_rest = build_and_evaluate_playlists(
+        existing_tracks_data=[],
+        dataset2_standard_playlists_raw=list(adds),
+        dataset3_podcast_playlists_raw=[],
+        dataset5_smart_playlists_raw=[],
+        all_track_infos=[copied_track],
+        user_playlists=[],
+        source_path_to_db_track_id={normalize_sync_playlist_path(source): 909},
+    )
+
+    assert len(playlists) == 1
+    assert playlists[0].track_ids == [909]

@@ -14,6 +14,7 @@ from scripts.check_architecture import (
     detect_import_cycles,
     detect_legacy_settings_runtime_globals,
     detect_main_window_runtime_singleton_access,
+    detect_sync_engine_facade_bypass,
     detect_sync_executor_private_usage,
 )
 
@@ -278,6 +279,44 @@ def bad(executor: SyncExecutor):
 
         assert violations == {
             "GUI/view.py": ["_SyncContext", "_write_database"]
+        }
+
+
+def test_detect_sync_engine_facade_bypass_reports_low_level_orchestration(
+) -> None:
+    with repo_temp_dir() as tmp_path:
+        write_file(
+            tmp_path / "app_core" / "jobs.py",
+            """
+from SyncEngine.fingerprint_diff_engine import FingerprintDiffEngine as DiffEngine
+from SyncEngine.sync_executor import SyncExecutor
+
+def bad(pc_library, ipod_path):
+    DiffEngine(pc_library, ipod_path)
+    SyncExecutor(ipod_path)
+""",
+        )
+        write_file(
+            tmp_path / "SyncEngine" / "core" / "engine.py",
+            """
+from SyncEngine.fingerprint_diff_engine import FingerprintDiffEngine
+from SyncEngine.sync_executor import SyncExecutor
+
+def allowed(pc_library, ipod_path):
+    FingerprintDiffEngine(pc_library, ipod_path)
+    SyncExecutor(ipod_path)
+""",
+        )
+
+        violations = detect_sync_engine_facade_bypass(tmp_path)
+
+        assert violations == {
+            "app_core/jobs.py": [
+                "DiffEngine",
+                "SyncEngine.fingerprint_diff_engine.FingerprintDiffEngine",
+                "SyncEngine.sync_executor.SyncExecutor",
+                "SyncExecutor",
+            ]
         }
 
 

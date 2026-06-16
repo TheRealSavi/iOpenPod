@@ -34,6 +34,7 @@ import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from typing import Any
 
 from iTunesDB_Shared.constants import MEDIA_TYPE_PODCAST
 
@@ -52,7 +53,9 @@ from .photos import (
     read_photo_db,
     scan_pc_photos,
 )
+from .planning_stages import scan_source_libraries
 from .source_identity import source_content_hash
+from .track_identity import SyncTrackIdentityState, build_fingerprint_identity_plan
 from .transcoder import TranscodeOptions, TranscodePlan, resolve_transcode_plan
 
 logger = logging.getLogger(__name__)
@@ -335,126 +338,23 @@ class FingerprintDiffEngine:
                     ipod_track[edit_key] = orig_val
             logger.info("Reverted GUI edits on %d tracks for accurate diff", len(gui_edits))
 
-        # ===== Phase 1: Scan PC & fingerprint =====
-        if is_cancelled and is_cancelled():
-            return plan
-
-        if progress_callback:
-            progress_callback("scan_pc", 0, 0, "Scanning PC library...")
-
-        # Run the scan with the same worker count as fingerprinting
-        scan_workers = min(sync_workers or (os.cpu_count() or 4), 8)
-
-        def _scan_progress(current: int, total: int, filename: str) -> None:
-            if progress_callback:
-                progress_callback("scan_pc", current, total, filename)
-
-        pc_tracks = list(
-            self.pc_library.scan(
-                progress_callback=_scan_progress,
-                include_video=self.supports_video,
-                max_workers=scan_workers,
-                is_cancelled=is_cancelled,
-            )
+        # ===== Phase 1: Scan PC & playlist-file references =====
+        source_scan = scan_source_libraries(
+            self.pc_library,
+            supports_video=self.supports_video,
+            supports_podcast=self.supports_podcast,
+            sync_workers=sync_workers,
+            allowed_paths=allowed_paths,
+            selected_playlist_paths=selected_playlist_paths,
+            progress_callback=progress_callback,
+            is_cancelled=is_cancelled,
         )
-
-        if is_cancelled and is_cancelled():
+        if source_scan.cancelled:
             return plan
 
-        playlist_discovery = None
-        selected_playlist_source_keys: set[str] | None = None
-        if allowed_paths is None or selected_playlist_paths is not None:
-            try:
-                from .sync_playlist_files import (
-                    discover_sync_playlist_files,
-                    normalize_sync_playlist_path,
-                )
-
-                if progress_callback:
-                    progress_callback("scan_playlists", 0, 0, "Scanning playlist files...")
-
-                playlist_discovery = discover_sync_playlist_files(
-                    self.pc_library.root_entries,
-                    include_video=self.supports_video,
-                )
-                if selected_playlist_paths is not None:
-                    selected_playlist_source_keys = {
-                        normalize_sync_playlist_path(path)
-                        for path in selected_playlist_paths
-                    }
-                existing_source_keys = {
-                    normalize_sync_playlist_path(track.path)
-                    for track in pc_tracks
-                }
-                playlist_media_paths = []
-                for playlist in playlist_discovery.playlists:
-                    if (
-                        selected_playlist_source_keys is not None
-                        and normalize_sync_playlist_path(playlist.source_path)
-                        not in selected_playlist_source_keys
-                    ):
-                        continue
-                    playlist_media_paths.extend(playlist.media_paths)
-                extra_media_paths = [
-                    path
-                    for path in playlist_media_paths
-                    if normalize_sync_playlist_path(path) not in existing_source_keys
-                ]
-                total_extra = len(extra_media_paths)
-                for index, raw_path in enumerate(extra_media_paths, start=1):
-                    if is_cancelled and is_cancelled():
-                        return plan
-                    path = Path(raw_path)
-                    if progress_callback:
-                        progress_callback("scan_playlists", index, total_extra, path.name)
-                    try:
-                        track = self.pc_library._read_track(path)
-                    except Exception as exc:
-                        logger.warning("Failed to read playlist-referenced track %s: %s", path, exc)
-                        continue
-                    if track is None:
-                        continue
-                    pc_tracks.append(track)
-                    existing_source_keys.add(normalize_sync_playlist_path(track.path))
-            except Exception as exc:
-                logger.warning("Playlist-file sync planning scan failed: %s", exc)
-
-        # Filter to only user-selected paths (selective sync mode).
-        if allowed_paths is not None:
-            allowed_path_keys = {
-                os.path.normcase(str(Path(path).expanduser().resolve()))
-                for path in allowed_paths
-            }
-            if playlist_discovery is not None and selected_playlist_source_keys is not None:
-                try:
-                    from .sync_playlist_files import normalize_sync_playlist_path
-
-                    for playlist in playlist_discovery.playlists:
-                        if (
-                            normalize_sync_playlist_path(playlist.source_path)
-                            not in selected_playlist_source_keys
-                        ):
-                            continue
-                        allowed_path_keys.update(
-                            normalize_sync_playlist_path(path)
-                            for path in playlist.media_paths
-                        )
-                except Exception:
-                    logger.warning(
-                        "Could not expand selected playlist track paths for selective sync",
-                        exc_info=True,
-                    )
-            pc_tracks = [
-                t for t in pc_tracks
-                if os.path.normcase(str(Path(t.path).expanduser().resolve()))
-                in allowed_path_keys
-            ]
-
-        # Filter out podcast tracks when the device doesn't support podcasts.
-        # This mirrors the include_video filter: no point syncing content the
-        # iPod can't categorise.
-        if not self.supports_podcast:
-            pc_tracks = [t for t in pc_tracks if not t.is_podcast]
+        pc_tracks = list(source_scan.pc_tracks)
+        playlist_discovery = source_scan.playlist_discovery
+        selected_playlist_source_keys = source_scan.selected_playlist_source_keys
 
         plan.total_pc_tracks = len(pc_tracks)
 
@@ -505,19 +405,19 @@ class FingerprintDiffEngine:
                     completed += 1
                     current = completed
 
-                track, fp, fp_status = future.result()
+                fingerprinted_track, fp, fp_status = future.result()
                 fingerprint_counts[fp_status] = fingerprint_counts.get(fp_status, 0) + 1
 
                 if progress_callback:
-                    progress_callback("fingerprint", current, total, track.filename)
+                    progress_callback("fingerprint", current, total, fingerprinted_track.filename)
 
                 if not fp:
-                    plan.fingerprint_errors.append((track.path, "Could not compute fingerprint"))
+                    plan.fingerprint_errors.append((fingerprinted_track.path, "Could not compute fingerprint"))
                     if len(fingerprint_failure_samples) < 5:
-                        fingerprint_failure_samples.append(track.path)
+                        fingerprint_failure_samples.append(fingerprinted_track.path)
                     continue
 
-                pc_by_fp.setdefault(fp, []).append(track)
+                pc_by_fp.setdefault(fp, []).append(fingerprinted_track)
                 seen_fps.add(fp)
 
         # Persist the fingerprint cache so the next sync is fast
@@ -614,23 +514,9 @@ class FingerprintDiffEngine:
         # ===== Phase 2: Group by identity (fingerprint + album) =====
         # Same fingerprint + same album = true duplicate (pick one, report rest)
         # Same fingerprint + different album = independent tracks (greatest hits)
-
-        # (fp, album_key) → list[PCTrack]
-        identity_groups: dict[tuple[str, str], list[PCTrack]] = {}
-        for fp, tracks in pc_by_fp.items():
-            by_album: dict[str, list[PCTrack]] = {}
-            for t in tracks:
-                # Note: album-only grouping here is intentional for fingerprint dedupe,
-                # and is kept separate from iPod album identity rules.
-                album_key = (t.album or "").strip().lower()
-                by_album.setdefault(album_key, []).append(t)
-
-            for album_key, album_tracks in by_album.items():
-                identity_groups[(fp, album_key)] = album_tracks
-                if len(album_tracks) > 1:
-                    # True duplicates: same song, same album, multiple files
-                    display_key = f"{album_tracks[0].artist or 'Unknown'}|{album_tracks[0].album or 'Unknown'}|{album_tracks[0].title or 'Unknown'}"
-                    plan.duplicates[display_key] = album_tracks
+        identity_plan = build_fingerprint_identity_plan(pc_by_fp)
+        for display_key, duplicate_tracks in identity_plan.duplicates.items():
+            plan.duplicates[display_key] = list(duplicate_tracks)
 
         represented_by_aggregate, detached_from_aggregate, claimed_aggregate_db_ids = (
             self._plan_chaptered_aggregate_updates(
@@ -651,43 +537,20 @@ class FingerprintDiffEngine:
 
         # For fingerprints with multiple album groups, we need to track which
         # mapping entries have already been claimed so each PC track gets its own.
-        claimed_db_track_ids: set[int] = set()
-        source_path_to_db_track_id: dict[str, int] = {}
-        sync_playlist_source_aliases: dict[str, str] = {}
+        track_identity = SyncTrackIdentityState()
 
-        # Sort identity groups so that groups whose album matches an existing
-        # iPod mapping entry process first.  Without this, iteration order is
-        # arbitrary (dict insertion order) and a *new* album variant can claim
-        # a mapping entry before the *matching* album group processes — causing
-        # a spurious duplicate ADD and a misattributed match.
-        def _album_match_priority(item):
-            (fp, album_key), _tracks = item
-            for entry in mapping.get_entries(fp):
-                ipod_track = ipod_by_db_track_id.get(entry.db_track_id)
-                if ipod_track:
-                    ipod_album = (ipod_track.get("Album", "") or "").strip().lower()
-                    if ipod_album == album_key:
-                        return 0  # has a matching entry → process first
-            return 1  # no match → process after confident matches
-
-        sorted_groups = sorted(identity_groups.items(), key=_album_match_priority)
+        sorted_groups = identity_plan.sorted_groups_for_matching(
+            mapping=mapping,
+            ipod_by_db_track_id=ipod_by_db_track_id,
+        )
 
         for (fp, _album_key), pc_tracks_for_group in sorted_groups:
             # Pick representative track (first one from this album group)
             pc_track = pc_tracks_for_group[0]
-            try:
-                from .sync_playlist_files import normalize_sync_playlist_path
-
-                representative_source_key = normalize_sync_playlist_path(pc_track.path)
-                for duplicate_track in pc_tracks_for_group[1:]:
-                    sync_playlist_source_aliases[
-                        normalize_sync_playlist_path(duplicate_track.path)
-                    ] = representative_source_key
-            except Exception:
-                pass
+            track_identity.record_duplicate_group_aliases(pc_tracks_for_group)
             if fp in represented_by_aggregate and fp not in detached_from_aggregate:
                 aggregate_db_track_id = represented_by_aggregate[fp].db_track_id
-                claimed_db_track_ids.add(aggregate_db_track_id)
+                track_identity.claim(aggregate_db_track_id)
                 plan.matched_tracks += 1
                 continue
 
@@ -711,7 +574,10 @@ class FingerprintDiffEngine:
                 continue
 
             # Filter out mapping entries already claimed by another album group
-            available_entries = [e for e in mapping_entries if e.db_track_id not in claimed_db_track_ids]
+            available_entries = [
+                e for e in mapping_entries
+                if not track_identity.is_claimed(e.db_track_id)
+            ]
 
             if not available_entries:
                 # All mapping entries for this fingerprint are claimed by other
@@ -736,10 +602,10 @@ class FingerprintDiffEngine:
 
             if matched_entry is None:
                 # Collision couldn't be resolved
-                plan.unresolved_collisions.append((fp, pc_tracks_for_group))
+                plan.unresolved_collisions.append((fp, list(pc_tracks_for_group)))
                 continue
 
-            claimed_db_track_ids.add(matched_entry.db_track_id)
+            track_identity.claim(matched_entry.db_track_id)
 
             db_track_id = matched_entry.db_track_id
             ipod_track = ipod_by_db_track_id.get(db_track_id)
@@ -766,457 +632,65 @@ class FingerprintDiffEngine:
 
             # Record PC path for artwork extraction (all matched tracks)
             plan.matched_pc_paths[db_track_id] = str(pc_track.path)
-            try:
-                from .sync_playlist_files import normalize_sync_playlist_path
+            track_identity.record_matched_source(pc_track.path, db_track_id)
 
-                source_path_to_db_track_id[
-                    normalize_sync_playlist_path(pc_track.path)
-                ] = db_track_id
-            except Exception:
-                pass
-
-            # ── Change detection ──
-
-            # File change: size+mtime gate
-            if self._source_file_changed(pc_track, matched_entry):
-                transcode_plan, estimated_size = resolve_track_transcode_plan(
-                    pc_track,
-                    self.transcode_options,
-                )
-                plan.to_update_file.append(SyncItem(
-                    action=SyncAction.UPDATE_FILE,
-                    fingerprint=fp,
-                    pc_track=pc_track,
-                    db_track_id=db_track_id,
-                    ipod_track=ipod_track,
-                    estimated_size=estimated_size,
-                    transcode_plan=transcode_plan,
-                    description=f"File changed: {pc_track.artist or 'Unknown'} - {pc_track.title or pc_track.filename}",
-                ))
-                plan.storage.bytes_to_update += estimated_size
-
-            # Metadata change
-            metadata_changes = self._compare_metadata(pc_track, ipod_track)
-            if metadata_changes:
-                plan.to_update_metadata.append(SyncItem(
-                    action=SyncAction.UPDATE_METADATA,
-                    fingerprint=fp,
-                    pc_track=pc_track,
-                    db_track_id=db_track_id,
-                    ipod_track=ipod_track,
-                    metadata_changes=metadata_changes,
-                    description=f"Metadata: {pc_track.artist or 'Unknown'} - {pc_track.title or pc_track.filename} ({', '.join(metadata_changes.keys())})",
-                ))
-
-            # Artwork change: compare art_hash (covers add, change, AND removal)
-            pc_art_hash = getattr(pc_track, "art_hash", None)
-            mapping_art_hash = matched_entry.art_hash
-            if pc_art_hash != mapping_art_hash:
-                plan.to_update_artwork.append(SyncItem(
-                    action=SyncAction.UPDATE_ARTWORK,
-                    fingerprint=fp,
-                    pc_track=pc_track,
-                    db_track_id=db_track_id,
-                    ipod_track=ipod_track,
-                    old_art_hash=mapping_art_hash,
-                    new_art_hash=pc_art_hash,
-                    description=f"Art {'removed' if not pc_art_hash else 'changed'}: {pc_track.artist or 'Unknown'} - {pc_track.title or pc_track.filename}",
-                ))
-            elif pc_art_hash and (ipod_track.get("artwork_count", 0) == 0 or ipod_track.get("artwork_id_ref", 0) == 0):
-                # PC has art and mapping agrees (hash matches) but iPod
-                # doesn't actually have it — previous ArtworkDB write may
-                # have failed.  Emit an artwork update so it gets retried.
-                plan.to_update_artwork.append(SyncItem(
-                    action=SyncAction.UPDATE_ARTWORK,
-                    fingerprint=fp,
-                    pc_track=pc_track,
-                    db_track_id=db_track_id,
-                    ipod_track=ipod_track,
-                    old_art_hash=None,
-                    new_art_hash=pc_art_hash,
-                    description=f"Art missing on iPod: {pc_track.artist or 'Unknown'} - {pc_track.title or pc_track.filename}",
-                ))
-
-            # Play count: scrobble iPod deltas from Play Counts file.
-            # iPod plays belong to the iPod, PC plays belong to the PC.
-            # We never sync play counts between the two — we just scrobble
-            # the iPod delta so the user's connected services stay up to date.
-            #
-            # Prefer the iTunesDB play_count_2 slot; fall back to the
-            # Play Counts file-derived delta when present.
-            ipod_play_delta = ipod_track.get("play_count_2", 0)
-            if not ipod_play_delta:
-                ipod_play_delta = ipod_track.get("recent_playcount", 0)
-            ipod_skip_delta = ipod_track.get("recent_skipcount", 0)
-
-            if ipod_play_delta > 0 or ipod_skip_delta > 0:
-                parts = []
-                if ipod_play_delta > 0:
-                    parts.append(f"+{ipod_play_delta} play{'s' if ipod_play_delta != 1 else ''}")
-                if ipod_skip_delta > 0:
-                    parts.append(f"+{ipod_skip_delta} skip{'s' if ipod_skip_delta != 1 else ''}")
-                track_name = f"{pc_track.artist or 'Unknown'} - {pc_track.title or pc_track.filename}"
-                desc = f"{', '.join(parts)}: {track_name}"
-
-                plan.to_sync_playcount.append(SyncItem(
-                    action=SyncAction.SYNC_PLAYCOUNT,
-                    fingerprint=fp,
-                    pc_track=pc_track,
-                    db_track_id=db_track_id,
-                    ipod_track=ipod_track,
-                    play_count_delta=ipod_play_delta,
-                    skip_count_delta=ipod_skip_delta,
-                    description=desc,
-                ))
-
-            # Rating: resolve conflicts using configured strategy
-            ipod_rating = ipod_track.get("rating", 0)
-            pc_rating = pc_track.rating or 0
-            if ipod_rating != pc_rating and (ipod_rating > 0 or pc_rating > 0):
-                strategy = rating_strategy
-
-                if strategy == "pc_wins":
-                    new_rating = pc_rating if pc_rating > 0 else ipod_rating
-                elif strategy == "highest":
-                    new_rating = max(ipod_rating, pc_rating)
-                elif strategy == "lowest":
-                    non_zero = [r for r in (ipod_rating, pc_rating) if r > 0]
-                    new_rating = min(non_zero) if non_zero else 0
-                elif strategy == "average":
-                    avg = (ipod_rating + pc_rating) / 2
-                    new_rating = round(avg / 20) * 20  # snap to nearest star step
-                    new_rating = max(0, min(100, new_rating))
-                else:  # ipod_wins (default)
-                    new_rating = ipod_rating if ipod_rating > 0 else pc_rating
-
-                plan.to_sync_rating.append(SyncItem(
-                    action=SyncAction.SYNC_RATING,
-                    fingerprint=fp,
-                    pc_track=pc_track,
-                    db_track_id=db_track_id,
-                    ipod_track=ipod_track,
-                    ipod_rating=ipod_rating,
-                    pc_rating=pc_rating,
-                    new_rating=new_rating,
-                    rating_strategy=strategy,
-                    description=f"Rating: {pc_track.artist or 'Unknown'} - {pc_track.title or pc_track.filename}",
-                ))
+            self._plan_matched_track_changes(
+                plan,
+                fingerprint=fp,
+                pc_track=pc_track,
+                matched_entry=matched_entry,
+                db_track_id=db_track_id,
+                ipod_track=ipod_track,
+                rating_strategy=rating_strategy,
+            )
 
         # ===== Phase 4: Find tracks to remove =====
         if is_cancelled and is_cancelled():
             return plan
 
-        # 4a: Fingerprints entirely absent from PC → all entries are removals
-        aggregate_mapping_fps = {
-            aggregate_fp for aggregate_fp, _entry in mapping.aggregate_entries()
-        }
-        mapping_fps = mapping.all_fingerprints()
-        orphaned_fps = mapping_fps - seen_fps
-
-        for fp in orphaned_fps:
-            for entry in mapping.get_entries(fp):
-                if fp in aggregate_mapping_fps:
-                    continue
-                db_track_id = entry.db_track_id
-                if db_track_id in bootstrap_protected_db_track_ids:
-                    continue
-                ipod_track = ipod_by_db_track_id.get(db_track_id)
-
-                if not ipod_track:
-                    plan._stale_mapping_entries.append((fp, db_track_id))
-                    continue
-
-                # Skip podcast tracks — managed by PodcastManager, not
-                # the PC-folder sync.  Their fingerprints won't appear
-                # in the PC scan so they'd always look "orphaned".
-                if ipod_track.get("media_type", 0) & MEDIA_TYPE_PODCAST:
-                    continue
-
-                plan.to_remove.append(SyncItem(
-                    action=SyncAction.REMOVE_FROM_IPOD,
-                    fingerprint=fp,
-                    db_track_id=db_track_id,
-                    ipod_track=ipod_track,
-                    description=(
-                        f"Removed from PC: "
-                        f"{ipod_track.get('Artist', 'Unknown')} - "
-                        f"{ipod_track.get('Title', 'Unknown')}"
-                    ),
-                ))
-                plan.storage.bytes_to_remove += ipod_track.get("size", 0)
-
-        # 4b: Fingerprints still on PC but with unclaimed mapping entries.
-        # These are album variants that were deleted (e.g., removed from
-        # Greatest Hits but kept on original album).
-        for fp in seen_fps & mapping_fps:
-            for entry in mapping.get_entries(fp):
-                if fp in aggregate_mapping_fps:
-                    continue
-                if entry.db_track_id in claimed_db_track_ids:
-                    continue
-                db_track_id = entry.db_track_id
-                if db_track_id in bootstrap_protected_db_track_ids:
-                    continue
-                ipod_track = ipod_by_db_track_id.get(db_track_id)
-
-                if not ipod_track:
-                    plan._stale_mapping_entries.append((fp, db_track_id))
-                    continue
-
-                # Skip podcast tracks (same reason as 4a).
-                if ipod_track.get("media_type", 0) & MEDIA_TYPE_PODCAST:
-                    continue
-
-                plan.to_remove.append(SyncItem(
-                    action=SyncAction.REMOVE_FROM_IPOD,
-                    fingerprint=fp,
-                    db_track_id=db_track_id,
-                    ipod_track=ipod_track,
-                    description=(
-                        f"Album variant removed: "
-                        f"{ipod_track.get('Artist', 'Unknown')} - "
-                        f"{ipod_track.get('Title', 'Unknown')} "
-                        f"[{ipod_track.get('Album', '')}]"
-                    ),
-                ))
-                plan.storage.bytes_to_remove += ipod_track.get("size", 0)
-
-        # 4c: Unmapped iPod tracks — tracks in iTunesDB that have NO mapping
-        # entry at all (e.g., put there by iTunes, not by iOpenPod).
-        # These are invisible to 4a/4b which only iterate mapping entries.
-        # Collect all db_track_ids already accounted for by matches or removals.
-        accounted_db_track_ids = claimed_db_track_ids.copy()
-        accounted_db_track_ids.update(claimed_aggregate_db_ids)
-        accounted_db_track_ids.update(bootstrap_protected_db_track_ids)
-        for item in plan.to_remove:
-            if item.db_track_id:
-                accounted_db_track_ids.add(item.db_track_id)
-        for _fp, db_track_id in plan._stale_mapping_entries:
-            accounted_db_track_ids.add(db_track_id)
-
-        for db_track_id, ipod_track in ipod_by_db_track_id.items():
-            if db_track_id in accounted_db_track_ids:
-                continue
-            # Skip podcast tracks — they are managed by the podcast
-            # subsystem (PodcastManager), not the PC-folder sync.
-            if ipod_track.get("media_type", 0) & MEDIA_TYPE_PODCAST:
-                continue
-            # This track exists in iTunesDB but has no mapping entry and
-            # was not matched to any PC track → it should be removed.
-            plan.to_remove.append(SyncItem(
-                action=SyncAction.REMOVE_FROM_IPOD,
-                fingerprint=None,
-                db_track_id=db_track_id,
-                ipod_track=ipod_track,
-                description=(
-                    f"Not in PC library: "
-                    f"{ipod_track.get('Artist', 'Unknown')} - "
-                    f"{ipod_track.get('Title', 'Unknown')}"
-                ),
-            ))
-            plan.storage.bytes_to_remove += ipod_track.get("size", 0)
+        self._plan_removed_tracks(
+            plan,
+            mapping=mapping,
+            seen_fps=seen_fps,
+            ipod_by_db_track_id=ipod_by_db_track_id,
+            track_identity=track_identity,
+            claimed_aggregate_db_ids=claimed_aggregate_db_ids,
+            bootstrap_protected_db_track_ids=bootstrap_protected_db_track_ids,
+        )
 
         # ===== Phase 5: GUI edits overlay ==============================
-        # The user may have changed rating, compilation, flags, volume,
-        # start/stop times etc. via the iOpenPod GUI.  These pending edits
-        # are stored as (original, new) tuples in iTunesDBCache._track_edits.
-        #
-        # IMPORTANT: update_track_flags() modifies the in-memory track dicts
-        # for instant UI feedback, so the ipod_tracks we received already
-        # contain the GUI values.  We reverted them to originals at the top
-        # of compute_diff (before Phase 3) so the PC-vs-iPod comparison ran
-        # against the true iPod state.  Now we overlay the edits.
-        #
-        # Edits are compared against the true iPod values (originals):
-        #  - rating edits → SYNC_RATING (always wins, bypasses strategy)
-        #  - METADATA_FIELDS edits → override / supplement the PC diff
-        #  - iPod-only flags → emitted as UPDATE_METADATA directly
-        #
-        # If the same track already has a PC-driven UPDATE_METADATA item
-        # from Phase 3, the GUI edit is merged into that item (GUI wins
-        # for any overlapping field).
+        self._apply_gui_edit_overlay(
+            plan,
+            ipod_by_db_track_id=ipod_by_db_track_id,
+            gui_edits=gui_edits,
+        )
+        self._restore_gui_edit_values(
+            ipod_by_db_track_id=ipod_by_db_track_id,
+            gui_edits=gui_edits,
+        )
 
-        if gui_edits:
-            # Reverse lookup: iPod dict key → PC field name (for METADATA_FIELDS)
-            _ipod_key_to_pc = {v: k for k, v in METADATA_FIELDS.items()}
+        self._plan_sync_playlists(
+            plan,
+            playlist_discovery=playlist_discovery,
+            existing_playlists=existing_playlists,
+            pc_tracks=pc_tracks,
+            ipod_tracks=ipod_tracks,
+            track_identity=track_identity,
+            selected_playlist_source_keys=selected_playlist_source_keys,
+        )
 
-            # Index existing UPDATE_METADATA items by db_track_id for merge
-            meta_by_db_track_id: dict[int, SyncItem] = {}
-            for item in plan.to_update_metadata:
-                if item.db_track_id:
-                    meta_by_db_track_id[item.db_track_id] = item
-
-            # Index existing SYNC_RATING items by db_track_id to replace them
-            rating_by_db_track_id: dict[int, int] = {}
-            for idx, item in enumerate(plan.to_sync_rating):
-                if item.db_track_id:
-                    rating_by_db_track_id[item.db_track_id] = idx
-
-            for db_track_id, field_edits in gui_edits.items():
-                ipod_track = ipod_by_db_track_id.get(db_track_id)
-                if ipod_track is None:
-                    continue  # track no longer on iPod
-
-                track_name = (
-                    f"{ipod_track.get('Artist', 'Unknown')} - "
-                    f"{ipod_track.get('Title', 'Unknown')}"
-                )
-
-                for edit_key, (orig_val, new_val) in field_edits.items():
-                    # orig_val is the true iPod value (before GUI edit)
-                    if orig_val == new_val:
-                        continue  # no actual change
-
-                    # ── Rating ──
-                    if edit_key == "rating":
-                        if db_track_id in rating_by_db_track_id:
-                            # Replace existing rating item — GUI always wins
-                            idx = rating_by_db_track_id[db_track_id]
-                            plan.to_sync_rating[idx].new_rating = new_val
-                            plan.to_sync_rating[idx].pc_rating = new_val
-                            plan.to_sync_rating[idx].description = (
-                                f"Rating (edited in iOpenPod): {track_name}"
-                            )
-                        else:
-                            plan.to_sync_rating.append(SyncItem(
-                                action=SyncAction.SYNC_RATING,
-                                db_track_id=db_track_id,
-                                ipod_track=ipod_track,
-                                ipod_rating=orig_val if orig_val else 0,
-                                pc_rating=new_val,
-                                new_rating=new_val,
-                                description=f"Rating (edited in iOpenPod): {track_name}",
-                            ))
-                        continue
-
-                    # ── Metadata field or iPod-only flag ──
-                    # Use the PC field name if available, otherwise the
-                    # raw track-dict key (for iPod-only fields).
-                    pc_field = _ipod_key_to_pc.get(edit_key, edit_key)
-
-                    if db_track_id in meta_by_db_track_id:
-                        # Merge into existing UPDATE_METADATA item
-                        meta_by_db_track_id[db_track_id].metadata_changes[pc_field] = (
-                            new_val, orig_val
-                        )
-                        # Update description
-                        fields_str = ", ".join(
-                            meta_by_db_track_id[db_track_id].metadata_changes.keys()
-                        )
-                        meta_by_db_track_id[db_track_id].description = (
-                            f"Metadata: {track_name} ({fields_str})"
-                        )
-                    else:
-                        new_item = SyncItem(
-                            action=SyncAction.UPDATE_METADATA,
-                            db_track_id=db_track_id,
-                            ipod_track=ipod_track,
-                            metadata_changes={pc_field: (new_val, orig_val)},
-                            description=f"Metadata (edited in iOpenPod): {track_name} ({pc_field})",
-                        )
-                        plan.to_update_metadata.append(new_item)
-                        meta_by_db_track_id[db_track_id] = new_item
-
-            logger.info("GUI edit overlay: processed %d edited tracks", len(gui_edits))
-
-        # ── Restore GUI edits on in-memory track dicts ──────────────────
-        # Phase 3 ran against the true iPod values; now put the GUI values
-        # back so the UI still shows what the user set.
-        if gui_edits:
-            for db_track_id, field_edits in gui_edits.items():
-                ipod_track = ipod_by_db_track_id.get(db_track_id)
-                if ipod_track is None:
-                    continue
-                for edit_key, (_orig_val, new_val) in field_edits.items():
-                    ipod_track[edit_key] = new_val
-
-        if playlist_discovery is not None and existing_playlists is not None:
-            try:
-                from .sync_playlist_files import (
-                    build_sync_playlist_changes,
-                    normalize_sync_playlist_path,
-                )
-
-                valid_source_paths = {
-                    normalize_sync_playlist_path(track.path)
-                    for track in pc_tracks
-                }
-                pending_add_source_paths = {
-                    normalize_sync_playlist_path(item.pc_track.path)
-                    for item in plan.to_add
-                    if item.pc_track is not None
-                }
-                playlist_adds, playlist_edits, playlist_removals = (
-                    build_sync_playlist_changes(
-                        playlist_discovery,
-                        existing_playlists,
-                        ipod_tracks,
-                        source_path_to_db_track_id=source_path_to_db_track_id,
-                        pending_add_source_paths=pending_add_source_paths,
-                        valid_source_paths=valid_source_paths,
-                        source_path_aliases=sync_playlist_source_aliases,
-                        selected_playlist_source_paths=selected_playlist_source_keys,
-                    )
-                )
-                plan.playlists_to_add.extend(playlist_adds)
-                plan.playlists_to_edit.extend(playlist_edits)
-                plan.playlists_to_remove.extend(playlist_removals)
-                logger.info(
-                    "Playlist-file sync plan: %d add, %d edit, %d remove",
-                    len(playlist_adds),
-                    len(playlist_edits),
-                    len(playlist_removals),
-                )
-            except Exception as exc:
-                logger.warning("Playlist-file sync planning failed: %s", exc)
+        if self._plan_photos(
+            plan,
+            allowed_paths=allowed_paths,
+            photo_edits=photo_edits,
+            sync_workers=sync_workers,
+            progress_callback=progress_callback,
+            is_cancelled=is_cancelled,
+        ):
+            return plan
 
         # Attach the mapping so the executor can reuse it instead of
         # loading from disk a second time.
-        if self.supports_photo:
-            try:
-                device_photos = read_photo_db(self.ipod_path)
-                if allowed_paths is None:
-                    if progress_callback:
-                        progress_callback("scan_photos", 0, 0, "Scanning photos...")
-
-                    def _photo_progress(current: int, total: int, filename: str) -> None:
-                        if progress_callback:
-                            progress_callback("scan_photos", current, total, filename)
-
-                    pc_photos = scan_pc_photos(
-                        self.pc_library.root_entries,
-                        progress_callback=_photo_progress,
-                        max_workers=scan_workers,
-                        is_cancelled=is_cancelled,
-                    )
-                    if is_cancelled and is_cancelled():
-                        return plan
-                    plan.photo_plan = build_photo_sync_plan(
-                        pc_photos,
-                        device_photos,
-                        photo_edits,
-                        ipod_path=self.ipod_path,
-                        sync_settings=self.photo_sync_settings,
-                    )
-                elif photo_edits and photo_edits.has_changes:
-                    plan.photo_plan = build_photo_sync_plan(
-                        PCPhotoLibrary(sync_root=str(self.pc_library.root_path)),
-                        device_photos,
-                        photo_edits,
-                        ipod_path=self.ipod_path,
-                        sync_settings=self.photo_sync_settings,
-                    )
-            except Exception as exc:
-                logger.warning("Photo sync planning failed: %s", exc)
-        elif photo_edits and photo_edits.has_changes:
-            logger.info("Skipping photo sync plan: device does not support photos")
-
-        if plan.photo_plan is not None:
-            # Include photo transfer deltas in the shared storage estimate so
-            # preflight checks and sync-review +/- totals reflect full sync cost.
-            plan.storage.bytes_to_add += plan.photo_plan.thumb_bytes_to_add
-            plan.storage.bytes_to_remove += plan.photo_plan.thumb_bytes_to_remove
-
         plan.mapping = mapping
 
         return plan
@@ -1897,12 +1371,586 @@ class FingerprintDiffEngine:
             normalized.append((startpos, title))
         return normalized
 
-    def _compare_metadata(self, pc_track: PCTrack, ipod_track: dict) -> dict:
+    @staticmethod
+    def _track_description_name(pc_track: PCTrack) -> str:
+        return f"{pc_track.artist or 'Unknown'} - {pc_track.title or pc_track.filename}"
+
+    @staticmethod
+    def _ipod_track_name(ipod_track: dict) -> str:
+        return (
+            f"{ipod_track.get('Artist', 'Unknown')} - "
+            f"{ipod_track.get('Title', 'Unknown')}"
+        )
+
+    @staticmethod
+    def _is_podcast_ipod_track(ipod_track: dict) -> bool:
+        return bool(ipod_track.get("media_type", 0) & MEDIA_TYPE_PODCAST)
+
+    @classmethod
+    def _append_removal_item(
+        cls,
+        plan: SyncPlan,
+        *,
+        fingerprint: str | None,
+        db_track_id: int,
+        ipod_track: dict,
+        description: str,
+    ) -> None:
+        plan.to_remove.append(SyncItem(
+            action=SyncAction.REMOVE_FROM_IPOD,
+            fingerprint=fingerprint,
+            db_track_id=db_track_id,
+            ipod_track=ipod_track,
+            description=description,
+        ))
+        plan.storage.bytes_to_remove += int(ipod_track.get("size", 0) or 0)
+
+    @classmethod
+    def _plan_removed_tracks(
+        cls,
+        plan: SyncPlan,
+        *,
+        mapping: MappingFile,
+        seen_fps: set[str],
+        ipod_by_db_track_id: dict[int, dict],
+        track_identity: SyncTrackIdentityState,
+        claimed_aggregate_db_ids: set[int],
+        bootstrap_protected_db_track_ids: set[int],
+    ) -> None:
+        aggregate_mapping_fps = {
+            aggregate_fp for aggregate_fp, _entry in mapping.aggregate_entries()
+        }
+        mapping_fps = mapping.all_fingerprints()
+
+        cls._plan_orphaned_mapping_removals(
+            plan,
+            mapping=mapping,
+            orphaned_fps=mapping_fps - seen_fps,
+            aggregate_mapping_fps=aggregate_mapping_fps,
+            ipod_by_db_track_id=ipod_by_db_track_id,
+            bootstrap_protected_db_track_ids=bootstrap_protected_db_track_ids,
+        )
+        cls._plan_unclaimed_mapping_removals(
+            plan,
+            mapping=mapping,
+            candidate_fps=seen_fps & mapping_fps,
+            aggregate_mapping_fps=aggregate_mapping_fps,
+            ipod_by_db_track_id=ipod_by_db_track_id,
+            track_identity=track_identity,
+            bootstrap_protected_db_track_ids=bootstrap_protected_db_track_ids,
+        )
+        cls._plan_unmapped_ipod_removals(
+            plan,
+            ipod_by_db_track_id=ipod_by_db_track_id,
+            track_identity=track_identity,
+            claimed_aggregate_db_ids=claimed_aggregate_db_ids,
+            bootstrap_protected_db_track_ids=bootstrap_protected_db_track_ids,
+        )
+
+    @classmethod
+    def _plan_orphaned_mapping_removals(
+        cls,
+        plan: SyncPlan,
+        *,
+        mapping: MappingFile,
+        orphaned_fps: set[str],
+        aggregate_mapping_fps: set[str],
+        ipod_by_db_track_id: dict[int, dict],
+        bootstrap_protected_db_track_ids: set[int],
+    ) -> None:
+        for fingerprint in orphaned_fps:
+            if fingerprint in aggregate_mapping_fps:
+                continue
+            for entry in mapping.get_entries(fingerprint):
+                db_track_id = entry.db_track_id
+                if db_track_id in bootstrap_protected_db_track_ids:
+                    continue
+                ipod_track = ipod_by_db_track_id.get(db_track_id)
+                if not ipod_track:
+                    plan._stale_mapping_entries.append((fingerprint, db_track_id))
+                    continue
+                if cls._is_podcast_ipod_track(ipod_track):
+                    continue
+                cls._append_removal_item(
+                    plan,
+                    fingerprint=fingerprint,
+                    db_track_id=db_track_id,
+                    ipod_track=ipod_track,
+                    description=f"Removed from PC: {cls._ipod_track_name(ipod_track)}",
+                )
+
+    @classmethod
+    def _plan_unclaimed_mapping_removals(
+        cls,
+        plan: SyncPlan,
+        *,
+        mapping: MappingFile,
+        candidate_fps: set[str],
+        aggregate_mapping_fps: set[str],
+        ipod_by_db_track_id: dict[int, dict],
+        track_identity: SyncTrackIdentityState,
+        bootstrap_protected_db_track_ids: set[int],
+    ) -> None:
+        for fingerprint in candidate_fps:
+            if fingerprint in aggregate_mapping_fps:
+                continue
+            for entry in mapping.get_entries(fingerprint):
+                db_track_id = entry.db_track_id
+                if track_identity.is_claimed(db_track_id):
+                    continue
+                if db_track_id in bootstrap_protected_db_track_ids:
+                    continue
+                ipod_track = ipod_by_db_track_id.get(db_track_id)
+                if not ipod_track:
+                    plan._stale_mapping_entries.append((fingerprint, db_track_id))
+                    continue
+                if cls._is_podcast_ipod_track(ipod_track):
+                    continue
+                cls._append_removal_item(
+                    plan,
+                    fingerprint=fingerprint,
+                    db_track_id=db_track_id,
+                    ipod_track=ipod_track,
+                    description=(
+                        f"Album variant removed: {cls._ipod_track_name(ipod_track)} "
+                        f"[{ipod_track.get('Album', '')}]"
+                    ),
+                )
+
+    @classmethod
+    def _plan_unmapped_ipod_removals(
+        cls,
+        plan: SyncPlan,
+        *,
+        ipod_by_db_track_id: dict[int, dict],
+        track_identity: SyncTrackIdentityState,
+        claimed_aggregate_db_ids: set[int],
+        bootstrap_protected_db_track_ids: set[int],
+    ) -> None:
+        accounted_db_track_ids = set(track_identity.claimed_db_track_ids)
+        accounted_db_track_ids.update(claimed_aggregate_db_ids)
+        accounted_db_track_ids.update(bootstrap_protected_db_track_ids)
+        for item in plan.to_remove:
+            if item.db_track_id:
+                accounted_db_track_ids.add(item.db_track_id)
+        for _fingerprint, db_track_id in plan._stale_mapping_entries:
+            accounted_db_track_ids.add(db_track_id)
+
+        for db_track_id, ipod_track in ipod_by_db_track_id.items():
+            if db_track_id in accounted_db_track_ids:
+                continue
+            if cls._is_podcast_ipod_track(ipod_track):
+                continue
+            cls._append_removal_item(
+                plan,
+                fingerprint=None,
+                db_track_id=db_track_id,
+                ipod_track=ipod_track,
+                description=f"Not in PC library: {cls._ipod_track_name(ipod_track)}",
+            )
+
+    @classmethod
+    def _apply_gui_edit_overlay(
+        cls,
+        plan: SyncPlan,
+        *,
+        ipod_by_db_track_id: dict[int, dict],
+        gui_edits: dict[int, dict[str, tuple]],
+    ) -> None:
+        """Overlay pending GUI edits onto the already-computed sync plan."""
+
+        if not gui_edits:
+            return
+
+        ipod_key_to_pc = {v: k for k, v in METADATA_FIELDS.items()}
+        meta_by_db_track_id = cls._metadata_items_by_db_track_id(plan)
+        rating_by_db_track_id = cls._rating_item_indexes_by_db_track_id(plan)
+
+        for db_track_id, field_edits in gui_edits.items():
+            ipod_track = ipod_by_db_track_id.get(db_track_id)
+            if ipod_track is None:
+                continue
+
+            track_name = cls._ipod_track_name(ipod_track)
+            for edit_key, (orig_val, new_val) in field_edits.items():
+                if orig_val == new_val:
+                    continue
+
+                if edit_key == "rating":
+                    cls._overlay_gui_rating_edit(
+                        plan,
+                        db_track_id=db_track_id,
+                        ipod_track=ipod_track,
+                        track_name=track_name,
+                        orig_val=orig_val,
+                        new_val=new_val,
+                        rating_by_db_track_id=rating_by_db_track_id,
+                    )
+                    continue
+
+                pc_field = ipod_key_to_pc.get(edit_key, edit_key)
+                cls._overlay_gui_metadata_edit(
+                    plan,
+                    db_track_id=db_track_id,
+                    ipod_track=ipod_track,
+                    track_name=track_name,
+                    pc_field=pc_field,
+                    orig_val=orig_val,
+                    new_val=new_val,
+                    meta_by_db_track_id=meta_by_db_track_id,
+                )
+
+        logger.info("GUI edit overlay: processed %d edited tracks", len(gui_edits))
+
+    @staticmethod
+    def _metadata_items_by_db_track_id(plan: SyncPlan) -> dict[int, SyncItem]:
+        return {
+            item.db_track_id: item
+            for item in plan.to_update_metadata
+            if item.db_track_id
+        }
+
+    @staticmethod
+    def _rating_item_indexes_by_db_track_id(plan: SyncPlan) -> dict[int, int]:
+        return {
+            item.db_track_id: idx
+            for idx, item in enumerate(plan.to_sync_rating)
+            if item.db_track_id
+        }
+
+    @staticmethod
+    def _overlay_gui_rating_edit(
+        plan: SyncPlan,
+        *,
+        db_track_id: int,
+        ipod_track: dict,
+        track_name: str,
+        orig_val: Any,
+        new_val: Any,
+        rating_by_db_track_id: dict[int, int],
+    ) -> None:
+        if db_track_id in rating_by_db_track_id:
+            idx = rating_by_db_track_id[db_track_id]
+            plan.to_sync_rating[idx].new_rating = new_val
+            plan.to_sync_rating[idx].pc_rating = new_val
+            plan.to_sync_rating[idx].description = (
+                f"Rating (edited in iOpenPod): {track_name}"
+            )
+            return
+
+        plan.to_sync_rating.append(SyncItem(
+            action=SyncAction.SYNC_RATING,
+            db_track_id=db_track_id,
+            ipod_track=ipod_track,
+            ipod_rating=orig_val if orig_val else 0,
+            pc_rating=new_val,
+            new_rating=new_val,
+            description=f"Rating (edited in iOpenPod): {track_name}",
+        ))
+        rating_by_db_track_id[db_track_id] = len(plan.to_sync_rating) - 1
+
+    @staticmethod
+    def _overlay_gui_metadata_edit(
+        plan: SyncPlan,
+        *,
+        db_track_id: int,
+        ipod_track: dict,
+        track_name: str,
+        pc_field: str,
+        orig_val: Any,
+        new_val: Any,
+        meta_by_db_track_id: dict[int, SyncItem],
+    ) -> None:
+        if db_track_id in meta_by_db_track_id:
+            meta_item = meta_by_db_track_id[db_track_id]
+            meta_item.metadata_changes[pc_field] = (new_val, orig_val)
+            fields_str = ", ".join(meta_item.metadata_changes.keys())
+            meta_item.description = f"Metadata: {track_name} ({fields_str})"
+            return
+
+        new_item = SyncItem(
+            action=SyncAction.UPDATE_METADATA,
+            db_track_id=db_track_id,
+            ipod_track=ipod_track,
+            metadata_changes={pc_field: (new_val, orig_val)},
+            description=f"Metadata (edited in iOpenPod): {track_name} ({pc_field})",
+        )
+        plan.to_update_metadata.append(new_item)
+        meta_by_db_track_id[db_track_id] = new_item
+
+    @staticmethod
+    def _restore_gui_edit_values(
+        *,
+        ipod_by_db_track_id: dict[int, dict],
+        gui_edits: dict[int, dict[str, tuple]],
+    ) -> None:
+        """Restore GUI-visible values after planning against original values."""
+
+        for db_track_id, field_edits in gui_edits.items():
+            ipod_track = ipod_by_db_track_id.get(db_track_id)
+            if ipod_track is None:
+                continue
+            for edit_key, (_orig_val, new_val) in field_edits.items():
+                ipod_track[edit_key] = new_val
+
+    @staticmethod
+    def _plan_sync_playlists(
+        plan: SyncPlan,
+        *,
+        playlist_discovery: Any,
+        existing_playlists: list[dict] | None,
+        pc_tracks: list[PCTrack],
+        ipod_tracks: list[dict],
+        track_identity: SyncTrackIdentityState,
+        selected_playlist_source_keys: frozenset[str] | None,
+    ) -> None:
+        if playlist_discovery is None or existing_playlists is None:
+            return
+
+        try:
+            from .sync_playlist_files import normalize_sync_playlist_path
+            from .sync_playlist_planner import SyncPlaylistPlanner
+
+            valid_source_paths = {
+                normalize_sync_playlist_path(track.path)
+                for track in pc_tracks
+            }
+            pending_add_source_paths = {
+                normalize_sync_playlist_path(item.pc_track.path)
+                for item in plan.to_add
+                if item.pc_track is not None
+            }
+            playlist_plan = SyncPlaylistPlanner(
+                identity_index=track_identity.build_playlist_index(
+                    pending_add_source_paths=pending_add_source_paths,
+                    valid_source_paths=valid_source_paths,
+                ),
+                ipod_tracks=ipod_tracks,
+            ).plan(
+                playlist_discovery,
+                existing_playlists,
+                selected_playlist_source_paths=selected_playlist_source_keys,
+            )
+            plan.playlists_to_add.extend(playlist_plan.to_add)
+            plan.playlists_to_edit.extend(playlist_plan.to_edit)
+            plan.playlists_to_remove.extend(playlist_plan.to_remove)
+            logger.info(
+                "Playlist-file sync plan: %d add, %d edit, %d remove",
+                len(playlist_plan.to_add),
+                len(playlist_plan.to_edit),
+                len(playlist_plan.to_remove),
+            )
+        except Exception as exc:
+            logger.warning("Playlist-file sync planning failed: %s", exc)
+
+    def _plan_photos(
+        self,
+        plan: SyncPlan,
+        *,
+        allowed_paths: frozenset[str] | None,
+        photo_edits: PhotoEditState | None,
+        sync_workers: int,
+        progress_callback: Callable[[str, int, int, str], None] | None,
+        is_cancelled: Callable[[], bool] | None,
+    ) -> bool:
+        """Plan photo sync actions. Returns True when cancelled mid-scan."""
+
+        if not self.supports_photo:
+            if photo_edits and photo_edits.has_changes:
+                logger.info("Skipping photo sync plan: device does not support photos")
+            return False
+
+        try:
+            device_photos = read_photo_db(self.ipod_path)
+            if allowed_paths is None:
+                if progress_callback:
+                    progress_callback("scan_photos", 0, 0, "Scanning photos...")
+
+                def _photo_progress(current: int, total: int, filename: str) -> None:
+                    if progress_callback:
+                        progress_callback("scan_photos", current, total, filename)
+
+                pc_photos = scan_pc_photos(
+                    self.pc_library.root_entries,
+                    progress_callback=_photo_progress,
+                    max_workers=min(sync_workers or (os.cpu_count() or 4), 8),
+                    is_cancelled=is_cancelled,
+                )
+                if is_cancelled and is_cancelled():
+                    return True
+                plan.photo_plan = build_photo_sync_plan(
+                    pc_photos,
+                    device_photos,
+                    photo_edits,
+                    ipod_path=self.ipod_path,
+                    sync_settings=self.photo_sync_settings,
+                )
+            elif photo_edits and photo_edits.has_changes:
+                plan.photo_plan = build_photo_sync_plan(
+                    PCPhotoLibrary(sync_root=str(self.pc_library.root_path)),
+                    device_photos,
+                    photo_edits,
+                    ipod_path=self.ipod_path,
+                    sync_settings=self.photo_sync_settings,
+                )
+        except Exception as exc:
+            logger.warning("Photo sync planning failed: %s", exc)
+
+        if plan.photo_plan is not None:
+            # Include photo transfer deltas in the shared storage estimate so
+            # preflight checks and sync-review +/- totals reflect full sync cost.
+            plan.storage.bytes_to_add += plan.photo_plan.thumb_bytes_to_add
+            plan.storage.bytes_to_remove += plan.photo_plan.thumb_bytes_to_remove
+
+        return False
+
+    def _plan_matched_track_changes(
+        self,
+        plan: SyncPlan,
+        *,
+        fingerprint: str,
+        pc_track: PCTrack,
+        matched_entry: TrackMapping,
+        db_track_id: int,
+        ipod_track: dict,
+        rating_strategy: str,
+    ) -> None:
+        track_name = self._track_description_name(pc_track)
+
+        # File change: size+mtime gate
+        if self._source_file_changed(pc_track, matched_entry):
+            transcode_plan, estimated_size = resolve_track_transcode_plan(
+                pc_track,
+                self.transcode_options,
+            )
+            plan.to_update_file.append(SyncItem(
+                action=SyncAction.UPDATE_FILE,
+                fingerprint=fingerprint,
+                pc_track=pc_track,
+                db_track_id=db_track_id,
+                ipod_track=ipod_track,
+                estimated_size=estimated_size,
+                transcode_plan=transcode_plan,
+                description=f"File changed: {track_name}",
+            ))
+            plan.storage.bytes_to_update += estimated_size
+
+        metadata_changes = self._compare_metadata(pc_track, ipod_track)
+        if metadata_changes:
+            plan.to_update_metadata.append(SyncItem(
+                action=SyncAction.UPDATE_METADATA,
+                fingerprint=fingerprint,
+                pc_track=pc_track,
+                db_track_id=db_track_id,
+                ipod_track=ipod_track,
+                metadata_changes=metadata_changes,
+                description=f"Metadata: {track_name} ({', '.join(metadata_changes.keys())})",
+            ))
+
+        # Artwork change: compare art_hash (covers add, change, AND removal)
+        pc_art_hash = getattr(pc_track, "art_hash", None)
+        mapping_art_hash = matched_entry.art_hash
+        if pc_art_hash != mapping_art_hash:
+            plan.to_update_artwork.append(SyncItem(
+                action=SyncAction.UPDATE_ARTWORK,
+                fingerprint=fingerprint,
+                pc_track=pc_track,
+                db_track_id=db_track_id,
+                ipod_track=ipod_track,
+                old_art_hash=mapping_art_hash,
+                new_art_hash=pc_art_hash,
+                description=f"Art {'removed' if not pc_art_hash else 'changed'}: {track_name}",
+            ))
+        elif pc_art_hash and (
+            ipod_track.get("artwork_count", 0) == 0
+            or ipod_track.get("artwork_id_ref", 0) == 0
+        ):
+            # PC has art and mapping agrees (hash matches) but iPod
+            # doesn't actually have it — previous ArtworkDB write may
+            # have failed.  Emit an artwork update so it gets retried.
+            plan.to_update_artwork.append(SyncItem(
+                action=SyncAction.UPDATE_ARTWORK,
+                fingerprint=fingerprint,
+                pc_track=pc_track,
+                db_track_id=db_track_id,
+                ipod_track=ipod_track,
+                old_art_hash=None,
+                new_art_hash=pc_art_hash,
+                description=f"Art missing on iPod: {track_name}",
+            ))
+
+        # Play count: scrobble iPod deltas from Play Counts file.
+        # iPod plays belong to the iPod, PC plays belong to the PC.
+        # We never sync play counts between the two — we just scrobble
+        # the iPod delta so the user's connected services stay up to date.
+        #
+        # Prefer the iTunesDB play_count_2 slot; fall back to the
+        # Play Counts file-derived delta when present.
+        ipod_play_delta = ipod_track.get("play_count_2", 0)
+        if not ipod_play_delta:
+            ipod_play_delta = ipod_track.get("recent_playcount", 0)
+        ipod_skip_delta = ipod_track.get("recent_skipcount", 0)
+
+        if ipod_play_delta > 0 or ipod_skip_delta > 0:
+            parts = []
+            if ipod_play_delta > 0:
+                parts.append(f"+{ipod_play_delta} play{'s' if ipod_play_delta != 1 else ''}")
+            if ipod_skip_delta > 0:
+                parts.append(f"+{ipod_skip_delta} skip{'s' if ipod_skip_delta != 1 else ''}")
+            desc = f"{', '.join(parts)}: {track_name}"
+
+            plan.to_sync_playcount.append(SyncItem(
+                action=SyncAction.SYNC_PLAYCOUNT,
+                fingerprint=fingerprint,
+                pc_track=pc_track,
+                db_track_id=db_track_id,
+                ipod_track=ipod_track,
+                play_count_delta=ipod_play_delta,
+                skip_count_delta=ipod_skip_delta,
+                description=desc,
+            ))
+
+        # Rating: resolve conflicts using configured strategy
+        ipod_rating = ipod_track.get("rating", 0)
+        pc_rating = pc_track.rating or 0
+        if ipod_rating == pc_rating or (ipod_rating <= 0 and pc_rating <= 0):
+            return
+
+        strategy = rating_strategy
+
+        if strategy == "pc_wins":
+            new_rating = pc_rating if pc_rating > 0 else ipod_rating
+        elif strategy == "highest":
+            new_rating = max(ipod_rating, pc_rating)
+        elif strategy == "lowest":
+            non_zero = [rating for rating in (ipod_rating, pc_rating) if rating > 0]
+            new_rating = min(non_zero) if non_zero else 0
+        elif strategy == "average":
+            avg = (ipod_rating + pc_rating) / 2
+            new_rating = round(avg / 20) * 20  # snap to nearest star step
+            new_rating = max(0, min(100, new_rating))
+        else:  # ipod_wins (default)
+            new_rating = ipod_rating if ipod_rating > 0 else pc_rating
+
+        plan.to_sync_rating.append(SyncItem(
+            action=SyncAction.SYNC_RATING,
+            fingerprint=fingerprint,
+            pc_track=pc_track,
+            db_track_id=db_track_id,
+            ipod_track=ipod_track,
+            ipod_rating=ipod_rating,
+            pc_rating=pc_rating,
+            new_rating=new_rating,
+            rating_strategy=strategy,
+            description=f"Rating: {track_name}",
+        ))
+
+    def _compare_metadata(self, pc_track: PCTrack, ipod_track: dict) -> dict[str, tuple[Any, Any]]:
         """Compare metadata between PC and iPod track.
 
         Returns: {field: (pc_value, ipod_value)} for fields that differ.
         """
-        changes = {}
+        changes: dict[str, tuple[Any, Any]] = {}
         for pc_field, ipod_field in METADATA_FIELDS.items():
             pc_value = getattr(pc_track, pc_field, None)
             ipod_value = ipod_track.get(ipod_field)

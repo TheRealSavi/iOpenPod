@@ -3,6 +3,7 @@ from typing import Any, cast
 
 from GUI.app import MainWindow
 from GUI.internal_drag import IOP_EXPORT_DRAG_MIME
+from infrastructure.settings_schema import AppSettings
 
 
 class _FakeStack:
@@ -38,6 +39,22 @@ class _FakeSidebar:
         self.device_info_updates.append(kwargs)
 
 
+class _FakeSettingsService:
+    def __init__(self) -> None:
+        self.settings = AppSettings()
+        self.saved_settings: list[AppSettings] = []
+
+    def get_global_settings(self) -> AppSettings:
+        return self.settings
+
+    def get_effective_settings(self) -> AppSettings:
+        return self.settings
+
+    def save_global_settings(self, settings: AppSettings) -> None:
+        self.settings = settings
+        self.saved_settings.append(settings)
+
+
 def test_main_window_device_name_ignores_dataset5_category_master() -> None:
     assert MainWindow._device_name_from_playlists(
         [
@@ -50,6 +67,103 @@ def test_main_window_device_name_ignores_dataset5_category_master() -> None:
             {"master_flag": True, "Title": "RoadPod"},
         ]
     ) == "RoadPod"
+
+
+def test_pc_media_folder_edits_persist_to_global_settings_immediately(tmp_path) -> None:
+    media_dir = tmp_path / "Media"
+    service = _FakeSettingsService()
+    window = SimpleNamespace(settings_service=service)
+
+    MainWindow._persist_pc_folder_entries(
+        cast(Any, window),
+        [
+            {
+                "directory": str(media_dir),
+                "recurse": False,
+                "media": ["audio", "playlist_files"],
+            }
+        ],
+    )
+
+    assert window._last_pc_folders == [str(media_dir)]
+    assert window._last_pc_folder_entries == [
+        {
+            "directory": str(media_dir),
+            "recurse": False,
+            "media_types": ["music", "playlists"],
+        }
+    ]
+    assert service.settings.media_folder == str(media_dir)
+    assert service.settings.media_folders == window._last_pc_folder_entries
+    assert service.saved_settings == [service.settings]
+
+
+def test_start_pc_sync_without_device_opens_media_folder_dialog(monkeypatch) -> None:
+    calls: list[object] = []
+
+    class _FakeSignal:
+        def __init__(self) -> None:
+            self.callbacks: list[object] = []
+
+        def connect(self, callback: object) -> None:
+            self.callbacks.append(callback)
+
+    class _FakeDialog:
+        DialogCode = SimpleNamespace(Accepted=1)
+
+        def __init__(
+            self,
+            parent: object,
+            folder_entries: object,
+            *,
+            sync_available: bool,
+        ) -> None:
+            calls.append(
+                {
+                    "parent": parent,
+                    "folder_entries": folder_entries,
+                    "sync_available": sync_available,
+                }
+            )
+            self.foldersChanged = _FakeSignal()
+
+        def exec(self) -> int:
+            calls.append("exec")
+            return 0
+
+    def _unexpected_tool_check(settings: object) -> None:
+        raise AssertionError("tool availability should not be checked without a device")
+
+    def _unexpected_warning(*args: object, **kwargs: object) -> None:
+        raise AssertionError("no-device sync should open the media folder dialog")
+
+    service = _FakeSettingsService()
+    entries = [{"directory": "/tmp/Music", "recurse": True, "media_types": ["music"]}]
+    window = SimpleNamespace(
+        _quick_write_controller=SimpleNamespace(
+            prepare_for_full_sync=lambda: calls.append("prepared")
+        ),
+        device_manager=SimpleNamespace(device_path=""),
+        settings_service=service,
+        _last_pc_folder_entries=entries,
+        _persist_pc_folder_entries=lambda folder_entries: calls.append(
+            {"persisted": folder_entries}
+        ),
+    )
+
+    monkeypatch.setattr("GUI.app.PCFolderDialog", _FakeDialog)
+    monkeypatch.setattr("GUI.app.check_sync_tool_availability", _unexpected_tool_check)
+    monkeypatch.setattr("GUI.app.QMessageBox.warning", _unexpected_warning)
+
+    MainWindow.startPCSync(cast(Any, window))
+
+    assert calls[0] == "prepared"
+    assert calls[1] == {
+        "parent": window,
+        "folder_entries": entries,
+        "sync_available": False,
+    }
+    assert calls[2] == "exec"
 
 
 class _FakeDropOverlay:

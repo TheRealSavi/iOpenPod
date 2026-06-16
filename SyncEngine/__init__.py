@@ -1,13 +1,13 @@
-"""
-SyncEngine - Bridge between PC media library and iPod
+"""Public SyncEngine package boundary.
 
-Core components:
-- PCLibrary: Scans PC media folder, extracts metadata
-- FingerprintDiffEngine: Computes sync plan using acoustic fingerprints
-- SyncExecutor: Executes sync plan (copy, transcode, update mapping)
-- MappingManager: Tracks fingerprint → list[db_track_id] relationships
-- Transcoder: Converts non-iPod formats (FLAC, etc.) to ALAC/AAC
+The preferred orchestration surface is :class:`SyncEngine.core.SyncEngine`.
+App and GUI code should enter planning, execution, and quick database writes
+through that facade so requests, progress, diagnostics, and validation all
+flow through one lifecycle.
 
+Lower-level modules such as ``FingerprintDiffEngine`` and ``SyncExecutor`` are
+kept exported for compatibility and focused tests, but production orchestration
+should not call them directly.
 """
 from ._formats import IPOD_NATIVE_FORMATS
 from .audio_fingerprint import (
@@ -26,6 +26,18 @@ from .contracts import (
     SyncPlan,
     SyncProgress,
     SyncRequest,
+)
+from .core import (
+    EngineDiagnostic,
+    EngineOperation,
+    EngineOptions,
+    EngineOutcome,
+    EnginePlanContext,
+    EngineProgress,
+    EngineRequest,
+    EngineStage,
+    EngineTransactionPolicy,
+    SyncEngine,
 )
 from .fingerprint_diff_engine import (
     FingerprintDiffEngine,
@@ -70,13 +82,24 @@ __all__ = [
     # PC Library
     "PCLibrary",
     "PCTrack",
-    # Fingerprint-based sync (primary)
-    "FingerprintDiffEngine",
+    # Sync plan contracts
     "SyncAction",
     "SyncPlan",
     "SyncItem",
     "StorageSummary",
-    # Sync execution
+    # Typed engine facade
+    "SyncEngine",
+    "EngineDiagnostic",
+    "EngineOperation",
+    "EngineOptions",
+    "EngineOutcome",
+    "EnginePlanContext",
+    "EngineProgress",
+    "EngineRequest",
+    "EngineStage",
+    "EngineTransactionPolicy",
+    # Compatibility internals. Prefer SyncEngine for orchestration.
+    "FingerprintDiffEngine",
     "SyncExecutor",
     "SyncOutcome",
     "SyncProgress",

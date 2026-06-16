@@ -1046,58 +1046,55 @@ class MainWindow(QMainWindow):
         self._quick_write_controller.prepare_for_full_sync()
 
         device = self.device_manager
-        if not device.device_path:
-            QMessageBox.warning(
-                self,
-                "No Device",
-                "Please select an iPod device first."
-            )
-            return
+        has_device = bool(device.device_path)
 
         settings = self.settings_service.get_effective_settings()
-        tools = check_sync_tool_availability(settings)
+        if has_device:
+            tools = check_sync_tool_availability(settings)
 
-        if tools.has_missing:
-            if tools.can_download:
-                dlg = _MissingToolsDialog(self, tools.tool_list, can_download=True)
-                if dlg.exec() == QDialog.DialogCode.Accepted:
-                    self._download_missing_tools_then_sync(
-                        tools.missing_ffmpeg,
-                        tools.missing_fpcalc,
+            if tools.has_missing:
+                if tools.can_download:
+                    dlg = _MissingToolsDialog(self, tools.tool_list, can_download=True)
+                    if dlg.exec() == QDialog.DialogCode.Accepted:
+                        self._download_missing_tools_then_sync(
+                            tools.missing_ffmpeg,
+                            tools.missing_fpcalc,
+                        )
+                        return
+                    elif not tools.can_continue_without_download:
+                        return
+                    # ffmpeg missing but user declined — let them continue with MP3/M4A only
+                else:
+                    # Platform doesn't support auto-download
+                    dlg = _MissingToolsDialog(
+                        self,
+                        tools.tool_list,
+                        can_download=False,
+                        detail_lines=tools.install_help_text,
                     )
-                    return
-                elif not tools.can_continue_without_download:
-                    return
-                # ffmpeg missing but user declined — let them continue with MP3/M4A only
-            else:
-                # Platform doesn't support auto-download
-                dlg = _MissingToolsDialog(
-                    self,
-                    tools.tool_list,
-                    can_download=False,
-                    detail_lines=tools.install_help_text,
-                )
-                if tools.can_continue_without_download:
-                    dlg.add_continue_option()
+                    if tools.can_continue_without_download:
+                        dlg.add_continue_option()
 
-                if dlg.exec() != QDialog.DialogCode.Accepted:
-                    return
-                # User clicked Continue Anyway (only possible when fpcalc is present)
+                    if dlg.exec() != QDialog.DialogCode.Accepted:
+                        return
+                    # User clicked Continue Anyway (only possible when fpcalc is present)
 
         # Show folder selection dialog
-        dialog = PCFolderDialog(self, self._last_pc_folder_entries)
+        dialog = PCFolderDialog(
+            self,
+            self._last_pc_folder_entries,
+            sync_available=has_device,
+        )
+        dialog.foldersChanged.connect(self._persist_pc_folder_entries)
         if dialog.exec() != dialog.DialogCode.Accepted:
             return
 
-        self._last_pc_folder_entries = dialog.selected_folder_entries
-        self._last_pc_folders = dialog.selected_folders
+        self._persist_pc_folder_entries(dialog.selected_folder_entries)
         primary_pc_folder = dialog.selected_folder
-        # Persist the folder choice
-        global_settings = self.settings_service.get_global_settings()
-        global_settings.media_folder = primary_pc_folder
-        global_settings.media_folders = list(self._last_pc_folder_entries)
-        self.settings_service.save_global_settings(global_settings)
         settings = self.settings_service.get_effective_settings()
+
+        if not has_device:
+            return
 
         # Branch: selective sync opens the PC library browser first
         if dialog.sync_mode == "selective":
@@ -1189,6 +1186,19 @@ class MainWindow(QMainWindow):
         self._sync_worker.finished.connect(self._onSyncDiffComplete)
         self._sync_worker.error.connect(self._onSyncError)
         self._sync_worker.start()
+
+    def _persist_pc_folder_entries(self, folder_entries: object) -> None:
+        """Persist PC media-folder settings immediately after dialog edits."""
+
+        entries = _normalize_media_folder_settings(folder_entries)
+        self._last_pc_folder_entries = entries
+        self._last_pc_folders = media_folder_paths(entries)
+        global_settings = self.settings_service.get_global_settings()
+        global_settings.media_folder = (
+            self._last_pc_folders[0] if self._last_pc_folders else ""
+        )
+        global_settings.media_folders = list(entries)
+        self.settings_service.save_global_settings(global_settings)
 
     def _download_missing_tools_then_sync(self, need_ffmpeg: bool, need_fpcalc: bool):
         """Download missing tools in a background thread, then restart sync."""

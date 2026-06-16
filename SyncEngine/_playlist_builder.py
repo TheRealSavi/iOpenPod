@@ -7,8 +7,6 @@ ready for write_itunesdb().
 
 import base64
 import logging
-import os
-from pathlib import Path
 
 from iTunesDB_Shared.constants import MEDIA_TYPE_PODCAST
 from iTunesDB_Shared.playlist_properties import (
@@ -18,6 +16,8 @@ from iTunesDB_Shared.playlist_properties import (
 from iTunesDB_Writer.mhit_writer import TrackInfo
 from iTunesDB_Writer.mhod_spl_writer import prefs_from_parsed, rules_from_parsed
 from iTunesDB_Writer.mhyp_writer import PlaylistInfo, PlaylistItemMeta
+
+from .path_identity import coerce_int, stable_path_key
 
 logger = logging.getLogger(__name__)
 
@@ -175,17 +175,11 @@ def _playlist_description(playlist: dict) -> str | None:
 
 
 def _source_path_key(path: str) -> str:
-    try:
-        return os.path.normcase(str(Path(path).expanduser().resolve()))
-    except OSError:
-        return os.path.normcase(str(Path(path).expanduser()))
+    return stable_path_key(path)
 
 
 def _mhsd5_type_value(playlist: dict) -> int:
-    try:
-        return int(playlist.get("mhsd5_type", 0) or 0)
-    except (TypeError, ValueError):
-        return 0
+    return coerce_int(playlist.get("mhsd5_type", 0))
 
 
 def build_and_evaluate_playlists(
@@ -216,12 +210,16 @@ def build_and_evaluate_playlists(
 
     old_tid_to_db_track_id: dict[int, int] = {}
     for t in existing_tracks_data:
-        tid = t.get("track_id", 0)
-        db_track_id = t.get("db_track_id", t.get("db_id", 0))
+        tid = coerce_int(t.get("track_id", 0))
+        db_track_id = coerce_int(t.get("db_track_id", t.get("db_id", 0)))
         if tid and db_track_id:
             old_tid_to_db_track_id[tid] = db_track_id
 
-    valid_db_track_ids: set[int] = {t.db_track_id for t in all_track_infos if t.db_track_id}
+    valid_db_track_ids: set[int] = set()
+    for track_info in all_track_infos:
+        db_track_id = coerce_int(track_info.db_track_id)
+        if db_track_id:
+            valid_db_track_ids.add(db_track_id)
     eval_tracks = [trackinfo_to_eval_dict(t) for t in all_track_infos]
 
     source_lookup = {
@@ -387,7 +385,7 @@ def _playlist_track_ids_and_metadata(
     item_meta: list[PlaylistItemMeta] = []
     for item in items:
         tid = item.get("track_id", 0)
-        db_track_id = old_tid_to_db_track_id.get(tid, 0)
+        db_track_id = old_tid_to_db_track_id.get(coerce_int(tid), 0)
         if not db_track_id:
             db_track_id = item.get("db_track_id", item.get("db_id", 0))
         if not db_track_id:
@@ -397,10 +395,7 @@ def _playlist_track_ids_and_metadata(
                     _source_path_key(str(source_path)),
                     0,
                 )
-        try:
-            db_track_id = int(db_track_id or 0)
-        except (TypeError, ValueError):
-            db_track_id = 0
+        db_track_id = coerce_int(db_track_id)
         if db_track_id in valid_db_track_ids:
             track_ids.append(db_track_id)
             item_meta.append(PlaylistItemMeta(

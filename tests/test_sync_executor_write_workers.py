@@ -11,7 +11,8 @@ from iTunesDB_Writer.mhit_writer import TrackInfo
 from SyncEngine.fingerprint_diff_engine import SyncAction, SyncItem, SyncPlan
 from SyncEngine.mapping import MappingFile
 from SyncEngine.pc_library import PCTrack
-from SyncEngine.sync_executor import SyncExecutor, _SyncContext
+from SyncEngine.sync_executor import SyncExecutor, _ExecutionLifecycle, _SyncContext
+from SyncEngine.sync_playlist_files import normalize_sync_playlist_path, sync_playlist_file_id
 from SyncEngine.transcoder import TranscodeResult, TranscodeTarget, resolve_transcode_plan
 
 
@@ -71,6 +72,377 @@ def test_auto_write_workers_use_hdd_safe_default_for_classic(tmp_path: Path) -> 
 
     assert executor._max_workers == 6
     assert executor._max_device_write_workers == 1
+
+
+def test_commit_file_mutations_writes_normal_database(monkeypatch, tmp_path: Path) -> None:
+    executor = SyncExecutor(tmp_path)
+    ctx = _SyncContext(
+        plan=SyncPlan(),
+        mapping=MappingFile(),
+        progress_callback=None,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+    )
+    writes: list[str] = []
+
+    monkeypatch.setattr(
+        executor,
+        "_execute_write_and_finalize",
+        lambda _ctx: writes.append("write"),
+    )
+
+    executor._commit_file_mutations(ctx, on_cancel_with_partial=None)
+
+    assert writes == ["write"]
+    assert not ctx.result.partial_save
+
+
+def test_execution_lifecycle_runs_named_phases_in_order(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    executor = SyncExecutor(tmp_path)
+    ctx = _SyncContext(
+        plan=SyncPlan(to_add=[SyncItem(action=SyncAction.ADD_TO_IPOD)]),
+        mapping=MappingFile(),
+        progress_callback=None,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+    )
+    lifecycle = _ExecutionLifecycle(on_cancel_with_partial=lambda _a, _b: True)
+    order: list[str] = []
+
+    def fake_prepare(_ctx) -> bool:
+        order.append("prepare")
+        return True
+
+    def fake_preflight(_ctx) -> bool:
+        order.append("preflight")
+        return True
+
+    monkeypatch.setattr(executor, "_prepare_execution_plan", fake_prepare)
+    monkeypatch.setattr(executor, "_run_preflight_phase", fake_preflight)
+    monkeypatch.setattr(
+        executor,
+        "_run_file_mutation_phase",
+        lambda _ctx: order.append("mutate"),
+    )
+
+    def fake_commit(_ctx, commit_lifecycle):
+        assert commit_lifecycle is lifecycle
+        order.append("commit")
+
+    monkeypatch.setattr(executor, "_run_database_commit_phase", fake_commit)
+
+    executor._run_execution_lifecycle(ctx, lifecycle)
+
+    assert order == ["prepare", "preflight", "mutate", "commit"]
+    assert ctx.result.success
+
+
+def test_prepare_execution_plan_rejects_structurally_invalid_plan(
+    tmp_path: Path,
+) -> None:
+    executor = SyncExecutor(tmp_path)
+    ctx = _SyncContext(
+        plan=SyncPlan(to_add=[SyncItem(action=SyncAction.ADD_TO_IPOD)]),
+        mapping=MappingFile(),
+        progress_callback=None,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+    )
+
+    assert not executor._prepare_execution_plan(ctx)
+    assert not ctx.result.success
+    assert ctx.result.errors[0][0] == "add_missing_source"
+
+
+def test_prepare_execution_plan_keeps_user_playlist_only_changes(
+    tmp_path: Path,
+) -> None:
+    executor = SyncExecutor(tmp_path)
+    ctx = _SyncContext(
+        plan=SyncPlan(),
+        mapping=MappingFile(),
+        progress_callback=None,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+        user_playlists=[
+            {
+                "playlist_id": 42,
+                "Title": "Manual",
+                "_isNew": True,
+                "items": [{"db_track_id": 101}],
+            }
+        ],
+    )
+
+    assert executor._prepare_execution_plan(ctx)
+    assert ctx.result.success
+
+
+def test_loaded_database_validation_rejects_missing_update_target(
+    tmp_path: Path,
+) -> None:
+    executor = SyncExecutor(tmp_path)
+    ctx = _SyncContext(
+        plan=SyncPlan(
+            to_update_metadata=[
+                SyncItem(
+                    action=SyncAction.UPDATE_METADATA,
+                    db_track_id=404,
+                    metadata_changes={"title": ("New", "Old")},
+                )
+            ]
+        ),
+        mapping=MappingFile(),
+        progress_callback=None,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+    )
+
+    assert not executor._validate_loaded_database_targets(ctx)
+    assert not ctx.result.success
+    assert ctx.result.errors[0][0] == "stale_plan_to_update_metadata"
+
+
+def test_loaded_database_validation_accepts_remove_target_by_location(
+    tmp_path: Path,
+) -> None:
+    executor = SyncExecutor(tmp_path)
+    location = ":iPod_Control:Music:F00:Song.mp3"
+    ctx = _SyncContext(
+        plan=SyncPlan(
+            to_remove=[
+                SyncItem(
+                    action=SyncAction.REMOVE_FROM_IPOD,
+                    ipod_track={"Location": location},
+                )
+            ]
+        ),
+        mapping=MappingFile(),
+        progress_callback=None,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+    )
+    ctx.tracks_by_location[location] = TrackInfo(location=location, title="Song")
+
+    assert executor._validate_loaded_database_targets(ctx)
+    assert ctx.result.success
+
+
+def test_remove_uses_loaded_database_location_over_stale_plan_location(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    executor = SyncExecutor(tmp_path)
+    stale_location = ":iPod_Control:Music:F00:Old.mp3"
+    current_location = ":iPod_Control:Music:F01:Current.mp3"
+    ctx = _SyncContext(
+        plan=SyncPlan(),
+        mapping=MappingFile(),
+        progress_callback=None,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+    )
+    ctx.tracks_by_db_track_id[42] = TrackInfo(
+        db_track_id=42,
+        location=current_location,
+        title="Current",
+    )
+    ctx.tracks_by_location[current_location] = ctx.tracks_by_db_track_id[42]
+    item = SyncItem(
+        action=SyncAction.REMOVE_FROM_IPOD,
+        db_track_id=42,
+        ipod_track={"Location": stale_location},
+    )
+    deleted_paths: list[Path] = []
+
+    def record_deleted_path(path: str | Path) -> bool:
+        deleted_paths.append(Path(path))
+        return True
+
+    monkeypatch.setattr(
+        executor,
+        "_delete_from_ipod",
+        record_deleted_path,
+    )
+
+    executor._execute_remove_items(
+        ctx,
+        [item],
+        stage_name="remove",
+        start_message="Removing tracks...",
+    )
+
+    assert deleted_paths == [tmp_path / "iPod_Control/Music/F01/Current.mp3"]
+    assert 42 not in ctx.tracks_by_db_track_id
+
+
+def test_remove_reports_delete_failure_but_removes_database_row(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    executor = SyncExecutor(tmp_path)
+    location = ":iPod_Control:Music:F00:Song.mp3"
+    ctx = _SyncContext(
+        plan=SyncPlan(),
+        mapping=MappingFile(),
+        progress_callback=None,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+    )
+    ctx.tracks_by_db_track_id[42] = TrackInfo(
+        db_track_id=42,
+        location=location,
+        title="Song",
+    )
+    ctx.tracks_by_location[location] = ctx.tracks_by_db_track_id[42]
+    item = SyncItem(
+        action=SyncAction.REMOVE_FROM_IPOD,
+        db_track_id=42,
+        ipod_track={"Location": location},
+    )
+    monkeypatch.setattr(executor, "_delete_from_ipod", lambda _path: False)
+
+    executor._execute_remove_items(
+        ctx,
+        [item],
+        stage_name="remove",
+        start_message="Removing tracks...",
+    )
+
+    assert ctx.result.errors
+    assert "Could not delete iPod file" in ctx.result.errors[0][1]
+    assert 42 not in ctx.tracks_by_db_track_id
+
+
+def test_commit_file_mutations_can_discard_cancelled_adds_only(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    executor = SyncExecutor(tmp_path)
+    ctx = _SyncContext(
+        plan=SyncPlan(to_add=[SyncItem(action=SyncAction.ADD_TO_IPOD)]),
+        mapping=MappingFile(),
+        progress_callback=None,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=lambda: True,
+    )
+    ctx.new_tracks.append(TrackInfo(location=":iPod_Control:Music:F00:copied.mp3", title="Copied"))
+    writes: list[str] = []
+
+    monkeypatch.setattr(
+        executor,
+        "_execute_write_and_finalize",
+        lambda _ctx: writes.append("write"),
+    )
+
+    executor._commit_file_mutations(
+        ctx,
+        on_cancel_with_partial=lambda _added, _skipped: False,
+    )
+
+    assert writes == []
+    assert not ctx.result.partial_save
+    assert "database was not updated" in ctx.result.errors[-1][1]
+
+
+def test_commit_file_mutations_forces_db_write_after_cancelled_removal(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    executor = SyncExecutor(tmp_path)
+    ctx = _SyncContext(
+        plan=SyncPlan(to_add=[SyncItem(action=SyncAction.ADD_TO_IPOD)]),
+        mapping=MappingFile(),
+        progress_callback=None,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=lambda: True,
+    )
+    ctx.new_tracks.append(
+        TrackInfo(
+            location=":iPod_Control:Music:F00:discarded.mp3",
+            title="Discarded",
+        )
+    )
+    ctx.result.tracks_removed = 1
+    writes: list[str] = []
+
+    monkeypatch.setattr(
+        executor,
+        "_execute_write_and_finalize",
+        lambda _ctx: writes.append("write"),
+    )
+
+    executor._commit_file_mutations(
+        ctx,
+        on_cancel_with_partial=lambda _added, _skipped: False,
+    )
+
+    assert writes == ["write"]
+    assert ctx.result.partial_save
+    assert ctx.new_tracks == []
+    assert "removal" in ctx.result.errors[-1][1]
+
+
+def test_prepare_database_commit_input_resolves_pending_playlist_source_paths(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "new.mp3"
+    source.write_bytes(b"audio")
+    source_key = normalize_sync_playlist_path(source)
+    playlist_id = sync_playlist_file_id(tmp_path / "mix.m3u8")
+    ctx = _SyncContext(
+        plan=SyncPlan(),
+        mapping=MappingFile(),
+        progress_callback=None,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+        user_playlists=[
+            {
+                "Title": "Mix",
+                "playlist_id": playlist_id,
+                "_isNew": True,
+                "_source": "sync_playlist_file",
+                "_mhsd_dataset_type": 2,
+                "items": [{"source_path": source_key}],
+            }
+        ],
+    )
+    ctx.new_tracks.append(
+        TrackInfo(
+            title="New",
+            location=":iPod_Control:Music:F00:New.mp3",
+            source_path=source_key,
+        )
+    )
+    progress_messages: list[str] = []
+
+    commit_input = SyncExecutor(tmp_path)._prepare_database_commit_input(
+        ctx,
+        advance=progress_messages.append,
+    )
+
+    assigned_db_id = ctx.new_tracks[0].db_track_id
+    assert assigned_db_id
+    assert progress_messages == ["Preparing tracks", "Resolving playlists"]
+    assert commit_input.all_tracks == ctx.new_tracks
+    assert commit_input.playlist_payload.standard_playlists == commit_input.playlists
+    assert [playlist.track_ids for playlist in commit_input.playlists] == [
+        [assigned_db_id]
+    ]
 
 
 def test_auto_write_workers_use_flash_friendly_default_for_nano(tmp_path: Path) -> None:
@@ -476,10 +848,80 @@ def test_merge_gui_playlists_leaves_ipod_categories_in_smart_bucket(
     assert ctx.existing_dataset5_smart_playlists_raw == [category]
 
 
+def test_merge_gui_playlists_applies_plan_playlist_adds_and_edits(
+    tmp_path: Path,
+) -> None:
+    executor = SyncExecutor(tmp_path)
+    new_playlist = {
+        "playlist_id": 101,
+        "Title": "Synced Mix",
+        "_isNew": True,
+        "_mhsd_dataset_type": 2,
+        "items": [{"source_path": "/music/a.mp3"}],
+    }
+    edited_playlist = {
+        "playlist_id": 202,
+        "Title": "Updated Mix",
+        "_isNew": False,
+        "_mhsd_dataset_type": 2,
+        "items": [{"db_track_id": 99}],
+    }
+    ctx = _make_sync_ctx(
+        user_playlists=[],
+        existing_dataset2_standard_playlists_raw=[
+            {
+                "playlist_id": 202,
+                "Title": "Old Mix",
+                "_mhsd_dataset_type": 2,
+                "items": [],
+            }
+        ],
+        existing_dataset5_smart_playlists_raw=[],
+    )
+    ctx.plan.playlists_to_add = [new_playlist]
+    ctx.plan.playlists_to_edit = [edited_playlist]
+
+    executor._merge_gui_playlists(ctx)
+
+    assert ctx.existing_dataset2_standard_playlists_raw == [
+        edited_playlist,
+        new_playlist,
+    ]
+
+
+def test_merge_gui_playlists_replaces_new_playlist_id_collision(
+    tmp_path: Path,
+) -> None:
+    executor = SyncExecutor(tmp_path)
+    incoming = {
+        "playlist_id": 101,
+        "Title": "Incoming Mix",
+        "_isNew": True,
+        "_mhsd_dataset_type": 2,
+        "items": [{"db_track_id": 1}],
+    }
+    ctx = _make_sync_ctx(
+        user_playlists=[incoming],
+        existing_dataset2_standard_playlists_raw=[
+            {
+                "playlist_id": 101,
+                "Title": "Existing Mix",
+                "_mhsd_dataset_type": 2,
+                "items": [{"db_track_id": 2}],
+            }
+        ],
+        existing_dataset5_smart_playlists_raw=[],
+    )
+
+    executor._merge_gui_playlists(ctx)
+
+    assert ctx.existing_dataset2_standard_playlists_raw == [incoming]
+
+
 def test_merge_gui_playlists_removes_reviewed_playlist_rows(tmp_path: Path) -> None:
     executor = SyncExecutor(tmp_path)
     remove_playlist = {
-        "playlist_id": 42,
+        "playlist_id": "42",
         "Title": "Synced Mix",
         "_mhsd_dataset_type": 2,
     }

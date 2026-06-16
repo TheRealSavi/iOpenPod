@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from .mapping import MappingFile
 
@@ -24,6 +24,13 @@ def _fmt_bytes(val: int) -> str:
             return f"{v:.1f} {unit}"
         v /= 1024
     return f"{v:.1f} TB"
+
+
+def _coerce_nonnegative_int(value: Any) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
 
 
 class SyncAction(Enum):
@@ -73,6 +80,68 @@ class SyncItem:
     aggregate_rebuild_pc_tracks: tuple[PCTrack, ...] = ()
     aggregate_removed_fingerprint: str | None = None
 
+    def __init__(
+        self,
+        action: SyncAction,
+        fingerprint: str | None = None,
+        pc_track: PCTrack | None = None,
+        estimated_size: int | None = None,
+        transcode_plan: TranscodePlan | None = None,
+        db_track_id: int | None = None,
+        ipod_track: dict | None = None,
+        metadata_changes: dict | None = None,
+        play_count_delta: int = 0,
+        skip_count_delta: int = 0,
+        ipod_rating: int = 0,
+        pc_rating: int = 0,
+        new_rating: int = 0,
+        rating_strategy: str = "",
+        old_art_hash: str | None = None,
+        new_art_hash: str | None = None,
+        description: str = "",
+        conversion_group_id: str | None = None,
+        conversion_group_add_count: int = 0,
+        defer_removal_until_after_add: bool = False,
+        conversion_source_fingerprints: tuple[str, ...] = (),
+        conversion_source_path_hints: tuple[str, ...] = (),
+        conversion_source_metadata: tuple[dict, ...] = (),
+        mapping_source_metadata: dict | None = None,
+        aggregate_kind: str | None = None,
+        aggregate_contains_fingerprints: tuple[str, ...] = (),
+        aggregate_contains_sources: tuple[dict, ...] = (),
+        aggregate_rebuild_pc_tracks: tuple[PCTrack, ...] = (),
+        aggregate_removed_fingerprint: str | None = None,
+    ) -> None:
+        self.action = action
+        self.fingerprint = fingerprint
+        self.pc_track = pc_track
+        self.estimated_size = estimated_size
+        self.transcode_plan = transcode_plan
+        self.db_track_id = db_track_id
+        self.ipod_track = ipod_track
+        self.metadata_changes = metadata_changes or {}
+        self.play_count_delta = play_count_delta
+        self.skip_count_delta = skip_count_delta
+        self.ipod_rating = ipod_rating
+        self.pc_rating = pc_rating
+        self.new_rating = new_rating
+        self.rating_strategy = rating_strategy
+        self.old_art_hash = old_art_hash
+        self.new_art_hash = new_art_hash
+        self.description = description
+        self.conversion_group_id = conversion_group_id
+        self.conversion_group_add_count = conversion_group_add_count
+        self.defer_removal_until_after_add = defer_removal_until_after_add
+        self.conversion_source_fingerprints = conversion_source_fingerprints
+        self.conversion_source_path_hints = conversion_source_path_hints
+        self.conversion_source_metadata = conversion_source_metadata
+        self.mapping_source_metadata = mapping_source_metadata
+        self.aggregate_kind = aggregate_kind
+        self.aggregate_contains_fingerprints = aggregate_contains_fingerprints
+        self.aggregate_contains_sources = aggregate_contains_sources
+        self.aggregate_rebuild_pc_tracks = aggregate_rebuild_pc_tracks
+        self.aggregate_removed_fingerprint = aggregate_removed_fingerprint
+
     def __post_init__(self) -> None:
         if self.metadata_changes is None:
             self.metadata_changes = {}
@@ -85,6 +154,108 @@ class SyncItem:
     @db_id.setter
     def db_id(self, value: int | None) -> None:
         self.db_track_id = value
+
+    @property
+    def has_pc_source(self) -> bool:
+        """True when this item has a source track available on the PC."""
+
+        return self.pc_track is not None and bool(getattr(self.pc_track, "path", ""))
+
+    @property
+    def source_path(self) -> str:
+        """Absolute or library-relative PC source path, when available."""
+
+        return str(getattr(self.pc_track, "path", "") or "") if self.pc_track else ""
+
+    @property
+    def source_relative_path(self) -> str:
+        """Stable library-relative source hint, when available."""
+
+        if self.pc_track is None:
+            return ""
+        return str(getattr(self.pc_track, "relative_path", "") or "")
+
+    @property
+    def ipod_location(self) -> str:
+        """iPod database location path for removal/update items."""
+
+        if not self.ipod_track:
+            return ""
+        return str(
+            self.ipod_track.get("Location")
+            or self.ipod_track.get("location")
+            or ""
+        )
+
+    @property
+    def display_label(self) -> str:
+        """Best short label for progress/errors."""
+
+        if self.description:
+            return self.description
+        if self.pc_track is not None:
+            return str(
+                getattr(self.pc_track, "title", None)
+                or getattr(self.pc_track, "filename", None)
+                or getattr(self.pc_track, "path", "")
+                or "track"
+            )
+        if self.ipod_track:
+            return str(
+                self.ipod_track.get("Title")
+                or self.ipod_track.get("title")
+                or self.ipod_location
+                or "track"
+            )
+        return "track"
+
+    @property
+    def planned_add_size(self) -> int:
+        """Estimated bytes that this item will write to the device."""
+
+        if self.estimated_size is not None:
+            return _coerce_nonnegative_int(self.estimated_size)
+        if self.pc_track is not None:
+            return _coerce_nonnegative_int(getattr(self.pc_track, "size", 0))
+        return 0
+
+    @property
+    def planned_remove_size(self) -> int:
+        """Estimated bytes removed from the device for this item."""
+
+        if not self.ipod_track:
+            return 0
+        return _coerce_nonnegative_int(self.ipod_track.get("size", 0))
+
+    @property
+    def planned_update_growth(self) -> int:
+        """Positive byte growth when replacing an existing file."""
+
+        return max(0, self.planned_add_size - self.planned_remove_size)
+
+    @property
+    def conversion_group_key(self) -> str:
+        return str(self.conversion_group_id or "")
+
+    @property
+    def conversion_group_expected_count(self) -> int:
+        return _coerce_nonnegative_int(self.conversion_group_add_count)
+
+    @property
+    def is_deferred_removal(self) -> bool:
+        return bool(self.defer_removal_until_after_add)
+
+    @property
+    def is_deferred_replacement_removal(self) -> bool:
+        return bool(self.defer_removal_until_after_add and self.conversion_group_id)
+
+    @property
+    def is_chaptered_aggregate_rebuild(self) -> bool:
+        return (
+            self.aggregate_kind == "chaptered_album"
+            and bool(self.aggregate_rebuild_pc_tracks)
+            and bool(self.db_track_id)
+        )
 
 
 @dataclass
@@ -170,26 +341,9 @@ class SyncPlan:
 
     @property
     def summary(self) -> str:
-        track_add_bytes = sum(
-            (
-                item.estimated_size
-                if item.estimated_size is not None
-                else (item.pc_track.size if item.pc_track else 0)
-            )
-            for item in self.to_add
-        )
-        track_remove_bytes = sum(
-            (item.ipod_track.get("size", 0) if item.ipod_track else 0)
-            for item in self.to_remove
-        )
-        track_update_bytes = sum(
-            (
-                item.estimated_size
-                if item.estimated_size is not None
-                else (item.pc_track.size if item.pc_track else 0)
-            )
-            for item in self.to_update_file
-        )
+        track_add_bytes = sum(item.planned_add_size for item in self.to_add)
+        track_remove_bytes = sum(item.planned_remove_size for item in self.to_remove)
+        track_update_bytes = sum(item.planned_add_size for item in self.to_update_file)
 
         lines = []
         if self.to_add:

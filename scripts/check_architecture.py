@@ -71,6 +71,16 @@ SYNC_EXECUTOR_PRIVATE_ATTRS = (
     "_track_dict_to_info",
     "_write_database",
 )
+SYNC_ENGINE_LOW_LEVEL_MODULES = {
+    "SyncEngine.fingerprint_diff_engine": "FingerprintDiffEngine",
+    "SyncEngine.sync_executor": "SyncExecutor",
+}
+SYNC_ENGINE_LOW_LEVEL_ALLOWED_PATHS = (
+    "SyncEngine/__init__.py",
+    "SyncEngine/core/engine.py",
+    "SyncEngine/fingerprint_diff_engine.py",
+    "SyncEngine/sync_executor.py",
+)
 
 
 def normalize_path(path: Path, repo_root: Path) -> str:
@@ -395,6 +405,76 @@ def detect_sync_executor_private_usage(repo_root: Path) -> dict[str, list[str]]:
     return violations
 
 
+def detect_sync_engine_facade_bypass(repo_root: Path) -> dict[str, list[str]]:
+    """Find production orchestration code bypassing the typed SyncEngine facade."""
+
+    violations: dict[str, list[str]] = {}
+    allowed_paths = set(SYNC_ENGINE_LOW_LEVEL_ALLOWED_PATHS)
+
+    for path in iter_python_files(repo_root):
+        normalized = normalize_path(path, repo_root)
+        if normalized in allowed_paths:
+            continue
+
+        try:
+            tree = parse_python(path)
+        except SyntaxError:
+            continue
+
+        hits: set[str] = set()
+        imported_low_level_names: set[str] = set()
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                module = node.module or ""
+                exported_name = SYNC_ENGINE_LOW_LEVEL_MODULES.get(module)
+                if not exported_name:
+                    continue
+                for alias in node.names:
+                    if alias.name == exported_name:
+                        imported_name = alias.asname or alias.name
+                        imported_low_level_names.add(imported_name)
+                        hits.add(f"{module}.{alias.name}")
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    name = alias.name
+                    if name in SYNC_ENGINE_LOW_LEVEL_MODULES:
+                        hits.add(name)
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            if (
+                isinstance(func, ast.Name)
+                and func.id in imported_low_level_names
+            ):
+                hits.add(func.id)
+            elif (
+                isinstance(func, ast.Attribute)
+                and func.attr in SYNC_ENGINE_LOW_LEVEL_MODULES.values()
+            ):
+                module_name = _attribute_module_name(func.value)
+                if module_name in SYNC_ENGINE_LOW_LEVEL_MODULES:
+                    hits.add(f"{module_name}.{func.attr}")
+
+        if hits:
+            violations[normalized] = sorted(hits)
+
+    return violations
+
+
+def _attribute_module_name(node: ast.AST) -> str:
+    parts: list[str] = []
+    current: ast.AST | None = node
+    while isinstance(current, ast.Attribute):
+        parts.append(current.attr)
+        current = current.value
+    if isinstance(current, ast.Name):
+        parts.append(current.id)
+    return ".".join(reversed(parts))
+
+
 def build_import_graph(repo_root: Path) -> dict[str, set[str]]:
     """Build the first-party import graph used for cycle detection."""
 
@@ -578,6 +658,12 @@ def check_rules(repo_root: Path, rules: dict) -> list[str]:
     if sync_executor_private_usage:
         errors.append("Private SyncExecutor API usage detected outside SyncEngine:")
         for path, names in sorted(sync_executor_private_usage.items()):
+            errors.append(f"  - {path}: {', '.join(names)}")
+
+    sync_engine_facade_bypass = detect_sync_engine_facade_bypass(repo_root)
+    if sync_engine_facade_bypass:
+        errors.append("Direct SyncEngine planner/executor orchestration detected:")
+        for path, names in sorted(sync_engine_facade_bypass.items()):
             errors.append(f"  - {path}: {', '.join(names)}")
 
     allowed_except_pass = rules.get("allowed_except_exception_pass_counts", {})

@@ -598,6 +598,20 @@ def _collect_track_artwork_decisions(
     return decisions, summary
 
 
+def _format_artwork_decision_progress(summary: ArtworkDecisionSummary) -> str:
+    parts: list[str] = []
+    preserved = summary.preserved_unchanged + summary.preserved_fallback
+    if preserved:
+        parts.append(f"preserving {preserved} existing")
+    if summary.reencoded:
+        parts.append(f"updating {summary.reencoded} changed/new")
+    if summary.cleared:
+        parts.append(f"clearing {summary.cleared}")
+    if not parts:
+        return "Artwork — verifying existing artwork links"
+    return f"Artwork — verifying artwork links ({', '.join(parts)})"
+
+
 def _convert_new_pc_art(
     decisions: dict[int, TrackArtworkDecision],
     required_format_ids: list[int],
@@ -947,6 +961,7 @@ def write_artworkdb(
         normalized_pc_paths,
         existing_art,
     )
+    _prog(_format_artwork_decision_progress(decision_summary))
     logger.info(
         "ART decisions: preserve=%d fallback=%d reencode=%d clear=%d",
         decision_summary.preserved_unchanged,

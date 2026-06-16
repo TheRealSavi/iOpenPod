@@ -1214,46 +1214,63 @@ class SyncDiffWorker(QThread):
 
     @staticmethod
     def _pc_folders(request: SyncDiffRequest) -> tuple[Any, ...]:
-        folders = tuple(path for path in request.pc_folders if str(path).strip())
+        folders = tuple(
+            path
+            for path in request.pc_folders
+            if path is not None and not (isinstance(path, str) and not path.strip())
+        )
         if folders:
             return folders
         return (request.pc_folder,) if request.pc_folder else ()
 
     def run(self) -> None:
         try:
-            from SyncEngine.fingerprint_diff_engine import FingerprintDiffEngine
-            from SyncEngine.pc_library import PCLibrary
+            from SyncEngine.core import (
+                EngineOperation,
+                EngineOptions,
+                EngineRequest,
+                SyncEngine,
+            )
 
             request = self._request
-            pc_library = PCLibrary(self._pc_folders(request))
-            diff_engine = FingerprintDiffEngine(
-                pc_library,
-                request.ipod_path,
-                supports_video=request.supports_video,
-                supports_podcast=request.supports_podcast,
-                supports_photo=request.supports_photo,
-                fpcalc_path=request.fpcalc_path,
-                photo_sync_settings=request.photo_sync_settings,
-                transcode_options=request.transcode_options,
-            )
 
-            plan = diff_engine.compute_diff(
-                request.ipod_tracks,
-                progress_callback=lambda stage, cur, tot, msg: self.progress.emit(
-                    stage,
-                    cur,
-                    tot,
-                    msg,
-                ),
-                is_cancelled=self.isInterruptionRequested,
+            def on_engine_progress(progress) -> None:
+                legacy = progress.legacy_event
+                if isinstance(legacy, tuple) and len(legacy) == 4:
+                    stage, cur, total, message = legacy
+                    self.progress.emit(stage, cur, total, message)
+                    return
+                self.progress.emit(
+                    str(progress.stage),
+                    progress.current,
+                    progress.total,
+                    progress.message,
+                )
+
+            engine_request = EngineRequest(
+                operation=EngineOperation.PLAN,
+                ipod_path=request.ipod_path,
+                pc_folders=self._pc_folders(request),
+                ipod_tracks=tuple(request.ipod_tracks),
+                existing_playlists=tuple(request.existing_playlists),
                 track_edits=request.track_edits,
                 photo_edits=request.photo_edits,
-                sync_workers=request.sync_workers,
-                rating_strategy=request.rating_strategy,
-                allowed_paths=request.allowed_paths,
-                selected_playlist_paths=request.selected_playlist_paths,
-                existing_playlists=list(request.existing_playlists),
+                options=EngineOptions(
+                    supports_video=request.supports_video,
+                    supports_podcast=request.supports_podcast,
+                    supports_photo=request.supports_photo,
+                    sync_workers=request.sync_workers,
+                    rating_strategy=request.rating_strategy,
+                    allowed_paths=request.allowed_paths,
+                    selected_playlist_paths=request.selected_playlist_paths,
+                    fpcalc_path=request.fpcalc_path,
+                    photo_sync_settings=request.photo_sync_settings,
+                    transcode_options=request.transcode_options,
+                ),
+                progress_callback=on_engine_progress,
+                is_cancelled=self.isInterruptionRequested,
             )
+            plan = SyncEngine().compute_plan(engine_request)
 
             if not self.isInterruptionRequested():
                 self.finished.emit(plan)
@@ -1881,6 +1898,30 @@ def _snapshot_cache_for_itunesdb_write(
     return tracks, playlists, artwork_sources
 
 
+def _engine_quick_write(
+    ipod_path: str,
+    *,
+    tracks_data: list[dict[str, Any]],
+    playlists_data: list[dict[str, Any]],
+    artwork_sources: dict[int, str],
+):
+    from SyncEngine.core import (
+        EngineOperation,
+        EngineRequest,
+        SyncEngine,
+    )
+
+    return SyncEngine().quick_write(
+        EngineRequest(
+            operation=EngineOperation.QUICK_WRITE,
+            ipod_path=ipod_path,
+            tracks_data=tuple(tracks_data),
+            playlists_data=tuple(playlists_data),
+            artwork_sources=artwork_sources,
+        )
+    )
+
+
 class QuickWriteWorker(QThread):
     """Background worker that dumps the current cached iTunesDB snapshot."""
 
@@ -1903,9 +1944,7 @@ class QuickWriteWorker(QThread):
 
     def run(self) -> None:
         try:
-            from SyncEngine.quick_writes import write_cached_itunesdb
-
-            result = write_cached_itunesdb(
+            result = _engine_quick_write(
                 self._ipod_path,
                 tracks_data=self._tracks_data,
                 playlists_data=self._playlists_data,
@@ -1934,8 +1973,6 @@ class PlaylistWriteWorker(QThread):
 
     def run(self) -> None:
         try:
-            from SyncEngine.quick_writes import write_cached_itunesdb
-
             if not self._ipod_path:
                 _reload_after_itunesdb_write(self._cache)
                 self.failed.emit("No iPod connected.")
@@ -1948,7 +1985,7 @@ class PlaylistWriteWorker(QThread):
             tracks_data, playlists_data, artwork_sources = (
                 _snapshot_cache_for_itunesdb_write(self._cache)
             )
-            result = write_cached_itunesdb(
+            result = _engine_quick_write(
                 self._ipod_path,
                 tracks_data=tracks_data,
                 playlists_data=playlists_data,
@@ -1985,8 +2022,6 @@ class PlaylistDeleteWorker(QThread):
 
     def run(self) -> None:
         try:
-            from SyncEngine.quick_writes import write_cached_itunesdb
-
             if not self._ipod_path:
                 _reload_after_itunesdb_write(self._cache)
                 self.failed.emit("No iPod connected.")
@@ -1999,7 +2034,7 @@ class PlaylistDeleteWorker(QThread):
             tracks_data, playlists_data, artwork_sources = (
                 _snapshot_cache_for_itunesdb_write(self._cache)
             )
-            result = write_cached_itunesdb(
+            result = _engine_quick_write(
                 self._ipod_path,
                 tracks_data=tracks_data,
                 playlists_data=playlists_data,
@@ -2046,16 +2081,14 @@ class PlaylistImportWorker(QThread):
                 SyncAction,
                 SyncItem,
                 SyncPlan,
-                SyncRequest,
             )
+            from SyncEngine.core import EngineOperation, EngineRequest, SyncEngine
             from SyncEngine.mapping import MappingManager
             from SyncEngine.pc_library import PCLibrary
             from SyncEngine.playlist_parser import (
                 PlaylistPathResolver,
                 parse_playlist,
             )
-            from SyncEngine.quick_writes import write_cached_itunesdb
-            from SyncEngine.sync_executor import SyncExecutor
 
             self.progress.emit(0, 0, "Parsing playlist file...")
             try:
@@ -2192,12 +2225,14 @@ class PlaylistImportWorker(QThread):
                 fresh_mapping = MappingManager(self._ipod_path).load()
                 plan = SyncPlan()
                 plan.to_add.extend(to_add)
-                request = SyncRequest(
+                request = EngineRequest(
+                    operation=EngineOperation.EXECUTE,
+                    ipod_path=self._ipod_path,
                     plan=plan,
                     mapping=fresh_mapping,
                     progress_callback=_on_sync_progress,
                 )
-                result = SyncExecutor(self._ipod_path).execute_request(request)
+                result = SyncEngine().execute_plan(request)
                 if not result.success:
                     error = result.errors[0] if result.errors else "Unknown error"
                     self.failed.emit(f"Sync failed: {error}")
@@ -2254,7 +2289,7 @@ class PlaylistImportWorker(QThread):
                 fresh_db = read_existing_database(Path(self._ipod_path))
                 tracks_data = copy.deepcopy(fresh_db.get("tracks", []))
                 playlists_data = copy.deepcopy(self._cache.get_playlists())
-            write_result = write_cached_itunesdb(
+            write_result = _engine_quick_write(
                 self._ipod_path,
                 tracks_data=tracks_data,
                 playlists_data=playlists_data,
@@ -2340,9 +2375,14 @@ class SyncExecuteWorker(QThread):
 
     def run(self) -> None:
         try:
-            from SyncEngine.contracts import SyncProgress, SyncRequest
+            from SyncEngine.contracts import SyncProgress
+            from SyncEngine.core import (
+                EngineOperation,
+                EngineOptions,
+                EngineRequest,
+                SyncEngine,
+            )
             from SyncEngine.mapping import MappingManager
-            from SyncEngine.sync_executor import SyncExecutor
 
             settings = self.settings
             self._partial_save_event = threading.Event()
@@ -2360,60 +2400,66 @@ class SyncExecuteWorker(QThread):
             if not self.skip_backup:
                 self._create_presync_backup(settings, SyncProgress)
 
-            cache_dir = (
-                Path(settings.transcode_cache_dir)
-                if settings.transcode_cache_dir
-                else None
-            )
-            executor = SyncExecutor(
-                self.ipod_path,
-                cache_dir=cache_dir,
-                max_workers=settings.sync_workers,
-                max_device_write_workers=settings.device_write_workers,
-                max_cache_size_gb=settings.max_cache_size_gb,
-                fpcalc_path=settings.fpcalc_path,
-                transcode_options=build_transcode_options(settings),
-                device_info=self.device_info,
-                device_capabilities=self.device_capabilities,
-                photo_sync_settings={
-                    "rotate_tall_photos_for_device": (
-                        settings.rotate_tall_photos_for_device
-                    ),
-                    "fit_photo_thumbnails": settings.fit_photo_thumbnails,
-                },
-            )
-
             if getattr(self.plan, "mapping", None) is not None:
                 mapping = self.plan.mapping
             else:
                 mapping_manager = MappingManager(self.ipod_path)
                 mapping = mapping_manager.load()
 
-            def on_progress(prog: SyncProgress) -> None:
-                self.progress.emit(prog)
+            def on_engine_progress(progress) -> None:
+                legacy = progress.legacy_event
+                if legacy is not None:
+                    self.progress.emit(legacy)
+                    return
+                self.progress.emit(
+                    SyncProgress(
+                        str(progress.stage),
+                        progress.current,
+                        progress.total,
+                        message=progress.message,
+                    )
+                )
 
-            request = SyncRequest(
+            engine_request = EngineRequest(
+                operation=EngineOperation.EXECUTE,
+                ipod_path=self.ipod_path,
                 plan=self.plan,
                 mapping=mapping,
-                progress_callback=on_progress,
-                dry_run=False,
-                is_cancelled=self.isInterruptionRequested,
-                write_back_to_pc=settings.write_back_to_pc,
                 user_playlists=tuple(self.user_playlists or ()),
+                options=EngineOptions(
+                    sync_workers=settings.sync_workers,
+                    device_write_workers=settings.device_write_workers,
+                    fpcalc_path=settings.fpcalc_path,
+                    transcode_options=build_transcode_options(settings),
+                    transcode_cache_dir=settings.transcode_cache_dir or "",
+                    max_cache_size_gb=settings.max_cache_size_gb,
+                    dry_run=False,
+                    write_back_to_pc=settings.write_back_to_pc,
+                    compute_sound_check=settings.compute_sound_check,
+                    scrobble_on_sync=settings.scrobble_on_sync,
+                    listenbrainz_token=settings.listenbrainz_token or "",
+                    listenbrainz_username=settings.listenbrainz_username or "",
+                    lastfm_api_key=getattr(settings, "lastfm_api_key", ""),
+                    lastfm_api_secret=getattr(settings, "lastfm_api_secret", ""),
+                    lastfm_session_key=getattr(settings, "lastfm_session_key", ""),
+                    lastfm_username=getattr(settings, "lastfm_username", ""),
+                    photo_sync_settings={
+                        "rotate_tall_photos_for_device": (
+                            settings.rotate_tall_photos_for_device
+                        ),
+                        "fit_photo_thumbnails": settings.fit_photo_thumbnails,
+                    },
+                ),
+                device_info=self.device_info,
+                device_capabilities=self.device_capabilities,
+                progress_callback=on_engine_progress,
+                is_cancelled=self.isInterruptionRequested,
                 on_sync_complete=self.on_sync_complete,
-                compute_sound_check=settings.compute_sound_check,
-                scrobble_on_sync=settings.scrobble_on_sync,
-                listenbrainz_token=settings.listenbrainz_token or "",
-                listenbrainz_username=settings.listenbrainz_username or "",
-                lastfm_api_key=getattr(settings, "lastfm_api_key", ""),
-                lastfm_api_secret=getattr(settings, "lastfm_api_secret", ""),
-                lastfm_session_key=getattr(settings, "lastfm_session_key", ""),
-                lastfm_username=getattr(settings, "lastfm_username", ""),
                 is_scrobble_cancelled=lambda: self._give_up_scrobble_requested,
                 on_cancel_with_partial=_on_cancel_with_partial,
             )
 
-            self.finished.emit(executor.execute_request(request))
+            self.finished.emit(SyncEngine().execute_plan(engine_request))
         except Exception as exc:
             logger.exception("SyncExecuteWorker failed")
             self.error.emit(str(exc))
