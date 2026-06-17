@@ -35,6 +35,7 @@ DEVICE_SETTING_KEYS = (
     "video_crf",
     "video_preset",
     "prefer_lossy",
+    "convert_wav_to_alac",
     "sync_workers",
     "device_write_workers",
     "normalize_sample_rate",
@@ -143,6 +144,7 @@ class AppSettings:
     video_crf: int = 23
     video_preset: str = "fast"
     prefer_lossy: bool = False
+    convert_wav_to_alac: bool = True
     sync_workers: int = 0
     device_write_workers: int = 0
     normalize_sample_rate: bool = False

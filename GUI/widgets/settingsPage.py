@@ -1678,6 +1678,11 @@ class SettingsPage(QWidget):
             "lossy format instead of ALAC. Saves iPod storage at the cost "
             "of quality.",
         )
+        self.convert_wav_to_alac = ToggleRow(
+            "Convert WAV to ALAC",
+            "When enabled, WAV files are converted to ALAC instead of copied. "
+            "Prefer Lossy Encoding overrides this and converts WAV to the selected lossy format.",
+        )
         self.video_crf = ComboRow(
             "Video Quality (CRF)",
             "Quality level for H.264 video transcodes. Lower CRF = better "
@@ -1760,6 +1765,7 @@ class SettingsPage(QWidget):
             self.music_lossy_cbr_bitrate,
             self.vbr_level,
             self.prefer_lossy,
+            self.convert_wav_to_alac,
             self.normalize_sample_rate,
         )
 
@@ -2010,6 +2016,7 @@ class SettingsPage(QWidget):
             self.vbr_level,
             self.spoken_lossy_cbr_bitrate,
             self.prefer_lossy,
+            self.convert_wav_to_alac,
             self.mono_for_spoken,
             self.smart_quality_by_type,
             self.normalize_sample_rate,
@@ -2039,6 +2046,7 @@ class SettingsPage(QWidget):
             self.lossy_encoder, self.lossy_quality, self.bitrate_mode,
             self.music_lossy_cbr_bitrate, self.vbr_level,
             self.spoken_lossy_cbr_bitrate, self.prefer_lossy,
+            self.convert_wav_to_alac,
             self.mono_for_spoken, self.smart_quality_by_type,
             self.normalize_sample_rate, self.aac_cutoff,
             self.fdk_afterburner, self.aac_tns, self.aac_pns,
@@ -2280,6 +2288,7 @@ class SettingsPage(QWidget):
 
         # Prefer lossy toggle
         self.prefer_lossy.value = s.prefer_lossy
+        self.convert_wav_to_alac.value = s.convert_wav_to_alac
 
         # Audio encoding options
         self.mono_for_spoken.value = s.mono_for_spoken
@@ -2346,6 +2355,7 @@ class SettingsPage(QWidget):
             self.vbr_level.changed.connect(self._save)
             self.spoken_lossy_cbr_bitrate.changed.connect(self._save)
             self.prefer_lossy.changed.connect(self._save)
+            self.convert_wav_to_alac.changed.connect(self._save)
             self.mono_for_spoken.changed.connect(self._save)
             self.smart_quality_by_type.changed.connect(self._save)
             self.smart_quality_by_type.changed.connect(self._update_smart_quality_visibility)
@@ -2632,6 +2642,7 @@ class SettingsPage(QWidget):
 
         # Prefer lossy toggle
         s.prefer_lossy = self.prefer_lossy.value
+        s.convert_wav_to_alac = self.convert_wav_to_alac.value
 
         # Audio encoding options
         s.mono_for_spoken = self.mono_for_spoken.value

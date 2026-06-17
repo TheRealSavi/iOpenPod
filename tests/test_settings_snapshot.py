@@ -29,6 +29,7 @@ def test_settings_snapshot_copies_values_and_freezes_lists() -> None:
             "music": {"Title": 240, "Album": 180, "Artist": 160}
         },
         device_write_workers=2,
+        convert_wav_to_alac=False,
         splitter_sizes=[300, 700],
         window_width=1440,
         window_height=900,
@@ -65,6 +66,7 @@ def test_settings_snapshot_copies_values_and_freezes_lists() -> None:
         "music": {"Title": 240, "Album": 180, "Artist": 160}
     }
     assert snapshot.device_write_workers == 2
+    assert snapshot.convert_wav_to_alac is False
     assert snapshot.splitter_sizes == (300, 700)
     assert snapshot.window_width == 1440
     assert snapshot.window_height == 900

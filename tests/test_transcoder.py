@@ -3,10 +3,12 @@ import logging
 import SyncEngine.transcoder as transcoder_module
 from SyncEngine.transcoder import (
     AudioProperties,
+    TranscodeOptions,
     TranscodeTarget,
     _transcode_timeout_seconds,
     find_ffprobe,
     get_transcode_target,
+    needs_transcoding,
 )
 
 
@@ -48,6 +50,47 @@ def test_unprobeable_native_audio_copies_instead_of_lossy_fallback(monkeypatch, 
     assert target == TranscodeTarget.COPY
     assert "skipping transcode fallback; copying as-is" in caplog.text
     assert "re-encoding to lossy codec as safe fallback" not in caplog.text
+
+
+def test_wav_copies_when_alac_conversion_disabled(monkeypatch) -> None:
+    monkeypatch.setattr(transcoder_module, "_device_supports_alac", lambda: True)
+
+    options = TranscodeOptions(convert_wav_to_alac=False)
+
+    assert get_transcode_target("song.wav", options=options) == TranscodeTarget.COPY
+    assert needs_transcoding("song.wav", options=options) is False
+
+
+def test_wav_converts_to_alac_when_alac_conversion_enabled(monkeypatch) -> None:
+    monkeypatch.setattr(transcoder_module, "_device_supports_alac", lambda: True)
+
+    assert get_transcode_target("song.wav") == TranscodeTarget.ALAC
+
+
+def test_wav_prefer_lossy_overrides_alac_conversion_setting(monkeypatch) -> None:
+    monkeypatch.setattr(transcoder_module, "_device_supports_alac", lambda: True)
+    monkeypatch.setattr(
+        transcoder_module,
+        "_resolve_lossy_target",
+        lambda options: TranscodeTarget.MP3,
+    )
+
+    options = TranscodeOptions(prefer_lossy=True, convert_wav_to_alac=True)
+
+    assert get_transcode_target("song.wav", options=options) == TranscodeTarget.MP3
+
+
+def test_wav_falls_back_to_lossy_when_alac_requested_but_unsupported(monkeypatch) -> None:
+    monkeypatch.setattr(transcoder_module, "_device_supports_alac", lambda: False)
+    monkeypatch.setattr(
+        transcoder_module,
+        "_resolve_lossy_target",
+        lambda options: TranscodeTarget.AAC,
+    )
+
+    options = TranscodeOptions(convert_wav_to_alac=True)
+
+    assert get_transcode_target("song.wav", options=options) == TranscodeTarget.AAC
 
 
 def test_find_ffprobe_uses_configured_ffmpeg_sibling(tmp_path, monkeypatch) -> None:

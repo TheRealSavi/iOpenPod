@@ -30,6 +30,7 @@ def test_device_settings_round_trip_preserves_device_write_workers(monkeypatch) 
         device_settings = AppSettings(
             sync_workers=6,
             device_write_workers=1,
+            convert_wav_to_alac=False,
             media_folder="C:/Music",
             listenbrainz_token="lb-token",
             listenbrainz_username="lb-user",
@@ -61,6 +62,7 @@ def test_device_settings_round_trip_preserves_device_write_workers(monkeypatch) 
 
     assert loaded.settings.sync_workers == 6
     assert loaded.settings.device_write_workers == 1
+    assert loaded.settings.convert_wav_to_alac is False
     assert loaded.settings.listenbrainz_token == "lb-token"
     assert loaded.settings.listenbrainz_username == "lb-user"
     assert loaded.settings.lastfm_api_key == "lf-key"
@@ -74,6 +76,7 @@ def test_device_settings_round_trip_preserves_device_write_workers(monkeypatch) 
     assert raw["settings"]["lastfm_session_key"].startswith("xor1:")
     assert raw["settings"]["lastfm_username"] == "lf-user"
     assert raw["settings"]["backup_before_sync_mode"] == "off"
+    assert raw["settings"]["convert_wav_to_alac"] is False
 
 
 def test_device_settings_migrates_legacy_backup_false_to_ask(monkeypatch) -> None:

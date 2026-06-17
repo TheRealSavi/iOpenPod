@@ -2,7 +2,8 @@
 Transcoder — Convert audio/video files to iPod-compatible formats via FFmpeg.
 
 Supported conversions:
-    FLAC/WAV/AIFF  → ALAC (lossless) or lossy (AAC/MP3 when prefer_lossy is on)
+    FLAC/AIFF      → ALAC (lossless) or lossy (AAC/MP3 when prefer_lossy is on)
+    WAV            → copy, ALAC, or lossy depending on user settings
     OGG/Opus/WMA   → lossy (AAC/MP3)
   Video           → M4V (H.264 Baseline + stereo AAC)
   Native formats  → re-encoded only when they exceed iPod hardware limits
@@ -150,6 +151,7 @@ class TranscodeOptions:
 
     ffmpeg_path: str = ""
     prefer_lossy: bool = False
+    convert_wav_to_alac: bool = True
     normalize_sample_rate: bool = False
     mono_for_spoken: bool = True
     smart_quality_by_type: bool = True
@@ -208,6 +210,7 @@ class TranscodeOptions:
         return cls(
             ffmpeg_path=_read_setting_str(settings, "ffmpeg_path", ""),
             prefer_lossy=bool(getattr(settings, "prefer_lossy", False)),
+            convert_wav_to_alac=bool(getattr(settings, "convert_wav_to_alac", True)),
             normalize_sample_rate=bool(getattr(settings, "normalize_sample_rate", False)),
             mono_for_spoken=bool(getattr(settings, "mono_for_spoken", True)),
             smart_quality_by_type=bool(getattr(settings, "smart_quality_by_type", True)),
@@ -924,6 +927,7 @@ def get_transcode_target(
     Decision tree:
       1. Video → probe → VIDEO_H264 or COPY
       2. Lossless source → ALAC (or AAC if prefer_lossy)
+         WAV may copy instead when convert_wav_to_alac is disabled
       3. Lossy non-native → AAC
       4. Native → COPY, unless iPod limits are exceeded
          (hi-res sample rate / 24-bit / surround)
@@ -942,6 +946,14 @@ def get_transcode_target(
 
     # ── Non-native audio ────────────────────────────────────────────────
     if suffix in _NON_NATIVE_LOSSLESS_EXTS:
+        if suffix == ".wav":
+            if prefer_lossy:
+                return lossy_target
+            if options.convert_wav_to_alac:
+                if not _device_supports_alac():
+                    return lossy_target
+                return TranscodeTarget.ALAC
+            return TranscodeTarget.COPY
         if prefer_lossy or not _device_supports_alac():
             return lossy_target
         return TranscodeTarget.ALAC
@@ -1001,9 +1013,13 @@ def needs_transcoding(
     filepath: str | Path,
     *,
     prefer_lossy: bool | None = None,
+    options: TranscodeOptions | None = None,
 ) -> bool:
     """True if the file needs any conversion before it can go on iPod."""
-    return get_transcode_target(filepath, prefer_lossy=prefer_lossy) != TranscodeTarget.COPY
+    return (
+        get_transcode_target(filepath, prefer_lossy=prefer_lossy, options=options)
+        != TranscodeTarget.COPY
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
