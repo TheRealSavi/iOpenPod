@@ -62,6 +62,7 @@ def test_settings_persistence_round_trip(monkeypatch) -> None:
             lastfm_api_secret="lf-secret",
             lastfm_session_key="lf-session",
             lastfm_username="lf-user",
+            backup_before_sync_mode="off",
         )
         save_app_settings(settings)
 
@@ -94,6 +95,8 @@ def test_settings_persistence_round_trip(monkeypatch) -> None:
     assert loaded.lastfm_api_secret == "lf-secret"
     assert loaded.lastfm_session_key == "lf-session"
     assert loaded.lastfm_username == "lf-user"
+    assert loaded.backup_before_sync_mode == "off"
+    assert loaded.backup_before_sync is False
 
 
 def test_settings_persistence_upgrades_legacy_media_folder_strings(monkeypatch) -> None:
@@ -120,3 +123,47 @@ def test_settings_persistence_upgrades_legacy_media_folder_strings(monkeypatch) 
             "media_types": ["music", "video", "photo", "playlists"],
         }
     ]
+
+
+def test_settings_persistence_migrates_legacy_backup_false_to_ask(monkeypatch) -> None:
+    with repo_temp_dir() as tmp_path:
+        settings_dir = tmp_path / "settings"
+        settings_dir.mkdir()
+        settings_path = settings_dir / "settings.json"
+        settings_path.write_text(
+            json.dumps({"backup_before_sync": False}),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(
+            settings_persistence,
+            "get_settings_path",
+            lambda: str(settings_path),
+        )
+
+        loaded = load_app_settings()
+
+    assert loaded.backup_before_sync_mode == "ask"
+    assert loaded.backup_before_sync is False
+
+
+def test_settings_persistence_preserves_legacy_bool_setter(monkeypatch) -> None:
+    with repo_temp_dir() as tmp_path:
+        settings_dir = tmp_path / "settings"
+        monkeypatch.setattr(
+            settings_persistence,
+            "default_settings_dir",
+            lambda: str(settings_dir),
+        )
+        monkeypatch.setattr(
+            settings_persistence,
+            "get_settings_path",
+            lambda: str(settings_dir / "settings.json"),
+        )
+        settings = AppSettings()
+        settings.backup_before_sync = False
+
+        save_app_settings(settings)
+        loaded = load_app_settings()
+
+    assert loaded.backup_before_sync_mode == "ask"
+    assert loaded.backup_before_sync is False

@@ -3,6 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
+
+BACKUP_BEFORE_SYNC_AUTO = "auto"
+BACKUP_BEFORE_SYNC_ASK = "ask"
+BACKUP_BEFORE_SYNC_OFF = "off"
+BACKUP_BEFORE_SYNC_MODES = frozenset({
+    BACKUP_BEFORE_SYNC_AUTO,
+    BACKUP_BEFORE_SYNC_ASK,
+    BACKUP_BEFORE_SYNC_OFF,
+})
 
 DEVICE_SETTING_KEYS = (
     "write_back_to_pc",
@@ -40,8 +50,61 @@ DEVICE_SETTING_KEYS = (
     "lastfm_session_key",
     "lastfm_username",
     "backup_before_sync",
+    "backup_before_sync_mode",
 )
 DEVICE_SECRET_KEYS = {"listenbrainz_token", "lastfm_api_key", "lastfm_api_secret", "lastfm_session_key"}
+
+
+def normalize_backup_before_sync_mode(
+    value: Any,
+    *,
+    legacy_backup_before_sync: bool = True,
+) -> str:
+    """Return canonical pre-sync backup mode."""
+
+    if isinstance(value, bool):
+        return BACKUP_BEFORE_SYNC_AUTO if value else BACKUP_BEFORE_SYNC_ASK
+    if isinstance(value, str):
+        normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
+        aliases = {
+            "on": BACKUP_BEFORE_SYNC_AUTO,
+            "always": BACKUP_BEFORE_SYNC_AUTO,
+            "automatic": BACKUP_BEFORE_SYNC_AUTO,
+            "enabled": BACKUP_BEFORE_SYNC_AUTO,
+            "ask_each_time": BACKUP_BEFORE_SYNC_ASK,
+            "ask_every_time": BACKUP_BEFORE_SYNC_ASK,
+            "prompt": BACKUP_BEFORE_SYNC_ASK,
+            "prompt_each_time": BACKUP_BEFORE_SYNC_ASK,
+            "disabled": BACKUP_BEFORE_SYNC_OFF,
+            "never": BACKUP_BEFORE_SYNC_OFF,
+        }
+        if normalized in BACKUP_BEFORE_SYNC_MODES:
+            return normalized
+        if normalized in aliases:
+            return aliases[normalized]
+    return (
+        BACKUP_BEFORE_SYNC_AUTO
+        if legacy_backup_before_sync
+        else BACKUP_BEFORE_SYNC_ASK
+    )
+
+
+def apply_backup_before_sync_mode(settings: AppSettings) -> None:
+    """Keep legacy bool in sync with canonical pre-sync backup mode."""
+
+    if (
+        settings.backup_before_sync_mode == BACKUP_BEFORE_SYNC_AUTO
+        and not settings.backup_before_sync
+    ):
+        settings.backup_before_sync_mode = BACKUP_BEFORE_SYNC_ASK
+        return
+    settings.backup_before_sync_mode = normalize_backup_before_sync_mode(
+        settings.backup_before_sync_mode,
+        legacy_backup_before_sync=settings.backup_before_sync,
+    )
+    settings.backup_before_sync = (
+        settings.backup_before_sync_mode == BACKUP_BEFORE_SYNC_AUTO
+    )
 
 
 @dataclass
@@ -110,7 +173,11 @@ class AppSettings:
     lastfm_username: str = ""
 
     backup_before_sync: bool = True
+    backup_before_sync_mode: str = ""
     max_backups: int = 10
+
+    def __post_init__(self) -> None:
+        apply_backup_before_sync_mode(self)
 
 
 @dataclass

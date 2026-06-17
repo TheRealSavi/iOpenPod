@@ -34,6 +34,13 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from infrastructure.settings_schema import (
+    BACKUP_BEFORE_SYNC_ASK,
+    BACKUP_BEFORE_SYNC_AUTO,
+    BACKUP_BEFORE_SYNC_OFF,
+    normalize_backup_before_sync_mode,
+)
+
 from ..styles import (
     FONT_FAMILY,
     Colors,
@@ -52,6 +59,15 @@ from ..styles import (
 
 if TYPE_CHECKING:
     from app_core.services import DeviceSessionService, SettingsService
+
+_BACKUP_BEFORE_SYNC_DISPLAY = {
+    BACKUP_BEFORE_SYNC_AUTO: "On",
+    BACKUP_BEFORE_SYNC_ASK: "Ask Each Time",
+    BACKUP_BEFORE_SYNC_OFF: "Off",
+}
+_BACKUP_BEFORE_SYNC_BY_TEXT = {
+    text: mode for mode, text in _BACKUP_BEFORE_SYNC_DISPLAY.items()
+}
 
 
 # ── Reusable row widgets ────────────────────────────────────────────────────
@@ -1910,12 +1926,12 @@ class SettingsPage(QWidget):
             "Leave empty for the platform default.",
             resolve_default_fn=lambda: _os2.path.join(_ddd(), "backups"),
         )
-        self.backup_before_sync = ToggleRow(
+        self.backup_before_sync = ComboRow(
             "Backup Before Sync",
-            "Automatically create a full device backup before each sync. "
-            "Recommended — allows you to restore your iPod if a sync "
-            "goes wrong.",
-            checked=True,
+            "Choose whether sync creates a full device backup automatically, "
+            "asks each time, or skips pre-sync backups.",
+            options=list(_BACKUP_BEFORE_SYNC_DISPLAY.values()),
+            current=_BACKUP_BEFORE_SYNC_DISPLAY[BACKUP_BEFORE_SYNC_AUTO],
         )
         self.max_backups = ComboRow(
             "Max Backups",
@@ -2201,7 +2217,17 @@ class SettingsPage(QWidget):
         self.fpcalc_path.value = s.fpcalc_path
 
         self.backup_dir.value = s.backup_dir
-        self.backup_before_sync.value = s.backup_before_sync
+        backup_mode = normalize_backup_before_sync_mode(
+            getattr(s, "backup_before_sync_mode", ""),
+            legacy_backup_before_sync=s.backup_before_sync,
+        )
+        backup_mode_text = _BACKUP_BEFORE_SYNC_DISPLAY.get(
+            backup_mode,
+            _BACKUP_BEFORE_SYNC_DISPLAY[BACKUP_BEFORE_SYNC_AUTO],
+        )
+        idx = self.backup_before_sync.combo.findText(backup_mode_text)
+        if idx >= 0:
+            self.backup_before_sync.combo.setCurrentIndex(idx)
 
         # Refresh tool status indicators
         self._refresh_tool_status()
@@ -2589,7 +2615,12 @@ class SettingsPage(QWidget):
             s.ffmpeg_path = self.ffmpeg_path.value
             s.fpcalc_path = self.fpcalc_path.value
             s.backup_dir = self.backup_dir.value
-        s.backup_before_sync = self.backup_before_sync.value
+        backup_mode = _BACKUP_BEFORE_SYNC_BY_TEXT.get(
+            self.backup_before_sync.value,
+            BACKUP_BEFORE_SYNC_AUTO,
+        )
+        s.backup_before_sync_mode = backup_mode
+        s.backup_before_sync = backup_mode == BACKUP_BEFORE_SYNC_AUTO
 
         if include_global_only:
             # Parse max backups

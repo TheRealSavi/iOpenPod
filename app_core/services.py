@@ -86,6 +86,7 @@ class SettingsSnapshot:
     lastfm_session_key: str
     lastfm_username: str
     backup_before_sync: bool
+    backup_before_sync_mode: str
     max_backups: int
 
     @classmethod

@@ -39,6 +39,7 @@ def test_settings_snapshot_copies_values_and_freezes_lists() -> None:
         lastfm_api_secret="lf-secret",
         lastfm_session_key="lf-session",
         lastfm_username="lf-user",
+        backup_before_sync_mode="ask",
     )
 
     snapshot = SettingsSnapshot.from_settings(settings)
@@ -74,6 +75,8 @@ def test_settings_snapshot_copies_values_and_freezes_lists() -> None:
     assert snapshot.lastfm_api_secret == "lf-secret"
     assert snapshot.lastfm_session_key == "lf-session"
     assert snapshot.lastfm_username == "lf-user"
+    assert snapshot.backup_before_sync_mode == "ask"
+    assert snapshot.backup_before_sync is False
 
     settings.track_list_columns_by_content["music"]["year"] = 120
     assert "year" not in snapshot.track_list_columns_by_content["music"]

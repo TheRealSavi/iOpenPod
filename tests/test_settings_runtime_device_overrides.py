@@ -37,6 +37,7 @@ def test_device_settings_round_trip_preserves_device_write_workers(monkeypatch) 
             lastfm_api_secret="lf-secret",
             lastfm_session_key="lf-session",
             lastfm_username="lf-user",
+            backup_before_sync_mode="off",
         )
         runtime.save_device_settings(
             str(tmp_path),
@@ -66,7 +67,29 @@ def test_device_settings_round_trip_preserves_device_write_workers(monkeypatch) 
     assert loaded.settings.lastfm_api_secret == "lf-secret"
     assert loaded.settings.lastfm_session_key == "lf-session"
     assert loaded.settings.lastfm_username == "lf-user"
+    assert loaded.settings.backup_before_sync_mode == "off"
+    assert loaded.settings.backup_before_sync is False
     assert raw["settings"]["lastfm_api_key"].startswith("xor1:")
     assert raw["settings"]["lastfm_api_secret"].startswith("xor1:")
     assert raw["settings"]["lastfm_session_key"].startswith("xor1:")
     assert raw["settings"]["lastfm_username"] == "lf-user"
+    assert raw["settings"]["backup_before_sync_mode"] == "off"
+
+
+def test_device_settings_migrates_legacy_backup_false_to_ask(monkeypatch) -> None:
+    with repo_temp_dir() as tmp_path:
+        monkeypatch.setattr(settings_runtime, "_clear_transcoder_caches", lambda: None)
+        settings_path = (
+            tmp_path / "iPod_Control" / "iOpenPod" / "settings.json"
+        )
+        settings_path.parent.mkdir(parents=True)
+        settings_path.write_text(
+            json.dumps({"settings": {"backup_before_sync": False}}),
+            encoding="utf-8",
+        )
+        runtime = SettingsRuntime()
+
+        loaded = runtime.load_device_settings(str(tmp_path), "", AppSettings())
+
+    assert loaded.settings.backup_before_sync_mode == "ask"
+    assert loaded.settings.backup_before_sync is False

@@ -11,10 +11,14 @@ from importlib import import_module
 
 from .settings_persistence import load_app_settings, save_app_settings
 from .settings_schema import (
+    BACKUP_BEFORE_SYNC_ASK,
+    BACKUP_BEFORE_SYNC_AUTO,
     DEVICE_SECRET_KEYS,
     DEVICE_SETTING_KEYS,
     AppSettings,
     DeviceSettingsState,
+    apply_backup_before_sync_mode,
+    normalize_backup_before_sync_mode,
 )
 from .settings_secrets import (
     decrypt_secret_for_device,
@@ -71,6 +75,20 @@ def _apply_settings_values(settings: AppSettings, data: dict, allowed_keys) -> N
         coerced = _coerce_setting_value(getattr(settings, key), data[key])
         if coerced is not None:
             setattr(settings, key, coerced)
+    if "backup_before_sync_mode" in data:
+        settings.backup_before_sync_mode = normalize_backup_before_sync_mode(
+            data.get("backup_before_sync_mode"),
+            legacy_backup_before_sync=settings.backup_before_sync,
+        )
+    else:
+        settings.backup_before_sync_mode = (
+            BACKUP_BEFORE_SYNC_AUTO
+            if settings.backup_before_sync
+            else BACKUP_BEFORE_SYNC_ASK
+        )
+    settings.backup_before_sync = (
+        settings.backup_before_sync_mode == BACKUP_BEFORE_SYNC_AUTO
+    )
 
 
 def _clear_transcoder_caches() -> None:
@@ -113,6 +131,7 @@ def device_settings_key(ipod_root: str = "", device_info=None) -> str:
 
 
 def _serialized_device_settings(settings: AppSettings, device_key: str) -> dict:
+    apply_backup_before_sync_mode(settings)
     data = {}
     for key in DEVICE_SETTING_KEYS:
         value = getattr(settings, key)

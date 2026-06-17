@@ -57,6 +57,11 @@ from infrastructure.media_folders import (
     media_folder_entries_to_settings,
     media_folder_paths,
 )
+from infrastructure.settings_schema import (
+    BACKUP_BEFORE_SYNC_ASK,
+    BACKUP_BEFORE_SYNC_AUTO,
+    normalize_backup_before_sync_mode,
+)
 from sync_progress_stages import friendly_stage_label
 from SyncEngine.review_selection import build_selected_photo_plan
 
@@ -2545,8 +2550,7 @@ class SyncReviewWidget(QWidget):
     def _show_presync_prompt(self):
         """Show the pre-sync backup prompt page.
 
-        Only shown when backup_before_sync is OFF — asks if the user
-        wants to create a backup before syncing.
+        Only shown when pre-sync backups are set to Ask Each Time.
         """
         self._presync_title.setText("Back Up Before Syncing?")
         self._presync_text.setText(
@@ -3389,18 +3393,27 @@ class SyncReviewWidget(QWidget):
 
         # Decide backup strategy based on setting
         settings = self._settings_service.get_effective_settings()
+        backup_mode = normalize_backup_before_sync_mode(
+            getattr(settings, "backup_before_sync_mode", ""),
+            legacy_backup_before_sync=settings.backup_before_sync,
+        )
 
         self._pending_sync_items = selected_items
 
-        if settings.backup_before_sync:
+        if backup_mode == BACKUP_BEFORE_SYNC_AUTO:
             # Backup is automatic — sync starts immediately with backup.
             # The user can skip via the footer cancel button on the progress screen.
             self._is_auto_presync = True
             self._skip_presync_backup = False
             self.sync_requested.emit(selected_items)
-        else:
-            # Backup is off — ask if they'd like to back up first.
+        elif backup_mode == BACKUP_BEFORE_SYNC_ASK:
+            # Ask before this sync whether a backup should be created.
             self._show_presync_prompt()
+        else:
+            # Backup is off — sync starts immediately without prompt or backup.
+            self._is_auto_presync = False
+            self._skip_presync_backup = True
+            self.sync_requested.emit(selected_items)
 
     _format_size = staticmethod(_format_size)
     _format_duration = staticmethod(_format_duration)

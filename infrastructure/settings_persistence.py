@@ -11,12 +11,19 @@ from .settings_paths import (
     default_settings_dir,
     get_settings_path,
 )
-from .settings_schema import AppSettings
+from .settings_schema import (
+    BACKUP_BEFORE_SYNC_ASK,
+    BACKUP_BEFORE_SYNC_AUTO,
+    AppSettings,
+    apply_backup_before_sync_mode,
+    normalize_backup_before_sync_mode,
+)
 
 
 def save_app_settings(settings: AppSettings) -> None:
     """Write settings to the active settings directory."""
 
+    apply_backup_before_sync_mode(settings)
     active_dir = settings.settings_dir or default_settings_dir()
     os.makedirs(active_dir, exist_ok=True)
 
@@ -72,6 +79,20 @@ def load_app_settings() -> AppSettings:
                     value = media_folder_entries_to_settings(value)
                 if isinstance(value, expected_type):
                     setattr(settings, key, value)
+        if "backup_before_sync_mode" in data:
+            settings.backup_before_sync_mode = normalize_backup_before_sync_mode(
+                data.get("backup_before_sync_mode"),
+                legacy_backup_before_sync=settings.backup_before_sync,
+            )
+        else:
+            settings.backup_before_sync_mode = (
+                BACKUP_BEFORE_SYNC_AUTO
+                if settings.backup_before_sync
+                else BACKUP_BEFORE_SYNC_ASK
+            )
+        settings.backup_before_sync = (
+            settings.backup_before_sync_mode == BACKUP_BEFORE_SYNC_AUTO
+        )
 
     except (json.JSONDecodeError, UnicodeDecodeError, OSError):
         pass
