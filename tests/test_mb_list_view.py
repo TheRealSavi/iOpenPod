@@ -27,6 +27,7 @@ from GUI.widgets.MBListView import (
     build_new_regular_playlist,
     chapter_count_from_data,
     chapter_summary_from_data,
+    podcast_conversion_changes_for_track,
 )
 from GUI.widgets.trackEditorDialog import (
     TrackEditorDialog,
@@ -225,6 +226,7 @@ class _LibraryCache:
     def __init__(self, *, ready: bool = True) -> None:
         self._ready = ready
         self.updated: list[tuple[list[dict], dict[str, object]]] = []
+        self.updated_by_track: list[tuple[list[dict], dict[int, dict[str, object]]]] = []
         self.playlist_quick_sync = _Signal()
 
     def is_ready(self) -> bool:
@@ -237,6 +239,15 @@ class _LibraryCache:
         self.updated.append((list(tracks), dict(changes)))
         for track in tracks:
             track.update(changes)
+
+    def update_track_flags_by_track(
+        self,
+        tracks: list[dict],
+        changes_by_track: dict[int, dict[str, object]],
+    ) -> None:
+        self.updated_by_track.append((list(tracks), dict(changes_by_track)))
+        for track in tracks:
+            track.update(changes_by_track.get(id(track), {}))
 
 
 class _RepoTempDir:
@@ -897,6 +908,95 @@ def test_edit_action_is_only_available_for_ready_ipod_tracks(qtbot) -> None:
 
     pc_view = _mount_list(qtbot, library_cache=cache, content_type_override="pc_tracks")
     assert not pc_view._can_edit_selected_tracks([{"db_track_id": 1, "Title": "PC Track"}])
+
+
+def test_podcast_conversion_changes_set_ipod_podcast_fields() -> None:
+    track = {
+        "db_track_id": 1,
+        "Title": "Episode",
+        "Artist": "Host",
+        "Album": "Example Show",
+        "Genre": "Comedy",
+        "media_type": 0x01,
+        "play_count_1": 0,
+        "skip_when_shuffling": 0,
+        "remember_position": 0,
+        "use_podcast_now_playing_flag": 0,
+    }
+
+    assert podcast_conversion_changes_for_track(track) == {
+        "media_type": 0x04,
+        "use_podcast_now_playing_flag": 1,
+        "podcast_flag": 1,
+        "skip_when_shuffling": 1,
+        "remember_position": 1,
+        "not_played_flag": 2,
+        "Category": "Comedy",
+        "Show": "Example Show",
+    }
+
+
+def test_convert_to_podcast_action_stages_per_track_updates(qtbot) -> None:
+    cache = _LibraryCache()
+    view = _mount_list(qtbot, library_cache=cache)
+    track = {
+        "db_track_id": 1001,
+        "Title": "Episode",
+        "Artist": "Host",
+        "Album": "",
+        "Genre": "",
+        "media_type": 0x01,
+        "play_count_1": 3,
+        "skip_when_shuffling": 0,
+        "remember_position": 0,
+        "use_podcast_now_playing_flag": 0,
+    }
+
+    view._convert_tracks_to_podcast([track])
+
+    assert cache.updated_by_track == [
+        (
+            [track],
+            {
+                id(track): {
+                    "media_type": 0x04,
+                    "use_podcast_now_playing_flag": 1,
+                    "podcast_flag": 1,
+                    "skip_when_shuffling": 1,
+                    "remember_position": 1,
+                    "not_played_flag": 1,
+                    "Category": "Podcast",
+                    "Genre": "Podcast",
+                    "Album": "Host",
+                    "Show": "Host",
+                }
+            },
+        )
+    ]
+    assert track["media_type"] == 0x04
+    assert track["use_podcast_now_playing_flag"] == 1
+    assert track["skip_when_shuffling"] == 1
+    assert track["remember_position"] == 1
+
+
+def test_convert_to_podcast_action_disables_ready_podcasts(qtbot) -> None:
+    cache = _LibraryCache()
+    view = _mount_list(qtbot, library_cache=cache)
+    menu = QMenu(view)
+    ready_track = {
+        "db_track_id": 1,
+        "Title": "Episode",
+        "media_type": 0x04,
+        "use_podcast_now_playing_flag": 1,
+        "skip_when_shuffling": 1,
+        "remember_position": 1,
+    }
+
+    act = view._add_convert_to_podcast_action(menu, [ready_track])
+
+    assert act is not None
+    assert act.text() == "Convert to Podcast"
+    assert not act.isEnabled()
 
 
 def test_rating_context_menu_shows_mixed_selection_header(qtbot) -> None:

@@ -10,6 +10,7 @@ from iTunesDB_Writer.mhit_writer import TrackInfo
 from iTunesDB_Writer.mhyp_writer import write_mhyp
 from SyncEngine import quick_writes
 from SyncEngine._playlist_builder import build_and_evaluate_playlists
+from SyncEngine._track_conversion import track_dict_to_info
 
 
 @dataclass
@@ -493,6 +494,39 @@ def test_podcast_playlist_membership_tracks_all_podcast_tracks() -> None:
 
     assert [playlist.track_ids for playlist in playlists if playlist.podcast_flag] == [[100, 101]]
     assert [playlist.track_ids for playlist in podcast_playlists if playlist.podcast_flag] == [[100, 101]]
+
+
+def test_converted_track_dict_builds_dataset3_podcast_playlist() -> None:
+    converted = {
+        "track_id": 10,
+        "db_track_id": 100,
+        "Title": "Converted Episode",
+        "Album": "Example Show",
+        "Location": ":iPod_Control:Music:F00:CONV.mp3",
+        "media_type": MEDIA_TYPE_PODCAST,
+        "use_podcast_now_playing_flag": 1,
+        "skip_when_shuffling": 1,
+        "remember_position": 1,
+    }
+    track = track_dict_to_info(converted)
+
+    assert track.media_type == MEDIA_TYPE_PODCAST
+    assert track.podcast_flag == 1
+    assert track.skip_when_shuffling is True
+    assert track.remember_position is True
+
+    _master_name, _master_id, _playlists, _podcast_master, _podcast_master_id, podcast_playlists, _smart_playlists = build_and_evaluate_playlists(
+        [converted],
+        [{"playlist_id": 1, "Title": "iPod", "master_flag": 1}],
+        [],
+        [],
+        [track],
+        [],
+    )
+
+    assert [(playlist.name, playlist.track_ids, playlist.podcast_flag) for playlist in podcast_playlists] == [
+        ("Podcasts", [100], 1)
+    ]
 
 
 def test_podcast_playlist_is_created_in_dataset3_when_missing() -> None:

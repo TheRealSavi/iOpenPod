@@ -595,6 +595,62 @@ def test_album_grid_ignores_movie_only_album_entries(monkeypatch) -> None:
     assert albums[0]["track_count"] == 1
 
 
+def test_album_grid_does_not_duplicate_music_album_for_matching_podcast_album_entry(monkeypatch) -> None:
+    monkeypatch.setattr(
+        runtime.DeviceManager,
+        "get_instance",
+        classmethod(lambda cls: SimpleNamespace(device_path="/fake/ipod")),
+    )
+
+    cache = runtime.iTunesDBCache()
+    cache.set_data(
+        {
+            "mhlt": [
+                {
+                    "track_id": 1,
+                    "album_id": 100,
+                    "Album": "Shared Album",
+                    "Artist": "Band",
+                    "Album Artist": "Band",
+                    "media_type": 0x04,
+                    "length": 90_000,
+                },
+                {
+                    "track_id": 2,
+                    "album_id": 200,
+                    "Album": "Shared Album",
+                    "Artist": "Band",
+                    "Album Artist": "Band",
+                    "media_type": 0x01,
+                    "length": 180_000,
+                },
+            ],
+            "mhla": [
+                {
+                    "album_id": 100,
+                    "Album (Used by Album Item)": "Shared Album",
+                    "Artist (Used by Album Item)": "Band",
+                },
+                {
+                    "album_id": 200,
+                    "Album (Used by Album Item)": "Shared Album",
+                    "Artist (Used by Album Item)": "Band",
+                },
+            ],
+            "mhlp": [],
+            "mhlp_podcast": [],
+            "mhlp_smart": [],
+        },
+        "/fake/ipod",
+    )
+
+    albums = runtime.build_album_list(cache)
+
+    assert [album["title"] for album in albums] == ["Shared Album"]
+    assert albums[0]["filter_key"] == "album_id"
+    assert albums[0]["filter_value"] == 200
+
+
 def test_update_track_flags_records_canonical_track_fields(monkeypatch) -> None:
     monkeypatch.setattr(
         runtime.DeviceManager,

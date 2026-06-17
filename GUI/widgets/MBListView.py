@@ -41,6 +41,7 @@ from iTunesDB_Shared.constants import (
     MEDIA_TYPE_AUDIOBOOK,
     MEDIA_TYPE_PODCAST,
     MEDIA_TYPE_VIDEO_MASK,
+    MEDIA_TYPE_VIDEO_PODCAST,
 )
 
 from ..artwork_rendering import (
@@ -286,6 +287,81 @@ def build_new_regular_playlist(
         "_source": "regular",
         "items": items,
     }
+
+
+def _track_int_value(track: dict, key: str, default: int = 0) -> int:
+    try:
+        return int(track.get(key, default) or default)
+    except (TypeError, ValueError):
+        return default
+
+
+def _track_text_value(track: dict, key: str) -> str:
+    return str(track.get(key) or "").strip()
+
+
+def _podcast_media_type_for_track(track: dict) -> int:
+    media_type = _track_int_value(track, "media_type", MEDIA_TYPE_AUDIO)
+    if media_type & MEDIA_TYPE_PODCAST:
+        return media_type
+    if media_type & MEDIA_TYPE_VIDEO_MASK:
+        return MEDIA_TYPE_VIDEO_PODCAST
+    return MEDIA_TYPE_PODCAST
+
+
+def _podcast_show_title_for_track(track: dict) -> str:
+    for key in ("Show", "Album", "Artist", "Album Artist"):
+        value = _track_text_value(track, key)
+        if value:
+            return value
+    return "Podcasts"
+
+
+def podcast_conversion_changes_for_track(track: dict) -> dict[str, object]:
+    """Return iPod DB fields needed for firmware to treat a track as podcast."""
+    play_count = _track_int_value(track, "play_count_1", 0)
+    show_title = _podcast_show_title_for_track(track)
+    category = _track_text_value(track, "Category")
+    genre = _track_text_value(track, "Genre")
+
+    changes: dict[str, object] = {
+        "media_type": _podcast_media_type_for_track(track),
+        "use_podcast_now_playing_flag": 1,
+        "podcast_flag": 1,
+        "skip_when_shuffling": 1,
+        "remember_position": 1,
+        "not_played_flag": 1 if play_count > 0 else 2,
+    }
+
+    if not category:
+        changes["Category"] = genre or "Podcast"
+    if not genre:
+        changes["Genre"] = "Podcast"
+    if not _track_text_value(track, "Album"):
+        changes["Album"] = show_title
+    if not _track_text_value(track, "Show"):
+        changes["Show"] = show_title
+
+    return {
+        key: value
+        for key, value in changes.items()
+        if track.get(key) != value
+    }
+
+
+def _track_is_podcast_ready(track: dict) -> bool:
+    media_type = _track_int_value(track, "media_type", MEDIA_TYPE_AUDIO)
+    podcast_flag = _track_int_value(
+        track,
+        "use_podcast_now_playing_flag",
+        _track_int_value(track, "podcast_flag", 0),
+    )
+    return bool(
+        media_type & MEDIA_TYPE_PODCAST
+        and podcast_flag
+        and _track_int_value(track, "skip_when_shuffling", 0)
+        and _track_int_value(track, "remember_position", 0)
+    )
 
 
 def _is_ipod_category_playlist(playlist: dict | None) -> bool:
@@ -2925,6 +3001,7 @@ class MusicBrowserList(QFrame):
                 edit_act.triggered.connect(
                     lambda _=False, sel=list(selected): self._edit_tracks(sel)
                 )
+            self._add_convert_to_podcast_action(menu, selected)
             menu.addSeparator()
 
         if len(selected) == 1 and chapter_count_from_data(selected[0].get("chapter_data")) >= 2:
@@ -3052,6 +3129,63 @@ class MusicBrowserList(QFrame):
         menu.exec(global_pos)
 
     # ── Flag & Rating Sub-menus ──────────────────────────────────────────
+
+    def _add_convert_to_podcast_action(
+        self,
+        menu: QMenu,
+        selected: list[dict],
+    ):
+        if not self._can_edit_selected_tracks(selected):
+            return None
+
+        act = menu.addAction("Convert to Podcast")
+        if act is None:
+            return None
+
+        icon = glyph_icon("broadcast", 14, Colors.TEXT_PRIMARY)
+        if icon is not None:
+            act.setIcon(icon)
+
+        enabled = (
+            self._device_supports_podcast()
+            and any(not _track_is_podcast_ready(track) for track in selected)
+        )
+        act.setEnabled(enabled)
+        if enabled:
+            act.triggered.connect(
+                lambda _=False, sel=list(selected): self._convert_tracks_to_podcast(sel)
+            )
+        return act
+
+    def _device_supports_podcast(self) -> bool:
+        try:
+            session = self._device_sessions.current_session()
+            capabilities = getattr(session, "capabilities", None)
+            if capabilities is None:
+                return True
+            return bool(getattr(capabilities, "supports_podcast", True))
+        except Exception:
+            return True
+
+    def _convert_tracks_to_podcast(self, selected: list[dict]) -> None:
+        if not self._can_edit_selected_tracks(selected):
+            return
+
+        cache = self._library_cache
+        if cache is None or not cache.is_ready():
+            return
+
+        changes_by_track: dict[int, dict[str, object]] = {}
+        for track in selected:
+            changes = podcast_conversion_changes_for_track(track)
+            if changes:
+                changes_by_track[id(track)] = changes
+
+        if not changes_by_track:
+            return
+
+        cache.update_track_flags_by_track(selected, changes_by_track)
+        self._refresh_visible_rows()
 
     def _build_flag_menu(self, menu: QMenu, style: str, selected: list[dict], cache) -> None:
         """Add boolean flag toggle actions to the context menu.

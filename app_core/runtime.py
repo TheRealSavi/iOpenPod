@@ -1492,12 +1492,22 @@ def build_album_list(cache: LibraryCacheLike) -> list:
             album_id = album_entry.get("Album ID")
 
         matching_tracks = []
+        filter_album_id = None
         if album_id is not None:
-            matching_tracks = [
+            album_id_tracks = [
                 track
                 for track in all_tracks
-                if track.get("album_id") == album_id and _is_music_browser_track(track)
+                if track.get("album_id") == album_id
             ]
+            matching_tracks = [
+                track
+                for track in album_id_tracks
+                if _is_music_browser_track(track)
+            ]
+            if matching_tracks:
+                filter_album_id = album_id
+            elif album_id_tracks:
+                continue
         elif artist:
             matching_tracks = album_index.get((album, artist), [])
 
@@ -1535,8 +1545,8 @@ def build_album_list(cache: LibraryCacheLike) -> list:
         if track_count == 0:
             continue
 
-        filter_key = "album_id" if album_id is not None else None
-        filter_value = album_id if album_id is not None else None
+        filter_key = "album_id" if filter_album_id is not None else None
+        filter_value = filter_album_id
 
         items.append(
             {
