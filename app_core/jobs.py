@@ -2343,6 +2343,7 @@ class SyncExecuteWorker(QThread):
         device_info: DeviceIdentitySnapshot | None = None,
         device_capabilities: DeviceCapabilitySnapshot | None = None,
         on_sync_complete: Callable[[], None] | None = None,
+        sync_until_full: bool = False,
     ):
         super().__init__()
         self.ipod_path = ipod_path
@@ -2355,6 +2356,7 @@ class SyncExecuteWorker(QThread):
         self.device_info = device_info
         self.device_capabilities = device_capabilities
         self.on_sync_complete = on_sync_complete
+        self.sync_until_full = bool(sync_until_full)
         self._give_up_scrobble_requested = False
         self._partial_save_event: threading.Event | None = None
         self._partial_save_decision: list[bool] = [True]
@@ -2443,6 +2445,7 @@ class SyncExecuteWorker(QThread):
                     lastfm_api_secret=getattr(settings, "lastfm_api_secret", ""),
                     lastfm_session_key=getattr(settings, "lastfm_session_key", ""),
                     lastfm_username=getattr(settings, "lastfm_username", ""),
+                    sync_until_full=self.sync_until_full,
                     photo_sync_settings={
                         "rotate_tall_photos_for_device": (
                             settings.rotate_tall_photos_for_device

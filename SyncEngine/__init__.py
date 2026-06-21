@@ -19,6 +19,10 @@ from .audio_fingerprint import (
 )
 from .backup_manager import BackupManager, BackupProgress, SnapshotInfo, get_device_display_name, get_device_identifier
 from .contracts import (
+    SYNC_DB_OVERHEAD_BYTES,
+    SYNC_DB_WRITE_RESERVE_BYTES,
+    SYNC_DISK_RESERVE_BYTES,
+    SYNC_UNTIL_FULL_RESERVE_BYTES,
     StorageSummary,
     SyncAction,
     SyncItem,
@@ -26,6 +30,7 @@ from .contracts import (
     SyncPlan,
     SyncProgress,
     SyncRequest,
+    sync_plan_required_free_bytes,
 )
 from .core import (
     EngineDiagnostic,
@@ -105,6 +110,11 @@ __all__ = [
     "SyncOutcome",
     "SyncProgress",
     "SyncRequest",
+    "SYNC_DISK_RESERVE_BYTES",
+    "SYNC_DB_WRITE_RESERVE_BYTES",
+    "SYNC_DB_OVERHEAD_BYTES",
+    "SYNC_UNTIL_FULL_RESERVE_BYTES",
+    "sync_plan_required_free_bytes",
     # Audio fingerprinting
     "compute_fingerprint",
     "read_fingerprint",

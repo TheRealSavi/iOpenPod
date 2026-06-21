@@ -1,4 +1,5 @@
 import logging
+import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -63,6 +64,7 @@ from GUI.notifications import Notifier
 from GUI.styles import FONT_FAMILY, Colors, Metrics, btn_css
 from GUI.widgets.backupBrowser import BackupBrowserWidget
 from GUI.widgets.dropOverlay import DropOverlayWidget
+from GUI.widgets.formatters import format_size
 from GUI.widgets.musicBrowser import MusicBrowser
 from GUI.widgets.settingsPage import SettingsPage
 from GUI.widgets.sidebar import Sidebar
@@ -73,6 +75,10 @@ from GUI.widgets.syncReview import (
 from infrastructure.media_folders import (
     media_folder_entries_to_settings,
     media_folder_paths,
+)
+from SyncEngine.contracts import (
+    SYNC_UNTIL_FULL_RESERVE_BYTES,
+    sync_plan_required_free_bytes,
 )
 from SyncEngine.review_selection import build_filtered_sync_plan
 
@@ -1817,6 +1823,13 @@ class MainWindow(QMainWindow):
         if not filtered_plan.has_changes:
             return
 
+        sync_until_full = self._confirm_sync_until_full_if_needed(
+            filtered_plan,
+            device_manager.device_path,
+        )
+        if sync_until_full is None:
+            return
+
         # Show progress in sync review widget
         self.syncReview.show_executing()
 
@@ -1855,6 +1868,7 @@ class MainWindow(QMainWindow):
             device_info=device_session.identity,
             device_capabilities=device_session.capabilities,
             on_sync_complete=_on_sync_complete,
+            sync_until_full=sync_until_full,
         )
         self._sync_execute_worker.progress.connect(self.syncReview.update_execute_progress)
         self._sync_execute_worker.finished.connect(self._onSyncExecuteComplete)
@@ -1864,6 +1878,46 @@ class MainWindow(QMainWindow):
         self.syncReview.skip_backup_signal.connect(self._sync_execute_worker.request_skip_backup)
         self.syncReview.give_up_scrobble_signal.connect(self._sync_execute_worker.request_give_up_scrobble)
         self._sync_execute_worker.start()
+
+    def _confirm_sync_until_full_if_needed(self, plan: Any, ipod_path: str) -> bool | None:
+        """Return True for sync-until-full, False for normal sync, None to cancel."""
+
+        try:
+            disk = shutil.disk_usage(ipod_path)
+        except OSError as exc:
+            logger.warning("Could not check iPod free space before sync: %s", exc)
+            return False
+
+        required = sync_plan_required_free_bytes(plan)
+        if required <= disk.free:
+            return False
+
+        shortage = max(0, required - disk.free)
+        reserve_label = format_size(SYNC_UNTIL_FULL_RESERVE_BYTES) or "1 MB"
+        message = (
+            "This sync is estimated to need more space than is available on "
+            "the iPod.\n\n"
+            f"Available: {format_size(disk.free) or '0 B'}\n"
+            f"Estimated needed: {format_size(required) or '0 B'}\n"
+            f"Estimated shortfall: {format_size(shortage) or '0 B'}\n\n"
+            "Sync Until Full will copy files in order until the next file would "
+            f"leave less than {reserve_label} free, then save the database with "
+            "the items that actually synced."
+        )
+
+        dialog = QMessageBox(self)
+        dialog.setIcon(QMessageBox.Icon.Warning)
+        dialog.setWindowTitle("Not Enough Space")
+        dialog.setText("The selected sync is larger than the iPod's free space.")
+        dialog.setInformativeText(message)
+        cancel_btn = dialog.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+        sync_btn = dialog.addButton(
+            "Sync Until Full",
+            QMessageBox.ButtonRole.AcceptRole,
+        )
+        dialog.setDefaultButton(cancel_btn)
+        dialog.exec()
+        return True if dialog.clickedButton() is sync_btn else None
 
     def _onSyncExecuteComplete(self, result):
         """Called when sync execution is complete."""

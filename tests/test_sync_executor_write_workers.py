@@ -8,6 +8,12 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from iTunesDB_Writer.mhit_writer import TrackInfo
+from SyncEngine.contracts import (
+    SYNC_DB_OVERHEAD_BYTES,
+    SYNC_DB_WRITE_RESERVE_BYTES,
+    StorageSummary,
+    sync_plan_required_free_bytes,
+)
 from SyncEngine.fingerprint_diff_engine import SyncAction, SyncItem, SyncPlan
 from SyncEngine.mapping import MappingFile
 from SyncEngine.pc_library import PCTrack
@@ -183,6 +189,144 @@ def test_prepare_execution_plan_keeps_user_playlist_only_changes(
 
     assert executor._prepare_execution_plan(ctx)
     assert ctx.result.success
+
+
+def test_sync_plan_required_free_bytes_excludes_deferred_removal_credit() -> None:
+    add = SyncItem(
+        action=SyncAction.ADD_TO_IPOD,
+        estimated_size=100,
+    )
+    immediate_remove = SyncItem(
+        action=SyncAction.REMOVE_FROM_IPOD,
+        ipod_track={"size": 30},
+    )
+    deferred_remove = SyncItem(
+        action=SyncAction.REMOVE_FROM_IPOD,
+        ipod_track={"size": 80},
+        defer_removal_until_after_add=True,
+    )
+    file_update = SyncItem(
+        action=SyncAction.UPDATE_FILE,
+        estimated_size=90,
+        ipod_track={"size": 50},
+    )
+    plan = SyncPlan(
+        to_add=[add],
+        to_remove=[immediate_remove, deferred_remove],
+        to_update_file=[file_update],
+        storage=StorageSummary(
+            bytes_to_add=100,
+            bytes_to_remove=110,
+            bytes_to_update=90,
+        ),
+    )
+
+    assert sync_plan_required_free_bytes(plan) == (
+        SYNC_DB_OVERHEAD_BYTES
+        + 100
+        - 30
+        + 40
+    )
+
+
+def test_preflight_blocks_over_capacity_without_until_full(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "iPod_Control" / "iTunes").mkdir(parents=True)
+    executor = SyncExecutor(tmp_path)
+    ctx = _SyncContext(
+        plan=SyncPlan(
+            storage=StorageSummary(bytes_to_add=SYNC_DB_OVERHEAD_BYTES + 1)
+        ),
+        mapping=MappingFile(),
+        progress_callback=None,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+    )
+
+    monkeypatch.setattr(
+        "SyncEngine.sync_executor.shutil.disk_usage",
+        lambda _path: SimpleNamespace(
+            total=SYNC_DB_OVERHEAD_BYTES * 2,
+            used=SYNC_DB_OVERHEAD_BYTES,
+            free=SYNC_DB_OVERHEAD_BYTES,
+        ),
+    )
+
+    assert not executor._preflight_checks(ctx)
+    assert ctx.result.errors[0][0] == "storage"
+    assert "Not enough space on iPod" in ctx.result.errors[0][1]
+
+
+def test_preflight_allows_over_capacity_with_until_full(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "iPod_Control" / "iTunes").mkdir(parents=True)
+    executor = SyncExecutor(tmp_path)
+    ctx = _SyncContext(
+        plan=SyncPlan(
+            storage=StorageSummary(bytes_to_add=SYNC_DB_OVERHEAD_BYTES + 1)
+        ),
+        mapping=MappingFile(),
+        progress_callback=None,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+        sync_until_full=True,
+    )
+
+    monkeypatch.setattr(
+        "SyncEngine.sync_executor.shutil.disk_usage",
+        lambda _path: SimpleNamespace(
+            total=SYNC_DB_OVERHEAD_BYTES * 2,
+            used=SYNC_DB_OVERHEAD_BYTES,
+            free=SYNC_DB_WRITE_RESERVE_BYTES + 1,
+        ),
+    )
+
+    assert executor._preflight_checks(ctx)
+    assert ctx.result.success
+
+
+def test_until_full_copy_uses_actual_staged_size_instead_of_estimate(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    ipod_root = tmp_path / "ipod"
+    source = tmp_path / "source.mp3"
+    ipod_root.mkdir()
+    source.write_bytes(b"source-with-tags")
+    executor = SyncExecutor(ipod_root, max_workers=1, max_device_write_workers=1)
+    transcode_plan = resolve_transcode_plan(source, options=executor.transcode_options)
+
+    def fake_strip_metadata(path: Path) -> bool:
+        path.write_bytes(b"ok")
+        return True
+
+    monkeypatch.setattr("SyncEngine.sync_executor.strip_metadata", fake_strip_metadata)
+    monkeypatch.setattr(
+        "SyncEngine.sync_executor.shutil.disk_usage",
+        lambda _path: SimpleNamespace(
+            total=SYNC_DB_WRITE_RESERVE_BYTES + 2,
+            used=0,
+            free=SYNC_DB_WRITE_RESERVE_BYTES + 2,
+        ),
+    )
+
+    success, ipod_path, _was_transcoded, err = executor._copy_to_ipod(
+        source,
+        transcode_plan,
+        expected_write_bytes=SYNC_DB_WRITE_RESERVE_BYTES + 3,
+        sync_until_full=True,
+    )
+
+    assert success
+    assert err == ""
+    assert ipod_path is not None
+    assert ipod_path.read_bytes() == b"ok"
 
 
 def test_loaded_database_validation_rejects_missing_update_target(
@@ -443,6 +587,108 @@ def test_prepare_database_commit_input_resolves_pending_playlist_source_paths(
     assert [playlist.track_ids for playlist in commit_input.playlists] == [
         [assigned_db_id]
     ]
+
+
+def test_parallel_copy_stage_caches_source_identity_for_backpatch(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source.mp3"
+    source.write_bytes(b"audio")
+    item = SyncItem(
+        action=SyncAction.ADD_TO_IPOD,
+        fingerprint="fp-one",
+        pc_track=_make_pc_track(source),
+        estimated_size=source.stat().st_size,
+    )
+    ctx = _SyncContext(
+        plan=SyncPlan(to_add=[item]),
+        mapping=MappingFile(),
+        progress_callback=None,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+    )
+    executor = SyncExecutor(tmp_path, max_workers=1)
+    cached_identity = (123, 456.0, "source-hash")
+    passed_identities: list[tuple[int, float, str | None] | None] = []
+
+    monkeypatch.setattr(
+        "SyncEngine.sync_executor._current_source_identity",
+        lambda _pc_track: cached_identity,
+    )
+
+    def fake_copy_to_ipod(_source_path, _transcode_plan, **kwargs):
+        passed_identities.append(kwargs.get("source_identity"))
+        destination = tmp_path / "iPod_Control" / "Music" / "F00" / "source.mp3"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"audio")
+        return True, destination, False, ""
+
+    monkeypatch.setattr(executor, "_copy_to_ipod", fake_copy_to_ipod)
+    successes: list[Path] = []
+
+    executor._parallel_copy_stage(
+        ctx,
+        stage_name="add",
+        items=[item],
+        on_success=lambda _item, ipod_path, _was_transcoded: successes.append(
+            ipod_path
+        ),
+    )
+
+    assert successes
+    assert ctx.sync_item_source_identities[id(item)] == cached_identity
+    assert passed_identities == [cached_identity]
+
+
+def test_backpatch_new_tracks_reuses_cached_source_identity(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source.mp3"
+    source.write_bytes(b"audio")
+    pc_track = _make_pc_track(source)
+    ipod_dest = tmp_path / "iPod_Control" / "Music" / "F00" / "source.mp3"
+    ipod_dest.parent.mkdir(parents=True)
+    ipod_dest.write_bytes(b"audio")
+    track_info = TrackInfo(
+        title="Source",
+        location=":iPod_Control:Music:F00:source.mp3",
+        db_track_id=77,
+    )
+    item = SyncItem(
+        action=SyncAction.ADD_TO_IPOD,
+        fingerprint="fp-one",
+        pc_track=pc_track,
+    )
+    ctx = _SyncContext(
+        plan=SyncPlan(),
+        mapping=MappingFile(),
+        progress_callback=None,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+    )
+    ctx.new_tracks.append(track_info)
+    ctx.new_track_fingerprints[id(track_info)] = "fp-one"
+    ctx.new_track_info[id(track_info)] = (pc_track, ipod_dest, False, item)
+    ctx.sync_item_source_identities[id(item)] = (987, 654.0, "cached-source-hash")
+
+    def fail_current_identity(_pc_track):
+        raise AssertionError("backpatch should use the worker-cached identity")
+
+    monkeypatch.setattr(
+        "SyncEngine.sync_executor._current_source_identity",
+        fail_current_identity,
+    )
+
+    SyncExecutor(tmp_path)._backpatch_new_tracks(ctx)
+
+    entry = ctx.mapping.get_entries("fp-one")[0]
+    assert entry.source_size == 987
+    assert entry.source_mtime == 654.0
+    assert entry.source_hash == "cached-source-hash"
 
 
 def test_auto_write_workers_use_flash_friendly_default_for_nano(tmp_path: Path) -> None:

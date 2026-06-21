@@ -47,7 +47,16 @@ from .capability_filter import (
     is_track_supported_by_device,
     unsupported_track_reason,
 )
-from .contracts import SyncOutcome, SyncProgress, SyncRequest
+from .contracts import (
+    SYNC_DB_OVERHEAD_BYTES,
+    SYNC_DB_WRITE_RESERVE_BYTES,
+    SYNC_DISK_RESERVE_BYTES,
+    SYNC_UNTIL_FULL_RESERVE_BYTES,
+    SyncOutcome,
+    SyncProgress,
+    SyncRequest,
+    sync_plan_required_free_bytes,
+)
 from .fingerprint_diff_engine import SyncItem, SyncPlan
 from .itunes_prefs import protect_from_itunes
 from .mapping import MappingFile, MappingManager
@@ -73,15 +82,17 @@ logger = logging.getLogger(__name__)
 # ── Constants ───────────────────────────────────────────────────────────────
 
 # Minimum free space (bytes) that must remain on the iPod after each file copy.
-_DISK_RESERVE_BYTES = 4 * 1024 * 1024   # 4 MB
+_DISK_RESERVE_BYTES = SYNC_DISK_RESERVE_BYTES
 
 # Minimum free space required before attempting to write the database.
 # Smaller than _DISK_RESERVE_BYTES so a sync that fills the iPod to ~4 MB
 # remaining can still commit its database.
-_DB_WRITE_RESERVE_BYTES = 1 * 1024 * 1024  # 1 MB
+_DB_WRITE_RESERVE_BYTES = SYNC_DB_WRITE_RESERVE_BYTES
 
 # Estimated overhead for the database files themselves.
-_DB_OVERHEAD_BYTES = 10 * 1024 * 1024    # 10 MB
+_DB_OVERHEAD_BYTES = SYNC_DB_OVERHEAD_BYTES
+
+_SYNC_UNTIL_FULL_RESERVE_BYTES = SYNC_UNTIL_FULL_RESERVE_BYTES
 
 # Default number of Fxx music directories (most common across iPod models).
 _DEFAULT_MUSIC_DIRS = 20
@@ -162,6 +173,9 @@ def _current_source_identity(pc_track) -> tuple[int, float, str | None]:
     return source_size, source_mtime, source_hash
 
 
+_SourceIdentitySnapshot = tuple[int, float, str | None]
+
+
 @dataclass
 class _SyncContext:
     """Shared mutable state flowing through all sync stages.
@@ -178,6 +192,7 @@ class _SyncContext:
     dry_run: bool
     write_back_to_pc: bool
     _is_cancelled: Callable[[], bool] | None
+    sync_until_full: bool = False
 
     # ── GUI-decoupled inputs (passed forward, not pulled from GUI) ──
     user_playlists: list[dict] = field(default_factory=list)
@@ -209,6 +224,7 @@ class _SyncContext:
     # ── Fingerprint/source tracking for new-track backpatch ─────────
     new_track_fingerprints: dict[int, str] = field(default_factory=dict)
     new_track_info: dict[int, tuple] = field(default_factory=dict)
+    sync_item_source_identities: dict[int, _SourceIdentitySnapshot] = field(default_factory=dict)
     conversion_group_add_counts: dict[str, int] = field(default_factory=dict)
     conversion_group_success_counts: dict[str, int] = field(default_factory=dict)
     completed_conversion_groups: set[str] = field(default_factory=set)
@@ -370,6 +386,7 @@ class SyncExecutor:
 
         self._folder_counter = 0
         self._folder_lock = threading.Lock()
+        self._space_guard_lock = threading.Lock()
 
         # 0 = auto (CPU count, capped at 8), 1 = sequential
         if max_workers <= 0:
@@ -435,6 +452,7 @@ class SyncExecutor:
         lastfm_api_secret = getattr(request, "lastfm_api_secret", "")
         lastfm_session_key = getattr(request, "lastfm_session_key", "")
         lastfm_username = getattr(request, "lastfm_username", "")
+        sync_until_full = bool(getattr(request, "sync_until_full", False))
 
         return self.execute(
             plan=request.plan,
@@ -455,6 +473,7 @@ class SyncExecutor:
             lastfm_username=lastfm_username,
             is_scrobble_cancelled=request.is_scrobble_cancelled,
             on_cancel_with_partial=request.on_cancel_with_partial,
+            sync_until_full=sync_until_full,
         )
 
     def execute(
@@ -478,6 +497,7 @@ class SyncExecutor:
         lastfm_username: str = "",
         is_scrobble_cancelled: Callable[[], bool] | None = None,
         on_cancel_with_partial: Callable[[int, int], bool] | None = None,
+        sync_until_full: bool = False,
     ) -> SyncOutcome:
         """Execute the sync plan.
 
@@ -508,6 +528,7 @@ class SyncExecutor:
             lastfm_session_key=lastfm_session_key,
             lastfm_username=lastfm_username,
             is_scrobble_cancelled=is_scrobble_cancelled,
+            sync_until_full=sync_until_full,
         )
         lifecycle = _ExecutionLifecycle(
             on_cancel_with_partial=on_cancel_with_partial,
@@ -542,6 +563,7 @@ class SyncExecutor:
         lastfm_session_key: str,
         lastfm_username: str,
         is_scrobble_cancelled: Callable[[], bool] | None,
+        sync_until_full: bool,
     ) -> _SyncContext:
         ctx = _SyncContext(
             plan,
@@ -551,6 +573,7 @@ class SyncExecutor:
             write_back_to_pc,
             is_cancelled,
         )
+        ctx.sync_until_full = bool(sync_until_full)
         ctx.user_playlists = list(user_playlists) if user_playlists else []
         ctx.on_sync_complete = on_sync_complete
         ctx.compute_sound_check = compute_sound_check
@@ -988,37 +1011,39 @@ class SyncExecutor:
             try:
                 disk = shutil.disk_usage(self.ipod_path)
 
-                # Updates can increase file size (e.g., re-encoding to a higher
-                # lossy bitrate). Account for positive growth so we fail early
-                # instead of deleting/replacing tracks until space runs out.
-                update_growth = 0
-                for item in ctx.plan.to_update_file:
-                    update_growth += item.planned_update_growth
-
-                deferred_remove_bytes = sum(
-                    self._sync_item_size(item)
-                    for item in ctx.plan.to_remove
-                    if item.is_deferred_removal
+                needed = sync_plan_required_free_bytes(
+                    ctx.plan,
+                    db_overhead_bytes=_DB_OVERHEAD_BYTES,
                 )
-                removable_credit = max(
-                    0,
-                    ctx.plan.storage.bytes_to_remove - deferred_remove_bytes,
-                )
-
-                needed = (ctx.plan.storage.bytes_to_add
-                          - removable_credit
-                          + update_growth
-                          + _DB_OVERHEAD_BYTES)
                 if needed > 0 and disk.free < needed:
-                    free_mb = disk.free / (1024 * 1024)
-                    need_mb = needed / (1024 * 1024)
-                    ctx.result.errors.append((
-                        "storage",
-                        f"Not enough space on iPod: {free_mb:.0f} MB free, "
-                        f"{need_mb:.0f} MB needed",
-                    ))
-                    ctx.result.success = False
-                    return False
+                    if ctx.sync_until_full:
+                        if disk.free < _DB_WRITE_RESERVE_BYTES:
+                            reserve_mb = _DB_WRITE_RESERVE_BYTES / (1024 * 1024)
+                            free_mb = disk.free / (1024 * 1024)
+                            ctx.result.errors.append((
+                                "storage",
+                                f"Not enough space to start sync: "
+                                f"{free_mb:.1f} MB free, "
+                                f"{reserve_mb:.0f} MB required.",
+                            ))
+                            ctx.result.success = False
+                            return False
+                        logger.info(
+                            "Sync plan needs about %s with %s free; "
+                            "continuing with sync-until-full policy.",
+                            _format_bytes(needed),
+                            _format_bytes(disk.free),
+                        )
+                    else:
+                        free_mb = disk.free / (1024 * 1024)
+                        need_mb = needed / (1024 * 1024)
+                        ctx.result.errors.append((
+                            "storage",
+                            f"Not enough space on iPod: {free_mb:.0f} MB free, "
+                            f"{need_mb:.0f} MB needed",
+                        ))
+                        ctx.result.success = False
+                        return False
             except OSError as e:
                 logger.warning("Could not check disk space: %s", e)
 
@@ -1485,12 +1510,17 @@ class SyncExecutor:
             )
             if fp and info and track.db_track_id != 0:
                 pc_track, ipod_dest, was_transcoded = info[:3]
-                # Re-stat the source file to capture post-fingerprint
-                # size/mtime.  The fingerprinting phase may have written
-                # the acoustic fingerprint tag back into the source file,
-                # changing its size and mtime after the initial scan.
-                source_size, source_mtime, source_hash = _current_source_identity(pc_track)
                 item = info[3] if len(info) > 3 else None
+                cached_identity = (
+                    ctx.sync_item_source_identities.get(id(item))
+                    if item is not None else None
+                )
+                if cached_identity is not None:
+                    source_size, source_mtime, source_hash = cached_identity
+                else:
+                    # Capture post-fingerprint size/mtime.  The fingerprinting
+                    # phase may have written a tag after the initial scan.
+                    source_size, source_mtime, source_hash = _current_source_identity(pc_track)
                 source_path_hint = pc_track.relative_path
                 source_format = Path(pc_track.path).suffix.lstrip(".")
                 if item is not None and item.mapping_source_metadata:
@@ -1791,10 +1821,13 @@ class SyncExecutor:
                 size_progress=size_frac,
             )
 
-        def _do_copy(item: SyncItem, worker_id: int) -> tuple[SyncItem, bool, Path | None, bool, str]:
+        def _do_copy(
+            item: SyncItem,
+            worker_id: int,
+        ) -> tuple[SyncItem, bool, Path | None, bool, str, _SourceIdentitySnapshot | None]:
             if item.pc_track is None:
                 logger.error("_do_copy called with None pc_track for %s", item.description)
-                return (item, False, None, False, "No source track")
+                return (item, False, None, False, "No source track", None)
             source_path = Path(item.pc_track.path)
             transcode_plan = self._transcode_plan_for_item(item, source_path)
             need_transcode = transcode_plan.target != TranscodeTarget.COPY
@@ -1836,16 +1869,35 @@ class SyncExecutor:
                     transcode_cb = _make_io_cb(filename, worker_id, "Transcoding")
                 copy_cb = _make_io_cb(filename, worker_id, "Copying")
 
+            action_name = getattr(item.action, "name", str(item.action))
+            if action_name == "ADD_TO_IPOD" and not item.fingerprint:
+                item.fingerprint = get_or_compute_fingerprint(
+                    source_path,
+                    fpcalc_path=self.fpcalc_path,
+                )
+
+            try:
+                source_identity = _current_source_identity(item.pc_track)
+            except Exception as exc:
+                logger.debug(
+                    "Could not precompute source identity for %s: %s",
+                    source_path,
+                    exc,
+                )
+                source_identity = None
+
             success, ipod_path, was_transcoded, err_msg = self._copy_to_ipod(
                 source_path, transcode_plan, fingerprint=item.fingerprint,
                 transcode_progress=transcode_cb,
                 copy_progress=copy_cb,
                 is_cancelled=ctx._is_cancelled,
                 expected_write_bytes=expected_write_bytes,
+                source_identity=source_identity,
+                sync_until_full=ctx.sync_until_full,
             )
-            return (item, success, ipod_path, was_transcoded, err_msg)
+            return (item, success, ipod_path, was_transcoded, err_msg, source_identity)
 
-        workers = self._max_workers
+        workers = 1 if ctx.sync_until_full else self._max_workers
         logger.info("Stage '%s': processing %d items with %d workers", stage_name, len(items_to_process), workers)
 
         pool = ThreadPoolExecutor(max_workers=workers)
@@ -1867,23 +1919,31 @@ class SyncExecutor:
 
                 idx = future_to_idx[future]
                 try:
-                    item, success, ipod_path, was_transcoded, err_msg = future.result()
+                    (
+                        item,
+                        success,
+                        ipod_path,
+                        was_transcoded,
+                        err_msg,
+                        source_identity,
+                    ) = future.result()
                 except (_CancelledError, _OutOfSpaceError) as e:
                     is_oom = isinstance(e, _OutOfSpaceError)
                     if is_oom:
                         logger.error(str(e))
-                        n_done = ctx.result.tracks_added
+                        summary = self._file_mutation_summary(ctx)
+                        n_done = completed_count
                         n_left = total - completed_count
-                        if n_done > 0:
+                        if n_done > 0 or summary.anything_done:
                             oom_msg = (
-                                f"Ran out of space after copying {n_done} "
-                                f"track{'s' if n_done != 1 else ''} — "
-                                f"{n_left} more could not be added. "
-                                f"The database will be saved with what completed."
+                                "Ran out of space before copying the next file. "
+                                f"{n_left} more file{'s' if n_left != 1 else ''} "
+                                "could not be copied. The database will be saved "
+                                "with what completed."
                             )
                         else:
                             oom_msg = (
-                                "Not enough space to copy any tracks. "
+                                "Not enough space to copy the next file. "
                                 "The iPod database was not changed."
                             )
                         ctx.result.errors.append(("storage", oom_msg))
@@ -1921,6 +1981,8 @@ class SyncExecutor:
                     ctx.result.errors.append((item.description, detail))
                     continue
 
+                if source_identity is not None:
+                    ctx.sync_item_source_identities[id(item)] = source_identity
                 on_success(item, ipod_path, was_transcoded)
         finally:
             pool.shutdown(wait=False, cancel_futures=True)
@@ -2773,12 +2835,6 @@ class SyncExecutor:
             ctx.new_track_info[id(track_info)] = (item.pc_track, ipod_path, was_transcoded, item)
 
             fingerprint = item.fingerprint
-            if not fingerprint:
-                fingerprint = get_or_compute_fingerprint(
-                    Path(item.pc_track.path),
-                    fpcalc_path=self.fpcalc_path,
-                )
-
             if fingerprint:
                 ctx.new_track_fingerprints[id(track_info)] = fingerprint
 
@@ -3169,6 +3225,8 @@ class SyncExecutor:
         copy_progress: Callable[[float], None] | None = None,
         is_cancelled: Callable[[], bool] | None = None,
         expected_write_bytes: int | None = None,
+        source_identity: _SourceIdentitySnapshot | None = None,
+        sync_until_full: bool = False,
     ) -> tuple[bool, Path | None, bool, str]:
         """
         Copy or transcode a file to iPod, using cache when possible.
@@ -3184,19 +3242,16 @@ class SyncExecutor:
         dest_folder = self._get_next_media_folder()
         source_size = source_path.stat().st_size
         write_size = expected_write_bytes if expected_write_bytes and expected_write_bytes > 0 else source_size
+        reserve_bytes = (
+            _SYNC_UNTIL_FULL_RESERVE_BYTES
+            if sync_until_full
+            else _DISK_RESERVE_BYTES
+        )
 
-        # Safety check: abort if writing this file would leave below the reserve
-        try:
-            free = shutil.disk_usage(self.ipod_path).free
-            if free - write_size < _DISK_RESERVE_BYTES:
-                free_mb = free / (1024 * 1024)
-                reserve_mb = _DISK_RESERVE_BYTES / (1024 * 1024)
-                raise _OutOfSpaceError(
-                    f"iPod is out of space ({free_mb:.0f} MB remaining, "
-                    f"{reserve_mb:.0f} MB reserve required). Stopping file writes."
-                )
-        except OSError:
-            pass  # Can't check — proceed and let the copy fail naturally
+        # Ordinary syncs keep the estimate-based precheck for quick feedback.
+        # Sync-until-full waits for the real staged/transcoded payload size.
+        if not sync_until_full:
+            self._ensure_device_has_space_for_write(write_size, reserve_bytes)
 
         needs_transcode = transcode_plan.target != TranscodeTarget.COPY
         if needs_transcode:
@@ -3206,9 +3261,12 @@ class SyncExecutor:
             cache_source_hash = None
             cache_source_mtime = 0.0
             if fingerprint:
-                cache_source_hash, cache_source_mtime = (
-                    self.transcode_cache.describe_source(source_path)
-                )
+                if source_identity is not None:
+                    _source_size, cache_source_mtime, cache_source_hash = source_identity
+                else:
+                    cache_source_hash, cache_source_mtime = (
+                        self.transcode_cache.describe_source(source_path)
+                    )
 
             # Check transcode cache
             if fingerprint:
@@ -3230,6 +3288,8 @@ class SyncExecutor:
                             cached_path, final_path,
                             copy_progress,
                             is_cancelled=is_cancelled,
+                            reserve_bytes=reserve_bytes,
+                            serialize_space_check=sync_until_full,
                         )
                         logger.info("Used cached transcode: %s", source_path.name)
                         return True, final_path, True, ""
@@ -3287,6 +3347,8 @@ class SyncExecutor:
                     final_path,
                     copy_progress,
                     is_cancelled=is_cancelled,
+                    reserve_bytes=reserve_bytes,
+                    serialize_space_check=sync_until_full,
                 )
 
                 # Clean up temp dir for non-fingerprinted tracks
@@ -3313,6 +3375,8 @@ class SyncExecutor:
                     dest_path,
                     copy_progress,
                     is_cancelled=is_cancelled,
+                    reserve_bytes=reserve_bytes,
+                    serialize_space_check=sync_until_full,
                 )
                 return True, dest_path, False, ""
             except _OutOfSpaceError:
@@ -3328,6 +3392,8 @@ class SyncExecutor:
         progress: Callable[[float], None] | None = None,
         *,
         is_cancelled: Callable[[], bool] | None = None,
+        reserve_bytes: int = _DISK_RESERVE_BYTES,
+        serialize_space_check: bool = False,
     ) -> None:
         """Copy a metadata-stripped temporary payload to the iPod."""
         with tempfile.TemporaryDirectory(prefix="iopenpod_stripped_") as tmp:
@@ -3349,6 +3415,8 @@ class SyncExecutor:
                 dst,
                 progress,
                 is_cancelled=is_cancelled,
+                reserve_bytes=reserve_bytes,
+                serialize_space_check=serialize_space_check,
             )
 
     def _copy_file_to_device(
@@ -3358,14 +3426,70 @@ class SyncExecutor:
         progress: Callable[[float], None] | None = None,
         *,
         is_cancelled: Callable[[], bool] | None = None,
+        reserve_bytes: int = _DISK_RESERVE_BYTES,
+        serialize_space_check: bool = False,
+    ) -> None:
+        if serialize_space_check:
+            with self._space_guard_lock:
+                self._copy_file_to_device_guarded(
+                    src,
+                    dst,
+                    progress,
+                    is_cancelled=is_cancelled,
+                    reserve_bytes=reserve_bytes,
+                )
+            return
+
+        self._copy_file_to_device_guarded(
+            src,
+            dst,
+            progress,
+            is_cancelled=is_cancelled,
+            reserve_bytes=reserve_bytes,
+        )
+
+    def _copy_file_to_device_guarded(
+        self,
+        src: Path,
+        dst: Path,
+        progress: Callable[[float], None] | None = None,
+        *,
+        is_cancelled: Callable[[], bool] | None = None,
+        reserve_bytes: int = _DISK_RESERVE_BYTES,
     ) -> None:
         with self._device_write_semaphore:
+            self._ensure_device_has_space_for_write(src.stat().st_size, reserve_bytes)
             self._copy_file_chunked(
                 src,
                 dst,
                 progress,
                 is_cancelled=is_cancelled,
             )
+
+    def _ensure_device_has_space_for_write(
+        self,
+        write_size: int,
+        reserve_bytes: int,
+    ) -> None:
+        """Raise when writing bytes would leave less than reserve on the iPod."""
+
+        try:
+            free = shutil.disk_usage(self.ipod_path).free
+        except OSError as exc:
+            logger.warning("Could not check disk space before file write: %s", exc)
+            return
+
+        if free - max(0, int(write_size or 0)) >= max(0, int(reserve_bytes or 0)):
+            return
+
+        free_mb = free / (1024 * 1024)
+        write_mb = max(0, int(write_size or 0)) / (1024 * 1024)
+        reserve_mb = max(0, int(reserve_bytes or 0)) / (1024 * 1024)
+        raise _OutOfSpaceError(
+            f"iPod is out of space ({free_mb:.1f} MB remaining, "
+            f"{write_mb:.1f} MB to write, {reserve_mb:.0f} MB reserve required). "
+            "Stopping file writes."
+        )
 
     @staticmethod
     def _copy_file_chunked(

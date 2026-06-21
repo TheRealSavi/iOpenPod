@@ -93,6 +93,7 @@ class EngineOptions:
     lastfm_api_secret: str = ""
     lastfm_session_key: str = ""
     lastfm_username: str = ""
+    sync_until_full: bool = False
     transaction_policy: EngineTransactionPolicy = EngineTransactionPolicy.USER_CHOICE
 
 

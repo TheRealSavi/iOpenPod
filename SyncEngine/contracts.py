@@ -33,6 +33,20 @@ def _coerce_nonnegative_int(value: Any) -> int:
         return 0
 
 
+# Minimum free space (bytes) that should remain on the iPod after ordinary
+# file copies. Sync-until-full lowers this to the database-write reserve.
+SYNC_DISK_RESERVE_BYTES = 4 * 1024 * 1024
+
+# Minimum free space required before attempting to write the database.
+SYNC_DB_WRITE_RESERVE_BYTES = 1 * 1024 * 1024
+
+# Estimated overhead for database files and their temporary write payloads.
+SYNC_DB_OVERHEAD_BYTES = 10 * 1024 * 1024
+
+# Reserve used by the explicit "sync until full" policy.
+SYNC_UNTIL_FULL_RESERVE_BYTES = SYNC_DB_WRITE_RESERVE_BYTES
+
+
 class SyncAction(Enum):
     """Type of sync action needed."""
 
@@ -403,6 +417,42 @@ class SyncPlan:
         return header + "\n" + "\n".join(all_lines)
 
 
+def sync_plan_required_free_bytes(
+    plan: Any,
+    *,
+    db_overhead_bytes: int = SYNC_DB_OVERHEAD_BYTES,
+) -> int:
+    """Estimate free bytes needed before starting an executable sync plan."""
+
+    storage = getattr(plan, "storage", None)
+    bytes_to_add = _coerce_nonnegative_int(getattr(storage, "bytes_to_add", 0))
+    bytes_to_remove = _coerce_nonnegative_int(
+        getattr(storage, "bytes_to_remove", 0)
+    )
+
+    update_growth = 0
+    for item in getattr(plan, "to_update_file", ()) or ():
+        update_growth += _coerce_nonnegative_int(
+            getattr(item, "planned_update_growth", 0)
+        )
+
+    deferred_remove_bytes = 0
+    for item in getattr(plan, "to_remove", ()) or ():
+        if bool(getattr(item, "is_deferred_removal", False)):
+            deferred_remove_bytes += _coerce_nonnegative_int(
+                getattr(item, "planned_remove_size", 0)
+            )
+
+    removable_credit = max(0, bytes_to_remove - deferred_remove_bytes)
+    return max(
+        0,
+        bytes_to_add
+        - removable_credit
+        + update_growth
+        + _coerce_nonnegative_int(db_overhead_bytes),
+    )
+
+
 @dataclass
 class SyncProgress:
     """Progress info for sync callbacks."""
@@ -507,6 +557,7 @@ class SyncRequest:
     listenbrainz_username: str = ""
     is_scrobble_cancelled: Callable[[], bool] | None = None
     on_cancel_with_partial: Callable[[int, int], bool] | None = None
+    sync_until_full: bool = False
     lastfm_api_key: str = ""
     lastfm_api_secret: str = ""
     lastfm_session_key: str = ""
