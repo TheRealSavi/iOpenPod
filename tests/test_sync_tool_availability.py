@@ -1,4 +1,7 @@
+from types import SimpleNamespace
+
 from app_core.jobs import (
+    SyncExecuteWorker,
     SyncToolAvailability,
     build_dropped_playlist_imports,
     check_sync_tool_availability,
@@ -18,13 +21,13 @@ def test_sync_tool_availability_summarizes_missing_tools() -> None:
 
     assert availability.has_missing is True
     assert availability.can_continue_without_download is False
-    assert availability.tool_names == ("fpcalc (Chromaprint)", "FFmpeg")
-    assert availability.tool_list == "fpcalc (Chromaprint) and FFmpeg"
+    assert availability.tool_names == ("fpcalc (Chromaprint)", "FFmpeg/ffprobe")
+    assert availability.tool_list == "fpcalc (Chromaprint) and FFmpeg/ffprobe"
     assert "ffprobe" in availability.install_help_text
     assert "Settings -> External Tools" in availability.install_help_text
 
 
-def test_sync_tool_availability_allows_missing_ffmpeg_only() -> None:
+def test_sync_tool_availability_blocks_missing_ffmpeg_only() -> None:
     availability = SyncToolAvailability(
         missing_ffmpeg=True,
         missing_fpcalc=False,
@@ -32,8 +35,8 @@ def test_sync_tool_availability_allows_missing_ffmpeg_only() -> None:
     )
 
     assert availability.has_missing is True
-    assert availability.can_continue_without_download is True
-    assert availability.tool_names == ("FFmpeg",)
+    assert availability.can_continue_without_download is False
+    assert availability.tool_names == ("FFmpeg/ffprobe",)
 
 
 def test_check_sync_tool_availability_uses_configured_paths(monkeypatch) -> None:
@@ -70,6 +73,30 @@ def test_check_sync_tool_availability_uses_configured_paths(monkeypatch) -> None
     assert availability.missing_fpcalc is False
     assert availability.can_download is False
     assert seen == {"ffmpeg": "missing-ffmpeg", "fpcalc": "fpcalc-ok"}
+
+
+def test_sync_execute_worker_blocks_missing_required_tools(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(
+        "app_core.jobs.check_sync_tool_availability",
+        lambda _settings: SyncToolAvailability(
+            missing_ffmpeg=True,
+            missing_fpcalc=False,
+            can_download=False,
+        ),
+    )
+
+    worker = SyncExecuteWorker(
+        str(tmp_path),
+        SimpleNamespace(),
+        settings=AppSettings(),
+    )
+    errors: list[str] = []
+    worker.error.connect(errors.append)
+
+    worker.run()
+
+    assert len(errors) == 1
+    assert "FFmpeg/ffprobe required before sync" in errors[0]
 
 
 def test_collect_media_file_paths_expands_supported_files(tmp_path) -> None:

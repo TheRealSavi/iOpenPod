@@ -6,6 +6,28 @@ from types import SimpleNamespace
 from app_core import runtime
 
 
+def test_cache_emits_load_failed_after_partial_device_load(monkeypatch) -> None:
+    monkeypatch.setattr(
+        runtime.DeviceManager,
+        "get_instance",
+        classmethod(lambda cls: SimpleNamespace(device_path="/fake/ipod")),
+    )
+
+    cache = runtime.iTunesDBCache()
+    errors: list[str] = []
+    cache.load_failed.connect(errors.append)
+
+    cache._on_load_complete(
+        (
+            {"mhlt": [], "mhlp": [], "mhlp_podcast": [], "mhlp_smart": []},
+            "/fake/ipod",
+            ["Could not load iTunesDB: [Errno 13] Permission denied"],
+        )
+    )
+
+    assert errors == ["Could not load iTunesDB: [Errno 13] Permission denied"]
+
+
 def test_commit_user_playlists_hydrates_pending_playlist_into_live_cache(
     monkeypatch,
 ) -> None:
@@ -154,14 +176,18 @@ def test_rename_master_playlist_updates_live_cache(monkeypatch) -> None:
         {
             "mhlt": [],
             "mhlp": [{"playlist_id": 1, "Title": "Old", "master_flag": 1}],
-            "mhlp_podcast": [],
+            "mhlp_podcast": [
+                {"playlist_id": 2, "Title": "Old Podcast", "master_flag": 1}
+            ],
             "mhlp_smart": [],
         },
         "/fake/ipod",
     )
 
     assert cache.rename_master_playlist("New") is True
-    assert cache.get_playlists()[0]["Title"] == "New"
+    playlists = cache.get_playlists()
+    assert playlists[0]["Title"] == "New"
+    assert playlists[1]["Title"] == "New"
 
 
 def test_remove_user_playlist_removes_live_playlist(monkeypatch) -> None:

@@ -579,8 +579,6 @@ def _collect_track_artwork_decisions(
                 existing_entry=existing_entry,
             )
             summary.cleared += 1
-            title = _get_track_field(track, "title") or "?"
-            logger.debug("ART: no art found for '%s' (%s)", title, pc_path)
             continue
 
         digest = art_hash(art_bytes)

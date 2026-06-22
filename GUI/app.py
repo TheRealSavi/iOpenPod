@@ -1,9 +1,10 @@
 import logging
+import shlex
 import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from PyQt6.QtCore import Qt, QTimer, pyqtSlot
+from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSlot
 from PyQt6.QtGui import QColor, QFont, QPalette
 from PyQt6.QtWidgets import (
     QApplication,
@@ -25,6 +26,7 @@ from app_core.controllers import (
     StartupDeviceRestoreController,
     StartupUpdateController,
 )
+from app_core.device_access import check_ipod_write_access
 from app_core.device_identity import (
     identify_ipod_at_root,
     refresh_device_disk_usage,
@@ -140,6 +142,68 @@ def _media_folder_entries_from_settings(settings: Any) -> list[dict[str, object]
     return _normalize_media_folder_settings(getattr(settings, "media_folder", ""))
 
 
+_DEVICE_ACCESS_ERROR_MARKERS = (
+    "permission denied",
+    "read-only file system",
+    "[errno 13]",
+    "[errno 30]",
+    "input/output error",
+)
+
+
+def _looks_like_device_access_error(text: object) -> bool:
+    lowered = str(text).lower()
+    return any(marker in lowered for marker in _DEVICE_ACCESS_ERROR_MARKERS)
+
+
+def _sync_execute_failure_message(result: Any) -> str | None:
+    """Return the message that should be shown for a failed sync result."""
+    if getattr(result, "success", True) or getattr(result, "partial_save", False):
+        return None
+
+    errors = list(getattr(result, "errors", []) or [])
+    if not errors:
+        return "Sync failed before making changes."
+
+    prioritized = None
+    for desc, msg in errors:
+        if str(desc).lower() in {"read-only", "permission"}:
+            prioritized = (desc, msg)
+            break
+        if _looks_like_device_access_error(f"{desc} {msg}"):
+            prioritized = (desc, msg)
+            break
+
+    desc, msg = prioritized or errors[0]
+    text = str(msg).strip() or str(desc).strip()
+    return text or "Sync failed before making changes."
+
+
+def _library_load_failure_message(mount_path: str, error_msg: str) -> str:
+    error_text = error_msg.strip() or "Unknown error"
+    if not _looks_like_device_access_error(error_text):
+        return f"iOpenPod could not load this iPod library.\n\n{error_text}"
+
+    mount = mount_path.strip() or "the iPod mount"
+    quoted_mount = shlex.quote(mount) if mount_path.strip() else "<mount-path>"
+    return (
+        "iOpenPod could not read this iPod cleanly.\n\n"
+        f"Mount path: {mount}\n"
+        f"System error: {error_text}\n\n"
+        "On Linux, this usually means the iPod mount is not accessible, "
+        "the FAT filesystem is dirty, or the current user does not have "
+        "permission to the mount.\n\n"
+        "Try reconnecting the iPod. If it still fails, try remounting it "
+        "read-write:\n"
+        f"  sudo mount -o remount,rw {quoted_mount}\n\n"
+        "If the filesystem is dirty, unmount it before repairing it:\n"
+        f"  sudo umount {quoted_mount}\n"
+        "  sudo fsck.vfat -a /dev/sdXN\n\n"
+        "Replace /dev/sdXN with the iPod partition. Do not run fsck while "
+        "the iPod is mounted."
+    )
+
+
 class MainWindow(QMainWindow):
     def __init__(self, context: "AppContext | None" = None):
         super().__init__()
@@ -169,6 +233,8 @@ class MainWindow(QMainWindow):
         # Sync worker reference
         self._sync_worker = None
         self._back_sync_worker = None
+        self._back_sync_workers = []
+        self._cancelled_workers = []
         self._podcast_plan_worker = None
         self._album_conversion_worker = None
         self._chapter_split_worker = None
@@ -236,6 +302,9 @@ class MainWindow(QMainWindow):
 
         # Connect cache ready signal to refresh UI
         self.library_cache.data_ready.connect(self.onDataReady)
+        load_failed = getattr(self.library_cache, "load_failed", None)
+        if load_failed is not None:
+            load_failed.connect(self.onDataLoadFailed)
         self.musicBrowser.photoBrowser.bind_cache(self.library_cache)
 
         # Schedule an immediate write whenever track flags are edited in the UI
@@ -316,6 +385,7 @@ class MainWindow(QMainWindow):
         )
         self.syncReview.cancelled.connect(self._onSyncReviewCancelled)
         self.syncReview.sync_requested.connect(self.executeSyncPlan)
+        self.syncReview.edit_selection_requested.connect(self._onSyncReviewEditSelection)
         self.centralStack.addWidget(self.syncReview)  # Index 1
 
         # Settings page
@@ -347,6 +417,8 @@ class MainWindow(QMainWindow):
         )
         self.selectiveSyncBrowser.selection_done.connect(self._onSelectiveSyncDone)
         self.selectiveSyncBrowser.cancelled.connect(self._onSelectiveSyncCancelled)
+        self.selectiveSyncBrowser.plan_selection_done.connect(self._onPlanSelectionDone)
+        self.selectiveSyncBrowser.plan_selection_cancelled.connect(self._onPlanSelectionCancelled)
         self.centralStack.addWidget(self.selectiveSyncBrowser)  # Index 4
 
         # No-device placeholder section (shown in content area; sidebar stays visible)
@@ -536,10 +608,11 @@ class MainWindow(QMainWindow):
 
                 device_manager.discovered_ipod = selected_ipod
                 device_manager.device_path = folder
-                # Persist selection
-                global_settings = self.settings_service.get_global_settings()
-                global_settings.last_device_path = folder
-                self.settings_service.save_global_settings(global_settings)
+                if same_device_path(device_manager.device_path, folder):
+                    # Persist selection only after the access preflight keeps it.
+                    global_settings = self.settings_service.get_global_settings()
+                    global_settings.last_device_path = folder
+                    self.settings_service.save_global_settings(global_settings)
             else:
                 QMessageBox.warning(
                     self,
@@ -572,6 +645,13 @@ class MainWindow(QMainWindow):
         self.sidebar.clearDeviceInfo()
 
         if path:
+            access = check_ipod_write_access(path)
+            if not access.writable:
+                logger.error("Selected iPod is not writable: %s", access.message)
+                QMessageBox.critical(self, "iPod Not Writable", access.message)
+                if same_device_path(path, self.device_manager.device_path):
+                    self.device_manager.device_path = None
+                return
             self._reset_library_category_for_new_device(path)
             self._show_default_page()
             # Start loading data (will emit data_ready when done)
@@ -681,6 +761,16 @@ class MainWindow(QMainWindow):
         self.musicBrowser.browserTrack.clearTable(clear_cache=True)
         self._update_podcast_statuses()
         self.musicBrowser.onDataReady()
+
+    def onDataLoadFailed(self, error_msg: str):
+        """Show device library load failures that would otherwise live only in logs."""
+        device_path = self.device_manager.device_path or ""
+        logger.error("iPod library load failed: %s", error_msg)
+        QMessageBox.critical(
+            self,
+            "Could Not Load iPod",
+            _library_load_failure_message(device_path, error_msg),
+        )
 
     def _onIpodTagFixesRequested(self) -> None:
         cache = self.library_cache
@@ -981,6 +1071,10 @@ class MainWindow(QMainWindow):
                 self._album_conversion_worker is not None
                 and self._album_conversion_worker.isRunning()
             )
+            or (
+                self._chapter_split_worker is not None
+                and self._chapter_split_worker.isRunning()
+            )
             or (self._sync_execute_worker is not None and self._sync_execute_worker.isRunning())
         )
 
@@ -1065,23 +1159,16 @@ class MainWindow(QMainWindow):
                             tools.missing_fpcalc,
                         )
                         return
-                    elif not tools.can_continue_without_download:
-                        return
-                    # ffmpeg missing but user declined — let them continue with MP3/M4A only
+                    return
                 else:
-                    # Platform doesn't support auto-download
                     dlg = _MissingToolsDialog(
                         self,
                         tools.tool_list,
                         can_download=False,
                         detail_lines=tools.install_help_text,
                     )
-                    if tools.can_continue_without_download:
-                        dlg.add_continue_option()
-
-                    if dlg.exec() != QDialog.DialogCode.Accepted:
-                        return
-                    # User clicked Continue Anyway (only possible when fpcalc is present)
+                    dlg.exec()
+                    return
 
         # Show folder selection dialog
         dialog = PCFolderDialog(
@@ -1115,7 +1202,7 @@ class MainWindow(QMainWindow):
             ipod_tracks = cache.get_tracks()
 
             device_manager = self.device_manager
-            self._back_sync_worker = BackSyncWorker(
+            worker = BackSyncWorker(
                 BackSyncRequest(
                     pc_folder=primary_pc_folder,
                     pc_folders=tuple(self._last_pc_folder_entries),
@@ -1126,13 +1213,16 @@ class MainWindow(QMainWindow):
                     device_manager.device_path or "",
                 ),
             )
-            self._back_sync_worker.progress.connect(self.syncReview.update_progress)
-            self._back_sync_worker.finished.connect(self._onBackSyncComplete)
-            self._back_sync_worker.error.connect(self._onSyncError)
-            # Ensure worker reference is cleared on finish/error
-            self._back_sync_worker.finished.connect(lambda _: setattr(self, '_back_sync_worker', None))
-            self._back_sync_worker.error.connect(lambda _: setattr(self, '_back_sync_worker', None))
-            self._back_sync_worker.start()
+            self._back_sync_worker = worker
+            self._retain_back_sync_worker(worker)
+            worker.progress.connect(self.syncReview.update_progress)
+            worker.finished.connect(
+                lambda result, w=worker: self._onBackSyncComplete(result, w)
+            )
+            worker.error.connect(
+                lambda error, w=worker: self._onBackSyncError(error, w)
+            )
+            worker.start()
             return
 
         # Switch to sync review view
@@ -1186,10 +1276,15 @@ class MainWindow(QMainWindow):
                 transcode_options=build_transcode_options(settings),
             )
         )
-        self._sync_worker.progress.connect(self.syncReview.update_progress)
-        self._sync_worker.finished.connect(self._onSyncDiffComplete)
-        self._sync_worker.error.connect(self._onSyncError)
-        self._sync_worker.start()
+        worker = self._sync_worker
+        worker.progress.connect(self.syncReview.update_progress)
+        worker.finished.connect(
+            lambda plan, w=worker: self._onSyncDiffComplete(plan, w)
+        )
+        worker.error.connect(
+            lambda error, w=worker: self._onWorkerSyncError("_sync_worker", w, error)
+        )
+        worker.start()
 
     def _persist_pc_folder_entries(self, folder_entries: object) -> None:
         """Persist PC media-folder settings immediately after dialog edits."""
@@ -1335,10 +1430,12 @@ class MainWindow(QMainWindow):
         )
         self._album_conversion_worker = worker
         worker.progress.connect(self.syncReview.update_progress)
-        worker.finished.connect(self._onAlbumConversionComplete)
-        worker.error.connect(self._onAlbumConversionError)
-        worker.finished.connect(lambda _: setattr(self, "_album_conversion_worker", None))
-        worker.error.connect(lambda _: setattr(self, "_album_conversion_worker", None))
+        worker.finished.connect(
+            lambda result, w=worker: self._onAlbumConversionComplete(result, w)
+        )
+        worker.error.connect(
+            lambda error, w=worker: self._onAlbumConversionError(error, w)
+        )
         worker.start()
 
     def _album_conversion_artwork_bytes(
@@ -1395,7 +1492,13 @@ class MainWindow(QMainWindow):
             logger.debug("Could not read %s artwork", context, exc_info=True)
             return None
 
-    def _onAlbumConversionComplete(self, result) -> None:
+    def _onAlbumConversionComplete(self, result, worker=None) -> None:
+        if worker is not None:
+            if self._album_conversion_worker is not worker:
+                return
+            self._album_conversion_worker = None
+        else:
+            self._album_conversion_worker = None
         self._plan = result.plan
         self.syncReview._ipod_tracks_cache = self.library_cache.get_tracks() or []
         self.syncReview.show_plan(result.plan)
@@ -1406,7 +1509,13 @@ class MainWindow(QMainWindow):
                 len(warnings),
             )
 
-    def _onAlbumConversionError(self, error_msg: str) -> None:
+    def _onAlbumConversionError(self, error_msg: str, worker=None) -> None:
+        if worker is not None:
+            if self._album_conversion_worker is not worker:
+                return
+            self._album_conversion_worker = None
+        else:
+            self._album_conversion_worker = None
         self.syncReview.show_error(error_msg)
 
     def _onChapterSplitRequested(self, tracks: list[dict]) -> None:
@@ -1470,13 +1579,21 @@ class MainWindow(QMainWindow):
         )
         self._chapter_split_worker = worker
         worker.progress.connect(self.syncReview.update_progress)
-        worker.finished.connect(self._onChapterSplitComplete)
-        worker.error.connect(self._onChapterSplitError)
-        worker.finished.connect(lambda _: setattr(self, "_chapter_split_worker", None))
-        worker.error.connect(lambda _: setattr(self, "_chapter_split_worker", None))
+        worker.finished.connect(
+            lambda result, w=worker: self._onChapterSplitComplete(result, w)
+        )
+        worker.error.connect(
+            lambda error, w=worker: self._onChapterSplitError(error, w)
+        )
         worker.start()
 
-    def _onChapterSplitComplete(self, result) -> None:
+    def _onChapterSplitComplete(self, result, worker=None) -> None:
+        if worker is not None:
+            if self._chapter_split_worker is not worker:
+                return
+            self._chapter_split_worker = None
+        else:
+            self._chapter_split_worker = None
         self._plan = result.plan
         self.syncReview._ipod_tracks_cache = self.library_cache.get_tracks() or []
         self.syncReview.show_plan(result.plan)
@@ -1487,7 +1604,13 @@ class MainWindow(QMainWindow):
                 len(warnings),
             )
 
-    def _onChapterSplitError(self, error_msg: str) -> None:
+    def _onChapterSplitError(self, error_msg: str, worker=None) -> None:
+        if worker is not None:
+            if self._chapter_split_worker is not worker:
+                return
+            self._chapter_split_worker = None
+        else:
+            self._chapter_split_worker = None
         self.syncReview.show_error(error_msg)
 
     def _onRemoveFromIpod(self, tracks: list):
@@ -1502,8 +1625,14 @@ class MainWindow(QMainWindow):
         self.centralStack.setCurrentIndex(1)
         self.syncReview.show_plan(plan)
 
-    def _onSyncDiffComplete(self, plan):
+    def _onSyncDiffComplete(self, plan, worker=None):
         """Called when sync diff calculation is complete."""
+        if worker is not None:
+            if self._sync_worker is not worker:
+                return
+            self._sync_worker = None
+        else:
+            self._sync_worker = None
         self._plan = plan  # Store for executeSyncPlan to access matched_pc_paths
         # Provide iPod tracks cache so the review widget can list artwork-missing tracks
         cache = self.library_cache
@@ -1540,17 +1669,21 @@ class MainWindow(QMainWindow):
         )
         self._podcast_plan_worker = worker
         worker.finished.connect(
-            lambda podcast_plan: self._on_podcast_plan_ready(plan, podcast_plan),
+            lambda podcast_plan, w=worker: self._on_podcast_plan_ready(plan, podcast_plan, w),
         )
         worker.error.connect(
-            lambda err: self._on_podcast_plan_error(plan, err),
+            lambda err, w=worker: self._on_podcast_plan_error(plan, err, w),
         )
-        worker.finished.connect(lambda _: setattr(self, '_podcast_plan_worker', None))
-        worker.error.connect(lambda _: setattr(self, '_podcast_plan_worker', None))
         worker.start()
 
-    def _on_podcast_plan_ready(self, plan, podcast_plan) -> None:
+    def _on_podcast_plan_ready(self, plan, podcast_plan, worker=None) -> None:
         """Podcast plan built — merge into music plan and show."""
+        if worker is not None:
+            if self._podcast_plan_worker is not worker:
+                return
+            self._podcast_plan_worker = None
+        else:
+            self._podcast_plan_worker = None
         if podcast_plan.to_add:
             plan.to_add.extend(podcast_plan.to_add)
             plan.storage.bytes_to_add += podcast_plan.storage.bytes_to_add
@@ -1559,8 +1692,14 @@ class MainWindow(QMainWindow):
             plan.storage.bytes_to_remove += podcast_plan.storage.bytes_to_remove
         self.syncReview.show_plan(plan)
 
-    def _on_podcast_plan_error(self, plan, error_msg: str) -> None:
+    def _on_podcast_plan_error(self, plan, error_msg: str, worker=None) -> None:
         """Podcast plan failed — show music-only plan."""
+        if worker is not None:
+            if self._podcast_plan_worker is not worker:
+                return
+            self._podcast_plan_worker = None
+        else:
+            self._podcast_plan_worker = None
         logger.warning("Failed to build podcast plan: %s", error_msg)
         self.syncReview.show_plan(plan)
 
@@ -1603,9 +1742,21 @@ class MainWindow(QMainWindow):
         """Called when sync diff fails."""
         self.syncReview.show_error(error_msg)
 
-    def _onBackSyncComplete(self, result: dict):
+    def _onWorkerSyncError(self, attr_name: str, worker, error_msg: str) -> None:
+        if worker is not None:
+            if getattr(self, attr_name, None) is not worker:
+                return
+            setattr(self, attr_name, None)
+        self._onSyncError(error_msg)
+
+    def _onBackSyncComplete(self, result: dict, worker=None):
         """Called when Back Sync export completes."""
-        self._back_sync_worker = None
+        if worker is not None:
+            if self._back_sync_worker is not worker:
+                return
+            self._clear_back_sync_worker(worker)
+        else:
+            self._back_sync_worker = None
 
         exported = int(result.get("exported", 0) or 0)
         missing = int(result.get("missing_on_pc", 0) or 0)
@@ -1617,6 +1768,141 @@ class MainWindow(QMainWindow):
             else:
                 message = "No iPod-only tracks were found"
             self._notifier.notify("Back Sync Complete", message)
+
+    def _onBackSyncError(self, error_msg: str, worker=None) -> None:
+        if worker is not None:
+            if self._back_sync_worker is not worker:
+                return
+            self._clear_back_sync_worker(worker)
+        else:
+            self._back_sync_worker = None
+        self._onSyncError(error_msg)
+
+    def _retain_back_sync_worker(self, worker) -> None:
+        """Keep a Back Sync thread alive until Qt reports it has stopped."""
+
+        if not hasattr(self, "_back_sync_workers"):
+            self._back_sync_workers = []
+        if worker in self._back_sync_workers:
+            return
+
+        self._back_sync_workers.append(worker)
+        try:
+            QThread.finished.__get__(worker, type(worker)).connect(
+                lambda w=worker: self._reap_back_sync_worker(w)
+            )
+        except Exception:
+            # Tests may use lightweight worker fakes that are not QThreads.
+            pass
+
+    def _clear_back_sync_worker(self, worker) -> None:
+        if self._back_sync_worker is worker:
+            self._back_sync_worker = None
+
+    def _reap_back_sync_worker(self, worker) -> None:
+        self._clear_back_sync_worker(worker)
+        try:
+            self._back_sync_workers.remove(worker)
+        except (AttributeError, ValueError):
+            pass
+        try:
+            worker.deleteLater()
+        except (AttributeError, RuntimeError):
+            pass
+
+    def _retain_cancelled_worker(self, worker) -> None:
+        """Keep a detached worker alive until its thread has stopped."""
+
+        if not hasattr(self, "_cancelled_workers"):
+            self._cancelled_workers = []
+        if worker in self._cancelled_workers:
+            return
+
+        self._cancelled_workers.append(worker)
+        try:
+            QThread.finished.__get__(worker, type(worker)).connect(
+                lambda w=worker: self._reap_cancelled_worker(w)
+            )
+        except Exception:
+            pass
+
+    def _clear_worker_reference(self, worker) -> None:
+        for attr_name in (
+            "_sync_worker",
+            "_podcast_plan_worker",
+            "_album_conversion_worker",
+            "_chapter_split_worker",
+        ):
+            if getattr(self, attr_name, None) is worker:
+                setattr(self, attr_name, None)
+
+    def _reap_cancelled_worker(self, worker) -> None:
+        self._clear_worker_reference(worker)
+        try:
+            self._cancelled_workers.remove(worker)
+        except (AttributeError, ValueError):
+            pass
+        try:
+            worker.deleteLater()
+        except (AttributeError, RuntimeError):
+            pass
+
+    def _cleanup_worker(self, attr_name: str, signal_names: tuple[str, ...]) -> None:
+        """Detach and interrupt a worker used by the sync review planning page."""
+
+        worker = getattr(self, attr_name, None)
+        if worker is None:
+            return
+
+        if worker.isRunning():
+            worker.requestInterruption()
+        for signal_name in signal_names:
+            try:
+                getattr(worker, signal_name).disconnect()
+            except (AttributeError, TypeError, RuntimeError):
+                pass
+
+        setattr(self, attr_name, None)
+        if worker.isRunning():
+            self._retain_cancelled_worker(worker)
+        else:
+            self._reap_cancelled_worker(worker)
+
+    def _cleanup_back_sync_worker(self) -> None:
+        """Detach a cancelled Back Sync worker from the UI without destroying it."""
+
+        worker = self._back_sync_worker
+        if worker is None:
+            return
+
+        if worker.isRunning():
+            worker.requestInterruption()
+        for sig in (worker.progress, worker.finished, worker.error):
+            try:
+                sig.disconnect()
+            except (TypeError, RuntimeError):
+                pass
+
+        self._clear_back_sync_worker(worker)
+        if worker.isRunning():
+            self._retain_back_sync_worker(worker)
+        else:
+            self._reap_back_sync_worker(worker)
+
+    def _cleanup_sync_diff_worker(self) -> None:
+        self._cleanup_worker("_sync_worker", ("progress", "finished", "error"))
+
+    def _cleanup_album_conversion_worker(self) -> None:
+        self._cleanup_worker(
+            "_album_conversion_worker",
+            ("progress", "finished", "error"),
+        )
+
+    def _cleanup_chapter_split_worker(self) -> None:
+        self._cleanup_worker(
+            "_chapter_split_worker",
+            ("progress", "finished", "error"),
+        )
 
     def _onSelectiveSyncDone(self, folder: object, selected_paths):
         """User finished picking tracks in selective sync; run diff on selection."""
@@ -1686,14 +1972,38 @@ class MainWindow(QMainWindow):
                 selected_playlist_paths=selected_playlist_paths,
             )
         )
-        self._sync_worker.progress.connect(self.syncReview.update_progress)
-        self._sync_worker.finished.connect(self._onSyncDiffComplete)
-        self._sync_worker.error.connect(self._onSyncError)
-        self._sync_worker.start()
+        worker = self._sync_worker
+        worker.progress.connect(self.syncReview.update_progress)
+        worker.finished.connect(
+            lambda plan, w=worker: self._onSyncDiffComplete(plan, w)
+        )
+        worker.error.connect(
+            lambda error, w=worker: self._onWorkerSyncError("_sync_worker", w, error)
+        )
+        worker.start()
 
     def _onSelectiveSyncCancelled(self):
         """User cancelled selective sync browser."""
         self._show_default_page()
+
+    def _onSyncReviewEditSelection(self, selection_state: object) -> None:
+        """Open the selective-sync shell as an alternate sync-plan editor."""
+
+        if self._plan is None:
+            return
+        self.centralStack.setCurrentIndex(4)
+        self.selectiveSyncBrowser.load_sync_plan(self._plan, selection_state)
+
+    def _onPlanSelectionDone(self, selection_state: object) -> None:
+        """Apply alternate plan-editor checks back to the sync review."""
+
+        self.syncReview.apply_selection_state(selection_state)
+        self.centralStack.setCurrentIndex(1)
+
+    def _onPlanSelectionCancelled(self) -> None:
+        """Return from alternate plan editor without changing review checks."""
+
+        self.centralStack.setCurrentIndex(1)
 
     def _onSyncReviewCancelled(self) -> None:
         """Handle cancel from the sync review page.
@@ -1701,22 +2011,6 @@ class MainWindow(QMainWindow):
         During sync execution we only request cancellation and keep the page
         visible so partial-save confirmation (save vs discard) can be shown.
         """
-        if self._back_sync_worker is not None and self._back_sync_worker.isRunning():
-            self._back_sync_worker.requestInterruption()
-            return
-        if (
-            self._podcast_plan_worker is not None
-            and self._podcast_plan_worker.isRunning()
-        ):
-            self._podcast_plan_worker.requestInterruption()
-            return
-        if (
-            self._album_conversion_worker is not None
-            and self._album_conversion_worker.isRunning()
-        ):
-            self._album_conversion_worker.requestInterruption()
-            return
-
         if self._sync_execute_worker is not None and self._sync_execute_worker.isRunning():
             self._sync_execute_worker.requestInterruption()
             return
@@ -1725,29 +2019,17 @@ class MainWindow(QMainWindow):
     def hideSyncReview(self):
         """Return to the main browsing view, stopping any background work."""
         self._keep_sync_results_visible_after_rescan = False
-        if self._sync_worker is not None and self._sync_worker.isRunning():
-            self._sync_worker.requestInterruption()
-        if self._back_sync_worker is not None and self._back_sync_worker.isRunning():
-            self._back_sync_worker.requestInterruption()
+        self._cleanup_sync_diff_worker()
+        self._cleanup_back_sync_worker()
         self._cleanup_podcast_plan_worker()
-        if self._album_conversion_worker is not None and self._album_conversion_worker.isRunning():
-            self._album_conversion_worker.requestInterruption()
+        self._cleanup_album_conversion_worker()
+        self._cleanup_chapter_split_worker()
         self._cleanup_sync_execute_worker()
         self._show_default_page()
 
     def _cleanup_podcast_plan_worker(self):
         """Stop and detach any in-flight managed podcast planning worker."""
-        w = self._podcast_plan_worker
-        if w is None:
-            return
-        if w.isRunning():
-            w.requestInterruption()
-        for sig in (w.finished, w.error):
-            try:
-                sig.disconnect()
-            except TypeError:
-                pass
-        self._podcast_plan_worker = None
+        self._cleanup_worker("_podcast_plan_worker", ("finished", "error"))
 
     def _cleanup_sync_execute_worker(self):
         """Request interruption and disconnect all signals from the execute worker.
@@ -1925,6 +2207,9 @@ class MainWindow(QMainWindow):
         # Show styled results view instead of a plain message box
         self.syncReview.show_result(result)
         self._keep_sync_results_visible_after_rescan = True
+        failure_message = _sync_execute_failure_message(result)
+        if failure_message:
+            QMessageBox.critical(self, "Sync Failed", failure_message)
 
         # Desktop notification if app is not focused
         if not self.isActiveWindow():
@@ -2192,15 +2477,32 @@ class MainWindow(QMainWindow):
         if self._sync_worker and self._sync_worker.isRunning():
             self._sync_worker.requestInterruption()
             self._sync_worker.wait(3000)
+        back_sync_workers = list(getattr(self, "_back_sync_workers", []))
+        if (
+            self._back_sync_worker is not None
+            and self._back_sync_worker not in back_sync_workers
+        ):
+            back_sync_workers.append(self._back_sync_worker)
+        for worker in back_sync_workers:
+            if worker.isRunning():
+                worker.requestInterruption()
+                worker.wait(3000)
         if self._podcast_plan_worker and self._podcast_plan_worker.isRunning():
             self._podcast_plan_worker.requestInterruption()
             self._podcast_plan_worker.wait(3000)
         if self._album_conversion_worker and self._album_conversion_worker.isRunning():
             self._album_conversion_worker.requestInterruption()
             self._album_conversion_worker.wait(3000)
+        if self._chapter_split_worker and self._chapter_split_worker.isRunning():
+            self._chapter_split_worker.requestInterruption()
+            self._chapter_split_worker.wait(3000)
         if self._sync_execute_worker and self._sync_execute_worker.isRunning():
             self._sync_execute_worker.requestInterruption()
             self._sync_execute_worker.wait(3000)
+        for worker in list(getattr(self, "_cancelled_workers", [])):
+            if worker.isRunning():
+                worker.requestInterruption()
+                worker.wait(3000)
         self._quick_write_controller.shutdown(3000)
 
         thread_pool = ThreadPoolSingleton.get_instance()
@@ -2316,32 +2618,7 @@ class _MissingToolsDialog(QDialog):
             ok_btn.clicked.connect(self.reject)
             btn_row.addWidget(ok_btn)
 
-            # If only ffmpeg is missing, offer to continue
-            self._continue_btn: QPushButton | None = None
-
         layout.addLayout(btn_row)
-
-    def add_continue_option(self):
-        """Add a 'Continue Anyway' button (for ffmpeg-only missing)."""
-        btn_layout = self.layout()
-        assert isinstance(btn_layout, QVBoxLayout)
-        # Get the last item which is the btn_row layout
-        btn_row_item = btn_layout.itemAt(btn_layout.count() - 1)
-        row_layout = btn_row_item.layout() if btn_row_item else None
-        if row_layout is not None:
-            cont_btn = QPushButton("Continue Anyway")
-            cont_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
-            cont_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            cont_btn.setMinimumHeight(40)
-            cont_btn.setStyleSheet(btn_css(
-                bg=Colors.ACCENT_DIM,
-                bg_hover=Colors.ACCENT_HOVER,
-                bg_press=Colors.ACCENT_PRESS,
-                border=f"1px solid {Colors.ACCENT_BORDER}",
-                padding="8px 24px",
-            ))
-            cont_btn.clicked.connect(self.accept)
-            row_layout.addWidget(cont_btn)
 
 
 class _DownloadProgressDialog(QDialog):

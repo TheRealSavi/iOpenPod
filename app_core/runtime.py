@@ -793,6 +793,7 @@ class iTunesDBCache(QObject):
     """Cache for parsed iTunesDB data. Loads once when device selected."""
 
     data_ready = pyqtSignal()
+    load_failed = pyqtSignal(str)
     _instance: iTunesDBCache | None = None
 
     playlists_changed = pyqtSignal()
@@ -1075,9 +1076,6 @@ class iTunesDBCache(QObject):
                     if playlist.get("master_flag"):
                         playlist["Title"] = new_name
                         renamed = True
-                        break
-                if renamed:
-                    break
         if renamed:
             self.playlists_changed.emit()
         return renamed
@@ -1407,11 +1405,17 @@ class iTunesDBCache(QObject):
         worker.signals.error.connect(self._on_load_error)
         ThreadPoolSingleton.get_instance().start(worker)
 
-    def _load_data(self, device_path: str, itunesdb_path: str | None) -> tuple:
+    def _load_data(
+        self,
+        device_path: str,
+        itunesdb_path: str | None,
+    ) -> tuple[dict, str, list[str]]:
         data: dict = {}
+        load_errors: list[str] = []
         if not itunesdb_path:
-            logger.warning("No iTunesDB path available for device: %s", device_path)
-            return data, device_path
+            message = f"No iTunesDB path available for device: {device_path}"
+            logger.warning(message)
+            return data, device_path, [message]
 
         try:
             from iTunesDB_Parser.ipod_library import load_ipod_library
@@ -1437,14 +1441,15 @@ class iTunesDBCache(QObject):
                     "iTunesDB parser returned unexpected type: %s",
                     type(parsed).__name__,
                 )
-        except Exception:
+        except Exception as exc:
             logger.exception("Failed to load iTunesDB for device: %s", device_path)
+            load_errors.append(f"Could not load iTunesDB: {exc}")
 
         try:
             from SyncEngine.photos import PhotoDB, read_photo_db
 
             data["photodb"] = read_photo_db(device_path)
-        except Exception:
+        except Exception as exc:
             logger.exception(
                 "Failed to load photo database for device: %s",
                 device_path,
@@ -1452,8 +1457,9 @@ class iTunesDBCache(QObject):
             from SyncEngine.photos import PhotoDB
 
             data["photodb"] = PhotoDB()
+            load_errors.append(f"Could not load photo database: {exc}")
 
-        return (data, device_path)
+        return (data, device_path, load_errors)
 
     def _on_load_error(self, error: tuple) -> None:
         exc_type, value, _traceback = error
@@ -1463,9 +1469,15 @@ class iTunesDBCache(QObject):
             value,
         )
         self.set_loading(False)
+        self.load_failed.emit(str(value))
 
-    def _on_load_complete(self, result: tuple) -> None:
-        data, device_path = result
+    def _on_load_complete(
+        self,
+        result: tuple[dict, str] | tuple[dict, str, list[str]],
+    ) -> None:
+        data = result[0]
+        device_path = result[1]
+        load_errors = result[2] if len(result) >= 3 else []
         if device_path != DeviceManager.get_instance().device_path:
             self.set_loading(False)
             return
@@ -1473,6 +1485,8 @@ class iTunesDBCache(QObject):
             self.set_data(data, device_path)
         else:
             self.set_loading(False)
+        if load_errors:
+            self.load_failed.emit("\n".join(str(error) for error in load_errors))
 
 
 def build_album_list(cache: LibraryCacheLike) -> list:

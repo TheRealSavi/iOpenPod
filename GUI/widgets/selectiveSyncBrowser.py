@@ -13,7 +13,10 @@ import logging
 import os
 import threading
 from collections import defaultdict, deque
+from collections.abc import Iterable
+from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 from PIL import Image, ImageOps
@@ -48,6 +51,7 @@ from iTunesDB_Shared.album_identity import (
     album_identity_from_track,
     group_tracks_by_album_identity,
 )
+from SyncEngine.pc_library import PCTrack
 from SyncEngine.photos import PCPhoto, PCPhotoLibrary, scan_pc_photos
 
 from ..glyphs import glyph_icon
@@ -189,6 +193,8 @@ class _PCLibScanWorker(QThread):
                     is_cancelled=self._is_cancelled,
                 )
             )
+            if self._is_cancelled():
+                return
             playlist_discovery = None
             try:
                 from SyncEngine.sync_playlist_files import (
@@ -228,6 +234,8 @@ class _PCLibScanWorker(QThread):
             except Exception as exc:
                 log.warning("Selective sync playlist scan failed: %s", exc)
             if self._include_photo:
+                if self._is_cancelled():
+                    return
                 self.progress.emit("scan_photos", 0, 0, "")
 
                 def _on_photo_progress(current: int, total: int, filename: str) -> None:
@@ -241,12 +249,16 @@ class _PCLibScanWorker(QThread):
                 )
             else:
                 photos = PCPhotoLibrary(sync_root=os.pathsep.join(self._folders))
+            if self._is_cancelled():
+                return
             self.finished.emit({
                 "tracks": tracks,
                 "photos": photos,
                 "playlists": playlist_discovery,
             })
         except Exception as e:
+            if self._is_cancelled():
+                return
             self.error.emit(str(e))
 
 
@@ -729,7 +741,7 @@ class PCTrackListView(QWidget):
             "vbr_flag": 1 if getattr(t, "vbr", False) else 0,
             "explicit_flag": getattr(t, "explicit_flag", 0) or 0,
             "filetype": t.extension.lstrip(".").upper() if t.extension else "",
-            "Location": t.path,
+            "Location": getattr(t, "display_path", None) or t.path,
             "_pc_path": t.path,  # internal key for checkbox tracking
         }
 
@@ -1254,11 +1266,29 @@ _GRID_MODES = {"Albums", "Artists", "Genres", "Playlists", "Podcasts", "Audioboo
 # Modes that go straight to the track list with no grouping.
 _LIST_MODES = {"All Tracks", "Movies", "Photos"}
 
+_PLAN_PLAYLIST_SECTION_KEYS = {
+    "playlists_to_add",
+    "playlists_to_edit",
+    "playlists_to_remove",
+}
+
+_PLAN_PHOTO_SECTION_KEYS = {
+    "photos_to_add",
+    "photos_to_remove",
+    "photos_to_update",
+    "albums_to_add",
+    "albums_to_remove",
+    "album_membership_adds",
+    "album_membership_removes",
+}
+
 
 class SelectiveSyncBrowser(QWidget):
     """Full-page widget for browsing PC media folders and selecting tracks."""
     selection_done = pyqtSignal(object, object)  # (folders, {"tracks": frozenset[str], "photos": tuple})
     cancelled = pyqtSignal()
+    plan_selection_done = pyqtSignal(object)
+    plan_selection_cancelled = pyqtSignal()
 
     def __init__(
         self,
@@ -1281,6 +1311,15 @@ class SelectiveSyncBrowser(QWidget):
         self._selected_tracks: dict[str, bool] = {}
         self._selected_photos: dict[str, bool] = {}
         self._selected_playlists: dict[str, bool] = {}
+        self._plan_selection_mode = False
+        self._plan_selection_sections: list[dict[str, object]] = []
+        self._plan_selection_state: dict[str, set[int]] = {}
+        self._plan_section_by_key: dict[str, dict[str, object]] = {}
+        self._current_plan_section_key = ""
+        self._plan_action_buttons: dict[str, QPushButton] = {}
+        self._plan_track_key_to_selection: dict[str, tuple[str, int]] = {}
+        self._plan_photo_key_to_selection: dict[str, tuple[str, int]] = {}
+        self._plan_playlist_key_to_selection: dict[str, tuple[str, int]] = {}
         self._device_supports_video = True
         self._device_supports_photo = True
         self._device_supports_podcast = True
@@ -1288,6 +1327,7 @@ class SelectiveSyncBrowser(QWidget):
         self._current_group: str | None = None
         self._current_group_tracks: list = []
         self._scan_worker: _PCLibScanWorker | None = None
+        self._scan_orphan_workers: list[_PCLibScanWorker] = []
         self._eta_tracker = ETATracker()
 
         self._build_ui()
@@ -1319,10 +1359,10 @@ class SelectiveSyncBrowser(QWidget):
         self._back_btn.clicked.connect(self._on_cancel)
         hdr_lay.addWidget(self._back_btn)
 
-        title = QLabel("Selective Sync")
-        title.setFont(QFont(FONT_FAMILY, Metrics.FONT_TITLE, QFont.Weight.Bold))
-        title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent;")
-        hdr_lay.addWidget(title)
+        self._title_label = QLabel("Selective Sync")
+        self._title_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_TITLE, QFont.Weight.Bold))
+        self._title_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent;")
+        hdr_lay.addWidget(self._title_label)
 
         self._folder_label = QLabel()
         self._folder_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
@@ -1349,6 +1389,7 @@ class SelectiveSyncBrowser(QWidget):
         sb_lay = QVBoxLayout(self._sidebar)
         sb_lay.setContentsMargins(8, 12, 8, 12)
         sb_lay.setSpacing(1)
+        self._sidebar_layout = sb_lay
 
         # Build buttons for every known category; empty buckets are hidden
         # after the library scan completes.
@@ -1411,6 +1452,27 @@ class SelectiveSyncBrowser(QWidget):
         sb_lay.addWidget(desel_all)
 
         body_lay.addWidget(self._sidebar)
+
+        # Horizontal sync-action tabs used when this browser edits a review
+        # plan. The left sidebar remains the normal category navigation.
+        content_shell = QWidget()
+        content_shell_lay = QVBoxLayout(content_shell)
+        content_shell_lay.setContentsMargins(0, 0, 0, 0)
+        content_shell_lay.setSpacing(0)
+
+        self._action_tabs_frame = QFrame()
+        self._action_tabs_frame.setVisible(False)
+        self._action_tabs_frame.setStyleSheet(f"""
+            QFrame {{
+                background: {Colors.BG_DARK};
+                border-bottom: 1px solid {Colors.BORDER_SUBTLE};
+            }}
+        """)
+        self._action_tabs_layout = QHBoxLayout(self._action_tabs_frame)
+        self._action_tabs_layout.setContentsMargins(12, 8, 12, 8)
+        self._action_tabs_layout.setSpacing(8)
+        self._action_tabs_layout.addStretch()
+        content_shell_lay.addWidget(self._action_tabs_frame)
 
         # --- Content area (stacked) ---
         self._content = QStackedWidget()
@@ -1532,7 +1594,8 @@ class SelectiveSyncBrowser(QWidget):
         self._photo_list.deselect_all_requested.connect(self._on_deselect_all_photos)
         self._content.addWidget(self._photo_list)  # index 3
 
-        body_lay.addWidget(self._content, 1)
+        content_shell_lay.addWidget(self._content, 1)
+        body_lay.addWidget(content_shell, 1)
         root.addWidget(body, 1)
 
         # Footer
@@ -1584,28 +1647,733 @@ class SelectiveSyncBrowser(QWidget):
         for grid in self._grids.values():
             grid.refresh_artwork_appearance()
 
+    def load_sync_plan(self, plan: object, selection_state: object | None = None) -> None:
+        """Render a sync plan as a categorized selection editor."""
+
+        self._cleanup_scan_worker()
+        self._plan_selection_mode = True
+        self._title_label.setText("Edit Sync Selection")
+        self._folder_label.setText("Choose a sync action, then browse it by category")
+        self._done_btn.setText("Back to Review")
+        self._back_btn.setToolTip("Back to Review")
+        self._show_plan_mode_sidebar(True)
+        self._plan_selection_sections = self._build_plan_selection_sections(plan)
+        self._plan_section_by_key = {
+            str(section["key"]): section
+            for section in self._plan_selection_sections
+        }
+        self._plan_selection_state = self._normalize_plan_selection_state(
+            selection_state,
+            self._plan_selection_sections,
+        )
+        self._rebuild_plan_action_tabs()
+
+        if self._plan_selection_sections:
+            first_key = str(self._plan_selection_sections[0]["key"])
+            self._show_plan_section(first_key)
+        else:
+            self._current_plan_section_key = ""
+            self._clear_plan_content()
+            self._content.setCurrentIndex(0)
+            self._loading_label.setText("No selectable sync changes")
+            self._progress_bar.setRange(0, 1)
+            self._progress_bar.setValue(0)
+            self._eta_label.setText("")
+            self._progress_detail.setText("")
+            self._count_label.setText("No selectable sync changes")
+            self._done_btn.setEnabled(True)
+
+    @staticmethod
+    def _sync_item_size(item: object) -> int:
+        estimated = getattr(item, "estimated_size", None)
+        if estimated is not None:
+            try:
+                return int(estimated or 0)
+            except (TypeError, ValueError):
+                return 0
+        track = getattr(item, "pc_track", None)
+        if track is not None:
+            try:
+                return int(getattr(track, "size", 0) or 0)
+            except (TypeError, ValueError):
+                return 0
+        ipod = getattr(item, "ipod_track", None)
+        if isinstance(ipod, dict):
+            try:
+                return int(ipod.get("size", ipod.get("Size", 0)) or 0)
+            except (TypeError, ValueError):
+                return 0
+        return 0
+
+    @staticmethod
+    def _list_plan_items(items: object) -> list[object]:
+        if items is None or isinstance(items, (str, bytes, bytearray)):
+            return []
+        if isinstance(items, Iterable):
+            return list(items)
+        return []
+
+    def _build_plan_selection_sections(self, plan: object) -> list[dict[str, object]]:
+        sections: list[dict[str, object]] = []
+
+        def add_section(
+            key: str,
+            label: str,
+            icon: str,
+            accent: str,
+            items: object,
+            *,
+            bucket: str,
+            checked_by_default: bool = True,
+        ) -> None:
+            item_list = self._list_plan_items(items)
+            if not item_list:
+                return
+            sections.append({
+                "key": key,
+                "label": label,
+                "icon": icon,
+                "accent": accent,
+                "items": item_list,
+                "bucket": bucket,
+                "checked_by_default": checked_by_default,
+            })
+
+        add_section("to_add", "Add Items", "plus", Colors.SUCCESS, getattr(plan, "to_add", ()), bucket="sync_items")
+        add_section(
+            "to_remove",
+            "Remove Items",
+            "minus",
+            Colors.DANGER,
+            getattr(plan, "to_remove", ()),
+            bucket="sync_items",
+            checked_by_default=bool(getattr(plan, "removals_pre_checked", False)),
+        )
+        add_section("to_update_file", "Re-sync Files", "refresh", Colors.SYNC_CYAN, getattr(plan, "to_update_file", ()), bucket="sync_items")
+        add_section("to_update_metadata", "Update Details", "edit", Colors.SYNC_PURPLE, getattr(plan, "to_update_metadata", ()), bucket="sync_items")
+        add_section("to_update_artwork", "Update Artwork", "download", Colors.SYNC_MAGENTA, getattr(plan, "to_update_artwork", ()), bucket="sync_items")
+        add_section("to_sync_playcount", "Play Counts", "music", Colors.INFO, getattr(plan, "to_sync_playcount", ()), bucket="sync_items")
+        add_section("to_sync_rating", "Ratings", "star", Colors.WARNING, getattr(plan, "to_sync_rating", ()), bucket="sync_items")
+
+        add_section("playlists_to_add", "Add Playlists", "playlist", Colors.INFO, getattr(plan, "playlists_to_add", ()), bucket="playlists_to_add")
+        add_section("playlists_to_edit", "Update Playlists", "playlist", Colors.INFO, getattr(plan, "playlists_to_edit", ()), bucket="playlists_to_edit")
+        add_section("playlists_to_remove", "Remove Playlists", "playlist", Colors.DANGER, getattr(plan, "playlists_to_remove", ()), bucket="playlists_to_remove")
+
+        photo_plan = getattr(plan, "photo_plan", None)
+        if photo_plan is not None:
+            add_section("photos_to_add", "Add Photos", "photo", Colors.SUCCESS, getattr(photo_plan, "photos_to_add", ()), bucket="photos_to_add")
+            add_section("photos_to_remove", "Remove Photos", "photo", Colors.DANGER, getattr(photo_plan, "photos_to_remove", ()), bucket="photos_to_remove", checked_by_default=False)
+            add_section("photos_to_update", "Update Photos", "photo", Colors.SYNC_PURPLE, getattr(photo_plan, "photos_to_update", ()), bucket="photos_to_update")
+            add_section("albums_to_add", "Create Photo Albums", "album", Colors.INFO, getattr(photo_plan, "albums_to_add", ()), bucket="albums_to_add")
+            add_section("albums_to_remove", "Remove Photo Albums", "album", Colors.DANGER, getattr(photo_plan, "albums_to_remove", ()), bucket="albums_to_remove", checked_by_default=False)
+            add_section("album_membership_adds", "Add to Photo Albums", "album", Colors.INFO, getattr(photo_plan, "album_membership_adds", ()), bucket="album_membership_adds")
+            add_section("album_membership_removes", "Remove from Photo Albums", "album", Colors.DANGER, getattr(photo_plan, "album_membership_removes", ()), bucket="album_membership_removes", checked_by_default=False)
+
+        return sections
+
+    @staticmethod
+    def _normalize_plan_selection_state(
+        selection_state: object | None,
+        sections: list[dict[str, object]],
+    ) -> dict[str, set[int]]:
+        known_buckets = {
+            "sync_items",
+            "playlists_to_add",
+            "playlists_to_edit",
+            "playlists_to_remove",
+            "photos_to_add",
+            "photos_to_remove",
+            "photos_to_update",
+            "albums_to_add",
+            "albums_to_remove",
+            "album_membership_adds",
+            "album_membership_removes",
+        }
+        state: dict[str, set[int]] = {bucket: set() for bucket in known_buckets}
+        if isinstance(selection_state, dict):
+            for key, values in selection_state.items():
+                try:
+                    state[str(key)] = {int(value) for value in values}
+                except TypeError:
+                    state[str(key)] = set()
+            return state
+
+        for section in sections:
+            if not bool(section.get("checked_by_default", True)):
+                continue
+            bucket = str(section["bucket"])
+            state.setdefault(bucket, set()).update(id(item) for item in section["items"])  # type: ignore[index]
+        return state
+
+    def _show_plan_mode_sidebar(self, enabled: bool) -> None:
+        frame = self.__dict__.get("_action_tabs_frame")
+        if isinstance(frame, QFrame):
+            frame.setVisible(enabled and bool(self._plan_selection_sections))
+        if not enabled:
+            for btn in getattr(self, "_mode_buttons", {}).values():
+                btn.setVisible(True)
+            for sep in getattr(self, "_mode_separators", {}).values():
+                sep.setVisible(True)
+
+    def _is_plan_selection_mode(self) -> bool:
+        return bool(self.__dict__.get("_plan_selection_mode", False))
+
+    def _clear_plan_mode_buttons(self) -> None:
+        self._clear_plan_action_tabs()
+
+    def _clear_plan_action_tabs(self) -> None:
+        layout = self.__dict__.get("_action_tabs_layout")
+        if not isinstance(layout, QHBoxLayout):
+            return
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget() if item is not None else None
+            if widget is not None:
+                widget.deleteLater()
+        layout.addStretch()
+        self._plan_action_buttons.clear()
+
+    def _rebuild_plan_action_tabs(self) -> None:
+        self._clear_plan_action_tabs()
+        layout = self.__dict__.get("_action_tabs_layout")
+        if not isinstance(layout, QHBoxLayout):
+            return
+        for section in self._plan_selection_sections:
+            key = str(section["key"])
+            btn = QPushButton(self._plan_action_tab_text(section))
+            btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.DemiBold))
+            btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+            btn.setStyleSheet(self._plan_action_tab_css(False, str(section["accent"])))
+            icon = glyph_icon(str(section["icon"]), 18, Colors.TEXT_SECONDARY)
+            if icon:
+                btn.setIcon(icon)
+                btn.setIconSize(QSize(18, 18))
+            btn.clicked.connect(lambda checked=False, section_key=key: self._show_plan_section(section_key))
+            layout.insertWidget(max(0, layout.count() - 1), btn)
+            self._plan_action_buttons[key] = btn
+        self._show_plan_mode_sidebar(True)
+
+    def _plan_action_tab_text(self, section: dict[str, object]) -> str:
+        items = self._list_plan_items(section.get("items"))
+        return f"{section['label']} ({len(items)})"
+
+    @staticmethod
+    def _plan_action_tab_css(selected: bool, accent: str) -> str:
+        if selected:
+            return btn_css(
+                bg=Colors.ACCENT_MUTED,
+                bg_hover=Colors.ACCENT_DIM,
+                bg_press=Colors.ACCENT_PRESS,
+                fg=accent,
+                border=f"1px solid {accent}",
+                radius=Metrics.BORDER_RADIUS_SM,
+                padding="7px 13px",
+                extra="font-weight: 700;",
+            )
+        return btn_css(
+            bg="transparent",
+            bg_hover=Colors.SURFACE_ACTIVE,
+            bg_press=Colors.SURFACE,
+            fg=Colors.TEXT_SECONDARY,
+            border=f"1px solid {Colors.BORDER_SUBTLE}",
+            radius=Metrics.BORDER_RADIUS_SM,
+            padding="7px 13px",
+            extra="font-weight: 600;",
+        )
+
+    def _show_plan_section(self, key: str) -> None:
+        section = self._plan_section_by_key.get(key)
+        if section is None:
+            return
+        self._current_plan_section_key = key
+        for section_key, btn in self._plan_action_buttons.items():
+            source = self._plan_section_by_key[section_key]
+            selected = section_key == key
+            accent = str(source["accent"])
+            btn.setStyleSheet(self._plan_action_tab_css(selected, accent))
+            icon = glyph_icon(
+                str(source["icon"]),
+                18,
+                accent if selected else Colors.TEXT_SECONDARY,
+            )
+            if icon:
+                btn.setIcon(icon)
+        self._load_plan_section_content(section)
+        self._update_plan_footer()
+
+    def _clear_plan_content(self) -> None:
+        self._all_tracks = []
+        self._all_photos = []
+        self._playlist_discovery = None
+        self._photo_library = PCPhotoLibrary(sync_root="")
+        self._groups.clear()
+        self._buckets.clear()
+        self._selected_tracks.clear()
+        self._selected_photos.clear()
+        self._selected_playlists.clear()
+        self._plan_track_key_to_selection.clear()
+        self._plan_photo_key_to_selection.clear()
+        self._plan_playlist_key_to_selection.clear()
+        self._current_group = None
+        self._current_group_tracks = []
+        grid_loaded = self.__dict__.get("_grid_loaded")
+        if isinstance(grid_loaded, set):
+            grid_loaded.clear()
+        for grid in getattr(self, "_grids", {}).values():
+            grid._art_cache.clear()
+            grid._art_pending.clear()
+            grid._art_seen.clear()
+            grid.clearItemSelection()
+
+    def _load_plan_section_content(self, section: dict[str, object]) -> None:
+        self._clear_plan_content()
+        section_key = str(section["key"])
+        bucket = str(section["bucket"])
+        label = str(section["label"])
+        selected_ids = self._plan_selection_state.setdefault(bucket, set())
+        items = self._list_plan_items(section.get("items"))
+
+        if section_key in _PLAN_PLAYLIST_SECTION_KEYS:
+            playlists: list[SimpleNamespace] = []
+            for index, item in enumerate(items):
+                item_id = id(item)
+                track = self._plan_playlist_to_track(item, section_key, index, label)
+                self._all_tracks.append(track)
+                self._selected_tracks[track.path] = item_id in selected_ids
+                self._plan_track_key_to_selection[track.path] = (bucket, item_id)
+
+                playlist = self._plan_playlist_to_discovery(item, section_key, index, track.path)
+                playlists.append(playlist)
+                self._selected_playlists[playlist.source_path] = item_id in selected_ids
+                self._plan_playlist_key_to_selection[playlist.source_path] = (bucket, item_id)
+            self._playlist_discovery = SimpleNamespace(playlists=tuple(playlists))
+
+        elif section_key in _PLAN_PHOTO_SECTION_KEYS:
+            photos: list[PCPhoto] = []
+            for index, item in enumerate(items):
+                item_id = id(item)
+                photo = self._plan_item_to_photo(item, section_key, index, label)
+                photos.append(photo)
+                self._selected_photos[photo.source_path] = item_id in selected_ids
+                self._plan_photo_key_to_selection[photo.source_path] = (bucket, item_id)
+            self._all_photos = photos
+            self._photo_library = PCPhotoLibrary(
+                sync_root="",
+                photos={photo.source_path: photo for photo in photos},
+                albums={name for photo in photos for name in photo.album_names},
+            )
+
+        else:
+            for index, item in enumerate(items):
+                item_id = id(item)
+                track = self._plan_sync_item_to_track(item, section_key, index, label)
+                self._all_tracks.append(track)
+                self._selected_tracks[track.path] = item_id in selected_ids
+                self._plan_track_key_to_selection[track.path] = (bucket, item_id)
+
+        self._build_groups()
+        self._apply_sidebar_visibility()
+        for mode in self._preferred_plan_modes(section_key):
+            if self._mode_has_content(mode):
+                self._show_mode(mode)
+                return
+
+        self._content.setCurrentIndex(0)
+        self._loading_label.setText(f"No {label.lower()} to show")
+        self._progress_bar.setRange(0, 1)
+        self._progress_bar.setValue(0)
+        self._eta_label.setText("")
+        self._progress_detail.setText("")
+
+    @staticmethod
+    def _preferred_plan_modes(section_key: str) -> tuple[str, ...]:
+        if section_key in _PLAN_PLAYLIST_SECTION_KEYS:
+            return (
+                "Playlists", "All Tracks", "Albums", "Artists", "Genres",
+                "Podcasts", "Audiobooks", "TV Shows", "Movies", "Music Videos", "Photos",
+            )
+        if section_key in _PLAN_PHOTO_SECTION_KEYS:
+            return ("Photos",)
+        return (
+            "Albums", "Artists", "Genres", "All Tracks", "Playlists", "Photos",
+            "Podcasts", "Audiobooks", "TV Shows", "Movies", "Music Videos",
+        )
+
+    @staticmethod
+    def _coerce_plan_int(value: object, default: int = 0) -> int:
+        if value in (None, ""):
+            return default
+        try:
+            if isinstance(value, int | float | str | bytes | bytearray):
+                return int(value)
+        except (TypeError, ValueError):
+            pass
+        return default
+
+    @staticmethod
+    def _set_plan_display_path(track: PCTrack, display_path: str) -> None:
+        track.__dict__["display_path"] = display_path
+
+    @staticmethod
+    def _dict_first(data: dict, *keys: str, default: object = "") -> object:
+        for key in keys:
+            value = data.get(key)
+            if value not in (None, ""):
+                return value
+        return default
+
+    def _plan_sync_item_to_track(
+        self,
+        item: object,
+        section_key: str,
+        index: int,
+        section_label: str,
+    ) -> PCTrack:
+        track = getattr(item, "pc_track", None)
+        if isinstance(track, PCTrack):
+            return replace(track)
+        rebuild_tracks = self._list_plan_items(getattr(item, "aggregate_rebuild_pc_tracks", ()))
+        if rebuild_tracks and isinstance(rebuild_tracks[0], PCTrack):
+            clone = replace(rebuild_tracks[0])
+            clone.path = self._plan_fake_path("track", section_key, index, item)
+            clone.relative_path = str(getattr(clone, "relative_path", "") or clone.filename)
+            clone.title = str(getattr(item, "description", "") or clone.album or clone.title)
+            self._set_plan_display_path(
+                clone,
+                str(getattr(item, "description", "") or clone.relative_path),
+            )
+            return clone
+        ipod = getattr(item, "ipod_track", None)
+        return self._plan_synthetic_track_from_ipod(
+            ipod if isinstance(ipod, dict) else {},
+            item,
+            section_key,
+            index,
+            section_label,
+        )
+
+    def _plan_synthetic_track_from_ipod(
+        self,
+        ipod: dict,
+        item: object,
+        section_key: str,
+        index: int,
+        section_label: str,
+    ) -> PCTrack:
+        location = str(self._dict_first(ipod, "Location", "location"))
+        filename = os.path.basename(location.replace(":", "/")) or f"{section_key}-{index + 1}"
+        extension = os.path.splitext(filename)[1]
+        media_type = self._coerce_plan_int(self._dict_first(ipod, "media_type", "Media Type", default=1), 1)
+        is_podcast = bool(media_type & 0x04)
+        is_audiobook = bool(media_type & 0x08)
+        is_video = bool(media_type & (0x02 | 0x20 | 0x40))
+        video_kind = ""
+        if media_type & 0x40:
+            video_kind = "tv_show"
+        elif media_type & 0x20:
+            video_kind = "music_video"
+        elif media_type & 0x02:
+            video_kind = "movie"
+
+        description = str(getattr(item, "description", "") or "")
+        title = str(self._dict_first(ipod, "Title", "title", default=description or filename or "Track"))
+        artist = str(self._dict_first(ipod, "Artist", "artist", default="Unknown Artist"))
+        album = str(self._dict_first(ipod, "Album", "album", default=section_label))
+        track = PCTrack(
+            path=self._plan_fake_path("track", section_key, index, item),
+            relative_path=location or description or filename,
+            filename=filename,
+            extension=extension,
+            mtime=0,
+            size=self._sync_item_size(item),
+            title=title,
+            artist=artist,
+            album=album,
+            album_artist=str(self._dict_first(ipod, "Album Artist", "album_artist", default=artist)) or None,
+            genre=str(self._dict_first(ipod, "Genre", "genre", default="")) or None,
+            year=self._coerce_plan_int(self._dict_first(ipod, "year", "Year", default=0)) or None,
+            track_number=self._coerce_plan_int(self._dict_first(ipod, "track_number", "Track Number", default=0)) or None,
+            track_total=self._coerce_plan_int(self._dict_first(ipod, "total_tracks", "Total Tracks", default=0)) or None,
+            disc_number=self._coerce_plan_int(self._dict_first(ipod, "disc_number", "Disc Number", default=0)) or None,
+            disc_total=self._coerce_plan_int(self._dict_first(ipod, "total_discs", "Total Discs", default=0)) or None,
+            duration_ms=self._coerce_plan_int(self._dict_first(ipod, "length", "duration_ms", "Total Time", default=0)),
+            bitrate=self._coerce_plan_int(self._dict_first(ipod, "bitrate", "Bit Rate", default=0)) or None,
+            sample_rate=self._coerce_plan_int(self._dict_first(ipod, "sample_rate_1", "sample_rate", default=0)) or None,
+            rating=self._coerce_plan_int(self._dict_first(ipod, "rating", "Rating", default=0)) or None,
+            is_video=is_video,
+            video_kind=video_kind,
+            show_name=str(self._dict_first(ipod, "show_name", "Show", default="")) or None,
+            season_number=self._coerce_plan_int(self._dict_first(ipod, "season_number", "Season", default=0)) or None,
+            episode_number=self._coerce_plan_int(self._dict_first(ipod, "episode_number", "Episode", default=0)) or None,
+            is_podcast=is_podcast,
+            is_audiobook=is_audiobook,
+        )
+        self._set_plan_display_path(track, location or description)
+        return track
+
+    def _plan_playlist_to_track(
+        self,
+        item: object,
+        section_key: str,
+        index: int,
+        section_label: str,
+    ) -> PCTrack:
+        title = self._plan_playlist_title(item)
+        source = self._plan_playlist_source(item)
+        track = PCTrack(
+            path=self._plan_fake_path("playlist", section_key, index, item),
+            relative_path=source or title,
+            filename=title,
+            extension=".playlist",
+            mtime=0,
+            size=0,
+            title=title,
+            artist=section_label,
+            album="Playlists",
+            album_artist=section_label,
+            genre="Playlist",
+            year=None,
+            track_number=index + 1,
+            track_total=None,
+            disc_number=None,
+            disc_total=None,
+            duration_ms=0,
+            bitrate=None,
+            sample_rate=None,
+            rating=None,
+        )
+        self._set_plan_display_path(track, source or title)
+        return track
+
+    def _plan_playlist_to_discovery(
+        self,
+        item: object,
+        section_key: str,
+        index: int,
+        track_path: str,
+    ) -> SimpleNamespace:
+        source = self._plan_playlist_source(item) or self._plan_fake_path("playlist-source", section_key, index, item)
+        total_entries = 1
+        skipped_entries = 0
+        if isinstance(item, dict):
+            items = item.get("items") or item.get("Playlist Items") or []
+            if isinstance(items, list):
+                total_entries = len(items) or 1
+            total_entries = self._coerce_plan_int(
+                item.get("_sync_playlist_total_entries", item.get("track_count", total_entries)),
+                total_entries,
+            )
+            skipped_entries = self._coerce_plan_int(item.get("_sync_playlist_skipped_count", 0))
+        return SimpleNamespace(
+            title=self._plan_playlist_title(item),
+            source_path=source,
+            items=({"source_path": track_path},),
+            total_entries=total_entries,
+            skipped_entries=skipped_entries,
+        )
+
+    @staticmethod
+    def _plan_playlist_title(item: object) -> str:
+        if isinstance(item, dict):
+            return str(item.get("Title") or item.get("name") or "Untitled playlist")
+        return str(getattr(item, "title", "") or getattr(item, "name", "") or "Untitled playlist")
+
+    @staticmethod
+    def _plan_playlist_source(item: object) -> str:
+        if isinstance(item, dict):
+            return str(
+                item.get("_sync_playlist_path")
+                or item.get("_sync_playlist_source_path")
+                or item.get("source_path")
+                or ""
+            )
+        return str(getattr(item, "source_path", "") or "")
+
+    def _plan_item_to_photo(
+        self,
+        item: object,
+        section_key: str,
+        index: int,
+        section_label: str,
+    ) -> PCPhoto:
+        display_name = str(
+            getattr(item, "display_name", "")
+            or getattr(item, "album_name", "")
+            or f"{section_label} {index + 1}"
+        )
+        source_path = str(getattr(item, "source_path", "") or "")
+        album_names_obj = getattr(item, "album_names", set()) or set()
+        if isinstance(album_names_obj, str):
+            album_names = {album_names_obj}
+        else:
+            try:
+                album_names = {str(name) for name in album_names_obj if name}
+            except TypeError:
+                album_names = set()
+        album_name = str(getattr(item, "album_name", "") or "")
+        if album_name:
+            album_names.add(album_name)
+        if not album_names and section_key.startswith("albums_"):
+            album_names.add(display_name)
+        size = self._coerce_plan_int(
+            getattr(item, "estimated_size", 0) or getattr(item, "size", 0) or 0
+        )
+        return PCPhoto(
+            visual_hash=str(
+                getattr(item, "visual_hash", "")
+                or self._plan_fake_path("photo-hash", section_key, index, item)
+            ),
+            display_name=display_name,
+            source_path=source_path or self._plan_fake_path("photo", section_key, index, item),
+            size=size,
+            album_names=album_names,
+        )
+
+    @staticmethod
+    def _plan_fake_path(kind: str, section_key: str, index: int, item: object) -> str:
+        return f"iopenpod://sync-plan/{kind}/{section_key}/{index}/{id(item)}"
+
+    def _set_plan_selection_item(self, bucket: str, item_id: int, checked: bool) -> None:
+        selected_ids = self._plan_selection_state.setdefault(bucket, set())
+        if checked:
+            selected_ids.add(item_id)
+        else:
+            selected_ids.discard(item_id)
+
+    def _set_plan_track_selection(self, path: str, checked: bool) -> bool:
+        changed = self._selected_tracks.get(path, True) != checked
+        self._selected_tracks[path] = checked
+        target = self._plan_track_key_to_selection.get(path)
+        if target is not None:
+            bucket, item_id = target
+            self._set_plan_selection_item(bucket, item_id, checked)
+        return changed
+
+    def _set_plan_photo_selection(self, path: str, checked: bool) -> bool:
+        changed = self._selected_photos.get(path, True) != checked
+        self._selected_photos[path] = checked
+        target = self._plan_photo_key_to_selection.get(path)
+        if target is not None:
+            bucket, item_id = target
+            self._set_plan_selection_item(bucket, item_id, checked)
+        return changed
+
+    def _set_plan_playlist_selection(self, path: str, checked: bool) -> bool:
+        changed = self._selected_playlists.get(path, True) != checked
+        self._selected_playlists[path] = checked
+        target = self._plan_playlist_key_to_selection.get(path)
+        if target is not None:
+            bucket, item_id = target
+            self._set_plan_selection_item(bucket, item_id, checked)
+        return changed
+
+    def _set_current_plan_action_checked(self, checked: bool) -> None:
+        section = self._plan_section_by_key.get(self._current_plan_section_key)
+        if section is None:
+            return
+        bucket = str(section["bucket"])
+        item_ids = {id(item) for item in self._list_plan_items(section.get("items"))}
+        selected_ids = self._plan_selection_state.setdefault(bucket, set())
+        if checked:
+            selected_ids.update(item_ids)
+        else:
+            selected_ids.difference_update(item_ids)
+
+        for path in list(self._selected_tracks):
+            self._selected_tracks[path] = checked
+        for path in list(self._selected_photos):
+            self._selected_photos[path] = checked
+        for path in list(self._selected_playlists):
+            self._selected_playlists[path] = checked
+        if self._content.currentIndex() == 2:
+            self._track_list.setAllChecked(checked)
+        if self._content.currentIndex() == 3:
+            self._photo_list.setAllChecked(checked)
+        self._update_plan_footer()
+
+    def _update_plan_footer(self) -> None:
+        total = 0
+        selected = 0
+        current_total = 0
+        current_selected = 0
+        for section in self._plan_selection_sections:
+            bucket = str(section["bucket"])
+            ids = self._plan_selection_state.setdefault(bucket, set())
+            items = self._list_plan_items(section.get("items"))
+            section_total = len(items)
+            section_selected = sum(1 for item in items if id(item) in ids)
+            total += section_total
+            selected += section_selected
+            if str(section["key"]) == self._current_plan_section_key:
+                current_total = section_total
+                current_selected = section_selected
+        if total:
+            current = (
+                f"{current_selected} of {current_total} in this tab"
+                if current_total
+                else "No changes in this tab"
+            )
+            self._count_label.setText(f"{selected} of {total} changes selected · {current}")
+        else:
+            self._count_label.setText("No selectable sync changes")
+        self._done_btn.setEnabled(True)
+
     def _cleanup_scan_worker(self):
         """Disconnect and clean up the current scan worker, if any."""
-        if self._scan_worker is None:
+        worker = self._scan_worker
+        if worker is None:
             return
         try:
-            self._scan_worker.finished.disconnect()
-            self._scan_worker.progress.disconnect()
-            self._scan_worker.error.disconnect()
+            worker.finished.disconnect()
+            worker.progress.disconnect()
+            worker.error.disconnect()
         except (TypeError, RuntimeError):
             pass
-        self._scan_worker.cancel()
-        if self._scan_worker.isRunning():
-            self._scan_worker.quit()
-            self._scan_worker.wait(2000)
-            if self._scan_worker.isRunning():
-                self._scan_worker.terminate()
-                self._scan_worker.wait(1000)
-        self._scan_worker.deleteLater()
         self._scan_worker = None
+        worker.cancel()
+        if worker.isRunning():
+            self._retain_scan_worker(worker)
+        else:
+            self._reap_scan_worker(worker)
+
+    def _retain_scan_worker(self, worker: _PCLibScanWorker) -> None:
+        if worker in self._scan_orphan_workers:
+            return
+        self._scan_orphan_workers.append(worker)
+        try:
+            QThread.finished.__get__(worker, type(worker)).connect(
+                lambda w=worker: self._reap_scan_worker(w)
+            )
+        except Exception:
+            pass
+
+    def _reap_scan_worker(self, worker: _PCLibScanWorker) -> None:
+        if self._scan_worker is worker:
+            self._scan_worker = None
+        try:
+            self._scan_orphan_workers.remove(worker)
+        except ValueError:
+            pass
+        try:
+            worker.deleteLater()
+        except RuntimeError:
+            pass
 
     def load(self, folder: object):
         """Start scanning one or more folders and prepare the browser."""
+        self._plan_selection_mode = False
+        self._title_label.setText("Selective Sync")
+        self._done_btn.setText("Done Selecting")
+        self._back_btn.setToolTip("Back")
+        self._show_plan_mode_sidebar(False)
+        self._clear_plan_mode_buttons()
+        self._plan_selection_sections = []
+        self._plan_selection_state = {}
+        self._plan_section_by_key = {}
+        self._current_plan_section_key = ""
+        self._plan_track_key_to_selection = {}
+        self._plan_photo_key_to_selection = {}
+        self._plan_playlist_key_to_selection = {}
         self._folder_entries = _normalize_folder_entries(folder)
         self._folders = media_folder_paths(self._folder_entries)
         self._folder = self._folders[0] if self._folders else ""
@@ -1665,14 +2433,34 @@ class SelectiveSyncBrowser(QWidget):
             include_photo=self._device_supports_photo,
             max_workers=scan_workers,
         )
-        self._scan_worker.finished.connect(self._on_scan_complete)
-        self._scan_worker.progress.connect(self._on_scan_progress)
-        self._scan_worker.error.connect(self._on_scan_error)
-        self._scan_worker.start()
+        worker = self._scan_worker
+        worker.finished.connect(
+            lambda payload, w=worker: self._on_scan_complete(payload, w)
+        )
+        worker.progress.connect(
+            lambda stage, current, total, filename, w=worker: self._on_scan_progress(
+                stage,
+                current,
+                total,
+                filename,
+                w,
+            )
+        )
+        worker.error.connect(lambda msg, w=worker: self._on_scan_error(msg, w))
+        worker.start()
 
     # ── Scan callbacks ───────────────────────────────────────────────────
 
-    def _on_scan_progress(self, stage: str, current: int, total: int, filename: str) -> None:
+    def _on_scan_progress(
+        self,
+        stage: str,
+        current: int,
+        total: int,
+        filename: str,
+        worker: _PCLibScanWorker | None = None,
+    ) -> None:
+        if worker is not None and self._scan_worker is not worker:
+            return
         stage_label = {
             "scan_pc": "Scanning PC library",
             "scan_playlists": "Scanning playlist files",
@@ -1693,7 +2481,17 @@ class SelectiveSyncBrowser(QWidget):
             self._progress_bar.setRange(0, 0)
             self._eta_label.setText("")
 
-    def _on_scan_complete(self, tracks: list):
+    def _on_scan_complete(
+        self,
+        tracks: list,
+        worker: _PCLibScanWorker | None = None,
+    ):
+        if worker is not None and self._scan_worker is not worker:
+            return
+        worker = self._scan_worker
+        self._scan_worker = None
+        if worker is not None:
+            worker.deleteLater()
         if isinstance(tracks, dict):
             self._all_tracks = list(tracks.get("tracks", []))
             self._photo_library = tracks.get("photos") or PCPhotoLibrary(sync_root=os.pathsep.join(self._folders))
@@ -1740,7 +2538,17 @@ class SelectiveSyncBrowser(QWidget):
         # Nothing to show — leave loading label.
         self._loading_label.setText("No music or photos found in these folders.")
 
-    def _on_scan_error(self, msg: str):
+    def _on_scan_error(
+        self,
+        msg: str,
+        worker: _PCLibScanWorker | None = None,
+    ):
+        if worker is not None and self._scan_worker is not worker:
+            return
+        worker = self._scan_worker
+        self._scan_worker = None
+        if worker is not None:
+            worker.deleteLater()
         self._loading_label.setText(f"Scan failed: {msg}")
 
     # ── Grouping ─────────────────────────────────────────────────────────
@@ -1753,8 +2561,12 @@ class SelectiveSyncBrowser(QWidget):
         known to exist) and includes a few fallbacks so the background
         worker can also check folder images.
         """
-        with_art = [t.path for t in track_list if getattr(t, "art_hash", None)]
-        without = [t.path for t in track_list if not getattr(t, "art_hash", None)]
+        valid_paths = [
+            t.path for t in track_list
+            if getattr(t, "path", "") and not str(t.path).startswith("iopenpod://")
+        ]
+        with_art = [t.path for t in track_list if getattr(t, "art_hash", None) and t.path in valid_paths]
+        without = [path for path in valid_paths if path not in with_art]
         # Return art-hash files first, then up to 3 fallbacks.
         return with_art[:5] + without[:3]
 
@@ -2347,9 +3159,12 @@ class SelectiveSyncBrowser(QWidget):
             path = getattr(track, "path", "")
             if not path:
                 continue
-            if self._selected_tracks.get(path, True) != checked:
-                changed = True
-            self._selected_tracks[path] = checked
+            if self._is_plan_selection_mode():
+                changed = self._set_plan_track_selection(path, checked) or changed
+            else:
+                if self._selected_tracks.get(path, True) != checked:
+                    changed = True
+                self._selected_tracks[path] = checked
         content = self.__dict__.get("_content")
         if isinstance(content, QStackedWidget) and content.currentIndex() == 2:
             self._track_list.updateCheckStates(self._selected_tracks)
@@ -2369,9 +3184,12 @@ class SelectiveSyncBrowser(QWidget):
             source_path = str(group.get("source_path", "") or "")
             if not source_path:
                 continue
-            if self._selected_playlists.get(source_path, True) != checked:
-                changed = True
-            self._selected_playlists[source_path] = checked
+            if self._is_plan_selection_mode():
+                changed = self._set_plan_playlist_selection(source_path, checked) or changed
+            else:
+                if self._selected_playlists.get(source_path, True) != checked:
+                    changed = True
+                self._selected_playlists[source_path] = checked
         if changed:
             self._update_footer()
 
@@ -2389,6 +3207,9 @@ class SelectiveSyncBrowser(QWidget):
             self._selected_tracks.get(getattr(track, "path", ""), False)
             for track in self._current_group_tracks
         )
+        if self._is_plan_selection_mode():
+            self._set_plan_playlist_selection(source_path, any_selected)
+            return
         self._selected_playlists[source_path] = any_selected
 
     def _on_track_back(self):
@@ -2400,11 +3221,19 @@ class SelectiveSyncBrowser(QWidget):
     # ── Checkbox toggling ────────────────────────────────────────────────
 
     def _on_track_toggled(self, path: str, checked: bool):
+        if self._is_plan_selection_mode():
+            self._set_plan_track_selection(path, checked)
+            self._sync_current_playlist_selection_from_tracks()
+            self._update_footer()
+            return
         self._selected_tracks[path] = checked
         self._sync_current_playlist_selection_from_tracks()
         self._update_footer()
 
     def _on_select_all(self):
+        if self._is_plan_selection_mode():
+            self._set_current_plan_action_checked(True)
+            return
         for path in self._selected_tracks:
             self._selected_tracks[path] = True
         for path in self._selected_photos:
@@ -2419,6 +3248,9 @@ class SelectiveSyncBrowser(QWidget):
         self._update_footer()
 
     def _on_deselect_all(self):
+        if self._is_plan_selection_mode():
+            self._set_current_plan_action_checked(False)
+            return
         for path in self._selected_tracks:
             self._selected_tracks[path] = False
         for path in self._selected_photos:
@@ -2434,34 +3266,56 @@ class SelectiveSyncBrowser(QWidget):
     def _on_group_select_all(self):
         """Select all tracks in the current drilled-in group."""
         for t in self._current_group_tracks:
-            self._selected_tracks[t.path] = True
+            if self._is_plan_selection_mode():
+                self._set_plan_track_selection(t.path, True)
+            else:
+                self._selected_tracks[t.path] = True
         source_path = self._current_playlist_source_path()
         if source_path:
-            self._selected_playlists[source_path] = True
+            if self._is_plan_selection_mode():
+                self._set_plan_playlist_selection(source_path, True)
+            else:
+                self._selected_playlists[source_path] = True
         self._track_list.setAllChecked(True)
         self._update_footer()
 
     def _on_group_deselect_all(self):
         """Deselect all tracks in the current drilled-in group."""
         for t in self._current_group_tracks:
-            self._selected_tracks[t.path] = False
+            if self._is_plan_selection_mode():
+                self._set_plan_track_selection(t.path, False)
+            else:
+                self._selected_tracks[t.path] = False
         source_path = self._current_playlist_source_path()
         if source_path:
-            self._selected_playlists[source_path] = False
+            if self._is_plan_selection_mode():
+                self._set_plan_playlist_selection(source_path, False)
+            else:
+                self._selected_playlists[source_path] = False
         self._track_list.setAllChecked(False)
         self._update_footer()
 
     def _on_photo_toggled(self, path: str, checked: bool):
+        if self._is_plan_selection_mode():
+            self._set_plan_photo_selection(path, checked)
+            self._update_footer()
+            return
         self._selected_photos[path] = checked
         self._update_footer()
 
     def _on_select_all_photos(self):
+        if self._is_plan_selection_mode():
+            self._set_current_plan_action_checked(True)
+            return
         for path in self._selected_photos:
             self._selected_photos[path] = True
         self._photo_list.setAllChecked(True)
         self._update_footer()
 
     def _on_deselect_all_photos(self):
+        if self._is_plan_selection_mode():
+            self._set_current_plan_action_checked(False)
+            return
         for path in self._selected_photos:
             self._selected_photos[path] = False
         self._photo_list.setAllChecked(False)
@@ -2470,6 +3324,9 @@ class SelectiveSyncBrowser(QWidget):
     # ── Footer ───────────────────────────────────────────────────────────
 
     def _update_footer(self):
+        if self._is_plan_selection_mode():
+            self._update_plan_footer()
+            return
         total_tracks = len(self._selected_tracks)
         checked_tracks = sum(1 for v in self._selected_tracks.values() if v)
         total_photos = len(self._selected_photos)
@@ -2491,6 +3348,12 @@ class SelectiveSyncBrowser(QWidget):
     # ── Done / Cancel ────────────────────────────────────────────────────
 
     def _on_done(self):
+        if self._is_plan_selection_mode():
+            self.plan_selection_done.emit({
+                key: set(value)
+                for key, value in self._plan_selection_state.items()
+            })
+            return
         selected_track_paths = frozenset(
             path for path, checked in self._selected_tracks.items() if checked
         )
@@ -2513,5 +3376,8 @@ class SelectiveSyncBrowser(QWidget):
         })
 
     def _on_cancel(self):
+        if self._is_plan_selection_mode():
+            self.plan_selection_cancelled.emit()
+            return
         self._cleanup_scan_worker()
         self.cancelled.emit()

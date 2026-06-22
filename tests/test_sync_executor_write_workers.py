@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -291,6 +292,39 @@ def test_preflight_allows_over_capacity_with_until_full(
     assert ctx.result.success
 
 
+def test_preflight_blocks_read_only_or_permission_denied_mount(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    executor = SyncExecutor(tmp_path)
+    ctx = _SyncContext(
+        plan=SyncPlan(),
+        mapping=MappingFile(),
+        progress_callback=None,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+    )
+    probe_path = tmp_path / "iPod_Control" / "iTunes" / ".iOpenPod_write_test_x"
+
+    def raise_permission_denied(*_args, **_kwargs):
+        raise OSError(errno.EACCES, "Permission denied", str(probe_path))
+
+    monkeypatch.setattr(
+        "SyncEngine.sync_executor.tempfile.mkstemp",
+        raise_permission_denied,
+    )
+
+    assert not executor._preflight_checks(ctx)
+    assert not ctx.result.success
+    assert ctx.result.errors[0][0] == "read-only"
+    message = ctx.result.errors[0][1]
+    assert "iOpenPod cannot write to this iPod" in message
+    assert str(tmp_path) in message
+    assert "Permission denied" in message
+    assert "fsck.vfat" in message
+
+
 def test_until_full_copy_uses_actual_staged_size_instead_of_estimate(
     monkeypatch,
     tmp_path: Path,
@@ -300,7 +334,10 @@ def test_until_full_copy_uses_actual_staged_size_instead_of_estimate(
     ipod_root.mkdir()
     source.write_bytes(b"source-with-tags")
     executor = SyncExecutor(ipod_root, max_workers=1, max_device_write_workers=1)
-    transcode_plan = resolve_transcode_plan(source, options=executor.transcode_options)
+    transcode_plan = replace(
+        resolve_transcode_plan(source, options=executor.transcode_options),
+        target=TranscodeTarget.COPY,
+    )
 
     def fake_strip_metadata(path: Path) -> bool:
         path.write_bytes(b"ok")
@@ -757,7 +794,10 @@ def test_device_write_limit_serializes_final_ipod_writes(monkeypatch, tmp_path: 
                 active -= 1
 
     monkeypatch.setattr(executor, "_copy_file_chunked", fake_copy_file_chunked)
-    transcode_plan = resolve_transcode_plan(source, options=executor.transcode_options)
+    transcode_plan = replace(
+        resolve_transcode_plan(source, options=executor.transcode_options),
+        target=TranscodeTarget.COPY,
+    )
 
     with ThreadPoolExecutor(max_workers=4) as pool:
         futures = [
@@ -804,7 +844,10 @@ def test_device_write_limit_allows_multiple_parallel_writes_when_configured(
                 active -= 1
 
     monkeypatch.setattr(executor, "_copy_file_chunked", fake_copy_file_chunked)
-    transcode_plan = resolve_transcode_plan(source, options=executor.transcode_options)
+    transcode_plan = replace(
+        resolve_transcode_plan(source, options=executor.transcode_options),
+        target=TranscodeTarget.COPY,
+    )
 
     with ThreadPoolExecutor(max_workers=4) as pool:
         futures = [
@@ -828,7 +871,10 @@ def test_copy_stage_uses_planned_transcode_decision(monkeypatch, tmp_path: Path)
         max_workers=1,
         max_device_write_workers=1,
     )
-    transcode_plan = resolve_transcode_plan(source, options=executor.transcode_options)
+    transcode_plan = replace(
+        resolve_transcode_plan(source, options=executor.transcode_options),
+        target=TranscodeTarget.COPY,
+    )
     item = SyncItem(
         action=SyncAction.ADD_TO_IPOD,
         pc_track=_make_pc_track(source),
@@ -881,7 +927,10 @@ def test_direct_copy_writes_metadata_stripped_payload_without_touching_source(
         max_workers=1,
         max_device_write_workers=1,
     )
-    transcode_plan = resolve_transcode_plan(source, options=executor.transcode_options)
+    transcode_plan = replace(
+        resolve_transcode_plan(source, options=executor.transcode_options),
+        target=TranscodeTarget.COPY,
+    )
     copied_from: list[Path] = []
 
     def fake_strip_metadata(path: Path) -> bool:

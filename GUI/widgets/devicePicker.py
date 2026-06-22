@@ -411,6 +411,7 @@ class DevicePickerDialog(QDialog):
         self.selected_ipod: Any | None = None
         self._cards: list[DeviceCard] = []
         self._scan_thread: DeviceScanWorker | None = None
+        self._scan_orphan_threads: list[DeviceScanWorker] = []
 
         # Debounce timer — drives may settle over a second or two after mount
         self._rescan_debounce = QTimer(self)
@@ -533,17 +534,31 @@ class DevicePickerDialog(QDialog):
 
     def _start_scan(self):
         """Kick off a background scan for iPods."""
+        if self._scan_thread is not None and self._scan_thread.isRunning():
+            return
+        self._cleanup_scan_thread()
         self._subtitle.setText("Scanning for connected iPods...")
         self._no_devices_label.hide()
         self._rescan_btn.setEnabled(False)
 
         self._scan_thread = DeviceScanWorker()
-        self._scan_thread.finished.connect(self._on_scan_complete)
-        self._scan_thread.error.connect(self._on_scan_error)
-        self._scan_thread.start()
+        worker = self._scan_thread
+        worker.finished.connect(
+            lambda ipods, w=worker: self._on_scan_complete(ipods, w)
+        )
+        worker.error.connect(
+            lambda error, w=worker: self._on_scan_error(error, w)
+        )
+        worker.start()
 
-    def _on_scan_complete(self, ipods: list[Any]):
+    def _on_scan_complete(self, ipods: list[Any], worker=None):
         """Handle scan results."""
+        if worker is not None and self._scan_thread is not worker:
+            return
+        worker = self._scan_thread
+        self._scan_thread = None
+        if worker is not None:
+            worker.deleteLater()
         self._rescan_btn.setEnabled(True)
 
         # Clear existing cards
@@ -574,12 +589,57 @@ class DevicePickerDialog(QDialog):
             self._subtitle.setText("No iPods found")
             self._no_devices_label.show()
 
-    def _on_scan_error(self, error_msg: str) -> None:
+    def _on_scan_error(self, error_msg: str, worker=None) -> None:
         """Surface scan failures without leaving the dialog stuck as busy."""
+        if worker is not None and self._scan_thread is not worker:
+            return
+        worker = self._scan_thread
+        self._scan_thread = None
+        if worker is not None:
+            worker.deleteLater()
         logger.warning("iPod scan failed: %s", error_msg)
         self._subtitle.setText("Scan failed")
         self._rescan_btn.setEnabled(True)
         self._no_devices_label.show()
+
+    def _cleanup_scan_thread(self) -> None:
+        worker = self._scan_thread
+        if worker is None:
+            return
+        try:
+            worker.finished.disconnect()
+            worker.error.disconnect()
+        except (TypeError, RuntimeError):
+            pass
+        self._scan_thread = None
+        if worker.isRunning():
+            worker.requestInterruption()
+            self._retain_scan_thread(worker)
+        else:
+            self._reap_scan_thread(worker)
+
+    def _retain_scan_thread(self, worker: DeviceScanWorker) -> None:
+        if worker in self._scan_orphan_threads:
+            return
+        self._scan_orphan_threads.append(worker)
+        try:
+            QThread.finished.__get__(worker, type(worker)).connect(
+                lambda w=worker: self._reap_scan_thread(w)
+            )
+        except Exception:
+            pass
+
+    def _reap_scan_thread(self, worker: DeviceScanWorker) -> None:
+        if self._scan_thread is worker:
+            self._scan_thread = None
+        try:
+            self._scan_orphan_threads.remove(worker)
+        except ValueError:
+            pass
+        try:
+            worker.deleteLater()
+        except RuntimeError:
+            pass
 
     def _on_card_clicked(self, ipod: Any):
         """Handle a device card being clicked."""
@@ -645,6 +705,7 @@ class DevicePickerDialog(QDialog):
 
     def done(self, a0):
         """Stop the drive watcher before closing the dialog."""
+        self._cleanup_scan_thread()
         self._drive_watcher.stop()
         self._drive_watcher.wait()
         super().done(a0)

@@ -4,11 +4,13 @@ import SyncEngine.transcoder as transcoder_module
 from SyncEngine.transcoder import (
     AudioProperties,
     TranscodeOptions,
+    TranscodeResult,
     TranscodeTarget,
     _transcode_timeout_seconds,
     find_ffprobe,
     get_transcode_target,
     needs_transcoding,
+    transcode,
 )
 
 
@@ -32,7 +34,7 @@ def test_video_transcode_timeout_uses_longer_floor_and_padding() -> None:
     assert _transcode_timeout_seconds(TranscodeTarget.VIDEO_H264, one_hour_video_us) == 9000
 
 
-def test_unprobeable_native_audio_copies_instead_of_lossy_fallback(monkeypatch, caplog) -> None:
+def test_unprobeable_native_audio_reencodes_instead_of_copying_blind(monkeypatch, caplog) -> None:
     monkeypatch.setattr(
         transcoder_module,
         "_resolve_lossy_target",
@@ -47,9 +49,8 @@ def test_unprobeable_native_audio_copies_instead_of_lossy_fallback(monkeypatch, 
     with caplog.at_level(logging.WARNING, logger="SyncEngine.transcoder"):
         target = get_transcode_target("Café.m4a")
 
-    assert target == TranscodeTarget.COPY
-    assert "skipping transcode fallback; copying as-is" in caplog.text
-    assert "re-encoding to lossy codec as safe fallback" not in caplog.text
+    assert target == TranscodeTarget.AAC
+    assert "re-encoding instead of copying blind" in caplog.text
 
 
 def test_wav_copies_when_alac_conversion_disabled(monkeypatch) -> None:
@@ -97,7 +98,8 @@ def test_find_ffprobe_uses_configured_ffmpeg_sibling(tmp_path, monkeypatch) -> N
     bin_dir = tmp_path / "tools"
     bin_dir.mkdir()
     ffmpeg = bin_dir / "ffmpeg"
-    ffprobe = bin_dir / "ffprobe"
+    ffprobe_name = "ffprobe.exe" if transcoder_module.sys.platform == "win32" else "ffprobe"
+    ffprobe = bin_dir / ffprobe_name
     ffmpeg.write_text("", encoding="utf-8")
     ffprobe.write_text("", encoding="utf-8")
 
@@ -112,3 +114,17 @@ def test_ffmpeg_availability_requires_ffprobe(monkeypatch) -> None:
     monkeypatch.setattr(transcoder_module, "find_ffprobe", lambda _path=None: None)
 
     assert transcoder_module.is_ffmpeg_available() is False
+
+
+def test_transcode_requires_ffprobe_for_transcodes(tmp_path, monkeypatch) -> None:
+    source = tmp_path / "source.flac"
+    source.write_bytes(b"audio")
+
+    monkeypatch.setattr(transcoder_module, "find_ffmpeg", lambda _path=None: "/tmp/ffmpeg")
+    monkeypatch.setattr(transcoder_module, "find_ffprobe", lambda _path=None: None)
+
+    result = transcode(source, tmp_path / "out")
+
+    assert isinstance(result, TranscodeResult)
+    assert result.success is False
+    assert result.error_message == "ffprobe not found"

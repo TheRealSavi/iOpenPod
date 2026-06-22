@@ -971,16 +971,14 @@ def get_transcode_target(
         # Native audio — probe for iPod limits and codec compatibility
         props = probe_audio(filepath)
 
-        # Probe failed: ffprobe couldn't parse this file.
-        # Do not transcode blind: a probe failure may be a filesystem sidecar
-        # or a corrupt file, and a lossy fallback would silently degrade valid
-        # lossless libraries.
+        # Probe failed: do not copy blind. A native-looking extension is not
+        # enough to prove the stream is compatible with the iPod.
         if not props.probe_ok:
             logger.warning(
-                "TRANSCODE: could not probe %s — skipping transcode fallback; copying as-is",
+                "TRANSCODE: could not probe %s — re-encoding instead of copying blind",
                 Path(filepath).name,
             )
-            return TranscodeTarget.COPY
+            return lossy_target
 
         if props.exceeds_ipod_limits():
             if suffix in {".m4a", ".m4b"} and not prefer_lossy and _device_supports_alac():
@@ -1472,6 +1470,12 @@ def transcode(
             success=False, source_path=source_path, output_path=None,
             target_format=target, was_transcoded=False,
             error_message="ffmpeg not found",
+        )
+    if not find_ffprobe(ffmpeg_path or options.ffmpeg_path):
+        return TranscodeResult(
+            success=False, source_path=source_path, output_path=None,
+            target_format=target, was_transcoded=False,
+            error_message="ffprobe not found",
         )
 
     ext = plan.output_extension

@@ -1,7 +1,15 @@
 from types import SimpleNamespace
+from typing import Any, cast
 
 from GUI.widgets.selectiveSyncBrowser import SelectiveSyncBrowser
+from SyncEngine.contracts import SyncAction, SyncItem, SyncPlan
 from SyncEngine.pc_library import PCTrack
+from SyncEngine.photos import (
+    PhotoAlbumChange,
+    PhotoMembershipChange,
+    PhotoSyncItem,
+    PhotoSyncPlan,
+)
 
 
 def _track(
@@ -47,7 +55,11 @@ def _browser_with_tracks(tracks: list[PCTrack]) -> SelectiveSyncBrowser:
     browser._playlist_discovery = None
     browser._groups = {}
     browser._buckets = {}
+    browser._selected_tracks = {}
+    browser._selected_photos = {}
     browser._selected_playlists = {}
+    browser._grids = {}
+    browser._grid_loaded = set()
     def _art_candidates(track_list: list) -> list[str]:
         return []
 
@@ -229,3 +241,244 @@ def test_selective_sync_grid_item_actions_resolve_playlist_tracks():
     assert browser._selected_playlists["/music/playlists/road-trip.m3u8"] is False
     assert browser._selected_tracks[tracks[0].path] is True
     assert browser._selected_tracks[tracks[1].path] is False
+
+
+def test_selective_sync_plan_mode_builds_action_tabs_with_review_defaults():
+    browser = SelectiveSyncBrowser.__new__(SelectiveSyncBrowser)
+    add = SyncItem(
+        action=SyncAction.ADD_TO_IPOD,
+        pc_track=_track("New Song", "Album A/01 New Song.mp3"),
+    )
+    remove = SyncItem(
+        action=SyncAction.REMOVE_FROM_IPOD,
+        ipod_track={"Title": "Gone", "size": 123},
+    )
+    update_file = SyncItem(
+        action=SyncAction.UPDATE_FILE,
+        pc_track=_track("Changed File", "Album A/02 Changed File.mp3"),
+    )
+    update_metadata = SyncItem(
+        action=SyncAction.UPDATE_METADATA,
+        pc_track=_track("Changed Details", "Album A/03 Changed Details.mp3"),
+    )
+    update_artwork = SyncItem(
+        action=SyncAction.UPDATE_ARTWORK,
+        pc_track=_track("Changed Art", "Album A/04 Changed Art.mp3"),
+    )
+    play_count = SyncItem(
+        action=SyncAction.SYNC_PLAYCOUNT,
+        pc_track=_track("Played Song", "Album A/05 Played Song.mp3"),
+    )
+    rating = SyncItem(
+        action=SyncAction.SYNC_RATING,
+        pc_track=_track("Rated Song", "Album A/06 Rated Song.mp3"),
+    )
+    photo = PhotoSyncItem("hash-a", "Photo A", source_path="/photos/a.jpg")
+    photo_plan = PhotoSyncPlan()
+    photo_plan.photos_to_add = [photo]
+    photo_plan.albums_to_add = [PhotoAlbumChange("Vacation")]
+    photo_plan.album_membership_adds = [
+        PhotoMembershipChange("hash-a", "Vacation", "Photo A", source_path="/photos/a.jpg")
+    ]
+    plan = SyncPlan(
+        to_add=[add],
+        to_remove=[remove],
+        to_update_file=[update_file],
+        to_update_metadata=[update_metadata],
+        to_update_artwork=[update_artwork],
+        to_sync_playcount=[play_count],
+        to_sync_rating=[rating],
+        playlists_to_add=[{"Title": "Workout"}],
+        playlists_to_edit=[{"Title": "Road Trip"}],
+        playlists_to_remove=[{"Title": "Old Mix"}],
+        photo_plan=photo_plan,
+    )
+
+    sections = browser._build_plan_selection_sections(plan)
+
+    assert [section["key"] for section in sections] == [
+        "to_add",
+        "to_remove",
+        "to_update_file",
+        "to_update_metadata",
+        "to_update_artwork",
+        "to_sync_playcount",
+        "to_sync_rating",
+        "playlists_to_add",
+        "playlists_to_edit",
+        "playlists_to_remove",
+        "photos_to_add",
+        "albums_to_add",
+        "album_membership_adds",
+    ]
+    assert [section["label"] for section in sections] == [
+        "Add Items",
+        "Remove Items",
+        "Re-sync Files",
+        "Update Details",
+        "Update Artwork",
+        "Play Counts",
+        "Ratings",
+        "Add Playlists",
+        "Update Playlists",
+        "Remove Playlists",
+        "Add Photos",
+        "Create Photo Albums",
+        "Add to Photo Albums",
+    ]
+
+    state = SelectiveSyncBrowser._normalize_plan_selection_state(None, sections)
+
+    assert id(add) in state["sync_items"]
+    assert id(remove) not in state["sync_items"]
+    assert id(plan.playlists_to_edit[0]) in state["playlists_to_edit"]
+    assert id(photo) in state["photos_to_add"]
+
+
+def test_selective_sync_plan_section_rebuilds_actions_into_music_groups():
+    browser = _browser_with_tracks([])
+    shown_modes: list[str] = []
+    browser._apply_sidebar_visibility = lambda: None
+    browser._show_mode = lambda mode: shown_modes.append(mode)
+    add = SyncItem(
+        action=SyncAction.ADD_TO_IPOD,
+        pc_track=_track(
+            "New Song",
+            "Album A/01 New Song.mp3",
+            artist="Artist A",
+            album="Album A",
+        ),
+    )
+    section = {
+        "key": "to_add",
+        "label": "Adds",
+        "icon": "plus",
+        "accent": "#00aa00",
+        "items": [add],
+        "bucket": "sync_items",
+        "checked_by_default": True,
+    }
+    browser._plan_selection_state = {"sync_items": {id(add)}}
+    browser._plan_track_key_to_selection = {}
+    browser._plan_photo_key_to_selection = {}
+    browser._plan_playlist_key_to_selection = {}
+
+    browser._load_plan_section_content(section)
+
+    assert shown_modes == ["Albums"]
+    assert set(browser._groups["Albums"]) == {"Album A"}
+    rebuilt_track = browser._groups["Albums"]["Album A"]["tracks"][0]
+    assert rebuilt_track.title == "New Song"
+    assert browser._selected_tracks[rebuilt_track.path] is True
+    assert browser._plan_track_key_to_selection[rebuilt_track.path] == (
+        "sync_items",
+        id(add),
+    )
+
+
+def test_selective_sync_plan_playlist_actions_render_as_playlist_rows():
+    browser = _browser_with_tracks([])
+    shown_modes: list[str] = []
+    browser._apply_sidebar_visibility = lambda: None
+    browser._show_mode = lambda mode: shown_modes.append(mode)
+    playlist = {
+        "Title": "Road Trip",
+        "_sync_playlist_path": "/music/playlists/road-trip.m3u8",
+        "_sync_playlist_total_entries": 12,
+        "_sync_playlist_skipped_count": 1,
+    }
+    section = {
+        "key": "playlists_to_edit",
+        "label": "Update Playlists",
+        "icon": "playlist",
+        "accent": "#00aaee",
+        "items": [playlist],
+        "bucket": "playlists_to_edit",
+        "checked_by_default": True,
+    }
+    browser._plan_selection_state = {"playlists_to_edit": {id(playlist)}}
+    browser._plan_track_key_to_selection = {}
+    browser._plan_photo_key_to_selection = {}
+    browser._plan_playlist_key_to_selection = {}
+
+    browser._load_plan_section_content(section)
+
+    assert shown_modes == ["Playlists"]
+    group = browser._groups["Playlists"]["Road Trip"]
+    assert group["source_path"] == "/music/playlists/road-trip.m3u8"
+    assert group["skipped_count"] == 1
+    playlist_row = group["tracks"][0]
+    assert playlist_row.title == "Road Trip"
+    assert browser._selected_tracks[playlist_row.path] is True
+
+    browser._set_plan_track_selection(playlist_row.path, False)
+
+    assert id(playlist) not in browser._plan_selection_state["playlists_to_edit"]
+
+
+class _FakeScanSignal:
+    def __init__(self) -> None:
+        self.disconnect_count = 0
+
+    def disconnect(self) -> None:
+        self.disconnect_count += 1
+
+
+class _FakeScanWorker:
+    def __init__(self, *, running: bool) -> None:
+        self._running = running
+        self.finished = _FakeScanSignal()
+        self.progress = _FakeScanSignal()
+        self.error = _FakeScanSignal()
+        self.cancel_count = 0
+        self.delete_later_count = 0
+        self.wait_count = 0
+        self.terminate_count = 0
+
+    def isRunning(self) -> bool:
+        return self._running
+
+    def cancel(self) -> None:
+        self.cancel_count += 1
+
+    def wait(self, _timeout: int | None = None) -> bool:
+        self.wait_count += 1
+        return True
+
+    def terminate(self) -> None:
+        self.terminate_count += 1
+
+    def deleteLater(self) -> None:
+        self.delete_later_count += 1
+
+
+def test_selective_sync_cancel_detaches_scan_worker_without_waiting():
+    browser = SelectiveSyncBrowser.__new__(SelectiveSyncBrowser)
+    browser_any = cast(Any, browser)
+    worker = _FakeScanWorker(running=True)
+    browser_any._scan_worker = worker
+    browser_any._scan_orphan_workers = []
+
+    SelectiveSyncBrowser._cleanup_scan_worker(browser)
+
+    assert worker.cancel_count == 1
+    assert worker.finished.disconnect_count == 1
+    assert worker.progress.disconnect_count == 1
+    assert worker.error.disconnect_count == 1
+    assert worker.wait_count == 0
+    assert worker.terminate_count == 0
+    assert browser_any._scan_worker is None
+    assert browser_any._scan_orphan_workers == [worker]
+
+
+def test_selective_sync_stale_scan_completion_after_cancel_is_ignored():
+    browser = SimpleNamespace(_scan_worker=None, marker="unchanged")
+    worker = _FakeScanWorker(running=False)
+
+    SelectiveSyncBrowser._on_scan_complete(
+        cast(Any, browser),
+        cast(Any, {"tracks": []}),
+        cast(Any, worker),
+    )
+
+    assert browser.marker == "unchanged"

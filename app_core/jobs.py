@@ -49,7 +49,7 @@ class SyncToolAvailability:
 
     @property
     def can_continue_without_download(self) -> bool:
-        return not self.missing_fpcalc
+        return False
 
     @property
     def tool_names(self) -> tuple[str, ...]:
@@ -57,7 +57,7 @@ class SyncToolAvailability:
         if self.missing_fpcalc:
             names.append("fpcalc (Chromaprint)")
         if self.missing_ffmpeg:
-            names.append("FFmpeg")
+            names.append("FFmpeg/ffprobe")
         return tuple(names)
 
     @property
@@ -74,7 +74,7 @@ class SyncToolAvailability:
             )
         if self.missing_ffmpeg:
             lines.append(
-                "FFmpeg and ffprobe are needed for transcoding and media probing.\n"
+                "FFmpeg and ffprobe are required for transcoding and media probing.\n"
                 "Install from: https://ffmpeg.org"
             )
         lines.append("You can also set custom paths in\nSettings -> External Tools.")
@@ -1334,7 +1334,14 @@ class BackSyncWorker(QThread):
             if not pc_folders and request.pc_folder:
                 pc_folders = (request.pc_folder,)
             pc_library = PCLibrary(pc_folders)
-            pc_tracks = list(pc_library.scan(include_video=True))
+            pc_tracks = list(
+                pc_library.scan(
+                    include_video=True,
+                    is_cancelled=self.isInterruptionRequested,
+                )
+            )
+            if self.isInterruptionRequested():
+                return
             total_pc = len(pc_tracks)
 
             self.progress.emit(
@@ -1353,7 +1360,9 @@ class BackSyncWorker(QThread):
             def _fp_pc(path: str) -> str | None:
                 return get_or_compute_fingerprint(path, write_to_file=False)
 
-            with ThreadPoolExecutor(max_workers=workers) as pool:
+            pool = ThreadPoolExecutor(max_workers=workers)
+            cancel_fingerprints = False
+            try:
                 futures = {
                     pool.submit(_fp_pc, track.path): track
                     for track in pc_tracks
@@ -1361,6 +1370,7 @@ class BackSyncWorker(QThread):
                 done = 0
                 for fut in as_completed(futures):
                     if self.isInterruptionRequested():
+                        cancel_fingerprints = True
                         for pending in futures:
                             pending.cancel()
                         return
@@ -1384,6 +1394,11 @@ class BackSyncWorker(QThread):
                                 f"{self._short_label(pc_track.filename)}"
                             ),
                         )
+            finally:
+                pool.shutdown(
+                    wait=not cancel_fingerprints,
+                    cancel_futures=cancel_fingerprints,
+                )
 
             ipod_candidates: list[tuple[dict, Path]] = []
             unresolved_ipod_tracks = 0
@@ -2387,6 +2402,13 @@ class SyncExecuteWorker(QThread):
             from SyncEngine.mapping import MappingManager
 
             settings = self.settings
+            tools = check_sync_tool_availability(settings)
+            if tools.has_missing:
+                raise RuntimeError(
+                    f"{tools.tool_list} required before sync.\n\n"
+                    f"{tools.install_help_text}"
+                )
+
             self._partial_save_event = threading.Event()
 
             def _on_cancel_with_partial(n_added: int, n_skipped: int) -> bool:

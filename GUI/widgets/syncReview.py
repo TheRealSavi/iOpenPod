@@ -1181,6 +1181,29 @@ class SyncCategoryCard(QFrame):
             r.cb.blockSignals(True)
             r.set_checked(state)
             r.cb.blockSignals(False)
+        self._on_row_toggled()
+
+    def set_checked_item_ids(
+        self,
+        *,
+        checked_track_ids: set[int] | None = None,
+        checked_item_ids: set[int] | None = None,
+    ) -> None:
+        """Set row checks from object-id buckets without emitting per-row churn."""
+
+        for row in self._track_rows:
+            if checked_track_ids is None:
+                continue
+            row.cb.blockSignals(True)
+            row.set_checked(id(row.sync_item) in checked_track_ids)
+            row.cb.blockSignals(False)
+        for row in self._item_rows:
+            if checked_item_ids is None:
+                continue
+            row.cb.blockSignals(True)
+            row.set_checked(id(row.sync_item) in checked_item_ids)
+            row.cb.blockSignals(False)
+        self._on_row_toggled()
 
     def checked_count(self) -> int:
         return (
@@ -1201,6 +1224,7 @@ class SyncReviewWidget(QWidget):
     """
 
     sync_requested = pyqtSignal(object)  # Emits selected sync items
+    edit_selection_requested = pyqtSignal(object)
     skip_backup_signal = pyqtSignal()     # Skip the in-progress pre-sync backup
     give_up_scrobble_signal = pyqtSignal()  # Stop retrying scrobble timeouts
     cancelled = pyqtSignal()
@@ -1675,6 +1699,17 @@ class SyncReviewWidget(QWidget):
         footer_layout.addSpacing(20)
 
         # Cancel and Apply buttons
+        self.edit_selection_btn = QPushButton("Edit Selection", footer)
+        self.edit_selection_btn.clicked.connect(self._edit_selection)
+        self.edit_selection_btn.setStyleSheet(btn_css(
+            bg="transparent",
+            bg_hover=Colors.SURFACE_ACTIVE,
+            bg_press=Colors.SURFACE_ALT,
+            border=f"1px solid {Colors.BORDER_SUBTLE}",
+            radius=Metrics.BORDER_RADIUS_SM,
+            padding="8px 18px",
+        ))
+
         self.cancel_btn = QPushButton("Cancel", footer)
         self.cancel_btn.clicked.connect(self._on_cancel_clicked)
         self.cancel_btn.setStyleSheet(btn_css(
@@ -1690,6 +1725,7 @@ class SyncReviewWidget(QWidget):
         self.apply_btn.clicked.connect(self._apply_sync)
         self.apply_btn.setStyleSheet(accent_btn_css())
 
+        footer_layout.addWidget(self.edit_selection_btn)
         footer_layout.addWidget(self.cancel_btn)
         footer_layout.addWidget(self.apply_btn)
 
@@ -1774,6 +1810,7 @@ class SyncReviewWidget(QWidget):
         self.expand_all_btn.setVisible(show_plan_btns)
         self.collapse_all_btn.setVisible(show_plan_btns)
         self.selection_label.setVisible(show_plan_btns)
+        self.edit_selection_btn.setVisible(show_plan_btns)
         self.apply_btn.setVisible(show_plan_btns)
 
         if state == "loading":
@@ -2734,10 +2771,10 @@ class SyncReviewWidget(QWidget):
             _set_result("warning-triangle", "△", Colors.WARNING, "Partial Sync Saved")
         elif success and not errors:
             _set_result("check-circle", "✓", Colors.SUCCESS, "Sync Complete")
+        elif not success:
+            _set_result("close-circle", "✕", Colors.DANGER, "Sync Failed")
         elif errors:
             _set_result("warning-triangle", "△", Colors.WARNING, "Sync Completed with Errors")
-        else:
-            _set_result("close-circle", "✕", Colors.DANGER, "Sync Failed")
 
         # Build results text
         lines = []
@@ -2781,6 +2818,9 @@ class SyncReviewWidget(QWidget):
 
         if not lines:
             lines.append("No changes were made.")
+
+        def _rich_error_text(value: object) -> str:
+            return html.escape(str(value)).replace("\n", "<br>")
 
         def _format_scrobble_message(message: str) -> str:
             text = message.strip()
@@ -2856,7 +2896,7 @@ class SyncReviewWidget(QWidget):
                 )
                 lines.append(
                     f"<span style='color: {Colors.TEXT_SECONDARY};'>"
-                    + storage_errors[0]
+                    + _rich_error_text(storage_errors[0])
                     + "</span>"
                 )
             elif cancel_errors:
@@ -2866,7 +2906,7 @@ class SyncReviewWidget(QWidget):
                 )
                 lines.append(
                     f"<span style='color: {Colors.TEXT_SECONDARY};'>"
-                    + cancel_errors[0]
+                    + _rich_error_text(cancel_errors[0])
                     + "</span>"
                 )
             if added or removed or updated_file:
@@ -2884,7 +2924,8 @@ class SyncReviewWidget(QWidget):
                 )
                 for desc, msg in other_errors[:8]:
                     lines.append(
-                        f"<span style='color: {Colors.DANGER};'>  {desc}: {msg}</span>"
+                        f"<span style='color: {Colors.DANGER};'>  "
+                        f"{html.escape(str(desc))}: {_rich_error_text(msg)}</span>"
                     )
                 if len(other_errors) > 8:
                     lines.append(
@@ -2903,7 +2944,10 @@ class SyncReviewWidget(QWidget):
             if scrobble_errors_by_service:
                 _append_scrobble_error_sections(scrobble_errors_by_service, partial=False)
             for desc, msg in other_errors[:10]:  # Show max 10
-                lines.append(f"<span style='color: {Colors.DANGER};'>  {desc}: {msg}</span>")
+                lines.append(
+                    f"<span style='color: {Colors.DANGER};'>  "
+                    f"{html.escape(str(desc))}: {_rich_error_text(msg)}</span>"
+                )
             if len(other_errors) > 10:
                 lines.append(f"<span style='color: {Colors.DANGER};'>  ...and {len(other_errors) - 10} more</span>")
 
@@ -2919,6 +2963,13 @@ class SyncReviewWidget(QWidget):
         total_actions = added + removed + updated_file + updated_meta + playcounts + ratings + photos_added + photos_removed + photos_updated + photo_albums_added + photo_albums_removed
         if partial_save:
             self.summary_label.setText(f"{total_actions} action{'s' if total_actions != 1 else ''} saved (partial sync)")
+        elif not success:
+            if total_actions:
+                self.summary_label.setText(
+                    f"{total_actions} action{'s' if total_actions != 1 else ''} completed before sync failed"
+                )
+            else:
+                self.summary_label.setText("Sync failed before making changes")
         else:
             self.summary_label.setText(f"{total_actions} action{'s' if total_actions != 1 else ''} completed")
 
@@ -3212,6 +3263,64 @@ class SyncReviewWidget(QWidget):
         for card in self._category_cards:
             selected_items.extend(card.get_checked_items())
         return selected_items
+
+    def get_selection_state(self) -> dict[str, set[int]]:
+        """Return checked row object IDs for the alternate plan editor."""
+
+        state: dict[str, set[int]] = {
+            "sync_items": set(),
+            "playlists_to_add": set(),
+            "playlists_to_edit": set(),
+            "playlists_to_remove": set(),
+            "photos_to_add": set(),
+            "photos_to_remove": set(),
+            "photos_to_update": set(),
+            "albums_to_add": set(),
+            "albums_to_remove": set(),
+            "album_membership_adds": set(),
+            "album_membership_removes": set(),
+        }
+        for card in self._category_cards:
+            for row in card._track_rows:
+                if row.is_checked():
+                    state["sync_items"].add(id(row.sync_item))
+            if card._selection_key:
+                bucket = state.setdefault(card._selection_key, set())
+                for row in card._item_rows:
+                    if row.is_checked():
+                        bucket.add(id(row.sync_item))
+        return state
+
+    def apply_selection_state(self, selection_state: object) -> None:
+        """Apply checked row object IDs from the alternate plan editor."""
+
+        if not isinstance(selection_state, dict):
+            return
+
+        normalized: dict[str, set[int]] = {}
+        for key, values in selection_state.items():
+            try:
+                normalized[str(key)] = {int(value) for value in values}
+            except TypeError:
+                normalized[str(key)] = set()
+
+        sync_item_ids = normalized.get("sync_items", set())
+        for card in self._category_cards:
+            item_ids = (
+                normalized.get(card._selection_key, set())
+                if card._selection_key
+                else None
+            )
+            card.set_checked_item_ids(
+                checked_track_ids=sync_item_ids if card._track_rows else None,
+                checked_item_ids=item_ids if card._item_rows else None,
+            )
+        self._do_update_selection_count()
+
+    def _edit_selection(self) -> None:
+        if self._plan is None:
+            return
+        self.edit_selection_requested.emit(self.get_selection_state())
 
     def get_selected_photo_plan(self):
         if self._plan is None or self._plan.photo_plan is None:

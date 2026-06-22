@@ -1,7 +1,11 @@
 from types import SimpleNamespace
 from typing import Any, cast
 
-from GUI.app import MainWindow
+from GUI.app import (
+    MainWindow,
+    _library_load_failure_message,
+    _sync_execute_failure_message,
+)
 from GUI.internal_drag import IOP_EXPORT_DRAG_MIME
 from infrastructure.settings_schema import AppSettings
 
@@ -23,11 +27,43 @@ class _FakeStack:
         self._current_index = index
 
 
+class _FakeSignal:
+    def __init__(self) -> None:
+        self.disconnect_count = 0
+
+    def disconnect(self) -> None:
+        self.disconnect_count += 1
+
+
+class _FakeBackSyncWorker:
+    def __init__(self, *, running: bool = True) -> None:
+        self._running = running
+        self.progress = _FakeSignal()
+        self.finished = _FakeSignal()
+        self.error = _FakeSignal()
+        self.request_count = 0
+        self.delete_later_count = 0
+
+    def isRunning(self) -> bool:
+        return self._running
+
+    def requestInterruption(self) -> None:
+        self.request_count += 1
+
+    def deleteLater(self) -> None:
+        self.delete_later_count += 1
+
+
+class _FakeSyncExecuteWorker(_FakeBackSyncWorker):
+    pass
+
+
 class _FakeSidebar:
     def __init__(self):
         self.library_tabs_visible: list[bool] = []
         self.tag_fixes_available: list[bool] = []
         self.device_info_updates: list[dict] = []
+        self.clear_count = 0
 
     def setLibraryTabsVisible(self, visible: bool) -> None:
         self.library_tabs_visible.append(visible)
@@ -37,6 +73,9 @@ class _FakeSidebar:
 
     def updateDeviceInfo(self, **kwargs) -> None:
         self.device_info_updates.append(kwargs)
+
+    def clearDeviceInfo(self) -> None:
+        self.clear_count += 1
 
 
 class _FakeSettingsService:
@@ -67,6 +106,75 @@ def test_main_window_device_name_ignores_dataset5_category_master() -> None:
             {"master_flag": True, "Title": "RoadPod"},
         ]
     ) == "RoadPod"
+
+
+def test_failed_sync_result_gets_user_visible_message() -> None:
+    result = SimpleNamespace(
+        success=False,
+        partial_save=False,
+        errors=[("read-only", "iOpenPod cannot write to this iPod.")],
+    )
+
+    assert _sync_execute_failure_message(result) == (
+        "iOpenPod cannot write to this iPod."
+    )
+
+
+def test_library_load_permission_message_includes_linux_recovery_steps() -> None:
+    message = _library_load_failure_message(
+        "/media/user/IPOD",
+        "Could not load iTunesDB: [Errno 13] Permission denied",
+    )
+
+    assert "iOpenPod could not read this iPod cleanly" in message
+    assert "/media/user/IPOD" in message
+    assert "mount -o remount,rw" in message
+    assert "fsck.vfat" in message
+
+
+def test_device_changed_rejects_unwritable_device_before_loading(monkeypatch) -> None:
+    calls: list[str] = []
+    criticals: list[tuple[str, str]] = []
+    fake_pool = SimpleNamespace(clear=lambda: calls.append("clear_pool"))
+
+    monkeypatch.setattr(
+        "GUI.app.ThreadPoolSingleton.get_instance",
+        staticmethod(lambda: fake_pool),
+    )
+    monkeypatch.setattr("GUI.imgMaker.clear_artwork_api", lambda: calls.append("art"))
+    monkeypatch.setattr(
+        "GUI.app.check_ipod_write_access",
+        lambda _path: SimpleNamespace(writable=False, message="not writable"),
+    )
+    monkeypatch.setattr(
+        "GUI.app.QMessageBox.critical",
+        lambda _parent, title, message: criticals.append((title, message)),
+    )
+
+    window = SimpleNamespace(
+        _theme_rebuild_timer=SimpleNamespace(
+            isActive=lambda: False,
+            stop=lambda: calls.append("stop_timer"),
+        ),
+        _pending_theme_rebuild=True,
+        musicBrowser=SimpleNamespace(reloadData=lambda: calls.append("reload")),
+        sidebar=_FakeSidebar(),
+        device_manager=SimpleNamespace(device_path="/media/user/IPOD"),
+        library_cache=SimpleNamespace(start_loading=lambda: calls.append("load")),
+        _apply_effective_theme=lambda: False,
+        _schedule_themed_rebuild=lambda restore_page=0: calls.append("theme"),
+        _reset_library_category_for_new_device=lambda path: calls.append(
+            f"category:{path}"
+        ),
+        _show_default_page=lambda: calls.append("default"),
+    )
+
+    MainWindow.onDeviceChanged(cast(Any, window), "/media/user/IPOD")
+
+    assert window.device_manager.device_path is None
+    assert "load" not in calls
+    assert "category:/media/user/IPOD" not in calls
+    assert criticals == [("iPod Not Writable", "not writable")]
 
 
 def test_pc_media_folder_edits_persist_to_global_settings_immediately(tmp_path) -> None:
@@ -372,3 +480,167 @@ def test_own_export_drag_is_ignored_for_sync_drop():
     assert not event.accepted
     assert window.dropped_paths == []
     assert window._drop_overlay.hide_count == 1
+
+
+def test_sync_review_edit_selection_opens_selective_plan_editor():
+    selection = {"sync_items": {1, 2}}
+    plan = object()
+    load_calls: list[tuple[object, object]] = []
+    window = SimpleNamespace(
+        _plan=plan,
+        centralStack=_FakeStack(),
+        selectiveSyncBrowser=SimpleNamespace(
+            load_sync_plan=lambda p, state: load_calls.append((p, state))
+        ),
+    )
+
+    MainWindow._onSyncReviewEditSelection(cast(Any, window), selection)
+
+    assert window.centralStack.set_indices == [4]
+    assert load_calls == [(plan, selection)]
+
+
+def test_selective_plan_editor_done_applies_state_and_returns_to_review():
+    selection = {"sync_items": {42}}
+    applied: list[object] = []
+    window = SimpleNamespace(
+        centralStack=_FakeStack(),
+        syncReview=SimpleNamespace(
+            apply_selection_state=lambda state: applied.append(state)
+        ),
+    )
+
+    MainWindow._onPlanSelectionDone(cast(Any, window), selection)
+
+    assert applied == [selection]
+    assert window.centralStack.set_indices == [1]
+
+
+def test_selective_plan_editor_cancel_returns_to_review_without_changes():
+    window = SimpleNamespace(centralStack=_FakeStack())
+
+    MainWindow._onPlanSelectionCancelled(cast(Any, window))
+
+    assert window.centralStack.set_indices == [1]
+
+
+def _build_window_for_back_sync_cancel(worker: _FakeBackSyncWorker):
+    default_page_calls: list[bool] = []
+    window = SimpleNamespace(
+        _sync_worker=None,
+        _back_sync_worker=worker,
+        _back_sync_workers=[worker],
+        _cancelled_workers=[],
+        _podcast_plan_worker=None,
+        _album_conversion_worker=None,
+        _chapter_split_worker=None,
+        _sync_execute_worker=None,
+        _keep_sync_results_visible_after_rescan=True,
+    )
+    window._cleanup_sync_execute_worker = lambda: None
+    window._show_default_page = lambda: default_page_calls.append(True)
+    window._clear_worker_reference = MainWindow._clear_worker_reference.__get__(window)
+    window._retain_cancelled_worker = MainWindow._retain_cancelled_worker.__get__(window)
+    window._reap_cancelled_worker = MainWindow._reap_cancelled_worker.__get__(window)
+    window._cleanup_worker = MainWindow._cleanup_worker.__get__(window)
+    window._clear_back_sync_worker = MainWindow._clear_back_sync_worker.__get__(window)
+    window._retain_back_sync_worker = MainWindow._retain_back_sync_worker.__get__(window)
+    window._reap_back_sync_worker = MainWindow._reap_back_sync_worker.__get__(window)
+    window._cleanup_back_sync_worker = MainWindow._cleanup_back_sync_worker.__get__(window)
+    window._cleanup_sync_diff_worker = MainWindow._cleanup_sync_diff_worker.__get__(window)
+    window._cleanup_podcast_plan_worker = MainWindow._cleanup_podcast_plan_worker.__get__(window)
+    window._cleanup_album_conversion_worker = MainWindow._cleanup_album_conversion_worker.__get__(window)
+    window._cleanup_chapter_split_worker = MainWindow._cleanup_chapter_split_worker.__get__(window)
+    window.hideSyncReview = MainWindow.hideSyncReview.__get__(window)
+    return window, default_page_calls
+
+
+def test_sync_review_cancel_detaches_back_sync_worker_and_returns_to_library():
+    worker = _FakeBackSyncWorker(running=True)
+    window, default_page_calls = _build_window_for_back_sync_cancel(worker)
+
+    MainWindow._onSyncReviewCancelled(cast(Any, window))
+
+    assert worker.request_count == 1
+    assert worker.progress.disconnect_count == 1
+    assert worker.finished.disconnect_count == 1
+    assert worker.error.disconnect_count == 1
+    assert window._back_sync_worker is None
+    assert window._back_sync_workers == [worker]
+    assert window._keep_sync_results_visible_after_rescan is False
+    assert default_page_calls == [True]
+
+
+def test_reap_back_sync_worker_releases_retained_thread_reference():
+    worker = _FakeBackSyncWorker(running=False)
+    window = SimpleNamespace(_back_sync_worker=worker, _back_sync_workers=[worker])
+    window._clear_back_sync_worker = MainWindow._clear_back_sync_worker.__get__(window)
+
+    MainWindow._reap_back_sync_worker(cast(Any, window), worker)
+
+    assert window._back_sync_worker is None
+    assert window._back_sync_workers == []
+    assert worker.delete_later_count == 1
+
+
+def test_stale_back_sync_completion_after_cancel_is_ignored():
+    worker = _FakeBackSyncWorker(running=False)
+    shown_results: list[object] = []
+    window = SimpleNamespace(
+        _back_sync_worker=None,
+        syncReview=SimpleNamespace(
+            show_back_sync_result=lambda result: shown_results.append(result)
+        ),
+    )
+    window._clear_back_sync_worker = MainWindow._clear_back_sync_worker.__get__(window)
+
+    MainWindow._onBackSyncComplete(
+        cast(Any, window),
+        {"exported": 1, "missing_on_pc": 1},
+        worker,
+    )
+
+    assert shown_results == []
+
+
+def test_sync_review_cancel_detaches_sync_diff_worker_and_returns_to_library():
+    worker = _FakeBackSyncWorker(running=True)
+    window, default_page_calls = _build_window_for_back_sync_cancel(
+        _FakeBackSyncWorker(running=False)
+    )
+    window._back_sync_worker = None
+    window._back_sync_workers = []
+    window._sync_worker = worker
+
+    MainWindow._onSyncReviewCancelled(cast(Any, window))
+
+    assert worker.request_count == 1
+    assert worker.progress.disconnect_count == 1
+    assert worker.finished.disconnect_count == 1
+    assert worker.error.disconnect_count == 1
+    assert window._sync_worker is None
+    assert window._cancelled_workers == [worker]
+    assert default_page_calls == [True]
+
+
+def test_sync_review_execute_cancel_stays_on_review_page():
+    execute_worker = _FakeSyncExecuteWorker(running=True)
+    default_page_calls: list[bool] = []
+    window = SimpleNamespace(
+        _sync_execute_worker=execute_worker,
+        hideSyncReview=lambda: default_page_calls.append(True),
+    )
+
+    MainWindow._onSyncReviewCancelled(cast(Any, window))
+
+    assert execute_worker.request_count == 1
+    assert default_page_calls == []
+
+
+def test_stale_sync_diff_completion_after_cancel_is_ignored():
+    worker = _FakeBackSyncWorker(running=False)
+    window = SimpleNamespace(_sync_worker=None)
+
+    MainWindow._onSyncDiffComplete(cast(Any, window), object(), worker)
+
+    assert not hasattr(window, "_plan")

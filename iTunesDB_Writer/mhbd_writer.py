@@ -466,12 +466,36 @@ def write_mhbd(
                      sorted(ref_types) if ref_types else "none (fallback to all)",
                      ref_order if ref_order else "default")
 
+    legacy_excluded_types: set[int] = set()
+    if capabilities is not None and capabilities.db_version <= 0x19:
+        # Types 6, 8, and 10 are newer generated browsing/stub datasets.
+        # They are useful on Classic/Nano 3G+ era databases, but older
+        # firmware can treat them as a malformed library. Strip them even
+        # when a previous iOpenPod write already introduced them.
+        legacy_excluded_types = {6, 8, 10}
+
+    required_ref_types: set[int] = set()
+    if ref_types is not None:
+        # A usable binary iTunesDB needs a track list plus whichever playlist
+        # universe the reference database already used. Do not invent newer
+        # browsing datasets here: older firmware can reject unfamiliar MHSDs
+        # even though iOpenPod's parser can read them back.
+        required_ref_types.add(1)
+        if 2 in ref_types:
+            required_ref_types.add(2)
+        elif include_podcasts and 3 in ref_types:
+            required_ref_types.add(3)
+        else:
+            required_ref_types.add(2)
+
     # Build the candidate datasets in priority order
     # Each entry: (type_number, data_bytes, required_flag)
     # When ref_types is available, only include types that are present in it.
     # Otherwise, include all types (libgpod-compatible default).
 
     def _include(dtype: int, required: bool = False) -> bool:
+        if dtype in legacy_excluded_types:
+            return False
         if required:
             return True
         if ref_types is None:
@@ -500,12 +524,14 @@ def write_mhbd(
             # Type 3 (podcasts) requires include_podcasts flag
             if dtype == 3 and not include_podcasts:
                 continue
-            if _include(dtype, required=(dtype in (1, 4, 8))):
+            if _include(dtype, required=(dtype in required_ref_types)):
                 data = type_to_data[dtype]
                 if data:
                     dataset_entries.append((dtype, data))
-        # Add any required types that weren't in the reference order
-        for dtype in (1, 4, 8):
+        # Add any required core types that weren't in the reference order.
+        for dtype in (1, 3, 2):
+            if dtype not in required_ref_types:
+                continue
             if not any(t == dtype for t, _ in dataset_entries):
                 dataset_entries.append((dtype, type_to_data[dtype]))
     else:
@@ -516,7 +542,8 @@ def write_mhbd(
         if _include(2):
             dataset_entries.append((2, mhsd_type2))
         dataset_entries.append((4, mhsd_type4))  # always required
-        dataset_entries.append((8, mhsd_type8))  # always required
+        if _include(8):
+            dataset_entries.append((8, mhsd_type8))
         if _include(6):
             dataset_entries.append((6, mhsd_type6))
         if _include(10):

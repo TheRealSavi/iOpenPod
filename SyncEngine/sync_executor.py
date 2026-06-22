@@ -15,6 +15,7 @@ The database is always fully rewritten (not patched incrementally).
 import errno
 import logging
 import os
+import shlex
 import shutil
 import tempfile
 import threading
@@ -132,6 +133,27 @@ def _format_bytes(val: int) -> str:
             return f"{value:.1f} {unit}"
         value /= 1024
     return f"{value:.1f} TB"
+
+
+def _write_permission_failure_message(ipod_path: Path, error: OSError) -> str:
+    mount_path = str(ipod_path)
+    quoted_mount = shlex.quote(mount_path)
+    detail = str(error).strip() or error.__class__.__name__
+    return (
+        "iOpenPod cannot write to this iPod.\n\n"
+        "The device is mounted read-only, or your user account does not have "
+        "write permission for the mount.\n\n"
+        f"Mount path: {mount_path}\n"
+        f"System error: {detail}\n\n"
+        "On Linux, try reconnecting the iPod. If it still mounts read-only, "
+        "try remounting it read-write:\n"
+        f"  sudo mount -o remount,rw {quoted_mount}\n\n"
+        "If the FAT filesystem is dirty, unmount it before repairing it:\n"
+        f"  sudo umount {quoted_mount}\n"
+        "  sudo fsck.vfat -a /dev/sdXN\n\n"
+        "Replace /dev/sdXN with the iPod partition. Do not run fsck while "
+        "the iPod is mounted."
+    )
 
 
 class _OutOfSpaceError(Exception):
@@ -387,6 +409,8 @@ class SyncExecutor:
         self._folder_counter = 0
         self._folder_lock = threading.Lock()
         self._space_guard_lock = threading.Lock()
+        self._metadata_strip_lock = threading.Lock()
+        self._reset_metadata_strip_summary()
 
         # 0 = auto (CPU count, capped at 8), 1 = sequential
         if max_workers <= 0:
@@ -540,8 +564,57 @@ class SyncExecutor:
             self._max_device_write_workers,
         )
 
-        self._run_execution_lifecycle(ctx, lifecycle)
+        self._reset_metadata_strip_summary()
+        try:
+            self._run_execution_lifecycle(ctx, lifecycle)
+        finally:
+            self._log_metadata_strip_summary()
         return ctx.result
+
+    def _reset_metadata_strip_summary(self) -> None:
+        self._metadata_stripped_files = 0
+        self._metadata_saved_bytes = 0
+        self._metadata_strip_failures = 0
+        self._metadata_strip_failure_exts: Counter[str] = Counter()
+
+    def _record_metadata_strip(self, saved_bytes: int) -> None:
+        if saved_bytes <= 0:
+            return
+        with self._metadata_strip_lock:
+            self._metadata_stripped_files += 1
+            self._metadata_saved_bytes += saved_bytes
+
+    def _record_metadata_strip_failure(self, suffix: str) -> None:
+        with self._metadata_strip_lock:
+            self._metadata_strip_failures += 1
+            self._metadata_strip_failure_exts[suffix or "<none>"] += 1
+
+    def _log_metadata_strip_summary(self) -> None:
+        with self._metadata_strip_lock:
+            stripped_files = self._metadata_stripped_files
+            saved_bytes = self._metadata_saved_bytes
+            failures = self._metadata_strip_failures
+            failure_exts = self._metadata_strip_failure_exts.copy()
+
+        if stripped_files:
+            logger.debug(
+                "Metadata stripping: removed tags from %d file(s), saved %s",
+                stripped_files,
+                _format_bytes(saved_bytes),
+            )
+        if failures:
+            ext_text = ""
+            if failure_exts:
+                by_ext = ", ".join(
+                    f"{ext}={count}"
+                    for ext, count in sorted(failure_exts.items())
+                )
+                ext_text = f" By extension: {by_ext}"
+            logger.warning(
+                "Could not strip metadata from %d file(s); copied unmodified payloads.%s",
+                failures,
+                ext_text,
+            )
 
     def _build_sync_context(
         self,
@@ -1059,14 +1132,7 @@ class SyncExecutor:
                 os.unlink(probe_path)
             except OSError as e:
                 if e.errno in (errno.EROFS, errno.EACCES):
-                    hint = (
-                        "The iPod filesystem is mounted read-only. "
-                        "On Linux, try remounting with write access:\n"
-                        "  sudo mount -o remount,rw /media/…/iPod\n"
-                        "If the filesystem is dirty, run:\n"
-                        "  sudo fsck.vfat -a /dev/sdXN\n"
-                        "then re-mount."
-                    )
+                    hint = _write_permission_failure_message(self.ipod_path, e)
                     logger.error("iPod is read-only: %s", e)
                     ctx.result.errors.append(("read-only", hint))
                     ctx.result.success = False
@@ -3402,14 +3468,9 @@ class SyncExecutor:
             before_size = staged.stat().st_size
             if strip_metadata(staged):
                 after_size = staged.stat().st_size
-                if after_size < before_size:
-                    logger.debug(
-                        "Stripped metadata from %s: saved %d bytes",
-                        src.name,
-                        before_size - after_size,
-                    )
+                self._record_metadata_strip(before_size - after_size)
             else:
-                logger.warning("Could not strip metadata from %s; copying unmodified payload", src.name)
+                self._record_metadata_strip_failure(src.suffix.lower())
             self._copy_file_to_device(
                 staged,
                 dst,

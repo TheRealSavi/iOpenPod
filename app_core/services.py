@@ -356,6 +356,7 @@ class LibraryCacheLike(Protocol):
     """Runtime library cache surface exposed across the app-core boundary."""
 
     data_ready: Any
+    load_failed: Any
     playlists_changed: Any
     photos_changed: Any
     tracks_changed: Any

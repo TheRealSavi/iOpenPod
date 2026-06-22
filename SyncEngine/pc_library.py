@@ -763,36 +763,45 @@ class PCLibrary:
         # Subprocess calls (ffprobe, art extraction) are also thread-safe.
         logging.info("PC scan: reading %d files with %d worker threads", total, max_workers)
         current = 0
-        with ThreadPoolExecutor(
+        cancel_pending = False
+        pool = ThreadPoolExecutor(
             max_workers=max_workers,
             thread_name_prefix="pc-scan",
-        ) as pool:
+        )
+        futures = {}
+        try:
             futures = {pool.submit(self._read_track, file_path, library_root=library_root): file_path for file_path, library_root in files}
-            try:
-                for future in as_completed(futures):
-                    if is_cancelled and is_cancelled():
-                        for pending in futures:
-                            pending.cancel()
-                        return
-                    file_path = futures[future]
-                    try:
-                        track = future.result()
-                    except Exception as e:
-                        logging.warning(f"Failed to read {file_path}: {e}")
-                        track = None
-                    current += 1
-                    if progress_callback:
-                        progress_callback(current, total, file_path.name)
-                    if track is None:
-                        continue
-                    yield track
-            except GeneratorExit:
-                # Caller stopped iterating — cancel pending futures so the
-                # ThreadPoolExecutor shutdown returns promptly instead of
-                # waiting for every queued read to complete.
-                for pending in futures:
-                    pending.cancel()
-                raise
+            for future in as_completed(futures):
+                if is_cancelled and is_cancelled():
+                    cancel_pending = True
+                    for pending in futures:
+                        pending.cancel()
+                    return
+                file_path = futures[future]
+                try:
+                    track = future.result()
+                except Exception as e:
+                    logging.warning(f"Failed to read {file_path}: {e}")
+                    track = None
+                current += 1
+                if progress_callback:
+                    progress_callback(current, total, file_path.name)
+                if track is None:
+                    continue
+                yield track
+        except GeneratorExit:
+            # Caller stopped iterating — cancel pending futures so the
+            # ThreadPoolExecutor shutdown returns promptly instead of
+            # waiting for every queued read to complete.
+            cancel_pending = True
+            for pending in futures:
+                pending.cancel()
+            raise
+        finally:
+            pool.shutdown(
+                wait=not cancel_pending,
+                cancel_futures=cancel_pending,
+            )
 
     def _read_track(
         self,

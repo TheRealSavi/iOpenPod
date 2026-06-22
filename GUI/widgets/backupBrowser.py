@@ -538,17 +538,20 @@ class BackupBrowserWidget(QWidget):
 
         prog_layout.addSpacing(8)
 
-        cancel_btn = QPushButton("Cancel")
-        cancel_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
-        cancel_btn.setFixedWidth(120)
-        cancel_btn.setStyleSheet(btn_css(
+        self._progress_cancel_btn = QPushButton("Cancel")
+        self._progress_cancel_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
+        self._progress_cancel_btn.setFixedWidth(120)
+        self._progress_cancel_btn.setStyleSheet(btn_css(
             bg=Colors.SURFACE_RAISED,
             bg_hover=Colors.SURFACE_ACTIVE,
             bg_press=Colors.SURFACE_ALT,
             border=f"1px solid {Colors.BORDER}",
         ))
-        cancel_btn.clicked.connect(self._on_cancel)
-        prog_layout.addWidget(cancel_btn, alignment=Qt.AlignmentFlag.AlignCenter)
+        self._progress_cancel_btn.clicked.connect(self._on_cancel)
+        prog_layout.addWidget(
+            self._progress_cancel_btn,
+            alignment=Qt.AlignmentFlag.AlignCenter,
+        )
 
         prog_layout.addStretch()
 
@@ -933,6 +936,8 @@ class BackupBrowserWidget(QWidget):
         self._progress_file.setText("Discovering files on iPod…")
         self._progress_stats.setText("")
         self._progress_eta.setText("")
+        self._progress_cancel_btn.setText("Cancel")
+        self._progress_cancel_btn.setEnabled(True)
         self._stack.setCurrentIndex(1)
         self.backup_now_btn.setEnabled(False)
         self._back_btn.setEnabled(False)
@@ -984,6 +989,8 @@ class BackupBrowserWidget(QWidget):
     def _on_backup_finished(self, result):
         self.backup_now_btn.setEnabled(True)
         self._back_btn.setEnabled(True)
+        self._progress_cancel_btn.setText("Cancel")
+        self._progress_cancel_btn.setEnabled(True)
 
         # Check if result is None because the user cancelled.
         worker = self._backup_worker
@@ -1030,6 +1037,8 @@ class BackupBrowserWidget(QWidget):
     def _on_backup_error(self, error_msg: str):
         self.backup_now_btn.setEnabled(True)
         self._back_btn.setEnabled(True)
+        self._progress_cancel_btn.setText("Cancel")
+        self._progress_cancel_btn.setEnabled(True)
         self._backup_worker = None
         self._stack.setCurrentIndex(0)
         QMessageBox.critical(
@@ -1100,6 +1109,8 @@ class BackupBrowserWidget(QWidget):
         self._progress_file.setText("Verifying backup integrity…")
         self._progress_stats.setText("")
         self._progress_eta.setText("")
+        self._progress_cancel_btn.setText("Cancel")
+        self._progress_cancel_btn.setEnabled(True)
         self._stack.setCurrentIndex(1)
         self.backup_now_btn.setEnabled(False)
         self._back_btn.setEnabled(False)
@@ -1144,6 +1155,8 @@ class BackupBrowserWidget(QWidget):
     def _on_restore_finished(self, success: bool):
         self.backup_now_btn.setEnabled(True)
         self._back_btn.setEnabled(True)
+        self._progress_cancel_btn.setText("Cancel")
+        self._progress_cancel_btn.setEnabled(True)
 
         # Check if the result is from a user-initiated cancellation.
         worker = self._restore_worker
@@ -1181,6 +1194,8 @@ class BackupBrowserWidget(QWidget):
     def _on_restore_error(self, error_msg: str):
         self.backup_now_btn.setEnabled(True)
         self._back_btn.setEnabled(True)
+        self._progress_cancel_btn.setText("Cancel")
+        self._progress_cancel_btn.setEnabled(True)
         self._restore_worker = None
         self._stack.setCurrentIndex(0)
         QMessageBox.critical(
@@ -1228,10 +1243,20 @@ class BackupBrowserWidget(QWidget):
 
     def _on_cancel(self):
         """Cancel the current backup/restore operation."""
+        requested = False
         if self._backup_worker and self._backup_worker.isRunning():
             self._backup_worker.requestInterruption()
+            requested = True
         if self._restore_worker and self._restore_worker.isRunning():
             self._restore_worker.requestInterruption()
+            requested = True
+        if requested:
+            self._progress_cancel_btn.setEnabled(False)
+            self._progress_cancel_btn.setText("Cancelling...")
+            self._progress_title.setText("Cancelling")
+            self._progress_file.setText(
+                "Waiting for the current file operation to stop safely."
+            )
 
     def _on_close(self):
         """Go back to main view."""
