@@ -69,3 +69,27 @@ def test_configure_artwork_api_reloads_when_artworkdb_file_changes(
         assert imgMaker.get_artwork(99, mode="cache_only") is None
     finally:
         imgMaker.clear_artwork_api()
+
+
+def test_image_only_artwork_reuses_full_result_cache(monkeypatch) -> None:
+    decode_calls = []
+    cached_image = Image.new("RGB", (2, 2), (12, 34, 56))
+
+    def fake_decode(*_args, **_kwargs):
+        decode_calls.append(True)
+        return None
+
+    monkeypatch.setattr(imgMaker, "_decode_image_from_db", fake_decode)
+    imgMaker.clear_artwork_api()
+
+    try:
+        imgMaker._image_cache_put(99, (cached_image, (0, 0, 0), {}))
+
+        result = imgMaker.get_artwork(99, mode="image_only")
+
+        assert result is not None
+        assert result is not cached_image
+        assert result.size == cached_image.size
+        assert decode_calls == []
+    finally:
+        imgMaker.clear_artwork_api()

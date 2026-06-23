@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, cast
 
 from infrastructure.media_folders import MediaFolderEntry
 from iTunesDB_Writer.mhit_writer import TrackInfo
@@ -683,11 +684,11 @@ def test_full_sync_playlist_ipod_file_reference_uses_existing_fingerprint(
     )
 
     engine = FingerprintDiffEngine(
-        PlaylistOnlyLibrary(),
+        cast(Any, PlaylistOnlyLibrary()),
         ipod_root,
         supports_photo=False,
     )
-    engine.mapping_manager = MappingManager()
+    cast(Any, engine).mapping_manager = MappingManager()
 
     plan = engine.compute_diff(
         [
@@ -831,11 +832,11 @@ def test_full_sync_playlist_external_reference_uses_existing_ipod_fingerprint(
     )
 
     engine = FingerprintDiffEngine(
-        PlaylistOnlyLibrary(),
+        cast(Any, PlaylistOnlyLibrary()),
         ipod_root,
         supports_photo=False,
     )
-    engine.mapping_manager = MappingManager()
+    cast(Any, engine).mapping_manager = MappingManager()
 
     plan = engine.compute_diff(
         [

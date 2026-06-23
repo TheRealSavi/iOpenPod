@@ -185,6 +185,79 @@ def test_write_cached_itunesdb_splits_categories_from_visible_playlists(monkeypa
     ]
 
 
+def test_write_cached_itunesdb_mirrors_regular_playlist_when_dataset3_exists(
+    monkeypatch,
+) -> None:
+    captured: dict[str, Any] = {}
+    all_tracks = [SimpleNamespace(artist="", album="", album_artist="")]
+
+    monkeypatch.setattr(quick_writes, "_tracks_to_infos", lambda *_args, **_kwargs: all_tracks)
+
+    def fake_evaluate(**kwargs):
+        captured.update(kwargs)
+        return (
+            "iPod",
+            1,
+            [FakePlaylistInfo(2, [100])],
+            "iPod",
+            10,
+            [FakePlaylistInfo(2, [100])],
+            [],
+        )
+
+    monkeypatch.setattr(quick_writes, "_evaluate_tracks_and_playlists", fake_evaluate)
+    monkeypatch.setattr(quick_writes, "_write_evaluated_database", lambda *args, **kwargs: True)
+
+    result = quick_writes.write_cached_itunesdb(
+        "I:/",
+        tracks_data=[{"track_id": 10, "db_track_id": 100}],
+        playlists_data=[
+            {
+                "playlist_id": 10,
+                "Title": "iPod",
+                "master_flag": 1,
+                "_mhsd_dataset_type": 3,
+            },
+            {
+                "playlist_id": 2,
+                "Title": "New Mix",
+                "_source": "regular",
+                "items": [{"track_id": 10}],
+            },
+        ],
+    )
+
+    assert result.success
+    assert captured["dataset2_playlist_rows"] == [
+        {
+            "playlist_id": 2,
+            "Title": "New Mix",
+            "_source": "regular",
+            "items": [{"track_id": 10}],
+            "mhip_child_count": 1,
+            "_mhsd_dataset_type": 2,
+            "_mhsd_result_key": "mhlp",
+        }
+    ]
+    assert captured["dataset3_playlist_rows"] == [
+        {
+            "playlist_id": 10,
+            "Title": "iPod",
+            "master_flag": 1,
+            "_mhsd_dataset_type": 3,
+        },
+        {
+            "playlist_id": 2,
+            "Title": "New Mix",
+            "_source": "regular",
+            "items": [{"track_id": 10}],
+            "mhip_child_count": 1,
+            "_mhsd_dataset_type": 3,
+            "_mhsd_result_key": "mhlp_podcast",
+        },
+    ]
+
+
 def test_write_cached_itunesdb_reports_missing_tracks() -> None:
     result = quick_writes.write_cached_itunesdb(
         "I:/",

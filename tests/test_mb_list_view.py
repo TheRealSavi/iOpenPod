@@ -353,12 +353,13 @@ def _mount_list(
     settings_service: SettingsService | None = None,
     library_cache: Any | None = None,
     content_type_override: str | None = None,
+    show_art_override: bool | None = False,
 ) -> MusicBrowserList:
     view = MusicBrowserList(
         settings_service=settings_service or _SettingsService(),
         device_sessions=_DeviceSessions(),
         library_cache=library_cache,
-        show_art_override=False,
+        show_art_override=show_art_override,
         content_type_override=content_type_override,
     )
     qtbot.addWidget(view)
@@ -366,6 +367,25 @@ def _mount_list(
     view.show()
     qtbot.wait(50)
     return view
+
+
+def _many_tracks_with_art(count: int) -> list[dict[str, object]]:
+    return [
+        {
+            "Title": f"Song {idx:03d}",
+            "Artist": "Artist",
+            "Album": "Album",
+            "Genre": "Rock",
+            "year": 2001,
+            "track_number": idx + 1,
+            "length": 180000,
+            "rating": 80,
+            "play_count_1": 5,
+            "date_added": 1710000000,
+            "artwork_id_ref": idx + 1,
+        }
+        for idx in range(count)
+    ]
 
 
 def _load_content(
@@ -394,6 +414,43 @@ def _visible_column_order(view: MusicBrowserList) -> list[str]:
         if col_key is not None:
             result.append(col_key)
     return result
+
+
+def test_tracklist_artwork_loads_only_visible_prefetch_rows(qtbot):
+    view = _mount_list(qtbot, show_art_override=True)
+    tracks = _many_tracks_with_art(300)
+
+    _load_content(qtbot, view, tracks=tracks, media_type_filter=0x01)
+
+    needed = view._visible_artwork_ids_needing_load()
+
+    assert needed
+    assert 1 in needed
+    assert len(needed) < len(tracks)
+    assert tracks[-1]["artwork_id_ref"] not in needed
+
+
+def test_tracklist_population_does_not_decode_shared_artwork_on_ui_thread(
+    qtbot,
+    monkeypatch,
+):
+    def fail_get_artwork(*_args, **_kwargs):
+        raise AssertionError("track rows should not decode artwork synchronously")
+
+    monkeypatch.setattr(imgMaker, "get_artwork", fail_get_artwork)
+    view = _mount_list(qtbot, show_art_override=True)
+
+    _load_content(
+        qtbot,
+        view,
+        tracks=_many_tracks_with_art(1),
+        media_type_filter=0x01,
+    )
+
+    art_item = view.table.item(0, 0)
+    assert art_item is not None
+    assert art_item.data(Qt.ItemDataRole.UserRole + 2) == 1
+    assert art_item.icon().isNull()
 
 
 def _drag_header_section(

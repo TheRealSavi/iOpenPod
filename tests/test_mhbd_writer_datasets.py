@@ -62,7 +62,7 @@ def test_modern_reference_keeps_artist_dataset() -> None:
     assert _mhsd_types(data) == [4, 1, 3, 2, 5, 8]
 
 
-def test_reference_type3_only_playlist_shape_does_not_gain_dataset2() -> None:
+def test_reference_type3_playlist_shape_writes_type2_companion() -> None:
     data = write_mhbd(
         [],
         reference_info={
@@ -72,4 +72,4 @@ def test_reference_type3_only_playlist_shape_does_not_gain_dataset2() -> None:
         },
     )
 
-    assert _mhsd_types(data) == [4, 1, 3, 5]
+    assert _mhsd_types(data) == [4, 1, 3, 2, 5]

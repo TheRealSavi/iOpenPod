@@ -87,6 +87,14 @@ _ICON_MASTER = "home"
 _ICON_CATEGORY = "grid"
 
 
+def _delete_embedded_widget(widget: QWidget | None) -> None:
+    if widget is None:
+        return
+    widget.hide()
+    widget.setParent(None)
+    widget.deleteLater()
+
+
 def _label_css(color: str) -> str:
     return f"color: {color}; background: transparent; border: none;"
 
@@ -758,9 +766,7 @@ class PlaylistInfoCard(QFrame):
         while self._rules_preview_layout.count():
             item = self._rules_preview_layout.takeAt(0)
             widget = item.widget() if item else None
-            if widget is not None:
-                widget.setParent(None)
-                widget.deleteLater()
+            _delete_embedded_widget(widget)
         self._rules_preview_widgets.clear()
         self._rules_summary_label.setText("")
 
@@ -1019,15 +1025,13 @@ class PlaylistInfoCard(QFrame):
     def _clear_details(self) -> None:
         """Remove all detail rows."""
         for lbl in self._detail_labels:
-            lbl.setParent(None)  # type: ignore[arg-type]
-            lbl.deleteLater()
+            _delete_embedded_widget(lbl)
         self._detail_labels.clear()
         # Remove stretch
         while self.details_layout.count():
             item = self.details_layout.takeAt(0)
             w = item.widget() if item else None
-            if w is not None:
-                w.deleteLater()
+            _delete_embedded_widget(w)
 
     def _add_detail_row(self, label: str, value: str) -> None:
         """Add a key-value row to details."""
@@ -1211,9 +1215,7 @@ class PlaylistListPanel(QFrame):
         while self._inner_layout.count():
             item = self._inner_layout.takeAt(0)
             w = item.widget() if item else None
-            if w:
-                w.setParent(None)  # type: ignore[arg-type]
-                w.deleteLater()
+            _delete_embedded_widget(w)
 
     def _add_section(self, text: str) -> None:
         if not text:

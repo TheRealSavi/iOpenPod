@@ -94,6 +94,32 @@ def _playlist_source_for_dataset(playlist: dict, dataset_type: int) -> str:
     return "regular"
 
 
+def _playlist_row_for_dataset(playlist: dict, dataset_type: int) -> dict:
+    row = dict(playlist)
+    row["_mhsd_dataset_type"] = dataset_type
+    row["_mhsd_result_key"] = _result_key_for_dataset(dataset_type)
+    row.setdefault("_source", _playlist_source_for_dataset(row, dataset_type))
+    return _playlist_with_description(row)
+
+
+def _data_uses_dataset3_playlists(data: dict | None) -> bool:
+    if data is None:
+        return False
+    rows = data.get("mhlp_podcast")
+    return isinstance(rows, list) and bool(rows)
+
+
+def _is_regular_playlist_mirror_candidate(playlist: dict) -> bool:
+    dataset_type = _playlist_dataset_type(playlist)
+    if dataset_type not in (0, 2):
+        return False
+    if _is_ipod_category_playlist(playlist):
+        return False
+    if playlist.get("podcast_flag", 0) == 1 or playlist.get("_source") == "podcast":
+        return False
+    return True
+
+
 def _playlist_origin_summary(playlist: dict) -> dict[str, object]:
     try:
         podcast_flag = int(playlist.get("podcast_flag", 0) or 0)
@@ -971,7 +997,17 @@ class iTunesDBCache(QObject):
                 resolved_playlist = _playlist_with_known_edit_origin(playlist, self._data)
                 if resolved_playlist is None:
                     return
-                target_playlists = [resolved_playlist]
+                if (
+                    playlist.get("_isNew") is not False
+                    and _data_uses_dataset3_playlists(self._data)
+                    and _is_regular_playlist_mirror_candidate(resolved_playlist)
+                ):
+                    target_playlists = [
+                        _playlist_row_for_dataset(resolved_playlist, 2),
+                        _playlist_row_for_dataset(resolved_playlist, 3),
+                    ]
+                else:
+                    target_playlists = [resolved_playlist]
 
             replaced_count = 0
             for target_playlist in target_playlists:

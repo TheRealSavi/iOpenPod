@@ -125,6 +125,33 @@ def _playlist_dataset_type(playlist: dict) -> int:
     return 2 if playlist.get("playlist_id") else 0
 
 
+def _playlist_result_key_for_dataset(dataset_type: int) -> str:
+    return {2: "mhlp", 3: "mhlp_podcast", 5: "mhlp_smart"}.get(
+        dataset_type,
+        "mhlp",
+    )
+
+
+def _playlist_row_for_dataset(playlist: dict, dataset_type: int) -> dict:
+    row = dict(playlist)
+    row["_mhsd_dataset_type"] = dataset_type
+    row["_mhsd_result_key"] = _playlist_result_key_for_dataset(dataset_type)
+    if dataset_type in (2, 3):
+        row.setdefault("_source", "regular")
+    return row
+
+
+def _is_regular_playlist_mirror_candidate(playlist: dict) -> bool:
+    dataset_type = _playlist_dataset_type(playlist)
+    if dataset_type not in (0, 2):
+        return False
+    if _is_ipod_category_playlist(playlist):
+        return False
+    if playlist.get("podcast_flag", 0) == 1 or playlist.get("_source") == "podcast":
+        return False
+    return True
+
+
 def _format_bytes(val: int) -> str:
     """Format bytes as compact human-readable text for progress messages."""
     value = float(max(0, val))
@@ -1448,11 +1475,29 @@ class SyncExecutor:
         current = 0
         ctx.progress("playlists", 0, total, message="Updating playlists...")
 
+        def _uses_dataset3_mirrors() -> bool:
+            return bool(ctx.existing_dataset3_podcast_playlists_raw)
+
+        def _upsert_playlist(bucket: list[dict], row: dict) -> bool:
+            pid = coerce_int(row.get("playlist_id", 0))
+            if pid:
+                for i, epl in enumerate(bucket):
+                    if coerce_int(epl.get("playlist_id")) == pid:
+                        bucket[i] = row
+                        return True
+            bucket.append(row)
+            return False
+
         def _remove_playlist(removal: dict) -> bool:
             playlist_id = coerce_int(removal.get("playlist_id"))
             if not playlist_id:
                 return False
             target_dataset = _playlist_dataset_type(removal)
+            mirrored_regular_removal = (
+                target_dataset == 2
+                and _uses_dataset3_mirrors()
+                and _is_regular_playlist_mirror_candidate(removal)
+            )
             buckets = (
                 (ctx.existing_dataset2_standard_playlists_raw, 2),
                 (ctx.existing_dataset3_podcast_playlists_raw, 3),
@@ -1470,6 +1515,11 @@ class SyncExecutor:
                             not target_dataset
                             or target_dataset == existing_dataset
                             or target_dataset == bucket_dataset
+                            or (
+                                mirrored_regular_removal
+                                and existing_dataset in (2, 3)
+                                and bucket_dataset in (2, 3)
+                            )
                         )
                     ):
                         removed = True
@@ -1520,16 +1570,21 @@ class SyncExecutor:
             else:
                 target = ctx.existing_dataset2_standard_playlists_raw
 
-            replaced = False
-            if pid:
-                for i, epl in enumerate(target):
-                    if coerce_int(epl.get("playlist_id")) == pid:
-                        target[i] = playlist
-                        replaced = True
-                        break
-
-            if not replaced:
-                target.append(playlist)
+            if (
+                target is ctx.existing_dataset2_standard_playlists_raw
+                and _uses_dataset3_mirrors()
+                and _is_regular_playlist_mirror_candidate(playlist)
+            ):
+                _upsert_playlist(
+                    ctx.existing_dataset2_standard_playlists_raw,
+                    _playlist_row_for_dataset(playlist, 2),
+                )
+                _upsert_playlist(
+                    ctx.existing_dataset3_podcast_playlists_raw,
+                    _playlist_row_for_dataset(playlist, 3),
+                )
+            else:
+                _upsert_playlist(target, playlist)
             logger.info(
                 "Merged plan playlist '%s' (id=%s, new=%s)",
                 playlist.get("Title", "?"),

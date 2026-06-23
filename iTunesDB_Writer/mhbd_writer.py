@@ -477,15 +477,22 @@ def write_mhbd(
     required_ref_types: set[int] = set()
     if ref_types is not None:
         # A usable binary iTunesDB needs a track list plus whichever playlist
-        # universe the reference database already used. Do not invent newer
-        # browsing datasets here: older firmware can reject unfamiliar MHSDs
-        # even though iOpenPod's parser can read them back.
+        # universe the reference database already used. MHSD type 3 devices
+        # still need the regular type 2 playlist list as a companion; otherwise
+        # creating a user playlist can leave only the podcast-aware mirror.
+        # Do not invent newer browsing datasets here: older firmware can reject
+        # unfamiliar MHSDs even though iOpenPod's parser can read them back.
         required_ref_types.add(1)
+        needs_regular_playlist_dataset = False
         if 2 in ref_types:
             required_ref_types.add(2)
-        elif include_podcasts and 3 in ref_types:
+            needs_regular_playlist_dataset = True
+        if include_podcasts and 3 in ref_types:
             required_ref_types.add(3)
-        else:
+            needs_regular_playlist_dataset = True
+        if needs_regular_playlist_dataset:
+            required_ref_types.add(2)
+        if not required_ref_types.intersection({2, 3}):
             required_ref_types.add(2)
 
     # Build the candidate datasets in priority order
@@ -518,6 +525,7 @@ def write_mhbd(
     dataset_entries: list[tuple[int, bytes]] = []
     if ref_order:
         # Follow the exact order from the reference database
+        inserted_required_type2 = False
         for dtype in ref_order:
             if dtype not in type_to_data:
                 continue
@@ -528,6 +536,15 @@ def write_mhbd(
                 data = type_to_data[dtype]
                 if data:
                     dataset_entries.append((dtype, data))
+                    if (
+                        dtype == 3
+                        and 2 in required_ref_types
+                        and ref_types is not None
+                        and 2 not in ref_types
+                        and not inserted_required_type2
+                    ):
+                        dataset_entries.append((2, type_to_data[2]))
+                        inserted_required_type2 = True
         # Add any required core types that weren't in the reference order.
         for dtype in (1, 3, 2):
             if dtype not in required_ref_types:

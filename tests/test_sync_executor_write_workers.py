@@ -29,6 +29,7 @@ def _make_sync_ctx(
     playlist_updates: list[dict],
     existing_dataset2_standard_playlists_raw: list[dict],
     existing_dataset5_smart_playlists_raw: list[dict],
+    existing_dataset3_podcast_playlists_raw: list[dict] | None = None,
 ) -> _SyncContext:
     ctx = _SyncContext(
         plan=SyncPlan(),
@@ -41,6 +42,9 @@ def _make_sync_ctx(
     ctx.plan.playlists_to_add = list(playlist_updates)
     ctx.existing_dataset2_standard_playlists_raw = (
         existing_dataset2_standard_playlists_raw
+    )
+    ctx.existing_dataset3_podcast_playlists_raw = (
+        existing_dataset3_podcast_playlists_raw or []
     )
     ctx.existing_dataset5_smart_playlists_raw = existing_dataset5_smart_playlists_raw
     return ctx
@@ -1185,6 +1189,166 @@ def test_merge_plan_playlists_applies_playlist_adds_and_edits(
     assert ctx.existing_dataset2_standard_playlists_raw == [
         edited_playlist,
         new_playlist,
+    ]
+
+
+def test_merge_plan_playlists_mirrors_regular_rows_to_dataset3(
+    tmp_path: Path,
+) -> None:
+    executor = SyncExecutor(tmp_path)
+    new_playlist = {
+        "playlist_id": 101,
+        "Title": "Synced Mix",
+        "_isNew": True,
+        "_mhsd_dataset_type": 2,
+        "items": [{"db_track_id": 99}],
+    }
+    ctx = _make_sync_ctx(
+        playlist_updates=[],
+        existing_dataset2_standard_playlists_raw=[],
+        existing_dataset3_podcast_playlists_raw=[
+            {
+                "playlist_id": 1,
+                "Title": "iPod",
+                "master_flag": 1,
+                "_mhsd_dataset_type": 3,
+            }
+        ],
+        existing_dataset5_smart_playlists_raw=[],
+    )
+    ctx.plan.playlists_to_add = [new_playlist]
+
+    executor._merge_plan_playlists(ctx)
+
+    assert ctx.existing_dataset2_standard_playlists_raw == [
+        {
+            **new_playlist,
+            "_mhsd_dataset_type": 2,
+            "_mhsd_result_key": "mhlp",
+            "_source": "regular",
+        }
+    ]
+    assert ctx.existing_dataset3_podcast_playlists_raw == [
+        {
+            "playlist_id": 1,
+            "Title": "iPod",
+            "master_flag": 1,
+            "_mhsd_dataset_type": 3,
+        },
+        {
+            **new_playlist,
+            "_mhsd_dataset_type": 3,
+            "_mhsd_result_key": "mhlp_podcast",
+            "_source": "regular",
+        },
+    ]
+
+
+def test_merge_plan_playlist_edit_updates_dataset2_and_dataset3_twins(
+    tmp_path: Path,
+) -> None:
+    executor = SyncExecutor(tmp_path)
+    edited_playlist = {
+        "playlist_id": 202,
+        "Title": "Updated Mix",
+        "_isNew": False,
+        "_mhsd_dataset_type": 2,
+        "items": [{"db_track_id": 99}],
+    }
+    ctx = _make_sync_ctx(
+        playlist_updates=[],
+        existing_dataset2_standard_playlists_raw=[
+            {
+                "playlist_id": 202,
+                "Title": "Old Mix",
+                "_mhsd_dataset_type": 2,
+                "items": [],
+            }
+        ],
+        existing_dataset3_podcast_playlists_raw=[
+            {
+                "playlist_id": 1,
+                "Title": "iPod",
+                "master_flag": 1,
+                "_mhsd_dataset_type": 3,
+            },
+            {
+                "playlist_id": 202,
+                "Title": "Old Mix",
+                "_mhsd_dataset_type": 3,
+                "items": [],
+            },
+        ],
+        existing_dataset5_smart_playlists_raw=[],
+    )
+    ctx.plan.playlists_to_edit = [edited_playlist]
+
+    executor._merge_plan_playlists(ctx)
+
+    assert ctx.existing_dataset2_standard_playlists_raw == [
+        {
+            **edited_playlist,
+            "_mhsd_dataset_type": 2,
+            "_mhsd_result_key": "mhlp",
+            "_source": "regular",
+        }
+    ]
+    assert ctx.existing_dataset3_podcast_playlists_raw[1] == {
+        **edited_playlist,
+        "_mhsd_dataset_type": 3,
+        "_mhsd_result_key": "mhlp_podcast",
+        "_source": "regular",
+    }
+
+
+def test_merge_plan_playlist_removal_deletes_dataset2_and_dataset3_twins(
+    tmp_path: Path,
+) -> None:
+    executor = SyncExecutor(tmp_path)
+    removal = {
+        "playlist_id": 202,
+        "Title": "Synced Mix",
+        "_mhsd_dataset_type": 2,
+        "_source": "sync_playlist_file",
+    }
+    ctx = _make_sync_ctx(
+        playlist_updates=[],
+        existing_dataset2_standard_playlists_raw=[
+            {
+                "playlist_id": 202,
+                "Title": "Synced Mix",
+                "_mhsd_dataset_type": 2,
+                "_source": "sync_playlist_file",
+            }
+        ],
+        existing_dataset3_podcast_playlists_raw=[
+            {
+                "playlist_id": 1,
+                "Title": "iPod",
+                "master_flag": 1,
+                "_mhsd_dataset_type": 3,
+            },
+            {
+                "playlist_id": 202,
+                "Title": "Synced Mix",
+                "_mhsd_dataset_type": 3,
+                "_source": "sync_playlist_file",
+            },
+        ],
+        existing_dataset5_smart_playlists_raw=[],
+    )
+    ctx.plan.playlists_to_remove = [removal]
+
+    executor._merge_plan_playlists(ctx)
+
+    assert ctx.existing_dataset2_standard_playlists_raw == []
+    assert ctx.existing_dataset3_podcast_playlists_raw == [
+        {
+            "playlist_id": 1,
+            "Title": "iPod",
+            "master_flag": 1,
+            "_mhsd_dataset_type": 3,
+        }
     ]
 
 

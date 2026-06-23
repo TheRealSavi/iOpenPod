@@ -620,7 +620,9 @@ SORTABLE_NUMERIC_KEYS = frozenset({
 # Batch size for incremental population (rows per timer tick)
 # Keep small to avoid blocking UI
 BATCH_SIZE = 50
-ART_LOAD_BATCH_SIZE = 20
+ART_LOAD_BATCH_SIZE = 6
+ART_PREFETCH_VIEWPORTS = 2
+ART_SCROLL_DEBOUNCE_MS = 80
 
 # Artwork thumbnail size in pixels for the track list
 ART_THUMB_SIZE = 32
@@ -923,6 +925,15 @@ class MusicBrowserList(QFrame):
         self._art_cache: dict[int, QPixmap] = {}   # artwork_id -> scaled source pixmap
         self._art_display_cache: dict[tuple[int, bool], QPixmap] = {}
         self._art_pending: set[int] = set()        # artwork_ids currently being loaded
+        self._art_unavailable: set[int] = set()    # artwork_ids known to have no thumbnail
+        self._art_load_timer = QTimer(self)
+        self._art_load_timer.setSingleShot(True)
+        self._art_load_timer.timeout.connect(self._load_art_async)
+        vbar = self.table.verticalScrollBar()
+        if vbar is not None:
+            vbar.valueChanged.connect(
+                lambda _value: self._schedule_visible_artwork_load()
+            )
 
         # Shared resources (created once, reused)
         self._font = QFont(FONT_FAMILY, Metrics.FONT_MD)
@@ -1323,6 +1334,7 @@ class MusicBrowserList(QFrame):
         if clear_cache:
             self._art_cache.clear()
             self._art_display_cache.clear()
+            self._art_unavailable.clear()
         self._art_pending.clear()
 
         try:
@@ -1609,6 +1621,7 @@ class MusicBrowserList(QFrame):
         self._pending_rows = []
         self._is_populating = False
         self._art_pending.clear()
+        self._art_load_timer.stop()
 
     def _populate_table(self, *, preserve_column_layout: bool = True) -> None:
         """Populate the table with current tracks."""
@@ -1927,9 +1940,9 @@ class MusicBrowserList(QFrame):
                 finally:
                     self._applying_column_layout = False
 
-            # Kick off async artwork loading
+            # Kick off lazy artwork loading for the visible rows.
             if self._show_art:
-                self._load_art_async()
+                self._schedule_visible_artwork_load(delay_ms=0)
 
             self._update_status()
 
@@ -1940,25 +1953,94 @@ class MusicBrowserList(QFrame):
     # Internal - Async Artwork Loading
     # -------------------------------------------------------------------------
 
-    def _load_art_async(self) -> None:
-        """Scan rows for missing artwork and load in background batches."""
-        from app_core.runtime import ThreadPoolSingleton, Worker
+    def _schedule_visible_artwork_load(
+        self,
+        delay_ms: int = ART_SCROLL_DEBOUNCE_MS,
+    ) -> None:
+        """Queue a debounced artwork load for the visible rows."""
+        if not self._show_art or self._is_populating or self.table.rowCount() <= 0:
+            return
+        self._art_load_timer.start(max(0, delay_ms))
 
-        # Collect unique artwork IDs that need loading.
-        artwork_ids_to_load: set[int] = set()
-        for row in range(self.table.rowCount()):
+    def _artwork_prefetch_rows(self) -> range:
+        """Return visible rows plus a small forward/backward prefetch window."""
+        row_count = self.table.rowCount()
+        if row_count <= 0:
+            return range(0)
+
+        viewport = self.table.viewport()
+        viewport_height = viewport.height() if viewport is not None else 0
+        first = self.table.rowAt(0)
+        if first < 0:
+            first = 0
+
+        last = self.table.rowAt(max(0, viewport_height - 1))
+        if last < first:
+            last = first
+            for candidate in range(first, row_count):
+                top = self.table.rowViewportPosition(candidate)
+                if viewport_height > 0 and top > viewport_height:
+                    break
+                if top + self.table.rowHeight(candidate) >= 0:
+                    last = candidate
+
+        visible_count = max(1, last - first + 1)
+        start = max(0, first - visible_count)
+        end = min(row_count, last + (visible_count * ART_PREFETCH_VIEWPORTS) + 1)
+        return range(start, end)
+
+    def _artwork_id_for_art_item(self, item: QTableWidgetItem | None) -> int | None:
+        if item is None:
+            return None
+        artwork_id = item.data(Qt.ItemDataRole.UserRole + 2)
+        if not artwork_id:
+            return None
+        try:
+            return int(artwork_id)
+        except (TypeError, ValueError):
+            return None
+
+    def _apply_cached_artwork_to_rows(self, rows: range | list[int]) -> None:
+        """Apply already-built thumbnails to the given rows without decoding."""
+        for row in rows:
             item = self.table.item(row, 0)
+            artwork_id = self._artwork_id_for_art_item(item)
+            if artwork_id is None:
+                continue
             if item is None:
                 continue
-            artwork_id = item.data(Qt.ItemDataRole.UserRole)
-            if artwork_id:
-                try:
-                    artwork_id = int(artwork_id)
-                except (ValueError, TypeError):
-                    continue
-                if artwork_id not in self._art_cache and artwork_id not in self._art_pending:
-                    artwork_ids_to_load.add(artwork_id)
+            pixmap = self._display_thumbnail_for_artwork_id(artwork_id)
+            if pixmap is None:
+                continue
+            item.setIcon(QIcon(pixmap))
+            item.setData(Qt.ItemDataRole.UserRole, None)
 
+    def _visible_artwork_ids_needing_load(self) -> list[int]:
+        """Return missing artwork IDs for the current visible/prefetch window."""
+        rows = self._artwork_prefetch_rows()
+        self._apply_cached_artwork_to_rows(rows)
+
+        needed: list[int] = []
+        seen: set[int] = set()
+        for row in rows:
+            artwork_id = self._artwork_id_for_art_item(self.table.item(row, 0))
+            if (
+                artwork_id is None
+                or artwork_id in seen
+                or artwork_id in self._art_cache
+                or artwork_id in self._art_pending
+                or artwork_id in self._art_unavailable
+            ):
+                continue
+            needed.append(artwork_id)
+            seen.add(artwork_id)
+        return needed
+
+    def _load_art_async(self) -> None:
+        """Load missing artwork for visible/prefetched rows in background batches."""
+        from app_core.runtime import ThreadPoolSingleton, Worker
+
+        artwork_ids_to_load = self._visible_artwork_ids_needing_load()
         if not artwork_ids_to_load:
             return
 
@@ -1968,20 +2050,20 @@ class MusicBrowserList(QFrame):
         artwork_folder = session.artwork_folder_path or ""
         cancellation_token = self._device_sessions.manager().cancellation_token
 
-        self._art_pending |= artwork_ids_to_load
         load_id = self._load_id
-
-        artwork_id_list = list(artwork_ids_to_load)
+        sharpen_artwork = self._sharpen_artwork_enabled()
+        self._art_pending.update(artwork_ids_to_load)
         pool = ThreadPoolSingleton.get_instance()
 
-        for i in range(0, len(artwork_id_list), ART_LOAD_BATCH_SIZE):
-            chunk = artwork_id_list[i:i + ART_LOAD_BATCH_SIZE]
+        for i in range(0, len(artwork_ids_to_load), ART_LOAD_BATCH_SIZE):
+            chunk = artwork_ids_to_load[i:i + ART_LOAD_BATCH_SIZE]
             worker = Worker(
                 self._load_art_batch,
                 chunk,
                 session.artworkdb_path,
                 artwork_folder,
                 cancellation_token,
+                sharpen_artwork,
             )
             # Use default arguments correctly to capture the current load_id
             worker.signals.result.connect(
@@ -1995,6 +2077,7 @@ class MusicBrowserList(QFrame):
         artworkdb_path: str,
         artwork_folder: str,
         cancellation_token: Any,
+        sharpen_artwork: bool,
     ) -> dict[int, tuple[int, int, bytes] | None]:
         """Background worker: decode artwork for a batch of artwork IDs.
 
@@ -2019,7 +2102,7 @@ class MusicBrowserList(QFrame):
             if pil_img is not None:
                 pil_img = enhance_artwork_image(
                     pil_img,
-                    enabled=self._sharpen_artwork_enabled(),
+                    enabled=sharpen_artwork,
                 )
                 pil_img = pil_img.convert("RGBA")
                 results[artwork_id] = (
@@ -2046,6 +2129,7 @@ class MusicBrowserList(QFrame):
             for artwork_id, data in results.items():
                 self._art_pending.discard(artwork_id)
                 if data is None:
+                    self._art_unavailable.add(artwork_id)
                     continue
                 w, h, rgba = data
                 qimg = QImage(rgba, w, h, QImage.Format.Format_RGBA8888).copy()
@@ -2058,25 +2142,25 @@ class MusicBrowserList(QFrame):
                     transform_mode=Qt.TransformationMode.SmoothTransformation,
                 )
                 self._art_cache[artwork_id] = pixmap
+                self._art_unavailable.discard(artwork_id)
                 self._invalidate_art_display_cache(artwork_id)
                 new_artwork_ids.add(artwork_id)
 
             if not new_artwork_ids:
                 return
 
-            # Use cached row-index instead of scanning all rows (O(K) where K = matched rows)
-            # Only process rows with artwork links that were just loaded
+            rows = list(self._artwork_prefetch_rows())
             for artwork_id in new_artwork_ids:
-                if artwork_id not in self._link_to_rows:
-                    continue
-                rows = self._link_to_rows[artwork_id]
                 pixmap = self._display_thumbnail_for_artwork_id(artwork_id)
                 if pixmap is None:
                     continue
                 icon = QIcon(pixmap)
                 for row in rows:
                     item = self.table.item(row, 0)
-                    if item is not None:
+                    if (
+                        item is not None
+                        and self._artwork_id_for_art_item(item) == artwork_id
+                    ):
                         item.setIcon(icon)
                         item.setData(Qt.ItemDataRole.UserRole, None)
 
@@ -2118,41 +2202,7 @@ class MusicBrowserList(QFrame):
             return None
 
     def _thumbnail_for_artwork_id(self, artwork_id: int) -> QPixmap | None:
-        """Return a cached/scaled thumbnail for *artwork_id* when available."""
-        pixmap = self._display_thumbnail_for_artwork_id(artwork_id)
-        if pixmap is not None:
-            return pixmap
-
-        try:
-            from ..imgMaker import get_artwork
-        except Exception:
-            return None
-
-        cached = get_artwork(artwork_id, mode="cache_only")
-        if cached is None:
-            return None
-
-        pil_img, _dominant_color, _album_colors = cached
-        pil_img = enhance_artwork_image(
-            pil_img,
-            enabled=self._sharpen_artwork_enabled(),
-        )
-        qimg = QImage(
-            pil_img.convert("RGBA").tobytes("raw", "RGBA"),
-            pil_img.width,
-            pil_img.height,
-            QImage.Format.Format_RGBA8888,
-        ).copy()
-        pixmap = scale_pixmap_for_display(
-            QPixmap.fromImage(qimg),
-            ART_THUMB_SIZE,
-            ART_THUMB_SIZE,
-            widget=self.table,
-            aspect_mode=Qt.AspectRatioMode.KeepAspectRatio,
-            transform_mode=Qt.TransformationMode.SmoothTransformation,
-        )
-        self._art_cache[artwork_id] = pixmap
-        self._invalidate_art_display_cache(artwork_id)
+        """Return a prebuilt thumbnail for *artwork_id* when available."""
         return self._display_thumbnail_for_artwork_id(artwork_id)
 
     def _display_thumbnail_for_artwork_id(self, artwork_id: int) -> QPixmap | None:
@@ -2440,6 +2490,9 @@ class MusicBrowserList(QFrame):
         table_vp = self.table.viewport()
         if table_vp and obj is table_vp:
             etype = event.type()
+
+            if etype == QEvent.Type.Resize:
+                self._schedule_visible_artwork_load()
 
             # Wheel events: horizontal trackpad swipe, shift+wheel, normal wheel
             if etype == QEvent.Type.Wheel:

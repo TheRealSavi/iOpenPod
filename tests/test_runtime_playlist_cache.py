@@ -471,6 +471,66 @@ def test_removing_display_merged_playlist_deletes_all_duplicate_origins(
     assert data["mhlp_podcast"] == []
 
 
+def test_new_regular_playlist_creates_dataset2_and_dataset3_rows(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        runtime.DeviceManager,
+        "get_instance",
+        classmethod(lambda cls: SimpleNamespace(device_path="/fake/ipod")),
+    )
+
+    cache = runtime.iTunesDBCache()
+    cache.set_data(
+        {
+            "mhlt": [],
+            "mhlp": [
+                {"playlist_id": 1, "Title": "iPod", "master_flag": 1}
+            ],
+            "mhlp_podcast": [
+                {
+                    "playlist_id": 10,
+                    "Title": "iPod",
+                    "master_flag": 1,
+                    "_mhsd_dataset_type": 3,
+                }
+            ],
+            "mhlp_smart": [],
+        },
+        "/fake/ipod",
+    )
+
+    cache.save_user_playlist(
+        {
+            "Title": "New Mix",
+            "_isNew": True,
+            "_source": "regular",
+            "items": [{"track_id": 10}],
+        }
+    )
+    pending = sorted(
+        cache.get_user_playlists(),
+        key=lambda playlist: playlist["_mhsd_dataset_type"],
+    )
+
+    assert [(row["Title"], row["_mhsd_dataset_type"]) for row in pending] == [
+        ("New Mix", 2),
+        ("New Mix", 3),
+    ]
+
+    cache.commit_user_playlists()
+    data = cache.get_data()
+    assert data is not None
+    assert [row["Title"] for row in data["mhlp"] if not row.get("master_flag")] == [
+        "New Mix"
+    ]
+    assert [
+        row["Title"]
+        for row in data["mhlp_podcast"]
+        if not row.get("master_flag")
+    ] == ["New Mix"]
+
+
 def test_save_user_playlist_refuses_ambiguous_originless_existing_edit(
     monkeypatch,
     caplog,

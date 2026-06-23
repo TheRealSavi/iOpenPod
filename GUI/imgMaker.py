@@ -204,6 +204,11 @@ def get_artwork(
     if mode == "cache_only":
         return _image_cache_get(int(img_id))
 
+    if mode == "image_only":
+        cached = _image_cache_get(int(img_id))
+        if cached is not None:
+            return cached[0].copy()
+
     if artworkdb_data is None:
         artworkdb_data = _artworkdb_cache
 

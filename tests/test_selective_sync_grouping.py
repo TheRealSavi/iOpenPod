@@ -1,7 +1,8 @@
 from types import SimpleNamespace
 from typing import Any, cast
 
-from GUI.widgets.selectiveSyncBrowser import SelectiveSyncBrowser
+from GUI.widgets.MBGridView import GridRecord, MusicBrowserGrid
+from GUI.widgets.selectiveSyncBrowser import PCMusicBrowserGrid, SelectiveSyncBrowser
 from SyncEngine.contracts import SyncAction, SyncItem, SyncPlan
 from SyncEngine.pc_library import PCTrack
 from SyncEngine.photos import (
@@ -374,6 +375,74 @@ def test_selective_sync_plan_section_rebuilds_actions_into_music_groups():
         "sync_items",
         id(add),
     )
+
+
+def test_selective_sync_plan_remove_section_preserves_ipod_artwork_ref():
+    browser = _browser_with_tracks([])
+    shown_modes: list[str] = []
+    browser._apply_sidebar_visibility = lambda: None
+    browser._show_mode = lambda mode: shown_modes.append(mode)
+    remove = SyncItem(
+        action=SyncAction.REMOVE_FROM_IPOD,
+        ipod_track={
+            "Title": "Gone Song",
+            "Artist": "Artist A",
+            "Album": "Album A",
+            "Location": ":iPod_Control:Music:F00:Gone.mp3",
+            "size": 123,
+            "artwork_id_ref": 321,
+        },
+    )
+    section = {
+        "key": "to_remove",
+        "label": "Remove Items",
+        "icon": "minus",
+        "accent": "#cc0000",
+        "items": [remove],
+        "bucket": "sync_items",
+        "checked_by_default": False,
+    }
+    browser._plan_selection_state = {"sync_items": {id(remove)}}
+    browser._plan_track_key_to_selection = {}
+    browser._plan_photo_key_to_selection = {}
+    browser._plan_playlist_key_to_selection = {}
+
+    browser._load_plan_section_content(section)
+
+    assert shown_modes == ["Albums"]
+    group = browser._groups["Albums"]["Album A"]
+    rebuilt_track = group["tracks"][0]
+    assert rebuilt_track.title == "Gone Song"
+    assert rebuilt_track.path.startswith("iopenpod://sync-plan/track/to_remove/")
+    assert rebuilt_track.__dict__["artwork_id_ref"] == 321
+    assert group["art_paths"] == []
+    assert group["artwork_id_ref"] == 321
+
+
+def test_plan_grid_falls_back_to_device_artwork_when_no_pc_art_paths(monkeypatch):
+    calls: list[int | None] = []
+
+    def fake_load_cached(self, record):  # noqa: ANN001
+        calls.append(record.artwork_id)
+        return "device-art"
+
+    monkeypatch.setattr(MusicBrowserGrid, "_load_cached_artwork", fake_load_cached)
+    grid = PCMusicBrowserGrid.__new__(PCMusicBrowserGrid)
+    grid._pc_mode = True
+    grid._pc_art_map = {}
+    record = GridRecord(
+        source={},
+        key=("Albums", "Album A"),
+        title="Album A",
+        subtitle="Artist A",
+        payload={},
+        artwork_id=321,
+        artwork_key=321,
+        search_words=(),
+    )
+
+    assert PCMusicBrowserGrid._load_cached_artwork(grid, record) == "device-art"
+    assert calls == [321]
 
 
 def test_selective_sync_plan_playlist_actions_render_as_playlist_rows():

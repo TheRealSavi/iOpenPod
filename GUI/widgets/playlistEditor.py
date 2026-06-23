@@ -86,6 +86,14 @@ from ..styles import (
 log = logging.getLogger(__name__)
 
 
+def _delete_embedded_widget(widget: QWidget | None) -> None:
+    if widget is None:
+        return
+    widget.hide()
+    widget.setParent(None)
+    widget.deleteLater()
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Dropdown data derived from iTunesDB_Shared definitions
 # ─────────────────────────────────────────────────────────────────────────────
@@ -948,8 +956,7 @@ class SmartRuleRow(QFrame):
         if hasattr(self, "_range_label"):
             del self._range_label
         for w in self._value_widgets:
-            w.setParent(None)  # type: ignore
-            w.deleteLater()
+            _delete_embedded_widget(w)
         self._value_widgets.clear()
 
     def _add_value_widget(self, w: QWidget) -> None:
@@ -1373,16 +1380,14 @@ class SmartPlaylistEditor(QFrame):
     def _remove_rule(self, row: SmartRuleRow) -> None:
         if row in self._rule_rows:
             self._rule_rows.remove(row)
-            row.setParent(None)  # type: ignore
-            row.deleteLater()
+            _delete_embedded_widget(row)
         # Always keep at least one rule
         if not self._rule_rows:
             self._add_empty_rule()
 
     def _clear_rules(self) -> None:
         for row in self._rule_rows:
-            row.setParent(None)  # type: ignore
-            row.deleteLater()
+            _delete_embedded_widget(row)
         self._rule_rows.clear()
 
     def _on_limit_toggled(self, checked: bool) -> None:

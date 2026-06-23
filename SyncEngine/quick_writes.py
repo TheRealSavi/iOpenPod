@@ -143,6 +143,40 @@ def _split_cached_playlists(
     dataset3_playlist_rows: list[dict[str, Any]] = []
     dataset5_playlist_rows: list[dict[str, Any]] = []
 
+    def _playlist_id(playlist: dict[str, Any]) -> int:
+        try:
+            return int(playlist.get("playlist_id", 0) or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    dataset3_source_ids = {
+        playlist_id
+        for playlist in playlists_data
+        if (
+            not playlist.get("master_flag")
+            and (playlist_id := _playlist_id(playlist))
+            and _playlist_dataset_type(playlist) == 3
+        )
+    }
+    uses_dataset3 = any(
+        _playlist_dataset_type(playlist) == 3
+        or playlist.get("_mhsd_result_key") == "mhlp_podcast"
+        for playlist in playlists_data
+    )
+
+    def _dataset_row(playlist: dict[str, Any], dataset_type: int) -> dict[str, Any]:
+        row = dict(playlist)
+        row["_mhsd_dataset_type"] = dataset_type
+        row["_mhsd_result_key"] = {2: "mhlp", 3: "mhlp_podcast", 5: "mhlp_smart"}[
+            dataset_type
+        ]
+        if dataset_type in (2, 3):
+            row.setdefault("_source", "regular")
+        items = row.get("items")
+        if isinstance(items, list):
+            row["mhip_child_count"] = len(items)
+        return row
+
     for playlist in playlists_data:
         row = dict(playlist)
         items = row.get("items")
@@ -162,6 +196,15 @@ def _split_cached_playlists(
             row.setdefault("_mhsd_dataset_type", 2)
             row.setdefault("_mhsd_result_key", "mhlp")
             dataset2_playlist_rows.append(row)
+            playlist_id = _playlist_id(row)
+            if (
+                uses_dataset3
+                and playlist_id
+                and playlist_id not in dataset3_source_ids
+                and not row.get("master_flag")
+                and _is_regular_playlist_mirror_candidate(row)
+            ):
+                dataset3_playlist_rows.append(_dataset_row(row, 3))
 
     return dataset2_playlist_rows, dataset3_playlist_rows, dataset5_playlist_rows
 
@@ -185,6 +228,17 @@ def _is_ipod_category_playlist(playlist: dict[str, Any]) -> bool:
     if dataset_type:
         return dataset_type == 5
     return playlist.get("_source") == "category" or bool(_mhsd5_type_value(playlist))
+
+
+def _is_regular_playlist_mirror_candidate(playlist: dict[str, Any]) -> bool:
+    dataset_type = _playlist_dataset_type(playlist)
+    if dataset_type not in (0, 2):
+        return False
+    if _is_ipod_category_playlist(playlist):
+        return False
+    if playlist.get("podcast_flag", 0) == 1 or playlist.get("_source") == "podcast":
+        return False
+    return True
 
 
 def _playlist_dataset_type(playlist: dict[str, Any]) -> int:

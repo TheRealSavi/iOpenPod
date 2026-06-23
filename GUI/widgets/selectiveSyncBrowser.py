@@ -268,8 +268,14 @@ class PCMusicBrowserGrid(MusicBrowserGrid):
     """Subclass of MusicBrowserGrid that loads artwork from embedded tags
     (or folder images) instead of the iPod ArtworkDB."""
 
-    def __init__(self, *, settings_service: SettingsService | None = None):
+    def __init__(
+        self,
+        *,
+        device_sessions: DeviceSessionService | None = None,
+        settings_service: SettingsService | None = None,
+    ):
         super().__init__(
+            device_sessions=device_sessions,
             settings_service=settings_service,
             multi_select_enabled=True,
         )
@@ -287,13 +293,17 @@ class PCMusicBrowserGrid(MusicBrowserGrid):
 
         items: list[dict] = []
         for key, info in sorted(groups.items(), key=lambda kv: kv[0].lower()):
-            self._pc_art_map[key] = info.get("art_paths", [])
+            art_paths = info.get("art_paths", [])
+            artwork_id_ref = info.get("artwork_id_ref")
+            art_key = key if art_paths else artwork_id_ref
+            if art_paths:
+                self._pc_art_map[key] = art_paths
 
             items.append({
                 "title": key,
                 "subtitle": info.get("subtitle", ""),
-                "artwork_id_ref": None,  # prevents base-class iPod art loading
-                "_grid_art_key": key,
+                "artwork_id_ref": artwork_id_ref,
+                "_grid_art_key": art_key,
                 "category": info.get("category", "Albums"),
                 "filter_key": info.get("filter_key", "album"),
                 "filter_value": info.get("filter_value", key),
@@ -317,6 +327,8 @@ class PCMusicBrowserGrid(MusicBrowserGrid):
         if record.artwork_key is None:
             return None
         if not self._pc_art_map.get(str(record.artwork_key)):
+            if record.artwork_id is not None:
+                return super()._load_cached_artwork(record)
             return None
         return _ART_CACHE_UNSET
 
@@ -329,6 +341,14 @@ class PCMusicBrowserGrid(MusicBrowserGrid):
         if not records:
             return
 
+        if any(
+            record.artwork_id is not None
+            and record.artwork_key is not None
+            and not self._pc_art_map.get(str(record.artwork_key))
+            for record in records
+        ):
+            super()._load_art_async()
+
         from app_core.runtime import ThreadPoolSingleton, Worker
 
         load_id = self._load_id
@@ -338,9 +358,10 @@ class PCMusicBrowserGrid(MusicBrowserGrid):
         for record in records:
             key = str(record.artwork_key)
             paths = self._pc_art_map.get(key, [])
-            if paths:
-                self._art_pending.add(key)
-                batch.append((key, paths))
+            if not paths:
+                continue
+            self._art_pending.add(key)
+            batch.append((key, paths))
             if len(batch) >= _ART_BATCH:
                 worker = Worker(self._pc_art_batch, list(batch))
                 worker.signals.result.connect(
@@ -1560,7 +1581,10 @@ class SelectiveSyncBrowser(QWidget):
 
         for cat in ("Albums", "Artists", "Genres", "Playlists",
                     "Podcasts", "Audiobooks", "TV Shows", "Music Videos"):
-            grid = PCMusicBrowserGrid(settings_service=self._settings_service)
+            grid = PCMusicBrowserGrid(
+                device_sessions=self._device_sessions,
+                settings_service=self._settings_service,
+            )
             grid.item_selected.connect(self._on_grid_item_clicked)
             grid.item_context_requested.connect(self._on_grid_item_context_requested)
             scroll = make_scroll_area()
@@ -2108,6 +2132,17 @@ class SelectiveSyncBrowser(QWidget):
             is_podcast=is_podcast,
             is_audiobook=is_audiobook,
         )
+        artwork_id_ref = self._coerce_plan_int(
+            self._dict_first(
+                ipod,
+                "artwork_id_ref",
+                "mhii_link",
+                "mhiiLink",
+                default=0,
+            )
+        )
+        if artwork_id_ref:
+            track.__dict__["artwork_id_ref"] = artwork_id_ref
         self._set_plan_display_path(track, location or description)
         return track
 
@@ -2571,6 +2606,31 @@ class SelectiveSyncBrowser(QWidget):
         return with_art[:5] + without[:3]
 
     @staticmethod
+    def _track_artwork_id(track: object) -> int | None:
+        for key in ("artwork_id_ref", "mhii_link", "mhiiLink"):
+            try:
+                value = getattr(track, key)
+            except AttributeError:
+                continue
+            if value in (None, ""):
+                continue
+            try:
+                artwork_id = int(value)
+            except (TypeError, ValueError):
+                continue
+            if artwork_id:
+                return artwork_id
+        return None
+
+    @classmethod
+    def _artwork_id_for_tracks(cls, track_list: list) -> int | None:
+        for track in track_list:
+            artwork_id = cls._track_artwork_id(track)
+            if artwork_id is not None:
+                return artwork_id
+        return None
+
+    @staticmethod
     def _classify(track) -> str:
         """Return the media-type bucket for *track*.
 
@@ -2664,6 +2724,7 @@ class SelectiveSyncBrowser(QWidget):
                 "tracks": group,
                 "subtitle": " \xb7 ".join(sub_parts),
                 "art_paths": self._art_candidates(group),
+                "artwork_id_ref": self._artwork_id_for_tracks(group),
                 "category": "Albums",
                 "filter_key": "album",
                 "filter_value": album,
@@ -2690,6 +2751,7 @@ class SelectiveSyncBrowser(QWidget):
                 "tracks": group,
                 "subtitle": " \xb7 ".join(sub_parts),
                 "art_paths": self._art_candidates(group),
+                "artwork_id_ref": self._artwork_id_for_tracks(group),
                 "category": "Artists",
                 "filter_key": "artist",
                 "filter_value": artist,
@@ -2714,6 +2776,7 @@ class SelectiveSyncBrowser(QWidget):
                 "tracks": group,
                 "subtitle": " \xb7 ".join(sub_parts),
                 "art_paths": self._art_candidates(group),
+                "artwork_id_ref": self._artwork_id_for_tracks(group),
                 "category": "Genres",
                 "filter_key": "genre",
                 "filter_value": genre,
@@ -2773,6 +2836,7 @@ class SelectiveSyncBrowser(QWidget):
                 "tracks": group_tracks,
                 "subtitle": " \xb7 ".join(sub_parts),
                 "art_paths": self._art_candidates(group_tracks),
+                "artwork_id_ref": self._artwork_id_for_tracks(group_tracks),
                 "category": "Playlists",
                 "filter_key": "playlist",
                 "filter_value": display_title,
@@ -2803,6 +2867,7 @@ class SelectiveSyncBrowser(QWidget):
                 "tracks": eps,
                 "subtitle": f"{n} episode{'s' if n != 1 else ''}",
                 "art_paths": self._art_candidates(eps),
+                "artwork_id_ref": self._artwork_id_for_tracks(eps),
                 "category": "Podcasts",
                 "filter_key": "podcast",
                 "filter_value": show,
@@ -2833,6 +2898,7 @@ class SelectiveSyncBrowser(QWidget):
                 "tracks": parts,
                 "subtitle": " \xb7 ".join(sub_parts),
                 "art_paths": self._art_candidates(parts),
+                "artwork_id_ref": self._artwork_id_for_tracks(parts),
                 "category": "Audiobooks",
                 "filter_key": "audiobook",
                 "filter_value": book,
@@ -2861,6 +2927,7 @@ class SelectiveSyncBrowser(QWidget):
                 "tracks": eps,
                 "subtitle": " \xb7 ".join(sub_parts),
                 "art_paths": self._art_candidates(eps),
+                "artwork_id_ref": self._artwork_id_for_tracks(eps),
                 "category": "TV Shows",
                 "filter_key": "tv_show",
                 "filter_value": title,
@@ -2883,6 +2950,7 @@ class SelectiveSyncBrowser(QWidget):
                 "tracks": vids,
                 "subtitle": f"{n} video{'s' if n != 1 else ''}",
                 "art_paths": self._art_candidates(vids),
+                "artwork_id_ref": self._artwork_id_for_tracks(vids),
                 "category": "Music Videos",
                 "filter_key": "artist",
                 "filter_value": artist,

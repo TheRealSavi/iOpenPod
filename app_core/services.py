@@ -61,6 +61,7 @@ class SettingsSnapshot:
     video_crf: int
     video_preset: str
     prefer_lossy: bool
+    always_encode_lossy: bool
     convert_wav_to_alac: bool
     sync_workers: int
     device_write_workers: int
