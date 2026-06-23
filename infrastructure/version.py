@@ -15,4 +15,4 @@ def get_version() -> str:
         return package_version("iopenpod")
     except Exception:
         logger.debug("Failed to read installed iopenpod version", exc_info=True)
-        return "1.0.60"
+        return "1.0.61"
