@@ -1139,12 +1139,32 @@ class MainWindow(QMainWindow):
 
     def startPCSync(self):
         """Start the PC to iPod sync process."""
-        # If a quick metadata write is in progress, cancel the pending timer and
-        # wait briefly for the worker to finish so we don't race on the DB.
-        self._quick_write_controller.prepare_for_full_sync()
-
         device = self.device_manager
         has_device = bool(device.device_path)
+        if has_device:
+            # Finish queued quick writes before planning so full sync only reads
+            # committed iPod state.
+            quick_ready, blocked_label = (
+                self._quick_write_controller.prepare_for_full_sync()
+            )
+            if not quick_ready:
+                label = blocked_label or "quick changes"
+                QMessageBox.warning(
+                    self,
+                    "Quick Changes Still Saving",
+                    (
+                        "iOpenPod is still saving pending quick changes. "
+                        f"Please wait for {label} to finish before starting a full sync."
+                    ),
+                )
+                return
+            if self.library_cache.is_loading():
+                QMessageBox.information(
+                    self,
+                    "Library Loading",
+                    "Please wait for the iPod library to finish loading.",
+                )
+                return
 
         settings = self.settings_service.get_effective_settings()
         if has_device:
@@ -1639,9 +1659,6 @@ class MainWindow(QMainWindow):
         ipod_tracks = cache.get_tracks() or []
         self.syncReview._ipod_tracks_cache = ipod_tracks
 
-        # ── Populate playlist change info on the plan ──────────────
-        self._populate_playlist_changes(plan, cache)
-
         # ── Merge podcast managed plan ─────────────────────────────
         # This requires refreshing RSS feeds and possibly downloading
         # episodes, so it runs in the background.  The sync review is
@@ -1702,41 +1719,6 @@ class MainWindow(QMainWindow):
             self._podcast_plan_worker = None
         logger.warning("Failed to build podcast plan: %s", error_msg)
         self.syncReview.show_plan(plan)
-
-    def _populate_playlist_changes(self, plan, cache):
-        """Compute playlist add/edit/remove lists for the sync plan.
-
-        Compares user-created/edited playlists (pending in cache) against
-        the existing iPod playlists to categorize changes.
-        """
-        user_playlists = cache.get_user_playlists()
-        if not user_playlists:
-            return
-
-        # Build set of existing iPod playlist IDs (from parsed DB)
-        existing_ids: set[int] = set()
-        data = cache.get_data()
-        if data:
-            for pl in data.get("mhlp", []):
-                pid = pl.get("playlist_id", 0)
-                if pid:
-                    existing_ids.add(pid)
-            for pl in data.get("mhlp_podcast", []):
-                pid = pl.get("playlist_id", 0)
-                if pid:
-                    existing_ids.add(pid)
-            for pl in data.get("mhlp_smart", []):
-                pid = pl.get("playlist_id", 0)
-                if pid:
-                    existing_ids.add(pid)
-
-        for upl in user_playlists:
-            pid = upl.get("playlist_id", 0)
-            is_new = upl.get("_isNew", False)
-            if is_new or pid not in existing_ids:
-                plan.playlists_to_add.append(upl)
-            else:
-                plan.playlists_to_edit.append(upl)
 
     def _onSyncError(self, error_msg: str):
         """Called when sync diff fails."""
@@ -2118,20 +2100,6 @@ class MainWindow(QMainWindow):
         # Respect the user's pre-sync backup choice from the prompt
         skip_backup = getattr(self.syncReview, '_skip_presync_backup', False)
 
-        # Gather GUI state to pass to executor (instead of it pulling from GUI)
-        user_playlists: list[dict] = []
-        seen_playlist_keys: set[tuple[object, object]] = set()
-        for playlist in (
-            filtered_plan.playlists_to_add + filtered_plan.playlists_to_edit
-        ):
-            playlist_id = playlist.get("playlist_id")
-            playlist_key = (playlist_id, playlist.get("_mhsd_dataset_type") or 0)
-            if playlist_id and playlist_key in seen_playlist_keys:
-                continue
-            if playlist_id:
-                seen_playlist_keys.add(playlist_key)
-            user_playlists.append(playlist)
-
         def _on_sync_complete():
             """Called by executor after successful DB write to clear pending state."""
             self.library_cache.clear_pending_sync_state()
@@ -2143,7 +2111,6 @@ class MainWindow(QMainWindow):
             plan=filtered_plan,
             settings=self.settings_service.get_effective_settings(),
             skip_backup=skip_backup,
-            user_playlists=user_playlists,
             backup_device_name=MainWindow._device_name_from_playlists(
                 self.library_cache.get_playlists()
             ),

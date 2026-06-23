@@ -55,6 +55,7 @@ from .photos import (
 )
 from .planning_stages import scan_source_libraries
 from .source_identity import source_content_hash
+from .sync_playlist_files import normalize_sync_playlist_path
 from .track_identity import SyncTrackIdentityState, build_fingerprint_identity_plan
 from .transcoder import TranscodeOptions, TranscodePlan, resolve_transcode_plan
 
@@ -355,6 +356,7 @@ class FingerprintDiffEngine:
         pc_tracks = list(source_scan.pc_tracks)
         playlist_discovery = source_scan.playlist_discovery
         selected_playlist_source_keys = source_scan.selected_playlist_source_keys
+        playlist_extra_source_keys = source_scan.playlist_extra_source_keys
 
         plan.total_pc_tracks = len(pc_tracks)
 
@@ -379,10 +381,14 @@ class FingerprintDiffEngine:
         fingerprint_failure_samples: list[str] = []
 
         def _fingerprint_one(track: PCTrack) -> tuple[PCTrack, str | None, str]:
+            track_source_key = normalize_sync_playlist_path(track.path)
             fp, status = get_or_compute_fingerprint_with_status(
                 track.path,
                 fpcalc_path=self.fpcalc_path,
-                write_to_file=write_fingerprints,
+                write_to_file=(
+                    write_fingerprints
+                    and track_source_key not in playlist_extra_source_keys
+                ),
             )
             return (track, fp, status)
 
@@ -538,6 +544,30 @@ class FingerprintDiffEngine:
         # For fingerprints with multiple album groups, we need to track which
         # mapping entries have already been claimed so each PC track gets its own.
         track_identity = SyncTrackIdentityState()
+        ipod_path_lookup = (
+            self._ipod_track_file_path_lookup(ipod_by_db_track_id)
+            if playlist_extra_source_keys
+            else {}
+        )
+        ipod_fingerprint_index: dict[str, list[tuple[int, dict, Path]]] | None = None
+
+        def _get_ipod_fingerprint_index() -> dict[str, list[tuple[int, dict, Path]]]:
+            nonlocal ipod_fingerprint_index
+            if ipod_fingerprint_index is None:
+                ipod_fingerprint_index = self._ipod_track_fingerprint_index(
+                    ipod_path_lookup,
+                )
+            return ipod_fingerprint_index
+
+        def _record_playlist_existing_match(
+            pc_track: PCTrack,
+            db_track_id: int,
+        ) -> None:
+            track_identity.claim(db_track_id)
+            bootstrap_protected_db_track_ids.add(db_track_id)
+            plan.matched_tracks += 1
+            plan.matched_pc_paths[db_track_id] = str(pc_track.path)
+            track_identity.record_matched_source(pc_track.path, db_track_id)
 
         sorted_groups = identity_plan.sorted_groups_for_matching(
             mapping=mapping,
@@ -552,6 +582,23 @@ class FingerprintDiffEngine:
                 aggregate_db_track_id = represented_by_aggregate[fp].db_track_id
                 track_identity.claim(aggregate_db_track_id)
                 plan.matched_tracks += 1
+                continue
+
+            playlist_existing_db_track_id = (
+                self._playlist_existing_db_track_id(
+                    pc_track,
+                    fp,
+                    ipod_path_lookup=ipod_path_lookup,
+                    ipod_fingerprint_index_getter=_get_ipod_fingerprint_index,
+                )
+                if normalize_sync_playlist_path(pc_track.path) in playlist_extra_source_keys
+                else 0
+            )
+            if playlist_existing_db_track_id:
+                _record_playlist_existing_match(
+                    pc_track,
+                    playlist_existing_db_track_id,
+                )
                 continue
 
             mapping_entries = mapping.get_entries(fp)
@@ -927,6 +974,105 @@ class FingerprintDiffEngine:
             return fallback
 
         return None
+
+    def _ipod_track_file_path_lookup(
+        self,
+        ipod_by_db_track_id: dict[int, dict],
+    ) -> dict[str, tuple[int, dict, Path]]:
+        """Build a normalized on-device file path lookup for iPod tracks."""
+
+        lookup: dict[str, tuple[int, dict, Path]] = {}
+        for db_track_id, ipod_track in ipod_by_db_track_id.items():
+            ipod_path = self._ipod_track_file_path(ipod_track)
+            if ipod_path is None:
+                continue
+            lookup[normalize_sync_playlist_path(ipod_path)] = (
+                db_track_id,
+                ipod_track,
+                ipod_path,
+            )
+        return lookup
+
+    def _playlist_existing_db_track_id(
+        self,
+        pc_track: PCTrack,
+        fingerprint: str,
+        *,
+        ipod_path_lookup: dict[str, tuple[int, dict, Path]],
+        ipod_fingerprint_index_getter: Callable[
+            [],
+            dict[str, list[tuple[int, dict, Path]]],
+        ],
+    ) -> int:
+        """Resolve a playlist-only iPod file reference to an existing track.
+
+        A direct iPod path is used only to find the likely candidate device
+        row. The fingerprint comparison is the identity check that prevents a
+        re-add. If the playlist path is not an iPod file path, fall back to a
+        fingerprint index of existing device files.
+        """
+
+        source_key = normalize_sync_playlist_path(pc_track.path)
+        match = ipod_path_lookup.get(source_key)
+        if match is not None:
+            db_track_id, _ipod_track, ipod_path = match
+            ipod_fingerprint = get_or_compute_fingerprint(
+                ipod_path,
+                fpcalc_path=self.fpcalc_path,
+                write_to_file=False,
+            )
+            if not ipod_fingerprint:
+                return 0
+            if ipod_fingerprint == fingerprint:
+                return db_track_id
+            logger.warning(
+                "Playlist-referenced iPod file %s did not match the existing device fingerprint",
+                ipod_path,
+            )
+            return 0
+
+        candidates = ipod_fingerprint_index_getter().get(fingerprint, [])
+        if not candidates:
+            return 0
+
+        if len(candidates) == 1:
+            return candidates[0][0]
+
+        scored = [
+            (
+                self._score_pc_to_ipod_track(pc_track, ipod_track),
+                db_track_id,
+            )
+            for db_track_id, ipod_track, _ipod_path in candidates
+        ]
+        scored.sort(key=lambda item: (-item[0], item[1]))
+        return scored[0][1]
+
+    def _ipod_track_fingerprint_index(
+        self,
+        ipod_path_lookup: dict[str, tuple[int, dict, Path]],
+    ) -> dict[str, list[tuple[int, dict, Path]]]:
+        """Fingerprint existing iPod files for playlist-only source matching."""
+
+        index: dict[str, list[tuple[int, dict, Path]]] = {}
+        seen_paths: set[str] = set()
+        for db_track_id, ipod_track, ipod_path in ipod_path_lookup.values():
+            path_key = normalize_sync_playlist_path(ipod_path)
+            if path_key in seen_paths:
+                continue
+            seen_paths.add(path_key)
+            fingerprint = get_or_compute_fingerprint(
+                ipod_path,
+                fpcalc_path=self.fpcalc_path,
+                write_to_file=False,
+            )
+            if fingerprint:
+                index.setdefault(fingerprint, []).append((
+                    db_track_id,
+                    ipod_track,
+                    ipod_path,
+                ))
+        return index
 
     def _select_bootstrap_pc_candidate(
         self,

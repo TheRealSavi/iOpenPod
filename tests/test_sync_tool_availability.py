@@ -1,6 +1,8 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 from app_core.jobs import (
+    DropScanWorker,
     SyncExecuteWorker,
     SyncToolAvailability,
     build_dropped_playlist_imports,
@@ -196,3 +198,202 @@ def test_build_dropped_playlist_imports_uses_supported_media_paths(tmp_path) -> 
     assert len(playlists) == 1
     assert playlists[0]["Title"] == "Mix"
     assert playlists[0]["items"] == [{"source_path": str(track)}]
+
+
+def test_drop_scan_worker_matches_existing_ipod_tracks_for_playlist_import(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    from SyncEngine import _db_io, audio_fingerprint
+    from SyncEngine import mapping as mapping_module
+    from SyncEngine.pc_library import PCLibrary
+
+    source = tmp_path / "song.mp3"
+    playlist = tmp_path / "mix.m3u8"
+    ipod_root = tmp_path / "ipod"
+    ipod_track = ipod_root / "iPod_Control" / "Music" / "F00" / "Song.mp3"
+    ipod_track.parent.mkdir(parents=True)
+    source.write_bytes(b"pc audio")
+    ipod_track.write_bytes(b"ipod audio")
+    playlist.write_text(str(source), encoding="utf-8")
+    fresh_tracks = [
+        {
+            "db_track_id": 888,
+            "Title": "Song",
+            "Artist": "Artist",
+            "Album": "Album",
+            "Location": ":iPod_Control:Music:F00:Song.mp3",
+            "length": 1000,
+            "track_number": 1,
+            "disc_number": 1,
+        }
+    ]
+    fresh_playlists = [
+        {
+            "playlist_id": 222,
+            "Title": "Mix",
+            "items": [],
+        }
+    ]
+
+    class _MappingManager:
+        def __init__(self, _ipod_path: str) -> None:
+            pass
+
+        def load(self) -> object:
+            return SimpleNamespace(get_entries=lambda _fingerprint: [])
+
+    monkeypatch.setattr(
+        audio_fingerprint,
+        "get_or_compute_fingerprint",
+        lambda path, *_args, **_kwargs: "fp-song"
+        if Path(path) in {source, ipod_track}
+        else None,
+    )
+    monkeypatch.setattr(
+        PCLibrary,
+        "_read_track",
+        lambda _self, path: SimpleNamespace(
+            path=str(path),
+            relative_path=Path(path).name,
+            filename=Path(path).name,
+            size=5,
+            artist="Artist",
+            album="Album",
+            title="Song",
+            extension="mp3",
+            is_video=False,
+            is_podcast=False,
+            track_number=1,
+            disc_number=1,
+            duration_ms=1000,
+        ),
+    )
+    monkeypatch.setattr(mapping_module, "MappingManager", _MappingManager)
+    monkeypatch.setattr(
+        _db_io,
+        "read_existing_database",
+        lambda _ipod_path: {
+            "tracks": fresh_tracks,
+            "dataset2_standard_playlists": fresh_playlists,
+        },
+    )
+
+    results = []
+    worker = DropScanWorker(
+        [],
+        playlist_paths=[playlist],
+        ipod_path=str(ipod_root),
+    )
+    worker.finished.connect(results.append)
+    worker.run()
+
+    assert len(results) == 1
+    plan = results[0]
+    assert plan.to_add == []
+    assert plan.matched_pc_paths == {888: str(source)}
+    assert plan.playlists_to_add == []
+    assert len(plan.playlists_to_edit) == 1
+    assert plan.playlists_to_edit[0]["playlist_id"] == 222
+    assert plan.playlists_to_edit[0]["items"] == [{"source_path": str(source)}]
+
+
+def test_drop_scan_worker_matches_ipod_file_fingerprint_without_readding(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    from SyncEngine import _db_io, audio_fingerprint
+    from SyncEngine import mapping as mapping_module
+    from SyncEngine.pc_library import PCLibrary
+
+    playlist = tmp_path / "mix.m3u8"
+    ipod_root = tmp_path / "ipod"
+    ipod_track = ipod_root / "iPod_Control" / "Music" / "F00" / "Song.mp3"
+    ipod_track.parent.mkdir(parents=True)
+    ipod_track.write_bytes(b"ipod audio")
+    playlist.write_text(str(ipod_track), encoding="utf-8")
+    fresh_tracks = [
+        {
+            "db_track_id": 888,
+            "Title": "Song",
+            "Location": ":iPod_Control:Music:F00:Song.mp3",
+            "Artist": "Artist",
+            "Album": "Album",
+            "length": 1000,
+            "track_number": 1,
+            "disc_number": 1,
+        }
+    ]
+    fresh_playlists = [
+        {
+            "playlist_id": 222,
+            "Title": "Mix",
+            "items": [],
+        }
+    ]
+
+    class _MappingManager:
+        def __init__(self, _ipod_path: str) -> None:
+            pass
+
+        def load(self) -> object:
+            return SimpleNamespace(get_entries=lambda _fingerprint: [])
+
+    fingerprinted_paths: list[Path] = []
+
+    def fake_fingerprint(path, *_args, **_kwargs):
+        fingerprinted_paths.append(Path(path))
+        return "fp-song" if Path(path) == ipod_track else None
+
+    monkeypatch.setattr(
+        audio_fingerprint,
+        "get_or_compute_fingerprint",
+        fake_fingerprint,
+    )
+    monkeypatch.setattr(
+        PCLibrary,
+        "_read_track",
+        lambda _self, path: SimpleNamespace(
+            path=str(path),
+            relative_path=Path(path).name,
+            filename=Path(path).name,
+            size=5,
+            artist="Artist",
+            album="Album",
+            title="Song",
+            extension="mp3",
+            is_video=False,
+            is_podcast=False,
+            track_number=1,
+            disc_number=1,
+            duration_ms=1000,
+        ),
+    )
+    monkeypatch.setattr(mapping_module, "MappingManager", _MappingManager)
+    monkeypatch.setattr(
+        _db_io,
+        "read_existing_database",
+        lambda _ipod_path: {
+            "tracks": fresh_tracks,
+            "dataset2_standard_playlists": fresh_playlists,
+        },
+    )
+
+    results = []
+    worker = DropScanWorker(
+        [],
+        playlist_paths=[playlist],
+        ipod_path=str(ipod_root),
+    )
+    worker.finished.connect(results.append)
+    worker.run()
+
+    assert len(results) == 1
+    plan = results[0]
+    assert plan.to_add == []
+    assert ipod_track in fingerprinted_paths
+    assert plan.matched_pc_paths == {888: str(ipod_track)}
+    assert plan.playlists_to_add == []
+    assert len(plan.playlists_to_edit) == 1
+    assert plan.playlists_to_edit[0]["playlist_id"] == 222
+    assert plan.playlists_to_edit[0]["items"] == [{"source_path": str(ipod_track)}]

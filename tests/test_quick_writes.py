@@ -305,7 +305,6 @@ def test_cached_playlist_items_can_reference_db_track_ids() -> None:
         [],
         [],
         [track],
-        [],
     )
 
     imported = next(playlist for playlist in playlists if playlist.playlist_id == 2)
@@ -335,7 +334,6 @@ def test_cached_playlist_items_can_reference_source_paths(tmp_path) -> None:
         [],
         [],
         [track],
-        [],
         {str(source): 100},
     )
 
@@ -370,7 +368,6 @@ def test_user_smart_playlist_in_visible_bucket_is_evaluated() -> None:
         [],
         [],
         [track],
-        [],
     )
 
     user_smart = next(playlist for playlist in playlists if playlist.playlist_id == 2)
@@ -399,7 +396,6 @@ def test_dataset2_standard_playlists_win_over_dataset3_podcast_mirror() -> None:
         ],
         [],
         [track],
-        [],
     )
 
     assert master_name == "Dataset 2 Master"
@@ -428,7 +424,6 @@ def test_dataset3_podcast_playlist_list_stays_separate_when_dataset2_empty() -> 
         ],
         [],
         [track],
-        [],
     )
 
     assert master_name == "iPod"
@@ -489,7 +484,6 @@ def test_podcast_playlist_membership_tracks_all_podcast_tracks() -> None:
         ],
         [],
         [existing_podcast, new_podcast, song],
-        [],
     )
 
     assert [playlist.track_ids for playlist in playlists if playlist.podcast_flag] == [[100, 101]]
@@ -521,7 +515,6 @@ def test_converted_track_dict_builds_dataset3_podcast_playlist() -> None:
         [],
         [],
         [track],
-        [],
     )
 
     assert [(playlist.name, playlist.track_ids, playlist.podcast_flag) for playlist in podcast_playlists] == [
@@ -545,7 +538,6 @@ def test_podcast_playlist_is_created_in_dataset3_when_missing() -> None:
         [],
         [],
         [podcast],
-        [],
     )
 
     assert playlists == []
@@ -630,7 +622,6 @@ def test_smart_playlist_playlist_rules_use_referenced_playlist_ids() -> None:
         [],
         [],
         tracks,
-        [],
     )
 
     smart = next(playlist for playlist in playlists if playlist.name == "Smart PL Rule")
@@ -663,7 +654,6 @@ def test_existing_dataset5_user_smart_playlist_stays_in_dataset5_bucket() -> Non
             }
         ],
         [track],
-        [],
     )
 
     assert playlists == []
@@ -702,7 +692,6 @@ def test_dataset5_category_keeps_firmware_marker_from_ui_cache() -> None:
             }
         ],
         [track],
-        [],
     )
 
     assert len(smart_playlists) == 1
@@ -767,7 +756,6 @@ def test_dataset5_category_preserves_parsed_membership_and_item_metadata() -> No
             }
         ],
         tracks,
-        [],
     )
 
     assert smart_playlists[0].track_ids == [100]
@@ -813,7 +801,6 @@ def test_dataset5_marker_in_dataset2_bucket_is_preserved_without_repair() -> Non
             [],
             [],
             [track],
-            [],
         )
     )
 

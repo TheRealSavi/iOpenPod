@@ -245,13 +245,10 @@ class QuickWriteController(QObject):
         worker.error.connect(self._on_quick_write_error)
         worker.start()
 
-    def prepare_for_full_sync(self, timeout_ms: int = 5000) -> None:
-        """Pause quick metadata writes before a full sync starts."""
+    def prepare_for_full_sync(self, timeout_ms: int = 30000) -> tuple[bool, str | None]:
+        """Finish queued quick writes before a full sync starts."""
 
-        self._metadata_timer.stop()
-        self._playlist_timer.stop()
-        if self._quick_worker is not None and self._quick_worker.isRunning():
-            self._quick_worker.wait(timeout_ms)
+        return self.flush_before_eject(timeout_ms)
 
     def flush_before_eject(self, timeout_ms: int = 30000) -> tuple[bool, str | None]:
         """Finish queued quick writes before ejecting the device."""

@@ -110,7 +110,6 @@ class EngineRequest:
     photo_edits: Any = None
     plan: Any = None
     mapping: Any = None
-    user_playlists: tuple[dict, ...] = ()
     tracks_data: tuple[dict, ...] = ()
     playlists_data: tuple[dict, ...] = ()
     artwork_sources: Mapping[int, str] | None = None

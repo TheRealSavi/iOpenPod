@@ -137,6 +137,42 @@ def _derive_name(filepath: Path) -> str:
 # Path resolution
 # ---------------------------------------------------------------------------
 
+_WINDOWS_DRIVE_IN_TEXT_RE = re.compile(r"[A-Za-z]:[\\/]")
+
+
+def _file_uri_path_part(parsed) -> str:
+    """Return the decoded local path portion of a parsed file URI."""
+
+    path_part = unquote(parsed.path or "")
+    if path_part:
+        return path_part
+
+    # Some playlist writers produce file://localhostC%3A%5C... or
+    # file://hostC%3A%5C... instead of the standard file:///C:/... form.
+    netloc = unquote(parsed.netloc or "")
+    if not netloc:
+        return ""
+    if netloc.lower().startswith("localhost"):
+        remainder = netloc[len("localhost"):]
+        if remainder:
+            return remainder
+    match = _WINDOWS_DRIVE_IN_TEXT_RE.search(netloc)
+    if match is not None:
+        return netloc[match.start():]
+    return ""
+
+
+def _strip_windows_uri_drive_slash(path_part: str) -> str:
+    if (
+        os.name == "nt"
+        and path_part.startswith("/")
+        and len(path_part) > 2
+        and path_part[2] == ":"
+    ):
+        return path_part[1:]
+    return path_part
+
+
 def _resolve_path(raw: str, base_dir: Path) -> str:
     """Resolve a raw path string from a playlist entry to an absolute path.
 
@@ -160,15 +196,9 @@ def _resolve_path(raw: str, base_dir: Path) -> str:
     if lower.startswith("file://"):
         try:
             parsed = urlparse(raw)
-            path_part = unquote(parsed.path)
-            # On Windows: /C:/path → C:/path
-            if (
-                os.name == "nt"
-                and path_part.startswith("/")
-                and len(path_part) > 2
-                and path_part[2] == ":"
-            ):
-                path_part = path_part[1:]
+            path_part = _strip_windows_uri_drive_slash(_file_uri_path_part(parsed))
+            if not path_part:
+                return ""
             return str(Path(path_part))
         except Exception:
             return ""
@@ -216,19 +246,18 @@ def _path_candidates(raw_path: str | Path) -> list[Path]:
     if parsed.scheme in {"http", "https"}:
         return []
 
-    decoded_path = unquote(parsed.path or "")
+    decoded_path = _file_uri_path_part(parsed)
 
     if parsed.scheme == "file":
         if decoded_path:
-            if (
-                os.name == "nt"
-                and decoded_path.startswith("/")
-                and len(decoded_path) > 2
-                and decoded_path[2] == ":"
-            ):
-                decoded_path = decoded_path[1:]
+            decoded_path = _strip_windows_uri_drive_slash(decoded_path)
             _add(decoded_path)
-        if parsed.netloc and parsed.netloc.lower() != "localhost" and decoded_path:
+        if (
+            parsed.netloc
+            and parsed.netloc.lower() != "localhost"
+            and parsed.path
+            and decoded_path
+        ):
             if os.name == "nt":
                 _add(
                     "\\\\"

@@ -549,7 +549,6 @@ class SyncRequest:
     dry_run: bool = False
     is_cancelled: Callable[[], bool] | None = None
     write_back_to_pc: bool = False
-    user_playlists: tuple[dict, ...] = ()
     on_sync_complete: Callable[[], None] | None = None
     compute_sound_check: bool = False
     scrobble_on_sync: bool = False

@@ -137,7 +137,7 @@ def _download(url: str, dest: Path, progress_callback=None) -> bool:
 
 def _binary_filename(binary_name: str) -> str:
     """Return the platform-specific executable filename for a tool."""
-    if sys.platform == "win32" and not binary_name.endswith(".exe"):
+    if _platform_key().startswith("windows-") and not binary_name.endswith(".exe"):
         return f"{binary_name}.exe"
     return binary_name
 

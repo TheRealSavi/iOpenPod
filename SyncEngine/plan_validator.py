@@ -8,7 +8,6 @@ every item must have the identities required by the stage that will consume it.
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -64,11 +63,7 @@ _DB_MUTATION_BUCKETS = {
 }
 
 
-def validate_sync_plan(
-    plan: SyncPlan,
-    *,
-    user_playlists: Iterable[dict] = (),
-) -> PlanValidationResult:
+def validate_sync_plan(plan: SyncPlan) -> PlanValidationResult:
     """Return all structural problems that would make execution ambiguous."""
 
     issues: list[PlanValidationIssue] = []
@@ -76,7 +71,7 @@ def validate_sync_plan(
     _validate_track_identities(plan, issues)
     _validate_conversion_groups(plan, issues)
     _validate_destructive_conflicts(plan, issues)
-    _validate_playlist_payloads(plan, user_playlists, issues)
+    _validate_playlist_payloads(plan, issues)
     _validate_stale_mapping_entries(plan, issues)
     return PlanValidationResult(tuple(issues))
 
@@ -356,15 +351,12 @@ def _validate_destructive_conflicts(
 
 def _validate_playlist_payloads(
     plan: SyncPlan,
-    user_playlists: Iterable[dict],
     issues: list[PlanValidationIssue],
 ) -> None:
-    user_playlist_list = list(user_playlists or ())
     plan_source_keys = _plan_source_keys(plan)
     playlist_sources = (
         ("playlists_to_add", plan.playlists_to_add, True),
         ("playlists_to_edit", plan.playlists_to_edit, True),
-        ("user_playlists", user_playlist_list, False),
     )
     pending_playlist_ids: dict[int, tuple[str, str]] = {}
     for bucket, playlists, require_known_sources in playlist_sources:

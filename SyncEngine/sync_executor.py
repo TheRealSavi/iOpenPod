@@ -217,7 +217,6 @@ class _SyncContext:
     sync_until_full: bool = False
 
     # ── GUI-decoupled inputs (passed forward, not pulled from GUI) ──
-    user_playlists: list[dict] = field(default_factory=list)
     on_sync_complete: Callable[[], None] | None = None
     compute_sound_check: bool = False
     scrobble_on_sync: bool = False
@@ -254,9 +253,6 @@ class _SyncContext:
     final_photo_db: object | None = None
 
     _cancel_recorded: bool = False
-
-    def __post_init__(self) -> None:
-        self.user_playlists = list(self.user_playlists or [])
 
     def cancelled(self) -> bool:
         """Check if the user cancelled.  Updates *result* once."""
@@ -485,7 +481,6 @@ class SyncExecutor:
             dry_run=request.dry_run,
             is_cancelled=request.is_cancelled,
             write_back_to_pc=request.write_back_to_pc,
-            user_playlists=list(request.user_playlists),
             on_sync_complete=request.on_sync_complete,
             compute_sound_check=request.compute_sound_check,
             scrobble_on_sync=request.scrobble_on_sync,
@@ -509,7 +504,6 @@ class SyncExecutor:
         is_cancelled: Callable[[], bool] | None = None,
         write_back_to_pc: bool = False,
         *,
-        user_playlists: list[dict] | None = None,
         on_sync_complete: Callable[[], None] | None = None,
         compute_sound_check: bool = False,
         scrobble_on_sync: bool = False,
@@ -541,7 +535,6 @@ class SyncExecutor:
             dry_run=dry_run,
             is_cancelled=is_cancelled,
             write_back_to_pc=write_back_to_pc,
-            user_playlists=user_playlists,
             on_sync_complete=on_sync_complete,
             compute_sound_check=compute_sound_check,
             scrobble_on_sync=scrobble_on_sync,
@@ -625,7 +618,6 @@ class SyncExecutor:
         dry_run: bool,
         is_cancelled: Callable[[], bool] | None,
         write_back_to_pc: bool,
-        user_playlists: list[dict] | None,
         on_sync_complete: Callable[[], None] | None,
         compute_sound_check: bool,
         scrobble_on_sync: bool,
@@ -647,7 +639,6 @@ class SyncExecutor:
             is_cancelled,
         )
         ctx.sync_until_full = bool(sync_until_full)
-        ctx.user_playlists = list(user_playlists) if user_playlists else []
         ctx.on_sync_complete = on_sync_complete
         ctx.compute_sound_check = compute_sound_check
         ctx.scrobble_on_sync = scrobble_on_sync
@@ -680,7 +671,7 @@ class SyncExecutor:
         """Normalize plan inputs before touching the device."""
 
         self._apply_device_capability_filters(ctx)
-        validation = validate_sync_plan(ctx.plan, user_playlists=ctx.user_playlists)
+        validation = validate_sync_plan(ctx.plan)
         for issue in validation.warnings:
             logger.warning("Sync plan warning [%s]: %s", issue.code, issue.message)
         if not validation.is_valid:
@@ -693,7 +684,7 @@ class SyncExecutor:
             )
             return False
         self._prepare_conversion_group_counts(ctx)
-        if not ctx.plan.has_changes and not ctx.user_playlists:
+        if not ctx.plan.has_changes:
             ctx.result.success = not ctx.result.has_errors
             return False
         return True
@@ -1446,15 +1437,14 @@ class SyncExecutor:
     def _apply_playlist_commit_actions(self, ctx: _SyncContext) -> None:
         """Apply reviewed playlist add/edit/remove actions to commit sources."""
 
-        user_pls = [
-            *ctx.user_playlists,
+        playlist_updates = [
             *list(ctx.plan.playlists_to_add or []),
             *list(ctx.plan.playlists_to_edit or []),
         ]
         remove_pls = list(ctx.plan.playlists_to_remove or [])
-        if not user_pls and not remove_pls:
+        if not playlist_updates and not remove_pls:
             return
-        total = len(user_pls) + len(remove_pls)
+        total = len(playlist_updates) + len(remove_pls)
         current = 0
         ctx.progress("playlists", 0, total, message="Updating playlists...")
 
@@ -1505,25 +1495,27 @@ class SyncExecutor:
                 message=f"Removed playlist: {removal.get('Title', '?')}",
             )
 
-        for upl in user_pls:
+        for playlist in playlist_updates:
             current += 1
-            if upl.get("master_flag"):
-                logger.debug("Skipping master playlist from user playlists (id=0x%X)",
-                             upl.get("playlist_id", 0))
+            if playlist.get("master_flag"):
+                logger.debug(
+                    "Skipping master playlist from sync plan (id=0x%X)",
+                    playlist.get("playlist_id", 0),
+                )
                 ctx.progress(
                     "playlists",
                     current,
                     total,
-                    message=f"Skipped master playlist: {upl.get('Title', '?')}",
+                    message=f"Skipped master playlist: {playlist.get('Title', '?')}",
                 )
                 continue
-            is_new = upl.get("_isNew", False)
-            pid = coerce_int(upl.get("playlist_id", 0))
-            dataset_type = coerce_int(upl.get("_mhsd_dataset_type", 0))
+            is_new = playlist.get("_isNew", False)
+            pid = coerce_int(playlist.get("playlist_id", 0))
+            dataset_type = coerce_int(playlist.get("_mhsd_dataset_type", 0))
 
-            if dataset_type == 3 or upl.get("_source") == "podcast":
+            if dataset_type == 3 or playlist.get("_source") == "podcast":
                 target = ctx.existing_dataset3_podcast_playlists_raw
-            elif dataset_type == 5 or _is_ipod_category_playlist(upl):
+            elif dataset_type == 5 or _is_ipod_category_playlist(playlist):
                 target = ctx.existing_dataset5_smart_playlists_raw
             else:
                 target = ctx.existing_dataset2_standard_playlists_raw
@@ -1532,21 +1524,23 @@ class SyncExecutor:
             if pid:
                 for i, epl in enumerate(target):
                     if coerce_int(epl.get("playlist_id")) == pid:
-                        target[i] = upl
+                        target[i] = playlist
                         replaced = True
                         break
 
             if not replaced:
-                target.append(upl)
-            logger.info("Merged user playlist '%s' (id=%s, new=%s)",
-                        upl.get("Title", "?"),
-                        (f"0x{pid:X}") if pid is not None else "new",
-                        is_new)
+                target.append(playlist)
+            logger.info(
+                "Merged plan playlist '%s' (id=%s, new=%s)",
+                playlist.get("Title", "?"),
+                (f"0x{pid:X}") if pid is not None else "new",
+                is_new,
+            )
             ctx.progress("playlists", current, total,
-                         message=f"Merged playlist: {upl.get('Title', '?')}")
+                         message=f"Merged playlist: {playlist.get('Title', '?')}")
 
-    def _merge_gui_playlists(self, ctx: _SyncContext) -> None:
-        """Compatibility wrapper for older tests/extensions."""
+    def _merge_plan_playlists(self, ctx: _SyncContext) -> None:
+        """Apply reviewed playlist actions from the sync plan."""
 
         self._apply_playlist_commit_actions(ctx)
 
@@ -3808,7 +3802,6 @@ class SyncExecutor:
             ctx.existing_dataset3_podcast_playlists_raw,
             ctx.existing_dataset5_smart_playlists_raw,
             all_track_infos,
-            ctx.user_playlists,
             source_path_to_db_track_id,
         )
 

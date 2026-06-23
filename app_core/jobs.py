@@ -15,7 +15,7 @@ from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, SupportsInt
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
@@ -938,6 +938,317 @@ def _is_ipod_category_playlist(playlist: dict) -> bool:
     if dataset_type:
         return dataset_type == 5
     return playlist.get("_source") == "category" or bool(_mhsd5_type_value(playlist))
+
+
+def _int_or_zero(value: object) -> int:
+    if value is None:
+        return 0
+    if not isinstance(value, (str, bytes, bytearray, SupportsInt)):
+        return 0
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _track_db_track_id(track: dict) -> int:
+    return _int_or_zero(track.get("db_track_id", track.get("db_id", 0)))
+
+
+def _playlist_item_db_track_id(
+    item: dict,
+    old_tid_to_db_track_id: dict[int, int],
+) -> int:
+    db_track_id = _int_or_zero(item.get("db_track_id", item.get("db_id", 0)))
+    if db_track_id:
+        return db_track_id
+    track_id = _int_or_zero(item.get("track_id", 0))
+    return old_tid_to_db_track_id.get(track_id, 0)
+
+
+def _old_tid_to_db_track_id(tracks: Iterable[dict]) -> dict[int, int]:
+    result: dict[int, int] = {}
+    for track in tracks:
+        track_id = _int_or_zero(track.get("track_id", 0))
+        db_track_id = _track_db_track_id(track)
+        if track_id and db_track_id:
+            result[track_id] = db_track_id
+    return result
+
+
+def _playlist_title_key(value: object) -> str:
+    return str(value or "").strip().casefold()
+
+
+def _is_regular_import_target_playlist(playlist: dict) -> bool:
+    if playlist.get("master_flag"):
+        return False
+    if playlist.get("smart_playlist_data") or playlist.get("smart_playlist_rules"):
+        return False
+    if playlist.get("podcast_flag") or playlist.get("_source") == "podcast":
+        return False
+    if _is_ipod_category_playlist(playlist):
+        return False
+    return True
+
+
+def _find_import_target_playlist(
+    playlists: Iterable[dict],
+    playlist_name: str,
+) -> dict | None:
+    target_key = _playlist_title_key(playlist_name)
+    if not target_key:
+        return None
+    for playlist in playlists:
+        if not _is_regular_import_target_playlist(playlist):
+            continue
+        if _playlist_title_key(playlist.get("Title")) == target_key:
+            return playlist
+    return None
+
+
+def _fresh_standard_playlists(fresh_db: dict) -> list[dict]:
+    playlists: list[dict] = []
+    for playlist in fresh_db.get("dataset2_standard_playlists", []) or []:
+        row = dict(playlist)
+        row.setdefault("_mhsd_dataset_type", 2)
+        row.setdefault("_mhsd_result_key", "mhlp")
+        playlists.append(row)
+    return playlists
+
+
+def _merged_playlist_items(
+    existing_items: Iterable[dict],
+    imported_db_track_ids: Iterable[int],
+    tracks: Iterable[dict],
+) -> list[dict]:
+    old_tid_to_db_track_id = _old_tid_to_db_track_id(tracks)
+    merged: list[dict] = []
+    seen_db_track_ids: set[int] = set()
+
+    for item in existing_items:
+        if not isinstance(item, dict):
+            continue
+        merged_item = dict(item)
+        merged.append(merged_item)
+        db_track_id = _playlist_item_db_track_id(
+            merged_item,
+            old_tid_to_db_track_id,
+        )
+        if db_track_id:
+            seen_db_track_ids.add(db_track_id)
+
+    for db_track_id in imported_db_track_ids:
+        normalized_id = _int_or_zero(db_track_id)
+        if not normalized_id or normalized_id in seen_db_track_ids:
+            continue
+        merged.append({"db_track_id": normalized_id})
+        seen_db_track_ids.add(normalized_id)
+
+    return merged
+
+
+def _import_source_path_key(path: object) -> str:
+    try:
+        from SyncEngine.path_identity import stable_path_key
+
+        return stable_path_key(str(path))
+    except (TypeError, ValueError, OSError):
+        return str(path or "").strip().casefold()
+
+
+def _merged_playlist_source_items(
+    existing_items: Iterable[dict],
+    imported_items: Iterable[dict],
+    *,
+    source_path_to_db_track_id: dict[str, int],
+    tracks: Iterable[dict],
+) -> list[dict]:
+    old_tid_to_db_track_id = _old_tid_to_db_track_id(tracks)
+    merged: list[dict] = []
+    seen_db_track_ids: set[int] = set()
+    seen_source_paths: set[str] = set()
+
+    for item in existing_items:
+        if not isinstance(item, dict):
+            continue
+        merged_item = dict(item)
+        merged.append(merged_item)
+        db_track_id = _playlist_item_db_track_id(
+            merged_item,
+            old_tid_to_db_track_id,
+        )
+        if db_track_id:
+            seen_db_track_ids.add(db_track_id)
+        source_path = merged_item.get("source_path") or merged_item.get("_source_path")
+        if source_path:
+            seen_source_paths.add(_import_source_path_key(source_path))
+
+    for item in imported_items:
+        if not isinstance(item, dict):
+            continue
+        source_path = item.get("source_path") or item.get("_source_path")
+        source_key = _import_source_path_key(source_path)
+        db_track_id = source_path_to_db_track_id.get(source_key, 0)
+        if db_track_id and db_track_id in seen_db_track_ids:
+            continue
+        if source_key and source_key in seen_source_paths:
+            continue
+        merged.append(dict(item))
+        if db_track_id:
+            seen_db_track_ids.add(db_track_id)
+        if source_key:
+            seen_source_paths.add(source_key)
+
+    return merged
+
+
+def _merge_imported_playlist_with_existing(
+    playlist: dict,
+    existing_playlists: Iterable[dict],
+    *,
+    source_path_to_db_track_id: dict[str, int],
+    tracks: Iterable[dict],
+) -> dict:
+    target_playlist = _find_import_target_playlist(
+        existing_playlists,
+        str(playlist.get("Title") or ""),
+    )
+    if target_playlist is None:
+        return playlist
+
+    merged = dict(target_playlist)
+    merged.setdefault("_mhsd_dataset_type", 2)
+    merged.setdefault("_mhsd_result_key", "mhlp")
+    merged["_isNew"] = False
+    merged["items"] = _merged_playlist_source_items(
+        target_playlist.get("items", []),
+        playlist.get("items", []),
+        source_path_to_db_track_id=source_path_to_db_track_id,
+        tracks=tracks,
+    )
+    merged["mhip_child_count"] = len(merged["items"])
+    return merged
+
+
+def _ipod_track_file_path(ipod_root: Path, ipod_track: dict) -> Path | None:
+    location = str(ipod_track.get("Location") or ipod_track.get("location") or "")
+    if not location:
+        return None
+
+    direct = Path(location)
+    if direct.exists() and direct.is_file():
+        return direct
+
+    unified = location.replace("\\", "/")
+    lower = unified.lower()
+    marker = "ipod_control"
+    marker_index = lower.find(marker)
+    if marker_index >= 0:
+        candidate = ipod_root / unified[marker_index:].lstrip("/")
+        if candidate.exists() and candidate.is_file():
+            return candidate
+
+    is_windows_abs = (
+        len(location) >= 3
+        and location[1] == ":"
+        and location[2] in ("\\", "/")
+    )
+    if not is_windows_abs and ":" in location:
+        candidate = ipod_root / location.replace(":", "/").lstrip("/")
+        if candidate.exists() and candidate.is_file():
+            return candidate
+
+    candidate = ipod_root / unified.lstrip("/")
+    if candidate.exists() and candidate.is_file():
+        return candidate
+    return None
+
+
+def _norm_import_text(value: object) -> str:
+    return re.sub(r"\W+", "", str(value or "")).casefold()
+
+
+def _score_import_track_match(pc_track: Any, ipod_track: dict) -> int:
+    score = 0
+    for pc_attr, ipod_key, points in (
+        ("album", "Album", 40),
+        ("title", "Title", 30),
+        ("artist", "Artist", 25),
+    ):
+        pc_value = _norm_import_text(getattr(pc_track, pc_attr, ""))
+        ipod_value = _norm_import_text(ipod_track.get(ipod_key))
+        if pc_value and ipod_value and pc_value == ipod_value:
+            score += points
+
+    if _int_or_zero(getattr(pc_track, "track_number", 0)) == _int_or_zero(
+        ipod_track.get("track_number", 0)
+    ):
+        score += 10
+    if _int_or_zero(getattr(pc_track, "disc_number", 0)) == _int_or_zero(
+        ipod_track.get("disc_number", 0)
+    ):
+        score += 5
+
+    pc_length = _int_or_zero(getattr(pc_track, "duration_ms", 0))
+    ipod_length = _int_or_zero(ipod_track.get("length", 0))
+    if pc_length and ipod_length and abs(pc_length - ipod_length) <= 5000:
+        score += 10
+    return score
+
+
+def _best_import_track_match(
+    candidates: list[tuple[int, dict]],
+    pc_track: Any,
+) -> int:
+    if not candidates:
+        return 0
+    if len(candidates) == 1:
+        return candidates[0][0]
+    scored = [
+        (_score_import_track_match(pc_track, ipod_track), db_track_id)
+        for db_track_id, ipod_track in candidates
+    ]
+    scored.sort(key=lambda row: (-row[0], row[1]))
+    return scored[0][1]
+
+
+def _mapping_match_db_track_id(
+    mapping: Any,
+    fingerprint: str,
+    valid_db_track_ids: set[int],
+) -> int:
+    for entry in mapping.get_entries(fingerprint):
+        db_track_id = _int_or_zero(getattr(entry, "db_track_id", 0))
+        if db_track_id and (not valid_db_track_ids or db_track_id in valid_db_track_ids):
+            return db_track_id
+    return 0
+
+
+def _build_ipod_fingerprint_index(
+    ipod_root: Path,
+    ipod_tracks: Iterable[dict],
+    *,
+    fpcalc_path: str | None,
+) -> dict[str, list[tuple[int, dict]]]:
+    from SyncEngine.audio_fingerprint import get_or_compute_fingerprint
+
+    index: dict[str, list[tuple[int, dict]]] = {}
+    for ipod_track in ipod_tracks:
+        db_track_id = _track_db_track_id(ipod_track)
+        if not db_track_id:
+            continue
+        ipod_file = _ipod_track_file_path(ipod_root, ipod_track)
+        if ipod_file is None:
+            continue
+        fingerprint = get_or_compute_fingerprint(
+            ipod_file,
+            fpcalc_path=fpcalc_path,
+            write_to_file=False,
+        )
+        if fingerprint:
+            index.setdefault(fingerprint, []).append((db_track_id, ipod_track))
+    return index
 
 
 def build_backup_device_context(
@@ -2136,47 +2447,34 @@ class PlaylistImportWorker(QThread):
             self.progress.emit(0, total, f"Scanning {total} tracks...")
 
             ipod_root = Path(self._ipod_path)
-            track_id_index = self._cache.get_track_id_index()
-            loc_to_db_track_id: dict[str, int] = {}
-            for track in track_id_index.values():
-                loc = track.get("Location", "")
-                db_track_id = track.get("db_track_id", track.get("db_id"))
-                if loc and db_track_id:
-                    loc_to_db_track_id[loc.lower()] = db_track_id
+            from SyncEngine._db_io import read_existing_database
 
-            def _path_to_location(path: Path) -> str:
-                try:
-                    rel = path.relative_to(ipod_root)
-                except ValueError:
-                    return ""
-                return ":" + str(rel).replace("\\", ":").replace("/", ":")
+            fresh_db = read_existing_database(ipod_root)
+            fresh_tracks = list(fresh_db.get("tracks", []))
 
             playlist_db_track_ids: list[int] = []
             needs_fingerprint: list[str] = []
-            already_present_fps: list[str] = []
-            fast_path_count = 0
+            already_present_db_track_ids: list[int] = []
 
             for idx, raw_path in enumerate(existing_paths):
                 path = Path(raw_path)
-                loc = _path_to_location(path)
-                if loc:
-                    db_track_id = loc_to_db_track_id.get(loc.lower())
-                    if db_track_id is not None:
-                        playlist_db_track_ids.append(db_track_id)
-                        fast_path_count += 1
-                        self.progress.emit(idx + 1, total, f"On iPod: {path.name}")
-                        continue
                 needs_fingerprint.append(raw_path)
                 self.progress.emit(idx + 1, total, f"Needs ID check: {path.name}")
 
             to_add: list[SyncItem] = []
             if needs_fingerprint:
                 mapping = MappingManager(self._ipod_path).load()
+                valid_db_track_ids = {
+                    db_track_id
+                    for track in fresh_tracks
+                    if (db_track_id := _track_db_track_id(track))
+                }
+                ipod_fingerprint_index: dict[str, list[tuple[int, dict]]] | None = None
                 fingerprint_total = len(needs_fingerprint)
 
                 for idx, raw_path in enumerate(needs_fingerprint):
                     path = Path(raw_path)
-                    global_idx = fast_path_count + idx + 1
+                    global_idx = idx + 1
                     self.progress.emit(
                         global_idx,
                         total,
@@ -2188,14 +2486,43 @@ class PlaylistImportWorker(QThread):
 
                     fingerprint = get_or_compute_fingerprint(
                         raw_path,
-                        self._fpcalc_path,
+                        fpcalc_path=self._fpcalc_path,
+                        write_to_file=False,
                     )
                     if fingerprint is None:
                         skipped += 1
                         continue
 
-                    if mapping.get_entries(fingerprint):
-                        already_present_fps.append(fingerprint)
+                    library = PCLibrary(str(path.parent))
+                    pc_track = library._read_track(path)
+                    if pc_track is None:
+                        skipped += 1
+                        continue
+
+                    existing_db_track_id = _mapping_match_db_track_id(
+                        mapping,
+                        fingerprint,
+                        valid_db_track_ids,
+                    )
+                    if not existing_db_track_id and fresh_tracks:
+                        if ipod_fingerprint_index is None:
+                            self.progress.emit(
+                                global_idx,
+                                total,
+                                "Checking existing iPod tracks...",
+                            )
+                            ipod_fingerprint_index = _build_ipod_fingerprint_index(
+                                ipod_root,
+                                fresh_tracks,
+                                fpcalc_path=self._fpcalc_path,
+                            )
+                        existing_db_track_id = _best_import_track_match(
+                            ipod_fingerprint_index.get(fingerprint, []),
+                            pc_track,
+                        )
+
+                    if existing_db_track_id:
+                        already_present_db_track_ids.append(existing_db_track_id)
                         self.progress.emit(
                             global_idx,
                             total,
@@ -2208,11 +2535,6 @@ class PlaylistImportWorker(QThread):
                         total,
                         f"New track, will add: {path.name}",
                     )
-                    library = PCLibrary(str(path.parent))
-                    pc_track = library._read_track(path)
-                    if pc_track is None:
-                        skipped += 1
-                        continue
 
                     to_add.append(
                         SyncItem(
@@ -2253,14 +2575,9 @@ class PlaylistImportWorker(QThread):
                     self.failed.emit(f"Sync failed: {error}")
                     return
 
-            if already_present_fps or to_add:
+            if to_add:
                 self.progress.emit(0, 0, "Resolving track IDs...")
                 final_mapping = MappingManager(self._ipod_path).load()
-
-                for fingerprint in already_present_fps:
-                    entries = final_mapping.get_entries(fingerprint)
-                    if entries:
-                        playlist_db_track_ids.append(entries[0].db_track_id)
 
                 for item in to_add:
                     if item.fingerprint is None:
@@ -2269,29 +2586,44 @@ class PlaylistImportWorker(QThread):
                     if entries:
                         playlist_db_track_ids.append(entries[0].db_track_id)
 
+            playlist_db_track_ids.extend(already_present_db_track_ids)
+
             if not playlist_db_track_ids:
                 self.failed.emit("No tracks could be matched to iPod database IDs.")
                 return
 
             self.progress.emit(0, 0, f"Writing playlist '{playlist_name}'...")
 
-            playlist_items = [
-                {"db_track_id": int(db_track_id)}
-                for db_track_id in playlist_db_track_ids
-                if db_track_id
-            ]
+            target_playlist = _find_import_target_playlist(
+                self._cache.get_playlists(),
+                playlist_name,
+            )
+            playlist_items = _merged_playlist_items(
+                target_playlist.get("items", []) if target_playlist else [],
+                playlist_db_track_ids,
+                fresh_tracks,
+            )
             if not playlist_items:
                 self.failed.emit("No tracks could be mapped to iPod database IDs.")
                 return
 
-            playlist_id = random.getrandbits(64)
-            playlist = {
-                "Title": playlist_name,
-                "playlist_id": playlist_id,
-                "_isNew": True,
-                "_source": "regular",
-                "items": playlist_items,
-            }
+            if target_playlist:
+                playlist = dict(target_playlist)
+                playlist.setdefault("_mhsd_dataset_type", 2)
+                playlist.setdefault("_mhsd_result_key", "mhlp")
+                playlist["_isNew"] = False
+                playlist["items"] = playlist_items
+                playlist["mhip_child_count"] = len(playlist_items)
+            else:
+                playlist_id = random.getrandbits(64)
+                playlist = {
+                    "Title": playlist_name,
+                    "playlist_id": playlist_id,
+                    "_isNew": True,
+                    "_source": "regular",
+                    "items": playlist_items,
+                    "mhip_child_count": len(playlist_items),
+                }
             self._cache.save_user_playlist(playlist)
             cache_mutated = True
 
@@ -2299,10 +2631,11 @@ class PlaylistImportWorker(QThread):
                 _snapshot_cache_for_itunesdb_write(self._cache)
             )
             if to_add:
-                from SyncEngine._db_io import read_existing_database
-
                 fresh_db = read_existing_database(Path(self._ipod_path))
                 tracks_data = copy.deepcopy(fresh_db.get("tracks", []))
+                playlists_data = copy.deepcopy(self._cache.get_playlists())
+            elif already_present_db_track_ids:
+                tracks_data = copy.deepcopy(fresh_tracks)
                 playlists_data = copy.deepcopy(self._cache.get_playlists())
             write_result = _engine_quick_write(
                 self._ipod_path,
@@ -2319,7 +2652,7 @@ class PlaylistImportWorker(QThread):
             self.finished_ok.emit(
                 playlist_name,
                 len(to_add),
-                fast_path_count + len(already_present_fps),
+                len(already_present_db_track_ids),
                 skipped,
             )
         except Exception as exc:
@@ -2353,7 +2686,6 @@ class SyncExecuteWorker(QThread):
         *,
         settings: AppSettings,
         skip_backup: bool = False,
-        user_playlists: list | None = None,
         backup_device_name: str = "",
         device_info: DeviceIdentitySnapshot | None = None,
         device_capabilities: DeviceCapabilitySnapshot | None = None,
@@ -2365,7 +2697,6 @@ class SyncExecuteWorker(QThread):
         self.plan = plan
         self.skip_backup = skip_backup
         self._skip_backup_requested = False
-        self.user_playlists = user_playlists
         self.backup_device_name = backup_device_name
         self.settings = settings
         self.device_info = device_info
@@ -2449,7 +2780,6 @@ class SyncExecuteWorker(QThread):
                 ipod_path=self.ipod_path,
                 plan=self.plan,
                 mapping=mapping,
-                user_playlists=tuple(self.user_playlists or ()),
                 options=EngineOptions(
                     sync_workers=settings.sync_workers,
                     device_write_workers=settings.device_write_workers,
@@ -2503,7 +2833,6 @@ class SyncExecuteWorker(QThread):
             device_id = get_device_identifier(self.ipod_path, self.device_info)
             device_name = (
                 self.backup_device_name.strip()
-                or backup_device_name_from_playlists(self.user_playlists or [])
                 or get_device_display_name(self.device_info)
             )
             ipod = self.device_info
@@ -2597,6 +2926,31 @@ class DropScanWorker(QThread):
 
             items: list[SyncItem] = []
             total_bytes = 0
+            fresh_db: dict[str, Any] = {}
+            fresh_tracks: list[dict] = []
+            existing_standard_playlists: list[dict] = []
+            mapping: Any | None = None
+            valid_db_track_ids: set[int] = set()
+            ipod_fingerprint_index: dict[str, list[tuple[int, dict]]] | None = None
+            source_path_to_db_track_id: dict[str, int] = {}
+            matched_pc_paths: dict[int, str] = {}
+            if self._ipod_path:
+                try:
+                    from SyncEngine._db_io import read_existing_database
+                    from SyncEngine.mapping import MappingManager
+
+                    fresh_db = read_existing_database(Path(self._ipod_path))
+                    fresh_tracks = list(fresh_db.get("tracks", []))
+                    existing_standard_playlists = _fresh_standard_playlists(fresh_db)
+                    valid_db_track_ids = {
+                        db_track_id
+                        for track in fresh_tracks
+                        if (db_track_id := _track_db_track_id(track))
+                    }
+                    mapping = MappingManager(self._ipod_path).load()
+                except Exception as exc:
+                    logger.debug("Could not load iPod state for dropped files: %s", exc)
+
             playlist_media_paths, playlists_to_add = build_dropped_playlist_imports(
                 self._playlist_paths,
                 include_video=self._supports_video,
@@ -2617,9 +2971,52 @@ class DropScanWorker(QThread):
                         supports_video=self._supports_video,
                         supports_podcast=self._supports_podcast,
                     ):
+                        fingerprint = None
+                        existing_db_track_id = 0
+                        if mapping is not None and fresh_tracks:
+                            try:
+                                from SyncEngine.audio_fingerprint import (
+                                    get_or_compute_fingerprint,
+                                )
+
+                                fingerprint = get_or_compute_fingerprint(
+                                    path,
+                                    write_to_file=False,
+                                )
+                            except Exception as exc:
+                                logger.debug(
+                                    "Could not fingerprint dropped file %s: %s",
+                                    path,
+                                    exc,
+                                )
+                            if fingerprint:
+                                existing_db_track_id = _mapping_match_db_track_id(
+                                    mapping,
+                                    fingerprint,
+                                    valid_db_track_ids,
+                                )
+                                if not existing_db_track_id:
+                                    if ipod_fingerprint_index is None:
+                                        ipod_fingerprint_index = (
+                                            _build_ipod_fingerprint_index(
+                                                Path(self._ipod_path),
+                                                fresh_tracks,
+                                                fpcalc_path=None,
+                                            )
+                                        )
+                                    existing_db_track_id = _best_import_track_match(
+                                        ipod_fingerprint_index.get(fingerprint, []),
+                                        track,
+                                    )
+                        if existing_db_track_id:
+                            source_key = _import_source_path_key(path)
+                            source_path_to_db_track_id[source_key] = existing_db_track_id
+                            matched_pc_paths[existing_db_track_id] = str(path)
+                            continue
                         items.append(
                             SyncItem(
                                 action=SyncAction.ADD_TO_IPOD,
+                                fingerprint=fingerprint,
                                 pc_track=track,
                                 description=f"{track.artist} - {track.title}",
                             )
@@ -2630,7 +3027,22 @@ class DropScanWorker(QThread):
 
             plan = SyncPlan()
             plan.to_add.extend(items)
-            plan.playlists_to_add.extend(playlists_to_add)
+            plan.matched_pc_paths.update(matched_pc_paths)
+            playlist_updates = [
+                _merge_imported_playlist_with_existing(
+                    playlist,
+                    existing_standard_playlists,
+                    source_path_to_db_track_id=source_path_to_db_track_id,
+                    tracks=fresh_tracks,
+                )
+                for playlist in playlists_to_add
+            ]
+            plan.playlists_to_add.extend(
+                playlist for playlist in playlist_updates if playlist.get("_isNew", True)
+            )
+            plan.playlists_to_edit.extend(
+                playlist for playlist in playlist_updates if not playlist.get("_isNew", True)
+            )
             plan.storage = StorageSummary(bytes_to_add=total_bytes)
             if (
                 self._supports_photo

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 from infrastructure.media_folders import MediaFolderEntry
 from iTunesDB_Writer.mhit_writer import TrackInfo
 from SyncEngine._playlist_builder import build_and_evaluate_playlists
+from SyncEngine.fingerprint_diff_engine import FingerprintDiffEngine
+from SyncEngine.pc_library import PCTrack
 from SyncEngine.sync_playlist_files import (
     SYNC_PLAYLIST_SOURCE,
     discover_sync_playlist_files,
@@ -450,8 +453,38 @@ def test_playlist_builder_resolves_synced_playlist_source_paths(tmp_path: Path) 
         dataset3_podcast_playlists_raw=[],
         dataset5_smart_playlists_raw=[],
         all_track_infos=[track],
-        user_playlists=[],
         source_path_to_db_track_id={normalize_sync_playlist_path(source): 101},
+    )
+
+    assert len(playlists) == 1
+    assert playlists[0].track_ids == [101]
+
+
+def test_playlist_builder_uses_trackinfo_source_path_for_playlist_items(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "song.mp3"
+    source.write_bytes(b"audio")
+    track = TrackInfo(
+        title="Song",
+        location=":iPod_Control:Music:F00:Song.mp3",
+        db_track_id=101,
+        source_path=normalize_sync_playlist_path(source),
+    )
+
+    _master_name, _master_id, playlists, *_rest = build_and_evaluate_playlists(
+        existing_tracks_data=[],
+        dataset2_standard_playlists_raw=[
+            {
+                "Title": "Mix",
+                "playlist_id": sync_playlist_file_id(tmp_path / "mix.m3u8"),
+                "_source": SYNC_PLAYLIST_SOURCE,
+                "items": [{"source_path": normalize_sync_playlist_path(source)}],
+            }
+        ],
+        dataset3_podcast_playlists_raw=[],
+        dataset5_smart_playlists_raw=[],
+        all_track_infos=[track],
     )
 
     assert len(playlists) == 1
@@ -488,7 +521,6 @@ def test_playlist_builder_prefers_sync_playlist_direct_db_track_ids(
         dataset3_podcast_playlists_raw=[],
         dataset5_smart_playlists_raw=[],
         all_track_infos=[track],
-        user_playlists=[],
         source_path_to_db_track_id={},
     )
 
@@ -532,9 +564,301 @@ def test_pending_add_playlist_item_resolves_after_commit_assigns_db_track_id(
         dataset3_podcast_playlists_raw=[],
         dataset5_smart_playlists_raw=[],
         all_track_infos=[copied_track],
-        user_playlists=[],
         source_path_to_db_track_id={normalize_sync_playlist_path(source): 909},
     )
 
     assert len(playlists) == 1
     assert playlists[0].track_ids == [909]
+
+
+def test_full_sync_playlist_ipod_file_reference_uses_existing_fingerprint(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    ipod_root = tmp_path / "ipod"
+    ipod_track_path = ipod_root / "iPod_Control" / "Music" / "F00" / "SONG.m4a"
+    ipod_track_path.parent.mkdir(parents=True)
+    ipod_track_path.write_bytes(b"audio")
+
+    playlist_root = tmp_path / "Music"
+    playlist_root.mkdir()
+    playlist_path = playlist_root / "mix.m3u8"
+    playlist_path.write_text(str(ipod_track_path), encoding="utf-8")
+
+    class PlaylistOnlyLibrary:
+        root_path = playlist_root
+        root_entries = (
+            MediaFolderEntry(
+                str(playlist_root),
+                recurse=False,
+                media_types=("playlists",),
+            ),
+        )
+
+        def scan(self, **_kwargs):
+            return []
+
+        def _read_track(self, file_path: Path, library_root: Path | None = None):
+            assert Path(file_path) == ipod_track_path
+            stat = ipod_track_path.stat()
+            return PCTrack(
+                path=str(ipod_track_path),
+                relative_path=ipod_track_path.name,
+                filename=ipod_track_path.name,
+                extension=ipod_track_path.suffix.lower(),
+                mtime=stat.st_mtime,
+                size=stat.st_size,
+                title="Song",
+                artist="Artist",
+                album="Album",
+                album_artist=None,
+                genre=None,
+                year=None,
+                track_number=None,
+                track_total=None,
+                disc_number=None,
+                disc_total=None,
+                duration_ms=123_000,
+                bitrate=256,
+                sample_rate=44_100,
+                rating=None,
+            )
+
+    class Mapping:
+        def all_db_track_ids(self):
+            return {888}
+
+        def all_fingerprints(self):
+            return {"old-fingerprint"}
+
+        def aggregate_entries(self):
+            return []
+
+        def get_entries(self, fingerprint: str):
+            if fingerprint == "old-fingerprint":
+                return [SimpleNamespace(db_track_id=888)]
+            return []
+
+    class MappingManager:
+        def exists(self):
+            return True
+
+        def load(self):
+            return Mapping()
+
+        def save(self, _mapping):
+            return True
+
+    monkeypatch.setattr(
+        "SyncEngine.fingerprint_diff_engine.is_fpcalc_available",
+        lambda _fpcalc_path="": True,
+    )
+    monkeypatch.setattr(
+        "SyncEngine.integrity.check_integrity",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            is_clean=True,
+            stale_mappings=[],
+            missing_files=[],
+            summary="clean",
+        ),
+    )
+
+    def fingerprint_playlist_reference(path, *, fpcalc_path="", write_to_file=True):
+        assert Path(path) == ipod_track_path
+        assert write_to_file is False
+        return "matching-fingerprint", "computed"
+
+    def fingerprint_existing_ipod_file(path, *, fpcalc_path="", write_to_file=True):
+        assert Path(path) == ipod_track_path
+        assert write_to_file is False
+        return "matching-fingerprint"
+
+    monkeypatch.setattr(
+        "SyncEngine.fingerprint_diff_engine.get_or_compute_fingerprint_with_status",
+        fingerprint_playlist_reference,
+    )
+    monkeypatch.setattr(
+        "SyncEngine.fingerprint_diff_engine.get_or_compute_fingerprint",
+        fingerprint_existing_ipod_file,
+    )
+
+    engine = FingerprintDiffEngine(
+        PlaylistOnlyLibrary(),
+        ipod_root,
+        supports_photo=False,
+    )
+    engine.mapping_manager = MappingManager()
+
+    plan = engine.compute_diff(
+        [
+            {
+                "db_track_id": 888,
+                "Location": ":iPod_Control:Music:F00:SONG.m4a",
+                "Title": "Song",
+                "Artist": "Artist",
+                "Album": "Album",
+                "length": 123_000,
+                "size": ipod_track_path.stat().st_size,
+            }
+        ],
+        write_fingerprints=True,
+        sync_workers=1,
+        existing_playlists=[],
+    )
+
+    assert plan.to_add == []
+    assert plan.to_remove == []
+    assert plan.playlists_to_add[0]["items"] == [
+        {
+            "source_path": normalize_sync_playlist_path(ipod_track_path),
+            "db_track_id": 888,
+        }
+    ]
+
+
+def test_full_sync_playlist_external_reference_uses_existing_ipod_fingerprint(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    ipod_root = tmp_path / "ipod"
+    ipod_track_path = ipod_root / "iPod_Control" / "Music" / "F00" / "SONG.m4a"
+    ipod_track_path.parent.mkdir(parents=True)
+    ipod_track_path.write_bytes(b"ipod audio")
+
+    playlist_root = tmp_path / "Music"
+    source_root = tmp_path / "External"
+    playlist_root.mkdir()
+    source_root.mkdir()
+    source_path = source_root / "Song.m4a"
+    source_path.write_bytes(b"source audio")
+    playlist_path = playlist_root / "mix.m3u8"
+    playlist_path.write_text(str(source_path), encoding="utf-8")
+
+    class PlaylistOnlyLibrary:
+        root_path = playlist_root
+        root_entries = (
+            MediaFolderEntry(
+                str(playlist_root),
+                recurse=False,
+                media_types=("playlists",),
+            ),
+        )
+
+        def scan(self, **_kwargs):
+            return []
+
+        def _read_track(self, file_path: Path, library_root: Path | None = None):
+            assert Path(file_path) == source_path
+            stat = source_path.stat()
+            return PCTrack(
+                path=str(source_path),
+                relative_path=source_path.name,
+                filename=source_path.name,
+                extension=source_path.suffix.lower(),
+                mtime=stat.st_mtime,
+                size=stat.st_size,
+                title="Song",
+                artist="Artist",
+                album="Album",
+                album_artist=None,
+                genre=None,
+                year=None,
+                track_number=None,
+                track_total=None,
+                disc_number=None,
+                disc_total=None,
+                duration_ms=123_000,
+                bitrate=256,
+                sample_rate=44_100,
+                rating=None,
+            )
+
+    class Mapping:
+        def all_db_track_ids(self):
+            return {888}
+
+        def all_fingerprints(self):
+            return {"old-fingerprint"}
+
+        def aggregate_entries(self):
+            return []
+
+        def get_entries(self, fingerprint: str):
+            if fingerprint == "old-fingerprint":
+                return [SimpleNamespace(db_track_id=888)]
+            return []
+
+    class MappingManager:
+        def exists(self):
+            return True
+
+        def load(self):
+            return Mapping()
+
+        def save(self, _mapping):
+            return True
+
+    monkeypatch.setattr(
+        "SyncEngine.fingerprint_diff_engine.is_fpcalc_available",
+        lambda _fpcalc_path="": True,
+    )
+    monkeypatch.setattr(
+        "SyncEngine.integrity.check_integrity",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            is_clean=True,
+            stale_mappings=[],
+            missing_files=[],
+            summary="clean",
+        ),
+    )
+
+    def fingerprint_playlist_reference(path, *, fpcalc_path="", write_to_file=True):
+        assert Path(path) == source_path
+        return "matching-fingerprint", "computed"
+
+    def fingerprint_existing_ipod_file(path, *, fpcalc_path="", write_to_file=True):
+        assert Path(path) == ipod_track_path
+        assert write_to_file is False
+        return "matching-fingerprint"
+
+    monkeypatch.setattr(
+        "SyncEngine.fingerprint_diff_engine.get_or_compute_fingerprint_with_status",
+        fingerprint_playlist_reference,
+    )
+    monkeypatch.setattr(
+        "SyncEngine.fingerprint_diff_engine.get_or_compute_fingerprint",
+        fingerprint_existing_ipod_file,
+    )
+
+    engine = FingerprintDiffEngine(
+        PlaylistOnlyLibrary(),
+        ipod_root,
+        supports_photo=False,
+    )
+    engine.mapping_manager = MappingManager()
+
+    plan = engine.compute_diff(
+        [
+            {
+                "db_track_id": 888,
+                "Location": ":iPod_Control:Music:F00:SONG.m4a",
+                "Title": "Song",
+                "Artist": "Artist",
+                "Album": "Album",
+                "length": 123_000,
+                "size": ipod_track_path.stat().st_size,
+            }
+        ],
+        write_fingerprints=True,
+        sync_workers=1,
+        existing_playlists=[],
+    )
+
+    assert plan.to_add == []
+    assert plan.to_remove == []
+    assert plan.playlists_to_add[0]["items"] == [
+        {
+            "source_path": normalize_sync_playlist_path(source_path),
+            "db_track_id": 888,
+        }
+    ]

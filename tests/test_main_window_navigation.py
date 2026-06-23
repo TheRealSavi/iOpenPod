@@ -8,6 +8,7 @@ from GUI.app import (
 )
 from GUI.internal_drag import IOP_EXPORT_DRAG_MIME
 from infrastructure.settings_schema import AppSettings
+from SyncEngine.contracts import SyncPlan
 
 
 class _FakeStack:
@@ -29,7 +30,11 @@ class _FakeStack:
 
 class _FakeSignal:
     def __init__(self) -> None:
+        self.connections: list[object] = []
         self.disconnect_count = 0
+
+    def connect(self, callback: object) -> None:
+        self.connections.append(callback)
 
     def disconnect(self) -> None:
         self.disconnect_count += 1
@@ -249,7 +254,7 @@ def test_start_pc_sync_without_device_opens_media_folder_dialog(monkeypatch) -> 
     entries = [{"directory": "/tmp/Music", "recurse": True, "media_types": ["music"]}]
     window = SimpleNamespace(
         _quick_write_controller=SimpleNamespace(
-            prepare_for_full_sync=lambda: calls.append("prepared")
+            prepare_for_full_sync=lambda: calls.append("prepared") or (True, None)
         ),
         device_manager=SimpleNamespace(device_path=""),
         settings_service=service,
@@ -265,13 +270,104 @@ def test_start_pc_sync_without_device_opens_media_folder_dialog(monkeypatch) -> 
 
     MainWindow.startPCSync(cast(Any, window))
 
-    assert calls[0] == "prepared"
-    assert calls[1] == {
+    assert calls[0] == {
         "parent": window,
         "folder_entries": entries,
         "sync_available": False,
     }
-    assert calls[2] == "exec"
+    assert calls[1] == "exec"
+    assert "prepared" not in calls
+
+
+def test_execute_sync_plan_passes_playlist_actions_only_in_plan(
+    monkeypatch,
+) -> None:
+    plan = SyncPlan(
+        playlists_to_add=[
+            {
+                "playlist_id": 5282529579168309310,
+                "Title": "Test",
+                "_isNew": True,
+                "_mhsd_dataset_type": 2,
+                "items": [{"db_track_id": 101}],
+            }
+        ]
+    )
+    workers: list[object] = []
+
+    class _CapturingSyncExecuteWorker:
+        def __init__(self, **kwargs: object) -> None:
+            self.kwargs = kwargs
+            self.progress = _FakeSignal()
+            self.finished = _FakeSignal()
+            self.error = _FakeSignal()
+            self.confirm_partial_save = _FakeSignal()
+            self.started = False
+            workers.append(self)
+
+        def request_skip_backup(self) -> None:
+            pass
+
+        def request_give_up_scrobble(self) -> None:
+            pass
+
+        def start(self) -> None:
+            self.started = True
+
+    class _FakeSyncReview:
+        _skip_presync_backup = False
+
+        def __init__(self) -> None:
+            self.skip_backup_signal = _FakeSignal()
+            self.give_up_scrobble_signal = _FakeSignal()
+            self.executing_count = 0
+
+        def get_selected_playlist_changes(self) -> dict:
+            return {"playlists_to_add": plan.playlists_to_add}
+
+        def get_selected_photo_plan(self) -> None:
+            return None
+
+        def show_executing(self) -> None:
+            self.executing_count += 1
+
+        def update_execute_progress(self, *_args: object) -> None:
+            pass
+
+    monkeypatch.setattr("GUI.app.SyncExecuteWorker", _CapturingSyncExecuteWorker)
+    monkeypatch.setattr(
+        "GUI.app.build_filtered_sync_plan",
+        lambda original_plan, _selected_items, **_kwargs: original_plan,
+    )
+
+    sync_review = _FakeSyncReview()
+    clear_calls: list[bool] = []
+    window = SimpleNamespace(
+        device_manager=SimpleNamespace(device_path="/media/IPOD"),
+        _plan=plan,
+        syncReview=sync_review,
+        _confirm_sync_until_full_if_needed=lambda _plan, _path: False,
+        settings_service=_FakeSettingsService(),
+        library_cache=SimpleNamespace(
+            clear_pending_sync_state=lambda: clear_calls.append(True),
+            get_playlists=lambda: [],
+        ),
+        device_session_service=SimpleNamespace(
+            current_session=lambda: SimpleNamespace(identity={}, capabilities={})
+        ),
+        _sync_execute_worker=None,
+        _onSyncExecuteComplete=lambda *_args: None,
+        _onSyncExecuteError=lambda *_args: None,
+        _onConfirmPartialSave=lambda *_args: None,
+    )
+
+    MainWindow.executeSyncPlan(cast(Any, window), selected_items=[])
+
+    assert len(workers) == 1
+    worker = cast(Any, workers[0])
+    assert worker.kwargs["plan"] is plan
+    assert "user_playlists" not in worker.kwargs
+    assert worker.started is True
 
 
 class _FakeDropOverlay:

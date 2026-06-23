@@ -13,9 +13,11 @@ from SyncEngine.contracts import (
     SYNC_DB_OVERHEAD_BYTES,
     SYNC_DB_WRITE_RESERVE_BYTES,
     StorageSummary,
+    SyncAction,
+    SyncItem,
+    SyncPlan,
     sync_plan_required_free_bytes,
 )
-from SyncEngine.fingerprint_diff_engine import SyncAction, SyncItem, SyncPlan
 from SyncEngine.mapping import MappingFile
 from SyncEngine.pc_library import PCTrack
 from SyncEngine.sync_executor import SyncExecutor, _ExecutionLifecycle, _SyncContext
@@ -24,7 +26,7 @@ from SyncEngine.transcoder import TranscodeResult, TranscodeTarget, resolve_tran
 
 
 def _make_sync_ctx(
-    user_playlists: list[dict],
+    playlist_updates: list[dict],
     existing_dataset2_standard_playlists_raw: list[dict],
     existing_dataset5_smart_playlists_raw: list[dict],
 ) -> _SyncContext:
@@ -35,8 +37,8 @@ def _make_sync_ctx(
         dry_run=True,
         write_back_to_pc=False,
         _is_cancelled=None,
-        user_playlists=user_playlists,
     )
+    ctx.plan.playlists_to_add = list(playlist_updates)
     ctx.existing_dataset2_standard_playlists_raw = (
         existing_dataset2_standard_playlists_raw
     )
@@ -167,25 +169,26 @@ def test_prepare_execution_plan_rejects_structurally_invalid_plan(
     assert ctx.result.errors[0][0] == "add_missing_source"
 
 
-def test_prepare_execution_plan_keeps_user_playlist_only_changes(
+def test_prepare_execution_plan_keeps_plan_playlist_only_changes(
     tmp_path: Path,
 ) -> None:
     executor = SyncExecutor(tmp_path)
     ctx = _SyncContext(
-        plan=SyncPlan(),
+        plan=SyncPlan(
+            playlists_to_add=[
+                {
+                    "playlist_id": 42,
+                    "Title": "Manual",
+                    "_isNew": True,
+                    "items": [{"db_track_id": 101}],
+                }
+            ]
+        ),
         mapping=MappingFile(),
         progress_callback=None,
         dry_run=False,
         write_back_to_pc=False,
         _is_cancelled=None,
-        user_playlists=[
-            {
-                "playlist_id": 42,
-                "Title": "Manual",
-                "_isNew": True,
-                "items": [{"db_track_id": 101}],
-            }
-        ],
     )
 
     assert executor._prepare_execution_plan(ctx)
@@ -585,22 +588,23 @@ def test_prepare_database_commit_input_resolves_pending_playlist_source_paths(
     source_key = normalize_sync_playlist_path(source)
     playlist_id = sync_playlist_file_id(tmp_path / "mix.m3u8")
     ctx = _SyncContext(
-        plan=SyncPlan(),
+        plan=SyncPlan(
+            playlists_to_add=[
+                {
+                    "Title": "Mix",
+                    "playlist_id": playlist_id,
+                    "_isNew": True,
+                    "_source": "sync_playlist_file",
+                    "_mhsd_dataset_type": 2,
+                    "items": [{"source_path": source_key}],
+                }
+            ]
+        ),
         mapping=MappingFile(),
         progress_callback=None,
         dry_run=False,
         write_back_to_pc=False,
         _is_cancelled=None,
-        user_playlists=[
-            {
-                "Title": "Mix",
-                "playlist_id": playlist_id,
-                "_isNew": True,
-                "_source": "sync_playlist_file",
-                "_mhsd_dataset_type": 2,
-                "items": [{"source_path": source_key}],
-            }
-        ],
     )
     ctx.new_tracks.append(
         TrackInfo(
@@ -1082,7 +1086,7 @@ def test_playlist_build_resolves_existing_tracks_from_matched_pc_paths(
     assert playlists[0].track_ids == [101]
 
 
-def test_merge_gui_playlists_does_not_remove_same_id_from_dataset5(
+def test_merge_plan_playlists_does_not_remove_same_id_from_dataset5(
     tmp_path: Path,
 ) -> None:
     executor = SyncExecutor(tmp_path)
@@ -1094,7 +1098,7 @@ def test_merge_gui_playlists_does_not_remove_same_id_from_dataset5(
         "smart_playlist_rules": {"rules": []},
     }
     ctx = _make_sync_ctx(
-        user_playlists=[user_playlist],
+        playlist_updates=[user_playlist],
         existing_dataset2_standard_playlists_raw=[],
         existing_dataset5_smart_playlists_raw=[
             {
@@ -1107,7 +1111,7 @@ def test_merge_gui_playlists_does_not_remove_same_id_from_dataset5(
         ],
     )
 
-    executor._merge_gui_playlists(ctx)
+    executor._merge_plan_playlists(ctx)
 
     assert ctx.existing_dataset2_standard_playlists_raw == [user_playlist]
     assert ctx.existing_dataset5_smart_playlists_raw == [
@@ -1121,7 +1125,7 @@ def test_merge_gui_playlists_does_not_remove_same_id_from_dataset5(
     ]
 
 
-def test_merge_gui_playlists_leaves_ipod_categories_in_smart_bucket(
+def test_merge_plan_playlists_leaves_ipod_categories_in_smart_bucket(
     tmp_path: Path,
 ) -> None:
     executor = SyncExecutor(tmp_path)
@@ -1132,18 +1136,18 @@ def test_merge_gui_playlists_leaves_ipod_categories_in_smart_bucket(
         "mhsd5_type": 4,
     }
     ctx = _make_sync_ctx(
-        user_playlists=[category],
+        playlist_updates=[category],
         existing_dataset2_standard_playlists_raw=[],
         existing_dataset5_smart_playlists_raw=[],
     )
 
-    executor._merge_gui_playlists(ctx)
+    executor._merge_plan_playlists(ctx)
 
     assert ctx.existing_dataset2_standard_playlists_raw == []
     assert ctx.existing_dataset5_smart_playlists_raw == [category]
 
 
-def test_merge_gui_playlists_applies_plan_playlist_adds_and_edits(
+def test_merge_plan_playlists_applies_playlist_adds_and_edits(
     tmp_path: Path,
 ) -> None:
     executor = SyncExecutor(tmp_path)
@@ -1162,7 +1166,7 @@ def test_merge_gui_playlists_applies_plan_playlist_adds_and_edits(
         "items": [{"db_track_id": 99}],
     }
     ctx = _make_sync_ctx(
-        user_playlists=[],
+        playlist_updates=[],
         existing_dataset2_standard_playlists_raw=[
             {
                 "playlist_id": 202,
@@ -1176,7 +1180,7 @@ def test_merge_gui_playlists_applies_plan_playlist_adds_and_edits(
     ctx.plan.playlists_to_add = [new_playlist]
     ctx.plan.playlists_to_edit = [edited_playlist]
 
-    executor._merge_gui_playlists(ctx)
+    executor._merge_plan_playlists(ctx)
 
     assert ctx.existing_dataset2_standard_playlists_raw == [
         edited_playlist,
@@ -1184,7 +1188,7 @@ def test_merge_gui_playlists_applies_plan_playlist_adds_and_edits(
     ]
 
 
-def test_merge_gui_playlists_replaces_new_playlist_id_collision(
+def test_merge_plan_playlists_replaces_new_playlist_id_collision(
     tmp_path: Path,
 ) -> None:
     executor = SyncExecutor(tmp_path)
@@ -1196,7 +1200,7 @@ def test_merge_gui_playlists_replaces_new_playlist_id_collision(
         "items": [{"db_track_id": 1}],
     }
     ctx = _make_sync_ctx(
-        user_playlists=[incoming],
+        playlist_updates=[incoming],
         existing_dataset2_standard_playlists_raw=[
             {
                 "playlist_id": 101,
@@ -1208,12 +1212,12 @@ def test_merge_gui_playlists_replaces_new_playlist_id_collision(
         existing_dataset5_smart_playlists_raw=[],
     )
 
-    executor._merge_gui_playlists(ctx)
+    executor._merge_plan_playlists(ctx)
 
     assert ctx.existing_dataset2_standard_playlists_raw == [incoming]
 
 
-def test_merge_gui_playlists_removes_reviewed_playlist_rows(tmp_path: Path) -> None:
+def test_merge_plan_playlists_removes_reviewed_playlist_rows(tmp_path: Path) -> None:
     executor = SyncExecutor(tmp_path)
     remove_playlist = {
         "playlist_id": "42",
@@ -1226,13 +1230,13 @@ def test_merge_gui_playlists_removes_reviewed_playlist_rows(tmp_path: Path) -> N
         "_mhsd_dataset_type": 2,
     }
     ctx = _make_sync_ctx(
-        user_playlists=[],
+        playlist_updates=[],
         existing_dataset2_standard_playlists_raw=[remove_playlist, kept_playlist],
         existing_dataset5_smart_playlists_raw=[],
     )
     ctx.plan.playlists_to_remove = [remove_playlist]
 
-    executor._merge_gui_playlists(ctx)
+    executor._merge_plan_playlists(ctx)
 
     assert ctx.existing_dataset2_standard_playlists_raw == [kept_playlist]
     assert ctx.existing_dataset5_smart_playlists_raw == []

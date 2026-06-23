@@ -265,7 +265,7 @@ def test_date_rules_format_absolute_and_relative_values() -> None:
 
 
 def test_editor_field_policy_marks_unproven_fields_unsupported() -> None:
-    source = Path("GUI/widgets/playlistEditor.py").read_text()
+    source = Path("GUI/widgets/playlistEditor.py").read_text(encoding="utf-8")
     tree = ast.parse(source)
     field_ids: tuple[int, ...] | None = None
     unsupported_ids: frozenset[int] | None = None

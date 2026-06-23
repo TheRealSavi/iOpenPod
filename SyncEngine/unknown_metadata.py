@@ -110,9 +110,14 @@ def _path_parts(value: object | None) -> tuple[str, ...]:
     if text.startswith(":"):
         return tuple(part for part in text.replace(":", "/").split("/") if part)
 
+    has_forward_separator = "/" in text
     is_windows_abs = len(text) >= 3 and text[1] == ":" and text[2] in ("\\", "/")
     is_unc = text.startswith("\\\\")
-    if is_windows_abs or is_unc or (os.sep == "\\" and "\\" in text):
+    if (
+        is_windows_abs
+        or is_unc
+        or (os.sep == "\\" and "\\" in text and not has_forward_separator)
+    ):
         text = text.replace("\\", "/")
 
     return tuple(part for part in text.split("/") if part)

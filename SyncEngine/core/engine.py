@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from sync_progress_stages import (
     classify_execution_stage_value,
@@ -89,7 +89,7 @@ class SyncEngine:
         from SyncEngine.fingerprint_diff_engine import FingerprintDiffEngine
         from SyncEngine.pc_library import PCLibrary
 
-        context = EnginePlanContext.from_request(request)
+        context = EnginePlanContext.from_request(cast(Any, request))
         self._emit(request, EngineStage.SCAN, message="Scanning media folders")
         pc_library = PCLibrary(context.pc_folders)
         diff_engine = FingerprintDiffEngine(
@@ -175,7 +175,6 @@ class SyncEngine:
             dry_run=request.options.dry_run,
             is_cancelled=request.is_cancelled,
             write_back_to_pc=request.options.write_back_to_pc,
-            user_playlists=request.user_playlists,
             on_sync_complete=request.on_sync_complete,
             compute_sound_check=request.options.compute_sound_check,
             scrobble_on_sync=request.options.scrobble_on_sync,

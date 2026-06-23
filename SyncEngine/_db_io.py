@@ -335,7 +335,6 @@ def commit_playcounts_if_needed(ipod_path: Path) -> bool:
         existing.get("dataset3_podcast_playlists", []),
         existing.get("dataset5_smart_playlists", []),
         all_tracks,
-        [],
     )
 
     if not write_database(

@@ -22,8 +22,8 @@ def _pc_track(path: str = "/music/song.mp3", **kwargs: object) -> Any:
     return cast(Any, SimpleNamespace(**values))
 
 
-def _codes(plan: SyncPlan, *, user_playlists: list[dict] | None = None) -> set[str]:
-    result = validate_sync_plan(plan, user_playlists=user_playlists or [])
+def _codes(plan: SyncPlan) -> set[str]:
+    result = validate_sync_plan(plan)
     return {issue.code for issue in result.errors}
 
 
@@ -288,17 +288,5 @@ def test_playlist_remove_conflicting_with_update_is_rejected() -> None:
     assert "playlist_remove_conflicts_with_pending_update" in _codes(plan)
 
 
-def test_user_playlist_changes_count_as_executable_changes() -> None:
-    result = validate_sync_plan(
-        SyncPlan(),
-        user_playlists=[
-            {
-                "Title": "Manual",
-                "playlist_id": 999,
-                "_isNew": True,
-                "items": [{"db_track_id": 10}],
-            }
-        ],
-    )
-
-    assert result.is_valid
+def test_empty_plan_has_no_playlist_side_channel() -> None:
+    assert validate_sync_plan(SyncPlan()).is_valid

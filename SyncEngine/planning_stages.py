@@ -52,6 +52,7 @@ class SourceLibraryScan:
     pc_tracks: tuple[Any, ...]
     playlist_discovery: SyncPlaylistDiscovery | None = None
     selected_playlist_source_keys: frozenset[str] | None = None
+    playlist_extra_source_keys: frozenset[str] = frozenset()
     cancelled: bool = False
 
 
@@ -94,8 +95,13 @@ def scan_source_libraries(
 
     playlist_discovery = None
     selected_playlist_source_keys: frozenset[str] | None = None
+    playlist_extra_source_keys: frozenset[str] = frozenset()
     if allowed_paths is None or selected_playlist_paths is not None:
-        playlist_discovery, selected_playlist_source_keys = _scan_playlist_references(
+        (
+            playlist_discovery,
+            selected_playlist_source_keys,
+            playlist_extra_source_keys,
+        ) = _scan_playlist_references(
             pc_library,
             pc_tracks,
             supports_video=supports_video,
@@ -108,6 +114,7 @@ def scan_source_libraries(
                 pc_tracks=tuple(pc_tracks),
                 playlist_discovery=playlist_discovery,
                 selected_playlist_source_keys=selected_playlist_source_keys,
+                playlist_extra_source_keys=playlist_extra_source_keys,
                 cancelled=True,
             )
 
@@ -136,6 +143,7 @@ def scan_source_libraries(
         pc_tracks=tuple(pc_tracks),
         playlist_discovery=playlist_discovery,
         selected_playlist_source_keys=selected_playlist_source_keys,
+        playlist_extra_source_keys=playlist_extra_source_keys,
     )
 
 
@@ -147,7 +155,7 @@ def _scan_playlist_references(
     selected_playlist_paths: frozenset[str] | None,
     progress_callback: PlanningProgressCallback | None,
     is_cancelled: CancelCallback | None,
-) -> tuple[SyncPlaylistDiscovery | None, frozenset[str] | None]:
+) -> tuple[SyncPlaylistDiscovery | None, frozenset[str] | None, frozenset[str]]:
     try:
         if progress_callback:
             progress_callback("scan_playlists", 0, 0, "Scanning playlist files")
@@ -183,6 +191,7 @@ def _scan_playlist_references(
             if normalize_sync_playlist_path(path) not in existing_source_keys
         ]
         total_extra = len(extra_media_paths)
+        playlist_extra_source_keys: set[str] = set()
         for index, raw_path in enumerate(extra_media_paths, start=1):
             if _is_cancelled(is_cancelled):
                 break
@@ -205,13 +214,15 @@ def _scan_playlist_references(
                 continue
             if track is None:
                 continue
+            source_key = normalize_sync_playlist_path(track.path)
             pc_tracks.append(track)
-            existing_source_keys.add(normalize_sync_playlist_path(track.path))
+            existing_source_keys.add(source_key)
+            playlist_extra_source_keys.add(source_key)
 
-        return playlist_discovery, selected_playlist_source_keys
+        return playlist_discovery, selected_playlist_source_keys, frozenset(playlist_extra_source_keys)
     except Exception as exc:
         logger.warning("Playlist-file sync planning scan failed: %s", exc)
-        return None, None
+        return None, None, frozenset()
 
 
 def _is_cancelled(is_cancelled: CancelCallback | None) -> bool:

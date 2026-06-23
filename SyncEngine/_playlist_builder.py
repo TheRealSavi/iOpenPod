@@ -188,7 +188,6 @@ def build_and_evaluate_playlists(
     dataset3_podcast_playlists_raw: list[dict],
     dataset5_smart_playlists_raw: list[dict],
     all_track_infos: list[TrackInfo],
-    user_playlists: list[dict],
     source_path_to_db_track_id: dict[str, int] | None = None,
 ) -> tuple[
     str,
@@ -223,9 +222,17 @@ def build_and_evaluate_playlists(
     eval_tracks = [trackinfo_to_eval_dict(t) for t in all_track_infos]
 
     source_lookup = {
-        _source_path_key(path): db_track_id
-        for path, db_track_id in (source_path_to_db_track_id or {}).items()
+        _source_path_key(str(track.source_path)): db_track_id
+        for track in all_track_infos
+        if track.source_path and (db_track_id := coerce_int(track.db_track_id))
     }
+    source_lookup.update(
+        {
+            _source_path_key(path): db_track_id
+            for path, raw_db_track_id in (source_path_to_db_track_id or {}).items()
+            if (db_track_id := coerce_int(raw_db_track_id))
+        }
+    )
     initial_playlist_lookup = _playlist_lookup_from_rows(
         [
             *dataset2_standard_playlists_raw,

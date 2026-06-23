@@ -210,7 +210,6 @@ def _evaluate_tracks_and_playlists(
         dataset3_playlist_rows,
         dataset5_playlist_rows,
         all_tracks,
-        [],
     )
 
 
