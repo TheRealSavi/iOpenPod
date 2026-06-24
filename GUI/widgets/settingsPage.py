@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import threading
 import urllib.error
 import urllib.parse
@@ -1561,7 +1562,7 @@ class SettingsPage(QWidget):
             "Overall concurrent sync work. This controls how many files can be "
             "prepared, fingerprinted, transcoded, or copied at once. "
             "Auto uses your CPU core count (capped at 8).",
-            options=["Auto", "1", "2", "4", "6", "8"],
+            options=["Auto", "1"] + [str(i) for i in range(2, os.cpu_count() + 1, 2)],
             current="Auto",
         )
         self.device_write_workers = ComboRow(
@@ -2330,7 +2331,7 @@ class SettingsPage(QWidget):
             self.video_preset.combo.setCurrentIndex(idx)
 
         # Sync workers → combo text
-        workers_map = {0: "Auto", 1: "1", 2: "2", 4: "4", 6: "6", 8: "8"}
+        workers_map = {0: "Auto", 1: "1", **{i: str(i) for i in range(2, os.cpu_count() + 1, 2)}}
         sw_text = workers_map.get(s.sync_workers, "Auto")
         idx = self.sync_workers.combo.findText(sw_text)
         if idx >= 0:
