@@ -876,6 +876,74 @@ class PodcastPlanWorker(QThread):
 
 
 @dataclass(frozen=True)
+class SubsonicPlanRequest:
+    """Typed request for building a Subsonic ADD-only sync plan.
+
+    Carries the connection credentials and selection knobs.  The
+    ``SubsonicClient`` is constructed inside the worker (off the GUI thread)
+    so a misbehaving server never blocks the UI.
+    """
+
+    url: str
+    username: str
+    password: str
+    ipod_tracks: list
+    cache_dir: str = ""
+    playlist_ids: tuple[str, ...] = ()
+    playlist_mappings: tuple[tuple[str, int], ...] = ()
+    ipod_playlists: tuple = ()
+
+
+class SubsonicPlanWorker(QThread):
+    """Background worker that connects to a Subsonic server and builds a plan.
+
+    Mirrors ``PodcastPlanWorker``: validate the connection, build an ADD-only
+    ``SyncPlan`` (starred songs + named playlists), and emit it.  The actual
+    track downloads happen later during execution (see
+    ``SyncExecutor._fetch_subsonic_tracks``).
+    """
+
+    finished = pyqtSignal(object)
+    error = pyqtSignal(str)
+
+    def __init__(self, request: SubsonicPlanRequest):
+        super().__init__()
+        self._request = request
+
+    def run(self) -> None:
+        try:
+            request = self._request
+            from SubsonicManager.client import SubsonicClient, SubsonicConnectionError
+            from SubsonicManager.plan_builder import build_subsonic_sync_plan
+
+            client = SubsonicClient(
+                request.url,
+                request.username,
+                request.password,
+            )
+            try:
+                client.ping()
+            except SubsonicConnectionError:
+                raise
+
+            plan = build_subsonic_sync_plan(
+                client,
+                request.ipod_tracks,
+                request.cache_dir,
+                playlist_ids=list(request.playlist_ids),
+                playlist_mappings=dict(request.playlist_mappings),
+                ipod_playlists=list(request.ipod_playlists),
+            )
+            if not self.isInterruptionRequested():
+                self.finished.emit(plan)
+        except Exception as exc:
+            if self.isInterruptionRequested():
+                return
+            logger.exception("SubsonicPlanWorker failed")
+            self.error.emit(str(exc))
+
+
+@dataclass(frozen=True)
 class BackupDeviceContext:
     """Stable backup identity and metadata for a device."""
 
@@ -2669,6 +2737,8 @@ def _delete_imported_otg_files(ipod_path: str) -> None:
         delete_otg_files(os.path.join(str(ipod_path), "iPod_Control", "iTunes"))
     except Exception as exc:
         logger.debug("OTG cleanup after playlist write failed: %s", exc)
+
+
 
 
 class SyncExecuteWorker(QThread):
