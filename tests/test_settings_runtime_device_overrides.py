@@ -30,6 +30,7 @@ def test_device_settings_round_trip_preserves_device_write_workers(monkeypatch) 
         device_settings = AppSettings(
             sync_workers=6,
             device_write_workers=1,
+            always_encode_lossy=True,
             convert_wav_to_alac=False,
             media_folder="C:/Music",
             listenbrainz_token="lb-token",
@@ -62,6 +63,7 @@ def test_device_settings_round_trip_preserves_device_write_workers(monkeypatch) 
 
     assert loaded.settings.sync_workers == 6
     assert loaded.settings.device_write_workers == 1
+    assert loaded.settings.always_encode_lossy is True
     assert loaded.settings.convert_wav_to_alac is False
     assert loaded.settings.listenbrainz_token == "lb-token"
     assert loaded.settings.listenbrainz_username == "lb-user"
@@ -76,6 +78,7 @@ def test_device_settings_round_trip_preserves_device_write_workers(monkeypatch) 
     assert raw["settings"]["lastfm_session_key"].startswith("xor1:")
     assert raw["settings"]["lastfm_username"] == "lf-user"
     assert raw["settings"]["backup_before_sync_mode"] == "off"
+    assert raw["settings"]["always_encode_lossy"] is True
     assert raw["settings"]["convert_wav_to_alac"] is False
 
 

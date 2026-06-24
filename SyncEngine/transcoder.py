@@ -151,6 +151,7 @@ class TranscodeOptions:
 
     ffmpeg_path: str = ""
     prefer_lossy: bool = False
+    always_encode_lossy: bool = False
     convert_wav_to_alac: bool = True
     normalize_sample_rate: bool = False
     mono_for_spoken: bool = True
@@ -210,6 +211,7 @@ class TranscodeOptions:
         return cls(
             ffmpeg_path=_read_setting_str(settings, "ffmpeg_path", ""),
             prefer_lossy=bool(getattr(settings, "prefer_lossy", False)),
+            always_encode_lossy=bool(getattr(settings, "always_encode_lossy", False)),
             convert_wav_to_alac=bool(getattr(settings, "convert_wav_to_alac", True)),
             normalize_sample_rate=bool(getattr(settings, "normalize_sample_rate", False)),
             mono_for_spoken=bool(getattr(settings, "mono_for_spoken", True)),
@@ -916,6 +918,18 @@ def _device_supports_alac() -> bool:
     return True
 
 
+def _is_native_lossy_audio(suffix: str, props: AudioProperties) -> bool:
+    """Return True for native audio that is already lossy."""
+    codec_name = props.codec_name.lower()
+    if suffix == ".mp3" or codec_name == "mp3":
+        return True
+    if suffix == ".aac" or codec_name == "aac":
+        return True
+    if suffix in {".m4a", ".m4b", ".m4p"}:
+        return codec_name != "alac" and props.bits_per_sample < 16
+    return False
+
+
 def get_transcode_target(
     filepath: str | Path,
     *,
@@ -931,6 +945,7 @@ def get_transcode_target(
       3. Lossy non-native → AAC
       4. Native → COPY, unless iPod limits are exceeded
          (hi-res sample rate / 24-bit / surround)
+         or always_encode_lossy wants to re-encode native lossy audio
          or prefer_lossy wants to shrink a native ALAC
     """
     suffix = Path(filepath).suffix.lower()
@@ -978,6 +993,9 @@ def get_transcode_target(
                 "TRANSCODE: could not probe %s — re-encoding instead of copying blind",
                 Path(filepath).name,
             )
+            return lossy_target
+
+        if options.always_encode_lossy and _is_native_lossy_audio(suffix, props):
             return lossy_target
 
         if props.exceeds_ipod_limits():

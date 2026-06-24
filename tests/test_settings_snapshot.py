@@ -29,6 +29,7 @@ def test_settings_snapshot_copies_values_and_freezes_lists() -> None:
             "music": {"Title": 240, "Album": 180, "Artist": 160}
         },
         device_write_workers=2,
+        always_encode_lossy=True,
         convert_wav_to_alac=False,
         splitter_sizes=[300, 700],
         window_width=1440,
@@ -66,6 +67,7 @@ def test_settings_snapshot_copies_values_and_freezes_lists() -> None:
         "music": {"Title": 240, "Album": 180, "Artist": 160}
     }
     assert snapshot.device_write_workers == 2
+    assert snapshot.always_encode_lossy is True
     assert snapshot.convert_wav_to_alac is False
     assert snapshot.splitter_sizes == (300, 700)
     assert snapshot.window_width == 1440

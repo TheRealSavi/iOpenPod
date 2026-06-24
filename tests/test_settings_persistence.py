@@ -55,6 +55,7 @@ def test_settings_persistence_round_trip(monkeypatch) -> None:
             },
             window_width=1440,
             device_write_workers=2,
+            always_encode_lossy=True,
             convert_wav_to_alac=False,
             scrobble_on_sync=True,
             listenbrainz_token="lb-token",
@@ -89,6 +90,7 @@ def test_settings_persistence_round_trip(monkeypatch) -> None:
     }
     assert loaded.window_width == 1440
     assert loaded.device_write_workers == 2
+    assert loaded.always_encode_lossy is True
     assert loaded.convert_wav_to_alac is False
     assert loaded.scrobble_on_sync is True
     assert loaded.listenbrainz_token == "lb-token"
