@@ -894,6 +894,16 @@ class Sidebar(QFrame):
             self.syncButton.setIconSize(_icon_sz)
         self.sidebarLayout.addWidget(self.syncButton)
 
+        # Subsonic sync button - row 3 (full width, secondary accent)
+        self.subsonicSyncButton = QPushButton("Sync Subsonic")
+        self.subsonicSyncButton.setStyleSheet(accent_btn_css())
+        self.subsonicSyncButton.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG, QFont.Weight.DemiBold))
+        _bi = glyph_icon("cloud", (20), Colors.TEXT_ON_ACCENT)
+        if _bi:
+            self.subsonicSyncButton.setIcon(_bi)
+            self.subsonicSyncButton.setIconSize(_icon_sz)
+        self.sidebarLayout.addWidget(self.subsonicSyncButton)
+
         # Backup button
         self.backupButton = QPushButton("Backups")
         self.backupButton.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))

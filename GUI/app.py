@@ -236,6 +236,7 @@ class MainWindow(QMainWindow):
         self._back_sync_workers = []
         self._cancelled_workers = []
         self._podcast_plan_worker = None
+        self._subsonic_plan_worker = None
         self._album_conversion_worker = None
         self._chapter_split_worker = None
         self._sync_execute_worker = None
@@ -368,6 +369,7 @@ class MainWindow(QMainWindow):
         self.sidebar.deviceButton.clicked.connect(self.selectDevice)
         self.sidebar.rescanButton.clicked.connect(self.resyncDevice)
         self.sidebar.syncButton.clicked.connect(self.startPCSync)
+        self.sidebar.subsonicSyncButton.clicked.connect(self.startSubsonicSync)
         self.sidebar.settingsButton.clicked.connect(self.showSettings)
         self.sidebar.backupButton.clicked.connect(self.showBackupBrowser)
         self.sidebar.tag_fixes_requested.connect(self._onIpodTagFixesRequested)
@@ -1068,6 +1070,10 @@ class MainWindow(QMainWindow):
                 and self._podcast_plan_worker.isRunning()
             )
             or (
+                self._subsonic_plan_worker is not None
+                and self._subsonic_plan_worker.isRunning()
+            )
+            or (
                 self._album_conversion_worker is not None
                 and self._album_conversion_worker.isRunning()
             )
@@ -1719,6 +1725,199 @@ class MainWindow(QMainWindow):
             self._podcast_plan_worker = None
         logger.warning("Failed to build podcast plan: %s", error_msg)
         self.syncReview.show_plan(plan)
+
+    # ── Subsonic sync ──────────────────────────────────────────────────────
+
+    def startSubsonicSync(self) -> None:
+        """Plan a sync from the configured Subsonic-compatible server.
+
+        Builds an ADD-only plan (starred songs + named playlists) in a
+        background worker, then routes it through the same sync-review /
+        execute pipeline as a PC sync.  Track bytes are streamed during
+        execution (see ``SyncExecutor._fetch_subsonic_tracks``).
+        """
+        if self._is_sync_running():
+            QMessageBox.information(
+                self, "Sync In Progress",
+                "A sync is already running. Please wait for it to finish.",
+            )
+            return
+
+        device = self.device_manager
+        if not device.device_path:
+            QMessageBox.information(
+                self, "No Device",
+                "Select an iPod before syncing from Subsonic.",
+            )
+            return
+
+        # Finish queued quick writes so planning reads committed state.
+        quick_ready, blocked_label = (
+            self._quick_write_controller.prepare_for_full_sync()
+        )
+        if not quick_ready:
+            label = blocked_label or "quick changes"
+            QMessageBox.warning(
+                self, "Quick Changes Still Saving",
+                f"iOpenPod is still saving pending {label}. Please wait.",
+            )
+            return
+        if self.library_cache.is_loading():
+            QMessageBox.information(
+                self, "Library Loading",
+                "Please wait for the iPod library to finish loading.",
+            )
+            return
+
+        settings = self.settings_service.get_effective_settings()
+        if not (settings.subsonic_url and settings.subsonic_username):
+            QMessageBox.information(
+                self, "Subsonic Not Configured",
+                "Configure a Subsonic server in Settings → Subsonic first.",
+            )
+            return
+
+        ipod_tracks = self.library_cache.get_tracks() or []
+        cache_dir = settings.transcode_cache_dir or ""
+
+        ipod_playlists = self.library_cache.get_playlists() or []
+
+        # Resolve the Subsonic playlist mapping.  When the user has selected
+        # playlists, fetch their names so we can show a mapping dialog (New vs
+        # merge into an existing iPod playlist) before planning.
+        playlist_ids = list(settings.subsonic_playlist_ids or ())
+        mappings: dict[str, int] = dict(settings.subsonic_playlist_mappings or {})
+
+        if playlist_ids:
+            subsonic_playlists = self._fetch_subsonic_playlist_names(
+                settings.subsonic_url,
+                settings.subsonic_username,
+                settings.subsonic_password,
+                playlist_ids,
+            )
+            if subsonic_playlists is not None:
+                from GUI.widgets.syncReview import SubsonicPlaylistMappingDialog
+
+                ipod_pairs = [
+                    (
+                        int(p.get("playlist_id") or p.get("Playlist ID") or 0),
+                        p.get("Title") or p.get("name") or "",
+                    )
+                    for p in ipod_playlists
+                    if (p.get("playlist_id") or p.get("Playlist ID"))
+                    and not p.get("master_flag")
+                ]
+                dlg = SubsonicPlaylistMappingDialog(
+                    self,
+                    subsonic_playlists,
+                    ipod_pairs,
+                    saved_mappings=mappings,
+                )
+                if dlg.exec() != dlg.DialogCode.Accepted:
+                    return  # user cancelled
+                mappings = dlg.mappings
+                # Persist the choice so it's remembered next time.
+                s = self.settings_service.get_global_settings()
+                s.subsonic_playlist_mappings = mappings
+                self.settings_service.save_global_settings(s)
+
+        from app_core.jobs import SubsonicPlanRequest, SubsonicPlanWorker
+
+        worker = SubsonicPlanWorker(
+            SubsonicPlanRequest(
+                url=settings.subsonic_url,
+                username=settings.subsonic_username,
+                password=settings.subsonic_password,
+                ipod_tracks=ipod_tracks,
+                cache_dir=cache_dir,
+                playlist_ids=tuple(playlist_ids),
+                playlist_mappings=tuple(mappings.items()),
+                ipod_playlists=tuple(ipod_playlists),
+            )
+        )
+        self._subsonic_plan_worker = worker
+        self.centralStack.setCurrentIndex(1)
+        self.syncReview.show_loading()
+        worker.finished.connect(
+            lambda plan, w=worker: self._on_subsonic_plan_ready(plan, w)
+        )
+        worker.error.connect(
+            lambda err, w=worker: self._on_subsonic_plan_error(err, w)
+        )
+        worker.start()
+
+    def _fetch_subsonic_playlist_names(
+        self, url: str, username: str, password: str, playlist_ids: list[str]
+    ) -> list[tuple[str, str]] | None:
+        """Fetch (id, name) pairs for the named Subsonic playlists.
+
+        Runs the network call off the UI thread with a wait cursor so the
+        mapping dialog can show real names.  Returns None on failure (the
+        caller then skips the dialog and falls back to saved mappings).
+        """
+        import threading
+
+        from PyQt6.QtCore import QCoreApplication, Qt
+        from PyQt6.QtGui import QGuiApplication
+
+        result: list[list] = [[]]  # mutable holder
+        done = threading.Event()
+
+        def _work():
+            try:
+                from SubsonicManager.client import SubsonicClient
+
+                client = SubsonicClient(url, username, password)
+                pairs: list[tuple[str, str]] = []
+                for pid in playlist_ids:
+                    pid = (pid or "").strip()
+                    if not pid:
+                        continue
+                    try:
+                        pl = client.get_playlist(pid)
+                        pairs.append((pid, str(pl.get("name") or pid)))
+                    except Exception:
+                        pairs.append((pid, pid))
+                result[0] = pairs
+            except Exception:
+                result[0] = []
+            finally:
+                done.set()
+
+        QGuiApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        t = threading.Thread(target=_work, daemon=True)
+        t.start()
+        # Spin the event loop while waiting so the UI stays responsive.
+        deadline_loops = 0
+        while not done.is_set() and deadline_loops < 2000:
+            QCoreApplication.processEvents()
+            t.join(0.01)
+            deadline_loops += 1
+        QGuiApplication.restoreOverrideCursor()
+        fetched = result[0]
+        return fetched if fetched is not None else None
+
+    def _on_subsonic_plan_ready(self, plan, worker=None) -> None:
+        """Subsonic plan built — show it for review."""
+        if worker is not None:
+            if self._subsonic_plan_worker is not worker:
+                return
+            self._subsonic_plan_worker = None
+        else:
+            self._subsonic_plan_worker = None
+        self._plan = plan
+        self.syncReview.show_plan(plan)
+
+    def _on_subsonic_plan_error(self, error_msg: str, worker=None) -> None:
+        """Subsonic plan failed — surface the error."""
+        if worker is not None:
+            if self._subsonic_plan_worker is not worker:
+                return
+            self._subsonic_plan_worker = None
+        else:
+            self._subsonic_plan_worker = None
+        logger.warning("Failed to build Subsonic plan: %s", error_msg)
+        self.syncReview.show_error(error_msg)
 
     def _onSyncError(self, error_msg: str):
         """Called when sync diff fails."""
