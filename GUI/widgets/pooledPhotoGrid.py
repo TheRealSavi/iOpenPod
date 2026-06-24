@@ -2,13 +2,20 @@ from __future__ import annotations
 
 from collections.abc import Hashable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, cast
 
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import QPoint, pyqtSignal
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import QWidget
 
 from .photoTile import PhotoGridTile
 from .pooledCardGrid import PooledCardGrid
+
+if TYPE_CHECKING:
+    from app_core.services import SettingsService
+
+
+_UNSET = object()
 
 
 @dataclass
@@ -17,16 +24,25 @@ class PhotoTileModel:
     title: str
     pixmap: QPixmap | None = None
     checked: bool = False
+    dominant_color: tuple[int, int, int] | None = None
 
 
 class PooledPhotoGridView(PooledCardGrid):
     checkedChanged = pyqtSignal(int, bool)
+    contextRequested = pyqtSignal(object, int, QPoint)
 
-    def __init__(self, *, checkable: bool = False, parent=None) -> None:
+    def __init__(
+        self,
+        *,
+        checkable: bool = False,
+        settings_service: SettingsService | None = None,
+        parent=None,
+    ) -> None:
         super().__init__()
         if parent is not None:
             self.setParent(parent)
         self._checkable = checkable
+        self._settings_service = settings_service
         self._record_index_by_key: dict[Hashable, int] = {}
 
     def setRecords(
@@ -51,7 +67,13 @@ class PooledPhotoGridView(PooledCardGrid):
         record = self._record_for_index(index)
         return record if isinstance(record, PhotoTileModel) else None
 
-    def setRecordPixmap(self, key: Hashable, pixmap: QPixmap | None) -> None:
+    def setRecordPixmap(
+        self,
+        key: Hashable,
+        pixmap: QPixmap | None,
+        *,
+        dominant_color: tuple[int, int, int] | None | object = _UNSET,
+    ) -> None:
         index = self._record_index_by_key.get(key)
         if index is None:
             return
@@ -59,8 +81,12 @@ class PooledPhotoGridView(PooledCardGrid):
         if record is None:
             return
         record.pixmap = pixmap
+        if dominant_color is not _UNSET:
+            record.dominant_color = cast(tuple[int, int, int] | None, dominant_color)
         widget = self._visible_widgets.get(index)
         if isinstance(widget, PhotoGridTile):
+            if dominant_color is not _UNSET:
+                widget.setDominantColor(record.dominant_color)
             widget.setPixmap(pixmap)
 
     def setRecordChecked(self, key: Hashable, checked: bool) -> None:
@@ -92,6 +118,12 @@ class PooledPhotoGridView(PooledCardGrid):
             self._record_index_by_key.clear()
         super().clearGrid(preserve_all_items=preserve_all_items)
 
+    def refresh_artwork_appearance(self) -> None:
+        rounded = self._rounded_artwork_enabled()
+        for widget in list(self._visible_widgets.values()):
+            if isinstance(widget, PhotoGridTile):
+                widget.set_rounded_artwork(rounded)
+
     def _record_identity(self, record: PhotoTileModel) -> Hashable:
         return record.key
 
@@ -102,6 +134,12 @@ class PooledPhotoGridView(PooledCardGrid):
         if not isinstance(widget, PhotoGridTile):
             return
         widget.clicked.connect(lambda w=widget: self._on_tile_clicked(w))
+        widget.context_requested.connect(
+            lambda global_pos, w=widget: self._on_tile_context_requested(
+                w,
+                global_pos,
+            )
+        )
         if self._checkable:
             widget.checked_changed.connect(
                 lambda checked, w=widget: self._on_tile_checked(w, checked)
@@ -116,6 +154,8 @@ class PooledPhotoGridView(PooledCardGrid):
         if not isinstance(widget, PhotoGridTile):
             return
         widget.setTitle(record.title)
+        widget.set_rounded_artwork(self._rounded_artwork_enabled())
+        widget.setDominantColor(record.dominant_color)
         widget.setPixmap(record.pixmap)
         if self._checkable:
             widget.setChecked(record.checked)
@@ -129,6 +169,20 @@ class PooledPhotoGridView(PooledCardGrid):
         if record_index is not None:
             self.setCurrentIndex(record_index)
 
+    def _on_tile_context_requested(
+        self,
+        widget: PhotoGridTile,
+        global_pos: QPoint,
+    ) -> None:
+        record_index = self._record_index_for_widget(widget)
+        if record_index is None:
+            return
+        record = self.recordAt(record_index)
+        if record is None:
+            return
+        self.setCurrentIndex(record_index)
+        self.contextRequested.emit(record.key, record_index, global_pos)
+
     def _on_tile_checked(self, widget: PhotoGridTile, checked: bool) -> None:
         record_index = self._record_index_for_widget(widget)
         if record_index is None:
@@ -138,3 +192,11 @@ class PooledPhotoGridView(PooledCardGrid):
             return
         record.checked = checked
         self.checkedChanged.emit(record_index, checked)
+
+    def _rounded_artwork_enabled(self) -> bool:
+        if self._settings_service is None:
+            return False
+        try:
+            return bool(self._settings_service.get_effective_settings().rounded_artwork)
+        except Exception:
+            return False

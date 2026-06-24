@@ -1,12 +1,19 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import QSize, Qt, pyqtSignal
+from PyQt6.QtCore import QPoint, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QCursor, QFont, QPixmap
 from PyQt6.QtWidgets import QCheckBox, QFrame, QHBoxLayout, QLabel, QVBoxLayout
 
+from ..artwork_rendering import nested_artwork_radius, rounded_artwork_pixmap
 from ..glyphs import glyph_pixmap
 from ..hidpi import scale_pixmap_for_display
-from ..styles import FONT_FAMILY, Colors, Metrics
+from ..styles import (
+    FONT_FAMILY,
+    Colors,
+    Metrics,
+    display_accent_rgb,
+    text_rgb_for_background,
+)
 from .scrollingLabel import ScrollingLabel
 
 _PHOTO_TILE_W = Metrics.GRID_ITEM_W
@@ -15,10 +22,37 @@ _PHOTO_IMAGE_BOX = Metrics.GRID_ART_SIZE
 _PHOTO_IMAGE_SIZE = Metrics.GRID_ART_SIZE
 
 
+def _css_hex_rgb(color: str) -> tuple[int, int, int] | None:
+    value = color.strip()
+    if len(value) != 7 or not value.startswith("#"):
+        return None
+    try:
+        return (
+            int(value[1:3], 16),
+            int(value[3:5], 16),
+            int(value[5:7], 16),
+        )
+    except ValueError:
+        return None
+
+
+def _blend_rgb(
+    foreground: tuple[int, int, int],
+    background: tuple[int, int, int],
+    alpha: float,
+) -> tuple[int, int, int]:
+    return (
+        int(round((foreground[0] * alpha) + (background[0] * (1.0 - alpha)))),
+        int(round((foreground[1] * alpha) + (background[1] * (1.0 - alpha)))),
+        int(round((foreground[2] * alpha) + (background[2] * (1.0 - alpha)))),
+    )
+
+
 class PhotoGridTile(QFrame):
     """Photo tile styled to match the music browser's card treatment."""
 
     clicked = pyqtSignal()
+    context_requested = pyqtSignal(QPoint)
     checked_changed = pyqtSignal(bool)
 
     def __init__(self, title: str, *, checkable: bool = False, parent=None):
@@ -26,6 +60,9 @@ class PhotoGridTile(QFrame):
         self._selected = False
         self._checked = False
         self._suspend_checkbox_signal = False
+        self._rounded_artwork = False
+        self._source_pixmap = QPixmap()
+        self._dominant_color: tuple[int, int, int] | None = None
         self.setObjectName("photoTile")
         self.setFixedSize(QSize(_PHOTO_TILE_W, _PHOTO_TILE_H))
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
@@ -72,24 +109,20 @@ class PhotoGridTile(QFrame):
         self._apply_style()
 
     def setPixmap(self, pixmap: QPixmap | None) -> None:
-        if pixmap and not pixmap.isNull():
-            self._has_image = True
-            scaled = scale_pixmap_for_display(
-                pixmap,
-                _PHOTO_IMAGE_SIZE,
-                _PHOTO_IMAGE_SIZE,
-                widget=self.image_label,
-                aspect_mode=Qt.AspectRatioMode.KeepAspectRatio,
-                transform_mode=Qt.TransformationMode.SmoothTransformation,
-            )
-            self.image_label.setPixmap(scaled)
-            self.image_label.setText("")
-            self.image_label.setStyleSheet(
-                f"background: transparent; border: none; border-radius: {Metrics.BORDER_RADIUS}px;"
-            )
-        else:
-            self._set_placeholder()
+        self._source_pixmap = pixmap if pixmap and not pixmap.isNull() else QPixmap()
+        self._render_pixmap()
         self._apply_style()
+
+    def setDominantColor(self, color: tuple[int, int, int] | None) -> None:
+        self._dominant_color = color
+        self._apply_style()
+
+    def set_rounded_artwork(self, enabled: bool) -> None:
+        enabled = bool(enabled)
+        if self._rounded_artwork == enabled:
+            return
+        self._rounded_artwork = enabled
+        self._render_pixmap()
 
     def setTitle(self, title: str) -> None:
         self.title_label.setText(title)
@@ -113,11 +146,43 @@ class PhotoGridTile(QFrame):
             self.clicked.emit()
         super().mousePressEvent(a0)
 
+    def contextMenuEvent(self, a0):
+        if a0:
+            self.context_requested.emit(a0.globalPos())
+            a0.accept()
+            return
+        super().contextMenuEvent(a0)
+
     def _on_checkbox_toggled(self, checked: bool) -> None:
         self._checked = checked
         self._apply_style()
         if not self._suspend_checkbox_signal:
             self.checked_changed.emit(checked)
+
+    def _render_pixmap(self) -> None:
+        if self._source_pixmap.isNull():
+            self._set_placeholder()
+            return
+
+        self._has_image = True
+        scaled = scale_pixmap_for_display(
+            self._source_pixmap,
+            _PHOTO_IMAGE_SIZE,
+            _PHOTO_IMAGE_SIZE,
+            widget=self.image_label,
+            aspect_mode=Qt.AspectRatioMode.KeepAspectRatio,
+            transform_mode=Qt.TransformationMode.SmoothTransformation,
+        )
+        if self._rounded_artwork:
+            scaled = rounded_artwork_pixmap(
+                scaled,
+                nested_artwork_radius(Metrics.BORDER_RADIUS_XL, 10),
+            )
+        self.image_label.setPixmap(scaled)
+        self.image_label.setText("")
+        self.image_label.setStyleSheet(
+            f"background: transparent; border: none; border-radius: {Metrics.BORDER_RADIUS}px;"
+        )
 
     def _set_placeholder(self) -> None:
         self._has_image = False
@@ -141,6 +206,24 @@ class PhotoGridTile(QFrame):
         bg = Colors.ACCENT_MUTED if self._selected else Colors.SURFACE_RAISED
         hover_bg = Colors.ACCENT_DIM if self._selected else Colors.SURFACE_ACTIVE
         image_bg = Colors.SURFACE_ALT
+        title_color = Colors.TEXT_PRIMARY
+
+        if not self._selected and self._has_image and self._dominant_color:
+            r, g, b = display_accent_rgb(
+                self._dominant_color,
+                background=Colors.BG_DARK,
+                target_ratio=Colors.GRID_ART_CONTRAST_TARGET,
+            )
+            bg = f"rgba({r}, {g}, {b}, 30)"
+            hover_bg = f"rgba({r}, {g}, {b}, 55)"
+            border = f"rgba({r}, {g}, {b}, 25)"
+            surface_rgb = _blend_rgb(
+                (r, g, b),
+                _css_hex_rgb(Colors.BG_DARK) or (26, 26, 46),
+                30 / 255,
+            )
+            tr, tg, tb = text_rgb_for_background(surface_rgb)
+            title_color = f"rgb({tr}, {tg}, {tb})"
 
         self.setStyleSheet(f"""
             QFrame#photoTile {{
@@ -168,7 +251,7 @@ class PhotoGridTile(QFrame):
             }
         """)
         self.title_label.setStyleSheet(
-            f"border: none; background: transparent; color: {Colors.TEXT_PRIMARY};"
+            f"border: none; background: transparent; color: {title_color};"
         )
         if self.checkbox is not None:
             self.checkbox.setStyleSheet(f"""

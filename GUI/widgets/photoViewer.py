@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QFont, QImage, QPixmap
 from PyQt6.QtWidgets import (
     QFrame,
@@ -16,7 +16,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from ..styles import FONT_FAMILY, Colors, Metrics
+from ..glyphs import glyph_icon
+from ..styles import FONT_FAMILY, Colors, Metrics, btn_css, danger_btn_css
 
 
 def pil_to_pixmap(img) -> QPixmap:
@@ -43,6 +44,7 @@ class PhotoViewerPane(QFrame):
         self._empty_summary = empty_summary
         self._source_pixmap = QPixmap()
         self._preview_placeholder_text = "Select a photo"
+        self._action_buttons: dict[str, QPushButton] = {}
         self.setMinimumWidth(0)
         self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
 
@@ -101,6 +103,14 @@ class PhotoViewerPane(QFrame):
         layout.addWidget(self._variant_row)
         self._variant_row.hide()
         self._variant_buttons: list[QPushButton] = []
+
+        self._action_row = QWidget(self)
+        action_row_layout = QHBoxLayout(self._action_row)
+        action_row_layout.setContentsMargins(0, 0, 0, 0)
+        action_row_layout.setSpacing(6)
+        layout.addWidget(self._action_row)
+        self._action_row.hide()
+        self._action_buttons_layout = action_row_layout
 
         self._content_splitter = QSplitter(Qt.Orientation.Vertical, self)
         self._content_splitter.setChildrenCollapsible(False)
@@ -198,6 +208,45 @@ class PhotoViewerPane(QFrame):
         self._content_splitter.setSizes([420, 320])
 
         self.clearPreview()
+
+    def configureActionRow(
+        self,
+        actions: list[tuple[str, str, str, bool]],
+    ) -> dict[str, QPushButton]:
+        """Create a compact row of caller-owned action buttons.
+
+        Each tuple is ``(key, label, glyph_name, danger)``. The caller connects
+        the returned buttons to domain actions.
+        """
+
+        while self._action_buttons_layout.count():
+            item = self._action_buttons_layout.takeAt(0)
+            widget = item.widget() if item else None
+            if widget is not None:
+                widget.deleteLater()
+        self._action_buttons.clear()
+
+        for key, label, glyph_name, danger in actions:
+            btn = QPushButton(label, self._action_row)
+            btn.setObjectName(f"photoViewerAction_{key}")
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
+            btn.setStyleSheet(
+                danger_btn_css()
+                if danger
+                else btn_css(padding="5px 10px", radius=Metrics.BORDER_RADIUS_SM)
+            )
+            icon_color = Colors.DANGER if danger else Colors.TEXT_SECONDARY
+            icon = glyph_icon(glyph_name, 14, icon_color)
+            if icon is not None:
+                btn.setIcon(icon)
+                btn.setIconSize(QSize(14, 14))
+            self._action_buttons[key] = btn
+            self._action_buttons_layout.addWidget(btn)
+
+        self._action_buttons_layout.addStretch()
+        self._action_row.setVisible(bool(actions))
+        return dict(self._action_buttons)
 
     def clearPreview(
         self,

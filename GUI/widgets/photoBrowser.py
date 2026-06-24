@@ -1,16 +1,20 @@
 from __future__ import annotations
 
 import copy
+import re
+import shutil
 from collections import deque
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
-from PyQt6.QtGui import QCursor, QFont, QImage, QPixmap
+from PyQt6.QtGui import QAction, QCursor, QFont, QImage, QPixmap
 from PyQt6.QtWidgets import (
+    QFileDialog,
     QFrame,
     QInputDialog,
+    QMenu,
     QMessageBox,
     QPushButton,
     QSplitter,
@@ -32,9 +36,12 @@ from SyncEngine.photos import (
     write_photo_db_metadata_only,
 )
 
+from ..glyphs import glyph_icon
 from ..styles import (
     FONT_FAMILY,
+    Colors,
     Metrics,
+    context_menu_css,
     make_scroll_area,
     sidebar_nav_css,
     sidebar_nav_selected_css,
@@ -60,10 +67,128 @@ if TYPE_CHECKING:
 
 
 PhotoListItem = tuple[int, PhotoEntry]
+PhotoTilePayload = tuple[int, int, bytes, tuple[int, int, int] | None]
+PhotoExportRequest = tuple[PhotoEntry, str]
 
 _THUMB_DECODE_BATCH_SIZE = 6
 _THUMB_PREFETCH_AHEAD = 6
 _MAX_THUMB_WORKERS = 2
+_EXPORT_FILTERS = "JPEG Image (*.jpg);;PNG Image (*.png);;All Files (*)"
+_JPEG_EXTENSIONS = {".jpg", ".jpeg"}
+_PNG_EXTENSIONS = {".png"}
+
+
+def _safe_photo_stem(name: str, fallback: str) -> str:
+    stem = Path(name).stem if name else fallback
+    cleaned = re.sub(r"[^A-Za-z0-9._ -]+", "_", stem).strip(" ._")
+    return cleaned or fallback
+
+
+def _default_export_filename(title: str, image_id: int) -> str:
+    stem = _safe_photo_stem(title, f"photo_{image_id:05d}")
+    return f"{stem}.jpg"
+
+
+def _device_full_res_path(ipod_path: str | Path, photo: PhotoEntry) -> Path | None:
+    if not photo.full_res_path:
+        return None
+    path = Path(ipod_path) / "Photos" / Path(photo.full_res_path)
+    return path if path.is_file() else None
+
+
+def _load_still_image(path: str | Path):
+    from PIL import Image, ImageOps
+
+    with Image.open(path) as image:
+        image.seek(0)
+        loaded = image.copy()
+    return ImageOps.exif_transpose(loaded)
+
+
+def _jpeg_ready_image(image):
+    from PIL import Image
+
+    if image.mode == "RGB":
+        return image
+    if image.mode in ("RGBA", "LA") or (
+        image.mode == "P" and "transparency" in image.info
+    ):
+        rgba = image.convert("RGBA")
+        background = Image.new("RGB", rgba.size, (255, 255, 255))
+        background.paste(rgba, mask=rgba.getchannel("A"))
+        return background
+    return image.convert("RGB")
+
+
+def _save_image_as_normal_photo(image, target_path: str | Path) -> Path:
+    target = Path(target_path)
+    if not target.suffix:
+        target = target.with_suffix(".jpg")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    suffix = target.suffix.lower()
+    if suffix in _PNG_EXTENSIONS:
+        image.convert("RGBA").save(target, format="PNG")
+    else:
+        _jpeg_ready_image(image).save(target, format="JPEG", quality=95, optimize=True)
+    return target
+
+
+def _preferred_export_format_id(photo: PhotoEntry) -> int | None:
+    if not photo.thumbs:
+        return None
+    role_priority = {
+        "photo_full": 0,
+        "photo_large": 1,
+        "photo_preview": 2,
+        "tv_out": 3,
+        "photo_list": 4,
+        "photo_thumb": 5,
+    }
+    return min(
+        photo.thumbs,
+        key=lambda fmt_id: (
+            role_priority.get(
+                (lambda fmt: fmt.role if fmt is not None else "")(
+                    ITHMB_FORMAT_MAP.get(fmt_id)
+                ),
+                9,
+            ),
+            -(
+                photo.thumbs[fmt_id].width
+                * photo.thumbs[fmt_id].height
+            ),
+            int(fmt_id),
+        ),
+    )
+
+
+def _export_photo_to_path(
+    photo: PhotoEntry,
+    ipod_path: str | Path,
+    target_path: str | Path,
+    *,
+    format_id: int | None = None,
+) -> Path:
+    target = Path(target_path)
+    if not target.suffix:
+        target = target.with_suffix(".jpg")
+
+    full_res_path = _device_full_res_path(ipod_path, photo)
+    suffix = target.suffix.lower()
+    if full_res_path is not None and suffix in _JPEG_EXTENSIONS:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(full_res_path, target)
+        return target
+
+    image = _load_still_image(full_res_path) if full_res_path is not None else None
+    if image is None and format_id is not None:
+        image = load_photo_preview(photo, ipod_path, format_id=format_id)
+    if image is None:
+        image = load_photo_preview(photo, ipod_path)
+    if image is None:
+        raise RuntimeError("Could not decode the selected photo from the iPod.")
+
+    return _save_image_as_normal_photo(image, target)
 
 
 class _PhotoWriteWorker(QThread):
@@ -191,6 +316,40 @@ class _PhotoWriteWorker(QThread):
             self.failed.emit(str(exc))
 
 
+class _PhotoExportWorker(QThread):
+    finished_ok = pyqtSignal(int, str)
+    failed = pyqtSignal(str)
+
+    def __init__(
+        self,
+        ipod_path: str,
+        exports: list[PhotoExportRequest],
+        destination_label: str,
+    ):
+        super().__init__()
+        self._ipod_path = ipod_path
+        self._exports = [
+            (copy.deepcopy(photo), target_path)
+            for photo, target_path in exports
+        ]
+        self._destination_label = destination_label
+
+    def run(self) -> None:
+        try:
+            if not self._exports:
+                raise RuntimeError("No photos were selected for export.")
+            for photo, target_path in self._exports:
+                _export_photo_to_path(
+                    photo,
+                    self._ipod_path,
+                    target_path,
+                    format_id=_preferred_export_format_id(photo),
+                )
+            self.finished_ok.emit(len(self._exports), self._destination_label)
+        except Exception as exc:
+            self.failed.emit(str(exc))
+
+
 class PhotoBrowserWidget(QFrame):
     def __init__(
         self,
@@ -216,7 +375,9 @@ class PhotoBrowserWidget(QFrame):
         self._album_buttons: dict[str, QPushButton] = {}
         self._selected_album_btn: QPushButton | None = None
         self._write_worker: _PhotoWriteWorker | None = None
+        self._export_worker: _PhotoExportWorker | None = None
         self._tile_pixmap_cache: dict[int, QPixmap] = {}
+        self._tile_color_cache: dict[int, tuple[int, int, int] | None] = {}
         self._preview_pixmap_cache: dict[tuple[int, int], QPixmap] = {}
         self._preview_pending: set[tuple[int, int]] = set()
         self._cache_marker: tuple[str, int, int] | None = None
@@ -259,23 +420,13 @@ class PhotoBrowserWidget(QFrame):
         header = BrowserHeroHeader("Photos", self)
 
         self.new_album_btn = QPushButton("New Album")
-        self.add_to_album_btn = QPushButton("Add to Album")
-        self.rename_album_btn = QPushButton("Rename Album")
-        self.delete_album_btn = QPushButton("Delete Album")
-        self.remove_from_album_btn = QPushButton("Remove from Album")
-        self.delete_photo_btn = QPushButton("Delete Photo")
-        for btn in (
-            self.new_album_btn,
-            self.add_to_album_btn,
-            self.rename_album_btn,
-            self.delete_album_btn,
-            self.remove_from_album_btn,
-            self.delete_photo_btn,
-        ):
-            btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-            btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-            btn.setStyleSheet(chrome_action_btn_css())
-            header.actions_layout.addWidget(btn)
+        self.new_album_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        self.new_album_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.new_album_btn.setStyleSheet(chrome_action_btn_css())
+        new_album_icon = glyph_icon("plus", 14, Colors.TEXT_PRIMARY)
+        if new_album_icon is not None:
+            self.new_album_btn.setIcon(new_album_icon)
+        header.actions_layout.addWidget(self.new_album_btn)
         header.actions_layout.addStretch()
 
         root.addWidget(header)
@@ -312,7 +463,7 @@ class PhotoBrowserWidget(QFrame):
 
         self.photo_scroll = make_scroll_area()
         self.photo_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self.photo_grid = PooledPhotoGridView()
+        self.photo_grid = PooledPhotoGridView(settings_service=self._settings_service)
         self.photo_scroll.setWidget(self.photo_grid)
         self._grid_panel.addWidget(self.photo_scroll, 1)
         splitter.addWidget(self._grid_panel)
@@ -323,18 +474,28 @@ class PhotoBrowserWidget(QFrame):
             empty_summary="Select a photo to inspect its preview and album details.",
             parent=splitter,
         )
+        viewer_actions = self.viewer.configureActionRow([
+            ("export_photo", "Export", "download", False),
+            ("add_to_album", "Add to Album", "plus", False),
+            ("remove_from_album", "Remove from Album", "minus", False),
+            ("delete_photo", "Delete Photo", "trash", True),
+        ])
+        self.export_photo_btn = viewer_actions["export_photo"]
+        self.add_to_album_btn = viewer_actions["add_to_album"]
+        self.remove_from_album_btn = viewer_actions["remove_from_album"]
+        self.delete_photo_btn = viewer_actions["delete_photo"]
         splitter.addWidget(self.viewer)
         splitter.setSizes([240, 760, 340])
 
         self.photo_grid.currentIndexChanged.connect(self._on_photo_changed)
+        self.photo_grid.contextRequested.connect(self._on_photo_context_requested)
         self.photo_grid.visibleIndicesChanged.connect(
             self._on_visible_photo_indices_changed
         )
         self.viewer.variantSelected.connect(self._on_variant_selected)
         self.new_album_btn.clicked.connect(self._create_album)
+        self.export_photo_btn.clicked.connect(self._export_current_photo)
         self.add_to_album_btn.clicked.connect(self._add_to_album)
-        self.rename_album_btn.clicked.connect(self._rename_album)
-        self.delete_album_btn.clicked.connect(self._delete_album)
         self.remove_from_album_btn.clicked.connect(self._remove_from_album)
         self.delete_photo_btn.clicked.connect(self._delete_photo)
         self._update_action_states()
@@ -345,6 +506,9 @@ class PhotoBrowserWidget(QFrame):
         cache.data_ready.connect(self.reload)
         cache.photos_changed.connect(self.reload)
         self._bound_cache = cache
+
+    def refresh_artwork_appearance(self) -> None:
+        self.photo_grid.refresh_artwork_appearance()
 
     def clear(self):
         self._reload_timer.stop()
@@ -365,6 +529,7 @@ class PhotoBrowserWidget(QFrame):
         self._grid_load_token += 1
         self._preview_request_token += 1
         self._tile_pixmap_cache.clear()
+        self._tile_color_cache.clear()
         self._preview_pixmap_cache.clear()
         self._cache_marker = None
         self._update_action_states()
@@ -381,6 +546,7 @@ class PhotoBrowserWidget(QFrame):
         marker = (device_path, id(photodb), len(photodb.photos))
         if marker != self._cache_marker:
             self._tile_pixmap_cache.clear()
+            self._tile_color_cache.clear()
             self._preview_pixmap_cache.clear()
             self._preview_pending.clear()
             self._cache_marker = marker
@@ -528,6 +694,23 @@ class PhotoBrowserWidget(QFrame):
         return QPixmap.fromImage(qimg.copy())
 
     @staticmethod
+    def _dominant_color_from_image(image) -> tuple[int, int, int] | None:
+        try:
+            from ..imgMaker import get_artwork_colors
+
+            dominant_color, _album_colors = get_artwork_colors(image.convert("RGBA"))
+            return dominant_color
+        except Exception:
+            try:
+                pixel = cast(
+                    tuple[int, int, int],
+                    image.convert("RGB").resize((1, 1)).getpixel((0, 0)),
+                )
+                return int(pixel[0]), int(pixel[1]), int(pixel[2])
+            except Exception:
+                return None
+
+    @staticmethod
     def _encode_loaded_image(
         image,
         *,
@@ -541,11 +724,24 @@ class PhotoBrowserWidget(QFrame):
         return image.width, image.height, image.tobytes("raw", "RGBA")
 
     @staticmethod
+    def _encode_loaded_tile_image(
+        image,
+        *,
+        thumbnail_size: tuple[int, int],
+    ) -> PhotoTilePayload | None:
+        if image is None:
+            return None
+        image.thumbnail(thumbnail_size)
+        image = image.convert("RGBA")
+        dominant_color = PhotoBrowserWidget._dominant_color_from_image(image)
+        return image.width, image.height, image.tobytes("raw", "RGBA"), dominant_color
+
+    @staticmethod
     def _load_thumb_batch(
         requests: list[tuple[int, PhotoEntry, int | None]],
         device_path: str,
-    ) -> dict[int, tuple[int, int, bytes] | None]:
-        results: dict[int, tuple[int, int, bytes] | None] = {}
+    ) -> dict[int, PhotoTilePayload | None]:
+        results: dict[int, PhotoTilePayload | None] = {}
         for photo_id, photo, format_id in requests:
             try:
                 image = load_photo_preview(
@@ -555,7 +751,7 @@ class PhotoBrowserWidget(QFrame):
                 )
                 if image is None:
                     image = load_photo_preview(photo, device_path)
-                results[photo_id] = PhotoBrowserWidget._encode_loaded_image(
+                results[photo_id] = PhotoBrowserWidget._encode_loaded_tile_image(
                     image,
                     thumbnail_size=(132, 132),
                 )
@@ -770,6 +966,7 @@ class PhotoBrowserWidget(QFrame):
                     key=photo_id,
                     title=self._device_photo_title(photo),
                     pixmap=cached if cached is not None else QPixmap(),
+                    dominant_color=self._tile_color_cache.get(photo.image_id),
                 )
             )
         self.photo_grid.setRecords(
@@ -925,7 +1122,7 @@ class PhotoBrowserWidget(QFrame):
 
     def _on_thumb_batch_loaded(
         self,
-        results: dict[int, tuple[int, int, bytes] | None] | None,
+        results: dict[int, PhotoTilePayload | None] | None,
         load_token: int,
     ) -> None:
         self._thumb_workers_in_flight = max(0, self._thumb_workers_in_flight - 1)
@@ -938,11 +1135,17 @@ class PhotoBrowserWidget(QFrame):
         for photo_id, data in results.items():
             self._thumb_in_flight_ids.discard(photo_id)
             pixmap = QPixmap()
+            dominant_color: tuple[int, int, int] | None = None
             if data is not None:
-                width, height, rgba = data
+                width, height, rgba, dominant_color = data
                 pixmap = self._pixmap_from_rgba_bytes(width, height, rgba)
             self._tile_pixmap_cache[photo_id] = pixmap
-            self.photo_grid.setRecordPixmap(photo_id, pixmap)
+            self._tile_color_cache[photo_id] = dominant_color
+            self.photo_grid.setRecordPixmap(
+                photo_id,
+                pixmap,
+                dominant_color=dominant_color,
+            )
 
         if self._thumb_queue and not self._thumb_timer.isActive():
             self._thumb_timer.start(0)
@@ -978,8 +1181,167 @@ class PhotoBrowserWidget(QFrame):
         btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
         btn.setStyleSheet(sidebar_nav_css())
         btn.clicked.connect(lambda _checked=False, album_name=name: self._on_album_changed(album_name))
+        btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        btn.customContextMenuRequested.connect(
+            lambda pos, b=btn, album_name=name: self._on_album_context_requested(
+                album_name,
+                b.mapToGlobal(pos),
+            )
+        )
         self._album_buttons[name] = btn
         self._album_inner_layout.addWidget(btn)
+
+    def _set_menu_icon(self, action, glyph_name: str, color: str | None = None) -> None:
+        icon = glyph_icon(glyph_name, 14, color or Colors.TEXT_PRIMARY)
+        if icon is not None and action is not None:
+            action.setIcon(icon)
+
+    def _add_menu_action(
+        self,
+        menu: QMenu,
+        label: str,
+        *,
+        glyph_name: str,
+        color: str | None = None,
+        enabled: bool = True,
+    ) -> QAction:
+        action = menu.addAction(label)
+        if action is None:
+            raise RuntimeError(f"Could not create menu action: {label}")
+        self._set_menu_icon(action, glyph_name, color)
+        action.setEnabled(enabled)
+        return action
+
+    def _on_photo_context_requested(
+        self,
+        key: object,
+        index: int,
+        global_pos,
+    ) -> None:
+        if not (0 <= index < len(self._filtered_items)):
+            return
+        photo_id, photo = self._filtered_items[index]
+        if photo_id != key:
+            return
+
+        grid = getattr(self, "photo_grid", None)
+        if grid is not None and hasattr(grid, "setCurrentIndex"):
+            grid.setCurrentIndex(index)
+
+        menu = QMenu(self)
+        menu.setStyleSheet(context_menu_css())
+        actions_locked = self._photo_actions_locked()
+
+        export_action = self._add_menu_action(
+            menu,
+            "Export Photo...",
+            glyph_name="download",
+            enabled=not actions_locked,
+        )
+
+        menu.addSeparator()
+        add_action = self._add_menu_action(
+            menu,
+            "Add to Album",
+            glyph_name="plus",
+            enabled=not actions_locked and bool(self._available_album_targets(photo)),
+        )
+
+        remove_action: QAction | None = None
+        current_album = self._selected_album_target()
+        if current_album:
+            remove_action = self._add_menu_action(
+                menu,
+                "Remove from Current Album",
+                glyph_name="minus",
+                enabled=(
+                    not actions_locked
+                    and current_album in getattr(photo, "album_names", set())
+                ),
+            )
+
+        menu.addSeparator()
+        delete_action = self._add_menu_action(
+            menu,
+            "Delete Photo",
+            glyph_name="trash",
+            color=Colors.DANGER,
+            enabled=not actions_locked,
+        )
+
+        chosen = menu.exec(global_pos)
+        if chosen == export_action and export_action.isEnabled():
+            self._export_current_photo()
+        elif chosen == add_action and add_action.isEnabled():
+            self._add_to_album()
+        elif (
+            remove_action is not None
+            and chosen == remove_action
+            and remove_action.isEnabled()
+        ):
+            self._remove_from_album()
+        elif chosen == delete_action and delete_action.isEnabled():
+            self._delete_photo()
+
+    def _on_album_context_requested(self, album_name: str, global_pos) -> None:
+        menu = QMenu(self)
+        menu.setStyleSheet(context_menu_css())
+        actions_locked = self._photo_actions_locked()
+        target_album = "" if album_name in ("", "All Photos") else album_name
+        exportable_count = len(self._photos_for_album_target(target_album))
+
+        export_action = self._add_menu_action(
+            menu,
+            "Export Album..." if target_album else "Export All Photos...",
+            glyph_name="download",
+            enabled=not actions_locked and exportable_count > 0,
+        )
+
+        menu.addSeparator()
+
+        new_action = self._add_menu_action(
+            menu,
+            "New Album",
+            glyph_name="plus",
+            enabled=not actions_locked,
+        )
+
+        rename_action: QAction | None = None
+        delete_action: QAction | None = None
+        if target_album:
+            menu.addSeparator()
+            rename_action = self._add_menu_action(
+                menu,
+                "Rename Album",
+                glyph_name="edit",
+                enabled=not actions_locked,
+            )
+
+            delete_action = self._add_menu_action(
+                menu,
+                "Delete Album",
+                glyph_name="trash",
+                color=Colors.DANGER,
+                enabled=not actions_locked,
+            )
+
+        chosen = menu.exec(global_pos)
+        if chosen == export_action and export_action.isEnabled():
+            self._export_album_target(target_album)
+        elif chosen == new_action and new_action.isEnabled():
+            self._create_album()
+        elif (
+            rename_action is not None
+            and chosen == rename_action
+            and rename_action.isEnabled()
+        ):
+            self._rename_album_target(target_album)
+        elif (
+            delete_action is not None
+            and chosen == delete_action
+            and delete_action.isEnabled()
+        ):
+            self._delete_album_target(target_album)
 
     def _highlight_album_button(self, album_name: str):
         if self._selected_album_btn is not None:
@@ -990,17 +1352,20 @@ class PhotoBrowserWidget(QFrame):
             btn.setStyleSheet(sidebar_nav_selected_css())
 
     def _update_action_states(self):
-        is_writing = self._write_worker is not None and self._write_worker.isRunning()
+        actions_locked = self._photo_actions_locked()
         has_album = bool(self._selected_album_target())
         _key, photo = self._current_photo()
         has_photo = photo is not None
         can_add_to_album = has_photo and bool(self._available_album_targets(photo))
-        self.new_album_btn.setEnabled(not is_writing)
-        self.add_to_album_btn.setEnabled(not is_writing and can_add_to_album)
-        self.rename_album_btn.setEnabled(not is_writing and has_album)
-        self.delete_album_btn.setEnabled(not is_writing and has_album)
-        self.remove_from_album_btn.setEnabled(not is_writing and has_album and has_photo)
-        self.delete_photo_btn.setEnabled(not is_writing and has_photo)
+        self.new_album_btn.setEnabled(not actions_locked)
+        self.export_photo_btn.setEnabled(
+            not actions_locked and has_photo and bool(self._current_device_path())
+        )
+        self.add_to_album_btn.setEnabled(not actions_locked and can_add_to_album)
+        self.remove_from_album_btn.setEnabled(
+            not actions_locked and has_album and has_photo
+        )
+        self.delete_photo_btn.setEnabled(not actions_locked and has_photo)
 
     def _on_album_changed(self, album_name: str):
         self._current_album = album_name
@@ -1040,10 +1405,24 @@ class PhotoBrowserWidget(QFrame):
             sidebar.show_save_indicator(state)
 
     def _is_sync_running(self) -> bool:
-        sync_checker = getattr(self.window(), "_is_sync_running", None)
+        owner = self.window()
+        if owner is self:
+            return False
+        sync_checker = getattr(owner, "_is_sync_running", None)
         if callable(sync_checker):
             return bool(sync_checker())
         return False
+
+    def _is_photo_export_running(self) -> bool:
+        export_worker = getattr(self, "_export_worker", None)
+        return export_worker is not None and export_worker.isRunning()
+
+    def _photo_actions_locked(self) -> bool:
+        write_worker = getattr(self, "_write_worker", None)
+        return (
+            write_worker is not None
+            and write_worker.isRunning()
+        ) or self._is_photo_export_running() or self._is_sync_running()
 
     def _start_photo_write(
         self,
@@ -1056,6 +1435,9 @@ class PhotoBrowserWidget(QFrame):
     ) -> None:
         if self._write_worker is not None and self._write_worker.isRunning():
             QMessageBox.information(self, "Photo Save In Progress", "Please wait for the current photo save to finish.")
+            return
+        if self._is_photo_export_running():
+            QMessageBox.information(self, "Photo Export In Progress", "Please wait for the current photo export to finish.")
             return
         if self._is_sync_running():
             QMessageBox.information(self, "Sync Running", "Wait for the current sync to finish before editing photos.")
@@ -1091,6 +1473,7 @@ class PhotoBrowserWidget(QFrame):
         if isinstance(photodb, PhotoDB):
             self._device_db = photodb
             self._tile_pixmap_cache.clear()
+            self._tile_color_cache.clear()
             self._preview_pixmap_cache.clear()
             self._preview_pending.clear()
             self._cache_marker = None
@@ -1104,6 +1487,173 @@ class PhotoBrowserWidget(QFrame):
     def _on_photo_write_finished(self) -> None:
         self._write_worker = None
         self._update_action_states()
+
+    def _normalize_export_dialog_path(
+        self,
+        path: str,
+        selected_filter: str,
+    ) -> Path:
+        target = Path(path)
+        supported_extensions = _JPEG_EXTENSIONS | _PNG_EXTENSIONS
+        if target.suffix.lower() in supported_extensions:
+            return target
+        suffix = ".png" if "PNG" in selected_filter else ".jpg"
+        return target.with_suffix(suffix)
+
+    def _photos_for_album_target(self, album_name: str) -> list[PhotoEntry]:
+        if self._device_db is None:
+            return []
+        photos = list(self._device_db.photos.values())
+        if album_name:
+            photos = [
+                photo for photo in photos
+                if album_name in getattr(photo, "album_names", set())
+            ]
+        return sorted(
+            photos,
+            key=lambda photo: (
+                self._device_photo_title(photo).lower(),
+                int(photo.image_id),
+            ),
+        )
+
+    def _unique_export_path(
+        self,
+        folder: Path,
+        filename: str,
+        used_names: set[str],
+    ) -> Path:
+        original = Path(filename)
+        stem = _safe_photo_stem(original.stem, "photo")
+        suffix = original.suffix if original.suffix.lower() in _JPEG_EXTENSIONS else ".jpg"
+        candidate = folder / f"{stem}{suffix}"
+        counter = 2
+        while candidate.name.lower() in used_names or candidate.exists():
+            candidate = folder / f"{stem} ({counter}){suffix}"
+            counter += 1
+        used_names.add(candidate.name.lower())
+        return candidate
+
+    def _export_targets_for_photos(
+        self,
+        photos: list[PhotoEntry],
+        folder: str | Path,
+    ) -> list[PhotoExportRequest]:
+        target_dir = Path(folder)
+        used_names: set[str] = set()
+        exports: list[PhotoExportRequest] = []
+        for photo in photos:
+            filename = _default_export_filename(
+                self._device_photo_title(photo),
+                int(photo.image_id),
+            )
+            target = self._unique_export_path(target_dir, filename, used_names)
+            exports.append((photo, str(target)))
+        return exports
+
+    def _start_photo_export(
+        self,
+        exports: list[PhotoExportRequest],
+        destination_label: str,
+    ) -> None:
+        if self._is_photo_export_running():
+            QMessageBox.information(self, "Photo Export In Progress", "Please wait for the current photo export to finish.")
+            return
+        if self._write_worker is not None and self._write_worker.isRunning():
+            QMessageBox.information(self, "Photo Save In Progress", "Please wait for the current photo save to finish.")
+            return
+        if self._is_sync_running():
+            QMessageBox.information(self, "Sync Running", "Wait for the current sync to finish before exporting photos.")
+            return
+        if not exports:
+            QMessageBox.information(self, "No Photos", "There are no photos to export.")
+            return
+
+        ipod_path = self._current_device_path()
+        if not ipod_path:
+            QMessageBox.warning(self, "No iPod Connected", "Select an iPod before exporting device photos.")
+            return
+
+        worker = _PhotoExportWorker(
+            ipod_path,
+            exports,
+            destination_label,
+        )
+        worker.finished_ok.connect(self._on_photo_export_ok)
+        worker.failed.connect(self._on_photo_export_failed)
+        worker.finished.connect(self._on_photo_export_finished)
+        worker.finished.connect(worker.deleteLater)
+        self._export_worker = worker
+        worker.start()
+        self._update_action_states()
+
+    def _on_photo_export_ok(self, count: int, destination_label: str) -> None:
+        noun = "photo" if count == 1 else "photos"
+        QMessageBox.information(
+            self,
+            "Photo Export Complete",
+            f"Exported {count:,} {noun} to:\n{destination_label}",
+        )
+
+    def _on_photo_export_failed(self, error_msg: str) -> None:
+        QMessageBox.warning(
+            self,
+            "Photo Export Failed",
+            f"Could not export photos from the iPod:\n{error_msg}",
+        )
+
+    def _on_photo_export_finished(self) -> None:
+        self._export_worker = None
+        self._update_action_states()
+
+    def _export_current_photo(self):
+        _key, photo = self._current_photo()
+        if photo is None:
+            return
+        if not self._current_device_path():
+            QMessageBox.warning(self, "No iPod Connected", "Select an iPod before exporting device photos.")
+            return
+
+        title = self._device_photo_title(photo)
+        default_path = Path.home() / _default_export_filename(title, int(photo.image_id))
+        path, selected_filter = QFileDialog.getSaveFileName(
+            self,
+            "Export Photo",
+            str(default_path),
+            _EXPORT_FILTERS,
+        )
+        if not path:
+            return
+
+        target_path = self._normalize_export_dialog_path(path, selected_filter)
+        self._start_photo_export(
+            [(photo, str(target_path))],
+            str(target_path),
+        )
+
+    def _export_album_target(self, album_name: str) -> None:
+        photos = self._photos_for_album_target(album_name)
+        if not photos:
+            QMessageBox.information(self, "No Photos", "There are no photos to export.")
+            return
+        if not self._current_device_path():
+            QMessageBox.warning(self, "No iPod Connected", "Select an iPod before exporting device photos.")
+            return
+
+        title = "Export Album" if album_name else "Export All Photos"
+        folder = QFileDialog.getExistingDirectory(
+            self,
+            title,
+            str(Path.home()),
+            QFileDialog.Option.ShowDirsOnly,
+        )
+        if not folder:
+            return
+
+        self._start_photo_export(
+            self._export_targets_for_photos(photos, folder),
+            folder,
+        )
 
     def _create_album(self):
         name, ok = QInputDialog.getText(self, "New Album", "Album name:")
@@ -1131,6 +1681,9 @@ class PhotoBrowserWidget(QFrame):
 
     def _rename_album(self):
         current = self._selected_album_target()
+        self._rename_album_target(current)
+
+    def _rename_album_target(self, current: str) -> None:
         if not current:
             return
         new_name, ok = QInputDialog.getText(self, "Rename Album", "New album name:", text=current)
@@ -1139,6 +1692,9 @@ class PhotoBrowserWidget(QFrame):
 
     def _delete_album(self):
         current = self._selected_album_target()
+        self._delete_album_target(current)
+
+    def _delete_album_target(self, current: str) -> None:
         if not current:
             return
         if QMessageBox.question(self, "Delete Album", f"Delete '{current}' from the iPod now?") == QMessageBox.StandardButton.Yes:

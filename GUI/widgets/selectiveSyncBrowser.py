@@ -17,7 +17,7 @@ from collections.abc import Iterable
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from PIL import Image, ImageOps
 from PyQt6.QtCore import QPoint, QSize, Qt, QThread, QTimer, pyqtSignal
@@ -91,6 +91,7 @@ _PC_PHOTO_THUMB_BATCH_SIZE = 6
 _PC_PHOTO_PREFETCH_AHEAD = 6
 _PC_PHOTO_MAX_THUMB_WORKERS = 2
 _PC_PHOTO_PREVIEW_MAX = (1600, 1600)
+PCPhotoTilePayload = tuple[int, int, bytes, tuple[int, int, int] | None]
 
 
 def _extract_art_for_group(file_paths: list[str]) -> tuple | None:
@@ -881,8 +882,13 @@ class PCPhotoListView(QWidget):
     select_all_requested = pyqtSignal()
     deselect_all_requested = pyqtSignal()
 
-    def __init__(self, parent=None):
+    def __init__(
+        self,
+        settings_service: SettingsService | None = None,
+        parent=None,
+    ):
         super().__init__(parent)
+        self._settings_service = settings_service
         self._photos: list[PCPhoto] = []
         self._selection: dict[str, bool] = {}
         self._visible_photos: list[PCPhoto] = []
@@ -890,6 +896,7 @@ class PCPhotoListView(QWidget):
         self._sort_key = "title"
         self._sort_reverse = False
         self._tile_pixmap_cache: dict[str, QPixmap] = {}
+        self._tile_color_cache: dict[str, tuple[int, int, int] | None] = {}
         self._preview_pixmap_cache: dict[str, QPixmap] = {}
         self._thumb_queue: deque[tuple[str, int]] = deque()
         self._queued_thumb_paths: set[str] = set()
@@ -922,7 +929,10 @@ class PCPhotoListView(QWidget):
 
         self._photo_scroll = make_scroll_area()
         self._photo_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self._photo_grid = PooledPhotoGridView(checkable=True)
+        self._photo_grid = PooledPhotoGridView(
+            checkable=True,
+            settings_service=self._settings_service,
+        )
         self._photo_grid.currentIndexChanged.connect(self._on_current_photo_changed)
         self._photo_grid.checkedChanged.connect(self._on_photo_checked_changed)
         self._photo_grid.visibleIndicesChanged.connect(
@@ -950,6 +960,7 @@ class PCPhotoListView(QWidget):
         self._load_token += 1
         self._preview_request_token += 1
         self._tile_pixmap_cache.clear()
+        self._tile_color_cache.clear()
         self._preview_pixmap_cache.clear()
         self._thumb_queue.clear()
         self._queued_thumb_paths.clear()
@@ -960,6 +971,9 @@ class PCPhotoListView(QWidget):
         self._grid_header.resetState()
         self._grid_header.blockSignals(False)
         self._refresh_list()
+
+    def refresh_artwork_appearance(self) -> None:
+        self._photo_grid.refresh_artwork_appearance()
 
     def _matches_search(self, photo: PCPhoto) -> bool:
         if not self._search_query:
@@ -1000,6 +1014,23 @@ class PCPhotoListView(QWidget):
         return QPixmap.fromImage(qimg.copy())
 
     @staticmethod
+    def _dominant_color_from_image(image: Image.Image) -> tuple[int, int, int] | None:
+        try:
+            from ..imgMaker import get_artwork_colors
+
+            dominant_color, _album_colors = get_artwork_colors(image.convert("RGBA"))
+            return dominant_color
+        except Exception:
+            try:
+                pixel = cast(
+                    tuple[int, int, int],
+                    image.convert("RGB").resize((1, 1)).getpixel((0, 0)),
+                )
+                return int(pixel[0]), int(pixel[1]), int(pixel[2])
+            except Exception:
+                return None
+
+    @staticmethod
     def _encode_pc_photo(
         path: str,
         *,
@@ -1016,9 +1047,30 @@ class PCPhotoListView(QWidget):
             return None
 
     @staticmethod
-    def _load_thumb_batch(paths: list[str]) -> dict[str, tuple[int, int, bytes] | None]:
+    def _encode_pc_photo_tile(
+        path: str,
+        *,
+        max_size: tuple[int, int],
+    ) -> PCPhotoTilePayload | None:
+        try:
+            with Image.open(path) as img:
+                image = ImageOps.exif_transpose(img)
+                image.thumbnail(max_size)
+                image = image.convert("RGBA")
+                dominant_color = PCPhotoListView._dominant_color_from_image(image)
+                return (
+                    image.width,
+                    image.height,
+                    image.tobytes("raw", "RGBA"),
+                    dominant_color,
+                )
+        except Exception:
+            return None
+
+    @staticmethod
+    def _load_thumb_batch(paths: list[str]) -> dict[str, PCPhotoTilePayload | None]:
         return {
-            path: PCPhotoListView._encode_pc_photo(path, max_size=(132, 132))
+            path: PCPhotoListView._encode_pc_photo_tile(path, max_size=(132, 132))
             for path in paths
         }
 
@@ -1058,6 +1110,7 @@ class PCPhotoListView(QWidget):
                     title=title,
                     pixmap=self._tile_pixmap_cache.get(photo.source_path, QPixmap()),
                     checked=checked,
+                    dominant_color=self._tile_color_cache.get(photo.source_path),
                 )
             )
         self._photo_grid.setRecords(
@@ -1159,7 +1212,7 @@ class PCPhotoListView(QWidget):
 
     def _on_thumb_batch_loaded(
         self,
-        results: dict[str, tuple[int, int, bytes] | None] | None,
+        results: dict[str, PCPhotoTilePayload | None] | None,
         load_token: int,
     ) -> None:
         self._thumb_workers_in_flight = max(0, self._thumb_workers_in_flight - 1)
@@ -1173,11 +1226,17 @@ class PCPhotoListView(QWidget):
         for path, data in results.items():
             self._thumb_in_flight_paths.discard(path)
             pixmap = QPixmap()
+            dominant_color: tuple[int, int, int] | None = None
             if data is not None:
-                width, height, rgba = data
+                width, height, rgba, dominant_color = data
                 pixmap = self._pixmap_from_rgba_bytes(width, height, rgba)
             self._tile_pixmap_cache[path] = pixmap
-            self._photo_grid.setRecordPixmap(path, pixmap)
+            self._tile_color_cache[path] = dominant_color
+            self._photo_grid.setRecordPixmap(
+                path,
+                pixmap,
+                dominant_color=dominant_color,
+            )
 
         if self._thumb_queue and not self._thumb_timer.isActive():
             self._thumb_timer.start(0)
@@ -1612,7 +1671,7 @@ class SelectiveSyncBrowser(QWidget):
         self._content.addWidget(self._track_list)  # index 2
 
         # Page 3: photo picker
-        self._photo_list = PCPhotoListView()
+        self._photo_list = PCPhotoListView(settings_service=self._settings_service)
         self._photo_list.toggled.connect(self._on_photo_toggled)
         self._photo_list.select_all_requested.connect(self._on_select_all_photos)
         self._photo_list.deselect_all_requested.connect(self._on_deselect_all_photos)
@@ -1670,6 +1729,8 @@ class SelectiveSyncBrowser(QWidget):
         """Refresh visible grid artwork for the current global appearance."""
         for grid in self._grids.values():
             grid.refresh_artwork_appearance()
+        if hasattr(self, "_photo_list"):
+            self._photo_list.refresh_artwork_appearance()
 
     def load_sync_plan(self, plan: object, selection_state: object | None = None) -> None:
         """Render a sync plan as a categorized selection editor."""

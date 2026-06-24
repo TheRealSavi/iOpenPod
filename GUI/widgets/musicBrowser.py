@@ -578,6 +578,7 @@ class MusicBrowser(QFrame):
         self.browserGrid.refresh_artwork_appearance()
         self.browserTrack.refresh_artwork_appearance()
         self.playlistBrowser.trackList.refresh_artwork_appearance()
+        self.photoBrowser.refresh_artwork_appearance()
 
     def _ensure_podcast_device(self):
         """Bind the podcast browser to the current iPod device if not done."""
