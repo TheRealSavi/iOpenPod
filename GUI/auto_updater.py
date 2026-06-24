@@ -346,6 +346,25 @@ def _write_windows_bootstrap(
     return script
 
 
+def _resolve_install_target(executable: Path, platform: str) -> tuple[Path, str]:
+    """Return the install directory and relaunch executable for a frozen app."""
+    app_dir = executable.parent
+    exe_name = executable.name
+
+    if platform == "darwin":
+        macos_dir = executable.parent
+        contents_dir = macos_dir.parent
+        bundle_dir = contents_dir.parent
+        if (
+            macos_dir.name == "MacOS"
+            and contents_dir.name == "Contents"
+            and bundle_dir.suffix.lower() == ".app"
+        ):
+            return bundle_dir, f"Contents/MacOS/{executable.name}"
+
+    return app_dir, exe_name
+
+
 def _write_unix_bootstrap(
     pid: int,
     app_dir: Path,
@@ -496,20 +515,13 @@ def launch_bootstrap_and_exit(staged_dir: Path) -> bool:
         return False
 
     pid = os.getpid()
-    app_dir = Path(sys.executable).parent
-    exe_name = Path(sys.executable).name
+    app_dir, exe_name = _resolve_install_target(Path(sys.executable), sys.platform)
 
     try:
         staged_contents = [p.name for p in staged_dir.iterdir()]
         _log_update(f"staged_dir contents: {staged_contents}")
     except Exception as exc:
         _log_update(f"Could not list staged_dir: {exc}")
-
-    # macOS .app bundle: replace the entire .app directory, not just
-    # Contents/MacOS/.  The staged archive also contains an .app folder.
-    if sys.platform == "darwin" and ".app/Contents/MacOS" in str(app_dir):
-        app_dir = app_dir.parent.parent.parent   # .app root
-        exe_name = f"Contents/MacOS/{Path(sys.executable).name}"
 
     _log_update(f"pid={pid}  app_dir={app_dir}  exe_name={exe_name}")
 
