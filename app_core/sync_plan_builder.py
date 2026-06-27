@@ -1,4 +1,4 @@
-"""UI-specific removal sync plan builders."""
+"""UI-specific sync plan builders."""
 
 from __future__ import annotations
 

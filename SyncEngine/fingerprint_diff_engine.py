@@ -29,7 +29,6 @@ Play counts: additive (iPod→PC).
 
 import logging
 import os
-import re
 import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -44,6 +43,8 @@ from .audio_fingerprint import (
     is_fpcalc_available,
 )
 from .contracts import SyncAction, SyncItem, SyncPlan
+from .existing_track_matcher import score_pc_to_ipod_track
+from .ipod_track_paths import existing_ipod_track_file_path
 from .mapping import MappingFile, MappingManager, TrackMapping
 from .pc_library import PCLibrary, PCTrack
 from .photos import (
@@ -931,49 +932,9 @@ class FingerprintDiffEngine:
         return added, total, protected_db_track_ids
 
     def _ipod_track_file_path(self, ipod_track: dict) -> Path | None:
-        """Resolve a track Location field to an on-disk path on the iPod.
+        """Resolve a track Location field to an on-disk path on the iPod."""
 
-        Supports:
-          - iTunes colon paths: :iPod_Control:Music:F00:FILE.mp3
-          - Absolute Windows paths: X:\\iPod_Control\\Music\\F00\\FILE.mp3
-          - Absolute/relative POSIX-style paths with iPod_Control segment
-        """
-        location = ipod_track.get("Location")
-        if not location:
-            return None
-
-        loc = str(location).strip()
-
-        # Absolute path (Windows/POSIX) — use as-is when it exists.
-        direct = Path(loc)
-        if direct.exists() and direct.is_file():
-            return direct
-
-        # If iPod_Control appears anywhere, join from that segment.
-        unified = loc.replace("\\", "/")
-        lower = unified.lower()
-        marker = "ipod_control"
-        marker_idx = lower.find(marker)
-        if marker_idx >= 0:
-            rel_from_marker = unified[marker_idx:].lstrip("/")
-            candidate = self.ipod_path / rel_from_marker
-            if candidate.exists() and candidate.is_file():
-                return candidate
-
-        # iTunesDB legacy colon-delimited path (not a Windows drive path).
-        is_windows_abs = len(loc) >= 3 and loc[1] == ":" and loc[2] in ("\\", "/")
-        if not is_windows_abs and ":" in loc:
-            rel_colon = loc.replace(":", "/").lstrip("/")
-            candidate = self.ipod_path / rel_colon
-            if candidate.exists() and candidate.is_file():
-                return candidate
-
-        # Final conservative fallback: treat it as already-relative.
-        fallback = self.ipod_path / unified.lstrip("/")
-        if fallback.exists() and fallback.is_file():
-            return fallback
-
-        return None
+        return existing_ipod_track_file_path(self.ipod_path, ipod_track)
 
     def _ipod_track_file_path_lookup(
         self,
@@ -1117,69 +1078,9 @@ class FingerprintDiffEngine:
 
         return scored[0][2]
 
-    @staticmethod
-    def _norm_text(value: str | None) -> str:
-        """Normalize text for robust metadata comparison."""
-        if not value:
-            return ""
-        return re.sub(r"\W+", "", value).lower()
-
     def _score_pc_to_ipod_track(self, pc_track: PCTrack, ipod_track: dict) -> int:
         """Score how well a PC track matches an iPod track's metadata."""
-        score = 0
-
-        pc_album = self._norm_text(pc_track.album)
-        ip_album = self._norm_text(ipod_track.get("Album"))
-        if pc_album and ip_album and pc_album == ip_album:
-            score += 40
-
-        pc_title = self._norm_text(pc_track.title)
-        ip_title = self._norm_text(ipod_track.get("Title"))
-        if pc_title and ip_title and pc_title == ip_title:
-            score += 30
-
-        pc_artist = self._norm_text(pc_track.artist)
-        ip_artist = self._norm_text(ipod_track.get("Artist"))
-        if pc_artist and ip_artist and pc_artist == ip_artist:
-            score += 25
-
-        pc_track_num = pc_track.track_number or 0
-        ip_track_num = ipod_track.get("track_number", 0) or 0
-        if pc_track_num > 0 and ip_track_num > 0 and pc_track_num == ip_track_num:
-            score += 15
-
-        pc_disc_num = pc_track.disc_number or 0
-        ip_disc_num = ipod_track.get("disc_number", 0) or 0
-        if pc_disc_num > 0 and ip_disc_num > 0 and pc_disc_num == ip_disc_num:
-            score += 8
-
-        pc_year = pc_track.year or 0
-        ip_year = ipod_track.get("year", 0) or 0
-        if pc_year > 0 and ip_year > 0 and pc_year == ip_year:
-            score += 4
-
-        pc_len = pc_track.duration_ms or 0
-        ip_len = ipod_track.get("length", 0) or 0
-        if pc_len > 0 and ip_len > 0:
-            delta = abs(pc_len - ip_len)
-            if delta <= 1500:
-                score += 12
-            elif delta <= 5000:
-                score += 7
-            elif delta <= 12000:
-                score += 3
-
-        pc_bitrate = pc_track.bitrate or 0
-        ip_bitrate = ipod_track.get("bitrate", 0) or 0
-        if pc_bitrate > 0 and ip_bitrate > 0 and abs(pc_bitrate - ip_bitrate) <= 16:
-            score += 3
-
-        pc_sr = pc_track.sample_rate or 0
-        ip_sr = ipod_track.get("sample_rate_1", 0) or 0
-        if pc_sr > 0 and ip_sr > 0 and abs(pc_sr - ip_sr) <= 1000:
-            score += 2
-
-        return score
+        return score_pc_to_ipod_track(pc_track, ipod_track)
 
     @staticmethod
     def _album_key_for_pc_track(pc_track: PCTrack) -> str:

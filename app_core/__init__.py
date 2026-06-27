@@ -15,6 +15,12 @@ from .device_identity import (
     resolve_ipod_image_color,
     resolve_ipod_product_image_filename,
 )
+from .dropped_files import (
+    DroppedImportFiles,
+    collect_import_file_paths,
+    collect_media_file_paths,
+    is_media_drop_candidate,
+)
 from .errors import AppConfigurationError, AppError, AppStateError, BackgroundJobError
 from .jobs import (
     BackSyncRequest,
@@ -27,7 +33,6 @@ from .jobs import (
     BackupRestoreWorker,
     BackupSnapshotCatalog,
     DeviceScanWorker,
-    DroppedImportFiles,
     PodcastPlanRequest,
     PodcastPlanWorker,
     SyncDiffRequest,
@@ -41,11 +46,8 @@ from .jobs import (
     build_imported_photo_edit_state,
     build_podcast_plan_for_sync,
     check_sync_tool_availability,
-    collect_import_file_paths,
-    collect_media_file_paths,
     delete_backup_snapshot,
     ensure_backup_folder,
-    is_media_drop_candidate,
     list_backup_devices_for_view,
     load_backup_snapshot_catalog,
     scan_for_ipod_devices,

@@ -292,4 +292,3 @@ def test_build_selected_photo_plan_returns_none_without_selected_changes() -> No
     original.thumb_bytes_to_add = 111
 
     assert build_selected_photo_plan(original, set()) is None
-

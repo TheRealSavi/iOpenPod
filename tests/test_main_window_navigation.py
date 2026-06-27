@@ -578,6 +578,40 @@ def test_own_export_drag_is_ignored_for_sync_drop():
     assert window._drop_overlay.hide_count == 1
 
 
+def test_drop_scan_complete_merges_import_context_into_existing_plan():
+    shown: list[SyncPlan] = []
+    existing = SyncPlan(
+        matched_pc_paths={1: "C:/Music/existing.mp3"},
+        playlists_to_edit=[{"Title": "Existing"}],
+    )
+    dropped = SyncPlan(
+        matched_pc_paths={2: "C:/Music/dropped.mp3"},
+        playlists_to_add=[{"Title": "New"}],
+        playlists_to_edit=[{"Title": "Dropped"}],
+    )
+    dropped.storage.bytes_to_add = 100
+    window = SimpleNamespace(
+        _drop_merge=True,
+        _plan=existing,
+        syncReview=SimpleNamespace(show_plan=shown.append),
+    )
+
+    MainWindow._on_drop_scan_complete(cast(Any, window), dropped)
+
+    assert window._plan is existing
+    assert shown == [existing]
+    assert existing.matched_pc_paths == {
+        1: "C:/Music/existing.mp3",
+        2: "C:/Music/dropped.mp3",
+    }
+    assert existing.playlists_to_add == [{"Title": "New"}]
+    assert existing.playlists_to_edit == [
+        {"Title": "Existing"},
+        {"Title": "Dropped"},
+    ]
+    assert existing.storage.bytes_to_add == 100
+
+
 def test_sync_review_edit_selection_opens_selective_plan_editor():
     selection = {"sync_items": {1, 2}}
     plan = object()

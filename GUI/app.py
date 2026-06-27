@@ -32,6 +32,7 @@ from app_core.device_identity import (
     refresh_device_disk_usage,
     resolve_device_image_filename,
 )
+from app_core.dropped_files import collect_import_file_paths, is_media_drop_candidate
 from app_core.jobs import (
     AlbumConversionRequest,
     AlbumConversionWorker,
@@ -50,8 +51,6 @@ from app_core.jobs import (
     ToolDownloadWorker,
     build_imported_photo_edit_state,
     check_sync_tool_availability,
-    collect_import_file_paths,
-    is_media_drop_candidate,
 )
 from app_core.runtime import (
     ThreadPoolSingleton,
@@ -60,6 +59,7 @@ from app_core.runtime import (
 )
 from app_core.sync_options import build_transcode_options
 from app_core.sync_plan_builder import build_removal_sync_plan
+from app_core.sync_plan_merge import merge_additional_sync_plan
 from GUI.glyphs import glyph_pixmap
 from GUI.internal_drag import is_iopenpod_export_drag
 from GUI.notifications import Notifier
@@ -2413,12 +2413,7 @@ class MainWindow(QMainWindow):
     def _on_drop_scan_complete(self, plan):
         """Merge dropped-file plan into any existing plan, then show."""
         if self._drop_merge and self._plan is not None:
-            self._plan.to_add.extend(plan.to_add)
-            self._plan.playlists_to_add.extend(plan.playlists_to_add)
-            self._plan.storage.bytes_to_add += plan.storage.bytes_to_add
-            self._plan.storage.bytes_to_remove += plan.storage.bytes_to_remove
-            if plan.photo_plan is not None and self._plan.photo_plan is None:
-                self._plan.photo_plan = plan.photo_plan
+            merge_additional_sync_plan(self._plan, plan)
             self.syncReview.show_plan(self._plan)
         else:
             self._plan = plan

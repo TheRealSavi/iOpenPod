@@ -7,7 +7,6 @@ import re
 import subprocess
 import tempfile
 from dataclasses import dataclass
-from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +18,7 @@ from iTunesDB_Shared.constants import (
     MEDIA_TYPE_PODCAST,
 )
 
+from .ipod_track_paths import existing_ipod_track_file_path
 from .mapping import MappingFile
 from .pc_library import PCLibrary, PCTrack
 from .transcoder import (
@@ -235,7 +235,11 @@ def resolve_album_sources(
                         break
 
         if source is None:
-            source = _resolve_ipod_location(track, ipod_path)
+            source = existing_ipod_track_file_path(
+                ipod_path,
+                track,
+                allow_music_filename_fallback=True,
+            )
             source_kind = "ipod"
             title = track.get("Title") or track.get("Location") or "track"
             warnings.append(f"Used iPod copy for {title}; original PC file was not found.")
@@ -602,55 +606,6 @@ def _resolve_hint(hint: str | None, roots: list[Path]) -> Path | None:
         if candidate.exists() and candidate.is_file():
             return candidate
     return None
-
-
-def _resolve_ipod_location(track: dict, ipod_path: str) -> Path | None:
-    location = str(track.get("Location") or track.get("location") or "")
-    location = location.split("\x00", 1)[0].strip()
-    if not location or not ipod_path:
-        return None
-    if location.lower().startswith("file://"):
-        from urllib.parse import unquote, urlparse
-
-        parsed = urlparse(location)
-        location = unquote(parsed.path or "")
-        location = location.split("\x00", 1)[0].strip()
-    direct = Path(location)
-    if direct.exists() and direct.is_file():
-        return direct
-    rel = location.replace("\\", "/").replace(":", "/").lstrip("/")
-    candidate = Path(ipod_path) / rel
-    if candidate.exists() and candidate.is_file():
-        return candidate
-    filename = Path(rel).name if rel else ""
-    if filename:
-        index_by_name, index_by_stem = _ipod_music_index(ipod_path)
-        match = index_by_name.get(filename.lower())
-        if match is None:
-            stem = Path(filename).stem.lower()
-            if stem:
-                match = index_by_stem.get(stem)
-        if match is not None and match.is_file():
-            return match
-    return None
-
-
-@lru_cache(maxsize=8)
-def _ipod_music_index(ipod_path: str) -> tuple[dict[str, Path], dict[str, Path]]:
-    music_root = Path(ipod_path) / "iPod_Control" / "Music"
-    if not music_root.is_dir():
-        return {}, {}
-    index_by_name: dict[str, Path] = {}
-    index_by_stem: dict[str, Path] = {}
-    for item in music_root.rglob("*"):
-        if item.is_file():
-            name_key = item.name.lower()
-            if name_key not in index_by_name:
-                index_by_name[name_key] = item
-            stem_key = item.stem.lower()
-            if stem_key and stem_key not in index_by_stem:
-                index_by_stem[stem_key] = item
-    return index_by_name, index_by_stem
 
 
 def _format_missing_sources(missing: list[dict[str, str]]) -> str:

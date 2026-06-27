@@ -59,6 +59,10 @@ from .contracts import (
     sync_plan_required_free_bytes,
 )
 from .fingerprint_diff_engine import SyncItem, SyncPlan
+from .ipod_track_paths import (
+    expected_ipod_track_file_path,
+    ipod_location_from_file_path,
+)
 from .itunes_prefs import protect_from_itunes
 from .mapping import MappingFile, MappingManager
 from .path_identity import coerce_int, stable_path_key
@@ -1853,9 +1857,8 @@ class SyncExecutor:
                 if current_track is not None and current_track.location:
                     file_path = current_track.location
             if file_path:
-                relative_path = file_path.replace(":", "/").lstrip("/")
-                full_path = self.ipod_path / relative_path
-                if not self._delete_from_ipod(full_path):
+                full_path = expected_ipod_track_file_path(self.ipod_path, file_path)
+                if full_path is not None and not self._delete_from_ipod(full_path):
                     ctx.result.errors.append((
                         item.display_label,
                         f"Could not delete iPod file {file_path}; "
@@ -2206,7 +2209,13 @@ class SyncExecutor:
             ctx.result.errors.append((item.description, "Chaptered album has no iPod location"))
             return False
 
-        old_full_path = self.ipod_path / old_location.replace(":", "/").lstrip("/")
+        old_full_path = expected_ipod_track_file_path(self.ipod_path, old_location)
+        if old_full_path is None:
+            ctx.result.errors.append((
+                item.description,
+                f"Could not resolve chaptered album iPod location {old_location}",
+            ))
+            return False
         track_dicts = [
             self._track_dict_from_pc_track(pc_track, index)
             for index, pc_track in enumerate(item.aggregate_rebuild_pc_tracks, start=1)
@@ -2262,7 +2271,10 @@ class SyncExecutor:
                     except OSError:
                         pass
 
-                ipod_location = ":" + str(destination.relative_to(self.ipod_path)).replace("\\", ":").replace("/", ":")
+                ipod_location = ipod_location_from_file_path(
+                    self.ipod_path,
+                    destination,
+                )
                 rebuilt = self._pc_track_to_info(
                     converted.pc_track,
                     ipod_location,
@@ -2377,7 +2389,7 @@ class SyncExecutor:
 
         def _on_success(item: SyncItem, ipod_path: Path, was_transcoded: bool) -> None:
             assert item.pc_track is not None  # guaranteed by _parallel_copy_stage filter
-            ipod_location = ":" + str(ipod_path.relative_to(self.ipod_path)).replace("\\", ":").replace("/", ":")
+            ipod_location = ipod_location_from_file_path(self.ipod_path, ipod_path)
             source_path = Path(item.pc_track.path)
 
             # Update existing TrackInfo
@@ -2429,9 +2441,12 @@ class SyncExecutor:
                 # Replacement succeeded: remove the old on-device file path.
                 if old_location and old_location != ipod_location:
                     try:
-                        old_rel = old_location.replace(":", "/").lstrip("/")
-                        old_full = self.ipod_path / old_rel
-                        self._delete_from_ipod(old_full)
+                        old_full = expected_ipod_track_file_path(
+                            self.ipod_path,
+                            old_location,
+                        )
+                        if old_full is not None:
+                            self._delete_from_ipod(old_full)
                     except Exception as exc:
                         logger.warning("Could not remove old iPod file %s: %s", old_location, exc)
 
@@ -2942,7 +2957,7 @@ class SyncExecutor:
 
         def _on_success(item: SyncItem, ipod_path: Path, was_transcoded: bool) -> None:
             assert item.pc_track is not None  # guaranteed by _parallel_copy_stage filter
-            ipod_location = ":" + str(ipod_path.relative_to(self.ipod_path)).replace("\\", ":").replace("/", ":")
+            ipod_location = ipod_location_from_file_path(self.ipod_path, ipod_path)
             track_info = self._pc_track_to_info(item.pc_track, ipod_location, was_transcoded, ipod_file_path=ipod_path)
             ctx.new_tracks.append(track_info)
 

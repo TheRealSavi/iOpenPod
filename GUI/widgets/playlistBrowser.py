@@ -1936,7 +1936,11 @@ class PlaylistBrowser(QFrame):
         def _abs_path(track: dict) -> str:
             location = track.get("Location", "")
             if location and ipod_root:
-                return os.path.join(ipod_root, location.replace(":", "/").lstrip("/"))
+                from SyncEngine.ipod_track_paths import expected_ipod_track_file_path
+
+                resolved = expected_ipod_track_file_path(ipod_root, location)
+                if resolved is not None:
+                    return str(resolved)
             return location
 
         ext = os.path.splitext(path)[1].lower()

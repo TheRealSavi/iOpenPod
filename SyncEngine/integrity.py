@@ -27,12 +27,12 @@ C. Filesystem → iTunesDB  (orphan detection)
 """
 
 import logging
-import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from ._formats import MEDIA_EXTENSIONS as _MEDIA_EXTS
+from .ipod_track_paths import expected_ipod_track_file_path
 from .mapping import MappingFile
 
 logger = logging.getLogger(__name__)
@@ -160,7 +160,7 @@ def _check_db_files_exist(
         if not location:
             continue
 
-        full_path = _resolve_location_to_path(ipod_root, location)
+        full_path = expected_ipod_track_file_path(ipod_root, location)
         if full_path is None:
             logger.debug(
                 "Integrity: could not resolve Location for track '%s' — skipping missing-file check",
@@ -244,7 +244,7 @@ def _check_orphan_files(
         location = track.get("Location")
         if not location:
             continue
-        resolved = _resolve_location_to_path(ipod_root, location)
+        resolved = expected_ipod_track_file_path(ipod_root, location)
         if resolved is None:
             continue
         referenced.add(os.path.normcase(str(resolved)))
@@ -305,45 +305,3 @@ def _check_orphan_files(
                     delete_error_count,
                     "; ".join(delete_error_samples),
                 )
-
-
-def _resolve_location_to_path(ipod_root: Path, location: str) -> Path | None:
-    """Resolve a track Location field to an expected on-device file path.
-
-    The returned path may not exist; callers decide whether absence is a
-    missing-file integrity issue.
-
-    Supports:
-      - iTunes colon paths: :iPod_Control:Music:F00:FILE.mp3
-      - Absolute Windows paths: X:\\iPod_Control\\Music\\F00\\FILE.mp3
-      - Absolute/relative POSIX-style paths containing iPod_Control
-    """
-    if not location:
-        return None
-
-    loc = str(location).strip()
-
-    direct = Path(loc)
-    if direct.is_file():
-        return direct
-
-    unified = loc.replace("\\", "/")
-    lower = unified.lower()
-    is_windows_abs = bool(re.match(r"^[a-zA-Z]:[\\/]", loc))
-
-    # Colon-delimited iTunes path.  Handle this before the generic
-    # iPod_Control marker branch so :iPod_Control:Music:... becomes slashes.
-    if not is_windows_abs and ":" in loc:
-        rel_colon = loc.replace(":", "/").lstrip("/")
-        return ipod_root / rel_colon
-
-    marker = "ipod_control"
-    marker_idx = lower.find(marker)
-    if marker_idx >= 0:
-        rel_from_marker = unified[marker_idx:].lstrip("/")
-        return ipod_root / rel_from_marker
-
-    if not direct.is_absolute() and not is_windows_abs:
-        return ipod_root / unified.lstrip("/")
-
-    return None

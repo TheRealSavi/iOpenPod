@@ -1,6 +1,7 @@
 from pathlib import Path
 
-from SyncEngine.integrity import _resolve_location_to_path, check_integrity
+from SyncEngine.integrity import check_integrity
+from SyncEngine.ipod_track_paths import expected_ipod_track_file_path
 from SyncEngine.mapping import MappingFile
 
 
@@ -14,7 +15,7 @@ def _make_music_file(ipod_root: Path, folder: str, filename: str) -> Path:
 def test_resolve_location_returns_expected_missing_colon_path(tmp_path: Path) -> None:
     ipod_root = tmp_path / "ipod"
 
-    resolved = _resolve_location_to_path(
+    resolved = expected_ipod_track_file_path(
         ipod_root,
         ":iPod_Control:Music:F00:GONE.mp3",
     )
@@ -27,7 +28,7 @@ def test_resolve_location_returns_expected_missing_windows_device_path(
 ) -> None:
     ipod_root = tmp_path / "ipod"
 
-    resolved = _resolve_location_to_path(
+    resolved = expected_ipod_track_file_path(
         ipod_root,
         r"X:\iPod_Control\Music\F01\GONE.m4a",
     )
@@ -40,7 +41,7 @@ def test_resolve_location_skips_external_windows_path_without_ipod_marker(
 ) -> None:
     ipod_root = tmp_path / "ipod"
 
-    resolved = _resolve_location_to_path(
+    resolved = expected_ipod_track_file_path(
         ipod_root,
         r"C:\Users\Someone\Music\Song.mp3",
     )

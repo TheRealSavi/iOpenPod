@@ -21,6 +21,10 @@ from PyQt6.QtCore import QThread, pyqtSignal
 
 from infrastructure.media_folders import media_folder_paths
 
+from .dropped_files import (
+    append_unique_path,
+    build_dropped_playlist_imports,
+)
 from .sync_options import build_transcode_options
 
 if TYPE_CHECKING:
@@ -518,252 +522,6 @@ class ChapterSplitWorker(QThread):
         return base / "chapter-splits"
 
 
-@dataclass(frozen=True)
-class DroppedImportFiles:
-    """Dropped files grouped by the importer that will handle them."""
-
-    track_paths: tuple[Path, ...] = ()
-    photo_imports: tuple[tuple[str, str], ...] = ()
-    playlist_paths: tuple[Path, ...] = ()
-
-    @property
-    def has_files(self) -> bool:
-        return bool(self.track_paths or self.photo_imports or self.playlist_paths)
-
-
-def is_media_drop_candidate(
-    path: Path,
-    *,
-    include_video: bool = True,
-    include_photo: bool = True,
-    include_playlist: bool = True,
-) -> bool:
-    """Return whether a path should activate the media drop overlay."""
-
-    return path.is_dir() or has_supported_import_extension(
-        path,
-        include_video=include_video,
-        include_photo=include_photo,
-        include_playlist=include_playlist,
-    )
-
-
-def is_supported_media_file(path: Path, *, include_video: bool = True) -> bool:
-    """Return whether a path is a supported media file."""
-
-    from SyncEngine._formats import AUDIO_EXTENSIONS, MEDIA_EXTENSIONS
-
-    extensions = MEDIA_EXTENSIONS if include_video else AUDIO_EXTENSIONS
-    return path.is_file() and path.suffix.lower() in extensions
-
-
-def has_supported_media_extension(path: Path, *, include_video: bool = True) -> bool:
-    """Return whether a path name looks like a supported media file."""
-
-    from SyncEngine._formats import AUDIO_EXTENSIONS, MEDIA_EXTENSIONS
-
-    extensions = MEDIA_EXTENSIONS if include_video else AUDIO_EXTENSIONS
-    return path.suffix.lower() in extensions
-
-
-def is_supported_photo_file(path: Path) -> bool:
-    """Return whether a path is a supported photo import file."""
-
-    from SyncEngine._formats import PHOTO_EXTENSIONS
-
-    return path.is_file() and path.suffix.lower() in PHOTO_EXTENSIONS
-
-
-def has_supported_photo_extension(path: Path) -> bool:
-    """Return whether a path name looks like a supported photo import file."""
-
-    from SyncEngine._formats import PHOTO_EXTENSIONS
-
-    return path.suffix.lower() in PHOTO_EXTENSIONS
-
-
-def is_supported_playlist_file(path: Path) -> bool:
-    """Return whether a path is a supported playlist import file."""
-
-    from SyncEngine._formats import PLAYLIST_EXTENSIONS
-
-    return path.is_file() and path.suffix.lower() in PLAYLIST_EXTENSIONS
-
-
-def has_supported_playlist_extension(path: Path) -> bool:
-    """Return whether a path name looks like a supported playlist import file."""
-
-    from SyncEngine._formats import PLAYLIST_EXTENSIONS
-
-    return path.suffix.lower() in PLAYLIST_EXTENSIONS
-
-
-def is_supported_import_file(
-    path: Path,
-    *,
-    include_video: bool = True,
-    include_photo: bool = True,
-    include_playlist: bool = True,
-) -> bool:
-    """Return whether a path is any supported drag-and-drop import file."""
-
-    return (
-        is_supported_media_file(path, include_video=include_video)
-        or (include_photo and is_supported_photo_file(path))
-        or (include_playlist and is_supported_playlist_file(path))
-    )
-
-
-def has_supported_import_extension(
-    path: Path,
-    *,
-    include_video: bool = True,
-    include_photo: bool = True,
-    include_playlist: bool = True,
-) -> bool:
-    """Return whether a path name looks like any supported import file.
-
-    Drag-enter must be generous: Windows Explorer may present paths before the
-    target process can stat them, so acceptance is based on the name. The drop
-    scan still validates the file before importing it.
-    """
-
-    return (
-        has_supported_media_extension(path, include_video=include_video)
-        or (include_photo and has_supported_photo_extension(path))
-        or (include_playlist and has_supported_playlist_extension(path))
-    )
-
-
-def _path_key(path: Path) -> str:
-    try:
-        return os.path.normcase(str(path.resolve()))
-    except OSError:
-        return os.path.normcase(str(path))
-
-
-def _append_unique_path(paths: list[Path], seen: set[str], path: Path) -> None:
-    key = _path_key(path)
-    if key in seen:
-        return
-    seen.add(key)
-    paths.append(path)
-
-
-def collect_media_file_paths(
-    paths: list[Path],
-    *,
-    include_video: bool = True,
-) -> list[Path]:
-    """Expand dropped files/folders into supported media file paths."""
-
-    return list(
-        collect_import_file_paths(
-            paths,
-            include_video=include_video,
-            include_photo=False,
-            include_playlist=False,
-        ).track_paths
-    )
-
-
-def collect_import_file_paths(
-    paths: list[Path],
-    *,
-    include_video: bool = True,
-    include_photo: bool = True,
-    include_playlist: bool = True,
-) -> DroppedImportFiles:
-    """Expand dropped files/folders into grouped import file paths."""
-
-    track_paths: list[Path] = []
-    photo_imports: list[tuple[str, str]] = []
-    playlist_paths: list[Path] = []
-    seen_tracks: set[str] = set()
-    seen_photos: set[str] = set()
-    seen_playlists: set[str] = set()
-
-    def _add_candidate(candidate: Path, album_name: str = "") -> None:
-        if is_supported_media_file(candidate, include_video=include_video):
-            _append_unique_path(track_paths, seen_tracks, candidate)
-            return
-        if include_photo and is_supported_photo_file(candidate):
-            key = _path_key(candidate)
-            if key not in seen_photos:
-                seen_photos.add(key)
-                photo_imports.append((str(candidate), album_name))
-            return
-        if include_playlist and is_supported_playlist_file(candidate):
-            _append_unique_path(playlist_paths, seen_playlists, candidate)
-
-    for path in paths:
-        if path.is_dir():
-            for root, dirs, files in os.walk(path):
-                dirs.sort()
-                root_path = Path(root)
-                try:
-                    rel_parent = root_path.relative_to(path)
-                except ValueError:
-                    rel_parent = Path()
-                album_name = rel_parent.as_posix() if rel_parent.parts else ""
-                for filename in sorted(files):
-                    _add_candidate(root_path / filename, album_name)
-        else:
-            _add_candidate(path)
-
-    return DroppedImportFiles(
-        track_paths=tuple(track_paths),
-        photo_imports=tuple(photo_imports),
-        playlist_paths=tuple(playlist_paths),
-    )
-
-
-def build_dropped_playlist_imports(
-    playlist_paths: Iterable[Path],
-    *,
-    include_video: bool = True,
-) -> tuple[list[Path], list[dict]]:
-    """Parse dropped playlist files into media paths and pending playlists."""
-
-    from SyncEngine.playlist_parser import PlaylistPathResolver, parse_playlist
-
-    media_paths: list[Path] = []
-    playlists: list[dict] = []
-    seen_media: set[str] = set()
-    resolver = PlaylistPathResolver()
-
-    for playlist_path in playlist_paths:
-        try:
-            raw_paths, playlist_name = parse_playlist(playlist_path)
-        except Exception as exc:
-            logger.warning("Failed to parse dropped playlist %s: %s", playlist_path, exc)
-            continue
-
-        items: list[dict] = []
-        for raw_path in raw_paths:
-            resolved_path = resolver.resolve_existing_path(raw_path)
-            if resolved_path is None:
-                continue
-            path = Path(resolved_path)
-            if not is_supported_media_file(path, include_video=include_video):
-                continue
-            _append_unique_path(media_paths, seen_media, path)
-            items.append({"source_path": str(path)})
-
-        if items:
-            playlists.append(
-                {
-                    "Title": playlist_name,
-                    "playlist_id": random.getrandbits(64),
-                    "_isNew": True,
-                    "_source": "regular",
-                    "items": items,
-                }
-            )
-
-    return media_paths, playlists
-
-
 def build_imported_photo_edit_state(imported_files: Iterable[Any] | None) -> Any | None:
     """Build photo edit state for selectively imported photo files."""
 
@@ -1129,126 +887,6 @@ def _merge_imported_playlist_with_existing(
     )
     merged["mhip_child_count"] = len(merged["items"])
     return merged
-
-
-def _ipod_track_file_path(ipod_root: Path, ipod_track: dict) -> Path | None:
-    location = str(ipod_track.get("Location") or ipod_track.get("location") or "")
-    if not location:
-        return None
-
-    direct = Path(location)
-    if direct.exists() and direct.is_file():
-        return direct
-
-    unified = location.replace("\\", "/")
-    lower = unified.lower()
-    marker = "ipod_control"
-    marker_index = lower.find(marker)
-    if marker_index >= 0:
-        candidate = ipod_root / unified[marker_index:].lstrip("/")
-        if candidate.exists() and candidate.is_file():
-            return candidate
-
-    is_windows_abs = (
-        len(location) >= 3
-        and location[1] == ":"
-        and location[2] in ("\\", "/")
-    )
-    if not is_windows_abs and ":" in location:
-        candidate = ipod_root / location.replace(":", "/").lstrip("/")
-        if candidate.exists() and candidate.is_file():
-            return candidate
-
-    candidate = ipod_root / unified.lstrip("/")
-    if candidate.exists() and candidate.is_file():
-        return candidate
-    return None
-
-
-def _norm_import_text(value: object) -> str:
-    return re.sub(r"\W+", "", str(value or "")).casefold()
-
-
-def _score_import_track_match(pc_track: Any, ipod_track: dict) -> int:
-    score = 0
-    for pc_attr, ipod_key, points in (
-        ("album", "Album", 40),
-        ("title", "Title", 30),
-        ("artist", "Artist", 25),
-    ):
-        pc_value = _norm_import_text(getattr(pc_track, pc_attr, ""))
-        ipod_value = _norm_import_text(ipod_track.get(ipod_key))
-        if pc_value and ipod_value and pc_value == ipod_value:
-            score += points
-
-    if _int_or_zero(getattr(pc_track, "track_number", 0)) == _int_or_zero(
-        ipod_track.get("track_number", 0)
-    ):
-        score += 10
-    if _int_or_zero(getattr(pc_track, "disc_number", 0)) == _int_or_zero(
-        ipod_track.get("disc_number", 0)
-    ):
-        score += 5
-
-    pc_length = _int_or_zero(getattr(pc_track, "duration_ms", 0))
-    ipod_length = _int_or_zero(ipod_track.get("length", 0))
-    if pc_length and ipod_length and abs(pc_length - ipod_length) <= 5000:
-        score += 10
-    return score
-
-
-def _best_import_track_match(
-    candidates: list[tuple[int, dict]],
-    pc_track: Any,
-) -> int:
-    if not candidates:
-        return 0
-    if len(candidates) == 1:
-        return candidates[0][0]
-    scored = [
-        (_score_import_track_match(pc_track, ipod_track), db_track_id)
-        for db_track_id, ipod_track in candidates
-    ]
-    scored.sort(key=lambda row: (-row[0], row[1]))
-    return scored[0][1]
-
-
-def _mapping_match_db_track_id(
-    mapping: Any,
-    fingerprint: str,
-    valid_db_track_ids: set[int],
-) -> int:
-    for entry in mapping.get_entries(fingerprint):
-        db_track_id = _int_or_zero(getattr(entry, "db_track_id", 0))
-        if db_track_id and (not valid_db_track_ids or db_track_id in valid_db_track_ids):
-            return db_track_id
-    return 0
-
-
-def _build_ipod_fingerprint_index(
-    ipod_root: Path,
-    ipod_tracks: Iterable[dict],
-    *,
-    fpcalc_path: str | None,
-) -> dict[str, list[tuple[int, dict]]]:
-    from SyncEngine.audio_fingerprint import get_or_compute_fingerprint
-
-    index: dict[str, list[tuple[int, dict]]] = {}
-    for ipod_track in ipod_tracks:
-        db_track_id = _track_db_track_id(ipod_track)
-        if not db_track_id:
-            continue
-        ipod_file = _ipod_track_file_path(ipod_root, ipod_track)
-        if ipod_file is None:
-            continue
-        fingerprint = get_or_compute_fingerprint(
-            ipod_file,
-            fpcalc_path=fpcalc_path,
-            write_to_file=False,
-        )
-        if fingerprint:
-            index.setdefault(fingerprint, []).append((db_track_id, ipod_track))
-    return index
 
 
 def build_backup_device_context(
@@ -1632,6 +1270,7 @@ class BackSyncWorker(QThread):
         try:
             from SyncEngine._formats import MEDIA_EXTENSIONS
             from SyncEngine.audio_fingerprint import get_or_compute_fingerprint
+            from SyncEngine.ipod_track_paths import existing_ipod_track_file_path
             from SyncEngine.pc_library import PCLibrary
 
             request = self._request
@@ -1719,7 +1358,10 @@ class BackSyncWorker(QThread):
                 if not location:
                     unresolved_ipod_tracks += 1
                     continue
-                ipod_file = self._resolve_location_to_path(str(location))
+                ipod_file = existing_ipod_track_file_path(
+                    self._request.ipod_path,
+                    track,
+                )
                 if ipod_file is None:
                     unresolved_ipod_tracks += 1
                     continue
@@ -1856,35 +1498,6 @@ class BackSyncWorker(QThread):
                 return
             logger.exception("BackSyncWorker failed")
             self.error.emit(str(exc))
-
-    def _resolve_location_to_path(self, location: str) -> Path | None:
-        if not location:
-            return None
-
-        loc = str(location).strip()
-        direct = Path(loc)
-        if direct.exists() and direct.is_file():
-            return direct
-
-        unified = loc.replace("\\", "/")
-        marker_idx = unified.lower().find("ipod_control")
-        if marker_idx >= 0:
-            rel = unified[marker_idx:].lstrip("/")
-            candidate = Path(self._request.ipod_path) / rel
-            if candidate.exists() and candidate.is_file():
-                return candidate
-
-        is_windows_abs = len(loc) >= 3 and loc[1] == ":" and loc[2] in ("\\", "/")
-        if not is_windows_abs and ":" in loc:
-            rel = loc.replace(":", "/").lstrip("/")
-            candidate = Path(self._request.ipod_path) / rel
-            if candidate.exists() and candidate.is_file():
-                return candidate
-
-        fallback = Path(self._request.ipod_path) / unified.lstrip("/")
-        if fallback.exists() and fallback.is_file():
-            return fallback
-        return None
 
     @staticmethod
     def _safe_component(value: str, fallback: str) -> str:
@@ -2448,6 +2061,9 @@ class PlaylistImportWorker(QThread):
 
             ipod_root = Path(self._ipod_path)
             from SyncEngine._db_io import read_existing_database
+            from SyncEngine.existing_track_matcher import (
+                existing_track_match_db_track_id,
+            )
 
             fresh_db = read_existing_database(ipod_root)
             fresh_tracks = list(fresh_db.get("tracks", []))
@@ -2469,7 +2085,7 @@ class PlaylistImportWorker(QThread):
                     for track in fresh_tracks
                     if (db_track_id := _track_db_track_id(track))
                 }
-                ipod_fingerprint_index: dict[str, list[tuple[int, dict]]] | None = None
+                ipod_fingerprint_cache: dict[str, str | None] = {}
                 fingerprint_total = len(needs_fingerprint)
 
                 for idx, raw_path in enumerate(needs_fingerprint):
@@ -2499,27 +2115,23 @@ class PlaylistImportWorker(QThread):
                         skipped += 1
                         continue
 
-                    existing_db_track_id = _mapping_match_db_track_id(
-                        mapping,
-                        fingerprint,
-                        valid_db_track_ids,
-                    )
-                    if not existing_db_track_id and fresh_tracks:
-                        if ipod_fingerprint_index is None:
-                            self.progress.emit(
-                                global_idx,
-                                total,
-                                "Checking existing iPod tracks...",
-                            )
-                            ipod_fingerprint_index = _build_ipod_fingerprint_index(
-                                ipod_root,
-                                fresh_tracks,
-                                fpcalc_path=self._fpcalc_path,
-                            )
-                        existing_db_track_id = _best_import_track_match(
-                            ipod_fingerprint_index.get(fingerprint, []),
-                            pc_track,
+                    if fresh_tracks:
+                        self.progress.emit(
+                            global_idx,
+                            total,
+                            "Checking existing iPod candidates...",
                         )
+                    existing_db_track_id = existing_track_match_db_track_id(
+                        ipod_root,
+                        fresh_tracks,
+                        pc_track,
+                        path,
+                        fingerprint,
+                        mapping=mapping,
+                        valid_db_track_ids=valid_db_track_ids,
+                        fpcalc_path=self._fpcalc_path,
+                        fingerprint_cache=ipod_fingerprint_cache,
+                    )
 
                     if existing_db_track_id:
                         already_present_db_track_ids.append(existing_db_track_id)
@@ -2922,6 +2534,9 @@ class DropScanWorker(QThread):
                 SyncItem,
                 SyncPlan,
             )
+            from SyncEngine.existing_track_matcher import (
+                existing_track_match_db_track_id,
+            )
             from SyncEngine.pc_library import PCLibrary
 
             items: list[SyncItem] = []
@@ -2931,7 +2546,7 @@ class DropScanWorker(QThread):
             existing_standard_playlists: list[dict] = []
             mapping: Any | None = None
             valid_db_track_ids: set[int] = set()
-            ipod_fingerprint_index: dict[str, list[tuple[int, dict]]] | None = None
+            ipod_fingerprint_cache: dict[str, str | None] = {}
             source_path_to_db_track_id: dict[str, int] = {}
             matched_pc_paths: dict[int, str] = {}
             if self._ipod_path:
@@ -2958,7 +2573,7 @@ class DropScanWorker(QThread):
             media_paths: list[Path] = []
             seen_media: set[str] = set()
             for path in (*self._file_paths, *playlist_media_paths):
-                _append_unique_path(media_paths, seen_media, path)
+                append_unique_path(media_paths, seen_media, path)
 
             for path in media_paths:
                 if self.isInterruptionRequested():
@@ -2988,26 +2603,19 @@ class DropScanWorker(QThread):
                                     "Could not fingerprint dropped file %s: %s",
                                     path,
                                     exc,
-                                )
+                            )
                             if fingerprint:
-                                existing_db_track_id = _mapping_match_db_track_id(
-                                    mapping,
+                                existing_db_track_id = existing_track_match_db_track_id(
+                                    Path(self._ipod_path),
+                                    fresh_tracks,
+                                    track,
+                                    path,
                                     fingerprint,
-                                    valid_db_track_ids,
+                                    mapping=mapping,
+                                    valid_db_track_ids=valid_db_track_ids,
+                                    fpcalc_path=None,
+                                    fingerprint_cache=ipod_fingerprint_cache,
                                 )
-                                if not existing_db_track_id:
-                                    if ipod_fingerprint_index is None:
-                                        ipod_fingerprint_index = (
-                                            _build_ipod_fingerprint_index(
-                                                Path(self._ipod_path),
-                                                fresh_tracks,
-                                                fpcalc_path=None,
-                                            )
-                                        )
-                                    existing_db_track_id = _best_import_track_match(
-                                        ipod_fingerprint_index.get(fingerprint, []),
-                                        track,
-                                    )
                         if existing_db_track_id:
                             source_key = _import_source_path_key(path)
                             source_path_to_db_track_id[source_key] = existing_db_track_id
