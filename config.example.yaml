@@ -1,0 +1,32 @@
+# iopenpod-sync configuration
+# Copy to ~/.config/iopenpodcli/config.yaml and edit.
+# Run `iopenpod-sync --init-config` to write this file automatically.
+
+# Root directory containing your music files.
+# The engine scans recursively for audio files here.
+music_path: ~/Music
+
+# Playlist files to sync (M3U / M3U8 / PLS / XSPF).
+# Paths are relative to music_path unless absolute.
+# Leave empty [] to sync all discovered music.
+playlists:
+  - Favorites.m3u
+  - Workout.m3u8
+
+# Podcast feeds.  State (episode status, download paths) is stored on the
+# iPod itself at /iPod_Control/iOpenPodPodcasts/ so it follows the device.
+podcasts:
+  - url: https://feeds.simplecast.com/4T39_jAj   # Darknet Diaries
+    keep_episodes: 3
+  - url: https://feeds.transistor.fm/some-show
+    keep_episodes: 5
+
+# Pull ratings (0–5 stars) from iPod back to local file tags after sync.
+pull_ratings: true
+
+# Pull play counts from iPod back to local file tags after sync.
+pull_playcounts: true
+
+# How to resolve a rating conflict between iPod and PC file tags.
+# Options: ipod_wins | pc_wins | higher_wins
+rating_strategy: ipod_wins

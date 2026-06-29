@@ -42,10 +42,12 @@ dependencies = [
     "packaging>=23.0",
     "tqdm>=4.67.3",
     "python-dateutil>=2.9.0.post0",
+    "pyyaml>=6.0",
 ]
 
 [project.scripts]
 iopenpod = "main:main"
+iopenpod-sync = "cli.main:main"
 
 [dependency-groups]
 dev = [
@@ -61,6 +63,7 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 only-include = [
+    "cli",
     "app_core",
     "infrastructure",
     "main.py",

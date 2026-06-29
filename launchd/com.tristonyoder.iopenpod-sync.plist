@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+    "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Auto-sync iPod when it mounts.
+
+  Install:
+    cp com.tristonyoder.iopenpod-sync.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.tristonyoder.iopenpod-sync.plist
+
+  The WatchPaths entry triggers this agent whenever the /Volumes directory
+  changes (i.e. a volume mounts or unmounts).  The sync script detects whether
+  an iPod is present and exits cleanly if not.
+
+  Adjust the ProgramArguments path to wherever iopenpod-sync is installed.
+  With a uv/pipx install it will be in ~/.local/bin/iopenpod-sync.
+  With Nix it will be in your PATH via the nix package.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.tristonyoder.iopenpod-sync</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/sh</string>
+        <string>-c</string>
+        <!-- Wait 3 s for the iPod filesystem to settle after mount, then sync -->
+        <string>sleep 3 &amp;&amp; /Users/tyoder/.local/bin/iopenpod-sync 2&gt;&gt;/tmp/iopenpod-sync.log</string>
+    </array>
+
+    <!-- Fire whenever /Volumes changes (volume mounted or unmounted) -->
+    <key>WatchPaths</key>
+    <array>
+        <string>/Volumes</string>
+    </array>
+
+    <!-- Throttle: don't re-trigger within 10 s of the last run -->
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/iopenpod-sync.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/iopenpod-sync.log</string>
+</dict>
+</plist>
