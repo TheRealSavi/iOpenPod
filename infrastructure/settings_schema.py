@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from .i18n import LANGUAGE_EN, normalize_language
+
 BACKUP_BEFORE_SYNC_AUTO = "auto"
 BACKUP_BEFORE_SYNC_ASK = "ask"
 BACKUP_BEFORE_SYNC_OFF = "off"
@@ -159,6 +161,7 @@ class AppSettings:
     rounded_artwork: bool = False
     sharpen_artwork: bool = True
     track_list_columns_by_content: dict[str, dict[str, int]] = field(default_factory=dict)
+    language: str = LANGUAGE_EN
     theme: str = "dark"
     high_contrast: str = "off"
     font_scale: str = "100%"
@@ -181,6 +184,7 @@ class AppSettings:
     max_backups: int = 10
 
     def __post_init__(self) -> None:
+        self.language = normalize_language(self.language)
         apply_backup_before_sync_mode(self)
 
 

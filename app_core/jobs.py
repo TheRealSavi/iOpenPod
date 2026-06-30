@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, SupportsInt
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
+from infrastructure.i18n import tr as _
 from infrastructure.media_folders import media_folder_paths
 
 from .dropped_files import (
@@ -66,22 +67,26 @@ class SyncToolAvailability:
 
     @property
     def tool_list(self) -> str:
-        return " and ".join(self.tool_names)
+        return _(" and ").join(self.tool_names)
 
     @property
     def install_help_text(self) -> str:
         lines = []
         if self.missing_fpcalc:
             lines.append(
-                "fpcalc is required for sync.\n"
-                "Install from: https://acoustid.org/chromaprint"
+                _(
+                    "fpcalc is required for sync.\n"
+                    "Install from: https://acoustid.org/chromaprint"
+                )
             )
         if self.missing_ffmpeg:
             lines.append(
-                "FFmpeg and ffprobe are required for transcoding and media probing.\n"
-                "Install from: https://ffmpeg.org"
+                _(
+                    "FFmpeg and ffprobe are required for transcoding and media probing.\n"
+                    "Install from: https://ffmpeg.org"
+                )
             )
-        lines.append("You can also set custom paths in\nSettings -> External Tools.")
+        lines.append(_("You can also set custom paths in\nSettings -> External Tools."))
         return "\n\n".join(lines)
 
 
@@ -1914,11 +1919,11 @@ class PlaylistWriteWorker(QThread):
         try:
             if not self._ipod_path:
                 _reload_after_itunesdb_write(self._cache)
-                self.failed.emit("No iPod connected.")
+                self.failed.emit(_("No iPod connected."))
                 return
             if not self._cache.get_data():
                 _reload_after_itunesdb_write(self._cache)
-                self.failed.emit("No iPod database loaded.")
+                self.failed.emit(_("No iPod database loaded."))
                 return
 
             tracks_data, playlists_data, artwork_sources = (
@@ -1932,7 +1937,7 @@ class PlaylistWriteWorker(QThread):
             )
             if not result.success:
                 _reload_after_itunesdb_write(self._cache)
-                self.failed.emit(result.error or "Database write failed.")
+                self.failed.emit(result.error or _("Database write failed."))
                 return
 
             _delete_imported_otg_files(self._ipod_path)
@@ -1963,11 +1968,11 @@ class PlaylistDeleteWorker(QThread):
         try:
             if not self._ipod_path:
                 _reload_after_itunesdb_write(self._cache)
-                self.failed.emit("No iPod connected.")
+                self.failed.emit(_("No iPod connected."))
                 return
             if not self._cache.get_data():
                 _reload_after_itunesdb_write(self._cache)
-                self.failed.emit("No iPod database loaded.")
+                self.failed.emit(_("No iPod database loaded."))
                 return
 
             tracks_data, playlists_data, artwork_sources = (
@@ -1981,7 +1986,7 @@ class PlaylistDeleteWorker(QThread):
             )
             if not result.success:
                 _reload_after_itunesdb_write(self._cache)
-                self.failed.emit(result.error or "Database write failed.")
+                self.failed.emit(result.error or _("Database write failed."))
                 return
 
             _reload_after_itunesdb_write(self._cache)
@@ -2257,7 +2262,7 @@ class PlaylistImportWorker(QThread):
             )
             if not write_result.success:
                 _reload_after_itunesdb_write(self._cache)
-                self.failed.emit(write_result.error or "Database write failed.")
+                self.failed.emit(write_result.error or _("Database write failed."))
                 return
 
             _reload_after_itunesdb_write(self._cache)

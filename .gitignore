@@ -53,10 +53,14 @@ coverage.xml
 tmp/
 pytest-tmp/
 cover/
+.npm-cache/
 
 # Translations
 *.mo
 *.pot
+!locale/
+!locale/**/
+!locale/**/*.mo
 
 # Django stuff:
 *.log

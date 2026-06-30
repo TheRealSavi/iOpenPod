@@ -3,6 +3,7 @@ from PyQt6.QtGui import QCursor, QFont, QFontMetrics, QRegularExpressionValidato
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QProgressBar, QPushButton, QSizePolicy, QVBoxLayout, QWidget
 
 from app_core.device_identity import format_checksum_type_name
+from infrastructure.i18n import tr as _
 
 from ..glyphs import glyph_icon, glyph_pixmap
 from ..ipod_images import get_ipod_image
@@ -30,6 +31,9 @@ from .formatters import format_size
 # so only printable Unicode is allowed (no control characters).
 _MAX_IPOD_NAME_LEN = 63
 _IPOD_NAME_RE = QRegularExpression(r"^[^\x00-\x1f\x7f]*$")
+_COMPACT_ACTION_MIN_FONT = 8
+_COMPACT_ACTION_TEXT_GUARD = 6
+_COMPACT_ACTION_ICON_GAP = 6
 
 
 def _dash(value) -> str:
@@ -37,7 +41,7 @@ def _dash(value) -> str:
 
 
 def _yes_no(value) -> str:
-    return "Yes" if bool(value) else "No"
+    return _("Yes") if bool(value) else _("No")
 
 
 def _hex_id(value: int, width: int = 4) -> str:
@@ -60,6 +64,64 @@ def _format_format_ids(formats: dict[int, tuple[int, int]]) -> str:
     if not formats:
         return "—"
     return ", ".join(str(fid) for fid in sorted(formats))
+
+
+class _CompactActionButton(QPushButton):
+    """Sidebar half-width action button that protects translated labels."""
+
+    def __init__(self, text: str):
+        super().__init__()
+        self._full_text = text
+        self._base_font = QFont(FONT_FAMILY, Metrics.FONT_LG, QFont.Weight.DemiBold)
+        self.setMinimumWidth(0)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setToolTip(text)
+        self.setFont(self._base_font)
+        super().setText(text)
+        QTimer.singleShot(0, self.refit_text)
+
+    def set_compact_text(self, text: str) -> None:
+        self._full_text = text
+        self.setToolTip(text)
+        super().setText(text)
+        self.refit_text()
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        self.refit_text()
+
+    def refit_text(self) -> None:
+        """Fit the full label into the current button width when possible."""
+        if not self._full_text:
+            return
+
+        available = self.contentsRect().width() - _COMPACT_ACTION_TEXT_GUARD
+        if not self.icon().isNull():
+            available -= self.iconSize().width() + _COMPACT_ACTION_ICON_GAP
+        if available <= 0:
+            return
+
+        base_size = self._base_font.pointSize()
+        for size in range(base_size, _COMPACT_ACTION_MIN_FONT - 1, -1):
+            font = QFont(self._base_font)
+            font.setPointSize(size)
+            metrics = QFontMetrics(font)
+            if metrics.horizontalAdvance(self._full_text) <= available:
+                self.setFont(font)
+                super().setText(self._full_text)
+                return
+
+        font = QFont(self._base_font)
+        font.setPointSize(_COMPACT_ACTION_MIN_FONT)
+        metrics = QFontMetrics(font)
+        self.setFont(font)
+        super().setText(
+            metrics.elidedText(
+                self._full_text,
+                Qt.TextElideMode.ElideRight,
+                available,
+            )
+        )
 
 
 class _RenameLineEdit(QLineEdit):
@@ -118,7 +180,7 @@ class TechInfoRow(QWidget):
         layout.setContentsMargins(0, (3), 0, (3))
         layout.setSpacing(6)
 
-        self.label_widget = QLabel(label)
+        self.label_widget = QLabel(_(label))
         self.label_widget.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS))
         self.label_widget.setStyleSheet(LABEL_TERTIARY())
         self.label_widget.setSizePolicy(
@@ -185,15 +247,15 @@ class DeviceInfoCard(QFrame):
         name_layout.setSpacing(1)
         self._name_layout = name_layout
 
-        self.name_label = QLabel("No Device")
+        self.name_label = QLabel(_("No Device"))
         self.name_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_XXL, QFont.Weight.Bold))
         self.name_label.setStyleSheet(LABEL_PRIMARY())
         self.name_label.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.name_label.setToolTip("Click to rename your iPod")
+        self.name_label.setToolTip(_("Click to rename your iPod"))
         self.name_label.mousePressEvent = lambda ev: self._start_rename()
         name_layout.addWidget(self.name_label)
 
-        self.model_label = QLabel("Press Select to choose your iPod")
+        self.model_label = QLabel(_("Press Select to choose your iPod"))
         self.model_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.model_label.setStyleSheet(LABEL_SECONDARY())
         self.model_label.setWordWrap(True)
@@ -213,7 +275,7 @@ class DeviceInfoCard(QFrame):
         self.eject_button = QPushButton()
         self.eject_button.setFixedSize((26), (26))
         self.eject_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.eject_button.setToolTip("Safely eject the iPod from your system")
+        self.eject_button.setToolTip(_("Safely eject the iPod from your system"))
         self.eject_button.setStyleSheet(btn_css(
             bg=Colors.SURFACE,
             bg_hover=Colors.SURFACE_HOVER,
@@ -271,8 +333,8 @@ class DeviceInfoCard(QFrame):
         inv_layout.setContentsMargins(0, (2), 0, (2))
         inv_layout.setSpacing(10)
 
-        self._inv_songs = _InventoryCell("—", "Songs")
-        self._inv_hours = _InventoryCell("—", "Hours")
+        self._inv_songs = _InventoryCell("—", _("Songs"))
+        self._inv_hours = _InventoryCell("—", _("Hours"))
 
         inv_layout.addWidget(self._inv_songs, 1)
         inv_layout.addWidget(self._inv_hours, 1)
@@ -280,7 +342,7 @@ class DeviceInfoCard(QFrame):
         layout.addWidget(inv_widget)
 
         # Technical details section (collapsible)
-        self.tech_toggle = QPushButton("Technical Details")
+        self.tech_toggle = QPushButton(_("Technical Details"))
         _chev = glyph_icon("chevron-right", (12), Colors.TEXT_TERTIARY)
         if _chev:
             self.tech_toggle.setIcon(_chev)
@@ -360,7 +422,7 @@ class DeviceInfoCard(QFrame):
         self.chapter_formats_row = TechInfoRow("Chapter Img:", "—")
 
         # Three grouped sections with hairline separators
-        tech_layout.addWidget(make_section_header("Identity"))
+        tech_layout.addWidget(make_section_header(_("Identity")))
         for w in (
             self.model_num_row, self.serial_row, self.firmware_row,
             self.board_row, self.family_id_row, self.updater_family_id_row,
@@ -370,7 +432,7 @@ class DeviceInfoCard(QFrame):
             tech_layout.addWidget(w)
 
         tech_layout.addWidget(make_separator())
-        tech_layout.addWidget(make_section_header("USB / SCSI"))
+        tech_layout.addWidget(make_section_header(_("USB / SCSI")))
         for w in (
             self.usb_vid_row, self.usb_pid_row, self.usb_serial_row,
             self.scsi_row, self.bus_format_row, self.usbstor_row,
@@ -379,7 +441,7 @@ class DeviceInfoCard(QFrame):
             tech_layout.addWidget(w)
 
         tech_layout.addWidget(make_separator())
-        tech_layout.addWidget(make_section_header("Database"))
+        tech_layout.addWidget(make_section_header(_("Database")))
         for w in (
             self.db_version_row, self.device_db_version_row,
             self.shadow_db_version_row, self.sqlite_row, self.db_id_row,
@@ -388,7 +450,7 @@ class DeviceInfoCard(QFrame):
             tech_layout.addWidget(w)
 
         tech_layout.addWidget(make_separator())
-        tech_layout.addWidget(make_section_header("Capabilities"))
+        tech_layout.addWidget(make_section_header(_("Capabilities")))
         for w in (
             self.podcast_support_row, self.voice_memo_row,
             self.sparse_art_row, self.max_transfer_row,
@@ -397,7 +459,7 @@ class DeviceInfoCard(QFrame):
             tech_layout.addWidget(w)
 
         tech_layout.addWidget(make_separator())
-        tech_layout.addWidget(make_section_header("Storage"))
+        tech_layout.addWidget(make_section_header(_("Storage")))
         for w in (
             self.disk_size_row, self.free_space_row, self.art_formats_row,
             self.photo_formats_row, self.chapter_formats_row,
@@ -433,7 +495,7 @@ class DeviceInfoCard(QFrame):
     def _start_rename(self, event=None):
         """Show an inline QLineEdit to rename the iPod."""
         current = self.name_label.text()
-        if current == "No Device" or self._rename_edit is not None:
+        if current == _("No Device") or self._rename_edit is not None:
             return
 
         self._rename_edit = _RenameLineEdit(current)
@@ -510,11 +572,11 @@ class DeviceInfoCard(QFrame):
     def update_device_info(self, name: str, model: str = "", device_info=None):
         """Update device name and model."""
         self._device_info = device_info
-        display = name or "No Device"
+        display = name or _("No Device")
         self.name_label.setText(display)
         self._fit_name_font(display)
         self.model_label.setText(model)
-        self.eject_button.setEnabled(bool(name) and display != "No Device")
+        self.eject_button.setEnabled(bool(name) and display != _("No Device"))
 
         # Try to load real product photo from centralized store
         family = ""
@@ -542,7 +604,7 @@ class DeviceInfoCard(QFrame):
             def source_tip(field: str, value: str) -> str:
                 source = field_sources.get(field, "")
                 if source and value != "—":
-                    return f"{value}\nSource: {source}"
+                    return _("{value}\nSource: {source}").format(value=value, source=source)
                 return value
 
             self.model_num_row.setValue(dev.model_number or '—')
@@ -569,7 +631,7 @@ class DeviceInfoCard(QFrame):
                 ) or str(conflicts)
                 self.conflicts_row.setValue(str(len(conflicts)), detail)
             else:
-                self.conflicts_row.setValue("None")
+                self.conflicts_row.setValue(_("None"))
 
             usb_vid = _hex_id(dev.usb_vid)
             self.usb_vid_row.setValue(usb_vid, source_tip("usb_vid", usb_vid))
@@ -607,7 +669,7 @@ class DeviceInfoCard(QFrame):
             self.id_method_row.setValue(dev.identification_method or '—')
 
             self.checksum_row.setValue(format_checksum_type_name(dev.checksum_type))
-            scheme_names = {-1: '—', 0: 'None', 1: 'Scheme 1', 2: 'Scheme 2'}
+            scheme_names = {-1: "—", 0: _("None"), 1: _("Scheme 1"), 2: _("Scheme 2")}
             self.hash_scheme_row.setValue(
                 scheme_names.get(dev.hashing_scheme, str(dev.hashing_scheme))
             )
@@ -671,10 +733,16 @@ class DeviceInfoCard(QFrame):
                 used_pct = int(((dev.disk_size_gb - dev.free_space_gb) / dev.disk_size_gb) * 100)
                 self.storage_bar.setValue(max(0, min(100, used_pct)))
                 self._capacity_label.setText(
-                    f"{dev.free_space_gb:.1f} GB free of {dev.disk_size_gb:.1f} GB"
+                    _("{free:.1f} GB free of {total:.1f} GB").format(
+                        free=dev.free_space_gb,
+                        total=dev.disk_size_gb,
+                    )
                 )
                 self._capacity_widget.setToolTip(
-                    f"{dev.free_space_gb:.1f} GB free of {dev.disk_size_gb:.1f} GB"
+                    _("{free:.1f} GB free of {total:.1f} GB").format(
+                        free=dev.free_space_gb,
+                        total=dev.disk_size_gb,
+                    )
                 )
                 self._capacity_widget.show()
 
@@ -751,29 +819,30 @@ class DeviceInfoCard(QFrame):
             self._save_label.setStyleSheet(
                 f"background: transparent; border: none; color: {Colors.TEXT_TERTIARY};"
             )
-            self._save_label.setText("Saving…")
+            self._save_label.setText(_("Saving…"))
             self._save_label.show()
         elif state == "saved":
             self._save_label.setStyleSheet(
                 f"background: transparent; border: none; color: {Colors.SUCCESS};"
             )
-            self._save_label.setText("✓ Saved")
+            self._save_label.setText(f"✓ {_('Saved')}")
             self._save_label.show()
             self._save_hide_timer.start(2500)
         elif state == "error":
             self._save_label.setStyleSheet(
                 f"background: transparent; border: none; color: {Colors.DANGER};"
             )
-            self._save_label.setText("⚠ Save failed")
+            self._save_label.setText(f"⚠ {_('Save failed')}")
             self._save_label.show()
             self._save_hide_timer.start(4000)
 
     def clear(self):
         """Clear all info (when no device selected)."""
         self._device_info = None
-        self.name_label.setText("No Device")
-        self._fit_name_font("No Device")
-        self.model_label.setText("Press Select to choose your iPod")
+        no_device = _("No Device")
+        self.name_label.setText(no_device)
+        self._fit_name_font(no_device)
+        self.model_label.setText(_("Press Select to choose your iPod"))
         self._set_default_icon()
         self._capacity_label.setText("—")
         self._capacity_widget.hide()
@@ -861,13 +930,11 @@ class Sidebar(QFrame):
         self.deviceSelectLayout.setContentsMargins(0, 0, 0, 0)
         self.deviceSelectLayout.setSpacing(6)
 
-        self.deviceButton = QPushButton("Select")
-        self.rescanButton = QPushButton("Rescan")
+        self.deviceButton = _CompactActionButton(_("Select"))
+        self.rescanButton = _CompactActionButton(_("Rescan"))
 
         self.deviceButton.setStyleSheet(toolbar_btn_css())
         self.rescanButton.setStyleSheet(toolbar_btn_css())
-        self.deviceButton.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG, QFont.Weight.DemiBold))
-        self.rescanButton.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG, QFont.Weight.DemiBold))
 
         _icon_sz = QSize((20), (20))
         _bi = glyph_icon("tablet", (20), Colors.TEXT_SECONDARY)
@@ -879,13 +946,16 @@ class Sidebar(QFrame):
             self.rescanButton.setIcon(_bi)
             self.rescanButton.setIconSize(_icon_sz)
 
-        self.deviceSelectLayout.addWidget(self.deviceButton)
-        self.deviceSelectLayout.addWidget(self.rescanButton)
+        self.deviceButton.refit_text()
+        self.rescanButton.refit_text()
+
+        self.deviceSelectLayout.addWidget(self.deviceButton, 1)
+        self.deviceSelectLayout.addWidget(self.rescanButton, 1)
 
         self.sidebarLayout.addLayout(self.deviceSelectLayout)
 
         # Sync button - row 2 (full width)
-        self.syncButton = QPushButton("Sync with PC")
+        self.syncButton = QPushButton(_("Sync with PC"))
         self.syncButton.setStyleSheet(accent_btn_css())
         self.syncButton.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG, QFont.Weight.DemiBold))
         _bi = glyph_icon("download", (20), Colors.TEXT_ON_ACCENT)
@@ -895,7 +965,7 @@ class Sidebar(QFrame):
         self.sidebarLayout.addWidget(self.syncButton)
 
         # Backup button
-        self.backupButton = QPushButton("Backups")
+        self.backupButton = QPushButton(_("Backups"))
         self.backupButton.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
         self.backupButton.setStyleSheet(sidebar_nav_css())
         _bi = glyph_icon("archive", (20), Colors.TEXT_SECONDARY)
@@ -904,10 +974,10 @@ class Sidebar(QFrame):
             self.backupButton.setIconSize(_icon_sz)
         self.sidebarLayout.addWidget(self.backupButton)
 
-        self.tagFixButton = QPushButton("Normalize Tags")
+        self.tagFixButton = QPushButton(_("Normalize Tags"))
         self.tagFixButton.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
         self.tagFixButton.setStyleSheet(sidebar_nav_css())
-        self.tagFixButton.setToolTip("Preview and apply iPod-friendly tag fixes across the whole library.")
+        self.tagFixButton.setToolTip(_("Preview and apply iPod-friendly tag fixes across the whole library."))
         _bi = glyph_icon("check-circle", (20), Colors.TEXT_SECONDARY)
         if _bi:
             self.tagFixButton.setIcon(_bi)
@@ -924,7 +994,7 @@ class Sidebar(QFrame):
         library_layout.setContentsMargins(0, 0, 0, 0)
         library_layout.setSpacing(1)
 
-        lib_label = make_section_header("Library")
+        lib_label = make_section_header(_("Library"))
         lib_label.setStyleSheet(lib_label.styleSheet() + f" padding-left: {(4)}px;")
         library_layout.addWidget(lib_label)
 
@@ -942,7 +1012,7 @@ class Sidebar(QFrame):
         _nav_icon_sz = QSize((20), (20))
 
         for category, icon_name in self.category_glyphs.items():
-            btn = QPushButton(category)
+            btn = QPushButton(_(category))
             btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
             icon = glyph_icon(icon_name, (20), Colors.TEXT_SECONDARY)
             if icon:
@@ -966,7 +1036,7 @@ class Sidebar(QFrame):
         self.sidebarLayout.addWidget(make_separator())
 
         # Settings button at bottom
-        self.settingsButton = QPushButton("Settings")
+        self.settingsButton = QPushButton(_("Settings"))
         self.settingsButton.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
         self.settingsButton.setStyleSheet(btn_css(
             bg="transparent",

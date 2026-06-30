@@ -8,7 +8,8 @@ from PyQt6.QtCore import QPoint
 
 from GUI.styles import context_menu_css
 from GUI.widgets import photoBrowser as photo_browser_module
-from GUI.widgets.photoBrowser import PhotoBrowserWidget
+from GUI.widgets.photoBrowser import PhotoBrowserWidget, _album_display_label
+from infrastructure.i18n import set_language
 from SyncEngine.photos import PhotoEntry
 
 
@@ -86,6 +87,16 @@ def _attach_menu_action_helper(browser: SimpleNamespace) -> None:
             **kwargs,
         )
     )
+
+
+def test_album_display_label_translates_only_builtin_all_photos() -> None:
+    try:
+        set_language("zh")
+
+        assert _album_display_label("All Photos") == "所有照片"
+        assert _album_display_label("Settings") == "Settings"
+    finally:
+        set_language("en")
 
 
 def test_sync_running_check_does_not_recurse_before_widget_is_attached() -> None:

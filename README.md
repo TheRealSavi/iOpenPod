@@ -185,6 +185,9 @@ Useful contributions include:
 - Focused pull requests for documented issues
 - Joining the discord to coordinate
 
+For user-facing UI text and language updates, follow the
+[internationalization maintenance guide](docs/i18n.md).
+
 Please open an issue before starting major changes, or use the [Discord server](https://discord.gg/9Yy499Tf5d) to discuss implementation details.
 
 ### Related Projects

@@ -53,6 +53,7 @@ def test_settings_persistence_round_trip(monkeypatch) -> None:
             track_list_columns_by_content={
                 "music": {"Title": 220, "Album": 180, "Artist": 160}
             },
+            language="zh",
             window_width=1440,
             device_write_workers=2,
             always_encode_lossy=True,
@@ -88,6 +89,7 @@ def test_settings_persistence_round_trip(monkeypatch) -> None:
     assert loaded.track_list_columns_by_content == {
         "music": {"Title": 220, "Album": 180, "Artist": 160}
     }
+    assert loaded.language == "zh"
     assert loaded.window_width == 1440
     assert loaded.device_write_workers == 2
     assert loaded.always_encode_lossy is True
@@ -171,3 +173,23 @@ def test_settings_persistence_preserves_legacy_bool_setter(monkeypatch) -> None:
 
     assert loaded.backup_before_sync_mode == "ask"
     assert loaded.backup_before_sync is False
+
+
+def test_settings_persistence_normalizes_language(monkeypatch) -> None:
+    with repo_temp_dir() as tmp_path:
+        settings_dir = tmp_path / "settings"
+        settings_dir.mkdir()
+        settings_path = settings_dir / "settings.json"
+        settings_path.write_text(
+            json.dumps({"language": "zh_CN"}),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(
+            settings_persistence,
+            "get_settings_path",
+            lambda: str(settings_path),
+        )
+
+        loaded = load_app_settings()
+
+    assert loaded.language == "zh"

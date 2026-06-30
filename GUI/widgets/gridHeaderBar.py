@@ -4,6 +4,8 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLineEdit, QMenu, QPushButton, QSizePolicy
 
+from infrastructure.i18n import tr as _
+
 from ..styles import Colors, Metrics, btn_css, input_css
 
 # Sort definitions per category: (display_label, sort_key, reverse)
@@ -63,7 +65,7 @@ class GridHeaderBar(QFrame):
         layout.setContentsMargins(8, 0, 8, 0)
         layout.setSpacing(6)
 
-        self._sort_btn = QPushButton(f"Sort: {_DEFAULT_LABEL} \u25be")
+        self._sort_btn = QPushButton(self._sort_button_text(_DEFAULT_LABEL))
         self._sort_btn.setStyleSheet(
             btn_css(padding="4px 10px", radius=Metrics.BORDER_RADIUS_SM)
         )
@@ -72,7 +74,7 @@ class GridHeaderBar(QFrame):
         self._sort_btn.clicked.connect(self._show_sort_menu)
 
         self._search = QLineEdit()
-        self._search.setPlaceholderText("Search\u2026")
+        self._search.setPlaceholderText(_("Search\u2026"))
         self._search.setFixedWidth(200)
         self._search.setStyleSheet(
             input_css(radius=Metrics.BORDER_RADIUS_SM, padding="4px 10px")
@@ -96,7 +98,7 @@ class GridHeaderBar(QFrame):
         self._search.clear()
         self._search.blockSignals(False)
         self._active_label = _DEFAULT_LABEL
-        self._sort_btn.setText(f"Sort: {_DEFAULT_LABEL} \u25be")
+        self._sort_btn.setText(self._sort_button_text(_DEFAULT_LABEL))
         # Emit the default sort so grid is reset even if called from other paths
         self.sort_changed.emit("title", False)
 
@@ -130,7 +132,7 @@ class GridHeaderBar(QFrame):
 
         all_sorts = _SORTS.get(self._category, _SORTS["Albums"])
         for label, key, reverse in all_sorts:
-            action = cast(QAction, menu.addAction(label))
+            action = cast(QAction, menu.addAction(_(label)))
             action.setCheckable(True)
             action.setChecked(label == self._active_label)
             action.triggered.connect(
@@ -143,5 +145,9 @@ class GridHeaderBar(QFrame):
 
     def _on_sort_selected(self, label: str, key: str, reverse: bool) -> None:
         self._active_label = label
-        self._sort_btn.setText(f"Sort: {label} \u25be")
+        self._sort_btn.setText(self._sort_button_text(label))
         self.sort_changed.emit(key, reverse)
+
+    @staticmethod
+    def _sort_button_text(label: str) -> str:
+        return _("Sort: {label} \u25be").format(label=_(label))

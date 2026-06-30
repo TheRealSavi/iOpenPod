@@ -1,0 +1,2763 @@
+# Chinese translations for iOpenPod.
+msgid ""
+msgstr ""
+"Project-Id-Version: iOpenPod 1.0.62\n"
+""
+"Report-Msgid-Bugs-To: https://github.com/TheRealSavi/iOpenPod/issues\n"
+""
+"POT-Creation-Date: 2026-06-30 00:00+0800\n"
+""
+"PO-Revision-Date: 2026-06-30 00:00+0800\n"
+""
+"Last-Translator: iOpenPod contributors\n"
+""
+"Language-Team: Chinese\n"
+""
+"Language: zh_CN\n"
+""
+"MIME-Version: 1.0\n"
+""
+"Content-Type: text/plain; charset=UTF-8\n"
+""
+"Content-Transfer-Encoding: 8bit\n"
+""
+
+msgid "A crash report has been saved to:\n"
+""
+msgstr "崩溃报告已保存到：\n"
+""
+
+msgid "API Key"
+msgstr "API 密钥"
+
+msgid "API Key and Secret required"
+msgstr "需要 API Key 和 Secret"
+
+msgid "API Secret"
+msgstr "API 密钥 Secret"
+
+msgid "All Tracks"
+msgstr "全部曲目"
+
+msgid "About"
+msgstr "关于"
+
+msgid "Accent Color"
+msgstr "强调色"
+
+msgid "Advanced AAC"
+msgstr "高级 AAC"
+
+msgid "Albums"
+msgstr "专辑"
+
+msgid "Album"
+msgstr "专辑"
+
+msgid "An unexpected error occurred:\n"
+"\n"
+""
+msgstr "发生未预期的错误：\n"
+"\n"
+""
+
+msgid "Appearance"
+msgstr "外观"
+
+msgid "Apply a subtle display-only sharpening pass to album art in grid cards and track lists. This does not modify artwork written to your iPod."
+msgstr "在网格卡片和曲目列表中对专辑封面应用轻微的仅显示锐化处理。不会修改写入 iPod 的封面。"
+
+msgid "Artists"
+msgstr "艺人"
+
+msgid "Artist"
+msgstr "艺人"
+
+msgid "Audio"
+msgstr "音频"
+
+msgid "Audiobooks"
+msgstr "有声书"
+
+msgid "Auto-detect"
+msgstr "自动检测"
+
+msgid "Ask Each Time"
+msgstr "每次询问"
+
+msgid "Back"
+msgstr "返回"
+
+msgid "Backup Folder"
+msgstr "备份文件夹"
+
+msgid "Backups"
+msgstr "备份"
+
+msgid "Backups and Rollback"
+msgstr "备份与回滚"
+
+msgid "Bandwidth Cutoff"
+msgstr "频宽截止"
+
+msgid "Before Sync"
+msgstr "同步前"
+
+msgid "Behavior"
+msgstr "行为"
+
+msgid "Duration"
+msgstr "时长"
+
+msgid "Bitrate Mode"
+msgstr "码率模式"
+
+msgid "Boost text and border contrast for accessibility. System follows your OS accessibility setting."
+msgstr "提高文本和边框对比度以改善可访问性。“系统”会跟随操作系统可访问性设置。"
+
+msgid "Browse..."
+msgstr "浏览..."
+
+msgid "Browse…"
+msgstr "浏览…"
+
+msgid "Cache Status"
+msgstr "缓存状态"
+
+msgid "Calculating…"
+msgstr "正在计算…"
+
+msgid "Cancel"
+msgstr "取消"
+
+msgid "Canceled"
+msgstr "已取消"
+
+msgid "Check"
+msgstr "检查"
+
+msgid "Check for a newer version of iOpenPod."
+msgstr "检查是否有新版 iOpenPod。"
+
+msgid "Checking…"
+msgstr "正在检查…"
+
+msgid "Choose the color scheme for the interface. System follows your OS preference."
+msgstr "选择界面的配色方案。“系统”会跟随操作系统偏好。"
+
+msgid "Choose the interface language. Changing it rebuilds the window."
+msgstr "选择界面语言。更改后会重建窗口以应用新语言。"
+
+msgid "Clear Cache"
+msgstr "清除缓存"
+
+msgid "Clear Transcode Cache"
+msgstr "清除转码缓存"
+
+msgid "Click to rename your iPod"
+msgstr "点击重命名你的 iPod"
+
+msgid "Compute Sound Check"
+msgstr "计算音量均衡"
+
+msgid "Connect"
+msgstr "连接"
+
+msgid "Connected as"
+msgstr "已连接为"
+
+msgid "Convert WAV to ALAC"
+msgstr "将 WAV 转为 ALAC"
+
+msgid "Copy the current global values into this iPod's settings file."
+msgstr "将当前全局值复制到这个 iPod 的设置文件。"
+
+msgid "Customize the accent color used throughout the interface. Match iPod uses the body color of your connected iPod."
+msgstr "自定义界面强调色。“匹配 iPod”会使用当前连接 iPod 的机身颜色。"
+
+msgid "Delete all cached transcoded files?\n"
+"\n"
+"They will be re-created on the next sync."
+msgstr "删除所有缓存的转码文件？\n"
+"\n"
+"它们会在下次同步时重新创建。"
+
+msgid "Device"
+msgstr "设备"
+
+msgid "Device..."
+msgstr "设备..."
+
+msgid "Disconnect"
+msgstr "断开连接"
+
+msgid "Download"
+msgstr "下载"
+
+msgid "Downloading…"
+msgstr "正在下载…"
+
+msgid "External Tools"
+msgstr "外部工具"
+
+msgid "FFmpeg"
+msgstr "FFmpeg"
+
+msgid "FFmpeg Path Override"
+msgstr "FFmpeg 路径覆盖"
+
+msgid "Fetching token..."
+msgstr "正在获取令牌..."
+
+msgid "Fit Thumbnails"
+msgstr "适配缩略图"
+
+msgid "Font Size"
+msgstr "字体大小"
+
+msgid "General"
+msgstr "通用"
+
+msgid "Genres"
+msgstr "流派"
+
+msgid "Get API keys ↗"
+msgstr "获取 API 密钥 ↗"
+
+msgid "Get token ↗"
+msgstr "获取令牌 ↗"
+
+msgid "Global"
+msgstr "全局"
+
+msgid "Hours"
+msgstr "小时"
+
+msgid "Ignore this iPod's settings file and use the PC settings while this iPod is selected."
+msgstr "选择此 iPod 时忽略它的设备设置文件，改用电脑上的全局设置。"
+
+msgid "Increased Contrast"
+msgstr "增强对比度"
+
+msgid "Intensity Stereo"
+msgstr "强度立体声"
+
+msgid "Invalid iPod Folder"
+msgstr "无效的 iPod 文件夹"
+
+msgid "Language"
+msgstr "语言"
+
+msgid "Last.fm"
+msgstr "Last.fm"
+
+msgid "Library"
+msgstr "资料库"
+
+msgid "LIBRARY"
+msgstr "资料库"
+
+msgid "Library (Master)"
+msgstr "资料库（主）"
+
+msgid "ListenBrainz"
+msgstr "ListenBrainz"
+
+msgid "Loading device settings..."
+msgstr "正在载入设备设置..."
+
+msgid "Loading iPod..."
+msgstr "正在载入 iPod..."
+
+msgid "Log Folder"
+msgstr "日志文件夹"
+
+msgid "Lossy Encoder"
+msgstr "有损编码器"
+
+msgid "Manage"
+msgstr "管理"
+
+msgid "Maximum Backups"
+msgstr "最大备份数"
+
+msgid "Mid/Side Stereo"
+msgstr "中/侧声道立体声"
+
+msgid "Mono for Spoken Word"
+msgstr "语音内容转单声道"
+
+msgid "Movies"
+msgstr "电影"
+
+msgid "Music Bitrate"
+msgstr "音乐码率"
+
+msgid "Music Quality"
+msgstr "音乐质量"
+
+msgid "Music Videos"
+msgstr "音乐视频"
+
+msgid "No"
+msgstr "否"
+
+msgid "No Device"
+msgstr "无设备"
+
+msgid "No device is currently selected.\n"
+"Choose an iPod to access your library and sync tools."
+msgstr "当前未选择设备。\n"
+"选择一个 iPod 后即可访问资料库和同步工具。"
+
+msgid "None"
+msgstr "无"
+
+msgid "Name"
+msgstr "名称"
+
+msgid "Normalize Tags"
+msgstr "规范化标签"
+
+msgid "Normalize to 44.1 kHz"
+msgstr "规范化为 44.1 kHz"
+
+msgid "Not found"
+msgstr "未找到"
+
+msgid "Not set"
+msgstr "未设置"
+
+msgid "Open"
+msgstr "打开"
+
+msgid "Open the GitHub issue tracker to report problems or request features."
+msgstr "打开 GitHub issue tracker 以报告问题或提出功能请求。"
+
+msgid "Open ↗"
+msgstr "打开 ↗"
+
+msgid "Overridden by device settings"
+msgstr "已被设备设置覆盖"
+
+msgid "Parallel Workers"
+msgstr "并行任务数"
+
+msgid "Parallel Writes"
+msgstr "并行写入数"
+
+msgid "Paste token here…"
+msgstr "在此粘贴令牌…"
+
+msgid "Perceptual Noise Substitution (PNS)"
+msgstr "感知噪声替代 (PNS)"
+
+msgid "Performance"
+msgstr "性能"
+
+msgid "Photos"
+msgstr "照片"
+
+msgid "Platform default"
+msgstr "平台默认"
+
+msgid "Playlists"
+msgstr "播放列表"
+
+msgid "PODCAST PLAYLISTS"
+msgstr "播客播放列表"
+
+msgid "Please report this issue on GitHub."
+msgstr "请在 GitHub 上报告这个问题。"
+
+msgid "Podcasts"
+msgstr "播客"
+
+msgid "Prefer Lossy Encoding"
+msgstr "优先有损编码"
+
+msgid "Press Select to choose your iPod"
+msgstr "点击“选择”来选择你的 iPod"
+
+msgid "Preview and apply iPod-friendly tag fixes across the whole library."
+msgstr "预览并在整个资料库中应用适合 iPod 的标签修复。"
+
+msgid "Rating Conflict Strategy"
+msgstr "评分冲突策略"
+
+msgid "REGULAR PLAYLISTS"
+msgstr "普通播放列表"
+
+msgid "Reading library and device settings."
+msgstr "正在读取资料库和设备设置。"
+
+msgid "Reencode Existing Lossy Files"
+msgstr "重新编码已有有损文件"
+
+msgid "Report a Bug"
+msgstr "报告问题"
+
+msgid "Rescan"
+msgstr "重新扫描"
+
+msgid "Reset"
+msgstr "重置"
+
+msgid "Reset Device Settings"
+msgstr "重置设备设置"
+
+msgid "Reset to auto-detect"
+msgstr "恢复自动检测"
+
+msgid "Size"
+msgstr "大小"
+
+msgid "Sort"
+msgstr "排序"
+
+msgid "SMART PLAYLISTS"
+msgstr "智能播放列表"
+
+msgid "INTERNAL BROWSE CATEGORIES"
+msgstr "内部浏览分类"
+
+msgid "Reset to default"
+msgstr "恢复默认"
+
+msgid "Rotate Tall Photos on Device"
+msgstr "在设备上旋转竖图"
+
+msgid "Round album art corners in grid cards and track lists. This only changes how artwork is drawn in iOpenPod and does not modify anything written to your iPod."
+msgstr "在网格卡片和曲目列表中为专辑封面使用圆角。这只影响 iOpenPod 内的显示，不会修改写入 iPod 的内容。"
+
+msgid "Rounded Artwork"
+msgstr "圆角封面"
+
+msgid "Safely eject the iPod from your system"
+msgstr "从系统安全弹出 iPod"
+
+msgid "Save failed"
+msgstr "保存失败"
+
+msgid "Saved"
+msgstr "已保存"
+
+msgid "Saving…"
+msgstr "正在保存…"
+
+msgid "Scale text size across the interface for accessibility."
+msgstr "缩放整个界面的文字大小以改善可访问性。"
+
+msgid "Scheme 1"
+msgstr "方案 1"
+
+msgid "Scheme 2"
+msgstr "方案 2"
+
+msgid "Scrobbling"
+msgstr "播放记录"
+
+msgid "Select"
+msgstr "选择"
+
+msgid "Select Device"
+msgstr "选择设备"
+
+msgid "Select File"
+msgstr "选择文件"
+
+msgid "Select Folder"
+msgstr "选择文件夹"
+
+msgid "Select an iPod to continue"
+msgstr "请选择一个 iPod 继续"
+
+msgid "Select an iPod to edit device settings"
+msgstr "选择一个 iPod 以编辑设备设置"
+
+msgid "Settings"
+msgstr "设置"
+
+msgid "Settings Folder"
+msgstr "设置文件夹"
+
+msgid "Sharpen Artwork"
+msgstr "锐化封面"
+
+msgid "Show album art thumbnails next to tracks in the list view."
+msgstr "在列表视图的曲目旁显示专辑封面缩略图。"
+
+msgid "Smart Quality by Content Type"
+msgstr "按内容类型智能选择质量"
+
+msgid "Songs"
+msgstr "歌曲"
+
+msgid "Spoken Word"
+msgstr "语音内容"
+
+msgid "Spoken Word Bitrate"
+msgstr "语音内容码率"
+
+msgid "Status"
+msgstr "状态"
+
+msgid "Storage"
+msgstr "存储"
+
+msgid "Storage Paths"
+msgstr "存储路径"
+
+msgid "Support iOpenPod"
+msgstr "支持 iOpenPod"
+
+msgid "Sync"
+msgstr "同步"
+
+msgid "Sync with PC"
+msgstr "与电脑同步"
+
+msgid "TV Shows"
+msgstr "电视节目"
+
+msgid "Technical Details"
+msgstr "技术详情"
+
+msgid "Temporal Noise Shaping (TNS)"
+msgstr "瞬态噪声整形 (TNS)"
+
+msgid "The selected folder could not be identified as an iPod."
+msgstr "无法将所选文件夹识别为 iPod。"
+
+msgid "The selected folder does not appear to be a valid iPod root.\n"
+"\n"
+"Expected structure:\n"
+"  <selected folder>/iPod_Control/iTunes/\n"
+"\n"
+"Please select the root folder of your iPod."
+msgstr "所选文件夹不像有效的 iPod 根目录。\n"
+"\n"
+"预期结构：\n"
+"  <selected folder>/iPod_Control/iTunes/\n"
+"\n"
+"请选择 iPod 的根文件夹。"
+
+msgid "Theme"
+msgstr "主题"
+
+msgid "Track List Artwork"
+msgstr "曲目列表封面"
+
+msgid "Tracks"
+msgstr "曲目"
+
+msgid "Transcode Cache"
+msgstr "转码缓存"
+
+msgid "Transcoding"
+msgstr "转码"
+
+msgid "Use Global Settings"
+msgstr "使用全局设置"
+
+msgid "VBR Quality Level"
+msgstr "VBR 质量等级"
+
+msgid "Video"
+msgstr "视频"
+
+msgid "Video Encode Speed"
+msgstr "视频编码速度"
+
+msgid "Video Quality (CRF)"
+msgstr "视频质量 (CRF)"
+
+msgid "Videos"
+msgstr "视频"
+
+msgid "Waiting for browser approval..."
+msgstr "正在等待浏览器授权..."
+
+msgid "Write Back to PC"
+msgstr "写回电脑"
+
+msgid "Yes"
+msgstr "是"
+
+msgid "fpcalc (Chromaprint)"
+msgstr "fpcalc (Chromaprint)"
+
+msgid "fpcalc Path Override"
+msgstr "fpcalc 路径覆盖"
+
+msgid "iOpenPod Error"
+msgstr "iOpenPod 错误"
+
+msgid "iOpenPod is and always will be completely free and open source. If you like it and would like to support me, it is so very appreciated."
+msgstr "iOpenPod 现在和将来都会是完全免费且开源的软件。如果你喜欢它并愿意支持，我会非常感谢。"
+
+msgid "iPod Not Writable"
+msgstr "iPod 不可写"
+
+msgid "libfdk_aac Afterburner"
+msgstr "libfdk_aac Afterburner"
+
+msgid "{free:.1f} GB free of {total:.1f} GB"
+msgstr "可用 {free:.1f} GB，共 {total:.1f} GB"
+
+msgid "(all columns shown)"
+msgstr "（已显示所有列）"
+
+msgid "{count:,} audiobook"
+msgstr "{count:,} 本有声书"
+
+msgid "{count:,} audiobooks"
+msgstr "{count:,} 本有声书"
+
+msgid "{count:,} episode"
+msgstr "{count:,} 集"
+
+msgid "{count:,} episodes"
+msgstr "{count:,} 集"
+
+msgid "{count:,} song"
+msgstr "{count:,} 首歌曲"
+
+msgid "{count:,} songs"
+msgstr "{count:,} 首歌曲"
+
+msgid "{count:,} track"
+msgstr "{count:,} 首曲目"
+
+msgid "{count:,} tracks"
+msgstr "{count:,} 首曲目"
+
+msgid "{count:,} video"
+msgstr "{count:,} 个视频"
+
+msgid "{count:,} videos"
+msgstr "{count:,} 个视频"
+
+msgid "{shown:,} of {total:,} audiobook"
+msgstr "显示 {shown:,} / {total:,} 本有声书"
+
+msgid "{shown:,} of {total:,} audiobooks"
+msgstr "显示 {shown:,} / {total:,} 本有声书"
+
+msgid "{shown:,} of {total:,} episode"
+msgstr "显示 {shown:,} / {total:,} 集"
+
+msgid "{shown:,} of {total:,} episodes"
+msgstr "显示 {shown:,} / {total:,} 集"
+
+msgid "{shown:,} of {total:,} song"
+msgstr "显示 {shown:,} / {total:,} 首歌曲"
+
+msgid "{shown:,} of {total:,} songs"
+msgstr "显示 {shown:,} / {total:,} 首歌曲"
+
+msgid "{shown:,} of {total:,} track"
+msgstr "显示 {shown:,} / {total:,} 首曲目"
+
+msgid "{shown:,} of {total:,} tracks"
+msgstr "显示 {shown:,} / {total:,} 首曲目"
+
+msgid "{shown:,} of {total:,} video"
+msgstr "显示 {shown:,} / {total:,} 个视频"
+
+msgid "{shown:,} of {total:,} videos"
+msgstr "显示 {shown:,} / {total:,} 个视频"
+
+msgid "{gb:.2f} GB used of {max_gb:.0f} GB · {count:,} file"
+msgstr "已用 {gb:.2f} GB，共 {max_gb:.0f} GB · {count:,} 个文件"
+
+msgid "{gb:.2f} GB used of {max_gb:.0f} GB · {count:,} files"
+msgstr "已用 {gb:.2f} GB，共 {max_gb:.0f} GB · {count:,} 个文件"
+
+msgid "{gb:.2f} GB · {count:,} file"
+msgstr "{gb:.2f} GB · {count:,} 个文件"
+
+msgid "{gb:.2f} GB · {count:,} files"
+msgstr "{gb:.2f} GB · {count:,} 个文件"
+
+msgid "Add Column"
+msgstr "添加列"
+
+msgid "Album Artist"
+msgstr "专辑艺人"
+
+msgid "Album ID"
+msgstr "专辑 ID"
+
+msgid "Art Count"
+msgstr "封面数量"
+
+msgid "Art Formats:"
+msgstr "封面格式："
+
+msgid "Artist Ref"
+msgstr "艺人引用"
+
+msgid "Artwork"
+msgstr "封面"
+
+msgid "Artwork Ref"
+msgstr "封面引用"
+
+msgid "Audio:"
+msgstr "音频："
+
+msgid "Audio Quality"
+msgstr "音频质量"
+
+msgid "Bitrate"
+msgstr "码率"
+
+msgid "BPM"
+msgstr "BPM"
+
+msgid "Bus/Format:"
+msgstr "总线/格式："
+
+msgid "Cache Location"
+msgstr "缓存位置"
+
+msgid "Capabilities"
+msgstr "能力"
+
+msgid "Category"
+msgstr "分类"
+
+msgid "Chapter Img:"
+msgstr "章节图像："
+
+msgid "Chapter Titles"
+msgstr "章节标题"
+
+msgid "Chapters"
+msgstr "章节"
+
+msgid "Cleared — {count:,} file removed"
+msgstr "已清除 - 移除 {count:,} 个文件"
+
+msgid "Cleared — {count:,} files removed"
+msgstr "已清除 - 移除 {count:,} 个文件"
+
+msgid "Comment"
+msgstr "备注"
+
+msgid "Compilation"
+msgstr "合辑"
+
+msgid "Composer"
+msgstr "作曲者"
+
+msgid "Composer ID"
+msgstr "作曲者 ID"
+
+msgid "Conflicts:"
+msgstr "冲突："
+
+msgid "Convert to a single chaptered track"
+msgstr "转换为单个带章节曲目"
+
+msgid "Core Metadata"
+msgstr "核心元数据"
+
+msgid "Could not prepare artwork:\n\n{error}"
+msgstr "无法准备封面：\n\n{error}"
+
+msgid "Could not stage artwork update:\n\n{error}"
+msgstr "无法暂存封面更新：\n\n{error}"
+
+msgid "Custom directory to store iOpenPod settings. Useful for portable setups or backups."
+msgstr "用于存储 iOpenPod 设置的自定义目录，适合便携配置或备份。"
+
+msgid "Date Added"
+msgstr "添加日期"
+
+msgid "Date Modified"
+msgstr "修改日期"
+
+msgid "Dates"
+msgstr "日期"
+
+msgid "Description"
+msgstr "描述"
+
+msgid "Device DB:"
+msgstr "设备数据库："
+
+msgid "Disc #"
+msgstr "光盘编号"
+
+msgid "Disc Total"
+msgstr "光盘总数"
+
+msgid "Disk Size:"
+msgstr "磁盘大小："
+
+msgid "Encoder"
+msgstr "编码器"
+
+msgid "Enclosure URL"
+msgstr "媒体文件 URL"
+
+msgid "Episode #"
+msgstr "剧集编号"
+
+msgid "Episode ID"
+msgstr "剧集 ID"
+
+msgid "Equalizer"
+msgstr "均衡器"
+
+msgid "Error clearing cache: {error}"
+msgstr "清除缓存失败：{error}"
+
+msgid "File Format"
+msgstr "文件格式"
+
+msgid "Flags"
+msgstr "标记"
+
+msgid "Free Space:"
+msgstr "可用空间："
+
+msgid "Gapless"
+msgstr "无缝播放"
+
+msgid "Gapless Album"
+msgstr "无缝专辑"
+
+msgid "Gapless Payload"
+msgstr "无缝负载"
+
+msgid "Grouping"
+msgstr "分组"
+
+msgid "Has Lyrics"
+msgstr "有歌词"
+
+msgid "Hash Scheme:"
+msgstr "哈希方案："
+
+msgid "Hide \"{column}\""
+msgstr "隐藏“{column}”"
+
+msgid "Identity"
+msgstr "身份"
+
+msgid "Identifiers"
+msgstr "标识符"
+
+msgid "Keywords"
+msgstr "关键词"
+
+msgid "Largest"
+msgstr "最大"
+
+msgid "Last Played"
+msgstr "上次播放"
+
+msgid "Last Skipped"
+msgstr "上次跳过"
+
+msgid "Locations"
+msgstr "位置"
+
+msgid "Locale"
+msgstr "区域"
+
+msgid "Location"
+msgstr "位置"
+
+msgid "Log Location"
+msgstr "日志位置"
+
+msgid "Lyrics"
+msgstr "歌词"
+
+msgid "Max Cache Size"
+msgstr "最大缓存大小"
+
+msgid "Max File:"
+msgstr "最大文件："
+
+msgid "Max Transfer:"
+msgstr "最大传输："
+
+msgid "Media Type"
+msgstr "媒体类型"
+
+msgid "Minimize"
+msgstr "最小化"
+
+msgid "Model #:"
+msgstr "型号："
+
+msgid "Most Albums"
+msgstr "专辑最多"
+
+msgid "Most Artists"
+msgstr "艺人最多"
+
+msgid "Most Plays"
+msgstr "播放最多"
+
+msgid "Most Skipped"
+msgstr "跳过最多"
+
+msgid "Most Tracks"
+msgstr "曲目最多"
+
+msgid "Network"
+msgstr "电视网"
+
+msgid "Oldest cached files are automatically removed (LRU) to stay within this limit. Set to Unlimited if storage is not a concern."
+msgstr "最旧的缓存文件会按 LRU 自动移除，以保持在此限制内。如果不担心存储空间，可设为无限制。"
+
+msgid "Open ↗"
+msgstr "打开 ↗"
+
+msgid "Other"
+msgstr "其他"
+
+msgid "Photo Formats:"
+msgstr "照片格式："
+
+msgid "Playback && Stats"
+msgstr "播放与统计"
+
+msgid "Played"
+msgstr "已播放"
+
+msgid "Plays"
+msgstr "播放次数"
+
+msgid "Plays (iPod)"
+msgstr "播放次数 (iPod)"
+
+msgid "Podcast"
+msgstr "播客"
+
+msgid "Podcasts:"
+msgstr "播客："
+
+msgid "Post-gap"
+msgstr "后间隙"
+
+msgid "Pre-gap"
+msgstr "前间隙"
+
+msgid "Product:"
+msgstr "产品："
+
+msgid "Rating"
+msgstr "评分"
+
+msgid "Release Date"
+msgstr "发行日期"
+
+msgid "Remember Pos."
+msgstr "记忆位置"
+
+msgid "Resize All Columns to Fit"
+msgstr "调整所有列以适应内容"
+
+msgid "Resize Column to Fit"
+msgstr "调整列以适应内容"
+
+msgid "RSS URL"
+msgstr "RSS URL"
+
+msgid "Sample Count"
+msgstr "采样数"
+
+msgid "Sample Rate"
+msgstr "采样率"
+
+msgid "Search…"
+msgstr "搜索…"
+
+msgid "Season"
+msgstr "季"
+
+msgid "Select an Album"
+msgstr "选择专辑"
+
+msgid "Select an Artist"
+msgstr "选择艺人"
+
+msgid "Select a Genre"
+msgstr "选择流派"
+
+msgid "Serial:"
+msgstr "序列号："
+
+msgid "Settings Location"
+msgstr "设置位置"
+
+msgid "Shadow DB:"
+msgstr "影子数据库："
+
+msgid "Show"
+msgstr "节目"
+
+msgid "Skip Shuffle"
+msgstr "随机播放时跳过"
+
+msgid "Skips"
+msgstr "跳过次数"
+
+msgid "Sort: {label} ▾"
+msgstr "排序：{label} ▾"
+
+msgid "Sort Album"
+msgstr "排序专辑"
+
+msgid "Sort Album Artist"
+msgstr "排序专辑艺人"
+
+msgid "Sort Artist"
+msgstr "排序艺人"
+
+msgid "Sort Composer"
+msgstr "排序作曲者"
+
+msgid "Sort Overrides"
+msgstr "排序覆盖"
+
+msgid "Sort Show"
+msgstr "排序节目"
+
+msgid "Sort Title"
+msgstr "排序标题"
+
+msgid "Sparse Art:"
+msgstr "稀疏封面："
+
+msgid "Start Time"
+msgstr "开始时间"
+
+msgid "Stop Time"
+msgstr "结束时间"
+
+msgid "Subtitle"
+msgstr "字幕"
+
+msgid "Technical Details"
+msgstr "技术详情"
+
+msgid "Time"
+msgstr "时长"
+
+msgid "Title"
+msgstr "标题"
+
+msgid "Track #"
+msgstr "曲目编号"
+
+msgid "Track ID"
+msgstr "曲目 ID"
+
+msgid "Track Keywords"
+msgstr "曲目关键词"
+
+msgid "Track Total"
+msgstr "曲目总数"
+
+msgid "Unavailable ({error})"
+msgstr "不可用（{error}）"
+
+msgid "Unify Artwork"
+msgstr "统一封面"
+
+msgid "Updater ID:"
+msgstr "更新器 ID："
+
+msgid "USB / SCSI"
+msgstr "USB / SCSI"
+
+msgid "USB Parent:"
+msgstr "USB 父级："
+
+msgid "USB PID:"
+msgstr "USB PID："
+
+msgid "USB Serial:"
+msgstr "USB 序列号："
+
+msgid "USB VID:"
+msgstr "USB VID："
+
+msgid "Voice Memos:"
+msgstr "语音备忘录："
+
+msgid "Volume Adj."
+msgstr "音量调整"
+
+msgid "Where iOpenPod writes log files and crash reports. Takes effect on next launch."
+msgstr "iOpenPod 写入日志文件和崩溃报告的位置。下次启动后生效。"
+
+msgid "Where transcoded files are cached to avoid re-encoding on future syncs."
+msgstr "转码文件的缓存位置，用于避免后续同步时重复编码。"
+
+msgid "Year"
+msgstr "年份"
+
+msgid "{value}\nSource: {source}"
+msgstr "{value}\n来源：{source}"
+
+msgid "(mixed selection)"
+msgstr "（选择内容不一致）"
+
+msgid "Add to Playlist"
+msgstr "添加到播放列表"
+
+msgid "Checked"
+msgstr "已勾选"
+
+msgid "Content Advisory"
+msgstr "内容分级"
+
+msgid "Content Advisory: Clean"
+msgstr "内容分级：洁净版"
+
+msgid "Content Advisory: Explicit"
+msgstr "内容分级：限制级"
+
+msgid "Convert to Podcast"
+msgstr "转换为播客"
+
+msgid "Copy as File(s)"
+msgstr "复制为文件"
+
+msgid "Copy as Text"
+msgstr "复制为文本"
+
+msgid "Downloading update…"
+msgstr "正在下载更新…"
+
+msgid "Edit ({count})"
+msgstr "编辑（{count}）"
+
+msgid "Explicit"
+msgstr "限制级"
+
+msgid "ffprobe missing"
+msgstr "缺少 ffprobe"
+
+msgid "iOpenPod Update"
+msgstr "iOpenPod 更新"
+
+msgid "Invalid token"
+msgstr "令牌无效"
+
+msgid "Move Down"
+msgstr "下移"
+
+msgid "Move Up"
+msgstr "上移"
+
+msgid "New Playlist"
+msgstr "新建播放列表"
+
+msgid "No Binary Available"
+msgstr "没有可用的二进制文件"
+
+msgid "No pre-built binary was found for your platform.\n\nVisit {release_page} to download manually."
+msgstr "没有找到适用于你平台的预构建二进制文件。\n\n请访问 {release_page} 手动下载。"
+
+msgid "No Rating"
+msgstr "无评分"
+
+msgid "None (Unset)"
+msgstr "无（未设置）"
+
+msgid "Part of a compilation album"
+msgstr "合辑专辑的一部分"
+
+msgid "Preparing {count} file…"
+msgstr "正在准备 {count} 个文件…"
+
+msgid "Preparing {count} files…"
+msgstr "正在准备 {count} 个文件…"
+
+msgid "Remove {count} Track from iPod"
+msgstr "从 iPod 移除 {count} 首曲目"
+
+msgid "Remove {count} Tracks from iPod"
+msgstr "从 iPod 移除 {count} 首曲目"
+
+msgid "Remove {count} Track from Playlist"
+msgstr "从播放列表移除 {count} 首曲目"
+
+msgid "Remove {count} Tracks from Playlist"
+msgstr "从播放列表移除 {count} 首曲目"
+
+msgid "Reset Columns"
+msgstr "重置列"
+
+msgid "Skip When Shuffling"
+msgstr "随机播放时跳过"
+
+msgid "Skip this track in shuffle mode"
+msgstr "随机播放时跳过此曲目"
+
+msgid "Split chapters into individual tracks"
+msgstr "将章节拆分为单独曲目"
+
+msgid "Starting drag…"
+msgstr "正在开始拖拽…"
+
+msgid "Untitled"
+msgstr "未命名"
+
+msgid "Up to Date"
+msgstr "已是最新"
+
+msgid "Update Check Failed"
+msgstr "更新检查失败"
+
+msgid "Validating…"
+msgstr "正在验证…"
+
+msgid "Volume Adjustment"
+msgstr "音量调整"
+
+msgid "You are running the latest version (v{version})."
+msgstr "你正在运行最新版本 (v{version})。"
+
+msgid "Clean"
+msgstr "洁净版"
+
+msgid "Database"
+msgstr "数据库"
+
+msgid "Edit"
+msgstr "编辑"
+
+msgid "Maximize"
+msgstr "最大化"
+
+msgid "{count} chapter"
+msgstr "{count} 个章节"
+
+msgid "{count} chapters"
+msgstr "{count} 个章节"
+
+
+#: GUI/app.py:2312
+msgid ""
+"\n"
+"\n"
+"If you discard, the copied files will be cleaned up automatically the next time you sync."
+msgstr "\n\n如果选择丢弃，已复制的文件会在下次同步时自动清理。"
+
+#: app_core/jobs.py:70
+msgid " and "
+msgstr " 和 "
+
+#: GUI/app.py:1439 GUI/app.py:1433
+msgid "Album Conversion"
+msgstr "专辑转换"
+
+#: GUI/app.py:1594
+msgid "Chapter Split"
+msgstr "章节拆分"
+
+#: GUI/app.py:1440
+msgid "Choose an album with at least two tracks."
+msgstr "请选择至少包含两首曲目的专辑。"
+
+#: GUI/app.py:781
+msgid "Could Not Load iPod"
+msgstr "无法加载 iPod"
+
+#: GUI/app.py:1379
+msgid ""
+"Could not download sync tools:\n"
+"\n"
+"{error}"
+msgstr "无法下载同步工具：\n\n{error}"
+
+#: GUI/app.py:1102
+msgid ""
+"Could not save quick changes to iPod:\n"
+"{error}\n"
+"\n"
+"iOpenPod is reloading the device view from the iPod."
+msgstr "无法将快速更改保存到 iPod：\n{error}\n\niOpenPod 正在从 iPod 重新加载设备视图。"
+
+#: GUI/app.py:955 app_core/jobs.py:1940 app_core/jobs.py:1989 app_core/jobs.py:2265
+msgid "Database write failed."
+msgstr "数据库写入失败。"
+
+#: GUI/app.py:958
+msgid "Device name updated successfully"
+msgstr "设备名称已更新"
+
+#: GUI/app.py:2317
+msgid "Discard"
+msgstr "丢弃"
+
+#: GUI/app.py:1378
+msgid "Download Failed"
+msgstr "下载失败"
+
+#: GUI/app.py:2625
+msgid "Downloading"
+msgstr "正在下载"
+
+#: GUI/app.py:2638
+msgid "Downloading Tools…"
+msgstr "正在下载工具…"
+
+#: GUI/app.py:1075
+msgid "Eject Failed"
+msgstr "弹出失败"
+
+#: app_core/jobs.py:84
+msgid ""
+"FFmpeg and ffprobe are required for transcoding and media probing.\n"
+"Install from: https://ffmpeg.org"
+msgstr "转码和媒体探测需要 FFmpeg 与 ffprobe。\n请从这里安装：https://ffmpeg.org"
+
+#: GUI/app.py:1076
+msgid ""
+"Failed to eject the iPod:\n"
+"{error}"
+msgstr "无法弹出 iPod：\n{error}"
+
+#: GUI/app.py:966
+msgid ""
+"Failed to rename iPod:\n"
+"{error}"
+msgstr "无法重命名 iPod：\n{error}"
+
+#: GUI/app.py:1423 GUI/app.py:1582 GUI/app.py:1184
+msgid "Library Loading"
+msgstr "资料库正在加载"
+
+#: GUI/app.py:791
+msgid "Load an iPod library before running tag normalization."
+msgstr "请先加载 iPod 资料库，再运行标签规范化。"
+
+#: GUI/app.py:2525
+msgid "Missing Tools"
+msgstr "缺少工具"
+
+#: app_core/jobs.py:1922 app_core/jobs.py:1971
+msgid "No iPod connected."
+msgstr "未连接 iPod。"
+
+#: app_core/jobs.py:1926 app_core/jobs.py:1975
+msgid "No iPod database loaded."
+msgstr "未加载 iPod 数据库。"
+
+#: GUI/app.py:2087
+msgid "No iPod device selected."
+msgstr "未选择 iPod 设备。"
+
+#: GUI/app.py:824
+msgid "No iPod-specific metadata fixes were found for this library."
+msgstr "没有在这个资料库中发现需要针对 iPod 修正的元数据。"
+
+#: GUI/app.py:800
+msgid "No tracks were found in this iPod library."
+msgstr "这个 iPod 资料库中没有找到曲目。"
+
+#: GUI/app.py:790 GUI/app.py:799 GUI/app.py:823
+msgid "Normalize iPod Tags"
+msgstr "规范化 iPod 标签"
+
+#: GUI/app.py:2184
+msgid "Not Enough Space"
+msgstr "空间不足"
+
+#: GUI/app.py:2575
+msgid "Not Now"
+msgstr "暂不"
+
+#: GUI/app.py:2603
+msgid "OK"
+msgstr "确定"
+
+#: GUI/app.py:1418 GUI/app.py:1575
+msgid "Please select an iPod device first."
+msgstr "请先选择 iPod 设备。"
+
+#: GUI/app.py:1412
+msgid "Please wait for the current sync to finish before converting an album."
+msgstr "请等待当前同步完成后再转换专辑。"
+
+#: GUI/app.py:1030
+msgid "Please wait for the current sync to finish before ejecting."
+msgstr "请等待当前同步完成后再弹出。"
+
+#: GUI/app.py:1569
+msgid "Please wait for the current sync to finish before splitting chapters."
+msgstr "请等待当前同步完成后再拆分章节。"
+
+#: GUI/app.py:1423 GUI/app.py:1583 GUI/app.py:1185
+msgid "Please wait for the iPod library to finish loading."
+msgstr "请等待 iPod 资料库加载完成。"
+
+#: GUI/app.py:2644
+msgid "Preparing download…"
+msgstr "正在准备下载…"
+
+#: GUI/app.py:1174
+msgid "Quick Changes Still Saving"
+msgstr "快速更改仍在保存"
+
+#: GUI/app.py:2421
+msgid "Reading dropped files..."
+msgstr "正在读取拖入的文件..."
+
+#: GUI/app.py:965
+msgid "Rename Failed"
+msgstr "重命名失败"
+
+#: GUI/app.py:1101
+msgid "Save Failed"
+msgstr "保存失败"
+
+#: GUI/app.py:979
+msgid "Save In Progress"
+msgstr "正在保存"
+
+#: GUI/app.py:2316
+msgid "Save Partial Database"
+msgstr "保存部分数据库"
+
+#: GUI/app.py:2301
+msgid "Save Partial Sync?"
+msgstr "保存部分同步结果？"
+
+#: GUI/app.py:1008
+msgid "Still Reading iPod"
+msgstr "仍在读取 iPod"
+
+#: GUI/app.py:2280
+msgid "Sync Error"
+msgstr "同步错误"
+
+#: GUI/app.py:2204
+msgid "Sync Failed"
+msgstr "同步失败"
+
+#: GUI/app.py:1029
+msgid "Sync In Progress"
+msgstr "正在同步"
+
+#: GUI/app.py:1411 GUI/app.py:1568
+msgid "Sync Running"
+msgstr "同步正在运行"
+
+#: GUI/app.py:2189
+msgid "Sync Until Full"
+msgstr "同步直到写满"
+
+#: GUI/app.py:167
+msgid "Sync failed before making changes."
+msgstr "同步在执行更改前失败。"
+
+#: GUI/app.py:2185
+msgid "The selected sync is larger than the iPod's free space."
+msgstr "所选同步内容超过了 iPod 的可用空间。"
+
+#: GUI/app.py:1393
+msgid "This iPod does not support podcasts."
+msgstr "这台 iPod 不支持播客。"
+
+#: GUI/app.py:2166
+msgid ""
+"This sync is estimated to need more space than is available on the iPod.\n"
+"\n"
+"Available: {available}\n"
+"Estimated needed: {required}\n"
+"Estimated shortfall: {shortage}\n"
+"\n"
+"Sync Until Full will copy files in order until the next file would leave less than {reserve} free, then save the database with the items that actually synced."
+msgstr "本次同步预计需要的空间超过 iPod 当前可用空间。\n\n可用空间：{available}\n预计需要：{required}\n预计缺口：{shortage}\n\n“同步直到写满”会按顺序复制文件，直到下一个文件会导致剩余空间低于 {reserve}，然后只保存实际同步成功的项目到数据库。"
+
+#: GUI/app.py:746 GUI/app.py:748
+msgid "Unknown iPod"
+msgstr "未知 iPod"
+
+#: GUI/app.py:1392
+msgid "Unsupported iPod"
+msgstr "不支持的 iPod"
+
+#: GUI/app.py:2309
+msgid "Would you like to save these tracks to your iPod's database?"
+msgstr "要将这些曲目保存到 iPod 数据库吗？"
+
+#: app_core/jobs.py:89
+msgid ""
+"You can also set custom paths in\n"
+"Settings -> External Tools."
+msgstr "你也可以在\n设置 -> 外部工具\n中设置自定义路径。"
+
+#: app_core/jobs.py:77
+msgid ""
+"fpcalc is required for sync.\n"
+"Install from: https://acoustid.org/chromaprint"
+msgstr "同步需要 fpcalc。\n请从这里安装：https://acoustid.org/chromaprint"
+
+#: GUI/app.py:2555
+msgid ""
+"iOpenPod can download these automatically (~80 MB).\n"
+"Download now?"
+msgstr "iOpenPod 可以自动下载这些工具（约 80 MB）。\n现在下载吗？"
+
+#: GUI/app.py:186
+msgid ""
+"iOpenPod could not load this iPod library.\n"
+"\n"
+"{error}"
+msgstr "iOpenPod 无法加载这个 iPod 资料库。\n\n{error}"
+
+#: GUI/app.py:190
+msgid ""
+"iOpenPod could not read this iPod cleanly.\n"
+"\n"
+"Mount path: {mount}\n"
+"System error: {error}\n"
+"\n"
+"On Linux, this usually means the iPod mount is not accessible, the FAT filesystem is dirty, or the current user does not have permission to the mount.\n"
+"\n"
+"Try reconnecting the iPod. If it still fails, try remounting it read-write:\n"
+"  sudo mount -o remount,rw {quoted_mount}\n"
+"\n"
+"If the filesystem is dirty, unmount it before repairing it:\n"
+"  sudo umount {quoted_mount}\n"
+"  sudo fsck.vfat -a /dev/sdXN\n"
+"\n"
+"Replace /dev/sdXN with the iPod partition. Do not run fsck while the iPod is mounted."
+msgstr "iOpenPod 无法干净地读取这台 iPod。\n\n挂载路径：{mount}\n系统错误：{error}\n\n在 Linux 上，这通常表示 iPod 挂载点不可访问、FAT 文件系统状态不干净，或当前用户没有挂载点权限。\n\n请先尝试重新连接 iPod。如果仍然失败，可以尝试以读写方式重新挂载：\n  sudo mount -o remount,rw {quoted_mount}\n\n如果文件系统状态不干净，请先卸载再修复：\n  sudo umount {quoted_mount}\n  sudo fsck.vfat -a /dev/sdXN\n\n请将 /dev/sdXN 替换为 iPod 分区。不要在 iPod 已挂载时运行 fsck。"
+
+#: GUI/app.py:1009
+msgid "iOpenPod is still finishing background reads from the iPod. Try ejecting again in a moment."
+msgstr "iOpenPod 仍在完成对 iPod 的后台读取。请稍后再尝试弹出。"
+
+#: GUI/app.py:1175
+msgid "iOpenPod is still saving pending quick changes. Please wait for {label} to finish before starting a full sync."
+msgstr "iOpenPod 仍在保存待处理的快速更改。请等待 {label} 完成后再开始完整同步。"
+
+#: GUI/app.py:980
+msgid "iOpenPod is still saving {label} to the iPod. Try ejecting again when the save finishes."
+msgstr "iOpenPod 仍在将 {label} 保存到 iPod。请在保存完成后再次尝试弹出。"
+
+#: GUI/app.py:1050
+msgid "iPod Ejected"
+msgstr "iPod 已弹出"
+
+#: GUI/app.py:958
+msgid "iPod Renamed"
+msgstr "iPod 已重命名"
+
+#: GUI/app.py:1171
+msgid "quick changes"
+msgstr "快速更改"
+
+#: GUI/app.py:2290
+msgid "track"
+msgstr "首曲目"
+
+#: GUI/app.py:2290
+msgid "tracks"
+msgstr "首曲目"
+
+#: GUI/app.py:2293
+msgid "{count} more track was not copied."
+msgstr "还有 {count} 首曲目未复制。"
+
+#: GUI/app.py:2295
+msgid "{count} more tracks were not copied."
+msgstr "还有 {count} 首曲目未复制。"
+
+#: GUI/app.py:2304
+msgid "{count} {tracks_word} were successfully copied to your iPod before the sync was cancelled."
+msgstr "同步取消前，已有 {count} {tracks_word}成功复制到 iPod。"
+
+#: GUI/app.py:2544
+msgid "{tools} Not Found"
+msgstr "未找到 {tools}"
+
+
+#: GUI/widgets/photoBrowser.py:1694
+msgid "Add Photo to Album"
+msgstr "添加照片到相簿"
+
+#: GUI/widgets/photoBrowser.py:1246 GUI/widgets/photoBrowser.py:480
+msgid "Add to Album"
+msgstr "添加到相簿"
+
+#: GUI/widgets/photoBrowser.py:1676
+msgid "Album name:"
+msgstr "相簿名："
+
+#: GUI/widgets/photoBrowser.py:1695
+msgid "Album:"
+msgstr "相簿："
+
+#: GUI/widgets/photoBrowser.py:814
+msgid "All Photos"
+msgstr "所有照片"
+
+#: GUI/widgets/playlistBrowser.py:1012
+msgid "Choose a playlist to inspect its tracks and database metadata"
+msgstr "选择一个播放列表以查看曲目和数据库元数据"
+
+#: GUI/widgets/photoBrowser.py:1689
+msgid "Create another album first, or choose a photo that is not already in every album."
+msgstr "请先创建另一个相簿，或选择一张尚未加入所有相簿的照片。"
+
+#: GUI/widgets/playlistBrowser.py:437
+msgid "Delete"
+msgstr "删除"
+
+#: GUI/widgets/photoBrowser.py:1724 GUI/widgets/photoBrowser.py:1742
+msgid "Delete '{name}' from the iPod now?"
+msgstr "现在从 iPod 删除“{name}”吗？"
+
+#: GUI/widgets/photoBrowser.py:1323 GUI/widgets/photoBrowser.py:1723
+msgid "Delete Album"
+msgstr "删除相簿"
+
+#: GUI/widgets/photoBrowser.py:1267 GUI/widgets/photoBrowser.py:1741 GUI/widgets/photoBrowser.py:482
+msgid "Delete Photo"
+msgstr "删除照片"
+
+#: GUI/widgets/playlistBrowser.py:561
+msgid "Details"
+msgstr "详情"
+
+#: GUI/widgets/playlistBrowser.py:451 GUI/widgets/playlistBrowser.py:1854 GUI/widgets/playlistBrowser.py:1879
+msgid "Evaluate Now"
+msgstr "立即计算"
+
+#: GUI/widgets/photoBrowser.py:479 GUI/widgets/playlistBrowser.py:473
+msgid "Export"
+msgstr "导出"
+
+#: GUI/widgets/photoBrowser.py:1660
+msgid "Export Album"
+msgstr "导出相簿"
+
+#: GUI/widgets/photoBrowser.py:1296
+msgid "Export Album..."
+msgstr "导出相簿..."
+
+#: GUI/widgets/photoBrowser.py:1660
+msgid "Export All Photos"
+msgstr "导出所有照片"
+
+#: GUI/widgets/photoBrowser.py:1296
+msgid "Export All Photos..."
+msgstr "导出所有照片..."
+
+#: GUI/widgets/photoBrowser.py:1634
+msgid "Export Photo"
+msgstr "导出照片"
+
+#: GUI/widgets/photoBrowser.py:1238
+msgid "Export Photo..."
+msgstr "导出照片..."
+
+#: GUI/widgets/playlistBrowser.py:1338 GUI/widgets/playlistBrowser.py:1974 GUI/widgets/playlistBrowser.py:1603
+msgid "Import Playlist"
+msgstr "导入播放列表"
+
+#: GUI/widgets/playlistBrowser.py:1401
+msgid "Importing Playlist…"
+msgstr "正在导入播放列表…"
+
+#: GUI/widgets/playlistBrowser.py:1603
+msgid "Importing…"
+msgstr "正在导入…"
+
+#: GUI/widgets/photoBrowser.py:423 GUI/widgets/photoBrowser.py:1305 GUI/widgets/photoBrowser.py:1676
+msgid "New Album"
+msgstr "新建相簿"
+
+#: GUI/widgets/photoBrowser.py:1710
+msgid "New album name:"
+msgstr "新相簿名："
+
+#: GUI/widgets/photoBrowser.py:1688
+msgid "No Available Albums"
+msgstr "没有可用相簿"
+
+#: GUI/widgets/photoBrowser.py:1574 GUI/widgets/photoBrowser.py:1650
+msgid "No Photos"
+msgstr "没有照片"
+
+#: GUI/widgets/photoBrowser.py:1454 GUI/widgets/photoBrowser.py:1581 GUI/widgets/photoBrowser.py:1625 GUI/widgets/photoBrowser.py:1655
+msgid "No iPod Connected"
+msgstr "未连接 iPod"
+
+#: GUI/widgets/photoBrowser.py:474
+msgid "No photo selected"
+msgstr "未选择照片"
+
+#: GUI/widgets/playlistBrowser.py:1177
+msgid "No playlists on this iPod"
+msgstr "此 iPod 上没有播放列表"
+
+#: GUI/widgets/playlistBrowser.py:1986
+msgid "Parsing playlist…"
+msgstr "正在解析播放列表…"
+
+#: GUI/widgets/photoBrowser.py:481
+msgid "Remove from Album"
+msgstr "从相簿移除"
+
+#: GUI/widgets/photoBrowser.py:1256
+msgid "Remove from Current Album"
+msgstr "从当前相簿移除"
+
+#: GUI/widgets/photoBrowser.py:1710 GUI/widgets/photoBrowser.py:1316
+msgid "Rename Album"
+msgstr "重命名相簿"
+
+#: GUI/widgets/playlistBrowser.py:528
+msgid "Rules"
+msgstr "规则"
+
+#: GUI/widgets/photoBrowser.py:475
+msgid "Select a photo to inspect its preview and album details."
+msgstr "选择照片以查看预览和相簿详情。"
+
+#: GUI/widgets/playlistBrowser.py:384 GUI/widgets/playlistBrowser.py:1007
+msgid "Select a playlist"
+msgstr "选择播放列表"
+
+#: GUI/widgets/photoBrowser.py:1455
+msgid "Select an iPod before editing device photos."
+msgstr "编辑设备照片前，请先选择一台 iPod。"
+
+#: GUI/widgets/photoBrowser.py:1582 GUI/widgets/photoBrowser.py:1626 GUI/widgets/photoBrowser.py:1656
+msgid "Select an iPod before exporting device photos."
+msgstr "导出设备照片前，请先选择一台 iPod。"
+
+#: GUI/widgets/photoBrowser.py:1574 GUI/widgets/photoBrowser.py:1650
+msgid "There are no photos to export."
+msgstr "没有可导出的照片。"
+
+#: GUI/widgets/playlistBrowser.py:1838
+msgid "Writing…"
+msgstr "正在写入…"
+
+
+#: GUI/widgets/settingsPage.py:1619 GUI/widgets/settingsPage.py:1627
+msgid "1"
+msgstr "1"
+
+#: GUI/widgets/settingsPage.py:1950
+msgid "1 GB"
+msgstr "1 GB"
+
+#: GUI/widgets/settingsPage.py:2008 GUI/widgets/settingsPage.py:2008
+msgid "10"
+msgstr "10"
+
+#: GUI/widgets/settingsPage.py:1950
+msgid "10 GB"
+msgstr "10 GB"
+
+#: GUI/widgets/settingsPage.py:1515 GUI/widgets/settingsPage.py:1515
+msgid "100%"
+msgstr "100%"
+
+#: GUI/widgets/settingsPage.py:1515
+msgid "110%"
+msgstr "110%"
+
+#: GUI/widgets/settingsPage.py:1515
+msgid "125%"
+msgstr "125%"
+
+#: GUI/widgets/settingsPage.py:1716
+msgid "128 kbps"
+msgstr "128 kbps"
+
+#: GUI/widgets/settingsPage.py:1787
+msgid "15 kHz"
+msgstr "15 kHz"
+
+#: GUI/widgets/settingsPage.py:1515
+msgid "150%"
+msgstr "150%"
+
+#: GUI/widgets/settingsPage.py:1787
+msgid "16 kHz"
+msgstr "16 kHz"
+
+#: GUI/widgets/settingsPage.py:1716
+msgid "160 kbps"
+msgstr "160 kbps"
+
+#: GUI/widgets/settingsPage.py:1787
+msgid "17 kHz"
+msgstr "17 kHz"
+
+#: GUI/widgets/settingsPage.py:1751
+msgid "18 (High)"
+msgstr "18（高）"
+
+#: GUI/widgets/settingsPage.py:1787
+msgid "18 kHz"
+msgstr "18 kHz"
+
+#: GUI/widgets/settingsPage.py:1787
+msgid "19 kHz"
+msgstr "19 kHz"
+
+#: GUI/widgets/settingsPage.py:1716 GUI/widgets/settingsPage.py:1716
+msgid "192 kbps"
+msgstr "192 kbps"
+
+#: GUI/widgets/settingsPage.py:1619 GUI/widgets/settingsPage.py:1627
+msgid "2"
+msgstr "2"
+
+#: GUI/widgets/settingsPage.py:1950
+msgid "2 GB"
+msgstr "2 GB"
+
+#: GUI/widgets/settingsPage.py:2008
+msgid "20"
+msgstr "20"
+
+#: GUI/widgets/settingsPage.py:1751
+msgid "20 (Good)"
+msgstr "20（良好）"
+
+#: GUI/widgets/settingsPage.py:1950
+msgid "20 GB"
+msgstr "20 GB"
+
+#: GUI/widgets/settingsPage.py:1787
+msgid "20 kHz"
+msgstr "20 kHz"
+
+#: GUI/widgets/settingsPage.py:1716
+msgid "224 kbps"
+msgstr "224 kbps"
+
+#: GUI/widgets/settingsPage.py:1751 GUI/widgets/settingsPage.py:1751
+msgid "23 (Balanced)"
+msgstr "23（均衡）"
+
+#: GUI/widgets/settingsPage.py:1716
+msgid "256 kbps"
+msgstr "256 kbps"
+
+#: GUI/widgets/settingsPage.py:1751
+msgid "26 (Low)"
+msgstr "26（低）"
+
+#: GUI/widgets/settingsPage.py:1751
+msgid "28 (Very Low)"
+msgstr "28（很低）"
+
+#: GUI/widgets/settingsPage.py:1728
+msgid "32 kbps"
+msgstr "32 kbps"
+
+#: GUI/widgets/settingsPage.py:1716
+msgid "320 kbps"
+msgstr "320 kbps"
+
+#: GUI/widgets/settingsPage.py:1619 GUI/widgets/settingsPage.py:1627
+msgid "4"
+msgstr "4"
+
+#: GUI/widgets/settingsPage.py:1728
+msgid "48 kbps"
+msgstr "48 kbps"
+
+#: GUI/widgets/settingsPage.py:2008
+msgid "5"
+msgstr "5"
+
+#: GUI/widgets/settingsPage.py:1950 GUI/widgets/settingsPage.py:1950
+msgid "5 GB"
+msgstr "5 GB"
+
+#: GUI/widgets/settingsPage.py:1950
+msgid "50 GB"
+msgstr "50 GB"
+
+#: GUI/widgets/settingsPage.py:1619
+msgid "6"
+msgstr "6"
+
+#: GUI/widgets/settingsPage.py:1728 GUI/widgets/settingsPage.py:1728
+msgid "64 kbps"
+msgstr "64 kbps"
+
+#: GUI/widgets/settingsPage.py:1515
+msgid "75%"
+msgstr "75%"
+
+#: GUI/widgets/settingsPage.py:1619
+msgid "8"
+msgstr "8"
+
+#: GUI/widgets/settingsPage.py:1728
+msgid "80 kbps"
+msgstr "80 kbps"
+
+#: GUI/widgets/settingsPage.py:1515
+msgid "90%"
+msgstr "90%"
+
+#: GUI/widgets/settingsPage.py:1716 GUI/widgets/settingsPage.py:1728
+msgid "96 kbps"
+msgstr "96 kbps"
+
+#: GUI/widgets/settingsPage.py:1780
+msgid "Always output audio at 44.1 kHz (CD rate). Recommended for early iPods (1G-4G) that can have trouble with 48 kHz ALAC.When off, sample rate is reduced to 48 kHz as iPods can only decode 48 kHz or lower"
+msgstr "始终以 44.1 kHz（CD 采样率）输出音频。建议用于早期 iPod（1G-4G），它们可能无法很好处理 48 kHz ALAC。关闭时，采样率会降到 48 kHz，因为 iPod 只能解码 48 kHz 或更低。"
+
+#: GUI/widgets/settingsPage.py:1640
+msgid "Analyze loudness of files missing ReplayGain/iTunNORM tags using ffmpeg, then write the result back into your PC files and sync to iPod. Sound Check values are always synced to iPod regardless of this setting."
+msgstr "使用 ffmpeg 分析缺少 ReplayGain/iTunNORM 标签的文件响度，然后将结果写回电脑音乐文件并同步到 iPod。无论此设置如何，音量均衡值都会同步到 iPod。"
+
+#: GUI/widgets/settingsPage.py:1702
+msgid "Audio quality preset for music tracks. High: 256 kbps / best VBR. Balanced: 192 kbps. Compact: 128 kbps / smaller VBR."
+msgstr "音乐曲目的音频质量预设。高质量：256 kbps / 最佳 VBR。均衡：192 kbps。紧凑：128 kbps / 更小的 VBR。"
+
+#: GUI/widgets/settingsPage.py:1619 GUI/widgets/settingsPage.py:1619 GUI/widgets/settingsPage.py:1627 GUI/widgets/settingsPage.py:1627 GUI/widgets/settingsPage.py:1688 GUI/widgets/settingsPage.py:1688 GUI/widgets/settingsPage.py:1787 GUI/widgets/settingsPage.py:1787
+msgid "Auto"
+msgstr "自动"
+
+#: GUI/widgets/settingsPage.py:1902
+msgid "Automatically scrobble new iPod plays to connected services when you sync."
+msgstr "同步时自动把新的 iPod 播放记录提交到已连接的服务。"
+
+#: GUI/widgets/settingsPage.py:1658
+msgid "Average"
+msgstr "平均"
+
+#: GUI/widgets/settingsPage.py:2001
+msgid "Backup Before Sync"
+msgstr "同步前备份"
+
+#: GUI/widgets/settingsPage.py:1995
+msgid "Backup Location"
+msgstr "备份位置"
+
+#: GUI/widgets/settingsPage.py:1702 GUI/widgets/settingsPage.py:1702
+msgid "Balanced"
+msgstr "均衡"
+
+#: GUI/widgets/settingsPage.py:1522 GUI/widgets/settingsPage.py:1522
+msgid "Blue (Default)"
+msgstr "蓝色（默认）"
+
+#: GUI/widgets/settingsPage.py:1709 GUI/widgets/settingsPage.py:1709
+msgid "CBR"
+msgstr "CBR"
+
+#: GUI/widgets/settingsPage.py:1709
+msgid "CBR uses a fixed target bitrate. VBR targets a quality level and lets the encoder choose bitrate per frame — typically better quality per byte."
+msgstr "CBR 使用固定目标码率。VBR 以质量等级为目标，让编码器按帧选择码率，通常能在相同体积下获得更好质量。"
+
+#: GUI/widgets/settingsPage.py:1495
+msgid "Catppuccin Frappé"
+msgstr "Catppuccin Frappé"
+
+#: GUI/widgets/settingsPage.py:1495
+msgid "Catppuccin Latte"
+msgstr "Catppuccin Latte"
+
+#: GUI/widgets/settingsPage.py:1495
+msgid "Catppuccin Macchiato"
+msgstr "Catppuccin Macchiato"
+
+#: GUI/widgets/settingsPage.py:1495
+msgid "Catppuccin Mocha"
+msgstr "Catppuccin Mocha"
+
+#: GUI/widgets/settingsPage.py:2001
+msgid "Choose whether sync creates a full device backup automatically, asks each time, or skips pre-sync backups."
+msgstr "选择同步前是自动创建完整设备备份、每次询问，还是跳过同步前备份。"
+
+#: GUI/widgets/settingsPage.py:1688
+msgid "Choose which lossy encoder to use.Auto chooses the best available."
+msgstr "选择要使用的有损编码器。自动会选择可用的最佳编码器。"
+
+#: GUI/widgets/settingsPage.py:1702
+msgid "Compact"
+msgstr "紧凑"
+
+#: GUI/widgets/settingsPage.py:1918
+msgid "Connect your Last.fm account to scrobble iPod plays. You will need to provide your Last.fm API Key and API Secret."
+msgstr "连接 Last.fm 账号以提交 iPod 播放记录。你需要提供 Last.fm API Key 和 API Secret。"
+
+#: GUI/widgets/settingsPage.py:1908
+msgid "Connect your ListenBrainz account to scrobble iPod plays. Copy your user token from the link below."
+msgstr "连接 ListenBrainz 账号以提交 iPod 播放记录。请从下方链接复制用户令牌。"
+
+#: GUI/widgets/settingsPage.py:1495 GUI/widgets/settingsPage.py:1495
+msgid "Dark"
+msgstr "深色"
+
+#: GUI/widgets/settingsPage.py:1769
+msgid "Downmix to mono when encoding podcasts and audiobooks. Mono at lowbites sounds significantly better than stereo and cuts file sizes in half."
+msgstr "编码播客和有声书时下混为单声道。低码率下单声道通常比立体声效果明显更好，并可将文件大小减半。"
+
+#: GUI/widgets/settingsPage.py:1775
+msgid "Enable separate quality settings for podcasts and audiobooks.Music tracks are unaffected."
+msgstr "为播客和有声书启用独立质量设置。音乐曲目不受影响。"
+
+#: GUI/widgets/settingsPage.py:1795
+msgid "Enables a quality-enhancement post-processing pass in libfdk_aac. Improves output at the cost of slightly longer encode times. Only affects the libfdk_aac encoder."
+msgstr "在 libfdk_aac 中启用质量增强后处理。会稍微增加编码时间，但可改善输出质量。仅影响 libfdk_aac 编码器。"
+
+#: GUI/widgets/settingsPage.py:1735
+msgid "Encode lossless sources (ALAC, FLAC, WAV, AIFF) as your selected lossy format instead of ALAC. Saves iPod storage at the cost of quality."
+msgstr "将无损源文件（ALAC、FLAC、WAV、AIFF）编码为所选有损格式，而不是 ALAC。会节省 iPod 空间，但会牺牲音质。"
+
+#: GUI/widgets/settingsPage.py:1813
+msgid "Encodes stereo as Sum (Mid) and Difference (Side) rather than Left/Right. Concentrates bits where the signal is strongest, particularly on centred content. Affects the native aac encoder only."
+msgstr "将立体声编码为和声道（Mid）与差声道（Side），而不是左/右声道。会把码率集中到信号最强的位置，尤其是居中的内容。仅影响原生 aac 编码器。"
+
+#: GUI/widgets/settingsPage.py:1647
+msgid "For portrait-heavy photos, rotate the device viewing caches clockwise when that uses more of the iPod's landscape photo screen. The original PC files are not modified."
+msgstr "对于以竖图为主的照片，如果顺时针旋转设备查看缓存能更好利用 iPod 横向照片屏幕，就会进行旋转。电脑上的原始文件不会被修改。"
+
+#: GUI/widgets/settingsPage.py:1741
+msgid "Force existing MP3 and AAC files through the selected lossy encoder. Use this to make the synced library more uniform or smaller."
+msgstr "强制将已有 MP3 和 AAC 文件重新经过所选有损编码器。可用于让同步后的资料库更统一或更小。"
+
+#: GUI/widgets/settingsPage.py:1522
+msgid "Gold"
+msgstr "金色"
+
+#: GUI/widgets/settingsPage.py:1522
+msgid "Green"
+msgstr "绿色"
+
+#: GUI/widgets/settingsPage.py:1702
+msgid "High Quality"
+msgstr "高质量"
+
+#: GUI/widgets/settingsPage.py:1658
+msgid "Highest"
+msgstr "最高"
+
+#: GUI/widgets/settingsPage.py:1658
+msgid "How to resolve rating conflicts when iPod and PC ratings differ. iPod/PC Wins uses that source (falling back to the other if zero). Highest/Lowest picks the max/min non-zero value. Average rounds to the nearest star."
+msgstr "当 iPod 与电脑评分不一致时如何解决冲突。iPod/电脑优先会使用对应来源（若为 0 则回退到另一方）。最高/最低会选择非零最大/最小值。平均会四舍五入到最近的星级。"
+
+#: GUI/widgets/settingsPage.py:1572
+msgid "Ko-fi"
+msgstr "Ko-fi"
+
+#: GUI/widgets/settingsPage.py:1495
+msgid "Light"
+msgstr "浅色"
+
+#: GUI/widgets/settingsPage.py:1658
+msgid "Lowest"
+msgstr "最低"
+
+#: GUI/widgets/settingsPage.py:1522
+msgid "Match iPod"
+msgstr "匹配 iPod"
+
+#: GUI/widgets/settingsPage.py:2008
+msgid "Max Backups"
+msgstr "最大备份数"
+
+#: GUI/widgets/settingsPage.py:1787
+msgid "Maximum frequency the encoder will output. Lowering this (16–18 kHz) frees bits for the mid-range and can eliminate high-frequency squeaks at lower bitrates. Auto lets the encoder decide. Applies to all AAC encoders."
+msgstr "编码器输出的最高频率。降低到 16-18 kHz 可为中频释放码率，并在低码率下减少高频尖锐噪声。自动会让编码器自行决定。适用于所有 AAC 编码器。"
+
+#: GUI/widgets/settingsPage.py:2008
+msgid "Maximum number of backup snapshots to keep per device. Oldest backups are automatically removed when the limit is exceeded."
+msgstr "每台设备保留的备份快照最大数量。超过限制后会自动移除最旧的备份。"
+
+#: GUI/widgets/settingsPage.py:1819
+msgid "Merges high-frequency stereo bands into a single channel with direction metadata. Saves bits at low bitrates but can cause stereo image wobble. Affects the native aac encoder only."
+msgstr "将高频立体声频带合并为带方向元数据的单声道。低码率下可节省码率，但可能造成声像晃动。仅影响原生 aac 编码器。"
+
+#: GUI/widgets/settingsPage.py:1507 GUI/widgets/settingsPage.py:1507
+msgid "Off"
+msgstr "关闭"
+
+#: GUI/widgets/settingsPage.py:1507
+msgid "On"
+msgstr "开启"
+
+#: GUI/widgets/settingsPage.py:1522
+msgid "Orange"
+msgstr "橙色"
+
+#: GUI/widgets/settingsPage.py:1619
+msgid "Overall concurrent sync work. This controls how many files can be prepared, fingerprinted, transcoded, or copied at once. Auto uses your CPU core count (capped at 8)."
+msgstr "整体同步并发任务数。控制可同时准备、生成指纹、转码或复制的文件数量。自动会使用 CPU 核心数（最多 8）。"
+
+#: GUI/widgets/settingsPage.py:1658
+msgid "PC Wins"
+msgstr "电脑优先"
+
+#: GUI/widgets/settingsPage.py:1893
+msgid "Path Overrides"
+msgstr "路径覆盖"
+
+#: GUI/widgets/settingsPage.py:1522
+msgid "Pink"
+msgstr "粉色"
+
+#: GUI/widgets/settingsPage.py:1882
+msgid "Point to a custom ffmpeg binary. Leave empty to auto-detect."
+msgstr "指向自定义 ffmpeg 可执行文件。留空则自动检测。"
+
+#: GUI/widgets/settingsPage.py:1887
+msgid "Point to a custom fpcalc binary. Leave empty to auto-detect."
+msgstr "指向自定义 fpcalc 可执行文件。留空则自动检测。"
+
+#: GUI/widgets/settingsPage.py:1522
+msgid "Purple"
+msgstr "紫色"
+
+#: GUI/widgets/settingsPage.py:1751
+msgid "Quality level for H.264 video transcodes. Lower CRF = better quality but larger files. Resolution and codec are always forced to iPod-compatible values."
+msgstr "H.264 视频转码质量等级。CRF 越低质量越好，但文件越大。分辨率和编码格式始终会强制为 iPod 兼容值。"
+
+#: GUI/widgets/settingsPage.py:1722
+msgid "Quality level for VBR encoding. Higher = better quality, larger files."
+msgstr "VBR 编码质量等级。越高质量越好，文件也越大。"
+
+#: GUI/widgets/settingsPage.py:1522
+msgid "Red"
+msgstr "红色"
+
+#: GUI/widgets/settingsPage.py:1807
+msgid "Replaces noise-like frequency bands with synthetic noise, saving bits. Can cause sandpaper or hissing artifacts if the encoder mistakes tonal content for noise. Off by default. Affects the native aac encoder only."
+msgstr "用合成噪声替代类似噪声的频段以节省码率。如果编码器把有音调的内容误判为噪声，可能产生砂纸感或嘶声伪影。默认关闭。仅影响原生 aac 编码器。"
+
+#: GUI/widgets/settingsPage.py:1875
+msgid "Required for acoustic fingerprinting, which identifies tracks even after re-encoding."
+msgstr "声学指纹所必需，用于在重新编码后仍能识别曲目。"
+
+#: GUI/widgets/settingsPage.py:1869
+msgid "Required for transcoding and media probing. Includes ffmpeg and ffprobe."
+msgstr "转码和媒体探测所必需。包含 ffmpeg 和 ffprobe。"
+
+#: GUI/widgets/settingsPage.py:1902
+msgid "Scrobble on Sync"
+msgstr "同步时记录播放"
+
+#: GUI/widgets/settingsPage.py:1928
+msgid "Services"
+msgstr "服务"
+
+#: GUI/widgets/settingsPage.py:1801
+msgid "Shapes quantization noise around transients to reduce pre-echo (smearing before drum hits). Disabling saves a few bits per block. Affects the native aac encoder only."
+msgstr "围绕瞬态调整量化噪声，以减少预回声（鼓点前的拖影）。禁用后每个块可节省少量码率。仅影响原生 aac 编码器。"
+
+#: GUI/widgets/settingsPage.py:1627
+msgid "Simultaneous writes to the iPod filesystem. Set to 1 for HDD-based iPods to reduce fragmentation risk. Auto uses an HDD-safe default when the device looks like a hard-drive iPod."
+msgstr "同时写入 iPod 文件系统的任务数。对于硬盘版 iPod，设为 1 可降低碎片风险。自动会在设备看起来像硬盘版 iPod 时使用硬盘安全默认值。"
+
+#: GUI/widgets/settingsPage.py:1762
+msgid "Slower presets produce slightly better quality at the same CRF, but take much longer."
+msgstr "较慢的预设在相同 CRF 下质量略好，但耗时会长得多。"
+
+#: GUI/widgets/podcastBrowser.py:1540
+msgid "Subscriptions"
+msgstr "订阅"
+
+#: GUI/widgets/settingsPage.py:1495 GUI/widgets/settingsPage.py:1507
+msgid "System"
+msgstr "系统"
+
+#: GUI/widgets/settingsPage.py:1716
+msgid "Target CBR bitrate for music tracks."
+msgstr "音乐曲目的目标 CBR 码率。"
+
+#: GUI/widgets/settingsPage.py:1728
+msgid "Target bitrate for podcasts and audiobooks (Always uses CBR despite set Bitrate Mode). Pair with 'Mono for Spoken Word' for best results."
+msgstr "播客和有声书的目标码率（无论码率模式如何，始终使用 CBR）。配合“语音内容转单声道”效果最佳。"
+
+#: GUI/widgets/settingsPage.py:1522
+msgid "Teal"
+msgstr "青色"
+
+#: GUI/widgets/settingsPage.py:1950 GUI/widgets/settingsPage.py:2008
+msgid "Unlimited"
+msgstr "无限制"
+
+#: GUI/widgets/settingsPage.py:1653
+msgid "Use aspect-fit for device photo thumbnail formats. When off (default), thumbnails use iTunes-style crop-to-fill."
+msgstr "设备照片缩略图使用等比适配。关闭时（默认），缩略图会使用 iTunes 风格的裁剪填充。"
+
+#: GUI/widgets/settingsPage.py:1709
+msgid "VBR"
+msgstr "VBR"
+
+#: GUI/widgets/settingsPage.py:1746
+msgid "When enabled, WAV files are converted to ALAC instead of copied. Prefer Lossy Encoding overrides this and converts WAV to the selected lossy format."
+msgstr "启用后，WAV 文件会转换为 ALAC，而不是直接复制。“优先有损编码”会覆盖此设置，并将 WAV 转换为所选有损格式。"
+
+#: GUI/widgets/settingsPage.py:1995
+msgid "Where full device backups are stored on your PC. Leave empty for the platform default."
+msgstr "完整设备备份在电脑上的存放位置。留空则使用平台默认位置。"
+
+#: GUI/widgets/settingsPage.py:1635
+msgid "While syncing, write ratings and sound check values into your PC music files. When off, no changes are made to your PC files."
+msgstr "同步时，将评分和音量均衡值写入电脑音乐文件。关闭时，不会修改电脑文件。"
+
+#: GUI/widgets/settingsPage.py:1688
+msgid "aac"
+msgstr "aac"
+
+#: GUI/widgets/settingsPage.py:1688
+msgid "aac_at"
+msgstr "aac_at"
+
+#: GUI/widgets/settingsPage.py:1488
+msgid "en"
+msgstr "en"
+
+#: GUI/widgets/settingsPage.py:1762 GUI/widgets/settingsPage.py:1762
+msgid "fast"
+msgstr "fast"
+
+#: GUI/widgets/settingsPage.py:1658 GUI/widgets/settingsPage.py:1658
+msgid "iPod Wins"
+msgstr "iPod 优先"
+
+#: GUI/widgets/settingsPage.py:1688
+msgid "libfdk_aac"
+msgstr "libfdk_aac"
+
+#: GUI/widgets/settingsPage.py:1688
+msgid "libmp3lame"
+msgstr "libmp3lame"
+
+#: GUI/widgets/settingsPage.py:1688
+msgid "libshine"
+msgstr "libshine"
+
+#: GUI/widgets/settingsPage.py:1762
+msgid "medium"
+msgstr "medium"
+
+#: GUI/widgets/settingsPage.py:1722
+msgid "q0 (Best)"
+msgstr "q0（最佳）"
+
+#: GUI/widgets/settingsPage.py:1722
+msgid "q1"
+msgstr "q1"
+
+#: GUI/widgets/settingsPage.py:1722
+msgid "q2"
+msgstr "q2"
+
+#: GUI/widgets/settingsPage.py:1722
+msgid "q3"
+msgstr "q3"
+
+#: GUI/widgets/settingsPage.py:1722 GUI/widgets/settingsPage.py:1722
+msgid "q4"
+msgstr "q4"
+
+#: GUI/widgets/settingsPage.py:1722
+msgid "q5"
+msgstr "q5"
+
+#: GUI/widgets/settingsPage.py:1722
+msgid "q6"
+msgstr "q6"
+
+#: GUI/widgets/settingsPage.py:1722
+msgid "q7"
+msgstr "q7"
+
+#: GUI/widgets/settingsPage.py:1722
+msgid "q8"
+msgstr "q8"
+
+#: GUI/widgets/settingsPage.py:1722
+msgid "q9 (Smallest)"
+msgstr "q9（最小）"
+
+#: GUI/widgets/settingsPage.py:1762
+msgid "slow"
+msgstr "slow"
+
+#: GUI/widgets/settingsPage.py:1762
+msgid "ultrafast"
+msgstr "ultrafast"
+
+#: GUI/widgets/settingsPage.py:1762
+msgid "veryfast"
+msgstr "veryfast"
+
+
+#: GUI/widgets/settingsPage.py:1780
+msgid "Always output audio at 44.1 kHz (CD rate). Recommended for early iPods (1G-4G) that can have trouble with 48 kHz ALAC. When off, sample rate is reduced to 48 kHz as iPods can only decode 48 kHz or lower"
+msgstr "始终以 44.1 kHz（CD 采样率）输出音频。建议用于早期 iPod（1G-4G），它们可能无法很好处理 48 kHz ALAC。关闭时，采样率会降到 48 kHz，因为 iPod 只能解码 48 kHz 或更低。"
+
+#: GUI/widgets/settingsPage.py:1688
+msgid "Choose which lossy encoder to use. Auto chooses the best available."
+msgstr "选择要使用的有损编码器。自动会选择可用的最佳编码器。"
+
+#: GUI/widgets/settingsPage.py:1775
+msgid "Enable separate quality settings for podcasts and audiobooks. Music tracks are unaffected."
+msgstr "为播客和有声书启用独立质量设置。音乐曲目不受影响。"
+
+
+#: GUI/widgets/playlistBrowser.py:1667
+msgid "New Smart Playlist"
+msgstr "新建智能播放列表"
+
+
+#: GUI/widgets/podcastBrowser.py:1441
+msgid "Add Podcast"
+msgstr "添加播客"
+
+#: GUI/widgets/podcastBrowser.py:1531
+msgid "Add Your First Podcast"
+msgstr "添加第一个播客"
+
+#: GUI/widgets/podcastBrowser.py:451
+msgid "Add this episode to iPod"
+msgstr "将这一集添加到 iPod"
+
+#: GUI/widgets/podcastBrowser.py:469 GUI/widgets/podcastBrowser.py:449 GUI/widgets/podcastBrowser.py:2102
+msgid "Add to iPod"
+msgstr "添加到 iPod"
+
+#: GUI/widgets/podcastBrowser.py:1469
+msgid "Apply per-feed settings: remove listened/old episodes, fill empty slots with new episodes"
+msgstr "应用每个 feed 的设置：移除已听/过旧剧集，并用新剧集填补空位"
+
+#: GUI/widgets/podcastBrowser.py:235
+msgid "Downloaded"
+msgstr "已下载"
+
+#: GUI/widgets/podcastBrowser.py:2247
+msgid "Downloaded: {count}"
+msgstr "已下载：{count}"
+
+#: GUI/widgets/podcastBrowser.py:260
+msgid "Episode"
+msgstr "剧集"
+
+#: GUI/widgets/podcastBrowser.py:2244
+msgid "Episodes: {count}"
+msgstr "剧集：{count}"
+
+#: GUI/widgets/podcastBrowser.py:516 GUI/widgets/podcastBrowser.py:596 GUI/widgets/podcastBrowser.py:525
+msgid "More"
+msgstr "更多"
+
+#: GUI/widgets/podcastBrowser.py:1508
+msgid "No Podcast Subscriptions"
+msgstr "没有播客订阅"
+
+#: GUI/widgets/podcastBrowser.py:586
+msgid "No description available."
+msgstr "暂无描述。"
+
+#: GUI/widgets/podcastBrowser.py:233
+msgid "On iPod"
+msgstr "已在 iPod 上"
+
+#: GUI/widgets/podcastBrowser.py:2250
+msgid "On iPod: {count}"
+msgstr "iPod 上：{count}"
+
+#: GUI/widgets/podcastBrowser.py:2240
+msgid "RSS feed linked"
+msgstr "已关联 RSS feed"
+
+#: GUI/widgets/podcastBrowser.py:1451
+msgid "Refresh All"
+msgstr "全部刷新"
+
+#: GUI/widgets/podcastBrowser.py:2024
+msgid "Refresh Feed"
+msgstr "刷新 Feed"
+
+#: GUI/widgets/podcastBrowser.py:2109
+msgid "Remove Download"
+msgstr "移除下载"
+
+#: GUI/widgets/podcastBrowser.py:504 GUI/widgets/podcastBrowser.py:480 GUI/widgets/podcastBrowser.py:2116
+msgid "Remove from iPod"
+msgstr "从 iPod 移除"
+
+#: GUI/widgets/podcastBrowser.py:484
+msgid "Remove this episode from iPod"
+msgstr "从 iPod 移除这一集"
+
+#: GUI/widgets/podcastBrowser.py:1518
+msgid ""
+"Search for podcasts or add an RSS feed to get started.\n"
+"Episodes can be downloaded and synced to your iPod."
+msgstr ""
+"搜索播客或添加 RSS feed 即可开始。\n"
+"剧集可以下载并同步到你的 iPod。"
+
+#: GUI/widgets/podcastBrowser.py:1648 GUI/widgets/podcastBrowser.py:2209
+msgid "Select a podcast"
+msgstr "选择播客"
+
+#: GUI/widgets/podcastBrowser.py:596 GUI/widgets/podcastBrowser.py:526
+msgid "Show less"
+msgstr "收起"
+
+#: GUI/widgets/podcastBrowser.py:1461
+msgid "Sync Podcasts"
+msgstr "同步播客"
+
+#: GUI/widgets/podcastBrowser.py:2226
+msgid "Unknown Author"
+msgstr "未知作者"
+
+#: GUI/widgets/podcastBrowser.py:2026
+msgid "Unsubscribe"
+msgstr "取消订阅"
+
+#: GUI/widgets/podcastBrowser.py:637 GUI/widgets/podcastBrowser.py:584
+msgid "Untitled Episode"
+msgstr "未命名剧集"
+
+#: GUI/widgets/podcastBrowser.py:2225
+msgid "Untitled Podcast"
+msgstr "未命名播客"
+
+#: GUI/widgets/podcastBrowser.py:2238
+msgid "Updated {date}"
+msgstr "更新于 {date}"
+
+
+#: GUI/widgets/podcastBrowser.py:1768
+msgid "1 Day"
+msgstr "1 天"
+
+#: GUI/widgets/podcastBrowser.py:1768
+msgid "1 Month"
+msgstr "1 个月"
+
+#: GUI/widgets/podcastBrowser.py:1768
+msgid "1 Week"
+msgstr "1 周"
+
+#: GUI/widgets/podcastBrowser.py:1768
+msgid "2 Months"
+msgstr "2 个月"
+
+#: GUI/widgets/podcastBrowser.py:1768
+msgid "2 Weeks"
+msgstr "2 周"
+
+#: GUI/widgets/podcastBrowser.py:1768
+msgid "3 Days"
+msgstr "3 天"
+
+#: GUI/widgets/podcastBrowser.py:1768
+msgid "3 Months"
+msgstr "3 个月"
+
+#: GUI/widgets/podcastBrowser.py:2586
+msgid "Adding podcast…"
+msgstr "正在添加播客…"
+
+#: GUI/widgets/podcastBrowser.py:2547
+msgid "All podcasts are up to date"
+msgstr "所有播客均为最新"
+
+#: GUI/widgets/podcastBrowser.py:2825
+msgid "All selected episodes are already on iPod"
+msgstr "所选剧集已在 iPod 上"
+
+#: GUI/widgets/podcastBrowser.py:2581
+msgid "Already subscribed"
+msgstr "已订阅"
+
+#: GUI/widgets/podcastSearchDialog.py:192
+msgid "Checking podcast results now."
+msgstr "正在检查播客结果。"
+
+#: GUI/widgets/podcastBrowser.py:2371
+msgid "Checking subscribed feeds for new episodes."
+msgstr "正在检查已订阅 feed 的新剧集。"
+
+#: GUI/widgets/podcastBrowser.py:2671
+msgid "Checking the feed for the latest episodes."
+msgstr "正在检查 feed 中的最新剧集。"
+
+#: GUI/widgets/podcastBrowser.py:1775
+msgid "Clear method:"
+msgstr "清理方式："
+
+#: GUI/widgets/podcastBrowser.py:1777
+msgid "Clear older than:"
+msgstr "清理早于："
+
+#: GUI/widgets/podcastBrowser.py:1776
+msgid "Clear when listened:"
+msgstr "听完后清理："
+
+#: GUI/widgets/podcastBrowser.py:2657
+msgid "Could not add podcast"
+msgstr "无法添加播客"
+
+#: GUI/widgets/podcastBrowser.py:2931
+msgid "Episodes not found on iPod"
+msgstr "未在 iPod 上找到剧集"
+
+#: GUI/widgets/podcastBrowser.py:1773
+msgid "Episodes:"
+msgstr "剧集："
+
+#: GUI/widgets/podcastBrowser.py:2584
+msgid "Fetching feed…"
+msgstr "正在获取 feed…"
+
+#: GUI/widgets/podcastBrowser.py:2586
+msgid "Fetching the feed and latest episodes."
+msgstr "正在获取 feed 和最新剧集。"
+
+#: GUI/widgets/podcastBrowser.py:1774
+msgid "Fill with:"
+msgstr "填充方式："
+
+#: GUI/widgets/podcastSearchDialog.py:118
+msgid "Find podcasts"
+msgstr "查找播客"
+
+#: GUI/widgets/podcastBrowser.py:1768
+msgid "Immediately"
+msgstr "立即"
+
+#: GUI/widgets/podcastBrowser.py:2330
+msgid "Loading episodes…"
+msgstr "正在加载剧集…"
+
+#: GUI/widgets/podcastBrowser.py:1765
+msgid "Mark for Replacement"
+msgstr "标记为替换"
+
+#: GUI/widgets/podcastBrowser.py:1768
+msgid "Never"
+msgstr "从不"
+
+#: GUI/widgets/podcastBrowser.py:1764
+msgid "Newest Episode"
+msgstr "最新剧集"
+
+#: GUI/widgets/podcastBrowser.py:1764
+msgid "Next Episode"
+msgstr "下一集"
+
+#: GUI/widgets/podcastBrowser.py:2281
+msgid "No episodes found"
+msgstr "未找到剧集"
+
+#: GUI/widgets/podcastBrowser.py:2815
+msgid "No episodes to sync"
+msgstr "没有可同步的剧集"
+
+#: GUI/widgets/podcastBrowser.py:2772 GUI/widgets/podcastBrowser.py:2899
+msgid "No iPod connected"
+msgstr "未连接 iPod"
+
+#: GUI/widgets/podcastSearchDialog.py:213
+msgid "No podcasts found"
+msgstr "未找到播客"
+
+#: GUI/widgets/podcastBrowser.py:2366
+msgid "No subscriptions to refresh"
+msgstr "没有可刷新的订阅"
+
+#: GUI/widgets/podcastBrowser.py:2476
+msgid "No subscriptions to sync"
+msgstr "没有可同步的订阅"
+
+#: GUI/widgets/podcastBrowser.py:2446
+msgid "Podcasts could not refresh"
+msgstr "播客刷新失败"
+
+#: GUI/widgets/podcastBrowser.py:2481
+msgid "Preparing podcast sync…"
+msgstr "正在准备播客同步…"
+
+#: GUI/widgets/podcastBrowser.py:2457
+msgid "Refresh failed"
+msgstr "刷新失败"
+
+#: GUI/widgets/podcastBrowser.py:2481
+msgid "Refreshing feeds before building the sync plan."
+msgstr "正在构建同步计划前刷新 feed。"
+
+#: GUI/widgets/podcastBrowser.py:2480
+msgid "Refreshing feeds for sync…"
+msgstr "正在为同步刷新 feed…"
+
+#: GUI/widgets/podcastBrowser.py:2371
+msgid "Refreshing podcasts…"
+msgstr "正在刷新播客…"
+
+#: GUI/widgets/podcastBrowser.py:2671
+msgid "Refreshing this podcast…"
+msgstr "正在刷新此播客…"
+
+#: GUI/widgets/podcastBrowser.py:1765
+msgid "Remove Immediately"
+msgstr "立即移除"
+
+#: GUI/widgets/podcastSearchDialog.py:118
+msgid "Search by show name, or paste an RSS feed below."
+msgstr "按节目名称搜索，或在下方粘贴 RSS feed。"
+
+#: GUI/widgets/podcastSearchDialog.py:192
+msgid "Searching for podcasts…"
+msgstr "正在搜索播客…"
+
+#: GUI/widgets/podcastBrowser.py:2756
+msgid "Select episodes first"
+msgstr "请先选择剧集"
+
+#: GUI/widgets/podcastBrowser.py:2784
+msgid "Selected episodes are already on iPod"
+msgstr "所选剧集已在 iPod 上"
+
+#: GUI/widgets/podcastBrowser.py:2786
+msgid "Selected episodes cannot be added yet"
+msgstr "所选剧集暂时无法添加"
+
+#: GUI/widgets/podcastBrowser.py:2448
+msgid "Some podcasts could not refresh"
+msgstr "部分播客刷新失败"
+
+#: GUI/widgets/podcastBrowser.py:2196
+msgid "Subscribed shows will appear here after their feeds refresh."
+msgstr "订阅节目会在 feed 刷新后显示在这里。"
+
+#: GUI/widgets/podcastBrowser.py:2569
+msgid "Sync failed"
+msgstr "同步失败"
+
+#: GUI/widgets/podcastBrowser.py:2471 GUI/widgets/podcastBrowser.py:2769
+msgid "This iPod does not support podcasts"
+msgstr "此 iPod 不支持播客"
+
+#: GUI/widgets/podcastBrowser.py:2281
+msgid "This podcast loaded, but its feed did not list any episodes."
+msgstr "此播客已加载，但它的 feed 未列出任何剧集。"
+
+#: GUI/widgets/podcastSearchDialog.py:213
+msgid "Try a different show name, or paste the RSS feed directly."
+msgstr "请尝试其他节目名称，或直接粘贴 RSS feed。"
+
+#: GUI/widgets/podcastBrowser.py:2196
+msgid "Waiting for episodes"
+msgstr "等待剧集"
+
+
+#: GUI/widgets/podcastBrowser.py:2895 GUI/widgets/podcastBrowser.py:2896
+msgid "Failed: {error}"
+msgstr "失败：{error}"
+
+#: GUI/widgets/podcastBrowser.py:2593 GUI/widgets/podcastBrowser.py:2594
+msgid "Podcast sync: {summary}"
+msgstr "播客同步：{summary}"
+
+#: GUI/widgets/podcastBrowser.py:2425
+msgid "Refreshed {count} feed"
+msgstr "已刷新 {count} 个 feed"
+
+#: GUI/widgets/podcastBrowser.py:2427
+msgid "Refreshed {count} feeds"
+msgstr "已刷新 {count} 个 feed"
+
+#: GUI/widgets/podcastBrowser.py:2454
+msgid "Refreshed {count}; {failures} feed could not update"
+msgstr "已刷新 {count} 个；{failures} 个 feed 更新失败"
+
+#: GUI/widgets/podcastBrowser.py:2459
+msgid "Refreshed {count}; {failures} feeds could not update"
+msgstr "已刷新 {count} 个；{failures} 个 feed 更新失败"
+
+#: GUI/widgets/podcastBrowser.py:2745 GUI/widgets/podcastBrowser.py:2746
+msgid "Refreshed {title}"
+msgstr "已刷新 {title}"
+
+#: GUI/widgets/podcastBrowser.py:2374
+msgid "Refreshing {count} feeds…"
+msgstr "正在刷新 {count} 个 feed…"
+
+#: GUI/widgets/podcastBrowser.py:2372
+msgid "Refreshing {count} feed…"
+msgstr "正在刷新 {count} 个 feed…"
+
+#: GUI/widgets/podcastBrowser.py:2715 GUI/widgets/podcastBrowser.py:2716
+msgid "Refreshing {title}…"
+msgstr "正在刷新 {title}…"
+
+#: GUI/widgets/podcastBrowser.py:2942
+msgid "Removed {count} download"
+msgstr "已移除 {count} 个下载"
+
+#: GUI/widgets/podcastBrowser.py:2944
+msgid "Removed {count} downloads"
+msgstr "已移除 {count} 个下载"
+
+#: GUI/widgets/podcastBrowser.py:2881
+msgid "Sending {count} episode to sync…"
+msgstr "正在发送 {count} 个剧集进行同步…"
+
+#: GUI/widgets/podcastBrowser.py:2883
+msgid "Sending {count} episodes to sync…"
+msgstr "正在发送 {count} 个剧集进行同步…"
+
+#: GUI/widgets/podcastBrowser.py:3005
+msgid "Sending {count} removal to sync…"
+msgstr "正在发送 {count} 个移除项进行同步…"
+
+#: GUI/widgets/podcastBrowser.py:3007
+msgid "Sending {count} removals to sync…"
+msgstr "正在发送 {count} 个移除项进行同步…"
+
+#: GUI/widgets/podcastBrowser.py:2675 GUI/widgets/podcastBrowser.py:2676
+msgid "Subscribed to {title}"
+msgstr "已订阅 {title}"
+
+#: GUI/widgets/podcastBrowser.py:2705 GUI/widgets/podcastBrowser.py:2706
+msgid "Unsubscribed from {title}"
+msgstr "已取消订阅 {title}"
+
+#: GUI/widgets/podcastBrowser.py:2590
+msgid "{count} to add"
+msgstr "要添加 {count} 个"
+
+#: GUI/widgets/podcastBrowser.py:2586
+msgid "{count} to remove"
+msgstr "要移除 {count} 个"
+
+#: GUI/widgets/playlistBrowser.py
+msgid "Music"
+msgstr "音乐"
+
+#: GUI/widgets/playlistBrowser.py
+msgid "Ringtones"
+msgstr "铃声"
+
+#: GUI/widgets/playlistBrowser.py
+msgid "Rentals"
+msgstr "租借影片"

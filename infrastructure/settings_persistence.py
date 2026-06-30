@@ -6,6 +6,7 @@ import json
 import os
 from dataclasses import asdict
 
+from .i18n import normalize_language
 from .media_folders import media_folder_entries_to_settings
 from .settings_paths import (
     default_settings_dir,
@@ -23,6 +24,7 @@ from .settings_schema import (
 def save_app_settings(settings: AppSettings) -> None:
     """Write settings to the active settings directory."""
 
+    settings.language = normalize_language(settings.language)
     apply_backup_before_sync_mode(settings)
     active_dir = settings.settings_dir or default_settings_dir()
     os.makedirs(active_dir, exist_ok=True)
@@ -93,6 +95,7 @@ def load_app_settings() -> AppSettings:
         settings.backup_before_sync = (
             settings.backup_before_sync_mode == BACKUP_BEFORE_SYNC_AUTO
         )
+        settings.language = normalize_language(settings.language)
 
     except (json.JSONDecodeError, UnicodeDecodeError, OSError):
         pass

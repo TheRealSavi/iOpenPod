@@ -190,6 +190,7 @@ def run_pyqt_app(context: AppContext | None = None) -> None:
         build_palette,
         resolve_accent_color,
     )
+    from infrastructure.i18n import set_language
 
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
@@ -200,6 +201,7 @@ def run_pyqt_app(context: AppContext | None = None) -> None:
     app.setStyle(DarkScrollbarStyle("Fusion"))
 
     settings_snapshot = context.settings.get_effective_snapshot()
+    set_language(settings_snapshot.language)
     Colors.apply_theme(
         settings_snapshot.theme,
         settings_snapshot.high_contrast,

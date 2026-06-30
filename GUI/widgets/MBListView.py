@@ -35,6 +35,7 @@ from PyQt6.QtWidgets import (
 )
 
 from app_core.runtime import display_playlists_from_rows
+from infrastructure.i18n import tr as _
 from iTunesDB_Shared.constants import (
     MEDIA_TYPE_AUDIO,
     MEDIA_TYPE_AUDIO_VIDEO,
@@ -70,6 +71,14 @@ _ALT = "⌥" if _sys.platform == "darwin" else "Alt"
 del _sys
 
 _VOLUME_ZERO_MAGNET_THRESHOLD = 12
+
+_COUNT_TEMPLATES = {
+    "video": ("{count:,} video", "{count:,} videos", "{shown:,} of {total:,} video", "{shown:,} of {total:,} videos"),
+    "episode": ("{count:,} episode", "{count:,} episodes", "{shown:,} of {total:,} episode", "{shown:,} of {total:,} episodes"),
+    "audiobook": ("{count:,} audiobook", "{count:,} audiobooks", "{shown:,} of {total:,} audiobook", "{shown:,} of {total:,} audiobooks"),
+    "song": ("{count:,} song", "{count:,} songs", "{shown:,} of {total:,} song", "{shown:,} of {total:,} songs"),
+    "track": ("{count:,} track", "{count:,} tracks", "{shown:,} of {total:,} track", "{shown:,} of {total:,} tracks"),
+}
 
 
 # =============================================================================
@@ -141,9 +150,9 @@ def format_volume(vol: int) -> str:
 def format_explicit(flag: int) -> str:
     """Format explicit/clean flag (0=none, 1=explicit, 2=clean)."""
     if flag == 1:
-        return "Explicit"
+        return _("Explicit")
     if flag == 2:
-        return "Clean"
+        return _("Clean")
     return ""
 
 
@@ -156,12 +165,12 @@ def format_checked(val: int) -> str:
 
 def format_bool_flag(val: int) -> str:
     """Format a 0/1 flag as Yes/empty."""
-    return "Yes" if val else ""
+    return _("Yes") if val else ""
 
 
 def format_compilation(val: int) -> str:
     """Format compilation flag."""
-    return "Yes" if val else ""
+    return _("Yes") if val else ""
 
 
 def format_sound_check(val: int) -> str:
@@ -202,8 +211,9 @@ def format_chapter_count(val: int) -> str:
     """Format a chapter count for table display."""
     if not val:
         return ""
-    noun = "chapter" if val == 1 else "chapters"
-    return f"{val} {noun}"
+    if val == 1:
+        return _("{count} chapter").format(count=val)
+    return _("{count} chapters").format(count=val)
 
 
 def _chapter_entries(chapter_data: object) -> list[dict]:
@@ -634,6 +644,7 @@ DEFAULT_COLUMN_HEADER_PADDING = 32
 DEFAULT_COLUMN_MIN_WIDTH = 48
 DEFAULT_COLUMN_MAX_WIDTH = 640
 DEFAULT_COLUMN_WIDTH_SAMPLE_LIMIT = 2_000
+DEFAULT_COLUMN_VIEWPORT_MARGIN = 2
 
 
 def _art_column_width() -> int:
@@ -713,7 +724,8 @@ class _DragProgressWidget(QWidget):
         inner.setContentsMargins(14, 10, 14, 10)
         inner.setSpacing(3)
 
-        self._header = QLabel(f"Preparing {n} file{'s' if n != 1 else ''}…")
+        prep_template = "Preparing {count} file…" if n == 1 else "Preparing {count} files…"
+        self._header = QLabel(_(prep_template).format(count=n))
         self._header.setFont(QFont(FONT_FAMILY, 9, QFont.Weight.Bold))
         inner.addWidget(self._header)
 
@@ -759,7 +771,7 @@ class _DragProgressWidget(QWidget):
             lbl.setStyleSheet(f"color: {Colors.ACCENT_LIGHT}; background: transparent;")
             self._done += 1
             if self._done == len(self._rows):
-                self._header.setText("Starting drag…")
+                self._header.setText(_("Starting drag…"))
                 self._header.setStyleSheet(
                     f"color: {Colors.ACCENT_LIGHT}; background: transparent;"
                 )
@@ -964,6 +976,11 @@ class MusicBrowserList(QFrame):
         self._width_resize_debounce_timer.setSingleShot(True)
         self._width_resize_debounce_timer.timeout.connect(
             self._on_width_resize_debounce_timeout
+        )
+        self._default_column_fit_timer = QTimer(self)
+        self._default_column_fit_timer.setSingleShot(True)
+        self._default_column_fit_timer.timeout.connect(
+            self._fit_current_default_columns_to_viewport
         )
 
         # Middle-mouse grab-scroll state
@@ -1174,7 +1191,7 @@ class MusicBrowserList(QFrame):
         if header:
             header.setSectionsMovable(True)
             header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-            header.setStretchLastSection(True)
+            header.setStretchLastSection(False)
             header.setDefaultSectionSize(150)
             header.setMinimumSectionSize(40)
             header.sectionMoved.connect(self._on_header_section_moved)
@@ -1441,6 +1458,17 @@ class MusicBrowserList(QFrame):
         self._column_layout_dirty = True
         self._column_layout_save_timer.start(COLUMN_LAYOUT_SAVE_DELAY_MS)
 
+    def _has_user_column_layout(self) -> bool:
+        """Return True when column widths/order should be treated as user-owned."""
+        content_key = self._active_column_content_key or self._content_type_key()
+        return bool(
+            content_key
+            and self._column_layouts.get(content_key)
+            or self._column_layout_dirty
+            or self._width_resize_debounce_timer.isActive()
+            or self._column_layout_save_timer.isActive()
+        )
+
     def _current_column_header_signature(
         self,
     ) -> tuple[tuple[str, ...], tuple[tuple[str, int], ...]]:
@@ -1542,6 +1570,8 @@ class MusicBrowserList(QFrame):
     ) -> None:
         """Debounce user-driven header width changes (prevents spam during drag)."""
         if self._applying_column_layout or old_size == new_size:
+            return
+        if self._header_interaction_signature is None:
             return
         # Restart debounce timer to batch resize events while dragging
         self._width_resize_debounce_timer.start(50)  # 50ms to catch rapid resizes
@@ -1861,6 +1891,115 @@ class MusicBrowserList(QFrame):
             min(DEFAULT_COLUMN_MAX_WIDTH, math.ceil(desired_width)),
         )
 
+    @staticmethod
+    def _fit_widths_to_budget(widths: list[int], budget: int) -> list[int]:
+        """Shrink default widths proportionally so their sum fits *budget*."""
+        if not widths or budget <= 0:
+            return widths
+        current_total = sum(widths)
+        if current_total <= budget:
+            return widths
+
+        min_total = DEFAULT_COLUMN_MIN_WIDTH * len(widths)
+        if budget <= min_total:
+            return [DEFAULT_COLUMN_MIN_WIDTH for _ in widths]
+
+        extra_budget = budget - min_total
+        extras = [max(0, width - DEFAULT_COLUMN_MIN_WIDTH) for width in widths]
+        extra_total = sum(extras)
+        if extra_total <= 0:
+            return widths
+
+        fitted: list[int] = []
+        remainders: list[tuple[float, int]] = []
+        for index, extra in enumerate(extras):
+            scaled = extra * (extra_budget / extra_total)
+            whole = math.floor(scaled)
+            fitted.append(DEFAULT_COLUMN_MIN_WIDTH + whole)
+            remainders.append((scaled - whole, index))
+
+        remainder = budget - sum(fitted)
+        for _fraction, index in sorted(remainders, reverse=True):
+            if remainder <= 0:
+                break
+            if fitted[index] < widths[index]:
+                fitted[index] += 1
+                remainder -= 1
+        return fitted
+
+    def _default_column_width_budget(self, start_col: int) -> int:
+        """Return the visible width available to default data columns."""
+        viewport = self.table.viewport()
+        viewport_width = viewport.width() if viewport is not None else self.table.width()
+        if viewport_width <= 0:
+            return 0
+
+        fixed_width = 0
+        header = self.table.horizontalHeader()
+        for logical_col in range(start_col):
+            fixed_width += (
+                header.sectionSize(logical_col)
+                if header is not None
+                else self.table.columnWidth(logical_col)
+            )
+        return max(
+            0,
+            viewport_width - fixed_width - DEFAULT_COLUMN_VIEWPORT_MARGIN,
+        )
+
+    def _fit_default_widths_to_viewport(
+        self,
+        logical_cols: list[int],
+        widths: list[int],
+    ) -> list[int]:
+        """Fit freshly calculated default widths to the current table viewport."""
+        if not logical_cols or self._has_user_column_layout():
+            return widths
+        budget = self._default_column_width_budget(min(logical_cols))
+        return self._fit_widths_to_budget(widths, budget)
+
+    def _fit_current_default_columns_to_viewport(self) -> None:
+        """Keep the default, non-user column layout inside the current viewport."""
+        if self._applying_column_layout or self._has_user_column_layout():
+            return
+
+        header = self.table.horizontalHeader()
+        if header is None or self.table.columnCount() <= 0:
+            return
+
+        start_col = 1 if self._show_art else 0
+        logical_cols = [
+            logical_col
+            for logical_col in range(start_col, self.table.columnCount())
+            if self._col_key_for_logical(logical_col) is not None
+        ]
+        if not logical_cols:
+            return
+
+        current_widths = [header.sectionSize(logical_col) for logical_col in logical_cols]
+        natural_widths = [
+            self._smart_default_column_width(logical_col)
+            for logical_col in logical_cols
+        ]
+        fitted = self._fit_default_widths_to_viewport(logical_cols, natural_widths)
+        if fitted == current_widths:
+            return
+
+        previous_stretch = header.stretchLastSection()
+        self._applying_column_layout = True
+        try:
+            header.setStretchLastSection(False)
+            for logical_col, width in zip(logical_cols, fitted, strict=True):
+                self.table.setColumnWidth(logical_col, width)
+        finally:
+            header.setStretchLastSection(previous_stretch)
+            self._applying_column_layout = False
+
+    def _schedule_default_column_fit(self) -> None:
+        """Debounce default column fitting after viewport/layout changes."""
+        if not self._default_column_fit_timer.isActive():
+            self._default_column_fit_timer.start(0)
+
     def _finish_population(self) -> None:
         """Complete table population - enable sorting, apply column widths, load art."""
         try:
@@ -1893,17 +2032,26 @@ class MusicBrowserList(QFrame):
                     # Re-apply header interaction properties (defensive — survives
                     # column-count changes and setSortingEnabled toggling)
                     header.setSectionsMovable(True)
+                    header.setStretchLastSection(False)
 
-                    # Apply saved column widths, or auto-size columns that have none
+                    # Apply saved column widths, or auto-size default columns to
+                    # the current viewport. User-owned layouts are allowed to
+                    # overflow horizontally; generated defaults should not.
+                    use_user_layout = self._has_user_column_layout()
+                    logical_cols: list[int] = []
+                    widths: list[int] = []
                     for i in range(start_col, total_cols):
                         col_key = self._col_key_for_logical(i)
-                        if col_key and col_key in self._user_col_widths:
-                            self.table.setColumnWidth(i, self._user_col_widths[col_key])
+                        if use_user_layout and col_key and col_key in self._user_col_widths:
+                            width = self._user_col_widths[col_key]
                         else:
-                            self.table.setColumnWidth(
-                                i,
-                                self._smart_default_column_width(i),
-                            )
+                            width = self._smart_default_column_width(i)
+                        logical_cols.append(i)
+                        widths.append(width)
+
+                    widths = self._fit_default_widths_to_viewport(logical_cols, widths)
+                    for i, width in zip(logical_cols, widths, strict=True):
+                        self.table.setColumnWidth(i, width)
 
                     # Restore saved visual column order (from user drag-reorder)
                     if self._user_col_order:
@@ -1929,8 +2077,7 @@ class MusicBrowserList(QFrame):
                             if current_vis != logical:
                                 header.moveSection(current_vis, logical)
 
-                    # Stretch the last column
-                    header.setStretchLastSection(True)
+                    header.setStretchLastSection(False)
 
                     # Re-install event filter (defensive — survives population)
                     header.installEventFilter(self)
@@ -2342,7 +2489,7 @@ class MusicBrowserList(QFrame):
             if icon is not None:
                 cell.setIcon(icon)
             cell.setForeground(_named_qcolor(Colors.DANGER))
-            cell.setToolTip("Content Advisory: Explicit")
+            cell.setToolTip(_("Content Advisory: Explicit"))
             return
 
         if flag == 2:
@@ -2350,7 +2497,7 @@ class MusicBrowserList(QFrame):
             if icon is not None:
                 cell.setIcon(icon)
             cell.setForeground(_named_qcolor(Colors.SUCCESS))
-            cell.setToolTip("Content Advisory: Clean")
+            cell.setToolTip(_("Content Advisory: Clean"))
             return
 
         cell.setForeground(_named_qcolor(Colors.TEXT_TERTIARY))
@@ -2375,22 +2522,24 @@ class MusicBrowserList(QFrame):
             noun = "song"
         else:
             noun = "track"
-        noun_pl = noun + "s" if total != 1 else noun
-        shown_pl = noun + "s" if shown != 1 else noun
         if total == 0:
             self._status_label.setText("")
         elif shown == total or self._current_filter is None:
-            self._status_label.setText(f"{total:,} {noun_pl}")
+            one_template, many_template, _filtered_one, _filtered_many = _COUNT_TEMPLATES[noun]
+            template = one_template if total == 1 else many_template
+            self._status_label.setText(_(template).format(count=total))
         else:
+            _one_template, _many_template, filtered_one, filtered_many = _COUNT_TEMPLATES[noun]
+            template = filtered_one if total == 1 else filtered_many
             self._status_label.setText(
-                f"{shown:,} of {total:,} {shown_pl}"
+                _(template).format(shown=shown, total=total)
             )
 
     @staticmethod
     def _get_header(key: str) -> str:
         """Get display name for a column key."""
         if key in COLUMN_CONFIG:
-            return COLUMN_CONFIG[key][0]
+            return _(COLUMN_CONFIG[key][0])
         return key
 
     @staticmethod
@@ -2493,6 +2642,7 @@ class MusicBrowserList(QFrame):
 
             if etype == QEvent.Type.Resize:
                 self._schedule_visible_artwork_load()
+                self._schedule_default_column_fit()
 
             # Wheel events: horizontal trackpad swipe, shift+wheel, normal wheel
             if etype == QEvent.Type.Wheel:
@@ -2611,26 +2761,26 @@ class MusicBrowserList(QFrame):
 
         # ── "Hide <column>" action ──
         if clicked_key and clicked_key in COLUMN_CONFIG:
-            display_name = COLUMN_CONFIG[clicked_key][0]
-            hide_act = menu.addAction(f"Hide \"{display_name}\"")
+            display_name = self._get_header(clicked_key)
+            hide_act = menu.addAction(_("Hide \"{column}\"").format(column=display_name))
             if hide_act:
                 hide_act.triggered.connect(lambda _=False, k=clicked_key: self._hide_column(k))
             menu.addSeparator()
 
         # ── Column sizing actions ──
         if clicked_key:
-            resize_act = menu.addAction("Resize Column to Fit")
+            resize_act = menu.addAction(_("Resize Column to Fit"))
             if resize_act:
                 resize_act.triggered.connect(
                     lambda _=False, col=clicked_logical: self._resize_column_to_current_content(col)
                 )
-        resize_all_act = menu.addAction("Resize All Columns to Fit")
+        resize_all_act = menu.addAction(_("Resize All Columns to Fit"))
         if resize_all_act:
             resize_all_act.triggered.connect(self._resize_all_columns_to_current_content)
         menu.addSeparator()
 
         # ── "Add Column" cascade with grouped sub-menus ──
-        add_menu = menu.addMenu("Add Column")
+        add_menu = menu.addMenu(_("Add Column"))
         if add_menu:
             add_menu.setStyleSheet(menu.styleSheet())
 
@@ -2704,11 +2854,11 @@ class MusicBrowserList(QFrame):
                 if not avail:
                     continue
                 any_available = True
-                sub = add_menu.addMenu(group_name)
+                sub = add_menu.addMenu(_(group_name))
                 if sub:
                     sub.setStyleSheet(menu.styleSheet())
                     for key in avail:
-                        display_name = COLUMN_CONFIG[key][0]
+                        display_name = self._get_header(key)
                         act = sub.addAction(display_name)
                         if act:
                             act.triggered.connect(lambda _=False, k=key: self._show_column(k))
@@ -2720,23 +2870,23 @@ class MusicBrowserList(QFrame):
             ]
             if ungrouped:
                 any_available = True
-                sub = add_menu.addMenu("Other")
+                sub = add_menu.addMenu(_("Other"))
                 if sub:
                     sub.setStyleSheet(menu.styleSheet())
                     for key in ungrouped:
-                        display_name = COLUMN_CONFIG[key][0]
+                        display_name = self._get_header(key)
                         act = sub.addAction(display_name)
                         if act:
                             act.triggered.connect(lambda _=False, k=key: self._show_column(k))
 
             if not any_available:
-                no_act = add_menu.addAction("(all columns shown)")
+                no_act = add_menu.addAction(_("(all columns shown)"))
                 if no_act:
                     no_act.setEnabled(False)
 
         # ── "Reset Columns" ──
         menu.addSeparator()
-        reset_act = menu.addAction("Reset Columns")
+        reset_act = menu.addAction(_("Reset Columns"))
         if reset_act:
             reset_act.triggered.connect(self._reset_columns)
 
@@ -2892,7 +3042,7 @@ class MusicBrowserList(QFrame):
         return all(track.get("db_track_id") or track.get("db_id") for track in selected)
 
     def _edit_action_label(self, selected: list[dict]) -> str:
-        return f"Edit ({len(selected)})"
+        return _("Edit ({count})").format(count=len(selected))
 
     def _start_file_drag(self) -> None:
         """Initiate an async Alt+drag export.
@@ -3058,7 +3208,7 @@ class MusicBrowserList(QFrame):
             menu.addSeparator()
 
         if len(selected) == 1 and chapter_count_from_data(selected[0].get("chapter_data")) >= 2:
-            split_act = menu.addAction("Split chapters into individual tracks")
+            split_act = menu.addAction(_("Split chapters into individual tracks"))
             if split_act:
                 icon = glyph_icon("chaptered-track", 14, Colors.TEXT_PRIMARY)
                 if icon is not None:
@@ -3086,11 +3236,11 @@ class MusicBrowserList(QFrame):
                 )
             ]
 
-            add_menu = menu.addMenu("Add to Playlist")
+            add_menu = menu.addMenu(_("Add to Playlist"))
             if add_menu:
                 add_menu.setStyleSheet(menu_style)
 
-                new_playlist_act = add_menu.addAction("New Playlist")
+                new_playlist_act = add_menu.addAction(_("New Playlist"))
                 if new_playlist_act:
                     icon = glyph_icon("plus", 14, Colors.TEXT_PRIMARY)
                     if icon is not None:
@@ -3100,7 +3250,7 @@ class MusicBrowserList(QFrame):
                 if regular:
                     add_menu.addSeparator()
                     for pl in regular:
-                        title = pl.get("Title", "Untitled")
+                        title = pl.get("Title", _("Untitled"))
                         act = add_menu.addAction(title)
                         if act:
                             act.triggered.connect(
@@ -3122,7 +3272,8 @@ class MusicBrowserList(QFrame):
                 )):
             menu.addSeparator()
             n = len(selected)
-            label = f"Remove {n} Track{'s' if n != 1 else ''} from Playlist"
+            template = "Remove {count} Track from Playlist" if n == 1 else "Remove {count} Tracks from Playlist"
+            label = _(template).format(count=n)
             remove_act = menu.addAction(label)
             if remove_act:
                 remove_act.triggered.connect(self._remove_selected_from_playlist)
@@ -3130,7 +3281,8 @@ class MusicBrowserList(QFrame):
         # ── "Remove from iPod" ──
         menu.addSeparator()
         n_sel = len(selected)
-        remove_ipod_label = f"Remove {n_sel} Track{'s' if n_sel != 1 else ''} from iPod"
+        template = "Remove {count} Track from iPod" if n_sel == 1 else "Remove {count} Tracks from iPod"
+        remove_ipod_label = _(template).format(count=n_sel)
         remove_ipod_act = menu.addAction(remove_ipod_label)
         if remove_ipod_act:
             icon = glyph_icon("minus", 14, Colors.TEXT_PRIMARY)
@@ -3144,11 +3296,11 @@ class MusicBrowserList(QFrame):
         if self._is_reorderable_playlist():
             selected_rows = sorted({idx.row() for idx in self.table.selectedIndexes()})
             menu.addSeparator()
-            up_act = menu.addAction(f"Move Up\t{_CTRL}+\u2191")
+            up_act = menu.addAction(f"{_('Move Up')}\t{_CTRL}+\u2191")
             if up_act:
                 up_act.setEnabled(bool(selected_rows) and selected_rows[0] > 0)
                 up_act.triggered.connect(lambda: self._move_selected_rows(-1))
-            down_act = menu.addAction(f"Move Down\t{_CTRL}+\u2193")
+            down_act = menu.addAction(f"{_('Move Down')}\t{_CTRL}+\u2193")
             if down_act:
                 down_act.setEnabled(bool(selected_rows) and selected_rows[-1] < self.table.rowCount() - 1)
                 down_act.triggered.connect(lambda: self._move_selected_rows(1))
@@ -3170,10 +3322,10 @@ class MusicBrowserList(QFrame):
 
         # ── Copy ──
         menu.addSeparator()
-        copy_text_act = menu.addAction(f"Copy as Text\t{_CTRL}+C")
+        copy_text_act = menu.addAction(f"{_('Copy as Text')}\t{_CTRL}+C")
         if copy_text_act:
             copy_text_act.triggered.connect(self._copy_selection)
-        copy_files_act = menu.addAction(f"Copy as File(s)\t{_CTRL}+{_ALT}+C")
+        copy_files_act = menu.addAction(f"{_('Copy as File(s)')}\t{_CTRL}+{_ALT}+C")
         if copy_files_act:
             copy_files_act.triggered.connect(self._copy_files_to_clipboard)
 
@@ -3191,7 +3343,7 @@ class MusicBrowserList(QFrame):
         if not self._can_edit_selected_tracks(selected):
             return None
 
-        act = menu.addAction("Convert to Podcast")
+        act = menu.addAction(_("Convert to Podcast"))
         if act is None:
             return None
 
@@ -3268,7 +3420,7 @@ class MusicBrowserList(QFrame):
                 prefix = "–  "
                 new_val = 1  # mixed → on
 
-            act = menu.addAction(f"{prefix}{label}")
+            act = menu.addAction(f"{prefix}{_(label)}")
             if act:
                 act.triggered.connect(
                     lambda _=False, k=key, v=new_val: self._set_track_flag(k, v)
@@ -3286,7 +3438,7 @@ class MusicBrowserList(QFrame):
         else:
             prefix = "–  "
             new_val = 0  # mixed → check
-        act = menu.addAction(f"{prefix}Checked")
+        act = menu.addAction(f"{prefix}{_('Checked')}")
         if act:
             act.triggered.connect(
                 lambda _=False, v=new_val: self._set_track_flag("checked_flag", v)
@@ -3294,7 +3446,7 @@ class MusicBrowserList(QFrame):
 
     def _build_rating_menu(self, menu: QMenu, style: str, selected: list[dict], cache) -> None:
         """Add a Rating submenu with 0-5 star options."""
-        rating_menu = menu.addMenu("Rating")
+        rating_menu = menu.addMenu(_("Rating"))
         if not rating_menu:
             return
         rating_menu.setStyleSheet(style)
@@ -3304,13 +3456,13 @@ class MusicBrowserList(QFrame):
         unanimous = current_ratings.pop() if len(current_ratings) == 1 else None
 
         if unanimous is None and len(selected) > 1:
-            mixed = rating_menu.addAction("(mixed selection)")
+            mixed = rating_menu.addAction(_("(mixed selection)"))
             if mixed:
                 mixed.setEnabled(False)
             rating_menu.addSeparator()
 
         stars = [
-            (0, "No Rating"),
+            (0, _("No Rating")),
             (20, "★"),
             (40, "★★"),
             (60, "★★★"),
@@ -3333,7 +3485,7 @@ class MusicBrowserList(QFrame):
           - 1: explicit
           - 2: clean
         """
-        advisory_menu = menu.addMenu("Content Advisory")
+        advisory_menu = menu.addMenu(_("Content Advisory"))
         if not advisory_menu:
             return
         advisory_menu.setStyleSheet(style)
@@ -3342,15 +3494,15 @@ class MusicBrowserList(QFrame):
         unanimous = current_flags.pop() if len(current_flags) == 1 else None
 
         if unanimous is None and len(selected) > 1:
-            mixed = advisory_menu.addAction("(mixed selection)")
+            mixed = advisory_menu.addAction(_("(mixed selection)"))
             if mixed:
                 mixed.setEnabled(False)
             advisory_menu.addSeparator()
 
         options: list[tuple[int, str]] = [
-            (0, "None (Unset)"),
-            (1, "Explicit"),
-            (2, "Clean"),
+            (0, _("None (Unset)")),
+            (1, _("Explicit")),
+            (2, _("Clean")),
         ]
         for value, label in options:
             act = advisory_menu.addAction(label)
@@ -3366,7 +3518,7 @@ class MusicBrowserList(QFrame):
 
     def _build_volume_menu(self, menu: QMenu, style: str, selected: list[dict]) -> None:
         """Add a Volume Adjustment submenu with a continuous slider."""
-        vol_menu = menu.addMenu("Volume Adjustment")
+        vol_menu = menu.addMenu(_("Volume Adjustment"))
         if not vol_menu:
             return
         vol_menu.setStyleSheet(style)

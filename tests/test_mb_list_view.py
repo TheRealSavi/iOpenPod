@@ -21,6 +21,7 @@ from GUI.styles import Colors
 from GUI.widgets.MBListView import (
     COLUMN_CONFIG,
     DEFAULT_AUDIOBOOK_COLUMNS,
+    DEFAULT_COLUMNS,
     DEFAULT_PODCAST_COLUMNS,
     SORTABLE_NUMERIC_KEYS,
     MusicBrowserList,
@@ -556,6 +557,137 @@ def test_default_column_width_uses_distribution_not_single_outlier(qtbot):
     assert title_width < outlier_width * 0.6
 
 
+def test_default_column_widths_fit_current_viewport(qtbot):
+    view = _mount_list(qtbot)
+    view.resize(560, 500)
+    tracks = [
+        {
+            "Title": f"Long title with extra release notes {idx}",
+            "Artist": "Very Long Artist Name",
+            "Album": "Very Long Album Name",
+            "Genre": "Alternative Rock",
+            "year": 2001,
+            "track_number": idx + 1,
+            "length": 180000,
+            "rating": 80,
+            "play_count_1": 5,
+            "date_added": 1710000000,
+        }
+        for idx in range(12)
+    ]
+
+    _load_content(qtbot, view, tracks=tracks, media_type_filter=0x01)
+
+    header = view.table.horizontalHeader()
+    assert header is not None
+    viewport = view.table.viewport()
+    assert viewport is not None
+
+    assert header.length() <= viewport.width() + 1
+    assert view.table.horizontalScrollBar().maximum() == 0
+
+
+def test_default_columns_do_not_stretch_last_column_to_fill_extra_width(qtbot):
+    view = _mount_list(qtbot)
+    view.resize(1400, 500)
+    tracks = [
+        {
+            "Title": "Yellow",
+            "Artist": "Coldplay",
+            "Album": "Parachutes",
+            "Genre": "Rock",
+            "year": 2000,
+            "track_number": 5,
+            "length": 266000,
+            "rating": 80,
+            "play_count_1": 1,
+            "date_added": 1710000000,
+        }
+    ]
+
+    _load_content(qtbot, view, tracks=tracks, media_type_filter=0x01)
+
+    header = view.table.horizontalHeader()
+    assert header is not None
+    viewport = view.table.viewport()
+    assert viewport is not None
+    last_logical = view.table.columnCount() - 1
+    last_natural = view._smart_default_column_width(last_logical)
+
+    assert header.stretchLastSection() is False
+    assert view.table.columnWidth(last_logical) == last_natural
+    assert header.length() < viewport.width()
+    assert view.table.horizontalScrollBar().maximum() == 0
+
+
+def test_default_column_widths_reexpand_when_viewport_grows(qtbot):
+    view = _mount_list(qtbot)
+    view.resize(560, 500)
+    tracks = [
+        {
+            "Title": f"Long title with extra release notes {idx}",
+            "Artist": "Very Long Artist Name",
+            "Album": "Very Long Album Name",
+            "Genre": "Alternative Rock",
+            "year": 2001,
+            "track_number": idx + 1,
+            "length": 180000,
+            "rating": 80,
+            "play_count_1": 5,
+            "date_added": 1710000000,
+        }
+        for idx in range(12)
+    ]
+
+    _load_content(qtbot, view, tracks=tracks, media_type_filter=0x01)
+
+    title_col = view._columns.index("Title")
+    narrow_width = view.table.columnWidth(title_col)
+
+    view.resize(1400, 500)
+    view._fit_current_default_columns_to_viewport()
+
+    header = view.table.horizontalHeader()
+    assert header is not None
+    viewport = view.table.viewport()
+    assert viewport is not None
+
+    assert view.table.columnWidth(title_col) > narrow_width
+    assert view.table.columnWidth(title_col) == view._smart_default_column_width(title_col)
+    assert header.length() < viewport.width()
+    assert view.table.horizontalScrollBar().maximum() == 0
+
+
+def test_automatic_column_resize_signal_does_not_save_user_layout(qtbot):
+    view = _mount_list(qtbot)
+    _load_content(qtbot, view, tracks=_tracks_for_music(), media_type_filter=0x01)
+
+    view.table.setColumnWidth(0, 260)
+    view._on_header_section_resized(0, 100, 260)
+    qtbot.wait(100)
+
+    assert (
+        view._settings_service
+        .get_global_settings()
+        .track_list_columns_by_content
+        == {}
+    )
+
+
+def test_saved_column_widths_are_not_forced_into_viewport(qtbot):
+    service = _SettingsService()
+    service.get_global_settings().track_list_columns_by_content = {
+        "music": {key: 220 for key in DEFAULT_COLUMNS}
+    }
+    view = _mount_list(qtbot, settings_service=service)
+    view.resize(560, 500)
+
+    _load_content(qtbot, view, tracks=_tracks_for_music(), media_type_filter=0x01)
+
+    assert view.table.columnWidth(0) == 220
+    assert view.table.horizontalScrollBar().maximum() > 0
+
+
 def test_column_layout_persists_per_content_type(qtbot):
     view = _mount_list(qtbot)
 
@@ -625,8 +757,10 @@ def test_reset_columns_removes_saved_widths_and_recalculates(qtbot):
     view = _mount_list(qtbot)
     _load_content(qtbot, view, tracks=_tracks_for_music(), media_type_filter=0x01)
 
+    view._begin_header_interaction()
     view.table.setColumnWidth(0, 260)
     view._on_header_section_resized(0, 100, 260)
+    view._finish_header_interaction()
     qtbot.waitUntil(
         lambda: (
             view._settings_service.get_global_settings()
@@ -741,10 +875,12 @@ def test_column_width_changes_debounced(qtbot):
 
     # Simulate multiple resize events (like during a drag)
     final_artist_width = original_artist_width
+    view._begin_header_interaction()
     for i in range(10):
         final_artist_width = original_artist_width + 10 + i
         view.table.setColumnWidth(1, final_artist_width)
         view._on_header_section_resized(1, original_artist_width, final_artist_width)
+    view._finish_header_interaction()
 
     # Wait for debounce timeout to complete
     qtbot.waitUntil(

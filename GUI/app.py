@@ -74,6 +74,7 @@ from GUI.widgets.syncReview import (
     PCFolderDialog,
     SyncReviewWidget,
 )
+from infrastructure.i18n import tr as _
 from infrastructure.media_folders import (
     media_folder_entries_to_settings,
     media_folder_paths,
@@ -163,7 +164,7 @@ def _sync_execute_failure_message(result: Any) -> str | None:
 
     errors = list(getattr(result, "errors", []) or [])
     if not errors:
-        return "Sync failed before making changes."
+        return _("Sync failed before making changes.")
 
     prioritized = None
     for desc, msg in errors:
@@ -182,26 +183,26 @@ def _sync_execute_failure_message(result: Any) -> str | None:
 def _library_load_failure_message(mount_path: str, error_msg: str) -> str:
     error_text = error_msg.strip() or "Unknown error"
     if not _looks_like_device_access_error(error_text):
-        return f"iOpenPod could not load this iPod library.\n\n{error_text}"
+        return _("iOpenPod could not load this iPod library.\n\n{error}").format(error=error_text)
 
     mount = mount_path.strip() or "the iPod mount"
     quoted_mount = shlex.quote(mount) if mount_path.strip() else "<mount-path>"
-    return (
+    return _(
         "iOpenPod could not read this iPod cleanly.\n\n"
-        f"Mount path: {mount}\n"
-        f"System error: {error_text}\n\n"
+        "Mount path: {mount}\n"
+        "System error: {error}\n\n"
         "On Linux, this usually means the iPod mount is not accessible, "
         "the FAT filesystem is dirty, or the current user does not have "
         "permission to the mount.\n\n"
         "Try reconnecting the iPod. If it still fails, try remounting it "
         "read-write:\n"
-        f"  sudo mount -o remount,rw {quoted_mount}\n\n"
+        "  sudo mount -o remount,rw {quoted_mount}\n\n"
         "If the filesystem is dirty, unmount it before repairing it:\n"
-        f"  sudo umount {quoted_mount}\n"
+        "  sudo umount {quoted_mount}\n"
         "  sudo fsck.vfat -a /dev/sdXN\n\n"
         "Replace /dev/sdXN with the iPod partition. Do not run fsck while "
         "the iPod is mounted."
-    )
+    ).format(mount=mount, error=error_text, quoted_mount=quoted_mount)
 
 
 class MainWindow(QMainWindow):
@@ -395,6 +396,7 @@ class MainWindow(QMainWindow):
         )
         self.settingsPage.closed.connect(self.hideSettings)
         self.settingsPage.theme_changed.connect(self._on_theme_changed)
+        self.settingsPage.language_changed.connect(self._on_language_changed)
         self.settingsPage.artwork_appearance_changed.connect(
             self._on_artwork_appearance_changed
         )
@@ -429,22 +431,24 @@ class MainWindow(QMainWindow):
 
         no_device_layout.addStretch(1)
 
-        title = QLabel("Select an iPod to continue")
+        title = QLabel(_("Select an iPod to continue"))
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setFont(QFont(FONT_FAMILY, Metrics.FONT_XXL, QFont.Weight.DemiBold))
         title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent;")
         no_device_layout.addWidget(title)
 
         subtitle = QLabel(
-            "No device is currently selected.\n"
-            "Choose an iPod to access your library and sync tools."
+            _(
+                "No device is currently selected.\n"
+                "Choose an iPod to access your library and sync tools."
+            )
         )
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         subtitle.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
         subtitle.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent;")
         no_device_layout.addWidget(subtitle)
 
-        select_btn = QPushButton("Select Device")
+        select_btn = QPushButton(_("Select Device"))
         select_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         select_btn.setFixedWidth(170)
         select_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.DemiBold))
@@ -475,13 +479,13 @@ class MainWindow(QMainWindow):
         loading_layout.setSpacing(12)
         loading_layout.addStretch(1)
 
-        loading_title = QLabel("Loading iPod...")
+        loading_title = QLabel(_("Loading iPod..."))
         loading_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         loading_title.setFont(QFont(FONT_FAMILY, Metrics.FONT_XXL, QFont.Weight.DemiBold))
         loading_title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent;")
         loading_layout.addWidget(loading_title)
 
-        loading_subtitle = QLabel("Reading library and device settings.")
+        loading_subtitle = QLabel(_("Reading library and device settings."))
         loading_subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         loading_subtitle.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
         loading_subtitle.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent;")
@@ -579,6 +583,10 @@ class MainWindow(QMainWindow):
         if settings_scope == "device" and hasattr(self.settingsPage, "set_settings_scope"):
             self.settingsPage.set_settings_scope("device")
 
+    def _on_language_changed(self):
+        """Rebuild the entire UI after a live language switch."""
+        self._rebuild_themed_ui(restore_page=2)
+
     def _on_artwork_appearance_changed(self):
         """Refresh visible artwork after UI-only artwork settings change."""
         self.musicBrowser.refresh_artwork_appearance()
@@ -600,8 +608,8 @@ class MainWindow(QMainWindow):
                     if selected_ipod is None:
                         QMessageBox.warning(
                             self,
-                            "Invalid iPod Folder",
-                            "The selected folder could not be identified as an iPod.",
+                            _("Invalid iPod Folder"),
+                            _("The selected folder could not be identified as an iPod."),
                         )
                         return
                     folder = selected_ipod.path or folder
@@ -616,11 +624,13 @@ class MainWindow(QMainWindow):
             else:
                 QMessageBox.warning(
                     self,
-                    "Invalid iPod Folder",
-                    "The selected folder does not appear to be a valid iPod root.\n\n"
-                    "Expected structure:\n"
-                    "  <selected folder>/iPod_Control/iTunes/\n\n"
-                    "Please select the root folder of your iPod."
+                    _("Invalid iPod Folder"),
+                    _(
+                        "The selected folder does not appear to be a valid iPod root.\n\n"
+                        "Expected structure:\n"
+                        "  <selected folder>/iPod_Control/iTunes/\n\n"
+                        "Please select the root folder of your iPod."
+                    )
                 )
 
     def onDeviceChanged(self, path: str):
@@ -648,7 +658,7 @@ class MainWindow(QMainWindow):
             access = check_ipod_write_access(path)
             if not access.writable:
                 logger.error("Selected iPod is not writable: %s", access.message)
-                QMessageBox.critical(self, "iPod Not Writable", access.message)
+                QMessageBox.critical(self, _("iPod Not Writable"), access.message)
                 if same_device_path(path, self.device_manager.device_path):
                     self.device_manager.device_path = None
                 return
@@ -733,9 +743,9 @@ class MainWindow(QMainWindow):
         device_name = (
             MainWindow._device_name_from_playlists(playlists)
             or (device_identity.ipod_name if device_identity else "")
-            or "Unk iPod"
+            or _("Unknown iPod")
         )
-        model = device_identity.display_name if device_identity else "Unk iPod"
+        model = device_identity.display_name if device_identity else _("Unknown iPod")
 
         db_version_hex = db_data.get('VersionHex', '') if db_data else ''
         db_version_name = get_version_name(db_version_hex) if db_version_hex else ''
@@ -768,7 +778,7 @@ class MainWindow(QMainWindow):
         logger.error("iPod library load failed: %s", error_msg)
         QMessageBox.critical(
             self,
-            "Could Not Load iPod",
+            _("Could Not Load iPod"),
             _library_load_failure_message(device_path, error_msg),
         )
 
@@ -777,8 +787,8 @@ class MainWindow(QMainWindow):
         if not cache.is_ready():
             QMessageBox.information(
                 self,
-                "Normalize iPod Tags",
-                "Load an iPod library before running tag normalization.",
+                _("Normalize iPod Tags"),
+                _("Load an iPod library before running tag normalization."),
             )
             return
 
@@ -786,8 +796,8 @@ class MainWindow(QMainWindow):
         if not tracks:
             QMessageBox.information(
                 self,
-                "Normalize iPod Tags",
-                "No tracks were found in this iPod library.",
+                _("Normalize iPod Tags"),
+                _("No tracks were found in this iPod library."),
             )
             return
 
@@ -810,8 +820,8 @@ class MainWindow(QMainWindow):
         if not suggestion.changes_by_track:
             QMessageBox.information(
                 self,
-                "Normalize iPod Tags",
-                "No iPod-specific metadata fixes were found for this library.",
+                _("Normalize iPod Tags"),
+                _("No iPod-specific metadata fixes were found for this library."),
             )
             return
 
@@ -942,17 +952,18 @@ class MainWindow(QMainWindow):
     def _onRenameDone(self, result):
         """Device rename write completed."""
         if not result.success:
-            self._onRenameFailed(result.error or "Database write failed.")
+            self._onRenameFailed(result.error or _("Database write failed."))
             return
         logger.info("iPod renamed successfully")
-        Notifier.get_instance().notify("iPod Renamed", "Device name updated successfully")
+        Notifier.get_instance().notify(_("iPod Renamed"), _("Device name updated successfully"))
 
     def _onRenameFailed(self, error_msg: str):
         """Device rename write failed."""
         logger.error("iPod rename failed: %s", error_msg)
         QMessageBox.critical(
-            self, "Rename Failed",
-            f"Failed to rename iPod:\n{error_msg}"
+            self,
+            _("Rename Failed"),
+            _("Failed to rename iPod:\n{error}").format(error=error_msg),
         )
 
     # ── Eject ──────────────────────────────────────────────────────────
@@ -965,9 +976,11 @@ class MainWindow(QMainWindow):
         if not ok:
             QMessageBox.warning(
                 self,
-                "Save In Progress",
-                f"iOpenPod is still saving {label} to the iPod. "
-                "Try ejecting again when the save finishes.",
+                _("Save In Progress"),
+                _(
+                    "iOpenPod is still saving {label} to the iPod. "
+                    "Try ejecting again when the save finishes."
+                ).format(label=label),
             )
             return False
 
@@ -992,9 +1005,11 @@ class MainWindow(QMainWindow):
         if not pool.waitForDone(5000):
             QMessageBox.warning(
                 self,
-                "Still Reading iPod",
-                "iOpenPod is still finishing background reads from the iPod. "
-                "Try ejecting again in a moment.",
+                _("Still Reading iPod"),
+                _(
+                    "iOpenPod is still finishing background reads from the iPod. "
+                    "Try ejecting again in a moment."
+                ),
             )
             return False
 
@@ -1010,8 +1025,9 @@ class MainWindow(QMainWindow):
 
         if self._is_sync_running():
             QMessageBox.warning(
-                self, "Sync In Progress",
-                "Please wait for the current sync to finish before ejecting."
+                self,
+                _("Sync In Progress"),
+                _("Please wait for the current sync to finish before ejecting."),
             )
             return
 
@@ -1031,7 +1047,7 @@ class MainWindow(QMainWindow):
         if self._eject_worker is not None:
             self._eject_worker.deleteLater()
             self._eject_worker = None
-        Notifier.get_instance().notify("iPod Ejected", message)
+        Notifier.get_instance().notify(_("iPod Ejected"), message)
         self.device_manager.device_path = None
         # Forget the restored device so it doesn't auto-reconnect next launch.
         try:
@@ -1055,8 +1071,9 @@ class MainWindow(QMainWindow):
         except Exception:
             logger.debug("Failed to restore UI after eject failure", exc_info=True)
         QMessageBox.critical(
-            self, "Eject Failed",
-            f"Failed to eject the iPod:\n{error_msg}"
+            self,
+            _("Eject Failed"),
+            _("Failed to eject the iPod:\n{error}").format(error=error_msg),
         )
 
     def _is_sync_running(self) -> bool:
@@ -1080,9 +1097,12 @@ class MainWindow(QMainWindow):
 
     def _on_quick_meta_failed(self, error_msg: str):
         QMessageBox.warning(
-            self, "Save Failed",
-            f"Could not save quick changes to iPod:\n{error_msg}\n\n"
-            "iOpenPod is reloading the device view from the iPod."
+            self,
+            _("Save Failed"),
+            _(
+                "Could not save quick changes to iPod:\n{error}\n\n"
+                "iOpenPod is reloading the device view from the iPod."
+            ).format(error=error_msg),
         )
 
     def _create_back_sync_artwork_provider(self, ipod_path: str):
@@ -1148,21 +1168,21 @@ class MainWindow(QMainWindow):
                 self._quick_write_controller.prepare_for_full_sync()
             )
             if not quick_ready:
-                label = blocked_label or "quick changes"
+                label = blocked_label or _("quick changes")
                 QMessageBox.warning(
                     self,
-                    "Quick Changes Still Saving",
-                    (
+                    _("Quick Changes Still Saving"),
+                    _(
                         "iOpenPod is still saving pending quick changes. "
-                        f"Please wait for {label} to finish before starting a full sync."
-                    ),
+                        "Please wait for {label} to finish before starting a full sync."
+                    ).format(label=label),
                 )
                 return
             if self.library_cache.is_loading():
                 QMessageBox.information(
                     self,
-                    "Library Loading",
-                    "Please wait for the iPod library to finish loading.",
+                    _("Library Loading"),
+                    _("Please wait for the iPod library to finish loading."),
                 )
                 return
 
@@ -1355,8 +1375,8 @@ class MainWindow(QMainWindow):
             self._dl_progress = None
         QMessageBox.critical(
             self,
-            "Download Failed",
-            f"Could not download sync tools:\n\n{error_msg}",
+            _("Download Failed"),
+            _("Could not download sync tools:\n\n{error}").format(error=error_msg),
         )
 
     def _onPodcastSyncRequested(self, plan):
@@ -1369,8 +1389,8 @@ class MainWindow(QMainWindow):
         if caps is not None and not caps.supports_podcast and getattr(plan, "to_add", None):
             QMessageBox.warning(
                 self,
-                "Unsupported iPod",
-                "This iPod does not support podcasts.",
+                _("Unsupported iPod"),
+                _("This iPod does not support podcasts."),
             )
             return
         self._plan = plan
@@ -1388,19 +1408,19 @@ class MainWindow(QMainWindow):
         if self._is_sync_running():
             QMessageBox.information(
                 self,
-                "Sync Running",
-                "Please wait for the current sync to finish before converting an album.",
+                _("Sync Running"),
+                _("Please wait for the current sync to finish before converting an album."),
             )
             return
 
         device_manager = self.device_manager
         if not device_manager.device_path:
-            QMessageBox.warning(self, "No Device", "Please select an iPod device first.")
+            QMessageBox.warning(self, _("No Device"), _("Please select an iPod device first."))
             return
 
         cache = self.library_cache
         if not cache.is_ready():
-            QMessageBox.information(self, "Library Loading", "Please wait for the iPod library to finish loading.")
+            QMessageBox.information(self, _("Library Loading"), _("Please wait for the iPod library to finish loading."))
             return
 
         album_item = dict(album_items[0])
@@ -1410,14 +1430,14 @@ class MainWindow(QMainWindow):
             album_tracks = resolve_album_tracks(album_item, cache.get_tracks())
         except Exception as exc:
             logger.debug("Album track resolution failed", exc_info=True)
-            QMessageBox.warning(self, "Album Conversion", str(exc))
+            QMessageBox.warning(self, _("Album Conversion"), str(exc))
             return
 
         if len(album_tracks) < 2:
             QMessageBox.information(
                 self,
-                "Album Conversion",
-                "Choose an album with at least two tracks.",
+                _("Album Conversion"),
+                _("Choose an album with at least two tracks."),
             )
             return
 
@@ -1545,22 +1565,22 @@ class MainWindow(QMainWindow):
         if self._is_sync_running():
             QMessageBox.information(
                 self,
-                "Sync Running",
-                "Please wait for the current sync to finish before splitting chapters.",
+                _("Sync Running"),
+                _("Please wait for the current sync to finish before splitting chapters."),
             )
             return
 
         device_manager = self.device_manager
         if not device_manager.device_path:
-            QMessageBox.warning(self, "No Device", "Please select an iPod device first.")
+            QMessageBox.warning(self, _("No Device"), _("Please select an iPod device first."))
             return
 
         cache = self.library_cache
         if not cache.is_ready():
             QMessageBox.information(
                 self,
-                "Library Loading",
-                "Please wait for the iPod library to finish loading.",
+                _("Library Loading"),
+                _("Please wait for the iPod library to finish loading."),
             )
             return
 
@@ -1571,7 +1591,7 @@ class MainWindow(QMainWindow):
             segments = build_chapter_split_segments(track)
         except Exception as exc:
             logger.debug("Chapter split validation failed", exc_info=True)
-            QMessageBox.warning(self, "Chapter Split", str(exc))
+            QMessageBox.warning(self, _("Chapter Split"), str(exc))
             return
 
         settings = self.settings_service.get_effective_settings()
@@ -2064,7 +2084,7 @@ class MainWindow(QMainWindow):
         # Get device path
         device_manager = self.device_manager
         if not device_manager.device_path:
-            QMessageBox.warning(self, "No Device", "No iPod device selected.")
+            QMessageBox.warning(self, _("No Device"), _("No iPod device selected."))
             return
 
         original_plan = self._plan  # stored in _onSyncDiffComplete
@@ -2143,25 +2163,30 @@ class MainWindow(QMainWindow):
 
         shortage = max(0, required - disk.free)
         reserve_label = format_size(SYNC_UNTIL_FULL_RESERVE_BYTES) or "1 MB"
-        message = (
+        message = _(
             "This sync is estimated to need more space than is available on "
             "the iPod.\n\n"
-            f"Available: {format_size(disk.free) or '0 B'}\n"
-            f"Estimated needed: {format_size(required) or '0 B'}\n"
-            f"Estimated shortfall: {format_size(shortage) or '0 B'}\n\n"
+            "Available: {available}\n"
+            "Estimated needed: {required}\n"
+            "Estimated shortfall: {shortage}\n\n"
             "Sync Until Full will copy files in order until the next file would "
-            f"leave less than {reserve_label} free, then save the database with "
+            "leave less than {reserve} free, then save the database with "
             "the items that actually synced."
+        ).format(
+            available=format_size(disk.free) or "0 B",
+            required=format_size(required) or "0 B",
+            shortage=format_size(shortage) or "0 B",
+            reserve=reserve_label,
         )
 
         dialog = QMessageBox(self)
         dialog.setIcon(QMessageBox.Icon.Warning)
-        dialog.setWindowTitle("Not Enough Space")
-        dialog.setText("The selected sync is larger than the iPod's free space.")
+        dialog.setWindowTitle(_("Not Enough Space"))
+        dialog.setText(_("The selected sync is larger than the iPod's free space."))
         dialog.setInformativeText(message)
-        cancel_btn = dialog.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+        cancel_btn = dialog.addButton(_("Cancel"), QMessageBox.ButtonRole.RejectRole)
         sync_btn = dialog.addButton(
-            "Sync Until Full",
+            _("Sync Until Full"),
             QMessageBox.ButtonRole.AcceptRole,
         )
         dialog.setDefaultButton(cancel_btn)
@@ -2176,7 +2201,7 @@ class MainWindow(QMainWindow):
         self._keep_sync_results_visible_after_rescan = True
         failure_message = _sync_execute_failure_message(result)
         if failure_message:
-            QMessageBox.critical(self, "Sync Failed", failure_message)
+            QMessageBox.critical(self, _("Sync Failed"), failure_message)
 
         # Desktop notification if app is not focused
         if not self.isActiveWindow():
@@ -2252,7 +2277,7 @@ class MainWindow(QMainWindow):
                 "You can restore it from the Backups page."
             )
 
-        QMessageBox.critical(self, "Sync Error", msg)
+        QMessageBox.critical(self, _("Sync Error"), msg)
         self.hideSyncReview()
 
     def _onConfirmPartialSave(self, n_added: int, n_skipped: int) -> None:
@@ -2262,27 +2287,34 @@ class MainWindow(QMainWindow):
         if worker is None:
             return
 
-        tracks_word = "track" if n_added == 1 else "tracks"
+        tracks_word = _("track") if n_added == 1 else _("tracks")
         skipped_line = (
-            f"{n_skipped} more {'track was' if n_skipped == 1 else 'tracks were'} not copied."
+            (
+                _("{count} more track was not copied.")
+                if n_skipped == 1
+                else _("{count} more tracks were not copied.")
+            ).format(count=n_skipped)
             if n_skipped > 0 else ""
         )
 
         msg = QMessageBox(self)
-        msg.setWindowTitle("Save Partial Sync?")
+        msg.setWindowTitle(_("Save Partial Sync?"))
         msg.setIcon(QMessageBox.Icon.Question)
         msg.setText(
-            f"{n_added} {tracks_word} were successfully copied to your iPod before the sync was cancelled."
+            _(
+                "{count} {tracks_word} were successfully copied to your iPod "
+                "before the sync was cancelled."
+            ).format(count=n_added, tracks_word=tracks_word)
         )
-        detail = "Would you like to save these tracks to your iPod's database?"
+        detail = _("Would you like to save these tracks to your iPod's database?")
         if skipped_line:
             detail = skipped_line + "\n\n" + detail
-        detail += (
+        detail += _(
             "\n\nIf you discard, the copied files will be cleaned up automatically the next time you sync."
         )
         msg.setInformativeText(detail)
-        save_btn = msg.addButton("Save Partial Database", QMessageBox.ButtonRole.AcceptRole)
-        discard_btn = msg.addButton("Discard", QMessageBox.ButtonRole.RejectRole)
+        save_btn = msg.addButton(_("Save Partial Database"), QMessageBox.ButtonRole.AcceptRole)
+        discard_btn = msg.addButton(_("Discard"), QMessageBox.ButtonRole.RejectRole)
         msg.setDefaultButton(save_btn)
         msg.exec()
 
@@ -2386,7 +2418,7 @@ class MainWindow(QMainWindow):
         # Switch to sync review and show loading
         self.centralStack.setCurrentIndex(1)
         self.syncReview.show_loading()
-        self.syncReview.loading_label.setText("Reading dropped files...")
+        self.syncReview.loading_label.setText(_("Reading dropped files..."))
         settings = self.settings_service.get_effective_settings()
         device_manager = self.device_manager
 
@@ -2490,7 +2522,7 @@ class _MissingToolsDialog(QDialog):
         detail_lines: str = "",
     ):
         super().__init__(parent)
-        self.setWindowTitle("Missing Tools")
+        self.setWindowTitle(_("Missing Tools"))
         self.setFixedWidth(420)
         _apply_dialog_background(self)
 
@@ -2509,7 +2541,7 @@ class _MissingToolsDialog(QDialog):
         icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(icon_label)
 
-        title = QLabel(f"{tool_list} Not Found")
+        title = QLabel(_("{tools} Not Found").format(tools=tool_list))
         title.setFont(QFont(FONT_FAMILY, Metrics.FONT_TITLE, QFont.Weight.Bold))
         title.setStyleSheet(_label_css(Colors.TEXT_PRIMARY))
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -2520,8 +2552,10 @@ class _MissingToolsDialog(QDialog):
 
         if can_download:
             body = QLabel(
-                "iOpenPod can download these automatically (~80 MB).\n"
-                "Download now?"
+                _(
+                    "iOpenPod can download these automatically (~80 MB).\n"
+                    "Download now?"
+                )
             )
         else:
             body = QLabel(detail_lines)
@@ -2538,7 +2572,7 @@ class _MissingToolsDialog(QDialog):
         btn_row.setSpacing(12)
 
         if can_download:
-            no_btn = QPushButton("Not Now")
+            no_btn = QPushButton(_("Not Now"))
             no_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
             no_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             no_btn.setMinimumHeight(40)
@@ -2552,7 +2586,7 @@ class _MissingToolsDialog(QDialog):
             no_btn.clicked.connect(self.reject)
             btn_row.addWidget(no_btn)
 
-            yes_btn = QPushButton("Download")
+            yes_btn = QPushButton(_("Download"))
             yes_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
             yes_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             yes_btn.setMinimumHeight(40)
@@ -2566,7 +2600,7 @@ class _MissingToolsDialog(QDialog):
             yes_btn.clicked.connect(self.accept)
             btn_row.addWidget(yes_btn)
         else:
-            ok_btn = QPushButton("OK")
+            ok_btn = QPushButton(_("OK"))
             ok_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
             ok_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             ok_btn.setMinimumHeight(40)
@@ -2588,7 +2622,7 @@ class _DownloadProgressDialog(QDialog):
 
     def __init__(self, parent: QWidget):
         super().__init__(parent)
-        self.setWindowTitle("Downloading")
+        self.setWindowTitle(_("Downloading"))
         self.setFixedSize((380), (180))
         self.setModal(True)
         self.setWindowFlags(
@@ -2601,13 +2635,13 @@ class _DownloadProgressDialog(QDialog):
         layout.setContentsMargins((28), (24), (28), (24))
         layout.setSpacing(14)
 
-        title = QLabel("Downloading Tools…")
+        title = QLabel(_("Downloading Tools…"))
         title.setFont(QFont(FONT_FAMILY, Metrics.FONT_XXL, QFont.Weight.Bold))
         title.setStyleSheet(_label_css(Colors.TEXT_PRIMARY))
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
-        self._status = QLabel("Preparing download…")
+        self._status = QLabel(_("Preparing download…"))
         self._status.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
         self._status.setStyleSheet(_label_css(Colors.TEXT_SECONDARY))
         self._status.setAlignment(Qt.AlignmentFlag.AlignCenter)

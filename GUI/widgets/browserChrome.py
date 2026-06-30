@@ -4,6 +4,8 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSplitter, QVBoxLayout, QWidget
 
+from infrastructure.i18n import tr as _
+
 from ..styles import FONT_FAMILY, Colors, Metrics, btn_css
 
 
@@ -73,7 +75,7 @@ class BrowserPane(QFrame):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        self.title_label = QLabel(title, self)
+        self.title_label = QLabel(_(title), self)
         self.title_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_TITLE, QFont.Weight.Bold))
         self.title_label.setStyleSheet(f"""
             color:{Colors.TEXT_PRIMARY};
