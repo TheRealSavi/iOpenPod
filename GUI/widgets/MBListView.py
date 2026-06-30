@@ -53,6 +53,7 @@ from ..glyphs import glyph_icon
 from ..hidpi import scale_pixmap_for_display
 from ..internal_drag import IOP_EXPORT_DRAG_MIME
 from ..styles import FONT_FAMILY, Colors, Metrics, context_menu_css, table_css
+from ..system_open import open_files_with_app_picker, open_files_with_default_app
 from .formatters import format_duration_mmss, format_size
 
 log = logging.getLogger(__name__)
@@ -67,6 +68,9 @@ if TYPE_CHECKING:
 # Platform-correct modifier key labels for menu shortcut hints.
 _CTRL = "⌘" if _sys.platform == "darwin" else "Ctrl"
 _ALT = "⌥" if _sys.platform == "darwin" else "Alt"
+_SHIFT = "⇧" if _sys.platform == "darwin" else "Shift"
+_OPEN_TRACK_SHORTCUT = f"{_CTRL}+O"
+_OPEN_WITH_TRACK_SHORTCUT = f"{_CTRL}+{_SHIFT}+O"
 del _sys
 
 _VOLUME_ZERO_MAGNET_THRESHOLD = 12
@@ -2454,6 +2458,12 @@ class MusicBrowserList(QFrame):
             if ke.modifiers() == ctrl and ke.key() == Qt.Key.Key_E:
                 self._edit_tracks()
                 return True
+            if ke.modifiers() == ctrl and ke.key() == Qt.Key.Key_O:
+                self._open_selected_track_files()
+                return True
+            if ke.modifiers() == (ctrl | Qt.KeyboardModifier.ShiftModifier) and ke.key() == Qt.Key.Key_O:
+                self._open_selected_track_file_with_picker()
+                return True
             if ke.modifiers() == ctrl and ke.key() == Qt.Key.Key_Up:
                 self._move_selected_rows(-1)
                 return True
@@ -2880,6 +2890,38 @@ class MusicBrowserList(QFrame):
                 tracks.append(self._tracks[orig_idx])
         return tracks
 
+    def _resolved_track_file_paths(self, tracks: list[dict]) -> list[str]:
+        """Resolve selected iPod track database locations to existing files."""
+        if not tracks:
+            return []
+
+        try:
+            session = self._device_sessions.current_session()
+            ipod_root = session.device_path or ""
+        except Exception:
+            ipod_root = ""
+        if not ipod_root:
+            return []
+
+        from SyncEngine.ipod_track_paths import existing_ipod_track_file_path
+
+        paths: list[str] = []
+        seen: set[str] = set()
+        for track in tracks:
+            path = existing_ipod_track_file_path(
+                ipod_root,
+                track,
+                allow_music_filename_fallback=True,
+            )
+            if path is None:
+                continue
+            path_text = str(path)
+            if path_text in seen:
+                continue
+            seen.add(path_text)
+            paths.append(path_text)
+        return paths
+
     def _can_edit_selected_tracks(self, selected: list[dict]) -> bool:
         """Return whether the current selection represents editable iPod tracks."""
         if not selected:
@@ -3168,6 +3210,10 @@ class MusicBrowserList(QFrame):
         # ── Volume Adjustment ──
         self._build_volume_menu(menu, menu_style, selected)
 
+        # ── Open Track File ──
+        menu.addSeparator()
+        self._add_open_file_actions(menu, selected)
+
         # ── Copy ──
         menu.addSeparator()
         copy_text_act = menu.addAction(f"Copy as Text\t{_CTRL}+C")
@@ -3180,6 +3226,66 @@ class MusicBrowserList(QFrame):
         vp = self.table.viewport()
         global_pos = vp.mapToGlobal(pos) if vp else QCursor.pos()
         menu.exec(global_pos)
+
+    def _add_open_file_actions(self, menu: QMenu, selected: list[dict]) -> None:
+        paths = self._resolved_track_file_paths(selected)
+        n_paths = len(paths)
+
+        if len(selected) == 1:
+            open_label = "Open Track File"
+        elif n_paths and n_paths < len(selected):
+            open_label = f"Open {n_paths} Available Track File{'s' if n_paths != 1 else ''}"
+        else:
+            open_label = f"Open {len(selected)} Track Files"
+        open_act = menu.addAction(f"{open_label}\t{_OPEN_TRACK_SHORTCUT}")
+        if open_act:
+            icon = glyph_icon("music", 14, Colors.TEXT_PRIMARY)
+            if icon is not None:
+                open_act.setIcon(icon)
+            open_act.setEnabled(bool(paths))
+            if not paths:
+                open_act.setToolTip("The selected track file could not be found on the iPod.")
+            else:
+                if n_paths < len(selected):
+                    open_act.setToolTip(f"{n_paths} of {len(selected)} selected track files could be found.")
+                open_act.triggered.connect(
+                    lambda _=False, selected_paths=list(paths): self._open_track_files(selected_paths)
+                )
+
+        open_with_act = menu.addAction(f"Open With...\t{_OPEN_WITH_TRACK_SHORTCUT}")
+        if open_with_act:
+            icon = glyph_icon("folder", 14, Colors.TEXT_PRIMARY)
+            if icon is not None:
+                open_with_act.setIcon(icon)
+            can_open_with = len(selected) == 1 and n_paths == 1
+            open_with_act.setEnabled(bool(paths))
+            if not paths:
+                open_with_act.setToolTip("The selected track file could not be found on the iPod.")
+            else:
+                if not can_open_with:
+                    open_with_act.setToolTip(
+                        f"Choose one app for {n_paths} selected track file{'s' if n_paths != 1 else ''}."
+                    )
+                open_with_act.triggered.connect(
+                    lambda _=False, selected_paths=list(paths): self._open_track_files_with_picker(selected_paths)
+                )
+
+    def _open_track_files(self, paths: list[str]) -> None:
+        if not open_files_with_default_app(paths):
+            log.warning("Could not open selected track file(s): %s", paths)
+
+    def _open_track_files_with_picker(self, paths: list[str]) -> None:
+        open_files_with_app_picker(paths, self)
+
+    def _open_selected_track_files(self) -> None:
+        paths = self._resolved_track_file_paths(self._get_selected_tracks())
+        if paths:
+            self._open_track_files(paths)
+
+    def _open_selected_track_file_with_picker(self) -> None:
+        paths = self._resolved_track_file_paths(self._get_selected_tracks())
+        if paths:
+            self._open_track_files_with_picker(paths)
 
     # ── Flag & Rating Sub-menus ──────────────────────────────────────────
 

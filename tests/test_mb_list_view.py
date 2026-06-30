@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -9,7 +10,8 @@ from uuid import uuid4
 
 import pytest
 from PIL import Image
-from PyQt6.QtCore import QPoint, Qt
+from PyQt6.QtCore import QEvent, QPoint, Qt
+from PyQt6.QtGui import QKeyEvent
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QComboBox, QDialog, QHeaderView, QLabel, QLineEdit, QMenu, QPushButton, QSlider, QTableWidget, QTableWidgetItem, QTreeWidget
 
@@ -19,6 +21,8 @@ from GUI import imgMaker
 from GUI.imgMaker import ArtworkFormatPreview, TrackArtworkPreview, get_track_artwork_previews
 from GUI.styles import Colors
 from GUI.widgets.MBListView import (
+    _OPEN_TRACK_SHORTCUT,
+    _OPEN_WITH_TRACK_SHORTCUT,
     COLUMN_CONFIG,
     DEFAULT_AUDIOBOOK_COLUMNS,
     DEFAULT_PODCAST_COLUMNS,
@@ -204,11 +208,12 @@ class _SettingsService:
 
 
 class _DeviceSessions:
-    def __init__(self) -> None:
+    def __init__(self, session: _Session | None = None) -> None:
         self._manager = _DeviceManager()
+        self._session = session or _Session()
 
     def current_session(self) -> DeviceSession:
-        return cast(DeviceSession, _Session())
+        return cast(DeviceSession, self._session)
 
     def manager(self) -> DeviceManagerLike:
         return cast(DeviceManagerLike, self._manager)
@@ -351,13 +356,14 @@ def _tracks_for_video() -> list[dict[str, object]]:
 def _mount_list(
     qtbot,
     settings_service: SettingsService | None = None,
+    device_sessions: _DeviceSessions | None = None,
     library_cache: Any | None = None,
     content_type_override: str | None = None,
     show_art_override: bool | None = False,
 ) -> MusicBrowserList:
     view = MusicBrowserList(
         settings_service=settings_service or _SettingsService(),
-        device_sessions=_DeviceSessions(),
+        device_sessions=device_sessions or _DeviceSessions(),
         library_cache=library_cache,
         show_art_override=show_art_override,
         content_type_override=content_type_override,
@@ -965,6 +971,162 @@ def test_edit_action_is_only_available_for_ready_ipod_tracks(qtbot) -> None:
 
     pc_view = _mount_list(qtbot, library_cache=cache, content_type_override="pc_tracks")
     assert not pc_view._can_edit_selected_tracks([{"db_track_id": 1, "Title": "PC Track"}])
+
+
+def test_track_file_resolution_uses_current_device_path(qtbot, tmp_path: Path) -> None:
+    track_path = tmp_path / "iPod_Control" / "Music" / "F00" / "Song.mp3"
+    track_path.parent.mkdir(parents=True)
+    track_path.write_bytes(b"audio")
+    view = _mount_list(
+        qtbot,
+        device_sessions=_DeviceSessions(_Session(device_path=str(tmp_path))),
+    )
+
+    paths = view._resolved_track_file_paths(
+        [{"Location": ":iPod_Control:Music:F00:Song.mp3"}]
+    )
+
+    assert paths == [str(track_path)]
+
+
+def test_open_track_file_actions_open_resolved_file(
+    qtbot,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    track_path = tmp_path / "iPod_Control" / "Music" / "F00" / "Song.mp3"
+    track_path.parent.mkdir(parents=True)
+    track_path.write_bytes(b"audio")
+    view = _mount_list(
+        qtbot,
+        device_sessions=_DeviceSessions(_Session(device_path=str(tmp_path))),
+    )
+    opened: list[list[str]] = []
+    picked: list[tuple[list[str], MusicBrowserList]] = []
+    monkeypatch.setattr(
+        "GUI.widgets.MBListView.open_files_with_default_app",
+        lambda paths: opened.append(list(paths)) or True,
+    )
+    monkeypatch.setattr(
+        "GUI.widgets.MBListView.open_files_with_app_picker",
+        lambda paths, parent: picked.append((list(paths), parent)) or True,
+    )
+
+    menu = QMenu(view)
+    view._add_open_file_actions(menu, [{"Location": ":iPod_Control:Music:F00:Song.mp3"}])
+    actions = menu.actions()
+
+    assert actions[0].text() == f"Open Track File\t{_OPEN_TRACK_SHORTCUT}"
+    assert actions[0].isEnabled()
+    assert actions[1].text() == f"Open With...\t{_OPEN_WITH_TRACK_SHORTCUT}"
+    assert actions[1].isEnabled()
+
+    actions[0].trigger()
+    actions[1].trigger()
+
+    assert opened == [[str(track_path)]]
+    assert picked == [([str(track_path)], view)]
+
+
+def test_open_track_file_actions_disable_missing_files(qtbot, tmp_path: Path) -> None:
+    view = _mount_list(
+        qtbot,
+        device_sessions=_DeviceSessions(_Session(device_path=str(tmp_path))),
+    )
+    menu = QMenu(view)
+
+    view._add_open_file_actions(menu, [{"Location": ":iPod_Control:Music:F00:Missing.mp3"}])
+    actions = menu.actions()
+
+    assert actions[0].text() == f"Open Track File\t{_OPEN_TRACK_SHORTCUT}"
+    assert not actions[0].isEnabled()
+    assert actions[1].text() == f"Open With...\t{_OPEN_WITH_TRACK_SHORTCUT}"
+    assert not actions[1].isEnabled()
+
+
+def test_open_with_action_uses_one_picker_for_multiple_tracks(
+    qtbot,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    first_path = tmp_path / "iPod_Control" / "Music" / "F00" / "One.mp3"
+    second_path = tmp_path / "iPod_Control" / "Music" / "F01" / "Two.mp3"
+    first_path.parent.mkdir(parents=True)
+    second_path.parent.mkdir(parents=True)
+    first_path.write_bytes(b"audio")
+    second_path.write_bytes(b"audio")
+    view = _mount_list(
+        qtbot,
+        device_sessions=_DeviceSessions(_Session(device_path=str(tmp_path))),
+    )
+    picked: list[tuple[list[str], MusicBrowserList]] = []
+    monkeypatch.setattr(
+        "GUI.widgets.MBListView.open_files_with_app_picker",
+        lambda paths, parent: picked.append((list(paths), parent)) or True,
+    )
+    menu = QMenu(view)
+
+    view._add_open_file_actions(
+        menu,
+        [
+            {"Location": ":iPod_Control:Music:F00:One.mp3"},
+            {"Location": ":iPod_Control:Music:F01:Two.mp3"},
+        ],
+    )
+    actions = menu.actions()
+
+    assert actions[0].text() == f"Open 2 Track Files\t{_OPEN_TRACK_SHORTCUT}"
+    assert actions[0].isEnabled()
+    assert actions[1].text() == f"Open With...\t{_OPEN_WITH_TRACK_SHORTCUT}"
+    assert actions[1].isEnabled()
+
+    actions[1].trigger()
+
+    assert picked == [([str(first_path), str(second_path)], view)]
+
+
+def test_open_track_shortcut_labels_use_platform_controls() -> None:
+    if sys.platform == "darwin":
+        assert _OPEN_TRACK_SHORTCUT == "⌘+O"
+        assert _OPEN_WITH_TRACK_SHORTCUT == "⌘+⇧+O"
+    else:
+        assert _OPEN_TRACK_SHORTCUT == "Ctrl+O"
+        assert _OPEN_WITH_TRACK_SHORTCUT == "Ctrl+Shift+O"
+
+
+def test_open_track_keyboard_shortcuts_route_to_open_handlers(
+    qtbot,
+    monkeypatch,
+) -> None:
+    view = _mount_list(qtbot)
+    opened: list[str] = []
+    picked: list[str] = []
+    monkeypatch.setattr(
+        view,
+        "_open_selected_track_files",
+        lambda: opened.append("open"),
+    )
+    monkeypatch.setattr(
+        view,
+        "_open_selected_track_file_with_picker",
+        lambda: picked.append("open-with"),
+    )
+
+    open_event = QKeyEvent(
+        QEvent.Type.KeyPress,
+        Qt.Key.Key_O,
+        Qt.KeyboardModifier.ControlModifier,
+    )
+    open_with_event = QKeyEvent(
+        QEvent.Type.KeyPress,
+        Qt.Key.Key_O,
+        Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier,
+    )
+
+    assert view.eventFilter(view.table, open_event) is True
+    assert view.eventFilter(view.table, open_with_event) is True
+    assert opened == ["open"]
+    assert picked == ["open-with"]
 
 
 def test_podcast_conversion_changes_set_ipod_podcast_fields() -> None:
