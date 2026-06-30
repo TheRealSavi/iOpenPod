@@ -46,11 +46,22 @@ def _build_song_to_artwork_id(artworkdb_path: Path) -> dict[int, int]:
     return links
 
 
+def _int_or_zero(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def hydrate_track_artwork_refs(
     tracks: list[dict[str, Any]],
     itunesdb_path: str | Path,
 ) -> int:
-    """Fill missing ``artwork_id_ref`` values from ArtworkDB ``songId`` links.
+    """Normalize ``artwork_id_ref`` values from ArtworkDB ``songId`` links.
+
+    The ArtworkDB MHII ``songId`` field is the direct link back to the track's
+    persistent ``db_track_id``. Prefer it over a stale/non-zero track-header
+    ref so the UI does not attach another track's cached image.
 
     Returns the number of tracks updated.
     """
@@ -67,22 +78,31 @@ def hydrate_track_artwork_refs(
     for track in tracks:
         if not isinstance(track, dict):
             continue
-        if track.get("artwork_id_ref") not in (None, "", 0):
-            continue
-        try:
-            db_track_id = int(track.get("db_track_id") or track.get("db_id") or 0)
-        except (TypeError, ValueError):
+        db_track_id = _int_or_zero(track.get("db_track_id") or track.get("db_id"))
+        if not db_track_id:
             continue
         artwork_id = song_to_artwork_id.get(db_track_id)
         if not artwork_id:
             continue
+
+        existing_artwork_id = _int_or_zero(track.get("artwork_id_ref"))
+        if existing_artwork_id == artwork_id:
+            continue
+
+        if existing_artwork_id:
+            logger.info(
+                "Corrected stale track artwork ref for db_track_id=%d: %d -> %d",
+                db_track_id,
+                existing_artwork_id,
+                artwork_id,
+            )
         track["artwork_id_ref"] = artwork_id
-        if track.get("mhii_link") in (None, "", 0):
+        if _int_or_zero(track.get("mhii_link")) != artwork_id:
             track["mhii_link"] = artwork_id
         if not track.get("artwork_count"):
             track["artwork_count"] = 1
         hydrated += 1
 
     if hydrated:
-        logger.info("Hydrated %d track artwork refs from ArtworkDB song links", hydrated)
+        logger.info("Normalized %d track artwork refs from ArtworkDB song links", hydrated)
     return hydrated

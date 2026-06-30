@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import os
 
+import numpy as np
 from PIL import Image
 
+from ArtworkDB_Writer.ithmb_codecs import encode_image_for_format
 from GUI import imgMaker
+from ipod_device.artwork import resolve_cover_art_format_definitions
 
 
 def test_configure_artwork_api_reuses_cache_for_unchanged_artworkdb(
@@ -93,3 +96,47 @@ def test_image_only_artwork_reuses_full_result_cache(monkeypatch) -> None:
         assert decode_calls == []
     finally:
         imgMaker.clear_artwork_api()
+
+
+def test_generate_image_crops_rgb565_stride_padding(tmp_path) -> None:
+    fmt = resolve_cover_art_format_definitions("iPod Nano", "7th Gen")[1016]
+    source = Image.new("RGB", (fmt.width, fmt.height), (240, 16, 32))
+    encoded = encode_image_for_format(
+        source,
+        fmt.format_id,
+        fmt.width,
+        fmt.height,
+        fmt_override=fmt,
+    )
+    ithmb_path = tmp_path / "F1016_1.ithmb"
+    ithmb_path.write_bytes(encoded.data)
+
+    decoded = imgMaker.generate_image(
+        str(ithmb_path),
+        {
+            "correlationID": fmt.format_id,
+            "ithmbOffset": 0,
+            "imgSize": encoded.size,
+            "imageWidth": fmt.width,
+            "imageHeight": fmt.height,
+            "horizontalPadding": encoded.stride_pixels - fmt.width,
+            "verticalPadding": 0,
+            "estimatedPixmapWidth": encoded.stride_pixels,
+            "estimatedPixmapHeight": fmt.height,
+            "image_format": {
+                "format_id": fmt.format_id,
+                "width": fmt.width,
+                "height": fmt.height,
+                "format": fmt.pixel_format,
+                "description": fmt.description,
+            },
+            "3": {"File Name": ":F1016_1.ithmb"},
+        },
+    )
+
+    assert decoded is not None
+    assert decoded.size == (fmt.width, fmt.height)
+    right_edge = np.asarray(decoded.convert("RGB"), dtype=np.uint8)[:, -1, :]
+    assert int(right_edge[:, 0].min()) > 200
+    assert int(right_edge[:, 1].max()) < 40
+    assert int(right_edge[:, 2].max()) < 60

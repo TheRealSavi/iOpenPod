@@ -34,7 +34,27 @@ def test_hydrate_track_artwork_refs_fills_missing_refs_from_song_links(
     assert "artwork_id_ref" not in tracks[2]
 
 
-def test_hydrate_track_artwork_refs_keeps_existing_track_refs(
+def test_hydrate_track_artwork_refs_keeps_matching_existing_track_refs(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        artwork_links,
+        "_build_song_to_artwork_id",
+        lambda _path: {111: 999},
+    )
+    tracks = [{"db_track_id": 111, "artwork_count": 1, "artwork_id_ref": 999}]
+
+    count = artwork_links.hydrate_track_artwork_refs(
+        tracks,
+        tmp_path / "iPod_Control" / "iTunes" / "iTunesDB",
+    )
+
+    assert count == 0
+    assert tracks[0]["artwork_id_ref"] == 999
+
+
+def test_hydrate_track_artwork_refs_corrects_stale_track_refs_from_song_links(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -50,5 +70,6 @@ def test_hydrate_track_artwork_refs_keeps_existing_track_refs(
         tmp_path / "iPod_Control" / "iTunes" / "iTunesDB",
     )
 
-    assert count == 0
-    assert tracks[0]["artwork_id_ref"] == 999
+    assert count == 1
+    assert tracks[0]["artwork_id_ref"] == 100
+    assert tracks[0]["mhii_link"] == 100

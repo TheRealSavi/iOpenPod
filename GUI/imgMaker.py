@@ -34,12 +34,12 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any, Literal, overload
 
-import numpy as np
 from PIL import Image
 
 from ArtworkDB_Shared.constants import IMAGE_CONTAINER_NAMES
 from ArtworkDB_Shared.ithmb_paths import normalize_ithmb_filename
 from ArtworkDB_Writer.ithmb_codecs import decode_pixels_for_format
+from ipod_device.artwork_presets import ArtworkFormat
 
 logger = logging.getLogger(__name__)
 
@@ -445,24 +445,54 @@ def clear_artworkdb_cache():
 # IMAGE FORMAT & GENERATION (INTERNAL HELPERS)
 # ============================================================================
 
-def rgb565_to_rgb888_vectorized(pixels):
-    """Convert RGB565 to RGB888 format using vectorized NumPy operations."""
-    pixels = pixels.astype(np.uint32)
-    r = ((pixels >> 11) & 0x1F) * 255 // 31
-    g = ((pixels >> 5) & 0x3F) * 255 // 63
-    b = (pixels & 0x1F) * 255 // 31
-    return np.stack([r, g, b], axis=-1).astype(np.uint8)
+def _int_or_zero(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
-def read_rgb565_pixels(img_data, fmt):
-    """Read RGB565 pixels with correct byte order based on format."""
-    if fmt in ("RGB565_BE", "RGB565_BE_90"):
-        # Big-endian: use dtype with explicit byte order
-        pixels = np.frombuffer(img_data, dtype='>u2')
-    else:
-        # Little-endian (default for most album art)
-        pixels = np.frombuffer(img_data, dtype='<u2')
-    return pixels
+def _is_two_byte_packed_format(pixel_format: str) -> bool:
+    return (
+        pixel_format.startswith("RGB565")
+        or pixel_format.startswith("RGB555")
+        or pixel_format.startswith("REC_RGB555")
+        or pixel_format == "UYVY"
+    )
+
+
+def _artwork_format_override_from_image_info(
+    format_id: int,
+    image_info: dict[str, Any],
+    image_format: dict[str, Any],
+) -> ArtworkFormat | None:
+    pixel_format = str(image_format.get("format") or "")
+    if not pixel_format:
+        return None
+
+    width = _int_or_zero(image_format.get("width") or image_info.get("imageWidth"))
+    height = _int_or_zero(image_format.get("height") or image_info.get("imageHeight"))
+    if format_id <= 0 or width <= 0 or height <= 0:
+        return None
+
+    row_bytes = _int_or_zero(
+        image_format.get("row_bytes")
+        or image_format.get("rowBytes")
+        or image_format.get("rowBytesHint")
+    )
+    if row_bytes <= 0 and _is_two_byte_packed_format(pixel_format):
+        stored_width = _int_or_zero(image_info.get("estimatedPixmapWidth"))
+        row_bytes = max(width, stored_width) * 2
+
+    return ArtworkFormat(
+        format_id=int(format_id),
+        width=width,
+        height=height,
+        row_bytes=max(0, row_bytes),
+        pixel_format=pixel_format,
+        role=str(image_format.get("role") or "cover"),
+        description=str(image_format.get("description") or ""),
+    )
 
 
 def generate_image(ithmb_filename, image_info):
@@ -487,129 +517,21 @@ def generate_image(ithmb_filename, image_info):
     hpad = max(0, int(image_info.get("horizontalPadding") or 0))
     vpad = max(0, int(image_info.get("verticalPadding") or 0))
 
-    if fmt.startswith("RGB565"):
-        num_pixels = image_info["imgSize"] // 2
-
-        # The mhni chunk records the actual stored pixmap layout:
-        #   estimatedPixmapWidth  = row stride in pixels  (imageWidth  + horizontalPadding)
-        #   estimatedPixmapHeight = total rows            (imageHeight + verticalPadding)
-        # When both multiply to exactly num_pixels they are unambiguous — use
-        # them directly.  When only the width is available (height missing or
-        # inconsistent) fall back to width-only division.  Finally fall back to
-        # the format-table width.  This handles Nano 7G entries whose
-        # correlationID maps to a 140×140 format table entry but the .ithmb
-        # file contains a much smaller pixmap (e.g. 58×57 = 3306 pixels).
-        mhni_w = image_info.get("estimatedPixmapWidth") or 0
-        mhni_h = image_info.get("estimatedPixmapHeight") or 0
-        image_w = image_info.get("imageWidth") or 0
-        image_h = image_info.get("imageHeight") or 0
-
-        # Prefer exact geometries that consume the payload exactly.
-        # Avoid forcing format-table width (e.g. 140) when payload math disagrees.
-        pref_w = mhni_w or image_w or target_width
-        pref_h = mhni_h or image_h or target_height
-
-        pair_candidates = []
-        for w, h in (
-            (mhni_w, mhni_h),
-            (image_w, image_h),
-            (target_width, target_height),
-        ):
-            if w > 0 and h > 0 and w * h == num_pixels:
-                pair_candidates.append((w, h))
-
-        width_candidates = set()
-        for base in (mhni_w, image_w, target_width):
-            if base and base > 0:
-                width_candidates.add(base)
-                if base > 1:
-                    width_candidates.add(base - 1)
-                width_candidates.add(base + 1)
-
-        div_candidates = []
-        for w in sorted(width_candidates):
-            if w > 0 and num_pixels % w == 0:
-                h = num_pixels // w
-                score = abs(w - pref_w) + abs(h - pref_h)
-                # Ambiguous stride cases (e.g. 57x58 vs 58x57) often shear when
-                # width is chosen too small. Prefer larger width on score ties.
-                target_bias = abs(w - target_width) + abs(h - target_height)
-                div_candidates.append((score, target_bias, -w, w, h))
-
-        if pair_candidates:
-            current_width, current_height = min(
-                pair_candidates,
-                key=lambda wh: abs(wh[0] - pref_w) + abs(wh[1] - pref_h),
-            )
-        elif div_candidates:
-            _score, _bias, _neg_w, current_width, current_height = min(div_candidates)
-        else:
-            logger.warning(
-                "generate_image: no valid geometry for %s imgSize=%d (%d px) "
-                "mhni w=%d h=%d imageWidth=%s imageHeight=%s fmt=%dx%d",
-                ithmb_filename,
-                image_info["imgSize"],
-                num_pixels,
-                mhni_w,
-                mhni_h,
-                image_info.get("imageWidth"),
-                image_info.get("imageHeight"),
-                target_width,
-                target_height,
-            )
-            return None
-
-        if current_width != target_width or current_height * current_width != num_pixels:
-            logger.info(
-                "generate_image: imgSize=%d (%d px) mhni w=%d h=%d → "
-                "decode %dx%d (fmt %dx%d); imageWidth=%s imageHeight=%s "
-                "hPad=%s vPad=%s",
-                image_info["imgSize"], num_pixels, mhni_w, mhni_h,
-                current_width, current_height, target_width, target_height,
-                image_info.get("imageWidth"), image_info.get("imageHeight"),
-                image_info.get("horizontalPadding"),
-                image_info.get("verticalPadding"),
-            )
-
-        expected_pixels = current_height * current_width
-
-        # Use byte-order-aware pixel reader
-        pixels = read_rgb565_pixels(img_data, fmt)
-
-        # Guard against empty/truncated ithmb data
-        if len(pixels) == 0 or len(pixels) < expected_pixels:
-            return None
-
-        # Trim any partial-row trailing padding before conversion
-        if len(pixels) > expected_pixels:
-            pixels = pixels[:expected_pixels]
-
-        rgb_array = rgb565_to_rgb888_vectorized(pixels)
-
-        # Reshape image
-        rgb_array = rgb_array.reshape((current_height, current_width, 3))
-        img_pil = Image.fromarray(rgb_array)
-
-        # Handle 90-degree rotation for _90 formats (PhotoPod full screen)
-        if fmt.endswith("_90"):
-            img_pil = img_pil.rotate(-90, expand=True)
-
-        # Resize to target dimensions if needed
-        if img_pil.size != (target_width, target_height):
-            img_pil = img_pil.resize(
-                (target_width, target_height), Image.Resampling.LANCZOS)
-        return img_pil
-
-    # Non-RGB565 formats (UYVY, I420, RGB555 variants, JPEG) go through
-    # the shared format-aware decoder.
     if format_id is not None:
+        format_id_int = int(format_id)
+        fmt_override = _artwork_format_override_from_image_info(
+            format_id_int,
+            image_info,
+            fmt_info,
+        )
         decoded = decode_pixels_for_format(
-            int(format_id),
+            format_id_int,
             img_data,
             int(image_info.get("imageWidth") or target_width),
             int(image_info.get("imageHeight") or target_height),
             hpad,
             vpad,
+            fmt_override=fmt_override,
         )
         if decoded is None:
             logger.warning("Unsupported/failed decode for format %s (id=%s)", fmt, format_id)
