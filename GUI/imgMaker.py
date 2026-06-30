@@ -32,7 +32,7 @@ import os
 import threading
 from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Any, Literal, overload
+from typing import Any, Literal, cast, overload
 
 from PIL import Image
 
@@ -755,6 +755,15 @@ def _image_result_from_container(container: dict[str, Any]) -> dict[str, Any] | 
     return result if isinstance(result, dict) else None
 
 
+def _image_result_file_info(image_result: dict[Any, Any]) -> dict[str, Any]:
+    """Return MHOD type-3 file metadata from parser or fixture-shaped results."""
+    for key in (3, "3"):
+        value = image_result.get(key)
+        if isinstance(value, dict):
+            return cast(dict[str, Any], value)
+    return {}
+
+
 def _iter_entry_image_candidates(entry):
     """Yield parsed MHNI results for all usable image containers on an entry."""
     containers = entry.get("_image_containers")
@@ -816,7 +825,7 @@ def _decode_entry_format_previews(entry: dict[str, Any], ithmb_folder_path: str)
         if format_id <= 0:
             continue
 
-        file_info = image_result.get("3", {})
+        file_info = _image_result_file_info(image_result)
         ithmb_filename = normalize_ithmb_filename(format_id, file_info.get("File Name"))
 
         location_key = (format_id, ithmb_filename, offset)
@@ -875,7 +884,7 @@ def _decode_image_from_db(artworkdb_data, ithmb_folder_path, img_id, img_id_inde
         if not candidates:
             continue
         for _area, image_result, _container in candidates:
-            file_info = image_result.get("3", {})
+            file_info = _image_result_file_info(image_result)
             ithmb_filename = normalize_ithmb_filename(
                 int(image_result.get("correlationID") or 0),
                 file_info.get("File Name"),
