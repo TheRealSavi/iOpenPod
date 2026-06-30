@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from infrastructure.i18n import tr as _
 from ipod_device.artwork import ITHMB_FORMAT_MAP
 from SyncEngine.photos import (
     PhotoDB,
@@ -76,6 +77,11 @@ _MAX_THUMB_WORKERS = 2
 _EXPORT_FILTERS = "JPEG Image (*.jpg);;PNG Image (*.png);;All Files (*)"
 _JPEG_EXTENSIONS = {".jpg", ".jpeg"}
 _PNG_EXTENSIONS = {".png"}
+
+
+def _album_display_label(name: str) -> str:
+    """Translate app-owned album labels without touching user album names."""
+    return _("All Photos") if name == "All Photos" else name
 
 
 def _safe_photo_stem(name: str, fallback: str) -> str:
@@ -419,7 +425,7 @@ class PhotoBrowserWidget(QFrame):
 
         header = BrowserHeroHeader("Photos", self)
 
-        self.new_album_btn = QPushButton("New Album")
+        self.new_album_btn = QPushButton(_("New Album"))
         self.new_album_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.new_album_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.new_album_btn.setStyleSheet(chrome_action_btn_css())
@@ -470,15 +476,15 @@ class PhotoBrowserWidget(QFrame):
 
         self.viewer = PhotoViewerPane(
             heading="",
-            empty_title="No photo selected",
-            empty_summary="Select a photo to inspect its preview and album details.",
+            empty_title=_("No photo selected"),
+            empty_summary=_("Select a photo to inspect its preview and album details."),
             parent=splitter,
         )
         viewer_actions = self.viewer.configureActionRow([
-            ("export_photo", "Export", "download", False),
-            ("add_to_album", "Add to Album", "plus", False),
-            ("remove_from_album", "Remove from Album", "minus", False),
-            ("delete_photo", "Delete Photo", "trash", True),
+            ("export_photo", _("Export"), "download", False),
+            ("add_to_album", _("Add to Album"), "plus", False),
+            ("remove_from_album", _("Remove from Album"), "minus", False),
+            ("delete_photo", _("Delete Photo"), "trash", True),
         ])
         self.export_photo_btn = viewer_actions["export_photo"]
         self.add_to_album_btn = viewer_actions["add_to_album"]
@@ -810,7 +816,7 @@ class PhotoBrowserWidget(QFrame):
         sections: list[tuple[str, list[tuple[str, str]]]] = []
 
         album_names = sorted(name for name in getattr(photo, "album_names", set()) if name)
-        album_label = ", ".join(album_names) if album_names else "All Photos"
+        album_label = ", ".join(album_names) if album_names else _("All Photos")
         image_rows = [
             ("Image ID", str(photo.image_id)),
             ("Display Name", photo.display_name or self._device_photo_title(photo)),
@@ -1094,7 +1100,7 @@ class PhotoBrowserWidget(QFrame):
 
         batch: list[tuple[int, PhotoEntry, int | None]] = []
         load_token = self._grid_load_token
-        for _ in range(_THUMB_DECODE_BATCH_SIZE):
+        for _batch_index in range(_THUMB_DECODE_BATCH_SIZE):
             if not self._thumb_queue:
                 break
             photo_id, photo, format_id, token = self._thumb_queue.popleft()
@@ -1176,7 +1182,7 @@ class PhotoBrowserWidget(QFrame):
         self._album_inner_layout.addStretch()
 
     def _add_album_button(self, name: str):
-        btn = QPushButton(name, self._album_inner)
+        btn = QPushButton(_album_display_label(name), self._album_inner)
         btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
         btn.setStyleSheet(sidebar_nav_css())
@@ -1234,7 +1240,7 @@ class PhotoBrowserWidget(QFrame):
 
         export_action = self._add_menu_action(
             menu,
-            "Export Photo...",
+            _("Export Photo..."),
             glyph_name="download",
             enabled=not actions_locked,
         )
@@ -1242,7 +1248,7 @@ class PhotoBrowserWidget(QFrame):
         menu.addSeparator()
         add_action = self._add_menu_action(
             menu,
-            "Add to Album",
+            _("Add to Album"),
             glyph_name="plus",
             enabled=not actions_locked and bool(self._available_album_targets(photo)),
         )
@@ -1252,7 +1258,7 @@ class PhotoBrowserWidget(QFrame):
         if current_album:
             remove_action = self._add_menu_action(
                 menu,
-                "Remove from Current Album",
+                _("Remove from Current Album"),
                 glyph_name="minus",
                 enabled=(
                     not actions_locked
@@ -1263,7 +1269,7 @@ class PhotoBrowserWidget(QFrame):
         menu.addSeparator()
         delete_action = self._add_menu_action(
             menu,
-            "Delete Photo",
+            _("Delete Photo"),
             glyph_name="trash",
             color=Colors.DANGER,
             enabled=not actions_locked,
@@ -1292,7 +1298,7 @@ class PhotoBrowserWidget(QFrame):
 
         export_action = self._add_menu_action(
             menu,
-            "Export Album..." if target_album else "Export All Photos...",
+            _("Export Album...") if target_album else _("Export All Photos..."),
             glyph_name="download",
             enabled=not actions_locked and exportable_count > 0,
         )
@@ -1301,7 +1307,7 @@ class PhotoBrowserWidget(QFrame):
 
         new_action = self._add_menu_action(
             menu,
-            "New Album",
+            _("New Album"),
             glyph_name="plus",
             enabled=not actions_locked,
         )
@@ -1312,14 +1318,14 @@ class PhotoBrowserWidget(QFrame):
             menu.addSeparator()
             rename_action = self._add_menu_action(
                 menu,
-                "Rename Album",
+                _("Rename Album"),
                 glyph_name="edit",
                 enabled=not actions_locked,
             )
 
             delete_action = self._add_menu_action(
                 menu,
-                "Delete Album",
+                _("Delete Album"),
                 glyph_name="trash",
                 color=Colors.DANGER,
                 enabled=not actions_locked,
@@ -1448,7 +1454,11 @@ class PhotoBrowserWidget(QFrame):
 
         ipod_path = self._current_device_path()
         if not ipod_path:
-            QMessageBox.warning(self, "No iPod Connected", "Select an iPod before editing device photos.")
+            QMessageBox.warning(
+                self,
+                _("No iPod Connected"),
+                _("Select an iPod before editing device photos."),
+            )
             return
 
         self._show_save_indicator("saving")
@@ -1566,12 +1576,16 @@ class PhotoBrowserWidget(QFrame):
             QMessageBox.information(self, "Sync Running", "Wait for the current sync to finish before exporting photos.")
             return
         if not exports:
-            QMessageBox.information(self, "No Photos", "There are no photos to export.")
+            QMessageBox.information(self, _("No Photos"), _("There are no photos to export."))
             return
 
         ipod_path = self._current_device_path()
         if not ipod_path:
-            QMessageBox.warning(self, "No iPod Connected", "Select an iPod before exporting device photos.")
+            QMessageBox.warning(
+                self,
+                _("No iPod Connected"),
+                _("Select an iPod before exporting device photos."),
+            )
             return
 
         worker = _PhotoExportWorker(
@@ -1611,14 +1625,18 @@ class PhotoBrowserWidget(QFrame):
         if photo is None:
             return
         if not self._current_device_path():
-            QMessageBox.warning(self, "No iPod Connected", "Select an iPod before exporting device photos.")
+            QMessageBox.warning(
+                self,
+                _("No iPod Connected"),
+                _("Select an iPod before exporting device photos."),
+            )
             return
 
         title = self._device_photo_title(photo)
         default_path = Path.home() / _default_export_filename(title, int(photo.image_id))
         path, selected_filter = QFileDialog.getSaveFileName(
             self,
-            "Export Photo",
+            _("Export Photo"),
             str(default_path),
             _EXPORT_FILTERS,
         )
@@ -1634,13 +1652,17 @@ class PhotoBrowserWidget(QFrame):
     def _export_album_target(self, album_name: str) -> None:
         photos = self._photos_for_album_target(album_name)
         if not photos:
-            QMessageBox.information(self, "No Photos", "There are no photos to export.")
+            QMessageBox.information(self, _("No Photos"), _("There are no photos to export."))
             return
         if not self._current_device_path():
-            QMessageBox.warning(self, "No iPod Connected", "Select an iPod before exporting device photos.")
+            QMessageBox.warning(
+                self,
+                _("No iPod Connected"),
+                _("Select an iPod before exporting device photos."),
+            )
             return
 
-        title = "Export Album" if album_name else "Export All Photos"
+        title = _("Export Album") if album_name else _("Export All Photos")
         folder = QFileDialog.getExistingDirectory(
             self,
             title,
@@ -1656,7 +1678,7 @@ class PhotoBrowserWidget(QFrame):
         )
 
     def _create_album(self):
-        name, ok = QInputDialog.getText(self, "New Album", "Album name:")
+        name, ok = QInputDialog.getText(self, _("New Album"), _("Album name:"))
         if ok and name.strip():
             self._start_photo_write("create_album", album_name=name.strip())
 
@@ -1666,12 +1688,16 @@ class PhotoBrowserWidget(QFrame):
             return
         album_names = self._available_album_targets(photo)
         if not album_names:
-            QMessageBox.information(self, "No Available Albums", "Create another album first, or choose a photo that is not already in every album.")
+            QMessageBox.information(
+                self,
+                _("No Available Albums"),
+                _("Create another album first, or choose a photo that is not already in every album."),
+            )
             return
         target_album, ok = QInputDialog.getItem(
             self,
-            "Add Photo to Album",
-            "Album:",
+            _("Add Photo to Album"),
+            _("Album:"),
             album_names,
             0,
             False,
@@ -1686,7 +1712,7 @@ class PhotoBrowserWidget(QFrame):
     def _rename_album_target(self, current: str) -> None:
         if not current:
             return
-        new_name, ok = QInputDialog.getText(self, "Rename Album", "New album name:", text=current)
+        new_name, ok = QInputDialog.getText(self, _("Rename Album"), _("New album name:"), text=current)
         if ok and new_name.strip() and new_name.strip() != current:
             self._start_photo_write("rename_album", old_name=current, new_name=new_name.strip())
 
@@ -1697,7 +1723,11 @@ class PhotoBrowserWidget(QFrame):
     def _delete_album_target(self, current: str) -> None:
         if not current:
             return
-        if QMessageBox.question(self, "Delete Album", f"Delete '{current}' from the iPod now?") == QMessageBox.StandardButton.Yes:
+        if QMessageBox.question(
+            self,
+            _("Delete Album"),
+            _("Delete '{name}' from the iPod now?").format(name=current),
+        ) == QMessageBox.StandardButton.Yes:
             self._start_photo_write("delete_album", album_name=current)
 
     def _remove_from_album(self):
@@ -1713,7 +1743,9 @@ class PhotoBrowserWidget(QFrame):
             return
         if QMessageBox.question(
             self,
-            "Delete Photo",
-            f"Delete '{self._device_photo_title(photo)}' from the iPod now?",
+            _("Delete Photo"),
+            _("Delete '{name}' from the iPod now?").format(
+                name=self._device_photo_title(photo)
+            ),
         ) == QMessageBox.StandardButton.Yes:
             self._start_photo_write("delete_photo", image_id=photo.image_id)

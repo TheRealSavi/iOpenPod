@@ -28,6 +28,7 @@ def test_settings_snapshot_copies_values_and_freezes_lists() -> None:
         track_list_columns_by_content={
             "music": {"Title": 240, "Album": 180, "Artist": 160}
         },
+        language="zh",
         device_write_workers=2,
         always_encode_lossy=True,
         convert_wav_to_alac=False,
@@ -66,6 +67,7 @@ def test_settings_snapshot_copies_values_and_freezes_lists() -> None:
     assert snapshot.track_list_columns_by_content == {
         "music": {"Title": 240, "Album": 180, "Artist": 160}
     }
+    assert snapshot.language == "zh"
     assert snapshot.device_write_workers == 2
     assert snapshot.always_encode_lossy is True
     assert snapshot.convert_wav_to_alac is False

@@ -80,6 +80,7 @@ only-include = [
     "assets/glyphs",
     "assets/icons",
     "assets/ipod_images",
+    "locale",
 ]
 
 [tool.flake8]

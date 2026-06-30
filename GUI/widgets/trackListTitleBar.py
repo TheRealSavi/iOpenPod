@@ -2,6 +2,8 @@ from PyQt6.QtCore import QPoint, QSize, Qt
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QWidget
 
+from infrastructure.i18n import tr as _
+
 from ..glyphs import glyph_icon
 from ..styles import (
     FONT_FAMILY,
@@ -136,16 +138,16 @@ class TrackListTitleBar(QFrame):
         self.setMaximumHeight(40)
         self.setFixedHeight(40)
 
-        self.title = QLabel("Tracks")
+        self.title = QLabel(_("Tracks"))
         self.title.setFont(QFont(FONT_FAMILY, Metrics.FONT_TITLE, QFont.Weight.Bold))
 
         self.button1 = QPushButton()
         self._icon_size = QSize(18, 18)
-        self.button1.setToolTip("Minimize")
+        self.button1.setToolTip(_("Minimize"))
         self.button1.clicked.connect(self._toggleMinimize)
 
         self.button2 = QPushButton()
-        self.button2.setToolTip("Maximize")
+        self.button2.setToolTip(_("Maximize"))
         self.button2.clicked.connect(self._toggleMaximize)
 
         self.titleBarLayout.addWidget(self.title)
@@ -155,9 +157,9 @@ class TrackListTitleBar(QFrame):
 
         self.resetColor()
 
-    def setTitle(self, title: str):
+    def setTitle(self, title: str, *, translate: bool = False):
         """Set the title text."""
-        self.title.setText(title)
+        self.title.setText(_(title) if translate else title)
 
     def setColor(self, r: int, g: int, b: int,
                  text: tuple | None = None, text_secondary: tuple | None = None):

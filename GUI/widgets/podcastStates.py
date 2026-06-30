@@ -14,6 +14,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from infrastructure.i18n import tr
+
 from ..glyphs import glyph_pixmap
 from ..styles import (
     FONT_FAMILY,
@@ -118,16 +120,16 @@ class PodcastStatePanel(QFrame):
 
     def show_loading(self, title: str, message: str) -> None:
         self._set_icon("broadcast", Colors.ACCENT)
-        self._title.setText(title)
-        self._set_message(message)
+        self._title.setText(tr(title))
+        self._set_message(tr(message))
         self._code.hide()
         self._progress.show()
         self._action.hide()
 
     def show_empty(self, title: str, message: str, *, glyph: str = "broadcast") -> None:
         self._set_icon(glyph, Colors.TEXT_TERTIARY)
-        self._title.setText(title)
-        self._set_message(message)
+        self._title.setText(tr(title))
+        self._set_message(tr(message))
         self._code.hide()
         self._progress.hide()
         self._action.hide()
@@ -141,12 +143,12 @@ class PodcastStatePanel(QFrame):
         action_text: str = "Try Again",
     ) -> None:
         self._set_icon("wifi-no-connection", Colors.WARNING)
-        self._title.setText(title)
-        self._set_message(message)
+        self._title.setText(tr(title))
+        self._set_message(tr(message))
         self._code.setText(code)
         self._code.setVisible(bool(code))
         self._progress.hide()
-        self._action.setText(action_text)
+        self._action.setText(tr(action_text))
         self._action.setVisible(bool(action_text))
 
     def _set_message(self, message: str) -> None:

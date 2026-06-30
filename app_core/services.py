@@ -73,6 +73,7 @@ class SettingsSnapshot:
     rounded_artwork: bool
     sharpen_artwork: bool
     track_list_columns_by_content: dict[str, dict[str, int]]
+    language: str
     theme: str
     high_contrast: str
     font_scale: str

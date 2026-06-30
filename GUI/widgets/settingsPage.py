@@ -34,6 +34,15 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from infrastructure.i18n import (
+    language_display_name,
+    language_from_display_name,
+    language_options,
+    set_language,
+)
+from infrastructure.i18n import (
+    tr as _,
+)
 from infrastructure.settings_schema import (
     BACKUP_BEFORE_SYNC_ASK,
     BACKUP_BEFORE_SYNC_AUTO,
@@ -94,13 +103,13 @@ class SettingRow(QFrame):
         text_layout = QVBoxLayout()
         text_layout.setSpacing(3)
 
-        self.title_label = QLabel(title)
+        self.title_label = QLabel(_(title))
         self.title_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG, QFont.Weight.DemiBold))
         self.title_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent; border: none;")
         text_layout.addWidget(self.title_label)
 
         if description:
-            self.desc_label = QLabel(description)
+            self.desc_label = QLabel(_(description))
             self.desc_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
             self.desc_label.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent; border: none;")
             self.desc_label.setWordWrap(True)
@@ -117,7 +126,7 @@ class SettingRow(QFrame):
     def set_override_warning(self, visible: bool) -> None:
         """Show or hide a yellow 'overridden by device' warning under the title."""
         if not hasattr(self, "_override_label"):
-            self._override_label = QLabel("Overridden by device settings")
+            self._override_label = QLabel(_("Overridden by device settings"))
             self._override_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
             self._override_label.setStyleSheet(
                 f"color: {Colors.WARNING}; background: transparent; border: none;"
@@ -186,18 +195,53 @@ class ComboRow(SettingRow):
         self.combo.setFixedWidth(130)
         self.combo.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
         self.combo.setStyleSheet(combo_css())
+        self._options: list[str] = []
         if options:
-            self.combo.addItems(options)
-        if current:
-            idx = self.combo.findText(current)
-            if idx >= 0:
-                self.combo.setCurrentIndex(idx)
-        self.combo.currentTextChanged.connect(self.changed.emit)
+            self.set_options(options, current=current)
+        self.combo.currentIndexChanged.connect(self._emit_current_value)
         self.add_control(self.combo)
+
+    def set_options(self, options: list[str], current: str = "") -> None:
+        """Replace dropdown choices while keeping raw English values stable."""
+
+        self._options = list(options)
+        self.combo.clear()
+        for option in self._options:
+            self.combo.addItem(_(option), option)
+        if current:
+            self.set_value(current)
+
+    def _value_at(self, index: int) -> str:
+        if index < 0:
+            return ""
+        value = self.combo.itemData(index, Qt.ItemDataRole.UserRole)
+        if isinstance(value, str):
+            return value
+        return self.combo.itemText(index)
+
+    def _emit_current_value(self, index: int) -> None:
+        self.changed.emit(self._value_at(index))
+
+    def find_value(self, value: str) -> int:
+        for index in range(self.combo.count()):
+            if self._value_at(index) == value:
+                return index
+        return -1
+
+    def set_value(self, value: str) -> None:
+        idx = self.find_value(value)
+        if idx < 0:
+            idx = self.combo.findText(value)
+        if idx >= 0:
+            self.combo.setCurrentIndex(idx)
 
     @property
     def value(self) -> str:
-        return self.combo.currentText()
+        return self._value_at(self.combo.currentIndex())
+
+    @value.setter
+    def value(self, v: str):
+        self.set_value(v)
 
 
 class SpinRow(SettingRow):
@@ -242,7 +286,7 @@ class FolderRow(SettingRow):
         super().__init__(title, description)
         self._resolve_default_fn = resolve_default_fn
 
-        self.open_btn = QPushButton("Open \u2197")
+        self.open_btn = QPushButton(_("Open \u2197"))
         self.open_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.open_btn.setStyleSheet(link_btn_css())
         self.open_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -252,14 +296,14 @@ class FolderRow(SettingRow):
         right_layout = QHBoxLayout()
         right_layout.setSpacing(8)
 
-        self.path_label = QLabel(self._truncate(path) if path else "Not set")
+        self.path_label = QLabel(self._truncate(path) if path else _("Not set"))
         self.path_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.path_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
         self.path_label.setMinimumWidth(120)
         self.path_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         right_layout.addWidget(self.path_label)
 
-        self.browse_btn = QPushButton("Browse…")
+        self.browse_btn = QPushButton(_("Browse…"))
         self.browse_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.browse_btn.setFixedWidth(80)
         self.browse_btn.setStyleSheet(btn_css(
@@ -303,7 +347,7 @@ class FolderRow(SettingRow):
 
     def _browse(self):
         folder = QFileDialog.getExistingDirectory(
-            self, "Select Folder", self._full_path,
+            self, _("Select Folder"), self._full_path,
             QFileDialog.Option.ShowDirsOnly,
         )
         if folder:
@@ -319,7 +363,7 @@ class FolderRow(SettingRow):
     @value.setter
     def value(self, v: str):
         self._full_path = v
-        self.path_label.setText(self._truncate(v) if v else "Not set")
+        self.path_label.setText(self._truncate(v) if v else _("Not set"))
         self._update_open_btn()
 
 
@@ -335,7 +379,7 @@ class ResettableFolderRow(SettingRow):
         self._default_label = default_label
         self._resolve_default_fn = resolve_default_fn
 
-        self.open_btn = QPushButton("Open \u2197")
+        self.open_btn = QPushButton(_("Open \u2197"))
         self.open_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.open_btn.setStyleSheet(link_btn_css())
         self.open_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -345,7 +389,7 @@ class ResettableFolderRow(SettingRow):
         right_layout = QHBoxLayout()
         right_layout.setSpacing(8)
 
-        self.path_label = QLabel(self._truncate(path) if path else default_label)
+        self.path_label = QLabel(self._truncate(path) if path else _(default_label))
         self.path_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.path_label.setStyleSheet(
             f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;"
@@ -356,7 +400,7 @@ class ResettableFolderRow(SettingRow):
         )
         right_layout.addWidget(self.path_label)
 
-        self.browse_btn = QPushButton("Browse\u2026")
+        self.browse_btn = QPushButton(_("Browse…"))
         self.browse_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.browse_btn.setFixedWidth(80)
         self.browse_btn.setStyleSheet(btn_css(
@@ -372,7 +416,7 @@ class ResettableFolderRow(SettingRow):
         self.clear_btn = QPushButton("\u2715")
         self.clear_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.clear_btn.setFixedWidth(28)
-        self.clear_btn.setToolTip("Reset to default")
+        self.clear_btn.setToolTip(_("Reset to default"))
         self.clear_btn.setStyleSheet(btn_css(
             bg="transparent",
             bg_hover=Colors.SURFACE_ACTIVE,
@@ -417,7 +461,7 @@ class ResettableFolderRow(SettingRow):
 
     def _browse(self):
         folder = QFileDialog.getExistingDirectory(
-            self, "Select Folder", self._full_path,
+            self, _("Select Folder"), self._full_path,
             QFileDialog.Option.ShowDirsOnly,
         )
         if folder:
@@ -428,7 +472,7 @@ class ResettableFolderRow(SettingRow):
 
     def _clear(self):
         self._full_path = ""
-        self.path_label.setText(self._default_label)
+        self.path_label.setText(_(self._default_label))
         self._update_clear_visibility()
         self.changed.emit("")
 
@@ -439,7 +483,7 @@ class ResettableFolderRow(SettingRow):
     @value.setter
     def value(self, v: str):
         self._full_path = v
-        self.path_label.setText(self._truncate(v) if v else self._default_label)
+        self.path_label.setText(self._truncate(v) if v else _(self._default_label))
         self._update_clear_visibility()
 
 
@@ -451,7 +495,7 @@ class ActionRow(SettingRow):
     def __init__(self, title: str, description: str = "", button_text: str = "Run"):
         super().__init__(title, description)
 
-        self.action_btn = QPushButton(button_text)
+        self.action_btn = QPushButton(_(button_text))
         self.action_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.action_btn.setFixedWidth(100)
         self.action_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -483,14 +527,14 @@ class FileRow(SettingRow):
         right_layout = QHBoxLayout()
         right_layout.setSpacing(8)
 
-        self.path_label = QLabel(self._truncate(path) if path else "Auto-detect")
+        self.path_label = QLabel(self._truncate(path) if path else _("Auto-detect"))
         self.path_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.path_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
         self.path_label.setMinimumWidth(120)
         self.path_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         right_layout.addWidget(self.path_label)
 
-        self.browse_btn = QPushButton("Browse…")
+        self.browse_btn = QPushButton(_("Browse…"))
         self.browse_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.browse_btn.setFixedWidth(80)
         self.browse_btn.setStyleSheet(btn_css(
@@ -506,7 +550,7 @@ class FileRow(SettingRow):
         self.clear_btn = QPushButton("✕")
         self.clear_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.clear_btn.setFixedWidth(28)
-        self.clear_btn.setToolTip("Reset to auto-detect")
+        self.clear_btn.setToolTip(_("Reset to auto-detect"))
         self.clear_btn.setStyleSheet(btn_css(
             bg="transparent",
             bg_hover=Colors.SURFACE_ACTIVE,
@@ -531,8 +575,8 @@ class FileRow(SettingRow):
 
     def _browse(self):
         start_dir = str(Path(self._full_path).parent) if self._full_path else ""
-        filepath, _ = QFileDialog.getOpenFileName(
-            self, "Select File", start_dir, self._filter_str,
+        filepath, _selected_filter = QFileDialog.getOpenFileName(
+            self, _("Select File"), start_dir, self._filter_str,
         )
         if filepath:
             self._full_path = filepath
@@ -541,7 +585,7 @@ class FileRow(SettingRow):
 
     def _clear(self):
         self._full_path = ""
-        self.path_label.setText("Auto-detect")
+        self.path_label.setText(_("Auto-detect"))
         self.changed.emit("")
 
     @property
@@ -551,7 +595,7 @@ class FileRow(SettingRow):
     @value.setter
     def value(self, v: str):
         self._full_path = v
-        self.path_label.setText(self._truncate(v) if v else "Auto-detect")
+        self.path_label.setText(self._truncate(v) if v else _("Auto-detect"))
 
 
 class ToolRow(SettingRow):
@@ -584,12 +628,12 @@ class ToolRow(SettingRow):
         right_layout = QHBoxLayout()
         right_layout.setSpacing(8)
 
-        self.status_label = QLabel("Checking…")
+        self.status_label = QLabel(_("Checking…"))
         self.status_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.status_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
         right_layout.addWidget(self.status_label)
 
-        self.download_btn = QPushButton("Download")
+        self.download_btn = QPushButton(_("Download"))
         self.download_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.download_btn.setFixedWidth(90)
         self.download_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -617,15 +661,15 @@ class ToolRow(SettingRow):
             self.status_label.setStyleSheet(f"color: {Colors.SUCCESS}; background: transparent; border: none;")
             self.download_btn.hide()
         else:
-            self.status_label.setText("Not found")
+            self.status_label.setText(_("Not found"))
             self.status_label.setStyleSheet(f"color: {Colors.WARNING}; background: transparent; border: none;")
             self.download_btn.show()
 
     def set_downloading(self):
         """Show downloading state."""
         self.download_btn.setEnabled(False)
-        self.download_btn.setText("Downloading…")
-        self.status_label.setText("Downloading…")
+        self.download_btn.setText(_("Downloading…"))
+        self.status_label.setText(_("Downloading…"))
         self.status_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
 
     def set_lossy_encoder_statuses(self, statuses: dict[str, bool]):
@@ -671,7 +715,7 @@ class _TokenRow(SettingRow):
 
         # Add a "Get token" link below the description if URL provided
         if link_url:
-            link_btn = QPushButton("Get token ↗")
+            link_btn = QPushButton(_("Get token ↗"))
             link_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
             link_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             link_btn.setStyleSheet(link_btn_css())
@@ -690,14 +734,14 @@ class _TokenRow(SettingRow):
         right_layout.addWidget(self.status_label)
 
         self.token_input = QLineEdit()
-        self.token_input.setPlaceholderText("Paste token here…")
+        self.token_input.setPlaceholderText(_("Paste token here…"))
         self.token_input.setFixedWidth(220)
         self.token_input.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.token_input.setEchoMode(QLineEdit.EchoMode.Password)
         self.token_input.setStyleSheet(input_css())
         right_layout.addWidget(self.token_input)
 
-        self.save_btn = QPushButton("Connect")
+        self.save_btn = QPushButton(_("Connect"))
         self.save_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.save_btn.setFixedWidth(80)
         self.save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -715,7 +759,7 @@ class _TokenRow(SettingRow):
         self.clear_btn = QPushButton("✕")
         self.clear_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.clear_btn.setFixedWidth(28)
-        self.clear_btn.setToolTip("Disconnect")
+        self.clear_btn.setToolTip(_("Disconnect"))
         self.clear_btn.setStyleSheet(btn_css(
             bg="transparent",
             bg_hover=Colors.SURFACE_ACTIVE,
@@ -734,7 +778,7 @@ class _TokenRow(SettingRow):
 
     def set_connected(self, username: str):
         """Show connected state with username."""
-        self.status_label.setText(f"✓ Connected as {username}")
+        self.status_label.setText(f"✓ {_('Connected as')} {username}")
         self.status_label.setStyleSheet(
             f"color: {Colors.SUCCESS}; background: transparent; border: none;"
         )
@@ -749,7 +793,7 @@ class _TokenRow(SettingRow):
         self.token_input.show()
         self.save_btn.show()
         self.clear_btn.hide()
-        self.save_btn.setText("Connect")
+        self.save_btn.setText(_("Connect"))
 
     def set_error(self, message: str):
         """Show an error after validation fails."""
@@ -815,7 +859,7 @@ class _LastFmAuthRow(SettingRow):
         self._session_error_sig.connect(self._on_session_error)
 
         if link_url:
-            link_btn = QPushButton("Get API keys ↗")
+            link_btn = QPushButton(_("Get API keys ↗"))
             link_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
             link_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             link_btn.setStyleSheet(link_btn_css())
@@ -838,14 +882,14 @@ class _LastFmAuthRow(SettingRow):
         inputs_layout.setSpacing(8)
 
         self.api_key_input = QLineEdit()
-        self.api_key_input.setPlaceholderText("API Key")
+        self.api_key_input.setPlaceholderText(_("API Key"))
         self.api_key_input.setFixedWidth(160)
         self.api_key_input.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.api_key_input.setStyleSheet(input_css())
         inputs_layout.addWidget(self.api_key_input)
 
         self.api_secret_input = QLineEdit()
-        self.api_secret_input.setPlaceholderText("API Secret")
+        self.api_secret_input.setPlaceholderText(_("API Secret"))
         self.api_secret_input.setFixedWidth(160)
         self.api_secret_input.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.api_secret_input.setEchoMode(QLineEdit.EchoMode.Password)
@@ -854,7 +898,7 @@ class _LastFmAuthRow(SettingRow):
 
         right_layout.addWidget(self.inputs_widget)
 
-        self.connect_btn = QPushButton("Connect")
+        self.connect_btn = QPushButton(_("Connect"))
         self.connect_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.connect_btn.setFixedWidth(80)
         self.connect_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -865,7 +909,7 @@ class _LastFmAuthRow(SettingRow):
         self.connect_btn.clicked.connect(self._start_auth_flow)
         right_layout.addWidget(self.connect_btn)
 
-        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn = QPushButton(_("Cancel"))
         self.cancel_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.cancel_btn.setFixedWidth(80)
         self.cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -880,7 +924,7 @@ class _LastFmAuthRow(SettingRow):
         self.clear_btn = QPushButton("✕")
         self.clear_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.clear_btn.setFixedWidth(28)
-        self.clear_btn.setToolTip("Disconnect")
+        self.clear_btn.setToolTip(_("Disconnect"))
         self.clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.clear_btn.setStyleSheet(btn_css(
             bg="transparent", bg_hover=Colors.SURFACE_ACTIVE, bg_press=Colors.SURFACE_ALT,
@@ -895,7 +939,7 @@ class _LastFmAuthRow(SettingRow):
         self.add_control(container)
 
     def set_connected(self, username: str):
-        self.status_label.setText(f"✓ Connected as {username}")
+        self.status_label.setText(f"✓ {_('Connected as')} {username}")
         self.status_label.setStyleSheet(f"color: {Colors.SUCCESS}; background: transparent; border: none;")
         self.inputs_widget.hide()
         self.connect_btn.hide()
@@ -915,7 +959,7 @@ class _LastFmAuthRow(SettingRow):
         self.inputs_widget.show()
         self.connect_btn.show()
         self.connect_btn.setEnabled(True)
-        self.connect_btn.setText("Connect")
+        self.connect_btn.setText(_("Connect"))
         self.cancel_btn.hide()
         self.clear_btn.hide()
         self._polling_timer.stop()
@@ -929,10 +973,10 @@ class _LastFmAuthRow(SettingRow):
         api_secret = self.api_secret_input.text().strip()
 
         if not api_key or not api_secret:
-            self.set_error("API Key and Secret required")
+            self.set_error(_("API Key and Secret required"))
             return
 
-        self.status_label.setText("Fetching token...")
+        self.status_label.setText(_("Fetching token..."))
         self.status_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
         self.api_key_input.setEnabled(False)
         self.api_secret_input.setEnabled(False)
@@ -969,7 +1013,7 @@ class _LastFmAuthRow(SettingRow):
         auth_url = f"https://www.last.fm/api/auth/?api_key={api_key}&token={token}"
         QDesktopServices.openUrl(QUrl(auth_url))
 
-        self.status_label.setText("Waiting for browser approval...")
+        self.status_label.setText(_("Waiting for browser approval..."))
         self.status_label.setStyleSheet(f"color: {Colors.ACCENT}; background: transparent; border: none;")
         self._is_polling = False
         self._polling_timer.start()
@@ -1067,7 +1111,7 @@ class _LastFmAuthRow(SettingRow):
     def _cancel_auth(self):
         self._polling_timer.stop()
         self._is_polling = False
-        self.status_label.setText("Canceled")
+        self.status_label.setText(_("Canceled"))
         self.status_label.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent; border: none;")
         self.cancel_btn.hide()
         self.connect_btn.show()
@@ -1087,7 +1131,7 @@ class _CacheSizeRow(SettingRow):
     def __init__(self, settings_service: SettingsService):
         super().__init__("Cache Status", "Calculating…")
         self._settings_service = settings_service
-        self._clear_btn = QPushButton("Clear Cache")
+        self._clear_btn = QPushButton(_("Clear Cache"))
         self._clear_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self._clear_btn.setFixedWidth(110)
         self._clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -1109,13 +1153,18 @@ class _CacheSizeRow(SettingRow):
             gb = stats["total_size_gb"]
             count = stats["total_files"]
             max_gb = stats.get("max_size_gb", 0.0)
+            file_noun = "file" if count == 1 else "files"
             if max_gb > 0:
-                self.desc_label.setText(f"{gb:.2f} GB used of {max_gb:.0f} GB · {count:,} files")
+                template = "{gb:.2f} GB used of {max_gb:.0f} GB · {count:,} " + file_noun
+                self.desc_label.setText(
+                    _(template).format(gb=gb, max_gb=max_gb, count=count)
+                )
             else:
-                self.desc_label.setText(f"{gb:.2f} GB · {count:,} files")
+                template = "{gb:.2f} GB · {count:,} " + file_noun
+                self.desc_label.setText(_(template).format(gb=gb, count=count))
             self._clear_btn.setEnabled(count > 0)
         except Exception as exc:
-            self.desc_label.setText(f"Unavailable ({exc})")
+            self.desc_label.setText(_("Unavailable ({error})").format(error=exc))
 
     def _on_clear(self) -> None:
         from PyQt6.QtWidgets import QMessageBox
@@ -1123,9 +1172,9 @@ class _CacheSizeRow(SettingRow):
         from SyncEngine.transcode_cache import TranscodeCache
         reply = QMessageBox.question(
             self,
-            "Clear Transcode Cache",
-            "Delete all cached transcoded files?\n\n"
-            "They will be re-created on the next sync.",
+            _("Clear Transcode Cache"),
+            _("Delete all cached transcoded files?\n\n"
+              "They will be re-created on the next sync."),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
         )
         if reply != QMessageBox.StandardButton.Yes:
@@ -1137,10 +1186,12 @@ class _CacheSizeRow(SettingRow):
                 cache_dir,
                 max_cache_size_gb=s.max_cache_size_gb,
             ).clear()
-            self.desc_label.setText(f"Cleared — {n:,} files removed")
+            noun = "file" if n == 1 else "files"
+            template = "Cleared — {count:,} " + noun + " removed"
+            self.desc_label.setText(_(template).format(count=n))
             self._clear_btn.setEnabled(False)
         except Exception as exc:
-            self.desc_label.setText(f"Error clearing cache: {exc}")
+            self.desc_label.setText(_("Error clearing cache: {error}").format(error=exc))
 
 
 class _SettingsCard(QFrame):
@@ -1213,6 +1264,7 @@ class SettingsPage(QWidget):
 
     closed = pyqtSignal()  # Emitted when user closes settings
     theme_changed = pyqtSignal()  # Emitted when theme or contrast changes
+    language_changed = pyqtSignal()  # Emitted when the interface language changes
     artwork_appearance_changed = pyqtSignal()  # Emitted when artwork UI styling changes
 
     def __init__(
@@ -1274,13 +1326,13 @@ class SettingsPage(QWidget):
         back_btn = QPushButton("←")
         back_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
         back_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        back_btn.setToolTip("Back")
+        back_btn.setToolTip(_("Back"))
         back_btn.setStyleSheet(back_btn_css())
         back_btn.clicked.connect(self._on_close)
         layout.addWidget(back_btn)
 
         # Title
-        title = QLabel("Settings")
+        title = QLabel(_("Settings"))
         title.setFont(QFont(FONT_FAMILY, Metrics.FONT_HERO, QFont.Weight.Bold))
         title.setStyleSheet(
             f"color: {Colors.TEXT_PRIMARY}; background: transparent; border: none;"
@@ -1297,7 +1349,7 @@ class SettingsPage(QWidget):
             "External Tools", "Scrobbling", "Storage", "Backups",
         ]
         for i, name in enumerate(nav_items):
-            btn = QPushButton(name)
+            btn = QPushButton(_(name))
             btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.clicked.connect(lambda _, idx=i: self._select_page(idx))
@@ -1323,8 +1375,8 @@ class SettingsPage(QWidget):
         lay.setContentsMargins(3, 3, 3, 3)
         lay.setSpacing(3)
 
-        self._scope_global_btn = QPushButton("Global")
-        self._scope_device_btn = QPushButton("Device")
+        self._scope_global_btn = QPushButton(_("Global"))
+        self._scope_device_btn = QPushButton(_("Device"))
         for btn in (self._scope_global_btn, self._scope_device_btn):
             btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -1388,7 +1440,7 @@ class SettingsPage(QWidget):
         layout.setSpacing(0)
 
         # Page title
-        title_label = QLabel(title)
+        title_label = QLabel(_(title))
         title_label.setFont(
             QFont(FONT_FAMILY, Metrics.FONT_PAGE_TITLE, QFont.Weight.Bold)
         )
@@ -1400,7 +1452,7 @@ class SettingsPage(QWidget):
 
         for item in items:
             if isinstance(item, str):
-                lbl = QLabel(item.upper())
+                lbl = QLabel(_(item).upper())
                 lbl.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS, QFont.Weight.Bold))
                 lbl.setStyleSheet(
                     f"color: {Colors.TEXT_TERTIARY}; background: transparent;"
@@ -1432,6 +1484,13 @@ class SettingsPage(QWidget):
             button_text="Reset",
         )
         self.reset_device_settings.clicked.connect(self._reset_device_settings_to_global)
+
+        self.language_combo = ComboRow(
+            "Language",
+            "Choose the interface language. Changing it rebuilds the window.",
+            options=language_options(),
+            current=language_display_name("en"),
+        )
 
         self.theme_combo = ComboRow(
             "Theme",
@@ -1531,6 +1590,7 @@ class SettingsPage(QWidget):
             self.reset_device_settings,
         )
         self._appearance_card = _SettingsCard(
+            self.language_combo,
             self.theme_combo,
             self.high_contrast,
             self.accent_color,
@@ -1627,7 +1687,7 @@ class SettingsPage(QWidget):
     def _build_transcoding_page(self) -> QScrollArea:
         self.lossy_encoder = ComboRow(
             "Lossy Encoder",
-            "Choose which lossy encoder to use."
+            "Choose which lossy encoder to use. "
             "Auto chooses the best available.",
             options=[
                 "Auto",
@@ -1714,13 +1774,13 @@ class SettingsPage(QWidget):
         )
         self.smart_quality_by_type = ToggleRow(
             "Smart Quality by Content Type",
-            "Enable separate quality settings for podcasts and audiobooks."
+            "Enable separate quality settings for podcasts and audiobooks. "
             "Music tracks are unaffected.",
         )
         self.normalize_sample_rate = ToggleRow(
             "Normalize to 44.1 kHz",
             "Always output audio at 44.1 kHz (CD rate). "
-            "Recommended for early iPods (1G-4G) that can have trouble with 48 kHz ALAC."
+            "Recommended for early iPods (1G-4G) that can have trouble with 48 kHz ALAC. "
             "When off, sample rate is reduced to 48 kHz as iPods can only decode 48 kHz or lower",
         )
 
@@ -1991,11 +2051,13 @@ class SettingsPage(QWidget):
                 loading_device_settings = False
         if hasattr(self, "_scope_device_btn"):
             self._scope_device_btn.setEnabled(has_device)
-            self._scope_device_btn.setText("Device..." if loading_device_settings else "Device")
+            self._scope_device_btn.setText(
+                _("Device...") if loading_device_settings else _("Device")
+            )
             self._scope_device_btn.setToolTip(
-                "Loading device settings..."
+                _("Loading device settings...")
                 if loading_device_settings
-                else ("" if has_device else "Select an iPod to edit device settings")
+                else ("" if has_device else _("Select an iPod to edit device settings"))
             )
         if not has_device and self._settings_scope == "device":
             self._settings_scope = "global"
@@ -2090,6 +2152,7 @@ class SettingsPage(QWidget):
 
         self._manage_card.setVisible(device_scope)
         self._set_section_visible("General", "Manage", device_scope)
+        self._appearance_card.set_row_visible(self.language_combo, not device_scope)
         self._appearance_card.set_row_visible(self.theme_combo, not device_scope)
         self._appearance_card.set_row_visible(self.high_contrast, not device_scope)
         self._appearance_card.set_row_visible(self.font_scale, not device_scope)
@@ -2158,9 +2221,7 @@ class SettingsPage(QWidget):
             "highest": "Highest", "lowest": "Lowest", "average": "Average",
         }
         rs_text = strategy_display.get(s.rating_conflict_strategy, "iPod Wins")
-        idx = self.rating_strategy.combo.findText(rs_text)
-        if idx >= 0:
-            self.rating_strategy.combo.setCurrentIndex(idx)
+        self.rating_strategy.value = rs_text
 
         # Scrobbling
         self.scrobble_on_sync.value = s.scrobble_on_sync
@@ -2179,6 +2240,10 @@ class SettingsPage(QWidget):
         self.rounded_artwork.value = s.rounded_artwork
         self.sharpen_artwork.value = s.sharpen_artwork
 
+        # Language
+        language_text = language_display_name(s.language)
+        self.language_combo.value = language_text
+
         # Theme
         theme_display = {
             "dark": "Dark", "light": "Light", "system": "System",
@@ -2188,16 +2253,12 @@ class SettingsPage(QWidget):
             "catppuccin-latte": "Catppuccin Latte",
         }
         theme_text = theme_display.get(s.theme, "Dark")
-        idx = self.theme_combo.combo.findText(theme_text)
-        if idx >= 0:
-            self.theme_combo.combo.setCurrentIndex(idx)
+        self.theme_combo.value = theme_text
 
         # High contrast
         hc_display = {"off": "Off", "on": "On", "system": "System"}
         hc_text = hc_display.get(s.high_contrast, "Off")
-        idx = self.high_contrast.combo.findText(hc_text)
-        if idx >= 0:
-            self.high_contrast.combo.setCurrentIndex(idx)
+        self.high_contrast.value = hc_text
 
         # Accent color
         accent_display = {
@@ -2207,23 +2268,17 @@ class SettingsPage(QWidget):
             "pink": "Pink",
         }
         ac_text = accent_display.get(s.accent_color, "Blue (Default)")
-        idx = self.accent_color.combo.findText(ac_text)
-        if idx >= 0:
-            self.accent_color.combo.setCurrentIndex(idx)
+        self.accent_color.value = ac_text
 
         # Font scale
-        idx = self.font_scale.combo.findText(s.font_scale)
-        if idx >= 0:
-            self.font_scale.combo.setCurrentIndex(idx)
+        self.font_scale.value = s.font_scale
 
         self.transcode_cache_dir.value = s.transcode_cache_dir
         # Max cache size combo
         _size_map = {0.0: "Unlimited", 1.0: "1 GB", 2.0: "2 GB", 5.0: "5 GB",
                      10.0: "10 GB", 20.0: "20 GB", 50.0: "50 GB"}
         _size_text = _size_map.get(float(s.max_cache_size_gb), "5 GB")
-        idx = self.max_cache_size.combo.findText(_size_text)
-        if idx >= 0:
-            self.max_cache_size.combo.setCurrentIndex(idx)
+        self.max_cache_size.value = _size_text
         self.cache_status.refresh()
         self.settings_dir.value = s.settings_dir
         self.log_dir.value = s.log_dir
@@ -2239,9 +2294,7 @@ class SettingsPage(QWidget):
             backup_mode,
             _BACKUP_BEFORE_SYNC_DISPLAY[BACKUP_BEFORE_SYNC_AUTO],
         )
-        idx = self.backup_before_sync.combo.findText(backup_mode_text)
-        if idx >= 0:
-            self.backup_before_sync.combo.setCurrentIndex(idx)
+        self.backup_before_sync.value = backup_mode_text
 
         # Refresh tool status indicators
         self._refresh_tool_status()
@@ -2249,9 +2302,7 @@ class SettingsPage(QWidget):
         # Max backups → combo text
         max_map = {0: "Unlimited", 5: "5", 10: "10", 20: "20"}
         mb_text = max_map.get(s.max_backups, "10")
-        idx = self.max_backups.combo.findText(mb_text)
-        if idx >= 0:
-            self.max_backups.combo.setCurrentIndex(idx)
+        self.max_backups.value = mb_text
 
         # Lossy encoder — also rebuilds bitrate_mode/vbr_level options for the encoder
         desired_enc = "Auto" if s.lossy_encoder == "auto" else s.lossy_encoder
@@ -2261,36 +2312,26 @@ class SettingsPage(QWidget):
         # Lossy quality (Auto mode)
         quality_display = {"high": "High Quality", "balanced": "Balanced", "compact": "Compact"}
         q_text = quality_display.get(s.lossy_quality, "Balanced")
-        idx = self.lossy_quality.combo.findText(q_text)
-        if idx >= 0:
-            self.lossy_quality.combo.setCurrentIndex(idx)
+        self.lossy_quality.value = q_text
 
         # Bitrate mode (manual encoder mode)
         bm_text = {"vbr": "VBR", "abr": "ABR", "cvbr": "CVBR"}.get(s.bitrate_mode, "CBR")
-        idx = self.bitrate_mode.combo.findText(bm_text)
-        if idx >= 0:
-            self.bitrate_mode.combo.setCurrentIndex(idx)
+        self.bitrate_mode.value = bm_text
 
         # Music CBR bitrate
         cbr_text = f"{s.music_lossy_cbr_bitrate} kbps"
-        idx = self.music_lossy_cbr_bitrate.combo.findText(cbr_text)
-        if idx >= 0:
-            self.music_lossy_cbr_bitrate.combo.setCurrentIndex(idx)
+        self.music_lossy_cbr_bitrate.value = cbr_text
 
         # VBR level
         vbr_text = self._vbr_level_to_text(selected_enc, s.vbr_level)
-        idx = self.vbr_level.combo.findText(vbr_text)
-        if idx >= 0:
-            self.vbr_level.combo.setCurrentIndex(idx)
+        self.vbr_level.value = vbr_text
 
         self._update_lossy_visibility()
         self._update_advanced_aac_visibility(selected_enc)
 
         # Spoken word bitrate
         spk_text = f"{s.spoken_lossy_cbr_bitrate} kbps"
-        idx = self.spoken_lossy_cbr_bitrate.combo.findText(spk_text)
-        if idx >= 0:
-            self.spoken_lossy_cbr_bitrate.combo.setCurrentIndex(idx)
+        self.spoken_lossy_cbr_bitrate.value = spk_text
 
         # Prefer lossy toggle
         self.prefer_lossy.value = s.prefer_lossy
@@ -2306,9 +2347,7 @@ class SettingsPage(QWidget):
         cutoff_display = {0: "Auto", 15000: "15 kHz", 16000: "16 kHz", 17000: "17 kHz",
                           18000: "18 kHz", 19000: "19 kHz", 20000: "20 kHz"}
         c_text = cutoff_display.get(s.aac_cutoff, "Auto")
-        idx = self.aac_cutoff.combo.findText(c_text)
-        if idx >= 0:
-            self.aac_cutoff.combo.setCurrentIndex(idx)
+        self.aac_cutoff.value = c_text
         self.fdk_afterburner.value = s.fdk_afterburner
         self.aac_tns.value = s.aac_tns
         self.aac_pns.value = s.aac_pns
@@ -2320,27 +2359,19 @@ class SettingsPage(QWidget):
         # Video CRF → combo text
         crf_map = {18: "18 (High)", 20: "20 (Good)", 23: "23 (Balanced)", 26: "26 (Low)", 28: "28 (Very Low)"}
         crf_text = crf_map.get(s.video_crf, "23 (Balanced)")
-        idx = self.video_crf.combo.findText(crf_text)
-        if idx >= 0:
-            self.video_crf.combo.setCurrentIndex(idx)
+        self.video_crf.value = crf_text
 
         # Video preset → combo text
-        idx = self.video_preset.combo.findText(s.video_preset)
-        if idx >= 0:
-            self.video_preset.combo.setCurrentIndex(idx)
+        self.video_preset.value = s.video_preset
 
         # Sync workers → combo text
         workers_map = {0: "Auto", 1: "1", 2: "2", 4: "4", 6: "6", 8: "8"}
         sw_text = workers_map.get(s.sync_workers, "Auto")
-        idx = self.sync_workers.combo.findText(sw_text)
-        if idx >= 0:
-            self.sync_workers.combo.setCurrentIndex(idx)
+        self.sync_workers.value = sw_text
 
         write_workers_map = {0: "Auto", 1: "1", 2: "2", 4: "4"}
         dww_text = write_workers_map.get(s.device_write_workers, "Auto")
-        idx = self.device_write_workers.combo.findText(dww_text)
-        if idx >= 0:
-            self.device_write_workers.combo.setCurrentIndex(idx)
+        self.device_write_workers.value = dww_text
 
         self._apply_scope_visibility()
 
@@ -2381,6 +2412,7 @@ class SettingsPage(QWidget):
             self.show_art.changed.connect(self._save)
             self.rounded_artwork.changed.connect(self._save)
             self.sharpen_artwork.changed.connect(self._save)
+            self.language_combo.changed.connect(self._save)
             self.accent_color.changed.connect(self._save)
             self.theme_combo.changed.connect(self._save)
             self.high_contrast.changed.connect(self._save)
@@ -2428,12 +2460,9 @@ class SettingsPage(QWidget):
 
         combo = self.lossy_encoder.combo
         combo.blockSignals(True)
-        combo.clear()
-        combo.addItems(options)
-        idx = combo.findText(desired) if desired in options else 0
-        combo.setCurrentIndex(idx)
+        self.lossy_encoder.set_options(options, current=desired if desired in options else options[0])
         combo.blockSignals(False)
-        return options[idx]
+        return self.lossy_encoder.value
 
     def _update_encoder_dependent_combos(self, encoder_text: str) -> None:
         """Repopulate bitrate_mode and vbr_level combos to match the selected encoder."""
@@ -2445,36 +2474,35 @@ class SettingsPage(QWidget):
             bm_options = ["CBR"]
 
         bm_combo = self.bitrate_mode.combo
-        current_bm = bm_combo.currentText()
+        current_bm = self.bitrate_mode.value
         bm_combo.blockSignals(True)
-        bm_combo.clear()
-        bm_combo.addItems(bm_options)
-        idx = bm_combo.findText(current_bm)
-        bm_combo.setCurrentIndex(max(0, idx))
+        self.bitrate_mode.set_options(bm_options, current=current_bm)
+        if self.bitrate_mode.find_value(current_bm) < 0:
+            self.bitrate_mode.combo.setCurrentIndex(0)
         bm_combo.blockSignals(False)
 
         vbr_combo = self.vbr_level.combo
-        current_vbr = vbr_combo.currentText()
+        current_vbr = self.vbr_level.value
         vbr_combo.blockSignals(True)
-        vbr_combo.clear()
         if encoder_text == "libfdk_aac":
-            vbr_combo.addItems([
+            vbr_options = [
                 "VBR 1 (Low)", "VBR 2", "VBR 3", "VBR 4", "VBR 5 (High)",
-            ])
+            ]
             default_idx = 3  # VBR 4
         elif encoder_text == "aac_at":
-            vbr_combo.addItems([
+            vbr_options = [
                 "q0 (Best)", "q1", "q2", "q3", "q4", "q5", "q6", "q7",
                 "q8", "q9", "q10", "q11", "q12", "q13", "q14 (Lowest)",
-            ])
+            ]
             default_idx = 9  # q9 mid-range
         else:
-            vbr_combo.addItems([
+            vbr_options = [
                 "q0 (Best)", "q1", "q2", "q3", "q4", "q5", "q6", "q7", "q8", "q9 (Smallest)",
-            ])
+            ]
             default_idx = 4  # q4
-        idx = vbr_combo.findText(current_vbr)
-        vbr_combo.setCurrentIndex(idx if idx >= 0 else default_idx)
+        self.vbr_level.set_options(vbr_options, current=current_vbr)
+        if self.vbr_level.find_value(current_vbr) < 0:
+            vbr_combo.setCurrentIndex(default_idx)
         vbr_combo.blockSignals(False)
 
     def _update_lossy_visibility(self) -> None:
@@ -2597,6 +2625,7 @@ class SettingsPage(QWidget):
         s.show_art_in_tracklist = self.show_art.value
 
         if include_global_only:
+            s.language = language_from_display_name(self.language_combo.value)
             s.rounded_artwork = self.rounded_artwork.value
             s.sharpen_artwork = self.sharpen_artwork.value
             # Theme
@@ -2706,6 +2735,12 @@ class SettingsPage(QWidget):
             Metrics.apply_font_scale(s.font_scale)
             self.theme_changed.emit()
 
+    def _apply_language_change_if_needed(self, before: str) -> None:
+        language = self._settings_service.get_effective_settings().language
+        if language != before:
+            set_language(language)
+            self.language_changed.emit()
+
     def _reset_device_settings_to_global(self) -> None:
         """Reset the selected iPod settings file from current global settings."""
         if self._device_settings_pending:
@@ -2748,6 +2783,7 @@ class SettingsPage(QWidget):
             effective_before.accent_color,
             effective_before.font_scale,
         )
+        language_before = effective_before.language
 
         ctx = self._current_device_context() if self._settings_scope == "device" else None
         if ctx:
@@ -2796,6 +2832,7 @@ class SettingsPage(QWidget):
                 pass
 
         self._apply_theme_change_if_needed(theme_before)
+        self._apply_language_change_if_needed(language_before)
         if artwork_before != (
             effective_after.show_art_in_tracklist,
             effective_after.rounded_artwork,
@@ -2837,22 +2874,25 @@ class SettingsPage(QWidget):
         from GUI.auto_updater import UpdateChecker, UpdateResult
 
         self.version_row.action_btn.setEnabled(False)
-        self.version_row.action_btn.setText("Checking…")
+        self.version_row.action_btn.setText(_("Checking…"))
 
         self._update_checker = UpdateChecker(self)
 
         def _on_result(result: UpdateResult):
             self.version_row.action_btn.setEnabled(True)
-            self.version_row.action_btn.setText("Check")
+            self.version_row.action_btn.setText(_("Check"))
 
             if result.error:
-                QMessageBox.warning(self, "Update Check Failed", result.error)
+                QMessageBox.warning(self, _("Update Check Failed"), result.error)
                 return
 
             if not result.update_available:
                 QMessageBox.information(
-                    self, "Up to Date",
-                    f"You are running the latest version (v{result.current_version}).",
+                    self,
+                    _("Up to Date"),
+                    _("You are running the latest version (v{version}).").format(
+                        version=result.current_version
+                    ),
                 )
                 return
 
@@ -2904,18 +2944,21 @@ class SettingsPage(QWidget):
 
         if not result.download_url:
             QMessageBox.information(
-                self, "No Binary Available",
-                "No pre-built binary was found for your platform.\n\n"
-                f"Visit {result.release_page} to download manually.",
+                self,
+                _("No Binary Available"),
+                _(
+                    "No pre-built binary was found for your platform.\n\n"
+                    "Visit {release_page} to download manually."
+                ).format(release_page=result.release_page),
             )
             QDesktopServices.openUrl(QUrl(result.release_page))
             return
 
         # Start download with progress dialog
         progress = QProgressDialog(
-            "Downloading update…", "Cancel", 0, 100, self,
+            _("Downloading update…"), _("Cancel"), 0, 100, self,
         )
-        progress.setWindowTitle("iOpenPod Update")
+        progress.setWindowTitle(_("iOpenPod Update"))
         progress.setMinimumDuration(0)
         progress.setAutoClose(False)
         progress.setAutoReset(False)
@@ -3014,7 +3057,7 @@ class SettingsPage(QWidget):
         ffprobe = find_ffprobe(settings.ffmpeg_path) if ffmpeg else None
         self.ffmpeg_tool.set_status(bool(ffmpeg and ffprobe), ffmpeg or "")
         if ffmpeg and not ffprobe:
-            self.ffmpeg_tool.status_label.setText("ffprobe missing")
+            self.ffmpeg_tool.status_label.setText(_("ffprobe missing"))
         aac_enc = available_aac_encoders(settings.ffmpeg_path) if ffmpeg else set()
         mp3_enc = available_mp3_encoders(settings.ffmpeg_path) if ffmpeg else set()
         self.ffmpeg_tool.set_lossy_encoder_statuses(
@@ -3069,14 +3112,14 @@ class SettingsPage(QWidget):
         """Called on main thread after FFmpeg download completes."""
         self._refresh_tool_status()
         self.ffmpeg_tool.download_btn.setEnabled(True)
-        self.ffmpeg_tool.download_btn.setText("Download")
+        self.ffmpeg_tool.download_btn.setText(_("Download"))
 
     @pyqtSlot()
     def _on_fpcalc_downloaded(self):
         """Called on main thread after fpcalc download completes."""
         self._refresh_tool_status()
         self.fpcalc_tool.download_btn.setEnabled(True)
-        self.fpcalc_tool.download_btn.setText("Download")
+        self.fpcalc_tool.download_btn.setText(_("Download"))
 
     # ── ListenBrainz Scrobbling handlers ───────────────────────────────────
 
@@ -3134,7 +3177,7 @@ class SettingsPage(QWidget):
 
         # Validate the token in a background thread
         self.listenbrainz_token_row.save_btn.setEnabled(False)
-        self.listenbrainz_token_row.save_btn.setText("Validating…")
+        self.listenbrainz_token_row.save_btn.setText(_("Validating…"))
 
         import threading
 
@@ -3165,10 +3208,10 @@ class SettingsPage(QWidget):
         pending = self._pending_lb_result
         token, username, scope, root, key, use_global = pending
         self.listenbrainz_token_row.save_btn.setEnabled(True)
-        self.listenbrainz_token_row.save_btn.setText("Connect")
+        self.listenbrainz_token_row.save_btn.setText(_("Connect"))
 
         if not username:
-            self.listenbrainz_token_row.set_error("Invalid token")
+            self.listenbrainz_token_row.set_error(_("Invalid token"))
             return
 
         self._save_listenbrainz_credentials(

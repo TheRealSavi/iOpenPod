@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
+from infrastructure.i18n import tr as _
 from iTunesDB_Shared.constants import (
     MEDIA_TYPE_AUDIO,
     MEDIA_TYPE_AUDIOBOOK,
@@ -42,6 +43,12 @@ from .podcastBrowser import PodcastBrowser
 from .trackListTitleBar import TrackListTitleBar
 
 log = logging.getLogger(__name__)
+
+_SELECTION_TITLE_BY_CATEGORY = {
+    "Albums": "Select an Album",
+    "Artists": "Select an Artist",
+    "Genres": "Select a Genre",
+}
 
 if TYPE_CHECKING:
     from app_core.services import (
@@ -122,6 +129,7 @@ class MusicBrowser(QFrame):
 
         # Bottom: Track Browser
         self.trackContainer = QFrame()
+        self.trackContainer.setMinimumSize(0, 0)
         self.trackContainerLayout = QVBoxLayout(self.trackContainer)
         self.trackContainerLayout.setContentsMargins(0, 0, 0, 0)
         self.trackContainerLayout.setSpacing(0)
@@ -326,7 +334,7 @@ class MusicBrowser(QFrame):
             self.browserTrack.clearTable()  # Clear track list before reloading
             self.browserTrack.clearFilter()
             self.browserTrack.loadTracks(media_type_filter=MEDIA_TYPE_AUDIO)
-            self.trackListTitleBar.setTitle("All Tracks")
+            self.trackListTitleBar.setTitle("All Tracks", translate=True)
             self.trackListTitleBar.resetColor()
             self.trackListTitleBar.setFullscreenMode(True)
         elif category == "Playlists":
@@ -360,7 +368,7 @@ class MusicBrowser(QFrame):
             self.browserTrack.clearTable()
             self.browserTrack.clearFilter()
             self.browserTrack.loadTracks(media_type_filter=MEDIA_TYPE_AUDIOBOOK)
-            self.trackListTitleBar.setTitle(category)
+            self.trackListTitleBar.setTitle(category, translate=True)
             self.trackListTitleBar.resetColor()
             self.trackListTitleBar.setFullscreenMode(True)
         elif category in ("Videos", "Movies", "TV Shows", "Music Videos"):
@@ -377,7 +385,7 @@ class MusicBrowser(QFrame):
             self.browserTrack.clearTable()
             self.browserTrack.clearFilter()
             self.browserTrack.loadTracks(media_type_filter=_MEDIA_TYPE_FILTER[category])
-            self.trackListTitleBar.setTitle(category)
+            self.trackListTitleBar.setTitle(category, translate=True)
             self.trackListTitleBar.resetColor()
             self.trackListTitleBar.setFullscreenMode(True)
         else:
@@ -393,7 +401,10 @@ class MusicBrowser(QFrame):
             # won't include video tracks in results.
             self.browserTrack.loadTracks(media_type_filter=MEDIA_TYPE_AUDIO)
             self.browserTrack.clearFilter()
-            self.trackListTitleBar.setTitle(f"Select a{'n' if category[0] in 'AE' else ''} {category[:-1]}")
+            self.trackListTitleBar.setTitle(
+                _SELECTION_TITLE_BY_CATEGORY.get(category, f"Select {category}"),
+                translate=True,
+            )
             self.trackListTitleBar.resetColor()
             self.trackListTitleBar.setFullscreenMode(False)
 
@@ -451,7 +462,7 @@ class MusicBrowser(QFrame):
 
         edit_action = None
         if len(album_items) == 1:
-            edit_action = menu.addAction("Edit")
+            edit_action = menu.addAction(_("Edit"))
             if edit_action is not None:
                 edit_icon = glyph_icon("edit", 14, Colors.TEXT_PRIMARY)
                 if edit_icon is not None:
@@ -459,7 +470,7 @@ class MusicBrowser(QFrame):
                 if int(album_items[0].get("track_count", 0) or 0) < 1:
                     edit_action.setEnabled(False)
 
-        conversion_action = menu.addAction("Convert to a single chaptered track")
+        conversion_action = menu.addAction(_("Convert to a single chaptered track"))
         if conversion_action is None:
             return
 
@@ -476,7 +487,7 @@ class MusicBrowser(QFrame):
             unify_context = self._album_artwork_unify_context(album_items[0])
             if unify_context is not None:
                 menu.addSeparator()
-                unify_action = menu.addAction("Unify Artwork")
+                unify_action = menu.addAction(_("Unify Artwork"))
                 if unify_action is not None:
                     unify_icon = glyph_icon("photo", 14, Colors.TEXT_PRIMARY)
                     if unify_icon is not None:
@@ -547,8 +558,8 @@ class MusicBrowser(QFrame):
         except Exception as exc:
             QMessageBox.warning(
                 self,
-                "Unify Artwork",
-                f"Could not prepare artwork:\n\n{exc}",
+                _("Unify Artwork"),
+                _("Could not prepare artwork:\n\n{error}").format(error=exc),
             )
             return
 
@@ -569,8 +580,8 @@ class MusicBrowser(QFrame):
                 pass
             QMessageBox.warning(
                 self,
-                "Unify Artwork",
-                f"Could not stage artwork update:\n\n{exc}",
+                _("Unify Artwork"),
+                _("Could not stage artwork update:\n\n{error}").format(error=exc),
             )
 
     def refresh_artwork_appearance(self) -> None:

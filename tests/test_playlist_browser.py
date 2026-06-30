@@ -7,6 +7,7 @@ from GUI.widgets.playlistBrowser import (
     _is_ipod_category_playlist,
     _is_regular_track_playlist,
     _is_user_smart_playlist,
+    _playlist_display_title,
     _podcast_grouping_summary,
 )
 from iTunesDB_Shared.extraction import extract_playlist_item_extras
@@ -74,6 +75,32 @@ def test_regular_track_playlist_excludes_generated_playlist_types() -> None:
     })
     assert not _is_regular_track_playlist({"Title": "Podcasts", "podcast_flag": 1})
     assert not _is_regular_track_playlist({"Title": "Synced", "_source": "sync_playlist_file"})
+
+
+def test_playlist_display_title_distinguishes_user_data_from_app_labels() -> None:
+    assert _playlist_display_title({"Title": "Settings"}) == ("Settings", False)
+    assert _playlist_display_title({"Title": "Library", "master_flag": 1}) == (
+        "Library (Master)",
+        True,
+    )
+    assert _playlist_display_title({
+        "Title": "Music",
+        "_source": "category",
+        "_mhsd_dataset_type": 5,
+    }) == ("Music", True)
+    assert _playlist_display_title({
+        "Title": "音乐",
+        "_source": "category",
+        "_mhsd_dataset_type": 5,
+        "mhsd5_type": 4,
+    }) == ("Music", True)
+    assert _playlist_display_title({
+        "Title": "视频",
+        "_source": "smart",
+        "_mhsd_dataset_type": 5,
+        "mhsd5_type": 0,
+    }) == ("Videos", True)
+    assert _playlist_display_title({}) == ("Untitled", True)
 
 
 def test_category_playlist_requires_dataset5_location() -> None:

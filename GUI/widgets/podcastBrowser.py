@@ -72,6 +72,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from infrastructure.i18n import tr
+
 from ..glyphs import glyph_icon, glyph_pixmap
 from ..hidpi import scale_pixmap_for_display
 from ..styles import (
@@ -228,11 +230,11 @@ def _load_artwork_bytes(source: str) -> bytes | None:
 
 
 def _status_accent(status: str) -> str:
-    if status == "On iPod":
+    if status in {"On iPod", tr("On iPod")}:
         return Colors.SUCCESS
-    if status == "Downloaded":
+    if status in {"Downloaded", tr("Downloaded")}:
         return Colors.ACCENT
-    if "Downloading" in status:
+    if "Downloading" in status or tr("Downloading") in status:
         return Colors.WARNING
     return Colors.TEXT_TERTIARY
 
@@ -255,7 +257,30 @@ def _episode_meta_text(row: dict) -> str:
     status = str(row.get("ep_status") or "")
     if status and not _is_state_status(status) and status not in parts:
         parts.append(status)
-    return "  |  ".join(parts) if parts else "Episode"
+    return "  |  ".join(parts) if parts else tr("Episode")
+
+
+def _set_combo_options(combo: QComboBox, options: list[str]) -> None:
+    combo.clear()
+    for option in options:
+        combo.addItem(tr(option), option)
+
+
+def _combo_value(combo: QComboBox) -> str:
+    value = combo.itemData(combo.currentIndex(), Qt.ItemDataRole.UserRole)
+    if isinstance(value, str):
+        return value
+    return combo.currentText()
+
+
+def _set_combo_value(combo: QComboBox, value: str) -> None:
+    for index in range(combo.count()):
+        if combo.itemData(index, Qt.ItemDataRole.UserRole) == value:
+            combo.setCurrentIndex(index)
+            return
+    idx = combo.findText(value)
+    if idx >= 0:
+        combo.setCurrentIndex(idx)
 
 
 def _wrap_lines(
@@ -421,9 +446,9 @@ class _PodcastEpisodeCard(QFrame):
         self._action_row.setObjectName("podcastEpisodeActionRow")
         self._action_row.setFixedHeight(_EPISODE_ACTION_ROW_HEIGHT)
 
-        self._add_btn = _PodcastCardMouseButton("Add to iPod", self._action_row)
+        self._add_btn = _PodcastCardMouseButton(tr("Add to iPod"), self._action_row)
         self._add_btn.setObjectName("podcastEpisodeAddButton")
-        self._add_btn.setToolTip("Add this episode to iPod")
+        self._add_btn.setToolTip(tr("Add this episode to iPod"))
         self._add_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
         self._add_btn.setStyleSheet(
             btn_css(
@@ -441,7 +466,7 @@ class _PodcastEpisodeCard(QFrame):
             self._add_btn.setIcon(add_icon)
             self._add_btn.setIconSize(QSize(13, 13))
         add_metrics = QFontMetrics(self._add_btn.font())
-        self._add_btn_full_text = "Add to iPod"
+        self._add_btn_full_text = tr("Add to iPod")
         self._add_btn_full_width = add_metrics.horizontalAdvance(
             self._add_btn_full_text
         ) + 34
@@ -452,11 +477,11 @@ class _PodcastEpisodeCard(QFrame):
         self._add_btn.clicked.connect(lambda: self.add_requested.emit(self._row_index))
 
         self._remove_btn = _PodcastCardMouseButton(
-            "Remove from iPod",
+            tr("Remove from iPod"),
             self._action_row,
         )
         self._remove_btn.setObjectName("podcastEpisodeRemoveButton")
-        self._remove_btn.setToolTip("Remove this episode from iPod")
+        self._remove_btn.setToolTip(tr("Remove this episode from iPod"))
         self._remove_btn.setFont(
             QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold)
         )
@@ -476,7 +501,7 @@ class _PodcastEpisodeCard(QFrame):
             self._remove_btn.setIcon(remove_icon)
             self._remove_btn.setIconSize(QSize(13, 13))
         remove_metrics = QFontMetrics(self._remove_btn.font())
-        self._remove_btn_full_text = "Remove from iPod"
+        self._remove_btn_full_text = tr("Remove from iPod")
         self._remove_btn_full_width = remove_metrics.horizontalAdvance(
             self._remove_btn_full_text
         ) + 34
@@ -488,7 +513,7 @@ class _PodcastEpisodeCard(QFrame):
             lambda: self.remove_requested.emit(self._row_index)
         )
 
-        self._more_btn = _PodcastCardMouseButton("More", self._action_row)
+        self._more_btn = _PodcastCardMouseButton(tr("More"), self._action_row)
         self._more_btn.setObjectName("podcastEpisodeMoreButton")
         self._more_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
         self._more_btn.setStyleSheet(
@@ -497,8 +522,8 @@ class _PodcastEpisodeCard(QFrame):
         btn_metrics = QFontMetrics(self._more_btn.font())
         self._more_btn.setFixedSize(
             max(
-                btn_metrics.horizontalAdvance("More"),
-                btn_metrics.horizontalAdvance("Show less"),
+                btn_metrics.horizontalAdvance(tr("More")),
+                btn_metrics.horizontalAdvance(tr("Show less")),
             )
             + 24,
             _EPISODE_ACTION_ROW_HEIGHT,
@@ -556,19 +581,19 @@ class _PodcastEpisodeCard(QFrame):
         podcast_title = str(row.get("podcast_feed_title") or "")
         self._podcast_label.setText(podcast_title)
         self._podcast_label.setVisible(bool(podcast_title))
-        self._title_label.setText(str(row.get("Title") or "Untitled Episode"))
+        self._title_label.setText(str(row.get("Title") or tr("Untitled Episode")))
         self._meta_label.setText(_episode_meta_text(row))
-        self._description_label.setText(description_text or "No description available.")
+        self._description_label.setText(description_text or tr("No description available."))
         self._set_description_height(description_text, expanded)
 
         status = str(row.get("ep_status") or "")
         if _is_state_status(status):
-            self._status_label.setText(status)
+            self._status_label.setText(tr(status))
             self._status_label.show()
         else:
             self._status_label.hide()
 
-        self._more_btn.setText("Show less" if expanded else "More")
+        self._more_btn.setText(tr("Show less") if expanded else tr("More"))
         self._more_btn.setVisible(show_more)
         self._add_btn.setVisible(bool(row.get("_can_add_to_ipod")))
         self._remove_btn.setVisible(bool(row.get("_can_remove_from_ipod")))
@@ -609,7 +634,7 @@ class _PodcastEpisodeCard(QFrame):
         metrics = QFontMetrics(self._title_label.font())
         if width <= 0:
             return metrics.lineSpacing()
-        text = self._title_label.text() or "Untitled Episode"
+        text = self._title_label.text() or tr("Untitled Episode")
         bounds = metrics.boundingRect(
             QRect(0, 0, width, 200),
             Qt.TextFlag.TextWordWrap,
@@ -1413,7 +1438,7 @@ class PodcastBrowser(QFrame):
         bar = BrowserHeroHeader("Podcasts", self)
         layout = bar.actions_layout
 
-        self._add_btn = QPushButton("Add Podcast")
+        self._add_btn = QPushButton(tr("Add Podcast"))
         self._add_btn.setFont(QFont(FONT_FAMILY, (Metrics.FONT_SM)))
         self._add_btn.setStyleSheet(chrome_action_btn_css())
         _add_ic = glyph_icon("plus", (14), Colors.TEXT_PRIMARY)
@@ -1423,7 +1448,7 @@ class PodcastBrowser(QFrame):
         self._add_btn.clicked.connect(self._on_search)
         layout.addWidget(self._add_btn)
 
-        self._refresh_btn = QPushButton("Refresh All")
+        self._refresh_btn = QPushButton(tr("Refresh All"))
         self._refresh_btn.setFont(QFont(FONT_FAMILY, (Metrics.FONT_SM)))
         self._refresh_btn.setStyleSheet(chrome_action_btn_css())
         _refresh_ic = glyph_icon("refresh", (14), Colors.TEXT_PRIMARY)
@@ -1433,7 +1458,7 @@ class PodcastBrowser(QFrame):
         self._refresh_btn.clicked.connect(self._on_refresh_all)
         layout.addWidget(self._refresh_btn)
 
-        self._sync_btn = QPushButton("Sync Podcasts")
+        self._sync_btn = QPushButton(tr("Sync Podcasts"))
         self._sync_btn.setFont(QFont(FONT_FAMILY, (Metrics.FONT_SM)))
         self._sync_btn.setStyleSheet(chrome_action_btn_css())
         _sync_ic = glyph_icon("refresh", (14), Colors.TEXT_PRIMARY)
@@ -1441,8 +1466,7 @@ class PodcastBrowser(QFrame):
             self._sync_btn.setIcon(_sync_ic)
             self._sync_btn.setIconSize(QSize((14), (14)))
         self._sync_btn.setToolTip(
-            "Apply per-feed settings: remove listened/old episodes, "
-            "fill empty slots with new episodes"
+            tr("Apply per-feed settings: remove listened/old episodes, fill empty slots with new episodes")
         )
         self._sync_btn.clicked.connect(self._on_sync_podcasts)
         layout.addWidget(self._sync_btn)
@@ -1481,7 +1505,7 @@ class PodcastBrowser(QFrame):
         layout.addSpacing(12)
 
         heading = make_label(
-            "No Podcast Subscriptions",
+            tr("No Podcast Subscriptions"),
             size=(Metrics.FONT_PAGE_TITLE),
             weight=QFont.Weight.DemiBold,
         )
@@ -1491,8 +1515,10 @@ class PodcastBrowser(QFrame):
         layout.addSpacing(6)
 
         desc = make_label(
-            "Search for podcasts or add an RSS feed to get started.\n"
-            "Episodes can be downloaded and synced to your iPod.",
+            tr(
+                "Search for podcasts or add an RSS feed to get started.\n"
+                "Episodes can be downloaded and synced to your iPod."
+            ),
             size=(Metrics.FONT_LG),
             style=LABEL_SECONDARY(),
             wrap=True,
@@ -1502,7 +1528,7 @@ class PodcastBrowser(QFrame):
 
         layout.addSpacing(16)
 
-        cta_btn = QPushButton("Add Your First Podcast")
+        cta_btn = QPushButton(tr("Add Your First Podcast"))
         cta_btn.setFont(QFont(FONT_FAMILY, (Metrics.FONT_MD), QFont.Weight.DemiBold))
         cta_btn.setStyleSheet(accent_btn_css())
         cta_btn.setFixedHeight(38)
@@ -1619,7 +1645,7 @@ class PodcastBrowser(QFrame):
         info_col.setSpacing(4)
 
         self._feed_title_label = make_label(
-            "Select a podcast",
+            tr("Select a podcast"),
             size=Metrics.FONT_PAGE_TITLE,
             weight=QFont.Weight.DemiBold,
         )
@@ -1699,14 +1725,14 @@ class PodcastBrowser(QFrame):
 
         def _make_setting_combo(options: list[str], width: int = 110) -> QComboBox:
             cb = QComboBox()
-            cb.addItems(options)
+            _set_combo_options(cb, options)
             cb.setFixedWidth(width)
             cb.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
             cb.setStyleSheet(_combo_style)
             return cb
 
         def _make_setting_label(text: str) -> QLabel:
-            lbl = QLabel(text)
+            lbl = QLabel(tr(text))
             lbl.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
             lbl.setStyleSheet(_lbl_css)
             return lbl
@@ -1995,9 +2021,9 @@ class PodcastBrowser(QFrame):
             }}
         """)
 
-        refresh_action = menu.addAction("Refresh Feed")
+        refresh_action = menu.addAction(tr("Refresh Feed"))
         menu.addSeparator()
-        unsub_action = menu.addAction("Unsubscribe")
+        unsub_action = menu.addAction(tr("Unsubscribe"))
 
         action = menu.exec(self._feed_list.mapToGlobal(pos))
         if action == refresh_action:
@@ -2073,21 +2099,21 @@ class PodcastBrowser(QFrame):
         if can_add:
             n = len(can_add)
             suffix = f" ({n})" if n > 1 else ""
-            add_action = menu.addAction(f"Add to iPod{suffix}")
+            add_action = menu.addAction(f"{tr('Add to iPod')}{suffix}")
 
         if can_remove_dl:
             if add_action:
                 menu.addSeparator()
             n = len(can_remove_dl)
             suffix = f" ({n})" if n > 1 else ""
-            remove_dl_action = menu.addAction(f"Remove Download{suffix}")
+            remove_dl_action = menu.addAction(f"{tr('Remove Download')}{suffix}")
 
         if can_remove_ipod:
             if add_action or remove_dl_action:
                 menu.addSeparator()
             n = len(can_remove_ipod)
             suffix = f" ({n})" if n > 1 else ""
-            remove_ipod_action = menu.addAction(f"Remove from iPod{suffix}")
+            remove_ipod_action = menu.addAction(f"{tr('Remove from iPod')}{suffix}")
 
         viewport = self._episode_list.table.viewport()
         if not viewport:
@@ -2180,7 +2206,7 @@ class PodcastBrowser(QFrame):
 
         if not feed:
             self._feed_header.show()
-            self._feed_title_label.setText("Select a podcast")
+            self._feed_title_label.setText(tr("Select a podcast"))
             self._feed_author_label.setText("")
             self._feed_description_label.setText("")
             self._feed_detail_label.setText("")
@@ -2196,8 +2222,8 @@ class PodcastBrowser(QFrame):
 
         self._showing_combined_feed = False
         self._feed_header.show()
-        self._feed_title_label.setText(feed.title or "Untitled Podcast")
-        self._feed_author_label.setText(feed.author or "Unknown Author")
+        self._feed_title_label.setText(feed.title or tr("Untitled Podcast"))
+        self._feed_author_label.setText(feed.author or tr("Unknown Author"))
 
         desc_text = (feed.description or "").replace("\n", " ").strip()
         if len(desc_text) > 170:
@@ -2209,14 +2235,20 @@ class PodcastBrowser(QFrame):
             detail_parts.append(feed.language.upper())
         refreshed = _fmt_date(feed.last_refreshed)
         if refreshed:
-            detail_parts.append(f"Updated {refreshed}")
+            detail_parts.append(tr("Updated {date}").format(date=refreshed))
         if feed.feed_url:
-            detail_parts.append("RSS feed linked")
+            detail_parts.append(tr("RSS feed linked"))
         self._feed_detail_label.setText("  ·  ".join(detail_parts))
 
-        self._feed_stat_episodes.setText(f"Episodes: {len(feed.episodes)}")
-        self._feed_stat_downloaded.setText(f"Downloaded: {feed.downloaded_count}")
-        self._feed_stat_on_ipod.setText(f"On iPod: {feed.on_ipod_count}")
+        self._feed_stat_episodes.setText(
+            tr("Episodes: {count}").format(count=len(feed.episodes))
+        )
+        self._feed_stat_downloaded.setText(
+            tr("Downloaded: {count}").format(count=feed.downloaded_count)
+        )
+        self._feed_stat_on_ipod.setText(
+            tr("On iPod: {count}").format(count=feed.on_ipod_count)
+        )
 
         extra_parts = []
         if feed.category:
@@ -2335,7 +2367,16 @@ class PodcastBrowser(QFrame):
             return
 
         self._refresh_btn.setEnabled(False)
-        self._set_status(f"Refreshing {len(feeds)} feeds…")
+        feed_count = len(feeds)
+        refresh_text = (
+            tr("Refreshing {count} feed…").format(count=feed_count)
+            if feed_count == 1
+            else tr("Refreshing {count} feeds…").format(count=feed_count)
+        )
+        self._set_status(
+            refresh_text,
+            translate=False,
+        )
         self._show_episode_loading(
             "Refreshing podcasts…",
             "Checking subscribed feeds for new episodes.",
@@ -2380,7 +2421,15 @@ class PodcastBrowser(QFrame):
             for f in self._store.get_feeds():
                 self._mark_feed_refreshed(f.feed_url)
         if count:
-            self._set_status(f"Refreshed {count} feed{'s' if count != 1 else ''}")
+            refreshed_text = (
+                tr("Refreshed {count} feed").format(count=count)
+                if count == 1
+                else tr("Refreshed {count} feeds").format(count=count)
+            )
+            self._set_status(
+                refreshed_text,
+                translate=False,
+            )
 
         # Reconcile episode statuses after RSS merge so that episodes
         # present on the iPod (but only known from RSS, not yet stored)
@@ -2400,9 +2449,23 @@ class PodcastBrowser(QFrame):
 
         if failures:
             if count:
+                failure_count = len(failures)
+                partial_text = (
+                    tr("Refreshed {count}; {failures} feed could not update").format(
+                        count=count,
+                        failures=failure_count,
+                    )
+                    if failure_count == 1
+                    else tr(
+                        "Refreshed {count}; {failures} feeds could not update"
+                    ).format(
+                        count=count,
+                        failures=failure_count,
+                    )
+                )
                 self._set_status(
-                    f"Refreshed {count}; {len(failures)} feed"
-                    f"{'s' if len(failures) != 1 else ''} could not update"
+                    partial_text,
+                    translate=False,
                 )
             elif not self._episode_dicts:
                 _feed_title, error = failures[0]
@@ -2519,10 +2582,18 @@ class PodcastBrowser(QFrame):
         # Emit the plan (pending episodes will download during sync)
         summary_parts = []
         if plan.to_remove:
-            summary_parts.append(f"{len(plan.to_remove)} to remove")
+            summary_parts.append(
+                tr("{count} to remove").format(count=len(plan.to_remove))
+            )
         if plan.to_add:
-            summary_parts.append(f"{len(plan.to_add)} to add")
-        self._set_status(f"Podcast sync: {', '.join(summary_parts)}")
+            summary_parts.append(
+                tr("{count} to add").format(count=len(plan.to_add))
+            )
+        summary_text = ", ".join(summary_parts)
+        self._set_status(
+            tr("Podcast sync: {summary}").format(summary=summary_text),
+            translate=False,
+        )
         self._sync_btn.setEnabled(True)
         self.podcast_sync_requested.emit(plan)
 
@@ -2601,7 +2672,10 @@ class PodcastBrowser(QFrame):
             return
         self._store.add_feed(feed)
         self._mark_feed_refreshed(feed.feed_url)
-        self._set_status(f"Subscribed to {feed.title}")
+        self._set_status(
+            tr("Subscribed to {title}").format(title=feed.title),
+            translate=False,
+        )
         self._showing_combined_feed = False
         self._refresh_feed_list()
 
@@ -2628,14 +2702,20 @@ class PodcastBrowser(QFrame):
         if not self._store:
             return
         self._store.remove_feed(feed.feed_url)
-        self._set_status(f"Unsubscribed from {feed.title}")
+        self._set_status(
+            tr("Unsubscribed from {title}").format(title=feed.title),
+            translate=False,
+        )
         self._selected_feed = None
         self._showing_combined_feed = False
         self._refresh_feed_list()
 
     def _refresh_single_feed(self, feed) -> None:
         """Refresh a single feed in the background."""
-        self._set_status(f"Refreshing {feed.title}…")
+        self._set_status(
+            tr("Refreshing {title}…").format(title=feed.title),
+            translate=False,
+        )
         self._show_episode_loading(
             "Refreshing this podcast…",
             "Checking the feed for the latest episodes.",
@@ -2662,7 +2742,10 @@ class PodcastBrowser(QFrame):
             return
         self._store.update_feed(feed)
         self._mark_feed_refreshed(feed.feed_url)
-        self._set_status(f"Refreshed {feed.title}")
+        self._set_status(
+            tr("Refreshed {title}").format(title=feed.title),
+            translate=False,
+        )
         was_combined = self._showing_combined_feed
         self._refresh_feed_list()
 
@@ -2794,15 +2877,25 @@ class PodcastBrowser(QFrame):
             return
 
         n = len(plan.to_add)
+        send_text = (
+            tr("Sending {count} episode to sync…").format(count=n)
+            if n == 1
+            else tr("Sending {count} episodes to sync…").format(count=n)
+        )
         self._set_action_status(
-            f"Sending {n} episode{'s' if n != 1 else ''} to sync…")
+            send_text,
+            translate=False,
+        )
 
         self.podcast_sync_requested.emit(plan)
 
     def _on_add_error(self, error_tuple) -> None:
         self._progress_bar.hide()
         _, value, _ = error_tuple
-        self._set_action_status(f"Failed: {value}")
+        self._set_action_status(
+            tr("Failed: {error}").format(error=value),
+            translate=False,
+        )
 
     # ── Remove download / Remove from iPod ───────────────────────────────
 
@@ -2845,7 +2938,15 @@ class PodcastBrowser(QFrame):
         else:
             self._show_episodes(self._selected_feed)
         self._refresh_feed_list()
-        self._set_action_status(f"Removed {removed} download{'s' if removed != 1 else ''}")
+        removed_text = (
+            tr("Removed {count} download").format(count=removed)
+            if removed == 1
+            else tr("Removed {count} downloads").format(count=removed)
+        )
+        self._set_action_status(
+            removed_text,
+            translate=False,
+        )
 
     def _remove_from_ipod(self, episodes: list) -> None:
         """Build a sync plan to remove episodes from the iPod."""
@@ -2900,8 +3001,15 @@ class PodcastBrowser(QFrame):
             return
 
         n = len(plan.to_remove)
+        removal_text = (
+            tr("Sending {count} removal to sync…").format(count=n)
+            if n == 1
+            else tr("Sending {count} removals to sync…").format(count=n)
+        )
         self._set_action_status(
-            f"Sending {n} removal{'s' if n != 1 else ''} to sync\u2026")
+            removal_text,
+            translate=False,
+        )
         self.podcast_sync_requested.emit(plan)
 
     def refresh_episodes(self) -> None:
@@ -2944,18 +3052,16 @@ class PodcastBrowser(QFrame):
             self._feed_episode_slots.setValue(feed.episode_slots)
 
             _fill_display = {"newest": "Newest Episode", "next": "Next Episode"}
-            idx = self._feed_fill_mode.findText(
+            _set_combo_value(
+                self._feed_fill_mode,
                 _fill_display.get(feed.fill_mode, "Newest Episode"),
             )
-            if idx >= 0:
-                self._feed_fill_mode.setCurrentIndex(idx)
 
             _cl_display = {True: "Yes", False: "No"}
-            idx = self._feed_clear_listened.findText(
+            _set_combo_value(
+                self._feed_clear_listened,
                 _cl_display.get(feed.clear_when_listened, "Yes"),
             )
-            if idx >= 0:
-                self._feed_clear_listened.setCurrentIndex(idx)
 
             _older_display = {
                 "immediate": "Immediately",
@@ -2964,21 +3070,19 @@ class PodcastBrowser(QFrame):
                 "1_month": "1 Month", "2_months": "2 Months",
                 "3_months": "3 Months", "never": "Never",
             }
-            idx = self._feed_clear_older.findText(
+            _set_combo_value(
+                self._feed_clear_older,
                 _older_display.get(feed.clear_older_than, "Never"),
             )
-            if idx >= 0:
-                self._feed_clear_older.setCurrentIndex(idx)
 
             _method_display = {
                 "remove": "Remove Immediately",
                 "replace": "Mark for Replacement",
             }
-            idx = self._feed_clear_method.findText(
+            _set_combo_value(
+                self._feed_clear_method,
                 _method_display.get(feed.clear_method, "Remove Immediately"),
             )
-            if idx >= 0:
-                self._feed_clear_method.setCurrentIndex(idx)
         else:
             self._feed_episode_slots.setValue(3)
             self._feed_fill_mode.setCurrentIndex(0)
@@ -3016,16 +3120,16 @@ class PodcastBrowser(QFrame):
 
         feed.episode_slots = self._feed_episode_slots.value()
         feed.fill_mode = _fill_keys.get(
-            self._feed_fill_mode.currentText(), "newest",
+            _combo_value(self._feed_fill_mode), "newest",
         )
         feed.clear_when_listened = _cl_keys.get(
-            self._feed_clear_listened.currentText(), True,
+            _combo_value(self._feed_clear_listened), True,
         )
         feed.clear_older_than = _older_keys.get(
-            self._feed_clear_older.currentText(), "never",
+            _combo_value(self._feed_clear_older), "never",
         )
         feed.clear_method = _method_keys.get(
-            self._feed_clear_method.currentText(), "remove",
+            _combo_value(self._feed_clear_method), "remove",
         )
 
         self._store.update_feed(feed)
@@ -3306,26 +3410,40 @@ class PodcastBrowser(QFrame):
 
     # ── Status helpers ───────────────────────────────────────────────────
 
-    def _set_status(self, text: str, timeout_ms: int = 5000) -> None:
+    def _set_status(
+        self,
+        text: str,
+        timeout_ms: int = 5000,
+        *,
+        translate: bool = True,
+    ) -> None:
         """Set toolbar status text with auto-clear."""
-        self._status_label.setText(text)
-        if timeout_ms > 0 and text:
-            QTimer.singleShot(timeout_ms, lambda: self._clear_status_if(text))
+        display_text = tr(text) if translate else text
+        self._status_label.setText(display_text)
+        if timeout_ms > 0 and display_text:
+            QTimer.singleShot(timeout_ms, lambda: self._clear_status_if(display_text))
 
     def _clear_status_if(self, expected: str) -> None:
         """Clear status only if it still shows the expected message."""
         if self._status_label.text() == expected:
             self._status_label.setText("")
 
-    def _set_action_status(self, text: str, timeout_ms: int = 5000) -> None:
+    def _set_action_status(
+        self,
+        text: str,
+        timeout_ms: int = 5000,
+        *,
+        translate: bool = True,
+    ) -> None:
         """Show the status toast with *text*, auto-hiding after *timeout_ms*."""
-        self._action_status.setText(text)
-        if text:
+        display_text = tr(text) if translate else text
+        self._action_status.setText(display_text)
+        if display_text:
             self._status_toast.show()
         else:
             self._status_toast.hide()
-        if timeout_ms > 0 and text:
-            QTimer.singleShot(timeout_ms, lambda: self._clear_action_if(text))
+        if timeout_ms > 0 and display_text:
+            QTimer.singleShot(timeout_ms, lambda: self._clear_action_if(display_text))
 
     def _clear_action_if(self, expected: str) -> None:
         if self._action_status.text() == expected:

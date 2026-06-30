@@ -1,0 +1,3025 @@
+#: GUI/widgets/photoBrowser.py:457 GUI/widgets/podcastBrowser.py:2330
+msgid ""
+msgstr ""
+"Project-Id-Version: iOpenPod\n"
+"Report-Msgid-Bugs-To: \n"
+"Language: fr\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgid ""
+"A crash report has been saved to:\n"
+msgstr ""
+"Un rapport de plantage a été enregistré dans :\n"
+
+#: GUI/widgets/settingsPage.py:885
+msgid "API Key"
+msgstr "Clé API"
+
+#: GUI/widgets/settingsPage.py:976
+msgid "API Key and Secret required"
+msgstr "Clé API et secret requis"
+
+#: GUI/widgets/settingsPage.py:892
+msgid "API Secret"
+msgstr "Secret API"
+
+#: GUI/widgets/musicBrowser.py:336
+msgid "All Tracks"
+msgstr "Tous les morceaux"
+
+#: GUI/widgets/settingsPage.py:1608
+msgid "About"
+msgstr "À propos"
+
+#: GUI/widgets/settingsPage.py:1522
+msgid "Accent Color"
+msgstr "Couleur d’accent"
+
+#: GUI/widgets/settingsPage.py:1853
+msgid "Advanced AAC"
+msgstr "AAC avancé"
+
+#: GUI/widgets/photoBrowser.py:439
+msgid "Albums"
+msgstr "Albums"
+
+msgid "Album"
+msgstr "Album"
+
+msgid ""
+"An unexpected error occurred:\n"
+"\n"
+msgstr ""
+"Une erreur inattendue s’est produite :\n"
+"\n"
+
+#: GUI/widgets/settingsPage.py:1608
+msgid "Appearance"
+msgstr "Apparence"
+
+#: GUI/widgets/settingsPage.py:1546
+msgid "Apply a subtle display-only sharpening pass to album art in grid cards and track lists. This does not modify artwork written to your iPod."
+msgstr "Apply a subtle display-only sharpening pass to album art in grid cards and track lists. This does not modify artwork written to your iPod."
+
+msgid "Artists"
+msgstr "Artistes"
+
+msgid "Artist"
+msgstr "Artiste"
+
+#: GUI/widgets/settingsPage.py:1853
+msgid "Audio"
+msgstr "Audio"
+
+msgid "Audiobooks"
+msgstr "Livres audio"
+
+#: GUI/widgets/settingsPage.py:588 GUI/widgets/settingsPage.py:530 GUI/widgets/settingsPage.py:598
+msgid "Auto-detect"
+msgstr "Détection automatique"
+
+msgid "Ask Each Time"
+msgstr "Demander à chaque fois"
+
+#: GUI/widgets/settingsPage.py:1329
+msgid "Back"
+msgstr "Retour"
+
+msgid "Backup Folder"
+msgstr "Dossier de sauvegarde"
+
+#: GUI/widgets/settingsPage.py:2023 GUI/widgets/sidebar.py:906
+msgid "Backups"
+msgstr "Sauvegardes"
+
+msgid "Backups and Rollback"
+msgstr "Sauvegardes et restauration"
+
+#: GUI/widgets/settingsPage.py:1787
+msgid "Bandwidth Cutoff"
+msgstr "Coupure de bande passante"
+
+msgid "Before Sync"
+msgstr "Avant la synchronisation"
+
+#: GUI/widgets/settingsPage.py:1676
+msgid "Behavior"
+msgstr "Comportement"
+
+msgid "Duration"
+msgstr "Durée"
+
+#: GUI/widgets/settingsPage.py:1709
+msgid "Bitrate Mode"
+msgstr "Mode de débit"
+
+#: GUI/widgets/settingsPage.py:1507
+msgid "Boost text and border contrast for accessibility. System follows your OS accessibility setting."
+msgstr "Boost text and border contrast for accessibility. System follows your OS accessibility setting."
+
+msgid "Browse..."
+msgstr "Parcourir..."
+
+#: GUI/widgets/settingsPage.py:306 GUI/widgets/settingsPage.py:403 GUI/widgets/settingsPage.py:537
+msgid "Browse…"
+msgstr "Parcourir…"
+
+msgid "Cache Status"
+msgstr "État du cache"
+
+msgid "Calculating…"
+msgstr "Calcul…"
+
+#: GUI/app.py:2187 GUI/widgets/settingsPage.py:912 GUI/widgets/settingsPage.py:2959
+msgid "Cancel"
+msgstr "Annuler"
+
+#: GUI/widgets/settingsPage.py:1114
+msgid "Canceled"
+msgstr "Annulé"
+
+#: GUI/widgets/settingsPage.py:1554 GUI/widgets/settingsPage.py:2883
+msgid "Check"
+msgstr "Vérifier"
+
+#: GUI/widgets/settingsPage.py:1554
+msgid "Check for a newer version of iOpenPod."
+msgstr "Check for a newer version of iOpenPod."
+
+#: GUI/widgets/settingsPage.py:631 GUI/widgets/settingsPage.py:2877
+msgid "Checking…"
+msgstr "Vérification…"
+
+#: GUI/widgets/settingsPage.py:1495
+msgid "Choose the color scheme for the interface. System follows your OS preference."
+msgstr "Choose the color scheme for the interface. System follows your OS preference."
+
+#: GUI/widgets/settingsPage.py:1488
+msgid "Choose the interface language. Changing it rebuilds the window."
+msgstr "Choose the interface language. Changing it rebuilds the window."
+
+#: GUI/widgets/settingsPage.py:1134
+msgid "Clear Cache"
+msgstr "Vider le cache"
+
+#: GUI/widgets/settingsPage.py:1175
+msgid "Clear Transcode Cache"
+msgstr "Vider le cache de transcodage"
+
+#: GUI/widgets/sidebar.py:193
+msgid "Click to rename your iPod"
+msgstr "Cliquez pour renommer votre iPod"
+
+#: GUI/widgets/settingsPage.py:1640
+msgid "Compute Sound Check"
+msgstr "Calculer Sound Check"
+
+#: GUI/widgets/settingsPage.py:744 GUI/widgets/settingsPage.py:796 GUI/widgets/settingsPage.py:901 GUI/widgets/settingsPage.py:962 GUI/widgets/settingsPage.py:3211
+msgid "Connect"
+msgstr "Connecter"
+
+#: GUI/widgets/settingsPage.py:781 GUI/widgets/settingsPage.py:942
+msgid "Connected as"
+msgstr "Connecté en tant que"
+
+#: GUI/widgets/settingsPage.py:1746
+msgid "Convert WAV to ALAC"
+msgstr "Convertir WAV en ALAC"
+
+#: GUI/widgets/settingsPage.py:1481
+msgid "Copy the current global values into this iPod's settings file."
+msgstr "Copy the current global values into this iPod's settings file."
+
+#: GUI/widgets/settingsPage.py:1522
+msgid "Customize the accent color used throughout the interface. Match iPod uses the body color of your connected iPod."
+msgstr "Customize the accent color used throughout the interface. Match iPod uses the body color of your connected iPod."
+
+#: GUI/widgets/settingsPage.py:1176
+msgid ""
+"Delete all cached transcoded files?\n"
+"\n"
+"They will be re-created on the next sync."
+msgstr ""
+"Supprimer tous les fichiers transcodés en cache ?\n"
+"\n"
+"Ils seront recréés à la prochaine synchronisation."
+
+#: GUI/widgets/settingsPage.py:1379 GUI/widgets/settingsPage.py:2055
+msgid "Device"
+msgstr "Appareil"
+
+#: GUI/widgets/settingsPage.py:2055
+msgid "Device..."
+msgstr "Appareil..."
+
+#: GUI/widgets/settingsPage.py:762 GUI/widgets/settingsPage.py:927
+msgid "Disconnect"
+msgstr "Déconnecter"
+
+#: GUI/app.py:2589 GUI/widgets/settingsPage.py:636 GUI/widgets/settingsPage.py:3115 GUI/widgets/settingsPage.py:3122
+msgid "Download"
+msgstr "Télécharger"
+
+#: GUI/widgets/settingsPage.py:671 GUI/widgets/settingsPage.py:672
+msgid "Downloading…"
+msgstr "Téléchargement…"
+
+#: GUI/widgets/settingsPage.py:1893
+msgid "External Tools"
+msgstr "Outils externes"
+
+#: GUI/widgets/settingsPage.py:1869
+msgid "FFmpeg"
+msgstr "FFmpeg"
+
+#: GUI/widgets/settingsPage.py:1882
+msgid "FFmpeg Path Override"
+msgstr "Remplacement du chemin FFmpeg"
+
+#: GUI/widgets/settingsPage.py:979
+msgid "Fetching token..."
+msgstr "Récupération du jeton..."
+
+#: GUI/widgets/settingsPage.py:1653
+msgid "Fit Thumbnails"
+msgstr "Adapter les miniatures"
+
+#: GUI/widgets/settingsPage.py:1515
+msgid "Font Size"
+msgstr "Taille de police"
+
+#: GUI/widgets/settingsPage.py:1608 GUI/widgets/settingsPage.py:1928
+msgid "General"
+msgstr "Général"
+
+msgid "Genres"
+msgstr "Genres"
+
+#: GUI/widgets/settingsPage.py:862
+msgid "Get API keys ↗"
+msgstr "Obtenir les clés API ↗"
+
+#: GUI/widgets/settingsPage.py:718
+msgid "Get token ↗"
+msgstr "Obtenir le jeton ↗"
+
+#: GUI/widgets/settingsPage.py:1378
+msgid "Global"
+msgstr "Global"
+
+#: GUI/widgets/sidebar.py:276
+msgid "Hours"
+msgstr "Heures"
+
+#: GUI/widgets/settingsPage.py:1475
+msgid "Ignore this iPod's settings file and use the PC settings while this iPod is selected."
+msgstr "Ignore this iPod's settings file and use the PC settings while this iPod is selected."
+
+#: GUI/widgets/settingsPage.py:1507
+msgid "Increased Contrast"
+msgstr "Contraste renforcé"
+
+#: GUI/widgets/settingsPage.py:1819
+msgid "Intensity Stereo"
+msgstr "Stéréo d’intensité"
+
+#: GUI/app.py:627 GUI/app.py:611
+msgid "Invalid iPod Folder"
+msgstr "Dossier iPod non valide"
+
+#: GUI/widgets/settingsPage.py:1488
+msgid "Language"
+msgstr "Langue"
+
+#: GUI/widgets/settingsPage.py:1918
+msgid "Last.fm"
+msgstr "Last.fm"
+
+#: GUI/widgets/sidebar.py:935
+msgid "Library"
+msgstr "Bibliothèque"
+
+msgid "LIBRARY"
+msgstr "BIBLIOTHÈQUE"
+
+msgid "Library (Master)"
+msgstr "Bibliothèque (maître)"
+
+#: GUI/widgets/settingsPage.py:1908
+msgid "ListenBrainz"
+msgstr "ListenBrainz"
+
+#: GUI/widgets/settingsPage.py:2058
+msgid "Loading device settings..."
+msgstr "Chargement des réglages de l’appareil..."
+
+#: GUI/app.py:482
+msgid "Loading iPod..."
+msgstr "Chargement de l’iPod..."
+
+msgid "Log Folder"
+msgstr "Dossier des journaux"
+
+#: GUI/widgets/settingsPage.py:1688
+msgid "Lossy Encoder"
+msgstr "Encodeur avec pertes"
+
+#: GUI/widgets/settingsPage.py:1608
+msgid "Manage"
+msgstr "Gérer"
+
+msgid "Maximum Backups"
+msgstr "Nombre maximal de sauvegardes"
+
+#: GUI/widgets/settingsPage.py:1813
+msgid "Mid/Side Stereo"
+msgstr "Stéréo mid/side"
+
+#: GUI/widgets/settingsPage.py:1769
+msgid "Mono for Spoken Word"
+msgstr "Mono pour voix parlée"
+
+msgid "Movies"
+msgstr "Films"
+
+#: GUI/widgets/settingsPage.py:1716
+msgid "Music Bitrate"
+msgstr "Débit musique"
+
+#: GUI/widgets/settingsPage.py:1702
+msgid "Music Quality"
+msgstr "Qualité musique"
+
+msgid "Music Videos"
+msgstr "Clips vidéo"
+
+#: GUI/widgets/podcastBrowser.py:1767 GUI/widgets/sidebar.py:41
+msgid "No"
+msgstr "Non"
+
+#: GUI/app.py:1418 GUI/app.py:1575 GUI/app.py:2087 GUI/widgets/sidebar.py:781 GUI/widgets/sidebar.py:189 GUI/widgets/sidebar.py:514 GUI/widgets/sidebar.py:437 GUI/widgets/sidebar.py:518
+msgid "No Device"
+msgstr "Aucun appareil"
+
+#: GUI/app.py:441
+msgid ""
+"No device is currently selected.\n"
+"Choose an iPod to access your library and sync tools."
+msgstr ""
+"Aucun appareil n’est sélectionné.\n"
+"Choisissez un iPod pour accéder à votre bibliothèque et aux outils de synchronisation."
+
+#: GUI/widgets/sidebar.py:611 GUI/widgets/sidebar.py:573
+msgid "None"
+msgstr "Aucun"
+
+msgid "Name"
+msgstr "Nom"
+
+#: GUI/widgets/sidebar.py:915
+msgid "Normalize Tags"
+msgstr "Normaliser les tags"
+
+#: GUI/widgets/settingsPage.py:1780
+msgid "Normalize to 44.1 kHz"
+msgstr "Normaliser à 44,1 kHz"
+
+#: GUI/widgets/settingsPage.py:664
+msgid "Not found"
+msgstr "Introuvable"
+
+#: GUI/widgets/settingsPage.py:299 GUI/widgets/settingsPage.py:366
+msgid "Not set"
+msgstr "Non défini"
+
+#: GUI/widgets/settingsPage.py:1561
+msgid "Open"
+msgstr "Ouvrir"
+
+#: GUI/widgets/settingsPage.py:1561
+msgid "Open the GitHub issue tracker to report problems or request features."
+msgstr "Open the GitHub issue tracker to report problems or request features."
+
+#: GUI/widgets/settingsPage.py:289 GUI/widgets/settingsPage.py:382
+msgid "Open ↗"
+msgstr "Ouvrir ↗"
+
+#: GUI/widgets/settingsPage.py:129
+msgid "Overridden by device settings"
+msgstr "Remplacé par les réglages de l’appareil"
+
+#: GUI/widgets/settingsPage.py:1619
+msgid "Parallel Workers"
+msgstr "Tâches parallèles"
+
+#: GUI/widgets/settingsPage.py:1627
+msgid "Parallel Writes"
+msgstr "Écritures parallèles"
+
+#: GUI/widgets/settingsPage.py:737
+msgid "Paste token here…"
+msgstr "Coller le jeton ici…"
+
+#: GUI/widgets/settingsPage.py:1807
+msgid "Perceptual Noise Substitution (PNS)"
+msgstr "Perceptual Noise Substitution (PNS)"
+
+#: GUI/widgets/settingsPage.py:1676
+msgid "Performance"
+msgstr "Performances"
+
+msgid "Photos"
+msgstr "Photos"
+
+#: GUI/widgets/settingsPage.py:1943 GUI/widgets/settingsPage.py:1961 GUI/widgets/settingsPage.py:1968
+msgid "Platform default"
+msgstr "Valeur par défaut de la plateforme"
+
+#: GUI/widgets/playlistBrowser.py:1353
+msgid "Playlists"
+msgstr "Listes de lecture"
+
+msgid "PODCAST PLAYLISTS"
+msgstr "LISTES DE PODCASTS"
+
+msgid "Please report this issue on GitHub."
+msgstr "Veuillez signaler ce problème sur GitHub."
+
+msgid "Podcasts"
+msgstr "Podcasts"
+
+#: GUI/widgets/settingsPage.py:1735
+msgid "Prefer Lossy Encoding"
+msgstr "Préférer l’encodage avec pertes"
+
+#: GUI/widgets/sidebar.py:197 GUI/widgets/sidebar.py:784
+msgid "Press Select to choose your iPod"
+msgstr "Appuyez sur Sélectionner pour choisir votre iPod"
+
+#: GUI/widgets/sidebar.py:918
+msgid "Preview and apply iPod-friendly tag fixes across the whole library."
+msgstr "Preview and apply iPod-friendly tag fixes across the whole library."
+
+#: GUI/widgets/settingsPage.py:1658
+msgid "Rating Conflict Strategy"
+msgstr "Stratégie de conflit de notes"
+
+msgid "REGULAR PLAYLISTS"
+msgstr "LISTES STANDARD"
+
+#: GUI/app.py:488
+msgid "Reading library and device settings."
+msgstr "Lecture de la bibliothèque et des réglages de l’appareil."
+
+#: GUI/widgets/settingsPage.py:1741
+msgid "Reencode Existing Lossy Files"
+msgstr "Réencoder les fichiers avec pertes existants"
+
+#: GUI/widgets/settingsPage.py:1561
+msgid "Report a Bug"
+msgstr "Signaler un bug"
+
+#: GUI/widgets/sidebar.py:873
+msgid "Rescan"
+msgstr "Actualiser"
+
+#: GUI/widgets/settingsPage.py:1481
+msgid "Reset"
+msgstr "Réinitialiser"
+
+#: GUI/widgets/settingsPage.py:1481
+msgid "Reset Device Settings"
+msgstr "Réinitialiser les réglages de l’appareil"
+
+#: GUI/widgets/settingsPage.py:553
+msgid "Reset to auto-detect"
+msgstr "Réinitialiser sur détection automatique"
+
+msgid "Size"
+msgstr "Taille"
+
+msgid "Sort"
+msgstr "Trier"
+
+msgid "SMART PLAYLISTS"
+msgstr "LISTES INTELLIGENTES"
+
+msgid "INTERNAL BROWSE CATEGORIES"
+msgstr "CATÉGORIES INTERNES"
+
+#: GUI/widgets/settingsPage.py:419
+msgid "Reset to default"
+msgstr "Réinitialiser par défaut"
+
+#: GUI/widgets/settingsPage.py:1647
+msgid "Rotate Tall Photos on Device"
+msgstr "Faire pivoter les photos verticales sur l’appareil"
+
+#: GUI/widgets/settingsPage.py:1539
+msgid "Round album art corners in grid cards and track lists. This only changes how artwork is drawn in iOpenPod and does not modify anything written to your iPod."
+msgstr "Round album art corners in grid cards and track lists. This only changes how artwork is drawn in iOpenPod and does not modify anything written to your iPod."
+
+#: GUI/widgets/settingsPage.py:1539
+msgid "Rounded Artwork"
+msgstr "Pochettes arrondies"
+
+#: GUI/widgets/sidebar.py:217
+msgid "Safely eject the iPod from your system"
+msgstr "Éjecter l’iPod en toute sécurité"
+
+#: GUI/widgets/sidebar.py:774
+msgid "Save failed"
+msgstr "Échec de l’enregistrement"
+
+#: GUI/widgets/sidebar.py:767
+msgid "Saved"
+msgstr "Enregistré"
+
+#: GUI/widgets/sidebar.py:761
+msgid "Saving…"
+msgstr "Enregistrement…"
+
+#: GUI/widgets/settingsPage.py:1515
+msgid "Scale text size across the interface for accessibility."
+msgstr "Scale text size across the interface for accessibility."
+
+#: GUI/widgets/sidebar.py:611
+msgid "Scheme 1"
+msgstr "Schéma 1"
+
+#: GUI/widgets/sidebar.py:611
+msgid "Scheme 2"
+msgstr "Schéma 2"
+
+#: GUI/widgets/settingsPage.py:1928
+msgid "Scrobbling"
+msgstr "Scrobbling"
+
+#: GUI/widgets/sidebar.py:872
+msgid "Select"
+msgstr "Choisir"
+
+#: GUI/app.py:451
+msgid "Select Device"
+msgstr "Sélectionner un appareil"
+
+#: GUI/widgets/settingsPage.py:579
+msgid "Select File"
+msgstr "Sélectionner un fichier"
+
+#: GUI/widgets/settingsPage.py:350 GUI/widgets/settingsPage.py:464
+msgid "Select Folder"
+msgstr "Sélectionner un dossier"
+
+#: GUI/app.py:434
+msgid "Select an iPod to continue"
+msgstr "Sélectionnez un iPod pour continuer"
+
+#: GUI/widgets/settingsPage.py:2060
+msgid "Select an iPod to edit device settings"
+msgstr "Sélectionnez un iPod pour modifier les réglages de l’appareil"
+
+#: GUI/widgets/settingsPage.py:1335 GUI/widgets/sidebar.py:977
+msgid "Settings"
+msgstr "Paramètres"
+
+msgid "Settings Folder"
+msgstr "Dossier des paramètres"
+
+#: GUI/widgets/settingsPage.py:1546
+msgid "Sharpen Artwork"
+msgstr "Accentuer les pochettes"
+
+#: GUI/widgets/settingsPage.py:1534
+msgid "Show album art thumbnails next to tracks in the list view."
+msgstr "Show album art thumbnails next to tracks in the list view."
+
+#: GUI/widgets/settingsPage.py:1775
+msgid "Smart Quality by Content Type"
+msgstr "Qualité intelligente par type de contenu"
+
+#: GUI/widgets/sidebar.py:275
+msgid "Songs"
+msgstr "Morceaux"
+
+#: GUI/widgets/settingsPage.py:1853
+msgid "Spoken Word"
+msgstr "Voix parlée"
+
+#: GUI/widgets/settingsPage.py:1728
+msgid "Spoken Word Bitrate"
+msgstr "Débit voix parlée"
+
+#: GUI/widgets/settingsPage.py:1893
+msgid "Status"
+msgstr "État"
+
+#: GUI/widgets/settingsPage.py:1976 GUI/widgets/sidebar.py:401
+msgid "Storage"
+msgstr "Stockage"
+
+msgid "Storage Paths"
+msgstr "Chemins de stockage"
+
+#: GUI/widgets/settingsPage.py:1572
+msgid "Support iOpenPod"
+msgstr "Soutenir iOpenPod"
+
+#: GUI/widgets/settingsPage.py:1676
+msgid "Sync"
+msgstr "Synchronisation"
+
+#: GUI/widgets/sidebar.py:896
+msgid "Sync with PC"
+msgstr "Synchroniser avec le PC"
+
+msgid "TV Shows"
+msgstr "Séries TV"
+
+#: GUI/widgets/sidebar.py:284
+msgid "Technical Details"
+msgstr "Détails techniques"
+
+#: GUI/widgets/settingsPage.py:1801
+msgid "Temporal Noise Shaping (TNS)"
+msgstr "Modelage temporel du bruit (TNS)"
+
+#: GUI/app.py:612
+msgid "The selected folder could not be identified as an iPod."
+msgstr "The selected folder could not be identified as an iPod."
+
+#: GUI/app.py:628
+msgid ""
+"The selected folder does not appear to be a valid iPod root.\n"
+"\n"
+"Expected structure:\n"
+"  <selected folder>/iPod_Control/iTunes/\n"
+"\n"
+"Please select the root folder of your iPod."
+msgstr ""
+"The selected folder does not appear to be a valid iPod root.\n"
+"\n"
+"Expected structure:\n"
+"  <selected folder>/iPod_Control/iTunes/\n"
+"\n"
+"Please select the root folder of your iPod."
+
+#: GUI/widgets/settingsPage.py:1495
+msgid "Theme"
+msgstr "Thème"
+
+#: GUI/widgets/settingsPage.py:1534
+msgid "Track List Artwork"
+msgstr "Pochettes dans la liste des morceaux"
+
+#: GUI/widgets/trackListTitleBar.py:141
+msgid "Tracks"
+msgstr "Morceaux"
+
+#: GUI/widgets/settingsPage.py:1976
+msgid "Transcode Cache"
+msgstr "Cache de transcodage"
+
+#: GUI/widgets/settingsPage.py:1853
+msgid "Transcoding"
+msgstr "Transcodage"
+
+#: GUI/widgets/settingsPage.py:1475
+msgid "Use Global Settings"
+msgstr "Utiliser les paramètres globaux"
+
+#: GUI/widgets/settingsPage.py:1722
+msgid "VBR Quality Level"
+msgstr "Niveau de qualité VBR"
+
+#: GUI/widgets/settingsPage.py:1853
+msgid "Video"
+msgstr "Vidéo"
+
+#: GUI/widgets/settingsPage.py:1762
+msgid "Video Encode Speed"
+msgstr "Vitesse d’encodage vidéo"
+
+#: GUI/widgets/settingsPage.py:1751
+msgid "Video Quality (CRF)"
+msgstr "Qualité vidéo (CRF)"
+
+msgid "Videos"
+msgstr "Vidéos"
+
+#: GUI/widgets/settingsPage.py:1016
+msgid "Waiting for browser approval..."
+msgstr "En attente de l’autorisation du navigateur..."
+
+#: GUI/widgets/settingsPage.py:1635
+msgid "Write Back to PC"
+msgstr "Réécrire sur le PC"
+
+#: GUI/widgets/MBListView.py:168 GUI/widgets/MBListView.py:173 GUI/widgets/podcastBrowser.py:1767 GUI/widgets/sidebar.py:41
+msgid "Yes"
+msgstr "Oui"
+
+#: GUI/widgets/settingsPage.py:1875
+msgid "fpcalc (Chromaprint)"
+msgstr "fpcalc (Chromaprint)"
+
+#: GUI/widgets/settingsPage.py:1887
+msgid "fpcalc Path Override"
+msgstr "fpcalc Path Override"
+
+msgid "iOpenPod Error"
+msgstr "Erreur iOpenPod"
+
+#: GUI/widgets/settingsPage.py:1572
+msgid "iOpenPod is and always will be completely free and open source. If you like it and would like to support me, it is so very appreciated."
+msgstr "iOpenPod is and always will be completely free and open source. If you like it and would like to support me, it is so very appreciated."
+
+#: GUI/app.py:661
+msgid "iPod Not Writable"
+msgstr "iPod non inscriptible"
+
+#: GUI/widgets/settingsPage.py:1795
+msgid "libfdk_aac Afterburner"
+msgstr "libfdk_aac Afterburner"
+
+#: GUI/widgets/sidebar.py:675 GUI/widgets/sidebar.py:681
+msgid "{free:.1f} GB free of {total:.1f} GB"
+msgstr "{free:.1f} Go libres sur {total:.1f} Go"
+
+#: GUI/widgets/MBListView.py:2746
+msgid "(all columns shown)"
+msgstr "(toutes les colonnes affichées)"
+
+msgid "{count:,} audiobook"
+msgstr "{count:,} livre audio"
+
+msgid "{count:,} audiobooks"
+msgstr "{count:,} livres audio"
+
+msgid "{count:,} episode"
+msgstr "{count:,} épisode"
+
+msgid "{count:,} episodes"
+msgstr "{count:,} épisodes"
+
+msgid "{count:,} song"
+msgstr "{count:,} morceau"
+
+msgid "{count:,} songs"
+msgstr "{count:,} morceaux"
+
+msgid "{count:,} track"
+msgstr "{count:,} morceau"
+
+msgid "{count:,} tracks"
+msgstr "{count:,} morceaux"
+
+msgid "{count:,} video"
+msgstr "{count:,} vidéo"
+
+msgid "{count:,} videos"
+msgstr "{count:,} vidéos"
+
+msgid "{shown:,} of {total:,} audiobook"
+msgstr "{shown:,} of {total:,} audiobook"
+
+msgid "{shown:,} of {total:,} audiobooks"
+msgstr "{shown:,} of {total:,} audiobooks"
+
+msgid "{shown:,} of {total:,} episode"
+msgstr "{shown:,} sur {total:,} épisode"
+
+msgid "{shown:,} of {total:,} episodes"
+msgstr "{shown:,} sur {total:,} épisodes"
+
+msgid "{shown:,} of {total:,} song"
+msgstr "{shown:,} sur {total:,} morceau"
+
+msgid "{shown:,} of {total:,} songs"
+msgstr "{shown:,} sur {total:,} morceaux"
+
+msgid "{shown:,} of {total:,} track"
+msgstr "{shown:,} sur {total:,} morceau"
+
+msgid "{shown:,} of {total:,} tracks"
+msgstr "{shown:,} sur {total:,} morceaux"
+
+msgid "{shown:,} of {total:,} video"
+msgstr "{shown:,} sur {total:,} vidéo"
+
+msgid "{shown:,} of {total:,} videos"
+msgstr "{shown:,} sur {total:,} vidéos"
+
+msgid "{gb:.2f} GB used of {max_gb:.0f} GB · {count:,} file"
+msgstr "{gb:.2f} Go utilisés sur {max_gb:.0f} Go · {count:,} fichier"
+
+msgid "{gb:.2f} GB used of {max_gb:.0f} GB · {count:,} files"
+msgstr "{gb:.2f} Go utilisés sur {max_gb:.0f} Go · {count:,} fichiers"
+
+msgid "{gb:.2f} GB · {count:,} file"
+msgstr "{gb:.2f} Go · {count:,} fichier"
+
+msgid "{gb:.2f} GB · {count:,} files"
+msgstr "{gb:.2f} Go · {count:,} fichiers"
+
+#: GUI/widgets/MBListView.py:2646
+msgid "Add Column"
+msgstr "Ajouter une colonne"
+
+msgid "Album Artist"
+msgstr "Artiste de l’album"
+
+msgid "Album ID"
+msgstr "ID album"
+
+msgid "Art Count"
+msgstr "Nombre de pochettes"
+
+msgid "Art Formats:"
+msgstr "Formats de pochette :"
+
+msgid "Artist Ref"
+msgstr "Réf. artiste"
+
+msgid "Artwork"
+msgstr "Pochette"
+
+msgid "Artwork Ref"
+msgstr "Réf. pochette"
+
+msgid "Audio:"
+msgstr "Audio :"
+
+msgid "Audio Quality"
+msgstr "Qualité audio"
+
+msgid "Bitrate"
+msgstr "Débit"
+
+msgid "BPM"
+msgstr "BPM"
+
+msgid "Bus/Format:"
+msgstr "Bus/Format:"
+
+#: GUI/widgets/settingsPage.py:1943
+msgid "Cache Location"
+msgstr "Emplacement du cache"
+
+#: GUI/widgets/sidebar.py:392
+msgid "Capabilities"
+msgstr "Capacités"
+
+msgid "Category"
+msgstr "Catégorie"
+
+msgid "Chapter Img:"
+msgstr "Chapter Img:"
+
+msgid "Chapter Titles"
+msgstr "Titres des chapitres"
+
+msgid "Chapters"
+msgstr "Chapitres"
+
+msgid "Cleared — {count:,} file removed"
+msgstr "Cache vidé — {count:,} fichier supprimé"
+
+msgid "Cleared — {count:,} files removed"
+msgstr "Cache vidé — {count:,} fichiers supprimés"
+
+msgid "Comment"
+msgstr "Commentaire"
+
+msgid "Compilation"
+msgstr "Compilation"
+
+msgid "Composer"
+msgstr "Compositeur"
+
+msgid "Composer ID"
+msgstr "Composer ID"
+
+msgid "Conflicts:"
+msgstr "Conflits :"
+
+#: GUI/widgets/musicBrowser.py:471
+msgid "Convert to a single chaptered track"
+msgstr "Convertir en un seul morceau chapitré"
+
+msgid "Core Metadata"
+msgstr "Métadonnées principales"
+
+#: GUI/widgets/musicBrowser.py:560
+msgid ""
+"Could not prepare artwork:\n"
+"\n"
+"{error}"
+msgstr ""
+"Could not prepare artwork:\n"
+"\n"
+"{error}"
+
+#: GUI/widgets/musicBrowser.py:582
+msgid ""
+"Could not stage artwork update:\n"
+"\n"
+"{error}"
+msgstr ""
+"Could not stage artwork update:\n"
+"\n"
+"{error}"
+
+#: GUI/widgets/settingsPage.py:1961
+msgid "Custom directory to store iOpenPod settings. Useful for portable setups or backups."
+msgstr "Custom directory to store iOpenPod settings. Useful for portable setups or backups."
+
+msgid "Date Added"
+msgstr "Date d’ajout"
+
+msgid "Date Modified"
+msgstr "Date de modification"
+
+msgid "Dates"
+msgstr "Dates"
+
+msgid "Description"
+msgstr "Description"
+
+msgid "Device DB:"
+msgstr "Device DB:"
+
+msgid "Disc #"
+msgstr "Disque n°"
+
+msgid "Disc Total"
+msgstr "Total disques"
+
+msgid "Disk Size:"
+msgstr "Taille du disque :"
+
+msgid "Encoder"
+msgstr "Encodeur"
+
+msgid "Enclosure URL"
+msgstr "Enclosure URL"
+
+msgid "Episode #"
+msgstr "Épisode n°"
+
+msgid "Episode ID"
+msgstr "ID épisode"
+
+msgid "Equalizer"
+msgstr "Égaliseur"
+
+#: GUI/widgets/settingsPage.py:1194
+msgid "Error clearing cache: {error}"
+msgstr "Error clearing cache: {error}"
+
+msgid "File Format"
+msgstr "Format de fichier"
+
+msgid "Flags"
+msgstr "Drapeaux"
+
+msgid "Free Space:"
+msgstr "Espace libre :"
+
+msgid "Gapless"
+msgstr "Gapless"
+
+msgid "Gapless Album"
+msgstr "Gapless Album"
+
+msgid "Gapless Payload"
+msgstr "Gapless Payload"
+
+msgid "Grouping"
+msgstr "Groupement"
+
+msgid "Has Lyrics"
+msgstr "Avec paroles"
+
+msgid "Hash Scheme:"
+msgstr "Hash Scheme:"
+
+#: GUI/widgets/MBListView.py:2628
+msgid "Hide \"{column}\""
+msgstr "Masquer « {column} »"
+
+#: GUI/widgets/sidebar.py:364
+msgid "Identity"
+msgstr "Identité"
+
+msgid "Identifiers"
+msgstr "Identifiants"
+
+msgid "Keywords"
+msgstr "Mots-clés"
+
+msgid "Largest"
+msgstr "Plus grand"
+
+msgid "Last Played"
+msgstr "Dernière lecture"
+
+msgid "Last Skipped"
+msgstr "Dernier saut"
+
+#: GUI/widgets/settingsPage.py:1976
+msgid "Locations"
+msgstr "Emplacements"
+
+msgid "Locale"
+msgstr "Paramètres régionaux"
+
+msgid "Location"
+msgstr "Emplacement"
+
+#: GUI/widgets/settingsPage.py:1968
+msgid "Log Location"
+msgstr "Emplacement des journaux"
+
+msgid "Lyrics"
+msgstr "Paroles"
+
+#: GUI/widgets/settingsPage.py:1950
+msgid "Max Cache Size"
+msgstr "Taille max. du cache"
+
+msgid "Max File:"
+msgstr "Max File:"
+
+msgid "Max Transfer:"
+msgstr "Max Transfer:"
+
+msgid "Media Type"
+msgstr "Type de média"
+
+#: GUI/widgets/trackListTitleBar.py:146
+msgid "Minimize"
+msgstr "Réduire"
+
+msgid "Model #:"
+msgstr "Model #:"
+
+msgid "Most Albums"
+msgstr "Le plus d’albums"
+
+msgid "Most Artists"
+msgstr "Le plus d’artistes"
+
+msgid "Most Plays"
+msgstr "Le plus de lectures"
+
+msgid "Most Skipped"
+msgstr "Le plus ignorés"
+
+msgid "Most Tracks"
+msgstr "Le plus de morceaux"
+
+msgid "Network"
+msgstr "Réseau"
+
+#: GUI/widgets/settingsPage.py:1950
+msgid "Oldest cached files are automatically removed (LRU) to stay within this limit. Set to Unlimited if storage is not a concern."
+msgstr "Oldest cached files are automatically removed (LRU) to stay within this limit. Set to Unlimited if storage is not a concern."
+
+#: GUI/widgets/MBListView.py:2736
+msgid "Other"
+msgstr "Autre"
+
+msgid "Photo Formats:"
+msgstr "Formats photo :"
+
+msgid "Playback && Stats"
+msgstr "Lecture et statistiques"
+
+msgid "Played"
+msgstr "Lu"
+
+msgid "Plays"
+msgstr "Lectures"
+
+msgid "Plays (iPod)"
+msgstr "Lectures (iPod)"
+
+msgid "Podcast"
+msgstr "Podcast"
+
+msgid "Podcasts:"
+msgstr "Podcasts :"
+
+msgid "Post-gap"
+msgstr "Post-gap"
+
+msgid "Pre-gap"
+msgstr "Pré-gap"
+
+msgid "Product:"
+msgstr "Product:"
+
+#: GUI/widgets/MBListView.py:3312
+msgid "Rating"
+msgstr "Note"
+
+msgid "Release Date"
+msgstr "Date de sortie"
+
+msgid "Remember Pos."
+msgstr "Mémoriser la position"
+
+#: GUI/widgets/MBListView.py:2640
+msgid "Resize All Columns to Fit"
+msgstr "Ajuster toutes les colonnes"
+
+#: GUI/widgets/MBListView.py:2635
+msgid "Resize Column to Fit"
+msgstr "Ajuster la colonne"
+
+msgid "RSS URL"
+msgstr "URL RSS"
+
+msgid "Sample Count"
+msgstr "Nombre d’échantillons"
+
+msgid "Sample Rate"
+msgstr "Fréquence d’échantillonnage"
+
+#: GUI/widgets/gridHeaderBar.py:77
+msgid "Search…"
+msgstr "Rechercher…"
+
+msgid "Season"
+msgstr "Saison"
+
+msgid "Select an Album"
+msgstr "Sélectionner un album"
+
+msgid "Select an Artist"
+msgstr "Sélectionner un artiste"
+
+msgid "Select a Genre"
+msgstr "Sélectionner un genre"
+
+msgid "Serial:"
+msgstr "Serial:"
+
+#: GUI/widgets/settingsPage.py:1961
+msgid "Settings Location"
+msgstr "Emplacement des paramètres"
+
+msgid "Shadow DB:"
+msgstr "Shadow DB:"
+
+msgid "Show"
+msgstr "Émission"
+
+msgid "Skip Shuffle"
+msgstr "Ignorer en lecture aléatoire"
+
+msgid "Skips"
+msgstr "Sauts"
+
+#: GUI/widgets/gridHeaderBar.py:153
+msgid "Sort: {label} ▾"
+msgstr "Trier : {label} ▾"
+
+msgid "Sort Album"
+msgstr "Tri album"
+
+msgid "Sort Album Artist"
+msgstr "Tri artiste album"
+
+msgid "Sort Artist"
+msgstr "Tri artiste"
+
+msgid "Sort Composer"
+msgstr "Tri compositeur"
+
+msgid "Sort Overrides"
+msgstr "Remplacements de tri"
+
+msgid "Sort Show"
+msgstr "Tri émission"
+
+msgid "Sort Title"
+msgstr "Tri titre"
+
+msgid "Sparse Art:"
+msgstr "Sparse Art:"
+
+msgid "Start Time"
+msgstr "Heure de début"
+
+msgid "Stop Time"
+msgstr "Heure de fin"
+
+msgid "Subtitle"
+msgstr "Sous-titre"
+
+msgid "Time"
+msgstr "Durée"
+
+msgid "Title"
+msgstr "Titre"
+
+msgid "Track #"
+msgstr "Piste n°"
+
+msgid "Track ID"
+msgstr "ID morceau"
+
+msgid "Track Keywords"
+msgstr "Mots-clés du morceau"
+
+msgid "Track Total"
+msgstr "Total morceaux"
+
+#: GUI/widgets/settingsPage.py:1167
+msgid "Unavailable ({error})"
+msgstr "Indisponible ({error})"
+
+#: GUI/widgets/musicBrowser.py:488 GUI/widgets/musicBrowser.py:559 GUI/widgets/musicBrowser.py:581
+msgid "Unify Artwork"
+msgstr "Unifier les pochettes"
+
+msgid "Updater ID:"
+msgstr "Updater ID:"
+
+#: GUI/widgets/sidebar.py:374
+msgid "USB / SCSI"
+msgstr "USB / SCSI"
+
+msgid "USB Parent:"
+msgstr "USB Parent:"
+
+msgid "USB PID:"
+msgstr "USB PID:"
+
+msgid "USB Serial:"
+msgstr "USB Serial:"
+
+msgid "USB VID:"
+msgstr "USB VID:"
+
+msgid "Voice Memos:"
+msgstr "Voice Memos:"
+
+msgid "Volume Adj."
+msgstr "Ajustement du volume"
+
+#: GUI/widgets/settingsPage.py:1968
+msgid "Where iOpenPod writes log files and crash reports. Takes effect on next launch."
+msgstr "Emplacement où iOpenPod écrit les journaux et rapports de plantage. Prend effet au prochain lancement."
+
+#: GUI/widgets/settingsPage.py:1943
+msgid "Where transcoded files are cached to avoid re-encoding on future syncs."
+msgstr "Emplacement de cache des fichiers transcodés afin d’éviter un réencodage lors des synchronisations futures."
+
+msgid "Year"
+msgstr "Année"
+
+#: GUI/widgets/sidebar.py:546
+msgid ""
+"{value}\n"
+"Source: {source}"
+msgstr ""
+"{value}\n"
+"Source: {source}"
+
+#: GUI/widgets/MBListView.py:3322 GUI/widgets/MBListView.py:3360
+msgid "(mixed selection)"
+msgstr "(sélection mixte)"
+
+#: GUI/widgets/MBListView.py:3102
+msgid "Add to Playlist"
+msgstr "Ajouter à la liste de lecture"
+
+#: GUI/widgets/MBListView.py:3304
+msgid "Checked"
+msgstr "Coché"
+
+#: GUI/widgets/MBListView.py:3351
+msgid "Content Advisory"
+msgstr "Avertissement de contenu"
+
+#: GUI/widgets/MBListView.py:2364
+msgid "Content Advisory: Clean"
+msgstr "Avertissement : version censurée"
+
+#: GUI/widgets/MBListView.py:2356
+msgid "Content Advisory: Explicit"
+msgstr "Avertissement : explicite"
+
+#: GUI/widgets/MBListView.py:3209
+msgid "Convert to Podcast"
+msgstr "Convertir en podcast"
+
+#: GUI/widgets/MBListView.py:3191
+msgid "Copy as File(s)"
+msgstr "Copier comme fichier(s)"
+
+#: GUI/widgets/MBListView.py:3188
+msgid "Copy as Text"
+msgstr "Copier comme texte"
+
+#: GUI/widgets/settingsPage.py:2959
+msgid "Downloading update…"
+msgstr "Téléchargement de la mise à jour…"
+
+#: GUI/widgets/MBListView.py:2908
+msgid "Edit ({count})"
+msgstr "Modifier ({count})"
+
+#: GUI/widgets/MBListView.py:153 GUI/widgets/MBListView.py:3367
+msgid "Explicit"
+msgstr "Explicite"
+
+#: GUI/widgets/settingsPage.py:3060
+msgid "ffprobe missing"
+msgstr "ffprobe missing"
+
+#: GUI/widgets/settingsPage.py:2961
+msgid "iOpenPod Update"
+msgstr "iOpenPod Update"
+
+#: GUI/widgets/settingsPage.py:3214
+msgid "Invalid token"
+msgstr "Jeton non valide"
+
+#: GUI/widgets/MBListView.py:3166
+msgid "Move Down"
+msgstr "Descendre"
+
+#: GUI/widgets/MBListView.py:3162
+msgid "Move Up"
+msgstr "Monter"
+
+#: GUI/widgets/MBListView.py:3106 GUI/widgets/playlistBrowser.py:1331 GUI/widgets/playlistBrowser.py:1674
+msgid "New Playlist"
+msgstr "Nouvelle liste de lecture"
+
+#: GUI/widgets/settingsPage.py:2948
+msgid "No Binary Available"
+msgstr "No Binary Available"
+
+#: GUI/widgets/settingsPage.py:2949
+msgid ""
+"No pre-built binary was found for your platform.\n"
+"\n"
+"Visit {release_page} to download manually."
+msgstr ""
+"No pre-built binary was found for your platform.\n"
+"\n"
+"Visit {release_page} to download manually."
+
+#: GUI/widgets/MBListView.py:3328
+msgid "No Rating"
+msgstr "Aucune note"
+
+#: GUI/widgets/MBListView.py:3366
+msgid "None (Unset)"
+msgstr "Aucun (non défini)"
+
+msgid "Part of a compilation album"
+msgstr "Fait partie d’une compilation"
+
+msgid "Preparing {count} file…"
+msgstr "Préparation de {count} fichier…"
+
+msgid "Preparing {count} files…"
+msgstr "Préparation de {count} fichiers…"
+
+msgid "Remove {count} Track from iPod"
+msgstr "Retirer {count} morceau de l’iPod"
+
+msgid "Remove {count} Tracks from iPod"
+msgstr "Retirer {count} morceaux de l’iPod"
+
+msgid "Remove {count} Track from Playlist"
+msgstr "Retirer {count} morceau de la liste"
+
+msgid "Remove {count} Tracks from Playlist"
+msgstr "Retirer {count} morceaux de la liste"
+
+#: GUI/widgets/MBListView.py:2752
+msgid "Reset Columns"
+msgstr "Réinitialiser les colonnes"
+
+msgid "Skip When Shuffling"
+msgstr "Ignorer en lecture aléatoire"
+
+msgid "Skip this track in shuffle mode"
+msgstr "Ignorer ce morceau en lecture aléatoire"
+
+#: GUI/widgets/MBListView.py:3074
+msgid "Split chapters into individual tracks"
+msgstr "Séparer les chapitres en morceaux"
+
+#: GUI/widgets/MBListView.py:773
+msgid "Starting drag…"
+msgstr "Début du glisser-déposer…"
+
+#: GUI/widgets/MBListView.py:3116
+msgid "Untitled"
+msgstr "Sans titre"
+
+#: GUI/widgets/settingsPage.py:2892
+msgid "Up to Date"
+msgstr "À jour"
+
+#: GUI/widgets/settingsPage.py:2886
+msgid "Update Check Failed"
+msgstr "Échec de la recherche de mise à jour"
+
+#: GUI/widgets/settingsPage.py:3180
+msgid "Validating…"
+msgstr "Validation…"
+
+#: GUI/widgets/MBListView.py:3384
+msgid "Volume Adjustment"
+msgstr "Ajustement du volume"
+
+#: GUI/widgets/settingsPage.py:2893
+msgid "You are running the latest version (v{version})."
+msgstr "You are running the latest version (v{version})."
+
+#: GUI/widgets/MBListView.py:155 GUI/widgets/MBListView.py:3368
+msgid "Clean"
+msgstr "Censuré"
+
+#: GUI/widgets/sidebar.py:383
+msgid "Database"
+msgstr "Base de données"
+
+#: GUI/widgets/musicBrowser.py:463 GUI/widgets/playlistBrowser.py:419
+msgid "Edit"
+msgstr "Modifier"
+
+#: GUI/widgets/trackListTitleBar.py:150
+msgid "Maximize"
+msgstr "Agrandir"
+
+#: GUI/widgets/MBListView.py:215
+msgid "{count} chapter"
+msgstr "{count} chapitre"
+
+#: GUI/widgets/MBListView.py:216
+msgid "{count} chapters"
+msgstr "{count} chapitres"
+
+#: GUI/app.py:2312
+msgid ""
+"\n"
+"\n"
+"If you discard, the copied files will be cleaned up automatically the next time you sync."
+msgstr ""
+"\n"
+"\n"
+"If you discard, the copied files will be cleaned up automatically the next time you sync."
+
+#: app_core/jobs.py:70
+msgid " and "
+msgstr " and "
+
+#: GUI/app.py:1439 GUI/app.py:1433
+msgid "Album Conversion"
+msgstr "Conversion d’album"
+
+#: GUI/app.py:1594
+msgid "Chapter Split"
+msgstr "Découpage des chapitres"
+
+#: GUI/app.py:1440
+msgid "Choose an album with at least two tracks."
+msgstr "Choisissez un album avec au moins deux morceaux."
+
+#: GUI/app.py:781
+msgid "Could Not Load iPod"
+msgstr "Impossible de charger l’iPod"
+
+#: GUI/app.py:1379
+msgid ""
+"Could not download sync tools:\n"
+"\n"
+"{error}"
+msgstr ""
+"Could not download sync tools:\n"
+"\n"
+"{error}"
+
+#: GUI/app.py:1102
+msgid ""
+"Could not save quick changes to iPod:\n"
+"{error}\n"
+"\n"
+"iOpenPod is reloading the device view from the iPod."
+msgstr ""
+"Could not save quick changes to iPod:\n"
+"{error}\n"
+"\n"
+"iOpenPod is reloading the device view from the iPod."
+
+#: GUI/app.py:955 app_core/jobs.py:1940 app_core/jobs.py:1989 app_core/jobs.py:2265
+msgid "Database write failed."
+msgstr "Échec de l’écriture de la base de données."
+
+#: GUI/app.py:958
+msgid "Device name updated successfully"
+msgstr "Nom de l’appareil mis à jour"
+
+#: GUI/app.py:2317
+msgid "Discard"
+msgstr "Ignorer"
+
+#: GUI/app.py:1378
+msgid "Download Failed"
+msgstr "Échec du téléchargement"
+
+#: GUI/app.py:2625 GUI/widgets/podcastBrowser.py:237
+msgid "Downloading"
+msgstr "Téléchargement"
+
+#: GUI/app.py:2638
+msgid "Downloading Tools…"
+msgstr "Téléchargement des outils…"
+
+#: GUI/app.py:1075
+msgid "Eject Failed"
+msgstr "Échec de l’éjection"
+
+#: app_core/jobs.py:84
+msgid ""
+"FFmpeg and ffprobe are required for transcoding and media probing.\n"
+"Install from: https://ffmpeg.org"
+msgstr ""
+"FFmpeg and ffprobe are required for transcoding and media probing.\n"
+"Install from: https://ffmpeg.org"
+
+#: GUI/app.py:1076
+msgid ""
+"Failed to eject the iPod:\n"
+"{error}"
+msgstr ""
+"Failed to eject the iPod:\n"
+"{error}"
+
+#: GUI/app.py:966
+msgid ""
+"Failed to rename iPod:\n"
+"{error}"
+msgstr ""
+"Failed to rename iPod:\n"
+"{error}"
+
+#: GUI/app.py:1423 GUI/app.py:1582 GUI/app.py:1184
+msgid "Library Loading"
+msgstr "Chargement de la bibliothèque"
+
+#: GUI/app.py:791
+msgid "Load an iPod library before running tag normalization."
+msgstr "Load an iPod library before running tag normalization."
+
+#: GUI/app.py:2525
+msgid "Missing Tools"
+msgstr "Outils manquants"
+
+#: app_core/jobs.py:1922 app_core/jobs.py:1971
+msgid "No iPod connected."
+msgstr "Aucun iPod connecté."
+
+#: app_core/jobs.py:1926 app_core/jobs.py:1975
+msgid "No iPod database loaded."
+msgstr "Aucune base de données iPod chargée."
+
+#: GUI/app.py:2087
+msgid "No iPod device selected."
+msgstr "Aucun appareil iPod sélectionné."
+
+#: GUI/app.py:824
+msgid "No iPod-specific metadata fixes were found for this library."
+msgstr "Aucune correction de métadonnées propre à l’iPod n’a été trouvée pour cette bibliothèque."
+
+#: GUI/app.py:800
+msgid "No tracks were found in this iPod library."
+msgstr "Aucun morceau trouvé dans cette bibliothèque iPod."
+
+#: GUI/app.py:790 GUI/app.py:799 GUI/app.py:823
+msgid "Normalize iPod Tags"
+msgstr "Normaliser les tags iPod"
+
+#: GUI/app.py:2184
+msgid "Not Enough Space"
+msgstr "Espace insuffisant"
+
+#: GUI/app.py:2575
+msgid "Not Now"
+msgstr "Pas maintenant"
+
+#: GUI/app.py:2603
+msgid "OK"
+msgstr "OK"
+
+#: GUI/app.py:1418 GUI/app.py:1575
+msgid "Please select an iPod device first."
+msgstr "Veuillez d’abord sélectionner un iPod."
+
+#: GUI/app.py:1412
+msgid "Please wait for the current sync to finish before converting an album."
+msgstr "Veuillez attendre la fin de la synchronisation avant de convertir un album."
+
+#: GUI/app.py:1030
+msgid "Please wait for the current sync to finish before ejecting."
+msgstr "Veuillez attendre la fin de la synchronisation avant d’éjecter."
+
+#: GUI/app.py:1569
+msgid "Please wait for the current sync to finish before splitting chapters."
+msgstr "Veuillez attendre la fin de la synchronisation avant de séparer les chapitres."
+
+#: GUI/app.py:1423 GUI/app.py:1583 GUI/app.py:1185
+msgid "Please wait for the iPod library to finish loading."
+msgstr "Veuillez attendre la fin du chargement de la bibliothèque iPod."
+
+#: GUI/app.py:2644
+msgid "Preparing download…"
+msgstr "Préparation du téléchargement…"
+
+#: GUI/app.py:1174
+msgid "Quick Changes Still Saving"
+msgstr "Les changements rapides sont encore en cours d’enregistrement"
+
+#: GUI/app.py:2421
+msgid "Reading dropped files..."
+msgstr "Lecture des fichiers déposés..."
+
+#: GUI/app.py:965
+msgid "Rename Failed"
+msgstr "Échec du renommage"
+
+#: GUI/app.py:1101
+msgid "Save Failed"
+msgstr "Échec de l’enregistrement"
+
+#: GUI/app.py:979
+msgid "Save In Progress"
+msgstr "Enregistrement en cours"
+
+#: GUI/app.py:2316
+msgid "Save Partial Database"
+msgstr "Enregistrer une base partielle"
+
+#: GUI/app.py:2301
+msgid "Save Partial Sync?"
+msgstr "Enregistrer la synchronisation partielle ?"
+
+#: GUI/app.py:1008
+msgid "Still Reading iPod"
+msgstr "Lecture de l’iPod en cours"
+
+#: GUI/app.py:2280
+msgid "Sync Error"
+msgstr "Erreur de synchronisation"
+
+#: GUI/app.py:2204
+msgid "Sync Failed"
+msgstr "Échec de la synchronisation"
+
+#: GUI/app.py:1029
+msgid "Sync In Progress"
+msgstr "Synchronisation en cours"
+
+#: GUI/app.py:1411 GUI/app.py:1568
+msgid "Sync Running"
+msgstr "Synchronisation active"
+
+#: GUI/app.py:2189
+msgid "Sync Until Full"
+msgstr "Synchroniser jusqu’à remplissage"
+
+#: GUI/app.py:167
+msgid "Sync failed before making changes."
+msgstr "La synchronisation a échoué avant toute modification."
+
+#: GUI/app.py:2185
+msgid "The selected sync is larger than the iPod's free space."
+msgstr "La synchronisation sélectionnée dépasse l’espace libre de l’iPod."
+
+#: GUI/app.py:1393
+msgid "This iPod does not support podcasts."
+msgstr "Cet iPod ne prend pas en charge les podcasts."
+
+#: GUI/app.py:2166
+msgid ""
+"This sync is estimated to need more space than is available on the iPod.\n"
+"\n"
+"Available: {available}\n"
+"Estimated needed: {required}\n"
+"Estimated shortfall: {shortage}\n"
+"\n"
+"Sync Until Full will copy files in order until the next file would leave less than {reserve} free, then save the database with the items that actually synced."
+msgstr ""
+"This sync is estimated to need more space than is available on the iPod.\n"
+"\n"
+"Available: {available}\n"
+"Estimated needed: {required}\n"
+"Estimated shortfall: {shortage}\n"
+"\n"
+"Sync Until Full will copy files in order until the next file would leave less than {reserve} free, then save the database with the items that actually synced."
+
+#: GUI/app.py:746 GUI/app.py:748
+msgid "Unknown iPod"
+msgstr "iPod inconnu"
+
+#: GUI/app.py:1392
+msgid "Unsupported iPod"
+msgstr "iPod non pris en charge"
+
+#: GUI/app.py:2309
+msgid "Would you like to save these tracks to your iPod's database?"
+msgstr "Voulez-vous enregistrer ces morceaux dans la base de données de l’iPod ?"
+
+#: app_core/jobs.py:89
+msgid ""
+"You can also set custom paths in\n"
+"Settings -> External Tools."
+msgstr ""
+"Vous pouvez aussi définir des chemins personnalisés dans\n"
+"Paramètres -> Outils externes."
+
+#: app_core/jobs.py:77
+msgid ""
+"fpcalc is required for sync.\n"
+"Install from: https://acoustid.org/chromaprint"
+msgstr ""
+"fpcalc is required for sync.\n"
+"Install from: https://acoustid.org/chromaprint"
+
+#: GUI/app.py:2555
+msgid ""
+"iOpenPod can download these automatically (~80 MB).\n"
+"Download now?"
+msgstr ""
+"iOpenPod can download these automatically (~80 MB).\n"
+"Download now?"
+
+#: GUI/app.py:186
+msgid ""
+"iOpenPod could not load this iPod library.\n"
+"\n"
+"{error}"
+msgstr ""
+"iOpenPod could not load this iPod library.\n"
+"\n"
+"{error}"
+
+#: GUI/app.py:190
+msgid ""
+"iOpenPod could not read this iPod cleanly.\n"
+"\n"
+"Mount path: {mount}\n"
+"System error: {error}\n"
+"\n"
+"On Linux, this usually means the iPod mount is not accessible, the FAT filesystem is dirty, or the current user does not have permission to the mount.\n"
+"\n"
+"Try reconnecting the iPod. If it still fails, try remounting it read-write:\n"
+"  sudo mount -o remount,rw {quoted_mount}\n"
+"\n"
+"If the filesystem is dirty, unmount it before repairing it:\n"
+"  sudo umount {quoted_mount}\n"
+"  sudo fsck.vfat -a /dev/sdXN\n"
+"\n"
+"Replace /dev/sdXN with the iPod partition. Do not run fsck while the iPod is mounted."
+msgstr ""
+"iOpenPod could not read this iPod cleanly.\n"
+"\n"
+"Mount path: {mount}\n"
+"System error: {error}\n"
+"\n"
+"On Linux, this usually means the iPod mount is not accessible, the FAT filesystem is dirty, or the current user does not have permission to the mount.\n"
+"\n"
+"Try reconnecting the iPod. If it still fails, try remounting it read-write:\n"
+"  sudo mount -o remount,rw {quoted_mount}\n"
+"\n"
+"If the filesystem is dirty, unmount it before repairing it:\n"
+"  sudo umount {quoted_mount}\n"
+"  sudo fsck.vfat -a /dev/sdXN\n"
+"\n"
+"Replace /dev/sdXN with the iPod partition. Do not run fsck while the iPod is mounted."
+
+#: GUI/app.py:1009
+msgid "iOpenPod is still finishing background reads from the iPod. Try ejecting again in a moment."
+msgstr "iOpenPod is still finishing background reads from the iPod. Try ejecting again in a moment."
+
+#: GUI/app.py:1175
+msgid "iOpenPod is still saving pending quick changes. Please wait for {label} to finish before starting a full sync."
+msgstr "iOpenPod is still saving pending quick changes. Please wait for {label} to finish before starting a full sync."
+
+#: GUI/app.py:980
+msgid "iOpenPod is still saving {label} to the iPod. Try ejecting again when the save finishes."
+msgstr "iOpenPod is still saving {label} to the iPod. Try ejecting again when the save finishes."
+
+#: GUI/app.py:1050
+msgid "iPod Ejected"
+msgstr "iPod éjecté"
+
+#: GUI/app.py:958
+msgid "iPod Renamed"
+msgstr "iPod renommé"
+
+#: GUI/app.py:1171
+msgid "quick changes"
+msgstr "changements rapides"
+
+#: GUI/app.py:2290
+msgid "track"
+msgstr "morceau"
+
+#: GUI/app.py:2290 GUI/widgets/playlistBrowser.py:1251
+msgid "tracks"
+msgstr "morceaux"
+
+#: GUI/app.py:2293
+msgid "{count} more track was not copied."
+msgstr "{count} morceau supplémentaire n’a pas été copié."
+
+#: GUI/app.py:2295
+msgid "{count} more tracks were not copied."
+msgstr "{count} morceaux supplémentaires n’ont pas été copiés."
+
+#: GUI/app.py:2304
+msgid "{count} {tracks_word} were successfully copied to your iPod before the sync was cancelled."
+msgstr "{count} {tracks_word} ont été copiés sur votre iPod avant l’annulation de la synchronisation."
+
+#: GUI/app.py:2544
+msgid "{tools} Not Found"
+msgstr "{tools} introuvable"
+
+#: GUI/widgets/photoBrowser.py:1694
+msgid "Add Photo to Album"
+msgstr "Ajouter une photo à l’album"
+
+#: GUI/widgets/photoBrowser.py:1246 GUI/widgets/photoBrowser.py:480
+msgid "Add to Album"
+msgstr "Ajouter à l’album"
+
+#: GUI/widgets/photoBrowser.py:1676
+msgid "Album name:"
+msgstr "Nom de l’album :"
+
+#: GUI/widgets/photoBrowser.py:1695
+msgid "Album:"
+msgstr "Album :"
+
+#: GUI/widgets/photoBrowser.py:814
+msgid "All Photos"
+msgstr "Toutes les photos"
+
+#: GUI/widgets/playlistBrowser.py:1012
+msgid "Choose a playlist to inspect its tracks and database metadata"
+msgstr "Choisissez une liste pour inspecter ses morceaux et métadonnées"
+
+#: GUI/widgets/photoBrowser.py:1689
+msgid "Create another album first, or choose a photo that is not already in every album."
+msgstr "Create another album first, or choose a photo that is not already in every album."
+
+#: GUI/widgets/playlistBrowser.py:437
+msgid "Delete"
+msgstr "Supprimer"
+
+#: GUI/widgets/photoBrowser.py:1724 GUI/widgets/photoBrowser.py:1742
+msgid "Delete '{name}' from the iPod now?"
+msgstr "Delete '{name}' from the iPod now?"
+
+#: GUI/widgets/photoBrowser.py:1323 GUI/widgets/photoBrowser.py:1723
+msgid "Delete Album"
+msgstr "Supprimer l’album"
+
+#: GUI/widgets/photoBrowser.py:1267 GUI/widgets/photoBrowser.py:1741 GUI/widgets/photoBrowser.py:482
+msgid "Delete Photo"
+msgstr "Supprimer la photo"
+
+#: GUI/widgets/playlistBrowser.py:561
+msgid "Details"
+msgstr "Détails"
+
+#: GUI/widgets/playlistBrowser.py:451 GUI/widgets/playlistBrowser.py:1854 GUI/widgets/playlistBrowser.py:1879
+msgid "Evaluate Now"
+msgstr "Évaluer maintenant"
+
+#: GUI/widgets/photoBrowser.py:479 GUI/widgets/playlistBrowser.py:473
+msgid "Export"
+msgstr "Exporter"
+
+#: GUI/widgets/photoBrowser.py:1660
+msgid "Export Album"
+msgstr "Exporter l’album"
+
+#: GUI/widgets/photoBrowser.py:1296
+msgid "Export Album..."
+msgstr "Exporter l’album..."
+
+#: GUI/widgets/photoBrowser.py:1660
+msgid "Export All Photos"
+msgstr "Exporter toutes les photos"
+
+#: GUI/widgets/photoBrowser.py:1296
+msgid "Export All Photos..."
+msgstr "Exporter toutes les photos..."
+
+#: GUI/widgets/photoBrowser.py:1634
+msgid "Export Photo"
+msgstr "Exporter la photo"
+
+#: GUI/widgets/photoBrowser.py:1238
+msgid "Export Photo..."
+msgstr "Exporter la photo..."
+
+#: GUI/widgets/playlistBrowser.py:1338 GUI/widgets/playlistBrowser.py:1974 GUI/widgets/playlistBrowser.py:1603
+msgid "Import Playlist"
+msgstr "Importer une liste de lecture"
+
+#: GUI/widgets/playlistBrowser.py:1401
+msgid "Importing Playlist…"
+msgstr "Import de la liste…"
+
+#: GUI/widgets/playlistBrowser.py:1603
+msgid "Importing…"
+msgstr "Import…"
+
+#: GUI/widgets/photoBrowser.py:423 GUI/widgets/photoBrowser.py:1305 GUI/widgets/photoBrowser.py:1676
+msgid "New Album"
+msgstr "Nouvel album"
+
+#: GUI/widgets/photoBrowser.py:1710
+msgid "New album name:"
+msgstr "Nom du nouvel album :"
+
+#: GUI/widgets/photoBrowser.py:1688
+msgid "No Available Albums"
+msgstr "Aucun album disponible"
+
+#: GUI/widgets/photoBrowser.py:1574 GUI/widgets/photoBrowser.py:1650
+msgid "No Photos"
+msgstr "Aucune photo"
+
+#: GUI/widgets/photoBrowser.py:1454 GUI/widgets/photoBrowser.py:1581 GUI/widgets/photoBrowser.py:1625 GUI/widgets/photoBrowser.py:1655
+msgid "No iPod Connected"
+msgstr "Aucun iPod connecté"
+
+#: GUI/widgets/photoBrowser.py:474
+msgid "No photo selected"
+msgstr "Aucune photo sélectionnée"
+
+#: GUI/widgets/playlistBrowser.py:1177
+msgid "No playlists on this iPod"
+msgstr "Aucune liste de lecture sur cet iPod"
+
+#: GUI/widgets/playlistBrowser.py:1986
+msgid "Parsing playlist…"
+msgstr "Analyse de la liste…"
+
+#: GUI/widgets/photoBrowser.py:481
+msgid "Remove from Album"
+msgstr "Retirer de l’album"
+
+#: GUI/widgets/photoBrowser.py:1256
+msgid "Remove from Current Album"
+msgstr "Retirer de l’album actuel"
+
+#: GUI/widgets/photoBrowser.py:1710 GUI/widgets/photoBrowser.py:1316
+msgid "Rename Album"
+msgstr "Renommer l’album"
+
+#: GUI/widgets/playlistBrowser.py:528
+msgid "Rules"
+msgstr "Règles"
+
+#: GUI/widgets/photoBrowser.py:475
+msgid "Select a photo to inspect its preview and album details."
+msgstr "Sélectionnez une photo pour voir son aperçu et les détails de l’album."
+
+#: GUI/widgets/playlistBrowser.py:1513 GUI/widgets/playlistBrowser.py:1547 GUI/widgets/playlistBrowser.py:1811 GUI/widgets/playlistBrowser.py:384 GUI/widgets/playlistBrowser.py:1007
+msgid "Select a playlist"
+msgstr "Sélectionner une liste de lecture"
+
+#: GUI/widgets/photoBrowser.py:1455
+msgid "Select an iPod before editing device photos."
+msgstr "Sélectionnez un iPod avant de modifier les photos de l’appareil."
+
+#: GUI/widgets/photoBrowser.py:1582 GUI/widgets/photoBrowser.py:1626 GUI/widgets/photoBrowser.py:1656
+msgid "Select an iPod before exporting device photos."
+msgstr "Sélectionnez un iPod avant d’exporter les photos de l’appareil."
+
+#: GUI/widgets/photoBrowser.py:1574 GUI/widgets/photoBrowser.py:1650
+msgid "There are no photos to export."
+msgstr "Il n’y a aucune photo à exporter."
+
+#: GUI/widgets/playlistBrowser.py:1838
+msgid "Writing…"
+msgstr "Écriture…"
+
+#: GUI/widgets/settingsPage.py:1619 GUI/widgets/settingsPage.py:1627
+msgid "1"
+msgstr "1"
+
+#: GUI/widgets/settingsPage.py:1950
+msgid "1 GB"
+msgstr "1 GB"
+
+#: GUI/widgets/settingsPage.py:2008 GUI/widgets/settingsPage.py:2008
+msgid "10"
+msgstr "10"
+
+#: GUI/widgets/settingsPage.py:1950
+msgid "10 GB"
+msgstr "10 GB"
+
+#: GUI/widgets/settingsPage.py:1515 GUI/widgets/settingsPage.py:1515
+msgid "100%"
+msgstr "100%"
+
+#: GUI/widgets/settingsPage.py:1515
+msgid "110%"
+msgstr "110%"
+
+#: GUI/widgets/settingsPage.py:1515
+msgid "125%"
+msgstr "125%"
+
+#: GUI/widgets/settingsPage.py:1716
+msgid "128 kbps"
+msgstr "128 kbps"
+
+#: GUI/widgets/settingsPage.py:1787
+msgid "15 kHz"
+msgstr "15 kHz"
+
+#: GUI/widgets/settingsPage.py:1515
+msgid "150%"
+msgstr "150%"
+
+#: GUI/widgets/settingsPage.py:1787
+msgid "16 kHz"
+msgstr "16 kHz"
+
+#: GUI/widgets/settingsPage.py:1716
+msgid "160 kbps"
+msgstr "160 kbps"
+
+#: GUI/widgets/settingsPage.py:1787
+msgid "17 kHz"
+msgstr "17 kHz"
+
+#: GUI/widgets/settingsPage.py:1751
+msgid "18 (High)"
+msgstr "18 (High)"
+
+#: GUI/widgets/settingsPage.py:1787
+msgid "18 kHz"
+msgstr "18 kHz"
+
+#: GUI/widgets/settingsPage.py:1787
+msgid "19 kHz"
+msgstr "19 kHz"
+
+#: GUI/widgets/settingsPage.py:1716 GUI/widgets/settingsPage.py:1716
+msgid "192 kbps"
+msgstr "192 kbps"
+
+#: GUI/widgets/settingsPage.py:1619 GUI/widgets/settingsPage.py:1627
+msgid "2"
+msgstr "2"
+
+#: GUI/widgets/settingsPage.py:1950
+msgid "2 GB"
+msgstr "2 GB"
+
+#: GUI/widgets/settingsPage.py:2008
+msgid "20"
+msgstr "20"
+
+#: GUI/widgets/settingsPage.py:1751
+msgid "20 (Good)"
+msgstr "20 (Good)"
+
+#: GUI/widgets/settingsPage.py:1950
+msgid "20 GB"
+msgstr "20 GB"
+
+#: GUI/widgets/settingsPage.py:1787
+msgid "20 kHz"
+msgstr "20 kHz"
+
+#: GUI/widgets/settingsPage.py:1716
+msgid "224 kbps"
+msgstr "224 kbps"
+
+#: GUI/widgets/settingsPage.py:1751 GUI/widgets/settingsPage.py:1751
+msgid "23 (Balanced)"
+msgstr "23 (Balanced)"
+
+#: GUI/widgets/settingsPage.py:1716
+msgid "256 kbps"
+msgstr "256 kbps"
+
+#: GUI/widgets/settingsPage.py:1751
+msgid "26 (Low)"
+msgstr "26 (Low)"
+
+#: GUI/widgets/settingsPage.py:1751
+msgid "28 (Very Low)"
+msgstr "28 (Very Low)"
+
+#: GUI/widgets/settingsPage.py:1728
+msgid "32 kbps"
+msgstr "32 kbps"
+
+#: GUI/widgets/settingsPage.py:1716
+msgid "320 kbps"
+msgstr "320 kbps"
+
+#: GUI/widgets/settingsPage.py:1619 GUI/widgets/settingsPage.py:1627
+msgid "4"
+msgstr "4"
+
+#: GUI/widgets/settingsPage.py:1728
+msgid "48 kbps"
+msgstr "48 kbps"
+
+#: GUI/widgets/settingsPage.py:2008
+msgid "5"
+msgstr "5"
+
+#: GUI/widgets/settingsPage.py:1950 GUI/widgets/settingsPage.py:1950
+msgid "5 GB"
+msgstr "5 GB"
+
+#: GUI/widgets/settingsPage.py:1950
+msgid "50 GB"
+msgstr "50 GB"
+
+#: GUI/widgets/settingsPage.py:1619
+msgid "6"
+msgstr "6"
+
+#: GUI/widgets/settingsPage.py:1728 GUI/widgets/settingsPage.py:1728
+msgid "64 kbps"
+msgstr "64 kbps"
+
+#: GUI/widgets/settingsPage.py:1515
+msgid "75%"
+msgstr "75%"
+
+#: GUI/widgets/settingsPage.py:1619
+msgid "8"
+msgstr "8"
+
+#: GUI/widgets/settingsPage.py:1728
+msgid "80 kbps"
+msgstr "80 kbps"
+
+#: GUI/widgets/settingsPage.py:1515
+msgid "90%"
+msgstr "90%"
+
+#: GUI/widgets/settingsPage.py:1716 GUI/widgets/settingsPage.py:1728
+msgid "96 kbps"
+msgstr "96 kbps"
+
+msgid "Always output audio at 44.1 kHz (CD rate). Recommended for early iPods (1G-4G) that can have trouble with 48 kHz ALAC.When off, sample rate is reduced to 48 kHz as iPods can only decode 48 kHz or lower"
+msgstr "Toujours sortir l’audio en 44,1 kHz (qualité CD). Recommandé pour les anciens iPods (1G-4G) qui peuvent avoir des problèmes avec l’ALAC 48 kHz. Désactivé, la fréquence est réduite à 48 kHz, car les iPods ne décodent que 48 kHz ou moins."
+
+#: GUI/widgets/settingsPage.py:1640
+msgid "Analyze loudness of files missing ReplayGain/iTunNORM tags using ffmpeg, then write the result back into your PC files and sync to iPod. Sound Check values are always synced to iPod regardless of this setting."
+msgstr "Analyse avec ffmpeg le volume des fichiers sans tags ReplayGain/iTunNORM, puis réécrit le résultat dans les fichiers du PC et synchronise vers l’iPod. Les valeurs Sound Check sont toujours synchronisées vers l’iPod."
+
+#: GUI/widgets/settingsPage.py:1702
+msgid "Audio quality preset for music tracks. High: 256 kbps / best VBR. Balanced: 192 kbps. Compact: 128 kbps / smaller VBR."
+msgstr "Préréglage de qualité audio pour la musique. Élevée : 256 kbps / meilleur VBR. Équilibrée : 192 kbps. Compacte : 128 kbps / VBR plus petit."
+
+#: GUI/widgets/settingsPage.py:1619 GUI/widgets/settingsPage.py:1619 GUI/widgets/settingsPage.py:1627 GUI/widgets/settingsPage.py:1627 GUI/widgets/settingsPage.py:1688 GUI/widgets/settingsPage.py:1688 GUI/widgets/settingsPage.py:1787 GUI/widgets/settingsPage.py:1787
+msgid "Auto"
+msgstr "Auto"
+
+#: GUI/widgets/settingsPage.py:1902
+msgid "Automatically scrobble new iPod plays to connected services when you sync."
+msgstr "Scrobbler automatiquement les nouvelles lectures iPod vers les services connectés lors de la synchronisation."
+
+#: GUI/widgets/settingsPage.py:1658
+msgid "Average"
+msgstr "Moyenne"
+
+#: GUI/widgets/settingsPage.py:2001
+msgid "Backup Before Sync"
+msgstr "Sauvegarde avant synchronisation"
+
+#: GUI/widgets/settingsPage.py:1995
+msgid "Backup Location"
+msgstr "Emplacement de sauvegarde"
+
+#: GUI/widgets/settingsPage.py:1702 GUI/widgets/settingsPage.py:1702
+msgid "Balanced"
+msgstr "Équilibré"
+
+#: GUI/widgets/settingsPage.py:1522 GUI/widgets/settingsPage.py:1522
+msgid "Blue (Default)"
+msgstr "Bleu (par défaut)"
+
+#: GUI/widgets/settingsPage.py:1709 GUI/widgets/settingsPage.py:1709
+msgid "CBR"
+msgstr "CBR"
+
+#: GUI/widgets/settingsPage.py:1709
+msgid "CBR uses a fixed target bitrate. VBR targets a quality level and lets the encoder choose bitrate per frame — typically better quality per byte."
+msgstr "CBR utilise un débit cible fixe. VBR vise un niveau de qualité et laisse l’encodeur choisir le débit par trame, offrant généralement une meilleure qualité par octet."
+
+#: GUI/widgets/settingsPage.py:1495
+msgid "Catppuccin Frappé"
+msgstr "Catppuccin Frappé"
+
+#: GUI/widgets/settingsPage.py:1495
+msgid "Catppuccin Latte"
+msgstr "Catppuccin Latte"
+
+#: GUI/widgets/settingsPage.py:1495
+msgid "Catppuccin Macchiato"
+msgstr "Catppuccin Macchiato"
+
+#: GUI/widgets/settingsPage.py:1495
+msgid "Catppuccin Mocha"
+msgstr "Catppuccin Mocha"
+
+#: GUI/widgets/settingsPage.py:2001
+msgid "Choose whether sync creates a full device backup automatically, asks each time, or skips pre-sync backups."
+msgstr "Choisissez si la synchronisation crée automatiquement une sauvegarde complète, demande à chaque fois ou ignore les sauvegardes préalables."
+
+msgid "Choose which lossy encoder to use.Auto chooses the best available."
+msgstr "Choisissez l’encodeur avec pertes à utiliser. Auto choisit le meilleur disponible."
+
+#: GUI/widgets/settingsPage.py:1702
+msgid "Compact"
+msgstr "Compact"
+
+#: GUI/widgets/settingsPage.py:1918
+msgid "Connect your Last.fm account to scrobble iPod plays. You will need to provide your Last.fm API Key and API Secret."
+msgstr "Connectez votre compte Last.fm pour scrobbler les lectures iPod. Vous devrez fournir la clé API et le secret API Last.fm."
+
+#: GUI/widgets/settingsPage.py:1908
+msgid "Connect your ListenBrainz account to scrobble iPod plays. Copy your user token from the link below."
+msgstr "Connectez votre compte ListenBrainz pour scrobbler les lectures iPod. Copiez votre jeton utilisateur depuis le lien ci-dessous."
+
+#: GUI/widgets/settingsPage.py:1495 GUI/widgets/settingsPage.py:1495
+msgid "Dark"
+msgstr "Sombre"
+
+#: GUI/widgets/settingsPage.py:1769
+msgid "Downmix to mono when encoding podcasts and audiobooks. Mono at lowbites sounds significantly better than stereo and cuts file sizes in half."
+msgstr "Convertit en mono lors de l’encodage des podcasts et livres audio. À bas débit, le mono sonne nettement mieux que la stéréo et divise la taille par deux."
+
+msgid "Enable separate quality settings for podcasts and audiobooks.Music tracks are unaffected."
+msgstr "Active des réglages de qualité séparés pour podcasts et livres audio. La musique n’est pas affectée."
+
+#: GUI/widgets/settingsPage.py:1795
+msgid "Enables a quality-enhancement post-processing pass in libfdk_aac. Improves output at the cost of slightly longer encode times. Only affects the libfdk_aac encoder."
+msgstr "Enables a quality-enhancement post-processing pass in libfdk_aac. Improves output at the cost of slightly longer encode times. Only affects the libfdk_aac encoder."
+
+#: GUI/widgets/settingsPage.py:1735
+msgid "Encode lossless sources (ALAC, FLAC, WAV, AIFF) as your selected lossy format instead of ALAC. Saves iPod storage at the cost of quality."
+msgstr "Encode les sources sans pertes (ALAC, FLAC, WAV, AIFF) dans le format avec pertes choisi au lieu d’ALAC. Économise l’espace iPod au prix de la qualité."
+
+#: GUI/widgets/settingsPage.py:1813
+msgid "Encodes stereo as Sum (Mid) and Difference (Side) rather than Left/Right. Concentrates bits where the signal is strongest, particularly on centred content. Affects the native aac encoder only."
+msgstr "Encodes stereo as Sum (Mid) and Difference (Side) rather than Left/Right. Concentrates bits where the signal is strongest, particularly on centred content. Affects the native aac encoder only."
+
+#: GUI/widgets/settingsPage.py:1647
+msgid "For portrait-heavy photos, rotate the device viewing caches clockwise when that uses more of the iPod's landscape photo screen. The original PC files are not modified."
+msgstr "Pour les photos surtout verticales, fait pivoter les caches d’affichage de l’appareil quand cela utilise mieux l’écran paysage de l’iPod. Les fichiers originaux du PC ne sont pas modifiés."
+
+#: GUI/widgets/settingsPage.py:1741
+msgid "Force existing MP3 and AAC files through the selected lossy encoder. Use this to make the synced library more uniform or smaller."
+msgstr "Force les fichiers MP3 et AAC existants à passer par l’encodeur avec pertes choisi. Utile pour rendre la bibliothèque synchronisée plus uniforme ou plus petite."
+
+#: GUI/widgets/settingsPage.py:1522
+msgid "Gold"
+msgstr "Or"
+
+#: GUI/widgets/settingsPage.py:1522
+msgid "Green"
+msgstr "Vert"
+
+#: GUI/widgets/settingsPage.py:1702
+msgid "High Quality"
+msgstr "Haute qualité"
+
+#: GUI/widgets/settingsPage.py:1658
+msgid "Highest"
+msgstr "Plus haute"
+
+#: GUI/widgets/settingsPage.py:1658
+msgid "How to resolve rating conflicts when iPod and PC ratings differ. iPod/PC Wins uses that source (falling back to the other if zero). Highest/Lowest picks the max/min non-zero value. Average rounds to the nearest star."
+msgstr "Définit comment résoudre les conflits de notes entre iPod et PC. iPod/PC prioritaire utilise cette source (avec repli si zéro). Plus haute/plus basse choisit la valeur non nulle max/min. Moyenne arrondit à l’étoile la plus proche."
+
+#: GUI/widgets/settingsPage.py:1572
+msgid "Ko-fi"
+msgstr "Ko-fi"
+
+#: GUI/widgets/settingsPage.py:1495
+msgid "Light"
+msgstr "Clair"
+
+#: GUI/widgets/settingsPage.py:1658
+msgid "Lowest"
+msgstr "Plus basse"
+
+#: GUI/widgets/settingsPage.py:1522
+msgid "Match iPod"
+msgstr "Associer à l’iPod"
+
+#: GUI/widgets/settingsPage.py:2008
+msgid "Max Backups"
+msgstr "Sauvegardes max."
+
+#: GUI/widgets/settingsPage.py:1787
+msgid "Maximum frequency the encoder will output. Lowering this (16–18 kHz) frees bits for the mid-range and can eliminate high-frequency squeaks at lower bitrates. Auto lets the encoder decide. Applies to all AAC encoders."
+msgstr "Maximum frequency the encoder will output. Lowering this (16–18 kHz) frees bits for the mid-range and can eliminate high-frequency squeaks at lower bitrates. Auto lets the encoder decide. Applies to all AAC encoders."
+
+#: GUI/widgets/settingsPage.py:2008
+msgid "Maximum number of backup snapshots to keep per device. Oldest backups are automatically removed when the limit is exceeded."
+msgstr "Nombre maximal d’instantanés de sauvegarde à conserver par appareil. Les plus anciens sont supprimés automatiquement quand la limite est dépassée."
+
+#: GUI/widgets/settingsPage.py:1819
+msgid "Merges high-frequency stereo bands into a single channel with direction metadata. Saves bits at low bitrates but can cause stereo image wobble. Affects the native aac encoder only."
+msgstr "Merges high-frequency stereo bands into a single channel with direction metadata. Saves bits at low bitrates but can cause stereo image wobble. Affects the native aac encoder only."
+
+#: GUI/widgets/settingsPage.py:1507 GUI/widgets/settingsPage.py:1507
+msgid "Off"
+msgstr "Désactivé"
+
+#: GUI/widgets/settingsPage.py:1507
+msgid "On"
+msgstr "Activé"
+
+#: GUI/widgets/settingsPage.py:1522
+msgid "Orange"
+msgstr "Orange"
+
+#: GUI/widgets/settingsPage.py:1619
+msgid "Overall concurrent sync work. This controls how many files can be prepared, fingerprinted, transcoded, or copied at once. Auto uses your CPU core count (capped at 8)."
+msgstr "Travail de synchronisation concurrent global. Contrôle combien de fichiers peuvent être préparés, empreintés, transcodés ou copiés à la fois. Auto utilise le nombre de cœurs CPU (max. 8)."
+
+#: GUI/widgets/settingsPage.py:1658
+msgid "PC Wins"
+msgstr "PC prioritaire"
+
+#: GUI/widgets/settingsPage.py:1893
+msgid "Path Overrides"
+msgstr "Remplacements de chemin"
+
+#: GUI/widgets/settingsPage.py:1522
+msgid "Pink"
+msgstr "Rose"
+
+#: GUI/widgets/settingsPage.py:1882
+msgid "Point to a custom ffmpeg binary. Leave empty to auto-detect."
+msgstr "Indiquez un binaire ffmpeg personnalisé. Laissez vide pour détecter automatiquement."
+
+#: GUI/widgets/settingsPage.py:1887
+msgid "Point to a custom fpcalc binary. Leave empty to auto-detect."
+msgstr "Indiquez un binaire fpcalc personnalisé. Laissez vide pour détecter automatiquement."
+
+#: GUI/widgets/settingsPage.py:1522
+msgid "Purple"
+msgstr "Violet"
+
+#: GUI/widgets/settingsPage.py:1751
+msgid "Quality level for H.264 video transcodes. Lower CRF = better quality but larger files. Resolution and codec are always forced to iPod-compatible values."
+msgstr "Niveau de qualité pour les transcodages vidéo H.264. CRF plus bas = meilleure qualité mais fichiers plus gros. La résolution et le codec sont toujours forcés pour l’iPod."
+
+#: GUI/widgets/settingsPage.py:1722
+msgid "Quality level for VBR encoding. Higher = better quality, larger files."
+msgstr "Niveau de qualité pour l’encodage VBR. Plus élevé = meilleure qualité, fichiers plus gros."
+
+#: GUI/widgets/settingsPage.py:1522
+msgid "Red"
+msgstr "Rouge"
+
+#: GUI/widgets/settingsPage.py:1807
+msgid "Replaces noise-like frequency bands with synthetic noise, saving bits. Can cause sandpaper or hissing artifacts if the encoder mistakes tonal content for noise. Off by default. Affects the native aac encoder only."
+msgstr "Replaces noise-like frequency bands with synthetic noise, saving bits. Can cause sandpaper or hissing artifacts if the encoder mistakes tonal content for noise. Off by default. Affects the native aac encoder only."
+
+#: GUI/widgets/settingsPage.py:1875
+msgid "Required for acoustic fingerprinting, which identifies tracks even after re-encoding."
+msgstr "Requis pour l’empreinte acoustique, qui identifie les morceaux même après réencodage."
+
+#: GUI/widgets/settingsPage.py:1869
+msgid "Required for transcoding and media probing. Includes ffmpeg and ffprobe."
+msgstr "Requis pour le transcodage et l’analyse des médias. Inclut ffmpeg et ffprobe."
+
+#: GUI/widgets/settingsPage.py:1902
+msgid "Scrobble on Sync"
+msgstr "Scrobbler à la synchronisation"
+
+#: GUI/widgets/settingsPage.py:1928
+msgid "Services"
+msgstr "Services"
+
+#: GUI/widgets/settingsPage.py:1801
+msgid "Shapes quantization noise around transients to reduce pre-echo (smearing before drum hits). Disabling saves a few bits per block. Affects the native aac encoder only."
+msgstr "Shapes quantization noise around transients to reduce pre-echo (smearing before drum hits). Disabling saves a few bits per block. Affects the native aac encoder only."
+
+#: GUI/widgets/settingsPage.py:1627
+msgid "Simultaneous writes to the iPod filesystem. Set to 1 for HDD-based iPods to reduce fragmentation risk. Auto uses an HDD-safe default when the device looks like a hard-drive iPod."
+msgstr "Écritures simultanées sur le système de fichiers iPod. Mettre à 1 pour les iPods à disque dur afin de réduire la fragmentation. Auto utilise une valeur sûre pour HDD quand l’appareil semble être un iPod à disque."
+
+#: GUI/widgets/settingsPage.py:1762
+msgid "Slower presets produce slightly better quality at the same CRF, but take much longer."
+msgstr "Les préréglages plus lents offrent une qualité légèrement meilleure au même CRF, mais prennent beaucoup plus de temps."
+
+#: GUI/widgets/podcastBrowser.py:1566
+msgid "Subscriptions"
+msgstr "Abonnements"
+
+#: GUI/widgets/settingsPage.py:1495 GUI/widgets/settingsPage.py:1507
+msgid "System"
+msgstr "Système"
+
+#: GUI/widgets/settingsPage.py:1716
+msgid "Target CBR bitrate for music tracks."
+msgstr "Débit CBR cible pour les morceaux de musique."
+
+#: GUI/widgets/settingsPage.py:1728
+msgid "Target bitrate for podcasts and audiobooks (Always uses CBR despite set Bitrate Mode). Pair with 'Mono for Spoken Word' for best results."
+msgstr "Débit cible pour podcasts et livres audio (utilise toujours CBR malgré le mode choisi). À associer avec « Mono pour voix parlée » pour de meilleurs résultats."
+
+#: GUI/widgets/settingsPage.py:1522
+msgid "Teal"
+msgstr "Bleu sarcelle"
+
+#: GUI/widgets/settingsPage.py:1950 GUI/widgets/settingsPage.py:2008
+msgid "Unlimited"
+msgstr "Illimité"
+
+#: GUI/widgets/settingsPage.py:1653
+msgid "Use aspect-fit for device photo thumbnail formats. When off (default), thumbnails use iTunes-style crop-to-fill."
+msgstr "Utilise l’ajustement proportionnel pour les miniatures photo de l’appareil. Désactivé (par défaut), les miniatures utilisent un recadrage façon iTunes."
+
+#: GUI/widgets/settingsPage.py:1709
+msgid "VBR"
+msgstr "VBR"
+
+#: GUI/widgets/settingsPage.py:1746
+msgid "When enabled, WAV files are converted to ALAC instead of copied. Prefer Lossy Encoding overrides this and converts WAV to the selected lossy format."
+msgstr "Quand activé, les fichiers WAV sont convertis en ALAC au lieu d’être copiés. « Préférer l’encodage avec pertes » remplace ce réglage et convertit WAV au format avec pertes choisi."
+
+#: GUI/widgets/settingsPage.py:1995
+msgid "Where full device backups are stored on your PC. Leave empty for the platform default."
+msgstr "Emplacement des sauvegardes complètes de l’appareil sur le PC. Laissez vide pour la valeur par défaut."
+
+#: GUI/widgets/settingsPage.py:1635
+msgid "While syncing, write ratings and sound check values into your PC music files. When off, no changes are made to your PC files."
+msgstr "Pendant la synchronisation, écrit les notes et valeurs Sound Check dans les fichiers musicaux du PC. Désactivé, les fichiers du PC ne sont pas modifiés."
+
+#: GUI/widgets/settingsPage.py:1688
+msgid "aac"
+msgstr "aac"
+
+#: GUI/widgets/settingsPage.py:1688
+msgid "aac_at"
+msgstr "aac_at"
+
+#: GUI/widgets/settingsPage.py:1488
+msgid "en"
+msgstr "en"
+
+#: GUI/widgets/settingsPage.py:1762 GUI/widgets/settingsPage.py:1762
+msgid "fast"
+msgstr "fast"
+
+#: GUI/widgets/settingsPage.py:1658 GUI/widgets/settingsPage.py:1658
+msgid "iPod Wins"
+msgstr "iPod prioritaire"
+
+#: GUI/widgets/settingsPage.py:1688
+msgid "libfdk_aac"
+msgstr "libfdk_aac"
+
+#: GUI/widgets/settingsPage.py:1688
+msgid "libmp3lame"
+msgstr "libmp3lame"
+
+#: GUI/widgets/settingsPage.py:1688
+msgid "libshine"
+msgstr "libshine"
+
+#: GUI/widgets/settingsPage.py:1762
+msgid "medium"
+msgstr "medium"
+
+#: GUI/widgets/settingsPage.py:1722
+msgid "q0 (Best)"
+msgstr "q0 (meilleur)"
+
+#: GUI/widgets/settingsPage.py:1722
+msgid "q1"
+msgstr "q1"
+
+#: GUI/widgets/settingsPage.py:1722
+msgid "q2"
+msgstr "q2"
+
+#: GUI/widgets/settingsPage.py:1722
+msgid "q3"
+msgstr "q3"
+
+#: GUI/widgets/settingsPage.py:1722 GUI/widgets/settingsPage.py:1722
+msgid "q4"
+msgstr "q4"
+
+#: GUI/widgets/settingsPage.py:1722
+msgid "q5"
+msgstr "q5"
+
+#: GUI/widgets/settingsPage.py:1722
+msgid "q6"
+msgstr "q6"
+
+#: GUI/widgets/settingsPage.py:1722
+msgid "q7"
+msgstr "q7"
+
+#: GUI/widgets/settingsPage.py:1722
+msgid "q8"
+msgstr "q8"
+
+#: GUI/widgets/settingsPage.py:1722
+msgid "q9 (Smallest)"
+msgstr "q9 (plus petit)"
+
+#: GUI/widgets/settingsPage.py:1762
+msgid "slow"
+msgstr "slow"
+
+#: GUI/widgets/settingsPage.py:1762
+msgid "ultrafast"
+msgstr "ultrafast"
+
+#: GUI/widgets/settingsPage.py:1762
+msgid "veryfast"
+msgstr "veryfast"
+
+#: GUI/widgets/settingsPage.py:1780
+msgid "Always output audio at 44.1 kHz (CD rate). Recommended for early iPods (1G-4G) that can have trouble with 48 kHz ALAC. When off, sample rate is reduced to 48 kHz as iPods can only decode 48 kHz or lower"
+msgstr "Always output audio at 44.1 kHz (CD rate). Recommended for early iPods (1G-4G) that can have trouble with 48 kHz ALAC. When off, sample rate is reduced to 48 kHz as iPods can only decode 48 kHz or lower"
+
+#: GUI/widgets/settingsPage.py:1688
+msgid "Choose which lossy encoder to use. Auto chooses the best available."
+msgstr "Choisissez l’encodeur avec pertes à utiliser. Auto choisit le meilleur disponible."
+
+#: GUI/widgets/settingsPage.py:1775
+msgid "Enable separate quality settings for podcasts and audiobooks. Music tracks are unaffected."
+msgstr "Active des réglages de qualité séparés pour podcasts et livres audio. La musique n’est pas affectée."
+
+#: GUI/widgets/playlistBrowser.py:1667
+msgid "New Smart Playlist"
+msgstr "Nouvelle liste intelligente"
+
+#: GUI/widgets/podcastBrowser.py:1441
+msgid "Add Podcast"
+msgstr "Ajouter un podcast"
+
+#: GUI/widgets/podcastBrowser.py:1531
+msgid "Add Your First Podcast"
+msgstr "Ajouter votre premier podcast"
+
+#: GUI/widgets/podcastBrowser.py:451
+msgid "Add this episode to iPod"
+msgstr "Ajouter cet épisode à l’iPod"
+
+#: GUI/widgets/podcastBrowser.py:469 GUI/widgets/podcastBrowser.py:449 GUI/widgets/podcastBrowser.py:2102
+msgid "Add to iPod"
+msgstr "Ajouter à l’iPod"
+
+#: GUI/widgets/podcastBrowser.py:1469
+msgid "Apply per-feed settings: remove listened/old episodes, fill empty slots with new episodes"
+msgstr "Appliquer les réglages du flux : retirer les épisodes écoutés/anciens et remplir les emplacements libres avec de nouveaux épisodes"
+
+#: GUI/widgets/podcastBrowser.py:235
+msgid "Downloaded"
+msgstr "Téléchargé"
+
+#: GUI/widgets/podcastBrowser.py:2247
+msgid "Downloaded: {count}"
+msgstr "Téléchargés : {count}"
+
+#: GUI/widgets/podcastBrowser.py:260
+msgid "Episode"
+msgstr "Épisode"
+
+#: GUI/widgets/podcastBrowser.py:2244
+msgid "Episodes: {count}"
+msgstr "Épisodes : {count}"
+
+#: GUI/widgets/podcastBrowser.py:516 GUI/widgets/podcastBrowser.py:596 GUI/widgets/podcastBrowser.py:525
+msgid "More"
+msgstr "Plus"
+
+#: GUI/widgets/podcastBrowser.py:1508
+msgid "No Podcast Subscriptions"
+msgstr "Aucun abonnement aux podcasts"
+
+#: GUI/widgets/podcastBrowser.py:586
+msgid "No description available."
+msgstr "Aucune description disponible."
+
+#: GUI/widgets/podcastBrowser.py:233
+msgid "On iPod"
+msgstr "Sur l’iPod"
+
+#: GUI/widgets/podcastBrowser.py:2250
+msgid "On iPod: {count}"
+msgstr "Sur l’iPod : {count}"
+
+#: GUI/widgets/podcastBrowser.py:2240
+msgid "RSS feed linked"
+msgstr "Flux RSS lié"
+
+#: GUI/widgets/podcastBrowser.py:1451
+msgid "Refresh All"
+msgstr "Tout actualiser"
+
+#: GUI/widgets/podcastBrowser.py:2024
+msgid "Refresh Feed"
+msgstr "Actualiser le flux"
+
+#: GUI/widgets/podcastBrowser.py:2109
+msgid "Remove Download"
+msgstr "Supprimer le téléchargement"
+
+#: GUI/widgets/podcastBrowser.py:504 GUI/widgets/podcastBrowser.py:480 GUI/widgets/podcastBrowser.py:2116
+msgid "Remove from iPod"
+msgstr "Retirer de l’iPod"
+
+#: GUI/widgets/podcastBrowser.py:484
+msgid "Remove this episode from iPod"
+msgstr "Retirer cet épisode de l’iPod"
+
+#: GUI/widgets/podcastBrowser.py:1518
+msgid ""
+"Search for podcasts or add an RSS feed to get started.\n"
+"Episodes can be downloaded and synced to your iPod."
+msgstr ""
+"Recherchez des podcasts ou ajoutez un flux RSS pour commencer.\n"
+"Les épisodes peuvent être téléchargés et synchronisés avec votre iPod."
+
+#: GUI/widgets/podcastBrowser.py:1648 GUI/widgets/podcastBrowser.py:2209
+msgid "Select a podcast"
+msgstr "Sélectionner un podcast"
+
+#: GUI/widgets/podcastBrowser.py:596 GUI/widgets/podcastBrowser.py:526
+msgid "Show less"
+msgstr "Afficher moins"
+
+#: GUI/widgets/podcastBrowser.py:1461
+msgid "Sync Podcasts"
+msgstr "Synchroniser les podcasts"
+
+#: GUI/widgets/podcastBrowser.py:2226
+msgid "Unknown Author"
+msgstr "Auteur inconnu"
+
+#: GUI/widgets/podcastBrowser.py:2026
+msgid "Unsubscribe"
+msgstr "Se désabonner"
+
+#: GUI/widgets/podcastBrowser.py:637 GUI/widgets/podcastBrowser.py:584
+msgid "Untitled Episode"
+msgstr "Épisode sans titre"
+
+#: GUI/widgets/podcastBrowser.py:2225
+msgid "Untitled Podcast"
+msgstr "Podcast sans titre"
+
+#: GUI/widgets/podcastBrowser.py:2238
+msgid "Updated {date}"
+msgstr "Mis à jour {date}"
+
+#: GUI/widgets/podcastBrowser.py:1768
+msgid "1 Day"
+msgstr "1 jour"
+
+#: GUI/widgets/podcastBrowser.py:1768
+msgid "1 Month"
+msgstr "1 mois"
+
+#: GUI/widgets/podcastBrowser.py:1768
+msgid "1 Week"
+msgstr "1 semaine"
+
+#: GUI/widgets/podcastBrowser.py:1768
+msgid "2 Months"
+msgstr "2 mois"
+
+#: GUI/widgets/podcastBrowser.py:1768
+msgid "2 Weeks"
+msgstr "2 semaines"
+
+#: GUI/widgets/podcastBrowser.py:1768
+msgid "3 Days"
+msgstr "3 jours"
+
+#: GUI/widgets/podcastBrowser.py:1768
+msgid "3 Months"
+msgstr "3 mois"
+
+#: GUI/widgets/podcastBrowser.py:2586
+msgid "Adding podcast…"
+msgstr "Ajout du podcast…"
+
+#: GUI/widgets/podcastBrowser.py:2547
+msgid "All podcasts are up to date"
+msgstr "Tous les podcasts sont à jour"
+
+#: GUI/widgets/podcastBrowser.py:2825
+msgid "All selected episodes are already on iPod"
+msgstr "Tous les épisodes sélectionnés sont déjà sur l’iPod"
+
+#: GUI/widgets/podcastBrowser.py:2581
+msgid "Already subscribed"
+msgstr "Déjà abonné"
+
+#: GUI/widgets/podcastSearchDialog.py:192
+msgid "Checking podcast results now."
+msgstr "Vérification des résultats de podcasts."
+
+#: GUI/widgets/podcastBrowser.py:2371
+msgid "Checking subscribed feeds for new episodes."
+msgstr "Recherche de nouveaux épisodes dans les flux abonnés."
+
+#: GUI/widgets/podcastBrowser.py:2671
+msgid "Checking the feed for the latest episodes."
+msgstr "Recherche des derniers épisodes dans le flux."
+
+#: GUI/widgets/podcastBrowser.py:1775
+msgid "Clear method:"
+msgstr "Méthode de nettoyage :"
+
+#: GUI/widgets/podcastBrowser.py:1777
+msgid "Clear older than:"
+msgstr "Supprimer au-delà de :"
+
+#: GUI/widgets/podcastBrowser.py:1776
+msgid "Clear when listened:"
+msgstr "Supprimer après écoute :"
+
+#: GUI/widgets/podcastBrowser.py:2657
+msgid "Could not add podcast"
+msgstr "Impossible d’ajouter le podcast"
+
+#: GUI/widgets/podcastBrowser.py:2931
+msgid "Episodes not found on iPod"
+msgstr "Épisodes introuvables sur l’iPod"
+
+#: GUI/widgets/podcastBrowser.py:1773
+msgid "Episodes:"
+msgstr "Épisodes :"
+
+#: GUI/widgets/podcastBrowser.py:2584
+msgid "Fetching feed…"
+msgstr "Récupération du flux…"
+
+#: GUI/widgets/podcastBrowser.py:2586
+msgid "Fetching the feed and latest episodes."
+msgstr "Récupération du flux et des derniers épisodes."
+
+#: GUI/widgets/podcastBrowser.py:1774
+msgid "Fill with:"
+msgstr "Remplir avec :"
+
+#: GUI/widgets/podcastSearchDialog.py:118
+msgid "Find podcasts"
+msgstr "Rechercher des podcasts"
+
+#: GUI/widgets/podcastBrowser.py:1768
+msgid "Immediately"
+msgstr "Immédiatement"
+
+#: GUI/widgets/podcastBrowser.py:2330
+msgid "Loading episodes…"
+msgstr "Chargement des épisodes…"
+
+#: GUI/widgets/podcastBrowser.py:1765
+msgid "Mark for Replacement"
+msgstr "Marquer pour remplacement"
+
+#: GUI/widgets/podcastBrowser.py:1768
+msgid "Never"
+msgstr "Jamais"
+
+#: GUI/widgets/podcastBrowser.py:1764
+msgid "Newest Episode"
+msgstr "Épisode le plus récent"
+
+#: GUI/widgets/podcastBrowser.py:1764
+msgid "Next Episode"
+msgstr "Épisode suivant"
+
+#: GUI/widgets/podcastBrowser.py:2281
+msgid "No episodes found"
+msgstr "Aucun épisode trouvé"
+
+#: GUI/widgets/podcastBrowser.py:2815
+msgid "No episodes to sync"
+msgstr "Aucun épisode à synchroniser"
+
+#: GUI/widgets/podcastBrowser.py:2772 GUI/widgets/podcastBrowser.py:2899
+msgid "No iPod connected"
+msgstr "Aucun iPod connecté"
+
+#: GUI/widgets/podcastSearchDialog.py:213
+msgid "No podcasts found"
+msgstr "Aucun podcast trouvé"
+
+#: GUI/widgets/podcastBrowser.py:2366
+msgid "No subscriptions to refresh"
+msgstr "Aucun abonnement à actualiser"
+
+#: GUI/widgets/podcastBrowser.py:2476
+msgid "No subscriptions to sync"
+msgstr "Aucun abonnement à synchroniser"
+
+#: GUI/widgets/podcastBrowser.py:2446
+msgid "Podcasts could not refresh"
+msgstr "Impossible d’actualiser les podcasts"
+
+#: GUI/widgets/podcastBrowser.py:2481
+msgid "Preparing podcast sync…"
+msgstr "Préparation de la synchronisation des podcasts…"
+
+#: GUI/widgets/podcastBrowser.py:2457
+msgid "Refresh failed"
+msgstr "Échec de l’actualisation"
+
+#: GUI/widgets/podcastBrowser.py:2481
+msgid "Refreshing feeds before building the sync plan."
+msgstr "Actualisation des flux avant la création du plan de synchronisation."
+
+#: GUI/widgets/podcastBrowser.py:2480
+msgid "Refreshing feeds for sync…"
+msgstr "Actualisation des flux pour la synchronisation…"
+
+#: GUI/widgets/podcastBrowser.py:2371
+msgid "Refreshing podcasts…"
+msgstr "Actualisation des podcasts…"
+
+#: GUI/widgets/podcastBrowser.py:2671
+msgid "Refreshing this podcast…"
+msgstr "Actualisation de ce podcast…"
+
+#: GUI/widgets/podcastBrowser.py:1765
+msgid "Remove Immediately"
+msgstr "Supprimer immédiatement"
+
+#: GUI/widgets/podcastSearchDialog.py:118
+msgid "Search by show name, or paste an RSS feed below."
+msgstr "Recherchez par nom d’émission ou collez un flux RSS ci-dessous."
+
+#: GUI/widgets/podcastSearchDialog.py:192
+msgid "Searching for podcasts…"
+msgstr "Recherche de podcasts…"
+
+#: GUI/widgets/podcastBrowser.py:2756
+msgid "Select episodes first"
+msgstr "Sélectionnez d’abord des épisodes"
+
+#: GUI/widgets/podcastBrowser.py:2784
+msgid "Selected episodes are already on iPod"
+msgstr "Les épisodes sélectionnés sont déjà sur l’iPod"
+
+#: GUI/widgets/podcastBrowser.py:2786
+msgid "Selected episodes cannot be added yet"
+msgstr "Les épisodes sélectionnés ne peuvent pas encore être ajoutés"
+
+#: GUI/widgets/podcastBrowser.py:2448
+msgid "Some podcasts could not refresh"
+msgstr "Certains podcasts n’ont pas pu être actualisés"
+
+#: GUI/widgets/podcastBrowser.py:2196
+msgid "Subscribed shows will appear here after their feeds refresh."
+msgstr "Les émissions abonnées apparaîtront ici après l’actualisation des flux."
+
+#: GUI/widgets/podcastBrowser.py:2569
+msgid "Sync failed"
+msgstr "Échec de la synchronisation"
+
+#: GUI/widgets/podcastBrowser.py:2471 GUI/widgets/podcastBrowser.py:2769
+msgid "This iPod does not support podcasts"
+msgstr "Cet iPod ne prend pas en charge les podcasts"
+
+#: GUI/widgets/podcastBrowser.py:2281
+msgid "This podcast loaded, but its feed did not list any episodes."
+msgstr "Ce podcast s’est chargé, mais son flux ne contient aucun épisode."
+
+#: GUI/widgets/podcastSearchDialog.py:213
+msgid "Try a different show name, or paste the RSS feed directly."
+msgstr "Essayez un autre nom d’émission ou collez directement le flux RSS."
+
+#: GUI/widgets/podcastBrowser.py:2196
+msgid "Waiting for episodes"
+msgstr "En attente d’épisodes"
+
+
+#: GUI/widgets/podcastBrowser.py:2895 GUI/widgets/podcastBrowser.py:2896
+msgid "Failed: {error}"
+msgstr "Échec : {error}"
+
+#: GUI/widgets/podcastBrowser.py:2593 GUI/widgets/podcastBrowser.py:2594
+msgid "Podcast sync: {summary}"
+msgstr "Synchronisation des podcasts : {summary}"
+
+#: GUI/widgets/podcastBrowser.py:2425
+msgid "Refreshed {count} feed"
+msgstr "{count} flux actualisé"
+
+#: GUI/widgets/podcastBrowser.py:2427
+msgid "Refreshed {count} feeds"
+msgstr "{count} flux actualisés"
+
+#: GUI/widgets/podcastBrowser.py:2454
+msgid "Refreshed {count}; {failures} feed could not update"
+msgstr "{count} actualisé ; {failures} flux n’a pas pu être actualisé"
+
+#: GUI/widgets/podcastBrowser.py:2459
+msgid "Refreshed {count}; {failures} feeds could not update"
+msgstr "{count} actualisés ; {failures} flux n’ont pas pu être actualisés"
+
+#: GUI/widgets/podcastBrowser.py:2745 GUI/widgets/podcastBrowser.py:2746
+msgid "Refreshed {title}"
+msgstr "{title} actualisé"
+
+#: GUI/widgets/podcastBrowser.py:2374
+msgid "Refreshing {count} feeds…"
+msgstr "Actualisation de {count} flux…"
+
+#: GUI/widgets/podcastBrowser.py:2372
+msgid "Refreshing {count} feed…"
+msgstr "Actualisation de {count} flux…"
+
+#: GUI/widgets/podcastBrowser.py:2715 GUI/widgets/podcastBrowser.py:2716
+msgid "Refreshing {title}…"
+msgstr "Actualisation de {title}…"
+
+#: GUI/widgets/podcastBrowser.py:2942
+msgid "Removed {count} download"
+msgstr "{count} téléchargement supprimé"
+
+#: GUI/widgets/podcastBrowser.py:2944
+msgid "Removed {count} downloads"
+msgstr "{count} téléchargements supprimés"
+
+#: GUI/widgets/podcastBrowser.py:2881
+msgid "Sending {count} episode to sync…"
+msgstr "Envoi de {count} épisode à synchroniser…"
+
+#: GUI/widgets/podcastBrowser.py:2883
+msgid "Sending {count} episodes to sync…"
+msgstr "Envoi de {count} épisodes à synchroniser…"
+
+#: GUI/widgets/podcastBrowser.py:3005
+msgid "Sending {count} removal to sync…"
+msgstr "Envoi de {count} suppression à synchroniser…"
+
+#: GUI/widgets/podcastBrowser.py:3007
+msgid "Sending {count} removals to sync…"
+msgstr "Envoi de {count} suppressions à synchroniser…"
+
+#: GUI/widgets/podcastBrowser.py:2675 GUI/widgets/podcastBrowser.py:2676
+msgid "Subscribed to {title}"
+msgstr "Abonné à {title}"
+
+#: GUI/widgets/podcastBrowser.py:2705 GUI/widgets/podcastBrowser.py:2706
+msgid "Unsubscribed from {title}"
+msgstr "Désabonné de {title}"
+
+#: GUI/widgets/podcastBrowser.py:2590
+msgid "{count} to add"
+msgstr "{count} à ajouter"
+
+#: GUI/widgets/podcastBrowser.py:2586
+msgid "{count} to remove"
+msgstr "{count} à supprimer"
+
+#: GUI/widgets/playlistBrowser.py
+msgid "Music"
+msgstr "Musique"
+
+#: GUI/widgets/playlistBrowser.py
+msgid "Ringtones"
+msgstr "Sonneries"
+
+#: GUI/widgets/playlistBrowser.py
+msgid "Rentals"
+msgstr "Locations"

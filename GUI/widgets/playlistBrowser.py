@@ -37,6 +37,7 @@ from app_core.jobs import (
     PlaylistWriteWorker as _PlaylistWriteWorker,
 )
 from app_core.runtime import display_playlists_from_rows
+from infrastructure.i18n import tr as _
 from iTunesDB_Shared.constants import MHOD_TYPE_TITLE
 from iTunesDB_Shared.playlist_properties import playlist_description_from_row
 
@@ -173,6 +174,56 @@ def _mhsd_type_label(playlist: dict | None) -> str:
     if not types:
         return "MHSD type unknown"
     return " + ".join(f"MHSD type {dataset_type}" for dataset_type in types)
+
+
+_IPOD_CATEGORY_TITLES_BY_MHSD5 = {
+    2: "Movies",
+    3: "TV Shows",
+    4: "Music",
+    5: "Audiobooks",
+    6: "Ringtones",
+    7: "Rentals",
+}
+
+_IPOD_CATEGORY_TITLES_BY_RAW_TITLE = {
+    "audiobooks": "Audiobooks",
+    "movies": "Movies",
+    "music": "Music",
+    "podcasts": "Podcasts",
+    "rentals": "Rentals",
+    "ringtones": "Ringtones",
+    "tv shows": "TV Shows",
+    "videos": "Videos",
+    "有声书": "Audiobooks",
+    "电影": "Movies",
+    "电视节目": "TV Shows",
+    "铃声": "Ringtones",
+    "视频": "Videos",
+    "音乐": "Music",
+}
+
+
+def _canonical_ipod_category_title(playlist: dict, raw_title: str) -> str:
+    """Return a stable English msgid for an iPod built-in category row."""
+    mhsd5_type = _mhsd5_type_value(playlist)
+    if mhsd5_type in _IPOD_CATEGORY_TITLES_BY_MHSD5:
+        return _IPOD_CATEGORY_TITLES_BY_MHSD5[mhsd5_type]
+    normalized_title = raw_title.strip().casefold()
+    return _IPOD_CATEGORY_TITLES_BY_RAW_TITLE.get(normalized_title, raw_title)
+
+
+def _playlist_display_title(playlist: dict | None) -> tuple[str, bool]:
+    """Return the playlist title and whether it is an app-owned label."""
+    raw_title = ""
+    if playlist:
+        raw_title = str(playlist.get("Title") or "").strip()
+    if playlist and playlist.get("master_flag") and not _is_ipod_category_playlist(playlist):
+        return "Library (Master)", True
+    if playlist and _is_ipod_category_playlist(playlist):
+        return _canonical_ipod_category_title(playlist, raw_title) or "Untitled", True
+    if raw_title:
+        return raw_title, False
+    return "Untitled", True
 
 
 def _int_value(value: object) -> int:
@@ -380,7 +431,7 @@ class PlaylistInfoCard(QFrame):
         title_col.setContentsMargins(0, 0, 0, 0)
         title_col.setSpacing(4)
 
-        self.title_label = QLabel("Select a playlist")
+        self.title_label = QLabel(_("Select a playlist"))
         self.title_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_PAGE_TITLE, QFont.Weight.Bold))
         self.title_label.setStyleSheet(_label_css(Colors.TEXT_PRIMARY))
         self.title_label.setWordWrap(True)
@@ -415,7 +466,7 @@ class PlaylistInfoCard(QFrame):
         btn_row.setContentsMargins(0, 0, 0, 0)
         btn_row.setSpacing(6)
 
-        self.edit_btn = QPushButton("Edit")
+        self.edit_btn = QPushButton(_("Edit"))
         self.edit_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.edit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         _ed_ic = glyph_icon("edit", (14), Colors.TEXT_SECONDARY)
@@ -433,7 +484,7 @@ class PlaylistInfoCard(QFrame):
         self.edit_btn.hide()
         btn_row.addWidget(self.edit_btn)
 
-        self.delete_btn = QPushButton("Delete")
+        self.delete_btn = QPushButton(_("Delete"))
         self.delete_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.delete_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.delete_btn.setStyleSheet(btn_css(
@@ -447,7 +498,7 @@ class PlaylistInfoCard(QFrame):
         self.delete_btn.hide()
         btn_row.addWidget(self.delete_btn)
 
-        self.evaluate_btn = QPushButton("Evaluate Now")
+        self.evaluate_btn = QPushButton(_("Evaluate Now"))
         self.evaluate_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.evaluate_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         _eval_ic = glyph_icon("check-circle", (14), Colors.TEXT_SECONDARY)
@@ -469,7 +520,7 @@ class PlaylistInfoCard(QFrame):
         self.evaluate_btn.hide()
         btn_row.addWidget(self.evaluate_btn)
 
-        self.export_btn = QPushButton("Export")
+        self.export_btn = QPushButton(_("Export"))
         self.export_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         _exp_ic = glyph_icon("arrow-up-tray", (14), Colors.TEXT_SECONDARY)
@@ -524,7 +575,7 @@ class PlaylistInfoCard(QFrame):
         rules_header = QHBoxLayout()
         rules_header.setContentsMargins(0, 0, 0, 0)
         rules_header.setSpacing(8)
-        rules_title = QLabel("Rules")
+        rules_title = QLabel(_("Rules"))
         rules_title.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS, QFont.Weight.Bold))
         rules_title.setStyleSheet(_subtle_label_css(Colors.TEXT_SECONDARY))
         rules_header.addWidget(rules_title)
@@ -557,7 +608,7 @@ class PlaylistInfoCard(QFrame):
         details_header = QHBoxLayout(details_header_widget)
         details_header.setContentsMargins(0, 0, 0, 0)
         details_header.setSpacing(8)
-        details_label = QLabel("Details", details_header_widget)
+        details_label = QLabel(_("Details"), details_header_widget)
         details_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS, QFont.Weight.Bold))
         details_label.setStyleSheet(_subtle_label_css(Colors.TEXT_SECONDARY))
         details_header.addWidget(details_label)
@@ -582,7 +633,7 @@ class PlaylistInfoCard(QFrame):
         group.setContentsMargins(0, 0, 0, 0)
         group.setSpacing(2)
 
-        label_widget = QLabel(label)
+        label_widget = QLabel(_(label))
         label_widget.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS, QFont.Weight.Bold))
         label_widget.setStyleSheet(_subtle_label_css(Colors.TEXT_SECONDARY))
         group.addWidget(label_widget)
@@ -1003,12 +1054,12 @@ class PlaylistInfoCard(QFrame):
         self._clear_details()
         self._clear_rules_preview()
         self._rules_panel.hide()
-        self.title_label.setText("Select a playlist")
+        self.title_label.setText(_("Select a playlist"))
         self.description_label.setText("")
         self.description_label.hide()
         self.type_label.setText("")
         self.type_label.hide()
-        self._source_label.setText("Choose a playlist to inspect its tracks and database metadata")
+        self._source_label.setText(_("Choose a playlist to inspect its tracks and database metadata"))
         self.stats_label.setText("")
         for metric in (self._track_metric, self._duration_metric, self._size_metric, self._sort_metric):
             metric.setText("—")
@@ -1045,7 +1096,7 @@ class PlaylistInfoCard(QFrame):
         self.details_layout.addWidget(sep)
         self._detail_labels.append(sep)
 
-        lbl = QLabel(text.upper())
+        lbl = QLabel(_(text).upper())
         lbl.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS, QFont.Weight.Bold))
         lbl.setStyleSheet(
             f"color: {Colors.TEXT_SECONDARY}; background: transparent;"
@@ -1057,7 +1108,7 @@ class PlaylistInfoCard(QFrame):
 
     def _add_detail_text(self, text: str) -> None:
         """Add a plain text line to details (used for rule summaries)."""
-        lbl = QLabel(text)
+        lbl = QLabel(_(text))
         lbl.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         lbl.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
         lbl.setWordWrap(True)
@@ -1173,7 +1224,7 @@ class PlaylistListPanel(QFrame):
             empty_icon.setStyleSheet("background: transparent; border: none;")
             empty_vbox.addWidget(empty_icon)
 
-            empty_text = QLabel("No playlists on this iPod")
+            empty_text = QLabel(_("No playlists on this iPod"))
             empty_text.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
             empty_text.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent; border: none;")
             empty_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1224,7 +1275,7 @@ class PlaylistListPanel(QFrame):
             spacer.setStyleSheet("background: transparent; border: none;")
             self._inner_layout.addWidget(spacer)
             return
-        lbl = QLabel(text)
+        lbl = QLabel(_(text))
         lbl.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS, QFont.Weight.Bold))
         lbl.setStyleSheet(
             f"color: {Colors.TEXT_TERTIARY}; background: transparent; "
@@ -1233,21 +1284,17 @@ class PlaylistListPanel(QFrame):
         self._inner_layout.addWidget(lbl)
 
     def _add_playlist_button(self, playlist: dict, icon_name: str, dimmed: bool = False) -> None:
-        title = playlist.get("Title", "Untitled")
         count = playlist.get("mhip_child_count", 0)
-        is_master = bool(playlist.get("master_flag"))
+        display_title, translate_title = _playlist_display_title(playlist)
+        display_label = _(display_title) if translate_title else display_title
 
-        display_title = title
-        if is_master:
-            display_title = "Library (Master)"
-
-        btn_text = display_title
+        btn_text = display_label
         if count > 0:
             btn_text += f"  ({count})"
 
         btn = QPushButton(btn_text)
         btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
-        btn.setToolTip(f"{title}\n{count} tracks\n{_mhsd_type_label(playlist)}")
+        btn.setToolTip(f"{display_label}\n{count} {_('tracks')}\n{_mhsd_type_label(playlist)}")
 
         fg = Colors.TEXT_DISABLED if dimmed else Colors.TEXT_PRIMARY
         ic = glyph_icon(icon_name, (20), fg)
@@ -1327,14 +1374,14 @@ class PlaylistBrowser(QFrame):
         self._header = BrowserHeroHeader("Playlists", self)
         root.addWidget(self._header)
 
-        self._new_playlist_btn = QPushButton("New Playlist")
+        self._new_playlist_btn = QPushButton(_("New Playlist"))
         self._new_playlist_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.Bold))
         self._new_playlist_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._new_playlist_btn.setStyleSheet(chrome_action_btn_css())
         self._new_playlist_btn.clicked.connect(self._onNewPlaylistButton)
         self._header.actions_layout.addWidget(self._new_playlist_btn)
 
-        self._import_playlist_btn = QPushButton("Import Playlist")
+        self._import_playlist_btn = QPushButton(_("Import Playlist"))
         self._import_playlist_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self._import_playlist_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._import_playlist_btn.setStyleSheet(chrome_action_btn_css())
@@ -1397,7 +1444,7 @@ class PlaylistBrowser(QFrame):
         _imp_lay.setSpacing(12)
         _imp_lay.addStretch()
 
-        _imp_title = QLabel("Importing Playlist\u2026")
+        _imp_title = QLabel(_("Importing Playlist\u2026"))
         _imp_title.setFont(QFont(FONT_FAMILY, Metrics.FONT_PAGE_TITLE, QFont.Weight.Bold))
         _imp_title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent;")
         _imp_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1509,7 +1556,7 @@ class PlaylistBrowser(QFrame):
         self.infoCard.showEmpty()
         self.trackList.clearTable()
         self._set_empty_regular_playlist_notice(None, 0)
-        self.trackTitleBar.setTitle("Select a playlist")
+        self.trackTitleBar.setTitle("Select a playlist", translate=True)
         self.trackTitleBar.resetColor()
         self._current_playlist = None
 
@@ -1543,7 +1590,7 @@ class PlaylistBrowser(QFrame):
         self.infoCard.showEmpty()
         self.trackList.clearTable(clear_cache=True)
         self._set_empty_regular_playlist_notice(None, 0)
-        self.trackTitleBar.setTitle("Select a playlist")
+        self.trackTitleBar.setTitle("Select a playlist", translate=True)
         self.trackTitleBar.resetColor()
         self._current_playlist = None
         self._playlist_signature = None
@@ -1599,7 +1646,7 @@ class PlaylistBrowser(QFrame):
     def _set_import_busy(self, busy: bool) -> None:
         self._import_playlist_btn.setEnabled(not busy)
         self._new_playlist_btn.setEnabled(not busy)
-        self._import_playlist_btn.setText("Importing…" if busy else "Import Playlist")
+        self._import_playlist_btn.setText(_("Importing…") if busy else _("Import Playlist"))
 
     def _onNewPlaylistButton(self) -> None:
         dlg = NewPlaylistDialog(self)
@@ -1631,10 +1678,8 @@ class PlaylistBrowser(QFrame):
         self.infoCard.showPlaylist(playlist, resolved_tracks, track_id_index)
 
         # Update title bar
-        title = playlist.get("Title", "Untitled")
-        if playlist.get("master_flag") and not _is_ipod_category_playlist(playlist):
-            title = "Library (Master)"
-        self.trackTitleBar.setTitle(title)
+        title, translate_title = _playlist_display_title(playlist)
+        self.trackTitleBar.setTitle(title, translate=translate_title)
 
         # Color the title bar based on playlist type
         if _is_ipod_category_playlist(playlist):
@@ -1663,14 +1708,14 @@ class PlaylistBrowser(QFrame):
             )
             self.editor.new_playlist()
             self._switchToEditor(1)
-            self.trackTitleBar.setTitle("New Smart Playlist")
+            self.trackTitleBar.setTitle("New Smart Playlist", translate=True)
             self.trackTitleBar.setColor(*Colors.PLAYLIST_SMART)
             self.trackList.clearTable()
             self._set_empty_regular_playlist_notice(None, 0)
         else:
             self.regularEditor.new_playlist()
             self._switchToEditor(2)
-            self.trackTitleBar.setTitle("New Playlist")
+            self.trackTitleBar.setTitle("New Playlist", translate=True)
             self.trackTitleBar.resetColor()
             self.trackList.clearTable()
             self._set_empty_regular_playlist_notice(None, 0)
@@ -1734,8 +1779,8 @@ class PlaylistBrowser(QFrame):
         # Select the saved playlist in the list (if it has an ID)
         self.infoCard.showPlaylist(playlist_data, [])
 
-        title = playlist_data.get("Title", "Untitled")
-        self.trackTitleBar.setTitle(title)
+        title, translate_title = _playlist_display_title(playlist_data)
+        self.trackTitleBar.setTitle(title, translate=translate_title)
         if _is_user_smart_playlist(playlist_data):
             self.trackTitleBar.setColor(*Colors.PLAYLIST_SMART)
             self._set_empty_regular_playlist_notice(None, 0)
@@ -1807,7 +1852,7 @@ class PlaylistBrowser(QFrame):
         self.infoCard.showEmpty()
         self.trackList.clearTable()
         self._set_empty_regular_playlist_notice(None, 0)
-        self.trackTitleBar.setTitle("Select a playlist")
+        self.trackTitleBar.setTitle("Select a playlist", translate=True)
         self.trackTitleBar.resetColor()
 
     def _onDeleteFailed(self, error_msg: str) -> None:
@@ -1834,7 +1879,7 @@ class PlaylistBrowser(QFrame):
         # Show a saving indicator on the info card
         self.infoCard.edit_btn.setEnabled(False)
         self.infoCard.evaluate_btn.setEnabled(False)
-        self.infoCard.evaluate_btn.setText("Writing…")
+        self.infoCard.evaluate_btn.setText(_("Writing…"))
         self.infoCard.evaluate_btn.setVisible(True)
 
         self._eval_worker = _PlaylistWriteWorker(
@@ -1850,7 +1895,7 @@ class PlaylistBrowser(QFrame):
         """Playlist write completed successfully."""
         self.infoCard.edit_btn.setEnabled(True)
         self.infoCard.evaluate_btn.setEnabled(True)
-        self.infoCard.evaluate_btn.setText("Evaluate Now")
+        self.infoCard.evaluate_btn.setText(_("Evaluate Now"))
         # Re-evaluate visibility (evaluate is only for smart playlists)
         if not _is_user_smart_playlist(self._current_playlist):
             self.infoCard.evaluate_btn.setVisible(False)
@@ -1875,7 +1920,7 @@ class PlaylistBrowser(QFrame):
         """Playlist write failed."""
         self.infoCard.edit_btn.setEnabled(True)
         self.infoCard.evaluate_btn.setEnabled(True)
-        self.infoCard.evaluate_btn.setText("Evaluate Now")
+        self.infoCard.evaluate_btn.setText(_("Evaluate Now"))
         if not _is_user_smart_playlist(self._current_playlist):
             self.infoCard.evaluate_btn.setVisible(False)
 
@@ -1968,9 +2013,9 @@ class PlaylistBrowser(QFrame):
             QMessageBox.warning(self, "No Device", "Please connect an iPod first.")
             return
 
-        path, _ = QFileDialog.getOpenFileName(
+        path, _selected_filter = QFileDialog.getOpenFileName(
             self,
-            "Import Playlist",
+            _("Import Playlist"),
             "",
             "Playlist Files (*.m3u *.m3u8 *.pls *.xspf);;All Files (*)",
         )
@@ -1982,7 +2027,7 @@ class PlaylistBrowser(QFrame):
         self._set_import_busy(True)
         self._topStack.setCurrentIndex(3)
         self._import_progress_bar.setRange(0, 0)  # indeterminate
-        self._import_status_label.setText("Parsing playlist…")
+        self._import_status_label.setText(_("Parsing playlist…"))
         self._import_count_label.setText("")
 
         self._import_worker = _PlaylistImportWorker(
