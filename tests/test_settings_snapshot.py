@@ -23,6 +23,7 @@ def test_settings_snapshot_copies_values_and_freezes_lists() -> None:
         ],
         theme="light",
         accent_color="#123456",
+        player_position="top",
         rounded_artwork=True,
         sharpen_artwork=False,
         track_list_columns_by_content={
@@ -61,6 +62,7 @@ def test_settings_snapshot_copies_values_and_freezes_lists() -> None:
     )
     assert snapshot.theme == "light"
     assert snapshot.accent_color == "#123456"
+    assert snapshot.player_position == "top"
     assert snapshot.rounded_artwork is True
     assert snapshot.sharpen_artwork is False
     assert snapshot.track_list_columns_by_content == {

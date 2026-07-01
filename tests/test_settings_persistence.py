@@ -50,6 +50,7 @@ def test_settings_persistence_round_trip(monkeypatch) -> None:
             ],
             rounded_artwork=True,
             sharpen_artwork=False,
+            player_position="top",
             track_list_columns_by_content={
                 "music": {"Title": 220, "Album": 180, "Artist": 160}
             },
@@ -85,6 +86,7 @@ def test_settings_persistence_round_trip(monkeypatch) -> None:
     ]
     assert loaded.rounded_artwork is True
     assert loaded.sharpen_artwork is False
+    assert loaded.player_position == "top"
     assert loaded.track_list_columns_by_content == {
         "music": {"Title": 220, "Album": 180, "Artist": 160}
     }

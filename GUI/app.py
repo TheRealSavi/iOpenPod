@@ -4,7 +4,7 @@ import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSlot
+from PyQt6.QtCore import Qt, QThread, QTimer, QUrl, pyqtSlot
 from PyQt6.QtGui import QColor, QFont, QPalette
 from PyQt6.QtWidgets import (
     QApplication,
@@ -54,6 +54,7 @@ from app_core.jobs import (
 )
 from app_core.runtime import (
     ThreadPoolSingleton,
+    Worker,
     build_album_list,
     same_device_path,
 )
@@ -68,6 +69,7 @@ from GUI.widgets.backupBrowser import BackupBrowserWidget
 from GUI.widgets.dropOverlay import DropOverlayWidget
 from GUI.widgets.formatters import format_size
 from GUI.widgets.musicBrowser import MusicBrowser
+from GUI.widgets.musicPlayer import MusicPlayerBar
 from GUI.widgets.settingsPage import SettingsPage
 from GUI.widgets.sidebar import Sidebar
 from GUI.widgets.syncReview import (
@@ -77,6 +79,11 @@ from GUI.widgets.syncReview import (
 from infrastructure.media_folders import (
     media_folder_entries_to_settings,
     media_folder_paths,
+)
+from infrastructure.settings_schema import (
+    PLAYER_POSITION_BOTTOM,
+    PLAYER_POSITION_TOP,
+    normalize_player_position,
 )
 from SyncEngine.contracts import (
     SYNC_UNTIL_FULL_RESERVE_BYTES,
@@ -154,6 +161,51 @@ _DEVICE_ACCESS_ERROR_MARKERS = (
 def _looks_like_device_access_error(text: object) -> bool:
     lowered = str(text).lower()
     return any(marker in lowered for marker in _DEVICE_ACCESS_ERROR_MARKERS)
+
+
+def _coerce_positive_int(value: object) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return int(value) or None
+    if isinstance(value, int):
+        return value if value > 0 else None
+    if isinstance(value, float):
+        result = int(value)
+        return result if result > 0 else None
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            result = int(text)
+        except ValueError:
+            return None
+        return result if result > 0 else None
+    return None
+
+
+def _track_artwork_id(track: dict) -> int | None:
+    for key in ("artwork_id_ref", "mhii_link", "mhiiLink"):
+        artwork_id = _coerce_positive_int(track.get(key))
+        if artwork_id is not None:
+            return artwork_id
+    return None
+
+
+def _playback_track_path_for_session(session: object, track: dict) -> str:
+    ipod_root = str(getattr(session, "device_path", "") or "")
+    if not ipod_root:
+        return ""
+
+    from SyncEngine.ipod_track_paths import existing_ipod_track_file_path
+
+    path = existing_ipod_track_file_path(
+        ipod_root,
+        track,
+        allow_music_filename_fallback=True,
+    )
+    return str(path) if path is not None else ""
 
 
 def _sync_execute_failure_message(result: Any) -> str | None:
@@ -240,6 +292,12 @@ class MainWindow(QMainWindow):
         self._chapter_split_worker = None
         self._sync_execute_worker = None
         self._tool_download_worker = None
+        self._media_player: Any | None = None
+        self._audio_output: Any | None = None
+        self._playback_tracks: list[dict] = []
+        self._playback_index = -1
+        self._player_artwork_token = 0
+        self._player_artwork_worker: Any | None = None
         self._keep_sync_results_visible_after_rescan = False
         self._plan = None
         self._last_pc_folder_entries = _media_folder_entries_from_settings(settings)
@@ -275,9 +333,28 @@ class MainWindow(QMainWindow):
         self._theme_rebuild_timer.setInterval(20)
         self._theme_rebuild_timer.timeout.connect(self._run_deferred_theme_rebuild)
 
-        # Central widget with stacked layout for main/sync views
+        # Root shell: current app stack plus a dockable player bar.
+        self.appShell = QWidget()
+        self.appShellLayout = QVBoxLayout(self.appShell)
+        self.appShellLayout.setContentsMargins(0, 0, 0, 0)
+        self.appShellLayout.setSpacing(0)
+
         self.centralStack = QStackedWidget()
-        self.setCentralWidget(self.centralStack)
+        self.appShellLayout.addWidget(self.centralStack, 1)
+
+        self.musicPlayer = MusicPlayerBar()
+        self.musicPlayer.close_requested.connect(lambda: self.setPlayerActive(False))
+        self.musicPlayer.play_pause_requested.connect(self._onPlayerPlayPauseRequested)
+        self.musicPlayer.previous_requested.connect(self._playPreviousTrack)
+        self.musicPlayer.next_requested.connect(self._playNextTrack)
+        self.musicPlayer.seek_requested.connect(self._seekPlayer)
+        self.musicPlayer.rating_changed.connect(self._onPlayerRatingChanged)
+        self.musicPlayer.volume_changed.connect(self._onPlayerVolumeChanged)
+        self.musicPlayer.setVisible(False)
+        self.appShellLayout.addWidget(self.musicPlayer, 0)
+        self._apply_player_position()
+
+        self.setCentralWidget(self.appShell)
 
         # Build all child widgets and connect signals
         self._build_ui()
@@ -356,6 +433,7 @@ class MainWindow(QMainWindow):
         )
         self.musicBrowser.podcastBrowser.podcast_sync_requested.connect(self._onPodcastSyncRequested)
         self.musicBrowser.album_conversion_requested.connect(self._onAlbumConversionRequested)
+        self.musicBrowser.playback_requested.connect(self._onTrackPlaybackRequested)
         self.musicBrowser.browserTrack.split_chapters_requested.connect(self._onChapterSplitRequested)
         self.musicBrowser.browserTrack.remove_from_ipod_requested.connect(self._onRemoveFromIpod)
         self.musicBrowser.playlistBrowser.trackList.split_chapters_requested.connect(self._onChapterSplitRequested)
@@ -395,6 +473,7 @@ class MainWindow(QMainWindow):
         )
         self.settingsPage.closed.connect(self.hideSettings)
         self.settingsPage.theme_changed.connect(self._on_theme_changed)
+        self.settingsPage.player_position_changed.connect(self._apply_player_position)
         self.settingsPage.artwork_appearance_changed.connect(
             self._on_artwork_appearance_changed
         )
@@ -495,6 +574,284 @@ class MainWindow(QMainWindow):
         self._refresh_default_page_state()
         self.centralStack.setCurrentIndex(0)
 
+    def _current_player_position(self) -> str:
+        try:
+            settings = self.settings_service.get_effective_settings()
+        except Exception:
+            return PLAYER_POSITION_BOTTOM
+        return normalize_player_position(
+            getattr(settings, "player_position", PLAYER_POSITION_BOTTOM)
+        )
+
+    def _apply_player_position(self) -> None:
+        position = self._current_player_position()
+        if self.appShellLayout.indexOf(self.musicPlayer) >= 0:
+            self.appShellLayout.removeWidget(self.musicPlayer)
+        if hasattr(self.musicPlayer, "setDockPosition"):
+            self.musicPlayer.setDockPosition(position)
+        insert_at = 0 if position == PLAYER_POSITION_TOP else self.appShellLayout.count()
+        self.appShellLayout.insertWidget(insert_at, self.musicPlayer, 0)
+
+    def setPlayerActive(self, active: bool) -> None:
+        self.musicPlayer.setVisible(bool(active))
+        if not active:
+            self._stopPlayback()
+
+    def _onTrackPlaybackRequested(
+        self,
+        track: dict,
+        tracks: list,
+        index: int,
+    ) -> None:
+        playback_tracks = [
+            candidate
+            for candidate in tracks
+            if isinstance(candidate, dict)
+        ] or [track]
+        if not (0 <= index < len(playback_tracks)):
+            try:
+                index = playback_tracks.index(track)
+            except ValueError:
+                index = 0
+        self._playback_tracks = playback_tracks
+        self._playTrackAtIndex(index)
+
+    def _ensureMediaPlayer(self) -> bool:
+        if self._media_player is not None:
+            return True
+
+        try:
+            from PyQt6.QtMultimedia import QAudioOutput, QMediaPlayer
+        except ImportError as exc:
+            logger.warning("QtMultimedia is unavailable: %s", exc)
+            QMessageBox.warning(
+                self,
+                "Playback Unavailable",
+                "This iOpenPod build does not include Qt multimedia playback.",
+            )
+            self.musicPlayer.setPlaying(False)
+            return False
+
+        self._audio_output = QAudioOutput(self)
+        self._audio_output.setVolume(self.musicPlayer.volumePercent() / 100)
+        self._media_player = QMediaPlayer(self)
+        self._media_player.setAudioOutput(self._audio_output)
+        self._media_player.positionChanged.connect(self.musicPlayer.setPosition)
+        self._media_player.durationChanged.connect(self.musicPlayer.setDuration)
+        self._media_player.playbackStateChanged.connect(self._onPlayerStateChanged)
+        self._media_player.mediaStatusChanged.connect(self._onPlayerMediaStatusChanged)
+        self._media_player.errorOccurred.connect(self._onPlayerError)
+        return True
+
+    def _playTrackAtIndex(self, index: int) -> None:
+        if not (0 <= index < len(self._playback_tracks)):
+            return
+
+        track = self._playback_tracks[index]
+        if self._media_player is not None:
+            self._media_player.stop()
+        self._playback_index = index
+        self.musicPlayer.setTrack(track)
+        self._refreshPlayerQueueControls()
+        self.setPlayerActive(True)
+        self._loadPlayerArtwork(track)
+
+        try:
+            session = self.device_session_service.current_session()
+        except Exception:
+            session = None
+        path = _playback_track_path_for_session(session, track) if session else ""
+        if not path:
+            self.musicPlayer.setPlaying(False)
+            QMessageBox.warning(
+                self,
+                "Track File Not Found",
+                "iOpenPod could not find this track's audio file on the iPod.",
+            )
+            return
+
+        if not self._ensureMediaPlayer():
+            return
+
+        player = self._media_player
+        if player is None:
+            return
+        player.setSource(QUrl.fromLocalFile(path))
+        player.play()
+
+    def _refreshPlayerQueueControls(self) -> None:
+        self.musicPlayer.setTransportAvailability(
+            self._playback_index > 0,
+            0 <= self._playback_index < len(self._playback_tracks) - 1,
+        )
+        self.musicPlayer.setQueueContext(
+            self._playback_index,
+            len(self._playback_tracks),
+        )
+
+    def _onPlayerPlayPauseRequested(self, should_play: bool) -> None:
+        if should_play:
+            if self._media_player is None:
+                if 0 <= self._playback_index < len(self._playback_tracks):
+                    self._playTrackAtIndex(self._playback_index)
+                else:
+                    self.musicPlayer.setPlaying(False)
+                return
+            self._media_player.play()
+            return
+
+        if self._media_player is not None:
+            self._media_player.pause()
+
+    def _seekPlayer(self, position_ms: int) -> None:
+        if self._media_player is not None:
+            self._media_player.setPosition(max(0, int(position_ms)))
+
+    def _onPlayerRatingChanged(self, rating: int) -> None:
+        if not (0 <= self._playback_index < len(self._playback_tracks)):
+            return
+
+        track = self._playback_tracks[self._playback_index]
+        if not isinstance(track, dict):
+            return
+
+        cache = self.library_cache
+        if not cache.is_ready():
+            return
+
+        cache.update_track_flags([track], {"rating": max(0, min(100, int(rating)))})
+
+    def _onPlayerVolumeChanged(self, percent: int) -> None:
+        if self._audio_output is None:
+            return
+        volume = max(0, min(100, int(percent))) / 100
+        self._audio_output.setVolume(volume)
+
+    def _playPreviousTrack(self) -> None:
+        if self._playback_index > 0:
+            self._playTrackAtIndex(self._playback_index - 1)
+
+    def _playNextTrack(self) -> None:
+        if self._playback_index < len(self._playback_tracks) - 1:
+            self._playTrackAtIndex(self._playback_index + 1)
+
+    def _stopPlayback(self) -> None:
+        if self._media_player is not None:
+            self._media_player.stop()
+            self._media_player.setSource(QUrl())
+        self.musicPlayer.setPlaying(False)
+
+    def _onPlayerStateChanged(self, state) -> None:
+        try:
+            from PyQt6.QtMultimedia import QMediaPlayer
+
+            playing = state == QMediaPlayer.PlaybackState.PlayingState
+        except ImportError:
+            playing = str(state).endswith("PlayingState")
+        self.musicPlayer.setPlaying(playing)
+
+    def _onPlayerMediaStatusChanged(self, status) -> None:
+        try:
+            from PyQt6.QtMultimedia import QMediaPlayer
+
+            ended = status == QMediaPlayer.MediaStatus.EndOfMedia
+        except ImportError:
+            ended = str(status).endswith("EndOfMedia")
+        if ended:
+            if self._playback_index < len(self._playback_tracks) - 1:
+                self._playNextTrack()
+            else:
+                self.musicPlayer.setPlaying(False)
+
+    def _onPlayerError(self, error, error_string: str = "") -> None:
+        try:
+            from PyQt6.QtMultimedia import QMediaPlayer
+
+            if error == QMediaPlayer.Error.NoError:
+                return
+        except ImportError:
+            if str(error).endswith("NoError"):
+                return
+
+        self.musicPlayer.setPlaying(False)
+        message = error_string or "The selected track could not be played."
+        logger.warning("Playback failed: %s", message)
+        QMessageBox.warning(self, "Playback Failed", message)
+
+    def _loadPlayerArtwork(self, track: dict) -> None:
+        self._player_artwork_token += 1
+        token = self._player_artwork_token
+        artwork_id = _track_artwork_id(track)
+        if artwork_id is None:
+            self.musicPlayer.setArtworkData(None)
+            return
+
+        try:
+            session = self.device_session_service.current_session()
+            artworkdb_path = session.artworkdb_path or ""
+            artwork_folder = session.artwork_folder_path or ""
+        except Exception:
+            self.musicPlayer.setArtworkData(None)
+            return
+
+        if not artworkdb_path or not artwork_folder:
+            self.musicPlayer.setArtworkData(None)
+            return
+
+        sharpen = bool(
+            getattr(self.settings_service.get_effective_settings(), "sharpen_artwork", True)
+        )
+        worker = Worker(
+            self._loadPlayerArtworkData,
+            artwork_id,
+            artworkdb_path,
+            artwork_folder,
+            sharpen,
+        )
+        self._player_artwork_worker = worker
+        worker.signals.result.connect(
+            lambda result, request_token=token: self._onPlayerArtworkLoaded(
+                result,
+                request_token,
+            )
+        )
+        worker.signals.error.connect(
+            lambda _error, request_token=token: self._onPlayerArtworkLoaded(
+                None,
+                request_token,
+            )
+        )
+        ThreadPoolSingleton.get_instance().start(worker)
+
+    @staticmethod
+    def _loadPlayerArtworkData(
+        artwork_id: int,
+        artworkdb_path: str,
+        artwork_folder: str,
+        sharpen: bool,
+    ) -> tuple[int, int, bytes] | None:
+        if not Path(artworkdb_path).exists() or not Path(artwork_folder).exists():
+            return None
+
+        from GUI.artwork_rendering import enhance_artwork_image
+        from GUI.imgMaker import configure_artwork_api, get_artwork
+
+        configure_artwork_api(artworkdb_path, artwork_folder)
+        image = get_artwork(int(artwork_id), mode="image_only")
+        if image is None:
+            return None
+        image = enhance_artwork_image(image, enabled=sharpen).convert("RGBA")
+        return image.width, image.height, image.tobytes("raw", "RGBA")
+
+    def _onPlayerArtworkLoaded(
+        self,
+        result: tuple[int, int, bytes] | None,
+        request_token: int,
+    ) -> None:
+        if request_token != self._player_artwork_token:
+            return
+        self.musicPlayer.setArtworkData(result)
+
     def _refresh_default_page_state(self):
         """Refresh the main browsing page state without changing pages."""
         has_device = bool(self.device_manager.device_path)
@@ -535,6 +892,7 @@ class MainWindow(QMainWindow):
             if isinstance(app, QApplication):
                 app.setPalette(build_palette())
                 app.setStyleSheet(app_stylesheet())
+            self.musicPlayer.refreshStyle()
 
             # Tear down existing widgets
             while self.centralStack.count():
@@ -627,6 +985,8 @@ class MainWindow(QMainWindow):
         """Handle device selection - start loading data."""
         # Cancel any pending style rebuild from a prior device before starting
         # a new load cycle.
+        if hasattr(self, "setPlayerActive"):
+            self.setPlayerActive(False)
         if self._theme_rebuild_timer.isActive():
             self._theme_rebuild_timer.stop()
         self._pending_theme_rebuild = False
@@ -975,6 +1335,7 @@ class MainWindow(QMainWindow):
 
     def _settle_background_device_reads_for_eject(self) -> bool:
         """Stop best-effort UI/background reads that can keep the drive open."""
+        self.setPlayerActive(False)
         try:
             self.musicBrowser.reloadData()
         except Exception:

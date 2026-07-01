@@ -351,6 +351,27 @@ def test_snapshot_uses_artwork_edit_map_and_strips_pending_marker() -> None:
     assert artwork_sources == {100: "/tmp/cache.png"}
 
 
+def test_snapshot_applies_pending_track_edits_to_copied_tracks() -> None:
+    class _Cache:
+        def get_tracks(self) -> list[dict]:
+            return [{"db_track_id": 100, "Title": "Song", "rating": 40}]
+
+        def get_playlists(self) -> list[dict]:
+            return [{"playlist_id": 1, "Title": "iPod", "master_flag": 1}]
+
+        def get_track_edits(self) -> dict[int, dict[str, tuple[object, object]]]:
+            return {100: {"rating": (40, 100)}}
+
+        def get_track_artwork_edits(self) -> dict[int, str]:
+            return {}
+
+    tracks, _playlists, _artwork_sources = _snapshot_cache_for_itunesdb_write(
+        cast(LibraryCacheLike, _Cache())
+    )
+
+    assert tracks == [{"db_track_id": 100, "Title": "Song", "rating": 100}]
+
+
 def test_playlist_import_refreshes_tracks_for_already_present_fingerprints(
     monkeypatch,
     tmp_path: Path,

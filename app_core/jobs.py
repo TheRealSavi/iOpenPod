@@ -1830,6 +1830,27 @@ def _snapshot_cache_for_itunesdb_write(
     cache: LibraryCacheLike,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[int, str]]:
     tracks = copy.deepcopy(cache.get_tracks())
+    track_edits_getter = getattr(cache, "get_track_edits", None)
+    track_edits = track_edits_getter() if callable(track_edits_getter) else {}
+    if track_edits:
+        tracks_by_db_track_id = {
+            _track_db_track_id(track): track
+            for track in tracks
+            if _track_db_track_id(track)
+        }
+        for raw_db_track_id, edits in track_edits.items():
+            try:
+                db_track_id = int(raw_db_track_id)
+            except (TypeError, ValueError):
+                continue
+            track = tracks_by_db_track_id.get(db_track_id)
+            if track is None:
+                continue
+            for field, change in edits.items():
+                if isinstance(change, tuple) and len(change) >= 2:
+                    track[field] = change[1]
+                else:
+                    track[field] = change
     artwork_sources = copy.deepcopy(cache.get_track_artwork_edits())
     for track in tracks:
         track.pop("_iop_pending_artwork_path", None)

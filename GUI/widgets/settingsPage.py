@@ -38,7 +38,10 @@ from infrastructure.settings_schema import (
     BACKUP_BEFORE_SYNC_ASK,
     BACKUP_BEFORE_SYNC_AUTO,
     BACKUP_BEFORE_SYNC_OFF,
+    PLAYER_POSITION_BOTTOM,
+    PLAYER_POSITION_TOP,
     normalize_backup_before_sync_mode,
+    normalize_player_position,
 )
 
 from ..styles import (
@@ -67,6 +70,13 @@ _BACKUP_BEFORE_SYNC_DISPLAY = {
 }
 _BACKUP_BEFORE_SYNC_BY_TEXT = {
     text: mode for mode, text in _BACKUP_BEFORE_SYNC_DISPLAY.items()
+}
+_PLAYER_POSITION_DISPLAY = {
+    PLAYER_POSITION_BOTTOM: "Bottom",
+    PLAYER_POSITION_TOP: "Top",
+}
+_PLAYER_POSITION_BY_TEXT = {
+    text: mode for mode, text in _PLAYER_POSITION_DISPLAY.items()
 }
 
 
@@ -1214,6 +1224,7 @@ class SettingsPage(QWidget):
     closed = pyqtSignal()  # Emitted when user closes settings
     theme_changed = pyqtSignal()  # Emitted when theme or contrast changes
     artwork_appearance_changed = pyqtSignal()  # Emitted when artwork UI styling changes
+    player_position_changed = pyqtSignal()  # Emitted when the player dock changes
 
     def __init__(
         self,
@@ -1460,6 +1471,13 @@ class SettingsPage(QWidget):
             current="100%",
         )
 
+        self.player_position = ComboRow(
+            "Player Position",
+            "Dock the playback bar above or below the main window content.",
+            options=["Bottom", "Top"],
+            current="Bottom",
+        )
+
         self.accent_color = ComboRow(
             "Accent Color",
             "Customize the accent color used throughout the interface. "
@@ -1535,6 +1553,7 @@ class SettingsPage(QWidget):
             self.high_contrast,
             self.accent_color,
             self.font_scale,
+            self.player_position,
             self.show_art,
             self.rounded_artwork,
             self.sharpen_artwork,
@@ -2093,6 +2112,7 @@ class SettingsPage(QWidget):
         self._appearance_card.set_row_visible(self.theme_combo, not device_scope)
         self._appearance_card.set_row_visible(self.high_contrast, not device_scope)
         self._appearance_card.set_row_visible(self.font_scale, not device_scope)
+        self._appearance_card.set_row_visible(self.player_position, not device_scope)
         self._appearance_card.set_row_visible(self.rounded_artwork, not device_scope)
         self._appearance_card.set_row_visible(self.sharpen_artwork, not device_scope)
         self._about_card.setVisible(not device_scope)
@@ -2215,6 +2235,14 @@ class SettingsPage(QWidget):
         idx = self.font_scale.combo.findText(s.font_scale)
         if idx >= 0:
             self.font_scale.combo.setCurrentIndex(idx)
+
+        player_position_text = _PLAYER_POSITION_DISPLAY.get(
+            normalize_player_position(getattr(s, "player_position", "")),
+            _PLAYER_POSITION_DISPLAY[PLAYER_POSITION_BOTTOM],
+        )
+        idx = self.player_position.combo.findText(player_position_text)
+        if idx >= 0:
+            self.player_position.combo.setCurrentIndex(idx)
 
         self.transcode_cache_dir.value = s.transcode_cache_dir
         # Max cache size combo
@@ -2385,6 +2413,7 @@ class SettingsPage(QWidget):
             self.theme_combo.changed.connect(self._save)
             self.high_contrast.changed.connect(self._save)
             self.font_scale.changed.connect(self._save)
+            self.player_position.changed.connect(self._save)
             self.transcode_cache_dir.changed.connect(self._save)
             self.max_cache_size.changed.connect(self._save)
             self.settings_dir.changed.connect(self._save)
@@ -2694,6 +2723,10 @@ class SettingsPage(QWidget):
                 "110%": "110%", "125%": "125%", "150%": "150%",
             }
             s.font_scale = scale_keys.get(self.font_scale.value, "100%")
+            s.player_position = _PLAYER_POSITION_BY_TEXT.get(
+                self.player_position.value,
+                PLAYER_POSITION_BOTTOM,
+            )
 
     def _apply_theme_change_if_needed(self, before) -> None:
         s = self._settings_service.get_effective_settings()
@@ -2748,6 +2781,9 @@ class SettingsPage(QWidget):
             effective_before.accent_color,
             effective_before.font_scale,
         )
+        player_position_before = normalize_player_position(
+            getattr(effective_before, "player_position", PLAYER_POSITION_BOTTOM)
+        )
 
         ctx = self._current_device_context() if self._settings_scope == "device" else None
         if ctx:
@@ -2796,6 +2832,11 @@ class SettingsPage(QWidget):
                 pass
 
         self._apply_theme_change_if_needed(theme_before)
+        player_position_after = normalize_player_position(
+            getattr(effective_after, "player_position", PLAYER_POSITION_BOTTOM)
+        )
+        if player_position_after != player_position_before:
+            self.player_position_changed.emit()
         if artwork_before != (
             effective_after.show_art_in_tracklist,
             effective_after.rounded_artwork,

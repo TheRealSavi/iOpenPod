@@ -872,6 +872,8 @@ class MusicBrowserList(QFrame):
 
     remove_from_ipod_requested = pyqtSignal(list)
     split_chapters_requested = pyqtSignal(list)
+    track_activated = pyqtSignal(dict)
+    playback_requested = pyqtSignal(dict, list, int)
 
     def __init__(
         self,
@@ -1167,6 +1169,7 @@ class MusicBrowserList(QFrame):
         # Right-click context menu on track rows
         t.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         t.customContextMenuRequested.connect(self._on_track_context_menu)
+        t.itemDoubleClicked.connect(self._activate_item_track)
 
         t.setStyleSheet(table_css())
 
@@ -2435,6 +2438,46 @@ class MusicBrowserList(QFrame):
             return None
         return self._col_key_for_logical(logical_col)
 
+    def _track_for_table_row(self, row: int) -> dict | None:
+        first_data_col = 1 if self._show_art else 0
+        item = self.table.item(row, first_data_col)
+        if item is None:
+            return None
+        orig_idx = item.data(Qt.ItemDataRole.UserRole + 1)
+        if orig_idx is None or not (0 <= orig_idx < len(self._tracks)):
+            return None
+        track = self._tracks[orig_idx]
+        return track if isinstance(track, dict) else None
+
+    def _visible_tracks_in_table_order(self) -> list[dict]:
+        tracks: list[dict] = []
+        for row in range(self.table.rowCount()):
+            track = self._track_for_table_row(row)
+            if track is not None:
+                tracks.append(track)
+        return tracks
+
+    def _activate_track_at_row(self, row: int) -> bool:
+        track = self._track_for_table_row(row)
+        if track is None:
+            return False
+        tracks = self._visible_tracks_in_table_order()
+        if not tracks:
+            return False
+        context_index = max(0, min(row, len(tracks) - 1))
+        self.track_activated.emit(track)
+        self.playback_requested.emit(track, tracks, context_index)
+        return True
+
+    def _activate_item_track(self, item: QTableWidgetItem) -> None:
+        self._activate_track_at_row(item.row())
+
+    def _activate_current_track(self) -> bool:
+        row = self.table.currentRow()
+        if row < 0:
+            return False
+        return self._activate_track_at_row(row)
+
     # -------------------------------------------------------------------------
     # Event Filter — catch right-click on header viewport
     # -------------------------------------------------------------------------
@@ -2470,6 +2513,11 @@ class MusicBrowserList(QFrame):
             if ke.modifiers() == ctrl and ke.key() == Qt.Key.Key_Down:
                 self._move_selected_rows(1)
                 return True
+            if ke.modifiers() == Qt.KeyboardModifier.NoModifier and ke.key() in (
+                Qt.Key.Key_Return,
+                Qt.Key.Key_Enter,
+            ):
+                return self._activate_current_track()
 
         # ── Header: context menu and human drag/resize persistence ──
         header_vp = header.viewport() if header else None

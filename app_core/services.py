@@ -77,6 +77,7 @@ class SettingsSnapshot:
     high_contrast: str
     font_scale: str
     accent_color: str
+    player_position: str
     window_width: int
     window_height: int
     splitter_sizes: tuple

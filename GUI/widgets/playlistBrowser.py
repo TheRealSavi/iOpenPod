@@ -1306,6 +1306,9 @@ class PlaylistBrowser(QFrame):
         - **Edit**   — SmartPlaylistEditor replaces info card
     """
 
+    track_activated = pyqtSignal(dict)
+    playback_requested = pyqtSignal(dict, list, int)
+
     def __init__(
         self,
         settings_service: SettingsService,
@@ -1463,6 +1466,8 @@ class PlaylistBrowser(QFrame):
         self.trackList.setMinimumWidth(0)
         self.trackList.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.trackList.minimumSizeHint = lambda: QSize(0, 0)
+        self.trackList.track_activated.connect(self.track_activated.emit)
+        self.trackList.playback_requested.connect(self.playback_requested.emit)
         self.trackContainerLayout.addWidget(self.trackList)
 
         self.rightSplitter.addWidget(self.trackContainer)

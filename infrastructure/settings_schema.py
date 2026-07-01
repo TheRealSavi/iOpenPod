@@ -13,6 +13,12 @@ BACKUP_BEFORE_SYNC_MODES = frozenset({
     BACKUP_BEFORE_SYNC_ASK,
     BACKUP_BEFORE_SYNC_OFF,
 })
+PLAYER_POSITION_BOTTOM = "bottom"
+PLAYER_POSITION_TOP = "top"
+PLAYER_POSITIONS = frozenset({
+    PLAYER_POSITION_BOTTOM,
+    PLAYER_POSITION_TOP,
+})
 
 DEVICE_SETTING_KEYS = (
     "write_back_to_pc",
@@ -109,6 +115,24 @@ def apply_backup_before_sync_mode(settings: AppSettings) -> None:
     )
 
 
+def normalize_player_position(value: Any) -> str:
+    """Return the canonical player dock position."""
+
+    if isinstance(value, str):
+        normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
+        aliases = {
+            "above": PLAYER_POSITION_TOP,
+            "upper": PLAYER_POSITION_TOP,
+            "below": PLAYER_POSITION_BOTTOM,
+            "lower": PLAYER_POSITION_BOTTOM,
+        }
+        if normalized in PLAYER_POSITIONS:
+            return normalized
+        if normalized in aliases:
+            return aliases[normalized]
+    return PLAYER_POSITION_BOTTOM
+
+
 @dataclass
 class AppSettings:
     """All user-configurable settings."""
@@ -163,6 +187,7 @@ class AppSettings:
     high_contrast: str = "off"
     font_scale: str = "100%"
     accent_color: str = "blue"
+    player_position: str = PLAYER_POSITION_BOTTOM
     window_width: int = 1280
     window_height: int = 720
     splitter_sizes: list = field(default_factory=list)
@@ -182,6 +207,7 @@ class AppSettings:
 
     def __post_init__(self) -> None:
         apply_backup_before_sync_mode(self)
+        self.player_position = normalize_player_position(self.player_position)
 
 
 @dataclass

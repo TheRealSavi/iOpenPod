@@ -56,6 +56,8 @@ class MusicBrowser(QFrame):
     """Main browser widget with grid and track list views."""
 
     album_conversion_requested = pyqtSignal(list)
+    track_activated = pyqtSignal(dict)
+    playback_requested = pyqtSignal(dict, list, int)
 
     def __init__(
         self,
@@ -135,6 +137,8 @@ class MusicBrowser(QFrame):
         self.browserTrack.setMinimumWidth(0)
         self.browserTrack.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.browserTrack.minimumSizeHint = lambda: QSize(0, 0)
+        self.browserTrack.track_activated.connect(self.track_activated.emit)
+        self.browserTrack.playback_requested.connect(self.playback_requested.emit)
 
         # Track Browser TitleBar
         self.trackListTitleBar = TrackListTitleBar(self.gridTrackSplitter)
@@ -184,6 +188,8 @@ class MusicBrowser(QFrame):
             device_sessions=self._device_sessions,
             libraries=self._library_service,
         )
+        self.playlistBrowser.track_activated.connect(self.track_activated.emit)
+        self.playlistBrowser.playback_requested.connect(self.playback_requested.emit)
 
         # Podcast browser (shown when Podcasts category is active)
         self.podcastBrowser = PodcastBrowser(

@@ -17,6 +17,7 @@ from .settings_schema import (
     AppSettings,
     apply_backup_before_sync_mode,
     normalize_backup_before_sync_mode,
+    normalize_player_position,
 )
 
 
@@ -24,6 +25,7 @@ def save_app_settings(settings: AppSettings) -> None:
     """Write settings to the active settings directory."""
 
     apply_backup_before_sync_mode(settings)
+    settings.player_position = normalize_player_position(settings.player_position)
     active_dir = settings.settings_dir or default_settings_dir()
     os.makedirs(active_dir, exist_ok=True)
 
@@ -93,6 +95,7 @@ def load_app_settings() -> AppSettings:
         settings.backup_before_sync = (
             settings.backup_before_sync_mode == BACKUP_BEFORE_SYNC_AUTO
         )
+        settings.player_position = normalize_player_position(settings.player_position)
 
     except (json.JSONDecodeError, UnicodeDecodeError, OSError):
         pass
