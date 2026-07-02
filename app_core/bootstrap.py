@@ -13,9 +13,11 @@ from infrastructure.settings_paths import default_data_dir
 from infrastructure.version import get_version
 
 from .context import AppContext, create_app_context
+from .qt_runtime import configure_qt_multimedia_logging
 
 # Prevent macOS from creating ._AppleDouble resource fork files on FAT32 iPods
 os.environ.setdefault("COPYFILE_DISABLE", "1")
+configure_qt_multimedia_logging()
 
 _LOG_FILE_PATH: str | None = None
 

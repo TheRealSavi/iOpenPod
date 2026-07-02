@@ -3,12 +3,13 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import cast
 
-from PyQt6.QtCore import QEvent, QPointF, Qt
-from PyQt6.QtGui import QMouseEvent
+from PyQt6.QtCore import QEvent, QPoint, QPointF, Qt
+from PyQt6.QtGui import QFontMetrics, QMouseEvent
 from PyQt6.QtWidgets import QVBoxLayout, QWidget
 
 from app_core.services import DeviceSessionService, SettingsService
 from GUI.app import MainWindow, _playback_track_path_for_session, _track_artwork_id
+from GUI.styles import Colors, Metrics
 from GUI.widgets.MBListView import MusicBrowserList
 from GUI.widgets.musicPlayer import MusicPlayerBar
 from infrastructure.settings_schema import AppSettings
@@ -28,6 +29,28 @@ class _SettingsService:
 class _DeviceSessions:
     def current_session(self):
         return SimpleNamespace(device_path="", identity=None, capabilities=None)
+
+
+def _snapshot_font_metrics() -> dict[str, int]:
+    return {attr: getattr(Metrics, attr) for attr in Metrics._FONT_BASES}
+
+
+def _restore_font_metrics(snapshot: dict[str, int]) -> None:
+    for attr, value in snapshot.items():
+        setattr(Metrics, attr, value)
+
+
+def _snapshot_color_state() -> dict[str, object]:
+    return {
+        attr: getattr(Colors, attr)
+        for attr in vars(Colors)
+        if attr.isupper() or attr.startswith("_active_")
+    }
+
+
+def _restore_color_state(snapshot: dict[str, object]) -> None:
+    for attr, value in snapshot.items():
+        setattr(Colors, attr, value)
 
 
 def _mount_track_list(qtbot) -> MusicBrowserList:
@@ -192,6 +215,103 @@ def test_music_player_bar_shows_track_metadata_and_transport_state(qtbot) -> Non
         player.close_button.click()
 
 
+def test_music_player_bar_respects_large_font_scale(qtbot) -> None:
+    snapshot = _snapshot_font_metrics()
+    try:
+        Metrics.apply_font_scale("150%")
+        player = MusicPlayerBar()
+        qtbot.addWidget(player)
+        player.resize(1100, 20)
+        player.show()
+
+        player.setTrack(
+            {
+                "Title": "A Very Long Track Title That Should Elide Instead of Clip",
+                "Artist": "Artist With A Fairly Long Name",
+                "Album": "Album With A Fairly Long Name",
+                "length": 180000,
+                "rating": 80,
+            }
+        )
+        player.refreshStyle()
+        qtbot.wait(50)
+
+        assert player.title_label.height() >= QFontMetrics(player.title_label.font()).height()
+        assert player.detail_label.height() >= QFontMetrics(player.detail_label.font()).height()
+        assert player.volume_label.width() >= QFontMetrics(player.volume_label.font()).horizontalAdvance("100%")
+        assert player.rating_control.height() >= QFontMetrics(player.rating_control.font()).height()
+        surface_layout = player.surface.layout()
+        assert surface_layout is not None
+        assert surface_layout.minimumSize().height() <= player.surface.height()
+    finally:
+        _restore_font_metrics(snapshot)
+
+
+def test_music_player_bar_grows_now_playing_panel_and_anchors_close(qtbot) -> None:
+    snapshot = _snapshot_font_metrics()
+    try:
+        Metrics.apply_font_scale("100%")
+        player = MusicPlayerBar()
+        qtbot.addWidget(player)
+        player.resize(1800, 80)
+        player.show()
+        player.setTrack({"Title": "Song A", "Artist": "Artist A", "Album": "Album A"})
+        qtbot.wait(50)
+
+        panel_center = player.surface.mapTo(
+            player,
+            QPoint(player.surface.width() // 2, 0),
+        ).x()
+        volume_right = player.volume_slider.mapTo(
+            player,
+            QPoint(player.volume_slider.width(), 0),
+        ).x()
+        close_right = player.close_button.mapTo(
+            player,
+            QPoint(player.close_button.width(), 0),
+        ).x()
+        assert player.height() <= 64
+        assert player.surface.maximumWidth() >= 1000
+        assert player.surface.width() >= 1000
+        assert player.surface.mapTo(player, QPoint(0, 0)).x() - volume_right >= 18
+        assert player.width() - close_right <= player._BAR_MARGIN_X + 2
+        assert panel_center < close_right
+    finally:
+        _restore_font_metrics(snapshot)
+
+
+def test_music_player_bar_derives_chrome_from_active_theme(qtbot) -> None:
+    color_snapshot = _snapshot_color_state()
+    try:
+        Colors.apply_theme("dark", "off", "blue")
+        player = MusicPlayerBar()
+        qtbot.addWidget(player)
+        player.show()
+        qtbot.wait(50)
+        dark_styles = "\n".join(
+            (
+                player.styleSheet(),
+                player.progress_slider.styleSheet(),
+                player.volume_slider.styleSheet(),
+            )
+        )
+
+        Colors.apply_theme("light", "off", "blue")
+        player.refreshStyle()
+        light_styles = "\n".join(
+            (
+                player.styleSheet(),
+                player.progress_slider.styleSheet(),
+                player.volume_slider.styleSheet(),
+            )
+        )
+
+        assert dark_styles != light_styles
+        assert "#f6f7f8" not in dark_styles
+    finally:
+        _restore_color_state(color_snapshot)
+
+
 def test_music_player_artwork_contains_wide_images_without_cover_crop(qtbot) -> None:
     player = MusicPlayerBar()
     qtbot.addWidget(player)
@@ -266,14 +386,22 @@ def test_player_position_setting_moves_player_bar(qtbot) -> None:
     settings.player_position = "top"
     MainWindow._apply_player_position(cast(MainWindow, window))
 
-    assert layout.itemAt(0).widget() is player
-    assert layout.itemAt(1).widget() is content
+    first_item = layout.itemAt(0)
+    second_item = layout.itemAt(1)
+    assert first_item is not None
+    assert second_item is not None
+    assert first_item.widget() is player
+    assert second_item.widget() is content
 
     settings.player_position = "bottom"
     MainWindow._apply_player_position(cast(MainWindow, window))
 
-    assert layout.itemAt(0).widget() is content
-    assert layout.itemAt(1).widget() is player
+    first_item = layout.itemAt(0)
+    second_item = layout.itemAt(1)
+    assert first_item is not None
+    assert second_item is not None
+    assert first_item.widget() is content
+    assert second_item.widget() is player
 
 
 def test_player_rating_change_updates_cache_track_edits() -> None:

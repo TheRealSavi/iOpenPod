@@ -1,8 +1,13 @@
+# ruff: noqa: I001
 import logging
 import shlex
 import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+# Keep this before PyQt imports so Qt Multimedia logging rules are installed
+# before any Qt module can initialize multimedia plugins.
+from app_core.qt_runtime import quiet_native_stderr
 
 from PyQt6.QtCore import Qt, QThread, QTimer, QUrl, pyqtSlot
 from PyQt6.QtGui import QColor, QFont, QPalette
@@ -294,6 +299,7 @@ class MainWindow(QMainWindow):
         self._tool_download_worker = None
         self._media_player: Any | None = None
         self._audio_output: Any | None = None
+        self._multimedia_unavailable_logged = False
         self._playback_tracks: list[dict] = []
         self._playback_index = -1
         self._player_artwork_token = 0
@@ -623,25 +629,37 @@ class MainWindow(QMainWindow):
         try:
             from PyQt6.QtMultimedia import QAudioOutput, QMediaPlayer
         except ImportError as exc:
-            logger.warning("QtMultimedia is unavailable: %s", exc)
-            QMessageBox.warning(
-                self,
-                "Playback Unavailable",
+            if not self._multimedia_unavailable_logged:
+                logger.warning("QtMultimedia is unavailable: %s", exc)
+                self._multimedia_unavailable_logged = True
+            self._notifyPlaybackIssue(
+                "Playback unavailable",
                 "This iOpenPod build does not include Qt multimedia playback.",
             )
             self.musicPlayer.setPlaying(False)
             return False
 
-        self._audio_output = QAudioOutput(self)
-        self._audio_output.setVolume(self.musicPlayer.volumePercent() / 100)
-        self._media_player = QMediaPlayer(self)
-        self._media_player.setAudioOutput(self._audio_output)
-        self._media_player.positionChanged.connect(self.musicPlayer.setPosition)
-        self._media_player.durationChanged.connect(self.musicPlayer.setDuration)
-        self._media_player.playbackStateChanged.connect(self._onPlayerStateChanged)
-        self._media_player.mediaStatusChanged.connect(self._onPlayerMediaStatusChanged)
-        self._media_player.errorOccurred.connect(self._onPlayerError)
-        return True
+        try:
+            self._audio_output = QAudioOutput(self)
+            self._audio_output.setVolume(self.musicPlayer.volumePercent() / 100)
+            self._media_player = QMediaPlayer(self)
+            self._media_player.setAudioOutput(self._audio_output)
+            self._media_player.positionChanged.connect(self.musicPlayer.setPosition)
+            self._media_player.durationChanged.connect(self.musicPlayer.setDuration)
+            self._media_player.playbackStateChanged.connect(self._onPlayerStateChanged)
+            self._media_player.mediaStatusChanged.connect(self._onPlayerMediaStatusChanged)
+            self._media_player.errorOccurred.connect(self._onPlayerError)
+            return True
+        except Exception as exc:
+            logger.warning("Failed to initialize Qt multimedia playback: %s", exc)
+            self._media_player = None
+            self._audio_output = None
+            self._notifyPlaybackIssue(
+                "Playback unavailable",
+                "iOpenPod could not initialize local playback for this session.",
+            )
+            self.musicPlayer.setPlaying(False)
+            return False
 
     def _playTrackAtIndex(self, index: int) -> None:
         if not (0 <= index < len(self._playback_tracks)):
@@ -663,9 +681,8 @@ class MainWindow(QMainWindow):
         path = _playback_track_path_for_session(session, track) if session else ""
         if not path:
             self.musicPlayer.setPlaying(False)
-            QMessageBox.warning(
-                self,
-                "Track File Not Found",
+            self._notifyPlaybackIssue(
+                "Track file not found",
                 "iOpenPod could not find this track's audio file on the iPod.",
             )
             return
@@ -676,8 +693,17 @@ class MainWindow(QMainWindow):
         player = self._media_player
         if player is None:
             return
-        player.setSource(QUrl.fromLocalFile(path))
-        player.play()
+        try:
+            with quiet_native_stderr():
+                player.setSource(QUrl.fromLocalFile(path))
+            player.play()
+        except Exception as exc:
+            self.musicPlayer.setPlaying(False)
+            logger.warning("Playback could not start for %s: %s", path, exc)
+            self._notifyPlaybackIssue(
+                "Playback failed",
+                "iOpenPod could not start playback for the selected track.",
+            )
 
     def _refreshPlayerQueueControls(self) -> None:
         self.musicPlayer.setTransportAvailability(
@@ -776,7 +802,7 @@ class MainWindow(QMainWindow):
         self.musicPlayer.setPlaying(False)
         message = error_string or "The selected track could not be played."
         logger.warning("Playback failed: %s", message)
-        QMessageBox.warning(self, "Playback Failed", message)
+        self._notifyPlaybackIssue("Playback failed", message)
 
     def _loadPlayerArtwork(self, track: dict) -> None:
         self._player_artwork_token += 1
@@ -851,6 +877,17 @@ class MainWindow(QMainWindow):
         if request_token != self._player_artwork_token:
             return
         self.musicPlayer.setArtworkData(result)
+
+    def _notifyPlaybackIssue(self, title: str, message: str) -> None:
+        """Surface a playback problem without blocking the UI."""
+        notifier = getattr(self, "_notifier", None)
+        if notifier is not None:
+            try:
+                notifier.notify(title, message)
+                return
+            except Exception:
+                logger.debug("Playback notification failed", exc_info=True)
+        logger.warning("%s: %s", title, message)
 
     def _refresh_default_page_state(self):
         """Refresh the main browsing page state without changing pages."""
