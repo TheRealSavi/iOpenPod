@@ -65,6 +65,11 @@ from .mhod_spl_writer import (
 from .mhod_writer import write_mhod_string
 
 
+def _display_text(value: object, default: str) -> str:
+    text = str(value or "").strip()
+    return text or default
+
+
 @dataclass
 class PlaylistItemMeta:
     """Per-item metadata preserved from parsed MHIP entries for round-trip fidelity.
@@ -223,6 +228,7 @@ def write_mhyp(
         timestamp = int(time.time())
 
     # Build MHOD for title
+    name = _display_text(name, "Playlist")
     mhod_title = write_mhod_string(MHOD_TYPE_TITLE, name)
 
     # On MHYP playlist rows, iTunes 7-era samples duplicate playlist
@@ -233,7 +239,7 @@ def write_mhyp(
     description_count = 0
     if playlist_description is not None:
         mhod_description = write_mhod_string(MHOD_TYPE_ALBUM, playlist_description)
-        description_count = 1
+        description_count = 1 if mhod_description else 0
 
     # Build MHOD for playlist preferences (type 100)
     if raw_mhod100 is not None:

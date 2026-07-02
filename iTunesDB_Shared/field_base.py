@@ -11,6 +11,7 @@ import time by :mod:`iTunesDB_Shared.__init__` from those modules.
 
 from __future__ import annotations
 
+import math
 import struct
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -53,6 +54,17 @@ class InvalidFieldValueError(WriteError):
 
 # Mac HFS+ epoch offset (seconds between 1904-01-01 and 1970-01-01).
 MAC_EPOCH_OFFSET: int = 2082844800
+_U32_MAX: int = 0xFFFFFFFF
+
+
+def _int_or_default(value: Any, default: int = 0) -> int:
+    """Coerce loose metadata to int without letting NaN/None leak through."""
+    try:
+        if isinstance(value, float) and not math.isfinite(value):
+            return default
+        return int(value)
+    except (TypeError, ValueError, OverflowError):
+        return default
 
 
 def mac_to_unix(mac_ts: int) -> int:
@@ -62,12 +74,17 @@ def mac_to_unix(mac_ts: int) -> int:
 
 def unix_to_mac(unix_ts: int) -> int:
     """Convert Unix epoch timestamp to Mac HFS+ timestamp."""
-    return unix_ts + MAC_EPOCH_OFFSET if unix_ts > 0 else 0
+    unix_ts = _int_or_default(unix_ts)
+    if unix_ts <= 0:
+        return 0
+    # The on-disk field is u32 seconds from the 1904 Mac epoch.
+    return min(unix_ts, _U32_MAX - MAC_EPOCH_OFFSET) + MAC_EPOCH_OFFSET
 
 
 def sample_rate_to_fixed(hz: int) -> int:
     """Encode sample rate as 16.16 fixed-point for MHIT offset 0x3C."""
-    return (hz << 16) & 0xFFFFFFFF
+    hz = max(0, min(_int_or_default(hz), 0xFFFF))
+    return hz << 16
 
 
 def fixed_to_sample_rate(raw: int) -> int:
@@ -77,17 +94,20 @@ def fixed_to_sample_rate(raw: int) -> int:
 
 def validate_rating(value: int) -> None:
     """Raise if rating is outside 0-100."""
+    value = _int_or_default(value, -1)
     if not (0 <= value <= 100):
         raise ValueError(f"rating {value} outside 0-100")
 
 
 def clamp_rating(value: int) -> int:
     """Clamp rating to 0-100."""
+    value = _int_or_default(value)
     return max(0, min(100, value))
 
 
 def validate_volume(value: int) -> None:
     """Raise if volume adjustment is outside -255..+255."""
+    value = _int_or_default(value, -1000)
     if not (-255 <= value <= 255):
         raise ValueError(f"volume {value} outside -255..+255")
 

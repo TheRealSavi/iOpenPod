@@ -580,8 +580,8 @@ class BackupBrowserWidget(QWidget):
         self._empty_text = QLabel(
             "No backups yet.\n\n"
             "Click 'Backup Now' to create your first full device backup.\n"
-            "Backups are stored on your PC and use content-addressable storage —\n"
-            "only new or changed files are stored, saving disk space."
+            "Backups are stored on your PC and use content-addressable storage.\n"
+            "Only new or changed files are stored, saving disk space."
         )
         self._empty_text.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
         self._empty_text.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent;")
@@ -678,8 +678,8 @@ class BackupBrowserWidget(QWidget):
                 self._show_empty(
                     "No backups yet.\n\n"
                     "Click 'Backup Now' to create your first full device backup.\n"
-                    "Backups are stored on your PC and use content-addressable storage —\n"
-                    "only new or changed files are stored, saving disk space."
+                    "Backups are stored on your PC and use content-addressable storage. \n"
+                    "Only new or changed files are stored, saving disk space."
                 )
             else:
                 self._show_empty(

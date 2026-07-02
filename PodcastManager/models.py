@@ -58,6 +58,10 @@ class PodcastEpisode:
     status: str = STATUS_NOT_DOWNLOADED
     downloaded_path: str = ""          # Absolute path on disk when downloaded
     ipod_db_track_id: int = 0           # MHIT db_track_id when synced to iPod
+    play_count: int = 0                 # Cumulative completed plays observed on iPod
+    last_played: int = 0                # Unix timestamp of last completed play
+    listened_override: bool | None = None
+    """Manual listened state. None means trust iPod/RSS-derived play history."""
 
     @property
     def ipod_db_id(self) -> int:
@@ -83,13 +87,17 @@ class PodcastEpisode:
             "status": self.status,
             "downloaded_path": self.downloaded_path,
             "ipod_db_track_id": self.ipod_db_track_id,
+            "play_count": self.play_count,
+            "last_played": self.last_played,
+            "listened_override": self.listened_override,
         }
 
     def to_dict_stored(self) -> dict:
         """Minimal serialization for on-iPod persistence.
 
         Only includes fields needed for identity, display when offline,
-        and sync matching.  Full metadata comes from RSS on refresh.
+        playback history, and sync matching.  Full metadata comes from RSS
+        on refresh.
         """
         return {
             "guid": self.guid,
@@ -100,6 +108,9 @@ class PodcastEpisode:
             "status": self.status,
             "downloaded_path": self.downloaded_path,
             "ipod_db_track_id": self.ipod_db_track_id,
+            "play_count": self.play_count,
+            "last_played": self.last_played,
+            "listened_override": self.listened_override,
         }
 
     @classmethod
@@ -117,6 +128,9 @@ class PodcastEpisode:
             status=d.get("status", STATUS_NOT_DOWNLOADED),
             downloaded_path=d.get("downloaded_path", ""),
             ipod_db_track_id=d.get("ipod_db_track_id", d.get("ipod_db_id", 0)),
+            play_count=d.get("play_count", 0),
+            last_played=d.get("last_played", 0),
+            listened_override=d.get("listened_override"),
         )
 
 
@@ -172,15 +186,18 @@ class PodcastFeed:
         """Serialize for on-iPod persistence.
 
         Only includes episodes that have meaningful local state
-        (downloaded or on iPod).  Episodes with status
-        ``"not_downloaded"`` are omitted — they come from RSS on
-        refresh.  Feed description is also omitted (fetched from RSS).
+        (downloaded, on iPod, or known playback history).  Episodes with
+        no local state are omitted — they come from RSS on refresh.  Feed
+        description is also omitted (fetched from RSS).
         """
         stored_episodes = [
             ep.to_dict_stored()
             for ep in self.episodes
             if ep.status in (STATUS_DOWNLOADED, STATUS_DOWNLOADING,
                              STATUS_ON_IPOD)
+            or ep.play_count > 0
+            or ep.last_played > 0
+            or ep.listened_override is not None
         ]
         return {
             "feed_url": self.feed_url,

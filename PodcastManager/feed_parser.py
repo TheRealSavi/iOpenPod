@@ -133,8 +133,8 @@ def _merge_feed(
 ) -> PodcastFeed:
     """Merge newly parsed episodes into an existing feed.
 
-    Preserves local state (downloaded_path, status, ipod_db_track_id) for
-    episodes that already exist (matched by guid).
+    Preserves local state (downloaded_path, status, ipod_db_track_id,
+    playback history) for episodes that already exist (matched by guid).
     """
     existing_by_guid = {ep.guid: ep for ep in existing.episodes}
 
@@ -146,12 +146,21 @@ def _merge_feed(
             ep.status = old.status
             ep.downloaded_path = old.downloaded_path
             ep.ipod_db_track_id = old.ipod_db_track_id
+            ep.play_count = old.play_count
+            ep.last_played = old.last_played
+            ep.listened_override = old.listened_override
         merged.append(ep)
 
     # Keep any old episodes that disappeared from the feed but are
-    # downloaded or on iPod (don't lose local data)
+    # downloaded, on iPod, or have playback history (don't lose local data).
     for old_ep in existing_by_guid.values():
-        if old_ep.downloaded_path or old_ep.ipod_db_track_id:
+        if (
+            old_ep.downloaded_path
+            or old_ep.ipod_db_track_id
+            or old_ep.play_count > 0
+            or old_ep.last_played > 0
+            or old_ep.listened_override is not None
+        ):
             merged.append(old_ep)
 
     existing.title = _get_text(feed_info, "title") or existing.title

@@ -23,7 +23,6 @@ from PyQt6.QtWidgets import (
 )
 
 from infrastructure.settings_schema import (
-    PLAYER_POSITION_BOTTOM,
     PLAYER_POSITION_TOP,
     normalize_player_position,
 )
@@ -412,7 +411,7 @@ class MusicPlayerBar(QFrame):
         self._duration_ms = 0
         self._artwork_data: tuple[int, int, bytes] | None = None
         self._track: dict | None = None
-        self._dock_position = PLAYER_POSITION_BOTTOM
+        self._dock_position = PLAYER_POSITION_TOP
         self._player_colors = _player_theme_colors()
 
         self.setObjectName("MusicPlayerBar")

@@ -17,9 +17,11 @@ Cross-referenced against:
   - iPodLinux wiki MHIT documentation
 """
 
+import math
 import random
 import time
 from dataclasses import dataclass
+from typing import Any
 
 from iTunesDB_Shared.constants import (
     AUDIO_FORMAT_FLAG_DEFAULT,
@@ -44,6 +46,14 @@ def generate_db_track_id() -> int:
 
 
 generate_db_id = generate_db_track_id
+
+_U8_MAX = 0xFF
+_U16_MAX = 0xFFFF
+_U32_MAX = 0xFFFFFFFF
+_U64_MAX = 0xFFFFFFFFFFFFFFFF
+_DEFAULT_SAMPLE_RATE = 44100
+_MAX_IPOD_SAMPLE_RATE = 48000
+_MIN_AUDIO_SAMPLE_RATE = 8000
 
 
 @dataclass
@@ -220,9 +230,101 @@ def _compute_sort_indicators(track: TrackInfo) -> bytes:
     return bytes(ind)
 
 
+def _int_or_default(value: Any, default: int = 0) -> int:
+    try:
+        if isinstance(value, float) and not math.isfinite(value):
+            return default
+        return int(value)
+    except (TypeError, ValueError, OverflowError):
+        return default
+
+
+def _clamp_int(value: Any, lower: int, upper: int, default: int = 0) -> int:
+    number = _int_or_default(value, default)
+    return max(lower, min(upper, number))
+
+
+def _u8(value: Any, default: int = 0) -> int:
+    return _clamp_int(value, 0, _U8_MAX, default)
+
+
+def _u16(value: Any, default: int = 0) -> int:
+    return _clamp_int(value, 0, _U16_MAX, default)
+
+
+def _u32(value: Any, default: int = 0) -> int:
+    return _clamp_int(value, 0, _U32_MAX, default)
+
+
+def _u64(value: Any, default: int = 0) -> int:
+    return _clamp_int(value, 0, _U64_MAX, default)
+
+
+def _bool_flag(value: Any) -> bool:
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"", "0", "false", "no", "off"}:
+            return False
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+    return bool(value)
+
+
+def _text_or_default(value: Any, default: str) -> str:
+    if value is None:
+        return default
+    text = str(value).strip()
+    return text or default
+
+
+def _normalize_ipod_location(value: Any) -> str:
+    location = _text_or_default(value, "")
+    if not location:
+        raise ValueError("track iPod location is empty")
+    if not location.startswith(":iPod_Control:"):
+        raise ValueError(f"track iPod location must be an iPod path, got {location!r}")
+    return location
+
+
+def _normalize_filetype(value: Any) -> str:
+    filetype = str(value or "mp3").strip().lower().lstrip(".")
+    return filetype or "mp3"
+
+
+def _normalize_sample_rate(value: Any) -> int:
+    sample_rate = _int_or_default(value, _DEFAULT_SAMPLE_RATE)
+    if sample_rate < _MIN_AUDIO_SAMPLE_RATE:
+        return _DEFAULT_SAMPLE_RATE
+    return min(sample_rate, _MAX_IPOD_SAMPLE_RATE)
+
+
+def _normalize_trim_times(
+    length: int,
+    start_time: Any,
+    stop_time: Any,
+    bookmark_time: Any,
+) -> tuple[int, int, int]:
+    start = _u32(start_time)
+    stop = _u32(stop_time)
+    bookmark = _u32(bookmark_time)
+
+    if length:
+        start_invalid = start >= length
+        if start >= length:
+            start = 0
+        if stop > length:
+            stop = length
+        if stop and (stop <= start or start_invalid):
+            stop = 0
+        if bookmark > length:
+            bookmark = length
+
+    return start, stop, bookmark
+
+
 def _resolve_media_type(track: TrackInfo, capabilities) -> int:
     """Downgrade media type when the device lacks required capability."""
-    media_type = track.media_type
+    media_type = _u32(track.media_type, MEDIA_TYPE_AUDIO)
     if capabilities is None:
         return media_type
     if not capabilities.supports_video:
@@ -238,8 +340,9 @@ def _resolve_media_type(track: TrackInfo, capabilities) -> int:
 
 def _resolve_movie_flag(track: TrackInfo, media_type: int) -> int:
     """Derive movie_flag from media_type when not explicitly set."""
-    if track.movie_file_flag != 0:
-        return track.movie_file_flag
+    movie_file_flag = _u8(track.movie_file_flag)
+    if movie_file_flag != 0:
+        return movie_file_flag
     if media_type in (MEDIA_TYPE_VIDEO, MEDIA_TYPE_MUSIC_VIDEO,
                       MEDIA_TYPE_TV_SHOW, MEDIA_TYPE_VIDEO_PODCAST):
         return 1
@@ -248,9 +351,10 @@ def _resolve_movie_flag(track: TrackInfo, media_type: int) -> int:
 
 def _resolve_not_played(track: TrackInfo) -> int:
     """Resolve the not_played_flag: auto-derive from play_count when -1."""
-    if track.played_mark >= 0:
-        return track.played_mark
-    return 0x01 if track.play_count > 0 else 0x02
+    played_mark = _int_or_default(track.played_mark, -1)
+    if played_mark >= 0:
+        return _u8(played_mark)
+    return 0x01 if _u32(track.play_count) > 0 else 0x02
 
 
 def _gapless_or_zero(value: int, capabilities) -> int:
@@ -275,19 +379,31 @@ def write_mhit(track: TrackInfo, track_id: int, db_id_2: int = 0,
     Returns:
         Complete MHIT chunk bytes (header + MHODs).
     """
+    track.db_track_id = _u64(track.db_track_id)
     if track.db_track_id == 0:
         track.db_track_id = generate_db_track_id()
+    track.date_added = _u32(track.date_added)
     if track.date_added == 0:
         track.date_added = int(time.time())
 
-    ft = track.filetype.lower()
+    ft = _normalize_filetype(track.filetype)
     filetype_code = FILETYPE_CODES.get(ft, FILETYPE_CODES['mp3'])
     media_type = _resolve_media_type(track, capabilities)
     has_lyrics = track.has_lyrics or bool(track.lyrics)
+    title = _text_or_default(track.title, "Unknown Title")
+    location = _normalize_ipod_location(track.location)
+    length = _u32(track.length)
+    sample_rate = _normalize_sample_rate(track.sample_rate)
+    start_time, stop_time, bookmark_time = _normalize_trim_times(
+        length,
+        track.start_time,
+        track.stop_time,
+        track.bookmark_time,
+    )
 
     # Build child MHODs first to know count + size.
     mhod_data, mhod_count = write_track_mhods(
-        title=track.title, location=track.location,
+        title=title, location=location,
         artist=track.artist, album=track.album, genre=track.genre,
         album_artist=track.album_artist, composer=track.composer,
         comment=track.comment, filetype_desc=track.filetype_desc,
@@ -313,79 +429,79 @@ def write_mhit(track: TrackInfo, track_id: int, db_id_2: int = 0,
     # Assemble the values dict — write_fields handles transforms & packing.
     values: dict = {
         'child_count': mhod_count,
-        'track_id': track_id,
+        'track_id': _u32(track_id),
         'visible': 1,
         'filetype': filetype_code,
-        'vbr_flag': 1 if track.vbr else 0,
+        'vbr_flag': 1 if _bool_flag(track.vbr) else 0,
         'mp3_flag': 1 if ft == 'mp3' else 0,
-        'compilation_flag': 1 if track.compilation_flag else 0,
-        'rating': track.rating,
-        'last_modified': track.last_modified or track.date_added,
-        'size': track.size,
-        'length': track.length,
-        'track_number': track.track_number,
-        'total_tracks': track.total_tracks,
-        'year': track.year,
-        'bitrate': track.bitrate,
-        'sample_rate_1': track.sample_rate,
-        'volume': track.volume,
-        'start_time': track.start_time,
-        'stop_time': track.stop_time,
-        'sound_check': track.sound_check,
-        'play_count_1': track.play_count,
-        'play_count_2': track.play_count_2,
-        'last_played': track.last_played,
-        'disc_number': track.disc_number,
-        'total_discs': track.total_discs,
-        'user_id': track.user_id,
+        'compilation_flag': 1 if _bool_flag(track.compilation_flag) else 0,
+        'rating': _clamp_int(track.rating, 0, 100),
+        'last_modified': _u32(track.last_modified or track.date_added),
+        'size': _u32(track.size),
+        'length': length,
+        'track_number': _u32(track.track_number),
+        'total_tracks': _u32(track.total_tracks),
+        'year': _u32(track.year),
+        'bitrate': _u32(track.bitrate),
+        'sample_rate_1': sample_rate,
+        'volume': _clamp_int(track.volume, -255, 255),
+        'start_time': start_time,
+        'stop_time': stop_time,
+        'sound_check': _u32(track.sound_check),
+        'play_count_1': _u32(track.play_count),
+        'play_count_2': _u32(track.play_count_2),
+        'last_played': _u32(track.last_played),
+        'disc_number': _u32(track.disc_number),
+        'total_discs': _u32(track.total_discs),
+        'user_id': _u32(track.user_id),
         'date_added': track.date_added,
-        'bookmark_time': track.bookmark_time,
+        'bookmark_time': bookmark_time,
         'db_track_id': track.db_track_id,
-        'checked_flag': track.checked_flag,
-        'app_rating': track.app_rating,
-        'bpm': max(0, track.bpm) if track.bpm is not None else 0,
-        'artwork_count': track.artwork_count,
+        'checked_flag': _u8(track.checked_flag),
+        'app_rating': _u8(track.app_rating),
+        'bpm': _u16(track.bpm),
+        'artwork_count': _u16(track.artwork_count),
         'audio_format_flag': AUDIO_FORMAT_FLAG_MAP.get(ft, AUDIO_FORMAT_FLAG_DEFAULT),
-        'artwork_size': track.artwork_size,
-        'sample_rate_2': float(track.sample_rate),
-        'date_released': track.date_released,
-        'mpeg_audio_type': track.mpeg_audio_type,
-        'explicit_flag': track.explicit_flag,
-        'purchased_aac_flag': track.purchased_aac_flag,
+        'artwork_size': _u32(track.artwork_size),
+        'sample_rate_2': float(sample_rate),
+        'date_released': _u32(track.date_released),
+        'mpeg_audio_type': _u16(track.mpeg_audio_type),
+        'explicit_flag': _u8(track.explicit_flag),
+        'purchased_aac_flag': _u8(track.purchased_aac_flag),
         # Extended fields
-        'skip_count': track.skip_count,
-        'last_skipped': track.last_skipped,
-        'has_artwork': 1 if track.artwork_count > 0 else 2,
-        'skip_when_shuffling': 1 if track.skip_when_shuffling else 0,
-        'remember_position': 1 if track.remember_position else 0,
-        'use_podcast_now_playing_flag': track.podcast_flag,
+        'skip_count': _u32(track.skip_count),
+        'last_skipped': _u32(track.last_skipped),
+        'has_artwork': 1 if _u16(track.artwork_count) > 0 else 2,
+        'skip_when_shuffling': 1 if _bool_flag(track.skip_when_shuffling) else 0,
+        'remember_position': 1 if _bool_flag(track.remember_position) else 0,
+        'use_podcast_now_playing_flag': _u8(track.podcast_flag),
         'db_track_id_2': track.db_track_id,
         'lyrics_flag': 1 if has_lyrics else 0,
-        'movie_flag': _resolve_movie_flag(track, media_type),
-        'not_played_flag': _resolve_not_played(track),
-        'pregap': _gapless_or_zero(track.pregap, capabilities),
-        'sample_count': _gapless_or_zero(track.sample_count, capabilities),
-        'postgap': _gapless_or_zero(track.postgap, capabilities),
-        'encoder': track.encoder_flag,
-        'media_type': media_type,
-        'season_number': track.season_number,
-        'episode_number': track.episode_number,
-        'date_added_to_itunes': track.date_added_to_itunes,
-        'store_track_id': track.store_track_id,
-        'store_encoder_version': track.store_encoder_version,
-        'store_artist_id': track.store_artist_id,
-        'store_album_id': track.store_album_id,
-        'store_content_flag': track.store_content_flag,
-        'gapless_audio_payload_size': _gapless_or_zero(track.gapless_data, capabilities),
-        'gapless_track_flag': _gapless_or_zero(track.gapless_track_flag, capabilities),
-        'gapless_album_flag': _gapless_or_zero(track.gapless_album_flag, capabilities),
-        'album_id': track.album_id,
-        'db_id_2_ref': db_id_2,
-        'size_2': track.size,
+        'movie_flag': _u8(_resolve_movie_flag(track, media_type)),
+        'not_played_flag': _u8(_resolve_not_played(track)),
+        'pregap': _u32(_gapless_or_zero(track.pregap, capabilities)),
+        'sample_count': _u64(_gapless_or_zero(track.sample_count, capabilities)),
+        'postgap': _u32(_gapless_or_zero(track.postgap, capabilities)),
+        'encoder': _u32(track.encoder_flag),
+        'media_type': _u32(media_type),
+        'season_number': _u32(track.season_number),
+        'episode_number': _u32(track.episode_number),
+        'date_added_to_itunes': _u32(track.date_added_to_itunes),
+        'store_track_id': _u32(track.store_track_id),
+        'store_encoder_version': _u32(track.store_encoder_version),
+        'store_artist_id': _u32(track.store_artist_id),
+        'store_album_id': _u32(track.store_album_id),
+        'store_content_flag': _u32(track.store_content_flag),
+        'gapless_audio_payload_size': _u32(_gapless_or_zero(track.gapless_data, capabilities)),
+        'gapless_track_flag': _u16(_gapless_or_zero(track.gapless_track_flag, capabilities)),
+        'gapless_album_flag': _u16(_gapless_or_zero(track.gapless_album_flag, capabilities)),
+        'album_id': _u32(track.album_id),
+        'db_id_2_ref': _u64(db_id_2),
+        'size_2': _u32(track.size),
         'sort_mhod_indicators': _compute_sort_indicators(track),
-        'artwork_id_ref': track.mhii_link,
-        'artist_id_ref': track.artist_id,
-        'composer_id': track.composer_id,
+        'artwork_id_ref': _u32(track.mhii_link),
+        'artist_id_ref': _u32(track.artist_id),
+        'composer_id': _u32(track.composer_id),
     }
 
     header = bytearray(header_size)

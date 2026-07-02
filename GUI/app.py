@@ -86,7 +86,6 @@ from infrastructure.media_folders import (
     media_folder_paths,
 )
 from infrastructure.settings_schema import (
-    PLAYER_POSITION_BOTTOM,
     PLAYER_POSITION_TOP,
     normalize_player_position,
 )
@@ -584,9 +583,9 @@ class MainWindow(QMainWindow):
         try:
             settings = self.settings_service.get_effective_settings()
         except Exception:
-            return PLAYER_POSITION_BOTTOM
+            return PLAYER_POSITION_TOP
         return normalize_player_position(
-            getattr(settings, "player_position", PLAYER_POSITION_BOTTOM)
+            getattr(settings, "player_position", PLAYER_POSITION_TOP)
         )
 
     def _apply_player_position(self) -> None:

@@ -14,6 +14,7 @@ and the parser in iTunesDB_Parser/mhod_parser.py.
 
 import struct
 from dataclasses import dataclass, field
+from typing import Any
 
 from iTunesDB_Shared.mhod_defs import (
     MHOD_HEADER_SIZE,
@@ -27,6 +28,43 @@ from iTunesDB_Shared.mhod_defs import (
     spl_get_field_type,
     write_mhod_header,
 )
+
+_U32_MAX = 0xFFFFFFFF
+_U64_MAX = 0xFFFFFFFFFFFFFFFF
+_I64_MIN = -0x8000000000000000
+_I64_MAX = 0x7FFFFFFFFFFFFFFF
+_MAX_RULE_STRING_UTF16_BYTES = 4096
+
+
+def _int_or_default(value: Any, default: int = 0) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError, OverflowError):
+        return default
+
+
+def _u32(value: Any) -> int:
+    number = _int_or_default(value)
+    return max(0, min(number, _U32_MAX))
+
+
+def _u64(value: Any) -> int:
+    number = _int_or_default(value)
+    return max(0, min(number, _U64_MAX))
+
+
+def _i64(value: Any) -> int:
+    number = _int_or_default(value)
+    return max(_I64_MIN, min(number, _I64_MAX))
+
+
+def _utf16be_payload(value: Any) -> bytes:
+    text = str(value or "")
+    encoded = text.encode("utf-16-be", errors="replace")
+    if len(encoded) <= _MAX_RULE_STRING_UTF16_BYTES:
+        return encoded
+    limit = _MAX_RULE_STRING_UTF16_BYTES & ~1
+    return encoded[:limit]
 
 # ────────────────────────────────────────────────────────────
 # Data classes
@@ -89,7 +127,7 @@ class SmartPlaylistRules:
 
 
 def _signed_i64(value: int) -> int:
-    value = int(value or 0)
+    value = _int_or_default(value)
     if value >= (1 << 63):
         return value - (1 << 64)
     return value
@@ -101,7 +139,7 @@ def _normalize_relative_date_fields(
     from_units: int = 0,
 ) -> tuple[int, int]:
     signed_from_value = _signed_i64(from_value)
-    normalized_from_date = int(from_date or 0)
+    normalized_from_date = _i64(from_date)
     if normalized_from_date:
         normalized_from_date = -abs(normalized_from_date)
     elif signed_from_value:
@@ -129,16 +167,17 @@ def write_mhod50(prefs: SmartPlaylistPrefs) -> bytes:
     body[0] = 1 if prefs.live_update else 0
     body[1] = 1 if prefs.check_rules else 0
     body[2] = 1 if prefs.check_limits else 0
-    body[3] = prefs.limit_type & 0xFF
+    body[3] = _u32(prefs.limit_type) & 0xFF
 
     # limit_sort: low byte at +4, reverse flag at +13
-    low_byte = prefs.limit_sort & 0xFF
-    reverse = 1 if (prefs.limit_sort & 0x80000000) else 0
+    limit_sort = _u32(prefs.limit_sort)
+    low_byte = limit_sort & 0xFF
+    reverse = 1 if (limit_sort & 0x80000000) else 0
     body[4] = low_byte
 
     # 3 bytes padding (5..7) already zero
 
-    struct.pack_into('<I', body, 8, prefs.limit_value)
+    struct.pack_into('<I', body, 8, _u32(prefs.limit_value))
 
     body[12] = 1 if prefs.match_checked_only else 0
     body[13] = reverse
@@ -168,7 +207,7 @@ def _write_spl_rule(rule: SmartPlaylistRule) -> bytes:
 
     if ft == SPLFT_STRING and rule.string_value is not None:
         # String rule: data = UTF-16 BE string
-        string_bytes = rule.string_value.encode('utf-16-be')
+        string_bytes = _utf16be_payload(rule.string_value)
         data_length = len(string_bytes)
         data_section = string_bytes
     else:
@@ -185,24 +224,23 @@ def _write_spl_rule(rule: SmartPlaylistRule) -> bytes:
             )
         # from_value, to_value, from_units, to_units use unsigned '>Q' format.
         # Mask defensively so legacy in-memory rules with signed values still pack.
-        _mask = 0xFFFFFFFFFFFFFFFF
-        struct.pack_into('>Q', data_section, 0x00, from_value & _mask)
-        struct.pack_into('>q', data_section, 0x08, from_date)
-        struct.pack_into('>Q', data_section, 0x10, rule.from_units & _mask)
-        struct.pack_into('>Q', data_section, 0x18, rule.to_value & _mask)
-        struct.pack_into('>q', data_section, 0x20, rule.to_date)
-        struct.pack_into('>Q', data_section, 0x28, rule.to_units & _mask)
-        struct.pack_into('>I', data_section, 0x30, rule.unk052)
-        struct.pack_into('>I', data_section, 0x34, rule.unk056)
-        struct.pack_into('>I', data_section, 0x38, rule.unk060)
-        struct.pack_into('>I', data_section, 0x3C, rule.unk064)
-        struct.pack_into('>I', data_section, 0x40, rule.unk068)
+        struct.pack_into('>Q', data_section, 0x00, _u64(from_value))
+        struct.pack_into('>q', data_section, 0x08, _i64(from_date))
+        struct.pack_into('>Q', data_section, 0x10, _u64(rule.from_units))
+        struct.pack_into('>Q', data_section, 0x18, _u64(rule.to_value))
+        struct.pack_into('>q', data_section, 0x20, _i64(rule.to_date))
+        struct.pack_into('>Q', data_section, 0x28, _u64(rule.to_units))
+        struct.pack_into('>I', data_section, 0x30, _u32(rule.unk052))
+        struct.pack_into('>I', data_section, 0x34, _u32(rule.unk056))
+        struct.pack_into('>I', data_section, 0x38, _u32(rule.unk060))
+        struct.pack_into('>I', data_section, 0x3C, _u32(rule.unk064))
+        struct.pack_into('>I', data_section, 0x40, _u32(rule.unk068))
         data_section = bytes(data_section)
 
     # Build rule header
     rule_header = bytearray(SPL_RULE_HEADER_SIZE)
-    struct.pack_into('>I', rule_header, 0x00, rule.field_id)
-    struct.pack_into('>I', rule_header, 0x04, rule.action_id)
+    struct.pack_into('>I', rule_header, 0x00, _u32(rule.field_id))
+    struct.pack_into('>I', rule_header, 0x04, _u32(rule.action_id))
     # 44 bytes padding (0x08..0x33) already zero
     struct.pack_into('>I', rule_header, 0x34, data_length)
 
@@ -220,8 +258,8 @@ def write_mhod51(rules_data: SmartPlaylistRules) -> bytes:
     # Build SLst header
     slst_header = bytearray(SLST_HEADER_SIZE)
     slst_header[0:4] = b'SLst'
-    struct.pack_into('>I', slst_header, 4, rules_data.unk004)
-    struct.pack_into('>I', slst_header, 8, len(rules_data.rules))
+    struct.pack_into('>I', slst_header, 4, _u32(rules_data.unk004))
+    struct.pack_into('>I', slst_header, 8, _u32(len(rules_data.rules)))
     conjunction_val = 1 if rules_data.conjunction.upper() == "OR" else 0
     struct.pack_into('>I', slst_header, 12, conjunction_val)
     # 120 bytes padding already zero

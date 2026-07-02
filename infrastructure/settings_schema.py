@@ -130,7 +130,7 @@ def normalize_player_position(value: Any) -> str:
             return normalized
         if normalized in aliases:
             return aliases[normalized]
-    return PLAYER_POSITION_BOTTOM
+    return PLAYER_POSITION_TOP
 
 
 @dataclass
@@ -187,7 +187,7 @@ class AppSettings:
     high_contrast: str = "off"
     font_scale: str = "100%"
     accent_color: str = "blue"
-    player_position: str = PLAYER_POSITION_BOTTOM
+    player_position: str = PLAYER_POSITION_TOP
     window_width: int = 1280
     window_height: int = 720
     splitter_sizes: list = field(default_factory=list)

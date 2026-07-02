@@ -13,6 +13,7 @@ Cross-referenced against:
 """
 
 import struct
+from typing import Any
 
 from iTunesDB_Shared.constants import MHOD_TYPE_TITLE
 from iTunesDB_Shared.field_base import write_fields, write_generic_header
@@ -24,6 +25,14 @@ from iTunesDB_Shared.mhod_defs import (
 from iTunesDB_Shared.mhod_defs import (
     MHOD_HEADER_SIZE as _MHOD_HEADER_SIZE,
 )
+
+
+def _u32(value: Any) -> int:
+    try:
+        number = int(value or 0)
+    except (TypeError, ValueError, OverflowError):
+        return 0
+    return max(0, min(number, 0xFFFFFFFF))
 
 
 def write_mhip(
@@ -93,7 +102,7 @@ def write_mhod_position(position: int) -> bytes:
     header = write_mhod_header(100, total_len)
 
     # Data section: position(4) + padding(16)
-    data = struct.pack('<I', position) + (b'\x00' * 16)
+    data = struct.pack('<I', _u32(position)) + (b'\x00' * 16)
 
     return header + data
 
@@ -125,7 +134,8 @@ def write_mhip_podcast_group(album_name: str, group_id: int) -> bytes:
     """
     from .mhod_writer import write_mhod_string
 
-    mhod_title = write_mhod_string(MHOD_TYPE_TITLE, album_name)
+    title = str(album_name or "").strip() or "Unknown"
+    mhod_title = write_mhod_string(MHOD_TYPE_TITLE, title)
     total_length = MHIP_HEADER_SIZE + len(mhod_title)
 
     header = bytearray(MHIP_HEADER_SIZE)

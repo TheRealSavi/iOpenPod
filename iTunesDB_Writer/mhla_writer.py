@@ -52,6 +52,13 @@ from iTunesDB_Shared.mhia_defs import MHIA_HEADER_SIZE
 from .mhod_writer import write_mhod_string
 
 
+def _extend_child(children: bytearray, chunk: bytes) -> int:
+    if not chunk:
+        return 0
+    children.extend(chunk)
+    return 1
+
+
 def write_mhia(album_id: int, album_name: str, album_artist: str,
                sort_album_artist: str = "",
                podcast_url: str = "", show_name: str = "",
@@ -78,24 +85,34 @@ def write_mhia(album_id: int, album_name: str, album_artist: str,
     child_count = 0
 
     if album_name:
-        children.extend(write_mhod_string(MHOD_TYPE_ALBUM_ALBUM, album_name))
-        child_count += 1
+        child_count += _extend_child(
+            children,
+            write_mhod_string(MHOD_TYPE_ALBUM_ALBUM, album_name),
+        )
 
     if album_artist:
-        children.extend(write_mhod_string(MHOD_TYPE_ALBUM_ARTIST_ITEM, album_artist))
-        child_count += 1
+        child_count += _extend_child(
+            children,
+            write_mhod_string(MHOD_TYPE_ALBUM_ARTIST_ITEM, album_artist),
+        )
 
     if sort_album_artist:
-        children.extend(write_mhod_string(MHOD_TYPE_ALBUM_SORT_ARTIST, sort_album_artist))
-        child_count += 1
+        child_count += _extend_child(
+            children,
+            write_mhod_string(MHOD_TYPE_ALBUM_SORT_ARTIST, sort_album_artist),
+        )
 
     if podcast_url:
-        children.extend(write_mhod_string(MHOD_TYPE_ALBUM_PODCAST_URL, podcast_url))
-        child_count += 1
+        child_count += _extend_child(
+            children,
+            write_mhod_string(MHOD_TYPE_ALBUM_PODCAST_URL, podcast_url),
+        )
 
     if show_name:
-        children.extend(write_mhod_string(MHOD_TYPE_ALBUM_SHOW, show_name))
-        child_count += 1
+        child_count += _extend_child(
+            children,
+            write_mhod_string(MHOD_TYPE_ALBUM_SHOW, show_name),
+        )
 
     # Total chunk length
     total_length = MHIA_HEADER_SIZE + len(children)

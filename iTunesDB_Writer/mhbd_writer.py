@@ -369,8 +369,11 @@ def write_mhbd(
             if track_id is None:
                 continue  # track not in this database — skip
             new_ids.append(track_id)
-            if new_meta is not None and meta is not None:
+            if new_meta is not None and meta is not None and i < len(meta):
                 new_meta.append(meta[i])
+
+        if new_meta is not None and len(new_meta) != len(new_ids):
+            new_meta = None
 
         return _dc_replace(pl, track_ids=new_ids, item_metadata=new_meta)
 

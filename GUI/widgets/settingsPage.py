@@ -2238,7 +2238,7 @@ class SettingsPage(QWidget):
 
         player_position_text = _PLAYER_POSITION_DISPLAY.get(
             normalize_player_position(getattr(s, "player_position", "")),
-            _PLAYER_POSITION_DISPLAY[PLAYER_POSITION_BOTTOM],
+            _PLAYER_POSITION_DISPLAY[PLAYER_POSITION_TOP],
         )
         idx = self.player_position.combo.findText(player_position_text)
         if idx >= 0:
@@ -2725,7 +2725,7 @@ class SettingsPage(QWidget):
             s.font_scale = scale_keys.get(self.font_scale.value, "100%")
             s.player_position = _PLAYER_POSITION_BY_TEXT.get(
                 self.player_position.value,
-                PLAYER_POSITION_BOTTOM,
+                PLAYER_POSITION_TOP,
             )
 
     def _apply_theme_change_if_needed(self, before) -> None:
@@ -2782,7 +2782,7 @@ class SettingsPage(QWidget):
             effective_before.font_scale,
         )
         player_position_before = normalize_player_position(
-            getattr(effective_before, "player_position", PLAYER_POSITION_BOTTOM)
+            getattr(effective_before, "player_position", PLAYER_POSITION_TOP)
         )
 
         ctx = self._current_device_context() if self._settings_scope == "device" else None
@@ -2833,7 +2833,7 @@ class SettingsPage(QWidget):
 
         self._apply_theme_change_if_needed(theme_before)
         player_position_after = normalize_player_position(
-            getattr(effective_after, "player_position", PLAYER_POSITION_BOTTOM)
+            getattr(effective_after, "player_position", PLAYER_POSITION_TOP)
         )
         if player_position_after != player_position_before:
             self.player_position_changed.emit()

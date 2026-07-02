@@ -43,6 +43,13 @@ from iTunesDB_Shared.mhii_defs import MHII_HEADER_SIZE
 from .mhod_writer import write_mhod_string
 
 
+def _extend_child(children: bytearray, chunk: bytes) -> int:
+    if not chunk:
+        return 0
+    children.extend(chunk)
+    return 1
+
+
 def write_mhii_artist(artist_id: int, artist_name: str) -> bytes:
     """
     Write an MHII (artist item) chunk for the artist list.
@@ -59,8 +66,10 @@ def write_mhii_artist(artist_id: int, artist_name: str) -> bytes:
     child_count = 0
 
     if artist_name:
-        children.extend(write_mhod_string(MHOD_TYPE_ARTIST_NAME, artist_name))
-        child_count += 1
+        child_count += _extend_child(
+            children,
+            write_mhod_string(MHOD_TYPE_ARTIST_NAME, artist_name),
+        )
 
     # Total chunk length
     total_length = MHII_HEADER_SIZE + len(children)

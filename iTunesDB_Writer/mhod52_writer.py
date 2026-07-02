@@ -24,7 +24,7 @@ Type 53 (MHOD_ID_LIBPLAYLISTJUMPTABLE):
 
 import struct
 import unicodedata
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from iTunesDB_Shared.field_base import strip_article
 from iTunesDB_Shared.mhod_defs import (
@@ -57,13 +57,22 @@ VIDEO_SORT_TYPES = [SORT_SHOW, SORT_SEASON, SORT_EPISODE]
 ALL_SORT_TYPES = BASE_SORT_TYPES
 
 
-def _sort_key(s: str) -> str:
+def _text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes | bytearray):
+        return bytes(value).decode("utf-8", errors="replace")
+    return str(value)
+
+
+def _sort_key(s: Any) -> str:
     """
     Create a case-insensitive sort key for a string.
 
     Strips leading articles (A, An, The) for sorting (matching iTunes behavior),
     normalizes unicode, and lowercases.
     """
+    s = _text(s)
     if not s:
         return ""
     s = strip_article(s)
@@ -71,7 +80,7 @@ def _sort_key(s: str) -> str:
     return unicodedata.normalize('NFKD', s).casefold()
 
 
-def _jump_table_letter(s: str) -> int:
+def _jump_table_letter(s: Any) -> int:
     """
     Get the first alphanumeric character for jump table grouping.
 
@@ -80,6 +89,7 @@ def _jump_table_letter(s: str) -> int:
 
     Based on libgpod's jump_table_letter().
     """
+    s = _text(s)
     if not s:
         return ord('0')
 

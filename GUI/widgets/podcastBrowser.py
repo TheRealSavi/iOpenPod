@@ -25,10 +25,11 @@ import html
 import logging
 import os
 import re
+import time
 from collections.abc import Callable
 from datetime import UTC
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from PyQt6.QtCore import (
     QEvent,
@@ -135,6 +136,50 @@ def _fmt_date(ts: float) -> str:
         return ""
 
 
+def _coerce_int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _episode_listened_override(ep) -> bool | None:
+    override = getattr(ep, "listened_override", None)
+    if override is None:
+        return None
+    return bool(override)
+
+
+def _episode_is_listened(ep) -> bool:
+    override = _episode_listened_override(ep)
+    if override is not None:
+        return override
+    return (
+        _coerce_int(getattr(ep, "play_count", 0)) > 0
+        or _coerce_int(getattr(ep, "last_played", 0)) > 0
+    )
+
+
+def _set_episode_listened(ep, listened: bool) -> None:
+    if listened:
+        ep.listened_override = True
+        ep.play_count = max(1, _coerce_int(getattr(ep, "play_count", 0)))
+        if _coerce_int(getattr(ep, "last_played", 0)) <= 0:
+            ep.last_played = int(time.time())
+        return
+
+    from PodcastManager.models import STATUS_ON_IPOD
+
+    ep.play_count = 0
+    ep.last_played = 0
+    ep.listened_override = (
+        False
+        if getattr(ep, "status", "") == STATUS_ON_IPOD
+        and bool(getattr(ep, "ipod_db_track_id", 0))
+        else None
+    )
+
+
 # ── Podcast episode list ─────────────────────────────────────────────────────
 
 _PODCAST_EPISODE_COLUMNS = [
@@ -232,13 +277,15 @@ def _status_accent(status: str) -> str:
         return Colors.SUCCESS
     if status == "Downloaded":
         return Colors.ACCENT
+    if status == "Listened":
+        return Colors.WARNING
     if "Downloading" in status:
         return Colors.WARNING
     return Colors.TEXT_TERTIARY
 
 
 def _is_state_status(status: str) -> bool:
-    return status in {"On iPod", "Downloaded"} or "Downloading" in status
+    return status in {"On iPod", "Downloaded", "Listened"} or "Downloading" in status
 
 
 def _episode_meta_text(row: dict) -> str:
@@ -253,6 +300,8 @@ def _episode_meta_text(row: dict) -> str:
     if size > 0:
         parts.append(format_size(size))
     status = str(row.get("ep_status") or "")
+    if row.get("_was_listened") and status != "Listened":
+        parts.append("Listened")
     if status and not _is_state_status(status) and status not in parts:
         parts.append(status)
     return "  |  ".join(parts) if parts else "Episode"
@@ -2043,8 +2092,24 @@ class PodcastBrowser(QFrame):
             for row, ep, feed in selected
             if ep.status == STATUS_ON_IPOD and ep.ipod_db_track_id
         ]
+        can_mark_listened = [
+            (row, ep, feed)
+            for row, ep, feed in selected
+            if not _episode_is_listened(ep)
+        ]
+        can_mark_unlistened = [
+            (row, ep, feed)
+            for row, ep, feed in selected
+            if _episode_is_listened(ep)
+        ]
 
-        if not can_add and not can_remove_dl and not can_remove_ipod:
+        if not any((
+            can_add,
+            can_remove_dl,
+            can_remove_ipod,
+            can_mark_listened,
+            can_mark_unlistened,
+        )):
             return
 
         menu = QMenu(self)
@@ -2069,6 +2134,7 @@ class PodcastBrowser(QFrame):
         """)
 
         add_action = remove_dl_action = remove_ipod_action = None
+        mark_listened_action = mark_unlistened_action = None
 
         if can_add:
             n = len(can_add)
@@ -2089,6 +2155,18 @@ class PodcastBrowser(QFrame):
             suffix = f" ({n})" if n > 1 else ""
             remove_ipod_action = menu.addAction(f"Remove from iPod{suffix}")
 
+        if can_mark_listened or can_mark_unlistened:
+            if add_action or remove_dl_action or remove_ipod_action:
+                menu.addSeparator()
+            if can_mark_listened:
+                n = len(can_mark_listened)
+                suffix = f" ({n})" if n > 1 else ""
+                mark_listened_action = menu.addAction(f"Mark as Listened{suffix}")
+            if can_mark_unlistened:
+                n = len(can_mark_unlistened)
+                suffix = f" ({n})" if n > 1 else ""
+                mark_unlistened_action = menu.addAction(f"Mark as Unlistened{suffix}")
+
         viewport = self._episode_list.table.viewport()
         if not viewport:
             return
@@ -2101,6 +2179,10 @@ class PodcastBrowser(QFrame):
             self._remove_download_refs(can_remove_dl)
         elif action == remove_ipod_action:
             self._remove_from_ipod_refs(can_remove_ipod)
+        elif action == mark_listened_action:
+            self._set_listened_refs(can_mark_listened, True)
+        elif action == mark_unlistened_action:
+            self._set_listened_refs(can_mark_unlistened, False)
 
     # ── Episode table ────────────────────────────────────────────────────
 
@@ -2111,6 +2193,8 @@ class PodcastBrowser(QFrame):
 
         ep_key = _episode_key(feed, ep) if feed is not None else ep.guid
         status = str(getattr(ep, "status", ""))
+        play_count = _coerce_int(getattr(ep, "play_count", 0))
+        last_played = _coerce_int(getattr(ep, "last_played", 0))
         return {
             "Title": ep.title or ep.guid or "",
             "podcast_feed_title": getattr(feed, "title", "") if feed is not None else "",
@@ -2119,8 +2203,12 @@ class PodcastBrowser(QFrame):
             "length": (ep.duration_seconds or 0) * 1000,
             "date_added": int(ep.pub_date or 0),
             "size": ep.size_bytes or 0,
+            "play_count_1": play_count,
+            "last_played": last_played,
             "_ep_guid": ep.guid,
             "_ep_key": ep_key,
+            "_was_listened": _episode_is_listened(ep),
+            "_listened_override": _episode_listened_override(ep),
             "_can_add_to_ipod": status not in (STATUS_ON_IPOD, STATUS_DOWNLOADING),
             "_can_remove_from_ipod": (
                 status == STATUS_ON_IPOD
@@ -2267,6 +2355,8 @@ class PodcastBrowser(QFrame):
             return ("Downloaded", _QC(Colors.ACCENT))
         if ep.status == STATUS_DOWNLOADING:
             return ("Downloading…", _QC(Colors.WARNING))
+        if _episode_is_listened(ep):
+            return ("Listened", _QC(Colors.WARNING))
         if ep.size_bytes and ep.size_bytes > 0:
             return (format_size(ep.size_bytes), None)
         return ("", None)
@@ -2705,6 +2795,47 @@ class PodcastBrowser(QFrame):
     def _get_selected_episodes(self):
         """Return list of (row, episode) for compatibility with callers/tests."""
         return [(row, ep) for row, ep, _feed in self._get_selected_episode_refs()]
+
+    # ── Listened state ──────────────────────────────────────────────────
+
+    def _set_listened_refs(self, episode_refs: list, listened: bool) -> None:
+        changed_feeds: dict[str, PodcastFeed] = {}
+        changed_count = 0
+
+        for _row, ep, feed in episode_refs:
+            if ep is None:
+                continue
+            if _episode_is_listened(ep) == listened:
+                continue
+            _set_episode_listened(ep, listened)
+            changed_count += 1
+            if feed is not None:
+                changed_feeds[getattr(feed, "feed_url", str(id(feed)))] = cast(
+                    "PodcastFeed",
+                    feed,
+                )
+
+        if changed_count <= 0:
+            self._set_action_status(
+                "Selected episodes are already marked"
+                if listened
+                else "Selected episodes are already unmarked"
+            )
+            return
+
+        if self._store and changed_feeds:
+            self._store.update_feeds(list(changed_feeds.values()))
+
+        if self._showing_combined_feed:
+            self._show_combined_feed()
+        else:
+            self._show_episodes(self._selected_feed)
+        self._refresh_feed_list()
+
+        state = "listened" if listened else "unlistened"
+        self._set_action_status(
+            f"Marked {changed_count} episode{'s' if changed_count != 1 else ''} as {state}"
+        )
 
     # ── Add to iPod (download + sync in one step) ──────────────────
 

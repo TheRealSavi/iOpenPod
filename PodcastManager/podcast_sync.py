@@ -13,7 +13,7 @@ import logging
 import os
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from .models import (
     STATUS_DOWNLOADED,
@@ -29,6 +29,83 @@ if TYPE_CHECKING:
     from SyncEngine.pc_library import PCTrack
 
 log = logging.getLogger(__name__)
+
+
+def _coerce_int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _track_play_count(track: dict | None) -> int:
+    if not track:
+        return 0
+    return max(
+        _coerce_int(track.get("play_count_1")),
+        _coerce_int(track.get("recent_playcount")),
+    )
+
+
+def _track_recent_play_count(track: dict | None) -> int:
+    if not track:
+        return 0
+    return _coerce_int(track.get("recent_playcount"))
+
+
+def _track_last_played(track: dict | None) -> int:
+    if not track:
+        return 0
+    return _coerce_int(track.get("last_played"))
+
+
+def _episode_play_count(episode: PodcastEpisode) -> int:
+    return _coerce_int(getattr(episode, "play_count", 0))
+
+
+def _episode_listened_override(episode: PodcastEpisode) -> bool | None:
+    override = getattr(episode, "listened_override", None)
+    if override is None:
+        return None
+    return bool(override)
+
+
+def _episode_was_listened(
+    episode: PodcastEpisode,
+    ipod_track: dict | None = None,
+) -> bool:
+    override = _episode_listened_override(episode)
+    if override is not None:
+        return override
+    return _episode_play_count(episode) > 0 or _track_play_count(ipod_track) > 0
+
+
+def _update_episode_playback_from_track(
+    episode: PodcastEpisode,
+    ipod_track: dict,
+) -> bool:
+    """Persist playback state observed on the iPod into an episode."""
+    changed = False
+    if _track_recent_play_count(ipod_track) > 0 and (
+        _episode_listened_override(episode) is False
+    ):
+        episode.listened_override = None
+        changed = True
+
+    if _episode_listened_override(episode) is False:
+        return changed
+
+    play_count = _track_play_count(ipod_track)
+    if play_count > _episode_play_count(episode):
+        episode.play_count = play_count
+        changed = True
+
+    last_played = _track_last_played(ipod_track)
+    if last_played > _coerce_int(getattr(episode, "last_played", 0)):
+        episode.last_played = last_played
+        changed = True
+
+    return changed
 
 
 class PodcastTrackMatcher:
@@ -74,6 +151,8 @@ class PodcastTrackMatcher:
                 )
 
             if matched_track:
+                if _update_episode_playback_from_track(ep, matched_track):
+                    changed = True
                 new_db_track_id = matched_track.get("db_track_id", matched_track.get("db_id", 0))
                 if ep.ipod_db_track_id != new_db_track_id or ep.status != STATUS_ON_IPOD:
                     ep.ipod_db_track_id = new_db_track_id
@@ -351,8 +430,7 @@ def _should_clear_episode(
     """
     # Clear when listened: play_count > 0
     if feed.clear_when_listened:
-        play_count = ipod_track.get("play_count_1", 0)
-        if play_count and play_count > 0:
+        if _track_play_count(ipod_track) > 0:
             return True
 
     # Clear when older than threshold (by date added to iPod)
@@ -394,6 +472,10 @@ def _pick_candidates(
         ep for ep in feed.episodes
         if ep.status != STATUS_ON_IPOD
         and ep.guid not in on_ipod_guids
+        and not (
+            feed.clear_when_listened
+            and _episode_was_listened(ep)
+        )
         and ep.audio_url  # must have a download URL
     ]
 
@@ -468,7 +550,7 @@ def _plan_newest_mode(
         seen_guids.add(ep.guid)
         if feed.clear_when_listened:
             track = on_ipod_track_by_guid.get(ep.guid)
-            if track and track.get("play_count_1", 0) > 0:
+            if _episode_was_listened(ep, track):
                 continue
         wanted.append(ep)
 

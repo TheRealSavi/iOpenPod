@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from infrastructure import settings_persistence
 from infrastructure.settings_persistence import load_app_settings, save_app_settings
-from infrastructure.settings_schema import AppSettings
+from infrastructure.settings_schema import PLAYER_POSITION_TOP, AppSettings
 
 
 @contextmanager
@@ -173,3 +173,26 @@ def test_settings_persistence_preserves_legacy_bool_setter(monkeypatch) -> None:
 
     assert loaded.backup_before_sync_mode == "ask"
     assert loaded.backup_before_sync is False
+
+
+def test_settings_defaults_player_position_to_top() -> None:
+    settings = AppSettings()
+
+    assert settings.player_position == PLAYER_POSITION_TOP
+
+
+def test_settings_persistence_defaults_missing_player_position_to_top(monkeypatch) -> None:
+    with repo_temp_dir() as tmp_path:
+        settings_dir = tmp_path / "settings"
+        settings_dir.mkdir()
+        settings_path = settings_dir / "settings.json"
+        settings_path.write_text(json.dumps({}), encoding="utf-8")
+        monkeypatch.setattr(
+            settings_persistence,
+            "get_settings_path",
+            lambda: str(settings_path),
+        )
+
+        loaded = load_app_settings()
+
+    assert loaded.player_position == PLAYER_POSITION_TOP

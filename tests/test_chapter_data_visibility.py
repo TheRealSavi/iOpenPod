@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+from io import BytesIO
+
+from iTunesDB_Parser import parse_itunesdb
 from iTunesDB_Parser.mhod_parser import parse_mhod
 from iTunesDB_Shared.extraction import extract_track_extras
 from iTunesDB_Shared.mhod_defs import MHOD_HEADER_SIZE
+from iTunesDB_Writer.mhbd_writer import write_mhbd
+from iTunesDB_Writer.mhit_writer import TrackInfo
 from iTunesDB_Writer.mhod_writer import write_mhod_chapter_data
 from SyncEngine._track_conversion import track_dict_to_info
 from SyncEngine.sync_executor import SyncExecutor
@@ -107,3 +112,29 @@ def test_track_dict_to_info_preserves_chapter_data_for_mp3() -> None:
 
 def test_sync_executor_can_apply_chapter_data_metadata_updates() -> None:
     assert SyncExecutor._META_FIELD_MAP["chapter_data"] == ("chapter_data", None)
+
+
+def test_track_writer_skips_implausible_chapter_data() -> None:
+    data = write_mhbd(
+        [
+            TrackInfo(
+                "Bad Chapters",
+                ":iPod_Control:Music:F00:BAD.m4a",
+                chapter_data={
+                    "chapters": [
+                        {"startpos": 0xFFFFFFFF, "title": "One"},
+                        {"startpos": 0xFFFFFFFF, "title": "Two"},
+                    ],
+                },
+            )
+        ]
+    )
+    db = parse_itunesdb(BytesIO(data))
+    track_dataset = next(
+        child["data"]
+        for child in db["children"]
+        if child["chunk_type"] == "mhsd" and child["data"]["dataset_type"] == 1
+    )
+    track = track_dataset["children"][0]["data"][0]["data"]
+
+    assert all(child["data"]["mhod_type"] != 17 for child in track["children"])

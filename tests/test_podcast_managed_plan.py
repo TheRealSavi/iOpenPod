@@ -18,6 +18,8 @@ def _episode(
     *,
     on_ipod: bool = False,
     db_track_id: int = 0,
+    play_count: int = 0,
+    listened_override: bool | None = None,
 ) -> PodcastEpisode:
     return PodcastEpisode(
         guid=guid,
@@ -27,6 +29,8 @@ def _episode(
         size_bytes=100,
         status=STATUS_ON_IPOD if on_ipod else STATUS_NOT_DOWNLOADED,
         ipod_db_track_id=db_track_id,
+        play_count=play_count,
+        listened_override=listened_override,
     )
 
 
@@ -47,6 +51,34 @@ def _ipod_track(
         "date_added": date_added if date_added is not None else time.time(),
         "size": 100,
     }
+
+
+def _remove_ids(plan) -> list[int]:
+    return [
+        item.db_track_id
+        for item in plan.to_remove
+        if item.db_track_id is not None
+    ]
+
+
+def test_feed_serialization_keeps_played_not_downloaded_episode() -> None:
+    episode = _episode(
+        "played",
+        "Played",
+        100,
+        play_count=1,
+    )
+    feed = PodcastFeed(
+        feed_url="https://example.test/feed.xml",
+        title="Show",
+        episodes=[episode],
+    )
+
+    restored = PodcastFeed.from_dict(feed.to_dict())
+
+    assert len(restored.episodes) == 1
+    assert restored.episodes[0].guid == "played"
+    assert restored.episodes[0].play_count == 1
 
 
 def test_replace_mode_does_not_clear_listened_episode_without_next_episode() -> None:
@@ -89,7 +121,7 @@ def test_replace_mode_clears_listened_episode_when_next_episode_exists() -> None
         [_ipod_track(current, feed, play_count=1)],
     )
 
-    assert [item.db_track_id for item in plan.to_remove] == [10]
+    assert _remove_ids(plan) == [10]
     assert [item.pc_track.title for item in plan.to_add if item.pc_track] == ["Newer"]
 
 
@@ -141,7 +173,7 @@ def test_immediate_age_rule_replaces_with_newest_available_episode() -> None:
         [_ipod_track(current, feed, date_added=time.time() - 1)],
     )
 
-    assert [item.db_track_id for item in plan.to_remove] == [10]
+    assert _remove_ids(plan) == [10]
     assert [item.pc_track.title for item in plan.to_add if item.pc_track] == ["Newer"]
 
 
@@ -214,7 +246,7 @@ def test_newest_replace_immediate_swaps_only_the_oldest_when_one_new_drops() -> 
         [_ipod_track(ep, feed) for ep in on_ipod_eps],
     )
 
-    assert [item.db_track_id for item in plan.to_remove] == [1]  # "On 0", pub 100
+    assert _remove_ids(plan) == [1]  # "On 0", pub 100
     assert [item.pc_track.title for item in plan.to_add if item.pc_track] == ["Brand New"]
 
 
@@ -269,7 +301,7 @@ def test_newest_replace_trims_when_slot_count_is_reduced() -> None:
 
     # Top-3 newest are Ep 0, Ep 1, Ep 2 (db_track_ids 1, 2, 3).
     # Ep 3 and Ep 4 (ids 4, 5) fell out and should be removed.
-    assert sorted(item.db_track_id for item in plan.to_remove) == [4, 5]
+    assert sorted(_remove_ids(plan)) == [4, 5]
     assert plan.to_add == []
 
 
@@ -299,8 +331,100 @@ def test_newest_replace_clear_when_listened_swaps_played_for_unheard() -> None:
 
     plan = build_podcast_managed_plan([feed], ipod_tracks)
 
-    assert [item.db_track_id for item in plan.to_remove] == [1]  # "Ep 0"
+    assert _remove_ids(plan) == [1]  # "Ep 0"
     assert [item.pc_track.title for item in plan.to_add if item.pc_track] == ["Next Unheard"]
+
+
+def test_newest_clear_when_listened_does_not_readd_previously_played_episode() -> None:
+    """A removed played episode should not become a top-N add on the next sync."""
+    played_removed = _episode(
+        "e0",
+        "Already Played",
+        pub_date=100.0,
+        play_count=1,
+    )
+    staying_eps = [
+        _episode(f"e{i}", f"Ep {i}", pub_date=float(100 - i),
+                 on_ipod=True, db_track_id=i)
+        for i in range(1, 4)
+    ]
+    feed = PodcastFeed(
+        feed_url="https://example.test/feed.xml",
+        title="Show",
+        episodes=[played_removed, *staying_eps],
+        episode_slots=3,
+        fill_mode="newest",
+        clear_when_listened=True,
+        clear_older_than="never",
+        clear_method="replace",
+    )
+
+    plan = build_podcast_managed_plan(
+        [feed],
+        [_ipod_track(ep, feed) for ep in staying_eps],
+    )
+
+    assert plan.to_remove == []
+    assert plan.to_add == []
+
+
+def test_newest_manual_unlistened_override_keeps_played_on_ipod_episode() -> None:
+    episode = _episode(
+        "current",
+        "Current",
+        100,
+        on_ipod=True,
+        db_track_id=10,
+        listened_override=False,
+    )
+    feed = PodcastFeed(
+        feed_url="https://example.test/feed.xml",
+        title="Show",
+        episodes=[episode],
+        episode_slots=1,
+        fill_mode="newest",
+        clear_when_listened=True,
+        clear_method="replace",
+    )
+
+    plan = build_podcast_managed_plan(
+        [feed],
+        [_ipod_track(episode, feed, play_count=1)],
+    )
+
+    assert plan.to_remove == []
+    assert plan.to_add == []
+
+
+def test_newest_manual_listened_override_replaces_unplayed_on_ipod_episode() -> None:
+    current = _episode(
+        "current",
+        "Current",
+        100,
+        on_ipod=True,
+        db_track_id=10,
+        listened_override=True,
+    )
+    replacement = _episode("replacement", "Replacement", 90)
+    feed = PodcastFeed(
+        feed_url="https://example.test/feed.xml",
+        title="Show",
+        episodes=[current, replacement],
+        episode_slots=1,
+        fill_mode="newest",
+        clear_when_listened=True,
+        clear_method="replace",
+    )
+
+    plan = build_podcast_managed_plan(
+        [feed],
+        [_ipod_track(current, feed, play_count=0)],
+    )
+
+    assert _remove_ids(plan) == [10]
+    assert [item.pc_track.title for item in plan.to_add if item.pc_track] == [
+        "Replacement"
+    ]
 
 
 def test_newest_remove_immediate_is_noop_when_already_holding_top_n() -> None:

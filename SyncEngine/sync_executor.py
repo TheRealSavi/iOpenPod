@@ -26,7 +26,7 @@ from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from copy import copy
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from iTunesDB_Shared.constants import (
     MEDIA_TYPE_AUDIOBOOK,
@@ -1695,10 +1695,57 @@ class SyncExecutor:
         """Mark added podcast episodes as on_ipod and removed ones as downloaded
         in the subscription store so the state persists across sessions."""
         try:
-            from PodcastManager.models import STATUS_DOWNLOADED, STATUS_ON_IPOD
+            from PodcastManager.models import (
+                STATUS_DOWNLOADED,
+                STATUS_NOT_DOWNLOADED,
+                STATUS_ON_IPOD,
+            )
             from PodcastManager.subscription_store import SubscriptionStore
         except ImportError:
             return
+
+        def _coerce_int(value: Any) -> int:
+            try:
+                return int(value) if value is not None else 0
+            except (TypeError, ValueError):
+                return 0
+
+        def _listened_override(ep) -> bool | None:
+            override = getattr(ep, "listened_override", None)
+            if override is None:
+                return None
+            return bool(override)
+
+        def _remember_track_playback(ep, track) -> None:
+            recent_play_count = _coerce_int(track.get("recent_playcount"))
+            if recent_play_count > 0 and _listened_override(ep) is False:
+                ep.listened_override = None
+
+            if _listened_override(ep) is False:
+                return
+
+            play_count = max(
+                _coerce_int(track.get("play_count_1")),
+                recent_play_count,
+            )
+            if play_count > _coerce_int(getattr(ep, "play_count", 0)):
+                ep.play_count = play_count
+
+            last_played = _coerce_int(track.get("last_played"))
+            if last_played > _coerce_int(getattr(ep, "last_played", 0)):
+                ep.last_played = last_played
+
+        def _remember_trackinfo_playback(ep, track) -> None:
+            if _listened_override(ep) is False:
+                return
+
+            play_count = _coerce_int(getattr(track, "play_count", 0))
+            if play_count > _coerce_int(getattr(ep, "play_count", 0)):
+                ep.play_count = play_count
+
+            last_played = _coerce_int(getattr(track, "last_played", 0))
+            if last_played > _coerce_int(getattr(ep, "last_played", 0)):
+                ep.last_played = last_played
 
         store = SubscriptionStore(str(self.ipod_path))
         feeds = store.get_feeds()
@@ -1707,10 +1754,13 @@ class SyncExecutor:
 
         # Index episodes by enclosure URL across all feeds
         ep_by_url: dict[str, tuple] = {}
+        ep_by_db_track_id: dict[int, tuple] = {}
         for feed in feeds:
             for ep in feed.episodes:
                 if ep.audio_url:
                     ep_by_url[ep.audio_url] = (ep, feed)
+                if ep.ipod_db_track_id:
+                    ep_by_db_track_id[ep.ipod_db_track_id] = (ep, feed)
 
         changed = False
 
@@ -1724,6 +1774,7 @@ class SyncExecutor:
             entry = ep_by_url.get(enc_url)
             if entry:
                 ep, _feed = entry
+                _remember_trackinfo_playback(ep, track)
                 ep.status = STATUS_ON_IPOD
                 ep.ipod_db_track_id = track.db_track_id
                 changed = True
@@ -1741,12 +1792,13 @@ class SyncExecutor:
             if not (ipod_track.get("media_type", 0) & MEDIA_TYPE_PODCAST):
                 continue
             enc_url = ipod_track.get("Podcast Enclosure URL", "")
-            if not enc_url:
-                continue
-            entry = ep_by_url.get(enc_url)
+            entry = ep_by_url.get(enc_url) if enc_url else None
+            if entry is None and item.db_track_id:
+                entry = ep_by_db_track_id.get(item.db_track_id)
             if entry:
                 ep, _feed = entry
-                ep.status = STATUS_DOWNLOADED if ep.downloaded_path else "not_downloaded"
+                _remember_track_playback(ep, ipod_track)
+                ep.status = STATUS_DOWNLOADED if ep.downloaded_path else STATUS_NOT_DOWNLOADED
                 ep.ipod_db_track_id = 0
                 changed = True
                 logger.debug("Podcast subscription: marked '%s' as removed from iPod",

@@ -25,6 +25,10 @@ log = logging.getLogger(__name__)
 
 _TIMEOUT = 30  # seconds (connect timeout; read is streaming)
 _CHUNK_SIZE = 64 * 1024  # 64 KB
+_MAX_CHAPTER_COUNT = 500
+_MAX_CHAPTER_START_MS = 0xFFFFFFFE
+
+_MP4_CONTAINER_ATOMS = {b"moov", b"udta"}
 
 
 class CancelToken(Protocol):
@@ -351,48 +355,135 @@ def _read_nero_chapters(file_path: str) -> list[dict] | None:
     with open(file_path, "rb") as f:
         data = f.read()
 
-    # Find 'chpl' atom
-    idx = data.find(b"chpl")
-    if idx < 4:
+    body = _find_mp4_atom_body(data, (b"moov", b"udta", b"chpl"))
+    if body is None:
         return None
 
-    # chpl atom: 4-byte size before 'chpl', then version(4), unk(1),
+    # chpl atom body: version/flags(4), unk(1),
     # chapter_count(4 for v1, 1 for v0), then entries.
-    pos = idx + 4  # skip 'chpl' fourcc
+    pos = 0
 
-    if pos + 5 > len(data):
+    if pos + 5 > len(body):
         return None
-    version = data[pos]
+    version = body[pos]
     pos += 5  # version(4) + unknown(1)
 
     if version == 1:
-        if pos + 4 > len(data):
+        if pos + 4 > len(body):
             return None
-        count = struct.unpack(">I", data[pos:pos + 4])[0]
+        count = struct.unpack(">I", body[pos:pos + 4])[0]
         pos += 4
     else:
-        count = data[pos]
+        if pos >= len(body):
+            return None
+        count = body[pos]
         pos += 1
 
-    if count == 0 or count > 500:
+    if count == 0 or count > _MAX_CHAPTER_COUNT:
         return None
 
     chapters = []
     for _ in range(count):
-        if pos + 9 > len(data):
-            break
+        if pos + 9 > len(body):
+            return None
         # timestamp: 8 bytes (100-nanosecond units)
-        ts = struct.unpack(">Q", data[pos:pos + 8])[0]
+        ts = struct.unpack(">Q", body[pos:pos + 8])[0]
         ms = ts // 10_000
-        name_len = data[pos + 8]
+        name_len = body[pos + 8]
         pos += 9
-        if pos + name_len > len(data):
-            break
-        title = data[pos:pos + name_len].decode("utf-8", errors="replace")
+        if pos + name_len > len(body):
+            return None
+        title = body[pos:pos + name_len].decode("utf-8", errors="replace")
         pos += name_len
         chapters.append({"startpos": int(ms), "title": title})
 
-    return chapters if chapters else None
+    return _plausible_chapters(chapters)
+
+
+def _find_mp4_atom_body(data: bytes, path: tuple[bytes, ...]) -> bytes | None:
+    """Return the body for an MP4 atom at *path*.
+
+    This deliberately walks the MP4 atom tree instead of searching for a raw
+    fourcc byte sequence. Audio payloads can contain arbitrary ``chpl`` bytes
+    that are not metadata atoms.
+    """
+    if not path:
+        return data
+
+    needle = path[0]
+    for atom_type, body_start, body_end in _iter_mp4_atoms(data, 0, len(data)):
+        if atom_type != needle:
+            continue
+        body = data[body_start:body_end]
+        if len(path) == 1:
+            return body
+        if atom_type not in _MP4_CONTAINER_ATOMS:
+            return None
+        found = _find_mp4_atom_body(body, path[1:])
+        if found is not None:
+            return found
+    return None
+
+
+def _iter_mp4_atoms(data: bytes, start: int, end: int):
+    import struct
+
+    pos = start
+    while pos + 8 <= end:
+        size = struct.unpack(">I", data[pos:pos + 4])[0]
+        atom_type = data[pos + 4:pos + 8]
+        header_size = 8
+
+        if size == 1:
+            if pos + 16 > end:
+                return
+            size = struct.unpack(">Q", data[pos + 8:pos + 16])[0]
+            header_size = 16
+        elif size == 0:
+            size = end - pos
+
+        if size < header_size or pos + size > end:
+            return
+
+        yield atom_type, pos + header_size, pos + size
+        pos += size
+
+
+def _plausible_chapters(chapters: list[dict]) -> list[dict] | None:
+    if not chapters or len(chapters) > _MAX_CHAPTER_COUNT:
+        return None
+
+    previous = -1
+    normalized: list[dict] = []
+    for index, chapter in enumerate(chapters, start=1):
+        try:
+            start_ms = int(chapter.get("startpos", 0))
+        except (TypeError, ValueError, OverflowError):
+            return None
+        if start_ms < 0 or start_ms > _MAX_CHAPTER_START_MS:
+            return None
+        if start_ms <= previous:
+            return None
+
+        title = str(chapter.get("title") or f"Chapter {index}").strip()
+        if _suspicious_chapter_title(title):
+            return None
+        normalized.append({"startpos": start_ms, "title": title or f"Chapter {index}"})
+        previous = start_ms
+
+    return normalized
+
+
+def _suspicious_chapter_title(title: str) -> bool:
+    if "\x00" in title:
+        return True
+    if title.count("\ufffd") > max(1, len(title) // 10):
+        return True
+    control_count = sum(
+        1 for ch in title
+        if ord(ch) < 32 and ch not in "\t\r\n"
+    )
+    return control_count > 0
 
 
 def _read_ffprobe_chapters(file_path: str) -> list[dict] | None:
@@ -435,7 +526,7 @@ def _read_ffprobe_chapters(file_path: str) -> list[dict] | None:
                      or ch.get("tags", {}).get("Title")
                      or f"Chapter {len(chapters) + 1}")
             chapters.append({"startpos": int(start_s * 1000), "title": title})
-        return chapters if chapters else None
+        return _plausible_chapters(chapters)
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return None
 
@@ -466,7 +557,7 @@ def _chapters_from_mp3(file_path: str) -> list[dict] | None:
         chapters.append({"startpos": int(start_ms), "title": title})
 
     chapters.sort(key=lambda c: c["startpos"])
-    return chapters if chapters else None
+    return _plausible_chapters(chapters)
 
 
 _KNOWN_AUDIO_EXTS = {".mp3", ".m4a", ".m4b", ".aac", ".ogg", ".opus", ".wav", ".flac"}
