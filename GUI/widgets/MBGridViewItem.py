@@ -53,6 +53,17 @@ class GridItemRenderState:
     display_album_colors: dict[str, Any] | None = None
 
 
+_GRID_CARD_TINT_DARK = (30, 25, 55, 45)
+_GRID_CARD_TINT_LIGHT = (48, 40, 82, 68)
+
+
+def _grid_card_tint_alphas() -> tuple[int, int, int, int]:
+    """Return normal bg, normal border, hover bg, hover border alpha."""
+    if getattr(Colors, "_active_mode", "dark") == "light":
+        return _GRID_CARD_TINT_LIGHT
+    return _GRID_CARD_TINT_DARK
+
+
 class MusicBrowserGridItem(QFrame):
     """Reusable, clickable grid card for albums, artists, and genres."""
     clicked = pyqtSignal(dict)
@@ -232,16 +243,17 @@ class MusicBrowserGridItem(QFrame):
             return
 
         r, g, b = render_state.display_dominant_color
+        bg_alpha, border_alpha, hover_bg_alpha, hover_border_alpha = _grid_card_tint_alphas()
         self.setStyleSheet(f"""
             QFrame {{
-                background-color: rgba({r}, {g}, {b}, 30);
-                border: 1px solid rgba({r}, {g}, {b}, 25);
+                background-color: rgba({r}, {g}, {b}, {bg_alpha});
+                border: 1px solid rgba({r}, {g}, {b}, {border_alpha});
                 border-radius: {Metrics.BORDER_RADIUS_XL}px;
                 color: {Colors.TEXT_PRIMARY};
             }}
             QFrame:hover {{
-                background-color: rgba({r}, {g}, {b}, 55);
-                border: 1px solid rgba({r}, {g}, {b}, 45);
+                background-color: rgba({r}, {g}, {b}, {hover_bg_alpha});
+                border: 1px solid rgba({r}, {g}, {b}, {hover_border_alpha});
             }}
         """)
 

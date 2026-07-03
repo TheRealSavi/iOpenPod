@@ -36,10 +36,10 @@ ALL_KNOWN_FORMATS: dict[int, tuple[int, int]] = {
 # Per-family convenience dicts — thin wrappers around ipod_device data.
 # May be removed in a future cleanup once all callers migrate to
 # ``ithmb_formats_for_device()`` or ``capabilities_for_family_gen()``.
-IPOD_CLASSIC_FORMATS = ithmb_formats_for_device("iPod Classic", "1st Gen")
+IPOD_CLASSIC_FORMATS = ithmb_formats_for_device("iPod Classic", "6th Gen")
 IPOD_NANO_1G2G_FORMATS = ithmb_formats_for_device("iPod Nano", "1st Gen")
-IPOD_PHOTO_FORMATS = ithmb_formats_for_device("iPod Photo", "4th Gen")
-IPOD_VIDEO_FORMATS = ithmb_formats_for_device("iPod Video", "5th Gen")
+IPOD_4G_PHOTO_FORMATS = ithmb_formats_for_device("iPod", "4th Gen (photo)")
+IPOD_5G_FORMATS = ithmb_formats_for_device("iPod", "5th Gen")
 IPOD_NANO_4G_FORMATS = ithmb_formats_for_device("iPod Nano", "4th Gen")
 IPOD_NANO_5G_FORMATS = ithmb_formats_for_device("iPod Nano", "5th Gen")
 
@@ -65,7 +65,7 @@ def get_artwork_format_definitions(ipod_path: str) -> dict[int, ArtworkFormat]:
     if device is not None:
         return {}
 
-    return resolve_cover_art_format_definitions("iPod Classic", "1st Gen")
+    return resolve_cover_art_format_definitions("iPod Classic", "6th Gen")
 
 
 def get_artwork_formats(ipod_path: str) -> dict[int, tuple[int, int]]:

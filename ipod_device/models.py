@@ -23,35 +23,37 @@ Sources
 # Maps order number prefixes to (product_line, generation, capacity, color)
 #
 # Generation naming conventions:
-#   The full-size iPod line has TWO numbering systems. This table uses the
-#   product-specific generation (matching what users see in "About" screens),
-#   with the overall iPod lineage noted in comments.
+#   This table uses the community model names as the display identity. Classic
+#   models continue the full-size iPod generation numbers, U2 is a color, and
+#   4th-gen full-size iPods keep their mono/photo/color distinction in the
+#   generation string.
 #
-#   Overall iPod gen │ Product-specific gen │ Years │ Apple Model
-#   ─────────────────┼──────────────────────┼───────┼────────────
-#   1st gen           │ iPod 1st Gen         │ 2001  │ M8541
-#   2nd gen           │ iPod 2nd Gen         │ 2002  │ A1019
-#   3rd gen           │ iPod 3rd Gen         │ 2003  │ A1040
-#   4th gen           │ iPod 4th Gen         │ 2004  │ A1059
-#   4th gen (color)   │ iPod Photo           │ 2004  │ A1099
-#   5th gen           │ iPod Video 5th Gen   │ 2005  │ A1136
-#   5.5th gen         │ iPod Video 5.5th Gen │ 2006  │ A1136 (Rev B)
-#   6th gen           │ iPod Classic 1st Gen │ 2007  │ A1238
-#   6.5th gen         │ iPod Classic 2nd Gen │ 2008  │ A1238 (Rev A)
-#   7th gen           │ iPod Classic 3rd Gen │ 2009  │ A1238 (Rev B/C)
+#   Model name                 │ Years │ Apple Model
+#   ───────────────────────────┼───────┼────────────
+#   iPod 1st Gen               │ 2001  │ M8541
+#   iPod 2nd Gen               │ 2002  │ A1019
+#   iPod 3rd Gen               │ 2003  │ A1040
+#   iPod 4th Gen (mono)        │ 2004  │ A1059
+#   iPod 4th Gen (photo)       │ 2004  │ A1099
+#   iPod 4th Gen (color)       │ 2005  │ A1099
+#   iPod 5th Gen               │ 2005  │ A1136
+#   iPod 5.5th Gen             │ 2006  │ A1136 (Rev B)
+#   iPod Classic 6th Gen       │ 2007  │ A1238
+#   iPod Classic 6.5th Gen     │ 2008  │ A1238 (Rev A)
+#   iPod Classic 7th Gen       │ 2009  │ A1238 (Rev B/C)
 
 IPOD_MODELS: dict[str, tuple[str, str, str, str]] = {
     # ==========================================================================
     # iPod Classic (2007-2009)
     # ==========================================================================
-    'MB029': ("iPod Classic", "1st Gen", "80GB", "Silver"),
-    'MB147': ("iPod Classic", "1st Gen", "80GB", "Black"),
-    'MB145': ("iPod Classic", "1st Gen", "160GB", "Silver"),
-    'MB150': ("iPod Classic", "1st Gen", "160GB", "Black"),
-    'MB562': ("iPod Classic", "2nd Gen", "120GB", "Silver"),
-    'MB565': ("iPod Classic", "2nd Gen", "120GB", "Black"),
-    'MC293': ("iPod Classic", "3rd Gen", "160GB", "Silver"),
-    'MC297': ("iPod Classic", "3rd Gen", "160GB", "Black"),
+    'MB029': ("iPod Classic", "6th Gen", "80GB", "Silver"),
+    'MB147': ("iPod Classic", "6th Gen", "80GB", "Black"),
+    'MB145': ("iPod Classic", "6th Gen", "160GB", "Silver"),
+    'MB150': ("iPod Classic", "6th Gen", "160GB", "Black"),
+    'MB562': ("iPod Classic", "6.5th Gen", "120GB", "Silver"),
+    'MB565': ("iPod Classic", "6.5th Gen", "120GB", "Black"),
+    'MC293': ("iPod Classic", "7th Gen", "160GB", "Silver"),
+    'MC297': ("iPod Classic", "7th Gen", "160GB", "Black"),
 
     # ==========================================================================
     # iPod (Scroll Wheel) — 1st Generation (2001)
@@ -80,42 +82,42 @@ IPOD_MODELS: dict[str, tuple[str, str, str, str]] = {
     'M9460': ("iPod", "3rd Gen", "15GB", "White"),
 
     # ==========================================================================
-    # iPod (Click Wheel) — 4th Generation (2004)
+    # iPod (Click Wheel) — 4th Generation mono (2004)
     # ==========================================================================
-    'M9268': ("iPod", "4th Gen", "40GB", "White"),
-    'M9282': ("iPod", "4th Gen", "20GB", "White"),
-    'ME436': ("iPod", "4th Gen", "40GB", "White"),
-    'M9787': ("iPod U2", "4th Gen", "20GB", "Black"),
+    'M9268': ("iPod", "4th Gen (mono)", "40GB", "White"),
+    'M9282': ("iPod", "4th Gen (mono)", "20GB", "White"),
+    'ME436': ("iPod", "4th Gen (mono)", "40GB", "White"),
+    'M9787': ("iPod", "4th Gen (mono)", "20GB", "U2"),
 
     # ==========================================================================
-    # iPod Photo / iPod with color Display — 4th Gen (Color) (2004-2005)
+    # iPod — 4th Generation photo/color (2004-2005)
     # ==========================================================================
-    'M9585': ("iPod Photo", "4th Gen", "40GB", "White"),
-    'M9586': ("iPod Photo", "4th Gen", "60GB", "White"),
-    'M9829': ("iPod Photo", "4th Gen", "30GB", "White"),
-    'M9830': ("iPod Photo", "4th Gen", "60GB", "White"),
-    'MA079': ("iPod Photo", "4th Gen", "20GB", "White"),
-    'MA127': ("iPod U2", "4th Gen", "20GB", "Black"),
-    'MS492': ("iPod Photo", "4th Gen", "30GB", "White"),
-    'MA215': ("iPod Photo", "4th Gen", "20GB", "White"),
+    'M9585': ("iPod", "4th Gen (photo)", "40GB", "White"),
+    'M9586': ("iPod", "4th Gen (photo)", "60GB", "White"),
+    'M9829': ("iPod", "4th Gen (photo)", "30GB", "White"),
+    'M9830': ("iPod", "4th Gen (photo)", "60GB", "White"),
+    'MA079': ("iPod", "4th Gen (color)", "20GB", "White"),
+    'MA127': ("iPod", "4th Gen (color)", "20GB", "U2"),
+    'MS492': ("iPod", "4th Gen (photo)", "30GB", "White"),
+    'MA215': ("iPod", "4th Gen (color)", "20GB", "White"),
 
     # ==========================================================================
-    # iPod Video — 5th Generation (2005)
+    # iPod — 5th Generation (2005)
     # ==========================================================================
-    'MA002': ("iPod Video", "5th Gen", "30GB", "White"),
-    'MA003': ("iPod Video", "5th Gen", "60GB", "White"),
-    'MA146': ("iPod Video", "5th Gen", "30GB", "Black"),
-    'MA147': ("iPod Video", "5th Gen", "60GB", "Black"),
-    'MA452': ("iPod Video U2", "5th Gen", "30GB", "Black"),
+    'MA002': ("iPod", "5th Gen", "30GB", "White"),
+    'MA003': ("iPod", "5th Gen", "60GB", "White"),
+    'MA146': ("iPod", "5th Gen", "30GB", "Black"),
+    'MA147': ("iPod", "5th Gen", "60GB", "Black"),
+    'MA452': ("iPod", "5th Gen", "30GB", "U2"),
 
     # ==========================================================================
-    # iPod Video — 5.5th Generation / Enhanced (Late 2006)
+    # iPod — 5.5th Generation / Enhanced (Late 2006)
     # ==========================================================================
-    'MA444': ("iPod Video", "5.5th Gen", "30GB", "White"),
-    'MA446': ("iPod Video", "5.5th Gen", "30GB", "Black"),
-    'MA448': ("iPod Video", "5.5th Gen", "80GB", "White"),
-    'MA450': ("iPod Video", "5.5th Gen", "80GB", "Black"),
-    'MA664': ("iPod Video U2", "5.5th Gen", "30GB", "Black"),
+    'MA444': ("iPod", "5.5th Gen", "30GB", "White"),
+    'MA446': ("iPod", "5.5th Gen", "30GB", "Black"),
+    'MA448': ("iPod", "5.5th Gen", "80GB", "White"),
+    'MA450': ("iPod", "5.5th Gen", "80GB", "Black"),
+    'MA664': ("iPod", "5.5th Gen", "30GB", "U2"),
 
     # ==========================================================================
     # iPod Mini — 1st Generation (2004)
@@ -337,6 +339,89 @@ IPOD_MODELS: dict[str, tuple[str, str, str, str]] = {
 }
 
 
+def _normalized_text(value: str | None) -> str:
+    return " ".join(str(value or "").strip().casefold().split())
+
+
+def _canonical_model_number_info(
+    model_number: str | None,
+) -> tuple[str, str, str, str] | None:
+    if not model_number:
+        return None
+
+    normalized = str(model_number).strip().upper()
+    candidates = [normalized]
+    if normalized and not normalized.startswith("M") and len(normalized) > 1:
+        candidates.append("M" + normalized[1:])
+
+    for candidate in candidates:
+        info = IPOD_MODELS.get(candidate)
+        if info:
+            return info
+    return None
+
+
+def canonicalize_model_identity(
+    family: str,
+    generation: str,
+    *,
+    capacity: str = "",
+    color: str = "",
+    model_number: str | None = None,
+) -> tuple[str, str, str]:
+    """Return canonical ``(family, generation, color)`` identity fields.
+
+    Model-number lookup is authoritative. The text fallback only normalizes
+    casing and generation spellings already inside the canonical model families.
+    """
+    model_info = _canonical_model_number_info(model_number)
+    if model_info:
+        return model_info[0], model_info[1], model_info[3]
+
+    family_text = str(family or "").strip()
+    generation_text = str(generation or "").strip()
+    color_text = str(color or "").strip()
+
+    family_norm = _normalized_text(family_text)
+    generation_norm = _normalized_text(generation_text)
+    classic_generation_map = {
+        "6th gen": "6th Gen",
+        "6.5 gen": "6.5th Gen",
+        "6.5th gen": "6.5th Gen",
+        "7th gen": "7th Gen",
+    }
+    if family_norm == "ipod classic":
+        return (
+            "iPod Classic",
+            classic_generation_map.get(generation_norm, generation_text),
+            color_text,
+        )
+
+    known_family_map = {
+        "ipod nano": "iPod Nano",
+        "ipod mini": "iPod Mini",
+        "ipod shuffle": "iPod Shuffle",
+    }
+    if family_norm in known_family_map:
+        return known_family_map[family_norm], generation_text, color_text
+
+    if family_norm == "ipod":
+        generation_map = {
+            "4th gen": "4th Gen (mono)",
+            "4th gen mono": "4th Gen (mono)",
+            "4th gen (mono)": "4th Gen (mono)",
+            "4th gen photo": "4th Gen (photo)",
+            "4th gen (photo)": "4th Gen (photo)",
+            "4th gen color": "4th Gen (color)",
+            "4th gen (color)": "4th Gen (color)",
+            "5.5 gen": "5.5th Gen",
+            "5.5th gen": "5.5th Gen",
+        }
+        return "iPod", generation_map.get(generation_norm, generation_text), color_text
+
+    return family_text, generation_text, color_text
+
+
 # ╔═══════════════════════════════════════════════════════════════════════════╗
 # ║  USB Product ID → iPod generation (Apple VID = 0x05AC)                  ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
@@ -345,23 +430,23 @@ USB_PID_TO_MODEL: dict[int, tuple[str, str]] = {
     # ── Normal-mode PIDs (0x120x) ──────────────────────────────────────────
     0x1201: ("iPod", "3rd Gen"),
     0x1202: ("iPod", ""),  # 1st/2nd Gen share this PID in USB ID tables
-    0x1203: ("iPod", "4th Gen"),
-    0x1204: ("iPod Photo", "4th Gen"),
+    0x1203: ("iPod", "4th Gen (mono)"),
+    0x1204: ("iPod", "4th Gen (photo)"),
     0x1205: ("iPod Mini", ""),  # Mini 1st/2nd Gen share this PID
     0x1206: ("iPod", ""),       # USB IDs label this only as "iPod '06'"
     0x1207: ("iPod", ""),       # USB IDs label this only as "iPod '07'"
     0x1208: ("iPod", ""),       # USB IDs label this only as "iPod '08'"
-    0x1209: ("iPod Video", ""),  # 5th/5.5th Gen share this coarse PID
+    0x1209: ("iPod", ""),       # 5th/5.5th Gen share this coarse PID
     0x120A: ("iPod Nano", ""),  # Original nano-era generic PID
 
     # ── DFU / WTF recovery mode PIDs (0x124x) ─────────────────────────────
-    0x1240: ("iPod Nano", "2nd Gen (Recovery)"),
-    0x1241: ("iPod Classic", "1st Gen (Recovery)"),
-    0x1242: ("iPod Nano", "3rd Gen (Recovery)"),
-    0x1243: ("iPod Nano", "4th Gen (Recovery)"),
-    0x1245: ("iPod Classic", "3rd Gen (Recovery)"),
-    0x1246: ("iPod Nano", "5th Gen (Recovery)"),
-    0x1255: ("iPod Nano", "4th Gen (Recovery)"),
+    0x1240: ("iPod Nano", "2nd Gen"),
+    0x1241: ("iPod Classic", "6th Gen"),
+    0x1242: ("iPod Nano", "3rd Gen"),
+    0x1243: ("iPod Nano", "4th Gen"),
+    0x1245: ("iPod Classic", "7th Gen"),
+    0x1246: ("iPod Nano", "5th Gen"),
+    0x1255: ("iPod Nano", "4th Gen"),
 
     # ── Normal-mode PIDs (0x126x) ──────────────────────────────────────────
     0x1260: ("iPod Nano", "2nd Gen"),
@@ -403,9 +488,9 @@ SERIAL_LAST3_TO_MODEL: dict[str, str] = {
     "PNU": "M9245",
     # ── iPod 4G (click wheel) ──────────────────────────────────────────
     "PS9": "M9282", "Q8U": "M9282", "PQ7": "M9268",
-    # ── iPod U2 (4G click wheel, 20GB) ─────────────────────────────────
+    # ── iPod 4G mono U2 color (20GB) ──────────────────────────────────
     "S2X": "M9787",
-    # ── iPod Photo / Color Display ─────────────────────────────────────
+    # ── iPod 4G photo/color display ───────────────────────────────────
     "TDU": "MA079", "TDS": "MA079", "TM2": "MA127",
     "SAZ": "M9830", "SB1": "M9830", "SAY": "M9829",
     "R5Q": "M9585", "R5R": "M9586", "R5T": "M9586",
@@ -492,14 +577,14 @@ SERIAL_LAST3_TO_MODEL: dict[str, str] = {
     "K63": "MKN22",  # silver (2015)
     "K64": "MKN52",  # space gray (2015)
     "K65": "MKN72",  # product red (2015)
-    # ── Video 5G ───────────────────────────────────────────────────────
+    # ── iPod 5G ────────────────────────────────────────────────────────
     "SZ9": "MA002", "WEC": "MA002", "WED": "MA002", "WEG": "MA002",
     "WEH": "MA002", "WEL": "MA002",
     "TXK": "MA146", "TXM": "MA146", "WEF": "MA146",
     "WEJ": "MA146", "WEK": "MA146",
     "SZA": "MA003", "SZU": "MA003", "TXL": "MA147", "TXN": "MA147",
-    "V9V": "MA452",  # iPod Video U2 Special Edition 5G 30GB (Black)
-    # ── Video 5.5G ─────────────────────────────────────────────────────
+    "V9V": "MA452",  # iPod 5th Gen U2 color 30GB
+    # ── iPod 5.5G ─────────────────────────────────────────────────────
     "V9K": "MA444", "V9L": "MA444", "WU9": "MA444",
     "VQM": "MA446", "V9M": "MA446", "V9N": "MA446", "WEE": "MA446",
     "V9P": "MA448", "V9Q": "MA448",

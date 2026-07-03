@@ -314,7 +314,7 @@ Writer:
 
 ## Current Risk Areas
 
-- iPod Video 5.5G sample at `/Users/john/Desktop/ipod5.5`:
+- iPod 5.5G sample at `/Users/john/Desktop/ipod5.5`:
   - Database version `117`, dataset order `[4, 1, 3, 2, 5, 9]`.
   - Dataset 2 and dataset 3 contain the same six playlist titles and IDs:
     `John Gibbons's iPod`, `Every Rule`, `Horchata`, `La Concha`,
@@ -340,7 +340,7 @@ Writer:
     Sort Album Artist, Sort Artist, Sort Composer, Sort Show, Sort Title, Title,
     Video Rating, and Work. iOpenPod still keeps legacy/libgpod string support
     for `0x3E` TV Show, even though that field was not present in this 47-rule
-    iPod Video 5.5G sample.
+    iPod 5.5G sample.
   - Boolean rules use only `is true` and `is false`. The observed/known boolean
     field family is exclusively Album Artwork, Checked, Compilation, and
     Purchased; do not coerce other one-byte-looking fields into booleans without

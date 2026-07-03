@@ -394,7 +394,7 @@ def _parse_mhod55(
 ) -> dict[str, Any]:
     """Parse MHOD type 55 as an opaque Apple binary plist.
 
-    The iPod video 5.5G sample carries this on user playlist MHYP rows as
+    The iPod 5.5G sample carries this on user playlist MHYP rows as
     ``bplist00`` with a ``description`` key. It is not playlist-folder data:
     the same description also appears as an MHOD type-3 string child. Preserve
     the body verbatim because other plist keys remain unsampled.

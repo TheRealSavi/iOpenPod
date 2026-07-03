@@ -49,15 +49,18 @@ from ..styles import (
     Colors,
     Metrics,
     back_btn_css,
-    btn_css,
+    button_css,
     combo_css,
     danger_btn_css,
+    icon_btn_css,
     input_css,
     link_btn_css,
     make_scroll_area,
+    panel_css,
     resolve_accent_color,
     sidebar_nav_css,
     sidebar_nav_selected_css,
+    spin_css,
 )
 
 if TYPE_CHECKING:
@@ -224,12 +227,7 @@ class SpinRow(SettingRow):
         self.spin.setValue(current)
         self.spin.setFixedWidth(80)
         self.spin.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
-        self.spin.setStyleSheet(input_css() + """
-            QSpinBox {
-                padding: 4px 8px;
-                border-radius: 6px;
-            }
-        """)
+        self.spin.setStyleSheet(spin_css(padding="4px 8px"))
         self.spin.valueChanged.connect(self.changed.emit)
         self.add_control(self.spin)
 
@@ -272,13 +270,7 @@ class FolderRow(SettingRow):
         self.browse_btn = QPushButton("Browse…")
         self.browse_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.browse_btn.setFixedWidth(80)
-        self.browse_btn.setStyleSheet(btn_css(
-            bg=Colors.SURFACE_RAISED,
-            bg_hover=Colors.SURFACE_ACTIVE,
-            bg_press=Colors.SURFACE_ALT,
-            border=f"1px solid {Colors.BORDER}",
-            padding="4px 8px",
-        ))
+        self.browse_btn.setStyleSheet(button_css("secondary", "sm"))
         self.browse_btn.clicked.connect(self._browse)
         right_layout.addWidget(self.browse_btn)
 
@@ -369,13 +361,7 @@ class ResettableFolderRow(SettingRow):
         self.browse_btn = QPushButton("Browse\u2026")
         self.browse_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.browse_btn.setFixedWidth(80)
-        self.browse_btn.setStyleSheet(btn_css(
-            bg=Colors.SURFACE_RAISED,
-            bg_hover=Colors.SURFACE_ACTIVE,
-            bg_press=Colors.SURFACE_ALT,
-            border=f"1px solid {Colors.BORDER}",
-            padding="4px 8px",
-        ))
+        self.browse_btn.setStyleSheet(button_css("secondary", "sm"))
         self.browse_btn.clicked.connect(self._browse)
         right_layout.addWidget(self.browse_btn)
 
@@ -383,14 +369,7 @@ class ResettableFolderRow(SettingRow):
         self.clear_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.clear_btn.setFixedWidth(28)
         self.clear_btn.setToolTip("Reset to default")
-        self.clear_btn.setStyleSheet(btn_css(
-            bg="transparent",
-            bg_hover=Colors.SURFACE_ACTIVE,
-            bg_press=Colors.SURFACE_ALT,
-            fg=Colors.TEXT_TERTIARY,
-            border="none",
-            padding="2px",
-        ))
+        self.clear_btn.setStyleSheet(icon_btn_css(28))
         self.clear_btn.clicked.connect(self._clear)
         right_layout.addWidget(self.clear_btn)
 
@@ -465,13 +444,7 @@ class ActionRow(SettingRow):
         self.action_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.action_btn.setFixedWidth(100)
         self.action_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.action_btn.setStyleSheet(btn_css(
-            bg=Colors.SURFACE_RAISED,
-            bg_hover=Colors.SURFACE_ACTIVE,
-            bg_press=Colors.SURFACE_ALT,
-            border=f"1px solid {Colors.BORDER}",
-            padding="5px 12px",
-        ))
+        self.action_btn.setStyleSheet(button_css("secondary", "sm"))
         self.action_btn.clicked.connect(self.clicked.emit)
         self.add_control(self.action_btn)
 
@@ -503,13 +476,7 @@ class FileRow(SettingRow):
         self.browse_btn = QPushButton("Browse…")
         self.browse_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.browse_btn.setFixedWidth(80)
-        self.browse_btn.setStyleSheet(btn_css(
-            bg=Colors.SURFACE_RAISED,
-            bg_hover=Colors.SURFACE_ACTIVE,
-            bg_press=Colors.SURFACE_ALT,
-            border=f"1px solid {Colors.BORDER}",
-            padding="4px 8px",
-        ))
+        self.browse_btn.setStyleSheet(button_css("secondary", "sm"))
         self.browse_btn.clicked.connect(self._browse)
         right_layout.addWidget(self.browse_btn)
 
@@ -517,14 +484,7 @@ class FileRow(SettingRow):
         self.clear_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.clear_btn.setFixedWidth(28)
         self.clear_btn.setToolTip("Reset to auto-detect")
-        self.clear_btn.setStyleSheet(btn_css(
-            bg="transparent",
-            bg_hover=Colors.SURFACE_ACTIVE,
-            bg_press=Colors.SURFACE_ALT,
-            fg=Colors.TEXT_TERTIARY,
-            border="none",
-            padding="2px",
-        ))
+        self.clear_btn.setStyleSheet(icon_btn_css(28))
         self.clear_btn.clicked.connect(self._clear)
         right_layout.addWidget(self.clear_btn)
 
@@ -603,14 +563,7 @@ class ToolRow(SettingRow):
         self.download_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.download_btn.setFixedWidth(90)
         self.download_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.download_btn.setStyleSheet(btn_css(
-            bg=Colors.ACCENT,
-            bg_hover=Colors.ACCENT_LIGHT,
-            bg_press=Colors.ACCENT,
-            fg=Colors.TEXT_ON_ACCENT,
-            border="none",
-            padding="4px 8px",
-        ))
+        self.download_btn.setStyleSheet(button_css("primary", "sm"))
         self.download_btn.clicked.connect(self.download_clicked.emit)
         self.download_btn.hide()
         right_layout.addWidget(self.download_btn)
@@ -711,14 +664,7 @@ class _TokenRow(SettingRow):
         self.save_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.save_btn.setFixedWidth(80)
         self.save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.save_btn.setStyleSheet(btn_css(
-            bg=Colors.ACCENT,
-            bg_hover=Colors.ACCENT_LIGHT,
-            bg_press=Colors.ACCENT,
-            fg=Colors.TEXT_ON_ACCENT,
-            border="none",
-            padding="4px 8px",
-        ))
+        self.save_btn.setStyleSheet(button_css("primary", "sm"))
         self.save_btn.clicked.connect(self._on_save)
         right_layout.addWidget(self.save_btn)
 
@@ -726,14 +672,7 @@ class _TokenRow(SettingRow):
         self.clear_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.clear_btn.setFixedWidth(28)
         self.clear_btn.setToolTip("Disconnect")
-        self.clear_btn.setStyleSheet(btn_css(
-            bg="transparent",
-            bg_hover=Colors.SURFACE_ACTIVE,
-            bg_press=Colors.SURFACE_ALT,
-            fg=Colors.TEXT_TERTIARY,
-            border="none",
-            padding="2px",
-        ))
+        self.clear_btn.setStyleSheet(icon_btn_css(28))
         self.clear_btn.clicked.connect(self._on_clear)
         self.clear_btn.hide()
         right_layout.addWidget(self.clear_btn)
@@ -868,10 +807,7 @@ class _LastFmAuthRow(SettingRow):
         self.connect_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.connect_btn.setFixedWidth(80)
         self.connect_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.connect_btn.setStyleSheet(btn_css(
-            bg=Colors.ACCENT, bg_hover=Colors.ACCENT_LIGHT, bg_press=Colors.ACCENT,
-            fg=Colors.TEXT_ON_ACCENT, border="none", padding="4px 8px"
-        ))
+        self.connect_btn.setStyleSheet(button_css("primary", "sm"))
         self.connect_btn.clicked.connect(self._start_auth_flow)
         right_layout.addWidget(self.connect_btn)
 
@@ -879,10 +815,7 @@ class _LastFmAuthRow(SettingRow):
         self.cancel_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.cancel_btn.setFixedWidth(80)
         self.cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.cancel_btn.setStyleSheet(btn_css(
-            bg="transparent", bg_hover=Colors.SURFACE_ACTIVE, bg_press=Colors.SURFACE_ALT,
-            fg=Colors.TEXT_TERTIARY, border="none", padding="4px 8px"
-        ))
+        self.cancel_btn.setStyleSheet(button_css("quiet", "sm"))
         self.cancel_btn.clicked.connect(self._cancel_auth)
         self.cancel_btn.hide()
         right_layout.addWidget(self.cancel_btn)
@@ -892,10 +825,7 @@ class _LastFmAuthRow(SettingRow):
         self.clear_btn.setFixedWidth(28)
         self.clear_btn.setToolTip("Disconnect")
         self.clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.clear_btn.setStyleSheet(btn_css(
-            bg="transparent", bg_hover=Colors.SURFACE_ACTIVE, bg_press=Colors.SURFACE_ALT,
-            fg=Colors.TEXT_TERTIARY, border="none", padding="2px"
-        ))
+        self.clear_btn.setStyleSheet(icon_btn_css(28))
         self.clear_btn.clicked.connect(self._on_clear)
         self.clear_btn.hide()
         right_layout.addWidget(self.clear_btn)
@@ -1159,13 +1089,11 @@ class _SettingsCard(QFrame):
     def __init__(self, *rows: QWidget):
         super().__init__()
         self.setObjectName("settingsCard")
-        self.setStyleSheet(f"""
-            QFrame#settingsCard {{
-                background: {Colors.SURFACE_ALT};
-                border: 1px solid {Colors.BORDER_SUBTLE};
-                border-radius: {Metrics.BORDER_RADIUS_LG}px;
-            }}
-        """)
+        self.setStyleSheet(panel_css(
+            "settingsCard",
+            bg=Colors.SURFACE_ALT,
+            radius=Metrics.BORDER_RADIUS_LG,
+        ))
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
@@ -1323,13 +1251,11 @@ class SettingsPage(QWidget):
         frame = QFrame()
         frame.setObjectName("settingsScopeSwitch")
         frame.setFixedHeight(34)
-        frame.setStyleSheet(f"""
-            QFrame#settingsScopeSwitch {{
-                background: {Colors.SURFACE_ALT};
-                border: 1px solid {Colors.BORDER_SUBTLE};
-                border-radius: {Metrics.BORDER_RADIUS_SM}px;
-            }}
-        """)
+        frame.setStyleSheet(panel_css(
+            "settingsScopeSwitch",
+            bg=Colors.SURFACE_ALT,
+            radius=Metrics.BORDER_RADIUS_SM,
+        ))
         lay = QHBoxLayout(frame)
         lay.setContentsMargins(3, 3, 3, 3)
         lay.setSpacing(3)
@@ -1352,14 +1278,9 @@ class SettingsPage(QWidget):
             return
         for scope, btn in (("global", self._scope_global_btn), ("device", self._scope_device_btn)):
             selected = self._settings_scope == scope
-            btn.setStyleSheet(btn_css(
-                bg=Colors.ACCENT if selected else "transparent",
-                bg_hover=Colors.ACCENT_LIGHT if selected else Colors.SURFACE_ACTIVE,
-                bg_press=Colors.ACCENT if selected else Colors.SURFACE_ALT,
-                fg=Colors.TEXT_ON_ACCENT if selected else Colors.TEXT_SECONDARY,
-                border="none",
-                padding="4px 8px",
-            ))
+            btn.setStyleSheet(
+                button_css("primary" if selected else "quiet", "sm")
+            )
 
     def set_settings_scope(self, scope: str) -> None:
         """Switch between PC/global settings and the selected iPod settings."""

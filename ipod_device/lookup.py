@@ -3,7 +3,7 @@
 import re
 
 from .capabilities import _FAMILY_GEN_CAPABILITIES
-from .models import IPOD_MODELS, SERIAL_LAST3_TO_MODEL
+from .models import IPOD_MODELS, SERIAL_LAST3_TO_MODEL, canonicalize_model_identity
 
 
 def _identity_text(value: str | None) -> str:
@@ -47,6 +47,14 @@ def usb_pid_identity_conflicts(
     pid_generation: str,
 ) -> bool:
     """Return True when an exact model tuple cannot belong to a USB PID hint."""
+    model_family, generation, _model_color = canonicalize_model_identity(
+        model_family,
+        generation,
+    )
+    pid_family, pid_generation, _pid_color = canonicalize_model_identity(
+        pid_family,
+        pid_generation,
+    )
     model_family_norm = _identity_text(model_family)
     pid_family_norm = _identity_text(pid_family)
     if not model_family_norm or not pid_family_norm:
@@ -59,10 +67,6 @@ def usb_pid_identity_conflicts(
 
     family_compatible = model_family_norm == pid_family_norm
 
-    # Special editions use more specific family labels than USB PID tables.
-    if not family_compatible and "u2" in model_family_norm:
-        family_compatible = model_family_norm.startswith(pid_family_norm + " ")
-
     if not family_compatible:
         return True
 
@@ -71,11 +75,17 @@ def usb_pid_identity_conflicts(
     if model_generation_norm == pid_generation_norm:
         return False
 
-    # The Video 5.5G uses the same coarse USB PID family as the Video 5G.
+    # Some USB PID identities are coarser than the exact model table.
     if (
-        pid_family_norm == "ipod video"
+        pid_family_norm == "ipod"
         and pid_generation_norm == "5th gen"
         and model_generation_norm == "5.5th gen"
+    ):
+        return False
+    if (
+        pid_family_norm == "ipod"
+        and pid_generation_norm == "4th gen (photo)"
+        and model_generation_norm in {"4th gen (photo)", "4th gen (color)"}
     ):
         return False
 
@@ -112,11 +122,14 @@ def get_friendly_model_name(model_number: str | None) -> str:
     info = get_model_info(model_number)
     if info:
         name, gen, capacity, color = info
-        parts = [name, capacity]
+        if gen:
+            parts = [name, gen]
+        else:
+            parts = [name]
+        if capacity:
+            parts.append(capacity)
         if color:
             parts.append(color)
-        if gen:
-            parts.append(f"({gen})")
         return " ".join(p for p in parts if p)
     return f"Unknown iPod ({model_number})" if model_number else "Unknown iPod"
 
@@ -146,7 +159,7 @@ def infer_generation(
 
     Uses the model table to find which generations match a given capacity.
     If only one generation of a family offers that capacity, we can infer
-    the generation with certainty (e.g. iPod Classic 120GB → 2nd Gen).
+    the generation with certainty (e.g. iPod Classic 120GB → 6.5th Gen).
 
     Falls back to returning the sole generation if a family has only one.
     Returns ``None`` when the generation is ambiguous.

@@ -4,14 +4,14 @@ Sources:
   - libgpod ``itdb_device.c`` — itdb_device_supports_*() functions,
     ipod_info_table, artwork format tables
   - libgpod ``itdb_itunesdb.c`` — iTunesSD writer, mhbd version handling
-  - Empirical: iPod Classic 2G, Nano 3G confirmed
+  - Empirical: iPod Classic 6.5G, Nano 3G confirmed
 
 This table captures every capability dimension that affects database
 writing, artwork generation, or sync behaviour.  It is the single
 authority for "what does this device support?" questions.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from .artwork_presets import (
     ARTWORK_FORMATS_BY_ID,
@@ -20,6 +20,12 @@ from .artwork_presets import (
     ArtworkFormat,
 )
 from .checksum import ChecksumType
+from .models import canonicalize_model_identity
+
+_MIB = 1024 * 1024
+_DEFAULT_MAX_DATABASE_BYTES = 32 * _MIB
+_LARGE_MAX_DATABASE_BYTES = 64 * _MIB
+_HIGH_MEMORY_VIDEO_MODELS = frozenset({"MA003", "MA147", "MA448", "MA450"})
 
 
 @dataclass(frozen=True)
@@ -56,7 +62,7 @@ class DeviceCapabilities:
     supports_gapless: bool = False
     """Device honours gapless playback fields (pregap, postgap,
     samplecount, gapless_data, gapless_track_flag).  Introduced with
-    iPod Video 5.5G (Late 2006)."""
+    iPod 5.5G (Late 2006)."""
 
     # ── Artwork ────────────────────────────────────────────────────────
     supports_artwork: bool = True
@@ -72,7 +78,7 @@ class DeviceCapabilities:
     supports_alac: bool = True
     """Device supports Apple Lossless (ALAC) audio playback.
     False for iPod 1G–3G and Mini 1G (pre-firmware-update era hardware that
-    received ALAC support only from 4th Gen / Photo / Mini 2G onwards)."""
+    received ALAC support only from 4th Gen photo/color / Mini 2G onwards)."""
     cover_art_formats: tuple[ArtworkFormat, ...] = ()
     """Supported cover-art thumbnail sizes.  Empty means no artwork."""
 
@@ -80,6 +86,12 @@ class DeviceCapabilities:
     music_dirs: int = 20
     """Number of ``Fxx`` directories under ``iPod_Control/Music/``.
     Varies 0–50 depending on model and storage capacity."""
+    max_database_bytes: int = _DEFAULT_MAX_DATABASE_BYTES
+    """Maximum supported on-device music database size.
+
+    Click-wheel firmware loads the database into device RAM. Treat this as
+    the practical ceiling for iTunesDB/iTunesCDB footprint checks.
+    """
 
     # ── SQLite database ────────────────────────────────────────────────
     uses_sqlite_db: bool = False
@@ -154,22 +166,31 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         db_version=0x13,
     ),
 
-    # ── iPod 4G (Click Wheel): first with podcast support ─────────────
-    ("iPod", "4th Gen"): DeviceCapabilities(
+    # ── iPod 4G mono (Click Wheel): first with podcast support ────────
+    ("iPod", "4th Gen (mono)"): DeviceCapabilities(
         supports_artwork=False,
         music_dirs=20,
         db_version=0x13,
     ),
 
-    # ── iPod U2 Special Edition (4th Gen hardware) ────────────────────
-    ("iPod U2", "4th Gen"): DeviceCapabilities(
-        supports_artwork=False,
+    # ── iPod 4G photo/color (Color Display) ───────────────────────────
+    ("iPod", "4th Gen (photo)"): DeviceCapabilities(
+        supports_artwork=True,
+        supports_photo=True,
+        photo_formats=(
+            ARTWORK_FORMATS_BY_ID[1009],
+            ARTWORK_FORMATS_BY_ID[1013],
+            ARTWORK_FORMATS_BY_ID[1015],
+            ARTWORK_FORMATS_BY_ID[1019],
+        ),
+        cover_art_formats=(
+            ARTWORK_FORMATS_BY_ID[1017],
+            ARTWORK_FORMATS_BY_ID[1016],
+        ),
         music_dirs=20,
         db_version=0x13,
     ),
-
-    # ── iPod Photo (Color Display) ────────────────────────────────────
-    ("iPod Photo", "4th Gen"): DeviceCapabilities(
+    ("iPod", "4th Gen (color)"): DeviceCapabilities(
         supports_artwork=True,
         supports_photo=True,
         photo_formats=(
@@ -186,8 +207,8 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         db_version=0x13,
     ),
 
-    # ── iPod Video 5th Gen ────────────────────────────────────────────
-    ("iPod Video", "5th Gen"): DeviceCapabilities(
+    # ── iPod 5th Gen ──────────────────────────────────────────────────
+    ("iPod", "5th Gen"): DeviceCapabilities(
         supports_video=True,
         supports_artwork=True,
         supports_photo=True,
@@ -207,49 +228,8 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         max_video_height=480,
     ),
 
-    # ── iPod Video 5.5th Gen — first with gapless playback ───────────
-    ("iPod Video", "5.5th Gen"): DeviceCapabilities(
-        supports_video=True,
-        supports_gapless=True,
-        supports_artwork=True,
-        supports_photo=True,
-        photo_formats=(
-            ARTWORK_FORMATS_BY_ID[1036],
-            ARTWORK_FORMATS_BY_ID[1024],
-            ARTWORK_FORMATS_BY_ID[1015],
-            ARTWORK_FORMATS_BY_ID[1019],
-        ),
-        cover_art_formats=(
-            ARTWORK_FORMATS_BY_ID[1028],
-            ARTWORK_FORMATS_BY_ID[1029],
-        ),
-        music_dirs=20,
-        db_version=0x19,
-        max_video_width=640,
-        max_video_height=480,
-    ),
-
-    # ── iPod Video U2 editions ────────────────────────────────────────
-    ("iPod Video U2", "5th Gen"): DeviceCapabilities(
-        supports_video=True,
-        supports_artwork=True,
-        supports_photo=True,
-        photo_formats=(
-            ARTWORK_FORMATS_BY_ID[1036],
-            ARTWORK_FORMATS_BY_ID[1024],
-            ARTWORK_FORMATS_BY_ID[1015],
-            ARTWORK_FORMATS_BY_ID[1019],
-        ),
-        cover_art_formats=(
-            ARTWORK_FORMATS_BY_ID[1028],
-            ARTWORK_FORMATS_BY_ID[1029],
-        ),
-        music_dirs=20,
-        db_version=0x19,
-        max_video_width=640,
-        max_video_height=480,
-    ),
-    ("iPod Video U2", "5.5th Gen"): DeviceCapabilities(
+    # ── iPod 5.5th Gen — first with gapless playback ──────────────────
+    ("iPod", "5.5th Gen"): DeviceCapabilities(
         supports_video=True,
         supports_gapless=True,
         supports_artwork=True,
@@ -271,7 +251,7 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
     ),
 
     # ── iPod Classic (all gens): HASH58, gapless, video ───────────────
-    ("iPod Classic", "1st Gen"): DeviceCapabilities(
+    ("iPod Classic", "6th Gen"): DeviceCapabilities(
         checksum=ChecksumType.HASH58,
         supports_video=True,
         supports_gapless=True,
@@ -286,11 +266,12 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         supports_sparse_artwork=True,
         cover_art_formats=CLASSIC_COVER_ART_FORMATS,
         music_dirs=50,
+        max_database_bytes=_LARGE_MAX_DATABASE_BYTES,
         db_version=0x30,
         max_video_width=640,
         max_video_height=480,
     ),
-    ("iPod Classic", "2nd Gen"): DeviceCapabilities(
+    ("iPod Classic", "6.5th Gen"): DeviceCapabilities(
         checksum=ChecksumType.HASH58,
         supports_video=True,
         supports_gapless=True,
@@ -305,11 +286,12 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         supports_sparse_artwork=True,
         cover_art_formats=CLASSIC_COVER_ART_FORMATS,
         music_dirs=50,
+        max_database_bytes=_LARGE_MAX_DATABASE_BYTES,
         db_version=0x30,
         max_video_width=640,
         max_video_height=480,
     ),
-    ("iPod Classic", "3rd Gen"): DeviceCapabilities(
+    ("iPod Classic", "7th Gen"): DeviceCapabilities(
         checksum=ChecksumType.HASH58,
         supports_video=True,
         supports_gapless=True,
@@ -324,6 +306,7 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         supports_sparse_artwork=True,
         cover_art_formats=CLASSIC_COVER_ART_FORMATS,
         music_dirs=50,
+        max_database_bytes=_LARGE_MAX_DATABASE_BYTES,
         db_version=0x30,
         max_video_width=640,
         max_video_height=480,
@@ -452,6 +435,7 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
             ARTWORK_FORMATS_BY_ID[1074],
         ),
         music_dirs=14,
+        max_database_bytes=_LARGE_MAX_DATABASE_BYTES,
         db_version=0x30,
         max_video_width=640,
         max_video_height=480,
@@ -478,6 +462,7 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
             ARTWORK_FORMATS_BY_ID[1074],
         ),
         music_dirs=20,
+        max_database_bytes=_LARGE_MAX_DATABASE_BYTES,
         db_version=0x30,
     ),
 
@@ -497,6 +482,7 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         uses_sqlite_db=True,
         cover_art_formats=NANO_7G_COVER_ART_FORMATS,
         music_dirs=20,
+        max_database_bytes=_LARGE_MAX_DATABASE_BYTES,
         db_version=0x30,
         max_video_width=720,
         max_video_height=576,
@@ -548,6 +534,36 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
 }
 
 
+def _capacity_gb(capacity: str | None) -> int:
+    parts = "".join(
+        char if char.isdigit() else " "
+        for char in str(capacity or "")
+    ).split()
+    return int(parts[0]) if parts else 0
+
+
+def _with_capacity_specific_database_limit(
+    family: str,
+    generation: str,
+    caps: DeviceCapabilities,
+    *,
+    capacity: str | None,
+    model_number: str | None,
+) -> DeviceCapabilities:
+    if family != "iPod":
+        return caps
+    if generation not in {"5th Gen", "5.5th Gen"}:
+        return caps
+
+    normalized_model = str(model_number or "").strip().upper()
+    if (
+        _capacity_gb(capacity) >= 60
+        or normalized_model in _HIGH_MEMORY_VIDEO_MODELS
+    ):
+        return replace(caps, max_database_bytes=_LARGE_MAX_DATABASE_BYTES)
+    return caps
+
+
 def capabilities_for_family_gen(
     family: str,
     generation: str,
@@ -564,9 +580,22 @@ def capabilities_for_family_gen(
     Returns ``None`` if the pair is not in the lookup table and the
     family-level fallback is ambiguous.
     """
+    family, generation, _color = canonicalize_model_identity(
+        family,
+        generation,
+        capacity=capacity or "",
+        model_number=model_number,
+    )
+
     caps = _FAMILY_GEN_CAPABILITIES.get((family, generation))
     if caps is not None:
-        return caps
+        return _with_capacity_specific_database_limit(
+            family,
+            generation,
+            caps,
+            capacity=capacity,
+            model_number=model_number,
+        )
 
     if family and not generation:
         family_caps = [
@@ -574,7 +603,13 @@ def capabilities_for_family_gen(
             if f == family
         ]
         if family_caps and all(c == family_caps[0] for c in family_caps):
-            return family_caps[0]
+            return _with_capacity_specific_database_limit(
+                family,
+                generation,
+                family_caps[0],
+                capacity=capacity,
+                model_number=model_number,
+            )
 
     return None
 
@@ -593,7 +628,12 @@ def cover_art_formats_for_family_gen(
     ArtworkDB cover formats, so a full capability fallback would be ambiguous
     while artwork generation is still safe.
     """
-    _ = capacity, model_number
+    family, generation, _color = canonicalize_model_identity(
+        family,
+        generation,
+        capacity=capacity or "",
+        model_number=model_number,
+    )
 
     caps = _FAMILY_GEN_CAPABILITIES.get((family, generation))
     if caps is not None:
@@ -625,6 +665,8 @@ def checksum_type_for_family_gen(
     Returns ``None`` if the pair is not in the lookup table and the family-
     level fallback is ambiguous.
     """
+    family, generation, _color = canonicalize_model_identity(family, generation)
+
     caps = _FAMILY_GEN_CAPABILITIES.get((family, generation))
     if caps is not None:
         return caps.checksum

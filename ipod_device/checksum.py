@@ -6,7 +6,7 @@ from enum import IntEnum
 class ChecksumType(IntEnum):
     """Checksum types for different iPod generations.
 
-    NONE        — Pre-2007 iPods (1G–5G, Photo, Video, Mini, Nano 1G–2G, Shuffle)
+    NONE        — Pre-2007 iPods (iPod 1G–5.5G, Mini 1G–2G, Nano 1G–2G, Shuffle)
     HASH58      — iPod Classic (all gens), Nano 3G, Nano 4G
     HASH72      — Nano 5G
     HASHAB      — Nano 6G, Nano 7G (white-box AES, via WASM module)

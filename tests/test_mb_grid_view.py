@@ -8,8 +8,9 @@ from PyQt6.QtGui import QContextMenuEvent
 from PyQt6.QtWidgets import QApplication, QScrollArea, QScrollBar
 
 import GUI.imgMaker as img_maker
+from GUI.styles import Colors
 from GUI.widgets.MBGridView import MusicBrowserGrid
-from GUI.widgets.MBGridViewItem import MusicBrowserGridItem
+from GUI.widgets.MBGridViewItem import GridItemRenderState, MusicBrowserGridItem
 
 
 def _build_items(
@@ -78,6 +79,42 @@ def _send_context_menu(widget: MusicBrowserGridItem) -> None:
         widget.mapToGlobal(pos),
     )
     QApplication.sendEvent(widget, event)
+
+
+def _compact_css(widget: MusicBrowserGridItem) -> str:
+    return "".join(widget.styleSheet().split())
+
+
+def test_grid_item_keeps_existing_artwork_tint_in_dark_theme(qtbot, monkeypatch):
+    monkeypatch.setattr(Colors, "_active_mode", "dark")
+    item = MusicBrowserGridItem()
+    qtbot.addWidget(item)
+
+    item._apply_color_theme(
+        GridItemRenderState(display_dominant_color=(86, 112, 144))
+    )
+
+    css = _compact_css(item)
+    assert "background-color:rgba(86,112,144,30);" in css
+    assert "border:1pxsolidrgba(86,112,144,25);" in css
+    assert "background-color:rgba(86,112,144,55);" in css
+    assert "border:1pxsolidrgba(86,112,144,45);" in css
+
+
+def test_grid_item_uses_stronger_artwork_tint_in_light_theme(qtbot, monkeypatch):
+    monkeypatch.setattr(Colors, "_active_mode", "light")
+    item = MusicBrowserGridItem()
+    qtbot.addWidget(item)
+
+    item._apply_color_theme(
+        GridItemRenderState(display_dominant_color=(86, 112, 144))
+    )
+
+    css = _compact_css(item)
+    assert "background-color:rgba(86,112,144,48);" in css
+    assert "border:1pxsolidrgba(86,112,144,40);" in css
+    assert "background-color:rgba(86,112,144,82);" in css
+    assert "border:1pxsolidrgba(86,112,144,68);" in css
 
 
 def _art_result(rgb: tuple[int, int, int]) -> tuple[int, int, bytes, tuple[int, int, int], dict]:

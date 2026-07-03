@@ -83,8 +83,11 @@ from ..styles import (
     accent_btn_css,
     btn_css,
     combo_css,
+    context_menu_css,
     make_label,
     make_separator,
+    progress_bar_css,
+    spin_css,
 )
 from .browserChrome import (
     BrowserHeroHeader,
@@ -1730,21 +1733,7 @@ class PodcastBrowser(QFrame):
             f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;"
         )
         _combo_style = combo_css()
-        _spin_style = f"""
-            QSpinBox {{
-                background: {Colors.SURFACE_RAISED};
-                border: 1px solid {Colors.BORDER};
-                border-radius: {Metrics.BORDER_RADIUS_SM}px;
-                color: {Colors.TEXT_PRIMARY};
-                padding: 2px 6px;
-            }}
-            QSpinBox:hover {{
-                border: 1px solid {Colors.BORDER_FOCUS};
-            }}
-            QSpinBox:focus {{
-                border: 1px solid {Colors.BORDER_FOCUS};
-            }}
-        """
+        _spin_style = spin_css(padding="2px 6px", font_size=Metrics.FONT_SM)
 
         def _make_setting_combo(options: list[str], width: int = 110) -> QComboBox:
             cb = QComboBox()
@@ -1827,16 +1816,9 @@ class PodcastBrowser(QFrame):
         self._progress_bar.setFixedHeight(3)
         self._progress_bar.setTextVisible(False)
         self._progress_bar.setRange(0, 100)
-        self._progress_bar.setStyleSheet(f"""
-            QProgressBar {{
-                background: {Colors.SURFACE};
-                border: none;
-            }}
-            QProgressBar::chunk {{
-                background: {Colors.ACCENT};
-                border-radius: 1px;
-            }}
-        """)
+        self._progress_bar.setStyleSheet(
+            progress_bar_css(height=3, radius=1, bg=Colors.SURFACE)
+        )
         self._progress_bar.hide()
         layout.addWidget(self._progress_bar)
 
@@ -2024,25 +2006,7 @@ class PodcastBrowser(QFrame):
             return
 
         menu = QMenu(self)
-        menu.setStyleSheet(f"""
-            QMenu {{
-                background: {Colors.MENU_BG};
-                color: {Colors.TEXT_PRIMARY};
-                border: 1px solid {Colors.BORDER};
-                padding: 4px 0;
-            }}
-            QMenu::item {{
-                padding: 6px 24px 6px 12px;
-            }}
-            QMenu::item:selected {{
-                background: {Colors.ACCENT_DIM};
-            }}
-            QMenu::separator {{
-                height: 1px;
-                background: {Colors.BORDER_SUBTLE};
-                margin: 4px 8px;
-            }}
-        """)
+        menu.setStyleSheet(context_menu_css())
 
         refresh_action = menu.addAction("Refresh Feed")
         menu.addSeparator()
@@ -2113,25 +2077,7 @@ class PodcastBrowser(QFrame):
             return
 
         menu = QMenu(self)
-        menu.setStyleSheet(f"""
-            QMenu {{
-                background: {Colors.MENU_BG};
-                color: {Colors.TEXT_PRIMARY};
-                border: 1px solid {Colors.BORDER};
-                padding: 4px 0;
-            }}
-            QMenu::item {{
-                padding: 6px 24px 6px 12px;
-            }}
-            QMenu::item:selected {{
-                background: {Colors.ACCENT_DIM};
-            }}
-            QMenu::separator {{
-                height: 1px;
-                background: {Colors.BORDER_SUBTLE};
-                margin: 4px 8px;
-            }}
-        """)
+        menu.setStyleSheet(context_menu_css())
 
         add_action = remove_dl_action = remove_ipod_action = None
         mark_listened_action = mark_unlistened_action = None
@@ -3011,10 +2957,9 @@ class PodcastBrowser(QFrame):
                 episodes_by_feed[key] = (feed, [])
             episodes_by_feed[key][1].append(ep)
 
-        plan = SyncPlan(
-            storage=StorageSummary(),
-            removals_pre_checked=True,
-        )
+        plan = SyncPlan()
+        plan.storage = StorageSummary()
+        plan.removals_pre_checked = True
         for feed, episodes in episodes_by_feed.values():
             partial = build_podcast_removal_sync_plan(
                 episodes,

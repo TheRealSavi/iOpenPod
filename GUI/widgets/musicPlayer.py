@@ -1020,6 +1020,7 @@ class MusicPlayerBar(QFrame):
         self._text_layout.setSpacing(1)
         self._utility_layout.setSpacing(max(3, Metrics.FONT_XS // 3))
         self.rating_control.refreshStyle()
+        self._sync_surface_margins(surface_margin_y)
 
         rating_height = self.rating_control.height()
         utility_h = queue_button_size + rating_height + self._utility_layout.spacing()
@@ -1030,8 +1031,17 @@ class MusicPlayerBar(QFrame):
             + self._text_layout.spacing() * 2
             + 2
         )
+        self._text_layout.invalidate()
+        self._utility_layout.invalidate()
+        self._surface_layout.invalidate()
+        text_h = max(text_h, self._text_layout.minimumSize().height())
+        utility_h = max(utility_h, self._utility_layout.minimumSize().height())
         content_h = max(art_size, play_button_size, text_h, utility_h)
-        surface_height = max(38, content_h + surface_margin_y * 2)
+        surface_height = max(
+            38,
+            content_h + surface_margin_y * 2,
+            self._surface_layout.minimumSize().height(),
+        )
         bar_height = max(44, surface_height + self._BAR_MARGIN_Y * 2)
 
         controls_width = (
@@ -1059,7 +1069,6 @@ class MusicPlayerBar(QFrame):
             self._BAR_MARGIN_Y,
         )
         self._bar_layout.setSpacing(playback_gap)
-        self._sync_surface_margins(surface_margin_y)
 
         return {
             "bar_height": bar_height,

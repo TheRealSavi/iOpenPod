@@ -32,6 +32,7 @@ from ..styles import (
     Metrics,
     accent_btn_css,
     btn_css,
+    input_css,
     make_label,
     make_scroll_area,
 )
@@ -77,18 +78,7 @@ class PodcastSearchDialog(QDialog):
         self._search_input = QLineEdit()
         self._search_input.setPlaceholderText("Search for podcasts…")
         self._search_input.setFont(QFont(FONT_FAMILY, (Metrics.FONT_MD)))
-        self._search_input.setStyleSheet(f"""
-            QLineEdit {{
-                background: {Colors.SURFACE_ALT};
-                border: 1px solid {Colors.BORDER};
-                border-radius: {Metrics.BORDER_RADIUS_SM}px;
-                color: {Colors.TEXT_PRIMARY};
-                padding: {(8)}px {(12)}px;
-            }}
-            QLineEdit:focus {{
-                border: 1px solid {Colors.BORDER_FOCUS};
-            }}
-        """)
+        self._search_input.setStyleSheet(input_css(padding="8px 12px"))
         self._search_input.returnPressed.connect(self._on_search)
         search_row.addWidget(self._search_input, stretch=1)
 
@@ -146,18 +136,7 @@ class PodcastSearchDialog(QDialog):
         self._rss_input = QLineEdit()
         self._rss_input.setPlaceholderText("https://example.com/feed.xml")
         self._rss_input.setFont(QFont(FONT_FAMILY, (Metrics.FONT_SM)))
-        self._rss_input.setStyleSheet(f"""
-            QLineEdit {{
-                background: {Colors.SURFACE_ALT};
-                border: 1px solid {Colors.BORDER};
-                border-radius: {Metrics.BORDER_RADIUS_SM}px;
-                color: {Colors.TEXT_PRIMARY};
-                padding: {(6)}px {(10)}px;
-            }}
-            QLineEdit:focus {{
-                border: 1px solid {Colors.BORDER_FOCUS};
-            }}
-        """)
+        self._rss_input.setStyleSheet(input_css(padding="6px 10px"))
         self._rss_input.returnPressed.connect(self._on_add_rss)
         rss_row.addWidget(self._rss_input, stretch=1)
 

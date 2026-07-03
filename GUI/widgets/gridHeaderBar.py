@@ -4,7 +4,7 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLineEdit, QMenu, QPushButton, QSizePolicy
 
-from ..styles import Colors, Metrics, btn_css, input_css
+from ..styles import Colors, Metrics, button_css, context_menu_css, input_css
 
 # Sort definitions per category: (display_label, sort_key, reverse)
 _SORTS = {
@@ -64,9 +64,7 @@ class GridHeaderBar(QFrame):
         layout.setSpacing(6)
 
         self._sort_btn = QPushButton(f"Sort: {_DEFAULT_LABEL} \u25be")
-        self._sort_btn.setStyleSheet(
-            btn_css(padding="4px 10px", radius=Metrics.BORDER_RADIUS_SM)
-        )
+        self._sort_btn.setStyleSheet(button_css("secondary", "sm"))
         self._sort_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self._sort_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._sort_btn.clicked.connect(self._show_sort_menu)
@@ -104,29 +102,7 @@ class GridHeaderBar(QFrame):
 
     def _show_sort_menu(self) -> None:
         menu = QMenu(self)
-        menu.setStyleSheet(f"""
-            QMenu {{
-                background: {Colors.SURFACE_RAISED};
-                border: 1px solid {Colors.BORDER};
-                border-radius: {Metrics.BORDER_RADIUS_SM}px;
-                color: {Colors.TEXT_PRIMARY};
-                padding: 4px 0;
-            }}
-            QMenu::item {{
-                padding: 6px 16px;
-            }}
-            QMenu::item:selected {{
-                background: {Colors.SURFACE_HOVER};
-            }}
-            QMenu::item:checked {{
-                color: {Colors.ACCENT};
-            }}
-            QMenu::separator {{
-                height: 1px;
-                background: {Colors.BORDER_SUBTLE};
-                margin: 4px 0;
-            }}
-        """)
+        menu.setStyleSheet(context_menu_css())
 
         all_sorts = _SORTS.get(self._category, _SORTS["Albums"])
         for label, key, reverse in all_sorts:

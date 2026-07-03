@@ -16,9 +16,12 @@ from ..styles import (
     Metrics,
     accent_btn_css,
     btn_css,
+    button_css,
+    input_css,
     make_scroll_area,
     make_section_header,
     make_separator,
+    progress_bar_css,
     sidebar_nav_css,
     sidebar_nav_selected_css,
     toolbar_btn_css,
@@ -153,6 +156,7 @@ class DeviceInfoCard(QFrame):
 
     device_renamed = pyqtSignal(str)  # emits the new name
     eject_requested = pyqtSignal()    # emitted when the Eject button is clicked
+    manage_storage_requested = pyqtSignal()
 
     def __init__(self):
         super().__init__()
@@ -231,33 +235,62 @@ class DeviceInfoCard(QFrame):
         self.eject_button.clicked.connect(self.eject_requested.emit)
         cap_row.addWidget(self.eject_button, 0, Qt.AlignmentFlag.AlignVCenter)
 
-        # Label + bar stacked on the right
-        cap_info = QWidget()
-        cap_info.setStyleSheet("background: transparent; border: none;")
+        # Database and device storage bars stacked on a compact manage-storage button.
+        cap_info = QPushButton()
+        cap_info.setObjectName("storageManageButton")
+        cap_info.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        cap_info.setAccessibleName("Manage storage")
+        cap_info.setToolTip("Manage database storage")
+        cap_info.setEnabled(False)
+        cap_info.setStyleSheet(f"""
+            QPushButton#storageManageButton {{
+                background: transparent;
+                border: none;
+                border-radius: {(4)}px;
+                padding: {(3)}px;
+            }}
+            QPushButton#storageManageButton:hover {{
+                background: {Colors.SURFACE_HOVER};
+            }}
+            QPushButton#storageManageButton:pressed {{
+                background: {Colors.SURFACE_ACTIVE};
+            }}
+            QPushButton#storageManageButton:disabled {{
+                background: transparent;
+            }}
+        """)
+        cap_info.clicked.connect(self.manage_storage_requested.emit)
+        self.storage_manage_button = cap_info
         cap_info_layout = QVBoxLayout(cap_info)
         cap_info_layout.setContentsMargins(0, 0, 0, 0)
-        cap_info_layout.setSpacing(4)
+        cap_info_layout.setSpacing(3)
 
-        self._capacity_label = QLabel("—")
-        self._capacity_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        self._capacity_label.setStyleSheet(LABEL_SECONDARY())
-        cap_info_layout.addWidget(self._capacity_label)
+        self.database_bar = QProgressBar()
+        self.database_bar.setObjectName("databaseStorageBar")
+        self.database_bar.setFixedHeight(5)
+        self.database_bar.setTextVisible(False)
+        self.database_bar.setAccessibleName("Database storage usage")
+        self.database_bar.setStyleSheet(progress_bar_css(
+            height=5,
+            radius=2,
+            bg=Colors.BORDER_SUBTLE,
+            chunk=Colors.WARNING,
+        ))
+        self.database_bar.hide()
+        cap_info_layout.addWidget(self.database_bar)
 
         self.storage_bar = QProgressBar()
         self.storage_bar.setFixedHeight(6)
         self.storage_bar.setTextVisible(False)
-        self.storage_bar.setStyleSheet(f"""
-            QProgressBar {{
-                background-color: {Colors.BORDER_SUBTLE};
-                border: none;
-                border-radius: {(3)}px;
-            }}
-            QProgressBar::chunk {{
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 {Colors.ACCENT}, stop:1 {Colors.ACCENT_LIGHT});
-                border-radius: {(3)}px;
-            }}
-        """)
+        self.storage_bar.setStyleSheet(progress_bar_css(
+            height=6,
+            radius=3,
+            bg=Colors.BORDER_SUBTLE,
+            chunk=(
+                "qlineargradient(x1:0, y1:0, x2:1, y2:0, "
+                f"stop:0 {Colors.ACCENT}, stop:1 {Colors.ACCENT_LIGHT})"
+            ),
+        ))
         cap_info_layout.addWidget(self.storage_bar)
         cap_row.addWidget(cap_info, 1)
 
@@ -286,18 +319,11 @@ class DeviceInfoCard(QFrame):
             self.tech_toggle.setIcon(_chev)
             self.tech_toggle.setIconSize(QSize((12), (12)))
         self.tech_toggle.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS))
-        self.tech_toggle.setStyleSheet(f"""
-            QPushButton {{
-                background: transparent;
-                border: none;
-                color: {Colors.TEXT_TERTIARY};
-                text-align: left;
-                padding: 2px 0;
-            }}
-            QPushButton:hover {{
-                color: {Colors.TEXT_SECONDARY};
-            }}
-        """)
+        self.tech_toggle.setStyleSheet(button_css(
+            "quiet",
+            "sm",
+            extra="text-align: left; padding-left: 0px; padding-right: 0px;",
+        ))
         self.tech_toggle.clicked.connect(self._toggle_tech_details)
         layout.addWidget(self.tech_toggle)
 
@@ -337,6 +363,7 @@ class DeviceInfoCard(QFrame):
 
         # Technical info rows — database / security
         self.db_version_row = TechInfoRow("Database:", "—")
+        self.db_limit_row = TechInfoRow("DB Limit:", "—")
         self.device_db_version_row = TechInfoRow("Device DB:", "—")
         self.shadow_db_version_row = TechInfoRow("Shadow DB:", "—")
         self.sqlite_row = TechInfoRow("SQLite:", "—")
@@ -381,7 +408,7 @@ class DeviceInfoCard(QFrame):
         tech_layout.addWidget(make_separator())
         tech_layout.addWidget(make_section_header("Database"))
         for w in (
-            self.db_version_row, self.device_db_version_row,
+            self.db_version_row, self.db_limit_row, self.device_db_version_row,
             self.shadow_db_version_row, self.sqlite_row, self.db_id_row,
             self.checksum_row, self.hash_scheme_row,
         ):
@@ -438,15 +465,9 @@ class DeviceInfoCard(QFrame):
 
         self._rename_edit = _RenameLineEdit(current)
         self._rename_edit.setFont(QFont(FONT_FAMILY, Metrics.FONT_XXL, QFont.Weight.Bold))
-        self._rename_edit.setStyleSheet(f"""
-            QLineEdit {{
-                color: {Colors.TEXT_PRIMARY};
-                background: {Colors.SHADOW_DEEP};
-                border: 1px solid {Colors.ACCENT};
-                border-radius: {(4)}px;
-                padding: 1px {(4)}px;
-            }}
-        """)
+        self._rename_edit.setStyleSheet(
+            input_css(radius=4, padding="1px 4px", font_size=Metrics.FONT_XXL)
+        )
         self._rename_edit.selectAll()
         self._rename_edit.returnPressed.connect(self._finish_rename)
         self._rename_edit.focus_lost.connect(self._finish_rename)
@@ -622,6 +643,12 @@ class DeviceInfoCard(QFrame):
                 str(dev.shadow_db_version) if dev.shadow_db_version else "—"
             )
             caps = dev.capabilities
+            max_database_bytes = int(
+                getattr(caps, "max_database_bytes", 0) or 0
+            )
+            self.db_limit_row.setValue(
+                format_size(max_database_bytes) if max_database_bytes else "—"
+            )
             self.sqlite_row.setValue(
                 _yes_no(dev.uses_sqlite_db or getattr(caps, "uses_sqlite_db", False))
             )
@@ -666,16 +693,17 @@ class DeviceInfoCard(QFrame):
             else:
                 self.free_space_row.setValue("—")
 
-            # Capacity hero: bar + label directly under the device name
+            # Capacity hero: compact bars directly under the device name
             if dev.disk_size_gb > 0:
                 used_pct = int(((dev.disk_size_gb - dev.free_space_gb) / dev.disk_size_gb) * 100)
                 self.storage_bar.setValue(max(0, min(100, used_pct)))
-                self._capacity_label.setText(
-                    f"{dev.free_space_gb:.1f} GB free of {dev.disk_size_gb:.1f} GB"
+                storage_tip = (
+                    f"Device storage: {dev.free_space_gb:.1f} GB free of "
+                    f"{dev.disk_size_gb:.1f} GB"
                 )
-                self._capacity_widget.setToolTip(
-                    f"{dev.free_space_gb:.1f} GB free of {dev.disk_size_gb:.1f} GB"
-                )
+                self._capacity_widget.setToolTip(storage_tip)
+                self.storage_manage_button.setToolTip(storage_tip)
+                self.storage_manage_button.setEnabled(True)
                 self._capacity_widget.show()
 
             # Artwork formats
@@ -717,6 +745,43 @@ class DeviceInfoCard(QFrame):
             self.db_id_row.setValue(f"{db_id:016X}")
         else:
             self.db_id_row.setValue("—")
+
+    def update_database_storage_info(
+        self,
+        database_size_bytes: int,
+        max_database_bytes: int,
+        database_path: str = "",
+    ) -> None:
+        """Update the compact iTunesDB/iTunesCDB size meter."""
+        max_bytes = max(0, int(max_database_bytes or 0))
+        size_bytes = max(0, int(database_size_bytes or 0))
+        if max_bytes <= 0:
+            self.database_bar.setValue(0)
+            self.database_bar.hide()
+            return
+
+        used_pct = int((size_bytes / max_bytes) * 100) if max_bytes else 0
+        self.database_bar.setValue(max(0, min(100, used_pct)))
+        chunk = Colors.DANGER if size_bytes > max_bytes else Colors.WARNING
+        self.database_bar.setStyleSheet(progress_bar_css(
+            height=5,
+            radius=2,
+            bg=Colors.BORDER_SUBTLE,
+            chunk=chunk,
+        ))
+        size_text = format_size(size_bytes) or "0 B"
+        max_text = format_size(max_bytes) or "—"
+        db_name = str(database_path or "Database").replace("\\", "/").rsplit("/", 1)[-1]
+        status = "over limit" if size_bytes > max_bytes else "used"
+        self.database_bar.setToolTip(
+            f"{db_name}: {size_text} of {max_text} database limit {status}"
+        )
+        self.storage_manage_button.setToolTip(
+            f"Manage database storage\n{db_name}: {size_text} of {max_text} database limit {status}"
+        )
+        self.storage_manage_button.setEnabled(True)
+        self.database_bar.show()
+        self._capacity_widget.show()
 
     def update_stats(self, tracks: int, albums: int, size_bytes: int, duration_ms: int,
                      videos: int = 0, podcasts: int = 0, audiobooks: int = 0):
@@ -775,7 +840,9 @@ class DeviceInfoCard(QFrame):
         self._fit_name_font("No Device")
         self.model_label.setText("Press Select to choose your iPod")
         self._set_default_icon()
-        self._capacity_label.setText("—")
+        self.database_bar.setValue(0)
+        self.database_bar.hide()
+        self.storage_manage_button.setEnabled(False)
         self._capacity_widget.hide()
         for cell in (self._inv_songs, self._inv_hours):
             cell.setValue("—")
@@ -790,7 +857,7 @@ class DeviceInfoCard(QFrame):
             self.usb_vid_row, self.usb_pid_row, self.usb_serial_row,
             self.scsi_row, self.bus_format_row, self.usbstor_row,
             self.usb_parent_row, self.id_method_row,
-            self.db_version_row, self.device_db_version_row,
+            self.db_version_row, self.db_limit_row, self.device_db_version_row,
             self.shadow_db_version_row, self.sqlite_row, self.db_id_row,
             self.checksum_row, self.hash_scheme_row,
             self.podcast_support_row, self.voice_memo_row,
@@ -807,6 +874,7 @@ class Sidebar(QFrame):
     device_renamed = pyqtSignal(str)  # emits new iPod name
     eject_requested = pyqtSignal()    # emitted when the Eject button is clicked
     tag_fixes_requested = pyqtSignal()
+    manage_storage_requested = pyqtSignal()
 
     # Categories that only make sense on video-capable iPods
     _VIDEO_CATEGORIES = frozenset({"Videos", "Movies", "TV Shows", "Music Videos"})
@@ -854,6 +922,7 @@ class Sidebar(QFrame):
         self.device_card = DeviceInfoCard()
         self.device_card.device_renamed.connect(self.device_renamed)
         self.device_card.eject_requested.connect(self.eject_requested)
+        self.device_card.manage_storage_requested.connect(self.manage_storage_requested)
         self.sidebarLayout.addWidget(self.device_card)
 
         # Device select buttons - row 1
@@ -990,11 +1059,18 @@ class Sidebar(QFrame):
                          db_version_hex: str = "", db_version_name: str = "",
                          db_id: int = 0, videos: int = 0,
                          podcasts: int = 0, audiobooks: int = 0,
-                         device_info=None):
+                         device_info=None, database_size_bytes: int = 0,
+                         max_database_bytes: int = 0,
+                         database_path: str = ""):
         """Update the device info card with current device data."""
         self.device_card.update_device_info(name, model, device_info=device_info)
         self.device_card.update_stats(tracks, albums, size_bytes, duration_ms,
                                       videos=videos, podcasts=podcasts, audiobooks=audiobooks)
+        self.device_card.update_database_storage_info(
+            database_size_bytes,
+            max_database_bytes,
+            database_path,
+        )
         if db_version_hex:
             self.device_card.update_database_info(db_version_hex, db_version_name, db_id)
 

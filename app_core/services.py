@@ -161,6 +161,7 @@ class DeviceCapabilitySnapshot:
     supports_sparse_artwork: bool
     supports_alac: bool
     music_dirs: int
+    max_database_bytes: int
     uses_sqlite_db: bool
     db_version: int
     byte_order: str
@@ -203,6 +204,9 @@ class DeviceCapabilitySnapshot:
             ),
             supports_alac=bool(getattr(capabilities, "supports_alac", True)),
             music_dirs=int(getattr(capabilities, "music_dirs", 20) or 20),
+            max_database_bytes=int(
+                getattr(capabilities, "max_database_bytes", 0) or 0
+            ),
             uses_sqlite_db=bool(getattr(capabilities, "uses_sqlite_db", False)),
             db_version=int(getattr(capabilities, "db_version", 0) or 0),
             byte_order=str(getattr(capabilities, "byte_order", "le") or "le"),

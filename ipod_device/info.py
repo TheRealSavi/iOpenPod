@@ -234,7 +234,16 @@ class DeviceInfo:
     def icon(self) -> str:
         """Emoji icon based on model family."""
         family = self.model_family.lower()
-        if "classic" in family or "video" in family or "photo" in family:
+        generation = self.generation.lower()
+        full_size_display_generations = {
+            "4th gen (photo)",
+            "4th gen (color)",
+            "5th gen",
+            "5.5th gen",
+        }
+        if "classic" in family or (
+            family == "ipod" and generation in full_size_display_generations
+        ):
             return "📱"
         elif "nano" in family:
             return "🎵"
@@ -255,7 +264,10 @@ class DeviceInfo:
         caps = None
         if self.model_family:
             caps = capabilities_for_family_gen(
-                self.model_family, self.generation or "",
+                self.model_family,
+                self.generation or "",
+                capacity=self.capacity,
+                model_number=self.model_number,
             )
         if caps is None:
             caps = DeviceCapabilities()
@@ -622,6 +634,53 @@ def _infer_color_from_variant_table(info: DeviceInfo) -> None:
         info.generation,
         f" {info.capacity}" if info.capacity else "",
     )
+
+
+def _canonicalize_device_identity(info: DeviceInfo) -> None:
+    """Repair stale non-community model names before they reach callers."""
+    try:
+        from .lookup import get_model_info
+        from .models import canonicalize_model_identity
+    except ImportError:
+        return
+
+    model_info = get_model_info(info.model_number) if info.model_number else None
+    if model_info:
+        updates = {
+            "model_family": model_info[0],
+            "generation": model_info[1],
+            "capacity": model_info[2],
+            "color": model_info[3],
+        }
+        source = info._field_sources.get("model_number", "model_table")
+    else:
+        family, generation, color = canonicalize_model_identity(
+            info.model_family,
+            info.generation,
+            capacity=info.capacity,
+            color=info.color,
+        )
+        updates = {
+            "model_family": family,
+            "generation": generation,
+            "color": color,
+        }
+        source = "model_table"
+
+    for field_name, value in updates.items():
+        if not value:
+            continue
+        current = getattr(info, field_name, "")
+        if _values_match(field_name, current, value):
+            continue
+        logger.debug(
+            "enrich: canonicalized %s from %r to %r",
+            field_name,
+            current,
+            value,
+        )
+        setattr(info, field_name, value)
+        info._field_sources[field_name] = source
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -1010,7 +1069,7 @@ def enrich(info: DeviceInfo) -> None:
     # ── 3d. Generation inference from family + capacity ───────────────
     #   When we know the family (e.g. from USB PID) but not the generation,
     #   use capacity to narrow it down.  For example, only iPod Classic
-    #   2nd Gen came in 120GB.  Disk-size-based capacity estimation
+    #   6.5th Gen came in 120GB.  Disk-size-based capacity estimation
     #   (stage 8/9) hasn't run yet, so this only works if capacity was
     #   already resolved from serial, model number, or SysInfo.
     if info.model_family and not info.generation:
@@ -1041,6 +1100,7 @@ def enrich(info: DeviceInfo) -> None:
 
     # Cached derived SysInfo fields are useful, but they must not be allowed
     # to combine with live USB identity into an impossible model label.
+    _canonicalize_device_identity(info)
     _restore_usb_pid_identity_if_needed(info)
     _sanitize_variant_fields(info)
 

@@ -31,6 +31,7 @@ from app_core.controllers import (
     StartupDeviceRestoreController,
     StartupUpdateController,
 )
+from app_core.database_storage import analyze_database_storage
 from app_core.device_access import check_ipod_write_access
 from app_core.device_identity import (
     identify_ipod_at_root,
@@ -69,8 +70,9 @@ from app_core.sync_plan_merge import merge_additional_sync_plan
 from GUI.glyphs import glyph_pixmap
 from GUI.internal_drag import is_iopenpod_export_drag
 from GUI.notifications import Notifier
-from GUI.styles import FONT_FAMILY, Colors, Metrics, btn_css
+from GUI.styles import FONT_FAMILY, Colors, Metrics, accent_btn_css, button_css, progress_bar_css
 from GUI.widgets.backupBrowser import BackupBrowserWidget
+from GUI.widgets.databaseStorageBrowser import DatabaseStorageBrowser
 from GUI.widgets.dropOverlay import DropOverlayWidget
 from GUI.widgets.formatters import format_size
 from GUI.widgets.musicBrowser import MusicBrowser
@@ -100,6 +102,26 @@ if TYPE_CHECKING:
     from app_core.services import DeviceManagerLike, LibraryCacheLike
 
 logger = logging.getLogger(__name__)
+
+_DATABASE_STORAGE_PAGE_INDEX = 5
+
+
+def _database_file_size_bytes(
+    path: str | None,
+    *,
+    uses_sqlite_db: bool = False,
+) -> int:
+    if not path:
+        return 0
+    try:
+        data = Path(path).read_bytes()
+    except OSError:
+        return 0
+    if uses_sqlite_db:
+        return len(data)
+    from iTunesDB_Parser.parser import decompress_itunescdb
+
+    return len(decompress_itunescdb(data))
 
 
 def _mhsd5_type_value(playlist: dict) -> int:
@@ -454,6 +476,7 @@ class MainWindow(QMainWindow):
         self.sidebar.settingsButton.clicked.connect(self.showSettings)
         self.sidebar.backupButton.clicked.connect(self.showBackupBrowser)
         self.sidebar.tag_fixes_requested.connect(self._onIpodTagFixesRequested)
+        self.sidebar.manage_storage_requested.connect(self.showDatabaseStorage)
 
         self.mainContentStack = QStackedWidget()
 
@@ -505,6 +528,11 @@ class MainWindow(QMainWindow):
         self.selectiveSyncBrowser.plan_selection_cancelled.connect(self._onPlanSelectionCancelled)
         self.centralStack.addWidget(self.selectiveSyncBrowser)  # Index 4
 
+        # Database storage page
+        self.databaseStorageBrowser = DatabaseStorageBrowser()
+        self.databaseStorageBrowser.closed.connect(self.hideDatabaseStorage)
+        self.centralStack.addWidget(self.databaseStorageBrowser)  # Index 5
+
         # No-device placeholder section (shown in content area; sidebar stays visible)
         self.noDeviceWidget = QWidget()
         no_device_layout = QVBoxLayout(self.noDeviceWidget)
@@ -532,14 +560,7 @@ class MainWindow(QMainWindow):
         select_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         select_btn.setFixedWidth(170)
         select_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.DemiBold))
-        select_btn.setStyleSheet(btn_css(
-            bg=Colors.ACCENT,
-            bg_hover=Colors.ACCENT_LIGHT,
-            bg_press=Colors.ACCENT,
-            fg=Colors.TEXT_ON_ACCENT,
-            border="none",
-            padding="8px 14px",
-        ))
+        select_btn.setStyleSheet(accent_btn_css("lg"))
         select_btn.clicked.connect(self.selectDevice)
 
         select_row = QHBoxLayout()
@@ -1136,6 +1157,8 @@ class MainWindow(QMainWindow):
         db_version_hex = db_data.get('VersionHex', '') if db_data else ''
         db_version_name = get_version_name(db_version_hex) if db_version_hex else ''
         database_id = db_data.get('DatabaseID', 0) if db_data else 0
+        database_path = getattr(session, "itunesdb_path", None)
+        capabilities = getattr(session, "capabilities", None)
 
         self.sidebar.updateDeviceInfo(
             name=device_name,
@@ -1151,6 +1174,16 @@ class MainWindow(QMainWindow):
             podcasts=len(classified["podcast"]),
             audiobooks=len(classified["audiobook"]),
             device_info=self.device_manager.discovered_ipod,
+            database_size_bytes=_database_file_size_bytes(
+                database_path,
+                uses_sqlite_db=bool(
+                    getattr(capabilities, "uses_sqlite_db", False)
+                ),
+            ),
+            max_database_bytes=int(
+                getattr(capabilities, "max_database_bytes", 0) or 0
+            ),
+            database_path=database_path or "",
         )
         self.sidebar.setTagFixesAvailable(bool(tracks))
         self._update_sidebar_visibility(classified)
@@ -2456,6 +2489,27 @@ class MainWindow(QMainWindow):
         """Return from backup browser to the main browsing view."""
         self._show_default_page()
 
+    def showDatabaseStorage(self):
+        """Show the database storage breakdown page."""
+        session = self.device_session_service.current_session()
+        capabilities = getattr(session, "capabilities", None)
+        report = analyze_database_storage(
+            getattr(session, "itunesdb_path", None),
+            ipod_root=getattr(self.device_manager, "device_path", None),
+            uses_sqlite_db=bool(getattr(capabilities, "uses_sqlite_db", False)),
+        )
+        self.databaseStorageBrowser.load_report(
+            report,
+            max_database_bytes=int(
+                getattr(capabilities, "max_database_bytes", 0) or 0
+            ),
+        )
+        self.centralStack.setCurrentIndex(_DATABASE_STORAGE_PAGE_INDEX)
+
+    def hideDatabaseStorage(self):
+        """Return from database storage management to the main browsing view."""
+        self._show_default_page()
+
     def executeSyncPlan(self, selected_items):
         """Execute the selected sync actions."""
         # Get device path
@@ -2939,13 +2993,7 @@ class _MissingToolsDialog(QDialog):
             no_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
             no_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             no_btn.setMinimumHeight(40)
-            no_btn.setStyleSheet(btn_css(
-                bg=Colors.SURFACE_RAISED,
-                bg_hover=Colors.SURFACE_HOVER,
-                bg_press=Colors.SURFACE_ACTIVE,
-                border=f"1px solid {Colors.BORDER_SUBTLE}",
-                padding="8px 24px",
-            ))
+            no_btn.setStyleSheet(button_css("secondary", "lg"))
             no_btn.clicked.connect(self.reject)
             btn_row.addWidget(no_btn)
 
@@ -2953,13 +3001,7 @@ class _MissingToolsDialog(QDialog):
             yes_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
             yes_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             yes_btn.setMinimumHeight(40)
-            yes_btn.setStyleSheet(btn_css(
-                bg=Colors.ACCENT_DIM,
-                bg_hover=Colors.ACCENT_HOVER,
-                bg_press=Colors.ACCENT_PRESS,
-                border=f"1px solid {Colors.ACCENT_BORDER}",
-                padding="8px 24px",
-            ))
+            yes_btn.setStyleSheet(accent_btn_css("lg"))
             yes_btn.clicked.connect(self.accept)
             btn_row.addWidget(yes_btn)
         else:
@@ -2967,13 +3009,7 @@ class _MissingToolsDialog(QDialog):
             ok_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
             ok_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             ok_btn.setMinimumHeight(40)
-            ok_btn.setStyleSheet(btn_css(
-                bg=Colors.SURFACE_RAISED,
-                bg_hover=Colors.SURFACE_HOVER,
-                bg_press=Colors.SURFACE_ACTIVE,
-                border=f"1px solid {Colors.BORDER_SUBTLE}",
-                padding="8px 24px",
-            ))
+            ok_btn.setStyleSheet(button_css("secondary", "lg"))
             ok_btn.clicked.connect(self.reject)
             btn_row.addWidget(ok_btn)
 
@@ -3014,17 +3050,7 @@ class _DownloadProgressDialog(QDialog):
         bar.setRange(0, 0)  # indeterminate
         bar.setFixedHeight(6)
         bar.setTextVisible(False)
-        bar.setStyleSheet(f"""
-            QProgressBar {{
-                background: {Colors.SURFACE};
-                border: none;
-                border-radius: {(3)}px;
-            }}
-            QProgressBar::chunk {{
-                background: {Colors.ACCENT};
-                border-radius: {(3)}px;
-            }}
-        """)
+        bar.setStyleSheet(progress_bar_css(height=6, radius=3, bg=Colors.SURFACE))
         layout.addWidget(bar)
 
         layout.addStretch()

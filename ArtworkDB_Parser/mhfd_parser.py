@@ -19,7 +19,7 @@ def parse_mhfd(data, offset, header_length, chunk_length) -> dict[str, Any]:
     datafile["unk3"] = struct.unpack(
         "<I", data[offset + 24:offset + 28])[0]  # always 0
 
-    # ID of last mhii + 1. On iPod video seems to be last mhii + mhba count + 1
+    # ID of last mhii + 1. On iPod 5G this seems to be last mhii + mhba count + 1.
     datafile["next_mhii_id"] = struct.unpack(
         "<I", data[offset + 28:offset + 32])[0]
 

@@ -4,19 +4,12 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSplitter, QVBoxLayout, QWidget
 
-from ..styles import FONT_FAMILY, Colors, Metrics, btn_css
+from ..styles import FONT_FAMILY, Colors, Metrics, button_css, panel_css
 
 
 def chrome_action_btn_css() -> str:
     """Shared style for action buttons hosted in BrowserHeroHeader."""
-    return btn_css(
-        bg=Colors.SURFACE_RAISED,
-        bg_hover=Colors.SURFACE_HOVER,
-        bg_press=Colors.SURFACE_ACTIVE,
-        fg=Colors.TEXT_PRIMARY,
-        border=f"1px solid {Colors.BORDER_SUBTLE}",
-        padding="6px 10px",
-    )
+    return button_css("secondary", "sm")
 
 
 class BrowserHeroHeader(QFrame):
@@ -59,13 +52,7 @@ class BrowserPane(QFrame):
     ):
         super().__init__(parent)
         self.setObjectName("browserPane")
-        self.setStyleSheet(f"""
-            QFrame#browserPane {{
-                background: {Colors.SURFACE};
-                border: 1px solid {Colors.BORDER_SUBTLE};
-                border-radius: 0px;
-            }}
-        """)
+        self.setStyleSheet(panel_css("browserPane", radius=0))
         if min_width:
             self.setMinimumWidth(min_width)
 

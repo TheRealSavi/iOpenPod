@@ -485,7 +485,7 @@ iPod Classic and Nano 3G+ require a device-specific hash at MHBD offset 0x58/0x7
 
 | Device | Hash Type | Requirement |
 | -------- | ----------- | ------------- |
-| iPod 1G–5G, Mini, Photo, Nano 1G–2G | None | Just length recalculation |
+| iPod 1G–5.5G, iPod Mini 1G–2G, iPod Nano 1G–2G | None | Just length recalculation |
 | Classic (all), Nano 3G, Nano 4G | HASH58 | FireWire GUID from SysInfo |
 | Nano 5G | HASH72 | HashInfo file or reference DB |
 | Nano 6G/7G | HASHAB | FireWire GUID + wasmtime (WASM module) |

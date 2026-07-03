@@ -420,7 +420,7 @@ def _default_firmware(family: str, generation: str) -> str:
         return "2.0.5"
     if family == "iPod Nano" and generation in {"5th Gen", "6th Gen", "7th Gen"}:
         return "1.0.4"
-    if "Video" in family:
+    if family == "iPod" and generation in {"5th Gen", "5.5th Gen"}:
         return "1.3"
     return "1.0"
 

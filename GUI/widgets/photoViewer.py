@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ..glyphs import glyph_icon
-from ..styles import FONT_FAMILY, Colors, Metrics, btn_css, danger_btn_css
+from ..styles import FONT_FAMILY, Colors, Metrics, btn_css, chip_btn_css, danger_btn_css, panel_css
 
 
 def pil_to_pixmap(img) -> QPixmap:
@@ -48,14 +48,8 @@ class PhotoViewerPane(QFrame):
         self.setMinimumWidth(0)
         self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
 
-        self.setStyleSheet(f"""
-            QFrame#photoViewer {{
-                background: {Colors.SURFACE};
-                border: 1px solid {Colors.BORDER_SUBTLE};
-                border-radius: 0px;
-            }}
-        """)
         self.setObjectName("photoViewer")
+        self.setStyleSheet(panel_css("photoViewer", radius=0))
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -366,25 +360,7 @@ class PhotoViewerPane(QFrame):
 
         self._variant_label.setText(label)
 
-        chip_css = f"""
-            QPushButton {{
-                background: {Colors.SURFACE_RAISED};
-                color: {Colors.TEXT_SECONDARY};
-                border: 1px solid {Colors.BORDER_SUBTLE};
-                border-radius: 999px;
-                padding: 4px 10px;
-            }}
-            QPushButton:hover {{
-                background: {Colors.SURFACE_HOVER};
-                color: {Colors.TEXT_PRIMARY};
-                border: 1px solid {Colors.BORDER};
-            }}
-            QPushButton:checked {{
-                background: {Colors.SURFACE_ACTIVE};
-                color: {Colors.TEXT_PRIMARY};
-                border: 1px solid {Colors.ACCENT};
-            }}
-        """
+        chip_css = chip_btn_css("sm", checked_accent=False)
 
         for index, image_id in enumerate(variant_ids):
             btn = QPushButton(str(image_id), self._variant_buttons_host)

@@ -26,7 +26,7 @@ def test_ipod_tag_suggestion_moves_featured_artist_to_title() -> None:
 
     suggestion = suggest_ipod_library_tag_fixes(
         tracks,
-        profile=ipod_tag_profile(family="iPod Classic", generation="3rd Gen"),
+        profile=ipod_tag_profile(family="iPod Classic", generation="7th Gen"),
     )
 
     assert suggestion.changes_by_track[id(tracks[0])] == {

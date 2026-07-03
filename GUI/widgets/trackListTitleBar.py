@@ -1,5 +1,7 @@
+import re
+
 from PyQt6.QtCore import QPoint, QSize, Qt
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QColor, QFont
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QWidget
 
 from ..glyphs import glyph_icon
@@ -8,11 +10,22 @@ from ..styles import (
     Colors,
     Metrics,
     display_accent_rgb,
+    icon_btn_css,
     text_rgb_for_background,
 )
 
 _TITLE_BAR_CONTRAST_TARGET = 2.95
 _TITLE_BAR_CORNER_RADIUS = 8
+_ALBUM_BAR_TOP_MIX = 0.14
+_ALBUM_BAR_BOTTOM_MIX = 0.24
+_ALBUM_BAR_TOP_ALPHA = 92
+_ALBUM_BAR_MID_ALPHA = 70
+_ALBUM_BAR_BOTTOM_ALPHA = 60
+_ALBUM_BAR_LIGHT_TOP_MIX = 0.08
+_ALBUM_BAR_LIGHT_BOTTOM_MIX = 0.22
+_ALBUM_BAR_LIGHT_TOP_ALPHA = 132
+_ALBUM_BAR_LIGHT_MID_ALPHA = 112
+_ALBUM_BAR_LIGHT_BOTTOM_ALPHA = 96
 
 
 def _mix_rgb(
@@ -38,13 +51,49 @@ def _css_rgba(rgb: tuple[int, int, int], alpha: int) -> str:
     return f"rgba({rgb[0]},{rgb[1]},{rgb[2]},{alpha})"
 
 
+def _css_to_rgb(css: str, fallback: tuple[int, int, int]) -> tuple[int, int, int]:
+    color = QColor(css)
+    if color.isValid():
+        return color.red(), color.green(), color.blue()
+
+    match = re.match(
+        r"rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)",
+        str(css).strip(),
+    )
+    if not match:
+        return fallback
+    return (
+        max(0, min(255, int(match.group(1)))),
+        max(0, min(255, int(match.group(2)))),
+        max(0, min(255, int(match.group(3)))),
+    )
+
+
+def _album_bar_mix() -> tuple[float, float]:
+    if getattr(Colors, "_active_mode", "dark") == "light":
+        return _ALBUM_BAR_LIGHT_TOP_MIX, _ALBUM_BAR_LIGHT_BOTTOM_MIX
+    return _ALBUM_BAR_TOP_MIX, _ALBUM_BAR_BOTTOM_MIX
+
+
+def _album_bar_alphas() -> tuple[int, int, int]:
+    if getattr(Colors, "_active_mode", "dark") == "light":
+        return (
+            _ALBUM_BAR_LIGHT_TOP_ALPHA,
+            _ALBUM_BAR_LIGHT_MID_ALPHA,
+            _ALBUM_BAR_LIGHT_BOTTOM_ALPHA,
+        )
+    return _ALBUM_BAR_TOP_ALPHA, _ALBUM_BAR_MID_ALPHA, _ALBUM_BAR_BOTTOM_ALPHA
+
+
 def _title_bar_css(
     *,
+    bg_rgb: tuple[int, int, int],
     top_rgb: tuple[int, int, int],
     bottom_rgb: tuple[int, int, int],
     border_rgb: tuple[int, int, int],
     text_rgb: tuple[int, int, int],
     text_secondary_rgb: tuple[int, int, int],
+    album_tint_gradient: bool = False,
 ) -> str:
     """Generate a refined, contrast-limited title bar stylesheet."""
     text_color = _css_rgb(text_rgb)
@@ -52,15 +101,32 @@ def _title_bar_css(
     button_bg = _css_rgba(text_rgb, 18)
     button_hover = _css_rgba(text_rgb, 30)
     button_press = _css_rgba(text_rgb, 24)
-    return f"""
-        QFrame {{
+    if album_tint_gradient:
+        top_alpha, mid_alpha, bottom_alpha = _album_bar_alphas()
+        background_css = f"""
+            background: qlineargradient(
+                x1: 0, y1: 0, x2: 0, y2: 1,
+                stop: 0 {_css_rgba(top_rgb, top_alpha)},
+                stop: 0.58 {_css_rgba(bg_rgb, mid_alpha)},
+                stop: 1 {_css_rgba(bottom_rgb, bottom_alpha)}
+            );
+        """
+        border_css = ""
+    else:
+        background_css = f"""
             background: qlineargradient(
                 x1: 0, y1: 0, x2: 0, y2: 1,
                 stop: 0 {_css_rgba(top_rgb, 190)},
                 stop: 1 {_css_rgba(bottom_rgb, 178)}
             );
+        """
+        border_css = f"border-bottom: 1px solid {_css_rgba(border_rgb, 130)};"
+
+    return f"""
+        QFrame {{
+            {background_css}
             border: none;
-            border-bottom: 1px solid {_css_rgba(border_rgb, 130)};
+            {border_css}
             border-top-left-radius: {_TITLE_BAR_CORNER_RADIUS}px;
             border-top-right-radius: {_TITLE_BAR_CORNER_RADIUS}px;
             border-bottom-left-radius: 0px;
@@ -72,23 +138,14 @@ def _title_bar_css(
             color: {text_color};
             background: transparent;
         }}
-        QPushButton {{
-            background-color: {button_bg};
-            border: none;
-            color: {text_secondary};
-            font-size: {Metrics.FONT_TITLE}px;
-            font-weight: bold;
-            width: {(28)}px;
-            height: {(28)}px;
-            border-radius: {(6)}px;
-        }}
-        QPushButton:hover {{
-            background-color: {button_hover};
-        }}
-        QPushButton:pressed {{
-            background-color: {button_press};
-        }}
-    """
+    """ + icon_btn_css(
+        28,
+        bg=button_bg,
+        bg_hover=button_hover,
+        bg_press=button_press,
+        fg=text_secondary,
+        radius=6,
+    )
 
 
 def _resolve_bar_palette(
@@ -96,17 +153,34 @@ def _resolve_bar_palette(
     *,
     text: tuple[int, int, int] | None = None,
     text_secondary: tuple[int, int, int] | None = None,
+    contrast_ensured: bool = False,
 ) -> dict[str, tuple[int, int, int]]:
     """Limit and shape a title-bar palette so it sits comfortably in the app."""
-    bg = display_accent_rgb(
-        base_rgb,
-        background=Colors.BG_DARK,
-        target_ratio=_TITLE_BAR_CONTRAST_TARGET,
-    )
-    top = _mix_rgb(bg, (255, 255, 255), 0.08)
-    bottom = _mix_rgb(bg, (0, 0, 0), 0.16)
-    primary_text = text or text_rgb_for_background(bg)
-    secondary_text = text_secondary or _mix_rgb(primary_text, bg, 0.3)
+    if contrast_ensured:
+        bg = base_rgb
+    else:
+        bg = display_accent_rgb(
+            base_rgb,
+            background=Colors.BG_DARK,
+            target_ratio=_TITLE_BAR_CONTRAST_TARGET,
+        )
+    if contrast_ensured:
+        top_mix, bottom_mix = _album_bar_mix()
+        top = _mix_rgb(bg, (255, 255, 255), top_mix)
+        bottom = _mix_rgb(bg, (0, 0, 0), bottom_mix)
+    else:
+        top = _mix_rgb(bg, (255, 255, 255), 0.08)
+        bottom = _mix_rgb(bg, (0, 0, 0), 0.16)
+    if contrast_ensured:
+        fallback_text = text_rgb_for_background(bg)
+        primary_text = _css_to_rgb(Colors.TEXT_PRIMARY, fallback_text)
+        secondary_text = _css_to_rgb(
+            Colors.TEXT_SECONDARY,
+            _mix_rgb(primary_text, bg, 0.3),
+        )
+    else:
+        primary_text = text or text_rgb_for_background(bg)
+        secondary_text = text_secondary or _mix_rgb(primary_text, bg, 0.3)
     border = _mix_rgb(bg, (0, 0, 0), 0.28)
     return {
         "bg": bg,
@@ -160,14 +234,16 @@ class TrackListTitleBar(QFrame):
         self.title.setText(title)
 
     def setColor(self, r: int, g: int, b: int,
-                 text: tuple | None = None, text_secondary: tuple | None = None):
+                 text: tuple | None = None, text_secondary: tuple | None = None,
+                 contrast_ensured: bool = False):
         """Set the title bar color using a limited, contrast-aware palette."""
         palette = _resolve_bar_palette(
             (r, g, b),
             text=text,
             text_secondary=text_secondary,
+            contrast_ensured=contrast_ensured,
         )
-        self._apply_palette(palette)
+        self._apply_palette(palette, album_tint_gradient=contrast_ensured)
 
     def setFullscreenMode(self, fullscreen: bool):
         """Enable/disable fullscreen mode. Hides buttons and disables dragging."""
@@ -194,14 +270,21 @@ class TrackListTitleBar(QFrame):
             }}
         """)
 
-    def _apply_palette(self, palette: dict[str, tuple[int, int, int]]) -> None:
+    def _apply_palette(
+        self,
+        palette: dict[str, tuple[int, int, int]],
+        *,
+        album_tint_gradient: bool = False,
+    ) -> None:
         self.setStyleSheet(
             _title_bar_css(
+                bg_rgb=palette["bg"],
                 top_rgb=palette["top"],
                 bottom_rgb=palette["bottom"],
                 border_rgb=palette["border"],
                 text_rgb=palette["text"],
                 text_secondary_rgb=palette["text_secondary"],
+                album_tint_gradient=album_tint_gradient,
             )
         )
         self._set_handle_color()

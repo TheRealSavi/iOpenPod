@@ -66,7 +66,7 @@ from sync_progress_stages import friendly_stage_label
 from SyncEngine.review_selection import build_selected_photo_plan
 
 from ..glyphs import glyph_icon, glyph_pixmap
-from ..styles import FONT_FAMILY, Colors, Metrics, accent_btn_css, btn_css, make_scroll_area
+from ..styles import FONT_FAMILY, Colors, Metrics, accent_btn_css, btn_css, button_css, make_scroll_area, progress_bar_css
 from .formatters import format_duration_mmss as _format_duration
 from .formatters import format_size as _format_size
 from .syncStagesPanel import DEFAULT_PIPELINE, SyncStagesPanel
@@ -1329,18 +1329,7 @@ class SyncReviewWidget(QWidget):
         self.progress_bar = QProgressBar(loading_center)
         self.progress_bar.setFixedWidth(360)
         self.progress_bar.setTextVisible(False)
-        self.progress_bar.setStyleSheet(f"""
-            QProgressBar {{
-                background: {Colors.BORDER_SUBTLE};
-                border: none;
-                border-radius: 4px;
-                height: 8px;
-            }}
-            QProgressBar::chunk {{
-                background: {Colors.ACCENT};
-                border-radius: 4px;
-            }}
-        """)
+        self.progress_bar.setStyleSheet(progress_bar_css(bg=Colors.BORDER_SUBTLE))
         loading_layout.addWidget(self.progress_bar, alignment=Qt.AlignmentFlag.AlignCenter)
 
         loading_layout.addSpacing(10)
@@ -1595,33 +1584,14 @@ class SyncReviewWidget(QWidget):
 
         # "Skip Backup & Sync Now" / "Sync Without Backup" — secondary action
         self._presync_skip_btn = QPushButton("Skip Backup && Sync Now", presync_inner)
-        self._presync_skip_btn.setStyleSheet(btn_css(
-            bg=Colors.SURFACE_RAISED,
-            bg_hover=Colors.SURFACE_ACTIVE,
-            bg_press=Colors.SURFACE_ALT,
-            border=f"1px solid {Colors.BORDER}",
-            radius=Metrics.BORDER_RADIUS_SM,
-            padding="8px 20px",
-        ))
+        self._presync_skip_btn.setStyleSheet(button_css("secondary", "lg"))
         self._presync_skip_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._presync_skip_btn.clicked.connect(self._presync_skip)
         presync_btn_row.addWidget(self._presync_skip_btn)
 
         # "Back Up & Sync" — primary action
         self._presync_backup_btn = QPushButton("Back Up && Sync", presync_inner)
-        self._presync_backup_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: {Colors.ACCENT};
-                border: none;
-                border-radius: {Metrics.BORDER_RADIUS_SM}px;
-                color: {Colors.TEXT_ON_ACCENT};
-                padding: {(8)}px {(24)}px;
-                font-weight: bold;
-            }}
-            QPushButton:hover {{
-                background: {Colors.ACCENT_LIGHT};
-            }}
-        """)
+        self._presync_backup_btn.setStyleSheet(accent_btn_css("lg"))
         self._presync_backup_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._presync_backup_btn.clicked.connect(self._presync_backup)
         presync_btn_row.addWidget(self._presync_backup_btn)
@@ -3468,31 +3438,12 @@ class SyncReviewWidget(QWidget):
         btn_row = QHBoxLayout()
         btn_row.addStretch()
         cancel_btn = QPushButton("Cancel", confirm)
-        cancel_btn.setStyleSheet(btn_css(
-            bg=Colors.SURFACE_RAISED,
-            bg_hover=Colors.SURFACE_ACTIVE,
-            bg_press=Colors.SURFACE_ALT,
-            border=f"1px solid {Colors.BORDER}",
-            radius=Metrics.BORDER_RADIUS_SM,
-            padding="8px 20px",
-        ))
+        cancel_btn.setStyleSheet(button_css("secondary", "lg"))
         cancel_btn.clicked.connect(confirm.reject)
         btn_row.addWidget(cancel_btn)
 
         confirm_btn = QPushButton("Apply Sync", confirm)
-        confirm_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: {Colors.ACCENT};
-                border: none;
-                border-radius: {Metrics.BORDER_RADIUS_SM}px;
-                color: {Colors.TEXT_ON_ACCENT};
-                padding: {(8)}px {(24)}px;
-                font-weight: bold;
-            }}
-            QPushButton:hover {{
-                background: {Colors.ACCENT_LIGHT};
-            }}
-        """)
+        confirm_btn.setStyleSheet(accent_btn_css("lg"))
         confirm_btn.clicked.connect(confirm.accept)
         btn_row.addWidget(confirm_btn)
         cl.addLayout(btn_row)
@@ -3564,25 +3515,7 @@ class PCFolderDialog(QDialog):
                 color: {Colors.TEXT_PRIMARY};
                 background: transparent;
             }}
-            QPushButton {{
-                background: {Colors.SURFACE_RAISED};
-                color: {Colors.TEXT_PRIMARY};
-                border: 1px solid {Colors.BORDER};
-                border-radius: {Metrics.BORDER_RADIUS_SM}px;
-                padding: {(6)}px {(14)}px;
-            }}
-            QPushButton:hover {{
-                background: {Colors.SURFACE_ACTIVE};
-            }}
-            QPushButton:disabled {{
-                background: {Colors.SURFACE};
-                color: {Colors.TEXT_TERTIARY};
-                border-color: {Colors.BORDER_SUBTLE};
-            }}
-            QPushButton:disabled:hover {{
-                background: {Colors.SURFACE};
-            }}
-        """)
+        """ + button_css("secondary", "sm"))
 
         self._setup_ui()
         self._render_folders()
@@ -3644,24 +3577,7 @@ class PCFolderDialog(QDialog):
 
         add_btn = QPushButton("Add Folder...", self)
         add_btn.clicked.connect(self._browse)
-        add_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: {Colors.ACCENT};
-                border: none;
-                border-radius: {Metrics.BORDER_RADIUS_SM}px;
-                color: {Colors.TEXT_ON_ACCENT};
-                padding: {(7)}px {(18)}px;
-                font-weight: bold;
-            }}
-            QPushButton:hover {{
-                background: {Colors.ACCENT_LIGHT};
-            }}
-            QPushButton:disabled {{
-                background: {Colors.SURFACE};
-                color: {Colors.TEXT_TERTIARY};
-                border: 1px solid {Colors.BORDER_SUBTLE};
-            }}
-        """)
+        add_btn.setStyleSheet(accent_btn_css("sm"))
         summary_row.addWidget(add_btn)
 
         clear_btn = QPushButton("Clear", self)
@@ -3723,24 +3639,7 @@ class PCFolderDialog(QDialog):
         btn_row.addWidget(back_sync_btn)
 
         full_btn = QPushButton("Full Sync", self)
-        full_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: {Colors.ACCENT};
-                border: none;
-                border-radius: {Metrics.BORDER_RADIUS_SM}px;
-                color: {Colors.TEXT_ON_ACCENT};
-                padding: {(6)}px {(20)}px;
-                font-weight: bold;
-            }}
-            QPushButton:hover {{
-                background: {Colors.ACCENT_LIGHT};
-            }}
-            QPushButton:disabled {{
-                background: {Colors.SURFACE};
-                color: {Colors.TEXT_TERTIARY};
-                border: 1px solid {Colors.BORDER_SUBTLE};
-            }}
-        """)
+        full_btn.setStyleSheet(accent_btn_css("sm"))
         full_btn.clicked.connect(self._accept_full)
         full_btn.setToolTip(
             "Full Sync: Takes everything on your PC and adds it to your iPod"

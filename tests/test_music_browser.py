@@ -3,6 +3,7 @@ from typing import Any, cast
 
 from PIL import Image
 from PyQt6.QtCore import QPoint
+from PyQt6.QtWidgets import QSplitter
 
 from GUI.styles import Colors, context_menu_css
 from GUI.widgets import artworkUnifier as artwork_unifier_module
@@ -11,6 +12,7 @@ from GUI.widgets.artworkUnifier import (
     build_album_artwork_unify_context,
 )
 from GUI.widgets.musicBrowser import MusicBrowser
+from GUI.widgets.trackListTitleBar import TrackListTitleBar, _resolve_bar_palette
 
 
 def _build_browser(category: str = "Albums") -> Any:
@@ -167,6 +169,113 @@ def test_album_grid_context_menu_edit_opens_album_tracks(monkeypatch) -> None:
     )
 
     assert edited == [album_item]
+
+
+def test_title_bar_palette_reuses_contrast_ensured_grid_color() -> None:
+    display_rgb = (86, 112, 144)
+
+    palette = _resolve_bar_palette(display_rgb, contrast_ensured=True)
+
+    assert palette["bg"] == display_rgb
+
+
+def test_title_bar_uses_prominent_gradient_from_contrast_ensured_color(qtbot) -> None:
+    splitter = QSplitter()
+    titlebar = TrackListTitleBar(splitter)
+    qtbot.addWidget(splitter)
+    qtbot.addWidget(titlebar)
+
+    titlebar.setColor(
+        86,
+        112,
+        144,
+        text=(18, 18, 24),
+        text_secondary=(45, 50, 60),
+        contrast_ensured=True,
+    )
+
+    compact_css = "".join(titlebar.styleSheet().split())
+    assert "qlineargradient" in compact_css
+    assert "stop:0rgba(110,132,160,92)" in compact_css
+    assert "stop:0.58rgba(86,112,144,70)" in compact_css
+    assert "stop:1rgba(65,85,109,60)" in compact_css
+    assert "border-top:" not in compact_css
+    assert "border-left:" not in compact_css
+    assert "border-bottom:" not in compact_css
+    assert "color:rgb(18,18,24);" not in compact_css
+
+
+def test_light_theme_title_bar_uses_more_opaque_album_gradient(qtbot, monkeypatch) -> None:
+    monkeypatch.setattr(Colors, "_active_mode", "light")
+    splitter = QSplitter()
+    titlebar = TrackListTitleBar(splitter)
+    qtbot.addWidget(splitter)
+    qtbot.addWidget(titlebar)
+
+    titlebar.setColor(
+        86,
+        112,
+        144,
+        text=(18, 18, 24),
+        text_secondary=(45, 50, 60),
+        contrast_ensured=True,
+    )
+
+    compact_css = "".join(titlebar.styleSheet().split())
+    assert "stop:0rgba(100,123,153,132)" in compact_css
+    assert "stop:0.58rgba(86,112,144,112)" in compact_css
+    assert "stop:1rgba(67,87,112,96)" in compact_css
+    assert "border-bottom:" not in compact_css
+
+
+def test_album_selection_reuses_grid_display_color_for_titlebar() -> None:
+    class _TitleBar:
+        def __init__(self) -> None:
+            self.title = ""
+            self.color_calls: list[tuple[tuple, dict]] = []
+
+        def setTitle(self, title: str) -> None:
+            self.title = title
+
+        def setColor(self, *args, **kwargs) -> None:
+            self.color_calls.append((args, kwargs))
+
+        def resetColor(self) -> None:
+            raise AssertionError("display color should be used")
+
+    applied_filters: list[dict] = []
+    titlebar = _TitleBar()
+    browser = SimpleNamespace(
+        trackListTitleBar=titlebar,
+        browserTrack=SimpleNamespace(applyFilter=applied_filters.append),
+    )
+    item = {
+        "title": "Display Color Album",
+        "category": "Albums",
+        "filter_key": "album",
+        "filter_value": "Display Color Album",
+        "dominant_color": (8, 16, 32),
+        "display_dominant_color": (86, 112, 144),
+        "display_album_colors": {
+            "text": (255, 255, 255),
+            "text_secondary": (225, 230, 238),
+        },
+    }
+
+    MusicBrowser._onGridItemSelected(cast(Any, browser), item)
+
+    assert titlebar.title == "Display Color Album"
+    assert titlebar.color_calls == [
+        (
+            (86, 112, 144),
+            {
+                "text": (255, 255, 255),
+                "text_secondary": (225, 230, 238),
+                "contrast_ensured": True,
+            },
+        )
+    ]
+    assert applied_filters == [item]
 
 
 def test_unify_artwork_hash_dedupes_matching_rgba_pixels() -> None:

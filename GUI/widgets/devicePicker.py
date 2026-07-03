@@ -33,7 +33,16 @@ from PyQt6.QtWidgets import (
 from app_core.jobs import DeviceScanWorker
 
 from ..ipod_images import get_ipod_image
-from ..styles import FONT_FAMILY, Colors, Metrics, accent_btn_css, btn_css, make_scroll_area
+from ..styles import (
+    FONT_FAMILY,
+    Colors,
+    Metrics,
+    accent_btn_css,
+    button_css,
+    combo_css,
+    input_css,
+    make_scroll_area,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -65,22 +74,7 @@ class VirtualIPodDialog(QDialog):
 
         self._model_combo = QComboBox()
         self._model_combo.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
-        self._model_combo.setStyleSheet(
-            f"""
-            QComboBox {{
-                background: {Colors.SURFACE_RAISED};
-                color: {Colors.TEXT_PRIMARY};
-                border: 1px solid {Colors.BORDER};
-                border-radius: {Metrics.BORDER_RADIUS_MD}px;
-                padding: 7px 10px;
-            }}
-            QComboBox QAbstractItemView {{
-                background: {Colors.SURFACE_RAISED};
-                color: {Colors.TEXT_PRIMARY};
-                selection-background-color: {Colors.SURFACE_ACTIVE};
-            }}
-            """
-        )
+        self._model_combo.setStyleSheet(combo_css(padding="7px 10px"))
         model_label = QLabel("iPod Model")
         model_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
         model_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
@@ -93,30 +87,13 @@ class VirtualIPodDialog(QDialog):
         self._directory_edit = QLineEdit()
         self._directory_edit.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
         self._directory_edit.setPlaceholderText("Choose a folder")
-        self._directory_edit.setStyleSheet(
-            f"""
-            QLineEdit {{
-                background: {Colors.SURFACE_RAISED};
-                color: {Colors.TEXT_PRIMARY};
-                border: 1px solid {Colors.BORDER};
-                border-radius: {Metrics.BORDER_RADIUS_MD}px;
-                padding: 7px 10px;
-            }}
-            """
-        )
+        self._directory_edit.setStyleSheet(input_css(padding="7px 10px"))
         directory_row.addWidget(self._directory_edit, 1)
 
         browse_btn = QPushButton("Browse")
         browse_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
         browse_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        browse_btn.setStyleSheet(btn_css(
-            bg=Colors.SURFACE_RAISED,
-            bg_hover=Colors.SURFACE_ACTIVE,
-            bg_press=Colors.SURFACE_ALT,
-            fg=Colors.TEXT_SECONDARY,
-            border=f"1px solid {Colors.BORDER}",
-            padding="7px 16px",
-        ))
+        browse_btn.setStyleSheet(button_css("secondary", "md"))
         browse_btn.clicked.connect(self._browse_directory)
         directory_row.addWidget(browse_btn)
 
@@ -138,14 +115,7 @@ class VirtualIPodDialog(QDialog):
         cancel_btn = self._button_box.button(QDialogButtonBox.StandardButton.Cancel)
         if cancel_btn is None:
             raise RuntimeError("Dialog cancel button was not created")
-        cancel_btn.setStyleSheet(btn_css(
-            bg=Colors.SURFACE_RAISED,
-            bg_hover=Colors.SURFACE_ACTIVE,
-            bg_press=Colors.SURFACE_ALT,
-            fg=Colors.TEXT_SECONDARY,
-            border=f"1px solid {Colors.BORDER}",
-            padding="7px 20px",
-        ))
+        cancel_btn.setStyleSheet(button_css("secondary", "md"))
         self._button_box.accepted.connect(self._create)
         self._button_box.rejected.connect(self.reject)
         layout.addWidget(self._button_box)
@@ -481,28 +451,14 @@ class DevicePickerDialog(QDialog):
         self._manual_btn = QPushButton("Browse Manually")
         self._manual_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
         self._manual_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._manual_btn.setStyleSheet(btn_css(
-            bg=Colors.SURFACE_RAISED,
-            bg_hover=Colors.SURFACE_ACTIVE,
-            bg_press=Colors.SURFACE_ALT,
-            fg=Colors.TEXT_SECONDARY,
-            border=f"1px solid {Colors.BORDER}",
-            padding="7px 16px",
-        ))
+        self._manual_btn.setStyleSheet(button_css("secondary", "md"))
         self._manual_btn.clicked.connect(self._browse_manually)
         btn_layout.addWidget(self._manual_btn)
 
         self._rescan_btn = QPushButton("Rescan")
         self._rescan_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
         self._rescan_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._rescan_btn.setStyleSheet(btn_css(
-            bg=Colors.SURFACE_RAISED,
-            bg_hover=Colors.SURFACE_ACTIVE,
-            bg_press=Colors.SURFACE_ALT,
-            fg=Colors.TEXT_SECONDARY,
-            border=f"1px solid {Colors.BORDER}",
-            padding="7px 16px",
-        ))
+        self._rescan_btn.setStyleSheet(button_css("secondary", "md"))
         self._rescan_btn.clicked.connect(self._start_scan)
         btn_layout.addWidget(self._rescan_btn)
 
@@ -519,14 +475,7 @@ class DevicePickerDialog(QDialog):
         cancel_btn = QPushButton("Cancel")
         cancel_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
         cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        cancel_btn.setStyleSheet(btn_css(
-            bg=Colors.SURFACE_RAISED,
-            bg_hover=Colors.SURFACE_ACTIVE,
-            bg_press=Colors.SURFACE_ALT,
-            fg=Colors.TEXT_SECONDARY,
-            border=f"1px solid {Colors.BORDER}",
-            padding="7px 20px",
-        ))
+        cancel_btn.setStyleSheet(button_css("secondary", "md"))
         cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(cancel_btn)
 

@@ -2,7 +2,7 @@
 
 Sources:
   - libgpod ``src/itdb_device.c`` fallback artwork tables
-  - Keith's iPod Photo Reader README (model/prefix cross-checks)
+  - Keith's photo database reader README (model/prefix cross-checks)
   - cyianor/ithmbrdr README (1067 photo payload confirmation)
   - local iTunes-authored Nano 7G artwork dump (F1010/F1013/F1015/F1016)
 
@@ -29,23 +29,23 @@ class ArtworkFormat:
 
 
 ARTWORK_FORMATS_BY_ID: dict[int, ArtworkFormat] = {
-    # iPod Photo / Video era
+    # iPod 4G photo/color and 5G era
     1005: ArtworkFormat(1005, 80, 80, 160, "RGB565_LE", "photo_thumb", "Nano 7G photo thumbnail"),
     1007: ArtworkFormat(1007, 480, 864, 960, "RGB565_LE", "photo_full", "Nano 7G photo full screen"),
     1009: ArtworkFormat(1009, 42, 30, 84, "RGB565_LE", "photo_list", "Photo list thumbnail"),
     1010: ArtworkFormat(1010, 240, 240, 480, "RGB565_LE", "cover_large", "Nano 7G album art large"),
     1013: ArtworkFormat(1013, 220, 176, 440, "RGB565_BE_90", "photo_full", "Photo full screen (rotated)"),
-    1015: ArtworkFormat(1015, 130, 88, 260, "RGB565_LE", "photo_preview", "Photo/Video preview"),
-    1016: ArtworkFormat(1016, 140, 140, 280, "RGB565_LE", "cover_large", "Photo album art large"),
-    1017: ArtworkFormat(1017, 56, 56, 112, "RGB565_LE", "cover_small", "Photo album art small"),
-    1019: ArtworkFormat(1019, 720, 480, 1440, "UYVY", "tv_out", "Photo/Video NTSC TV output"),
+    1015: ArtworkFormat(1015, 130, 88, 260, "RGB565_LE", "photo_preview", "iPod 4G/5G preview"),
+    1016: ArtworkFormat(1016, 140, 140, 280, "RGB565_LE", "cover_large", "iPod 4G photo/color album art large"),
+    1017: ArtworkFormat(1017, 56, 56, 112, "RGB565_LE", "cover_small", "iPod 4G photo/color album art small"),
+    1019: ArtworkFormat(1019, 720, 480, 1440, "UYVY", "tv_out", "iPod 4G/5G NTSC TV output"),
     # Compatibility alias preserved from existing Apple databases.
     1020: ArtworkFormat(1020, 220, 176, 440, "RGB565_BE_90", "photo_full", "Photo full screen (alt rotated)"),
     1023: ArtworkFormat(1023, 176, 132, 352, "RGB565_BE", "photo_full", "Nano full screen"),
     1024: ArtworkFormat(1024, 320, 240, 640, "RGB565_LE", "photo_full", "320x240 photo full screen"),
     1027: ArtworkFormat(1027, 100, 100, 200, "RGB565_LE", "cover_large", "Nano album art large"),
-    1028: ArtworkFormat(1028, 100, 100, 200, "RGB565_LE", "cover_small", "Video album art small"),
-    1029: ArtworkFormat(1029, 200, 200, 400, "RGB565_LE", "cover_large", "Video album art large"),
+    1028: ArtworkFormat(1028, 100, 100, 200, "RGB565_LE", "cover_small", "iPod 5G album art small"),
+    1029: ArtworkFormat(1029, 200, 200, 400, "RGB565_LE", "cover_large", "iPod 5G album art large"),
     1031: ArtworkFormat(1031, 42, 42, 84, "RGB565_LE", "cover_small", "Nano album art small"),
     1032: ArtworkFormat(1032, 42, 37, 84, "RGB565_LE", "photo_list", "Nano list thumbnail"),
     1036: ArtworkFormat(1036, 50, 41, 100, "RGB565_LE", "photo_list", "Video list thumbnail"),

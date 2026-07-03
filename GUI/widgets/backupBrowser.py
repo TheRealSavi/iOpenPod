@@ -56,6 +56,8 @@ from ..styles import (
     btn_css,
     danger_btn_css,
     make_scroll_area,
+    panel_css,
+    progress_bar_css,
 )
 from .browserChrome import chrome_action_btn_css
 from .formatters import format_size
@@ -343,12 +345,11 @@ class BackupBrowserWidget(QWidget):
         self._sidebar = QFrame()
         self._sidebar.setObjectName("backupSidebar")
         self._sidebar.setFixedWidth(Metrics.SIDEBAR_WIDTH)
-        self._sidebar.setStyleSheet(f"""
-            QFrame#backupSidebar {{
-                background: {Colors.SURFACE};
-                border-right: 1px solid {Colors.BORDER_SUBTLE};
-            }}
-        """)
+        self._sidebar.setStyleSheet(panel_css(
+            "backupSidebar",
+            border=f"0px solid transparent; border-right: 1px solid {Colors.BORDER_SUBTLE}",
+            radius=0,
+        ))
         sidebar_layout = QVBoxLayout(self._sidebar)
         sidebar_layout.setContentsMargins((12), (14), (12), (12))
         sidebar_layout.setSpacing(8)
@@ -395,12 +396,12 @@ class BackupBrowserWidget(QWidget):
 
         self._device_hero = QFrame()
         self._device_hero.setObjectName("backupDeviceHero")
-        self._device_hero.setStyleSheet(f"""
-            QFrame#backupDeviceHero {{
-                background: {Colors.BG_DARK};
-                border-bottom: 1px solid {Colors.BORDER_SUBTLE};
-            }}
-        """)
+        self._device_hero.setStyleSheet(panel_css(
+            "backupDeviceHero",
+            bg=Colors.BG_DARK,
+            border=f"0px solid transparent; border-bottom: 1px solid {Colors.BORDER_SUBTLE}",
+            radius=0,
+        ))
         hero_layout = QHBoxLayout(self._device_hero)
         hero_layout.setContentsMargins((24), (18), (24), (18))
         hero_layout.setSpacing(18)
@@ -503,18 +504,7 @@ class BackupBrowserWidget(QWidget):
         self._progress_bar = QProgressBar()
         self._progress_bar.setFixedHeight(8)
         self._progress_bar.setTextVisible(False)
-        self._progress_bar.setStyleSheet(f"""
-            QProgressBar {{
-                background-color: {Colors.SURFACE_ALT};
-                border: none;
-                border-radius: {(4)}px;
-            }}
-            QProgressBar::chunk {{
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 {Colors.ACCENT}, stop:1 {Colors.ACCENT_LIGHT});
-                border-radius: {(4)}px;
-            }}
-        """)
+        self._progress_bar.setStyleSheet(progress_bar_css())
         prog_layout.addWidget(self._progress_bar)
 
         self._progress_file = QLabel("")

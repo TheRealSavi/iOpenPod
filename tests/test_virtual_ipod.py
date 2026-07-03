@@ -26,7 +26,7 @@ def test_create_virtual_ipod_seeds_identity_and_layout(tmp_path) -> None:
     payload = json.loads((tmp_path / "iPodInfo.json").read_text())
     assert payload["model_number"] == "MC297"
     assert payload["model_family"] == "iPod Classic"
-    assert payload["generation"] == "3rd Gen"
+    assert payload["generation"] == "7th Gen"
     assert payload["serial"].endswith(payload["serial_suffix"])
 
     assert device.model_number == "MC297"

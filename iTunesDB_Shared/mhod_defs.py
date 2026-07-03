@@ -434,7 +434,7 @@ SPL_FIELD_MAP = {
     0x52: "Sort Composer",
     0x53: "Sort TV Show",
     0x5A: "Album Rating",
-    # iPod Video 5.5G "Every Rule" sample, entered alphabetically in iTunes.
+    # iPod 5.5G "Every Rule" sample, entered alphabetically in iTunes.
     # These extend beyond libgpod's public SPL field enum.
     0x59: "Video Rating",
     0x85: "Location",
@@ -560,7 +560,7 @@ SPL_FIELD_TYPE_MAP = {
 # Smart playlist fields whose values are chosen from an iTunes menu instead of
 # typed freely. These still use the normal SLst numeric payload; the tables here
 # only describe the UI/formatting surface. Values marked below are based on the
-# iPod Video 5.5G "Every Rule" sample and existing iOpenPod media constants,
+# iPod 5.5G "Every Rule" sample and existing iOpenPod media constants,
 # not a complete Apple specification.
 SPL_CHOICE_FIELD_IDS = frozenset({0x28, 0x3C, 0x85, 0x86, 0x9A, 0x9C})
 

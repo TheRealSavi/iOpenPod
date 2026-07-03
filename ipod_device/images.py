@@ -5,36 +5,37 @@ icons stored in assets/ipod_images/.  Also maps each icon to an (R,G,B)
 accent color for the "Match iPod" theme setting.
 """
 
-from .models import IPOD_MODELS
+from .models import IPOD_MODELS, canonicalize_model_identity
 
 # Key: (model_family_lower, generation_lower, color_lower) → filename
 COLOR_MAP: dict[tuple[str, str, str], str] = {
-    # ── iPod (1G–4G) ────────────────────────────────────────
+    # ── iPod (1G–4G mono) ───────────────────────────────────
     ("ipod", "1st gen", "white"): "iPod1.png",
     ("ipod", "2nd gen", "white"): "iPod1.png",
     ("ipod", "3rd gen", "white"): "iPod2.png",
-    ("ipod", "4th gen", "white"): "iPod4-White.png",
-    ("ipod u2", "4th gen", "black"): "iPod4-BlackRed.png",
+    ("ipod", "4th gen (mono)", "white"): "iPod4-White.png",
+    ("ipod", "4th gen (mono)", "u2"): "iPod4-BlackRed.png",
 
-    # ── iPod Photo / iPod with Color Display (4th gen)──────
-    ("ipod photo", "4th gen", "white"): "iPod5-White.png",
-    ("ipod photo u2", "4th gen", "black"): "iPod5-BlackRed.png",
+    # ── iPod 4G photo/color ─────────────────────────────────
+    ("ipod", "4th gen (photo)", "white"): "iPod5-White.png",
+    ("ipod", "4th gen (color)", "white"): "iPod5-White.png",
+    ("ipod", "4th gen (color)", "u2"): "iPod5-BlackRed.png",
 
-    # ── iPod with Video (5th Gen / 5.5th Gen) ────────────
-    ("ipod video", "5th gen", "white"): "iPod6-White.png",
-    ("ipod video", "5th gen", "black"): "iPod6-Black.png",
-    ("ipod video", "5.5th gen", "white"): "iPod6-White.png",
-    ("ipod video", "5.5th gen", "black"): "iPod6-Black.png",
-    ("ipod video u2", "5th gen", "black"): "iPod6-BlackRed.png",
-    ("ipod video u2", "5.5th gen", "black"): "iPod6-BlackRed.png",
+    # ── iPod 5th Gen / 5.5th Gen ───────────────────────────
+    ("ipod", "5th gen", "white"): "iPod6-White.png",
+    ("ipod", "5th gen", "black"): "iPod6-Black.png",
+    ("ipod", "5th gen", "u2"): "iPod6-BlackRed.png",
+    ("ipod", "5.5th gen", "white"): "iPod6-White.png",
+    ("ipod", "5.5th gen", "black"): "iPod6-Black.png",
+    ("ipod", "5.5th gen", "u2"): "iPod6-BlackRed.png",
 
-    # ── iPod Classic (1st–3rd Gen) ───────────────────────
-    ("ipod classic", "1st gen", "silver"): "iPod11-Silver.png",
-    ("ipod classic", "1st gen", "black"): "iPod11-Black.png",
-    ("ipod classic", "2nd gen", "silver"): "iPod11-Silver.png",
-    ("ipod classic", "2nd gen", "black"): "iPod11B-Black.png",
-    ("ipod classic", "3rd gen", "silver"): "iPod11-Silver.png",
-    ("ipod classic", "3rd gen", "black"): "iPod11B-Black.png",
+    # ── iPod Classic (6th–7th Gen) ─────────────────────────
+    ("ipod classic", "6th gen", "silver"): "iPod11-Silver.png",
+    ("ipod classic", "6th gen", "black"): "iPod11-Black.png",
+    ("ipod classic", "6.5th gen", "silver"): "iPod11-Silver.png",
+    ("ipod classic", "6.5th gen", "black"): "iPod11B-Black.png",
+    ("ipod classic", "7th gen", "silver"): "iPod11-Silver.png",
+    ("ipod classic", "7th gen", "black"): "iPod11B-Black.png",
 
     # ── iPod Mini 1st Gen ────────────
     ("ipod mini", "1st gen", "silver"): "iPod3-Silver.png",
@@ -195,11 +196,6 @@ MODEL_IMAGE: dict[str, str] = {
 
 FAMILY_FALLBACK: dict[str, str] = {
     "ipod": "iPod4-White.png",
-    "ipod u2": "iPod4-BlackRed.png",
-    "ipod photo": "iPod5-White.png",
-    "ipod photo u2": "iPod5-BlackRed.png",
-    "ipod video": "iPod6-White.png",
-    "ipod video u2": "iPod6-BlackRed.png",
     "ipod classic": "iPod11-Silver.png",
     "ipod mini": "iPod3-Silver.png",
     "ipod nano": "iPod15-Silver.png",
@@ -218,7 +214,7 @@ _SILVER = (223, 224, 223)
 _GRAY = (44, 44, 49)
 
 IMAGE_COLORS: dict[str, tuple[int, int, int]] = {
-    # ── iPod (original / Photo / Video / Classic) ─────────────────────
+    # ── iPod full-size / Classic ──────────────────────────────────────
     "ipod1": _SILVER,
     "ipod2": _SILVER,
     "ipod4-white": _SILVER,
@@ -378,6 +374,11 @@ def resolve_image_filename(
     3. Family-level fallback
     4. ``iPodGeneric.png``
     """
+    family, generation, color = canonicalize_model_identity(
+        family,
+        generation,
+        color=color,
+    )
     fam = family.lower()
     gen = generation.lower()
     col = color.lower().strip()

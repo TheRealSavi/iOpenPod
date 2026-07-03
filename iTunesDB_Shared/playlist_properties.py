@@ -2,7 +2,7 @@
 
 Classic iTunesDB playlist rows can carry playlist description in two places:
 
-- MHOD type 55: an Apple binary plist. The iPod video 5.5G sample only shows
+- MHOD type 55: an Apple binary plist. The iPod 5.5G sample only shows
   a ``description`` key, but the plist is preserved whole for future keys.
 - MHOD type 3: the same text duplicated as a string child. Type 3 is "Album"
   for tracks, so this fallback is only valid while handling playlist rows.

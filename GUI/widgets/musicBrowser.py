@@ -415,13 +415,21 @@ class MusicBrowser(QFrame):
 
         # Update title bar with album color
         self.trackListTitleBar.setTitle(title)
-        dominant_color = item_data.get("display_dominant_color") or item_data.get("dominant_color")
+        display_dominant_color = item_data.get("display_dominant_color")
+        dominant_color = display_dominant_color or item_data.get("dominant_color")
         if dominant_color:
             r, g, b = dominant_color
             album_colors = item_data.get("display_album_colors") or item_data.get("album_colors", {})
             text = album_colors.get("text")
             text_sec = album_colors.get("text_secondary")
-            self.trackListTitleBar.setColor(r, g, b, text=text, text_secondary=text_sec)
+            self.trackListTitleBar.setColor(
+                r,
+                g,
+                b,
+                text=text,
+                text_secondary=text_sec,
+                contrast_ensured=display_dominant_color is not None,
+            )
         else:
             self.trackListTitleBar.resetColor()
 

@@ -445,7 +445,7 @@ def write_mhbd(
     #
     # Default order matches libgpod: Type 1, 3, 2, 4, 8, 6, 10, 5
     #   - Type 3 MUST appear between types 1 and 2 for podcast support
-    #   - Type 1 MUST be first — older iPod firmware (Video 5G, Nano 1G-2G)
+    #   - Type 1 MUST be first — older iPod firmware (iPod 5G, Nano 1G-2G)
     #     may assume dataset[0] is the track list.
     #   - Types 8, 6, 10 come between albums (4) and smart playlists (5).
     #

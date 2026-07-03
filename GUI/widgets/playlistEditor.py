@@ -78,9 +78,16 @@ from ..styles import (
     Colors,
     Metrics,
     accent_btn_css,
-    btn_css,
+    button_css,
+    checkbox_css,
+    combo_css,
+    danger_btn_css,
+    input_css,
     make_scroll_area,
     make_separator,
+    panel_css,
+    spin_css,
+    title_input_css,
 )
 
 log = logging.getLogger(__name__)
@@ -281,105 +288,19 @@ def _int_raw_value(field_id: int, display_value: int, *, upper_bound: bool = Fal
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _combo_css() -> str:
-    return f"""
-    QComboBox {{
-        background: {Colors.SURFACE_RAISED};
-        border: 1px solid {Colors.BORDER_SUBTLE};
-        border-radius: {Metrics.BORDER_RADIUS_SM}px;
-        color: {Colors.TEXT_PRIMARY};
-        padding: {(4)}px {(8)}px;
-        font-family: {FONT_FAMILY};
-        font-size: {Metrics.FONT_LG}px;
-        min-height: {(22)}px;
-    }}
-    QComboBox:hover {{
-        border-color: {Colors.ACCENT};
-    }}
-    QComboBox::drop-down {{
-        border: none;
-        width: 0;
-    }}
-    QComboBox::down-arrow {{
-        image: none;
-        width: 0; height: 0;
-    }}
-    QComboBox QAbstractItemView {{
-        background: {Colors.DROPDOWN_BG};
-        border: 1px solid {Colors.BORDER};
-        color: {Colors.TEXT_PRIMARY};
-        selection-background-color: {Colors.ACCENT};
-        selection-color: {Colors.TEXT_ON_ACCENT};
-        padding: {(2)}px;
-    }}
-"""
+    return combo_css(padding="4px 8px", min_height=22, font_size=Metrics.FONT_LG)
 
 
 def _input_css() -> str:
-    return f"""
-    QLineEdit {{
-        background: {Colors.SURFACE_RAISED};
-        border: 1px solid {Colors.BORDER_SUBTLE};
-        border-radius: {Metrics.BORDER_RADIUS_SM}px;
-        color: {Colors.TEXT_PRIMARY};
-        padding: {(4)}px {(8)}px;
-        font-family: {FONT_FAMILY};
-        font-size: {Metrics.FONT_LG}px;
-        min-height: {(22)}px;
-    }}
-    QLineEdit:hover {{
-        border-color: {Colors.ACCENT};
-    }}
-    QLineEdit:focus {{
-        border-color: {Colors.ACCENT};
-    }}
-"""
+    return input_css(padding="4px 8px", min_height=22, font_size=Metrics.FONT_LG)
 
 
 def _spinbox_css() -> str:
-    return f"""
-    QSpinBox {{
-        background: {Colors.SURFACE_RAISED};
-        border: 1px solid {Colors.BORDER_SUBTLE};
-        border-radius: {Metrics.BORDER_RADIUS_SM}px;
-        color: {Colors.TEXT_PRIMARY};
-        padding: {(4)}px {(8)}px;
-        font-family: {FONT_FAMILY};
-        font-size: {Metrics.FONT_LG}px;
-        min-height: {(22)}px;
-    }}
-    QSpinBox:hover {{
-        border-color: {Colors.ACCENT};
-    }}
-    QSpinBox::up-button, QSpinBox::down-button {{
-        width: 0;
-        border: none;
-    }}
-"""
+    return spin_css(padding="4px 8px", min_height=22, font_size=Metrics.FONT_LG)
 
 
 def _checkbox_css() -> str:
-    return f"""
-    QCheckBox {{
-        color: {Colors.TEXT_PRIMARY};
-        font-family: {FONT_FAMILY};
-        font-size: {Metrics.FONT_LG}px;
-        spacing: {(6)}px;
-    }}
-    QCheckBox::indicator {{
-        width: {(16)}px;
-        height: {(16)}px;
-        border: 1px solid {Colors.BORDER_SUBTLE};
-        border-radius: {(3)}px;
-        background: {Colors.SURFACE_RAISED};
-    }}
-    QCheckBox::indicator:hover {{
-        border-color: {Colors.ACCENT};
-    }}
-    QCheckBox::indicator:checked {{
-        background: {Colors.ACCENT};
-        border-color: {Colors.ACCENT};
-    }}
-"""
+    return checkbox_css(Metrics.FONT_LG)
 
 
 def _label_css(color: str) -> str:
@@ -394,44 +315,24 @@ def _subtle_label_css(color: str = Colors.TEXT_TERTIARY) -> str:
 
 
 def _title_input_css() -> str:
-    return f"""
-    QLineEdit {{
-        background: transparent;
-        border: none;
-        border-bottom: 1px solid {Colors.BORDER_SUBTLE};
-        color: {Colors.TEXT_PRIMARY};
-        padding: 0 0 2px 0;
-        font-family: {FONT_FAMILY};
-        font-size: {Metrics.FONT_PAGE_TITLE}px;
-        font-weight: 700;
-    }}
-    QLineEdit:hover {{
-        border-bottom-color: {Colors.BORDER};
-    }}
-    QLineEdit:focus {{
-        border-bottom-color: {Colors.ACCENT};
-    }}
-"""
+    return title_input_css()
 
 
 def _editor_panel_css(object_name: str) -> str:
-    return f"""
-    QFrame#{object_name} {{
-        background: {Colors.SURFACE_ALT};
-        border: 1px solid {Colors.BORDER_SUBTLE};
-        border-radius: {Metrics.BORDER_RADIUS_SM}px;
-    }}
-"""
+    return panel_css(
+        object_name,
+        bg=Colors.SURFACE_ALT,
+        radius=Metrics.BORDER_RADIUS_SM,
+    )
 
 
 def _editor_notice_css(object_name: str) -> str:
-    return f"""
-    QFrame#{object_name} {{
-        background: {Colors.ACCENT_MUTED};
-        border: 1px solid {Colors.ACCENT_BORDER};
-        border-radius: {Metrics.BORDER_RADIUS_SM}px;
-    }}
-"""
+    return panel_css(
+        object_name,
+        bg=Colors.ACCENT_MUTED,
+        border=f"1px solid {Colors.ACCENT_BORDER}",
+        radius=Metrics.BORDER_RADIUS_SM,
+    )
 
 
 def _section_header(text: str) -> QWidget:
@@ -457,14 +358,7 @@ def _section_label_style() -> str:
 
 
 def _remove_btn_css() -> str:
-    return btn_css(
-        bg=Colors.DANGER_DIM,
-        bg_hover=Colors.DANGER_HOVER,
-        bg_press=Colors.DANGER_DIM,
-        fg=Colors.DANGER,
-        radius=Metrics.BORDER_RADIUS_SM,
-        padding=f"{(2)}px {(6)}px",
-    )
+    return danger_btn_css("sm")
 
 
 class _RuleComboBox(QComboBox):
@@ -995,13 +889,10 @@ class SmartPlaylistEditor(QFrame):
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setObjectName("smartPlaylistEditor")
-        self.setStyleSheet(f"""
-            QFrame#smartPlaylistEditor {{
-                background: {Colors.SURFACE};
-                border: 1px solid {Colors.BORDER_SUBTLE};
-                border-radius: {Metrics.BORDER_RADIUS_LG}px;
-            }}
-        """)
+        self.setStyleSheet(panel_css(
+            "smartPlaylistEditor",
+            radius=Metrics.BORDER_RADIUS_LG,
+        ))
 
         self._editing_playlist: dict | None = None  # None → new playlist
         self._playlist_options: list[tuple[int, str]] = []
@@ -1055,14 +946,7 @@ class SmartPlaylistEditor(QFrame):
         self.cancel_btn = QPushButton("Cancel")
         self.cancel_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.cancel_btn.setStyleSheet(btn_css(
-            bg="transparent",
-            bg_hover=Colors.SURFACE_HOVER,
-            bg_press=Colors.SURFACE_ACTIVE,
-            fg=Colors.TEXT_SECONDARY,
-            border=f"1px solid {Colors.BORDER}",
-            padding="3px 12px",
-        ))
+        self.cancel_btn.setStyleSheet(button_css("secondary", "sm"))
         self.cancel_btn.clicked.connect(self.cancelled.emit)
         btn_row.addWidget(self.cancel_btn)
 
@@ -1117,18 +1001,11 @@ class SmartPlaylistEditor(QFrame):
         self.add_rule_btn = QPushButton("Add Rule")
         self.add_rule_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.add_rule_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        _add_ic = glyph_icon("plus", 14, Colors.ACCENT)
+        _add_ic = glyph_icon("plus", 14, Colors.TEXT_SECONDARY)
         if _add_ic:
             self.add_rule_btn.setIcon(_add_ic)
             self.add_rule_btn.setIconSize(QSize(14, 14))
-        self.add_rule_btn.setStyleSheet(btn_css(
-            bg="transparent",
-            bg_hover=Colors.SURFACE_HOVER,
-            bg_press=Colors.SURFACE_ACTIVE,
-            fg=Colors.ACCENT,
-            border=f"1px solid {Colors.ACCENT_BORDER}",
-            padding="3px 12px",
-        ))
+        self.add_rule_btn.setStyleSheet(button_css("quiet", "sm"))
         self.add_rule_btn.clicked.connect(self._add_empty_rule)
         conj_row.addWidget(self.add_rule_btn, 0, Qt.AlignmentFlag.AlignRight)
         rules_panel_layout.addLayout(conj_row)
@@ -1448,13 +1325,10 @@ class RegularPlaylistEditor(QFrame):
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setObjectName("regularPlaylistEditor")
-        self.setStyleSheet(f"""
-            QFrame#regularPlaylistEditor {{
-                background: {Colors.SURFACE};
-                border: 1px solid {Colors.BORDER_SUBTLE};
-                border-radius: {Metrics.BORDER_RADIUS_LG}px;
-            }}
-        """)
+        self.setStyleSheet(panel_css(
+            "regularPlaylistEditor",
+            radius=Metrics.BORDER_RADIUS_LG,
+        ))
 
         self._editing_playlist: dict | None = None  # None → new playlist
 
@@ -1507,14 +1381,7 @@ class RegularPlaylistEditor(QFrame):
         self.cancel_btn = QPushButton("Cancel")
         self.cancel_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.cancel_btn.setStyleSheet(btn_css(
-            bg="transparent",
-            bg_hover=Colors.SURFACE_HOVER,
-            bg_press=Colors.SURFACE_ACTIVE,
-            fg=Colors.TEXT_SECONDARY,
-            border=f"1px solid {Colors.BORDER}",
-            padding="3px 12px",
-        ))
+        self.cancel_btn.setStyleSheet(button_css("secondary", "sm"))
         self.cancel_btn.clicked.connect(self.cancelled.emit)
         btn_row.addWidget(self.cancel_btn)
 
@@ -1700,13 +1567,7 @@ class NewPlaylistDialog(QDialog):
         self.regular_btn = QPushButton("Regular")
         self.regular_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
         self.regular_btn.setMinimumHeight(44)
-        self.regular_btn.setStyleSheet(btn_css(
-            bg=Colors.SURFACE_RAISED,
-            bg_hover=Colors.SURFACE_HOVER,
-            bg_press=Colors.SURFACE_ACTIVE,
-            border=f"1px solid {Colors.BORDER_SUBTLE}",
-            padding=f"{(10)}px {(20)}px",
-        ))
+        self.regular_btn.setStyleSheet(button_css("secondary", "lg"))
         _ic = glyph_icon(_ICON_REGULAR, (20), Colors.TEXT_SECONDARY)
         if _ic:
             self.regular_btn.setIcon(_ic)
@@ -1718,14 +1579,7 @@ class NewPlaylistDialog(QDialog):
         self.smart_btn = QPushButton("Smart")
         self.smart_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
         self.smart_btn.setMinimumHeight(44)
-        self.smart_btn.setStyleSheet(btn_css(
-            bg=Colors.ACCENT_DIM,
-            bg_hover=Colors.ACCENT_HOVER,
-            bg_press=Colors.ACCENT_PRESS,
-            fg=Colors.TEXT_ON_ACCENT,
-            border=f"1px solid {Colors.ACCENT_BORDER}",
-            padding=f"{(10)}px {(20)}px",
-        ))
+        self.smart_btn.setStyleSheet(accent_btn_css("lg"))
         _ic = glyph_icon(_ICON_SMART, (20), Colors.TEXT_ON_ACCENT)
         if _ic:
             self.smart_btn.setIcon(_ic)

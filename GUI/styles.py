@@ -884,6 +884,28 @@ class Metrics:
             setattr(cls, attr, max(6, round(base * factor)))
 
 
+class Design:
+    """iOpenPod design language primitives.
+
+    Desktop-HIG baseline: restrained hierarchy, predictable control sizes,
+    visible affordances, consistent state changes, and 4px-grid spacing.
+    """
+
+    GRID = 4
+
+    CONTROL_RADIUS = 6
+    PANEL_RADIUS = 8
+    CHIP_RADIUS = 999
+
+    CONTROL_HEIGHT_SM = 28
+    CONTROL_HEIGHT_MD = 32
+    CONTROL_HEIGHT_LG = 36
+    ICON_BUTTON_SIZE = 28
+
+    BUTTON_WEIGHT = 500
+    BUTTON_WEIGHT_STRONG = 600
+
+
 # ── Custom proxy style for scrollbar painting ───────────────────────────────
 
 class DarkScrollbarStyle(QProxyStyle):
@@ -1201,6 +1223,27 @@ def scrollbar_corner_css() -> str:
     """
 
 
+def _button_size_tokens(size: str) -> tuple[int, int, str]:
+    """Return (min-height, font-size, padding) for a design-system button."""
+    if size == "sm":
+        return (
+            Design.CONTROL_HEIGHT_SM,
+            Metrics.FONT_SM,
+            f"0px {Design.GRID * 3}px",
+        )
+    if size == "lg":
+        return (
+            Design.CONTROL_HEIGHT_LG,
+            Metrics.FONT_LG,
+            f"0px {Design.GRID * 5}px",
+        )
+    return (
+        Design.CONTROL_HEIGHT_MD,
+        Metrics.FONT_MD,
+        f"0px {Design.GRID * 4}px",
+    )
+
+
 def btn_css(
     bg: str | None = None,
     bg_hover: str | None = None,
@@ -1212,6 +1255,10 @@ def btn_css(
     bg_disabled: str | None = None,
     fg_disabled: str | None = None,
     extra: str = "",
+    min_height: int | None = None,
+    min_width: int | None = None,
+    font_size: int | None = None,
+    font_weight: int | str | None = None,
 ) -> str:
     """Standard button stylesheet."""
     if bg is None:
@@ -1228,13 +1275,22 @@ def btn_css(
         padding = f"{Metrics.BTN_PADDING_V}px {Metrics.BTN_PADDING_H}px"
     _d_bg = bg_disabled if bg_disabled is not None else Colors.SURFACE
     _d_fg = fg_disabled if fg_disabled is not None else Colors.TEXT_DISABLED
+    min_height_rule = f"min-height: {min_height}px;" if min_height is not None else ""
+    min_width_rule = f"min-width: {min_width}px;" if min_width is not None else ""
+    font_size_rule = f"font-size: {font_size}px;" if font_size is not None else ""
+    font_weight_rule = f"font-weight: {font_weight};" if font_weight is not None else ""
     return f"""
         QPushButton {{
             background: {bg};
             border: {border};
             border-radius: {radius}px;
             color: {fg};
+            font-family: {_CSS_FONT_STACK};
+            {font_size_rule}
+            {font_weight_rule}
             padding: {padding};
+            {min_height_rule}
+            {min_width_rule}
             {extra}
         }}
         QPushButton:hover {{
@@ -1251,31 +1307,161 @@ def btn_css(
     """
 
 
-def accent_btn_css() -> str:
-    """Primary action button (blue accent)."""
+def button_css(role: str = "secondary", size: str = "md", *, extra: str = "") -> str:
+    """Design-system button stylesheet.
+
+    Roles:
+    - ``primary``: one main action per surface.
+    - ``secondary``: normal command button.
+    - ``quiet``: low-emphasis command.
+    - ``danger``: destructive command.
+    """
+    height, font_size, padding = _button_size_tokens(size)
+    radius = Design.CONTROL_RADIUS
+
+    if role == "primary":
+        return btn_css(
+            bg=Colors.ACCENT,
+            bg_hover=Colors.ACCENT_LIGHT,
+            bg_press=Colors.ACCENT_SOLID_PRESS,
+            fg=Colors.TEXT_ON_ACCENT,
+            border="none",
+            radius=radius,
+            padding=padding,
+            bg_disabled=Colors.SURFACE,
+            fg_disabled=Colors.TEXT_DISABLED,
+            min_height=height,
+            font_size=font_size,
+            font_weight=Design.BUTTON_WEIGHT_STRONG,
+            extra=extra,
+        )
+    if role == "quiet":
+        return btn_css(
+            bg="transparent",
+            bg_hover=Colors.SURFACE_HOVER,
+            bg_press=Colors.SURFACE_ACTIVE,
+            fg=Colors.TEXT_SECONDARY,
+            border="1px solid transparent",
+            radius=radius,
+            padding=padding,
+            bg_disabled="transparent",
+            fg_disabled=Colors.TEXT_DISABLED,
+            min_height=height,
+            font_size=font_size,
+            font_weight=Design.BUTTON_WEIGHT,
+            extra=extra,
+        )
+    if role == "danger":
+        return btn_css(
+            bg="transparent",
+            bg_hover=Colors.DANGER_DIM,
+            bg_press=Colors.DANGER_HOVER,
+            fg=Colors.DANGER,
+            border=f"1px solid {Colors.DANGER_BORDER}",
+            radius=radius,
+            padding=padding,
+            bg_disabled=Colors.SURFACE,
+            fg_disabled=Colors.TEXT_DISABLED,
+            min_height=height,
+            font_size=font_size,
+            font_weight=Design.BUTTON_WEIGHT,
+            extra=extra,
+        )
+
     return btn_css(
-        bg=Colors.ACCENT_DIM,
-        bg_hover=Colors.ACCENT_HOVER,
-        bg_press=Colors.ACCENT_PRESS,
-        fg=Colors.TEXT_ON_ACCENT,
-        border=f"1px solid {Colors.ACCENT_BORDER}",
-        padding=f"{Metrics.BTN_PADDING_V + 1}px {Metrics.BTN_PADDING_H + 2}px",
+        bg=Colors.SURFACE_RAISED,
+        bg_hover=Colors.SURFACE_HOVER,
+        bg_press=Colors.SURFACE_ACTIVE,
+        fg=Colors.TEXT_PRIMARY,
+        border=f"1px solid {Colors.BORDER}",
+        radius=radius,
+        padding=padding,
         bg_disabled=Colors.SURFACE,
         fg_disabled=Colors.TEXT_DISABLED,
+        min_height=height,
+        font_size=font_size,
+        font_weight=Design.BUTTON_WEIGHT,
+        extra=extra,
     )
 
 
-def danger_btn_css() -> str:
+def accent_btn_css(size: str = "md") -> str:
+    """Primary action button."""
+    return button_css("primary", size)
+
+
+def danger_btn_css(size: str = "md") -> str:
     """Destructive action button (red)."""
+    return button_css("danger", size)
+
+
+def icon_btn_css(
+    size: int | None = None,
+    *,
+    bg: str = "transparent",
+    bg_hover: str | None = None,
+    bg_press: str | None = None,
+    fg: str | None = None,
+    radius: int | None = None,
+) -> str:
+    """Square icon/symbol button with stable hit target."""
+    if size is None:
+        size = Design.ICON_BUTTON_SIZE
+    if bg_hover is None:
+        bg_hover = Colors.SURFACE_HOVER
+    if bg_press is None:
+        bg_press = Colors.SURFACE_ACTIVE
+    if fg is None:
+        fg = Colors.TEXT_SECONDARY
+    if radius is None:
+        radius = Design.CONTROL_RADIUS
     return btn_css(
-        bg="transparent",
-        bg_hover=Colors.DANGER_DIM,
-        bg_press=Colors.DANGER_HOVER,
-        fg=Colors.DANGER,
-        border=f"1px solid {Colors.DANGER_BORDER}",
-        bg_disabled=Colors.SURFACE,
+        bg=bg,
+        bg_hover=bg_hover,
+        bg_press=bg_press,
+        fg=fg,
+        border="none",
+        radius=radius,
+        padding="0px",
+        bg_disabled="transparent",
         fg_disabled=Colors.TEXT_DISABLED,
+        font_size=Metrics.FONT_MD,
+        font_weight=Design.BUTTON_WEIGHT,
+        extra=(
+            f"min-width: {size}px; max-width: {size}px; "
+            f"min-height: {size}px; max-height: {size}px;"
+        ),
     )
+
+
+def chip_btn_css(size: str = "sm", *, checked_accent: bool = True) -> str:
+    """Selectable pill/chip button used for filters, IDs, and segmented bits."""
+    height, font_size, padding = _button_size_tokens(size)
+    checked_bg = Colors.ACCENT_MUTED if checked_accent else Colors.SURFACE_ACTIVE
+    checked_border = Colors.ACCENT_BORDER
+    return btn_css(
+        bg=Colors.SURFACE_RAISED,
+        bg_hover=Colors.SURFACE_HOVER,
+        bg_press=Colors.SURFACE_ACTIVE,
+        fg=Colors.TEXT_SECONDARY,
+        border=f"1px solid {Colors.BORDER_SUBTLE}",
+        radius=Design.CHIP_RADIUS,
+        padding=padding,
+        min_height=height,
+        font_size=font_size,
+        font_weight=Design.BUTTON_WEIGHT,
+    ) + f"""
+        QPushButton:hover {{
+            color: {Colors.TEXT_PRIMARY};
+            border-color: {Colors.BORDER};
+        }}
+        QPushButton:checked {{
+            background: {checked_bg};
+            color: {Colors.TEXT_PRIMARY};
+            border-color: {checked_border};
+            font-weight: {Design.BUTTON_WEIGHT_STRONG};
+        }}
+    """
 
 
 def back_btn_css() -> str:
@@ -1291,19 +1477,33 @@ def back_btn_css() -> str:
     )
 
 
-def input_css(radius: int | None = None, padding: str | None = None) -> str:
+def input_css(
+    radius: int | None = None,
+    padding: str | None = None,
+    *,
+    min_height: int | None = None,
+    font_size: int | None = None,
+    font_weight: int | str | None = None,
+) -> str:
     """Standard input field stylesheet for QLineEdit / QTextEdit."""
     if radius is None:
         radius = Metrics.BORDER_RADIUS_SM
     if padding is None:
         padding = f"5px {Metrics.BTN_PADDING_H - 2}px"
+    min_height_rule = f"min-height: {min_height}px;" if min_height is not None else ""
+    font_size_rule = f"font-size: {font_size}px;" if font_size is not None else ""
+    font_weight_rule = f"font-weight: {font_weight};" if font_weight is not None else ""
     return f"""
         QLineEdit, QTextEdit, QPlainTextEdit {{
             background: {Colors.SURFACE_ALT};
             border: 1px solid {Colors.BORDER};
             border-radius: {radius}px;
             color: {Colors.TEXT_PRIMARY};
+            font-family: {_CSS_FONT_STACK};
+            {font_size_rule}
+            {font_weight_rule}
             padding: {padding};
+            {min_height_rule}
         }}
         QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus {{
             border: 1px solid {Colors.BORDER_FOCUS};
@@ -1317,35 +1517,49 @@ def input_css(radius: int | None = None, padding: str | None = None) -> str:
     """
 
 
-def combo_css(radius: int | None = None, padding: str | None = None) -> str:
+def combo_css(
+    radius: int | None = None,
+    padding: str | None = None,
+    *,
+    min_height: int | None = None,
+    font_size: int | None = None,
+    font_weight: int | str | None = None,
+) -> str:
     """Standard combo box stylesheet for QComboBox."""
     if radius is None:
         radius = Metrics.BORDER_RADIUS_SM
     if padding is None:
         padding = f"5px {(10)}px"
+    min_height_rule = f"min-height: {min_height}px;" if min_height is not None else ""
+    font_size_rule = f"font-size: {font_size}px;" if font_size is not None else ""
+    font_weight_rule = f"font-weight: {font_weight};" if font_weight is not None else ""
     return f"""
-        QComboBox {{
+        QComboBox, QDateEdit {{
             background: {Colors.SURFACE_RAISED};
             border: 1px solid {Colors.BORDER};
             border-radius: {radius}px;
             color: {Colors.TEXT_PRIMARY};
+            font-family: {_CSS_FONT_STACK};
+            {font_size_rule}
+            {font_weight_rule}
             padding: {padding};
+            {min_height_rule}
         }}
-        QComboBox:hover {{
+        QComboBox:hover, QDateEdit:hover {{
             border: 1px solid {Colors.BORDER_FOCUS};
         }}
-        QComboBox:focus {{
+        QComboBox:focus, QDateEdit:focus {{
             border: 1px solid {Colors.BORDER_FOCUS};
         }}
-        QComboBox::drop-down {{
+        QComboBox::drop-down, QDateEdit::drop-down {{
             border: none;
             width: {(22)}px;
         }}
-        QComboBox::down-arrow {{
+        QComboBox::down-arrow, QDateEdit::down-arrow {{
             image: none;
             border: none;
         }}
-        QComboBox QAbstractItemView {{
+        QComboBox QAbstractItemView, QDateEdit QAbstractItemView {{
             background: {Colors.DROPDOWN_BG};
             color: {Colors.TEXT_PRIMARY};
             selection-background-color: {Colors.ACCENT_DIM};
@@ -1355,10 +1569,115 @@ def combo_css(radius: int | None = None, padding: str | None = None) -> str:
             padding: 2px;
             outline: none;
         }}
-        QComboBox:disabled {{
+        QComboBox:disabled, QDateEdit:disabled {{
             background: {Colors.SURFACE};
             color: {Colors.TEXT_DISABLED};
             border-color: {Colors.BORDER_SUBTLE};
+        }}
+    """
+
+
+def spin_css(
+    radius: int | None = None,
+    padding: str | None = None,
+    *,
+    min_height: int | None = None,
+    font_size: int | None = None,
+) -> str:
+    """Standard spin box stylesheet."""
+    if radius is None:
+        radius = Metrics.BORDER_RADIUS_SM
+    if padding is None:
+        padding = "4px 6px"
+    min_height_rule = f"min-height: {min_height}px;" if min_height is not None else ""
+    font_size_rule = f"font-size: {font_size}px;" if font_size is not None else ""
+    return f"""
+        QSpinBox, QDoubleSpinBox {{
+            background: {Colors.SURFACE_ALT};
+            border: 1px solid {Colors.BORDER};
+            border-radius: {radius}px;
+            color: {Colors.TEXT_PRIMARY};
+            font-family: {_CSS_FONT_STACK};
+            {font_size_rule}
+            padding: {padding};
+            {min_height_rule}
+        }}
+        QSpinBox:hover, QDoubleSpinBox:hover {{
+            border-color: {Colors.BORDER_FOCUS};
+        }}
+        QSpinBox:focus, QDoubleSpinBox:focus {{
+            border: 1px solid {Colors.BORDER_FOCUS};
+            background: {Colors.SURFACE_RAISED};
+        }}
+        QSpinBox::up-button, QSpinBox::down-button,
+        QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {{
+            border: none;
+            background: transparent;
+            width: {(16)}px;
+        }}
+        QSpinBox:disabled, QDoubleSpinBox:disabled {{
+            background: {Colors.SURFACE};
+            color: {Colors.TEXT_DISABLED};
+            border-color: {Colors.BORDER_SUBTLE};
+        }}
+    """
+
+
+def checkbox_css(font_size: int | None = None) -> str:
+    """Standard checkbox stylesheet."""
+    font_size_rule = f"font-size: {font_size}px;" if font_size is not None else ""
+    return f"""
+        QCheckBox {{
+            color: {Colors.TEXT_PRIMARY};
+            background: transparent;
+            font-family: {_CSS_FONT_STACK};
+            {font_size_rule}
+            spacing: 6px;
+        }}
+        QCheckBox::indicator {{
+            width: {(16)}px;
+            height: {(16)}px;
+            border-radius: {(4)}px;
+            border: 1px solid {Colors.BORDER};
+            background: {Colors.SURFACE_ALT};
+        }}
+        QCheckBox::indicator:hover {{
+            border-color: {Colors.BORDER_FOCUS};
+            background: {Colors.SURFACE_HOVER};
+        }}
+        QCheckBox::indicator:checked {{
+            background: {Colors.ACCENT};
+            border-color: {Colors.ACCENT};
+        }}
+        QCheckBox::indicator:checked:hover {{
+            background: {Colors.ACCENT_HOVER};
+            border-color: {Colors.ACCENT_HOVER};
+        }}
+        QCheckBox::indicator:disabled {{
+            background: {Colors.SURFACE};
+            border-color: {Colors.BORDER_SUBTLE};
+        }}
+    """
+
+
+def title_input_css() -> str:
+    """Borderless title-edit field used in editor headers."""
+    return f"""
+        QLineEdit {{
+            background: transparent;
+            border: none;
+            border-bottom: 1px solid {Colors.BORDER_SUBTLE};
+            color: {Colors.TEXT_PRIMARY};
+            font-family: {_CSS_FONT_STACK};
+            font-size: {Metrics.FONT_PAGE_TITLE}px;
+            font-weight: {Design.BUTTON_WEIGHT_STRONG};
+            padding: 0px 0px 2px 0px;
+        }}
+        QLineEdit:hover {{
+            border-bottom-color: {Colors.BORDER};
+        }}
+        QLineEdit:focus {{
+            border-bottom-color: {Colors.BORDER_FOCUS};
         }}
     """
 
@@ -1410,11 +1729,14 @@ def sidebar_nav_selected_css() -> str:
 
 
 def toolbar_btn_css() -> str:
-    return btn_css(
-        bg=Colors.SURFACE_RAISED,
-        bg_hover=Colors.SURFACE_ACTIVE,
-        bg_press=Colors.SURFACE_ALT,
-        padding=f"{(8)}px 0",
+    return button_css(
+        "secondary",
+        "md",
+        extra=(
+            f"min-width: {Design.CONTROL_HEIGHT_MD}px; "
+            f"padding-left: {Design.GRID * 2}px; "
+            f"padding-right: {Design.GRID * 2}px;"
+        ),
     )
 
 
@@ -1711,6 +2033,59 @@ def card_css(
         f" border-radius: {radius}px; padding: {padding};"
         f" {extra}"
     )
+
+
+def panel_css(
+    object_name: str,
+    *,
+    bg: str | None = None,
+    border: str | None = None,
+    radius: int | None = None,
+    extra: str = "",
+) -> str:
+    """Object-scoped QFrame panel style."""
+    if bg is None:
+        bg = Colors.SURFACE
+    if border is None:
+        border = f"1px solid {Colors.BORDER_SUBTLE}"
+    if radius is None:
+        radius = Design.PANEL_RADIUS
+    return f"""
+        QFrame#{object_name} {{
+            background: {bg};
+            border: {border};
+            border-radius: {radius}px;
+            {extra}
+        }}
+    """
+
+
+def progress_bar_css(
+    *,
+    height: int = 8,
+    radius: int | None = None,
+    bg: str | None = None,
+    chunk: str | None = None,
+) -> str:
+    """Standard horizontal QProgressBar style."""
+    if radius is None:
+        radius = max(1, height // 2)
+    if bg is None:
+        bg = Colors.SURFACE_ALT
+    if chunk is None:
+        chunk = Colors.ACCENT
+    return f"""
+        QProgressBar {{
+            background: {bg};
+            border: none;
+            border-radius: {radius}px;
+            height: {height}px;
+        }}
+        QProgressBar::chunk {{
+            background: {chunk};
+            border-radius: {radius}px;
+        }}
+    """
 
 
 # ── Application-level stylesheet ────────────────────────────────────────────

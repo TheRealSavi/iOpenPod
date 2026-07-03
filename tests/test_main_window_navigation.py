@@ -1,8 +1,12 @@
+import struct
+import zlib
 from types import SimpleNamespace
 from typing import Any, cast
 
+from app_core.database_storage import DatabaseStorageReport
 from GUI.app import (
     MainWindow,
+    _database_file_size_bytes,
     _library_load_failure_message,
     _sync_execute_failure_message,
 )
@@ -463,7 +467,11 @@ def _build_window_for_data_ready(
         discovered_ipod=SimpleNamespace(path=""),
     )
     window.device_session_service = SimpleNamespace(
-        current_session=lambda: SimpleNamespace(identity=identity),
+        current_session=lambda: SimpleNamespace(
+            identity=identity,
+            capabilities=None,
+            itunesdb_path=None,
+        ),
     )
     window.sidebar = _FakeSidebar()
     window.library_cache = _FakeCache()
@@ -506,6 +514,71 @@ def _build_window_for_drop_events(*, overlay_visible: bool = False):
 
 def _call_on_data_ready(window: object) -> None:
     MainWindow.onDataReady(cast(Any, window))
+
+
+def test_database_file_size_helper_reads_existing_file(tmp_path) -> None:
+    db_path = tmp_path / "iTunesDB"
+    db_path.write_bytes(b"itunesdb")
+
+    assert _database_file_size_bytes(str(db_path)) == 8
+    assert _database_file_size_bytes(str(tmp_path / "missing")) == 0
+    assert _database_file_size_bytes(None) == 0
+
+
+def test_database_file_size_helper_uses_decompressed_cdb_size(tmp_path) -> None:
+    header = bytearray(16)
+    header[:4] = b"mhbd"
+    struct.pack_into("<I", header, 4, len(header))
+    struct.pack_into("<I", header, 12, 2)
+    payload = b"x" * 2048
+    cdb_path = tmp_path / "iTunesCDB"
+    cdb_path.write_bytes(bytes(header) + zlib.compress(payload))
+
+    assert _database_file_size_bytes(str(cdb_path)) == len(header) + len(payload)
+
+
+def test_database_file_size_helper_keeps_cdb_physical_size_for_sqlite_ipods(
+    tmp_path,
+) -> None:
+    header = bytearray(16)
+    header[:4] = b"mhbd"
+    struct.pack_into("<I", header, 4, len(header))
+    struct.pack_into("<I", header, 12, 2)
+    payload = b"x" * 2048
+    cdb_path = tmp_path / "iTunesCDB"
+    cdb_path.write_bytes(bytes(header) + zlib.compress(payload))
+
+    assert _database_file_size_bytes(
+        str(cdb_path),
+        uses_sqlite_db=True,
+    ) == cdb_path.stat().st_size
+
+
+def test_data_ready_includes_database_storage_metric(tmp_path) -> None:
+    window = _build_window_for_data_ready()
+    window._keep_sync_results_visible_after_rescan = False
+    window._apply_match_ipod_accent = lambda dev: False
+
+    db_path = tmp_path / "iTunesDB"
+    db_path.write_bytes(b"x" * 1024)
+    identity = SimpleNamespace(ipod_name="RoadPod", display_name="iPod Classic")
+    window.device_session_service = SimpleNamespace(
+        current_session=lambda: SimpleNamespace(
+            identity=identity,
+            capabilities=SimpleNamespace(
+                max_database_bytes=64 * 1024 * 1024,
+                uses_sqlite_db=False,
+            ),
+            itunesdb_path=str(db_path),
+        ),
+    )
+
+    _call_on_data_ready(window)
+
+    update = window.sidebar.device_info_updates[-1]
+    assert update["database_size_bytes"] == 1024
+    assert update["max_database_bytes"] == 64 * 1024 * 1024
+    assert update["database_path"] == str(db_path)
 
 
 def test_post_sync_rescan_refreshes_library_without_leaving_results():
@@ -644,6 +717,46 @@ def test_selective_plan_editor_done_applies_state_and_returns_to_review():
 
     assert applied == [selection]
     assert window.centralStack.set_indices == [1]
+
+
+def test_show_database_storage_loads_current_device_report(tmp_path) -> None:
+    db_path = tmp_path / "iTunesDB"
+    db_path.write_bytes(b"not an iTunesDB")
+    load_calls: list[tuple[DatabaseStorageReport, int]] = []
+    window = SimpleNamespace(
+        centralStack=_FakeStack(),
+        databaseStorageBrowser=SimpleNamespace(
+            load_report=lambda report, *, max_database_bytes=0: load_calls.append(
+                (report, max_database_bytes)
+            )
+        ),
+        device_manager=SimpleNamespace(device_path=str(tmp_path)),
+        device_session_service=SimpleNamespace(
+            current_session=lambda: SimpleNamespace(
+                capabilities=SimpleNamespace(
+                    max_database_bytes=64 * 1024 * 1024,
+                    uses_sqlite_db=False,
+                ),
+                itunesdb_path=str(db_path),
+            ),
+        ),
+    )
+
+    MainWindow.showDatabaseStorage(cast(Any, window))
+
+    assert window.centralStack.set_indices == [5]
+    report, max_database_bytes = load_calls[-1]
+    assert report.database_path == str(db_path)
+    assert max_database_bytes == 64 * 1024 * 1024
+
+
+def test_hide_database_storage_returns_to_default_page() -> None:
+    default_calls: list[bool] = []
+    window = SimpleNamespace(_show_default_page=lambda: default_calls.append(True))
+
+    MainWindow.hideDatabaseStorage(cast(Any, window))
+
+    assert default_calls == [True]
 
 
 def test_selective_plan_editor_cancel_returns_to_review_without_changes():

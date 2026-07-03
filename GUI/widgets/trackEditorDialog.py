@@ -66,7 +66,10 @@ from ..styles import (
     Metrics,
     accent_btn_css,
     btn_css,
+    chip_btn_css,
+    input_css,
     make_scroll_area,
+    panel_css,
 )
 from .artworkUnifier import (
     ArtworkUnifyContext,
@@ -2041,12 +2044,17 @@ class _ArtworkPreviewPanel(QFrame):
         self.setObjectName("sectionPanel")
 
         self.setStyleSheet(
-            f"""
-            QFrame#artworkPreviewRail, QFrame#artworkMetadataPanel {{
-                background: {Colors.SURFACE_ALT};
-                border: 1px solid {Colors.BORDER_SUBTLE};
-                border-radius: {Metrics.BORDER_RADIUS_SM}px;
-            }}
+            panel_css(
+                "artworkPreviewRail",
+                bg=Colors.SURFACE_ALT,
+                radius=Metrics.BORDER_RADIUS_SM,
+            )
+            + panel_css(
+                "artworkMetadataPanel",
+                bg=Colors.SURFACE_ALT,
+                radius=Metrics.BORDER_RADIUS_SM,
+            )
+            + f"""
             QLabel#artworkInspectorLabel {{
                 color: {Colors.TEXT_TERTIARY};
                 background: transparent;
@@ -2513,27 +2521,7 @@ class _ArtworkPreviewPanel(QFrame):
         if not variants:
             return
 
-        chip_css = f"""
-            QPushButton {{
-                background: {Colors.SURFACE_RAISED};
-                color: {Colors.TEXT_SECONDARY};
-                border: 1px solid {Colors.BORDER_SUBTLE};
-                border-radius: 999px;
-                padding: 4px 8px;
-                font-family: {FONT_FAMILY};
-                font-size: {Metrics.FONT_XS}px;
-            }}
-            QPushButton:hover {{
-                background: {Colors.SURFACE_HOVER};
-                color: {Colors.TEXT_PRIMARY};
-                border-color: {Colors.BORDER};
-            }}
-            QPushButton:checked {{
-                background: {Colors.ACCENT_MUTED};
-                color: {Colors.TEXT_PRIMARY};
-                border-color: {Colors.ACCENT_BORDER};
-            }}
-        """
+        chip_css = chip_btn_css("sm")
         for index, variant in enumerate(variants):
             btn = QPushButton(variant.label)
             btn.setCheckable(True)
@@ -2606,11 +2594,6 @@ class TrackEditorDialog(QDialog):
             QDialog {{
                 background: {Colors.DIALOG_BG};
             }}
-            QFrame#editorHeader {{
-                background: {Colors.SURFACE};
-                border: 1px solid {Colors.BORDER_SUBTLE};
-                border-radius: {Metrics.BORDER_RADIUS_SM}px;
-            }}
             QListWidget#sectionNav {{
                 background: {Colors.SURFACE};
                 border: 1px solid {Colors.BORDER_SUBTLE};
@@ -2635,11 +2618,6 @@ class TrackEditorDialog(QDialog):
                 color: {Colors.TEXT_PRIMARY};
                 border: 1px solid transparent;
             }}
-            QFrame#sectionPanel {{
-                background: {Colors.SURFACE};
-                border: 1px solid {Colors.BORDER_SUBTLE};
-                border-radius: {Metrics.BORDER_RADIUS_SM}px;
-            }}
             QFrame#trackFieldRow {{
                 background: transparent;
                 border: 1px solid transparent;
@@ -2650,6 +2628,8 @@ class TrackEditorDialog(QDialog):
                 border: 1px solid {Colors.ACCENT_BORDER};
             }}
             """
+            + panel_css("editorHeader", radius=Metrics.BORDER_RADIUS_SM)
+            + panel_css("sectionPanel", radius=Metrics.BORDER_RADIUS_SM)
         )
 
         self._build_ui()
@@ -2705,20 +2685,7 @@ class TrackEditorDialog(QDialog):
         self._search = QLineEdit()
         self._search.setPlaceholderText("Filter fields")
         self._search.setStyleSheet(
-            f"""
-            QLineEdit {{
-                background: {Colors.SURFACE_ALT};
-                border: 1px solid {Colors.BORDER};
-                border-radius: {Metrics.BORDER_RADIUS_SM}px;
-                color: {Colors.TEXT_PRIMARY};
-                padding: 8px 10px;
-                font-family: {FONT_FAMILY};
-                font-size: {Metrics.FONT_SM}px;
-            }}
-            QLineEdit:focus {{
-                border-color: {Colors.BORDER_FOCUS};
-            }}
-            """
+            input_css(padding="8px 10px", font_size=Metrics.FONT_SM)
         )
         self._search.textChanged.connect(self._apply_filter)
         self._search.setFixedWidth(260)

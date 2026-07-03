@@ -85,6 +85,7 @@ from .models import (
     IPOD_USB_PIDS,
     SERIAL_LAST3_TO_MODEL,
     USB_PID_TO_MODEL,
+    canonicalize_model_identity,
 )
 
 # ── sysinfo parsing/evidence ─────────────────────────────────────────

@@ -49,6 +49,8 @@ from ..styles import (
     make_detail_row,
     make_scroll_area,
     make_separator,
+    panel_css,
+    progress_bar_css,
     sidebar_nav_css,
     sidebar_nav_selected_css,
 )
@@ -356,14 +358,11 @@ class PlaylistInfoCard(QFrame):
 
     def __init__(self):
         super().__init__()
-        self.setStyleSheet(f"""
-            QFrame#playlistInfoCard {{
-                background: {Colors.SURFACE};
-                border: 1px solid {Colors.BORDER_SUBTLE};
-                border-radius: {Metrics.BORDER_RADIUS_LG}px;
-            }}
-        """)
         self.setObjectName("playlistInfoCard")
+        self.setStyleSheet(panel_css(
+            "playlistInfoCard",
+            radius=Metrics.BORDER_RADIUS_LG,
+        ))
         self.setMinimumHeight(0)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
 
@@ -1409,18 +1408,12 @@ class PlaylistBrowser(QFrame):
         self._import_progress_bar = QProgressBar()
         self._import_progress_bar.setFixedHeight(8)
         self._import_progress_bar.setTextVisible(False)
-        self._import_progress_bar.setStyleSheet(f"""
-            QProgressBar {{
-                background-color: {Colors.SURFACE_ALT};
-                border: none;
-                border-radius: 4px;
-            }}
-            QProgressBar::chunk {{
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 {Colors.ACCENT}, stop:1 {Colors.ACCENT_LIGHT});
-                border-radius: 4px;
-            }}
-        """)
+        self._import_progress_bar.setStyleSheet(progress_bar_css(
+            chunk=(
+                "qlineargradient(x1:0, y1:0, x2:1, y2:0, "
+                f"stop:0 {Colors.ACCENT}, stop:1 {Colors.ACCENT_LIGHT})"
+            )
+        ))
         _imp_lay.addWidget(self._import_progress_bar)
 
         self._import_status_label = QLabel("")

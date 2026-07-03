@@ -22,6 +22,7 @@ from ..styles import (
     Metrics,
     accent_btn_css,
     make_label,
+    progress_bar_css,
 )
 
 
@@ -92,17 +93,9 @@ class PodcastStatePanel(QFrame):
         self._progress.setFixedWidth(220 if compact else 260)
         self._progress.setTextVisible(False)
         self._progress.setRange(0, 0)
-        self._progress.setStyleSheet(f"""
-            QProgressBar {{
-                background: {Colors.SURFACE};
-                border: none;
-                border-radius: 2px;
-            }}
-            QProgressBar::chunk {{
-                background: {Colors.ACCENT};
-                border-radius: 2px;
-            }}
-        """)
+        self._progress.setStyleSheet(
+            progress_bar_css(height=4, radius=2, bg=Colors.SURFACE)
+        )
         self._progress.hide()
         layout.addWidget(self._progress, alignment=Qt.AlignmentFlag.AlignCenter)
 

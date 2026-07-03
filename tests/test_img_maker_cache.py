@@ -144,7 +144,7 @@ def test_generate_image_crops_rgb565_stride_padding(tmp_path) -> None:
 
 
 def test_artwork_decode_uses_integer_mhod_file_metadata_key(tmp_path) -> None:
-    fmt = resolve_cover_art_format_definitions("iPod Classic", "1st Gen")[1061]
+    fmt = resolve_cover_art_format_definitions("iPod Classic", "6th Gen")[1061]
     red = encode_image_for_format(
         Image.new("RGB", (fmt.width, fmt.height), (240, 16, 32)),
         fmt.format_id,

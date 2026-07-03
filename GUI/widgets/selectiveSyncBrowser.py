@@ -61,7 +61,9 @@ from ..styles import (
     Metrics,
     back_btn_css,
     btn_css,
+    context_menu_css,
     make_scroll_area,
+    progress_bar_css,
     sidebar_nav_css,
     sidebar_nav_selected_css,
 )
@@ -1580,18 +1582,7 @@ class SelectiveSyncBrowser(QWidget):
         self._progress_bar = QProgressBar(loading_page)
         self._progress_bar.setFixedWidth(360)
         self._progress_bar.setTextVisible(False)
-        self._progress_bar.setStyleSheet(f"""
-            QProgressBar {{
-                background: {Colors.BORDER_SUBTLE};
-                border: none;
-                border-radius: 4px;
-                height: 8px;
-            }}
-            QProgressBar::chunk {{
-                background: {Colors.ACCENT};
-                border-radius: 4px;
-            }}
-        """)
+        self._progress_bar.setStyleSheet(progress_bar_css(bg=Colors.BORDER_SUBTLE))
         lp_lay.addWidget(self._progress_bar, alignment=Qt.AlignmentFlag.AlignCenter)
 
         lp_lay.addSpacing(10)
@@ -3235,25 +3226,7 @@ class SelectiveSyncBrowser(QWidget):
         remove_label = "Remove Selected from Queue" if multi else "Remove from Queue"
 
         menu = QMenu(self)
-        menu.setStyleSheet(f"""
-            QMenu {{
-                background: {Colors.MENU_BG};
-                color: {Colors.TEXT_PRIMARY};
-                border: 1px solid {Colors.BORDER};
-                padding: 4px 0;
-            }}
-            QMenu::item {{
-                padding: 6px 24px 6px 12px;
-            }}
-            QMenu::item:selected {{
-                background: {Colors.ACCENT_DIM};
-            }}
-            QMenu::separator {{
-                height: 1px;
-                background: {Colors.BORDER_SUBTLE};
-                margin: 4px 8px;
-            }}
-        """)
+        menu.setStyleSheet(context_menu_css())
         add_action = menu.addAction(add_label)
         remove_action = menu.addAction(remove_label)
 

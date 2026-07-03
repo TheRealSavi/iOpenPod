@@ -29,6 +29,8 @@ from ..styles import (
     Metrics,
     accent_btn_css,
     btn_css,
+    chip_btn_css,
+    input_css,
     table_css,
 )
 from .ipodTagNormalizer import IpodLibraryTagSuggestion
@@ -49,42 +51,11 @@ def _label_css(color: str) -> str:
 
 
 def _line_edit_css() -> str:
-    return f"""
-        QLineEdit {{
-            background: {Colors.SURFACE};
-            border: 1px solid {Colors.BORDER_SUBTLE};
-            border-radius: {Metrics.BORDER_RADIUS_SM}px;
-            color: {Colors.TEXT_PRIMARY};
-            padding: 7px 9px;
-            font-family: {FONT_FAMILY};
-            font-size: {Metrics.FONT_SM}px;
-        }}
-        QLineEdit:focus {{
-            border-color: {Colors.BORDER_FOCUS};
-        }}
-    """
+    return input_css(radius=Metrics.BORDER_RADIUS_SM, padding="7px 9px")
 
 
 def _field_chip_css() -> str:
-    return f"""
-        QPushButton {{
-            background: {Colors.SURFACE};
-            border: 1px solid {Colors.BORDER_SUBTLE};
-            border-radius: {Metrics.BORDER_RADIUS_SM}px;
-            color: {Colors.TEXT_SECONDARY};
-            padding: 6px 9px;
-            text-align: left;
-        }}
-        QPushButton:hover {{
-            background: {Colors.SURFACE_HOVER};
-            color: {Colors.TEXT_PRIMARY};
-        }}
-        QPushButton:checked {{
-            background: {Colors.ACCENT_MUTED};
-            border-color: {Colors.ACCENT_BORDER};
-            color: {Colors.TEXT_PRIMARY};
-        }}
-    """
+    return chip_btn_css("sm")
 
 
 def _value_text(value: Any) -> str:

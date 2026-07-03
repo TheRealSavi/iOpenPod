@@ -1,4 +1,4 @@
-"""Photo sync support for iPod Photo Database + ithmb thumbnails."""
+"""Photo sync support for the iPod photo database and ithmb thumbnails."""
 
 from __future__ import annotations
 
@@ -1235,7 +1235,7 @@ def _photo_formats_for_current_device(ipod_path: str | Path | None = None) -> Ma
                 return formats
     except Exception:
         pass
-    return photo_formats_for_device("iPod Classic", "2nd Gen")
+    return photo_formats_for_device("iPod Classic", "6.5th Gen")
 
 
 def _estimated_photo_storage_bytes(formats: Mapping[int, ArtworkFormat]) -> int:
