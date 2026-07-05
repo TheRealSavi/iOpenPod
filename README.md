@@ -29,6 +29,8 @@ PyPI installs are recommended over native builds while native packaging is still
 
 ### [Latest Release Builds](https://github.com/TheRealSavi/iOpenPod/releases/latest)
 
+Need step-by-step, platform-specific setup help? See the [Install Help and Troubleshooting page](https://therealsavi.github.io/iOpenPod/install-help.html).
+
 ### Install from PyPI (Recommended)
 
 iOpenPod is available as a Python package to download through `pip`, `pipx`, and `uv tool`.
@@ -52,6 +54,7 @@ If `iopenpod` is not on your shell `PATH` yet, run `pipx ensurepath` for `pipx` 
 Installs should be updated with the same tool used to install them.
 
 > **Required tools:** Install [FFmpeg](https://ffmpeg.org/) with `ffprobe` for transcoding and media probing, and [Chromaprint](https://acoustid.org/chromaprint) for acoustic fingerprinting during sync.
+> **Linux desktop dependencies:** If iOpenPod fails with a Qt `xcb` platform plugin error or crashes when pressing Ctrl, Alt, or Shift, install the XCB/XKeyboard runtime packages listed on the [Install Help and Troubleshooting page](https://therealsavi.github.io/iOpenPod/install-help.html#helper-tools).
 
 ---
 
@@ -181,9 +184,11 @@ Useful contributions include:
 
 - Hardware testing on different iPod models
 - macOS and Linux testing
-- Bug reports with steps to reproduce and logs
+- Bug reports with steps to reproduce and `iopenpod.log`
 - Focused pull requests for documented issues
 - Joining the discord to coordinate
+
+To find logs in iOpenPod, open **Settings > Storage**, then click **Open** next to **Log Location**.
 
 Please open an issue before starting major changes, or use the [Discord server](https://discord.gg/9Yy499Tf5d) to discuss implementation details.
 

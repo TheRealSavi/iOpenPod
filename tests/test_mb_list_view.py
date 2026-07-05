@@ -1129,6 +1129,26 @@ def test_open_track_keyboard_shortcuts_route_to_open_handlers(
     assert picked == ["open-with"]
 
 
+@pytest.mark.parametrize(
+    ("key", "modifier"),
+    [
+        (Qt.Key.Key_Control, Qt.KeyboardModifier.ControlModifier),
+        (Qt.Key.Key_Alt, Qt.KeyboardModifier.AltModifier),
+        (Qt.Key.Key_Shift, Qt.KeyboardModifier.ShiftModifier),
+        (Qt.Key.Key_Meta, Qt.KeyboardModifier.MetaModifier),
+    ],
+)
+def test_modifier_only_keypresses_do_not_trigger_table_shortcuts(
+    qtbot,
+    key: Qt.Key,
+    modifier: Qt.KeyboardModifier,
+) -> None:
+    view = _mount_list(qtbot)
+    event = QKeyEvent(QEvent.Type.KeyPress, key, modifier)
+
+    assert view.eventFilter(view.table, event) is False
+
+
 def test_podcast_conversion_changes_set_ipod_podcast_fields() -> None:
     track = {
         "db_track_id": 1,

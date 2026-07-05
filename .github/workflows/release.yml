@@ -54,7 +54,18 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libegl1 libxkbcommon0 libdbus-1-3
+          sudo apt-get install -y \
+            libdbus-1-3 \
+            libegl1 \
+            libxcb-cursor0 \
+            libxcb-icccm4 \
+            libxcb-image0 \
+            libxcb-keysyms1 \
+            libxcb-render-util0 \
+            libxcb-util1 \
+            libxcb-xkb1 \
+            libxkbcommon-x11-0 \
+            libxkbcommon0
 
       - name: Install project dependencies
         run: uv sync

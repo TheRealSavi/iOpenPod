@@ -28,6 +28,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.error import URLError
@@ -56,6 +57,28 @@ class UpdateResult:
     release_notes: str = ""
     release_page: str = ""
     error: str = ""
+
+
+@dataclass(frozen=True)
+class InstallMethod:
+    """How the running copy of iOpenPod appears to be installed."""
+
+    kind: str
+    label: str
+    detail: str
+
+
+@dataclass(frozen=True)
+class UpdateGuidance:
+    """User-facing update guidance for a specific install method."""
+
+    install_label: str
+    summary: str
+    steps: tuple[str, ...]
+    commands: tuple[str, ...] = ()
+    can_auto_install: bool = False
+    auto_install_label: str = "Download and Install"
+    release_asset_hint: str = ""
 
 
 # ── HTTP helpers ────────────────────────────────────────────────────────────
@@ -93,6 +116,244 @@ def _current_version() -> str:
     """Get the running version string."""
     from infrastructure.version import get_version
     return get_version()
+
+
+def _normalised_path_text(*paths: Path | str) -> str:
+    return " ".join(str(path).replace("\\", "/").lower() for path in paths)
+
+
+def _looks_like_source_checkout(cwd: Path) -> bool:
+    pyproject = cwd / "pyproject.toml"
+    try:
+        pyproject_text = pyproject.read_text(encoding="utf-8").lower()
+    except OSError:
+        pyproject_text = ""
+
+    return (
+        (cwd / "main.py").exists()
+        and pyproject.exists()
+        and 'name = "iopenpod"' in pyproject_text
+    )
+
+
+def detect_install_method(
+    *,
+    platform: str = sys.platform,
+    frozen: bool | None = None,
+    executable: Path | None = None,
+    prefix: Path | None = None,
+    base_prefix: Path | None = None,
+    cwd: Path | None = None,
+    environ: Mapping[str, str] | None = None,
+) -> InstallMethod:
+    """Infer the install method so update instructions can be specific."""
+
+    frozen = bool(getattr(sys, "frozen", False)) if frozen is None else frozen
+    executable = Path(sys.executable) if executable is None else executable
+    prefix = Path(sys.prefix) if prefix is None else prefix
+    base_prefix = (
+        Path(getattr(sys, "base_prefix", sys.prefix))
+        if base_prefix is None
+        else base_prefix
+    )
+    cwd = Path.cwd() if cwd is None else cwd
+    env = os.environ if environ is None else environ
+
+    if frozen:
+        if platform == "linux" and env.get("APPIMAGE"):
+            return InstallMethod(
+                "native_appimage",
+                "Linux AppImage",
+                "Replace the AppImage file with the new release asset.",
+            )
+        if platform == "darwin":
+            return InstallMethod(
+                "native_macos_app",
+                "macOS app",
+                "Use the built-in updater or download the latest macOS zip.",
+            )
+        if platform == "win32":
+            return InstallMethod(
+                "native_windows",
+                "Windows native build",
+                "Use the built-in updater or download the latest Windows zip.",
+            )
+        if platform == "linux":
+            return InstallMethod(
+                "native_linux_archive",
+                "Linux native archive",
+                "Use the built-in updater for extracted release folders.",
+            )
+        return InstallMethod(
+            "native_binary",
+            "Native build",
+            "Use the matching release asset for your platform.",
+        )
+
+    path_text = _normalised_path_text(executable, prefix)
+    if "/uv/tools/iopenpod/" in path_text or "/uv/tools/iopenpod" in path_text:
+        return InstallMethod(
+            "uv_tool",
+            "uv tool install",
+            "Update iOpenPod with uv from a terminal.",
+        )
+    if "/pipx/venvs/iopenpod/" in path_text or "/pipx/venvs/iopenpod" in path_text:
+        return InstallMethod(
+            "pipx",
+            "pipx",
+            "Update iOpenPod with pipx from a terminal.",
+        )
+    if _looks_like_source_checkout(cwd):
+        return InstallMethod(
+            "source_checkout",
+            "Source checkout",
+            "Pull the latest source and sync the development environment.",
+        )
+    if prefix != base_prefix:
+        return InstallMethod(
+            "pip_virtualenv",
+            "Python virtual environment",
+            "Upgrade iOpenPod inside the same virtual environment.",
+        )
+
+    return InstallMethod(
+        "pip",
+        "Python package",
+        "Upgrade iOpenPod with the Python that launched the app.",
+    )
+
+
+def _release_asset_hint(platform: str, method: InstallMethod) -> str:
+    if method.kind == "native_appimage":
+        return "iOpenPod-Linux-x86_64.AppImage"
+    if platform == "win32":
+        return "iOpenPod-Windows.zip"
+    if platform == "darwin":
+        return "iOpenPod-macOS.zip"
+    if platform == "linux":
+        return "iOpenPod-Linux.tar.gz"
+    return "the matching iOpenPod release asset"
+
+
+def build_update_guidance(
+    result: UpdateResult,
+    *,
+    method: InstallMethod | None = None,
+    platform: str = sys.platform,
+) -> UpdateGuidance:
+    """Build clear update instructions for the detected install method."""
+
+    method = detect_install_method(platform=platform) if method is None else method
+    asset_hint = _release_asset_hint(platform, method)
+
+    if method.kind == "uv_tool":
+        return UpdateGuidance(
+            method.label,
+            "This copy is managed by uv. Use uv to upgrade it so the tool "
+            "environment stays consistent.",
+            (
+                "Close iOpenPod.",
+                "Open a terminal.",
+                "Run the command below, then start iOpenPod again.",
+            ),
+            commands=("uv tool upgrade iopenpod", "iopenpod"),
+            release_asset_hint=asset_hint,
+        )
+
+    if method.kind == "pipx":
+        return UpdateGuidance(
+            method.label,
+            "This copy is managed by pipx. Use pipx to upgrade the isolated "
+            "app environment.",
+            (
+                "Close iOpenPod.",
+                "Open a terminal.",
+                "Run the command below, then start iOpenPod again.",
+            ),
+            commands=("pipx upgrade iopenpod", "iopenpod"),
+            release_asset_hint=asset_hint,
+        )
+
+    if method.kind == "source_checkout":
+        return UpdateGuidance(
+            method.label,
+            "This copy is running from a local checkout. Pull the repo and "
+            "resync dependencies.",
+            (
+                "Close iOpenPod.",
+                "Open a terminal in the iOpenPod repo.",
+                "Run the commands below.",
+            ),
+            commands=("git pull", "uv sync", "uv run python main.py"),
+            release_asset_hint=asset_hint,
+        )
+
+    if method.kind == "pip_virtualenv":
+        return UpdateGuidance(
+            method.label,
+            "This copy is running inside a Python virtual environment. "
+            "Upgrade it in that same environment.",
+            (
+                "Close iOpenPod.",
+                "Activate the virtual environment you used to install iOpenPod.",
+                "Run the command below, then start iOpenPod again.",
+            ),
+            commands=("python -m pip install --upgrade iopenpod", "iopenpod"),
+            release_asset_hint=asset_hint,
+        )
+
+    if method.kind == "pip":
+        return UpdateGuidance(
+            method.label,
+            "This copy was launched as a Python package. Upgrade it with the "
+            "same Python install.",
+            (
+                "Close iOpenPod.",
+                "Open a terminal.",
+                "Run the command below, then start iOpenPod again.",
+            ),
+            commands=("python -m pip install --upgrade iopenpod", "iopenpod"),
+            release_asset_hint=asset_hint,
+        )
+
+    if method.kind == "native_appimage":
+        return UpdateGuidance(
+            method.label,
+            "This copy is running from an AppImage. Replace the AppImage file "
+            "with the latest one from GitHub.",
+            (
+                f"Download {asset_hint} from the release page.",
+                "Move it to the folder where you keep iOpenPod.",
+                "Make it executable, then launch the new AppImage.",
+            ),
+            commands=(
+                "chmod +x iOpenPod-Linux-x86_64.AppImage",
+                "./iOpenPod-Linux-x86_64.AppImage",
+            ),
+            can_auto_install=False,
+            release_asset_hint=asset_hint,
+        )
+
+    can_auto_install = bool(result.download_url)
+    steps = (
+        "Use Download and Install to fetch the matching release asset.",
+        "iOpenPod will close, apply the update, and relaunch.",
+        "If that fails, open the release page and download the asset manually.",
+    )
+    if not can_auto_install:
+        steps = (
+            f"Open the release page and download {asset_hint}.",
+            "Close iOpenPod.",
+            "Replace the old app files with the new release.",
+        )
+
+    return UpdateGuidance(
+        method.label,
+        method.detail,
+        steps,
+        can_auto_install=can_auto_install,
+        release_asset_hint=asset_hint,
+    )
 
 
 def check_for_update() -> UpdateResult:

@@ -13,7 +13,7 @@ from infrastructure.settings_paths import default_data_dir
 from infrastructure.version import get_version
 
 from .context import AppContext, create_app_context
-from .qt_runtime import configure_qt_multimedia_logging
+from .qt_runtime import configure_qt_multimedia_logging, linux_qt_dependency_error
 
 # Prevent macOS from creating ._AppleDouble resource fork files on FAT32 iPods
 os.environ.setdefault("COPYFILE_DISABLE", "1")
@@ -174,6 +174,12 @@ def run_pyqt_app(context: AppContext | None = None) -> None:
         get_version(),
         log_path,
     )
+
+    qt_dependency_error = linux_qt_dependency_error()
+    if qt_dependency_error:
+        logger.error("%s", qt_dependency_error)
+        print(qt_dependency_error, file=sys.stderr)
+        raise SystemExit(1)
 
     if sys.platform == "linux" and getattr(sys, "frozen", False):
         os.environ.setdefault("QT_IM_MODULE", "")

@@ -2794,9 +2794,8 @@ class SettingsPage(QWidget):
 
     def _check_for_updates(self):
         """Check GitHub for a newer version in a background thread."""
-        from PyQt6.QtWidgets import QMessageBox
-
         from GUI.auto_updater import UpdateChecker, UpdateResult
+        from GUI.widgets.updateDialog import UpdateStatusDialog
 
         self.version_row.action_btn.setEnabled(False)
         self.version_row.action_btn.setText("Checking…")
@@ -2808,14 +2807,11 @@ class SettingsPage(QWidget):
             self.version_row.action_btn.setText("Check")
 
             if result.error:
-                QMessageBox.warning(self, "Update Check Failed", result.error)
+                UpdateStatusDialog(result, self).exec()
                 return
 
             if not result.update_available:
-                QMessageBox.information(
-                    self, "Up to Date",
-                    f"You are running the latest version (v{result.current_version}).",
-                )
+                UpdateStatusDialog(result, self).exec()
                 return
 
             self._handle_update_result(result)
@@ -2825,7 +2821,7 @@ class SettingsPage(QWidget):
 
     def _handle_update_result(self, result):
         """Show update-available UI and optionally download/install."""
-        from PyQt6.QtWidgets import QMessageBox, QProgressDialog
+        from PyQt6.QtWidgets import QDialog, QMessageBox, QProgressDialog
 
         from GUI.auto_updater import (
             UpdateDownloader,
@@ -2833,35 +2829,13 @@ class SettingsPage(QWidget):
             stage_update,
             update_log_path,
         )
+        from GUI.widgets.updateDialog import UpdateAvailableDialog
 
-        notes_preview = result.release_notes[:500]
-        if len(result.release_notes) > 500:
-            notes_preview += "…"
-
-        import sys as _sys
-
-        if not getattr(_sys, "frozen", False):
-            # Running from source — no point downloading a binary
-            QMessageBox.information(
-                self, "Update Available",
-                f"A new version is available: v{result.latest_version}\n"
-                f"(current: v{result.current_version})\n\n"
-                f"{notes_preview}\n\n"
-                "You are running from source.\n"
-                "Run 'git pull' to get the latest changes.",
-            )
+        dialog = UpdateAvailableDialog(result, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
             return
 
-        answer = QMessageBox.question(
-            self, "Update Available",
-            f"A new version is available: v{result.latest_version}\n"
-            f"(current: v{result.current_version})\n\n"
-            f"{notes_preview}\n\n"
-            f"Download now?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-
-        if answer != QMessageBox.StandardButton.Yes:
+        if dialog.selected_action != "install":
             return
 
         if not result.download_url:
