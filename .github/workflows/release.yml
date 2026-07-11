@@ -150,7 +150,7 @@ jobs:
           EOF
           chmod +x AppDir/AppRun
 
-          cp assets/icons/icon-256.png AppDir/iOpenPod.png
+          cp src/iopenpod/assets/icons/icon-256.png AppDir/iOpenPod.png
 
           ARCH=x86_64 ./appimagetool-x86_64.AppImage --appimage-extract-and-run \
             AppDir "${{ matrix.appimage_name }}"

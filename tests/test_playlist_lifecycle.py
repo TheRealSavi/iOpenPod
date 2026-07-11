@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from iTunesDB_Shared.playlist_lifecycle import playlist_edit_payload
+from iopenpod.itunesdb_shared.playlist_lifecycle import playlist_edit_payload
 
 
 def test_playlist_edit_payload_preserves_origin_flags_and_items() -> None:

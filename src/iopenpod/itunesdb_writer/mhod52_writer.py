@@ -1,0 +1,344 @@
+"""
+MHOD Type 52/53 Writer - Library Playlist Index for iTunesDB.
+
+These MHODs are written ONLY for the Master Playlist and provide
+pre-sorted track indices that the iPod uses to build its browsing
+views (Songs, Artists, Albums, Genres, Composers).
+
+Without these indices, the iPod Classic shows "no songs, no albums"
+even if tracks exist in the database.
+
+Based on libgpod's mk_mhod52(), mk_mhod53(), and write_playlist()
+in itdb_itunesdb.c.
+
+Type 52 (MHOD_ID_LIBPLAYLISTINDEX):
+  Pre-sorted track position arrays for each sort category.
+  Format: header(24) + sort_type(4) + count(4) + padding(40) + indices(count*4)
+  Total = 4*count + 72
+
+Type 53 (MHOD_ID_LIBPLAYLISTJUMPTABLE):
+  Letter-jump table for quick scrolling in each category.
+  Format: header(24) + sort_type(4) + count(4) + padding(8) + entries(count*12)
+  Total = 12*count + 40
+"""
+
+import struct
+import unicodedata
+from typing import TYPE_CHECKING, Any
+
+from iopenpod.itunesdb_shared.field_base import strip_article
+from iopenpod.itunesdb_shared.mhod_defs import (
+    MHOD52_BODY_HEADER_SIZE,
+    MHOD53_BODY_HEADER_SIZE,
+    MHOD53_ENTRY_SIZE,
+    MHOD_HEADER_SIZE,
+    SORT_ALBUM,
+    SORT_ALBUM_ARTIST,
+    SORT_ARTIST,
+    SORT_COMPOSER,
+    SORT_EPISODE,
+    SORT_GENRE,
+    SORT_SEASON,
+    SORT_SHOW,
+    SORT_TITLE,
+    write_mhod_header,
+)
+
+if TYPE_CHECKING:
+    from .mhit_writer import TrackInfo
+
+# Base sort types — always written
+BASE_SORT_TYPES = [SORT_TITLE, SORT_ALBUM, SORT_ARTIST, SORT_GENRE, SORT_COMPOSER]
+
+# Video sort types — only for devices with supports_video
+VIDEO_SORT_TYPES = [SORT_SHOW, SORT_SEASON, SORT_EPISODE]
+
+# Legacy alias for backward compatibility
+ALL_SORT_TYPES = BASE_SORT_TYPES
+
+
+def _text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes | bytearray):
+        return bytes(value).decode("utf-8", errors="replace")
+    return str(value)
+
+
+def _sort_key(s: Any) -> str:
+    """
+    Create a case-insensitive sort key for a string.
+
+    Strips leading articles (A, An, The) for sorting (matching iTunes behavior),
+    normalizes unicode, and lowercases.
+    """
+    s = _text(s)
+    if not s:
+        return ""
+    s = strip_article(s)
+    # Normalize unicode for consistent comparison
+    return unicodedata.normalize('NFKD', s).casefold()
+
+
+def _jump_table_letter(s: Any) -> int:
+    """
+    Get the first alphanumeric character for jump table grouping.
+
+    Returns uppercase letter (A-Z) as Unicode codepoint, or ord('0')
+    for strings starting with digits.
+
+    Based on libgpod's jump_table_letter().
+    """
+    s = _text(s)
+    if not s:
+        return ord('0')
+
+    for ch in s:
+        if ch.isalnum():
+            if ch.isdigit():
+                return ord('0')
+            upper = ord(ch.upper()[0])
+            if upper > 0xFFFF:
+                continue  # non-BMP char can't fit in UTF-16 jump table
+            return upper
+
+    return ord('0')
+
+
+def _get_sort_fields(track: "TrackInfo", sort_type: int) -> tuple:
+    """
+    Get sort key fields for a track based on sort type.
+
+    Returns a tuple used for sorting. Multi-field sorts match
+    libgpod's mhod52_sort_* comparison functions.
+
+    IMPORTANT: For every field, prefer the sort_* variant over the
+    display variant (e.g. sort_album over album).  This matches
+    libgpod's ``sort_compare(track->sort_X ? track->sort_X : track->X, ...)``
+    pattern used in mhod52_sort_album(), mhod52_sort_artist(), etc.
+    """
+    title = _sort_key(track.sort_name or track.title or "")
+    album = _sort_key(track.sort_album or track.album or "")
+    artist = _sort_key(track.sort_artist or track.artist or "")
+    genre = _sort_key(track.genre or "")
+    composer = _sort_key(track.sort_composer or track.composer or "")
+    track_nr = track.track_number or 0
+    cd_nr = track.disc_number or 0
+
+    if sort_type == SORT_TITLE:
+        return (title,)
+    elif sort_type == SORT_ALBUM:
+        return (album, cd_nr, track_nr, title)
+    elif sort_type == SORT_ARTIST:
+        return (artist, album, cd_nr, track_nr, title)
+    elif sort_type == SORT_GENRE:
+        return (genre, artist, album, cd_nr, track_nr, title)
+    elif sort_type == SORT_COMPOSER:
+        return (composer, album, cd_nr, track_nr, title)
+    elif sort_type == SORT_SHOW:
+        show = _sort_key(track.sort_show or track.show_name or "")
+        season = track.season_number or 0
+        episode = track.episode_number or 0
+        return (show, season, episode, title)
+    elif sort_type == SORT_SEASON:
+        season = track.season_number or 0
+        episode = track.episode_number or 0
+        show = _sort_key(track.sort_show or track.show_name or "")
+        return (season, episode, show, title)
+    elif sort_type == SORT_EPISODE:
+        episode = track.episode_number or 0
+        season = track.season_number or 0
+        show = _sort_key(track.sort_show or track.show_name or "")
+        return (episode, season, show, title)
+    elif sort_type == SORT_ALBUM_ARTIST:
+        album_artist = _sort_key(
+            track.sort_album_artist
+            or track.album_artist
+            or track.sort_artist or track.artist or ""
+        )
+        return (album_artist, album, cd_nr, track_nr, title)
+    else:
+        return (title,)
+
+
+def _get_jump_letter(track: "TrackInfo", sort_type: int) -> int:
+    """Get the letter for jump table grouping based on sort type.
+
+    Uses sort_* field variants for consistency with ``_get_sort_fields``.
+    """
+    if sort_type == SORT_TITLE:
+        return _jump_table_letter(track.sort_name or track.title or "")
+    elif sort_type == SORT_ALBUM:
+        return _jump_table_letter(track.sort_album or track.album or "")
+    elif sort_type == SORT_ARTIST:
+        s = track.sort_artist or track.artist or ""
+        return _jump_table_letter(s)
+    elif sort_type == SORT_GENRE:
+        return _jump_table_letter(track.genre or "")
+    elif sort_type == SORT_COMPOSER:
+        return _jump_table_letter(track.sort_composer or track.composer or "")
+    elif sort_type == SORT_SHOW:
+        return _jump_table_letter(track.sort_show or track.show_name or "")
+    elif sort_type == SORT_SEASON:
+        n = track.season_number or 0
+        return _jump_table_letter(str(n)) if n else ord('0')
+    elif sort_type == SORT_EPISODE:
+        n = track.episode_number or 0
+        return _jump_table_letter(str(n)) if n else ord('0')
+    elif sort_type == SORT_ALBUM_ARTIST:
+        s = (
+            track.sort_album_artist
+            or track.album_artist
+            or track.sort_artist or track.artist or ""
+        )
+        return _jump_table_letter(s)
+    else:
+        return _jump_table_letter(track.sort_name or track.title or "")
+
+
+def write_mhod_type52(tracks: list["TrackInfo"], sort_type: int) -> tuple[bytes, list[tuple[int, int, int]]]:
+    """
+    Write a Type 52 MHOD (library playlist index) for one sort category.
+
+    Args:
+        tracks: List of all TrackInfo objects (in original order)
+        sort_type: Sort category (SORT_TITLE, SORT_ALBUM, etc.)
+
+    Returns:
+        Tuple of (MHOD bytes, jump_table_entries) where jump_table_entries
+        is a list of (letter, start, count) tuples for the corresponding
+        Type 53 MHOD.
+    """
+    num_tracks = len(tracks)
+
+    # Create indexed list: (sort_key, original_index, track)
+    indexed = []
+    for i, track in enumerate(tracks):
+        sort_key = _get_sort_fields(track, sort_type)
+        indexed.append((sort_key, i, track))
+
+    # Sort by the sort key
+    indexed.sort(key=lambda x: x[0])
+
+    # Build sorted track indices (original position in track list)
+    sorted_indices = [idx for _, idx, _ in indexed]
+
+    # Build jump table entries: group by first letter
+    jump_entries: list[tuple[int, int, int]] = []
+    last_letter = -1
+    current_entry = None
+
+    for pos, (_, _, track) in enumerate(indexed):
+        letter = _get_jump_letter(track, sort_type)
+        if letter != last_letter:
+            current_entry = (letter, pos, 0)
+            jump_entries.append(current_entry)
+            last_letter = letter
+        # Increment count for current entry
+        letter_val, start, count = jump_entries[-1]
+        jump_entries[-1] = (letter_val, start, count + 1)
+
+    # Build MHOD type 52 binary data
+    # Body: sort_type(4) + count(4) + padding(40) + indices(count*4)
+    total_len = 4 * num_tracks + MHOD_HEADER_SIZE + MHOD52_BODY_HEADER_SIZE
+
+    header = write_mhod_header(52, total_len)
+
+    # Body header
+    body_header = bytearray(MHOD52_BODY_HEADER_SIZE)
+    struct.pack_into('<I', body_header, 0, sort_type)    # sort type
+    struct.pack_into('<I', body_header, 4, num_tracks)   # number of entries
+    # Remaining 40 bytes are zero padding
+
+    # Track indices
+    indices_data = bytearray(4 * num_tracks)
+    for i, idx in enumerate(sorted_indices):
+        struct.pack_into('<I', indices_data, i * 4, idx)
+
+    return bytes(header) + bytes(body_header) + bytes(indices_data), jump_entries
+
+
+def write_mhod_type53(sort_type: int, jump_entries: list[tuple[int, int, int]]) -> bytes:
+    """
+    Write a Type 53 MHOD (library playlist jump table) for one sort category.
+
+    Args:
+        sort_type: Sort category (must match corresponding type 52)
+        jump_entries: List of (letter, start, count) tuples from write_mhod_type52()
+
+    Returns:
+        Complete MHOD type 53 bytes
+    """
+    num_entries = len(jump_entries)
+
+    # Build MHOD type 53 binary data
+    # Body: sort_type(4) + count(4) + padding(8) + entries(count*12)
+    total_len = MHOD53_ENTRY_SIZE * num_entries + MHOD_HEADER_SIZE + MHOD53_BODY_HEADER_SIZE
+
+    header = write_mhod_header(53, total_len)
+
+    # Body header
+    body_header = bytearray(MHOD53_BODY_HEADER_SIZE)
+    struct.pack_into('<I', body_header, 0, sort_type)     # sort type
+    struct.pack_into('<I', body_header, 4, num_entries)    # number of entries
+    # 8 bytes zero padding
+
+    # Jump table entries: each is letter(u16) + pad(u16) + start(u32) + count(u32)
+    entries_data = bytearray(MHOD53_ENTRY_SIZE * num_entries)
+    for i, (letter, start, count) in enumerate(jump_entries):
+        offset = i * MHOD53_ENTRY_SIZE
+        struct.pack_into('<H', entries_data, offset, letter)       # letter (UTF-16)
+        struct.pack_into('<H', entries_data, offset + 2, 0)        # padding
+        struct.pack_into('<I', entries_data, offset + 4, start)    # start index
+        struct.pack_into('<I', entries_data, offset + 8, count)    # count
+
+    return bytes(header) + bytes(body_header) + bytes(entries_data)
+
+
+def write_library_indices(tracks: list["TrackInfo"], capabilities=None) -> tuple[bytes, int]:
+    """
+    Write all library index MHODs (type 52 + type 53 pairs) for the
+    master playlist.
+
+    Base sort categories (always written):
+    - Title (0x03), Album (0x04), Artist (0x05), Genre (0x07), Composer (0x12)
+
+    Video sort categories (when capabilities.supports_video is True):
+    - Show (0x1D), Season (0x1E), Episode (0x1F)
+
+    Album Artist sort (0x23) is written for all devices with capabilities
+    (i.e. modern iPods that use the capabilities system).
+
+    Args:
+        tracks: List of all TrackInfo objects
+        capabilities: Optional DeviceCapabilities for conditional sort types.
+
+    Returns:
+        Tuple of (concatenated MHOD bytes, count of MHODs written)
+    """
+    if not tracks:
+        return b'', 0
+
+    # Build the list of sort types to write
+    sort_types = list(BASE_SORT_TYPES)
+    if capabilities is not None:
+        if capabilities.supports_video:
+            sort_types.extend(VIDEO_SORT_TYPES)
+        # Album artist sort for all modern iPods
+        sort_types.append(SORT_ALBUM_ARTIST)
+
+    result = bytearray()
+    mhod_count = 0
+
+    for sort_type in sort_types:
+        # Write type 52 (sorted index)
+        mhod52_data, jump_entries = write_mhod_type52(tracks, sort_type)
+        result.extend(mhod52_data)
+        mhod_count += 1
+
+        # Write type 53 (jump table)
+        mhod53_data = write_mhod_type53(sort_type, jump_entries)
+        result.extend(mhod53_data)
+        mhod_count += 1
+
+    return bytes(result), mhod_count

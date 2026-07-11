@@ -1,8 +1,8 @@
 import logging
 
-import SyncEngine.transcoder as transcoder_module
-from infrastructure.settings_schema import AppSettings
-from SyncEngine.transcoder import (
+import iopenpod.sync.transcoder as transcoder_module
+from iopenpod.infrastructure.settings_schema import AppSettings
+from iopenpod.sync.transcoder import (
     AudioProperties,
     TranscodeOptions,
     TranscodeResult,
@@ -47,7 +47,7 @@ def test_unprobeable_native_audio_reencodes_instead_of_copying_blind(monkeypatch
         lambda filepath: AudioProperties(probe_ok=False),
     )
 
-    with caplog.at_level(logging.WARNING, logger="SyncEngine.transcoder"):
+    with caplog.at_level(logging.WARNING, logger="iopenpod.sync.transcoder"):
         target = get_transcode_target("Café.m4a")
 
     assert target == TranscodeTarget.AAC

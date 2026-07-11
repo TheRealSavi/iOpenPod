@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sync_progress_stages import (
+from iopenpod.sync_progress_stages import (
     EXECUTION_STAGE_TO_ENGINE_STAGE,
     PIPELINE_STAGE_ROWS,
     PLANNING_STAGE_TO_ENGINE_STAGE,

@@ -3,7 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any, cast
 
-from SyncEngine.contracts import SyncAction, SyncItem, SyncPlan
+from iopenpod.sync.contracts import SyncAction, SyncItem, SyncPlan
 
 
 def _pc_track(**kwargs: object) -> Any:

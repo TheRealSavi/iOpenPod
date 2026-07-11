@@ -15,12 +15,12 @@ from PyQt6.QtGui import QKeyEvent
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QComboBox, QDialog, QHeaderView, QLabel, QLineEdit, QMenu, QPushButton, QSlider, QTableWidget, QTableWidgetItem, QTreeWidget
 
-from app_core.context import RuntimeSettingsService
-from app_core.services import DeviceCapabilitySnapshot, DeviceIdentitySnapshot, DeviceManagerLike, DeviceSession, SettingsService, SettingsSnapshot
-from GUI import imgMaker
-from GUI.imgMaker import ArtworkFormatPreview, TrackArtworkPreview, get_track_artwork_previews
-from GUI.styles import Colors
-from GUI.widgets.MBListView import (
+from iopenpod.application.context import RuntimeSettingsService
+from iopenpod.application.services import DeviceCapabilitySnapshot, DeviceIdentitySnapshot, DeviceManagerLike, DeviceSession, SettingsService, SettingsSnapshot
+from iopenpod.gui import imgMaker
+from iopenpod.gui.imgMaker import ArtworkFormatPreview, TrackArtworkPreview, get_track_artwork_previews
+from iopenpod.gui.styles import Colors
+from iopenpod.gui.widgets.MBListView import (
     _OPEN_TRACK_SHORTCUT,
     _OPEN_WITH_TRACK_SHORTCUT,
     COLUMN_CONFIG,
@@ -33,7 +33,7 @@ from GUI.widgets.MBListView import (
     chapter_summary_from_data,
     podcast_conversion_changes_for_track,
 )
-from GUI.widgets.trackEditorDialog import (
+from iopenpod.gui.widgets.trackEditorDialog import (
     TrackEditorDialog,
     _ArtworkPreviewPanel,
     _ChapterTimelineEditor,
@@ -42,9 +42,9 @@ from GUI.widgets.trackEditorDialog import (
     _SquareCropCanvas,
     _subgroup_for_key,
 )
-from infrastructure import settings_persistence
-from infrastructure.settings_runtime import SettingsRuntime
-from infrastructure.settings_schema import AppSettings, DeviceSettingsState
+from iopenpod.infrastructure import settings_persistence
+from iopenpod.infrastructure.settings_runtime import SettingsRuntime
+from iopenpod.infrastructure.settings_schema import AppSettings, DeviceSettingsState
 
 _QTEST: Any = QTest
 
@@ -1004,11 +1004,11 @@ def test_open_track_file_actions_open_resolved_file(
     opened: list[list[str]] = []
     picked: list[tuple[list[str], MusicBrowserList]] = []
     monkeypatch.setattr(
-        "GUI.widgets.MBListView.open_files_with_default_app",
+        "iopenpod.gui.widgets.MBListView.open_files_with_default_app",
         lambda paths: opened.append(list(paths)) or True,
     )
     monkeypatch.setattr(
-        "GUI.widgets.MBListView.open_files_with_app_picker",
+        "iopenpod.gui.widgets.MBListView.open_files_with_app_picker",
         lambda paths, parent: picked.append((list(paths), parent)) or True,
     )
 
@@ -1061,7 +1061,7 @@ def test_open_with_action_uses_one_picker_for_multiple_tracks(
     )
     picked: list[tuple[list[str], MusicBrowserList]] = []
     monkeypatch.setattr(
-        "GUI.widgets.MBListView.open_files_with_app_picker",
+        "iopenpod.gui.widgets.MBListView.open_files_with_app_picker",
         lambda paths, parent: picked.append((list(paths), parent)) or True,
     )
     menu = QMenu(view)
@@ -1581,7 +1581,7 @@ def test_track_editor_dialog_artwork_panel_collapses_matching_artworks(qtbot, mo
         ),
     ]
     monkeypatch.setattr(
-        "GUI.widgets.trackEditorDialog.get_track_artwork_previews",
+        "iopenpod.gui.widgets.trackEditorDialog.get_track_artwork_previews",
         lambda _tracks: previews,
     )
 
@@ -1625,7 +1625,7 @@ def test_track_editor_dialog_artwork_panel_shows_multiple_images_for_different_a
         ),
     ]
     monkeypatch.setattr(
-        "GUI.widgets.trackEditorDialog.get_track_artwork_previews",
+        "iopenpod.gui.widgets.trackEditorDialog.get_track_artwork_previews",
         lambda _tracks: previews,
     )
 
@@ -1664,7 +1664,7 @@ def test_track_editor_dialog_artwork_panel_shows_multiple_values_for_artwork_pre
         ),
     ]
     monkeypatch.setattr(
-        "GUI.widgets.trackEditorDialog.get_track_artwork_previews",
+        "iopenpod.gui.widgets.trackEditorDialog.get_track_artwork_previews",
         lambda _tracks: previews,
     )
 
@@ -1702,9 +1702,9 @@ def test_track_editor_dialog_artwork_panel_shows_multiple_values_for_artwork_pre
         def selected_choice(self):
             return self._context.choices[0]
 
-    monkeypatch.setattr("GUI.widgets.trackEditorDialog.UnifyArtworkDialog", _Dialog)
+    monkeypatch.setattr("iopenpod.gui.widgets.trackEditorDialog.UnifyArtworkDialog", _Dialog)
     monkeypatch.setattr(
-        "GUI.widgets.trackEditorDialog.save_unified_artwork_temp",
+        "iopenpod.gui.widgets.trackEditorDialog.save_unified_artwork_temp",
         lambda _image: str(staged_path),
     )
 

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import sqlite3
 
-from iTunesDB_Writer.mhyp_writer import PlaylistInfo
-from SQLiteDB_Writer.library_writer import write_library_itdb
+from iopenpod.itunesdb_writer.mhyp_writer import PlaylistInfo
+from iopenpod.sqlitedb_writer.library_writer import write_library_itdb
 
 
 def test_sqlite_writer_maps_libgpod_music_mhsd5_type(tmp_path) -> None:

@@ -4,19 +4,19 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
-from infrastructure.media_folders import MediaFolderEntry
-from iTunesDB_Writer.mhit_writer import TrackInfo
-from SyncEngine._playlist_builder import build_and_evaluate_playlists
-from SyncEngine.fingerprint_diff_engine import FingerprintDiffEngine
-from SyncEngine.pc_library import PCTrack
-from SyncEngine.sync_playlist_files import (
+from iopenpod.infrastructure.media_folders import MediaFolderEntry
+from iopenpod.itunesdb_writer.mhit_writer import TrackInfo
+from iopenpod.sync._playlist_builder import build_and_evaluate_playlists
+from iopenpod.sync.fingerprint_diff_engine import FingerprintDiffEngine
+from iopenpod.sync.pc_library import PCTrack
+from iopenpod.sync.sync_playlist_files import (
     SYNC_PLAYLIST_SOURCE,
     discover_sync_playlist_files,
     is_managed_sync_playlist_id,
     normalize_sync_playlist_path,
     sync_playlist_file_id,
 )
-from SyncEngine.sync_playlist_planner import build_sync_playlist_changes
+from iopenpod.sync.sync_playlist_planner import build_sync_playlist_changes
 
 
 def test_discover_sync_playlist_files_imports_outside_references_and_counts_skips(
@@ -651,11 +651,11 @@ def test_full_sync_playlist_ipod_file_reference_uses_existing_fingerprint(
             return True
 
     monkeypatch.setattr(
-        "SyncEngine.fingerprint_diff_engine.is_fpcalc_available",
+        "iopenpod.sync.fingerprint_diff_engine.is_fpcalc_available",
         lambda _fpcalc_path="": True,
     )
     monkeypatch.setattr(
-        "SyncEngine.integrity.check_integrity",
+        "iopenpod.sync.integrity.check_integrity",
         lambda *_args, **_kwargs: SimpleNamespace(
             is_clean=True,
             stale_mappings=[],
@@ -670,7 +670,7 @@ def test_full_sync_playlist_ipod_file_reference_uses_existing_fingerprint(
         return "matching-fingerprint", "computed"
 
     monkeypatch.setattr(
-        "SyncEngine.fingerprint_diff_engine.get_or_compute_fingerprint_with_status",
+        "iopenpod.sync.fingerprint_diff_engine.get_or_compute_fingerprint_with_status",
         fingerprint_playlist_reference,
     )
 
@@ -791,11 +791,11 @@ def test_full_sync_playlist_external_reference_uses_existing_ipod_fingerprint(
             return True
 
     monkeypatch.setattr(
-        "SyncEngine.fingerprint_diff_engine.is_fpcalc_available",
+        "iopenpod.sync.fingerprint_diff_engine.is_fpcalc_available",
         lambda _fpcalc_path="": True,
     )
     monkeypatch.setattr(
-        "SyncEngine.integrity.check_integrity",
+        "iopenpod.sync.integrity.check_integrity",
         lambda *_args, **_kwargs: SimpleNamespace(
             is_clean=True,
             stale_mappings=[],
@@ -811,7 +811,7 @@ def test_full_sync_playlist_external_reference_uses_existing_ipod_fingerprint(
         return "matching-fingerprint", "computed"
 
     monkeypatch.setattr(
-        "SyncEngine.fingerprint_diff_engine.get_or_compute_fingerprint_with_status",
+        "iopenpod.sync.fingerprint_diff_engine.get_or_compute_fingerprint_with_status",
         fingerprint_playlist_reference,
     )
 

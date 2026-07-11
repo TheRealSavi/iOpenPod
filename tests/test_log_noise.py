@@ -1,13 +1,13 @@
 import logging
 import struct
 
-from ArtworkDB_Writer import artwork_writer as aw
-from iTunesDB_Parser.chunk_parser import (
+from iopenpod.artworkdb_writer import artwork_writer as aw
+from iopenpod.itunesdb_parser.chunk_parser import (
     log_unknown_chunk_summary,
     parse_chunk,
     reset_unknown_chunk_summary,
 )
-from SyncEngine.sync_executor import SyncExecutor
+from iopenpod.sync.sync_executor import SyncExecutor
 
 
 def test_unknown_itunesdb_chunks_are_summarized(caplog) -> None:
@@ -44,10 +44,10 @@ def test_metadata_strip_successes_are_summarized_without_track_names(
     def fake_copy_file_to_device(*_args, **_kwargs):
         return None
 
-    monkeypatch.setattr("SyncEngine.sync_executor.strip_metadata", fake_strip_metadata)
+    monkeypatch.setattr("iopenpod.sync.sync_executor.strip_metadata", fake_strip_metadata)
     monkeypatch.setattr(executor, "_copy_file_to_device", fake_copy_file_to_device)
 
-    with caplog.at_level(logging.DEBUG, logger="SyncEngine.sync_executor"):
+    with caplog.at_level(logging.DEBUG, logger="iopenpod.sync.sync_executor"):
         executor._reset_metadata_strip_summary()
         executor._copy_stripped_file_to_device(source_a, tmp_path / "out-a.mp3")
         executor._copy_stripped_file_to_device(source_b, tmp_path / "out-b.mp3")
@@ -73,10 +73,10 @@ def test_metadata_strip_failures_are_summarized_without_track_names(
     def fake_copy_file_to_device(*_args, **_kwargs):
         return None
 
-    monkeypatch.setattr("SyncEngine.sync_executor.strip_metadata", fake_strip_metadata)
+    monkeypatch.setattr("iopenpod.sync.sync_executor.strip_metadata", fake_strip_metadata)
     monkeypatch.setattr(executor, "_copy_file_to_device", fake_copy_file_to_device)
 
-    with caplog.at_level(logging.WARNING, logger="SyncEngine.sync_executor"):
+    with caplog.at_level(logging.WARNING, logger="iopenpod.sync.sync_executor"):
         executor._reset_metadata_strip_summary()
         executor._copy_stripped_file_to_device(source, tmp_path / "out.mp3")
         executor._log_metadata_strip_summary()
@@ -100,7 +100,7 @@ def test_artwork_missing_art_debug_is_summarized_without_track_names(
 
     monkeypatch.setattr(aw, "extract_art_with_folder", lambda _path: None)
 
-    with caplog.at_level(logging.DEBUG, logger="ArtworkDB_Writer.artwork_writer"):
+    with caplog.at_level(logging.DEBUG, logger="iopenpod.artworkdb_writer.artwork_writer"):
         decisions, summary = aw._collect_track_artwork_decisions(
             [track],
             {101: str(source)},

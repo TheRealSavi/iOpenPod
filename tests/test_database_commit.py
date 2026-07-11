@@ -4,10 +4,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from iTunesDB_Writer.mhit_writer import TrackInfo
-from iTunesDB_Writer.mhyp_writer import PlaylistInfo
-from SyncEngine import _db_io, database_commit, itunes_prefs
-from SyncEngine.database_commit import (
+from iopenpod.itunesdb_writer.mhit_writer import TrackInfo
+from iopenpod.itunesdb_writer.mhyp_writer import PlaylistInfo
+from iopenpod.sync import _db_io, database_commit, itunes_prefs
+from iopenpod.sync.database_commit import (
     DatabaseCommitPayload,
     apply_itunes_protections_from_tracks,
     write_database_commit,

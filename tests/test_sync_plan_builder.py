@@ -1,18 +1,18 @@
 from types import SimpleNamespace
 
-from app_core.sync_plan_builder import (
+from iopenpod.application.sync_plan_builder import (
     build_podcast_removal_sync_plan,
     build_removal_sync_plan,
 )
-from SyncEngine.fingerprint_diff_engine import SyncAction, SyncItem, SyncPlan
-from SyncEngine.photos import (
+from iopenpod.sync.fingerprint_diff_engine import SyncAction, SyncItem, SyncPlan
+from iopenpod.sync.photos import (
     PCPhotoLibrary,
     PhotoAlbumChange,
     PhotoMembershipChange,
     PhotoSyncItem,
     PhotoSyncPlan,
 )
-from SyncEngine.review_selection import (
+from iopenpod.sync.review_selection import (
     build_filtered_sync_plan,
     build_selected_photo_plan,
 )

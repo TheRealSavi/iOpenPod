@@ -8,8 +8,8 @@ from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
-from iTunesDB_Writer.mhit_writer import TrackInfo
-from SyncEngine.contracts import (
+from iopenpod.itunesdb_writer.mhit_writer import TrackInfo
+from iopenpod.sync.contracts import (
     SYNC_DB_OVERHEAD_BYTES,
     SYNC_DB_WRITE_RESERVE_BYTES,
     StorageSummary,
@@ -18,11 +18,11 @@ from SyncEngine.contracts import (
     SyncPlan,
     sync_plan_required_free_bytes,
 )
-from SyncEngine.mapping import MappingFile
-from SyncEngine.pc_library import PCTrack
-from SyncEngine.sync_executor import SyncExecutor, _ExecutionLifecycle, _SyncContext
-from SyncEngine.sync_playlist_files import normalize_sync_playlist_path, sync_playlist_file_id
-from SyncEngine.transcoder import TranscodeResult, TranscodeTarget, resolve_transcode_plan
+from iopenpod.sync.mapping import MappingFile
+from iopenpod.sync.pc_library import PCTrack
+from iopenpod.sync.sync_executor import SyncExecutor, _ExecutionLifecycle, _SyncContext
+from iopenpod.sync.sync_playlist_files import normalize_sync_playlist_path, sync_playlist_file_id
+from iopenpod.sync.transcoder import TranscodeResult, TranscodeTarget, resolve_transcode_plan
 
 
 def _make_sync_ctx(
@@ -255,7 +255,7 @@ def test_preflight_blocks_over_capacity_without_until_full(
     )
 
     monkeypatch.setattr(
-        "SyncEngine.sync_executor.shutil.disk_usage",
+        "iopenpod.sync.sync_executor.shutil.disk_usage",
         lambda _path: SimpleNamespace(
             total=SYNC_DB_OVERHEAD_BYTES * 2,
             used=SYNC_DB_OVERHEAD_BYTES,
@@ -287,7 +287,7 @@ def test_preflight_allows_over_capacity_with_until_full(
     )
 
     monkeypatch.setattr(
-        "SyncEngine.sync_executor.shutil.disk_usage",
+        "iopenpod.sync.sync_executor.shutil.disk_usage",
         lambda _path: SimpleNamespace(
             total=SYNC_DB_OVERHEAD_BYTES * 2,
             used=SYNC_DB_OVERHEAD_BYTES,
@@ -318,7 +318,7 @@ def test_preflight_blocks_read_only_or_permission_denied_mount(
         raise OSError(errno.EACCES, "Permission denied", str(probe_path))
 
     monkeypatch.setattr(
-        "SyncEngine.sync_executor.tempfile.mkstemp",
+        "iopenpod.sync.sync_executor.tempfile.mkstemp",
         raise_permission_denied,
     )
 
@@ -350,9 +350,9 @@ def test_until_full_copy_uses_actual_staged_size_instead_of_estimate(
         path.write_bytes(b"ok")
         return True
 
-    monkeypatch.setattr("SyncEngine.sync_executor.strip_metadata", fake_strip_metadata)
+    monkeypatch.setattr("iopenpod.sync.sync_executor.strip_metadata", fake_strip_metadata)
     monkeypatch.setattr(
-        "SyncEngine.sync_executor.shutil.disk_usage",
+        "iopenpod.sync.sync_executor.shutil.disk_usage",
         lambda _path: SimpleNamespace(
             total=SYNC_DB_WRITE_RESERVE_BYTES + 2,
             used=0,
@@ -658,7 +658,7 @@ def test_parallel_copy_stage_caches_source_identity_for_backpatch(
     passed_identities: list[tuple[int, float, str | None] | None] = []
 
     monkeypatch.setattr(
-        "SyncEngine.sync_executor._current_source_identity",
+        "iopenpod.sync.sync_executor._current_source_identity",
         lambda _pc_track: cached_identity,
     )
 
@@ -723,7 +723,7 @@ def test_backpatch_new_tracks_reuses_cached_source_identity(
         raise AssertionError("backpatch should use the worker-cached identity")
 
     monkeypatch.setattr(
-        "SyncEngine.sync_executor._current_source_identity",
+        "iopenpod.sync.sync_executor._current_source_identity",
         fail_current_identity,
     )
 
@@ -902,7 +902,7 @@ def test_copy_stage_uses_planned_transcode_decision(monkeypatch, tmp_path: Path)
         raise AssertionError("executor should use the SyncItem transcode_plan")
 
     monkeypatch.setattr(
-        "SyncEngine.sync_executor.resolve_transcode_plan",
+        "iopenpod.sync.sync_executor.resolve_transcode_plan",
         fail_resolve,
     )
 
@@ -951,7 +951,7 @@ def test_direct_copy_writes_metadata_stripped_payload_without_touching_source(
         if progress:
             progress(1.0)
 
-    monkeypatch.setattr("SyncEngine.sync_executor.strip_metadata", fake_strip_metadata)
+    monkeypatch.setattr("iopenpod.sync.sync_executor.strip_metadata", fake_strip_metadata)
     monkeypatch.setattr(executor, "_copy_file_chunked", fake_copy_file_chunked)
 
     success, ipod_path, was_transcoded, err = executor._copy_to_ipod(source, transcode_plan)
@@ -1004,8 +1004,8 @@ def test_transcoded_file_is_stripped_before_device_write(
         path.write_bytes(b"stripped-transcode")
         return True
 
-    monkeypatch.setattr("SyncEngine.sync_executor.transcode", fake_transcode)
-    monkeypatch.setattr("SyncEngine.sync_executor.strip_metadata", fake_strip_metadata)
+    monkeypatch.setattr("iopenpod.sync.sync_executor.transcode", fake_transcode)
+    monkeypatch.setattr("iopenpod.sync.sync_executor.strip_metadata", fake_strip_metadata)
 
     success, ipod_path, was_transcoded, err = executor._copy_to_ipod(source, transcode_plan)
 

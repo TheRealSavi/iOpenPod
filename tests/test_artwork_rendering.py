@@ -1,6 +1,6 @@
 from PIL import Image
 
-from GUI.artwork_rendering import enhance_artwork_image, nested_artwork_radius
+from iopenpod.gui.artwork_rendering import enhance_artwork_image, nested_artwork_radius
 
 
 def test_nested_artwork_radius_preserves_parent_shape_language() -> None:

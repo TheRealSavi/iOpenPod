@@ -1,4 +1,4 @@
-from ipod_device import capabilities_for_family_gen
+from iopenpod.device import capabilities_for_family_gen
 
 _MIB = 1024 * 1024
 

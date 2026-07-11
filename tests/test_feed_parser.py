@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import gzip
 
-from PodcastManager.feed_parser import fetch_feed
+from iopenpod.podcasts.feed_parser import fetch_feed
 
 
 def _feed_xml(title: str = "Example Show") -> bytes:
@@ -54,7 +54,7 @@ def test_fetch_feed_tolerates_invalid_gzip_header(monkeypatch) -> None:
         assert kwargs["headers"]["Accept-Encoding"] == "identity"
         return response
 
-    monkeypatch.setattr("PodcastManager.feed_parser.requests.get", fake_get)
+    monkeypatch.setattr("iopenpod.podcasts.feed_parser.requests.get", fake_get)
 
     feed = fetch_feed("https://example.test/feed.xml")
 
@@ -66,7 +66,7 @@ def test_fetch_feed_tolerates_invalid_gzip_header(monkeypatch) -> None:
 def test_fetch_feed_decodes_valid_gzip_response(monkeypatch) -> None:
     response = _Response(gzip.compress(_feed_xml("Compressed Feed")), "gzip")
     monkeypatch.setattr(
-        "PodcastManager.feed_parser.requests.get",
+        "iopenpod.podcasts.feed_parser.requests.get",
         lambda *_args, **_kwargs: response,
     )
 

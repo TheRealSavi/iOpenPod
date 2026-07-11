@@ -6,20 +6,20 @@ from types import SimpleNamespace
 
 import pytest
 
-from iTunesDB_Writer.mhit_writer import TrackInfo
-from SyncEngine.fingerprint_diff_engine import SyncAction, SyncItem, SyncPlan
-from SyncEngine.lastfm_scrobbler import (
+from iopenpod.itunesdb_writer.mhit_writer import TrackInfo
+from iopenpod.sync.fingerprint_diff_engine import SyncAction, SyncItem, SyncPlan
+from iopenpod.sync.lastfm_scrobbler import (
     ScrobbleEntry as LastFmScrobbleEntry,
 )
-from SyncEngine.lastfm_scrobbler import (
+from iopenpod.sync.lastfm_scrobbler import (
     ScrobbleResult as LastFmScrobbleResult,
 )
-from SyncEngine.lastfm_scrobbler import (
+from iopenpod.sync.lastfm_scrobbler import (
     _build_scrobble_batch_params,
     _make_lastfm_request,
     scrobble_lastfm,
 )
-from SyncEngine.lb_scrobbler import (
+from iopenpod.sync.lb_scrobbler import (
     IMPORT_SERVICE,
     RateLimitInfo,
     ScrobbleAborted,
@@ -31,9 +31,9 @@ from SyncEngine.lb_scrobbler import (
     scrobble_listenbrainz,
     set_latest_import,
 )
-from SyncEngine.mapping import MappingFile
-from SyncEngine.pc_library import PCTrack
-from SyncEngine.sync_executor import SyncExecutor, _SyncContext
+from iopenpod.sync.mapping import MappingFile
+from iopenpod.sync.pc_library import PCTrack
+from iopenpod.sync.sync_executor import SyncExecutor, _SyncContext
 
 
 def _build_scrobble_context(*, progress_log: list | None = None) -> _SyncContext:
@@ -100,7 +100,7 @@ def test_execute_scrobble_reports_listenbrainz_errors(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    import SyncEngine.lb_scrobbler as lb_scrobbler
+    import iopenpod.sync.lb_scrobbler as lb_scrobbler
 
     progress_log = []
     ctx = _build_scrobble_context(progress_log=progress_log)
@@ -128,7 +128,7 @@ def test_execute_scrobble_reports_lastfm_errors(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    import SyncEngine.lastfm_scrobbler as lastfm_scrobbler
+    import iopenpod.sync.lastfm_scrobbler as lastfm_scrobbler
 
     progress_log = []
     ctx = _build_scrobble_context(progress_log=progress_log)
@@ -179,8 +179,8 @@ def test_each_scrobble_service_gets_original_playcount_delta(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    import SyncEngine.lastfm_scrobbler as lastfm_scrobbler
-    import SyncEngine.lb_scrobbler as lb_scrobbler
+    import iopenpod.sync.lastfm_scrobbler as lastfm_scrobbler
+    import iopenpod.sync.lb_scrobbler as lb_scrobbler
 
     ctx = _build_scrobble_context()
     ctx.plan.to_sync_playcount[0].play_count_delta = 2
@@ -225,7 +225,7 @@ def test_lastfm_request_reports_json_api_errors(monkeypatch) -> None:
             return b'{"error": 9, "message": "Invalid session key"}'
 
     monkeypatch.setattr(
-        "SyncEngine.lastfm_scrobbler.urllib.request.urlopen",
+        "iopenpod.sync.lastfm_scrobbler.urllib.request.urlopen",
         lambda *_args, **_kwargs: FakeResponse(),
     )
 
@@ -261,11 +261,11 @@ def test_lastfm_request_retries_json_temporary_api_errors(monkeypatch) -> None:
         return responses.pop(0)
 
     monkeypatch.setattr(
-        "SyncEngine.lastfm_scrobbler.urllib.request.urlopen",
+        "iopenpod.sync.lastfm_scrobbler.urllib.request.urlopen",
         fake_urlopen,
     )
     monkeypatch.setattr(
-        "SyncEngine.lastfm_scrobbler._sleep_with_abort",
+        "iopenpod.sync.lastfm_scrobbler._sleep_with_abort",
         lambda seconds, should_abort=None: waits.append(seconds),
     )
 
@@ -306,7 +306,7 @@ def test_scrobble_lastfm_reports_json_api_errors(monkeypatch) -> None:
         raise RuntimeError("Last.fm API 9: Invalid session key")
 
     monkeypatch.setattr(
-        "SyncEngine.lastfm_scrobbler._make_lastfm_request",
+        "iopenpod.sync.lastfm_scrobbler._make_lastfm_request",
         fake_make_request,
     )
 
@@ -348,7 +348,7 @@ def test_latest_import_requests_are_scoped_to_iopenpod(monkeypatch) -> None:
             return {"latest_import": 123}, RateLimitInfo()
         return {"status": "ok"}, RateLimitInfo()
 
-    monkeypatch.setattr("SyncEngine.lb_scrobbler._make_request", fake_make_request)
+    monkeypatch.setattr("iopenpod.sync.lb_scrobbler._make_request", fake_make_request)
 
     assert get_latest_import("TheRealSavi", "token") == 123
     assert set_latest_import(456, "token") is True
@@ -392,9 +392,9 @@ def test_scrobble_listenbrainz_skips_entries_covered_by_latest_import(
         submitted_payloads.append(json.loads(body.decode("utf-8"))["payload"])
         return {"status": "ok"}, RateLimitInfo(remaining=10, reset_in=0.0)
 
-    monkeypatch.setattr("SyncEngine.lb_scrobbler.get_latest_import", fake_get_latest_import)
-    monkeypatch.setattr("SyncEngine.lb_scrobbler.set_latest_import", fake_set_latest_import)
-    monkeypatch.setattr("SyncEngine.lb_scrobbler._make_request", fake_make_request)
+    monkeypatch.setattr("iopenpod.sync.lb_scrobbler.get_latest_import", fake_get_latest_import)
+    monkeypatch.setattr("iopenpod.sync.lb_scrobbler.set_latest_import", fake_set_latest_import)
+    monkeypatch.setattr("iopenpod.sync.lb_scrobbler._make_request", fake_make_request)
 
     result = scrobble_listenbrainz(
         [
@@ -418,7 +418,7 @@ def test_scrobble_listenbrainz_returns_user_gave_up_when_latest_import_aborts(
     def fake_get_latest_import(*args, **kwargs):
         raise ScrobbleAborted("User gave up while connecting to ListenBrainz")
 
-    monkeypatch.setattr("SyncEngine.lb_scrobbler.get_latest_import", fake_get_latest_import)
+    monkeypatch.setattr("iopenpod.sync.lb_scrobbler.get_latest_import", fake_get_latest_import)
 
     result = scrobble_listenbrainz(
         [ScrobbleEntry("Artist", "Track", "Album", 240, 1_700_000_100)],
@@ -439,8 +439,8 @@ def test_scrobble_listenbrainz_reports_latest_import_update_failure(
         assert path == "/1/submit-listens"
         return {"status": "ok"}, RateLimitInfo(remaining=10, reset_in=0.0)
 
-    monkeypatch.setattr("SyncEngine.lb_scrobbler._make_request", fake_make_request)
-    monkeypatch.setattr("SyncEngine.lb_scrobbler.set_latest_import", lambda *args, **kwargs: False)
+    monkeypatch.setattr("iopenpod.sync.lb_scrobbler._make_request", fake_make_request)
+    monkeypatch.setattr("iopenpod.sync.lb_scrobbler.set_latest_import", lambda *args, **kwargs: False)
 
     result = scrobble_listenbrainz(
         [ScrobbleEntry("Artist", "Track", "Album", 240, 1_700_000_100)],
@@ -458,7 +458,7 @@ def test_write_finalize_scrobbles_before_deleting_playcounts(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    import SyncEngine.sync_executor as sync_executor
+    import iopenpod.sync.sync_executor as sync_executor
 
     order: list[str] = []
     ctx = _build_scrobble_context()
@@ -496,7 +496,7 @@ def test_write_finalize_clears_playcount_after_scrobble_before_database_write(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    import SyncEngine.sync_executor as sync_executor
+    import iopenpod.sync.sync_executor as sync_executor
 
     ctx = _build_scrobble_context()
     ctx.plan.to_sync_playcount[0].db_track_id = 123

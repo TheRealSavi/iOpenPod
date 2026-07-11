@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from app_core.device_identity import (
+from iopenpod.application.device_identity import (
     format_checksum_type_name,
     generic_ipod_image_filename,
     refresh_device_disk_usage,
@@ -33,7 +33,7 @@ def test_format_checksum_type_name_handles_known_and_unknown_values() -> None:
 
 def test_resolve_device_image_filename_prefers_model_number(monkeypatch) -> None:
     monkeypatch.setattr(
-        "ipod_device.image_for_model",
+        "iopenpod.device.image_for_model",
         lambda model_number: "classic-black.png",
     )
 
@@ -48,9 +48,9 @@ def test_resolve_device_image_filename_prefers_model_number(monkeypatch) -> None
 
 
 def test_resolve_device_image_filename_falls_back_to_family(monkeypatch) -> None:
-    monkeypatch.setattr("ipod_device.image_for_model", lambda model_number: "")
+    monkeypatch.setattr("iopenpod.device.image_for_model", lambda model_number: "")
     monkeypatch.setattr(
-        "ipod_device.resolve_image_filename",
+        "iopenpod.device.resolve_image_filename",
         lambda family, generation, color: f"{family}-{generation}-{color}.png",
     )
 
@@ -66,7 +66,7 @@ def test_resolve_device_image_filename_falls_back_to_family(monkeypatch) -> None
 
 def test_resolve_ipod_product_image_filename_uses_family_fields(monkeypatch) -> None:
     monkeypatch.setattr(
-        "ipod_device.resolve_image_filename",
+        "iopenpod.device.resolve_image_filename",
         lambda family, generation, color: f"{family}-{generation}-{color}.png",
     )
 
@@ -78,7 +78,7 @@ def test_resolve_ipod_product_image_filename_uses_family_fields(monkeypatch) -> 
 
 def test_resolve_ipod_image_color_uses_product_image_color(monkeypatch) -> None:
     monkeypatch.setattr(
-        "ipod_device.color_for_image",
+        "iopenpod.device.color_for_image",
         lambda filename: (64, 156, 255) if filename == "blue.png" else None,
     )
 

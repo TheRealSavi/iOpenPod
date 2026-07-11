@@ -7,7 +7,7 @@ Work through each section with a real iPod connected.
 
 ## 1. Startup & Settings
 
-Tests: `settings.py`, `main.py`, `GUI/settings.py` (deleted shim), function renames
+Tests: `settings.py`, `src/iopenpod/__main__.py`, `src/iopenpod/gui/settings.py` (deleted shim), function renames
 
 - [ ] App launches without import errors
 - [ ] Settings load correctly (check theme, transcode format, backup toggle)
@@ -33,7 +33,7 @@ Tests: deleted list parsers (`mhlt`, `mhla`, `mhli`, `mhlp`), `_parse_child_list
 
 ## 3. Sync — Analysis Phase
 
-Tests: `SyncEngine/__init__.py`, `_formats.py`, `_track_conversion.py`, `pc_library.py`, `integrity.py`
+Tests: `src/iopenpod/sync/__init__.py`, `_formats.py`, `_track_conversion.py`, `pc_library.py`, `integrity.py`
 
 - [ ] Add a few new tracks to PC library, click Sync
 - [ ] Sync review shows correct additions (new tracks listed)
@@ -86,7 +86,7 @@ Tests: `transcoder.py`, `_formats.py` constants
 
 ## 7. SQLite Database (Nano 6G/7G only)
 
-Tests: `SQLiteDB_Writer/_helpers.py`, `library_writer.py`, `dynamic_writer.py`, `extras_writer.py`, `genius_writer.py`, `locations_writer.py`, `sqlite_writer.py`
+Tests: `src/iopenpod/sqlitedb_writer/_helpers.py`, `library_writer.py`, `dynamic_writer.py`, `extras_writer.py`, `genius_writer.py`, `locations_writer.py`, `sqlite_writer.py`
 
 Skip if no Nano 6G/7G available.
 
@@ -100,7 +100,7 @@ Skip if no Nano 6G/7G available.
 
 ## 8. Podcast Sync
 
-Tests: `PodcastManager/downloader.py` (new `download_and_probe_episode()`), `podcast_sync.py`, `subscription_store.py`
+Tests: `src/iopenpod/podcasts/downloader.py` (new `download_and_probe_episode()`), `podcast_sync.py`, `subscription_store.py`
 
 - [ ] Subscribe to a podcast feed
 - [ ] Episodes download successfully
@@ -133,7 +133,7 @@ Tests: `integrity.py`, `_db_io.py`, `playcounts.py`
 
 ## 11. GUI
 
-Tests: import path changes (`GUI.settings` -> `settings`), `GUI/app.py`
+Tests: import path changes (`iopenpod.gui.settings` -> `settings`), `src/iopenpod/gui/app.py`
 
 - [ ] All theme changes work (dark, light, system, catppuccin variants)
 - [ ] High contrast toggle works
@@ -160,6 +160,6 @@ Tests: import path changes (`GUI.settings` -> `settings`), `GUI/app.py`
 | Extraction helpers | `extract_datasets()`, `extract_mhod_strings()`, `extract_playlist_extras()` moved to `extraction.py` |
 | SyncEngine | Large `sync_executor.py` split into `_db_io.py`, `_formats.py`, `_track_conversion.py`, `_playlist_builder.py` |
 | SQLiteDB helpers | `unix_to_coredata()`, `s64()`, `open_db()` extracted to `_helpers.py` |
-| Settings shim | `GUI/settings.py` removed; all imports point to root `settings.py` |
+| Settings shim | `src/iopenpod/gui/settings.py` removed; all imports point to root `settings.py` |
 | Function visibility | `_default_data_dir()`, `_default_cache_dir()`, `_get_settings_dir()` made public (underscore removed) |
 | Podcast download | `download_and_probe_episode()` added to `downloader.py`, used by sync_executor |

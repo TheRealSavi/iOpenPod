@@ -1,0 +1,356 @@
+"""Podcast search dialog — iTunes Search API powered discovery.
+
+Modal dialog that lets users search for podcasts by name and subscribe
+to them.  Search runs in a background worker thread to keep the UI
+responsive.
+"""
+
+from __future__ import annotations
+
+import logging
+
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QFont, QImage, QPixmap
+from PyQt6.QtWidgets import (
+    QDialog,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
+
+from ..glyphs import glyph_pixmap
+from ..hidpi import scale_pixmap_for_display
+from ..styles import (
+    FONT_FAMILY,
+    LABEL_SECONDARY,
+    Colors,
+    Metrics,
+    accent_btn_css,
+    btn_css,
+    input_css,
+    make_label,
+    make_scroll_area,
+)
+from .podcastStates import PodcastStatePanel
+
+log = logging.getLogger(__name__)
+
+
+class PodcastSearchDialog(QDialog):
+    """Modal dialog for searching and subscribing to podcasts.
+
+    Emits ``subscribed(str, str)`` with the RSS feed URL and artwork URL
+    when the user clicks Subscribe on a search result.
+    """
+
+    subscribed = pyqtSignal(str, str)  # feed_url, artwork_url
+
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.setWindowTitle("Search Podcasts")
+        self.setMinimumSize((560), (480))
+        self.resize((620), (540))
+        self.setStyleSheet(f"""
+            QDialog {{
+                background: {Colors.DIALOG_BG};
+            }}
+        """)
+
+        self._build_ui()
+        self._results: list = []
+
+    # ── UI construction ──────────────────────────────────────────────────
+
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins((16), (16), (16), (16))
+        layout.setSpacing(12)
+
+        # ── Search bar ───────────────────────────────────────────────────
+        search_row = QHBoxLayout()
+        search_row.setSpacing(8)
+
+        self._search_input = QLineEdit()
+        self._search_input.setPlaceholderText("Search for podcasts…")
+        self._search_input.setFont(QFont(FONT_FAMILY, (Metrics.FONT_MD)))
+        self._search_input.setStyleSheet(input_css(padding="8px 12px"))
+        self._search_input.returnPressed.connect(self._on_search)
+        search_row.addWidget(self._search_input, stretch=1)
+
+        self._search_btn = QPushButton("Search")
+        self._search_btn.setFont(QFont(FONT_FAMILY, (Metrics.FONT_MD)))
+        self._search_btn.setStyleSheet(accent_btn_css())
+        self._search_btn.setFixedHeight(36)
+        self._search_btn.clicked.connect(self._on_search)
+        search_row.addWidget(self._search_btn)
+
+        layout.addLayout(search_row)
+
+        # ── Status label ─────────────────────────────────────────────────
+        self._status_label = make_label(
+            "Enter a search term to find podcasts",
+            size=(Metrics.FONT_SM),
+            style=LABEL_SECONDARY(),
+        )
+        layout.addWidget(self._status_label)
+
+        # ── Results scroll area ──────────────────────────────────────────
+        self._results_container = QWidget()
+        self._results_layout = QVBoxLayout(self._results_container)
+        self._results_layout.setContentsMargins(0, 0, 0, 0)
+        self._results_layout.setSpacing(4)
+        self._state_panel = PodcastStatePanel(compact=True)
+        self._state_panel.show_empty(
+            "Find podcasts",
+            "Search by show name, or paste an RSS feed below.",
+        )
+        self._state_panel.action_clicked.connect(self._on_search)
+        self._results_layout.addWidget(self._state_panel)
+        self._results_layout.addStretch()
+
+        scroll = make_scroll_area(extra_css=f"""
+            QScrollArea {{
+                border: 1px solid {Colors.BORDER_SUBTLE};
+                border-radius: {Metrics.BORDER_RADIUS_SM}px;
+            }}
+        """)
+        scroll.setWidget(self._results_container)
+        layout.addWidget(scroll, stretch=1)
+
+        # ── Manual RSS row ───────────────────────────────────────────────
+        rss_row = QHBoxLayout()
+        rss_row.setSpacing(8)
+
+        rss_label = make_label(
+            "Or paste RSS URL:",
+            size=(Metrics.FONT_SM),
+            style=LABEL_SECONDARY(),
+        )
+        rss_row.addWidget(rss_label)
+
+        self._rss_input = QLineEdit()
+        self._rss_input.setPlaceholderText("https://example.com/feed.xml")
+        self._rss_input.setFont(QFont(FONT_FAMILY, (Metrics.FONT_SM)))
+        self._rss_input.setStyleSheet(input_css(padding="6px 10px"))
+        self._rss_input.returnPressed.connect(self._on_add_rss)
+        rss_row.addWidget(self._rss_input, stretch=1)
+
+        self._rss_btn = QPushButton("Add Feed")
+        self._rss_btn.setFont(QFont(FONT_FAMILY, (Metrics.FONT_SM)))
+        self._rss_btn.setStyleSheet(accent_btn_css())
+        self._rss_btn.setFixedHeight(32)
+        self._rss_btn.clicked.connect(self._on_add_rss)
+        rss_row.addWidget(self._rss_btn)
+
+        layout.addLayout(rss_row)
+
+        # ── Close button ─────────────────────────────────────────────────
+        close_btn = QPushButton("Close")
+        close_btn.setFont(QFont(FONT_FAMILY, (Metrics.FONT_MD)))
+        close_btn.setStyleSheet(btn_css())
+        close_btn.setFixedHeight(36)
+        close_btn.clicked.connect(self.close)
+        layout.addWidget(close_btn, alignment=Qt.AlignmentFlag.AlignRight)
+
+    # ── Slots ────────────────────────────────────────────────────────────
+
+    def _on_search(self):
+        query = self._search_input.text().strip()
+        if not query:
+            return
+
+        self._search_btn.setEnabled(False)
+        self._status_label.setText("Searching…")
+        self._clear_results()
+        self._state_panel.show()
+        self._state_panel.show_loading(
+            "Searching for podcasts…",
+            "Checking podcast results now.",
+        )
+
+        from iopenpod.application.runtime import ThreadPoolSingleton, Worker
+        from iopenpod.podcasts.itunes_search import search_podcasts
+
+        worker = Worker(search_podcasts, query, raise_on_error=True)
+        worker.signals.result.connect(self._on_search_results)
+        worker.signals.error.connect(self._on_search_error)
+        worker.signals.finished.connect(lambda: self._search_btn.setEnabled(True))
+        ThreadPoolSingleton.get_instance().start(worker)
+
+    def _on_search_results(self, results):
+        self._results = results
+        self._clear_results()
+
+        if not results:
+            self._status_label.setText("No podcasts found")
+            self._state_panel.show()
+            self._state_panel.show_empty(
+                "No podcasts found",
+                "Try a different show name, or paste the RSS feed directly.",
+            )
+            return
+
+        self._status_label.setText(f"Found {len(results)} podcast{'s' if len(results) != 1 else ''}")
+        self._state_panel.hide()
+
+        for result in results:
+            card = _SearchResultCard(result, self)
+            card.subscribe_clicked.connect(self._on_subscribe)
+            self._results_layout.insertWidget(
+                self._results_layout.count() - 1,  # Before stretch
+                card,
+            )
+
+    def _on_search_error(self, error_tuple):
+        _, value, _ = error_tuple
+        from iopenpod.podcasts.network_errors import describe_podcast_error
+
+        info = describe_podcast_error(value, action="search podcasts")
+        self._status_label.setText(info.title)
+        self._clear_results()
+        self._state_panel.show()
+        self._state_panel.show_error(info.title, info.message, code=info.code)
+        self._search_btn.setEnabled(True)
+
+    def _on_subscribe(self, feed_url: str, artwork_url: str):
+        self.subscribed.emit(feed_url, artwork_url)
+
+    def _on_add_rss(self):
+        url = self._rss_input.text().strip()
+        if url and (url.startswith("http://") or url.startswith("https://")):
+            self.subscribed.emit(url, "")
+            self._rss_input.clear()
+
+    def _clear_results(self):
+        for index in range(self._results_layout.count() - 1, -1, -1):
+            item = self._results_layout.itemAt(index)
+            if item is None:
+                continue
+            widget = item.widget()
+            if widget is None or widget is self._state_panel:
+                continue
+            self._results_layout.takeAt(index)
+            widget.deleteLater()
+
+
+class _SearchResultCard(QFrame):
+    """A single search result row with podcast info and Subscribe button."""
+
+    subscribe_clicked = pyqtSignal(str, str)  # feed_url, artwork_url
+
+    def __init__(self, result, parent=None):
+        super().__init__(parent)
+        self._result = result
+        self.setStyleSheet(f"""
+            _SearchResultCard {{
+                background: {Colors.SURFACE_ALT};
+                border: 1px solid {Colors.BORDER_SUBTLE};
+                border-radius: {Metrics.BORDER_RADIUS_SM}px;
+            }}
+            _SearchResultCard:hover {{
+                background: {Colors.SURFACE_HOVER};
+            }}
+        """)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins((10), (8), (10), (8))
+        layout.setSpacing(10)
+
+        # Artwork placeholder
+        self._art_label = QLabel()
+        self._art_label.setFixedSize((56), (56))
+        self._art_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._art_label.setStyleSheet(f"""
+            background: {Colors.SURFACE_RAISED};
+            border-radius: {Metrics.BORDER_RADIUS_SM}px;
+            color: {Colors.TEXT_TERTIARY};
+            font-size: {(20)}px;
+        """)
+        self._art_label.setText("◎")
+        _search_px = glyph_pixmap("broadcast", (24), Colors.TEXT_TERTIARY)
+        if _search_px:
+            self._art_label.setPixmap(_search_px)
+        layout.addWidget(self._art_label)
+
+        # Load artwork in background
+        if result.artwork_url_small:
+            self._load_artwork(result.artwork_url_small)
+
+        # Info column
+        info = QVBoxLayout()
+        info.setSpacing(2)
+
+        title_lbl = make_label(
+            result.title,
+            size=(Metrics.FONT_MD),
+            weight=QFont.Weight.DemiBold,
+        )
+        title_lbl.setWordWrap(True)
+        title_lbl.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred,
+        )
+        info.addWidget(title_lbl)
+
+        details = result.artist
+        if result.genre:
+            details += f"  ·  {result.genre}"
+        if result.track_count:
+            details += f"  ·  {result.track_count} episodes"
+        detail_lbl = make_label(
+            details,
+            size=(Metrics.FONT_SM),
+            style=LABEL_SECONDARY(),
+        )
+        detail_lbl.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred,
+        )
+        info.addWidget(detail_lbl)
+
+        layout.addLayout(info, stretch=1)
+
+        # Subscribe button
+        sub_btn = QPushButton("Subscribe")
+        sub_btn.setFont(QFont(FONT_FAMILY, (Metrics.FONT_SM)))
+        sub_btn.setStyleSheet(accent_btn_css())
+        sub_btn.setFixedSize((90), (32))
+        sub_btn.clicked.connect(
+            lambda: self.subscribe_clicked.emit(
+                result.feed_url,
+                result.artwork_url or result.artwork_url_small,
+            )
+        )
+        layout.addWidget(sub_btn, alignment=Qt.AlignmentFlag.AlignVCenter)
+
+    def _load_artwork(self, url: str):
+        """Load artwork thumbnail in background."""
+        import requests
+
+        from iopenpod.application.runtime import ThreadPoolSingleton, Worker
+
+        def _fetch():
+            resp = requests.get(url, timeout=10)
+            resp.raise_for_status()
+            return resp.content
+
+        worker = Worker(_fetch)
+        worker.signals.result.connect(self._on_artwork_loaded)
+        ThreadPoolSingleton.get_instance().start(worker)
+
+    def _on_artwork_loaded(self, data: bytes):
+        img = QImage()
+        if img.loadFromData(data):
+            pm = scale_pixmap_for_display(
+                QPixmap.fromImage(img),
+                56,
+                56,
+                widget=self._art_label,
+                aspect_mode=Qt.AspectRatioMode.KeepAspectRatio,
+                transform_mode=Qt.TransformationMode.SmoothTransformation,
+            )
+            self._art_label.setPixmap(pm)
+            self._art_label.setText("")

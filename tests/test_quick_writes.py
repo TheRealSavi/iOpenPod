@@ -5,12 +5,12 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any
 
-from iTunesDB_Shared.constants import MEDIA_TYPE_PODCAST
-from iTunesDB_Writer.mhit_writer import TrackInfo
-from iTunesDB_Writer.mhyp_writer import write_mhyp
-from SyncEngine import quick_writes
-from SyncEngine._playlist_builder import build_and_evaluate_playlists
-from SyncEngine._track_conversion import track_dict_to_info
+from iopenpod.itunesdb_shared.constants import MEDIA_TYPE_PODCAST
+from iopenpod.itunesdb_writer.mhit_writer import TrackInfo
+from iopenpod.itunesdb_writer.mhyp_writer import write_mhyp
+from iopenpod.sync import quick_writes
+from iopenpod.sync._playlist_builder import build_and_evaluate_playlists
+from iopenpod.sync._track_conversion import track_dict_to_info
 
 
 @dataclass

@@ -1,5 +1,5 @@
-from GUI.widgets.syncReview import PCFolderDialog
-from infrastructure.media_folders import (
+from iopenpod.gui.widgets.syncReview import PCFolderDialog
+from iopenpod.infrastructure.media_folders import (
     MEDIA_TYPE_MUSIC,
     MEDIA_TYPE_PHOTO,
     MEDIA_TYPE_PLAYLISTS,

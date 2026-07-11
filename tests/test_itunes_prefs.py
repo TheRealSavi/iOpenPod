@@ -3,8 +3,8 @@ from __future__ import annotations
 import struct
 from pathlib import Path
 
-from iTunesDB_Writer.mhbd_writer import write_mhbd
-from SyncEngine.itunes_prefs import protect_from_itunes
+from iopenpod.itunesdb_writer.mhbd_writer import write_mhbd
+from iopenpod.sync.itunes_prefs import protect_from_itunes
 
 
 def _itunes_dir(ipod_root: Path) -> Path:
@@ -42,7 +42,7 @@ def test_protect_from_itunes_falls_back_to_existing_db_library_id(
     db_path = itunes_dir / "iTunesDB"
     db_path.write_bytes(db_bytes)
 
-    monkeypatch.setattr("ipod_device.resolve_itdb_path", lambda _ipod_path: str(db_path))
+    monkeypatch.setattr("iopenpod.device.resolve_itdb_path", lambda _ipod_path: str(db_path))
 
     updated = protect_from_itunes(ipod_root, track_count=1, total_music_bytes=10, total_music_seconds=1)
 

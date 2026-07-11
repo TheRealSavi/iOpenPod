@@ -399,7 +399,7 @@ The iPod firmware does **not** modify iTunesDB directly.  Instead it creates a s
 When reading the existing database (`_read_existing_database`), the executor:
 
 1. Parses the iTunesDB to get the track list
-2. Parses the Play Counts file (if present) via `iTunesDB_Parser.playcounts`
+2. Parses the Play Counts file (if present) via `iopenpod.itunesdb_parser.playcounts`
 3. Merges the deltas: `playCount += recent_plays`, `skipCount += recent_skips`
 4. Stores `recent_playcount` and `recent_skipcount` on each track dict
 
@@ -642,20 +642,20 @@ flowchart TB
 
 | File | Role |
 | ------ | ------ |
-| [SyncEngine/pc_library.py](SyncEngine/pc_library.py) | Scan PC folder, extract metadata via mutagen |
-| [SyncEngine/audio_fingerprint.py](SyncEngine/audio_fingerprint.py) | Compute/read/write Chromaprint fingerprints |
-| [SyncEngine/fingerprint_diff_engine.py](SyncEngine/fingerprint_diff_engine.py) | Compare PC library vs iPod, produce SyncPlan |
-| [SyncEngine/sync_executor.py](SyncEngine/sync_executor.py) | Execute the 7-stage sync plan |
-| [SyncEngine/mapping.py](SyncEngine/mapping.py) | Manage iOpenPod.json (fingerprint → db_track_id) |
-| [SyncEngine/integrity.py](SyncEngine/integrity.py) | Three-way consistency validation |
-| [SyncEngine/transcoder.py](SyncEngine/transcoder.py) | FFmpeg transcoding (FLAC→ALAC, etc.) |
-| [SyncEngine/transcode_cache.py](SyncEngine/transcode_cache.py) | Cache transcoded files across syncs/devices |
-| [iTunesDB_Writer/mhbd_writer.py](iTunesDB_Writer/mhbd_writer.py) | Build and write complete iTunesDB |
-| [iTunesDB_Writer/mhit_writer.py](iTunesDB_Writer/mhit_writer.py) | Write individual track entries |
-| [iTunesDB_Writer/device.py](iTunesDB_Writer/device.py) | Detect iPod model and hash requirements |
-| [iTunesDB_Writer/hash58.py](iTunesDB_Writer/hash58.py) | HASH58 (HMAC-SHA1 w/ FireWire ID) |
-| [iTunesDB_Writer/hash72.py](iTunesDB_Writer/hash72.py) | HASH72 (AES-CBC w/ HashInfo) |
-| [ArtworkDB_Writer/artwork_writer.py](ArtworkDB_Writer/artwork_writer.py) | Extract art, write ArtworkDB + ithmb |
-| [GUI/widgets/syncReview.py](GUI/widgets/syncReview.py) | Sync review UI (tree view, progress, results) |
-| [GUI/app.py](GUI/app.py) | Main window — sync initiation and wiring |
-| [GUI/settings.py](GUI/settings.py) | AppSettings with sync-related options |
+| [src/iopenpod/sync/pc_library.py](../src/iopenpod/sync/pc_library.py) | Scan PC folder, extract metadata via mutagen |
+| [src/iopenpod/sync/audio_fingerprint.py](../src/iopenpod/sync/audio_fingerprint.py) | Compute/read/write Chromaprint fingerprints |
+| [src/iopenpod/sync/fingerprint_diff_engine.py](../src/iopenpod/sync/fingerprint_diff_engine.py) | Compare PC library vs iPod, produce SyncPlan |
+| [src/iopenpod/sync/sync_executor.py](../src/iopenpod/sync/sync_executor.py) | Execute the 7-stage sync plan |
+| [src/iopenpod/sync/mapping.py](../src/iopenpod/sync/mapping.py) | Manage iOpenPod.json (fingerprint → db_track_id) |
+| [src/iopenpod/sync/integrity.py](../src/iopenpod/sync/integrity.py) | Three-way consistency validation |
+| [src/iopenpod/sync/transcoder.py](../src/iopenpod/sync/transcoder.py) | FFmpeg transcoding (FLAC→ALAC, etc.) |
+| [src/iopenpod/sync/transcode_cache.py](../src/iopenpod/sync/transcode_cache.py) | Cache transcoded files across syncs/devices |
+| [src/iopenpod/itunesdb_writer/mhbd_writer.py](../src/iopenpod/itunesdb_writer/mhbd_writer.py) | Build and write complete iTunesDB |
+| [src/iopenpod/itunesdb_writer/mhit_writer.py](../src/iopenpod/itunesdb_writer/mhit_writer.py) | Write individual track entries |
+| [src/iopenpod/itunesdb_writer/device.py](../src/iopenpod/itunesdb_writer/device.py) | Detect iPod model and hash requirements |
+| [src/iopenpod/itunesdb_writer/hash58.py](../src/iopenpod/itunesdb_writer/hash58.py) | HASH58 (HMAC-SHA1 w/ FireWire ID) |
+| [src/iopenpod/itunesdb_writer/hash72.py](../src/iopenpod/itunesdb_writer/hash72.py) | HASH72 (AES-CBC w/ HashInfo) |
+| [src/iopenpod/artworkdb_writer/artwork_writer.py](../src/iopenpod/artworkdb_writer/artwork_writer.py) | Extract art, write ArtworkDB + ithmb |
+| [src/iopenpod/gui/widgets/syncReview.py](../src/iopenpod/gui/widgets/syncReview.py) | Sync review UI (tree view, progress, results) |
+| [src/iopenpod/gui/app.py](../src/iopenpod/gui/app.py) | Main window — sync initiation and wiring |
+| [src/iopenpod/gui/settings.py](../src/iopenpod/gui/settings.py) | AppSettings with sync-related options |

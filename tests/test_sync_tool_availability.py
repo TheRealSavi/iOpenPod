@@ -1,13 +1,13 @@
 from pathlib import Path
 from types import SimpleNamespace
 
-from app_core.jobs import (
+from iopenpod.application.jobs import (
     DropScanWorker,
     SyncExecuteWorker,
     SyncToolAvailability,
     check_sync_tool_availability,
 )
-from infrastructure.settings_schema import AppSettings
+from iopenpod.infrastructure.settings_schema import AppSettings
 
 
 def test_sync_tool_availability_summarizes_missing_tools() -> None:
@@ -49,15 +49,15 @@ def test_check_sync_tool_availability_uses_configured_paths(monkeypatch) -> None
         return path == "fpcalc-ok"
 
     monkeypatch.setattr(
-        "SyncEngine.transcoder.is_ffmpeg_available",
+        "iopenpod.sync.transcoder.is_ffmpeg_available",
         fake_ffmpeg_available,
     )
     monkeypatch.setattr(
-        "SyncEngine.audio_fingerprint.is_fpcalc_available",
+        "iopenpod.sync.audio_fingerprint.is_fpcalc_available",
         fake_fpcalc_available,
     )
     monkeypatch.setattr(
-        "SyncEngine.dependency_manager.is_platform_supported",
+        "iopenpod.sync.dependency_manager.is_platform_supported",
         lambda: False,
     )
 
@@ -75,7 +75,7 @@ def test_check_sync_tool_availability_uses_configured_paths(monkeypatch) -> None
 
 def test_sync_execute_worker_blocks_missing_required_tools(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(
-        "app_core.jobs.check_sync_tool_availability",
+        "iopenpod.application.jobs.check_sync_tool_availability",
         lambda _settings: SyncToolAvailability(
             missing_ffmpeg=True,
             missing_fpcalc=False,
@@ -101,9 +101,9 @@ def test_drop_scan_worker_matches_existing_ipod_tracks_for_playlist_import(
     monkeypatch,
     tmp_path,
 ) -> None:
-    from SyncEngine import _db_io, audio_fingerprint
-    from SyncEngine import mapping as mapping_module
-    from SyncEngine.pc_library import PCLibrary
+    from iopenpod.sync import _db_io, audio_fingerprint
+    from iopenpod.sync import mapping as mapping_module
+    from iopenpod.sync.pc_library import PCLibrary
 
     source = tmp_path / "song.mp3"
     playlist = tmp_path / "mix.m3u8"
@@ -201,9 +201,9 @@ def test_drop_scan_worker_matches_ipod_file_fingerprint_without_readding(
     monkeypatch,
     tmp_path,
 ) -> None:
-    from SyncEngine import _db_io, audio_fingerprint
-    from SyncEngine import mapping as mapping_module
-    from SyncEngine.pc_library import PCLibrary
+    from iopenpod.sync import _db_io, audio_fingerprint
+    from iopenpod.sync import mapping as mapping_module
+    from iopenpod.sync.pc_library import PCLibrary
 
     playlist = tmp_path / "mix.m3u8"
     ipod_root = tmp_path / "ipod"
@@ -303,9 +303,9 @@ def test_drop_scan_worker_does_not_scan_entire_ipod_for_unmatched_new_track(
     monkeypatch,
     tmp_path,
 ) -> None:
-    from SyncEngine import _db_io, audio_fingerprint
-    from SyncEngine import mapping as mapping_module
-    from SyncEngine.pc_library import PCLibrary
+    from iopenpod.sync import _db_io, audio_fingerprint
+    from iopenpod.sync import mapping as mapping_module
+    from iopenpod.sync.pc_library import PCLibrary
 
     source = tmp_path / "new-song.mp3"
     ipod_root = tmp_path / "ipod"

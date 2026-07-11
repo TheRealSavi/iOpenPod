@@ -6,9 +6,9 @@ from typing import cast
 import numpy as np
 from PIL import Image
 
-from ArtworkDB_Writer.ithmb_codecs import encode_image_for_format
-from GUI import imgMaker
-from ipod_device.artwork import resolve_cover_art_format_definitions
+from iopenpod.artworkdb_writer.ithmb_codecs import encode_image_for_format
+from iopenpod.device.artwork import resolve_cover_art_format_definitions
+from iopenpod.gui import imgMaker
 
 
 def test_configure_artwork_api_reuses_cache_for_unchanged_artworkdb(
@@ -23,7 +23,7 @@ def test_configure_artwork_api_reuses_cache_for_unchanged_artworkdb(
         parse_calls.append(path)
         return {"mhli": [{"img_id": len(parse_calls)}]}
 
-    monkeypatch.setattr("ArtworkDB_Parser.parser.parse_artworkdb", fake_parse)
+    monkeypatch.setattr("iopenpod.artworkdb_parser.parser.parse_artworkdb", fake_parse)
     imgMaker.clear_artwork_api()
 
     try:
@@ -51,7 +51,7 @@ def test_configure_artwork_api_reloads_when_artworkdb_file_changes(
         parse_calls.append(path)
         return {"mhli": [{"img_id": len(parse_calls)}]}
 
-    monkeypatch.setattr("ArtworkDB_Parser.parser.parse_artworkdb", fake_parse)
+    monkeypatch.setattr("iopenpod.artworkdb_parser.parser.parse_artworkdb", fake_parse)
     imgMaker.clear_artwork_api()
 
     try:

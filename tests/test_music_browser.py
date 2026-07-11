@@ -5,14 +5,14 @@ from PIL import Image
 from PyQt6.QtCore import QPoint
 from PyQt6.QtWidgets import QSplitter
 
-from GUI.styles import Colors, context_menu_css
-from GUI.widgets import artworkUnifier as artwork_unifier_module
-from GUI.widgets.artworkUnifier import (
+from iopenpod.gui.styles import Colors, context_menu_css
+from iopenpod.gui.widgets import artworkUnifier as artwork_unifier_module
+from iopenpod.gui.widgets.artworkUnifier import (
     artwork_compare_hash,
     build_album_artwork_unify_context,
 )
-from GUI.widgets.musicBrowser import MusicBrowser
-from GUI.widgets.trackListTitleBar import TrackListTitleBar, _resolve_bar_palette
+from iopenpod.gui.widgets.musicBrowser import MusicBrowser
+from iopenpod.gui.widgets.trackListTitleBar import TrackListTitleBar, _resolve_bar_palette
 
 
 def _build_browser(category: str = "Albums") -> Any:
@@ -97,8 +97,8 @@ def test_album_grid_context_menu_uses_shared_menu_style(monkeypatch) -> None:
             self.exec_pos = pos
             return None
 
-    monkeypatch.setattr("GUI.widgets.musicBrowser.QMenu", _Menu)
-    monkeypatch.setattr("GUI.widgets.musicBrowser.glyph_icon", lambda *_args: None)
+    monkeypatch.setattr("iopenpod.gui.widgets.musicBrowser.QMenu", _Menu)
+    monkeypatch.setattr("iopenpod.gui.widgets.musicBrowser.glyph_icon", lambda *_args: None)
 
     emitted: list[list[dict]] = []
     browser = SimpleNamespace(
@@ -150,8 +150,8 @@ def test_album_grid_context_menu_edit_opens_album_tracks(monkeypatch) -> None:
         def exec(self, _pos: QPoint):
             return next(action for action in self.actions if action.label == "Edit")
 
-    monkeypatch.setattr("GUI.widgets.musicBrowser.QMenu", _Menu)
-    monkeypatch.setattr("GUI.widgets.musicBrowser.glyph_icon", lambda *_args: None)
+    monkeypatch.setattr("iopenpod.gui.widgets.musicBrowser.QMenu", _Menu)
+    monkeypatch.setattr("iopenpod.gui.widgets.musicBrowser.glyph_icon", lambda *_args: None)
 
     edited: list[dict] = []
     browser = SimpleNamespace(
@@ -298,7 +298,7 @@ def test_unify_artwork_context_collapses_duplicate_visual_images(monkeypatch) ->
     images = {1: red, 2: red.copy(), 3: blue}
 
     monkeypatch.setattr(
-        "GUI.imgMaker.configure_artwork_api",
+        "iopenpod.gui.imgMaker.configure_artwork_api",
         lambda *_args, **_kwargs: ({}, {}),
     )
     monkeypatch.setattr(
@@ -332,7 +332,7 @@ def test_unify_artwork_context_available_for_missing_artwork(monkeypatch) -> Non
     ]
 
     monkeypatch.setattr(
-        "GUI.imgMaker.configure_artwork_api",
+        "iopenpod.gui.imgMaker.configure_artwork_api",
         lambda *_args, **_kwargs: ({}, {}),
     )
     monkeypatch.setattr(

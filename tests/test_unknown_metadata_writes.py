@@ -1,5 +1,5 @@
-from iTunesDB_Writer.mhit_writer import TrackInfo
-from SyncEngine.unknown_metadata import (
+from iopenpod.itunesdb_writer.mhit_writer import TrackInfo
+from iopenpod.sync.unknown_metadata import (
     UnknownMetadataRegistry,
     apply_unknown_placeholders,
     apply_unknown_placeholders_to_mapping,

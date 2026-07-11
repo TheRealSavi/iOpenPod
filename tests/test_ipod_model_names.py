@@ -1,4 +1,4 @@
-from ipod_device import (
+from iopenpod.device import (
     IPOD_MODELS,
     USB_PID_TO_MODEL,
     DeviceInfo,

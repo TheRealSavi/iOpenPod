@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-from app_core.qt_runtime import (
+from iopenpod.application.qt_runtime import (
     configure_qt_multimedia_logging,
     linux_qt_dependency_error,
     quiet_native_stderr,

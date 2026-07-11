@@ -3,22 +3,22 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any, cast
 
-from app_core.jobs import SyncToolAvailability
-from app_core.services import (
+from iopenpod.application.jobs import SyncToolAvailability
+from iopenpod.application.services import (
     DeviceManagerLike,
     DeviceSessionService,
     LibraryCacheLike,
     SettingsService,
 )
-from app_core.sync_session import (
+from iopenpod.application.sync_session import (
     PodcastPlanningInput,
     SyncExecutionIntent,
     SyncPlanningIntent,
     SyncSessionBlocked,
     SyncSessionController,
 )
-from infrastructure.settings_schema import AppSettings
-from SyncEngine.contracts import StorageSummary, SyncAction, SyncItem, SyncPlan
+from iopenpod.infrastructure.settings_schema import AppSettings
+from iopenpod.sync.contracts import StorageSummary, SyncAction, SyncItem, SyncPlan
 
 
 class _FakeSignal:
@@ -229,7 +229,7 @@ def test_start_planning_builds_full_sync_request_and_emits_plan_ready(
         workers.append(worker)
         return worker
 
-    monkeypatch.setattr("app_core.sync_session.SyncDiffWorker", fake_worker)
+    monkeypatch.setattr("iopenpod.application.sync_session.SyncDiffWorker", fake_worker)
     controller = _controller()
     plans: list[Any] = []
     controller.plan_ready.connect(plans.append)
@@ -265,7 +265,7 @@ def test_start_planning_builds_selective_sync_request(
 ) -> None:
     workers: list[_FakeWorker] = []
     monkeypatch.setattr(
-        "app_core.sync_session.SyncDiffWorker",
+        "iopenpod.application.sync_session.SyncDiffWorker",
         lambda request: workers.append(_FakeWorker(request)) or workers[-1],
     )
     controller = _controller()
@@ -293,11 +293,11 @@ def test_plan_ready_waits_for_podcast_plan_merge(qapp, monkeypatch) -> None:
     podcast_workers: list[_FakeWorker] = []
 
     monkeypatch.setattr(
-        "app_core.sync_session.SyncDiffWorker",
+        "iopenpod.application.sync_session.SyncDiffWorker",
         lambda request: diff_workers.append(_FakeWorker(request)) or diff_workers[-1],
     )
     monkeypatch.setattr(
-        "app_core.sync_session.PodcastPlanWorker",
+        "iopenpod.application.sync_session.PodcastPlanWorker",
         lambda request: podcast_workers.append(_FakeWorker(request)) or podcast_workers[-1],
     )
     controller = _controller(
@@ -338,7 +338,7 @@ def test_cancelled_planning_worker_cannot_publish_stale_plan(
 ) -> None:
     workers: list[_FakeWorker] = []
     monkeypatch.setattr(
-        "app_core.sync_session.SyncDiffWorker",
+        "iopenpod.application.sync_session.SyncDiffWorker",
         lambda request: workers.append(_FakeWorker(request)) or workers[-1],
     )
     controller = _controller()
@@ -369,7 +369,7 @@ def test_start_execution_owns_worker_controls(qapp, monkeypatch) -> None:
         workers.append(worker)
         return worker
 
-    monkeypatch.setattr("app_core.sync_session.SyncExecuteWorker", fake_execute_worker)
+    monkeypatch.setattr("iopenpod.application.sync_session.SyncExecuteWorker", fake_execute_worker)
     cache = _FakeLibraryCache()
     controller = _controller(cache=cache)
     completed: list[Any] = []

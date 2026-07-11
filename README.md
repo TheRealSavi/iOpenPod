@@ -145,7 +145,7 @@ To run iOpenPod from source, clone the repository and use `uv sync`.
 git clone https://github.com/TheRealSavi/iOpenPod.git
 cd iOpenPod
 uv sync
-uv run python main.py
+uv run iopenpod
 ```
 
 `uv sync` installs dependencies into a local virtual environment.
@@ -154,17 +154,23 @@ uv run python main.py
 
 ```text
 iOpenPod/
-├── GUI/                    # PyQt6 interface
-│   ├── app.py              # Main window
-│   └── widgets/            # Album grid, track list, sidebar, sync review, etc.
-├── iTunesDB_Parser/        # Reads iPod's binary iTunesDB
-├── iTunesDB_Writer/        # Writes iTunesDB
-├── ArtworkDB_Parser/       # Reads ArtworkDB binary format
-├── ArtworkDB_Writer/       # Writes album art to .ithmb files
-├── SyncEngine/             # Fingerprinting, diffing, transcoding, sync execution
-├── PodcastManager/         # Podcast search, subscription, and download
-├── SQLiteDB_Writer/        # SQLite DB for Nano 6G/7G
-└── main.py                 # Entry point
+├── src/
+│   └── iopenpod/                   # Single installed Python package
+│       ├── __main__.py             # Console and python -m entry point
+│       ├── application/            # Application orchestration and sessions
+│       ├── gui/                    # PyQt6 presentation
+│       ├── sync/                   # Planning, execution, and transcoding
+│       ├── device/                 # iPod discovery and capabilities
+│       ├── podcasts/               # Podcast subscriptions and downloads
+│       ├── itunesdb_parser/        # Reads iTunesDB
+│       ├── itunesdb_writer/        # Writes iTunesDB
+│       ├── artworkdb_parser/       # Reads ArtworkDB
+│       ├── artworkdb_writer/       # Writes ArtworkDB and .ithmb files
+│       ├── sqlitedb_writer/        # SQLite DB for Nano 6G/7G
+│       └── assets/                 # Installed fonts, icons, glyphs, and iPod images
+├── tests/
+├── scripts/
+└── pyproject.toml
 ```
 
 ### How Sync Works

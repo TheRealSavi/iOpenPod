@@ -6,9 +6,9 @@ from contextlib import contextmanager
 from pathlib import Path
 from uuid import uuid4
 
-from infrastructure import settings_runtime
-from infrastructure.settings_runtime import SettingsRuntime
-from infrastructure.settings_schema import AppSettings
+from iopenpod.infrastructure import settings_runtime
+from iopenpod.infrastructure.settings_runtime import SettingsRuntime
+from iopenpod.infrastructure.settings_schema import AppSettings
 
 
 @contextmanager

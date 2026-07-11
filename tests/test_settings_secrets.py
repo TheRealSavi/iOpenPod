@@ -1,4 +1,4 @@
-from infrastructure.settings_secrets import (
+from iopenpod.infrastructure.settings_secrets import (
     decrypt_secret_for_device,
     encrypt_secret,
     normalized_device_mount_key,

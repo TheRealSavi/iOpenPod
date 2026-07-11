@@ -2,10 +2,10 @@ from pathlib import Path
 
 from PIL import Image
 
-import SyncEngine.photos as photos
-from ArtworkDB_Writer.artwork_types import EncodedFormatPayload
-from ipod_device.artwork_presets import ArtworkFormat
-from SyncEngine.photos import (
+import iopenpod.sync.photos as photos
+from iopenpod.artworkdb_writer.artwork_types import EncodedFormatPayload
+from iopenpod.device.artwork_presets import ArtworkFormat
+from iopenpod.sync.photos import (
     PhotoEntry,
     PhotoThumbRef,
     _decode_photo_format,

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from iTunesDB_Shared.constants import MEDIA_TYPE_PODCAST
-from SyncEngine.contracts import SyncAction, SyncPlan
-from SyncEngine.fingerprint_diff_engine import FingerprintDiffEngine
-from SyncEngine.mapping import MappingFile
-from SyncEngine.track_identity import SyncTrackIdentityState
+from iopenpod.itunesdb_shared.constants import MEDIA_TYPE_PODCAST
+from iopenpod.sync.contracts import SyncAction, SyncPlan
+from iopenpod.sync.fingerprint_diff_engine import FingerprintDiffEngine
+from iopenpod.sync.mapping import MappingFile
+from iopenpod.sync.track_identity import SyncTrackIdentityState
 
 
 def _mapping(db_track_id: int, *, aggregate_kind: str | None = None) -> dict:

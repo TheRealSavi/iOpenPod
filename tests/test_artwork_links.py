@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from iTunesDB_Parser import artwork_links
+from iopenpod.itunesdb_parser import artwork_links
 
 
 def test_hydrate_track_artwork_refs_fills_missing_refs_from_song_links(

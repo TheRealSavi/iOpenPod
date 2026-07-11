@@ -1,0 +1,144 @@
+"""
+iTunesDB Writer module for iOpenPod.
+
+This module provides write support for iTunesDB (and iTunesCDB) files.
+
+Supported devices:
+- Pre-2007 iPods (1G-5G, Mini, Photo, Nano 1G-2G): No hash required
+- iPod Classic (all gens), Nano 3G, Nano 4G: HASH58 (needs FireWire ID)
+- iPod Nano 5G: HASH72 (requires HashInfo file from an iTunes sync)
+- iPod Nano 6G/7G: HASHAB (needs FireWire ID + WASM runtime)
+
+Usage:
+    from iopenpod.itunesdb_writer import write_checksum, detect_checksum_type
+
+    checksum_type = detect_checksum_type(ipod_path)
+    with open(itunesdb_path, 'rb') as f:
+        itdb_data = bytearray(f.read())
+
+    success = write_checksum(itdb_data, ipod_path)
+"""
+
+from iopenpod.device import ChecksumType, detect_checksum_type, get_firewire_id
+from iopenpod.itunesdb_shared.constants import (
+    MEDIA_TYPE_AUDIO,
+    MEDIA_TYPE_AUDIOBOOK,
+    MEDIA_TYPE_MUSIC_VIDEO,
+    MEDIA_TYPE_PODCAST,
+    MEDIA_TYPE_RINGTONE,
+    MEDIA_TYPE_TV_SHOW,
+    MEDIA_TYPE_VIDEO,
+    MEDIA_TYPE_VIDEO_PODCAST,
+)
+
+from .hash58 import (
+    compute_hash58,
+    write_hash58,
+)
+from .hash72 import (
+    compute_hash72,
+    extract_hash_info,
+    extract_hash_info_to_dict,
+    read_hash_info,
+    write_hash72,
+)
+from .hashab import (
+    compute_hashab,
+    write_hashab,
+)
+from .mhbd_writer import extract_db_info, write_itunesdb, write_mhbd
+from .mhit_writer import TrackInfo, write_mhit
+from .mhli_writer import write_mhii_artist, write_mhli, write_mhli_empty
+from .mhod_spl_writer import (
+    SmartPlaylistPrefs,
+    SmartPlaylistRule,
+    SmartPlaylistRules,
+    prefs_from_parsed,
+    rules_from_parsed,
+)
+from .mhyp_writer import PlaylistInfo, write_mhyp, write_playlist
+
+
+def write_checksum(itdb_data: bytearray, ipod_path: str) -> bool:
+    """
+    Write appropriate checksum to iTunesDB based on device type.
+
+    Args:
+        itdb_data: Mutable bytearray of complete iTunesDB file
+        ipod_path: Mount point of iPod
+
+    Returns:
+        True if checksum was written successfully
+
+    Raises:
+        ValueError: For unsupported devices
+    """
+    checksum_type = detect_checksum_type(ipod_path)
+
+    if checksum_type == ChecksumType.NONE:
+        # No hash needed
+        return True
+
+    elif checksum_type == ChecksumType.HASH58:
+        firewire_id = get_firewire_id(ipod_path)
+        write_hash58(itdb_data, firewire_id)
+        return True
+
+    elif checksum_type == ChecksumType.HASH72:
+        write_hash72(itdb_data, ipod_path)
+        return True
+
+    elif checksum_type == ChecksumType.HASHAB:
+        firewire_id = get_firewire_id(ipod_path)
+        write_hashab(itdb_data, firewire_id)
+        return True
+
+    else:
+        raise ValueError(
+            f"Unsupported checksum type: {checksum_type}."
+        )
+
+
+__all__ = [
+    'ChecksumType',
+    'detect_checksum_type',
+    'get_firewire_id',
+    'compute_hash58',
+    'write_hash58',
+    'compute_hash72',
+    'write_hash72',
+    'read_hash_info',
+    'extract_hash_info',
+    'extract_hash_info_to_dict',
+    'compute_hashab',
+    'write_hashab',
+    'write_checksum',
+    # Writer
+    'TrackInfo',
+    'write_mhit',
+    # Media type constants
+    'MEDIA_TYPE_AUDIO',
+    'MEDIA_TYPE_VIDEO',
+    'MEDIA_TYPE_PODCAST',
+    'MEDIA_TYPE_VIDEO_PODCAST',
+    'MEDIA_TYPE_AUDIOBOOK',
+    'MEDIA_TYPE_MUSIC_VIDEO',
+    'MEDIA_TYPE_TV_SHOW',
+    'MEDIA_TYPE_RINGTONE',
+    'write_mhbd',
+    'write_itunesdb',
+    'extract_db_info',
+    # Artist list
+    'write_mhli',
+    'write_mhii_artist',
+    'write_mhli_empty',
+    # Playlists
+    'PlaylistInfo',
+    'write_playlist',
+    'write_mhyp',
+    'SmartPlaylistPrefs',
+    'SmartPlaylistRules',
+    'SmartPlaylistRule',
+    'prefs_from_parsed',
+    'rules_from_parsed',
+]

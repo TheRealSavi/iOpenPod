@@ -7,9 +7,9 @@ from PyQt6.QtCore import QPoint
 from PyQt6.QtGui import QColor, QContextMenuEvent, QPixmap
 from PyQt6.QtWidgets import QApplication, QScrollArea, QWidget
 
-from GUI.styles import Colors, display_accent_rgb
-from GUI.widgets.photoTile import PhotoGridTile
-from GUI.widgets.pooledPhotoGrid import PhotoTileModel, PooledPhotoGridView
+from iopenpod.gui.styles import Colors, display_accent_rgb
+from iopenpod.gui.widgets.photoTile import PhotoGridTile
+from iopenpod.gui.widgets.pooledPhotoGrid import PhotoTileModel, PooledPhotoGridView
 
 
 def _mount_grid(

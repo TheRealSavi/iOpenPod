@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 from urllib.parse import quote
 
-from SyncEngine.playlist_parser import (
+from iopenpod.sync.playlist_parser import (
     PlaylistPathResolver,
     parse_playlist,
     resolve_existing_playlist_path,

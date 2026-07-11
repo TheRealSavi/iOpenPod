@@ -13,22 +13,19 @@ import hashlib
 import json
 import shutil
 import subprocess
-import sys
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+from iopenpod.infrastructure.media_folders import MEDIA_TYPE_VIDEO
+from iopenpod.sync.contracts import SyncAction, SyncItem, SyncPlan, SyncRequest
+from iopenpod.sync.mapping import MappingManager
+from iopenpod.sync.pc_library import PCLibrary
+from iopenpod.sync.sync_executor import SyncExecutor
+from iopenpod.sync.transcoder import resolve_transcode_plan
 
-from infrastructure.media_folders import MEDIA_TYPE_VIDEO  # noqa: E402
-from SyncEngine.contracts import SyncAction, SyncItem, SyncPlan, SyncRequest  # noqa: E402
-from SyncEngine.mapping import MappingManager  # noqa: E402
-from SyncEngine.pc_library import PCLibrary  # noqa: E402
-from SyncEngine.sync_executor import SyncExecutor  # noqa: E402
-from SyncEngine.transcoder import resolve_transcode_plan  # noqa: E402
+ROOT = Path(__file__).resolve().parents[1]
 
 
 @dataclass
@@ -442,7 +439,7 @@ def install(ipod: Path, workdir: Path, variants: list[Variant]) -> dict[str, Any
 
 def attach_installed_probes(ipod: Path, variants: list[Variant]) -> None:
     try:
-        from SyncEngine._db_io import read_existing_database
+        from iopenpod.sync._db_io import read_existing_database
     except Exception:
         return
     try:

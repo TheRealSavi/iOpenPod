@@ -7,12 +7,12 @@ from PyQt6.QtCore import QEvent, QPoint, QPointF, Qt
 from PyQt6.QtGui import QFontMetrics, QMouseEvent
 from PyQt6.QtWidgets import QVBoxLayout, QWidget
 
-from app_core.services import DeviceSessionService, SettingsService
-from GUI.app import MainWindow, _playback_track_path_for_session, _track_artwork_id
-from GUI.styles import Colors, Metrics
-from GUI.widgets.MBListView import MusicBrowserList
-from GUI.widgets.musicPlayer import MusicPlayerBar
-from infrastructure.settings_schema import AppSettings
+from iopenpod.application.services import DeviceSessionService, SettingsService
+from iopenpod.gui.app import MainWindow, _playback_track_path_for_session, _track_artwork_id
+from iopenpod.gui.styles import Colors, Metrics
+from iopenpod.gui.widgets.MBListView import MusicBrowserList
+from iopenpod.gui.widgets.musicPlayer import MusicPlayerBar
+from iopenpod.infrastructure.settings_schema import AppSettings
 
 
 class _SettingsService:

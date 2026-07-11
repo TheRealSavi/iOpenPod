@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from SyncEngine.contracts import SyncAction, SyncItem, SyncPlan
-from SyncEngine.fingerprint_diff_engine import FingerprintDiffEngine
+from iopenpod.sync.contracts import SyncAction, SyncItem, SyncPlan
+from iopenpod.sync.fingerprint_diff_engine import FingerprintDiffEngine
 
 
 def test_gui_rating_edit_replaces_existing_rating_plan_item() -> None:

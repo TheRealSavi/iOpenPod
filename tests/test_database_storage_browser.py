@@ -1,9 +1,9 @@
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QLabel, QPushButton
 
-from app_core.database_storage import DatabaseStorageReport, StorageBreakdownNode
-from GUI.styles import back_btn_css
-from GUI.widgets.databaseStorageBrowser import DatabaseStorageBrowser
+from iopenpod.application.database_storage import DatabaseStorageReport, StorageBreakdownNode
+from iopenpod.gui.styles import back_btn_css
+from iopenpod.gui.widgets.databaseStorageBrowser import DatabaseStorageBrowser
 
 
 def test_database_storage_browser_summary_describes_sqlite_storage(qtbot) -> None:

@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from SyncEngine.integrity import check_integrity
-from SyncEngine.ipod_track_paths import expected_ipod_track_file_path
-from SyncEngine.mapping import MappingFile
+from iopenpod.sync.integrity import check_integrity
+from iopenpod.sync.ipod_track_paths import expected_ipod_track_file_path
+from iopenpod.sync.mapping import MappingFile
 
 
 def _make_music_file(ipod_root: Path, folder: str, filename: str) -> Path:

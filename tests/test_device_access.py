@@ -3,7 +3,7 @@ from __future__ import annotations
 import errno
 from pathlib import Path
 
-from app_core import device_access
+from iopenpod.application import device_access
 
 
 def test_check_ipod_write_access_accepts_writable_ipod_root(tmp_path: Path) -> None:

@@ -264,31 +264,31 @@ Rules:
 
 Parser:
 
-- `iTunesDB_Parser.mhsd_parser.parse_dataset()` reads the `mhsd_type`.
-- `iTunesDB_Parser.chunk_parser._parse_child_list()` parses `mhlp` as a generic
+- `iopenpod.itunesdb_parser.mhsd_parser.parse_dataset()` reads the `mhsd_type`.
+- `iopenpod.itunesdb_parser.chunk_parser._parse_child_list()` parses `mhlp` as a generic
   list container.
-- `iTunesDB_Parser.mhyp_parser.parse_playlist()` reads `mhyp` fields via
-  `iTunesDB_Shared.mhyp_defs`.
-- `SyncEngine._db_io.read_existing_database()` normalizes parsed datasets into
+- `iopenpod.itunesdb_parser.mhyp_parser.parse_playlist()` reads `mhyp` fields via
+  `iopenpod.itunesdb_shared.mhyp_defs`.
+- `iopenpod.sync._db_io.read_existing_database()` normalizes parsed datasets into
   `tracks`, `dataset2_standard_playlists`, `dataset3_podcast_playlists`, and
   `dataset5_smart_playlists`.
-- `app_core.runtime.iTunesDBCache.get_playlists()` presents all playlist
+- `iopenpod.application.runtime.iTunesDBCache.get_playlists()` presents all playlist
   buckets for UI and stamps `_source` plus `_mhsd_dataset_type` without
   deduplicating equal playlist IDs across datasets.
 
 Writer:
 
-- `iTunesDB_Writer.mhbd_writer.write_mhbd()` assembles dataset chunks and
+- `iopenpod.itunesdb_writer.mhbd_writer.write_mhbd()` assembles dataset chunks and
   decides ordering.
-- `iTunesDB_Writer.mhlp_writer.write_mhlp_with_playlists()` generates dataset-2
+- `iopenpod.itunesdb_writer.mhlp_writer.write_mhlp_with_playlists()` generates dataset-2
   master + user playlists.
-- `iTunesDB_Writer.mhlp_writer.write_mhlp_with_playlists_type3()` generates the
+- `iopenpod.itunesdb_writer.mhlp_writer.write_mhlp_with_playlists_type3()` generates the
   podcast-special dataset from explicit dataset-3 input, or from dataset 2 only
   when no explicit dataset-3 input is supplied.
-- `iTunesDB_Writer.mhlp_writer.write_mhlp_smart()` writes dataset-5 categories.
-- `iTunesDB_Writer.mhyp_writer.write_mhyp()` writes the shared playlist row,
+- `iopenpod.itunesdb_writer.mhlp_writer.write_mhlp_smart()` writes dataset-5 categories.
+- `iopenpod.itunesdb_writer.mhyp_writer.write_mhyp()` writes the shared playlist row,
   including dataset-5 extended fields.
-- `SyncEngine._playlist_builder.build_and_evaluate_playlists()` is the policy
+- `iopenpod.sync._playlist_builder.build_and_evaluate_playlists()` is the policy
   boundary that builds dataset 2, 3, and 5 outputs separately.
 
 ## Hard Invariants

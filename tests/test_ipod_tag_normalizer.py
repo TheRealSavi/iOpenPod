@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from GUI.widgets.ipodTagNormalizer import (
+from iopenpod.gui.widgets.ipodTagNormalizer import (
     ipod_tag_profile,
     suggest_ipod_library_tag_fixes,
 )

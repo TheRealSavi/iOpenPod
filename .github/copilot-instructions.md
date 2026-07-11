@@ -5,7 +5,7 @@ iOpenPod is an iPod Classic sync tool that reads/writes Apple's proprietary iTun
 
 ## Architecture
 
-### Binary Parsers (`iTunesDB_Parser/` and `ArtworkDB_Parser/`)
+### Binary Parsers (`src/iopenpod/itunesdb_parser/` and `src/iopenpod/artworkdb_parser/`)
 Both parsers follow the **same recursive chunk-based pattern**:
 - `parser.py` - Entry point accepting file path or file-like object
 - `chunk_parser.py` - Router using `match` statements to dispatch by 4-byte chunk type (e.g., `mhbd`, `mhit`, `mhod`)
@@ -14,7 +14,7 @@ Both parsers follow the **same recursive chunk-based pattern**:
 
 **Key pattern**: Every parser returns `{"nextOffset": int, "result": dict}` to enable recursive child parsing. New chunk parsers must follow this convention.
 
-### GUI (`GUI/`)
+### GUI (`src/iopenpod/gui/`)
 - `app.py` - Main window with `ThreadPoolSingleton` for background loading, `Worker`/`WorkerSignals` for async tasks
 - `widgets/` - PyQt6 components: `MBGridView` (album grid), `MBListView` (track list), `sidebar` (navigation)
 - `imgMaker.py` - Decodes RGB565 artwork from `.ithmb` files using NumPy/Pillow
@@ -24,7 +24,7 @@ Both parsers follow the **same recursive chunk-based pattern**:
 2. JSON → GUI loads via `AlbumLoaderThread`/`TrackLoaderThread` workers
 3. Artwork: `mhiiLink` in track data references `imgId` in ArtworkDB → `.ithmb` file offset
 
-### SQLite Database Writer (`SQLiteDB_Writer/`)
+### SQLite Database Writer (`src/iopenpod/sqlitedb_writer/`)
 iPod Nano 6G/7G ignore binary iTunesCDB and read from SQLite databases in
 `/iPod_Control/iTunes/iTunes Library.itlp/`.
 
@@ -228,7 +228,7 @@ hash_generate(signature, sha1, hash_info->iv, hash_info->rndpart);
 - See `itdb_hash58.c`, `itdb_hash72.c` in libgpod
 
 #### Writer Implementation Checklist
-1. Create `iTunesDB_Writer/` mirroring parser structure
+1. Create `src/iopenpod/itunesdb_writer/` mirroring parser structure
 2. Build database in memory buffer (not file)
 3. Track position and backpatch all `total_length` fields
 4. Update counters: `mhbd.num_children`, `mhlt.num_tracks`, etc.
@@ -334,12 +334,12 @@ def hash72_generate(sha1: bytes, iv: bytes, rndpart: bytes) -> bytes:
 Implemented using dstaley/hashab — a clean-room reimplementation of Apple's
 white-box AES signing algorithm, compiled to WebAssembly and executed via
 wasmtime-py.  The WASM binary (`calcHashAB.wasm`) ships in
-`iTunesDB_Writer/wasm/` and works cross-platform without native compilation.
+`src/iopenpod/itunesdb_writer/wasm/` and works cross-platform without native compilation.
 
 Source: https://github.com/dstaley/hashab (The Unlicense)
 
 ```python
-from iTunesDB_Writer.hashab import write_hashab
+from iopenpod.itunesdb_writer.hashab import write_hashab
 
 write_hashab(itdb_data, firewire_id)  # 57 bytes written at mhbd+0xAB
 ```
@@ -454,7 +454,7 @@ Quick reference per generation family:
 - MHOD strings: Check for null bytes to determine UTF-16-LE vs UTF-8 encoding
 - Mac timestamps: seconds since 1904-01-01 (add 2082844800 to convert to Unix epoch)
 
-## Sync Engine Architecture (`SyncEngine/`)
+## Sync Engine Architecture (`src/iopenpod/sync/`)
 
 ### Overview
 The sync engine uses **acoustic fingerprinting** (Chromaprint) to reliably track identity between PC files and iPod tracks. This allows:
@@ -567,14 +567,14 @@ Install Chromaprint: https://acoustid.org/chromaprint
 ### Setup & Running
 ```bash
 uv sync          # Install dependencies
-uv run python main.py  # Launch PyQt6 GUI
+uv run iopenpod  # Launch PyQt6 GUI
 ```
 
 ### Dependencies
 PyQt6, NumPy, Pillow (see `pyproject.toml`). Uses **uv** for dependency management.
 
 ### Test Data
-Parsers expect iPod database files. JSON outputs (`idb.json`, `artdb.json`) should be in the project root. Artwork `.ithmb` files go in `testData/Artwork/`. Paths are computed relative to project root in `GUI/app.py`.
+Parsers expect iPod database files. JSON outputs (`idb.json`, `artdb.json`) should be in the project root. Artwork `.ithmb` files go in `testData/Artwork/`. Paths are computed relative to project root in `src/iopenpod/gui/app.py`.
 
 ### Adding New MHOD Types
 1. Add entry to `constants.py` → `mhod_type_map`

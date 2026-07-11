@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from PyQt6.QtWidgets import QLabel
 
-from GUI.widgets.playlistBrowser import (
+from iopenpod.gui.widgets.playlistBrowser import (
     PlaylistListPanel,
     _is_ipod_category_playlist,
     _is_regular_track_playlist,
     _is_user_smart_playlist,
     _podcast_grouping_summary,
 )
-from iTunesDB_Shared.extraction import extract_playlist_item_extras
+from iopenpod.itunesdb_shared.extraction import extract_playlist_item_extras
 
 
 def test_dataset5_smart_playlist_is_not_treated_as_ipod_category() -> None:

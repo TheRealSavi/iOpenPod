@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from PyQt6.QtWidgets import QApplication, QFrame, QPushButton
 
-from GUI.auto_updater import InstallMethod, UpdateResult
-from GUI.widgets import updateDialog
+from iopenpod.gui.auto_updater import InstallMethod, UpdateResult
+from iopenpod.gui.widgets import updateDialog
 
 
 def _source_checkout_method() -> InstallMethod:

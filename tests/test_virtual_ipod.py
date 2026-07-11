@@ -1,6 +1,6 @@
 import json
 
-from ipod_device import (
+from iopenpod.device import (
     ChecksumType,
     available_virtual_ipod_models,
     create_virtual_ipod,

@@ -18,19 +18,19 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from app_core.context import RuntimeSettingsService
-from app_core.services import (
+from iopenpod.application.context import RuntimeSettingsService
+from iopenpod.application.services import (
     DeviceCapabilitySnapshot,
     DeviceIdentitySnapshot,
     DeviceManagerLike,
     DeviceSession,
 )
-from GUI.styles import FONT_FAMILY, Metrics
-from GUI.widgets.browserChrome import chrome_action_btn_css
-from GUI.widgets.formatters import format_duration_mmss
-from GUI.widgets.MBListView import MusicBrowserList
-from infrastructure.settings_paths import get_settings_path
-from infrastructure.settings_runtime import SettingsRuntime
+from iopenpod.gui.styles import FONT_FAMILY, Metrics
+from iopenpod.gui.widgets.browserChrome import chrome_action_btn_css
+from iopenpod.gui.widgets.formatters import format_duration_mmss
+from iopenpod.gui.widgets.MBListView import MusicBrowserList
+from iopenpod.infrastructure.settings_paths import get_settings_path
+from iopenpod.infrastructure.settings_runtime import SettingsRuntime
 
 _HARNESS_BG = "#f4f1ea"
 _HARNESS_PANEL = "#fffaf0"

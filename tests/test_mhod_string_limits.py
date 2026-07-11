@@ -3,12 +3,12 @@ from __future__ import annotations
 import struct
 from io import BytesIO
 
-from ipod_device import capabilities_for_family_gen
-from iTunesDB_Parser import parse_itunesdb
-from iTunesDB_Shared.constants import MHOD_TYPE_LYRICS, MHOD_TYPE_TITLE
-from iTunesDB_Writer.mhbd_writer import write_mhbd
-from iTunesDB_Writer.mhit_writer import TrackInfo
-from iTunesDB_Writer.mhod_writer import (
+from iopenpod.device import capabilities_for_family_gen
+from iopenpod.itunesdb_parser import parse_itunesdb
+from iopenpod.itunesdb_shared.constants import MHOD_TYPE_LYRICS, MHOD_TYPE_TITLE
+from iopenpod.itunesdb_writer.mhbd_writer import write_mhbd
+from iopenpod.itunesdb_writer.mhit_writer import TrackInfo
+from iopenpod.itunesdb_writer.mhod_writer import (
     MHOD_LONG_TEXT_MAX_UTF16_BYTES,
     MHOD_STRING_MAX_UTF16_BYTES,
     write_mhod_string,

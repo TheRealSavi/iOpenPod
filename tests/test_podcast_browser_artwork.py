@@ -8,7 +8,7 @@ from PyQt6.QtCore import QPoint, Qt
 from PyQt6.QtGui import QColor, QContextMenuEvent, QPixmap
 from PyQt6.QtWidgets import QApplication, QLabel, QPushButton, QVBoxLayout, QWidget
 
-from GUI.widgets.podcastBrowser import (
+from iopenpod.gui.widgets.podcastBrowser import (
     _COMBINED_FEED_COLUMNS,
     _EPISODE_ARTWORK_COLLAPSED_HEIGHT,
     _EPISODE_ROW_GAP,
@@ -25,8 +25,8 @@ from GUI.widgets.podcastBrowser import (
     _resolve_local_artwork_path,
     _set_episode_listened,
 )
-from PodcastManager.artwork import cache_feed_artwork, resolve_feed_artwork_source
-from PodcastManager.models import (
+from iopenpod.podcasts.artwork import cache_feed_artwork, resolve_feed_artwork_source
+from iopenpod.podcasts.models import (
     STATUS_DOWNLOADED,
     STATUS_DOWNLOADING,
     STATUS_ON_IPOD,
@@ -101,7 +101,7 @@ def test_cache_feed_artwork_stores_relative_jpeg_path(tmp_path: Path, monkeypatc
             pass
 
     monkeypatch.setattr(
-        "PodcastManager.artwork.requests.get",
+        "iopenpod.podcasts.artwork.requests.get",
         lambda *_args, **_kwargs: _Response(),
     )
 

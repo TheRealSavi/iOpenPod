@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import struct
 
-from ipod_device import capabilities_for_family_gen
-from iTunesDB_Writer.mhbd_writer import write_mhbd
+from iopenpod.device import capabilities_for_family_gen
+from iopenpod.itunesdb_writer.mhbd_writer import write_mhbd
 
 
 def _mhsd_types(data: bytes) -> list[int]:

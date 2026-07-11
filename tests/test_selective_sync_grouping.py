@@ -1,11 +1,11 @@
 from types import SimpleNamespace
 from typing import Any, cast
 
-from GUI.widgets.MBGridView import GridRecord, MusicBrowserGrid
-from GUI.widgets.selectiveSyncBrowser import PCMusicBrowserGrid, SelectiveSyncBrowser
-from SyncEngine.contracts import SyncAction, SyncItem, SyncPlan
-from SyncEngine.pc_library import PCTrack
-from SyncEngine.photos import (
+from iopenpod.gui.widgets.MBGridView import GridRecord, MusicBrowserGrid
+from iopenpod.gui.widgets.selectiveSyncBrowser import PCMusicBrowserGrid, SelectiveSyncBrowser
+from iopenpod.sync.contracts import SyncAction, SyncItem, SyncPlan
+from iopenpod.sync.pc_library import PCTrack
+from iopenpod.sync.photos import (
     PhotoAlbumChange,
     PhotoMembershipChange,
     PhotoSyncItem,

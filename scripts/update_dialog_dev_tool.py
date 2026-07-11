@@ -3,12 +3,7 @@
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 from typing import cast
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
@@ -29,9 +24,9 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from GUI.auto_updater import RELEASES_URL, InstallMethod, UpdateResult
-from GUI.styles import FONT_FAMILY, Colors, Metrics, button_css
-from GUI.widgets.updateDialog import UpdateAvailableDialog, UpdateStatusDialog
+from iopenpod.gui.auto_updater import RELEASES_URL, InstallMethod, UpdateResult
+from iopenpod.gui.styles import FONT_FAMILY, Colors, Metrics, button_css
+from iopenpod.gui.widgets.updateDialog import UpdateAvailableDialog, UpdateStatusDialog
 
 MethodChoice = InstallMethod | None
 

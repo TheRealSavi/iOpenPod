@@ -5,10 +5,10 @@ from pathlib import Path
 
 from PyQt6.QtWidgets import QSpinBox
 
-from GUI.widgets.formatters import format_smart_rule
-from GUI.widgets.playlistEditor import SmartRuleRow
-from iTunesDB_Parser.mhod_parser import _parse_mhod51
-from iTunesDB_Shared.mhod_defs import (
+from iopenpod.gui.widgets.formatters import format_smart_rule
+from iopenpod.gui.widgets.playlistEditor import SmartRuleRow
+from iopenpod.itunesdb_parser.mhod_parser import _parse_mhod51
+from iopenpod.itunesdb_shared.mhod_defs import (
     MHOD_HEADER_SIZE,
     SPL_FIELD_MAP,
     SPL_FIELD_TYPE_MAP,
@@ -17,7 +17,7 @@ from iTunesDB_Shared.mhod_defs import (
     SPLFT_INT,
     SPLFT_STRING,
 )
-from iTunesDB_Writer.mhod_spl_writer import rules_from_parsed, write_mhod51
+from iopenpod.itunesdb_writer.mhod_spl_writer import rules_from_parsed, write_mhod51
 
 
 def _last_played_relative_row(qtbot) -> SmartRuleRow:
@@ -265,7 +265,9 @@ def test_date_rules_format_absolute_and_relative_values() -> None:
 
 
 def test_editor_field_policy_marks_unproven_fields_unsupported() -> None:
-    source = Path("GUI/widgets/playlistEditor.py").read_text(encoding="utf-8")
+    source = Path("src/iopenpod/gui/widgets/playlistEditor.py").read_text(
+        encoding="utf-8"
+    )
     tree = ast.parse(source)
     field_ids: tuple[int, ...] | None = None
     unsupported_ids: frozenset[int] | None = None

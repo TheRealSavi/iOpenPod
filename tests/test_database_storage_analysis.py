@@ -1,7 +1,7 @@
 import sqlite3
 import struct
 
-from app_core.database_storage import analyze_database_storage
+from iopenpod.application.database_storage import analyze_database_storage
 
 
 def _chunk(tag: bytes, header: bytes, body: bytes = b"") -> bytes:

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import struct
 
-from iTunesDB_Parser.mhsd_parser import parse_dataset
-from iTunesDB_Shared.extraction import extract_datasets
-from iTunesDB_Shared.mhsd_defs import MHSD_HEADER_SIZE
+from iopenpod.itunesdb_parser.mhsd_parser import parse_dataset
+from iopenpod.itunesdb_shared.extraction import extract_datasets
+from iopenpod.itunesdb_shared.mhsd_defs import MHSD_HEADER_SIZE
 
 
 def test_mhsd_type9_genius_cuid_is_raw_payload_not_child_chunk() -> None:

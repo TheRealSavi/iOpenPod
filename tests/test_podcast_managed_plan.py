@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import time
 
-from PodcastManager.models import (
+from iopenpod.podcasts.models import (
     STATUS_NOT_DOWNLOADED,
     STATUS_ON_IPOD,
     PodcastEpisode,
     PodcastFeed,
 )
-from PodcastManager.podcast_sync import build_podcast_managed_plan
+from iopenpod.podcasts.podcast_sync import build_podcast_managed_plan
 
 
 def _episode(

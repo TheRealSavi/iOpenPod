@@ -1,4 +1,4 @@
-from app_core.services import DeviceCapabilitySnapshot, DeviceIdentitySnapshot
+from iopenpod.application.services import DeviceCapabilitySnapshot, DeviceIdentitySnapshot
 
 
 class FakeCapabilities:

@@ -6,15 +6,15 @@ from typing import cast
 
 from PyQt6.QtCore import QObject
 
-from app_core import controllers
-from app_core.controllers import QuickWriteController
-from app_core.jobs import (
+from iopenpod.application import controllers
+from iopenpod.application.controllers import QuickWriteController
+from iopenpod.application.jobs import (
     PlaylistImportWorker,
     QuickWriteWorker,
     _snapshot_cache_for_itunesdb_write,
 )
-from app_core.services import DeviceManagerLike, LibraryCacheLike
-from SyncEngine.quick_writes import QuickWriteResult
+from iopenpod.application.services import DeviceManagerLike, LibraryCacheLike
+from iopenpod.sync.quick_writes import QuickWriteResult
 
 
 class _FakeCache:
@@ -293,7 +293,7 @@ def test_quick_write_failure_discards_and_reloads() -> None:
 
 
 def test_quick_write_worker_reloads_cache_after_write(monkeypatch) -> None:
-    from SyncEngine import quick_writes
+    from iopenpod.sync import quick_writes
 
     class _WorkerCache:
         def __init__(self) -> None:
@@ -376,10 +376,10 @@ def test_playlist_import_refreshes_tracks_for_already_present_fingerprints(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    from app_core import jobs
-    from SyncEngine import _db_io, audio_fingerprint
-    from SyncEngine import mapping as mapping_module
-    from SyncEngine.pc_library import PCLibrary
+    from iopenpod.application import jobs
+    from iopenpod.sync import _db_io, audio_fingerprint
+    from iopenpod.sync import mapping as mapping_module
+    from iopenpod.sync.pc_library import PCLibrary
 
     source = tmp_path / "song.mp3"
     playlist = tmp_path / "mix.m3u8"
@@ -481,10 +481,10 @@ def test_playlist_import_merges_same_name_playlist_without_duplicate_members(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    from app_core import jobs
-    from SyncEngine import _db_io, audio_fingerprint
-    from SyncEngine import mapping as mapping_module
-    from SyncEngine.pc_library import PCLibrary
+    from iopenpod.application import jobs
+    from iopenpod.sync import _db_io, audio_fingerprint
+    from iopenpod.sync import mapping as mapping_module
+    from iopenpod.sync.pc_library import PCLibrary
 
     source = tmp_path / "song.mp3"
     playlist_file = tmp_path / "mix.m3u8"
@@ -602,11 +602,11 @@ def test_playlist_import_finds_existing_ipod_track_when_mapping_is_missing(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    from app_core import jobs
-    from SyncEngine import _db_io, audio_fingerprint
-    from SyncEngine import mapping as mapping_module
-    from SyncEngine.core import SyncEngine as CoreSyncEngine
-    from SyncEngine.pc_library import PCLibrary
+    from iopenpod.application import jobs
+    from iopenpod.sync import _db_io, audio_fingerprint
+    from iopenpod.sync import mapping as mapping_module
+    from iopenpod.sync.core import SyncEngine as CoreSyncEngine
+    from iopenpod.sync.pc_library import PCLibrary
 
     source = tmp_path / "song.mp3"
     playlist_file = tmp_path / "mix.m3u8"
@@ -727,11 +727,11 @@ def test_playlist_import_matches_ipod_file_fingerprint_without_readding(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    from app_core import jobs
-    from SyncEngine import _db_io, audio_fingerprint
-    from SyncEngine import mapping as mapping_module
-    from SyncEngine.core import SyncEngine as CoreSyncEngine
-    from SyncEngine.pc_library import PCLibrary
+    from iopenpod.application import jobs
+    from iopenpod.sync import _db_io, audio_fingerprint
+    from iopenpod.sync import mapping as mapping_module
+    from iopenpod.sync.core import SyncEngine as CoreSyncEngine
+    from iopenpod.sync.pc_library import PCLibrary
 
     playlist_file = tmp_path / "mix.m3u8"
     ipod_root = tmp_path / "ipod"

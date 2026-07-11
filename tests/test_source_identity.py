@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from SyncEngine.source_identity import source_content_hash
-from SyncEngine.transcode_cache import TranscodeCache
+from iopenpod.sync.source_identity import source_content_hash
+from iopenpod.sync.transcode_cache import TranscodeCache
 
 
 def _box(box_type: bytes, payload: bytes) -> bytes:

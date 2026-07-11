@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PodcastManager.downloader import _read_nero_chapters
+from iopenpod.podcasts.downloader import _read_nero_chapters
 
 
 def _atom(kind: bytes, body: bytes) -> bytes:

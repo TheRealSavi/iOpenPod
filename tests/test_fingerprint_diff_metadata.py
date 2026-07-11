@@ -1,7 +1,7 @@
-from SyncEngine.fingerprint_diff_engine import FingerprintDiffEngine
-from SyncEngine.mapping import TrackMapping
-from SyncEngine.pc_library import PCTrack
-from SyncEngine.source_identity import source_content_hash
+from iopenpod.sync.fingerprint_diff_engine import FingerprintDiffEngine
+from iopenpod.sync.mapping import TrackMapping
+from iopenpod.sync.pc_library import PCTrack
+from iopenpod.sync.source_identity import source_content_hash
 
 
 def _track(

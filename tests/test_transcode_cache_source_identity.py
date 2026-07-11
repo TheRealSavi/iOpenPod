@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from SyncEngine.transcode_cache import CachedFile, TranscodeCache
+from iopenpod.sync.transcode_cache import CachedFile, TranscodeCache
 
 
 def test_cache_separates_same_fingerprint_by_source_hash(tmp_path):

@@ -1,7 +1,7 @@
 from pathlib import Path
 from types import SimpleNamespace
 
-from SyncEngine.existing_track_matcher import (
+from iopenpod.sync.existing_track_matcher import (
     best_ipod_track_match,
     candidate_ipod_fingerprint_match_db_track_id,
     existing_track_match_db_track_id,
@@ -43,7 +43,7 @@ def test_candidate_match_fingerprints_only_likely_metadata_candidates(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    from SyncEngine import audio_fingerprint
+    from iopenpod.sync import audio_fingerprint
 
     ipod_root = tmp_path / "ipod"
     likely_file = ipod_root / "iPod_Control" / "Music" / "F00" / "Song.mp3"
@@ -105,7 +105,7 @@ def test_existing_track_match_uses_direct_ipod_source_path_even_with_weak_metada
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    from SyncEngine import audio_fingerprint
+    from iopenpod.sync import audio_fingerprint
 
     ipod_root = tmp_path / "ipod"
     ipod_file = ipod_root / "iPod_Control" / "Music" / "F00" / "Song.mp3"

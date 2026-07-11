@@ -2,15 +2,15 @@ from __future__ import annotations
 
 from io import BytesIO
 
-from iTunesDB_Parser import parse_itunesdb
-from iTunesDB_Parser.mhod_parser import parse_mhod
-from iTunesDB_Shared.extraction import extract_track_extras
-from iTunesDB_Shared.mhod_defs import MHOD_HEADER_SIZE
-from iTunesDB_Writer.mhbd_writer import write_mhbd
-from iTunesDB_Writer.mhit_writer import TrackInfo
-from iTunesDB_Writer.mhod_writer import write_mhod_chapter_data
-from SyncEngine._track_conversion import track_dict_to_info
-from SyncEngine.sync_executor import SyncExecutor
+from iopenpod.itunesdb_parser import parse_itunesdb
+from iopenpod.itunesdb_parser.mhod_parser import parse_mhod
+from iopenpod.itunesdb_shared.extraction import extract_track_extras
+from iopenpod.itunesdb_shared.mhod_defs import MHOD_HEADER_SIZE
+from iopenpod.itunesdb_writer.mhbd_writer import write_mhbd
+from iopenpod.itunesdb_writer.mhit_writer import TrackInfo
+from iopenpod.itunesdb_writer.mhod_writer import write_mhod_chapter_data
+from iopenpod.sync._track_conversion import track_dict_to_info
+from iopenpod.sync.sync_executor import SyncExecutor
 
 
 def _chapter_data() -> dict[str, object]:

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import SyncEngine.pc_library as pc_library_module
-from SyncEngine.pc_library import PCLibrary, PCTrack
+import iopenpod.sync.pc_library as pc_library_module
+from iopenpod.sync.pc_library import PCLibrary, PCTrack
 
 
 def test_count_audio_files_skips_appledouble_sidecars(tmp_path):

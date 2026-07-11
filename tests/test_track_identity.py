@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from SyncEngine.path_identity import stable_path_key
-from SyncEngine.track_identity import (
+from iopenpod.sync.path_identity import stable_path_key
+from iopenpod.sync.track_identity import (
     SyncTrackIdentityState,
     build_fingerprint_identity_plan,
 )

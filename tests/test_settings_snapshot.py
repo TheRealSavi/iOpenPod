@@ -2,8 +2,8 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from app_core.services import SettingsSnapshot
-from infrastructure.settings_schema import AppSettings
+from iopenpod.application.services import SettingsSnapshot
+from iopenpod.infrastructure.settings_schema import AppSettings
 
 
 def test_settings_snapshot_copies_values_and_freezes_lists() -> None:

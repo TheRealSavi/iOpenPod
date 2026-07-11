@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from app_core.jobs import scan_for_ipod_devices
+from iopenpod.application.jobs import scan_for_ipod_devices
 
 
 def test_scan_for_ipod_devices_uses_injected_scanner() -> None:

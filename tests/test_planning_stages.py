@@ -5,9 +5,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from infrastructure.media_folders import MediaFolderEntry
-from SyncEngine.path_identity import stable_path_key
-from SyncEngine.planning_stages import scan_source_libraries
+from iopenpod.infrastructure.media_folders import MediaFolderEntry
+from iopenpod.sync.path_identity import stable_path_key
+from iopenpod.sync.planning_stages import scan_source_libraries
 
 
 def _track(path, *, is_podcast: bool = False) -> Any:

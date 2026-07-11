@@ -1,16 +1,16 @@
 import plistlib
 
-from iTunesDB_Parser.mhod_parser import parse_mhod
-from iTunesDB_Shared.constants import MHOD_TYPE_PLAYLIST_PROPERTY_PLIST
-from iTunesDB_Shared.extraction import extract_playlist_extras
-from iTunesDB_Shared.mhod_defs import MHOD_HEADER_SIZE, write_mhod_header
-from iTunesDB_Shared.playlist_properties import (
+from iopenpod.itunesdb_parser.mhod_parser import parse_mhod
+from iopenpod.itunesdb_shared.constants import MHOD_TYPE_PLAYLIST_PROPERTY_PLIST
+from iopenpod.itunesdb_shared.extraction import extract_playlist_extras
+from iopenpod.itunesdb_shared.mhod_defs import MHOD_HEADER_SIZE, write_mhod_header
+from iopenpod.itunesdb_shared.playlist_properties import (
     normalize_playlist_description,
     playlist_description_from_row,
     playlist_description_update_fields,
     playlist_property_raw_body_for_write,
 )
-from iTunesDB_Writer.mhyp_writer import PlaylistInfo, write_playlist
+from iopenpod.itunesdb_writer.mhyp_writer import PlaylistInfo, write_playlist
 
 
 def test_mhod55_playlist_property_plist_decodes_and_preserves_raw_body() -> None:

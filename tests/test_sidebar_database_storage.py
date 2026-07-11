@@ -1,7 +1,7 @@
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QProgressBar, QPushButton
 
-from GUI.widgets.sidebar import DeviceInfoCard
+from iopenpod.gui.widgets.sidebar import DeviceInfoCard
 
 
 def test_database_storage_bar_uses_capability_limit(qtbot) -> None:

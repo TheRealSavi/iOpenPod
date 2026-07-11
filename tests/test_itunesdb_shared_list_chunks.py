@@ -1,6 +1,6 @@
 import struct
 
-from iTunesDB_Shared.field_base import (
+from iopenpod.itunesdb_shared.field_base import (
     GENERIC_HEADER_SIZE,
     MHLT_HEADER_SIZE,
     write_list_chunk,

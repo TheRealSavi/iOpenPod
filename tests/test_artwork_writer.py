@@ -6,9 +6,9 @@ from types import SimpleNamespace
 
 from PIL import Image
 
-from ArtworkDB_Writer import artwork_writer as aw
-from ArtworkDB_Writer import rgb565
-from ArtworkDB_Writer.art_extractor import extract_art
+from iopenpod.artworkdb_writer import artwork_writer as aw
+from iopenpod.artworkdb_writer import rgb565
+from iopenpod.artworkdb_writer.art_extractor import extract_art
 
 REQUIRED_FMT = 1055
 EXTRA_KNOWN_FMT = 1060

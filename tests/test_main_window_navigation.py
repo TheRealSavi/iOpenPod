@@ -3,22 +3,22 @@ import zlib
 from types import SimpleNamespace
 from typing import Any, cast
 
-from app_core.database_storage import DatabaseStorageReport
-from app_core.jobs import SyncToolAvailability
-from app_core.sync_session import (
+from iopenpod.application.database_storage import DatabaseStorageReport
+from iopenpod.application.jobs import SyncToolAvailability
+from iopenpod.application.sync_session import (
     SyncExecutionIntent,
     SyncPlanningIntent,
     SyncSessionMissingTools,
 )
-from GUI.app import (
+from iopenpod.gui.app import (
     MainWindow,
     _database_file_size_bytes,
     _library_load_failure_message,
     _sync_execute_failure_message,
 )
-from GUI.internal_drag import IOP_EXPORT_DRAG_MIME
-from infrastructure.settings_schema import AppSettings
-from SyncEngine.contracts import SyncPlan
+from iopenpod.gui.internal_drag import IOP_EXPORT_DRAG_MIME
+from iopenpod.infrastructure.settings_schema import AppSettings
+from iopenpod.sync.contracts import SyncPlan
 
 
 class _FakeStack:
@@ -209,16 +209,16 @@ def test_device_changed_rejects_unwritable_device_before_loading(monkeypatch) ->
     fake_pool = SimpleNamespace(clear=lambda: calls.append("clear_pool"))
 
     monkeypatch.setattr(
-        "GUI.app.ThreadPoolSingleton.get_instance",
+        "iopenpod.gui.app.ThreadPoolSingleton.get_instance",
         staticmethod(lambda: fake_pool),
     )
-    monkeypatch.setattr("GUI.imgMaker.clear_artwork_api", lambda: calls.append("art"))
+    monkeypatch.setattr("iopenpod.gui.imgMaker.clear_artwork_api", lambda: calls.append("art"))
     monkeypatch.setattr(
-        "GUI.app.check_ipod_write_access",
+        "iopenpod.gui.app.check_ipod_write_access",
         lambda _path: SimpleNamespace(writable=False, message="not writable"),
     )
     monkeypatch.setattr(
-        "GUI.app.QMessageBox.critical",
+        "iopenpod.gui.app.QMessageBox.critical",
         lambda _parent, title, message: criticals.append((title, message)),
     )
 
@@ -327,8 +327,8 @@ def test_start_pc_sync_without_device_opens_media_folder_dialog(monkeypatch) -> 
         ),
     )
 
-    monkeypatch.setattr("GUI.app.PCFolderDialog", _FakeDialog)
-    monkeypatch.setattr("GUI.app.QMessageBox.warning", _unexpected_warning)
+    monkeypatch.setattr("iopenpod.gui.app.PCFolderDialog", _FakeDialog)
+    monkeypatch.setattr("iopenpod.gui.app.QMessageBox.warning", _unexpected_warning)
 
     MainWindow.startPCSync(cast(Any, window))
 
@@ -378,7 +378,7 @@ def test_execute_sync_plan_passes_playlist_actions_only_in_plan(
             pass
 
     monkeypatch.setattr(
-        "GUI.app.build_filtered_sync_plan",
+        "iopenpod.gui.app.build_filtered_sync_plan",
         lambda original_plan, _selected_items, **_kwargs: original_plan,
     )
 
@@ -427,9 +427,9 @@ def test_missing_tools_download_preserves_sync_planning_intent(monkeypatch) -> N
         def exec(self) -> int:
             return 1
 
-    monkeypatch.setattr("GUI.app._MissingToolsDialog", _FakeMissingToolsDialog)
+    monkeypatch.setattr("iopenpod.gui.app._MissingToolsDialog", _FakeMissingToolsDialog)
     monkeypatch.setattr(
-        "GUI.app.QDialog.DialogCode",
+        "iopenpod.gui.app.QDialog.DialogCode",
         SimpleNamespace(Accepted=1),
     )
     window = SimpleNamespace(

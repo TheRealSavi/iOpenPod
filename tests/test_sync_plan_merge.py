@@ -1,12 +1,12 @@
 from dataclasses import fields
 
-from app_core import sync_plan_merge
-from app_core.sync_plan_merge import (
+from iopenpod.application import sync_plan_merge
+from iopenpod.application.sync_plan_merge import (
     merge_additional_photo_plan,
     merge_additional_sync_plan,
 )
-from SyncEngine.contracts import SyncAction, SyncItem, SyncPlan
-from SyncEngine.photos import PhotoAlbumChange, PhotoSyncItem, PhotoSyncPlan
+from iopenpod.sync.contracts import SyncAction, SyncItem, SyncPlan
+from iopenpod.sync.photos import PhotoAlbumChange, PhotoSyncItem, PhotoSyncPlan
 
 
 def _item(action: SyncAction, description: str) -> SyncItem:

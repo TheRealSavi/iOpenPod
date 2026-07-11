@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ipod_device.artwork import ITHMB_FORMAT_MAP, resolve_cover_art_format_definitions
+from iopenpod.device.artwork import ITHMB_FORMAT_MAP, resolve_cover_art_format_definitions
 
 
 def test_standard_device_resolves_formats_from_global_registry() -> None:

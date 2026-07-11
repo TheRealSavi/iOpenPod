@@ -1,14 +1,14 @@
 import json
 from types import SimpleNamespace
 
-from app_core.jobs import (
+from iopenpod.application.jobs import (
     backup_device_name_from_playlists,
     build_backup_device_context,
     build_backup_device_meta,
     ensure_backup_folder,
     list_backup_devices_for_view,
 )
-from SyncEngine.backup_manager import BackupManager
+from iopenpod.sync.backup_manager import BackupManager
 
 
 def test_build_backup_device_context_sanitizes_identity_and_copies_meta() -> None:

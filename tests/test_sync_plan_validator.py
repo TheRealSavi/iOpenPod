@@ -4,8 +4,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
-from SyncEngine.contracts import SyncAction, SyncItem, SyncPlan
-from SyncEngine.plan_validator import validate_sync_plan
+from iopenpod.sync.contracts import SyncAction, SyncItem, SyncPlan
+from iopenpod.sync.plan_validator import validate_sync_plan
 
 
 def _pc_track(path: str = "/music/song.mp3", **kwargs: object) -> Any:

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from app_core.dropped_files import (
+from iopenpod.application.dropped_files import (
     build_dropped_playlist_imports,
     collect_import_file_paths,
     collect_media_file_paths,

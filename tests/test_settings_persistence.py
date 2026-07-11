@@ -4,9 +4,9 @@ from contextlib import contextmanager
 from pathlib import Path
 from uuid import uuid4
 
-from infrastructure import settings_persistence
-from infrastructure.settings_persistence import load_app_settings, save_app_settings
-from infrastructure.settings_schema import PLAYER_POSITION_TOP, AppSettings
+from iopenpod.infrastructure import settings_persistence
+from iopenpod.infrastructure.settings_persistence import load_app_settings, save_app_settings
+from iopenpod.infrastructure.settings_schema import PLAYER_POSITION_TOP, AppSettings
 
 
 @contextmanager

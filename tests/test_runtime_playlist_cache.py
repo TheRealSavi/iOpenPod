@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from types import SimpleNamespace
 
-from app_core import runtime
+from iopenpod.application import runtime
 
 
 def test_cache_emits_load_failed_after_partial_device_load(monkeypatch) -> None:

@@ -91,12 +91,12 @@ if sys.platform == 'linux':
             _linux_qt_xcb_binaries.append((_path, '.'))
 
 a = Analysis(
-    ['main.py'],
+    ['src/iopenpod/__main__.py'],
     pathex=[],
     binaries=[*_wasmtime_binaries, *_linux_qt_xcb_binaries],
     datas=[
-        ('assets', 'assets'),
-        ('iTunesDB_Writer/wasm', 'iTunesDB_Writer/wasm'),
+        ('src/iopenpod/assets', 'iopenpod/assets'),
+        ('src/iopenpod/itunesdb_writer/wasm', 'iopenpod/itunesdb_writer/wasm'),
         *copy_metadata('iopenpod'),
     ],
     hiddenimports=[
@@ -141,7 +141,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file='entitlements.plist' if sys.platform == 'darwin' else None,
-    icon='assets/icons/icon.ico' if sys.platform == 'win32' else 'assets/icons/icon-256.png',
+    icon='src/iopenpod/assets/icons/icon.ico' if sys.platform == 'win32' else 'src/iopenpod/assets/icons/icon-256.png',
 )
 coll = COLLECT(
     exe,
@@ -158,7 +158,7 @@ if sys.platform == 'darwin':
     app = BUNDLE(
         coll,
         name='iOpenPod.app',
-        icon='assets/icons/icon-256.png',
+        icon='src/iopenpod/assets/icons/icon-256.png',
         bundle_identifier='com.iopenpod.app',
         info_plist={
             'CFBundleShortVersionString': _version,

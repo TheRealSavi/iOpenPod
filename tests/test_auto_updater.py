@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from GUI.auto_updater import (
+from iopenpod.gui.auto_updater import (
     InstallMethod,
     UpdateResult,
     _resolve_install_target,
@@ -54,7 +54,9 @@ def test_detect_install_method_recognizes_pipx() -> None:
 
 
 def test_detect_install_method_recognizes_source_checkout(tmp_path) -> None:
-    (tmp_path / "main.py").write_text("print('iOpenPod')\n", encoding="utf-8")
+    package_main = tmp_path / "src" / "iopenpod" / "__main__.py"
+    package_main.parent.mkdir(parents=True)
+    package_main.write_text("print('iOpenPod')\n", encoding="utf-8")
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "iopenpod"\n',
         encoding="utf-8",

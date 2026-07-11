@@ -45,7 +45,7 @@ dependencies = [
 ]
 
 [project.scripts]
-iopenpod = "main:main"
+iopenpod = "iopenpod.__main__:main"
 
 [dependency-groups]
 dev = [
@@ -60,27 +60,7 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-only-include = [
-    "app_core",
-    "infrastructure",
-    "main.py",
-    "sync_progress_stages.py",
-    "GUI",
-    "PodcastManager",
-    "ipod_device",
-    "iTunesDB_Parser",
-    "iTunesDB_Shared",
-    "iTunesDB_Writer",
-    "ArtworkDB_Shared",
-    "ArtworkDB_Parser",
-    "ArtworkDB_Writer",
-    "SyncEngine",
-    "SQLiteDB_Writer",
-    "assets/fonts",
-    "assets/glyphs",
-    "assets/icons",
-    "assets/ipod_images",
-]
+packages = ["src/iopenpod"]
 
 [tool.flake8]
 # Allow line breaks before binary operators (W503) — matches Black's style
@@ -91,6 +71,7 @@ max-line-length = 320
 [tool.pytest.ini_options]
 addopts = "-p no:cacheprovider"
 testpaths = ["tests"]
+pythonpath = ["."]
 
 [tool.ruff]
 line-length = 320
@@ -103,24 +84,24 @@ select = ["B", "E", "F", "I", "UP"]
 [tool.mypy]
 python_version = "3.11"
 files = [
-    "app_core/device_identity.py",
-    "app_core/services.py",
-    "app_core/context.py",
-    "app_core/jobs.py",
-    "app_core/progress.py",
-    "app_core/sync_review_model.py",
-    "app_core/sync_plan_builder.py",
-    "app_core/sync_options.py",
-    "app_core/sync_session.py",
-    "infrastructure/settings_persistence.py",
-    "infrastructure/settings_paths.py",
-    "infrastructure/settings_runtime.py",
-    "infrastructure/settings_schema.py",
-    "infrastructure/settings_secrets.py",
-    "infrastructure/version.py",
-    "SyncEngine/contracts.py",
-    "SyncEngine/database_commit.py",
-    "SyncEngine/quick_writes.py",
+    "src/iopenpod/application/device_identity.py",
+    "src/iopenpod/application/services.py",
+    "src/iopenpod/application/context.py",
+    "src/iopenpod/application/jobs.py",
+    "src/iopenpod/application/progress.py",
+    "src/iopenpod/application/sync_review_model.py",
+    "src/iopenpod/application/sync_plan_builder.py",
+    "src/iopenpod/application/sync_options.py",
+    "src/iopenpod/application/sync_session.py",
+    "src/iopenpod/infrastructure/settings_persistence.py",
+    "src/iopenpod/infrastructure/settings_paths.py",
+    "src/iopenpod/infrastructure/settings_runtime.py",
+    "src/iopenpod/infrastructure/settings_schema.py",
+    "src/iopenpod/infrastructure/settings_secrets.py",
+    "src/iopenpod/infrastructure/version.py",
+    "src/iopenpod/sync/contracts.py",
+    "src/iopenpod/sync/database_commit.py",
+    "src/iopenpod/sync/quick_writes.py",
     "scripts/check_architecture.py",
     "tests/test_architecture_checks.py",
     "tests/test_backup_jobs.py",
@@ -133,7 +114,7 @@ files = [
     "tests/test_quick_writes.py",
     "tests/test_sync_review_model.py",
     "tests/test_sync_plan_builder.py",
-    "main.py",
+    "src/iopenpod/__main__.py",
 ]
 follow_imports = "silent"
 ignore_missing_imports = true

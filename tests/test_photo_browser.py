@@ -6,10 +6,10 @@ from typing import Any, cast
 
 from PyQt6.QtCore import QPoint
 
-from GUI.styles import context_menu_css
-from GUI.widgets import photoBrowser as photo_browser_module
-from GUI.widgets.photoBrowser import PhotoBrowserWidget
-from SyncEngine.photos import PhotoEntry
+from iopenpod.gui.styles import context_menu_css
+from iopenpod.gui.widgets import photoBrowser as photo_browser_module
+from iopenpod.gui.widgets.photoBrowser import PhotoBrowserWidget
+from iopenpod.sync.photos import PhotoEntry
 
 
 class _Action:
@@ -65,7 +65,7 @@ class _Menu:
 def _patch_menu(monkeypatch, choose_label: str | None = None) -> None:
     _Menu.last = None
     _Menu.choose_label = choose_label
-    monkeypatch.setattr("GUI.widgets.photoBrowser.QMenu", _Menu)
+    monkeypatch.setattr("iopenpod.gui.widgets.photoBrowser.QMenu", _Menu)
 
 
 def _photo(**values):

@@ -1,7 +1,7 @@
 # iOpenPod GUI Design System
 
-This is the reusable design language for the PyQt GUI. New UI should use
-`GUI/styles.py` primitives instead of local one-off styles.
+This is the reusable design language for the PyQt iopenpod.gui. New UI should use
+`src/iopenpod/gui/styles.py` primitives instead of local one-off styles.
 
 ## Principles
 

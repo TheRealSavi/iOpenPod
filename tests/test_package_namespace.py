@@ -4,6 +4,7 @@ import importlib
 import tomllib
 from pathlib import Path
 
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -23,3 +24,17 @@ def test_console_script_enters_through_package_main() -> None:
 
     assert project["project"]["scripts"]["iopenpod"] == "iopenpod.__main__:main"
 
+
+def test_console_version_does_not_boot_the_gui(capsys, monkeypatch) -> None:
+    package_main = importlib.import_module("iopenpod.__main__")
+    monkeypatch.setattr(
+        package_main,
+        "run_pyqt_app",
+        lambda: pytest.fail("--version must not boot the GUI"),
+    )
+
+    with pytest.raises(SystemExit) as exit_info:
+        package_main.main(["--version"])
+
+    assert exit_info.value.code == 0
+    assert capsys.readouterr().out.strip()

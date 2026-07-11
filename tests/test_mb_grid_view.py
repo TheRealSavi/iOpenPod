@@ -7,10 +7,10 @@ from PyQt6.QtCore import QPoint, Qt
 from PyQt6.QtGui import QContextMenuEvent
 from PyQt6.QtWidgets import QApplication, QScrollArea, QScrollBar
 
-import GUI.imgMaker as img_maker
-from GUI.styles import Colors
-from GUI.widgets.MBGridView import MusicBrowserGrid
-from GUI.widgets.MBGridViewItem import GridItemRenderState, MusicBrowserGridItem
+import iopenpod.gui.imgMaker as img_maker
+from iopenpod.gui.styles import Colors
+from iopenpod.gui.widgets.MBGridView import MusicBrowserGrid
+from iopenpod.gui.widgets.MBGridViewItem import GridItemRenderState, MusicBrowserGridItem
 
 
 def _build_items(

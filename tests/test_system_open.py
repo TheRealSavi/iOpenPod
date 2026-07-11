@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from GUI import system_open
+from iopenpod.gui import system_open
 
 
 def test_open_files_with_default_app_opens_existing_files(

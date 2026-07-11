@@ -5,16 +5,16 @@ from io import BytesIO
 
 import pytest
 
-from iTunesDB_Parser import parse_itunesdb
-from iTunesDB_Shared.constants import MHOD_TYPE_PODCAST_RSS_URL
-from iTunesDB_Shared.extraction import extract_mhod_strings
-from iTunesDB_Writer.mhbd_writer import write_mhbd
-from iTunesDB_Writer.mhit_writer import TrackInfo
-from iTunesDB_Writer.mhod_writer import (
+from iopenpod.itunesdb_parser import parse_itunesdb
+from iopenpod.itunesdb_shared.constants import MHOD_TYPE_PODCAST_RSS_URL
+from iopenpod.itunesdb_shared.extraction import extract_mhod_strings
+from iopenpod.itunesdb_writer.mhbd_writer import write_mhbd
+from iopenpod.itunesdb_writer.mhit_writer import TrackInfo
+from iopenpod.itunesdb_writer.mhod_writer import (
     MHOD_URL_MAX_UTF8_BYTES,
     write_mhod_podcast_url,
 )
-from iTunesDB_Writer.mhyp_writer import PlaylistInfo, PlaylistItemMeta
+from iopenpod.itunesdb_writer.mhyp_writer import PlaylistInfo, PlaylistItemMeta
 
 
 def _first_track(data: bytes) -> dict:
