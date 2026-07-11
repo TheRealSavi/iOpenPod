@@ -1257,15 +1257,15 @@ class SettingsPage(QWidget):
             radius=Metrics.BORDER_RADIUS_SM,
         ))
         lay = QHBoxLayout(frame)
-        lay.setContentsMargins(3, 3, 3, 3)
+        # Optical alignment: keep 28px control height, but shift the segmented
+        # buttons up by 1px within the 34px shell to avoid a slightly low look.
+        lay.setContentsMargins(3, 2, 3, 4)
         lay.setSpacing(3)
 
         self._scope_global_btn = QPushButton("Global")
         self._scope_device_btn = QPushButton("Device")
         for btn in (self._scope_global_btn, self._scope_device_btn):
-            btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setFixedHeight(26)
             lay.addWidget(btn, stretch=1)
 
         self._scope_global_btn.clicked.connect(lambda: self.set_settings_scope("global"))

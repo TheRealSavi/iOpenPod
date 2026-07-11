@@ -3798,7 +3798,9 @@ class PCFolderDialog(QDialog):
             path_label.setWordWrap(True)
             path_label.setToolTip(folder)
             path_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-            path_label.setStyleSheet(f"color:{Colors.TEXT_PRIMARY}; border:none;")
+            path_label.setStyleSheet(
+                f"color:{Colors.TEXT_PRIMARY}; border:none; padding-left: 4px;"
+            )
             header_layout.addWidget(path_label, 1)
 
             settings_btn = self._make_folder_icon_button(

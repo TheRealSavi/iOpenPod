@@ -464,6 +464,13 @@ class DevicePickerDialog(QDialog):
 
         btn_layout.addStretch()
 
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
+        cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        cancel_btn.setStyleSheet(button_css("secondary", "md"))
+        cancel_btn.clicked.connect(self.reject)
+        btn_layout.addWidget(cancel_btn)
+
         self._select_btn = QPushButton("Select")
         self._select_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.DemiBold))
         self._select_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -471,13 +478,6 @@ class DevicePickerDialog(QDialog):
         self._select_btn.setStyleSheet(accent_btn_css())
         self._select_btn.clicked.connect(self.accept)
         btn_layout.addWidget(self._select_btn)
-
-        cancel_btn = QPushButton("Cancel")
-        cancel_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
-        cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        cancel_btn.setStyleSheet(button_css("secondary", "md"))
-        cancel_btn.clicked.connect(self.reject)
-        btn_layout.addWidget(cancel_btn)
 
         layout.addLayout(btn_layout)
 

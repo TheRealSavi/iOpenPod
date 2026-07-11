@@ -344,7 +344,9 @@ class BackupBrowserWidget(QWidget):
         # ── Sidebar: back + device navigation ───────────────────────────
         self._sidebar = QFrame()
         self._sidebar.setObjectName("backupSidebar")
-        self._sidebar.setFixedWidth(Metrics.SIDEBAR_WIDTH)
+        # Backup device rows need a little more room than the main nav sidebar
+        # to avoid right-edge clipping on some DPI/font combinations.
+        self._sidebar.setFixedWidth(max(Metrics.SIDEBAR_WIDTH, 240))
         self._sidebar.setStyleSheet(panel_css(
             "backupSidebar",
             border=f"0px solid transparent; border-right: 1px solid {Colors.BORDER_SUBTLE}",
@@ -380,7 +382,9 @@ class BackupBrowserWidget(QWidget):
         self._devices_scroll_content = QWidget()
         self._devices_scroll_content.setStyleSheet("background: transparent;")
         self._devices_scroll_layout = QVBoxLayout(self._devices_scroll_content)
-        self._devices_scroll_layout.setContentsMargins(0, 0, 0, 0)
+        # Keep a small inset on the right so card borders are not clipped by
+        # the viewport edge/scrollbar.
+        self._devices_scroll_layout.setContentsMargins(0, 0, 3, 0)
         self._devices_scroll_layout.setSpacing(4)
         self._devices_scroll_layout.addStretch()
         dev_scroll.setWidget(self._devices_scroll_content)

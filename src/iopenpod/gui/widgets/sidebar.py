@@ -162,6 +162,7 @@ class DeviceInfoCard(QFrame):
         super().__init__()
         self._rename_edit: QLineEdit | None = None
         self._device_info = None
+        self._device_display_name = "No Device"
         self.setStyleSheet(f"""
             QFrame {{
                 background: {Colors.SURFACE_RAISED};
@@ -192,6 +193,7 @@ class DeviceInfoCard(QFrame):
         self.name_label = QLabel("No Device")
         self.name_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_XXL, QFont.Weight.Bold))
         self.name_label.setStyleSheet(LABEL_PRIMARY())
+        self.name_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.name_label.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.name_label.setToolTip("Click to rename your iPod")
         self.name_label.mousePressEvent = lambda ev: self._start_rename()
@@ -459,7 +461,7 @@ class DeviceInfoCard(QFrame):
 
     def _start_rename(self, event=None):
         """Show an inline QLineEdit to rename the iPod."""
-        current = self.name_label.text()
+        current = self._device_display_name
         if current == "No Device" or self._rename_edit is not None:
             return
 
@@ -498,15 +500,14 @@ class DeviceInfoCard(QFrame):
         self._rename_edit = None  # prevent re-entrant call from .hide()
 
         new_name = edit.text().strip()
-        old_name = self.name_label.text()
+        old_name = self._device_display_name
 
         edit.hide()
         edit.deleteLater()
         self.name_label.show()
 
         if new_name and new_name != old_name:
-            self.name_label.setText(new_name)
-            self._fit_name_font(new_name)
+            self._set_device_name(new_name)
             self.device_renamed.emit(new_name)
 
     def _toggle_tech_details(self):
@@ -518,22 +519,45 @@ class DeviceInfoCard(QFrame):
         if icon:
             self.tech_toggle.setIcon(icon)
 
-    def _fit_name_font(self, text: str):
-        """Shrink the device name font if the text is too wide for the card."""
-        max_w = (134)  # approximate width available for the name
+    def resizeEvent(self, a0):
+        super().resizeEvent(a0)
+        self._refresh_name_label()
+
+    def _set_device_name(self, text: str) -> None:
+        self._device_display_name = text or "No Device"
+        self._refresh_name_label()
+
+    def _refresh_name_label(self) -> None:
+        """Fit and elide the name based on the actual label width."""
+        text = self._device_display_name or "No Device"
+        max_w = self.name_label.width()
+        if max_w <= 1:
+            max_w = max(80, self.width() - 128)
+
         for size in (Metrics.FONT_XXL, Metrics.FONT_XL, Metrics.FONT_LG, Metrics.FONT_MD):
-            f = QFont(FONT_FAMILY, size, QFont.Weight.Bold)
-            if QFontMetrics(f).horizontalAdvance(text) <= max_w:
-                self.name_label.setFont(f)
+            font = QFont(FONT_FAMILY, size, QFont.Weight.Bold)
+            metrics = QFontMetrics(font)
+            if metrics.horizontalAdvance(text) <= max_w:
+                self.name_label.setFont(font)
+                self.name_label.setText(text)
+                self.name_label.setToolTip("Click to rename your iPod")
                 return
-        self.name_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.Bold))
+
+        font = QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.Bold)
+        metrics = QFontMetrics(font)
+        elided = metrics.elidedText(text, Qt.TextElideMode.ElideRight, max_w)
+        self.name_label.setFont(font)
+        self.name_label.setText(elided)
+        if text != "No Device":
+            self.name_label.setToolTip(f"{text}\nClick to rename your iPod")
+        else:
+            self.name_label.setToolTip("Click to rename your iPod")
 
     def update_device_info(self, name: str, model: str = "", device_info=None):
         """Update device name and model."""
         self._device_info = device_info
         display = name or "No Device"
-        self.name_label.setText(display)
-        self._fit_name_font(display)
+        self._set_device_name(display)
         self.model_label.setText(model)
         self.eject_button.setEnabled(bool(name) and display != "No Device")
 
@@ -836,8 +860,7 @@ class DeviceInfoCard(QFrame):
     def clear(self):
         """Clear all info (when no device selected)."""
         self._device_info = None
-        self.name_label.setText("No Device")
-        self._fit_name_font("No Device")
+        self._set_device_name("No Device")
         self.model_label.setText("Press Select to choose your iPod")
         self._set_default_icon()
         self.database_bar.setValue(0)
@@ -955,7 +978,7 @@ class Sidebar(QFrame):
 
         # Sync button - row 2 (full width)
         self.syncButton = QPushButton("Sync with PC")
-        self.syncButton.setStyleSheet(accent_btn_css())
+        self.syncButton.setStyleSheet(accent_btn_css("lg"))
         self.syncButton.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG, QFont.Weight.DemiBold))
         _bi = glyph_icon("download", (20), Colors.TEXT_ON_ACCENT)
         if _bi:
