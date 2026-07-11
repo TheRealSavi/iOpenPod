@@ -24,7 +24,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from infrastructure.media_folders import MEDIA_TYPE_VIDEO  # noqa: E402
-from SyncEngine.contracts import SyncAction, SyncItem, SyncPlan  # noqa: E402
+from SyncEngine.contracts import SyncAction, SyncItem, SyncPlan, SyncRequest  # noqa: E402
 from SyncEngine.mapping import MappingManager  # noqa: E402
 from SyncEngine.pc_library import PCLibrary  # noqa: E402
 from SyncEngine.sync_executor import SyncExecutor  # noqa: E402
@@ -413,7 +413,9 @@ def install(ipod: Path, workdir: Path, variants: list[Variant]) -> dict[str, Any
         )
 
     executor = SyncExecutor(ipod, max_workers=1, max_device_write_workers=1)
-    outcome = executor.execute(plan, mapping, progress_callback=on_progress)
+    outcome = executor.execute_request(
+        SyncRequest(plan=plan, mapping=mapping, progress_callback=on_progress)
+    )
 
     mapping_after = mapping_manager.load()
     installed_by_source: dict[str, str] = {}

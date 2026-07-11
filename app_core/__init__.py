@@ -33,11 +33,6 @@ from .jobs import (
     BackupRestoreWorker,
     BackupSnapshotCatalog,
     DeviceScanWorker,
-    PodcastPlanRequest,
-    PodcastPlanWorker,
-    SyncDiffRequest,
-    SyncDiffWorker,
-    SyncExecuteWorker,
     SyncToolAvailability,
     ToolDownloadWorker,
     backup_device_name_from_playlists,
@@ -65,6 +60,14 @@ from .services import (
     SettingsSnapshot,
 )
 from .sync_plan_builder import build_removal_sync_plan
+from .sync_session import (
+    PodcastPlanningInput,
+    SyncExecutionIntent,
+    SyncPlanningIntent,
+    SyncSessionBlocked,
+    SyncSessionController,
+    SyncSessionMissingTools,
+)
 
 __all__ = [
     "AppConfigurationError",
@@ -94,8 +97,7 @@ __all__ = [
     "LibraryCacheLike",
     "LibraryService",
     "LibrarySnapshot",
-    "PodcastPlanRequest",
-    "PodcastPlanWorker",
+    "PodcastPlanningInput",
     "QuickWriteController",
     "SettingsService",
     "SettingsSnapshot",
@@ -105,9 +107,11 @@ __all__ = [
     "resolve_device_image_filename",
     "resolve_ipod_image_color",
     "resolve_ipod_product_image_filename",
-    "SyncDiffRequest",
-    "SyncDiffWorker",
-    "SyncExecuteWorker",
+    "SyncExecutionIntent",
+    "SyncPlanningIntent",
+    "SyncSessionBlocked",
+    "SyncSessionController",
+    "SyncSessionMissingTools",
     "SyncToolAvailability",
     "ToolDownloadWorker",
     "backup_device_name_from_playlists",

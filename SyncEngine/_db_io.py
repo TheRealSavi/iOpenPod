@@ -337,16 +337,21 @@ def commit_playcounts_if_needed(ipod_path: Path) -> bool:
         all_tracks,
     )
 
-    if not write_database(
+    from .database_commit import DatabaseCommitPayload, write_database_commit
+
+    if not write_database_commit(
         ipod_path,
-        all_tracks,
-        playlists=playlists,
-        podcast_playlists=podcast_playlists,
-        smart_playlists=smart_playlists,
-        master_playlist_name=master_name,
-        master_playlist_id=master_playlist_id,
-        podcast_master_playlist_name=podcast_master_name,
-        podcast_master_playlist_id=podcast_master_playlist_id,
+        DatabaseCommitPayload(
+            all_tracks=all_tracks,
+            playlists=playlists,
+            podcast_playlists=podcast_playlists,
+            smart_playlists=smart_playlists,
+            master_playlist_name=master_name,
+            master_playlist_id=master_playlist_id,
+            podcast_master_playlist_name=podcast_master_name,
+            podcast_master_playlist_id=podcast_master_playlist_id,
+        ),
+        protect_itunes=True,
     ):
         return False
 

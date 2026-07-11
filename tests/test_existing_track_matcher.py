@@ -57,9 +57,14 @@ def test_candidate_match_fingerprints_only_likely_metadata_candidates(
 
     def fake_fingerprint(path, *_args, **_kwargs):
         fingerprinted_paths.append(Path(path))
-        return "fp-song" if Path(path) == likely_file else "fp-other"
+        fingerprint = "fp-song" if Path(path) == likely_file else "fp-other"
+        return fingerprint, "computed"
 
-    monkeypatch.setattr(audio_fingerprint, "get_or_compute_fingerprint", fake_fingerprint)
+    monkeypatch.setattr(
+        audio_fingerprint,
+        "get_or_compute_fingerprint_with_status",
+        fake_fingerprint,
+    )
 
     db_track_id = candidate_ipod_fingerprint_match_db_track_id(
         ipod_root,
@@ -110,8 +115,10 @@ def test_existing_track_match_uses_direct_ipod_source_path_even_with_weak_metada
 
     monkeypatch.setattr(
         audio_fingerprint,
-        "get_or_compute_fingerprint",
-        lambda path, *_args, **_kwargs: "fp-song" if Path(path) == ipod_file else None,
+        "get_or_compute_fingerprint_with_status",
+        lambda path, *_args, **_kwargs: (
+            ("fp-song", "computed") if Path(path) == ipod_file else (None, "failed")
+        ),
     )
 
     db_track_id = existing_track_match_db_track_id(

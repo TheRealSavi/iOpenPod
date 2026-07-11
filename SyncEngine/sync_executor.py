@@ -29,7 +29,6 @@ from pathlib import Path
 from typing import Any, Optional
 
 from iTunesDB_Shared.constants import (
-    MEDIA_TYPE_AUDIOBOOK,
     MEDIA_TYPE_MUSIC_VIDEO,
     MEDIA_TYPE_PODCAST,
     MEDIA_TYPE_TV_SHOW,
@@ -43,7 +42,7 @@ from .album_chapters import (
     ResolvedAlbumSource,
     convert_album_to_chaptered_track,
 )
-from .audio_fingerprint import get_or_compute_fingerprint
+from .audio_fingerprint import get_or_compute_fingerprint_with_status
 from .capability_filter import (
     is_track_supported_by_device,
     unsupported_track_reason,
@@ -53,17 +52,22 @@ from .contracts import (
     SYNC_DB_WRITE_RESERVE_BYTES,
     SYNC_DISK_RESERVE_BYTES,
     SYNC_UNTIL_FULL_RESERVE_BYTES,
+    SyncItem,
     SyncOutcome,
+    SyncPlan,
     SyncProgress,
     SyncRequest,
     sync_plan_required_free_bytes,
 )
-from .fingerprint_diff_engine import SyncItem, SyncPlan
+from .database_commit import (
+    DatabaseCommitPayload,
+    apply_itunes_protections_from_tracks,
+    write_database_commit,
+)
 from .ipod_track_paths import (
     expected_ipod_track_file_path,
     ipod_location_from_file_path,
 )
-from .itunes_prefs import protect_from_itunes
 from .mapping import MappingFile, MappingManager
 from .path_identity import coerce_int, stable_path_key
 from .photos import apply_photo_sync_plan, read_photo_db
@@ -342,43 +346,6 @@ class _ResolvedPlaylistCommitPayload:
     smart_playlists: list[PlaylistInfo]
 
 
-@dataclass(frozen=True, slots=True)
-class _DatabaseCommitInput:
-    """Resolved database-write payload after file mutations are complete."""
-
-    all_tracks: list[TrackInfo]
-    normalized_pc_paths: dict[int, str]
-    playlist_payload: _ResolvedPlaylistCommitPayload
-
-    @property
-    def master_playlist_name(self) -> str:
-        return self.playlist_payload.master_playlist_name
-
-    @property
-    def master_playlist_id(self) -> int | None:
-        return self.playlist_payload.master_playlist_id
-
-    @property
-    def playlists(self) -> list[PlaylistInfo]:
-        return self.playlist_payload.standard_playlists
-
-    @property
-    def podcast_master_playlist_name(self) -> str:
-        return self.playlist_payload.podcast_master_playlist_name
-
-    @property
-    def podcast_master_playlist_id(self) -> int | None:
-        return self.playlist_payload.podcast_master_playlist_id
-
-    @property
-    def podcast_playlists(self) -> list[PlaylistInfo]:
-        return self.playlist_payload.podcast_playlists
-
-    @property
-    def smart_playlists(self) -> list[PlaylistInfo]:
-        return self.playlist_payload.smart_playlists
-
-
 @dataclass(slots=True)
 class _ScrobbleServiceOutcome:
     """Executor-level result for one external scrobbling service."""
@@ -402,7 +369,7 @@ class SyncExecutor:
 
     Usage:
         executor = SyncExecutor(ipod_path)
-        result = executor.execute(plan, mapping, progress_callback)
+        result = executor.execute_request(request)
     """
 
     def __init__(
@@ -490,12 +457,7 @@ class SyncExecutor:
     # ── Public API ──────────────────────────────────────────────────────────
 
     def execute_request(self, request: SyncRequest) -> SyncOutcome:
-        """Execute a typed request object.
-
-        ``execute`` remains the low-level compatibility surface inside the
-        engine; app-core/UI orchestration should prefer this method so the sync
-        boundary has one explicit contract.
-        """
+        """Execute a typed request object."""
         # Be tolerant of older callers that may still construct SyncRequest
         # without the ListenBrainz username field.
         listenbrainz_username = getattr(request, "listenbrainz_username", "")
@@ -505,7 +467,9 @@ class SyncExecutor:
         lastfm_username = getattr(request, "lastfm_username", "")
         sync_until_full = bool(getattr(request, "sync_until_full", False))
 
-        return self.execute(
+        _clear_transcoder_caches()
+
+        ctx = self._build_sync_context(
             plan=request.plan,
             mapping=request.mapping,
             progress_callback=request.progress_callback,
@@ -522,64 +486,10 @@ class SyncExecutor:
             lastfm_session_key=lastfm_session_key,
             lastfm_username=lastfm_username,
             is_scrobble_cancelled=request.is_scrobble_cancelled,
-            on_cancel_with_partial=request.on_cancel_with_partial,
-            sync_until_full=sync_until_full,
-        )
-
-    def execute(
-        self,
-        plan: SyncPlan,
-        mapping: MappingFile,
-        progress_callback: Callable[[SyncProgress], None] | None = None,
-        dry_run: bool = False,
-        is_cancelled: Callable[[], bool] | None = None,
-        write_back_to_pc: bool = False,
-        *,
-        on_sync_complete: Callable[[], None] | None = None,
-        compute_sound_check: bool = False,
-        scrobble_on_sync: bool = False,
-        listenbrainz_token: str = "",
-        listenbrainz_username: str = "",
-        lastfm_api_key: str = "",
-        lastfm_api_secret: str = "",
-        lastfm_session_key: str = "",
-        lastfm_username: str = "",
-        is_scrobble_cancelled: Callable[[], bool] | None = None,
-        on_cancel_with_partial: Callable[[int, int], bool] | None = None,
-        sync_until_full: bool = False,
-    ) -> SyncOutcome:
-        """Execute the sync plan.
-
-        Flow:
-        1. Pre-flight checks (storage, writability)
-        2. Load existing iPod database
-        3. Run stages 1-6 (remove → file update → metadata → artwork →
-           add → sound check → play counts → ratings)
-        4. Write database in one shot (stage 7)
-        """
-        _clear_transcoder_caches()
-
-        ctx = self._build_sync_context(
-            plan=plan,
-            mapping=mapping,
-            progress_callback=progress_callback,
-            dry_run=dry_run,
-            is_cancelled=is_cancelled,
-            write_back_to_pc=write_back_to_pc,
-            on_sync_complete=on_sync_complete,
-            compute_sound_check=compute_sound_check,
-            scrobble_on_sync=scrobble_on_sync,
-            listenbrainz_token=listenbrainz_token,
-            listenbrainz_username=listenbrainz_username,
-            lastfm_api_key=lastfm_api_key,
-            lastfm_api_secret=lastfm_api_secret,
-            lastfm_session_key=lastfm_session_key,
-            lastfm_username=lastfm_username,
-            is_scrobble_cancelled=is_scrobble_cancelled,
             sync_until_full=sync_until_full,
         )
         lifecycle = _ExecutionLifecycle(
-            on_cancel_with_partial=on_cancel_with_partial,
+            on_cancel_with_partial=request.on_cancel_with_partial,
         )
 
         logger.info(
@@ -1061,13 +971,6 @@ class SyncExecutor:
                 detail += f"; and {remaining} more"
             ctx.result.errors.append(("device capabilities", f"Skipped unsupported media: {detail}"))
 
-    def _apply_itunes_protections_from_tracks(self, all_tracks: list[TrackInfo]) -> None:
-        """Lightweight iTunesPrefs update from a track list (no _SyncContext)."""
-
-        from .quick_writes import apply_itunes_protections_from_tracks
-
-        apply_itunes_protections_from_tracks(self.ipod_path, all_tracks)
-
     @staticmethod
     def _prepare_conversion_group_counts(ctx: _SyncContext) -> None:
         counts = Counter(
@@ -1255,12 +1158,12 @@ class SyncExecutor:
                     hint = "preserve_existing"
             track._iop_artwork_sync_hint = hint
 
-    def _prepare_database_commit_input(
+    def _prepare_database_commit_payload(
         self,
         ctx: _SyncContext,
         *,
         advance: Callable[[str], None],
-    ) -> _DatabaseCommitInput:
+    ) -> DatabaseCommitPayload:
         """Prepare the fully resolved payload for the database writer."""
 
         advance("Preparing tracks")
@@ -1275,10 +1178,16 @@ class SyncExecutor:
 
         advance("Resolving playlists")
         playlist_payload = self._prepare_playlist_commit_payload(ctx, all_tracks)
-        return _DatabaseCommitInput(
+        return DatabaseCommitPayload(
             all_tracks=all_tracks,
-            normalized_pc_paths=normalized_pc_paths,
-            playlist_payload=playlist_payload,
+            pc_file_paths=normalized_pc_paths,
+            playlists=playlist_payload.standard_playlists,
+            podcast_playlists=playlist_payload.podcast_playlists,
+            smart_playlists=playlist_payload.smart_playlists,
+            master_playlist_name=playlist_payload.master_playlist_name,
+            master_playlist_id=playlist_payload.master_playlist_id,
+            podcast_master_playlist_name=playlist_payload.podcast_master_playlist_name,
+            podcast_master_playlist_id=playlist_payload.podcast_master_playlist_id,
         )
 
     def _prepare_tracks_for_database_commit(self, ctx: _SyncContext) -> list[TrackInfo]:
@@ -1392,7 +1301,7 @@ class SyncExecutor:
             self._execute_scrobble(ctx)
             self._clear_playcount_deltas(ctx)
 
-        commit_input = self._prepare_database_commit_input(ctx, advance=_advance)
+        commit_payload = self._prepare_database_commit_payload(ctx, advance=_advance)
 
         try:
             # The inner writer calls our callback to advance the bar
@@ -1402,21 +1311,12 @@ class SyncExecutor:
                 ctx.progress("write_database", _step, _TOTAL_STEPS, message=msg)
                 _step += 1
 
-            db_ok = self._write_database(
-                commit_input.all_tracks,
-                pc_file_paths=commit_input.normalized_pc_paths,
-                playlists=commit_input.playlist_payload.standard_playlists,
-                podcast_playlists=commit_input.playlist_payload.podcast_playlists,
-                smart_playlists=commit_input.playlist_payload.smart_playlists,
-                master_playlist_name=commit_input.playlist_payload.master_playlist_name,
-                master_playlist_id=commit_input.playlist_payload.master_playlist_id,
-                podcast_master_playlist_name=(
-                    commit_input.playlist_payload.podcast_master_playlist_name
-                ),
-                podcast_master_playlist_id=(
-                    commit_input.playlist_payload.podcast_master_playlist_id
-                ),
+            db_ok = write_database_commit(
+                self.ipod_path,
+                commit_payload,
                 progress_callback=_db_progress,
+                raise_on_error=True,
+                protect_itunes=False,
             )
             if not db_ok:
                 logger.error("Database write returned failure — skipping mapping save")
@@ -1426,7 +1326,7 @@ class SyncExecutor:
                 ctx.result.errors.append(("database", "Database write failed"))
                 return
             ctx.progress("write_database", _TOTAL_STEPS, _TOTAL_STEPS,
-                         message=f"Database written — {len(commit_input.all_tracks)} tracks")
+                         message=f"Database written — {len(commit_payload.all_tracks)} tracks")
 
             # ── Backpatch: new tracks now have real db_track_ids ──
             self._backpatch_new_tracks(ctx)
@@ -1457,7 +1357,15 @@ class SyncExecutor:
             else:
                 ctx.final_photo_db = read_photo_db(self.ipod_path)
 
-            self._apply_itunes_protections(ctx, commit_input.all_tracks)
+            photo_db = ctx.final_photo_db if ctx.final_photo_db is not None else read_photo_db(
+                self.ipod_path
+            )
+            apply_itunes_protections_from_tracks(
+                self.ipod_path,
+                commit_payload.all_tracks,
+                photo_db=photo_db,
+                include_photo_totals=True,
+            )
 
             self._delete_playcounts_file()
 
@@ -2041,9 +1949,11 @@ class SyncExecutor:
 
             action_name = getattr(item.action, "name", str(item.action))
             if action_name == "ADD_TO_IPOD" and not item.fingerprint:
-                item.fingerprint = get_or_compute_fingerprint(
-                    source_path,
-                    fpcalc_path=self.fpcalc_path,
+                item.fingerprint, _fingerprint_status = (
+                    get_or_compute_fingerprint_with_status(
+                        source_path,
+                        fpcalc_path=self.fpcalc_path,
+                    )
                 )
 
             try:
@@ -2347,11 +2257,14 @@ class SyncExecutor:
                 if old_full_path != destination:
                     self._delete_from_ipod(old_full_path)
 
-                new_fingerprint = get_or_compute_fingerprint(
-                    converted.output_path,
-                    fpcalc_path=self.fpcalc_path,
-                    write_to_file=False,
-                ) or item.fingerprint
+                new_fingerprint, _fingerprint_status = (
+                    get_or_compute_fingerprint_with_status(
+                        converted.output_path,
+                        fpcalc_path=self.fpcalc_path,
+                        write_to_file=False,
+                    )
+                )
+                new_fingerprint = new_fingerprint or item.fingerprint
 
                 existing_mapping = (
                     ctx.mapping.get_by_db_track_id(db_track_id)
@@ -3762,79 +3675,6 @@ class SyncExecutor:
             logger.warning("Could not write rating to %s: %s", file_path, e)
             return False
 
-    # ── iTunes protection ───────────────────────────────────────────────────
-
-    def _apply_itunes_protections(self, ctx: _SyncContext,
-                                  all_tracks: list[TrackInfo]) -> None:
-        """Compute media-type totals and write iTunesPrefs protection."""
-        # (media_type_mask, label) → (bytes, secs, count)
-        _MEDIA_BUCKETS: list[tuple[int, str]] = [
-            (MEDIA_TYPE_PODCAST, "podcast"),
-            (MEDIA_TYPE_AUDIOBOOK, "audiobook"),
-            (MEDIA_TYPE_TV_SHOW, "tv"),
-            (MEDIA_TYPE_MUSIC_VIDEO, "mv"),
-            (MEDIA_TYPE_VIDEO, "video"),
-        ]
-
-        totals: dict[str, list[int]] = {
-            "music": [0, 0, 0], "video": [0, 0, 0], "podcast": [0, 0, 0],
-            "audiobook": [0, 0, 0], "tv": [0, 0, 0], "mv": [0, 0, 0],
-        }
-
-        for t in all_tracks:
-            mt = t.media_type
-            bucket = "music"
-            for mask, label in _MEDIA_BUCKETS:
-                if mt & mask:
-                    bucket = label
-                    break
-            totals[bucket][0] += t.size
-            totals[bucket][1] += t.length // 1000
-            totals[bucket][2] += 1
-
-        photo_db = ctx.final_photo_db if ctx.final_photo_db is not None else read_photo_db(self.ipod_path)
-        total_photos = len(getattr(photo_db, "photos", {}))
-        total_photo_bytes = sum(getattr(photo_db, "file_sizes", {}).values())
-
-        try:
-            from ipod_device import get_current_device
-            dev = get_current_device()
-            caps = dev.capabilities if dev else None
-            supports_photos = bool(caps and caps.supports_photo)
-            supports_videos = bool(caps and caps.supports_video)
-        except Exception:
-            supports_photos = total_photos > 0
-            supports_videos = True
-
-        try:
-            protect_from_itunes(
-                self.ipod_path,
-                track_count=totals["music"][2],
-                total_music_bytes=totals["music"][0],
-                total_music_seconds=totals["music"][1],
-                video_tracks=totals["video"][2],
-                video_bytes=totals["video"][0],
-                video_seconds=totals["video"][1],
-                podcast_tracks=totals["podcast"][2],
-                podcast_bytes=totals["podcast"][0],
-                podcast_seconds=totals["podcast"][1],
-                audiobook_tracks=totals["audiobook"][2],
-                audiobook_bytes=totals["audiobook"][0],
-                audiobook_seconds=totals["audiobook"][1],
-                tv_show_tracks=totals["tv"][2],
-                tv_show_bytes=totals["tv"][0],
-                tv_show_seconds=totals["tv"][1],
-                music_video_tracks=totals["mv"][2],
-                music_video_bytes=totals["mv"][0],
-                music_video_seconds=totals["mv"][1],
-                total_photos=total_photos,
-                total_photo_bytes=total_photo_bytes,
-                supports_photos=supports_photos,
-                supports_videos=supports_videos,
-            )
-        except Exception as e:
-            logger.warning("iTunesPrefs protection failed (non-fatal): %s", e)
-
     # ── Play Counts cleanup ─────────────────────────────────────────────────
 
     def _delete_playcounts_file(self) -> None:
@@ -3932,32 +3772,3 @@ class SyncExecutor:
         """Convert a TrackInfo to a dict the SPL evaluator can consume."""
         from ._track_conversion import trackinfo_to_eval_dict
         return trackinfo_to_eval_dict(t)
-
-    def _write_database(
-        self,
-        tracks: list[TrackInfo],
-        pc_file_paths: dict | None = None,
-        playlists: list[PlaylistInfo] | None = None,
-        podcast_playlists: list[PlaylistInfo] | None = None,
-        smart_playlists: list[PlaylistInfo] | None = None,
-        master_playlist_name: str = "iPod",
-        master_playlist_id: int | None = None,
-        podcast_master_playlist_name: str | None = None,
-        podcast_master_playlist_id: int | None = None,
-        progress_callback: Callable[[str], None] | None = None,
-    ) -> bool:
-        """Write tracks to iTunesDB (and ArtworkDB/SQLite if applicable)."""
-        from ._db_io import write_database
-        return write_database(
-            self.ipod_path, tracks,
-            pc_file_paths=pc_file_paths,
-            playlists=playlists,
-            podcast_playlists=podcast_playlists,
-            smart_playlists=smart_playlists,
-            master_playlist_name=master_playlist_name,
-            master_playlist_id=master_playlist_id,
-            podcast_master_playlist_name=podcast_master_playlist_name,
-            podcast_master_playlist_id=podcast_master_playlist_id,
-            progress_callback=progress_callback,
-            raise_on_error=True,
-        )

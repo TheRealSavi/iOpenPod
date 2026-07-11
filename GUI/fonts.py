@@ -81,7 +81,7 @@ def load_bundled_fonts() -> list[str]:
         QFont.insertSubstitutions(primary, _SUBSTITUTIONS)
 
     if loaded_families:
-        log.info("Bundled fonts available: %s", ", ".join(loaded_families))
+        log.debug("Bundled fonts available: %s", ", ".join(loaded_families))
     else:
         log.warning("No bundled fonts were loaded")
 

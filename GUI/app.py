@@ -48,15 +48,8 @@ from app_core.jobs import (
     ChapterSplitWorker,
     DropScanWorker,
     EjectDeviceWorker,
-    PodcastPlanRequest,
-    PodcastPlanWorker,
     QuickWriteWorker,
-    SyncDiffRequest,
-    SyncDiffWorker,
-    SyncExecuteWorker,
     ToolDownloadWorker,
-    build_imported_photo_edit_state,
-    check_sync_tool_availability,
 )
 from app_core.runtime import (
     ThreadPoolSingleton,
@@ -64,9 +57,16 @@ from app_core.runtime import (
     build_album_list,
     same_device_path,
 )
-from app_core.sync_options import build_transcode_options
 from app_core.sync_plan_builder import build_removal_sync_plan
 from app_core.sync_plan_merge import merge_additional_sync_plan
+from app_core.sync_session import (
+    PodcastPlanningInput,
+    SyncExecutionIntent,
+    SyncPlanningIntent,
+    SyncSessionBlocked,
+    SyncSessionController,
+    SyncSessionMissingTools,
+)
 from GUI.glyphs import glyph_pixmap
 from GUI.internal_drag import is_iopenpod_export_drag
 from GUI.notifications import Notifier
@@ -93,6 +93,7 @@ from infrastructure.settings_schema import (
 )
 from SyncEngine.contracts import (
     SYNC_UNTIL_FULL_RESERVE_BYTES,
+    SyncPlan,
     sync_plan_required_free_bytes,
 )
 from SyncEngine.review_selection import build_filtered_sync_plan
@@ -129,18 +130,6 @@ def _mhsd5_type_value(playlist: dict) -> int:
         return int(playlist.get("mhsd5_type", 0) or 0)
     except (TypeError, ValueError):
         return 0
-
-
-def _existing_playlist_rows_for_sync(cache) -> tuple[dict, ...]:
-    data = cache.get_data() if cache else None
-    if not data:
-        return ()
-    rows: list[dict] = []
-    for key in ("mhlp", "mhlp_podcast", "mhlp_smart"):
-        for playlist in data.get(key, []):
-            if isinstance(playlist, dict):
-                rows.append(dict(playlist))
-    return tuple(rows)
 
 
 def _is_ipod_category_playlist(playlist: dict) -> bool:
@@ -309,14 +298,12 @@ class MainWindow(QMainWindow):
         self._drop_worker = None
 
         # Sync worker reference
-        self._sync_worker = None
         self._back_sync_worker = None
         self._back_sync_workers = []
         self._cancelled_workers = []
-        self._podcast_plan_worker = None
+        self._pending_tool_sync_intent: SyncPlanningIntent | None = None
         self._album_conversion_worker = None
         self._chapter_split_worker = None
-        self._sync_execute_worker = None
         self._tool_download_worker = None
         self._media_player: Any | None = None
         self._audio_output: Any | None = None
@@ -326,7 +313,7 @@ class MainWindow(QMainWindow):
         self._player_artwork_token = 0
         self._player_artwork_worker: Any | None = None
         self._keep_sync_results_visible_after_rescan = False
-        self._plan = None
+        self._plan: SyncPlan | None = None
         self._last_pc_folder_entries = _media_folder_entries_from_settings(settings)
         self._last_pc_folders = media_folder_paths(self._last_pc_folder_entries)
         self._last_device_path = settings.last_device_path or ""
@@ -385,6 +372,30 @@ class MainWindow(QMainWindow):
 
         # Build all child widgets and connect signals
         self._build_ui()
+        self._sync_session = SyncSessionController(
+            self.device_manager,
+            self.library_cache,
+            self.settings_service,
+            self.device_session_service,
+            self._quick_write_controller,
+            podcast_input_provider=self._current_podcast_planning_input,
+            parent=self,
+        )
+        self._sync_session.blocked.connect(self._on_sync_session_blocked)
+        self._sync_session.missing_tools.connect(self._on_sync_session_missing_tools)
+        self._sync_session.planning_started.connect(
+            self._on_sync_session_planning_started
+        )
+        self._connect_sync_session_review_signals()
+        self._sync_session.plan_ready.connect(self._onSyncDiffComplete)
+        self._sync_session.plan_failed.connect(self._onSyncError)
+        self._sync_session.execution_complete.connect(self._onSyncExecuteComplete)
+        self._sync_session.execution_failed.connect(self._onSyncExecuteError)
+        self._sync_session.partial_save_requested.connect(self._onConfirmPartialSave)
+        self.syncReview.skip_backup_signal.connect(self._sync_session.request_skip_backup)
+        self.syncReview.give_up_scrobble_signal.connect(
+            self._sync_session.request_give_up_scrobble
+        )
         self._quick_write_controller.save_status_changed.connect(
             self.sidebar.show_save_indicator
         )
@@ -441,6 +452,98 @@ class MainWindow(QMainWindow):
             if playlist.get("master_flag") and not _is_ipod_category_playlist(playlist):
                 return str(playlist.get("Title") or "").strip()
         return ""
+
+    def _current_podcast_planning_input(self) -> PodcastPlanningInput | None:
+        browser = self.musicBrowser.podcastBrowser
+        store = browser._store
+        feeds = store.get_feeds() if store else []
+        if not store or not feeds:
+            return None
+        return PodcastPlanningInput(feeds=tuple(feeds), store=store)
+
+    def _on_sync_session_blocked(self, blocked: SyncSessionBlocked) -> None:
+        if blocked.reason == "quick_changes_saving":
+            label = blocked.label or "quick changes"
+            QMessageBox.warning(
+                self,
+                "Quick Changes Still Saving",
+                (
+                    "iOpenPod is still saving pending quick changes. "
+                    f"Please wait for {label} to finish before starting a full sync."
+                ),
+            )
+            return
+        if blocked.reason == "library_loading":
+            QMessageBox.information(
+                self,
+                "Library Loading",
+                "Please wait for the iPod library to finish loading.",
+            )
+            return
+        if blocked.reason == "no_device":
+            QMessageBox.warning(self, "No Device", "No iPod device selected.")
+            return
+        if blocked.reason == "busy":
+            QMessageBox.information(
+                self,
+                "Sync Running",
+                "Please wait for the current sync to finish.",
+            )
+
+    def _on_sync_session_missing_tools(
+        self,
+        missing: SyncSessionMissingTools,
+    ) -> None:
+        tools = missing.availability
+        if tools.can_download:
+            dlg = _MissingToolsDialog(self, tools.tool_list, can_download=True)
+            if dlg.exec() == QDialog.DialogCode.Accepted:
+                self._download_missing_tools_then_sync(
+                    tools.missing_ffmpeg,
+                    tools.missing_fpcalc,
+                    missing.planning_intent,
+                )
+            return
+
+        dlg = _MissingToolsDialog(
+            self,
+            tools.tool_list,
+            can_download=False,
+            detail_lines=tools.install_help_text,
+        )
+        dlg.exec()
+
+    def _on_sync_session_planning_started(self) -> None:
+        self.centralStack.setCurrentIndex(1)
+        self.syncReview.show_loading()
+
+    def _connect_sync_session_review_signals(self) -> None:
+        """Route session updates to whichever review widget is currently active."""
+
+        self._sync_session.planning_progress.connect(
+            self._on_sync_session_planning_progress
+        )
+        self._sync_session.execution_started.connect(
+            self._on_sync_session_execution_started
+        )
+        self._sync_session.execution_progress.connect(
+            self._on_sync_session_execution_progress
+        )
+
+    def _on_sync_session_planning_progress(
+        self,
+        stage: str,
+        current: int,
+        total: int,
+        message: str,
+    ) -> None:
+        self.syncReview.update_progress(stage, current, total, message)
+
+    def _on_sync_session_execution_started(self) -> None:
+        self.syncReview.show_executing()
+
+    def _on_sync_session_execution_progress(self, progress: object) -> None:
+        self.syncReview.update_execute_progress(progress)
 
     def _build_ui(self):
         """Create child widgets and wire up signals.
@@ -1490,13 +1593,10 @@ class MainWindow(QMainWindow):
         )
 
     def _is_sync_running(self) -> bool:
+        sync_session = getattr(self, "_sync_session", None)
         return (
-            (self._sync_worker is not None and self._sync_worker.isRunning())
+            (sync_session is not None and sync_session.is_running())
             or (self._back_sync_worker is not None and self._back_sync_worker.isRunning())
-            or (
-                self._podcast_plan_worker is not None
-                and self._podcast_plan_worker.isRunning()
-            )
             or (
                 self._album_conversion_worker is not None
                 and self._album_conversion_worker.isRunning()
@@ -1505,7 +1605,6 @@ class MainWindow(QMainWindow):
                 self._chapter_split_worker is not None
                 and self._chapter_split_worker.isRunning()
             )
-            or (self._sync_execute_worker is not None and self._sync_execute_worker.isRunning())
         )
 
     def _on_quick_meta_failed(self, error_msg: str):
@@ -1571,54 +1670,6 @@ class MainWindow(QMainWindow):
         """Start the PC to iPod sync process."""
         device = self.device_manager
         has_device = bool(device.device_path)
-        if has_device:
-            # Finish queued quick writes before planning so full sync only reads
-            # committed iPod state.
-            quick_ready, blocked_label = (
-                self._quick_write_controller.prepare_for_full_sync()
-            )
-            if not quick_ready:
-                label = blocked_label or "quick changes"
-                QMessageBox.warning(
-                    self,
-                    "Quick Changes Still Saving",
-                    (
-                        "iOpenPod is still saving pending quick changes. "
-                        f"Please wait for {label} to finish before starting a full sync."
-                    ),
-                )
-                return
-            if self.library_cache.is_loading():
-                QMessageBox.information(
-                    self,
-                    "Library Loading",
-                    "Please wait for the iPod library to finish loading.",
-                )
-                return
-
-        settings = self.settings_service.get_effective_settings()
-        if has_device:
-            tools = check_sync_tool_availability(settings)
-
-            if tools.has_missing:
-                if tools.can_download:
-                    dlg = _MissingToolsDialog(self, tools.tool_list, can_download=True)
-                    if dlg.exec() == QDialog.DialogCode.Accepted:
-                        self._download_missing_tools_then_sync(
-                            tools.missing_ffmpeg,
-                            tools.missing_fpcalc,
-                        )
-                        return
-                    return
-                else:
-                    dlg = _MissingToolsDialog(
-                        self,
-                        tools.tool_list,
-                        can_download=False,
-                        detail_lines=tools.install_help_text,
-                    )
-                    dlg.exec()
-                    return
 
         # Show folder selection dialog
         dialog = PCFolderDialog(
@@ -1632,7 +1683,6 @@ class MainWindow(QMainWindow):
 
         self._persist_pc_folder_entries(dialog.selected_folder_entries)
         primary_pc_folder = dialog.selected_folder
-        settings = self.settings_service.get_effective_settings()
 
         if not has_device:
             return
@@ -1675,66 +1725,12 @@ class MainWindow(QMainWindow):
             worker.start()
             return
 
-        # Switch to sync review view
-        self.centralStack.setCurrentIndex(1)
-        self.syncReview.show_loading()
-
-        # Check device media capabilities through the app-core session seam.
-        caps = self.device_session_service.current_session().capabilities
-        supports_video = bool(caps and caps.supports_video)
-        supports_podcast = bool(caps and caps.supports_podcast)
-        supports_photo = bool(caps and caps.supports_photo)
-
-        # Gather GUI state to pass forward (not pulled by SyncEngine)
-        cache = self.library_cache
-        ipod_tracks = cache.get_tracks()
-
-        track_edits = cache.get_track_edits()
-        photo_edits = cache.get_photo_edits()
-        try:
-            sync_workers = settings.sync_workers
-            rating_strategy = settings.rating_conflict_strategy
-            fpcalc_path = settings.fpcalc_path
-        except Exception:
-            sync_workers = 0  # auto
-            rating_strategy = "ipod_wins"
-            fpcalc_path = ""
-
-        device_manager = self.device_manager
-
-        self._sync_worker = SyncDiffWorker(
-            SyncDiffRequest(
-                pc_folder=primary_pc_folder,
-                pc_folders=tuple(self._last_pc_folder_entries),
-                ipod_tracks=ipod_tracks,
-                ipod_path=device_manager.device_path or "",
-                supports_video=supports_video,
-                supports_podcast=supports_podcast,
-                supports_photo=supports_photo,
-                track_edits=track_edits,
-                photo_edits=photo_edits,
-                sync_workers=sync_workers,
-                rating_strategy=rating_strategy,
-                existing_playlists=_existing_playlist_rows_for_sync(cache),
-                fpcalc_path=fpcalc_path,
-                photo_sync_settings={
-                    "rotate_tall_photos_for_device": (
-                        settings.rotate_tall_photos_for_device
-                    ),
-                    "fit_photo_thumbnails": settings.fit_photo_thumbnails,
-                },
-                transcode_options=build_transcode_options(settings),
+        self._sync_session.start_planning(
+            SyncPlanningIntent(
+                mode="full",
+                folder_entries=tuple(self._last_pc_folder_entries),
             )
         )
-        worker = self._sync_worker
-        worker.progress.connect(self.syncReview.update_progress)
-        worker.finished.connect(
-            lambda plan, w=worker: self._onSyncDiffComplete(plan, w)
-        )
-        worker.error.connect(
-            lambda error, w=worker: self._onWorkerSyncError("_sync_worker", w, error)
-        )
-        worker.start()
 
     def _persist_pc_folder_entries(self, folder_entries: object) -> None:
         """Persist PC media-folder settings immediately after dialog edits."""
@@ -1749,13 +1745,19 @@ class MainWindow(QMainWindow):
         global_settings.media_folders = list(entries)
         self.settings_service.save_global_settings(global_settings)
 
-    def _download_missing_tools_then_sync(self, need_ffmpeg: bool, need_fpcalc: bool):
+    def _download_missing_tools_then_sync(
+        self,
+        need_ffmpeg: bool,
+        need_fpcalc: bool,
+        planning_intent: SyncPlanningIntent | None = None,
+    ):
         """Download missing tools in a background thread, then restart sync."""
         progress = _DownloadProgressDialog(self)
         progress.show()
 
         # Keep a reference so it isn't garbage collected
         self._dl_progress = progress
+        self._pending_tool_sync_intent = planning_intent
 
         worker = ToolDownloadWorker(
             need_ffmpeg=need_ffmpeg,
@@ -1774,7 +1776,11 @@ class MainWindow(QMainWindow):
         if hasattr(self, '_dl_progress') and self._dl_progress:
             self._dl_progress.close()
             self._dl_progress = None
-        # Re-run sync now that tools should be available
+        planning_intent = getattr(self, "_pending_tool_sync_intent", None)
+        self._pending_tool_sync_intent = None
+        if planning_intent is not None:
+            self._sync_session.start_planning(planning_intent)
+            return
         self.startPCSync()
 
     @pyqtSlot(str)
@@ -1783,11 +1789,20 @@ class MainWindow(QMainWindow):
         if hasattr(self, '_dl_progress') and self._dl_progress:
             self._dl_progress.close()
             self._dl_progress = None
+        self._pending_tool_sync_intent = None
         QMessageBox.critical(
             self,
             "Download Failed",
             f"Could not download sync tools:\n\n{error_msg}",
         )
+
+    def _show_sync_plan(self, plan: SyncPlan) -> None:
+        """Show a prepared sync plan in the review page."""
+
+        self._plan = plan
+        self.syncReview._ipod_tracks_cache = self.library_cache.get_tracks() or []
+        self.centralStack.setCurrentIndex(1)
+        self.syncReview.show_plan(plan)
 
     def _onPodcastSyncRequested(self, plan):
         """Handle podcast sync plan from PodcastBrowser.
@@ -1803,13 +1818,7 @@ class MainWindow(QMainWindow):
                 "This iPod does not support podcasts.",
             )
             return
-        self._plan = plan
-        cache = self.library_cache
-        self.syncReview._ipod_tracks_cache = cache.get_tracks() or []
-
-        # Switch to sync review view and show the plan
-        self.centralStack.setCurrentIndex(1)
-        self.syncReview.show_plan(plan)
+        self._show_sync_plan(plan)
 
     def _onAlbumConversionRequested(self, album_items: list[dict]) -> None:
         """Prepare a chaptered-album conversion plan from an Albums grid item."""
@@ -1949,9 +1958,7 @@ class MainWindow(QMainWindow):
             self._album_conversion_worker = None
         else:
             self._album_conversion_worker = None
-        self._plan = result.plan
-        self.syncReview._ipod_tracks_cache = self.library_cache.get_tracks() or []
-        self.syncReview.show_plan(result.plan)
+        self._show_sync_plan(result.plan)
         warnings = getattr(result, "warnings", ()) or ()
         if warnings:
             logger.debug(
@@ -2044,9 +2051,7 @@ class MainWindow(QMainWindow):
             self._chapter_split_worker = None
         else:
             self._chapter_split_worker = None
-        self._plan = result.plan
-        self.syncReview._ipod_tracks_cache = self.library_cache.get_tracks() or []
-        self.syncReview.show_plan(result.plan)
+        self._show_sync_plan(result.plan)
         warnings = getattr(result, "warnings", ()) or ()
         if warnings:
             logger.debug(
@@ -2069,97 +2074,15 @@ class MainWindow(QMainWindow):
             return
 
         plan = build_removal_sync_plan(tracks)
-        self._plan = plan
-        cache = self.library_cache
-        self.syncReview._ipod_tracks_cache = cache.get_tracks() or []
-        self.centralStack.setCurrentIndex(1)
-        self.syncReview.show_plan(plan)
+        self._show_sync_plan(plan)
 
     def _onSyncDiffComplete(self, plan, worker=None):
         """Called when sync diff calculation is complete."""
-        if worker is not None:
-            if self._sync_worker is not worker:
-                return
-            self._sync_worker = None
-        else:
-            self._sync_worker = None
-        self._plan = plan  # Store for executeSyncPlan to access matched_pc_paths
-        # Provide iPod tracks cache so the review widget can list artwork-missing tracks
-        cache = self.library_cache
-        ipod_tracks = cache.get_tracks() or []
-        self.syncReview._ipod_tracks_cache = ipod_tracks
-
-        # ── Merge podcast managed plan ─────────────────────────────
-        # This requires refreshing RSS feeds and possibly downloading
-        # episodes, so it runs in the background.  The sync review is
-        # shown after the podcast plan is merged (or immediately if
-        # there are no podcast subscriptions).
-        browser = self.musicBrowser.podcastBrowser
-        store = browser._store
-        feeds = store.get_feeds() if store else []
-        caps = self.device_session_service.current_session().capabilities
-        supports_podcast = bool(caps and caps.supports_podcast)
-
-        if not feeds or not supports_podcast:
-            self.syncReview.show_plan(plan)
-            return
-
-        self.syncReview.update_progress("podcast_sync", 0, 0, "Refreshing podcast feeds…")
-
-        worker = PodcastPlanWorker(
-            PodcastPlanRequest(
-                feeds=feeds,
-                ipod_tracks=ipod_tracks,
-                store=store,
-                supports_podcast=supports_podcast,
-            )
-        )
-        self._podcast_plan_worker = worker
-        worker.finished.connect(
-            lambda podcast_plan, w=worker: self._on_podcast_plan_ready(plan, podcast_plan, w),
-        )
-        worker.error.connect(
-            lambda err, w=worker: self._on_podcast_plan_error(plan, err, w),
-        )
-        worker.start()
-
-    def _on_podcast_plan_ready(self, plan, podcast_plan, worker=None) -> None:
-        """Podcast plan built — merge into music plan and show."""
-        if worker is not None:
-            if self._podcast_plan_worker is not worker:
-                return
-            self._podcast_plan_worker = None
-        else:
-            self._podcast_plan_worker = None
-        if podcast_plan.to_add:
-            plan.to_add.extend(podcast_plan.to_add)
-            plan.storage.bytes_to_add += podcast_plan.storage.bytes_to_add
-        if podcast_plan.to_remove:
-            plan.to_remove.extend(podcast_plan.to_remove)
-            plan.storage.bytes_to_remove += podcast_plan.storage.bytes_to_remove
-        self.syncReview.show_plan(plan)
-
-    def _on_podcast_plan_error(self, plan, error_msg: str, worker=None) -> None:
-        """Podcast plan failed — show music-only plan."""
-        if worker is not None:
-            if self._podcast_plan_worker is not worker:
-                return
-            self._podcast_plan_worker = None
-        else:
-            self._podcast_plan_worker = None
-        logger.warning("Failed to build podcast plan: %s", error_msg)
-        self.syncReview.show_plan(plan)
+        self._show_sync_plan(plan)
 
     def _onSyncError(self, error_msg: str):
         """Called when sync diff fails."""
         self.syncReview.show_error(error_msg)
-
-    def _onWorkerSyncError(self, attr_name: str, worker, error_msg: str) -> None:
-        if worker is not None:
-            if getattr(self, attr_name, None) is not worker:
-                return
-            setattr(self, attr_name, None)
-        self._onSyncError(error_msg)
 
     def _onBackSyncComplete(self, result: dict, worker=None):
         """Called when Back Sync export completes."""
@@ -2240,8 +2163,6 @@ class MainWindow(QMainWindow):
 
     def _clear_worker_reference(self, worker) -> None:
         for attr_name in (
-            "_sync_worker",
-            "_podcast_plan_worker",
             "_album_conversion_worker",
             "_chapter_split_worker",
         ):
@@ -2260,7 +2181,7 @@ class MainWindow(QMainWindow):
             pass
 
     def _cleanup_worker(self, attr_name: str, signal_names: tuple[str, ...]) -> None:
-        """Detach and interrupt a worker used by the sync review planning page."""
+        """Detach and interrupt a background worker."""
 
         worker = getattr(self, attr_name, None)
         if worker is None:
@@ -2301,9 +2222,6 @@ class MainWindow(QMainWindow):
         else:
             self._reap_back_sync_worker(worker)
 
-    def _cleanup_sync_diff_worker(self) -> None:
-        self._cleanup_worker("_sync_worker", ("progress", "finished", "error"))
-
     def _cleanup_album_conversion_worker(self) -> None:
         self._cleanup_worker(
             "_album_conversion_worker",
@@ -2322,77 +2240,13 @@ class MainWindow(QMainWindow):
         selected_folders = media_folder_paths(selected_folder_entries)
         self._last_pc_folder_entries = selected_folder_entries
         self._last_pc_folders = selected_folders
-        primary_pc_folder = selected_folders[0] if selected_folders else ""
-        self.centralStack.setCurrentIndex(1)
-        self.syncReview.show_loading()
-
-        caps = self.device_session_service.current_session().capabilities
-        supports_video = bool(caps and caps.supports_video)
-        supports_podcast = bool(caps and caps.supports_podcast)
-        supports_photo = bool(caps and caps.supports_photo)
-
-        cache = self.library_cache
-        ipod_tracks = cache.get_tracks()
-        track_edits = cache.get_track_edits()
-        selected_track_paths = selected_paths
-        selected_photo_imports = ()
-        selected_playlist_paths = None
-        if isinstance(selected_paths, dict):
-            selected_track_paths = frozenset(selected_paths.get("tracks", ()))
-            selected_photo_imports = tuple(selected_paths.get("photos", ()))
-            selected_playlist_paths = frozenset(selected_paths.get("playlists", ()))
-
-        photo_edits = (
-            build_imported_photo_edit_state(selected_photo_imports)
-            if supports_photo
-            else None
-        )
-        settings = self.settings_service.get_effective_settings()
-        try:
-            sync_workers = settings.sync_workers
-            rating_strategy = settings.rating_conflict_strategy
-            fpcalc_path = settings.fpcalc_path
-        except Exception:
-            sync_workers = 0
-            rating_strategy = "ipod_wins"
-            fpcalc_path = ""
-
-        device_manager = self.device_manager
-        self._sync_worker = SyncDiffWorker(
-            SyncDiffRequest(
-                pc_folder=primary_pc_folder,
-                pc_folders=tuple(selected_folder_entries),
-                ipod_tracks=ipod_tracks,
-                ipod_path=device_manager.device_path or "",
-                supports_video=supports_video,
-                supports_podcast=supports_podcast,
-                supports_photo=supports_photo,
-                track_edits=track_edits,
-                photo_edits=photo_edits,
-                sync_workers=sync_workers,
-                rating_strategy=rating_strategy,
-                existing_playlists=_existing_playlist_rows_for_sync(cache),
-                fpcalc_path=fpcalc_path,
-                photo_sync_settings={
-                    "rotate_tall_photos_for_device": (
-                        settings.rotate_tall_photos_for_device
-                    ),
-                    "fit_photo_thumbnails": settings.fit_photo_thumbnails,
-                },
-                transcode_options=build_transcode_options(settings),
-                allowed_paths=frozenset(selected_track_paths),
-                selected_playlist_paths=selected_playlist_paths,
+        self._sync_session.start_planning(
+            SyncPlanningIntent(
+                mode="selective",
+                folder_entries=tuple(selected_folder_entries),
+                selected_paths=selected_paths,
             )
         )
-        worker = self._sync_worker
-        worker.progress.connect(self.syncReview.update_progress)
-        worker.finished.connect(
-            lambda plan, w=worker: self._onSyncDiffComplete(plan, w)
-        )
-        worker.error.connect(
-            lambda error, w=worker: self._onWorkerSyncError("_sync_worker", w, error)
-        )
-        worker.start()
 
     def _onSelectiveSyncCancelled(self):
         """User cancelled selective sync browser."""
@@ -2423,47 +2277,19 @@ class MainWindow(QMainWindow):
         During sync execution we only request cancellation and keep the page
         visible so partial-save confirmation (save vs discard) can be shown.
         """
-        if self._sync_execute_worker is not None and self._sync_execute_worker.isRunning():
-            self._sync_execute_worker.requestInterruption()
+        if self._sync_session.is_executing():
+            self._sync_session.request_execution_cancel()
             return
         self.hideSyncReview()
 
     def hideSyncReview(self):
         """Return to the main browsing view, stopping any background work."""
         self._keep_sync_results_visible_after_rescan = False
-        self._cleanup_sync_diff_worker()
+        self._sync_session.cancel()
         self._cleanup_back_sync_worker()
-        self._cleanup_podcast_plan_worker()
         self._cleanup_album_conversion_worker()
         self._cleanup_chapter_split_worker()
-        self._cleanup_sync_execute_worker()
         self._show_default_page()
-
-    def _cleanup_podcast_plan_worker(self):
-        """Stop and detach any in-flight managed podcast planning worker."""
-        self._cleanup_worker("_podcast_plan_worker", ("finished", "error"))
-
-    def _cleanup_sync_execute_worker(self):
-        """Request interruption and disconnect all signals from the execute worker.
-
-        The worker thread may continue running briefly (in-flight futures
-        can't be force-killed), but with signals disconnected it can't
-        affect the UI. Clearing the reference lets ``_is_sync_running``
-        return False so a new sync can start cleanly.
-        """
-        w = self._sync_execute_worker
-        if w is None:
-            return
-        if w.isRunning():
-            w.requestInterruption()
-        # Disconnect all signals so stale callbacks don't fire
-        for sig in (w.progress, w.finished, w.error, w.confirm_partial_save):
-            try:
-                sig.disconnect()
-            except TypeError:
-                pass
-        self._disconnect_skip_signal()
-        self._sync_execute_worker = None
 
     def showSettings(self):
         """Show the settings page."""
@@ -2545,39 +2371,16 @@ class MainWindow(QMainWindow):
         if sync_until_full is None:
             return
 
-        # Show progress in sync review widget
-        self.syncReview.show_executing()
-
         # Respect the user's pre-sync backup choice from the prompt
         skip_backup = getattr(self.syncReview, '_skip_presync_backup', False)
 
-        def _on_sync_complete():
-            """Called by executor after successful DB write to clear pending state."""
-            self.library_cache.clear_pending_sync_state()
-
-        # Start sync execution worker
-        device_session = self.device_session_service.current_session()
-        self._sync_execute_worker = SyncExecuteWorker(
-            ipod_path=device_manager.device_path or "",
-            plan=filtered_plan,
-            settings=self.settings_service.get_effective_settings(),
-            skip_backup=skip_backup,
-            backup_device_name=MainWindow._device_name_from_playlists(
-                self.library_cache.get_playlists()
-            ),
-            device_info=device_session.identity,
-            device_capabilities=device_session.capabilities,
-            on_sync_complete=_on_sync_complete,
-            sync_until_full=sync_until_full,
+        self._sync_session.start_execution(
+            SyncExecutionIntent(
+                plan=filtered_plan,
+                skip_backup=skip_backup,
+                sync_until_full=sync_until_full,
+            )
         )
-        self._sync_execute_worker.progress.connect(self.syncReview.update_execute_progress)
-        self._sync_execute_worker.finished.connect(self._onSyncExecuteComplete)
-        self._sync_execute_worker.error.connect(self._onSyncExecuteError)
-        self._sync_execute_worker.confirm_partial_save.connect(self._onConfirmPartialSave)
-        # Allow the user to skip the in-progress backup from the progress screen
-        self.syncReview.skip_backup_signal.connect(self._sync_execute_worker.request_skip_backup)
-        self.syncReview.give_up_scrobble_signal.connect(self._sync_execute_worker.request_give_up_scrobble)
-        self._sync_execute_worker.start()
 
     def _confirm_sync_until_full_if_needed(self, plan: Any, ipod_path: str) -> bool | None:
         """Return True for sync-until-full, False for normal sync, None to cancel."""
@@ -2621,7 +2424,6 @@ class MainWindow(QMainWindow):
 
     def _onSyncExecuteComplete(self, result):
         """Called when sync execution is complete."""
-        self._disconnect_skip_signal()
         # Show styled results view instead of a plain message box
         self.syncReview.show_result(result)
         self._keep_sync_results_visible_after_rescan = True
@@ -2676,20 +2478,8 @@ class MainWindow(QMainWindow):
 
         cache.start_loading()
 
-    def _disconnect_skip_signal(self):
-        """Disconnect worker control signals from the finished worker."""
-        try:
-            self.syncReview.skip_backup_signal.disconnect()
-        except TypeError:
-            pass  # Already disconnected
-        try:
-            self.syncReview.give_up_scrobble_signal.disconnect()
-        except TypeError:
-            pass  # Already disconnected
-
     def _onSyncExecuteError(self, error_msg: str):
         """Called when sync execution fails."""
-        self._disconnect_skip_signal()
         # Desktop notification if app is not focused
         if not self.isActiveWindow():
             self._notifier.notify_sync_error(error_msg)
@@ -2709,10 +2499,6 @@ class MainWindow(QMainWindow):
     def _onConfirmPartialSave(self, n_added: int, n_skipped: int) -> None:
         """Called from the sync worker when the user cancels mid-sync with tracks already copied.
         Shows a dialog asking whether to save the partial database, then unblocks the worker."""
-        worker = getattr(self, '_sync_execute_worker', None)
-        if worker is None:
-            return
-
         tracks_word = "track" if n_added == 1 else "tracks"
         skipped_line = (
             f"{n_skipped} more {'track was' if n_skipped == 1 else 'tracks were'} not copied."
@@ -2739,7 +2525,7 @@ class MainWindow(QMainWindow):
 
         # Default to save if dialog was closed via X button (no explicit choice)
         save = (msg.clickedButton() != discard_btn)
-        worker.respond_to_partial_save(save)
+        self._sync_session.respond_to_partial_save(save)
 
     # ── Drag-and-drop support ──────────────────────────────────────────────
 
@@ -2761,7 +2547,7 @@ class MainWindow(QMainWindow):
         if not device.device_path:
             a0.ignore()
             return
-        if self._sync_execute_worker and self._sync_execute_worker.isRunning():
+        if self._sync_session.is_executing():
             a0.ignore()
             return
 
@@ -2861,14 +2647,13 @@ class MainWindow(QMainWindow):
         self._drop_worker.error.connect(self._onSyncError)
         self._drop_worker.start()
 
-    def _on_drop_scan_complete(self, plan):
+    def _on_drop_scan_complete(self, plan: SyncPlan) -> None:
         """Merge dropped-file plan into any existing plan, then show."""
         if self._drop_merge and self._plan is not None:
             merge_additional_sync_plan(self._plan, plan)
-            self.syncReview.show_plan(self._plan)
+            self._show_sync_plan(self._plan)
         else:
-            self._plan = plan
-            self.syncReview.show_plan(plan)
+            self._show_sync_plan(plan)
 
     def closeEvent(self, a0):
         """Ensure all threads are stopped when the window is closed."""
@@ -2887,9 +2672,7 @@ class MainWindow(QMainWindow):
         # Request graceful stop for sync workers
         self._startup_restore.stop(3000)
         self._startup_updates.stop(3000)
-        if self._sync_worker and self._sync_worker.isRunning():
-            self._sync_worker.requestInterruption()
-            self._sync_worker.wait(3000)
+        self._sync_session.shutdown(3000)
         back_sync_workers = list(getattr(self, "_back_sync_workers", []))
         if (
             self._back_sync_worker is not None
@@ -2900,18 +2683,12 @@ class MainWindow(QMainWindow):
             if worker.isRunning():
                 worker.requestInterruption()
                 worker.wait(3000)
-        if self._podcast_plan_worker and self._podcast_plan_worker.isRunning():
-            self._podcast_plan_worker.requestInterruption()
-            self._podcast_plan_worker.wait(3000)
         if self._album_conversion_worker and self._album_conversion_worker.isRunning():
             self._album_conversion_worker.requestInterruption()
             self._album_conversion_worker.wait(3000)
         if self._chapter_split_worker and self._chapter_split_worker.isRunning():
             self._chapter_split_worker.requestInterruption()
             self._chapter_split_worker.wait(3000)
-        if self._sync_execute_worker and self._sync_execute_worker.isRunning():
-            self._sync_execute_worker.requestInterruption()
-            self._sync_execute_worker.wait(3000)
         for worker in list(getattr(self, "_cancelled_workers", [])):
             if worker.isRunning():
                 worker.requestInterruption()

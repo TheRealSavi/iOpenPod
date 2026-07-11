@@ -38,7 +38,6 @@ from typing import Any
 from iTunesDB_Shared.constants import MEDIA_TYPE_PODCAST
 
 from .audio_fingerprint import (
-    get_or_compute_fingerprint,
     get_or_compute_fingerprint_with_status,
     is_fpcalc_available,
 )
@@ -859,7 +858,7 @@ class FingerprintDiffEngine:
                 skipped_no_path += 1
                 continue
 
-            fp = get_or_compute_fingerprint(
+            fp, _fingerprint_status = get_or_compute_fingerprint_with_status(
                 ipod_path,
                 fpcalc_path=self.fpcalc_path,
                 write_to_file=False,
@@ -977,10 +976,12 @@ class FingerprintDiffEngine:
         match = ipod_path_lookup.get(source_key)
         if match is not None:
             db_track_id, _ipod_track, ipod_path = match
-            ipod_fingerprint = get_or_compute_fingerprint(
-                ipod_path,
-                fpcalc_path=self.fpcalc_path,
-                write_to_file=False,
+            ipod_fingerprint, _fingerprint_status = (
+                get_or_compute_fingerprint_with_status(
+                    ipod_path,
+                    fpcalc_path=self.fpcalc_path,
+                    write_to_file=False,
+                )
             )
             if not ipod_fingerprint:
                 return 0
@@ -1022,10 +1023,12 @@ class FingerprintDiffEngine:
             if path_key in seen_paths:
                 continue
             seen_paths.add(path_key)
-            fingerprint = get_or_compute_fingerprint(
-                ipod_path,
-                fpcalc_path=self.fpcalc_path,
-                write_to_file=False,
+            fingerprint, _fingerprint_status = (
+                get_or_compute_fingerprint_with_status(
+                    ipod_path,
+                    fpcalc_path=self.fpcalc_path,
+                    write_to_file=False,
+                )
             )
             if fingerprint:
                 index.setdefault(fingerprint, []).append((

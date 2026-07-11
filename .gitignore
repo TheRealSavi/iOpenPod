@@ -166,6 +166,7 @@ cython_debug/
 /ipodTestData
 /compendium
 /tests/fixtures/fake_music_library
+/docs/flow
 
 # macOS
 .DS_Store

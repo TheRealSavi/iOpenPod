@@ -8,9 +8,11 @@ from scripts.check_architecture import (
     count_except_exception_passes,
     count_runtime_singleton_access,
     detect_app_core_sync_executor_private_usage,
+    detect_database_commit_bypass,
     detect_forbidden_runtime_private_access,
     detect_forbidden_settings_runtime_imports,
     detect_forbidden_sync_review_workers,
+    detect_gui_app_sync_session_bypass,
     detect_gui_forbidden_imports,
     detect_import_cycles,
     detect_legacy_settings_runtime_globals,
@@ -254,6 +256,31 @@ class BackSyncWorker:
         assert violations == ["BackSyncWorker", "SyncExecuteWorker", "SyncWorker"]
 
 
+def test_detect_gui_app_sync_session_bypass_reports_full_sync_workers() -> None:
+    with repo_temp_dir() as tmp_path:
+        write_file(
+            tmp_path / "GUI" / "app.py",
+            """
+from app_core.jobs import (
+    BackSyncWorker,
+    PodcastPlanWorker,
+    SyncDiffRequest,
+    SyncDiffWorker,
+    SyncExecuteWorker,
+)
+""",
+        )
+
+        violations = detect_gui_app_sync_session_bypass(tmp_path)
+
+        assert violations == [
+            "PodcastPlanWorker",
+            "SyncDiffRequest",
+            "SyncDiffWorker",
+            "SyncExecuteWorker",
+        ]
+
+
 def test_detect_app_core_sync_executor_private_usage_reports_reach_in(
 ) -> None:
     with repo_temp_dir() as tmp_path:
@@ -264,7 +291,7 @@ from SyncEngine.sync_executor import SyncExecutor, _SyncContext
 
 def bad(executor: SyncExecutor):
     executor._read_existing_database()
-    executor._write_database([])
+    executor._track_dict_to_info({})
 """,
         )
 
@@ -274,7 +301,7 @@ def bad(executor: SyncExecutor):
             "app_core/jobs.py": [
                 "_SyncContext",
                 "_read_existing_database",
-                "_write_database",
+                "_track_dict_to_info",
             ]
         }
 
@@ -289,7 +316,7 @@ class _SyncContext:
     pass
 
 class SyncExecutor:
-    def _write_database(self):
+    def _build_and_evaluate_playlists(self):
         pass
 """,
         )
@@ -299,14 +326,14 @@ class SyncExecutor:
 from SyncEngine.sync_executor import SyncExecutor, _SyncContext
 
 def bad(executor: SyncExecutor):
-    executor._write_database()
+    executor._build_and_evaluate_playlists()
 """,
         )
 
         violations = detect_sync_executor_private_usage(tmp_path)
 
         assert violations == {
-            "GUI/view.py": ["_SyncContext", "_write_database"]
+            "GUI/view.py": ["_SyncContext", "_build_and_evaluate_playlists"]
         }
 
 
@@ -346,6 +373,26 @@ def allowed(pc_library, ipod_path):
                 "SyncExecutor",
             ]
         }
+
+
+def test_detect_database_commit_bypass_reports_raw_database_writer_imports() -> None:
+    with repo_temp_dir() as tmp_path:
+        write_file(
+            tmp_path / "SyncEngine" / "quick_writes.py",
+            """
+from SyncEngine._db_io import write_database
+""",
+        )
+        write_file(
+            tmp_path / "SyncEngine" / "database_commit.py",
+            """
+from SyncEngine._db_io import write_database
+""",
+        )
+
+        violations = detect_database_commit_bypass(tmp_path)
+
+        assert violations == {"SyncEngine/quick_writes.py": ["write_database"]}
 
 
 def test_sync_contracts_do_not_import_diff_engine() -> None:

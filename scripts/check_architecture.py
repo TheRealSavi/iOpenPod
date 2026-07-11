@@ -64,12 +64,18 @@ SYNC_REVIEW_FORBIDDEN_WORKERS = (
     "SyncExecuteWorker",
     "SyncWorker",
 )
+GUI_APP_FORBIDDEN_SYNC_SESSION_BYPASS = (
+    "PodcastPlanRequest",
+    "PodcastPlanWorker",
+    "SyncDiffRequest",
+    "SyncDiffWorker",
+    "SyncExecuteWorker",
+)
 SYNC_EXECUTOR_PRIVATE_ATTRS = (
     "_SyncContext",
     "_build_and_evaluate_playlists",
     "_read_existing_database",
     "_track_dict_to_info",
-    "_write_database",
 )
 SYNC_ENGINE_LOW_LEVEL_MODULES = {
     "SyncEngine.fingerprint_diff_engine": "FingerprintDiffEngine",
@@ -80,6 +86,10 @@ SYNC_ENGINE_LOW_LEVEL_ALLOWED_PATHS = (
     "SyncEngine/core/engine.py",
     "SyncEngine/fingerprint_diff_engine.py",
     "SyncEngine/sync_executor.py",
+)
+DATABASE_COMMIT_ALLOWED_PATHS = (
+    "SyncEngine/_db_io.py",
+    "SyncEngine/database_commit.py",
 )
 
 
@@ -331,6 +341,31 @@ def detect_forbidden_sync_review_workers(repo_root: Path) -> list[str]:
     )
 
 
+def detect_gui_app_sync_session_bypass(repo_root: Path) -> list[str]:
+    """Find GUI/app.py imports that bypass the Sync Session module."""
+
+    path = repo_root / "GUI" / "app.py"
+    if not path.exists():
+        return []
+
+    try:
+        tree = parse_python(path)
+    except SyntaxError:
+        return []
+
+    hits: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        if node.module not in {"app_core", "app_core.jobs"}:
+            continue
+        for alias in node.names:
+            if alias.name in GUI_APP_FORBIDDEN_SYNC_SESSION_BYPASS:
+                hits.add(alias.name)
+
+    return sorted(hits)
+
+
 def detect_app_core_sync_executor_private_usage(
     repo_root: Path,
 ) -> dict[str, list[str]]:
@@ -457,6 +492,41 @@ def detect_sync_engine_facade_bypass(repo_root: Path) -> dict[str, list[str]]:
                 module_name = _attribute_module_name(func.value)
                 if module_name in SYNC_ENGINE_LOW_LEVEL_MODULES:
                     hits.add(f"{module_name}.{func.attr}")
+
+        if hits:
+            violations[normalized] = sorted(hits)
+
+    return violations
+
+
+def detect_database_commit_bypass(repo_root: Path) -> dict[str, list[str]]:
+    """Find production code that bypasses the shared database commit module."""
+
+    violations: dict[str, list[str]] = {}
+    allowed_paths = set(DATABASE_COMMIT_ALLOWED_PATHS)
+
+    for path in iter_python_files(repo_root):
+        normalized = normalize_path(path, repo_root)
+        if normalized in allowed_paths:
+            continue
+
+        try:
+            tree = parse_python(path)
+        except SyntaxError:
+            continue
+
+        hits: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                module = node.module or ""
+                if module in {"SyncEngine._db_io", "._db_io"}:
+                    for alias in node.names:
+                        if alias.name == "write_database":
+                            hits.add(alias.name)
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name == "SyncEngine._db_io":
+                        hits.add(alias.name)
 
         if hits:
             violations[normalized] = sorted(hits)
@@ -655,6 +725,11 @@ def check_rules(repo_root: Path, rules: dict) -> list[str]:
         errors.append("Operational sync workers detected in GUI sync review:")
         errors.append(f"  - {', '.join(sync_review_workers)}")
 
+    sync_session_bypass = detect_gui_app_sync_session_bypass(repo_root)
+    if sync_session_bypass:
+        errors.append("GUI/app.py imports that bypass Sync Session detected:")
+        errors.append(f"  - {', '.join(sync_session_bypass)}")
+
     sync_executor_private_usage = detect_sync_executor_private_usage(repo_root)
     if sync_executor_private_usage:
         errors.append("Private SyncExecutor API usage detected outside SyncEngine:")
@@ -665,6 +740,12 @@ def check_rules(repo_root: Path, rules: dict) -> list[str]:
     if sync_engine_facade_bypass:
         errors.append("Direct SyncEngine planner/executor orchestration detected:")
         for path, names in sorted(sync_engine_facade_bypass.items()):
+            errors.append(f"  - {path}: {', '.join(names)}")
+
+    database_commit_bypass = detect_database_commit_bypass(repo_root)
+    if database_commit_bypass:
+        errors.append("Raw database writer imports detected outside commit module:")
+        for path, names in sorted(database_commit_bypass.items()):
             errors.append(f"  - {path}: {', '.join(names)}")
 
     allowed_except_pass = rules.get("allowed_except_exception_pass_counts", {})

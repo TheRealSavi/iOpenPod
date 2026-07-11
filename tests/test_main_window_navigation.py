@@ -4,6 +4,12 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 from app_core.database_storage import DatabaseStorageReport
+from app_core.jobs import SyncToolAvailability
+from app_core.sync_session import (
+    SyncExecutionIntent,
+    SyncPlanningIntent,
+    SyncSessionMissingTools,
+)
 from GUI.app import (
     MainWindow,
     _database_file_size_bytes,
@@ -43,6 +49,10 @@ class _FakeSignal:
     def disconnect(self) -> None:
         self.disconnect_count += 1
 
+    def emit(self, *args: object) -> None:
+        for callback in list(self.connections):
+            callback(*args)
+
 
 class _FakeBackSyncWorker:
     def __init__(self, *, running: bool = True) -> None:
@@ -61,10 +71,6 @@ class _FakeBackSyncWorker:
 
     def deleteLater(self) -> None:
         self.delete_later_count += 1
-
-
-class _FakeSyncExecuteWorker(_FakeBackSyncWorker):
-    pass
 
 
 class _FakeSidebar:
@@ -101,6 +107,62 @@ class _FakeSettingsService:
     def save_global_settings(self, settings: AppSettings) -> None:
         self.settings = settings
         self.saved_settings.append(settings)
+
+
+def test_sync_session_progress_targets_rebuilt_review_widget() -> None:
+    class _FakeSyncReview:
+        def __init__(self) -> None:
+            self.planning_progress: list[tuple[object, ...]] = []
+            self.execution_progress: list[object] = []
+            self.executing_count = 0
+
+        def update_progress(self, *args: object) -> None:
+            self.planning_progress.append(args)
+
+        def show_executing(self) -> None:
+            self.executing_count += 1
+
+        def update_execute_progress(self, progress: object) -> None:
+            self.execution_progress.append(progress)
+
+    session = SimpleNamespace(
+        planning_progress=_FakeSignal(),
+        execution_started=_FakeSignal(),
+        execution_progress=_FakeSignal(),
+    )
+    old_review = _FakeSyncReview()
+    current_review = _FakeSyncReview()
+    window = SimpleNamespace(_sync_session=session, syncReview=old_review)
+    window._on_sync_session_planning_progress = (
+        MainWindow._on_sync_session_planning_progress.__get__(window)
+    )
+    window._on_sync_session_execution_started = (
+        MainWindow._on_sync_session_execution_started.__get__(window)
+    )
+    window._on_sync_session_execution_progress = (
+        MainWindow._on_sync_session_execution_progress.__get__(window)
+    )
+
+    MainWindow._connect_sync_session_review_signals(cast(Any, window))
+    window.syncReview = current_review  # live theme changes rebuild this widget
+
+    planning_event = ("fingerprint", 2, 3, "track-02.mp3")
+    execution_event = SimpleNamespace(
+        stage="add",
+        current=2,
+        total=3,
+        worker_lines=["Copying track-02.mp3 — 75%"],
+    )
+    session.planning_progress.emit(*planning_event)
+    session.execution_started.emit()
+    session.execution_progress.emit(execution_event)
+
+    assert current_review.planning_progress == [planning_event]
+    assert current_review.executing_count == 1
+    assert current_review.execution_progress == [execution_event]
+    assert old_review.planning_progress == []
+    assert old_review.executing_count == 0
+    assert old_review.execution_progress == []
 
 
 def test_main_window_device_name_ignores_dataset5_category_master() -> None:
@@ -248,9 +310,6 @@ def test_start_pc_sync_without_device_opens_media_folder_dialog(monkeypatch) -> 
             calls.append("exec")
             return 0
 
-    def _unexpected_tool_check(settings: object) -> None:
-        raise AssertionError("tool availability should not be checked without a device")
-
     def _unexpected_warning(*args: object, **kwargs: object) -> None:
         raise AssertionError("no-device sync should open the media folder dialog")
 
@@ -269,7 +328,6 @@ def test_start_pc_sync_without_device_opens_media_folder_dialog(monkeypatch) -> 
     )
 
     monkeypatch.setattr("GUI.app.PCFolderDialog", _FakeDialog)
-    monkeypatch.setattr("GUI.app.check_sync_tool_availability", _unexpected_tool_check)
     monkeypatch.setattr("GUI.app.QMessageBox.warning", _unexpected_warning)
 
     MainWindow.startPCSync(cast(Any, window))
@@ -297,26 +355,7 @@ def test_execute_sync_plan_passes_playlist_actions_only_in_plan(
             }
         ]
     )
-    workers: list[object] = []
-
-    class _CapturingSyncExecuteWorker:
-        def __init__(self, **kwargs: object) -> None:
-            self.kwargs = kwargs
-            self.progress = _FakeSignal()
-            self.finished = _FakeSignal()
-            self.error = _FakeSignal()
-            self.confirm_partial_save = _FakeSignal()
-            self.started = False
-            workers.append(self)
-
-        def request_skip_backup(self) -> None:
-            pass
-
-        def request_give_up_scrobble(self) -> None:
-            pass
-
-        def start(self) -> None:
-            self.started = True
+    execution_intents: list[SyncExecutionIntent] = []
 
     class _FakeSyncReview:
         _skip_presync_backup = False
@@ -338,7 +377,6 @@ def test_execute_sync_plan_passes_playlist_actions_only_in_plan(
         def update_execute_progress(self, *_args: object) -> None:
             pass
 
-    monkeypatch.setattr("GUI.app.SyncExecuteWorker", _CapturingSyncExecuteWorker)
     monkeypatch.setattr(
         "GUI.app.build_filtered_sync_plan",
         lambda original_plan, _selected_items, **_kwargs: original_plan,
@@ -359,7 +397,9 @@ def test_execute_sync_plan_passes_playlist_actions_only_in_plan(
         device_session_service=SimpleNamespace(
             current_session=lambda: SimpleNamespace(identity={}, capabilities={})
         ),
-        _sync_execute_worker=None,
+        _sync_session=SimpleNamespace(
+            start_execution=lambda intent: execution_intents.append(intent)
+        ),
         _onSyncExecuteComplete=lambda *_args: None,
         _onSyncExecuteError=lambda *_args: None,
         _onConfirmPartialSave=lambda *_args: None,
@@ -367,11 +407,74 @@ def test_execute_sync_plan_passes_playlist_actions_only_in_plan(
 
     MainWindow.executeSyncPlan(cast(Any, window), selected_items=[])
 
-    assert len(workers) == 1
-    worker = cast(Any, workers[0])
-    assert worker.kwargs["plan"] is plan
-    assert "user_playlists" not in worker.kwargs
-    assert worker.started is True
+    assert len(execution_intents) == 1
+    intent = execution_intents[0]
+    assert intent.plan is plan
+    assert not hasattr(intent, "user_playlists")
+
+
+def test_missing_tools_download_preserves_sync_planning_intent(monkeypatch) -> None:
+    downloads: list[tuple[bool, bool, SyncPlanningIntent | None]] = []
+    intent = SyncPlanningIntent(
+        mode="full",
+        folder_entries=({"directory": "/music", "recurse": True},),
+    )
+
+    class _FakeMissingToolsDialog:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def exec(self) -> int:
+            return 1
+
+    monkeypatch.setattr("GUI.app._MissingToolsDialog", _FakeMissingToolsDialog)
+    monkeypatch.setattr(
+        "GUI.app.QDialog.DialogCode",
+        SimpleNamespace(Accepted=1),
+    )
+    window = SimpleNamespace(
+        _download_missing_tools_then_sync=lambda need_ffmpeg, need_fpcalc, planning_intent=None: downloads.append(
+            (need_ffmpeg, need_fpcalc, planning_intent)
+        )
+    )
+
+    MainWindow._on_sync_session_missing_tools(
+        cast(Any, window),
+        SyncSessionMissingTools(
+            SyncToolAvailability(
+                missing_ffmpeg=True,
+                missing_fpcalc=False,
+                can_download=True,
+            ),
+            planning_intent=intent,
+        ),
+    )
+
+    assert downloads == [(True, False, intent)]
+
+
+def test_tool_download_completion_resumes_pending_sync_planning_intent() -> None:
+    closed: list[bool] = []
+    planned: list[SyncPlanningIntent] = []
+    reopened_dialog: list[bool] = []
+    intent = SyncPlanningIntent(
+        mode="selective",
+        folder_entries=({"directory": "/music", "recurse": True},),
+        selected_paths={"tracks": {"/music/song.mp3"}},
+    )
+    window = SimpleNamespace(
+        _dl_progress=SimpleNamespace(close=lambda: closed.append(True)),
+        _pending_tool_sync_intent=intent,
+        _sync_session=SimpleNamespace(start_planning=lambda ready: planned.append(ready)),
+        startPCSync=lambda: reopened_dialog.append(True),
+    )
+
+    MainWindow._on_tools_downloaded(cast(Any, window))
+
+    assert closed == [True]
+    assert planned == [intent]
+    assert reopened_dialog == []
+    assert window._pending_tool_sync_intent is None
 
 
 class _FakeDropOverlay:
@@ -503,7 +606,7 @@ def _build_window_for_drop_events(*, overlay_visible: bool = False):
     window = SimpleNamespace()
     window._drop_overlay = _FakeDropOverlay(visible=overlay_visible)
     window.device_manager = SimpleNamespace(device_path="E:/iPod")
-    window._sync_execute_worker = None
+    window._sync_session = SimpleNamespace(is_executing=lambda: False)
     window.device_session_service = SimpleNamespace(
         current_session=lambda: SimpleNamespace(capabilities=None),
     )
@@ -666,7 +769,7 @@ def test_drop_scan_complete_merges_import_context_into_existing_plan():
     window = SimpleNamespace(
         _drop_merge=True,
         _plan=existing,
-        syncReview=SimpleNamespace(show_plan=shown.append),
+        _show_sync_plan=lambda plan: shown.append(plan),
     )
 
     MainWindow._on_drop_scan_complete(cast(Any, window), dropped)
@@ -769,18 +872,21 @@ def test_selective_plan_editor_cancel_returns_to_review_without_changes():
 
 def _build_window_for_back_sync_cancel(worker: _FakeBackSyncWorker):
     default_page_calls: list[bool] = []
+    sync_cancel_calls: list[bool] = []
     window = SimpleNamespace(
-        _sync_worker=None,
         _back_sync_worker=worker,
         _back_sync_workers=[worker],
         _cancelled_workers=[],
-        _podcast_plan_worker=None,
         _album_conversion_worker=None,
         _chapter_split_worker=None,
-        _sync_execute_worker=None,
+        _sync_session=SimpleNamespace(
+            is_executing=lambda: False,
+            request_execution_cancel=lambda: None,
+            cancel=lambda: sync_cancel_calls.append(True),
+        ),
+        _sync_session_cancel_calls=sync_cancel_calls,
         _keep_sync_results_visible_after_rescan=True,
     )
-    window._cleanup_sync_execute_worker = lambda: None
     window._show_default_page = lambda: default_page_calls.append(True)
     window._clear_worker_reference = MainWindow._clear_worker_reference.__get__(window)
     window._retain_cancelled_worker = MainWindow._retain_cancelled_worker.__get__(window)
@@ -790,8 +896,6 @@ def _build_window_for_back_sync_cancel(worker: _FakeBackSyncWorker):
     window._retain_back_sync_worker = MainWindow._retain_back_sync_worker.__get__(window)
     window._reap_back_sync_worker = MainWindow._reap_back_sync_worker.__get__(window)
     window._cleanup_back_sync_worker = MainWindow._cleanup_back_sync_worker.__get__(window)
-    window._cleanup_sync_diff_worker = MainWindow._cleanup_sync_diff_worker.__get__(window)
-    window._cleanup_podcast_plan_worker = MainWindow._cleanup_podcast_plan_worker.__get__(window)
     window._cleanup_album_conversion_worker = MainWindow._cleanup_album_conversion_worker.__get__(window)
     window._cleanup_chapter_split_worker = MainWindow._cleanup_chapter_split_worker.__get__(window)
     window.hideSyncReview = MainWindow.hideSyncReview.__get__(window)
@@ -811,6 +915,7 @@ def test_sync_review_cancel_detaches_back_sync_worker_and_returns_to_library():
     assert window._back_sync_worker is None
     assert window._back_sync_workers == [worker]
     assert window._keep_sync_results_visible_after_rescan is False
+    assert window._sync_session_cancel_calls == [True]
     assert default_page_calls == [True]
 
 
@@ -846,44 +951,53 @@ def test_stale_back_sync_completion_after_cancel_is_ignored():
     assert shown_results == []
 
 
-def test_sync_review_cancel_detaches_sync_diff_worker_and_returns_to_library():
-    worker = _FakeBackSyncWorker(running=True)
+def test_sync_review_cancel_cancels_sync_session_and_returns_to_library():
     window, default_page_calls = _build_window_for_back_sync_cancel(
         _FakeBackSyncWorker(running=False)
     )
     window._back_sync_worker = None
     window._back_sync_workers = []
-    window._sync_worker = worker
 
     MainWindow._onSyncReviewCancelled(cast(Any, window))
 
-    assert worker.request_count == 1
-    assert worker.progress.disconnect_count == 1
-    assert worker.finished.disconnect_count == 1
-    assert worker.error.disconnect_count == 1
-    assert window._sync_worker is None
-    assert window._cancelled_workers == [worker]
+    assert window._sync_session_cancel_calls == [True]
     assert default_page_calls == [True]
 
 
 def test_sync_review_execute_cancel_stays_on_review_page():
-    execute_worker = _FakeSyncExecuteWorker(running=True)
+    cancel_calls: list[bool] = []
     default_page_calls: list[bool] = []
     window = SimpleNamespace(
-        _sync_execute_worker=execute_worker,
+        _sync_session=SimpleNamespace(
+            is_executing=lambda: True,
+            request_execution_cancel=lambda: cancel_calls.append(True),
+        ),
         hideSyncReview=lambda: default_page_calls.append(True),
     )
 
     MainWindow._onSyncReviewCancelled(cast(Any, window))
 
-    assert execute_worker.request_count == 1
+    assert cancel_calls == [True]
     assert default_page_calls == []
 
 
-def test_stale_sync_diff_completion_after_cancel_is_ignored():
-    worker = _FakeBackSyncWorker(running=False)
-    window = SimpleNamespace(_sync_worker=None)
+def test_sync_session_plan_ready_updates_review():
+    plan = object()
+    shown: list[object] = []
+    stack = _FakeStack()
+    window = SimpleNamespace(
+        centralStack=stack,
+        library_cache=SimpleNamespace(get_tracks=lambda: [{"db_track_id": 1}]),
+        syncReview=SimpleNamespace(
+            _ipod_tracks_cache=[],
+            show_plan=lambda ready_plan: shown.append(ready_plan),
+        ),
+    )
+    window._show_sync_plan = MainWindow._show_sync_plan.__get__(window)
 
-    MainWindow._onSyncDiffComplete(cast(Any, window), object(), worker)
+    MainWindow._onSyncDiffComplete(cast(Any, window), plan)
 
-    assert not hasattr(window, "_plan")
+    assert window._plan is plan
+    assert window.syncReview._ipod_tracks_cache == [{"db_track_id": 1}]
+    assert stack.set_indices == [1]
+    assert shown == [plan]

@@ -161,15 +161,6 @@ class SyncItem:
             self.metadata_changes = {}
 
     @property
-    def db_id(self) -> int | None:
-        """Backward-compatible alias for the iPod track persistent ID."""
-        return self.db_track_id
-
-    @db_id.setter
-    def db_id(self, value: int | None) -> None:
-        self.db_track_id = value
-
-    @property
     def has_pc_source(self) -> bool:
         """True when this item has a source track available on the PC."""
 

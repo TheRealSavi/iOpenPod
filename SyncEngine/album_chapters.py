@@ -258,11 +258,14 @@ def resolve_album_sources(
 
         if fingerprint is None and fpcalc_path:
             try:
-                from .audio_fingerprint import get_or_compute_fingerprint
-                fingerprint = get_or_compute_fingerprint(
-                    source,
-                    fpcalc_path=fpcalc_path,
-                    write_to_file=False,
+                from .audio_fingerprint import get_or_compute_fingerprint_with_status
+
+                fingerprint, _fingerprint_status = (
+                    get_or_compute_fingerprint_with_status(
+                        source,
+                        fpcalc_path=fpcalc_path,
+                        write_to_file=False,
+                    )
                 )
             except Exception:
                 logger.debug("Could not fingerprint conversion source %s", source, exc_info=True)

@@ -461,26 +461,6 @@ def get_or_compute_fingerprint_with_status(
     return fingerprint, "computed"
 
 
-def get_or_compute_fingerprint(
-    filepath: str | Path,
-    fpcalc_path: str | None = None,
-    write_to_file: bool = True,
-) -> str | None:
-    """
-    Get fingerprint from file metadata, or compute and optionally store it.
-
-    This compatibility wrapper returns only the fingerprint. Use
-    :func:`get_or_compute_fingerprint_with_status` when batch callers need
-    cache/tag/computed/failed counts for summary logging.
-    """
-    fingerprint, _status = get_or_compute_fingerprint_with_status(
-        filepath,
-        fpcalc_path=fpcalc_path,
-        write_to_file=write_to_file,
-    )
-    return fingerprint
-
-
 def is_fpcalc_available(fpcalc_path: str | None = None) -> bool:
     """Check if fpcalc is available on this system."""
     return find_fpcalc(fpcalc_path) is not None

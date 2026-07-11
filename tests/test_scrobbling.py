@@ -464,12 +464,20 @@ def test_write_finalize_scrobbles_before_deleting_playcounts(
     ctx = _build_scrobble_context()
     executor = SyncExecutor(tmp_path)
 
-    monkeypatch.setattr(executor, "_write_database", lambda *args, **kwargs: True)
+    monkeypatch.setattr(
+        sync_executor,
+        "write_database_commit",
+        lambda *_args, **_kwargs: True,
+    )
     monkeypatch.setattr(executor, "_backpatch_new_tracks", lambda ctx: None)
     monkeypatch.setattr(executor.mapping_manager, "save", lambda mapping: None)
     monkeypatch.setattr(executor, "_update_podcast_subscriptions", lambda ctx: None)
     monkeypatch.setattr(executor, "_clear_gui_cache", lambda ctx: None)
-    monkeypatch.setattr(executor, "_apply_itunes_protections", lambda ctx, tracks: None)
+    monkeypatch.setattr(
+        sync_executor,
+        "apply_itunes_protections_from_tracks",
+        lambda *_args, **_kwargs: None,
+    )
     monkeypatch.setattr(
         executor,
         "_build_and_evaluate_playlists",
@@ -509,17 +517,21 @@ def test_write_finalize_clears_playcount_after_scrobble_before_database_write(
         assert scrobble_ctx.plan.to_sync_playcount[0].ipod_track["play_count_2"] == 3
         return True
 
-    def fake_write_database(all_tracks, **_kwargs):
+    def fake_write_database_commit(_ipod_path, payload, **_kwargs):
         order.append("write")
-        assert all_tracks[0].play_count_2 == 0
+        assert payload.all_tracks[0].play_count_2 == 0
         return True
 
-    monkeypatch.setattr(executor, "_write_database", fake_write_database)
+    monkeypatch.setattr(sync_executor, "write_database_commit", fake_write_database_commit)
     monkeypatch.setattr(executor, "_backpatch_new_tracks", lambda ctx: None)
     monkeypatch.setattr(executor.mapping_manager, "save", lambda mapping: None)
     monkeypatch.setattr(executor, "_update_podcast_subscriptions", lambda ctx: None)
     monkeypatch.setattr(executor, "_clear_gui_cache", lambda ctx: None)
-    monkeypatch.setattr(executor, "_apply_itunes_protections", lambda ctx, tracks: None)
+    monkeypatch.setattr(
+        sync_executor,
+        "apply_itunes_protections_from_tracks",
+        lambda *_args, **_kwargs: None,
+    )
     monkeypatch.setattr(
         executor,
         "_build_and_evaluate_playlists",

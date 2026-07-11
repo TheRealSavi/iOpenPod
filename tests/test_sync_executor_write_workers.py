@@ -584,7 +584,7 @@ def test_commit_file_mutations_forces_db_write_after_cancelled_removal(
     assert "removal" in ctx.result.errors[-1][1]
 
 
-def test_prepare_database_commit_input_resolves_pending_playlist_source_paths(
+def test_prepare_database_commit_payload_resolves_pending_playlist_source_paths(
     tmp_path: Path,
 ) -> None:
     source = tmp_path / "new.mp3"
@@ -619,7 +619,7 @@ def test_prepare_database_commit_input_resolves_pending_playlist_source_paths(
     )
     progress_messages: list[str] = []
 
-    commit_input = SyncExecutor(tmp_path)._prepare_database_commit_input(
+    commit_payload = SyncExecutor(tmp_path)._prepare_database_commit_payload(
         ctx,
         advance=progress_messages.append,
     )
@@ -627,9 +627,8 @@ def test_prepare_database_commit_input_resolves_pending_playlist_source_paths(
     assigned_db_id = ctx.new_tracks[0].db_track_id
     assert assigned_db_id
     assert progress_messages == ["Preparing tracks", "Resolving playlists"]
-    assert commit_input.all_tracks == ctx.new_tracks
-    assert commit_input.playlist_payload.standard_playlists == commit_input.playlists
-    assert [playlist.track_ids for playlist in commit_input.playlists] == [
+    assert commit_payload.all_tracks == ctx.new_tracks
+    assert [playlist.track_ids for playlist in commit_payload.playlists] == [
         [assigned_db_id]
     ]
 

@@ -669,18 +669,9 @@ def test_full_sync_playlist_ipod_file_reference_uses_existing_fingerprint(
         assert write_to_file is False
         return "matching-fingerprint", "computed"
 
-    def fingerprint_existing_ipod_file(path, *, fpcalc_path="", write_to_file=True):
-        assert Path(path) == ipod_track_path
-        assert write_to_file is False
-        return "matching-fingerprint"
-
     monkeypatch.setattr(
         "SyncEngine.fingerprint_diff_engine.get_or_compute_fingerprint_with_status",
         fingerprint_playlist_reference,
-    )
-    monkeypatch.setattr(
-        "SyncEngine.fingerprint_diff_engine.get_or_compute_fingerprint",
-        fingerprint_existing_ipod_file,
     )
 
     engine = FingerprintDiffEngine(
@@ -814,21 +805,14 @@ def test_full_sync_playlist_external_reference_uses_existing_ipod_fingerprint(
     )
 
     def fingerprint_playlist_reference(path, *, fpcalc_path="", write_to_file=True):
-        assert Path(path) == source_path
+        assert Path(path) in {source_path, ipod_track_path}
+        if Path(path) == ipod_track_path:
+            assert write_to_file is False
         return "matching-fingerprint", "computed"
-
-    def fingerprint_existing_ipod_file(path, *, fpcalc_path="", write_to_file=True):
-        assert Path(path) == ipod_track_path
-        assert write_to_file is False
-        return "matching-fingerprint"
 
     monkeypatch.setattr(
         "SyncEngine.fingerprint_diff_engine.get_or_compute_fingerprint_with_status",
         fingerprint_playlist_reference,
-    )
-    monkeypatch.setattr(
-        "SyncEngine.fingerprint_diff_engine.get_or_compute_fingerprint",
-        fingerprint_existing_ipod_file,
     )
 
     engine = FingerprintDiffEngine(

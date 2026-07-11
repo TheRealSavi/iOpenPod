@@ -142,10 +142,12 @@ def test_drop_scan_worker_matches_existing_ipod_tracks_for_playlist_import(
 
     monkeypatch.setattr(
         audio_fingerprint,
-        "get_or_compute_fingerprint",
-        lambda path, *_args, **_kwargs: "fp-song"
-        if Path(path) in {source, ipod_track}
-        else None,
+        "get_or_compute_fingerprint_with_status",
+        lambda path, *_args, **_kwargs: (
+            ("fp-song", "computed")
+            if Path(path) in {source, ipod_track}
+            else (None, "failed")
+        ),
     )
     monkeypatch.setattr(
         PCLibrary,
@@ -240,11 +242,12 @@ def test_drop_scan_worker_matches_ipod_file_fingerprint_without_readding(
 
     def fake_fingerprint(path, *_args, **_kwargs):
         fingerprinted_paths.append(Path(path))
-        return "fp-song" if Path(path) == ipod_track else None
+        fingerprint = "fp-song" if Path(path) == ipod_track else None
+        return fingerprint, "computed" if fingerprint else "failed"
 
     monkeypatch.setattr(
         audio_fingerprint,
-        "get_or_compute_fingerprint",
+        "get_or_compute_fingerprint_with_status",
         fake_fingerprint,
     )
     monkeypatch.setattr(
@@ -322,11 +325,11 @@ def test_drop_scan_worker_does_not_scan_entire_ipod_for_unmatched_new_track(
 
     def fake_fingerprint(path, *_args, **_kwargs):
         fingerprinted_paths.append(Path(path))
-        return "fp-new" if Path(path) == source else "fp-old"
+        return ("fp-new" if Path(path) == source else "fp-old"), "computed"
 
     monkeypatch.setattr(
         audio_fingerprint,
-        "get_or_compute_fingerprint",
+        "get_or_compute_fingerprint_with_status",
         fake_fingerprint,
     )
     monkeypatch.setattr(

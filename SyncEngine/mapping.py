@@ -55,15 +55,6 @@ class TrackMapping:
     contains_fingerprints: list[str] | None = None
     contains_sources: list[dict] | None = None
 
-    @property
-    def db_id(self) -> int:
-        """Backward-compatible alias for older mapping callers."""
-        return self.db_track_id
-
-    @db_id.setter
-    def db_id(self, value: int) -> None:
-        self.db_track_id = value
-
     def to_dict(self) -> dict:
         """Convert to JSON-serializable dict."""
         d = asdict(self)
@@ -222,10 +213,6 @@ class MappingFile:
                     self._db_track_id_index[entry.db_track_id] = (fp, entry)
         return self._db_track_id_index.get(db_track_id)
 
-    def get_by_db_id(self, db_id: int) -> tuple[str, TrackMapping] | None:
-        """Backward-compatible alias for get_by_db_track_id()."""
-        return self.get_by_db_track_id(db_id)
-
     def aggregate_entries(self) -> list[tuple[str, TrackMapping]]:
         """Return all mappings that represent an aggregate/container track."""
         return [
@@ -287,10 +274,6 @@ class MappingFile:
                 return True
         return False
 
-    def remove_by_db_id(self, db_id: int) -> bool:
-        """Backward-compatible alias for remove_by_db_track_id()."""
-        return self.remove_by_db_track_id(db_id)
-
     @property
     def track_count(self) -> int:
         """Total number of individual track entries (across all fingerprints)."""
@@ -312,10 +295,6 @@ class MappingFile:
             for entry in entries:
                 db_track_ids.add(entry.db_track_id)
         return db_track_ids
-
-    def all_db_ids(self) -> set[int]:
-        """Backward-compatible alias for all_db_track_ids()."""
-        return self.all_db_track_ids()
 
     def all_entries(self) -> list[tuple[str, TrackMapping]]:
         """Return all (fingerprint, mapping) pairs flattened."""

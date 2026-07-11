@@ -11,11 +11,11 @@ import shutil
 import tempfile
 import threading
 import traceback
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, SupportsInt
+from typing import TYPE_CHECKING, Any, SupportsInt, cast
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
@@ -1269,7 +1269,7 @@ class BackSyncWorker(QThread):
     def run(self) -> None:
         try:
             from SyncEngine._formats import MEDIA_EXTENSIONS
-            from SyncEngine.audio_fingerprint import get_or_compute_fingerprint
+            from SyncEngine.audio_fingerprint import get_or_compute_fingerprint_with_status
             from SyncEngine.ipod_track_paths import existing_ipod_track_file_path
             from SyncEngine.pc_library import PCLibrary
 
@@ -1308,7 +1308,11 @@ class BackSyncWorker(QThread):
             workers = min(os.cpu_count() or 4, 8)
 
             def _fp_pc(path: str) -> str | None:
-                return get_or_compute_fingerprint(path, write_to_file=False)
+                fingerprint, _fingerprint_status = get_or_compute_fingerprint_with_status(
+                    path,
+                    write_to_file=False,
+                )
+                return fingerprint
 
             pool = ThreadPoolExecutor(max_workers=workers)
             cancel_fingerprints = False
@@ -1388,7 +1392,10 @@ class BackSyncWorker(QThread):
                     return
                 title = track.get("Title") or ipod_file.name
                 try:
-                    fp = get_or_compute_fingerprint(ipod_file, write_to_file=False)
+                    fp, _fingerprint_status = get_or_compute_fingerprint_with_status(
+                        ipod_file,
+                        write_to_file=False,
+                    )
                 except Exception as exc:
                     fp = None
                     ipod_fingerprint_errors.append(f"{title}: {exc}")
@@ -1831,7 +1838,11 @@ def _snapshot_cache_for_itunesdb_write(
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[int, str]]:
     tracks = copy.deepcopy(cache.get_tracks())
     track_edits_getter = getattr(cache, "get_track_edits", None)
-    track_edits = track_edits_getter() if callable(track_edits_getter) else {}
+    track_edits = (
+        cast(Mapping[Any, Mapping[str, Any]], track_edits_getter())
+        if callable(track_edits_getter)
+        else {}
+    )
     if track_edits:
         tracks_by_db_track_id = {
             _track_db_track_id(track): track
@@ -2036,7 +2047,7 @@ class PlaylistImportWorker(QThread):
     def run(self) -> None:
         cache_mutated = False
         try:
-            from SyncEngine.audio_fingerprint import get_or_compute_fingerprint
+            from SyncEngine.audio_fingerprint import get_or_compute_fingerprint_with_status
             from SyncEngine.contracts import (
                 SyncAction,
                 SyncItem,
@@ -2121,10 +2132,12 @@ class PlaylistImportWorker(QThread):
                         ),
                     )
 
-                    fingerprint = get_or_compute_fingerprint(
-                        raw_path,
-                        fpcalc_path=self._fpcalc_path,
-                        write_to_file=False,
+                    fingerprint, _fingerprint_status = (
+                        get_or_compute_fingerprint_with_status(
+                            raw_path,
+                            fpcalc_path=self._fpcalc_path,
+                            write_to_file=False,
+                        )
                     )
                     if fingerprint is None:
                         skipped += 1
@@ -2612,12 +2625,14 @@ class DropScanWorker(QThread):
                         if mapping is not None and fresh_tracks:
                             try:
                                 from SyncEngine.audio_fingerprint import (
-                                    get_or_compute_fingerprint,
+                                    get_or_compute_fingerprint_with_status,
                                 )
 
-                                fingerprint = get_or_compute_fingerprint(
-                                    path,
-                                    write_to_file=False,
+                                fingerprint, _fingerprint_status = (
+                                    get_or_compute_fingerprint_with_status(
+                                        path,
+                                        write_to_file=False,
+                                    )
                                 )
                             except Exception as exc:
                                 logger.debug(

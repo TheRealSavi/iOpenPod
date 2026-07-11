@@ -2,25 +2,17 @@
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from iTunesDB_Shared.constants import (
-    MEDIA_TYPE_AUDIOBOOK,
-    MEDIA_TYPE_MUSIC_VIDEO,
-    MEDIA_TYPE_PODCAST,
-    MEDIA_TYPE_TV_SHOW,
-    MEDIA_TYPE_VIDEO,
-)
 from iTunesDB_Writer.mhit_writer import TrackInfo
+
+from .database_commit import DatabaseCommitPayload, write_database_commit
 
 if TYPE_CHECKING:
     from .contracts import SyncProgress
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -293,78 +285,19 @@ def _write_evaluated_database(
     podcast_master_playlist_id: int | None,
     pc_file_paths: Mapping[int, str] | None = None,
 ) -> bool:
-    from ._db_io import write_database
-
-    db_ok = write_database(
-        Path(ipod_path),
-        all_tracks,
-        pc_file_paths=dict(pc_file_paths) if pc_file_paths else None,
-        playlists=playlists,
-        podcast_playlists=podcast_playlists,
-        smart_playlists=smart_playlists,
-        master_playlist_name=master_playlist_name,
-        master_playlist_id=master_playlist_id,
-        podcast_master_playlist_name=podcast_master_playlist_name,
-        podcast_master_playlist_id=podcast_master_playlist_id,
-    )
-    if not db_ok:
-        return False
-
-    try:
-        apply_itunes_protections_from_tracks(ipod_path, all_tracks)
-    except Exception as exc:
-        logger.warning("iTunesPrefs protection failed (non-fatal): %s", exc)
-    return True
-
-
-def apply_itunes_protections_from_tracks(
-    ipod_path: str | Path,
-    all_tracks: list[TrackInfo],
-) -> None:
-    """Update iTunesPrefs from a track list after a quick database rewrite."""
-
-    from .itunes_prefs import protect_from_itunes
-
-    media_buckets = [
-        (MEDIA_TYPE_PODCAST, "podcast"),
-        (MEDIA_TYPE_AUDIOBOOK, "audiobook"),
-        (MEDIA_TYPE_TV_SHOW, "tv"),
-        (MEDIA_TYPE_MUSIC_VIDEO, "mv"),
-        (MEDIA_TYPE_VIDEO, "video"),
-    ]
-    totals: dict[str, list[int]] = {
-        key: [0, 0, 0]
-        for key in ("music", "video", "podcast", "audiobook", "tv", "mv")
-    }
-    for track in all_tracks:
-        media_type = track.media_type
-        bucket = "music"
-        for mask, label in media_buckets:
-            if media_type & mask:
-                bucket = label
-                break
-        totals[bucket][0] += track.size
-        totals[bucket][1] += track.length // 1000
-        totals[bucket][2] += 1
-
-    protect_from_itunes(
-        Path(ipod_path),
-        track_count=totals["music"][2],
-        total_music_bytes=totals["music"][0],
-        total_music_seconds=totals["music"][1],
-        video_tracks=totals["video"][2],
-        video_bytes=totals["video"][0],
-        video_seconds=totals["video"][1],
-        podcast_tracks=totals["podcast"][2],
-        podcast_bytes=totals["podcast"][0],
-        podcast_seconds=totals["podcast"][1],
-        audiobook_tracks=totals["audiobook"][2],
-        audiobook_bytes=totals["audiobook"][0],
-        audiobook_seconds=totals["audiobook"][1],
-        tv_show_tracks=totals["tv"][2],
-        tv_show_bytes=totals["tv"][0],
-        tv_show_seconds=totals["tv"][1],
-        music_video_tracks=totals["mv"][2],
-        music_video_bytes=totals["mv"][0],
-        music_video_seconds=totals["mv"][1],
+    return write_database_commit(
+        ipod_path,
+        DatabaseCommitPayload(
+            all_tracks=all_tracks,
+            pc_file_paths=dict(pc_file_paths) if pc_file_paths else None,
+            playlists=playlists,
+            podcast_playlists=podcast_playlists,
+            smart_playlists=smart_playlists,
+            master_playlist_name=master_playlist_name,
+            master_playlist_id=master_playlist_id,
+            podcast_master_playlist_name=podcast_master_playlist_name,
+            podcast_master_playlist_id=podcast_master_playlist_id,
+        ),
+        protect_itunes=True,
+        include_photo_totals=False,
     )

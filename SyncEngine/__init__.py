@@ -5,14 +5,13 @@ App and GUI code should enter planning, execution, and quick database writes
 through that facade so requests, progress, diagnostics, and validation all
 flow through one lifecycle.
 
-Lower-level modules such as ``FingerprintDiffEngine`` and ``SyncExecutor`` are
-kept exported for compatibility and focused tests, but production orchestration
-should not call them directly.
+Lower-level modules remain importable from their concrete modules for focused
+tests, but production orchestration should enter through the facade.
 """
 from ._formats import IPOD_NATIVE_FORMATS
 from .audio_fingerprint import (
     compute_fingerprint,
-    get_or_compute_fingerprint,
+    get_or_compute_fingerprint_with_status,
     is_fpcalc_available,
     read_fingerprint,
     write_fingerprint,
@@ -44,9 +43,6 @@ from .core import (
     EngineTransactionPolicy,
     SyncEngine,
 )
-from .fingerprint_diff_engine import (
-    FingerprintDiffEngine,
-)
 from .integrity import IntegrityReport, check_integrity
 from .itunes_prefs import (
     DeviceTotals,
@@ -73,7 +69,6 @@ from .photos import (
 )
 from .review_selection import build_filtered_sync_plan, build_selected_photo_plan
 from .spl_evaluator import spl_update, spl_update_all, spl_update_from_parsed
-from .sync_executor import SyncExecutor
 from .transcode_cache import CachedFile, CacheIndex, TranscodeCache
 from .transcoder import (
     TranscodeResult,
@@ -104,9 +99,7 @@ __all__ = [
     "EngineRequest",
     "EngineStage",
     "EngineTransactionPolicy",
-    # Compatibility internals. Prefer SyncEngine for orchestration.
-    "FingerprintDiffEngine",
-    "SyncExecutor",
+    # Execution results
     "SyncOutcome",
     "SyncProgress",
     "SyncRequest",
@@ -119,7 +112,7 @@ __all__ = [
     "compute_fingerprint",
     "read_fingerprint",
     "write_fingerprint",
-    "get_or_compute_fingerprint",
+    "get_or_compute_fingerprint_with_status",
     "is_fpcalc_available",
     # Mapping
     "MappingManager",

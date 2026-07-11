@@ -152,7 +152,7 @@ def candidate_ipod_fingerprint_match_db_track_id(
 ) -> int:
     """Fingerprint likely iPod-side candidates and return the best db_track_id."""
 
-    from .audio_fingerprint import get_or_compute_fingerprint
+    from . import audio_fingerprint
 
     cache = fingerprint_cache if fingerprint_cache is not None else {}
     matches: list[tuple[int, dict]] = []
@@ -169,10 +169,12 @@ def candidate_ipod_fingerprint_match_db_track_id(
             ipod_fingerprint = cache[cache_key]
         else:
             try:
-                ipod_fingerprint = get_or_compute_fingerprint(
-                    ipod_file,
-                    fpcalc_path=fpcalc_path,
-                    write_to_file=False,
+                ipod_fingerprint, _fingerprint_status = (
+                    audio_fingerprint.get_or_compute_fingerprint_with_status(
+                        ipod_file,
+                        fpcalc_path=fpcalc_path,
+                        write_to_file=False,
+                    )
                 )
             except Exception as exc:
                 logger.debug(

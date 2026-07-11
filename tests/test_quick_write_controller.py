@@ -430,8 +430,8 @@ def test_playlist_import_refreshes_tracks_for_already_present_fingerprints(
 
     monkeypatch.setattr(
         audio_fingerprint,
-        "get_or_compute_fingerprint",
-        lambda *_args, **_kwargs: "fp-song",
+        "get_or_compute_fingerprint_with_status",
+        lambda *_args, **_kwargs: ("fp-song", "computed"),
     )
     monkeypatch.setattr(
         PCLibrary,
@@ -542,8 +542,8 @@ def test_playlist_import_merges_same_name_playlist_without_duplicate_members(
 
     monkeypatch.setattr(
         audio_fingerprint,
-        "get_or_compute_fingerprint",
-        lambda *_args, **_kwargs: "fp-song",
+        "get_or_compute_fingerprint_with_status",
+        lambda *_args, **_kwargs: ("fp-song", "computed"),
     )
     monkeypatch.setattr(
         PCLibrary,
@@ -661,9 +661,14 @@ def test_playlist_import_finds_existing_ipod_track_when_mapping_is_missing(
             return SimpleNamespace(get_entries=lambda _fingerprint: [])
 
     def fake_fingerprint(path, *_args, **_kwargs):
-        return "fp-song" if Path(path) in {source, ipod_track} else None
+        fingerprint = "fp-song" if Path(path) in {source, ipod_track} else None
+        return fingerprint, "computed" if fingerprint else "failed"
 
-    monkeypatch.setattr(audio_fingerprint, "get_or_compute_fingerprint", fake_fingerprint)
+    monkeypatch.setattr(
+        audio_fingerprint,
+        "get_or_compute_fingerprint_with_status",
+        fake_fingerprint,
+    )
     monkeypatch.setattr(
         PCLibrary,
         "_read_track",
@@ -781,9 +786,14 @@ def test_playlist_import_matches_ipod_file_fingerprint_without_readding(
 
     def fake_fingerprint(path, *_args, **_kwargs):
         fingerprinted_paths.append(Path(path))
-        return "fp-song" if Path(path) == ipod_track else None
+        fingerprint = "fp-song" if Path(path) == ipod_track else None
+        return fingerprint, "computed" if fingerprint else "failed"
 
-    monkeypatch.setattr(audio_fingerprint, "get_or_compute_fingerprint", fake_fingerprint)
+    monkeypatch.setattr(
+        audio_fingerprint,
+        "get_or_compute_fingerprint_with_status",
+        fake_fingerprint,
+    )
     monkeypatch.setattr(
         PCLibrary,
         "_read_track",
