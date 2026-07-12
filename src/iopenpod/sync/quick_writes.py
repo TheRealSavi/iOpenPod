@@ -25,6 +25,7 @@ class QuickWriteResult:
     playlist_counts: dict[int, int] = field(default_factory=dict)
     master_playlist_name: str = ""
     track_count: int = 0
+    newer_changes_pending: bool = False
 
     @classmethod
     def failed(cls, stage: str, message: str) -> QuickWriteResult:

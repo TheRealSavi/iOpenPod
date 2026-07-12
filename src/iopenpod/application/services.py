@@ -72,6 +72,7 @@ class SettingsSnapshot:
     show_art_in_tracklist: bool
     rounded_artwork: bool
     sharpen_artwork: bool
+    grid_item_size: str
     track_list_columns_by_content: dict[str, dict[str, int]]
     theme: str
     high_contrast: str
@@ -366,6 +367,7 @@ class LibraryCacheLike(Protocol):
     playlists_changed: Any
     photos_changed: Any
     tracks_changed: Any
+    track_fields_changed: Any
     playlist_quick_sync: Any
 
     @property
@@ -484,6 +486,15 @@ class LibraryCacheLike(Protocol):
     def discard_quick_write_state(self) -> None:
         ...
 
+    def get_quick_write_revision(self) -> int:
+        ...
+
+    def capture_quick_write_state(self) -> QuickWriteSnapshot:
+        ...
+
+    def commit_quick_write_state(self, expected_revision: int) -> bool:
+        ...
+
     def reload_after_itunesdb_write(self) -> None:
         ...
 
@@ -492,6 +503,17 @@ class LibraryCacheLike(Protocol):
 
     def commit_user_playlists(self) -> None:
         ...
+
+
+@dataclass(frozen=True)
+class QuickWriteSnapshot:
+    """Atomic cache inputs used by one iTunesDB quick write."""
+
+    tracks: list[dict]
+    playlists: list[dict]
+    track_edits: dict[int, dict[str, tuple]]
+    artwork_sources: dict[int, str]
+    revision: int
 
 
 class DeviceSessionService(Protocol):

@@ -79,6 +79,7 @@ from ..styles import (
     FONT_FAMILY,
     LABEL_SECONDARY,
     Colors,
+    Design,
     Metrics,
     accent_btn_css,
     btn_css,
@@ -1596,8 +1597,10 @@ class PodcastBrowser(QFrame):
         )
 
         self._feed_list = QListWidget()
+        self._feed_list.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
         self._feed_list.setIconSize(QSize((36), (36)))
         self._feed_list.setSpacing(2)
+        self._feed_list.setTextElideMode(Qt.TextElideMode.ElideRight)
         self._feed_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._feed_list.customContextMenuRequested.connect(self._on_feed_context_menu)
         self._feed_list.currentRowChanged.connect(self._on_feed_selected)
@@ -1611,10 +1614,12 @@ class PodcastBrowser(QFrame):
                 padding: {(6)}px {(8)}px;
                 border-radius: {Metrics.BORDER_RADIUS_SM}px;
                 color: {Colors.TEXT_PRIMARY};
+                font-weight: {Design.BUTTON_WEIGHT};
             }}
             QListWidget::item:selected {{
                 background: {Colors.ACCENT_MUTED};
                 color: {Colors.ACCENT};
+                font-weight: {Design.BUTTON_WEIGHT_STRONG};
             }}
             QListWidget::item:hover:!selected {{
                 background: {Colors.SURFACE_ACTIVE};
@@ -1909,7 +1914,7 @@ class PodcastBrowser(QFrame):
 
         feed_item = QListWidgetItem("Feed")
         feed_item.setData(Qt.ItemDataRole.UserRole, _COMBINED_FEED_KEY)
-        feed_item.setSizeHint(QSize(0, (44)))
+        feed_item.setSizeHint(QSize(0, 40))
         feed_icon = self._artwork_placeholder_pixmap(36)
         if feed_icon:
             feed_item.setIcon(QIcon(feed_icon))
@@ -1922,7 +1927,7 @@ class PodcastBrowser(QFrame):
             label = feed.title or "Untitled"
             item = QListWidgetItem(f"{label}  ({ep_count})")
             item.setData(Qt.ItemDataRole.UserRole, feed.feed_url)
-            item.setSizeHint(QSize(0, (44)))
+            item.setSizeHint(QSize(0, 40))
 
             # Feed artwork thumbnail in list
             artwork_source = self._feed_artwork_source(feed)

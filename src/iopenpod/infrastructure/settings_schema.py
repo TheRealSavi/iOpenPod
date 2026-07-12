@@ -55,7 +55,6 @@ DEVICE_SETTING_KEYS = (
     "mono_for_spoken",
     "smart_quality_by_type",
     "show_art_in_tracklist",
-    "grid_item_size",
     "accent_color",
     "scrobble_on_sync",
     "listenbrainz_token",

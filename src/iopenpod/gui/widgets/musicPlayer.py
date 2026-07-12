@@ -1141,6 +1141,12 @@ class MusicPlayerBar(QFrame):
     ) -> str:
         handle_margin = -max(1, (handle_size - groove_height) // 2)
         handle_radius = max(1, handle_size // 2)
+        handle_geometry = f"""
+                width: {handle_size}px;
+                height: {handle_size}px;
+                margin: {handle_margin}px 0;
+                border-radius: {handle_radius}px;
+        """
         return f"""
             QSlider::groove:horizontal {{
                 height: {groove_height}px;
@@ -1158,10 +1164,7 @@ class MusicPlayerBar(QFrame):
                 border-radius: {max(1, groove_height // 2)}px;
             }}
             QSlider::handle:horizontal {{
-                width: {handle_size}px;
-                height: {handle_size}px;
-                margin: {handle_margin}px 0;
-                border-radius: {handle_radius}px;
+                {handle_geometry}
                 background: qradialgradient(cx:0.35, cy:0.25, radius:0.85,
                     stop:0 {colors['handle_top']},
                     stop:0.45 {colors['handle_mid']},
@@ -1169,6 +1172,11 @@ class MusicPlayerBar(QFrame):
                 border: 1px solid {colors['border']};
             }}
             QSlider::handle:horizontal:hover {{
+                {handle_geometry}
+                border-color: {colors['accent']};
+            }}
+            QSlider::handle:horizontal:pressed {{
+                {handle_geometry}
                 border-color: {colors['accent']};
             }}
             QSlider::groove:horizontal:disabled {{
@@ -1178,6 +1186,7 @@ class MusicPlayerBar(QFrame):
                 background: {colors['border']};
             }}
             QSlider::handle:horizontal:disabled {{
+                {handle_geometry}
                 background: {colors['disabled']};
                 border-color: {colors['border']};
             }}

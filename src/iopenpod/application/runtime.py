@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import logging
 import os
 import sys
@@ -19,7 +20,7 @@ from iopenpod.itunesdb_shared.playlist_properties import (
     normalize_playlist_description,
 )
 
-from .services import DeviceInfoLike, LibraryCacheLike
+from .services import DeviceInfoLike, LibraryCacheLike, QuickWriteSnapshot
 
 logger = logging.getLogger(__name__)
 
@@ -825,6 +826,7 @@ class iTunesDBCache(QObject):
     playlists_changed = pyqtSignal()
     playlist_quick_sync = pyqtSignal()
     tracks_changed = pyqtSignal()
+    track_fields_changed = pyqtSignal(object)
     photos_changed = pyqtSignal()
 
     def __init__(self):
@@ -832,7 +834,7 @@ class iTunesDBCache(QObject):
         self._data: dict | None = None
         self._device_path: str | None = None
         self._is_loading: bool = False
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._album_index: dict | None = None
         self._album_only_index: dict | None = None
         self._artist_index: dict | None = None
@@ -842,6 +844,7 @@ class iTunesDBCache(QObject):
         self._user_playlists: list[dict] = []
         self._track_edits: dict[int, dict[str, tuple]] = {}
         self._track_artwork_edits: dict[int, str] = {}
+        self._quick_write_revision = 0
         from iopenpod.sync.photos import PhotoEditState
 
         self._photo_edits = PhotoEditState()
@@ -867,6 +870,7 @@ class iTunesDBCache(QObject):
             _cleanup_temp_artwork_paths(list(self._track_artwork_edits.values()))
             self._track_edits.clear()
             self._track_artwork_edits.clear()
+            self._quick_write_revision += 1
             from iopenpod.sync.photos import PhotoEditState
 
             self._photo_edits = PhotoEditState()
@@ -1029,6 +1033,7 @@ class iTunesDBCache(QObject):
                         break
                 if not replaced:
                     self._user_playlists.append(target_playlist)
+            self._quick_write_revision += 1
 
         logger.info(
             "User playlist saved: '%s' (id=0x%016X, row_count=%d, new=%s)",
@@ -1097,6 +1102,8 @@ class iTunesDBCache(QObject):
                     if len(kept) != len(bucket):
                         data[key] = kept
                         removed = True
+            if removed:
+                self._quick_write_revision += 1
         if removed:
             self.playlists_changed.emit()
         return removed
@@ -1112,6 +1119,8 @@ class iTunesDBCache(QObject):
                     if playlist.get("master_flag"):
                         playlist["Title"] = new_name
                         renamed = True
+            if renamed:
+                self._quick_write_revision += 1
         if renamed:
             self.playlists_changed.emit()
         return renamed
@@ -1202,6 +1211,7 @@ class iTunesDBCache(QObject):
 
     def update_track_flags(self, tracks: list[dict], changes: dict) -> None:
         with self._lock:
+            edited = False
             for track in tracks:
                 db_track_id = track.get("db_track_id", track.get("db_id", 0))
                 if not db_track_id:
@@ -1214,6 +1224,10 @@ class iTunesDBCache(QObject):
                     else:
                         edits[key] = (track.get(key), value)
                     track[key] = value
+                    edited = True
+
+            if edited:
+                self._quick_write_revision += 1
 
             if self._data is not None:
                 (
@@ -1229,6 +1243,7 @@ class iTunesDBCache(QObject):
             len(tracks),
             ", ".join(f"{key}={value}" for key, value in changes.items()),
         )
+        self.track_fields_changed.emit(frozenset(changes))
         self.tracks_changed.emit()
 
     def update_track_flags_by_track(self, tracks: list[dict], changes_by_track: dict[int, dict]) -> None:
@@ -1253,6 +1268,9 @@ class iTunesDBCache(QObject):
                     field_counts[key] += 1
                 edited += 1
 
+            if edited:
+                self._quick_write_revision += 1
+
             if self._data is not None:
                 (
                     self._album_index,
@@ -1268,6 +1286,7 @@ class iTunesDBCache(QObject):
             ", ".join(f"{key}={count}" for key, count in sorted(field_counts.items())),
         )
         if edited:
+            self.track_fields_changed.emit(frozenset(field_counts))
             self.tracks_changed.emit()
 
     def update_track_artwork(self, tracks: list[dict], image_path: str) -> None:
@@ -1291,7 +1310,11 @@ class iTunesDBCache(QObject):
                 track["_iop_pending_artwork_path"] = image_path
                 edited += 1
 
+            if edited:
+                self._quick_write_revision += 1
+
         logger.info("Track artwork updated on %d track(s): %s", edited, image_path)
+        self.track_fields_changed.emit(frozenset({"artwork"}))
         self.tracks_changed.emit()
 
     def get_track_edits(self) -> dict[int, dict[str, tuple]]:
@@ -1335,6 +1358,35 @@ class iTunesDBCache(QObject):
             self._user_playlists.clear()
             self._track_edits.clear()
             self._track_artwork_edits.clear()
+            self._quick_write_revision += 1
+
+    def get_quick_write_revision(self) -> int:
+        with self._lock:
+            return self._quick_write_revision
+
+    def capture_quick_write_state(self) -> QuickWriteSnapshot:
+        """Atomically copy staged iTunesDB inputs and their cache revision."""
+        with self._lock:
+            return QuickWriteSnapshot(
+                tracks=copy.deepcopy(self.get_tracks()),
+                playlists=copy.deepcopy(self.get_playlists()),
+                track_edits=copy.deepcopy(self._track_edits),
+                artwork_sources=copy.deepcopy(self._track_artwork_edits),
+                revision=self._quick_write_revision,
+            )
+
+    def commit_quick_write_state(self, expected_revision: int) -> bool:
+        """Finalize an unchanged quick-write snapshot without reparsing."""
+        with self._lock:
+            if expected_revision != self._quick_write_revision:
+                return False
+            self.commit_user_playlists()
+            _cleanup_temp_artwork_paths(list(self._track_artwork_edits.values()))
+            self._track_edits.clear()
+            self._track_artwork_edits.clear()
+            self._quick_write_revision += 1
+
+        return True
 
     def reload_after_itunesdb_write(self) -> None:
         """Clear committed iTunesDB staging and reload the device database."""

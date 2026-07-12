@@ -69,6 +69,7 @@ from .formatters import (
 )
 from .MBListView import MusicBrowserList
 from .playlistEditor import NewPlaylistDialog, RegularPlaylistEditor, SmartPlaylistEditor
+from .sidebarNavButton import SidebarNavButton
 from .trackListTitleBar import TrackListTitleBar
 
 log = logging.getLogger(__name__)
@@ -1244,8 +1245,7 @@ class PlaylistListPanel(QFrame):
         if count > 0:
             btn_text += f"  ({count})"
 
-        btn = QPushButton(btn_text)
-        btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
+        btn = SidebarNavButton(btn_text)
         btn.setToolTip(f"{title}\n{count} tracks\n{_mhsd_type_label(playlist)}")
 
         fg = Colors.TEXT_DISABLED if dimmed else Colors.TEXT_PRIMARY

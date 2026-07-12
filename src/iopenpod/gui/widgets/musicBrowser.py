@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import QSize, Qt, QTimer, pyqtSignal
@@ -223,7 +224,11 @@ class MusicBrowser(QFrame):
         try:
             cache = self._library_cache
             cache.playlists_changed.connect(self._on_playlists_changed)
-            cache.tracks_changed.connect(self._on_tracks_changed)
+            track_fields_changed = getattr(cache, "track_fields_changed", None)
+            if track_fields_changed is not None:
+                track_fields_changed.connect(self._on_track_fields_changed)
+            else:
+                cache.tracks_changed.connect(self._on_tracks_changed)
             cache.photos_changed.connect(lambda: self._mark_tab_dirty("Photos"))
         except Exception:
             pass
@@ -236,11 +241,42 @@ class MusicBrowser(QFrame):
             self._tab_dirty["Playlists"] = False
 
     def _on_tracks_changed(self) -> None:
-        """Refresh the active browser state after in-place track metadata edits."""
+        """Conservatively refresh for caches without field-aware signals."""
         self._mark_tab_dirty("Playlists")
         self._mark_tab_dirty("Podcasts")
         if self._current_category != "Photos":
             self._schedule_refresh_current_category()
+
+    def _on_track_fields_changed(self, fields: object) -> None:
+        """Apply track edits in place unless they change grid grouping or artwork."""
+        self._mark_tab_dirty("Playlists")
+        self._mark_tab_dirty("Podcasts")
+        if self._current_category == "Photos":
+            return
+
+        field_values: Iterable[object]
+        if isinstance(fields, (set, frozenset, list, tuple)):
+            field_values = fields
+        else:
+            field_values = ()
+        changed_fields = {
+            str(field).strip().lower().replace("-", "_").replace(" ", "_")
+            for field in field_values
+        }
+        grid_fields = {
+            "album",
+            "album_artist",
+            "artist",
+            "genre",
+            "compilation",
+            "compilation_flag",
+            "artwork",
+        }
+        if changed_fields & grid_fields:
+            self._schedule_refresh_current_category()
+            return
+
+        self.browserTrack._refresh_visible_rows()
 
     def _mark_tab_dirty(self, tab_name: str) -> None:
         if tab_name in self._tab_dirty:

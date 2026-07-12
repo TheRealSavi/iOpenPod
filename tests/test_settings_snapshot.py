@@ -1,4 +1,5 @@
 from dataclasses import FrozenInstanceError
+from typing import Any, cast
 
 import pytest
 
@@ -26,6 +27,7 @@ def test_settings_snapshot_copies_values_and_freezes_lists() -> None:
         player_position="top",
         rounded_artwork=True,
         sharpen_artwork=False,
+        grid_item_size="small",
         track_list_columns_by_content={
             "music": {"Title": 240, "Album": 180, "Artist": 160}
         },
@@ -45,7 +47,7 @@ def test_settings_snapshot_copies_values_and_freezes_lists() -> None:
         backup_before_sync_mode="ask",
     )
 
-    snapshot = SettingsSnapshot.from_settings(settings)
+    snapshot = SettingsSnapshot.from_settings(cast(Any, settings))
 
     assert snapshot.media_folder == "C:/Music"
     assert snapshot.media_folders == (
@@ -65,6 +67,7 @@ def test_settings_snapshot_copies_values_and_freezes_lists() -> None:
     assert snapshot.player_position == "top"
     assert snapshot.rounded_artwork is True
     assert snapshot.sharpen_artwork is False
+    assert snapshot.grid_item_size == "small"
     assert snapshot.track_list_columns_by_content == {
         "music": {"Title": 240, "Album": 180, "Artist": 160}
     }

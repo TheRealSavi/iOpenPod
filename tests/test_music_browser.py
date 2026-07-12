@@ -17,6 +17,7 @@ from iopenpod.gui.widgets.trackListTitleBar import TrackListTitleBar, _resolve_b
 
 def _build_browser(category: str = "Albums") -> Any:
     scheduled: list[str] = []
+    visible_row_refreshes: list[str] = []
     browser = SimpleNamespace(
         _current_category=category,
         _tab_dirty={
@@ -25,31 +26,54 @@ def _build_browser(category: str = "Albums") -> Any:
             "Photos": False,
         },
         _schedule_refresh_current_category=lambda: scheduled.append("refresh"),
+        browserTrack=SimpleNamespace(
+            _refresh_visible_rows=lambda: visible_row_refreshes.append("rows")
+        ),
     )
     browser._mark_tab_dirty = MusicBrowser._mark_tab_dirty.__get__(browser)
-    return cast(Any, browser), scheduled
+    return cast(Any, browser), scheduled, visible_row_refreshes
 
 
-def test_track_edits_mark_related_tabs_dirty_and_refresh_current_category() -> None:
-    browser, scheduled = _build_browser("Albums")
+def test_rating_edit_refreshes_visible_rows_without_reloading_album_grid() -> None:
+    browser, scheduled, visible_row_refreshes = _build_browser("Albums")
 
-    MusicBrowser._on_tracks_changed(browser)
+    MusicBrowser._on_track_fields_changed(browser, {"rating"})
 
     assert browser._tab_dirty["Playlists"] is True
     assert browser._tab_dirty["Podcasts"] is True
-    assert browser._tab_dirty["Photos"] is False
+    assert scheduled == []
+    assert visible_row_refreshes == ["rows"]
+
+
+def test_album_edit_reloads_album_grid() -> None:
+    browser, scheduled, visible_row_refreshes = _build_browser("Albums")
+
+    MusicBrowser._on_track_fields_changed(browser, {"album"})
+
     assert scheduled == ["refresh"]
+    assert visible_row_refreshes == []
+
+
+def test_production_grouping_field_names_reload_grid() -> None:
+    for field_name in ("Album Artist", "compilation_flag"):
+        browser, scheduled, visible_row_refreshes = _build_browser("Albums")
+
+        MusicBrowser._on_track_fields_changed(browser, {field_name})
+
+        assert scheduled == ["refresh"]
+        assert visible_row_refreshes == []
 
 
 def test_track_edits_do_not_reload_photo_browser() -> None:
-    browser, scheduled = _build_browser("Photos")
+    browser, scheduled, visible_row_refreshes = _build_browser("Photos")
 
-    MusicBrowser._on_tracks_changed(browser)
+    MusicBrowser._on_track_fields_changed(browser, {"rating"})
 
     assert browser._tab_dirty["Playlists"] is True
     assert browser._tab_dirty["Podcasts"] is True
     assert browser._tab_dirty["Photos"] is False
     assert scheduled == []
+    assert visible_row_refreshes == []
 
 
 def test_context_menu_css_styles_disabled_rows_and_icon_gutter() -> None:

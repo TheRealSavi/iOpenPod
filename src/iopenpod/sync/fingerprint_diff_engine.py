@@ -64,6 +64,14 @@ logger = logging.getLogger(__name__)
 _MP4_CONTAINER_EXTS = {".m4a", ".m4b", ".mp4", ".m4v", ".mov"}
 
 
+def _fingerprint_worker_count(sync_workers: int, tracks: list[PCTrack]) -> int:
+    """Keep video decoding serial so large media cannot saturate the machine."""
+    requested = max(1, min(sync_workers or (os.cpu_count() or 4), 8))
+    if any(track.is_video for track in tracks):
+        return 1
+    return requested
+
+
 # ─── Storage Estimation ───────────────────────────────────────────────────────
 
 def estimate_transcode_size(
@@ -366,7 +374,7 @@ class FingerprintDiffEngine:
 
         # Parallel fingerprinting — fpcalc is a subprocess so threading
         # scales well.  Respect the user's sync_workers setting.
-        fp_workers = min(sync_workers or (os.cpu_count() or 4), 8)
+        fp_workers = _fingerprint_worker_count(sync_workers, pc_tracks)
 
         completed = 0
         completed_lock = threading.Lock()

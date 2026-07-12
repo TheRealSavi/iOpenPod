@@ -177,6 +177,7 @@ class QuickWriteController(QObject):
         self._quick_worker: QThread | None = None
         self._active_write_has_track_edits = False
         self._active_write_has_playlists = False
+        self._force_snapshot_write = False
 
         self._metadata_timer = QTimer(self)
         self._metadata_timer.setSingleShot(True)
@@ -213,7 +214,7 @@ class QuickWriteController(QObject):
 
         has_track_edits = self._library_cache.has_pending_track_edits()
         has_playlists = self._library_cache.has_pending_playlists()
-        if not has_track_edits and not has_playlists:
+        if not has_track_edits and not has_playlists and not self._force_snapshot_write:
             return
 
         ipod_path = self._device_manager.device_path
@@ -223,7 +224,12 @@ class QuickWriteController(QObject):
         edits = self._library_cache.get_track_edits()
         artwork_edits = self._library_cache.get_track_artwork_edits()
         user_playlists = self._library_cache.get_user_playlists()
-        if not edits and not artwork_edits and not user_playlists:
+        if (
+            not edits
+            and not artwork_edits
+            and not user_playlists
+            and not self._force_snapshot_write
+        ):
             return
 
         logger.info(
@@ -240,6 +246,7 @@ class QuickWriteController(QObject):
             ipod_path=ipod_path,
             cache=self._library_cache,
         )
+        self._force_snapshot_write = False
         self._quick_worker = worker
         worker.completed.connect(self._on_quick_write_done)
         worker.error.connect(self._on_quick_write_error)
@@ -296,7 +303,12 @@ class QuickWriteController(QObject):
             self._quick_worker = None
         if result.success:
             logger.info("Quick write completed successfully")
-            self.save_status_changed.emit("saved")
+            if getattr(result, "newer_changes_pending", False):
+                self._force_snapshot_write = True
+                self.save_status_changed.emit("saving")
+                self._metadata_timer.start(0)
+            else:
+                self.save_status_changed.emit("saved")
         else:
             errors = "; ".join(msg for _, msg in getattr(result, "errors", []))
             if not errors:

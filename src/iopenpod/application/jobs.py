@@ -34,6 +34,7 @@ if TYPE_CHECKING:
         DeviceCapabilitySnapshot,
         DeviceIdentitySnapshot,
         LibraryCacheLike,
+        QuickWriteSnapshot,
     )
 
 logger = logging.getLogger(__name__)
@@ -1836,13 +1837,37 @@ def _reload_after_itunesdb_write(cache: LibraryCacheLike) -> None:
 def _snapshot_cache_for_itunesdb_write(
     cache: LibraryCacheLike,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[int, str]]:
-    tracks = copy.deepcopy(cache.get_tracks())
-    track_edits_getter = getattr(cache, "get_track_edits", None)
-    track_edits = (
-        cast(Mapping[Any, Mapping[str, Any]], track_edits_getter())
-        if callable(track_edits_getter)
-        else {}
+    tracks, playlists, artwork_sources, _revision = (
+        _capture_cache_for_itunesdb_write(cache)
     )
+    return tracks, playlists, artwork_sources
+
+
+def _capture_cache_for_itunesdb_write(
+    cache: LibraryCacheLike,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[int, str], int]:
+    capture = getattr(cache, "capture_quick_write_state", None)
+    if callable(capture):
+        capture_snapshot = cast("Callable[[], QuickWriteSnapshot]", capture)
+        snapshot = capture_snapshot()
+        tracks = snapshot.tracks
+        playlists = snapshot.playlists
+        raw_track_edits: object = snapshot.track_edits
+        artwork_sources = snapshot.artwork_sources
+        revision_value: SupportsInt = snapshot.revision
+    else:
+        tracks = copy.deepcopy(cache.get_tracks())
+        playlists = copy.deepcopy(cache.get_playlists())
+        track_edits_getter = getattr(cache, "get_track_edits", None)
+        raw_track_edits = track_edits_getter() if callable(track_edits_getter) else {}
+        artwork_sources = copy.deepcopy(cache.get_track_artwork_edits())
+        revision_getter = getattr(cache, "get_quick_write_revision", None)
+        if callable(revision_getter):
+            get_revision = cast("Callable[[], SupportsInt]", revision_getter)
+            revision_value = get_revision()
+        else:
+            revision_value = 0
+    track_edits = cast(Mapping[Any, Mapping[str, Any]], raw_track_edits)
     if track_edits:
         tracks_by_db_track_id = {
             _track_db_track_id(track): track
@@ -1862,11 +1887,9 @@ def _snapshot_cache_for_itunesdb_write(
                     track[field] = change[1]
                 else:
                     track[field] = change
-    artwork_sources = copy.deepcopy(cache.get_track_artwork_edits())
     for track in tracks:
         track.pop("_iop_pending_artwork_path", None)
-    playlists = copy.deepcopy(cache.get_playlists())
-    return tracks, playlists, artwork_sources
+    return tracks, playlists, artwork_sources, int(revision_value)
 
 
 def _engine_quick_write(
@@ -1911,7 +1934,8 @@ class QuickWriteWorker(QThread):
             self._tracks_data,
             self._playlists_data,
             self._artwork_sources,
-        ) = _snapshot_cache_for_itunesdb_write(cache)
+            self._cache_revision,
+        ) = _capture_cache_for_itunesdb_write(cache)
 
     def run(self) -> None:
         try:
@@ -1922,7 +1946,15 @@ class QuickWriteWorker(QThread):
                 artwork_sources=self._artwork_sources,
             )
 
-            _reload_after_itunesdb_write(self._cache)
+            if result.success and not self._artwork_sources:
+                result.newer_changes_pending = not self._cache.commit_quick_write_state(
+                    self._cache_revision
+                )
+            else:
+                # Failed writes need disk authority restored. Artwork writes also
+                # change ArtworkDB references that the live track cache cannot
+                # safely reconcile yet.
+                _reload_after_itunesdb_write(self._cache)
             self.completed.emit(result)
         except Exception as exc:
             logger.exception("QuickWriteWorker failed")

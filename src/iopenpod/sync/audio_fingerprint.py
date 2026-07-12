@@ -19,12 +19,19 @@ import shutil
 import subprocess
 import sys
 import threading
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
 # Prevents console windows from flashing on Windows during subprocess calls
 _SP_KWARGS: dict = (
-    {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
+    {
+        "creationflags": (
+            subprocess.CREATE_NO_WINDOW | subprocess.BELOW_NORMAL_PRIORITY_CLASS
+        )
+    }
+    if sys.platform == "win32"
+    else {}
 )
 
 try:
@@ -54,6 +61,14 @@ logger = logging.getLogger(__name__)
 # Tag names for storing fingerprint in different formats
 FINGERPRINT_TAG = "ACOUSTID_FINGERPRINT"
 FINGERPRINT_TAG_MP4 = "----:com.apple.iTunes:ACOUSTID_FINGERPRINT"
+_FAILED_FINGERPRINT = "__iopenpod_unfingerprintable__"
+_FINGERPRINT_LENGTH_SECONDS = 120
+
+
+@dataclass(frozen=True)
+class _FingerprintResult:
+    fingerprint: str | None
+    deterministic_failure: bool = False
 
 
 class FingerprintCache:
@@ -191,30 +206,31 @@ def find_fpcalc(fpcalc_path: str | None = None) -> str | None:
     return None
 
 
-def compute_fingerprint(filepath: str | Path, fpcalc_path: str | None = None) -> str | None:
-    """
-    Compute acoustic fingerprint using Chromaprint's fpcalc.
+def _compute_fingerprint_result(
+    filepath: str | Path,
+    fpcalc_path: str | None = None,
+) -> _FingerprintResult:
+    """Compute a fingerprint and classify whether a failure is media-specific."""
 
-    Args:
-        filepath: Path to audio file
-        fpcalc_path: Optional path to fpcalc binary
-
-    Returns:
-        Fingerprint string, or None if computation failed
-    """
     filepath = Path(filepath)
     if not filepath.exists():
         logger.error(f"File not found: {filepath}")
-        return None
+        return _FingerprintResult(None)
 
     fpcalc = fpcalc_path or find_fpcalc()
     if not fpcalc:
         logger.error("fpcalc not found. Install Chromaprint: https://acoustid.org/chromaprint")
-        return None
+        return _FingerprintResult(None)
 
     try:
         result = subprocess.run(
-            [fpcalc, "-raw", str(filepath)],
+            [
+                fpcalc,
+                "-raw",
+                "-length",
+                str(_FINGERPRINT_LENGTH_SECONDS),
+                str(filepath),
+            ],
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -231,9 +247,10 @@ def compute_fingerprint(filepath: str | Path, fpcalc_path: str | None = None) ->
                     "(silent, empty, or unsupported media).",
                     filepath.name,
                 )
+                return _FingerprintResult(None, deterministic_failure=True)
             else:
                 logger.error(f"fpcalc failed for {filepath}: {stderr}")
-            return None
+            return _FingerprintResult(None)
 
         # Parse output: DURATION=123\nFINGERPRINT=abc123...
         fingerprint = None
@@ -247,16 +264,21 @@ def compute_fingerprint(filepath: str | Path, fpcalc_path: str | None = None) ->
                 "Fingerprint unavailable for %s: fpcalc produced no fingerprint output",
                 filepath.name,
             )
-            return None
+            return _FingerprintResult(None, deterministic_failure=True)
 
-        return fingerprint
+        return _FingerprintResult(fingerprint)
 
     except subprocess.TimeoutExpired:
         logger.error(f"fpcalc timed out for {filepath}")
-        return None
+        return _FingerprintResult(None)
     except Exception as e:
         logger.error(f"Error computing fingerprint for {filepath}: {e}")
-        return None
+        return _FingerprintResult(None)
+
+
+def compute_fingerprint(filepath: str | Path, fpcalc_path: str | None = None) -> str | None:
+    """Compute an acoustic fingerprint using Chromaprint's fpcalc."""
+    return _compute_fingerprint_result(filepath, fpcalc_path).fingerprint
 
 
 def read_fingerprint(filepath: str | Path) -> str | None:
@@ -425,6 +447,8 @@ def get_or_compute_fingerprint_with_status(
     # 1. Check filesystem cache (no file I/O needed)
     cached = cache.lookup(filepath)
     if cached:
+        if cached == _FAILED_FINGERPRINT:
+            return None, "failed"
         if _is_raw_fingerprint(cached):
             return cached, "cache"
         logger.debug(
@@ -444,8 +468,11 @@ def get_or_compute_fingerprint_with_status(
         )
 
     # 3. Compute new fingerprint
-    fingerprint = compute_fingerprint(filepath, fpcalc_path)
+    result = _compute_fingerprint_result(filepath, fpcalc_path)
+    fingerprint = result.fingerprint
     if not fingerprint:
+        if result.deterministic_failure:
+            cache.store(filepath, _FAILED_FINGERPRINT)
         return None, "failed"
 
     # Optionally store in file metadata

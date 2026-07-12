@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import os
 import re
 import shutil
 from collections import deque
@@ -23,6 +24,7 @@ from PyQt6.QtWidgets import (
 )
 
 from iopenpod.device.artwork import ITHMB_FORMAT_MAP
+from iopenpod.sync import photos as photo_sync
 from iopenpod.sync.photos import (
     PhotoDB,
     PhotoEditState,
@@ -56,6 +58,7 @@ from .formatters import format_size
 from .gridHeaderBar import GridHeaderBar
 from .photoViewer import PhotoViewerPane
 from .pooledGrid import GridItemModel, PooledGridView
+from .sidebarNavButton import SidebarNavButton
 
 if TYPE_CHECKING:
     from iopenpod.application.services import (
@@ -243,6 +246,65 @@ class _PhotoWriteWorker(QThread):
         )
         return photodb
 
+    def _rename_photo_fast_path(self) -> PhotoDB:
+        if self._image_id is None:
+            raise RuntimeError("No device photo selected.")
+
+        new_stem = _safe_photo_stem(self._new_name, "")
+        if not new_stem:
+            raise RuntimeError("Photo name cannot be empty.")
+
+        photodb = copy.deepcopy(self._device_photos)
+        photo = photodb.photos.get(self._image_id)
+        if photo is None:
+            raise RuntimeError("Selected photo could not be resolved on the iPod.")
+
+        old_path: Path | None = None
+        new_path: Path | None = None
+        if photo.full_res_path:
+            old_path = Path(self._ipod_path) / "Photos" / Path(photo.full_res_path)
+            new_path = old_path.with_name(f"{new_stem}{old_path.suffix}")
+            same_location = os.path.normcase(str(new_path)) == os.path.normcase(str(old_path))
+            if not same_location and new_path.exists():
+                raise RuntimeError(f"A photo named '{new_path.name}' already exists.")
+            if old_path.exists() and old_path.name != new_path.name:
+                rename_source = old_path
+                if same_location:
+                    rename_source = old_path.with_name(f".{old_path.name}.rename-tmp")
+                    rename_source.unlink(missing_ok=True)
+                    old_path.rename(rename_source)
+                rename_source.rename(new_path)
+                photo.full_res_path = Path(
+                    photo.full_res_path
+                ).with_name(new_path.name).as_posix()
+
+        photo.display_name = f"{new_stem}{new_path.suffix if new_path else ''}"
+        metadata_paths = (
+            photo_sync._photo_db_path(self._ipod_path),
+            photo_sync._photo_mapping_path(self._ipod_path),
+        )
+        metadata_backups = {
+            path: path.read_bytes() if path.exists() else None
+            for path in metadata_paths
+        }
+        try:
+            write_photo_db_metadata_only(
+                self._ipod_path,
+                photodb,
+                sync_settings=self._sync_settings,
+            )
+        except Exception:
+            for path, contents in metadata_backups.items():
+                if contents is None:
+                    path.unlink(missing_ok=True)
+                else:
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes(contents)
+            if old_path is not None and new_path is not None and new_path.exists():
+                new_path.rename(old_path)
+            raise
+        return photodb
+
     def _resolve_photo_for_membership_action(self) -> PhotoEntry:
         if self._image_id is None:
             raise RuntimeError("No device photo selected.")
@@ -305,6 +367,10 @@ class _PhotoWriteWorker(QThread):
         try:
             if self._action == "delete_photo":
                 photodb = self._delete_photo_fast_path()
+                self.finished_ok.emit(photodb)
+                return
+            if self._action == "rename_photo":
+                photodb = self._rename_photo_fast_path()
                 self.finished_ok.emit(photodb)
                 return
 
@@ -626,6 +692,10 @@ class PhotoBrowserWidget(QFrame):
         return f"{album_names[0]}, {album_names[1]} +{len(album_names) - 2} more"
 
     def _device_photo_title(self, photo: PhotoEntry) -> str:
+        if photo.display_name:
+            display_stem = Path(photo.display_name).stem
+            if display_stem:
+                return display_stem
         if photo.full_res_path:
             stem = Path(photo.full_res_path).stem
             image_suffix = f"_{photo.image_id:05d}"
@@ -1178,9 +1248,8 @@ class PhotoBrowserWidget(QFrame):
         self._album_inner_layout.addStretch()
 
     def _add_album_button(self, name: str):
-        btn = QPushButton(name, self._album_inner)
+        btn = SidebarNavButton(name, self._album_inner)
         btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
         btn.setStyleSheet(sidebar_nav_css())
         btn.clicked.connect(lambda _checked=False, album_name=name: self._on_album_changed(album_name))
         btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -1271,6 +1340,13 @@ class PhotoBrowserWidget(QFrame):
             enabled=not actions_locked,
         )
 
+        rename_action = self._add_menu_action(
+            menu,
+            "Rename Photo",
+            glyph_name="edit",
+            enabled=not actions_locked,
+        )
+
         chosen = menu.exec(global_pos)
         if chosen == export_action and export_action.isEnabled():
             self._export_current_photo()
@@ -1284,6 +1360,8 @@ class PhotoBrowserWidget(QFrame):
             self._remove_from_album()
         elif chosen == delete_action and delete_action.isEnabled():
             self._delete_photo()
+        elif chosen == rename_action and rename_action.isEnabled():
+            self._rename_photo()
 
     def _on_album_context_requested(self, album_name: str, global_pos) -> None:
         menu = QMenu(self)
@@ -1719,3 +1797,21 @@ class PhotoBrowserWidget(QFrame):
             f"Delete '{self._device_photo_title(photo)}' from the iPod now?",
         ) == QMessageBox.StandardButton.Yes:
             self._start_photo_write("delete_photo", image_id=photo.image_id)
+
+    def _rename_photo(self) -> None:
+        _key, photo = self._current_photo()
+        if photo is None:
+            return
+        current = self._device_photo_title(photo)
+        new_name, ok = QInputDialog.getText(
+            self,
+            "Rename Photo",
+            "New photo name:",
+            text=current,
+        )
+        if ok and new_name.strip() and new_name.strip() != current:
+            self._start_photo_write(
+                "rename_photo",
+                image_id=photo.image_id,
+                new_name=new_name.strip(),
+            )

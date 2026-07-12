@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from types import SimpleNamespace
 from typing import cast
 
@@ -312,6 +313,40 @@ def test_music_player_bar_derives_chrome_from_active_theme(qtbot) -> None:
         assert "#f6f7f8" not in dark_styles
     finally:
         _restore_color_state(color_snapshot)
+
+
+def test_music_player_slider_handle_stays_round_in_every_interaction_state() -> None:
+    css = MusicPlayerBar._themed_slider_css(
+        handle_size=14,
+        groove_height=4,
+        colors={
+            "accent": "#1a1a1a",
+            "border": "#2a2a2a",
+            "border_subtle": "#3a3a3a",
+            "disabled": "#4a4a4a",
+            "groove_bottom": "#5a5a5a",
+            "groove_fill_bottom": "#6a6a6a",
+            "groove_fill_top": "#7a7a7a",
+            "groove_mid": "#8a8a8a",
+            "groove_top": "#9a9a9a",
+            "handle_bottom": "#aaaaaa",
+            "handle_mid": "#bababa",
+            "handle_top": "#cacaca",
+        },
+    )
+
+    for state in ("", ":hover", ":pressed", ":disabled"):
+        match = re.search(
+            rf"QSlider::handle:horizontal{state}\s*\{{(?P<body>.*?)\}}",
+            css,
+            re.DOTALL,
+        )
+        assert match is not None
+        body = match.group("body")
+        assert "width: 14px;" in body
+        assert "height: 14px;" in body
+        assert "margin: -5px 0;" in body
+        assert "border-radius: 7px;" in body
 
 
 def test_music_player_artwork_contains_wide_images_without_cover_crop(qtbot) -> None:

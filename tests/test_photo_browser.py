@@ -209,6 +209,164 @@ def test_photo_context_menu_export_dispatches_current_photo_action(monkeypatch):
     assert calls == ["export"]
 
 
+def test_photo_context_menu_rename_dispatches_current_photo_action(monkeypatch):
+    _patch_menu(monkeypatch, choose_label="Rename Photo")
+    calls: list[str] = []
+    browser = SimpleNamespace(
+        _filtered_items=[(101, _photo())],
+        photo_grid=SimpleNamespace(setCurrentIndex=lambda _index: None),
+        _photo_actions_locked=lambda: False,
+        _available_album_targets=lambda _photo: [],
+        _selected_album_target=lambda: "",
+        _set_menu_icon=lambda *_args: None,
+        _rename_photo=lambda: calls.append("rename"),
+        _add_to_album=lambda: calls.append("add"),
+        _remove_from_album=lambda: calls.append("remove"),
+        _delete_photo=lambda: calls.append("delete"),
+    )
+    _attach_menu_action_helper(browser)
+
+    PhotoBrowserWidget._on_photo_context_requested(
+        cast(Any, browser),
+        101,
+        0,
+        QPoint(1, 2),
+    )
+
+    assert calls == ["rename"]
+
+
+def test_photo_write_worker_renames_full_resolution_file_and_metadata(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "ipod"
+    old_path = root / "Photos" / "Full Resolution" / "old_name.jpg"
+    old_path.parent.mkdir(parents=True)
+    old_path.write_bytes(b"photo")
+    photodb = photo_browser_module.PhotoDB(
+        photos={
+            101: PhotoEntry(
+                image_id=101,
+                display_name="old_name.jpg",
+                full_res_path="Full Resolution/old_name.jpg",
+            )
+        }
+    )
+    written: list[PhotoEntry] = []
+
+    def fake_write(_root, db, **_kwargs):
+        written.append(db.photos[101])
+
+    monkeypatch.setattr(photo_browser_module, "write_photo_db_metadata_only", fake_write)
+    worker = photo_browser_module._PhotoWriteWorker(
+        str(root),
+        photodb,
+        "rename_photo",
+        image_id=101,
+        new_name="Sunset",
+    )
+    worker.run()
+
+    renamed = root / "Photos" / "Full Resolution" / "Sunset.jpg"
+    assert renamed.read_bytes() == b"photo"
+    assert not old_path.exists()
+    assert written[0].display_name == "Sunset.jpg"
+    assert written[0].full_res_path == "Full Resolution/Sunset.jpg"
+
+
+def test_photo_write_worker_rejects_rename_collision(tmp_path: Path) -> None:
+    root = tmp_path / "ipod"
+    photo_dir = root / "Photos" / "Full Resolution"
+    photo_dir.mkdir(parents=True)
+    old_path = photo_dir / "old_name.jpg"
+    old_path.write_bytes(b"old")
+    (photo_dir / "Sunset.jpg").write_bytes(b"existing")
+    photodb = photo_browser_module.PhotoDB(
+        photos={
+            101: PhotoEntry(
+                image_id=101,
+                display_name="old_name.jpg",
+                full_res_path="Full Resolution/old_name.jpg",
+            )
+        }
+    )
+    errors: list[str] = []
+    worker = photo_browser_module._PhotoWriteWorker(
+        str(root), photodb, "rename_photo", image_id=101, new_name="Sunset"
+    )
+    worker.failed.connect(errors.append)
+    worker.run()
+
+    assert errors and "already exists" in errors[0]
+    assert old_path.read_bytes() == b"old"
+
+
+def test_photo_write_worker_rolls_back_file_and_metadata_on_write_failure(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "ipod"
+    old_path = root / "Photos" / "Full Resolution" / "old_name.jpg"
+    old_path.parent.mkdir(parents=True)
+    old_path.write_bytes(b"photo")
+    db_path = root / "Photos" / "Photo Database"
+    db_path.write_bytes(b"old-db")
+    photodb = photo_browser_module.PhotoDB(
+        photos={
+            101: PhotoEntry(
+                image_id=101,
+                display_name="old_name.jpg",
+                full_res_path="Full Resolution/old_name.jpg",
+            )
+        }
+    )
+
+    def fake_write(_root, _db, **_kwargs):
+        db_path.write_bytes(b"new-db")
+        raise OSError("mapping disk full")
+
+    monkeypatch.setattr(photo_browser_module, "write_photo_db_metadata_only", fake_write)
+    errors: list[str] = []
+    worker = photo_browser_module._PhotoWriteWorker(
+        str(root), photodb, "rename_photo", image_id=101, new_name="Sunset"
+    )
+    worker.failed.connect(errors.append)
+    worker.run()
+
+    assert errors
+    assert old_path.read_bytes() == b"photo"
+    assert not (old_path.parent / "Sunset.jpg").exists()
+    assert db_path.read_bytes() == b"old-db"
+
+
+def test_photo_write_worker_allows_case_only_rename(monkeypatch, tmp_path: Path) -> None:
+    root = tmp_path / "ipod"
+    old_path = root / "Photos" / "Full Resolution" / "sunset.jpg"
+    old_path.parent.mkdir(parents=True)
+    old_path.write_bytes(b"photo")
+    photodb = photo_browser_module.PhotoDB(
+        photos={
+            101: PhotoEntry(
+                image_id=101,
+                display_name="sunset.jpg",
+                full_res_path="Full Resolution/sunset.jpg",
+            )
+        }
+    )
+    monkeypatch.setattr(
+        photo_browser_module,
+        "write_photo_db_metadata_only",
+        lambda *_args, **_kwargs: None,
+    )
+    worker = photo_browser_module._PhotoWriteWorker(
+        str(root), photodb, "rename_photo", image_id=101, new_name="Sunset"
+    )
+    worker.run()
+
+    assert (old_path.parent / "Sunset.jpg").read_bytes() == b"photo"
+
+
 def test_album_context_menu_export_targets_right_clicked_album(monkeypatch):
     _patch_menu(monkeypatch, choose_label="Export Album...")
     calls: list[tuple[str, str]] = []

@@ -99,3 +99,36 @@ def test_device_settings_migrates_legacy_backup_false_to_ask(monkeypatch) -> Non
 
     assert loaded.settings.backup_before_sync_mode == "ask"
     assert loaded.settings.backup_before_sync is False
+
+
+def test_grid_item_size_is_global_only_and_ignores_legacy_device_value(
+    monkeypatch,
+) -> None:
+    with repo_temp_dir() as tmp_path:
+        monkeypatch.setattr(settings_runtime, "_clear_transcoder_caches", lambda: None)
+        settings_path = (
+            tmp_path / "iPod_Control" / "iOpenPod" / "settings.json"
+        )
+        settings_path.parent.mkdir(parents=True)
+        settings_path.write_text(
+            json.dumps(
+                {
+                    "use_global_settings": False,
+                    "settings": {
+                        "grid_item_size": "large",
+                        "sync_workers": 2,
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        runtime = SettingsRuntime()
+
+        loaded = runtime.load_device_settings(
+            str(tmp_path),
+            "",
+            AppSettings(grid_item_size="small", sync_workers=6),
+        )
+
+    assert loaded.settings.grid_item_size == "small"
+    assert loaded.settings.sync_workers == 2

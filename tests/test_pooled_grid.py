@@ -4,6 +4,7 @@ from PyQt6.QtCore import QPoint, Qt
 from PyQt6.QtGui import QColor, QContextMenuEvent, QPixmap
 from PyQt6.QtWidgets import QApplication, QScrollArea
 
+from iopenpod.gui.styles import Metrics
 from iopenpod.gui.widgets.gridItem import GridItem
 from iopenpod.gui.widgets.pooledGrid import GridItemModel, PooledGridView
 
@@ -24,6 +25,24 @@ def _solid_pixmap(rgb: tuple[int, int, int]) -> QPixmap:
     pixmap = QPixmap(48, 48)
     pixmap.fill(QColor(*rgb))
     return pixmap
+
+
+def test_grid_size_preset_controls_shared_music_and_photo_card_geometry(qtbot):
+    try:
+        Metrics.apply_grid_item_scale("small")
+        small_item = GridItem()
+        qtbot.addWidget(small_item)
+
+        assert small_item.width() == Metrics.GRID_ITEM_W == 185
+        assert small_item.height() == Metrics.GRID_ITEM_H == 235
+        assert small_item.image_label.width() == Metrics.GRID_ART_SIZE == 169
+
+        grid = _mount_grid(qtbot)
+        grid.setRecords([GridItemModel(key="photo", title="Photo")])
+        qtbot.waitUntil(lambda: len(grid.gridItems) == 1, timeout=2000)
+        assert grid.gridItems[0].size() == small_item.size()
+    finally:
+        Metrics.apply_grid_item_scale("large")
 
 
 def test_shared_grid_item_supports_music_and_photo_models(qtbot):

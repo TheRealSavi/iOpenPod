@@ -4,7 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
 
-from PyQt6.QtCore import QObject
+from PyQt6.QtCore import QObject, QTimer
 
 from iopenpod.application import controllers
 from iopenpod.application.controllers import QuickWriteController
@@ -23,6 +23,7 @@ class _FakeCache:
         self.discarded = 0
         self.invalidated = 0
         self.loaded = 0
+        self.revision = 1
         self._track_edits: dict[int, dict[str, tuple[object, object]]] = {}
         self._artwork_edits: dict[int, str] = {}
         self._pending = [{"playlist_id": 123, "Title": "Pending"}]
@@ -56,6 +57,21 @@ class _FakeCache:
     def get_track_artwork_edits(self) -> dict[int, str]:
         return dict(self._artwork_edits)
 
+    def get_tracks(self) -> list[dict]:
+        return []
+
+    def get_playlists(self) -> list[dict]:
+        return []
+
+    def capture_quick_write_state(self) -> SimpleNamespace:
+        return SimpleNamespace(
+            tracks=self.get_tracks(),
+            playlists=self.get_playlists(),
+            track_edits={},
+            artwork_sources=self.get_track_artwork_edits(),
+            revision=self.revision,
+        )
+
     def has_pending_playlists(self) -> bool:
         return bool(self._pending)
 
@@ -66,6 +82,51 @@ class _FakeCache:
 class _FakeDeviceManager:
     def __init__(self) -> None:
         self.device_path = "/fake/ipod"
+
+
+class _WorkerCache:
+    def __init__(self, artwork_edits: dict[int, str] | None = None) -> None:
+        self.commit_count = 0
+        self.reload_count = 0
+        self._artwork_edits = artwork_edits or {}
+        self.revision = 1
+
+    def get_tracks(self) -> list[dict]:
+        return [{"track_id": 1, "db_track_id": 100, "Title": "Song"}]
+
+    def get_playlists(self) -> list[dict]:
+        return [{"playlist_id": 1, "Title": "iPod", "master_flag": 1}]
+
+    def get_track_artwork_edits(self) -> dict[int, str]:
+        return dict(self._artwork_edits)
+
+    def get_quick_write_revision(self) -> int:
+        return self.revision
+
+    def commit_quick_write_state(self, expected_revision: int) -> bool:
+        if expected_revision != self.revision:
+            return False
+        self.commit_count += 1
+        return True
+
+    def reload_after_itunesdb_write(self) -> None:
+        self.reload_count += 1
+
+
+def _run_quick_write_worker(
+    monkeypatch,
+    cache: _WorkerCache,
+    result: QuickWriteResult,
+) -> None:
+    from iopenpod.sync import quick_writes
+
+    monkeypatch.setattr(
+        quick_writes,
+        "write_cached_itunesdb",
+        lambda *_args, **_kwargs: result,
+    )
+    worker = QuickWriteWorker("/fake/ipod", cast(LibraryCacheLike, cache))
+    worker.run()
 
 
 class _FakeWorker(QObject):
@@ -96,6 +157,66 @@ def test_quick_playlist_done_does_not_reload_in_controller() -> None:
     assert cache.invalidated == 0
     assert cache.loaded == 0
     assert controller._quick_worker is None
+
+
+def test_quick_write_done_keeps_saving_status_for_newer_changes() -> None:
+    cache = _FakeCache()
+    cache._pending.clear()
+    controller = QuickWriteController(
+        device_manager=cast(DeviceManagerLike, _FakeDeviceManager()),
+        library_cache=cast(LibraryCacheLike, cache),
+        is_sync_running=lambda: False,
+    )
+    controller._quick_worker = cast(controllers.QuickWriteWorker, _FakeWorker())
+    statuses: list[str] = []
+    timer_starts: list[int] = []
+    controller._metadata_timer = cast(
+        QTimer,
+        SimpleNamespace(start=timer_starts.append),
+    )
+    controller.save_status_changed.connect(statuses.append)
+
+    controller._on_quick_write_done(
+        QuickWriteResult(success=True, newer_changes_pending=True)
+    )
+
+    assert statuses == ["saving"]
+    assert timer_starts == [0]
+    assert controller._force_snapshot_write is True
+
+
+def test_forced_snapshot_write_starts_without_staged_rows(monkeypatch) -> None:
+    created: dict[str, object] = {}
+
+    class _Signal:
+        def connect(self, _callback) -> None:
+            pass
+
+    class _QuickWriteWorker:
+        def __init__(self, ipod_path: str, cache) -> None:
+            created["ipod_path"] = ipod_path
+            created["cache"] = cache
+            self.completed = _Signal()
+            self.error = _Signal()
+
+        def start(self) -> None:
+            created["started"] = True
+
+    monkeypatch.setattr(controllers, "QuickWriteWorker", _QuickWriteWorker)
+    cache = _FakeCache()
+    cache._pending.clear()
+    controller = QuickWriteController(
+        device_manager=cast(DeviceManagerLike, _FakeDeviceManager()),
+        library_cache=cast(LibraryCacheLike, cache),
+        is_sync_running=lambda: False,
+    )
+    controller._force_snapshot_write = True
+
+    controller.start_quick_write()
+
+    assert created["cache"] is cache
+    assert created["started"] is True
+    assert controller._force_snapshot_write is False
 
 
 def test_start_playlist_sync_does_not_clear_pending_before_success(monkeypatch) -> None:
@@ -292,37 +413,54 @@ def test_quick_write_failure_discards_and_reloads() -> None:
     assert cache.loaded == 0
 
 
-def test_quick_write_worker_reloads_cache_after_write(monkeypatch) -> None:
+def test_quick_write_worker_commits_cache_in_place_after_write(monkeypatch) -> None:
+    cache = _WorkerCache()
+    _run_quick_write_worker(monkeypatch, cache, QuickWriteResult(success=True))
+
+    assert cache.commit_count == 1
+    assert cache.reload_count == 0
+
+
+def test_quick_write_worker_reloads_cache_when_artwork_changed(monkeypatch) -> None:
+    cache = _WorkerCache({100: "/tmp/new-cover.png"})
+    _run_quick_write_worker(monkeypatch, cache, QuickWriteResult(success=True))
+
+    assert cache.commit_count == 0
+    assert cache.reload_count == 1
+
+
+def test_quick_write_worker_reloads_cache_after_failed_write(monkeypatch) -> None:
+    cache = _WorkerCache()
+    _run_quick_write_worker(
+        monkeypatch,
+        cache,
+        QuickWriteResult(
+            success=False,
+            errors=[("quick_write", "Database write failed")],
+        ),
+    )
+
+    assert cache.commit_count == 0
+    assert cache.reload_count == 1
+
+
+def test_quick_write_worker_reports_newer_staged_changes(monkeypatch) -> None:
     from iopenpod.sync import quick_writes
 
-    class _WorkerCache:
-        def __init__(self) -> None:
-            self.loaded = 0
-
-        def get_tracks(self) -> list[dict]:
-            return [{"track_id": 1, "db_track_id": 100, "Title": "Song"}]
-
-        def get_playlists(self) -> list[dict]:
-            return [{"playlist_id": 1, "Title": "iPod", "master_flag": 1}]
-
-        def get_track_artwork_edits(self) -> dict[int, str]:
-            return {}
-
-        def reload_after_itunesdb_write(self) -> None:
-            self.loaded += 1
-
     cache = _WorkerCache()
-
+    result = QuickWriteResult(success=True)
     monkeypatch.setattr(
         quick_writes,
         "write_cached_itunesdb",
-        lambda *_args, **_kwargs: QuickWriteResult(success=True),
+        lambda *_args, **_kwargs: result,
     )
-
     worker = QuickWriteWorker("/fake/ipod", cast(LibraryCacheLike, cache))
+    cache.revision += 1
+
     worker.run()
 
-    assert cache.loaded == 1
+    assert result.newer_changes_pending is True
+    assert cache.commit_count == 0
 
 
 def test_snapshot_uses_artwork_edit_map_and_strips_pending_marker() -> None:

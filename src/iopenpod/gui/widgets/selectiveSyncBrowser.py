@@ -59,6 +59,7 @@ from ..styles import (
     FONT_FAMILY,
     Colors,
     Metrics,
+    accent_btn_css,
     back_btn_css,
     btn_css,
     context_menu_css,
@@ -1689,16 +1690,7 @@ class SelectiveSyncBrowser(QWidget):
         ft_lay.addWidget(cancel_btn)
 
         self._done_btn = QPushButton("Done Selecting")
-        self._done_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.Bold))
-        self._done_btn.setStyleSheet(btn_css(
-            bg=Colors.ACCENT_DIM,
-            bg_hover=Colors.ACCENT_HOVER,
-            bg_press=Colors.ACCENT_PRESS,
-            fg=Colors.TEXT_ON_ACCENT,
-            border=f"1px solid {Colors.ACCENT_BORDER}",
-            padding="6px 16px",
-            radius=Metrics.BORDER_RADIUS_SM,
-        ))
+        self._done_btn.setStyleSheet(accent_btn_css())
         self._done_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self._done_btn.clicked.connect(self._on_done)
         ft_lay.addWidget(self._done_btn)
