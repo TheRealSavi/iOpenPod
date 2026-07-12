@@ -19,6 +19,12 @@ PLAYER_POSITIONS = frozenset({
     PLAYER_POSITION_BOTTOM,
     PLAYER_POSITION_TOP,
 })
+GRID_ITEM_SIZE_LARGE = "large"
+GRID_ITEM_SIZE_SMALL = "small"
+GRID_ITEM_SIZES = frozenset({
+    GRID_ITEM_SIZE_LARGE,
+    GRID_ITEM_SIZE_SMALL,
+})
 
 DEVICE_SETTING_KEYS = (
     "write_back_to_pc",
@@ -49,6 +55,7 @@ DEVICE_SETTING_KEYS = (
     "mono_for_spoken",
     "smart_quality_by_type",
     "show_art_in_tracklist",
+    "grid_item_size",
     "accent_color",
     "scrobble_on_sync",
     "listenbrainz_token",
@@ -133,6 +140,23 @@ def normalize_player_position(value: Any) -> str:
     return PLAYER_POSITION_TOP
 
 
+def normalize_grid_item_size(value: Any) -> str:
+    """Return the canonical grid item size preset."""
+
+    if isinstance(value, str):
+        normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
+        aliases = {
+            "big": GRID_ITEM_SIZE_LARGE,
+            "default": GRID_ITEM_SIZE_LARGE,
+            "compact": GRID_ITEM_SIZE_SMALL,
+        }
+        if normalized in GRID_ITEM_SIZES:
+            return normalized
+        if normalized in aliases:
+            return aliases[normalized]
+    return GRID_ITEM_SIZE_LARGE
+
+
 @dataclass
 class AppSettings:
     """All user-configurable settings."""
@@ -182,6 +206,7 @@ class AppSettings:
     show_art_in_tracklist: bool = True
     rounded_artwork: bool = False
     sharpen_artwork: bool = True
+    grid_item_size: str = GRID_ITEM_SIZE_LARGE
     track_list_columns_by_content: dict[str, dict[str, int]] = field(default_factory=dict)
     theme: str = "dark"
     high_contrast: str = "off"
@@ -208,6 +233,7 @@ class AppSettings:
     def __post_init__(self) -> None:
         apply_backup_before_sync_mode(self)
         self.player_position = normalize_player_position(self.player_position)
+        self.grid_item_size = normalize_grid_item_size(self.grid_item_size)
 
 
 @dataclass

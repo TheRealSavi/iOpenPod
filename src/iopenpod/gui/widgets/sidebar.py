@@ -13,6 +13,7 @@ from ..styles import (
     LABEL_TERTIARY,
     MONO_FONT_FAMILY,
     Colors,
+    Design,
     Metrics,
     accent_btn_css,
     btn_css,
@@ -217,7 +218,10 @@ class DeviceInfoCard(QFrame):
 
         # Small icon-only eject button
         self.eject_button = QPushButton()
-        self.eject_button.setFixedSize((26), (26))
+        self.eject_button.setFixedSize(
+            Design.ICON_BUTTON_SIZE,
+            Design.ICON_BUTTON_SIZE,
+        )
         self.eject_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.eject_button.setToolTip("Safely eject the iPod from your system")
         self.eject_button.setStyleSheet(btn_css(
@@ -457,7 +461,7 @@ class DeviceInfoCard(QFrame):
             self.icon_label.setPixmap(px)
         else:
             self.icon_label.setText("♪")
-            self.icon_label.setFont(QFont(FONT_FAMILY, 24))
+            self.icon_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_ICON_MD))
 
     def _start_rename(self, event=None):
         """Show an inline QLineEdit to rename the iPod."""
@@ -1059,15 +1063,8 @@ class Sidebar(QFrame):
 
         # Settings button at bottom
         self.settingsButton = QPushButton("Settings")
-        self.settingsButton.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
-        self.settingsButton.setStyleSheet(btn_css(
-            bg="transparent",
-            bg_hover=Colors.SURFACE_RAISED,
-            bg_press=Colors.SURFACE,
-            fg=Colors.TEXT_TERTIARY,
-            padding=f"{(7)}px {(12)}px",
-            extra="text-align: left;",
-        ))
+        self.settingsButton.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
+        self.settingsButton.setStyleSheet(sidebar_nav_css())
         _bi = glyph_icon("settings", (20), Colors.TEXT_TERTIARY)
         if _bi:
             self.settingsButton.setIcon(_bi)

@@ -500,7 +500,9 @@ class BackupBrowserWidget(QWidget):
         prog_layout.addStretch()
 
         self._progress_title = QLabel("Creating backup…")
-        self._progress_title.setFont(QFont(FONT_FAMILY, 16, QFont.Weight.Bold))
+        self._progress_title.setFont(
+            QFont(FONT_FAMILY, Metrics.FONT_PAGE_TITLE, QFont.Weight.Bold)
+        )
         self._progress_title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent;")
         self._progress_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         prog_layout.addWidget(self._progress_title)

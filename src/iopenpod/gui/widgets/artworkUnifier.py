@@ -419,7 +419,7 @@ class UnifyArtworkDialog(QDialog):
 
         title = QLabel("Choose Artwork")
         title.setObjectName("dialogTitle")
-        title.setStyleSheet(f"font-size: {Metrics.FONT_XL}px; font-weight: 700;")
+        title.setStyleSheet(f"font-size: {Metrics.FONT_XL}pt; font-weight: 700;")
         outer.addWidget(title)
 
         track_count = len(context.tracks)

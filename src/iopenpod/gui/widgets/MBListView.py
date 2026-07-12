@@ -718,7 +718,7 @@ class _DragProgressWidget(QWidget):
         inner.setSpacing(3)
 
         self._header = QLabel(f"Preparing {n} file{'s' if n != 1 else ''}…")
-        self._header.setFont(QFont(FONT_FAMILY, 9, QFont.Weight.Bold))
+        self._header.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.Bold))
         inner.addWidget(self._header)
 
         sep = QFrame()
@@ -732,7 +732,7 @@ class _DragProgressWidget(QWidget):
             if len(text) > 44:
                 text = text[:41] + "…"
             lbl = QLabel(f"  ○  {text}")
-            lbl.setFont(QFont(FONT_FAMILY, 9))
+            lbl.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
             inner.addWidget(lbl)
             self._rows.append(lbl)
 
@@ -3575,11 +3575,11 @@ class MusicBrowserList(QFrame):
                 color: {Colors.TEXT_SECONDARY};
                 background: transparent;
                 font-family: {FONT_FAMILY};
-                font-size: {Metrics.FONT_XS}px;
+                font-size: {Metrics.FONT_XS}pt;
             }}
             QLabel#volumeAdjustmentValueLabel {{
                 color: {Colors.TEXT_PRIMARY};
-                font-size: {Metrics.FONT_SM}px;
+                font-size: {Metrics.FONT_SM}pt;
                 font-weight: 600;
             }}
             QSlider::groove:horizontal {{

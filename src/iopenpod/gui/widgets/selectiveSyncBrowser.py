@@ -437,7 +437,7 @@ class PCMusicBrowserGrid(MusicBrowserGrid):
 
 # ── PC-adapted track table ─────────────────────────────────────────────────
 
-_HERO_ART_SIZE = 120  # px, artwork square in the hero header
+_HERO_ART_SIZE = 176  # px, artwork square in the hero header
 
 # Columns suitable for PC tracks (no iPod-only stats like play_count, date_added)
 _PC_DEFAULT_COLUMNS = [
@@ -536,7 +536,7 @@ class PCTrackListView(QWidget):
 
         # ── Hero header ─────────────────────────────────────────────────
         self._hero = QFrame()
-        self._hero.setMaximumHeight(375)
+        self._hero.setMaximumHeight(312)
         self._hero.setStyleSheet(f"""
             QFrame#heroHeader {{
                 background: {Colors.BG_DARK};
@@ -552,7 +552,7 @@ class PCTrackListView(QWidget):
         top_bar = QFrame()
         top_bar.setStyleSheet("background: transparent; border: none;")
         top_lay = QHBoxLayout(top_bar)
-        top_lay.setContentsMargins(12, 8, 12, 0)
+        top_lay.setContentsMargins(12, 4, 12, 0)
         top_lay.setSpacing(0)
 
         self._back_btn = QPushButton("\u2190")
@@ -568,8 +568,8 @@ class PCTrackListView(QWidget):
         hero_body = QFrame()
         hero_body.setStyleSheet("background: transparent; border: none;")
         body_lay = QHBoxLayout(hero_body)
-        body_lay.setContentsMargins(24, 12, 24, 16)
-        body_lay.setSpacing(20)
+        body_lay.setContentsMargins(20, 4, 20, 10)
+        body_lay.setSpacing(16)
 
         # Artwork
         self._hero_art = QLabel()
@@ -579,23 +579,28 @@ class PCTrackListView(QWidget):
 
         # Info column
         info_col = QVBoxLayout()
-        info_col.setContentsMargins(0, 4, 0, 0)
-        info_col.setSpacing(4)
+        info_col.setContentsMargins(0, 2, 0, 0)
+        info_col.setSpacing(2)
 
         self._title_label = QLabel()
         self._title_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_PAGE_TITLE, QFont.Weight.Bold))
         self._title_label.setWordWrap(True)
         info_col.addWidget(self._title_label)
 
+        self._artist_label = QLabel()
+        self._artist_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_TITLE, QFont.Weight.DemiBold))
+        self._artist_label.setWordWrap(True)
+        info_col.addWidget(self._artist_label)
+
         self._subtitle_label = QLabel()
-        self._subtitle_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
+        self._subtitle_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         info_col.addWidget(self._subtitle_label)
 
         self._meta_label = QLabel()
         self._meta_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         info_col.addWidget(self._meta_label)
 
-        info_col.addSpacing(8)
+        info_col.addSpacing(6)
 
         # Select / Deselect buttons row
         btn_row = QHBoxLayout()
@@ -615,7 +620,6 @@ class PCTrackListView(QWidget):
         btn_row.addStretch()
 
         info_col.addLayout(btn_row)
-        info_col.addStretch()
         body_lay.addLayout(info_col, 1)
 
         # Collect hero buttons for unified styling
@@ -641,22 +645,16 @@ class PCTrackListView(QWidget):
     def setSubtitle(self, subtitle: str):
         self._subtitle_label.setText(subtitle)
 
+    def setArtist(self, artist: str):
+        text = artist.strip()
+        self._artist_label.setText(text)
+        self._artist_label.setVisible(bool(text))
+
     def setMeta(self, meta: str):
         self._meta_label.setText(meta)
 
     def setHeroColor(self, r: int, g: int, b: int):
         """Tint the hero header background with the artwork's dominant color."""
-        if Colors._active_mode == "light":
-            glass_bg = "rgba(0, 0, 0, 20)"
-            glass_hover = "rgba(0, 0, 0, 28)"
-            glass_press = "rgba(0, 0, 0, 14)"
-            glass_border = "rgba(0, 0, 0, 24)"
-        else:
-            glass_bg = "rgba(255, 255, 255, 18)"
-            glass_hover = "rgba(255, 255, 255, 35)"
-            glass_press = "rgba(255, 255, 255, 12)"
-            glass_border = "rgba(255, 255, 255, 15)"
-
         self._hero.setStyleSheet(f"""
             QFrame#heroHeader {{
                 background: qlineargradient(
@@ -673,21 +671,13 @@ class PCTrackListView(QWidget):
             border: 1px solid rgba({r}, {g}, {b}, 50);
         """)
         self._title_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent;")
+        self._artist_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent;")
         self._subtitle_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent;")
         self._meta_label.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent;")
-        # Frosted-glass buttons that sit nicely on the tinted background
-        _overlay_css = btn_css(
-            bg=glass_bg,
-            bg_hover=glass_hover,
-            bg_press=glass_press,
-            fg=Colors.TEXT_PRIMARY,
-            border=f"1px solid {glass_border}",
-            padding="5px 12px",
-            radius=Metrics.BORDER_RADIUS_SM,
-        )
+        _default_btn = btn_css(padding="5px 12px", radius=Metrics.BORDER_RADIUS_SM)
         self._back_btn.setStyleSheet(back_btn_css())
-        self._sel_btn.setStyleSheet(_overlay_css)
-        self._desel_btn.setStyleSheet(_overlay_css)
+        self._sel_btn.setStyleSheet(_default_btn)
+        self._desel_btn.setStyleSheet(_default_btn)
 
     def resetHeroColor(self):
         """Reset the hero header to default (no artwork tint)."""
@@ -707,6 +697,7 @@ class PCTrackListView(QWidget):
             border: 1px solid {Colors.BORDER_SUBTLE};
         """)
         self._title_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent;")
+        self._artist_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent;")
         self._subtitle_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent;")
         self._meta_label.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent;")
         _default_btn = btn_css(padding="5px 12px", radius=Metrics.BORDER_RADIUS_SM)
@@ -1570,7 +1561,7 @@ class SelectiveSyncBrowser(QWidget):
         # Stage headline
         self._loading_label = QLabel("Scanning library...", loading_page)
         self._loading_label.setStyleSheet(
-            f"color: {Colors.TEXT_PRIMARY}; font-size: {Metrics.FONT_HERO}px;"
+            f"color: {Colors.TEXT_PRIMARY}; font-size: {Metrics.FONT_HERO}pt;"
             f" font-weight: 500;"
         )
         self._loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1590,7 +1581,7 @@ class SelectiveSyncBrowser(QWidget):
         # ETA / counter
         self._eta_label = QLabel("", loading_page)
         self._eta_label.setStyleSheet(
-            f"color: {Colors.TEXT_TERTIARY}; font-size: {Metrics.FONT_MD}px;"
+            f"color: {Colors.TEXT_TERTIARY}; font-size: {Metrics.FONT_MD}pt;"
         )
         self._eta_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lp_lay.addWidget(self._eta_label)
@@ -1600,7 +1591,7 @@ class SelectiveSyncBrowser(QWidget):
         # Detail — current file
         self._progress_detail = QLabel("", loading_page)
         self._progress_detail.setStyleSheet(
-            f"color: {Colors.TEXT_TERTIARY}; font-size: {Metrics.FONT_LG}px;"
+            f"color: {Colors.TEXT_TERTIARY}; font-size: {Metrics.FONT_LG}pt;"
         )
         self._progress_detail.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._progress_detail.setWordWrap(False)
@@ -3083,6 +3074,7 @@ class SelectiveSyncBrowser(QWidget):
                 self._current_group = mode
                 self._current_group_tracks = tracks
                 self._track_list.setTitle(title)
+                self._track_list.setArtist("")
                 n = len(tracks)
                 self._track_list.setSubtitle(
                     f"{n} {noun[0] if n == 1 else noun[1]}"
@@ -3165,7 +3157,16 @@ class SelectiveSyncBrowser(QWidget):
 
         # Populate hero header
         self._track_list.setTitle(key)
-        self._track_list.setSubtitle(group.get("subtitle", ""))
+        subtitle_text = str(group.get("subtitle", "") or "")
+        artist_text = str(group.get("artist", "") or "")
+        if artist_text:
+            artist_prefix = f"{artist_text} \u00b7 "
+            if subtitle_text.startswith(artist_prefix):
+                subtitle_text = subtitle_text[len(artist_prefix):]
+            elif subtitle_text == artist_text:
+                subtitle_text = ""
+        self._track_list.setArtist(artist_text)
+        self._track_list.setSubtitle(subtitle_text)
 
         # Build meta line: total duration + total size
         tracks = group["tracks"]

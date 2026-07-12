@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Hashable
+from collections.abc import Hashable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
@@ -136,7 +136,7 @@ class PooledGridView(QFrame):
 
     def setRecords(
         self,
-        records: list[GridItemModel],
+        records: Sequence[GridItemModel],
         *,
         reset_scroll: bool = True,
         preserve_selection: bool = True,
@@ -247,7 +247,7 @@ class PooledGridView(QFrame):
 
     def _set_viewport_records(
         self,
-        records: list[Any],
+        records: Sequence[Any],
         *,
         reset_scroll: bool,
         preserve_selection: bool = False,

@@ -689,7 +689,13 @@ class MusicBrowserGrid(PooledGridView):
             QApplication.keyboardModifiers(),
         ):
             return
-        self.item_selected.emit(dict(self._visible_records[record_index].payload))
+        item_data = dict(self._visible_records[record_index].payload)
+        widget = self._visible_widgets.get(record_index)
+        if isinstance(widget, MusicBrowserGridItem):
+            # The pooled card carries artwork-derived display colors after its
+            # image has been rendered; the normalized record payload does not.
+            item_data.update(widget.item_data)
+        self.item_selected.emit(item_data)
 
     def _onRecordContextRequested(
         self,

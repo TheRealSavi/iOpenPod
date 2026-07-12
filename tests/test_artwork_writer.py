@@ -343,6 +343,509 @@ def test_write_artworkdb_preserves_unchanged_art_without_reencoding(
     assert existing_ithmb.read_bytes() == b"OLD!"
 
 
+def test_write_artworkdb_reuses_lowest_file_when_preserved_art_fits(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    ipod_root, artwork_dir = _make_ipod_root(tmp_path)
+    existing_ithmb = artwork_dir / f"F{REQUIRED_FMT}_1.ithmb"
+    preserved_track_count = 100
+    existing_payload = b"OLD!" * preserved_track_count
+    existing_ithmb.write_bytes(existing_payload)
+
+    existing_art = {
+        1000 + index: {
+            "song_id": index + 1,
+            "src_img_size": 99,
+            "formats": {
+                REQUIRED_FMT: aw.ExistingFormatRef(
+                    path=str(existing_ithmb),
+                    ithmb_offset=index * 4,
+                    size=4,
+                    width=1,
+                    height=1,
+                ),
+            },
+        }
+        for index in range(preserved_track_count)
+    }
+    preserved_tracks = [_make_track(index + 1) for index in range(preserved_track_count)]
+    changed_tracks = [
+        _make_track(preserved_track_count + index + 1)
+        for index in range(4)
+    ]
+    later_changed_tracks = [
+        _make_track(preserved_track_count + len(changed_tracks) + index + 1)
+        for index in range(4)
+    ]
+    shared_art_path = tmp_path / "shared.png"
+    shared_art_path.write_bytes(b"source image placeholder")
+    later_shared_art_path = tmp_path / "later-shared.png"
+    later_shared_art_path.write_bytes(b"later source image placeholder")
+
+    parse_written_artworkdb = aw.read_existing_artwork
+    read_calls = 0
+
+    def _read_existing(artworkdb_path: str, artwork_path: str):
+        nonlocal read_calls
+        read_calls += 1
+        if read_calls == 1:
+            return existing_art
+        return parse_written_artworkdb(artworkdb_path, artwork_path)
+
+    monkeypatch.setattr(aw, "read_existing_artwork", _read_existing)
+    monkeypatch.setattr(aw, "get_artwork_format_definitions", lambda _ipod_path: {})
+    monkeypatch.setattr(aw, "expected_size_bytes", lambda *_args, **_kwargs: 4)
+    extract_calls = 0
+
+    def _extract(path: str) -> bytes:
+        nonlocal extract_calls
+        extract_calls += 1
+        return Path(path).name.encode("ascii")
+
+    monkeypatch.setattr(aw, "extract_art_with_folder", _extract)
+    monkeypatch.setattr(
+        aw,
+        "image_from_bytes",
+        lambda _bytes, **_kwargs: Image.new("RGB", (1, 1), (9, 8, 7)),
+    )
+    encode_calls = 0
+
+    def _encode(_img, _fmt_id, *_args, **_kwargs):
+        nonlocal encode_calls
+        encode_calls += 1
+        return aw.EncodedFormatPayload(
+            data=b"NEW!",
+            width=1,
+            height=1,
+            size=4,
+            stride_pixels=1,
+        )
+
+    monkeypatch.setattr(aw, "encode_image_for_format", _encode)
+
+    result = aw.write_artworkdb(
+        str(ipod_root),
+        [*preserved_tracks, *changed_tracks, *later_changed_tracks],
+        pc_file_paths={
+            track.db_track_id: str(shared_art_path)
+            for track in changed_tracks
+        },
+        artwork_formats={REQUIRED_FMT: (1, 1)},
+    )
+
+    assert len(result) == preserved_track_count + len(changed_tracks)
+    assert extract_calls == 1
+    assert encode_calls == 1
+    assert existing_ithmb.read_bytes() == existing_payload + b"NEW!"
+    assert not (artwork_dir / f"F{REQUIRED_FMT}_2.ithmb").exists()
+
+    rewritten = parse_written_artworkdb(
+        str(artwork_dir / "ArtworkDB"),
+        str(artwork_dir),
+    )
+    refs_by_song_id = {
+        entry["song_id"]: entry["formats"][REQUIRED_FMT]
+        for entry in rewritten.values()
+    }
+    assert len(refs_by_song_id) == preserved_track_count + len(changed_tracks)
+    assert refs_by_song_id[1].ithmb_filename == f"F{REQUIRED_FMT}_1.ithmb"
+    assert refs_by_song_id[changed_tracks[0].db_track_id].ithmb_filename == (
+        f"F{REQUIRED_FMT}_1.ithmb"
+    )
+
+    second_result = aw.write_artworkdb(
+        str(ipod_root),
+        [*preserved_tracks, *changed_tracks, *later_changed_tracks],
+        pc_file_paths={
+            track.db_track_id: str(later_shared_art_path)
+            for track in later_changed_tracks
+        },
+        artwork_formats={REQUIRED_FMT: (1, 1)},
+    )
+
+    assert len(second_result) == (
+        preserved_track_count + len(changed_tracks) + len(later_changed_tracks)
+    )
+    assert extract_calls == 2
+    assert encode_calls == 2
+    assert existing_ithmb.read_bytes() == existing_payload + b"NEW!NEW!"
+    assert not (artwork_dir / f"F{REQUIRED_FMT}_2.ithmb").exists()
+
+    rewritten = parse_written_artworkdb(
+        str(artwork_dir / "ArtworkDB"),
+        str(artwork_dir),
+    )
+    refs_by_song_id = {
+        entry["song_id"]: entry["formats"][REQUIRED_FMT]
+        for entry in rewritten.values()
+    }
+    assert refs_by_song_id[changed_tracks[0].db_track_id].ithmb_filename == (
+        f"F{REQUIRED_FMT}_1.ithmb"
+    )
+    assert refs_by_song_id[later_changed_tracks[0].db_track_id].ithmb_filename == (
+        f"F{REQUIRED_FMT}_1.ithmb"
+    )
+
+
+def test_write_artworkdb_reuses_lowest_file_after_art_clear(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    ipod_root, artwork_dir = _make_ipod_root(tmp_path)
+    base_ithmb = artwork_dir / f"F{REQUIRED_FMT}_1.ithmb"
+    tail_ithmb = artwork_dir / f"F{REQUIRED_FMT}_2.ithmb"
+    base_ithmb.write_bytes(b"BASE")
+    tail_ithmb.write_bytes(b"LIVE")
+    source = tmp_path / "new.mp3"
+    source.write_bytes(b"audio")
+    existing_art = {
+        101: {
+            "song_id": 1,
+            "src_img_size": 4,
+            "formats": {REQUIRED_FMT: _format_ref(base_ithmb)},
+        },
+        102: {
+            "song_id": 2,
+            "src_img_size": 4,
+            "formats": {REQUIRED_FMT: _format_ref(tail_ithmb)},
+        },
+    }
+
+    parse_written_artworkdb = aw.read_existing_artwork
+    monkeypatch.setattr(aw, "read_existing_artwork", lambda *_args: existing_art)
+    monkeypatch.setattr(aw, "get_artwork_format_definitions", lambda _path: {})
+    monkeypatch.setattr(aw, "expected_size_bytes", lambda *_args, **_kwargs: 4)
+    monkeypatch.setattr(aw, "extract_art_with_folder", lambda _path: b"new")
+    monkeypatch.setattr(
+        aw,
+        "image_from_bytes",
+        lambda *_args, **_kwargs: Image.new("RGB", (1, 1), (9, 8, 7)),
+    )
+    monkeypatch.setattr(
+        aw,
+        "encode_image_for_format",
+        lambda *_args, **_kwargs: aw.EncodedFormatPayload(
+            data=b"NEW!",
+            width=1,
+            height=1,
+            size=4,
+            stride_pixels=1,
+        ),
+    )
+
+    result = aw.write_artworkdb(
+        str(ipod_root),
+        [_make_track(1, hint="clear_art"), _make_track(2), _make_track(3)],
+        pc_file_paths={3: str(source)},
+        artwork_formats={REQUIRED_FMT: (1, 1)},
+    )
+
+    assert set(result) == {2, 3}
+    assert base_ithmb.read_bytes() == b"NEW!"
+    assert tail_ithmb.read_bytes() == b"LIVE"
+
+    rewritten = parse_written_artworkdb(
+        str(artwork_dir / "ArtworkDB"),
+        str(artwork_dir),
+    )
+    refs_by_song_id = {
+        entry["song_id"]: entry["formats"][REQUIRED_FMT]
+        for entry in rewritten.values()
+    }
+    assert set(refs_by_song_id) == {2, 3}
+    assert refs_by_song_id[2].ithmb_filename == f"F{REQUIRED_FMT}_2.ithmb"
+    assert refs_by_song_id[2].ithmb_offset == 0
+    assert refs_by_song_id[3].ithmb_filename == f"F{REQUIRED_FMT}_1.ithmb"
+    assert refs_by_song_id[3].ithmb_offset == 0
+
+
+def test_write_artworkdb_uses_lowest_numbered_file_that_fits(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    ipod_root, artwork_dir = _make_ipod_root(tmp_path)
+    first_ithmb = artwork_dir / f"F{REQUIRED_FMT}_1.ithmb"
+    second_ithmb = artwork_dir / f"F{REQUIRED_FMT}_2.ithmb"
+    first_ithmb.write_bytes(b"ONE!")
+    second_ithmb.write_bytes(b"TWO!")
+    source = tmp_path / "new.mp3"
+    source.write_bytes(b"audio")
+    existing_art = {
+        101: {
+            "song_id": 1,
+            "src_img_size": 4,
+            "formats": {REQUIRED_FMT: _format_ref(first_ithmb)},
+        },
+        102: {
+            "song_id": 2,
+            "src_img_size": 4,
+            "formats": {REQUIRED_FMT: _format_ref(second_ithmb)},
+        },
+    }
+
+    parse_written_artworkdb = aw.read_existing_artwork
+    monkeypatch.setattr(aw, "read_existing_artwork", lambda *_args: existing_art)
+    monkeypatch.setattr(aw, "get_artwork_format_definitions", lambda _path: {})
+    monkeypatch.setattr(aw, "expected_size_bytes", lambda *_args, **_kwargs: 4)
+    monkeypatch.setattr(aw, "extract_art_with_folder", lambda _path: b"new")
+    monkeypatch.setattr(
+        aw,
+        "image_from_bytes",
+        lambda *_args, **_kwargs: Image.new("RGB", (1, 1), (9, 8, 7)),
+    )
+    monkeypatch.setattr(
+        aw,
+        "encode_image_for_format",
+        lambda *_args, **_kwargs: aw.EncodedFormatPayload(
+            data=b"NEW!",
+            width=1,
+            height=1,
+            size=4,
+            stride_pixels=1,
+        ),
+    )
+
+    result = aw.write_artworkdb(
+        str(ipod_root),
+        [_make_track(1), _make_track(2), _make_track(3)],
+        pc_file_paths={3: str(source)},
+        artwork_formats={REQUIRED_FMT: (1, 1)},
+    )
+
+    assert set(result) == {1, 2, 3}
+    assert first_ithmb.read_bytes() == b"ONE!NEW!"
+    assert second_ithmb.read_bytes() == b"TWO!"
+
+    rewritten = parse_written_artworkdb(
+        str(artwork_dir / "ArtworkDB"),
+        str(artwork_dir),
+    )
+    refs_by_song_id = {
+        entry["song_id"]: entry["formats"][REQUIRED_FMT]
+        for entry in rewritten.values()
+    }
+    assert refs_by_song_id[1].ithmb_filename == f"F{REQUIRED_FMT}_1.ithmb"
+    assert refs_by_song_id[1].ithmb_offset == 0
+    assert refs_by_song_id[2].ithmb_filename == f"F{REQUIRED_FMT}_2.ithmb"
+    assert refs_by_song_id[2].ithmb_offset == 0
+    assert refs_by_song_id[3].ithmb_filename == f"F{REQUIRED_FMT}_1.ithmb"
+    assert refs_by_song_id[3].ithmb_offset == 4
+
+
+def test_write_artworkdb_uses_next_file_when_lowest_file_is_full(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    ipod_root, artwork_dir = _make_ipod_root(tmp_path)
+    first_ithmb = artwork_dir / f"F{REQUIRED_FMT}_1.ithmb"
+    first_ithmb.write_bytes(b"ONE!")
+    source = tmp_path / "new.mp3"
+    source.write_bytes(b"audio")
+    existing_art = {
+        101: {
+            "song_id": 1,
+            "src_img_size": 4,
+            "formats": {REQUIRED_FMT: _format_ref(first_ithmb)},
+        },
+    }
+
+    parse_written_artworkdb = aw.read_existing_artwork
+    monkeypatch.setattr(aw, "ITHMB_MAX_SIZE_BYTES", 7)
+    monkeypatch.setattr(aw, "read_existing_artwork", lambda *_args: existing_art)
+    monkeypatch.setattr(aw, "get_artwork_format_definitions", lambda _path: {})
+    monkeypatch.setattr(aw, "expected_size_bytes", lambda *_args, **_kwargs: 4)
+    monkeypatch.setattr(aw, "extract_art_with_folder", lambda _path: b"new")
+    monkeypatch.setattr(
+        aw,
+        "image_from_bytes",
+        lambda *_args, **_kwargs: Image.new("RGB", (1, 1), (9, 8, 7)),
+    )
+    monkeypatch.setattr(
+        aw,
+        "encode_image_for_format",
+        lambda *_args, **_kwargs: aw.EncodedFormatPayload(
+            data=b"NEW!",
+            width=1,
+            height=1,
+            size=4,
+            stride_pixels=1,
+        ),
+    )
+
+    result = aw.write_artworkdb(
+        str(ipod_root),
+        [_make_track(1), _make_track(2)],
+        pc_file_paths={2: str(source)},
+        artwork_formats={REQUIRED_FMT: (1, 1)},
+    )
+
+    assert set(result) == {1, 2}
+    assert first_ithmb.read_bytes() == b"ONE!"
+    assert (artwork_dir / f"F{REQUIRED_FMT}_2.ithmb").read_bytes() == b"NEW!"
+
+    rewritten = parse_written_artworkdb(
+        str(artwork_dir / "ArtworkDB"),
+        str(artwork_dir),
+    )
+    refs_by_song_id = {
+        entry["song_id"]: entry["formats"][REQUIRED_FMT]
+        for entry in rewritten.values()
+    }
+    assert refs_by_song_id[1].ithmb_filename == f"F{REQUIRED_FMT}_1.ithmb"
+    assert refs_by_song_id[1].ithmb_offset == 0
+    assert refs_by_song_id[2].ithmb_filename == f"F{REQUIRED_FMT}_2.ithmb"
+    assert refs_by_song_id[2].ithmb_offset == 0
+
+
+def test_write_artworkdb_reuses_base_when_clear_leaves_no_live_art(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    ipod_root, artwork_dir = _make_ipod_root(tmp_path)
+    base_ithmb = artwork_dir / f"F{REQUIRED_FMT}_1.ithmb"
+    base_ithmb.write_bytes(b"BASE")
+    source = tmp_path / "new.mp3"
+    source.write_bytes(b"audio")
+    existing_art = {
+        101: {
+            "song_id": 1,
+            "src_img_size": 4,
+            "formats": {REQUIRED_FMT: _format_ref(base_ithmb)},
+        },
+    }
+
+    parse_written_artworkdb = aw.read_existing_artwork
+    monkeypatch.setattr(aw, "read_existing_artwork", lambda *_args: existing_art)
+    monkeypatch.setattr(aw, "get_artwork_format_definitions", lambda _path: {})
+    monkeypatch.setattr(aw, "expected_size_bytes", lambda *_args, **_kwargs: 4)
+    monkeypatch.setattr(aw, "extract_art_with_folder", lambda _path: b"new")
+    monkeypatch.setattr(
+        aw,
+        "image_from_bytes",
+        lambda *_args, **_kwargs: Image.new("RGB", (1, 1), (9, 8, 7)),
+    )
+    monkeypatch.setattr(
+        aw,
+        "encode_image_for_format",
+        lambda *_args, **_kwargs: aw.EncodedFormatPayload(
+            data=b"NEW!",
+            width=1,
+            height=1,
+            size=4,
+            stride_pixels=1,
+        ),
+    )
+
+    result = aw.write_artworkdb(
+        str(ipod_root),
+        [_make_track(1, hint="clear_art"), _make_track(2)],
+        pc_file_paths={2: str(source)},
+        artwork_formats={REQUIRED_FMT: (1, 1)},
+    )
+
+    assert set(result) == {2}
+    assert base_ithmb.read_bytes() == b"NEW!"
+    assert not (artwork_dir / f"F{REQUIRED_FMT}_2.ithmb").exists()
+
+    rewritten = parse_written_artworkdb(
+        str(artwork_dir / "ArtworkDB"),
+        str(artwork_dir),
+    )
+    refs_by_song_id = {
+        entry["song_id"]: entry["formats"][REQUIRED_FMT]
+        for entry in rewritten.values()
+    }
+    assert set(refs_by_song_id) == {2}
+    assert refs_by_song_id[2].ithmb_filename == f"F{REQUIRED_FMT}_1.ithmb"
+    assert refs_by_song_id[2].ithmb_offset == 0
+
+
+def test_write_artworkdb_reuses_lowest_file_after_earlier_shards_clear(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    ipod_root, artwork_dir = _make_ipod_root(tmp_path)
+    base_ithmb = artwork_dir / f"F{REQUIRED_FMT}_1.ithmb"
+    middle_ithmb = artwork_dir / f"F{REQUIRED_FMT}_2.ithmb"
+    tail_ithmb = artwork_dir / f"F{REQUIRED_FMT}_3.ithmb"
+    base_ithmb.write_bytes(b"BASE")
+    middle_ithmb.write_bytes(b"MID!")
+    tail_ithmb.write_bytes(b"LIVE")
+    source = tmp_path / "new.mp3"
+    source.write_bytes(b"audio")
+    existing_art = {
+        101: {
+            "song_id": 1,
+            "src_img_size": 4,
+            "formats": {REQUIRED_FMT: _format_ref(base_ithmb)},
+        },
+        102: {
+            "song_id": 2,
+            "src_img_size": 4,
+            "formats": {REQUIRED_FMT: _format_ref(middle_ithmb)},
+        },
+        103: {
+            "song_id": 3,
+            "src_img_size": 4,
+            "formats": {REQUIRED_FMT: _format_ref(tail_ithmb)},
+        },
+    }
+
+    parse_written_artworkdb = aw.read_existing_artwork
+    monkeypatch.setattr(aw, "read_existing_artwork", lambda *_args: existing_art)
+    monkeypatch.setattr(aw, "get_artwork_format_definitions", lambda _path: {})
+    monkeypatch.setattr(aw, "expected_size_bytes", lambda *_args, **_kwargs: 4)
+    monkeypatch.setattr(aw, "extract_art_with_folder", lambda _path: b"new")
+    monkeypatch.setattr(
+        aw,
+        "image_from_bytes",
+        lambda *_args, **_kwargs: Image.new("RGB", (1, 1), (9, 8, 7)),
+    )
+    monkeypatch.setattr(
+        aw,
+        "encode_image_for_format",
+        lambda *_args, **_kwargs: aw.EncodedFormatPayload(
+            data=b"NEW!",
+            width=1,
+            height=1,
+            size=4,
+            stride_pixels=1,
+        ),
+    )
+
+    result = aw.write_artworkdb(
+        str(ipod_root),
+        [
+            _make_track(1, hint="clear_art"),
+            _make_track(2, hint="clear_art"),
+            _make_track(3),
+            _make_track(4),
+        ],
+        pc_file_paths={4: str(source)},
+        artwork_formats={REQUIRED_FMT: (1, 1)},
+    )
+
+    assert set(result) == {3, 4}
+    assert base_ithmb.read_bytes() == b"NEW!"
+    assert middle_ithmb.read_bytes() == b"MID!"
+    assert tail_ithmb.read_bytes() == b"LIVE"
+
+    rewritten = parse_written_artworkdb(
+        str(artwork_dir / "ArtworkDB"),
+        str(artwork_dir),
+    )
+    refs_by_song_id = {
+        entry["song_id"]: entry["formats"][REQUIRED_FMT]
+        for entry in rewritten.values()
+    }
+    assert set(refs_by_song_id) == {3, 4}
+    assert refs_by_song_id[3].ithmb_filename == f"F{REQUIRED_FMT}_3.ithmb"
+    assert refs_by_song_id[3].ithmb_offset == 0
+    assert refs_by_song_id[4].ithmb_filename == f"F{REQUIRED_FMT}_1.ithmb"
+    assert refs_by_song_id[4].ithmb_offset == 0
+
+
 def test_write_artworkdb_preserve_only_does_not_replace_ithmb(
     monkeypatch,
     tmp_path: Path,
@@ -672,6 +1175,7 @@ def test_write_artworkdb_reencodes_existing_extra_known_formats_for_new_art(
     existing_required.write_bytes(b"OLDR")
     existing_extra.write_bytes(b"OLDE")
 
+    parse_written_artworkdb = aw.read_existing_artwork
     monkeypatch.setattr(
         aw,
         "read_existing_artwork",
@@ -713,7 +1217,18 @@ def test_write_artworkdb_reencodes_existing_extra_known_formats_for_new_art(
 
     assert result[1] == (100, 3)
     assert seen_format_ids == [REQUIRED_FMT, EXTRA_KNOWN_FMT]
-    assert (artwork_dir / f"F{EXTRA_KNOWN_FMT}_1.ithmb").read_bytes() == bytes([EXTRA_KNOWN_FMT % 256]) * 4
+    assert existing_required.read_bytes() == bytes([REQUIRED_FMT % 256]) * 4
+    assert existing_extra.read_bytes() == bytes([EXTRA_KNOWN_FMT % 256]) * 4
+    assert not (artwork_dir / f"F{REQUIRED_FMT}_2.ithmb").exists()
+    assert not (artwork_dir / f"F{EXTRA_KNOWN_FMT}_2.ithmb").exists()
+
+    rewritten = parse_written_artworkdb(
+        str(artwork_dir / "ArtworkDB"),
+        str(artwork_dir),
+    )
+    refs = next(iter(rewritten.values()))["formats"]
+    assert refs[REQUIRED_FMT].ithmb_filename == f"F{REQUIRED_FMT}_1.ithmb"
+    assert refs[EXTRA_KNOWN_FMT].ithmb_filename == f"F{EXTRA_KNOWN_FMT}_1.ithmb"
 
 
 def test_write_artworkdb_incremental_sync_preserves_video_5g_existing_art(
@@ -899,6 +1414,10 @@ def test_read_existing_artwork_uses_mhni_filename_for_numbered_ithmb(
     assert ref.path == str(ithmb_path)
     assert ref.ithmb_filename == f"F{REQUIRED_FMT}_2.ithmb"
     assert ref.ithmb_offset == 4
+
+
+def test_ithmb_shard_budget_limits_mutable_tail_rewrite_size() -> None:
+    assert aw.ITHMB_MAX_SIZE_BYTES == 32 * 1000 * 1000
 
 
 def test_write_artworkdb_rolls_owned_formats_to_next_numbered_ithmb(

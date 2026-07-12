@@ -76,6 +76,7 @@ from ..glyphs import glyph_icon
 from ..styles import (
     FONT_FAMILY,
     Colors,
+    Design,
     Metrics,
     accent_btn_css,
     button_css,
@@ -353,7 +354,7 @@ def _section_header(text: str) -> QWidget:
 def _section_label_style() -> str:
     return (
         f"color: {Colors.TEXT_TERTIARY}; background: transparent; border: none; "
-        f"font-size: {Metrics.FONT_SM}px; font-weight: bold;"
+        f"font-size: {Metrics.FONT_SM}pt; font-weight: bold;"
     )
 
 
@@ -460,7 +461,10 @@ class SmartRuleRow(QFrame):
             self.remove_btn.setIcon(_close_ic)
         else:
             self.remove_btn.setText("✕")
-        self.remove_btn.setFixedSize((24), (24))
+        self.remove_btn.setFixedSize(
+            Design.ICON_BUTTON_SIZE,
+            Design.ICON_BUTTON_SIZE,
+        )
         self.remove_btn.setStyleSheet(_remove_btn_css())
         self.remove_btn.setToolTip("Remove this rule")
         self.remove_btn.setCursor(Qt.CursorShape.PointingHandCursor)

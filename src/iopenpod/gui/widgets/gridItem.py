@@ -6,7 +6,7 @@ from typing import Any
 
 from PIL import Image
 from PyQt6.QtCore import QPoint, QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QCursor, QFont, QImage, QPixmap
+from PyQt6.QtGui import QContextMenuEvent, QCursor, QFont, QImage, QMouseEvent, QPixmap
 from PyQt6.QtWidgets import QCheckBox, QFrame, QHBoxLayout, QLabel, QVBoxLayout
 
 from ..artwork_rendering import nested_artwork_radius, rounded_artwork_pixmap
@@ -418,6 +418,7 @@ class GridItem(QFrame):
             background = Colors.ACCENT_MUTED
             hover = Colors.ACCENT_DIM
             border = f"2px solid {Colors.ACCENT_BORDER}"
+            hover_border = border
             title_color = Colors.TEXT_PRIMARY
         elif self._render_state.display_dominant_color:
             r, g, b = self._render_state.display_dominant_color
@@ -508,14 +509,14 @@ class GridItem(QFrame):
         if not self._suspend_checkbox_signal:
             self.checked_changed.emit(checked)
 
-    def mousePressEvent(self, event) -> None:
-        if event and event.button() == Qt.MouseButton.LeftButton:
+    def mousePressEvent(self, a0: QMouseEvent | None) -> None:
+        if a0 and a0.button() == Qt.MouseButton.LeftButton:
             self.clicked.emit()
-        super().mousePressEvent(event)
+        super().mousePressEvent(a0)
 
-    def contextMenuEvent(self, event) -> None:
-        if event:
-            self.context_requested.emit(event.globalPos())
-            event.accept()
+    def contextMenuEvent(self, a0: QContextMenuEvent | None) -> None:
+        if a0:
+            self.context_requested.emit(a0.globalPos())
+            a0.accept()
             return
-        super().contextMenuEvent(event)
+        super().contextMenuEvent(a0)

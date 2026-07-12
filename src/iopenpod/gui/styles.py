@@ -828,48 +828,79 @@ def build_palette() -> QPalette:
 
 class Metrics:
     """Shared dimension constants ( in-place by ``apply_scaling``)."""
-    BORDER_RADIUS = 8
-    BORDER_RADIUS_SM = 6
-    BORDER_RADIUS_MD = 8
-    BORDER_RADIUS_LG = 10
-    BORDER_RADIUS_XL = 12
+    BORDER_RADIUS = 10
+    BORDER_RADIUS_SM = 8
+    BORDER_RADIUS_MD = 10
+    BORDER_RADIUS_LG = 12
+    BORDER_RADIUS_XL = 16
 
-    GRID_ITEM_W = 172
-    GRID_ITEM_H = 230
-    GRID_ART_SIZE = 152
-    GRID_SPACING = 14
+    # Library grid cards are explicit; artwork size is derived from the card
+    # width minus the shared inset on both sides.
+    GRID_ITEM_W = 220
+    GRID_ITEM_H = 280
+    GRID_CARD_MARGIN = 10
+    GRID_ART_SIZE = GRID_ITEM_W - (GRID_CARD_MARGIN * 2)
+    GRID_SPACING = 20
+    GRID_MARGIN_X = 40
+    GRID_MARGIN_Y = 16
+    GRID_CARD_SPACING = 6
+    GRID_TEXT_HEIGHT = 22
+    GRID_CARD_RADIUS = 16
+    GRID_ART_RADIUS = 6
 
-    SIDEBAR_WIDTH = 220
-    SCROLLBAR_W = 8
-    SCROLLBAR_MIN_H = 40
+    GRID_ITEM_PRESET_LARGE = "large"
+    GRID_ITEM_PRESET_SMALL = "small"
 
-    BTN_PADDING_V = 7
-    BTN_PADDING_H = 14
+    _GRID_ITEM_BASES = {
+        "GRID_ITEM_W": 220,
+        "GRID_ITEM_H": 280,
+        "GRID_CARD_MARGIN": 10,
+        "GRID_SPACING": 20,
+        "GRID_MARGIN_X": 40,
+        "GRID_MARGIN_Y": 16,
+        "GRID_CARD_SPACING": 6,
+        "GRID_CARD_RADIUS": 16,
+        "GRID_ART_RADIUS": 6,
+    }
+
+    _GRID_ITEM_PRESET_FACTORS = {
+        GRID_ITEM_PRESET_LARGE: 1.0,
+        GRID_ITEM_PRESET_SMALL: 0.84,
+    }
+
+    SIDEBAR_WIDTH = 288
+    SCROLLBAR_W = 10
+    SCROLLBAR_MIN_H = 44
+
+    BTN_PADDING_V = 8
+    BTN_PADDING_H = 16
 
     # ── Font size scale (pt) ─────────────────────────────────
-    FONT_XS = 8        # Tech details, section headers, fine print
-    FONT_SM = 9        # Descriptions, secondary labels, small buttons
-    FONT_MD = 10       # Body text, toolbar buttons, controls
-    FONT_LG = 11       # Sidebar nav, table headers, setting titles
+    # 100% is the comfortable, everyday desktop baseline. Smaller choices are
+    # intentionally opt-in; users should not need 125% just to read the app.
+    FONT_XS = 9        # Tech details, section headers, fine print
+    FONT_SM = 10       # Descriptions, secondary labels, small buttons
+    FONT_MD = 11       # Body text, toolbar buttons, controls
+    FONT_LG = 12       # Table headers and setting titles
     FONT_XL = 12       # Card titles, title bar text
-    FONT_XXL = 13      # Device name, stat values
-    FONT_TITLE = 14    # Dialog titles, page section titles
-    FONT_PAGE_TITLE = 16  # Large page headings (Sync Review, empty states)
-    FONT_HERO = 18     # Settings / backup page title
+    FONT_XXL = 14      # Device name, stat values
+    FONT_TITLE = 16    # Dialog titles, page section titles
+    FONT_PAGE_TITLE = 18  # Large page headings (Sync Review, empty states)
+    FONT_HERO = 22     # Settings / backup page title
 
     # ── Icon / glyph sizes (pt) — for large decorative text ──
-    FONT_ICON_SM = 15   # Small icon labels in cards
-    FONT_ICON_MD = 22   # Badge / backup list icons
-    FONT_ICON_LG = 40   # Grid item placeholder glyphs
-    FONT_ICON_XL = 48   # Empty-state decorative glyphs
+    FONT_ICON_SM = 16   # Small icon labels in cards
+    FONT_ICON_MD = 24   # Badge / backup list icons
+    FONT_ICON_LG = 42   # Grid item placeholder glyphs
+    FONT_ICON_XL = 52   # Empty-state decorative glyphs
 
     # Base values (100%) — used by apply_font_scale to recompute
     _FONT_BASES = {
-        "FONT_XS": 8, "FONT_SM": 9, "FONT_MD": 10, "FONT_LG": 11,
-        "FONT_XL": 12, "FONT_XXL": 13, "FONT_TITLE": 14,
-        "FONT_PAGE_TITLE": 16, "FONT_HERO": 18,
-        "FONT_ICON_SM": 15, "FONT_ICON_MD": 22,
-        "FONT_ICON_LG": 40, "FONT_ICON_XL": 48,
+        "FONT_XS": 9, "FONT_SM": 10, "FONT_MD": 11, "FONT_LG": 12,
+        "FONT_XL": 12, "FONT_XXL": 14, "FONT_TITLE": 16,
+        "FONT_PAGE_TITLE": 18, "FONT_HERO": 22,
+        "FONT_ICON_SM": 16, "FONT_ICON_MD": 24,
+        "FONT_ICON_LG": 42, "FONT_ICON_XL": 52,
     }
 
     @classmethod
@@ -883,6 +914,18 @@ class Metrics:
         for attr, base in cls._FONT_BASES.items():
             setattr(cls, attr, max(6, round(base * factor)))
 
+    @classmethod
+    def apply_grid_item_scale(cls, preset: str = GRID_ITEM_PRESET_LARGE) -> None:
+        """Scale grid card dimensions for the chosen size preset."""
+
+        normalized = str(preset).strip().lower().replace("-", "_").replace(" ", "_")
+        factor = cls._GRID_ITEM_PRESET_FACTORS.get(normalized, 1.0)
+
+        for attr, base in cls._GRID_ITEM_BASES.items():
+            setattr(cls, attr, max(1, round(base * factor)))
+
+        cls.GRID_ART_SIZE = max(1, cls.GRID_ITEM_W - (cls.GRID_CARD_MARGIN * 2))
+
 
 class Design:
     """iOpenPod design language primitives.
@@ -893,14 +936,19 @@ class Design:
 
     GRID = 4
 
-    CONTROL_RADIUS = 6
-    PANEL_RADIUS = 8
+    CONTROL_RADIUS = 8
+    PANEL_RADIUS = 12
     CHIP_RADIUS = 999
 
-    CONTROL_HEIGHT_SM = 28
-    CONTROL_HEIGHT_MD = 32
-    CONTROL_HEIGHT_LG = 36
-    ICON_BUTTON_SIZE = 28
+    CONTROL_HEIGHT_SM = 32
+    CONTROL_HEIGHT_MD = 36
+    CONTROL_HEIGHT_LG = 40
+    ICON_BUTTON_SIZE = 32
+
+    FIELD_PADDING_V = 4
+    FIELD_PADDING_H = 12
+    SPIN_PADDING_H = 8
+    FIELD_CONTENT_HEIGHT = 22
 
     BUTTON_WEIGHT = 500
     BUTTON_WEIGHT_STRONG = 600
@@ -973,7 +1021,7 @@ class DarkScrollbarStyle(QProxyStyle):
                     f"border-radius: {(4)}px;"
                     f"padding: {(3)}px {(6)}px;"
                     f"font-family: {_CSS_FONT_STACK};"
-                    f"font-size: {Metrics.FONT_LG}px;"
+                    f"font-size: {Metrics.FONT_LG}pt;"
                 )
         super().polish(arg)
 
@@ -1277,7 +1325,7 @@ def btn_css(
     _d_fg = fg_disabled if fg_disabled is not None else Colors.TEXT_DISABLED
     min_height_rule = f"min-height: {min_height}px;" if min_height is not None else ""
     min_width_rule = f"min-width: {min_width}px;" if min_width is not None else ""
-    font_size_rule = f"font-size: {font_size}px;" if font_size is not None else ""
+    font_size_rule = f"font-size: {font_size}pt;" if font_size is not None else ""
     font_weight_rule = f"font-weight: {font_weight};" if font_weight is not None else ""
     return f"""
         QPushButton {{
@@ -1466,7 +1514,7 @@ def chip_btn_css(size: str = "sm", *, checked_accent: bool = True) -> str:
 
 def back_btn_css() -> str:
     """Compact arrow-only back button used by full-page app chrome."""
-    size = 28
+    size = Design.ICON_BUTTON_SIZE
     return btn_css(
         padding="0px",
         radius=Metrics.BORDER_RADIUS_SM,
@@ -1487,11 +1535,15 @@ def input_css(
 ) -> str:
     """Standard input field stylesheet for QLineEdit / QTextEdit."""
     if radius is None:
-        radius = Metrics.BORDER_RADIUS_SM
+        radius = Design.CONTROL_RADIUS
     if padding is None:
-        padding = f"5px {Metrics.BTN_PADDING_H - 2}px"
+        padding = f"{Design.FIELD_PADDING_V}px {Design.FIELD_PADDING_H}px"
+    if min_height is None:
+        min_height = Design.FIELD_CONTENT_HEIGHT
+    if font_size is None:
+        font_size = Metrics.FONT_MD
     min_height_rule = f"min-height: {min_height}px;" if min_height is not None else ""
-    font_size_rule = f"font-size: {font_size}px;" if font_size is not None else ""
+    font_size_rule = f"font-size: {font_size}pt;" if font_size is not None else ""
     font_weight_rule = f"font-weight: {font_weight};" if font_weight is not None else ""
     return f"""
         QLineEdit, QTextEdit, QPlainTextEdit {{
@@ -1527,11 +1579,15 @@ def combo_css(
 ) -> str:
     """Standard combo box stylesheet for QComboBox."""
     if radius is None:
-        radius = Metrics.BORDER_RADIUS_SM
+        radius = Design.CONTROL_RADIUS
     if padding is None:
-        padding = f"5px {(10)}px"
+        padding = f"{Design.FIELD_PADDING_V}px {Design.FIELD_PADDING_H}px"
+    if min_height is None:
+        min_height = Design.FIELD_CONTENT_HEIGHT
+    if font_size is None:
+        font_size = Metrics.FONT_MD
     min_height_rule = f"min-height: {min_height}px;" if min_height is not None else ""
-    font_size_rule = f"font-size: {font_size}px;" if font_size is not None else ""
+    font_size_rule = f"font-size: {font_size}pt;" if font_size is not None else ""
     font_weight_rule = f"font-weight: {font_weight};" if font_weight is not None else ""
     return f"""
         QComboBox, QDateEdit {{
@@ -1586,11 +1642,15 @@ def spin_css(
 ) -> str:
     """Standard spin box stylesheet."""
     if radius is None:
-        radius = Metrics.BORDER_RADIUS_SM
+        radius = Design.CONTROL_RADIUS
     if padding is None:
-        padding = "4px 6px"
+        padding = f"{Design.FIELD_PADDING_V}px {Design.SPIN_PADDING_H}px"
+    if min_height is None:
+        min_height = Design.FIELD_CONTENT_HEIGHT
+    if font_size is None:
+        font_size = Metrics.FONT_MD
     min_height_rule = f"min-height: {min_height}px;" if min_height is not None else ""
-    font_size_rule = f"font-size: {font_size}px;" if font_size is not None else ""
+    font_size_rule = f"font-size: {font_size}pt;" if font_size is not None else ""
     return f"""
         QSpinBox, QDoubleSpinBox {{
             background: {Colors.SURFACE_ALT};
@@ -1625,18 +1685,20 @@ def spin_css(
 
 def checkbox_css(font_size: int | None = None) -> str:
     """Standard checkbox stylesheet."""
-    font_size_rule = f"font-size: {font_size}px;" if font_size is not None else ""
+    if font_size is None:
+        font_size = Metrics.FONT_MD
+    font_size_rule = f"font-size: {font_size}pt;" if font_size is not None else ""
     return f"""
         QCheckBox {{
             color: {Colors.TEXT_PRIMARY};
             background: transparent;
             font-family: {_CSS_FONT_STACK};
             {font_size_rule}
-            spacing: 6px;
+            spacing: 8px;
         }}
         QCheckBox::indicator {{
-            width: {(16)}px;
-            height: {(16)}px;
+            width: {(18)}px;
+            height: {(18)}px;
             border-radius: {(4)}px;
             border: 1px solid {Colors.BORDER};
             background: {Colors.SURFACE_ALT};
@@ -1669,7 +1731,7 @@ def title_input_css() -> str:
             border-bottom: 1px solid {Colors.BORDER_SUBTLE};
             color: {Colors.TEXT_PRIMARY};
             font-family: {_CSS_FONT_STACK};
-            font-size: {Metrics.FONT_PAGE_TITLE}px;
+            font-size: {Metrics.FONT_PAGE_TITLE}pt;
             font-weight: {Design.BUTTON_WEIGHT_STRONG};
             padding: 0px 0px 2px 0px;
         }}
@@ -1711,7 +1773,10 @@ def sidebar_nav_css() -> str:
         bg_hover=Colors.SURFACE_ACTIVE,
         bg_press=Colors.SURFACE,
         radius=Metrics.BORDER_RADIUS_SM,
-        padding=f"{(7)}px {(12)}px",
+        padding=f"0px {(12)}px",
+        min_height=Design.CONTROL_HEIGHT_LG,
+        font_size=Metrics.FONT_LG,
+        font_weight=Design.BUTTON_WEIGHT,
         extra="text-align: left;",
     )
 
@@ -1723,8 +1788,11 @@ def sidebar_nav_selected_css() -> str:
         bg_press=Colors.ACCENT_PRESS,
         fg=Colors.ACCENT,
         radius=Metrics.BORDER_RADIUS_SM,
-        padding=f"{(7)}px {(12)}px",
-        extra="text-align: left; font-weight: 600;",
+        padding=f"0px {(12)}px",
+        min_height=Design.CONTROL_HEIGHT_LG,
+        font_size=Metrics.FONT_LG,
+        font_weight=Design.BUTTON_WEIGHT_STRONG,
+        extra="text-align: left;",
     )
 
 
@@ -1751,9 +1819,10 @@ def table_css() -> str:
             gridline-color: {Colors.GRIDLINE};
             selection-background-color: {Colors.SELECTION};
             outline: none;
+            font-size: {Metrics.FONT_MD}pt;
         }}
         QTableWidget::item {{
-            padding: 6px 8px;
+            padding: 8px 10px;
             border-bottom: 1px solid {Colors.BORDER_SUBTLE};
         }}
         QTableWidget::item:selected {{
@@ -1763,9 +1832,9 @@ def table_css() -> str:
             background-color: {Colors.SURFACE};
         }}
         QTableView::indicator {{
-            width: 16px;
-            height: 16px;
-            border-radius: 3px;
+            width: 18px;
+            height: 18px;
+            border-radius: 4px;
             border: 1px solid {Colors.BORDER};
             background: {Colors.SURFACE_ALT};
         }}
@@ -1792,7 +1861,7 @@ def table_css() -> str:
             border: none;
             border-bottom: 1px solid {Colors.BORDER};
             font-weight: 600;
-            font-size: {Metrics.FONT_LG}px;
+            font-size: {Metrics.FONT_LG}pt;
         }}
         QHeaderView::section:hover {{
             background-color: {Colors.SURFACE_RAISED};
@@ -1816,10 +1885,12 @@ def context_menu_css() -> str:
             background: {Colors.MENU_BG};
             color: {Colors.TEXT_PRIMARY};
             border: 1px solid {Colors.BORDER};
-            padding: 4px 6px;
+            padding: 6px;
+            font-size: {Metrics.FONT_MD}pt;
+            border-radius: {Metrics.BORDER_RADIUS_SM}px;
         }}
         QMenu::item {{
-            padding: 6px 24px 6px 12px;
+            padding: 8px 28px 8px 12px;
         }}
         QMenu::item:selected {{
             background: {Colors.ACCENT_DIM};
@@ -2150,8 +2221,9 @@ def app_stylesheet() -> str:
         border: 1px solid {Colors.BORDER};
         border-radius: {Metrics.BORDER_RADIUS_SM}px;
         color: {Colors.TEXT_PRIMARY};
-        padding: {(6)}px {(20)}px;
-        min-width: {(70)}px;
+        padding: 0px {(20)}px;
+        min-height: {Design.CONTROL_HEIGHT_LG}px;
+        min-width: {(80)}px;
     }}
     QMessageBox QPushButton:hover {{
         background: {Colors.SURFACE_HOVER};
@@ -2169,7 +2241,8 @@ def app_stylesheet() -> str:
         border: 1px solid {Colors.BORDER};
         border-radius: {Metrics.BORDER_RADIUS_SM}px;
         color: {Colors.TEXT_PRIMARY};
-        padding: 5px {Metrics.BTN_PADDING_H - 2}px;
+        padding: {Design.FIELD_PADDING_V}px {Design.FIELD_PADDING_H}px;
+        min-height: {Design.FIELD_CONTENT_HEIGHT}px;
         selection-background-color: {Colors.ACCENT_DIM};
     }}
     QLineEdit:focus {{
@@ -2188,7 +2261,8 @@ def app_stylesheet() -> str:
         border: 1px solid {Colors.BORDER};
         border-radius: {Metrics.BORDER_RADIUS_SM}px;
         color: {Colors.TEXT_PRIMARY};
-        padding: 5px {(10)}px;
+        padding: {Design.FIELD_PADDING_V}px {Design.FIELD_PADDING_H}px;
+        min-height: {Design.FIELD_CONTENT_HEIGHT}px;
     }}
     QComboBox:hover {{
         border: 1px solid {Colors.BORDER_FOCUS};
@@ -2226,7 +2300,8 @@ def app_stylesheet() -> str:
         border: 1px solid {Colors.BORDER};
         border-radius: {Metrics.BORDER_RADIUS_SM}px;
         color: {Colors.TEXT_PRIMARY};
-        padding: 4px 6px;
+        padding: {Design.FIELD_PADDING_V}px {Design.SPIN_PADDING_H}px;
+        min-height: {Design.FIELD_CONTENT_HEIGHT}px;
     }}
     QSpinBox:focus, QDoubleSpinBox:focus {{
         border: 1px solid {Colors.BORDER_FOCUS};
@@ -2243,11 +2318,11 @@ def app_stylesheet() -> str:
     QCheckBox {{
         color: {Colors.TEXT_PRIMARY};
         background: transparent;
-        spacing: 6px;
+        spacing: 8px;
     }}
     QCheckBox::indicator {{
-        width: {(16)}px;
-        height: {(16)}px;
+        width: {(18)}px;
+        height: {(18)}px;
         border-radius: {(4)}px;
         border: 1px solid {Colors.BORDER};
         background: {Colors.SURFACE_ALT};

@@ -304,6 +304,18 @@ class MusicBrowser(QFrame):
 
         self.gridTrackSplitter.setSizes([grid_h, track_h])
 
+    def _show_track_list_fullscreen(self) -> None:
+        """Give the track list all splitter space when the grid pane is hidden."""
+
+        for widget_name in ("trackContainer", "browserTrack"):
+            widget = getattr(self, widget_name, None)
+            if widget is not None:
+                widget.show()
+
+        sizes = self.gridTrackSplitter.sizes()
+        total = max(self.gridTrackSplitter.height(), sum(sizes), 1)
+        self.gridTrackSplitter.setSizes([0, total])
+
     def onDataReady(self):
         """Called when iTunesDB cache is loaded. Refresh current view."""
         self._mark_all_tabs_dirty()
@@ -335,6 +347,7 @@ class MusicBrowser(QFrame):
             self.trackListTitleBar.setTitle("All Tracks")
             self.trackListTitleBar.resetColor()
             self.trackListTitleBar.setFullscreenMode(True)
+            self._show_track_list_fullscreen()
         elif category == "Playlists":
             self.stack.setCurrentIndex(1)
             self.trackListTitleBar.setFullscreenMode(False)
@@ -369,6 +382,7 @@ class MusicBrowser(QFrame):
             self.trackListTitleBar.setTitle(category)
             self.trackListTitleBar.resetColor()
             self.trackListTitleBar.setFullscreenMode(True)
+            self._show_track_list_fullscreen()
         elif category in ("Videos", "Movies", "TV Shows", "Music Videos"):
             # Video categories: hide entire grid container for fullscreen tracklist
             _MEDIA_TYPE_FILTER = {
@@ -386,6 +400,7 @@ class MusicBrowser(QFrame):
             self.trackListTitleBar.setTitle(category)
             self.trackListTitleBar.resetColor()
             self.trackListTitleBar.setFullscreenMode(True)
+            self._show_track_list_fullscreen()
         else:
             self.stack.setCurrentIndex(0)
             # Show grid for Albums, Artists, Genres

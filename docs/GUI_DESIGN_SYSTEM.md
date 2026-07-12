@@ -9,8 +9,14 @@ This is the reusable design language for the PyQt iopenpod.gui. New UI should us
   destructive actions look distinct, disabled states look inactive.
 - One primary action per surface. Use `accent_btn_css()` only for the action that
   advances the current task.
-- Stable geometry: controls use 4px-grid spacing, 6px control radius, 8px panel
+- Stable geometry: controls use 4px-grid spacing, 8px control radius, 12px panel
   radius, and fixed hit-target heights from `Design`.
+- Readable at 100%: body copy is 11pt, secondary copy is 10pt, and even fine
+  print stays at 9pt. Font scaling is an accessibility preference, not a
+  prerequisite for comfortably using the app.
+- Apple Music density: primary navigation rows are 40px tall, the main sidebar
+  is 288px wide, and library artwork uses 204px tiles on a 20px grid rhythm
+  with a 40px leading content gutter.
 - Quiet hierarchy: regular text stays regular weight, command labels use medium
   weight, primary or selected controls use semibold.
 - State changes are visible and consistent: hover brightens surface, press darkens
@@ -44,6 +50,11 @@ This is the reusable design language for the PyQt iopenpod.gui. New UI should us
 - `sm`: dense toolbar/chip/dialog secondary controls.
 - `md`: default app controls.
 - `lg`: confirmation dialogs and large task actions.
+
+The standard control heights are 32px, 36px, and 40px respectively. Avoid
+fixed heights below the small-control token for interactive elements.
+Text fields use 4px vertical and 12px horizontal padding, preserving the 4px
+grid while matching Apple Music's compact 32px search-field density.
 
 ## Review Rule
 

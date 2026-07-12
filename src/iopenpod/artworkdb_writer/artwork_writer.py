@@ -19,6 +19,8 @@ ArtworkDB structure:
       mhsd type=3 → mhlf → mhif[] (one per image format, describes ithmb file sizes)
 """
 
+from __future__ import annotations
+
 import logging
 import os
 from collections import Counter, defaultdict
@@ -58,8 +60,8 @@ from .rgb565 import get_artwork_format_definitions, get_artwork_formats, image_f
 
 logger = logging.getLogger(__name__)
 
-ITHMB_MAX_SIZE_BYTES = 256 * 1000 * 1000
-"""Maximum target size for one numbered ithmb file before opening the next N."""
+ITHMB_MAX_SIZE_BYTES = 32 * 1000 * 1000
+"""Performance budget for one mutable ITHMB shard before opening the next N."""
 
 # Backward-compatible test/downstream hook. Production extraction uses
 # ``extract_art_with_source`` unless this symbol has been monkeypatched.
@@ -72,6 +74,97 @@ def _ithmb_filename(format_id: int, index: int) -> str:
 
 def _ithmb_filename_from_path(path: str, format_id: int) -> str:
     return ithmb_filename_from_path(path, format_id)
+
+
+def _ithmb_file_index(filename: str, format_id: int) -> int | None:
+    """Return N from the canonical ``F{format_id}_N.ithmb`` filename."""
+    prefix = f"F{int(format_id)}_"
+    suffix = ".ithmb"
+    if not filename.startswith(prefix) or not filename.endswith(suffix):
+        return None
+    raw_index = filename[len(prefix) : -len(suffix)]
+    try:
+        return int(raw_index)
+    except ValueError:
+        return None
+
+
+def _select_ithmb_rewrite_plan(
+    existing_art: Mapping[int, dict],
+    decisions: Mapping[int, TrackArtworkDecision],
+    new_artwork: Mapping[ArtworkAssetRef, ArtworkPayload],
+) -> tuple[dict[int, set[str]], dict[int, int]]:
+    """Choose the lowest numbered file that can hold each new artwork format."""
+    indexed_filenames: dict[int, dict[int, str]] = defaultdict(dict)
+    for entry in existing_art.values():
+        for raw_format_id, ref in entry.get("formats", {}).items():
+            format_id = int(raw_format_id)
+            filename = ref.ithmb_filename or _ithmb_filename_from_path(ref.path, format_id)
+            index = _ithmb_file_index(filename, format_id)
+            if index is not None and index >= 1:
+                indexed_filenames[format_id][index] = filename
+
+    preserved_bytes_by_file: dict[tuple[int, str], int] = defaultdict(int)
+    seen_preserved_assets: set[ArtworkAssetRef] = set()
+    for decision in decisions.values():
+        if decision.kind not in (
+            ArtworkDecisionKind.PRESERVE_EXISTING,
+            ArtworkDecisionKind.PRESERVE_FALLBACK,
+        ):
+            continue
+        if decision.asset_ref is None or decision.existing_entry is None:
+            continue
+        if decision.asset_ref in seen_preserved_assets:
+            continue
+        seen_preserved_assets.add(decision.asset_ref)
+        for raw_format_id, ref in decision.existing_entry.get("formats", {}).items():
+            format_id = int(raw_format_id)
+            filename = ref.ithmb_filename or _ithmb_filename_from_path(ref.path, format_id)
+            if _ithmb_file_index(filename, format_id) is not None:
+                preserved_bytes_by_file[(format_id, filename)] += int(ref.size)
+
+    new_payload_sizes_by_format: dict[int, list[int]] = defaultdict(list)
+    for payload in new_artwork.values():
+        for format_id, format_payload in payload.formats.items():
+            if isinstance(format_payload, EncodedFormatPayload):
+                new_payload_sizes_by_format[format_id].append(int(format_payload.size))
+
+    rewrite_filenames: dict[int, set[str]] = {}
+    writable_start_indices: dict[int, int] = {}
+    for format_id, payload_sizes in new_payload_sizes_by_format.items():
+        filenames = indexed_filenames.get(format_id, {})
+        max_existing_index = max(filenames, default=0)
+        total_new_bytes = sum(payload_sizes)
+        largest_new_payload = max(payload_sizes)
+        for index in range(1, max_existing_index + 2):
+            filename = filenames.get(index, _ithmb_filename(format_id, index))
+            total_bytes = preserved_bytes_by_file[(format_id, filename)] + total_new_bytes
+            if total_bytes <= ITHMB_MAX_SIZE_BYTES:
+                rewrite_filenames[format_id] = {filename}
+                writable_start_indices[format_id] = index - 1
+                break
+        else:
+            # A bulk sync can need more than one file. Start with the lowest
+            # file that can hold one artwork payload; the writer opens the next
+            # available number only after this one reaches its size budget.
+            for index in range(1, max_existing_index + 2):
+                filename = filenames.get(index, _ithmb_filename(format_id, index))
+                total_bytes = (
+                    preserved_bytes_by_file[(format_id, filename)]
+                    + largest_new_payload
+                )
+                if total_bytes <= ITHMB_MAX_SIZE_BYTES:
+                    rewrite_filenames[format_id] = {filename}
+                    writable_start_indices[format_id] = index - 1
+                    break
+            else:
+                raise RuntimeError(
+                    f"Artwork format {format_id} has a {largest_new_payload}-byte "
+                    f"payload, exceeding the {ITHMB_MAX_SIZE_BYTES}-byte ITHMB "
+                    "file limit."
+                )
+
+    return rewrite_filenames, writable_start_indices
 
 
 @dataclass
@@ -477,6 +570,21 @@ def _build_existing_song_index(existing_art: dict[int, dict]) -> dict[int, int]:
     return existing_by_song_id
 
 
+def _preserved_asset_ref(existing_img_id: int, existing_entry: dict) -> ArtworkAssetRef:
+    """Keep MHII records that share the same ITHMB frames deduplicated."""
+    locations: list[str] = []
+    refs = existing_entry.get("formats", {})
+    for raw_format_id, ref in sorted(refs.items(), key=lambda item: int(item[0])):
+        format_id = int(raw_format_id)
+        filename = ref.ithmb_filename or _ithmb_filename_from_path(ref.path, format_id)
+        locations.append(
+            f"{format_id}:{filename}:{int(ref.ithmb_offset)}:{int(ref.size)}"
+        )
+    if not locations:
+        return ArtworkAssetRef("preserve", existing_img_id)
+    return ArtworkAssetRef("preserve", "|".join(locations))
+
+
 def _collect_track_artwork_decisions(
     tracks: list,
     pc_file_paths: dict[int, str],
@@ -486,6 +594,7 @@ def _collect_track_artwork_decisions(
     decisions: dict[int, TrackArtworkDecision] = {}
     summary = ArtworkDecisionSummary()
     existing_by_song_id = _build_existing_song_index(existing_art)
+    extracted_by_path: dict[str, tuple[bytes | None, str | None]] = {}
 
     for track in tracks:
         db_track_id = _get_track_field(track, "db_track_id")
@@ -517,7 +626,7 @@ def _collect_track_artwork_decisions(
             decisions[db_track_id] = TrackArtworkDecision(
                 db_track_id=db_track_id,
                 kind=kind,
-                asset_ref=ArtworkAssetRef("preserve", existing_img_id),
+                asset_ref=_preserved_asset_ref(existing_img_id, existing_entry),
                 src_img_size=int(existing_entry.get("src_img_size", 0) or 0),
                 existing_entry=existing_entry,
             )
@@ -532,7 +641,7 @@ def _collect_track_artwork_decisions(
                 decisions[db_track_id] = TrackArtworkDecision(
                     db_track_id=db_track_id,
                     kind=ArtworkDecisionKind.PRESERVE_FALLBACK,
-                    asset_ref=ArtworkAssetRef("preserve", existing_img_id),
+                    asset_ref=_preserved_asset_ref(existing_img_id, existing_entry),
                     src_img_size=int(existing_entry.get("src_img_size", 0) or 0),
                     existing_entry=existing_entry,
                 )
@@ -553,7 +662,7 @@ def _collect_track_artwork_decisions(
                 decisions[db_track_id] = TrackArtworkDecision(
                     db_track_id=db_track_id,
                     kind=ArtworkDecisionKind.PRESERVE_FALLBACK,
-                    asset_ref=ArtworkAssetRef("preserve", existing_img_id),
+                    asset_ref=_preserved_asset_ref(existing_img_id, existing_entry),
                     src_img_size=int(existing_entry.get("src_img_size", 0) or 0),
                     existing_entry=existing_entry,
                 )
@@ -567,11 +676,17 @@ def _collect_track_artwork_decisions(
                 summary.cleared += 1
             continue
 
-        if extract_art_with_folder is not _extract_art_with_folder:
-            art_bytes = extract_art_with_folder(pc_path)
-            art_source_path = pc_path if art_bytes is not None else None
-        else:
-            art_bytes, art_source_path = extract_art_with_source(pc_path)
+        source_cache_key = os.path.normcase(os.path.abspath(pc_path))
+        cached_art = extracted_by_path.get(source_cache_key)
+        if cached_art is None:
+            if extract_art_with_folder is not _extract_art_with_folder:
+                art_bytes = extract_art_with_folder(pc_path)
+                art_source_path = pc_path if art_bytes is not None else None
+            else:
+                art_bytes, art_source_path = extract_art_with_source(pc_path)
+            cached_art = (art_bytes, art_source_path)
+            extracted_by_path[source_cache_key] = cached_art
+        art_bytes, art_source_path = cached_art
         if art_bytes is None:
             decisions[db_track_id] = TrackArtworkDecision(
                 db_track_id=db_track_id,
@@ -710,11 +825,19 @@ def _load_preserved_art_payloads(
     device_format_defs: Mapping[int, ArtworkFormat],
     *,
     passthrough_known_formats: bool = False,
+    rewrite_known_filenames: Mapping[int, set[str]] | None = None,
 ) -> tuple[dict[ArtworkAssetRef, ArtworkPayload], int, int]:
     """Load or salvage preserved on-device artwork for reuse."""
     preserve_entries: dict[ArtworkAssetRef, dict] = {}
     preserve_refs: dict[ArtworkAssetRef, dict] = {}
     ref_by_file_fmt: dict[tuple[str, int], list[tuple[int, ArtworkAssetRef, int]]] = defaultdict(list)
+    rewrite_known_filenames = rewrite_known_filenames or {}
+
+    def _should_rewrite_known_ref(fmt_id: int, ref: ExistingFormatRef) -> bool:
+        if not passthrough_known_formats:
+            return True
+        filename = ref.ithmb_filename or _ithmb_filename_from_path(ref.path, fmt_id)
+        return filename in rewrite_known_filenames.get(fmt_id, set())
 
     for decision in decisions.values():
         if decision.kind not in (
@@ -741,8 +864,8 @@ def _load_preserved_art_payloads(
                 "fmt_meta": fmt_meta,
                 "src_img_size": int(decision.existing_entry.get("src_img_size", 0) or 0),
             }
-            if not passthrough_known_formats:
-                for fmt_id, meta in fmt_meta.items():
+            for fmt_id, meta in fmt_meta.items():
+                if _should_rewrite_known_ref(fmt_id, meta):
                     ref_by_file_fmt[(meta.path, fmt_id)].append(
                         (meta.ithmb_offset, decision.asset_ref, meta.size)
                     )
@@ -773,14 +896,13 @@ def _load_preserved_art_payloads(
             fmt_id: ref
             for fmt_id, ref in asset_passthrough_format_refs.get(asset_ref, {}).items()
         }
-        if passthrough_known_formats:
-            for fmt_id, ref in meta["fmt_meta"].items():
+        for fmt_id, ref in meta["fmt_meta"].items():
+            if not _should_rewrite_known_ref(fmt_id, ref):
                 formats[fmt_id] = PassthroughFormatRef.from_existing_ref(ref)
-        else:
-            for fmt_id, dims in meta["fmt_meta"].items():
+            else:
                 pixel_bytes = pixel_cache.get((asset_ref, fmt_id))
                 if pixel_bytes:
-                    formats[fmt_id] = EncodedFormatPayload.from_existing_ref(dims, pixel_bytes)
+                    formats[fmt_id] = EncodedFormatPayload.from_existing_ref(ref, pixel_bytes)
         if formats:
             unique_converted[asset_ref] = ArtworkPayload(
                 formats=formats,
@@ -982,6 +1104,11 @@ def write_artworkdb(
         device_format_defs,
         progress_callback=progress_callback,
     )
+    rewrite_filenames, writable_start_indices = (
+        _select_ithmb_rewrite_plan(existing_art, decisions, unique_converted)
+        if unique_converted
+        else ({}, {})
+    )
     preserved_converted, salvaged_preserved, dropped_invalid = _load_preserved_art_payloads(
         decisions,
         required_format_ids,
@@ -989,7 +1116,10 @@ def write_artworkdb(
         asset_passthrough_format_refs,
         device_formats,
         device_format_defs,
-        passthrough_known_formats=decision_summary.reencoded == 0,
+        # Rewrite only the lowest file that has room for the new artwork. Other
+        # files retain their existing track links without extra device I/O.
+        passthrough_known_formats=True,
+        rewrite_known_filenames=rewrite_filenames,
     )
     unique_converted.update(preserved_converted)
     decision_summary.salvaged = salvaged_preserved
@@ -1124,7 +1254,7 @@ def write_artworkdb(
     ithmb_final_paths: dict[tuple[int, int], str] = {}  # (fmt_id, file_index) -> final path
     ithmb_files = {}
     ithmb_state: dict[int, dict[str, int]] = {
-        fmt_id: {"index": 0, "offset": 0}
+        fmt_id: {"index": writable_start_indices.get(fmt_id, 0), "offset": 0}
         for fmt_id in writable_format_ids
     }
 

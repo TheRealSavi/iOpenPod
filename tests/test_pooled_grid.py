@@ -95,7 +95,9 @@ def test_shared_pooled_grid_owns_keyed_selection_checking_and_context(qtbot):
     assert grid.currentIndex() == 0
 
     grid.setRecordChecked("one", True)
-    assert grid.recordAt(0).checked is True
+    first_record = grid.recordAt(0)
+    assert first_record is not None
+    assert first_record.checked is True
     assert first.checkbox is not None and first.checkbox.isChecked()
 
     pos = first.rect().center()

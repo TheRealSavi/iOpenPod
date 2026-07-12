@@ -66,7 +66,7 @@ from iopenpod.sync.review_selection import build_selected_photo_plan
 from iopenpod.sync_progress_stages import friendly_stage_label
 
 from ..glyphs import glyph_icon, glyph_pixmap
-from ..styles import FONT_FAMILY, Colors, Metrics, accent_btn_css, btn_css, button_css, make_scroll_area, progress_bar_css
+from ..styles import FONT_FAMILY, Colors, Design, Metrics, accent_btn_css, btn_css, button_css, make_scroll_area, progress_bar_css
 from .formatters import format_duration_mmss as _format_duration
 from .formatters import format_size as _format_size
 from .syncStagesPanel import DEFAULT_PIPELINE, SyncStagesPanel
@@ -328,7 +328,7 @@ class SyncTrackRow(QFrame):
         # Right-side badge / iPod size
         self.badge_label = QLabel(self)
         self.badge_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
-        self.badge_label.setFixedHeight(24)
+        self.badge_label.setMinimumHeight(28)
         self.badge_label.setMinimumWidth(52)
         self.badge_label.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.badge_label.setStyleSheet(
@@ -662,7 +662,7 @@ class _InfoRow(QFrame):
         if badge:
             b = QLabel(badge, self)
             b.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
-            b.setFixedHeight(24)
+            b.setFixedHeight(Design.CONTROL_HEIGHT_SM)
             b.setMinimumWidth(52)
             b.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
             b.setStyleSheet(
@@ -752,7 +752,7 @@ class _CheckableInfoRow(QFrame):
         if badge:
             b = QLabel(badge, self)
             b.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
-            b.setFixedHeight(24)
+            b.setFixedHeight(Design.CONTROL_HEIGHT_SM)
             b.setMinimumWidth(52)
             b.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
             b.setStyleSheet(
@@ -826,7 +826,7 @@ class _DuplicateGroupWidget(QFrame):
         skipped = max(0, len(tracks) - 1)
         summary = QLabel(f"1 synced · {skipped} skipped", self)
         summary.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
-        summary.setFixedHeight(24)
+        summary.setMinimumHeight(28)
         summary.setMinimumWidth(52)
         summary.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         summary.setStyleSheet(
@@ -883,7 +883,7 @@ class _DuplicateGroupWidget(QFrame):
         if size:
             size_lbl = QLabel(_format_size(size), self)
             size_lbl.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
-            size_lbl.setFixedHeight(24)
+            size_lbl.setMinimumHeight(28)
             size_lbl.setMinimumWidth(52)
             size_lbl.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
             size_lbl.setStyleSheet(
@@ -980,7 +980,10 @@ class SyncCategoryCard(QFrame):
 
         # Icon
         icon_lbl = QLabel(self._header_frame)
-        icon_lbl.setFixedSize(30, 30)
+        icon_lbl.setFixedSize(
+            Design.ICON_BUTTON_SIZE,
+            Design.ICON_BUTTON_SIZE,
+        )
         icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         svg_px = glyph_pixmap(icon, (16), accent)
         if svg_px:
@@ -1028,7 +1031,7 @@ class SyncCategoryCard(QFrame):
         count_lbl = QLabel(str(count), self._header_frame)
         count_lbl.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.Bold))
         count_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        count_lbl.setFixedHeight(24)
+        count_lbl.setMinimumHeight(28)
         count_lbl.setMinimumWidth(34)
         count_lbl.setStyleSheet(f"""
             background: {_rgba(accent, 22)};
@@ -1317,7 +1320,7 @@ class SyncReviewWidget(QWidget):
         # Stage headline
         self.loading_label = QLabel("Scanning library...", loading_center)
         self.loading_label.setStyleSheet(
-            f"color: {Colors.TEXT_PRIMARY}; font-size: {Metrics.FONT_HERO}px;"
+            f"color: {Colors.TEXT_PRIMARY}; font-size: {Metrics.FONT_HERO}pt;"
             f" font-weight: 500;"
         )
         self.loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1337,7 +1340,7 @@ class SyncReviewWidget(QWidget):
         # ETA / counter
         self.eta_label = QLabel("", loading_center)
         self.eta_label.setStyleSheet(
-            f"color: {Colors.TEXT_TERTIARY}; font-size: {Metrics.FONT_MD}px;"
+            f"color: {Colors.TEXT_TERTIARY}; font-size: {Metrics.FONT_MD}pt;"
         )
         self.eta_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         loading_layout.addWidget(self.eta_label)
@@ -1348,7 +1351,7 @@ class SyncReviewWidget(QWidget):
         # Bounded size so a burst of active workers cannot grow the window.
         self.progress_detail = QLabel("", loading_center)
         self.progress_detail.setStyleSheet(
-            f"color: {Colors.TEXT_TERTIARY}; font-size: {Metrics.FONT_LG}px;"
+            f"color: {Colors.TEXT_TERTIARY}; font-size: {Metrics.FONT_LG}pt;"
         )
         self.progress_detail.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.progress_detail.setWordWrap(False)
@@ -1364,7 +1367,7 @@ class SyncReviewWidget(QWidget):
             loading_center,
         )
         self._backup_hint.setStyleSheet(
-            f"color: {Colors.TEXT_TERTIARY}; font-size: {Metrics.FONT_SM}px;"
+            f"color: {Colors.TEXT_TERTIARY}; font-size: {Metrics.FONT_SM}pt;"
         )
         self._backup_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._backup_hint.setVisible(False)
@@ -1509,7 +1512,7 @@ class SyncReviewWidget(QWidget):
         empty_layout.addWidget(empty_text)
 
         self.empty_stats = QLabel("", empty_widget)
-        self.empty_stats.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; font-size: {Metrics.FONT_XL}px;")
+        self.empty_stats.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; font-size: {Metrics.FONT_XL}pt;")
         self.empty_stats.setAlignment(Qt.AlignmentFlag.AlignCenter)
         empty_layout.addWidget(self.empty_stats)
 
@@ -1532,7 +1535,7 @@ class SyncReviewWidget(QWidget):
         results_layout.addWidget(self.result_title)
 
         self.result_details = QLabel("", results_widget)
-        self.result_details.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: {Metrics.FONT_XXL}px;")
+        self.result_details.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: {Metrics.FONT_XXL}pt;")
         self.result_details.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.result_details.setWordWrap(True)
         self.result_details.setMaximumWidth(500)
@@ -1571,7 +1574,7 @@ class SyncReviewWidget(QWidget):
         presync_layout.addWidget(self._presync_title)
 
         self._presync_text = QLabel("", presync_inner)
-        self._presync_text.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: {Metrics.FONT_XL}px;")
+        self._presync_text.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: {Metrics.FONT_XL}pt;")
         self._presync_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._presync_text.setWordWrap(True)
         presync_layout.addWidget(self._presync_text)
@@ -1601,7 +1604,7 @@ class SyncReviewWidget(QWidget):
 
         self._presync_hint = QLabel("", presync_inner)
         self._presync_hint.setStyleSheet(
-            f"color: {Colors.TEXT_TERTIARY}; font-size: {Metrics.FONT_MD}px;"
+            f"color: {Colors.TEXT_TERTIARY}; font-size: {Metrics.FONT_MD}pt;"
         )
         self._presync_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         presync_layout.addWidget(self._presync_hint)
@@ -2515,7 +2518,7 @@ class SyncReviewWidget(QWidget):
         if projected > total:
             over = projected - total
             self._storage_detail.setStyleSheet(
-                f"color:{Colors.DANGER}; font-size:{Metrics.FONT_MD}px; "
+                f"color:{Colors.DANGER}; font-size:{Metrics.FONT_MD}pt; "
                 f"font-family:{FONT_FAMILY}; background:transparent;"
             )
             self._storage_detail.setText(
@@ -2525,7 +2528,7 @@ class SyncReviewWidget(QWidget):
         else:
             net_sign = "+" if net_change >= 0 else "-"
             self._storage_detail.setStyleSheet(
-                f"color:{Colors.TEXT_TERTIARY}; font-size:{Metrics.FONT_MD}px; "
+                f"color:{Colors.TEXT_TERTIARY}; font-size:{Metrics.FONT_MD}pt; "
                 f"font-family:{FONT_FAMILY}; background:transparent;"
             )
             self._storage_detail.setText(
@@ -3659,7 +3662,10 @@ class PCFolderDialog(QDialog):
         color: str = Colors.TEXT_SECONDARY,
     ) -> QPushButton:
         btn = QPushButton("")
-        btn.setFixedSize(30, 30)
+        btn.setFixedSize(
+            Design.ICON_BUTTON_SIZE,
+            Design.ICON_BUTTON_SIZE,
+        )
         btn.setIconSize(QSize(18, 18))
         icon = glyph_icon(glyph, 18, color)
         if icon:
@@ -3670,7 +3676,10 @@ class PCFolderDialog(QDialog):
             bg_hover=Colors.SURFACE_ACTIVE,
             bg_press=Colors.SURFACE,
             padding="4px",
-            extra="min-width: 0; max-width: 30px;",
+            extra=(
+                "min-width: 0; "
+                f"max-width: {Design.ICON_BUTTON_SIZE}px;"
+            ),
         ))
         return btn
 
@@ -3780,7 +3789,8 @@ class PCFolderDialog(QDialog):
             header_layout.setSpacing(10)
 
             number = QLabel(str(index))
-            number.setFixedWidth(24)
+            number_size = max(24, Metrics.FONT_SM * 2)
+            number.setFixedSize(number_size, number_size)
             number.setAlignment(Qt.AlignmentFlag.AlignCenter)
             number.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.Bold))
             number.setStyleSheet(f"""
@@ -3788,7 +3798,7 @@ class PCFolderDialog(QDialog):
                     color: {Colors.TEXT_ON_ACCENT};
                     background: {Colors.ACCENT_DIM};
                     border: none;
-                    border-radius: 12px;
+                    border-radius: {number_size // 2}px;
                     padding: 3px;
                 }}
             """)

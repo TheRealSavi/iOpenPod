@@ -63,6 +63,7 @@ from ..imgMaker import TrackArtworkPreview, get_track_artwork_previews
 from ..styles import (
     FONT_FAMILY,
     Colors,
+    Design,
     Metrics,
     accent_btn_css,
     btn_css,
@@ -1000,7 +1001,7 @@ class _ChapterCellDelegate(QStyledItemDelegate):
                 border-radius: {Metrics.BORDER_RADIUS_SM}px;
                 padding: 0 6px;
                 font-family: {FONT_FAMILY};
-                font-size: {Metrics.FONT_SM}px;
+                font-size: {Metrics.FONT_SM}pt;
                 selection-background-color: {Colors.ACCENT};
                 selection-color: {Colors.TEXT_ON_ACCENT};
             }}
@@ -1138,7 +1139,7 @@ class _ChapterTimelineEditor(QFrame):
                 selection-background-color: {Colors.ACCENT_MUTED};
                 selection-color: {Colors.TEXT_PRIMARY};
                 font-family: {FONT_FAMILY};
-                font-size: {Metrics.FONT_SM}px;
+                font-size: {Metrics.FONT_SM}pt;
             }}
             QTableWidget::item {{
                 padding: 7px 8px;
@@ -1154,7 +1155,7 @@ class _ChapterTimelineEditor(QFrame):
                 border-bottom: 1px solid {Colors.BORDER_SUBTLE};
                 padding: 7px 8px;
                 font-family: {FONT_FAMILY};
-                font-size: {Metrics.FONT_XS}px;
+                font-size: {Metrics.FONT_XS}pt;
                 font-weight: 700;
             }}
             """
@@ -1387,7 +1388,7 @@ class _TrackFieldRow(QFrame):
                     color: {Colors.TEXT_TERTIARY};
                     padding: 2px 7px;
                     font-family: {FONT_FAMILY};
-                    font-size: {Metrics.FONT_XS}px;
+                    font-size: {Metrics.FONT_XS}pt;
                 }}
                 """
             )
@@ -1397,7 +1398,7 @@ class _TrackFieldRow(QFrame):
         self.reset_button.setObjectName("fieldResetButton")
         self.reset_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.reset_button.setVisible(False)
-        self.reset_button.setFixedHeight(24)
+        self.reset_button.setFixedHeight(Design.CONTROL_HEIGHT_SM)
         self.reset_button.clicked.connect(self.reset)
         self.reset_button.setStyleSheet(
             f"""
@@ -1408,7 +1409,7 @@ class _TrackFieldRow(QFrame):
                 color: {Colors.TEXT_SECONDARY};
                 padding: 2px 8px;
                 font-family: {FONT_FAMILY};
-                font-size: {Metrics.FONT_SM}px;
+                font-size: {Metrics.FONT_SM}pt;
             }}
             QPushButton#fieldResetButton:hover {{
                 border-color: {Colors.BORDER_FOCUS};
@@ -1499,7 +1500,7 @@ class _TrackFieldRow(QFrame):
                 color: {Colors.TEXT_PRIMARY};
                 padding: 7px 9px;
                 font-family: {FONT_FAMILY};
-                font-size: {Metrics.FONT_SM}px;
+                font-size: {Metrics.FONT_SM}pt;
             }}
             QLineEdit:focus, QPlainTextEdit:focus, QComboBox:focus {{
                 border-color: {Colors.BORDER_FOCUS};
@@ -1943,7 +1944,7 @@ class _ArtworkCropDialog(QDialog):
             QLabel {{
                 color: {Colors.TEXT_SECONDARY};
                 font-family: {FONT_FAMILY};
-                font-size: {Metrics.FONT_SM}px;
+                font-size: {Metrics.FONT_SM}pt;
             }}
             QSlider::groove:horizontal {{
                 background: {Colors.SURFACE_ALT};
@@ -2527,7 +2528,7 @@ class _ArtworkPreviewPanel(QFrame):
             btn.setCheckable(True)
             btn.setChecked(index == self._format_index)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setFixedHeight(25)
+            btn.setFixedHeight(Design.CONTROL_HEIGHT_SM)
             btn.setStyleSheet(chip_css)
             btn.clicked.connect(lambda _checked=False, index=index: self._select_format(index))
             self._format_buttons_layout.addWidget(btn)

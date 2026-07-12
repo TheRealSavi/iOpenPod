@@ -9,7 +9,35 @@ from PyQt6.QtCore import QPoint
 from iopenpod.gui.styles import context_menu_css
 from iopenpod.gui.widgets import photoBrowser as photo_browser_module
 from iopenpod.gui.widgets.photoBrowser import PhotoBrowserWidget
+from iopenpod.gui.widgets.photoViewer import PhotoViewerPane
 from iopenpod.sync.photos import PhotoEntry
+
+
+def test_photo_viewer_action_buttons_collapse_to_glyphs_when_narrow(qtbot):
+    viewer = PhotoViewerPane(heading="")
+    qtbot.addWidget(viewer)
+    buttons = viewer.configureActionRow(
+        [
+            ("export", "Export", "download", False),
+            ("add", "Add to Album", "plus", False),
+            ("remove", "Remove from Album", "minus", False),
+            ("delete", "Delete Photo", "trash", True),
+        ]
+    )
+
+    viewer.resize(320, 500)
+    viewer.show()
+    qtbot.wait(50)
+
+    assert all(button.text() == "" for button in buttons.values())
+    assert buttons["add"].toolTip() == "Add to Album"
+    assert all(button.width() == 32 for button in buttons.values())
+
+    viewer.resize(900, 500)
+    qtbot.wait(50)
+
+    assert buttons["add"].text() == "Add to Album"
+    assert buttons["remove"].text() == "Remove from Album"
 
 
 class _Action:

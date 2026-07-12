@@ -124,7 +124,7 @@ class DatabaseStorageBrowser(QWidget):
                 border-bottom: 1px solid {Colors.BORDER};
                 padding: 6px 8px;
                 font-weight: 600;
-                font-size: {Metrics.FONT_LG}px;
+                font-size: {Metrics.FONT_LG}pt;
             }}
         """)
         header_view = self.tree.header()

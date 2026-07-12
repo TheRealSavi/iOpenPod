@@ -186,12 +186,13 @@ def run_pyqt_app(context: AppContext | None = None) -> None:
         os.environ.setdefault("QT_IM_MODULE", "")
 
     from PyQt6.QtCore import Qt
-    from PyQt6.QtGui import QIcon
+    from PyQt6.QtGui import QFont, QIcon
     from PyQt6.QtWidgets import QApplication
 
     from iopenpod.gui.app import MainWindow
     from iopenpod.gui.fonts import load_bundled_fonts
     from iopenpod.gui.styles import (
+        FONT_FAMILY,
         Colors,
         DarkScrollbarStyle,
         Metrics,
@@ -215,6 +216,7 @@ def run_pyqt_app(context: AppContext | None = None) -> None:
         resolve_accent_color(settings_snapshot.accent_color),
     )
     Metrics.apply_font_scale(settings_snapshot.font_scale)
+    app.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
     app.setPalette(build_palette())
 
     icon_dir = resource_path("assets", "icons")

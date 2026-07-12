@@ -55,8 +55,8 @@ def test_track_edits_do_not_reload_photo_browser() -> None:
 def test_context_menu_css_styles_disabled_rows_and_icon_gutter() -> None:
     css = context_menu_css()
 
-    assert "padding: 4px 6px;" in css
-    assert "padding: 6px 24px 6px 12px;" in css
+    assert "padding: 6px;" in css
+    assert "padding: 8px 28px 8px 12px;" in css
     assert "QMenu::item:disabled" in css
     assert "QMenu::item:disabled:selected" in css
     assert f"color: {Colors.TEXT_DISABLED};" in css
@@ -226,6 +226,40 @@ def test_light_theme_title_bar_uses_more_opaque_album_gradient(qtbot, monkeypatc
     assert "stop:0.58rgba(86,112,144,112)" in compact_css
     assert "stop:1rgba(67,87,112,96)" in compact_css
     assert "border-bottom:" not in compact_css
+
+
+def test_title_bar_maximize_uses_splitter_height_when_sizes_are_collapsed(
+    qtbot,
+    monkeypatch,
+) -> None:
+    splitter = QSplitter()
+    titlebar = TrackListTitleBar(splitter)
+    qtbot.addWidget(splitter)
+    qtbot.addWidget(titlebar)
+    splitter.resize(900, 600)
+
+    applied_sizes: list[list[int]] = []
+    monkeypatch.setattr(splitter, "sizes", lambda: [0, titlebar.minimumHeight()])
+    monkeypatch.setattr(splitter, "setSizes", applied_sizes.append)
+
+    titlebar._toggleMaximize()
+
+    assert applied_sizes == [[120, 480]]
+
+
+def test_fullscreen_tracklist_sizes_hidden_grid_to_zero() -> None:
+    applied_sizes: list[list[int]] = []
+    browser = SimpleNamespace(
+        gridTrackSplitter=SimpleNamespace(
+            height=lambda: 600,
+            sizes=lambda: [560, 40],
+            setSizes=applied_sizes.append,
+        )
+    )
+
+    MusicBrowser._show_track_list_fullscreen(cast(Any, browser))
+
+    assert applied_sizes == [[0, 600]]
 
 
 def test_album_selection_reuses_grid_display_color_for_titlebar() -> None:

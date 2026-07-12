@@ -244,7 +244,8 @@ class UpdateAvailableDialog(QDialog):
             row.setSpacing(10)
 
             chip = QLabel(str(index))
-            chip.setFixedSize(24, 24)
+            chip_size = max(24, Metrics.FONT_SM * 2)
+            chip.setFixedSize(chip_size, chip_size)
             chip.setAlignment(Qt.AlignmentFlag.AlignCenter)
             chip.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
             chip.setStyleSheet(
@@ -253,7 +254,7 @@ class UpdateAvailableDialog(QDialog):
                     color: {Colors.TEXT_ON_ACCENT};
                     background: {Colors.ACCENT};
                     border: none;
-                    border-radius: 12px;
+                    border-radius: {chip_size // 2}px;
                 }}
                 """
             )

@@ -551,10 +551,14 @@ class MainWindow(QMainWindow):
         Called once from ``__init__`` and again by ``_on_theme_changed``
         to rebuild the UI with fresh themed styles.
         """
+        s = self.settings_service.get_effective_settings()
+        Metrics.apply_grid_item_scale(getattr(s, "grid_item_size", "large"))
+
         # Main browsing page
         self.mainWidget = QWidget()
         self.mainLayout = QHBoxLayout(self.mainWidget)
         self.mainLayout.setContentsMargins(0, 0, 0, 0)
+        self.mainLayout.setSpacing(0)
 
         self.musicBrowser = MusicBrowser(
             settings_service=self.settings_service,
@@ -1050,6 +1054,7 @@ class MainWindow(QMainWindow):
         try:
             app = QApplication.instance()
             if isinstance(app, QApplication):
+                app.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
                 app.setPalette(build_palette())
                 app.setStyleSheet(app_stylesheet())
             self.musicPlayer.refreshStyle()
@@ -1389,6 +1394,7 @@ class MainWindow(QMainWindow):
         accent_hex = resolve_accent_color(s.accent_color, img)
         Colors.apply_theme(s.theme, s.high_contrast, accent_hex)
         Metrics.apply_font_scale(s.font_scale)
+        Metrics.apply_grid_item_scale(getattr(s, "grid_item_size", "large"))
         return Colors.ACCENT != old_accent
 
     def _apply_match_ipod_accent(self, dev=None):

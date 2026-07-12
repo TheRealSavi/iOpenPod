@@ -38,15 +38,19 @@ from iopenpod.infrastructure.settings_schema import (
     BACKUP_BEFORE_SYNC_ASK,
     BACKUP_BEFORE_SYNC_AUTO,
     BACKUP_BEFORE_SYNC_OFF,
+    GRID_ITEM_SIZE_LARGE,
+    GRID_ITEM_SIZE_SMALL,
     PLAYER_POSITION_BOTTOM,
     PLAYER_POSITION_TOP,
     normalize_backup_before_sync_mode,
+    normalize_grid_item_size,
     normalize_player_position,
 )
 
 from ..styles import (
     FONT_FAMILY,
     Colors,
+    Design,
     Metrics,
     back_btn_css,
     button_css,
@@ -80,6 +84,13 @@ _PLAYER_POSITION_DISPLAY = {
 }
 _PLAYER_POSITION_BY_TEXT = {
     text: mode for mode, text in _PLAYER_POSITION_DISPLAY.items()
+}
+_GRID_ITEM_SIZE_DISPLAY = {
+    GRID_ITEM_SIZE_LARGE: "Large",
+    GRID_ITEM_SIZE_SMALL: "Small",
+}
+_GRID_ITEM_SIZE_BY_TEXT = {
+    text: size for size, text in _GRID_ITEM_SIZE_DISPLAY.items()
 }
 
 
@@ -367,9 +378,9 @@ class ResettableFolderRow(SettingRow):
 
         self.clear_btn = QPushButton("\u2715")
         self.clear_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        self.clear_btn.setFixedWidth(28)
+        self.clear_btn.setFixedWidth(Design.ICON_BUTTON_SIZE)
         self.clear_btn.setToolTip("Reset to default")
-        self.clear_btn.setStyleSheet(icon_btn_css(28))
+        self.clear_btn.setStyleSheet(icon_btn_css())
         self.clear_btn.clicked.connect(self._clear)
         right_layout.addWidget(self.clear_btn)
 
@@ -482,9 +493,9 @@ class FileRow(SettingRow):
 
         self.clear_btn = QPushButton("✕")
         self.clear_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        self.clear_btn.setFixedWidth(28)
+        self.clear_btn.setFixedWidth(Design.ICON_BUTTON_SIZE)
         self.clear_btn.setToolTip("Reset to auto-detect")
-        self.clear_btn.setStyleSheet(icon_btn_css(28))
+        self.clear_btn.setStyleSheet(icon_btn_css())
         self.clear_btn.clicked.connect(self._clear)
         right_layout.addWidget(self.clear_btn)
 
@@ -670,9 +681,9 @@ class _TokenRow(SettingRow):
 
         self.clear_btn = QPushButton("✕")
         self.clear_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        self.clear_btn.setFixedWidth(28)
+        self.clear_btn.setFixedWidth(Design.ICON_BUTTON_SIZE)
         self.clear_btn.setToolTip("Disconnect")
-        self.clear_btn.setStyleSheet(icon_btn_css(28))
+        self.clear_btn.setStyleSheet(icon_btn_css())
         self.clear_btn.clicked.connect(self._on_clear)
         self.clear_btn.hide()
         right_layout.addWidget(self.clear_btn)
@@ -822,10 +833,10 @@ class _LastFmAuthRow(SettingRow):
 
         self.clear_btn = QPushButton("✕")
         self.clear_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        self.clear_btn.setFixedWidth(28)
+        self.clear_btn.setFixedWidth(Design.ICON_BUTTON_SIZE)
         self.clear_btn.setToolTip("Disconnect")
         self.clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.clear_btn.setStyleSheet(icon_btn_css(28))
+        self.clear_btn.setStyleSheet(icon_btn_css())
         self.clear_btn.clicked.connect(self._on_clear)
         self.clear_btn.hide()
         right_layout.addWidget(self.clear_btn)
@@ -1197,7 +1208,7 @@ class SettingsPage(QWidget):
     def _build_sidebar(self) -> QFrame:
         sidebar = QFrame()
         sidebar.setObjectName("settingsSidebar")
-        sidebar.setFixedWidth(240)
+        sidebar.setFixedWidth(max(Metrics.SIDEBAR_WIDTH, 256))
         sidebar.setStyleSheet(f"""
             QFrame#settingsSidebar {{
                 background: {Colors.SURFACE};
@@ -1250,16 +1261,15 @@ class SettingsPage(QWidget):
         """Build the Global / Device segmented settings scope control."""
         frame = QFrame()
         frame.setObjectName("settingsScopeSwitch")
-        frame.setFixedHeight(34)
+        frame.setFixedHeight(40)
         frame.setStyleSheet(panel_css(
             "settingsScopeSwitch",
             bg=Colors.SURFACE_ALT,
             radius=Metrics.BORDER_RADIUS_SM,
         ))
         lay = QHBoxLayout(frame)
-        # Optical alignment: keep 28px control height, but shift the segmented
-        # buttons up by 1px within the 34px shell to avoid a slightly low look.
-        lay.setContentsMargins(3, 2, 3, 4)
+        # Keep the segmented control comfortably centered in its shell.
+        lay.setContentsMargins(4, 4, 4, 4)
         lay.setSpacing(3)
 
         self._scope_global_btn = QPushButton("Global")
@@ -1392,6 +1402,13 @@ class SettingsPage(QWidget):
             current="100%",
         )
 
+        self.grid_item_size = ComboRow(
+            "Grid Item Size",
+            "Choose a compact or spacious album grid. Small scales the cards down while keeping the same proportions.",
+            options=["Large", "Small"],
+            current="Large",
+        )
+
         self.player_position = ComboRow(
             "Player Position",
             "Dock the playback bar above or below the main window content.",
@@ -1474,6 +1491,7 @@ class SettingsPage(QWidget):
             self.high_contrast,
             self.accent_color,
             self.font_scale,
+            self.grid_item_size,
             self.player_position,
             self.show_art,
             self.rounded_artwork,
@@ -2033,6 +2051,7 @@ class SettingsPage(QWidget):
         self._appearance_card.set_row_visible(self.theme_combo, not device_scope)
         self._appearance_card.set_row_visible(self.high_contrast, not device_scope)
         self._appearance_card.set_row_visible(self.font_scale, not device_scope)
+        self._appearance_card.set_row_visible(self.grid_item_size, not device_scope)
         self._appearance_card.set_row_visible(self.player_position, not device_scope)
         self._appearance_card.set_row_visible(self.rounded_artwork, not device_scope)
         self._appearance_card.set_row_visible(self.sharpen_artwork, not device_scope)
@@ -2119,6 +2138,14 @@ class SettingsPage(QWidget):
         self.show_art.value = s.show_art_in_tracklist
         self.rounded_artwork.value = s.rounded_artwork
         self.sharpen_artwork.value = s.sharpen_artwork
+
+        grid_item_size_text = _GRID_ITEM_SIZE_DISPLAY.get(
+            normalize_grid_item_size(getattr(s, "grid_item_size", GRID_ITEM_SIZE_LARGE)),
+            "Large",
+        )
+        idx = self.grid_item_size.combo.findText(grid_item_size_text)
+        if idx >= 0:
+            self.grid_item_size.combo.setCurrentIndex(idx)
 
         # Theme
         theme_display = {
@@ -2334,6 +2361,7 @@ class SettingsPage(QWidget):
             self.theme_combo.changed.connect(self._save)
             self.high_contrast.changed.connect(self._save)
             self.font_scale.changed.connect(self._save)
+            self.grid_item_size.changed.connect(self._save)
             self.player_position.changed.connect(self._save)
             self.transcode_cache_dir.changed.connect(self._save)
             self.max_cache_size.changed.connect(self._save)
@@ -2549,6 +2577,7 @@ class SettingsPage(QWidget):
         if include_global_only:
             s.rounded_artwork = self.rounded_artwork.value
             s.sharpen_artwork = self.sharpen_artwork.value
+            s.grid_item_size = _GRID_ITEM_SIZE_BY_TEXT.get(self.grid_item_size.value, GRID_ITEM_SIZE_LARGE)
             # Theme
             theme_keys = {
                 "Dark": "dark", "Light": "light", "System": "system",
@@ -2651,7 +2680,13 @@ class SettingsPage(QWidget):
 
     def _apply_theme_change_if_needed(self, before) -> None:
         s = self._settings_service.get_effective_settings()
-        after = (s.theme, s.high_contrast, s.accent_color, s.font_scale)
+        after = (
+            s.theme,
+            s.high_contrast,
+            s.accent_color,
+            s.font_scale,
+            normalize_grid_item_size(getattr(s, "grid_item_size", GRID_ITEM_SIZE_LARGE)),
+        )
         if after != before:
             accent_hex = resolve_accent_color(
                 s.accent_color, self._current_ipod_image(),
@@ -2674,6 +2709,7 @@ class SettingsPage(QWidget):
             effective_before.high_contrast,
             effective_before.accent_color,
             effective_before.font_scale,
+            normalize_grid_item_size(getattr(effective_before, "grid_item_size", GRID_ITEM_SIZE_LARGE)),
         )
 
         root, key = ctx
@@ -2701,6 +2737,7 @@ class SettingsPage(QWidget):
             effective_before.high_contrast,
             effective_before.accent_color,
             effective_before.font_scale,
+            normalize_grid_item_size(getattr(effective_before, "grid_item_size", GRID_ITEM_SIZE_LARGE)),
         )
         player_position_before = normalize_player_position(
             getattr(effective_before, "player_position", PLAYER_POSITION_TOP)

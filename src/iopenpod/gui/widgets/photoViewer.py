@@ -45,6 +45,10 @@ class PhotoViewerPane(QFrame):
         self._source_pixmap = QPixmap()
         self._preview_placeholder_text = "Select a photo"
         self._action_buttons: dict[str, QPushButton] = {}
+        self._action_labels: dict[str, str] = {}
+        self._action_full_widths: dict[str, int] = {}
+        self._compact_actions = False
+        self._updating_action_mode = False
         self.setMinimumWidth(0)
         self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
 
@@ -219,11 +223,15 @@ class PhotoViewerPane(QFrame):
             if widget is not None:
                 widget.deleteLater()
         self._action_buttons.clear()
+        self._action_labels.clear()
+        self._action_full_widths.clear()
 
         for key, label, glyph_name, danger in actions:
             btn = QPushButton(label, self._action_row)
             btn.setObjectName(f"photoViewerAction_{key}")
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setToolTip(label)
+            btn.setAccessibleName(label)
             btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
             btn.setStyleSheet(
                 danger_btn_css()
@@ -236,11 +244,48 @@ class PhotoViewerPane(QFrame):
                 btn.setIcon(icon)
                 btn.setIconSize(QSize(14, 14))
             self._action_buttons[key] = btn
+            self._action_labels[key] = label
+            label_width = btn.fontMetrics().horizontalAdvance(label) + 42
+            self._action_full_widths[key] = max(btn.sizeHint().width(), label_width)
             self._action_buttons_layout.addWidget(btn)
 
         self._action_buttons_layout.addStretch()
         self._action_row.setVisible(bool(actions))
+        self._update_action_button_mode()
         return dict(self._action_buttons)
+
+    def _update_action_button_mode(self) -> None:
+        """Use icon-only actions when the preview pane cannot fit their labels."""
+        if self._updating_action_mode or not self._action_buttons:
+            return
+        available = max(0, self.width() - 24)
+        if available <= 0:
+            available = self._action_row.contentsRect().width()
+        if available <= 0:
+            return
+        spacing = self._action_buttons_layout.spacing()
+        full_width = sum(self._action_full_widths.values())
+        required_width = full_width + spacing * max(0, len(self._action_buttons) - 1)
+        compact = available < required_width
+        if compact == self._compact_actions:
+            return
+
+        self._updating_action_mode = True
+        try:
+            for key, button in self._action_buttons.items():
+                button.setText("" if compact else self._action_labels[key])
+                if compact:
+                    button.setMinimumWidth(30)
+                    button.setMaximumWidth(34)
+                    button.setFixedWidth(32)
+                else:
+                    button.setMinimumWidth(0)
+                    button.setMaximumWidth(16777215)
+                    button.setMinimumSize(QSize(0, 0))
+                    button.setMaximumSize(QSize(16777215, 16777215))
+            self._compact_actions = compact
+        finally:
+            self._updating_action_mode = False
 
     def clearPreview(
         self,
@@ -382,6 +427,7 @@ class PhotoViewerPane(QFrame):
 
     def resizeEvent(self, a0):
         super().resizeEvent(a0)
+        self._update_action_button_mode()
         self._apply_scaled_pixmap()
 
     def _apply_scaled_pixmap(self) -> None:

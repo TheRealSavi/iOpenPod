@@ -270,7 +270,9 @@ def test_music_player_bar_grows_now_playing_panel_and_anchors_close(qtbot) -> No
             player,
             QPoint(player.close_button.width(), 0),
         ).x()
-        assert player.height() <= 64
+        # The readable 100% type baseline needs a little more vertical room
+        # than the former compact-density player, while remaining a slim bar.
+        assert player.height() <= 76
         assert player.surface.maximumWidth() >= 1000
         assert player.surface.width() >= 1000
         assert player.surface.mapTo(player, QPoint(0, 0)).x() - volume_right >= 18

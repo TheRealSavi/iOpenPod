@@ -134,7 +134,7 @@ def _title_bar_css(
         }}
         QLabel {{
             font-weight: 700;
-            font-size: {Metrics.FONT_TITLE}px;
+            font-size: {Metrics.FONT_TITLE}pt;
             color: {text_color};
             background: transparent;
         }}
@@ -206,9 +206,10 @@ class TrackListTitleBar(QFrame):
         self.titleBarLayout.setContentsMargins((14), 0, (10), 0)
         self.splitter.splitterMoved.connect(self.enforceMinHeight)
 
-        self.setMinimumHeight(40)
-        self.setMaximumHeight(40)
-        self.setFixedHeight(40)
+        title_bar_height = max(40, Metrics.FONT_TITLE * 2)
+        self.setMinimumHeight(title_bar_height)
+        self.setMaximumHeight(title_bar_height)
+        self.setFixedHeight(title_bar_height)
 
         self.title = QLabel("Tracks")
         self.title.setFont(QFont(FONT_FAMILY, Metrics.FONT_TITLE, QFont.Weight.Bold))
@@ -309,17 +310,27 @@ class TrackListTitleBar(QFrame):
 
     def _toggleMinimize(self):
         """Minimize the track list panel."""
-        sizes = self.splitter.sizes()
-        total = sum(sizes)
+        total = self._available_splitter_height()
+        min_height = self.minimumHeight()
         # Set track panel to minimum (just title bar)
-        self.splitter.setSizes([total - 40, 40])
+        self.splitter.setSizes([max(total - min_height, 0), min_height])
+        self.enforceMinHeight()
 
     def _toggleMaximize(self):
         """Maximize the track list panel."""
+        total = self._available_splitter_height()
+        track_height = max(int(total * 0.8), self.minimumHeight() + 1)
+        grid_height = max(total - track_height, 0)
+        self.splitter.setSizes([grid_height, track_height])
+        self.enforceMinHeight()
+
+    def _available_splitter_height(self) -> int:
+        """Return the real splitter height even during collapsed-size transitions."""
+
         sizes = self.splitter.sizes()
-        total = sum(sizes)
-        # Set track panel to 80% of space
-        self.splitter.setSizes([int(total * 0.2), int(total * 0.8)])
+        reported_total = sum(sizes)
+        widget_height = self.splitter.height()
+        return max(reported_total, widget_height, self.minimumHeight())
 
     def mousePressEvent(self, a0):
         if a0 and a0.button() == Qt.MouseButton.LeftButton:
