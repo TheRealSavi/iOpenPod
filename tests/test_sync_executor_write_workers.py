@@ -425,6 +425,35 @@ def test_loaded_database_validation_accepts_remove_target_by_location(
     assert ctx.result.success
 
 
+def test_metadata_update_repairs_video_duration(tmp_path: Path) -> None:
+    executor = SyncExecutor(tmp_path)
+    item = SyncItem(
+        action=SyncAction.UPDATE_METADATA,
+        db_track_id=42,
+        metadata_changes={"duration_ms": (90_250, 0)},
+        description="Repair video duration",
+    )
+    ctx = _SyncContext(
+        plan=SyncPlan(to_update_metadata=[item]),
+        mapping=MappingFile(),
+        progress_callback=None,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+    )
+    track = TrackInfo(
+        title="Movie",
+        location=":iPod_Control:Music:F00:MOVI.m4v",
+        db_track_id=42,
+        length=0,
+    )
+    ctx.tracks_by_db_track_id[42] = track
+
+    executor._execute_metadata_updates(ctx)
+
+    assert track.length == 90_250
+
+
 def test_remove_uses_loaded_database_location_over_stale_plan_location(
     monkeypatch,
     tmp_path: Path,

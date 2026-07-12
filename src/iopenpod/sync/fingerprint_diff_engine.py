@@ -2060,6 +2060,14 @@ class FingerprintDiffEngine:
             elif pc_value != ipod_value:
                 changes[pc_field] = (pc_value, ipod_value)
 
+        # Video scanning reads the MP4 movie header without decoding media.
+        # Repair legacy rows written with a zero duration, but do not compare
+        # nonzero values because container timescale rounding can differ.
+        pc_duration = int(pc_track.duration_ms or 0)
+        ipod_duration = int(ipod_track.get("length") or 0)
+        if pc_track.is_video and pc_duration > 0 and ipod_duration <= 0:
+            changes["duration_ms"] = (pc_duration, ipod_duration)
+
         # Chapter timelines are iTunesDB-side metadata, not AAC/M4A-only file
         # metadata.  When the PC source exposes embedded chapters, sync them to
         # the DB for any matched audio file type; absent PC chapters do not

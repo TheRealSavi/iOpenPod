@@ -20,6 +20,7 @@ from collections.abc import Callable, Iterable, Iterator
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from iopenpod.infrastructure.media_folders import (
     MEDIA_TYPE_MUSIC,
@@ -32,10 +33,9 @@ from ._formats import (
     AUDIO_EXTENSIONS,
     MEDIA_EXTENSIONS,
     NEEDS_TRANSCODING,
-    VIDEO_ALWAYS_TRANSCODE,
     VIDEO_EXTENSIONS,
-    VIDEO_PROBE_CONTAINERS,
 )
+from .source_identity import mp4_duration_ms
 
 try:
     import mutagen
@@ -820,19 +820,32 @@ class PCLibrary:
         ext = file_path.suffix.lower()
         is_video = ext in VIDEO_EXTENSIONS
 
-        # Try to open with mutagen
-        audio = None
-        if mutagen is not None:
-            try:
-                audio = mutagen.File(file_path)  # type: ignore[union-attr]
-            except Exception as e:
-                logging.debug(f"mutagen failed on {file_path}: {e}")
+        # Video scanning must remain metadata-light. Opening large or malformed
+        # containers with Mutagen, FFmpeg, or ffprobe here can exhaust system
+        # resources before the user has even reviewed the sync plan. Video
+        # metadata and artwork therefore use safe filename/default values.
+        metadata: dict[str, Any]
+        if is_video:
+            audio = None
+            metadata = {
+                "duration_ms": (
+                    mp4_duration_ms(file_path)
+                    if ext in {".mp4", ".m4v", ".mov"}
+                    else 0
+                ),
+            }
+            art_hash = None
+        else:
+            # Try to open audio with mutagen.
+            audio = None
+            if mutagen is not None:
+                try:
+                    audio = mutagen.File(file_path)  # type: ignore[union-attr]
+                except Exception as e:
+                    logging.debug(f"mutagen failed on {file_path}: {e}")
 
-        # Extract metadata based on file format
-        metadata = self._extract_metadata(audio, ext, file_path)
-
-        # Extract art hash for artwork change detection
-        art_hash = self._compute_art_hash(file_path)
+            metadata = self._extract_metadata(audio, ext, file_path)
+            art_hash = self._compute_art_hash(file_path)
 
         # Determine video kind from metadata or extension
         video_kind = ""
@@ -850,7 +863,7 @@ class PCLibrary:
         # iPod DB chapter timelines are format-agnostic; embedded chapters are
         # only a source/import convenience when the container exposes them.
         chapters = None
-        if ext in MEDIA_EXTENSIONS:
+        if not is_video and ext in MEDIA_EXTENSIONS:
             try:
                 from iopenpod.podcasts.downloader import extract_chapters
                 chapters = extract_chapters(str(file_path))
@@ -859,14 +872,9 @@ class PCLibrary:
 
         # Determine transcoding need
         if is_video:
-            if ext in VIDEO_ALWAYS_TRANSCODE:
-                needs_tc = True
-            elif ext in VIDEO_PROBE_CONTAINERS:
-                # Probe the actual codec to decide
-                from .transcoder import probe_video_needs_transcode
-                needs_tc = probe_video_needs_transcode(file_path)
-            else:
-                needs_tc = True  # Unknown video format, transcode to be safe
+            # Without probing codec/profile during scan, transcoding is the
+            # conservative compatibility choice for every video source.
+            needs_tc = True
         else:
             needs_tc = ext in NEEDS_TRANSCODING
 

@@ -2530,6 +2530,7 @@ class SyncExecutor:
         "podcast_url": ("podcast_rss_url", None),
         "podcast_enclosure_url": ("podcast_enclosure_url", None),
         "date_released": ("date_released", "int"),
+        "duration_ms": ("length", "int"),
         # iTunesDB chapter data is DB-side and applies regardless of filetype.
         "chapter_data": ("chapter_data", None),
     }

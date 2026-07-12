@@ -23,6 +23,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
+from ._formats import VIDEO_EXTENSIONS
+from .source_identity import video_content_identity
+
 # Prevents console windows from flashing on Windows during subprocess calls
 _SP_KWARGS: dict = (
     {
@@ -69,6 +72,35 @@ _FINGERPRINT_LENGTH_SECONDS = 120
 class _FingerprintResult:
     fingerprint: str | None
     deterministic_failure: bool = False
+
+
+def _parse_fpcalc_result(result: subprocess.CompletedProcess[str], filepath: Path) -> _FingerprintResult:
+    if result.returncode != 0:
+        stderr = (result.stderr or "").strip()
+        if "Empty fingerprint" in stderr:
+            logger.warning(
+                "Fingerprint unavailable for %s: fpcalc returned no audio fingerprint "
+                "(silent, empty, or unsupported media).",
+                filepath.name,
+            )
+            return _FingerprintResult(None, deterministic_failure=True)
+        logger.error("fpcalc failed for %s: %s", filepath, stderr)
+        return _FingerprintResult(None)
+
+    fingerprint = None
+    for line in result.stdout.strip().split("\n"):
+        if line.startswith("FINGERPRINT="):
+            fingerprint = line.split("=", 1)[1]
+            break
+
+    if not fingerprint:
+        logger.warning(
+            "Fingerprint unavailable for %s: fpcalc produced no fingerprint output",
+            filepath.name,
+        )
+        return _FingerprintResult(None, deterministic_failure=True)
+
+    return _FingerprintResult(fingerprint)
 
 
 class FingerprintCache:
@@ -217,6 +249,13 @@ def _compute_fingerprint_result(
         logger.error(f"File not found: {filepath}")
         return _FingerprintResult(None)
 
+    if filepath.suffix.lower() in VIDEO_EXTENSIONS:
+        try:
+            return _FingerprintResult(video_content_identity(filepath))
+        except OSError as exc:
+            logger.error("Could not identify video %s: %s", filepath, exc)
+            return _FingerprintResult(None)
+
     fpcalc = fpcalc_path or find_fpcalc()
     if not fpcalc:
         logger.error("fpcalc not found. Install Chromaprint: https://acoustid.org/chromaprint")
@@ -239,34 +278,7 @@ def _compute_fingerprint_result(
             **_SP_KWARGS,
         )
 
-        if result.returncode != 0:
-            stderr = (result.stderr or "").strip()
-            if "Empty fingerprint" in stderr:
-                logger.warning(
-                    "Fingerprint unavailable for %s: fpcalc returned no audio fingerprint "
-                    "(silent, empty, or unsupported media).",
-                    filepath.name,
-                )
-                return _FingerprintResult(None, deterministic_failure=True)
-            else:
-                logger.error(f"fpcalc failed for {filepath}: {stderr}")
-            return _FingerprintResult(None)
-
-        # Parse output: DURATION=123\nFINGERPRINT=abc123...
-        fingerprint = None
-        for line in result.stdout.strip().split("\n"):
-            if line.startswith("FINGERPRINT="):
-                fingerprint = line.split("=", 1)[1]
-                break
-
-        if not fingerprint:
-            logger.warning(
-                "Fingerprint unavailable for %s: fpcalc produced no fingerprint output",
-                filepath.name,
-            )
-            return _FingerprintResult(None, deterministic_failure=True)
-
-        return _FingerprintResult(fingerprint)
+        return _parse_fpcalc_result(result, filepath)
 
     except subprocess.TimeoutExpired:
         logger.error(f"fpcalc timed out for {filepath}")
@@ -277,7 +289,7 @@ def _compute_fingerprint_result(
 
 
 def compute_fingerprint(filepath: str | Path, fpcalc_path: str | None = None) -> str | None:
-    """Compute an acoustic fingerprint using Chromaprint's fpcalc."""
+    """Compute an audio fingerprint or a bounded, non-decoding video identity."""
     return _compute_fingerprint_result(filepath, fpcalc_path).fingerprint
 
 
@@ -296,6 +308,11 @@ def read_fingerprint(filepath: str | Path) -> str | None:
 
     filepath = Path(filepath)
     suffix = filepath.suffix.lower()
+
+    # Video fingerprints live in the bounded filesystem cache. Parsing MP4
+    # tag payloads can materialise an arbitrarily large atom in memory.
+    if suffix in VIDEO_EXTENSIONS:
+        return None
 
     try:
         if suffix == ".mp3":
@@ -353,6 +370,10 @@ def write_fingerprint(filepath: str | Path, fingerprint: str) -> bool:
 
     filepath = Path(filepath)
     suffix = filepath.suffix.lower()
+
+    # Never rewrite a multi-gigabyte video merely to store a small cache key.
+    if suffix in VIDEO_EXTENSIONS:
+        return False
 
     try:
         if suffix == ".mp3":
@@ -429,8 +450,8 @@ def get_or_compute_fingerprint_with_status(
         ``tag``, ``computed``, or ``failed``.
     """
 
-    def _is_raw_fingerprint(value: str) -> bool:
-        """Return True when fingerprint is fpcalc -raw integer CSV format.
+    def _is_supported_identity(value: str, *, is_video: bool) -> bool:
+        """Return True for current audio fingerprints and video identities.
 
         Historical iOpenPod builds may have cached/stored fingerprints in the
         compressed/default fpcalc format.  Those won't compare equal to current
@@ -439,9 +460,12 @@ def get_or_compute_fingerprint_with_status(
         v = (value or "").strip()
         if not v:
             return False
+        if is_video:
+            return bool(re.fullmatch(r"video-sample-sha256-v1:[0-9a-f]{64}", v))
         return bool(re.fullmatch(r"-?\d+(,-?\d+)*", v))
 
     filepath = Path(filepath)
+    is_video = filepath.suffix.lower() in VIDEO_EXTENSIONS
     cache = FingerprintCache.get_instance()
 
     # 1. Check filesystem cache (no file I/O needed)
@@ -449,7 +473,7 @@ def get_or_compute_fingerprint_with_status(
     if cached:
         if cached == _FAILED_FINGERPRINT:
             return None, "failed"
-        if _is_raw_fingerprint(cached):
+        if _is_supported_identity(cached, is_video=is_video):
             return cached, "cache"
         logger.debug(
             "Legacy cached fingerprint format for %s; recomputing raw fingerprint",
@@ -459,7 +483,7 @@ def get_or_compute_fingerprint_with_status(
     # 2. Try to read existing fingerprint from file tags
     fingerprint = read_fingerprint(filepath)
     if fingerprint:
-        if _is_raw_fingerprint(fingerprint):
+        if _is_supported_identity(fingerprint, is_video=is_video):
             cache.store(filepath, fingerprint)
             return fingerprint, "tag"
         logger.debug(
