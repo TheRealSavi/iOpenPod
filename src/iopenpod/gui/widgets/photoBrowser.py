@@ -55,7 +55,7 @@ from .browserChrome import (
 from .formatters import format_size
 from .gridHeaderBar import GridHeaderBar
 from .photoViewer import PhotoViewerPane
-from .pooledPhotoGrid import PhotoTileModel, PooledPhotoGridView
+from .pooledGrid import GridItemModel, PooledGridView
 
 if TYPE_CHECKING:
     from iopenpod.application.services import (
@@ -463,8 +463,9 @@ class PhotoBrowserWidget(QFrame):
 
         self.photo_scroll = make_scroll_area()
         self.photo_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self.photo_grid = PooledPhotoGridView(settings_service=self._settings_service)
+        self.photo_grid = PooledGridView(settings_service=self._settings_service)
         self.photo_scroll.setWidget(self.photo_grid)
+        self.photo_grid.attachScrollArea(self.photo_scroll)
         self._grid_panel.addWidget(self.photo_scroll, 1)
         splitter.addWidget(self._grid_panel)
 
@@ -958,15 +959,16 @@ class PhotoBrowserWidget(QFrame):
 
         self._filtered_items = self._sort_items(self._filtered_items)
 
-        records: list[PhotoTileModel] = []
+        records: list[GridItemModel] = []
         for _index, (photo_id, photo) in enumerate(self._filtered_items):
             cached = self._tile_pixmap_cache.get(photo.image_id)
             records.append(
-                PhotoTileModel(
+                GridItemModel(
                     key=photo_id,
                     title=self._device_photo_title(photo),
-                    pixmap=cached if cached is not None else QPixmap(),
+                    image=cached if cached is not None else QPixmap(),
                     dominant_color=self._tile_color_cache.get(photo.image_id),
+                    placeholder_glyph="photo",
                 )
             )
         self.photo_grid.setRecords(

@@ -2,12 +2,16 @@ from __future__ import annotations
 
 from collections.abc import Hashable
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
-from PyQt6.QtCore import QEvent, QObject, QRect, QTimer, pyqtSignal
+from PyQt6.QtCore import QEvent, QObject, QPoint, QRect, QTimer, pyqtSignal
 from PyQt6.QtWidgets import QFrame, QScrollArea, QSizePolicy, QWidget
 
 from ..styles import Metrics
+from .gridItem import GridImage, GridItem, GridItemModel
+
+if TYPE_CHECKING:
+    from iopenpod.application.services import SettingsService
 
 _ROW_BUFFER = 2
 _SCROLL_THROTTLE_MS = 16
@@ -21,14 +25,29 @@ class PooledWidgetState:
     record_identity: Hashable
 
 
-class PooledCardGrid(QFrame):
-    """Generic pooled card grid backed by a QScrollArea viewport."""
+_UNSET = object()
+
+
+class PooledGridView(QFrame):
+    """Keyed, pooled grid shared by every media browser."""
 
     currentIndexChanged = pyqtSignal(int)
     visibleIndicesChanged = pyqtSignal(object)
+    itemActivated = pyqtSignal(object, int)
+    checkedChanged = pyqtSignal(int, bool)
+    contextRequested = pyqtSignal(object, int, QPoint)
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(
+        self,
+        *,
+        checkable: bool = False,
+        settings_service: SettingsService | None = None,
+        parent=None,
+    ) -> None:
+        super().__init__(parent)
+        self._checkable = checkable
+        self._settings_service = settings_service
+        self._record_index_by_key: dict[Hashable, int] = {}
         self.gridItems: list[QWidget] = []
         self.columnCount = 1
         self._load_id = 0
@@ -104,6 +123,7 @@ class PooledCardGrid(QFrame):
 
         if not preserve_all_items:
             self._viewport_records = []
+            self._record_index_by_key.clear()
 
         self.setMinimumHeight(0)
         self.visibleIndicesChanged.emit(tuple())
@@ -113,6 +133,95 @@ class PooledCardGrid(QFrame):
 
     def currentIndex(self) -> int:
         return self._current_index
+
+    def setRecords(
+        self,
+        records: list[GridItemModel],
+        *,
+        reset_scroll: bool = True,
+        preserve_selection: bool = True,
+        fallback_index: int = -1,
+    ) -> None:
+        keys = [self._record_identity(record) for record in records]
+        if len(keys) != len(set(keys)):
+            raise ValueError("Pooled grid record keys must be unique")
+        self._record_index_by_key = {key: index for index, key in enumerate(keys)}
+        self._set_viewport_records(
+            records,
+            reset_scroll=reset_scroll,
+            preserve_selection=preserve_selection,
+            fallback_index=fallback_index,
+        )
+
+    def recordAt(self, index: int) -> GridItemModel | None:
+        record = self._record_for_index(index)
+        return record if isinstance(record, GridItemModel) else None
+
+    def setRecordArtwork(
+        self,
+        key: Hashable,
+        image: GridImage | None,
+        *,
+        dominant_color: tuple[int, int, int] | None | object = _UNSET,
+        album_colors: dict[str, Any] | None | object = _UNSET,
+    ) -> None:
+        index = self._record_index_by_key.get(key)
+        if index is None:
+            return
+        record = self.recordAt(index)
+        if record is None:
+            return
+        record.image = image
+        if dominant_color is not _UNSET:
+            record.dominant_color = cast(
+                tuple[int, int, int] | None,
+                dominant_color,
+            )
+        if album_colors is not _UNSET:
+            record.album_colors = cast(dict[str, Any] | None, album_colors)
+        widget = self._visible_widgets.get(index)
+        if isinstance(widget, GridItem):
+            widget.applyImageResult(
+                image,
+                record.dominant_color,
+                record.album_colors,
+            )
+
+    def setRecordPixmap(
+        self,
+        key: Hashable,
+        pixmap,
+        *,
+        dominant_color: tuple[int, int, int] | None | object = _UNSET,
+    ) -> None:
+        """Compatibility alias for photo-browser callers."""
+
+        self.setRecordArtwork(
+            key,
+            pixmap,
+            dominant_color=dominant_color,
+        )
+
+    def setRecordChecked(self, key: Hashable, checked: bool) -> None:
+        index = self._record_index_by_key.get(key)
+        if index is None:
+            return
+        record = self.recordAt(index)
+        if record is None:
+            return
+        record.checked = bool(checked)
+        widget = self._visible_widgets.get(index)
+        if isinstance(widget, GridItem):
+            widget.setChecked(record.checked)
+
+    def setAllRecordsChecked(self, checked: bool) -> None:
+        for record in self._viewport_records:
+            if isinstance(record, GridItemModel):
+                record.checked = bool(checked)
+        for index, widget in self._visible_widgets.items():
+            record = self.recordAt(index)
+            if isinstance(widget, GridItem) and record is not None:
+                widget.setChecked(record.checked)
 
     def visibleIndices(self) -> tuple[int, ...]:
         return tuple(sorted(self._visible_widgets))
@@ -127,6 +236,13 @@ class PooledCardGrid(QFrame):
 
     def showEvent(self, a0) -> None:
         super().showEvent(a0)
+        if self._scroll_area is None:
+            parent = self.parentWidget()
+            while parent is not None:
+                if isinstance(parent, QScrollArea):
+                    self.attachScrollArea(parent)
+                    break
+                parent = parent.parentWidget()
         self._schedule_viewport_refresh(force=True)
 
     def _set_viewport_records(
@@ -146,6 +262,9 @@ class PooledCardGrid(QFrame):
         self._viewport_records = list(records)
         self._load_id += 1
         self._last_view_state = None
+        # Keys preserve selection across refreshes, but a same-key record may
+        # carry new title, check state, or artwork and must be rebound.
+        self._bound_widget_state.clear()
 
         if reset_scroll and self._scroll_area is not None:
             bar = self._scroll_area.verticalScrollBar()
@@ -214,7 +333,7 @@ class PooledCardGrid(QFrame):
 
         count = len(self._viewport_records)
         row_pitch = Metrics.GRID_ITEM_H + Metrics.GRID_SPACING
-        margin = Metrics.GRID_SPACING
+        margin = int(getattr(Metrics, "GRID_MARGIN_Y", Metrics.GRID_SPACING))
         total_rows = (count + columns - 1) // columns if count else 0
         total_height = (
             margin * 2
@@ -309,7 +428,7 @@ class PooledCardGrid(QFrame):
 
     @staticmethod
     def _compute_columns(width: int) -> int:
-        margin = Metrics.GRID_SPACING
+        margin = int(getattr(Metrics, "GRID_MARGIN_X", Metrics.GRID_SPACING))
         usable = max(1, width - (margin * 2))
         cell = Metrics.GRID_ITEM_W + Metrics.GRID_SPACING
         return max(1, (usable + Metrics.GRID_SPACING) // cell)
@@ -321,7 +440,7 @@ class PooledCardGrid(QFrame):
         column_count: int,
         column_index: int,
     ) -> int:
-        base_margin = Metrics.GRID_SPACING
+        base_margin = int(getattr(Metrics, "GRID_MARGIN_X", Metrics.GRID_SPACING))
         base_gap = Metrics.GRID_SPACING
 
         if column_count <= 0:
@@ -397,23 +516,97 @@ class PooledCardGrid(QFrame):
             widget.hide()
             widget.deleteLater()
 
-    def _record_identity(self, record: Any) -> Hashable:
-        raise NotImplementedError
+    def refresh_artwork_appearance(self) -> None:
+        rounded = self._rounded_artwork_enabled()
+        for widget in list(self._visible_widgets.values()):
+            if isinstance(widget, GridItem):
+                widget.set_rounded_artwork(rounded)
 
-    def _create_pooled_widget(self) -> QWidget:
-        raise NotImplementedError
+    def _rounded_artwork_enabled(self) -> bool:
+        if self._settings_service is None:
+            return False
+        try:
+            return bool(
+                self._settings_service.get_effective_settings().rounded_artwork
+            )
+        except Exception:
+            return False
+
+    def _record_identity(self, record: Any) -> Hashable:
+        key = getattr(record, "key", None)
+        return cast(Hashable, key if key is not None else id(record))
+
+    def _create_pooled_widget(self) -> GridItem:
+        return GridItem(checkable=self._checkable)
 
     def _connect_widget(self, widget: QWidget) -> None:
-        """Hook for subclasses to connect widget signals once on creation."""
+        if not isinstance(widget, GridItem):
+            return
+        widget.clicked.connect(lambda w=widget: self._on_item_clicked(w))
+        widget.context_requested.connect(
+            lambda global_pos, w=widget: self._on_item_context_requested(
+                w,
+                global_pos,
+            )
+        )
+        if self._checkable:
+            widget.checked_changed.connect(
+                lambda checked, w=widget: self._on_item_checked(w, checked)
+            )
 
     def _bind_widget(self, widget: QWidget, record_index: int, record: Any) -> None:
-        raise NotImplementedError
+        if not isinstance(widget, GridItem) or not isinstance(record, GridItemModel):
+            return
+        widget.set_rounded_artwork(self._rounded_artwork_enabled())
+        widget.setModel(record)
 
     def _apply_widget_selection(self, widget: QWidget, selected: bool) -> None:
-        """Hook for subclasses whose widgets have selected-state visuals."""
+        if isinstance(widget, GridItem):
+            widget.setSelected(selected)
+
+    def _on_item_clicked(self, widget: GridItem) -> None:
+        record_index = self._record_index_for_widget(widget)
+        if record_index is None:
+            return
+        self.setCurrentIndex(record_index)
+        record = self._record_for_index(record_index)
+        if record is not None:
+            self.itemActivated.emit(self._record_identity(record), record_index)
+
+    def _on_item_context_requested(
+        self,
+        widget: GridItem,
+        global_pos: QPoint,
+    ) -> None:
+        record_index = self._record_index_for_widget(widget)
+        if record_index is None:
+            return
+        record = self._record_for_index(record_index)
+        if record is None:
+            return
+        self.setCurrentIndex(record_index)
+        self.contextRequested.emit(
+            self._record_identity(record),
+            record_index,
+            global_pos,
+        )
+
+    def _on_item_checked(self, widget: GridItem, checked: bool) -> None:
+        record_index = self._record_index_for_widget(widget)
+        if record_index is None:
+            return
+        record = self.recordAt(record_index)
+        if record is None:
+            return
+        record.checked = checked
+        self.checkedChanged.emit(record_index, checked)
 
     def _on_widget_released(self, widget: QWidget) -> None:
         """Hook for subclasses to clear transient widget state when recycled."""
 
     def _after_viewport_refresh(self) -> None:
         """Hook called after visible widgets have been refreshed."""
+
+
+# Compatibility name for callers that imported the former abstract base.
+PooledCardGrid = PooledGridView

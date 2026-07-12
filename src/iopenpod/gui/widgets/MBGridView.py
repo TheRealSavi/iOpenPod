@@ -9,8 +9,9 @@ from PyQt6.QtCore import QPoint, Qt, pyqtSignal
 from PyQt6.QtWidgets import QApplication
 
 from ..artwork_rendering import virtual_artwork_payload
-from .MBGridViewItem import GridItemModel, MusicBrowserGridItem
-from .pooledCardGrid import PooledCardGrid
+from .gridItem import GridItem as MusicBrowserGridItem
+from .gridItem import GridItemModel
+from .pooledGrid import PooledGridView
 
 if TYPE_CHECKING:
     from iopenpod.application.services import DeviceSessionService, LibraryCacheLike, SettingsService
@@ -76,7 +77,7 @@ class ArtworkResult:
 CachedArtworkLookup = ArtworkResult | None | _ArtCacheUnset
 
 
-class MusicBrowserGrid(PooledCardGrid):
+class MusicBrowserGrid(PooledGridView):
     """Grid view that displays albums, artists, or genres as clickable items."""
 
     item_selected = pyqtSignal(dict)
@@ -111,6 +112,8 @@ class MusicBrowserGrid(PooledCardGrid):
         self._art_seen: set[Hashable] = set()
         self._selected_record_keys: set[Hashable] = set()
         self._selection_anchor_key: Hashable | None = None
+        self.itemActivated.connect(self._onRecordActivated)
+        self.contextRequested.connect(self._onRecordContextRequested)
 
     def loadCategory(self, category: str) -> None:
         """Load and display items for the specified category."""
@@ -439,9 +442,7 @@ class MusicBrowserGrid(PooledCardGrid):
         return MusicBrowserGridItem()
 
     def _connect_widget(self, widget) -> None:
-        if isinstance(widget, MusicBrowserGridItem):
-            widget.clicked.connect(self._onItemClicked)
-            widget.context_requested.connect(self._onItemContextRequested)
+        super()._connect_widget(widget)
 
     def _bind_widget(
         self,
@@ -680,22 +681,27 @@ class MusicBrowserGrid(PooledCardGrid):
                 continue
             self._apply_art_to_widget(widget, record)
 
-    def _onItemClicked(self, item_data: dict) -> None:
-        record_index = self._record_index_for_item_data(item_data)
-        if record_index is not None and self._apply_selection_click(
+    def _onRecordActivated(self, _key: object, record_index: int) -> None:
+        if not (0 <= record_index < len(self._visible_records)):
+            return
+        if self._apply_selection_click(
             record_index,
             QApplication.keyboardModifiers(),
         ):
             return
-        self.item_selected.emit(item_data)
+        self.item_selected.emit(dict(self._visible_records[record_index].payload))
 
-    def _onItemContextRequested(self, item_data: dict, global_pos: QPoint) -> None:
-        if not self._multi_select_enabled:
-            self.item_context_requested.emit([dict(item_data)], global_pos)
+    def _onRecordContextRequested(
+        self,
+        _key: object,
+        record_index: int,
+        global_pos: QPoint,
+    ) -> None:
+        if not (0 <= record_index < len(self._visible_records)):
             return
-
-        record_index = self._record_index_for_item_data(item_data)
-        if record_index is None:
+        item_data = dict(self._visible_records[record_index].payload)
+        if not self._multi_select_enabled:
+            self.item_context_requested.emit([item_data], global_pos)
             return
 
         clicked_key = self._visible_records[record_index].key
