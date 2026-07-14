@@ -31,7 +31,9 @@ from PyQt6.QtWidgets import (
 )
 
 from iopenpod.application.jobs import DeviceScanWorker
+from iopenpod.device import has_exact_model_number
 
+from ..device_warnings import show_unidentified_ipod_warning
 from ..ipod_images import get_ipod_image
 from ..styles import (
     FONT_FAMILY,
@@ -308,6 +310,15 @@ class DeviceCard(QFrame):
         name_label.setStyleSheet(f"color: {name_color}; background: transparent; border: none;")
         layout.addWidget(name_label)
 
+        if not has_exact_model_number(ipod):
+            warning_label = QLabel("Identification failed")
+            warning_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
+            warning_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            warning_label.setStyleSheet(
+                f"color: {Colors.WARNING}; background: transparent; border: none;"
+            )
+            layout.addWidget(warning_label)
+
     def _apply_style(self, hovered: bool):
         if self._selected:
             self.setStyleSheet(f"""
@@ -532,7 +543,7 @@ class DevicePickerDialog(QDialog):
                 self._cards.append(card)
 
             # If only one iPod found, auto-select it
-            if len(ipods) == 1:
+            if len(ipods) == 1 and has_exact_model_number(ipods[0]):
                 self._on_card_clicked(ipods[0])
         else:
             self._subtitle.setText("No iPods found")
@@ -592,6 +603,16 @@ class DevicePickerDialog(QDialog):
 
     def _on_card_clicked(self, ipod: Any):
         """Handle a device card being clicked."""
+        if not has_exact_model_number(ipod):
+            self.selected_path = ""
+            self.selected_ipod = None
+            for card in self._cards:
+                card.setSelected(False)
+            self._select_btn.setEnabled(False)
+            self._select_btn.setText("Select")
+            show_unidentified_ipod_warning(self, ipod)
+            return
+
         self.selected_path = ipod.path
         self.selected_ipod = ipod
 
@@ -601,6 +622,17 @@ class DevicePickerDialog(QDialog):
 
         self._select_btn.setEnabled(True)
         self._select_btn.setText(f"Select ({ipod.mount_name})")
+
+    def accept(self) -> None:
+        """Accept only a scanned device with a model number or a manual path."""
+        if self.selected_ipod is not None and not has_exact_model_number(
+            self.selected_ipod
+        ):
+            show_unidentified_ipod_warning(self, self.selected_ipod)
+            return
+        if self.selected_ipod is None and not self.selected_path:
+            return
+        super().accept()
 
     def _on_drives_changed(self):
         """A drive was added or removed — debounce and rescan."""

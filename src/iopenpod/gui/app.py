@@ -67,6 +67,8 @@ from iopenpod.application.sync_session import (
     SyncSessionController,
     SyncSessionMissingTools,
 )
+from iopenpod.device import has_exact_model_number
+from iopenpod.gui.device_warnings import show_unidentified_ipod_warning
 from iopenpod.gui.glyphs import glyph_pixmap
 from iopenpod.gui.internal_drag import is_iopenpod_export_drag
 from iopenpod.gui.notifications import Notifier
@@ -324,6 +326,9 @@ class MainWindow(QMainWindow):
             self.device_manager,
             self._last_device_path,
             self,
+        )
+        self._startup_restore.identification_rejected.connect(
+            self._on_unidentified_ipod
         )
         self._startup_updates = StartupUpdateController(
             self._create_update_checker,
@@ -1138,6 +1143,10 @@ class MainWindow(QMainWindow):
                         return
                     folder = selected_ipod.path or folder
 
+                if not has_exact_model_number(selected_ipod):
+                    self._on_unidentified_ipod(folder, selected_ipod)
+                    return
+
                 device_manager.discovered_ipod = selected_ipod
                 device_manager.device_path = folder
                 if same_device_path(device_manager.device_path, folder):
@@ -1154,6 +1163,11 @@ class MainWindow(QMainWindow):
                     "  <selected folder>/iPod_Control/iTunes/\n\n"
                     "Please select the root folder of your iPod."
                 )
+
+    @pyqtSlot(str, object)
+    def _on_unidentified_ipod(self, _path: str, ipod: object) -> None:
+        """Warn without activating an iPod whose exact model is unknown."""
+        show_unidentified_ipod_warning(self, ipod)
 
     def onDeviceChanged(self, path: str):
         """Handle device selection - start loading data."""

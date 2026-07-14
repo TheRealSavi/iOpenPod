@@ -14,6 +14,7 @@ from iopenpod.infrastructure.settings_schema import AppSettings, DeviceSettingsS
 class DeviceInfoLike(Protocol):
     """Device identity fields used across UI-facing service boundaries."""
 
+    model_number: str
     model_family: str
     generation: str
     color: str
@@ -24,7 +25,7 @@ def is_device_info_like(value: object) -> TypeGuard[DeviceInfoLike]:
 
     return all(
         hasattr(value, field_name)
-        for field_name in ("model_family", "generation", "color")
+        for field_name in ("model_number", "model_family", "generation", "color")
     )
 
 

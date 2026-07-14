@@ -681,8 +681,12 @@ class DeviceManager(QObject):
 
     @discovered_ipod.setter
     def discovered_ipod(self, ipod: DeviceInfoLike | None) -> None:
-        self._discovered_ipod = ipod
+        if ipod is not None:
+            from iopenpod.device import require_exact_model_number
+
+            require_exact_model_number(ipod)
         self._sync_device_info(ipod)
+        self._discovered_ipod = ipod
 
     @staticmethod
     def _same_device_path(left: str | None, right: str | None) -> bool:
@@ -746,6 +750,10 @@ class DeviceManager(QObject):
 
     @device_path.setter
     def device_path(self, path: str | None) -> None:
+        if path:
+            from iopenpod.device import require_exact_model_number
+
+            require_exact_model_number(self._discovered_ipod)
         self.device_changing.emit()
         self.cancel_all_operations()
         iTunesDBCache.get_instance().clear()

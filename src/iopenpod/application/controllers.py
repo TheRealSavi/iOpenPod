@@ -17,6 +17,8 @@ logger = logging.getLogger(__name__)
 class StartupDeviceRestoreController(QObject):
     """Own the remembered-device restore lifecycle for the main window."""
 
+    identification_rejected = pyqtSignal(str, object)
+
     def __init__(
         self,
         device_manager: DeviceManagerLike,
@@ -76,6 +78,15 @@ class StartupDeviceRestoreController(QObject):
                 "Fast resume identification returned an unexpected device payload for '%s'",
                 path,
             )
+            return
+        from iopenpod.device import has_exact_model_number
+
+        if not has_exact_model_number(ipod):
+            logger.warning(
+                "Fast resume rejected unidentified iPod at '%s': no model number",
+                path,
+            )
+            self.identification_rejected.emit(path, ipod)
             return
         self._device_manager.discovered_ipod = ipod
         self._device_manager.device_path = path

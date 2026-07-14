@@ -687,6 +687,29 @@ def _canonicalize_device_identity(info: DeviceInfo) -> None:
 # Thread-safe singleton store
 # ──────────────────────────────────────────────────────────────────────
 
+
+class UnidentifiedDeviceError(ValueError):
+    """Raised when code tries to activate an iPod without an exact model."""
+
+
+def has_exact_model_number(info: object | None) -> bool:
+    """Return whether *info* has the exact model number required for use."""
+
+    return bool(str(getattr(info, "model_number", "") or "").strip())
+
+
+def require_exact_model_number(info: object) -> None:
+    """Reject an iPod that was discovered without an exact model number."""
+
+    if has_exact_model_number(info):
+        return
+    path = str(getattr(info, "path", "") or "unknown mount")
+    raise UnidentifiedDeviceError(
+        f"Refusing to activate unidentified iPod at {path}: "
+        "no exact model number was resolved"
+    )
+
+
 class _Store:
     """Holds the *active* DeviceInfo for the running session.
 
@@ -730,6 +753,8 @@ def get_current_device() -> DeviceInfo | None:
 
 def set_current_device(info: DeviceInfo | None) -> None:
     """Store *info* as the active device (called once during selection)."""
+    if info is not None:
+        require_exact_model_number(info)
     _Store._get().current = info
     if info is not None:
         logger.info(

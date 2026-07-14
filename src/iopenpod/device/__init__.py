@@ -59,13 +59,16 @@ from .images import (
 # ── info (device_info) ───────────────────────────────────────────────
 from .info import (
     DeviceInfo,
+    UnidentifiedDeviceError,
     clear_current_device,
     detect_checksum_type,
     enrich,
     get_current_device,
     get_firewire_id,
+    has_exact_model_number,
     itdb_write_filename,
     read_sysinfo,
+    require_exact_model_number,
     resolve_itdb_path,
     set_current_device,
 )
