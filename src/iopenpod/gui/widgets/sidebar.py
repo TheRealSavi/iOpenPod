@@ -319,8 +319,6 @@ class DeviceInfoCard(QFrame):
         self._capacity_widget.hide()  # shown once we have disk info
         layout.addWidget(self._capacity_widget)
 
-        layout.addWidget(make_separator())
-
         # Technical details section (collapsible)
         self.tech_toggle = QPushButton("Technical Details")
         _chev = glyph_icon("chevron-right", (12), Colors.TEXT_TERTIARY)
