@@ -28,6 +28,60 @@ class IpodLibraryTagSuggestion:
         return dict(self.changes_by_track.get(id(track), {}))
 
 
+@dataclass(frozen=True)
+class IndexedIpodTagFixPlan:
+    """Tag changes keyed by snapshot position for safe background scanning."""
+
+    changes_by_index: dict[int, dict[str, Any]]
+    changed_track_count: int
+    changed_field_count: int
+
+
+_IPOD_TAG_SCAN_FIELDS = (
+    "Title",
+    "Artist",
+    "Album",
+    "Album Artist",
+    "Composer",
+    "Sort Title",
+    "Sort Artist",
+    "Sort Album",
+    "Sort Album Artist",
+    "Sort Composer",
+    "Sort Show",
+    "compilation_flag",
+)
+
+
+def build_ipod_tag_scan_snapshot(library_tracks: list[dict]) -> list[dict]:
+    """Copy only fields read by normalization, preserving track positions."""
+
+    return [
+        {key: track[key] for key in _IPOD_TAG_SCAN_FIELDS if key in track}
+        for track in library_tracks
+    ]
+
+
+def index_ipod_library_tag_fixes(
+    library_tracks: list[dict],
+    *,
+    profile: IpodTagProfile | None = None,
+) -> IndexedIpodTagFixPlan:
+    """Return a stable plan that can be mapped back to an unchanged cache."""
+
+    suggestion = suggest_ipod_library_tag_fixes(library_tracks, profile=profile)
+    changes_by_index = {
+        index: changes
+        for index, track in enumerate(library_tracks)
+        if (changes := suggestion.changes_by_track.get(id(track)))
+    }
+    return IndexedIpodTagFixPlan(
+        changes_by_index=changes_by_index,
+        changed_track_count=len(changes_by_index),
+        changed_field_count=sum(len(changes) for changes in changes_by_index.values()),
+    )
+
+
 _CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 _SPACE_RE = re.compile(r"\s+")
 _FEAT_IN_TITLE_RE = re.compile(
@@ -113,12 +167,19 @@ def suggest_ipod_library_tag_fixes(
 
     if not profile.is_shuffle:
         if not profile.supports_album_artist_reliably:
-            for album_group in _album_groups(tracks, acc).values():
-                _queue_featured_artist_cleanup(album_group, acc)
-            for album_group in _album_groups(tracks, acc).values():
-                _queue_album_artist_unification(album_group, acc)
             for album_title_group in _album_title_groups(tracks, acc).values():
-                _queue_compilation_marking(album_title_group, acc)
+                _queue_inferred_compilation_marking(album_title_group, acc)
+
+        for album_group in _album_groups(tracks, acc).values():
+            _queue_explicit_compilation_normalization(album_group, acc)
+
+        if not profile.supports_album_artist_reliably:
+            for album_group in _album_groups(tracks, acc).values():
+                if not _is_compilation_group(album_group, acc):
+                    _queue_featured_artist_cleanup(album_group, acc)
+            for album_group in _album_groups(tracks, acc).values():
+                if not _is_compilation_group(album_group, acc):
+                    _queue_album_artist_unification(album_group, acc)
             _queue_unique_album_edits_for_collisions(tracks, acc)
 
         _queue_library_sort_consistency(tracks, acc)
@@ -229,14 +290,35 @@ def _featured_suffix_from_artist(text: str) -> str:
     return stripped.strip(" ()[]")
 
 
-def _queue_compilation_marking(group: list[dict], acc: _TagFixAccumulator) -> None:
+def _is_compilation_group(group: list[dict], acc: _TagFixAccumulator) -> bool:
+    return any(bool(acc.current(track, "compilation_flag")) for track in group)
+
+
+def _queue_explicit_compilation_normalization(
+    group: list[dict],
+    acc: _TagFixAccumulator,
+) -> None:
+    if not _is_compilation_group(group, acc):
+        return
+    _queue_compilation_fields(group, acc)
+
+
+def _queue_inferred_compilation_marking(group: list[dict], acc: _TagFixAccumulator) -> None:
     artists = {_current_norm(t, "Artist", acc) for t in group if _current_norm(t, "Artist", acc)}
-    album_artists = {_current_norm(t, "Album Artist", acc) for t in group if _current_norm(t, "Album Artist", acc)}
+    album_artists = {
+        _current_norm(t, "Album Artist", acc)
+        for t in group
+        if _current_norm(t, "Album Artist", acc)
+    }
     is_various = any(value in {"various artists", "various", "va"} for value in album_artists)
     if len(artists) <= 1 and not is_various:
         return
     if not is_various and album_artists:
         return
+    _queue_compilation_fields(group, acc)
+
+
+def _queue_compilation_fields(group: list[dict], acc: _TagFixAccumulator) -> None:
     for track in group:
         acc.queue(track, "Album Artist", "Various Artists", "Set a stable album artist for true compilations.")
         acc.queue(track, "compilation_flag", 1, "Mark true compilations so iPod compilation handling can keep them together.")

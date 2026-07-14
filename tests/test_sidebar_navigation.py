@@ -48,6 +48,20 @@ def test_sidebar_navigation_button_owns_selected_glyph_state(qtbot) -> None:
     assert Colors.SURFACE_ACTIVE in button.styleSheet()
 
 
+def test_sidebar_navigation_badge_reserves_trailing_space(qtbot) -> None:
+    button = SidebarNavButton("Normalize Tags", icon_name="check-circle")
+    qtbot.addWidget(button)
+    button.resize(180, 32)
+    button.setBadgeCount(42)
+    button.show()
+    qtbot.wait(20)
+
+    assert button.badgeCount() == 42
+    assert not button._badge_label.isHidden()
+    assert button._badge_label.text() == "42"
+    assert button._badge_label.geometry().right() < button.width()
+
+
 def test_item_view_sidebars_share_the_canonical_selected_state() -> None:
     css = sidebar_item_view_css()
     selected = sidebar_nav_state(True)

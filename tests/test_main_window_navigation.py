@@ -1,5 +1,6 @@
 import struct
 import zlib
+from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -40,10 +41,10 @@ class _FakeStack:
 
 class _FakeSignal:
     def __init__(self) -> None:
-        self.connections: list[object] = []
+        self.connections: list[Callable[..., object]] = []
         self.disconnect_count = 0
 
-    def connect(self, callback: object) -> None:
+    def connect(self, callback: Callable[..., object]) -> None:
         self.connections.append(callback)
 
     def disconnect(self) -> None:
@@ -77,6 +78,7 @@ class _FakeSidebar:
     def __init__(self):
         self.library_tabs_visible: list[bool] = []
         self.tag_fixes_available: list[bool] = []
+        self.tag_fix_counts: list[tuple[int, int]] = []
         self.device_info_updates: list[dict] = []
         self.clear_count = 0
 
@@ -85,6 +87,9 @@ class _FakeSidebar:
 
     def setTagFixesAvailable(self, available: bool) -> None:
         self.tag_fixes_available.append(available)
+
+    def setTagFixCount(self, field_count: int, track_count: int = 0) -> None:
+        self.tag_fix_counts.append((field_count, track_count))
 
     def updateDeviceInfo(self, **kwargs) -> None:
         self.device_info_updates.append(kwargs)
@@ -191,6 +196,101 @@ def test_failed_sync_result_gets_user_visible_message() -> None:
     )
 
 
+def test_successful_sync_queues_silent_normalization_after_rescan(monkeypatch) -> None:
+    shown_results: list[object] = []
+    scheduled: list[tuple[int, object]] = []
+    monkeypatch.setattr(
+        "iopenpod.gui.app.QTimer.singleShot",
+        lambda delay, callback: scheduled.append((delay, callback)),
+    )
+    window = SimpleNamespace(
+        syncReview=SimpleNamespace(show_result=shown_results.append),
+        settings_service=SimpleNamespace(
+            get_effective_settings=lambda: AppSettings(
+                normalize_tags_after_sync=True,
+            )
+        ),
+        isActiveWindow=lambda: True,
+        _rescanAfterSync=lambda: None,
+        _normalize_tags_after_sync_pending=False,
+    )
+    result = SimpleNamespace(success=True, partial_save=False, errors=[])
+
+    MainWindow._onSyncExecuteComplete(cast(Any, window), result)
+
+    assert shown_results == [result]
+    assert window._normalize_tags_after_sync_pending is True
+    assert scheduled == [(500, window._rescanAfterSync)]
+
+
+def test_post_sync_tag_scan_applies_silently_to_unchanged_cache() -> None:
+    tracks = [
+        {"db_track_id": 1, "Title": "  Song  "},
+        {"db_track_id": 2, "Title": "Already Clean"},
+    ]
+    staged_changes: list[tuple[list[dict], dict[int, dict]]] = []
+    sidebar = _FakeSidebar()
+    window = SimpleNamespace(
+        _tag_fix_scan_generation=7,
+        _tag_fix_scan_worker=object(),
+        _normalize_tags_after_sync_pending=True,
+        sidebar=sidebar,
+        settings_service=SimpleNamespace(
+            get_effective_settings=lambda: AppSettings(
+                normalize_tags_after_sync=True,
+            )
+        ),
+        library_cache=SimpleNamespace(
+            get_tracks=lambda: tracks,
+            update_track_flags_by_track=lambda current, changes: staged_changes.append(
+                (current, changes)
+            ),
+        ),
+        _schedule_tag_fix_scan=lambda: None,
+    )
+    result = SimpleNamespace(
+        changes_by_index={0: {"Title": "Song", "Sort Title": "Song"}},
+        changed_track_count=1,
+        changed_field_count=2,
+    )
+
+    MainWindow._on_tag_fix_scan_ready(
+        cast(Any, window),
+        result,
+        generation=7,
+        scanned_track_count=2,
+        apply_after_scan=True,
+    )
+
+    assert sidebar.tag_fix_counts == [(2, 1)]
+    assert staged_changes == [
+        (tracks, {id(tracks[0]): {"Title": "Song", "Sort Title": "Song"}})
+    ]
+    assert window._normalize_tags_after_sync_pending is False
+
+
+def test_stale_tag_scan_does_not_update_badge_or_cache() -> None:
+    sidebar = _FakeSidebar()
+    window = SimpleNamespace(
+        _tag_fix_scan_generation=8,
+        sidebar=sidebar,
+    )
+
+    MainWindow._on_tag_fix_scan_ready(
+        cast(Any, window),
+        SimpleNamespace(
+            changes_by_index={0: {"Title": "Song"}},
+            changed_track_count=1,
+            changed_field_count=1,
+        ),
+        generation=7,
+        scanned_track_count=1,
+        apply_after_scan=True,
+    )
+
+    assert sidebar.tag_fix_counts == []
+
+
 def test_library_load_permission_message_includes_linux_recovery_steps() -> None:
     message = _library_load_failure_message(
         "/media/user/IPOD",
@@ -233,6 +333,7 @@ def test_device_changed_rejects_unwritable_device_before_loading(monkeypatch) ->
         device_manager=SimpleNamespace(device_path="/media/user/IPOD"),
         library_cache=SimpleNamespace(start_loading=lambda: calls.append("load")),
         _apply_effective_theme=lambda: False,
+        _invalidate_tag_fix_scan=lambda: calls.append("invalidate_tag_scan"),
         _schedule_themed_rebuild=lambda restore_page=0: calls.append("theme"),
         _reset_library_category_for_new_device=lambda path: calls.append(
             f"category:{path}"
@@ -245,6 +346,7 @@ def test_device_changed_rejects_unwritable_device_before_loading(monkeypatch) ->
     assert window.device_manager.device_path is None
     assert "load" not in calls
     assert "category:/media/user/IPOD" not in calls
+    assert "invalidate_tag_scan" in calls
     assert criticals == [("iPod Not Writable", "not writable")]
 
 
@@ -589,6 +691,12 @@ def _build_window_for_data_ready(
     }
     window._update_sidebar_visibility = lambda classified: None
     window._update_podcast_statuses = lambda: None
+    window.tag_fix_scan_schedules = 0
+    window._schedule_tag_fix_scan = lambda: setattr(
+        window,
+        "tag_fix_scan_schedules",
+        window.tag_fix_scan_schedules + 1,
+    )
     window._is_sync_results_visible = MainWindow._is_sync_results_visible.__get__(
         window
     )
@@ -728,6 +836,7 @@ def test_data_ready_updates_main_page_when_main_page_is_visible():
 
     assert window.centralStack.set_indices == [0]
     assert window.mainContentStack.set_indices == [0]
+    assert window.tag_fix_scan_schedules == 1
 
 
 def test_own_export_drag_is_ignored_for_sync_drag_enter():

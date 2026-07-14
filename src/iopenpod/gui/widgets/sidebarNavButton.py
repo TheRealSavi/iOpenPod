@@ -2,11 +2,12 @@
 
 from PyQt6.QtCore import QEvent, QSize, Qt
 from PyQt6.QtGui import QFont, QFontMetrics, QIcon
-from PyQt6.QtWidgets import QPushButton, QSizePolicy
+from PyQt6.QtWidgets import QLabel, QPushButton, QSizePolicy
 
 from ..glyphs import glyph_icon
 from ..styles import (
     FONT_FAMILY,
+    Colors,
     Design,
     Metrics,
     sidebar_nav_css,
@@ -31,6 +32,15 @@ class SidebarNavButton(QPushButton):
         self._navigation_icon_size = icon_size
         self._selected = False
         self._dimmed = False
+        self._badge_count = 0
+        self._badge_label = QLabel(self)
+        self._badge_label.setObjectName("sidebarNavBadge")
+        self._badge_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._badge_label.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents,
+            True,
+        )
+        self._badge_label.hide()
         self.setFont(QFont(FONT_FAMILY, Metrics.FONT_SIDEBAR))
         self.setToolTip(text)
         self.setMinimumWidth(0)
@@ -62,6 +72,24 @@ class SidebarNavButton(QPushButton):
             return
         self._dimmed = dimmed
         self._apply_navigation_appearance()
+
+    def setBadgeCount(self, count: int) -> None:
+        count = max(0, int(count))
+        if self._badge_count == count:
+            return
+        self._badge_count = count
+        if count <= 0:
+            self._badge_label.hide()
+        else:
+            text = "999+" if count > 999 else str(count)
+            self._badge_label.setText(text)
+            self._badge_label.show()
+            self._badge_label.raise_()
+        self._refresh_badge_appearance()
+        self._refresh_elided_text()
+
+    def badgeCount(self) -> int:
+        return self._badge_count
 
     def setText(self, text: str | None) -> None:
         normalized = text or ""
@@ -101,14 +129,52 @@ class SidebarNavButton(QPushButton):
                 ))
         elif not self.icon().isNull():
             self.setIcon(QIcon())
+        self._refresh_badge_appearance()
         self._refresh_elided_text()
+
+    def _refresh_badge_appearance(self) -> None:
+        if self._badge_count <= 0:
+            return
+        badge_font = QFont(FONT_FAMILY, Metrics.FONT_XS, QFont.Weight.DemiBold)
+        self._badge_label.setFont(badge_font)
+        self._badge_label.setStyleSheet(f"""
+            QLabel#sidebarNavBadge {{
+                background: {Colors.ACCENT};
+                color: {Colors.TEXT_ON_ACCENT};
+                border: none;
+                border-radius: 9px;
+                padding: 0px 5px;
+            }}
+        """)
+        text_width = QFontMetrics(badge_font).horizontalAdvance(
+            self._badge_label.text()
+        )
+        badge_width = max(18, text_width + 10)
+        self._badge_label.setFixedSize(badge_width, 18)
+        self._refresh_badge_geometry()
+
+    def _refresh_badge_geometry(self) -> None:
+        if self._badge_count <= 0:
+            return
+        x = max(0, self.width() - self._badge_label.width() - 10)
+        y = max(0, (self.height() - self._badge_label.height()) // 2)
+        self._badge_label.move(x, y)
+
+    def _badge_reserved_width(self) -> int:
+        if self._badge_count <= 0:
+            return 0
+        return self._badge_label.width() + 8
 
     def _refresh_elided_text(self) -> None:
         icon_width = self.iconSize().width() + 8 if not self.icon().isNull() else 0
-        available = max(1, self.width() - 24 - icon_width)
+        available = max(
+            1,
+            self.width() - 24 - icon_width - self._badge_reserved_width(),
+        )
         elided = QFontMetrics(self.font()).elidedText(
             self._full_text,
             Qt.TextElideMode.ElideRight,
             available,
         )
         QPushButton.setText(self, elided)
+        self._refresh_badge_geometry()

@@ -1110,6 +1110,7 @@ class Sidebar(QFrame):
         """Clear device info when no device is selected."""
         self.device_card.clear()
         self.setTagFixesAvailable(False)
+        self.setTagFixCount(0)
         # Show all categories again when no device is selected
         self.setVideoVisible(True)
         self.setPodcastVisible(True)
@@ -1117,6 +1118,24 @@ class Sidebar(QFrame):
 
     def setTagFixesAvailable(self, available: bool) -> None:
         self.tagFixButton.setEnabled(available)
+
+    def setTagFixCount(self, field_count: int, track_count: int = 0) -> None:
+        """Update the pending normalization badge and explanatory tooltip."""
+
+        field_count = max(0, int(field_count))
+        track_count = max(0, int(track_count))
+        self.tagFixButton.setBadgeCount(field_count)
+        if field_count <= 0:
+            self.tagFixButton.setToolTip(
+                "Preview and apply iPod-friendly tag fixes across the whole library."
+            )
+            return
+        field_word = "field" if field_count == 1 else "fields"
+        track_word = "track" if track_count == 1 else "tracks"
+        self.tagFixButton.setToolTip(
+            f"{field_count:,} tag {field_word} can be normalized across "
+            f"{track_count:,} {track_word}."
+        )
 
     def _first_visible_category(self) -> str | None:
         preferred = self.buttons.get("Albums")

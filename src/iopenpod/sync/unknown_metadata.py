@@ -29,7 +29,14 @@ def _placeholder_match(field_name: str, value: object | None) -> re.Match[str] |
     text = _clean_text(value)
     if not text:
         return None
-    pattern = rf"^Unknown\s+{re.escape(field_name)}(?:\s+(.+))?$"
+    if field_name.casefold() == "album artist":
+        # Album Artist placeholders are intentionally written as
+        # "Unknown Artist N". Accept the older "Unknown Album Artist N"
+        # spelling as well so both forms remain repairable.
+        placeholder_name = r"(?:Album\s+)?Artist"
+    else:
+        placeholder_name = re.escape(field_name)
+    pattern = rf"^Unknown\s+{placeholder_name}(?:\s+(.+))?$"
     return re.match(pattern, text, flags=re.IGNORECASE)
 
 

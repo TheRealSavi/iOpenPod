@@ -313,6 +313,9 @@ class MainWindow(QMainWindow):
         self._player_artwork_token = 0
         self._player_artwork_worker: Any | None = None
         self._keep_sync_results_visible_after_rescan = False
+        self._normalize_tags_after_sync_pending = False
+        self._tag_fix_scan_generation = 0
+        self._tag_fix_scan_worker: Worker | None = None
         self._plan: SyncPlan | None = None
         self._last_pc_folder_entries = _media_folder_entries_from_settings(settings)
         self._last_pc_folders = media_folder_paths(self._last_pc_folder_entries)
@@ -346,6 +349,11 @@ class MainWindow(QMainWindow):
         self._theme_rebuild_timer.setSingleShot(True)
         self._theme_rebuild_timer.setInterval(20)
         self._theme_rebuild_timer.timeout.connect(self._run_deferred_theme_rebuild)
+
+        self._tag_fix_scan_timer = QTimer(self)
+        self._tag_fix_scan_timer.setSingleShot(True)
+        self._tag_fix_scan_timer.setInterval(120)
+        self._tag_fix_scan_timer.timeout.connect(self._start_tag_fix_scan)
 
         # Root shell: current app stack plus a dockable player bar.
         self.appShell = QWidget()
@@ -426,6 +434,7 @@ class MainWindow(QMainWindow):
         self.library_cache.tracks_changed.connect(
             self._quick_write_controller.schedule_metadata_write
         )
+        self.library_cache.tracks_changed.connect(self._schedule_tag_fix_scan)
 
         # Instant playlist sync whenever playlists are added/edited via context menu
         self.library_cache.playlist_quick_sync.connect(
@@ -1148,6 +1157,8 @@ class MainWindow(QMainWindow):
 
     def onDeviceChanged(self, path: str):
         """Handle device selection - start loading data."""
+        self._normalize_tags_after_sync_pending = False
+        self._invalidate_tag_fix_scan()
         # Cancel any pending style rebuild from a prior device before starting
         # a new load cycle.
         if hasattr(self, "setPlayerActive"):
@@ -1298,9 +1309,11 @@ class MainWindow(QMainWindow):
         self.musicBrowser.browserTrack.clearTable(clear_cache=True)
         self._update_podcast_statuses()
         self.musicBrowser.onDataReady()
+        self._schedule_tag_fix_scan()
 
     def onDataLoadFailed(self, error_msg: str):
         """Show device library load failures that would otherwise live only in logs."""
+        self._normalize_tags_after_sync_pending = False
         device_path = self.device_manager.device_path or ""
         logger.error("iPod library load failed: %s", error_msg)
         QMessageBox.critical(
@@ -1329,20 +1342,9 @@ class MainWindow(QMainWindow):
             return
 
         from iopenpod.gui.widgets.ipodTagFixDialog import IpodLibraryTagFixDialog
-        from iopenpod.gui.widgets.ipodTagNormalizer import (
-            ipod_tag_profile,
-            suggest_ipod_library_tag_fixes,
-        )
+        from iopenpod.gui.widgets.ipodTagNormalizer import suggest_ipod_library_tag_fixes
 
-        session = self.device_session_service.current_session()
-        identity = session.identity
-        capabilities = session.capabilities
-        profile = ipod_tag_profile(
-            family=str(getattr(identity, "model_family", "") or ""),
-            generation=str(getattr(identity, "generation", "") or ""),
-            uses_sqlite_db=bool(getattr(capabilities, "uses_sqlite_db", False)),
-            is_shuffle=bool(getattr(capabilities, "is_shuffle", False)),
-        )
+        profile = self._current_ipod_tag_profile()
         suggestion = suggest_ipod_library_tag_fixes(tracks, profile=profile)
         if not suggestion.changes_by_track:
             QMessageBox.information(
@@ -1364,6 +1366,150 @@ class MainWindow(QMainWindow):
             f"Staged {changed_fields:,} field edit{'s' if changed_fields != 1 else ''} "
             f"across {changed_tracks:,} track{'s' if changed_tracks != 1 else ''}.",
         )
+
+    def _current_ipod_tag_profile(self):
+        from iopenpod.gui.widgets.ipodTagNormalizer import ipod_tag_profile
+
+        session = self.device_session_service.current_session()
+        identity = session.identity
+        capabilities = session.capabilities
+        return ipod_tag_profile(
+            family=str(getattr(identity, "model_family", "") or ""),
+            generation=str(getattr(identity, "generation", "") or ""),
+            uses_sqlite_db=bool(getattr(capabilities, "uses_sqlite_db", False)),
+            is_shuffle=bool(getattr(capabilities, "is_shuffle", False)),
+        )
+
+    @staticmethod
+    def _scan_ipod_tag_fixes(track_snapshot: list[dict], profile):
+        from iopenpod.gui.widgets.ipodTagNormalizer import (
+            index_ipod_library_tag_fixes,
+        )
+
+        return index_ipod_library_tag_fixes(track_snapshot, profile=profile)
+
+    def _invalidate_tag_fix_scan(self) -> None:
+        self._tag_fix_scan_generation = getattr(
+            self,
+            "_tag_fix_scan_generation",
+            0,
+        ) + 1
+        timer = getattr(self, "_tag_fix_scan_timer", None)
+        if timer is not None:
+            timer.stop()
+        worker = getattr(self, "_tag_fix_scan_worker", None)
+        if worker is not None:
+            worker.cancel()
+            self._tag_fix_scan_worker = None
+        sidebar = getattr(self, "sidebar", None)
+        if sidebar is not None:
+            sidebar.setTagFixCount(0)
+
+    def _schedule_tag_fix_scan(self) -> None:
+        timer = getattr(self, "_tag_fix_scan_timer", None)
+        if timer is None:
+            return
+        self._tag_fix_scan_generation += 1
+        worker = self._tag_fix_scan_worker
+        if worker is not None:
+            worker.cancel()
+            self._tag_fix_scan_worker = None
+        timer.start()
+
+    def _start_tag_fix_scan(self) -> None:
+        cache = self.library_cache
+        if not cache.is_ready():
+            self.sidebar.setTagFixCount(0)
+            return
+        tracks = cache.get_tracks()
+        if not tracks:
+            self._normalize_tags_after_sync_pending = False
+            self.sidebar.setTagFixCount(0)
+            return
+
+        settings = self.settings_service.get_effective_settings()
+        apply_after_scan = bool(
+            self._normalize_tags_after_sync_pending
+            and getattr(settings, "normalize_tags_after_sync", False)
+        )
+        if self._normalize_tags_after_sync_pending and not apply_after_scan:
+            self._normalize_tags_after_sync_pending = False
+
+        from iopenpod.gui.widgets.ipodTagNormalizer import (
+            build_ipod_tag_scan_snapshot,
+        )
+
+        generation = self._tag_fix_scan_generation
+        track_count = len(tracks)
+        track_snapshot = build_ipod_tag_scan_snapshot(tracks)
+        worker = Worker(
+            self._scan_ipod_tag_fixes,
+            track_snapshot,
+            self._current_ipod_tag_profile(),
+        )
+        self._tag_fix_scan_worker = worker
+        worker.signals.result.connect(
+            lambda result, token=generation, count=track_count, apply=apply_after_scan: (
+                self._on_tag_fix_scan_ready(result, token, count, apply)
+            )
+        )
+        worker.signals.error.connect(
+            lambda error, token=generation: self._on_tag_fix_scan_failed(
+                error,
+                token,
+            )
+        )
+        ThreadPoolSingleton.get_instance().start(worker)
+
+    def _on_tag_fix_scan_ready(
+        self,
+        result,
+        generation: int,
+        scanned_track_count: int,
+        apply_after_scan: bool,
+    ) -> None:
+        if generation != self._tag_fix_scan_generation:
+            return
+        self._tag_fix_scan_worker = None
+        self.sidebar.setTagFixCount(
+            result.changed_field_count,
+            result.changed_track_count,
+        )
+        if not apply_after_scan:
+            return
+
+        settings = self.settings_service.get_effective_settings()
+        if not getattr(settings, "normalize_tags_after_sync", False):
+            self._normalize_tags_after_sync_pending = False
+            return
+
+        tracks = self.library_cache.get_tracks()
+        if len(tracks) != scanned_track_count:
+            self._schedule_tag_fix_scan()
+            return
+
+        self._normalize_tags_after_sync_pending = False
+        if not result.changes_by_index:
+            return
+        changes_by_track = {
+            id(tracks[index]): changes
+            for index, changes in result.changes_by_index.items()
+            if 0 <= index < len(tracks)
+        }
+        self.library_cache.update_track_flags_by_track(tracks, changes_by_track)
+        logger.info(
+            "Applied silent post-sync tag normalization: %d fields across %d tracks",
+            result.changed_field_count,
+            result.changed_track_count,
+        )
+
+    def _on_tag_fix_scan_failed(self, error: object, generation: int) -> None:
+        if generation != self._tag_fix_scan_generation:
+            return
+        self._tag_fix_scan_worker = None
+        self._normalize_tags_after_sync_pending = False
+        self.sidebar.setTagFixCount(0)
+        logger.warning("Tag normalization scan failed: %s", error)
 
     def _schedule_themed_rebuild(self, restore_page: int = 0) -> None:
         """Queue a deferred themed UI rebuild if one is not already pending."""
@@ -2434,6 +2580,11 @@ class MainWindow(QMainWindow):
         self.syncReview.show_result(result)
         self._keep_sync_results_visible_after_rescan = True
         failure_message = _sync_execute_failure_message(result)
+        settings = self.settings_service.get_effective_settings()
+        self._normalize_tags_after_sync_pending = bool(
+            not failure_message
+            and getattr(settings, "normalize_tags_after_sync", False)
+        )
         if failure_message:
             QMessageBox.critical(self, "Sync Failed", failure_message)
 
@@ -2468,6 +2619,7 @@ class MainWindow(QMainWindow):
 
     def _rescanAfterSync(self):
         """Rescan the iPod database after a short post-write delay."""
+        self._invalidate_tag_fix_scan()
         cache = self.library_cache
         # Use clear() (not invalidate()) to fully reset the cache state.
         # invalidate() does not reset _is_loading, so if a prior load is
@@ -2486,6 +2638,7 @@ class MainWindow(QMainWindow):
 
     def _onSyncExecuteError(self, error_msg: str):
         """Called when sync execution fails."""
+        self._normalize_tags_after_sync_pending = False
         # Desktop notification if app is not focused
         if not self.isActiveWindow():
             self._notifier.notify_sync_error(error_msg)

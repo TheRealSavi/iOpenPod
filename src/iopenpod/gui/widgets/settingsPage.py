@@ -1541,6 +1541,12 @@ class SettingsPage(QWidget):
             "and sync to iPod. Sound Check values are always synced to iPod "
             "regardless of this setting.",
         )
+        self.normalize_tags_after_sync = ToggleRow(
+            "Normalize Tags After Sync",
+            "Automatically apply iPod-specific metadata cleanup after each "
+            "successful sync.",
+            checked=False,
+        )
         self.rotate_tall_photos = ToggleRow(
             "Rotate Tall Photos on Device",
             "For portrait-heavy photos, rotate the device viewing caches "
@@ -1565,6 +1571,7 @@ class SettingsPage(QWidget):
         self._sync_card = _SettingsCard(
             self.write_back,
             self.compute_sound_check,
+            self.normalize_tags_after_sync,
             self.rotate_tall_photos,
             self.fit_photo_thumbnails,
             self.rating_strategy,
@@ -1969,6 +1976,7 @@ class SettingsPage(QWidget):
             self.show_art,
             self.write_back,
             self.compute_sound_check,
+            self.normalize_tags_after_sync,
             self.rotate_tall_photos,
             self.fit_photo_thumbnails,
             self.rating_strategy,
@@ -2005,6 +2013,7 @@ class SettingsPage(QWidget):
         return [
             self.accent_color, self.show_art, self.write_back,
             self.compute_sound_check, self.rotate_tall_photos,
+            self.normalize_tags_after_sync,
             self.fit_photo_thumbnails, self.rating_strategy,
             self.lossy_encoder, self.lossy_quality, self.bitrate_mode,
             self.music_lossy_cbr_bitrate, self.vbr_level,
@@ -2108,6 +2117,9 @@ class SettingsPage(QWidget):
 
         self.write_back.value = s.write_back_to_pc
         self.compute_sound_check.value = s.compute_sound_check
+        self.normalize_tags_after_sync.value = bool(
+            getattr(s, "normalize_tags_after_sync", False)
+        )
         self.rotate_tall_photos.value = s.rotate_tall_photos_for_device
         self.fit_photo_thumbnails.value = s.fit_photo_thumbnails
 
@@ -2325,6 +2337,7 @@ class SettingsPage(QWidget):
             self.use_global_settings.changed.connect(self._save)
             self.write_back.changed.connect(self._save)
             self.compute_sound_check.changed.connect(self._save)
+            self.normalize_tags_after_sync.changed.connect(self._save)
             self.rotate_tall_photos.changed.connect(self._save)
             self.fit_photo_thumbnails.changed.connect(self._save)
             self.rating_strategy.changed.connect(self._save)
@@ -2545,6 +2558,7 @@ class SettingsPage(QWidget):
         """Copy visible control values into an AppSettings object."""
         s.write_back_to_pc = self.write_back.value
         s.compute_sound_check = self.compute_sound_check.value
+        s.normalize_tags_after_sync = self.normalize_tags_after_sync.value
         s.rotate_tall_photos_for_device = self.rotate_tall_photos.value
         s.fit_photo_thumbnails = self.fit_photo_thumbnails.value
 

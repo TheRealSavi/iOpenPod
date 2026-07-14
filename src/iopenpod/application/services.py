@@ -91,6 +91,7 @@ class SettingsSnapshot:
     lastfm_username: str
     backup_before_sync: bool
     backup_before_sync_mode: str
+    normalize_tags_after_sync: bool
     max_backups: int
 
     @classmethod
