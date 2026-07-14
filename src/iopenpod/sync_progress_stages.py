@@ -19,6 +19,15 @@ class ProgressStageRow:
     aliases: frozenset[str]
 
 
+@dataclass(frozen=True, slots=True)
+class ProgressStageHelp:
+    """Explanatory copy for an optional progress-screen help action."""
+
+    title: str
+    text: str
+    informative_text: str
+
+
 PROGRESS_STAGE_LABELS: dict[str, str] = {
     "load": "Loading sync data",
     "migrate": "Checking sync data",
@@ -38,6 +47,7 @@ PROGRESS_STAGE_LABELS: dict[str, str] = {
     "load_mapping": "Loading iPod mapping",
     "integrity": "Checking iPod integrity",
     "fingerprint": "Computing fingerprints",
+    "bootstrap_mapping": "Analyzing existing iPod tracks",
     "duplicates": "Checking for duplicates",
     "diff": "Comparing libraries",
     "add": "Copying tracks to iPod",
@@ -70,6 +80,54 @@ PROGRESS_STAGE_LABELS: dict[str, str] = {
     "backsync_pc_fingerprint": "Back Sync: identifying PC tracks",
     "backsync_ipod_fingerprint": "Back Sync: finding missing iPod tracks",
     "backsync_copy": "Back Sync: exporting tracks",
+}
+
+
+PROGRESS_STAGE_HELP: dict[str, ProgressStageHelp] = {
+    "bootstrap_mapping": ProgressStageHelp(
+        title="Initial iPod analysis",
+        text=(
+            "Builds iOpenPod's sync database by fingerprinting music already "
+            "on the iPod."
+        ),
+        informative_text=(
+            "This is usually a one-time setup step for each existing track. "
+            "iOpenPod reads the audio, calculates an acoustic fingerprint, and "
+            "uses it to compare with your computer library. It saves fingerprints in"
+            " iOpenPod's database so future syncs can recognize the same "
+            "audio, avoid duplicate copies, and safely plan additions, updates, "
+            "and removals. It may run again for any tracks added outside iOpenPod or "
+            "when the mapping needs repair. The analysis does not modify the "
+            "audio files on your iPod or PC."
+        ),
+    ),
+    "fingerprint": ProgressStageHelp(
+        title="Track identification",
+        text=(
+            "Creates content-based track identities so the same audio can be "
+            "matched across your computer and iPod."
+        ),
+        informative_text=(
+            "An acoustic fingerprint identifies a track by its audio rather than "
+            "its filename or tags. iOpenPod uses fingerprints to match tracks "
+            "between your computer and iPod, avoid duplicates, and detect changes "
+            "reliably. Results are cached, so unchanged tracks are faster to scan "
+            "during later syncs."
+        ),
+    ),
+    "integrity": ProgressStageHelp(
+        title="Pre-sync safety check",
+        text=(
+            "Checks that media files, iTunes database entries, and iOpenPod's "
+            "saved mapping agree before syncing."
+        ),
+        informative_text=(
+            "iOpenPod compares the iPod's media files, iTunes database, and saved "
+            "track mapping. This catches missing or stale references before the "
+            "sync plan is built, helping prevent duplicate copies and unsafe "
+            "removals."
+        ),
+    ),
 }
 
 
@@ -179,6 +237,12 @@ def friendly_stage_label(stage: str) -> str:
     return PROGRESS_STAGE_LABELS.get(stage, stage.replace("_", " ").title())
 
 
+def progress_stage_help(stage: str) -> ProgressStageHelp | None:
+    """Return optional explanatory copy for a raw progress stage."""
+
+    return PROGRESS_STAGE_HELP.get(stage)
+
+
 def classify_planning_stage_value(stage: str) -> str:
     """Map a raw planning stage to a canonical engine lifecycle value."""
 
@@ -205,10 +269,13 @@ __all__ = [
     "EXECUTION_STAGE_TO_ENGINE_STAGE",
     "PIPELINE_STAGE_ROWS",
     "PLANNING_STAGE_TO_ENGINE_STAGE",
+    "PROGRESS_STAGE_HELP",
     "PROGRESS_STAGE_LABELS",
+    "ProgressStageHelp",
     "ProgressStageRow",
     "classify_execution_stage_value",
     "classify_planning_stage_value",
     "friendly_stage_label",
     "known_pipeline_stage_aliases",
+    "progress_stage_help",
 ]

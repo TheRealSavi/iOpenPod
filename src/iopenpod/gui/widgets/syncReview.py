@@ -16,7 +16,7 @@ import os
 import shutil
 from typing import TYPE_CHECKING, Any
 
-from PyQt6.QtCore import QRectF, QSize, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QEvent, QObject, QRectF, QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QPainter
 from PyQt6.QtWidgets import (
     QCheckBox,
@@ -63,10 +63,10 @@ from iopenpod.infrastructure.settings_schema import (
     normalize_backup_before_sync_mode,
 )
 from iopenpod.sync.review_selection import build_selected_photo_plan
-from iopenpod.sync_progress_stages import friendly_stage_label
+from iopenpod.sync_progress_stages import friendly_stage_label, progress_stage_help
 
 from ..glyphs import glyph_icon, glyph_pixmap
-from ..styles import FONT_FAMILY, Colors, Design, Metrics, accent_btn_css, btn_css, button_css, make_scroll_area, progress_bar_css
+from ..styles import FONT_FAMILY, MONO_FONT_FAMILY, Colors, Design, Metrics, accent_btn_css, btn_css, button_css, make_scroll_area, progress_bar_css
 from .formatters import format_duration_mmss as _format_duration
 from .formatters import format_size as _format_size
 from .syncStagesPanel import DEFAULT_PIPELINE, SyncStagesPanel
@@ -1250,6 +1250,10 @@ class SyncReviewWidget(QWidget):
         self._is_auto_presync: bool = False
         self._completed_stages: list = []
         self._current_exec_stage = ""
+        self._progress_help_stage = ""
+        self._progress_help_expanded = False
+        self._progress_help_click_targets: set[QObject] = set()
+        self._progress_help_toggle_icon: QLabel | None = None
         self._scrobble_timeout_retrying = False
         # Debounce timer for selection count updates (avoids O(n²) on bulk toggles)
         self._count_timer = QTimer(self)
@@ -1374,6 +1378,21 @@ class SyncReviewWidget(QWidget):
         loading_layout.addWidget(self._backup_hint)
 
         loading_layout.addStretch(4)
+
+        # Separate, expandable context panel anchored at the bottom of the
+        # loading screen. Its visual treatment matches Normalize iPod Tags.
+        self._progress_help_panel = self._build_progress_help_panel(loading_center)
+        self._progress_help_panel.setMinimumWidth(560)
+        self._progress_help_panel.setMaximumWidth(720)
+        self._progress_help_panel.setVisible(False)
+        self._progress_help_row = QHBoxLayout()
+        self._progress_help_row.setContentsMargins(0, 0, 0, 0)
+        self._progress_help_row.setSpacing(0)
+        self._progress_help_row.addStretch()
+        self._progress_help_row.addWidget(self._progress_help_panel)
+        self._progress_help_row.addStretch()
+        loading_layout.addLayout(self._progress_help_row)
+        loading_layout.addSpacing(16)
 
         self.stack.addWidget(loading_widget)  # Index 0
 
@@ -1708,6 +1727,154 @@ class SyncReviewWidget(QWidget):
         return friendly_stage_label(stage)
 
     @staticmethod
+    def _progress_help_label_css(color: str) -> str:
+        return f"color: {color}; background: transparent; border: none;"
+
+    def _build_progress_help_panel(self, parent: QWidget) -> QFrame:
+        panel = QFrame(parent)
+        panel.setObjectName("syncProgressExplanation")
+        panel.setCursor(Qt.CursorShape.PointingHandCursor)
+        panel.setStyleSheet(
+            f"QFrame#syncProgressExplanation {{"
+            f"background:{Colors.SURFACE};"
+            f"border:1px solid {Colors.ACCENT_BORDER};"
+            f"border-radius:{Metrics.BORDER_RADIUS_MD}px;"
+            f"}}"
+            f"QFrame#syncProgressExplanation:hover {{"
+            f"background:{Colors.SURFACE_ALT};"
+            f"}}"
+        )
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(8)
+
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(9)
+
+        self._progress_help_mark = QLabel("?", panel)
+        self._progress_help_mark.setFixedSize(28, 28)
+        self._progress_help_mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._progress_help_mark.setFont(
+            QFont(MONO_FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.DemiBold)
+        )
+        self._progress_help_mark.setStyleSheet(
+            f"color:{Colors.ACCENT_LIGHT};"
+            f"background:{Colors.ACCENT_MUTED};"
+            f"border:1px solid {Colors.ACCENT_BORDER};"
+            f"border-radius:{Metrics.BORDER_RADIUS_SM}px;"
+        )
+        header.addWidget(self._progress_help_mark)
+
+        title_stack = QVBoxLayout()
+        title_stack.setContentsMargins(0, 0, 0, 0)
+        title_stack.setSpacing(1)
+
+        self._progress_help_title = QLabel("What's this for?", panel)
+        self._progress_help_title.setFont(
+            QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.DemiBold)
+        )
+        self._progress_help_title.setStyleSheet(
+            self._progress_help_label_css(Colors.TEXT_PRIMARY)
+        )
+        title_stack.addWidget(self._progress_help_title)
+
+        self._progress_help_profile = QLabel("", panel)
+        self._progress_help_profile.setFont(QFont(MONO_FONT_FAMILY, Metrics.FONT_XS))
+        self._progress_help_profile.setStyleSheet(
+            self._progress_help_label_css(Colors.TEXT_TERTIARY)
+        )
+        title_stack.addWidget(self._progress_help_profile)
+        header.addLayout(title_stack, 1)
+
+        toggle_icon = QLabel(panel)
+        toggle_icon.setFixedSize(14, 28)
+        toggle_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        toggle_icon.setStyleSheet(
+            self._progress_help_label_css(Colors.TEXT_TERTIARY)
+        )
+        self._progress_help_toggle_icon = toggle_icon
+        header.addWidget(toggle_icon, 0, Qt.AlignmentFlag.AlignRight)
+        layout.addLayout(header)
+
+        self._progress_help_summary = QLabel("", panel)
+        self._progress_help_summary.setFont(
+            QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold)
+        )
+        self._progress_help_summary.setStyleSheet(
+            self._progress_help_label_css(Colors.TEXT_PRIMARY)
+        )
+        self._progress_help_summary.setWordWrap(True)
+        self._progress_help_summary.setTextFormat(Qt.TextFormat.PlainText)
+        layout.addWidget(self._progress_help_summary)
+
+        self._progress_help_body = QLabel("", panel)
+        self._progress_help_body.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        self._progress_help_body.setStyleSheet(
+            self._progress_help_label_css(Colors.TEXT_SECONDARY)
+        )
+        self._progress_help_body.setWordWrap(True)
+        self._progress_help_body.setTextFormat(Qt.TextFormat.PlainText)
+        layout.addWidget(self._progress_help_body)
+
+        self._register_progress_help_click_targets(panel)
+        self._sync_progress_help_state()
+        return panel
+
+    def _register_progress_help_click_targets(self, widget: QWidget) -> None:
+        self._progress_help_click_targets.add(widget)
+        widget.setCursor(Qt.CursorShape.PointingHandCursor)
+        widget.installEventFilter(self)
+        for child in widget.findChildren(QWidget):
+            self._progress_help_click_targets.add(child)
+            child.setCursor(Qt.CursorShape.PointingHandCursor)
+            child.installEventFilter(self)
+
+    def eventFilter(self, a0: QObject | None, a1: QEvent | None) -> bool:
+        if (
+            a0 is not None
+            and a1 is not None
+            and a0 in self._progress_help_click_targets
+            and a1.type() == QEvent.Type.MouseButtonRelease
+        ):
+            button = getattr(a1, "button", lambda: None)()
+            if button == Qt.MouseButton.LeftButton:
+                self._toggle_progress_help()
+                return True
+        return super().eventFilter(a0, a1)
+
+    def _toggle_progress_help(self) -> None:
+        if not self._progress_help_stage:
+            return
+        self._progress_help_expanded = not self._progress_help_expanded
+        self._sync_progress_help_state()
+
+    def _sync_progress_help_state(self) -> None:
+        self._progress_help_body.setVisible(self._progress_help_expanded)
+        icon = self._progress_help_toggle_icon
+        if icon is None:
+            return
+        glyph = "chevron-down" if self._progress_help_expanded else "chevron-right"
+        px = glyph_pixmap(glyph, 14, Colors.TEXT_TERTIARY)
+        if px is not None:
+            icon.setPixmap(px)
+            icon.setText("")
+        else:
+            icon.setText("v" if self._progress_help_expanded else ">")
+
+    def _set_progress_help_stage(self, stage: str) -> None:
+        help_content = progress_stage_help(stage)
+        if stage != self._progress_help_stage:
+            self._progress_help_expanded = False
+        self._progress_help_stage = stage if help_content is not None else ""
+        if help_content is not None:
+            self._progress_help_profile.setText(help_content.title)
+            self._progress_help_summary.setText(help_content.text)
+            self._progress_help_body.setText(help_content.informative_text)
+        self._sync_progress_help_state()
+        self._progress_help_panel.setVisible(help_content is not None)
+
+    @staticmethod
     def _photo_change_count(photo_plan: Any | None) -> int:
         if photo_plan is None:
             return 0
@@ -1813,6 +1980,7 @@ class SyncReviewWidget(QWidget):
         self.progress_bar.setRange(0, 0)  # Indeterminate
         self.eta_label.setText("")
         self.progress_detail.setText("")
+        self._set_progress_help_stage("")
         self._eta_tracker.start()
         self._backup_hint.setVisible(False)
         self.summary_label.setText("")
@@ -1830,6 +1998,7 @@ class SyncReviewWidget(QWidget):
             "Finding iPod tracks that are missing from your PC library."
         )
         self.progress_detail.setTextFormat(Qt.TextFormat.PlainText)
+        self._set_progress_help_stage("")
         self._eta_tracker.start()
         self._backup_hint.setVisible(False)
         self.summary_label.setText("Back Sync")
@@ -1841,6 +2010,7 @@ class SyncReviewWidget(QWidget):
         self.loading_label.setText(friendly)
         self.progress_detail.setText(message)
         self.progress_detail.setTextFormat(Qt.TextFormat.PlainText)
+        self._set_progress_help_stage(stage)
         if stage.startswith("backsync_"):
             if total > 0:
                 self.summary_label.setText(f"{current:,} of {total:,}")
@@ -2550,6 +2720,7 @@ class SyncReviewWidget(QWidget):
         self.stack.setCurrentIndex(0)  # Loading view
         self.loading_label.setText("Syncing")
         self.progress_detail.setText("")
+        self._set_progress_help_stage("")
         self.progress_bar.setRange(0, 0)  # Indeterminate initially
         self.eta_label.setText("")
         self._backup_hint.setVisible(False)
@@ -2605,6 +2776,7 @@ class SyncReviewWidget(QWidget):
         message = getattr(prog, 'message', '') or ''
         worker_lines = getattr(prog, 'worker_lines', None)
         size_progress = getattr(prog, 'size_progress', None)
+        self._set_progress_help_stage(stage)
 
         # Transcode is a sub-stage — update the bar without changing
         # the headline.
