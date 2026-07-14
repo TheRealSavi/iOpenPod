@@ -15,8 +15,6 @@ from ..styles import (
     Colors,
     Design,
     Metrics,
-    accent_btn_css,
-    btn_css,
     button_css,
     input_css,
     make_scroll_area,
@@ -88,30 +86,6 @@ class _RenameLineEdit(QLineEdit):
         self.focus_lost.emit()
 
 
-class _InventoryCell(QWidget):
-    """Compact value+label cell used in the DeviceInfoCard inventory grid."""
-
-    def __init__(self, value: str, label: str):
-        super().__init__()
-        self.setStyleSheet("background: transparent; border: none;")
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-
-        self.value_label = QLabel(value)
-        self.value_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SIDEBAR, QFont.Weight.DemiBold))
-        self.value_label.setStyleSheet(LABEL_PRIMARY())
-        layout.addWidget(self.value_label)
-
-        self.desc_label = QLabel(label)
-        self.desc_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        self.desc_label.setStyleSheet(LABEL_TERTIARY())
-        layout.addWidget(self.desc_label)
-
-    def setValue(self, value: str):
-        self.value_label.setText(value)
-
-
 class TechInfoRow(QWidget):
     """A single row of technical info: label and value."""
 
@@ -165,24 +139,25 @@ class DeviceInfoCard(QFrame):
         self._device_info = None
         self._device_display_name = "No Device"
         self.setObjectName("deviceInfoCard")
-        self.setStyleSheet("""
-            QFrame#deviceInfoCard {
-                background: transparent;
-                border: none;
-            }
+        self.setStyleSheet(f"""
+            QFrame#deviceInfoCard {{
+                background: {Colors.SURFACE_RAISED};
+                border: 1px solid {Colors.BORDER_SUBTLE};
+                border-radius: {Design.PANEL_RADIUS}px;
+            }}
         """)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 6, 10, 8)
-        layout.setSpacing(6)
+        layout.setContentsMargins(12, 12, 12, 10)
+        layout.setSpacing(8)
 
-        # ── Header: 40×40 icon + name + model ──
+        # ── Header: device identity, with ejection kept with the device ──
         header_layout = QHBoxLayout()
         header_layout.setSpacing(8)
 
         self.icon_label = QLabel()
         self._set_default_icon()
-        self.icon_label.setFixedSize(40, 40)
+        self.icon_label.setFixedSize(44, 44)
         self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.icon_label.setStyleSheet("background: transparent; border: none;")
         header_layout.addWidget(self.icon_label, 0, Qt.AlignmentFlag.AlignVCenter)
@@ -209,16 +184,7 @@ class DeviceInfoCard(QFrame):
         name_layout.addWidget(self.model_label)
 
         header_layout.addLayout(name_layout, 1)
-        layout.addLayout(header_layout)
 
-        # ── Capacity row: eject icon · "X free of Y" label + 6px bar ──
-        self._capacity_widget = QWidget()
-        self._capacity_widget.setStyleSheet("background: transparent; border: none;")
-        cap_row = QHBoxLayout(self._capacity_widget)
-        cap_row.setContentsMargins(0, 0, 0, 0)
-        cap_row.setSpacing(8)
-
-        # Small icon-only eject button
         self.eject_button = QPushButton()
         self.eject_button.setFixedSize(
             Design.ICON_BUTTON_SIZE,
@@ -226,24 +192,29 @@ class DeviceInfoCard(QFrame):
         )
         self.eject_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.eject_button.setToolTip("Safely eject the iPod from your system")
-        self.eject_button.setStyleSheet(btn_css(
-            bg=Colors.SURFACE,
-            bg_hover=Colors.SURFACE_HOVER,
-            bg_press=Colors.SURFACE_ACTIVE,
-            border=f"1px solid {Colors.BORDER_SUBTLE}",
-            padding="0px",
-        ))
-        _ej = glyph_icon("eject", (14), Colors.TEXT_SECONDARY)
+        self.eject_button.setStyleSheet(button_css("quiet", "sm", extra="padding: 0px;"))
+        _ej = glyph_icon("eject", 14, Colors.TEXT_SECONDARY)
         if _ej:
             self.eject_button.setIcon(_ej)
-            self.eject_button.setIconSize(QSize((14), (14)))
+            self.eject_button.setIconSize(QSize(14, 14))
         else:
             self.eject_button.setText("⏏")
         self.eject_button.setEnabled(False)
         self.eject_button.clicked.connect(self.eject_requested.emit)
-        cap_row.addWidget(self.eject_button, 0, Qt.AlignmentFlag.AlignVCenter)
+        header_layout.addWidget(self.eject_button, 0, Qt.AlignmentFlag.AlignTop)
+        layout.addLayout(header_layout)
 
-        # Database and device storage bars stacked on a compact manage-storage button.
+        self.library_summary_label = QLabel("— songs · — hours")
+        self.library_summary_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        self.library_summary_label.setStyleSheet(LABEL_SECONDARY())
+        layout.addWidget(self.library_summary_label)
+
+        # ── Capacity: labelled bars make device and database usage legible ──
+        self._capacity_widget = QWidget()
+        self._capacity_widget.setStyleSheet("background: transparent; border: none;")
+        capacity_layout = QVBoxLayout(self._capacity_widget)
+        capacity_layout.setContentsMargins(0, 0, 0, 0)
+        capacity_layout.setSpacing(0)
         cap_info = QPushButton()
         cap_info.setObjectName("storageManageButton")
         cap_info.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
@@ -269,23 +240,27 @@ class DeviceInfoCard(QFrame):
         """)
         cap_info.clicked.connect(self.manage_storage_requested.emit)
         self.storage_manage_button = cap_info
+        self.storage_manage_button.setMinimumHeight(Design.CONTROL_HEIGHT_SM)
         cap_info_layout = QVBoxLayout(cap_info)
         cap_info_layout.setContentsMargins(0, 0, 0, 0)
-        cap_info_layout.setSpacing(3)
+        cap_info_layout.setSpacing(4)
 
-        self.database_bar = QProgressBar()
-        self.database_bar.setObjectName("databaseStorageBar")
-        self.database_bar.setFixedHeight(5)
-        self.database_bar.setTextVisible(False)
-        self.database_bar.setAccessibleName("Database storage usage")
-        self.database_bar.setStyleSheet(progress_bar_css(
-            height=5,
-            radius=2,
-            bg=Colors.BORDER_SUBTLE,
-            chunk=Colors.WARNING,
-        ))
-        self.database_bar.hide()
-        cap_info_layout.addWidget(self.database_bar)
+        storage_heading = QHBoxLayout()
+        storage_heading.setContentsMargins(0, 0, 0, 0)
+        self.storage_label = QLabel("Storage")
+        self.storage_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS, QFont.Weight.DemiBold))
+        self.storage_label.setStyleSheet(LABEL_TERTIARY())
+        storage_heading.addWidget(self.storage_label)
+        storage_heading.addStretch()
+        self.storage_value_label = QLabel("—")
+        self.storage_value_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS))
+        self.storage_value_label.setStyleSheet(LABEL_SECONDARY())
+        self.storage_value_label.setFixedWidth(88)
+        self.storage_value_label.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+        storage_heading.addWidget(self.storage_value_label)
+        cap_info_layout.addLayout(storage_heading)
 
         self.storage_bar = QProgressBar()
         self.storage_bar.setFixedHeight(6)
@@ -300,25 +275,51 @@ class DeviceInfoCard(QFrame):
             ),
         ))
         cap_info_layout.addWidget(self.storage_bar)
-        cap_row.addWidget(cap_info, 1)
+
+        self.database_storage_widget = QWidget()
+        self.database_storage_widget.setStyleSheet("background: transparent; border: none;")
+        database_layout = QVBoxLayout(self.database_storage_widget)
+        database_layout.setContentsMargins(0, 2, 0, 0)
+        database_layout.setSpacing(4)
+
+        database_heading = QHBoxLayout()
+        database_heading.setContentsMargins(0, 0, 0, 0)
+        database_label = QLabel("Database")
+        database_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS, QFont.Weight.DemiBold))
+        database_label.setStyleSheet(LABEL_TERTIARY())
+        database_heading.addWidget(database_label)
+        database_heading.addStretch()
+        self.database_value_label = QLabel("—")
+        self.database_value_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS))
+        self.database_value_label.setStyleSheet(LABEL_SECONDARY())
+        self.database_value_label.setFixedWidth(88)
+        self.database_value_label.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+        database_heading.addWidget(self.database_value_label)
+        database_layout.addLayout(database_heading)
+
+        self.database_bar = QProgressBar()
+        self.database_bar.setObjectName("databaseStorageBar")
+        self.database_bar.setFixedHeight(5)
+        self.database_bar.setTextVisible(False)
+        self.database_bar.setAccessibleName("Database storage usage")
+        self.database_bar.setStyleSheet(progress_bar_css(
+            height=5,
+            radius=2,
+            bg=Colors.BORDER_SUBTLE,
+            chunk=Colors.WARNING,
+        ))
+        self.database_bar.hide()
+        database_layout.addWidget(self.database_bar)
+        self.database_storage_widget.hide()
+        cap_info_layout.addWidget(self.database_storage_widget)
+        capacity_layout.addWidget(cap_info)
 
         self._capacity_widget.hide()  # shown once we have disk info
         layout.addWidget(self._capacity_widget)
 
-        # ── Inventory: Songs · Hours ──
-        inv_widget = QWidget()
-        inv_widget.setStyleSheet("background: transparent; border: none;")
-        inv_layout = QHBoxLayout(inv_widget)
-        inv_layout.setContentsMargins(0, 0, 0, 0)
-        inv_layout.setSpacing(8)
-
-        self._inv_songs = _InventoryCell("—", "Songs")
-        self._inv_hours = _InventoryCell("—", "Hours")
-
-        inv_layout.addWidget(self._inv_songs, 1)
-        inv_layout.addWidget(self._inv_hours, 1)
-
-        layout.addWidget(inv_widget)
+        layout.addWidget(make_separator())
 
         # Technical details section (collapsible)
         self.tech_toggle = QPushButton("Technical Details")
@@ -331,7 +332,7 @@ class DeviceInfoCard(QFrame):
             "quiet",
             "sm",
             extra=(
-                "text-align: left; padding-left: 0px; padding-right: 0px; "
+                "text-align: left; padding-left: 2px; padding-right: 2px; "
                 "min-height: 28px;"
             ),
         ))
@@ -584,7 +585,7 @@ class DeviceInfoCard(QFrame):
         if not family and model:
             family = model
 
-        photo = get_ipod_image(family, generation, 40, color) if family else None
+        photo = get_ipod_image(family, generation, 44, color) if family else None
         if photo and not photo.isNull():
             self.icon_label.setPixmap(photo)
             self.icon_label.setFont(QFont())  # Clear emoji font
@@ -736,6 +737,7 @@ class DeviceInfoCard(QFrame):
                     f"Device storage: {dev.free_space_gb:.1f} GB free of "
                     f"{dev.disk_size_gb:.1f} GB"
                 )
+                self.storage_value_label.setText(f"{dev.free_space_gb:.0f} GB free")
                 self._capacity_widget.setToolTip(storage_tip)
                 self.storage_manage_button.setToolTip(storage_tip)
                 self.storage_manage_button.setEnabled(True)
@@ -792,7 +794,11 @@ class DeviceInfoCard(QFrame):
         size_bytes = max(0, int(database_size_bytes or 0))
         if max_bytes <= 0:
             self.database_bar.setValue(0)
+            self.database_value_label.setText("—")
             self.database_bar.hide()
+            self.database_storage_widget.hide()
+            self.storage_manage_button.setMinimumHeight(Design.CONTROL_HEIGHT_SM)
+            self.storage_manage_button.updateGeometry()
             return
 
         used_pct = int((size_bytes / max_bytes) * 100) if max_bytes else 0
@@ -811,27 +817,38 @@ class DeviceInfoCard(QFrame):
         self.database_bar.setToolTip(
             f"{db_name}: {size_text} of {max_text} database limit {status}"
         )
+        self.database_value_label.setText(f"{used_pct}% used")
         self.storage_manage_button.setToolTip(
             f"Manage database storage\n{db_name}: {size_text} of {max_text} database limit {status}"
         )
         self.storage_manage_button.setEnabled(True)
+        # QPushButton computes its size hint from its own label, not the
+        # embedded layout. Reserve enough vertical space for both meters so
+        # the database row is inside the button's painted content rect.
+        self.storage_manage_button.setMinimumHeight(68)
+        self.storage_manage_button.updateGeometry()
+        self.database_storage_widget.show()
         self.database_bar.show()
         self._capacity_widget.show()
 
     def update_stats(self, tracks: int, albums: int, size_bytes: int, duration_ms: int,
                      videos: int = 0, podcasts: int = 0, audiobooks: int = 0):
-        """Update library statistics — populates the 2×2 inventory grid."""
-        self._inv_songs.setValue(f"{tracks:,}" if tracks else "0")
+        """Update the compact library summary beneath the device identity."""
+        song_text = f"{tracks:,}" if tracks else "0"
 
         hours = (duration_ms or 0) / 3_600_000
         if hours >= 100:
-            self._inv_hours.setValue(f"{hours:,.0f}")
+            hours_text = f"{hours:,.0f}"
         elif hours >= 10:
-            self._inv_hours.setValue(f"{hours:.0f}")
+            hours_text = f"{hours:.0f}"
         elif hours >= 1:
-            self._inv_hours.setValue(f"{hours:.1f}")
+            hours_text = f"{hours:.1f}"
         else:
-            self._inv_hours.setValue("0")
+            hours_text = "0"
+
+        self.library_summary_label.setText(
+            f"{song_text} song{'s' if tracks != 1 else ''} · {hours_text} hours"
+        )
 
         # Tooltip carries the precise size + playtime that no longer have
         # a dedicated line in the card.
@@ -839,7 +856,7 @@ class DeviceInfoCard(QFrame):
         dur_str = format_duration(duration_ms)
         tip_parts = [p for p in (size_str, dur_str) if p]
         if tip_parts:
-            self._inv_hours.setToolTip(" · ".join(tip_parts))
+            self.library_summary_label.setToolTip(" · ".join(tip_parts))
 
     def show_save_indicator(self, state: str) -> None:
         """Show a brief status indicator after a quick metadata write.
@@ -876,10 +893,12 @@ class DeviceInfoCard(QFrame):
         self._set_default_icon()
         self.database_bar.setValue(0)
         self.database_bar.hide()
+        self.database_storage_widget.hide()
+        self.storage_value_label.setText("—")
+        self.database_value_label.setText("—")
         self.storage_manage_button.setEnabled(False)
         self._capacity_widget.hide()
-        for cell in (self._inv_songs, self._inv_hours):
-            cell.setValue("—")
+        self.library_summary_label.setText("— songs · — hours")
         self._save_label.hide()
         self._save_hide_timer.stop()
         self.eject_button.setEnabled(False)
@@ -954,7 +973,14 @@ class Sidebar(QFrame):
         self.device_card.manage_storage_requested.connect(self.manage_storage_requested)
         self.sidebarLayout.addWidget(self.device_card)
 
-        # Device select buttons - row 1
+        # Device actions form one compact command group below the summary.
+        device_actions = QWidget()
+        device_actions.setObjectName("sidebarDeviceActions")
+        device_actions.setStyleSheet("background: transparent; border: none;")
+        device_actions_layout = QVBoxLayout(device_actions)
+        device_actions_layout.setContentsMargins(0, 0, 0, 0)
+        device_actions_layout.setSpacing(6)
+
         self.deviceSelectLayout = QHBoxLayout()
         self.deviceSelectLayout.setContentsMargins(0, 0, 0, 0)
         self.deviceSelectLayout.setSpacing(6)
@@ -962,10 +988,10 @@ class Sidebar(QFrame):
         self.deviceButton = QPushButton("Select")
         self.rescanButton = QPushButton("Rescan")
 
-        self.deviceButton.setStyleSheet(button_css("quiet", "sm"))
-        self.rescanButton.setStyleSheet(button_css("quiet", "sm"))
-        self.deviceButton.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
-        self.rescanButton.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
+        self.deviceButton.setStyleSheet(button_css("secondary", "sm"))
+        self.rescanButton.setStyleSheet(button_css("secondary", "sm"))
+        self.deviceButton.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        self.rescanButton.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
 
         _icon_sz = QSize(Design.SIDEBAR_ICON_SIZE, Design.SIDEBAR_ICON_SIZE)
         _bi = glyph_icon("tablet", Design.SIDEBAR_ICON_SIZE, Colors.TEXT_SECONDARY)
@@ -979,22 +1005,27 @@ class Sidebar(QFrame):
 
         self.deviceSelectLayout.addWidget(self.deviceButton)
         self.deviceSelectLayout.addWidget(self.rescanButton)
+        device_actions_layout.addLayout(self.deviceSelectLayout)
 
-        self.sidebarLayout.addLayout(self.deviceSelectLayout)
-
-        # Sync button - row 2 (full width)
+        # The one primary command remains visually distinct.
         self.syncButton = QPushButton("Sync with PC")
-        self.syncButton.setStyleSheet(accent_btn_css("md"))
+        self.syncButton.setStyleSheet(button_css("primary", "md"))
         self.syncButton.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.DemiBold))
         _bi = glyph_icon("download", Design.SIDEBAR_ICON_SIZE, Colors.TEXT_ON_ACCENT)
         if _bi:
             self.syncButton.setIcon(_bi)
             self.syncButton.setIconSize(_icon_sz)
-        self.sidebarLayout.addWidget(self.syncButton)
+        device_actions_layout.addWidget(self.syncButton)
+        self.sidebarLayout.addWidget(device_actions)
 
-        # Backup button
+        maintenance_section = QWidget()
+        maintenance_layout = QVBoxLayout(maintenance_section)
+        maintenance_layout.setContentsMargins(0, 0, 0, 0)
+        maintenance_layout.setSpacing(0)
+        maintenance_layout.addWidget(make_sidebar_section_header("Maintenance"))
+
         self.backupButton = SidebarNavButton("Backups", icon_name="archive")
-        self.sidebarLayout.addWidget(self.backupButton)
+        maintenance_layout.addWidget(self.backupButton)
 
         self.tagFixButton = SidebarNavButton(
             "Normalize Tags",
@@ -1003,7 +1034,8 @@ class Sidebar(QFrame):
         self.tagFixButton.setToolTip("Preview and apply iPod-friendly tag fixes across the whole library.")
         self.tagFixButton.setEnabled(False)
         self.tagFixButton.clicked.connect(self.tag_fixes_requested.emit)
-        self.sidebarLayout.addWidget(self.tagFixButton)
+        maintenance_layout.addWidget(self.tagFixButton)
+        self.sidebarLayout.addWidget(maintenance_section)
 
         self.sidebarLayout.addSpacing(Design.SIDEBAR_SECTION_GAP)
 

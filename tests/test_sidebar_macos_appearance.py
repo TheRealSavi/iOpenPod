@@ -26,10 +26,10 @@ def test_sidebar_uses_macos_source_list_metrics(qtbot) -> None:
     assert album_button.iconSize().width() == Design.SIDEBAR_ICON_SIZE
     assert album_button.height() >= Design.SIDEBAR_ROW_HEIGHT
 
-    section_label = sidebar.findChild(QLabel, "sidebarSectionLabel")
-    assert section_label is not None
-    assert section_label.text() == "Library"
-    assert section_label.font().pointSize() == Metrics.FONT_SIDEBAR_SECTION
+    section_labels = sidebar.findChildren(QLabel, "sidebarSectionLabel")
+    library_label = next(label for label in section_labels if label.text() == "Library")
+    assert library_label.font().pointSize() == Metrics.FONT_SIDEBAR_SECTION
+    assert any(label.text() == "Maintenance" for label in section_labels)
 
 
 def test_sidebar_selection_is_neutral_instead_of_accent_colored(qtbot) -> None:
@@ -46,19 +46,34 @@ def test_sidebar_selection_is_neutral_instead_of_accent_colored(qtbot) -> None:
     assert Colors.ACCENT_MUTED not in selected_css
 
 
-def test_device_summary_is_flattened_into_the_sidebar(qtbot) -> None:
+def test_device_summary_is_a_single_contained_sidebar_surface(qtbot) -> None:
     sidebar = Sidebar()
     qtbot.addWidget(sidebar)
 
     card = sidebar.device_card
     assert card.objectName() == "deviceInfoCard"
-    assert "background: transparent" in card.styleSheet()
+    assert Colors.SURFACE_RAISED in card.styleSheet()
+    assert Colors.BORDER_SUBTLE in card.styleSheet()
     card_layout = card.layout()
     assert card_layout is not None
     margins = card_layout.contentsMargins()
     assert (margins.left(), margins.top(), margins.right(), margins.bottom()) == (
+        12,
+        12,
+        12,
         10,
-        6,
-        10,
-        8,
     )
+
+
+def test_device_summary_uses_one_library_stat_line(qtbot) -> None:
+    sidebar = Sidebar()
+    qtbot.addWidget(sidebar)
+
+    sidebar.device_card.update_stats(
+        tracks=2_072,
+        albums=0,
+        size_bytes=0,
+        duration_ms=128 * 3_600_000,
+    )
+
+    assert sidebar.device_card.library_summary_label.text() == "2,072 songs · 128 hours"
