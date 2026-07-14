@@ -1333,7 +1333,7 @@ def _cmd_video(
 
     return [
         ffmpeg, "-i", src,
-        "-map", "0:v:0", "-map", "0:a:0",
+        "-map", "0:v:0", "-map", "0:a:0?",
         "-vcodec", "libx264",
         "-profile:v", "baseline", "-level", h264_level,
         "-pix_fmt", "yuv420p",

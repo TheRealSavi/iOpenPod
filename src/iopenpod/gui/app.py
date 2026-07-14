@@ -2,6 +2,7 @@
 import logging
 import shlex
 import shutil
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -46,9 +47,11 @@ from iopenpod.application.jobs import (
     BackSyncWorker,
     ChapterSplitRequest,
     ChapterSplitWorker,
+    check_sync_tool_availability,
     DropScanWorker,
     EjectDeviceWorker,
     QuickWriteWorker,
+    SyncToolAvailability,
     ToolDownloadWorker,
 )
 from iopenpod.application.runtime import (
@@ -304,6 +307,7 @@ class MainWindow(QMainWindow):
         self._back_sync_workers = []
         self._cancelled_workers = []
         self._pending_tool_sync_intent: SyncPlanningIntent | None = None
+        self._pending_tool_download_callback: Callable[[], None] | None = None
         self._album_conversion_worker = None
         self._chapter_split_worker = None
         self._tool_download_worker = None
@@ -512,6 +516,17 @@ class MainWindow(QMainWindow):
         if tools.can_download:
             dlg = _MissingToolsDialog(self, tools.tool_list, can_download=True)
             if dlg.exec() == QDialog.DialogCode.Accepted:
+                execution_intent = missing.execution_intent
+                if execution_intent is not None:
+                    def resume_execution() -> None:
+                        self._sync_session.start_execution(execution_intent)
+
+                    self._download_missing_tools_then_sync(
+                        tools.missing_ffmpeg,
+                        tools.missing_fpcalc,
+                        completion_callback=resume_execution,
+                    )
+                    return
                 self._download_missing_tools_then_sync(
                     tools.missing_ffmpeg,
                     tools.missing_fpcalc,
@@ -1916,14 +1931,16 @@ class MainWindow(QMainWindow):
         need_ffmpeg: bool,
         need_fpcalc: bool,
         planning_intent: SyncPlanningIntent | None = None,
+        completion_callback: Callable[[], None] | None = None,
     ):
-        """Download missing tools in a background thread, then restart sync."""
+        """Download missing tools in a background thread, then resume sync."""
         progress = _DownloadProgressDialog(self)
         progress.show()
 
         # Keep a reference so it isn't garbage collected
         self._dl_progress = progress
         self._pending_tool_sync_intent = planning_intent
+        self._pending_tool_download_callback = completion_callback
 
         worker = ToolDownloadWorker(
             need_ffmpeg=need_ffmpeg,
@@ -1944,6 +1961,11 @@ class MainWindow(QMainWindow):
             self._dl_progress = None
         planning_intent = getattr(self, "_pending_tool_sync_intent", None)
         self._pending_tool_sync_intent = None
+        completion_callback = getattr(self, "_pending_tool_download_callback", None)
+        self._pending_tool_download_callback = None
+        if completion_callback is not None:
+            completion_callback()
+            return
         if planning_intent is not None:
             self._sync_session.start_planning(planning_intent)
             return
@@ -1956,6 +1978,7 @@ class MainWindow(QMainWindow):
             self._dl_progress.close()
             self._dl_progress = None
         self._pending_tool_sync_intent = None
+        self._pending_tool_download_callback = None
         QMessageBox.critical(
             self,
             "Download Failed",
@@ -2787,6 +2810,13 @@ class MainWindow(QMainWindow):
         if not dropped_files.has_files:
             return
 
+        if dropped_files.track_paths or dropped_files.playlist_paths:
+            settings = self.settings_service.get_effective_settings()
+            tools = check_sync_tool_availability(settings)
+            if tools.has_missing:
+                self._show_missing_tools_for_drop(tools, paths)
+                return
+
         # Remember whether we already have a plan to merge into
         self._drop_merge = (
             self._plan is not None
@@ -2819,6 +2849,30 @@ class MainWindow(QMainWindow):
         self._drop_worker.finished.connect(self._on_drop_scan_complete)
         self._drop_worker.error.connect(self._onSyncError)
         self._drop_worker.start()
+
+    def _show_missing_tools_for_drop(
+        self,
+        tools: SyncToolAvailability,
+        paths: list[Path],
+    ) -> None:
+        """Offer tool setup before a dropped import reaches media probing."""
+        if tools.can_download:
+            dialog = _MissingToolsDialog(self, tools.tool_list, can_download=True)
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                self._download_missing_tools_then_sync(
+                    tools.missing_ffmpeg,
+                    tools.missing_fpcalc,
+                    completion_callback=lambda: self._on_files_dropped(paths),
+                )
+            return
+
+        dialog = _MissingToolsDialog(
+            self,
+            tools.tool_list,
+            can_download=False,
+            detail_lines=tools.install_help_text,
+        )
+        dialog.exec()
 
     def _on_drop_scan_complete(self, plan: SyncPlan) -> None:
         """Merge dropped-file plan into any existing plan, then show."""
@@ -2881,7 +2935,7 @@ class MainWindow(QMainWindow):
 # ============================================================================
 
 class _MissingToolsDialog(QDialog):
-    """Dark-themed dialog prompting the user to download missing tools."""
+    """Clear, focused setup prompt for external sync tools."""
 
     def __init__(
         self,
@@ -2891,13 +2945,13 @@ class _MissingToolsDialog(QDialog):
         detail_lines: str = "",
     ):
         super().__init__(parent)
-        self.setWindowTitle("Missing Tools")
-        self.setFixedWidth(420)
+        self.setWindowTitle("Set Up Sync Tools")
+        self.setFixedWidth(460)
         _apply_dialog_background(self)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins((28), (24), (28), (24))
-        layout.setSpacing(10)
+        layout.setContentsMargins((32), (28), (32), (28))
+        layout.setSpacing(12)
 
         # Icon + title row
         icon_label = QLabel()
@@ -2910,36 +2964,47 @@ class _MissingToolsDialog(QDialog):
         icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(icon_label)
 
-        title = QLabel(f"{tool_list} Not Found")
+        title = QLabel("Set up Sync Tools")
         title.setFont(QFont(FONT_FAMILY, Metrics.FONT_TITLE, QFont.Weight.Bold))
         title.setStyleSheet(_label_css(Colors.TEXT_PRIMARY))
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setWordWrap(True)
         layout.addWidget(title)
 
-        layout.addSpacing(4)
+        tools_label = QLabel(tool_list)
+        tools_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.DemiBold))
+        tools_label.setStyleSheet(_label_css(Colors.WARNING))
+        tools_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        tools_label.setWordWrap(True)
+        layout.addWidget(tools_label)
+
+        layout.addSpacing(2)
 
         if can_download:
             body = QLabel(
-                "iOpenPod can download these automatically (~80 MB).\n"
-                "Download now?"
+                "iOpenPod needs these tools to prepare and sync your media.\n"
+                "Download them automatically now? (~80 MB)"
             )
         else:
             body = QLabel(detail_lines)
         body.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
         body.setStyleSheet(_label_css(Colors.TEXT_SECONDARY))
-        body.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        body.setAlignment(
+            Qt.AlignmentFlag.AlignCenter
+            if can_download
+            else Qt.AlignmentFlag.AlignLeft
+        )
         body.setWordWrap(True)
         layout.addWidget(body)
 
-        layout.addSpacing(12)
+        layout.addSpacing(16)
 
         # Buttons
         btn_row = QHBoxLayout()
         btn_row.setSpacing(12)
 
         if can_download:
-            no_btn = QPushButton("Not Now")
+            no_btn = QPushButton("Not now")
             no_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
             no_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             no_btn.setMinimumHeight(40)
@@ -2947,11 +3012,12 @@ class _MissingToolsDialog(QDialog):
             no_btn.clicked.connect(self.reject)
             btn_row.addWidget(no_btn)
 
-            yes_btn = QPushButton("Download")
+            yes_btn = QPushButton("Download tools")
             yes_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
             yes_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             yes_btn.setMinimumHeight(40)
             yes_btn.setStyleSheet(accent_btn_css("lg"))
+            yes_btn.setDefault(True)
             yes_btn.clicked.connect(self.accept)
             btn_row.addWidget(yes_btn)
         else:

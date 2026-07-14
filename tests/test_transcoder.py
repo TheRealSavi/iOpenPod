@@ -35,6 +35,24 @@ def test_video_transcode_timeout_uses_longer_floor_and_padding() -> None:
     assert _transcode_timeout_seconds(TranscodeTarget.VIDEO_H264, one_hour_video_us) == 9000
 
 
+def test_video_transcode_command_allows_silent_sources() -> None:
+    command = transcoder_module._cmd_video(
+        "ffmpeg",
+        "silent.mp4",
+        "output.m4v",
+        crf=23,
+        preset="medium",
+        max_w=320,
+        max_h=240,
+        max_fps=30,
+        max_bitrate=0,
+        h264_level="3.0",
+        audio_encoder="aac",
+    )
+
+    assert "0:a:0?" in command
+
+
 def test_unprobeable_native_audio_reencodes_instead_of_copying_blind(monkeypatch, caplog) -> None:
     monkeypatch.setattr(
         transcoder_module,

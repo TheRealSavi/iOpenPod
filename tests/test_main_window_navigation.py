@@ -1,6 +1,7 @@
 import struct
 import zlib
 from collections.abc import Callable
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -446,16 +447,15 @@ def test_start_pc_sync_without_device_opens_media_folder_dialog(monkeypatch) -> 
 def test_execute_sync_plan_passes_playlist_actions_only_in_plan(
     monkeypatch,
 ) -> None:
-    plan = SyncPlan(
-        playlists_to_add=[
-            {
-                "playlist_id": 5282529579168309310,
-                "Title": "Test",
-                "_isNew": True,
-                "_mhsd_dataset_type": 2,
-                "items": [{"db_track_id": 101}],
-            }
-        ]
+    plan = SyncPlan()
+    plan.playlists_to_add.append(
+        {
+            "playlist_id": 5282529579168309310,
+            "Title": "Test",
+            "_isNew": True,
+            "_mhsd_dataset_type": 2,
+            "items": [{"db_track_id": 101}],
+        }
     )
     execution_intents: list[SyncExecutionIntent] = []
 
@@ -555,6 +555,46 @@ def test_missing_tools_download_preserves_sync_planning_intent(monkeypatch) -> N
     assert downloads == [(True, False, intent)]
 
 
+def test_missing_tools_download_resumes_sync_execution(monkeypatch) -> None:
+    execution_intents: list[SyncExecutionIntent] = []
+    intent = SyncExecutionIntent(plan=SyncPlan())
+
+    class _FakeMissingToolsDialog:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def exec(self) -> int:
+            return 1
+
+    monkeypatch.setattr("iopenpod.gui.app._MissingToolsDialog", _FakeMissingToolsDialog)
+    monkeypatch.setattr(
+        "iopenpod.gui.app.QDialog.DialogCode",
+        SimpleNamespace(Accepted=1),
+    )
+    window = SimpleNamespace(
+        _sync_session=SimpleNamespace(
+            start_execution=lambda ready: execution_intents.append(ready)
+        ),
+        _download_missing_tools_then_sync=lambda _ffmpeg, _fpcalc, **kwargs: kwargs[
+            "completion_callback"
+        ](),
+    )
+
+    MainWindow._on_sync_session_missing_tools(
+        cast(Any, window),
+        SyncSessionMissingTools(
+            SyncToolAvailability(
+                missing_ffmpeg=False,
+                missing_fpcalc=True,
+                can_download=True,
+            ),
+            execution_intent=intent,
+        ),
+    )
+
+    assert execution_intents == [intent]
+
+
 def test_tool_download_completion_resumes_pending_sync_planning_intent() -> None:
     closed: list[bool] = []
     planned: list[SyncPlanningIntent] = []
@@ -577,6 +617,65 @@ def test_tool_download_completion_resumes_pending_sync_planning_intent() -> None
     assert planned == [intent]
     assert reopened_dialog == []
     assert window._pending_tool_sync_intent is None
+
+
+def test_tool_download_completion_resumes_pending_drop() -> None:
+    closed: list[bool] = []
+    resumed_drops: list[list[Path]] = []
+    paths = [Path("/music/song.mp3")]
+    window = SimpleNamespace(
+        _dl_progress=SimpleNamespace(close=lambda: closed.append(True)),
+        _pending_tool_sync_intent=None,
+        _pending_tool_download_callback=lambda: resumed_drops.append(paths),
+        _sync_session=SimpleNamespace(
+            start_planning=lambda _intent: (_ for _ in ()).throw(AssertionError())
+        ),
+        startPCSync=lambda: (_ for _ in ()).throw(AssertionError()),
+    )
+
+    MainWindow._on_tools_downloaded(cast(Any, window))
+
+    assert closed == [True]
+    assert resumed_drops == [paths]
+    assert window._pending_tool_download_callback is None
+
+
+def test_dropped_files_show_missing_tools_prompt_before_starting_scan(monkeypatch) -> None:
+    paths = [Path("/music/song.mp3")]
+    availability = SyncToolAvailability(
+        missing_ffmpeg=True,
+        missing_fpcalc=False,
+        can_download=True,
+    )
+    prompted: list[tuple[SyncToolAvailability, list[Path]]] = []
+    worker_started: list[bool] = []
+    window = SimpleNamespace(
+        settings_service=SimpleNamespace(get_effective_settings=lambda: AppSettings()),
+        _show_missing_tools_for_drop=lambda tools, dropped_paths: prompted.append(
+            (tools, dropped_paths)
+        ),
+        device_session_service=SimpleNamespace(
+            current_session=lambda: SimpleNamespace(capabilities=None)
+        ),
+        _drop_worker=SimpleNamespace(start=lambda: worker_started.append(True)),
+    )
+    monkeypatch.setattr(
+        "iopenpod.gui.app.collect_import_file_paths",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            has_files=True,
+            track_paths=tuple(paths),
+            playlist_paths=(),
+        ),
+    )
+    monkeypatch.setattr(
+        "iopenpod.gui.app.check_sync_tool_availability",
+        lambda _settings: availability,
+    )
+
+    MainWindow._on_files_dropped(cast(Any, window), paths)
+
+    assert prompted == [(availability, paths)]
+    assert worker_started == []
 
 
 class _FakeDropOverlay:

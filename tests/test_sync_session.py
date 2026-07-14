@@ -218,6 +218,28 @@ def test_start_planning_emits_missing_tools_instead_of_creating_worker(qapp) -> 
     assert controller.is_running() is False
 
 
+def test_start_execution_emits_missing_tools_instead_of_creating_worker(qapp) -> None:
+    controller = _controller(
+        tool_availability=SyncToolAvailability(
+            missing_ffmpeg=False,
+            missing_fpcalc=True,
+            can_download=True,
+        )
+    )
+    missing: list[Any] = []
+    controller.missing_tools.connect(missing.append)
+    intent = SyncExecutionIntent(
+        plan=SyncPlan(to_add=[SyncItem(action=SyncAction.ADD_TO_IPOD)])
+    )
+
+    controller.start_execution(intent)
+
+    assert len(missing) == 1
+    assert missing[0].availability.missing_fpcalc is True
+    assert missing[0].execution_intent == intent
+    assert controller.is_running() is False
+
+
 def test_start_planning_builds_full_sync_request_and_emits_plan_ready(
     qapp,
     monkeypatch,

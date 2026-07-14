@@ -83,6 +83,7 @@ class SyncSessionMissingTools:
 
     availability: SyncToolAvailability
     planning_intent: SyncPlanningIntent | None = None
+    execution_intent: SyncExecutionIntent | None = None
 
 
 class SyncSessionController(QObject):
@@ -193,6 +194,13 @@ class SyncSessionController(QObject):
             return
 
         settings = self._settings_service.get_effective_settings()
+        tools = self._tool_availability_check(settings)
+        if tools.has_missing:
+            self.missing_tools.emit(
+                SyncSessionMissingTools(tools, execution_intent=intent)
+            )
+            return
+
         device_session = self._device_sessions.current_session()
 
         worker = SyncExecuteWorker(
