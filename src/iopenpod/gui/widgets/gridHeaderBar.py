@@ -5,7 +5,16 @@ from PyQt6.QtGui import QAction, QFont
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QMenu, QPushButton
 
 from ..glyphs import glyph_icon
-from ..styles import FONT_FAMILY, Colors, Metrics, btn_css, context_menu_css, input_css
+from ..styles import (
+    BROWSER_SEARCH_CONTROL_SIZE,
+    BROWSER_SEARCH_FIELD_WIDTH,
+    FONT_FAMILY,
+    Colors,
+    Metrics,
+    browser_search_field_css,
+    btn_css,
+    context_menu_css,
+)
 
 # Sort definitions per category: (display_label, sort_key, reverse)
 _SORTS = {
@@ -74,7 +83,7 @@ class GridHeaderBar(QFrame):
             f"color: {Colors.TEXT_PRIMARY}; background: transparent; border: none;"
         )
 
-        control_size = 34
+        control_size = BROWSER_SEARCH_CONTROL_SIZE
         self._sort_btn = QPushButton()
         self._sort_btn.setObjectName("gridSortButton")
         self._sort_btn.setFixedSize(control_size, control_size)
@@ -97,15 +106,11 @@ class GridHeaderBar(QFrame):
         self._search = QLineEdit()
         self._search.setObjectName("gridSearchField")
         self._search.setPlaceholderText(f"Find in {self._category}")
-        self._search.setFixedSize(190, control_size)
-        self._search.setStyleSheet(
-            input_css(
-                radius=control_size // 2,
-                padding="0px 12px",
-                min_height=control_size - 2,
-                font_size=Metrics.FONT_BROWSER_SEARCH,
-            )
+        self._search.setFixedSize(
+            BROWSER_SEARCH_FIELD_WIDTH,
+            BROWSER_SEARCH_CONTROL_SIZE,
         )
+        self._search.setStyleSheet(browser_search_field_css())
         search_icon = glyph_icon("search", 16, Colors.TEXT_TERTIARY)
         if search_icon is not None:
             self._search.addAction(

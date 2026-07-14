@@ -1,8 +1,8 @@
 import re
 
-from PyQt6.QtCore import QPoint, QSize, Qt
-from PyQt6.QtGui import QColor, QFont
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QWidget
+from PyQt6.QtCore import QPoint, QSize, Qt, pyqtSignal
+from PyQt6.QtGui import QAction, QColor, QFont
+from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QWidget
 
 from ..glyphs import glyph_icon
 from ..styles import (
@@ -26,6 +26,8 @@ _ALBUM_BAR_LIGHT_BOTTOM_MIX = 0.22
 _ALBUM_BAR_LIGHT_TOP_ALPHA = 132
 _ALBUM_BAR_LIGHT_MID_ALPHA = 112
 _ALBUM_BAR_LIGHT_BOTTOM_ALPHA = 96
+_TITLE_BAR_SEARCH_WIDTH = 190
+_TITLE_BAR_SEARCH_HEIGHT = 28
 
 
 def _mix_rgb(
@@ -148,6 +150,30 @@ def _title_bar_css(
     )
 
 
+def _title_bar_search_css(
+    text_rgb: tuple[int, int, int],
+    text_secondary_rgb: tuple[int, int, int],
+) -> str:
+    """Search treatment that remains legible over dynamic title-bar colors."""
+    return f"""
+        QLineEdit#trackListTitleSearchField {{
+            background: {_css_rgba(text_rgb, 20)};
+            border: 1px solid {_css_rgba(text_rgb, 42)};
+            border-radius: {_TITLE_BAR_SEARCH_HEIGHT // 2}px;
+            color: {_css_rgb(text_secondary_rgb)};
+            placeholder-text-color: {_css_rgba(text_secondary_rgb, 220)};
+            padding: 0px 10px;
+            font-size: {Metrics.FONT_BROWSER_SEARCH}pt;
+            font-weight: 500;
+        }}
+        QLineEdit#trackListTitleSearchField:focus {{
+            background: {_css_rgba(text_rgb, 32)};
+            border-color: {_css_rgba(text_rgb, 88)};
+            color: {_css_rgb(text_rgb)};
+        }}
+    """
+
+
 def _resolve_bar_palette(
     base_rgb: tuple[int, int, int],
     *,
@@ -195,6 +221,8 @@ def _resolve_bar_palette(
 class TrackListTitleBar(QFrame):
     """Draggable title bar for the track list panel."""
 
+    search_changed = pyqtSignal(str)
+
     def __init__(self, splitterToControl):
         super().__init__()
         self.splitter = splitterToControl
@@ -223,8 +251,24 @@ class TrackListTitleBar(QFrame):
         self.button2.setToolTip("Maximize")
         self.button2.clicked.connect(self._toggleMaximize)
 
+        self.search = QLineEdit(self)
+        self.search.setObjectName("trackListTitleSearchField")
+        self.search.setPlaceholderText("Search tracks")
+        self.search.setAccessibleName("Search tracks")
+        self.search.setToolTip(
+            "Search visible and hidden track metadata in the current list"
+        )
+        self.search.setClearButtonEnabled(True)
+        self.search.setFixedSize(
+            _TITLE_BAR_SEARCH_WIDTH,
+            _TITLE_BAR_SEARCH_HEIGHT,
+        )
+        self._search_icon_action: QAction | None = None
+        self.search.textChanged.connect(self.search_changed.emit)
+
         self.titleBarLayout.addWidget(self.title)
         self.titleBarLayout.addStretch()
+        self.titleBarLayout.addWidget(self.search)
         self.titleBarLayout.addWidget(self.button1)
         self.titleBarLayout.addWidget(self.button2)
 
@@ -233,6 +277,10 @@ class TrackListTitleBar(QFrame):
     def setTitle(self, title: str):
         """Set the title text."""
         self.title.setText(title)
+
+    def setSearchQuery(self, query: str) -> None:
+        """Synchronize the title-bar field with its attached track list."""
+        self.search.setText(query)
 
     def setColor(self, r: int, g: int, b: int,
                  text: tuple | None = None, text_secondary: tuple | None = None,
@@ -290,6 +338,29 @@ class TrackListTitleBar(QFrame):
         )
         self._set_handle_color()
         self._refresh_button_icons(palette["text_secondary"])
+        self._refresh_search_style(
+            palette["text"],
+            palette["text_secondary"],
+        )
+
+    def _refresh_search_style(
+        self,
+        text_rgb: tuple[int, int, int],
+        text_secondary_rgb: tuple[int, int, int],
+    ) -> None:
+        self.search.setStyleSheet(
+            _title_bar_search_css(text_rgb, text_secondary_rgb)
+        )
+        icon = glyph_icon("search", 15, _css_rgb(text_secondary_rgb))
+        if icon is None:
+            return
+        if self._search_icon_action is None:
+            self._search_icon_action = self.search.addAction(
+                icon,
+                QLineEdit.ActionPosition.LeadingPosition,
+            )
+        else:
+            self._search_icon_action.setIcon(icon)
 
     def _refresh_button_icons(self, rgb: tuple[int, int, int]) -> None:
         down_icon = glyph_icon("chevron-down", 18, _css_rgb(rgb))

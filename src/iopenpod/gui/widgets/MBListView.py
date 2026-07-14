@@ -25,6 +25,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLineEdit,
     QMenu,
     QSlider,
     QTableWidget,
@@ -52,7 +53,16 @@ from ..artwork_rendering import (
 from ..glyphs import glyph_icon
 from ..hidpi import scale_pixmap_for_display
 from ..internal_drag import IOP_EXPORT_DRAG_MIME
-from ..styles import FONT_FAMILY, Colors, Metrics, context_menu_css, table_css
+from ..styles import (
+    BROWSER_SEARCH_CONTROL_SIZE,
+    BROWSER_SEARCH_FIELD_WIDTH,
+    FONT_FAMILY,
+    Colors,
+    Metrics,
+    browser_search_field_css,
+    context_menu_css,
+    table_css,
+)
 from ..system_open import open_files_with_app_picker, open_files_with_default_app
 from .formatters import format_duration_mmss, format_size
 
@@ -638,6 +648,7 @@ DEFAULT_COLUMN_HEADER_PADDING = 32
 DEFAULT_COLUMN_MIN_WIDTH = 48
 DEFAULT_COLUMN_MAX_WIDTH = 640
 DEFAULT_COLUMN_WIDTH_SAMPLE_LIMIT = 2_000
+SEARCH_DEBOUNCE_MS = 120
 
 
 def _art_column_width() -> int:
@@ -874,6 +885,7 @@ class MusicBrowserList(QFrame):
     split_chapters_requested = pyqtSignal(list)
     track_activated = pyqtSignal(dict)
     playback_requested = pyqtSignal(dict, list, int)
+    search_query_changed = pyqtSignal(str)
 
     def __init__(
         self,
@@ -883,6 +895,7 @@ class MusicBrowserList(QFrame):
         library_cache: LibraryCacheLike | None = None,
         show_art_override: bool | None = None,
         content_type_override: str | None = None,
+        show_search_bar: bool = True,
     ):
         super().__init__()
         self._settings_service = settings_service
@@ -895,6 +908,22 @@ class MusicBrowserList(QFrame):
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(0, 0, 0, 0)
         self._layout.setSpacing(0)
+
+        # Search state is independent of album/artist/playlist filtering.  The
+        # latter defines the current list scope; search narrows that scope.
+        self._search_query = ""
+        self._search_scope_tracks: list[dict] = []
+        self._search_text_cache: dict[int, tuple[dict, str]] = {}
+        self._pending_search_selection: set[tuple[str, object]] = set()
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(SEARCH_DEBOUNCE_MS)
+        self._search_timer.timeout.connect(self._apply_search_filter)
+
+        # Thin search section directly below the owning track-list title bar.
+        self._search_bar = self._build_search_bar()
+        self._search_bar.setVisible(show_search_bar)
+        self._layout.addWidget(self._search_bar)
 
         # Table widget
         self.table = QTableWidget()
@@ -990,6 +1019,129 @@ class MusicBrowserList(QFrame):
         self._clip_orphan_threads: list[_FilePrepThread] = []
         self._clip_progress_widget: _DragProgressWidget | None = None
 
+    def _build_search_bar(self) -> QFrame:
+        bar = QFrame(self)
+        bar.setObjectName("trackListSearchBar")
+        bar.setFixedHeight(46)
+        bar.setStyleSheet(
+            f"QFrame#trackListSearchBar {{"
+            f"background:{Colors.SURFACE};"
+            f"border:none;"
+            f"border-bottom:1px solid {Colors.BORDER_SUBTLE};"
+            f"}}"
+        )
+
+        layout = QHBoxLayout(bar)
+        layout.setContentsMargins(
+            Metrics.GRID_MARGIN_X,
+            6,
+            Metrics.GRID_MARGIN_X,
+            6,
+        )
+        layout.setSpacing(0)
+
+        self._search_field = QLineEdit(bar)
+        self._search_field.setObjectName("trackListSearchField")
+        self._search_field.setPlaceholderText("Search tracks")
+        self._search_field.setAccessibleName("Search tracks")
+        self._search_field.setToolTip(
+            "Search visible and hidden track metadata in the current list"
+        )
+        self._search_field.setClearButtonEnabled(True)
+        self._search_field.setFixedSize(
+            BROWSER_SEARCH_FIELD_WIDTH,
+            BROWSER_SEARCH_CONTROL_SIZE,
+        )
+        self._search_field.setStyleSheet(browser_search_field_css())
+        search_icon = glyph_icon("search", 16, Colors.TEXT_TERTIARY)
+        if search_icon is not None:
+            self._search_field.addAction(
+                search_icon,
+                QLineEdit.ActionPosition.LeadingPosition,
+            )
+        self._search_field.textChanged.connect(self._on_search_text_changed)
+
+        layout.addStretch()
+        layout.addWidget(self._search_field)
+        return bar
+
+    def _on_search_text_changed(self, text: str) -> None:
+        self._search_query = text.strip()
+        self._search_timer.start()
+        self.search_query_changed.emit(text)
+
+    def setSearchQuery(self, query: str) -> None:
+        """Set the metadata search query shown in the search field."""
+        self._search_field.setText(query)
+
+    def clearSearch(self) -> None:
+        """Clear the metadata search and restore the current list scope."""
+        self._search_field.clear()
+
+    def _set_track_scope(self, tracks: list[dict]) -> None:
+        """Set the album/artist/playlist scope that search may narrow."""
+        self._search_scope_tracks = tracks
+        self._tracks = self._tracks_matching_search(tracks)
+
+    def _tracks_matching_search(self, tracks: list[dict]) -> list[dict]:
+        terms = tuple(term for term in self._search_query.casefold().split() if term)
+        if not terms:
+            return tracks
+        return [
+            track
+            for track in tracks
+            if all(term in self._track_search_text(track) for term in terms)
+        ]
+
+    def _track_search_text(self, track: dict) -> str:
+        cache_key = id(track)
+        cached = self._search_text_cache.get(cache_key)
+        if cached is not None and cached[0] is track:
+            return cached[1]
+
+        available_keys = set(track)
+        values: list[str] = []
+        for key in COLUMN_CONFIG:
+            if key == "_pl_pos" or not _column_available_from_keys(
+                key,
+                available_keys,
+                playlist_mode=False,
+            ):
+                continue
+            raw_value = _track_column_raw_value(track, key)
+            if raw_value is None or raw_value == "":
+                continue
+            raw_text = str(raw_value)
+            values.append(raw_text)
+            display_text = self._format_value(key, raw_value)
+            if display_text and display_text != raw_text:
+                values.append(display_text)
+
+        searchable = "\n".join(values).casefold()
+        self._search_text_cache[cache_key] = (track, searchable)
+        return searchable
+
+    @staticmethod
+    def _search_selection_key(track: dict) -> tuple[str, object]:
+        for key in ("db_track_id", "track_id", "_pc_path", "Location"):
+            value = track.get(key)
+            if value is not None and value != "":
+                try:
+                    hash(value)
+                    return key, value
+                except TypeError:
+                    return key, str(value)
+        return "object", id(track)
+
+    def _apply_search_filter(self) -> None:
+        selected_keys = {
+            self._search_selection_key(track)
+            for track in self._get_selected_tracks()
+        }
+        self._tracks = self._tracks_matching_search(self._search_scope_tracks)
+        self._pending_search_selection = selected_keys
+        self._populate_table()
+
     # -------------------------------------------------------------------------
     # Properties for backwards compatibility
     # -------------------------------------------------------------------------
@@ -1001,6 +1153,7 @@ class MusicBrowserList(QFrame):
     @all_tracks.setter
     def all_tracks(self, value: list[dict]):
         self._all_tracks = value
+        self._search_text_cache.clear()
 
     @property
     def tracks(self) -> list[dict]:
@@ -1008,7 +1161,7 @@ class MusicBrowserList(QFrame):
 
     @tracks.setter
     def tracks(self, value: list[dict]):
-        self._tracks = value
+        self._set_track_scope(value)
 
     @property
     def final_column_order(self) -> list[str]:
@@ -1024,6 +1177,8 @@ class MusicBrowserList(QFrame):
 
     def _is_reorderable_playlist(self) -> bool:
         """True when showing a regular playlist with manual sort order."""
+        if self._search_query:
+            return False
         if not self._is_playlist_mode or not self._current_playlist:
             return False
         pl = self._current_playlist
@@ -1222,6 +1377,7 @@ class MusicBrowserList(QFrame):
 
         self._media_type_filter = media_type_filter
         self._all_tracks = cache.get_tracks()
+        self._search_text_cache.clear()
 
         if media_type_filter is not None:
             self._all_tracks = [
@@ -1239,7 +1395,7 @@ class MusicBrowserList(QFrame):
         """Display all tracks without filtering."""
         self._current_filter = None
         self._is_playlist_mode = False
-        self._tracks = self._all_tracks
+        self._set_track_scope(self._all_tracks)
         self._setup_columns()
         self._populate_table()
 
@@ -1254,11 +1410,12 @@ class MusicBrowserList(QFrame):
         self._current_filter = {"type": "album", "album": album, "artist": artist}
 
         if artist:
-            self._tracks = [t for t in self._all_tracks
-                            if t.get("Album") == album and t.get("Artist") == artist]
+            tracks = [t for t in self._all_tracks
+                      if t.get("Album") == album and t.get("Artist") == artist]
         else:
-            self._tracks = [t for t in self._all_tracks if t.get("Album") == album]
+            tracks = [t for t in self._all_tracks if t.get("Album") == album]
 
+        self._set_track_scope(tracks)
         self._setup_columns()
         self._populate_table()
 
@@ -1266,7 +1423,9 @@ class MusicBrowserList(QFrame):
         """Filter to show only tracks from a specific artist."""
         self._ensure_tracks_loaded()
         self._current_filter = {"type": "artist", "artist": artist}
-        self._tracks = [t for t in self._all_tracks if t.get("Artist") == artist]
+        self._set_track_scope(
+            [t for t in self._all_tracks if t.get("Artist") == artist]
+        )
         self._setup_columns()
         self._populate_table()
 
@@ -1274,7 +1433,9 @@ class MusicBrowserList(QFrame):
         """Filter to show only tracks of a specific genre."""
         self._ensure_tracks_loaded()
         self._current_filter = {"type": "genre", "genre": genre}
-        self._tracks = [t for t in self._all_tracks if t.get("Genre") == genre]
+        self._set_track_scope(
+            [t for t in self._all_tracks if t.get("Genre") == genre]
+        )
         self._setup_columns()
         self._populate_table()
 
@@ -1287,7 +1448,9 @@ class MusicBrowserList(QFrame):
 
         if filter_key is not None and filter_value is not None:
             self._current_filter = filter_data
-            self._tracks = [t for t in self._all_tracks if t.get(filter_key) == filter_value]
+            self._set_track_scope(
+                [t for t in self._all_tracks if t.get(filter_key) == filter_value]
+            )
             self._setup_columns()
             self._populate_table()
 
@@ -1304,19 +1467,20 @@ class MusicBrowserList(QFrame):
         self._is_playlist_mode = True
         self._current_playlist = playlist
         # Resolve trackIDs to track dicts, preserving playlist order
-        self._tracks = []
+        tracks: list[dict] = []
         for tid in track_ids:
             track = track_id_index.get(tid)
             if track:
-                self._tracks.append(track)
+                tracks.append(track)
 
         # Apply sort order (Manual / Default leave the list as-is)
         if playlist:
             sort_order = playlist.get("sort_order", 0)
             if sort_order not in (0, 1):
                 from iopenpod.sync._playlist_builder import sort_tracks_by_order
-                self._tracks = sort_tracks_by_order(self._tracks, sort_order)
+                tracks = sort_tracks_by_order(tracks, sort_order)
 
+        self._set_track_scope(tracks)
         self._setup_columns()
         self._populate_table()
 
@@ -1332,16 +1496,27 @@ class MusicBrowserList(QFrame):
         ):
             self._store_current_column_layout(self._active_column_content_key)
         self._cancel_population()
+        self._search_timer.stop()
         self._all_tracks = []
         self._tracks = []
+        self._search_scope_tracks = []
+        self._search_text_cache.clear()
+        self._pending_search_selection.clear()
         self._current_filter = None
         self._media_type_filter = None
         self._is_playlist_mode = False
         self._current_playlist = None
         if clear_cache:
+            had_search_query = bool(self._search_query or self._search_field.text())
             self._art_cache.clear()
             self._art_display_cache.clear()
             self._art_unavailable.clear()
+            self._search_query = ""
+            self._search_field.blockSignals(True)
+            self._search_field.clear()
+            self._search_field.blockSignals(False)
+            if had_search_query:
+                self.search_query_changed.emit("")
         self._art_pending.clear()
 
         try:
@@ -1370,6 +1545,7 @@ class MusicBrowserList(QFrame):
                 return
             if cache.is_ready():
                 self._all_tracks = cache.get_tracks()
+                self._search_text_cache.clear()
                 mf = getattr(self, "_media_type_filter", None)
                 if mf is not None:
                     self._all_tracks = [
@@ -1582,13 +1758,14 @@ class MusicBrowserList(QFrame):
 
         using_saved_layout = self._user_col_order is not None
 
-        if not self._tracks:
+        column_source = self._search_scope_tracks or self._tracks
+        if not column_source:
             self._columns = list(self._user_col_order or defaults)
             return
 
         # Sample tracks to find available keys
         available_keys = set()
-        for track in self._tracks[:100]:
+        for track in column_source[:100]:
             available_keys.update(track.keys())
 
         # If the user has a saved compact layout, its keys are the visible columns.
@@ -1633,6 +1810,10 @@ class MusicBrowserList(QFrame):
     def _populate_table(self, *, preserve_column_layout: bool = True) -> None:
         """Populate the table with current tracks."""
         try:
+            # Backwards-compatible callers may assign ``_tracks`` directly.
+            # With no active query, that list becomes the next search scope.
+            if not self._search_query:
+                self._search_scope_tracks = self._tracks
             self._cancel_population()
 
             # Capture current column state before clearing (preserves drag order & widths)
@@ -1952,9 +2133,28 @@ class MusicBrowserList(QFrame):
                 self._schedule_visible_artwork_load(delay_ms=0)
 
             self._update_status()
+            self._restore_search_selection()
 
         except RuntimeError:
             pass  # Widget deleted
+
+    def _restore_search_selection(self) -> None:
+        if not self._pending_search_selection or not self._tracks:
+            self._pending_search_selection.clear()
+            return
+
+        wanted = self._pending_search_selection
+        self._pending_search_selection = set()
+        first_data_col = 1 if self._show_art else 0
+        for row in range(self.table.rowCount()):
+            anchor = self.table.item(row, first_data_col)
+            if anchor is None:
+                continue
+            track_index = anchor.data(Qt.ItemDataRole.UserRole + 1)
+            if not isinstance(track_index, int) or not 0 <= track_index < len(self._tracks):
+                continue
+            if self._search_selection_key(self._tracks[track_index]) in wanted:
+                self.table.selectRow(row)
 
     # -------------------------------------------------------------------------
     # Internal - Async Artwork Loading
@@ -2365,7 +2565,11 @@ class MusicBrowserList(QFrame):
     def _update_status(self) -> None:
         """Update the status label with track count info."""
         shown = len(self._tracks)
-        total = len(self._all_tracks)
+        total = (
+            len(self._search_scope_tracks)
+            if self._search_query
+            else len(self._all_tracks)
+        )
         # Determine context-appropriate noun from media type filter
         mf = getattr(self, "_media_type_filter", None)
         if (
@@ -2383,14 +2587,13 @@ class MusicBrowserList(QFrame):
         else:
             noun = "track"
         noun_pl = noun + "s" if total != 1 else noun
-        shown_pl = noun + "s" if shown != 1 else noun
         if total == 0:
             self._status_label.setText("")
-        elif shown == total or self._current_filter is None:
+        elif shown == total or (self._current_filter is None and not self._search_query):
             self._status_label.setText(f"{total:,} {noun_pl}")
         else:
             self._status_label.setText(
-                f"{shown:,} of {total:,} {shown_pl}"
+                f"{shown:,} of {total:,} {noun_pl}"
             )
 
     @staticmethod
@@ -3747,6 +3950,19 @@ class MusicBrowserList(QFrame):
         cells that are already on screen.  Useful after in-place edits to
         track dicts (flags, ratings, etc.).
         """
+        self._search_text_cache.clear()
+        if self._search_query:
+            selected_keys = {
+                self._search_selection_key(track)
+                for track in self._get_selected_tracks()
+            }
+            matching = self._tracks_matching_search(self._search_scope_tracks)
+            if [id(track) for track in matching] != [id(track) for track in self._tracks]:
+                self._tracks = matching
+                self._pending_search_selection = selected_keys
+                self._populate_table()
+                return
+
         if not self._tracks:
             return
 
@@ -3895,11 +4111,12 @@ class MusicBrowserList(QFrame):
         self._current_filter = {"type": "playlist"}
         self._is_playlist_mode = True
         self._current_playlist = playlist
-        self._tracks = []
+        tracks: list[dict] = []
         for tid in track_ids:
             track = track_id_index.get(tid)
             if track:
-                self._tracks.append(track)
+                tracks.append(track)
+        self._set_track_scope(tracks)
         self._setup_columns()
         self._populate_table()
 

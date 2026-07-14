@@ -1,6 +1,11 @@
 from PyQt6.QtWidgets import QLabel, QLineEdit, QPushButton
 
-from iopenpod.gui.styles import Metrics
+from iopenpod.gui.styles import (
+    BROWSER_SEARCH_CONTROL_SIZE,
+    BROWSER_SEARCH_FIELD_WIDTH,
+    Metrics,
+    browser_search_field_css,
+)
 from iopenpod.gui.widgets.gridHeaderBar import GridHeaderBar
 
 
@@ -21,7 +26,11 @@ def test_grid_header_matches_macos_browser_chrome(qtbot) -> None:
     assert sort_button.text() == ""
     assert sort_button.accessibleName() == "Sort: Name"
     assert search is not None
-    assert (search.width(), search.height()) == (190, 34)
+    assert (search.width(), search.height()) == (
+        BROWSER_SEARCH_FIELD_WIDTH,
+        BROWSER_SEARCH_CONTROL_SIZE,
+    )
+    assert search.styleSheet() == browser_search_field_css()
     assert search.placeholderText() == "Find in Albums"
 
 

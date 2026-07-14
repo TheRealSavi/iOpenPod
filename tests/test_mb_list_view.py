@@ -13,13 +13,19 @@ from PIL import Image
 from PyQt6.QtCore import QEvent, QPoint, Qt
 from PyQt6.QtGui import QKeyEvent
 from PyQt6.QtTest import QTest
-from PyQt6.QtWidgets import QComboBox, QDialog, QHeaderView, QLabel, QLineEdit, QMenu, QPushButton, QSlider, QTableWidget, QTableWidgetItem, QTreeWidget
+from PyQt6.QtWidgets import QComboBox, QDialog, QHeaderView, QLabel, QLineEdit, QMenu, QPushButton, QSlider, QSplitter, QTableWidget, QTableWidgetItem, QTreeWidget
 
 from iopenpod.application.context import RuntimeSettingsService
 from iopenpod.application.services import DeviceCapabilitySnapshot, DeviceIdentitySnapshot, DeviceManagerLike, DeviceSession, SettingsService, SettingsSnapshot
 from iopenpod.gui import imgMaker
 from iopenpod.gui.imgMaker import ArtworkFormatPreview, TrackArtworkPreview, get_track_artwork_previews
-from iopenpod.gui.styles import Colors
+from iopenpod.gui.styles import (
+    BROWSER_SEARCH_CONTROL_SIZE,
+    BROWSER_SEARCH_FIELD_WIDTH,
+    Colors,
+    Metrics,
+    browser_search_field_css,
+)
 from iopenpod.gui.widgets.MBListView import (
     _OPEN_TRACK_SHORTCUT,
     _OPEN_WITH_TRACK_SHORTCUT,
@@ -42,6 +48,7 @@ from iopenpod.gui.widgets.trackEditorDialog import (
     _SquareCropCanvas,
     _subgroup_for_key,
 )
+from iopenpod.gui.widgets.trackListTitleBar import TrackListTitleBar
 from iopenpod.infrastructure import settings_persistence
 from iopenpod.infrastructure.settings_runtime import SettingsRuntime
 from iopenpod.infrastructure.settings_schema import AppSettings, DeviceSettingsState
@@ -360,6 +367,7 @@ def _mount_list(
     library_cache: Any | None = None,
     content_type_override: str | None = None,
     show_art_override: bool | None = False,
+    show_search_bar: bool = True,
 ) -> MusicBrowserList:
     view = MusicBrowserList(
         settings_service=settings_service or _SettingsService(),
@@ -367,6 +375,7 @@ def _mount_list(
         library_cache=library_cache,
         show_art_override=show_art_override,
         content_type_override=content_type_override,
+        show_search_bar=show_search_bar,
     )
     qtbot.addWidget(view)
     view.resize(900, 500)
@@ -420,6 +429,122 @@ def _visible_column_order(view: MusicBrowserList) -> list[str]:
         if col_key is not None:
             result.append(col_key)
     return result
+
+
+def test_tracklist_search_section_sits_above_table(qtbot) -> None:
+    view = _mount_list(qtbot)
+
+    assert view._search_bar.objectName() == "trackListSearchBar"
+    assert view._search_field.objectName() == "trackListSearchField"
+    assert view._search_field.placeholderText() == "Search tracks"
+    assert view._layout.indexOf(view._search_bar) < view._layout.indexOf(view.table)
+    assert view._search_field.size().width() == BROWSER_SEARCH_FIELD_WIDTH
+    assert view._search_field.size().height() == BROWSER_SEARCH_CONTROL_SIZE
+    assert view._search_field.styleSheet() == browser_search_field_css()
+    search_layout = view._search_bar.layout()
+    assert search_layout is not None
+    assert search_layout.indexOf(view._search_field) == 1
+    leading_item = search_layout.itemAt(0)
+    assert leading_item is not None
+    assert leading_item.spacerItem() is not None
+    assert search_layout.contentsMargins().right() == Metrics.GRID_MARGIN_X
+
+
+def test_tracklist_search_matches_hidden_and_formatted_metadata(qtbot) -> None:
+    view = _mount_list(qtbot)
+    tracks: list[dict[str, object]] = [
+        {
+            "Title": "First Song",
+            "Artist": "Alpha",
+            "Album": "Album A",
+            "Genre": "Rock",
+            "Comment": "A deeply hidden needle",
+            "explicit_flag": 0,
+        },
+        {
+            "Title": "Second Song",
+            "Artist": "Beta",
+            "Album": "Album B",
+            "Genre": "Jazz",
+            "Comment": "Nothing unusual",
+            "explicit_flag": 1,
+        },
+        {
+            "Title": "Third Song",
+            "Artist": "Gamma",
+            "Album": "Album C",
+            "Genre": "Ambient",
+            "Comment": "Another note",
+            "explicit_flag": 0,
+        },
+    ]
+    _load_content(qtbot, view, tracks=tracks, media_type_filter=0x01)
+    assert "Comment" not in view._columns
+    assert "explicit_flag" not in view._columns
+    view.table.selectRow(0)
+
+    view._search_field.setText("hidden needle")
+    qtbot.waitUntil(lambda: view.table.rowCount() == 1, timeout=2000)
+    assert view.tracks == [tracks[0]]
+    selection_model = view.table.selectionModel()
+    assert selection_model is not None
+    assert [index.row() for index in selection_model.selectedRows()] == [0]
+
+    view._search_field.setText("second jazz")
+    qtbot.waitUntil(
+        lambda: len(view.tracks) == 1 and view.tracks[0] is tracks[1],
+        timeout=2000,
+    )
+
+    view._search_field.setText("explicit")
+    qtbot.waitUntil(
+        lambda: len(view.tracks) == 1 and view.tracks[0] is tracks[1],
+        timeout=2000,
+    )
+
+    view._search_field.clear()
+    qtbot.waitUntil(lambda: view.table.rowCount() == len(tracks), timeout=2000)
+    assert view.tracks == tracks
+
+
+def test_title_bar_search_filters_embedded_track_list(qtbot) -> None:
+    view = _mount_list(qtbot, show_search_bar=False)
+    titlebar = TrackListTitleBar(QSplitter())
+    qtbot.addWidget(titlebar)
+    titlebar.search_changed.connect(view.setSearchQuery)
+    view.search_query_changed.connect(titlebar.setSearchQuery)
+
+    tracks: list[dict[str, object]] = [
+        {"Title": "First", "Comment": "Needle in hidden metadata"},
+        {"Title": "Second", "Comment": "Nothing to find"},
+    ]
+    _load_content(qtbot, view, tracks=tracks, media_type_filter=0x01)
+    assert view._search_bar.isHidden()
+
+    titlebar.search.setText("needle")
+    qtbot.waitUntil(lambda: view.table.rowCount() == 1, timeout=2000)
+    assert view.tracks == [tracks[0]]
+
+    view.clearTable(clear_cache=True)
+    assert titlebar.search.text() == ""
+
+
+def test_tracklist_search_filters_only_the_current_list_scope(qtbot) -> None:
+    view = _mount_list(qtbot)
+    tracks: list[dict[str, object]] = [
+        {"Title": "Inside Match", "Artist": "Alpha", "Album": "Album A"},
+        {"Title": "Inside Other", "Artist": "Beta", "Album": "Album A"},
+        {"Title": "Outside Match", "Artist": "Gamma", "Album": "Album B"},
+    ]
+    _load_content(qtbot, view, tracks=tracks, media_type_filter=0x01)
+    view.filterByAlbum("Album A")
+    qtbot.waitUntil(lambda: view.table.rowCount() == 2, timeout=2000)
+
+    view._search_field.setText("match")
+    qtbot.waitUntil(lambda: view.table.rowCount() == 1, timeout=2000)
+
+    assert view.tracks == [tracks[0]]
+    assert view._status_label.text() == "1 of 2 songs"
 
 
 def test_tracklist_artwork_loads_only_visible_prefetch_rows(qtbot):

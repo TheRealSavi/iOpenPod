@@ -133,6 +133,7 @@ class MusicBrowser(QFrame):
             settings_service=self._settings_service,
             device_sessions=self._device_sessions,
             library_cache=self._library_cache,
+            show_search_bar=False,
         )
         self.browserTrack.setMinimumHeight(0)
         self.browserTrack.setMinimumWidth(0)
@@ -143,6 +144,12 @@ class MusicBrowser(QFrame):
 
         # Track Browser TitleBar
         self.trackListTitleBar = TrackListTitleBar(self.gridTrackSplitter)
+        self.trackListTitleBar.search_changed.connect(
+            self.browserTrack.setSearchQuery
+        )
+        self.browserTrack.search_query_changed.connect(
+            self.trackListTitleBar.setSearchQuery
+        )
         self.trackContainerLayout.addWidget(self.trackListTitleBar)
         self.trackContainerLayout.addWidget(self.browserTrack)
 

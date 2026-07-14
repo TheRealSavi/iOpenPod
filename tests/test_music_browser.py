@@ -3,7 +3,7 @@ from typing import Any, cast
 
 from PIL import Image
 from PyQt6.QtCore import QPoint
-from PyQt6.QtWidgets import QSplitter
+from PyQt6.QtWidgets import QLineEdit, QSplitter
 
 from iopenpod.gui.styles import Colors, context_menu_css
 from iopenpod.gui.widgets import artworkUnifier as artwork_unifier_module
@@ -201,6 +201,54 @@ def test_title_bar_palette_reuses_contrast_ensured_grid_color() -> None:
     palette = _resolve_bar_palette(display_rgb, contrast_ensured=True)
 
     assert palette["bg"] == display_rgb
+
+
+def test_title_bar_places_metadata_search_before_window_controls(qtbot) -> None:
+    splitter = QSplitter()
+    titlebar = TrackListTitleBar(splitter)
+    qtbot.addWidget(splitter)
+    qtbot.addWidget(titlebar)
+    titlebar.show()
+
+    search = titlebar.findChild(QLineEdit, "trackListTitleSearchField")
+    assert search is titlebar.search
+    assert search is not None
+    assert search.placeholderText() == "Search tracks"
+    assert titlebar.titleBarLayout.indexOf(search) < titlebar.titleBarLayout.indexOf(
+        titlebar.button1
+    )
+    assert (search.width(), search.height()) == (190, 28)
+    assert "QLineEdit#trackListTitleSearchField" in search.styleSheet()
+
+    palette = _resolve_bar_palette(
+        (86, 112, 144),
+        text=(18, 18, 24),
+        text_secondary=(45, 50, 60),
+        contrast_ensured=True,
+    )
+    titlebar.setColor(
+        86,
+        112,
+        144,
+        text=(18, 18, 24),
+        text_secondary=(45, 50, 60),
+        contrast_ensured=True,
+    )
+    compact_search_css = "".join(search.styleSheet().split())
+    secondary_rgb = ",".join(str(value) for value in palette["text_secondary"])
+    primary_rgb = ",".join(str(value) for value in palette["text"])
+    assert f"color:rgb({secondary_rgb});" in compact_search_css
+    assert f"color:rgb({primary_rgb});" in compact_search_css
+
+    emitted: list[str] = []
+    titlebar.search_changed.connect(emitted.append)
+    search.setText("hidden metadata")
+    assert emitted == ["hidden metadata"]
+
+    titlebar.setFullscreenMode(True)
+    assert search.isVisible()
+    assert titlebar.button1.isHidden()
+    assert titlebar.button2.isHidden()
 
 
 def test_title_bar_uses_prominent_gradient_from_contrast_ensured_color(qtbot) -> None:

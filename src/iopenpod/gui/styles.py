@@ -2327,6 +2327,20 @@ def progress_bar_css(
     """
 
 
+BROWSER_SEARCH_CONTROL_SIZE = 34
+BROWSER_SEARCH_FIELD_WIDTH = 190
+
+
+def browser_search_field_css() -> str:
+    """Shared styling for compact search fields in browser filter headers."""
+    return input_css(
+        radius=BROWSER_SEARCH_CONTROL_SIZE // 2,
+        padding="0px 12px",
+        min_height=BROWSER_SEARCH_CONTROL_SIZE - 2,
+        font_size=Metrics.FONT_BROWSER_SEARCH,
+    )
+
+
 # ── Application-level stylesheet ────────────────────────────────────────────
 
 def app_stylesheet() -> str:

@@ -773,7 +773,8 @@ class PCTrackListView(QWidget):
         # Feed into the browser list
         bl = self._browser_list
         bl._all_tracks = self._pc_track_dicts
-        bl._tracks = self._pc_track_dicts
+        bl._search_text_cache.clear()
+        bl._set_track_scope(self._pc_track_dicts)
         bl._is_playlist_mode = False
         bl._current_filter = None
         if not bl._columns or bl._columns == ["Title"]:

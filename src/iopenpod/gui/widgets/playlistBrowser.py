@@ -1427,7 +1427,10 @@ class PlaylistBrowser(QFrame):
             settings_service=self._settings_service,
             device_sessions=self._device_sessions,
             library_cache=self._library_cache,
+            show_search_bar=False,
         )
+        self.trackTitleBar.search_changed.connect(self.trackList.setSearchQuery)
+        self.trackList.search_query_changed.connect(self.trackTitleBar.setSearchQuery)
         self.trackList.setMinimumHeight(0)
         self.trackList.setMinimumWidth(0)
         self.trackList.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
