@@ -79,7 +79,6 @@ from ..styles import (
     FONT_FAMILY,
     LABEL_SECONDARY,
     Colors,
-    Design,
     Metrics,
     accent_btn_css,
     btn_css,
@@ -88,6 +87,7 @@ from ..styles import (
     make_label,
     make_separator,
     progress_bar_css,
+    sidebar_item_view_css,
     spin_css,
 )
 from .browserChrome import (
@@ -1597,34 +1597,14 @@ class PodcastBrowser(QFrame):
         )
 
         self._feed_list = QListWidget()
-        self._feed_list.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
+        self._feed_list.setFont(QFont(FONT_FAMILY, Metrics.FONT_SIDEBAR))
         self._feed_list.setIconSize(QSize((36), (36)))
         self._feed_list.setSpacing(2)
         self._feed_list.setTextElideMode(Qt.TextElideMode.ElideRight)
         self._feed_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._feed_list.customContextMenuRequested.connect(self._on_feed_context_menu)
         self._feed_list.currentRowChanged.connect(self._on_feed_selected)
-        self._feed_list.setStyleSheet(f"""
-            QListWidget {{
-                background: transparent;
-                border: none;
-                outline: none;
-            }}
-            QListWidget::item {{
-                padding: {(6)}px {(8)}px;
-                border-radius: {Metrics.BORDER_RADIUS_SM}px;
-                color: {Colors.TEXT_PRIMARY};
-                font-weight: {Design.BUTTON_WEIGHT};
-            }}
-            QListWidget::item:selected {{
-                background: {Colors.ACCENT_MUTED};
-                color: {Colors.ACCENT};
-                font-weight: {Design.BUTTON_WEIGHT_STRONG};
-            }}
-            QListWidget::item:hover:!selected {{
-                background: {Colors.SURFACE_ACTIVE};
-            }}
-        """)
+        self._feed_list.setStyleSheet(sidebar_item_view_css(background="transparent"))
 
         panel.addWidget(self._feed_list, 1)
         return panel

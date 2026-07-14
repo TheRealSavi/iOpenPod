@@ -1,5 +1,10 @@
 from PyQt6.QtWidgets import QVBoxLayout, QWidget
 
+from iopenpod.gui.styles import (
+    Colors,
+    sidebar_item_view_css,
+    sidebar_nav_state,
+)
 from iopenpod.gui.widgets.sidebarNavButton import SidebarNavButton
 
 
@@ -28,3 +33,31 @@ def test_sidebar_navigation_button_elides_inside_constrained_sidebar(qtbot) -> N
 
     assert button.width() <= 150
     assert button.text().endswith("…")
+
+
+def test_sidebar_navigation_button_owns_selected_glyph_state(qtbot) -> None:
+    button = SidebarNavButton("Albums", icon_name="album")
+    qtbot.addWidget(button)
+    normal_icon_key = button.icon().cacheKey()
+
+    button.setSelected(True)
+
+    assert button.isSelected()
+    assert button.icon().cacheKey() != normal_icon_key
+    assert sidebar_nav_state(True).icon == Colors.ACCENT
+    assert Colors.SURFACE_ACTIVE in button.styleSheet()
+
+
+def test_item_view_sidebars_share_the_canonical_selected_state() -> None:
+    css = sidebar_item_view_css()
+    selected = sidebar_nav_state(True)
+
+    assert selected.background in css
+    assert selected.text in css
+    assert "min-height: 32px" in css
+
+
+def test_embedded_item_view_sidebar_does_not_paint_a_second_surface() -> None:
+    css = sidebar_item_view_css(background="transparent")
+
+    assert "background: transparent;" in css

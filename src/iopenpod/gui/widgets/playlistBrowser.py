@@ -49,10 +49,9 @@ from ..styles import (
     make_detail_row,
     make_scroll_area,
     make_separator,
+    make_sidebar_section_header,
     panel_css,
     progress_bar_css,
-    sidebar_nav_css,
-    sidebar_nav_selected_css,
 )
 from .browserChrome import (
     BrowserHeroHeader,
@@ -1094,9 +1093,9 @@ class PlaylistListPanel(QFrame):
         self._inner_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self._scroll.setWidget(self._inner)
 
-        self._buttons: list[QPushButton] = []
+        self._buttons: list[SidebarNavButton] = []
         self._button_icons: dict[int, str] = {}  # button index -> icon name
-        self._selected_btn: QPushButton | None = None
+        self._selected_btn: SidebarNavButton | None = None
         self._playlist_map: dict[int, dict] = {}  # button index -> playlist dict
 
     # ─────────────────────────────────────────────────────────────
@@ -1224,12 +1223,7 @@ class PlaylistListPanel(QFrame):
             spacer.setStyleSheet("background: transparent; border: none;")
             self._inner_layout.addWidget(spacer)
             return
-        lbl = QLabel(text)
-        lbl.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS, QFont.Weight.Bold))
-        lbl.setStyleSheet(
-            f"color: {Colors.TEXT_TERTIARY}; background: transparent; "
-            f"border: none; padding: 8px 4px 3px 4px;"
-        )
+        lbl = make_sidebar_section_header(text)
         self._inner_layout.addWidget(lbl)
 
     def _add_playlist_button(self, playlist: dict, icon_name: str, dimmed: bool = False) -> None:
@@ -1245,16 +1239,9 @@ class PlaylistListPanel(QFrame):
         if count > 0:
             btn_text += f"  ({count})"
 
-        btn = SidebarNavButton(btn_text)
+        btn = SidebarNavButton(btn_text, icon_name=icon_name)
         btn.setToolTip(f"{title}\n{count} tracks\n{_mhsd_type_label(playlist)}")
-
-        fg = Colors.TEXT_DISABLED if dimmed else Colors.TEXT_PRIMARY
-        ic = glyph_icon(icon_name, (20), fg)
-        if ic:
-            btn.setIcon(ic)
-            btn.setIconSize(QSize((20), (20)))
-
-        btn.setStyleSheet(sidebar_nav_css())
+        btn.setDimmed(dimmed)
 
         idx = len(self._buttons)
         self._playlist_map[idx] = playlist
@@ -1267,25 +1254,11 @@ class PlaylistListPanel(QFrame):
     def _on_click(self, index: int) -> None:
         # Reset previous selection
         if self._selected_btn is not None:
-            prev_idx = self._buttons.index(self._selected_btn)
-            self._selected_btn.setStyleSheet(sidebar_nav_css())
-            prev_icon = self._button_icons.get(prev_idx)
-            if prev_icon:
-                pl = self._playlist_map.get(prev_idx)
-                dimmed = bool(pl.get("master_flag")) if pl else False
-                fg = Colors.TEXT_DISABLED if dimmed else Colors.TEXT_SECONDARY
-                ic = glyph_icon(prev_icon, (20), fg)
-                if ic:
-                    self._selected_btn.setIcon(ic)
+            self._selected_btn.setSelected(False)
 
         # Highlight new selection
         btn = self._buttons[index]
-        btn.setStyleSheet(sidebar_nav_selected_css())
-        icon_name = self._button_icons.get(index)
-        if icon_name:
-            ic = glyph_icon(icon_name, (20), Colors.ACCENT)
-            if ic:
-                btn.setIcon(ic)
+        btn.setSelected(True)
         self._selected_btn = btn
 
         playlist = self._playlist_map.get(index)

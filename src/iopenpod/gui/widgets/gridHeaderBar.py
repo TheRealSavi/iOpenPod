@@ -1,10 +1,11 @@
 from typing import cast
 
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QAction
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLineEdit, QMenu, QPushButton, QSizePolicy
+from PyQt6.QtCore import QSize, Qt, pyqtSignal
+from PyQt6.QtGui import QAction, QFont
+from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QMenu, QPushButton
 
-from ..styles import Colors, Metrics, button_css, context_menu_css, input_css
+from ..glyphs import glyph_icon
+from ..styles import FONT_FAMILY, Colors, Metrics, btn_css, context_menu_css, input_css
 
 # Sort definitions per category: (display_label, sort_key, reverse)
 _SORTS = {
@@ -51,35 +52,72 @@ class GridHeaderBar(QFrame):
         self._category = "Albums"
         self._active_label = _DEFAULT_LABEL
 
-        self.setFixedHeight(36)
-        self.setStyleSheet(f"""
-            GridHeaderBar {{
-                background: {Colors.BG_DARK};
-                border-bottom: 1px solid {Colors.BORDER_SUBTLE};
-            }}
+        self.setObjectName("gridHeaderBar")
+        self.setFixedHeight(56)
+        self.setStyleSheet("""
+            QFrame#gridHeaderBar {
+                background: transparent;
+                border: none;
+            }
         """)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(8, 0, 8, 0)
-        layout.setSpacing(6)
+        layout.setContentsMargins(Metrics.GRID_MARGIN_X, 0, Metrics.GRID_MARGIN_X, 0)
+        layout.setSpacing(10)
 
-        self._sort_btn = QPushButton(f"Sort: {_DEFAULT_LABEL} \u25be")
-        self._sort_btn.setStyleSheet(button_css("secondary", "sm"))
-        self._sort_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self._title = QLabel(self._category)
+        self._title.setObjectName("gridHeaderTitle")
+        self._title.setFont(
+            QFont(FONT_FAMILY, Metrics.FONT_BROWSER_TITLE, QFont.Weight.DemiBold)
+        )
+        self._title.setStyleSheet(
+            f"color: {Colors.TEXT_PRIMARY}; background: transparent; border: none;"
+        )
+
+        control_size = 34
+        self._sort_btn = QPushButton()
+        self._sort_btn.setObjectName("gridSortButton")
+        self._sort_btn.setFixedSize(control_size, control_size)
+        self._sort_btn.setStyleSheet(btn_css(
+            bg=Colors.SURFACE_RAISED,
+            bg_hover=Colors.SURFACE_HOVER,
+            bg_press=Colors.SURFACE_ACTIVE,
+            border=f"1px solid {Colors.BORDER}",
+            radius=control_size // 2,
+            padding="0px",
+        ))
+        sort_icon = glyph_icon("sort-descending", 18, Colors.TEXT_SECONDARY)
+        if sort_icon is not None:
+            self._sort_btn.setIcon(sort_icon)
+            self._sort_btn.setIconSize(QSize(18, 18))
+        self._update_sort_accessibility()
         self._sort_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._sort_btn.clicked.connect(self._show_sort_menu)
 
         self._search = QLineEdit()
-        self._search.setPlaceholderText("Search\u2026")
-        self._search.setFixedWidth(200)
+        self._search.setObjectName("gridSearchField")
+        self._search.setPlaceholderText(f"Find in {self._category}")
+        self._search.setFixedSize(190, control_size)
         self._search.setStyleSheet(
-            input_css(radius=Metrics.BORDER_RADIUS_SM, padding="4px 10px")
+            input_css(
+                radius=control_size // 2,
+                padding="0px 12px",
+                min_height=control_size - 2,
+                font_size=Metrics.FONT_BROWSER_SEARCH,
+            )
         )
+        search_icon = glyph_icon("search", 16, Colors.TEXT_TERTIARY)
+        if search_icon is not None:
+            self._search.addAction(
+                search_icon,
+                QLineEdit.ActionPosition.LeadingPosition,
+            )
         self._search.setClearButtonEnabled(True)
         self._search.textChanged.connect(self.search_changed)
 
-        layout.addWidget(self._sort_btn)
+        layout.addWidget(self._title)
         layout.addStretch()
+        layout.addWidget(self._sort_btn)
         layout.addWidget(self._search)
 
     # ── Public API ────────────────────────────────────────────────────────────
@@ -87,6 +125,8 @@ class GridHeaderBar(QFrame):
     def setCategory(self, category: str) -> None:
         """Update the available sort options for the given category."""
         self._category = category
+        self._title.setText(category)
+        self._search.setPlaceholderText(f"Find in {category}")
 
     def resetState(self) -> None:
         """Reset search text and sort selection to defaults."""
@@ -94,7 +134,7 @@ class GridHeaderBar(QFrame):
         self._search.clear()
         self._search.blockSignals(False)
         self._active_label = _DEFAULT_LABEL
-        self._sort_btn.setText(f"Sort: {_DEFAULT_LABEL} \u25be")
+        self._update_sort_accessibility()
         # Emit the default sort so grid is reset even if called from other paths
         self.sort_changed.emit("title", False)
 
@@ -119,5 +159,10 @@ class GridHeaderBar(QFrame):
 
     def _on_sort_selected(self, label: str, key: str, reverse: bool) -> None:
         self._active_label = label
-        self._sort_btn.setText(f"Sort: {label} \u25be")
+        self._update_sort_accessibility()
         self.sort_changed.emit(key, reverse)
+
+    def _update_sort_accessibility(self) -> None:
+        label = f"Sort: {self._active_label}"
+        self._sort_btn.setAccessibleName(label)
+        self._sort_btn.setToolTip(label)

@@ -62,10 +62,10 @@ from ..styles import (
     make_scroll_area,
     panel_css,
     resolve_accent_color,
-    sidebar_nav_css,
-    sidebar_nav_selected_css,
+    sidebar_panel_css,
     spin_css,
 )
+from .sidebarNavButton import SidebarNavButton
 
 if TYPE_CHECKING:
     from iopenpod.application.services import DeviceSessionService, SettingsService
@@ -1209,15 +1209,11 @@ class SettingsPage(QWidget):
         sidebar = QFrame()
         sidebar.setObjectName("settingsSidebar")
         sidebar.setFixedWidth(max(Metrics.SIDEBAR_WIDTH, 256))
-        sidebar.setStyleSheet(f"""
-            QFrame#settingsSidebar {{
-                background: {Colors.SURFACE};
-                border-right: 1px solid {Colors.BORDER_SUBTLE};
-            }}
-        """)
+        sidebar.setStyleSheet(sidebar_panel_css("settingsSidebar"))
 
         layout = QVBoxLayout(sidebar)
-        layout.setContentsMargins((16), (16), (16), (16))
+        margin = Design.SIDEBAR_OUTER_MARGIN
+        layout.setContentsMargins(margin, margin, margin, margin)
         layout.setSpacing(4)
 
         # Back button
@@ -1241,19 +1237,22 @@ class SettingsPage(QWidget):
         layout.addSpacing(12)
 
         # Navigation items
-        self._nav_buttons: list[QPushButton] = []
+        self._nav_buttons: list[SidebarNavButton] = []
+        nav_layout = QVBoxLayout()
+        nav_layout.setContentsMargins(0, 0, 0, 0)
+        nav_layout.setSpacing(0)
         nav_items = [
             "General", "Sync", "Transcoding",
             "External Tools", "Scrobbling", "Storage", "Backups",
         ]
         for i, name in enumerate(nav_items):
-            btn = QPushButton(name)
-            btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
+            btn = SidebarNavButton(name)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.clicked.connect(lambda _, idx=i: self._select_page(idx))
             self._nav_buttons.append(btn)
-            layout.addWidget(btn)
+            nav_layout.addWidget(btn)
 
+        layout.addLayout(nav_layout)
         layout.addStretch()
         return sidebar
 
@@ -1309,7 +1308,7 @@ class SettingsPage(QWidget):
         if 0 <= index < len(self._nav_buttons) and self._nav_buttons[index].isHidden():
             index = 0
         for i, btn in enumerate(self._nav_buttons):
-            btn.setStyleSheet(sidebar_nav_selected_css() if i == index else sidebar_nav_css())
+            btn.setSelected(i == index)
         self._stack.setCurrentIndex(index)
 
     # ── Page factory ────────────────────────────────────────────────────────

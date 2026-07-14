@@ -45,8 +45,6 @@ from ..styles import (
     Metrics,
     context_menu_css,
     make_scroll_area,
-    sidebar_nav_css,
-    sidebar_nav_selected_css,
 )
 from .browserChrome import (
     BrowserHeroHeader,
@@ -438,8 +436,8 @@ class PhotoBrowserWidget(QFrame):
         self._search_query = ""
         self._sort_key = "title"
         self._sort_reverse = False
-        self._album_buttons: dict[str, QPushButton] = {}
-        self._selected_album_btn: QPushButton | None = None
+        self._album_buttons: dict[str, SidebarNavButton] = {}
+        self._selected_album_btn: SidebarNavButton | None = None
         self._write_worker: _PhotoWriteWorker | None = None
         self._export_worker: _PhotoExportWorker | None = None
         self._tile_pixmap_cache: dict[int, QPixmap] = {}
@@ -1250,7 +1248,6 @@ class PhotoBrowserWidget(QFrame):
     def _add_album_button(self, name: str):
         btn = SidebarNavButton(name, self._album_inner)
         btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        btn.setStyleSheet(sidebar_nav_css())
         btn.clicked.connect(lambda _checked=False, album_name=name: self._on_album_changed(album_name))
         btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         btn.customContextMenuRequested.connect(
@@ -1425,11 +1422,11 @@ class PhotoBrowserWidget(QFrame):
 
     def _highlight_album_button(self, album_name: str):
         if self._selected_album_btn is not None:
-            self._selected_album_btn.setStyleSheet(sidebar_nav_css())
+            self._selected_album_btn.setSelected(False)
         btn = self._album_buttons.get(album_name) or self._album_buttons.get("All Photos")
         self._selected_album_btn = btn
         if btn is not None:
-            btn.setStyleSheet(sidebar_nav_selected_css())
+            btn.setSelected(True)
 
     def _update_action_states(self):
         actions_locked = self._photo_actions_locked()

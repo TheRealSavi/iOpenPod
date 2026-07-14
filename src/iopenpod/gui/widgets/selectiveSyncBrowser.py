@@ -58,6 +58,7 @@ from ..glyphs import glyph_icon
 from ..styles import (
     FONT_FAMILY,
     Colors,
+    Design,
     Metrics,
     accent_btn_css,
     back_btn_css,
@@ -65,8 +66,7 @@ from ..styles import (
     context_menu_css,
     make_scroll_area,
     progress_bar_css,
-    sidebar_nav_css,
-    sidebar_nav_selected_css,
+    sidebar_panel_css,
 )
 from .browserChrome import style_browser_splitter
 from .formatters import format_duration_human, format_size
@@ -81,6 +81,7 @@ from .MBGridView import (
 from .MBGridViewItem import MusicBrowserGridItem
 from .photoViewer import PhotoViewerPane
 from .pooledPhotoGrid import PhotoTileModel, PooledPhotoGridView
+from .sidebarNavButton import SidebarNavButton
 
 log = logging.getLogger(__name__)
 
@@ -1453,23 +1454,19 @@ class SelectiveSyncBrowser(QWidget):
 
         # --- Mini sidebar ---
         self._sidebar = QFrame()
+        self._sidebar.setObjectName("selectiveSyncSidebar")
         self._sidebar.setFixedWidth(Metrics.SIDEBAR_WIDTH)
-        self._sidebar.setStyleSheet(f"""
-            QFrame {{
-                background: {Colors.BG_DARK};
-                border-right: 1px solid {Colors.BORDER_SUBTLE};
-            }}
-        """)
+        self._sidebar.setStyleSheet(sidebar_panel_css("selectiveSyncSidebar"))
         sb_lay = QVBoxLayout(self._sidebar)
-        sb_lay.setContentsMargins(8, 12, 8, 12)
-        sb_lay.setSpacing(1)
+        margin = Design.SIDEBAR_OUTER_MARGIN
+        sb_lay.setContentsMargins(margin, margin, margin, margin)
+        sb_lay.setSpacing(0)
         self._sidebar_layout = sb_lay
 
         # Build buttons for every known category; empty buckets are hidden
         # after the library scan completes.
-        self._mode_buttons: dict[str, QPushButton] = {}
+        self._mode_buttons: dict[str, SidebarNavButton] = {}
         self._mode_separators: dict[str, QFrame] = {}
-        nav_icon_sz = QSize(20, 20)
 
         def _make_separator() -> QFrame:
             sep = QFrame()
@@ -1496,13 +1493,7 @@ class SelectiveSyncBrowser(QWidget):
                 self._mode_separators[cat] = sep
                 continue
             icon_name = _CATEGORY_GLYPHS[cat]
-            btn = QPushButton(cat)
-            btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
-            icon = glyph_icon(icon_name, 20, Colors.TEXT_SECONDARY)
-            if icon:
-                btn.setIcon(icon)
-                btn.setIconSize(nav_icon_sz)
-            btn.setStyleSheet(sidebar_nav_css())
+            btn = SidebarNavButton(cat, icon_name=icon_name)
             btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
             btn.clicked.connect(lambda checked, c=cat: self._on_mode_clicked(c))
             sb_lay.addWidget(btn)
@@ -3123,16 +3114,7 @@ class SelectiveSyncBrowser(QWidget):
 
     def _highlight_mode(self, active: str):
         for cat, btn in self._mode_buttons.items():
-            selected = cat == active
-            btn.setStyleSheet(
-                sidebar_nav_selected_css() if selected else sidebar_nav_css()
-            )
-            icon_name = _CATEGORY_GLYPHS.get(cat)
-            if icon_name:
-                color = Colors.ACCENT if selected else Colors.TEXT_SECONDARY
-                icon = glyph_icon(icon_name, 20, color)
-                if icon:
-                    btn.setIcon(icon)
+            btn.setSelected(cat == active)
 
     # ── Grid item click → drill into track list ──────────────────────────
 

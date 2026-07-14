@@ -50,6 +50,7 @@ from ..styles import (
     FONT_FAMILY,
     MONO_FONT_FAMILY,
     Colors,
+    Design,
     Metrics,
     accent_btn_css,
     back_btn_css,
@@ -58,6 +59,8 @@ from ..styles import (
     make_scroll_area,
     panel_css,
     progress_bar_css,
+    sidebar_nav_state,
+    sidebar_panel_css,
 )
 from .browserChrome import chrome_action_btn_css
 from .formatters import format_size
@@ -160,24 +163,21 @@ class BackupDeviceNavItem(QFrame):
         self._apply_style()
 
     def _apply_style(self) -> None:
-        bg = Colors.ACCENT_MUTED if self._selected else "transparent"
-        hover = Colors.ACCENT_DIM if self._selected else Colors.SURFACE_ACTIVE
-        border = Colors.ACCENT_BORDER if self._selected else "transparent"
-        name_color = Colors.ACCENT if self._selected else Colors.TEXT_PRIMARY
+        state = sidebar_nav_state(self._selected)
         sub_color = Colors.SUCCESS if self._connected else Colors.TEXT_TERTIARY
         self.setStyleSheet(f"""
             QFrame {{
-                background: {bg};
-                border: 1px solid {border};
+                background: {state.background};
+                border: none;
                 border-radius: {Metrics.BORDER_RADIUS_SM}px;
             }}
             QFrame:hover {{
-                background: {hover};
-                border: 1px solid {Colors.ACCENT_BORDER};
+                background: {state.hover_background};
+                border: none;
             }}
         """)
         self._name.setStyleSheet(
-            f"color: {name_color}; background: transparent; border: none;"
+            f"color: {state.text}; background: transparent; border: none;"
         )
         self._sub.setStyleSheet(
             f"color: {sub_color}; background: transparent; border: none;"
@@ -347,13 +347,10 @@ class BackupBrowserWidget(QWidget):
         # Backup device rows need a little more room than the main nav sidebar
         # to avoid right-edge clipping on some DPI/font combinations.
         self._sidebar.setFixedWidth(max(Metrics.SIDEBAR_WIDTH, 240))
-        self._sidebar.setStyleSheet(panel_css(
-            "backupSidebar",
-            border=f"0px solid transparent; border-right: 1px solid {Colors.BORDER_SUBTLE}",
-            radius=0,
-        ))
+        self._sidebar.setStyleSheet(sidebar_panel_css("backupSidebar"))
         sidebar_layout = QVBoxLayout(self._sidebar)
-        sidebar_layout.setContentsMargins((12), (14), (12), (12))
+        margin = Design.SIDEBAR_OUTER_MARGIN
+        sidebar_layout.setContentsMargins(margin, margin, margin, margin)
         sidebar_layout.setSpacing(8)
 
         back_btn = QPushButton("←")

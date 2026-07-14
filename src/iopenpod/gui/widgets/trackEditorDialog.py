@@ -71,6 +71,7 @@ from ..styles import (
     input_css,
     make_scroll_area,
     panel_css,
+    sidebar_item_view_css,
 )
 from .artworkUnifier import (
     ArtworkUnifyContext,
@@ -2595,30 +2596,6 @@ class TrackEditorDialog(QDialog):
             QDialog {{
                 background: {Colors.DIALOG_BG};
             }}
-            QListWidget#sectionNav {{
-                background: {Colors.SURFACE};
-                border: 1px solid {Colors.BORDER_SUBTLE};
-                border-radius: {Metrics.BORDER_RADIUS_SM}px;
-                padding: 6px;
-                outline: none;
-            }}
-            QListWidget#sectionNav::item {{
-                color: {Colors.TEXT_SECONDARY};
-                border: 1px solid transparent;
-                border-radius: {Metrics.BORDER_RADIUS_SM}px;
-                padding: 8px 10px;
-                margin: 1px 0;
-            }}
-            QListWidget#sectionNav::item:selected {{
-                background: {Colors.ACCENT_MUTED};
-                color: {Colors.TEXT_PRIMARY};
-                border: 1px solid transparent;
-            }}
-            QListWidget#sectionNav::item:hover {{
-                background: {Colors.SURFACE_HOVER};
-                color: {Colors.TEXT_PRIMARY};
-                border: 1px solid transparent;
-            }}
             QFrame#trackFieldRow {{
                 background: transparent;
                 border: 1px solid transparent;
@@ -2629,6 +2606,7 @@ class TrackEditorDialog(QDialog):
                 border: 1px solid {Colors.ACCENT_BORDER};
             }}
             """
+            + sidebar_item_view_css("QListWidget#sectionNav", background="transparent")
             + panel_css("editorHeader", radius=Metrics.BORDER_RADIUS_SM)
             + panel_css("sectionPanel", radius=Metrics.BORDER_RADIUS_SM)
         )
@@ -2700,7 +2678,8 @@ class TrackEditorDialog(QDialog):
         self._nav = QListWidget()
         self._nav.setObjectName("sectionNav")
         self._nav.setFixedWidth(178)
-        self._nav.setSpacing(2)
+        self._nav.setFont(QFont(FONT_FAMILY, Metrics.FONT_SIDEBAR))
+        self._nav.setSpacing(0)
         self._nav.setItemDelegate(_NoFocusItemDelegate(self._nav))
         self._nav.currentRowChanged.connect(self._on_nav_changed)
         content.addWidget(self._nav)

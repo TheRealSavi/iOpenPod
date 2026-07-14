@@ -10,6 +10,7 @@ from __future__ import annotations
 import colorsys
 import re
 import sys
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import QRect, Qt
@@ -834,32 +835,33 @@ class Metrics:
     BORDER_RADIUS_LG = 12
     BORDER_RADIUS_XL = 16
 
-    # Library grid cards are explicit; artwork size is derived from the card
-    # width minus the shared inset on both sides.
-    GRID_ITEM_W = 220
-    GRID_ITEM_H = 280
-    GRID_CARD_MARGIN = 10
+    # Library grid cards are explicit; artwork is inset by the shared margin
+    # on both sides so the card surface remains visible around the artwork.
+    GRID_ITEM_W = 180
+    GRID_ITEM_H = 228
+    GRID_CARD_MARGIN = 5
     GRID_ART_SIZE = GRID_ITEM_W - (GRID_CARD_MARGIN * 2)
-    GRID_SPACING = 20
-    GRID_MARGIN_X = 40
-    GRID_MARGIN_Y = 16
+    GRID_SPACING = 18
+    GRID_MARGIN_X = 28
+    GRID_MARGIN_Y = 12
     GRID_CARD_SPACING = 6
     GRID_TEXT_HEIGHT = 22
-    GRID_CARD_RADIUS = 16
+    GRID_SUBTITLE_HEIGHT = 20
+    GRID_CARD_RADIUS = 8
     GRID_ART_RADIUS = 6
 
     GRID_ITEM_PRESET_LARGE = "large"
     GRID_ITEM_PRESET_SMALL = "small"
 
     _GRID_ITEM_BASES = {
-        "GRID_ITEM_W": 220,
-        "GRID_ITEM_H": 280,
-        "GRID_CARD_MARGIN": 10,
-        "GRID_SPACING": 20,
-        "GRID_MARGIN_X": 40,
-        "GRID_MARGIN_Y": 16,
+        "GRID_ITEM_W": 180,
+        "GRID_ITEM_H": 228,
+        "GRID_CARD_MARGIN": 5,
+        "GRID_SPACING": 18,
+        "GRID_MARGIN_X": 28,
+        "GRID_MARGIN_Y": 12,
         "GRID_CARD_SPACING": 6,
-        "GRID_CARD_RADIUS": 16,
+        "GRID_CARD_RADIUS": 8,
         "GRID_ART_RADIUS": 6,
     }
 
@@ -888,6 +890,16 @@ class Metrics:
     FONT_PAGE_TITLE = 18  # Large page headings (Sync Review, empty states)
     FONT_HERO = 22     # Settings / backup page title
 
+    # macOS source-list/sidebar typography.  These are intentionally separate
+    # from the general control scale: sidebar rows are navigation, not large
+    # command buttons, and use the 13 pt macOS body baseline.
+    FONT_SIDEBAR = 13
+    FONT_SIDEBAR_SECTION = 11
+    FONT_GRID_TITLE = 13
+    FONT_GRID_SUBTITLE = 12
+    FONT_BROWSER_TITLE = 15
+    FONT_BROWSER_SEARCH = 13
+
     # ── Icon / glyph sizes (pt) — for large decorative text ──
     FONT_ICON_SM = 16   # Small icon labels in cards
     FONT_ICON_MD = 24   # Badge / backup list icons
@@ -899,6 +911,9 @@ class Metrics:
         "FONT_XS": 9, "FONT_SM": 10, "FONT_MD": 11, "FONT_LG": 12,
         "FONT_XL": 12, "FONT_XXL": 14, "FONT_TITLE": 16,
         "FONT_PAGE_TITLE": 18, "FONT_HERO": 22,
+        "FONT_SIDEBAR": 13, "FONT_SIDEBAR_SECTION": 11,
+        "FONT_GRID_TITLE": 13, "FONT_GRID_SUBTITLE": 12,
+        "FONT_BROWSER_TITLE": 15, "FONT_BROWSER_SEARCH": 13,
         "FONT_ICON_SM": 16, "FONT_ICON_MD": 24,
         "FONT_ICON_LG": 42, "FONT_ICON_XL": 52,
     }
@@ -913,6 +928,11 @@ class Metrics:
         factor = max(0.5, min(factor, 2.0))
         for attr, base in cls._FONT_BASES.items():
             setattr(cls, attr, max(6, round(base * factor)))
+        # Grid captions have explicit line boxes so pooled cards retain stable
+        # geometry. Scale those boxes with their fonts to avoid clipping at
+        # accessibility sizes; apply_grid_item_scale() then derives card height.
+        cls.GRID_TEXT_HEIGHT = max(12, round(22 * factor))
+        cls.GRID_SUBTITLE_HEIGHT = max(12, round(20 * factor))
 
     @classmethod
     def apply_grid_item_scale(cls, preset: str = GRID_ITEM_PRESET_LARGE) -> None:
@@ -922,9 +942,18 @@ class Metrics:
         factor = cls._GRID_ITEM_PRESET_FACTORS.get(normalized, 1.0)
 
         for attr, base in cls._GRID_ITEM_BASES.items():
-            setattr(cls, attr, max(1, round(base * factor)))
+            value = 0 if base == 0 else max(1, round(base * factor))
+            setattr(cls, attr, value)
 
         cls.GRID_ART_SIZE = max(1, cls.GRID_ITEM_W - (cls.GRID_CARD_MARGIN * 2))
+        cls.GRID_ITEM_H = max(
+            cls.GRID_ITEM_H,
+            (cls.GRID_CARD_MARGIN * 2)
+            + cls.GRID_ART_SIZE
+            + cls.GRID_CARD_SPACING
+            + cls.GRID_TEXT_HEIGHT
+            + cls.GRID_SUBTITLE_HEIGHT,
+        )
 
 
 class Design:
@@ -952,6 +981,13 @@ class Design:
 
     BUTTON_WEIGHT = 500
     BUTTON_WEIGHT_STRONG = 600
+
+    # macOS source-list geometry.
+    SIDEBAR_ROW_HEIGHT = 32
+    SIDEBAR_ICON_SIZE = 18
+    SIDEBAR_OUTER_MARGIN = 10
+    SIDEBAR_ROW_PADDING = 12
+    SIDEBAR_SECTION_GAP = 8
 
 
 # ── Custom proxy style for scrollbar painting ───────────────────────────────
@@ -1767,33 +1803,147 @@ def link_btn_css() -> str:
 # ── Button style presets (functions — resolved at call time so scaling applies)
 
 
-def sidebar_nav_css() -> str:
+@dataclass(frozen=True)
+class SidebarNavState:
+    """Canonical visual state shared by every sidebar navigation adapter."""
+
+    background: str
+    hover_background: str
+    pressed_background: str
+    text: str
+    icon: str
+    weight: int
+
+
+def sidebar_nav_state(
+    selected: bool,
+    *,
+    enabled: bool = True,
+    dimmed: bool = False,
+) -> SidebarNavState:
+    """Resolve sidebar colors and weight from semantic navigation state."""
+
+    if not enabled:
+        return SidebarNavState(
+            background="transparent",
+            hover_background=Colors.SURFACE_HOVER,
+            pressed_background=Colors.SURFACE,
+            text=Colors.TEXT_DISABLED,
+            icon=Colors.TEXT_DISABLED,
+            weight=400,
+        )
+    if selected:
+        return SidebarNavState(
+            background=Colors.SURFACE_ACTIVE,
+            hover_background=Colors.SURFACE_ACTIVE,
+            pressed_background=Colors.SURFACE_RAISED,
+            text=Colors.TEXT_PRIMARY,
+            icon=Colors.ACCENT,
+            weight=Design.BUTTON_WEIGHT_STRONG,
+        )
+    if dimmed:
+        return SidebarNavState(
+            background="transparent",
+            hover_background=Colors.SURFACE_HOVER,
+            pressed_background=Colors.SURFACE,
+            text=Colors.TEXT_DISABLED,
+            icon=Colors.TEXT_DISABLED,
+            weight=400,
+        )
+    return SidebarNavState(
+        background="transparent",
+        hover_background=Colors.SURFACE_HOVER,
+        pressed_background=Colors.SURFACE,
+        text=Colors.TEXT_PRIMARY,
+        icon=Colors.TEXT_SECONDARY,
+        weight=400,
+    )
+
+
+def sidebar_panel_css(object_name: str) -> str:
+    """Canonical sidebar panel surface and trailing seam."""
+
+    return f"""
+        QFrame#{object_name} {{
+            background: {Colors.SURFACE};
+            border: none;
+            border-right: 1px solid {Colors.BORDER_SUBTLE};
+        }}
+    """
+
+
+def sidebar_item_view_css(
+    selector: str = "QListWidget",
+    *,
+    background: str | None = None,
+) -> str:
+    """Canonical source-list styling for QListWidget-based sidebars.
+
+    ``background="transparent"`` lets an embedded list inherit its host
+    panel's surface without painting a second rectangular layer.
+    """
+
+    normal = sidebar_nav_state(False)
+    selected = sidebar_nav_state(True)
+    viewport_background = Colors.SURFACE if background is None else background
+    return f"""
+        {selector} {{
+            background: {viewport_background};
+            border: none;
+            outline: none;
+            padding: {Design.SIDEBAR_OUTER_MARGIN}px;
+        }}
+        {selector}::viewport {{
+            background: {viewport_background};
+        }}
+        {selector}::item {{
+            min-height: {Design.SIDEBAR_ROW_HEIGHT}px;
+            padding: 0px {Design.SIDEBAR_ROW_PADDING}px;
+            margin: 0px;
+            border: none;
+            border-radius: {Metrics.BORDER_RADIUS_SM}px;
+            color: {normal.text};
+            font-size: {Metrics.FONT_SIDEBAR}pt;
+            font-weight: {normal.weight};
+        }}
+        {selector}::item:selected {{
+            background: {selected.background};
+            color: {selected.text};
+            font-weight: {selected.weight};
+        }}
+        {selector}::item:hover:!selected {{
+            background: {normal.hover_background};
+            color: {normal.text};
+        }}
+    """
+
+
+def sidebar_nav_css(
+    *,
+    selected: bool = False,
+    enabled: bool = True,
+    dimmed: bool = False,
+) -> str:
+    state = sidebar_nav_state(selected, enabled=enabled, dimmed=dimmed)
     return btn_css(
-        bg="transparent",
-        bg_hover=Colors.SURFACE_ACTIVE,
-        bg_press=Colors.SURFACE,
+        bg=state.background,
+        bg_hover=state.hover_background,
+        bg_press=state.pressed_background,
+        fg=state.text,
+        bg_disabled="transparent",
         radius=Metrics.BORDER_RADIUS_SM,
-        padding=f"0px {(12)}px",
-        min_height=Design.CONTROL_HEIGHT_LG,
-        font_size=Metrics.FONT_LG,
-        font_weight=Design.BUTTON_WEIGHT,
+        padding=f"0px {Design.SIDEBAR_ROW_PADDING}px",
+        min_height=Design.SIDEBAR_ROW_HEIGHT,
+        font_size=Metrics.FONT_SIDEBAR,
+        font_weight=state.weight,
         extra="text-align: left;",
     )
 
 
 def sidebar_nav_selected_css() -> str:
-    return btn_css(
-        bg=Colors.ACCENT_MUTED,
-        bg_hover=Colors.ACCENT_DIM,
-        bg_press=Colors.ACCENT_PRESS,
-        fg=Colors.ACCENT,
-        radius=Metrics.BORDER_RADIUS_SM,
-        padding=f"0px {(12)}px",
-        min_height=Design.CONTROL_HEIGHT_LG,
-        font_size=Metrics.FONT_LG,
-        font_weight=Design.BUTTON_WEIGHT_STRONG,
-        extra="text-align: left;",
-    )
+    """Compatibility wrapper for callers not yet migrated to semantic state."""
+
+    return sidebar_nav_css(selected=True)
 
 
 def toolbar_btn_css() -> str:
@@ -1989,6 +2139,24 @@ def make_section_header(text: str) -> QLabel:
         f" letter-spacing: 1.2px;"
     )
     return lbl
+
+
+def make_sidebar_section_header(text: str) -> QLabel:
+    """Create the canonical title-case heading used within source lists."""
+
+    from PyQt6.QtGui import QFont as _QFont
+    from PyQt6.QtWidgets import QLabel as _QLabel
+
+    label = _QLabel(text)
+    label.setObjectName("sidebarSectionLabel")
+    label.setFont(
+        _QFont(FONT_FAMILY, Metrics.FONT_SIDEBAR_SECTION, _QFont.Weight.DemiBold)
+    )
+    label.setStyleSheet(
+        f"color: {Colors.TEXT_SECONDARY}; background: transparent; "
+        "border: none; padding: 0 4px 2px 4px;"
+    )
+    return label
 
 
 def make_detail_row(label: str, value: str) -> QWidget:

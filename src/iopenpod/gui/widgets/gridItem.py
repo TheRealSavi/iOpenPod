@@ -110,7 +110,9 @@ class GridItem(QFrame):
 
         self.image_frame = QFrame(self)
         self.image_frame.setObjectName("unifiedGridItemImageFrame")
-        self.image_frame.setFixedHeight(Metrics.GRID_ART_SIZE)
+        self.image_frame.setFixedSize(
+            QSize(Metrics.GRID_ART_SIZE, Metrics.GRID_ART_SIZE)
+        )
         image_layout = QVBoxLayout(self.image_frame)
         image_layout.setContentsMargins(0, 0, 0, 0)
         image_layout.setSpacing(0)
@@ -125,7 +127,7 @@ class GridItem(QFrame):
         self.caption_frame = QFrame(self)
         self.caption_frame.setObjectName("unifiedGridItemCaptionFrame")
         caption_layout = QHBoxLayout(self.caption_frame)
-        caption_layout.setContentsMargins(2, 0, 2, 0)
+        caption_layout.setContentsMargins(0, 0, 0, 0)
         caption_layout.setSpacing(6)
 
         self.checkbox: QCheckBox | None = None
@@ -145,22 +147,20 @@ class GridItem(QFrame):
         text_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         self.title_label = ScrollingLabel("", self.caption_frame)
         self.title_label.setFont(
-            QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.DemiBold)
+            QFont(FONT_FAMILY, Metrics.FONT_GRID_TITLE, QFont.Weight.Medium)
         )
         self.title_label.setAlignment(
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
         )
-        self.title_label.setFixedHeight(
-            max(_grid_metric("GRID_TEXT_HEIGHT", 20), Metrics.FONT_MD * 2)
-        )
+        self.title_label.setFixedHeight(_grid_metric("GRID_TEXT_HEIGHT", 22))
         text_layout.addWidget(self.title_label)
 
         self.subtitle_label = ScrollingLabel("", self.caption_frame)
-        self.subtitle_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        self.subtitle_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_GRID_SUBTITLE))
         self.subtitle_label.setAlignment(
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
         )
-        self.subtitle_label.setFixedHeight(max(18, Metrics.FONT_SM * 2))
+        self.subtitle_label.setFixedHeight(_grid_metric("GRID_SUBTITLE_HEIGHT", 20))
         text_layout.addWidget(self.subtitle_label)
         caption_layout.addLayout(text_layout, 1)
         layout.addWidget(self.caption_frame)

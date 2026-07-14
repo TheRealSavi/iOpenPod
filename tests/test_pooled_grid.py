@@ -27,15 +27,53 @@ def _solid_pixmap(rgb: tuple[int, int, int]) -> QPixmap:
     return pixmap
 
 
+def test_large_grid_item_matches_macos_album_geometry_and_typography(qtbot):
+    Metrics.apply_grid_item_scale("large")
+    item = GridItem()
+    qtbot.addWidget(item)
+
+    assert (item.width(), item.height()) == (180, 228)
+    assert (item.image_label.width(), item.image_label.height()) == (
+        Metrics.GRID_ART_SIZE,
+        Metrics.GRID_ART_SIZE,
+    )
+    item_layout = item.layout()
+    assert item_layout is not None
+    margins = item_layout.contentsMargins()
+    assert (margins.left(), margins.top(), margins.right(), margins.bottom()) == (
+        Metrics.GRID_CARD_MARGIN,
+        Metrics.GRID_CARD_MARGIN,
+        Metrics.GRID_CARD_MARGIN,
+        Metrics.GRID_CARD_MARGIN,
+    )
+    assert item.title_label.font().pointSize() == Metrics.FONT_GRID_TITLE
+    assert item.subtitle_label.font().pointSize() == Metrics.FONT_GRID_SUBTITLE
+
+
+def test_grid_caption_geometry_tracks_accessibility_font_scale() -> None:
+    try:
+        Metrics.apply_font_scale("125%")
+        Metrics.apply_grid_item_scale("large")
+
+        assert Metrics.FONT_GRID_TITLE == 16
+        assert Metrics.FONT_GRID_SUBTITLE == 15
+        assert Metrics.GRID_TEXT_HEIGHT == 28
+        assert Metrics.GRID_SUBTITLE_HEIGHT == 25
+        assert Metrics.GRID_ITEM_H == 239
+    finally:
+        Metrics.apply_font_scale("100%")
+        Metrics.apply_grid_item_scale("large")
+
+
 def test_grid_size_preset_controls_shared_music_and_photo_card_geometry(qtbot):
     try:
         Metrics.apply_grid_item_scale("small")
         small_item = GridItem()
         qtbot.addWidget(small_item)
 
-        assert small_item.width() == Metrics.GRID_ITEM_W == 185
-        assert small_item.height() == Metrics.GRID_ITEM_H == 235
-        assert small_item.image_label.width() == Metrics.GRID_ART_SIZE == 169
+        assert small_item.width() == Metrics.GRID_ITEM_W == 151
+        assert small_item.height() == Metrics.GRID_ITEM_H == 198
+        assert small_item.image_label.width() == Metrics.GRID_ART_SIZE == 143
 
         grid = _mount_grid(qtbot)
         grid.setRecords([GridItemModel(key="photo", title="Photo")])
