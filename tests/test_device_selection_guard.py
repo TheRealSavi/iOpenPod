@@ -85,6 +85,66 @@ def test_device_manager_rejects_path_without_identified_ipod(qtbot) -> None:
     assert manager.device_path is None
 
 
+def test_device_manager_initializes_missing_database_for_identified_device(qtbot, tmp_path) -> None:
+    """Selecting an identified iPod repairs an absent iTunes database layout."""
+
+    clear_current_device()
+    manager = DeviceManager()
+    ipod = DeviceInfo(
+        path=str(tmp_path),
+        mount_name="NANO",
+        model_number="MA005",
+        model_family="iPod Nano",
+        generation="1st Gen",
+    )
+
+    manager.discovered_ipod = ipod
+    manager.device_path = str(tmp_path)
+
+    database = tmp_path / "iPod_Control" / "iTunes" / "iTunesDB"
+    assert database.read_bytes()[:4] == b"mhbd"
+
+
+def test_device_manager_leaves_hashed_device_uninitialized_without_guid(qtbot, tmp_path) -> None:
+    """A selected device must not receive an iTunesDB it cannot validate."""
+
+    clear_current_device()
+    manager = DeviceManager()
+    ipod = DeviceInfo(
+        path=str(tmp_path),
+        mount_name="CLASSIC",
+        model_number="MC297",
+        model_family="iPod Classic",
+        generation="7th Gen",
+    )
+
+    manager.discovered_ipod = ipod
+    manager.device_path = str(tmp_path)
+
+    assert not (tmp_path / "iPod_Control" / "iTunes" / "iTunesDB").exists()
+
+
+def test_device_manager_uses_selected_device_database_format(qtbot, tmp_path) -> None:
+    clear_current_device()
+    manager = DeviceManager()
+    ipod = DeviceInfo(
+        path=str(tmp_path),
+        mount_name="NANO",
+        model_number="MC060",
+        model_family="iPod Nano",
+        generation="5th Gen",
+        hash_info_iv=b"i" * 16,
+        hash_info_rndpart=b"r" * 12,
+    )
+
+    manager.discovered_ipod = ipod
+    manager.device_path = str(tmp_path)
+
+    database = tmp_path / "iPod_Control" / "iTunes" / "iTunesCDB"
+    assert database.read_bytes()[:4] == b"mhbd"
+    assert not (database.parent / "iTunesDB").exists()
+
+
 def test_picker_warns_and_does_not_select_unidentified_ipod(monkeypatch) -> None:
     ipod = _unidentified_ipod()
     card = _FakeCard(ipod)

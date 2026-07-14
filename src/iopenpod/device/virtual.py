@@ -15,6 +15,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from .bootstrap import _seed_ipod_layout, ensure_device_itunes_database
 from .capabilities import capabilities_for_family_gen
 from .checksum import CHECKSUM_MHBD_SCHEME, ChecksumType
 from .info import DeviceInfo, resolve_itdb_path
@@ -103,7 +104,7 @@ def create_virtual_ipod(
     hash_iv = secrets.token_bytes(16)
     hash_rndpart = secrets.token_bytes(12)
 
-    _seed_ipod_layout(root, caps)
+    _seed_ipod_layout(root, uses_sqlite_db=bool(caps and caps.uses_sqlite_db))
 
     payload: dict[str, Any] = {
         "schema_version": _SCHEMA_VERSION,
@@ -169,14 +170,7 @@ def ensure_virtual_itunes_database(ipod_path: str | os.PathLike[str]) -> str | N
         return existing
 
     info = load_virtual_ipod_info(root)
-    caps = capabilities_for_family_gen(info.model_family, info.generation)
-    _write_empty_itunes_database(
-        root,
-        caps,
-        ipod_name=info.ipod_name or "iPod",
-        device_info=info,
-    )
-    return resolve_itdb_path(str(root))
+    return ensure_device_itunes_database(root, info)
 
 
 def load_virtual_ipod_info(
@@ -325,20 +319,6 @@ def _generate_firewire_guid() -> str:
             return guid
 
 
-def _seed_ipod_layout(root: Path, caps: Any | None) -> None:
-    (root / "iPod_Control" / "Device").mkdir(parents=True, exist_ok=True)
-    (root / "iPod_Control" / "iTunes").mkdir(parents=True, exist_ok=True)
-    (root / "iPod_Control" / "Music").mkdir(parents=True, exist_ok=True)
-    (root / "iPod_Control" / "Artwork").mkdir(parents=True, exist_ok=True)
-    if caps is not None and caps.uses_sqlite_db:
-        (
-            root
-            / "iPod_Control"
-            / "iTunes"
-            / "iTunes Library.itlp"
-        ).mkdir(parents=True, exist_ok=True)
-
-
 def _write_json(root: Path, payload: dict[str, Any]) -> None:
     with virtual_ipod_info_path(root).open("w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2, sort_keys=True)
@@ -382,37 +362,6 @@ def _write_virtual_hash_info(
         # The in-memory DeviceInfo carries the same values; this file is a
         # compatibility cache for non-GUI write paths.
         return
-
-
-def _write_empty_itunes_database(
-    root: Path,
-    caps: Any | None,
-    *,
-    ipod_name: str,
-    device_info: DeviceInfo,
-) -> None:
-    """Seed the virtual iPod with an empty database so normal loading succeeds."""
-
-    from iopenpod.itunesdb_writer import write_itunesdb
-
-    from .info import get_current_device, set_current_device
-
-    previous_device = get_current_device()
-    set_current_device(device_info)
-    try:
-        ok = write_itunesdb(
-            str(root),
-            [],
-            backup=False,
-            pc_file_paths=None,
-            capabilities=caps,
-            master_playlist_name=ipod_name,
-        )
-    finally:
-        set_current_device(previous_device)
-
-    if not ok:
-        raise RuntimeError("Failed to create an empty iTunesDB for the virtual iPod")
 
 
 def _default_firmware(family: str, generation: str) -> str:

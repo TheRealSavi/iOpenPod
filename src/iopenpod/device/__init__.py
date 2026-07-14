@@ -29,6 +29,7 @@ from .authority import (
     read_authority,
     update_sysinfo,
 )
+from .bootstrap import ensure_device_itunes_database
 
 # ── capabilities ─────────────────────────────────────────────────────
 from .capabilities import (

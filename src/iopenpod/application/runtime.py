@@ -751,9 +751,15 @@ class DeviceManager(QObject):
     @device_path.setter
     def device_path(self, path: str | None) -> None:
         if path:
-            from iopenpod.device import require_exact_model_number
+            from iopenpod.device import (
+                DeviceInfo,
+                ensure_device_itunes_database,
+                require_exact_model_number,
+            )
 
             require_exact_model_number(self._discovered_ipod)
+            if isinstance(self._discovered_ipod, DeviceInfo):
+                ensure_device_itunes_database(path, self._discovered_ipod)
         self.device_changing.emit()
         self.cancel_all_operations()
         iTunesDBCache.get_instance().clear()
@@ -811,8 +817,7 @@ class DeviceManager(QObject):
         except Exception:
             pass
         ipod_control = os.path.join(path, "iPod_Control")
-        itunes_folder = os.path.join(ipod_control, "iTunes")
-        return os.path.isdir(ipod_control) and os.path.isdir(itunes_folder)
+        return os.path.isdir(ipod_control)
 
     @staticmethod
     def _sync_device_info(ipod) -> None:
