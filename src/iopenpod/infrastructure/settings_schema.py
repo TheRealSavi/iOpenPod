@@ -25,6 +25,21 @@ GRID_ITEM_SIZES = frozenset({
     GRID_ITEM_SIZE_LARGE,
     GRID_ITEM_SIZE_SMALL,
 })
+THEME_MODE_LIGHT = "light"
+THEME_MODE_DARK = "dark"
+THEME_MODE_AUTO = "auto"
+THEME_MODES = frozenset({
+    THEME_MODE_LIGHT,
+    THEME_MODE_DARK,
+    THEME_MODE_AUTO,
+})
+LIGHT_THEME_IDS = frozenset({"light", "catppuccin-latte"})
+DARK_THEME_IDS = frozenset({
+    "dark",
+    "catppuccin-mocha",
+    "catppuccin-macchiato",
+    "catppuccin-frappe",
+})
 
 DEVICE_SETTING_KEYS = (
     "write_back_to_pc",
@@ -157,6 +172,34 @@ def normalize_grid_item_size(value: Any) -> str:
     return GRID_ITEM_SIZE_LARGE
 
 
+def normalize_theme_mode(value: Any) -> str:
+    """Return the canonical appearance mode."""
+
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized == "system":
+            return THEME_MODE_AUTO
+        if normalized in THEME_MODES:
+            return normalized
+    return THEME_MODE_DARK
+
+
+def normalize_light_theme(value: Any) -> str:
+    """Return a valid light palette identifier."""
+
+    if isinstance(value, str) and value in LIGHT_THEME_IDS:
+        return value
+    return "light"
+
+
+def normalize_dark_theme(value: Any) -> str:
+    """Return a valid dark palette identifier."""
+
+    if isinstance(value, str) and value in DARK_THEME_IDS:
+        return value
+    return "dark"
+
+
 @dataclass
 class AppSettings:
     """All user-configurable settings."""
@@ -208,7 +251,12 @@ class AppSettings:
     sharpen_artwork: bool = True
     grid_item_size: str = GRID_ITEM_SIZE_LARGE
     track_list_columns_by_content: dict[str, dict[str, int]] = field(default_factory=dict)
-    theme: str = "dark"
+    # ``theme`` is retained as a compatibility value for existing settings files
+    # and third-party callers. New UI state lives in the three fields below.
+    theme: str = "system"
+    theme_mode: str = THEME_MODE_AUTO
+    light_theme: str = "light"
+    dark_theme: str = "dark"
     high_contrast: str = "off"
     font_scale: str = "100%"
     accent_color: str = "blue"
@@ -245,3 +293,41 @@ class DeviceSettingsState:
     use_global_settings: bool = True
     exists: bool = False
     path: str = ""
+
+
+def normalize_theme_preferences(
+    settings: AppSettings,
+    *,
+    migrate_legacy_theme: bool = False,
+) -> None:
+    """Normalize split theme preferences and migrate the former single setting.
+
+    Older settings files stored the selected palette (or ``"system"``) in
+    ``theme``. The split preferences preserve that choice in the appropriate
+    light or dark selector and choose the matching appearance mode.
+    """
+
+    if migrate_legacy_theme:
+        legacy_theme = settings.theme
+        if legacy_theme == "system":
+            settings.theme_mode = THEME_MODE_AUTO
+        elif legacy_theme in LIGHT_THEME_IDS:
+            settings.theme_mode = THEME_MODE_LIGHT
+            settings.light_theme = legacy_theme
+        elif legacy_theme in DARK_THEME_IDS:
+            settings.theme_mode = THEME_MODE_DARK
+            settings.dark_theme = legacy_theme
+
+    settings.theme_mode = normalize_theme_mode(settings.theme_mode)
+    settings.light_theme = normalize_light_theme(settings.light_theme)
+    settings.dark_theme = normalize_dark_theme(settings.dark_theme)
+
+    # Keep the old field useful for integrations that have not moved to the
+    # split preferences yet. It cannot represent Auto's two independent picks,
+    # so Auto retains the historical "system" value.
+    if settings.theme_mode == THEME_MODE_AUTO:
+        settings.theme = "system"
+    elif settings.theme_mode == THEME_MODE_LIGHT:
+        settings.theme = settings.light_theme
+    else:
+        settings.theme = settings.dark_theme

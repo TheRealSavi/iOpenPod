@@ -76,6 +76,9 @@ class SettingsSnapshot:
     grid_item_size: str
     track_list_columns_by_content: dict[str, dict[str, int]]
     theme: str
+    theme_mode: str
+    light_theme: str
+    dark_theme: str
     high_contrast: str
     font_scale: str
     accent_color: str

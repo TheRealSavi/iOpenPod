@@ -1374,14 +1374,24 @@ class SettingsPage(QWidget):
         )
         self.reset_device_settings.clicked.connect(self._reset_device_settings_to_global)
 
-        self.theme_combo = ComboRow(
-            "Theme",
-            "Choose the color scheme for the interface. "
-            "System follows your OS preference.",
+        self.theme_mode_combo = ComboRow(
+            "Theme Mode",
+            "Choose Light, Dark, or Auto to follow your OS preference.",
+            options=["Light", "Dark", "Auto"],
+            current="Auto",
+        )
+        self.light_theme_combo = ComboRow(
+            "Light Theme",
+            "Choose the palette to use whenever Light appearance is active.",
+            options=["Light", "Catppuccin Latte"],
+            current="Light",
+        )
+        self.dark_theme_combo = ComboRow(
+            "Dark Theme",
+            "Choose the palette to use whenever Dark appearance is active.",
             options=[
-                "Dark", "Light", "System",
-                "Catppuccin Mocha", "Catppuccin Macchiato",
-                "Catppuccin Frappé", "Catppuccin Latte",
+                "Dark", "Catppuccin Mocha", "Catppuccin Macchiato",
+                "Catppuccin Frappé",
             ],
             current="Dark",
         )
@@ -1486,7 +1496,9 @@ class SettingsPage(QWidget):
             self.reset_device_settings,
         )
         self._appearance_card = _SettingsCard(
-            self.theme_combo,
+            self.theme_mode_combo,
+            self.light_theme_combo,
+            self.dark_theme_combo,
             self.high_contrast,
             self.accent_color,
             self.font_scale,
@@ -2056,7 +2068,9 @@ class SettingsPage(QWidget):
 
         self._manage_card.setVisible(device_scope)
         self._set_section_visible("General", "Manage", device_scope)
-        self._appearance_card.set_row_visible(self.theme_combo, not device_scope)
+        self._appearance_card.set_row_visible(self.theme_mode_combo, not device_scope)
+        self._appearance_card.set_row_visible(self.light_theme_combo, not device_scope)
+        self._appearance_card.set_row_visible(self.dark_theme_combo, not device_scope)
         self._appearance_card.set_row_visible(self.high_contrast, not device_scope)
         self._appearance_card.set_row_visible(self.font_scale, not device_scope)
         self._appearance_card.set_row_visible(self.grid_item_size, not device_scope)
@@ -2158,18 +2172,31 @@ class SettingsPage(QWidget):
         if idx >= 0:
             self.grid_item_size.combo.setCurrentIndex(idx)
 
-        # Theme
+        # Theme preferences
+        mode_display = {"light": "Light", "dark": "Dark", "auto": "Auto"}
+        idx = self.theme_mode_combo.combo.findText(
+            mode_display.get(s.theme_mode, "Auto")
+        )
+        if idx >= 0:
+            self.theme_mode_combo.combo.setCurrentIndex(idx)
+
         theme_display = {
-            "dark": "Dark", "light": "Light", "system": "System",
+            "dark": "Dark", "light": "Light",
             "catppuccin-mocha": "Catppuccin Mocha",
             "catppuccin-macchiato": "Catppuccin Macchiato",
             "catppuccin-frappe": "Catppuccin Frappé",
             "catppuccin-latte": "Catppuccin Latte",
         }
-        theme_text = theme_display.get(s.theme, "Dark")
-        idx = self.theme_combo.combo.findText(theme_text)
+        idx = self.light_theme_combo.combo.findText(
+            theme_display.get(s.light_theme, "Light")
+        )
         if idx >= 0:
-            self.theme_combo.combo.setCurrentIndex(idx)
+            self.light_theme_combo.combo.setCurrentIndex(idx)
+        idx = self.dark_theme_combo.combo.findText(
+            theme_display.get(s.dark_theme, "Dark")
+        )
+        if idx >= 0:
+            self.dark_theme_combo.combo.setCurrentIndex(idx)
 
         # High contrast
         hc_display = {"off": "Off", "on": "On", "system": "System"}
@@ -2370,7 +2397,9 @@ class SettingsPage(QWidget):
             self.rounded_artwork.changed.connect(self._save)
             self.sharpen_artwork.changed.connect(self._save)
             self.accent_color.changed.connect(self._save)
-            self.theme_combo.changed.connect(self._save)
+            self.theme_mode_combo.changed.connect(self._save)
+            self.light_theme_combo.changed.connect(self._save)
+            self.dark_theme_combo.changed.connect(self._save)
             self.high_contrast.changed.connect(self._save)
             self.font_scale.changed.connect(self._save)
             self.grid_item_size.changed.connect(self._save)
@@ -2591,15 +2620,19 @@ class SettingsPage(QWidget):
             s.rounded_artwork = self.rounded_artwork.value
             s.sharpen_artwork = self.sharpen_artwork.value
             s.grid_item_size = _GRID_ITEM_SIZE_BY_TEXT.get(self.grid_item_size.value, GRID_ITEM_SIZE_LARGE)
-            # Theme
+            # Theme preferences
+            s.theme_mode = {
+                "Light": "light", "Dark": "dark", "Auto": "auto",
+            }.get(self.theme_mode_combo.value, "dark")
             theme_keys = {
-                "Dark": "dark", "Light": "light", "System": "system",
+                "Dark": "dark", "Light": "light",
                 "Catppuccin Mocha": "catppuccin-mocha",
                 "Catppuccin Macchiato": "catppuccin-macchiato",
                 "Catppuccin Frappé": "catppuccin-frappe",
                 "Catppuccin Latte": "catppuccin-latte",
             }
-            s.theme = theme_keys.get(self.theme_combo.value, "dark")
+            s.light_theme = theme_keys.get(self.light_theme_combo.value, "light")
+            s.dark_theme = theme_keys.get(self.dark_theme_combo.value, "dark")
 
             # High contrast
             hc_keys = {"Off": "off", "On": "on", "System": "system"}
@@ -2694,7 +2727,9 @@ class SettingsPage(QWidget):
     def _apply_theme_change_if_needed(self, before) -> None:
         s = self._settings_service.get_effective_settings()
         after = (
-            s.theme,
+            s.theme_mode,
+            s.light_theme,
+            s.dark_theme,
             s.high_contrast,
             s.accent_color,
             s.font_scale,
@@ -2704,7 +2739,9 @@ class SettingsPage(QWidget):
             accent_hex = resolve_accent_color(
                 s.accent_color, self._current_ipod_image(),
             )
-            Colors.apply_theme(s.theme, s.high_contrast, accent_hex)
+            Colors.apply_theme_selection(
+                s.theme_mode, s.light_theme, s.dark_theme, s.high_contrast, accent_hex
+            )
             Metrics.apply_font_scale(s.font_scale)
             self.theme_changed.emit()
 
@@ -2718,7 +2755,9 @@ class SettingsPage(QWidget):
 
         effective_before = self._settings_service.get_effective_settings()
         theme_before = (
-            effective_before.theme,
+            effective_before.theme_mode,
+            effective_before.light_theme,
+            effective_before.dark_theme,
             effective_before.high_contrast,
             effective_before.accent_color,
             effective_before.font_scale,
@@ -2746,7 +2785,9 @@ class SettingsPage(QWidget):
             effective_before.sharpen_artwork,
         )
         theme_before = (
-            effective_before.theme,
+            effective_before.theme_mode,
+            effective_before.light_theme,
+            effective_before.dark_theme,
             effective_before.high_contrast,
             effective_before.accent_color,
             effective_before.font_scale,

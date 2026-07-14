@@ -67,6 +67,9 @@ def test_settings_persistence_round_trip(monkeypatch) -> None:
             lastfm_session_key="lf-session",
             lastfm_username="lf-user",
             backup_before_sync_mode="off",
+            theme_mode="auto",
+            light_theme="catppuccin-latte",
+            dark_theme="catppuccin-macchiato",
         )
         save_app_settings(settings)
 
@@ -105,6 +108,10 @@ def test_settings_persistence_round_trip(monkeypatch) -> None:
     assert loaded.lastfm_username == "lf-user"
     assert loaded.backup_before_sync_mode == "off"
     assert loaded.backup_before_sync is False
+    assert loaded.theme_mode == "auto"
+    assert loaded.light_theme == "catppuccin-latte"
+    assert loaded.dark_theme == "catppuccin-macchiato"
+    assert loaded.theme == "system"
 
 
 def test_settings_persistence_upgrades_legacy_media_folder_strings(monkeypatch) -> None:
@@ -131,6 +138,29 @@ def test_settings_persistence_upgrades_legacy_media_folder_strings(monkeypatch) 
             "media_types": ["music", "video", "photo", "playlists"],
         }
     ]
+
+
+def test_settings_persistence_migrates_legacy_single_theme(monkeypatch) -> None:
+    with repo_temp_dir() as tmp_path:
+        settings_dir = tmp_path / "settings"
+        settings_dir.mkdir()
+        settings_path = settings_dir / "settings.json"
+        settings_path.write_text(
+            json.dumps({"theme": "catppuccin-latte"}),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(
+            settings_persistence,
+            "get_settings_path",
+            lambda: str(settings_path),
+        )
+
+        loaded = load_app_settings()
+
+    assert loaded.theme_mode == "light"
+    assert loaded.light_theme == "catppuccin-latte"
+    assert loaded.dark_theme == "dark"
+    assert loaded.theme == "catppuccin-latte"
 
 
 def test_settings_persistence_migrates_legacy_backup_false_to_ask(monkeypatch) -> None:
@@ -181,6 +211,9 @@ def test_settings_defaults_player_position_to_top() -> None:
     settings = AppSettings()
 
     assert settings.player_position == PLAYER_POSITION_TOP
+    assert settings.theme_mode == "auto"
+    assert settings.light_theme == "light"
+    assert settings.dark_theme == "dark"
 
 
 def test_settings_persistence_defaults_missing_player_position_to_top(monkeypatch) -> None:

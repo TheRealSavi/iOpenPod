@@ -18,6 +18,7 @@ from .settings_schema import (
     apply_backup_before_sync_mode,
     normalize_backup_before_sync_mode,
     normalize_player_position,
+    normalize_theme_preferences,
 )
 
 
@@ -26,6 +27,7 @@ def save_app_settings(settings: AppSettings) -> None:
 
     apply_backup_before_sync_mode(settings)
     settings.player_position = normalize_player_position(settings.player_position)
+    normalize_theme_preferences(settings)
     active_dir = settings.settings_dir or default_settings_dir()
     os.makedirs(active_dir, exist_ok=True)
 
@@ -96,6 +98,10 @@ def load_app_settings() -> AppSettings:
             settings.backup_before_sync_mode == BACKUP_BEFORE_SYNC_AUTO
         )
         settings.player_position = normalize_player_position(settings.player_position)
+        normalize_theme_preferences(
+            settings,
+            migrate_legacy_theme="theme_mode" not in data,
+        )
 
     except (json.JSONDecodeError, UnicodeDecodeError, OSError):
         pass

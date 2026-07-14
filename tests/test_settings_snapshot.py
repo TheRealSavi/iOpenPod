@@ -23,6 +23,9 @@ def test_settings_snapshot_copies_values_and_freezes_lists() -> None:
             },
         ],
         theme="light",
+        theme_mode="light",
+        light_theme="catppuccin-latte",
+        dark_theme="catppuccin-mocha",
         accent_color="#123456",
         player_position="top",
         rounded_artwork=True,
@@ -64,6 +67,9 @@ def test_settings_snapshot_copies_values_and_freezes_lists() -> None:
         },
     )
     assert snapshot.theme == "light"
+    assert snapshot.theme_mode == "light"
+    assert snapshot.light_theme == "catppuccin-latte"
+    assert snapshot.dark_theme == "catppuccin-mocha"
     assert snapshot.accent_color == "#123456"
     assert snapshot.player_position == "top"
     assert snapshot.rounded_artwork is True

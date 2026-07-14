@@ -557,6 +557,25 @@ class Colors:
             if rgb is not None:
                 cls.PLAYLIST_REGULAR = rgb
 
+    @classmethod
+    def apply_theme_selection(
+        cls,
+        mode: str,
+        light_theme: str,
+        dark_theme: str,
+        high_contrast: str = "off",
+        accent_color: str = "blue",
+    ) -> None:
+        """Apply a palette from split light/dark appearance preferences."""
+
+        if mode == "light":
+            theme = light_theme
+        elif mode == "dark":
+            theme = dark_theme
+        else:
+            theme = dark_theme if cls._detect_system_dark() else light_theme
+        cls.apply_theme(theme, high_contrast, accent_color)
+
 
 # Named accent color presets (settings value → hex).
 ACCENT_PRESETS: dict[str, str] = {

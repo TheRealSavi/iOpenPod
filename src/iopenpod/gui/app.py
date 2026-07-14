@@ -1567,7 +1567,9 @@ class MainWindow(QMainWindow):
 
         old_accent = Colors.ACCENT
         accent_hex = resolve_accent_color(s.accent_color, img)
-        Colors.apply_theme(s.theme, s.high_contrast, accent_hex)
+        Colors.apply_theme_selection(
+            s.theme_mode, s.light_theme, s.dark_theme, s.high_contrast, accent_hex
+        )
         Metrics.apply_font_scale(s.font_scale)
         Metrics.apply_grid_item_scale(getattr(s, "grid_item_size", "large"))
         return Colors.ACCENT != old_accent
@@ -1592,7 +1594,9 @@ class MainWindow(QMainWindow):
         # This ensures switching from a colorful device to a gray/white/black
         # device resets the UI back to the default accent.
         old_accent = Colors.ACCENT
-        Colors.apply_theme(s.theme, s.high_contrast, accent_hex)
+        Colors.apply_theme_selection(
+            s.theme_mode, s.light_theme, s.dark_theme, s.high_contrast, accent_hex
+        )
         return Colors.ACCENT != old_accent
 
     @staticmethod
