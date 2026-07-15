@@ -14,11 +14,11 @@ iOpenPod is a free, open-source desktop application for managing iPods without i
 
 ## Screenshots
 
-| Sync Setup | Sync Review | Track Editing |
+| Sync Workflow | Library Editing | Device Tools |
 | --- | --- | --- |
-| ![Media folder selection](assets/screenshots/syncmedia.png) | ![Sync review](assets/screenshots/syncreview.png) | ![Track metadata and artwork editor](assets/screenshots/managetracks.png) |
-| ![Track playback options editor](assets/screenshots/managetracks2.png) | ![Podcast manager](assets/screenshots/podcasts.png) | ![Smart playlist editor](assets/screenshots/smartplaylist.png) |
-| ![Backup browser](assets/screenshots/backups.png) | ![Transcoding settings](assets/screenshots/settings.png) | ![Light mode library view](assets/screenshots/lightmode.png) |
+| ![Media folder and scan-type selection](assets/screenshots/syncmedia.png) | ![Track artwork and iPod database editor](assets/screenshots/trackedits.png) | ![Podcast subscription and episode manager](assets/screenshots/podcasts.png) |
+| ![Sync change and storage review](assets/screenshots/syncreview.png) | ![Track playback options editor](assets/screenshots/trackedits2.png) | ![Device-aware backup browser](assets/screenshots/backups.png) |
+| ![Individual sync change selection](assets/screenshots/syncreview2.png) | ![Smart playlist rule editor](assets/screenshots/smartplaylists.png) | ![Music and spoken-word transcoding settings](assets/screenshots/settings.png) |
 
 ---
 
