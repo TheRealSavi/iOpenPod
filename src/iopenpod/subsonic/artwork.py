@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import logging
 
-from ArtworkDB_Writer.art_extractor import art_hash
+from iopenpod.artworkdb_writer.art_extractor import art_hash
 
 from .client import SubsonicClient, SubsonicConnectionError
 

@@ -7,7 +7,7 @@ endpoints iOpenPod needs: ``ping``, ``getStarred2``, ``getPlaylists``,
 
 Reference: https://opensubsonic.netlify.app/docs/api-reference/
 
-The streaming download path mirrors ``PodcastManager.downloader.download_episode``:
+The streaming download path mirrors ``iopenpod.podcasts.downloader.download_episode``:
 ``requests`` streaming, ``.part`` temp file + atomic rename, chunk-level
 cancellation and progress callbacks.
 """
@@ -33,7 +33,7 @@ _CLIENT_NAME = "iOpenPod"
 
 
 class CancelToken(Protocol):
-    """Protocol for cancellation tokens (mirrors PodcastManager.downloader)."""
+    """Protocol for cancellation tokens (mirrors iopenpod.podcasts.downloader)."""
 
     def is_cancelled(self) -> bool: ...
 

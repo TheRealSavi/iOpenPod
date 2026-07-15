@@ -1,6 +1,6 @@
 """Build a ``SyncPlan`` from a Subsonic-compatible server.
 
-Mirrors ``PodcastManager.podcast_sync.build_podcast_sync_plan``: collect
+Mirrors ``iopenpod.podcasts.podcast_sync.build_podcast_sync_plan``: collect
 candidate tracks (here: songs from named playlists), filter out those not
 on the iPod, and emit **playlist-only** ``SyncItem``s.  No songs are
 downloaded — the Subsonic source is playlist-only, referencing tracks
@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from SyncEngine.contracts import StorageSummary, SyncPlan
+from iopenpod.sync.contracts import StorageSummary, SyncPlan
 
 if TYPE_CHECKING:
     from .client import SubsonicClient

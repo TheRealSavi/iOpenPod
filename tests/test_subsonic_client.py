@@ -5,8 +5,8 @@ import os
 
 import pytest
 
-from SubsonicManager import client as client_mod
-from SubsonicManager.client import SubsonicClient, SubsonicConnectionError
+from iopenpod.subsonic import client as client_mod
+from iopenpod.subsonic.client import SubsonicClient, SubsonicConnectionError
 
 
 class _JsonResponse:

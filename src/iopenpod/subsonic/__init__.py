@@ -2,7 +2,7 @@
 
 Provides music sync from Subsonic-compatible servers (Navidrome, Airsonic,
 Gonic, original Subsonic) to iPod devices.  Mirrors the structure of
-``PodcastManager``: a self-contained source module that builds a
+``iopenpod.podcasts``: a self-contained source module that builds a
 ``SyncPlan`` directly (bypassing the PC-library diff engine) and streams
 track bytes during execution.
 """

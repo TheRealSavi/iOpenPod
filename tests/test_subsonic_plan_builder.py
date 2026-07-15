@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from SubsonicManager.plan_builder import (
+from iopenpod.subsonic.plan_builder import (
     _collect_playlists,
     _match_key,
     build_subsonic_sync_plan,

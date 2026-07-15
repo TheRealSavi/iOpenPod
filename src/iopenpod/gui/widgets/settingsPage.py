@@ -3582,7 +3582,7 @@ class SettingsPage(QWidget):
         import threading
 
         def _do_fetch():
-            from SubsonicManager.client import SubsonicClient
+            from iopenpod.subsonic.client import SubsonicClient
 
             playlists: list[tuple[str, str]] = []
             ok = False
@@ -3631,7 +3631,7 @@ class SettingsPage(QWidget):
         import threading
 
         def _do_ping():
-            from SubsonicManager.client import SubsonicClient
+            from iopenpod.subsonic.client import SubsonicClient
 
             ok = False
             try:

@@ -30,7 +30,7 @@ def main() -> None:
     print()
 
     # --- Fetch starred songs from the server ---
-    from SubsonicManager.client import SubsonicClient, SubsonicConnectionError
+    from iopenpod.subsonic.client import SubsonicClient, SubsonicConnectionError
 
     try:
         client = SubsonicClient(s.subsonic_url, s.subsonic_username, s.subsonic_password)
@@ -40,7 +40,7 @@ def main() -> None:
         print(f"✗ Connection failed: {exc}")
         return
 
-    from SubsonicManager.plan_builder import _collect_starred_songs, _dedupe_songs
+    from iopenpod.subsonic.plan_builder import _collect_starred_songs, _dedupe_songs
 
     songs = []
     if s.subsonic_sync_starred:

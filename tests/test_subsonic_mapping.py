@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from SubsonicManager.mapping import IPOD_NATIVE_AUDIO, song_to_pc_track
+from iopenpod.subsonic.mapping import IPOD_NATIVE_AUDIO, song_to_pc_track
 
 
 def _song(**overrides):

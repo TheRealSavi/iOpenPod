@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from SubsonicManager import artwork
-from SubsonicManager.client import SubsonicConnectionError
+from iopenpod.subsonic import artwork
+from iopenpod.subsonic.client import SubsonicConnectionError
 
 
 class _FakeClient:

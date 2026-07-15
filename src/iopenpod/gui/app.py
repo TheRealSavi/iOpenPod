@@ -2354,7 +2354,7 @@ class MainWindow(QMainWindow):
                 playlist_ids,
             )
             if subsonic_playlists is not None:
-                from GUI.widgets.syncReview import SubsonicPlaylistMappingDialog
+                from iopenpod.gui.widgets.syncReview import SubsonicPlaylistMappingDialog
 
                 ipod_pairs = [
                     (
@@ -2379,7 +2379,7 @@ class MainWindow(QMainWindow):
                 s.subsonic_playlist_mappings = mappings
                 self.settings_service.save_global_settings(s)
 
-        from app_core.jobs import SubsonicPlanRequest, SubsonicPlanWorker
+        from iopenpod.application.jobs import SubsonicPlanRequest, SubsonicPlanWorker
 
         worker = SubsonicPlanWorker(
             SubsonicPlanRequest(
@@ -2423,7 +2423,7 @@ class MainWindow(QMainWindow):
 
         def _work():
             try:
-                from SubsonicManager.client import SubsonicClient
+                from iopenpod.subsonic.client import SubsonicClient
 
                 client = SubsonicClient(url, username, password)
                 pairs: list[tuple[str, str]] = []

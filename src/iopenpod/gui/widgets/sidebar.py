@@ -1014,6 +1014,11 @@ class Sidebar(QFrame):
             self.syncButton.setIcon(_bi)
             self.syncButton.setIconSize(_icon_sz)
         device_actions_layout.addWidget(self.syncButton)
+
+        # Subsonic sync button — secondary sync source, sits alongside PC sync
+        self.subsonicSyncButton = SidebarNavButton("Sync Subsonic", icon_name="cloud")
+        device_actions_layout.addWidget(self.subsonicSyncButton)
+
         self.sidebarLayout.addWidget(device_actions)
 
         maintenance_section = QWidget()
@@ -1021,10 +1026,6 @@ class Sidebar(QFrame):
         maintenance_layout.setContentsMargins(0, 0, 0, 0)
         maintenance_layout.setSpacing(0)
         maintenance_layout.addWidget(make_sidebar_section_header("Maintenance"))
-
-        # Subsonic sync button
-        self.subsonicSyncButton = SidebarNavButton("Sync Subsonic", icon_name="cloud")
-        maintenance_layout.addWidget(self.subsonicSyncButton)
 
         self.backupButton = SidebarNavButton("Backups", icon_name="archive")
         maintenance_layout.addWidget(self.backupButton)

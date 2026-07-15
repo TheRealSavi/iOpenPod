@@ -1,7 +1,7 @@
 """Map OpenSubsonic song dicts into iOpenPod's ``PCTrack`` domain model.
 
 Mirrors podkit's ``mapSongToTrack`` (``adapters/subsonic.ts``), adapted to
-the field set of ``SyncEngine.pc_library.PCTrack``.  A song's ``path`` is
+the field set of ``iopenpod.sync.pc_library.PCTrack``.  A song's ``path`` is
 set to the virtual URI ``subsonic://<track_id>``; the executor's fetch
 phase (``_fetch_subsonic_tracks``) recognises this scheme and replaces it
 with a real local cache path before the track is copied to the device.
@@ -13,13 +13,13 @@ import logging
 import time
 from typing import Any
 
-from SyncEngine._formats import IPOD_NATIVE_AUDIO
-from SyncEngine.pc_library import PCTrack
+from iopenpod.sync._formats import IPOD_NATIVE_AUDIO
+from iopenpod.sync.pc_library import PCTrack
 
 log = logging.getLogger(__name__)
 
 # IPOD_NATIVE_AUDIO is imported from the canonical SyncEngine._formats module
-# to avoid a divergent duplicate set (see SyncEngine/_formats.py).
+# to avoid a divergent duplicate set (see iopenpod/sync/_formats.py).
 
 
 def _as_int(value: Any, default: int = 0) -> int:
@@ -51,7 +51,7 @@ def song_to_pc_track(
         album: Optional parent album dict (``AlbumWithSongsID3``) used to fill
             gaps (albumArtist, genre, year, isCompilation).
         check_artwork: When True and ``client`` is provided, probe the cover
-            via :func:`SubsonicManager.artwork.classify_cover` to set
+            via :func:`iopenpod.subsonic.artwork.classify_cover` to set
             ``art_hash``.  When False, ``art_hash`` is left None and resolved
             later from the downloaded file (matches podcast behaviour).
         client: ``SubsonicClient`` used for the artwork probe.
