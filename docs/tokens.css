@@ -1,0 +1,78 @@
+/* iOpenPod web design tokens · single runtime source */
+:root {
+  --color-paper: oklch(98% 0.008 250);
+  --color-paper-2: oklch(95% 0.015 250);
+  --color-paper-3: oklch(92% 0.018 250);
+  --color-rule: oklch(86% 0.014 250);
+  --color-rule-2: oklch(74% 0.016 250);
+  --color-neutral: oklch(55% 0.014 250);
+  --color-muted: oklch(43% 0.014 250);
+  --color-ink-2: oklch(32% 0.018 250);
+  --color-ink: oklch(20% 0.020 250);
+  --color-accent: oklch(50% 0.160 250);
+  --color-accent-ink: oklch(98% 0.008 250);
+  --color-focus: oklch(44% 0.190 250);
+  --color-success: oklch(42% 0.130 145);
+  --color-warning: oklch(48% 0.130 75);
+  --color-error: oklch(48% 0.170 25);
+  --color-overlay: oklch(18% 0.018 250 / 72%);
+  --color-shadow: oklch(26% 0.020 250 / 12%);
+
+  --font-display: "Bricolage Grotesque", "Arial Narrow", sans-serif;
+  --font-body: "Geist", "Aptos", sans-serif;
+  --font-outlier: "Geist Mono", "Cascadia Code", monospace;
+
+  --display-weight: 700;
+  --body-weight: 400;
+  --tracking-display: -0.025em;
+  --tracking-label: 0.03em;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-md: 1.25rem;
+  --text-lg: 1.5625rem;
+  --text-xl: 1.9531rem;
+  --text-2xl: 2.4414rem;
+  --text-3xl: 3.0518rem;
+  --text-4xl: 3.8147rem;
+  --text-display-s: clamp(2.4rem, 6vw, 4rem);
+  --text-display: clamp(2.75rem, 7vw, 4.75rem);
+
+  --space-3xs: 0.125rem;
+  --space-2xs: 0.25rem;
+  --space-xs: 0.5rem;
+  --space-sm: 0.75rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2.5rem;
+  --space-2xl: 4rem;
+  --space-3xl: 6rem;
+  --space-4xl: 9rem;
+
+  --rule-hair: 1px;
+  --rule-fine: 2px;
+  --rule-focus: 2px;
+  --radius-card: 0.75rem;
+  --radius-pill: 999px;
+  --radius-input: 0.5rem;
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-micro: 120ms;
+  --dur-short: 220ms;
+  --dur-long: 420ms;
+
+  --layout-max: 76rem;
+  --layout-prose: 65ch;
+  --layout-help: 70rem;
+  --layout-reading: 58rem;
+  --control-hit: 2.75rem;
+  --nav-height: 4.5rem;
+  --z-base: 1;
+  --z-raised: 10;
+  --z-sticky: 200;
+  --z-modal: 400;
+  --shadow-image: 0 1.5rem 4rem var(--color-shadow);
+}

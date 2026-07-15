@@ -1,0 +1,13 @@
+{
+  "date": "2026-07-15",
+  "target": "docs",
+  "font_stack": "Bricolage Grotesque with Geist and Geist Mono",
+  "palette": "warm white with pale blue surfaces and iOpenPod blue",
+  "motion": "motion-cut; CSS interaction feedback only",
+  "spacing": "4-point named scale",
+  "framework": "vanilla HTML and CSS",
+  "assets": [
+    "assets/screenshots/*.png",
+    "docs/MacOS_Install_IMGS/*.png"
+  ]
+}

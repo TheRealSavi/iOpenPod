@@ -1,0 +1,22 @@
+[
+  {
+    "date": "2026-07-15",
+    "scope": "app",
+    "macrostructure": "Split Studio + Conversational FAQ",
+    "theme": "custom",
+    "theme_axes": "light / rounded-sans / cool",
+    "vibe": "friendly, calm, familiar",
+    "enrichment": "real product screenshots",
+    "brief": "iOpenPod docs friendly-simplicity revision"
+  },
+  {
+    "date": "2026-07-15",
+    "scope": "app",
+    "macrostructure": "Workbench + Index-First",
+    "theme": "custom",
+    "theme_axes": "dark / mono / cool",
+    "vibe": "industrial precision, iPod-blue, quiet utility",
+    "enrichment": "real product screenshots",
+    "brief": "iOpenPod docs site redesign"
+  }
+]
