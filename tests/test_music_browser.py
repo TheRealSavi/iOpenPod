@@ -12,6 +12,7 @@ from iopenpod.gui.widgets.artworkUnifier import (
     build_album_artwork_unify_context,
 )
 from iopenpod.gui.widgets.musicBrowser import MusicBrowser
+from iopenpod.gui.widgets.trackContextMenu import resolve_grid_item_tracks
 from iopenpod.gui.widgets.trackListTitleBar import TrackListTitleBar, _resolve_bar_palette
 
 
@@ -86,113 +87,210 @@ def test_context_menu_css_styles_disabled_rows_and_icon_gutter() -> None:
     assert f"color: {Colors.TEXT_DISABLED};" in css
 
 
-def test_album_grid_context_menu_uses_shared_menu_style(monkeypatch) -> None:
-    class _Action:
-        def __init__(self) -> None:
-            self._enabled = True
+def test_grid_item_track_resolution_matches_album_artist_and_genre_groups() -> None:
+    album_track_one = {
+        "db_track_id": 1,
+        "Title": "One",
+        "Album": "Album A",
+        "Artist": "Artist A",
+        "Genre": "Rock",
+        "media_type": 1,
+    }
+    album_track_two = {
+        "db_track_id": 2,
+        "Title": "Two",
+        "Album": "Album A",
+        "Artist": "Artist A",
+        "Genre": "Rock",
+        "media_type": 1,
+    }
+    same_album_other_artist = {
+        "db_track_id": 3,
+        "Title": "Three",
+        "Album": "Album A",
+        "Artist": "Artist B",
+        "Genre": "Rock",
+        "media_type": 1,
+    }
+    same_artist_other_album = {
+        "db_track_id": 4,
+        "Title": "Four",
+        "Album": "Album B",
+        "Artist": "Artist A",
+        "Genre": "Jazz",
+        "media_type": 1,
+    }
+    video_track = {
+        "db_track_id": 5,
+        "Title": "Video",
+        "Album": "Album A",
+        "Artist": "Artist A",
+        "Genre": "Rock",
+        "media_type": 2,
+    }
+    all_tracks = [
+        album_track_one,
+        album_track_two,
+        same_album_other_artist,
+        same_artist_other_album,
+        video_track,
+    ]
 
-        def setIcon(self, _icon) -> None:
-            pass
+    assert resolve_grid_item_tracks(
+        {"category": "Albums", "album": "Album A", "artist": "Artist A"},
+        all_tracks,
+    ) == [album_track_one, album_track_two]
+    assert resolve_grid_item_tracks(
+        {"category": "Artists", "filter_key": "Artist", "filter_value": "Artist A"},
+        all_tracks,
+    ) == [album_track_one, album_track_two, same_artist_other_album]
+    assert resolve_grid_item_tracks(
+        {"category": "Genres", "filter_key": "Genre", "filter_value": "Rock"},
+        all_tracks,
+    ) == [album_track_one, album_track_two, same_album_other_artist]
 
-        def setEnabled(self, enabled: bool) -> None:
-            self._enabled = enabled
 
-        def isEnabled(self) -> bool:
-            return self._enabled
+def test_artist_grid_context_menu_passes_all_group_tracks_to_track_menu(
+    monkeypatch,
+) -> None:
+    artist_tracks = [
+        {"db_track_id": 1, "Title": "One", "Artist": "Artist A"},
+        {"db_track_id": 2, "Title": "Two", "Artist": "Artist A"},
+    ]
 
-    class _Menu:
-        last: "_Menu | None" = None
+    class _Cache:
+        @staticmethod
+        def is_ready() -> bool:
+            return True
 
-        def __init__(self, _parent) -> None:
-            self._style = ""
-            self.exec_pos = None
-            _Menu.last = self
+        @staticmethod
+        def get_tracks() -> list[dict]:
+            return [*artist_tracks, {"db_track_id": 3, "Artist": "Artist B"}]
 
-        def setStyleSheet(self, style: str) -> None:
-            self._style = style
+    shown: list[tuple[object, list[dict], QPoint]] = []
+    menu_host = SimpleNamespace()
+    monkeypatch.setattr(
+        "iopenpod.gui.widgets.musicBrowser.show_track_context_menu",
+        lambda _parent, host, tracks, pos: shown.append((host, tracks, pos)),
+    )
+    browser = SimpleNamespace(
+        _current_category="Artists",
+        _library_cache=_Cache(),
+        browserTrack=menu_host,
+    )
+    browser._resolve_grid_tracks_for_menu = (
+        MusicBrowser._resolve_grid_tracks_for_menu.__get__(browser)
+    )
+    item = {
+        "category": "Artists",
+        "filter_key": "Artist",
+        "filter_value": "Artist A",
+    }
+    pos = QPoint(12, 34)
 
-        def styleSheet(self) -> str:
-            return self._style
+    MusicBrowser._onGridItemContextRequested(cast(Any, browser), [item], pos)
 
-        def addAction(self, _label: str) -> _Action:
-            return _Action()
+    assert shown == [(menu_host, artist_tracks, pos)]
 
-        def exec(self, pos: QPoint):
-            self.exec_pos = pos
-            return None
 
-    monkeypatch.setattr("iopenpod.gui.widgets.musicBrowser.QMenu", _Menu)
-    monkeypatch.setattr("iopenpod.gui.widgets.musicBrowser.glyph_icon", lambda *_args: None)
+def test_album_grid_context_menu_adds_chaptered_conversion_to_shared_menu(
+    monkeypatch,
+) -> None:
+    tracks = [
+        {"db_track_id": 1, "Title": "One", "Album": "Album", "Artist": "Artist"},
+        {"db_track_id": 2, "Title": "Two", "Album": "Album", "Artist": "Artist"},
+    ]
 
+    class _Cache:
+        @staticmethod
+        def is_ready() -> bool:
+            return True
+
+        @staticmethod
+        def get_tracks() -> list[dict]:
+            return tracks
+
+    shown: list[tuple[object, list[dict], QPoint, dict[str, Any]]] = []
+    menu_host = SimpleNamespace()
+    monkeypatch.setattr(
+        "iopenpod.gui.widgets.musicBrowser.show_track_context_menu",
+        lambda _parent, host, selected, pos, **kwargs: shown.append(
+            (host, selected, pos, kwargs)
+        ),
+    )
     emitted: list[list[dict]] = []
     browser = SimpleNamespace(
         _current_category="Albums",
-        _album_artwork_unify_context=lambda _item: None,
+        _library_cache=_Cache(),
+        browserTrack=menu_host,
         album_conversion_requested=SimpleNamespace(emit=emitted.append),
     )
+    browser._resolve_grid_tracks_for_menu = (
+        MusicBrowser._resolve_grid_tracks_for_menu.__get__(browser)
+    )
+    album_item = {
+        "category": "Albums",
+        "album": "Album",
+        "artist": "Artist",
+        "track_count": 2,
+    }
 
     pos = QPoint(12, 34)
     MusicBrowser._onGridItemContextRequested(
         cast(Any, browser),
-        [{"category": "Albums", "track_count": 2}],
+        [album_item],
         pos,
     )
 
-    assert _Menu.last is not None
-    assert _Menu.last.styleSheet() == context_menu_css()
-    assert _Menu.last.exec_pos == pos
-    assert emitted == []
+    assert shown[0][0] is menu_host
+    assert shown[0][1] == tracks
+    assert shown[0][2] == pos
+    conversion_action = shown[0][3]["chaptered_album_action"]
+    assert list(conversion_action.items) == [album_item]
+    conversion_action.requested([album_item])
+    assert emitted == [[album_item]]
 
 
-def test_album_grid_context_menu_edit_opens_album_tracks(monkeypatch) -> None:
-    class _Action:
-        def __init__(self, label: str) -> None:
-            self.label = label
-            self._enabled = True
+def test_genre_grid_context_menu_passes_all_group_tracks_to_track_menu(
+    monkeypatch,
+) -> None:
+    genre_tracks = [
+        {"db_track_id": 1, "Title": "One", "Genre": "Rock"},
+        {"db_track_id": 2, "Title": "Two", "Genre": "Rock"},
+    ]
 
-        def setIcon(self, _icon) -> None:
-            pass
+    class _Cache:
+        @staticmethod
+        def is_ready() -> bool:
+            return True
 
-        def setEnabled(self, enabled: bool) -> None:
-            self._enabled = enabled
+        @staticmethod
+        def get_tracks() -> list[dict]:
+            return [*genre_tracks, {"db_track_id": 3, "Genre": "Jazz"}]
 
-        def isEnabled(self) -> bool:
-            return self._enabled
-
-    class _Menu:
-        def __init__(self, _parent) -> None:
-            self.actions: list[_Action] = []
-
-        def setStyleSheet(self, _style: str) -> None:
-            pass
-
-        def addAction(self, label: str) -> _Action:
-            action = _Action(label)
-            self.actions.append(action)
-            return action
-
-        def exec(self, _pos: QPoint):
-            return next(action for action in self.actions if action.label == "Edit")
-
-    monkeypatch.setattr("iopenpod.gui.widgets.musicBrowser.QMenu", _Menu)
-    monkeypatch.setattr("iopenpod.gui.widgets.musicBrowser.glyph_icon", lambda *_args: None)
-
-    edited: list[dict] = []
-    browser = SimpleNamespace(
-        _current_category="Albums",
-        _album_artwork_unify_context=lambda _item: None,
-        _edit_album_tracks=edited.append,
-        album_conversion_requested=SimpleNamespace(emit=lambda _items: None),
+    shown: list[tuple[object, list[dict], QPoint]] = []
+    menu_host = SimpleNamespace()
+    monkeypatch.setattr(
+        "iopenpod.gui.widgets.musicBrowser.show_track_context_menu",
+        lambda _parent, host, tracks, pos: shown.append((host, tracks, pos)),
     )
-    album_item = {"category": "Albums", "track_count": 3, "title": "Album"}
+    browser = SimpleNamespace(
+        _current_category="Genres",
+        _library_cache=_Cache(),
+        browserTrack=menu_host,
+    )
+    browser._resolve_grid_tracks_for_menu = (
+        MusicBrowser._resolve_grid_tracks_for_menu.__get__(browser)
+    )
+    pos = QPoint(12, 34)
 
     MusicBrowser._onGridItemContextRequested(
         cast(Any, browser),
-        [album_item],
-        QPoint(12, 34),
+        [{"category": "Genres", "filter_key": "Genre", "filter_value": "Rock"}],
+        pos,
     )
 
-    assert edited == [album_item]
+    assert shown == [(menu_host, genre_tracks, pos)]
 
 
 def test_title_bar_palette_reuses_contrast_ensured_grid_color() -> None:

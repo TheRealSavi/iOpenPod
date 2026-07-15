@@ -1,16 +1,12 @@
 from __future__ import annotations
 
 import logging
-import os
 from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
-    QDialog,
     QFrame,
-    QMenu,
-    QMessageBox,
     QSizePolicy,
     QSplitter,
     QStackedWidget,
@@ -26,20 +22,18 @@ from iopenpod.itunesdb_shared.constants import (
     MEDIA_TYPE_VIDEO_MASK,
 )
 
-from ..glyphs import glyph_icon
-from ..styles import Colors, context_menu_css, make_scroll_area
-from .artworkUnifier import (
-    ArtworkUnifyContext,
-    UnifyArtworkDialog,
-    build_album_artwork_unify_context,
-    save_unified_artwork_temp,
-)
+from ..styles import Colors, make_scroll_area
 from .gridHeaderBar import GridHeaderBar
 from .MBGridView import MusicBrowserGrid
 from .MBListView import MusicBrowserList
 from .photoBrowser import PhotoBrowserWidget
 from .playlistBrowser import PlaylistBrowser
 from .podcastBrowser import PodcastBrowser
+from .trackContextMenu import (
+    ChapteredAlbumMenuAction,
+    resolve_grid_item_tracks,
+    show_track_context_menu,
+)
 from .trackListTitleBar import TrackListTitleBar
 
 log = logging.getLogger(__name__)
@@ -504,146 +498,61 @@ class MusicBrowser(QFrame):
             self.browserTrack.filterByGenre(title)
 
     def _onGridItemContextRequested(self, items: object, global_pos) -> None:
-        """Show the Albums-grid context menu."""
-        if self._current_category != "Albums":
+        """Show the shared track menu for grouped grid items."""
+        if self._current_category not in {"Albums", "Artists", "Genres"}:
             return
         if not isinstance(items, list):
             return
 
-        album_items = [
+        grid_items = [
             dict(item)
             for item in items
-            if isinstance(item, dict) and item.get("category", "Albums") == "Albums"
+            if isinstance(item, dict)
+            and item.get("category", self._current_category) == self._current_category
         ]
-        if not album_items:
+        if not grid_items:
             return
 
-        menu = QMenu(self)
-        menu.setStyleSheet(context_menu_css())
-
-        edit_action = None
-        if len(album_items) == 1:
-            edit_action = menu.addAction("Edit")
-            if edit_action is not None:
-                edit_icon = glyph_icon("edit", 14, Colors.TEXT_PRIMARY)
-                if edit_icon is not None:
-                    edit_action.setIcon(edit_icon)
-                if int(album_items[0].get("track_count", 0) or 0) < 1:
-                    edit_action.setEnabled(False)
-
-        conversion_action = menu.addAction("Convert to a single chaptered track")
-        if conversion_action is None:
+        selected_tracks = self._resolve_grid_tracks_for_menu(grid_items)
+        if not selected_tracks:
             return
 
-        icon = glyph_icon("chaptered-track", 14, Colors.TEXT_PRIMARY)
-        if icon is not None:
-            conversion_action.setIcon(icon)
-
-        if any(int(item.get("track_count", 0) or 0) < 2 for item in album_items):
-            conversion_action.setEnabled(False)
-
-        unify_context: ArtworkUnifyContext | None = None
-        unify_action = None
-        if len(album_items) == 1:
-            unify_context = self._album_artwork_unify_context(album_items[0])
-            if unify_context is not None:
-                menu.addSeparator()
-                unify_action = menu.addAction("Unify Artwork")
-                if unify_action is not None:
-                    unify_icon = glyph_icon("photo", 14, Colors.TEXT_PRIMARY)
-                    if unify_icon is not None:
-                        unify_action.setIcon(unify_icon)
-
-        chosen = menu.exec(global_pos)
-        if edit_action is not None and chosen == edit_action and edit_action.isEnabled():
-            self._edit_album_tracks(album_items[0])
-        elif chosen == conversion_action and conversion_action.isEnabled():
-            self.album_conversion_requested.emit(album_items)
-        elif (
-            unify_action is not None
-            and chosen == unify_action
-            and unify_context is not None
-        ):
-            self._show_unify_artwork_dialog(unify_context)
-
-    def _resolve_album_tracks_for_menu(self, album_item: dict) -> list[dict]:
-        cache = self._library_cache
-        if cache is None or not cache.is_ready():
-            return []
-
-        try:
-            from iopenpod.sync.album_chapters import resolve_album_tracks
-
-            return resolve_album_tracks(album_item, cache.get_tracks())
-        except Exception:
-            log.debug("Could not resolve album tracks for album context menu", exc_info=True)
-            return []
-
-    def _edit_album_tracks(self, album_item: dict) -> None:
-        album_tracks = self._resolve_album_tracks_for_menu(album_item)
-        if not album_tracks:
+        if self._current_category == "Albums":
+            show_track_context_menu(
+                self,
+                self.browserTrack,
+                selected_tracks,
+                global_pos,
+                chaptered_album_action=ChapteredAlbumMenuAction(
+                    items=tuple(grid_items),
+                    requested=self.album_conversion_requested.emit,
+                ),
+            )
             return
-        self.browserTrack._edit_tracks(album_tracks)
 
-    def _album_artwork_unify_context(
-        self,
-        album_item: dict,
-    ) -> ArtworkUnifyContext | None:
-        """Return album artwork choices when tracks are not visually unified."""
-        album_tracks = self._resolve_album_tracks_for_menu(album_item)
-        if not album_tracks:
-            return None
-
-        session = self._device_sessions.current_session()
-        return build_album_artwork_unify_context(
-            album_item,
-            album_tracks,
-            artworkdb_path=session.artworkdb_path,
-            artwork_folder_path=session.artwork_folder_path,
+        show_track_context_menu(
+            self,
+            self.browserTrack,
+            selected_tracks,
+            global_pos,
         )
 
-    def _show_unify_artwork_dialog(
-        self,
-        context: ArtworkUnifyContext,
-    ) -> None:
-        dialog = UnifyArtworkDialog(context, self)
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return
-
-        choice = dialog.selected_choice()
-        if choice is None:
-            return
-
-        try:
-            artwork_path = save_unified_artwork_temp(choice.image)
-        except Exception as exc:
-            QMessageBox.warning(
-                self,
-                "Unify Artwork",
-                f"Could not prepare artwork:\n\n{exc}",
-            )
-            return
-
+    def _resolve_grid_tracks_for_menu(self, grid_items: list[dict]) -> list[dict]:
         cache = self._library_cache
         if cache is None or not cache.is_ready():
-            try:
-                os.remove(artwork_path)
-            except OSError:
-                pass
-            return
+            return []
 
-        try:
-            cache.update_track_artwork(context.tracks, artwork_path)
-        except Exception as exc:
-            try:
-                os.remove(artwork_path)
-            except OSError:
-                pass
-            QMessageBox.warning(
-                self,
-                "Unify Artwork",
-                f"Could not stage artwork update:\n\n{exc}",
-            )
+        all_tracks = cache.get_tracks()
+        selected: list[dict] = []
+        seen: set[int] = set()
+        for item in grid_items:
+            for track in resolve_grid_item_tracks(item, all_tracks):
+                identity = id(track)
+                if identity in seen:
+                    continue
+                seen.add(identity)
+                selected.append(track)
+        return selected
 
     def refresh_artwork_appearance(self) -> None:
         """Refresh list and grid artwork after an appearance setting changes."""

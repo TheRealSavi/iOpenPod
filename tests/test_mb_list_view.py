@@ -39,6 +39,10 @@ from iopenpod.gui.widgets.MBListView import (
     chapter_summary_from_data,
     podcast_conversion_changes_for_track,
 )
+from iopenpod.gui.widgets.trackContextMenu import (
+    ChapteredAlbumMenuAction,
+    build_track_context_menu,
+)
 from iopenpod.gui.widgets.trackEditorDialog import (
     TrackEditorDialog,
     _ArtworkPreviewPanel,
@@ -1361,6 +1365,73 @@ def test_convert_to_podcast_action_disables_ready_podcasts(qtbot) -> None:
     assert act is not None
     assert act.text() == "Convert to Podcast"
     assert not act.isEnabled()
+
+
+def test_album_group_menu_differs_from_track_menu_only_by_conversion_action(qtbot) -> None:
+    cache = _LibraryCache()
+    view = _mount_list(qtbot, library_cache=cache)
+    tracks = [
+        {"db_track_id": 1, "Title": "One"},
+        {"db_track_id": 2, "Title": "Two"},
+    ]
+
+    track_menu = build_track_context_menu(view, view, tracks)
+    album_menu = build_track_context_menu(
+        view,
+        view,
+        tracks,
+        chaptered_album_action=ChapteredAlbumMenuAction(
+            items=({"category": "Albums", "track_count": 2},),
+            requested=lambda _items: None,
+        ),
+    )
+
+    track_actions = [
+        action.text() for action in track_menu.actions() if not action.isSeparator()
+    ]
+    album_actions = [
+        action.text() for action in album_menu.actions() if not action.isSeparator()
+    ]
+    conversion_label = "Convert to a single chaptered track"
+    conversion_index = album_actions.index(conversion_label)
+
+    assert (
+        album_actions[:conversion_index] + album_actions[conversion_index + 1 :]
+        == track_actions
+    )
+
+
+def test_shared_menu_actions_use_explicit_group_track_selection(qtbot) -> None:
+    cache = _LibraryCache()
+    view = _mount_list(qtbot, library_cache=cache)
+    group_tracks = [
+        {"db_track_id": 1, "Title": "One", "rating": 0},
+        {"db_track_id": 2, "Title": "Two", "rating": 20},
+    ]
+    removed: list[list[dict]] = []
+    view.remove_from_ipod_requested.connect(removed.append)
+
+    menu = build_track_context_menu(view, view, group_tracks)
+    rating_menu = next(
+        action.menu()
+        for action in menu.actions()
+        if action.menu() is not None and action.text() == "Rating"
+    )
+    assert rating_menu is not None
+    five_stars = next(
+        action for action in rating_menu.actions() if action.text().strip() == "★★★★★"
+    )
+    remove_action = next(
+        action
+        for action in menu.actions()
+        if action.text() == "Remove 2 Tracks from iPod"
+    )
+
+    five_stars.trigger()
+    remove_action.trigger()
+
+    assert cache.updated[-1] == (group_tracks, {"rating": 100})
+    assert removed == [group_tracks]
 
 
 def test_rating_context_menu_shows_mixed_selection_header(qtbot) -> None:
