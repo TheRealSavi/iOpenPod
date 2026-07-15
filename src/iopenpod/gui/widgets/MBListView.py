@@ -43,6 +43,7 @@ from iopenpod.itunesdb_shared.constants import (
     MEDIA_TYPE_VIDEO_MASK,
     MEDIA_TYPE_VIDEO_PODCAST,
 )
+from iopenpod.search import SearchText, matches_search, prepare_search_text
 
 from ..artwork_rendering import (
     enhance_artwork_image,
@@ -895,7 +896,7 @@ class MusicBrowserList(QFrame):
         # latter defines the current list scope; search narrows that scope.
         self._search_query = ""
         self._search_scope_tracks: list[dict] = []
-        self._search_text_cache: dict[int, tuple[dict, str]] = {}
+        self._search_text_cache: dict[int, tuple[dict, SearchText]] = {}
         self._pending_search_selection: set[tuple[str, object]] = set()
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
@@ -1066,16 +1067,19 @@ class MusicBrowserList(QFrame):
         self._tracks = self._tracks_matching_search(tracks)
 
     def _tracks_matching_search(self, tracks: list[dict]) -> list[dict]:
-        terms = tuple(term for term in self._search_query.casefold().split() if term)
-        if not terms:
+        if not self._search_query.strip():
             return tracks
         return [
             track
             for track in tracks
-            if all(term in self._track_search_text(track) for term in terms)
+            if matches_search(
+                self._search_query,
+                self._track_search_text(track),
+                match_all_terms=True,
+            )
         ]
 
-    def _track_search_text(self, track: dict) -> str:
+    def _track_search_text(self, track: dict) -> SearchText:
         cache_key = id(track)
         cached = self._search_text_cache.get(cache_key)
         if cached is not None and cached[0] is track:
@@ -1099,7 +1103,7 @@ class MusicBrowserList(QFrame):
             if display_text and display_text != raw_text:
                 values.append(display_text)
 
-        searchable = "\n".join(values).casefold()
+        searchable = prepare_search_text("\n".join(values))
         self._search_text_cache[cache_key] = (track, searchable)
         return searchable
 

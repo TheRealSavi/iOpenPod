@@ -362,6 +362,20 @@ def test_stale_art_results_are_ignored_after_dataset_switch(qtbot, monkeypatch):
     )
 
 
+def test_grid_search_matches_symbol_variants(qtbot):
+    _scroll, grid = _mount_grid(qtbot)
+    item = {
+        "title": "I’m",
+        "artist": "Artist",
+        "category": "Albums",
+    }
+    grid.populateGrid([item])
+
+    grid.setSearchFilter("i'm")
+
+    assert [record.source for record in grid._visible_records] == [item]
+
+
 def test_search_requeues_artwork_after_pending_request_is_invalidated(qtbot, monkeypatch):
     monkeypatch.setattr(img_maker, "get_artwork", lambda *args, **kwargs: None)
 

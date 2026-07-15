@@ -24,6 +24,7 @@ from PyQt6.QtWidgets import (
 )
 
 from iopenpod.device.artwork import ITHMB_FORMAT_MAP
+from iopenpod.search import matches_search
 from iopenpod.sync import photos as photo_sync
 from iopenpod.sync.photos import (
     PhotoDB,
@@ -636,7 +637,7 @@ class PhotoBrowserWidget(QFrame):
         return [(int(photo.image_id), photo) for photo in self._device_db.photos.values()]
 
     def _on_search_changed(self, query: str):
-        self._search_query = query.strip().lower()
+        self._search_query = query.strip()
         self._schedule_grid_reload(self._current_device_path())
 
     def _on_sort_changed(self, key: str, reverse: bool):
@@ -654,8 +655,8 @@ class PhotoBrowserWidget(QFrame):
             " ".join(str(format_id) for format_id in self._photo_format_ids(photo)),
             " ".join(sorted(name for name in getattr(photo, "album_names", set()) if name)),
         ]
-        haystack = " ".join(part for part in parts if part).lower()
-        return self._search_query in haystack
+        haystack = " ".join(part for part in parts if part)
+        return matches_search(self._search_query, haystack)
 
     def _sort_items(
         self,

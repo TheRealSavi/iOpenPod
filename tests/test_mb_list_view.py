@@ -45,12 +45,14 @@ from iopenpod.gui.widgets.trackContextMenu import (
 )
 from iopenpod.gui.widgets.trackEditorDialog import (
     TrackEditorDialog,
+    TrackFieldSpec,
     _ArtworkPreviewPanel,
     _ChapterTimelineEditor,
     _format_datetime_value,
     _parse_datetime_text,
     _SquareCropCanvas,
     _subgroup_for_key,
+    _TrackFieldRow,
 )
 from iopenpod.gui.widgets.trackListTitleBar import TrackListTitleBar
 from iopenpod.infrastructure import settings_persistence
@@ -509,6 +511,17 @@ def test_tracklist_search_matches_hidden_and_formatted_metadata(qtbot) -> None:
     view._search_field.clear()
     qtbot.waitUntil(lambda: view.table.rowCount() == len(tracks), timeout=2000)
     assert view.tracks == tracks
+
+
+def test_tracklist_search_matches_symbol_variants(qtbot) -> None:
+    view = _mount_list(qtbot)
+    track: dict[str, object] = {"Title": "Don’t Stop"}
+    _load_content(qtbot, view, tracks=[track], media_type_filter=0x01)
+
+    view.setSearchQuery("don't")
+
+    qtbot.waitUntil(lambda: not view._search_timer.isActive(), timeout=2000)
+    assert view.tracks == [track]
 
 
 def test_title_bar_search_filters_embedded_track_list(qtbot) -> None:
@@ -2278,3 +2291,18 @@ def test_track_editor_dialog_filter_restores_hidden_sections(qtbot) -> None:
     assert not title_row.isHidden()
     assert not comment_row.isHidden()
     assert not comment_panel.isHidden()
+
+
+def test_track_editor_field_search_matches_symbol_variants(qtbot) -> None:
+    row = _TrackFieldRow(
+        TrackFieldSpec(
+            key="artist_credit",
+            label="Artist Credit",
+            group="Metadata",
+            help_text="The artist’s displayed credit",
+        ),
+        "",
+    )
+    qtbot.addWidget(row)
+
+    assert row.matches("artist's")

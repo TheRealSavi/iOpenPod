@@ -116,6 +116,22 @@ def _attach_menu_action_helper(browser: SimpleNamespace) -> None:
     )
 
 
+def test_photo_search_matches_symbol_variants() -> None:
+    photo = PhotoEntry(
+        image_id=101,
+        display_name="John’s Photo.jpg",
+        full_res_path="Full Resolution/John’s Photo.jpg",
+    )
+    browser = SimpleNamespace(
+        _search_query="john's",
+        _device_photo_title=lambda value: value.display_name,
+        _device_storage_size=lambda _value: 0,
+        _photo_format_ids=lambda _value: (),
+    )
+
+    assert PhotoBrowserWidget._matches_search(cast(Any, browser), photo)
+
+
 def test_sync_running_check_does_not_recurse_before_widget_is_attached() -> None:
     browser = SimpleNamespace()
     browser.window = lambda: browser

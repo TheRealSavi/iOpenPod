@@ -58,6 +58,7 @@ from PyQt6.QtWidgets import (
 
 from iopenpod.itunesdb_shared.constants import MEDIA_TYPE_MAP
 from iopenpod.itunesdb_shared.mhit_defs import MHIT_FIELDS
+from iopenpod.search import matches_search
 
 from ..imgMaker import TrackArtworkPreview, get_track_artwork_previews
 from ..styles import (
@@ -1432,8 +1433,8 @@ class _TrackFieldRow(QFrame):
         haystack = (
             f"{self.spec.label} {self.spec.key} {self.spec.group} "
             f"{self.spec.help_text}"
-        ).lower()
-        return query.lower() in haystack
+        )
+        return matches_search(query, haystack)
 
     def is_modified(self) -> bool:
         return self._modified

@@ -51,6 +51,7 @@ from iopenpod.itunesdb_shared.album_identity import (
     album_identity_from_track,
     group_tracks_by_album_identity,
 )
+from iopenpod.search import matches_search
 from iopenpod.sync.pc_library import PCTrack
 from iopenpod.sync.photos import PCPhoto, PCPhotoLibrary, scan_pc_photos
 
@@ -980,8 +981,8 @@ class PCPhotoListView(QWidget):
                 photo.source_path,
                 " ".join(sorted(name for name in photo.album_names if name)),
             ) if part
-        ).lower()
-        return self._search_query in haystack
+        )
+        return matches_search(self._search_query, haystack)
 
     def _sort_photos(self, photos: list[PCPhoto]) -> list[PCPhoto]:
         if self._sort_key == "size":
@@ -1128,7 +1129,7 @@ class PCPhotoListView(QWidget):
         self._refresh_list()
 
     def _on_search_changed(self, query: str):
-        self._search_query = query.strip().lower()
+        self._search_query = query.strip()
         self._refresh_list()
 
     def setAllChecked(self, checked: bool):

@@ -21,6 +21,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from iopenpod.search import matches_search
+
 from ..glyphs import glyph_pixmap
 from ..styles import (
     FONT_FAMILY,
@@ -512,14 +514,17 @@ class IpodLibraryTagFixDialog(QDialog):
     def _filtered_preview_rows(self) -> tuple[list[tuple[dict, str, Any, Any]], int]:
         rows: list[tuple[dict, str, Any, Any]] = []
         matching_count = 0
-        query = self._search_text.casefold()
+        query = self._search_text
         for track in self._tracks:
             changes = self._suggestion.changes_by_track.get(id(track), {})
             for key, new_value in sorted(changes.items(), key=lambda item: item[0].casefold()):
                 old_value = track.get(key)
                 if self._selected_field and key != self._selected_field:
                     continue
-                if query and query not in self._preview_search_text(track, key, old_value, new_value):
+                if query and not matches_search(
+                    query,
+                    self._preview_search_text(track, key, old_value, new_value),
+                ):
                     continue
                 matching_count += 1
                 if len(rows) >= _PREVIEW_ROW_LIMIT:
@@ -535,7 +540,7 @@ class IpodLibraryTagFixDialog(QDialog):
                 _value_text(old_value),
                 _value_text(new_value),
             )
-        ).casefold()
+        )
 
     def _total_change_count(self) -> int:
         return sum(len(changes) for changes in self._suggestion.changes_by_track.values())

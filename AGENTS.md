@@ -1,5 +1,11 @@
 # Agent skills
 
+## Version control
+
+Do not create, amend, or otherwise rewrite commits unless the user explicitly
+requests that exact version-control action in the current conversation. Leave
+implementation changes uncommitted in the working tree by default.
+
 ## Issue tracker
 
 Issues and PRDs are tracked in GitHub Issues for this repo. See `docs/agents/issue-tracker.md`.

@@ -3,10 +3,15 @@ from typing import Any, cast
 
 from iopenpod.gui.styles import accent_btn_css
 from iopenpod.gui.widgets.MBGridView import GridRecord, MusicBrowserGrid
-from iopenpod.gui.widgets.selectiveSyncBrowser import PCMusicBrowserGrid, SelectiveSyncBrowser
+from iopenpod.gui.widgets.selectiveSyncBrowser import (
+    PCMusicBrowserGrid,
+    PCPhotoListView,
+    SelectiveSyncBrowser,
+)
 from iopenpod.sync.contracts import SyncAction, SyncItem, SyncPlan
 from iopenpod.sync.pc_library import PCTrack
 from iopenpod.sync.photos import (
+    PCPhoto,
     PhotoAlbumChange,
     PhotoMembershipChange,
     PhotoSyncItem,
@@ -67,6 +72,18 @@ def _browser_with_tracks(tracks: list[PCTrack]) -> SelectiveSyncBrowser:
 
     browser._art_candidates = _art_candidates
     return browser
+
+
+def test_selective_sync_photo_search_matches_symbol_variants() -> None:
+    photo = PCPhoto(
+        visual_hash="hash",
+        display_name="John’s Photo.jpg",
+        source_path="/photos/John’s Photo.jpg",
+        size=1,
+    )
+    view = SimpleNamespace(_search_query="john's")
+
+    assert PCPhotoListView._matches_search(cast(Any, view), photo)
 
 
 def test_done_selecting_uses_standard_primary_action_style(qtbot) -> None:
