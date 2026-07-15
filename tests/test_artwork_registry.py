@@ -1,17 +1,17 @@
 from __future__ import annotations
 
-from ipod_device.artwork import ITHMB_FORMAT_MAP, resolve_cover_art_format_definitions
+from iopenpod.device.artwork import ITHMB_FORMAT_MAP, resolve_cover_art_format_definitions
 
 
 def test_standard_device_resolves_formats_from_global_registry() -> None:
-    resolved = resolve_cover_art_format_definitions("iPod Classic", "1st Gen")
+    resolved = resolve_cover_art_format_definitions("iPod Classic", "6th Gen")
 
     assert list(resolved) == [1055, 1060, 1061, 1068]
     assert resolved[1055] == ITHMB_FORMAT_MAP[1055]
 
 
-def test_ipod_video_unknown_generation_resolves_shared_video_formats() -> None:
-    resolved = resolve_cover_art_format_definitions("iPod Video", "")
+def test_ipod_5th_gen_resolves_shared_formats() -> None:
+    resolved = resolve_cover_art_format_definitions("iPod", "5th Gen")
 
     assert list(resolved) == [1028, 1029]
     assert resolved[1028] == ITHMB_FORMAT_MAP[1028]

@@ -1,4 +1,4 @@
-from app_core.services import DeviceCapabilitySnapshot, DeviceIdentitySnapshot
+from iopenpod.application.services import DeviceCapabilitySnapshot, DeviceIdentitySnapshot
 
 
 class FakeCapabilities:
@@ -23,6 +23,7 @@ class FakeCapabilities:
     max_video_fps = 30
     max_video_bitrate = 2500
     h264_level = "3.1"
+    max_database_bytes = 64 * 1024 * 1024
 
 
 class FakeDeviceInfo:
@@ -58,3 +59,4 @@ def test_device_capability_snapshot_copies_device_capabilities() -> None:
     assert snapshot.supports_podcast is False
     assert snapshot.music_dirs == 50
     assert snapshot.h264_level == "3.1"
+    assert snapshot.max_database_bytes == 64 * 1024 * 1024

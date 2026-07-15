@@ -1,13 +1,13 @@
 from pathlib import Path
 
-from app_core.jobs import ChapterSplitWorker
-from iTunesDB_Writer.mhit_writer import TrackInfo
-from SyncEngine.contracts import SyncAction, SyncItem, SyncPlan
-from SyncEngine.fingerprint_diff_engine import FingerprintDiffEngine
-from SyncEngine.mapping import MappingFile
-from SyncEngine.pc_library import PCTrack
-from SyncEngine.sync_executor import SyncExecutor, _SyncContext
-from SyncEngine.transcoder import TranscodeOptions
+from iopenpod.application.jobs import ChapterSplitWorker
+from iopenpod.itunesdb_writer.mhit_writer import TrackInfo
+from iopenpod.sync.contracts import SyncAction, SyncItem, SyncPlan
+from iopenpod.sync.fingerprint_diff_engine import FingerprintDiffEngine
+from iopenpod.sync.mapping import MappingFile
+from iopenpod.sync.pc_library import PCTrack
+from iopenpod.sync.sync_executor import SyncExecutor, _SyncContext
+from iopenpod.sync.transcoder import TranscodeOptions
 
 
 def _track(

@@ -6,9 +6,9 @@ from contextlib import contextmanager
 from pathlib import Path
 from uuid import uuid4
 
-from infrastructure import settings_runtime
-from infrastructure.settings_runtime import SettingsRuntime
-from infrastructure.settings_schema import AppSettings
+from iopenpod.infrastructure import settings_runtime
+from iopenpod.infrastructure.settings_runtime import SettingsRuntime
+from iopenpod.infrastructure.settings_schema import AppSettings
 
 
 @contextmanager
@@ -30,6 +30,7 @@ def test_device_settings_round_trip_preserves_device_write_workers(monkeypatch) 
         device_settings = AppSettings(
             sync_workers=6,
             device_write_workers=1,
+            always_encode_lossy=True,
             convert_wav_to_alac=False,
             media_folder="C:/Music",
             listenbrainz_token="lb-token",
@@ -39,6 +40,7 @@ def test_device_settings_round_trip_preserves_device_write_workers(monkeypatch) 
             lastfm_session_key="lf-session",
             lastfm_username="lf-user",
             backup_before_sync_mode="off",
+            normalize_tags_after_sync=True,
         )
         runtime.save_device_settings(
             str(tmp_path),
@@ -62,6 +64,7 @@ def test_device_settings_round_trip_preserves_device_write_workers(monkeypatch) 
 
     assert loaded.settings.sync_workers == 6
     assert loaded.settings.device_write_workers == 1
+    assert loaded.settings.always_encode_lossy is True
     assert loaded.settings.convert_wav_to_alac is False
     assert loaded.settings.listenbrainz_token == "lb-token"
     assert loaded.settings.listenbrainz_username == "lb-user"
@@ -71,12 +74,19 @@ def test_device_settings_round_trip_preserves_device_write_workers(monkeypatch) 
     assert loaded.settings.lastfm_username == "lf-user"
     assert loaded.settings.backup_before_sync_mode == "off"
     assert loaded.settings.backup_before_sync is False
+    assert loaded.settings.normalize_tags_after_sync is True
     assert raw["settings"]["lastfm_api_key"].startswith("xor1:")
     assert raw["settings"]["lastfm_api_secret"].startswith("xor1:")
     assert raw["settings"]["lastfm_session_key"].startswith("xor1:")
     assert raw["settings"]["lastfm_username"] == "lf-user"
     assert raw["settings"]["backup_before_sync_mode"] == "off"
+    assert raw["settings"]["normalize_tags_after_sync"] is True
+    assert raw["settings"]["always_encode_lossy"] is True
     assert raw["settings"]["convert_wav_to_alac"] is False
+
+
+def test_normalize_tags_after_sync_defaults_off() -> None:
+    assert AppSettings().normalize_tags_after_sync is False
 
 
 def test_device_settings_migrates_legacy_backup_false_to_ask(monkeypatch) -> None:
@@ -96,3 +106,36 @@ def test_device_settings_migrates_legacy_backup_false_to_ask(monkeypatch) -> Non
 
     assert loaded.settings.backup_before_sync_mode == "ask"
     assert loaded.settings.backup_before_sync is False
+
+
+def test_grid_item_size_is_global_only_and_ignores_legacy_device_value(
+    monkeypatch,
+) -> None:
+    with repo_temp_dir() as tmp_path:
+        monkeypatch.setattr(settings_runtime, "_clear_transcoder_caches", lambda: None)
+        settings_path = (
+            tmp_path / "iPod_Control" / "iOpenPod" / "settings.json"
+        )
+        settings_path.parent.mkdir(parents=True)
+        settings_path.write_text(
+            json.dumps(
+                {
+                    "use_global_settings": False,
+                    "settings": {
+                        "grid_item_size": "large",
+                        "sync_workers": 2,
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        runtime = SettingsRuntime()
+
+        loaded = runtime.load_device_settings(
+            str(tmp_path),
+            "",
+            AppSettings(grid_item_size="small", sync_workers=6),
+        )
+
+    assert loaded.settings.grid_item_size == "small"
+    assert loaded.settings.sync_workers == 2

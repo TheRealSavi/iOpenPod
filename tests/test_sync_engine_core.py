@@ -3,7 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any, cast
 
-from SyncEngine.core import (
+from iopenpod.sync.core import (
     EngineOperation,
     EngineOptions,
     EnginePlanContext,
@@ -13,11 +13,11 @@ from SyncEngine.core import (
     EngineTransactionPolicy,
     SyncEngine,
 )
-from SyncEngine.path_identity import stable_path_key
+from iopenpod.sync.path_identity import stable_path_key
 
 
 def test_quick_write_wraps_progress_and_copies_payloads(monkeypatch) -> None:
-    from SyncEngine import quick_writes
+    from iopenpod.sync import quick_writes
 
     captured: dict[str, Any] = {}
 
@@ -127,8 +127,8 @@ def test_engine_plan_context_accepts_structured_media_folder_entries(tmp_path) -
 
 
 def test_compute_plan_uses_normalized_plan_context(monkeypatch, tmp_path) -> None:
-    import SyncEngine.fingerprint_diff_engine as diff_module
-    import SyncEngine.pc_library as pc_library_module
+    import iopenpod.sync.fingerprint_diff_engine as diff_module
+    import iopenpod.sync.pc_library as pc_library_module
 
     captured: dict[str, Any] = {}
 
@@ -197,8 +197,8 @@ def test_compute_plan_uses_normalized_plan_context(monkeypatch, tmp_path) -> Non
 
 
 def test_execute_plan_builds_legacy_request_from_typed_options(monkeypatch, tmp_path) -> None:
-    import SyncEngine.mapping as mapping_module
-    import SyncEngine.sync_executor as sync_executor_module
+    import iopenpod.sync.mapping as mapping_module
+    import iopenpod.sync.sync_executor as sync_executor_module
 
     captured: dict[str, Any] = {}
 
@@ -307,7 +307,7 @@ def test_engine_progress_stage_classification_covers_current_pipeline() -> None:
 
 
 def test_run_reports_transaction_policy_diagnostic(monkeypatch) -> None:
-    from SyncEngine import quick_writes
+    from iopenpod.sync import quick_writes
 
     monkeypatch.setattr(
         quick_writes,

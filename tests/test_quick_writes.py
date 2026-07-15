@@ -5,18 +5,70 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any
 
-from iTunesDB_Shared.constants import MEDIA_TYPE_PODCAST
-from iTunesDB_Writer.mhit_writer import TrackInfo
-from iTunesDB_Writer.mhyp_writer import write_mhyp
-from SyncEngine import quick_writes
-from SyncEngine._playlist_builder import build_and_evaluate_playlists
-from SyncEngine._track_conversion import track_dict_to_info
+from iopenpod.itunesdb_shared.constants import MEDIA_TYPE_PODCAST
+from iopenpod.itunesdb_writer.mhit_writer import TrackInfo
+from iopenpod.itunesdb_writer.mhyp_writer import write_mhyp
+from iopenpod.sync import quick_writes
+from iopenpod.sync._playlist_builder import build_and_evaluate_playlists
+from iopenpod.sync._track_conversion import track_dict_to_info
 
 
 @dataclass
 class FakePlaylistInfo:
     playlist_id: int
     track_ids: list[int]
+
+
+def test_quick_write_keeps_numbered_album_artist_placeholder_group(
+    monkeypatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    monkeypatch.setattr(
+        quick_writes,
+        "_evaluate_tracks_and_playlists",
+        lambda **_kwargs: (
+            "iPod",
+            None,
+            [FakePlaylistInfo(1, [100])],
+            "iPod",
+            None,
+            [],
+            [],
+        ),
+    )
+
+    def fake_write(*_args, **kwargs) -> bool:
+        captured["track"] = kwargs["all_tracks"][0]
+        return True
+
+    monkeypatch.setattr(quick_writes, "_write_evaluated_database", fake_write)
+
+    result = quick_writes.write_cached_itunesdb(
+        "I:/",
+        tracks_data=[
+            {
+                "track_id": 10,
+                "db_track_id": 100,
+                "Title": "Video",
+                "Location": ":iPod_Control:Music:F00:VIDEO.m4v",
+                "Artist": "Unknown Artist 194",
+                "Album": "Unknown Album 175",
+                "Album Artist": "Unknown Artist 194",
+            }
+        ],
+        playlists_data=[
+            {"playlist_id": 1, "Title": "iPod", "master_flag": 1}
+        ],
+    )
+
+    track = captured["track"]
+    assert result.success
+    assert (track.artist, track.album, track.album_artist) == (
+        "Unknown Artist 194",
+        "Unknown Album 194",
+        "Unknown Artist 194",
+    )
 
 
 def test_write_cached_itunesdb_dumps_tracks_and_playlists_once(monkeypatch) -> None:

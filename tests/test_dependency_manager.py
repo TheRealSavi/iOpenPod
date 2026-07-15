@@ -2,7 +2,7 @@ import shutil
 import zipfile
 from pathlib import Path
 
-from SyncEngine import dependency_manager as deps
+from iopenpod.sync import dependency_manager as deps
 
 
 def _write_zip(path: Path, names: tuple[str, ...]) -> None:

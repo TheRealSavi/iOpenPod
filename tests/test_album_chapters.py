@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from SyncEngine.album_chapters import (
+from iopenpod.sync.album_chapters import (
     _build_ffmpeg_concat_command,
     _build_ffmpeg_split_command,
     build_chapter_lyrics,
@@ -8,12 +8,12 @@ from SyncEngine.album_chapters import (
     build_chapter_timeline,
     resolve_album_tracks,
 )
-from SyncEngine.fingerprint_diff_engine import SyncAction, SyncItem, SyncPlan
-from SyncEngine.mapping import MappingFile
-from SyncEngine.pc_library import PCLibrary
-from SyncEngine.review_selection import build_filtered_sync_plan
-from SyncEngine.sync_executor import SyncExecutor, _SyncContext
-from SyncEngine.transcoder import TranscodeOptions, TranscodeTarget
+from iopenpod.sync.fingerprint_diff_engine import SyncAction, SyncItem, SyncPlan
+from iopenpod.sync.mapping import MappingFile
+from iopenpod.sync.pc_library import PCLibrary
+from iopenpod.sync.review_selection import build_filtered_sync_plan
+from iopenpod.sync.sync_executor import SyncExecutor, _SyncContext
+from iopenpod.sync.transcoder import TranscodeOptions, TranscodeTarget
 
 
 def _track(
@@ -331,7 +331,7 @@ def test_pc_library_extracts_chapters_for_music_m4a(monkeypatch, tmp_path) -> No
     )
     monkeypatch.setattr(PCLibrary, "_compute_art_hash", lambda self, file_path: None)
     monkeypatch.setattr(
-        "PodcastManager.downloader.extract_chapters",
+        "iopenpod.podcasts.downloader.extract_chapters",
         lambda file_path: chapters,
     )
 
@@ -360,7 +360,7 @@ def test_pc_library_extracts_chapters_for_supported_non_aac_audio(monkeypatch, t
     )
     monkeypatch.setattr(PCLibrary, "_compute_art_hash", lambda self, file_path: None)
     monkeypatch.setattr(
-        "PodcastManager.downloader.extract_chapters",
+        "iopenpod.podcasts.downloader.extract_chapters",
         lambda file_path: chapters,
     )
 

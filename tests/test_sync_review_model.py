@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from app_core.sync_review_model import (
+from iopenpod.application.sync_review_model import (
     ACTION_ADD_TO_IPOD,
     ACTION_REMOVE_FROM_IPOD,
     ACTION_UPDATE_FILE,
@@ -11,8 +11,8 @@ from app_core.sync_review_model import (
     sync_action_key,
     sync_item_size_delta,
 )
-from GUI.widgets.syncReview import SyncTrackRow
-from SyncEngine.contracts import SyncAction, SyncItem
+from iopenpod.gui.widgets.syncReview import SyncTrackRow
+from iopenpod.sync.contracts import SyncAction, SyncItem
 
 
 def _enum_like(name: str) -> SimpleNamespace:

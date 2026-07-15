@@ -1,13 +1,13 @@
 from pathlib import Path
 from types import SimpleNamespace
 
-from SyncEngine.contracts import StorageSummary, SyncAction, SyncItem, SyncPlan
-from SyncEngine.fingerprint_diff_engine import FingerprintDiffEngine
-from SyncEngine.integrity import IntegrityReport
-from SyncEngine.mapping import MappingFile
-from SyncEngine.pc_library import PCLibrary, PCTrack
-from SyncEngine.photos import PhotoSyncItem, PhotoSyncPlan
-from SyncEngine.sync_executor import SyncExecutor, _SyncContext
+from iopenpod.sync.contracts import StorageSummary, SyncAction, SyncItem, SyncPlan
+from iopenpod.sync.fingerprint_diff_engine import FingerprintDiffEngine
+from iopenpod.sync.integrity import IntegrityReport
+from iopenpod.sync.mapping import MappingFile
+from iopenpod.sync.pc_library import PCLibrary, PCTrack
+from iopenpod.sync.photos import PhotoSyncItem, PhotoSyncPlan
+from iopenpod.sync.sync_executor import SyncExecutor, _SyncContext
 
 
 def _track(
@@ -116,15 +116,15 @@ def test_diff_engine_skips_photo_planning_when_device_lacks_photo_support(
             return iter(())
 
     monkeypatch.setattr(
-        "SyncEngine.fingerprint_diff_engine.is_fpcalc_available",
+        "iopenpod.sync.fingerprint_diff_engine.is_fpcalc_available",
         lambda _path="": True,
     )
     monkeypatch.setattr(
-        "SyncEngine.integrity.check_integrity",
+        "iopenpod.sync.integrity.check_integrity",
         lambda *_args, **_kwargs: IntegrityReport(),
     )
     monkeypatch.setattr(
-        "SyncEngine.audio_fingerprint.FingerprintCache.get_instance",
+        "iopenpod.sync.audio_fingerprint.FingerprintCache.get_instance",
         lambda *_args: SimpleNamespace(save=lambda: None),
     )
 
@@ -132,7 +132,7 @@ def test_diff_engine_skips_photo_planning_when_device_lacks_photo_support(
         raise AssertionError("photo DB should not be read")
 
     monkeypatch.setattr(
-        "SyncEngine.fingerprint_diff_engine.read_photo_db",
+        "iopenpod.sync.fingerprint_diff_engine.read_photo_db",
         fail_read_photo_db,
     )
 

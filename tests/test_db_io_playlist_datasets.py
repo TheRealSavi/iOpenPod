@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from SyncEngine._db_io import read_existing_database
+from iopenpod.sync._db_io import read_existing_database
 
 
 def test_read_existing_database_keeps_playlist_datasets_separate(
@@ -15,10 +15,10 @@ def test_read_existing_database_keeps_playlist_datasets_separate(
     itdb_path = itunes_dir / "iTunesDB"
     itdb_path.write_bytes(b"mhbd")
 
-    monkeypatch.setattr("ipod_device.resolve_itdb_path", lambda _path: str(itdb_path))
-    monkeypatch.setattr("iTunesDB_Parser.parse_itunesdb", lambda _path: {"raw": True})
+    monkeypatch.setattr("iopenpod.device.resolve_itdb_path", lambda _path: str(itdb_path))
+    monkeypatch.setattr("iopenpod.itunesdb_parser.parse_itunesdb", lambda _path: {"raw": True})
     monkeypatch.setattr(
-        "iTunesDB_Shared.extraction.extract_datasets",
+        "iopenpod.itunesdb_shared.extraction.extract_datasets",
         lambda _raw: {
             "mhlt": [],
             "mhlp": [
@@ -38,23 +38,23 @@ def test_read_existing_database_keeps_playlist_datasets_separate(
         },
     )
     monkeypatch.setattr(
-        "iTunesDB_Shared.extraction.extract_mhod_strings",
+        "iopenpod.itunesdb_shared.extraction.extract_mhod_strings",
         lambda _children: {},
     )
     monkeypatch.setattr(
-        "iTunesDB_Shared.extraction.extract_playlist_extras",
+        "iopenpod.itunesdb_shared.extraction.extract_playlist_extras",
         lambda _children: {},
     )
     monkeypatch.setattr(
-        "iTunesDB_Parser.artwork_links.hydrate_track_artwork_refs",
+        "iopenpod.itunesdb_parser.artwork_links.hydrate_track_artwork_refs",
         lambda _tracks, _itdb_path: None,
     )
     monkeypatch.setattr(
-        "iTunesDB_Parser.playcounts.parse_playcounts",
+        "iopenpod.itunesdb_parser.playcounts.parse_playcounts",
         lambda _path: None,
     )
     monkeypatch.setattr(
-        "iTunesDB_Parser.otg.load_otg_playlists",
+        "iopenpod.itunesdb_parser.otg.load_otg_playlists",
         lambda _itunes_dir, _tracks: [],
     )
 

@@ -10,7 +10,7 @@ paired with an iPod's BSD whole-disk name.
 
 from __future__ import annotations
 
-from ipod_device.scanner import _parse_macos_ioreg_bsd_serials
+from iopenpod.device.scanner import _parse_macos_ioreg_bsd_serials
 
 _SINGLE_IPOD = """\
 +-o iPod@01130000  <class IOUSBHostDevice, ...>

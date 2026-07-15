@@ -1,4 +1,4 @@
-from infrastructure.media_folders import (
+from iopenpod.infrastructure.media_folders import (
     media_folder_entries_to_settings,
     media_folder_paths,
 )

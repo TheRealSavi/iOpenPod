@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from GUI.widgets.podcastStates import PodcastStatePanel
+from iopenpod.gui.widgets.podcastStates import PodcastStatePanel
 
 
 def test_podcast_state_error_message_reserves_wrapped_height(qtbot) -> None:

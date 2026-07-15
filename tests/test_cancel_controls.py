@@ -1,8 +1,8 @@
 from types import SimpleNamespace
 from typing import Any, cast
 
-from GUI.widgets.backupBrowser import BackupBrowserWidget
-from GUI.widgets.devicePicker import DevicePickerDialog
+from iopenpod.gui.widgets.backupBrowser import BackupBrowserWidget
+from iopenpod.gui.widgets.devicePicker import DevicePickerDialog
 
 
 class _FakeButton:

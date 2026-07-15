@@ -1,0 +1,1028 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>iOpenPod Install Help and Troubleshooting</title>
+    <meta name="description" content="Friendly iOpenPod install help for Windows, macOS, and Linux, including native builds, uv, pipx, helper tools, and common troubleshooting.">
+    <link rel="canonical" href="https://therealsavi.github.io/iOpenPod/install-help.html">
+    <style>
+        :root {
+            --bg: #0d1117;
+            --surface: #161b22;
+            --surface-2: #1f2630;
+            --surface-3: #27313d;
+            --border: rgba(148, 163, 184, 0.16);
+            --border-strong: rgba(148, 163, 184, 0.28);
+            --text: #edf2f7;
+            --text-2: #b6c2d1;
+            --text-3: #8190a3;
+            --accent: #58a6ff;
+            --accent-2: #5eead4;
+            --success: #4ade80;
+            --warning: #facc15;
+            --danger: #fb7185;
+            --code-bg: #080c12;
+            --max: 1180px;
+        }
+
+        * { box-sizing: border-box; }
+
+        html { scroll-behavior: smooth; }
+
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            line-height: 1.55;
+        }
+
+        a { color: var(--accent); text-decoration: none; }
+        a:hover { color: var(--accent); text-decoration: underline; }
+
+        code, kbd {
+            color: #bfdbfe;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+            font-size: 0.92em;
+        }
+
+        kbd {
+            padding: 1px 6px;
+            border: 1px solid var(--border-strong);
+            border-radius: 5px;
+            background: var(--surface-2);
+            color: var(--text);
+        }
+
+        pre {
+            margin: 8px 0 0;
+            padding: 13px 14px;
+            overflow-x: auto;
+            background: var(--code-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            font-size: 0.88rem;
+            line-height: 1.5;
+        }
+
+        pre code { color: inherit; font-size: inherit; }
+
+        .wrap {
+            width: min(var(--max), 100%);
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        .hero {
+            padding: 32px 0 26px;
+            border-bottom: 1px solid var(--border);
+            background: linear-gradient(180deg, rgba(88, 166, 255, 0.10), rgba(13, 17, 23, 0));
+        }
+
+        .back-link {
+            display: inline-flex;
+            margin-bottom: 22px;
+            color: var(--text-2);
+            font-size: 0.94rem;
+        }
+
+        h1 {
+            max-width: 760px;
+            margin: 0 0 10px;
+            font-size: 2.55rem;
+            line-height: 1.08;
+            letter-spacing: 0;
+        }
+
+        .lead {
+            max-width: 760px;
+            margin: 0;
+            color: var(--text-2);
+            font-size: 1.05rem;
+        }
+
+        .page {
+            display: grid;
+            grid-template-columns: 236px minmax(0, 1fr);
+            gap: 34px;
+            padding-top: 26px;
+            padding-bottom: 58px;
+        }
+
+        .sidebar {
+            align-self: start;
+            position: sticky;
+            top: 18px;
+        }
+
+        .sidebar-inner {
+            padding: 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: rgba(22, 27, 34, 0.92);
+        }
+
+        .sidebar-title {
+            margin: 0 0 8px;
+            padding: 0 8px;
+            color: var(--text-3);
+            font-size: 0.78rem;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .side-nav {
+            display: grid;
+            gap: 4px;
+        }
+
+        .side-nav a {
+            display: block;
+            padding: 8px 9px;
+            border-radius: 7px;
+            color: var(--text-2);
+            font-size: 0.93rem;
+            font-weight: 650;
+        }
+
+        .side-nav a:hover {
+            background: var(--surface-2);
+            color: var(--text);
+            text-decoration: none;
+        }
+
+        main {
+            min-width: 0;
+        }
+
+        section {
+            margin-bottom: 30px;
+            padding-bottom: 30px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        section:last-child { border-bottom: 0; }
+
+        h2 {
+            margin: 0 0 10px;
+            font-size: 1.55rem;
+            line-height: 1.18;
+            letter-spacing: 0;
+        }
+
+        h3 {
+            margin: 20px 0 8px;
+            font-size: 1.02rem;
+            line-height: 1.3;
+            letter-spacing: 0;
+        }
+
+        p {
+            max-width: 760px;
+            margin: 0 0 11px;
+            color: var(--text-2);
+        }
+
+        ul, ol {
+            margin: 8px 0 0;
+            padding-left: 21px;
+            color: var(--text-2);
+        }
+
+        li { margin: 6px 0; }
+        strong { color: var(--text); }
+
+        .section-kicker {
+            margin-bottom: 14px;
+            color: var(--text-3);
+        }
+
+        .option-grid,
+        .two-grid,
+        .tool-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 14px;
+            margin-top: 16px;
+        }
+
+        .two-grid,
+        .tool-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .choice,
+        .tool-card,
+        .callout,
+        .help-item {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--surface);
+        }
+
+        .choice,
+        .tool-card,
+        .callout {
+            padding: 15px;
+        }
+
+        .choice {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            min-height: 100%;
+        }
+
+        .choice > * {
+            margin-top: 0;
+            margin-bottom: 0;
+        }
+
+        .choice-actions {
+            margin-top: auto;
+        }
+
+        .choice-actions .button-row {
+            margin-top: 12px;
+        }
+
+        .tool-card {
+            display: grid;
+            align-content: start;
+            gap: 10px;
+        }
+
+        .tool-card > * {
+            margin-top: 0;
+            margin-bottom: 0;
+        }
+
+        .choice h3,
+        .tool-card h3 {
+            margin-top: 0;
+            margin-bottom: 0;
+        }
+
+        .choice p:last-child,
+        .tool-card p:last-child,
+        .callout p:last-child {
+            margin-bottom: 0;
+        }
+
+        .tag {
+            display: inline-flex;
+            align-self: flex-start;
+            justify-self: start;
+            width: fit-content;
+            max-width: max-content;
+            padding: 3px 8px;
+            border: 1px solid var(--border-strong);
+            border-radius: 999px;
+            color: var(--accent-2);
+            font-size: 0.7rem;
+            font-weight: 800;
+            letter-spacing: 0;
+            line-height: 1.2;
+            white-space: nowrap;
+        }
+
+        .tag.secondary { color: var(--text-2); }
+        .tag.warning { color: var(--warning); }
+
+        .button-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 12px;
+        }
+
+        .button-link {
+            display: inline-flex;
+            align-items: center;
+            min-height: 36px;
+            padding: 8px 13px;
+            border: 1px solid var(--border-strong);
+            border-radius: 8px;
+            background: var(--surface-2);
+            color: var(--text);
+            font-size: 0.9rem;
+            font-weight: 750;
+        }
+
+        .button-link.primary {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: #06111f;
+        }
+
+        .button-link:hover {
+            background: var(--surface-3);
+            color: var(--text);
+            text-decoration: none;
+        }
+
+        .button-link.primary:hover {
+            background: #8bc2ff;
+            color: #06111f;
+        }
+
+        .callout {
+            margin: 14px 0 0;
+            border-left: 4px solid var(--accent);
+            background: rgba(31, 38, 48, 0.7);
+        }
+
+        .callout.warning { border-left-color: var(--warning); }
+        .callout.danger { border-left-color: var(--danger); }
+
+        .mini-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 14px;
+            overflow: hidden;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+
+        .mini-table th,
+        .mini-table td {
+            padding: 11px 12px;
+            border-bottom: 1px solid var(--border);
+            text-align: left;
+            vertical-align: top;
+        }
+
+        .mini-table th {
+            color: var(--text);
+            background: var(--surface-2);
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+
+        .mini-table td { color: var(--text-2); }
+        .mini-table tr:last-child td { border-bottom: 0; }
+
+        .details-list {
+            display: grid;
+            gap: 10px;
+            margin-top: 14px;
+        }
+
+        .tool-grid + .help-item,
+        .help-item + .help-item {
+            margin-top: 12px;
+        }
+
+        .help-item {
+            overflow: hidden;
+        }
+
+        .help-item summary {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+            padding: 14px 15px;
+            cursor: pointer;
+            color: var(--text);
+            font-weight: 800;
+            list-style: none;
+        }
+
+        .help-item summary span {
+            min-width: 0;
+        }
+
+        .help-item summary::-webkit-details-marker { display: none; }
+
+        .help-item summary::after {
+            content: "+";
+            width: 24px;
+            height: 24px;
+            flex: 0 0 24px;
+            border-radius: 7px;
+            background: var(--surface-2);
+            color: var(--text-2);
+            text-align: center;
+            line-height: 24px;
+            font-weight: 900;
+        }
+
+        .help-item[open] summary {
+            border-bottom: 1px solid var(--border);
+            background: var(--surface-2);
+        }
+
+        .help-item[open] summary::after { content: "-"; }
+
+        .help-body {
+            display: grid;
+            gap: 12px;
+            padding: 14px 15px 15px;
+        }
+
+        .help-body > * {
+            margin-top: 0;
+            margin-bottom: 0;
+        }
+
+        .command-group {
+            display: grid;
+            gap: 6px;
+        }
+
+        .command-title {
+            color: var(--text);
+            font-size: 0.9rem;
+            font-weight: 800;
+        }
+
+        .step-gallery {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+            margin: 14px 0 0;
+        }
+
+        .step-card {
+            margin: 0;
+            overflow: hidden;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--surface);
+        }
+
+        .step-card.wide { grid-column: 1 / -1; }
+
+        .step-card img {
+            display: block;
+            width: 100%;
+            height: auto;
+            background: #f8fafc;
+        }
+
+        .step-card figcaption {
+            padding: 10px 12px;
+            color: var(--text-2);
+            font-size: 0.88rem;
+            line-height: 1.4;
+        }
+
+        .muted { color: var(--text-3); }
+        .good { color: var(--success); font-weight: 800; }
+
+        footer {
+            padding: 26px 0 42px;
+            border-top: 1px solid var(--border);
+            color: var(--text-3);
+            font-size: 0.9rem;
+        }
+
+        @media (max-width: 900px) {
+            .page {
+                grid-template-columns: 1fr;
+                gap: 20px;
+            }
+
+            .sidebar {
+                position: static;
+            }
+
+            .side-nav {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .option-grid,
+            .two-grid,
+            .tool-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .wrap { padding: 0 18px; }
+            .hero { padding-top: 26px; }
+            h1 { font-size: 2rem; }
+            .side-nav { grid-template-columns: 1fr; }
+            .step-gallery { grid-template-columns: 1fr; }
+            .step-card.wide { grid-column: auto; }
+            .mini-table, .mini-table thead, .mini-table tbody, .mini-table th, .mini-table td, .mini-table tr {
+                display: block;
+            }
+            .mini-table thead { display: none; }
+            .mini-table tr { border-bottom: 1px solid var(--border); }
+            .mini-table tr:last-child { border-bottom: 0; }
+            .mini-table td {
+                border-bottom: 0;
+                padding: 9px 11px;
+            }
+            .mini-table td::before {
+                content: attr(data-label);
+                display: block;
+                margin-bottom: 2px;
+                color: var(--text);
+                font-size: 0.76rem;
+                font-weight: 800;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="hero">
+        <div class="wrap">
+            <a class="back-link" href="./">Back to iOpenPod</a>
+            <h1>Install Help and Troubleshooting</h1>
+            <p class="lead">Pick the install path that matches your setup. Use the fixes below only when something goes wrong.</p>
+            <div class="button-row">
+                <a class="button-link" href="#start">Choose an install</a>
+                <a class="button-link" href="#fixes">Find a fix</a>
+            </div>
+        </div>
+    </header>
+
+    <div class="wrap page">
+        <aside class="sidebar" aria-label="Help navigation">
+            <div class="sidebar-inner">
+                <p class="sidebar-title">On this page</p>
+                <nav class="side-nav">
+                    <a href="#start">Start here</a>
+                    <a href="#native">Native apps</a>
+                    <a href="#python">uv and pipx</a>
+                    <a href="#tools">Helper tools</a>
+                    <a href="#fixes">Troubleshooting</a>
+                    <a href="#report">Bug report</a>
+                    <a href="#links">Reference links</a>
+                </nav>
+            </div>
+        </aside>
+
+        <main>
+            <section id="start">
+                <h2>Start Here</h2>
+                <p class="section-kicker">Most users only need one of these three paths.</p>
+
+                <div class="option-grid">
+                    <article class="choice">
+                        <span class="tag">Best</span>
+                        <h3>Use uv</h3>
+                        <p>Best if you can copy terminal commands. uv keeps iOpenPod isolated and can manage Python for you.</p>
+                        <div class="choice-actions">
+                            <pre><code>uv tool install iopenpod
+iopenpod</code></pre>
+                            <div class="button-row">
+                                <a class="button-link" href="#uv-install">uv steps</a>
+                            </div>
+                        </div>
+                    </article>
+
+                    <article class="choice">
+                        <h3>Use pipx</h3>
+                        <p>Best if Python 3.11 or newer is already installed. pipx keeps app installs separate.</p>
+                        <div class="choice-actions">
+                            <pre><code>pipx install iopenpod
+iopenpod</code></pre>
+                            <div class="button-row">
+                                <a class="button-link" href="#pipx-install">pipx steps</a>
+                            </div>
+                        </div>
+                    </article>
+
+                    <article class="choice">
+                        <span class="tag warning">No Python</span>
+                        <h3>Use a native build</h3>
+                        <p>Best if you want a downloaded app. Native builds may show security prompts because they are not fully signed yet.</p>
+                        <div class="choice-actions">
+                            <div class="button-row">
+                                <a class="button-link" href="#native">Native steps</a>
+                            </div>
+                        </div>
+                    </article>
+                </div>
+                <div class="callout">
+                    <p>Already installed iOpenPod more than one way? Use the <a href="#multiple-installs">cleanup steps</a> before reinstalling.</p>
+                </div>
+            </section>
+
+            <section id="native">
+                <h2>Native Apps</h2>
+                <p class="section-kicker">Download native files from the official GitHub release page, then open the dropdown for your platform.</p>
+                <div class="button-row">
+                    <a class="button-link primary" href="https://github.com/TheRealSavi/iOpenPod/releases/latest">Latest release</a>
+                </div>
+
+                <div class="details-list">
+                    <details class="help-item">
+                        <summary>Windows native app</summary>
+                        <div class="help-body">
+                            <ol>
+                                <li>Download <code>iOpenPod-Windows.zip</code>.</li>
+                                <li>Right-click the zip and choose <strong>Extract All</strong>.</li>
+                                <li>Open the extracted folder.</li>
+                                <li>Double-click <code>iOpenPod.exe</code>.</li>
+                            </ol>
+                            <div class="callout warning">
+                                <p>If SmartScreen appears, check that the file came from the official iOpenPod GitHub release.</p>
+                                <p>Then choose <strong>More info</strong>, then <strong>Run anyway</strong>.</p>
+                            </div>
+                        </div>
+                    </details>
+
+                    <details class="help-item">
+                        <summary>macOS native app and security prompt</summary>
+                        <div class="help-body">
+                            <ol>
+                                <li>Download <code>iOpenPod-macOS.zip</code>.</li>
+                                <li>Open the zip.</li>
+                                <li>Move <code>iOpenPod.app</code> to Applications if you want it installed there.</li>
+                                <li>Open <code>iOpenPod.app</code>.</li>
+                            </ol>
+                            <div class="callout warning">
+                                <p>The macOS app is not notarized yet. Gatekeeper may block the first launch.</p>
+                                <p>Only continue if the file came from the official GitHub release.</p>
+                            </div>
+
+                            <h3 id="macos-system-settings">Allow it in System Settings</h3>
+                            <ol>
+                                <li>Open <code>iOpenPod.app</code> from Finder.</li>
+                                <li>When macOS blocks it, choose <strong>Done</strong>.</li>
+                                <li>Open <strong>System Settings</strong>.</li>
+                                <li>Go to <strong>Privacy &amp; Security</strong>.</li>
+                                <li>Choose <strong>Open Anyway</strong> next to the iOpenPod message.</li>
+                                <li>Confirm with Touch ID or an administrator password.</li>
+                            </ol>
+
+                            <div class="step-gallery" aria-label="macOS security approval screenshots">
+                                <figure class="step-card wide">
+                                    <img src="MacOS_Install_IMGS/macOS_Step1.png" width="1840" height="1368" loading="lazy" alt="Finder window showing iOpenPod.app selected before first launch">
+                                    <figcaption>1. Open <code>iOpenPod.app</code> from Finder.</figcaption>
+                                </figure>
+                                <figure class="step-card">
+                                    <img src="MacOS_Install_IMGS/macOS_Step2.png" width="520" height="598" loading="lazy" alt="macOS warning dialog saying iOpenPod.app was not opened and showing Done">
+                                    <figcaption>2. Choose <strong>Done</strong>.</figcaption>
+                                </figure>
+                                <figure class="step-card wide">
+                                    <img src="MacOS_Install_IMGS/macOS_Step3.png" width="1446" height="1632" loading="lazy" alt="Privacy and Security settings showing iOpenPod was blocked and an Open Anyway button">
+                                    <figcaption>3. Choose <strong>Open Anyway</strong> in Privacy &amp; Security.</figcaption>
+                                </figure>
+                                <figure class="step-card">
+                                    <img src="MacOS_Install_IMGS/macOS_Step4.png" width="520" height="700" loading="lazy" alt="macOS confirmation dialog asking whether to open iOpenPod.app and showing Open Anyway">
+                                    <figcaption>4. Confirm with <strong>Open Anyway</strong>.</figcaption>
+                                </figure>
+                                <figure class="step-card">
+                                    <img src="MacOS_Install_IMGS/macOS_Step5.png" width="520" height="692" loading="lazy" alt="macOS authentication dialog asking for Touch ID or administrator password">
+                                    <figcaption>5. Use Touch ID or enter an admin password.</figcaption>
+                                </figure>
+                            </div>
+                        </div>
+                    </details>
+
+                    <details class="help-item">
+                        <summary>Linux AppImage</summary>
+                        <div class="help-body">
+                            <ol>
+                                <li>Download <code>iOpenPod-Linux-x86_64.AppImage</code>.</li>
+                                <li>Open a terminal in the download folder.</li>
+                                <li>Run the commands below.</li>
+                            </ol>
+                            <pre><code>chmod a+x ./iOpenPod-Linux-x86_64.AppImage
+./iOpenPod-Linux-x86_64.AppImage</code></pre>
+                            <p>You can also mark the file executable in your file manager, then double-click it.</p>
+                        </div>
+                    </details>
+
+                    <details class="help-item">
+                        <summary>Linux tarball or Flatpak</summary>
+                        <div class="help-body">
+                            <h3>Tarball</h3>
+                            <pre><code>tar -xzf iOpenPod-Linux.tar.gz
+cd iOpenPod
+./iOpenPod</code></pre>
+                            <h3>Flatpak bundle</h3>
+                            <pre><code>flatpak install --user ./iOpenPod-Linux.flatpak
+flatpak run io.github.therealsavi.iOpenPod</code></pre>
+                            <p>Flatpak is only available when the release includes <code>iOpenPod-Linux.flatpak</code>.</p>
+                        </div>
+                    </details>
+                </div>
+            </section>
+
+            <section id="python">
+                <h2>uv and pipx Installs</h2>
+                <p class="section-kicker">Use these if you prefer an install that updates from PyPI.</p>
+
+                <div class="two-grid">
+                    <article id="uv-install" class="tool-card">
+                        <span class="tag">Best</span>
+                        <h3>Install with uv</h3>
+                        <p>If uv is not installed, follow the official uv install guide. Then reopen your terminal.</p>
+                        <p><a href="https://docs.astral.sh/uv/getting-started/installation/" target="_blank" rel="noopener noreferrer">Official uv installation instructions</a></p>
+                        <div class="command-group">
+                            <div class="command-title">Install and run</div>
+                            <pre><code>uv tool install iopenpod
+iopenpod</code></pre>
+                        </div>
+                        <div class="command-group">
+                            <div class="command-title">Update or remove</div>
+                            <pre><code>uv tool upgrade iopenpod
+uv tool uninstall iopenpod</code></pre>
+                        </div>
+                    </article>
+
+                    <article id="pipx-install" class="tool-card">
+                        <h3>Install with pipx</h3>
+                        <p>If pipx is not installed, follow the official pipx guide. Then reopen your terminal.</p>
+                        <p><a href="https://pipx.pypa.io/stable/how-to/install-pipx/" target="_blank" rel="noopener noreferrer">Official pipx installation instructions</a></p>
+                        <div class="command-group">
+                            <div class="command-title">Install and run</div>
+                            <pre><code>pipx install iopenpod
+iopenpod</code></pre>
+                        </div>
+                        <div class="command-group">
+                            <div class="command-title">Update or remove</div>
+                            <pre><code>pipx upgrade iopenpod
+pipx uninstall iopenpod</code></pre>
+                        </div>
+                    </article>
+                </div>
+            </section>
+
+            <section id="tools">
+                <h2>Helper Tools</h2>
+                <p class="section-kicker">iOpenPod can open without these, but full sync needs them.</p>
+
+                <div class="tool-grid">
+                    <article class="tool-card">
+                        <h3>FFmpeg and ffprobe</h3>
+                        <p>Needed for media checks and audio/video conversion.</p>
+                        <pre><code>ffmpeg -version
+ffprobe -version</code></pre>
+                    </article>
+
+                    <article class="tool-card">
+                        <h3>Chromaprint fpcalc</h3>
+                        <p>Needed for acoustic fingerprints during matching.</p>
+                        <pre><code>fpcalc -version</code></pre>
+                    </article>
+                </div>
+
+                <details class="help-item">
+                    <summary>Common helper tool install commands</summary>
+                    <div class="help-body">
+                        <table class="mini-table">
+                            <thead>
+                                <tr><th>Platform</th><th>FFmpeg</th><th>Chromaprint / fpcalc</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td data-label="Platform">Windows</td>
+                                    <td data-label="FFmpeg">Use the <a href="https://ffmpeg.org/download.html">FFmpeg download page</a>, WinGet, Scoop, or Chocolatey.</td>
+                                    <td data-label="Chromaprint / fpcalc">Download <code>chromaprint-fpcalc</code> from <a href="https://acoustid.org/chromaprint">AcoustID Chromaprint</a>.</td>
+                                </tr>
+                                <tr>
+                                    <td data-label="Platform">macOS</td>
+                                    <td data-label="FFmpeg"><code>brew install ffmpeg</code></td>
+                                    <td data-label="Chromaprint / fpcalc"><code>brew install chromaprint</code></td>
+                                </tr>
+                                <tr>
+                                    <td data-label="Platform">Ubuntu / Debian</td>
+                                    <td data-label="FFmpeg"><code>sudo apt install ffmpeg</code></td>
+                                    <td data-label="Chromaprint / fpcalc"><code>sudo apt install libchromaprint-tools</code></td>
+                                </tr>
+                                <tr>
+                                    <td data-label="Platform">Fedora / RPM</td>
+                                    <td data-label="FFmpeg"><code>sudo dnf install ffmpeg</code></td>
+                                    <td data-label="Chromaprint / fpcalc"><code>sudo dnf install chromaprint-tools</code></td>
+                                </tr>
+                                <tr>
+                                    <td data-label="Platform">Arch Linux</td>
+                                    <td data-label="FFmpeg"><code>sudo pacman -S ffmpeg</code></td>
+                                    <td data-label="Chromaprint / fpcalc"><code>sudo pacman -S chromaprint</code></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </details>
+
+                <details class="help-item">
+                    <summary>Linux Qt desktop libraries</summary>
+                    <div class="help-body">
+                        <p>Install these if Linux reports an <code>xcb</code> error or crashes when pressing <kbd>Ctrl</kbd>, <kbd>Alt</kbd>, or <kbd>Shift</kbd>.</p>
+                        <div class="command-group">
+                            <div class="command-title">Debian / Ubuntu</div>
+                            <pre><code>sudo apt install libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-xkb1 libxkbcommon0 libxkbcommon-x11-0</code></pre>
+                        </div>
+                        <div class="command-group">
+                            <div class="command-title">Fedora / RPM-based Linux</div>
+                            <pre><code>sudo dnf install libxcb xcb-util-cursor xcb-util-wm xcb-util-image xcb-util-keysyms xcb-util-renderutil libxkbcommon libxkbcommon-x11</code></pre>
+                        </div>
+                        <div class="command-group">
+                            <div class="command-title">Arch Linux</div>
+                            <pre><code>sudo pacman -S libxcb xcb-util-cursor xcb-util-wm xcb-util-image xcb-util-keysyms xcb-util-renderutil libxkbcommon libxkbcommon-x11</code></pre>
+                        </div>
+                        <p>If names differ, search your distro for <code>xcb-xkb</code>, <code>xkbcommon</code>, and <code>xkbcommon-x11</code>.</p>
+                    </div>
+                </details>
+            </section>
+
+            <section id="fixes">
+                <h2>Troubleshooting</h2>
+                <p class="section-kicker">Open the item that matches the problem you see.</p>
+
+                <div class="details-list">
+                    <details class="help-item">
+                        <summary><span><code>iopenpod</code> is not recognized</span></summary>
+                        <div class="help-body">
+                            <p>Your terminal cannot find the command yet.</p>
+                            <pre><code># uv installs
+uv tool update-shell
+
+# pipx installs
+pipx ensurepath</code></pre>
+                            <p>Close and reopen the terminal. On Windows, sign out and back in if PATH still has not updated.</p>
+                        </div>
+                    </details>
+
+                    <details class="help-item">
+                        <summary><span><code>pipx install iopenpod</code> says Python is too old</span></summary>
+                        <div class="help-body">
+                            <p>iOpenPod requires Python 3.11 or newer.</p>
+                            <pre><code>pipx install --python python3.11 iopenpod</code></pre>
+                            <p>On Windows, list installed Python versions with:</p>
+                            <pre><code>py -0p</code></pre>
+                        </div>
+                    </details>
+
+                    <details class="help-item">
+                        <summary><span><code>uv tool install iopenpod</code> cannot download Python</span></summary>
+                        <div class="help-body">
+                            <p>Managed computers may block downloads, proxies, or TLS inspection.</p>
+                            <p>Try another network, install Python 3.11 or newer yourself, or use a native build.</p>
+                        </div>
+                    </details>
+
+                    <details class="help-item">
+                        <summary>Windows says the app is unsafe</summary>
+                        <div class="help-body">
+                            <p>Unsigned open-source apps can trigger SmartScreen.</p>
+                            <p>Only continue if the file came from the official iOpenPod GitHub release.</p>
+                            <p>Choose <strong>More info</strong>, then <strong>Run anyway</strong>.</p>
+                        </div>
+                    </details>
+
+                    <details class="help-item">
+                        <summary>macOS says the developer cannot be verified</summary>
+                        <div class="help-body">
+                            <p>Open <strong>System Settings</strong>, then go to <strong>Privacy &amp; Security</strong>.</p>
+                            <p>Choose <strong>Open Anyway</strong> next to the iOpenPod message.</p>
+                            <p>If <strong>Open Anyway</strong> does not appear, Control-click <code>iOpenPod.app</code>, choose <strong>Open</strong>, then confirm.</p>
+                        </div>
+                    </details>
+
+                    <details class="help-item">
+                        <summary>Linux says the Qt xcb platform plugin could not load</summary>
+                        <div class="help-body">
+                            <p>A Qt desktop library is missing. On Debian or Ubuntu, start with:</p>
+                            <pre><code>sudo apt install libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-xkb1 libxkbcommon0 libxkbcommon-x11-0</code></pre>
+                            <p>On a Wayland-only desktop, you can also try:</p>
+                            <pre><code>QT_QPA_PLATFORM=wayland iopenpod</code></pre>
+                        </div>
+                    </details>
+
+                    <details class="help-item">
+                        <summary>Linux build crashes when pressing Ctrl, Alt, or Shift</summary>
+                        <div class="help-body">
+                            <p>This points to Qt's XKeyboard libraries.</p>
+                            <p>Install the Linux Qt libraries above, especially <code>libxcb-xkb1</code>, <code>libxkbcommon0</code>, and <code>libxkbcommon-x11-0</code>.</p>
+                            <p>If you use a native Linux build, download a newer iOpenPod release after those libraries were bundled.</p>
+                        </div>
+                    </details>
+
+                    <details class="help-item">
+                        <summary>Linux AppImage reports a FUSE error</summary>
+                        <div class="help-body">
+                            <pre><code># Ubuntu / Debian
+sudo apt install libfuse2
+
+# Ubuntu 24.04 and newer may use this name
+sudo apt install libfuse2t64
+
+# Arch Linux
+sudo pacman -S fuse2</code></pre>
+                            <p>If FUSE still fails, use the tarball, Flatpak bundle, or uv install.</p>
+                        </div>
+                    </details>
+
+                    <details class="help-item">
+                        <summary>Linux says the iPod is read-only or permission denied</summary>
+                        <div class="help-body">
+                            <p>Do not sync until a small write test works.</p>
+                            <p>Find your iPod path. It often looks like <code>/run/media/YOURNAME/IPOD</code> or <code>/media/YOURNAME/IPOD</code>.</p>
+
+                            <h3>Check the mount</h3>
+                            <pre><code>findmnt -T "/path/to/iPod"
+lsblk -f</code></pre>
+                            <p>In <code>findmnt</code>, <code>ro</code> means read-only. <code>rw</code> means read-write.</p>
+
+                            <h3>Safe write test</h3>
+                            <pre><code>touch "/path/to/iPod/.iopenpod-write-test"
+rm "/path/to/iPod/.iopenpod-write-test"</code></pre>
+                            <p>If both commands work, iOpenPod should be able to write.</p>
+
+                            <h3>If it mounted read-only</h3>
+                            <pre><code>sudo mount -o remount,rw "/path/to/iPod"</code></pre>
+                            <p>Run the write test again after remounting.</p>
+
+                            <h3>If FAT32 needs repair</h3>
+                            <div class="callout warning">
+                                <p>Replace <code>/dev/sdXN</code> with the iPod partition. Using the wrong disk can damage data.</p>
+                                <p>Do not run <code>fsck</code> while the iPod is mounted.</p>
+                            </div>
+                            <pre><code>sudo umount "/path/to/iPod"
+sudo fsck.vfat -a /dev/sdXN</code></pre>
+                            <p>Reconnect the iPod, then run the write test again.</p>
+
+                            <h3>If it is Mac-formatted</h3>
+                            <p>If <code>lsblk -f</code> shows <code>hfsplus</code>, Linux write support is limited.</p>
+                            <p>Use macOS, or back up and restore the iPod as Windows/FAT32 before using it mainly on Linux.</p>
+
+                            <h3>If root owns the mount</h3>
+                            <p>Unmount, unplug, and reconnect from your desktop file manager.</p>
+                            <p>Advanced manual mount:</p>
+                            <pre><code>sudo umount "/path/to/iPod"
+sudo mkdir -p /mnt/ipod
+sudo mount -o rw,uid=$(id -u),gid=$(id -g),umask=022 /dev/sdXN /mnt/ipod</code></pre>
+                        </div>
+                    </details>
+
+                    <details class="help-item">
+                        <summary>iOpenPod opens but does not find my iPod</summary>
+                        <div class="help-body">
+                            <ul>
+                                <li>Make sure the iPod appears in Finder, File Explorer, or your Linux file manager.</li>
+                                <li>Try another USB cable or port.</li>
+                                <li>Close iTunes, Music, Finder sync windows, or other iPod tools.</li>
+                                <li>On Linux, make sure the safe write test succeeds.</li>
+                            </ul>
+                        </div>
+                    </details>
+
+                    <details class="help-item">
+                        <summary>FFmpeg, ffprobe, or fpcalc is missing</summary>
+                        <div class="help-body">
+                            <p>Install the missing helper tool, restart iOpenPod, then check:</p>
+                            <pre><code>ffmpeg -version
+ffprobe -version
+fpcalc -version</code></pre>
+                        </div>
+                    </details>
+
+                    <details class="help-item" id="multiple-installs">
+                        <summary>I installed iOpenPod more than one way</summary>
+                        <div class="help-body">
+                            <p>Pick one install method and remove the others.</p>
+                            <pre><code>uv tool uninstall iopenpod
+pipx uninstall iopenpod
+python -m pip uninstall iopenpod</code></pre>
+                            <p>Then reinstall with one method, preferably uv or pipx.</p>
+                        </div>
+                    </details>
+                </div>
+            </section>
+
+            <section id="report">
+                <h2>Bug Report</h2>
+                <p class="section-kicker">If you encounter a bug, please submit a report!</p>
+                <ul>
+                    <li>Please include <code>iopenpod.log</code>. In iOpenPod, open <strong>Settings &gt; Storage</strong>, then click <strong>Open</strong> next to <strong>Log Location</strong>.</li>
+                </ul>
+                <div class="button-row">
+                    <a class="button-link primary" href="https://github.com/TheRealSavi/iOpenPod/issues/new/choose">Open a GitHub issue</a>
+                </div>
+            </section>
+
+            <section id="links">
+                <h2>Reference Links</h2>
+                <ul>
+                    <li><a href="https://docs.astral.sh/uv/getting-started/installation/" target="_blank" rel="noopener noreferrer">Official uv installation docs</a></li>
+                    <li><a href="https://pipx.pypa.io/stable/how-to/install-pipx/" target="_blank" rel="noopener noreferrer">Official pipx installation docs</a></li>
+                    <li><a href="https://docs.appimage.org/user-guide/troubleshooting/fuse.html">Official AppImage FUSE troubleshooting docs</a></li>
+                    <li><a href="https://ffmpeg.org/download.html">Official FFmpeg download page</a></li>
+                    <li><a href="https://acoustid.org/chromaprint">Official Chromaprint download page</a></li>
+                </ul>
+            </section>
+        </main>
+    </div>
+
+    <footer>
+        <div class="wrap">
+            iOpenPod is free and open source. Download releases from <a href="https://github.com/TheRealSavi/iOpenPod/releases/latest">the official GitHub release page</a>.
+        </div>
+    </footer>
+</body>
+</html>

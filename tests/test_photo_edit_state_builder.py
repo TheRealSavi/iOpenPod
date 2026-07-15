@@ -1,4 +1,4 @@
-from app_core.jobs import build_imported_photo_edit_state
+from iopenpod.application.jobs import build_imported_photo_edit_state
 
 
 def test_build_imported_photo_edit_state_skips_empty_imports() -> None:

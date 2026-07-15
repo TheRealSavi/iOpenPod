@@ -1,7 +1,7 @@
-from SyncEngine.fingerprint_diff_engine import FingerprintDiffEngine
-from SyncEngine.mapping import TrackMapping
-from SyncEngine.pc_library import PCTrack
-from SyncEngine.source_identity import source_content_hash
+from iopenpod.sync.fingerprint_diff_engine import FingerprintDiffEngine
+from iopenpod.sync.mapping import TrackMapping
+from iopenpod.sync.pc_library import PCTrack
+from iopenpod.sync.source_identity import source_content_hash
 
 
 def _track(
@@ -18,6 +18,7 @@ def _track(
     extension: str = ".mp3",
     mtime: float = 0,
     size: int = 1,
+    is_video: bool = False,
 ) -> PCTrack:
     return PCTrack(
         path=path,
@@ -40,6 +41,7 @@ def _track(
         bitrate=None,
         sample_rate=None,
         rating=None,
+        is_video=is_video,
         sound_check=sound_check,
         chapters=chapters,
     )
@@ -124,6 +126,26 @@ def test_metadata_compare_keeps_real_pc_metadata_authoritative() -> None:
     assert changes["album"] == ("Real Album", "Folder Album")
     assert changes["album_artist"] == ("Real Album Artist", "Folder Artist")
     assert changes["sound_check"] == (987654, 123456)
+
+
+def test_metadata_compare_repairs_missing_video_duration() -> None:
+    changes = _engine()._compare_metadata(
+        _track(
+            path="/video/movie.mp4",
+            relative_path="movie.mp4",
+            filename="movie.mp4",
+            extension=".mp4",
+            is_video=True,
+        ),
+        {
+            "Title": "Song",
+            "Artist": "Unknown Artist",
+            "Album": "Unknown Album",
+            "length": 0,
+        },
+    )
+
+    assert changes["duration_ms"] == (1000, 0)
 
 
 def test_metadata_compare_syncs_pc_chapters_for_any_filetype() -> None:

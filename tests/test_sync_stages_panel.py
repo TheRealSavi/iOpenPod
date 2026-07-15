@@ -8,7 +8,7 @@ logic so we can catch regressions without spinning up Qt.
 
 from __future__ import annotations
 
-from GUI.widgets.syncStagesPanel import (
+from iopenpod.gui.widgets.syncStagesPanel import (
     DEFAULT_PIPELINE,
     StageStatus,
     SyncStage,
@@ -291,7 +291,7 @@ def test_default_pipeline_full_walkthrough() -> None:
 
 def test_panel_widget_reflects_state_machine(qtbot) -> None:
     """End-to-end: notify_stage on the widget should rebuild row visuals."""
-    from GUI.widgets.syncStagesPanel import SyncStagesPanel
+    from iopenpod.gui.widgets.syncStagesPanel import SyncStagesPanel
 
     panel = SyncStagesPanel(_TEST_PIPELINE)
     qtbot.addWidget(panel)
@@ -322,7 +322,7 @@ def test_panel_widget_reflects_state_machine(qtbot) -> None:
 
 def test_panel_reset_for_pipeline_clears_previous_state(qtbot) -> None:
     """Reusing the panel for a fresh sync wipes the prior run's status."""
-    from GUI.widgets.syncStagesPanel import SyncStagesPanel
+    from iopenpod.gui.widgets.syncStagesPanel import SyncStagesPanel
 
     panel = SyncStagesPanel(_TEST_PIPELINE)
     qtbot.addWidget(panel)

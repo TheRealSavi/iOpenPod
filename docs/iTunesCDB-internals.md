@@ -295,6 +295,7 @@ void itdb_zlib_check_compress_fexp(FExport *fexp)
 ```
 
 **Key observations:**
+
 - Uses **`compress2()` with level 1** (fastest compression, larger output).
   This prioritises write speed over compression ratio.
 - Sets **`unk_0xA8` to 1** after compression.
@@ -404,7 +405,7 @@ if (itdb_device_supports_compressed_itunesdb(device)) {
 }
 ```
 
-> **Warning:** iPod Classic 3G will **reject** the database if this is set
+> **Warning:** iPod Classic 7G will **reject** the database if this is set
 > to 2. Only set it for devices that actually support compressed databases.
 
 ### `unk_0xA8` — Compression State Flag

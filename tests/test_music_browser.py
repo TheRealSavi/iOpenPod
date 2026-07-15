@@ -3,18 +3,21 @@ from typing import Any, cast
 
 from PIL import Image
 from PyQt6.QtCore import QPoint
+from PyQt6.QtWidgets import QLineEdit, QSplitter
 
-from GUI.styles import Colors, context_menu_css
-from GUI.widgets import artworkUnifier as artwork_unifier_module
-from GUI.widgets.artworkUnifier import (
+from iopenpod.gui.styles import Colors, context_menu_css
+from iopenpod.gui.widgets import artworkUnifier as artwork_unifier_module
+from iopenpod.gui.widgets.artworkUnifier import (
     artwork_compare_hash,
     build_album_artwork_unify_context,
 )
-from GUI.widgets.musicBrowser import MusicBrowser
+from iopenpod.gui.widgets.musicBrowser import MusicBrowser
+from iopenpod.gui.widgets.trackListTitleBar import TrackListTitleBar, _resolve_bar_palette
 
 
 def _build_browser(category: str = "Albums") -> Any:
     scheduled: list[str] = []
+    visible_row_refreshes: list[str] = []
     browser = SimpleNamespace(
         _current_category=category,
         _tab_dirty={
@@ -23,38 +26,61 @@ def _build_browser(category: str = "Albums") -> Any:
             "Photos": False,
         },
         _schedule_refresh_current_category=lambda: scheduled.append("refresh"),
+        browserTrack=SimpleNamespace(
+            _refresh_visible_rows=lambda: visible_row_refreshes.append("rows")
+        ),
     )
     browser._mark_tab_dirty = MusicBrowser._mark_tab_dirty.__get__(browser)
-    return cast(Any, browser), scheduled
+    return cast(Any, browser), scheduled, visible_row_refreshes
 
 
-def test_track_edits_mark_related_tabs_dirty_and_refresh_current_category() -> None:
-    browser, scheduled = _build_browser("Albums")
+def test_rating_edit_refreshes_visible_rows_without_reloading_album_grid() -> None:
+    browser, scheduled, visible_row_refreshes = _build_browser("Albums")
 
-    MusicBrowser._on_tracks_changed(browser)
+    MusicBrowser._on_track_fields_changed(browser, {"rating"})
 
     assert browser._tab_dirty["Playlists"] is True
     assert browser._tab_dirty["Podcasts"] is True
-    assert browser._tab_dirty["Photos"] is False
+    assert scheduled == []
+    assert visible_row_refreshes == ["rows"]
+
+
+def test_album_edit_reloads_album_grid() -> None:
+    browser, scheduled, visible_row_refreshes = _build_browser("Albums")
+
+    MusicBrowser._on_track_fields_changed(browser, {"album"})
+
     assert scheduled == ["refresh"]
+    assert visible_row_refreshes == []
+
+
+def test_production_grouping_field_names_reload_grid() -> None:
+    for field_name in ("Album Artist", "compilation_flag"):
+        browser, scheduled, visible_row_refreshes = _build_browser("Albums")
+
+        MusicBrowser._on_track_fields_changed(browser, {field_name})
+
+        assert scheduled == ["refresh"]
+        assert visible_row_refreshes == []
 
 
 def test_track_edits_do_not_reload_photo_browser() -> None:
-    browser, scheduled = _build_browser("Photos")
+    browser, scheduled, visible_row_refreshes = _build_browser("Photos")
 
-    MusicBrowser._on_tracks_changed(browser)
+    MusicBrowser._on_track_fields_changed(browser, {"rating"})
 
     assert browser._tab_dirty["Playlists"] is True
     assert browser._tab_dirty["Podcasts"] is True
     assert browser._tab_dirty["Photos"] is False
     assert scheduled == []
+    assert visible_row_refreshes == []
 
 
 def test_context_menu_css_styles_disabled_rows_and_icon_gutter() -> None:
     css = context_menu_css()
 
-    assert "padding: 4px 6px;" in css
-    assert "padding: 6px 24px 6px 12px;" in css
+    assert "padding: 6px;" in css
+    assert "padding: 8px 28px 8px 12px;" in css
     assert "QMenu::item:disabled" in css
     assert "QMenu::item:disabled:selected" in css
     assert f"color: {Colors.TEXT_DISABLED};" in css
@@ -95,8 +121,8 @@ def test_album_grid_context_menu_uses_shared_menu_style(monkeypatch) -> None:
             self.exec_pos = pos
             return None
 
-    monkeypatch.setattr("GUI.widgets.musicBrowser.QMenu", _Menu)
-    monkeypatch.setattr("GUI.widgets.musicBrowser.glyph_icon", lambda *_args: None)
+    monkeypatch.setattr("iopenpod.gui.widgets.musicBrowser.QMenu", _Menu)
+    monkeypatch.setattr("iopenpod.gui.widgets.musicBrowser.glyph_icon", lambda *_args: None)
 
     emitted: list[list[dict]] = []
     browser = SimpleNamespace(
@@ -148,8 +174,8 @@ def test_album_grid_context_menu_edit_opens_album_tracks(monkeypatch) -> None:
         def exec(self, _pos: QPoint):
             return next(action for action in self.actions if action.label == "Edit")
 
-    monkeypatch.setattr("GUI.widgets.musicBrowser.QMenu", _Menu)
-    monkeypatch.setattr("GUI.widgets.musicBrowser.glyph_icon", lambda *_args: None)
+    monkeypatch.setattr("iopenpod.gui.widgets.musicBrowser.QMenu", _Menu)
+    monkeypatch.setattr("iopenpod.gui.widgets.musicBrowser.glyph_icon", lambda *_args: None)
 
     edited: list[dict] = []
     browser = SimpleNamespace(
@@ -167,6 +193,195 @@ def test_album_grid_context_menu_edit_opens_album_tracks(monkeypatch) -> None:
     )
 
     assert edited == [album_item]
+
+
+def test_title_bar_palette_reuses_contrast_ensured_grid_color() -> None:
+    display_rgb = (86, 112, 144)
+
+    palette = _resolve_bar_palette(display_rgb, contrast_ensured=True)
+
+    assert palette["bg"] == display_rgb
+
+
+def test_title_bar_places_metadata_search_before_window_controls(qtbot) -> None:
+    splitter = QSplitter()
+    titlebar = TrackListTitleBar(splitter)
+    qtbot.addWidget(splitter)
+    qtbot.addWidget(titlebar)
+    titlebar.show()
+
+    search = titlebar.findChild(QLineEdit, "trackListTitleSearchField")
+    assert search is titlebar.search
+    assert search is not None
+    assert search.placeholderText() == "Search tracks"
+    assert titlebar.titleBarLayout.indexOf(search) < titlebar.titleBarLayout.indexOf(
+        titlebar.button1
+    )
+    assert (search.width(), search.height()) == (190, 28)
+    assert "QLineEdit#trackListTitleSearchField" in search.styleSheet()
+
+    palette = _resolve_bar_palette(
+        (86, 112, 144),
+        text=(18, 18, 24),
+        text_secondary=(45, 50, 60),
+        contrast_ensured=True,
+    )
+    titlebar.setColor(
+        86,
+        112,
+        144,
+        text=(18, 18, 24),
+        text_secondary=(45, 50, 60),
+        contrast_ensured=True,
+    )
+    compact_search_css = "".join(search.styleSheet().split())
+    secondary_rgb = ",".join(str(value) for value in palette["text_secondary"])
+    primary_rgb = ",".join(str(value) for value in palette["text"])
+    assert f"color:rgb({secondary_rgb});" in compact_search_css
+    assert f"color:rgb({primary_rgb});" in compact_search_css
+
+    emitted: list[str] = []
+    titlebar.search_changed.connect(emitted.append)
+    search.setText("hidden metadata")
+    assert emitted == ["hidden metadata"]
+
+    titlebar.setFullscreenMode(True)
+    assert search.isVisible()
+    assert titlebar.button1.isHidden()
+    assert titlebar.button2.isHidden()
+
+
+def test_title_bar_uses_prominent_gradient_from_contrast_ensured_color(qtbot) -> None:
+    splitter = QSplitter()
+    titlebar = TrackListTitleBar(splitter)
+    qtbot.addWidget(splitter)
+    qtbot.addWidget(titlebar)
+
+    titlebar.setColor(
+        86,
+        112,
+        144,
+        text=(18, 18, 24),
+        text_secondary=(45, 50, 60),
+        contrast_ensured=True,
+    )
+
+    compact_css = "".join(titlebar.styleSheet().split())
+    assert "qlineargradient" in compact_css
+    assert "stop:0rgba(110,132,160,92)" in compact_css
+    assert "stop:0.58rgba(86,112,144,70)" in compact_css
+    assert "stop:1rgba(65,85,109,60)" in compact_css
+    assert "border-top:" not in compact_css
+    assert "border-left:" not in compact_css
+    assert "border-bottom:" not in compact_css
+    assert "color:rgb(18,18,24);" not in compact_css
+
+
+def test_light_theme_title_bar_uses_more_opaque_album_gradient(qtbot, monkeypatch) -> None:
+    monkeypatch.setattr(Colors, "_active_mode", "light")
+    splitter = QSplitter()
+    titlebar = TrackListTitleBar(splitter)
+    qtbot.addWidget(splitter)
+    qtbot.addWidget(titlebar)
+
+    titlebar.setColor(
+        86,
+        112,
+        144,
+        text=(18, 18, 24),
+        text_secondary=(45, 50, 60),
+        contrast_ensured=True,
+    )
+
+    compact_css = "".join(titlebar.styleSheet().split())
+    assert "stop:0rgba(100,123,153,132)" in compact_css
+    assert "stop:0.58rgba(86,112,144,112)" in compact_css
+    assert "stop:1rgba(67,87,112,96)" in compact_css
+    assert "border-bottom:" not in compact_css
+
+
+def test_title_bar_maximize_uses_splitter_height_when_sizes_are_collapsed(
+    qtbot,
+    monkeypatch,
+) -> None:
+    splitter = QSplitter()
+    titlebar = TrackListTitleBar(splitter)
+    qtbot.addWidget(splitter)
+    qtbot.addWidget(titlebar)
+    splitter.resize(900, 600)
+
+    applied_sizes: list[list[int]] = []
+    monkeypatch.setattr(splitter, "sizes", lambda: [0, titlebar.minimumHeight()])
+    monkeypatch.setattr(splitter, "setSizes", applied_sizes.append)
+
+    titlebar._toggleMaximize()
+
+    assert applied_sizes == [[120, 480]]
+
+
+def test_fullscreen_tracklist_sizes_hidden_grid_to_zero() -> None:
+    applied_sizes: list[list[int]] = []
+    browser = SimpleNamespace(
+        gridTrackSplitter=SimpleNamespace(
+            height=lambda: 600,
+            sizes=lambda: [560, 40],
+            setSizes=applied_sizes.append,
+        )
+    )
+
+    MusicBrowser._show_track_list_fullscreen(cast(Any, browser))
+
+    assert applied_sizes == [[0, 600]]
+
+
+def test_album_selection_reuses_grid_display_color_for_titlebar() -> None:
+    class _TitleBar:
+        def __init__(self) -> None:
+            self.title = ""
+            self.color_calls: list[tuple[tuple, dict]] = []
+
+        def setTitle(self, title: str) -> None:
+            self.title = title
+
+        def setColor(self, *args, **kwargs) -> None:
+            self.color_calls.append((args, kwargs))
+
+        def resetColor(self) -> None:
+            raise AssertionError("display color should be used")
+
+    applied_filters: list[dict] = []
+    titlebar = _TitleBar()
+    browser = SimpleNamespace(
+        trackListTitleBar=titlebar,
+        browserTrack=SimpleNamespace(applyFilter=applied_filters.append),
+    )
+    item = {
+        "title": "Display Color Album",
+        "category": "Albums",
+        "filter_key": "album",
+        "filter_value": "Display Color Album",
+        "dominant_color": (8, 16, 32),
+        "display_dominant_color": (86, 112, 144),
+        "display_album_colors": {
+            "text": (255, 255, 255),
+            "text_secondary": (225, 230, 238),
+        },
+    }
+
+    MusicBrowser._onGridItemSelected(cast(Any, browser), item)
+
+    assert titlebar.title == "Display Color Album"
+    assert titlebar.color_calls == [
+        (
+            (86, 112, 144),
+            {
+                "text": (255, 255, 255),
+                "text_secondary": (225, 230, 238),
+                "contrast_ensured": True,
+            },
+        )
+    ]
+    assert applied_filters == [item]
 
 
 def test_unify_artwork_hash_dedupes_matching_rgba_pixels() -> None:
@@ -189,7 +404,7 @@ def test_unify_artwork_context_collapses_duplicate_visual_images(monkeypatch) ->
     images = {1: red, 2: red.copy(), 3: blue}
 
     monkeypatch.setattr(
-        "GUI.imgMaker.configure_artwork_api",
+        "iopenpod.gui.imgMaker.configure_artwork_api",
         lambda *_args, **_kwargs: ({}, {}),
     )
     monkeypatch.setattr(
@@ -223,7 +438,7 @@ def test_unify_artwork_context_available_for_missing_artwork(monkeypatch) -> Non
     ]
 
     monkeypatch.setattr(
-        "GUI.imgMaker.configure_artwork_api",
+        "iopenpod.gui.imgMaker.configure_artwork_api",
         lambda *_args, **_kwargs: ({}, {}),
     )
     monkeypatch.setattr(

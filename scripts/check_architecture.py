@@ -8,27 +8,33 @@ import json
 from collections import defaultdict
 from pathlib import Path
 
-FIRST_PARTY_ROOTS = (
-    "GUI",
-    "ipod_device",
-    "SyncEngine",
-    "PodcastManager",
-    "SQLiteDB_Writer",
-    "iTunesDB_Analyzer",
-    "iTunesDB_Parser",
-    "iTunesDB_Shared",
-    "iTunesDB_Writer",
-    "ArtworkDB_Parser",
-    "ArtworkDB_Writer",
-    "app_core",
-    "infrastructure",
+SOURCE_ROOT = Path("src")
+PACKAGE_ROOT = SOURCE_ROOT / "iopenpod"
+LEGACY_FIRST_PARTY_IMPORT_ROOTS = frozenset(
+    {
+        "ArtworkDB_Parser",
+        "ArtworkDB_Shared",
+        "ArtworkDB_Writer",
+        "GUI",
+        "PodcastManager",
+        "SQLiteDB_Writer",
+        "SyncEngine",
+        "app_core",
+        "infrastructure",
+        "ipod_device",
+        "iTunesDB_Analyzer",
+        "iTunesDB_Parser",
+        "iTunesDB_Shared",
+        "iTunesDB_Writer",
+        "sync_progress_stages",
+    }
 )
 GUI_FORBIDDEN_PREFIXES = (
-    "SyncEngine",
-    "ipod_device",
-    "PodcastManager",
+    "iopenpod.sync",
+    "iopenpod.device",
+    "iopenpod.podcasts",
     "settings",
-    "infrastructure.settings_runtime",
+    "iopenpod.infrastructure.settings_runtime",
 )
 FORBIDDEN_RUNTIME_PRIVATE_ATTRS = (
     "_device_path",
@@ -43,12 +49,12 @@ RUNTIME_SINGLETONS = (
     "DeviceManager",
     "iTunesDBCache",
 )
-SETTINGS_RUNTIME_MODULE = "infrastructure.settings_runtime"
+SETTINGS_RUNTIME_MODULE = "iopenpod.infrastructure.settings_runtime"
 SETTINGS_RUNTIME_ALLOWED_PATHS = (
-    "infrastructure/settings_runtime.py",
+    "src/iopenpod/infrastructure/settings_runtime.py",
 )
 SETTINGS_RUNTIME_ALLOWED_PREFIXES = (
-    "app_core/",
+    "src/iopenpod/application/",
 )
 LEGACY_SETTINGS_RUNTIME_GLOBALS = (
     "_global_instance",
@@ -64,22 +70,32 @@ SYNC_REVIEW_FORBIDDEN_WORKERS = (
     "SyncExecuteWorker",
     "SyncWorker",
 )
+GUI_APP_FORBIDDEN_SYNC_SESSION_BYPASS = (
+    "PodcastPlanRequest",
+    "PodcastPlanWorker",
+    "SyncDiffRequest",
+    "SyncDiffWorker",
+    "SyncExecuteWorker",
+)
 SYNC_EXECUTOR_PRIVATE_ATTRS = (
     "_SyncContext",
     "_build_and_evaluate_playlists",
     "_read_existing_database",
     "_track_dict_to_info",
-    "_write_database",
 )
 SYNC_ENGINE_LOW_LEVEL_MODULES = {
-    "SyncEngine.fingerprint_diff_engine": "FingerprintDiffEngine",
-    "SyncEngine.sync_executor": "SyncExecutor",
+    "iopenpod.sync.fingerprint_diff_engine": "FingerprintDiffEngine",
+    "iopenpod.sync.sync_executor": "SyncExecutor",
 }
 SYNC_ENGINE_LOW_LEVEL_ALLOWED_PATHS = (
-    "SyncEngine/__init__.py",
-    "SyncEngine/core/engine.py",
-    "SyncEngine/fingerprint_diff_engine.py",
-    "SyncEngine/sync_executor.py",
+    "src/iopenpod/sync/__init__.py",
+    "src/iopenpod/sync/core/engine.py",
+    "src/iopenpod/sync/fingerprint_diff_engine.py",
+    "src/iopenpod/sync/sync_executor.py",
+)
+DATABASE_COMMIT_ALLOWED_PATHS = (
+    "src/iopenpod/sync/_db_io.py",
+    "src/iopenpod/sync/database_commit.py",
 )
 
 
@@ -92,21 +108,55 @@ def normalize_path(path: Path, repo_root: Path) -> str:
 def iter_python_files(repo_root: Path) -> list[Path]:
     """Return first-party Python files for architecture analysis."""
 
-    files: list[Path] = []
-    for root_name in FIRST_PARTY_ROOTS:
-        root = repo_root / root_name
-        if root.exists():
-            files.extend(sorted(root.rglob("*.py")))
-    main_py = repo_root / "main.py"
-    if main_py.exists():
-        files.append(main_py)
-    return files
+    package_root = repo_root / PACKAGE_ROOT
+    if not package_root.exists():
+        return []
+    return sorted(package_root.rglob("*.py"))
+
+
+def iter_namespace_consumers(repo_root: Path) -> list[Path]:
+    """Return Python files that must import through the package namespace."""
+
+    roots = (repo_root / PACKAGE_ROOT, repo_root / "scripts", repo_root / "tests")
+    return sorted(path for root in roots if root.exists() for path in root.rglob("*.py"))
 
 
 def parse_python(path: Path) -> ast.Module:
     """Parse a Python file using UTF-8 with graceful decoding."""
 
     return ast.parse(path.read_text(encoding="utf-8", errors="ignore"))
+
+
+def module_matches_prefix(module: str, prefixes: tuple[str, ...]) -> bool:
+    """Return whether *module* is a prefix itself or one of its children."""
+
+    return any(module == prefix or module.startswith(f"{prefix}.") for prefix in prefixes)
+
+
+def detect_legacy_first_party_imports(repo_root: Path) -> dict[str, list[str]]:
+    """Find imports that bypass the installed ``iopenpod`` namespace."""
+
+    violations: dict[str, list[str]] = {}
+    for path in iter_namespace_consumers(repo_root):
+        try:
+            tree = parse_python(path)
+        except SyntaxError:
+            continue
+
+        hits: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                module = node.module or ""
+                if not node.level and module.split(".", 1)[0] in LEGACY_FIRST_PARTY_IMPORT_ROOTS:
+                    hits.add(module)
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name.split(".", 1)[0] in LEGACY_FIRST_PARTY_IMPORT_ROOTS:
+                        hits.add(alias.name)
+
+        if hits:
+            violations[normalize_path(path, repo_root)] = sorted(hits)
+    return violations
 
 
 def count_except_exception_passes(repo_root: Path) -> dict[str, int]:
@@ -133,7 +183,7 @@ def detect_gui_forbidden_imports(repo_root: Path) -> dict[str, list[str]]:
     """Find GUI modules that still reach directly into forbidden layers."""
 
     violations: dict[str, list[str]] = {}
-    gui_root = repo_root / "GUI"
+    gui_root = repo_root / PACKAGE_ROOT / "gui"
     if not gui_root.exists():
         return violations
 
@@ -147,12 +197,12 @@ def detect_gui_forbidden_imports(repo_root: Path) -> dict[str, list[str]]:
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom):
                 module = node.module or ""
-                if module.startswith(GUI_FORBIDDEN_PREFIXES):
+                if module_matches_prefix(module, GUI_FORBIDDEN_PREFIXES):
                     hits.add(module)
             elif isinstance(node, ast.Import):
                 for alias in node.names:
                     name = alias.name
-                    if name.startswith(GUI_FORBIDDEN_PREFIXES):
+                    if module_matches_prefix(name, GUI_FORBIDDEN_PREFIXES):
                         hits.add(name)
 
         if hits:
@@ -165,7 +215,7 @@ def detect_forbidden_runtime_private_access(repo_root: Path) -> dict[str, list[s
     """Find first-party modules that reach into runtime private state."""
 
     violations: dict[str, list[str]] = {}
-    runtime_module = "app_core/runtime.py"
+    runtime_module = "src/iopenpod/application/runtime.py"
 
     for path in iter_python_files(repo_root):
         normalized = normalize_path(path, repo_root)
@@ -191,7 +241,7 @@ def detect_forbidden_runtime_private_access(repo_root: Path) -> dict[str, list[s
 def detect_main_window_runtime_singleton_access(repo_root: Path) -> list[str]:
     """Find direct runtime singleton lookups in the main window shell."""
 
-    path = repo_root / "GUI" / "app.py"
+    path = repo_root / PACKAGE_ROOT / "gui" / "app.py"
     if not path.exists():
         return []
 
@@ -216,12 +266,12 @@ def detect_main_window_runtime_singleton_access(repo_root: Path) -> list[str]:
 
 
 def count_runtime_singleton_access(repo_root: Path) -> dict[str, dict[str, int]]:
-    """Count direct runtime singleton lookups outside app_core."""
+    """Count direct runtime singleton lookups outside the application layer."""
 
     counts: dict[str, dict[str, int]] = {}
     for path in iter_python_files(repo_root):
         normalized = normalize_path(path, repo_root)
-        if normalized.startswith("app_core/"):
+        if normalized.startswith("src/iopenpod/application/"):
             continue
 
         try:
@@ -246,7 +296,7 @@ def count_runtime_singleton_access(repo_root: Path) -> dict[str, dict[str, int]]
 
 
 def detect_forbidden_settings_runtime_imports(repo_root: Path) -> dict[str, list[str]]:
-    """Find modules outside app_core that import mutable settings runtime state."""
+    """Find modules outside the application layer importing settings runtime state."""
 
     violations: dict[str, list[str]] = {}
     for path in iter_python_files(repo_root):
@@ -282,7 +332,7 @@ def detect_forbidden_settings_runtime_imports(repo_root: Path) -> dict[str, list
 def detect_legacy_settings_runtime_globals(repo_root: Path) -> list[str]:
     """Find old module-level mutable settings runtime state names."""
 
-    path = repo_root / "infrastructure" / "settings_runtime.py"
+    path = repo_root / PACKAGE_ROOT / "infrastructure" / "settings_runtime.py"
     if not path.exists():
         return []
 
@@ -314,7 +364,7 @@ def detect_legacy_settings_runtime_globals(repo_root: Path) -> list[str]:
 def detect_forbidden_sync_review_workers(repo_root: Path) -> list[str]:
     """Find operational workers that should not live in the sync review widget."""
 
-    path = repo_root / "GUI" / "widgets" / "syncReview.py"
+    path = repo_root / PACKAGE_ROOT / "gui" / "widgets" / "syncReview.py"
     if not path.exists():
         return []
 
@@ -331,17 +381,42 @@ def detect_forbidden_sync_review_workers(repo_root: Path) -> list[str]:
     )
 
 
-def detect_app_core_sync_executor_private_usage(
+def detect_gui_app_sync_session_bypass(repo_root: Path) -> list[str]:
+    """Find main-window imports that bypass the Sync Session module."""
+
+    path = repo_root / PACKAGE_ROOT / "gui" / "app.py"
+    if not path.exists():
+        return []
+
+    try:
+        tree = parse_python(path)
+    except SyntaxError:
+        return []
+
+    hits: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        if node.module not in {"iopenpod.application", "iopenpod.application.jobs"}:
+            continue
+        for alias in node.names:
+            if alias.name in GUI_APP_FORBIDDEN_SYNC_SESSION_BYPASS:
+                hits.add(alias.name)
+
+    return sorted(hits)
+
+
+def detect_application_sync_executor_private_usage(
     repo_root: Path,
 ) -> dict[str, list[str]]:
-    """Find app-core reaches into private SyncExecutor APIs."""
+    """Find application-layer reaches into private SyncExecutor APIs."""
 
     violations: dict[str, list[str]] = {}
-    app_core_root = repo_root / "app_core"
-    if not app_core_root.exists():
+    application_root = repo_root / PACKAGE_ROOT / "application"
+    if not application_root.exists():
         return violations
 
-    for path in sorted(app_core_root.rglob("*.py")):
+    for path in sorted(application_root.rglob("*.py")):
         try:
             tree = parse_python(path)
         except SyntaxError:
@@ -351,7 +426,7 @@ def detect_app_core_sync_executor_private_usage(
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom):
                 module = node.module or ""
-                if module == "SyncEngine.sync_executor":
+                if module == "iopenpod.sync.sync_executor":
                     for alias in node.names:
                         if alias.name.startswith("_"):
                             hits.add(alias.name)
@@ -371,7 +446,7 @@ def detect_sync_executor_private_usage(repo_root: Path) -> dict[str, list[str]]:
     """Find first-party reaches into private SyncExecutor APIs."""
 
     violations: dict[str, list[str]] = {}
-    allowed_path = "SyncEngine/sync_executor.py"
+    allowed_path = "src/iopenpod/sync/sync_executor.py"
 
     for path in iter_python_files(repo_root):
         normalized = normalize_path(path, repo_root)
@@ -387,7 +462,7 @@ def detect_sync_executor_private_usage(repo_root: Path) -> dict[str, list[str]]:
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom):
                 module = node.module or ""
-                if module == "SyncEngine.sync_executor":
+                if module == "iopenpod.sync.sync_executor":
                     for alias in node.names:
                         if alias.name.startswith("_"):
                             hits.add(alias.name)
@@ -464,6 +539,41 @@ def detect_sync_engine_facade_bypass(repo_root: Path) -> dict[str, list[str]]:
     return violations
 
 
+def detect_database_commit_bypass(repo_root: Path) -> dict[str, list[str]]:
+    """Find production code that bypasses the shared database commit module."""
+
+    violations: dict[str, list[str]] = {}
+    allowed_paths = set(DATABASE_COMMIT_ALLOWED_PATHS)
+
+    for path in iter_python_files(repo_root):
+        normalized = normalize_path(path, repo_root)
+        if normalized in allowed_paths:
+            continue
+
+        try:
+            tree = parse_python(path)
+        except SyntaxError:
+            continue
+
+        hits: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                module = node.module or ""
+                if module in {"iopenpod.sync._db_io", "._db_io"}:
+                    for alias in node.names:
+                        if alias.name == "write_database":
+                            hits.add(alias.name)
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name == "iopenpod.sync._db_io":
+                        hits.add(alias.name)
+
+        if hits:
+            violations[normalized] = sorted(hits)
+
+    return violations
+
+
 def _attribute_module_name(node: ast.AST) -> str:
     parts: list[str] = []
     current: ast.AST | None = node
@@ -479,20 +589,19 @@ def build_import_graph(repo_root: Path) -> dict[str, set[str]]:
     """Build the first-party import graph used for cycle detection."""
 
     modules: dict[str, Path] = {}
-    for root_name in FIRST_PARTY_ROOTS:
-        root = repo_root / root_name
-        if not root.exists():
+    source_root = repo_root / SOURCE_ROOT
+    package_root = repo_root / PACKAGE_ROOT
+    if not package_root.exists():
+        return {}
+    for path in package_root.rglob("*.py"):
+        if path.name == "__init__.py":
             continue
-        for path in root.rglob("*.py"):
-            module_name = (
-                path.relative_to(repo_root)
-                .with_suffix("")
-                .as_posix()
-                .replace("/", ".")
-            )
-            modules[module_name] = path
+        relative = path.relative_to(source_root).with_suffix("")
+        parts = list(relative.parts)
+        module_name = ".".join(parts)
+        modules[module_name] = path
 
-    prefixes = tuple(sorted({module.split(".")[0] for module in modules}))
+    prefix = "iopenpod"
     graph: dict[str, set[str]] = defaultdict(set)
 
     for module_name, path in modules.items():
@@ -500,12 +609,12 @@ def build_import_graph(repo_root: Path) -> dict[str, set[str]]:
             tree = parse_python(path)
         except SyntaxError:
             continue
-        package = module_name.rsplit(".", 1)[0] if "." in module_name else module_name
+        package = module_name.rsplit(".", 1)[0]
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
                     name = alias.name
-                    if name.startswith(prefixes) and name in modules:
+                    if name.startswith(prefix) and name in modules:
                         graph[module_name].add(name)
             elif isinstance(node, ast.ImportFrom):
                 if node.level:
@@ -517,7 +626,7 @@ def build_import_graph(repo_root: Path) -> dict[str, set[str]]:
                 else:
                     base_name = node.module or ""
 
-                if not base_name.startswith(prefixes):
+                if not base_name.startswith(prefix):
                     continue
 
                 if base_name in modules:
@@ -585,6 +694,12 @@ def check_rules(repo_root: Path, rules: dict) -> list[str]:
 
     errors: list[str] = []
 
+    legacy_imports = detect_legacy_first_party_imports(repo_root)
+    if legacy_imports:
+        errors.append("Legacy first-party imports outside iopenpod detected:")
+        for path, imports in sorted(legacy_imports.items()):
+            errors.append(f"  - {path}: {', '.join(imports)}")
+
     allowed_cycles = {
         tuple(sorted(cycle))
         for cycle in rules.get("allowed_import_cycles", [])
@@ -620,7 +735,7 @@ def check_rules(repo_root: Path, rules: dict) -> list[str]:
 
     singleton_access = detect_main_window_runtime_singleton_access(repo_root)
     if singleton_access:
-        errors.append("Unexpected GUI/app.py runtime singleton access detected:")
+        errors.append("Unexpected main-window runtime singleton access detected:")
         for name in singleton_access:
             errors.append(f"  - {name}")
 
@@ -655,6 +770,11 @@ def check_rules(repo_root: Path, rules: dict) -> list[str]:
         errors.append("Operational sync workers detected in GUI sync review:")
         errors.append(f"  - {', '.join(sync_review_workers)}")
 
+    sync_session_bypass = detect_gui_app_sync_session_bypass(repo_root)
+    if sync_session_bypass:
+        errors.append("Main-window imports that bypass Sync Session detected:")
+        errors.append(f"  - {', '.join(sync_session_bypass)}")
+
     sync_executor_private_usage = detect_sync_executor_private_usage(repo_root)
     if sync_executor_private_usage:
         errors.append("Private SyncExecutor API usage detected outside SyncEngine:")
@@ -665,6 +785,12 @@ def check_rules(repo_root: Path, rules: dict) -> list[str]:
     if sync_engine_facade_bypass:
         errors.append("Direct SyncEngine planner/executor orchestration detected:")
         for path, names in sorted(sync_engine_facade_bypass.items()):
+            errors.append(f"  - {path}: {', '.join(names)}")
+
+    database_commit_bypass = detect_database_commit_bypass(repo_root)
+    if database_commit_bypass:
+        errors.append("Raw database writer imports detected outside commit module:")
+        for path, names in sorted(database_commit_bypass.items()):
             errors.append(f"  - {path}: {', '.join(names)}")
 
     allowed_except_pass = rules.get("allowed_except_exception_pass_counts", {})

@@ -1,7 +1,8 @@
 from pathlib import Path
 
-from SyncEngine.source_identity import source_content_hash
-from SyncEngine.transcode_cache import TranscodeCache
+from iopenpod.sync import source_identity
+from iopenpod.sync.source_identity import source_content_hash
+from iopenpod.sync.transcode_cache import TranscodeCache
 
 
 def _box(box_type: bytes, payload: bytes) -> bytes:
@@ -27,6 +28,63 @@ def test_mp4_source_hash_ignores_metadata_atoms(tmp_path: Path) -> None:
 
     assert source_content_hash(before) == source_content_hash(after)
     assert source_content_hash(before) != source_content_hash(changed_audio)
+
+
+def test_video_identity_survives_move_and_mp4_metadata_change(tmp_path: Path) -> None:
+    before = tmp_path / "old-name.mp4"
+    moved = tmp_path / "new-name.mp4"
+    changed = tmp_path / "changed.mp4"
+    before.write_bytes(_mp4_bytes(metadata=b"old-title", media=b"same-video"))
+    moved.write_bytes(_mp4_bytes(metadata=b"new-title", media=b"same-video"))
+    changed.write_bytes(_mp4_bytes(metadata=b"old-title", media=b"different-video"))
+
+    before_identity = source_identity.video_content_identity(before)
+
+    assert before_identity == source_identity.video_content_identity(moved)
+    assert before_identity != source_identity.video_content_identity(changed)
+
+
+def test_large_video_identity_reads_only_bounded_samples(tmp_path: Path, monkeypatch) -> None:
+    video = tmp_path / "large.mp4"
+    payload_size = 64 * 1024 * 1024
+    with video.open("wb") as stream:
+        stream.write(_box(b"ftyp", b"mp42\0\0\0\0"))
+        stream.write((8 + payload_size).to_bytes(4, "big") + b"mdat")
+        stream.seek(payload_size - 1, 1)
+        stream.write(b"\0")
+
+    real_open = open
+    bytes_read = 0
+
+    class CountingReader:
+        def __init__(self, stream):
+            self._stream = stream
+
+        def __enter__(self):
+            self._stream.__enter__()
+            return self
+
+        def __exit__(self, *args):
+            return self._stream.__exit__(*args)
+
+        def __getattr__(self, name):
+            return getattr(self._stream, name)
+
+        def read(self, size=-1):
+            nonlocal bytes_read
+            data = self._stream.read(size)
+            bytes_read += len(data)
+            return data
+
+    def counting_open(path, mode="r", *args, **kwargs):
+        return CountingReader(real_open(path, mode, *args, **kwargs))
+
+    monkeypatch.setattr(source_identity, "open", counting_open, raising=False)
+
+    identity = source_identity.video_content_identity(video)
+
+    assert identity.startswith("video-sample-sha256-v1:")
+    assert bytes_read < 3 * 1024 * 1024
 
 
 def test_transcode_cache_reuses_entry_when_mp4_container_size_changes(

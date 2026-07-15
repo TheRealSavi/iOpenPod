@@ -1,11 +1,12 @@
 from types import SimpleNamespace
 from typing import Any, cast
 
-from GUI.widgets.MBGridView import GridRecord, MusicBrowserGrid
-from GUI.widgets.selectiveSyncBrowser import PCMusicBrowserGrid, SelectiveSyncBrowser
-from SyncEngine.contracts import SyncAction, SyncItem, SyncPlan
-from SyncEngine.pc_library import PCTrack
-from SyncEngine.photos import (
+from iopenpod.gui.styles import accent_btn_css
+from iopenpod.gui.widgets.MBGridView import GridRecord, MusicBrowserGrid
+from iopenpod.gui.widgets.selectiveSyncBrowser import PCMusicBrowserGrid, SelectiveSyncBrowser
+from iopenpod.sync.contracts import SyncAction, SyncItem, SyncPlan
+from iopenpod.sync.pc_library import PCTrack
+from iopenpod.sync.photos import (
     PhotoAlbumChange,
     PhotoMembershipChange,
     PhotoSyncItem,
@@ -66,6 +67,26 @@ def _browser_with_tracks(tracks: list[PCTrack]) -> SelectiveSyncBrowser:
 
     browser._art_candidates = _art_candidates
     return browser
+
+
+def test_done_selecting_uses_standard_primary_action_style(qtbot) -> None:
+    settings = SimpleNamespace(track_list_columns_by_content={})
+    browser = SelectiveSyncBrowser(
+        settings_service=cast(
+            Any,
+            SimpleNamespace(
+                get_global_settings=lambda: settings,
+                get_effective_settings=lambda: settings,
+            ),
+        ),
+        device_sessions=cast(
+            Any,
+            SimpleNamespace(current_session=lambda: None),
+        ),
+    )
+    qtbot.addWidget(browser)
+
+    assert browser._done_btn.styleSheet() == accent_btn_css()
 
 
 def test_selective_sync_groups_unknown_albums_by_source_folder():

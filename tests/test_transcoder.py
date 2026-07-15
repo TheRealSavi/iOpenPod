@@ -1,7 +1,8 @@
 import logging
 
-import SyncEngine.transcoder as transcoder_module
-from SyncEngine.transcoder import (
+import iopenpod.sync.transcoder as transcoder_module
+from iopenpod.infrastructure.settings_schema import AppSettings
+from iopenpod.sync.transcoder import (
     AudioProperties,
     TranscodeOptions,
     TranscodeResult,
@@ -34,6 +35,24 @@ def test_video_transcode_timeout_uses_longer_floor_and_padding() -> None:
     assert _transcode_timeout_seconds(TranscodeTarget.VIDEO_H264, one_hour_video_us) == 9000
 
 
+def test_video_transcode_command_allows_silent_sources() -> None:
+    command = transcoder_module._cmd_video(
+        "ffmpeg",
+        "silent.mp4",
+        "output.m4v",
+        crf=23,
+        preset="medium",
+        max_w=320,
+        max_h=240,
+        max_fps=30,
+        max_bitrate=0,
+        h264_level="3.0",
+        audio_encoder="aac",
+    )
+
+    assert "0:a:0?" in command
+
+
 def test_unprobeable_native_audio_reencodes_instead_of_copying_blind(monkeypatch, caplog) -> None:
     monkeypatch.setattr(
         transcoder_module,
@@ -46,11 +65,105 @@ def test_unprobeable_native_audio_reencodes_instead_of_copying_blind(monkeypatch
         lambda filepath: AudioProperties(probe_ok=False),
     )
 
-    with caplog.at_level(logging.WARNING, logger="SyncEngine.transcoder"):
+    with caplog.at_level(logging.WARNING, logger="iopenpod.sync.transcoder"):
         target = get_transcode_target("Café.m4a")
 
     assert target == TranscodeTarget.AAC
     assert "re-encoding instead of copying blind" in caplog.text
+
+
+def test_native_mp3_copies_by_default_and_reencodes_when_forced(monkeypatch) -> None:
+    monkeypatch.setattr(
+        transcoder_module,
+        "_resolve_lossy_target",
+        lambda options: TranscodeTarget.MP3,
+    )
+    monkeypatch.setattr(
+        transcoder_module,
+        "probe_audio",
+        lambda filepath: AudioProperties(
+            sample_rate=44100,
+            channels=2,
+            codec_name="mp3",
+            probe_ok=True,
+        ),
+    )
+
+    assert get_transcode_target("song.mp3") == TranscodeTarget.COPY
+
+    options = TranscodeOptions(always_encode_lossy=True)
+
+    assert get_transcode_target("song.mp3", options=options) == TranscodeTarget.MP3
+    assert needs_transcoding("song.mp3", options=options) is True
+
+
+def test_lossy_native_aac_copies_by_default_and_reencodes_when_forced(monkeypatch) -> None:
+    monkeypatch.setattr(
+        transcoder_module,
+        "_resolve_lossy_target",
+        lambda options: TranscodeTarget.AAC,
+    )
+    monkeypatch.setattr(
+        transcoder_module,
+        "probe_audio",
+        lambda filepath: AudioProperties(
+            sample_rate=44100,
+            bits_per_sample=0,
+            channels=2,
+            codec_name="aac",
+            profile="LC",
+            probe_ok=True,
+        ),
+    )
+
+    assert get_transcode_target("song.m4a") == TranscodeTarget.COPY
+
+    options = TranscodeOptions(always_encode_lossy=True)
+
+    assert get_transcode_target("song.m4a", options=options) == TranscodeTarget.AAC
+
+
+def test_alac_m4a_is_not_forced_by_always_encode_lossy(monkeypatch) -> None:
+    monkeypatch.setattr(transcoder_module, "_device_supports_alac", lambda: True)
+    monkeypatch.setattr(
+        transcoder_module,
+        "_resolve_lossy_target",
+        lambda options: TranscodeTarget.AAC,
+    )
+    monkeypatch.setattr(
+        transcoder_module,
+        "probe_audio",
+        lambda filepath: AudioProperties(
+            sample_rate=44100,
+            bits_per_sample=16,
+            channels=2,
+            codec_name="alac",
+            probe_ok=True,
+        ),
+    )
+
+    assert (
+        get_transcode_target(
+            "song.m4a",
+            options=TranscodeOptions(always_encode_lossy=True),
+        )
+        == TranscodeTarget.COPY
+    )
+    assert (
+        get_transcode_target(
+            "song.m4a",
+            options=TranscodeOptions(always_encode_lossy=True, prefer_lossy=True),
+        )
+        == TranscodeTarget.AAC
+    )
+
+
+def test_transcode_options_from_settings_preserves_always_encode_lossy() -> None:
+    settings = AppSettings(always_encode_lossy=True)
+
+    options = TranscodeOptions.from_settings(settings)
+
+    assert options.always_encode_lossy is True
 
 
 def test_wav_copies_when_alac_conversion_disabled(monkeypatch) -> None:

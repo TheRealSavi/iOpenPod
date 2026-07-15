@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -9,16 +10,25 @@ from uuid import uuid4
 
 import pytest
 from PIL import Image
-from PyQt6.QtCore import QPoint, Qt
+from PyQt6.QtCore import QEvent, QPoint, Qt
+from PyQt6.QtGui import QKeyEvent
 from PyQt6.QtTest import QTest
-from PyQt6.QtWidgets import QComboBox, QDialog, QHeaderView, QLabel, QLineEdit, QMenu, QPushButton, QSlider, QTableWidget, QTableWidgetItem, QTreeWidget
+from PyQt6.QtWidgets import QComboBox, QDialog, QHeaderView, QLabel, QLineEdit, QMenu, QPushButton, QSlider, QSplitter, QTableWidget, QTableWidgetItem, QTreeWidget
 
-from app_core.context import RuntimeSettingsService
-from app_core.services import DeviceCapabilitySnapshot, DeviceIdentitySnapshot, DeviceManagerLike, DeviceSession, SettingsService, SettingsSnapshot
-from GUI import imgMaker
-from GUI.imgMaker import ArtworkFormatPreview, TrackArtworkPreview, get_track_artwork_previews
-from GUI.styles import Colors
-from GUI.widgets.MBListView import (
+from iopenpod.application.context import RuntimeSettingsService
+from iopenpod.application.services import DeviceCapabilitySnapshot, DeviceIdentitySnapshot, DeviceManagerLike, DeviceSession, SettingsService, SettingsSnapshot
+from iopenpod.gui import imgMaker
+from iopenpod.gui.imgMaker import ArtworkFormatPreview, TrackArtworkPreview, get_track_artwork_previews
+from iopenpod.gui.styles import (
+    BROWSER_SEARCH_CONTROL_SIZE,
+    BROWSER_SEARCH_FIELD_WIDTH,
+    Colors,
+    Metrics,
+    browser_search_field_css,
+)
+from iopenpod.gui.widgets.MBListView import (
+    _OPEN_TRACK_SHORTCUT,
+    _OPEN_WITH_TRACK_SHORTCUT,
     COLUMN_CONFIG,
     DEFAULT_AUDIOBOOK_COLUMNS,
     DEFAULT_PODCAST_COLUMNS,
@@ -29,7 +39,7 @@ from GUI.widgets.MBListView import (
     chapter_summary_from_data,
     podcast_conversion_changes_for_track,
 )
-from GUI.widgets.trackEditorDialog import (
+from iopenpod.gui.widgets.trackEditorDialog import (
     TrackEditorDialog,
     _ArtworkPreviewPanel,
     _ChapterTimelineEditor,
@@ -38,9 +48,10 @@ from GUI.widgets.trackEditorDialog import (
     _SquareCropCanvas,
     _subgroup_for_key,
 )
-from infrastructure import settings_persistence
-from infrastructure.settings_runtime import SettingsRuntime
-from infrastructure.settings_schema import AppSettings, DeviceSettingsState
+from iopenpod.gui.widgets.trackListTitleBar import TrackListTitleBar
+from iopenpod.infrastructure import settings_persistence
+from iopenpod.infrastructure.settings_runtime import SettingsRuntime
+from iopenpod.infrastructure.settings_schema import AppSettings, DeviceSettingsState
 
 _QTEST: Any = QTest
 
@@ -204,11 +215,12 @@ class _SettingsService:
 
 
 class _DeviceSessions:
-    def __init__(self) -> None:
+    def __init__(self, session: _Session | None = None) -> None:
         self._manager = _DeviceManager()
+        self._session = session or _Session()
 
     def current_session(self) -> DeviceSession:
-        return cast(DeviceSession, _Session())
+        return cast(DeviceSession, self._session)
 
     def manager(self) -> DeviceManagerLike:
         return cast(DeviceManagerLike, self._manager)
@@ -351,16 +363,19 @@ def _tracks_for_video() -> list[dict[str, object]]:
 def _mount_list(
     qtbot,
     settings_service: SettingsService | None = None,
+    device_sessions: _DeviceSessions | None = None,
     library_cache: Any | None = None,
     content_type_override: str | None = None,
     show_art_override: bool | None = False,
+    show_search_bar: bool = True,
 ) -> MusicBrowserList:
     view = MusicBrowserList(
         settings_service=settings_service or _SettingsService(),
-        device_sessions=_DeviceSessions(),
+        device_sessions=device_sessions or _DeviceSessions(),
         library_cache=library_cache,
         show_art_override=show_art_override,
         content_type_override=content_type_override,
+        show_search_bar=show_search_bar,
     )
     qtbot.addWidget(view)
     view.resize(900, 500)
@@ -414,6 +429,122 @@ def _visible_column_order(view: MusicBrowserList) -> list[str]:
         if col_key is not None:
             result.append(col_key)
     return result
+
+
+def test_tracklist_search_section_sits_above_table(qtbot) -> None:
+    view = _mount_list(qtbot)
+
+    assert view._search_bar.objectName() == "trackListSearchBar"
+    assert view._search_field.objectName() == "trackListSearchField"
+    assert view._search_field.placeholderText() == "Search tracks"
+    assert view._layout.indexOf(view._search_bar) < view._layout.indexOf(view.table)
+    assert view._search_field.size().width() == BROWSER_SEARCH_FIELD_WIDTH
+    assert view._search_field.size().height() == BROWSER_SEARCH_CONTROL_SIZE
+    assert view._search_field.styleSheet() == browser_search_field_css()
+    search_layout = view._search_bar.layout()
+    assert search_layout is not None
+    assert search_layout.indexOf(view._search_field) == 1
+    leading_item = search_layout.itemAt(0)
+    assert leading_item is not None
+    assert leading_item.spacerItem() is not None
+    assert search_layout.contentsMargins().right() == Metrics.GRID_MARGIN_X
+
+
+def test_tracklist_search_matches_hidden_and_formatted_metadata(qtbot) -> None:
+    view = _mount_list(qtbot)
+    tracks: list[dict[str, object]] = [
+        {
+            "Title": "First Song",
+            "Artist": "Alpha",
+            "Album": "Album A",
+            "Genre": "Rock",
+            "Comment": "A deeply hidden needle",
+            "explicit_flag": 0,
+        },
+        {
+            "Title": "Second Song",
+            "Artist": "Beta",
+            "Album": "Album B",
+            "Genre": "Jazz",
+            "Comment": "Nothing unusual",
+            "explicit_flag": 1,
+        },
+        {
+            "Title": "Third Song",
+            "Artist": "Gamma",
+            "Album": "Album C",
+            "Genre": "Ambient",
+            "Comment": "Another note",
+            "explicit_flag": 0,
+        },
+    ]
+    _load_content(qtbot, view, tracks=tracks, media_type_filter=0x01)
+    assert "Comment" not in view._columns
+    assert "explicit_flag" not in view._columns
+    view.table.selectRow(0)
+
+    view._search_field.setText("hidden needle")
+    qtbot.waitUntil(lambda: view.table.rowCount() == 1, timeout=2000)
+    assert view.tracks == [tracks[0]]
+    selection_model = view.table.selectionModel()
+    assert selection_model is not None
+    assert [index.row() for index in selection_model.selectedRows()] == [0]
+
+    view._search_field.setText("second jazz")
+    qtbot.waitUntil(
+        lambda: len(view.tracks) == 1 and view.tracks[0] is tracks[1],
+        timeout=2000,
+    )
+
+    view._search_field.setText("explicit")
+    qtbot.waitUntil(
+        lambda: len(view.tracks) == 1 and view.tracks[0] is tracks[1],
+        timeout=2000,
+    )
+
+    view._search_field.clear()
+    qtbot.waitUntil(lambda: view.table.rowCount() == len(tracks), timeout=2000)
+    assert view.tracks == tracks
+
+
+def test_title_bar_search_filters_embedded_track_list(qtbot) -> None:
+    view = _mount_list(qtbot, show_search_bar=False)
+    titlebar = TrackListTitleBar(QSplitter())
+    qtbot.addWidget(titlebar)
+    titlebar.search_changed.connect(view.setSearchQuery)
+    view.search_query_changed.connect(titlebar.setSearchQuery)
+
+    tracks: list[dict[str, object]] = [
+        {"Title": "First", "Comment": "Needle in hidden metadata"},
+        {"Title": "Second", "Comment": "Nothing to find"},
+    ]
+    _load_content(qtbot, view, tracks=tracks, media_type_filter=0x01)
+    assert view._search_bar.isHidden()
+
+    titlebar.search.setText("needle")
+    qtbot.waitUntil(lambda: view.table.rowCount() == 1, timeout=2000)
+    assert view.tracks == [tracks[0]]
+
+    view.clearTable(clear_cache=True)
+    assert titlebar.search.text() == ""
+
+
+def test_tracklist_search_filters_only_the_current_list_scope(qtbot) -> None:
+    view = _mount_list(qtbot)
+    tracks: list[dict[str, object]] = [
+        {"Title": "Inside Match", "Artist": "Alpha", "Album": "Album A"},
+        {"Title": "Inside Other", "Artist": "Beta", "Album": "Album A"},
+        {"Title": "Outside Match", "Artist": "Gamma", "Album": "Album B"},
+    ]
+    _load_content(qtbot, view, tracks=tracks, media_type_filter=0x01)
+    view.filterByAlbum("Album A")
+    qtbot.waitUntil(lambda: view.table.rowCount() == 2, timeout=2000)
+
+    view._search_field.setText("match")
+    qtbot.waitUntil(lambda: view.table.rowCount() == 1, timeout=2000)
+
+    assert view.tracks == [tracks[0]]
+    assert view._status_label.text() == "1 of 2 songs"
 
 
 def test_tracklist_artwork_loads_only_visible_prefetch_rows(qtbot):
@@ -967,6 +1098,182 @@ def test_edit_action_is_only_available_for_ready_ipod_tracks(qtbot) -> None:
     assert not pc_view._can_edit_selected_tracks([{"db_track_id": 1, "Title": "PC Track"}])
 
 
+def test_track_file_resolution_uses_current_device_path(qtbot, tmp_path: Path) -> None:
+    track_path = tmp_path / "iPod_Control" / "Music" / "F00" / "Song.mp3"
+    track_path.parent.mkdir(parents=True)
+    track_path.write_bytes(b"audio")
+    view = _mount_list(
+        qtbot,
+        device_sessions=_DeviceSessions(_Session(device_path=str(tmp_path))),
+    )
+
+    paths = view._resolved_track_file_paths(
+        [{"Location": ":iPod_Control:Music:F00:Song.mp3"}]
+    )
+
+    assert paths == [str(track_path)]
+
+
+def test_open_track_file_actions_open_resolved_file(
+    qtbot,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    track_path = tmp_path / "iPod_Control" / "Music" / "F00" / "Song.mp3"
+    track_path.parent.mkdir(parents=True)
+    track_path.write_bytes(b"audio")
+    view = _mount_list(
+        qtbot,
+        device_sessions=_DeviceSessions(_Session(device_path=str(tmp_path))),
+    )
+    opened: list[list[str]] = []
+    picked: list[tuple[list[str], MusicBrowserList]] = []
+    monkeypatch.setattr(
+        "iopenpod.gui.widgets.MBListView.open_files_with_default_app",
+        lambda paths: opened.append(list(paths)) or True,
+    )
+    monkeypatch.setattr(
+        "iopenpod.gui.widgets.MBListView.open_files_with_app_picker",
+        lambda paths, parent: picked.append((list(paths), parent)) or True,
+    )
+
+    menu = QMenu(view)
+    view._add_open_file_actions(menu, [{"Location": ":iPod_Control:Music:F00:Song.mp3"}])
+    actions = menu.actions()
+
+    assert actions[0].text() == f"Open Track File\t{_OPEN_TRACK_SHORTCUT}"
+    assert actions[0].isEnabled()
+    assert actions[1].text() == f"Open With...\t{_OPEN_WITH_TRACK_SHORTCUT}"
+    assert actions[1].isEnabled()
+
+    actions[0].trigger()
+    actions[1].trigger()
+
+    assert opened == [[str(track_path)]]
+    assert picked == [([str(track_path)], view)]
+
+
+def test_open_track_file_actions_disable_missing_files(qtbot, tmp_path: Path) -> None:
+    view = _mount_list(
+        qtbot,
+        device_sessions=_DeviceSessions(_Session(device_path=str(tmp_path))),
+    )
+    menu = QMenu(view)
+
+    view._add_open_file_actions(menu, [{"Location": ":iPod_Control:Music:F00:Missing.mp3"}])
+    actions = menu.actions()
+
+    assert actions[0].text() == f"Open Track File\t{_OPEN_TRACK_SHORTCUT}"
+    assert not actions[0].isEnabled()
+    assert actions[1].text() == f"Open With...\t{_OPEN_WITH_TRACK_SHORTCUT}"
+    assert not actions[1].isEnabled()
+
+
+def test_open_with_action_uses_one_picker_for_multiple_tracks(
+    qtbot,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    first_path = tmp_path / "iPod_Control" / "Music" / "F00" / "One.mp3"
+    second_path = tmp_path / "iPod_Control" / "Music" / "F01" / "Two.mp3"
+    first_path.parent.mkdir(parents=True)
+    second_path.parent.mkdir(parents=True)
+    first_path.write_bytes(b"audio")
+    second_path.write_bytes(b"audio")
+    view = _mount_list(
+        qtbot,
+        device_sessions=_DeviceSessions(_Session(device_path=str(tmp_path))),
+    )
+    picked: list[tuple[list[str], MusicBrowserList]] = []
+    monkeypatch.setattr(
+        "iopenpod.gui.widgets.MBListView.open_files_with_app_picker",
+        lambda paths, parent: picked.append((list(paths), parent)) or True,
+    )
+    menu = QMenu(view)
+
+    view._add_open_file_actions(
+        menu,
+        [
+            {"Location": ":iPod_Control:Music:F00:One.mp3"},
+            {"Location": ":iPod_Control:Music:F01:Two.mp3"},
+        ],
+    )
+    actions = menu.actions()
+
+    assert actions[0].text() == f"Open 2 Track Files\t{_OPEN_TRACK_SHORTCUT}"
+    assert actions[0].isEnabled()
+    assert actions[1].text() == f"Open With...\t{_OPEN_WITH_TRACK_SHORTCUT}"
+    assert actions[1].isEnabled()
+
+    actions[1].trigger()
+
+    assert picked == [([str(first_path), str(second_path)], view)]
+
+
+def test_open_track_shortcut_labels_use_platform_controls() -> None:
+    if sys.platform == "darwin":
+        assert _OPEN_TRACK_SHORTCUT == "⌘+O"
+        assert _OPEN_WITH_TRACK_SHORTCUT == "⌘+⇧+O"
+    else:
+        assert _OPEN_TRACK_SHORTCUT == "Ctrl+O"
+        assert _OPEN_WITH_TRACK_SHORTCUT == "Ctrl+Shift+O"
+
+
+def test_open_track_keyboard_shortcuts_route_to_open_handlers(
+    qtbot,
+    monkeypatch,
+) -> None:
+    view = _mount_list(qtbot)
+    opened: list[str] = []
+    picked: list[str] = []
+    monkeypatch.setattr(
+        view,
+        "_open_selected_track_files",
+        lambda: opened.append("open"),
+    )
+    monkeypatch.setattr(
+        view,
+        "_open_selected_track_file_with_picker",
+        lambda: picked.append("open-with"),
+    )
+
+    open_event = QKeyEvent(
+        QEvent.Type.KeyPress,
+        Qt.Key.Key_O,
+        Qt.KeyboardModifier.ControlModifier,
+    )
+    open_with_event = QKeyEvent(
+        QEvent.Type.KeyPress,
+        Qt.Key.Key_O,
+        Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier,
+    )
+
+    assert view.eventFilter(view.table, open_event) is True
+    assert view.eventFilter(view.table, open_with_event) is True
+    assert opened == ["open"]
+    assert picked == ["open-with"]
+
+
+@pytest.mark.parametrize(
+    ("key", "modifier"),
+    [
+        (Qt.Key.Key_Control, Qt.KeyboardModifier.ControlModifier),
+        (Qt.Key.Key_Alt, Qt.KeyboardModifier.AltModifier),
+        (Qt.Key.Key_Shift, Qt.KeyboardModifier.ShiftModifier),
+        (Qt.Key.Key_Meta, Qt.KeyboardModifier.MetaModifier),
+    ],
+)
+def test_modifier_only_keypresses_do_not_trigger_table_shortcuts(
+    qtbot,
+    key: Qt.Key,
+    modifier: Qt.KeyboardModifier,
+) -> None:
+    view = _mount_list(qtbot)
+    event = QKeyEvent(QEvent.Type.KeyPress, key, modifier)
+
+    assert view.eventFilter(view.table, event) is False
+
+
 def test_podcast_conversion_changes_set_ipod_podcast_fields() -> None:
     track = {
         "db_track_id": 1,
@@ -1399,7 +1706,7 @@ def test_track_editor_dialog_artwork_panel_collapses_matching_artworks(qtbot, mo
         ),
     ]
     monkeypatch.setattr(
-        "GUI.widgets.trackEditorDialog.get_track_artwork_previews",
+        "iopenpod.gui.widgets.trackEditorDialog.get_track_artwork_previews",
         lambda _tracks: previews,
     )
 
@@ -1443,7 +1750,7 @@ def test_track_editor_dialog_artwork_panel_shows_multiple_images_for_different_a
         ),
     ]
     monkeypatch.setattr(
-        "GUI.widgets.trackEditorDialog.get_track_artwork_previews",
+        "iopenpod.gui.widgets.trackEditorDialog.get_track_artwork_previews",
         lambda _tracks: previews,
     )
 
@@ -1482,7 +1789,7 @@ def test_track_editor_dialog_artwork_panel_shows_multiple_values_for_artwork_pre
         ),
     ]
     monkeypatch.setattr(
-        "GUI.widgets.trackEditorDialog.get_track_artwork_previews",
+        "iopenpod.gui.widgets.trackEditorDialog.get_track_artwork_previews",
         lambda _tracks: previews,
     )
 
@@ -1520,9 +1827,9 @@ def test_track_editor_dialog_artwork_panel_shows_multiple_values_for_artwork_pre
         def selected_choice(self):
             return self._context.choices[0]
 
-    monkeypatch.setattr("GUI.widgets.trackEditorDialog.UnifyArtworkDialog", _Dialog)
+    monkeypatch.setattr("iopenpod.gui.widgets.trackEditorDialog.UnifyArtworkDialog", _Dialog)
     monkeypatch.setattr(
-        "GUI.widgets.trackEditorDialog.save_unified_artwork_temp",
+        "iopenpod.gui.widgets.trackEditorDialog.save_unified_artwork_temp",
         lambda _image: str(staged_path),
     )
 

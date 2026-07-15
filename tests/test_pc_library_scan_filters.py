@@ -1,9 +1,27 @@
 from __future__ import annotations
 
+import struct
 from pathlib import Path
 
-import SyncEngine.pc_library as pc_library_module
-from SyncEngine.pc_library import PCLibrary, PCTrack
+import iopenpod.sync.pc_library as pc_library_module
+from iopenpod.sync.pc_library import PCLibrary, PCTrack
+
+
+def _write_minimal_mp4_with_duration(
+    path: Path,
+    *,
+    timescale: int,
+    duration: int,
+) -> None:
+    mvhd_payload = (
+        b"\0\0\0\0"
+        + struct.pack(">IIII", 0, 0, timescale, duration)
+        + (b"\0" * 80)
+    )
+    mvhd = struct.pack(">I4s", 8 + len(mvhd_payload), b"mvhd") + mvhd_payload
+    moov = struct.pack(">I4s", 8 + len(mvhd), b"moov") + mvhd
+    ftyp = struct.pack(">I4s", 16, b"ftyp") + b"mp42\0\0\0\0"
+    path.write_bytes(ftyp + moov)
 
 
 def test_count_audio_files_skips_appledouble_sidecars(tmp_path):
@@ -225,3 +243,69 @@ def test_metadata_text_falls_back_for_none_and_blank_values() -> None:
     assert pc_library_module.PCLibrary._metadata_text({"title": None}, "title", "fallback") == "fallback"
     assert pc_library_module.PCLibrary._metadata_text({"title": "   "}, "title", "fallback") == "fallback"
     assert pc_library_module.PCLibrary._metadata_text({"title": " Song "}, "title", "fallback") == "Song"
+
+
+def test_video_scan_never_extracts_artwork_or_decodes_thumbnail(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    from iopenpod.artworkdb_writer import art_extractor
+    from iopenpod.podcasts import downloader
+    from iopenpod.sync import transcoder
+
+    video = tmp_path / "recording.mp4"
+    video.write_bytes(b"video")
+    scan_calls: list[str] = []
+
+    class RecordingMutagen:
+        @staticmethod
+        def File(_path):
+            scan_calls.append("mutagen")
+            return None
+
+    monkeypatch.setattr(pc_library_module, "mutagen", RecordingMutagen())
+    monkeypatch.setattr(
+        PCLibrary,
+        "_extract_metadata",
+        lambda self, audio, ext, file_path=None: scan_calls.append("metadata") or {},
+    )
+    monkeypatch.setattr(
+        art_extractor,
+        "extract_art_with_folder",
+        lambda _path: scan_calls.append("artwork") or None,
+    )
+    monkeypatch.setattr(
+        downloader,
+        "extract_chapters",
+        lambda _path: scan_calls.append("chapters") or None,
+    )
+    monkeypatch.setattr(
+        transcoder,
+        "probe_video_needs_transcode",
+        lambda _path: scan_calls.append("codec-probe") or True,
+    )
+
+    track = PCLibrary(tmp_path)._read_track(video, library_root=tmp_path)
+
+    assert track is not None
+    assert track.is_video is True
+    assert scan_calls == []
+
+
+def test_video_scan_reads_mp4_duration_without_external_probe(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    video = tmp_path / "recording.mp4"
+    _write_minimal_mp4_with_duration(video, timescale=1_000, duration=90_250)
+
+    def unexpected_process(*_args, **_kwargs):
+        raise AssertionError("video duration launched an external process")
+
+    monkeypatch.setattr(pc_library_module.subprocess, "run", unexpected_process)
+    monkeypatch.setattr(pc_library_module.subprocess, "check_output", unexpected_process)
+
+    track = PCLibrary(tmp_path)._read_track(video, library_root=tmp_path)
+
+    assert track is not None
+    assert track.duration_ms == 90_250

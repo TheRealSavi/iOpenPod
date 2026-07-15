@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from app_core.jobs import build_podcast_plan_for_sync
+from iopenpod.application.jobs import build_podcast_plan_for_sync
 
 
 class _Store:

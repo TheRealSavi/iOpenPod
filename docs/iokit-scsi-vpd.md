@@ -4,7 +4,7 @@
 
 Apple iPods store device identity data (serial number, FamilyID, codec
 capabilities, artwork specs) in SCSI VPD (Vital Product Data) pages accessible
-via INQUIRY commands.  The existing approach (`ipod_device.vpd_libusb`) uses pyusb
+via INQUIRY commands.  The existing approach (`iopenpod.device.vpd_libusb`) uses pyusb
 to send these SCSI commands over the USB bulk transport, but this requires:
 
 1. **Root / sudo** — the macOS kernel mass-storage driver (`IOUSBMassStorageDriver`)
@@ -247,23 +247,23 @@ The Nano 2G returned **37 fields** and **6,279 bytes**.
 ## Architecture
 
 ```
-ipod_device.vpd_libusb
+iopenpod.device.vpd_libusb
   └─ identify_via_vpd()                              ← single entry point
        ├─ _vpd_query_any_platform()
-  │    ├─ macOS fast path: ipod_device.vpd_iokit.query_ipod_vpd()  ← IOKit, no root
+  │    ├─ macOS fast path: iopenpod.device.vpd_iokit.query_ipod_vpd()  ← IOKit, no root
        │    └─ Fallback: query_ipod_vpd()             ← pyusb, root on Linux
-  ├─ ipod_device.lookup_by_serial()              ← serial-last-3 → exact model
+  ├─ iopenpod.device.lookup_by_serial()              ← serial-last-3 → exact model
        ├─ _wait_for_remount()                         ← pyusb remount handling
        └─ write_sysinfo()                             ← persist to iPod
 
-ipod_device/info.py
+src/iopenpod/device/info.py
   └─ _enrich_from_usb_vpd()  → calls identify_via_vpd()
 
-ipod_device/scanner.py
+src/iopenpod/device/scanner.py
   └─ _try_vpd_identification()  → calls identify_via_vpd()
 ```
 
-On non-macOS platforms, `ipod_device.vpd_iokit` raises `ImportError` at import time
+On non-macOS platforms, `iopenpod.device.vpd_iokit` raises `ImportError` at import time
 (line 34: `if sys.platform != "darwin": raise ImportError`).  The centralized
 `_vpd_query_any_platform()` catches this and falls through to pyusb automatically.
 

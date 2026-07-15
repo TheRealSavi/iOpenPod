@@ -48,7 +48,7 @@ modules:
 
       # Icon assets from the repository.
       - type: dir
-        path: ../assets/icons
+        path: ../src/iopenpod/assets/icons
         dest: icons
 
       # Wrapper shell script, desktop entry, and AppStream metadata live in

@@ -24,7 +24,9 @@ Steps to reproduce the behavior:
 What you expected to happen.
 
 **Screenshots / logs**
-If applicable, add screenshots or paste the logs from `~/iOpenPod/`.
+If applicable, add screenshots and attach `iopenpod.log`.
+
+To find it in iOpenPod: open **Settings > Storage**, then click **Open** next to **Log Location**.
 
 **Environment**
 

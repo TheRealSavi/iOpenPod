@@ -3,8 +3,8 @@ from __future__ import annotations
 import numpy as np
 from PIL import Image
 
-from ArtworkDB_Writer.ithmb_codecs import decode_pixels_for_format, encode_image_for_format
-from ipod_device.artwork import resolve_cover_art_format_definitions
+from iopenpod.artworkdb_writer.ithmb_codecs import decode_pixels_for_format, encode_image_for_format
+from iopenpod.device.artwork import resolve_cover_art_format_definitions
 
 
 def test_nano_7g_small_alt_writes_padded_stride() -> None:

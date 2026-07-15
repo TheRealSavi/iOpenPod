@@ -7,9 +7,10 @@ from PyQt6.QtCore import QPoint, Qt
 from PyQt6.QtGui import QContextMenuEvent
 from PyQt6.QtWidgets import QApplication, QScrollArea, QScrollBar
 
-import GUI.imgMaker as img_maker
-from GUI.widgets.MBGridView import MusicBrowserGrid
-from GUI.widgets.MBGridViewItem import MusicBrowserGridItem
+import iopenpod.gui.imgMaker as img_maker
+from iopenpod.gui.styles import Colors
+from iopenpod.gui.widgets.MBGridView import ArtworkResult, MusicBrowserGrid
+from iopenpod.gui.widgets.MBGridViewItem import GridItemRenderState, MusicBrowserGridItem
 
 
 def _build_items(
@@ -78,6 +79,40 @@ def _send_context_menu(widget: MusicBrowserGridItem) -> None:
         widget.mapToGlobal(pos),
     )
     QApplication.sendEvent(widget, event)
+
+
+def _compact_css(widget: MusicBrowserGridItem) -> str:
+    return "".join(widget.styleSheet().split())
+
+
+def test_grid_item_keeps_existing_artwork_tint_in_dark_theme(qtbot, monkeypatch):
+    monkeypatch.setattr(Colors, "_active_mode", "dark")
+    item = MusicBrowserGridItem()
+    qtbot.addWidget(item)
+
+    item._apply_color_theme(
+        GridItemRenderState(display_dominant_color=(86, 112, 144))
+    )
+
+    css = _compact_css(item)
+    assert "background-color:rgba(86,112,144,30);" in css
+    assert "border:none;" in css
+    assert "background-color:rgba(86,112,144,55);" in css
+
+
+def test_grid_item_uses_stronger_artwork_tint_in_light_theme(qtbot, monkeypatch):
+    monkeypatch.setattr(Colors, "_active_mode", "light")
+    item = MusicBrowserGridItem()
+    qtbot.addWidget(item)
+
+    item._apply_color_theme(
+        GridItemRenderState(display_dominant_color=(86, 112, 144))
+    )
+
+    css = _compact_css(item)
+    assert "background-color:rgba(86,112,144,48);" in css
+    assert "border:none;" in css
+    assert "background-color:rgba(86,112,144,82);" in css
 
 
 def _art_result(rgb: tuple[int, int, int]) -> tuple[int, int, bytes, tuple[int, int, int], dict]:
@@ -159,6 +194,30 @@ def test_grid_modifier_clicks_select_without_opening(qtbot):
     qtbot.mouseClick(items[3], Qt.MouseButton.LeftButton)
     assert opened == ["Album 0003"]
     assert _selected_titles(grid) == ["Album 0000", "Album 0002"]
+
+
+def test_grid_click_emits_rendered_artwork_colors(qtbot):
+    _scroll, grid = _mount_grid(qtbot)
+    grid.populateGrid(_build_items(1, with_art=True))
+    qtbot.waitUntil(lambda: len(grid.gridItems) == 1, timeout=2000)
+    grid._art_cache[1000] = ArtworkResult(
+        Image.new("RGBA", (16, 16), (86, 112, 144, 255)),
+        (86, 112, 144),
+        {"text": (255, 255, 255), "text_secondary": (225, 230, 238)},
+    )
+    grid._apply_art_to_visible_widgets(1000)
+    qtbot.waitUntil(
+        lambda: _grid_items(grid)[0].item_data.get("dominant_color") == (86, 112, 144),
+        timeout=2000,
+    )
+
+    emitted: list[dict] = []
+    grid.item_selected.connect(emitted.append)
+    qtbot.mouseClick(_grid_items(grid)[0], Qt.MouseButton.LeftButton)
+
+    assert len(emitted) == 1
+    assert emitted[0]["dominant_color"] == (86, 112, 144)
+    assert emitted[0]["display_dominant_color"] == (86, 112, 144)
 
 
 def test_grid_modifier_click_opens_when_multi_select_is_disabled(qtbot):

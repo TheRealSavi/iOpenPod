@@ -1,10 +1,10 @@
 from pathlib import Path
 from types import SimpleNamespace
 
-from iTunesDB_Writer.mhit_writer import TrackInfo
-from SyncEngine.contracts import SyncPlan
-from SyncEngine.mapping import MappingFile
-from SyncEngine.sync_executor import SyncExecutor, _SyncContext
+from iopenpod.itunesdb_writer.mhit_writer import TrackInfo
+from iopenpod.sync.contracts import SyncPlan
+from iopenpod.sync.mapping import MappingFile
+from iopenpod.sync.sync_executor import SyncExecutor, _SyncContext
 
 
 def _context() -> _SyncContext:

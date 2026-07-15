@@ -4,17 +4,17 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
 
-from PyQt6.QtCore import QObject
+from PyQt6.QtCore import QObject, QTimer
 
-from app_core import controllers
-from app_core.controllers import QuickWriteController
-from app_core.jobs import (
+from iopenpod.application import controllers
+from iopenpod.application.controllers import QuickWriteController
+from iopenpod.application.jobs import (
     PlaylistImportWorker,
     QuickWriteWorker,
     _snapshot_cache_for_itunesdb_write,
 )
-from app_core.services import DeviceManagerLike, LibraryCacheLike
-from SyncEngine.quick_writes import QuickWriteResult
+from iopenpod.application.services import DeviceManagerLike, LibraryCacheLike
+from iopenpod.sync.quick_writes import QuickWriteResult
 
 
 class _FakeCache:
@@ -23,6 +23,7 @@ class _FakeCache:
         self.discarded = 0
         self.invalidated = 0
         self.loaded = 0
+        self.revision = 1
         self._track_edits: dict[int, dict[str, tuple[object, object]]] = {}
         self._artwork_edits: dict[int, str] = {}
         self._pending = [{"playlist_id": 123, "Title": "Pending"}]
@@ -56,6 +57,21 @@ class _FakeCache:
     def get_track_artwork_edits(self) -> dict[int, str]:
         return dict(self._artwork_edits)
 
+    def get_tracks(self) -> list[dict]:
+        return []
+
+    def get_playlists(self) -> list[dict]:
+        return []
+
+    def capture_quick_write_state(self) -> SimpleNamespace:
+        return SimpleNamespace(
+            tracks=self.get_tracks(),
+            playlists=self.get_playlists(),
+            track_edits={},
+            artwork_sources=self.get_track_artwork_edits(),
+            revision=self.revision,
+        )
+
     def has_pending_playlists(self) -> bool:
         return bool(self._pending)
 
@@ -66,6 +82,51 @@ class _FakeCache:
 class _FakeDeviceManager:
     def __init__(self) -> None:
         self.device_path = "/fake/ipod"
+
+
+class _WorkerCache:
+    def __init__(self, artwork_edits: dict[int, str] | None = None) -> None:
+        self.commit_count = 0
+        self.reload_count = 0
+        self._artwork_edits = artwork_edits or {}
+        self.revision = 1
+
+    def get_tracks(self) -> list[dict]:
+        return [{"track_id": 1, "db_track_id": 100, "Title": "Song"}]
+
+    def get_playlists(self) -> list[dict]:
+        return [{"playlist_id": 1, "Title": "iPod", "master_flag": 1}]
+
+    def get_track_artwork_edits(self) -> dict[int, str]:
+        return dict(self._artwork_edits)
+
+    def get_quick_write_revision(self) -> int:
+        return self.revision
+
+    def commit_quick_write_state(self, expected_revision: int) -> bool:
+        if expected_revision != self.revision:
+            return False
+        self.commit_count += 1
+        return True
+
+    def reload_after_itunesdb_write(self) -> None:
+        self.reload_count += 1
+
+
+def _run_quick_write_worker(
+    monkeypatch,
+    cache: _WorkerCache,
+    result: QuickWriteResult,
+) -> None:
+    from iopenpod.sync import quick_writes
+
+    monkeypatch.setattr(
+        quick_writes,
+        "write_cached_itunesdb",
+        lambda *_args, **_kwargs: result,
+    )
+    worker = QuickWriteWorker("/fake/ipod", cast(LibraryCacheLike, cache))
+    worker.run()
 
 
 class _FakeWorker(QObject):
@@ -96,6 +157,66 @@ def test_quick_playlist_done_does_not_reload_in_controller() -> None:
     assert cache.invalidated == 0
     assert cache.loaded == 0
     assert controller._quick_worker is None
+
+
+def test_quick_write_done_keeps_saving_status_for_newer_changes() -> None:
+    cache = _FakeCache()
+    cache._pending.clear()
+    controller = QuickWriteController(
+        device_manager=cast(DeviceManagerLike, _FakeDeviceManager()),
+        library_cache=cast(LibraryCacheLike, cache),
+        is_sync_running=lambda: False,
+    )
+    controller._quick_worker = cast(controllers.QuickWriteWorker, _FakeWorker())
+    statuses: list[str] = []
+    timer_starts: list[int] = []
+    controller._metadata_timer = cast(
+        QTimer,
+        SimpleNamespace(start=timer_starts.append),
+    )
+    controller.save_status_changed.connect(statuses.append)
+
+    controller._on_quick_write_done(
+        QuickWriteResult(success=True, newer_changes_pending=True)
+    )
+
+    assert statuses == ["saving"]
+    assert timer_starts == [0]
+    assert controller._force_snapshot_write is True
+
+
+def test_forced_snapshot_write_starts_without_staged_rows(monkeypatch) -> None:
+    created: dict[str, object] = {}
+
+    class _Signal:
+        def connect(self, _callback) -> None:
+            pass
+
+    class _QuickWriteWorker:
+        def __init__(self, ipod_path: str, cache) -> None:
+            created["ipod_path"] = ipod_path
+            created["cache"] = cache
+            self.completed = _Signal()
+            self.error = _Signal()
+
+        def start(self) -> None:
+            created["started"] = True
+
+    monkeypatch.setattr(controllers, "QuickWriteWorker", _QuickWriteWorker)
+    cache = _FakeCache()
+    cache._pending.clear()
+    controller = QuickWriteController(
+        device_manager=cast(DeviceManagerLike, _FakeDeviceManager()),
+        library_cache=cast(LibraryCacheLike, cache),
+        is_sync_running=lambda: False,
+    )
+    controller._force_snapshot_write = True
+
+    controller.start_quick_write()
+
+    assert created["cache"] is cache
+    assert created["started"] is True
+    assert controller._force_snapshot_write is False
 
 
 def test_start_playlist_sync_does_not_clear_pending_before_success(monkeypatch) -> None:
@@ -292,37 +413,54 @@ def test_quick_write_failure_discards_and_reloads() -> None:
     assert cache.loaded == 0
 
 
-def test_quick_write_worker_reloads_cache_after_write(monkeypatch) -> None:
-    from SyncEngine import quick_writes
+def test_quick_write_worker_commits_cache_in_place_after_write(monkeypatch) -> None:
+    cache = _WorkerCache()
+    _run_quick_write_worker(monkeypatch, cache, QuickWriteResult(success=True))
 
-    class _WorkerCache:
-        def __init__(self) -> None:
-            self.loaded = 0
+    assert cache.commit_count == 1
+    assert cache.reload_count == 0
 
-        def get_tracks(self) -> list[dict]:
-            return [{"track_id": 1, "db_track_id": 100, "Title": "Song"}]
 
-        def get_playlists(self) -> list[dict]:
-            return [{"playlist_id": 1, "Title": "iPod", "master_flag": 1}]
+def test_quick_write_worker_reloads_cache_when_artwork_changed(monkeypatch) -> None:
+    cache = _WorkerCache({100: "/tmp/new-cover.png"})
+    _run_quick_write_worker(monkeypatch, cache, QuickWriteResult(success=True))
 
-        def get_track_artwork_edits(self) -> dict[int, str]:
-            return {}
+    assert cache.commit_count == 0
+    assert cache.reload_count == 1
 
-        def reload_after_itunesdb_write(self) -> None:
-            self.loaded += 1
+
+def test_quick_write_worker_reloads_cache_after_failed_write(monkeypatch) -> None:
+    cache = _WorkerCache()
+    _run_quick_write_worker(
+        monkeypatch,
+        cache,
+        QuickWriteResult(
+            success=False,
+            errors=[("quick_write", "Database write failed")],
+        ),
+    )
+
+    assert cache.commit_count == 0
+    assert cache.reload_count == 1
+
+
+def test_quick_write_worker_reports_newer_staged_changes(monkeypatch) -> None:
+    from iopenpod.sync import quick_writes
 
     cache = _WorkerCache()
-
+    result = QuickWriteResult(success=True)
     monkeypatch.setattr(
         quick_writes,
         "write_cached_itunesdb",
-        lambda *_args, **_kwargs: QuickWriteResult(success=True),
+        lambda *_args, **_kwargs: result,
     )
-
     worker = QuickWriteWorker("/fake/ipod", cast(LibraryCacheLike, cache))
+    cache.revision += 1
+
     worker.run()
 
-    assert cache.loaded == 1
+    assert result.newer_changes_pending is True
+    assert cache.commit_count == 0
 
 
 def test_snapshot_uses_artwork_edit_map_and_strips_pending_marker() -> None:
@@ -351,14 +489,35 @@ def test_snapshot_uses_artwork_edit_map_and_strips_pending_marker() -> None:
     assert artwork_sources == {100: "/tmp/cache.png"}
 
 
+def test_snapshot_applies_pending_track_edits_to_copied_tracks() -> None:
+    class _Cache:
+        def get_tracks(self) -> list[dict]:
+            return [{"db_track_id": 100, "Title": "Song", "rating": 40}]
+
+        def get_playlists(self) -> list[dict]:
+            return [{"playlist_id": 1, "Title": "iPod", "master_flag": 1}]
+
+        def get_track_edits(self) -> dict[int, dict[str, tuple[object, object]]]:
+            return {100: {"rating": (40, 100)}}
+
+        def get_track_artwork_edits(self) -> dict[int, str]:
+            return {}
+
+    tracks, _playlists, _artwork_sources = _snapshot_cache_for_itunesdb_write(
+        cast(LibraryCacheLike, _Cache())
+    )
+
+    assert tracks == [{"db_track_id": 100, "Title": "Song", "rating": 100}]
+
+
 def test_playlist_import_refreshes_tracks_for_already_present_fingerprints(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    from app_core import jobs
-    from SyncEngine import _db_io, audio_fingerprint
-    from SyncEngine import mapping as mapping_module
-    from SyncEngine.pc_library import PCLibrary
+    from iopenpod.application import jobs
+    from iopenpod.sync import _db_io, audio_fingerprint
+    from iopenpod.sync import mapping as mapping_module
+    from iopenpod.sync.pc_library import PCLibrary
 
     source = tmp_path / "song.mp3"
     playlist = tmp_path / "mix.m3u8"
@@ -409,8 +568,8 @@ def test_playlist_import_refreshes_tracks_for_already_present_fingerprints(
 
     monkeypatch.setattr(
         audio_fingerprint,
-        "get_or_compute_fingerprint",
-        lambda *_args, **_kwargs: "fp-song",
+        "get_or_compute_fingerprint_with_status",
+        lambda *_args, **_kwargs: ("fp-song", "computed"),
     )
     monkeypatch.setattr(
         PCLibrary,
@@ -460,10 +619,10 @@ def test_playlist_import_merges_same_name_playlist_without_duplicate_members(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    from app_core import jobs
-    from SyncEngine import _db_io, audio_fingerprint
-    from SyncEngine import mapping as mapping_module
-    from SyncEngine.pc_library import PCLibrary
+    from iopenpod.application import jobs
+    from iopenpod.sync import _db_io, audio_fingerprint
+    from iopenpod.sync import mapping as mapping_module
+    from iopenpod.sync.pc_library import PCLibrary
 
     source = tmp_path / "song.mp3"
     playlist_file = tmp_path / "mix.m3u8"
@@ -521,8 +680,8 @@ def test_playlist_import_merges_same_name_playlist_without_duplicate_members(
 
     monkeypatch.setattr(
         audio_fingerprint,
-        "get_or_compute_fingerprint",
-        lambda *_args, **_kwargs: "fp-song",
+        "get_or_compute_fingerprint_with_status",
+        lambda *_args, **_kwargs: ("fp-song", "computed"),
     )
     monkeypatch.setattr(
         PCLibrary,
@@ -581,11 +740,11 @@ def test_playlist_import_finds_existing_ipod_track_when_mapping_is_missing(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    from app_core import jobs
-    from SyncEngine import _db_io, audio_fingerprint
-    from SyncEngine import mapping as mapping_module
-    from SyncEngine.core import SyncEngine as CoreSyncEngine
-    from SyncEngine.pc_library import PCLibrary
+    from iopenpod.application import jobs
+    from iopenpod.sync import _db_io, audio_fingerprint
+    from iopenpod.sync import mapping as mapping_module
+    from iopenpod.sync.core import SyncEngine as CoreSyncEngine
+    from iopenpod.sync.pc_library import PCLibrary
 
     source = tmp_path / "song.mp3"
     playlist_file = tmp_path / "mix.m3u8"
@@ -640,9 +799,14 @@ def test_playlist_import_finds_existing_ipod_track_when_mapping_is_missing(
             return SimpleNamespace(get_entries=lambda _fingerprint: [])
 
     def fake_fingerprint(path, *_args, **_kwargs):
-        return "fp-song" if Path(path) in {source, ipod_track} else None
+        fingerprint = "fp-song" if Path(path) in {source, ipod_track} else None
+        return fingerprint, "computed" if fingerprint else "failed"
 
-    monkeypatch.setattr(audio_fingerprint, "get_or_compute_fingerprint", fake_fingerprint)
+    monkeypatch.setattr(
+        audio_fingerprint,
+        "get_or_compute_fingerprint_with_status",
+        fake_fingerprint,
+    )
     monkeypatch.setattr(
         PCLibrary,
         "_read_track",
@@ -701,11 +865,11 @@ def test_playlist_import_matches_ipod_file_fingerprint_without_readding(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    from app_core import jobs
-    from SyncEngine import _db_io, audio_fingerprint
-    from SyncEngine import mapping as mapping_module
-    from SyncEngine.core import SyncEngine as CoreSyncEngine
-    from SyncEngine.pc_library import PCLibrary
+    from iopenpod.application import jobs
+    from iopenpod.sync import _db_io, audio_fingerprint
+    from iopenpod.sync import mapping as mapping_module
+    from iopenpod.sync.core import SyncEngine as CoreSyncEngine
+    from iopenpod.sync.pc_library import PCLibrary
 
     playlist_file = tmp_path / "mix.m3u8"
     ipod_root = tmp_path / "ipod"
@@ -760,9 +924,14 @@ def test_playlist_import_matches_ipod_file_fingerprint_without_readding(
 
     def fake_fingerprint(path, *_args, **_kwargs):
         fingerprinted_paths.append(Path(path))
-        return "fp-song" if Path(path) == ipod_track else None
+        fingerprint = "fp-song" if Path(path) == ipod_track else None
+        return fingerprint, "computed" if fingerprint else "failed"
 
-    monkeypatch.setattr(audio_fingerprint, "get_or_compute_fingerprint", fake_fingerprint)
+    monkeypatch.setattr(
+        audio_fingerprint,
+        "get_or_compute_fingerprint_with_status",
+        fake_fingerprint,
+    )
     monkeypatch.setattr(
         PCLibrary,
         "_read_track",

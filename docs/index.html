@@ -731,6 +731,8 @@
               "acceptedAnswer": { "@type": "Answer", "text": "iPod Classic, iPod Mini, and iPod Nano models are supported. iPod Shuffle support is planned. iPod Touch support is not planned." }},
             { "@type": "Question", "name": "Will syncing with iOpenPod erase my iPod?",
               "acceptedAnswer": { "@type": "Answer", "text": "No. iOpenPod shows you exactly what will change before anything is written, and automatically backs up your database before every sync. You can roll back with one click." }},
+            { "@type": "Question", "name": "How do I find the iOpenPod log file?",
+              "acceptedAnswer": { "@type": "Answer", "text": "In iOpenPod, open Settings > Storage, then click Open next to Log Location. Attach iopenpod.log when reporting a bug." }},
             { "@type": "Question", "name": "Do I need Python to use iOpenPod?",
               "acceptedAnswer": { "@type": "Answer", "text": "PyPI installs require Python 3.11 or newer. Native builds do not require a separate Python installation." }}
         ]
@@ -753,6 +755,7 @@
 
             <div class="cta">
                 <a href="#install" class="btn btn-primary">Install iOpenPod</a>
+                <a href="install-help.html" class="btn btn-secondary">Install Help</a>
                 <a href="https://github.com/TheRealSavi/iOpenPod" class="btn btn-secondary">View on GitHub</a>
                 <a href="https://discord.gg/9Yy499Tf5d" class="btn btn-secondary">Join Discord</a>
             </div>
@@ -1027,6 +1030,7 @@
             </p>
             <div class="download-cta">
                 <a href="https://github.com/TheRealSavi/iOpenPod/releases/latest" class="btn btn-secondary" style="font-size: 1rem; padding: 13px 32px;">View Latest Release Builds</a>
+                <a href="install-help.html" class="btn btn-secondary" style="font-size: 1rem; padding: 13px 32px; margin-left: 8px;">Detailed Install Help</a>
             </div>
             <div class="download-table-wrap">
                 <table class="download-table">
@@ -1034,18 +1038,21 @@
                         <tr><th>Platform</th><th>File</th><th>Instructions</th></tr>
                     </thead>
                     <tbody>
-                        <tr><td>Windows</td><td>iOpenPod-windows.zip</td><td>Extract the archive and run iOpenPod.exe.</td></tr>
-                        <tr><td>macOS</td><td>iOpenPod-macos.tar.gz</td><td>Extract the archive and run iOpenPod.app. You may need to allow the app in System Settings.</td></tr>
+                        <tr><td>Windows</td><td>iOpenPod-Windows.zip</td><td>Extract the archive and run iOpenPod.exe.</td></tr>
+                        <tr><td>macOS</td><td>iOpenPod-macOS.zip</td><td>Extract the archive and run iOpenPod.app. You may need to allow the app in System Settings.</td></tr>
                         <tr><td>Linux (recommended)</td><td>iOpenPod-Linux-x86_64.AppImage</td><td>Run <code style="font-size:0.8rem;color:var(--accent)">chmod a+x ./iOpenPod-Linux-x86_64.AppImage</code>, then launch the AppImage.</td></tr>
                         <tr><td>Linux (Arch-based)</td><td><a href="https://aur.archlinux.org/packages/iopenpod" style="color:var(--accent);text-decoration:none">iopenpod</a> (AUR)</td><td>Install from the AUR.</td></tr>
-                        <tr><td>Linux (tarball)</td><td>iOpenPod-linux.tar.gz</td><td>Extract the archive and run ./iOpenPod.</td></tr>
+                        <tr><td>Linux (tarball)</td><td>iOpenPod-Linux.tar.gz</td><td>Extract the archive and run ./iOpenPod.</td></tr>
+                        <tr><td>Linux (Flatpak)</td><td>iOpenPod-Linux.flatpak</td><td>If present on the release, install with Flatpak.</td></tr>
                     </tbody>
                 </table>
             </div>
             <p class="prereq-note">
+                For step-by-step platform setup and troubleshooting, see the <a href="install-help.html">Install Help page</a>.<br>
                 Python package installs require Python 3.11+. If <code style="color:var(--accent);font-family:monospace">iopenpod</code> is not on your PATH yet, run <code style="color:var(--accent);font-family:monospace">pipx ensurepath</code> for pipx or <code style="color:var(--accent);font-family:monospace">uv tool update-shell</code> for uv tool.<br>
                 Installs should be updated with the same tool used to install them.<br>
-                Required tools: install <a href="https://ffmpeg.org/">FFmpeg</a> with <code style="color:var(--accent);font-family:monospace">ffprobe</code> for transcoding and media probing, and <a href="https://acoustid.org/chromaprint">Chromaprint</a> for acoustic fingerprinting during sync.
+                Required tools: install <a href="https://ffmpeg.org/">FFmpeg</a> with <code style="color:var(--accent);font-family:monospace">ffprobe</code> for transcoding and media probing, and <a href="https://acoustid.org/chromaprint">Chromaprint</a> for acoustic fingerprinting during sync.<br>
+                Linux users who see a Qt <code style="color:var(--accent);font-family:monospace">xcb</code> platform plugin error should install the XCB runtime packages listed on the Install Help page.
             </p>
         </section>
 
@@ -1070,7 +1077,7 @@
                 </div>
                 <div class="terminal-line">
                     <span class="terminal-prompt">$</span>
-                    <span class="terminal-cmd"><em>uv run python main.py</em></span>
+                    <span class="terminal-cmd"><em>uv run iopenpod</em></span>
                 </div>
             </div>
             <p class="prereq-note" style="margin-top: 16px;">
@@ -1130,7 +1137,14 @@
                     <summary>My iPod isn't being detected. What should I do?
                         <svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
                     </summary>
-                    <p>Make sure the iPod is mounted as a drive (visible in File Explorer or Finder) and not in disk mode lock. iOpenPod also has a manual folder picker if auto-detection misses it. If it's still not working, open an issue on GitHub with your iPod model and OS.</p>
+                    <p>Make sure the iPod is mounted as a drive and visible in File Explorer, Finder, or your Linux file manager. If it still is not working, open an issue with your iPod model, OS, and <code>iopenpod.log</code>.</p>
+                    <p>To find the log in iOpenPod, open <strong>Settings &gt; Storage</strong>, then click <strong>Open</strong> next to <strong>Log Location</strong>.</p>
+                </details>
+                <details>
+                    <summary>How do I find the iOpenPod log file?
+                        <svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    </summary>
+                    <p>Open <strong>Settings &gt; Storage</strong>, then click <strong>Open</strong> next to <strong>Log Location</strong>. Attach <code>iopenpod.log</code> when reporting a bug.</p>
                 </details>
                 <details>
                     <summary>Do I need FFmpeg, ffprobe, and Chromaprint installed?

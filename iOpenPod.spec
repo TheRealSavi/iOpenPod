@@ -1,6 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 import sys
 import platform as _platform
+import subprocess as _subprocess
 from pathlib import Path as _Path
 from PyInstaller.utils.hooks import copy_metadata
 
@@ -34,13 +35,68 @@ try:
 except Exception:
     pass
 
+_linux_qt_xcb_binaries = []
+if sys.platform == 'linux':
+    # Qt's xcb platform plugin loads these small utility libraries from the
+    # host unless we copy them into the frozen bundle.
+    _linux_qt_xcb_sonames = (
+        'libxcb-cursor.so.0',
+        'libxcb-icccm.so.4',
+        'libxcb-image.so.0',
+        'libxcb-keysyms.so.1',
+        'libxcb-render-util.so.0',
+        'libxcb-util.so.1',
+        'libxcb-xkb.so.1',
+        'libxkbcommon.so.0',
+        'libxkbcommon-x11.so.0',
+    )
+
+    def _ldconfig_paths():
+        try:
+            output = _subprocess.check_output(
+                ['ldconfig', '-p'],
+                stderr=_subprocess.DEVNULL,
+                text=True,
+            )
+        except Exception:
+            return {}
+
+        paths = {}
+        for line in output.splitlines():
+            if '=>' not in line:
+                continue
+            left, right = line.split('=>', 1)
+            name = left.strip().split()[0]
+            paths[name] = right.strip()
+        return paths
+
+    _ldconfig_cache = _ldconfig_paths()
+    _library_dirs = (
+        _Path('/lib'),
+        _Path('/usr/lib'),
+        _Path('/lib/x86_64-linux-gnu'),
+        _Path('/usr/lib/x86_64-linux-gnu'),
+        _Path('/lib/aarch64-linux-gnu'),
+        _Path('/usr/lib/aarch64-linux-gnu'),
+    )
+    for _soname in _linux_qt_xcb_sonames:
+        _path = _ldconfig_cache.get(_soname)
+        if not _path:
+            for _directory in _library_dirs:
+                _candidate = _directory / _soname
+                if _candidate.exists():
+                    _path = str(_candidate)
+                    break
+        if _path:
+            _linux_qt_xcb_binaries.append((_path, '.'))
+
 a = Analysis(
-    ['main.py'],
+    ['src/iopenpod/__main__.py'],
     pathex=[],
-    binaries=[*_wasmtime_binaries],
+    binaries=[*_wasmtime_binaries, *_linux_qt_xcb_binaries],
     datas=[
-        ('assets', 'assets'),
-        ('iTunesDB_Writer/wasm', 'iTunesDB_Writer/wasm'),
+        ('src/iopenpod/assets', 'iopenpod/assets'),
+        ('src/iopenpod/itunesdb_writer/wasm', 'iopenpod/itunesdb_writer/wasm'),
         *copy_metadata('iopenpod'),
     ],
     hiddenimports=[
@@ -85,7 +141,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file='entitlements.plist' if sys.platform == 'darwin' else None,
-    icon='assets/icons/icon.ico' if sys.platform == 'win32' else 'assets/icons/icon-256.png',
+    icon='src/iopenpod/assets/icons/icon.ico' if sys.platform == 'win32' else 'src/iopenpod/assets/icons/icon-256.png',
 )
 coll = COLLECT(
     exe,
@@ -102,7 +158,7 @@ if sys.platform == 'darwin':
     app = BUNDLE(
         coll,
         name='iOpenPod.app',
-        icon='assets/icons/icon-256.png',
+        icon='src/iopenpod/assets/icons/icon-256.png',
         bundle_identifier='com.iopenpod.app',
         info_plist={
             'CFBundleShortVersionString': _version,

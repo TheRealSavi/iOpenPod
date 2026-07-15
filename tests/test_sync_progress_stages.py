@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sync_progress_stages import (
+from iopenpod.sync_progress_stages import (
     EXECUTION_STAGE_TO_ENGINE_STAGE,
     PIPELINE_STAGE_ROWS,
     PLANNING_STAGE_TO_ENGINE_STAGE,
@@ -9,6 +9,7 @@ from sync_progress_stages import (
     classify_planning_stage_value,
     friendly_stage_label,
     known_pipeline_stage_aliases,
+    progress_stage_help,
 )
 
 
@@ -86,6 +87,7 @@ def test_progress_stage_registry_has_valid_engine_stage_values() -> None:
 
 def test_friendly_stage_label_uses_registry_with_fallback() -> None:
     assert friendly_stage_label("scan_pc") == "Scanning media folders"
+    assert friendly_stage_label("bootstrap_mapping") == "Analyzing existing iPod tracks"
     assert friendly_stage_label("new_future_stage") == "New Future Stage"
 
 
@@ -93,3 +95,20 @@ def test_pipeline_row_ids_are_unique() -> None:
     row_ids = [row.stage_id for row in PIPELINE_STAGE_ROWS]
 
     assert len(row_ids) == len(set(row_ids))
+
+
+def test_bootstrap_mapping_help_explains_one_time_fingerprint_analysis() -> None:
+    help_content = progress_stage_help("bootstrap_mapping")
+
+    assert help_content is not None
+    explanation = f"{help_content.text} {help_content.informative_text}".lower()
+    assert "one-time" in explanation
+    assert "fingerprint" in explanation
+    assert "iopenpod's database" in explanation
+    assert "future sync" in explanation
+
+
+def test_progress_help_is_available_only_for_explanatory_stages() -> None:
+    assert progress_stage_help("fingerprint") is not None
+    assert progress_stage_help("integrity") is not None
+    assert progress_stage_help("scan_pc") is None

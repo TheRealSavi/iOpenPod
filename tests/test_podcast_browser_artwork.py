@@ -8,22 +8,25 @@ from PyQt6.QtCore import QPoint, Qt
 from PyQt6.QtGui import QColor, QContextMenuEvent, QPixmap
 from PyQt6.QtWidgets import QApplication, QLabel, QPushButton, QVBoxLayout, QWidget
 
-from GUI.widgets.podcastBrowser import (
+from iopenpod.gui.widgets.podcastBrowser import (
     _COMBINED_FEED_COLUMNS,
     _EPISODE_ARTWORK_COLLAPSED_HEIGHT,
     _EPISODE_ROW_GAP,
     _PODCAST_EPISODE_COLUMNS,
     PodcastBrowser,
     _episode_description_text,
+    _episode_is_listened,
     _episode_key,
+    _episode_meta_text,
     _is_remote_artwork_source,
     _PodcastEpisodeCard,
     _PodcastEpisodeList,
     _read_local_artwork_bytes,
     _resolve_local_artwork_path,
+    _set_episode_listened,
 )
-from PodcastManager.artwork import cache_feed_artwork, resolve_feed_artwork_source
-from PodcastManager.models import (
+from iopenpod.podcasts.artwork import cache_feed_artwork, resolve_feed_artwork_source
+from iopenpod.podcasts.models import (
     STATUS_DOWNLOADED,
     STATUS_DOWNLOADING,
     STATUS_ON_IPOD,
@@ -98,7 +101,7 @@ def test_cache_feed_artwork_stores_relative_jpeg_path(tmp_path: Path, monkeypatc
             pass
 
     monkeypatch.setattr(
-        "PodcastManager.artwork.requests.get",
+        "iopenpod.podcasts.artwork.requests.get",
         lambda *_args, **_kwargs: _Response(),
     )
 
@@ -191,6 +194,53 @@ def test_episode_dict_marks_card_ipod_actions() -> None:
 
     assert row["_can_add_to_ipod"] is False
     assert row["_can_remove_from_ipod"] is True
+
+
+def test_episode_dict_marks_listened_state() -> None:
+    episode = PodcastEpisode(
+        guid="episode-guid",
+        title="Episode",
+        play_count=1,
+    )
+
+    row = PodcastBrowser._ep_to_dict(episode, "Listened")
+
+    assert row["_was_listened"] is True
+    assert row["play_count_1"] == 1
+    assert row["ep_status"] == "Listened"
+
+
+def test_episode_meta_text_includes_listened_with_download_status() -> None:
+    row = {
+        "ep_status": "Downloaded",
+        "date_added": 0,
+        "length": 0,
+        "size": 0,
+        "_was_listened": True,
+    }
+
+    assert _episode_meta_text(row) == "Listened"
+
+
+def test_set_episode_listened_can_mark_and_unmark_on_ipod_episode() -> None:
+    episode = PodcastEpisode(
+        guid="episode-guid",
+        title="Episode",
+        status=STATUS_ON_IPOD,
+        ipod_db_track_id=42,
+    )
+
+    _set_episode_listened(episode, True)
+
+    assert _episode_is_listened(episode) is True
+    assert episode.listened_override is True
+    assert episode.play_count == 1
+
+    _set_episode_listened(episode, False)
+
+    assert _episode_is_listened(episode) is False
+    assert episode.listened_override is False
+    assert episode.play_count == 0
 
 
 def test_episode_card_artwork_only_shows_for_combined_feed(qtbot) -> None:

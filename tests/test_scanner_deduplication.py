@@ -1,5 +1,5 @@
-from ipod_device import scanner
-from ipod_device.info import DeviceInfo
+from iopenpod.device import scanner
+from iopenpod.device.info import DeviceInfo
 
 
 def _device(path: str, *, guid: str = "", serial: str = "") -> DeviceInfo:

@@ -3,8 +3,8 @@ from __future__ import annotations
 import pytest
 import requests
 
-from PodcastManager.itunes_search import search_podcasts
-from PodcastManager.network_errors import PodcastNetworkError, describe_podcast_error
+from iopenpod.podcasts.itunes_search import search_podcasts
+from iopenpod.podcasts.network_errors import PodcastNetworkError, describe_podcast_error
 
 
 def test_describe_http_500_includes_simple_code() -> None:
@@ -34,7 +34,7 @@ def test_search_podcasts_can_raise_ui_friendly_network_error(monkeypatch) -> Non
     def fail_get(*_args, **_kwargs):
         raise requests.ConnectionError("offline")
 
-    monkeypatch.setattr("PodcastManager.itunes_search.requests.get", fail_get)
+    monkeypatch.setattr("iopenpod.podcasts.itunes_search.requests.get", fail_get)
 
     with pytest.raises(PodcastNetworkError) as exc_info:
         search_podcasts("example", raise_on_error=True)

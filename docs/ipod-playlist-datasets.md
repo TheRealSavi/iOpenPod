@@ -264,31 +264,31 @@ Rules:
 
 Parser:
 
-- `iTunesDB_Parser.mhsd_parser.parse_dataset()` reads the `mhsd_type`.
-- `iTunesDB_Parser.chunk_parser._parse_child_list()` parses `mhlp` as a generic
+- `iopenpod.itunesdb_parser.mhsd_parser.parse_dataset()` reads the `mhsd_type`.
+- `iopenpod.itunesdb_parser.chunk_parser._parse_child_list()` parses `mhlp` as a generic
   list container.
-- `iTunesDB_Parser.mhyp_parser.parse_playlist()` reads `mhyp` fields via
-  `iTunesDB_Shared.mhyp_defs`.
-- `SyncEngine._db_io.read_existing_database()` normalizes parsed datasets into
+- `iopenpod.itunesdb_parser.mhyp_parser.parse_playlist()` reads `mhyp` fields via
+  `iopenpod.itunesdb_shared.mhyp_defs`.
+- `iopenpod.sync._db_io.read_existing_database()` normalizes parsed datasets into
   `tracks`, `dataset2_standard_playlists`, `dataset3_podcast_playlists`, and
   `dataset5_smart_playlists`.
-- `app_core.runtime.iTunesDBCache.get_playlists()` presents all playlist
+- `iopenpod.application.runtime.iTunesDBCache.get_playlists()` presents all playlist
   buckets for UI and stamps `_source` plus `_mhsd_dataset_type` without
   deduplicating equal playlist IDs across datasets.
 
 Writer:
 
-- `iTunesDB_Writer.mhbd_writer.write_mhbd()` assembles dataset chunks and
+- `iopenpod.itunesdb_writer.mhbd_writer.write_mhbd()` assembles dataset chunks and
   decides ordering.
-- `iTunesDB_Writer.mhlp_writer.write_mhlp_with_playlists()` generates dataset-2
+- `iopenpod.itunesdb_writer.mhlp_writer.write_mhlp_with_playlists()` generates dataset-2
   master + user playlists.
-- `iTunesDB_Writer.mhlp_writer.write_mhlp_with_playlists_type3()` generates the
+- `iopenpod.itunesdb_writer.mhlp_writer.write_mhlp_with_playlists_type3()` generates the
   podcast-special dataset from explicit dataset-3 input, or from dataset 2 only
   when no explicit dataset-3 input is supplied.
-- `iTunesDB_Writer.mhlp_writer.write_mhlp_smart()` writes dataset-5 categories.
-- `iTunesDB_Writer.mhyp_writer.write_mhyp()` writes the shared playlist row,
+- `iopenpod.itunesdb_writer.mhlp_writer.write_mhlp_smart()` writes dataset-5 categories.
+- `iopenpod.itunesdb_writer.mhyp_writer.write_mhyp()` writes the shared playlist row,
   including dataset-5 extended fields.
-- `SyncEngine._playlist_builder.build_and_evaluate_playlists()` is the policy
+- `iopenpod.sync._playlist_builder.build_and_evaluate_playlists()` is the policy
   boundary that builds dataset 2, 3, and 5 outputs separately.
 
 ## Hard Invariants
@@ -314,7 +314,7 @@ Writer:
 
 ## Current Risk Areas
 
-- iPod Video 5.5G sample at `/Users/john/Desktop/ipod5.5`:
+- iPod 5.5G sample at `/Users/john/Desktop/ipod5.5`:
   - Database version `117`, dataset order `[4, 1, 3, 2, 5, 9]`.
   - Dataset 2 and dataset 3 contain the same six playlist titles and IDs:
     `John Gibbons's iPod`, `Every Rule`, `Horchata`, `La Concha`,
@@ -340,7 +340,7 @@ Writer:
     Sort Album Artist, Sort Artist, Sort Composer, Sort Show, Sort Title, Title,
     Video Rating, and Work. iOpenPod still keeps legacy/libgpod string support
     for `0x3E` TV Show, even though that field was not present in this 47-rule
-    iPod Video 5.5G sample.
+    iPod 5.5G sample.
   - Boolean rules use only `is true` and `is false`. The observed/known boolean
     field family is exclusively Album Artwork, Checked, Compilation, and
     Purchased; do not coerce other one-byte-looking fields into booleans without

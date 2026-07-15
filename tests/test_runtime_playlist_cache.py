@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from types import SimpleNamespace
 
-from app_core import runtime
+from iopenpod.application import runtime
 
 
 def test_cache_emits_load_failed_after_partial_device_load(monkeypatch) -> None:
@@ -851,6 +851,110 @@ def test_discard_quick_write_state_preserves_photo_edits(monkeypatch) -> None:
     assert not cache.has_pending_playlists()
     assert cache.pop_track_artwork_edits() == {}
     assert cache.has_pending_photo_edits()
+
+
+def test_commit_quick_write_state_preserves_live_data_and_photo_edits(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        runtime.DeviceManager,
+        "get_instance",
+        classmethod(lambda cls: SimpleNamespace(device_path="/fake/ipod")),
+    )
+
+    track = {"db_track_id": 123, "Title": "Song", "checked_flag": 0}
+    cache = runtime.iTunesDBCache()
+    cache.set_data(
+        {
+            "mhlt": [track],
+            "mhlp": [],
+            "mhlp_podcast": [],
+            "mhlp_smart": [],
+        },
+        "/fake/ipod",
+    )
+    cache.update_track_flags([track], {"checked_flag": 1})
+    cache.save_user_playlist(
+        {
+            "playlist_id": 2,
+            "Title": "Pending",
+            "_source": "regular",
+            "items": [],
+        }
+    )
+    cache.stage_photo_import("/tmp/photo.jpg", "Album")
+
+    revision = cache.get_quick_write_revision()
+    assert cache.commit_quick_write_state(revision) is True
+
+    assert cache.get_data() is not None
+    assert cache.is_ready()
+    assert track["checked_flag"] == 1
+    assert [playlist["Title"] for playlist in cache.get_playlists()] == ["Pending"]
+    assert not cache.has_pending_track_edits()
+    assert not cache.has_pending_playlists()
+    assert cache.has_pending_photo_edits()
+
+
+def test_commit_quick_write_state_keeps_edits_staged_after_snapshot(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        runtime.DeviceManager,
+        "get_instance",
+        classmethod(lambda cls: SimpleNamespace(device_path="/fake/ipod")),
+    )
+
+    track = {"db_track_id": 123, "Title": "Song", "rating": 20}
+    cache = runtime.iTunesDBCache()
+    cache.set_data(
+        {
+            "mhlt": [track],
+            "mhlp": [],
+            "mhlp_podcast": [],
+            "mhlp_smart": [],
+        },
+        "/fake/ipod",
+    )
+    cache.update_track_flags([track], {"rating": 40})
+    written_revision = cache.get_quick_write_revision()
+
+    cache.update_track_flags([track], {"rating": 80})
+
+    assert cache.commit_quick_write_state(written_revision) is False
+    assert cache.has_pending_track_edits()
+    assert cache.get_track_edits()[123]["rating"] == (20, 80)
+
+
+def test_playlist_remove_and_master_rename_advance_quick_write_revision(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        runtime.DeviceManager,
+        "get_instance",
+        classmethod(lambda cls: SimpleNamespace(device_path="/fake/ipod")),
+    )
+    cache = runtime.iTunesDBCache()
+    cache.set_data(
+        {
+            "mhlt": [],
+            "mhlp": [
+                {"playlist_id": 1, "Title": "iPod", "master_flag": 1},
+                {"playlist_id": 2, "Title": "Mix"},
+            ],
+            "mhlp_podcast": [],
+            "mhlp_smart": [],
+        },
+        "/fake/ipod",
+    )
+
+    before_remove = cache.get_quick_write_revision()
+    assert cache.remove_user_playlist(2) is True
+    after_remove = cache.get_quick_write_revision()
+    assert after_remove > before_remove
+
+    assert cache.rename_master_playlist("RoadPod") is True
+    assert cache.get_quick_write_revision() > after_remove
 
 
 def test_reload_after_itunesdb_write_clears_quick_state_and_starts_load(

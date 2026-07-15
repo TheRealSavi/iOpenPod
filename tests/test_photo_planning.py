@@ -3,8 +3,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any, cast
 
-from SyncEngine.contracts import SyncPlan
-from SyncEngine.fingerprint_diff_engine import FingerprintDiffEngine
+from iopenpod.sync.contracts import SyncPlan
+from iopenpod.sync.fingerprint_diff_engine import FingerprintDiffEngine
 
 
 def _engine(tmp_path, *, supports_photo: bool = True) -> FingerprintDiffEngine:
@@ -17,7 +17,7 @@ def _engine(tmp_path, *, supports_photo: bool = True) -> FingerprintDiffEngine:
 
 
 def test_plan_photos_scans_and_adds_storage_deltas(monkeypatch, tmp_path) -> None:
-    import SyncEngine.fingerprint_diff_engine as diff_module
+    import iopenpod.sync.fingerprint_diff_engine as diff_module
 
     progress_events: list[tuple[str, int, int, str]] = []
     plan = SyncPlan()
@@ -64,7 +64,7 @@ def test_plan_photos_scans_and_adds_storage_deltas(monkeypatch, tmp_path) -> Non
 
 
 def test_plan_photos_reports_cancelled_scan(monkeypatch, tmp_path) -> None:
-    import SyncEngine.fingerprint_diff_engine as diff_module
+    import iopenpod.sync.fingerprint_diff_engine as diff_module
 
     plan = SyncPlan()
     monkeypatch.setattr(diff_module, "read_photo_db", lambda _ipod_path: "device")

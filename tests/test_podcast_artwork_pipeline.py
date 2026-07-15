@@ -4,16 +4,16 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
-from PodcastManager.downloader import (
+from iopenpod.podcasts.downloader import (
     DownloadedEpisodeInfo,
     download_and_probe_episode,
     embed_feed_artwork,
 )
-from PodcastManager.models import STATUS_DOWNLOADED, PodcastEpisode, PodcastFeed
-from PodcastManager.podcast_sync import episode_to_pc_track
-from PodcastManager.subscription_store import SubscriptionStore
-from SyncEngine.fingerprint_diff_engine import SyncAction, SyncItem, SyncPlan
-from SyncEngine.sync_executor import SyncExecutor
+from iopenpod.podcasts.models import STATUS_DOWNLOADED, PodcastEpisode, PodcastFeed
+from iopenpod.podcasts.podcast_sync import episode_to_pc_track
+from iopenpod.podcasts.subscription_store import SubscriptionStore
+from iopenpod.sync.fingerprint_diff_engine import SyncAction, SyncItem, SyncPlan
+from iopenpod.sync.sync_executor import SyncExecutor
 
 
 def test_episode_to_pc_track_reuses_predicted_download_and_hashes_folder_art(
@@ -34,7 +34,7 @@ def test_episode_to_pc_track_reuses_predicted_download_and_hashes_folder_art(
     dest_dir = Path(store.feed_dir(feed))
     dest_dir.mkdir(parents=True)
 
-    from PodcastManager.downloader import _safe_filename
+    from iopenpod.podcasts.downloader import _safe_filename
 
     predicted = dest_dir / _safe_filename(episode)
     predicted.write_bytes(b"not-real-audio")
@@ -59,7 +59,7 @@ def test_embed_feed_artwork_treats_missing_local_path_as_no_artwork(
     def _unexpected_request(*_args, **_kwargs):
         raise AssertionError("missing local artwork path should not be requested")
 
-    monkeypatch.setattr("PodcastManager.downloader.requests.get", _unexpected_request)
+    monkeypatch.setattr("iopenpod.podcasts.downloader.requests.get", _unexpected_request)
 
     assert embed_feed_artwork(str(audio_path), str(tmp_path / "missing-cover.jpg")) is False
 
@@ -85,11 +85,11 @@ def test_download_and_probe_episode_forwards_byte_progress(
         return str(downloaded)
 
     monkeypatch.setattr(
-        "PodcastManager.downloader.download_episode",
+        "iopenpod.podcasts.downloader.download_episode",
         fake_download_episode,
     )
     monkeypatch.setattr(
-        "PodcastManager.downloader.probe_episode_file",
+        "iopenpod.podcasts.downloader.probe_episode_file",
         lambda path, artwork_url="": DownloadedEpisodeInfo(
             path=path,
             size=4,
@@ -178,7 +178,7 @@ def test_sync_podcast_download_progress_uses_bytes(
         )
 
     monkeypatch.setattr(
-        "PodcastManager.downloader.download_and_probe_episode",
+        "iopenpod.podcasts.downloader.download_and_probe_episode",
         fake_download_and_probe_episode,
     )
 

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from iTunesDB_Writer import mhbd_writer
-from iTunesDB_Writer.mhit_writer import TrackInfo
+from iopenpod.itunesdb_writer import mhbd_writer
+from iopenpod.itunesdb_writer.mhit_writer import TrackInfo
 
 
 def test_write_itunesdb_surfaces_artwork_write_errors(monkeypatch, tmp_path) -> None:
@@ -14,15 +14,15 @@ def test_write_itunesdb_surfaces_artwork_write_errors(monkeypatch, tmp_path) -> 
         raise RuntimeError("palette artwork could not be converted")
 
     monkeypatch.setattr(
-        "ArtworkDB_Writer.artwork_writer.write_artworkdb",
+        "iopenpod.artworkdb_writer.artwork_writer.write_artworkdb",
         fake_write_artworkdb,
     )
     monkeypatch.setattr(
-        "ipod_device.itdb_write_filename",
+        "iopenpod.device.itdb_write_filename",
         lambda _ipod_path: "iTunesDB",
     )
     monkeypatch.setattr(
-        "ipod_device.resolve_itdb_path",
+        "iopenpod.device.resolve_itdb_path",
         lambda _ipod_path: None,
     )
 
