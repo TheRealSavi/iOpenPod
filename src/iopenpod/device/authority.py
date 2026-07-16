@@ -54,7 +54,7 @@ _SOURCE_ORDER: list[str] = [
     "wmi",                  # Windows WMI (live hardware query)
     # ── Guesses: lookups, derivations, files ────────────────────────
     "itunes",               # Pre-existing value assumed to be from iTunes
-    "serial_lookup",        # Derived from serial last-3 chars
+    "serial_lookup",        # Derived from a published serial suffix
     "usb_pid",              # Coarse USB PID mapping
     "disk_size",            # Live disk-size based capacity estimate
     "model_table",          # Deterministic inference from known model tuples
@@ -90,7 +90,7 @@ SYSINFO_FIELDS: list[tuple[str, str]] = [
     ("UpdaterFamilyID", "updater_family_id"),
     # ── Derived / resolved by iOpenPod for full device granularity ────
     # These are deterministically derived from model_number (via
-    # IPOD_MODELS or serial-last-3 lookup), but caching them in SysInfo
+    # IPOD_MODELS or serial-suffix lookup), but caching them in SysInfo
     # avoids re-derivation and lets the authority system track provenance.
     ("ModelFamily", "model_family"),
     ("Generation", "generation"),
@@ -119,7 +119,7 @@ _DERIVED_SYSINFO_KEYS: frozenset[str] = frozenset({
 # provenance, the expensive hardware and VPD probes are skipped.
 #
 # Only the essential identification trio is included:
-#   - Serial number (needed for serial-last-3 exact model resolution)
+#   - Serial number (needed for serial-suffix exact model resolution)
 #   - FireWire GUID (needed for database signing)
 #   - Model number (needed for family/gen/capacity/color derivation)
 #

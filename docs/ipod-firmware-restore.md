@@ -188,13 +188,17 @@ Starting with the iPod Nano 3G (2007), Apple moved to a completely different res
 
 - **Nano 3G-5G:** Hold MENU+SELECT to reboot, then immediately hold SELECT+PLAY for ~10 seconds. Screen goes dark, but USB device enumerates in DFU mode
 - **Nano 6G-7G:** Connect to USB, hold SLEEP+VOLUME_DOWN for 8 seconds, release SLEEP but keep holding VOLUME_DOWN for another 5 seconds
-- In DFU mode, the iPod enumerates with USB VID `0x05AC` (Apple) and a DFU-specific PID:
-  - Nano 3G: `0x1223`
-  - Nano 4G: `0x1231`
-  - Nano 5G: `0x1242`
-  - Nano 6G: `0x1245`
-  - Nano 7G: `0x1246`
-  - (Exact PIDs may vary — verify against Apple's USB configuration)
+- Recovery devices enumerate with USB VID `0x05AC` (Apple). The PID changes
+  between the Bootrom DFU stage and the WTF/recovery-loader stage:
+  - Bootrom DFU: Nano 2G `0x1220`; Nano 3G `0x1223` or `0x1224`;
+    Nano 4G `0x1225`; Nano 5G `0x1231`; Nano 6G `0x1232`;
+    Shuffle 4G `0x1233`; Nano 7G `0x1234`.
+  - WTF/recovery loader: Nano 2G `0x1240`; Classic 6G `0x1241`;
+    Nano 3G `0x1242`; Nano 4G `0x1243`; Classic 6.5G `0x1245`;
+    Nano 5G `0x1246`; Classic 7G `0x1247`; Nano 6G `0x1248`;
+    Nano 7G `0x1249` (or `0x124A` for the Mid-2015 revision).
+  - `0x1223` is also shared by all iPod Classic Bootrom DFU revisions, and
+    `0x1255` is an alternate Nano 4G DFU identity.
 
 ### The USB Protocol
 

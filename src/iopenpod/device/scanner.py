@@ -16,7 +16,7 @@ Detection pipeline:
     2b. iTunesDB header → hashing_scheme (generation class)
 
   **Phase 3 — Model resolution** (pure computation, per-field priority):
-    - model_number:  SysInfo ModelNumStr → IPOD_MODELS  >  serial last-3 → IPOD_MODELS
+    - model_number:  SysInfo ModelNumStr → IPOD_MODELS  >  serial suffix → IPOD_MODELS
     - firewire_guid: device tree  >  SysInfoExtended  >  SysInfo  >  USB serial (always 16 hex chars on iPods)
     - serial:        SysInfo pszSerialNumber (Apple serial)  >  IOCTL (only if non-GUID)
     - firmware:      IOCTL revision  >  SysInfo visibleBuildID
@@ -26,7 +26,7 @@ Detection pipeline:
   **Phase 4 — Inline VPD** (macOS only, for incomplete identification):
     If model_number is still unknown after Phase 3, query the iPod's
     firmware via IOKit SCSI VPD (~1 s, no root, disk stays mounted)
-    to get the Apple serial.  Serial-last-3 lookup resolves exact model
+    to get the Apple serial. Serial-suffix lookup resolves the exact model
     (family, generation, capacity, color).  Writes SysInfo to the iPod
     so that subsequent scans never need VPD again.
 """
@@ -1867,7 +1867,7 @@ def _resolve_model(
     #
     # Layers 1 and 2 are evaluated together so they can cross-check each
     # other.  When they agree the SysInfo result is used (preserving its
-    # provenance).  When they DISAGREE the serial wins: the last-3 suffix
+    # provenance). When they DISAGREE the serial suffix wins: it is a
     # is a manufacturer-encoded identifier that is much harder to corrupt
     # than the NVRAM-stored ModelNumStr, which can be wrong after a botched
     # restore, firmware flash, or logic-board swap (e.g. a device whose
@@ -1879,7 +1879,7 @@ def _resolve_model(
     if sysinfo_model:
         sysinfo_mi = get_model_info(sysinfo_model)
 
-    # Layer 2: Serial last-3-char → IPOD_MODELS
+    # Layer 2: Longest matching serial suffix → IPOD_MODELS
     serial = resolved["serial"]
     serial_info: dict | None = None
     if serial:
@@ -1919,10 +1919,10 @@ def _resolve_model(
         pid_gen,
     ):
         logger.warning(
-            "_resolve_model: serial last-3 '%s' resolves to %s %s, "
+            "_resolve_model: serial suffix '%s' resolves to %s %s, "
             "which conflicts with live USB PID identity %s %s; ignoring "
             "cached serial-derived model",
-            serial[-3:],
+            serial_info.get("serial_suffix", "?"),
             serial_info.get("model_family", "?"),
             serial_info.get("generation", "?"),
             pid_family,
@@ -1944,10 +1944,10 @@ def _resolve_model(
         if sr_model and sr_model != sysinfo_model:
             logger.warning(
                 "_resolve_model: SysInfo ModelNumStr %s (%s %s) conflicts "
-                "with serial last-3 '%s' → %s (%s %s); preferring serial "
+                "with serial suffix '%s' → %s (%s %s); preferring serial "
                 "(USB PID family: %s)",
                 sysinfo_model, sysinfo_mi[0], sysinfo_mi[1],
-                serial[-3:], sr_model,
+                serial_info.get("serial_suffix", "?"), sr_model,
                 serial_info.get("model_family", "?"),
                 serial_info.get("generation", "?"),
                 hw.get("model_family", "unknown"),
@@ -2310,8 +2310,8 @@ def _identify_via_hashing_scheme(ipod_path: str) -> dict | None:
 
 
 def _identify_via_serial_lookup(serial: str) -> dict | None:
-    """Look up model from serial number's last 3 characters."""
-    from .lookup import lookup_by_serial
+    """Look up a model from the serial's longest published suffix."""
+    from .lookup import lookup_by_serial, match_serial_suffix
 
     result = lookup_by_serial(serial)
     if not result:
@@ -2324,6 +2324,7 @@ def _identify_via_serial_lookup(serial: str) -> dict | None:
         "generation": info[1],
         "capacity": info[2],
         "color": info[3],
+        "serial_suffix": match_serial_suffix(serial) or "",
     }
 
 
@@ -2585,12 +2586,12 @@ def scan_for_ipods() -> list[DeviceInfo]:
         SysInfo / SysInfoExtended + iTunesDB header.
 
       **Phase 3 — Model resolution** (per-field priority merge):
-        SysInfo ModelNumStr > serial last-3 > USB PID > hashing_scheme.
+        SysInfo ModelNumStr > serial suffix > USB PID > hashing_scheme.
 
       **Phase 4 — Inline VPD** (macOS only, for incomplete identification):
         If model_number is still unknown after Phase 3, query the iPod's
         firmware via IOKit SCSI VPD to get the Apple serial, then resolve
-        via serial-last-3 lookup.  Writes SysInfo so this only runs once.
+        via serial-suffix lookup. Writes SysInfo so this only runs once.
 
       **Phase 5 — Enrich** (fills derived fields: checksum, artwork, etc.)
 

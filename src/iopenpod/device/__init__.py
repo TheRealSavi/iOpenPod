@@ -81,13 +81,16 @@ from .lookup import (
     get_model_info,
     infer_generation,
     lookup_by_serial,
+    match_serial_suffix,
 )
 
 # ── models ───────────────────────────────────────────────────────────
 from .models import (
     IPOD_MODELS,
+    IPOD_RECOVERY_USB_PIDS,
     IPOD_USB_PIDS,
     SERIAL_LAST3_TO_MODEL,
+    SERIAL_SUFFIX_TO_MODEL,
     USB_PID_TO_MODEL,
     canonicalize_model_identity,
 )

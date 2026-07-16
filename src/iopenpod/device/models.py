@@ -4,8 +4,9 @@ Data tables
 ~~~~~~~~~~~
 - ``IPOD_MODELS``            Model number → (family, gen, capacity, color)
 - ``USB_PID_TO_MODEL``       USB Product ID → (family, gen)
+- ``IPOD_RECOVERY_USB_PIDS`` DFU/WTF-mode Product IDs (frozenset)
 - ``IPOD_USB_PIDS``          All known iPod USB Product IDs (frozenset)
-- ``SERIAL_LAST3_TO_MODEL``  Serial suffix → model number
+- ``SERIAL_SUFFIX_TO_MODEL`` Serial suffix (3 or 4 chars) → model number
 
 Sources
 ~~~~~~~
@@ -338,7 +339,6 @@ IPOD_MODELS: dict[str, tuple[str, str, str, str]] = {
     'MKML2': ("iPod Shuffle", "4th Gen", "2GB", "Red"),
 }
 
-
 def _normalized_text(value: str | None) -> str:
     return " ".join(str(value or "").strip().casefold().split())
 
@@ -439,13 +439,29 @@ USB_PID_TO_MODEL: dict[int, tuple[str, str]] = {
     0x1209: ("iPod", ""),       # 5th/5.5th Gen share this coarse PID
     0x120A: ("iPod Nano", ""),  # Original nano-era generic PID
 
-    # ── DFU / WTF recovery mode PIDs (0x124x) ─────────────────────────────
+    # ── Bootrom DFU mode PIDs ─────────────────────────────────────────────
+    0x1220: ("iPod Nano", "2nd Gen"),
+    # Shared by Nano 3G and all Classic revisions. Keep this coarse so the
+    # live PID cannot reject a more specific model-number/serial identity.
+    0x1223: ("iPod", ""),
+    0x1224: ("iPod Nano", "3rd Gen"),
+    0x1225: ("iPod Nano", "4th Gen"),
+    0x1231: ("iPod Nano", "5th Gen"),
+    0x1232: ("iPod Nano", "6th Gen"),
+    0x1233: ("iPod Shuffle", "4th Gen"),
+    0x1234: ("iPod Nano", "7th Gen"),
+
+    # ── NOR DFU / WTF recovery-loader mode PIDs ──────────────────────────
     0x1240: ("iPod Nano", "2nd Gen"),
     0x1241: ("iPod Classic", "6th Gen"),
     0x1242: ("iPod Nano", "3rd Gen"),
     0x1243: ("iPod Nano", "4th Gen"),
-    0x1245: ("iPod Classic", "7th Gen"),
+    0x1245: ("iPod Classic", "6.5th Gen"),
     0x1246: ("iPod Nano", "5th Gen"),
+    0x1247: ("iPod Classic", "7th Gen"),
+    0x1248: ("iPod Nano", "6th Gen"),
+    0x1249: ("iPod Nano", "7th Gen"),
+    0x124A: ("iPod Nano", "7th Gen"),  # Mid-2015 revision
     0x1255: ("iPod Nano", "4th Gen"),
 
     # ── Normal-mode PIDs (0x126x) ──────────────────────────────────────────
@@ -464,14 +480,20 @@ USB_PID_TO_MODEL: dict[int, tuple[str, str]] = {
     0x1303: ("iPod Shuffle", "4th Gen"),
 }
 
+IPOD_RECOVERY_USB_PIDS: frozenset[int] = frozenset({
+    0x1220, 0x1223, 0x1224, 0x1225, 0x1231, 0x1232, 0x1233, 0x1234,
+    0x1240, 0x1241, 0x1242, 0x1243, 0x1245, 0x1246, 0x1247, 0x1248,
+    0x1249, 0x124A, 0x1255,
+})
+
 IPOD_USB_PIDS: frozenset[int] = frozenset(USB_PID_TO_MODEL)
 
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗
-# ║  Serial number last-3-char → model number (from libgpod)                ║
+# ║  Serial-number suffix → model number (from libgpod / The Apple Wiki)    ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
-SERIAL_LAST3_TO_MODEL: dict[str, str] = {
+SERIAL_SUFFIX_TO_MODEL: dict[str, str] = {
     # ── iPod Classic ────────────────────────────────────────────────────
     "Y5N": "MB029", "YMV": "MB147", "YMU": "MB145", "YMX": "MB150",
     "2C5": "MB562", "2C7": "MB565",
@@ -491,7 +513,7 @@ SERIAL_LAST3_TO_MODEL: dict[str, str] = {
     # ── iPod 4G mono U2 color (20GB) ──────────────────────────────────
     "S2X": "M9787",
     # ── iPod 4G photo/color display ───────────────────────────────────
-    "TDU": "MA079", "TDS": "MA079", "TM2": "MA127",
+    "TDU": "MA079", "TDS": "MA079", "TM2": "MA127", "U5H": "MA215",
     "SAZ": "M9830", "SB1": "M9830", "SAY": "M9829",
     "R5Q": "M9585", "R5R": "M9586", "R5T": "M9586",
     # ── iPod Mini 1G ───────────────────────────────────────────────────
@@ -499,7 +521,8 @@ SERIAL_LAST3_TO_MODEL: dict[str, str] = {
     "QKL": "M9436", "QKQ": "M9436", "QKK": "M9435", "QKP": "M9435",
     "QKJ": "M9434", "QKN": "M9434", "QKM": "M9437", "QKR": "M9437",
     # ── iPod Mini 2G ───────────────────────────────────────────────────
-    "S41": "M9800", "S4C": "M9800", "S43": "M9802", "S45": "M9804", "S4G": "M9804",
+    "S41": "M9800", "S4C": "M9800", "S43": "M9802", "S45": "M9804",
+    "S4G": "M9805", "S4H": "M9805",
     "S47": "M9806", "S4J": "M9806", "S42": "M9801", "S44": "M9803",
     "S48": "M9807",
     # ── Shuffle 1G ─────────────────────────────────────────────────────
@@ -508,16 +531,27 @@ SERIAL_LAST3_TO_MODEL: dict[str, str] = {
     # ── Shuffle 2G ─────────────────────────────────────────────────────
     "VTE": "MA546", "VTF": "MA546",
     "XQ5": "MA947", "XQS": "MA947", "XQV": "MA949", "XQX": "MA949",
-    "YX7": "MB228", "XQY": "MA951", "YX8": "MA951", "XR1": "MA953",
-    "YXA": "MB233", "YX6": "MB225", "YX9": "MB225",
-    "8CQ": "MC167", "1ZH": "MB518",
+    "YX7": "MB227", "YXH": "MB227", "XQY": "MA951", "YX8": "MA951", "XR1": "MA953",
+    "YXA": "MB233", "YXL": "MB233", "YX6": "MB225", "YX9": "MB225",
+    # YX8 and YX9 are also published for later green/red revisions. Keep the
+    # established mappings because a three-character suffix cannot distinguish them.
+    "YXJ": "MB229", "YXK": "MB231",
+    "8CQ": "MC167", "1ZH": "MB518", "1ZK": "MB520",
+    "1ZM": "MB522", "1ZP": "MB524", "1ZR": "MB526",
+    "436": "MB811", "3FK": "MB681", "437": "MB813", "3FL": "MB683",
+    "438": "MB815", "3FM": "MB685", "439": "MB817", "3W6": "MB779",
     # ── Shuffle 3G ─────────────────────────────────────────────────────
     "A1S": "MC306", "A78": "MC323", "ALB": "MC381", "ALD": "MC384",
     "ALG": "MC387", "4NZ": "MB867", "891": "MC164",
     "A1L": "MC303", "A1U": "MC307", "A7B": "MC328", "A7D": "MC331",
     # ── Shuffle 4G ─────────────────────────────────────────────────────
-    "CMJ": "MC584", "CMK": "MC585", "FDM": "MC749", "FDN": "MC750",
-    "FDP": "MC751",
+    "DCMJ": "MC584", "DCMK": "MC585", "DFDM": "MC749", "DFDN": "MC750",
+    "DFDP": "MC751",
+    "F4RT": "MD773", "F4RV": "MD774", "F4RW": "MD775", "F4RY": "MD776",
+    "F4T0": "MD777", "F4T1": "MD778", "F4VF": "MD779", "F4VG": "MD780",
+    "FJDH": "ME949",
+    "GK67": "MKM72", "GK68": "MKM92", "GK69": "MKME2",
+    "GK6C": "MKMG2", "GK6D": "MKMJ2", "GK6F": "MKML2",
     # ── Nano 1G ────────────────────────────────────────────────────────
     "TUZ": "MA004", "TV0": "MA005", "TUY": "MA099", "TV1": "MA107",
     "UYN": "MA350", "UYP": "MA352",
@@ -538,8 +572,9 @@ SERIAL_LAST3_TO_MODEL: dict[str, str] = {
     # ── Nano 3G ────────────────────────────────────────────────────────
     "Y0P": "MA978", "Y0R": "MA980",
     "YXR": "MB249", "YXV": "MB257", "YXT": "MB253", "YXX": "MB261",
+    "13F": "MB453",
     # ── Nano 4G ────────────────────────────────────────────────────────
-    "37P": "MB663", "37Q": "MB666", "37H": "MB654", "1P1": "MB480",
+    "37P": "MB663", "37Q": "MB666", "37G": "MB651", "37H": "MB654", "1P1": "MB480",
     "37K": "MB657", "37L": "MB660", "2ME": "MB598",
     "3QS": "MB732", "3QT": "MB735", "3QU": "MB739", "3QW": "MB742",
     "3QX": "MB745", "3QY": "MB748", "3R0": "MB754", "3QZ": "MB751",
@@ -548,35 +583,32 @@ SERIAL_LAST3_TO_MODEL: dict[str, str] = {
     "5BF": "MB918",
     # ── Nano 5G ────────────────────────────────────────────────────────
     "71V": "MC027", "71Y": "MC031", "721": "MC034", "726": "MC037",
-    "72A": "MC040", "72F": "MC046", "72K": "MC049", "72L": "MC050",
+    "72A": "MC040", "72D": "MC043", "72F": "MC046", "72K": "MC049", "72L": "MC050",
     "72Q": "MC060", "72R": "MC062",
     "72S": "MC064", "72X": "MC066", "734": "MC068", "738": "MC070",
     "739": "MC072", "73A": "MC074", "73B": "MC075",
     # ── Nano 6G ────────────────────────────────────────────────────────
-    "CMN": "MC525", "CMP": "MC526",
-    "DVX": "MC688", "DVY": "MC689", "DW0": "MC690", "DW1": "MC691",
-    "DW2": "MC692", "DW3": "MC693",
-    "DW4": "MC694", "DW5": "MC695", "DW6": "MC696", "DW7": "MC697",
-    "DW8": "MC698", "DW9": "MC699",
+    "DCMN": "MC525", "DCMP": "MC526",
+    "DDVX": "MC688", "DDVY": "MC689", "DDW0": "MC690", "DDW1": "MC691",
+    "DDW2": "MC692", "DDW3": "MC693",
+    "DDW4": "MC694", "DDW5": "MC695", "DDW6": "MC696", "DDW7": "MC697",
+    "DDW8": "MC698", "DDW9": "MC699",
     # ── Nano 7G ────────────────────────────────────────────────────────
-    # Source: TheAppleWiki Models/iPod (serial suffix table). Entries there
-    # are 4-char suffixes (e.g. F0GN); this map stores last-3 to match our
-    # lookup_by_serial(serial[-3:]) convention.
-    "0GD": "MD475", "0GM": "MD475",  # pink
-    "0GF": "MD476", "0GN": "MD476",  # yellow
-    "0GG": "MD477", "0GP": "MD477",  # blue
-    "0GH": "MD478", "0GQ": "MD478",  # green
-    "0GJ": "MD479", "0GR": "MD479",  # purple
-    "0GK": "MD480", "0GT": "MD480",  # silver
-    "0GL": "MD481", "0GV": "MD481",  # slate
-    "4LN": "MD744", "4LP": "MD744",  # product red
-    "JQ1": "ME971",  # space gray (2013)
-    "K60": "MKMV2",  # pink (2015)
-    "K61": "MKMX2",  # gold (2015)
-    "K62": "MKN02",  # blue (2015)
-    "K63": "MKN22",  # silver (2015)
-    "K64": "MKN52",  # space gray (2015)
-    "K65": "MKN72",  # product red (2015)
+    "F0GD": "MD475", "F0GM": "MD475",  # pink
+    "F0GF": "MD476", "F0GN": "MD476",  # yellow
+    "F0GG": "MD477", "F0GP": "MD477",  # blue
+    "F0GH": "MD478", "F0GQ": "MD478",  # green
+    "F0GJ": "MD479", "F0GR": "MD479",  # purple
+    "F0GK": "MD480", "F0GT": "MD480",  # silver
+    "F0GL": "MD481", "F0GV": "MD481",  # slate
+    "F4LN": "MD744", "F4LP": "MD744",  # product red
+    "FJQ1": "ME971",  # space gray (2013)
+    "GK60": "MKMV2",  # pink (2015)
+    "GK61": "MKMX2",  # gold (2015)
+    "GK62": "MKN02",  # blue (2015)
+    "GK63": "MKN22",  # silver (2015)
+    "GK64": "MKN52",  # space gray (2015)
+    "GK65": "MKN72",  # product red (2015)
     # ── iPod 5G ────────────────────────────────────────────────────────
     "SZ9": "MA002", "WEC": "MA002", "WED": "MA002", "WEG": "MA002",
     "WEH": "MA002", "WEL": "MA002",
@@ -590,5 +622,9 @@ SERIAL_LAST3_TO_MODEL: dict[str, str] = {
     "V9P": "MA448", "V9Q": "MA448",
     "V9R": "MA450", "V9S": "MA450", "V95": "MA450",
     "V96": "MA450", "WUC": "MA450",
-    "W9G": "MA664",
+    "W9G": "MA664", "WEM": "MA664",
 }
+
+# Backward-compatible import for callers written before four-character suffix
+# support. The mapping itself now contains the published variable-length keys.
+SERIAL_LAST3_TO_MODEL: dict[str, str] = SERIAL_SUFFIX_TO_MODEL

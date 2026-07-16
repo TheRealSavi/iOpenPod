@@ -761,7 +761,7 @@ def set_current_device(info: DeviceInfo | None) -> None:
             "Device stored: %s %s (%s) serial=…%s fwguid=%s "
             "checksum=%s method=%s capacity=%s formats=%s",
             info.model_family, info.generation, info.model_number,
-            info.serial[-3:] if info.serial else "none",
+            info.serial[-4:] if info.serial else "none",
             info.firewire_guid or "none",
             info.checksum_type,
             info.identification_method,
@@ -1062,9 +1062,9 @@ def enrich(info: DeviceInfo) -> None:
         except ImportError:
             pass
 
-    # ── 3b. Serial-last-3 model lookup ────────────────────────────────
-    #   Very reliable — the last 3 chars of the serial encode the exact
-    #   model (incl. capacity and color).  Run whenever the serial is
+    # ── 3b. Serial-suffix model lookup ─────────────────────────────────
+    #   Very reliable — a published 3- or 4-character suffix encodes the
+    #   exact model (incl. capacity and color). Run whenever the serial is
     #   available: the lookup is cheap and _enrich_from_serial_lookup
     #   uses authority-rank comparison, so it only overwrites fields
     #   whose current source is less reliable than the serial.  This
@@ -2009,7 +2009,7 @@ def _enrich_from_usb_vpd(info: DeviceInfo) -> None:
     """Query iPod firmware via USB SCSI VPD pages for device identification.
 
     Delegates to :func:`iopenpod.device.vpd_libusb.identify_via_vpd` on supported
-    non-Windows platforms, resolves the exact model via serial-last-3 lookup,
+    non-Windows platforms, resolves the exact model via serial-suffix lookup,
     and handles post-query remount on Linux/macOS.
 
     SysInfo writing is NOT done here — the authority module handles it
@@ -2083,7 +2083,7 @@ def _enrich_from_usb_vpd(info: DeviceInfo) -> None:
         info._field_sources["model_number"] = vpd_source
         info._field_sources["model_family"] = vpd_source
         info._field_sources["generation"] = vpd_source
-        # VPD serial-last-3 is authoritative — always overwrite capacity
+        # A VPD serial suffix is authoritative — always overwrite capacity
         # and color even if they were pre-populated from a stale/wrong
         # SysInfo model number (e.g. MB029 → 80GB when device is MB565 → 120GB).
         if result["capacity"]:
@@ -2156,11 +2156,11 @@ def _enrich_from_usb_vpd(info: DeviceInfo) -> None:
 
 
 def _enrich_from_serial_lookup(info: DeviceInfo) -> None:
-    """Look up exact model from serial number's last 3 characters.
+    """Look up the exact model from its longest published serial suffix.
 
-    This is very high confidence — the last 3 chars encode the exact model
+    This is very high confidence — the suffix encodes the exact model
     including capacity, color, and hardware revision.  Always fills gaps
-    even when ``model_number`` is already known, because serial-last-3
+    even when ``model_number`` is already known, because serial-suffix lookup
     provides exact variant resolution that generic model lookup may miss.
 
     The derived fields inherit the serial number's authority source, since
@@ -2171,10 +2171,11 @@ def _enrich_from_serial_lookup(info: DeviceInfo) -> None:
         return
 
     try:
-        from .lookup import lookup_by_serial
+        from .lookup import lookup_by_serial, match_serial_suffix
     except ImportError:
         return
 
+    matched_suffix = match_serial_suffix(info.serial)
     result = lookup_by_serial(info.serial)
     if not result:
         return
@@ -2198,10 +2199,10 @@ def _enrich_from_serial_lookup(info: DeviceInfo) -> None:
     if not info.model_number or _serial_rank <= _cur_mn_rank:
         if info.model_number and info.model_number != model_num:
             logger.warning(
-                "enrich: serial last-3 '%s' gives model %s but current "
+                "enrich: serial suffix '%s' gives model %s but current "
                 "model_number is %s (source: %s, rank %d); overriding with "
                 "serial result (serial source: %s, rank %d)",
-                info.serial[-3:], model_num, info.model_number,
+                matched_suffix, model_num, info.model_number,
                 info._field_sources.get("model_number", "unknown"),
                 _cur_mn_rank, _src, _serial_rank,
             )
@@ -2226,7 +2227,7 @@ def _enrich_from_serial_lookup(info: DeviceInfo) -> None:
         info.generation = model_info[1]
         info._field_sources["generation"] = _src
 
-    # Serial-last-3 is authoritative for capacity/color — use the same
+    # Serial-suffix lookup is authoritative for capacity/color — use the same
     # rank comparison as family/generation so it overwrites stale values
     # from a wrong SysInfo model number.
     _cur_cap_rank = SOURCE_RANK.get(
@@ -2246,8 +2247,8 @@ def _enrich_from_serial_lookup(info: DeviceInfo) -> None:
     if info.identification_method in ("unknown", "hardware"):
         info.identification_method = "serial"
     logger.debug(
-        "enrich: serial-last-3 '%s' -> %s %s %s %s model=%s source=%s",
-        info.serial[-3:], model_info[0], model_info[1],
+        "enrich: serial suffix '%s' -> %s %s %s %s model=%s source=%s",
+        matched_suffix, model_info[0], model_info[1],
         model_info[2], model_info[3], model_num, _src,
     )
 

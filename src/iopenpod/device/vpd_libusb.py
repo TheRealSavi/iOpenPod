@@ -5,7 +5,7 @@ Apple iPods respond to SCSI INQUIRY with vendor-specific VPD (Vital Product
 Data) pages 0xC0-0xFF, which contain a fragmented XML plist with detailed
 device information including:
 
-  - SerialNumber (Apple serial — last 3 chars encode exact model)
+  - SerialNumber (Apple serial — a 3- or 4-character suffix encodes the model)
   - FireWireGUID
   - FamilyID / UpdaterFamilyID
   - BuildID / VisibleBuildID
@@ -570,7 +570,7 @@ def identify_via_vpd(
     may unmount/remount on Linux/macOS).
 
     On success, resolves the exact model (family, generation, capacity,
-    color) from the Apple serial's last 3 characters and optionally writes
+    color) from the Apple serial's published suffix and optionally writes
     SysInfo + SysInfoExtended to the iPod for instant future identification.
 
     Parameters
@@ -630,7 +630,7 @@ def identify_via_vpd(
         )
         return None
 
-    # ── Step 2: Resolve model from serial-last-3 ──────────────────
+    # ── Step 2: Resolve model from the longest serial suffix ──────
     vpd_fw_guid = vpd_info.get("FireWireGUID") or vpd_info.get("usb_serial", "")
     result: dict = {
         "serial": apple_serial,
@@ -1290,7 +1290,7 @@ def main() -> int:
         print(f"  SCSI Product:    {info.get('scsi_product', '?')}")
         print(f"  SCSI Revision:   {info.get('scsi_revision', '?')}")
 
-        # Try serial-last-3 model lookup
+        # Try serial-suffix model lookup
         apple_serial = info.get("SerialNumber", "")
         if apple_serial and len(apple_serial) >= 3:
             try:

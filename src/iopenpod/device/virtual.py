@@ -19,7 +19,12 @@ from .bootstrap import _seed_ipod_layout, ensure_device_itunes_database
 from .capabilities import capabilities_for_family_gen
 from .checksum import CHECKSUM_MHBD_SCHEME, ChecksumType
 from .info import DeviceInfo, resolve_itdb_path
-from .models import IPOD_MODELS, SERIAL_LAST3_TO_MODEL, USB_PID_TO_MODEL
+from .models import (
+    IPOD_MODELS,
+    IPOD_RECOVERY_USB_PIDS,
+    SERIAL_SUFFIX_TO_MODEL,
+    USB_PID_TO_MODEL,
+)
 
 VIRTUAL_IPOD_INFO_FILENAME = "iPodInfo.json"
 _SCHEMA_VERSION = 1
@@ -291,7 +296,11 @@ def load_virtual_ipod_info(
 
 def _serial_suffix_by_model() -> dict[str, str]:
     suffix_by_model: dict[str, str] = {}
-    for suffix, model_number in sorted(SERIAL_LAST3_TO_MODEL.items()):
+    ordered_suffixes = sorted(
+        SERIAL_SUFFIX_TO_MODEL.items(),
+        key=lambda item: (-len(item[0]), item[0]),
+    )
+    for suffix, model_number in ordered_suffixes:
         suffix_by_model.setdefault(model_number, suffix)
     return suffix_by_model
 
@@ -396,7 +405,7 @@ def _usb_pid_for_identity(family: str, generation: str) -> int:
     normal_pids = {
         pid: identity
         for pid, identity in USB_PID_TO_MODEL.items()
-        if not (0x1240 <= pid <= 0x1255)
+        if pid not in IPOD_RECOVERY_USB_PIDS
     }
     for pid, (pid_family, pid_generation) in normal_pids.items():
         if pid_family == family and pid_generation == generation:

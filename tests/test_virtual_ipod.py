@@ -73,3 +73,20 @@ def test_available_virtual_ipod_models_have_known_serial_suffixes() -> None:
     assert rows
     assert all(row["model_number"] and row["serial_suffix"] for row in rows)
     assert any(row["model_number"] == "MC297" for row in rows)
+
+
+def test_virtual_ipods_preserve_published_serial_suffix_length(tmp_path) -> None:
+    expected_suffix_lengths = {
+        "MB453": 3,
+        "MC525": 4,
+        "MD475": 4,
+        "MD773": 4,
+    }
+
+    for model_number, suffix_length in expected_suffix_lengths.items():
+        model_path = tmp_path / model_number
+        device = create_virtual_ipod(model_path, model_number)
+        payload = json.loads((model_path / "iPodInfo.json").read_text())
+
+        assert len(payload["serial_suffix"]) == suffix_length
+        assert device.serial.endswith(payload["serial_suffix"])
