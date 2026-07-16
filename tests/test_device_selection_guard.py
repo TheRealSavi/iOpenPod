@@ -2,6 +2,8 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+from PyQt6.QtCore import QCoreApplication, QEvent, QPointF, Qt
+from PyQt6.QtGui import QMouseEvent, QPixmap
 
 from iopenpod.application.controllers import StartupDeviceRestoreController
 from iopenpod.application.runtime import DeviceManager
@@ -13,7 +15,7 @@ from iopenpod.device.info import (
     set_current_device,
 )
 from iopenpod.gui.widgets import devicePicker
-from iopenpod.gui.widgets.devicePicker import DevicePickerDialog
+from iopenpod.gui.widgets.devicePicker import DeviceCard, DevicePickerDialog
 
 
 class _FakeCard:
@@ -170,6 +172,63 @@ def test_picker_warns_and_does_not_select_unidentified_ipod(monkeypatch) -> None
     assert select_button.enabled is False
     assert select_button.text == "Select"
     assert warnings == [ipod]
+
+
+def test_device_card_can_be_deleted_by_its_click_handler(monkeypatch, qtbot) -> None:
+    """A nested dialog may process a scan refresh before the click returns."""
+    monkeypatch.setattr(devicePicker, "get_ipod_image", lambda *_args: QPixmap())
+    ipod = SimpleNamespace(
+        model_family="iPod",
+        generation="Classic",
+        color="",
+        ipod_name="",
+        display_name="iPod Classic",
+    )
+    card = DeviceCard(ipod)
+
+    def delete_card(_ipod: object) -> None:
+        card.setParent(None)
+        card.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+    card.clicked.connect(delete_card)
+    event = QMouseEvent(
+        QEvent.Type.MouseButtonPress,
+        QPointF(10, 10),
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+
+    card.mousePressEvent(event)
+
+
+def test_device_card_can_be_deleted_by_its_double_click_handler(monkeypatch, qtbot) -> None:
+    monkeypatch.setattr(devicePicker, "get_ipod_image", lambda *_args: QPixmap())
+    ipod = SimpleNamespace(
+        model_family="iPod",
+        generation="Classic",
+        color="",
+        ipod_name="",
+        display_name="iPod Classic",
+    )
+    card = DeviceCard(ipod)
+
+    def delete_card(_ipod: object) -> None:
+        card.setParent(None)
+        card.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+    card.clicked.connect(delete_card)
+    event = QMouseEvent(
+        QEvent.Type.MouseButtonDblClick,
+        QPointF(10, 10),
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+
+    card.mouseDoubleClickEvent(event)
 
 
 def test_fast_resume_rejects_unidentified_ipod_and_requests_warning(qtbot) -> None:

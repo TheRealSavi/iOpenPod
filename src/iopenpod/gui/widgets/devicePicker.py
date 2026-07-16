@@ -360,17 +360,27 @@ class DeviceCard(QFrame):
         super().leaveEvent(a0)
 
     def mousePressEvent(self, a0):
+        # A click receiver can open a modal warning dialog.  Its nested event
+        # loop may process a rescan that removes this card, so finish Qt's
+        # base handling before emitting the application-level signal.
+        super().mousePressEvent(a0)
         if a0 and a0.button() == Qt.MouseButton.LeftButton:
             self.clicked.emit(self.ipod)
-        super().mousePressEvent(a0)
 
     def mouseDoubleClickEvent(self, a0):
+        # QFrame's default double-click handling can re-enter
+        # mousePressEvent().  Handle the event here instead, because a click
+        # receiver can synchronously delete this card during a rescan.
+        dialog = self.window()
         if a0 and a0.button() == Qt.MouseButton.LeftButton:
+            ipod = self.ipod
+            clicked = self.clicked
+            a0.accept()
+            clicked.emit(ipod)
             # Double-click = select + accept
-            self.clicked.emit(self.ipod)
-            dialog = self.window()
             if isinstance(dialog, DevicePickerDialog):
                 dialog.accept()
+            return
         super().mouseDoubleClickEvent(a0)
 
 
