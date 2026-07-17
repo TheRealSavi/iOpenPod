@@ -608,9 +608,15 @@ class MainWindow(QMainWindow):
         self._show_default_page()
         self._startup_restore.start_later(100)
         self._startup_updates.update_available.connect(
-            self.settingsPage._handle_update_result
+            self._handle_startup_update_result
         )
         self._startup_updates.start_later(2000)
+
+    @pyqtSlot(object)
+    def _handle_startup_update_result(self, result: object) -> None:
+        """Route startup results to the current, potentially rebuilt settings page."""
+
+        self.settingsPage._handle_update_result(result)
 
     @staticmethod
     def _create_update_checker(parent):

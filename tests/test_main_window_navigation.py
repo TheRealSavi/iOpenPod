@@ -44,6 +44,24 @@ class _FakeStack:
         self._current_index = index
 
 
+def test_startup_update_result_routes_to_current_settings_page() -> None:
+    original_results: list[object] = []
+    current_results: list[object] = []
+    window = SimpleNamespace(
+        settingsPage=SimpleNamespace(_handle_update_result=original_results.append)
+    )
+    handler = MainWindow._handle_startup_update_result.__get__(window)
+    window.settingsPage = SimpleNamespace(
+        _handle_update_result=current_results.append
+    )
+    result = object()
+
+    handler(result)
+
+    assert original_results == []
+    assert current_results == [result]
+
+
 class _FakeSignal:
     def __init__(self) -> None:
         self.connections: list[Callable[..., object]] = []
