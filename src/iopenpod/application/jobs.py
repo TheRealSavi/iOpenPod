@@ -19,6 +19,13 @@ from typing import TYPE_CHECKING, Any, SupportsInt, cast
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
+from iopenpod.device.write_guard import (
+    DatabaseGeneration,
+    DeviceWriteGuard,
+    DeviceWriteSafetyError,
+    ExternalDatabaseChangeError,
+    capture_database_generation,
+)
 from iopenpod.infrastructure.media_folders import media_folder_paths
 
 from .dropped_files import (
@@ -33,6 +40,7 @@ if TYPE_CHECKING:
     from .services import (
         DeviceCapabilitySnapshot,
         DeviceIdentitySnapshot,
+        DeviceStorageSnapshot,
         LibraryCacheLike,
         QuickWriteSnapshot,
     )
@@ -568,21 +576,9 @@ def build_podcast_plan_for_sync(
         builder = build_podcast_managed_plan
 
     refreshed = []
-    podcast_dir = getattr(store, "podcast_dir", "")
-    cache_artwork = None
-    if podcast_dir:
-        try:
-            from iopenpod.podcasts.artwork import cache_feed_artwork
-
-            cache_artwork = cache_feed_artwork
-        except Exception:
-            cache_artwork = None
-
     for feed in feeds:
         try:
             refreshed_feed = fetcher(feed.feed_url, existing=feed)
-            if cache_artwork is not None:
-                cache_artwork(refreshed_feed, podcast_dir)
             refreshed.append(refreshed_feed)
         except Exception as exc:
             logger.warning(
@@ -592,8 +588,12 @@ def build_podcast_plan_for_sync(
             )
             refreshed.append(feed)
 
-    store.update_feeds(refreshed)
-    return builder(refreshed, ipod_tracks, store)
+    plan = builder(refreshed, ipod_tracks, store)
+    # Feed persistence and artwork caching target the iPod.  Carry the
+    # refreshed state into execution so those writes happen under the same
+    # retained device writer guard as the rest of the sync.
+    plan._refreshed_podcast_feeds = refreshed
+    return plan
 
 
 @dataclass(frozen=True)
@@ -1024,6 +1024,8 @@ class BackupCreateRequest:
     backup_dir: str
     max_backups: int
     device_meta: dict[str, str]
+    reported_volume_format: str = ""
+    expected_volume_identity_key: str = ""
 
 
 class BackupCreateWorker(QThread):
@@ -1062,6 +1064,8 @@ class BackupCreateWorker(QThread):
                 progress_callback=on_progress,
                 is_cancelled=self.isInterruptionRequested,
                 max_backups=request.max_backups,
+                reported_volume_format=request.reported_volume_format,
+                expected_volume_identity_key=request.expected_volume_identity_key,
             )
 
             if result is None:
@@ -1084,6 +1088,8 @@ class BackupRestoreRequest:
     ipod_path: str
     device_id: str
     backup_dir: str
+    reported_volume_format: str = ""
+    expected_volume_identity_key: str = ""
 
 
 class BackupRestoreWorker(QThread):
@@ -1120,6 +1126,8 @@ class BackupRestoreWorker(QThread):
                 ipod_path=request.ipod_path,
                 progress_callback=on_progress,
                 is_cancelled=self.isInterruptionRequested,
+                reported_volume_format=request.reported_volume_format,
+                expected_volume_identity_key=request.expected_volume_identity_key,
             )
 
             self.finished.emit(success)
@@ -1812,15 +1820,34 @@ class EjectDeviceWorker(QThread):
     finished_ok = pyqtSignal(str)
     failed = pyqtSignal(str)
 
-    def __init__(self, ipod_path: str):
+    def __init__(
+        self,
+        ipod_path: str,
+        device_storage: DeviceStorageSnapshot | None = None,
+    ):
         super().__init__()
         self._ipod_path = ipod_path
+        self._device_storage = device_storage
 
     def run(self) -> None:
         try:
             from iopenpod.device.eject import eject_ipod
 
-            ok, message = eject_ipod(self._ipod_path)
+            ok, message = eject_ipod(
+                self._ipod_path,
+                reported_volume_format=str(
+                    getattr(
+                        self._device_storage,
+                        "reported_volume_format",
+                        "",
+                    )
+                    or ""
+                ),
+                expected_volume_identity_key=str(
+                    getattr(self._device_storage, "volume_identity_key", "")
+                    or ""
+                ),
+            )
             if ok:
                 self.finished_ok.emit(message)
             else:
@@ -1837,7 +1864,7 @@ def _reload_after_itunesdb_write(cache: LibraryCacheLike) -> None:
 def _snapshot_cache_for_itunesdb_write(
     cache: LibraryCacheLike,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[int, str]]:
-    tracks, playlists, artwork_sources, _revision = (
+    tracks, playlists, artwork_sources, _revision, _database_generation = (
         _capture_cache_for_itunesdb_write(cache)
     )
     return tracks, playlists, artwork_sources
@@ -1845,7 +1872,13 @@ def _snapshot_cache_for_itunesdb_write(
 
 def _capture_cache_for_itunesdb_write(
     cache: LibraryCacheLike,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[int, str], int]:
+) -> tuple[
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    dict[int, str],
+    int,
+    DatabaseGeneration | None,
+]:
     capture = getattr(cache, "capture_quick_write_state", None)
     if callable(capture):
         capture_snapshot = cast("Callable[[], QuickWriteSnapshot]", capture)
@@ -1855,6 +1888,10 @@ def _capture_cache_for_itunesdb_write(
         raw_track_edits: object = snapshot.track_edits
         artwork_sources = snapshot.artwork_sources
         revision_value: SupportsInt = snapshot.revision
+        database_generation = cast(
+            "DatabaseGeneration | None",
+            getattr(snapshot, "database_generation", None),
+        )
     else:
         tracks = copy.deepcopy(cache.get_tracks())
         playlists = copy.deepcopy(cache.get_playlists())
@@ -1867,6 +1904,15 @@ def _capture_cache_for_itunesdb_write(
             revision_value = get_revision()
         else:
             revision_value = 0
+        generation_getter = getattr(cache, "get_database_generation", None)
+        if callable(generation_getter):
+            get_database_generation = cast(
+                "Callable[[], DatabaseGeneration | None]",
+                generation_getter,
+            )
+            database_generation = get_database_generation()
+        else:
+            database_generation = None
     track_edits = cast(Mapping[Any, Mapping[str, Any]], raw_track_edits)
     if track_edits:
         tracks_by_db_track_id = {
@@ -1889,7 +1935,13 @@ def _capture_cache_for_itunesdb_write(
                     track[field] = change
     for track in tracks:
         track.pop("_iop_pending_artwork_path", None)
-    return tracks, playlists, artwork_sources, int(revision_value)
+    return (
+        tracks,
+        playlists,
+        artwork_sources,
+        int(revision_value),
+        database_generation,
+    )
 
 
 def _engine_quick_write(
@@ -1898,6 +1950,8 @@ def _engine_quick_write(
     tracks_data: list[dict[str, Any]],
     playlists_data: list[dict[str, Any]],
     artwork_sources: dict[int, str],
+    expected_database_generation: DatabaseGeneration | None = None,
+    device_storage: DeviceStorageSnapshot | None = None,
 ):
     from iopenpod.sync.core import (
         EngineOperation,
@@ -1912,6 +1966,8 @@ def _engine_quick_write(
             tracks_data=tuple(tracks_data),
             playlists_data=tuple(playlists_data),
             artwork_sources=artwork_sources,
+            expected_database_generation=expected_database_generation,
+            device_storage=device_storage,
         )
     )
 
@@ -1926,15 +1982,18 @@ class QuickWriteWorker(QThread):
         self,
         ipod_path: str,
         cache: LibraryCacheLike,
+        device_storage: DeviceStorageSnapshot | None = None,
     ):
         super().__init__()
         self._ipod_path = ipod_path
         self._cache = cache
+        self._device_storage = device_storage
         (
             self._tracks_data,
             self._playlists_data,
             self._artwork_sources,
             self._cache_revision,
+            self._database_generation,
         ) = _capture_cache_for_itunesdb_write(cache)
 
     def run(self) -> None:
@@ -1944,12 +2003,26 @@ class QuickWriteWorker(QThread):
                 tracks_data=self._tracks_data,
                 playlists_data=self._playlists_data,
                 artwork_sources=self._artwork_sources,
+                expected_database_generation=self._database_generation,
+                device_storage=self._device_storage,
             )
 
             if result.success and not self._artwork_sources:
-                result.newer_changes_pending = not self._cache.commit_quick_write_state(
-                    self._cache_revision
+                commit_with_generation = getattr(
+                    self._cache,
+                    "commit_quick_write_state_with_generation",
+                    None,
                 )
+                if callable(commit_with_generation):
+                    committed = commit_with_generation(
+                        self._cache_revision,
+                        result.database_generation,
+                    )
+                else:
+                    committed = self._cache.commit_quick_write_state(
+                        self._cache_revision
+                    )
+                result.newer_changes_pending = not committed
             else:
                 # Failed writes need disk authority restored. Artwork writes also
                 # change ArtworkDB references that the live track cache cannot
@@ -1968,11 +2041,18 @@ class PlaylistWriteWorker(QThread):
     finished_ok = pyqtSignal(int, str)
     failed = pyqtSignal(str)
 
-    def __init__(self, playlist: dict, ipod_path: str, cache: LibraryCacheLike):
+    def __init__(
+        self,
+        playlist: dict,
+        ipod_path: str,
+        cache: LibraryCacheLike,
+        device_storage: DeviceStorageSnapshot | None = None,
+    ):
         super().__init__()
         self._playlist = playlist
         self._ipod_path = ipod_path
         self._cache = cache
+        self._device_storage = device_storage
 
     def run(self) -> None:
         try:
@@ -1985,21 +2065,31 @@ class PlaylistWriteWorker(QThread):
                 self.failed.emit("No iPod database loaded.")
                 return
 
-            tracks_data, playlists_data, artwork_sources = (
-                _snapshot_cache_for_itunesdb_write(self._cache)
-            )
+            (
+                tracks_data,
+                playlists_data,
+                artwork_sources,
+                _revision,
+                database_generation,
+            ) = _capture_cache_for_itunesdb_write(self._cache)
             result = _engine_quick_write(
                 self._ipod_path,
                 tracks_data=tracks_data,
                 playlists_data=playlists_data,
                 artwork_sources=artwork_sources,
+                expected_database_generation=database_generation,
+                device_storage=self._device_storage,
             )
             if not result.success:
                 _reload_after_itunesdb_write(self._cache)
                 self.failed.emit(result.error or "Database write failed.")
                 return
 
-            _delete_imported_otg_files(self._ipod_path)
+            _delete_imported_otg_files(
+                self._ipod_path,
+                device_storage=self._device_storage,
+                expected_database_generation=result.database_generation,
+            )
             playlist_id = int(self._playlist.get("playlist_id", 0) or 0)
             matched_count = result.playlist_counts.get(playlist_id, 0)
             playlist_name = str(self._playlist.get("Title", "Untitled"))
@@ -2017,11 +2107,18 @@ class PlaylistDeleteWorker(QThread):
     finished_ok = pyqtSignal(str)
     failed = pyqtSignal(str)
 
-    def __init__(self, playlist: dict, ipod_path: str, cache: LibraryCacheLike):
+    def __init__(
+        self,
+        playlist: dict,
+        ipod_path: str,
+        cache: LibraryCacheLike,
+        device_storage: DeviceStorageSnapshot | None = None,
+    ):
         super().__init__()
         self._playlist = playlist
         self._ipod_path = ipod_path
         self._cache = cache
+        self._device_storage = device_storage
 
     def run(self) -> None:
         try:
@@ -2034,14 +2131,20 @@ class PlaylistDeleteWorker(QThread):
                 self.failed.emit("No iPod database loaded.")
                 return
 
-            tracks_data, playlists_data, artwork_sources = (
-                _snapshot_cache_for_itunesdb_write(self._cache)
-            )
+            (
+                tracks_data,
+                playlists_data,
+                artwork_sources,
+                _revision,
+                database_generation,
+            ) = _capture_cache_for_itunesdb_write(self._cache)
             result = _engine_quick_write(
                 self._ipod_path,
                 tracks_data=tracks_data,
                 playlists_data=playlists_data,
                 artwork_sources=artwork_sources,
+                expected_database_generation=database_generation,
+                device_storage=self._device_storage,
             )
             if not result.success:
                 _reload_after_itunesdb_write(self._cache)
@@ -2069,12 +2172,14 @@ class PlaylistImportWorker(QThread):
         ipod_path: str,
         fpcalc_path: str,
         cache: LibraryCacheLike,
+        device_storage: DeviceStorageSnapshot | None = None,
     ):
         super().__init__()
         self._playlist_file = playlist_file
         self._ipod_path = ipod_path
         self._fpcalc_path = fpcalc_path or None
         self._cache = cache
+        self._device_storage = device_storage
 
     def run(self) -> None:
         cache_mutated = False
@@ -2129,7 +2234,33 @@ class PlaylistImportWorker(QThread):
                 existing_track_match_db_track_id,
             )
 
+            generation_before_read = capture_database_generation(ipod_root)
             fresh_db = read_existing_database(ipod_root)
+            fresh_database_generation = capture_database_generation(ipod_root)
+            if generation_before_read != fresh_database_generation:
+                raise ExternalDatabaseChangeError(
+                    "The iPod database changed while iOpenPod was reading it. "
+                    "Reload the iPod library and try the playlist import again."
+                )
+            cached_generation_getter = getattr(
+                self._cache,
+                "get_database_generation",
+                None,
+            )
+            cached_database_generation = (
+                cached_generation_getter()
+                if callable(cached_generation_getter)
+                else None
+            )
+            if (
+                cached_database_generation is not None
+                and cached_database_generation != fresh_database_generation
+            ):
+                raise ExternalDatabaseChangeError(
+                    "The iPod database changed since its library was loaded. "
+                    "iOpenPod stopped before importing the playlist; reload the "
+                    "iPod library and try again."
+                )
             fresh_tracks = list(fresh_db.get("tracks", []))
 
             playlist_db_track_ids: list[int] = []
@@ -2245,6 +2376,8 @@ class PlaylistImportWorker(QThread):
                     ipod_path=self._ipod_path,
                     plan=plan,
                     mapping=fresh_mapping,
+                    device_storage=self._device_storage,
+                    expected_database_generation=fresh_database_generation,
                     progress_callback=_on_sync_progress,
                 )
                 result = SyncEngine().execute_plan(request)
@@ -2305,21 +2438,35 @@ class PlaylistImportWorker(QThread):
             self._cache.save_user_playlist(playlist)
             cache_mutated = True
 
-            tracks_data, playlists_data, artwork_sources = (
-                _snapshot_cache_for_itunesdb_write(self._cache)
-            )
+            (
+                tracks_data,
+                playlists_data,
+                artwork_sources,
+                _revision,
+                expected_database_generation,
+            ) = _capture_cache_for_itunesdb_write(self._cache)
             if to_add:
-                fresh_db = read_existing_database(Path(self._ipod_path))
+                generation_before_read = capture_database_generation(ipod_root)
+                fresh_db = read_existing_database(ipod_root)
+                expected_database_generation = capture_database_generation(ipod_root)
+                if generation_before_read != expected_database_generation:
+                    raise ExternalDatabaseChangeError(
+                        "The iPod database changed while iOpenPod was refreshing "
+                        "the imported playlist. Reload the iPod and try again."
+                    )
                 tracks_data = copy.deepcopy(fresh_db.get("tracks", []))
                 playlists_data = copy.deepcopy(self._cache.get_playlists())
             elif already_present_db_track_ids:
                 tracks_data = copy.deepcopy(fresh_tracks)
                 playlists_data = copy.deepcopy(self._cache.get_playlists())
+                expected_database_generation = fresh_database_generation
             write_result = _engine_quick_write(
                 self._ipod_path,
                 tracks_data=tracks_data,
                 playlists_data=playlists_data,
                 artwork_sources=artwork_sources,
+                expected_database_generation=expected_database_generation,
+                device_storage=self._device_storage,
             )
             if not write_result.success:
                 _reload_after_itunesdb_write(self._cache)
@@ -2335,18 +2482,86 @@ class PlaylistImportWorker(QThread):
             )
         except Exception as exc:
             logger.exception("PlaylistImportWorker failed")
-            if cache_mutated:
+            if cache_mutated or isinstance(exc, DeviceWriteSafetyError):
                 _reload_after_itunesdb_write(self._cache)
             self.failed.emit(str(exc))
 
 
-def _delete_imported_otg_files(ipod_path: str) -> None:
-    try:
-        from iopenpod.itunesdb_parser.otg import delete_otg_files
+def _delete_imported_otg_files(
+    ipod_path: str,
+    *,
+    device_storage: DeviceStorageSnapshot | None = None,
+    expected_database_generation: DatabaseGeneration | None = None,
+) -> None:
+    """Durably remove imported OTG state from the same verified iPod volume."""
+    from iopenpod.device.durability import durable_unlink, flush_filesystem
+    from iopenpod.device.path_safety import resolve_device_path
+    from iopenpod.device.write_readiness import (
+        inspect_device_write_readiness,
+        revalidate_device_write_readiness,
+        volume_lock_key,
+    )
 
-        delete_otg_files(os.path.join(str(ipod_path), "iPod_Control", "iTunes"))
-    except Exception as exc:
-        logger.debug("OTG cleanup after playlist write failed: %s", exc)
+    profile = inspect_device_write_readiness(
+        ipod_path,
+        reported_volume_format=str(
+            getattr(device_storage, "reported_volume_format", "") or ""
+        ),
+    )
+    current_volume_key = volume_lock_key(profile)
+    expected_volume_key = str(
+        getattr(device_storage, "volume_identity_key", "") or ""
+    )
+    if expected_volume_key and current_volume_key != expected_volume_key:
+        raise DeviceWriteSafetyError(
+            "A different volume is mounted at the selected iPod path. "
+            "iOpenPod stopped before removing imported On-The-Go playlist data."
+        )
+
+    with DeviceWriteGuard(
+        ipod_path,
+        volume_key=current_volume_key,
+        expected_database_generation=expected_database_generation,
+    ) as write_guard:
+        retained = revalidate_device_write_readiness(
+            profile,
+            probe_case_sensitivity=True,
+        )
+        otg_path = resolve_device_path(
+            ipod_path,
+            "iPod_Control/iTunes/OTGPlaylistInfo",
+            allowed_subtree="iPod_Control/iTunes",
+        )
+        try:
+            otg_path.stat()
+        except FileNotFoundError:
+            return
+        except OSError as exc:
+            raise DeviceWriteSafetyError(
+                "Could not safely inspect imported On-The-Go playlist data: "
+                f"{exc}"
+            ) from exc
+        revalidate_device_write_readiness(
+            retained,
+            probe_case_sensitivity=False,
+        )
+        write_guard.assert_database_unchanged()
+        otg_path = resolve_device_path(
+            ipod_path,
+            "iPod_Control/iTunes/OTGPlaylistInfo",
+            allowed_subtree="iPod_Control/iTunes",
+        )
+        durable_unlink(otg_path)
+        revalidate_device_write_readiness(
+            retained,
+            probe_case_sensitivity=False,
+        )
+        flush_ok, flush_message = flush_filesystem(ipod_path)
+        if not flush_ok:
+            raise DeviceWriteSafetyError(
+                "Imported On-The-Go playlist data was removed, but the "
+                f"filesystem durability barrier failed: {flush_message}"
+            )
 
 
 class SyncExecuteWorker(QThread):
@@ -2367,6 +2582,8 @@ class SyncExecuteWorker(QThread):
         backup_device_name: str = "",
         device_info: DeviceIdentitySnapshot | None = None,
         device_capabilities: DeviceCapabilitySnapshot | None = None,
+        device_storage: DeviceStorageSnapshot | None = None,
+        expected_database_generation: DatabaseGeneration | None = None,
         on_sync_complete: Callable[[], None] | None = None,
         sync_until_full: bool = False,
     ):
@@ -2379,6 +2596,8 @@ class SyncExecuteWorker(QThread):
         self.settings = settings
         self.device_info = device_info
         self.device_capabilities = device_capabilities
+        self.device_storage = device_storage
+        self.expected_database_generation = expected_database_generation
         self.on_sync_complete = on_sync_complete
         self.sync_until_full = bool(sync_until_full)
         self._give_up_scrobble_requested = False
@@ -2485,6 +2704,8 @@ class SyncExecuteWorker(QThread):
                 ),
                 device_info=self.device_info,
                 device_capabilities=self.device_capabilities,
+                device_storage=self.device_storage,
+                expected_database_generation=self.expected_database_generation,
                 progress_callback=on_engine_progress,
                 is_cancelled=self.isInterruptionRequested,
                 on_sync_complete=self.on_sync_complete,

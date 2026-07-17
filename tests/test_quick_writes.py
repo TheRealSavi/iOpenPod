@@ -5,6 +5,9 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+
+from iopenpod.device.write_guard import DatabaseGeneration
 from iopenpod.itunesdb_shared.constants import MEDIA_TYPE_PODCAST
 from iopenpod.itunesdb_writer.mhit_writer import TrackInfo
 from iopenpod.itunesdb_writer.mhyp_writer import write_mhyp
@@ -17,6 +20,23 @@ from iopenpod.sync._track_conversion import track_dict_to_info
 class FakePlaylistInfo:
     playlist_id: int
     track_ids: list[int]
+
+
+@pytest.fixture(autouse=True)
+def _safe_filesystem_profile(monkeypatch):
+    profile = SimpleNamespace(case_sensitive=False)
+    monkeypatch.setattr(
+        quick_writes,
+        "inspect_device_write_readiness",
+        lambda _path, **_kwargs: profile,
+    )
+    monkeypatch.setattr(
+        quick_writes,
+        "revalidate_device_write_readiness",
+        lambda retained, **_kwargs: retained,
+    )
+    monkeypatch.setattr(quick_writes, "volume_lock_key", lambda _profile: "test-volume")
+    return profile
 
 
 def test_quick_write_keeps_numbered_album_artist_placeholder_group(
@@ -131,6 +151,97 @@ def test_write_cached_itunesdb_dumps_tracks_and_playlists_once(monkeypatch) -> N
     assert captured["evaluate"]["dataset3_playlist_rows"] == []
     assert captured["evaluate"]["dataset5_playlist_rows"] == []
     assert captured["write"]["master_playlist_name"] == "iPod"
+
+
+def test_quick_write_holds_writer_guard_from_build_through_commit(
+    monkeypatch,
+) -> None:
+    events: list[str] = []
+    cached_generation = DatabaseGeneration("iTunesDB", True, digest="cached")
+    committed_generation = DatabaseGeneration("iTunesDB", True, digest="committed")
+    guard_arguments: dict[str, Any] = {}
+
+    class FakeGuard:
+        def __init__(self, _ipod_path, **kwargs) -> None:
+            guard_arguments.update(kwargs)
+
+        @property
+        def starting_database_generation(self):
+            return committed_generation
+
+        def __enter__(self):
+            events.append("guard-enter")
+            return self
+
+        def __exit__(self, *_args) -> None:
+            events.append("guard-exit")
+
+    monkeypatch.setattr(quick_writes, "DeviceWriteGuard", FakeGuard, raising=False)
+
+    def fake_tracks_to_infos(*_args):
+        events.append("build")
+        return [SimpleNamespace(artist="", album="", album_artist="")]
+
+    monkeypatch.setattr(
+        quick_writes,
+        "_tracks_to_infos",
+        fake_tracks_to_infos,
+    )
+    monkeypatch.setattr(
+        quick_writes,
+        "_evaluate_tracks_and_playlists",
+        lambda **_kwargs: (
+            "iPod",
+            None,
+            [],
+            "iPod",
+            None,
+            [],
+            [],
+        ),
+    )
+
+    def fake_write(*_args, **kwargs) -> bool:
+        assert isinstance(kwargs["write_guard"], FakeGuard)
+        events.append("commit")
+        return True
+
+    monkeypatch.setattr(quick_writes, "_write_evaluated_database", fake_write)
+
+    result = quick_writes.write_cached_itunesdb(
+        "I:/",
+        tracks_data=[{"track_id": 1, "Title": "Song"}],
+        playlists_data=[],
+        expected_database_generation=cached_generation,
+    )
+
+    assert result.success is True
+    assert result.database_generation == committed_generation
+    assert guard_arguments["expected_database_generation"] == cached_generation
+    assert events == ["guard-enter", "build", "commit", "guard-exit"]
+
+
+def test_quick_write_refuses_replaced_scan_time_volume(monkeypatch) -> None:
+    guard_entered = False
+
+    class FakeGuard:
+        def __init__(self, *_args, **_kwargs) -> None:
+            nonlocal guard_entered
+            guard_entered = True
+
+    monkeypatch.setattr(quick_writes, "DeviceWriteGuard", FakeGuard)
+
+    result = quick_writes.write_cached_itunesdb(
+        "I:/",
+        tracks_data=[{"track_id": 1, "Title": "Song"}],
+        playlists_data=[],
+        expected_volume_identity_key="scan-volume",
+    )
+
+    assert result.success is False
+    assert result.errors[0][0] == "filesystem_safety"
+    assert "different volume" in result.error.lower()
+    assert guard_entered is False
 
 
 def test_write_cached_itunesdb_uses_master_name_from_cache(monkeypatch) -> None:

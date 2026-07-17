@@ -28,9 +28,17 @@ from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from enum import StrEnum
+from pathlib import Path
 
 from iopenpod.artworkdb_shared.ithmb_paths import ithmb_filename, ithmb_filename_from_path
 from iopenpod.device import ITHMB_FORMAT_MAP, ArtworkFormat
+from iopenpod.device.durability import (
+    durable_replace,
+    durable_unlink,
+    flush_written_file,
+    open_unique_sibling_temp,
+)
+from iopenpod.device.path_safety import resolve_device_path
 
 from .art_extractor import (
     art_hash,
@@ -223,23 +231,27 @@ class PendingArtworkWrite:
         """Return dict items."""
         return self.db_track_id_to_art_info.items()
 
-    def commit(self) -> None:
+    def commit(self, before_replace: Callable[[], None] | None = None) -> None:
         """Atomically replace all temp files with final paths."""
         if self._committed:
             return
         for temp, final in self._pending_renames:
-            os.replace(temp, final)
+            if before_replace is not None:
+                before_replace()
+            durable_replace(temp, final)
         if self._post_commit_cleanup is not None:
             self._post_commit_cleanup()
         self._committed = True
 
-    def abort(self) -> None:
+    def abort(self, before_remove: Callable[[], None] | None = None) -> None:
         """Remove all temp files without committing."""
         if self._committed:
             return
         for temp, _final in self._pending_renames:
             try:
-                os.remove(temp)
+                if before_remove is not None:
+                    before_remove()
+                durable_unlink(temp, missing_ok=True)
             except OSError:
                 pass
 
@@ -999,6 +1011,7 @@ def write_artworkdb(
     artwork_formats: dict[int, tuple[int, int]] | None = None,
     defer_commit: bool = False,
     progress_callback: Callable[[str], None] | None = None,
+    before_device_mutation: Callable[[], None] | None = None,
 ) -> dict | PendingArtworkWrite:
     """
     Write ArtworkDB and ithmb files for an iPod.
@@ -1036,8 +1049,18 @@ def write_artworkdb(
         If ``defer_commit=True``: a ``PendingArtworkWrite`` with the
         mapping in ``.db_track_id_to_art_info`` and a ``.commit()`` method.
     """
-    artwork_dir = os.path.join(ipod_path, "iPod_Control", "Artwork")
-    os.makedirs(artwork_dir, exist_ok=True)
+    artwork_subtree = os.path.join("iPod_Control", "Artwork")
+    artwork_dir = str(
+        resolve_device_path(
+            ipod_path,
+            artwork_subtree,
+            allowed_subtree=artwork_subtree,
+        )
+    )
+    if not os.path.isdir(artwork_dir):
+        if before_device_mutation is not None:
+            before_device_mutation()
+        os.makedirs(artwork_dir, exist_ok=True)
 
     def _prog(msg: str) -> None:
         if progress_callback is not None:
@@ -1250,7 +1273,7 @@ def write_artworkdb(
 
     # Write ithmb files to temp paths first — originals stay intact until
     # both ithmb AND ArtworkDB are fully written and verified.
-    ithmb_temp_paths: dict[tuple[int, int], str] = {}  # (fmt_id, file_index) -> temp path
+    ithmb_temp_paths: dict[tuple[int, int], Path] = {}  # (fmt_id, file_index) -> temp path
     ithmb_final_paths: dict[tuple[int, int], str] = {}  # (fmt_id, file_index) -> final path
     ithmb_files = {}
     ithmb_state: dict[int, dict[str, int]] = {
@@ -1261,7 +1284,10 @@ def write_artworkdb(
     def _close_current_ithmb(fmt_id: int) -> None:
         handle = ithmb_files.pop(fmt_id, None)
         if handle is not None:
-            handle.close()
+            try:
+                flush_written_file(handle)
+            finally:
+                handle.close()
 
     def _open_next_ithmb(fmt_id: int) -> None:
         _close_current_ithmb(fmt_id)
@@ -1274,10 +1300,12 @@ def write_artworkdb(
                 break
         state["offset"] = 0
         final = os.path.join(artwork_dir, filename)
-        temp = final + ".tmp"
         ithmb_final_paths[(fmt_id, state["index"])] = final
+        if before_device_mutation is not None:
+            before_device_mutation()
+        temp, temp_file = open_unique_sibling_temp(final, mode="wb")
         ithmb_temp_paths[(fmt_id, state["index"])] = temp
-        ithmb_files[fmt_id] = open(temp, "wb")
+        ithmb_files[fmt_id] = temp_file
 
     def _write_encoded_ithmb_payload(fmt_id: int, data: bytes) -> IthmbLocation:
         state = ithmb_state[fmt_id]
@@ -1299,35 +1327,42 @@ def write_artworkdb(
     # Track which unique images have been written to avoid ithmb duplication
     art_payload_written: dict[ArtworkAssetRef, dict[int, IthmbLocation]] = {}
     try:
-        # Write each unique image only once; per-track entries sharing
-        # the same art_hash reuse the same ithmb offsets.
+        try:
+            # Write each unique image only once; per-track entries sharing
+            # the same art_hash reuse the same ithmb offsets.
+            for entry in entries:
+                asset_ref = entry_asset_keys[entry.img_id]
+                if asset_ref in art_payload_written:
+                    # Already written — reuse offsets
+                    format_locations_map[entry.img_id] = dict(art_payload_written[asset_ref])
+                else:
+                    locations: dict[int, IthmbLocation] = {}
+                    for fmt_id in format_ids:
+                        if fmt_id not in entry.formats:
+                            continue
+                        img_info = entry.formats[fmt_id]
+                        if isinstance(img_info, EncodedFormatPayload):
+                            locations[fmt_id] = _write_encoded_ithmb_payload(fmt_id, img_info.data)
+                        elif isinstance(img_info, PassthroughFormatRef):
+                            locations[fmt_id] = _passthrough_location(fmt_id, img_info)
+                    art_payload_written[asset_ref] = locations
+                    format_locations_map[entry.img_id] = dict(locations)
 
-        for entry in entries:
-            asset_ref = entry_asset_keys[entry.img_id]
-            if asset_ref in art_payload_written:
-                # Already written — reuse offsets
-                format_locations_map[entry.img_id] = dict(art_payload_written[asset_ref])
-            else:
-                locations: dict[int, IthmbLocation] = {}
-                for fmt_id in format_ids:
-                    if fmt_id not in entry.formats:
-                        continue
-                    img_info = entry.formats[fmt_id]
-                    if isinstance(img_info, EncodedFormatPayload):
-                        locations[fmt_id] = _write_encoded_ithmb_payload(fmt_id, img_info.data)
-                    elif isinstance(img_info, PassthroughFormatRef):
-                        locations[fmt_id] = _passthrough_location(fmt_id, img_info)
-                art_payload_written[asset_ref] = locations
-                format_locations_map[entry.img_id] = dict(locations)
-
-        # Flush ithmb temp files to OS buffers.  No fsync here — these are
-        # .tmp files and the os.replace renames below are the durability
-        # boundary.  Fsyncing each ithmb file over USB adds multiple seconds
-        # of blocked I/O with no safety benefit (the old files remain intact
-        # until the rename succeeds).
-    finally:
-        for fmt_id in list(ithmb_files.keys()):
-            _close_current_ithmb(fmt_id)
+            # Each completed ithmb temp file is synchronized before the atomic
+            # rename so a successful database commit never references cached-only
+            # artwork payloads.
+        finally:
+            for fmt_id in list(ithmb_files.keys()):
+                _close_current_ithmb(fmt_id)
+    except Exception:
+        for temp in ithmb_temp_paths.values():
+            try:
+                if before_device_mutation is not None:
+                    before_device_mutation()
+                durable_unlink(temp, missing_ok=True)
+            except OSError:
+                pass
+        raise
 
     # --- Step 4: Build ArtworkDB binary ---
     next_id = start_img_id + len(entries)
@@ -1342,23 +1377,30 @@ def write_artworkdb(
 
     # Write ArtworkDB to temp file
     artdb_path = os.path.join(artwork_dir, "ArtworkDB")
-    artdb_temp = artdb_path + ".tmp"
+    artdb_temp: Path | None = None
     try:
-        with open(artdb_temp, 'wb') as f:
+        if before_device_mutation is not None:
+            before_device_mutation()
+        artdb_temp, artdb_file = open_unique_sibling_temp(artdb_path, mode="wb")
+        with artdb_file as f:
             f.write(artdb_data)
-            f.flush()
-            os.fsync(f.fileno())
+            flush_written_file(f)
     except Exception:
         # Clean up all temp files on failure
         for tp in ithmb_temp_paths.values():
             try:
-                os.remove(tp)
+                if before_device_mutation is not None:
+                    before_device_mutation()
+                durable_unlink(tp, missing_ok=True)
             except OSError:
                 pass
-        try:
-            os.remove(artdb_temp)
-        except OSError:
-            pass
+        if artdb_temp is not None:
+            try:
+                if before_device_mutation is not None:
+                    before_device_mutation()
+                durable_unlink(artdb_temp, missing_ok=True)
+            except OSError:
+                pass
         raise
 
     # --- Atomic commit: all temp files are complete, swap them in ---
@@ -1399,13 +1441,17 @@ def write_artworkdb(
     # Immediate commit (legacy behaviour)
     try:
         for temp, final in pending_renames:
-            os.replace(temp, final)
+            if before_device_mutation is not None:
+                before_device_mutation()
+            durable_replace(temp, final)
         _post_commit_cleanup()
     except Exception:
         # If any replace fails, clean up remaining temps
         for temp, _final in pending_renames:
             try:
-                os.remove(temp)
+                if before_device_mutation is not None:
+                    before_device_mutation()
+                durable_unlink(temp, missing_ok=True)
             except OSError:
                 pass
         raise

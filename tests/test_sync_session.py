@@ -17,6 +17,7 @@ from iopenpod.application.sync_session import (
     SyncSessionBlocked,
     SyncSessionController,
 )
+from iopenpod.device.write_guard import DatabaseGeneration
 from iopenpod.infrastructure.settings_schema import AppSettings
 from iopenpod.sync.contracts import StorageSummary, SyncAction, SyncItem, SyncPlan
 
@@ -93,6 +94,11 @@ class _FakeLibraryCache:
             "mhlp_smart": [],
         }
         self.clear_pending_calls = 0
+        self.database_generation = DatabaseGeneration(
+            "iTunesDB",
+            True,
+            digest="loaded",
+        )
 
     def is_loading(self) -> bool:
         return self.loading
@@ -114,6 +120,9 @@ class _FakeLibraryCache:
 
     def clear_pending_sync_state(self) -> None:
         self.clear_pending_calls += 1
+
+    def get_database_generation(self) -> DatabaseGeneration:
+        return self.database_generation
 
 
 class _FakeQuickWrites:
@@ -416,6 +425,10 @@ def test_start_execution_owns_worker_controls(qapp, monkeypatch) -> None:
     assert worker.kwargs["settings"].sync_workers == 3
     assert worker.kwargs["backup_device_name"] == "RoadPod"
     assert worker.kwargs["sync_until_full"] is True
+    assert (
+        worker.kwargs["expected_database_generation"]
+        == cache.database_generation
+    )
     assert worker.started is True
     assert started == [True]
 

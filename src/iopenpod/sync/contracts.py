@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import TYPE_CHECKING, Any
 
+from iopenpod.device.storage_safety import allocated_size
+
 from .mapping import MappingFile
 
 if TYPE_CHECKING:
@@ -307,6 +309,8 @@ class SyncPlan:
     duplicates: dict[str, list[PCTrack]] = field(default_factory=dict)
     _stale_mapping_entries: list[tuple[str, int]] = field(default_factory=list)
     _integrity_removals: list[SyncItem] = field(default_factory=list)
+    _mapping_requires_persistence: bool = False
+    _refreshed_podcast_feeds: list[Any] | None = None
     mapping: MappingFile | None = None
     integrity_report: IntegrityReport | None = None
     total_pc_tracks: int = 0
@@ -330,11 +334,35 @@ class SyncPlan:
             self.to_sync_playcount,
             self.to_sync_rating,
             self._integrity_removals,
+            self.has_integrity_housekeeping,
+            self._refreshed_podcast_feeds,
             self.playlists_to_add,
             self.playlists_to_edit,
             self.playlists_to_remove,
             self.photo_plan and self.photo_plan.has_changes,
         ])
+
+    @property
+    def has_integrity_housekeeping(self) -> bool:
+        """Whether execution has non-database integrity cleanup to perform."""
+        report = self.integrity_report
+        return bool(
+            self._mapping_requires_persistence
+            or (report and getattr(report, "orphan_files", ()))
+        )
+
+    @property
+    def integrity_change_count(self) -> int:
+        """Number of automatic integrity actions represented by this plan."""
+        report = self.integrity_report
+        if report is None:
+            return len(self._integrity_removals)
+        return (
+            len(getattr(report, "missing_files", ()))
+            + len(getattr(report, "stale_mappings", ()))
+            + len(getattr(report, "orphan_files", ()))
+            + int(bool(getattr(report, "mapping_rebuild_required", False)))
+        )
 
     @property
     def has_duplicates(self) -> bool:
@@ -391,11 +419,21 @@ class SyncPlan:
         if self.integrity_report and not self.integrity_report.is_clean:
             ir = self.integrity_report
             if ir.missing_files:
-                integrity_lines.append(f"  🔧 {len(ir.missing_files)} DB tracks had missing files (cleaned)")
+                integrity_lines.append(
+                    f"  🔧 {len(ir.missing_files)} DB tracks with missing files will be removed"
+                )
             if ir.stale_mappings:
-                integrity_lines.append(f"  🔧 {len(ir.stale_mappings)} stale mapping entries (cleaned)")
+                integrity_lines.append(
+                    f"  🔧 {len(ir.stale_mappings)} stale mapping entries will be cleaned"
+                )
             if ir.orphan_files:
-                integrity_lines.append(f"  🔧 {len(ir.orphan_files)} orphan files removed from iPod")
+                integrity_lines.append(
+                    f"  🔧 {len(ir.orphan_files)} orphan files will be removed from iPod"
+                )
+            if getattr(ir, "mapping_rebuild_required", False):
+                integrity_lines.append(
+                    "  🔧 The corrupt iOpenPod mapping will be backed up and rebuilt"
+                )
 
         if not lines and not integrity_lines:
             return "✅ Everything is in sync!"
@@ -412,6 +450,7 @@ def sync_plan_required_free_bytes(
     plan: Any,
     *,
     db_overhead_bytes: int = SYNC_DB_OVERHEAD_BYTES,
+    allocation_unit_size: int | None = None,
 ) -> int:
     """Estimate free bytes needed before starting an executable sync plan."""
 
@@ -421,11 +460,41 @@ def sync_plan_required_free_bytes(
         getattr(storage, "bytes_to_remove", 0)
     )
 
+    if allocation_unit_size:
+        add_items = tuple(getattr(plan, "to_add", ()) or ())
+        logical_track_add = sum(
+            _coerce_nonnegative_int(getattr(item, "planned_add_size", 0))
+            for item in add_items
+        )
+        allocated_track_add = sum(
+            allocated_size(
+                _coerce_nonnegative_int(getattr(item, "planned_add_size", 0)),
+                allocation_unit_size,
+            )
+            for item in add_items
+        )
+        unitemized_add = max(0, bytes_to_add - logical_track_add)
+        bytes_to_add = allocated_track_add + allocated_size(
+            unitemized_add,
+            allocation_unit_size,
+        )
+
     update_growth = 0
     for item in getattr(plan, "to_update_file", ()) or ():
-        update_growth += _coerce_nonnegative_int(
-            getattr(item, "planned_update_growth", 0)
-        )
+        if allocation_unit_size:
+            new_size = allocated_size(
+                _coerce_nonnegative_int(getattr(item, "planned_add_size", 0)),
+                allocation_unit_size,
+            )
+            old_size = allocated_size(
+                _coerce_nonnegative_int(getattr(item, "planned_remove_size", 0)),
+                allocation_unit_size,
+            )
+            update_growth += max(0, new_size - old_size)
+        else:
+            update_growth += _coerce_nonnegative_int(
+                getattr(item, "planned_update_growth", 0)
+            )
 
     deferred_remove_bytes = 0
     for item in getattr(plan, "to_remove", ()) or ():
@@ -440,7 +509,10 @@ def sync_plan_required_free_bytes(
         bytes_to_add
         - removable_credit
         + update_growth
-        + _coerce_nonnegative_int(db_overhead_bytes),
+        + allocated_size(
+            _coerce_nonnegative_int(db_overhead_bytes),
+            allocation_unit_size,
+        ),
     )
 
 

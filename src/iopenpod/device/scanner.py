@@ -54,8 +54,15 @@ from .diagnostic_log import (
     format_fields,
     format_sources,
 )
+from .filesystem import (
+    ITUNESDB_PLATFORM_MAC,
+    detect_filesystem_type,
+    filesystem_itunesdb_platform,
+)
+from .filesystem_profile import inspect_filesystem_profile
 from .info import DeviceInfo
 from .models import USB_PID_TO_MODEL
+from .write_readiness import volume_lock_key
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +73,8 @@ _PROBE_META_FIELDS: tuple[tuple[str, str], ...] = (
     ("_sysinfo_extended_keys", "sie_keys"),
     ("_sysinfo_extended_regex_fallback", "sie_regex"),
     ("hashing_scheme", "hash_scheme"),
+    ("filesystem_type", "fs_type"),
+    ("volume_identity_key", "volume_identity"),
 )
 
 # Prevents console windows from flashing on Windows during subprocess calls
@@ -1711,6 +1720,46 @@ def _probe_filesystem(ipod_path: str) -> dict:
     """
     result: dict = {}
 
+    filesystem_type = detect_filesystem_type(ipod_path)
+    try:
+        filesystem_profile = inspect_filesystem_profile(ipod_path)
+    except Exception as exc:
+        filesystem_profile = None
+        logger.warning(
+            "Could not capture scan-time iPod volume identity: mount=%s error=%s",
+            ipod_path,
+            exc,
+        )
+    if filesystem_profile is not None:
+        filesystem_type = filesystem_type or filesystem_profile.filesystem_type
+        if filesystem_profile.identity.is_complete:
+            result["volume_identity_key"] = volume_lock_key(filesystem_profile)
+            result.setdefault("_sources", {})["volume_identity_key"] = (
+                "mounted_volume_identity"
+            )
+            logger.info(
+                "iPod mounted volume identity captured: mount=%s identity=%s",
+                ipod_path,
+                result["volume_identity_key"],
+            )
+    if filesystem_type:
+        logger.info(
+            "iPod mounted filesystem detected: mount=%s filesystem=%s",
+            ipod_path,
+            filesystem_type,
+        )
+        if (
+            sys.platform.startswith("linux")
+            and filesystem_itunesdb_platform(filesystem_type) == ITUNESDB_PLATFORM_MAC
+        ):
+            logger.warning(
+                "Mac-formatted iPod filesystem detected on Linux: "
+                "mount=%s filesystem=%s. Linux may mount journaled HFS+ "
+                "read-only; verify write support before syncing.",
+                ipod_path,
+                filesystem_type,
+            )
+
     # ── SysInfo / SysInfoExtended ──────────────────────────────────────
     sysinfo = _identify_via_sysinfo(ipod_path)
     if sysinfo:
@@ -1727,6 +1776,10 @@ def _probe_filesystem(ipod_path: str) -> dict:
         if hash_info.get("model_family"):
             result["hash_model_family"] = hash_info["model_family"]
             result["hash_generation"] = hash_info.get("generation", "")
+
+    if filesystem_type:
+        result["filesystem_type"] = filesystem_type
+        result.setdefault("_sources", {})["filesystem_type"] = "mounted_filesystem"
 
     logger.debug(
         "Filesystem probe result: mount=%s meta=[%s] identity=[%s] caps=[%s] "
@@ -1788,7 +1841,9 @@ def _resolve_model(
         "scsi_product",
         "scsi_revision",
         "connected_bus",
-        "volume_format",
+        "reported_volume_format",
+        "filesystem_type",
+        "volume_identity_key",
         "db_version",
         "shadow_db_version",
         "uses_sqlite_db",
@@ -2490,7 +2545,9 @@ def _identify_ipod_mount(mount_path: str, display_name: str) -> DeviceInfo:
         "scsi_product",
         "scsi_revision",
         "connected_bus",
-        "volume_format",
+        "reported_volume_format",
+        "filesystem_type",
+        "volume_identity_key",
         "db_version",
         "shadow_db_version",
         "uses_sqlite_db",
@@ -2534,10 +2591,13 @@ def _identify_ipod_mount(mount_path: str, display_name: str) -> DeviceInfo:
 
     ipod_data = ipod.__dict__
     logger.info(
-        "iPod identified: mount=%s display=%s identity=[%s] caps=[%s] "
-        "method=%s checksum=%s hash_scheme=%s sources=[%s] conflicts=[%s]",
+        "iPod identified: mount=%s display=%s filesystem=%s "
+        "reported_volume_format=%s identity=[%s] caps=[%s] method=%s "
+        "checksum=%s hash_scheme=%s sources=[%s] conflicts=[%s]",
         ipod.path,
         ipod.display_name,
+        ipod.filesystem_type or "unknown",
+        ipod.reported_volume_format or "unknown",
         format_fields(ipod_data, IDENTITY_FIELDS),
         format_fields(ipod_data, CAPABILITY_FIELDS, include_false=True),
         ipod.identification_method,

@@ -257,16 +257,9 @@ def read_firewire_id(ipod_path: str) -> bytes:
 
     Reads from the centralised DeviceInfo store.  Raises if not available.
     """
-    from iopenpod.device import get_current_device
-    device = get_current_device()
-    if device is not None:
-        fwid = device.firewire_id_bytes
-        if fwid:
-            return fwid
-    raise RuntimeError(
-        "FireWire GUID not available. Device info was not populated "
-        "by the device scanner."
-    )
+    from iopenpod.device import get_firewire_id
+
+    return get_firewire_id(ipod_path)
 
 
 if __name__ == "__main__":

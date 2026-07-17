@@ -1911,7 +1911,9 @@ class SyncReviewWidget(QWidget):
                 "to_sync_playcount",
                 "to_sync_rating",
             )
-        ) + self._playlist_change_count(plan) + self._photo_change_count(getattr(plan, "photo_plan", None))
+        ) + self._playlist_change_count(plan) + self._photo_change_count(
+            getattr(plan, "photo_plan", None)
+        ) + int(getattr(plan, "integrity_change_count", 0) or 0)
 
     def _overview_summary_text(self, plan: Any) -> str:
         parts: list[str] = []
@@ -2051,7 +2053,7 @@ class SyncReviewWidget(QWidget):
             ir = plan.integrity_report
             if ir and not ir.is_clean:
                 fixes = len(ir.missing_files) + len(ir.stale_mappings) + len(ir.orphan_files)
-                stats += f" · <span style='color: {Colors.INFO};'>{fixes} integrity fixes applied</span>"
+                stats += f" · <span style='color: {Colors.INFO};'>{fixes} integrity fixes ready</span>"
             self.summary_label.setText(stats)
             self.summary_label.setTextFormat(Qt.TextFormat.RichText)
             self.empty_stats.setText(stats)
@@ -2101,36 +2103,43 @@ class SyncReviewWidget(QWidget):
         # ── Integrity fixes ─────────────────────────────────────────
         ir = plan.integrity_report
         if ir and not ir.is_clean:
-            fix_count = len(ir.missing_files) + len(ir.stale_mappings) + len(ir.orphan_files)
+            fix_count = int(getattr(plan, "integrity_change_count", 0) or 0)
             card = SyncCategoryCard("shield-warning", "Library Repairs", fix_count,
                                     _CAT_COLORS["integrity"], checkable=False, start_expanded=False,
-                                    subtitle="Stale iPod records cleaned before sync",
+                                    subtitle="Repairs will run under the iPod writer safety guard",
                                     parent=self._cards_container)
             for t in ir.missing_files:
                 detail = "\n".join(part for part in [
                     f"{t.get('Artist', 'Unknown Artist')} · {t.get('Album', 'Unknown Album')}",
                     "Issue: the iPod database pointed to an audio file that is no longer on disk.",
                     f"iPod location: {t.get('Location', 'Unknown')}",
-                    "Repair: removed the stale database entry from this sync pass.",
+                    "Repair: remove the stale database entry during guarded sync execution.",
                 ] if part)
                 card.add_info_row(t.get("Title", "Unknown track"), detail)
             for _fp, db_track_id in ir.stale_mappings:
                 card.add_info_row(
                     f"Stale mapping {db_track_id}",
                     "Issue: iOpenPod had a saved fingerprint mapping for a track no longer in the iPod database.\n"
-                    "Repair: removed the old mapping entry.",
+                    "Repair: remove the old mapping entry during guarded sync execution.",
                 )
             for orphan in ir.orphan_files[:20]:
                 card.add_info_row(
                     orphan.name,
                     "Issue: this audio file existed on the iPod but was not referenced by the iPod database.\n"
                     f"Location: {_short_display_path(str(orphan))}\n"
-                    "Repair: deleted the orphaned file.",
+                    "Repair: durably delete the orphaned file during guarded sync execution.",
                 )
             if len(ir.orphan_files) > 20:
                 card.add_info_row(
                     f"...and {len(ir.orphan_files) - 20} more",
-                    "Additional orphaned files were repaired but are hidden to keep this review readable.",
+                    "Additional orphaned files are hidden to keep this review readable.",
+                )
+            if getattr(ir, "mapping_rebuild_required", False):
+                card.add_info_row(
+                    "Corrupt iOpenPod mapping",
+                    "Issue: iOpenPod could not parse iOpenPod.json. The original "
+                    "file has not been changed.\nRepair: back it up and rebuild it "
+                    "during guarded sync execution.",
                 )
             _insert_card(card)
 
@@ -3380,7 +3389,11 @@ class SyncReviewWidget(QWidget):
 
         has_integrity_fixes = (
             self._plan is not None
-            and bool(getattr(self._plan, "_integrity_removals", []))
+            and bool(
+                getattr(self._plan, "_integrity_removals", [])
+                or getattr(self._plan, "has_integrity_housekeeping", False)
+                or getattr(self._plan, "_refreshed_podcast_feeds", None)
+            )
         )
 
         if selected == 0 and has_integrity_fixes:
@@ -3516,7 +3529,11 @@ class SyncReviewWidget(QWidget):
 
         has_integrity_fixes = (
             self._plan is not None
-            and bool(getattr(self._plan, '_integrity_removals', []))
+            and bool(
+                getattr(self._plan, '_integrity_removals', [])
+                or getattr(self._plan, "has_integrity_housekeeping", False)
+                or getattr(self._plan, "_refreshed_podcast_feeds", None)
+            )
         )
 
         if not selected_items and not playlists_selected and not has_integrity_fixes and not (selected_photo_plan and selected_photo_plan.has_changes):
@@ -3576,8 +3593,24 @@ class SyncReviewWidget(QWidget):
                 msg_parts.append(f"Remove {pl_remove} playlists")
 
         if has_integrity_fixes and self._plan:
-            n = len(self._plan._integrity_removals)
-            msg_parts.append(f"Clean {n} ghost tracks (missing files) from database")
+            ir = getattr(self._plan, "integrity_report", None)
+            missing_count = len(getattr(ir, "missing_files", ())) or len(
+                getattr(self._plan, "_integrity_removals", ())
+            )
+            stale_count = len(getattr(ir, "stale_mappings", ()))
+            orphan_count = len(getattr(ir, "orphan_files", ()))
+            if missing_count:
+                msg_parts.append(
+                    f"Clean {missing_count} ghost tracks (missing files) from database"
+                )
+            if stale_count:
+                msg_parts.append(f"Clean {stale_count} stale fingerprint mappings")
+            if orphan_count:
+                msg_parts.append(f"Remove {orphan_count} unreferenced iPod media files")
+            if getattr(ir, "mapping_rebuild_required", False):
+                msg_parts.append("Back up and rebuild the corrupt iOpenPod mapping")
+            if getattr(self._plan, "_refreshed_podcast_feeds", None):
+                msg_parts.append("Save refreshed podcast feed metadata and artwork")
 
         msg = "This will:\n• " + "\n• ".join(msg_parts) + "\n\nContinue?"
 

@@ -40,6 +40,19 @@ def test_photo_encoder_accepts_typed_codec_payload():
     assert info["filename"] == "F1017_1.ithmb"
 
 
+def test_explicit_unknown_device_path_has_no_classic_photo_format_fallback(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        photos,
+        "_current_device_family_gen",
+        lambda _ipod_path=None: ("", ""),
+    )
+
+    assert photos._photo_formats_for_current_device(tmp_path / "unknown-ipod") == {}
+
+
 def test_photo_encoder_passes_format_override(monkeypatch):
     img = Image.new("RGB", (80, 40), (200, 40, 20))
     fmt = ArtworkFormat(

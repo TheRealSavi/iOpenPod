@@ -1759,10 +1759,12 @@ class PlaylistBrowser(QFrame):
         self.infoCard.delete_btn.setEnabled(False)
         self.infoCard.evaluate_btn.setEnabled(False)
 
+        device = self._device_sessions.current_session()
         self._delete_worker = _PlaylistDeleteWorker(
             playlist,
-            self._device_sessions.current_session().device_path or "",
+            device.device_path or "",
             self._library_cache,
+            device_storage=device.storage,
         )
         self._delete_worker.finished_ok.connect(self._onDeleteDone)
         self._delete_worker.failed.connect(self._onDeleteFailed)
@@ -1811,10 +1813,12 @@ class PlaylistBrowser(QFrame):
         self.infoCard.evaluate_btn.setText("Writing…")
         self.infoCard.evaluate_btn.setVisible(True)
 
+        device = self._device_sessions.current_session()
         self._eval_worker = _PlaylistWriteWorker(
             playlist,
-            self._device_sessions.current_session().device_path or "",
+            device.device_path or "",
             self._library_cache,
+            device_storage=device.storage,
         )
         self._eval_worker.finished_ok.connect(self._onWriteDone)
         self._eval_worker.failed.connect(self._onWriteFailed)
@@ -1964,6 +1968,7 @@ class PlaylistBrowser(QFrame):
             ipod_path=str(device.device_path),
             fpcalc_path=settings.fpcalc_path,
             cache=self._library_cache,
+            device_storage=device.storage,
         )
         self._import_worker.progress.connect(self._onImportProgress)
         self._import_worker.finished_ok.connect(self._onImportDone)

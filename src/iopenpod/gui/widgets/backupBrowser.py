@@ -922,6 +922,7 @@ class BackupBrowserWidget(QWidget):
             device.discovered_ipod,
             device_name=self._connected_device_name(),
         )
+        device_storage = getattr(device, "storage", None)
 
         # Show progress page
         self._progress_title.setText("Scanning Device")
@@ -946,6 +947,12 @@ class BackupBrowserWidget(QWidget):
                 backup_dir=settings.backup_dir,
                 max_backups=settings.max_backups,
                 device_meta=backup_context.device_meta,
+                reported_volume_format=str(
+                    getattr(device_storage, "reported_volume_format", "") or ""
+                ),
+                expected_volume_identity_key=str(
+                    getattr(device_storage, "volume_identity_key", "") or ""
+                ),
             )
         )
         self._backup_worker.progress.connect(self._on_backup_progress)
@@ -1068,6 +1075,7 @@ class BackupBrowserWidget(QWidget):
             device.discovered_ipod,
             device_name=self._connected_device_name(),
         )
+        device_storage = getattr(device, "storage", None)
         connected_id = connected_context.device_id
 
         # Safety: only restore to the matching device
@@ -1116,6 +1124,12 @@ class BackupBrowserWidget(QWidget):
                 ipod_path=device.device_path,
                 device_id=connected_id,
                 backup_dir=settings.backup_dir,
+                reported_volume_format=str(
+                    getattr(device_storage, "reported_volume_format", "") or ""
+                ),
+                expected_volume_identity_key=str(
+                    getattr(device_storage, "volume_identity_key", "") or ""
+                ),
             )
         )
         self._restore_worker.progress.connect(self._on_restore_progress)

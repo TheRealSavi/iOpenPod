@@ -50,8 +50,10 @@ import re
 import struct
 import subprocess
 import sys
+from pathlib import Path
 
 from .diagnostic_log import CAPABILITY_FIELDS, IDENTITY_FIELDS, format_fields
+from .metadata_write import guarded_device_metadata_session
 from .models import IPOD_USB_PIDS as IPOD_PIDS
 from .usb_backend import backend_diagnostic, get_libusb_backend
 
@@ -459,7 +461,13 @@ def query_all_ipods() -> list[dict]:
     return results
 
 
-def write_sysinfo(ipod_path: str, vpd_info: dict) -> bool:
+def write_sysinfo(
+    ipod_path: str,
+    vpd_info: dict,
+    *,
+    reported_volume_format: str = "",
+    expected_volume_identity_key: str = "",
+) -> bool:
     """Write SysInfo and SysInfoExtended to the iPod from VPD data.
 
     This populates the files that iTunes normally creates, so that
@@ -477,79 +485,71 @@ def write_sysinfo(ipod_path: str, vpd_info: dict) -> bool:
     bool
         True if at least one file was written successfully.
     """
-    device_dir = os.path.join(ipod_path, "iPod_Control", "Device")
-    os.makedirs(device_dir, exist_ok=True)
+    lines = []
+    serial = vpd_info.get("SerialNumber", "")
+    if serial:
+        lines.append(f"pszSerialNumber: {serial}")
 
-    wrote_any = False
+    fw_guid = vpd_info.get("FireWireGUID", "") or vpd_info.get("usb_serial", "")
+    if fw_guid:
+        lines.append(f"FirewireGuid: 0x{fw_guid}")
 
-    # ── Write SysInfo (plain text key:value format) ────────────────
-    sysinfo_path = os.path.join(device_dir, "SysInfo")
-    try:
-        lines = []
-        serial = vpd_info.get("SerialNumber", "")
-        if serial:
-            lines.append(f"pszSerialNumber: {serial}")
+    build_id = vpd_info.get("VisibleBuildID", vpd_info.get("BuildID", ""))
+    if build_id:
+        lines.append(f"visibleBuildID: {build_id}")
 
-        fw_guid = vpd_info.get("FireWireGUID", "")
-        if not fw_guid:
-            fw_guid = vpd_info.get("usb_serial", "")
-        if fw_guid:
-            lines.append(f"FirewireGuid: 0x{fw_guid}")
+    board = vpd_info.get("BoardHwName", "")
+    if board:
+        lines.append(f"BoardHwName: {board}")
 
-        build_id = vpd_info.get("VisibleBuildID",
-                                vpd_info.get("BuildID", ""))
-        if build_id:
-            lines.append(f"visibleBuildID: {build_id}")
+    model = vpd_info.get("ModelNumStr", "")
+    if model:
+        lines.append(f"ModelNumStr: {model}")
 
-        board = vpd_info.get("BoardHwName", "")
-        if board:
-            lines.append(f"BoardHwName: {board}")
+    fam_id = vpd_info.get("FamilyID")
+    if fam_id is not None:
+        lines.append(f"FamilyID: {fam_id}")
 
-        model = vpd_info.get("ModelNumStr", "")
-        if model:
-            lines.append(f"ModelNumStr: {model}")
+    upd_fam_id = vpd_info.get("UpdaterFamilyID")
+    if upd_fam_id is not None:
+        lines.append(f"UpdaterFamilyID: {upd_fam_id}")
 
-        # Also store FamilyID and UpdaterFamilyID for future use
-        fam_id = vpd_info.get("FamilyID")
-        if fam_id is not None:
-            lines.append(f"FamilyID: {fam_id}")
-
-        upd_fam_id = vpd_info.get("UpdaterFamilyID")
-        if upd_fam_id is not None:
-            lines.append(f"UpdaterFamilyID: {upd_fam_id}")
-
-        if lines:
-            with open(sysinfo_path, "w") as f:
-                f.write("\n".join(lines) + "\n")
-            wrote_any = True
-            logger.info("Wrote SysInfo (%d fields) to %s",
-                        len(lines), sysinfo_path)
-
-    except Exception as exc:
-        logger.error("Failed to write SysInfo: %s", exc)
-
-    # ── Write SysInfoExtended (XML plist) ──────────────────────────
-    sysinfo_ext_path = os.path.join(device_dir, "SysInfoExtended")
+    xml_data = b""
     raw_xml = vpd_info.get("vpd_raw_xml", b"")
     if raw_xml:
-        try:
-            # Use raw VPD XML directly — it's already a plist
-            xml_start = raw_xml.find(b"<?xml")
-            if xml_start < 0:
-                xml_start = raw_xml.find(b"<plist")
-            if xml_start >= 0:
-                xml_data = raw_xml[xml_start:]
-                # Ensure proper termination
-                if b"</plist>" not in xml_data:
-                    xml_data += b"\n</dict>\n</plist>"
-                with open(sysinfo_ext_path, "wb") as f:
-                    f.write(xml_data)
-                wrote_any = True
-                logger.info("Wrote SysInfoExtended to %s", sysinfo_ext_path)
-        except Exception as exc:
-            logger.error("Failed to write SysInfoExtended: %s", exc)
+        xml_start = raw_xml.find(b"<?xml")
+        if xml_start < 0:
+            xml_start = raw_xml.find(b"<plist")
+        if xml_start >= 0:
+            xml_data = raw_xml[xml_start:]
+            if b"</plist>" not in xml_data:
+                xml_data += b"\n</dict>\n</plist>"
 
-    return wrote_any
+    if not lines and not xml_data:
+        return False
+
+    device_subtree = Path("iPod_Control") / "Device"
+    with guarded_device_metadata_session(
+        ipod_path,
+        reported_volume_format=reported_volume_format,
+        expected_volume_identity_key=expected_volume_identity_key,
+    ) as writer:
+        if lines:
+            sysinfo_path = writer.write_text_atomic(
+                device_subtree / "SysInfo",
+                "\n".join(lines) + "\n",
+                allowed_subtree=device_subtree,
+            )
+            logger.info("Wrote SysInfo (%d fields) to %s", len(lines), sysinfo_path)
+        if xml_data:
+            sysinfo_ext_path = writer.write_bytes_atomic(
+                device_subtree / "SysInfoExtended",
+                xml_data,
+                allowed_subtree=device_subtree,
+            )
+            logger.info("Wrote SysInfoExtended to %s", sysinfo_ext_path)
+
+    return True
 
 
 # ──────────────────────────────────────────────────────────────────────

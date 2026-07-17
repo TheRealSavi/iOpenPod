@@ -9,7 +9,12 @@ from typing import Any
 from PyQt6.QtCore import QObject, QThread, QTimer, pyqtSignal, pyqtSlot
 
 from .jobs import AutoRestoreDeviceWorker, QuickWriteWorker
-from .services import DeviceManagerLike, LibraryCacheLike, is_device_info_like
+from .services import (
+    DeviceManagerLike,
+    DeviceStorageSnapshot,
+    LibraryCacheLike,
+    is_device_info_like,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -253,10 +258,20 @@ class QuickWriteController(QObject):
         self._active_write_has_track_edits = bool(edits or artwork_edits)
         self._active_write_has_playlists = bool(user_playlists)
 
-        worker = QuickWriteWorker(
-            ipod_path=ipod_path,
-            cache=self._library_cache,
+        device_storage = DeviceStorageSnapshot.from_device_info(
+            getattr(self._device_manager, "discovered_ipod", None)
         )
+        if device_storage is None:
+            worker = QuickWriteWorker(
+                ipod_path=ipod_path,
+                cache=self._library_cache,
+            )
+        else:
+            worker = QuickWriteWorker(
+                ipod_path=ipod_path,
+                cache=self._library_cache,
+                device_storage=device_storage,
+            )
         self._force_snapshot_write = False
         self._quick_worker = worker
         worker.completed.connect(self._on_quick_write_done)

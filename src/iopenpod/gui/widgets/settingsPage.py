@@ -25,6 +25,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QProgressDialog,
     QPushButton,
     QScrollArea,
@@ -2765,13 +2766,50 @@ class SettingsPage(QWidget):
         )
 
         root, key = ctx
-        self._settings_service.reset_device_settings_to_global(
-            root,
-            key,
-            use_global_settings=self.use_global_settings.value,
-        )
+        try:
+            self._settings_service.reset_device_settings_to_global(
+                root,
+                key,
+                use_global_settings=self.use_global_settings.value,
+            )
+        except Exception as exc:
+            self._show_device_settings_write_error(exc)
+            return
         self.load_from_settings()
         self._apply_theme_change_if_needed(theme_before)
+
+    def _show_device_settings_write_error(self, exc: Exception) -> None:
+        """Explain a refused device-settings write and restore the saved values."""
+
+        QMessageBox.critical(
+            self,
+            "Device Settings Not Saved",
+            "iOpenPod stopped before writing settings to the selected iPod.\n\n"
+            f"{exc}\n\nReconnect and reload the iPod before trying again.",
+        )
+        self.load_from_settings()
+
+    def _save_device_settings_with_alert(
+        self,
+        root: str,
+        settings,
+        *,
+        use_global_settings: bool,
+        device_key: str,
+    ) -> bool:
+        """Persist device settings, returning false after a user-visible refusal."""
+
+        try:
+            self._settings_service.save_device_settings(
+                root,
+                settings,
+                use_global_settings=use_global_settings,
+                device_key=device_key,
+            )
+        except Exception as exc:
+            self._show_device_settings_write_error(exc)
+            return False
+        return True
 
     def _save(self, *_args):
         """Read controls back into the active settings scope and persist."""
@@ -2803,12 +2841,13 @@ class SettingsPage(QWidget):
             state = self._settings_service.get_device_settings_for_edit(root, key)
             s = state.settings
             self._read_controls_into_settings(s, include_global_only=False)
-            self._settings_service.save_device_settings(
+            if not self._save_device_settings_with_alert(
                 root,
                 s,
                 use_global_settings=self.use_global_settings.value,
                 device_key=key,
-            )
+            ):
+                return
             effective_after = self._settings_service.get_effective_settings()
             self._apply_scope_visibility()
             self._apply_theme_change_if_needed(theme_before)
@@ -3115,7 +3154,7 @@ class SettingsPage(QWidget):
         root: str | None = None,
         key: str | None = None,
         use_global: bool | None = None,
-    ) -> None:
+    ) -> bool:
         if scope is None:
             ctx = self._current_device_context() if self._settings_scope == "device" else None
             if ctx:
@@ -3129,18 +3168,18 @@ class SettingsPage(QWidget):
             s = state.settings
             s.listenbrainz_token = token
             s.listenbrainz_username = username
-            self._settings_service.save_device_settings(
+            return self._save_device_settings_with_alert(
                 root,
                 s,
                 use_global_settings=self.use_global_settings.value if use_global is None else use_global,
                 device_key=key,
             )
-            return
 
         s = self._settings_service.get_global_settings()
         s.listenbrainz_token = token
         s.listenbrainz_username = username
         self._settings_service.save_global_settings(s)
+        return True
 
     def _on_listenbrainz_token_changed(self, token: str):
         """Handle ListenBrainz token save/clear."""
@@ -3198,14 +3237,15 @@ class SettingsPage(QWidget):
             self.listenbrainz_token_row.set_error("Invalid token")
             return
 
-        self._save_listenbrainz_credentials(
+        if not self._save_listenbrainz_credentials(
             token,
             username,
             scope=scope,
             root=root,
             key=key,
             use_global=use_global,
-        )
+        ):
+            return
 
         self.listenbrainz_token_row.set_connected(username)
 
@@ -3221,7 +3261,7 @@ class SettingsPage(QWidget):
         root: str | None = None,
         key: str | None = None,
         use_global: bool | None = None,
-    ) -> None:
+    ) -> bool:
         if scope is None:
             ctx = self._current_device_context() if self._settings_scope == "device" else None
             if ctx:
@@ -3237,13 +3277,12 @@ class SettingsPage(QWidget):
             s.lastfm_api_secret = api_secret
             s.lastfm_session_key = session_key
             s.lastfm_username = username
-            self._settings_service.save_device_settings(
+            return self._save_device_settings_with_alert(
                 root,
                 s,
                 use_global_settings=self.use_global_settings.value if use_global is None else use_global,
                 device_key=key,
             )
-            return
 
         s = self._settings_service.get_global_settings()
         s.lastfm_api_key = api_key
@@ -3251,13 +3290,15 @@ class SettingsPage(QWidget):
         s.lastfm_session_key = session_key
         s.lastfm_username = username
         self._settings_service.save_global_settings(s)
+        return True
 
     def _on_lastfm_credentials_changed(self, api_key: str, api_secret: str, session_key: str, username: str):
         """Handle Last.fm credentials save/clear."""
         # If session_key is empty, the user clicked "Disconnect"
         if not session_key:
             # We still save the API key & secret so they don't have to type them again later
-            self._save_lastfm_credentials(api_key, api_secret, "", "")
+            if not self._save_lastfm_credentials(api_key, api_secret, "", ""):
+                return
             self.lastfm_auth_row.set_disconnected(api_key, api_secret)
             return
 
@@ -3272,7 +3313,7 @@ class SettingsPage(QWidget):
             use_global = False
 
         # Save the successfully fetched session key and username
-        self._save_lastfm_credentials(
+        if not self._save_lastfm_credentials(
             api_key,
             api_secret,
             session_key,
@@ -3281,5 +3322,6 @@ class SettingsPage(QWidget):
             root=root,
             key=key,
             use_global=use_global,
-        )
+        ):
+            return
         self.lastfm_auth_row.set_connected(username)

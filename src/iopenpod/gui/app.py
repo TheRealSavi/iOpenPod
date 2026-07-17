@@ -1,7 +1,7 @@
 # ruff: noqa: I001
 import logging
-import shlex
 import shutil
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -33,11 +33,15 @@ from iopenpod.application.controllers import (
     StartupUpdateController,
 )
 from iopenpod.application.database_storage import analyze_database_storage
-from iopenpod.application.device_access import check_ipod_write_access
+from iopenpod.application.device_access import DeviceWriteAccessResult, check_ipod_write_access
 from iopenpod.application.device_identity import (
     identify_ipod_at_root,
     refresh_device_disk_usage,
     resolve_device_image_filename,
+)
+from iopenpod.device.recovery import (
+    LinuxFilesystemRecoveryPlan,
+    linux_filesystem_recovery_plan,
 )
 from iopenpod.application.dropped_files import collect_import_file_paths, is_media_drop_candidate
 from iopenpod.application.jobs import (
@@ -105,7 +109,11 @@ from iopenpod.sync.review_selection import build_filtered_sync_plan
 
 if TYPE_CHECKING:
     from iopenpod.application.context import AppContext
-    from iopenpod.application.services import DeviceManagerLike, LibraryCacheLike
+    from iopenpod.application.services import (
+        DeviceManagerLike,
+        DeviceStorageSnapshot,
+        LibraryCacheLike,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -183,6 +191,154 @@ def _looks_like_device_access_error(text: object) -> bool:
     return any(marker in lowered for marker in _DEVICE_ACCESS_ERROR_MARKERS)
 
 
+def _linux_recovery_guidance(plan: LinuxFilesystemRecoveryPlan) -> str:
+    """Render conservative recovery copy from device-layer mount facts."""
+    lines = [
+        "On Linux, reconnect the iPod first. If it remains read-only, do not "
+        "force or remount it read-write; that can worsen filesystem damage.",
+        "",
+    ]
+    if plan.source or plan.filesystem:
+        lines.extend([
+            "Detected mount: "
+            f"{plan.source or 'unknown device'} "
+            f"({plan.filesystem or 'unknown filesystem'}).",
+            "",
+        ])
+    lines.extend([
+        "Unmount it before running any filesystem check:",
+        f"  {plan.unmount_command}",
+        "",
+    ])
+
+    if not plan.source or not plan.filesystem:
+        lines.extend([
+            "Identify the exact device and filesystem before choosing a checker:",
+            f"  {plan.identify_command}",
+            "",
+        ])
+
+    if plan.kind == "fat":
+        if plan.checker_command:
+            lines.extend([
+                "For FAT, start with a read-only check:",
+                f"  {plan.checker_command}",
+                "Review the result and back up recoverable data before choosing a repair mode.",
+            ])
+        else:
+            lines.append(
+                "For FAT, use fsck.fat only after substituting the exact unmounted device; "
+                "start with its non-writing (-n) mode."
+            )
+    elif plan.kind == "exfat":
+        if plan.checker_command:
+            lines.extend([
+                "For exFAT, start with a read-only check:",
+                f"  {plan.checker_command}",
+                "Review the result and back up recoverable data before choosing a repair mode.",
+            ])
+        else:
+            lines.append(
+                "For exFAT, identify the exact unmounted device and start with "
+                "fsck.exfat's non-writing (-n) mode."
+            )
+    elif plan.kind == "mac":
+        lines.append(
+            "This is a Mac-formatted iPod. Do not run a FAT checker or force Linux "
+            "write access; check or repair it on macOS with Disk Utility First Aid."
+        )
+    elif plan.kind == "ntfs":
+        lines.append(
+            "For NTFS, keep it unmounted on Linux and use Windows drive Error Checking "
+            "or chkdsk after backing up recoverable data."
+        )
+    else:
+        lines.append(
+            "Use only the checker that matches the detected filesystem and exact device. "
+            "Do not run a checker while the iPod is mounted."
+        )
+
+    return "\n".join(lines)
+
+
+def _filesystem_recovery_guidance(
+    mount_path: str,
+    *,
+    filesystem: str = "",
+    source: str = "",
+) -> str:
+    """Render conservative recovery steps for the host operating system."""
+    if sys.platform.startswith("linux"):
+        return _linux_recovery_guidance(
+            linux_filesystem_recovery_plan(
+                mount_path,
+                filesystem=filesystem,
+                source=source,
+            )
+        )
+
+    detected = ""
+    if filesystem or source:
+        detected = (
+            "\n\nDetected volume: "
+            f"{source or mount_path} ({filesystem or 'unknown filesystem'})."
+        )
+
+    if sys.platform == "darwin":
+        return (
+            "On macOS, reconnect the iPod first. If it remains read-only or "
+            "reports I/O errors, stop syncing and do not force it to mount "
+            "read-write."
+            f"{detected}\n\n"
+            "Use Disk Utility First Aid on the exact iPod volume. Back up any "
+            "recoverable data first, and keep iOpenPod and other media apps "
+            "closed while the check runs."
+        )
+
+    if sys.platform == "win32":
+        return (
+            "On Windows, reconnect the iPod first. If it remains read-only or "
+            "reports I/O errors, stop syncing and do not format the volume as "
+            "a shortcut."
+            f"{detected}\n\n"
+            "Run Windows drive Error Checking (Properties > Tools) against the "
+            "exact iPod drive, with iOpenPod and iTunes closed. If the iPod "
+            "database or filesystem cannot be recovered, back up what you can "
+            "before using iTunes Restore."
+        )
+
+    return (
+        "Reconnect the iPod first. If it remains read-only or reports I/O "
+        "errors, stop syncing and do not force write access."
+        f"{detected}\n\n"
+        "Use only your operating system's filesystem checker for the exact "
+        "iPod volume, after backing up any recoverable data."
+    )
+
+
+def _device_write_access_failure_message(access: DeviceWriteAccessResult) -> str:
+    mount_path = access.mount_path or "the iPod mount"
+    filesystem = access.mount.filesystem if access.mount is not None else ""
+    source = access.mount.source if access.mount is not None else ""
+    lines = [
+        "iOpenPod cannot use this iPod because it is not writable.",
+        "",
+        f"Mount path: {mount_path}",
+    ]
+    if access.mount is not None:
+        lines.append(f"Mount: {access.mount.summary}")
+    lines.extend([
+        f"System error: {access.reason or 'write access check failed'}",
+        "",
+        _filesystem_recovery_guidance(
+            mount_path,
+            filesystem=filesystem,
+            source=source,
+        ),
+    ])
+    return "\n".join(lines)
+
+
 def _coerce_positive_int(value: object) -> int | None:
     if value is None:
         return None
@@ -228,7 +384,7 @@ def _playback_track_path_for_session(session: object, track: dict) -> str:
     return str(path) if path is not None else ""
 
 
-def _sync_execute_failure_message(result: Any) -> str | None:
+def _sync_execute_failure_message(result: Any, mount_path: str = "") -> str | None:
     """Return the message that should be shown for a failed sync result."""
     if getattr(result, "success", True) or getattr(result, "partial_save", False):
         return None
@@ -248,6 +404,14 @@ def _sync_execute_failure_message(result: Any) -> str | None:
 
     desc, msg = prioritized or errors[0]
     text = str(msg).strip() or str(desc).strip()
+    if prioritized is not None:
+        mount = mount_path.strip() or "the iPod mount"
+        return (
+            "iOpenPod cannot write to this iPod.\n\n"
+            f"Mount path: {mount}\n"
+            f"System error: {text or 'write access check failed'}\n\n"
+            + _filesystem_recovery_guidance(mount)
+        )
     return text or "Sync failed before making changes."
 
 
@@ -257,22 +421,11 @@ def _library_load_failure_message(mount_path: str, error_msg: str) -> str:
         return f"iOpenPod could not load this iPod library.\n\n{error_text}"
 
     mount = mount_path.strip() or "the iPod mount"
-    quoted_mount = shlex.quote(mount) if mount_path.strip() else "<mount-path>"
     return (
         "iOpenPod could not read this iPod cleanly.\n\n"
         f"Mount path: {mount}\n"
         f"System error: {error_text}\n\n"
-        "On Linux, this usually means the iPod mount is not accessible, "
-        "the FAT filesystem is dirty, or the current user does not have "
-        "permission to the mount.\n\n"
-        "Try reconnecting the iPod. If it still fails, try remounting it "
-        "read-write:\n"
-        f"  sudo mount -o remount,rw {quoted_mount}\n\n"
-        "If the filesystem is dirty, unmount it before repairing it:\n"
-        f"  sudo umount {quoted_mount}\n"
-        "  sudo fsck.vfat -a /dev/sdXN\n\n"
-        "Replace /dev/sdXN with the iPod partition. Do not run fsck while "
-        "the iPod is mounted."
+        + _filesystem_recovery_guidance(mount)
     )
 
 
@@ -342,6 +495,8 @@ class MainWindow(QMainWindow):
 
         # Eject worker (safe-unmount off the UI thread)
         self._eject_worker: EjectDeviceWorker | None = None
+        self._eject_only_device_path: str | None = None
+        self._eject_only_device_storage: DeviceStorageSnapshot | None = None
 
         self._quick_write_controller = QuickWriteController(
             self.device_manager,
@@ -1111,6 +1266,8 @@ class MainWindow(QMainWindow):
             cache = self.library_cache
             if cache.get_data() is not None:
                 self.onDataReady()
+            if self._eject_only_device_path:
+                self.sidebar.setEjectAvailable(True)
         finally:
             self.setUpdatesEnabled(True)
 
@@ -1186,6 +1343,9 @@ class MainWindow(QMainWindow):
 
     def onDeviceChanged(self, path: str):
         """Handle device selection - start loading data."""
+        if not path or same_device_path(path, self.device_manager.device_path):
+            self._eject_only_device_path = None
+            self._eject_only_device_storage = None
         self._normalize_tags_after_sync_pending = False
         self._invalidate_tag_fix_scan()
         # Cancel any pending style rebuild from a prior device before starting
@@ -1212,10 +1372,18 @@ class MainWindow(QMainWindow):
         if path:
             access = check_ipod_write_access(path)
             if not access.writable:
-                logger.error("Selected iPod is not writable: %s", access.message)
-                QMessageBox.critical(self, "iPod Not Writable", access.message)
+                message = _device_write_access_failure_message(access)
+                logger.error("Selected iPod is not writable: %s", access.reason)
                 if same_device_path(path, self.device_manager.device_path):
+                    eject_storage = self.device_session_service.current_session().storage
+                    # Keep this mount only as an eject candidate. Clearing the
+                    # active device prevents every library and write action;
+                    # DeviceManager synchronously emits onDeviceChanged("") here.
                     self.device_manager.device_path = None
+                    self._eject_only_device_path = path
+                    self._eject_only_device_storage = eject_storage
+                    self.sidebar.setEjectAvailable(True)
+                QMessageBox.critical(self, "iPod Not Writable", message)
                 return
             self._reset_library_category_for_new_device(path)
             self._show_default_page()
@@ -1246,6 +1414,10 @@ class MainWindow(QMainWindow):
         if not same_device_path(path, self.device_manager.device_path):
             return
         logger.warning("Using global settings; device settings failed: %s", error)
+        self._notifier.notify(
+            "Device Settings Not Loaded",
+            f"iOpenPod left the on-iPod settings file unchanged. {error}",
+        )
         try:
             self.settingsPage._sync_scope_availability()
         except Exception:
@@ -1651,7 +1823,12 @@ class MainWindow(QMainWindow):
 
         logger.info("Renaming iPod to '%s'", new_name)
 
-        self._rename_worker = QuickWriteWorker(device.device_path, cache)
+        session = self.device_session_service.current_session()
+        self._rename_worker = QuickWriteWorker(
+            device.device_path,
+            cache,
+            device_storage=session.storage,
+        )
         self._rename_worker.completed.connect(self._onRenameDone)
         self._rename_worker.error.connect(self._onRenameFailed)
         self._rename_worker.start()
@@ -1722,7 +1899,8 @@ class MainWindow(QMainWindow):
     def _onEjectDevice(self):
         """Safely eject the current iPod from the OS."""
         device = self.device_manager
-        path = device.device_path
+        active_path = device.device_path
+        path = active_path or self._eject_only_device_path
         if not path:
             return
 
@@ -1737,9 +1915,16 @@ class MainWindow(QMainWindow):
         if not self._flush_quick_writes_for_eject():
             return
 
-        self.sidebar.device_card.eject_button.setEnabled(False)
+        self.sidebar.setEjectAvailable(False)
 
-        self._eject_worker = EjectDeviceWorker(path)
+        if active_path:
+            device_storage = self.device_session_service.current_session().storage
+        else:
+            device_storage = self._eject_only_device_storage
+        self._eject_worker = EjectDeviceWorker(
+            path,
+            device_storage=device_storage,
+        )
         self._eject_worker.finished_ok.connect(self._onEjectDone)
         self._eject_worker.failed.connect(self._onEjectFailed)
         self._eject_worker.start()
@@ -1750,7 +1935,10 @@ class MainWindow(QMainWindow):
             self._eject_worker.deleteLater()
             self._eject_worker = None
         Notifier.get_instance().notify("iPod Ejected", message)
+        self._eject_only_device_path = None
+        self._eject_only_device_storage = None
         self.device_manager.device_path = None
+        self.sidebar.setEjectAvailable(False)
         # Forget the restored device so it doesn't auto-reconnect next launch.
         try:
             s = self.settings_service.get_global_settings()
@@ -1765,8 +1953,10 @@ class MainWindow(QMainWindow):
             self._eject_worker.deleteLater()
             self._eject_worker = None
         # Re-enable the button so the user can retry.
-        has_device = bool(self.device_manager.device_path)
-        self.sidebar.device_card.eject_button.setEnabled(has_device)
+        has_device = bool(
+            self.device_manager.device_path or self._eject_only_device_path
+        )
+        self.sidebar.setEjectAvailable(has_device)
         try:
             if self.library_cache.is_ready():
                 self.onDataReady()
@@ -2620,7 +2810,11 @@ class MainWindow(QMainWindow):
         # Show styled results view instead of a plain message box
         self.syncReview.show_result(result)
         self._keep_sync_results_visible_after_rescan = True
-        failure_message = _sync_execute_failure_message(result)
+        device_manager = getattr(self, "device_manager", None)
+        failure_message = _sync_execute_failure_message(
+            result,
+            getattr(device_manager, "device_path", "") or "",
+        )
         settings = self.settings_service.get_effective_settings()
         self._normalize_tags_after_sync_pending = bool(
             not failure_message

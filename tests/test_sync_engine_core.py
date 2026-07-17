@@ -28,11 +28,17 @@ def test_quick_write_wraps_progress_and_copies_payloads(monkeypatch) -> None:
         playlists_data,
         artwork_sources=None,
         progress_callback=None,
+        expected_database_generation=None,
+        reported_volume_format="",
+        expected_volume_identity_key="",
     ):
         captured["ipod_path"] = ipod_path
         captured["tracks_data"] = tracks_data
         captured["playlists_data"] = playlists_data
         captured["artwork_sources"] = artwork_sources
+        captured["expected_database_generation"] = expected_database_generation
+        captured["reported_volume_format"] = reported_volume_format
+        captured["expected_volume_identity_key"] = expected_volume_identity_key
         tracks_data[0]["Title"] = "mutated"
         if progress_callback is not None:
             progress_callback(
@@ -44,6 +50,7 @@ def test_quick_write_wraps_progress_and_copies_payloads(monkeypatch) -> None:
 
     progress_events: list[EngineProgress] = []
     original_track = {"Title": "Original"}
+    database_generation = object()
     result = SyncEngine().quick_write(
         EngineRequest(
             operation=EngineOperation.QUICK_WRITE,
@@ -51,6 +58,11 @@ def test_quick_write_wraps_progress_and_copies_payloads(monkeypatch) -> None:
             tracks_data=(original_track,),
             playlists_data=({"Title": "Playlist"},),
             artwork_sources={101: "/tmp/art.jpg"},
+            device_storage=SimpleNamespace(
+                reported_volume_format="FAT32",
+                volume_identity_key="scan-volume",
+            ),
+            expected_database_generation=database_generation,
             progress_callback=progress_events.append,
         )
     )
@@ -58,6 +70,9 @@ def test_quick_write_wraps_progress_and_copies_payloads(monkeypatch) -> None:
     assert result.success
     assert captured["ipod_path"] == "/Volumes/iPod"
     assert captured["artwork_sources"] == {101: "/tmp/art.jpg"}
+    assert captured["expected_database_generation"] is database_generation
+    assert captured["reported_volume_format"] == "FAT32"
+    assert captured["expected_volume_identity_key"] == "scan-volume"
     assert original_track == {"Title": "Original"}
     assert progress_events[0].stage == EngineStage.ASSEMBLE_COMMIT
     assert progress_events[1].stage == EngineStage.COMMIT

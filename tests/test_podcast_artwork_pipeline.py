@@ -114,10 +114,13 @@ def test_sync_podcast_download_progress_uses_bytes(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    downloaded = tmp_path / "episode.mp3"
+    ipod_root = tmp_path / "ipod"
+    host_cache = tmp_path / "cache"
+    host_cache.mkdir()
+    downloaded = host_cache / "episode.mp3"
     pc_track = SimpleNamespace(
         is_podcast=True,
-        path=str(tmp_path / "missing.mp3"),
+        path=str(host_cache / "missing.mp3"),
         podcast_enclosure_url="https://example.test/episode.mp3",
         podcast_url="",
         title="Episode",
@@ -182,7 +185,7 @@ def test_sync_podcast_download_progress_uses_bytes(
         fake_download_and_probe_episode,
     )
 
-    SyncExecutor(tmp_path)._download_podcast_episodes(cast(Any, _Ctx()))
+    SyncExecutor(ipod_root)._download_podcast_episodes(cast(Any, _Ctx()))
 
     byte_events = [
         event for event in progress_events

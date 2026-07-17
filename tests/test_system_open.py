@@ -21,7 +21,7 @@ def test_open_files_with_default_app_opens_existing_files(
     )
 
     assert system_open.open_files_with_default_app([existing, missing]) is True
-    assert opened == [str(existing)]
+    assert [Path(path) for path in opened] == [existing]
 
 
 def test_macos_open_with_chooses_one_app_for_multiple_files(

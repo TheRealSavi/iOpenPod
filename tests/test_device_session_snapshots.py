@@ -1,4 +1,8 @@
-from iopenpod.application.services import DeviceCapabilitySnapshot, DeviceIdentitySnapshot
+from iopenpod.application.services import (
+    DeviceCapabilitySnapshot,
+    DeviceIdentitySnapshot,
+    DeviceStorageSnapshot,
+)
 
 
 class FakeCapabilities:
@@ -38,6 +42,10 @@ class FakeDeviceInfo:
     color = "Black"
     serial = "SERIAL123"
     firewire_guid = "ABCDEF1234567890"
+    reported_volume_format = "FAT32"
+    filesystem_type = "vfat"
+    volume_identity_key = "linux|8:2|IPOD-UUID|mount-42"
+    max_file_size_gb = 4
     capabilities = FakeCapabilities()
 
 
@@ -60,3 +68,13 @@ def test_device_capability_snapshot_copies_device_capabilities() -> None:
     assert snapshot.music_dirs == 50
     assert snapshot.h264_level == "3.1"
     assert snapshot.max_database_bytes == 64 * 1024 * 1024
+
+
+def test_device_storage_snapshot_keeps_reported_and_observed_formats_separate() -> None:
+    snapshot = DeviceStorageSnapshot.from_device_info(FakeDeviceInfo())
+
+    assert snapshot is not None
+    assert snapshot.reported_volume_format == "FAT32"
+    assert snapshot.scanned_filesystem_type == "vfat"
+    assert snapshot.device_max_file_size_bytes == 4 * 1024**3
+    assert snapshot.volume_identity_key == "linux|8:2|IPOD-UUID|mount-42"

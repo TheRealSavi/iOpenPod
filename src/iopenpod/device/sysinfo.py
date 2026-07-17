@@ -358,7 +358,7 @@ def identity_from_sysinfo_extended(
     for key, field_name in (
         ("ProductType", "product_type"),
         ("ConnectedBus", "connected_bus"),
-        ("VolumeFormat", "volume_format"),
+        ("VolumeFormat", "reported_volume_format"),
         ("scsi_vendor", "scsi_vendor"),
         ("scsi_product", "scsi_product"),
         ("scsi_revision", "scsi_revision"),

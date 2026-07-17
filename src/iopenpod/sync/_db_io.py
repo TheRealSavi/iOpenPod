@@ -10,13 +10,30 @@ import struct
 from collections.abc import Callable
 from pathlib import Path
 
+from iopenpod.device.durability import durable_unlink
+from iopenpod.device.filesystem_profile import FilesystemProfile
+from iopenpod.device.path_safety import UnsafeDevicePathError, resolve_device_path
+from iopenpod.device.write_guard import DeviceWriteGuard, DeviceWriteSafetyError
+from iopenpod.device.write_readiness import (
+    inspect_device_write_readiness,
+    revalidate_device_write_readiness,
+    volume_lock_key,
+)
 from iopenpod.itunesdb_writer.mhit_writer import TrackInfo
 from iopenpod.itunesdb_writer.mhyp_writer import PlaylistInfo
 
 logger = logging.getLogger(__name__)
 
 
-def read_existing_database(ipod_path: Path) -> dict:
+class DatabaseVerificationError(RuntimeError):
+    """Raised when a freshly written iPod database fails read-back checks."""
+
+
+def read_existing_database(
+    ipod_path: Path,
+    *,
+    raise_on_error: bool = False,
+) -> dict:
     """Read existing tracks, playlists, and smart playlists from iTunesDB.
 
     Also reads the Play Counts file (if present) and merges per-track
@@ -47,6 +64,8 @@ def read_existing_database(ipod_path: Path) -> dict:
     _resolved = resolve_itdb_path(str(ipod_path))
     itdb_path = Path(_resolved) if _resolved else ipod_path / "iPod_Control" / "iTunes" / "iTunesDB"
     if not itdb_path.exists():
+        if raise_on_error:
+            raise FileNotFoundError(f"iTunesDB was not found at {itdb_path}")
         return empty
 
     try:
@@ -144,7 +163,98 @@ def read_existing_database(ipod_path: Path) -> dict:
         }
     except Exception as e:
         logger.error("Failed to parse iTunesDB: %s", e)
+        if raise_on_error:
+            raise
         return empty
+
+
+def verify_written_database(
+    ipod_path: Path,
+    *,
+    expected_track_count: int,
+    case_sensitive_paths: bool | None = None,
+) -> None:
+    """Reparse a committed database and verify every media reference."""
+    from iopenpod.device.filesystem import detect_filesystem_type
+
+    from .ipod_track_paths import expected_ipod_track_file_path
+
+    try:
+        parsed = read_existing_database(ipod_path, raise_on_error=True)
+    except Exception as exc:
+        raise DatabaseVerificationError(
+            f"Freshly written iTunesDB could not be reparsed: {exc}"
+        ) from exc
+
+    parsed_tracks = parsed.get("tracks", [])
+    problems: list[str] = []
+    if len(parsed_tracks) != expected_track_count:
+        problems.append(
+            "track count mismatch "
+            f"(expected {expected_track_count}, read back {len(parsed_tracks)})"
+        )
+
+    if case_sensitive_paths is None:
+        filesystem_type = detect_filesystem_type(ipod_path)
+        case_sensitive_paths = filesystem_type == "hfsx"
+    ipod_root = ipod_path.resolve()
+    seen_media_paths: dict[str, str] = {}
+    for track in parsed_tracks:
+        title = str(track.get("Title") or "?")
+        location = str(track.get("Location") or "").strip()
+        if not location:
+            problems.append(f"track '{title}' has no Location")
+            continue
+        media_path = expected_ipod_track_file_path(ipod_path, location)
+        if media_path is None:
+            problems.append(
+                f"track '{title}' has an invalid or outside the iPod media path {location}"
+            )
+            continue
+
+        resolved_media_path = media_path.resolve()
+        try:
+            resolved_media_path.relative_to(ipod_root)
+        except ValueError:
+            problems.append(
+                f"track '{title}' references media outside the iPod {location}"
+            )
+            continue
+
+        media_key = _database_media_path_key(
+            resolved_media_path,
+            case_sensitive=case_sensitive_paths,
+        )
+        previous_location = seen_media_paths.get(media_key)
+        if previous_location is not None:
+            problems.append(
+                "duplicate media location "
+                f"{location} (already referenced as {previous_location})"
+            )
+        else:
+            seen_media_paths[media_key] = location
+
+        if not resolved_media_path.is_file():
+            problems.append(f"track '{title}' references missing media {location}")
+
+    if problems:
+        detail = "; ".join(problems[:5])
+        if len(problems) > 5:
+            detail += f"; and {len(problems) - 5} more problem(s)"
+        raise DatabaseVerificationError(
+            f"Freshly written iTunesDB failed verification: {detail}"
+        )
+
+    logger.info(
+        "Verified freshly written iTunesDB: %d tracks and all media paths exist",
+        len(parsed_tracks),
+    )
+
+
+def _database_media_path_key(path: Path, *, case_sensitive: bool) -> str:
+    """Return a duplicate-comparison key matching the mounted filesystem."""
+    key = str(path).replace("\\", "/")
+    return key if case_sensitive else key.casefold()
 
 
 def write_database(
@@ -160,6 +270,9 @@ def write_database(
     podcast_master_playlist_id: int | None = None,
     progress_callback: Callable[[str], None] | None = None,
     raise_on_error: bool = False,
+    case_sensitive_paths: bool | None = None,
+    before_database_replace: Callable[[], None] | None = None,
+    before_device_mutation: Callable[[], None] | None = None,
 ) -> bool:
     """Write tracks to iTunesDB (and ArtworkDB if pc_file_paths provided).
 
@@ -185,8 +298,11 @@ def write_database(
     # Resolve capabilities once for the writer
     capabilities = None
     try:
-        from iopenpod.device import capabilities_for_family_gen, get_current_device
-        dev = get_current_device()
+        from iopenpod.device import (
+            capabilities_for_family_gen,
+            get_current_device_for_path,
+        )
+        dev = get_current_device_for_path(str(ipod_path))
         if dev and dev.model_family:
             capabilities = capabilities_for_family_gen(
                 dev.model_family, dev.generation or "",
@@ -208,12 +324,29 @@ def write_database(
             podcast_master_playlist_name=podcast_master_playlist_name,
             podcast_master_playlist_id=podcast_master_playlist_id,
             progress_callback=progress_callback,
+            before_database_replace=before_database_replace,
+            before_device_mutation=before_device_mutation,
         )
     except Exception as e:
         logger.exception(
             "Database write failed during iTunesDB serialization; output was not committed. Error: %s",
             e,
         )
+        if raise_on_error:
+            raise
+        return False
+
+    if not ok:
+        return False
+
+    try:
+        verify_written_database(
+            ipod_path,
+            expected_track_count=len(tracks),
+            case_sensitive_paths=case_sensitive_paths,
+        )
+    except DatabaseVerificationError as exc:
+        logger.error("Database read-back verification failed: %s", exc)
         if raise_on_error:
             raise
         return False
@@ -271,6 +404,7 @@ def write_database(
                 db_pid=db_pid,
                 capabilities=capabilities,
                 firewire_id=firewire_id,
+                before_device_mutation=before_device_mutation,
             )
             if not sqlite_ok:
                 logger.error("SQLite database write failed")
@@ -286,21 +420,34 @@ def write_database(
     return ok
 
 
-def delete_playcounts_files(ipod_path: Path) -> None:
+def delete_playcounts_files(
+    ipod_path: Path,
+    *,
+    before_device_mutation: Callable[[], None] | None = None,
+) -> None:
     """Delete Play Counts (and related) files after committing deltas."""
-    itunes_dir = ipod_path / "iPod_Control" / "iTunes"
-    for name in ("Play Counts", "iTunesStats", "PlayCounts.plist"):
-        path = itunes_dir / name
-        if path.exists():
-            try:
-                path.unlink()
-                logger.info("Deleted %s", path)
-            except OSError as exc:
-                logger.warning("Could not delete %s: %s", path, exc)
-
-    from iopenpod.itunesdb_parser.otg import delete_otg_files
-
-    delete_otg_files(str(itunes_dir))
+    relative_dir = Path("iPod_Control") / "iTunes"
+    for name in (
+        "Play Counts",
+        "iTunesStats",
+        "PlayCounts.plist",
+        "OTGPlaylistInfo",
+    ):
+        try:
+            if before_device_mutation is not None:
+                before_device_mutation()
+            path = resolve_device_path(
+                ipod_path,
+                relative_dir / name,
+                allowed_subtree=relative_dir,
+            )
+            durable_unlink(path, missing_ok=True)
+        except (OSError, UnsafeDevicePathError) as exc:
+            raise DeviceWriteSafetyError(
+                "The iPod database was committed, but its device-generated "
+                f"sync state could not be cleared ({name}): {exc}"
+            ) from exc
+        logger.info("Cleared device-generated sync state %s", path)
 
 
 def commit_playcounts_if_needed(ipod_path: Path) -> bool:
@@ -311,6 +458,26 @@ def commit_playcounts_if_needed(ipod_path: Path) -> bool:
     entries = parse_playcounts(pc_path)
     if entries is None or not any(entry.has_data for entry in entries):
         return False
+
+    profile = inspect_device_write_readiness(ipod_path)
+    with DeviceWriteGuard(
+        ipod_path,
+        volume_key=volume_lock_key(profile),
+    ) as write_guard:
+        return _commit_playcounts_guarded(
+            ipod_path,
+            filesystem_profile=profile,
+            write_guard=write_guard,
+        )
+
+
+def _commit_playcounts_guarded(
+    ipod_path: Path,
+    *,
+    filesystem_profile: FilesystemProfile,
+    write_guard: DeviceWriteGuard,
+) -> bool:
+    """Commit play deltas while one verified device write session is held."""
 
     existing = read_existing_database(ipod_path)
     tracks_data = existing.get("tracks", [])
@@ -352,8 +519,17 @@ def commit_playcounts_if_needed(ipod_path: Path) -> bool:
             podcast_master_playlist_id=podcast_master_playlist_id,
         ),
         protect_itunes=True,
+        write_guard=write_guard,
+        filesystem_profile=filesystem_profile,
     ):
         return False
 
-    delete_playcounts_files(ipod_path)
+    def _revalidate() -> None:
+        nonlocal filesystem_profile
+        filesystem_profile = revalidate_device_write_readiness(filesystem_profile)
+
+    delete_playcounts_files(
+        ipod_path,
+        before_device_mutation=_revalidate,
+    )
     return True

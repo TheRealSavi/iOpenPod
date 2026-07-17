@@ -63,13 +63,33 @@ import logging
 import os
 import random
 import shutil
+import stat
 import struct
 import time
 import zlib
 from collections.abc import Callable
 from dataclasses import replace as _dc_replace
+from pathlib import Path
 
 from iopenpod.device import ChecksumType, DeviceCapabilities, detect_checksum_type
+from iopenpod.device.durability import (
+    durable_replace,
+    durable_unlink,
+    flush_written_file,
+    open_unique_sibling_temp,
+)
+from iopenpod.device.filesystem import (
+    detect_filesystem_type,
+    resolve_itunesdb_platform,
+)
+from iopenpod.device.path_safety import resolve_device_path
+from iopenpod.device.storage_safety import (
+    allocated_size,
+    effective_max_file_size_bytes,
+    require_file_size_supported,
+)
+from iopenpod.device.write_guard import DeviceWriteSafetyError
+from iopenpod.device.write_readiness import inspect_device_write_readiness
 from iopenpod.itunesdb_shared.album_identity import album_identity_from_track
 from iopenpod.itunesdb_shared.field_base import (
     read_fields,
@@ -123,6 +143,43 @@ def _maybe_decompress_cdb(itdb_data: bytes) -> bytes:
         except zlib.error:
             pass
     return itdb_data
+
+
+def _valid_itunesdb_platform(itdb_data: bytes | None) -> int | None:
+    """Read a valid MHBD platform flag without trusting other header fields."""
+    if not itdb_data or len(itdb_data) < 0x22 or itdb_data[:4] != b"mhbd":
+        return None
+    platform = struct.unpack_from("<H", itdb_data, 0x20)[0]
+    return platform if platform in (1, 2) else None
+
+
+def _validate_existing_itunesdb(itdb_data: bytes, path: str) -> None:
+    """Reject an existing on-device database that is unsafe to rewrite from."""
+    if len(itdb_data) < MHBD_HEADER_SIZE or itdb_data[:4] != b"mhbd":
+        raise RuntimeError(
+            f"The existing iPod database is truncated or malformed: {path}. "
+            "iOpenPod stopped before replacing it."
+        )
+    header_len = struct.unpack_from("<I", itdb_data, 4)[0]
+    total_len = struct.unpack_from("<I", itdb_data, 8)[0]
+    if (
+        header_len < MHBD_HEADER_SIZE
+        or header_len > total_len
+        or total_len > len(itdb_data)
+    ):
+        raise RuntimeError(
+            f"The existing iPod database has invalid size fields: {path}. "
+            "iOpenPod stopped before replacing it."
+        )
+    compressed = struct.unpack_from("<H", itdb_data, 0xA8)[0] == 1
+    if compressed:
+        try:
+            zlib.decompress(itdb_data[header_len:total_len])
+        except zlib.error as exc:
+            raise RuntimeError(
+                f"The existing compressed iPod database is corrupt: {path}. "
+                "iOpenPod stopped before replacing it."
+            ) from exc
 
 
 def extract_db_info(itdb_path: str) -> dict:
@@ -225,6 +282,8 @@ def write_mhbd(
     master_playlist_id: int | None = None,
     podcast_master_playlist_name: str | None = None,
     podcast_master_playlist_id: int | None = None,
+    *,
+    platform: int | None = None,
 ) -> bytes:
     """
     Write a complete iTunesDB database.
@@ -254,6 +313,8 @@ def write_mhbd(
         podcast_master_playlist_name: Display name for the dataset 3 master
                                       playlist. Defaults to master_playlist_name.
         podcast_master_playlist_id: Existing dataset 3 master playlist ID, if any.
+        platform: Explicit MHBD OS flag (1=Mac, 2=Windows). When omitted,
+                  preserves a valid value from ``reference_info``.
 
     Returns:
         Complete iTunesDB file content as bytes
@@ -630,6 +691,12 @@ def write_mhbd(
 
     # ── Build the header using shared field definitions ──────────────
 
+    platform_flag = platform
+    if platform_flag not in (1, 2):
+        platform_flag = reference_info.get('platform', 2) if reference_info else 2
+    if platform_flag not in (1, 2):
+        platform_flag = 2
+
     header = bytearray(MHBD_HEADER_SIZE)
     write_generic_header(header, 0, b'mhbd', MHBD_HEADER_SIZE, total_length)
 
@@ -638,7 +705,7 @@ def write_mhbd(
         'version': db_version,
         'child_count': child_count,
         'db_id': db_id,
-        'platform': 2,
+        'platform': platform_flag,
         'unk0x22': reference_info.get('unk0x22', 611) if reference_info else 611,
         'db_id_2': db_id_2,
         'unk0x2c': 0,
@@ -665,6 +732,170 @@ def write_mhbd(
     return bytes(header) + all_datasets
 
 
+def _run_before_mutation(callback: Callable[[], None] | None) -> None:
+    if callback is not None:
+        callback()
+
+
+def _cleanup_device_temp(
+    path: str | os.PathLike[str],
+    *,
+    before_device_mutation: Callable[[], None] | None,
+) -> None:
+    try:
+        _run_before_mutation(before_device_mutation)
+        durable_unlink(Path(path), missing_ok=True)
+    except Exception as exc:
+        logger.warning("Could not safely remove temporary device file %s: %s", path, exc)
+
+
+def _copy_device_file_durably(
+    source: str,
+    target: str,
+    *,
+    before_device_mutation: Callable[[], None] | None,
+) -> None:
+    """Copy a device file through a flushed sibling and atomic replacement."""
+    _run_before_mutation(before_device_mutation)
+    before = os.stat(source)
+    temp_path, temp_file = open_unique_sibling_temp(target, mode="wb")
+    try:
+        with temp_file as dst:
+            with open(source, "rb") as src:
+                while chunk := src.read(1024 * 1024):
+                    dst.write(chunk)
+                flush_written_file(dst)
+        after = os.stat(source)
+        if (
+            before.st_size,
+            before.st_mtime_ns,
+            before.st_dev,
+            before.st_ino,
+        ) != (
+            after.st_size,
+            after.st_mtime_ns,
+            after.st_dev,
+            after.st_ino,
+        ):
+            raise RuntimeError(f"Source changed while backing up {source}")
+        _run_before_mutation(before_device_mutation)
+        durable_replace(temp_path, target)
+    except Exception:
+        _cleanup_device_temp(
+            temp_path,
+            before_device_mutation=before_device_mutation,
+        )
+        raise
+
+
+def _database_filename_for_capabilities(
+    capabilities: DeviceCapabilities | None,
+) -> str | None:
+    if capabilities is None:
+        return None
+    return "iTunesCDB" if capabilities.supports_compressed_db else "iTunesDB"
+
+
+def _preflight_database_install(
+    ipod_path: str,
+    itdb_path: str,
+    database_size: int,
+    *,
+    capabilities: DeviceCapabilities | None,
+    backup_sources: tuple[str | None, ...] = (),
+) -> None:
+    """Enforce firmware, filesystem, and staging-space limits before mutation."""
+    profile = inspect_device_write_readiness(ipod_path)
+    firmware_limit = (
+        int(capabilities.max_database_bytes or 0)
+        if capabilities is not None
+        else None
+    )
+    maximum = effective_max_file_size_bytes(
+        profile.max_file_size_bytes,
+        firmware_limit,
+    )
+    require_file_size_supported(
+        database_size,
+        max_file_size_bytes=maximum,
+        display_name=os.path.basename(itdb_path) or "iTunes database",
+    )
+
+    required_free = allocated_size(
+        database_size,
+        profile.allocation_unit_size,
+    )
+    seen_sources: set[str] = set()
+    for source in backup_sources:
+        if not source:
+            continue
+        source_key = os.path.normcase(os.path.realpath(source))
+        if source_key in seen_sources:
+            continue
+        seen_sources.add(source_key)
+        try:
+            source_stat = os.stat(source)
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            raise DeviceWriteSafetyError(
+                "Could not verify space needed to back up the existing iPod "
+                f"database: {exc}"
+            ) from exc
+        required_free += allocated_size(
+            source_stat.st_size,
+            profile.allocation_unit_size,
+        )
+
+    try:
+        free_bytes = int(shutil.disk_usage(Path(itdb_path).parent).free)
+    except OSError as exc:
+        raise DeviceWriteSafetyError(
+            f"Could not verify iPod free space before writing the database: {exc}"
+        ) from exc
+    if free_bytes < required_free:
+        raise DeviceWriteSafetyError(
+            "The iPod does not have enough free space to stage and safely "
+            "commit its database. "
+            f"At least {required_free:,} bytes are required, but only "
+            f"{free_bytes:,} bytes are available. iOpenPod stopped before "
+            "replacing the database."
+        )
+
+
+def _resolve_existing_itdb_for_write(
+    ipod_path: str,
+    *,
+    preferred_filename: str | None,
+) -> str | None:
+    """Select one on-disk DB without consulting mutable device selection."""
+    filenames = (
+        (preferred_filename, "iTunesDB" if preferred_filename == "iTunesCDB" else "iTunesCDB")
+        if preferred_filename is not None
+        else ("iTunesCDB", "iTunesDB")
+    )
+    paths = [
+        resolve_device_path(
+            ipod_path,
+            os.path.join("iPod_Control", "iTunes", filename),
+            allowed_subtree=os.path.join("iPod_Control", "iTunes"),
+        )
+        for filename in filenames
+    ]
+    existing: list[str] = []
+    for path in paths:
+        try:
+            metadata = path.stat()
+        except FileNotFoundError:
+            continue
+        if not stat.S_ISREG(metadata.st_mode):
+            raise OSError(f"iPod database path is not a regular file: {path}")
+        existing.append(str(path))
+        if metadata.st_size > 0:
+            return str(path)
+    return existing[0] if existing else None
+
+
 def write_itunesdb(
     ipod_path: str,
     tracks: list[TrackInfo],
@@ -683,6 +914,8 @@ def write_itunesdb(
     podcast_master_playlist_name: str | None = None,
     podcast_master_playlist_id: int | None = None,
     progress_callback: Callable[[str], None] | None = None,
+    before_database_replace: Callable[[], None] | None = None,
+    before_device_mutation: Callable[[], None] | None = None,
 ) -> bool:
     """
     Write a complete iTunesDB to an iPod.
@@ -719,32 +952,34 @@ def write_itunesdb(
     Returns:
         True if successful
     """
-    from iopenpod.device import itdb_write_filename, resolve_itdb_path
-
     def _progress(msg: str) -> None:
         if progress_callback is not None:
             progress_callback(msg)
 
     _progress("Preparing database")
 
-    # Determine the correct database filename for this device (iTunesDB or iTunesCDB)
-    db_filename = itdb_write_filename(ipod_path)
-    itdb_path = os.path.join(ipod_path, "iPod_Control", "iTunes", db_filename)
-
-    # Auto-detect capabilities from the centralized device store
+    # Resolve capabilities for this exact path before selecting the database
+    # filename. A retained caller snapshot always wins over mutable UI/global
+    # device selection; disk state is only a fallback when identity is unknown.
     if capabilities is None:
         try:
-            from iopenpod.device import capabilities_for_family_gen, get_current_device
-            dev = get_current_device()
+            from iopenpod.device import (
+                capabilities_for_family_gen,
+                get_current_device_for_path,
+            )
+
+            dev = get_current_device_for_path(ipod_path)
             if dev and dev.model_family:
                 capabilities = capabilities_for_family_gen(
-                    dev.model_family, dev.generation or "",
+                    dev.model_family,
+                    dev.generation or "",
                 )
                 if capabilities:
                     logger.debug(
                         "Auto-detected capabilities: %s %s (db_version=0x%X, "
                         "podcast=%s, gapless=%s, video=%s, music_dirs=%d)",
-                        dev.model_family, dev.generation or "(family fallback)",
+                        dev.model_family,
+                        dev.generation or "(family fallback)",
                         capabilities.db_version,
                         capabilities.supports_podcast,
                         capabilities.supports_gapless,
@@ -754,21 +989,80 @@ def write_itunesdb(
         except Exception as e:
             logger.debug("Could not auto-detect capabilities: %s", e)
 
+    retained_filename = _database_filename_for_capabilities(capabilities)
+    selected_existing_itdb_path = _resolve_existing_itdb_for_write(
+        ipod_path,
+        preferred_filename=retained_filename,
+    )
+    disk_filename = None
+    if (
+        selected_existing_itdb_path is not None
+        and os.path.getsize(selected_existing_itdb_path) > 0
+    ):
+        disk_filename = os.path.basename(selected_existing_itdb_path)
+    db_filename = retained_filename or (
+        disk_filename
+        if disk_filename is not None
+        else "iTunesDB"
+    )
+    itunes_subtree = os.path.join("iPod_Control", "iTunes")
+    itdb_path = str(
+        resolve_device_path(
+            ipod_path,
+            os.path.join(itunes_subtree, db_filename),
+            allowed_subtree=itunes_subtree,
+        )
+    )
+
+    def _before_precommit_mutation() -> None:
+        _run_before_mutation(before_device_mutation)
+        _run_before_mutation(before_database_replace)
+
     # Read existing database for reference (for db_id and hash info extraction)
     # Check both iTunesCDB and iTunesDB — the existing database may be under
     # either name, and we may be switching filenames (e.g. first iOpenPod write
     # to a device that previously only had iTunesCDB from iTunes).
     existing_itdb = None
-    existing_itdb_path = resolve_itdb_path(ipod_path)
+    existing_itdb_path = selected_existing_itdb_path
     if existing_itdb_path:
+        existing_itdb_path = str(
+            resolve_device_path(
+                ipod_path,
+                os.path.join(
+                    itunes_subtree,
+                    os.path.basename(existing_itdb_path),
+                ),
+                allowed_subtree=itunes_subtree,
+            )
+        )
+        existing_size = os.path.getsize(existing_itdb_path)
         try:
             with open(existing_itdb_path, 'rb') as f:
                 existing_itdb = f.read()
-            logger.debug("Read existing database from %s (%d bytes)",
-                         existing_itdb_path, len(existing_itdb))
         except Exception as exc:
-            logger.warning("Could not read existing database %s: %s",
-                           existing_itdb_path, exc)
+            if existing_size > 0:
+                raise RuntimeError(
+                    "The existing iPod database could not be read safely: "
+                    f"{existing_itdb_path}. iOpenPod stopped before replacing it: {exc}"
+                ) from exc
+            logger.warning(
+                "Could not read zero-byte database marker %s: %s",
+                existing_itdb_path,
+                exc,
+            )
+        else:
+            if existing_size > 0 and not existing_itdb:
+                raise RuntimeError(
+                    "The existing iPod database became empty while it was being read. "
+                    "iOpenPod stopped before replacing it."
+                )
+            if existing_itdb:
+                _validate_existing_itunesdb(existing_itdb, existing_itdb_path)
+            logger.debug(
+                "Read existing database from %s (%d bytes)",
+                existing_itdb_path,
+                len(existing_itdb),
+            )
 
     # Also read reference iTunesDB if provided
     reference_itdb = None
@@ -852,6 +1146,58 @@ def write_itunesdb(
             logger.warning("Could not extract reference info: %s", e)
             reference_info = None
 
+    filesystem_type = detect_filesystem_type(ipod_path)
+    existing_platform = _valid_itunesdb_platform(existing_itdb)
+    external_reference_platform = _valid_itunesdb_platform(reference_itdb)
+    if existing_platform is not None:
+        reference_platform = existing_platform
+        platform_evidence_source = "existing_database"
+    elif external_reference_platform is not None:
+        reference_platform = external_reference_platform
+        platform_evidence_source = "reference_database"
+    else:
+        reference_platform = None
+        platform_evidence_source = ""
+    platform_resolution = resolve_itunesdb_platform(
+        filesystem_type=filesystem_type,
+        reference_platform=reference_platform,
+    )
+    if reference_platform is not None:
+        platform_resolution = _dc_replace(
+            platform_resolution,
+            source=platform_evidence_source,
+        )
+    platform_name = (
+        "Mac" if platform_resolution.flag == 1 else "Windows"
+    )
+    logger.info(
+        "iTunesDB platform selection: flag=%d (%s) source=%s "
+        "filesystem=%s reference=%s",
+        platform_resolution.flag,
+        platform_name,
+        platform_resolution.source,
+        platform_resolution.filesystem_type or "unknown",
+        platform_resolution.reference_platform or "none",
+    )
+    if platform_resolution.mismatch:
+        inferred_name = (
+            "Mac" if platform_resolution.inferred_flag == 1 else "Windows"
+        )
+        preserved_from = (
+            "the existing on-device database"
+            if platform_resolution.source == "existing_database"
+            else "the supplied reference database"
+        )
+        logger.warning(
+            "iTunesDB platform/filesystem mismatch: preserving flag=%d (%s) "
+            "from %s although filesystem=%s suggests %s",
+            platform_resolution.flag,
+            platform_name,
+            preserved_from,
+            platform_resolution.filesystem_type,
+            inferred_name,
+        )
+
     # --- Generate db_track_ids for all tracks BEFORE artwork ---
     # write_mhit() generates db_track_ids lazily, but we need them now so
     # write_artworkdb can match tracks to PC file paths.
@@ -912,6 +1258,7 @@ def write_itunesdb(
                 artwork_formats=artwork_formats,
                 defer_commit=True,
                 progress_callback=_progress,
+                before_device_mutation=_before_precommit_mutation,
             )
 
             # Extract the mapping — works for both deferred and immediate results
@@ -964,6 +1311,7 @@ def write_itunesdb(
     # Build database with reference info
     itdb_data = bytearray(write_mhbd(
         tracks, db_id, reference_info=reference_info,
+        platform=platform_resolution.flag,
         playlists_type2=playlists,
         playlists_type3=podcast_playlists,
         playlists_type5=smart_playlists,
@@ -1008,6 +1356,12 @@ def write_itunesdb(
     if force_checksum is not None:
         checksum_type = force_checksum
         logger.debug("Using forced checksum type: %s", checksum_type.name)
+    elif capabilities is not None and capabilities.checksum != ChecksumType.UNKNOWN:
+        checksum_type = capabilities.checksum
+        logger.debug(
+            "Using checksum type from retained device capabilities: %s",
+            checksum_type.name,
+        )
     else:
         checksum_type = detect_checksum_type(ipod_path)
         # If detection returned NONE but we have an existing database with hashing,
@@ -1066,15 +1420,12 @@ def write_itunesdb(
         if firewire_id:
             write_hash58(itdb_data, firewire_id)
             logger.info("HASH58 signature computed with FireWire ID: %s", firewire_id.hex())
-        elif source_itdb and len(source_itdb) >= 0x6C and source_itdb[0x58:0x6C] != bytes(20):
-            # Last resort: copy hash58 from reference database
-            # NOTE: This is WRONG if the database content changed! hash58 is content-dependent.
-            # This fallback only works if the database is byte-identical to the reference.
-            itdb_data[0x58:0x6C] = source_itdb[0x58:0x6C]
-            logger.warning("HASH58 copied from reference (content-dependent — may be invalid!)")
-            logger.warning("  To fix: connect iPod so FireWire GUID can be read from USB serial")
         else:
-            logger.error("No FireWire ID and no reference hash58 — database will be rejected!")
+            hash_error = (
+                "No FireWire ID is available to compute the required HASH58 "
+                "signature. iOpenPod stopped before writing a database the "
+                "iPod firmware would reject."
+            )
 
     elif checksum_type == ChecksumType.HASH72:
         # Try to get hash info from centralized store first, then fall back to disk
@@ -1082,14 +1433,15 @@ def write_itunesdb(
 
         hash_info = None
         try:
-            from iopenpod.device import get_current_device
-            dev = get_current_device()
+            from iopenpod.device import get_current_device_for_path
+            dev = get_current_device_for_path(ipod_path)
             if dev and dev.hash_info_iv and dev.hash_info_rndpart:
                 hash_info = HashInfo(uuid=b'\x00' * 20, rndpart=dev.hash_info_rndpart, iv=dev.hash_info_iv)
                 logger.debug("HashInfo loaded from centralized device store")
         except Exception:
             pass
 
+        hash72_written = False
         if hash_info is None:
             # Fallback: read_hash_info checks the store again (harmless)
             # then reads from disk if needed
@@ -1118,6 +1470,7 @@ def write_itunesdb(
                     sha1 = _compute_itunesdb_sha1(itdb_data)
                     signature = _hash_generate(sha1, hash_dict['iv'], hash_dict['rndpart'])
                     itdb_data[0x72:0x72 + 46] = signature
+                    hash72_written = True
                     logger.info("HASH72 signature written successfully")
                 else:
                     logger.warning("Could not extract hash info from reference database")
@@ -1127,7 +1480,15 @@ def write_itunesdb(
             sha1 = _compute_itunesdb_sha1(itdb_data)
             signature = _hash_generate(sha1, hash_info.iv, hash_info.rndpart)
             itdb_data[0x72:0x72 + 46] = signature
+            hash72_written = True
             logger.info("HASH72 signature written from HashInfo file")
+
+        if not hash72_written:
+            hash_error = (
+                "No valid HashInfo material is available to compute the "
+                "required HASH72 signature. iOpenPod stopped before writing "
+                "a database the iPod firmware would reject."
+            )
 
         # Nano 5G uses HASH72 only — do NOT write hash58.
         # libgpod itdb_hash72_write_hash only computes hash72 (hashing_scheme=2).
@@ -1178,49 +1539,92 @@ def write_itunesdb(
     if hash_error:
         logger.error(hash_error)
         if pending_artwork:
-            pending_artwork.abort()
+            pending_artwork.abort(before_remove=before_device_mutation)
         return False
+
+    try:
+        _run_before_mutation(before_device_mutation)
+        _preflight_database_install(
+            ipod_path,
+            itdb_path,
+            len(itdb_data),
+            capabilities=capabilities,
+            backup_sources=(itdb_path, existing_itdb_path) if backup else (),
+        )
+    except Exception:
+        if pending_artwork:
+            pending_artwork.abort(before_remove=before_device_mutation)
+        raise
 
     # Backup existing file(s)
     if backup:
-        for _bpath in (itdb_path, existing_itdb_path):
+        backup_sources = dict.fromkeys((itdb_path, existing_itdb_path))
+        for _bpath in backup_sources:
             if _bpath and os.path.exists(_bpath):
                 try:
-                    shutil.copy2(_bpath, _bpath + ".backup")
+                    _copy_device_file_durably(
+                        _bpath,
+                        _bpath + ".backup",
+                        before_device_mutation=_before_precommit_mutation,
+                    )
                 except Exception as e:
-                    logger.warning("Could not backup %s: %s", os.path.basename(_bpath), e)
+                    logger.error(
+                        "Could not safely backup %s: %s",
+                        os.path.basename(_bpath),
+                        e,
+                    )
+                    if pending_artwork:
+                        pending_artwork.abort(
+                            before_remove=before_device_mutation
+                        )
+                    return False
 
     _progress("Writing to iPod")
 
     # Write atomically — os.replace is atomic on NTFS and POSIX
-    temp_path = itdb_path + ".tmp"
+    temp_path: os.PathLike[str] | None = None
+    database_committed = False
+    stale_temp: os.PathLike[str] | None = None
     try:
-        with open(temp_path, 'wb') as f:
+        _run_before_mutation(before_device_mutation)
+        temp_path, temp_file = open_unique_sibling_temp(itdb_path, mode="wb")
+        with temp_file as f:
             f.write(itdb_data)
-            f.flush()
-            os.fsync(f.fileno())
+            flush_written_file(f)
 
         # Commit ArtworkDB and ithmb files FIRST (before swapping CDB),
         # then swap CDB.  Both happen here to ensure they stay in sync.
         if pending_artwork:
-            pending_artwork.commit()
+            pending_artwork.commit(before_replace=_before_precommit_mutation)
             logger.info("ART: committed ArtworkDB + ithmb files")
 
-        os.replace(temp_path, itdb_path)
+        # Serialization, checksumming, and artwork preparation can take long
+        # enough for another process to replace the live database.  Let the
+        # guarded caller re-check its generation at the actual commit point,
+        # after every preparatory step but before the atomic replacement.
+        _before_precommit_mutation()
+        durable_replace(temp_path, itdb_path)
+        database_committed = True
 
         # Truncate the stale database file to 0 bytes if the filename changed
         # (e.g. migrating from iTunesDB → iTunesCDB or vice versa).
         # libgpod truncates rather than deletes because some firmwares may
         # check for the file's existence and behave unexpectedly if it's gone.
         if existing_itdb_path and existing_itdb_path != itdb_path:
-            try:
-                with open(existing_itdb_path, 'wb') as f:
-                    f.truncate(0)
-                logger.info("Truncated stale %s to 0 bytes (now using %s)",
-                            os.path.basename(existing_itdb_path), db_filename)
-            except Exception as e:
-                logger.warning("Could not truncate stale %s: %s",
-                               os.path.basename(existing_itdb_path), e)
+            _run_before_mutation(before_device_mutation)
+            stale_temp, stale_file = open_unique_sibling_temp(
+                existing_itdb_path,
+                mode="wb",
+            )
+            with stale_file as f:
+                flush_written_file(f)
+            _run_before_mutation(before_device_mutation)
+            durable_replace(stale_temp, existing_itdb_path)
+            logger.info(
+                "Truncated stale %s to 0 bytes (now using %s)",
+                os.path.basename(existing_itdb_path),
+                db_filename,
+            )
 
         logger.info("Wrote %s (%d bytes%s)", db_filename, len(itdb_data),
                     f", uncompressed {uncompressed_size}" if db_filename == "iTunesCDB" else "")
@@ -1228,8 +1632,18 @@ def write_itunesdb(
 
     except Exception as e:
         logger.error("Error writing iTunesDB: %s", e)
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
+        if temp_path is not None and os.path.exists(temp_path):
+            _cleanup_device_temp(
+                temp_path,
+                before_device_mutation=before_device_mutation,
+            )
+        if stale_temp and os.path.exists(stale_temp):
+            _cleanup_device_temp(
+                stale_temp,
+                before_device_mutation=before_device_mutation,
+            )
+        if not database_committed and pending_artwork:
+            pending_artwork.abort(before_remove=before_device_mutation)
         # Note: if we reached this point, pending_artwork was already
         # committed (it happens before os.replace for the CDB).  A CDB
         # write failure after artwork commit is unlikely (same filesystem)

@@ -21,8 +21,8 @@ import hashlib
 import json
 import logging
 import os
+import re
 import shutil
-import sys
 import tempfile
 import threading
 from collections.abc import Callable
@@ -30,6 +30,22 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+
+from iopenpod.device.durability import (
+    durable_replace,
+    durable_unlink,
+    flush_filesystem,
+    flush_parent_directory,
+    flush_written_file,
+)
+from iopenpod.device.filesystem_profile import FilesystemProfile, inspect_filesystem_profile
+from iopenpod.device.storage_safety import allocated_size, require_file_size_supported
+from iopenpod.device.write_guard import DeviceWriteGuard, DeviceWriteSafetyError
+from iopenpod.device.write_readiness import (
+    inspect_device_write_readiness,
+    revalidate_device_write_readiness,
+    volume_lock_key,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +91,292 @@ def _is_excluded(name: str) -> bool:
 
 # SHA-256 read buffer
 _HASH_BUF_SIZE = 1024 * 1024  # 1 MB
+
+_SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
+
+
+@dataclass(frozen=True, slots=True)
+class _RestoreFile:
+    relative_path: str
+    file_hash: str
+    size: int
+    blob_path: Path
+
+
+@dataclass(slots=True)
+class _RestoreWriteSession:
+    """Identity-retained, durable mutation session for one backup restore."""
+
+    mount_path: Path
+    filesystem_profile: FilesystemProfile
+    device_dirty: bool = False
+    finalized: bool = False
+    finalize_attempted: bool = False
+
+    def revalidate(self, *, probe_case_sensitivity: bool | None = None) -> None:
+        self.filesystem_profile = revalidate_device_write_readiness(
+            self.filesystem_profile,
+            probe_case_sensitivity=probe_case_sensitivity,
+        )
+
+    def validate_target(self, relative_path: str, size: int) -> None:
+        target = _resolve_restore_path(self.mount_path, relative_path)
+        limit = int(self.filesystem_profile.max_component_length or 0)
+        if limit > 0:
+            relative_parts = target.relative_to(self.mount_path).parts
+            too_long = next((part for part in relative_parts if len(part) > limit), None)
+            if too_long is not None:
+                raise DeviceWriteSafetyError(
+                    f"The backup path component {too_long!r} exceeds this iPod "
+                    f"filesystem's {limit}-character filename limit."
+                )
+        require_file_size_supported(
+            size,
+            max_file_size_bytes=self.filesystem_profile.max_file_size_bytes,
+            display_name=relative_path,
+        )
+
+    def ensure_parent(self, relative_path: str) -> None:
+        target = _resolve_restore_path(self.mount_path, relative_path)
+        relative_parent_parts = target.parent.relative_to(self.mount_path).parts
+        for depth in range(1, len(relative_parent_parts) + 1):
+            self.revalidate()
+            target = _resolve_restore_path(self.mount_path, relative_path)
+            directory = self.mount_path.joinpath(*relative_parent_parts[:depth])
+            if directory.exists():
+                if not directory.is_dir():
+                    raise DeviceWriteSafetyError(
+                        f"Cannot restore {relative_path}: {directory} is not a directory."
+                    )
+                continue
+            directory.mkdir()
+            flush_parent_directory(directory)
+            self.device_dirty = True
+
+    def delete(self, relative_path: str) -> None:
+        self.revalidate()
+        target = _resolve_restore_path(self.mount_path, relative_path)
+        durable_unlink(target)
+        self.device_dirty = True
+
+    def remove_empty_parents(self, relative_path: str) -> None:
+        target = _resolve_restore_path(self.mount_path, relative_path)
+        relative_parent_parts = target.parent.relative_to(self.mount_path).parts
+        for depth in range(len(relative_parent_parts), 0, -1):
+            parent = self.mount_path.joinpath(*relative_parent_parts[:depth])
+            try:
+                has_entries = next(parent.iterdir(), None) is not None
+            except FileNotFoundError:
+                continue
+            except OSError as exc:
+                raise DeviceWriteSafetyError(
+                    f"Could not inspect restore directory {parent}: {exc}"
+                ) from exc
+            if has_entries:
+                break
+            self.revalidate()
+            _resolve_restore_path(self.mount_path, relative_path)
+            if not parent.exists():
+                continue
+            try:
+                parent.rmdir()
+                flush_parent_directory(parent)
+            except OSError as exc:
+                raise DeviceWriteSafetyError(
+                    f"Could not remove empty restore directory {parent}: {exc}"
+                ) from exc
+            self.device_dirty = True
+
+    def install(self, restore_file: _RestoreFile) -> None:
+        self.validate_target(restore_file.relative_path, restore_file.size)
+        self.ensure_parent(restore_file.relative_path)
+        self.revalidate()
+        self._ensure_free_space(restore_file.size, restore_file.relative_path)
+        target = _resolve_restore_path(self.mount_path, restore_file.relative_path)
+        fd, raw_temp = tempfile.mkstemp(
+            dir=str(target.parent),
+            prefix=".iop-restore-",
+            suffix=".tmp",
+        )
+        temp_path = Path(raw_temp)
+        self.device_dirty = True
+        try:
+            with open(restore_file.blob_path, "rb") as source, os.fdopen(
+                fd,
+                "wb",
+            ) as destination:
+                fd = -1
+                shutil.copyfileobj(source, destination, _HASH_BUF_SIZE)
+                flush_written_file(destination)
+
+            if _hash_file(temp_path) != restore_file.file_hash:
+                raise DeviceWriteSafetyError(
+                    f"The temporary restore copy for {restore_file.relative_path} "
+                    "failed its SHA-256 verification."
+                )
+
+            self.revalidate()
+            target = _resolve_restore_path(self.mount_path, restore_file.relative_path)
+            if temp_path.parent != target.parent:
+                raise DeviceWriteSafetyError(
+                    "The restore destination changed before atomic replacement."
+                )
+            durable_replace(temp_path, target)
+
+            if _hash_file(target) != restore_file.file_hash:
+                raise DeviceWriteSafetyError(
+                    f"The restored file {restore_file.relative_path} failed its "
+                    "SHA-256 verification."
+                )
+        except Exception:
+            if fd >= 0:
+                os.close(fd)
+            self._cleanup_temp_if_safe(temp_path)
+            raise
+
+    def finalize(self) -> None:
+        self.finalize_attempted = True
+        self.revalidate()
+        flush_ok, flush_message = flush_filesystem(self.mount_path)
+        if not flush_ok:
+            raise DeviceWriteSafetyError(
+                f"The restored iPod could not be flushed safely: {flush_message}"
+            )
+        self.revalidate()
+        self.finalized = True
+        logger.info("Backup restore durability barrier completed: %s", flush_message)
+
+    def _ensure_free_space(self, size: int, relative_path: str) -> None:
+        try:
+            free = shutil.disk_usage(self.mount_path).free
+        except OSError as exc:
+            raise DeviceWriteSafetyError(
+                f"Could not verify iPod free space before restoring "
+                f"{relative_path}: {exc}"
+            ) from exc
+        required = allocated_size(
+            size,
+            self.filesystem_profile.allocation_unit_size,
+        )
+        if free < required:
+            raise DeviceWriteSafetyError(
+                f"The iPod does not have enough free space to atomically restore "
+                f"{relative_path}. iOpenPod stopped before creating its temporary copy."
+            )
+
+    def _cleanup_temp_if_safe(self, temp_path: Path) -> None:
+        try:
+            self.revalidate()
+            durable_unlink(temp_path, missing_ok=True)
+        except Exception as exc:
+            logger.warning(
+                "Could not safely remove temporary restore file %s: %s",
+                temp_path,
+                exc,
+            )
+
+
+def _resolve_restore_path(ipod_root: Path, relative_path: str) -> Path:
+    """Resolve one manifest path within the selected iPod root."""
+    if not isinstance(relative_path, str) or not relative_path or "\x00" in relative_path:
+        raise DeviceWriteSafetyError("The backup contains an invalid file path.")
+    unified = relative_path.replace("\\", "/")
+    if unified.startswith("/") or re.match(r"^[A-Za-z]:", unified):
+        raise DeviceWriteSafetyError(
+            f"The backup contains an absolute file path: {relative_path!r}."
+        )
+    parts = tuple(unified.split("/"))
+    if any(not part or part in {".", ".."} or ":" in part for part in parts):
+        raise DeviceWriteSafetyError(
+            f"The backup contains an unsafe file path: {relative_path!r}."
+        )
+    if any(_is_excluded(part) for part in parts):
+        raise DeviceWriteSafetyError(
+            f"The backup path {relative_path!r} targets an OS-managed location."
+        )
+
+    try:
+        root = ipod_root.resolve(strict=True)
+    except OSError as exc:
+        raise DeviceWriteSafetyError(
+            f"The selected iPod root is unavailable: {exc}"
+        ) from exc
+    candidate = root.joinpath(*parts)
+    current = root
+    for part in parts:
+        current /= part
+        try:
+            if current.is_symlink():
+                raise DeviceWriteSafetyError(
+                    f"The backup path {relative_path!r} crosses a symbolic link."
+                )
+        except OSError as exc:
+            raise DeviceWriteSafetyError(
+                f"Could not safely inspect backup path {relative_path!r}: {exc}"
+            ) from exc
+    try:
+        resolved = candidate.resolve(strict=False)
+        resolved.relative_to(root)
+    except (OSError, ValueError) as exc:
+        raise DeviceWriteSafetyError(
+            f"The backup path escapes the selected iPod: {relative_path!r}."
+        ) from exc
+    return candidate
+
+
+def _hash_file(path: Path) -> str:
+    sha = hashlib.sha256()
+    with open(path, "rb") as file:
+        while chunk := file.read(_HASH_BUF_SIZE):
+            sha.update(chunk)
+    return sha.hexdigest()
+
+
+def _inspect_backup_source(
+    mount_path: Path,
+    *,
+    reported_volume_format: str,
+    expected_volume_identity_key: str,
+) -> FilesystemProfile:
+    """Capture and validate the scan-time identity for a read-only backup pass."""
+    profile = inspect_filesystem_profile(
+        mount_path,
+        reported_volume_format=reported_volume_format,
+    )
+    if not profile.identity.is_complete:
+        raise DeviceWriteSafetyError(
+            "The connected iPod volume identity could not be verified before backup."
+        )
+    if volume_lock_key(profile) != expected_volume_identity_key:
+        raise DeviceWriteSafetyError(
+            "A different volume is mounted at the selected iPod path. "
+            "iOpenPod stopped before creating a mixed-device backup."
+        )
+    logger.info(
+        "Backup source filesystem: mount=%s actual=%s reported=%s identity=%s",
+        profile.mount_path,
+        profile.filesystem_type or "unknown",
+        profile.reported_volume_format or "unknown",
+        expected_volume_identity_key,
+    )
+    return profile
+
+
+def _revalidate_backup_source(retained: FilesystemProfile) -> None:
+    current = inspect_filesystem_profile(
+        retained.inspection_path or retained.mount_path,
+        reported_volume_format=retained.reported_volume_format,
+    )
+    if (
+        not current.identity.is_complete
+        or current.identity != retained.identity
+        or current.filesystem_type != retained.filesystem_type
+        or os.path.realpath(current.mount_path) != os.path.realpath(retained.mount_path)
+    ):
+        raise DeviceWriteSafetyError(
+            "The selected iPod volume changed while its backup was being created. "
+            "iOpenPod discarded the incomplete snapshot."
+        )
 
 
 @dataclass
@@ -155,6 +457,9 @@ class BackupManager:
         progress_callback: Callable[[BackupProgress], None] | None = None,
         is_cancelled: Callable[[], bool] | None = None,
         max_backups: int = 10,
+        *,
+        reported_volume_format: str = "",
+        expected_volume_identity_key: str = "",
     ) -> SnapshotInfo | None:
         """
         Create a full backup of the iPod device.
@@ -172,6 +477,13 @@ class BackupManager:
             SnapshotInfo for the new snapshot, or None if cancelled/failed.
         """
         ipod_root = Path(ipod_path)
+        source_profile: FilesystemProfile | None = None
+        if expected_volume_identity_key:
+            source_profile = _inspect_backup_source(
+                ipod_root,
+                reported_volume_format=reported_volume_format,
+                expected_volume_identity_key=expected_volume_identity_key,
+            )
 
         # Ensure directories exist
         self.blobs_dir.mkdir(parents=True, exist_ok=True)
@@ -188,6 +500,8 @@ class BackupManager:
             ))
 
         all_files = self._walk_device(ipod_root)
+        if source_profile is not None:
+            _revalidate_backup_source(source_profile)
         total_files = len(all_files)
 
         if total_files == 0:
@@ -323,6 +637,15 @@ class BackupManager:
                             if len(skipped_samples) < 5:
                                 skipped_samples.append(f"{rp} ({e})")
 
+        if source_profile is not None:
+            _revalidate_backup_source(source_profile)
+            if skipped_files:
+                examples = "; ".join(skipped_samples)
+                raise DeviceWriteSafetyError(
+                    f"The iPod backup could not read {skipped_files} file(s). "
+                    f"iOpenPod discarded the incomplete snapshot. {examples}"
+                )
+
         # Phase 2c: Check for duplicate — skip saving if nothing changed
         latest_snap = self._get_latest_snapshot_files()
         if latest_snap is not None:
@@ -339,6 +662,8 @@ class BackupManager:
                 return None
 
         # Phase 3: Write manifest
+        if source_profile is not None:
+            _revalidate_backup_source(source_profile)
         now = datetime.now()
         timestamp = now.strftime("%Y%m%d_%H%M%S")
 
@@ -431,312 +756,258 @@ class BackupManager:
         ipod_path: str | Path,
         progress_callback: Callable[[BackupProgress], None] | None = None,
         is_cancelled: Callable[[], bool] | None = None,
+        *,
+        reported_volume_format: str = "",
+        expected_volume_identity_key: str = "",
     ) -> bool:
-        """
-        Restore a snapshot to the iPod device using **delta transfer**.
-
-        Instead of wiping the entire iPod and re-copying everything, this
-        method compares the snapshot manifest with the current device state
-        and only transfers differences:
-
-        - Files already on the iPod with the correct hash → **skipped**
-        - Files in the snapshot but not on the iPod → **copied**
-        - Files on the iPod but not in the snapshot → **deleted**
-        - Files with different hashes → **replaced**
-
-        This dramatically reduces USB transfer time when restoring a snapshot
-        that is close to the current device state.
-
-        Args:
-            snapshot_id: The snapshot timestamp ID to restore.
-            ipod_path: Root path of the iPod.
-            progress_callback: Called with progress updates.
-            is_cancelled: Optional cancellation check.
-
-        Returns:
-            True if restore completed successfully.
-        """
-        ipod_root = Path(ipod_path)
+        """Restore a snapshot with the existing delete-then-delta-copy phases."""
+        ipod_root = Path(os.path.realpath(ipod_path))
         manifest = self._load_manifest(snapshot_id)
         if not manifest:
-            logger.error(f"Snapshot {snapshot_id} not found")
+            logger.error("Snapshot %s not found", snapshot_id)
             return False
 
-        target_files = manifest.get("files", {})
-        total_target = len(target_files)
-
-        if total_target == 0:
+        if progress_callback:
+            progress_callback(BackupProgress(
+                "verifying",
+                0,
+                0,
+                message="Verifying backup integrity…",
+            ))
+        target_files = self._validated_restore_files(ipod_root, manifest)
+        if not target_files:
             logger.warning("Snapshot has no files — nothing to restore")
             return False
 
-        logger.info(f"Restore: {total_target} files from snapshot {snapshot_id}")
+        filesystem_profile = inspect_device_write_readiness(
+            ipod_root,
+            reported_volume_format=reported_volume_format,
+        )
+        current_volume_key = volume_lock_key(filesystem_profile)
+        if (
+            expected_volume_identity_key
+            and current_volume_key != expected_volume_identity_key
+        ):
+            raise DeviceWriteSafetyError(
+                "A different volume is mounted at the selected iPod path. "
+                "iOpenPod stopped before restoring the backup."
+            )
 
-        # Phase 0a: Validate paths — reject manifests with traversal attacks.
-        ipod_root_resolved = ipod_root.resolve()
-
-        bad_paths: list[str] = []
-        for rel_path in target_files:
-            dest = (ipod_root / rel_path).resolve()
+        logger.info(
+            "Restore: %s files from snapshot %s",
+            len(target_files),
+            snapshot_id,
+        )
+        with DeviceWriteGuard(ipod_root, volume_key=current_volume_key):
+            session = _RestoreWriteSession(ipod_root, filesystem_profile)
+            session.revalidate(probe_case_sensitivity=True)
             try:
-                dest.relative_to(ipod_root_resolved)
-            except ValueError:
-                bad_paths.append(rel_path)
+                return self._restore_backup_guarded(
+                    target_files,
+                    session,
+                    progress_callback=progress_callback,
+                    is_cancelled=is_cancelled,
+                )
+            finally:
+                if session.device_dirty and not session.finalize_attempted:
+                    session.finalize()
 
-        if bad_paths:
-            logger.error(
-                f"Restore aborted: {len(bad_paths)} paths escape the iPod root. "
-                f"First offender: {bad_paths[0]!r}"
+    def _validated_restore_files(
+        self,
+        ipod_root: Path,
+        manifest: dict,
+    ) -> dict[str, _RestoreFile]:
+        raw_files = manifest.get("files")
+        if not isinstance(raw_files, dict):
+            raise DeviceWriteSafetyError(
+                "The backup manifest has an invalid files section."
             )
-            return False
 
-        # Phase 0b: Verify ALL blobs exist BEFORE touching the device.
-        if progress_callback:
-            progress_callback(BackupProgress(
-                "verifying", 0, 0, message="Verifying backup integrity…"
-            ))
+        result: dict[str, _RestoreFile] = {}
+        casefold_paths: set[str] = set()
+        verified_blobs: set[str] = set()
+        for raw_relative_path, raw_info in raw_files.items():
+            if not isinstance(raw_relative_path, str):
+                raise DeviceWriteSafetyError(
+                    "The backup manifest contains a non-text file path."
+                )
+            target = _resolve_restore_path(ipod_root, raw_relative_path)
+            relative_path = target.relative_to(ipod_root).as_posix()
+            folded = relative_path.casefold()
+            if relative_path in result or folded in casefold_paths:
+                raise DeviceWriteSafetyError(
+                    f"The backup contains colliding file paths: {relative_path!r}."
+                )
+            if not isinstance(raw_info, dict):
+                raise DeviceWriteSafetyError(
+                    f"The backup entry for {relative_path!r} is invalid."
+                )
+            file_hash = raw_info.get("hash")
+            size = raw_info.get("size")
+            if not isinstance(file_hash, str) or not _SHA256_RE.fullmatch(file_hash):
+                raise DeviceWriteSafetyError(
+                    f"The backup entry for {relative_path!r} has an invalid SHA-256 hash."
+                )
+            if isinstance(size, bool) or not isinstance(size, int) or size < 0:
+                raise DeviceWriteSafetyError(
+                    f"The backup entry for {relative_path!r} has an invalid file size."
+                )
+            normalized_hash = file_hash.casefold()
+            blob_path = self._blob_path(normalized_hash)
+            try:
+                blob_size = blob_path.stat().st_size
+            except OSError as exc:
+                raise DeviceWriteSafetyError(
+                    f"The backup blob for {relative_path!r} is unavailable: {exc}"
+                ) from exc
+            if blob_size != size:
+                raise DeviceWriteSafetyError(
+                    f"The backup blob for {relative_path!r} has the wrong size."
+                )
+            if normalized_hash not in verified_blobs:
+                try:
+                    actual_hash = _hash_file(blob_path)
+                except OSError as exc:
+                    raise DeviceWriteSafetyError(
+                        f"The backup blob for {relative_path!r} could not be verified: {exc}"
+                    ) from exc
+                if actual_hash != normalized_hash:
+                    raise DeviceWriteSafetyError(
+                        f"The backup blob for {relative_path!r} failed SHA-256 verification."
+                    )
+                verified_blobs.add(normalized_hash)
 
-        missing_blobs: list[str] = []
-        for rel_path, file_info in target_files.items():
-            blob_path = self._blob_path(file_info["hash"])
-            if not blob_path.exists():
-                missing_blobs.append(rel_path)
-
-        if missing_blobs:
-            logger.error(
-                f"Restore aborted: {len(missing_blobs)} files have missing blobs. "
-                f"First missing: {missing_blobs[0]}"
+            result[relative_path] = _RestoreFile(
+                relative_path=relative_path,
+                file_hash=normalized_hash,
+                size=size,
+                blob_path=blob_path,
             )
-            return False
+            casefold_paths.add(folded)
 
-        # Phase 1: Scan iPod to build current state map (path → hash).
-        # Uses the hash cache where possible to avoid re-hashing unchanged
-        # files over slow USB. New/uncached files are hashed in parallel.
+        folded_files = {path.casefold() for path in result}
+        for relative_path in result:
+            parts = relative_path.split("/")
+            if any(
+                "/".join(parts[:depth]).casefold() in folded_files
+                for depth in range(1, len(parts))
+            ):
+                raise DeviceWriteSafetyError(
+                    f"The backup path {relative_path!r} is nested beneath another file."
+                )
+        return result
+
+    def _restore_backup_guarded(
+        self,
+        target_files: dict[str, _RestoreFile],
+        session: _RestoreWriteSession,
+        *,
+        progress_callback: Callable[[BackupProgress], None] | None,
+        is_cancelled: Callable[[], bool] | None,
+    ) -> bool:
         if progress_callback:
             progress_callback(BackupProgress(
-                "scanning", 0, 0, message="Enumerating iPod files…"
+                "scanning",
+                0,
+                0,
+                message="Enumerating and verifying iPod files…",
             ))
-
-        hash_cache = self._load_hash_cache()
-        ipod_files = self._walk_device(ipod_root)
-        ipod_total = len(ipod_files)
-
-        if progress_callback:
-            progress_callback(BackupProgress(
-                "scanning", 0, ipod_total,
-                message=f"Found {ipod_total:,} files, checking cache…"
-            ))
-
-        # Build current state: {rel_path: hash}
+        ipod_files = self._walk_device(session.mount_path, fail_on_error=True)
         current_hashes: dict[str, str] = {}
-        scanned = 0
-
-        # Partition into cached vs uncached (same pattern as backup)
-        cached_scan: list[tuple[str, str]] = []       # (rel_path, hash)
-        uncached_scan: list[tuple[str, Path]] = []     # (rel_path, full_path)
-
-        for rel_path, full_path in ipod_files:
+        total_current = len(ipod_files)
+        for index, (relative_path, full_path) in enumerate(ipod_files, start=1):
+            if is_cancelled and is_cancelled():
+                logger.info("Restore cancelled during scan")
+                return False
+            session.revalidate()
             try:
-                st = full_path.stat()
-                cache_key = f"{rel_path}|{st.st_size}|{st.st_mtime_ns}"
-                cached_hash = hash_cache.get(cache_key)
-                if cached_hash:
-                    cached_scan.append((rel_path, cached_hash))
-                else:
-                    uncached_scan.append((rel_path, full_path))
-            except (OSError, PermissionError):
-                uncached_scan.append((rel_path, full_path))
+                current_hashes[relative_path] = _hash_file(full_path)
+            except OSError as exc:
+                raise DeviceWriteSafetyError(
+                    f"Could not verify existing iPod file {relative_path}: {exc}"
+                ) from exc
+            if progress_callback and (index == total_current or index % 10 == 0):
+                progress_callback(BackupProgress(
+                    "scanning",
+                    index,
+                    total_current,
+                    current_file=relative_path,
+                    message=f"Verifying {index:,}/{total_current:,} iPod files…",
+                ))
+        session.revalidate()
 
-        # Fast path: cached files
-        for rel_path, file_hash in cached_scan:
-            current_hashes[rel_path] = file_hash
-            scanned += 1
-
-        if progress_callback:
-            msg = (f"{len(cached_scan):,} files matched cache"
-                   f", hashing {len(uncached_scan):,} remaining…"
-                   if uncached_scan else
-                   f"All {len(cached_scan):,} files matched cache")
-            progress_callback(BackupProgress(
-                "scanning", scanned, ipod_total, message=msg,
-            ))
-
-        # Slow path: hash uncached files in parallel
-        if uncached_scan:
-            lock = threading.Lock()
-
-            def _hash_ipod_file(rel_path: str, full_path: Path) -> tuple[str, str]:
-                file_hash = self._hash_file(full_path)
-                return rel_path, file_hash
-
-            with ThreadPoolExecutor(max_workers=_NUM_WORKERS) as pool:
-                futures = {
-                    pool.submit(_hash_ipod_file, rp, fp): rp
-                    for rp, fp in uncached_scan
-                }
-                for future in as_completed(futures):
-                    if is_cancelled and is_cancelled():
-                        pool.shutdown(wait=False, cancel_futures=True)
-                        logger.info("Restore cancelled during scan")
-                        return False
-
-                    scanned += 1
-                    try:
-                        rel_path, file_hash = future.result()
-                        with lock:
-                            current_hashes[rel_path] = file_hash
-                    except (OSError, PermissionError) as e:
-                        rp = futures[future]
-                        logger.warning(f"Restore scan: could not hash {rp}: {e}")
-
-                    if progress_callback and scanned % 10 == 0:
-                        progress_callback(BackupProgress(
-                            "scanning", scanned, ipod_total,
-                            message=f"Hashing {scanned:,}/{ipod_total:,} iPod files…"
-                        ))
-
-        if progress_callback:
-            progress_callback(BackupProgress(
-                "scanning", ipod_total, ipod_total,
-                message=f"Scan complete — {len(cached_scan):,} cached, "
-                f"{len(uncached_scan):,} hashed"
-            ))
-
-        logger.info(
-            f"Restore scan: {len(cached_scan)} cached, "
-            f"{len(uncached_scan)} hashed, {len(current_hashes)} total on device"
-        )
-
-        # Phase 2: Compute delta
-        target_keys = set(target_files.keys())
-        current_keys = set(current_hashes.keys())
-
-        to_add = target_keys - current_keys          # New files
-        to_remove = current_keys - target_keys        # Files to delete
-        # Changed: same path, different hash
-        to_replace: set[str] = set()
-        for rp in target_keys & current_keys:
-            if target_files[rp].get("hash") != current_hashes.get(rp):
-                to_replace.add(rp)
-
-        to_copy = to_add | to_replace   # Files that need blob → iPod transfer
+        target_keys = set(target_files)
+        current_keys = set(current_hashes)
+        to_add = target_keys - current_keys
+        to_remove = current_keys - target_keys
+        to_replace = {
+            path
+            for path in target_keys & current_keys
+            if target_files[path].file_hash != current_hashes[path]
+        }
+        to_copy = to_add | to_replace
         skipped = len(target_keys & current_keys) - len(to_replace)
-
         logger.info(
-            f"Restore delta: {len(to_add)} add, {len(to_replace)} replace, "
-            f"{len(to_remove)} remove, {skipped} unchanged (skipped)"
+            "Restore delta: %s add, %s replace, %s remove, %s unchanged",
+            len(to_add),
+            len(to_replace),
+            len(to_remove),
+            skipped,
         )
 
-        if not to_copy and not to_remove:
-            logger.info("Restore: iPod already matches snapshot — nothing to do")
+        self._preflight_restore_capacity(
+            target_files,
+            to_copy,
+            to_remove,
+            to_replace,
+            session,
+        )
+
+        if to_remove and progress_callback:
+            progress_callback(BackupProgress(
+                "cleaning",
+                0,
+                len(to_remove),
+                message=f"Removing {len(to_remove)} files…",
+            ))
+        for index, relative_path in enumerate(sorted(to_remove), start=1):
+            if is_cancelled and is_cancelled():
+                logger.warning("Restore cancelled after device changes began")
+                return False
+            session.delete(relative_path)
+            session.remove_empty_parents(relative_path)
             if progress_callback:
                 progress_callback(BackupProgress(
-                    "complete", total_target, total_target,
-                    message="iPod already matches this snapshot — no changes needed"
+                    "cleaning",
+                    index,
+                    len(to_remove),
+                    current_file=relative_path,
+                    message=f"Removing {index}/{len(to_remove)}: {relative_path}",
                 ))
-            return True
 
-        # Phase 3: Delete files that are NOT in the snapshot.
-        # Files being *replaced* (same path, different hash) are NOT deleted
-        # here — Phase 4's shutil.copy2 overwrites them in place.  This
-        # avoids a dangerous window where a replaced file has been deleted
-        # but its new version hasn't been copied yet (USB disconnect, disk
-        # full, power loss would leave the iPod missing those files).
-
-        if to_remove:
+        for index, relative_path in enumerate(sorted(to_copy), start=1):
+            if is_cancelled and is_cancelled():
+                logger.warning("Restore cancelled after device changes began")
+                return False
+            session.install(target_files[relative_path])
             if progress_callback:
                 progress_callback(BackupProgress(
-                    "cleaning", 0, 0,
-                    message=f"Removing {len(to_remove)} files…"
+                    "restoring",
+                    index,
+                    len(to_copy),
+                    current_file=relative_path,
+                    message=f"Copying {index}/{len(to_copy)}: {relative_path}",
                 ))
 
-            for rel_path in to_remove:
-                if is_cancelled and is_cancelled():
-                    logger.warning("Restore cancelled — iPod may be in incomplete state!")
-                    return False
-
-                dest = ipod_root / rel_path
-                try:
-                    if dest.exists():
-                        dest.unlink()
-                except PermissionError:
-                    if sys.platform == "win32":
-                        try:
-                            os.chmod(dest, 0o777)
-                            dest.unlink()
-                        except OSError as e:
-                            logger.warning(f"Restore: could not remove {rel_path}: {e}")
-                    else:
-                        logger.warning(f"Restore: could not remove {rel_path}")
-                except OSError as e:
-                    logger.warning(f"Restore: could not remove {rel_path}: {e}")
-
-            # Clean up empty directories left behind by removals.
-            # Walk bottom-up: try to rmdir each parent up to (but not including)
-            # the iPod root. rmdir only succeeds on empty dirs, so this is safe.
-            for rel_path in to_remove:
-                parent = (ipod_root / rel_path).parent
-                while parent != ipod_root:
-                    try:
-                        parent.rmdir()  # Only removes empty dirs
-                        parent = parent.parent
-                    except OSError:
-                        break
-
-        # Phase 4: Copy new + replaced files from blob store → iPod
-        if to_copy:
-            # Pre-create directory tree for new files
-            needed_dirs: set[Path] = set()
-            for rel_path in to_copy:
-                needed_dirs.add((ipod_root / rel_path).parent)
-            for d in sorted(needed_dirs):
-                d.mkdir(parents=True, exist_ok=True)
-
-            errors = 0
-            copied = 0
-            lock = threading.Lock()
-
-            def _restore_file(rel_path: str, file_hash: str) -> tuple[str, bool, str]:
-                """Copy one blob to its destination."""
-                blob_path = self._blob_path(file_hash)
-                dest_path = ipod_root / rel_path
-                if not blob_path.exists():
-                    return rel_path, False, f"missing blob {file_hash[:16]}…"
-                try:
-                    shutil.copyfile(str(blob_path), str(dest_path))
-                    return rel_path, True, ""
-                except (OSError, PermissionError) as exc:
-                    return rel_path, False, str(exc)
-
-            with ThreadPoolExecutor(max_workers=_NUM_WORKERS) as pool:
-                futures = {
-                    pool.submit(_restore_file, rp, target_files[rp]["hash"]): rp
-                    for rp in to_copy
-                }
-
-                for future in as_completed(futures):
-                    if is_cancelled and is_cancelled():
-                        pool.shutdown(wait=False, cancel_futures=True)
-                        logger.warning("Restore cancelled — iPod may be in incomplete state!")
-                        return False
-
-                    with lock:
-                        copied += 1
-
-                    rel_path, ok, err = future.result()
-                    if not ok:
-                        logger.error(f"Restore: {err} for {rel_path}")
-                        with lock:
-                            errors += 1
-
-                    if progress_callback:
-                        progress_callback(BackupProgress(
-                            "restoring", copied, len(to_copy),
-                            current_file=rel_path,
-                            message=f"Copying {copied}/{len(to_copy)}: {rel_path}"
-                        ))
-        else:
-            errors = 0
-
+        self._verify_restored_device(target_files, session)
+        session.finalize()
+        logger.info(
+            "Restore complete: +%s add, ~%s replace, −%s remove, %s skipped",
+            len(to_add),
+            len(to_replace),
+            len(to_remove),
+            skipped,
+        )
         if progress_callback:
             parts = []
             if to_add:
@@ -746,22 +1017,94 @@ class BackupManager:
             if to_remove:
                 parts.append(f"−{len(to_remove)} removed")
             parts.append(f"{skipped} unchanged")
-            msg = f"Restore complete — {', '.join(parts)}"
-            if errors:
-                msg += f" ({errors} errors)"
             progress_callback(BackupProgress(
-                "complete", total_target, total_target, message=msg
+                "complete",
+                len(target_files),
+                len(target_files),
+                message=f"Restore complete — {', '.join(parts)}",
             ))
+        return True
 
-        if errors:
-            logger.warning(f"Restore completed with {errors} errors")
-        else:
-            logger.info(
-                f"Restore complete: +{len(to_add)} add, ~{len(to_replace)} replace, "
-                f"−{len(to_remove)} remove, {skipped} skipped"
+    def _preflight_restore_capacity(
+        self,
+        target_files: dict[str, _RestoreFile],
+        to_copy: set[str],
+        to_remove: set[str],
+        to_replace: set[str],
+        session: _RestoreWriteSession,
+    ) -> None:
+        for relative_path in sorted(to_copy):
+            restore_file = target_files[relative_path]
+            session.validate_target(relative_path, restore_file.size)
+
+        session.revalidate()
+        try:
+            free_now = shutil.disk_usage(session.mount_path).free
+        except OSError as exc:
+            raise DeviceWriteSafetyError(
+                f"Could not verify iPod free space before restore: {exc}"
+            ) from exc
+        allocation_unit = session.filesystem_profile.allocation_unit_size
+        freed_by_removals = 0
+        for relative_path in to_remove:
+            target = _resolve_restore_path(session.mount_path, relative_path)
+            try:
+                freed_by_removals += allocated_size(target.stat().st_size, allocation_unit)
+            except OSError as exc:
+                raise DeviceWriteSafetyError(
+                    f"Could not inspect {relative_path} before restore: {exc}"
+                ) from exc
+
+        consumed = 0
+        peak_required = 0
+        for relative_path in sorted(to_copy):
+            new_size = allocated_size(target_files[relative_path].size, allocation_unit)
+            old_size = 0
+            if relative_path in to_replace:
+                target = _resolve_restore_path(session.mount_path, relative_path)
+                try:
+                    old_size = allocated_size(target.stat().st_size, allocation_unit)
+                except OSError as exc:
+                    raise DeviceWriteSafetyError(
+                        f"Could not inspect {relative_path} before replacement: {exc}"
+                    ) from exc
+            peak_required = max(peak_required, consumed + new_size)
+            consumed += new_size - old_size
+
+        if free_now + freed_by_removals < peak_required:
+            raise DeviceWriteSafetyError(
+                "The iPod does not have enough free space for the restore's "
+                "atomic temporary files. iOpenPod stopped before deleting anything."
             )
 
-        return errors == 0
+    def _verify_restored_device(
+        self,
+        target_files: dict[str, _RestoreFile],
+        session: _RestoreWriteSession,
+    ) -> None:
+        session.revalidate()
+        restored_files = self._walk_device(session.mount_path, fail_on_error=True)
+        restored_paths = {relative_path for relative_path, _path in restored_files}
+        if restored_paths != set(target_files):
+            missing = sorted(set(target_files) - restored_paths)
+            extra = sorted(restored_paths - set(target_files))
+            detail = missing[0] if missing else extra[0]
+            raise DeviceWriteSafetyError(
+                f"The restored iPod does not match the backup manifest: {detail}."
+            )
+        for relative_path, full_path in restored_files:
+            session.revalidate()
+            try:
+                actual_hash = _hash_file(full_path)
+            except OSError as exc:
+                raise DeviceWriteSafetyError(
+                    f"Could not verify restored file {relative_path}: {exc}"
+                ) from exc
+            if actual_hash != target_files[relative_path].file_hash:
+                raise DeviceWriteSafetyError(
+                    f"The restored file {relative_path} failed final SHA-256 verification."
+                )
+        session.revalidate()
 
     def list_snapshots(self) -> list[SnapshotInfo]:
         """
@@ -1026,7 +1369,12 @@ class BackupManager:
         except (json.JSONDecodeError, UnicodeDecodeError, OSError):
             return None
 
-    def _walk_device(self, ipod_root: Path) -> list[tuple[str, Path]]:
+    def _walk_device(
+        self,
+        ipod_root: Path,
+        *,
+        fail_on_error: bool = False,
+    ) -> list[tuple[str, Path]]:
         """
         Walk the entire iPod root and return (relative_path, full_path) pairs.
 
@@ -1035,9 +1383,24 @@ class BackupManager:
         """
         results: list[tuple[str, Path]] = []
 
-        for root, dirs, files in os.walk(ipod_root, followlinks=False):
+        def _raise_walk_error(exc: OSError) -> None:
+            raise exc
+
+        for root, dirs, files in os.walk(
+            ipod_root,
+            followlinks=False,
+            onerror=_raise_walk_error if fail_on_error else None,
+        ):
             # Filter out OS-managed directories in-place (single pass)
             dirs[:] = [d for d in dirs if not _is_excluded(d)]
+
+            if fail_on_error:
+                for dirname in dirs:
+                    directory = Path(root) / dirname
+                    if directory.is_symlink():
+                        raise DeviceWriteSafetyError(
+                            f"Restore stopped because {directory} is a symbolic link."
+                        )
 
             for filename in files:
                 if _is_excluded(filename):
@@ -1048,6 +1411,10 @@ class BackupManager:
                 # Skip symlinks — avoid following links outside the device,
                 # and iPod filesystems (FAT32/exFAT) don't support them anyway.
                 if full_path.is_symlink():
+                    if fail_on_error:
+                        raise DeviceWriteSafetyError(
+                            f"Restore stopped because {full_path} is a symbolic link."
+                        )
                     continue
 
                 try:

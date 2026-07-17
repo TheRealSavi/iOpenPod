@@ -110,8 +110,11 @@ def test_cache_feed_artwork_stores_relative_jpeg_path(tmp_path: Path, monkeypatc
         artwork_path="",
         artwork_url="https://example.test/cover.png",
     )
+    (tmp_path / "iPod_Control" / "iOpenPodPodcasts").mkdir(parents=True)
+    (tmp_path / "iPodInfo.json").write_text("{}", encoding="utf-8")
+    podcast_dir = tmp_path / "iPod_Control" / "iOpenPodPodcasts"
 
-    cached = cache_feed_artwork(feed, tmp_path)
+    cached = cache_feed_artwork(feed, podcast_dir)
 
     assert Path(cached).exists()
     assert feed.artwork_path.startswith("artwork-cache/")

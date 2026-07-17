@@ -274,8 +274,9 @@ class FingerprintDiffEngine:
 
         # ===== Pre-flight: Integrity check =====
         # Validate consistency between filesystem, iTunesDB, and mapping.
-        # This mutates ipod_tracks (removes entries with missing files)
-        # and mapping (removes stale db_track_ids), and deletes orphan files.
+        # Integrity inspection is read-only; this planner applies the report
+        # only to its private in-memory working state and schedules guarded
+        # persistence/deletion for execution.
         from .integrity import check_integrity
         if progress_callback:
             progress_callback("integrity", 0, 0, "Checking iPod integrity…")
@@ -283,27 +284,40 @@ class FingerprintDiffEngine:
             self.ipod_path,
             ipod_tracks,
             mapping,
-            delete_orphans=True,
+            delete_orphans=False,
             progress_callback=progress_callback,
             is_cancelled=is_cancelled,
         )
+        mapping_source_was_corrupt = bool(
+            getattr(mapping, "source_was_corrupt", False)
+        )
+        integrity_report.mapping_rebuild_required = mapping_source_was_corrupt
         if is_cancelled and is_cancelled():
             return plan
+        integrity_errors = list(getattr(integrity_report, "errors", ()) or ())
+        if integrity_errors:
+            examples = "; ".join(integrity_errors[:3])
+            raise RuntimeError(
+                "Could not safely inspect the iPod filesystem before sync: "
+                f"{examples}"
+            )
         if not integrity_report.is_clean:
             logger.info(integrity_report.summary)
-            if integrity_report.stale_mappings:
-                if self.mapping_manager.save(mapping):
-                    logger.info(
-                        "Integrity preflight removed %d stale mapping entries and saved iOpenPod.json",
-                        len(integrity_report.stale_mappings),
-                    )
-                else:
-                    logger.warning(
-                        "Integrity preflight removed %d stale mapping entries but failed to save iOpenPod.json",
-                        len(integrity_report.stale_mappings),
-                    )
 
         plan.integrity_report = integrity_report
+        plan._mapping_requires_persistence = mapping_source_was_corrupt
+
+        # Build the diff against a clean private view.  The source list and
+        # on-device mapping file remain untouched until guarded execution.
+        missing_track_objects = {id(track) for track in integrity_report.missing_files}
+        if missing_track_objects:
+            ipod_tracks[:] = [
+                track for track in ipod_tracks if id(track) not in missing_track_objects
+            ]
+        for fingerprint, db_track_id in integrity_report.stale_mappings:
+            mapping.remove_track(fingerprint, db_track_id=db_track_id)
+            plan._stale_mapping_entries.append((fingerprint, db_track_id))
+            plan._mapping_requires_persistence = True
 
         # Tracks whose files are missing must be explicitly removed from the
         # iPod database.  The integrity check pulled them out of ipod_tracks
@@ -496,18 +510,13 @@ class FingerprintDiffEngine:
             )
 
             if boot_added > 0:
-                if self.mapping_manager.save(mapping):
-                    logger.info(
-                        "Bootstrap seeded %d mapping entries from %d unmapped iPod tracks and saved iOpenPod.json",
-                        boot_added,
-                        boot_scanned,
-                    )
-                else:
-                    logger.warning(
-                        "Bootstrap seeded %d mapping entries from %d unmapped iPod tracks but failed to save iOpenPod.json",
-                        boot_added,
-                        boot_scanned,
-                    )
+                plan._mapping_requires_persistence = True
+                logger.info(
+                    "Bootstrap seeded %d in-memory mapping entries from %d "
+                    "unmapped iPod tracks; guarded execution will persist them",
+                    boot_added,
+                    boot_scanned,
+                )
             else:
                 logger.info(
                     "Bootstrap scanned %d unmapped iPod tracks and found 0 PC matches",
@@ -517,13 +526,6 @@ class FingerprintDiffEngine:
             logger.info(
                 "No mapping reconciliation was needed during preflight; iOpenPod.json remains absent",
             )
-        elif False:  # Preview must not write mapping files.
-            # No unmapped tracks means nothing to bootstrap, but still create
-            # the initial mapping file so logs and on-disk state agree.
-            if self.mapping_manager.save(mapping):
-                logger.info("No unmapped iPod tracks; wrote initial empty mapping file")
-            else:
-                logger.warning("No unmapped iPod tracks; failed to write initial empty mapping file")
 
         # ===== Phase 2: Group by identity (fingerprint + album) =====
         # Same fingerprint + same album = true duplicate (pick one, report rest)
@@ -746,6 +748,8 @@ class FingerprintDiffEngine:
 
         # Attach the mapping so the executor can reuse it instead of
         # loading from disk a second time.
+        if plan._stale_mapping_entries:
+            plan._mapping_requires_persistence = True
         plan.mapping = mapping
 
         return plan

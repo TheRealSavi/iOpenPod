@@ -25,8 +25,22 @@ import random
 import shutil
 import tempfile
 import time
+from collections.abc import Callable
 
 from iopenpod.device import ChecksumType, DeviceCapabilities, detect_checksum_type, get_firewire_id
+from iopenpod.device.durability import (
+    durable_replace,
+    durable_unlink,
+    flush_written_file,
+    open_unique_sibling_temp,
+)
+from iopenpod.device.path_safety import resolve_device_path
+from iopenpod.device.write_guard import DeviceWriteGuard, DeviceWriteSafetyError
+from iopenpod.device.write_readiness import (
+    inspect_device_write_readiness,
+    revalidate_device_write_readiness,
+    volume_lock_key,
+)
 from iopenpod.itunesdb_writer.mhit_writer import TrackInfo
 from iopenpod.itunesdb_writer.mhyp_writer import PlaylistInfo
 
@@ -43,6 +57,36 @@ logger = logging.getLogger(__name__)
 ITLP_DIR = os.path.join("iPod_Control", "iTunes", "iTunes Library.itlp")
 
 
+def _install_database_file(
+    src_path: str,
+    dst_path: str,
+    *,
+    before_device_mutation: Callable[[], None],
+) -> None:
+    """Durably install one generated database without truncating the old one."""
+    temp_path = None
+    try:
+        before_device_mutation()
+        temp_path, temp_file = open_unique_sibling_temp(dst_path, mode="wb")
+        with temp_file as written_file:
+            with open(src_path, "rb") as source_file:
+                shutil.copyfileobj(source_file, written_file)
+            flush_written_file(written_file)
+        before_device_mutation()
+        durable_replace(temp_path, dst_path)
+    finally:
+        if temp_path is not None:
+            try:
+                before_device_mutation()
+                durable_unlink(temp_path, missing_ok=True)
+            except OSError as cleanup_error:
+                logger.warning(
+                    "Could not remove incomplete SQLite database temp file %s: %s",
+                    temp_path,
+                    cleanup_error,
+                )
+
+
 def write_sqlite_databases(
     ipod_path: str,
     tracks: list[TrackInfo],
@@ -53,6 +97,9 @@ def write_sqlite_databases(
     capabilities: DeviceCapabilities | None = None,
     firewire_id: bytes | None = None,
     backup: bool = True,
+    before_device_mutation: Callable[[], None] | None = None,
+    reported_volume_format: str = "",
+    expected_volume_identity_key: str = "",
 ) -> bool:
     """Write all SQLite databases for iPod Nano 6G/7G.
 
@@ -73,10 +120,57 @@ def write_sqlite_databases(
     Returns:
         True if all databases were written successfully.
     """
-    itlp_path = os.path.join(ipod_path, ITLP_DIR)
+    if before_device_mutation is None:
+        profile = inspect_device_write_readiness(
+            ipod_path,
+            reported_volume_format=reported_volume_format,
+        )
+        current_key = volume_lock_key(profile)
+        if (
+            expected_volume_identity_key
+            and current_key != expected_volume_identity_key
+        ):
+            raise DeviceWriteSafetyError(
+                "A different volume is mounted at the selected iPod path. "
+                "iOpenPod stopped before writing SQLite databases."
+            )
+        with DeviceWriteGuard(ipod_path, volume_key=current_key):
+            profile = revalidate_device_write_readiness(
+                profile,
+                probe_case_sensitivity=True,
+            )
+
+            def _revalidate() -> None:
+                nonlocal profile
+                profile = revalidate_device_write_readiness(profile)
+
+            return write_sqlite_databases(
+                ipod_path,
+                tracks,
+                playlists=playlists,
+                smart_playlists=smart_playlists,
+                master_playlist_name=master_playlist_name,
+                db_pid=db_pid,
+                capabilities=capabilities,
+                firewire_id=firewire_id,
+                backup=backup,
+                before_device_mutation=_revalidate,
+                reported_volume_format=reported_volume_format,
+                expected_volume_identity_key=expected_volume_identity_key,
+            )
+
+    itlp_path = str(
+        resolve_device_path(
+            ipod_path,
+            ITLP_DIR,
+            allowed_subtree=ITLP_DIR,
+        )
+    )
 
     # Ensure the directory exists
-    os.makedirs(itlp_path, exist_ok=True)
+    if not os.path.isdir(itlp_path):
+        before_device_mutation()
+        os.makedirs(itlp_path, exist_ok=True)
 
     # Determine timezone offset
     if time.daylight:
@@ -106,14 +200,27 @@ def write_sqlite_databases(
 
     # Backup existing databases
     if backup:
-        for fname in ("Library.itdb", "Locations.itdb", "Dynamic.itdb",
-                      "Extras.itdb", "Genius.itdb", "Locations.itdb.cbk"):
-            fpath = os.path.join(itlp_path, fname)
-            if os.path.exists(fpath):
-                try:
-                    shutil.copy2(fpath, fpath + ".backup")
-                except Exception as e:
-                    logger.warning("Could not backup %s: %s", fname, e)
+        try:
+            for fname in (
+                "Library.itdb",
+                "Locations.itdb",
+                "Dynamic.itdb",
+                "Extras.itdb",
+                "Genius.itdb",
+                "Locations.itdb.cbk",
+            ):
+                fpath = os.path.join(itlp_path, fname)
+                if os.path.exists(fpath):
+                    _install_database_file(
+                        fpath,
+                        fpath + ".backup",
+                        before_device_mutation=before_device_mutation,
+                    )
+        except DeviceWriteSafetyError:
+            raise
+        except Exception as exc:
+            logger.error("Could not safely back up SQLite databases: %s", exc)
+            return False
 
     # Write all databases to temp directory first, then move
     # This gives us atomicity — if any write fails, the originals are intact.
@@ -191,7 +298,11 @@ def write_sqlite_databases(
             for fname, src_path in files_to_move:
                 dst_path = os.path.join(itlp_path, fname)
                 try:
-                    shutil.copyfile(src_path, dst_path)
+                    _install_database_file(
+                        src_path,
+                        dst_path,
+                        before_device_mutation=before_device_mutation,
+                    )
                 except Exception as e:
                     logger.error("Failed to copy %s to iPod: %s", fname, e)
                     raise

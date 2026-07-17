@@ -5,6 +5,7 @@ from iopenpod.application.sync_plan_builder import (
     build_removal_sync_plan,
 )
 from iopenpod.sync.fingerprint_diff_engine import SyncAction, SyncItem, SyncPlan
+from iopenpod.sync.integrity import IntegrityReport
 from iopenpod.sync.photos import (
     PCPhotoLibrary,
     PhotoAlbumChange,
@@ -88,12 +89,15 @@ def test_build_filtered_sync_plan_groups_selected_actions_and_preserves_context(
     rating = _item(SyncAction.SYNC_RATING, "rating")
     stale_entries = [("abc", 1)]
     integrity_removals = [_item(SyncAction.REMOVE_FROM_IPOD, "integrity")]
+    integrity_report = IntegrityReport()
     photo_plan = object()
 
     original = SyncPlan(
         matched_pc_paths={1: "C:/Music/song.m4a"},
         _stale_mapping_entries=stale_entries,
         _integrity_removals=integrity_removals,
+        _mapping_requires_persistence=True,
+        integrity_report=integrity_report,
         playlists_to_add=[{"name": "New"}],
         playlists_to_edit=[{"name": "Edit"}],
         playlists_to_remove=[{"name": "Remove"}],
@@ -116,6 +120,8 @@ def test_build_filtered_sync_plan_groups_selected_actions_and_preserves_context(
     assert filtered.matched_pc_paths == {1: "C:/Music/song.m4a"}
     assert filtered._stale_mapping_entries == stale_entries
     assert filtered._integrity_removals == integrity_removals
+    assert filtered._mapping_requires_persistence is True
+    assert filtered.integrity_report is integrity_report
     assert filtered.playlists_to_add == [{"name": "New"}]
     assert filtered.playlists_to_edit == [{"name": "Edit"}]
     assert filtered.playlists_to_remove == [{"name": "Remove"}]

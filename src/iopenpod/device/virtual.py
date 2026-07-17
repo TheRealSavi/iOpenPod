@@ -134,7 +134,8 @@ def create_virtual_ipod(
         "usb_pid": _usb_pid_for_identity(family, generation),
         "usb_serial": firewire_guid,
         "connected_bus": "USB",
-        "volume_format": "FAT32",
+        "reported_volume_format": "FAT32",
+        "filesystem_type": "fat32",
         "scsi_vendor": "Apple",
         "scsi_product": "iPod",
         "scsi_revision": _default_firmware(family, generation),
@@ -210,7 +211,8 @@ def load_virtual_ipod_info(
         "board",
         "product_type",
         "connected_bus",
-        "volume_format",
+        "reported_volume_format",
+        "filesystem_type",
         "scsi_vendor",
         "scsi_product",
         "scsi_revision",
@@ -219,6 +221,13 @@ def load_virtual_ipod_info(
         if value not in (None, ""):
             setattr(info, field, str(value))
             info._field_sources[field] = VIRTUAL_IPOD_INFO_FILENAME
+
+    # Schema v1 used the ambiguous name ``volume_format`` for this
+    # SysInfoExtended hint. Keep old virtual devices readable without
+    # conflating it with the host-observed filesystem type.
+    if not info.reported_volume_format and payload.get("volume_format"):
+        info.reported_volume_format = str(payload["volume_format"])
+        info._field_sources["reported_volume_format"] = VIRTUAL_IPOD_INFO_FILENAME
 
     for field in (
         "family_id",

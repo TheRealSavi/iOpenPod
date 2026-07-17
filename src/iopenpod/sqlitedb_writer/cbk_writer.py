@@ -111,8 +111,12 @@ def write_locations_cbk(
         # Try centralized store first
         hash_info = None
         try:
-            from iopenpod.device import get_current_device
-            dev = get_current_device()
+            from iopenpod.device import get_current_device_for_path
+            dev = (
+                get_current_device_for_path(ipod_path)
+                if ipod_path is not None
+                else None
+            )
             if dev and dev.hash_info_iv and dev.hash_info_rndpart:
                 hash_info = HashInfo(
                     uuid=b'\x00' * 20,
@@ -152,13 +156,19 @@ def write_locations_cbk(
             header = _hash_generate(final_sha1, hash_info.iv, hash_info.rndpart)
             logger.debug("CBK header: HASH72 signature (%d bytes)", len(header))
         else:
-            logger.warning("No HashInfo available for HASH72 cbk — writing final SHA1 only")
-            header = final_sha1
+            raise ValueError(
+                "HashInfo is required for the HASH72 Locations.itdb.cbk "
+                "signature; refusing to write an unsigned checksum book"
+            )
 
-    else:
-        # No checksum needed — older devices or NONE
-        # Just write the SHA1 as header (20 bytes)
+    elif checksum_type == ChecksumType.NONE:
+        # Positively identified older devices need no signed CBK header.
         header = final_sha1
+    else:
+        raise ValueError(
+            f"Cannot safely write Locations.itdb.cbk for checksum type "
+            f"{checksum_type.name}"
+        )
 
     # Write the cbk file: header + final_sha1 + block_sha1s
     with open(cbk_path, 'wb') as f:

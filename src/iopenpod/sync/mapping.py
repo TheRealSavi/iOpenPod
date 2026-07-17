@@ -12,9 +12,17 @@ Location on iPod: /iPod_Control/iTunes/iOpenPod.json
 
 import json
 import logging
+import shutil
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+
+from iopenpod.device.durability import (
+    durable_replace,
+    durable_unlink,
+    flush_written_file,
+    open_unique_sibling_temp,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +118,7 @@ class MappingFile:
     modified: str = ""
     _tracks: dict[str, list[TrackMapping]] | None = None
     _db_track_id_index: dict[int, tuple[str, TrackMapping]] | None = None
+    _source_was_corrupt: bool = False
 
     def __post_init__(self):
         if self._tracks is None:
@@ -126,6 +135,11 @@ class MappingFile:
         if self._tracks is None:
             self._tracks = {}
         return self._tracks
+
+    @property
+    def source_was_corrupt(self) -> bool:
+        """Whether load detected an on-device mapping that needs rebuilding."""
+        return self._source_was_corrupt
 
     def add_track(
         self,
@@ -365,7 +379,7 @@ class MappingManager:
         return self.mapping_file.exists()
 
     def load(self) -> MappingFile:
-        """Load mapping file from iPod. Returns empty MappingFile if not found."""
+        """Load mapping state without modifying any on-device files."""
         if not self.mapping_file.exists():
             logger.info(f"No mapping file found at {self.mapping_file}; starting with empty mapping")
             return MappingFile()
@@ -378,34 +392,78 @@ class MappingManager:
                         f"({mapping.fingerprint_count} fingerprints)")
             return mapping
 
-        except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON in mapping file: {e}")
-            backup = self.mapping_file.with_suffix(".json.bak")
-            self.mapping_file.replace(backup)
-            logger.warning(f"Backed up corrupt mapping to {backup}")
-            return MappingFile()
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
+            logger.error("Invalid iOpenPod mapping file: %s", e)
+            logger.warning(
+                "The corrupt mapping remains untouched until a guarded sync "
+                "can back it up and rebuild it"
+            )
+            return MappingFile(_source_was_corrupt=True)
 
-        except Exception as e:
-            logger.error(f"Error loading mapping file: {e}")
-            return MappingFile()
+        except OSError as e:
+            logger.error("Could not read mapping file: %s", e)
+            raise MappingLoadError(
+                f"Could not read the iPod mapping file: {e}"
+            ) from e
 
     def save(self, mapping: MappingFile) -> bool:
         """Save mapping file to iPod atomically."""
+        temp_file: Path | None = None
         try:
             self.mapping_dir.mkdir(parents=True, exist_ok=True)
             mapping.modified = datetime.now(UTC).isoformat()
 
-            temp_file = self.mapping_file.with_suffix(".json.tmp")
-            with open(temp_file, "w", encoding="utf-8") as f:
-                json.dump(mapping.to_dict(), f, indent=2)
+            if mapping.source_was_corrupt and self.mapping_file.exists():
+                self._backup_corrupt_mapping()
 
-            temp_file.replace(self.mapping_file)
+            temp_file, opened_temp = open_unique_sibling_temp(
+                self.mapping_file,
+                mode="w",
+                encoding="utf-8",
+            )
+            with opened_temp as f:
+                json.dump(mapping.to_dict(), f, indent=2)
+                flush_written_file(f)
+
+            durable_replace(temp_file, self.mapping_file)
+            mapping._source_was_corrupt = False
             logger.info(f"Saved mapping with {mapping.track_count} tracks")
             return True
 
         except Exception as e:
             logger.error(f"Error saving mapping file: {e}")
             return False
+        finally:
+            if temp_file is not None:
+                try:
+                    durable_unlink(temp_file, missing_ok=True)
+                except OSError as cleanup_error:
+                    logger.warning(
+                        "Could not remove incomplete mapping temp %s: %s",
+                        temp_file,
+                        cleanup_error,
+                    )
+
+    def _backup_corrupt_mapping(self) -> Path:
+        """Durably preserve a corrupt mapping immediately before replacement."""
+        backup_path = self.mapping_file.with_suffix(".json.bak")
+        temp_backup: Path | None = None
+        try:
+            temp_backup, opened_temp = open_unique_sibling_temp(
+                backup_path,
+                mode="wb",
+            )
+            with opened_temp as target:
+                with open(self.mapping_file, "rb") as source:
+                    shutil.copyfileobj(source, target)
+                flush_written_file(target)
+            durable_replace(temp_backup, backup_path)
+        except Exception:
+            if temp_backup is not None:
+                durable_unlink(temp_backup, missing_ok=True)
+            raise
+        logger.warning("Backed up corrupt mapping to %s", backup_path)
+        return backup_path
 
     def backup(self) -> Path | None:
         """Create a timestamped backup of the mapping file."""
@@ -414,12 +472,34 @@ class MappingManager:
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         backup_path = self.mapping_file.with_suffix(f".{timestamp}.bak")
+        temp_backup: Path | None = None
 
         try:
-            import shutil
-            shutil.copy2(self.mapping_file, backup_path)
+            temp_backup, opened_temp = open_unique_sibling_temp(
+                backup_path,
+                mode="wb",
+            )
+            with opened_temp as target:
+                with open(self.mapping_file, "rb") as source:
+                    shutil.copyfileobj(source, target)
+                flush_written_file(target)
+            durable_replace(temp_backup, backup_path)
             logger.info(f"Created mapping backup: {backup_path}")
             return backup_path
         except Exception as e:
             logger.error(f"Failed to backup mapping: {e}")
             return None
+        finally:
+            if temp_backup is not None:
+                try:
+                    durable_unlink(temp_backup, missing_ok=True)
+                except OSError as cleanup_error:
+                    logger.warning(
+                        "Could not remove incomplete mapping backup temp %s: %s",
+                        temp_backup,
+                        cleanup_error,
+                    )
+
+
+class MappingLoadError(RuntimeError):
+    """Raised when mapping state cannot be read safely."""

@@ -146,7 +146,9 @@ class DeviceInfo:
     scsi_product: str = ""
     scsi_revision: str = ""
     connected_bus: str = ""
-    volume_format: str = ""
+    reported_volume_format: str = ""  # SysInfoExtended hint, not an OS probe
+    filesystem_type: str = ""         # Actual mounted filesystem (vfat, hfsplus, ...)
+    volume_identity_key: str = ""      # Host-observed identity captured during scan
 
     # ── Device capabilities from SysInfoExtended / VPD ────────────────
     db_version: int = 0
@@ -209,6 +211,15 @@ class DeviceInfo:
         if _sys.platform == "win32" and self.path and self.path[0].isalpha():
             return self.path[0]
         return ""
+
+    @property
+    def volume_format(self) -> str:
+        """Legacy alias for :attr:`reported_volume_format`."""
+        return self.reported_volume_format
+
+    @volume_format.setter
+    def volume_format(self, value: str) -> None:
+        self.reported_volume_format = str(value or "")
 
     @property
     def display_name(self) -> str:
@@ -290,6 +301,20 @@ class DeviceInfo:
 # Utility functions (used by multiple modules)
 # ──────────────────────────────────────────────────────────────────────
 
+def _capability_itdb_filename(ipod_path: str) -> str | None:
+    """Return the database filename required by the matched device, if known."""
+    dev = get_current_device_for_path(ipod_path)
+    if not dev or not dev.model_family:
+        return None
+
+    from .capabilities import capabilities_for_family_gen
+
+    caps = capabilities_for_family_gen(dev.model_family, dev.generation or "")
+    if caps is None:
+        return None
+    return "iTunesCDB" if caps.supports_compressed_db else "iTunesDB"
+
+
 def resolve_itdb_path(ipod_path: str) -> str | None:
     """Return the path to the iTunesDB (or iTunesCDB) on the iPod.
 
@@ -300,7 +325,13 @@ def resolve_itdb_path(ipod_path: str) -> str | None:
     ``DeviceCapabilities.supports_compressed_db`` is True.  The firmware
     on those devices reads ``iTunesCDB`` and ignores ``iTunesDB``.
 
-    Check order:
+    When the mounted path matches the selected device and its capabilities are
+    known, only the database filename that firmware uses is considered.  This
+    prevents a stale, non-empty alternate database from being loaded while the
+    writer and generation guard operate on the real database.
+
+    Without matched device capabilities, check order is (ignoring zero-byte
+    stale-filename markers while a non-empty alternate exists):
 
     1. ``iTunesCDB`` — used by devices with ``supports_compressed_db``
     2. ``iTunesDB``  — used by all other devices
@@ -310,11 +341,55 @@ def resolve_itdb_path(ipod_path: str) -> str | None:
     """
     itunes_dir = os.path.join(ipod_path, "iPod_Control", "iTunes")
     cdb = os.path.join(itunes_dir, "iTunesCDB")
-    if os.path.exists(cdb):
-        return cdb
     db = os.path.join(itunes_dir, "iTunesDB")
-    if os.path.exists(db):
-        return db
+    required_filename = _capability_itdb_filename(ipod_path)
+    if required_filename is not None:
+        required_path = os.path.join(itunes_dir, required_filename)
+        alternate_path = cdb if required_filename == "iTunesDB" else db
+        for candidate in (required_path, alternate_path):
+            try:
+                if os.path.isfile(candidate) and os.path.getsize(candidate) > 0:
+                    if candidate == alternate_path:
+                        logger.warning(
+                            "The identified iPod has only the alternate database "
+                            "%s; it will be used as the recovery source while the "
+                            "next guarded write restores %s",
+                            os.path.basename(alternate_path),
+                            required_filename,
+                        )
+                    return candidate
+            except OSError as exc:
+                from .write_guard import DeviceWriteSafetyError
+
+                raise DeviceWriteSafetyError(
+                    "Could not safely inspect the iPod database filenames: "
+                    f"{exc}"
+                ) from exc
+        for candidate in (required_path, alternate_path):
+            try:
+                if os.path.exists(candidate):
+                    return candidate
+            except OSError as exc:
+                from .write_guard import DeviceWriteSafetyError
+
+                raise DeviceWriteSafetyError(
+                    "Could not safely inspect the iPod database filenames: "
+                    f"{exc}"
+                ) from exc
+        return None
+
+    # The writer deliberately leaves the obsolete alternate filename as a
+    # zero-byte marker for firmware compatibility. Never mistake that marker
+    # for the live database when the other file contains a committed DB.
+    for candidate in (cdb, db):
+        try:
+            if os.path.isfile(candidate) and os.path.getsize(candidate) > 0:
+                return candidate
+        except OSError:
+            continue
+    for candidate in (cdb, db):
+        if os.path.exists(candidate):
+            return candidate
     return None
 
 
@@ -325,20 +400,21 @@ def itdb_write_filename(ipod_path: str) -> str:
     available.  Falls back to whichever file already exists on disk, and
     finally defaults to ``"iTunesDB"``.
     """
-    # 1. Ask the device store (capabilities handles family-level fallback)
-    dev = get_current_device()
-    if dev and dev.model_family:
-        from .capabilities import capabilities_for_family_gen
-        caps = capabilities_for_family_gen(
-            dev.model_family, dev.generation or "",
-        )
-        if caps and caps.supports_compressed_db:
-            return "iTunesCDB"
+    # 1. Ask the matched device store (capabilities handles family fallback).
+    required_filename = _capability_itdb_filename(ipod_path)
+    if required_filename is not None:
+        return required_filename
 
-    # 2. If an iTunesCDB already exists on disk, keep using it
-    cdb = os.path.join(ipod_path, "iPod_Control", "iTunes", "iTunesCDB")
-    if os.path.exists(cdb):
-        return "iTunesCDB"
+    # 2. Without capabilities, follow the non-empty committed database. The
+    # obsolete alternate filename may intentionally remain as a zero-byte
+    # firmware marker and must not influence the next write target.
+    existing = resolve_itdb_path(ipod_path)
+    if existing:
+        try:
+            if os.path.getsize(existing) > 0:
+                return os.path.basename(existing)
+        except OSError:
+            pass
 
     return "iTunesDB"
 
@@ -363,11 +439,11 @@ def read_sysinfo(ipod_path: str) -> dict:
     """
     sysinfo_path = os.path.join(ipod_path, "iPod_Control", "Device", "SysInfo")
 
-    if not os.path.exists(sysinfo_path):
-        raise FileNotFoundError(f"SysInfo not found at {sysinfo_path}")
-
-    with open(sysinfo_path, errors="ignore") as f:
-        content = f.read()
+    try:
+        with open(sysinfo_path, errors="ignore") as f:
+            content = f.read()
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(f"SysInfo not found at {sysinfo_path}") from exc
 
     from .sysinfo import parse_sysinfo_text
     return parse_sysinfo_text(content)
@@ -751,6 +827,19 @@ def get_current_device() -> DeviceInfo | None:
     return _Store._get().current
 
 
+def get_current_device_for_path(ipod_path: str | os.PathLike[str]) -> DeviceInfo | None:
+    """Return the active device only when it describes *ipod_path* exactly."""
+    device = get_current_device()
+    if device is None or not str(device.path or "").strip():
+        return None
+    try:
+        selected = os.path.normcase(os.path.realpath(os.fspath(ipod_path)))
+        identified = os.path.normcase(os.path.realpath(device.path))
+    except (OSError, TypeError, ValueError):
+        return None
+    return device if selected == identified else None
+
+
 def set_current_device(info: DeviceInfo | None) -> None:
     """Store *info* as the active device (called once during selection)."""
     if info is not None:
@@ -788,7 +877,7 @@ def detect_checksum_type(ipod_path: str):
     from .lookup import extract_model_number, get_model_info
 
     # Fast path: centralised store
-    device = get_current_device()
+    device = get_current_device_for_path(ipod_path)
     if device is not None and device.checksum_type != 99:
         return ChecksumType(device.checksum_type)
 
@@ -806,7 +895,7 @@ def detect_checksum_type(ipod_path: str):
     try:
         sysinfo = read_sysinfo(ipod_path)
     except FileNotFoundError:
-        return ChecksumType.NONE
+        return ChecksumType.UNKNOWN
 
     model_str = sysinfo.get("ModelNumStr", "")
     model_num = extract_model_number(model_str)
@@ -819,7 +908,17 @@ def detect_checksum_type(ipod_path: str):
                 return ct
 
     hi_path = os.path.join(ipod_path, "iPod_Control", "Device", "HashInfo")
-    if os.path.exists(hi_path):
+    try:
+        os.stat(hi_path)
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        from .write_guard import DeviceWriteSafetyError
+
+        raise DeviceWriteSafetyError(
+            f"Could not inspect the iPod HashInfo checksum material: {exc}"
+        ) from exc
+    else:
         return ChecksumType.HASH72
 
     firmware = sysinfo.get("visibleBuildID", "")
@@ -834,7 +933,10 @@ def detect_checksum_type(ipod_path: str):
     if "FirewireGuid" in sysinfo:
         return ChecksumType.UNKNOWN
 
-    return ChecksumType.NONE
+    # An identified legacy model above can positively select NONE. Empty or
+    # unidentifiable physical metadata cannot: guessing "no checksum" would
+    # produce a database that modern firmware rejects.
+    return ChecksumType.UNKNOWN
 
 
 def get_firewire_id(ipod_path: str, *, known_guid: str | None = None) -> bytes:
@@ -862,7 +964,7 @@ def get_firewire_id(ipod_path: str, *, known_guid: str | None = None) -> bytes:
             pass
 
     # Source 1: centralised store
-    device = get_current_device()
+    device = get_current_device_for_path(ipod_path)
     if device is not None:
         fwid = device.firewire_id_bytes
         if fwid:
@@ -1295,6 +1397,7 @@ def _cache_live_sysinfo_extended(
     ipod_path: str,
     vpd_raw: dict,
     source: str,
+    expected_volume_identity_key: str = "",
 ) -> None:
     raw_xml = vpd_raw.get("vpd_raw_xml") if isinstance(vpd_raw, dict) else b""
     if not raw_xml:
@@ -1333,6 +1436,7 @@ def _cache_live_sysinfo_extended(
             raw_xml,
             source=source,
             metadata=metadata,
+            expected_volume_identity_key=expected_volume_identity_key,
         )
     except Exception as exc:
         logger.debug("enrich: live SysInfoExtended cache failed: %s", exc)
@@ -1394,11 +1498,13 @@ def _apply_live_result_to_cache(
     usb_pid_source: str,
     live_result: dict,
     live_source: str,
+    expected_volume_identity_key: str = "",
 ) -> None:
     validated = DeviceInfo()
     validated.path = path
     validated.mount_name = mount_name
     validated.usb_pid = usb_pid
+    validated.volume_identity_key = expected_volume_identity_key
     if usb_pid:
         validated._field_sources["usb_pid"] = usb_pid_source or "unknown"
 
@@ -1483,6 +1589,7 @@ def _start_live_identity_validation(info: DeviceInfo) -> None:
     cached.serial = info.serial
     cached.firmware = info.firmware
     cached.usb_pid = info.usb_pid
+    cached.volume_identity_key = info.volume_identity_key
     cached._field_sources.update(info._field_sources)
 
     def _run() -> None:
@@ -1519,7 +1626,12 @@ def _start_live_identity_validation(info: DeviceInfo) -> None:
                 format_fields(vpd_raw, CAPABILITY_FIELDS, include_false=True),
             )
             _log_live_validation_differences(cached, result, live_source)
-            _cache_live_sysinfo_extended(cached.path, vpd_raw, live_source)
+            _cache_live_sysinfo_extended(
+                cached.path,
+                vpd_raw,
+                live_source,
+                cached.volume_identity_key,
+            )
             for fld in (
                 "serial",
                 "firewire_guid",
@@ -1585,6 +1697,7 @@ def _start_live_identity_validation(info: DeviceInfo) -> None:
                 cached._field_sources.get("usb_pid", ""),
                 result,
                 live_source,
+                cached.volume_identity_key,
             )
         except Exception as exc:
             logger.debug("Live identity validation failed for %s: %s", cached.path, exc)
@@ -1843,7 +1956,7 @@ def _apply_sysinfo_extended_identity(
         "scsi_product",
         "scsi_revision",
         "connected_bus",
-        "volume_format",
+        "reported_volume_format",
         "db_version",
         "shadow_db_version",
         "uses_sqlite_db",

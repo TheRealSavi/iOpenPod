@@ -53,6 +53,7 @@ SOURCE_FIELDS: tuple[FieldSpec, ...] = (
     ("color", "color"),
     ("usb_pid", "pid"),
     ("firmware", "fw"),
+    ("filesystem_type", "filesystem"),
 )
 
 _HEX_WIDTHS: dict[str, int] = {

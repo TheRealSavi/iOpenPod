@@ -49,7 +49,9 @@ def test_resolve_location_skips_external_windows_path_without_ipod_marker(
     assert resolved is None
 
 
-def test_integrity_marks_missing_db_file_and_removes_track(tmp_path: Path) -> None:
+def test_integrity_reports_missing_db_file_without_mutating_tracks(
+    tmp_path: Path,
+) -> None:
     ipod_root = tmp_path / "ipod"
     existing = _make_music_file(ipod_root, "F00", "LIVE.mp3")
     tracks = [
@@ -81,6 +83,11 @@ def test_integrity_marks_missing_db_file_and_removes_track(tmp_path: Path) -> No
     ]
     assert tracks == [
         {
+            "db_track_id": 1,
+            "Title": "Ghost",
+            "Location": ":iPod_Control:Music:F00:GONE.mp3",
+        },
+        {
             "db_track_id": 2,
             "Title": "Live",
             "Location": ":iPod_Control:Music:F00:LIVE.mp3",
@@ -90,7 +97,9 @@ def test_integrity_marks_missing_db_file_and_removes_track(tmp_path: Path) -> No
     assert existing.is_file()
 
 
-def test_integrity_treats_directory_location_as_missing(tmp_path: Path) -> None:
+def test_integrity_treats_directory_location_as_missing_without_removing_track(
+    tmp_path: Path,
+) -> None:
     ipod_root = tmp_path / "ipod"
     bogus_dir = ipod_root / "iPod_Control" / "Music" / "F00" / "DIR.mp3"
     bogus_dir.mkdir(parents=True)
@@ -110,7 +119,7 @@ def test_integrity_treats_directory_location_as_missing(tmp_path: Path) -> None:
     )
 
     assert [track["Title"] for track in report.missing_files] == ["Directory"]
-    assert tracks == []
+    assert len(tracks) == 1
 
 
 def test_integrity_ignores_appledouble_sidecar_orphans(tmp_path: Path) -> None:
@@ -136,3 +145,40 @@ def test_integrity_ignores_appledouble_sidecar_orphans(tmp_path: Path) -> None:
     assert report.errors == []
     assert real.is_file()
     assert sidecar.is_file()
+
+
+def test_integrity_reports_orphan_without_deleting_it_even_when_legacy_flag_is_true(
+    tmp_path: Path,
+) -> None:
+    ipod_root = tmp_path / "ipod"
+    orphan = _make_music_file(ipod_root, "F00", "ORPHAN.mp3")
+
+    report = check_integrity(
+        ipod_root,
+        [],
+        MappingFile(),
+        delete_orphans=True,
+    )
+
+    assert report.orphan_files == [orphan]
+    assert orphan.read_bytes() == b"audio"
+
+
+def test_integrity_reports_stale_mapping_without_mutating_mapping(
+    tmp_path: Path,
+) -> None:
+    mapping = MappingFile()
+    mapping.add_track(
+        "fingerprint",
+        db_track_id=9,
+        source_format="flac",
+        ipod_format="m4a",
+        source_size=1,
+        source_mtime=1.0,
+        was_transcoded=True,
+    )
+
+    report = check_integrity(tmp_path / "ipod", [], mapping)
+
+    assert report.stale_mappings == [("fingerprint", 9)]
+    assert mapping.get_by_db_track_id(9) is not None

@@ -12,14 +12,16 @@ import io
 import logging
 import os
 import re
-import tempfile
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Protocol
 from urllib.parse import unquote, urlparse
 
 import requests
 from PIL import Image, UnidentifiedImageError
+
+from iopenpod.device.metadata_write import guarded_device_metadata_session
+from iopenpod.device.write_guard import DeviceWriteSafetyError
 
 from .models import normalize_artwork_url
 
@@ -201,6 +203,10 @@ def cache_feed_artwork(
     feed: PodcastArtworkFeed,
     podcast_dir: str | os.PathLike[str],
     fallback_urls: Iterable[str] = (),
+    *,
+    write_bytes: Callable[[Path, bytes], Path] | None = None,
+    reported_volume_format: str = "",
+    expected_volume_identity_key: str = "",
 ) -> str:
     """Ensure a feed has a usable local artwork cache.
 
@@ -238,13 +244,6 @@ def cache_feed_artwork(
     if not candidates:
         return ""
 
-    cache_dir = Path(podcast_dir) / _CACHE_DIRNAME
-    try:
-        cache_dir.mkdir(parents=True, exist_ok=True)
-    except OSError as exc:
-        log.debug("Could not create podcast artwork cache %s: %s", cache_dir, exc)
-        return ""
-
     for url in candidates:
         key_seed = f"{feed_url}|{url}" if feed_url else url
         rel_path = Path(_CACHE_DIRNAME) / (
@@ -253,11 +252,16 @@ def cache_feed_artwork(
         cache_path = Path(podcast_dir) / rel_path
 
         try:
-            if cache_path.exists() and cache_path.stat().st_size > 0:
-                feed.artwork_path = rel_path.as_posix()
-                return str(cache_path)
+            cached_size = cache_path.stat().st_size
+        except FileNotFoundError:
+            cached_size = 0
         except OSError:
-            pass
+            # A device read failure is not equivalent to a cache miss. Let the
+            # guarded caller stop and alert the user instead of writing onward.
+            raise
+        if cached_size > 0:
+            feed.artwork_path = rel_path.as_posix()
+            return str(cache_path)
 
         try:
             resp = requests.get(url, timeout=_REQUEST_TIMEOUT, headers=_REQUEST_HEADERS)
@@ -265,26 +269,62 @@ def cache_feed_artwork(
             prepared = prepare_artwork_bytes(resp.content)
             if not prepared:
                 continue
-
-            fd, tmp_path = tempfile.mkstemp(
-                dir=str(cache_dir),
-                suffix=".tmp",
-                prefix="art_",
-            )
-            try:
-                with os.fdopen(fd, "wb") as handle:
-                    handle.write(prepared)
-                os.replace(tmp_path, cache_path)
-            except Exception:
-                try:
-                    os.remove(tmp_path)
-                except OSError:
-                    pass
-                raise
-
-            feed.artwork_path = rel_path.as_posix()
-            return str(cache_path)
         except Exception as exc:
             log.debug("Failed to cache podcast artwork from %s: %s", url, exc)
+            continue
+
+        try:
+            installed = (
+                write_bytes(rel_path, prepared)
+                if write_bytes is not None
+                else _write_artwork_bytes_guarded(
+                    podcast_dir,
+                    rel_path,
+                    prepared,
+                    reported_volume_format=reported_volume_format,
+                    expected_volume_identity_key=expected_volume_identity_key,
+                )
+            )
+        except (DeviceWriteSafetyError, OSError):
+            raise
+        except Exception as exc:
+            log.debug("Failed to store podcast artwork from %s: %s", url, exc)
+            continue
+
+        feed.artwork_path = rel_path.as_posix()
+        return str(installed)
 
     return ""
+
+
+def _write_artwork_bytes_guarded(
+    podcast_dir: str | os.PathLike[str],
+    relative_path: Path,
+    data: bytes,
+    *,
+    reported_volume_format: str,
+    expected_volume_identity_key: str,
+) -> Path:
+    """Install artwork only when *podcast_dir* is the canonical iPod subtree."""
+    podcast_path = Path(os.path.realpath(podcast_dir))
+    if (
+        podcast_path.name.casefold() != "iopenpodpodcasts"
+        or podcast_path.parent.name.casefold() != "ipod_control"
+    ):
+        raise DeviceWriteSafetyError(
+            "The podcast artwork destination is outside the expected iPod "
+            "metadata directory. iOpenPod stopped before writing artwork."
+        )
+
+    mount_path = podcast_path.parent.parent
+    subtree = Path("iPod_Control") / "iOpenPodPodcasts"
+    with guarded_device_metadata_session(
+        mount_path,
+        reported_volume_format=reported_volume_format,
+        expected_volume_identity_key=expected_volume_identity_key,
+    ) as writer:
+        return writer.write_bytes_atomic(
+            subtree / relative_path,
+            data,
+            allowed_subtree=subtree,
+        )

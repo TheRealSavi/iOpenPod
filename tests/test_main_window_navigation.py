@@ -6,15 +6,19 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 from iopenpod.application.database_storage import DatabaseStorageReport
+from iopenpod.application.device_access import DeviceWriteAccessResult
 from iopenpod.application.jobs import SyncToolAvailability
 from iopenpod.application.sync_session import (
     SyncExecutionIntent,
     SyncPlanningIntent,
     SyncSessionMissingTools,
 )
+from iopenpod.device.recovery import LinuxMountDetails
+from iopenpod.gui import app as app_module
 from iopenpod.gui.app import (
     MainWindow,
     _database_file_size_bytes,
+    _device_write_access_failure_message,
     _library_load_failure_message,
     _sync_execute_failure_message,
 )
@@ -81,6 +85,7 @@ class _FakeSidebar:
         self.tag_fixes_available: list[bool] = []
         self.tag_fix_counts: list[tuple[int, int]] = []
         self.device_info_updates: list[dict] = []
+        self.eject_availability: list[bool] = []
         self.clear_count = 0
 
     def setLibraryTabsVisible(self, visible: bool) -> None:
@@ -97,6 +102,9 @@ class _FakeSidebar:
 
     def clearDeviceInfo(self) -> None:
         self.clear_count += 1
+
+    def setEjectAvailable(self, available: bool) -> None:
+        self.eject_availability.append(available)
 
 
 class _FakeSettingsService:
@@ -185,16 +193,49 @@ def test_main_window_device_name_ignores_dataset5_category_master() -> None:
     ) == "RoadPod"
 
 
-def test_failed_sync_result_gets_user_visible_message() -> None:
+def test_failed_sync_result_gets_user_visible_message(monkeypatch) -> None:
+    monkeypatch.setattr(app_module.sys, "platform", "linux")
     result = SimpleNamespace(
         success=False,
         partial_save=False,
-        errors=[("read-only", "iOpenPod cannot write to this iPod.")],
+        errors=[("read-only", "[Errno 13] Permission denied")],
     )
 
-    assert _sync_execute_failure_message(result) == (
-        "iOpenPod cannot write to this iPod."
+    message = _sync_execute_failure_message(result, "/media/user/IPOD")
+
+    assert message is not None
+    assert "iOpenPod cannot write to this iPod" in message
+    assert "/media/user/IPOD" in message
+    assert "Permission denied" in message
+    assert "unmount it before" in message.lower()
+    assert "mount -o remount,rw" not in message
+
+
+def test_device_write_access_message_routes_mac_format_to_first_aid(monkeypatch) -> None:
+    monkeypatch.setattr(app_module.sys, "platform", "linux")
+    mount = LinuxMountDetails(
+        mount_point="/media/user/IPOD",
+        source="/dev/sdz2",
+        filesystem="hfsplus",
+        options=("ro", "nosuid"),
+        super_options=("ro",),
     )
+
+    message = _device_write_access_failure_message(
+        DeviceWriteAccessResult(
+            writable=False,
+            reason="mount is read-only",
+            mount_path=mount.mount_point,
+            mount=mount,
+        )
+    )
+
+    assert "/dev/sdz2" in message
+    assert "hfsplus" in message
+    assert "Mac-formatted" in message
+    assert "Disk Utility First Aid" in message
+    assert "fsck.fat" not in message
+    assert "mount -o remount,rw" not in message
 
 
 def test_successful_sync_queues_silent_normalization_after_rescan(monkeypatch) -> None:
@@ -292,7 +333,8 @@ def test_stale_tag_scan_does_not_update_badge_or_cache() -> None:
     assert sidebar.tag_fix_counts == []
 
 
-def test_library_load_permission_message_includes_linux_recovery_steps() -> None:
+def test_library_load_permission_message_includes_linux_recovery_steps(monkeypatch) -> None:
+    monkeypatch.setattr(app_module.sys, "platform", "linux")
     message = _library_load_failure_message(
         "/media/user/IPOD",
         "Could not load iTunesDB: [Errno 13] Permission denied",
@@ -300,11 +342,44 @@ def test_library_load_permission_message_includes_linux_recovery_steps() -> None
 
     assert "iOpenPod could not read this iPod cleanly" in message
     assert "/media/user/IPOD" in message
-    assert "mount -o remount,rw" in message
-    assert "fsck.vfat" in message
+    assert "unmount it before" in message.lower()
+    assert "findmnt" in message
+    assert "mount -o remount,rw" not in message
 
 
-def test_device_changed_rejects_unwritable_device_before_loading(monkeypatch) -> None:
+def test_sync_write_failure_uses_windows_recovery_steps(monkeypatch) -> None:
+    monkeypatch.setattr(app_module.sys, "platform", "win32")
+    result = SimpleNamespace(
+        success=False,
+        partial_save=False,
+        errors=[("read-only", "The media is write protected")],
+    )
+
+    message = _sync_execute_failure_message(result, "E:\\")
+
+    assert message is not None
+    assert "Windows drive Error Checking" in message
+    assert "iTunes Restore" in message
+    assert "sudo" not in message
+    assert "findmnt" not in message
+
+
+def test_library_load_failure_uses_macos_recovery_steps(monkeypatch) -> None:
+    monkeypatch.setattr(app_module.sys, "platform", "darwin")
+
+    message = _library_load_failure_message(
+        "/Volumes/IPOD",
+        "Could not load iTunesDB: Input/output error",
+    )
+
+    assert "Disk Utility First Aid" in message
+    assert "sudo" not in message
+    assert "findmnt" not in message
+
+
+def test_device_changed_keeps_unwritable_device_available_for_safe_eject(
+    monkeypatch,
+) -> None:
     calls: list[str] = []
     criticals: list[tuple[str, str]] = []
     fake_pool = SimpleNamespace(clear=lambda: calls.append("clear_pool"))
@@ -316,22 +391,48 @@ def test_device_changed_rejects_unwritable_device_before_loading(monkeypatch) ->
     monkeypatch.setattr("iopenpod.gui.imgMaker.clear_artwork_api", lambda: calls.append("art"))
     monkeypatch.setattr(
         "iopenpod.gui.app.check_ipod_write_access",
-        lambda _path: SimpleNamespace(writable=False, message="not writable"),
+        lambda path: DeviceWriteAccessResult(
+            writable=False,
+            reason="not writable",
+            mount_path=path,
+        ),
     )
     monkeypatch.setattr(
         "iopenpod.gui.app.QMessageBox.critical",
         lambda _parent, title, message: criticals.append((title, message)),
     )
 
+    class _SignalingDeviceManager:
+        def __init__(self, path: str) -> None:
+            self._device_path: str | None = path
+            self.changed: Callable[[str], None] | None = None
+
+        @property
+        def device_path(self) -> str | None:
+            return self._device_path
+
+        @device_path.setter
+        def device_path(self, path: str | None) -> None:
+            self._device_path = path
+            if self.changed is not None:
+                self.changed(path or "")
+
+    device_storage = object()
+    device_manager = _SignalingDeviceManager("/media/user/IPOD")
     window = SimpleNamespace(
         _theme_rebuild_timer=SimpleNamespace(
             isActive=lambda: False,
             stop=lambda: calls.append("stop_timer"),
         ),
         _pending_theme_rebuild=True,
+        _eject_only_device_path=None,
+        _eject_only_device_storage=None,
         musicBrowser=SimpleNamespace(reloadData=lambda: calls.append("reload")),
         sidebar=_FakeSidebar(),
-        device_manager=SimpleNamespace(device_path="/media/user/IPOD"),
+        device_manager=device_manager,
+        device_session_service=SimpleNamespace(
+            current_session=lambda: SimpleNamespace(storage=device_storage)
+        ),
         library_cache=SimpleNamespace(start_loading=lambda: calls.append("load")),
         _apply_effective_theme=lambda: False,
         _invalidate_tag_fix_scan=lambda: calls.append("invalidate_tag_scan"),
@@ -341,14 +442,115 @@ def test_device_changed_rejects_unwritable_device_before_loading(monkeypatch) ->
         ),
         _show_default_page=lambda: calls.append("default"),
     )
+    device_manager.changed = lambda changed_path: MainWindow.onDeviceChanged(
+        cast(Any, window),
+        changed_path,
+    )
 
     MainWindow.onDeviceChanged(cast(Any, window), "/media/user/IPOD")
 
     assert window.device_manager.device_path is None
+    assert window._eject_only_device_path == "/media/user/IPOD"
+    assert window._eject_only_device_storage is device_storage
+    assert window.sidebar.eject_availability[-1] is True
     assert "load" not in calls
     assert "category:/media/user/IPOD" not in calls
     assert "invalidate_tag_scan" in calls
-    assert criticals == [("iPod Not Writable", "not writable")]
+    assert len(criticals) == 1
+    assert criticals[0][0] == "iPod Not Writable"
+    assert "not writable" in criticals[0][1]
+    assert "mount -o remount,rw" not in criticals[0][1]
+
+
+def test_eject_uses_read_only_device_candidate_when_no_active_device(
+    monkeypatch,
+) -> None:
+    workers: list[Any] = []
+    calls: list[str] = []
+    device_storage = object()
+
+    class _Signal:
+        def connect(self, _callback) -> None:
+            pass
+
+    class _FakeEjectWorker:
+        def __init__(self, path: str, *, device_storage: object) -> None:
+            self.path = path
+            self.device_storage = device_storage
+            self.finished_ok = _Signal()
+            self.failed = _Signal()
+            self.started = False
+            workers.append(self)
+
+        def start(self) -> None:
+            self.started = True
+
+    monkeypatch.setattr(app_module, "EjectDeviceWorker", _FakeEjectWorker)
+    sidebar = _FakeSidebar()
+
+    def _flush_before_eject() -> bool:
+        calls.append("flush")
+        return True
+
+    window = SimpleNamespace(
+        device_manager=SimpleNamespace(device_path=None),
+        _eject_only_device_path="/media/user/IPOD",
+        _eject_only_device_storage=device_storage,
+        _is_sync_running=lambda: False,
+        _flush_quick_writes_for_eject=_flush_before_eject,
+        sidebar=sidebar,
+        _eject_worker=None,
+        _onEjectDone=lambda _message: None,
+        _onEjectFailed=lambda _message: None,
+    )
+
+    MainWindow._onEjectDevice(cast(Any, window))
+
+    assert calls == ["flush"]
+    assert len(workers) == 1
+    worker = workers[0]
+    assert worker.path == "/media/user/IPOD"
+    assert worker.device_storage is device_storage
+    assert worker.started is True
+    assert sidebar.eject_availability == [False]
+
+
+def test_eject_failure_keeps_read_only_candidate_available_for_retry(
+    monkeypatch,
+) -> None:
+    criticals: list[tuple[str, str]] = []
+    sidebar = _FakeSidebar()
+
+    class _Worker:
+        def __init__(self) -> None:
+            self.deleted = False
+
+        def deleteLater(self) -> None:
+            self.deleted = True
+
+    worker = _Worker()
+    monkeypatch.setattr(
+        "iopenpod.gui.app.QMessageBox.critical",
+        lambda _parent, title, message: criticals.append((title, message)),
+    )
+    window = SimpleNamespace(
+        _eject_worker=worker,
+        device_manager=SimpleNamespace(device_path=None),
+        _eject_only_device_path="/media/user/IPOD",
+        _eject_only_device_storage=object(),
+        sidebar=sidebar,
+        library_cache=SimpleNamespace(is_ready=lambda: False),
+    )
+
+    MainWindow._onEjectFailed(cast(Any, window), "device is still mounted")
+
+    assert worker.deleted is True
+    assert window._eject_worker is None
+    assert window._eject_only_device_path == "/media/user/IPOD"
+    assert sidebar.eject_availability == [True]
+    assert criticals == [
+        ("Eject Failed", "Failed to eject the iPod:\ndevice is still mounted")
+    ]
 
 
 def test_pc_media_folder_edits_persist_to_global_settings_immediately(tmp_path) -> None:

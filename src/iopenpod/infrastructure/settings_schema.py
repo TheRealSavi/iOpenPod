@@ -293,6 +293,7 @@ class DeviceSettingsState:
     use_global_settings: bool = True
     exists: bool = False
     path: str = ""
+    load_error: str = ""
 
 
 def normalize_theme_preferences(

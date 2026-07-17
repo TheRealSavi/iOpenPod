@@ -4,8 +4,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
+import pytest
 from PyQt6.QtCore import QPoint
 
+from iopenpod.device.path_safety import UnsafeDevicePathError
 from iopenpod.gui.styles import context_menu_css
 from iopenpod.gui.widgets import photoBrowser as photo_browser_module
 from iopenpod.gui.widgets.photoBrowser import PhotoBrowserWidget
@@ -88,6 +90,37 @@ class _Menu:
 
     def action(self, label: str) -> _Action:
         return next(action for action in self.actions if action.label == label)
+
+
+def _allow_photo_write(monkeypatch) -> None:
+    profile = object()
+
+    class _Guard:
+        def __init__(self, _root, *, volume_key: str):
+            assert volume_key == "test-volume"
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+    monkeypatch.setattr(
+        photo_browser_module,
+        "inspect_device_write_readiness",
+        lambda *_args, **_kwargs: profile,
+    )
+    monkeypatch.setattr(
+        photo_browser_module,
+        "revalidate_device_write_readiness",
+        lambda retained: retained,
+    )
+    monkeypatch.setattr(
+        photo_browser_module,
+        "volume_lock_key",
+        lambda _profile: "test-volume",
+    )
+    monkeypatch.setattr(photo_browser_module, "DeviceWriteGuard", _Guard)
 
 
 def _patch_menu(monkeypatch, choose_label: str | None = None) -> None:
@@ -256,6 +289,7 @@ def test_photo_write_worker_renames_full_resolution_file_and_metadata(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
+    _allow_photo_write(monkeypatch)
     root = tmp_path / "ipod"
     old_path = root / "Photos" / "Full Resolution" / "old_name.jpg"
     old_path.parent.mkdir(parents=True)
@@ -291,7 +325,8 @@ def test_photo_write_worker_renames_full_resolution_file_and_metadata(
     assert written[0].full_res_path == "Full Resolution/Sunset.jpg"
 
 
-def test_photo_write_worker_rejects_rename_collision(tmp_path: Path) -> None:
+def test_photo_write_worker_rejects_rename_collision(monkeypatch, tmp_path: Path) -> None:
+    _allow_photo_write(monkeypatch)
     root = tmp_path / "ipod"
     photo_dir = root / "Photos" / "Full Resolution"
     photo_dir.mkdir(parents=True)
@@ -322,12 +357,15 @@ def test_photo_write_worker_rolls_back_file_and_metadata_on_write_failure(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
+    _allow_photo_write(monkeypatch)
     root = tmp_path / "ipod"
     old_path = root / "Photos" / "Full Resolution" / "old_name.jpg"
     old_path.parent.mkdir(parents=True)
     old_path.write_bytes(b"photo")
     db_path = root / "Photos" / "Photo Database"
     db_path.write_bytes(b"old-db")
+    predictable_restore_temp = db_path.with_name(f".{db_path.name}.restore-tmp")
+    predictable_restore_temp.write_bytes(b"do-not-truncate")
     photodb = photo_browser_module.PhotoDB(
         photos={
             101: PhotoEntry(
@@ -354,13 +392,22 @@ def test_photo_write_worker_rolls_back_file_and_metadata_on_write_failure(
     assert old_path.read_bytes() == b"photo"
     assert not (old_path.parent / "Sunset.jpg").exists()
     assert db_path.read_bytes() == b"old-db"
+    assert predictable_restore_temp.read_bytes() == b"do-not-truncate"
 
 
 def test_photo_write_worker_allows_case_only_rename(monkeypatch, tmp_path: Path) -> None:
+    _allow_photo_write(monkeypatch)
+    monkeypatch.setattr(
+        photo_browser_module.os.path,
+        "normcase",
+        lambda value: str(value).lower(),
+    )
     root = tmp_path / "ipod"
     old_path = root / "Photos" / "Full Resolution" / "sunset.jpg"
     old_path.parent.mkdir(parents=True)
     old_path.write_bytes(b"photo")
+    predictable_rename_temp = old_path.with_name(f".{old_path.name}.rename-tmp")
+    predictable_rename_temp.write_bytes(b"do-not-delete")
     photodb = photo_browser_module.PhotoDB(
         photos={
             101: PhotoEntry(
@@ -381,6 +428,172 @@ def test_photo_write_worker_allows_case_only_rename(monkeypatch, tmp_path: Path)
     worker.run()
 
     assert (old_path.parent / "Sunset.jpg").read_bytes() == b"photo"
+    assert predictable_rename_temp.read_bytes() == b"do-not-delete"
+
+
+@pytest.mark.parametrize("path_kind", ["absolute", "traversal"])
+def test_device_full_res_path_rejects_database_path_escape(
+    tmp_path: Path,
+    path_kind: str,
+) -> None:
+    root = tmp_path / "ipod"
+    outside = tmp_path / "outside.jpg"
+    outside.write_bytes(b"outside")
+    full_res_path = (
+        str(outside)
+        if path_kind == "absolute"
+        else "Full Resolution/../../../outside.jpg"
+    )
+
+    with pytest.raises(UnsafeDevicePathError):
+        photo_browser_module._device_full_res_path(
+            root,
+            PhotoEntry(image_id=101, full_res_path=full_res_path),
+        )
+
+
+def test_photo_write_worker_checks_readiness_and_guard_before_each_mutation(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "ipod"
+    full_res = root / "Photos" / "Full Resolution" / "photo.jpg"
+    full_res.parent.mkdir(parents=True)
+    full_res.write_bytes(b"photo")
+    photodb = photo_browser_module.PhotoDB(
+        photos={
+            101: PhotoEntry(
+                image_id=101,
+                full_res_path="Full Resolution/photo.jpg",
+            )
+        }
+    )
+    profile = object()
+    events: list[str] = []
+
+    class _Guard:
+        def __init__(self, _root, *, volume_key: str):
+            assert volume_key == "volume-key"
+
+        def __enter__(self):
+            events.append("guard_enter")
+            return self
+
+        def __exit__(self, *_args):
+            events.append("guard_exit")
+
+    def inspect(_root, *, reported_volume_format: str = ""):
+        assert reported_volume_format == "FAT32"
+        events.append("inspect")
+        return profile
+
+    def revalidate(retained):
+        assert retained is profile
+        events.append("revalidate")
+        return profile
+
+    def durable_unlink(path, *, missing_ok: bool = False):
+        events.append("unlink")
+        Path(path).unlink(missing_ok=missing_ok)
+
+    def commit(*_args, before_device_mutation, **_kwargs):
+        before_device_mutation()
+        events.append("commit")
+
+    monkeypatch.setattr(
+        photo_browser_module,
+        "inspect_device_write_readiness",
+        inspect,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        photo_browser_module,
+        "revalidate_device_write_readiness",
+        revalidate,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        photo_browser_module,
+        "volume_lock_key",
+        lambda retained: "volume-key",
+        raising=False,
+    )
+    monkeypatch.setattr(photo_browser_module, "DeviceWriteGuard", _Guard, raising=False)
+    monkeypatch.setattr(
+        photo_browser_module,
+        "durable_unlink",
+        durable_unlink,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        photo_browser_module,
+        "write_photo_db_metadata_only",
+        commit,
+    )
+
+    worker = photo_browser_module._PhotoWriteWorker(
+        str(root),
+        photodb,
+        "delete_photo",
+        image_id=101,
+        reported_volume_format="FAT32",
+    )
+    worker.run()
+
+    assert events == [
+        "inspect",
+        "guard_enter",
+        "revalidate",
+        "unlink",
+        "revalidate",
+        "revalidate",
+        "commit",
+        "guard_exit",
+    ]
+
+
+def test_photo_write_worker_stops_when_mounted_volume_identity_changed(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "ipod"
+    profile = object()
+    errors: list[str] = []
+    commits: list[object] = []
+
+    monkeypatch.setattr(
+        photo_browser_module,
+        "inspect_device_write_readiness",
+        lambda *_args, **_kwargs: profile,
+    )
+    monkeypatch.setattr(
+        photo_browser_module,
+        "volume_lock_key",
+        lambda _profile: "replacement-volume",
+    )
+    monkeypatch.setattr(
+        photo_browser_module,
+        "DeviceWriteGuard",
+        lambda *_args, **_kwargs: pytest.fail("writer guard must not be acquired"),
+    )
+    monkeypatch.setattr(
+        photo_browser_module,
+        "write_photo_db_metadata_only",
+        lambda *_args, **_kwargs: commits.append(object()),
+    )
+
+    worker = photo_browser_module._PhotoWriteWorker(
+        str(root),
+        photo_browser_module.PhotoDB(),
+        "create_album",
+        album_name="Vacation",
+        expected_volume_identity_key="original-volume",
+    )
+    worker.failed.connect(errors.append)
+    worker.run()
+
+    assert commits == []
+    assert errors and "volume changed" in errors[0]
 
 
 def test_album_context_menu_export_targets_right_clicked_album(monkeypatch):

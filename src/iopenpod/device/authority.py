@@ -27,12 +27,20 @@ import json
 import logging
 import os
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING
+
+from .metadata_write import (
+    DeviceMetadataWriteSession,
+    guarded_device_metadata_session,
+)
 
 if TYPE_CHECKING:
     from .info import DeviceInfo
 
 logger = logging.getLogger(__name__)
+
+_DEVICE_SUBTREE = Path("iPod_Control") / "Device"
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -305,16 +313,17 @@ def read_authority(ipod_path: str) -> dict:
     return {}
 
 
-def _write_authority(ipod_path: str, authority: dict) -> None:
-    path = _authority_path(ipod_path)
-    device_dir = os.path.dirname(path)
-    os.makedirs(device_dir, exist_ok=True)
-    try:
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(authority, f, indent=2, ensure_ascii=False)
-        logger.debug("Wrote authority file to %s", path)
-    except Exception as exc:
-        logger.warning("Failed to write authority file: %s", exc)
+def _write_authority(
+    ipod_path: str,
+    authority: dict,
+    session: DeviceMetadataWriteSession,
+) -> None:
+    path = session.write_text_atomic(
+        _DEVICE_SUBTREE / AUTHORITY_FILENAME,
+        json.dumps(authority, indent=2, ensure_ascii=False),
+        allowed_subtree=_DEVICE_SUBTREE,
+    )
+    logger.debug("Wrote authority file to %s", path)
 
 
 def _read_sysinfo_raw(ipod_path: str) -> dict[str, str]:
@@ -334,18 +343,19 @@ def _read_sysinfo_raw(ipod_path: str) -> dict[str, str]:
     return result
 
 
-def _write_sysinfo_file(ipod_path: str, fields: dict[str, str]) -> None:
+def _write_sysinfo_file(
+    ipod_path: str,
+    fields: dict[str, str],
+    session: DeviceMetadataWriteSession,
+) -> None:
     """Write all fields to the SysInfo file."""
-    path = _sysinfo_path(ipod_path)
-    device_dir = os.path.dirname(path)
-    os.makedirs(device_dir, exist_ok=True)
     lines = [f"{k}: {v}" for k, v in fields.items() if v]
-    try:
-        with open(path, "w", encoding="utf-8") as f:
-            f.write("\n".join(lines) + "\n")
-        logger.info("Wrote SysInfo (%d fields) to %s", len(lines), path)
-    except Exception as exc:
-        logger.warning("Failed to write SysInfo: %s", exc)
+    path = session.write_text_atomic(
+        _DEVICE_SUBTREE / "SysInfo",
+        "\n".join(lines) + "\n",
+        allowed_subtree=_DEVICE_SUBTREE,
+    )
+    logger.info("Wrote SysInfo (%d fields) to %s", len(lines), path)
 
 
 def _normalise_sysinfo_extended(raw_xml: bytes | str) -> bytes:
@@ -383,6 +393,7 @@ def cache_sysinfo_extended(
     *,
     source: str = "unknown",
     metadata: dict | None = None,
+    expected_volume_identity_key: str = "",
 ) -> bool:
     """Cache a live SysInfoExtended payload and refresh authority hashes."""
     if not ipod_path or not raw_xml:
@@ -396,13 +407,38 @@ def cache_sysinfo_extended(
     if not data:
         return False
 
-    path = _sysinfo_extended_path(ipod_path)
     try:
-        with open(path, "wb") as f:
-            f.write(data)
+        with guarded_device_metadata_session(
+            ipod_path,
+            expected_volume_identity_key=expected_volume_identity_key,
+        ) as session:
+            return _cache_sysinfo_extended_guarded(
+                ipod_path,
+                data,
+                source=source,
+                metadata=metadata,
+                session=session,
+            )
     except Exception as exc:
-        logger.warning("Failed to cache SysInfoExtended: %s", exc)
+        logger.warning("Failed to safely cache SysInfoExtended: %s", exc)
         return False
+
+
+def _cache_sysinfo_extended_guarded(
+    ipod_path: str,
+    data: bytes,
+    *,
+    source: str,
+    metadata: dict | None,
+    session: DeviceMetadataWriteSession,
+) -> bool:
+    """Install one live SysInfoExtended payload inside a guarded session."""
+
+    path = session.write_bytes_atomic(
+        _DEVICE_SUBTREE / "SysInfoExtended",
+        data,
+        allowed_subtree=_DEVICE_SUBTREE,
+    )
 
     authority = read_authority(ipod_path)
     now = datetime.now(UTC).isoformat()
@@ -421,7 +457,7 @@ def cache_sysinfo_extended(
     authority["version"] = 1
     authority["last_updated"] = now
     _store_file_hashes(ipod_path, authority)
-    _write_authority(ipod_path, authority)
+    _write_authority(ipod_path, authority, session)
     logger.debug(
         "Cached SysInfoExtended (%d bytes, source=%s) to %s",
         len(data),
@@ -532,6 +568,24 @@ def update_sysinfo(info: DeviceInfo) -> None:
     """
     if not info.path:
         return
+
+    with guarded_device_metadata_session(
+        info.path,
+        reported_volume_format=str(
+            getattr(info, "reported_volume_format", "") or ""
+        ),
+        expected_volume_identity_key=str(
+            getattr(info, "volume_identity_key", "") or ""
+        ),
+    ) as session:
+        _update_sysinfo_guarded(info, session)
+
+
+def _update_sysinfo_guarded(
+    info: DeviceInfo,
+    session: DeviceMetadataWriteSession,
+) -> None:
+    """Reconcile and persist SysInfo while one exact-volume guard is held."""
 
     ipod_path = info.path
     device_dir = os.path.join(ipod_path, "iPod_Control", "Device")
@@ -659,7 +713,7 @@ def update_sysinfo(info: DeviceInfo) -> None:
 
     # ── Persist ───────────────────────────────────────────────────────
     if sysinfo_changed:
-        _write_sysinfo_file(ipod_path, updated_sysinfo)
+        _write_sysinfo_file(ipod_path, updated_sysinfo, session)
 
     # Always ensure the authority dict is well-formed before writing.
     authority["version"] = 1
@@ -668,4 +722,4 @@ def update_sysinfo(info: DeviceInfo) -> None:
 
     # Always refresh file hashes so the next run can detect tampering.
     _store_file_hashes(ipod_path, authority)
-    _write_authority(ipod_path, authority)
+    _write_authority(ipod_path, authority, session)

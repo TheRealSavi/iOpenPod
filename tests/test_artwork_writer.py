@@ -4,17 +4,61 @@ import logging
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from PIL import Image
 
 from iopenpod.artworkdb_writer import artwork_writer as aw
 from iopenpod.artworkdb_writer import rgb565
 from iopenpod.artworkdb_writer.art_extractor import extract_art
+from iopenpod.device.write_guard import DeviceWriteSafetyError
 
 REQUIRED_FMT = 1055
 EXTRA_KNOWN_FMT = 1060
 UNKNOWN_FMT = 9999
 VIDEO_SMALL_FMT = 1028
 VIDEO_LARGE_FMT = 1029
+
+
+def test_unknown_device_path_does_not_guess_classic_artwork_formats(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        "iopenpod.device.get_current_device_for_path",
+        lambda _path: None,
+    )
+
+    assert rgb565.get_artwork_format_definitions(str(tmp_path)) == {}
+    assert rgb565.get_artwork_formats(str(tmp_path)) == {}
+
+
+def test_pending_artwork_revalidates_before_each_atomic_replace(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    events: list[str] = []
+    pending_renames = []
+    for index in range(2):
+        temp = tmp_path / f"art-{index}.tmp"
+        final = tmp_path / f"art-{index}.ithmb"
+        temp.write_bytes(bytes([index]))
+        pending_renames.append((str(temp), str(final)))
+
+    original_replace = aw.durable_replace
+
+    def replace(source, target) -> None:
+        events.append("replace")
+        original_replace(source, target)
+
+    monkeypatch.setattr(aw, "durable_replace", replace)
+    pending = aw.PendingArtworkWrite(
+        db_track_id_to_art_info={},
+        _pending_renames=pending_renames,
+    )
+
+    pending.commit(before_replace=lambda: events.append("revalidate"))
+
+    assert events == ["revalidate", "replace", "revalidate", "replace"]
 
 
 def test_extract_art_accepts_direct_image_file(tmp_path) -> None:
@@ -1146,6 +1190,8 @@ def test_write_artworkdb_zero_art_case_preserves_existing_ithmbs(
     ipod_root, artwork_dir = _make_ipod_root(tmp_path)
     stale_ithmb = artwork_dir / f"F{REQUIRED_FMT}_1.ithmb"
     stale_ithmb.write_bytes(b"OLD!")
+    predictable_temp = artwork_dir / "ArtworkDB.tmp"
+    predictable_temp.write_bytes(b"do-not-truncate")
 
     monkeypatch.setattr(aw, "read_existing_artwork", lambda *_args, **_kwargs: {})
     monkeypatch.setattr(aw, "get_artwork_format_definitions", lambda _ipod_path: {})
@@ -1160,7 +1206,56 @@ def test_write_artworkdb_zero_art_case_preserves_existing_ithmbs(
     assert result == {}
     assert stale_ithmb.exists()
     assert stale_ithmb.read_bytes() == b"OLD!"
+    assert predictable_temp.read_bytes() == b"do-not-truncate"
     assert (artwork_dir / "ArtworkDB").exists()
+
+
+def test_write_artworkdb_cleans_exclusive_ithmb_temp_when_flush_fails(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    ipod_root, artwork_dir = _make_ipod_root(tmp_path)
+    source = tmp_path / "song.mp3"
+    source.write_bytes(b"music")
+    callbacks: list[str] = []
+
+    monkeypatch.setattr(aw, "read_existing_artwork", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(aw, "get_artwork_format_definitions", lambda _ipod_path: {})
+    monkeypatch.setattr(aw, "extract_art_with_folder", lambda _path: b"image")
+    monkeypatch.setattr(
+        aw,
+        "image_from_bytes",
+        lambda _bytes, **_kwargs: Image.new("RGB", (1, 1), (9, 8, 7)),
+    )
+    monkeypatch.setattr(
+        aw,
+        "encode_image_for_format",
+        lambda *_args, **_kwargs: aw.EncodedFormatPayload(
+            data=b"NEW!",
+            width=1,
+            height=1,
+            size=4,
+            stride_pixels=1,
+        ),
+    )
+    monkeypatch.setattr(
+        aw,
+        "flush_written_file",
+        lambda _file: (_ for _ in ()).throw(OSError("device flush failed")),
+    )
+
+    with pytest.raises(OSError, match="device flush failed"):
+        aw.write_artworkdb(
+            str(ipod_root),
+            [_make_track(1)],
+            pc_file_paths={1: str(source)},
+            artwork_formats={REQUIRED_FMT: (1, 1)},
+            before_device_mutation=lambda: callbacks.append("revalidate"),
+        )
+
+    assert callbacks
+    assert list(artwork_dir.glob(".iop-*.tmp")) == []
+    assert not (artwork_dir / f"F{REQUIRED_FMT}_1.ithmb").exists()
 
 
 def test_write_artworkdb_reencodes_existing_extra_known_formats_for_new_art(
@@ -1480,9 +1575,8 @@ def test_write_artworkdb_rolls_owned_formats_to_next_numbered_ithmb(
     assert refs_by_song_id[3].ithmb_offset == 0
 
 
-def test_read_existing_artwork_keeps_valid_entries_before_truncated_tail(
+def test_read_existing_artwork_rejects_truncated_tail(
     tmp_path: Path,
-    caplog,
 ) -> None:
     _ipod_root, artwork_dir = _make_ipod_root(tmp_path)
     ithmb_path = artwork_dir / f"F{REQUIRED_FMT}_1.ithmb"
@@ -1512,9 +1606,8 @@ def test_read_existing_artwork_keeps_valid_entries_before_truncated_tail(
     artdb_path = artwork_dir / "ArtworkDB"
     artdb_path.write_bytes(artdb_data[:-10])
 
-    with caplog.at_level(logging.WARNING):
-        parsed = aw.read_existing_artwork(str(artdb_path), str(artwork_dir))
-
-    assert set(parsed) == {100}
-    assert parsed[100]["formats"][REQUIRED_FMT].path == str(ithmb_path)
-    assert "invalid ArtworkDB" in caplog.text
+    with pytest.raises(
+        DeviceWriteSafetyError,
+        match="ArtworkDB is malformed or truncated",
+    ):
+        aw.read_existing_artwork(str(artdb_path), str(artwork_dir))

@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import shutil
 import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -18,6 +19,15 @@ from typing import Protocol
 from urllib.parse import unquote, urlparse
 
 import requests
+
+from iopenpod.device.durability import (
+    durable_replace,
+    durable_unlink,
+    flush_parent_directory,
+    flush_written_file,
+)
+from iopenpod.device.storage_safety import allocated_size, require_file_size_supported
+from iopenpod.device.write_guard import DeviceWriteSafetyError
 
 from .models import STATUS_DOWNLOADED, STATUS_DOWNLOADING, PodcastEpisode
 
@@ -38,11 +48,70 @@ class CancelToken(Protocol):
         ...
 
 
+@dataclass(frozen=True, slots=True)
+class DeviceDownloadSafety:
+    """Scan-time limits and revalidation for a podcast file on the iPod.
+
+    Normal podcast downloads use the host transcode cache and do not need this
+    policy.  The sync executor supplies it only for a legacy cache path that
+    resolves inside the selected iPod's contained podcast subtree.
+    """
+
+    before_device_io: Callable[[], None]
+    free_space_path: str | Path
+    max_file_size_bytes: int | None = None
+    max_component_length: int | None = None
+    allocation_unit_size: int | None = None
+
+    def revalidate(self) -> None:
+        """Revalidate the retained volume immediately before device I/O."""
+        self.before_device_io()
+
+    def require_component_supported(self, name: str) -> None:
+        """Reject a filename that the inspected filesystem cannot represent."""
+        limit = int(self.max_component_length or 0)
+        if limit > 0 and len(name) > limit:
+            raise DeviceWriteSafetyError(
+                f"The podcast filename {name!r} exceeds this iPod "
+                f"filesystem's {limit}-character component limit."
+            )
+
+    def require_size_supported(self, logical_size: int, display_name: str) -> None:
+        """Reject a file size beyond the retained device/filesystem limit."""
+        require_file_size_supported(
+            logical_size,
+            max_file_size_bytes=self.max_file_size_bytes,
+            display_name=display_name,
+        )
+
+    def available_bytes(self, display_name: str) -> int:
+        """Return current free space, failing closed if it cannot be read."""
+        self.revalidate()
+        try:
+            return int(shutil.disk_usage(self.free_space_path).free)
+        except OSError as exc:
+            raise DeviceWriteSafetyError(
+                "Could not verify iPod free space before writing podcast "
+                f"file {display_name}: {exc}"
+            ) from exc
+
+    def require_space_within(self, logical_size: int, available: int, display_name: str) -> None:
+        """Reject a streamed size that exceeds a previously verified budget."""
+        required = allocated_size(logical_size, self.allocation_unit_size)
+        if required > max(0, int(available)):
+            raise DeviceWriteSafetyError(
+                "The iPod does not have enough free space to safely write "
+                f"podcast file {display_name}. iOpenPod stopped the download."
+            )
+
+
 def download_episode(
     episode: PodcastEpisode,
     dest_dir: str,
     progress_cb: Callable[[int, int], None] | None = None,
     cancel_token: CancelToken | None = None,
+    *,
+    device_safety: DeviceDownloadSafety | None = None,
 ) -> str:
     """Download a single podcast episode.
 
@@ -54,6 +123,8 @@ def download_episode(
                      Content-Length.
         cancel_token: Optional cancellation token.  Download aborts
                       if ``is_cancelled()`` returns True.
+        device_safety: Optional retained-volume policy.  This is only used
+                       when a legacy episode cache path is on the iPod.
 
     Returns:
         Absolute path to the downloaded file.
@@ -65,13 +136,31 @@ def download_episode(
     if not episode.audio_url:
         raise ValueError(f"Episode '{episode.title}' has no audio URL")
 
+    if device_safety is not None:
+        device_safety.revalidate()
     os.makedirs(dest_dir, exist_ok=True)
+    if device_safety is not None:
+        flush_parent_directory(dest_dir)
 
     filename = _safe_filename(episode)
     dest_path = os.path.join(dest_dir, filename)
+    if device_safety is not None:
+        device_safety.require_component_supported(filename)
 
     # If already fully downloaded, return existing path
-    if os.path.exists(dest_path) and os.path.getsize(dest_path) > 0:
+    if device_safety is not None:
+        device_safety.revalidate()
+        try:
+            existing_size = Path(dest_path).stat().st_size
+        except FileNotFoundError:
+            existing_size = 0
+        except OSError:
+            raise
+        if existing_size > 0:
+            device_safety.require_size_supported(existing_size, filename)
+    else:
+        existing_size = os.path.getsize(dest_path) if os.path.exists(dest_path) else 0
+    if existing_size > 0:
         episode.downloaded_path = dest_path
         episode.status = STATUS_DOWNLOADED
         return dest_path
@@ -94,26 +183,62 @@ def download_episode(
 
     total = int(resp.headers.get("Content-Length", 0))
     downloaded = 0
+    free_space_budget: int | None = None
+    if device_safety is not None:
+        device_safety.require_component_supported(Path(dest_path).name)
+        device_safety.require_component_supported(".iop-12345678.part")
+        device_safety.require_size_supported(total, Path(dest_path).name)
+        free_space_budget = device_safety.available_bytes(Path(dest_path).name)
+        if total > 0:
+            device_safety.require_space_within(
+                total,
+                free_space_budget,
+                Path(dest_path).name,
+            )
 
     # Write to temp file, then rename (atomic-ish on same filesystem)
-    fd, tmp_path = tempfile.mkstemp(dir=dest_dir, suffix=".part")
+    if device_safety is not None:
+        device_safety.revalidate()
+    fd, tmp_path = tempfile.mkstemp(dir=dest_dir, prefix=".iop-", suffix=".part")
     try:
         with os.fdopen(fd, "wb") as f:
             for chunk in resp.iter_content(chunk_size=_CHUNK_SIZE):
                 if cancel_token and cancel_token.is_cancelled():
                     raise RuntimeError("Download cancelled")
+                next_size = downloaded + len(chunk)
+                if device_safety is not None:
+                    device_safety.require_size_supported(
+                        next_size,
+                        Path(dest_path).name,
+                    )
+                    assert free_space_budget is not None
+                    device_safety.require_space_within(
+                        next_size,
+                        free_space_budget,
+                        Path(dest_path).name,
+                    )
                 f.write(chunk)
-                downloaded += len(chunk)
+                downloaded = next_size
                 if progress_cb:
                     progress_cb(downloaded, total)
+            if device_safety is not None:
+                flush_written_file(f)
 
-        os.replace(tmp_path, dest_path)
+        if device_safety is not None:
+            device_safety.revalidate()
+            durable_replace(tmp_path, dest_path)
+        else:
+            os.replace(tmp_path, dest_path)
     except Exception:
         # Clean up partial download
-        try:
-            os.remove(tmp_path)
-        except OSError:
-            pass
+        if device_safety is not None:
+            device_safety.revalidate()
+            durable_unlink(tmp_path, missing_ok=True)
+        else:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
         raise
 
     episode.downloaded_path = dest_path
@@ -124,7 +249,12 @@ def download_episode(
     return dest_path
 
 
-def embed_feed_artwork(file_path: str, artwork_url: str) -> bool:
+def embed_feed_artwork(
+    file_path: str,
+    artwork_url: str,
+    *,
+    device_safety: DeviceDownloadSafety | None = None,
+) -> bool:
     """Download feed artwork and embed it into the audio file.
 
     Skips silently if the file already has embedded artwork, if the
@@ -132,7 +262,21 @@ def embed_feed_artwork(file_path: str, artwork_url: str) -> bool:
 
     Returns True if artwork was embedded.
     """
-    if not artwork_url or not os.path.exists(file_path):
+    if not artwork_url:
+        return False
+
+    target_size = 0
+    if device_safety is not None:
+        device_safety.revalidate()
+        try:
+            target_size = Path(file_path).stat().st_size
+        except FileNotFoundError:
+            return False
+        except OSError:
+            raise
+        device_safety.require_component_supported(Path(file_path).name)
+        device_safety.require_size_supported(target_size, Path(file_path).name)
+    elif not os.path.exists(file_path):
         return False
 
     ext = Path(file_path).suffix.lower()
@@ -152,8 +296,26 @@ def embed_feed_artwork(file_path: str, artwork_url: str) -> bool:
         elif hasattr(audio, "tags") and audio.tags and "covr" in audio.tags:
             return False
 
-        if os.path.exists(artwork_url):
-            with open(artwork_url, "rb") as f:
+    except DeviceWriteSafetyError:
+        raise
+    except OSError:
+        if device_safety is not None:
+            raise
+        return False
+    except Exception as exc:
+        log.debug("Failed to inspect artwork in %s: %s", file_path, exc)
+        return False
+
+    try:
+        if device_safety is not None:
+            device_safety.revalidate()
+        local_artwork = Path(artwork_url)
+        try:
+            local_artwork_size = local_artwork.stat().st_size
+        except FileNotFoundError:
+            local_artwork_size = 0
+        if local_artwork_size > 0:
+            with open(local_artwork, "rb") as f:
                 art_data = f.read()
         else:
             parsed = urlparse(artwork_url)
@@ -166,7 +328,15 @@ def embed_feed_artwork(file_path: str, artwork_url: str) -> bool:
             )
             resp.raise_for_status()
             art_data = resp.content
+    except OSError:
+        if device_safety is not None:
+            raise
+        return False
+    except Exception as exc:
+        log.debug("Failed to load artwork for %s: %s", file_path, exc)
+        return False
 
+    try:
         from iopenpod.podcasts.artwork import prepare_artwork_bytes
 
         prepared = prepare_artwork_bytes(art_data)
@@ -175,30 +345,70 @@ def embed_feed_artwork(file_path: str, artwork_url: str) -> bool:
         art_data = prepared
         mime = "image/jpeg"
 
+        if device_safety is not None:
+            projected_size = target_size + len(art_data)
+            device_safety.require_size_supported(
+                projected_size,
+                Path(file_path).name,
+            )
+            available = device_safety.available_bytes(Path(file_path).name)
+            growth = max(
+                0,
+                allocated_size(projected_size, device_safety.allocation_unit_size)
+                - allocated_size(target_size, device_safety.allocation_unit_size),
+            )
+            if growth > available:
+                raise DeviceWriteSafetyError(
+                    "The iPod does not have enough free space to safely embed "
+                    f"artwork in podcast file {Path(file_path).name}."
+                )
+
         if ext == ".mp3":
             from mutagen.id3 import APIC, PictureType  # type: ignore[attr-defined]
             if audio.tags is None:
                 audio.add_tags()
-            audio.tags.add(APIC(
+            mp3_tags = audio.tags
+            if mp3_tags is None:
+                return False
+            mp3_tags.add(APIC(
                 encoding=0,
                 mime=mime,
                 type=PictureType.COVER_FRONT,
                 desc="Cover",
                 data=art_data,
             ))
+            if device_safety is not None:
+                device_safety.revalidate()
             audio.save()
         else:
             # M4A / AAC / M4B
             from mutagen.mp4 import MP4Cover
             if audio.tags is None:
                 audio.add_tags()
+            mp4_tags = audio.tags
+            if mp4_tags is None:
+                return False
             fmt = MP4Cover.FORMAT_PNG if mime == "image/png" else MP4Cover.FORMAT_JPEG
-            audio.tags["covr"] = [MP4Cover(art_data, imageformat=fmt)]
+            mp4_tags["covr"] = [MP4Cover(art_data, imageformat=fmt)]
+            if device_safety is not None:
+                device_safety.revalidate()
             audio.save()
+
+        if device_safety is not None:
+            device_safety.revalidate()
+            with open(file_path, "rb+") as written_file:
+                flush_written_file(written_file)
+            flush_parent_directory(file_path)
 
         log.info("Embedded feed artwork into %s", Path(file_path).name)
         return True
 
+    except DeviceWriteSafetyError:
+        raise
+    except OSError:
+        if device_safety is not None:
+            raise
+        return False
     except Exception as exc:
         log.debug("Failed to embed artwork into %s: %s", file_path, exc)
         return False
@@ -226,6 +436,7 @@ def download_and_probe_episode(
     artwork_url: str = "",
     progress_cb: Callable[[int, int], None] | None = None,
     cancel_token: CancelToken | None = None,
+    device_safety: DeviceDownloadSafety | None = None,
 ) -> DownloadedEpisodeInfo:
     """Download an episode, embed artwork, and probe its audio metadata.
 
@@ -242,6 +453,8 @@ def download_and_probe_episode(
         progress_cb: Called with (bytes_downloaded, total_bytes) while
                      downloading. total_bytes is 0 when unknown.
         cancel_token: Optional cancellation token checked during download.
+        device_safety: Optional retained-volume policy for an iPod-resident
+                       legacy cache path.
 
     Returns:
         DownloadedEpisodeInfo with file info and probed metadata.
@@ -250,26 +463,50 @@ def download_and_probe_episode(
         Same exceptions as download_episode.
     """
     ep = PodcastEpisode(guid=audio_url, title=title, audio_url=audio_url)
+    if device_safety is None:
+        path = download_episode(
+            ep,
+            dest_dir,
+            progress_cb=progress_cb,
+            cancel_token=cancel_token,
+        )
+        return probe_episode_file(path, artwork_url=artwork_url)
+
     path = download_episode(
         ep,
         dest_dir,
         progress_cb=progress_cb,
         cancel_token=cancel_token,
+        device_safety=device_safety,
     )
-    return probe_episode_file(path, artwork_url=artwork_url)
+    return probe_episode_file(
+        path,
+        artwork_url=artwork_url,
+        device_safety=device_safety,
+    )
 
 
 def probe_episode_file(
     file_path: str,
     *,
     artwork_url: str = "",
+    device_safety: DeviceDownloadSafety | None = None,
 ) -> DownloadedEpisodeInfo:
     """Embed missing feed artwork if available, then probe file metadata."""
     if artwork_url:
-        embed_feed_artwork(file_path, artwork_url)
+        embed_feed_artwork(
+            file_path,
+            artwork_url,
+            device_safety=device_safety,
+        )
 
     real_path = Path(file_path)
+    if device_safety is not None:
+        device_safety.revalidate()
     st = real_path.stat()
+    if device_safety is not None:
+        device_safety.require_component_supported(real_path.name)
+        device_safety.require_size_supported(st.st_size, real_path.name)
     info = DownloadedEpisodeInfo(
         path=file_path,
         size=st.st_size,
@@ -288,6 +525,9 @@ def probe_episode_file(
                 info.sample_rate = audio.info.sample_rate
             if hasattr(audio.info, 'length') and audio.info.length:
                 info.duration_ms = int(audio.info.length * 1000)
+    except OSError:
+        if device_safety is not None:
+            raise
     except Exception:
         pass
 
@@ -297,6 +537,9 @@ def probe_episode_file(
         art_bytes = extract_art_with_folder(file_path)
         if art_bytes:
             info.art_hash = art_hash(art_bytes)
+    except OSError:
+        if device_safety is not None:
+            raise
     except Exception:
         pass
 

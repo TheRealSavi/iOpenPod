@@ -91,6 +91,8 @@ def test_device_manager_initializes_missing_database_for_identified_device(qtbot
     """Selecting an identified iPod repairs an absent iTunes database layout."""
 
     clear_current_device()
+    (tmp_path / "iPod_Control").mkdir()
+    (tmp_path / "iPodInfo.json").write_text("{}", encoding="utf-8")
     manager = DeviceManager()
     ipod = DeviceInfo(
         path=str(tmp_path),
@@ -111,6 +113,8 @@ def test_device_manager_leaves_hashed_device_uninitialized_without_guid(qtbot, t
     """A selected device must not receive an iTunesDB it cannot validate."""
 
     clear_current_device()
+    (tmp_path / "iPod_Control").mkdir()
+    (tmp_path / "iPodInfo.json").write_text("{}", encoding="utf-8")
     manager = DeviceManager()
     ipod = DeviceInfo(
         path=str(tmp_path),
@@ -128,6 +132,8 @@ def test_device_manager_leaves_hashed_device_uninitialized_without_guid(qtbot, t
 
 def test_device_manager_uses_selected_device_database_format(qtbot, tmp_path) -> None:
     clear_current_device()
+    (tmp_path / "iPod_Control").mkdir()
+    (tmp_path / "iPodInfo.json").write_text("{}", encoding="utf-8")
     manager = DeviceManager()
     ipod = DeviceInfo(
         path=str(tmp_path),

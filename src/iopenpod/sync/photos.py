@@ -25,6 +25,16 @@ from iopenpod.artworkdb_writer.ithmb_codecs import (
 )
 from iopenpod.device import ITHMB_FORMAT_MAP, photo_formats_for_device
 from iopenpod.device.capabilities import ArtworkFormat
+from iopenpod.device.durability import (
+    durable_replace,
+    durable_unlink,
+    flush_parent_directory,
+    flush_written_file,
+    open_unique_sibling_temp,
+)
+from iopenpod.device.filesystem_profile import FilesystemProfile
+from iopenpod.device.path_safety import UnsafeDevicePathError, resolve_device_path
+from iopenpod.device.storage_safety import require_file_size_supported
 from iopenpod.infrastructure.media_folders import (
     MEDIA_TYPE_PHOTO,
     MediaFolderEntry,
@@ -63,6 +73,7 @@ _ROTATE_TALL_PHOTO_ASPECT_THRESHOLD = 1.15
 _ROTATE_TALL_PHOTO_GAIN_THRESHOLD = 1.2
 _ROTATABLE_PHOTO_ROLES = frozenset({"photo_full", "photo_preview", "photo_large", "tv_out"})
 _FULL_RES_ROTATION_ROLES = frozenset({"photo_full", "photo_preview", "photo_large"})
+_PHOTO_BASENAME_MAX_LENGTH = 180
 PhotoMappingEntry = dict[str, object]
 _THUMBNAIL_PHOTO_ROLES = frozenset({"photo_thumb", "photo_list"})
 _SUPPORTED_IMAGE_EXTENSIONS = PHOTO_EXTENSIONS
@@ -74,20 +85,36 @@ _PIL_LOAD_ERRORS = tuple(
 )
 
 
+class PhotoMetadataSafetyError(RuntimeError):
+    """Raised when existing iPod photo metadata cannot be trusted for a write."""
+
+
 def _photo_db_path(ipod_path: str | Path) -> Path:
-    return Path(ipod_path) / _PHOTO_DB_RELATIVE
+    return resolve_device_path(ipod_path, _PHOTO_DB_RELATIVE, allowed_subtree="Photos")
 
 
 def _photo_thumbs_dir(ipod_path: str | Path) -> Path:
-    return Path(ipod_path) / _PHOTO_THUMBS_RELATIVE
+    return resolve_device_path(
+        ipod_path,
+        _PHOTO_THUMBS_RELATIVE,
+        allowed_subtree=_PHOTO_THUMBS_RELATIVE,
+    )
 
 
 def _photo_full_res_dir(ipod_path: str | Path) -> Path:
-    return Path(ipod_path) / _PHOTO_FULL_RES_RELATIVE
+    return resolve_device_path(
+        ipod_path,
+        _PHOTO_FULL_RES_RELATIVE,
+        allowed_subtree=_PHOTO_FULL_RES_RELATIVE,
+    )
 
 
 def _photo_mapping_path(ipod_path: str | Path) -> Path:
-    return Path(ipod_path) / _PHOTO_MAPPING_RELATIVE
+    return resolve_device_path(
+        ipod_path,
+        _PHOTO_MAPPING_RELATIVE,
+        allowed_subtree=_PHOTO_MAPPING_RELATIVE.parent,
+    )
 
 
 @dataclass
@@ -252,16 +279,29 @@ class PhotoSyncPlan:
 
 def _load_photo_mapping(ipod_path: str | Path) -> dict[str, PhotoMappingEntry]:
     path = _photo_mapping_path(ipod_path)
-    if not path.exists():
-        return {}
     try:
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
-        if isinstance(data, dict):
-            return data
+    except FileNotFoundError:
+        return {}
     except Exception as exc:
-        logger.debug("Photo mapping load failed: %s", exc)
-    return {}
+        raise PhotoMetadataSafetyError(
+            "The existing iPod photo mapping could not be read safely. "
+            "iOpenPod stopped before changing photos so the current photo "
+            f"library is not overwritten: {exc}"
+        ) from exc
+    if not isinstance(data, dict):
+        raise PhotoMetadataSafetyError(
+            "The existing iPod photo mapping is malformed. iOpenPod stopped "
+            "before changing photos so the current photo library is not overwritten."
+        )
+    if any(not isinstance(key, str) or not isinstance(value, dict) for key, value in data.items()):
+        raise PhotoMetadataSafetyError(
+            "The existing iPod photo mapping contains invalid entries. "
+            "iOpenPod stopped before changing photos so the current photo "
+            "library is not overwritten."
+        )
+    return data
 
 
 def photo_sync_settings_from_settings(settings: object) -> dict[str, bool]:
@@ -317,8 +357,11 @@ def _save_photo_mapping(
     photodb: PhotoDB,
     *,
     sync_settings: Mapping[str, object] | None = None,
+    before_device_mutation: Callable[[], None] | None = None,
 ) -> None:
     path = _photo_mapping_path(ipod_path)
+    if before_device_mutation is not None:
+        before_device_mutation()
     path.parent.mkdir(parents=True, exist_ok=True)
     payload: dict[str, PhotoMappingEntry] = {
         str(photo.image_id): {
@@ -336,8 +379,78 @@ def _save_photo_mapping(
             (sync_settings or {}).get("fit_photo_thumbnails", False)
         ),
     }
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=2, sort_keys=True)
+    _replace_bytes_durably(
+        path,
+        json.dumps(payload, indent=2, sort_keys=True).encode("utf-8"),
+        before_device_mutation=before_device_mutation,
+    )
+
+
+def _cleanup_device_temp(
+    path: Path | None,
+    *,
+    before_device_mutation: Callable[[], None] | None,
+) -> None:
+    if path is None:
+        return
+    try:
+        if before_device_mutation is not None:
+            before_device_mutation()
+        durable_unlink(path, missing_ok=True)
+    except Exception as exc:
+        logger.warning("Could not safely remove photo temporary file %s: %s", path, exc)
+
+
+def _replace_bytes_durably(
+    target: Path,
+    data: bytes,
+    *,
+    before_device_mutation: Callable[[], None] | None,
+) -> None:
+    """Write bytes through an exclusive sibling and atomically install them."""
+    temp_path: Path | None = None
+    try:
+        if before_device_mutation is not None:
+            before_device_mutation()
+        temp_path, temp_file = open_unique_sibling_temp(target, mode="wb")
+        with temp_file as file:
+            file.write(data)
+            flush_written_file(file)
+        if before_device_mutation is not None:
+            before_device_mutation()
+        durable_replace(temp_path, target)
+    except Exception:
+        _cleanup_device_temp(
+            temp_path,
+            before_device_mutation=before_device_mutation,
+        )
+        raise
+
+
+def _replace_jpeg_durably(
+    target: Path,
+    image: Image.Image,
+    *,
+    before_device_mutation: Callable[[], None] | None,
+) -> None:
+    """Encode a JPEG into an exclusive sibling and atomically install it."""
+    temp_path: Path | None = None
+    try:
+        if before_device_mutation is not None:
+            before_device_mutation()
+        temp_path, temp_file = open_unique_sibling_temp(target, mode="wb")
+        with temp_file as file:
+            image.save(file, format="JPEG", quality=92, optimize=True)
+            flush_written_file(file)
+        if before_device_mutation is not None:
+            before_device_mutation()
+        durable_replace(temp_path, target)
+    except Exception:
+        _cleanup_device_temp(
+            temp_path,
+            before_device_mutation=before_device_mutation,
+        )
+        raise
 
 
 def _image_visual_hash(img: Image.Image) -> str:
@@ -357,7 +470,8 @@ def _load_pil_still_image(path: str | Path) -> Image.Image:
 def _sanitize_photo_basename(name: str, fallback: str) -> str:
     stem = Path(name).stem if name else fallback
     cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", stem).strip("._")
-    return cleaned or fallback
+    cleaned = cleaned[:_PHOTO_BASENAME_MAX_LENGTH].rstrip("._")
+    return cleaned or fallback[:_PHOTO_BASENAME_MAX_LENGTH]
 
 
 def _photo_db_string_to_rel_path(value: str) -> str:
@@ -369,8 +483,48 @@ def _photo_rel_path_to_db_string(rel_path: str | Path) -> str:
     return ":" + ":".join(Path(rel_path).parts)
 
 
+def resolve_photo_full_res_path(
+    ipod_path: str | Path,
+    rel_path: str | Path,
+) -> Path:
+    """Resolve a Photo DB full-resolution path inside the iPod photo tree."""
+    return resolve_device_path(
+        ipod_path,
+        Path("Photos") / Path(rel_path),
+        allowed_subtree=_PHOTO_FULL_RES_RELATIVE,
+    )
+
+
 def _device_photo_path(ipod_path: str | Path, rel_path: str) -> Path:
-    return Path(ipod_path) / "Photos" / Path(rel_path)
+    return resolve_photo_full_res_path(ipod_path, rel_path)
+
+
+def _device_photo_thumb_path(ipod_path: str | Path, filename: str) -> Path:
+    return resolve_device_path(
+        ipod_path,
+        _PHOTO_THUMBS_RELATIVE / Path(filename),
+        allowed_subtree=_PHOTO_THUMBS_RELATIVE,
+    )
+
+
+def _safe_enumerated_photo_path(
+    ipod_path: str | Path,
+    path: Path,
+    *,
+    allowed_subtree: str | Path,
+) -> Path:
+    root = Path(ipod_path).resolve(strict=False)
+    try:
+        relative = path.relative_to(root)
+    except ValueError as exc:
+        raise UnsafeDevicePathError(
+            f"Enumerated photo path is outside the iPod: {path}",
+        ) from exc
+    return resolve_device_path(
+        root,
+        relative,
+        allowed_subtree=allowed_subtree,
+    )
 
 
 def _full_res_rel_path_for_entry(entry: PhotoEntry) -> str:
@@ -618,10 +772,9 @@ def _decode_photo_image(entry: PhotoEntry, ipod_path: str | Path) -> Image.Image
             int(ref.format_id),
         ),
     )
-    thumbs_dir = _photo_thumbs_dir(ipod_path)
     for ref in candidates:
         filename = ref.filename or f"F{ref.format_id}_1.ithmb"
-        thumb_path = thumbs_dir / filename
+        thumb_path = _device_photo_thumb_path(ipod_path, filename)
         if not thumb_path.exists():
             continue
         try:
@@ -660,9 +813,8 @@ def _decode_photo_format(
     ref = entry.thumbs.get(int(format_id))
     if ref is None:
         return None
-    thumbs_dir = _photo_thumbs_dir(ipod_path)
     filename = ref.filename or f"F{ref.format_id}_1.ithmb"
-    thumb_path = thumbs_dir / filename
+    thumb_path = _device_photo_thumb_path(ipod_path, filename)
     if not thumb_path.exists():
         return None
     try:
@@ -928,43 +1080,82 @@ def _parse_mhlf(data: bytes, offset: int) -> tuple[dict[int, dict], int]:
     return formats, child_offset - offset
 
 
-def read_photo_db(ipod_path: str | Path) -> PhotoDB:
+def _read_photo_db_checked(ipod_path: str | Path) -> PhotoDB:
     ipod_path = Path(ipod_path)
     db_path = _photo_db_path(ipod_path)
     photodb = PhotoDB()
-    if not db_path.exists():
+    try:
+        data = db_path.read_bytes()
+    except FileNotFoundError:
+        # An orphaned mapping is still existing photo metadata. Validate it
+        # before a future write is allowed to replace it.
+        _load_photo_mapping(ipod_path)
         photodb.mhfd_unknown2 = _mhfd_unknown2_for_device(ipod_path)
         photodb.non_master_album_type = _non_master_album_type_for_device(ipod_path)
         photodb.master_album()
         return photodb
 
-    data = db_path.read_bytes()
     if len(data) < _MHFD_HEADER_SIZE or data[:4] != b"mhfd":
-        photodb.mhfd_unknown2 = _mhfd_unknown2_for_device(ipod_path)
-        photodb.non_master_album_type = _non_master_album_type_for_device(ipod_path)
-        photodb.master_album()
-        return photodb
+        raise PhotoMetadataSafetyError(
+            "The existing iPod Photo Database is malformed or incomplete. "
+            "iOpenPod stopped before changing photos so the current photo "
+            "library is not overwritten."
+        )
+
+    header_len = struct.unpack_from("<I", data, 4)[0]
+    total_len = struct.unpack_from("<I", data, 8)[0]
+    if (
+        header_len < _MHFD_HEADER_SIZE
+        or header_len > total_len
+        or total_len > len(data)
+    ):
+        raise PhotoMetadataSafetyError(
+            "The existing iPod Photo Database has invalid size fields. "
+            "iOpenPod stopped before changing photos so the current photo "
+            "library is not overwritten."
+        )
 
     photodb.mhfd_unknown2 = struct.unpack_from("<I", data, 16)[0]
 
-    offset = struct.unpack_from("<I", data, 4)[0]
+    offset = header_len
     format_meta: dict[int, dict] = {}
-    while offset + 16 <= len(data):
+    while offset + 16 <= total_len:
         if data[offset: offset + 4] != b"mhsd":
-            break
-        header_len = struct.unpack_from("<I", data, offset + 4)[0]
-        total_len = struct.unpack_from("<I", data, offset + 8)[0]
+            raise PhotoMetadataSafetyError(
+                "The existing iPod Photo Database contains an invalid dataset."
+            )
+        dataset_header_len = struct.unpack_from("<I", data, offset + 4)[0]
+        dataset_total_len = struct.unpack_from("<I", data, offset + 8)[0]
+        if (
+            dataset_header_len < 16
+            or dataset_header_len > dataset_total_len
+            or offset + dataset_total_len > total_len
+        ):
+            raise PhotoMetadataSafetyError(
+                "The existing iPod Photo Database contains invalid dataset sizes."
+            )
         ds_type = struct.unpack_from("<I", data, offset + 12)[0]
-        child_offset = offset + header_len
-        if child_offset + 4 <= len(data):
+        child_offset = offset + dataset_header_len
+        expected_child = {1: b"mhli", 2: b"mhla", 3: b"mhlf"}.get(ds_type)
+        if expected_child is not None:
             child_type = data[child_offset: child_offset + 4]
-            if ds_type == 1 and child_type == b"mhli":
+            if child_type != expected_child:
+                raise PhotoMetadataSafetyError(
+                    "The existing iPod Photo Database contains an invalid "
+                    f"type-{ds_type} dataset."
+                )
+            if ds_type == 1:
                 photodb.photos, _ = _parse_mhli(data, child_offset)
-            elif ds_type == 2 and child_type == b"mhla":
+            elif ds_type == 2:
                 photodb.albums, _ = _parse_mhla(data, child_offset)
-            elif ds_type == 3 and child_type == b"mhlf":
+            else:
                 format_meta, _ = _parse_mhlf(data, child_offset)
-        offset += total_len
+        offset += dataset_total_len
+
+    if offset != total_len:
+        raise PhotoMetadataSafetyError(
+            "The existing iPod Photo Database is truncated between datasets."
+        )
 
     for info in format_meta.values():
         photodb.file_sizes[info["format_id"]] = info["image_size"]
@@ -1001,6 +1192,20 @@ def read_photo_db(ipod_path: str | Path) -> PhotoDB:
     if photodb.albums:
         photodb.next_album_id = max(a.album_id for a in photodb.albums) + 1
     return photodb
+
+
+def read_photo_db(ipod_path: str | Path) -> PhotoDB:
+    """Read existing photo metadata, failing closed when it cannot be trusted."""
+    try:
+        return _read_photo_db_checked(ipod_path)
+    except PhotoMetadataSafetyError:
+        raise
+    except Exception as exc:
+        raise PhotoMetadataSafetyError(
+            "The existing iPod Photo Database could not be read safely. "
+            "iOpenPod stopped before changing photos so the current photo "
+            f"library is not overwritten: {exc}"
+        ) from exc
 
 
 def _write_mhod_string(mhod_type: int, string: str) -> bytes:
@@ -1200,8 +1405,18 @@ def _write_mhfd(datasets: list[bytes], next_mhii_id: int, unknown2: int) -> byte
 
 def _current_device_family_gen(ipod_path: str | Path | None = None) -> tuple[str, str]:
     try:
-        from iopenpod.device import DeviceInfo, enrich, get_current_device, read_sysinfo
-        dev = get_current_device()
+        from iopenpod.device import (
+            DeviceInfo,
+            enrich,
+            get_current_device,
+            get_current_device_for_path,
+            read_sysinfo,
+        )
+        dev = (
+            get_current_device_for_path(ipod_path)
+            if ipod_path is not None
+            else get_current_device()
+        )
         if dev is None and ipod_path is not None:
             dev = DeviceInfo(path=str(ipod_path))
             dev.sysinfo = read_sysinfo(str(ipod_path))
@@ -1235,6 +1450,8 @@ def _photo_formats_for_current_device(ipod_path: str | Path | None = None) -> Ma
                 return formats
     except Exception:
         pass
+    if ipod_path is not None:
+        return {}
     return photo_formats_for_device("iPod Classic", "6.5th Gen")
 
 
@@ -1434,18 +1651,24 @@ def _write_photo_db_snapshot(
     progress_callback: Callable[[str, int, int, str], None] | None = None,
     is_cancelled: Callable[[], bool] | None = None,
     sync_settings: dict[str, bool] | None = None,
+    before_device_mutation: Callable[[], None] | None = None,
+    filesystem_profile: FilesystemProfile | None = None,
 ) -> None:
     ipod_path = Path(ipod_path)
+    read_photo_db(ipod_path)
+    formats = _photo_formats_for_current_device(ipod_path)
+    if not formats:
+        raise RuntimeError("No photo formats available for the current device")
+    _preflight_photo_snapshot_sizes(photodb, formats, filesystem_profile)
     db_path = _photo_db_path(ipod_path)
     thumbs_dir = _photo_thumbs_dir(ipod_path)
     full_res_dir = _photo_full_res_dir(ipod_path)
+    if before_device_mutation is not None:
+        before_device_mutation()
     thumbs_dir.mkdir(parents=True, exist_ok=True)
     full_res_dir.mkdir(parents=True, exist_ok=True)
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
-    formats = _photo_formats_for_current_device(ipod_path)
-    if not formats:
-        raise RuntimeError("No photo formats available for the current device")
     sync_settings = _current_photo_sync_settings(sync_settings)
     rotate_tall_photos = bool(sync_settings.get("rotate_tall_photos_for_device", False))
     fit_thumbnails = bool(sync_settings.get("fit_photo_thumbnails", False))
@@ -1472,11 +1695,15 @@ def _write_photo_db_snapshot(
             raise RuntimeError(f"Missing source image for photo {photo.image_id}")
         photo.full_res_path = _full_res_rel_path_for_entry(photo)
         full_res_target = _device_photo_path(ipod_path, photo.full_res_path)
+        if before_device_mutation is not None:
+            before_device_mutation()
         full_res_target.parent.mkdir(parents=True, exist_ok=True)
-        tmp_full_res = full_res_target.with_suffix(f"{full_res_target.suffix}.tmp")
         full_res_image = _prepare_full_res_photo(image, formats, rotate_tall_photos)
-        full_res_image.save(tmp_full_res, format="JPEG", quality=92, optimize=True)
-        os.replace(tmp_full_res, full_res_target)
+        _replace_jpeg_durably(
+            full_res_target,
+            full_res_image,
+            before_device_mutation=before_device_mutation,
+        )
         full_res_sizes[photo.image_id] = full_res_target.stat().st_size
         photo.full_res_size = full_res_sizes[photo.image_id]
         live_full_res_paths.add(full_res_target.resolve())
@@ -1518,36 +1745,57 @@ def _write_photo_db_snapshot(
         unknown2,
     )
 
-    tmp_db = db_path.with_suffix(".tmp")
-    tmp_db.write_bytes(data)
-    os.replace(tmp_db, db_path)
+    _replace_bytes_durably(
+        db_path,
+        data,
+        before_device_mutation=before_device_mutation,
+    )
 
     live_files = set()
     for fmt_id, payload in payloads_by_format.items():
         filename = filenames[fmt_id]
         live_files.add(filename)
-        tmp_thumb = thumbs_dir / f"{filename}.tmp"
-        tmp_thumb.write_bytes(bytes(payload))
-        os.replace(tmp_thumb, thumbs_dir / filename)
+        _replace_bytes_durably(
+            thumbs_dir / filename,
+            bytes(payload),
+            before_device_mutation=before_device_mutation,
+        )
 
     for stale in thumbs_dir.glob("F*_*.ithmb"):
         if stale.name not in live_files:
-            try:
-                stale.unlink()
-            except OSError:
-                logger.debug("Could not remove stale photo thumb %s", stale)
+            safe_stale = _safe_enumerated_photo_path(
+                ipod_path,
+                stale,
+                allowed_subtree=_PHOTO_THUMBS_RELATIVE,
+            )
+            if before_device_mutation is not None:
+                before_device_mutation()
+            durable_unlink(safe_stale, missing_ok=True)
 
-    managed_full_res_root = full_res_dir / "iOpenPod"
+    managed_full_res_root = resolve_device_path(
+        ipod_path,
+        _PHOTO_FULL_RES_RELATIVE / "iOpenPod",
+        allowed_subtree=_PHOTO_FULL_RES_RELATIVE,
+    )
     if managed_full_res_root.exists():
         for stale in managed_full_res_root.rglob("*.jpg"):
-            try:
-                if stale.resolve() not in live_full_res_paths:
-                    stale.unlink()
-            except OSError:
-                logger.debug("Could not remove stale full-res photo %s", stale)
+            safe_stale = _safe_enumerated_photo_path(
+                ipod_path,
+                stale,
+                allowed_subtree=_PHOTO_FULL_RES_RELATIVE,
+            )
+            if safe_stale not in live_full_res_paths:
+                if before_device_mutation is not None:
+                    before_device_mutation()
+                durable_unlink(safe_stale, missing_ok=True)
 
     photodb.file_sizes = file_sizes
-    _save_photo_mapping(ipod_path, photodb, sync_settings=sync_settings)
+    _save_photo_mapping(
+        ipod_path,
+        photodb,
+        sync_settings=sync_settings,
+        before_device_mutation=before_device_mutation,
+    )
 
 
 def build_photo_sync_plan(
@@ -1786,10 +2034,14 @@ def write_photo_db_metadata_only(
     photodb: PhotoDB,
     *,
     sync_settings: Mapping[str, object] | None = None,
+    before_device_mutation: Callable[[], None] | None = None,
 ) -> None:
     """Rewrite only the photo database metadata, preserving existing image payload files."""
     ipod_path = Path(ipod_path)
+    read_photo_db(ipod_path)
     db_path = _photo_db_path(ipod_path)
+    if before_device_mutation is not None:
+        before_device_mutation()
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
     ordered_photos = sorted(photodb.photos.values(), key=lambda p: p.image_id)
@@ -1817,15 +2069,18 @@ def write_photo_db_metadata_only(
         unknown2,
     )
 
-    tmp_db = db_path.with_suffix(".tmp")
-    tmp_db.write_bytes(data)
-    os.replace(tmp_db, db_path)
+    _replace_bytes_durably(
+        db_path,
+        data,
+        before_device_mutation=before_device_mutation,
+    )
 
     photodb.file_sizes = file_sizes
     _save_photo_mapping(
         ipod_path,
         photodb,
         sync_settings=_current_photo_sync_settings(sync_settings),
+        before_device_mutation=before_device_mutation,
     )
 
 
@@ -1835,6 +2090,101 @@ class _PhotoSyncChangeSet:
     updated_ids: set[int]
     new_ids: set[int]
     touch_ids: list[int]
+
+
+def _photo_format_payload_size(fmt_id: int, fmt: ArtworkFormat) -> int:
+    size = expected_size_bytes(
+        int(fmt_id),
+        max(1, int(fmt.width or 0)),
+        max(1, int(fmt.height or 0)),
+        fmt_override=fmt,
+    )
+    if size <= 0 and int(fmt.row_bytes or 0) > 0:
+        size = int(fmt.row_bytes) * max(1, int(fmt.height or 0))
+    return max(0, int(size))
+
+
+def _preflight_photo_ithmb_sizes(
+    ipod_path: Path,
+    photodb: PhotoDB,
+    change_set: _PhotoSyncChangeSet,
+    formats: Mapping[int, ArtworkFormat],
+    filesystem_profile: FilesystemProfile | None,
+) -> None:
+    """Reject unrepresentable final ITHMB sizes before photo mutations."""
+    max_file_size = (
+        filesystem_profile.max_file_size_bytes
+        if filesystem_profile is not None
+        else None
+    )
+    if not max_file_size:
+        return
+
+    will_compact = bool(change_set.removed_ids or change_set.updated_ids)
+    final_sizes: dict[int, int] = {}
+    if will_compact:
+        touched = set(change_set.touch_ids)
+        for photo in photodb.photos.values():
+            if photo.image_id in touched:
+                for fmt_id, fmt in formats.items():
+                    final_sizes[fmt_id] = (
+                        final_sizes.get(fmt_id, 0)
+                        + _photo_format_payload_size(fmt_id, fmt)
+                    )
+                continue
+            for fmt_id, thumb in photo.thumbs.items():
+                final_sizes[fmt_id] = final_sizes.get(fmt_id, 0) + max(
+                    0,
+                    int(thumb.size),
+                )
+    elif change_set.touch_ids:
+        for fmt_id, fmt in formats.items():
+            thumb_path = _device_photo_thumb_path(
+                ipod_path,
+                f"F{fmt_id}_1.ithmb",
+            )
+            try:
+                disk_size = int(thumb_path.stat().st_size)
+            except FileNotFoundError:
+                disk_size = 0
+            baseline = max(
+                0,
+                int(photodb.file_sizes.get(fmt_id, 0)),
+                disk_size,
+            )
+            final_sizes[fmt_id] = (
+                baseline
+                + len(change_set.touch_ids)
+                * _photo_format_payload_size(fmt_id, fmt)
+            )
+
+    for fmt_id, final_size in final_sizes.items():
+        require_file_size_supported(
+            final_size,
+            max_file_size_bytes=max_file_size,
+            display_name=f"F{fmt_id}_1.ithmb photo thumbnail file",
+        )
+
+
+def _preflight_photo_snapshot_sizes(
+    photodb: PhotoDB,
+    formats: Mapping[int, ArtworkFormat],
+    filesystem_profile: FilesystemProfile | None,
+) -> None:
+    max_file_size = (
+        filesystem_profile.max_file_size_bytes
+        if filesystem_profile is not None
+        else None
+    )
+    if not max_file_size:
+        return
+    photo_count = len(photodb.photos)
+    for fmt_id, fmt in formats.items():
+        require_file_size_supported(
+            photo_count * _photo_format_payload_size(fmt_id, fmt),
+            max_file_size_bytes=max_file_size,
+            display_name=f"F{fmt_id}_1.ithmb photo thumbnail file",
+        )
 
 
 def _collect_removed_photo_ids(photo_plan: PhotoSyncPlan) -> set[int]:
@@ -1904,24 +2254,27 @@ def _remove_deleted_full_res_files(
     ipod_path: Path,
     pre_merge_by_id: Mapping[int, PhotoEntry],
     removed_ids: set[int],
+    before_device_mutation: Callable[[], None] | None = None,
 ) -> None:
     for image_id in removed_ids:
         prev = pre_merge_by_id.get(image_id)
         if prev is None or not prev.full_res_path:
             continue
         full_res_path = _device_photo_path(ipod_path, prev.full_res_path)
-        try:
-            full_res_path.unlink(missing_ok=True)
-        except OSError:
-            logger.debug("Could not remove deleted full-res photo %s", full_res_path)
+        if before_device_mutation is not None:
+            before_device_mutation()
+        durable_unlink(full_res_path, missing_ok=True)
 
 
 def _initialize_thumb_file_sizes(
     ipod_path: Path,
     formats: Mapping[int, ArtworkFormat],
     baseline_sizes: Mapping[int, int],
+    before_device_mutation: Callable[[], None] | None = None,
 ) -> dict[int, int]:
     thumbs_dir = _photo_thumbs_dir(ipod_path)
+    if before_device_mutation is not None:
+        before_device_mutation()
     thumbs_dir.mkdir(parents=True, exist_ok=True)
 
     file_sizes = {int(fmt_id): int(size) for fmt_id, size in baseline_sizes.items()}
@@ -1982,6 +2335,7 @@ def _write_full_res_for_touched_photo(
     formats: Mapping[int, ArtworkFormat],
     *,
     rotate_tall_photos: bool,
+    before_device_mutation: Callable[[], None] | None = None,
 ) -> None:
     if prev is not None and prev.full_res_path:
         photo.full_res_path = prev.full_res_path
@@ -1989,12 +2343,16 @@ def _write_full_res_for_touched_photo(
         photo.full_res_path = _full_res_rel_path_for_entry(photo)
 
     full_res_target = _device_photo_path(ipod_path, photo.full_res_path)
+    if before_device_mutation is not None:
+        before_device_mutation()
     full_res_target.parent.mkdir(parents=True, exist_ok=True)
-    tmp_full_res = full_res_target.with_suffix(f"{full_res_target.suffix}.tmp")
 
     full_res_image = _prepare_full_res_photo(img, formats, rotate_tall_photos)
-    full_res_image.save(tmp_full_res, format="JPEG", quality=92, optimize=True)
-    os.replace(tmp_full_res, full_res_target)
+    _replace_jpeg_durably(
+        full_res_target,
+        full_res_image,
+        before_device_mutation=before_device_mutation,
+    )
 
     photo.full_res_size = full_res_target.stat().st_size
     if not photo.original_size:
@@ -2002,14 +2360,15 @@ def _write_full_res_for_touched_photo(
 
 
 def _append_touched_photo_thumbs(
+    ipod_path: Path,
     photo: PhotoEntry,
     img: Image.Image,
     formats: Mapping[int, ArtworkFormat],
-    thumbs_dir: Path,
     file_sizes: dict[int, int],
     *,
     rotate_tall_photos: bool,
     fit_thumbnails: bool,
+    before_device_mutation: Callable[[], None] | None = None,
 ) -> None:
     encoded = _encode_photo_for_formats(
         img,
@@ -2021,10 +2380,16 @@ def _append_touched_photo_thumbs(
     photo.thumbs.clear()
     for fmt_id, info in encoded.items():
         filename = info["filename"]
-        thumb_path = thumbs_dir / filename
         offset = int(file_sizes.get(fmt_id, 0))
+        if before_device_mutation is not None:
+            before_device_mutation()
+        thumb_path = _device_photo_thumb_path(ipod_path, filename)
+        thumb_existed = thumb_path.exists()
         with open(thumb_path, "ab") as f:
             f.write(info["data"])
+            flush_written_file(f)
+        if not thumb_existed:
+            flush_parent_directory(thumb_path)
         file_sizes[fmt_id] = offset + len(info["data"])
 
         photo.thumbs[fmt_id] = PhotoThumbRef(
@@ -2051,8 +2416,8 @@ def _apply_touched_photo_changes(
     fit_thumbnails: bool,
     progress_callback: Callable[[str, int, int, str], None] | None = None,
     is_cancelled: Callable[[], bool] | None = None,
+    before_device_mutation: Callable[[], None] | None = None,
 ) -> None:
-    thumbs_dir = _photo_thumbs_dir(ipod_path)
     current_by_id = {photo.image_id: photo for photo in merged_db.photos.values()}
 
     total = len(change_set.touch_ids)
@@ -2082,15 +2447,17 @@ def _apply_touched_photo_changes(
             img,
             formats,
             rotate_tall_photos=rotate_tall_photos,
+            before_device_mutation=before_device_mutation,
         )
         _append_touched_photo_thumbs(
+            ipod_path,
             photo,
             img,
             formats,
-            thumbs_dir,
             file_sizes,
             rotate_tall_photos=rotate_tall_photos,
             fit_thumbnails=fit_thumbnails,
+            before_device_mutation=before_device_mutation,
         )
 
         if progress_callback:
@@ -2101,9 +2468,12 @@ def _compact_photo_thumb_payloads(
     ipod_path: Path,
     photodb: PhotoDB,
     progress_callback: Callable[[str, int, int, str], None] | None = None,
+    before_device_mutation: Callable[[], None] | None = None,
 ) -> None:
     """Compact ithmb payloads by copying only currently referenced thumb blocks."""
     thumbs_dir = _photo_thumbs_dir(ipod_path)
+    if before_device_mutation is not None:
+        before_device_mutation()
     thumbs_dir.mkdir(parents=True, exist_ok=True)
 
     ordered_photos = sorted(photodb.photos.values(), key=lambda p: p.image_id)
@@ -2121,7 +2491,6 @@ def _compact_photo_thumb_payloads(
             continue
         target_filename = f"F{fmt_id}_1.ithmb"
         target_path = thumbs_dir / target_filename
-        tmp_path = thumbs_dir / f"{target_filename}.tmp.compact"
         live_files.add(target_filename)
 
         if progress_callback:
@@ -2129,52 +2498,69 @@ def _compact_photo_thumb_payloads(
 
         offset_map: dict[tuple[str, int, int], int] = {}
         src_handles: dict[str, BinaryIO] = {}
+        tmp_path: Path | None = None
         try:
-            with open(tmp_path, "wb") as dst:
-                for ref in refs:
-                    source_filename = ref.filename or target_filename
-                    key = (source_filename, int(ref.offset), int(ref.size))
-                    existing_offset = offset_map.get(key)
-                    if existing_offset is not None:
-                        ref.offset = existing_offset
+            if before_device_mutation is not None:
+                before_device_mutation()
+            tmp_path, temp_file = open_unique_sibling_temp(target_path, mode="wb")
+            try:
+                with temp_file as dst:
+                    for ref in refs:
+                        source_filename = ref.filename or target_filename
+                        key = (source_filename, int(ref.offset), int(ref.size))
+                        existing_offset = offset_map.get(key)
+                        if existing_offset is not None:
+                            ref.offset = existing_offset
+                            ref.filename = target_filename
+                            continue
+
+                        src = src_handles.get(source_filename)
+                        if src is None:
+                            src_path = _device_photo_thumb_path(ipod_path, source_filename)
+                            src = open(src_path, "rb")
+                            src_handles[source_filename] = src
+
+                        src.seek(int(ref.offset))
+                        payload = src.read(int(ref.size))
+                        if len(payload) != int(ref.size):
+                            raise RuntimeError(
+                                f"Could not compact photo thumbs for {target_filename}: "
+                                f"short read at offset {ref.offset} (size {ref.size})",
+                            )
+
+                        new_offset = int(dst.tell())
+                        dst.write(payload)
+                        offset_map[key] = new_offset
+                        ref.offset = new_offset
                         ref.filename = target_filename
-                        continue
-
-                    src = src_handles.get(source_filename)
-                    if src is None:
-                        src_path = thumbs_dir / source_filename
-                        src = open(src_path, "rb")
-                        src_handles[source_filename] = src
-
-                    src.seek(int(ref.offset))
-                    payload = src.read(int(ref.size))
-                    if len(payload) != int(ref.size):
-                        raise RuntimeError(
-                            f"Could not compact photo thumbs for {target_filename}: "
-                            f"short read at offset {ref.offset} (size {ref.size})",
-                        )
-
-                    new_offset = int(dst.tell())
-                    dst.write(payload)
-                    offset_map[key] = new_offset
-                    ref.offset = new_offset
-                    ref.filename = target_filename
-        finally:
-            for src in src_handles.values():
-                try:
-                    src.close()
-                except OSError:
-                    pass
-
-        os.replace(tmp_path, target_path)
+                    flush_written_file(dst)
+            finally:
+                for src in src_handles.values():
+                    try:
+                        src.close()
+                    except OSError:
+                        pass
+            if before_device_mutation is not None:
+                before_device_mutation()
+            durable_replace(tmp_path, target_path)
+        except Exception:
+            _cleanup_device_temp(
+                tmp_path,
+                before_device_mutation=before_device_mutation,
+            )
+            raise
         new_file_sizes[fmt_id] = int(target_path.stat().st_size)
 
     for stale in thumbs_dir.glob("F*_*.ithmb"):
         if stale.name not in live_files:
-            try:
-                stale.unlink()
-            except OSError:
-                logger.debug("Could not remove stale photo thumb %s", stale)
+            safe_stale = _safe_enumerated_photo_path(
+                ipod_path,
+                stale,
+                allowed_subtree=_PHOTO_THUMBS_RELATIVE,
+            )
+            if before_device_mutation is not None:
+                before_device_mutation()
+            durable_unlink(safe_stale, missing_ok=True)
 
     photodb.file_sizes = new_file_sizes
 
@@ -2186,6 +2572,8 @@ def _apply_photo_sync_plan_incremental(
     progress_callback: Callable[[str, int, int, str], None] | None = None,
     is_cancelled: Callable[[], bool] | None = None,
     sync_settings: dict[str, bool] | None = None,
+    before_device_mutation: Callable[[], None] | None = None,
+    filesystem_profile: FilesystemProfile | None = None,
 ) -> PhotoDB:
     """Apply photo sync plan incrementally in three phases.
 
@@ -2197,24 +2585,53 @@ def _apply_photo_sync_plan_incremental(
     current_db = merge_photo_sync_plan(current_db, photo_plan)
     change_set = _build_incremental_change_set(photo_plan, pre_merge_by_id, current_db)
 
-    _remove_deleted_full_res_files(ipod_path, pre_merge_by_id, change_set.removed_ids)
+    formats: Mapping[int, ArtworkFormat] = {}
+    if change_set.touch_ids:
+        formats = _photo_formats_for_current_device(ipod_path)
+        if not formats:
+            raise RuntimeError("No photo formats available for the current device")
+    _preflight_photo_ithmb_sizes(
+        ipod_path,
+        current_db,
+        change_set,
+        formats,
+        filesystem_profile,
+    )
+
+    _remove_deleted_full_res_files(
+        ipod_path,
+        pre_merge_by_id,
+        change_set.removed_ids,
+        before_device_mutation=before_device_mutation,
+    )
 
     sync_settings = _current_photo_sync_settings(sync_settings)
 
     # Albums/membership/removes-only plans can skip re-encoding entirely.
     if not change_set.touch_ids:
         if change_set.removed_ids:
-            _compact_photo_thumb_payloads(ipod_path, current_db, progress_callback=progress_callback)
-        write_photo_db_metadata_only(ipod_path, current_db, sync_settings=sync_settings)
+            _compact_photo_thumb_payloads(
+                ipod_path,
+                current_db,
+                progress_callback=progress_callback,
+                before_device_mutation=before_device_mutation,
+            )
+        write_photo_db_metadata_only(
+            ipod_path,
+            current_db,
+            sync_settings=sync_settings,
+            before_device_mutation=before_device_mutation,
+        )
         return current_db
-
-    formats = _photo_formats_for_current_device(ipod_path)
-    if not formats:
-        raise RuntimeError("No photo formats available for the current device")
 
     rotate_tall_photos = bool(sync_settings.get("rotate_tall_photos_for_device", False))
     fit_thumbnails = bool(sync_settings.get("fit_photo_thumbnails", False))
-    file_sizes = _initialize_thumb_file_sizes(ipod_path, formats, current_db.file_sizes)
+    file_sizes = _initialize_thumb_file_sizes(
+        ipod_path,
+        formats,
+        current_db.file_sizes,
+        before_device_mutation=before_device_mutation,
+    )
     _apply_touched_photo_changes(
         ipod_path,
         current_db,
@@ -2226,13 +2643,24 @@ def _apply_photo_sync_plan_incremental(
         fit_thumbnails=fit_thumbnails,
         progress_callback=progress_callback,
         is_cancelled=is_cancelled,
+        before_device_mutation=before_device_mutation,
     )
 
     current_db.file_sizes = file_sizes
     if change_set.removed_ids or change_set.updated_ids:
-        _compact_photo_thumb_payloads(ipod_path, current_db, progress_callback=progress_callback)
+        _compact_photo_thumb_payloads(
+            ipod_path,
+            current_db,
+            progress_callback=progress_callback,
+            before_device_mutation=before_device_mutation,
+        )
 
-    write_photo_db_metadata_only(ipod_path, current_db, sync_settings=sync_settings)
+    write_photo_db_metadata_only(
+        ipod_path,
+        current_db,
+        sync_settings=sync_settings,
+        before_device_mutation=before_device_mutation,
+    )
     return current_db
 
 
@@ -2242,9 +2670,16 @@ def apply_photo_sync_plan(
     progress_callback: Callable[[str, int, int, str], None] | None = None,
     is_cancelled: Callable[[], bool] | None = None,
     sync_settings: dict[str, bool] | None = None,
+    before_device_mutation: Callable[[], None] | None = None,
+    filesystem_profile: FilesystemProfile | None = None,
 ) -> PhotoDB:
     ipod_path = Path(ipod_path)
-    current_db = copy.deepcopy(photo_plan.current_db if photo_plan and photo_plan.current_db else read_photo_db(ipod_path))
+    on_disk_db = read_photo_db(ipod_path)
+    current_db = copy.deepcopy(
+        photo_plan.current_db
+        if photo_plan and photo_plan.current_db
+        else on_disk_db
+    )
     if not photo_plan:
         return current_db
 
@@ -2255,4 +2690,6 @@ def apply_photo_sync_plan(
         progress_callback=progress_callback,
         is_cancelled=is_cancelled,
         sync_settings=sync_settings,
+        before_device_mutation=before_device_mutation,
+        filesystem_profile=filesystem_profile,
     )

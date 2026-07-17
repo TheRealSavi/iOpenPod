@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import copy
 from dataclasses import dataclass, fields
-from typing import Any, Protocol, TypeGuard, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, TypeGuard, runtime_checkable
 
 from iopenpod.infrastructure.media_folders import media_folder_entries_to_settings
 from iopenpod.infrastructure.settings_schema import AppSettings, DeviceSettingsState
+
+if TYPE_CHECKING:
+    from iopenpod.device.write_guard import DatabaseGeneration
 
 
 @runtime_checkable
@@ -232,6 +235,48 @@ class DeviceCapabilitySnapshot:
 
 
 @dataclass(frozen=True)
+class DeviceStorageSnapshot:
+    """Immutable device-reported storage limits and scan-time observations."""
+
+    reported_volume_format: str
+    scanned_filesystem_type: str
+    device_max_file_size_bytes: int | None
+    volume_identity_key: str = ""
+
+    @classmethod
+    def from_device_info(
+        cls,
+        device_info: object | None,
+    ) -> DeviceStorageSnapshot | None:
+        if device_info is None:
+            return None
+        reported_format = getattr(device_info, "reported_volume_format", None)
+        if reported_format is None:
+            reported_format = getattr(device_info, "volume_format", "")
+        try:
+            max_file_size_gb = float(
+                getattr(device_info, "max_file_size_gb", 0) or 0
+            )
+        except (TypeError, ValueError):
+            max_file_size_gb = 0
+        device_limit = (
+            int(max_file_size_gb * 1024**3)
+            if max_file_size_gb > 0
+            else None
+        )
+        return cls(
+            reported_volume_format=str(reported_format or ""),
+            scanned_filesystem_type=str(
+                getattr(device_info, "filesystem_type", "") or ""
+            ),
+            device_max_file_size_bytes=device_limit,
+            volume_identity_key=str(
+                getattr(device_info, "volume_identity_key", "") or ""
+            ),
+        )
+
+
+@dataclass(frozen=True)
 class DeviceSession:
     """Current device session state exposed to the UI."""
 
@@ -243,6 +288,7 @@ class DeviceSession:
     discovered_ipod: DeviceInfoLike | None
     identity: DeviceIdentitySnapshot | None
     capabilities: DeviceCapabilitySnapshot | None
+    storage: DeviceStorageSnapshot | None = None
 
     @property
     def has_device(self) -> bool:
@@ -500,6 +546,16 @@ class LibraryCacheLike(Protocol):
     def commit_quick_write_state(self, expected_revision: int) -> bool:
         ...
 
+    def commit_quick_write_state_with_generation(
+        self,
+        expected_revision: int,
+        database_generation: DatabaseGeneration | None,
+    ) -> bool:
+        ...
+
+    def get_database_generation(self) -> DatabaseGeneration | None:
+        ...
+
     def reload_after_itunesdb_write(self) -> None:
         ...
 
@@ -519,6 +575,7 @@ class QuickWriteSnapshot:
     track_edits: dict[int, dict[str, tuple]]
     artwork_sources: dict[int, str]
     revision: int
+    database_generation: DatabaseGeneration | None = None
 
 
 class DeviceSessionService(Protocol):

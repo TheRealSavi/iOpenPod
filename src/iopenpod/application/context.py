@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import logging
+import os
+from dataclasses import dataclass, field, replace
 
 from iopenpod.infrastructure.settings_runtime import SettingsRuntime, get_default_runtime
 from iopenpod.infrastructure.settings_schema import AppSettings, DeviceSettingsState
@@ -13,12 +15,15 @@ from .services import (
     DeviceManagerLike,
     DeviceSession,
     DeviceSessionService,
+    DeviceStorageSnapshot,
     LibraryCacheLike,
     LibraryService,
     LibrarySnapshot,
     SettingsService,
     SettingsSnapshot,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -61,11 +66,16 @@ class RuntimeSettingsService:
         use_global_settings: bool = False,
         device_key: str = "",
     ) -> None:
+        reported_format, volume_identity_key = self._device_storage_facts(
+            ipod_root
+        )
         self.runtime.save_device_settings(
             ipod_root,
             settings,
             use_global_settings=use_global_settings,
             device_key=device_key,
+            reported_volume_format=reported_format,
+            expected_volume_identity_key=volume_identity_key,
         )
 
     def reset_device_settings_to_global(
@@ -74,11 +84,35 @@ class RuntimeSettingsService:
         device_key: str = "",
         use_global_settings: bool = False,
     ) -> AppSettings:
+        reported_format, volume_identity_key = self._device_storage_facts(
+            ipod_root
+        )
         return self.runtime.reset_device_settings_to_global(
             ipod_root,
             device_key,
             use_global_settings=use_global_settings,
+            reported_volume_format=reported_format,
+            expected_volume_identity_key=volume_identity_key,
         )
+
+    @staticmethod
+    def _device_storage_facts(ipod_root: str) -> tuple[str, str]:
+        try:
+            from iopenpod.device import get_current_device
+
+            device = get_current_device()
+            if device is None or not getattr(device, "path", ""):
+                return "", ""
+            selected = os.path.normcase(os.path.realpath(ipod_root))
+            current = os.path.normcase(os.path.realpath(device.path))
+            if selected != current:
+                return "", ""
+            return (
+                str(getattr(device, "reported_volume_format", "") or ""),
+                str(getattr(device, "volume_identity_key", "") or ""),
+            )
+        except Exception:
+            return "", ""
 
     def get_global_snapshot(self) -> SettingsSnapshot:
         return SettingsSnapshot.from_settings(self.get_global_settings())
@@ -101,6 +135,29 @@ class RuntimeDeviceSessionService:
     def current_session(self) -> DeviceSession:
         manager = self.manager()
         discovered_ipod = manager.discovered_ipod
+        storage = DeviceStorageSnapshot.from_device_info(discovered_ipod)
+        if (
+            storage is not None
+            and manager.device_path
+            and not storage.volume_identity_key
+        ):
+            try:
+                from iopenpod.device.filesystem_profile import (
+                    inspect_filesystem_profile,
+                )
+                from iopenpod.device.write_readiness import volume_lock_key
+
+                profile = inspect_filesystem_profile(manager.device_path)
+                if profile.identity.is_complete:
+                    storage = replace(
+                        storage,
+                        volume_identity_key=volume_lock_key(profile),
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "Could not capture selected iPod volume identity: %s",
+                    exc,
+                )
         return DeviceSession(
             device_path=manager.device_path,
             itunesdb_path=manager.itunesdb_path,
@@ -110,6 +167,7 @@ class RuntimeDeviceSessionService:
             discovered_ipod=discovered_ipod,
             identity=DeviceIdentitySnapshot.from_device_info(discovered_ipod),
             capabilities=DeviceCapabilitySnapshot.from_device_info(discovered_ipod),
+            storage=storage,
         )
 
 

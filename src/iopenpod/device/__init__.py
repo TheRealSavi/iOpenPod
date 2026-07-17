@@ -65,6 +65,7 @@ from .info import (
     detect_checksum_type,
     enrich,
     get_current_device,
+    get_current_device_for_path,
     get_firewire_id,
     has_exact_model_number,
     itdb_write_filename,

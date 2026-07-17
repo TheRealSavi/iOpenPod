@@ -6,15 +6,17 @@ Provides a single entry point, :func:`eject_ipod`, that unmounts and
 Strategies per platform:
   * **Windows** — Windows device eject request, Shell "Eject" fallback,
                   and drive-removal verification.
-  * **macOS**   — ``diskutil eject`` first, then force unmount/eject fallbacks.
-  * **Linux**   — ``udisksctl`` unmount/power-off first, then ``eject``,
-                  then force/lazy ``umount`` fallbacks.
+  * **macOS**   — checked flush followed by non-forced ``diskutil`` eject or
+                  unmount/eject paths.
+  * **Linux**   — flush pending writes, then use non-forced ``udisksctl``,
+                  ``eject``, or ``umount`` paths.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import os
 import plistlib
 import re
 import shutil
@@ -22,6 +24,11 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+
+from .durability import flush_filesystem
+from .filesystem_profile import FilesystemProfile, inspect_filesystem_profile
+from .write_guard import DeviceWriteGuard, DeviceWriteSafetyError
+from .write_readiness import volume_lock_key
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +49,12 @@ _MISSING_TARGET_HINTS = (
 )
 
 
-def eject_ipod(mount_path: str) -> tuple[bool, str]:
+def eject_ipod(
+    mount_path: str,
+    *,
+    reported_volume_format: str = "",
+    expected_volume_identity_key: str = "",
+) -> tuple[bool, str]:
     """Safely eject / unmount an iPod at *mount_path*.
 
     Returns ``(success, message)``.  The *message* is suitable for
@@ -51,23 +63,117 @@ def eject_ipod(mount_path: str) -> tuple[bool, str]:
     if not mount_path:
         return False, "No device path supplied."
 
-    path = Path(mount_path)
+    path = Path(os.path.realpath(mount_path))
+    # Virtual iPods are ordinary host directories. Never pass one to an OS
+    # eject API: doing so could unmount or power off the host volume that
+    # contains the directory.
+    if (path / "iPodInfo.json").is_file():
+        logger.info("Virtual iPod needs no operating-system eject: %s", path)
+        return True, "Virtual iPod closed; no operating-system eject was needed."
+
     try:
-        if sys.platform == "win32":
-            return _eject_windows(path)
-        if sys.platform == "darwin":
-            return _eject_macos(path)
-        return _eject_linux(path)
+        profile = _inspect_eject_volume(
+            path,
+            reported_volume_format=reported_volume_format,
+        )
+        current_key = volume_lock_key(profile)
+        if expected_volume_identity_key and current_key != expected_volume_identity_key:
+            raise DeviceWriteSafetyError(
+                "A different volume is mounted at the selected iPod path. "
+                "iOpenPod stopped before ejecting it. Reconnect and reload the iPod."
+            )
+
+        with DeviceWriteGuard(
+            path,
+            volume_key=current_key,
+            track_database_generation=False,
+        ):
+            current_profile = _revalidate_eject_volume(profile)
+            if sys.platform == "win32":
+                return _eject_windows(path, read_only=current_profile.read_only)
+            if sys.platform == "darwin":
+                return _eject_macos(path, read_only=current_profile.read_only)
+            return _eject_linux(path, read_only=current_profile.read_only)
+    except DeviceWriteSafetyError as exc:
+        logger.warning("Safe eject refused for %s: %s", path, exc)
+        return False, str(exc)
     except Exception as exc:  # last-ditch safety net
         logger.exception("eject_ipod: unexpected failure")
         return False, f"Unexpected error: {exc}"
+
+
+def _inspect_eject_volume(
+    path: Path,
+    *,
+    reported_volume_format: str = "",
+) -> FilesystemProfile:
+    """Identify the exact selected volume without requiring write access."""
+    profile = inspect_filesystem_profile(
+        path,
+        reported_volume_format=reported_volume_format,
+        probe_case_sensitivity=False,
+    )
+    selected = os.path.normcase(os.path.realpath(path))
+    observed = os.path.normcase(os.path.realpath(profile.mount_path))
+    if selected != observed:
+        raise DeviceWriteSafetyError(
+            "The selected iPod path is no longer mounted as its own volume. "
+            "iOpenPod stopped rather than ejecting the containing host volume."
+        )
+    if not (path / "iPod_Control").is_dir():
+        raise DeviceWriteSafetyError(
+            "The selected volume no longer contains iPod_Control. iOpenPod "
+            "stopped rather than ejecting an unrecognized volume."
+        )
+    if not profile.identity.is_complete:
+        raise DeviceWriteSafetyError(
+            "The mounted volume identity could not be verified. Use the "
+            "operating system's eject control for this iPod."
+        )
+    logger.info(
+        "Safe eject volume inspected: mount=%s filesystem=%s reported=%s "
+        "source=%s identity=%s",
+        profile.mount_path,
+        profile.filesystem_type or "unknown",
+        profile.reported_volume_format or "unknown",
+        profile.mount_source or "unknown",
+        volume_lock_key(profile),
+    )
+    return profile
+
+
+def _revalidate_eject_volume(retained: FilesystemProfile) -> FilesystemProfile:
+    """Refuse eject if the path now names a different mounted volume."""
+    current = inspect_filesystem_profile(
+        retained.inspection_path or retained.mount_path,
+        reported_volume_format=retained.reported_volume_format,
+        probe_case_sensitivity=False,
+    )
+    if not current.identity.is_complete or current.identity != retained.identity:
+        raise DeviceWriteSafetyError(
+            "The mounted volume changed while iOpenPod was preparing to eject. "
+            "Nothing was ejected; reconnect and reload the iPod."
+        )
+    if current.filesystem_type != retained.filesystem_type:
+        raise DeviceWriteSafetyError(
+            "The filesystem at the selected iPod path changed while preparing "
+            "to eject. Nothing was ejected."
+        )
+    if os.path.normcase(os.path.realpath(current.mount_path)) != os.path.normcase(
+        os.path.realpath(retained.mount_path)
+    ):
+        raise DeviceWriteSafetyError(
+            "The iPod mount point changed while preparing to eject. Nothing "
+            "was ejected."
+        )
+    return current
 
 
 # ──────────────────────────────────────────────────────────────────────
 # Windows
 # ──────────────────────────────────────────────────────────────────────
 
-def _eject_windows(path: Path) -> tuple[bool, str]:
+def _eject_windows(path: Path, *, read_only: bool = False) -> tuple[bool, str]:
     """Ask Windows to safely remove the drive and verify it disappeared.
 
     Explorer's COM ``Eject`` verb returns before Windows confirms the
@@ -82,6 +188,15 @@ def _eject_windows(path: Path) -> tuple[bool, str]:
 
     if not _windows_drive_is_mounted(drive):
         return True, f"{drive} is already ejected."
+
+    if not read_only:
+        flush_ok, flush_msg = flush_filesystem(path)
+        if not flush_ok:
+            logger.error("Windows eject stopped because write flush failed: %s", flush_msg)
+            return False, (
+                "iOpenPod could not flush pending writes, so the iPod was not "
+                f"ejected. {flush_msg}"
+            )
 
     pnp_device_id, pnp_msg = _get_windows_disk_pnp_id(drive)
     prep_ok, prep_msg = _prepare_windows_volume_for_eject(drive)
@@ -197,7 +312,11 @@ def _prepare_windows_volume_for_eject(drive: str) -> tuple[bool, str]:
         return False, f"Could not open {drive} for eject ({err})."
 
     try:
-        kernel32.FlushFileBuffers(handle)
+        if not kernel32.FlushFileBuffers(handle):
+            return False, (
+                f"Could not flush pending writes for {drive} before eject "
+                f"({_windows_last_error_message()})."
+            )
 
         deadline = time.monotonic() + _WINDOWS_LOCK_RETRY_SECS
         last_error = ""
@@ -517,8 +636,8 @@ def _windows_eject_failure_message(
 # macOS
 # ──────────────────────────────────────────────────────────────────────
 
-def _eject_macos(path: Path) -> tuple[bool, str]:
-    """Eject via ``diskutil`` with forced unmount fallbacks."""
+def _eject_macos(path: Path, *, read_only: bool = False) -> tuple[bool, str]:
+    """Flush writes, then eject via only non-forced ``diskutil`` paths."""
     if not shutil.which("diskutil"):
         return False, "diskutil is not available."
 
@@ -534,7 +653,14 @@ def _eject_macos(path: Path) -> tuple[bool, str]:
     if not info and not _macos_mount_is_present(mount_point, device_id):
         return True, "Device already unmounted."
 
-    _run_sync()
+    if not read_only:
+        flush_ok, flush_msg = flush_filesystem(mount_path, allow_unavailable=True)
+        if not flush_ok:
+            logger.error("macOS eject stopped because write flush failed: %s", flush_msg)
+            return False, (
+                "iOpenPod could not flush pending writes, so the iPod was not "
+                f"ejected. {flush_msg}"
+            )
     attempts: list[str] = []
 
     ok, msg = _run_command(["diskutil", "eject", disk_target])
@@ -553,32 +679,17 @@ def _eject_macos(path: Path) -> tuple[bool, str]:
         ):
             return True, f"Unmounted and ejected {disk_target}"
 
-    ok, msg = _run_command(["diskutil", "unmount", "force", volume_target])
-    attempts.append(msg)
-    if ok:
-        ok_eject, eject_msg = _run_command(["diskutil", "eject", disk_target])
-        attempts.append(eject_msg)
-        if (ok_eject or _is_benign_absence(eject_msg)) and _wait_for_macos_mount_gone(
-            mount_point,
-            device_id,
-        ):
-            return True, f"Force-unmounted and ejected {disk_target}"
-
-    ok, msg = _run_command(["diskutil", "unmountDisk", "force", disk_target])
-    attempts.append(msg)
-    if ok:
-        ok_eject, eject_msg = _run_command(["diskutil", "eject", disk_target])
-        attempts.append(eject_msg)
-        if _wait_for_macos_mount_gone(mount_point, device_id):
-            if ok_eject or _is_benign_absence(eject_msg):
-                return True, f"Force-unmounted and ejected {disk_target}"
-            return True, f"Force-unmounted {disk_target}; eject reported: {eject_msg}"
-
     if _wait_for_macos_mount_gone(mount_point, device_id):
         return True, f"Device unmounted: {disk_target}"
 
     details = _join_unique_messages([info_msg, *attempts])
-    return False, details or f"diskutil could not eject {disk_target}."
+    message = (
+        f"diskutil could not safely eject {disk_target}; the iPod is still "
+        "mounted. Close any files or apps using it, then retry."
+    )
+    if details:
+        message += f" Details: {details}"
+    return False, message
 
 
 def _macos_disk_info(target: str) -> tuple[dict, str]:
@@ -652,15 +763,31 @@ def _macos_mount_is_present(mount_point: str, device_id: str = "") -> bool:
 # Linux
 # ──────────────────────────────────────────────────────────────────────
 
-def _eject_linux(path: Path) -> tuple[bool, str]:
-    """Try udisksctl, eject, then force/lazy umount, verifying each step."""
+def _eject_linux(path: Path, *, read_only: bool = False) -> tuple[bool, str]:
+    """Flush writes, then try only non-forced Linux unmount/eject paths."""
     mount_path = str(path)
     device = _find_block_device(mount_path)
     detach_target = (_parent_block_device(device) or device) if device else None
-    if not _linux_path_is_mounted(mount_path, device):
+    try:
+        mounted = _linux_path_is_mounted(mount_path, device)
+    except OSError as exc:
+        return False, (
+            "iOpenPod could not verify the Linux mount table, so it did not "
+            f"attempt to eject the iPod: {exc}"
+        )
+    if not mounted:
         return True, "Device already unmounted."
 
-    _run_sync()
+    if not read_only:
+        flush_ok, flush_msg = _run_sync(mount_path)
+        if not flush_ok:
+            logger.error("Linux eject stopped because write flush failed: %s", flush_msg)
+            return False, (
+                "iOpenPod could not flush pending writes, so the iPod was not "
+                f"ejected. {flush_msg}"
+            )
+        logger.debug("Linux eject write flush completed: %s", flush_msg)
+
     errors: list[str] = []
     last_error: str | None = None
 
@@ -676,7 +803,10 @@ def _eject_linux(path: Path) -> tuple[bool, str]:
         ok, msg = _run_eject_command(detach_target)
         if ok and _wait_for_linux_mount_gone(mount_path, device):
             return True, msg
-        if _is_benign_absence(msg):
+        if _is_benign_absence(msg) and _wait_for_linux_mount_gone(
+            mount_path,
+            device,
+        ):
             return True, f"Device already detached: {detach_target}"
         last_error = msg
         errors.append(msg)
@@ -690,18 +820,16 @@ def _eject_linux(path: Path) -> tuple[bool, str]:
             umount_targets.append(mount_path)
         umount_targets = list(dict.fromkeys(umount_targets))
 
-        modes = ("normal", "force", "lazy", "force_lazy")
         for target in umount_targets:
-            for mode in modes:
-                ok, msg, already_unmounted = _run_umount_command(target, mode=mode)
-                if ok or already_unmounted:
-                    if _wait_for_linux_mount_gone(mount_path, device):
-                        detach_msg = _detach_linux_after_unmount(detach_target)
-                        if detach_msg:
-                            return True, f"{msg}; {detach_msg}"
-                        return True, msg
-                last_error = msg
-                errors.append(msg)
+            ok, msg, already_unmounted = _run_umount_command(target)
+            if ok or already_unmounted:
+                if _wait_for_linux_mount_gone(mount_path, device):
+                    detach_msg = _detach_linux_after_unmount(detach_target)
+                    if detach_msg:
+                        return True, f"{msg}; {detach_msg}"
+                    return True, msg
+            last_error = msg
+            errors.append(msg)
 
     if _wait_for_linux_mount_gone(mount_path, device):
         return True, "Device already unmounted."
@@ -709,7 +837,7 @@ def _eject_linux(path: Path) -> tuple[bool, str]:
     details = _join_unique_messages(errors)
     return False, details or last_error or (
         "No suitable unmount utility found "
-        "(tried udisksctl, eject, force/lazy umount)."
+        "(tried udisksctl, eject, and umount without forcing)."
     )
 
 
@@ -787,9 +915,7 @@ def _find_block_device(mount_path: str) -> str | None:
 
 def _udisks_eject(device: str, mount_path: str) -> tuple[bool, str]:
     """Unmount then power off the parent disk via ``udisksctl``."""
-    ok, msg = _run_udisks_unmount(device, force=False)
-    if not ok and not _is_benign_absence(msg):
-        ok, msg = _run_udisks_unmount(device, force=True)
+    ok, msg = _run_udisks_unmount(device)
     if not ok and not _is_benign_absence(msg):
         return False, msg
 
@@ -803,23 +929,19 @@ def _udisks_eject(device: str, mount_path: str) -> tuple[bool, str]:
     return _run_udisks_poweroff(parent)
 
 
-def _run_udisks_unmount(device: str, force: bool) -> tuple[bool, str]:
+def _run_udisks_unmount(device: str) -> tuple[bool, str]:
     args = [
         "udisksctl", "unmount",
         "--block-device", device,
         "--no-user-interaction",
     ]
-    if force:
-        args.append("--force")
 
     ok, msg = _run_command(args)
     if ok:
-        label = "force-unmounted" if force else "unmounted"
-        return True, f"udisksctl {label} {device}."
+        return True, f"udisksctl unmounted {device}."
     if _is_benign_absence(msg):
         return True, "Device already unmounted."
-    prefix = "udisksctl force unmount failed" if force else "udisksctl unmount failed"
-    return False, msg or f"{prefix}."
+    return False, msg or "udisksctl unmount failed."
 
 
 def _run_udisks_poweroff(parent: str) -> tuple[bool, str]:
@@ -854,19 +976,8 @@ def _run_eject_command(target: str) -> tuple[bool, str]:
     return False, err or "eject failed."
 
 
-def _run_umount_command(target: str, mode: str = "normal") -> tuple[bool, str, bool]:
-    args = ["umount"]
-    label = "umount"
-    if mode == "force":
-        args.append("-f")
-        label = "force umount"
-    elif mode == "lazy":
-        args.append("-l")
-        label = "lazy umount"
-    elif mode == "force_lazy":
-        args.append("-fl")
-        label = "force/lazy umount"
-    args.append(target)
+def _run_umount_command(target: str) -> tuple[bool, str, bool]:
+    args = ["umount", target]
 
     try:
         proc = subprocess.run(
@@ -876,15 +987,15 @@ def _run_umount_command(target: str, mode: str = "normal") -> tuple[bool, str, b
             timeout=_TIMEOUT_SECS,
         )
     except subprocess.TimeoutExpired:
-        return False, f"{label} timed out.", False
+        return False, "umount timed out.", False
 
     if proc.returncode == 0:
-        return True, f"{label} succeeded for {target}", False
+        return True, f"umount succeeded for {target}", False
 
     err = (proc.stderr or proc.stdout).strip()
     if _is_benign_absence(err):
         return False, err or "Device already unmounted.", True
-    return False, err or f"{label} failed.", False
+    return False, err or "umount failed.", False
 
 
 def _detach_linux_after_unmount(detach_target: str | None) -> str:
@@ -909,10 +1020,19 @@ def _detach_linux_after_unmount(detach_target: str | None) -> str:
 def _wait_for_linux_mount_gone(mount_path: str, device: str | None = None) -> bool:
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline:
-        if not _linux_path_is_mounted(mount_path, device):
+        try:
+            mounted = _linux_path_is_mounted(mount_path, device)
+        except OSError as exc:
+            logger.warning("Could not verify Linux unmount completion: %s", exc)
+            return False
+        if not mounted:
             return True
         time.sleep(0.25)
-    return not _linux_path_is_mounted(mount_path, device)
+    try:
+        return not _linux_path_is_mounted(mount_path, device)
+    except OSError as exc:
+        logger.warning("Could not verify Linux unmount completion: %s", exc)
+        return False
 
 
 def _linux_path_is_mounted(mount_path: str, device: str | None = None) -> bool:
@@ -943,23 +1063,34 @@ def _linux_mount_entries() -> list[tuple[str, str]]:
                 parts = line.split()
                 if len(parts) >= 2:
                     entries.append((parts[0], _decode_mount_field(parts[1])))
-    except OSError:
-        pass
+    except OSError as exc:
+        raise OSError(f"Could not read the Linux mount table: {exc}") from exc
     return entries
 
 
-def _run_sync() -> None:
+def _run_sync(mount_path: str | None = None) -> tuple[bool, str]:
+    if mount_path is not None:
+        return flush_filesystem(mount_path, allow_unavailable=True)
+
     if not shutil.which("sync"):
-        return
+        return True, "sync utility unavailable; relying on the unmount flush"
+
     try:
-        subprocess.run(
+        proc = subprocess.run(
             ["sync"],
             capture_output=True,
             text=True,
             timeout=15,
         )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        pass
+    except FileNotFoundError:
+        return True, "sync utility unavailable; relying on the unmount flush"
+    except subprocess.TimeoutExpired:
+        return False, "filesystem flush timed out"
+
+    output = (proc.stderr or proc.stdout or "").strip()
+    if proc.returncode != 0:
+        return False, output or f"filesystem flush failed with code {proc.returncode}"
+    return True, output or "pending writes flushed"
 
 
 def _run_command(args: list[str], timeout: int = _TIMEOUT_SECS) -> tuple[bool, str]:

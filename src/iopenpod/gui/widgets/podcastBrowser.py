@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import html
 import logging
-import os
 import re
 import time
 from collections.abc import Callable
@@ -62,6 +61,7 @@ from PyQt6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMenu,
+    QMessageBox,
     QProgressBar,
     QPushButton,
     QScrollArea,
@@ -1353,11 +1353,35 @@ class PodcastBrowser(QFrame):
 
         from iopenpod.podcasts.subscription_store import SubscriptionStore
         settings = self._settings_service.get_effective_settings()
+        session = self._device_sessions.current_session()
+        storage = session.storage
         self._store = SubscriptionStore(
             ipod_path,
             download_cache_dir=settings.transcode_cache_dir,
+            reported_volume_format=(
+                storage.reported_volume_format if storage is not None else ""
+            ),
+            expected_volume_identity_key=(
+                storage.volume_identity_key if storage is not None else ""
+            ),
         )
-        self._store.load()
+        try:
+            self._store.load()
+        except Exception as exc:
+            log.exception("Could not safely load podcast subscriptions")
+            self._store = None
+            self._feed_list.clear()
+            self._episode_list.set_rows([], _PODCAST_EPISODE_COLUMNS)
+            self._stack.setCurrentIndex(0)
+            self._set_status("Podcast data could not be loaded safely")
+            QMessageBox.critical(
+                self,
+                "Podcast Data Not Loaded",
+                "iOpenPod could not safely read the podcast subscriptions on "
+                f"this iPod and left them unchanged.\n\n{exc}\n\nReconnect and "
+                "reload the iPod before making podcast changes.",
+            )
+            return
 
         # Apply any deferred reconciliation captured before the Podcasts
         # view/store was initialized (e.g. app.py data-ready timing).
@@ -1396,13 +1420,39 @@ class PodcastBrowser(QFrame):
         self._status_label.setText("")
         self._stack.setCurrentIndex(0)
 
+    def _persist_subscription_change(
+        self,
+        action: str,
+        operation: Callable[[], object],
+    ) -> bool:
+        """Run one device-store mutation and alert instead of masking refusal."""
+        try:
+            operation()
+            return True
+        except Exception as exc:
+            log.exception("Could not %s", action)
+            if self._store is not None:
+                try:
+                    self._store.load()
+                except Exception:
+                    log.exception("Could not reload podcast subscriptions after failure")
+            QMessageBox.critical(
+                self,
+                "Podcast Changes Not Saved",
+                f"iOpenPod stopped before it could {action}.\n\n{exc}\n\n"
+                "Reconnect and reload the iPod before trying again.",
+            )
+            self._set_status("Podcast changes were not saved")
+            return False
+
     def reconcile_ipod_statuses(self, ipod_tracks: list[dict] | None = None) -> None:
         """Reconcile stored episode state with the current iPod track list.
 
         This keeps "Downloaded" / "On iPod" statuses accurate even when
         feeds are loaded after iTunesDB parsing or tracks were removed.
         """
-        if not self._store:
+        store = self._store
+        if store is None:
             # Store tracks for later reconciliation when set_device() creates
             # the SubscriptionStore after the Podcasts tab is opened.
             if ipod_tracks is not None:
@@ -1417,7 +1467,7 @@ class PodcastBrowser(QFrame):
 
         from iopenpod.podcasts.podcast_sync import PodcastTrackMatcher
 
-        feeds = self._store.get_feeds()
+        feeds = store.get_feeds()
         matcher = PodcastTrackMatcher(ipod_tracks)
         changed_feeds: list = []
 
@@ -1426,10 +1476,14 @@ class PodcastBrowser(QFrame):
                 changed_feeds.append(feed)
 
         if changed_feeds:
-            self._store.update_feeds(changed_feeds)
+            if not self._persist_subscription_change(
+                "update podcast status",
+                lambda: store.update_feeds(changed_feeds),
+            ):
+                return
 
         if self._selected_feed:
-            refreshed = self._store.get_feed(self._selected_feed.feed_url)
+            refreshed = store.get_feed(self._selected_feed.feed_url)
             if refreshed:
                 self._selected_feed = refreshed
         if self._showing_combined_feed:
@@ -2322,7 +2376,6 @@ class PodcastBrowser(QFrame):
             )
 
         from iopenpod.application.runtime import ThreadPoolSingleton, Worker
-        from iopenpod.podcasts.artwork import cache_feed_artwork
         from iopenpod.podcasts.feed_parser import fetch_feed
 
         store = self._store
@@ -2333,7 +2386,7 @@ class PodcastBrowser(QFrame):
             for feed in feeds:
                 try:
                     refreshed = fetch_feed(feed.feed_url, existing=feed)
-                    cache_feed_artwork(refreshed, store.podcast_dir)
+                    store.cache_feed_artwork(refreshed)
                     refreshed_feeds.append(refreshed)
                 except Exception as exc:
                     log.warning("Background refresh failed for %s: %s", feed.title, exc)
@@ -2364,7 +2417,6 @@ class PodcastBrowser(QFrame):
         self._episode_state_retry = self._on_refresh_all
 
         from iopenpod.application.runtime import ThreadPoolSingleton, Worker
-        from iopenpod.podcasts.artwork import cache_feed_artwork
         from iopenpod.podcasts.feed_parser import fetch_feed
 
         store = self._store
@@ -2375,7 +2427,7 @@ class PodcastBrowser(QFrame):
             for feed in feeds:
                 try:
                     refreshed = fetch_feed(feed.feed_url, existing=feed)
-                    cache_feed_artwork(refreshed, store.podcast_dir)
+                    store.cache_feed_artwork(refreshed)
                     refreshed_feeds.append(refreshed)
                 except Exception as exc:
                     log.warning("Failed to refresh %s: %s", feed.title, exc)
@@ -2474,7 +2526,6 @@ class PodcastBrowser(QFrame):
         self._episode_state_retry = self._on_sync_podcasts
 
         from iopenpod.application.runtime import ThreadPoolSingleton, Worker
-        from iopenpod.podcasts.artwork import cache_feed_artwork
         from iopenpod.podcasts.feed_parser import fetch_feed
 
         store = self._store
@@ -2485,7 +2536,7 @@ class PodcastBrowser(QFrame):
             for feed in feeds:
                 try:
                     refreshed_feed = fetch_feed(feed.feed_url, existing=feed)
-                    cache_feed_artwork(refreshed_feed, store.podcast_dir)
+                    store.cache_feed_artwork(refreshed_feed)
                     refreshed.append(refreshed_feed)
                 except Exception as exc:
                     log.warning("Failed to refresh %s: %s", feed.title, exc)
@@ -2591,7 +2642,6 @@ class PodcastBrowser(QFrame):
         ThreadPoolSingleton.get_instance().start(worker)
 
     def _fetch_subscribed_feed(self, feed_url: str, artwork_url: str = ""):
-        from iopenpod.podcasts.artwork import cache_feed_artwork
         from iopenpod.podcasts.feed_parser import fetch_feed
         from iopenpod.podcasts.models import normalize_artwork_url
 
@@ -2600,9 +2650,8 @@ class PodcastBrowser(QFrame):
         if fallback_url and not feed.artwork_url:
             feed.artwork_url = fallback_url
         if self._store:
-            cache_feed_artwork(
+            self._store.cache_feed_artwork(
                 feed,
-                self._store.podcast_dir,
                 fallback_urls=[fallback_url] if fallback_url else [],
             )
         return feed
@@ -2611,16 +2660,20 @@ class PodcastBrowser(QFrame):
         if not self._store or not artwork_url:
             return ""
 
-        from iopenpod.podcasts.artwork import cache_feed_artwork
         from iopenpod.podcasts.models import PodcastFeed
 
         feed = PodcastFeed(feed_url=feed_url, artwork_url=artwork_url)
-        return cache_feed_artwork(feed, self._store.podcast_dir)
+        return self._store.cache_feed_artwork(feed)
 
     def _on_feed_fetched(self, feed) -> None:
-        if not self._store:
+        store = self._store
+        if store is None:
             return
-        self._store.add_feed(feed)
+        if not self._persist_subscription_change(
+            "save the podcast subscription",
+            lambda: store.add_feed(feed),
+        ):
+            return
         self._mark_feed_refreshed(feed.feed_url)
         self._set_status(f"Subscribed to {feed.title}")
         self._showing_combined_feed = False
@@ -2633,7 +2686,7 @@ class PodcastBrowser(QFrame):
                 self._feed_list.setCurrentRow(i)
                 break
 
-        self._selected_feed = self._store.get_feed(feed.feed_url) or feed
+        self._selected_feed = store.get_feed(feed.feed_url) or feed
         self._show_episodes(self._selected_feed)
 
     def _on_subscribe_error(self, error_tuple) -> None:
@@ -2646,9 +2699,14 @@ class PodcastBrowser(QFrame):
         self._set_status("Could not add podcast")
 
     def _unsubscribe_feed(self, feed) -> None:
-        if not self._store:
+        store = self._store
+        if store is None:
             return
-        self._store.remove_feed(feed.feed_url)
+        if not self._persist_subscription_change(
+            "remove the podcast subscription",
+            lambda: store.remove_feed(feed.feed_url),
+        ):
+            return
         self._set_status(f"Unsubscribed from {feed.title}")
         self._selected_feed = None
         self._showing_combined_feed = False
@@ -2664,13 +2722,12 @@ class PodcastBrowser(QFrame):
         self._episode_state_retry = lambda feed=feed: self._refresh_single_feed(feed)
 
         from iopenpod.application.runtime import ThreadPoolSingleton, Worker
-        from iopenpod.podcasts.artwork import cache_feed_artwork
         from iopenpod.podcasts.feed_parser import fetch_feed
 
         def _do():
             refreshed = fetch_feed(feed.feed_url, existing=feed)
             if self._store:
-                cache_feed_artwork(refreshed, self._store.podcast_dir)
+                self._store.cache_feed_artwork(refreshed)
             return refreshed
 
         worker = Worker(_do)
@@ -2679,9 +2736,14 @@ class PodcastBrowser(QFrame):
         ThreadPoolSingleton.get_instance().start(worker)
 
     def _on_single_feed_refreshed(self, feed) -> None:
-        if not self._store:
+        store = self._store
+        if store is None:
             return
-        self._store.update_feed(feed)
+        if not self._persist_subscription_change(
+            "save the refreshed podcast",
+            lambda: store.update_feed(feed),
+        ):
+            return
         self._mark_feed_refreshed(feed.feed_url)
         self._set_status(f"Refreshed {feed.title}")
         was_combined = self._showing_combined_feed
@@ -2754,8 +2816,13 @@ class PodcastBrowser(QFrame):
             )
             return
 
-        if self._store and changed_feeds:
-            self._store.update_feeds(list(changed_feeds.values()))
+        store = self._store
+        if store is not None and changed_feeds:
+            if not self._persist_subscription_change(
+                "save listened status",
+                lambda: store.update_feeds(list(changed_feeds.values())),
+            ):
+                return
 
         if self._showing_combined_feed:
             self._show_combined_feed()
@@ -2882,13 +2949,23 @@ class PodcastBrowser(QFrame):
         from iopenpod.podcasts.models import STATUS_NOT_DOWNLOADED
 
         removed = 0
+        failures: list[tuple[object, Exception]] = []
         changed_feeds: dict[str, PodcastFeed] = {}
+        store = self._store
         for _row, ep, feed in episode_refs:
-            if ep.downloaded_path and os.path.exists(ep.downloaded_path):
+            downloaded_path = ep.downloaded_path
+            if downloaded_path:
                 try:
-                    os.remove(ep.downloaded_path)
-                except OSError as exc:
-                    log.warning("Could not delete %s: %s", ep.downloaded_path, exc)
+                    if store is None:
+                        raise RuntimeError("Podcast download storage is unavailable")
+                    store.remove_episode_download(downloaded_path)
+                except Exception as exc:
+                    log.warning(
+                        "Could not safely remove podcast download %r: %s",
+                        downloaded_path,
+                        exc,
+                    )
+                    failures.append((downloaded_path, exc))
                     continue
             ep.downloaded_path = ""
             ep.status = STATUS_NOT_DOWNLOADED
@@ -2899,15 +2976,45 @@ class PodcastBrowser(QFrame):
                 )
             removed += 1
 
-        if self._store and changed_feeds:
-            self._store.update_feeds(list(changed_feeds.values()))
+        if store is not None and changed_feeds:
+            if not self._persist_subscription_change(
+                "save downloaded episode status",
+                lambda: store.update_feeds(list(changed_feeds.values())),
+            ):
+                return
 
         if self._showing_combined_feed:
             self._show_combined_feed()
         else:
             self._show_episodes(self._selected_feed)
         self._refresh_feed_list()
-        self._set_action_status(f"Removed {removed} download{'s' if removed != 1 else ''}")
+        if failures:
+            failed_count = len(failures)
+            title = "Download Not Removed" if failed_count == 1 else "Downloads Not Removed"
+            first_error = failures[0][1]
+            QMessageBox.warning(
+                self,
+                title,
+                "iOpenPod left "
+                f"{failed_count} episode download"
+                f"{'s' if failed_count != 1 else ''} and their saved state "
+                "unchanged because the stored path was unsafe or the file "
+                f"could not be removed.\n\n{first_error}",
+            )
+            if removed:
+                self._set_action_status(
+                    f"Removed {removed}; {failed_count} not removed"
+                )
+            else:
+                verb = "was" if failed_count == 1 else "were"
+                self._set_action_status(
+                    f"{failed_count} download{'s' if failed_count != 1 else ''} "
+                    f"{verb} not removed"
+                )
+            return
+        self._set_action_status(
+            f"Removed {removed} download{'s' if removed != 1 else ''}"
+        )
 
     def _remove_from_ipod(self, episodes: list) -> None:
         """Build a sync plan to remove episodes from the iPod."""
@@ -3056,7 +3163,8 @@ class PodcastBrowser(QFrame):
 
     def _on_feed_setting_changed(self, *_args) -> None:
         """Write current setting controls back to the selected feed."""
-        if not self._store or not self._selected_feed:
+        store = self._store
+        if store is None or not self._selected_feed:
             return
 
         feed = self._selected_feed
@@ -3089,7 +3197,10 @@ class PodcastBrowser(QFrame):
             self._feed_clear_method.currentText(), "remove",
         )
 
-        self._store.update_feed(feed)
+        self._persist_subscription_change(
+            "save podcast sync settings",
+            lambda: store.update_feed(feed),
+        )
 
     def _set_feed_art_placeholder(self) -> None:
         """Set a crisp HiDPI-safe placeholder icon in the feed artwork slot."""

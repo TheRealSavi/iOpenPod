@@ -2,17 +2,31 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from iopenpod.device.filesystem_profile import FilesystemProfile
+from iopenpod.device.write_guard import (
+    DatabaseGeneration,
+    DeviceWriteGuard,
+    DeviceWriteSafetyError,
+)
+from iopenpod.device.write_readiness import (
+    inspect_device_write_readiness,
+    revalidate_device_write_readiness,
+    volume_lock_key,
+)
 from iopenpod.itunesdb_writer.mhit_writer import TrackInfo
 
 from .database_commit import DatabaseCommitPayload, write_database_commit
 
 if TYPE_CHECKING:
     from .contracts import SyncProgress
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -26,6 +40,7 @@ class QuickWriteResult:
     master_playlist_name: str = ""
     track_count: int = 0
     newer_changes_pending: bool = False
+    database_generation: DatabaseGeneration | None = None
 
     @classmethod
     def failed(cls, stage: str, message: str) -> QuickWriteResult:
@@ -39,6 +54,9 @@ def write_cached_itunesdb(
     playlists_data: list[dict[str, Any]],
     artwork_sources: Mapping[int, str] | None = None,
     progress_callback: Callable[[SyncProgress], None] | None = None,
+    expected_database_generation: DatabaseGeneration | None = None,
+    reported_volume_format: str = "",
+    expected_volume_identity_key: str = "",
 ) -> QuickWriteResult:
     """Write the supplied cached tracks/playlists as the device iTunesDB.
 
@@ -49,6 +67,62 @@ def write_cached_itunesdb(
     the iTunesDB write.
     """
 
+    if not tracks_data and not playlists_data:
+        return QuickWriteResult.failed(
+            "quick_write",
+            "No cached tracks available to write.",
+        )
+
+    try:
+        filesystem_profile = inspect_device_write_readiness(
+            ipod_path,
+            reported_volume_format=reported_volume_format,
+        )
+        current_volume_key = volume_lock_key(filesystem_profile)
+        if (
+            expected_volume_identity_key
+            and current_volume_key != expected_volume_identity_key
+        ):
+            raise DeviceWriteSafetyError(
+                "A different volume is mounted at the selected iPod path. "
+                "iOpenPod stopped before the quick write. Reconnect and reload "
+                "the iPod."
+            )
+        with DeviceWriteGuard(
+            ipod_path,
+            volume_key=current_volume_key,
+            expected_database_generation=expected_database_generation,
+        ) as write_guard:
+            filesystem_profile = revalidate_device_write_readiness(
+                filesystem_profile,
+                probe_case_sensitivity=True,
+            )
+            return _write_cached_itunesdb_guarded(
+                ipod_path,
+                tracks_data=tracks_data,
+                playlists_data=playlists_data,
+                artwork_sources=artwork_sources,
+                progress_callback=progress_callback,
+                write_guard=write_guard,
+                filesystem_profile=filesystem_profile,
+            )
+    except DeviceWriteSafetyError as exc:
+        logger.error("Quick write stopped by device safety guard: %s", exc)
+        return QuickWriteResult.failed("filesystem_safety", str(exc))
+
+
+def _write_cached_itunesdb_guarded(
+    ipod_path: str | Path,
+    *,
+    tracks_data: list[dict[str, Any]],
+    playlists_data: list[dict[str, Any]],
+    artwork_sources: Mapping[int, str] | None,
+    progress_callback: Callable[[SyncProgress], None] | None,
+    write_guard: DeviceWriteGuard,
+    filesystem_profile: FilesystemProfile,
+) -> QuickWriteResult:
+    """Build and commit one cached snapshot while holding its device guard."""
+
     from .contracts import SyncProgress
     from .unknown_metadata import apply_unknown_placeholders
 
@@ -57,12 +131,6 @@ def write_cached_itunesdb(
             progress_callback(
                 SyncProgress("quick_write", current, total, message=message)
             )
-
-    if not tracks_data and not playlists_data:
-        return QuickWriteResult.failed(
-            "quick_write",
-            "No cached tracks available to write.",
-        )
 
     total_steps = 3
     _progress(0, total_steps, "Preparing cached database...")
@@ -104,6 +172,8 @@ def write_cached_itunesdb(
         podcast_master_playlist_name=podcast_master_name,
         podcast_master_playlist_id=podcast_master_playlist_id,
         pc_file_paths=dict(artwork_sources) if artwork_sources else None,
+        write_guard=write_guard,
+        filesystem_profile=filesystem_profile,
     ):
         return QuickWriteResult.failed(
             "quick_write",
@@ -116,6 +186,11 @@ def write_cached_itunesdb(
         playlist_counts=playlist_counts,
         master_playlist_name=master_name,
         track_count=len(all_tracks),
+        database_generation=getattr(
+            write_guard,
+            "starting_database_generation",
+            None,
+        ),
     )
 
 
@@ -285,6 +360,8 @@ def _write_evaluated_database(
     podcast_master_playlist_name: str,
     podcast_master_playlist_id: int | None,
     pc_file_paths: Mapping[int, str] | None = None,
+    write_guard: DeviceWriteGuard | None = None,
+    filesystem_profile: FilesystemProfile | None = None,
 ) -> bool:
     return write_database_commit(
         ipod_path,
@@ -301,4 +378,6 @@ def _write_evaluated_database(
         ),
         protect_itunes=True,
         include_photo_totals=False,
+        write_guard=write_guard,
+        filesystem_profile=filesystem_profile,
     )

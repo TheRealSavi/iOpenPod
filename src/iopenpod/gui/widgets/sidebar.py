@@ -647,7 +647,7 @@ class DeviceInfoCard(QFrame):
             bus_bits = [
                 bit for bit in (
                     dev.connected_bus,
-                    dev.volume_format,
+                    dev.reported_volume_format,
                 )
                 if bit
             ]
@@ -1113,6 +1113,10 @@ class Sidebar(QFrame):
         self.setVideoVisible(True)
         self.setPodcastVisible(True)
         self.setPhotoVisible(True)
+
+    def setEjectAvailable(self, available: bool) -> None:
+        """Allow safe eject even when device data cannot be loaded."""
+        self.device_card.eject_button.setEnabled(available)
 
     def setTagFixesAvailable(self, available: bool) -> None:
         self.tagFixButton.setEnabled(available)

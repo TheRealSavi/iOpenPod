@@ -6,6 +6,9 @@ from contextlib import contextmanager
 from pathlib import Path
 from uuid import uuid4
 
+import pytest
+
+from iopenpod.device.write_guard import DeviceWriteSafetyError
 from iopenpod.infrastructure import settings_runtime
 from iopenpod.infrastructure.settings_runtime import SettingsRuntime
 from iopenpod.infrastructure.settings_schema import AppSettings
@@ -25,6 +28,8 @@ def repo_temp_dir():
 def test_device_settings_round_trip_preserves_device_write_workers(monkeypatch) -> None:
     with repo_temp_dir() as tmp_path:
         monkeypatch.setattr(settings_runtime, "_clear_transcoder_caches", lambda: None)
+        (tmp_path / "iPod_Control" / "iTunes").mkdir(parents=True)
+        (tmp_path / "iPodInfo.json").write_text("{}", encoding="utf-8")
         runtime = SettingsRuntime()
 
         device_settings = AppSettings(
@@ -87,6 +92,24 @@ def test_device_settings_round_trip_preserves_device_write_workers(monkeypatch) 
 
 def test_normalize_tags_after_sync_defaults_off() -> None:
     assert AppSettings().normalize_tags_after_sync is False
+
+
+def test_corrupt_device_settings_are_not_silently_overwritten(monkeypatch) -> None:
+    with repo_temp_dir() as tmp_path:
+        monkeypatch.setattr(settings_runtime, "_clear_transcoder_caches", lambda: None)
+        settings_path = tmp_path / "iPod_Control" / "iOpenPod" / "settings.json"
+        settings_path.parent.mkdir(parents=True)
+        settings_path.write_text("{broken", encoding="utf-8")
+        original = settings_path.read_bytes()
+        runtime = SettingsRuntime()
+
+        loaded = runtime.load_device_settings(str(tmp_path), "", AppSettings())
+
+        assert loaded.exists is True
+        assert "could not be read safely" in loaded.load_error
+        with pytest.raises(DeviceWriteSafetyError, match="did not overwrite"):
+            runtime.save_device_settings(str(tmp_path), AppSettings())
+        assert settings_path.read_bytes() == original
 
 
 def test_device_settings_migrates_legacy_backup_false_to_ask(monkeypatch) -> None:

@@ -6,24 +6,24 @@ iPod Integrity Checker — validates consistency between three sources of truth:
   3. **iOpenPod.json**: our mapping file (fingerprint → db_track_id)
 
 Run this BEFORE the diff engine so the sync plan is built on accurate data.
-Any discrepancies are repaired automatically (conservative: never delete files
-the user can't re-sync).
+This module is deliberately read-only: it reports discrepancies for the sync
+plan, and the guarded executor performs any requested repair later.
 
 Checks performed
 ────────────────
 A. iTunesDB → Filesystem
    For every track Location in iTunesDB, verify the file exists.
-   If missing → remove that track from the working tracks list so the
-   diff engine doesn't think it's on the iPod.
+   If missing → report that track so the planner can exclude it from its
+   private working set and schedule a database removal.
 
 B. iOpenPod.json → iTunesDB
    For every db_track_id in the mapping, verify the db_track_id exists in iTunesDB.
-   If stale → remove from mapping so the diff engine treats the PC
-   track as a fresh add.
+   If stale → report it so the planner can use a cleaned in-memory mapping
+   and the guarded executor can persist that cleanup.
 
 C. Filesystem → iTunesDB  (orphan detection)
    Scan /iPod_Control/Music/F** for files not referenced by any track.
-   Orphans are deleted to reclaim space.
+   Orphans are reported for guarded deletion during execution.
 """
 
 import logging
@@ -45,7 +45,7 @@ def _is_appledouble_sidecar(path: Path) -> bool:
 
 @dataclass
 class IntegrityReport:
-    """Summary of what the integrity check found and fixed."""
+    """Summary of discrepancies found without mutating the iPod."""
 
     # Tracks in iTunesDB whose file is missing from the iPod filesystem
     missing_files: list[dict] = field(default_factory=list)
@@ -56,12 +56,22 @@ class IntegrityReport:
     # Files on iPod not referenced by any iTunesDB track
     orphan_files: list[Path] = field(default_factory=list)
 
+    # The mapping file could not be parsed and must be rebuilt under the
+    # device writer guard.  The original remains untouched during planning.
+    mapping_rebuild_required: bool = False
+
     # Errors encountered during the check
     errors: list[str] = field(default_factory=list)
 
     @property
     def is_clean(self) -> bool:
-        return not (self.missing_files or self.stale_mappings or self.orphan_files)
+        return not (
+            self.missing_files
+            or self.stale_mappings
+            or self.orphan_files
+            or self.mapping_rebuild_required
+            or self.errors
+        )
 
     @property
     def summary(self) -> str:
@@ -74,6 +84,8 @@ class IntegrityReport:
             parts.append(f"{len(self.stale_mappings)} stale entries in iOpenPod.json")
         if self.orphan_files:
             parts.append(f"{len(self.orphan_files)} orphan files on iPod (not in DB)")
+        if self.mapping_rebuild_required:
+            parts.append("iOpenPod.json needs a guarded rebuild")
         if self.errors:
             parts.append(f"{len(self.errors)} errors")
         return "Integrity issues found: " + ", ".join(parts)
@@ -84,22 +96,19 @@ def check_integrity(
     ipod_tracks: list[dict],
     mapping: MappingFile,
     *,
-    delete_orphans: bool = True,
+    delete_orphans: bool | None = None,
     progress_callback: Callable | None = None,
     is_cancelled: Callable[[], bool] | None = None,
 ) -> IntegrityReport:
     """
-    Run all three consistency checks and repair discrepancies.
-
-    This mutates ``ipod_tracks`` (removes entries whose files are missing)
-    and ``mapping`` (removes stale db_track_ids).  Orphan files are deleted from
-    the iPod filesystem if *delete_orphans* is True.
+    Run all three consistency checks without modifying the iPod or inputs.
 
     Args:
         ipod_path: Mount point / root of the iPod.
-        ipod_tracks: Track dicts parsed from iTunesDB (mutated in place).
-        mapping: The loaded iOpenPod.json MappingFile (mutated in place).
-        delete_orphans: If True, delete orphan files from iPod. Default True.
+        ipod_tracks: Track dicts parsed from iTunesDB.
+        mapping: The loaded iOpenPod.json MappingFile.
+        delete_orphans: Deprecated compatibility argument.  Orphans are never
+                        deleted by this read-only check.
         progress_callback: Optional callback(stage, current, total, message).
 
     Returns:
@@ -125,7 +134,11 @@ def check_integrity(
     if progress_callback:
         progress_callback("integrity", 0, 0, "Checking mapping against iTunesDB…")
 
-    _check_mapping_db_track_ids(ipod_tracks, mapping, report)
+    missing_track_objects = {id(track) for track in report.missing_files}
+    existing_tracks = [
+        track for track in ipod_tracks if id(track) not in missing_track_objects
+    ]
+    _check_mapping_db_track_ids(existing_tracks, mapping, report)
 
     if _cancelled():
         return report
@@ -134,7 +147,7 @@ def check_integrity(
     if progress_callback:
         progress_callback("integrity", 0, 0, "Scanning for orphan files…")
 
-    _check_orphan_files(ipod_root, music_dir, ipod_tracks, report, delete_orphans, _cancelled)
+    _check_orphan_files(ipod_root, music_dir, ipod_tracks, report, _cancelled)
 
     if not report.is_clean:
         logger.warning(report.summary)
@@ -152,10 +165,8 @@ def _check_db_files_exist(
     ipod_tracks: list[dict],
     report: IntegrityReport,
 ) -> None:
-    """Remove tracks from *ipod_tracks* whose audio file is missing."""
-    to_remove_indices: list[int] = []
-
-    for idx, track in enumerate(ipod_tracks):
+    """Report tracks whose referenced audio file is missing."""
+    for track in ipod_tracks:
         location = track.get("Location")
         if not location:
             continue
@@ -174,15 +185,11 @@ def _check_db_files_exist(
                 f"'{track.get('Title', '?')}' — {location}"
             )
             report.missing_files.append(track)
-            to_remove_indices.append(idx)
-
-    # Remove from back to front so indices stay valid
-    for idx in reversed(to_remove_indices):
-        ipod_tracks.pop(idx)
 
     if report.missing_files:
         logger.info(
-            f"Integrity: removed {len(report.missing_files)} tracks with missing files from working set"
+            "Integrity: found %d database tracks with missing files",
+            len(report.missing_files),
         )
 
 
@@ -194,8 +201,8 @@ def _check_mapping_db_track_ids(
     mapping: MappingFile,
     report: IntegrityReport,
 ) -> None:
-    """Remove mapping entries whose db_track_id is not in *ipod_tracks*."""
-    # Build set of valid db_track_ids from the (already-cleaned) track list
+    """Report mapping entries whose db_track_id is not in *ipod_tracks*."""
+    # Build set of valid db_track_ids from tracks whose media files exist.
     valid_db_track_ids: set[int] = set()
     for track in ipod_tracks:
         db_track_id = track.get("db_track_id", track.get("db_id"))
@@ -210,12 +217,16 @@ def _check_mapping_db_track_ids(
         if result:
             fp, _entry = result
             report.stale_mappings.append((fp, db_track_id))
-            mapping.remove_track(fp, db_track_id=db_track_id)
-            logger.warning(f"Integrity: removed stale mapping db_track_id={db_track_id} (fingerprint {fp[:20]}…)")
+            logger.warning(
+                "Integrity: found stale mapping db_track_id=%s (fingerprint %s…)",
+                db_track_id,
+                fp[:20],
+            )
 
     if report.stale_mappings:
         logger.info(
-            f"Integrity: cleaned {len(report.stale_mappings)} stale mapping entries"
+            "Integrity: found %d stale mapping entries",
+            len(report.stale_mappings),
         )
 
 
@@ -227,11 +238,22 @@ def _check_orphan_files(
     music_dir: Path,
     ipod_tracks: list[dict],
     report: IntegrityReport,
-    delete_orphans: bool,
     is_cancelled: Callable[[], bool] = lambda: False,
 ) -> None:
-    """Find and optionally delete files in Music/F** not referenced by iTunesDB."""
+    """Find media in Music/F** that is not referenced by iTunesDB."""
     if not music_dir.exists():
+        return
+
+    try:
+        root_resolved = ipod_root.resolve(strict=False)
+        music_resolved = music_dir.resolve(strict=False)
+    except OSError as exc:
+        report.errors.append(f"Could not resolve the iPod music directory: {exc}")
+        return
+    if not music_resolved.is_relative_to(root_resolved):
+        report.errors.append(
+            "The iPod music directory resolves outside the selected device root"
+        )
         return
 
     # Build set of normalised paths referenced by iTunesDB.
@@ -251,7 +273,13 @@ def _check_orphan_files(
 
     # Scan F00–F## for actual audio files
     orphans: list[Path] = []
-    for folder in sorted(music_dir.iterdir()):
+    try:
+        folders = sorted(music_dir.iterdir())
+    except OSError as exc:
+        report.errors.append(f"Could not scan the iPod music directory: {exc}")
+        return
+
+    for folder in folders:
         if is_cancelled():
             return
         if not folder.is_dir():
@@ -259,7 +287,22 @@ def _check_orphan_files(
         # Only look in F## folders
         if not (len(folder.name) >= 2 and folder.name[0] == "F" and folder.name[1:].isdigit()):
             continue
-        for file in folder.iterdir():
+        try:
+            folder_resolved = folder.resolve(strict=False)
+        except OSError as exc:
+            report.errors.append(f"Could not resolve iPod music folder {folder}: {exc}")
+            continue
+        if not folder_resolved.is_relative_to(music_resolved):
+            report.errors.append(
+                f"Skipped iPod music folder that resolves outside Music: {folder}"
+            )
+            continue
+        try:
+            files = tuple(folder.iterdir())
+        except OSError as exc:
+            report.errors.append(f"Could not scan iPod music folder {folder}: {exc}")
+            continue
+        for file in files:
             if is_cancelled():
                 return
             if not file.is_file():
@@ -267,6 +310,15 @@ def _check_orphan_files(
             if _is_appledouble_sidecar(file):
                 continue
             if file.suffix.lower() not in _MEDIA_EXTS:
+                continue
+            try:
+                if not file.resolve(strict=False).is_relative_to(music_resolved):
+                    report.errors.append(
+                        f"Skipped iPod media path that resolves outside Music: {file}"
+                    )
+                    continue
+            except OSError as exc:
+                report.errors.append(f"Could not resolve iPod media file {file}: {exc}")
                 continue
             if os.path.normcase(str(file)) not in referenced:
                 orphans.append(file)
@@ -279,29 +331,3 @@ def _check_orphan_files(
             f"Integrity: found {len(orphans)} orphan files "
             f"({total_bytes / (1024 * 1024):.1f} MB)"
         )
-
-        if delete_orphans:
-            deleted = 0
-            delete_error_count = 0
-            delete_error_samples: list[str] = []
-            for orphan in orphans:
-                try:
-                    orphan.unlink()
-                    deleted += 1
-                    logger.debug(f"Integrity: deleted orphan {orphan}")
-                except FileNotFoundError:
-                    logger.debug("Integrity: orphan already gone %s", orphan)
-                except Exception as e:
-                    error_text = f"Failed to delete orphan {orphan}: {e}"
-                    report.errors.append(error_text)
-                    delete_error_count += 1
-                    if len(delete_error_samples) < 5:
-                        delete_error_samples.append(error_text)
-
-            logger.info(f"Integrity: deleted {deleted}/{len(orphans)} orphan files")
-            if delete_error_samples:
-                logger.warning(
-                    "Integrity: failed to delete %d orphan file(s); examples: %s",
-                    delete_error_count,
-                    "; ".join(delete_error_samples),
-                )

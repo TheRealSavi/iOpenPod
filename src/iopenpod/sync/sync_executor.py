@@ -15,8 +15,8 @@ The database is always fully rewritten (not patched incrementally).
 import errno
 import logging
 import os
-import shlex
 import shutil
+import stat
 import tempfile
 import threading
 import time
@@ -28,6 +28,34 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
+from iopenpod.device.durability import (
+    durable_replace,
+    durable_unlink,
+    flush_filesystem,
+    flush_parent_directory,
+    flush_written_file,
+)
+from iopenpod.device.filesystem_profile import FilesystemProfile
+from iopenpod.device.metadata_write import DeviceMetadataWriteSession
+from iopenpod.device.path_safety import (
+    UnsafeDevicePathError,
+    resolve_device_path,
+)
+from iopenpod.device.storage_safety import (
+    allocated_size,
+    effective_max_file_size_bytes,
+    require_file_size_supported,
+)
+from iopenpod.device.write_guard import (
+    DatabaseGeneration,
+    DeviceWriteGuard,
+    DeviceWriteSafetyError,
+)
+from iopenpod.device.write_readiness import (
+    inspect_device_write_readiness,
+    revalidate_device_write_readiness,
+    volume_lock_key,
+)
 from iopenpod.itunesdb_shared.constants import (
     MEDIA_TYPE_MUSIC_VIDEO,
     MEDIA_TYPE_PODCAST,
@@ -38,6 +66,7 @@ from iopenpod.itunesdb_shared.constants import (
 from iopenpod.itunesdb_writer.mhit_writer import TrackInfo
 from iopenpod.itunesdb_writer.mhyp_writer import PlaylistInfo
 
+from ._formats import MEDIA_EXTENSIONS as _MEDIA_EXTENSIONS
 from .album_chapters import (
     ResolvedAlbumSource,
     convert_album_to_chaptered_track,
@@ -170,25 +199,24 @@ def _format_bytes(val: int) -> str:
     return f"{value:.1f} TB"
 
 
-def _write_permission_failure_message(ipod_path: Path, error: OSError) -> str:
-    mount_path = str(ipod_path)
-    quoted_mount = shlex.quote(mount_path)
-    detail = str(error).strip() or error.__class__.__name__
-    return (
-        "iOpenPod cannot write to this iPod.\n\n"
-        "The device is mounted read-only, or your user account does not have "
-        "write permission for the mount.\n\n"
-        f"Mount path: {mount_path}\n"
-        f"System error: {detail}\n\n"
-        "On Linux, try reconnecting the iPod. If it still mounts read-only, "
-        "try remounting it read-write:\n"
-        f"  sudo mount -o remount,rw {quoted_mount}\n\n"
-        "If the FAT filesystem is dirty, unmount it before repairing it:\n"
-        f"  sudo umount {quoted_mount}\n"
-        "  sudo fsck.vfat -a /dev/sdXN\n\n"
-        "Replace /dev/sdXN with the iPod partition. Do not run fsck while "
-        "the iPod is mounted."
-    )
+def _write_permission_failure_detail(error: OSError) -> str:
+    return str(error).strip() or error.__class__.__name__
+
+
+def _strict_device_path_stat(
+    path: Path,
+    *,
+    action: str,
+) -> os.stat_result | None:
+    """Stat a device path without treating an I/O failure as absence."""
+    try:
+        return path.stat()
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        raise DeviceWriteSafetyError(
+            f"Could not safely inspect the iPod path before {action}: {exc}"
+        ) from exc
 
 
 class _OutOfSpaceError(Exception):
@@ -286,6 +314,11 @@ class _SyncContext:
     completed_conversion_groups: set[str] = field(default_factory=set)
     pc_file_paths: dict[int, str] = field(default_factory=dict)
     final_photo_db: object | None = None
+    database_committed: bool = False
+    device_changes_committed: bool = False
+    integrity_orphans_removed: int = 0
+    write_guard: DeviceWriteGuard | None = None
+    filesystem_profile: FilesystemProfile | None = None
 
     _cancel_recorded: bool = False
 
@@ -384,6 +417,8 @@ class SyncExecutor:
         transcode_options: TranscodeOptions | None = None,
         device_info: object | None = None,
         device_capabilities: object | None = None,
+        device_storage: object | None = None,
+        expected_database_generation: DatabaseGeneration | None = None,
     ):
         from .transcode_cache import TranscodeCache
 
@@ -399,6 +434,9 @@ class SyncExecutor:
         self.transcode_options = transcode_options or TranscodeOptions()
         self.device_info = device_info
         self.device_capabilities = device_capabilities
+        self.device_storage = device_storage
+        self.expected_database_generation = expected_database_generation
+        self._filesystem_profile: FilesystemProfile | None = None
 
         self._folder_counter = 0
         self._folder_lock = threading.Lock()
@@ -500,7 +538,60 @@ class SyncExecutor:
 
         self._reset_metadata_strip_summary()
         try:
-            self._run_execution_lifecycle(ctx, lifecycle)
+            if ctx.dry_run:
+                self._run_execution_lifecycle(ctx, lifecycle)
+            else:
+                try:
+                    reported_format = str(
+                        getattr(
+                            self.device_storage,
+                            "reported_volume_format",
+                            "",
+                        )
+                        or ""
+                    )
+                    profile = inspect_device_write_readiness(
+                        self.ipod_path,
+                        reported_volume_format=reported_format,
+                    )
+                    current_volume_key = volume_lock_key(profile)
+                    expected_volume_key = str(
+                        getattr(
+                            self.device_storage,
+                            "volume_identity_key",
+                            "",
+                        )
+                        or ""
+                    )
+                    if (
+                        expected_volume_key
+                        and current_volume_key != expected_volume_key
+                    ):
+                        raise DeviceWriteSafetyError(
+                            "A different volume is mounted at the selected iPod "
+                            "path. iOpenPod stopped before writing."
+                        )
+                    self._filesystem_profile = profile
+                    ctx.filesystem_profile = profile
+                    with DeviceWriteGuard(
+                        self.ipod_path,
+                        volume_key=current_volume_key,
+                        expected_database_generation=(
+                            self.expected_database_generation
+                        ),
+                    ) as write_guard:
+                        profile = revalidate_device_write_readiness(
+                            profile,
+                            probe_case_sensitivity=True,
+                        )
+                        self._filesystem_profile = profile
+                        ctx.filesystem_profile = profile
+                        ctx.write_guard = write_guard
+                        self._run_execution_lifecycle(ctx, lifecycle)
+                except DeviceWriteSafetyError as exc:
+                    logger.error("Sync stopped by device safety guard: %s", exc)
+                    ctx.result.errors.append(("filesystem_safety", str(exc)))
+                    ctx.result.success = False
         finally:
             self._log_metadata_strip_summary()
         return ctx.result
@@ -604,8 +695,46 @@ class SyncExecutor:
         if not self._run_preflight_phase(ctx):
             return
 
-        self._run_file_mutation_phase(ctx)
-        self._run_database_commit_phase(ctx, lifecycle)
+        flush_ok = True
+        try:
+            self._run_file_mutation_phase(ctx)
+            self._run_database_commit_phase(ctx, lifecycle)
+        finally:
+            if not ctx.dry_run:
+                try:
+                    # Never run a mount-scoped flush against a path that may
+                    # now refer to a replacement volume or an ordinary host
+                    # directory after the iPod was unplugged.
+                    self._revalidate_device_write_readiness()
+                    flush_ok, flush_message = flush_filesystem(self.ipod_path)
+                except DeviceWriteSafetyError as exc:
+                    flush_ok = False
+                    flush_message = (
+                        "filesystem flush was skipped because the selected "
+                        f"iPod mount is no longer safe: {exc}"
+                    )
+                except Exception as exc:
+                    flush_ok = False
+                    flush_message = f"filesystem flush failed: {exc}"
+
+                if flush_ok:
+                    logger.info(
+                        "Sync filesystem flush completed: mount=%s result=%s",
+                        self.ipod_path,
+                        flush_message,
+                    )
+                else:
+                    logger.error(
+                        "Sync filesystem flush failed: mount=%s result=%s",
+                        self.ipod_path,
+                        flush_message,
+                    )
+                    ctx.result.errors.append((
+                        "filesystem_flush",
+                        flush_message,
+                    ))
+        if (ctx.database_committed or ctx.device_changes_committed) and flush_ok:
+            self._clear_gui_cache(ctx)
         ctx.result.success = not ctx.result.has_errors
 
     def _prepare_execution_plan(self, ctx: _SyncContext) -> bool:
@@ -644,11 +773,33 @@ class SyncExecutor:
         """Reject plans whose target database rows disappeared before execute."""
 
         missing: list[tuple[str, str]] = []
+        unsafe_paths: list[tuple[str, str]] = []
+
+        def _check_safe_location(
+            bucket: str,
+            item: SyncItem,
+            location: str,
+        ) -> None:
+            if location and expected_ipod_track_file_path(
+                self.ipod_path,
+                location,
+            ) is None:
+                unsafe_paths.append((
+                    bucket,
+                    f"{item.display_label} has an unsafe iPod media path: {location}",
+                ))
 
         def _check_db_items(bucket: str, items: list[SyncItem]) -> None:
             for item in items:
                 db_track_id = coerce_int(item.db_track_id)
                 if db_track_id and db_track_id in ctx.tracks_by_db_track_id:
+                    if bucket == "to_update_file":
+                        current = ctx.tracks_by_db_track_id[db_track_id]
+                        _check_safe_location(
+                            bucket,
+                            item,
+                            str(current.location or item.ipod_location or ""),
+                        )
                     continue
                 missing.append((
                     bucket,
@@ -673,8 +824,15 @@ class SyncExecutor:
                 db_track_id = coerce_int(item.db_track_id)
                 location = item.ipod_location
                 if db_track_id and db_track_id in ctx.tracks_by_db_track_id:
+                    current = ctx.tracks_by_db_track_id[db_track_id]
+                    _check_safe_location(
+                        bucket,
+                        item,
+                        str(current.location or location or ""),
+                    )
                     continue
                 if location and location in ctx.tracks_by_location:
+                    _check_safe_location(bucket, item, location)
                     continue
                 missing.append((
                     bucket,
@@ -684,13 +842,19 @@ class SyncExecutor:
                     ),
                 ))
 
-        if not missing:
+        if not missing and not unsafe_paths:
             return True
 
         for code, message in missing:
             ctx.result.errors.append((f"stale_plan_{code}", message))
+        for code, message in unsafe_paths:
+            ctx.result.errors.append((f"unsafe_device_path_{code}", message))
         ctx.result.success = False
-        logger.error("Sync plan targets disappeared before execution: %d", len(missing))
+        logger.error(
+            "Sync plan target validation failed: missing=%d unsafe_paths=%d",
+            len(missing),
+            len(unsafe_paths),
+        )
         return False
 
     def _run_file_mutation_phase(self, ctx: _SyncContext) -> None:
@@ -724,6 +888,7 @@ class SyncExecutor:
         """File and in-memory mutation stages that precede database commit."""
 
         return (
+            self._execute_integrity_housekeeping,
             self._execute_removes,
             self._execute_file_updates,
             self._execute_metadata_updates,
@@ -745,6 +910,10 @@ class SyncExecutor:
         """Commit the database state required by completed file mutations."""
 
         if ctx.dry_run:
+            return
+
+        if self._is_integrity_housekeeping_only(ctx.plan):
+            self._commit_integrity_housekeeping(ctx)
             return
 
         was_cancelled = ctx.cancelled()
@@ -771,6 +940,57 @@ class SyncExecutor:
             return
 
         self._execute_write_and_finalize(ctx)
+
+    @staticmethod
+    def _is_integrity_housekeeping_only(plan: SyncPlan) -> bool:
+        """Return True when execution needs no iTunesDB rewrite."""
+        database_changes = any((
+            plan.to_add,
+            plan.to_remove,
+            plan.to_update_metadata,
+            plan.to_update_file,
+            plan.to_update_artwork,
+            plan.to_sync_playcount,
+            plan.to_sync_rating,
+            plan._integrity_removals,
+            plan.playlists_to_add,
+            plan.playlists_to_edit,
+            plan.playlists_to_remove,
+            plan.photo_plan and plan.photo_plan.has_changes,
+        ))
+        housekeeping = bool(
+            plan.has_integrity_housekeeping or plan._refreshed_podcast_feeds
+        )
+        return bool(housekeeping and not database_changes)
+
+    def _commit_integrity_housekeeping(self, ctx: _SyncContext) -> None:
+        """Persist mapping-only maintenance without rewriting iTunesDB."""
+        if ctx.cancelled() or not ctx.result.success:
+            return
+
+        mapping_saved = False
+        if ctx.plan._mapping_requires_persistence:
+            self._revalidate_device_write_readiness()
+            if self.mapping_manager.save(ctx.mapping) is False:
+                ctx.result.errors.append((
+                    "mapping",
+                    "Could not safely save the cleaned iPod mapping file.",
+                ))
+                ctx.result.success = False
+                return
+            mapping_saved = True
+
+        podcast_metadata_saved = False
+        if ctx.plan._refreshed_podcast_feeds:
+            self._update_podcast_subscriptions(ctx)
+            podcast_metadata_saved = True
+
+        if (
+            mapping_saved
+            or podcast_metadata_saved
+            or ctx.integrity_orphans_removed
+        ):
+            ctx.device_changes_committed = True
 
     @staticmethod
     def _file_mutation_summary(ctx: _SyncContext) -> _FileMutationSummary:
@@ -891,9 +1111,9 @@ class SyncExecutor:
         if capabilities is not None:
             return capabilities
         try:
-            from iopenpod.device import get_current_device
+            from iopenpod.device import get_current_device_for_path
 
-            device = get_current_device()
+            device = get_current_device_for_path(self.ipod_path)
             return getattr(device, "capabilities", None) if device is not None else None
         except Exception:
             return None
@@ -1012,6 +1232,11 @@ class SyncExecutor:
                 needed = sync_plan_required_free_bytes(
                     ctx.plan,
                     db_overhead_bytes=_DB_OVERHEAD_BYTES,
+                    allocation_unit_size=getattr(
+                        ctx.filesystem_profile,
+                        "allocation_unit_size",
+                        None,
+                    ),
                 )
                 if needed > 0 and disk.free < needed:
                     if ctx.sync_until_full:
@@ -1043,27 +1268,50 @@ class SyncExecutor:
                         ctx.result.success = False
                         return False
             except OSError as e:
-                logger.warning("Could not check disk space: %s", e)
+                message = f"Could not verify iPod free space before sync: {e}"
+                logger.error(message)
+                ctx.result.errors.append(("filesystem_safety", message))
+                ctx.result.success = False
+                return False
 
         # On Linux the iPod may be auto-mounted read-only (dirty VFAT,
         # missing write permissions).  Detect early for a clear error.
         if not ctx.dry_run:
             probe_dir = self.ipod_path / "iPod_Control" / "iTunes"
             try:
-                fd, probe_path = tempfile.mkstemp(
+                self._revalidate_device_write_readiness()
+                fd, raw_probe_path = tempfile.mkstemp(
                     prefix=".iOpenPod_write_test_", dir=str(probe_dir),
                 )
                 os.close(fd)
-                os.unlink(probe_path)
+                probe_path = Path(raw_probe_path)
+                self._revalidate_device_write_readiness()
+                durable_unlink(probe_path)
             except OSError as e:
                 if e.errno in (errno.EROFS, errno.EACCES):
-                    hint = _write_permission_failure_message(self.ipod_path, e)
+                    detail = _write_permission_failure_detail(e)
                     logger.error("iPod is read-only: %s", e)
-                    ctx.result.errors.append(("read-only", hint))
+                    ctx.result.errors.append(("read-only", detail))
                     ctx.result.success = False
                     return False
-                else:
-                    logger.warning("Writability probe failed (non-fatal): %s", e)
+                message = f"Could not verify that the iPod is writable: {e}"
+                logger.error(message)
+                ctx.result.errors.append(("filesystem_safety", message))
+                ctx.result.success = False
+                return False
+
+        try:
+            max_file_size = self._effective_max_file_size_bytes()
+            for item in (*ctx.plan.to_add, *ctx.plan.to_update_file):
+                require_file_size_supported(
+                    item.planned_add_size,
+                    max_file_size_bytes=max_file_size,
+                    display_name=item.display_label,
+                )
+        except DeviceWriteSafetyError as exc:
+            ctx.result.errors.append(("filesystem_safety", str(exc)))
+            ctx.result.success = False
+            return False
 
         return True
 
@@ -1280,6 +1528,7 @@ class SyncExecutor:
         # the database itself.  This lets a sync that fills the iPod close to
         # the wire still commit successfully.
         try:
+            self._revalidate_device_write_readiness()
             free_now = shutil.disk_usage(self.ipod_path).free
             if free_now < _DB_WRITE_RESERVE_BYTES:
                 reserve_mb = _DB_WRITE_RESERVE_BYTES / (1024 * 1024)
@@ -1292,7 +1541,11 @@ class SyncExecutor:
                 ctx.result.success = False
                 return
         except OSError as e:
-            logger.warning("Could not check disk space before DB write: %s", e)
+            message = f"Could not verify iPod free space before database write: {e}"
+            logger.error(message)
+            ctx.result.errors.append(("filesystem_safety", message))
+            ctx.result.success = False
+            return
 
         # Scrobble before clearing transient play deltas or deleting Play
         # Counts.  Each service receives its own snapshot of the original
@@ -1317,6 +1570,9 @@ class SyncExecutor:
                 progress_callback=_db_progress,
                 raise_on_error=True,
                 protect_itunes=False,
+                flush_after_write=False,
+                write_guard=ctx.write_guard,
+                filesystem_profile=ctx.filesystem_profile,
             )
             if not db_ok:
                 logger.error("Database write returned failure — skipping mapping save")
@@ -1332,14 +1588,26 @@ class SyncExecutor:
             self._backpatch_new_tracks(ctx)
 
             # Save mapping ONLY after successful DB write + backpatch.
-            self.mapping_manager.save(ctx.mapping)
+            self._revalidate_device_write_readiness()
+            if self.mapping_manager.save(ctx.mapping) is False:
+                ctx.result.errors.append((
+                    "mapping",
+                    "The iPod database was written, but the iOpenPod mapping "
+                    "file could not be saved.",
+                ))
+                ctx.result.success = False
+                return
 
             # ── Update podcast subscription store ──────────────────
             self._update_podcast_subscriptions(ctx)
 
-            self._clear_gui_cache(ctx)
+            # The lifecycle invokes the sync-complete callback only after the
+            # target filesystem has passed its final durability flush.
+            ctx.database_committed = True
+            ctx.device_changes_committed = True
 
             if ctx.plan.photo_plan:
+                self._revalidate_device_write_readiness()
                 ctx.final_photo_db = apply_photo_sync_plan(
                     self.ipod_path,
                     ctx.plan.photo_plan,
@@ -1348,6 +1616,8 @@ class SyncExecutor:
                     ),
                     is_cancelled=ctx._is_cancelled,
                     sync_settings=self.photo_sync_settings,
+                    before_device_mutation=self._revalidate_device_write_readiness,
+                    filesystem_profile=ctx.filesystem_profile,
                 )
                 ctx.result.photos_added = len(ctx.plan.photo_plan.photos_to_add)
                 ctx.result.photos_removed = len(ctx.plan.photo_plan.photos_to_remove)
@@ -1360,15 +1630,22 @@ class SyncExecutor:
             photo_db = ctx.final_photo_db if ctx.final_photo_db is not None else read_photo_db(
                 self.ipod_path
             )
+            self._revalidate_device_write_readiness()
             apply_itunes_protections_from_tracks(
                 self.ipod_path,
                 commit_payload.all_tracks,
                 photo_db=photo_db,
                 include_photo_totals=True,
+                before_device_mutation=self._revalidate_device_write_readiness,
             )
 
+            self._revalidate_device_write_readiness()
             self._delete_playcounts_file()
 
+        except DeviceWriteSafetyError as e:
+            ctx.result.errors.append(("filesystem_safety", str(e)))
+            ctx.result.success = False
+            logger.error("Database commit stopped by device safety guard: %s", e)
         except Exception as e:
             ctx.result.errors.append(("database write", str(e)))
             logger.exception("Database/post-write phase failed")
@@ -1655,10 +1932,34 @@ class SyncExecutor:
             if last_played > _coerce_int(getattr(ep, "last_played", 0)):
                 ep.last_played = last_played
 
-        store = SubscriptionStore(str(self.ipod_path))
-        feeds = store.get_feeds()
+        profile = ctx.filesystem_profile or self._filesystem_profile
+        if profile is None:
+            raise DeviceWriteSafetyError(
+                "Podcast metadata cannot be written without a retained "
+                "filesystem safety profile."
+            )
+        metadata_session = DeviceMetadataWriteSession(
+            Path(os.path.realpath(self.ipod_path)),
+            profile,
+        )
+        store = SubscriptionStore(
+            str(self.ipod_path),
+            reported_volume_format=str(
+                getattr(self.device_storage, "reported_volume_format", "") or ""
+            ),
+            expected_volume_identity_key=str(
+                getattr(self.device_storage, "volume_identity_key", "") or ""
+            ),
+            metadata_write_session=metadata_session,
+        )
+        refreshed_feeds = ctx.plan._refreshed_podcast_feeds
+        feeds = list(refreshed_feeds) if refreshed_feeds is not None else store.get_feeds()
         if not feeds:
             return
+
+        if refreshed_feeds is not None:
+            for feed in feeds:
+                store.cache_feed_artwork(feed)
 
         # Index episodes by enclosure URL across all feeds
         ep_by_url: dict[str, tuple] = {}
@@ -1670,7 +1971,7 @@ class SyncExecutor:
                 if ep.ipod_db_track_id:
                     ep_by_db_track_id[ep.ipod_db_track_id] = (ep, feed)
 
-        changed = False
+        changed = refreshed_feeds is not None
 
         # Mark added podcast episodes as on_ipod with their db_track_id
         for track in ctx.new_tracks:
@@ -1727,6 +2028,142 @@ class SyncExecutor:
                 pass
 
     # ── Stage Implementations ───────────────────────────────────────────────
+
+    def _execute_integrity_housekeeping(self, ctx: _SyncContext) -> None:
+        """Delete planned orphan media under the active device writer guard."""
+        report = ctx.plan.integrity_report
+        orphan_files = list(
+            getattr(report, "orphan_files", ()) if report is not None else ()
+        )
+        if not orphan_files:
+            return
+
+        ctx.progress(
+            "integrity",
+            0,
+            len(orphan_files),
+            message="Removing unreferenced iPod media...",
+        )
+        for index, planned_path in enumerate(orphan_files, start=1):
+            if ctx.cancelled():
+                return
+            ctx.progress(
+                "integrity",
+                index,
+                len(orphan_files),
+                message=Path(planned_path).name,
+            )
+            if ctx.dry_run:
+                continue
+            try:
+                removed = self._delete_planned_integrity_orphan(ctx, planned_path)
+            except DeviceWriteSafetyError:
+                raise
+            except OSError as exc:
+                message = (
+                    "Could not remove unreferenced iPod media "
+                    f"{Path(planned_path).name}: {exc}"
+                )
+                logger.error(message)
+                ctx.result.errors.append(("integrity_cleanup", message))
+                ctx.result.success = False
+                return
+            if removed:
+                ctx.integrity_orphans_removed += 1
+
+    def _delete_planned_integrity_orphan(
+        self,
+        ctx: _SyncContext,
+        planned_path: str | Path,
+    ) -> bool:
+        """Revalidate, contain, and durably delete one planned orphan."""
+        with self._device_write_semaphore:
+            self._revalidate_device_write_readiness()
+            candidate = self._resolve_integrity_orphan_path(planned_path)
+            candidate_stat = _strict_device_path_stat(
+                candidate,
+                action="integrity cleanup",
+            )
+            if candidate_stat is None:
+                logger.info("Planned orphan is already absent: %s", candidate)
+                return False
+            if self._database_references_media_path(ctx, candidate):
+                logger.warning(
+                    "Skipped planned orphan because the current iTunesDB now "
+                    "references it: %s",
+                    candidate,
+                )
+                return False
+            if not stat.S_ISREG(candidate_stat.st_mode):
+                raise DeviceWriteSafetyError(
+                    f"Planned orphan is no longer a regular media file: {candidate}"
+                )
+            try:
+                durable_unlink(candidate)
+            except OSError as exc:
+                raise DeviceWriteSafetyError(
+                    f"Could not durably remove planned orphan {candidate}: {exc}"
+                ) from exc
+            logger.info("Removed unreferenced iPod media: %s", candidate)
+            return True
+
+    def _resolve_integrity_orphan_path(self, planned_path: str | Path) -> Path:
+        """Resolve one planner-reported orphan inside Music/F## only."""
+        root = Path(os.path.abspath(self.ipod_path))
+        lexical = Path(os.path.abspath(Path(planned_path)))
+        try:
+            relative = lexical.relative_to(root)
+        except ValueError as exc:
+            raise DeviceWriteSafetyError(
+                f"Refusing orphan cleanup outside the selected iPod: {planned_path}"
+            ) from exc
+
+        parts = relative.parts
+        if (
+            len(parts) != 4
+            or parts[0].casefold() != "ipod_control"
+            or parts[1].casefold() != "music"
+            or not (
+                len(parts[2]) >= 2
+                and parts[2][0].casefold() == "f"
+                and parts[2][1:].isdigit()
+            )
+            or Path(parts[3]).suffix.lower() not in _MEDIA_EXTENSIONS
+        ):
+            raise DeviceWriteSafetyError(
+                f"Refusing unexpected orphan cleanup path: {planned_path}"
+            )
+
+        try:
+            resolved = resolve_device_path(
+                root,
+                relative,
+                allowed_subtree=Path("iPod_Control") / "Music",
+            )
+        except UnsafeDevicePathError as exc:
+            raise DeviceWriteSafetyError(str(exc)) from exc
+
+        if os.path.normcase(str(lexical)) != os.path.normcase(str(resolved)):
+            raise DeviceWriteSafetyError(
+                "Refusing orphan cleanup through a symlink or reparse point: "
+                f"{planned_path}"
+            )
+        return resolved
+
+    def _database_references_media_path(
+        self,
+        ctx: _SyncContext,
+        candidate: Path,
+    ) -> bool:
+        candidate_key = stable_path_key(candidate)
+        for track in ctx.tracks_by_db_track_id.values():
+            location = str(track.location or "")
+            if not location:
+                continue
+            referenced = expected_ipod_track_file_path(self.ipod_path, location)
+            if referenced is not None and stable_path_key(referenced) == candidate_key:
+                return True
+        return False
 
     def _transcode_plan_for_item(
         self,
@@ -1879,6 +2316,7 @@ class SyncExecutor:
         worker_fractions: dict[int, float] = {}
         worker_sizes: dict[int, int] = {}
         worker_status: dict[int, str] = {}
+        stop_writes = threading.Event()
         total = len(items)
 
         total_sync_bytes = sum(
@@ -1970,7 +2408,8 @@ class SyncExecutor:
                 source_path, transcode_plan, fingerprint=item.fingerprint,
                 transcode_progress=transcode_cb,
                 copy_progress=copy_cb,
-                is_cancelled=ctx._is_cancelled,
+                is_cancelled=lambda: stop_writes.is_set()
+                or bool(ctx._is_cancelled and ctx._is_cancelled()),
                 expected_write_bytes=expected_write_bytes,
                 source_identity=source_identity,
                 sync_until_full=ctx.sync_until_full,
@@ -1985,16 +2424,18 @@ class SyncExecutor:
             future_to_idx: dict[Future, int] = {}
             for idx, item in items_to_process:
                 if ctx.cancelled():
-                    pool.shutdown(wait=False, cancel_futures=True)
+                    stop_writes.set()
+                    pool.shutdown(wait=True, cancel_futures=True)
                     return
                 fut = pool.submit(_do_copy, item, idx)
                 future_to_idx[fut] = idx
 
             for future in as_completed(future_to_idx):
                 if ctx.cancelled():
+                    stop_writes.set()
                     for f in future_to_idx:
                         f.cancel()
-                    pool.shutdown(wait=False, cancel_futures=True)
+                    pool.shutdown(wait=True, cancel_futures=True)
                     return
 
                 idx = future_to_idx[future]
@@ -2008,6 +2449,7 @@ class SyncExecutor:
                         source_identity,
                     ) = future.result()
                 except (_CancelledError, _OutOfSpaceError) as e:
+                    stop_writes.set()
                     is_oom = isinstance(e, _OutOfSpaceError)
                     if is_oom:
                         logger.error(str(e))
@@ -2030,8 +2472,14 @@ class SyncExecutor:
                         ctx.result.success = False
                     for f in future_to_idx:
                         f.cancel()
-                    pool.shutdown(wait=False, cancel_futures=True)
+                    pool.shutdown(wait=True, cancel_futures=True)
                     return
+                except DeviceWriteSafetyError:
+                    stop_writes.set()
+                    for f in future_to_idx:
+                        f.cancel()
+                    pool.shutdown(wait=True, cancel_futures=True)
+                    raise
                 except Exception as e:
                     item = items[idx]
                     ctx.result.errors.append((item.description, f"Worker error: {e}"))
@@ -2112,13 +2560,19 @@ class SyncExecutor:
     @staticmethod
     def _unique_rebuild_destination(path: Path, suffix: str) -> Path:
         candidate = path.with_suffix(suffix)
-        if candidate == path or not candidate.exists():
+        if candidate == path or _strict_device_path_stat(
+            candidate,
+            action="choosing a rebuild destination",
+        ) is None:
             return candidate
         stem = candidate.stem
         parent = candidate.parent
         for index in range(1, 10_000):
             numbered = parent / f"{stem} {index}{suffix}"
-            if not numbered.exists():
+            if _strict_device_path_stat(
+                numbered,
+                action="choosing a rebuild destination",
+            ) is None:
                 return numbered
         raise RuntimeError(f"Could not choose rebuild destination for {path.name}")
 
@@ -2216,7 +2670,6 @@ class SyncExecutor:
                     old_full_path,
                     converted.output_path.suffix,
                 )
-                destination.parent.mkdir(parents=True, exist_ok=True)
                 tmp_destination = destination.with_name(
                     f"{destination.name}.iopenpodtmp"
                 )
@@ -2226,12 +2679,13 @@ class SyncExecutor:
                         tmp_destination,
                         is_cancelled=ctx._is_cancelled,
                     )
-                    tmp_destination.replace(destination)
+                    with self._device_write_semaphore:
+                        self._revalidate_device_write_readiness()
+                        durable_replace(tmp_destination, destination)
                 finally:
-                    try:
-                        tmp_destination.unlink(missing_ok=True)
-                    except OSError:
-                        pass
+                    with self._device_write_semaphore:
+                        self._revalidate_device_write_readiness()
+                        durable_unlink(tmp_destination, missing_ok=True)
 
                 ipod_location = ipod_location_from_file_path(
                     self.ipod_path,
@@ -2365,7 +2819,7 @@ class SyncExecutor:
                 if existing_track.location in ctx.tracks_by_location:
                     del ctx.tracks_by_location[existing_track.location]
                 existing_track.location = ipod_location
-                existing_track.size = ipod_path.stat().st_size if ipod_path.exists() else item.pc_track.size
+                existing_track.size = ipod_path.stat().st_size
 
                 ext = ipod_path.suffix.lower().lstrip(".")
                 if ext in ("m4a", "mp4"):
@@ -2676,6 +3130,97 @@ class SyncExecutor:
         if not ctx.plan.to_add:
             return
 
+        from iopenpod.podcasts.downloader import DeviceDownloadSafety
+
+        podcast_subtree = Path("iPod_Control") / "iOpenPodPodcasts"
+
+        def _device_cache_context(
+            path: Path,
+        ) -> tuple[Path, DeviceDownloadSafety] | None:
+            """Return a contained device path and its retained safety policy.
+
+            Podcast episode downloads normally live in the host transcode
+            cache.  Legacy subscription data can still name an iPod-resident
+            cache file; only those paths receive device write policy.
+            """
+            if not path.is_absolute():
+                return None
+
+            root = Path(os.path.abspath(self.ipod_path))
+            candidate = Path(os.path.abspath(path))
+            try:
+                relative = candidate.relative_to(root)
+            except ValueError:
+                return None
+
+            try:
+                contained = resolve_device_path(
+                    self.ipod_path,
+                    relative,
+                    allowed_subtree=podcast_subtree,
+                )
+                subtree_root = resolve_device_path(
+                    self.ipod_path,
+                    podcast_subtree,
+                    allowed_subtree=podcast_subtree,
+                )
+            except (OSError, UnsafeDevicePathError) as exc:
+                raise DeviceWriteSafetyError(
+                    "A podcast cache path is outside the contained "
+                    "iPod_Control/iOpenPodPodcasts directory. iOpenPod "
+                    "stopped before accessing it."
+                ) from exc
+
+            profile = ctx.filesystem_profile or self._filesystem_profile
+            if profile is None:
+                raise DeviceWriteSafetyError(
+                    "An iPod-resident podcast cache cannot be accessed "
+                    "without a retained filesystem safety profile."
+                )
+            safety = DeviceDownloadSafety(
+                before_device_io=self._revalidate_device_write_readiness,
+                free_space_path=self.ipod_path,
+                max_file_size_bytes=self._effective_max_file_size_bytes(),
+                max_component_length=profile.max_component_length,
+                allocation_unit_size=profile.allocation_unit_size,
+            )
+            try:
+                descendant = contained.relative_to(subtree_root)
+            except ValueError as exc:
+                raise DeviceWriteSafetyError(
+                    "A podcast cache path escaped the contained iPod "
+                    "podcast directory."
+                ) from exc
+            for component in descendant.parts:
+                safety.require_component_supported(component)
+            return contained, safety
+
+        def _source_if_present(
+            source: Path,
+        ) -> tuple[Path | None, DeviceDownloadSafety | None]:
+            device_context = _device_cache_context(source)
+            if device_context is None:
+                return (source, None) if source.exists() else (None, None)
+
+            contained, safety = device_context
+            safety.revalidate()
+            try:
+                source_stat = contained.stat()
+            except FileNotFoundError:
+                return None, safety
+            except OSError as exc:
+                raise DeviceWriteSafetyError(
+                    "Could not safely inspect the iPod podcast cache file "
+                    f"{contained.name}: {exc}"
+                ) from exc
+            if not stat.S_ISREG(source_stat.st_mode):
+                raise DeviceWriteSafetyError(
+                    "The selected iPod podcast cache source is not a regular "
+                    f"file: {contained}"
+                )
+            safety.require_size_supported(source_stat.st_size, contained.name)
+            return contained, safety
+
         # Existing podcast cache files may still need artwork embedded or
         # their art hash refreshed before the final ArtworkDB pass.
         existing: list[SyncItem] = []
@@ -2688,7 +3233,10 @@ class SyncExecutor:
             if not item.pc_track.is_podcast:
                 continue
             source = Path(item.pc_track.path) if item.pc_track.path else None
-            if source and source.exists():
+            present_source, _source_safety = (
+                _source_if_present(source) if source is not None else (None, None)
+            )
+            if present_source is not None:
                 existing.append(item)
                 continue
             if item.pc_track.podcast_enclosure_url:
@@ -2697,8 +3245,13 @@ class SyncExecutor:
         if not pending and not existing:
             return
 
-        from iopenpod.podcasts.artwork import resolve_feed_artwork_source
+        from iopenpod.podcasts.artwork import (
+            is_remote_artwork_source,
+            resolve_feed_artwork_source,
+            resolve_local_artwork_path,
+        )
         from iopenpod.podcasts.downloader import download_and_probe_episode, probe_episode_file
+        from iopenpod.podcasts.models import normalize_artwork_url
 
         from ._formats import IPOD_NATIVE_AUDIO
 
@@ -2708,16 +3261,105 @@ class SyncExecutor:
         def _artwork_source(feed_url: str) -> str:
             if feed_url in artwork_source_cache:
                 return artwork_source_cache[feed_url]
+            if not feed_url:
+                artwork_source_cache[feed_url] = ""
+                return ""
             source = ""
             try:
                 from iopenpod.podcasts.subscription_store import SubscriptionStore
                 if self.ipod_path:
-                    _store = SubscriptionStore(str(self.ipod_path))
+                    reported_format = str(
+                        getattr(self.device_storage, "reported_volume_format", "") or ""
+                    )
+                    expected_volume_key = str(
+                        getattr(self.device_storage, "volume_identity_key", "") or ""
+                    )
+                    subscriptions_path = resolve_device_path(
+                        self.ipod_path,
+                        podcast_subtree / "subscriptions.json",
+                        allowed_subtree=podcast_subtree,
+                    )
+                    self._revalidate_device_write_readiness()
+                    try:
+                        subscriptions_stat = subscriptions_path.stat()
+                    except FileNotFoundError:
+                        artwork_source_cache[feed_url] = ""
+                        return ""
+                    except OSError as exc:
+                        raise DeviceWriteSafetyError(
+                            "Could not safely inspect podcast subscriptions "
+                            f"on the iPod: {exc}"
+                        ) from exc
+                    if not stat.S_ISREG(subscriptions_stat.st_mode):
+                        raise DeviceWriteSafetyError(
+                            "The iPod podcast subscriptions path is not a "
+                            "regular file."
+                        )
+                    _store = SubscriptionStore(
+                        str(self.ipod_path),
+                        reported_volume_format=reported_format,
+                        expected_volume_identity_key=expected_volume_key,
+                    )
                     _feed = _store.get_feed(feed_url)
+                    self._revalidate_device_write_readiness()
                     if _feed:
-                        source = resolve_feed_artwork_source(_feed, _store.podcast_dir)
-            except Exception:
-                pass
+                        artwork_path = str(
+                            getattr(_feed, "artwork_path", "") or ""
+                        ).strip()
+                        local_path = resolve_local_artwork_path(
+                            artwork_path,
+                            _store.podcast_dir,
+                        )
+                        local_context = (
+                            _device_cache_context(local_path)
+                            if local_path is not None
+                            else None
+                        )
+                        if local_context is not None:
+                            contained_artwork, artwork_safety = local_context
+                            artwork_safety.revalidate()
+                            try:
+                                artwork_stat = contained_artwork.stat()
+                            except FileNotFoundError:
+                                artwork_stat = None
+                            except OSError as exc:
+                                raise DeviceWriteSafetyError(
+                                    "Could not safely inspect cached podcast "
+                                    f"artwork on the iPod: {exc}"
+                                ) from exc
+                            if artwork_stat is not None:
+                                if not stat.S_ISREG(artwork_stat.st_mode):
+                                    raise DeviceWriteSafetyError(
+                                        "Cached podcast artwork on the iPod "
+                                        "is not a regular file."
+                                    )
+                                source = str(contained_artwork)
+                        elif local_path is not None:
+                            source = resolve_feed_artwork_source(
+                                _feed,
+                                _store.podcast_dir,
+                            )
+
+                        if not source:
+                            artwork_url = normalize_artwork_url(
+                                str(getattr(_feed, "artwork_url", "") or "")
+                            )
+                            if artwork_url:
+                                source = artwork_url
+                            elif is_remote_artwork_source(artwork_path):
+                                source = artwork_path
+            except DeviceWriteSafetyError:
+                raise
+            except OSError as exc:
+                raise DeviceWriteSafetyError(
+                    f"Could not safely read podcast artwork metadata: {exc}"
+                ) from exc
+            except Exception as exc:
+                logger.debug(
+                    "Could not resolve artwork for podcast feed %s: %s",
+                    feed_url,
+                    exc,
+                )
             artwork_source_cache[feed_url] = source
             return source
 
@@ -2775,16 +3417,37 @@ class SyncExecutor:
             pc = item.pc_track
             assert pc is not None
             source = Path(pc.path) if pc.path else None
-            if not source or not source.exists():
+            present_source, source_safety = (
+                _source_if_present(source) if source is not None else (None, None)
+            )
+            if present_source is None:
                 continue
             try:
                 info = probe_episode_file(
-                    str(source),
+                    str(present_source),
                     artwork_url=_artwork_source(pc.podcast_url or ""),
+                    device_safety=source_safety,
                 )
                 _apply_episode_info(pc, info)
+            except DeviceWriteSafetyError:
+                raise
+            except OSError as exc:
+                if source_safety is not None:
+                    raise DeviceWriteSafetyError(
+                        "Could not safely prepare the iPod podcast cache file "
+                        f"{present_source.name}: {exc}"
+                    ) from exc
+                logger.debug(
+                    "Could not prepare existing podcast file %s: %s",
+                    present_source,
+                    exc,
+                )
             except Exception as exc:
-                logger.debug("Could not prepare existing podcast file %s: %s", source, exc)
+                logger.debug(
+                    "Could not prepare existing podcast file %s: %s",
+                    present_source,
+                    exc,
+                )
 
         for idx, item in enumerate(pending):
             if ctx.cancelled():
@@ -2803,6 +3466,13 @@ class SyncExecutor:
                 url_hash = hashlib.sha256(feed_url.encode()).hexdigest()[:16]
                 base = str(self.transcode_cache.cache_dir)
                 dest_dir = str(Path(base) / "podcasts" / url_hash)
+
+            device_destination = _device_cache_context(Path(dest_dir))
+            if device_destination is not None:
+                contained_destination, download_safety = device_destination
+                dest_dir = str(contained_destination)
+            else:
+                download_safety = None
 
             try:
                 last_downloaded = 0
@@ -2857,6 +3527,7 @@ class SyncExecutor:
                     artwork_url=_artwork_source(feed_url),
                     progress_cb=_on_download_progress,
                     cancel_token=ctx,
+                    device_safety=download_safety,
                 )
                 _apply_episode_info(pc, info)
                 completed_download_bytes += max(
@@ -2879,6 +3550,16 @@ class SyncExecutor:
 
                 logger.info("Downloaded podcast: %s", title)
 
+            except DeviceWriteSafetyError:
+                raise
+            except OSError as exc:
+                if download_safety is not None:
+                    raise DeviceWriteSafetyError(
+                        "Could not safely write the iPod podcast cache for "
+                        f"{title}: {exc}"
+                    ) from exc
+                logger.warning("Failed to download podcast %s: %s", title, exc)
+                failed_items.append(item)
             except Exception as exc:
                 logger.warning("Failed to download podcast %s: %s", title, exc)
                 failed_items.append(item)
@@ -3268,8 +3949,11 @@ class SyncExecutor:
         # Determine music_dirs from device capabilities
         music_dirs = _DEFAULT_MUSIC_DIRS
         try:
-            from iopenpod.device import capabilities_for_family_gen, get_current_device
-            dev = get_current_device()
+            from iopenpod.device import (
+                capabilities_for_family_gen,
+                get_current_device_for_path,
+            )
+            dev = get_current_device_for_path(self.ipod_path)
             if dev and dev.model_family:
                 caps = capabilities_for_family_gen(
                     dev.model_family, dev.generation or "",
@@ -3282,9 +3966,7 @@ class SyncExecutor:
         with self._folder_lock:
             folder_name = f"F{self._folder_counter:02d}"
             self._folder_counter = (self._folder_counter + 1) % music_dirs
-        folder = self.music_dir / folder_name
-        folder.mkdir(parents=True, exist_ok=True)
-        return folder
+        return self.music_dir / folder_name
 
     def _generate_ipod_filename(self, _original_name: str, extension: str,
                                 dest_folder: Path | None = None) -> str:
@@ -3300,7 +3982,10 @@ class SyncExecutor:
         for _ in range(50):  # max attempts
             random_name = "".join(random.choices(chars, k=4))
             filename = f"{random_name}{extension}"
-            if dest_folder is None or not (dest_folder / filename).exists():
+            if dest_folder is None or _strict_device_path_stat(
+                dest_folder / filename,
+                action="choosing a media filename",
+            ) is None:
                 return filename
         # Fallback — extremely unlikely with collision check + 50 retries
         return f"{''.join(random.choices(chars, k=8))}{extension}"
@@ -3391,6 +4076,8 @@ class SyncExecutor:
                         return True, final_path, True, ""
                     except _OutOfSpaceError:
                         raise
+                    except DeviceWriteSafetyError:
+                        raise
                     except Exception as e:
                         logger.warning("Cache copy failed, will transcode: %s", e)
 
@@ -3477,6 +4164,8 @@ class SyncExecutor:
                 return True, dest_path, False, ""
             except _OutOfSpaceError:
                 raise
+            except DeviceWriteSafetyError:
+                raise
             except Exception as e:
                 logger.error("Copy failed: %s", e)
                 return False, None, False, str(e)
@@ -3549,13 +4238,26 @@ class SyncExecutor:
         reserve_bytes: int = _DISK_RESERVE_BYTES,
     ) -> None:
         with self._device_write_semaphore:
-            self._ensure_device_has_space_for_write(src.stat().st_size, reserve_bytes)
-            self._copy_file_chunked(
-                src,
-                dst,
-                progress,
-                is_cancelled=is_cancelled,
+            self._revalidate_device_write_readiness()
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            source_size = src.stat().st_size
+            require_file_size_supported(
+                source_size,
+                max_file_size_bytes=self._effective_max_file_size_bytes(),
+                display_name=src.name,
             )
+            self._ensure_device_has_space_for_write(source_size, reserve_bytes)
+            try:
+                self._copy_file_chunked(
+                    src,
+                    dst,
+                    progress,
+                    is_cancelled=is_cancelled,
+                )
+            except Exception:
+                self._revalidate_device_write_readiness()
+                durable_unlink(dst, missing_ok=True)
+                raise
 
     def _ensure_device_has_space_for_write(
         self,
@@ -3567,14 +4269,21 @@ class SyncExecutor:
         try:
             free = shutil.disk_usage(self.ipod_path).free
         except OSError as exc:
-            logger.warning("Could not check disk space before file write: %s", exc)
-            return
+            raise DeviceWriteSafetyError(
+                f"Could not verify iPod free space before writing a file: {exc}"
+            ) from exc
 
-        if free - max(0, int(write_size or 0)) >= max(0, int(reserve_bytes or 0)):
+        allocation_unit = getattr(
+            self._filesystem_profile,
+            "allocation_unit_size",
+            None,
+        )
+        allocated_write = allocated_size(write_size, allocation_unit)
+        if free - allocated_write >= max(0, int(reserve_bytes or 0)):
             return
 
         free_mb = free / (1024 * 1024)
-        write_mb = max(0, int(write_size or 0)) / (1024 * 1024)
+        write_mb = allocated_write / (1024 * 1024)
         reserve_mb = max(0, int(reserve_bytes or 0)) / (1024 * 1024)
         raise _OutOfSpaceError(
             f"iPod is out of space ({free_mb:.1f} MB remaining, "
@@ -3604,14 +4313,12 @@ class SyncExecutor:
                     copied += len(buf)
                     if progress and total:
                         progress(copied / total)
+                flush_written_file(fdst)
+            flush_parent_directory(dst)
             # Final callback in case total was 0 (empty file)
             if progress:
                 progress(1.0)
         except Exception as e:
-            try:
-                dst.unlink(missing_ok=True)
-            except OSError:
-                pass
             if isinstance(e, OSError) and e.errno == errno.ENOSPC:
                 raise _OutOfSpaceError("No space left on iPod while writing file") from e
             raise
@@ -3619,14 +4326,44 @@ class SyncExecutor:
     def _delete_from_ipod(self, ipod_path: str | Path) -> bool:
         """Delete a file from iPod."""
         try:
-            path = Path(ipod_path)
-            if path.exists():
-                path.unlink()
+            with self._device_write_semaphore:
+                self._revalidate_device_write_readiness()
+                path = Path(ipod_path)
+                try:
+                    path.stat()
+                except FileNotFoundError:
+                    return True
+                except OSError as exc:
+                    raise DeviceWriteSafetyError(
+                        f"Could not safely inspect the iPod file before deletion: {exc}"
+                    ) from exc
+                durable_unlink(path)
                 logger.debug("Deleted: %s", path)
             return True
+        except DeviceWriteSafetyError:
+            raise
         except Exception as e:
             logger.error("Delete failed for %s: %s", ipod_path, e)
             return False
+
+    def _effective_max_file_size_bytes(self) -> int | None:
+        filesystem_limit = getattr(
+            self._filesystem_profile,
+            "max_file_size_bytes",
+            None,
+        )
+        device_limit = getattr(
+            self.device_storage,
+            "device_max_file_size_bytes",
+            None,
+        )
+        return effective_max_file_size_bytes(filesystem_limit, device_limit)
+
+    def _revalidate_device_write_readiness(self) -> None:
+        profile = self._filesystem_profile
+        if profile is None:
+            return
+        self._filesystem_profile = revalidate_device_write_readiness(profile)
 
     # ── PC Write-Back ───────────────────────────────────────────────────────
 
@@ -3694,7 +4431,10 @@ class SyncExecutor:
         """
         from ._db_io import delete_playcounts_files
 
-        delete_playcounts_files(self.ipod_path)
+        delete_playcounts_files(
+            self.ipod_path,
+            before_device_mutation=self._revalidate_device_write_readiness,
+        )
 
     # ── Track Conversion ────────────────────────────────────────────────────
 

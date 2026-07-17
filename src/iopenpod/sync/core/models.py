@@ -116,6 +116,8 @@ class EngineRequest:
     options: EngineOptions = field(default_factory=EngineOptions)
     device_info: Any = None
     device_capabilities: Any = None
+    device_storage: Any = None
+    expected_database_generation: Any = None
     progress_callback: EngineProgressCallback | None = None
     is_cancelled: Callable[[], bool] | None = None
     is_scrobble_cancelled: Callable[[], bool] | None = None

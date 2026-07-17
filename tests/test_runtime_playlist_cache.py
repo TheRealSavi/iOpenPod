@@ -4,6 +4,7 @@ import logging
 from types import SimpleNamespace
 
 from iopenpod.application import runtime
+from iopenpod.device.write_guard import DatabaseGeneration
 
 
 def test_cache_emits_load_failed_after_partial_device_load(monkeypatch) -> None:
@@ -26,6 +27,63 @@ def test_cache_emits_load_failed_after_partial_device_load(monkeypatch) -> None:
     )
 
     assert errors == ["Could not load iTunesDB: [Errno 13] Permission denied"]
+
+
+def test_quick_write_snapshot_carries_database_generation(monkeypatch) -> None:
+    monkeypatch.setattr(
+        runtime.DeviceManager,
+        "get_instance",
+        classmethod(lambda cls: SimpleNamespace(device_path="/fake/ipod")),
+    )
+    generation = DatabaseGeneration("iTunesDB", True, digest="loaded")
+    committed_generation = DatabaseGeneration("iTunesDB", True, digest="committed")
+    cache = runtime.iTunesDBCache()
+    cache.set_data(
+        {"mhlt": [], "mhlp": [], "mhlp_podcast": [], "mhlp_smart": []},
+        "/fake/ipod",
+        generation,
+    )
+
+    snapshot = cache.capture_quick_write_state()
+
+    assert snapshot.database_generation == generation
+    assert cache.commit_quick_write_state_with_generation(
+        snapshot.revision,
+        committed_generation,
+    )
+    assert cache.get_database_generation() == committed_generation
+
+
+def test_cache_rejects_database_changed_while_it_was_parsed(monkeypatch) -> None:
+    from iopenpod.itunesdb_parser import ipod_library
+    from iopenpod.sync import _db_io, photos
+
+    generations = iter(
+        (
+            DatabaseGeneration("iTunesDB", True, digest="before"),
+            DatabaseGeneration("iTunesDB", True, digest="after"),
+        )
+    )
+    monkeypatch.setattr(
+        runtime,
+        "capture_database_generation",
+        lambda _path: next(generations),
+    )
+    monkeypatch.setattr(_db_io, "commit_playcounts_if_needed", lambda _path: False)
+    monkeypatch.setattr(
+        ipod_library,
+        "load_ipod_library",
+        lambda *_args, **_kwargs: {"mhlt": []},
+    )
+    monkeypatch.setattr(photos, "read_photo_db", lambda _path: photos.PhotoDB())
+
+    _data, _device_path, errors, generation = runtime.iTunesDBCache()._load_data(
+        "/fake/ipod",
+        "/fake/ipod/iPod_Control/iTunes/iTunesDB",
+    )
+
+    assert generation is None
+    assert any("changed while iOpenPod was loading it" in error for error in errors)
 
 
 def test_commit_user_playlists_hydrates_pending_playlist_into_live_cache(

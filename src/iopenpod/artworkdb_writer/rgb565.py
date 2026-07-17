@@ -17,7 +17,6 @@ from iopenpod.device import (
     ITHMB_FORMAT_MAP,
     ArtworkFormat,
     ithmb_formats_for_device,
-    resolve_cover_art_format_definitions,
     resolve_cover_art_format_definitions_for_device,
 )
 
@@ -56,16 +55,13 @@ def _format_decompression_bomb_message(source_path: str, exc: Exception) -> str:
 
 def get_artwork_format_definitions(ipod_path: str) -> dict[int, ArtworkFormat]:
     """Return device-specific artwork format objects for the connected iPod."""
-    from iopenpod.device import get_current_device
+    from iopenpod.device import get_current_device_for_path
 
-    device = get_current_device()
+    device = get_current_device_for_path(ipod_path)
     resolved = resolve_cover_art_format_definitions_for_device(device)
     if resolved:
         return resolved
-    if device is not None:
-        return {}
-
-    return resolve_cover_art_format_definitions("iPod Classic", "6th Gen")
+    return {}
 
 
 def get_artwork_formats(ipod_path: str) -> dict[int, tuple[int, int]]:
@@ -73,32 +69,28 @@ def get_artwork_formats(ipod_path: str) -> dict[int, tuple[int, int]]:
 
     Reads from the centralised DeviceInfo store (populated when the device
     was selected). Falls back to the model capabilities table. Only code paths
-    without an identified current device use iPod Classic as a legacy default.
+    without an identified device stop instead of guessing another model's
+    binary artwork layout.
     """
     import logging
     _log = logging.getLogger(__name__)
 
-    from iopenpod.device import get_current_device
+    from iopenpod.device import get_current_device_for_path
 
     defs = get_artwork_format_definitions(ipod_path)
     if defs:
         _log.info("ART: using resolved format definitions: %s", list(defs.keys()))
         return {fid: (int(fmt.width), int(fmt.height)) for fid, fmt in defs.items()}
 
-    device = get_current_device()
-    if device is not None:
-        _log.warning(
-            "ART: no artwork definitions available for identified device %s %s; "
-            "refusing to default to unrelated formats",
-            getattr(device, "model_family", "") or "unknown",
-            getattr(device, "generation", "") or "",
-        )
-        return {}
-
-    _log.info(
-        "ART: no artwork definitions available — defaulting to iPod Classic formats"
+    device = get_current_device_for_path(ipod_path)
+    _log.warning(
+        "ART: no artwork definitions available for device %s %s at %s; "
+        "refusing to guess an unrelated device format",
+        getattr(device, "model_family", "") or "unknown",
+        getattr(device, "generation", "") or "",
+        ipod_path,
     )
-    return IPOD_CLASSIC_FORMATS
+    return {}
 
 
 def _extract_format_ids(data: bytes) -> list[int]:

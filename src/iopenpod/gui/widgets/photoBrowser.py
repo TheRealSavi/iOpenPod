@@ -24,6 +24,18 @@ from PyQt6.QtWidgets import (
 )
 
 from iopenpod.device.artwork import ITHMB_FORMAT_MAP
+from iopenpod.device.durability import (
+    durable_replace,
+    durable_unlink,
+    flush_written_file,
+    open_unique_sibling_temp,
+)
+from iopenpod.device.write_guard import DeviceWriteGuard, DeviceWriteSafetyError
+from iopenpod.device.write_readiness import (
+    inspect_device_write_readiness,
+    revalidate_device_write_readiness,
+    volume_lock_key,
+)
 from iopenpod.search import matches_search
 from iopenpod.sync import photos as photo_sync
 from iopenpod.sync.photos import (
@@ -36,6 +48,7 @@ from iopenpod.sync.photos import (
     ensure_photo_visual_hashes,
     load_photo_preview,
     merge_photo_sync_plan,
+    resolve_photo_full_res_path,
     write_photo_db_metadata_only,
 )
 
@@ -66,6 +79,7 @@ if TYPE_CHECKING:
         LibraryService,
         SettingsService,
     )
+    from iopenpod.device.filesystem_profile import FilesystemProfile
 
 
 PhotoListItem = tuple[int, PhotoEntry]
@@ -94,7 +108,7 @@ def _default_export_filename(title: str, image_id: int) -> str:
 def _device_full_res_path(ipod_path: str | Path, photo: PhotoEntry) -> Path | None:
     if not photo.full_res_path:
         return None
-    path = Path(ipod_path) / "Photos" / Path(photo.full_res_path)
+    path = resolve_photo_full_res_path(ipod_path, photo.full_res_path)
     return path if path.is_file() else None
 
 
@@ -208,6 +222,8 @@ class _PhotoWriteWorker(QThread):
         old_name: str = "",
         new_name: str = "",
         sync_settings: dict[str, bool] | None = None,
+        reported_volume_format: str = "",
+        expected_volume_identity_key: str = "",
     ):
         super().__init__()
         self._ipod_path = ipod_path
@@ -218,6 +234,53 @@ class _PhotoWriteWorker(QThread):
         self._old_name = old_name
         self._new_name = new_name
         self._sync_settings = sync_settings
+        self._reported_volume_format = reported_volume_format
+        self._expected_volume_identity_key = expected_volume_identity_key
+        self._filesystem_profile: FilesystemProfile | None = None
+
+    def _revalidate_write_readiness(self) -> None:
+        profile = self._filesystem_profile
+        if profile is None:
+            raise DeviceWriteSafetyError("The iPod write session is not active.")
+        self._filesystem_profile = revalidate_device_write_readiness(profile)
+
+    def _unlink_device_path(self, path: Path, *, missing_ok: bool = False) -> None:
+        self._revalidate_write_readiness()
+        durable_unlink(path, missing_ok=missing_ok)
+
+    def _replace_device_path(self, source: Path, target: Path) -> None:
+        self._revalidate_write_readiness()
+        durable_replace(source, target)
+
+    def _commit_photo_metadata(self, photodb: PhotoDB) -> None:
+        self._revalidate_write_readiness()
+        write_photo_db_metadata_only(
+            self._ipod_path,
+            photodb,
+            sync_settings=self._sync_settings,
+            before_device_mutation=self._revalidate_write_readiness,
+        )
+
+    def _restore_metadata_file(self, path: Path, contents: bytes | None) -> None:
+        if contents is None:
+            self._unlink_device_path(path, missing_ok=True)
+            return
+
+        tmp_path: Path | None = None
+        try:
+            self._revalidate_write_readiness()
+            tmp_path, temp_file = open_unique_sibling_temp(path, mode="wb")
+            with temp_file as file:
+                file.write(contents)
+                flush_written_file(file)
+            self._replace_device_path(tmp_path, path)
+        except Exception:
+            if tmp_path is not None:
+                try:
+                    self._unlink_device_path(tmp_path, missing_ok=True)
+                except Exception:
+                    pass
+            raise
 
     def _delete_photo_fast_path(self) -> PhotoDB:
         if self._image_id is None:
@@ -232,17 +295,13 @@ class _PhotoWriteWorker(QThread):
             album.members = [mid for mid in album.members if mid != self._image_id]
 
         if photo.full_res_path:
-            full_res_path = Path(self._ipod_path) / "Photos" / Path(photo.full_res_path)
-            try:
-                full_res_path.unlink(missing_ok=True)
-            except OSError:
-                pass
+            full_res_path = resolve_photo_full_res_path(
+                self._ipod_path,
+                photo.full_res_path,
+            )
+            self._unlink_device_path(full_res_path, missing_ok=True)
 
-        write_photo_db_metadata_only(
-            self._ipod_path,
-            photodb,
-            sync_settings=self._sync_settings,
-        )
+        self._commit_photo_metadata(photodb)
         return photodb
 
     def _rename_photo_fast_path(self) -> PhotoDB:
@@ -261,18 +320,37 @@ class _PhotoWriteWorker(QThread):
         old_path: Path | None = None
         new_path: Path | None = None
         if photo.full_res_path:
-            old_path = Path(self._ipod_path) / "Photos" / Path(photo.full_res_path)
+            old_path = resolve_photo_full_res_path(
+                self._ipod_path,
+                photo.full_res_path,
+            )
             new_path = old_path.with_name(f"{new_stem}{old_path.suffix}")
             same_location = os.path.normcase(str(new_path)) == os.path.normcase(str(old_path))
             if not same_location and new_path.exists():
                 raise RuntimeError(f"A photo named '{new_path.name}' already exists.")
             if old_path.exists() and old_path.name != new_path.name:
                 rename_source = old_path
+                rename_temp: Path | None = None
                 if same_location:
-                    rename_source = old_path.with_name(f".{old_path.name}.rename-tmp")
-                    rename_source.unlink(missing_ok=True)
-                    old_path.rename(rename_source)
-                rename_source.rename(new_path)
+                    self._revalidate_write_readiness()
+                    rename_temp, temp_file = open_unique_sibling_temp(
+                        old_path,
+                        mode="wb",
+                    )
+                    with temp_file as file:
+                        flush_written_file(file)
+                    try:
+                        self._replace_device_path(old_path, rename_temp)
+                    except Exception:
+                        self._unlink_device_path(rename_temp, missing_ok=True)
+                        raise
+                    rename_source = rename_temp
+                try:
+                    self._replace_device_path(rename_source, new_path)
+                except Exception:
+                    if rename_temp is not None and rename_temp.exists():
+                        self._replace_device_path(rename_temp, old_path)
+                    raise
                 photo.full_res_path = Path(
                     photo.full_res_path
                 ).with_name(new_path.name).as_posix()
@@ -287,20 +365,12 @@ class _PhotoWriteWorker(QThread):
             for path in metadata_paths
         }
         try:
-            write_photo_db_metadata_only(
-                self._ipod_path,
-                photodb,
-                sync_settings=self._sync_settings,
-            )
+            self._commit_photo_metadata(photodb)
         except Exception:
             for path, contents in metadata_backups.items():
-                if contents is None:
-                    path.unlink(missing_ok=True)
-                else:
-                    path.parent.mkdir(parents=True, exist_ok=True)
-                    path.write_bytes(contents)
+                self._restore_metadata_file(path, contents)
             if old_path is not None and new_path is not None and new_path.exists():
-                new_path.rename(old_path)
+                self._replace_device_path(new_path, old_path)
             raise
         return photodb
 
@@ -348,34 +418,51 @@ class _PhotoWriteWorker(QThread):
             plan.photos_to_add or plan.photos_to_remove or plan.photos_to_update
         )
         if needs_payload_writes:
+            self._revalidate_write_readiness()
             return apply_photo_sync_plan(
                 self._ipod_path,
                 plan,
                 sync_settings=self._sync_settings,
+                before_device_mutation=self._revalidate_write_readiness,
+                filesystem_profile=self._filesystem_profile,
             )
 
         photodb = merge_photo_sync_plan(copy.deepcopy(self._device_photos), plan)
-        write_photo_db_metadata_only(
-            self._ipod_path,
-            photodb,
-            sync_settings=self._sync_settings,
-        )
+        self._commit_photo_metadata(photodb)
         return photodb
+
+    def _run_guarded(self) -> PhotoDB:
+        profile = inspect_device_write_readiness(
+            self._ipod_path,
+            reported_volume_format=self._reported_volume_format,
+        )
+        lock_key = volume_lock_key(profile)
+        if (
+            self._expected_volume_identity_key
+            and lock_key != self._expected_volume_identity_key
+        ):
+            raise DeviceWriteSafetyError(
+                "The mounted iPod volume changed since it was selected. "
+                "iOpenPod stopped before editing photos. Reconnect and reload the iPod."
+            )
+
+        with DeviceWriteGuard(self._ipod_path, volume_key=lock_key):
+            self._filesystem_profile = profile
+            try:
+                if self._action == "delete_photo":
+                    return self._delete_photo_fast_path()
+                if self._action == "rename_photo":
+                    return self._rename_photo_fast_path()
+
+                ensure_photo_visual_hashes(self._device_photos, self._ipod_path)
+                edits = self._build_edits_for_action()
+                return self._apply_edit_state(edits)
+            finally:
+                self._filesystem_profile = None
 
     def run(self) -> None:
         try:
-            if self._action == "delete_photo":
-                photodb = self._delete_photo_fast_path()
-                self.finished_ok.emit(photodb)
-                return
-            if self._action == "rename_photo":
-                photodb = self._rename_photo_fast_path()
-                self.finished_ok.emit(photodb)
-                return
-
-            ensure_photo_visual_hashes(self._device_photos, self._ipod_path)
-            edits = self._build_edits_for_action()
-            photodb = self._apply_edit_state(edits)
+            photodb = self._run_guarded()
             self.finished_ok.emit(photodb)
         except Exception as exc:
             self.failed.emit(str(exc))
@@ -1524,7 +1611,8 @@ class PhotoBrowserWidget(QFrame):
             QMessageBox.warning(self, "No Photo Database", "The iPod photo database is not loaded yet.")
             return
 
-        ipod_path = self._current_device_path()
+        session = self._device_sessions.current_session()
+        ipod_path = session.device_path or ""
         if not ipod_path:
             QMessageBox.warning(self, "No iPod Connected", "Select an iPod before editing device photos.")
             return
@@ -1539,6 +1627,16 @@ class PhotoBrowserWidget(QFrame):
             old_name=old_name,
             new_name=new_name,
             sync_settings=self._photo_sync_settings(),
+            reported_volume_format=(
+                session.storage.reported_volume_format
+                if session.storage is not None
+                else ""
+            ),
+            expected_volume_identity_key=(
+                session.storage.volume_identity_key
+                if session.storage is not None
+                else ""
+            ),
         )
         self._write_worker.finished_ok.connect(self._on_photo_write_ok)
         self._write_worker.failed.connect(self._on_photo_write_failed)

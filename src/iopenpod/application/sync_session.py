@@ -5,10 +5,11 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, cast
 
 from PyQt6.QtCore import QObject, QThread, pyqtSignal
 
+from iopenpod.device.write_guard import DatabaseGeneration
 from iopenpod.infrastructure.media_folders import (
     media_folder_entries_to_settings,
     media_folder_paths,
@@ -202,6 +203,19 @@ class SyncSessionController(QObject):
             return
 
         device_session = self._device_sessions.current_session()
+        generation_getter = getattr(
+            self._library_cache,
+            "get_database_generation",
+            None,
+        )
+        if callable(generation_getter):
+            get_database_generation = cast(
+                "Callable[[], DatabaseGeneration | None]",
+                generation_getter,
+            )
+            expected_database_generation = get_database_generation()
+        else:
+            expected_database_generation = None
 
         worker = SyncExecuteWorker(
             ipod_path,
@@ -213,6 +227,8 @@ class SyncSessionController(QObject):
             ),
             device_info=device_session.identity,
             device_capabilities=device_session.capabilities,
+            device_storage=getattr(device_session, "storage", None),
+            expected_database_generation=expected_database_generation,
             on_sync_complete=self._library_cache.clear_pending_sync_state,
             sync_until_full=bool(intent.sync_until_full),
         )

@@ -14,6 +14,11 @@ from typing import TypeAlias
 
 from PyQt6.QtCore import QObject, QRunnable, QThread, QThreadPool, pyqtSignal, pyqtSlot
 
+from iopenpod.device.write_guard import (
+    DatabaseGeneration,
+    ExternalDatabaseChangeError,
+    capture_database_generation,
+)
 from iopenpod.itunesdb_shared.album_identity import album_identity_from_mapping
 from iopenpod.itunesdb_shared.constants import MEDIA_TYPE_AUDIO, MEDIA_TYPE_AUDIO_VIDEO
 from iopenpod.itunesdb_shared.playlist_properties import (
@@ -617,6 +622,10 @@ class DeviceSettingsLoader(QThread):
                 self._device_key,
                 settings_runtime.get_global_settings(),
             )
+            if state.load_error:
+                from iopenpod.device.write_guard import DeviceWriteSafetyError
+
+                raise DeviceWriteSafetyError(state.load_error)
             if not self.isInterruptionRequested():
                 self.loaded.emit(
                     self._token,
@@ -759,7 +768,15 @@ class DeviceManager(QObject):
 
             require_exact_model_number(self._discovered_ipod)
             if isinstance(self._discovered_ipod, DeviceInfo):
-                ensure_device_itunes_database(path, self._discovered_ipod)
+                try:
+                    ensure_device_itunes_database(path, self._discovered_ipod)
+                except Exception as exc:
+                    logger.error(
+                        "iPod selection stopped before activation: path=%s error=%s",
+                        path,
+                        exc,
+                    )
+                    raise
         self.device_changing.emit()
         self.cancel_all_operations()
         iTunesDBCache.get_instance().clear()
@@ -858,6 +875,7 @@ class iTunesDBCache(QObject):
         self._track_edits: dict[int, dict[str, tuple]] = {}
         self._track_artwork_edits: dict[int, str] = {}
         self._quick_write_revision = 0
+        self._database_generation: DatabaseGeneration | None = None
         from iopenpod.sync.photos import PhotoEditState
 
         self._photo_edits = PhotoEditState()
@@ -884,6 +902,7 @@ class iTunesDBCache(QObject):
             self._track_edits.clear()
             self._track_artwork_edits.clear()
             self._quick_write_revision += 1
+            self._database_generation = None
             from iopenpod.sync.photos import PhotoEditState
 
             self._photo_edits = PhotoEditState()
@@ -896,6 +915,7 @@ class iTunesDBCache(QObject):
             self._artist_index = None
             self._genre_index = None
             self._track_id_index = None
+            self._database_generation = None
 
     def is_ready(self) -> bool:
         device = DeviceManager.get_instance()
@@ -1386,9 +1406,18 @@ class iTunesDBCache(QObject):
                 track_edits=copy.deepcopy(self._track_edits),
                 artwork_sources=copy.deepcopy(self._track_artwork_edits),
                 revision=self._quick_write_revision,
+                database_generation=self._database_generation,
             )
 
     def commit_quick_write_state(self, expected_revision: int) -> bool:
+        """Finalize a legacy quick-write result without a generation update."""
+        return self.commit_quick_write_state_with_generation(expected_revision, None)
+
+    def commit_quick_write_state_with_generation(
+        self,
+        expected_revision: int,
+        database_generation: DatabaseGeneration | None,
+    ) -> bool:
         """Finalize an unchanged quick-write snapshot without reparsing."""
         with self._lock:
             if expected_revision != self._quick_write_revision:
@@ -1397,9 +1426,16 @@ class iTunesDBCache(QObject):
             _cleanup_temp_artwork_paths(list(self._track_artwork_edits.values()))
             self._track_edits.clear()
             self._track_artwork_edits.clear()
+            if database_generation is not None:
+                self._database_generation = database_generation
             self._quick_write_revision += 1
 
         return True
+
+    def get_database_generation(self) -> DatabaseGeneration | None:
+        """Return the on-device generation backing the live parsed cache."""
+        with self._lock:
+            return self._database_generation
 
     def reload_after_itunesdb_write(self) -> None:
         """Clear committed iTunesDB staging and reload the device database."""
@@ -1413,6 +1449,7 @@ class iTunesDBCache(QObject):
             self._genre_index = None
             self._track_id_index = None
             self._photo_db = None
+            self._database_generation = None
         self.start_loading()
 
     def has_pending_photo_edits(self) -> bool:
@@ -1461,7 +1498,12 @@ class iTunesDBCache(QObject):
             self._track_artwork_edits.clear()
             return edits
 
-    def set_data(self, data: dict, device_path: str) -> None:
+    def set_data(
+        self,
+        data: dict,
+        device_path: str,
+        database_generation: DatabaseGeneration | None = None,
+    ) -> None:
         for key in ("mhlp", "mhlp_podcast", "mhlp_smart"):
             bucket = data.get(key, [])
             if isinstance(bucket, list):
@@ -1482,6 +1524,7 @@ class iTunesDBCache(QObject):
             self._genre_index = genre_index
             self._track_id_index = track_id_index
             self._photo_db = data.get("photodb")
+            self._database_generation = database_generation
         self.data_ready.emit()
 
     def set_loading(self, loading: bool) -> None:
@@ -1510,13 +1553,14 @@ class iTunesDBCache(QObject):
         self,
         device_path: str,
         itunesdb_path: str | None,
-    ) -> tuple[dict, str, list[str]]:
+    ) -> tuple[dict, str, list[str], DatabaseGeneration | None]:
         data: dict = {}
         load_errors: list[str] = []
+        database_generation: DatabaseGeneration | None = None
         if not itunesdb_path:
             message = f"No iTunesDB path available for device: {device_path}"
             logger.warning(message)
-            return data, device_path, [message]
+            return data, device_path, [message], None
 
         try:
             from iopenpod.itunesdb_parser.ipod_library import load_ipod_library
@@ -1528,13 +1572,28 @@ class iTunesDBCache(QObject):
                 committed_playcounts = commit_playcounts_if_needed(
                     Path(device_path),
                 )
-            except Exception:
+            except Exception as exc:
                 logger.warning("Play Counts auto-commit failed", exc_info=True)
+                from iopenpod.device.write_guard import DeviceWriteSafetyError
 
+                if isinstance(exc, DeviceWriteSafetyError):
+                    load_errors.append(
+                        "Play Counts were not committed because the iPod is not "
+                        f"safe to write: {exc}"
+                    )
+
+            generation_before_parse = capture_database_generation(device_path)
             parsed = load_ipod_library(
                 itunesdb_path,
                 merge_playcounts=not committed_playcounts,
             ) or {}
+            generation_after_parse = capture_database_generation(device_path)
+            if generation_before_parse != generation_after_parse:
+                raise ExternalDatabaseChangeError(
+                    "The iPod database changed while iOpenPod was loading it. "
+                    "Close other device-management apps and reload the iPod."
+                )
+            database_generation = generation_after_parse
             if isinstance(parsed, dict):
                 data = parsed
             else:
@@ -1560,7 +1619,7 @@ class iTunesDBCache(QObject):
             data["photodb"] = PhotoDB()
             load_errors.append(f"Could not load photo database: {exc}")
 
-        return (data, device_path, load_errors)
+        return (data, device_path, load_errors, database_generation)
 
     def _on_load_error(self, error: tuple) -> None:
         exc_type, value, _traceback = error
@@ -1574,16 +1633,21 @@ class iTunesDBCache(QObject):
 
     def _on_load_complete(
         self,
-        result: tuple[dict, str] | tuple[dict, str, list[str]],
+        result: (
+            tuple[dict, str]
+            | tuple[dict, str, list[str]]
+            | tuple[dict, str, list[str], DatabaseGeneration | None]
+        ),
     ) -> None:
         data = result[0]
         device_path = result[1]
         load_errors = result[2] if len(result) >= 3 else []
+        database_generation = result[3] if len(result) >= 4 else None
         if device_path != DeviceManager.get_instance().device_path:
             self.set_loading(False)
             return
-        if data:
-            self.set_data(data, device_path)
+        if data and (len(result) < 4 or database_generation is not None):
+            self.set_data(data, device_path, database_generation)
         else:
             self.set_loading(False)
         if load_errors:
