@@ -10,15 +10,15 @@
 
 iOpenPod is a free, open-source desktop application for managing iPods without iTunes. It can browse and edit an iPod library, sync media from the PC, convert unsupported audio and video formats automatically, manage podcasts and playlists, write artwork and photos, and is built to preserve iPod-specific database behaviors.
 
-![Album Browser](assets/screenshots/hero.png)
+![Album Browser](docs/screenshots/hero.png)
 
 ## Screenshots
 
 | Sync Workflow | Library Editing | Device Tools |
 | --- | --- | --- |
-| ![Media folder and scan-type selection](assets/screenshots/syncmedia.png) | ![Track artwork and iPod database editor](assets/screenshots/trackedits.png) | ![Podcast subscription and episode manager](assets/screenshots/podcasts.png) |
-| ![Sync change and storage review](assets/screenshots/syncreview.png) | ![Track playback options editor](assets/screenshots/trackedits2.png) | ![Device-aware backup browser](assets/screenshots/backups.png) |
-| ![Individual sync change selection](assets/screenshots/syncreview2.png) | ![Smart playlist rule editor](assets/screenshots/smartplaylists.png) | ![Music and spoken-word transcoding settings](assets/screenshots/settings.png) |
+| ![Media folder and scan-type selection](docs/screenshots/syncmedia.png) | ![Track artwork and iPod database editor](docs/screenshots/trackedits.png) | ![Podcast subscription and episode manager](docs/screenshots/podcasts.png) |
+| ![Sync change and storage review](docs/screenshots/syncreview.png) | ![Track playback options editor](docs/screenshots/trackedits2.png) | ![Device-aware backup browser](docs/screenshots/backups.png) |
+| ![Individual sync change selection](docs/screenshots/syncreview2.png) | ![Smart playlist rule editor](docs/screenshots/smartplaylists.png) | ![Music and spoken-word transcoding settings](docs/screenshots/settings.png) |
 
 ---
 
