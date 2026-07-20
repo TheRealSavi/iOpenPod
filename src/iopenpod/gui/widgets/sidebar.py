@@ -1014,6 +1014,11 @@ class Sidebar(QFrame):
             self.syncButton.setIcon(_bi)
             self.syncButton.setIconSize(_icon_sz)
         device_actions_layout.addWidget(self.syncButton)
+
+        # Subsonic sync button — secondary sync source, sits alongside PC sync
+        self.subsonicSyncButton = SidebarNavButton("Sync Subsonic", icon_name="cloud")
+        device_actions_layout.addWidget(self.subsonicSyncButton)
+
         self.sidebarLayout.addWidget(device_actions)
 
         maintenance_section = QWidget()

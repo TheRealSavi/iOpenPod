@@ -252,6 +252,288 @@ class SpinRow(SettingRow):
         self.spin.setValue(v)
 
 
+class _SubsonicServerRow(SettingRow):
+    """Setting row for a Subsonic server connection (URL/user/password).
+
+    Emits ``test_requested`` when the user clicks "Test Connection"; the
+    owning page validates asynchronously and reports back via
+    ``set_connected`` / ``set_error``.  Plain ``changed`` is emitted on any
+    field edit so the page can persist immediately (mirroring the way
+    scrobbling credentials are saved on edit, not on _save).
+    """
+
+    test_requested = pyqtSignal(str, str, str)  # url, username, password
+    changed = pyqtSignal()
+
+    def __init__(self, title: str, description: str = ""):
+        super().__init__(title, description)
+
+        right_layout = QHBoxLayout()
+        right_layout.setSpacing(8)
+        right_layout.setAlignment(Qt.AlignmentFlag.AlignRight)
+
+        self.status_label = QLabel("")
+        self.status_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        self.status_label.setStyleSheet(
+            f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;"
+        )
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        right_layout.addWidget(self.status_label)
+
+        self.inputs_widget = QWidget()
+        inputs_layout = QHBoxLayout(self.inputs_widget)
+        inputs_layout.setContentsMargins(0, 0, 0, 0)
+        inputs_layout.setSpacing(8)
+
+        self.url_input = QLineEdit()
+        self.url_input.setPlaceholderText("https://music.example.com")
+        self.url_input.setFixedWidth(180)
+        self.url_input.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        self.url_input.setStyleSheet(input_css())
+        self.url_input.textChanged.connect(self._on_field_changed)
+        inputs_layout.addWidget(self.url_input)
+
+        self.username_input = QLineEdit()
+        self.username_input.setPlaceholderText("Username")
+        self.username_input.setFixedWidth(110)
+        self.username_input.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        self.username_input.setStyleSheet(input_css())
+        self.username_input.textChanged.connect(self._on_field_changed)
+        inputs_layout.addWidget(self.username_input)
+
+        self.password_input = QLineEdit()
+        self.password_input.setPlaceholderText("Password")
+        self.password_input.setFixedWidth(130)
+        self.password_input.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.password_input.setStyleSheet(input_css())
+        self.password_input.textChanged.connect(self._on_field_changed)
+        inputs_layout.addWidget(self.password_input)
+
+        right_layout.addWidget(self.inputs_widget)
+
+        self.test_btn = QPushButton("Test")
+        self.test_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        self.test_btn.setFixedWidth(70)
+        self.test_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.test_btn.setStyleSheet(btn_css(
+            bg=Colors.ACCENT, bg_hover=Colors.ACCENT_LIGHT, bg_press=Colors.ACCENT,
+            fg=Colors.TEXT_ON_ACCENT, border="none", padding="4px 8px",
+        ))
+        self.test_btn.clicked.connect(self._on_test)
+        right_layout.addWidget(self.test_btn)
+
+        container = QWidget()
+        container.setLayout(right_layout)
+        self.add_control(container)
+
+    def _on_field_changed(self) -> None:
+        self.changed.emit()
+
+    def _on_test(self) -> None:
+        url = self.url_input.text().strip()
+        username = self.username_input.text().strip()
+        password = self.password_input.text()
+        if not url or not username:
+            self.set_error("Enter URL and username")
+            return
+        self.test_requested.emit(url, username, password)
+
+    def set_connected(self, username: str) -> None:
+        self.status_label.setText(f"✓ Connected as {username}")
+        self.status_label.setStyleSheet(
+            f"color: {Colors.SUCCESS}; background: transparent; border: none;"
+        )
+        self.test_btn.setEnabled(True)
+        self.test_btn.setText("Test")
+
+    def set_error(self, message: str) -> None:
+        self.status_label.setText(f"✕ {message}")
+        self.status_label.setStyleSheet(
+            f"color: {Colors.DANGER}; background: transparent; border: none;"
+        )
+        self.test_btn.setEnabled(True)
+        self.test_btn.setText("Test")
+
+    def set_validating(self) -> None:
+        self.status_label.setText("Testing…")
+        self.status_label.setStyleSheet(
+            f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;"
+        )
+        self.test_btn.setEnabled(False)
+        self.test_btn.setText("…")
+
+    @property
+    def url(self) -> str:
+        return self.url_input.text().strip()
+
+    @property
+    def username(self) -> str:
+        return self.username_input.text().strip()
+
+    @property
+    def password(self) -> str:
+        return self.password_input.text()
+
+
+class _SubsonicPlaylistRow(SettingRow):
+    """A selectable list of Subsonic playlists (checkbox per playlist).
+
+    Shows a "Refresh" button that asks the owning page to fetch the server's
+    playlists via ``refresh_requested``.  The fetched list is rendered as one
+    checkbox per playlist; checked ids are exposed via ``selected_ids`` and
+    emitted on every toggle via ``selection_changed``.  Empty until the first
+    successful connection + refresh.
+
+    Playlist *mapping* (which Subsonic playlist goes to which iPod playlist) is
+    chosen in the sync-time dialog, not here — this row only picks *which*
+    playlists to include.
+    """
+
+    refresh_requested = pyqtSignal()
+    selection_changed = pyqtSignal(list)  # list[str] of selected ids
+
+    def __init__(self, title: str, description: str = ""):
+        super().__init__(title, description)
+
+        # Right side: a status label + a Refresh button.
+        right = QVBoxLayout()
+        right.setSpacing(6)
+        right.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight)
+
+        top = QHBoxLayout()
+        top.setSpacing(8)
+        top.setAlignment(Qt.AlignmentFlag.AlignRight)
+
+        self.status_label = QLabel("Connect first to load playlists")
+        self.status_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        self.status_label.setStyleSheet(
+            f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;"
+        )
+        top.addWidget(self.status_label)
+
+        self.refresh_btn = QPushButton("Refresh")
+        self.refresh_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        self.refresh_btn.setFixedWidth(80)
+        self.refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.refresh_btn.setEnabled(False)
+        self.refresh_btn.setStyleSheet(btn_css(
+            bg=Colors.ACCENT, bg_hover=Colors.ACCENT_LIGHT, bg_press=Colors.ACCENT,
+            fg=Colors.TEXT_ON_ACCENT, border="none", padding="4px 8px",
+        ))
+        self.refresh_btn.clicked.connect(self.refresh_requested.emit)
+        top.addWidget(self.refresh_btn)
+        right.addLayout(top)
+
+        # Scrollable checkbox area.
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setMinimumHeight(180)
+        self._scroll.setMinimumWidth(360)
+        self._scroll.setStyleSheet(
+            f"QScrollArea {{ border: 1px solid {Colors.BORDER_SUBTLE}; "
+            f"border-radius: 6px; background: {Colors.SURFACE_ALT}; }}"
+        )
+        self._list_widget = QWidget()
+        self._list_layout = QVBoxLayout(self._list_widget)
+        self._list_layout.setContentsMargins(8, 8, 8, 8)
+        self._list_layout.setSpacing(4)
+        self._list_layout.addStretch()
+        self._scroll.setWidget(self._list_widget)
+        right.addWidget(self._scroll)
+
+        container = QWidget()
+        container.setLayout(right)
+        self._checkboxes: list[tuple[str, str, QCheckBox]] = []
+        self.add_control(container)
+
+    def set_enabled(self, enabled: bool) -> None:
+        """Enable/disable the refresh button (e.g. before/after connecting)."""
+        self.refresh_btn.setEnabled(enabled)
+
+    def set_playlists(
+        self,
+        playlists: list[tuple[str, str]],
+        checked_ids: list[str] | None = None,
+    ) -> None:
+        """Render the fetched playlists as checkboxes.
+
+        Args:
+            playlists: list of (id, name) pairs.
+            checked_ids: ids that should start checked (e.g. previously saved).
+        """
+        checked_set = set(checked_ids or [])
+
+        # Clear existing checkboxes (keep the trailing stretch item).
+        while self._list_layout.count() > 1:
+            item = self._list_layout.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+        self._checkboxes.clear()
+
+        for pid, name in playlists:
+            cb = QCheckBox(name or pid)
+            cb.setChecked(pid in checked_set)
+            cb.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+            cb.setStyleSheet(
+                f"QCheckBox {{ color: {Colors.TEXT_PRIMARY}; background: transparent; }}"
+            )
+            cb.toggled.connect(self._on_change)
+            self._list_layout.insertWidget(self._list_layout.count() - 1, cb)
+            self._checkboxes.append((pid, name, cb))
+
+        if playlists:
+            self.status_label.setText(f"{len(playlists)} playlist(s)")
+            self.status_label.setStyleSheet(
+                f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;"
+            )
+        else:
+            self.status_label.setText("No playlists found")
+        self.set_enabled(True)
+
+    def set_error(self, message: str) -> None:
+        self.status_label.setText(f"✕ {message}")
+        self.status_label.setStyleSheet(
+            f"color: {Colors.DANGER}; background: transparent; border: none;"
+        )
+        self.set_enabled(True)
+
+    def _on_change(self) -> None:
+        self.selection_changed.emit(self.selected_ids)
+
+    @property
+    def selected_ids(self) -> list[str]:
+        return [pid for pid, _name, cb in self._checkboxes if cb.isChecked()]
+
+
+class TextEditRow(SettingRow):
+    """Setting row with a multi-line text edit (e.g. comma-separated ids)."""
+
+    changed = pyqtSignal(str)
+
+    def __init__(self, title: str, description: str = "", placeholder: str = ""):
+        super().__init__(title, description)
+
+        from PyQt6.QtWidgets import QPlainTextEdit
+
+        self.edit = QPlainTextEdit()
+        self.edit.setPlaceholderText(placeholder)
+        self.edit.setFixedHeight(64)
+        self.edit.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        self.edit.setStyleSheet(input_css())
+        self.edit.textChanged.connect(lambda: self.changed.emit(self.edit.toPlainText()))
+        self.add_control(self.edit)
+
+    @property
+    def value(self) -> str:
+        return self.edit.toPlainText()
+
+    @value.setter
+    def value(self, v: str):
+        self.edit.setPlainText(v or "")
+
+
 class FolderRow(SettingRow):
     """Setting row with folder path display and browse button."""
 
@@ -1175,6 +1457,7 @@ class SettingsPage(QWidget):
         self._settings_service = settings_service
         self._device_sessions = device_sessions
         self._pending_lb_result: tuple[str, str, str, str, str, bool] = ("", "", "global", "", "", False)
+        self._pending_subsonic_result: tuple[str, str, str] | None = None
         self._update_checker: object | None = None
         self._update_downloader: object | None = None
         self._update_progress: QProgressDialog | None = None
@@ -1199,6 +1482,7 @@ class SettingsPage(QWidget):
         self._stack.addWidget(self._build_scrobbling_page())    # 4
         self._stack.addWidget(self._build_storage_page())       # 5
         self._stack.addWidget(self._build_backups_page())       # 6
+        self._stack.addWidget(self._build_subsonic_page())      # 7
         main.addWidget(self._stack, stretch=1)
 
         # Select first page
@@ -1244,7 +1528,7 @@ class SettingsPage(QWidget):
         nav_layout.setSpacing(0)
         nav_items = [
             "General", "Sync", "Transcoding",
-            "External Tools", "Scrobbling", "Storage", "Backups",
+            "External Tools", "Scrobbling", "Storage", "Backups", "Subsonic",
         ]
         for i, name in enumerate(nav_items):
             btn = SidebarNavButton(name)
@@ -1855,6 +2139,35 @@ class SettingsPage(QWidget):
             ),
         )
 
+    def _build_subsonic_page(self) -> QScrollArea:
+        """Settings page for the Subsonic-compatible server sync source."""
+        self.subsonic_playlist_row = _SubsonicPlaylistRow(
+            "Playlists",
+            "Select server playlists to recreate on the iPod using songs "
+            "already in the library.  Connect to the server first, then "
+            "Refresh to load the list.",
+        )
+
+        self.subsonic_server_row = _SubsonicServerRow(
+            "Server",
+            "Connect to a Subsonic-compatible server (Navidrome, Airsonic, "
+            "Gonic, original Subsonic) to sync its playlists.",
+        )
+        self.subsonic_server_row.test_requested.connect(self._on_subsonic_test)
+        self.subsonic_server_row.changed.connect(self._save_subsonic_fields)
+        self.subsonic_playlist_row.refresh_requested.connect(self._on_subsonic_refresh_playlists)
+        self.subsonic_playlist_row.selection_changed.connect(self._on_subsonic_playlist_selection)
+
+        return self._make_page(
+            "Subsonic",
+            "Server",
+            _SettingsCard(self.subsonic_server_row),
+            "Selection",
+            _SettingsCard(
+                self.subsonic_playlist_row,
+            ),
+        )
+
     def _build_storage_page(self) -> QScrollArea:
         from iopenpod.infrastructure.settings_paths import default_cache_dir
         self.transcode_cache_dir = ResettableFolderRow(
@@ -2160,6 +2473,18 @@ class SettingsPage(QWidget):
             self.lastfm_auth_row.set_connected(s.lastfm_username)
         else:
             self.lastfm_auth_row.set_disconnected(s.lastfm_api_key, s.lastfm_api_secret)
+
+        # Subsonic
+        self.subsonic_server_row.url_input.setText(s.subsonic_url)
+        self.subsonic_server_row.username_input.setText(s.subsonic_username)
+        self.subsonic_server_row.password_input.setText(s.subsonic_password)
+        # Playlists are loaded from the server on connect; we cannot render a
+        # checkbox selection before that, so just enable Refresh if configured.
+        if s.subsonic_url and s.subsonic_username:
+            self.subsonic_server_row.status_label.setText("Saved")
+            self.subsonic_playlist_row.set_enabled(True)
+        else:
+            self.subsonic_server_row.status_label.setText("")
 
         self.show_art.value = s.show_art_in_tracklist
         self.rounded_artwork.value = s.rounded_artwork
@@ -2600,6 +2925,14 @@ class SettingsPage(QWidget):
         s.rating_conflict_strategy = strategy_keys.get(self.rating_strategy.value, "ipod_wins")
 
         s.scrobble_on_sync = self.scrobble_on_sync.value
+
+        # Subsonic selection toggles (credentials are saved on edit via
+        # _save_subsonic_fields, but mirror them here for a clean _save round-trip).
+        s.subsonic_url = self.subsonic_server_row.url
+        s.subsonic_username = self.subsonic_server_row.username
+        s.subsonic_password = self.subsonic_server_row.password
+        s.subsonic_playlist_ids = list(self.subsonic_playlist_row.selected_ids)
+        s.subsonic_enabled = bool(s.subsonic_url and s.subsonic_username)
 
         # Lossy encoder
         enc_text = self.lossy_encoder.value
@@ -3248,6 +3581,130 @@ class SettingsPage(QWidget):
             return
 
         self.listenbrainz_token_row.set_connected(username)
+
+    # ── Subsonic handlers ─────────────────────────────────────────────────
+
+    def _save_subsonic_fields(self, *_args) -> None:
+        """Persist all Subsonic fields from the UI immediately on edit.
+
+        Credentials (URL/user/password) are stored in plaintext like the
+        Last.fm fields; no separate secret store is used.
+        """
+        if self._loading_settings:
+            return
+
+        playlist_ids = list(self.subsonic_playlist_row.selected_ids)
+
+        s = self._settings_service.get_global_settings()
+        s.subsonic_url = self.subsonic_server_row.url
+        s.subsonic_username = self.subsonic_server_row.username
+        s.subsonic_password = self.subsonic_server_row.password
+        s.subsonic_playlist_ids = playlist_ids
+        s.subsonic_enabled = bool(s.subsonic_url and s.subsonic_username)
+        self._settings_service.save_global_settings(s)
+
+    def _on_subsonic_playlist_selection(self, _ids: list) -> None:
+        """A playlist checkbox was toggled — persist the new selection."""
+        self._save_subsonic_fields()
+
+    def _on_subsonic_refresh_playlists(self) -> None:
+        """Fetch the server's playlists in the background and render them."""
+        url = self.subsonic_server_row.url
+        username = self.subsonic_server_row.username
+        password = self.subsonic_server_row.password
+        if not (url and username):
+            self.subsonic_playlist_row.set_error("Enter URL and username")
+            return
+        self.subsonic_playlist_row.refresh_btn.setEnabled(False)
+        self.subsonic_playlist_row.status_label.setText("Loading…")
+        self._pending_subsonic_result = (url, username, password)
+
+        import threading
+
+        def _do_fetch():
+            from iopenpod.subsonic.client import SubsonicClient
+
+            playlists: list[tuple[str, str]] = []
+            ok = False
+            try:
+                client = SubsonicClient(url, username, password)
+                raw = client.get_playlists()
+                playlists = [
+                    (str(p.get("id", "")), str(p.get("name", p.get("id", ""))))
+                    for p in raw
+                    if p.get("id")
+                ]
+                ok = True
+            except Exception:
+                playlists = []
+            self._pending_subsonic_playlists = playlists
+            self._pending_subsonic_playlists_ok = ok
+            from PyQt6.QtCore import QMetaObject
+            from PyQt6.QtCore import Qt as QtCore_Qt
+
+            QMetaObject.invokeMethod(
+                self,
+                "_on_subsonic_playlists_loaded",
+                QtCore_Qt.ConnectionType.QueuedConnection,
+            )
+
+        threading.Thread(target=_do_fetch, daemon=True).start()
+
+    @pyqtSlot()
+    def _on_subsonic_playlists_loaded(self) -> None:
+        """Called on main thread after the playlist fetch completes."""
+        playlists = getattr(self, "_pending_subsonic_playlists", [])
+        ok = getattr(self, "_pending_subsonic_playlists_ok", False)
+        if not ok:
+            self.subsonic_playlist_row.set_error("Could not load playlists")
+            return
+        # Preserve the currently-saved selection when re-rendering.
+        saved = self._settings_service.get_global_settings()
+        saved_ids = list(saved.subsonic_playlist_ids)
+        self.subsonic_playlist_row.set_playlists(playlists, checked_ids=saved_ids)
+
+    def _on_subsonic_test(self, url: str, username: str, password: str) -> None:
+        """Validate the Subsonic connection in a background thread."""
+        self.subsonic_server_row.set_validating()
+        self._pending_subsonic_result = (url, username, password)
+
+        import threading
+
+        def _do_ping():
+            from iopenpod.subsonic.client import SubsonicClient
+
+            ok = False
+            try:
+                client = SubsonicClient(url, username, password)
+                client.ping()
+                ok = True
+            except Exception:
+                ok = False
+            self._pending_subsonic_ok = ok
+            from PyQt6.QtCore import QMetaObject
+            from PyQt6.QtCore import Qt as QtCore_Qt
+
+            QMetaObject.invokeMethod(
+                self,
+                "_on_subsonic_validate_result",
+                QtCore_Qt.ConnectionType.QueuedConnection,
+            )
+
+        threading.Thread(target=_do_ping, daemon=True).start()
+
+    @pyqtSlot()
+    def _on_subsonic_validate_result(self) -> None:
+        """Called on main thread after the Subsonic ping completes."""
+        ok = getattr(self, "_pending_subsonic_ok", False)
+        url, username, _password = self._pending_subsonic_result or ("", "", "")
+        if ok:
+            self.subsonic_server_row.set_connected(username)
+            # Persist now that the connection is confirmed.
+            self._save_subsonic_fields()
+            # Auto-load the playlist list now that we have a working connection.
+            self._on_subsonic_refresh_playlists()
+        else:
+            self.subsonic_server_row.set_error("Could not connect / bad credentials")
 
     # ── Last.fm Scrobbling handlers ────────────────────────────────────────
 

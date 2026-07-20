@@ -19,7 +19,9 @@ from typing import TYPE_CHECKING, Any
 from PyQt6.QtCore import QEvent, QObject, QRectF, QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QPainter
 from PyQt6.QtWidgets import (
+    QButtonGroup,
     QCheckBox,
+    QComboBox,
     QDialog,
     QFileDialog,
     QFrame,
@@ -28,8 +30,10 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QRadioButton,
     QSizePolicy,
     QStackedWidget,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -4185,4 +4189,283 @@ class PCFolderDialog(QDialog):
         if not self._validate_folders():
             return
         self.sync_mode = "back_sync"
+        self.accept()
+
+
+class SubsonicPlaylistMappingDialog(QDialog):
+    """Choose how each Subsonic playlist maps onto the iPod.
+
+    Shown right before a Subsonic sync starts.  Two tabs:
+
+    **Playlists** — select which iPod playlist each Subsonic list maps to
+    (new, or an existing one).
+
+    **Mode** — for each *mapped* playlist, choose Merge (keep existing iPod
+    tracks + add new) or Overwrite (replace the iPod playlist with the
+    Subsonic one).
+
+    ``mappings`` (read after ``exec()``) is a ``{subsonic_id: ipod_id}`` dict
+    — positive ids = merge, negative ids = overwrite.
+    """
+
+    def __init__(
+        self,
+        parent=None,
+        subsonic_playlists: list[tuple[str, str]] | None = None,
+        ipod_playlists: list[tuple[int, str]] | None = None,
+        *,
+        saved_mappings: dict[str, int] | None = None,
+    ):
+        super().__init__(parent)
+        self.setWindowTitle("Subsonic Sync — Map & Mode")
+        self.setMinimumSize(640, 500)
+        self.mappings: dict[str, int] = {}
+        self._subsonic = list(subsonic_playlists or [])
+        self._ipod = list(ipod_playlists or [])
+        self._saved = dict(saved_mappings or {})
+        self._combos: list[tuple[str, QComboBox]] = []
+        self._mode_rows: dict[str, QButtonGroup] = {}
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(8)
+
+        title = QLabel("Subsonic Sync")
+        title.setFont(QFont(FONT_FAMILY, Metrics.FONT_HERO, QFont.Weight.Bold))
+        title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent;")
+        layout.addWidget(title)
+
+        tabs = QTabWidget()
+        tabs.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        tabs.addTab(self._build_playlist_tab(), "Mapping")
+        tabs.addTab(self._build_mode_tab(), "Sync Mode")
+        layout.addWidget(tabs, stretch=1)
+
+        # Buttons.
+        btns = QHBoxLayout()
+        btns.addStretch()
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
+        cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        cancel_btn.setStyleSheet(btn_css(
+            bg="transparent", bg_hover=Colors.SURFACE_ACTIVE,
+            fg=Colors.TEXT_SECONDARY, border=f"1px solid {Colors.BORDER}",
+        ))
+        cancel_btn.clicked.connect(self.reject)
+        btns.addWidget(cancel_btn)
+
+        ok_btn = QPushButton("Continue")
+        ok_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.DemiBold))
+        ok_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        ok_btn.setStyleSheet(btn_css(
+            bg=Colors.ACCENT, bg_hover=Colors.ACCENT_LIGHT, bg_press=Colors.ACCENT,
+            fg=Colors.TEXT_ON_ACCENT, border="none",
+        ))
+        ok_btn.clicked.connect(self._accept)
+        btns.addWidget(ok_btn)
+        layout.addLayout(btns)
+
+    # ---- Tab 1: Playlist mapping ----
+
+    def _build_playlist_tab(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(8, 12, 8, 8)
+        layout.setSpacing(8)
+
+        hint = QLabel(
+            "Choose where each Subsonic playlist appears on the iPod.\n"
+            "\"New (same name)\" creates a fresh playlist; selecting an "
+            "existing playlist links it for sync."
+        )
+        hint.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        hint.setWordWrap(True)
+        hint.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent;")
+        layout.addWidget(hint)
+
+        scroll = make_scroll_area()
+        content = QWidget()
+        content.setStyleSheet("background: transparent;")
+        rows = QVBoxLayout(content)
+        rows.setContentsMargins(0, 0, 0, 0)
+        rows.setSpacing(8)
+
+        if not self._subsonic:
+            empty = QLabel("No Subsonic playlists selected.")
+            empty.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+            empty.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent;")
+            rows.addWidget(empty)
+        else:
+            for sid, name in self._subsonic:
+                row = QFrame()
+                row.setStyleSheet(
+                    f"QFrame {{ background: {Colors.SURFACE}; border-radius: 6px; }}"
+                )
+                rl = QHBoxLayout(row)
+                rl.setContentsMargins(12, 10, 12, 10)
+                rl.setSpacing(12)
+
+                lbl = QLabel(name or sid)
+                lbl.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
+                lbl.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent;")
+                rl.addWidget(lbl, stretch=1)
+
+                combo = QComboBox()
+                combo.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+                combo.setMinimumWidth(220)
+                combo.addItem("New (same name)", None)
+                for ipod_id, ipod_name in self._ipod:
+                    combo.addItem(ipod_name or str(ipod_id), ipod_id)
+                # Pre-select a saved mapping.
+                target = self._saved.get(sid)
+                if target:
+                    idx = combo.findData(abs(target))
+                    if idx >= 0:
+                        combo.setCurrentIndex(idx)
+                combo.currentIndexChanged.connect(lambda _i: self._rebuild_mode_tab())
+                rl.addWidget(combo)
+                rows.addWidget(row)
+                self._combos.append((sid, combo))
+
+        rows.addStretch()
+        scroll.setWidget(content)
+        layout.addWidget(scroll, stretch=1)
+        return page
+
+    # ---- Tab 2: Sync mode ----
+
+    def _build_mode_tab(self) -> QWidget:
+        self._mode_page = QWidget()
+        self._mode_content = None
+        self._rebuild_mode_tab()
+        return self._mode_page
+
+    def _rebuild_mode_tab(self) -> None:
+        """Rebuild the mode tab when mapping combos change."""
+        if not hasattr(self, "_mode_page") or self._mode_page is None:
+            return
+        # Clear.
+        if self._mode_content is not None:
+            self._mode_content.setParent(None)
+        layout = QVBoxLayout(self._mode_page)
+        layout.setContentsMargins(8, 12, 8, 8)
+        layout.setSpacing(8)
+
+        hint = QLabel(
+            "For each mapped playlist, choose the sync direction and mode.\n"
+            "• Remote → Local (Overwrite): replace iPod playlist with Subsonic version.\n"
+            "• Remote → Local (Add): add Subsonic tracks to the iPod playlist (merge)."
+        )
+        hint.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        hint.setWordWrap(True)
+        hint.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent;")
+        layout.addWidget(hint)
+
+        scroll = make_scroll_area()
+        content = QWidget()
+        content.setStyleSheet("background: transparent;")
+        rows = QVBoxLayout(content)
+        rows.setContentsMargins(0, 0, 0, 0)
+        rows.setSpacing(8)
+        self._mode_rows.clear()
+
+        any_mapped = False
+        for sid, combo in self._combos:
+            target = combo.currentData()
+            if not isinstance(target, int) or not target:
+                continue
+            ipod_name = str(combo.currentText())
+            sub_name = next((n for i, n in self._subsonic if i == sid), sid)
+            any_mapped = True
+
+            row = QFrame()
+            row.setStyleSheet(
+                f"QFrame {{ background: {Colors.SURFACE}; border-radius: 6px; }}"
+            )
+            rl = QVBoxLayout(row)
+            rl.setContentsMargins(12, 10, 12, 10)
+            rl.setSpacing(4)
+
+            # Header
+            header = QLabel(f"{sub_name} (remote)  →  {ipod_name} (local)")
+            header.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.Bold))
+            header.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent;")
+            rl.addWidget(header)
+
+            group = QButtonGroup(row)
+            options = QHBoxLayout()
+            options.setSpacing(12)
+
+            # Mode values:
+            # 0 = Remote → Local (Overwrite) → negative id → overwrite
+            # 1 = Remote → Local (Add) → positive id → merge (DEFAULT)
+            # 2 = Local → Remote (Overwrite) → not yet supported
+            # 3 = Local → Remote (Add) → not yet supported
+
+            rb_overwrite = QRadioButton("Remote → Local (Overwrite)")
+            rb_add = QRadioButton("Remote → Local (Add)")
+            rb_local_overwrite = QRadioButton("Local → Remote (Overwrite)")
+            rb_local_add = QRadioButton("Local → Remote (Add)")
+
+            for rb in (rb_overwrite, rb_add, rb_local_overwrite, rb_local_add):
+                rb.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+                rb.setStyleSheet(
+                    f"QRadioButton {{ color: {Colors.TEXT_PRIMARY}; background: transparent; }}"
+                    f"QRadioButton:disabled {{ color: {Colors.TEXT_TERTIARY}; }}"
+                )
+                options.addWidget(rb)
+
+            group.addButton(rb_overwrite, 0)
+            group.addButton(rb_add, 1)
+            group.addButton(rb_local_overwrite, 2)
+            group.addButton(rb_local_add, 3)
+
+            # Local → Remote not yet supported — grey out.
+            rb_local_overwrite.setEnabled(False)
+            rb_local_add.setEnabled(False)
+            rb_local_overwrite.setToolTip("Writing to Subsonic server is not yet supported")
+            rb_local_add.setToolTip("Writing to Subsonic server is not yet supported")
+
+            # Pre-select based on saved mapping.
+            saved = self._saved.get(sid)
+            if saved and saved < 0:
+                rb_overwrite.setChecked(True)
+            else:
+                rb_add.setChecked(True)
+
+            rl.addLayout(options)
+            rows.addWidget(row)
+            self._mode_rows[sid] = group
+
+        if not any_mapped:
+            empty = QLabel(
+                "No playlists are mapped to an existing iPod list yet.\n"
+                "Go back to the Mapping tab and select a target playlist."
+            )
+            empty.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+            empty.setWordWrap(True)
+            empty.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent;")
+            rows.addWidget(empty)
+
+        rows.addStretch()
+        scroll.setWidget(content)
+        layout.addWidget(scroll, stretch=1)
+        self._mode_content = content
+
+    # ---- accept ----
+
+    def _accept(self) -> None:
+        self.mappings = {}
+        for sid, combo in self._combos:
+            target = combo.currentData()
+            if not isinstance(target, int) or not target:
+                continue
+            # Mode 0 (Remote→Local Overwrite) → negative id
+            # Mode 1 (Remote→Local Add) → positive id (merge)
+            group = self._mode_rows.get(sid)
+            if group is not None and group.checkedId() == 0:
+                target = -target
+            self.mappings[sid] = target
         self.accept()

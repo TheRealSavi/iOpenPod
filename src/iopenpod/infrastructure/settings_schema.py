@@ -279,6 +279,18 @@ class AppSettings:
     normalize_tags_after_sync: bool = False
     max_backups: int = 10
 
+    # Subsonic-compatible server sync source (Navidrome / Airsonic / Gonic).
+    # Stored in plaintext like the Last.fm credentials above; not synced to the
+    # device as an obfuscated secret (see DEVICE_SECRET_KEYS).
+    subsonic_enabled: bool = False
+    subsonic_url: str = ""
+    subsonic_username: str = ""
+    subsonic_password: str = ""
+    subsonic_playlist_ids: list[str] = field(default_factory=list)
+    # Mapping of Subsonic playlist id -> existing iPod playlist id (int) to merge
+    # into, instead of creating a new same-named playlist.  Empty/unset => create.
+    subsonic_playlist_mappings: dict[str, int] = field(default_factory=dict)
+
     def __post_init__(self) -> None:
         apply_backup_before_sync_mode(self)
         self.player_position = normalize_player_position(self.player_position)

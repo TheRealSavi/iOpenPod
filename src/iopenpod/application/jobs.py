@@ -635,6 +635,74 @@ class PodcastPlanWorker(QThread):
 
 
 @dataclass(frozen=True)
+class SubsonicPlanRequest:
+    """Typed request for building a Subsonic ADD-only sync plan.
+
+    Carries the connection credentials and selection knobs.  The
+    ``SubsonicClient`` is constructed inside the worker (off the GUI thread)
+    so a misbehaving server never blocks the UI.
+    """
+
+    url: str
+    username: str
+    password: str
+    ipod_tracks: list
+    cache_dir: str = ""
+    playlist_ids: tuple[str, ...] = ()
+    playlist_mappings: tuple[tuple[str, int], ...] = ()
+    ipod_playlists: tuple = ()
+
+
+class SubsonicPlanWorker(QThread):
+    """Background worker that connects to a Subsonic server and builds a plan.
+
+    Mirrors ``PodcastPlanWorker``: validate the connection, build an ADD-only
+    ``SyncPlan`` (starred songs + named playlists), and emit it.  The actual
+    track downloads happen later during execution (see
+    ``SyncExecutor._fetch_subsonic_tracks``).
+    """
+
+    finished = pyqtSignal(object)
+    error = pyqtSignal(str)
+
+    def __init__(self, request: SubsonicPlanRequest):
+        super().__init__()
+        self._request = request
+
+    def run(self) -> None:
+        try:
+            request = self._request
+            from iopenpod.subsonic.client import SubsonicClient, SubsonicConnectionError
+            from iopenpod.subsonic.plan_builder import build_subsonic_sync_plan
+
+            client = SubsonicClient(
+                request.url,
+                request.username,
+                request.password,
+            )
+            try:
+                client.ping()
+            except SubsonicConnectionError:
+                raise
+
+            plan = build_subsonic_sync_plan(
+                client,
+                request.ipod_tracks,
+                request.cache_dir,
+                playlist_ids=list(request.playlist_ids),
+                playlist_mappings=dict(request.playlist_mappings),
+                ipod_playlists=list(request.ipod_playlists),
+            )
+            if not self.isInterruptionRequested():
+                self.finished.emit(plan)
+        except Exception as exc:
+            if self.isInterruptionRequested():
+                return
+            logger.exception("SubsonicPlanWorker failed")
+            self.error.emit(str(exc))
+
+
+@dataclass(frozen=True)
 class BackupDeviceContext:
     """Stable backup identity and metadata for a device."""
 
@@ -2564,6 +2632,8 @@ def _delete_imported_otg_files(
             )
 
 
+
+
 class SyncExecuteWorker(QThread):
     """Background worker for executing a reviewed sync plan."""
 
@@ -2638,6 +2708,10 @@ class SyncExecuteWorker(QThread):
                 )
 
             self._partial_save_event = threading.Event()
+
+            # Resolve any subsonic:// virtual URIs before handing off to the
+            # sync engine (download tracks from the Subsonic server to cache).
+            self._resolve_subsonic_sources(settings)
 
             def _on_cancel_with_partial(n_added: int, n_skipped: int) -> bool:
                 evt = self._partial_save_event
@@ -2782,6 +2856,67 @@ class SyncExecuteWorker(QThread):
         except Exception as exc:
             logger.warning("Pre-sync backup failed (continuing sync): %s", exc)
             logger.debug("Pre-sync backup failure details:\n%s", traceback.format_exc())
+
+    def _resolve_subsonic_sources(self, settings: AppSettings) -> None:
+        """Download any Subsonic tracks referenced via ``subsonic://`` URIs.
+
+        Scans ``self.plan.to_add`` for items whose ``pc_track.path`` starts
+        with ``subsonic://``, downloads the track bytes from the Subsonic
+        server to the transcode cache, and updates ``pc_track.path`` to point
+        to the local file.
+
+        Currently a no-op for the playlist-only Subsonic sync (the plan
+        builder emits ``to_add=[]``), but provides a safety net for future
+        track-download support.
+        """
+        items = getattr(self.plan, "to_add", []) or []
+        subsonic_items = [
+            item for item in items
+            if item.has_pc_source
+            and str(getattr(item.pc_track, "path", "")).startswith("subsonic://")
+        ]
+        if not subsonic_items:
+            return
+
+        url = (settings.subsonic_url or "").strip()
+        username = (settings.subsonic_username or "").strip()
+        password = settings.subsonic_password or ""
+        cache_dir = (settings.transcode_cache_dir or "").strip()
+
+        if not (url and username):
+            logger.warning(
+                "Plan contains %d subsonic:// track(s) but Subsonic is not "
+                "configured — skipping them.",
+                len(subsonic_items),
+            )
+            return
+
+        try:
+            from iopenpod.subsonic.client import SubsonicClient
+
+            client = SubsonicClient(url, username, password)
+            client.ping()
+        except Exception as exc:
+            logger.warning(
+                "Could not connect to Subsonic server to resolve %d track(s): %s",
+                len(subsonic_items),
+                exc,
+            )
+            return
+
+        os.makedirs(cache_dir or ".", exist_ok=True)
+        for item in subsonic_items:
+            if self.isInterruptionRequested():
+                break
+            track_id = str(getattr(item.pc_track, "path", "")).replace("subsonic://", "", 1)
+            rel_path = str(getattr(item.pc_track, "relative_path", f"{track_id}.mp3"))
+            dest = os.path.join(cache_dir, "subsonic", rel_path)
+            try:
+                client.download_track(track_id, dest)
+                item.pc_track.path = dest
+                logger.debug("Resolved subsonic://%s -> %s", track_id, dest)
+            except Exception as exc:
+                logger.warning("Failed to download Subsonic track %s: %s", track_id, exc)
 
 
 class DropScanWorker(QThread):
