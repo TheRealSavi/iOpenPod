@@ -506,6 +506,11 @@ class SyncExecutor:
         sync_until_full = bool(getattr(request, "sync_until_full", False))
 
         _clear_transcoder_caches()
+        # A crashed transcode can leave an unindexed reserved file behind.
+        # Maintenance happens before any new cache writes, so it cannot race a
+        # live conversion in this sync.
+        self.transcode_cache.cleanup()
+        self.transcode_cache.trim_to_limit()
 
         ctx = self._build_sync_context(
             plan=request.plan,
@@ -1944,6 +1949,7 @@ class SyncExecutor:
         )
         store = SubscriptionStore(
             str(self.ipod_path),
+            download_cache_dir=str(self.transcode_cache.cache_dir),
             reported_volume_format=str(
                 getattr(self.device_storage, "reported_volume_format", "") or ""
             ),
@@ -1955,6 +1961,7 @@ class SyncExecutor:
         refreshed_feeds = ctx.plan._refreshed_podcast_feeds
         feeds = list(refreshed_feeds) if refreshed_feeds is not None else store.get_feeds()
         if not feeds:
+            store.prune_download_cache([])
             return
 
         if refreshed_feeds is not None:
@@ -1984,6 +1991,16 @@ class SyncExecutor:
             if entry:
                 ep, _feed = entry
                 _remember_trackinfo_playback(ep, track)
+                if ep.downloaded_path:
+                    try:
+                        store.remove_episode_download(ep.downloaded_path)
+                        ep.downloaded_path = ""
+                    except Exception as exc:
+                        logger.warning(
+                            "Could not safely remove synced podcast staging file %r: %s",
+                            ep.downloaded_path,
+                            exc,
+                        )
                 ep.status = STATUS_ON_IPOD
                 ep.ipod_db_track_id = track.db_track_id
                 changed = True
@@ -2005,13 +2022,34 @@ class SyncExecutor:
             if entry is None and item.db_track_id:
                 entry = ep_by_db_track_id.get(item.db_track_id)
             if entry:
-                ep, _feed = entry
+                ep, feed = entry
                 _remember_track_playback(ep, ipod_track)
+                if (
+                    ep.downloaded_path
+                    and getattr(feed, "clear_when_listened", False)
+                    and max(
+                        _coerce_int(ipod_track.get("play_count_1")),
+                        _coerce_int(ipod_track.get("recent_playcount")),
+                    ) > 0
+                ):
+                    try:
+                        store.remove_episode_download(ep.downloaded_path)
+                        ep.downloaded_path = ""
+                    except Exception as exc:
+                        logger.warning(
+                            "Could not safely remove listened podcast download %r: %s",
+                            ep.downloaded_path,
+                            exc,
+                        )
                 ep.status = STATUS_DOWNLOADED if ep.downloaded_path else STATUS_NOT_DOWNLOADED
                 ep.ipod_db_track_id = 0
                 changed = True
                 logger.debug("Podcast subscription: marked '%s' as removed from iPod",
                              ep.title)
+
+        # Sweep stale parts and old feed directories even when this sync did
+        # not add or remove a podcast. Referenced pending downloads stay put.
+        store.prune_download_cache(feeds)
 
         if changed:
             store.update_feeds(feeds)

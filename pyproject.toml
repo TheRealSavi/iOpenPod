@@ -52,6 +52,7 @@ dev = [
     "mypy>=1.15.0",
     "nuitka>=4.0.3",
     "ordered-set>=4.1.0",
+    "pre-commit>=4.2.0",
     "pytest>=8.3.5",
     "pytest-qt>=4.4.0",
     "pyinstaller>=6.19.0",
@@ -61,12 +62,6 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/iopenpod"]
-
-[tool.flake8]
-# Allow line breaks before binary operators (W503) — matches Black's style
-extend-ignore = ["W503"]
-# Keep line length reasonable; adjust if you prefer a different value
-max-line-length = 320
 
 [tool.pytest.ini_options]
 addopts = "-p no:cacheprovider"

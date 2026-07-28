@@ -1,0 +1,16 @@
+# Expose an iPod's Apple product serial without granting users raw-disk access.
+#
+# The USB descriptor serial and the default SCSI page 0x83 identifier are the
+# iPod's FireWire GUID.  Apple stores the product serial used for exact model
+# lookup on SCSI VPD page 0x80.  systemd-udevd already runs scsi_id as root for
+# storage discovery, so capture page 0x80 in a separate iOpenPod property while
+# leaving the standard ID_SERIAL values and device-node permissions untouched.
+ACTION=="add|change", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", \
+  ENV{ID_IOPENPOD_PRODUCT_SERIAL}=""
+
+ACTION=="add|change", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", \
+  ATTRS{vendor}=="Apple*", ATTRS{model}=="iPod*", \
+  PROGRAM=="scsi_id --page=0x80 --whitelisted --device=/dev/%k", \
+  RESULT=="SApple*iPod*", ENV{ID_IOPENPOD_PRODUCT_SERIAL}="%c{3}", \
+  SYMLINK+="disk/by-id/ipod-$env{ID_IOPENPOD_PRODUCT_SERIAL}", \
+  OPTIONS+="string_escape=replace"

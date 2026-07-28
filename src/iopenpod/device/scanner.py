@@ -6,10 +6,10 @@ ALL available data sources and picks the best value for each field.
 
 Detection pipeline:
 
-  **Phase 1 — Hardware probing** (pure Win32, no file I/O, no subprocess):
-    1a. IOCTL_STORAGE_QUERY_PROPERTY → vendor, product, firmware, Apple serial
-    1b. PnP device tree walk (SetupAPI/cfgmgr32) → FireWire GUID, USB PID
-    1c. If both fail: silent fallback to WMI (PowerShell + registry)
+  **Phase 1 — Hardware probing** (platform adapter, read-only):
+    - Windows: storage descriptor/WMI → Apple serial; PnP → FireWire GUID/PID
+    - macOS: Disk Arbitration/ioreg → storage and USB identity
+    - Linux: cached VPD page 0x80/udev → Apple serial; sysfs → GUID/PID
 
   **Phase 2 — Filesystem probing** (file reads on iPod):
     2a. SysInfo / SysInfoExtended → ModelNumStr, FireWire GUID, serial
@@ -18,7 +18,7 @@ Detection pipeline:
   **Phase 3 — Model resolution** (pure computation, per-field priority):
     - model_number:  SysInfo ModelNumStr → IPOD_MODELS  >  serial suffix → IPOD_MODELS
     - firewire_guid: device tree  >  SysInfoExtended  >  SysInfo  >  USB serial (always 16 hex chars on iPods)
-    - serial:        SysInfo pszSerialNumber (Apple serial)  >  IOCTL (only if non-GUID)
+    - serial:        live product serial  >  SysInfoExtended  >  SysInfo
     - firmware:      IOCTL revision  >  SysInfo visibleBuildID
     - usb_pid:       device tree USB parent  >  WMI fallback
     - model_family:  IPOD_MODELS  >  USB PID table (with disk-size sanity check)  >  hashing_scheme
@@ -61,6 +61,7 @@ from .filesystem import (
 )
 from .filesystem_profile import inspect_filesystem_profile
 from .info import DeviceInfo
+from .linux_identity import probe_linux_identity
 from .models import USB_PID_TO_MODEL
 from .write_readiness import volume_lock_key
 
@@ -804,64 +805,9 @@ def _linux_usb_info_from_bus_scan(base_disk: str) -> dict:
 
 
 def _probe_hardware_linux(mount_path: str) -> dict:
-    """
-    Linux hardware probing via sysfs / udevadm / findmnt.
+    """Compatibility wrapper around the Linux identity adapter."""
 
-    Traces the mount point → block device → USB device through multiple
-    strategies to extract the USB PID, serial number, and FireWire GUID.
-
-    Strategies (tried in order for each sub-task):
-
-    Block device lookup:
-      1. ``findmnt`` — handles paths with spaces and bind mounts
-      2. ``/proc/mounts`` with octal-escape decoding
-      3. ``lsblk --json``
-
-    USB identity extraction:
-      1. ``udevadm info`` on the partition device
-      2. ``udevadm info`` on the parent disk device (Arch/CachyOS may not
-         propagate USB properties to partition devices)
-      3. sysfs walk — manual traversal from block device to USB ancestor
-      4. USB bus scan — walk ``/sys/bus/usb/devices/`` for Apple devices
-         matching this block device
-    """
-    import re as _re
-
-    result: dict = {}
-
-    try:
-        device = _linux_find_block_device(mount_path)
-        if not device:
-            logger.debug("Linux probe: could not resolve block device for %s", mount_path)
-            return result
-
-        # Get the base disk name (e.g., sdb from /dev/sdb1)
-        dev_name = os.path.basename(device)
-        base_disk = _re.sub(r"\d+$", "", dev_name)  # sdb1 → sdb
-
-        # ── Strategy 1: udevadm info on partition ─────────────────
-        result = _linux_usb_info_from_udevadm(device)
-
-        # ── Strategy 2: udevadm info on parent disk ──────────────
-        #   On Arch-based distros (CachyOS, Manjaro, EndeavourOS), udev
-        #   rules may not propagate USB identity properties (ID_VENDOR_ID,
-        #   ID_MODEL_ID, ID_SERIAL_SHORT) from the USB device to its
-        #   partition children.  Querying the parent disk directly works.
-        if not result and base_disk != dev_name:
-            result = _linux_usb_info_from_udevadm(f"/dev/{base_disk}")
-
-        # ── Strategy 3: sysfs walk ────────────────────────────────
-        if not result:
-            result = _linux_usb_info_from_sysfs(base_disk)
-
-        # ── Strategy 4: USB bus scan (last resort) ────────────────
-        if not result:
-            result = _linux_usb_info_from_bus_scan(base_disk)
-
-    except Exception as e:
-        logger.debug("Linux hardware probe failed: %s", e)
-
-    return result
+    return probe_linux_identity(mount_path)
 
 
 def _identify_via_usb_for_drive(drive_letter: str) -> dict | None:
@@ -1675,8 +1621,8 @@ def _probe_hardware(mount_path: str, mount_name: str) -> dict:
             logger.debug("Hardware probe (macOS): %s", result)
 
     else:
-        result = _probe_hardware_linux(mount_path)
-        _hw_method = "sysfs"
+        result = probe_linux_identity(mount_path)
+        _hw_method = "linux_identity"
         if result:
             logger.debug("Hardware probe (Linux): %s", result)
 
@@ -1685,16 +1631,18 @@ def _probe_hardware(mount_path: str, mount_name: str) -> dict:
         sources = result.setdefault("_sources", {})
         if result.get("firewire_guid"):
             # On Windows, FW GUID comes from device tree walk specifically
-            sources["firewire_guid"] = (
-                "device_tree" if _hw_method in ("ioctl", "wmi") else _hw_method
+            sources.setdefault(
+                "firewire_guid",
+                "device_tree" if _hw_method in ("ioctl", "wmi") else _hw_method,
             )
         if result.get("serial"):
-            sources["serial"] = _hw_method
+            sources.setdefault("serial", _hw_method)
         if result.get("firmware"):
-            sources["firmware"] = _hw_method
+            sources.setdefault("firmware", _hw_method)
         if result.get("usb_pid"):
-            sources["usb_pid"] = (
-                "device_tree" if _hw_method in ("ioctl", "wmi") else _hw_method
+            sources.setdefault(
+                "usb_pid",
+                "device_tree" if _hw_method in ("ioctl", "wmi") else _hw_method,
             )
 
     logger.debug(
@@ -1885,17 +1833,31 @@ def _resolve_model(
         resolved["firewire_guid"] = ""
 
     # ── Serial (Apple serial number, NOT the USB/FireWire GUID) ────────
-    # Only the filesystem layer (SysInfo pszSerialNumber) provides the real
-    # Apple serial.  Hardware probing returns the USB serial which is always
-    # the FireWire GUID on iPods — that's stored in firewire_guid above.
+    # Live hardware evidence wins over cached SysInfo. Platform probes keep
+    # the USB descriptor serial separate as firewire_guid, so hw["serial"] is
+    # specifically Apple product-serial evidence.
     fs_serial = fs.get("serial", "")
-    hw_serial = hw.get("serial", "")  # rare: non-GUID serial from IOCTL
-    if fs_serial and not fs_serial.startswith("RAND"):
-        resolved["serial"] = fs_serial
-        sources["serial"] = fs_sources.get("serial", "sysinfo")
-    elif hw_serial and not hw_serial.startswith("RAND"):
+    hw_serial = hw.get("serial", "")
+    if hw_serial and not hw_serial.startswith("RAND"):
         resolved["serial"] = hw_serial
         sources["serial"] = hw_sources.get("serial", "hardware")
+        if (
+            fs_serial
+            and not fs_serial.startswith("RAND")
+            and str(fs_serial).casefold() != str(hw_serial).casefold()
+        ):
+            conflicts.append({
+                "field": "serial",
+                "winner": sources["serial"],
+                "rejected_source": fs_sources.get("serial", "sysinfo"),
+                "rejected_value": fs_serial,
+                "reason": (
+                    "cached product serial conflicts with live hardware serial"
+                ),
+            })
+    elif fs_serial and not fs_serial.startswith("RAND"):
+        resolved["serial"] = fs_serial
+        sources["serial"] = fs_sources.get("serial", "sysinfo")
     else:
         resolved["serial"] = ""
 

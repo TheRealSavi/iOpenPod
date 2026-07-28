@@ -1,0 +1,31 @@
+---
+description: Python tooling — uv-only entry point and dev commands
+alwaysApply: true
+---
+
+# Python tooling
+
+Use **uv** for all Python work. Never invoke bare `python`, `pip`, `poetry`, or `conda`.
+
+## Dev checks
+
+```bash
+uv sync
+uv run python scripts/dev.py check    # full gate
+uv run python scripts/dev.py lint     # ruff check
+uv run python scripts/dev.py fmt      # ruff format
+uv run python scripts/dev.py types    # mypy
+uv run python scripts/dev.py test     # pytest
+uv run python scripts/dev.py arch     # architecture rules
+uv run python scripts/dev.py doctor   # verify install / hooks
+uv run iopenpod                       # run the app
+```
+
+## Linting
+
+- **ruff** only — do not run flake8, black, isort, or pylint
+- Config: `pyproject.toml` (`[tool.ruff]`, `[tool.mypy]`)
+
+## Before marking work done
+
+Run `uv run python scripts/dev.py lint` and targeted tests at minimum.

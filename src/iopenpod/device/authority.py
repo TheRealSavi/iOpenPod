@@ -13,8 +13,9 @@ determines whether the new or existing value is more trustworthy.
 Source reliability (most → least)::
 
     Sure (live hardware):
-        scsi_vpd / windows_scsi / linux_scsi / usb_vendor > vpd > iokit > ioctl
-            > device_tree / ioreg / sysfs > wmi
+        scsi_vpd / windows_scsi / linux_scsi / sysfs_vpd /
+            udev_scsi_id / usb_vendor > vpd > iokit > ioctl
+            > device_tree / ioreg / sysfs / udev > wmi
     Guesses (files / lookups / derivations):
         sysinfo_extended > sysinfo > itunes > serial_lookup
             > usb_pid > hashing > unknown
@@ -52,6 +53,8 @@ _SOURCE_ORDER: list[str] = [
     "scsi_vpd",             # Live SCSI INQUIRY VPD plist
     "windows_scsi",         # Windows SCSI pass-through VPD
     "linux_scsi",           # Linux SG_IO SCSI pass-through VPD
+    "sysfs_vpd",            # Kernel-cached Linux SCSI VPD page
+    "udev_scsi_id",         # Root-time udev scsi_id page 0x80 probe
     "usb_vendor",           # Live Apple USB vendor-control plist
     "vpd",                  # SCSI Vital Product Data — gold standard
     "iokit",                # macOS IOKit SCSI (effectively VPD, no unmount)
@@ -59,6 +62,7 @@ _SOURCE_ORDER: list[str] = [
     "device_tree",          # Windows PnP device tree (live hardware)
     "ioreg",                # macOS ioreg (live hardware)
     "sysfs",                # Linux sysfs (live hardware)
+    "udev",                 # Linux udev USB properties
     "wmi",                  # Windows WMI (live hardware query)
     # ── Guesses: lookups, derivations, files ────────────────────────
     "itunes",               # Pre-existing value assumed to be from iTunes

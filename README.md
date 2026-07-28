@@ -150,6 +150,22 @@ uv run iopenpod
 
 `uv sync` installs dependencies into a local virtual environment.
 
+### Dev checks
+
+All lint, format, typecheck, and test commands go through one entry point:
+
+```bash
+uv run python scripts/dev.py check    # full gate
+uv run python scripts/dev.py lint     # ruff
+uv run python scripts/dev.py fmt      # ruff format
+uv run python scripts/dev.py types    # mypy
+uv run python scripts/dev.py test     # pytest
+```
+
+See `AGENTS.md` for the full command reference (including architecture checks and agent conventions).
+
+Full human guide: [`docs/DEV.md`](docs/DEV.md).
+
 ### Project Layout
 
 ```text

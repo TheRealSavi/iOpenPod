@@ -5,15 +5,25 @@ import os
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
 
 import pytest
 
 from iopenpod.device.write_guard import DeviceWriteSafetyError
 from iopenpod.gui.widgets.podcastBrowser import PodcastBrowser
+from iopenpod.itunesdb_writer.mhit_writer import TrackInfo
 from iopenpod.podcasts.artwork import cache_feed_artwork
-from iopenpod.podcasts.models import STATUS_DOWNLOADED, PodcastEpisode, PodcastFeed
+from iopenpod.podcasts.models import (
+    STATUS_DOWNLOADED,
+    STATUS_NOT_DOWNLOADED,
+    STATUS_ON_IPOD,
+    PodcastEpisode,
+    PodcastFeed,
+)
 from iopenpod.podcasts.subscription_store import SubscriptionStore
+from iopenpod.sync.contracts import SyncAction, SyncItem, SyncPlan
+from iopenpod.sync.mapping import MappingFile
+from iopenpod.sync.sync_executor import SyncExecutor, _SyncContext
 
 
 def _virtual_ipod(root: Path) -> None:
@@ -155,6 +165,77 @@ def test_remove_download_removes_file_inside_host_podcast_cache(
     assert not downloaded.exists()
 
 
+def test_remove_feed_removes_host_podcast_downloads(tmp_path: Path) -> None:
+    ipod = tmp_path / "ipod"
+    _virtual_ipod(ipod)
+    cache = tmp_path / "cache"
+    feed = PodcastFeed(
+        feed_url="https://example.test/feed.xml",
+        title="Cached Show",
+    )
+    store = SubscriptionStore(str(ipod), download_cache_dir=str(cache))
+    feed_dir = Path(store.feed_dir(feed))
+    downloaded = feed_dir / "episode.mp3"
+    stale = feed_dir / "stale-episode.mp3"
+    downloaded.parent.mkdir(parents=True)
+    downloaded.write_bytes(b"episode")
+    stale.write_bytes(b"old episode")
+    feed.episodes.append(
+        PodcastEpisode(
+            guid="episode-1",
+            status=STATUS_DOWNLOADED,
+            downloaded_path=str(downloaded),
+        )
+    )
+    store.add_feed(feed)
+
+    removed = store.remove_feed(feed.feed_url)
+
+    assert removed is not None
+    assert not downloaded.exists()
+    assert not stale.exists()
+    assert not feed_dir.exists()
+    assert store.get_feeds() == []
+
+
+def test_prune_download_cache_removes_only_unreferenced_staging_files(
+    tmp_path: Path,
+) -> None:
+    ipod = tmp_path / "ipod"
+    _virtual_ipod(ipod)
+    cache = tmp_path / "cache"
+    feed = PodcastFeed(
+        feed_url="https://example.test/feed.xml",
+        title="Cached Show",
+    )
+    store = SubscriptionStore(str(ipod), download_cache_dir=str(cache))
+    feed_dir = Path(store.feed_dir(feed))
+    retained = feed_dir / "pending.mp3"
+    stale = feed_dir / ".iop-interrupted.part"
+    orphan_dir = cache / "podcasts" / "0123456789abcdef"
+    orphaned = orphan_dir / "orphan.mp3"
+    retained.parent.mkdir(parents=True)
+    retained.write_bytes(b"pending")
+    stale.write_bytes(b"partial")
+    orphan_dir.mkdir()
+    orphaned.write_bytes(b"orphan")
+    feed.episodes.append(
+        PodcastEpisode(
+            guid="episode-1",
+            status=STATUS_DOWNLOADED,
+            downloaded_path=str(retained),
+        )
+    )
+
+    removed = store.prune_download_cache([feed])
+
+    assert removed == 2
+    assert retained.exists()
+    assert not stale.exists()
+    assert not orphaned.exists()
+    assert not orphan_dir.exists()
+
+
 def test_remove_download_refuses_symlink_inside_host_podcast_cache(
     tmp_path: Path,
 ) -> None:
@@ -268,6 +349,173 @@ def test_browser_remove_download_preserves_episode_when_path_is_refused(
     assert episode.status == STATUS_DOWNLOADED
     assert browser.statuses == ["1 download was not removed"]
     assert warnings and warnings[0][0] == "Download Not Removed"
+
+
+def test_sync_update_removes_download_for_listened_podcast_removal(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    ipod = tmp_path / "ipod"
+    cache = tmp_path / "cache"
+    downloaded = cache / "podcasts" / "feed-id" / "episode.mp3"
+    downloaded.parent.mkdir(parents=True)
+    downloaded.write_bytes(b"episode")
+    episode = PodcastEpisode(
+        guid="episode-1",
+        title="Played Episode",
+        audio_url="https://example.test/episode.mp3",
+        status=STATUS_ON_IPOD,
+        downloaded_path=str(downloaded),
+        ipod_db_track_id=123,
+    )
+    feed = PodcastFeed(
+        feed_url="https://example.test/feed.xml",
+        title="Played Show",
+        clear_when_listened=True,
+        episodes=[episode],
+    )
+    updated_feeds: list[list[PodcastFeed]] = []
+
+    class _Store:
+        def __init__(self, *_args, **kwargs) -> None:
+            assert kwargs["download_cache_dir"] == str(cache)
+            self._real = SubscriptionStore(
+                str(ipod),
+                download_cache_dir=kwargs["download_cache_dir"],
+            )
+
+        def get_feeds(self) -> list[PodcastFeed]:
+            return [feed]
+
+        def cache_feed_artwork(self, _feed) -> None:
+            pass
+
+        def remove_episode_download(self, path: str) -> None:
+            self._real.remove_episode_download(path)
+
+        def prune_download_cache(self, feeds: list[PodcastFeed]) -> int:
+            return self._real.prune_download_cache(feeds)
+
+        def update_feeds(self, feeds: list[PodcastFeed]) -> int:
+            updated_feeds.append(feeds)
+            return len(feeds)
+
+    monkeypatch.setattr(
+        "iopenpod.podcasts.subscription_store.SubscriptionStore",
+        _Store,
+    )
+
+    executor = SyncExecutor.__new__(SyncExecutor)
+    executor.ipod_path = ipod
+    executor.device_storage = SimpleNamespace(
+        reported_volume_format="",
+        volume_identity_key="",
+    )
+    executor.transcode_cache = cast(Any, SimpleNamespace(cache_dir=cache))
+    executor._filesystem_profile = None
+    ctx = _SyncContext(
+        filesystem_profile=cast(Any, SimpleNamespace()),
+        new_tracks=[],
+        plan=SyncPlan(
+            to_remove=[
+                SyncItem(
+                    action=SyncAction.REMOVE_FROM_IPOD,
+                    db_track_id=123,
+                    ipod_track={
+                        "media_type": 0x04,
+                        "Podcast Enclosure URL": episode.audio_url,
+                        "play_count_1": 1,
+                    },
+                )
+            ],
+        ),
+        mapping=MappingFile(),
+        progress_callback=None,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+    )
+
+    executor._update_podcast_subscriptions(ctx)
+
+    assert not downloaded.exists()
+    assert episode.downloaded_path == ""
+    assert episode.status == STATUS_NOT_DOWNLOADED
+    assert updated_feeds == [[feed]]
+
+
+def test_sync_update_removes_staging_download_after_podcast_add(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    ipod = tmp_path / "ipod"
+    cache = tmp_path / "cache"
+    downloaded = cache / "podcasts" / "feed-id" / "episode.mp3"
+    downloaded.parent.mkdir(parents=True)
+    downloaded.write_bytes(b"episode")
+    episode = PodcastEpisode(
+        guid="episode-1",
+        title="Synced Episode",
+        audio_url="https://example.test/episode.mp3",
+        status=STATUS_DOWNLOADED,
+        downloaded_path=str(downloaded),
+    )
+    feed = PodcastFeed(feed_url="https://example.test/feed.xml", episodes=[episode])
+    updated_feeds: list[list[PodcastFeed]] = []
+
+    class _Store:
+        def __init__(self, *_args, **kwargs) -> None:
+            self._real = SubscriptionStore(str(ipod), download_cache_dir=str(cache))
+
+        def get_feeds(self) -> list[PodcastFeed]:
+            return [feed]
+
+        def cache_feed_artwork(self, _feed) -> None:
+            pass
+
+        def remove_episode_download(self, path: str) -> None:
+            self._real.remove_episode_download(path)
+
+        def prune_download_cache(self, feeds: list[PodcastFeed]) -> int:
+            return self._real.prune_download_cache(feeds)
+
+        def update_feeds(self, feeds: list[PodcastFeed]) -> int:
+            updated_feeds.append(feeds)
+            return len(feeds)
+
+    monkeypatch.setattr("iopenpod.podcasts.subscription_store.SubscriptionStore", _Store)
+
+    executor = SyncExecutor.__new__(SyncExecutor)
+    executor.ipod_path = ipod
+    executor.device_storage = SimpleNamespace(reported_volume_format="", volume_identity_key="")
+    executor.transcode_cache = cast(Any, SimpleNamespace(cache_dir=cache))
+    executor._filesystem_profile = None
+    ctx = _SyncContext(
+        filesystem_profile=cast(Any, SimpleNamespace()),
+        new_tracks=[
+            TrackInfo(
+                title="Synced Episode",
+                location=":iPod_Control:Music:F00:episode.mp3",
+                media_type=0x04,
+                podcast_enclosure_url=episode.audio_url,
+                db_track_id=321,
+            )
+        ],
+        plan=SyncPlan(),
+        mapping=MappingFile(),
+        progress_callback=None,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+    )
+
+    executor._update_podcast_subscriptions(ctx)
+
+    assert not downloaded.exists()
+    assert episode.downloaded_path == ""
+    assert episode.status == STATUS_ON_IPOD
+    assert episode.ipod_db_track_id == 321
+    assert updated_feeds == [[feed]]
 
 
 def test_artwork_cache_read_error_is_not_treated_as_cache_miss(
