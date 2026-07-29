@@ -1345,7 +1345,7 @@ class MainWindow(QMainWindow):
     @pyqtSlot(str, object)
     def _on_unidentified_ipod(self, _path: str, ipod: object) -> None:
         """Warn without activating an iPod whose exact model is unknown."""
-        show_unidentified_ipod_warning(self, ipod)
+        show_unidentified_ipod_warning(self, ipod, automatic=True)
 
     def onDeviceChanged(self, path: str):
         """Handle device selection - start loading data."""

@@ -174,12 +174,14 @@ def check_authority_coverage(
     """
     authority = read_authority(ipod_path)
     fields = authority.get("fields", {})
-    if not fields:
+    if not isinstance(fields, dict) or not fields:
         return False, {}
 
     # Tamper detection — if SysInfo/SysInfoExtended were modified externally
     # (by iTunes or another tool), we can't trust the cached provenance.
     stored_hashes = authority.get("file_hashes", {})
+    if not isinstance(stored_hashes, dict):
+        return False, {}
     if stored_hashes:
         tampered = False
         for label, path in [
@@ -201,6 +203,7 @@ def check_authority_coverage(
 
     field_sources: dict[str, str] = {}
     all_tracked = True
+    current_sysinfo = _read_sysinfo_raw(ipod_path)
     for sysinfo_key, device_field in SYSINFO_FIELDS:
         entry = fields.get(sysinfo_key)
         if entry is None:
@@ -210,7 +213,24 @@ def check_authority_coverage(
             if sysinfo_key in _CORE_FIELDS:
                 all_tracked = False
             continue
-        source = entry.get("source", "unknown")
+        if not isinstance(entry, dict):
+            logger.info(
+                "Authority coverage: invalid entry for %s; treating cache "
+                "provenance as unavailable",
+                sysinfo_key,
+            )
+            return False, {}
+        if sysinfo_key in _CORE_FIELDS:
+            current_value = current_sysinfo.get(sysinfo_key, "")
+            expected_value = str(entry.get("value", "") or "")
+            if not current_value or not expected_value:
+                all_tracked = False
+            elif _normalise_sysinfo_value(
+                sysinfo_key,
+                current_value,
+            ) != _normalise_sysinfo_value(sysinfo_key, expected_value):
+                all_tracked = False
+        source = str(entry.get("source", "unknown") or "unknown")
         field_sources[device_field] = source
 
     return all_tracked, field_sources
@@ -571,6 +591,13 @@ def update_sysinfo(info: DeviceInfo) -> None:
     SysInfo so future runs can make informed decisions.
     """
     if not info.path:
+        return
+    if not str(getattr(info, "model_number", "") or "").strip():
+        logger.info(
+            "Skipping SysInfo authority update for unidentified iPod at %s: "
+            "exact model number is unavailable",
+            info.path,
+        )
         return
 
     with guarded_device_metadata_session(

@@ -25,7 +25,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libegl1 libxkbcommon0 libdbus-1-3
+          sudo apt-get install -y libegl1 libxkbcommon0 libdbus-1-3 udev
 
       - name: Install project and dev dependencies
         run: uv sync --all-groups
@@ -49,3 +49,16 @@ jobs:
           uv pip install --python .wheel-smoke/bin/python --no-deps dist/*.whl
           .wheel-smoke/bin/python scripts/smoke_test_installed_package.py
           .wheel-smoke/bin/iopenpod --version
+
+      - name: Validate Linux identity rule syntax
+        run: udevadm verify src/iopenpod/assets/linux/61-iopenpod.rules
+
+      - name: Frozen application resource smoke test
+        run: |
+          uv run pyinstaller iOpenPod.spec --noconfirm
+          dist/iOpenPod/iOpenPod --print-linux-udev-rule > frozen-rule.txt
+          grep -q ID_IOPENPOD_PRODUCT_SERIAL frozen-rule.txt
+          if grep -q 'TAG+="uaccess"\|MODE=' frozen-rule.txt; then
+            echo "Frozen rule grants raw-device access" >&2
+            exit 1
+          fi

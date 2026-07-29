@@ -34,6 +34,9 @@ finish-args:
   # Common iPod mount points on Linux.
   - --filesystem=/media
   - --filesystem=/run/media
+  - --filesystem=/mnt
+  # Read-only host udev properties published by the iOpenPod identity rule.
+  - --filesystem=/run/udev:ro
 
 modules:
   - name: iOpenPod

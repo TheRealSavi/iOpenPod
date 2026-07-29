@@ -22,7 +22,8 @@ privileges:
   `ID_IOPENPOD_PRODUCT_SERIAL` udev property. Raw SG_IO is a diagnostic
   fallback, not the default permission model.
 
-Linux packages may install `packaging/linux/61-iopenpod.rules`. The root-owned
+Linux packages may install
+`src/iopenpod/assets/linux/61-iopenpod.rules`. The root-owned
 udev event first matches the Apple/iPod SCSI vendor and model, performs one
 read-only page-`0x80` query, and publishes only the serial. Matching at the
 SCSI layer supports USB and FireWire transports without widening access.

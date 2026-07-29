@@ -1,3 +1,4 @@
+import sys
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -14,6 +15,7 @@ from iopenpod.device.info import (
     get_current_device,
     set_current_device,
 )
+from iopenpod.gui import device_warnings
 from iopenpod.gui.widgets import devicePicker
 from iopenpod.gui.widgets.devicePicker import DeviceCard, DevicePickerDialog
 
@@ -251,3 +253,75 @@ def test_fast_resume_rejects_unidentified_ipod_and_requests_warning(qtbot) -> No
     assert manager.device_path is None
     assert manager.discovered_ipod is None
     assert rejected == [("E:\\", ipod)]
+
+
+def test_linux_unidentified_warning_offers_safe_host_setup(
+    monkeypatch,
+    qtbot,
+) -> None:
+    shown_messages = []
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(
+        device_warnings.QMessageBox,
+        "exec",
+        lambda message: shown_messages.append(message) or 0,
+    )
+    ipod = SimpleNamespace(
+        path="/media/johng/IPOD",
+        mount_name="IPOD",
+        model_number="",
+        firewire_guid="000A2700138A422D",
+        usb_pid=0x1261,
+    )
+
+    device_warnings.show_unidentified_ipod_warning(None, ipod)
+
+    assert len(shown_messages) == 1
+    message = shown_messages[0]
+    button_labels = {button.text() for button in message.buttons()}
+    assert "Review Linux Setup" in button_labels
+    assert "/etc/udev/rules.d/61-iopenpod.rules" in message.detailedText()
+    assert "udevadm trigger" in message.detailedText()
+    assert 'TAG+="uaccess"' not in message.detailedText()
+
+
+def test_linux_setup_commands_are_visible_before_copying(qtbot) -> None:
+    commands = "sudo install example\nsudo udevadm control --reload-rules\n"
+    dialog = device_warnings.LinuxIdentitySetupReviewDialog(None, commands)
+    qtbot.addWidget(dialog)
+
+    assert dialog.commands.isReadOnly()
+    assert dialog.commands.toPlainText() == commands
+    assert dialog.commands.accessibleName() == "Linux iPod host setup commands"
+
+
+def test_picker_automatically_offers_linux_setup_once_per_ipod(
+    monkeypatch,
+    qtbot,
+    tmp_path,
+) -> None:
+    from iopenpod.device.virtual import create_virtual_ipod
+
+    ipod = create_virtual_ipod(tmp_path, "MB565")
+    ipod.model_number = ""
+    ipod.serial = ""
+    warnings: list[object] = []
+    monkeypatch.setattr(devicePicker.sys, "platform", "linux")
+    monkeypatch.setattr(
+        devicePicker,
+        "show_unidentified_ipod_warning",
+        lambda _parent, device: warnings.append(device),
+    )
+    device_warnings._AUTOMATIC_WARNING_KEYS.clear()
+    dialog = SimpleNamespace()
+
+    DevicePickerDialog._offer_linux_identity_setup(
+        cast(Any, dialog),
+        [ipod],
+    )
+    DevicePickerDialog._offer_linux_identity_setup(
+        cast(Any, dialog),
+        [ipod],
+    )
+
+    assert warnings == [ipod]

@@ -30,10 +30,14 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from iopenpod.application.device_identity import linux_identity_setup_guidance
 from iopenpod.application.jobs import DeviceScanWorker
 from iopenpod.device import has_exact_model_number
 
-from ..device_warnings import show_unidentified_ipod_warning
+from ..device_warnings import (
+    claim_unidentified_ipod_auto_prompt,
+    show_unidentified_ipod_warning,
+)
 from ..ipod_images import get_ipod_image
 from ..styles import (
     FONT_FAMILY,
@@ -555,9 +559,24 @@ class DevicePickerDialog(QDialog):
             # If only one iPod found, auto-select it
             if len(ipods) == 1 and has_exact_model_number(ipods[0]):
                 self._on_card_clicked(ipods[0])
+            self._offer_linux_identity_setup(ipods)
         else:
             self._subtitle.setText("No iPods found")
             self._no_devices_label.show()
+
+    def _offer_linux_identity_setup(self, ipods: list[Any]) -> None:
+        """Prompt once for a Linux iPod whose product serial is unavailable."""
+
+        if not sys.platform.startswith("linux"):
+            return
+
+        for ipod in ipods:
+            if linux_identity_setup_guidance(ipod, platform=sys.platform) is None:
+                continue
+            if not claim_unidentified_ipod_auto_prompt(ipod):
+                continue
+            show_unidentified_ipod_warning(self, ipod)
+            return
 
     def _on_scan_error(self, error_msg: str, worker=None) -> None:
         """Surface scan failures without leaving the dialog stuck as busy."""

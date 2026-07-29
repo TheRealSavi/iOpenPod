@@ -6,7 +6,12 @@
 # storage discovery, so capture page 0x80 in a separate iOpenPod property while
 # leaving the standard ID_SERIAL values and device-node permissions untouched.
 ACTION=="add|change", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", \
+  ENV{ID_IOPENPOD_RULE_VERSION}="", \
   ENV{ID_IOPENPOD_PRODUCT_SERIAL}=""
+
+ACTION=="add|change", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", \
+  ATTRS{vendor}=="Apple*", ATTRS{model}=="iPod*", \
+  ENV{ID_IOPENPOD_RULE_VERSION}="1"
 
 ACTION=="add|change", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", \
   ATTRS{vendor}=="Apple*", ATTRS{model}=="iPod*", \

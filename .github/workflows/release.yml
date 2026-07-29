@@ -74,6 +74,37 @@ jobs:
       - name: Build with PyInstaller
         run: uv run pyinstaller iOpenPod.spec --noconfirm
 
+      - name: Smoke-test frozen resource (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $process = Start-Process `
+            -FilePath .\dist\iOpenPod\iOpenPod.exe `
+            -ArgumentList --check-linux-udev-rule `
+            -Wait -PassThru -WindowStyle Hidden
+          if ($process.ExitCode -ne 0) { throw "Frozen resource check failed" }
+
+      - name: Smoke-test frozen resource (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          dist/iOpenPod.app/Contents/MacOS/iOpenPod \
+            --print-linux-udev-rule > frozen-rule.txt
+          grep -q ID_IOPENPOD_PRODUCT_SERIAL frozen-rule.txt
+          if grep -q 'TAG+="uaccess"\|MODE=' frozen-rule.txt; then
+            echo "Frozen rule grants raw-device access" >&2
+            exit 1
+          fi
+
+      - name: Smoke-test frozen resource (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          dist/iOpenPod/iOpenPod --print-linux-udev-rule > frozen-rule.txt
+          grep -q ID_IOPENPOD_PRODUCT_SERIAL frozen-rule.txt
+          if grep -q 'TAG+="uaccess"\|MODE=' frozen-rule.txt; then
+            echo "Frozen rule grants raw-device access" >&2
+            exit 1
+          fi
+
       # ── Package archive ─────────────────────────────────────────────
       # macOS: ad-hoc sign all binaries so Gatekeeper doesn't kill the app
       - name: Ad-hoc codesign (macOS)
@@ -154,6 +185,17 @@ jobs:
 
           ARCH=x86_64 ./appimagetool-x86_64.AppImage --appimage-extract-and-run \
             AppDir "${{ matrix.appimage_name }}"
+
+      - name: Smoke-test AppImage resource
+        if: runner.os == 'Linux'
+        run: |
+          ./"${{ matrix.appimage_name }}" --appimage-extract-and-run \
+            --print-linux-udev-rule > appimage-rule.txt
+          grep -q ID_IOPENPOD_PRODUCT_SERIAL appimage-rule.txt
+          if grep -q 'TAG+="uaccess"\|MODE=' appimage-rule.txt; then
+            echo "AppImage rule grants raw-device access" >&2
+            exit 1
+          fi
 
       # ── Checksums ───────────────────────────────────────────────────
       - name: Generate SHA-256 checksum

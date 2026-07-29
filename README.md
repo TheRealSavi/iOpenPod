@@ -55,6 +55,10 @@ Installs should be updated with the same tool used to install them.
 
 > **Required tools:** Install [FFmpeg](https://ffmpeg.org/) with `ffprobe` for transcoding and media probing, and [Chromaprint](https://acoustid.org/chromaprint) for acoustic fingerprinting during sync.
 > **Linux desktop dependencies:** If iOpenPod fails with a Qt `xcb` platform plugin error or crashes when pressing Ctrl, Alt, or Shift, install the XCB/XKeyboard runtime packages listed on the [Install Help and Troubleshooting page](https://therealsavi.github.io/iOpenPod/install-help.html#helper-tools).
+> **Linux iPod identification:** On first use, iOpenPod may ask you to copy
+> and run transparent host-side udev setup commands. This publishes only the
+> Apple product serial and never grants the app raw-disk access. The setup
+> uses a targeted udev refresh, so the iPod does not need to be disconnected.
 
 ---
 

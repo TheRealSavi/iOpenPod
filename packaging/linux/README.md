@@ -12,7 +12,9 @@ cache page `0x80` at `/sys/class/block/<disk>/device/vpd_pg80`, which iOpenPod
 can read without extra permissions. Older and quirked iPods may not get that
 sysfs attribute.
 
-[`61-iopenpod.rules`](61-iopenpod.rules) covers that compatibility gap. During
+The canonical bundled rule at
+[`src/iopenpod/assets/linux/61-iopenpod.rules`](../../src/iopenpod/assets/linux/61-iopenpod.rules)
+covers that compatibility gap. During
 the root-owned udev add event it asks udev's existing `scsi_id` helper for page
 `0x80` after matching the SCSI vendor/model as an Apple iPod, and records only:
 
@@ -25,26 +27,35 @@ the block device's owner, group, mode, or ACL. Matching at the SCSI layer keeps
 the rule transport-neutral for both USB and FireWire iPods when Linux exposes
 them as SCSI block devices.
 
-## Manual installation
+## Host installation
 
-From a source checkout:
+The preferred path is **Select Device → Review Linux Setup** in iOpenPod. The
+generated commands resolve the selected mount back to its exact whole-disk
+node, install the bundled rule with an atomic replacement, trigger only that
+device, and verify the resulting serial property. They do not disconnect or
+unmount the iPod.
 
-```bash
-sudo install -Dm644 packaging/linux/61-iopenpod.rules \
-  /etc/udev/rules.d/61-iopenpod.rules
-sudo udevadm control --reload-rules
-```
-
-Unplug and reconnect the iPod, then verify the whole-disk node:
+The same setup is available from any launcher:
 
 ```bash
-udevadm info --query=property --name=/dev/sdX |
-  grep ID_IOPENPOD_PRODUCT_SERIAL
+# Source checkout
+uv run iopenpod --linux-identity-status "/media/$USER/IPOD"
+
+# PyPI installation
+iopenpod --linux-identity-status "/media/$USER/IPOD"
+
+# AppImage
+./iOpenPod-Linux-x86_64.AppImage \
+  --linux-identity-status "/media/$USER/IPOD"
+
+# Flatpak
+flatpak run io.github.therealsavi.iOpenPod \
+  --linux-identity-status "/media/$USER/IPOD"
 ```
 
-Replace `/dev/sdX` with the iPod's whole disk, not a partition. `lsblk` can
-show the mapping. Do not guess a disk name when running commands that can
-write.
+Replace the example mount with the mounted iPod path. The command intentionally
+exits nonzero until identity integration is ready, making it suitable for
+installer and companion-package checks.
 
 To remove a manual installation:
 
@@ -55,13 +66,17 @@ sudo udevadm control --reload-rules
 
 ## Distribution and sandbox packaging
 
-Native distribution packages should install the rule into the distribution's
+Native distribution packages should install this same bundled rule into the
+distribution's
 vendor udev-rules directory, normally `/usr/lib/udev/rules.d`. Administrator
 overrides belong in `/etc/udev/rules.d`.
 
 Wheels, AppImages, and Flatpaks must not silently modify host system
-configuration. Ship this as an explicit native integration step or a small
-companion package.
+configuration. iOpenPod ships the rule inside every artifact and displays
+transparent host-side setup instructions when the serial bridge is missing.
+Native packages may install it directly; Flatpak may use a small companion
+package. The Flatpak receives read-only access to `/run/udev` so it can consume
+the namespaced property; it still cannot modify the host rule or udev database.
 
 ## Why not `MODE="660", TAG+="uaccess"`?
 

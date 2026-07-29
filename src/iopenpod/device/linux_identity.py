@@ -7,7 +7,8 @@ do not require opening a raw block device:
 
 1. the kernel-cached SCSI VPD page 0x80 sysfs attribute, when available;
 2. ``ID_IOPENPOD_PRODUCT_SERIAL``, populated by iOpenPod's udev rule;
-3. ordinary udev/sysfs USB properties for the FireWire GUID and USB PID.
+3. the rule's mount-anchored ``/dev/disk/by-id/ipod-*`` link;
+4. ordinary udev/sysfs USB properties for the FireWire GUID and USB PID.
 
 Raw SG_IO remains a later fallback in :mod:`iopenpod.device.vpd_linux`.
 """
@@ -19,6 +20,7 @@ import logging
 import os
 import posixpath
 import re
+import stat
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -28,6 +30,9 @@ from .models import IPOD_USB_PIDS, USB_PID_TO_MODEL
 logger = logging.getLogger(__name__)
 
 _EMPTY_VALUES = (None, "", b"")
+_BY_ID_DIRECTORY = Path("/dev/disk/by-id")
+_UDEV_DATA_DIRECTORY = Path("/run/udev/data")
+_SERIAL_SETUP_WARNED: set[str] = set()
 
 
 def whole_disk_device(device: str) -> str:
@@ -215,11 +220,60 @@ def _clean_product_serial(value: str) -> str:
     return serial
 
 
+def _udev_database_key(device: str) -> str:
+    """Return the mount-anchored udev database key for a block-device node."""
+
+    try:
+        device_stat = os.stat(device)
+    except OSError:
+        return ""
+    if not stat.S_ISBLK(device_stat.st_mode):
+        return ""
+    # ``os.major``/``os.minor`` and ``stat_result.st_rdev`` are POSIX-only.
+    # Access them dynamically so Windows type stubs (and therefore Pylance)
+    # can analyse this cross-platform module too.
+    major = getattr(os, "major", None)
+    minor = getattr(os, "minor", None)
+    device_number = getattr(device_stat, "st_rdev", None)
+    if not callable(major) or not callable(minor) or not isinstance(device_number, int):
+        return ""
+
+    try:
+        return f"b{major(device_number)}:{minor(device_number)}"
+    except (OSError, TypeError, ValueError):
+        return ""
+
+
+def _properties_from_udev_database(device: str) -> dict[str, str]:
+    """Read root-published properties directly when ``udevadm`` is sandboxed."""
+
+    key = _udev_database_key(device)
+    if not key:
+        return {}
+    try:
+        data = (_UDEV_DATA_DIRECTORY / key).read_text(
+            encoding="utf-8",
+            errors="replace",
+        )
+    except OSError:
+        return {}
+
+    properties: dict[str, str] = {}
+    for line in data.splitlines():
+        if not line.startswith("E:"):
+            continue
+        name, separator, value = line[2:].partition("=")
+        if separator:
+            properties[name.strip()] = value.strip()
+    return properties
+
+
 def _identity_from_udev(device: str) -> dict[str, Any]:
     """Read non-privileged identity properties cached by udev."""
 
     result: dict[str, Any] = {}
     sources: dict[str, str] = {}
+    properties: dict[str, str] = {}
     try:
         completed = subprocess.run(
             ["udevadm", "info", "--query=property", "--name", device],
@@ -229,17 +283,16 @@ def _identity_from_udev(device: str) -> dict[str, Any]:
             errors="replace",
             timeout=5,
         )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return result
+    except (OSError, subprocess.TimeoutExpired):
+        completed = None
 
-    if completed.returncode != 0:
-        return result
-
-    properties: dict[str, str] = {}
-    for line in completed.stdout.splitlines():
-        key, separator, value = line.partition("=")
-        if separator:
-            properties[key.strip()] = value.strip()
+    if completed is not None and completed.returncode == 0:
+        for line in completed.stdout.splitlines():
+            key, separator, value = line.partition("=")
+            if separator:
+                properties[key.strip()] = value.strip()
+    for key, value in _properties_from_udev_database(device).items():
+        properties.setdefault(key, value)
 
     product_serial = _clean_product_serial(
         properties.get("ID_IOPENPOD_PRODUCT_SERIAL", "")
@@ -247,6 +300,13 @@ def _identity_from_udev(device: str) -> dict[str, Any]:
     if product_serial:
         result["serial"] = product_serial
         sources["serial"] = "udev_scsi_id"
+    elif properties.get("ID_IOPENPOD_RULE_VERSION"):
+        logger.info(
+            "Linux identity rule version %s ran for %s but did not publish "
+            "an Apple product serial",
+            properties["ID_IOPENPOD_RULE_VERSION"],
+            device,
+        )
 
     product_id = properties.get("ID_MODEL_ID", "")
     try:
@@ -420,6 +480,28 @@ def _identity_from_usb_bus(base_disk: str) -> dict[str, Any]:
     return result
 
 
+def _identity_from_by_id(whole_disk: str) -> dict[str, Any]:
+    """Read the root-owned iPod serial link for this exact mounted disk."""
+
+    target = os.path.realpath(whole_disk)
+    try:
+        candidates = list(_BY_ID_DIRECTORY.glob("ipod-*"))
+    except OSError:
+        return {}
+
+    for candidate in candidates:
+        if os.path.realpath(str(candidate)) != target:
+            continue
+        serial = _clean_product_serial(candidate.name.removeprefix("ipod-"))
+        if not re.fullmatch(r"[A-Za-z0-9]{8,16}", serial):
+            continue
+        return {
+            "serial": serial,
+            "_sources": {"serial": "udev_scsi_id"},
+        }
+    return {}
+
+
 def _merge_identity(target: dict[str, Any], candidate: dict[str, Any]) -> None:
     candidate_sources = candidate.get("_sources") or {}
     target_sources = target.setdefault("_sources", {})
@@ -454,8 +536,22 @@ def probe_linux_identity(mount_path: str) -> dict[str, Any]:
     _merge_identity(result, _identity_from_udev(partition))
     if whole_disk != partition:
         _merge_identity(result, _identity_from_udev(whole_disk))
+    _merge_identity(result, _identity_from_by_id(whole_disk))
     _merge_identity(result, _identity_from_usb_bus(base_disk))
 
     if result:
         logger.debug("Linux identity evidence: %s", result)
+    if result.get("serial"):
+        _SERIAL_SETUP_WARNED.discard(mount_path)
+    elif (
+        result.get("usb_pid") or result.get("firewire_guid")
+    ) and mount_path not in _SERIAL_SETUP_WARNED:
+        _SERIAL_SETUP_WARNED.add(mount_path)
+        logger.warning(
+            "Linux Apple product serial is unavailable for %s. Complete the "
+            "Linux identity setup prompt, or pass "
+            "--linux-identity-status %r to the same iOpenPod launcher.",
+            mount_path,
+            mount_path,
+        )
     return result
