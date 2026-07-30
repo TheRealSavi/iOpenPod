@@ -1034,6 +1034,27 @@ def delete_backup_snapshot(device_id: str, backup_dir: str, snapshot_id: str) ->
     return bool(manager.delete_snapshot(snapshot_id))
 
 
+def export_backup_snapshot(
+    device_id: str,
+    backup_dir: str,
+    snapshot_id: str,
+    destination_dir: str,
+    progress_callback=None,
+    is_cancelled=None,
+):
+    """Materialize one validated snapshot as ordinary files."""
+
+    from iopenpod.sync.backup_manager import BackupManager
+
+    manager = BackupManager(device_id=device_id, backup_dir=backup_dir)
+    return manager.export_snapshot(
+        snapshot_id=snapshot_id,
+        destination_dir=destination_dir,
+        progress_callback=progress_callback,
+        is_cancelled=is_cancelled,
+    )
+
+
 @dataclass(frozen=True)
 class BackupCreateRequest:
     """Typed request for creating a full device backup."""
@@ -1111,6 +1132,53 @@ class BackupRestoreRequest:
     identity_is_stable: bool = False
     reported_volume_format: str = ""
     expected_volume_identity_key: str = ""
+
+
+@dataclass(frozen=True)
+class BackupExportRequest:
+    """Typed request for materializing a backup snapshot on the computer."""
+
+    snapshot_id: str
+    device_id: str
+    backup_dir: str
+    destination_dir: str
+
+
+class BackupExportWorker(QThread):
+    """Export a snapshot without blocking the Qt event loop."""
+
+    progress = pyqtSignal(str, int, int, str)
+    finished = pyqtSignal(object)
+    error = pyqtSignal(str)
+
+    def __init__(self, request: BackupExportRequest):
+        super().__init__()
+        self._request = request
+
+    def run(self) -> None:
+        try:
+            request = self._request
+
+            def on_progress(prog) -> None:
+                self.progress.emit(
+                    prog.stage,
+                    prog.current,
+                    prog.total,
+                    prog.message,
+                )
+
+            result = export_backup_snapshot(
+                device_id=request.device_id,
+                backup_dir=request.backup_dir,
+                snapshot_id=request.snapshot_id,
+                destination_dir=request.destination_dir,
+                progress_callback=on_progress,
+                is_cancelled=self.isInterruptionRequested,
+            )
+            self.finished.emit(result)
+        except Exception as exc:
+            logger.exception("BackupExportWorker failed")
+            self.error.emit(str(exc))
 
 
 @dataclass(frozen=True)

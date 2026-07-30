@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 from PyQt6.QtCore import Qt, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import QDesktopServices, QFont
 from PyQt6.QtWidgets import (
+    QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -35,6 +36,8 @@ from iopenpod.application.jobs import (
     BackupCreateRequest,
     BackupCreateWorker,
     BackupDeviceInventory,
+    BackupExportRequest,
+    BackupExportWorker,
     BackupRestoreFailure,
     BackupRestoreRequest,
     BackupRestoreWorker,
@@ -227,6 +230,7 @@ class SnapshotCard(QFrame):
 
     restore_requested = pyqtSignal(str)  # snapshot_id
     delete_requested = pyqtSignal(str)  # snapshot_id
+    export_requested = pyqtSignal(str)  # snapshot_id
 
     def __init__(
         self,
@@ -387,6 +391,24 @@ class SnapshotCard(QFrame):
         # TODO: Allow pressing the restore even for incorrect iPods, but show a warning dialog that the backup may not belong to the connected device and may cause problems.
         self._restore_allowed = can_restore and snapshot_is_valid
         self._delete_allowed = snapshot_is_valid
+        self._export_allowed = snapshot_is_valid
+        self._export_btn = QPushButton("Export")
+        self._export_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
+        self._export_btn.setFixedWidth(_btn_w)
+        self._export_btn.setStyleSheet(btn_css(
+            bg=Colors.SURFACE_RAISED,
+            bg_hover=Colors.SURFACE_ACTIVE,
+            bg_press=Colors.SURFACE_ALT,
+            border=f"1px solid {Colors.BORDER}",
+        ))
+        self._export_btn.clicked.connect(
+            lambda: self.export_requested.emit(self.snapshot_id)
+        )
+        if not self._export_allowed:
+            self._export_btn.setEnabled(False)
+            self._export_btn.setToolTip(validation_error)
+        btn_layout.addWidget(self._export_btn)
+
         self._restore_btn = QPushButton("Restore")
         self._restore_btn.setFont(
             QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.DemiBold)
@@ -432,6 +454,7 @@ class SnapshotCard(QFrame):
         """Enable card actions without overriding permanent safety gates."""
         self._restore_btn.setEnabled(enabled and self._restore_allowed)
         self._delete_btn.setEnabled(enabled and self._delete_allowed)
+        self._export_btn.setEnabled(enabled and self._export_allowed)
 
 
 # ── Main backup browser widget ─────────────────────────────────────────────
@@ -455,6 +478,7 @@ class BackupBrowserWidget(QWidget):
         self._library_cache: LibraryCacheLike = libraries.cache()
         self._backup_worker = None
         self._restore_worker = None
+        self._export_worker = None
         self._delete_worker: Worker | None = None
         self._delete_generation = 0
         self._delete_result: bool | None = None
@@ -750,6 +774,8 @@ class BackupBrowserWidget(QWidget):
         """Return the operation whose terminal UI signal is still pending."""
         if self._restore_worker is not None:
             return "restore"
+        if self._export_worker is not None:
+            return "export"
         if self._backup_worker is not None:
             return "backup"
         if getattr(self, "_delete_worker", None) is not None:
@@ -784,6 +810,12 @@ class BackupBrowserWidget(QWidget):
                 "Backup Cleanup Still Finishing",
                 "iOpenPod is deleting the selected snapshot and safely checking "
                 "which stored files are still needed by other backups.\n\n"
+                "Please wait for the result, then close iOpenPod again.",
+            )
+        if operation == "export":
+            return (
+                "Export Still Finishing",
+                "iOpenPod is materializing the selected backup as ordinary files. "
                 "Please wait for the result, then close iOpenPod again.",
             )
         return (
@@ -1120,6 +1152,7 @@ class BackupBrowserWidget(QWidget):
             )
             card.restore_requested.connect(self._on_restore)
             card.delete_requested.connect(self._on_delete)
+            card.export_requested.connect(self._on_export)
             self._snapshot_cards.append(card)
             self._scroll_layout.insertWidget(self._scroll_layout.count() - 1, card)
 
@@ -1451,6 +1484,7 @@ class BackupBrowserWidget(QWidget):
         "committing": "Applying Restore Safely",
         "cleaning": "Removing Changed Files",
         "restoring": "Copying Files to iPod",
+        "exporting": "Exporting Backup Files",
         "finalizing": "Finalizing Restore",
         "no_changes": "Already Up to Date",
         "complete": "Complete",
@@ -1617,6 +1651,130 @@ class BackupBrowserWidget(QWidget):
         )
         # Clear ownership only after the terminal handler has fully reported.
         self._backup_worker = None
+        self._progress_cancel_btn.setText("Cancel")
+        self._progress_cancel_btn.setEnabled(True)
+        self._set_archive_actions_enabled(True)
+        self.refresh()
+
+    # ── Export snapshot ────────────────────────────────────────────────
+
+    def _on_export(self, snapshot_id: str) -> None:
+        """Materialize a validated snapshot as ordinary computer files."""
+        if self._is_busy():
+            QMessageBox.information(
+                self,
+                "Operation In Progress",
+                "Please wait for the current backup, restore, export, or cleanup "
+                "to finish.",
+            )
+            return
+        snapshot = self._snapshots_by_id.get(snapshot_id)
+        if snapshot is None:
+            QMessageBox.warning(
+                self,
+                "Backup Not Found",
+                "This backup is no longer present. Refreshing the archive.",
+            )
+            self.refresh()
+            return
+        if not snapshot.is_valid:
+            QMessageBox.warning(
+                self,
+                "Export Disabled — Catalog Needs Attention",
+                "iOpenPod cannot safely materialize an invalid backup catalog.\n\n"
+                f"Validation details: {snapshot.validation_error}",
+            )
+            return
+        parent = QFileDialog.getExistingDirectory(
+            self,
+            "Choose a folder for the exported backup",
+            str(self._settings_service.get_effective_settings().backup_dir),
+        )
+        if not parent:
+            return
+        reply = QMessageBox.question(
+            self,
+            "Export Backup Files",
+            f"Export {snapshot.file_count:,} files "
+            f"({format_size(snapshot.total_size)}) to a new folder inside:\n\n"
+            f"{parent}\n\n"
+            "Existing files will not be overwritten. The export will be placed "
+            "in a new folder named after this snapshot.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        settings = self._settings_service.get_effective_settings()
+        self._cancel_completion_refresh()
+        self._set_progress_accessibility("export")
+        self._progress_title.setText("Exporting Backup Files")
+        self._progress_bar.setRange(0, 0)
+        self._progress_file.setText("Preparing a safe export folder…")
+        self._progress_stats.setText("")
+        self._progress_eta.setText("")
+        self._progress_cancel_btn.setText("Cancel")
+        self._progress_cancel_btn.setEnabled(True)
+        self._stack.setCurrentIndex(1)
+        self._back_btn.setEnabled(False)
+        self._eta_tracker.start()
+        self._eta_start_time = time.monotonic()
+        self._export_worker = BackupExportWorker(
+            BackupExportRequest(
+                snapshot_id=snapshot_id,
+                device_id=self._current_device_id,
+                backup_dir=settings.backup_dir,
+                destination_dir=parent,
+            )
+        )
+        self._export_worker.progress.connect(self._on_export_progress)
+        self._export_worker.finished.connect(self._on_export_finished)
+        self._export_worker.error.connect(self._on_export_error)
+        self._set_archive_actions_enabled(False)
+        self._export_worker.start()
+
+    def _on_export_progress(
+        self,
+        stage: str,
+        current: int,
+        total: int,
+        message: str,
+    ) -> None:
+        self._on_backup_progress(stage, current, total, message)
+
+    def _on_export_finished(self, result) -> None:
+        worker = self._export_worker
+        was_cancelled = worker is not None and worker.isInterruptionRequested()
+        if result is not None:
+            destination = str(result.destination)
+            QMessageBox.information(
+                self,
+                "Backup Export Complete",
+                f"Exported {result.file_count:,} files "
+                f"({format_size(result.total_size)}) to:\n\n{destination}",
+            )
+        elif was_cancelled:
+            QMessageBox.information(
+                self,
+                "Export Cancelled Safely",
+                "The export was cancelled. Its partial export folder was removed; "
+                "the backup archive was not changed.",
+            )
+        self._export_worker = None
+        self._progress_cancel_btn.setText("Cancel")
+        self._progress_cancel_btn.setEnabled(True)
+        self._set_archive_actions_enabled(True)
+        self.refresh()
+
+    def _on_export_error(self, error_msg: str) -> None:
+        QMessageBox.critical(
+            self,
+            "Backup Export Failed",
+            f"The backup could not be exported:\n\n{error_msg}\n\n"
+            "The original backup archive was not changed.",
+        )
+        self._export_worker = None
         self._progress_cancel_btn.setText("Cancel")
         self._progress_cancel_btn.setEnabled(True)
         self._set_archive_actions_enabled(True)
@@ -2065,6 +2223,10 @@ class BackupBrowserWidget(QWidget):
         if self._restore_worker and self._restore_worker.isRunning():
             self._restore_worker.requestInterruption()
             requested = True
+        export_worker = getattr(self, "_export_worker", None)
+        if export_worker and export_worker.isRunning():
+            export_worker.requestInterruption()
+            requested = True
         if requested:
             self._progress_cancel_btn.setEnabled(False)
             self._progress_cancel_btn.setText("Cancelling...")
@@ -2102,7 +2264,11 @@ class BackupBrowserWidget(QWidget):
         self._archive_load_generation += 1
         for archive_worker in tuple(self._archive_workers):
             archive_worker.cancel()
-        for worker in (self._backup_worker, self._restore_worker):
+        for worker in (
+            self._backup_worker,
+            self._restore_worker,
+            self._export_worker,
+        ):
             if worker is not None and worker.isRunning():
                 worker.requestInterruption()
                 worker.wait(5000)  # 5 s grace period
@@ -2122,6 +2288,10 @@ class BackupBrowserWidget(QWidget):
                 and not self._restore_committing
             ):
                 self._restore_worker.requestInterruption()
+            return False
+        if self._export_worker is not None:
+            if self._export_worker.isRunning():
+                self._export_worker.requestInterruption()
             return False
         if self._backup_worker is not None:
             if self._backup_worker.isRunning():

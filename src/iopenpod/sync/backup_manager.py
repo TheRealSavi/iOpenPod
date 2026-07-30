@@ -969,6 +969,67 @@ def _resolve_restore_path(ipod_root: Path, relative_path: str) -> Path:
     return candidate
 
 
+def _resolve_export_relative_path(relative_path: str) -> tuple[str, ...]:
+    """Validate a manifest path before materializing it on the host."""
+    if (
+        not isinstance(relative_path, str)
+        or not relative_path
+        or "\x00" in relative_path
+    ):
+        raise DeviceWriteSafetyError("The backup contains an invalid file path.")
+    if (
+        relative_path.startswith(("/", "\\\\"))
+        or re.match(r"^[A-Za-z]:[/\\]", relative_path)
+    ):
+        raise DeviceWriteSafetyError(
+            f"The backup contains an absolute file path: {relative_path!r}."
+        )
+    parts = tuple(relative_path.split("/"))
+    if any(not part or part in {".", ".."} for part in parts):
+        raise DeviceWriteSafetyError(
+            f"The backup contains an unsafe file path: {relative_path!r}."
+        )
+    if any(_is_excluded(part) for part in parts):
+        raise DeviceWriteSafetyError(
+            f"The backup path {relative_path!r} targets an OS-managed location."
+        )
+    if os.name == "nt":
+        for component in parts:
+            if (
+                any(ord(character) < 32 for character in component)
+                or any(character in '<>:"\\|?*' for character in component)
+                or component.endswith((" ", "."))
+                or component.split(".", 1)[0].rstrip(" .").casefold()
+                in _WINDOWS_RESERVED_STEMS
+            ):
+                raise DeviceWriteSafetyError(
+                    f"The backup path {relative_path!r} cannot be represented "
+                    "safely on this computer."
+                )
+    return parts
+
+
+def _resolve_export_path(export_root: Path, relative_path: str) -> Path:
+    """Resolve one validated manifest path beneath a newly-created export."""
+    parts = _resolve_export_relative_path(relative_path)
+    root = export_root.resolve(strict=True)
+    candidate = root.joinpath(*parts)
+    current = root
+    for part in parts:
+        current /= part
+        if current.is_symlink():
+            raise DeviceWriteSafetyError(
+                f"The export path {relative_path!r} crosses a symbolic link."
+            )
+    try:
+        candidate.resolve(strict=False).relative_to(root)
+    except (OSError, ValueError) as exc:
+        raise DeviceWriteSafetyError(
+            f"The export path escapes its destination: {relative_path!r}."
+        ) from exc
+    return candidate
+
+
 def _hash_file(path: Path) -> str:
     sha = hashlib.sha256()
     with open(path, "rb") as file:
@@ -1282,6 +1343,15 @@ class SnapshotInfo:
             return dt.strftime("%b %d, %Y · %I:%M %p")
         except Exception:
             return self.timestamp
+
+
+@dataclass(frozen=True, slots=True)
+class ExportResult:
+    """The materialized filesystem folder created from one snapshot."""
+
+    destination: Path
+    file_count: int
+    total_size: int
 
 
 @dataclass
@@ -1855,6 +1925,188 @@ class BackupManager:
                 raise
             finally:
                 self._active_device_guard = None
+
+    @_repository_locked
+    def export_snapshot(
+        self,
+        snapshot_id: str,
+        destination_dir: str | Path,
+        progress_callback: Callable[[BackupProgress], None] | None = None,
+        is_cancelled: Callable[[], bool] | None = None,
+    ) -> ExportResult | None:
+        """Materialize a validated snapshot as ordinary files on the computer.
+
+        ``destination_dir`` is treated as a parent folder. A new uniquely
+        named child is created so an export can never overwrite user files.
+        The archive itself is read-only and remains content-addressed.
+        """
+        self._migrate_device_blobs()
+        manifest = self._load_manifest(snapshot_id)
+        if not manifest:
+            raise DeviceWriteSafetyError(
+                f"The backup snapshot {snapshot_id!r} could not be found."
+            )
+        raw_files = _validated_manifest_entries(
+            manifest,
+            expected_snapshot_id=snapshot_id,
+            expected_device_id=self.device_id,
+        )
+        export_files = self._validated_export_files(raw_files)
+        parent = Path(destination_dir).expanduser().resolve()
+        try:
+            parent.relative_to(self.backup_root.resolve())
+        except ValueError:
+            pass
+        else:
+            raise DeviceWriteSafetyError(
+                "Choose an export location outside the iOpenPod backup "
+                "repository so exported files cannot be mistaken for archive data."
+            )
+        parent.mkdir(parents=True, exist_ok=True)
+        export_root = self._create_export_directory(parent, snapshot_id)
+
+        if progress_callback:
+            progress_callback(BackupProgress(
+                "exporting",
+                0,
+                len(export_files),
+                message=f"Preparing export folder: {export_root.name}",
+            ))
+
+        try:
+            for index, (relative_path, file_info) in enumerate(
+                export_files.items(),
+                start=1,
+            ):
+                if is_cancelled and is_cancelled():
+                    raise _BackupOperationCancelled
+                target = _resolve_export_path(export_root, relative_path)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                blob_path = self._blob_path(file_info["hash"])
+                fd, raw_temp = tempfile.mkstemp(
+                    dir=str(target.parent),
+                    prefix=".iopenpod-export-",
+                    suffix=".tmp",
+                )
+                temp_path = Path(raw_temp)
+                try:
+                    if target.exists() or os.path.lexists(target):
+                        raise DeviceWriteSafetyError(
+                            f"The export destination already contains "
+                            f"{relative_path!r}; no files were overwritten."
+                        )
+                    digest = hashlib.sha256()
+                    copied = 0
+                    with open(blob_path, "rb") as source, os.fdopen(
+                        fd,
+                        "wb",
+                    ) as destination:
+                        fd = -1
+                        while chunk := source.read(_HASH_BUF_SIZE):
+                            destination.write(chunk)
+                            digest.update(chunk)
+                            copied += len(chunk)
+                        flush_written_file(destination)
+                    if digest.hexdigest() != file_info["hash"] or copied != file_info["size"]:
+                        raise DeviceWriteSafetyError(
+                            f"The backup blob for {relative_path!r} failed "
+                            "verification while exporting."
+                        )
+                    durable_replace(temp_path, target)
+                    mtime_ns = file_info.get("mtime_ns")
+                    if isinstance(mtime_ns, int):
+                        os.utime(target, ns=(mtime_ns, mtime_ns))
+                except Exception:
+                    if fd >= 0:
+                        os.close(fd)
+                    durable_unlink(temp_path, missing_ok=True)
+                    raise
+                if progress_callback:
+                    progress_callback(BackupProgress(
+                        "exporting",
+                        index,
+                        len(export_files),
+                        current_file=relative_path,
+                        message=(
+                            f"Exporting {index:,}/{len(export_files):,}: "
+                            f"{relative_path}"
+                        ),
+                    ))
+        except _BackupOperationCancelled:
+            shutil.rmtree(export_root, ignore_errors=True)
+            return None
+        except Exception:
+            shutil.rmtree(export_root, ignore_errors=True)
+            raise
+
+        return ExportResult(
+            destination=export_root,
+            file_count=len(export_files),
+            total_size=sum(int(info["size"]) for info in export_files.values()),
+        )
+
+    def _validated_export_files(
+        self,
+        raw_files: dict[str, dict],
+    ) -> dict[str, dict]:
+        """Validate export paths before creating any output files."""
+        normalized_paths: dict[tuple[str, ...], str] = {}
+        normalized_directories: dict[tuple[str, ...], tuple[str, ...]] = {}
+        for relative_path, _file_info in raw_files.items():
+            _resolve_export_relative_path(relative_path)
+            components = tuple(relative_path.split("/"))
+            normalized = tuple(
+                unicodedata.normalize("NFC", component).casefold()
+                if os.name == "nt"
+                else unicodedata.normalize("NFC", component)
+                for component in components
+            )
+            previous = normalized_paths.get(normalized)
+            if previous is not None and previous != relative_path:
+                raise DeviceWriteSafetyError(
+                    f"The backup contains export paths that collide on this "
+                    f"computer: {previous!r} and {relative_path!r}."
+                )
+            normalized_paths[normalized] = relative_path
+            for depth in range(1, len(components)):
+                normalized_directory = normalized[:depth]
+                actual_directory = components[:depth]
+                previous_directory = normalized_directories.get(normalized_directory)
+                if (
+                    previous_directory is not None
+                    and previous_directory != actual_directory
+                ):
+                    raise DeviceWriteSafetyError(
+                        "The backup contains directory names that alias each "
+                        f"other during export: {'/'.join(previous_directory)!r} "
+                        f"and {'/'.join(actual_directory)!r}."
+                    )
+                normalized_directories[normalized_directory] = actual_directory
+        normalized_file_paths = set(normalized_paths)
+        for normalized, relative_path in normalized_paths.items():
+            if any(
+                normalized[:depth] in normalized_file_paths
+                for depth in range(1, len(normalized))
+            ):
+                raise DeviceWriteSafetyError(
+                    f"The backup path {relative_path!r} is nested beneath another file."
+                )
+        return raw_files
+
+    @staticmethod
+    def _create_export_directory(parent: Path, snapshot_id: str) -> Path:
+        base_name = f"iOpenPod Export - {snapshot_id}"
+        for suffix in range(1, 10_000):
+            name = base_name if suffix == 1 else f"{base_name} ({suffix})"
+            candidate = parent / name
+            try:
+                candidate.mkdir()
+            except FileExistsError:
+                continue
+            return candidate
+        raise DeviceWriteSafetyError(
+            "Could not create a unique export folder in the selected location."
+        )
 
     @_repository_locked
     def _restore_backup_from_snapshot(

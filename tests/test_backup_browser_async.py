@@ -103,7 +103,7 @@ def test_invalid_snapshot_card_disables_delete_with_accessible_reason(qapp) -> N
         validation_error="Manifest checksum does not match",
     )
 
-    card = SnapshotCard(snapshot)
+    card = SnapshotCard(cast(Any, snapshot))
 
     assert card._delete_btn.isEnabled() is False
     assert "catalog" in card._delete_btn.toolTip().lower()

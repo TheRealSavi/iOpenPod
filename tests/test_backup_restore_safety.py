@@ -106,6 +106,71 @@ def _patch_safe_restore_environment(
     return profile
 
 
+def test_export_snapshot_materializes_files_without_overwriting_archive(
+    tmp_path: Path,
+) -> None:
+    manager = BackupManager(
+        "DEVICE",
+        backup_dir=str(tmp_path / "backups"),
+        identity_is_stable=True,
+    )
+    _write_snapshot(
+        manager,
+        "20260101_120000",
+        {"iPod_Control/Music/F00/song.mp3": b"preserved bytes"},
+    )
+    export_parent = tmp_path / "exports"
+    progress_stages: list[str] = []
+
+    result = manager.export_snapshot(
+        "20260101_120000",
+        export_parent,
+        progress_callback=lambda progress: progress_stages.append(progress.stage),
+    )
+
+    assert result is not None
+    exported = result.destination / "iPod_Control" / "Music" / "F00" / "song.mp3"
+    assert exported.read_bytes() == b"preserved bytes"
+    assert result.file_count == 1
+    assert result.total_size == len(b"preserved bytes")
+    assert progress_stages == ["exporting", "exporting"]
+    assert manager._snapshot_manifest_path("20260101_120000").is_file()
+
+
+def test_export_snapshot_removes_partial_output_when_cancelled(
+    tmp_path: Path,
+) -> None:
+    manager = BackupManager(
+        "DEVICE",
+        backup_dir=str(tmp_path / "backups"),
+        identity_is_stable=True,
+    )
+    _write_snapshot(
+        manager,
+        "20260101_120000",
+        {
+            "iPod_Control/Music/F00/one.mp3": b"one",
+            "iPod_Control/Music/F00/two.mp3": b"two",
+        },
+    )
+    export_parent = tmp_path / "exports"
+    calls = 0
+
+    def cancel_after_first_file() -> bool:
+        nonlocal calls
+        calls += 1
+        return calls > 1
+
+    result = manager.export_snapshot(
+        "20260101_120000",
+        export_parent,
+        is_cancelled=cancel_after_first_file,
+    )
+
+    assert result is None
+    assert list(export_parent.glob("iOpenPod Export - *")) == []
+
+
 def test_restore_rejects_a_different_scan_time_volume_before_mutation(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
