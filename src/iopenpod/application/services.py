@@ -101,6 +101,12 @@ class SettingsSnapshot:
     normalize_tags_after_sync: bool
     rockbox_metadata_support: bool
     max_backups: int
+    subsonic_enabled: bool
+    subsonic_url: str
+    subsonic_username: str
+    subsonic_password: str
+    subsonic_playlist_ids: tuple[str, ...]
+    subsonic_playlist_mappings: dict[str, int]
 
     @classmethod
     def from_settings(cls, settings: AppSettings) -> SettingsSnapshot:
@@ -112,6 +118,10 @@ class SettingsSnapshot:
             elif field_info.name == "splitter_sizes":
                 value = tuple(value)
             elif field_info.name == "track_list_columns_by_content":
+                value = copy.deepcopy(value)
+            elif field_info.name == "subsonic_playlist_ids":
+                value = tuple(value)
+            elif field_info.name == "subsonic_playlist_mappings":
                 value = copy.deepcopy(value)
             data[field_info.name] = value
         return cls(**data)
