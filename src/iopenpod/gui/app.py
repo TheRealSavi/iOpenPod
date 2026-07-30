@@ -811,6 +811,7 @@ class MainWindow(QMainWindow):
             libraries=self.library_service,
         )
         self.backupBrowser.closed.connect(self.hideBackupBrowser)
+        self.backupBrowser.safe_eject_required.connect(self._onEjectDevice)
         self.centralStack.addWidget(self.backupBrowser)  # Index 3
 
         # Selective sync browser page
@@ -2884,17 +2885,20 @@ class MainWindow(QMainWindow):
         if not self.isActiveWindow():
             self._notifier.notify_sync_error(error_msg)
 
-        settings = self.settings_service.get_effective_settings()
-
         msg = f"Sync failed:\n\n{error_msg}"
-        if settings.backup_before_sync:
-            msg += (
-                "\n\nA backup was created before this sync. "
-                "You can restore it from the Backups page."
-            )
 
         QMessageBox.critical(self, "Sync Error", msg)
-        self.hideSyncReview()
+        if (
+            "pre-sync backup could not be completed safely"
+            in error_msg.casefold()
+            and self._plan is not None
+        ):
+            # No iPod mutation began. Keep the reviewed plan available so the
+            # user can fix the backup location and retry, or deliberately use
+            # the existing Sync Without Backup path.
+            self._show_sync_plan(self._plan)
+        else:
+            self.hideSyncReview()
 
     def _onConfirmPartialSave(self, n_added: int, n_skipped: int) -> None:
         """Called from the sync worker when the user cancels mid-sync with tracks already copied.
@@ -3088,6 +3092,23 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, a0):
         """Ensure all threads are stopped when the window is closed."""
+        if not self.backupBrowser.prepare_for_app_close(3000):
+            if a0:
+                a0.ignore()
+            self.centralStack.setCurrentWidget(self.backupBrowser)
+            self.show()
+            self.raise_()
+            self.activateWindow()
+            notice_title, notice_message = (
+                self.backupBrowser.app_close_block_notice()
+            )
+            QMessageBox.information(
+                self,
+                notice_title,
+                notice_message,
+            )
+            return
+
         # Persist window dimensions
         try:
             _s = self.settings_service.get_global_settings()

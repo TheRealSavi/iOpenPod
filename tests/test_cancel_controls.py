@@ -78,6 +78,59 @@ def test_backup_cancel_is_one_shot_with_immediate_feedback() -> None:
     assert "stop safely" in detail.text
 
 
+def test_restore_cancel_is_ignored_after_commit_begins() -> None:
+    worker = _FakeWorker(running=True)
+    cancel_btn = _FakeButton()
+    title = _FakeLabel()
+    detail = _FakeLabel()
+    widget = SimpleNamespace(
+        _backup_worker=None,
+        _restore_worker=worker,
+        _restore_committing=True,
+        _progress_cancel_btn=cancel_btn,
+        _progress_title=title,
+        _progress_file=detail,
+    )
+
+    BackupBrowserWidget._on_cancel(cast(Any, widget))
+
+    assert worker.request_count == 0
+    assert cancel_btn.enabled is None
+    assert title.text == ""
+
+
+def test_app_close_waits_for_restore_terminal_handler_without_blocking_gui() -> None:
+    worker = _FakeWorker(running=False)
+    widget = SimpleNamespace(
+        _backup_worker=None,
+        _restore_worker=worker,
+        _restore_committing=True,
+    )
+
+    can_close = BackupBrowserWidget.prepare_for_app_close(
+        cast(Any, widget),
+    )
+
+    assert can_close is False
+    assert worker.request_count == 0
+
+
+def test_app_close_requests_safe_restore_cancel_and_still_waits_for_result() -> None:
+    worker = _FakeWorker(running=True)
+    widget = SimpleNamespace(
+        _backup_worker=None,
+        _restore_worker=worker,
+        _restore_committing=False,
+    )
+
+    can_close = BackupBrowserWidget.prepare_for_app_close(
+        cast(Any, widget),
+    )
+
+    assert can_close is False
+    assert worker.request_count == 1
+
+
 def test_device_picker_cancel_detaches_active_scan_thread() -> None:
     worker = _FakeScanThread(running=True)
     dialog = SimpleNamespace(_scan_thread=worker, _scan_orphan_threads=[])

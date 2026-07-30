@@ -13,7 +13,7 @@ import threading
 import traceback
 from collections.abc import Callable, Iterable, Mapping
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, SupportsInt, cast
 
@@ -641,6 +641,7 @@ class BackupDeviceContext:
     device_id: str
     device_name: str
     device_meta: dict[str, str]
+    stable_identity: bool
 
 
 @dataclass(frozen=True)
@@ -650,6 +651,7 @@ class BackupDeviceInventory:
     devices: list[dict[str, Any]]
     connected_device_id: str
     device_connected: bool
+    connected_identity_stable: bool
 
 
 @dataclass(frozen=True)
@@ -895,6 +897,7 @@ def build_backup_device_context(
     device_info: Any | None,
     *,
     device_name: str = "",
+    volume_identity_key: str = "",
 ) -> BackupDeviceContext:
     """Return the sanitized backup identity for a connected device."""
 
@@ -904,11 +907,20 @@ def build_backup_device_context(
         get_device_identifier,
     )
 
-    raw_id = get_device_identifier(ipod_path, device_info)
+    raw_id = get_device_identifier(
+        ipod_path,
+        device_info,
+        volume_identity_key=volume_identity_key,
+    )
+    stable_identity = bool(
+        str(getattr(device_info, "serial", "") or "").strip()
+        or str(getattr(device_info, "firewire_guid", "") or "").strip()
+    )
     return BackupDeviceContext(
         device_id=BackupManager._sanitize_id(raw_id),
         device_name=device_name.strip() or get_device_display_name(device_info),
         device_meta=build_backup_device_meta(device_info),
+        stable_identity=stable_identity,
     )
 
 
@@ -918,6 +930,7 @@ def list_backup_devices_for_view(
     connected_ipod_path: str = "",
     connected_ipod_info: Any | None = None,
     connected_device_name: str = "",
+    connected_volume_identity_key: str = "",
 ) -> BackupDeviceInventory:
     """Return backup devices sorted for the backup browser sidebar."""
 
@@ -929,13 +942,16 @@ def list_backup_devices_for_view(
             connected_ipod_path,
             connected_ipod_info,
             device_name=connected_device_name,
+            volume_identity_key=connected_volume_identity_key,
         )
-        BackupManager(
-            device_id=connected_context.device_id,
-            backup_dir=backup_dir,
-            device_name=connected_context.device_name,
-            device_meta=connected_context.device_meta,
-        ).update_device_metadata()
+        if connected_context.stable_identity:
+            BackupManager(
+                device_id=connected_context.device_id,
+                backup_dir=backup_dir,
+                device_name=connected_context.device_name,
+                device_meta=connected_context.device_meta,
+                identity_is_stable=True,
+            ).update_device_metadata()
 
     devices_by_id = {
         item["device_id"]: dict(item)
@@ -943,9 +959,11 @@ def list_backup_devices_for_view(
     }
     connected_device_id = ""
     device_connected = bool(connected_ipod_path)
+    connected_identity_stable = False
 
     if connected_context:
         connected_device_id = connected_context.device_id
+        connected_identity_stable = connected_context.stable_identity
         connected_info = devices_by_id.get(connected_device_id, {})
         connected_info.update(
             {
@@ -954,6 +972,7 @@ def list_backup_devices_for_view(
                 "snapshot_count": int(
                     connected_info.get("snapshot_count", 0) or 0
                 ),
+                "identity_is_stable": connected_context.stable_identity,
                 "device_meta": (
                     connected_context.device_meta
                     or connected_info.get("device_meta", {})
@@ -973,6 +992,7 @@ def list_backup_devices_for_view(
         devices=devices,
         connected_device_id=connected_device_id,
         device_connected=device_connected,
+        connected_identity_stable=connected_identity_stable,
     )
 
 
@@ -1024,6 +1044,8 @@ class BackupCreateRequest:
     backup_dir: str
     max_backups: int
     device_meta: dict[str, str]
+    identity_is_stable: bool = False
+    reason: str = "manual"
     reported_volume_format: str = ""
     expected_volume_identity_key: str = ""
 
@@ -1049,6 +1071,7 @@ class BackupCreateWorker(QThread):
                 backup_dir=request.backup_dir,
                 device_name=request.device_name,
                 device_meta=request.device_meta,
+                identity_is_stable=request.identity_is_stable,
             )
 
             def on_progress(prog) -> None:
@@ -1066,13 +1089,8 @@ class BackupCreateWorker(QThread):
                 max_backups=request.max_backups,
                 reported_volume_format=request.reported_volume_format,
                 expected_volume_identity_key=request.expected_volume_identity_key,
+                reason=request.reason,
             )
-
-            if result is None:
-                try:
-                    manager.garbage_collect()
-                except Exception as exc:
-                    logger.debug("Backup garbage collection failed: %s", exc)
 
             self.finished.emit(result)
         except Exception as exc:
@@ -1088,8 +1106,22 @@ class BackupRestoreRequest:
     ipod_path: str
     device_id: str
     backup_dir: str
+    device_name: str = "iPod"
+    device_meta: dict[str, str] = field(default_factory=dict)
+    identity_is_stable: bool = False
     reported_volume_format: str = ""
     expected_volume_identity_key: str = ""
+
+
+@dataclass(frozen=True)
+class BackupRestoreFailure:
+    """Typed restore failure so the UI can give the correct recovery path."""
+
+    message: str
+    device_changed: bool
+    safety_snapshot_id: str = ""
+    content_verified: bool = False
+    requires_safe_eject: bool = False
 
 
 class BackupRestoreWorker(QThread):
@@ -1097,7 +1129,7 @@ class BackupRestoreWorker(QThread):
 
     progress = pyqtSignal(str, int, int, str)
     finished = pyqtSignal(bool)
-    error = pyqtSignal(str)
+    error = pyqtSignal(object)
 
     def __init__(self, request: BackupRestoreRequest):
         super().__init__()
@@ -1111,9 +1143,12 @@ class BackupRestoreWorker(QThread):
             manager = BackupManager(
                 device_id=request.device_id,
                 backup_dir=request.backup_dir,
+                device_name=request.device_name,
+                device_meta=request.device_meta,
+                identity_is_stable=request.identity_is_stable,
             )
 
-            def on_progress(prog) -> None:
+            def on_restore_progress(prog) -> None:
                 self.progress.emit(
                     prog.stage,
                     prog.current,
@@ -1121,10 +1156,25 @@ class BackupRestoreWorker(QThread):
                     prog.message,
                 )
 
-            success = manager.restore_backup(
+            def on_safety_backup_progress(prog) -> None:
+                self.progress.emit(
+                    "safety_backup",
+                    prog.current,
+                    prog.total,
+                    f"Protecting current iPod: {prog.message}",
+                )
+
+            self.progress.emit(
+                "safety_backup",
+                0,
+                0,
+                "Creating a verified safety backup of the current iPod…",
+            )
+            success = manager.restore_with_safety_checkpoint(
                 snapshot_id=request.snapshot_id,
                 ipod_path=request.ipod_path,
-                progress_callback=on_progress,
+                progress_callback=on_restore_progress,
+                safety_progress_callback=on_safety_backup_progress,
                 is_cancelled=self.isInterruptionRequested,
                 reported_volume_format=request.reported_volume_format,
                 expected_volume_identity_key=request.expected_volume_identity_key,
@@ -1133,7 +1183,21 @@ class BackupRestoreWorker(QThread):
             self.finished.emit(success)
         except Exception as exc:
             logger.exception("BackupRestoreWorker failed")
-            self.error.emit(str(exc))
+            self.error.emit(
+                BackupRestoreFailure(
+                    message=str(exc),
+                    device_changed=bool(getattr(exc, "device_dirty", False)),
+                    safety_snapshot_id=str(
+                        getattr(exc, "safety_snapshot_id", "") or ""
+                    ),
+                    content_verified=bool(
+                        getattr(exc, "content_verified", False)
+                    ),
+                    requires_safe_eject=bool(
+                        getattr(exc, "requires_safe_eject", False)
+                    ),
+                )
+            )
 
 
 @dataclass(frozen=True)
@@ -2603,6 +2667,7 @@ class SyncExecuteWorker(QThread):
         self._give_up_scrobble_requested = False
         self._partial_save_event: threading.Event | None = None
         self._partial_save_decision: list[bool] = [True]
+        self._presync_snapshot_id = ""
 
     def respond_to_partial_save(self, save: bool) -> None:
         """Unblock the worker after the UI decides on a partial save."""
@@ -2716,7 +2781,13 @@ class SyncExecuteWorker(QThread):
             self.finished.emit(SyncEngine().execute_plan(engine_request))
         except Exception as exc:
             logger.exception("SyncExecuteWorker failed")
-            self.error.emit(str(exc))
+            message = str(exc)
+            if self._presync_snapshot_id:
+                message += (
+                    "\n\nA verified pre-sync backup remains available. "
+                    f"Snapshot ID: {self._presync_snapshot_id}"
+                )
+            self.error.emit(message)
 
     def _create_presync_backup(self, settings: AppSettings, progress_type) -> None:
         try:
@@ -2729,7 +2800,19 @@ class SyncExecuteWorker(QThread):
                 get_device_identifier,
             )
 
-            device_id = get_device_identifier(self.ipod_path, self.device_info)
+            volume_identity_key = str(
+                getattr(
+                    self.device_storage,
+                    "volume_identity_key",
+                    "",
+                )
+                or ""
+            )
+            device_id = get_device_identifier(
+                self.ipod_path,
+                self.device_info,
+                volume_identity_key=volume_identity_key,
+            )
             device_name = (
                 self.backup_device_name.strip()
                 or get_device_display_name(self.device_info)
@@ -2749,6 +2832,10 @@ class SyncExecuteWorker(QThread):
                 backup_dir=settings.backup_dir,
                 device_name=device_name,
                 device_meta=device_meta,
+                identity_is_stable=bool(
+                    str(getattr(ipod, "serial", "") or "").strip()
+                    or str(getattr(ipod, "firewire_guid", "") or "").strip()
+                ),
             )
 
             def on_backup_progress(prog) -> None:
@@ -2768,20 +2855,46 @@ class SyncExecuteWorker(QThread):
                     self.isInterruptionRequested() or self._skip_backup_requested
                 ),
                 max_backups=settings.max_backups,
+                reason="pre_sync",
+                reported_volume_format=str(
+                    getattr(
+                        self.device_storage,
+                        "reported_volume_format",
+                        "",
+                    )
+                    or ""
+                ),
+                expected_volume_identity_key=volume_identity_key,
             )
 
             if snap is None and self.isInterruptionRequested():
                 return
-            if snap is None:
-                try:
-                    manager.garbage_collect()
-                except Exception as exc:
-                    logger.debug("Backup garbage collection failed: %s", exc)
-            else:
+            if snap is not None:
+                self._presync_snapshot_id = snap.id
                 logger.info("Pre-sync backup created: %s", snap.id)
+            elif not self._skip_backup_requested:
+                current_snapshots = manager.list_snapshots()
+                current = next(
+                    (
+                        snapshot
+                        for snapshot in current_snapshots
+                        if snapshot.is_valid
+                    ),
+                    None,
+                )
+                if current is not None:
+                    self._presync_snapshot_id = current.id
         except Exception as exc:
-            logger.warning("Pre-sync backup failed (continuing sync): %s", exc)
+            logger.error("Pre-sync backup failed; sync stopped: %s", exc)
             logger.debug("Pre-sync backup failure details:\n%s", traceback.format_exc())
+            detail = str(exc).strip() or type(exc).__name__
+            raise DeviceWriteSafetyError(
+                "The pre-sync backup could not be completed safely, so iOpenPod "
+                "stopped before changing the iPod.\n\n"
+                f"Backup error: {detail}\n\n"
+                "Resolve the backup error and try again, or explicitly choose "
+                "Sync Without Backup."
+            ) from exc
 
 
 class DropScanWorker(QThread):

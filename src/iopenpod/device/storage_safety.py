@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import ctypes
+import os
+import sys
+from pathlib import Path
+
 from .write_guard import DeviceWriteSafetyError
 
 
@@ -16,6 +21,39 @@ def allocated_size(logical_size: int, allocation_unit_size: int | None) -> int:
     if size == 0 or unit <= 1:
         return size
     return ((size + unit - 1) // unit) * unit
+
+
+def existing_file_allocated_size(
+    path: str | Path,
+    allocation_unit_size: int | None,
+) -> int:
+    """Return bytes that deleting an existing file can safely be assumed to free.
+
+    Sparse and compressed files can occupy far less space than their logical
+    length. When the host cannot report allocation, return zero rather than
+    over-promising space to a destructive restore preflight.
+    """
+    target = Path(path)
+    file_stat = target.stat()
+    blocks = getattr(file_stat, "st_blocks", None)
+    if isinstance(blocks, int) and blocks >= 0:
+        return blocks * 512
+    if sys.platform == "win32":
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        get_allocated_size = kernel32.GetCompressedFileSizeW
+        get_allocated_size.argtypes = [
+            ctypes.c_wchar_p,
+            ctypes.POINTER(ctypes.c_ulong),
+        ]
+        get_allocated_size.restype = ctypes.c_ulong
+        high = ctypes.c_ulong(0)
+        ctypes.set_last_error(0)
+        low = int(get_allocated_size(os.fspath(target), ctypes.byref(high)))
+        error = ctypes.get_last_error()
+        if low == 0xFFFFFFFF and error:
+            raise OSError(error, ctypes.FormatError(error).strip())
+        return (int(high.value) << 32) | low
+    return 0
 
 
 def effective_max_file_size_bytes(

@@ -75,6 +75,34 @@ def test_linux_profile_reports_mounted_filesystem_limits_and_identity(
     assert profile.detection_errors == ()
 
 
+def test_linux_profile_prefers_udev_filesystem_uuid_for_volume_identity(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    mountinfo = tmp_path / "mountinfo"
+    mountinfo.write_text(_linux_mountinfo_line(tmp_path), encoding="utf-8")
+    udev_data = tmp_path / "udev-data"
+    udev_data.mkdir()
+    (udev_data / "b8:17").write_text(
+        "E:ID_FS_TYPE=vfat\nE:ID_FS_UUID=ABCD-1234\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(filesystem_profile.sys, "platform", "linux")
+    monkeypatch.setattr(filesystem_profile, "_LINUX_MOUNTINFO", mountinfo)
+    monkeypatch.setattr(filesystem_profile, "_LINUX_UDEV_DATA", udev_data)
+    monkeypatch.setattr(filesystem_profile.os, "pathconf", lambda *_args: 255, raising=False)
+    monkeypatch.setattr(
+        filesystem_profile.os,
+        "statvfs",
+        lambda *_args: type("Stats", (), {"f_frsize": 4096, "f_bsize": 4096})(),
+        raising=False,
+    )
+
+    profile = filesystem_profile.inspect_filesystem_profile(tmp_path)
+
+    assert profile.identity.volume_id == "uuid:ABCD-1234"
+
+
 def test_revalidation_stops_when_linux_mount_instance_changes(
     monkeypatch,
     tmp_path: Path,

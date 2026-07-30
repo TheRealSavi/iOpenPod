@@ -8,7 +8,14 @@ on:
 
 jobs:
   health:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+    runs-on: ${{ matrix.os }}
     env:
       QT_QPA_PLATFORM: offscreen
     steps:
@@ -43,6 +50,7 @@ jobs:
         run: uv run python scripts/dev.py arch
 
       - name: Packaging smoke test
+        if: runner.os == 'Linux'
         run: |
           uv build
           uv venv .wheel-smoke
@@ -51,9 +59,11 @@ jobs:
           .wheel-smoke/bin/iopenpod --version
 
       - name: Validate Linux identity rule syntax
+        if: runner.os == 'Linux'
         run: udevadm verify src/iopenpod/assets/linux/61-iopenpod.rules
 
       - name: Frozen application resource smoke test
+        if: runner.os == 'Linux'
         run: |
           uv run pyinstaller iOpenPod.spec --noconfirm
           dist/iOpenPod/iOpenPod --print-linux-udev-rule > frozen-rule.txt

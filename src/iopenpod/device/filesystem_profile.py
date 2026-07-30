@@ -10,6 +10,7 @@ from __future__ import annotations
 import ctypes
 import os
 import plistlib
+import re
 import subprocess
 import sys
 import tempfile
@@ -21,6 +22,7 @@ from typing import Protocol, cast
 from .filesystem import detect_filesystem_type
 
 _LINUX_MOUNTINFO = Path("/proc/self/mountinfo")
+_LINUX_UDEV_DATA = Path("/run/udev/data")
 
 _MAX_FILE_SIZE_BYTES = {
     "fat": 2 * 1024**3 - 1,
@@ -294,7 +296,19 @@ def _inspect_linux(requested_path: str) -> _MountedFilesystemFacts:
         if best is None or score > best[0]:
             best = (score, parsed)
     if best is not None:
-        return best[1]
+        facts = best[1]
+        filesystem_uuid = _linux_filesystem_uuid(
+            facts.identity.device_id,
+        )
+        if filesystem_uuid:
+            facts = replace(
+                facts,
+                identity=replace(
+                    facts.identity,
+                    volume_id=f"uuid:{filesystem_uuid}",
+                ),
+            )
+        return facts
     facts = _unavailable_facts(requested_path, operating_system="linux")
     return _MountedFilesystemFacts(
         mount_path=facts.mount_path,
@@ -481,6 +495,25 @@ def _parse_linux_mountinfo_line(line: str) -> _MountedFilesystemFacts | None:
             mount_instance=mount_id,
         ),
     )
+
+
+def _linux_filesystem_uuid(device_id: str) -> str:
+    """Read udev's non-privileged filesystem UUID for one Linux block device."""
+    if not re.fullmatch(r"\d+:\d+", device_id):
+        return ""
+    udev_record = _LINUX_UDEV_DATA / f"b{device_id}"
+    try:
+        lines = udev_record.read_text(
+            encoding="utf-8",
+            errors="replace",
+        ).splitlines()
+    except OSError:
+        return ""
+    for line in lines:
+        prefix = "E:ID_FS_UUID="
+        if line.startswith(prefix):
+            return line[len(prefix):].strip()
+    return ""
 
 
 def _unique_options(*values: str) -> tuple[str, ...]:
