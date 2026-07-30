@@ -186,6 +186,7 @@ class SyncEngine:
             lastfm_api_secret=request.options.lastfm_api_secret,
             lastfm_session_key=request.options.lastfm_session_key,
             lastfm_username=request.options.lastfm_username,
+            rockbox_metadata_support=request.options.rockbox_metadata_support,
             is_scrobble_cancelled=request.is_scrobble_cancelled,
             on_cancel_with_partial=request.on_cancel_with_partial,
             sync_until_full=request.options.sync_until_full,

@@ -1560,6 +1560,13 @@ class SettingsPage(QWidget):
             "successful sync.",
             checked=False,
         )
+        self.rockbox_metadata_support = ToggleRow(
+            "Rockbox Metadata Support",
+            "Write the final iTunes database metadata and cover artwork into "
+            "every supported song file on the iPod during each sync. This is "
+            "needed by Rockbox, which reads file tags instead of iTunesDB.",
+            checked=False,
+        )
         self.rotate_tall_photos = ToggleRow(
             "Rotate Tall Photos on Device",
             "For portrait-heavy photos, rotate the device viewing caches "
@@ -1585,6 +1592,7 @@ class SettingsPage(QWidget):
             self.write_back,
             self.compute_sound_check,
             self.normalize_tags_after_sync,
+            self.rockbox_metadata_support,
             self.rotate_tall_photos,
             self.fit_photo_thumbnails,
             self.rating_strategy,
@@ -1990,6 +1998,7 @@ class SettingsPage(QWidget):
             self.write_back,
             self.compute_sound_check,
             self.normalize_tags_after_sync,
+            self.rockbox_metadata_support,
             self.rotate_tall_photos,
             self.fit_photo_thumbnails,
             self.rating_strategy,
@@ -2027,6 +2036,7 @@ class SettingsPage(QWidget):
             self.accent_color, self.show_art, self.write_back,
             self.compute_sound_check, self.rotate_tall_photos,
             self.normalize_tags_after_sync,
+            self.rockbox_metadata_support,
             self.fit_photo_thumbnails, self.rating_strategy,
             self.lossy_encoder, self.lossy_quality, self.bitrate_mode,
             self.music_lossy_cbr_bitrate, self.vbr_level,
@@ -2134,6 +2144,9 @@ class SettingsPage(QWidget):
         self.compute_sound_check.value = s.compute_sound_check
         self.normalize_tags_after_sync.value = bool(
             getattr(s, "normalize_tags_after_sync", False)
+        )
+        self.rockbox_metadata_support.value = bool(
+            getattr(s, "rockbox_metadata_support", False)
         )
         self.rotate_tall_photos.value = s.rotate_tall_photos_for_device
         self.fit_photo_thumbnails.value = s.fit_photo_thumbnails
@@ -2366,6 +2379,7 @@ class SettingsPage(QWidget):
             self.write_back.changed.connect(self._save)
             self.compute_sound_check.changed.connect(self._save)
             self.normalize_tags_after_sync.changed.connect(self._save)
+            self.rockbox_metadata_support.changed.connect(self._save)
             self.rotate_tall_photos.changed.connect(self._save)
             self.fit_photo_thumbnails.changed.connect(self._save)
             self.rating_strategy.changed.connect(self._save)
@@ -2589,6 +2603,7 @@ class SettingsPage(QWidget):
         s.write_back_to_pc = self.write_back.value
         s.compute_sound_check = self.compute_sound_check.value
         s.normalize_tags_after_sync = self.normalize_tags_after_sync.value
+        s.rockbox_metadata_support = self.rockbox_metadata_support.value
         s.rotate_tall_photos_for_device = self.rotate_tall_photos.value
         s.fit_photo_thumbnails = self.fit_photo_thumbnails.value
 

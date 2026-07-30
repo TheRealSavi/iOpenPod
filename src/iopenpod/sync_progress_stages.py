@@ -63,6 +63,7 @@ PROGRESS_STAGE_LABELS: dict[str, str] = {
     "sync_playcount": "Recording iPod play counts",
     "sync_rating": "Syncing ratings",
     "playlists": "Updating playlists",
+    "rockbox_metadata": "Writing Rockbox metadata",
     "write_database": "Writing iPod database",
     "quick_write": "Writing iPod database",
     "backpatch": "Recording source file identities",
@@ -176,6 +177,11 @@ PIPELINE_STAGE_ROWS: tuple[ProgressStageRow, ...] = (
     ),
     ProgressStageRow("playlists", "Update playlists", frozenset({"playlists"})),
     ProgressStageRow(
+        "rockbox_metadata",
+        "Write Rockbox metadata",
+        frozenset({"rockbox_metadata"}),
+    ),
+    ProgressStageRow(
         "write_database",
         "Write iPod database",
         frozenset({"write_database", "quick_write", "assemble_commit", "commit"}),
@@ -221,6 +227,7 @@ EXECUTION_STAGE_TO_ENGINE_STAGE: dict[str, str] = {
     "scrobble": "assemble_commit",
     "scrobble_listenbrainz": "assemble_commit",
     "scrobble_lastfm": "assemble_commit",
+    "rockbox_metadata": "assemble_commit",
     "write_database": "commit",
     "quick_write": "commit",
     "photos": "commit",

@@ -93,6 +93,7 @@ def test_build_filtered_sync_plan_groups_selected_actions_and_preserves_context(
     photo_plan = object()
 
     original = SyncPlan(
+        rockbox_metadata_pass=True,
         matched_pc_paths={1: "C:/Music/song.m4a"},
         _stale_mapping_entries=stale_entries,
         _integrity_removals=integrity_removals,
@@ -126,6 +127,14 @@ def test_build_filtered_sync_plan_groups_selected_actions_and_preserves_context(
     assert filtered.playlists_to_edit == [{"name": "Edit"}]
     assert filtered.playlists_to_remove == [{"name": "Remove"}]
     assert filtered.photo_plan is photo_plan
+    assert filtered.rockbox_metadata_pass is True
+
+
+def test_rockbox_metadata_pass_is_executable_without_track_diffs() -> None:
+    plan = SyncPlan(rockbox_metadata_pass=True, total_ipod_tracks=12)
+
+    assert plan.has_changes is True
+    assert "12 tracks" in plan.summary
 
 
 def test_build_filtered_sync_plan_can_exclude_playlists() -> None:

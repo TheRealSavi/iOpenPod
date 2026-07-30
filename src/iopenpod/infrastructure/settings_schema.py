@@ -81,6 +81,7 @@ DEVICE_SETTING_KEYS = (
     "backup_before_sync",
     "backup_before_sync_mode",
     "normalize_tags_after_sync",
+    "rockbox_metadata_support",
 )
 DEVICE_SECRET_KEYS = {"listenbrainz_token", "lastfm_api_key", "lastfm_api_secret", "lastfm_session_key"}
 
@@ -277,6 +278,7 @@ class AppSettings:
     backup_before_sync: bool = True
     backup_before_sync_mode: str = ""
     normalize_tags_after_sync: bool = False
+    rockbox_metadata_support: bool = False
     max_backups: int = 10
 
     def __post_init__(self) -> None:

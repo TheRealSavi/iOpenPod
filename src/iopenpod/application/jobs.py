@@ -2841,6 +2841,9 @@ class SyncExecuteWorker(QThread):
                     lastfm_api_secret=getattr(settings, "lastfm_api_secret", ""),
                     lastfm_session_key=getattr(settings, "lastfm_session_key", ""),
                     lastfm_username=getattr(settings, "lastfm_username", ""),
+                    rockbox_metadata_support=bool(
+                        getattr(settings, "rockbox_metadata_support", False)
+                    ),
                     sync_until_full=self.sync_until_full,
                     photo_sync_settings={
                         "rotate_tall_photos_for_device": (

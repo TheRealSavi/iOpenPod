@@ -256,6 +256,7 @@ def test_execute_plan_builds_legacy_request_from_typed_options(monkeypatch, tmp_
                 transcode_cache_dir=str(tmp_path / "cache"),
                 write_back_to_pc=True,
                 compute_sound_check=True,
+                rockbox_metadata_support=True,
                 sync_until_full=True,
             ),
             progress_callback=progress_events.append,
@@ -272,6 +273,7 @@ def test_execute_plan_builds_legacy_request_from_typed_options(monkeypatch, tmp_
     assert sync_request.mapping == {"loaded": True}
     assert sync_request.write_back_to_pc is True
     assert sync_request.compute_sound_check is True
+    assert sync_request.rockbox_metadata_support is True
     assert sync_request.sync_until_full is True
     assert progress_events[0].stage == EngineStage.VALIDATE
     assert progress_events[-1].stage == EngineStage.COMMIT
@@ -305,6 +307,7 @@ def test_engine_progress_stage_classification_covers_current_pipeline() -> None:
         "sync_rating",
         "scrobble_listenbrainz",
         "scrobble_lastfm",
+        "rockbox_metadata",
     ):
         assert engine._execution_stage(stage) == EngineStage.ASSEMBLE_COMMIT
 

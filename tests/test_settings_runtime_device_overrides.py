@@ -46,6 +46,7 @@ def test_device_settings_round_trip_preserves_device_write_workers(monkeypatch) 
             lastfm_username="lf-user",
             backup_before_sync_mode="off",
             normalize_tags_after_sync=True,
+            rockbox_metadata_support=True,
         )
         runtime.save_device_settings(
             str(tmp_path),
@@ -80,18 +81,24 @@ def test_device_settings_round_trip_preserves_device_write_workers(monkeypatch) 
     assert loaded.settings.backup_before_sync_mode == "off"
     assert loaded.settings.backup_before_sync is False
     assert loaded.settings.normalize_tags_after_sync is True
+    assert loaded.settings.rockbox_metadata_support is True
     assert raw["settings"]["lastfm_api_key"].startswith("xor1:")
     assert raw["settings"]["lastfm_api_secret"].startswith("xor1:")
     assert raw["settings"]["lastfm_session_key"].startswith("xor1:")
     assert raw["settings"]["lastfm_username"] == "lf-user"
     assert raw["settings"]["backup_before_sync_mode"] == "off"
     assert raw["settings"]["normalize_tags_after_sync"] is True
+    assert raw["settings"]["rockbox_metadata_support"] is True
     assert raw["settings"]["always_encode_lossy"] is True
     assert raw["settings"]["convert_wav_to_alac"] is False
 
 
 def test_normalize_tags_after_sync_defaults_off() -> None:
     assert AppSettings().normalize_tags_after_sync is False
+
+
+def test_rockbox_metadata_support_defaults_off() -> None:
+    assert AppSettings().rockbox_metadata_support is False
 
 
 def test_corrupt_device_settings_are_not_silently_overwritten(monkeypatch) -> None:

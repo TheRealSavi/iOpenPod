@@ -28,6 +28,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
+from iopenpod.device.artwork import (
+    resolve_cover_art_format_definitions_for_device,
+)
 from iopenpod.device.durability import (
     durable_replace,
     durable_unlink,
@@ -101,6 +104,7 @@ from .mapping import MappingFile, MappingManager
 from .path_identity import coerce_int, stable_path_key
 from .photos import apply_photo_sync_plan, read_photo_db
 from .plan_validator import validate_sync_plan
+from .rockbox_metadata import write_rockbox_metadata_library
 from .source_identity import source_content_hash
 from .transcoder import (
     TranscodeOptions,
@@ -278,6 +282,7 @@ class _SyncContext:
     write_back_to_pc: bool
     _is_cancelled: Callable[[], bool] | None
     sync_until_full: bool = False
+    rockbox_metadata_support: bool = False
 
     # ── GUI-decoupled inputs (passed forward, not pulled from GUI) ──
     on_sync_complete: Callable[[], None] | None = None
@@ -504,6 +509,10 @@ class SyncExecutor:
         lastfm_session_key = getattr(request, "lastfm_session_key", "")
         lastfm_username = getattr(request, "lastfm_username", "")
         sync_until_full = bool(getattr(request, "sync_until_full", False))
+        rockbox_metadata_support = bool(
+            getattr(request, "rockbox_metadata_support", False)
+            or getattr(request.plan, "rockbox_metadata_pass", False)
+        )
 
         _clear_transcoder_caches()
         # A crashed transcode can leave an unindexed reserved file behind.
@@ -530,6 +539,7 @@ class SyncExecutor:
             lastfm_username=lastfm_username,
             is_scrobble_cancelled=request.is_scrobble_cancelled,
             sync_until_full=sync_until_full,
+            rockbox_metadata_support=rockbox_metadata_support,
         )
         lifecycle = _ExecutionLifecycle(
             on_cancel_with_partial=request.on_cancel_with_partial,
@@ -666,6 +676,7 @@ class SyncExecutor:
         lastfm_username: str,
         is_scrobble_cancelled: Callable[[], bool] | None,
         sync_until_full: bool,
+        rockbox_metadata_support: bool,
     ) -> _SyncContext:
         ctx = _SyncContext(
             plan,
@@ -676,6 +687,7 @@ class SyncExecutor:
             is_cancelled,
         )
         ctx.sync_until_full = bool(sync_until_full)
+        ctx.rockbox_metadata_support = bool(rockbox_metadata_support)
         ctx.on_sync_complete = on_sync_complete
         ctx.compute_sound_check = compute_sound_check
         ctx.scrobble_on_sync = scrobble_on_sync
@@ -962,6 +974,7 @@ class SyncExecutor:
             plan.playlists_to_edit,
             plan.playlists_to_remove,
             plan.photo_plan and plan.photo_plan.has_changes,
+            plan.rockbox_metadata_pass,
         ))
         housekeeping = bool(
             plan.has_integrity_housekeeping or plan._refreshed_podcast_feeds
@@ -1513,6 +1526,58 @@ class SyncExecutor:
             smart_playlists=smart_playlists,
         )
 
+    def _execute_rockbox_metadata_pass(
+        self,
+        ctx: _SyncContext,
+        commit_payload: DatabaseCommitPayload,
+    ) -> None:
+        """Materialize the final database metadata in every device media file."""
+
+        tracks = commit_payload.all_tracks
+        ctx.progress(
+            "rockbox_metadata",
+            0,
+            len(tracks),
+            message="Preparing Rockbox-compatible file metadata",
+        )
+        pass_result = write_rockbox_metadata_library(
+            self.ipod_path,
+            tracks,
+            pc_file_paths=commit_payload.pc_file_paths,
+            progress_callback=lambda current, total, label: ctx.progress(
+                "rockbox_metadata",
+                current,
+                total,
+                message=f"Writing Rockbox metadata: {label}",
+            ),
+            is_cancelled=ctx.cancelled,
+            before_device_mutation=self._revalidate_device_write_readiness,
+            max_file_size_bytes=self._effective_max_file_size_bytes(),
+            device_artwork_formats=(
+                resolve_cover_art_format_definitions_for_device(self.device_info)
+            ),
+        )
+        ctx.result.rockbox_metadata_updated += pass_result.updated
+        for failure in pass_result.failures:
+            label = failure.location or "unknown track"
+            ctx.result.errors.append(
+                (
+                    "rockbox_metadata",
+                    f"{label}: {failure.message}",
+                )
+            )
+        if pass_result.failures:
+            logger.warning(
+                "Rockbox metadata pass updated %d track(s) with %d failure(s)",
+                pass_result.updated,
+                len(pass_result.failures),
+            )
+        else:
+            logger.info(
+                "Rockbox metadata pass updated %d track(s)",
+                pass_result.updated,
+            )
+
     def _execute_write_and_finalize(self, ctx: _SyncContext) -> None:
         """Stage 7: assemble final track list, write database, backpatch and finalize."""
         # Define sub-steps so the progress bar advances smoothly through
@@ -1560,6 +1625,8 @@ class SyncExecutor:
             self._clear_playcount_deltas(ctx)
 
         commit_payload = self._prepare_database_commit_payload(ctx, advance=_advance)
+        if ctx.rockbox_metadata_support:
+            self._execute_rockbox_metadata_pass(ctx, commit_payload)
 
         try:
             # The inner writer calls our callback to advance the bar

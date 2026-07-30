@@ -1913,7 +1913,11 @@ class SyncReviewWidget(QWidget):
             )
         ) + self._playlist_change_count(plan) + self._photo_change_count(
             getattr(plan, "photo_plan", None)
-        ) + int(getattr(plan, "integrity_change_count", 0) or 0)
+        ) + int(getattr(plan, "integrity_change_count", 0) or 0) + (
+            int(getattr(plan, "total_ipod_tracks", 0) or 0)
+            if getattr(plan, "rockbox_metadata_pass", False)
+            else 0
+        )
 
     def _overview_summary_text(self, plan: Any) -> str:
         parts: list[str] = []
@@ -1929,6 +1933,8 @@ class SyncReviewWidget(QWidget):
         add_part(len(plan.to_update_artwork), "Artwork")
         add_part(len(plan.to_sync_playcount), "Play counts")
         add_part(len(plan.to_sync_rating), "Ratings")
+        if getattr(plan, "rockbox_metadata_pass", False):
+            add_part(plan.total_ipod_tracks, "Rockbox tags")
         add_part(self._playlist_change_count(plan), "Playlists")
         add_part(self._photo_change_count(getattr(plan, "photo_plan", None)), "Photos")
 
@@ -2141,6 +2147,27 @@ class SyncReviewWidget(QWidget):
                     "file has not been changed.\nRepair: back it up and rebuild it "
                     "during guarded sync execution.",
                 )
+            _insert_card(card)
+
+        # ── Rockbox file metadata ──────────────────────────────────
+        if getattr(plan, "rockbox_metadata_pass", False):
+            track_count = int(getattr(plan, "total_ipod_tracks", 0) or 0)
+            card = SyncCategoryCard(
+                "music",
+                "Rockbox Metadata",
+                track_count,
+                _CAT_COLORS["metadata"],
+                checkable=False,
+                start_expanded=False,
+                subtitle="Runs across the complete iPod library",
+                parent=self._cards_container,
+            )
+            card.add_info_row(
+                "Write file tags and cover artwork",
+                "Each supported audio or video file will receive the final "
+                "iTunesDB title, artist, album, and related metadata plus a "
+                "Rockbox-compatible embedded JPEG cover.",
+            )
             _insert_card(card)
 
         # ── Add to iPod ─────────────────────────────────────────────
@@ -3535,8 +3562,18 @@ class SyncReviewWidget(QWidget):
                 or getattr(self._plan, "_refreshed_podcast_feeds", None)
             )
         )
+        has_rockbox_metadata = bool(
+            self._plan is not None
+            and getattr(self._plan, "rockbox_metadata_pass", False)
+        )
 
-        if not selected_items and not playlists_selected and not has_integrity_fixes and not (selected_photo_plan and selected_photo_plan.has_changes):
+        if (
+            not selected_items
+            and not playlists_selected
+            and not has_integrity_fixes
+            and not has_rockbox_metadata
+            and not (selected_photo_plan and selected_photo_plan.has_changes)
+        ):
             QMessageBox.information(self, "No Selection", "Please select items to sync.")
             return
 
@@ -3570,6 +3607,11 @@ class SyncReviewWidget(QWidget):
             msg_parts.append(f"Sync {playcount_count} play counts")
         if rating_count:
             msg_parts.append(f"Sync {rating_count} ratings")
+        if has_rockbox_metadata and self._plan:
+            msg_parts.append(
+                "Write metadata and cover artwork into all "
+                f"{self._plan.total_ipod_tracks} iPod tracks for Rockbox"
+            )
         if photo_add_count:
             msg_parts.append(f"Add {photo_add_count} photos")
         if photo_remove_count:

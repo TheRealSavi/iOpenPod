@@ -140,6 +140,9 @@ def build_filtered_sync_plan(
         playlists_to_edit=playlists_to_edit,
         playlists_to_remove=playlists_to_remove,
         photo_plan=selected_photo_plan if original_plan else None,
+        rockbox_metadata_pass=(
+            original_plan.rockbox_metadata_pass if original_plan else False
+        ),
     )
 
 

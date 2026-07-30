@@ -93,6 +93,7 @@ class EngineOptions:
     lastfm_api_secret: str = ""
     lastfm_session_key: str = ""
     lastfm_username: str = ""
+    rockbox_metadata_support: bool = False
     sync_until_full: bool = False
     transaction_policy: EngineTransactionPolicy = EngineTransactionPolicy.USER_CHOICE
 

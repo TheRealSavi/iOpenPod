@@ -322,6 +322,7 @@ class SyncPlan:
     storage: StorageSummary = field(default_factory=StorageSummary)
     photo_plan: PhotoSyncPlan | None = None
     removals_pre_checked: bool = False
+    rockbox_metadata_pass: bool = False
 
     @property
     def has_changes(self) -> bool:
@@ -340,6 +341,7 @@ class SyncPlan:
             self.playlists_to_edit,
             self.playlists_to_remove,
             self.photo_plan and self.photo_plan.has_changes,
+            self.rockbox_metadata_pass,
         ])
 
     @property
@@ -393,6 +395,11 @@ class SyncPlan:
             lines.append(f"  🎵 {len(self.to_sync_playcount)} tracks with new play counts")
         if self.to_sync_rating:
             lines.append(f"  ⭐ {len(self.to_sync_rating)} tracks with rating changes")
+        if self.rockbox_metadata_pass:
+            lines.append(
+                f"  🎸 Materialize Rockbox metadata for "
+                f"{self.total_ipod_tracks} tracks"
+            )
         if self.fingerprint_errors:
             lines.append(f"  ⚠️  {len(self.fingerprint_errors)} files could not be fingerprinted")
         if self.playlists_to_add:
@@ -546,6 +553,7 @@ class SyncOutcome:
     photo_albums_added: int = 0
     photo_albums_removed: int = 0
     sound_check_computed: int = 0
+    rockbox_metadata_updated: int = 0
     scrobbles_submitted: int = 0
     errors: list[tuple[str, str]] = field(default_factory=list)
     partial_save: bool = False
@@ -585,6 +593,11 @@ class SyncOutcome:
             lines.append(
                 f"  Computed Sound Check for {self.sound_check_computed} tracks"
             )
+        if self.rockbox_metadata_updated:
+            lines.append(
+                f"  Wrote Rockbox metadata to "
+                f"{self.rockbox_metadata_updated} tracks"
+            )
         if self.scrobbles_submitted:
             lines.append(f"  Scrobbled {self.scrobbles_submitted} plays")
         if self.errors:
@@ -619,6 +632,7 @@ class SyncRequest:
     listenbrainz_username: str = ""
     is_scrobble_cancelled: Callable[[], bool] | None = None
     on_cancel_with_partial: Callable[[int, int], bool] | None = None
+    rockbox_metadata_support: bool = False
     sync_until_full: bool = False
     lastfm_api_key: str = ""
     lastfm_api_secret: str = ""

@@ -190,11 +190,15 @@ class SyncSessionController(QObject):
         if self.is_running():
             self.blocked.emit(SyncSessionBlocked("busy"))
             return
-        if intent.plan is None or not getattr(intent.plan, "has_changes", True):
+        if intent.plan is None:
             self.blocked.emit(SyncSessionBlocked("no_changes"))
             return
 
         settings = self._settings_service.get_effective_settings()
+        self._apply_settings_to_plan(intent.plan, settings)
+        if not getattr(intent.plan, "has_changes", True):
+            self.blocked.emit(SyncSessionBlocked("no_changes"))
+            return
         tools = self._tool_availability_check(settings)
         if tools.has_missing:
             self.missing_tools.emit(
@@ -363,6 +367,10 @@ class SyncSessionController(QObject):
         podcast_input = self._current_podcast_input()
         supports_podcast = self._supports_podcast()
         if podcast_input is None or not podcast_input.feeds or not supports_podcast:
+            self._apply_settings_to_plan(
+                plan,
+                self._settings_service.get_effective_settings(),
+            )
             self.plan_ready.emit(plan)
             return
 
@@ -418,6 +426,10 @@ class SyncSessionController(QObject):
         if getattr(podcast_plan, "to_remove", None):
             plan.to_remove.extend(podcast_plan.to_remove)
             plan.storage.bytes_to_remove += podcast_plan.storage.bytes_to_remove
+        self._apply_settings_to_plan(
+            plan,
+            self._settings_service.get_effective_settings(),
+        )
         self.plan_ready.emit(plan)
 
     def _on_podcast_plan_error(self, plan: Any, error_msg: str, worker: Any) -> None:
@@ -425,6 +437,10 @@ class SyncSessionController(QObject):
             return
         self._podcast_plan_worker = None
         logger.warning("Failed to build podcast plan: %s", error_msg)
+        self._apply_settings_to_plan(
+            plan,
+            self._settings_service.get_effective_settings(),
+        )
         self.plan_ready.emit(plan)
 
     def _on_execution_complete(self, result: Any, worker: Any) -> None:
@@ -447,6 +463,14 @@ class SyncSessionController(QObject):
     def _supports_podcast(self) -> bool:
         caps = self._device_sessions.current_session().capabilities
         return bool(caps and caps.supports_podcast)
+
+    @staticmethod
+    def _apply_settings_to_plan(plan: Any, settings: Any) -> None:
+        """Capture execution-only settings in the reviewable plan."""
+
+        plan.rockbox_metadata_pass = bool(
+            getattr(settings, "rockbox_metadata_support", False)
+        )
 
     @staticmethod
     def _worker_is_running(worker: Any | None) -> bool:

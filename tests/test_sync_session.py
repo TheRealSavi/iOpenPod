@@ -249,6 +249,25 @@ def test_start_execution_emits_missing_tools_instead_of_creating_worker(qapp) ->
     assert controller.is_running() is False
 
 
+def test_start_execution_allows_rockbox_only_sync(qapp, monkeypatch) -> None:
+    workers: list[_FakeWorker] = []
+    monkeypatch.setattr(
+        "iopenpod.application.sync_session.SyncExecuteWorker",
+        lambda ipod_path, plan, **kwargs: (
+            workers.append(_FakeWorker(ipod_path=ipod_path, plan=plan, **kwargs))
+            or workers[-1]
+        ),
+    )
+    controller = _controller()
+    controller._settings_service.settings.rockbox_metadata_support = True
+    plan = SyncPlan(total_ipod_tracks=8)
+
+    controller.start_execution(SyncExecutionIntent(plan=plan, skip_backup=True))
+
+    assert plan.rockbox_metadata_pass is True
+    assert workers[0].started is True
+
+
 def test_start_planning_builds_full_sync_request_and_emits_plan_ready(
     qapp,
     monkeypatch,
