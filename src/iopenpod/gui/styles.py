@@ -914,7 +914,9 @@ class Metrics:
     # command buttons, and use the 13 pt macOS body baseline.
     FONT_SIDEBAR = 13
     FONT_SIDEBAR_SECTION = 11
-    FONT_GRID_TITLE = 13
+    # Grid cards need a clear two-level reading order: the album, artist, or
+    # photo name is the primary scan target, while its metadata stays quiet.
+    FONT_GRID_TITLE = 14
     FONT_GRID_SUBTITLE = 12
     FONT_BROWSER_TITLE = 15
     FONT_BROWSER_SEARCH = 13
@@ -931,7 +933,7 @@ class Metrics:
         "FONT_XL": 12, "FONT_XXL": 14, "FONT_TITLE": 16,
         "FONT_PAGE_TITLE": 18, "FONT_HERO": 22,
         "FONT_SIDEBAR": 13, "FONT_SIDEBAR_SECTION": 11,
-        "FONT_GRID_TITLE": 13, "FONT_GRID_SUBTITLE": 12,
+        "FONT_GRID_TITLE": 14, "FONT_GRID_SUBTITLE": 12,
         "FONT_BROWSER_TITLE": 15, "FONT_BROWSER_SEARCH": 13,
         "FONT_ICON_SM": 16, "FONT_ICON_MD": 24,
         "FONT_ICON_LG": 42, "FONT_ICON_XL": 52,

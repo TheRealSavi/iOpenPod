@@ -55,7 +55,7 @@ def test_grid_caption_geometry_tracks_accessibility_font_scale() -> None:
         Metrics.apply_font_scale("125%")
         Metrics.apply_grid_item_scale("large")
 
-        assert Metrics.FONT_GRID_TITLE == 16
+        assert Metrics.FONT_GRID_TITLE == 18
         assert Metrics.FONT_GRID_SUBTITLE == 15
         assert Metrics.GRID_TEXT_HEIGHT == 28
         assert Metrics.GRID_SUBTITLE_HEIGHT == 25

@@ -2606,10 +2606,16 @@ class TrackEditorDialog(QDialog):
                 background: {Colors.ACCENT_MUTED};
                 border: 1px solid {Colors.ACCENT_BORDER};
             }}
+            QWidget#editorContent,
+            QWidget#editorPage,
+            QWidget#editorBody {{
+                background: {Colors.DIALOG_BG};
+            }}
             """
             + sidebar_item_view_css("QListWidget#sectionNav", background="transparent")
             + panel_css("editorHeader", radius=Metrics.BORDER_RADIUS_SM)
             + panel_css("sectionPanel", radius=Metrics.BORDER_RADIUS_SM)
+            + panel_css("editorPageHeader", radius=Metrics.BORDER_RADIUS_SM)
         )
 
         self._build_ui()
@@ -2679,15 +2685,21 @@ class TrackEditorDialog(QDialog):
         self._nav = QListWidget()
         self._nav.setObjectName("sectionNav")
         self._nav.setFixedWidth(178)
+        self._nav.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._nav.setTextElideMode(Qt.TextElideMode.ElideRight)
         self._nav.setFont(QFont(FONT_FAMILY, Metrics.FONT_SIDEBAR))
         self._nav.setSpacing(0)
         self._nav.setItemDelegate(_NoFocusItemDelegate(self._nav))
         self._nav.currentRowChanged.connect(self._on_nav_changed)
         content.addWidget(self._nav)
 
+        content_widget = QWidget()
+        content_widget.setObjectName("editorContent")
+        content_widget.setLayout(content)
+
         self._stack = QStackedWidget()
         content.addWidget(self._stack, 1)
-        outer.addLayout(content, 1)
+        outer.addWidget(content_widget, 1)
 
         grouped: dict[str, list[TrackFieldSpec]] = {}
         for spec in build_track_field_specs(self._tracks):
@@ -2729,16 +2741,18 @@ class TrackEditorDialog(QDialog):
 
     def _add_group_page(self, group: str, specs: list[TrackFieldSpec]) -> None:
         page = QWidget()
+        page.setObjectName("editorPage")
         page_layout = QVBoxLayout(page)
         page_layout.setContentsMargins(0, 0, 0, 0)
 
         body = QWidget()
+        body.setObjectName("editorBody")
         body_layout = QVBoxLayout(body)
         body_layout.setContentsMargins(0, 0, 0, 0)
         body_layout.setSpacing(12)
 
         page_header = QFrame()
-        page_header.setObjectName("sectionPanel")
+        page_header.setObjectName("editorPageHeader")
         page_header_layout = QVBoxLayout(page_header)
         page_header_layout.setContentsMargins(14, 12, 14, 12)
         page_header_layout.setSpacing(3)

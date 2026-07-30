@@ -147,7 +147,7 @@ class GridItem(QFrame):
         text_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         self.title_label = ScrollingLabel("", self.caption_frame)
         self.title_label.setFont(
-            QFont(FONT_FAMILY, Metrics.FONT_GRID_TITLE, QFont.Weight.Medium)
+            QFont(FONT_FAMILY, Metrics.FONT_GRID_TITLE, QFont.Weight.DemiBold)
         )
         self.title_label.setAlignment(
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
@@ -156,7 +156,9 @@ class GridItem(QFrame):
         text_layout.addWidget(self.title_label)
 
         self.subtitle_label = ScrollingLabel("", self.caption_frame)
-        self.subtitle_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_GRID_SUBTITLE))
+        self.subtitle_label.setFont(
+            QFont(FONT_FAMILY, Metrics.FONT_GRID_SUBTITLE, QFont.Weight.Medium)
+        )
         self.subtitle_label.setAlignment(
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
         )
