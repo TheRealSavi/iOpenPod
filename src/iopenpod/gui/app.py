@@ -120,6 +120,33 @@ logger = logging.getLogger(__name__)
 _DATABASE_STORAGE_PAGE_INDEX = 5
 
 
+def _sync_plan_removes_track(plan: object, track: object) -> bool:
+    """Return whether a sync plan removes the track currently being played."""
+
+    if not isinstance(track, dict):
+        return False
+    current_id = track.get("db_track_id", track.get("db_id"))
+    if current_id is None:
+        return False
+    try:
+        current_id = int(current_id)
+    except (TypeError, ValueError):
+        return False
+
+    for item in getattr(plan, "to_remove", ()) or ():
+        item_id = getattr(item, "db_track_id", None)
+        if item_id is None:
+            item_track = getattr(item, "ipod_track", None)
+            if isinstance(item_track, dict):
+                item_id = item_track.get("db_track_id", item_track.get("db_id"))
+        try:
+            if item_id is not None and int(item_id) == current_id:
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
+
+
 def _database_file_size_bytes(
     path: str | None,
     *,
@@ -2760,6 +2787,16 @@ class MainWindow(QMainWindow):
         )
         if sync_until_full is None:
             return
+
+        playback_index = getattr(self, "_playback_index", -1)
+        playback_tracks = getattr(self, "_playback_tracks", ())
+        if 0 <= playback_index < len(playback_tracks):
+            current_track = playback_tracks[playback_index]
+            if _sync_plan_removes_track(filtered_plan, current_track):
+                # The sync worker will delete the audio file. Stop and release
+                # it immediately before the worker starts so the filesystem/
+                # database write cannot race with an active media handle.
+                self._stopPlayback()
 
         # Respect the user's pre-sync backup choice from the prompt
         skip_backup = getattr(self.syncReview, '_skip_presync_backup', False)

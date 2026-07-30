@@ -21,10 +21,71 @@ from iopenpod.gui.app import (
     _device_write_access_failure_message,
     _library_load_failure_message,
     _sync_execute_failure_message,
+    _sync_plan_removes_track,
 )
 from iopenpod.gui.internal_drag import IOP_EXPORT_DRAG_MIME
 from iopenpod.infrastructure.settings_schema import AppSettings
-from iopenpod.sync.contracts import SyncPlan
+from iopenpod.sync.contracts import SyncAction, SyncItem, SyncPlan
+
+
+def test_sync_plan_removes_track_matches_current_db_id() -> None:
+    item = SyncItem(
+        action=SyncAction.REMOVE_FROM_IPOD,
+        db_track_id=42,
+        ipod_track={"db_track_id": 42},
+    )
+    plan = SimpleNamespace(to_remove=[item])
+
+    assert _sync_plan_removes_track(plan, {"db_track_id": 42})
+    assert not _sync_plan_removes_track(plan, {"db_track_id": 43})
+
+
+def test_execute_sync_plan_stops_playback_before_removing_current_track(
+    monkeypatch,
+) -> None:
+    plan = SyncPlan()
+    plan.to_remove.append(
+        SyncItem(
+            action=SyncAction.REMOVE_FROM_IPOD,
+            db_track_id=42,
+            ipod_track={"db_track_id": 42},
+        )
+    )
+    events: list[str] = []
+
+    class _FakeSyncReview:
+        _skip_presync_backup = False
+
+        def get_selected_playlist_changes(self) -> dict:
+            return {}
+
+        def get_selected_photo_plan(self) -> None:
+            return None
+
+    monkeypatch.setattr(
+        "iopenpod.gui.app.build_filtered_sync_plan",
+        lambda original_plan, _selected_items, **_kwargs: original_plan,
+    )
+    window = SimpleNamespace(
+        device_manager=SimpleNamespace(device_path="/media/IPOD"),
+        _plan=plan,
+        syncReview=_FakeSyncReview(),
+        _playback_index=0,
+        _playback_tracks=[{"db_track_id": 42}],
+        _stopPlayback=lambda: events.append("stop"),
+        _confirm_sync_until_full_if_needed=lambda _plan, _path: False,
+        settings_service=_FakeSettingsService(),
+        device_session_service=SimpleNamespace(
+            current_session=lambda: SimpleNamespace(identity={}, capabilities={})
+        ),
+        _sync_session=SimpleNamespace(
+            start_execution=lambda _intent: events.append("execute")
+        ),
+    )
+
+    MainWindow.executeSyncPlan(cast(Any, window), selected_items=[])
+
+    assert events == ["stop", "execute"]
 
 
 class _FakeStack:
