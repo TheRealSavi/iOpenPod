@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMessageBox,
     QProgressBar,
     QPushButton,
@@ -48,6 +49,7 @@ from iopenpod.application.jobs import (
     ensure_backup_folder,
     list_backup_devices_for_view,
     load_backup_snapshot_catalog,
+    update_backup_snapshot_note,
 )
 from iopenpod.application.progress import ETATracker
 
@@ -231,6 +233,7 @@ class SnapshotCard(QFrame):
     restore_requested = pyqtSignal(str)  # snapshot_id
     delete_requested = pyqtSignal(str)  # snapshot_id
     export_requested = pyqtSignal(str)  # snapshot_id
+    note_changed = pyqtSignal(str, str)  # snapshot_id, note
 
     def __init__(
         self,
@@ -360,6 +363,23 @@ class SnapshotCard(QFrame):
         delta_label.setStyleSheet(f"color: {delta_color}; background: transparent; border: none;")
         info_layout.addWidget(delta_label)
 
+        self._note_edit = QLineEdit()
+        self._note_edit.setText(str(getattr(snapshot_info, "note", "") or ""))
+        self._note_edit.setPlaceholderText("Add a note about this backup…")
+        self._note_edit.setMaxLength(4_000)
+        self._note_edit.setClearButtonEnabled(True)
+        self._note_edit.setToolTip(
+            "Optional note saved with this backup snapshot"
+        )
+        self._note_edit.setAccessibleName("Backup note")
+        self._note_edit.setAccessibleDescription(
+            "Optional note saved with this backup snapshot"
+        )
+        self._note_edit.setEnabled(snapshot_is_valid)
+        self._note_edit.editingFinished.connect(self._emit_note_changed)
+        self._note_saving = False
+        info_layout.addWidget(self._note_edit)
+
         self._invalid_detail_label: QLabel | None = None
         if not snapshot_is_valid:
             detail_label = QLabel(f"Why unavailable: {validation_error}")
@@ -455,6 +475,27 @@ class SnapshotCard(QFrame):
         self._restore_btn.setEnabled(enabled and self._restore_allowed)
         self._delete_btn.setEnabled(enabled and self._delete_allowed)
         self._export_btn.setEnabled(enabled and self._export_allowed)
+        self._note_edit.setEnabled(enabled and not self._note_saving)
+
+    def set_note_saving(self, saving: bool) -> None:
+        """Lock the note editor while its manifest update is in flight."""
+        self._note_saving = saving
+        self._note_edit.setEnabled(not saving)
+        self._note_edit.setAccessibleDescription(
+            "Saving backup note…" if saving else
+            "Optional note saved with this backup snapshot"
+        )
+
+    def set_note_text(self, note: str) -> None:
+        """Restore the last persisted note after a failed save."""
+        self._note_edit.setText(note)
+
+    def set_note_saved(self) -> None:
+        """Give the user quiet confirmation that the note reached disk."""
+        self._note_edit.setToolTip("Backup note saved")
+
+    def _emit_note_changed(self) -> None:
+        self.note_changed.emit(self.snapshot_id, self._note_edit.text())
 
 
 # ── Main backup browser widget ─────────────────────────────────────────────
@@ -480,6 +521,11 @@ class BackupBrowserWidget(QWidget):
         self._restore_worker = None
         self._export_worker = None
         self._delete_worker: Worker | None = None
+        self._note_workers: dict[str, Worker] = {}
+        self._note_previous_values: dict[str, str] = {}
+        self._note_pending_values: dict[str, str] = {}
+        self._note_results: dict[str, bool | None] = {}
+        self._note_errors: dict[str, str] = {}
         self._delete_generation = 0
         self._delete_result: bool | None = None
         self._delete_error = ""
@@ -776,6 +822,8 @@ class BackupBrowserWidget(QWidget):
             return "restore"
         if self._export_worker is not None:
             return "export"
+        if self._note_workers:
+            return "note"
         if self._backup_worker is not None:
             return "backup"
         if getattr(self, "_delete_worker", None) is not None:
@@ -817,6 +865,12 @@ class BackupBrowserWidget(QWidget):
                 "Export Still Finishing",
                 "iOpenPod is materializing the selected backup as ordinary files. "
                 "Please wait for the result, then close iOpenPod again.",
+            )
+        if operation == "note":
+            return (
+                "Backup Note Still Saving",
+                "iOpenPod is saving a backup note. Please wait for the save "
+                "result, then close iOpenPod again.",
             )
         return (
             "Backup Cancellation Requested",
@@ -1153,6 +1207,7 @@ class BackupBrowserWidget(QWidget):
             card.restore_requested.connect(self._on_restore)
             card.delete_requested.connect(self._on_delete)
             card.export_requested.connect(self._on_export)
+            card.note_changed.connect(self._on_note_changed)
             self._snapshot_cards.append(card)
             self._scroll_layout.insertWidget(self._scroll_layout.count() - 1, card)
 
@@ -1780,6 +1835,105 @@ class BackupBrowserWidget(QWidget):
         self._set_archive_actions_enabled(True)
         self.refresh()
 
+    # ── Snapshot notes ─────────────────────────────────────────────────
+
+    def _snapshot_card_for_id(self, snapshot_id: str) -> SnapshotCard | None:
+        return next(
+            (
+                card
+                for card in self._snapshot_cards
+                if card.snapshot_id == snapshot_id
+            ),
+            None,
+        )
+
+    def _on_note_changed(self, snapshot_id: str, note: str) -> None:
+        """Save a row note asynchronously and keep the archive actions usable."""
+        if snapshot_id in self._note_workers:
+            return
+        snapshot = self._snapshots_by_id.get(snapshot_id)
+        card = self._snapshot_card_for_id(snapshot_id)
+        if snapshot is None or card is None or not snapshot.is_valid:
+            return
+        settings = self._settings_service.get_effective_settings()
+        previous = snapshot.note
+        self._note_previous_values[snapshot_id] = previous
+        self._note_pending_values[snapshot_id] = note
+        self._note_results[snapshot_id] = None
+        self._note_errors[snapshot_id] = ""
+        card.set_note_saving(True)
+        from iopenpod.application.runtime import ThreadPoolSingleton, Worker
+
+        worker = Worker(
+            update_backup_snapshot_note,
+            device_id=self._current_device_id,
+            backup_dir=settings.backup_dir,
+            snapshot_id=snapshot_id,
+            note=note,
+        )
+        self._note_workers[snapshot_id] = worker
+        worker.signals.result.connect(
+            lambda result, sid=snapshot_id, w=worker: self._on_note_worker_result(
+                sid, w, result
+            )
+        )
+        worker.signals.error.connect(
+            lambda error, sid=snapshot_id, w=worker: self._on_note_worker_error(
+                sid, w, error
+            )
+        )
+        worker.signals.finished.connect(
+            lambda sid=snapshot_id, w=worker: self._on_note_worker_finished(sid, w)
+        )
+        ThreadPoolSingleton.get_instance().start(worker)
+
+    def _on_note_worker_result(
+        self,
+        snapshot_id: str,
+        worker: Worker,
+        result: object,
+    ) -> None:
+        if self._note_workers.get(snapshot_id) is worker:
+            self._note_results[snapshot_id] = bool(result)
+
+    def _on_note_worker_error(
+        self,
+        snapshot_id: str,
+        worker: Worker,
+        error: object,
+    ) -> None:
+        if self._note_workers.get(snapshot_id) is worker:
+            self._note_errors[snapshot_id] = self._background_error_text(error)
+
+    def _on_note_worker_finished(self, snapshot_id: str, worker: Worker) -> None:
+        if self._note_workers.get(snapshot_id) is not worker:
+            return
+        snapshot = self._snapshots_by_id.get(snapshot_id)
+        card = self._snapshot_card_for_id(snapshot_id)
+        result = self._note_results.get(snapshot_id)
+        error = self._note_errors.get(snapshot_id, "")
+        if result is True and snapshot is not None:
+            snapshot.note = self._note_pending_values.get(snapshot_id, "").strip()
+            if card is not None:
+                card.set_note_saving(False)
+                card.set_note_saved()
+        else:
+            previous = self._note_previous_values.get(snapshot_id, "")
+            if card is not None:
+                card.set_note_text(previous)
+                card.set_note_saving(False)
+            if error:
+                QMessageBox.warning(
+                    self,
+                    "Backup Note Not Saved",
+                    f"iOpenPod could not save this note:\n\n{error}",
+                )
+        self._note_workers.pop(snapshot_id, None)
+        self._note_previous_values.pop(snapshot_id, None)
+        self._note_pending_values.pop(snapshot_id, None)
+        self._note_results.pop(snapshot_id, None)
+        self._note_errors.pop(snapshot_id, None)
+
     # ── Restore ─────────────────────────────────────────────────────────
 
     def _on_restore(self, snapshot_id: str):
@@ -2292,6 +2446,8 @@ class BackupBrowserWidget(QWidget):
         if self._export_worker is not None:
             if self._export_worker.isRunning():
                 self._export_worker.requestInterruption()
+            return False
+        if self._note_workers:
             return False
         if self._backup_worker is not None:
             if self._backup_worker.isRunning():

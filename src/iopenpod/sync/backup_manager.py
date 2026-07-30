@@ -112,6 +112,7 @@ def _is_excluded(name: str) -> bool:
 _HASH_BUF_SIZE = 1024 * 1024  # 1 MB
 
 _SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
+_MAX_SNAPSHOT_NOTE_LENGTH = 4_000
 _SNAPSHOT_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 _CURRENT_MANIFEST_VERSION = 3
 _SUPPORTED_MANIFEST_VERSIONS = frozenset({2, 3})
@@ -1324,6 +1325,7 @@ class SnapshotInfo:
     file_count: int = 0
     total_size: int = 0  # bytes
     reason: str = "manual"
+    note: str = ""
     # Delta vs previous snapshot (computed on list)
     files_added: int = 0
     files_removed: int = 0
@@ -1706,6 +1708,7 @@ class BackupManager:
                 expected_volume_identity_key or ""
             ),
             "reason": str(reason or "manual"),
+            "note": "",
             "file_count": len(manifest_files),
             "total_size": total_size,
             "source_verification": "full_sha256",
@@ -1813,6 +1816,55 @@ class BackupManager:
             ))
 
         return info
+
+    @_repository_locked
+    def update_snapshot_note(self, snapshot_id: str, note: str) -> bool:
+        """Persist a user note without changing the snapshot's file content."""
+        if not isinstance(note, str):
+            raise DeviceWriteSafetyError("A backup note must be text.")
+        normalized_note = note.strip()
+        if len(normalized_note) > _MAX_SNAPSHOT_NOTE_LENGTH:
+            raise DeviceWriteSafetyError(
+                f"A backup note cannot exceed {_MAX_SNAPSHOT_NOTE_LENGTH:,} characters."
+            )
+        manifest_path = self._snapshot_manifest_path(snapshot_id)
+        manifest = self._load_manifest(snapshot_id)
+        if manifest is None:
+            raise DeviceWriteSafetyError(
+                f"The backup snapshot {snapshot_id!r} could not be found."
+            )
+        _validated_manifest_entries(
+            manifest,
+            expected_snapshot_id=snapshot_id,
+            expected_device_id=self.device_id,
+        )
+        if str(manifest.get("note", "") or "") == normalized_note:
+            return True
+        manifest["note"] = normalized_note
+        manifest["manifest_sha256"] = _manifest_digest(manifest)
+        tmp_path: Path | None = None
+        try:
+            tmp_path, manifest_file = open_unique_sibling_temp(
+                manifest_path,
+                mode="w",
+                encoding="utf-8",
+            )
+            with manifest_file as file:
+                json.dump(manifest, file, indent=2, ensure_ascii=False)
+                flush_written_file(file)
+            durable_replace(tmp_path, manifest_path)
+            tmp_path = None
+            with open(manifest_path, encoding="utf-8") as file:
+                published = json.load(file)
+            _validated_manifest_entries(
+                published,
+                expected_snapshot_id=snapshot_id,
+                expected_device_id=self.device_id,
+            )
+            return True
+        finally:
+            if tmp_path is not None:
+                durable_unlink(tmp_path, missing_ok=True)
 
     def restore_backup(
         self,
@@ -2761,6 +2813,7 @@ class BackupManager:
                 file_count=int(data["file_count"]),
                 total_size=int(data["total_size"]),
                 reason=str(data.get("reason", "manual") or "manual"),
+                note=str(data.get("note", "") or "")[:_MAX_SNAPSHOT_NOTE_LENGTH],
                 device_meta=(
                     data.get("device_meta", {})
                     if isinstance(data.get("device_meta", {}), dict)

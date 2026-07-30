@@ -171,6 +171,30 @@ def test_export_snapshot_removes_partial_output_when_cancelled(
     assert list(export_parent.glob("iOpenPod Export - *")) == []
 
 
+def test_snapshot_note_is_persisted_in_the_checked_manifest(
+    tmp_path: Path,
+) -> None:
+    manager = BackupManager(
+        "DEVICE",
+        backup_dir=str(tmp_path / "backups"),
+        identity_is_stable=True,
+    )
+    _write_snapshot(manager, "20260101_120000", {"track.mp3": b"track"})
+
+    assert manager.list_snapshots()[0].note == ""
+    assert manager.update_snapshot_note(
+        "20260101_120000",
+        "  Preserved before the move  ",
+    ) is True
+
+    snapshots = manager.list_snapshots()
+    assert snapshots[0].note == "Preserved before the move"
+    manifest = manager._load_manifest("20260101_120000")
+    assert manifest is not None
+    assert manifest["note"] == "Preserved before the move"
+    assert manifest["manifest_sha256"] == backup_manager._manifest_digest(manifest)
+
+
 def test_restore_rejects_a_different_scan_time_volume_before_mutation(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

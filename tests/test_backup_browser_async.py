@@ -99,6 +99,7 @@ def test_invalid_snapshot_card_disables_delete_with_accessible_reason(qapp) -> N
         files_added=0,
         files_removed=0,
         files_changed=0,
+        note="",
         is_valid=False,
         validation_error="Manifest checksum does not match",
     )
@@ -108,6 +109,32 @@ def test_invalid_snapshot_card_disables_delete_with_accessible_reason(qapp) -> N
     assert card._delete_btn.isEnabled() is False
     assert "catalog" in card._delete_btn.toolTip().lower()
     assert "checksum" in card._delete_btn.accessibleDescription().lower()
+
+
+def test_snapshot_card_provides_an_empty_editable_note(qapp) -> None:
+    del qapp
+    snapshot = SimpleNamespace(
+        id="20260101_120000",
+        display_date="January 1, 2026",
+        reason="manual",
+        file_count=1,
+        total_size=4,
+        files_added=0,
+        files_removed=0,
+        files_changed=0,
+        note="",
+        is_valid=True,
+        validation_error="",
+    )
+    card = SnapshotCard(cast(Any, snapshot))
+    emitted: list[tuple[str, str]] = []
+    card.note_changed.connect(lambda snapshot_id, note: emitted.append((snapshot_id, note)))
+
+    assert card._note_edit.text() == ""
+    card._note_edit.setText("Saved for later")
+    card._note_edit.editingFinished.emit()
+
+    assert emitted == [("20260101_120000", "Saved for later")]
 
 
 def test_delete_worker_stays_pinned_until_finished() -> None:

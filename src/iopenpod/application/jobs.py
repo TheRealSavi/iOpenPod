@@ -1055,6 +1055,20 @@ def export_backup_snapshot(
     )
 
 
+def update_backup_snapshot_note(
+    device_id: str,
+    backup_dir: str,
+    snapshot_id: str,
+    note: str,
+) -> bool:
+    """Persist the user-authored note for one backup snapshot."""
+
+    from iopenpod.sync.backup_manager import BackupManager
+
+    manager = BackupManager(device_id=device_id, backup_dir=backup_dir)
+    return manager.update_snapshot_note(snapshot_id, note)
+
+
 @dataclass(frozen=True)
 class BackupCreateRequest:
     """Typed request for creating a full device backup."""
