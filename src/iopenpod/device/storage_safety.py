@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import ctypes
+import logging
 import os
 import sys
 from pathlib import Path
 
 from .write_guard import DeviceWriteSafetyError
+
+logger = logging.getLogger(__name__)
 
 
 class FileSizeLimitError(DeviceWriteSafetyError):
@@ -80,6 +83,13 @@ def require_file_size_supported(
     limit = int(max_file_size_bytes or 0)
     if limit <= 0 or size <= limit:
         return
+    logger.debug(
+        "File-size safety guard rejected write: display_name=%s "
+        "file_size_bytes=%d max_file_size_bytes=%d",
+        display_name,
+        size,
+        limit,
+    )
     raise FileSizeLimitError(
         f"{display_name} is {_format_size(size)}, exceeding the "
         f"{_format_size(limit)} maximum supported by this iPod or its "
@@ -88,4 +98,8 @@ def require_file_size_supported(
 
 
 def _format_size(size: int) -> str:
-    return f"{size / 1024**3:.1f} GB"
+    if size >= 0.1 * 1024**3:
+        return f"{size / 1024**3:.1f} GB"
+    if size >= 1024**2:
+        return f"{size / 1024**2:.1f} MB"
+    return f"{size / 1024:.1f} KB"

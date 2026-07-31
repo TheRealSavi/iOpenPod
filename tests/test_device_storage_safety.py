@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from iopenpod.device.storage_safety import (
@@ -29,3 +31,24 @@ def test_file_size_limit_reports_the_file_and_detected_limit() -> None:
             max_file_size_bytes=4 * 1024**3 - 1,
             display_name="album.flac",
         )
+
+
+def test_file_size_limit_uses_small_units_and_logs_raw_byte_values(caplog) -> None:
+    file_size = 33 * 1024**2
+    max_file_size_bytes = 32 * 1024**2
+
+    caplog.set_level(logging.DEBUG, logger="iopenpod.device.storage_safety")
+
+    with pytest.raises(
+        FileSizeLimitError,
+        match=r"iTunesDB is 33\.0 MB, exceeding the 32\.0 MB maximum",
+    ):
+        require_file_size_supported(
+            file_size,
+            max_file_size_bytes=max_file_size_bytes,
+            display_name="iTunesDB",
+        )
+
+    assert (
+        "file_size_bytes=34603008 max_file_size_bytes=33554432" in caplog.text
+    )
