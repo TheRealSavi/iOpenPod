@@ -11,7 +11,7 @@ from uuid import uuid4
 import pytest
 from PIL import Image
 from PyQt6.QtCore import QEvent, QPoint, Qt
-from PyQt6.QtGui import QKeyEvent
+from PyQt6.QtGui import QColor, QKeyEvent, QPixmap
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QComboBox, QDialog, QHeaderView, QLabel, QLineEdit, QMenu, QPushButton, QSlider, QSplitter, QTableWidget, QTableWidgetItem, QTreeWidget
 
@@ -601,6 +601,39 @@ def test_tracklist_population_does_not_decode_shared_artwork_on_ui_thread(
     assert art_item is not None
     assert art_item.data(Qt.ItemDataRole.UserRole + 2) == 1
     assert art_item.icon().isNull()
+
+
+def test_tracklist_artwork_is_centered_in_its_column(qtbot) -> None:
+    """Artwork is optically centered rather than offset by cell text padding."""
+    view = _mount_list(qtbot, show_art_override=True)
+    thumbnail = QPixmap(32, 32)
+    thumbnail.fill(QColor("#ff00ff"))
+    view._art_cache[1] = thumbnail
+
+    _load_content(
+        qtbot,
+        view,
+        tracks=[_many_tracks_with_art(1)[0]],
+        media_type_filter=None,
+    )
+    qtbot.wait(20)
+
+    item = _table_item(view.table, 0, 0)
+    cell_rect = view.table.visualItemRect(item)
+    viewport = view.table.viewport()
+    assert viewport is not None
+    image = viewport.grab().toImage()
+    thumbnail_xs = [
+        x
+        for y in range(image.height())
+        for x in range(image.width())
+        if image.pixelColor(x, y).name() == "#ff00ff"
+    ]
+
+    assert thumbnail_xs
+    scale = image.devicePixelRatio()
+    cell_center = (cell_rect.left() + cell_rect.right()) * scale
+    assert abs(min(thumbnail_xs) + max(thumbnail_xs) - cell_center) <= 1
 
 
 def _drag_header_section(

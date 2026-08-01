@@ -28,6 +28,9 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QMenu,
     QSlider,
+    QStyle,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -681,6 +684,52 @@ class _SortableItem(QTableWidgetItem):
         return (self.text() or "") < (other.text() or "")
 
 
+class _ArtworkItemDelegate(QStyledItemDelegate):
+    """Paint artwork icons centered without changing ordinary cell rendering."""
+
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__(parent)
+        self._is_artwork_column = False
+
+    def set_artwork_column_visible(self, visible: bool) -> None:
+        self._is_artwork_column = visible
+
+    def paint(self, painter: QPainter, option, index) -> None:  # type: ignore[override]
+        if not self._is_artwork_column:
+            super().paint(painter, option, index)
+            return
+
+        item_option = QStyleOptionViewItem(option)
+        self.initStyleOption(item_option, index)
+        icon = item_option.icon
+        if icon.isNull():
+            super().paint(painter, option, index)
+            return
+        pixmap = icon.pixmap(item_option.decorationSize)
+        if pixmap.isNull():
+            super().paint(painter, option, index)
+            return
+
+        item_option.icon = QIcon()
+        item_option.features &= ~QStyleOptionViewItem.ViewItemFeature.HasDecoration
+        style = item_option.widget.style() if item_option.widget else QApplication.style()
+        if style is None:
+            super().paint(painter, option, index)
+            return
+        style.drawControl(
+            QStyle.ControlElement.CE_ItemViewItem,
+            item_option,
+            painter,
+            item_option.widget,
+        )
+        size = pixmap.deviceIndependentSize().toSize()
+        painter.drawPixmap(
+            item_option.rect.x() + (item_option.rect.width() - size.width()) // 2,
+            item_option.rect.y() + (item_option.rect.height() - size.height()) // 2,
+            pixmap,
+        )
+
+
 # =============================================================================
 # _DragProgressWidget — floating overlay showing per-track prep progress
 # =============================================================================
@@ -912,6 +961,8 @@ class MusicBrowserList(QFrame):
         self.table = QTableWidget()
         self._layout.addWidget(self.table)
         self._setup_table()
+        self._artwork_delegate = _ArtworkItemDelegate(self.table)
+        self.table.setItemDelegateForColumn(0, self._artwork_delegate)
 
         # Status bar (track count)
         self._status_label = QLabel()
@@ -1815,6 +1866,7 @@ class MusicBrowserList(QFrame):
                 )
             else:
                 self._show_art = self._show_art_override
+            self._artwork_delegate.set_artwork_column_visible(self._show_art)
 
             # Capture state for this load
             load_id = self._load_id
