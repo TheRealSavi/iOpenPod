@@ -487,6 +487,11 @@ SPL_ACTION_MAP = {
 
 SPL_DATE_RELATIVE_ACTION_IDS = {0x00000200, 0x02000200}
 
+# Required in both value slots for relative date rules (e.g. "is in the
+# last 7 days"). The actual relative amount and unit live in from_date and
+# from_units. iPod firmware uses this marker to recognize the rule format.
+SPL_DATE_IDENTIFIER = 0x2DAE2DAE2DAE2DAE
+
 # Field type enum (from libgpod ItdbSPLFieldType — values start at 1)
 SPLFT_STRING = 1
 SPLFT_INT = 2
@@ -556,6 +561,90 @@ SPL_FIELD_TYPE_MAP = {
     0x85: SPLFT_BINARY_AND,  # Location
     0x3C: SPLFT_INT,       # Media Kind
 }
+
+# ── Smart Playlist host-evaluation compatibility ──────────────────────────
+#
+# The writer preserves any parsed field, but a field is only authorable in the
+# editor when iOpenPod can also calculate its initial membership during a
+# sync. These maps are the one source of truth for the evaluator's expected
+# track-dict keys and the editor's supported-field policy.
+SPL_HOST_STRING_FIELD_KEYS: dict[int, str] = {
+    0x02: "Title",
+    0x03: "Album",
+    0x04: "Artist",
+    0x08: "Genre",
+    0x09: "filetype",
+    0x0E: "Comment",
+    0x12: "Composer",
+    0x27: "Grouping",
+    0x36: "Description Text",
+    0x37: "Category",
+    0x3E: "Show",
+    0x47: "Album Artist",
+    0x4E: "Sort Title",
+    0x4F: "Sort Album",
+    0x50: "Sort Artist",
+    0x51: "Sort Album Artist",
+    0x52: "Sort Composer",
+    0x53: "Sort Show",
+}
+
+SPL_HOST_INT_FIELD_KEYS: dict[int, str] = {
+    0x05: "bitrate",
+    0x06: "sample_rate_1",
+    0x07: "year",
+    0x0B: "track_number",
+    0x0C: "size",
+    0x0D: "length",
+    0x16: "play_count_1",
+    0x18: "disc_number",
+    0x19: "rating",
+    0x23: "bpm",
+    0x39: "podcast_flag",
+    0x3C: "media_type",
+    0x3F: "season_number",
+    0x44: "skip_count",
+}
+
+SPL_HOST_DATE_FIELD_KEYS: dict[int, str] = {
+    0x0A: "last_modified",
+    0x10: "date_added",
+    0x17: "last_played",
+    0x45: "last_skipped",
+}
+
+SPL_HOST_BOOLEAN_FIELD_KEYS: dict[int, str] = {
+    0x1D: "checked_flag",
+    0x1F: "compilation_flag",
+    0x25: "has_artwork",
+    0x29: "purchased_flag",
+}
+
+SPL_HOST_BINARY_AND_FIELD_KEYS: dict[int, str] = {
+    0x85: "location_kind",
+}
+
+SPL_HOST_EVALUABLE_FIELD_IDS = frozenset(
+    {
+        *SPL_HOST_STRING_FIELD_KEYS,
+        *SPL_HOST_INT_FIELD_KEYS,
+        *SPL_HOST_DATE_FIELD_KEYS,
+        *SPL_HOST_BOOLEAN_FIELD_KEYS,
+        *SPL_HOST_BINARY_AND_FIELD_KEYS,
+        0x28,  # Playlist membership is supplied separately by the builder.
+    }
+)
+
+# These fields are understood by the host evaluator but remain unavailable for
+# new rules until we have sufficient device-format evidence. All other known
+# fields that are not host-evaluable stay visible as disabled parsed values,
+# rather than creating playlists whose initial membership iOpenPod cannot
+# calculate correctly.
+SPL_AUTHORABLE_FIELD_IDS = SPL_HOST_EVALUABLE_FIELD_IDS - frozenset({
+    0x39,  # Podcast
+    0x3E,  # TV Show
+    0x3F,  # Season Number
+})
 
 # Smart playlist fields whose values are chosen from an iTunes menu instead of
 # typed freely. These still use the normal SLst numeric payload; the tables here

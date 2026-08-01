@@ -67,6 +67,7 @@ from iopenpod.itunesdb_shared.constants import (
     MEDIA_TYPE_VIDEO,
     MEDIA_TYPE_VIDEO_PODCAST,
 )
+from iopenpod.itunesdb_shared.device_time import DeviceTimeContext
 from iopenpod.itunesdb_writer.mhit_writer import TrackInfo
 from iopenpod.itunesdb_writer.mhyp_writer import PlaylistInfo
 
@@ -308,6 +309,7 @@ class _SyncContext:
     existing_dataset2_standard_playlists_raw: list[dict] = field(default_factory=list)
     existing_dataset3_podcast_playlists_raw: list[dict] = field(default_factory=list)
     existing_dataset5_smart_playlists_raw: list[dict] = field(default_factory=list)
+    device_time_context: DeviceTimeContext | None = None
 
     # ── Track state (mutated by stage methods) ──────────────────────
     tracks_by_db_track_id: dict[int, TrackInfo] = field(default_factory=dict)
@@ -1293,6 +1295,7 @@ class SyncExecutor:
         ctx.existing_dataset2_standard_playlists_raw = existing_db["dataset2_standard_playlists"]
         ctx.existing_dataset3_podcast_playlists_raw = existing_db["dataset3_podcast_playlists"]
         ctx.existing_dataset5_smart_playlists_raw = existing_db["dataset5_smart_playlists"]
+        ctx.device_time_context = existing_db.get("device_time_context")
 
         for t in ctx.existing_tracks_data:
             track_info = self._track_dict_to_info(t)
@@ -4331,6 +4334,7 @@ class SyncExecutor:
             ctx.existing_dataset5_smart_playlists_raw,
             all_track_infos,
             source_path_to_db_track_id,
+            time_context=ctx.device_time_context,
         )
 
     @staticmethod

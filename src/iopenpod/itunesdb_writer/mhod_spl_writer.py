@@ -19,6 +19,7 @@ from typing import Any
 from iopenpod.itunesdb_shared.mhod_defs import (
     MHOD_HEADER_SIZE,
     SLST_HEADER_SIZE,
+    SPL_DATE_IDENTIFIER,
     SPL_DATE_RELATIVE_ACTION_IDS,
     SPL_RULE_DATA_SIZE,
     SPL_RULE_HEADER_SIZE,
@@ -149,7 +150,7 @@ def _normalize_relative_date_fields(
             normalized_from_date = -(amount // units)
         else:
             normalized_from_date = -amount
-    return 0, normalized_from_date
+    return SPL_DATE_IDENTIFIER, normalized_from_date
 
 
 # ────────────────────────────────────────────────────────────
@@ -216,20 +217,26 @@ def _write_spl_rule(rule: SmartPlaylistRule) -> bytes:
         data_section = bytearray(SPL_RULE_DATA_SIZE)
         from_value = rule.from_value
         from_date = rule.from_date
+        to_value = rule.to_value
+        to_date = rule.to_date
+        to_units = rule.to_units
         if ft == SPLFT_DATE and rule.action_id in SPL_DATE_RELATIVE_ACTION_IDS:
             from_value, from_date = _normalize_relative_date_fields(
                 from_value,
                 from_date,
                 rule.from_units,
             )
+            to_value = SPL_DATE_IDENTIFIER
+            to_date = 0
+            to_units = 1
         # from_value, to_value, from_units, to_units use unsigned '>Q' format.
         # Mask defensively so legacy in-memory rules with signed values still pack.
         struct.pack_into('>Q', data_section, 0x00, _u64(from_value))
         struct.pack_into('>q', data_section, 0x08, _i64(from_date))
         struct.pack_into('>Q', data_section, 0x10, _u64(rule.from_units))
-        struct.pack_into('>Q', data_section, 0x18, _u64(rule.to_value))
-        struct.pack_into('>q', data_section, 0x20, _i64(rule.to_date))
-        struct.pack_into('>Q', data_section, 0x28, _u64(rule.to_units))
+        struct.pack_into('>Q', data_section, 0x18, _u64(to_value))
+        struct.pack_into('>q', data_section, 0x20, _i64(to_date))
+        struct.pack_into('>Q', data_section, 0x28, _u64(to_units))
         struct.pack_into('>I', data_section, 0x30, _u32(rule.unk052))
         struct.pack_into('>I', data_section, 0x34, _u32(rule.unk056))
         struct.pack_into('>I', data_section, 0x38, _u32(rule.unk060))

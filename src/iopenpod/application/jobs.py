@@ -2975,6 +2975,7 @@ class DatabaseStorageTrimWorker(QThread):
             existing.get("dataset3_podcast_playlists", []),
             existing.get("dataset5_smart_playlists", []),
             tracks,
+            time_context=existing.get("device_time_context"),
         )
         return DatabaseCommitPayload(
             all_tracks=tracks,

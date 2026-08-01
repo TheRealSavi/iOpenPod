@@ -20,12 +20,12 @@ File layout (iTunes 7+ / entry_length 0x1C):
     Per-entry  (28 bytes for entry_length == 0x1C)
     ┌─────────────┬────────────────────┐
     │ 0x00  4B    │ play_count         │
-    │ 0x04  4B    │ last_played (Mac)  │
+    │ 0x04  4B    │ last_played (local Mac time) │
     │ 0x08  4B    │ bookmark_time      │
     │ 0x0C  4B    │ rating (0-100)     │
     │ 0x10  4B    │ unk16 / podcast    │
     │ 0x14  4B    │ skip_count         │
-    │ 0x18  4B    │ last_skipped (Mac) │
+    │ 0x18  4B    │ last_skipped (local Mac time) │
     └─────────────┴────────────────────┘
 
 Entries are ordered 1:1 with tracks in the mhlt (matched by index, **not**
@@ -41,23 +41,25 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
-from iopenpod.itunesdb_shared.field_base import MAC_EPOCH_OFFSET
+from iopenpod.itunesdb_shared.device_time import (
+    DeviceTimeContext,
+    current_device_time_context,
+)
 
 from ._parsing import UINT32_LE
 
 logger = logging.getLogger(__name__)
-
 
 @dataclass(slots=True)
 class PlayCountEntry:
     """Delta values for a single track from the Play Counts file."""
 
     play_count: int = 0
-    last_played_mac: int = 0    # Mac epoch timestamp (0 = not played)
+    last_played_mac: int = 0    # Device-local Mac timestamp (0 = not played)
     bookmark_time: int = 0
     rating: int = -1            # -1 = no change; 0-100 = new rating
     skip_count: int = 0
-    last_skipped_mac: int = 0   # Mac epoch timestamp (0 = not skipped)
+    last_skipped_mac: int = 0   # Device-local Mac timestamp (0 = not skipped)
 
     # Convenience: is there any delta data in this entry?
     @property
@@ -70,17 +72,25 @@ class PlayCountEntry:
 
     @property
     def last_played_unix(self) -> int:
-        """Last-played as Unix timestamp (0 if never played)."""
-        if self.last_played_mac == 0:
-            return 0
-        return self.last_played_mac - MAC_EPOCH_OFFSET
+        """Last-played using the active device time context.
+
+        Sync callers should use :meth:`last_played_as_unix` with the explicit
+        context discovered from the target iPod.
+        """
+        return self.last_played_as_unix(current_device_time_context())
 
     @property
     def last_skipped_unix(self) -> int:
-        """Last-skipped as Unix timestamp (0 if never skipped)."""
-        if self.last_skipped_mac == 0:
-            return 0
-        return self.last_skipped_mac - MAC_EPOCH_OFFSET
+        """Last-skipped using the active device time context."""
+        return self.last_skipped_as_unix(current_device_time_context())
+
+    def last_played_as_unix(self, time_context: DeviceTimeContext) -> int:
+        """Last-played as UTC Unix seconds in ``time_context``."""
+        return time_context.mac_to_unix(self.last_played_mac)
+
+    def last_skipped_as_unix(self, time_context: DeviceTimeContext) -> int:
+        """Last-skipped as UTC Unix seconds in ``time_context``."""
+        return time_context.mac_to_unix(self.last_skipped_mac)
 
 
 def parse_playcounts(path: str | Path) -> list[PlayCountEntry] | None:
@@ -179,6 +189,8 @@ def parse_playcounts(path: str | Path) -> list[PlayCountEntry] | None:
 def merge_playcounts(
     tracks: list[dict],
     entries: list[PlayCountEntry],
+    *,
+    time_context: DeviceTimeContext | None = None,
 ) -> None:
     """
     Fold Play Counts deltas into parsed track dicts **in place**.
@@ -195,6 +207,7 @@ def merge_playcounts(
 
     This mirrors libgpod's ``get_mhit()`` merge logic.
     """
+    time_context = time_context or current_device_time_context()
     count = min(len(tracks), len(entries))
     if len(tracks) != len(entries):
         logger.warning(
@@ -237,17 +250,17 @@ def merge_playcounts(
             track["bookmark_time"] = entry.bookmark_time
 
         # --- Timestamps (use more-recent value) ---
-        # track["last_played"] is a Unix timestamp (converted from Mac
-        # epoch during iTunesDB parsing).  entry.last_played_mac is raw
-        # Mac epoch.  Use the .last_played_unix property to compare in
-        # the same unit and avoid double-conversion downstream.
+        # track["last_played"] is a Unix timestamp (converted from the Mac
+        # epoch during iTunesDB parsing). entry.last_played_mac is device-local
+        # Mac time. Use the .last_played_unix property to compare in the same
+        # unit and avoid double-conversion downstream.
         if entry.last_played_mac > 0:
-            unix_ts = entry.last_played_unix
+            unix_ts = entry.last_played_as_unix(time_context)
             if unix_ts > track.get("last_played", 0):
                 track["last_played"] = unix_ts
 
         if entry.last_skipped_mac > 0:
-            unix_ts = entry.last_skipped_unix
+            unix_ts = entry.last_skipped_as_unix(time_context)
             if unix_ts > track.get("last_skipped", 0):
                 track["last_skipped"] = unix_ts
 

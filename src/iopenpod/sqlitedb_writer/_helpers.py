@@ -14,20 +14,18 @@ import sqlite3
 CORE_DATA_EPOCH = 978307200  # Unix timestamp of 2001-01-01 00:00:00 UTC
 
 
-def unix_to_coredata(unix_ts: int, tz_offset: int = 0) -> int:
+def unix_to_coredata(unix_ts: int) -> int:
     """Convert Unix timestamp to Core Data timestamp.
 
     Args:
         unix_ts: Unix timestamp (seconds since 1970-01-01)
-        tz_offset: Timezone offset in seconds (positive = east of UTC)
-
     Returns:
-        Core Data timestamp (seconds since 2001-01-01) adjusted for timezone.
+        Core Data timestamp (seconds since 2001-01-01 UTC).
         Returns 0 if input is 0.
     """
     if unix_ts == 0:
         return 0
-    return unix_ts - CORE_DATA_EPOCH - tz_offset
+    return unix_ts - CORE_DATA_EPOCH
 
 
 def s64(val: int) -> int:

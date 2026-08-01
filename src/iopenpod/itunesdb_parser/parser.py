@@ -20,6 +20,11 @@ import os
 import zlib
 from typing import Any, BinaryIO
 
+from iopenpod.itunesdb_shared.device_time import (
+    DeviceTimeContext,
+    use_device_time_context,
+)
+
 from ._parsing import UINT32_LE
 from .exceptions import CorruptHeaderError
 
@@ -74,7 +79,11 @@ def decompress_itunescdb(data: bytes | bytearray) -> bytes | bytearray:
     return data[:header_length] + decompressed
 
 
-def parse_itunesdb(file: str | os.PathLike[str] | BinaryIO) -> dict[str, Any]:
+def parse_itunesdb(
+    file: str | os.PathLike[str] | BinaryIO,
+    *,
+    time_context: DeviceTimeContext | None = None,
+) -> dict[str, Any]:
     """Parse an iTunesDB (or iTunesCDB) file into a nested dict tree.
 
     Args:
@@ -113,6 +122,10 @@ def parse_itunesdb(file: str | os.PathLike[str] | BinaryIO) -> dict[str, Any]:
     data = decompress_itunescdb(data)
 
     reset_unknown_chunk_summary()
-    parsed, _chunk_type = parse_chunk(data, 0)
+    if time_context is None:
+        parsed, _chunk_type = parse_chunk(data, 0)
+    else:
+        with use_device_time_context(time_context):
+            parsed, _chunk_type = parse_chunk(data, 0)
     log_unknown_chunk_summary()
     return parsed["data"]

@@ -24,11 +24,18 @@ from __future__ import annotations
 import random
 import time
 
+from iopenpod.itunesdb_shared.device_time import (
+    DeviceTimeContext,
+    current_device_time_context,
+)
 from iopenpod.itunesdb_shared.field_base import MAC_EPOCH_OFFSET
 from iopenpod.itunesdb_shared.mhod_defs import (
-    SPL_FIELD_TYPE_MAP as _FIELD_TYPE_MAP,
-)
-from iopenpod.itunesdb_shared.mhod_defs import (
+    SPL_FIELD_TYPE_MAP,
+    SPL_HOST_BINARY_AND_FIELD_KEYS,
+    SPL_HOST_BOOLEAN_FIELD_KEYS,
+    SPL_HOST_DATE_FIELD_KEYS,
+    SPL_HOST_INT_FIELD_KEYS,
+    SPL_HOST_STRING_FIELD_KEYS,
     SPL_LIMIT_SORT_ALBUM,
     SPL_LIMIT_SORT_ARTIST,
     SPL_LIMIT_SORT_GENRE,
@@ -54,82 +61,13 @@ from iopenpod.itunesdb_writer.mhod_spl_writer import (
 # Field accessor: maps SPL field IDs → parsed track dict keys
 # ────────────────────────────────────────────────────────────
 
-# String fields — track dict key, used for string comparisons
-_STRING_FIELD_KEY: dict[int, str] = {
-    0x02: "Title",           # Song Name
-    0x03: "Album",           # Album
-    0x04: "Artist",          # Artist
-    0x08: "Genre",           # Genre
-    0x09: "filetype",        # Kind (e.g. "MP3", "Apple Lossless / AAC")
-    0x0E: "Comment",         # Comment
-    0x12: "Composer",        # Composer
-    0x27: "Grouping",        # Grouping
-    0x36: "Description Text",  # Description
-    0x37: "Category",        # Category
-    0x3E: "Show",            # TV Show
-    0x47: "Album Artist",    # Album Artist
-    0x4E: "Sort Title",      # Sort Song Name
-    0x4F: "Sort Album",      # Sort Album
-    0x50: "Sort Artist",     # Sort Artist
-    0x51: "Sort Album Artist",  # Sort Album Artist
-    0x52: "Sort Composer",   # Sort Composer
-    0x53: "Sort Show",       # Sort TV Show
-    0x59: "Video Rating",    # Video Rating / content rating text
-    0x9F: "Work",            # Work
-    0xA0: "Movement Name",   # Movement Name
-}
-
-# Integer fields — track dict key
-_INT_FIELD_KEY: dict[int, str] = {
-    0x05: "bitrate",         # Bitrate (kbps)
-    0x06: "sample_rate_1",   # Sample Rate (Hz)
-    0x07: "year",            # Year
-    0x0B: "track_number",    # Track Number
-    0x0C: "size",            # Size (bytes)
-    0x0D: "length",          # Time (milliseconds)
-    0x16: "play_count_1",    # Play Count
-    0x18: "disc_number",     # Disc Number
-    0x19: "rating",          # Rating (0-100, stars×20)
-    0x23: "bpm",             # BPM
-    0x3F: "season_number",   # Season Number
-    0x44: "skip_count",      # Skip Count
-    0x39: "podcast_flag",    # Podcast flag
-    0x3C: "media_type",      # Media Kind
-    0x86: "cloud_status",    # Cloud Status (sample-derived)
-    0x9A: "favorite_flag",   # Favorite / Suggest Less (sample-derived)
-    0x9C: "album_favorite_flag",  # Album Favorite / Suggest Less
-    0xA1: "movement_number", # Movement Number
-}
-
-# Date fields — track dict key (values are Unix timestamps)
-_DATE_FIELD_KEY: dict[int, str] = {
-    0x0A: "last_modified",   # Date Modified
-    0x10: "date_added",      # Date Added
-    0x17: "last_played",     # Last Played
-    0x45: "last_skipped",    # Last Skipped
-}
-
-# Boolean fields
-_BOOL_FIELD_KEY: dict[int, str] = {
-    0x1D: "checked_flag",  # Checked (0 means checked in MHIT)
-    0x25: "has_artwork",   # Album Artwork
-    0x1F: "compilation_flag",  # Compilation
-    0x29: "purchased_flag", # Purchased
-}
-
-# Binary AND field
-_BINARY_AND_FIELD_KEY: dict[int, str] = {
-    0x85: "location_kind",   # Location (sample-derived)
-}
-
-
 # ────────────────────────────────────────────────────────────
 # Rule evaluation
 # ────────────────────────────────────────────────────────────
 
 def _get_string_value(track: dict, field_id: int) -> str:
     """Get the string value for a track field, case-folded for comparison."""
-    key = _STRING_FIELD_KEY.get(field_id)
+    key = SPL_HOST_STRING_FIELD_KEYS.get(field_id)
     if key is None:
         return ""
     val = track.get(key, "")
@@ -138,10 +76,10 @@ def _get_string_value(track: dict, field_id: int) -> str:
 
 def _get_int_value(track: dict, field_id: int) -> int:
     """Get the integer value for a track field."""
-    key = _INT_FIELD_KEY.get(field_id)
+    key = SPL_HOST_INT_FIELD_KEYS.get(field_id)
     if key is None:
         # Check binary AND fields too
-        key = _BINARY_AND_FIELD_KEY.get(field_id)
+        key = SPL_HOST_BINARY_AND_FIELD_KEYS.get(field_id)
     if key is None:
         return 0
     val = track.get(key, 0)
@@ -150,7 +88,7 @@ def _get_int_value(track: dict, field_id: int) -> int:
 
 def _get_date_value(track: dict, field_id: int) -> int:
     """Get the date (Unix timestamp) value for a track field."""
-    key = _DATE_FIELD_KEY.get(field_id)
+    key = SPL_HOST_DATE_FIELD_KEYS.get(field_id)
     if key is None:
         return 0
     val = track.get(key, 0)
@@ -169,7 +107,7 @@ def _get_bool_value(track: dict, field_id: int) -> bool:
         )
     if field_id == 0x29:
         return bool(track.get("purchased_flag") or track.get("Purchased"))
-    key = _BOOL_FIELD_KEY.get(field_id)
+    key = SPL_HOST_BOOLEAN_FIELD_KEYS.get(field_id)
     if key is None:
         return False
     val = track.get(key, 0)
@@ -233,15 +171,19 @@ def _eval_int(track_val: int, rule: SmartPlaylistRule) -> bool:
             return False
 
 
-def _eval_date(track_val: int, rule: SmartPlaylistRule) -> bool:
+def _eval_date(
+    track_val: int,
+    rule: SmartPlaylistRule,
+    time_context: DeviceTimeContext,
+) -> bool:
     """Evaluate a date-type rule.
 
     Date values are Unix timestamps. "is in the last" rules use from_date
     and from_units to compute a relative threshold.
     """
     action = rule.action_id
-    fv = _rule_date_to_unix(rule.from_value)
-    tv = _rule_date_to_unix(rule.to_value)
+    fv = _rule_date_to_unix(rule.from_value, time_context)
+    tv = _rule_date_to_unix(rule.to_value, time_context)
 
     match action:
         case 0x00000001:  # is
@@ -277,10 +219,14 @@ def _eval_date(track_val: int, rule: SmartPlaylistRule) -> bool:
             return False
 
 
-def _rule_date_to_unix(value: int) -> int:
+def _rule_date_to_unix(
+    value: int,
+    time_context: DeviceTimeContext | None = None,
+) -> int:
+    """Decode an absolute SPL date through the target iPod's clock."""
     value = int(value or 0)
-    if value > MAC_EPOCH_OFFSET:
-        return value - MAC_EPOCH_OFFSET
+    if value >= MAC_EPOCH_OFFSET:
+        return (time_context or current_device_time_context()).mac_to_unix(value)
     return value
 
 
@@ -340,6 +286,7 @@ def eval_rule(
     rule: SmartPlaylistRule,
     track: dict,
     playlist_lookup: dict[int, set[int]] | None = None,
+    time_context: DeviceTimeContext | None = None,
 ) -> bool:
     """Evaluate a single smart playlist rule against a track.
 
@@ -352,7 +299,7 @@ def eval_rule(
     Returns:
         True if the track matches the rule.
     """
-    ft = _FIELD_TYPE_MAP.get(rule.field_id)
+    ft = SPL_FIELD_TYPE_MAP.get(rule.field_id)
 
     if rule.field_id == 0x3C and rule.action_id in (0x00000400, 0x02000400):
         return _eval_binary_and(_get_int_value(track, rule.field_id), rule)
@@ -365,7 +312,11 @@ def eval_rule(
         case 3:  # SPLFT_BOOLEAN
             return _eval_boolean(_get_bool_value(track, rule.field_id), rule)
         case 4:  # SPLFT_DATE
-            return _eval_date(_get_date_value(track, rule.field_id), rule)
+            return _eval_date(
+                _get_date_value(track, rule.field_id),
+                rule,
+                time_context or current_device_time_context(),
+            )
         case 5:  # SPLFT_PLAYLIST
             return _eval_playlist(track, rule, playlist_lookup)
         case 7:  # SPLFT_BINARY_AND
@@ -437,6 +388,7 @@ def spl_update(
     rules: SmartPlaylistRules,
     tracks: list[dict],
     playlist_lookup: dict[int, set[int]] | None = None,
+    time_context: DeviceTimeContext | None = None,
 ) -> list[int]:
     """Evaluate smart playlist rules and return matching track IDs.
 
@@ -468,7 +420,9 @@ def spl_update(
             match_result = is_and  # start True for AND, False for OR
 
             for rule in rules.rules:
-                rule_truth = eval_rule(rule, track, playlist_lookup)
+                rule_truth = eval_rule(
+                    rule, track, playlist_lookup, time_context=time_context,
+                )
 
                 if is_and:
                     if not rule_truth:
@@ -523,6 +477,7 @@ def spl_update_from_parsed(
     parsed_rules: dict,
     tracks: list[dict],
     playlist_lookup: dict[int, set[int]] | None = None,
+    time_context: DeviceTimeContext | None = None,
 ) -> list[int]:
     """Convenience wrapper that accepts parsed dicts directly from the parser.
 
@@ -533,7 +488,7 @@ def spl_update_from_parsed(
 
     prefs = prefs_from_parsed(parsed_prefs)
     rules = rules_from_parsed(parsed_rules)
-    return spl_update(prefs, rules, tracks, playlist_lookup)
+    return spl_update(prefs, rules, tracks, playlist_lookup, time_context)
 
 
 def spl_update_all(

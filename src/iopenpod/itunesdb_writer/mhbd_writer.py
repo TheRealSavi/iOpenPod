@@ -92,6 +92,7 @@ from iopenpod.device.storage_safety import (
 from iopenpod.device.write_guard import DeviceWriteSafetyError
 from iopenpod.device.write_readiness import inspect_device_write_readiness
 from iopenpod.itunesdb_shared.album_identity import album_identity_from_track
+from iopenpod.itunesdb_shared.device_time import active_device_time_context
 from iopenpod.itunesdb_shared.field_base import (
     read_fields,
     write_fields,
@@ -653,8 +654,13 @@ def write_mhbd(
     else:
         lib_pid = db_id
 
-    # +0x6C: timezone_offset (signed)
-    if reference_info and "timezone_offset" in reference_info:
+    # +0x6C: timezone_offset (signed).  A sync boundary supplies the target
+    # device context; do not retain a stale offset after the user changes the
+    # iPod clock between syncs.
+    time_context = active_device_time_context()
+    if time_context is not None:
+        tz_offset = time_context.offset_at_unix(int(time.time()))
+    elif reference_info and "timezone_offset" in reference_info:
         tz_offset = reference_info["timezone_offset"]
     else:
         tz_offset = -time.altzone if time.daylight else -time.timezone
@@ -1232,24 +1238,35 @@ def write_itunesdb(
     if existing_itdb:
         preserved_blobs = extract_preserved_mhsd_blobs(existing_itdb)
 
-    # Build database with reference info
-    itdb_data = bytearray(
-        write_mhbd(
-            tracks,
-            db_id,
-            reference_info=reference_info,
-            platform=platform_resolution.flag,
-            playlists_type2=playlists,
-            playlists_type3=podcast_playlists,
-            playlists_type5=smart_playlists,
-            preserved_mhsd_blobs=preserved_blobs,
-            capabilities=capabilities,
-            master_playlist_name=master_playlist_name,
-            master_playlist_id=master_playlist_id,
-            podcast_master_playlist_name=podcast_master_playlist_name,
-            podcast_master_playlist_id=podcast_master_playlist_id,
-        )
+    # Build all binary timestamps in the target iPod's current local clock,
+    # never in the timezone of the computer performing the sync.
+    from iopenpod.itunesdb_shared.device_time import (
+        read_device_time_context,
+        use_device_time_context,
     )
+
+    device_time_context = read_device_time_context(
+        ipod_path,
+        database_offset=(reference_info or {}).get("timezone_offset"),
+    )
+    with use_device_time_context(device_time_context):
+        itdb_data = bytearray(
+            write_mhbd(
+                tracks,
+                db_id,
+                reference_info=reference_info,
+                platform=platform_resolution.flag,
+                playlists_type2=playlists,
+                playlists_type3=podcast_playlists,
+                playlists_type5=smart_playlists,
+                preserved_mhsd_blobs=preserved_blobs,
+                capabilities=capabilities,
+                master_playlist_name=master_playlist_name,
+                master_playlist_id=master_playlist_id,
+                podcast_master_playlist_name=podcast_master_playlist_name,
+                podcast_master_playlist_id=podcast_master_playlist_id,
+            )
+        )
 
     # ── Compress for iTunesCDB if needed ──────────────────────────────
     #   MUST happen BEFORE checksum — the iPod firmware verifies the hash

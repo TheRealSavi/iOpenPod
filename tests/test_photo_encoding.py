@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 from PIL import Image
 
@@ -51,6 +52,16 @@ def test_explicit_unknown_device_path_has_no_classic_photo_format_fallback(
     )
 
     assert photos._photo_formats_for_current_device(tmp_path / "unknown-ipod") == {}
+
+
+def test_photo_timestamp_clamps_only_at_the_explicit_u32_boundary(monkeypatch) -> None:
+    monkeypatch.setattr(
+        Path,
+        "stat",
+        lambda _path: SimpleNamespace(st_mtime=0x1_0000_0000),
+    )
+
+    assert photos._source_timestamp("future.jpg") == 0xFFFF_FFFF
 
 
 def test_photo_encoder_passes_format_override(monkeypatch):

@@ -1,17 +1,18 @@
 from __future__ import annotations
 
-import ast
-from pathlib import Path
-
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QSpinBox
 
 from iopenpod.gui.widgets.formatters import format_smart_rule
-from iopenpod.gui.widgets.playlistEditor import SmartRuleRow
+from iopenpod.gui.widgets.playlistEditor import SmartPlaylistEditor, SmartRuleRow
 from iopenpod.itunesdb_parser.mhod_parser import _parse_mhod51
 from iopenpod.itunesdb_shared.mhod_defs import (
     MHOD_HEADER_SIZE,
+    SPL_AUTHORABLE_FIELD_IDS,
+    SPL_DATE_IDENTIFIER,
     SPL_FIELD_MAP,
     SPL_FIELD_TYPE_MAP,
+    SPL_HOST_EVALUABLE_FIELD_IDS,
     SPLFT_BINARY_AND,
     SPLFT_BOOLEAN,
     SPLFT_INT,
@@ -46,8 +47,10 @@ def test_relative_date_rule_survives_writer_parser_editor_round_trip(qtbot) -> N
     parsed = _parse_mhod51(blob, MHOD_HEADER_SIZE, len(blob) - MHOD_HEADER_SIZE)
     parsed_rule = parsed["rules"][0]
 
-    assert parsed_rule["from_value"] == 0
+    assert parsed_rule["from_value"] == SPL_DATE_IDENTIFIER
     assert parsed_rule["from_date"] == -1
+    assert parsed_rule["to_value"] == SPL_DATE_IDENTIFIER
+    assert parsed_rule["to_units"] == 1
 
     reloaded = SmartRuleRow()
     qtbot.addWidget(reloaded)
@@ -55,6 +58,47 @@ def test_relative_date_rule_survives_writer_parser_editor_round_trip(qtbot) -> N
     reloaded_spin = reloaded._find_widget(QSpinBox)
     assert isinstance(reloaded_spin, QSpinBox)
     assert reloaded_spin.value() == 1
+
+
+def test_relative_date_rules_write_ipod_date_identifier() -> None:
+    """The device uses this marker to recognize live-updating date rules."""
+    blob = write_mhod51(
+        rules_from_parsed(
+            {
+                "conjunction": "AND",
+                "rules": [
+                    {
+                        "field_id": 0x19,
+                        "action_id": 0x00000001,
+                        "from_value": 100,
+                    },
+                    {
+                        "field_id": 0x17,
+                        "action_id": 0x02000200,
+                        "from_date": -1,
+                        "from_units": 86400,
+                    },
+                    {
+                        "field_id": 0x45,
+                        "action_id": 0x02000200,
+                        "from_date": -1,
+                        "from_units": 86400,
+                    },
+                ],
+            }
+        )
+    )
+
+    parsed = _parse_mhod51(blob, MHOD_HEADER_SIZE, len(blob) - MHOD_HEADER_SIZE)
+
+    assert parsed["rules"][0]["from_value"] == 100
+    assert [
+        (rule["field_id"], rule["from_value"], rule["to_value"])
+        for rule in parsed["rules"][1:]
+    ] == [
+        (0x17, SPL_DATE_IDENTIFIER, SPL_DATE_IDENTIFIER),
+        (0x45, SPL_DATE_IDENTIFIER, SPL_DATE_IDENTIFIER),
+    ]
 
 
 def test_legacy_negative_relative_date_from_value_is_normalized() -> None:
@@ -71,7 +115,7 @@ def test_legacy_negative_relative_date_from_value_is_normalized() -> None:
     )
     parsed = _parse_mhod51(blob, MHOD_HEADER_SIZE, len(blob) - MHOD_HEADER_SIZE)
 
-    assert parsed["rules"][0]["from_value"] == 0
+    assert parsed["rules"][0]["from_value"] == SPL_DATE_IDENTIFIER
     assert parsed["rules"][0]["from_date"] == -1
 
 
@@ -103,7 +147,7 @@ def test_legacy_seconds_relative_date_value_is_converted_to_units() -> None:
     )
     parsed = _parse_mhod51(blob, MHOD_HEADER_SIZE, len(blob) - MHOD_HEADER_SIZE)
 
-    assert parsed["rules"][0]["from_value"] == 0
+    assert parsed["rules"][0]["from_value"] == SPL_DATE_IDENTIFIER
     assert parsed["rules"][0]["from_date"] == -1
 
 
@@ -264,39 +308,56 @@ def test_date_rules_format_absolute_and_relative_values() -> None:
     }) == "Last Played is in the last 2 weeks"
 
 
-def test_editor_field_policy_marks_unproven_fields_unsupported() -> None:
-    source = Path("src/iopenpod/gui/widgets/playlistEditor.py").read_text(
-        encoding="utf-8"
-    )
-    tree = ast.parse(source)
-    field_ids: tuple[int, ...] | None = None
-    unsupported_ids: frozenset[int] | None = None
+def test_editor_only_enables_fields_the_host_can_evaluate(qtbot) -> None:
+    row = SmartRuleRow()
+    qtbot.addWidget(row)
 
-    def _literal_frozenset(node: ast.AST) -> frozenset[int]:
-        if (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Name)
-            and node.func.id == "frozenset"
-            and node.args
-        ):
-            return frozenset(ast.literal_eval(node.args[0]))
-        value = ast.literal_eval(node)
-        return frozenset(value)
+    assert SPL_AUTHORABLE_FIELD_IDS <= SPL_HOST_EVALUABLE_FIELD_IDS
 
-    for node in tree.body:
-        if not isinstance(node, ast.Assign):
-            continue
-        for target in node.targets:
-            if isinstance(target, ast.Name) and target.id == "_FIELD_OPTION_IDS":
-                field_ids = ast.literal_eval(node.value)
-            if isinstance(target, ast.Name) and target.id == "_UNSUPPORTED_FIELD_IDS":
-                unsupported_ids = _literal_frozenset(node.value)
+    for field_id in {
+        0x39, 0x3E, 0x3F,  # Existing device-evidence restrictions.
+        0x59, 0x5A, 0x86, 0x9A, 0x9C, 0x9F, 0xA0, 0xA1,  # No host metadata.
+    }:
+        assert field_id not in SPL_AUTHORABLE_FIELD_IDS
+        index = row.field_combo.findData(field_id)
+        assert index >= 0
+        assert row.field_combo.itemData(index, Qt.ItemDataRole.UserRole - 1) == 0
 
-    assert field_ids is not None
-    assert unsupported_ids is not None
-    assert {0x4E, 0x4F, 0x50, 0x51, 0x52, 0x53}.issubset(field_ids)
-    assert {0x39, 0x3E, 0x3F}.issubset(field_ids)
-    assert unsupported_ids == frozenset({0x39, 0x3E, 0x3F})
+
+def test_editor_preserves_static_rule_free_preferences(qtbot) -> None:
+    editor = SmartPlaylistEditor()
+    qtbot.addWidget(editor)
+
+    editor.edit_playlist({
+        "Title": "Frozen selection",
+        "smart_playlist_data": {
+            "live_update": False,
+            "check_rules": False,
+            "check_limits": True,
+            "limit_type": 0x03,
+            "limit_sort": 0x10,
+            "reverse_sort": 1,
+            "limit_value": 50,
+            "match_checked_only": True,
+        },
+        "smart_playlist_rules": {"conjunction": "AND", "rules": []},
+    })
+
+    assert editor._rule_rows == []
+    assert not editor.check_rules_check.isChecked()
+
+    saved = editor.get_playlist_data()
+
+    assert saved["smart_playlist_data"] == {
+        "live_update": False,
+        "check_rules": False,
+        "check_limits": True,
+        "limit_type": 0x03,
+        "limit_sort": 0x80000010,
+        "limit_value": 50,
+        "match_checked_only": True,
+    }
+    assert saved["smart_playlist_rules"] == {"conjunction": "AND", "rules": []}
 
 
 def test_editor_preserves_non_default_string_action(qtbot) -> None:

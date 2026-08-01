@@ -17,6 +17,14 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any
 
+from .device_time import (
+    MAC_EPOCH_OFFSET as _MAC_EPOCH_OFFSET,
+)
+from .device_time import (
+    MAC_U32_MAX,
+    current_device_time_context,
+)
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  1. Exception Hierarchy
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -53,8 +61,10 @@ class InvalidFieldValueError(WriteError):
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 # Mac HFS+ epoch offset (seconds between 1904-01-01 and 1970-01-01).
-MAC_EPOCH_OFFSET: int = 2082844800
-_U32_MAX: int = 0xFFFFFFFF
+# Re-exported here for the field-definition callers that predate the explicit
+# device-clock module.
+_U32_MAX: int = MAC_U32_MAX
+MAC_EPOCH_OFFSET: int = _MAC_EPOCH_OFFSET
 
 
 def _int_or_default(value: Any, default: int = 0) -> int:
@@ -68,17 +78,17 @@ def _int_or_default(value: Any, default: int = 0) -> int:
 
 
 def mac_to_unix(mac_ts: int) -> int:
-    """Convert Mac HFS+ timestamp to Unix epoch."""
-    return mac_ts - MAC_EPOCH_OFFSET if mac_ts > 0 else 0
+    """Convert a device-local Mac timestamp through the active context."""
+    return current_device_time_context().mac_to_unix(mac_ts)
 
 
 def unix_to_mac(unix_ts: int) -> int:
-    """Convert Unix epoch timestamp to Mac HFS+ timestamp."""
-    unix_ts = _int_or_default(unix_ts)
-    if unix_ts <= 0:
-        return 0
-    # The on-disk field is u32 seconds from the 1904 Mac epoch.
-    return min(unix_ts, _U32_MAX - MAC_EPOCH_OFFSET) + MAC_EPOCH_OFFSET
+    """Convert a UTC Unix timestamp through the active device context.
+
+    Values beyond the u32 Mac range raise rather than silently becoming a
+    different 2040 date on the device.
+    """
+    return current_device_time_context().unix_to_mac(_int_or_default(unix_ts))
 
 
 def sample_rate_to_fixed(hz: int) -> int:

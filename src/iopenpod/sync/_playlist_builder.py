@@ -9,6 +9,7 @@ import base64
 import logging
 
 from iopenpod.itunesdb_shared.constants import MEDIA_TYPE_PODCAST
+from iopenpod.itunesdb_shared.device_time import DeviceTimeContext
 from iopenpod.itunesdb_shared.playlist_properties import (
     playlist_description_from_row,
     playlist_property_raw_body_for_write,
@@ -189,6 +190,7 @@ def build_and_evaluate_playlists(
     dataset5_smart_playlists_raw: list[dict],
     all_track_infos: list[TrackInfo],
     source_path_to_db_track_id: dict[str, int] | None = None,
+    time_context: DeviceTimeContext | None = None,
 ) -> tuple[
     str,
     int | None,
@@ -247,12 +249,12 @@ def build_and_evaluate_playlists(
     master_name, _master_id, playlists = _build_standard_dataset_playlists(
         dataset2_standard_playlists_raw, old_tid_to_db_track_id,
         valid_db_track_ids, eval_tracks, spl_update,
-        source_lookup, "dataset2", initial_playlist_lookup,
+        source_lookup, "dataset2", initial_playlist_lookup, time_context,
     )
     podcast_master_name, _podcast_master_id, podcast_playlists = _build_standard_dataset_playlists(
         dataset3_podcast_playlists_raw, old_tid_to_db_track_id,
         valid_db_track_ids, eval_tracks, spl_update,
-        source_lookup, "dataset3", initial_playlist_lookup,
+        source_lookup, "dataset3", initial_playlist_lookup, time_context,
     )
 
     smart_playlists = _build_smart_playlists(
@@ -263,6 +265,7 @@ def build_and_evaluate_playlists(
         spl_update,
         source_lookup,
         initial_playlist_lookup,
+        time_context,
     )
 
     _reevaluate_live_update(
@@ -271,6 +274,7 @@ def build_and_evaluate_playlists(
         valid_db_track_ids,
         eval_tracks,
         spl_update,
+        time_context,
     )
     _sync_podcast_playlist_membership(playlists, podcast_playlists, all_track_infos)
 
@@ -425,6 +429,7 @@ def _build_standard_dataset_playlists(
     source_path_to_db_track_id: dict[str, int],
     source_dataset_name: str,
     playlist_lookup: dict[int, set[int]] | None,
+    time_context: DeviceTimeContext | None,
 ) -> tuple[str, int | None, list[PlaylistInfo]]:
     """Build dataset-2/3 playlists, returning (master_name, master_id, rows).
 
@@ -471,22 +476,38 @@ def _build_standard_dataset_playlists(
             item_metadata=item_meta,
         )
 
-        # Evaluate smart playlist rules (dataset 2 smart playlists)
+        # Preserve static smart-playlist membership. Only live-updating
+        # playlists are recalculated during sync; a user may intentionally
+        # keep a fixed snapshot while retaining the Smart Playlist rule data.
         prefs_data = pl.get("smart_playlist_data")
         rules_data = pl.get("smart_playlist_rules")
         if prefs_data and rules_data:
             info.smart_prefs = prefs_from_parsed(prefs_data)
             info.smart_rules = rules_from_parsed(rules_data)
-            matched_db_track_ids = spl_update(
-                info.smart_prefs,
-                info.smart_rules,
-                eval_tracks,
-                playlist_lookup,
-            )
-            info.track_ids = [d for d in matched_db_track_ids if d in valid_db_track_ids]
-            info.item_metadata = None
-            logger.debug("SPL (ds2) '%s': %d tracks matched",
-                         info.name, len(info.track_ids))
+            if info.smart_prefs.live_update:
+                matched_db_track_ids = spl_update(
+                    info.smart_prefs,
+                    info.smart_rules,
+                    eval_tracks,
+                    playlist_lookup,
+                    time_context,
+                )
+                info.track_ids = [
+                    d for d in matched_db_track_ids if d in valid_db_track_ids
+                ]
+                info.item_metadata = None
+                logger.debug(
+                    "SPL (%s) '%s': %d tracks matched",
+                    source_dataset_name,
+                    info.name,
+                    len(info.track_ids),
+                )
+            else:
+                logger.debug(
+                    "SPL (%s) '%s': keeping parsed membership (live_update=False)",
+                    source_dataset_name,
+                    info.name,
+                )
 
         playlists.append(info)
 
@@ -506,6 +527,7 @@ def _build_smart_playlists(
     spl_update,
     source_path_to_db_track_id: dict[str, int],
     playlist_lookup: dict[int, set[int]] | None,
+    time_context: DeviceTimeContext | None,
 ) -> list[PlaylistInfo]:
     """Build dataset-5 smart playlists."""
     smart_playlists: list[PlaylistInfo] = []
@@ -546,6 +568,7 @@ def _build_smart_playlists(
                     info.smart_rules,
                     eval_tracks,
                     playlist_lookup,
+                    time_context,
                 )
                 info.track_ids = [d for d in matched_db_track_ids if d in valid_db_track_ids]
                 info.item_metadata = None
@@ -570,6 +593,7 @@ def _reevaluate_live_update(
     valid_db_track_ids: set[int],
     eval_tracks: list[dict],
     spl_update,
+    time_context: DeviceTimeContext | None,
 ) -> None:
     """Re-evaluate all live-update SPLs against the final track list."""
     for info in list(playlists) + [s for s in smart_playlists if not s.mhsd5_type]:
@@ -580,6 +604,7 @@ def _reevaluate_live_update(
                 info.smart_rules,
                 eval_tracks,
                 playlist_lookup,
+                time_context,
             )
             new_ids = [d for d in matched_db_track_ids if d in valid_db_track_ids]
             if new_ids != info.track_ids:

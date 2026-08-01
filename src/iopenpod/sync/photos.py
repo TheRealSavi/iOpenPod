@@ -74,6 +74,7 @@ _ROTATE_TALL_PHOTO_GAIN_THRESHOLD = 1.2
 _ROTATABLE_PHOTO_ROLES = frozenset({"photo_full", "photo_preview", "photo_large", "tv_out"})
 _FULL_RES_ROTATION_ROLES = frozenset({"photo_full", "photo_preview", "photo_large"})
 _PHOTO_BASENAME_MAX_LENGTH = 180
+_PHOTO_UNIX_TIMESTAMP_MAX = 0xFFFF_FFFF
 PhotoMappingEntry = dict[str, object]
 _THUMBNAIL_PHOTO_ROLES = frozenset({"photo_thumb", "photo_list"})
 _SUPPORTED_IMAGE_EXTENSIONS = PHOTO_EXTENSIONS
@@ -534,9 +535,19 @@ def _full_res_rel_path_for_entry(entry: PhotoEntry) -> str:
 
 def _source_timestamp(path: str | Path) -> int:
     try:
-        return int(Path(path).stat().st_mtime)
+        timestamp = int(Path(path).stat().st_mtime)
     except OSError:
         return 0
+    if timestamp < 0:
+        return 0
+    if timestamp > _PHOTO_UNIX_TIMESTAMP_MAX:
+        logger.warning(
+            "Photo timestamp for %s exceeds the PhotoDB u32 Unix range; "
+            "using its maximum representable value.",
+            path,
+        )
+        return _PHOTO_UNIX_TIMESTAMP_MAX
+    return timestamp
 
 
 def _describe_image_load_error(path: str | Path, exc: BaseException) -> str:

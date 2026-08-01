@@ -406,6 +406,7 @@ def trackinfo_to_eval_dict(t: TrackInfo) -> dict:
         "Sort Artist": t.sort_artist or "",
         "Sort Album Artist": t.sort_album_artist or "",
         "Sort Composer": t.sort_composer or "",
+        "Sort Show": t.sort_show or "",
         "Grouping": t.grouping or "",
         # Integer fields
         "bitrate": t.bitrate,
@@ -421,12 +422,20 @@ def trackinfo_to_eval_dict(t: TrackInfo) -> dict:
         "skip_count": t.skip_count,
         # Date fields (Unix timestamps)
         "date_added": t.date_added,
+        "last_modified": t.last_modified,
         "last_played": t.last_played,
         "last_skipped": t.last_skipped,
         # Boolean fields
         "compilation_flag": 1 if t.compilation_flag else 0,
+        "has_artwork": bool(t.artwork_count or t.mhii_link),
+        "artwork_count": t.artwork_count,
+        "artwork_id_ref": t.mhii_link,
+        "purchased_flag": t.purchased_aac_flag,
         # Binary AND fields
         "media_type": t.media_type,
+        # Tracks being evaluated are local to this iPod. The iPod's Location
+        # rule uses bit 0 for "on this computer".
+        "location_kind": 1,
         # Checked flag (0=checked, 1=unchecked in iPod convention)
         "checked_flag": t.checked_flag,
         # Video fields for smart playlist evaluation

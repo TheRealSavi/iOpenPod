@@ -34,6 +34,7 @@ from iopenpod.itunesdb_shared.constants import PLAYLIST_SORT_ORDER_MAP
 from iopenpod.itunesdb_shared.field_base import MAC_EPOCH_OFFSET
 from iopenpod.itunesdb_shared.mhod_defs import (
     SPL_ACTION_MAP,
+    SPL_AUTHORABLE_FIELD_IDS,
     SPL_CHOICE_FIELD_IDS,
     SPL_CHOICE_UNKNOWN_LABELS,
     SPL_CHOICE_VALUE_MAP,
@@ -118,7 +119,7 @@ _FIELD_LABEL_OVERRIDES = {
     0x02: "Name",
     0x3E: "Video Show",
 }
-_UNSUPPORTED_FIELD_IDS = frozenset({0x39, 0x3E, 0x3F})
+_UNSUPPORTED_FIELD_IDS = frozenset(_FIELD_OPTION_IDS) - SPL_AUTHORABLE_FIELD_IDS
 
 FIELD_DEFS: dict[int, tuple[str, int]] = {
     field_id: (
@@ -630,7 +631,7 @@ class SmartRuleRow(QFrame):
                 idx = unit_combo.findData(units)
                 if idx >= 0:
                     unit_combo.setCurrentIndex(idx)
-            if date_edits:
+            if date_edits and aid not in (0x00000200, 0x02000200):
                 date_edits[0].setDate(_date_from_mac_timestamp(rule.get("from_value", 0)))
                 if len(date_edits) > 1:
                     date_edits[1].setDate(_date_from_mac_timestamp(rule.get("to_value", 0)))
@@ -1095,6 +1096,12 @@ class SmartPlaylistEditor(QFrame):
         limit_row.addStretch()
         opts.addLayout(limit_row)
 
+        # Rule matching
+        self.check_rules_check = QCheckBox("Match rules")
+        self.check_rules_check.setStyleSheet(_checkbox_css())
+        self.check_rules_check.setChecked(True)
+        opts.addWidget(self.check_rules_check)
+
         # Live updating
         self.live_update_check = QCheckBox("Live updating")
         self.live_update_check.setStyleSheet(_checkbox_css())
@@ -1155,6 +1162,7 @@ class SmartPlaylistEditor(QFrame):
         self.description_input.setText("")
         self.conjunction_combo.setCurrentIndex(0)  # all (AND)
         self.limit_check.setChecked(False)
+        self.check_rules_check.setChecked(True)
         self.live_update_check.setChecked(True)
         self.match_checked_check.setChecked(False)
         self.sort_combo.setCurrentIndex(0)  # Manual
@@ -1184,11 +1192,15 @@ class SmartPlaylistEditor(QFrame):
         lt_idx = self.limit_type_combo.findData(prefs.get("limit_type", 0x03))
         if lt_idx >= 0:
             self.limit_type_combo.setCurrentIndex(lt_idx)
-        ls_idx = self.limit_sort_combo.findData(prefs.get("limit_sort", 0x02))
+        limit_sort = prefs.get("limit_sort", 0x02)
+        if prefs.get("reverse_sort", False):
+            limit_sort |= 0x80000000
+        ls_idx = self.limit_sort_combo.findData(limit_sort)
         if ls_idx >= 0:
             self.limit_sort_combo.setCurrentIndex(ls_idx)
 
-        # Live update & match checked
+        # Rule matching, live update & match checked
+        self.check_rules_check.setChecked(prefs.get("check_rules", True))
         self.live_update_check.setChecked(prefs.get("live_update", True))
         self.match_checked_check.setChecked(prefs.get("match_checked_only", False))
 
@@ -1203,12 +1215,9 @@ class SmartPlaylistEditor(QFrame):
         # Rules
         self._clear_rules()
         rule_list = rules.get("rules", [])
-        if not rule_list:
-            self._add_empty_rule()
-        else:
-            for r in rule_list:
-                row = self._add_empty_rule()
-                row.set_rule_data(r)
+        for r in rule_list:
+            row = self._add_empty_rule()
+            row.set_rule_data(r)
 
         self.name_input.setFocus()
         self.name_input.selectAll()
@@ -1228,7 +1237,7 @@ class SmartPlaylistEditor(QFrame):
             "sort_order": self.sort_combo.currentData() or 1,
             "smart_playlist_data": {
                 "live_update": self.live_update_check.isChecked(),
-                "check_rules": True,
+                "check_rules": self.check_rules_check.isChecked(),
                 "check_limits": self.limit_check.isChecked(),
                 "limit_type": self.limit_type_combo.currentData() or 0x03,
                 "limit_sort": self.limit_sort_combo.currentData() or 0x02,
@@ -1264,9 +1273,6 @@ class SmartPlaylistEditor(QFrame):
         if row in self._rule_rows:
             self._rule_rows.remove(row)
             _delete_embedded_widget(row)
-        # Always keep at least one rule
-        if not self._rule_rows:
-            self._add_empty_rule()
 
     def _clear_rules(self) -> None:
         for row in self._rule_rows:
