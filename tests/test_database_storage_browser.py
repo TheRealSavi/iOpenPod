@@ -43,7 +43,7 @@ def test_database_storage_browser_back_button_emits_closed(qtbot) -> None:
         qtbot.mouseClick(button, Qt.MouseButton.LeftButton)
 
 
-def test_database_storage_browser_adds_truncate_control_for_lyrics(qtbot) -> None:
+def test_database_storage_browser_adds_inspect_control_for_lyrics(qtbot) -> None:
     browser = DatabaseStorageBrowser()
     qtbot.addWidget(browser)
     report = DatabaseStorageReport(
@@ -67,7 +67,10 @@ def test_database_storage_browser_adds_truncate_control_for_lyrics(qtbot) -> Non
     )
 
     browser.load_report(report)
-    button = browser.findChild(QPushButton, "databaseStorageTruncateButton")
+    button = browser.findChild(QPushButton, "databaseStorageInspectButton")
 
     assert button is not None
-    assert button.text() == "Truncate…"
+    assert button.text() == "Inspect…"
+    with qtbot.waitSignal(browser.inspect_requested) as signal:
+        qtbot.mouseClick(button, Qt.MouseButton.LeftButton)
+    assert signal.args == [10, "Lyrics"]

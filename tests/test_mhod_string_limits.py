@@ -22,11 +22,7 @@ def _mhod_string_length(blob: bytes) -> int:
 
 def _first_track(data: bytes) -> dict:
     db = parse_itunesdb(BytesIO(data))
-    track_dataset = next(
-        child["data"]
-        for child in db["children"]
-        if child["chunk_type"] == "mhsd" and child["data"]["dataset_type"] == 1
-    )
+    track_dataset = next(child["data"] for child in db["children"] if child["chunk_type"] == "mhsd" and child["data"]["dataset_type"] == 1)
     return track_dataset["children"][0]["data"][0]["data"]
 
 
@@ -57,11 +53,7 @@ def test_huge_lyrics_tag_does_not_make_a_huge_legacy_itunesdb() -> None:
     )
 
     track = _first_track(data)
-    lyrics = next(
-        child["data"]["string"]
-        for child in track["children"]
-        if child["data"]["mhod_type"] == MHOD_TYPE_LYRICS
-    )
+    lyrics = next(child["data"]["string"] for child in track["children"] if child["data"]["mhod_type"] == MHOD_TYPE_LYRICS)
 
     assert len(lyrics.encode("utf-16-le")) == MHOD_LONG_TEXT_MAX_UTF16_BYTES
     assert len(data) < 30_000
@@ -83,10 +75,7 @@ def test_zero_byte_lyrics_limit_removes_mhod_and_lyrics_flag() -> None:
     parsed_track = _first_track(data)
 
     assert parsed_track["lyrics_flag"] == 0
-    assert all(
-        child["data"]["mhod_type"] != MHOD_TYPE_LYRICS
-        for child in parsed_track["children"]
-    )
+    assert all(child["data"]["mhod_type"] != MHOD_TYPE_LYRICS for child in parsed_track["children"])
 
 
 def test_truncation_keeps_only_complete_utf16_codepoints() -> None:

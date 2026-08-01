@@ -2,8 +2,10 @@ import sqlite3
 import struct
 
 from iopenpod.application.database_storage import (
+    analyze_database_field_values_bytes,
     analyze_database_storage,
     analyze_database_storage_bytes,
+    is_truncatable_mhod_type,
 )
 from iopenpod.itunesdb_writer.mhbd_writer import write_mhbd
 from iopenpod.itunesdb_writer.mhit_writer import TrackInfo
@@ -40,11 +42,7 @@ def _mhsd(dataset_type: int, child: bytes) -> bytes:
 def _mhbd(children: list[bytes]) -> bytes:
     body = b"".join(children)
     total_length = 24 + len(body)
-    return (
-        b"mhbd"
-        + struct.pack("<IIIII", 24, total_length, 1, 0x19, len(children))
-        + body
-    )
+    return b"mhbd" + struct.pack("<IIIII", 24, total_length, 1, 0x19, len(children)) + body
 
 
 def test_analyze_database_storage_nests_data_objects_under_container(
@@ -63,9 +61,7 @@ def test_analyze_database_storage_nests_data_objects_under_container(
     assert report.logical_bytes == db_path.stat().st_size
     assert "Data objects" not in [child.label for child in root.children]
     assert track_item is not None
-    data_objects = next(
-        child for child in track_item.children if child.label == "Data objects"
-    )
+    data_objects = next(child for child in track_item.children if child.label == "Data objects")
     lyrics_node = data_objects.find("Lyrics")
     title_node = data_objects.find("Title")
     assert lyrics_node is not None
@@ -90,6 +86,34 @@ def test_analyze_database_storage_bytes_inspects_unwritten_database() -> None:
     assert report.database_path == "Proposed iTunesDB"
     assert report.logical_bytes == len(data)
     assert report.find("Lyrics") is not None
+
+
+def test_analyze_database_field_values_reads_each_value_and_payload_size() -> None:
+    data = write_mhbd(
+        [
+            TrackInfo(
+                title="First",
+                location=":iPod_Control:Music:F00:FIRST.m4a",
+                lyrics="short",
+            ),
+            TrackInfo(
+                title="Second",
+                location=":iPod_Control:Music:F00:SECOND.m4a",
+                lyrics="a longer lyric",
+            ),
+        ]
+    )
+
+    inspection = analyze_database_field_values_bytes(data, 10)
+
+    assert [value.value for value in inspection.values] == ["short", "a longer lyric"]
+    assert [value.byte_count for value in inspection.values] == [10, 28]
+
+
+def test_important_sort_and_podcast_url_fields_cannot_be_truncated() -> None:
+    important_mhod_types = (15, 16, 27, 28, 29, 30, 31)
+
+    assert not any(is_truncatable_mhod_type(mhod_type) for mhod_type in important_mhod_types)
 
 
 def test_analyze_database_storage_reports_sqlite_itdb_files(tmp_path) -> None:

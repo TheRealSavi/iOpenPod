@@ -188,11 +188,7 @@ class SyncItem:
 
         if not self.ipod_track:
             return ""
-        return str(
-            self.ipod_track.get("Location")
-            or self.ipod_track.get("location")
-            or ""
-        )
+        return str(self.ipod_track.get("Location") or self.ipod_track.get("location") or "")
 
     @property
     def display_label(self) -> str:
@@ -201,19 +197,9 @@ class SyncItem:
         if self.description:
             return self.description
         if self.pc_track is not None:
-            return str(
-                getattr(self.pc_track, "title", None)
-                or getattr(self.pc_track, "filename", None)
-                or getattr(self.pc_track, "path", "")
-                or "track"
-            )
+            return str(getattr(self.pc_track, "title", None) or getattr(self.pc_track, "filename", None) or getattr(self.pc_track, "path", "") or "track")
         if self.ipod_track:
-            return str(
-                self.ipod_track.get("Title")
-                or self.ipod_track.get("title")
-                or self.ipod_location
-                or "track"
-            )
+            return str(self.ipod_track.get("Title") or self.ipod_track.get("title") or self.ipod_location or "track")
         return "track"
 
     @property
@@ -258,11 +244,7 @@ class SyncItem:
 
     @property
     def is_chaptered_aggregate_rebuild(self) -> bool:
-        return (
-            self.aggregate_kind == "chaptered_album"
-            and bool(self.aggregate_rebuild_pc_tracks)
-            and bool(self.db_track_id)
-        )
+        return self.aggregate_kind == "chaptered_album" and bool(self.aggregate_rebuild_pc_tracks) and bool(self.db_track_id)
 
 
 @dataclass
@@ -326,32 +308,31 @@ class SyncPlan:
 
     @property
     def has_changes(self) -> bool:
-        return any([
-            self.to_add,
-            self.to_remove,
-            self.to_update_metadata,
-            self.to_update_file,
-            self.to_update_artwork,
-            self.to_sync_playcount,
-            self.to_sync_rating,
-            self._integrity_removals,
-            self.has_integrity_housekeeping,
-            self._refreshed_podcast_feeds,
-            self.playlists_to_add,
-            self.playlists_to_edit,
-            self.playlists_to_remove,
-            self.photo_plan and self.photo_plan.has_changes,
-            self.rockbox_metadata_pass,
-        ])
+        return any(
+            [
+                self.to_add,
+                self.to_remove,
+                self.to_update_metadata,
+                self.to_update_file,
+                self.to_update_artwork,
+                self.to_sync_playcount,
+                self.to_sync_rating,
+                self._integrity_removals,
+                self.has_integrity_housekeeping,
+                self._refreshed_podcast_feeds,
+                self.playlists_to_add,
+                self.playlists_to_edit,
+                self.playlists_to_remove,
+                self.photo_plan and self.photo_plan.has_changes,
+                self.rockbox_metadata_pass,
+            ]
+        )
 
     @property
     def has_integrity_housekeeping(self) -> bool:
         """Whether execution has non-database integrity cleanup to perform."""
         report = self.integrity_report
-        return bool(
-            self._mapping_requires_persistence
-            or (report and getattr(report, "orphan_files", ()))
-        )
+        return bool(self._mapping_requires_persistence or (report and getattr(report, "orphan_files", ())))
 
     @property
     def integrity_change_count(self) -> int:
@@ -359,12 +340,7 @@ class SyncPlan:
         report = self.integrity_report
         if report is None:
             return len(self._integrity_removals)
-        return (
-            len(getattr(report, "missing_files", ()))
-            + len(getattr(report, "stale_mappings", ()))
-            + len(getattr(report, "orphan_files", ()))
-            + int(bool(getattr(report, "mapping_rebuild_required", False)))
-        )
+        return len(getattr(report, "missing_files", ())) + len(getattr(report, "stale_mappings", ())) + len(getattr(report, "orphan_files", ())) + int(bool(getattr(report, "mapping_rebuild_required", False)))
 
     @property
     def has_duplicates(self) -> bool:
@@ -396,10 +372,7 @@ class SyncPlan:
         if self.to_sync_rating:
             lines.append(f"  ⭐ {len(self.to_sync_rating)} tracks with rating changes")
         if self.rockbox_metadata_pass:
-            lines.append(
-                f"  🎸 Materialize Rockbox metadata for "
-                f"{self.total_ipod_tracks} tracks"
-            )
+            lines.append(f"  🎸 Materialize Rockbox metadata for {self.total_ipod_tracks} tracks")
         if self.fingerprint_errors:
             lines.append(f"  ⚠️  {len(self.fingerprint_errors)} files could not be fingerprinted")
         if self.playlists_to_add:
@@ -426,29 +399,18 @@ class SyncPlan:
         if self.integrity_report and not self.integrity_report.is_clean:
             ir = self.integrity_report
             if ir.missing_files:
-                integrity_lines.append(
-                    f"  🔧 {len(ir.missing_files)} DB tracks with missing files will be removed"
-                )
+                integrity_lines.append(f"  🔧 {len(ir.missing_files)} DB tracks with missing files will be removed")
             if ir.stale_mappings:
-                integrity_lines.append(
-                    f"  🔧 {len(ir.stale_mappings)} stale mapping entries will be cleaned"
-                )
+                integrity_lines.append(f"  🔧 {len(ir.stale_mappings)} stale mapping entries will be cleaned")
             if ir.orphan_files:
-                integrity_lines.append(
-                    f"  🔧 {len(ir.orphan_files)} orphan files will be removed from iPod"
-                )
+                integrity_lines.append(f"  🔧 {len(ir.orphan_files)} orphan files will be removed from iPod")
             if getattr(ir, "mapping_rebuild_required", False):
-                integrity_lines.append(
-                    "  🔧 The corrupt iOpenPod mapping will be backed up and rebuilt"
-                )
+                integrity_lines.append("  🔧 The corrupt iOpenPod mapping will be backed up and rebuilt")
 
         if not lines and not integrity_lines:
             return "✅ Everything is in sync!"
 
-        header = (
-            f"Sync Plan ({self.matched_tracks} matched, "
-            f"{self.total_pc_tracks} PC, {self.total_ipod_tracks} iPod):"
-        )
+        header = f"Sync Plan ({self.matched_tracks} matched, {self.total_pc_tracks} PC, {self.total_ipod_tracks} iPod):"
         all_lines = integrity_lines + lines
         return header + "\n" + "\n".join(all_lines)
 
@@ -463,16 +425,11 @@ def sync_plan_required_free_bytes(
 
     storage = getattr(plan, "storage", None)
     bytes_to_add = _coerce_nonnegative_int(getattr(storage, "bytes_to_add", 0))
-    bytes_to_remove = _coerce_nonnegative_int(
-        getattr(storage, "bytes_to_remove", 0)
-    )
+    bytes_to_remove = _coerce_nonnegative_int(getattr(storage, "bytes_to_remove", 0))
 
     if allocation_unit_size:
         add_items = tuple(getattr(plan, "to_add", ()) or ())
-        logical_track_add = sum(
-            _coerce_nonnegative_int(getattr(item, "planned_add_size", 0))
-            for item in add_items
-        )
+        logical_track_add = sum(_coerce_nonnegative_int(getattr(item, "planned_add_size", 0)) for item in add_items)
         allocated_track_add = sum(
             allocated_size(
                 _coerce_nonnegative_int(getattr(item, "planned_add_size", 0)),
@@ -499,16 +456,12 @@ def sync_plan_required_free_bytes(
             )
             update_growth += max(0, new_size - old_size)
         else:
-            update_growth += _coerce_nonnegative_int(
-                getattr(item, "planned_update_growth", 0)
-            )
+            update_growth += _coerce_nonnegative_int(getattr(item, "planned_update_growth", 0))
 
     deferred_remove_bytes = 0
     for item in getattr(plan, "to_remove", ()) or ():
         if bool(getattr(item, "is_deferred_removal", False)):
-            deferred_remove_bytes += _coerce_nonnegative_int(
-                getattr(item, "planned_remove_size", 0)
-            )
+            deferred_remove_bytes += _coerce_nonnegative_int(getattr(item, "planned_remove_size", 0))
 
     removable_credit = max(0, bytes_to_remove - deferred_remove_bytes)
     return max(
@@ -580,9 +533,7 @@ class SyncOutcome:
         if self.tracks_removed:
             lines.append(f"  Removed {self.tracks_removed} tracks")
         if self.tracks_updated_metadata:
-            lines.append(
-                f"  Updated metadata for {self.tracks_updated_metadata} tracks"
-            )
+            lines.append(f"  Updated metadata for {self.tracks_updated_metadata} tracks")
         if self.tracks_updated_file:
             lines.append(f"  Re-synced {self.tracks_updated_file} tracks")
         if self.playcounts_synced:
@@ -600,14 +551,9 @@ class SyncOutcome:
         if self.photo_albums_removed:
             lines.append(f"  Removed {self.photo_albums_removed} photo albums")
         if self.sound_check_computed:
-            lines.append(
-                f"  Computed Sound Check for {self.sound_check_computed} tracks"
-            )
+            lines.append(f"  Computed Sound Check for {self.sound_check_computed} tracks")
         if self.rockbox_metadata_updated:
-            lines.append(
-                f"  Wrote Rockbox metadata to "
-                f"{self.rockbox_metadata_updated} tracks"
-            )
+            lines.append(f"  Wrote Rockbox metadata to {self.rockbox_metadata_updated} tracks")
         if self.scrobbles_submitted:
             lines.append(f"  Scrobbled {self.scrobbles_submitted} plays")
         if self.errors:

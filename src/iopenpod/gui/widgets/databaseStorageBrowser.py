@@ -8,7 +8,6 @@ from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QHeaderView,
-    QInputDialog,
     QLabel,
     QPushButton,
     QTreeWidget,
@@ -41,7 +40,7 @@ class DatabaseStorageBrowser(QWidget):
     """Tree view of database storage usage."""
 
     closed = pyqtSignal()
-    truncate_requested = pyqtSignal(int, int)
+    inspect_requested = pyqtSignal(int, str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -83,9 +82,7 @@ class DatabaseStorageBrowser(QWidget):
         self.summary_label = QLabel("")
         self.summary_label.setObjectName("databaseStorageSummary")
         self.summary_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        self.summary_label.setStyleSheet(
-            f"color: {Colors.TEXT_TERTIARY}; background: transparent;"
-        )
+        self.summary_label.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent;")
         self.summary_label.setWordWrap(True)
         self.summary_label.setTextFormat(Qt.TextFormat.PlainText)
         title_col.addWidget(self.summary_label)
@@ -147,16 +144,7 @@ class DatabaseStorageBrowser(QWidget):
     def _build_explanation(self) -> QFrame:
         panel = QFrame(self)
         panel.setObjectName("databaseStorageExplanation")
-        panel.setStyleSheet(
-            f"QFrame#databaseStorageExplanation {{"
-            f"background:{Colors.SURFACE};"
-            f"border:1px solid {Colors.ACCENT_BORDER};"
-            f"border-radius:{Metrics.BORDER_RADIUS_MD}px;"
-            f"}}"
-            f"QFrame#databaseStorageExplanation:hover {{"
-            f"background:{Colors.SURFACE_ALT};"
-            f"}}"
-        )
+        panel.setStyleSheet(f"QFrame#databaseStorageExplanation {{background:{Colors.SURFACE};border:1px solid {Colors.ACCENT_BORDER};border-radius:{Metrics.BORDER_RADIUS_MD}px;}}QFrame#databaseStorageExplanation:hover {{background:{Colors.SURFACE_ALT};}}")
 
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(12, 10, 12, 10)
@@ -171,12 +159,7 @@ class DatabaseStorageBrowser(QWidget):
         help_mark.setFixedSize(28, 28)
         help_mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
         help_mark.setFont(QFont(MONO_FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.DemiBold))
-        help_mark.setStyleSheet(
-            f"color:{Colors.ACCENT_LIGHT};"
-            f"background:{Colors.ACCENT_MUTED};"
-            f"border:1px solid {Colors.ACCENT_BORDER};"
-            f"border-radius:{Metrics.BORDER_RADIUS_SM}px;"
-        )
+        help_mark.setStyleSheet(f"color:{Colors.ACCENT_LIGHT};background:{Colors.ACCENT_MUTED};border:1px solid {Colors.ACCENT_BORDER};border-radius:{Metrics.BORDER_RADIUS_SM}px;")
         header.addWidget(help_mark)
 
         title_stack = QVBoxLayout()
@@ -199,8 +182,7 @@ class DatabaseStorageBrowser(QWidget):
         layout.addLayout(header)
 
         compact = QLabel(
-            "The iPod must load this entire file into RAM for the iPod to function. "
-            "Slimming the database by removing unnecessary data can allow for more tracks to be stored.",
+            "The iPod must load this entire file into RAM for the iPod to function. Slimming the database by removing unnecessary data can allow for more tracks to be stored.",
             panel,
         )
         compact.setObjectName("databaseStorageExplanationSummary")
@@ -283,12 +265,14 @@ class DatabaseStorageBrowser(QWidget):
         return status
 
     def _item_for_node(self, node: StorageBreakdownNode) -> QTreeWidgetItem:
-        item = QTreeWidgetItem([
-            node.label,
-            format_size(node.bytes_used) or "0 B",
-            self._percent_text(node.bytes_used),
-            node.detail,
-        ])
+        item = QTreeWidgetItem(
+            [
+                node.label,
+                format_size(node.bytes_used) or "0 B",
+                self._percent_text(node.bytes_used),
+                node.detail,
+            ]
+        )
         item.setData(0, Qt.ItemDataRole.UserRole, node.kind)
         item.setData(1, Qt.ItemDataRole.UserRole, node.bytes_used)
         item.setData(4, Qt.ItemDataRole.UserRole, node.mhod_type)
@@ -303,12 +287,12 @@ class DatabaseStorageBrowser(QWidget):
     def _add_action_controls(self, item: QTreeWidgetItem) -> None:
         mhod_type = item.data(4, Qt.ItemDataRole.UserRole)
         if is_truncatable_mhod_type(mhod_type):
-            button = QPushButton("Truncate…", self.tree)
-            button.setObjectName("databaseStorageTruncateButton")
+            button = QPushButton("Inspect…", self.tree)
+            button.setObjectName("databaseStorageInspectButton")
             button.setCursor(Qt.CursorShape.PointingHandCursor)
-            button.setToolTip("Set a maximum byte count for every value of this field")
+            button.setToolTip("Inspect field sizes and values before truncating")
             button.clicked.connect(
-                lambda _checked=False, value=int(mhod_type), row=item: self._request_truncation(
+                lambda _checked=False, value=int(mhod_type), row=item: self._request_inspection(
                     value,
                     row.text(0),
                 )
@@ -320,17 +304,8 @@ class DatabaseStorageBrowser(QWidget):
             if child is not None:
                 self._add_action_controls(child)
 
-    def _request_truncation(self, mhod_type: int, label: str) -> None:
-        max_bytes, accepted = QInputDialog.getInt(
-            self,
-            f"Truncate {label}",
-            f"Maximum bytes per {label} value (0 removes the field):",
-            2048,
-            0,
-            2**31 - 1,
-        )
-        if accepted:
-            self.truncate_requested.emit(mhod_type, max_bytes)
+    def _request_inspection(self, mhod_type: int, label: str) -> None:
+        self.inspect_requested.emit(mhod_type, label)
 
     def _percent_text(self, bytes_used: int) -> str:
         denominator = self._max_database_bytes

@@ -72,11 +72,7 @@ def effective_max_file_size_bytes(
     device_limit: int | None,
 ) -> int | None:
     """Return the strictest positive file-size limit supplied by either source."""
-    limits = [
-        int(limit)
-        for limit in (filesystem_limit, device_limit)
-        if limit is not None and int(limit) > 0
-    ]
+    limits = [int(limit) for limit in (filesystem_limit, device_limit) if limit is not None and int(limit) > 0]
     return min(limits) if limits else None
 
 
@@ -92,17 +88,12 @@ def require_file_size_supported(
     if limit <= 0 or size <= limit:
         return
     logger.debug(
-        "File-size safety guard rejected write: display_name=%s "
-        "file_size_bytes=%d max_file_size_bytes=%d",
+        "File-size safety guard rejected write: display_name=%s file_size_bytes=%d max_file_size_bytes=%d",
         display_name,
         size,
         limit,
     )
-    raise FileSizeLimitError(
-        f"{display_name} is {_format_size(size)}, exceeding the "
-        f"{_format_size(limit)} maximum supported by this iPod or its "
-        "filesystem. iOpenPod stopped before writing the file."
-    )
+    raise FileSizeLimitError(f"{display_name} is {_format_size(size)}, exceeding the {_format_size(limit)} maximum supported by this iPod or its filesystem. iOpenPod stopped before writing the file.")
 
 
 def _format_size(size: int) -> str:
