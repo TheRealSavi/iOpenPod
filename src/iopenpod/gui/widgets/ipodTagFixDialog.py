@@ -27,12 +27,12 @@ from ..glyphs import glyph_pixmap
 from ..styles import (
     FONT_FAMILY,
     MONO_FONT_FAMILY,
-    Colors,
     Metrics,
     accent_btn_css,
     btn_css,
     chip_btn_css,
     input_css,
+    paint_css,
     table_css,
 )
 from .ipodTagNormalizer import IpodLibraryTagSuggestion
@@ -42,8 +42,8 @@ _PREVIEW_ROW_LIMIT = 1000
 
 def _panel_css() -> str:
     return (
-        f"background: {Colors.SURFACE};"
-        f"border: 1px solid {Colors.BORDER_SUBTLE};"
+        f"background: {paint_css('surface.default')};"
+        f"border: 1px solid {paint_css('border.subtle')};"
         f"border-radius: {Metrics.BORDER_RADIUS_SM}px;"
     )
 
@@ -106,7 +106,7 @@ class IpodLibraryTagFixDialog(QDialog):
         self.resize(980, 720)
         self.setAutoFillBackground(True)
         palette = self.palette()
-        palette.setColor(QPalette.ColorRole.Window, QColor(Colors.DIALOG_BG))
+        palette.setColor(QPalette.ColorRole.Window, QColor(paint_css("modal.background")))
         self.setPalette(palette)
 
         outer = QVBoxLayout(self)
@@ -140,12 +140,12 @@ class IpodLibraryTagFixDialog(QDialog):
         panel.setCursor(Qt.CursorShape.PointingHandCursor)
         panel.setStyleSheet(
             f"QFrame#tagFixerExplanation {{"
-            f"background:{Colors.SURFACE};"
-            f"border:1px solid {Colors.ACCENT_BORDER};"
+            f"background:{paint_css('notice.info.fill')};"
+            f"border:1px solid {paint_css('notice.info.border')};"
             f"border-radius:{Metrics.BORDER_RADIUS_MD}px;"
             f"}}"
             f"QFrame#tagFixerExplanation:hover {{"
-            f"background:{Colors.SURFACE_ALT};"
+            f"background:{paint_css('notice.info.hover_fill')};"
             f"}}"
         )
         layout = QVBoxLayout(panel)
@@ -161,9 +161,9 @@ class IpodLibraryTagFixDialog(QDialog):
         help_mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
         help_mark.setFont(QFont(MONO_FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.DemiBold))
         help_mark.setStyleSheet(
-            f"color:{Colors.ACCENT_LIGHT};"
-            f"background:{Colors.ACCENT_MUTED};"
-            f"border:1px solid {Colors.ACCENT_BORDER};"
+            f"color:{paint_css('status.info.text')};"
+            f"background:{paint_css('notice.info.fill')};"
+            f"border:1px solid {paint_css('notice.info.border')};"
             f"border-radius:{Metrics.BORDER_RADIUS_SM}px;"
         )
         header.addWidget(help_mark)
@@ -173,19 +173,19 @@ class IpodLibraryTagFixDialog(QDialog):
         title_stack.setSpacing(1)
         title = QLabel("What's this for?", panel)
         title.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.DemiBold))
-        title.setStyleSheet(_label_css(Colors.TEXT_PRIMARY))
+        title.setStyleSheet(_label_css(paint_css("text.primary")))
         title_stack.addWidget(title)
 
         profile = QLabel(f"Based on {self._suggestion.profile.label}", panel)
         profile.setFont(QFont(MONO_FONT_FAMILY, Metrics.FONT_XS))
-        profile.setStyleSheet(_label_css(Colors.TEXT_TERTIARY))
+        profile.setStyleSheet(_label_css(paint_css("text.tertiary")))
         title_stack.addWidget(profile)
         header.addLayout(title_stack, 1)
 
         toggle_icon = QLabel(panel)
         toggle_icon.setFixedSize(14, 28)
         toggle_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        toggle_icon.setStyleSheet(_label_css(Colors.TEXT_TERTIARY))
+        toggle_icon.setStyleSheet(_label_css(paint_css("text.tertiary")))
         self._explanation_toggle_icon = toggle_icon
         header.addWidget(toggle_icon, 0, Qt.AlignmentFlag.AlignRight)
         layout.addLayout(header)
@@ -196,7 +196,7 @@ class IpodLibraryTagFixDialog(QDialog):
             panel,
         )
         compact.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
-        compact.setStyleSheet(_label_css(Colors.TEXT_PRIMARY))
+        compact.setStyleSheet(_label_css(paint_css("text.primary")))
         compact.setWordWrap(True)
         compact.setTextFormat(Qt.TextFormat.PlainText)
         layout.addWidget(compact)
@@ -208,7 +208,7 @@ class IpodLibraryTagFixDialog(QDialog):
             panel,
         )
         body.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        body.setStyleSheet(_label_css(Colors.TEXT_SECONDARY))
+        body.setStyleSheet(_label_css(paint_css("text.secondary")))
         body.setWordWrap(True)
         body.setTextFormat(Qt.TextFormat.PlainText)
         layout.addWidget(body)
@@ -231,7 +231,7 @@ class IpodLibraryTagFixDialog(QDialog):
 
         label = QLabel("What this changes", wrapper)
         label.setFont(QFont(MONO_FONT_FAMILY, Metrics.FONT_XS, QFont.Weight.DemiBold))
-        label.setStyleSheet(_label_css(Colors.TEXT_TERTIARY))
+        label.setStyleSheet(_label_css(paint_css("text.tertiary")))
         layout.addWidget(label)
 
         for title, detail in (
@@ -277,7 +277,7 @@ class IpodLibraryTagFixDialog(QDialog):
         bullet = QFrame(bullet_slot)
         bullet.setFixedSize(5, 5)
         bullet.setStyleSheet(
-            f"background:{Colors.ACCENT_LIGHT};"
+            f"background:{paint_css('status.info.text')};"
             f"border:0px;"
             f"border-radius:2px;"
         )
@@ -290,12 +290,12 @@ class IpodLibraryTagFixDialog(QDialog):
 
         title_label = QLabel(title, row)
         title_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
-        title_label.setStyleSheet(_label_css(Colors.TEXT_PRIMARY))
+        title_label.setStyleSheet(_label_css(paint_css("text.primary")))
         text_stack.addWidget(title_label)
 
         detail_label = QLabel(detail, row)
         detail_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        detail_label.setStyleSheet(_label_css(Colors.TEXT_SECONDARY))
+        detail_label.setStyleSheet(_label_css(paint_css("text.secondary")))
         detail_label.setWordWrap(True)
         detail_label.setTextFormat(Qt.TextFormat.PlainText)
         text_stack.addWidget(detail_label)
@@ -338,7 +338,7 @@ class IpodLibraryTagFixDialog(QDialog):
         if icon is None:
             return
         glyph = "chevron-down" if self._explanation_expanded else "chevron-right"
-        px = glyph_pixmap(glyph, 14, Colors.TEXT_TERTIARY)
+        px = glyph_pixmap(glyph, 14, paint_css("text.tertiary"))
         if px is not None:
             icon.setPixmap(px)
             icon.setText("")
@@ -354,7 +354,7 @@ class IpodLibraryTagFixDialog(QDialog):
 
         title = QLabel("Review iPod Tag Fixes", header)
         title.setFont(QFont(FONT_FAMILY, Metrics.FONT_XL, QFont.Weight.Bold))
-        title.setStyleSheet(_label_css(Colors.TEXT_PRIMARY))
+        title.setStyleSheet(_label_css(paint_css("text.primary")))
         layout.addWidget(title)
 
         changed_track_count = len(self._suggestion.changes_by_track)
@@ -365,7 +365,7 @@ class IpodLibraryTagFixDialog(QDialog):
             header,
         )
         summary.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
-        summary.setStyleSheet(_label_css(Colors.TEXT_PRIMARY))
+        summary.setStyleSheet(_label_css(paint_css("text.primary")))
         layout.addWidget(summary)
 
         return header
@@ -401,7 +401,7 @@ class IpodLibraryTagFixDialog(QDialog):
 
         self._preview_status = QLabel(change_panel)
         self._preview_status.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS))
-        self._preview_status.setStyleSheet(_label_css(Colors.TEXT_TERTIARY))
+        self._preview_status.setStyleSheet(_label_css(paint_css("text.tertiary")))
         change_layout.addWidget(self._preview_status)
 
         self._change_table = self._build_change_table()
@@ -419,7 +419,7 @@ class IpodLibraryTagFixDialog(QDialog):
 
         label = QLabel("Fields", wrapper)
         label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
-        label.setStyleSheet(_label_css(Colors.TEXT_SECONDARY))
+        label.setStyleSheet(_label_css(paint_css("text.secondary")))
         layout.addWidget(label)
 
         for field, count in self._field_counts():

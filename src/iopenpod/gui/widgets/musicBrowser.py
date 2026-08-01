@@ -22,7 +22,7 @@ from iopenpod.itunesdb_shared.constants import (
     MEDIA_TYPE_VIDEO_MASK,
 )
 
-from ..styles import Colors, make_scroll_area
+from ..styles import make_scroll_area, paint_css
 from .gridHeaderBar import GridHeaderBar
 from .MBGridView import MusicBrowserGrid
 from .MBListView import MusicBrowserList
@@ -161,13 +161,13 @@ class MusicBrowser(QFrame):
         self.gridTrackSplitter.setMinimumSize(0, 0)
         self.gridTrackSplitter.setStyleSheet(f"""
             QSplitter::handle {{
-                background: {Colors.BORDER_SUBTLE};
+                background: {paint_css('border.subtle')};
             }}
             QSplitter::handle:hover {{
-                background: {Colors.ACCENT};
+                background: {paint_css('control.primary.fill')};
             }}
             QSplitter::handle:pressed {{
-                background: {Colors.ACCENT_LIGHT};
+                background: {paint_css('control.primary.hover_fill')};
             }}
         """)
 

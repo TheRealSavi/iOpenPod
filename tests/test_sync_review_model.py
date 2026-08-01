@@ -149,7 +149,7 @@ def test_sync_track_row_shows_chaptered_album_metadata_update_when_ipod_title_is
         aggregate_kind="chaptered_album",
     )
 
-    row = SyncTrackRow(item, "#8844ff")
+    row = SyncTrackRow(item, "metadata")
     qtbot.addWidget(row)
 
     assert row.title_label.text() == "Update chapter titles: Album"
@@ -170,7 +170,7 @@ def test_sync_track_row_metadata_update_fallback_handles_loose_item(qtbot) -> No
         },
     )
 
-    row = SyncTrackRow(item, "#8844ff")
+    row = SyncTrackRow(item, "metadata")
     qtbot.addWidget(row)
 
     assert row.title_label.text() == "Update chapter titles: Album"
@@ -192,7 +192,7 @@ def test_sync_track_row_shows_aggregate_file_update_without_pc_track(qtbot) -> N
         aggregate_kind="chaptered_album",
     )
 
-    row = SyncTrackRow(item, "#8844ff")
+    row = SyncTrackRow(item, "update_file")
     qtbot.addWidget(row)
 
     assert row.title_label.text() == "Rebuild chaptered album: Album"

@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import QLabel
 
-from iopenpod.gui.styles import Colors, Design, Metrics
+from iopenpod.gui.styles import Design, Metrics, current_theme, paint_css
 from iopenpod.gui.widgets.sidebar import Sidebar
 from iopenpod.gui.widgets.sidebarNavButton import SidebarNavButton
 
@@ -41,9 +41,9 @@ def test_sidebar_selection_is_neutral_instead_of_accent_colored(qtbot) -> None:
     selected_css = sidebar.buttons["Albums"].styleSheet()
     assert isinstance(sidebar.buttons["Albums"], SidebarNavButton)
     assert sidebar.buttons["Albums"].isSelected()
-    assert Colors.SURFACE_ACTIVE in selected_css
-    assert f"color: {Colors.TEXT_PRIMARY}" in selected_css
-    assert Colors.ACCENT_MUTED not in selected_css
+    assert paint_css("surface.active") in selected_css
+    assert f"color: {paint_css('text.primary')}" in selected_css
+    assert current_theme().paint("selection.fill").css not in selected_css
 
 
 def test_device_summary_is_a_single_contained_sidebar_surface(qtbot) -> None:
@@ -52,8 +52,8 @@ def test_device_summary_is_a_single_contained_sidebar_surface(qtbot) -> None:
 
     card = sidebar.device_card
     assert card.objectName() == "deviceInfoCard"
-    assert Colors.SURFACE_RAISED in card.styleSheet()
-    assert Colors.BORDER_SUBTLE in card.styleSheet()
+    assert paint_css("surface.raised") in card.styleSheet()
+    assert paint_css("border.subtle") in card.styleSheet()
     card_layout = card.layout()
     assert card_layout is not None
     margins = card_layout.contentsMargins()

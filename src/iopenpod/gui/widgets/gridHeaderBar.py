@@ -9,11 +9,11 @@ from ..styles import (
     BROWSER_SEARCH_CONTROL_SIZE,
     BROWSER_SEARCH_FIELD_WIDTH,
     FONT_FAMILY,
-    Colors,
     Metrics,
     browser_search_field_css,
     btn_css,
     context_menu_css,
+    paint_css,
 )
 
 # Sort definitions per category: (display_label, sort_key, reverse)
@@ -81,7 +81,7 @@ class GridHeaderBar(QFrame):
             QFont(FONT_FAMILY, Metrics.FONT_BROWSER_TITLE, QFont.Weight.DemiBold)
         )
         self._title.setStyleSheet(
-            f"color: {Colors.TEXT_PRIMARY}; background: transparent; border: none;"
+            f"color: {paint_css('text.primary')}; background: transparent; border: none;"
         )
 
         control_size = BROWSER_SEARCH_CONTROL_SIZE
@@ -89,14 +89,14 @@ class GridHeaderBar(QFrame):
         self._sort_btn.setObjectName("gridSortButton")
         self._sort_btn.setFixedSize(control_size, control_size)
         self._sort_btn.setStyleSheet(btn_css(
-            bg=Colors.SURFACE_RAISED,
-            bg_hover=Colors.SURFACE_HOVER,
-            bg_press=Colors.SURFACE_ACTIVE,
-            border=f"1px solid {Colors.BORDER}",
+            bg=paint_css("control.secondary.fill"),
+            bg_hover=paint_css("control.secondary.hover_fill"),
+            bg_press=paint_css("control.secondary.pressed_fill"),
+            border=f"1px solid {paint_css('border.default')}",
             radius=control_size // 2,
             padding="0px",
         ))
-        sort_icon = glyph_icon("sort-descending", 18, Colors.TEXT_SECONDARY)
+        sort_icon = glyph_icon("sort-descending", 18, paint_css("text.secondary"))
         if sort_icon is not None:
             self._sort_btn.setIcon(sort_icon)
             self._sort_btn.setIconSize(QSize(18, 18))
@@ -121,7 +121,7 @@ class GridHeaderBar(QFrame):
             BROWSER_SEARCH_CONTROL_SIZE,
         )
         self._search.setStyleSheet(browser_search_field_css())
-        search_icon = glyph_icon("search", 16, Colors.TEXT_TERTIARY)
+        search_icon = glyph_icon("search", 16, paint_css("text.tertiary"))
         if search_icon is not None:
             self._search.addAction(
                 search_icon,
@@ -206,17 +206,37 @@ class GridHeaderBar(QFrame):
         enabled = self._selection_group_btn.isChecked()
         control_size = BROWSER_SEARCH_CONTROL_SIZE
         self._selection_group_btn.setStyleSheet(btn_css(
-            bg=Colors.ACCENT_DIM if enabled else Colors.SURFACE_RAISED,
-            bg_hover=Colors.ACCENT_HOVER if enabled else Colors.SURFACE_HOVER,
-            bg_press=Colors.ACCENT_PRESS if enabled else Colors.SURFACE_ACTIVE,
-            border=f"1px solid {Colors.ACCENT_BORDER if enabled else Colors.BORDER}",
+            bg=(
+                paint_css("control.toggle.selected_fill")
+                if enabled
+                else paint_css("control.secondary.fill")
+            ),
+            bg_hover=(
+                paint_css("control.toggle.selected_hover_fill")
+                if enabled
+                else paint_css("control.secondary.hover_fill")
+            ),
+            bg_press=(
+                paint_css("control.toggle.selected_pressed_fill")
+                if enabled
+                else paint_css("control.secondary.pressed_fill")
+            ),
+            border=(
+                f"1px solid {paint_css('control.toggle.selected_border')}"
+                if enabled
+                else f"1px solid {paint_css('border.default')}"
+            ),
             radius=control_size // 2,
             padding="0px",
         ))
         icon = glyph_icon(
             "check-circle",
             18,
-            Colors.ACCENT if enabled else Colors.TEXT_SECONDARY,
+            (
+                paint_css("control.primary.fill")
+                if enabled
+                else paint_css("text.secondary")
+            ),
         )
         if icon is not None:
             self._selection_group_btn.setIcon(icon)

@@ -25,9 +25,9 @@ from iopenpod.application.database_storage import (
 from ..styles import (
     FONT_FAMILY,
     MONO_FONT_FAMILY,
-    Colors,
     Metrics,
     back_btn_css,
+    paint_css,
 )
 from .formatters import format_size
 
@@ -76,13 +76,17 @@ class DatabaseStorageBrowser(QWidget):
 
         title = QLabel("Database Storage Usage")
         title.setFont(QFont(FONT_FAMILY, Metrics.FONT_XXL, QFont.Weight.DemiBold))
-        title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent;")
+        title.setStyleSheet(
+            f"color: {paint_css('text.primary')}; background: transparent;"
+        )
         title_col.addWidget(title)
 
         self.summary_label = QLabel("")
         self.summary_label.setObjectName("databaseStorageSummary")
         self.summary_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        self.summary_label.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent;")
+        self.summary_label.setStyleSheet(
+            f"color: {paint_css('text.tertiary')}; background: transparent;"
+        )
         self.summary_label.setWordWrap(True)
         self.summary_label.setTextFormat(Qt.TextFormat.PlainText)
         title_col.addWidget(self.summary_label)
@@ -103,29 +107,29 @@ class DatabaseStorageBrowser(QWidget):
         self.tree.setTextElideMode(Qt.TextElideMode.ElideMiddle)
         self.tree.setStyleSheet(f"""
             QTreeWidget {{
-                background: {Colors.SHADOW_LIGHT};
-                alternate-background-color: {Colors.SURFACE};
-                color: {Colors.TEXT_PRIMARY};
-                border: 1px solid {Colors.BORDER_SUBTLE};
+                background: {paint_css('table.row.fill')};
+                alternate-background-color: {paint_css('table.row.alternate_fill')};
+                color: {paint_css('text.primary')};
+                border: 1px solid {paint_css('border.subtle')};
                 border-radius: {Metrics.BORDER_RADIUS_SM}px;
                 outline: none;
             }}
             QTreeWidget::item {{
                 padding: 5px 6px;
-                border-bottom: 1px solid {Colors.BORDER_SUBTLE};
+                border-bottom: 1px solid {paint_css('border.subtle')};
             }}
             QTreeWidget::item:selected {{
-                background: {Colors.SELECTION};
-                color: {Colors.TEXT_PRIMARY};
+                background: {paint_css('table.row.selected_fill')};
+                color: {paint_css('text.primary')};
             }}
             QTreeWidget::item:hover {{
-                background: {Colors.SURFACE_HOVER};
+                background: {paint_css('surface.hover')};
             }}
             QHeaderView::section {{
-                background: {Colors.SURFACE_ALT};
-                color: {Colors.TEXT_SECONDARY};
+                background: {paint_css('surface.inset')};
+                color: {paint_css('text.secondary')};
                 border: none;
-                border-bottom: 1px solid {Colors.BORDER};
+                border-bottom: 1px solid {paint_css('border.default')};
                 padding: 6px 8px;
                 font-weight: 600;
                 font-size: {Metrics.FONT_LG}pt;
@@ -144,7 +148,16 @@ class DatabaseStorageBrowser(QWidget):
     def _build_explanation(self) -> QFrame:
         panel = QFrame(self)
         panel.setObjectName("databaseStorageExplanation")
-        panel.setStyleSheet(f"QFrame#databaseStorageExplanation {{background:{Colors.SURFACE};border:1px solid {Colors.ACCENT_BORDER};border-radius:{Metrics.BORDER_RADIUS_MD}px;}}QFrame#databaseStorageExplanation:hover {{background:{Colors.SURFACE_ALT};}}")
+        panel.setStyleSheet(
+            "QFrame#databaseStorageExplanation {"
+            f"background: {paint_css('notice.info.fill')};"
+            f"border: 1px solid {paint_css('notice.info.border')};"
+            f"border-radius: {Metrics.BORDER_RADIUS_MD}px;"
+            "}"
+            "QFrame#databaseStorageExplanation:hover {"
+            f"background: {paint_css('notice.info.hover_fill')};"
+            "}"
+        )
 
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(12, 10, 12, 10)
@@ -159,7 +172,12 @@ class DatabaseStorageBrowser(QWidget):
         help_mark.setFixedSize(28, 28)
         help_mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
         help_mark.setFont(QFont(MONO_FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.DemiBold))
-        help_mark.setStyleSheet(f"color:{Colors.ACCENT_LIGHT};background:{Colors.ACCENT_MUTED};border:1px solid {Colors.ACCENT_BORDER};border-radius:{Metrics.BORDER_RADIUS_SM}px;")
+        help_mark.setStyleSheet(
+            f"color:{paint_css('status.info.text')};"
+            f"background:{paint_css('notice.info.fill')};"
+            f"border:1px solid {paint_css('notice.info.border')};"
+            f"border-radius:{Metrics.BORDER_RADIUS_SM}px;"
+        )
         header.addWidget(help_mark)
 
         title_stack = QVBoxLayout()
@@ -169,13 +187,13 @@ class DatabaseStorageBrowser(QWidget):
         title = QLabel("What's this for?", panel)
         title.setObjectName("databaseStorageExplanationTitle")
         title.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.DemiBold))
-        title.setStyleSheet(_label_css(Colors.TEXT_PRIMARY))
+        title.setStyleSheet(_label_css(paint_css("text.primary")))
         title_stack.addWidget(title)
 
         profile = QLabel("iTunesDB, iTunesCDB, and SQLite files", panel)
         profile.setObjectName("databaseStorageExplanationProfile")
         profile.setFont(QFont(MONO_FONT_FAMILY, Metrics.FONT_XS))
-        profile.setStyleSheet(_label_css(Colors.TEXT_TERTIARY))
+        profile.setStyleSheet(_label_css(paint_css("text.tertiary")))
         title_stack.addWidget(profile)
 
         header.addLayout(title_stack, 1)
@@ -187,7 +205,7 @@ class DatabaseStorageBrowser(QWidget):
         )
         compact.setObjectName("databaseStorageExplanationSummary")
         compact.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
-        compact.setStyleSheet(_label_css(Colors.TEXT_PRIMARY))
+        compact.setStyleSheet(_label_css(paint_css("text.primary")))
         compact.setWordWrap(True)
         compact.setTextFormat(Qt.TextFormat.PlainText)
         layout.addWidget(compact)
@@ -199,7 +217,7 @@ class DatabaseStorageBrowser(QWidget):
         # )
         # body.setObjectName("databaseStorageExplanationBody")
         # body.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        # body.setStyleSheet(_label_css(Colors.TEXT_SECONDARY))
+        # body.setStyleSheet(_label_css(paint_css("text.secondary")))
         # body.setWordWrap(True)
         # body.setTextFormat(Qt.TextFormat.PlainText)
         # layout.addWidget(body)

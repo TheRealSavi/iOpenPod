@@ -5,7 +5,7 @@ from iopenpod.application.database_storage import (
     DatabaseStorageFieldInspection,
     DatabaseStorageFieldValue,
 )
-from iopenpod.gui.styles import Colors, _parse_color
+from iopenpod.gui.styles import _parse_color, paint_css
 from iopenpod.gui.widgets import databaseStorageInspectionDialog
 
 
@@ -22,11 +22,11 @@ def test_field_size_summary_and_histogram_use_the_stored_byte_sizes() -> None:
     assert sum(bin_data.count for bin_data in histogram) == 5
 
 
-def test_chart_theme_colors_support_css_rgba_values() -> None:
-    color = _parse_color(Colors.ACCENT_MUTED)
+def test_chart_theme_colors_are_final_opaque_data_paints() -> None:
+    color = _parse_color(paint_css("data.accent.subtle_fill"))
 
     assert color.isValid()
-    assert color.alpha() > 0
+    assert color.alpha() == 255
 
 
 def test_field_inspector_shows_stats_and_filters_values_by_byte_count(qtbot) -> None:

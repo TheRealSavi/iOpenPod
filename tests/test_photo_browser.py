@@ -8,7 +8,7 @@ import pytest
 from PyQt6.QtCore import QPoint
 
 from iopenpod.device.path_safety import UnsafeDevicePathError
-from iopenpod.gui.styles import context_menu_css
+from iopenpod.gui.styles import context_menu_css, paint_css
 from iopenpod.gui.widgets import photoBrowser as photo_browser_module
 from iopenpod.gui.widgets.photoBrowser import PhotoBrowserWidget
 from iopenpod.gui.widgets.photoViewer import PhotoViewerPane
@@ -40,6 +40,28 @@ def test_photo_viewer_action_buttons_collapse_to_glyphs_when_narrow(qtbot):
 
     assert buttons["add"].text() == "Add to Album"
     assert buttons["remove"].text() == "Remove from Album"
+    assert paint_css("selection.fill") in viewer.meta_tree.styleSheet()
+    assert paint_css("border.subtle") in viewer.preview_label.styleSheet()
+
+
+def test_photo_browser_menu_icons_use_resolved_text_and_danger_paints(monkeypatch):
+    colors: list[str] = []
+    monkeypatch.setattr(
+        photo_browser_module,
+        "glyph_icon",
+        lambda _glyph, _size, color: colors.append(color) or object(),
+    )
+    browser = SimpleNamespace()
+
+    PhotoBrowserWidget._set_menu_icon(cast(Any, browser), _Action("Export"), "download")
+    PhotoBrowserWidget._set_menu_icon(
+        cast(Any, browser),
+        _Action("Delete"),
+        "trash",
+        paint_css("status.danger.text"),
+    )
+
+    assert colors == [paint_css("text.primary"), paint_css("status.danger.text")]
 
 
 class _Action:

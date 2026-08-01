@@ -8,6 +8,7 @@ from PyQt6.QtCore import QPoint, Qt
 from PyQt6.QtGui import QColor, QContextMenuEvent, QPixmap
 from PyQt6.QtWidgets import QApplication, QLabel, QPushButton, QVBoxLayout, QWidget
 
+from iopenpod.gui.styles import paint_css
 from iopenpod.gui.widgets.podcastBrowser import (
     _COMBINED_FEED_COLUMNS,
     _EPISODE_ARTWORK_COLLAPSED_HEIGHT,
@@ -39,6 +40,15 @@ def test_http_artwork_source_is_remote() -> None:
     assert _is_remote_artwork_source("https://example.com/cover.jpg") is True
     assert _is_remote_artwork_source("http://example.com/cover.jpg") is True
     assert _is_remote_artwork_source(r"G:\iPod_Control\cover.jpg") is False
+
+
+def test_episode_card_uses_resolved_episode_and_action_paints(qtbot) -> None:
+    card = _PodcastEpisodeCard()
+    qtbot.addWidget(card)
+
+    assert paint_css("podcast.episode.fill") in card.styleSheet()
+    assert paint_css("control.primary.fill") in card._add_btn.styleSheet()
+    assert paint_css("status.danger.subtle_fill") in card._remove_btn.styleSheet()
 
 
 def test_read_local_artwork_bytes_reads_existing_file(tmp_path: Path) -> None:

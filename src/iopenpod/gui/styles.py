@@ -7,7 +7,6 @@ every widget draws from a single visual language.
 
 from __future__ import annotations
 
-import colorsys
 import re
 import sys
 from dataclasses import dataclass
@@ -27,6 +26,9 @@ from PyQt6.QtWidgets import (
 )
 
 from iopenpod.application.device_identity import resolve_ipod_image_color
+from iopenpod.infrastructure.theme_catalog import load_theme_catalog
+from iopenpod.infrastructure.theme_renderer import Color, ResolvedTheme, render_theme
+from iopenpod.infrastructure.theme_runtime import ThemeRuntime
 
 if TYPE_CHECKING:
     from PyQt6.QtWidgets import QFrame, QLabel, QScrollArea, QWidget
@@ -49,532 +51,134 @@ else:
         ' "Ubuntu", "DejaVu Sans"'
     )
 
-# ── Theme palettes ───────────────────────────────────────────────────────────
-# Each palette is a dict mapping attribute name → color string.
-# Colors.apply_theme() copies the selected palette onto class attributes.
+# ── Theme runtime ──────────────────────────────────────────────────────────
 #
-# Token semantics (applies to all palettes):
-#   BG_DARK / BG_MID       — window background gradient stops
-#   SURFACE                — subtle card/panel tint (semi-transparent)
-#   SURFACE_ALT            — input field backgrounds; inset areas
-#   SURFACE_RAISED         — raised elements: buttons, chips
-#   SURFACE_HOVER          — hover state for interactive surfaces
-#   SURFACE_ACTIVE         — pressed / active state
-#   TEXT_PRIMARY/SECONDARY/TERTIARY/DISABLED — text hierarchy
-#   BORDER / BORDER_SUBTLE — dividers, outlines; BORDER_SUBTLE is hairlines
-#   BORDER_FOCUS           — focus rings on inputs
-#   SELECTION              — row/item highlight background
-#   SYNC_FREED             — "freed storage" teal in the storage bar legend
+# The catalog owns authored JSON, the renderer owns all paint recipes, and the
+# runtime holds exactly one immutable resolved result for every GUI consumer.
+_INITIAL_THEME = render_theme(load_theme_catalog().get("dark"))
+_THEME_RUNTIME = ThemeRuntime(_INITIAL_THEME)
 
-# ── Built-in dark ────────────────────────────────────────────────────────────
-_DARK_PALETTE = dict(
-    ACCENT="#409cff", ACCENT_LIGHT="#60b0ff",
-    ACCENT_DIM="rgba(64,156,255,80)", ACCENT_HOVER="rgba(64,156,255,120)",
-    ACCENT_PRESS="rgba(64,156,255,60)", ACCENT_BORDER="rgba(64,156,255,100)",
-    ACCENT_MUTED="rgba(64,156,255,35)",
-    ACCENT_SOLID="rgba(64,156,255,200)", ACCENT_SOLID_PRESS="rgba(64,156,255,160)",
-    ACCENT_DARK="rgba(40,100,200,100)", ACCENT_DARK_DIM="rgba(40,100,180,60)",
-    BG_DARK="#1a1a2e", BG_MID="#1e1e32",
-    SURFACE="rgba(255,255,255,8)", SURFACE_ALT="rgba(255,255,255,12)",
-    SURFACE_RAISED="rgba(255,255,255,18)", SURFACE_HOVER="rgba(255,255,255,25)",
-    SURFACE_ACTIVE="rgba(255,255,255,35)",
-    MENU_BG="#2a2a40",
-    TEXT_PRIMARY="rgba(255,255,255,230)", TEXT_SECONDARY="rgba(255,255,255,150)",
-    TEXT_TERTIARY="rgba(255,255,255,100)", TEXT_DISABLED="rgba(255,255,255,60)",
-    BORDER="rgba(255,255,255,30)", BORDER_SUBTLE="rgba(255,255,255,15)",
-    BORDER_FOCUS="rgba(64,156,255,150)",
-    DIALOG_BG="#222233", TOOLTIP_BG="#2a2d3a", DROPDOWN_BG="#2a2d3a",
-    GRIDLINE="rgba(255,255,255,12)", SELECTION="rgba(64,156,255,90)",
-    STAR="#ffc857",
-    DANGER="#ff6b6b", DANGER_DIM="rgba(255,100,100,30)", DANGER_HOVER="rgba(255,100,100,50)",
-    DANGER_BORDER="rgba(220,60,60,80)",
-    SUCCESS="#51cf66", SUCCESS_DIM="rgba(80,180,80,40)", SUCCESS_HOVER="rgba(80,180,80,60)",
-    SUCCESS_BORDER="rgba(80,180,80,80)",
-    WARNING="#fcc419", INFO="#74c0fc",
-    OVERLAY="rgba(30,30,38,220)",
-    SHADOW_LIGHT="rgba(0,0,0,25)", SHADOW="rgba(0,0,0,40)", SHADOW_DEEP="rgba(0,0,0,60)",
-    TEXT_ON_ACCENT="#ffffff",
-    SYNC_CYAN="#66d9e8", SYNC_PURPLE="#b197fc",
-    SYNC_MAGENTA="#f06595", SYNC_ORANGE="#ff922b",
-    SYNC_FREED="#66d9c2",
-)
-
-# ── Built-in light ───────────────────────────────────────────────────────────
-_LIGHT_PALETTE = dict(
-    ACCENT="#0a6fdb", ACCENT_LIGHT="#3d8de5",
-    ACCENT_DIM="rgba(10,111,219,60)", ACCENT_HOVER="rgba(10,111,219,100)",
-    ACCENT_PRESS="rgba(10,111,219,45)", ACCENT_BORDER="rgba(10,111,219,80)",
-    ACCENT_MUTED="rgba(10,111,219,18)",
-    ACCENT_SOLID="rgba(10,111,219,180)", ACCENT_SOLID_PRESS="rgba(10,111,219,140)",
-    ACCENT_DARK="rgba(10,80,160,80)", ACCENT_DARK_DIM="rgba(10,80,160,40)",
-    BG_DARK="#f0f0f5", BG_MID="#e8e8f0",
-    SURFACE="rgba(0,0,0,8)", SURFACE_ALT="rgba(0,0,0,14)",
-    SURFACE_RAISED="rgba(0,0,0,20)", SURFACE_HOVER="rgba(0,0,0,26)",
-    SURFACE_ACTIVE="rgba(0,0,0,32)",
-    MENU_BG="#ffffff",
-    TEXT_PRIMARY="rgba(0,0,0,220)", TEXT_SECONDARY="rgba(0,0,0,140)",
-    TEXT_TERTIARY="rgba(0,0,0,100)", TEXT_DISABLED="rgba(0,0,0,50)",
-    BORDER="rgba(0,0,0,24)", BORDER_SUBTLE="rgba(0,0,0,16)",
-    BORDER_FOCUS="rgba(10,111,219,130)",
-    DIALOG_BG="#ffffff", TOOLTIP_BG="#f5f5fa", DROPDOWN_BG="#ffffff",
-    GRIDLINE="rgba(0,0,0,12)", SELECTION="rgba(10,111,219,70)",
-    STAR="#e6a800",
-    DANGER="#d9363e", DANGER_DIM="rgba(217,54,62,20)", DANGER_HOVER="rgba(217,54,62,35)",
-    DANGER_BORDER="rgba(217,54,62,60)",
-    SUCCESS="#2b8a3e", SUCCESS_DIM="rgba(43,138,62,25)", SUCCESS_HOVER="rgba(43,138,62,40)",
-    SUCCESS_BORDER="rgba(43,138,62,60)",
-    WARNING="#e07700", INFO="#1c7ed6",
-    OVERLAY="rgba(240,240,245,230)",
-    SHADOW_LIGHT="rgba(0,0,0,14)", SHADOW="rgba(0,0,0,22)", SHADOW_DEEP="rgba(0,0,0,32)",
-    TEXT_ON_ACCENT="#ffffff",
-    SYNC_CYAN="#0c8599", SYNC_PURPLE="#7048e8",
-    SYNC_MAGENTA="#c2255c", SYNC_ORANGE="#d9480f",
-    SYNC_FREED="#09a389",
-)
-
-# ── High-contrast overlays: merged on top of dark or light palette ───────────
-_HC_DARK_OVERRIDES = dict(
-    TEXT_PRIMARY="rgba(255,255,255,255)", TEXT_SECONDARY="rgba(255,255,255,200)",
-    TEXT_TERTIARY="rgba(255,255,255,160)", TEXT_DISABLED="rgba(255,255,255,100)",
-    BORDER="rgba(255,255,255,60)", BORDER_SUBTLE="rgba(255,255,255,35)",
-    BORDER_FOCUS="rgba(64,156,255,220)",
-    GRIDLINE="rgba(255,255,255,25)",
-    DANGER="#ff8787", SUCCESS="#69db7c", WARNING="#ffe066", INFO="#91d5ff",
-    DANGER_BORDER="rgba(255,135,135,120)", SUCCESS_BORDER="rgba(105,219,124,120)",
-)
-
-_HC_LIGHT_OVERRIDES = dict(
-    TEXT_PRIMARY="rgba(0,0,0,255)", TEXT_SECONDARY="rgba(0,0,0,200)",
-    TEXT_TERTIARY="rgba(0,0,0,160)", TEXT_DISABLED="rgba(0,0,0,100)",
-    BORDER="rgba(0,0,0,40)", BORDER_SUBTLE="rgba(0,0,0,25)",
-    BORDER_FOCUS="rgba(10,111,219,220)",
-    GRIDLINE="rgba(0,0,0,18)",
-    DANGER="#a91e25", SUCCESS="#1a6b2d", WARNING="#b85c00", INFO="#1062b0",
-    DANGER_BORDER="rgba(169,30,37,110)", SUCCESS_BORDER="rgba(26,107,45,110)",
-)
-
-# ── Catppuccin Mocha (darkest) ────────────────────────────────────────────────
-# https://catppuccin.com/palette — Mocha flavor
-_CATPPUCCIN_MOCHA = dict(
-    ACCENT="#89b4fa", ACCENT_LIGHT="#b4befe",          # Blue / Lavender
-    ACCENT_DIM="rgba(137,180,250,70)", ACCENT_HOVER="rgba(137,180,250,110)",
-    ACCENT_PRESS="rgba(137,180,250,55)", ACCENT_BORDER="rgba(137,180,250,90)",
-    ACCENT_MUTED="rgba(137,180,250,25)",
-    ACCENT_SOLID="rgba(137,180,250,200)", ACCENT_SOLID_PRESS="rgba(137,180,250,160)",
-    ACCENT_DARK="rgba(80,120,200,90)", ACCENT_DARK_DIM="rgba(80,120,200,55)",
-    BG_DARK="#1e1e2e", BG_MID="#181825",               # Base / Mantle
-    SURFACE="rgba(49,50,68,60)",                        # Surface0 tinted
-    SURFACE_ALT="#313244",                              # Surface0
-    SURFACE_RAISED="#45475a",                           # Surface1
-    SURFACE_HOVER="#585b70",                            # Surface2
-    SURFACE_ACTIVE="rgba(88,91,112,220)",               # Surface2 opaque
-    MENU_BG="#313244",
-    TEXT_PRIMARY="#cdd6f4",                             # Text
-    TEXT_SECONDARY="#bac2de",                           # Subtext1
-    TEXT_TERTIARY="#a6adc8",                            # Subtext0
-    TEXT_DISABLED="#6c7086",                            # Overlay0
-    BORDER="rgba(69,71,90,200)",                        # Surface1
-    BORDER_SUBTLE="rgba(49,50,68,200)",                 # Surface0
-    BORDER_FOCUS="rgba(137,180,250,160)",
-    DIALOG_BG="#181825",                                # Mantle
-    TOOLTIP_BG="#313244",                               # Surface0
-    DROPDOWN_BG="#313244",
-    GRIDLINE="rgba(49,50,68,200)",
-    SELECTION="rgba(137,180,250,80)",
-    STAR="#f9e2af",                                     # Yellow
-    DANGER="#f38ba8", DANGER_DIM="rgba(243,139,168,25)", DANGER_HOVER="rgba(243,139,168,45)",
-    DANGER_BORDER="rgba(243,139,168,80)",               # Red
-    SUCCESS="#a6e3a1", SUCCESS_DIM="rgba(166,227,161,25)", SUCCESS_HOVER="rgba(166,227,161,45)",
-    SUCCESS_BORDER="rgba(166,227,161,80)",              # Green
-    WARNING="#f9e2af", INFO="#89dceb",                  # Yellow / Sky
-    OVERLAY="rgba(30,30,46,225)",
-    SHADOW_LIGHT="rgba(17,17,27,35)", SHADOW="rgba(17,17,27,55)", SHADOW_DEEP="rgba(17,17,27,75)",
-    TEXT_ON_ACCENT="#1e1e2e",                           # Base (dark on pastel blue)
-    SYNC_CYAN="#94e2d5", SYNC_PURPLE="#cba6f7",        # Teal / Mauve
-    SYNC_MAGENTA="#f5c2e7", SYNC_ORANGE="#fab387",     # Pink / Peach
-    SYNC_FREED="#94e2d5",
-)
-
-# ── Catppuccin Macchiato ──────────────────────────────────────────────────────
-_CATPPUCCIN_MACCHIATO = dict(
-    ACCENT="#8aadf4", ACCENT_LIGHT="#b7bdf8",          # Blue / Lavender
-    ACCENT_DIM="rgba(138,173,244,70)", ACCENT_HOVER="rgba(138,173,244,110)",
-    ACCENT_PRESS="rgba(138,173,244,55)", ACCENT_BORDER="rgba(138,173,244,90)",
-    ACCENT_MUTED="rgba(138,173,244,25)",
-    ACCENT_SOLID="rgba(138,173,244,200)", ACCENT_SOLID_PRESS="rgba(138,173,244,160)",
-    ACCENT_DARK="rgba(80,120,200,90)", ACCENT_DARK_DIM="rgba(80,120,200,55)",
-    BG_DARK="#24273a", BG_MID="#1e2030",               # Base / Mantle
-    SURFACE="rgba(54,58,79,60)",
-    SURFACE_ALT="#363a4f",                              # Surface0
-    SURFACE_RAISED="#494d64",                           # Surface1
-    SURFACE_HOVER="#5b6078",                            # Surface2
-    SURFACE_ACTIVE="rgba(91,96,120,220)",
-    MENU_BG="#363a4f",
-    TEXT_PRIMARY="#cad3f5",
-    TEXT_SECONDARY="#b8c0e0",
-    TEXT_TERTIARY="#a5adcb",
-    TEXT_DISABLED="#6e738d",                            # Overlay0
-    BORDER="rgba(73,77,100,200)",
-    BORDER_SUBTLE="rgba(54,58,79,200)",
-    BORDER_FOCUS="rgba(138,173,244,160)",
-    DIALOG_BG="#1e2030",
-    TOOLTIP_BG="#363a4f",
-    DROPDOWN_BG="#363a4f",
-    GRIDLINE="rgba(54,58,79,200)",
-    SELECTION="rgba(138,173,244,80)",
-    STAR="#eed49f",
-    DANGER="#ed8796", DANGER_DIM="rgba(237,135,150,25)", DANGER_HOVER="rgba(237,135,150,45)",
-    DANGER_BORDER="rgba(237,135,150,80)",
-    SUCCESS="#a6da95", SUCCESS_DIM="rgba(166,218,149,25)", SUCCESS_HOVER="rgba(166,218,149,45)",
-    SUCCESS_BORDER="rgba(166,218,149,80)",
-    WARNING="#eed49f", INFO="#91d7e3",                  # Yellow / Sky
-    OVERLAY="rgba(36,39,58,225)",
-    SHADOW_LIGHT="rgba(24,25,38,35)", SHADOW="rgba(24,25,38,55)", SHADOW_DEEP="rgba(24,25,38,75)",
-    TEXT_ON_ACCENT="#24273a",
-    SYNC_CYAN="#8bd5ca", SYNC_PURPLE="#c6a0f6",
-    SYNC_MAGENTA="#f5bde6", SYNC_ORANGE="#f5a97f",
-    SYNC_FREED="#8bd5ca",
-)
-
-# ── Catppuccin Frappé ─────────────────────────────────────────────────────────
-_CATPPUCCIN_FRAPPE = dict(
-    ACCENT="#8caaee", ACCENT_LIGHT="#babbf1",          # Blue / Lavender
-    ACCENT_DIM="rgba(140,170,238,70)", ACCENT_HOVER="rgba(140,170,238,110)",
-    ACCENT_PRESS="rgba(140,170,238,55)", ACCENT_BORDER="rgba(140,170,238,90)",
-    ACCENT_MUTED="rgba(140,170,238,25)",
-    ACCENT_SOLID="rgba(140,170,238,200)", ACCENT_SOLID_PRESS="rgba(140,170,238,160)",
-    ACCENT_DARK="rgba(80,115,190,90)", ACCENT_DARK_DIM="rgba(80,115,190,55)",
-    BG_DARK="#303446", BG_MID="#292c3c",               # Base / Mantle
-    SURFACE="rgba(65,69,89,60)",
-    SURFACE_ALT="#414559",                              # Surface0
-    SURFACE_RAISED="#51576d",                           # Surface1
-    SURFACE_HOVER="#626880",                            # Surface2
-    SURFACE_ACTIVE="rgba(98,104,128,220)",
-    MENU_BG="#414559",
-    TEXT_PRIMARY="#c6d0f5",
-    TEXT_SECONDARY="#b5bfe2",
-    TEXT_TERTIARY="#a5adce",
-    TEXT_DISABLED="#737994",                            # Overlay0
-    BORDER="rgba(81,87,109,200)",
-    BORDER_SUBTLE="rgba(65,69,89,200)",
-    BORDER_FOCUS="rgba(140,170,238,160)",
-    DIALOG_BG="#292c3c",
-    TOOLTIP_BG="#414559",
-    DROPDOWN_BG="#414559",
-    GRIDLINE="rgba(65,69,89,200)",
-    SELECTION="rgba(140,170,238,80)",
-    STAR="#e5c890",
-    DANGER="#e78284", DANGER_DIM="rgba(231,130,132,25)", DANGER_HOVER="rgba(231,130,132,45)",
-    DANGER_BORDER="rgba(231,130,132,80)",
-    SUCCESS="#a6d189", SUCCESS_DIM="rgba(166,209,137,25)", SUCCESS_HOVER="rgba(166,209,137,45)",
-    SUCCESS_BORDER="rgba(166,209,137,80)",
-    WARNING="#e5c890", INFO="#99d1db",
-    OVERLAY="rgba(48,52,70,225)",
-    SHADOW_LIGHT="rgba(35,38,52,35)", SHADOW="rgba(35,38,52,55)", SHADOW_DEEP="rgba(35,38,52,75)",
-    TEXT_ON_ACCENT="#303446",
-    SYNC_CYAN="#81c8be", SYNC_PURPLE="#ca9ee6",
-    SYNC_MAGENTA="#f4b8e4", SYNC_ORANGE="#ef9f76",
-    SYNC_FREED="#81c8be",
-)
-
-# ── Catppuccin Latte (light) ──────────────────────────────────────────────────
-_CATPPUCCIN_LATTE = dict(
-    ACCENT="#1e66f5", ACCENT_LIGHT="#7287fd",          # Blue / Lavender
-    ACCENT_DIM="rgba(30,102,245,60)", ACCENT_HOVER="rgba(30,102,245,100)",
-    ACCENT_PRESS="rgba(30,102,245,45)", ACCENT_BORDER="rgba(30,102,245,80)",
-    ACCENT_MUTED="rgba(30,102,245,18)",
-    ACCENT_SOLID="rgba(30,102,245,180)", ACCENT_SOLID_PRESS="rgba(30,102,245,140)",
-    ACCENT_DARK="rgba(20,80,200,80)", ACCENT_DARK_DIM="rgba(20,80,200,50)",
-    BG_DARK="#eff1f5", BG_MID="#e6e9ef",               # Base / Mantle
-    SURFACE="rgba(204,208,218,60)",
-    SURFACE_ALT="#ccd0da",                              # Surface0
-    SURFACE_RAISED="#bcc0cc",                           # Surface1
-    SURFACE_HOVER="#acb0be",                            # Surface2
-    SURFACE_ACTIVE="rgba(172,176,190,220)",
-    MENU_BG="#eff1f5",
-    TEXT_PRIMARY="#4c4f69",                             # Text
-    TEXT_SECONDARY="#5c5f77",                           # Subtext1
-    TEXT_TERTIARY="#6c6f85",                            # Subtext0
-    TEXT_DISABLED="#9ca0b0",                            # Overlay0
-    BORDER="rgba(172,176,190,200)",                     # Surface2
-    BORDER_SUBTLE="rgba(204,208,218,200)",              # Surface0
-    BORDER_FOCUS="rgba(30,102,245,130)",
-    DIALOG_BG="#eff1f5",
-    TOOLTIP_BG="#e6e9ef",
-    DROPDOWN_BG="#eff1f5",
-    GRIDLINE="rgba(188,192,204,200)",
-    SELECTION="rgba(30,102,245,70)",
-    STAR="#df8e1d",                                     # Yellow
-    DANGER="#d20f39", DANGER_DIM="rgba(210,15,57,20)", DANGER_HOVER="rgba(210,15,57,35)",
-    DANGER_BORDER="rgba(210,15,57,60)",                 # Red
-    SUCCESS="#40a02b", SUCCESS_DIM="rgba(64,160,43,25)", SUCCESS_HOVER="rgba(64,160,43,40)",
-    SUCCESS_BORDER="rgba(64,160,43,60)",               # Green
-    WARNING="#df8e1d", INFO="#04a5e5",                  # Yellow / Sky
-    OVERLAY="rgba(239,241,245,230)",
-    SHADOW_LIGHT="rgba(0,0,0,12)", SHADOW="rgba(0,0,0,20)", SHADOW_DEEP="rgba(0,0,0,30)",
-    TEXT_ON_ACCENT="#eff1f5",                           # Base (light on dark blue)
-    SYNC_CYAN="#179299", SYNC_PURPLE="#8839ef",        # Teal / Mauve
-    SYNC_MAGENTA="#ea76cb", SYNC_ORANGE="#fe640b",     # Pink / Peach
-    SYNC_FREED="#179299",
-)
-
-# Registry: theme-id → (palette_dict, is_dark)
-_THEME_REGISTRY: dict[str, tuple[dict, bool]] = {
-    "dark": (_DARK_PALETTE, True),
-    "light": (_LIGHT_PALETTE, False),
-    "catppuccin-mocha": (_CATPPUCCIN_MOCHA, True),
-    "catppuccin-macchiato": (_CATPPUCCIN_MACCHIATO, True),
-    "catppuccin-frappe": (_CATPPUCCIN_FRAPPE, True),
-    "catppuccin-latte": (_CATPPUCCIN_LATTE, False),
-}
-
-# Playlist / category colors per theme (r,g,b tuples used by TrackListTitleBar)
-_PLAYLIST_COLORS: dict[str, dict] = {
-    "dark": dict(
-        PLAYLIST_SMART=(128, 90, 213), PLAYLIST_PODCAST=(46, 160, 67),
-        PLAYLIST_MASTER=(100, 100, 120), PLAYLIST_REGULAR=(64, 156, 255),
-    ),
-    "light": dict(
-        PLAYLIST_SMART=(114, 72, 200), PLAYLIST_PODCAST=(38, 135, 55),
-        PLAYLIST_MASTER=(90, 90, 110), PLAYLIST_REGULAR=(10, 111, 219),
-    ),
-    "catppuccin-mocha": dict(
-        PLAYLIST_SMART=(203, 166, 247), PLAYLIST_PODCAST=(166, 227, 161),
-        PLAYLIST_MASTER=(88, 91, 112), PLAYLIST_REGULAR=(137, 180, 250),
-    ),
-    "catppuccin-macchiato": dict(
-        PLAYLIST_SMART=(198, 160, 246), PLAYLIST_PODCAST=(166, 218, 149),
-        PLAYLIST_MASTER=(91, 96, 120), PLAYLIST_REGULAR=(138, 173, 244),
-    ),
-    "catppuccin-frappe": dict(
-        PLAYLIST_SMART=(202, 158, 230), PLAYLIST_PODCAST=(166, 209, 137),
-        PLAYLIST_MASTER=(98, 104, 128), PLAYLIST_REGULAR=(140, 170, 238),
-    ),
-    "catppuccin-latte": dict(
-        PLAYLIST_SMART=(136, 57, 239), PLAYLIST_PODCAST=(64, 160, 43),
-        PLAYLIST_MASTER=(140, 143, 161), PLAYLIST_REGULAR=(30, 102, 245),
-    ),
-}
+# Accent and artwork colors are normalized toward these contrast targets by
+# the application. Theme files intentionally never configure these mechanics.
+ACCENT_CONTRAST_TARGET = 3.35
+GRID_ART_CONTRAST_TARGET = 3.35
 
 
-class Colors:
-    """Named colors used throughout the app.
+def current_theme() -> ResolvedTheme:
+    """Return the immutable resolved theme for shared GUI styling helpers."""
 
-    All attributes start with the dark palette.  Call ``apply_theme()``
-    after QApplication is created to switch palettes based on user settings.
+    return _THEME_RUNTIME.current
+
+
+def paint_css(name: str) -> str:
+    """Return one documented application paint as a Qt stylesheet color."""
+
+    if "." not in name:
+        raise ValueError(f"{name!r} is a legacy token, not an application paint")
+    return current_theme().paint(name).css
+
+
+def paint_qcolor(name: str) -> QColor:
+    """Return one documented application paint for imperative Qt painting."""
+
+    color = current_theme().paint(name).color
+    return QColor(color.red, color.green, color.blue, color.alpha)
+
+
+def _detect_system_dark() -> bool:
+    """Return whether the current OS appearance is dark, defaulting safely."""
+
+    try:
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtGui import QPalette as _QPalette
+        from PyQt6.QtWidgets import QApplication
+
+        app = QApplication.instance()
+        if isinstance(app, QApplication):
+            hints = app.styleHints()
+            if hints is not None:
+                scheme = hints.colorScheme()
+                if scheme == Qt.ColorScheme.Dark:
+                    return True
+                if scheme == Qt.ColorScheme.Light:
+                    return False
+            bg = app.palette().color(_QPalette.ColorRole.Window)
+            return bg.lightnessF() < 0.5
+    except Exception:
+        pass
+    return True
+
+
+def _detect_system_high_contrast() -> bool:
+    """Return whether the current OS palette indicates increased contrast."""
+
+    try:
+        from PyQt6.QtGui import QPalette as _QPalette
+        from PyQt6.QtWidgets import QApplication
+
+        app = QApplication.instance()
+        if isinstance(app, QApplication):
+            palette = app.palette()
+            background = palette.color(_QPalette.ColorRole.Window)
+            foreground = palette.color(_QPalette.ColorRole.WindowText)
+            return abs(foreground.lightnessF() - background.lightnessF()) > 0.9
+    except Exception:
+        pass
+    return False
+
+
+def apply_theme(
+    theme: str = "dark",
+    high_contrast: str = "off",
+    accent_color: str = "blue",
+) -> ResolvedTheme:
+    """Resolve one theme preference set and replace the active runtime theme."""
+
+    effective_theme = (
+        "dark" if _detect_system_dark() else "light"
+    ) if theme == "system" else theme
+    definition = load_theme_catalog().get(effective_theme)
+    high_contrast_enabled = (
+        _detect_system_high_contrast() if high_contrast == "system" else high_contrast == "on"
+    )
+    accent_override = None
+    if accent_color and accent_color not in ("blue", "match-ipod"):
+        accent_override = Color.try_from_hex(accent_color)
+    resolved_theme = render_theme(
+        definition,
+        high_contrast=high_contrast_enabled,
+        accent_override=accent_override,
+        accent_contrast_target=ACCENT_CONTRAST_TARGET,
+    )
+    _THEME_RUNTIME.replace(resolved_theme)
+    return resolved_theme
+
+
+def apply_theme_selection(
+    mode: str,
+    light_theme: str,
+    dark_theme: str,
+    high_contrast: str = "off",
+    accent_color: str = "blue",
+) -> bool:
+    """Apply a selected theme and report whether its rendered appearance changed.
+
+    The public seam replaces the immutable runtime consumed by all GUI code.
     """
 
-    # Current resolved mode (set by apply_theme)
-    _active_mode: str = "dark"
-    _active_hc: bool = False
-
-    # Initialise with dark palette defaults
-    ACCENT: str = _DARK_PALETTE["ACCENT"]
-    ACCENT_LIGHT: str = _DARK_PALETTE["ACCENT_LIGHT"]
-    ACCENT_DIM = _DARK_PALETTE["ACCENT_DIM"]
-    ACCENT_HOVER = _DARK_PALETTE["ACCENT_HOVER"]
-    ACCENT_PRESS = _DARK_PALETTE["ACCENT_PRESS"]
-    ACCENT_BORDER = _DARK_PALETTE["ACCENT_BORDER"]
-    BG_DARK = _DARK_PALETTE["BG_DARK"]
-    BG_MID = _DARK_PALETTE["BG_MID"]
-    SURFACE = _DARK_PALETTE["SURFACE"]
-    SURFACE_ALT = _DARK_PALETTE["SURFACE_ALT"]
-    SURFACE_RAISED = _DARK_PALETTE["SURFACE_RAISED"]
-    SURFACE_HOVER = _DARK_PALETTE["SURFACE_HOVER"]
-    SURFACE_ACTIVE = _DARK_PALETTE["SURFACE_ACTIVE"]
-    MENU_BG = _DARK_PALETTE["MENU_BG"]
-    TEXT_PRIMARY = _DARK_PALETTE["TEXT_PRIMARY"]
-    TEXT_SECONDARY = _DARK_PALETTE["TEXT_SECONDARY"]
-    TEXT_TERTIARY = _DARK_PALETTE["TEXT_TERTIARY"]
-    TEXT_DISABLED = _DARK_PALETTE["TEXT_DISABLED"]
-    BORDER = _DARK_PALETTE["BORDER"]
-    BORDER_SUBTLE = _DARK_PALETTE["BORDER_SUBTLE"]
-    BORDER_FOCUS = _DARK_PALETTE["BORDER_FOCUS"]
-    DIALOG_BG = _DARK_PALETTE["DIALOG_BG"]
-    TOOLTIP_BG = _DARK_PALETTE["TOOLTIP_BG"]
-    DROPDOWN_BG = _DARK_PALETTE["DROPDOWN_BG"]
-    GRIDLINE = _DARK_PALETTE["GRIDLINE"]
-    SELECTION = _DARK_PALETTE["SELECTION"]
-    STAR = _DARK_PALETTE["STAR"]
-    DANGER = _DARK_PALETTE["DANGER"]
-    DANGER_DIM = _DARK_PALETTE["DANGER_DIM"]
-    DANGER_HOVER = _DARK_PALETTE["DANGER_HOVER"]
-    SUCCESS = _DARK_PALETTE["SUCCESS"]
-    SUCCESS_DIM = _DARK_PALETTE["SUCCESS_DIM"]
-    SUCCESS_HOVER = _DARK_PALETTE["SUCCESS_HOVER"]
-    WARNING = _DARK_PALETTE["WARNING"]
-    INFO = _DARK_PALETTE["INFO"]
-    OVERLAY = _DARK_PALETTE["OVERLAY"]
-    SHADOW_LIGHT = _DARK_PALETTE["SHADOW_LIGHT"]
-    SHADOW = _DARK_PALETTE["SHADOW"]
-    SHADOW_DEEP = _DARK_PALETTE["SHADOW_DEEP"]
-    TEXT_ON_ACCENT = _DARK_PALETTE["TEXT_ON_ACCENT"]
-    ACCENT_MUTED = _DARK_PALETTE["ACCENT_MUTED"]
-    ACCENT_SOLID = _DARK_PALETTE["ACCENT_SOLID"]
-    ACCENT_SOLID_PRESS = _DARK_PALETTE["ACCENT_SOLID_PRESS"]
-    ACCENT_DARK = _DARK_PALETTE["ACCENT_DARK"]
-    ACCENT_DARK_DIM = _DARK_PALETTE["ACCENT_DARK_DIM"]
-    DANGER_BORDER = _DARK_PALETTE["DANGER_BORDER"]
-    SUCCESS_BORDER = _DARK_PALETTE["SUCCESS_BORDER"]
-    SYNC_CYAN = _DARK_PALETTE["SYNC_CYAN"]
-    SYNC_PURPLE = _DARK_PALETTE["SYNC_PURPLE"]
-    SYNC_MAGENTA = _DARK_PALETTE["SYNC_MAGENTA"]
-    SYNC_ORANGE = _DARK_PALETTE["SYNC_ORANGE"]
-
-    # Accent colors are normalized toward this contrast against the app
-    # background so red, blue, gold, and artwork-derived colors read with
-    # similar visual strength across themes.
-    ACCENT_CONTRAST_TARGET = 3.35
-    GRID_ART_CONTRAST_TARGET = 3.35
-
-    # ── Semantic playlist / category color tuples (r, g, b) ──
-    PLAYLIST_SMART: tuple[int, int, int] = (128, 90, 213)
-    PLAYLIST_PODCAST: tuple[int, int, int] = (46, 160, 67)
-    PLAYLIST_MASTER: tuple[int, int, int] = (100, 100, 120)
-    PLAYLIST_REGULAR: tuple[int, int, int] = (64, 156, 255)
-
-    # Sync storage legend color — theme-aware, initialised from dark palette
-    SYNC_FREED = _DARK_PALETTE["SYNC_FREED"]
-
-    # Active theme identifier (set by apply_theme)
-    _active_theme: str = "dark"
-
-    @classmethod
-    def _detect_system_dark(cls) -> bool:
-        """Return True if the OS is in dark mode."""
-        try:
-            from PyQt6.QtCore import Qt
-            from PyQt6.QtGui import QPalette as _QPalette
-            from PyQt6.QtWidgets import QApplication
-            app = QApplication.instance()
-            if isinstance(app, QApplication):
-                hints = app.styleHints()
-                if hints is not None:
-                    scheme = hints.colorScheme()
-                    if scheme == Qt.ColorScheme.Dark:
-                        return True
-                    if scheme == Qt.ColorScheme.Light:
-                        return False
-                # Unknown — fall back to palette luminance
-                bg = app.palette().color(_QPalette.ColorRole.Window)
-                return bg.lightnessF() < 0.5
-        except Exception:
-            pass
-        return True  # default to dark
-
-    @classmethod
-    def _detect_system_hc(cls) -> bool:
-        """Return True if OS has increased-contrast / high-contrast enabled."""
-        try:
-            from PyQt6.QtGui import QPalette as _QPalette
-            from PyQt6.QtWidgets import QApplication
-            app = QApplication.instance()
-            if isinstance(app, QApplication):
-                pal = app.palette()
-                bg = pal.color(_QPalette.ColorRole.Window)
-                fg = pal.color(_QPalette.ColorRole.WindowText)
-                contrast = abs(fg.lightnessF() - bg.lightnessF())
-                return contrast > 0.9
-        except Exception:
-            pass
-        return False
-
-    @classmethod
-    def apply_theme(
-        cls,
-        theme: str = "dark",
-        high_contrast: str = "off",
-        accent_color: str = "blue",
-    ) -> None:
-        """Resolve theme + contrast settings and update all class attributes.
-
-        Parameters
-        ----------
-        theme : str
-            ``"dark"``, ``"light"``, ``"system"``, or any ``"catppuccin-*"`` key.
-        high_contrast : str
-            ``"on"``, ``"off"``, or ``"system"`` (ignored for Catppuccin flavors)
-        accent_color : str
-            ``"blue"`` uses the theme default, ``"match-ipod"`` is resolved
-            externally before calling, or a hex string like ``"#e34060"``.
-        """
-        # Resolve system theme
-        if theme == "system":
-            effective = "dark" if cls._detect_system_dark() else "light"
-        else:
-            effective = theme
-
-        palette_entry = _THEME_REGISTRY.get(effective, _THEME_REGISTRY["dark"])
-        base_palette, is_dark = palette_entry
-
-        # Resolve contrast (ignored for Catppuccin — they have their own contrast ratios)
-        if high_contrast == "system":
-            hc = cls._detect_system_hc()
-        else:
-            hc = (high_contrast == "on")
-
-        cls._active_mode = "dark" if is_dark else "light"
-        cls._active_theme = effective
-        cls._active_hc = hc
-
-        # Build resolved palette, optionally merging HC overrides.
-        # High contrast applies to all themes based on their is_dark flag,
-        # including Catppuccin variants (Latte is light, others are dark).
-        resolved = dict(base_palette)
-        if hc:
-            resolved.update(_HC_DARK_OVERRIDES if is_dark else _HC_LIGHT_OVERRIDES)
-
-        # Apply custom accent color (skip for "blue" — use theme default)
-        if accent_color and accent_color not in ("blue", "match-ipod"):
-            rgb = _parse_accent_hex(accent_color)
-            if rgb is not None:
-                resolved.update(_accent_overrides(*rgb, is_dark))
-
-        # Normalize every app accent, including theme defaults and iPod-matched
-        # accents, so the chosen hue has a consistent contrast from the window.
-        accent_rgb = _css_rgb_tuple(resolved.get("ACCENT", ""))
-        bg_rgb = _css_rgb_tuple(resolved.get("BG_DARK", ""))
-        if accent_rgb is not None and bg_rgb is not None:
-            target = 4.5 if hc else cls.ACCENT_CONTRAST_TARGET
-            accent_rgb = _normalize_rgb_for_contrast(accent_rgb, bg_rgb, target)
-            resolved.update(_accent_overrides(*accent_rgb, is_dark))
-
-        # Apply all palette values to class attributes
-        for key, value in resolved.items():
-            setattr(cls, key, value)
-
-        # Apply per-theme playlist/category colors
-        pc = _PLAYLIST_COLORS.get(effective, _PLAYLIST_COLORS["dark"])
-        cls.PLAYLIST_SMART = pc["PLAYLIST_SMART"]
-        cls.PLAYLIST_PODCAST = pc["PLAYLIST_PODCAST"]
-        cls.PLAYLIST_MASTER = pc["PLAYLIST_MASTER"]
-        cls.PLAYLIST_REGULAR = pc["PLAYLIST_REGULAR"]
-
-        # If a custom accent color was applied, use it for PLAYLIST_REGULAR
-        # so the default track title bar color matches the user's accent choice.
-        if accent_color and accent_color not in ("blue", "match-ipod"):
-            rgb = _css_rgb_tuple(cls.ACCENT)
-            if rgb is not None:
-                cls.PLAYLIST_REGULAR = rgb
-
-    @classmethod
-    def apply_theme_selection(
-        cls,
-        mode: str,
-        light_theme: str,
-        dark_theme: str,
-        high_contrast: str = "off",
-        accent_color: str = "blue",
-    ) -> None:
-        """Apply a palette from split light/dark appearance preferences."""
-
-        if mode == "light":
-            theme = light_theme
-        elif mode == "dark":
-            theme = dark_theme
-        else:
-            theme = dark_theme if cls._detect_system_dark() else light_theme
-        cls.apply_theme(theme, high_contrast, accent_color)
+    previous_theme = current_theme()
+    if mode == "light":
+        theme = light_theme
+    elif mode == "dark":
+        theme = dark_theme
+    else:
+        theme = dark_theme if _detect_system_dark() else light_theme
+    resolved_theme = apply_theme(theme, high_contrast, accent_color)
+    return (
+        previous_theme.is_dark != resolved_theme.is_dark
+        or previous_theme.high_contrast != resolved_theme.high_contrast
+        or previous_theme.paints != resolved_theme.paints
+    )
 
 
 # Named accent color presets (settings value → hex).
@@ -625,17 +229,6 @@ def resolve_accent_color(
     return "blue"
 
 
-def _parse_accent_hex(hex_str: str) -> tuple[int, int, int] | None:
-    """Parse a hex color like ``'#e34060'`` into (R, G, B) or None."""
-    s = hex_str.strip().lstrip("#")
-    if len(s) == 6:
-        try:
-            return (int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16))
-        except ValueError:
-            return None
-    return None
-
-
 def _clamp_byte(value: float) -> int:
     return max(0, min(255, int(round(value))))
 
@@ -660,26 +253,16 @@ def _css_rgb_tuple(css: str) -> tuple[int, int, int] | None:
 
 
 def _relative_luminance(rgb: tuple[int, int, int]) -> float:
-    """WCAG relative luminance for an RGB tuple."""
-    def _linear(channel: int) -> float:
-        value = channel / 255.0
-        if value <= 0.03928:
-            return value / 12.92
-        return ((value + 0.055) / 1.055) ** 2.4
+    """Delegate RGB luminance to the Theme Renderer color model."""
 
-    r, g, b = (_linear(c) for c in rgb)
-    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+    return Color(*rgb).relative_luminance()
 
 
 def _contrast_ratio(
     a: tuple[int, int, int],
     b: tuple[int, int, int],
 ) -> float:
-    la = _relative_luminance(a)
-    lb = _relative_luminance(b)
-    lighter = max(la, lb)
-    darker = min(la, lb)
-    return (lighter + 0.05) / (darker + 0.05)
+    return Color(*a).contrast_ratio(Color(*b))
 
 
 def _normalize_rgb_for_contrast(
@@ -687,33 +270,9 @@ def _normalize_rgb_for_contrast(
     background: tuple[int, int, int],
     target_ratio: float,
 ) -> tuple[int, int, int]:
-    """Preserve hue/saturation while moving lightness toward target contrast."""
-    target_ratio = max(1.0, float(target_ratio))
-    h, lightness, saturation = colorsys.rgb_to_hls(
-        rgb[0] / 255.0,
-        rgb[1] / 255.0,
-        rgb[2] / 255.0,
-    )
+    """Delegate contrast normalization to the Theme Renderer color model."""
 
-    best_rgb = rgb
-    best_score = (float("inf"), float("inf"))
-    # Sampling is intentionally used instead of assuming perfect monotonicity:
-    # HLS-to-RGB clipping and gamma contrast make edge cases a bit lumpy.
-    for step in range(256):
-        candidate_l = step / 255.0
-        cr, cg, cb = colorsys.hls_to_rgb(h, candidate_l, saturation)
-        candidate = (
-            _clamp_byte(cr * 255),
-            _clamp_byte(cg * 255),
-            _clamp_byte(cb * 255),
-        )
-        ratio = _contrast_ratio(candidate, background)
-        score = (abs(ratio - target_ratio), abs(candidate_l - lightness))
-        if score < best_score:
-            best_score = score
-            best_rgb = candidate
-
-    return best_rgb
+    return Color(*rgb).normalized_for_contrast(Color(*background), target_ratio).rgb
 
 
 def display_accent_rgb(
@@ -723,26 +282,26 @@ def display_accent_rgb(
 ) -> tuple[int, int, int]:
     """Normalize an accent/artwork RGB color for current app background."""
     if background is None:
-        bg_rgb = _css_rgb_tuple(Colors.BG_DARK)
+        bg_rgb = current_theme().paint("canvas.default").color.rgb
     elif isinstance(background, tuple):
         bg_rgb = background
     else:
         bg_rgb = _css_rgb_tuple(background)
 
     if bg_rgb is None:
-        bg_rgb = (26, 26, 46) if Colors._active_mode == "dark" else (240, 240, 245)
+        bg_rgb = current_theme().paint("canvas.default").color.rgb
 
     target = target_ratio
     if target is None:
-        target = Colors.GRID_ART_CONTRAST_TARGET
-    if Colors._active_hc:
+        target = GRID_ART_CONTRAST_TARGET
+    if current_theme().high_contrast:
         target = max(float(target), 4.5)
     return _normalize_rgb_for_contrast(rgb, bg_rgb, float(target))
 
 
 def current_accent_rgb() -> tuple[int, int, int]:
     """Return the currently active app accent as an RGB tuple."""
-    return _css_rgb_tuple(Colors.ACCENT) or Colors.PLAYLIST_REGULAR
+    return current_theme().paint("control.primary.fill").color.rgb
 
 
 def text_rgb_for_background(rgb: tuple[int, int, int]) -> tuple[int, int, int]:
@@ -750,59 +309,6 @@ def text_rgb_for_background(rgb: tuple[int, int, int]) -> tuple[int, int, int]:
     white = (255, 255, 255)
     black = (18, 18, 24)
     return white if _contrast_ratio(white, rgb) >= _contrast_ratio(black, rgb) else black
-
-
-def _accent_overrides(r: int, g: int, b: int, is_dark: bool) -> dict[str, str]:
-    """Generate all ACCENT_* palette entries from a single (R, G, B) color.
-
-    Produces the same set of accent keys each palette defines, with
-    alpha levels matching the built-in dark/light palettes.
-    """
-    # Darker shade — shift toward black by ~35%
-    dr, dg, db = int(r * 0.62), int(g * 0.64), int(b * 0.78)
-    # Lighter shade — shift toward white by ~25%
-    lr = min(255, int(r + (255 - r) * 0.25))
-    lg = min(255, int(g + (255 - g) * 0.25))
-    lb = min(255, int(b + (255 - b) * 0.25))
-
-    # Choose text-on-accent based on perceived luminance
-    lum = 0.299 * r + 0.587 * g + 0.114 * b
-    text_on = "#ffffff" if lum < 160 else "#1a1a2e" if is_dark else "#000000"
-
-    if is_dark:
-        return {
-            "ACCENT": f"#{r:02x}{g:02x}{b:02x}",
-            "ACCENT_LIGHT": f"#{lr:02x}{lg:02x}{lb:02x}",
-            "ACCENT_DIM": f"rgba({r},{g},{b},80)",
-            "ACCENT_HOVER": f"rgba({r},{g},{b},120)",
-            "ACCENT_PRESS": f"rgba({r},{g},{b},60)",
-            "ACCENT_BORDER": f"rgba({r},{g},{b},100)",
-            "ACCENT_MUTED": f"rgba({r},{g},{b},35)",
-            "ACCENT_SOLID": f"rgba({r},{g},{b},200)",
-            "ACCENT_SOLID_PRESS": f"rgba({r},{g},{b},160)",
-            "ACCENT_DARK": f"rgba({dr},{dg},{db},100)",
-            "ACCENT_DARK_DIM": f"rgba({dr},{dg},{db},60)",
-            "BORDER_FOCUS": f"rgba({r},{g},{b},150)",
-            "SELECTION": f"rgba({r},{g},{b},90)",
-            "TEXT_ON_ACCENT": text_on,
-        }
-    else:
-        return {
-            "ACCENT": f"#{r:02x}{g:02x}{b:02x}",
-            "ACCENT_LIGHT": f"#{lr:02x}{lg:02x}{lb:02x}",
-            "ACCENT_DIM": f"rgba({r},{g},{b},60)",
-            "ACCENT_HOVER": f"rgba({r},{g},{b},100)",
-            "ACCENT_PRESS": f"rgba({r},{g},{b},45)",
-            "ACCENT_BORDER": f"rgba({r},{g},{b},80)",
-            "ACCENT_MUTED": f"rgba({r},{g},{b},18)",
-            "ACCENT_SOLID": f"rgba({r},{g},{b},180)",
-            "ACCENT_SOLID_PRESS": f"rgba({r},{g},{b},140)",
-            "ACCENT_DARK": f"rgba({dr},{dg},{db},80)",
-            "ACCENT_DARK_DIM": f"rgba({dr},{dg},{db},40)",
-            "BORDER_FOCUS": f"rgba({r},{g},{b},130)",
-            "SELECTION": f"rgba({r},{g},{b},70)",
-            "TEXT_ON_ACCENT": text_on,
-        }
 
 
 def _parse_color(css: str) -> QColor:
@@ -816,17 +322,18 @@ def _parse_color(css: str) -> QColor:
         r, g, b = int(m.group(1)), int(m.group(2)), int(m.group(3))
         a = int(m.group(4)) if m.group(4) else 255
         return QColor(r, g, b, a)
-    return QColor("white" if Colors._active_mode == "dark" else "black")
+    return QColor("white" if current_theme().is_dark else "black")
 
 
 def build_palette() -> QPalette:
-    """Build a QPalette from the current Colors state (call after apply_theme)."""
+    """Build a QPalette from the current resolved theme."""
     pal = QPalette()
-    bg = QColor(Colors.BG_DARK)
-    base = QColor(Colors.BG_DARK).darker(110) if Colors._active_mode == "dark" else QColor(Colors.BG_DARK).lighter(105)
-    alt = QColor(Colors.BG_MID)
-    text = _parse_color(Colors.TEXT_PRIMARY)
-    accent = QColor(Colors.ACCENT)
+    theme = current_theme()
+    bg = QColor(paint_css("canvas.default"))
+    base = bg.darker(110) if theme.is_dark else bg.lighter(105)
+    alt = QColor(paint_css("canvas.inset"))
+    text = _parse_color(paint_css("text.primary"))
+    accent = QColor(paint_css("control.primary.fill"))
     pal.setColor(QPalette.ColorRole.Window, bg)
     pal.setColor(QPalette.ColorRole.WindowText, text)
     pal.setColor(QPalette.ColorRole.Base, base)
@@ -835,13 +342,13 @@ def build_palette() -> QPalette:
     pal.setColor(QPalette.ColorRole.Button, alt)
     pal.setColor(QPalette.ColorRole.ButtonText, text)
     pal.setColor(QPalette.ColorRole.Highlight, accent)
-    pal.setColor(QPalette.ColorRole.HighlightedText, QColor(Colors.TEXT_ON_ACCENT))
+    pal.setColor(QPalette.ColorRole.HighlightedText, QColor(paint_css("control.primary.text")))
     pal.setColor(QPalette.ColorRole.Mid, alt)
     pal.setColor(QPalette.ColorRole.Dark, bg.darker(130))
     pal.setColor(QPalette.ColorRole.Midlight, alt.lighter(120))
-    pal.setColor(QPalette.ColorRole.Shadow, QColor(Colors.SHADOW_DEEP))
+    pal.setColor(QPalette.ColorRole.Shadow, _parse_color(paint_css("effect.elevation_deep_shadow")))
     pal.setColor(QPalette.ColorRole.Light, alt.lighter(140))
-    pal.setColor(QPalette.ColorRole.ToolTipBase, QColor(Colors.TOOLTIP_BG))
+    pal.setColor(QPalette.ColorRole.ToolTipBase, QColor(paint_css("tooltip.background")))
     pal.setColor(QPalette.ColorRole.ToolTipText, text)
     return pal
 
@@ -1028,15 +535,15 @@ class DarkScrollbarStyle(QProxyStyle):
 
     @property
     def _thumb(self):
-        return QColor(255, 255, 255, 70) if Colors._active_mode == "dark" else QColor(0, 0, 0, 55)
+        return paint_qcolor("effect.scrollbar.thumb")
 
     @property
     def _thumb_hover(self):
-        return QColor(255, 255, 255, 110) if Colors._active_mode == "dark" else QColor(0, 0, 0, 90)
+        return paint_qcolor("effect.scrollbar.thumb_hover")
 
     @property
     def _thumb_press(self):
-        return QColor(255, 255, 255, 140) if Colors._active_mode == "dark" else QColor(0, 0, 0, 120)
+        return paint_qcolor("effect.scrollbar.thumb_press")
 
     _CLICKABLE_TYPES = (QAbstractButton, QComboBox, QGroupBox, QTabBar)
 
@@ -1058,9 +565,9 @@ class DarkScrollbarStyle(QProxyStyle):
         meta = arg.metaObject()
         if meta is not None and meta.className() == "QTipLabel":
             tooltip_style_key = (
-                Colors.TOOLTIP_BG,
-                Colors.TEXT_PRIMARY,
-                Colors.BORDER,
+                paint_css("tooltip.background"),
+                paint_css("text.primary"),
+                paint_css("border.default"),
                 Metrics.FONT_LG,
             )
             if arg.property("_iop_tooltip_style_key") != tooltip_style_key:
@@ -1072,9 +579,9 @@ class DarkScrollbarStyle(QProxyStyle):
                 except TypeError:
                     pass  # Some PyQt6 builds reject the enum via SIP
                 arg.setStyleSheet(
-                    f"background-color: {Colors.TOOLTIP_BG};"
-                    f"color: {Colors.TEXT_PRIMARY};"
-                    f"border: 1px solid {Colors.BORDER};"
+                    f"background-color: {paint_css('tooltip.background')};"
+                    f"color: {paint_css('text.primary')};"
+                    f"border: 1px solid {paint_css('border.default')};"
                     f"border-radius: {(4)}px;"
                     f"padding: {(3)}px {(6)}px;"
                     f"font-family: {_CSS_FONT_STACK};"
@@ -1253,9 +760,9 @@ def scrollbar_css(width: int | None = None, orient: str = "vertical") -> str:
     bar = f"QScrollBar:{orient}"
     r = max(width // 2, 1)
     # Theme-adaptive handle colors
-    sb_handle = Colors.BORDER
-    sb_hover = Colors.TEXT_DISABLED
-    sb_press = Colors.TEXT_TERTIARY
+    sb_handle = paint_css("border.default")
+    sb_hover = paint_css("text.disabled")
+    sb_press = paint_css("text.tertiary")
     if orient == "vertical":
         return f"""
             {bar} {{
@@ -1367,19 +874,19 @@ def btn_css(
 ) -> str:
     """Standard button stylesheet."""
     if bg is None:
-        bg = Colors.SURFACE_RAISED
+        bg = paint_css("control.secondary.fill")
     if bg_hover is None:
-        bg_hover = Colors.SURFACE_HOVER
+        bg_hover = paint_css("control.secondary.hover_fill")
     if bg_press is None:
-        bg_press = Colors.SURFACE_ALT
+        bg_press = paint_css("control.secondary.pressed_fill")
     if fg is None:
-        fg = Colors.TEXT_PRIMARY
+        fg = paint_css("text.primary")
     if radius is None:
         radius = Metrics.BORDER_RADIUS_SM
     if padding is None:
         padding = f"{Metrics.BTN_PADDING_V}px {Metrics.BTN_PADDING_H}px"
-    _d_bg = bg_disabled if bg_disabled is not None else Colors.SURFACE
-    _d_fg = fg_disabled if fg_disabled is not None else Colors.TEXT_DISABLED
+    _d_bg = bg_disabled if bg_disabled is not None else paint_css("surface.default")
+    _d_fg = fg_disabled if fg_disabled is not None else paint_css("text.disabled")
     min_height_rule = f"min-height: {min_height}px;" if min_height is not None else ""
     min_width_rule = f"min-width: {min_width}px;" if min_width is not None else ""
     font_size_rule = f"font-size: {font_size}pt;" if font_size is not None else ""
@@ -1407,7 +914,7 @@ def btn_css(
         QPushButton:disabled {{
             background: {_d_bg};
             color: {_d_fg};
-            border-color: {Colors.BORDER_SUBTLE};
+            border-color: {paint_css('border.subtle')};
         }}
     """
 
@@ -1426,15 +933,15 @@ def button_css(role: str = "secondary", size: str = "md", *, extra: str = "") ->
 
     if role == "primary":
         return btn_css(
-            bg=Colors.ACCENT,
-            bg_hover=Colors.ACCENT_LIGHT,
-            bg_press=Colors.ACCENT_SOLID_PRESS,
-            fg=Colors.TEXT_ON_ACCENT,
+            bg=paint_css("control.primary.fill"),
+            bg_hover=paint_css("control.primary.hover_fill"),
+            bg_press=paint_css("control.primary.pressed_fill"),
+            fg=paint_css("control.primary.text"),
             border="none",
             radius=radius,
             padding=padding,
-            bg_disabled=Colors.SURFACE,
-            fg_disabled=Colors.TEXT_DISABLED,
+            bg_disabled=paint_css("surface.default"),
+            fg_disabled=paint_css("text.disabled"),
             min_height=height,
             font_size=font_size,
             font_weight=Design.BUTTON_WEIGHT_STRONG,
@@ -1443,14 +950,14 @@ def button_css(role: str = "secondary", size: str = "md", *, extra: str = "") ->
     if role == "quiet":
         return btn_css(
             bg="transparent",
-            bg_hover=Colors.SURFACE_HOVER,
-            bg_press=Colors.SURFACE_ACTIVE,
-            fg=Colors.TEXT_SECONDARY,
+            bg_hover=paint_css("control.quiet.hover_fill"),
+            bg_press=paint_css("control.quiet.pressed_fill"),
+            fg=paint_css("text.secondary"),
             border="1px solid transparent",
             radius=radius,
             padding=padding,
             bg_disabled="transparent",
-            fg_disabled=Colors.TEXT_DISABLED,
+            fg_disabled=paint_css("text.disabled"),
             min_height=height,
             font_size=font_size,
             font_weight=Design.BUTTON_WEIGHT,
@@ -1458,15 +965,15 @@ def button_css(role: str = "secondary", size: str = "md", *, extra: str = "") ->
         )
     if role == "danger":
         return btn_css(
-            bg="transparent",
-            bg_hover=Colors.DANGER_DIM,
-            bg_press=Colors.DANGER_HOVER,
-            fg=Colors.DANGER,
-            border=f"1px solid {Colors.DANGER_BORDER}",
+            bg=paint_css("status.danger.subtle_fill"),
+            bg_hover=paint_css("status.danger.hover_fill"),
+            bg_press=paint_css("status.danger.hover_fill"),
+            fg=paint_css("status.danger.text"),
+            border=f"1px solid {paint_css('status.danger.border')}",
             radius=radius,
             padding=padding,
-            bg_disabled=Colors.SURFACE,
-            fg_disabled=Colors.TEXT_DISABLED,
+            bg_disabled=paint_css("surface.default"),
+            fg_disabled=paint_css("text.disabled"),
             min_height=height,
             font_size=font_size,
             font_weight=Design.BUTTON_WEIGHT,
@@ -1474,15 +981,15 @@ def button_css(role: str = "secondary", size: str = "md", *, extra: str = "") ->
         )
 
     return btn_css(
-        bg=Colors.SURFACE_RAISED,
-        bg_hover=Colors.SURFACE_HOVER,
-        bg_press=Colors.SURFACE_ACTIVE,
-        fg=Colors.TEXT_PRIMARY,
-        border=f"1px solid {Colors.BORDER}",
+        bg=paint_css("control.secondary.fill"),
+        bg_hover=paint_css("control.secondary.hover_fill"),
+        bg_press=paint_css("control.secondary.pressed_fill"),
+        fg=paint_css("text.primary"),
+        border=f"1px solid {paint_css('border.default')}",
         radius=radius,
         padding=padding,
-        bg_disabled=Colors.SURFACE,
-        fg_disabled=Colors.TEXT_DISABLED,
+        bg_disabled=paint_css("surface.default"),
+        fg_disabled=paint_css("text.disabled"),
         min_height=height,
         font_size=font_size,
         font_weight=Design.BUTTON_WEIGHT,
@@ -1513,11 +1020,11 @@ def icon_btn_css(
     if size is None:
         size = Design.ICON_BUTTON_SIZE
     if bg_hover is None:
-        bg_hover = Colors.SURFACE_HOVER
+        bg_hover = paint_css("control.quiet.hover_fill")
     if bg_press is None:
-        bg_press = Colors.SURFACE_ACTIVE
+        bg_press = paint_css("control.quiet.pressed_fill")
     if fg is None:
-        fg = Colors.TEXT_SECONDARY
+        fg = paint_css("text.secondary")
     if radius is None:
         radius = Design.CONTROL_RADIUS
     return btn_css(
@@ -1529,7 +1036,7 @@ def icon_btn_css(
         radius=radius,
         padding="0px",
         bg_disabled="transparent",
-        fg_disabled=Colors.TEXT_DISABLED,
+        fg_disabled=paint_css("text.disabled"),
         font_size=Metrics.FONT_MD,
         font_weight=Design.BUTTON_WEIGHT,
         extra=(
@@ -1542,14 +1049,18 @@ def icon_btn_css(
 def chip_btn_css(size: str = "sm", *, checked_accent: bool = True) -> str:
     """Selectable pill/chip button used for filters, IDs, and segmented bits."""
     height, font_size, padding = _button_size_tokens(size)
-    checked_bg = Colors.ACCENT_MUTED if checked_accent else Colors.SURFACE_ACTIVE
-    checked_border = Colors.ACCENT_BORDER
+    checked_bg = (
+        paint_css("control.toggle.selected_fill")
+        if checked_accent
+        else paint_css("surface.active")
+    )
+    checked_border = paint_css("control.toggle.selected_border")
     return btn_css(
-        bg=Colors.SURFACE_RAISED,
-        bg_hover=Colors.SURFACE_HOVER,
-        bg_press=Colors.SURFACE_ACTIVE,
-        fg=Colors.TEXT_SECONDARY,
-        border=f"1px solid {Colors.BORDER_SUBTLE}",
+        bg=paint_css("surface.raised"),
+        bg_hover=paint_css("surface.hover"),
+        bg_press=paint_css("surface.active"),
+        fg=paint_css("text.secondary"),
+        border=f"1px solid {paint_css('border.subtle')}",
         radius=Design.CHIP_RADIUS,
         padding=padding,
         min_height=height,
@@ -1557,12 +1068,12 @@ def chip_btn_css(size: str = "sm", *, checked_accent: bool = True) -> str:
         font_weight=Design.BUTTON_WEIGHT,
     ) + f"""
         QPushButton:hover {{
-            color: {Colors.TEXT_PRIMARY};
-            border-color: {Colors.BORDER};
+            color: {paint_css("text.primary")};
+            border-color: {paint_css("border.default")};
         }}
         QPushButton:checked {{
             background: {checked_bg};
-            color: {Colors.TEXT_PRIMARY};
+            color: {paint_css("text.primary")};
             border-color: {checked_border};
             font-weight: {Design.BUTTON_WEIGHT_STRONG};
         }}
@@ -1604,10 +1115,10 @@ def input_css(
     font_weight_rule = f"font-weight: {font_weight};" if font_weight is not None else ""
     return f"""
         QLineEdit, QTextEdit, QPlainTextEdit {{
-            background: {Colors.SURFACE_ALT};
-            border: 1px solid {Colors.BORDER};
+            background: {paint_css('surface.inset')};
+            border: 1px solid {paint_css('border.default')};
             border-radius: {radius}px;
-            color: {Colors.TEXT_PRIMARY};
+            color: {paint_css('text.primary')};
             font-family: {_CSS_FONT_STACK};
             {font_size_rule}
             {font_weight_rule}
@@ -1615,13 +1126,13 @@ def input_css(
             {min_height_rule}
         }}
         QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus {{
-            border: 1px solid {Colors.BORDER_FOCUS};
-            background: {Colors.SURFACE_RAISED};
+            border: 1px solid {paint_css('focus.border')};
+            background: {paint_css('surface.raised')};
         }}
         QLineEdit:disabled, QTextEdit:disabled, QPlainTextEdit:disabled {{
-            background: {Colors.SURFACE};
-            color: {Colors.TEXT_DISABLED};
-            border-color: {Colors.BORDER_SUBTLE};
+            background: {paint_css('surface.default')};
+            color: {paint_css('text.disabled')};
+            border-color: {paint_css('border.subtle')};
         }}
     """
 
@@ -1648,10 +1159,10 @@ def combo_css(
     font_weight_rule = f"font-weight: {font_weight};" if font_weight is not None else ""
     return f"""
         QComboBox, QDateEdit {{
-            background: {Colors.SURFACE_RAISED};
-            border: 1px solid {Colors.BORDER};
+            background: {paint_css('surface.raised')};
+            border: 1px solid {paint_css('border.default')};
             border-radius: {radius}px;
-            color: {Colors.TEXT_PRIMARY};
+            color: {paint_css('text.primary')};
             font-family: {_CSS_FONT_STACK};
             {font_size_rule}
             {font_weight_rule}
@@ -1659,10 +1170,10 @@ def combo_css(
             {min_height_rule}
         }}
         QComboBox:hover, QDateEdit:hover {{
-            border: 1px solid {Colors.BORDER_FOCUS};
+            border: 1px solid {paint_css('focus.border')};
         }}
         QComboBox:focus, QDateEdit:focus {{
-            border: 1px solid {Colors.BORDER_FOCUS};
+            border: 1px solid {paint_css('focus.border')};
         }}
         QComboBox::drop-down, QDateEdit::drop-down {{
             border: none;
@@ -1673,19 +1184,19 @@ def combo_css(
             border: none;
         }}
         QComboBox QAbstractItemView, QDateEdit QAbstractItemView {{
-            background: {Colors.DROPDOWN_BG};
-            color: {Colors.TEXT_PRIMARY};
-            selection-background-color: {Colors.ACCENT_DIM};
-            selection-color: {Colors.TEXT_PRIMARY};
-            border: 1px solid {Colors.BORDER};
+            background: {paint_css('menu.background')};
+            color: {paint_css('text.primary')};
+            selection-background-color: {paint_css('selection.fill')};
+            selection-color: {paint_css('text.primary')};
+            border: 1px solid {paint_css('border.default')};
             border-radius: 4px;
             padding: 2px;
             outline: none;
         }}
         QComboBox:disabled, QDateEdit:disabled {{
-            background: {Colors.SURFACE};
-            color: {Colors.TEXT_DISABLED};
-            border-color: {Colors.BORDER_SUBTLE};
+            background: {paint_css('surface.default')};
+            color: {paint_css('text.disabled')};
+            border-color: {paint_css('border.subtle')};
         }}
     """
 
@@ -1710,21 +1221,21 @@ def spin_css(
     font_size_rule = f"font-size: {font_size}pt;" if font_size is not None else ""
     return f"""
         QSpinBox, QDoubleSpinBox {{
-            background: {Colors.SURFACE_ALT};
-            border: 1px solid {Colors.BORDER};
+            background: {paint_css('surface.inset')};
+            border: 1px solid {paint_css('border.default')};
             border-radius: {radius}px;
-            color: {Colors.TEXT_PRIMARY};
+            color: {paint_css('text.primary')};
             font-family: {_CSS_FONT_STACK};
             {font_size_rule}
             padding: {padding};
             {min_height_rule}
         }}
         QSpinBox:hover, QDoubleSpinBox:hover {{
-            border-color: {Colors.BORDER_FOCUS};
+            border-color: {paint_css('focus.border')};
         }}
         QSpinBox:focus, QDoubleSpinBox:focus {{
-            border: 1px solid {Colors.BORDER_FOCUS};
-            background: {Colors.SURFACE_RAISED};
+            border: 1px solid {paint_css('focus.border')};
+            background: {paint_css('surface.raised')};
         }}
         QSpinBox::up-button, QSpinBox::down-button,
         QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {{
@@ -1733,9 +1244,9 @@ def spin_css(
             width: {(16)}px;
         }}
         QSpinBox:disabled, QDoubleSpinBox:disabled {{
-            background: {Colors.SURFACE};
-            color: {Colors.TEXT_DISABLED};
-            border-color: {Colors.BORDER_SUBTLE};
+            background: {paint_css('surface.default')};
+            color: {paint_css('text.disabled')};
+            border-color: {paint_css('border.subtle')};
         }}
     """
 
@@ -1747,7 +1258,7 @@ def checkbox_css(font_size: int | None = None) -> str:
     font_size_rule = f"font-size: {font_size}pt;" if font_size is not None else ""
     return f"""
         QCheckBox {{
-            color: {Colors.TEXT_PRIMARY};
+            color: {paint_css('text.primary')};
             background: transparent;
             font-family: {_CSS_FONT_STACK};
             {font_size_rule}
@@ -1757,24 +1268,24 @@ def checkbox_css(font_size: int | None = None) -> str:
             width: {(18)}px;
             height: {(18)}px;
             border-radius: {(4)}px;
-            border: 1px solid {Colors.BORDER};
-            background: {Colors.SURFACE_ALT};
+            border: 1px solid {paint_css('border.default')};
+            background: {paint_css('surface.inset')};
         }}
         QCheckBox::indicator:hover {{
-            border-color: {Colors.BORDER_FOCUS};
-            background: {Colors.SURFACE_HOVER};
+            border-color: {paint_css('focus.border')};
+            background: {paint_css('surface.hover')};
         }}
         QCheckBox::indicator:checked {{
-            background: {Colors.ACCENT};
-            border-color: {Colors.ACCENT};
+            background: {paint_css('control.primary.fill')};
+            border-color: {paint_css('control.primary.fill')};
         }}
         QCheckBox::indicator:checked:hover {{
-            background: {Colors.ACCENT_HOVER};
-            border-color: {Colors.ACCENT_HOVER};
+            background: {paint_css('control.primary.hover_fill')};
+            border-color: {paint_css('control.primary.hover_fill')};
         }}
         QCheckBox::indicator:disabled {{
-            background: {Colors.SURFACE};
-            border-color: {Colors.BORDER_SUBTLE};
+            background: {paint_css('surface.default')};
+            border-color: {paint_css('border.subtle')};
         }}
     """
 
@@ -1785,18 +1296,18 @@ def title_input_css() -> str:
         QLineEdit {{
             background: transparent;
             border: none;
-            border-bottom: 1px solid {Colors.BORDER_SUBTLE};
-            color: {Colors.TEXT_PRIMARY};
+            border-bottom: 1px solid {paint_css('border.subtle')};
+            color: {paint_css('text.primary')};
             font-family: {_CSS_FONT_STACK};
             font-size: {Metrics.FONT_PAGE_TITLE}pt;
             font-weight: {Design.BUTTON_WEIGHT_STRONG};
             padding: 0px 0px 2px 0px;
         }}
         QLineEdit:hover {{
-            border-bottom-color: {Colors.BORDER};
+            border-bottom-color: {paint_css('border.default')};
         }}
         QLineEdit:focus {{
-            border-bottom-color: {Colors.BORDER_FOCUS};
+            border-bottom-color: {paint_css('focus.border')};
         }}
     """
 
@@ -1807,16 +1318,16 @@ def link_btn_css() -> str:
         QPushButton {{
             background: transparent;
             border: none;
-            color: {Colors.ACCENT};
+            color: {paint_css('control.primary.fill')};
             padding: 0;
             text-align: left;
         }}
         QPushButton:hover {{
-            color: {Colors.ACCENT_LIGHT};
+            color: {paint_css('control.primary.hover_fill')};
             text-decoration: underline;
         }}
         QPushButton:pressed {{
-            color: {Colors.ACCENT};
+            color: {paint_css('control.primary.fill')};
         }}
     """
 
@@ -1847,36 +1358,36 @@ def sidebar_nav_state(
     if not enabled:
         return SidebarNavState(
             background="transparent",
-            hover_background=Colors.SURFACE_HOVER,
-            pressed_background=Colors.SURFACE,
-            text=Colors.TEXT_DISABLED,
-            icon=Colors.TEXT_DISABLED,
+            hover_background=paint_css("surface.hover"),
+            pressed_background=paint_css("surface.default"),
+            text=paint_css("text.disabled"),
+            icon=paint_css("text.disabled"),
             weight=400,
         )
     if selected:
         return SidebarNavState(
-            background=Colors.SURFACE_ACTIVE,
-            hover_background=Colors.SURFACE_ACTIVE,
-            pressed_background=Colors.SURFACE_RAISED,
-            text=Colors.TEXT_PRIMARY,
-            icon=Colors.ACCENT,
+            background=paint_css("surface.active"),
+            hover_background=paint_css("surface.active"),
+            pressed_background=paint_css("surface.raised"),
+            text=paint_css("text.primary"),
+            icon=paint_css("control.primary.fill"),
             weight=Design.BUTTON_WEIGHT_STRONG,
         )
     if dimmed:
         return SidebarNavState(
             background="transparent",
-            hover_background=Colors.SURFACE_HOVER,
-            pressed_background=Colors.SURFACE,
-            text=Colors.TEXT_DISABLED,
-            icon=Colors.TEXT_DISABLED,
+            hover_background=paint_css("surface.hover"),
+            pressed_background=paint_css("surface.default"),
+            text=paint_css("text.disabled"),
+            icon=paint_css("text.disabled"),
             weight=400,
         )
     return SidebarNavState(
         background="transparent",
-        hover_background=Colors.SURFACE_HOVER,
-        pressed_background=Colors.SURFACE,
-        text=Colors.TEXT_PRIMARY,
-        icon=Colors.TEXT_SECONDARY,
+        hover_background=paint_css("surface.hover"),
+        pressed_background=paint_css("surface.default"),
+        text=paint_css("text.primary"),
+        icon=paint_css("text.secondary"),
         weight=400,
     )
 
@@ -1886,9 +1397,9 @@ def sidebar_panel_css(object_name: str) -> str:
 
     return f"""
         QFrame#{object_name} {{
-            background: {Colors.SURFACE};
+            background: {paint_css('chrome.sidebar.fill')};
             border: none;
-            border-right: 1px solid {Colors.BORDER_SUBTLE};
+            border-right: 1px solid {paint_css('border.subtle')};
         }}
     """
 
@@ -1906,7 +1417,7 @@ def sidebar_item_view_css(
 
     normal = sidebar_nav_state(False)
     selected = sidebar_nav_state(True)
-    viewport_background = Colors.SURFACE if background is None else background
+    viewport_background = paint_css("chrome.sidebar.fill") if background is None else background
     return f"""
         {selector} {{
             background: {viewport_background};
@@ -1983,68 +1494,68 @@ def table_css() -> str:
     """Shared table + header stylesheet for QTableWidget instances."""
     return f"""
         QTableWidget {{
-            background-color: {Colors.SHADOW_LIGHT};
-            alternate-background-color: {Colors.SURFACE};
+            background-color: {paint_css('table.row.fill')};
+            alternate-background-color: {paint_css('table.row.alternate_fill')};
             border: none;
-            color: {Colors.TEXT_PRIMARY};
-            gridline-color: {Colors.GRIDLINE};
-            selection-background-color: {Colors.SELECTION};
+            color: {paint_css('text.primary')};
+            gridline-color: {paint_css('border.grid')};
+            selection-background-color: {paint_css('table.row.selected_fill')};
             outline: none;
             font-size: {Metrics.FONT_MD}pt;
         }}
         QTableWidget::item {{
             padding: 8px 10px;
-            border-bottom: 1px solid {Colors.BORDER_SUBTLE};
+            border-bottom: 1px solid {paint_css('border.subtle')};
         }}
         QTableWidget::item:selected {{
-            background-color: {Colors.SELECTION};
+            background-color: {paint_css('table.row.selected_fill')};
         }}
         QTableWidget::item:hover {{
-            background-color: {Colors.SURFACE};
+            background-color: {paint_css('surface.hover')};
         }}
         QTableView::indicator {{
             width: 18px;
             height: 18px;
             border-radius: 4px;
-            border: 1px solid {Colors.BORDER};
-            background: {Colors.SURFACE_ALT};
+            border: 1px solid {paint_css('border.default')};
+            background: {paint_css('surface.inset')};
         }}
         QTableView::indicator:hover {{
-            border-color: {Colors.BORDER_FOCUS};
-            background: {Colors.SURFACE_HOVER};
+            border-color: {paint_css('focus.border')};
+            background: {paint_css('surface.hover')};
         }}
         QTableView::indicator:checked {{
-            background: {Colors.ACCENT};
-            border-color: {Colors.ACCENT};
+            background: {paint_css('control.primary.fill')};
+            border-color: {paint_css('control.primary.fill')};
         }}
         QTableView::indicator:checked:hover {{
-            background: {Colors.ACCENT_HOVER};
-            border-color: {Colors.ACCENT_HOVER};
+            background: {paint_css('control.primary.hover_fill')};
+            border-color: {paint_css('control.primary.hover_fill')};
         }}
         QTableView::indicator:disabled {{
-            background: {Colors.SURFACE};
-            border-color: {Colors.BORDER_SUBTLE};
+            background: {paint_css('surface.default')};
+            border-color: {paint_css('border.subtle')};
         }}
         QHeaderView::section {{
-            background-color: {Colors.SURFACE_ALT};
-            color: {Colors.TEXT_SECONDARY};
+            background-color: {paint_css('surface.inset')};
+            color: {paint_css('text.secondary')};
             padding: 6px 8px;
             border: none;
-            border-bottom: 1px solid {Colors.BORDER};
+            border-bottom: 1px solid {paint_css('border.default')};
             font-weight: 600;
             font-size: {Metrics.FONT_LG}pt;
         }}
         QHeaderView::section:hover {{
-            background-color: {Colors.SURFACE_RAISED};
-            color: {Colors.TEXT_PRIMARY};
+            background-color: {paint_css('surface.raised')};
+            color: {paint_css('text.primary')};
         }}
         QHeaderView::section:pressed {{
-            background-color: {Colors.SURFACE_ACTIVE};
+            background-color: {paint_css('surface.active')};
         }}
         QTableCornerButton::section {{
-            background-color: {Colors.SURFACE_ALT};
+            background-color: {paint_css('surface.inset')};
             border: none;
-            border-bottom: 1px solid {Colors.BORDER};
+            border-bottom: 1px solid {paint_css('border.default')};
         }}
     """
 
@@ -2053,9 +1564,9 @@ def context_menu_css() -> str:
     """Shared stylesheet for right-click context menus."""
     return f"""
         QMenu {{
-            background: {Colors.MENU_BG};
-            color: {Colors.TEXT_PRIMARY};
-            border: 1px solid {Colors.BORDER};
+            background: {paint_css('menu.background')};
+            color: {paint_css('text.primary')};
+            border: 1px solid {paint_css('border.default')};
             padding: 6px;
             font-size: {Metrics.FONT_MD}pt;
             border-radius: {Metrics.BORDER_RADIUS_SM}px;
@@ -2064,19 +1575,19 @@ def context_menu_css() -> str:
             padding: 8px 28px 8px 12px;
         }}
         QMenu::item:selected {{
-            background: {Colors.ACCENT_DIM};
+            background: {paint_css('selection.fill')};
         }}
         QMenu::item:disabled {{
-            color: {Colors.TEXT_DISABLED};
+            color: {paint_css('text.disabled')};
             background: transparent;
         }}
         QMenu::item:disabled:selected {{
-            color: {Colors.TEXT_DISABLED};
-            background: {Colors.SURFACE};
+            color: {paint_css('text.disabled')};
+            background: {paint_css('surface.default')};
         }}
         QMenu::separator {{
             height: 1px;
-            background: {Colors.BORDER_SUBTLE};
+            background: {paint_css('border.subtle')};
             margin: 4px 8px;
         }}
     """
@@ -2085,23 +1596,23 @@ def context_menu_css() -> str:
 
 
 def LABEL_PRIMARY() -> str:
-    return f"color: {Colors.TEXT_PRIMARY}; background: transparent; border: none;"
+    return f"color: {paint_css('text.primary')}; background: transparent; border: none;"
 
 
 def LABEL_SECONDARY() -> str:
-    return f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;"
+    return f"color: {paint_css('text.secondary')}; background: transparent; border: none;"
 
 
 def LABEL_TERTIARY() -> str:
-    return f"color: {Colors.TEXT_TERTIARY}; background: transparent; border: none;"
+    return f"color: {paint_css('text.tertiary')}; background: transparent; border: none;"
 
 
 def LABEL_DISABLED() -> str:
-    return f"color: {Colors.TEXT_DISABLED}; background: transparent; border: none;"
+    return f"color: {paint_css('text.disabled')}; background: transparent; border: none;"
 
 
 def SEPARATOR_CSS() -> str:
-    return f"background-color: {Colors.BORDER_SUBTLE}; border: none;"
+    return f"background-color: {paint_css('border.subtle')}; border: none;"
 
 
 # ── Widget factory helpers ───────────────────────────────────────────────────
@@ -2155,7 +1666,7 @@ def make_section_header(text: str) -> QLabel:
     lbl = _QLabel(text.upper())
     lbl.setFont(_QFont(FONT_FAMILY, Metrics.FONT_XS, _QFont.Weight.Bold))
     lbl.setStyleSheet(
-        f"color: {Colors.TEXT_TERTIARY}; background: transparent;"
+        f"color: {paint_css('text.tertiary')}; background: transparent;"
         f" border: none; padding-top: {(6)}px;"
         f" letter-spacing: 1.2px;"
     )
@@ -2174,7 +1685,7 @@ def make_sidebar_section_header(text: str) -> QLabel:
         _QFont(FONT_FAMILY, Metrics.FONT_SIDEBAR_SECTION, _QFont.Weight.DemiBold)
     )
     label.setStyleSheet(
-        f"color: {Colors.TEXT_SECONDARY}; background: transparent; "
+        f"color: {paint_css('text.secondary')}; background: transparent; "
         "border: none; padding: 0 4px 2px 4px;"
     )
     return label
@@ -2281,9 +1792,9 @@ def card_css(
     All parameters have sensible defaults based on the current theme.
     """
     if bg is None:
-        bg = Colors.SURFACE
+        bg = paint_css("surface.default")
     if border is None:
-        border = f"1px solid {Colors.BORDER_SUBTLE}"
+        border = f"1px solid {paint_css('border.subtle')}"
     if radius is None:
         radius = Metrics.BORDER_RADIUS
     if padding is None:
@@ -2305,9 +1816,9 @@ def panel_css(
 ) -> str:
     """Object-scoped QFrame panel style."""
     if bg is None:
-        bg = Colors.SURFACE
+        bg = paint_css("surface.default")
     if border is None:
-        border = f"1px solid {Colors.BORDER_SUBTLE}"
+        border = f"1px solid {paint_css('border.subtle')}"
     if radius is None:
         radius = Design.PANEL_RADIUS
     return f"""
@@ -2331,9 +1842,9 @@ def progress_bar_css(
     if radius is None:
         radius = max(1, height // 2)
     if bg is None:
-        bg = Colors.SURFACE_ALT
+        bg = paint_css("surface.inset")
     if chunk is None:
-        chunk = Colors.ACCENT
+        chunk = paint_css("control.primary.fill")
     return f"""
         QProgressBar {{
             background: {bg};
@@ -2370,7 +1881,7 @@ def app_stylesheet() -> str:
     /* ── Base ──────────────────────────────────────────────────── */
     QMainWindow {{
         background: qlineargradient(x1:0, y1:0, x2:0.4, y2:1,
-            stop:0 {Colors.BG_DARK}, stop:1 {Colors.BG_MID});
+            stop:0 {paint_css("canvas.default")}, stop:1 {paint_css("canvas.inset")});
     }}
     QWidget {{
         font-family: {_CSS_FONT_STACK};
@@ -2396,82 +1907,83 @@ def app_stylesheet() -> str:
 
     /* ── Splitter handle ───────────────────────────────────────── */
     QSplitter::handle {{
-        background: {Colors.BORDER_SUBTLE};
+        background: {paint_css("border.subtle")};
     }}
     QSplitter::handle:hover {{
-        background: {Colors.ACCENT};
+        background: {paint_css("control.primary.fill")};
     }}
     QSplitter::handle:pressed {{
-        background: {Colors.ACCENT_LIGHT};
+        background: {paint_css("control.primary.hover_fill")};
     }}
 
     /* ── Message boxes ─────────────────────────────────────────── */
     QMessageBox {{
-        background: {Colors.DIALOG_BG};
-        color: {Colors.TEXT_PRIMARY};
+        background: {paint_css("modal.background")};
+        color: {paint_css("text.primary")};
     }}
     QMessageBox QFrame {{
         background: transparent;
         border: none;
     }}
     QMessageBox QLabel {{
-        color: {Colors.TEXT_PRIMARY};
+        color: {paint_css("text.primary")};
         background: transparent;
         border: none;
     }}
     QMessageBox QPushButton {{
-        background: {Colors.SURFACE_RAISED};
-        border: 1px solid {Colors.BORDER};
+        background: {paint_css("surface.raised")};
+        border: 1px solid {paint_css("border.default")};
         border-radius: {Metrics.BORDER_RADIUS_SM}px;
-        color: {Colors.TEXT_PRIMARY};
+        color: {paint_css("text.primary")};
         padding: 0px {(20)}px;
         min-height: {Design.CONTROL_HEIGHT_LG}px;
         min-width: {(80)}px;
     }}
     QMessageBox QPushButton:hover {{
-        background: {Colors.SURFACE_HOVER};
+        background: {paint_css("surface.hover")};
     }}
 
     /* ── Dialog ─────────────────────────────────────────────────── */
     QDialog {{
-        background: {Colors.DIALOG_BG};
-        color: {Colors.TEXT_PRIMARY};
+        background: {paint_css("modal.background")};
+        color: {paint_css("text.primary")};
     }}
 
     /* ── Input fields ───────────────────────────────────────────── */
     QLineEdit {{
-        background: {Colors.SURFACE_ALT};
-        border: 1px solid {Colors.BORDER};
+        background: {paint_css("surface.inset")};
+        border: 1px solid {paint_css("border.default")};
         border-radius: {Metrics.BORDER_RADIUS_SM}px;
-        color: {Colors.TEXT_PRIMARY};
+        color: {paint_css("text.primary")};
         padding: {Design.FIELD_PADDING_V}px {Design.FIELD_PADDING_H}px;
         min-height: {Design.FIELD_CONTENT_HEIGHT}px;
-        selection-background-color: {Colors.ACCENT_DIM};
+        selection-background-color: {paint_css("control.primary.fill")};
+        selection-color: {paint_css("control.primary.text")};
     }}
     QLineEdit:focus {{
-        border: 1px solid {Colors.BORDER_FOCUS};
-        background: {Colors.SURFACE_RAISED};
+        border: 1px solid {paint_css("focus.border")};
+        background: {paint_css("surface.raised")};
     }}
     QLineEdit:disabled {{
-        background: {Colors.SURFACE};
-        color: {Colors.TEXT_DISABLED};
-        border-color: {Colors.BORDER_SUBTLE};
+        background: {paint_css("surface.default")};
+        color: {paint_css("text.disabled")};
+        border-color: {paint_css("border.subtle")};
     }}
 
     /* ── Combo box ──────────────────────────────────────────────── */
     QComboBox {{
-        background: {Colors.SURFACE_RAISED};
-        border: 1px solid {Colors.BORDER};
+        background: {paint_css("surface.raised")};
+        border: 1px solid {paint_css("border.default")};
         border-radius: {Metrics.BORDER_RADIUS_SM}px;
-        color: {Colors.TEXT_PRIMARY};
+        color: {paint_css("text.primary")};
         padding: {Design.FIELD_PADDING_V}px {Design.FIELD_PADDING_H}px;
         min-height: {Design.FIELD_CONTENT_HEIGHT}px;
     }}
     QComboBox:hover {{
-        border: 1px solid {Colors.BORDER_FOCUS};
+        border: 1px solid {paint_css("focus.border")};
     }}
     QComboBox:focus {{
-        border: 1px solid {Colors.BORDER_FOCUS};
+        border: 1px solid {paint_css("focus.border")};
     }}
     QComboBox::drop-down {{
         border: none;
@@ -2482,33 +1994,33 @@ def app_stylesheet() -> str:
         border: none;
     }}
     QComboBox QAbstractItemView {{
-        background: {Colors.DROPDOWN_BG};
-        color: {Colors.TEXT_PRIMARY};
-        selection-background-color: {Colors.ACCENT_DIM};
-        selection-color: {Colors.TEXT_PRIMARY};
-        border: 1px solid {Colors.BORDER};
+        background: {paint_css("menu.background")};
+        color: {paint_css("text.primary")};
+        selection-background-color: {paint_css("control.primary.fill")};
+        selection-color: {paint_css("control.primary.text")};
+        border: 1px solid {paint_css("border.default")};
         border-radius: {Metrics.BORDER_RADIUS_SM}px;
         padding: 2px;
         outline: none;
     }}
     QComboBox:disabled {{
-        background: {Colors.SURFACE};
-        color: {Colors.TEXT_DISABLED};
-        border-color: {Colors.BORDER_SUBTLE};
+        background: {paint_css("surface.default")};
+        color: {paint_css("text.disabled")};
+        border-color: {paint_css("border.subtle")};
     }}
 
     /* ── Spin box ───────────────────────────────────────────────── */
     QSpinBox, QDoubleSpinBox {{
-        background: {Colors.SURFACE_ALT};
-        border: 1px solid {Colors.BORDER};
+        background: {paint_css("surface.inset")};
+        border: 1px solid {paint_css("border.default")};
         border-radius: {Metrics.BORDER_RADIUS_SM}px;
-        color: {Colors.TEXT_PRIMARY};
+        color: {paint_css("text.primary")};
         padding: {Design.FIELD_PADDING_V}px {Design.SPIN_PADDING_H}px;
         min-height: {Design.FIELD_CONTENT_HEIGHT}px;
     }}
     QSpinBox:focus, QDoubleSpinBox:focus {{
-        border: 1px solid {Colors.BORDER_FOCUS};
-        background: {Colors.SURFACE_RAISED};
+        border: 1px solid {paint_css("focus.border")};
+        background: {paint_css("surface.raised")};
     }}
     QSpinBox::up-button, QSpinBox::down-button,
     QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {{
@@ -2519,7 +2031,7 @@ def app_stylesheet() -> str:
 
     /* ── Checkbox ───────────────────────────────────────────────── */
     QCheckBox {{
-        color: {Colors.TEXT_PRIMARY};
+        color: {paint_css("text.primary")};
         background: transparent;
         spacing: 8px;
     }}
@@ -2527,23 +2039,23 @@ def app_stylesheet() -> str:
         width: {(18)}px;
         height: {(18)}px;
         border-radius: {(4)}px;
-        border: 1px solid {Colors.BORDER};
-        background: {Colors.SURFACE_ALT};
+        border: 1px solid {paint_css("border.default")};
+        background: {paint_css("surface.inset")};
     }}
     QCheckBox::indicator:hover {{
-        border-color: {Colors.BORDER_FOCUS};
-        background: {Colors.SURFACE_HOVER};
+        border-color: {paint_css("focus.border")};
+        background: {paint_css("surface.hover")};
     }}
     QCheckBox::indicator:checked {{
-        background: {Colors.ACCENT};
-        border-color: {Colors.ACCENT};
+        background: {paint_css("control.primary.fill")};
+        border-color: {paint_css("control.primary.fill")};
     }}
     QCheckBox::indicator:checked:hover {{
-        background: {Colors.ACCENT_HOVER};
-        border-color: {Colors.ACCENT_HOVER};
+        background: {paint_css("control.primary.hover_fill")};
+        border-color: {paint_css("control.primary.hover_fill")};
     }}
     QCheckBox::indicator:disabled {{
-        background: {Colors.SURFACE};
-        border-color: {Colors.BORDER_SUBTLE};
+        background: {paint_css("surface.default")};
+        border-color: {paint_css("border.subtle")};
     }}
 """

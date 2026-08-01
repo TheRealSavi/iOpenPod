@@ -9,8 +9,9 @@ from PyQt6.QtGui import QFontMetrics, QMouseEvent
 from PyQt6.QtWidgets import QVBoxLayout, QWidget
 
 from iopenpod.application.services import DeviceSessionService, SettingsService
+from iopenpod.gui import styles
 from iopenpod.gui.app import MainWindow, _playback_track_path_for_session, _track_artwork_id
-from iopenpod.gui.styles import Colors, Metrics
+from iopenpod.gui.styles import Metrics, apply_theme, current_theme
 from iopenpod.gui.widgets.MBListView import MusicBrowserList
 from iopenpod.gui.widgets.musicPlayer import MusicPlayerBar
 from iopenpod.infrastructure.settings_schema import AppSettings
@@ -26,6 +27,9 @@ class _SettingsService:
     def get_effective_settings(self) -> AppSettings:
         return self.settings
 
+    def save_global_settings(self, settings: AppSettings) -> None:
+        self.settings = settings
+
 
 class _DeviceSessions:
     def current_session(self):
@@ -39,19 +43,6 @@ def _snapshot_font_metrics() -> dict[str, int]:
 def _restore_font_metrics(snapshot: dict[str, int]) -> None:
     for attr, value in snapshot.items():
         setattr(Metrics, attr, value)
-
-
-def _snapshot_color_state() -> dict[str, object]:
-    return {
-        attr: getattr(Colors, attr)
-        for attr in vars(Colors)
-        if attr.isupper() or attr.startswith("_active_")
-    }
-
-
-def _restore_color_state(snapshot: dict[str, object]) -> None:
-    for attr, value in snapshot.items():
-        setattr(Colors, attr, value)
 
 
 def _mount_track_list(qtbot) -> MusicBrowserList:
@@ -284,9 +275,9 @@ def test_music_player_bar_grows_now_playing_panel_and_anchors_close(qtbot) -> No
 
 
 def test_music_player_bar_derives_chrome_from_active_theme(qtbot) -> None:
-    color_snapshot = _snapshot_color_state()
+    theme_snapshot = current_theme()
     try:
-        Colors.apply_theme("dark", "off", "blue")
+        apply_theme("dark", "off", "blue")
         player = MusicPlayerBar()
         qtbot.addWidget(player)
         player.show()
@@ -299,7 +290,7 @@ def test_music_player_bar_derives_chrome_from_active_theme(qtbot) -> None:
             )
         )
 
-        Colors.apply_theme("light", "off", "blue")
+        apply_theme("light", "off", "blue")
         player.refreshStyle()
         light_styles = "\n".join(
             (
@@ -312,7 +303,7 @@ def test_music_player_bar_derives_chrome_from_active_theme(qtbot) -> None:
         assert dark_styles != light_styles
         assert "#f6f7f8" not in dark_styles
     finally:
-        _restore_color_state(color_snapshot)
+        styles._THEME_RUNTIME.replace(theme_snapshot)
 
 
 def test_music_player_slider_handle_stays_round_in_every_interaction_state() -> None:

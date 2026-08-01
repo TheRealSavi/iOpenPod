@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -33,13 +34,17 @@ THEME_MODES = frozenset({
     THEME_MODE_DARK,
     THEME_MODE_AUTO,
 })
-LIGHT_THEME_IDS = frozenset({"light", "catppuccin-latte"})
-DARK_THEME_IDS = frozenset({
+# These IDs are only used to migrate the former single ``theme`` setting.
+# The Theme Catalog validates current selections dynamically from the user's
+# theme directory at application startup.
+_LEGACY_LIGHT_THEME_IDS = frozenset({"light", "catppuccin-latte"})
+_LEGACY_DARK_THEME_IDS = frozenset({
     "dark",
     "catppuccin-mocha",
     "catppuccin-macchiato",
     "catppuccin-frappe",
 })
+_THEME_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
 
 DEVICE_SETTING_KEYS = (
     "write_back_to_pc",
@@ -186,18 +191,22 @@ def normalize_theme_mode(value: Any) -> str:
 
 
 def normalize_light_theme(value: Any) -> str:
-    """Return a valid light palette identifier."""
+    """Return a well-formed theme ID without consulting the file catalog."""
 
-    if isinstance(value, str) and value in LIGHT_THEME_IDS:
-        return value
+    if isinstance(value, str):
+        candidate = value.strip()
+        if _THEME_ID_RE.fullmatch(candidate):
+            return candidate
     return "light"
 
 
 def normalize_dark_theme(value: Any) -> str:
-    """Return a valid dark palette identifier."""
+    """Return a well-formed theme ID without consulting the file catalog."""
 
-    if isinstance(value, str) and value in DARK_THEME_IDS:
-        return value
+    if isinstance(value, str):
+        candidate = value.strip()
+        if _THEME_ID_RE.fullmatch(candidate):
+            return candidate
     return "dark"
 
 
@@ -314,10 +323,10 @@ def normalize_theme_preferences(
         legacy_theme = settings.theme
         if legacy_theme == "system":
             settings.theme_mode = THEME_MODE_AUTO
-        elif legacy_theme in LIGHT_THEME_IDS:
+        elif legacy_theme in _LEGACY_LIGHT_THEME_IDS:
             settings.theme_mode = THEME_MODE_LIGHT
             settings.light_theme = legacy_theme
-        elif legacy_theme in DARK_THEME_IDS:
+        elif legacy_theme in _LEGACY_DARK_THEME_IDS:
             settings.theme_mode = THEME_MODE_DARK
             settings.dark_theme = legacy_theme
 

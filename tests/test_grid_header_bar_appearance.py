@@ -5,6 +5,7 @@ from iopenpod.gui.styles import (
     BROWSER_SEARCH_FIELD_WIDTH,
     Metrics,
     browser_search_field_css,
+    paint_css,
 )
 from iopenpod.gui.widgets.gridHeaderBar import GridHeaderBar
 
@@ -61,3 +62,5 @@ def test_grid_header_can_toggle_selected_item_grouping(qtbot) -> None:
     assert signal.args == [True]
     assert toggle.isChecked()
     assert toggle.accessibleName() == "Group by selected"
+    assert paint_css("control.toggle.selected_fill") in toggle.styleSheet()
+    assert paint_css("control.toggle.selected_border") in toggle.styleSheet()

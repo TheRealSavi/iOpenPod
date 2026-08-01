@@ -96,6 +96,7 @@ a = Analysis(
     binaries=[*_wasmtime_binaries, *_linux_qt_xcb_binaries],
     datas=[
         ('src/iopenpod/assets', 'iopenpod/assets'),
+        ('src/iopenpod/themes', 'iopenpod/themes'),
         ('src/iopenpod/itunesdb_writer/wasm', 'iopenpod/itunesdb_writer/wasm'),
         *copy_metadata('iopenpod'),
     ],

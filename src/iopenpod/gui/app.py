@@ -84,7 +84,14 @@ from iopenpod.gui.device_warnings import show_unidentified_ipod_warning
 from iopenpod.gui.glyphs import glyph_pixmap
 from iopenpod.gui.internal_drag import is_iopenpod_export_drag
 from iopenpod.gui.notifications import Notifier
-from iopenpod.gui.styles import FONT_FAMILY, Colors, Metrics, accent_btn_css, button_css, progress_bar_css
+from iopenpod.gui.styles import (
+    FONT_FAMILY,
+    Metrics,
+    accent_btn_css,
+    button_css,
+    paint_css,
+    progress_bar_css,
+)
 from iopenpod.gui.widgets.backupBrowser import BackupBrowserWidget
 from iopenpod.gui.widgets.databaseStorageBrowser import DatabaseStorageBrowser
 from iopenpod.gui.widgets.databaseStorageInspectionDialog import (
@@ -197,7 +204,7 @@ def _label_css(color: str) -> str:
 def _apply_dialog_background(dialog: QDialog) -> None:
     dialog.setAutoFillBackground(True)
     palette = dialog.palette()
-    palette.setColor(QPalette.ColorRole.Window, QColor(Colors.DIALOG_BG))
+    palette.setColor(QPalette.ColorRole.Window, QColor(paint_css("modal.background")))
     dialog.setPalette(palette)
 
 
@@ -826,13 +833,13 @@ class MainWindow(QMainWindow):
         title = QLabel("Select an iPod to continue")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setFont(QFont(FONT_FAMILY, Metrics.FONT_XXL, QFont.Weight.DemiBold))
-        title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent;")
+        title.setStyleSheet(f"color: {paint_css('text.primary')}; background: transparent;")
         no_device_layout.addWidget(title)
 
         subtitle = QLabel("No device is currently selected.\nChoose an iPod to access your library and sync tools.")
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         subtitle.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
-        subtitle.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent;")
+        subtitle.setStyleSheet(f"color: {paint_css('text.tertiary')}; background: transparent;")
         no_device_layout.addWidget(subtitle)
 
         select_btn = QPushButton("Select Device")
@@ -862,13 +869,13 @@ class MainWindow(QMainWindow):
         loading_title = QLabel("Loading iPod...")
         loading_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         loading_title.setFont(QFont(FONT_FAMILY, Metrics.FONT_XXL, QFont.Weight.DemiBold))
-        loading_title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent;")
+        loading_title.setStyleSheet(f"color: {paint_css('text.primary')}; background: transparent;")
         loading_layout.addWidget(loading_title)
 
         loading_subtitle = QLabel("Reading library and device settings.")
         loading_subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         loading_subtitle.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
-        loading_subtitle.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent;")
+        loading_subtitle.setStyleSheet(f"color: {paint_css('text.tertiary')}; background: transparent;")
         loading_layout.addWidget(loading_subtitle)
         loading_layout.addStretch(2)
 
@@ -1674,7 +1681,11 @@ class MainWindow(QMainWindow):
 
     def _apply_effective_theme(self, dev=None) -> bool:
         """Apply the currently effective theme/accent and report visual changes."""
-        from iopenpod.gui.styles import Colors, Metrics, resolve_accent_color
+        from iopenpod.gui.styles import (
+            Metrics,
+            apply_theme_selection,
+            resolve_accent_color,
+        )
 
         s = self.settings_service.get_effective_settings()
         if dev is None:
@@ -1684,12 +1695,17 @@ class MainWindow(QMainWindow):
         if s.accent_color == "match-ipod":
             img = resolve_device_image_filename(dev)
 
-        old_accent = Colors.ACCENT
         accent_hex = resolve_accent_color(s.accent_color, img)
-        Colors.apply_theme_selection(s.theme_mode, s.light_theme, s.dark_theme, s.high_contrast, accent_hex)
+        accent_changed = apply_theme_selection(
+            s.theme_mode,
+            s.light_theme,
+            s.dark_theme,
+            s.high_contrast,
+            accent_hex,
+        )
         Metrics.apply_font_scale(s.font_scale)
         Metrics.apply_grid_item_scale(getattr(s, "grid_item_size", "large"))
-        return Colors.ACCENT != old_accent
+        return accent_changed
 
     def _apply_match_ipod_accent(self, dev=None):
         """Re-apply accent color when 'match-ipod' is active and device is known.
@@ -1704,16 +1720,20 @@ class MainWindow(QMainWindow):
 
         img = resolve_device_image_filename(dev)
 
-        from iopenpod.gui.styles import Colors, resolve_accent_color
+        from iopenpod.gui.styles import apply_theme_selection, resolve_accent_color
 
         accent_hex = resolve_accent_color("match-ipod", img)
 
         # Always apply the resolved accent, including "blue" fallback.
         # This ensures switching from a colorful device to a gray/white/black
         # device resets the UI back to the default accent.
-        old_accent = Colors.ACCENT
-        Colors.apply_theme_selection(s.theme_mode, s.light_theme, s.dark_theme, s.high_contrast, accent_hex)
-        return Colors.ACCENT != old_accent
+        return apply_theme_selection(
+            s.theme_mode,
+            s.light_theme,
+            s.dark_theme,
+            s.high_contrast,
+            accent_hex,
+        )
 
     @staticmethod
     def _classify_tracks(tracks: list) -> dict[str, list]:
@@ -3216,7 +3236,7 @@ class _MissingToolsDialog(QDialog):
 
         # Icon + title row
         icon_label = QLabel()
-        _warnpx = glyph_pixmap("warning-triangle", Metrics.FONT_ICON_MD, Colors.WARNING)
+        _warnpx = glyph_pixmap("warning-triangle", Metrics.FONT_ICON_MD, paint_css("status.warning.text"))
         if _warnpx:
             icon_label.setPixmap(_warnpx)
         else:
@@ -3227,14 +3247,14 @@ class _MissingToolsDialog(QDialog):
 
         title = QLabel("Set up Sync Tools")
         title.setFont(QFont(FONT_FAMILY, Metrics.FONT_TITLE, QFont.Weight.Bold))
-        title.setStyleSheet(_label_css(Colors.TEXT_PRIMARY))
+        title.setStyleSheet(_label_css(paint_css("text.primary")))
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setWordWrap(True)
         layout.addWidget(title)
 
         tools_label = QLabel(tool_list)
         tools_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.DemiBold))
-        tools_label.setStyleSheet(_label_css(Colors.WARNING))
+        tools_label.setStyleSheet(_label_css(paint_css("status.warning.text")))
         tools_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         tools_label.setWordWrap(True)
         layout.addWidget(tools_label)
@@ -3246,7 +3266,7 @@ class _MissingToolsDialog(QDialog):
         else:
             body = QLabel(detail_lines)
         body.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
-        body.setStyleSheet(_label_css(Colors.TEXT_SECONDARY))
+        body.setStyleSheet(_label_css(paint_css("text.secondary")))
         body.setAlignment(Qt.AlignmentFlag.AlignCenter if can_download else Qt.AlignmentFlag.AlignLeft)
         body.setWordWrap(True)
         layout.addWidget(body)
@@ -3305,13 +3325,13 @@ class _DownloadProgressDialog(QDialog):
 
         title = QLabel("Downloading Tools…")
         title.setFont(QFont(FONT_FAMILY, Metrics.FONT_XXL, QFont.Weight.Bold))
-        title.setStyleSheet(_label_css(Colors.TEXT_PRIMARY))
+        title.setStyleSheet(_label_css(paint_css("text.primary")))
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
         self._status = QLabel("Preparing download…")
         self._status.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
-        self._status.setStyleSheet(_label_css(Colors.TEXT_SECONDARY))
+        self._status.setStyleSheet(_label_css(paint_css("text.secondary")))
         self._status.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self._status)
 
@@ -3319,7 +3339,7 @@ class _DownloadProgressDialog(QDialog):
         bar.setRange(0, 0)  # indeterminate
         bar.setFixedHeight(6)
         bar.setTextVisible(False)
-        bar.setStyleSheet(progress_bar_css(height=6, radius=3, bg=Colors.SURFACE))
+        bar.setStyleSheet(progress_bar_css(height=6, radius=3, bg=paint_css("surface.default")))
         layout.addWidget(bar)
 
         layout.addStretch()

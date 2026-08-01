@@ -47,12 +47,13 @@ from iopenpod.infrastructure.settings_schema import (
     normalize_grid_item_size,
     normalize_player_position,
 )
+from iopenpod.infrastructure.theme_catalog import load_theme_catalog
 
 from ..styles import (
     FONT_FAMILY,
-    Colors,
     Design,
     Metrics,
+    apply_theme_selection,
     back_btn_css,
     button_css,
     combo_css,
@@ -61,6 +62,7 @@ from ..styles import (
     input_css,
     link_btn_css,
     make_scroll_area,
+    paint_css,
     panel_css,
     resolve_accent_color,
     sidebar_panel_css,
@@ -104,9 +106,9 @@ class SettingRow(QFrame):
         super().__init__()
         self.setStyleSheet(f"""
             QFrame {{
-                background: {Colors.SURFACE};
+                background: {paint_css('surface.default')};
                 border: none;
-                border-bottom: 1px solid {Colors.BORDER_SUBTLE};
+                border-bottom: 1px solid {paint_css('border.subtle')};
                 border-radius: 0px;
             }}
         """)
@@ -121,13 +123,13 @@ class SettingRow(QFrame):
 
         self.title_label = QLabel(title)
         self.title_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG, QFont.Weight.DemiBold))
-        self.title_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent; border: none;")
+        self.title_label.setStyleSheet(f"color: {paint_css('text.primary')}; background: transparent; border: none;")
         text_layout.addWidget(self.title_label)
 
         if description:
             self.desc_label = QLabel(description)
             self.desc_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-            self.desc_label.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent; border: none;")
+            self.desc_label.setStyleSheet(f"color: {paint_css('text.tertiary')}; background: transparent; border: none;")
             self.desc_label.setWordWrap(True)
             text_layout.addWidget(self.desc_label)
 
@@ -145,7 +147,7 @@ class SettingRow(QFrame):
             self._override_label = QLabel("Overridden by device settings")
             self._override_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
             self._override_label.setStyleSheet(
-                f"color: {Colors.WARNING}; background: transparent; border: none;"
+                f"color: {paint_css('status.warning.text')}; background: transparent; border: none;"
             )
             self._text_layout.addWidget(self._override_label)
         self._override_label.setVisible(visible)
@@ -170,20 +172,20 @@ class ToggleRow(SettingRow):
                 width: {(38)}px;
                 height: {(20)}px;
                 border-radius: {(10)}px;
-                background: {Colors.SURFACE_ACTIVE};
-                border: 1px solid {Colors.BORDER};
+                background: {paint_css('control.secondary.pressed_fill')};
+                border: 1px solid {paint_css('border.default')};
             }}
             QCheckBox::indicator:hover {{
-                background: {Colors.SURFACE_HOVER};
-                border: 1px solid {Colors.BORDER_FOCUS};
+                background: {paint_css('control.secondary.hover_fill')};
+                border: 1px solid {paint_css('focus.border')};
             }}
             QCheckBox::indicator:checked {{
-                background: {Colors.ACCENT};
-                border: 1px solid {Colors.ACCENT};
+                background: {paint_css('control.primary.fill')};
+                border: 1px solid {paint_css('control.primary.fill')};
             }}
             QCheckBox::indicator:checked:hover {{
-                background: {Colors.ACCENT_HOVER};
-                border: 1px solid {Colors.ACCENT_LIGHT};
+                background: {paint_css('control.primary.hover_fill')};
+                border: 1px solid {paint_css('control.primary.hover_fill')};
             }}
         """)
         self.checkbox.toggled.connect(self.changed.emit)
@@ -274,7 +276,7 @@ class FolderRow(SettingRow):
 
         self.path_label = QLabel(self._truncate(path) if path else "Not set")
         self.path_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        self.path_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
+        self.path_label.setStyleSheet(f"color: {paint_css('text.secondary')}; background: transparent; border: none;")
         self.path_label.setMinimumWidth(120)
         self.path_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         right_layout.addWidget(self.path_label)
@@ -362,7 +364,7 @@ class ResettableFolderRow(SettingRow):
         self.path_label = QLabel(self._truncate(path) if path else default_label)
         self.path_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.path_label.setStyleSheet(
-            f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;"
+            f"color: {paint_css('text.secondary')}; background: transparent; border: none;"
         )
         self.path_label.setMinimumWidth(120)
         self.path_label.setAlignment(
@@ -480,7 +482,7 @@ class FileRow(SettingRow):
 
         self.path_label = QLabel(self._truncate(path) if path else "Auto-detect")
         self.path_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        self.path_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
+        self.path_label.setStyleSheet(f"color: {paint_css('text.secondary')}; background: transparent; border: none;")
         self.path_label.setMinimumWidth(120)
         self.path_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         right_layout.addWidget(self.path_label)
@@ -568,7 +570,7 @@ class ToolRow(SettingRow):
 
         self.status_label = QLabel("Checking…")
         self.status_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        self.status_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
+        self.status_label.setStyleSheet(f"color: {paint_css('text.secondary')}; background: transparent; border: none;")
         right_layout.addWidget(self.status_label)
 
         self.download_btn = QPushButton("Download")
@@ -589,11 +591,11 @@ class ToolRow(SettingRow):
         if found:
             display = path if len(path) <= 40 else "…" + path[-38:]
             self.status_label.setText(f"✓ {display}")
-            self.status_label.setStyleSheet(f"color: {Colors.SUCCESS}; background: transparent; border: none;")
+            self.status_label.setStyleSheet(f"color: {paint_css('status.success.text')}; background: transparent; border: none;")
             self.download_btn.hide()
         else:
             self.status_label.setText("Not found")
-            self.status_label.setStyleSheet(f"color: {Colors.WARNING}; background: transparent; border: none;")
+            self.status_label.setStyleSheet(f"color: {paint_css('status.warning.text')}; background: transparent; border: none;")
             self.download_btn.show()
 
     def set_downloading(self):
@@ -601,7 +603,7 @@ class ToolRow(SettingRow):
         self.download_btn.setEnabled(False)
         self.download_btn.setText("Downloading…")
         self.status_label.setText("Downloading…")
-        self.status_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
+        self.status_label.setStyleSheet(f"color: {paint_css('text.secondary')}; background: transparent; border: none;")
 
     def set_lossy_encoder_statuses(self, statuses: dict[str, bool]):
         """Update lossy encoder pills (AAC + MP3) for FFmpeg rows."""
@@ -612,9 +614,9 @@ class ToolRow(SettingRow):
                 pill.setStyleSheet(
                     f"""
                     QLabel {{
-                        color: {Colors.SUCCESS};
-                        background: {Colors.SUCCESS_DIM};
-                        border: 1px solid {Colors.SUCCESS_BORDER};
+                        color: {paint_css('status.success.text')};
+                        background: {paint_css('status.success.subtle_fill')};
+                        border: 1px solid {paint_css('status.success.border')};
                         border-radius: {Metrics.BORDER_RADIUS_SM}px;
                         padding: 2px 8px;
                     }}
@@ -624,9 +626,9 @@ class ToolRow(SettingRow):
                 pill.setStyleSheet(
                     f"""
                     QLabel {{
-                        color: {Colors.TEXT_TERTIARY};
-                        background: {Colors.SURFACE_ALT};
-                        border: 1px solid {Colors.BORDER_SUBTLE};
+                        color: {paint_css('text.tertiary')};
+                        background: {paint_css('surface.inset')};
+                        border: 1px solid {paint_css('border.subtle')};
                         border-radius: {Metrics.BORDER_RADIUS_SM}px;
                         padding: 2px 8px;
                     }}
@@ -660,7 +662,7 @@ class _TokenRow(SettingRow):
         self.status_label = QLabel("")
         self.status_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.status_label.setStyleSheet(
-            f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;"
+            f"color: {paint_css('text.secondary')}; background: transparent; border: none;"
         )
         right_layout.addWidget(self.status_label)
 
@@ -697,7 +699,7 @@ class _TokenRow(SettingRow):
         """Show connected state with username."""
         self.status_label.setText(f"✓ Connected as {username}")
         self.status_label.setStyleSheet(
-            f"color: {Colors.SUCCESS}; background: transparent; border: none;"
+            f"color: {paint_css('status.success.text')}; background: transparent; border: none;"
         )
         self.token_input.hide()
         self.save_btn.hide()
@@ -716,7 +718,7 @@ class _TokenRow(SettingRow):
         """Show an error after validation fails."""
         self.status_label.setText(f"✗ {message}")
         self.status_label.setStyleSheet(
-            f"color: {Colors.WARNING}; background: transparent; border: none;"
+            f"color: {paint_css('status.warning.text')}; background: transparent; border: none;"
         )
 
     def _on_save(self):
@@ -789,7 +791,7 @@ class _LastFmAuthRow(SettingRow):
 
         self.status_label = QLabel("")
         self.status_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        self.status_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
+        self.status_label.setStyleSheet(f"color: {paint_css('text.secondary')}; background: transparent; border: none;")
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignRight)
         right_layout.addWidget(self.status_label)
 
@@ -848,7 +850,7 @@ class _LastFmAuthRow(SettingRow):
 
     def set_connected(self, username: str):
         self.status_label.setText(f"✓ Connected as {username}")
-        self.status_label.setStyleSheet(f"color: {Colors.SUCCESS}; background: transparent; border: none;")
+        self.status_label.setStyleSheet(f"color: {paint_css('status.success.text')}; background: transparent; border: none;")
         self.inputs_widget.hide()
         self.connect_btn.hide()
         self.cancel_btn.hide()
@@ -857,7 +859,7 @@ class _LastFmAuthRow(SettingRow):
 
     def set_disconnected(self, api_key: str = "", api_secret: str = ""):
         self.status_label.setText("")
-        self.status_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
+        self.status_label.setStyleSheet(f"color: {paint_css('text.secondary')}; background: transparent; border: none;")
         if api_key:
             self.api_key_input.setText(api_key)
         if api_secret:
@@ -874,7 +876,7 @@ class _LastFmAuthRow(SettingRow):
 
     def set_error(self, message: str):
         self.status_label.setText(f"✗ {message}")
-        self.status_label.setStyleSheet(f"color: {Colors.WARNING}; background: transparent; border: none;")
+        self.status_label.setStyleSheet(f"color: {paint_css('status.warning.text')}; background: transparent; border: none;")
 
     def _start_auth_flow(self):
         api_key = self.api_key_input.text().strip()
@@ -885,7 +887,7 @@ class _LastFmAuthRow(SettingRow):
             return
 
         self.status_label.setText("Fetching token...")
-        self.status_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
+        self.status_label.setStyleSheet(f"color: {paint_css('text.secondary')}; background: transparent; border: none;")
         self.api_key_input.setEnabled(False)
         self.api_secret_input.setEnabled(False)
         self.connect_btn.hide()
@@ -922,7 +924,7 @@ class _LastFmAuthRow(SettingRow):
         QDesktopServices.openUrl(QUrl(auth_url))
 
         self.status_label.setText("Waiting for browser approval...")
-        self.status_label.setStyleSheet(f"color: {Colors.ACCENT}; background: transparent; border: none;")
+        self.status_label.setStyleSheet(f"color: {paint_css('control.primary.fill')}; background: transparent; border: none;")
         self._is_polling = False
         self._polling_timer.start()
 
@@ -1020,7 +1022,7 @@ class _LastFmAuthRow(SettingRow):
         self._polling_timer.stop()
         self._is_polling = False
         self.status_label.setText("Canceled")
-        self.status_label.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent; border: none;")
+        self.status_label.setStyleSheet(f"color: {paint_css('text.tertiary')}; background: transparent; border: none;")
         self.cancel_btn.hide()
         self.connect_btn.show()
         self.api_key_input.setEnabled(True)
@@ -1103,7 +1105,7 @@ class _SettingsCard(QFrame):
         self.setObjectName("settingsCard")
         self.setStyleSheet(panel_css(
             "settingsCard",
-            bg=Colors.SURFACE_ALT,
+            bg=paint_css("surface.inset"),
             radius=Metrics.BORDER_RADIUS_LG,
         ))
         lay = QVBoxLayout(self)
@@ -1119,7 +1121,7 @@ class _SettingsCard(QFrame):
                 sep = QFrame()
                 sep.setFixedHeight(1)
                 sep.setStyleSheet(
-                    f"background: {Colors.BORDER_SUBTLE}; border: none;"
+                    f"background: {paint_css('border.subtle')}; border: none;"
                 )
                 lay.addWidget(sep)
 
@@ -1230,7 +1232,7 @@ class SettingsPage(QWidget):
         title = QLabel("Settings")
         title.setFont(QFont(FONT_FAMILY, Metrics.FONT_HERO, QFont.Weight.Bold))
         title.setStyleSheet(
-            f"color: {Colors.TEXT_PRIMARY}; background: transparent; border: none;"
+            f"color: {paint_css('text.primary')}; background: transparent; border: none;"
         )
         layout.addWidget(title)
         layout.addSpacing(8)
@@ -1264,7 +1266,7 @@ class SettingsPage(QWidget):
         frame.setFixedHeight(40)
         frame.setStyleSheet(panel_css(
             "settingsScopeSwitch",
-            bg=Colors.SURFACE_ALT,
+            bg=paint_css("surface.inset"),
             radius=Metrics.BORDER_RADIUS_SM,
         ))
         lay = QHBoxLayout(frame)
@@ -1335,7 +1337,7 @@ class SettingsPage(QWidget):
             QFont(FONT_FAMILY, Metrics.FONT_PAGE_TITLE, QFont.Weight.Bold)
         )
         title_label.setStyleSheet(
-            f"color: {Colors.TEXT_PRIMARY}; background: transparent; border: none;"
+            f"color: {paint_css('text.primary')}; background: transparent; border: none;"
         )
         layout.addWidget(title_label)
         layout.addSpacing(20)
@@ -1345,7 +1347,7 @@ class SettingsPage(QWidget):
                 lbl = QLabel(item.upper())
                 lbl.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS, QFont.Weight.Bold))
                 lbl.setStyleSheet(
-                    f"color: {Colors.TEXT_TERTIARY}; background: transparent;"
+                    f"color: {paint_css('text.tertiary')}; background: transparent;"
                     f" border: none; padding-left: {(4)}px;"
                 )
                 self._section_labels[(title, item)] = lbl
@@ -1384,18 +1386,14 @@ class SettingsPage(QWidget):
         self.light_theme_combo = ComboRow(
             "Light Theme",
             "Choose the palette to use whenever Light appearance is active.",
-            options=["Light", "Catppuccin Latte"],
-            current="Light",
+            options=[],
         )
         self.dark_theme_combo = ComboRow(
             "Dark Theme",
             "Choose the palette to use whenever Dark appearance is active.",
-            options=[
-                "Dark", "Catppuccin Mocha", "Catppuccin Macchiato",
-                "Catppuccin Frappé",
-            ],
-            current="Dark",
+            options=[],
         )
+        self._refresh_theme_options()
 
         self.high_contrast = ComboRow(
             "Increased Contrast",
@@ -2113,6 +2111,36 @@ class SettingsPage(QWidget):
 
         self._update_override_warnings()
 
+    def _refresh_theme_options(
+        self,
+        selected_light: str = "light",
+        selected_dark: str = "dark",
+    ) -> None:
+        """Populate appearance controls from the file-backed theme catalog."""
+
+        catalog = load_theme_catalog()
+        self._set_theme_options(
+            self.light_theme_combo,
+            catalog.available("light"),
+            selected_light,
+        )
+        self._set_theme_options(
+            self.dark_theme_combo,
+            catalog.available("dark"),
+            selected_dark,
+        )
+
+    @staticmethod
+    def _set_theme_options(row: ComboRow, themes: tuple, selected_id: str) -> None:
+        combo = row.combo
+        previous = combo.blockSignals(True)
+        combo.clear()
+        for theme in themes:
+            combo.addItem(theme.name, theme.id)
+        index = combo.findData(selected_id)
+        combo.setCurrentIndex(index if index >= 0 else 0)
+        combo.blockSignals(previous)
+
     # ── Settings I/O ────────────────────────────────────────────────────────
 
     def load_from_settings(self):
@@ -2194,21 +2222,11 @@ class SettingsPage(QWidget):
         if idx >= 0:
             self.theme_mode_combo.combo.setCurrentIndex(idx)
 
-        theme_display = {
-            "dark": "Dark", "light": "Light",
-            "catppuccin-mocha": "Catppuccin Mocha",
-            "catppuccin-macchiato": "Catppuccin Macchiato",
-            "catppuccin-frappe": "Catppuccin Frappé",
-            "catppuccin-latte": "Catppuccin Latte",
-        }
-        idx = self.light_theme_combo.combo.findText(
-            theme_display.get(s.light_theme, "Light")
-        )
+        self._refresh_theme_options(s.light_theme, s.dark_theme)
+        idx = self.light_theme_combo.combo.findData(s.light_theme)
         if idx >= 0:
             self.light_theme_combo.combo.setCurrentIndex(idx)
-        idx = self.dark_theme_combo.combo.findText(
-            theme_display.get(s.dark_theme, "Dark")
-        )
+        idx = self.dark_theme_combo.combo.findData(s.dark_theme)
         if idx >= 0:
             self.dark_theme_combo.combo.setCurrentIndex(idx)
 
@@ -2640,15 +2658,8 @@ class SettingsPage(QWidget):
             s.theme_mode = {
                 "Light": "light", "Dark": "dark", "Auto": "auto",
             }.get(self.theme_mode_combo.value, "dark")
-            theme_keys = {
-                "Dark": "dark", "Light": "light",
-                "Catppuccin Mocha": "catppuccin-mocha",
-                "Catppuccin Macchiato": "catppuccin-macchiato",
-                "Catppuccin Frappé": "catppuccin-frappe",
-                "Catppuccin Latte": "catppuccin-latte",
-            }
-            s.light_theme = theme_keys.get(self.light_theme_combo.value, "light")
-            s.dark_theme = theme_keys.get(self.dark_theme_combo.value, "dark")
+            s.light_theme = self.light_theme_combo.combo.currentData() or "light"
+            s.dark_theme = self.dark_theme_combo.combo.currentData() or "dark"
 
             # High contrast
             hc_keys = {"Off": "off", "On": "on", "System": "system"}
@@ -2755,7 +2766,7 @@ class SettingsPage(QWidget):
             accent_hex = resolve_accent_color(
                 s.accent_color, self._current_ipod_image(),
             )
-            Colors.apply_theme_selection(
+            apply_theme_selection(
                 s.theme_mode, s.light_theme, s.dark_theme, s.high_contrast, accent_hex
             )
             Metrics.apply_font_scale(s.font_scale)

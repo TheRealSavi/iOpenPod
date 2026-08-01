@@ -12,7 +12,6 @@ from ..styles import (
     LABEL_SECONDARY,
     LABEL_TERTIARY,
     MONO_FONT_FAMILY,
-    Colors,
     Design,
     Metrics,
     button_css,
@@ -21,6 +20,7 @@ from ..styles import (
     make_section_header,
     make_separator,
     make_sidebar_section_header,
+    paint_css,
     progress_bar_css,
     sidebar_panel_css,
 )
@@ -141,8 +141,8 @@ class DeviceInfoCard(QFrame):
         self.setObjectName("deviceInfoCard")
         self.setStyleSheet(f"""
             QFrame#deviceInfoCard {{
-                background: {Colors.SURFACE_RAISED};
-                border: 1px solid {Colors.BORDER_SUBTLE};
+                background: {paint_css('surface.raised')};
+                border: 1px solid {paint_css('border.subtle')};
                 border-radius: {Design.PANEL_RADIUS}px;
             }}
         """)
@@ -193,7 +193,7 @@ class DeviceInfoCard(QFrame):
         self.eject_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.eject_button.setToolTip("Safely eject the iPod from your system")
         self.eject_button.setStyleSheet(button_css("quiet", "sm", extra="padding: 0px;"))
-        _ej = glyph_icon("eject", 14, Colors.TEXT_SECONDARY)
+        _ej = glyph_icon("eject", 14, paint_css("text.secondary"))
         if _ej:
             self.eject_button.setIcon(_ej)
             self.eject_button.setIconSize(QSize(14, 14))
@@ -229,10 +229,10 @@ class DeviceInfoCard(QFrame):
                 padding: {(3)}px;
             }}
             QPushButton#storageManageButton:hover {{
-                background: {Colors.SURFACE_HOVER};
+                background: {paint_css('control.quiet.hover_fill')};
             }}
             QPushButton#storageManageButton:pressed {{
-                background: {Colors.SURFACE_ACTIVE};
+                background: {paint_css('control.quiet.pressed_fill')};
             }}
             QPushButton#storageManageButton:disabled {{
                 background: transparent;
@@ -268,10 +268,11 @@ class DeviceInfoCard(QFrame):
         self.storage_bar.setStyleSheet(progress_bar_css(
             height=6,
             radius=3,
-            bg=Colors.BORDER_SUBTLE,
+            bg=paint_css("surface.inset"),
             chunk=(
                 "qlineargradient(x1:0, y1:0, x2:1, y2:0, "
-                f"stop:0 {Colors.ACCENT}, stop:1 {Colors.ACCENT_LIGHT})"
+                f"stop:0 {paint_css('control.primary.fill')}, "
+                f"stop:1 {paint_css('control.primary.hover_fill')})"
             ),
         ))
         cap_info_layout.addWidget(self.storage_bar)
@@ -307,8 +308,8 @@ class DeviceInfoCard(QFrame):
         self.database_bar.setStyleSheet(progress_bar_css(
             height=5,
             radius=2,
-            bg=Colors.BORDER_SUBTLE,
-            chunk=Colors.WARNING,
+            bg=paint_css("surface.inset"),
+            chunk=paint_css("status.warning.text"),
         ))
         self.database_bar.hide()
         database_layout.addWidget(self.database_bar)
@@ -321,7 +322,7 @@ class DeviceInfoCard(QFrame):
 
         # Technical details section (collapsible)
         self.tech_toggle = QPushButton("Technical Details")
-        _chev = glyph_icon("chevron-right", (12), Colors.TEXT_TERTIARY)
+        _chev = glyph_icon("chevron-right", (12), paint_css("text.tertiary"))
         if _chev:
             self.tech_toggle.setIcon(_chev)
             self.tech_toggle.setIconSize(QSize((12), (12)))
@@ -460,7 +461,7 @@ class DeviceInfoCard(QFrame):
     def _set_default_icon(self) -> None:
         """Reset the header icon to the generic music fallback."""
         self.icon_label.clear()
-        px = glyph_pixmap("music", (32), Colors.TEXT_SECONDARY)
+        px = glyph_pixmap("music", (32), paint_css("text.secondary"))
         if px:
             self.icon_label.setPixmap(px)
         else:
@@ -525,7 +526,7 @@ class DeviceInfoCard(QFrame):
         self._tech_expanded = not self._tech_expanded
         self.tech_container.setVisible(self._tech_expanded)
         chev = "chevron-down" if self._tech_expanded else "chevron-right"
-        icon = glyph_icon(chev, (12), Colors.TEXT_TERTIARY)
+        icon = glyph_icon(chev, (12), paint_css("text.tertiary"))
         if icon:
             self.tech_toggle.setIcon(icon)
 
@@ -801,11 +802,15 @@ class DeviceInfoCard(QFrame):
 
         used_pct = int((size_bytes / max_bytes) * 100) if max_bytes else 0
         self.database_bar.setValue(max(0, min(100, used_pct)))
-        chunk = Colors.DANGER if size_bytes > max_bytes else Colors.WARNING
+        chunk = (
+            paint_css("status.danger.text")
+            if size_bytes > max_bytes
+            else paint_css("status.warning.text")
+        )
         self.database_bar.setStyleSheet(progress_bar_css(
             height=5,
             radius=2,
-            bg=Colors.BORDER_SUBTLE,
+            bg=paint_css("surface.inset"),
             chunk=chunk,
         ))
         size_text = format_size(size_bytes) or "0 B"
@@ -864,20 +869,20 @@ class DeviceInfoCard(QFrame):
         self._save_hide_timer.stop()
         if state == "saving":
             self._save_label.setStyleSheet(
-                f"background: transparent; border: none; color: {Colors.TEXT_TERTIARY};"
+                f"background: transparent; border: none; color: {paint_css('text.tertiary')};"
             )
             self._save_label.setText("Saving…")
             self._save_label.show()
         elif state == "saved":
             self._save_label.setStyleSheet(
-                f"background: transparent; border: none; color: {Colors.SUCCESS};"
+                f"background: transparent; border: none; color: {paint_css('status.success.text')};"
             )
             self._save_label.setText("✓ Saved")
             self._save_label.show()
             self._save_hide_timer.start(2500)
         elif state == "error":
             self._save_label.setStyleSheet(
-                f"background: transparent; border: none; color: {Colors.DANGER};"
+                f"background: transparent; border: none; color: {paint_css('status.danger.text')};"
             )
             self._save_label.setText("⚠ Save failed")
             self._save_label.show()
@@ -992,11 +997,11 @@ class Sidebar(QFrame):
         self.rescanButton.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
 
         _icon_sz = QSize(Design.SIDEBAR_ICON_SIZE, Design.SIDEBAR_ICON_SIZE)
-        _bi = glyph_icon("tablet", Design.SIDEBAR_ICON_SIZE, Colors.TEXT_SECONDARY)
+        _bi = glyph_icon("tablet", Design.SIDEBAR_ICON_SIZE, paint_css("text.secondary"))
         if _bi:
             self.deviceButton.setIcon(_bi)
             self.deviceButton.setIconSize(_icon_sz)
-        _bi = glyph_icon("refresh", Design.SIDEBAR_ICON_SIZE, Colors.TEXT_SECONDARY)
+        _bi = glyph_icon("refresh", Design.SIDEBAR_ICON_SIZE, paint_css("text.secondary"))
         if _bi:
             self.rescanButton.setIcon(_bi)
             self.rescanButton.setIconSize(_icon_sz)
@@ -1009,7 +1014,7 @@ class Sidebar(QFrame):
         self.syncButton = QPushButton("Sync with PC")
         self.syncButton.setStyleSheet(button_css("primary", "md"))
         self.syncButton.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.DemiBold))
-        _bi = glyph_icon("download", Design.SIDEBAR_ICON_SIZE, Colors.TEXT_ON_ACCENT)
+        _bi = glyph_icon("download", Design.SIDEBAR_ICON_SIZE, paint_css("control.primary.text"))
         if _bi:
             self.syncButton.setIcon(_bi)
             self.syncButton.setIconSize(_icon_sz)

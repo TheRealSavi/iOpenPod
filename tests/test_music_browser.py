@@ -5,7 +5,8 @@ from PIL import Image
 from PyQt6.QtCore import QPoint
 from PyQt6.QtWidgets import QLineEdit, QSplitter
 
-from iopenpod.gui.styles import Colors, context_menu_css
+from iopenpod.gui import styles
+from iopenpod.gui.styles import apply_theme, context_menu_css, current_theme, paint_css
 from iopenpod.gui.widgets import artworkUnifier as artwork_unifier_module
 from iopenpod.gui.widgets.artworkUnifier import (
     artwork_compare_hash,
@@ -13,7 +14,8 @@ from iopenpod.gui.widgets.artworkUnifier import (
 )
 from iopenpod.gui.widgets.musicBrowser import MusicBrowser
 from iopenpod.gui.widgets.trackContextMenu import resolve_grid_item_tracks
-from iopenpod.gui.widgets.trackListTitleBar import TrackListTitleBar, _resolve_bar_palette
+from iopenpod.gui.widgets.trackListTitleBar import TrackListTitleBar
+from iopenpod.infrastructure.theme_renderer import render_track_title_bar_paints
 
 
 def _build_browser(category: str = "Albums") -> Any:
@@ -84,7 +86,7 @@ def test_context_menu_css_styles_disabled_rows_and_icon_gutter() -> None:
     assert "padding: 8px 28px 8px 12px;" in css
     assert "QMenu::item:disabled" in css
     assert "QMenu::item:disabled:selected" in css
-    assert f"color: {Colors.TEXT_DISABLED};" in css
+    assert f"color: {paint_css('text.disabled')};" in css
 
 
 def test_grid_item_track_resolution_matches_album_artist_and_genre_groups() -> None:
@@ -296,9 +298,14 @@ def test_genre_grid_context_menu_passes_all_group_tracks_to_track_menu(
 def test_title_bar_palette_reuses_contrast_ensured_grid_color() -> None:
     display_rgb = (86, 112, 144)
 
-    palette = _resolve_bar_palette(display_rgb, contrast_ensured=True)
+    paints = render_track_title_bar_paints(
+        current_theme(),
+        display_rgb,
+        contrast_ensured=True,
+    )
 
-    assert palette["bg"] == display_rgb
+    assert paints.gradient_middle is not None
+    assert paints.gradient_middle.color.rgb == display_rgb
 
 
 def test_title_bar_places_metadata_search_before_window_controls(qtbot) -> None:
@@ -318,10 +325,11 @@ def test_title_bar_places_metadata_search_before_window_controls(qtbot) -> None:
     assert (search.width(), search.height()) == (190, 28)
     assert "QLineEdit#trackListTitleSearchField" in search.styleSheet()
 
-    palette = _resolve_bar_palette(
+    paints = render_track_title_bar_paints(
+        current_theme(),
         (86, 112, 144),
-        text=(18, 18, 24),
-        text_secondary=(45, 50, 60),
+        text_rgb=(18, 18, 24),
+        text_secondary_rgb=(45, 50, 60),
         contrast_ensured=True,
     )
     titlebar.setColor(
@@ -333,10 +341,8 @@ def test_title_bar_places_metadata_search_before_window_controls(qtbot) -> None:
         contrast_ensured=True,
     )
     compact_search_css = "".join(search.styleSheet().split())
-    secondary_rgb = ",".join(str(value) for value in palette["text_secondary"])
-    primary_rgb = ",".join(str(value) for value in palette["text"])
-    assert f"color:rgb({secondary_rgb});" in compact_search_css
-    assert f"color:rgb({primary_rgb});" in compact_search_css
+    assert f"color:{paints.search_text.css};" in compact_search_css
+    assert f"color:{paints.search_focus_text.css};" in compact_search_css
 
     emitted: list[str] = []
     titlebar.search_changed.connect(emitted.append)
@@ -375,27 +381,30 @@ def test_title_bar_uses_prominent_gradient_from_contrast_ensured_color(qtbot) ->
     assert "color:rgb(18,18,24);" not in compact_css
 
 
-def test_light_theme_title_bar_uses_more_opaque_album_gradient(qtbot, monkeypatch) -> None:
-    monkeypatch.setattr(Colors, "_active_mode", "light")
+def test_light_theme_title_bar_uses_more_opaque_album_gradient(qtbot) -> None:
+    theme_snapshot = current_theme()
+    apply_theme("light", "off", "blue")
     splitter = QSplitter()
     titlebar = TrackListTitleBar(splitter)
     qtbot.addWidget(splitter)
     qtbot.addWidget(titlebar)
+    try:
+        titlebar.setColor(
+            86,
+            112,
+            144,
+            text=(18, 18, 24),
+            text_secondary=(45, 50, 60),
+            contrast_ensured=True,
+        )
 
-    titlebar.setColor(
-        86,
-        112,
-        144,
-        text=(18, 18, 24),
-        text_secondary=(45, 50, 60),
-        contrast_ensured=True,
-    )
-
-    compact_css = "".join(titlebar.styleSheet().split())
-    assert "stop:0rgba(100,123,153,132)" in compact_css
-    assert "stop:0.58rgba(86,112,144,112)" in compact_css
-    assert "stop:1rgba(67,87,112,96)" in compact_css
-    assert "border-bottom:" not in compact_css
+        compact_css = "".join(titlebar.styleSheet().split())
+        assert "stop:0rgba(100,123,153,132)" in compact_css
+        assert "stop:0.58rgba(86,112,144,112)" in compact_css
+        assert "stop:1rgba(67,87,112,96)" in compact_css
+        assert "border-bottom:" not in compact_css
+    finally:
+        styles._THEME_RUNTIME.replace(theme_snapshot)
 
 
 def test_title_bar_maximize_uses_splitter_height_when_sizes_are_collapsed(

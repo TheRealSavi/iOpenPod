@@ -8,7 +8,7 @@ from PyQt6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
 from PyQt6.QtWidgets import QWidget
 
 from iopenpod.gui.glyphs import glyph_pixmap
-from iopenpod.gui.styles import FONT_FAMILY, Colors
+from iopenpod.gui.styles import FONT_FAMILY, paint_css
 
 
 def _qcolor(css: str) -> QColor:
@@ -50,7 +50,7 @@ class DropOverlayWidget(QWidget):
         w, h = self.width(), self.height()
 
         # ── Background: theme-aware translucent fill ────────────────
-        painter.fillRect(self.rect(), _qcolor(Colors.OVERLAY))
+        painter.fillRect(self.rect(), _qcolor(paint_css("effect.drop_target_scrim")))
 
         # ── Inner rounded rectangle with dashed accent border ───────
         margin = (40)
@@ -58,15 +58,12 @@ class DropOverlayWidget(QWidget):
         radius = (20)
 
         # Subtle accent-tinted fill inside the border
-        accent = _qcolor(Colors.ACCENT)
-        inner_fill = QColor(accent)
-        inner_fill.setAlpha(18)
         path = QPainterPath()
         path.addRoundedRect(inner, radius, radius)
-        painter.fillPath(path, inner_fill)
+        painter.fillPath(path, _qcolor(paint_css("effect.drop_target_tint")))
 
         # Dashed border
-        pen = QPen(_qcolor(Colors.ACCENT_BORDER), (2.5))
+        pen = QPen(_qcolor(paint_css("effect.drop_target_border")), (2.5))
         pen.setStyle(Qt.PenStyle.CustomDashLine)
         pen.setDashPattern([(8), (5)])
         pen.setCapStyle(Qt.PenCapStyle.RoundCap)
@@ -79,7 +76,7 @@ class DropOverlayWidget(QWidget):
 
         # Icon
         icon_size = (56)
-        icon_px = glyph_pixmap("download", icon_size, Colors.ACCENT)
+        icon_px = glyph_pixmap("download", icon_size, paint_css("control.primary.fill"))
         if icon_px:
             painter.drawPixmap(
                 int(cx - icon_size / 2),
@@ -88,7 +85,7 @@ class DropOverlayWidget(QWidget):
             )
 
         # Primary text
-        painter.setPen(_qcolor(Colors.TEXT_PRIMARY))
+        painter.setPen(_qcolor(paint_css("text.primary")))
         primary_font = QFont(FONT_FAMILY, (20))
         primary_font.setWeight(QFont.Weight.DemiBold)
         painter.setFont(primary_font)
@@ -97,7 +94,7 @@ class DropOverlayWidget(QWidget):
                          "Drop files to import")
 
         # Secondary hint text
-        painter.setPen(_qcolor(Colors.TEXT_SECONDARY))
+        painter.setPen(_qcolor(paint_css("text.secondary")))
         hint_font = QFont(FONT_FAMILY, (12))
         painter.setFont(hint_font)
         hint_rect = QRectF(inner.left(), cy + (42), inner.width(), (44))

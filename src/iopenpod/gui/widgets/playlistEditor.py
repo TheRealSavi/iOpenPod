@@ -75,7 +75,6 @@ from iopenpod.itunesdb_shared.playlist_properties import (
 from ..glyphs import glyph_icon
 from ..styles import (
     FONT_FAMILY,
-    Colors,
     Design,
     Metrics,
     accent_btn_css,
@@ -86,6 +85,7 @@ from ..styles import (
     input_css,
     make_scroll_area,
     make_separator,
+    paint_css,
     panel_css,
     spin_css,
     title_input_css,
@@ -308,7 +308,9 @@ def _label_css(color: str) -> str:
     return f"color: {color}; background: transparent; border: none;"
 
 
-def _subtle_label_css(color: str = Colors.TEXT_TERTIARY) -> str:
+def _subtle_label_css(color: str | None = None) -> str:
+    if color is None:
+        color = paint_css("text.tertiary")
     return (
         f"color: {color}; background: transparent; border: none;"
         " text-transform: uppercase;"
@@ -322,7 +324,7 @@ def _title_input_css() -> str:
 def _editor_panel_css(object_name: str) -> str:
     return panel_css(
         object_name,
-        bg=Colors.SURFACE_ALT,
+        bg=paint_css("surface.inset"),
         radius=Metrics.BORDER_RADIUS_SM,
     )
 
@@ -330,8 +332,8 @@ def _editor_panel_css(object_name: str) -> str:
 def _editor_notice_css(object_name: str) -> str:
     return panel_css(
         object_name,
-        bg=Colors.ACCENT_MUTED,
-        border=f"1px solid {Colors.ACCENT_BORDER}",
+        bg=paint_css("notice.info.fill"),
+        border=f"1px solid {paint_css('notice.info.border')}",
         radius=Metrics.BORDER_RADIUS_SM,
     )
 
@@ -345,7 +347,7 @@ def _section_header(text: str) -> QWidget:
 
     label = QLabel(text, widget)
     label.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS, QFont.Weight.Bold))
-    label.setStyleSheet(_subtle_label_css(Colors.TEXT_SECONDARY))
+    label.setStyleSheet(_subtle_label_css(paint_css("text.secondary")))
     layout.addWidget(label)
     layout.addWidget(make_separator(), 1)
     return widget
@@ -353,7 +355,7 @@ def _section_header(text: str) -> QWidget:
 
 def _section_label_style() -> str:
     return (
-        f"color: {Colors.TEXT_TERTIARY}; background: transparent; border: none; "
+        f"color: {paint_css('text.tertiary')}; background: transparent; border: none; "
         f"font-size: {Metrics.FONT_SM}pt; font-weight: bold;"
     )
 
@@ -456,7 +458,7 @@ class SmartRuleRow(QFrame):
 
         # ── Remove button ──
         self.remove_btn = QPushButton()
-        _close_ic = glyph_icon("close", 12, Colors.DANGER)
+        _close_ic = glyph_icon("close", 12, paint_css("status.danger.text"))
         if _close_ic:
             self.remove_btn.setIcon(_close_ic)
         else:
@@ -694,7 +696,7 @@ class SmartRuleRow(QFrame):
             # "in range" needs a second spin
             self._range_label = QLabel("to")
             self._range_label.setStyleSheet(
-                f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;"
+                f"color: {paint_css('text.secondary')}; background: transparent; border: none;"
             )
             self._range_label.setVisible(False)
             self._add_value_widget(self._range_label)
@@ -720,7 +722,7 @@ class SmartRuleRow(QFrame):
 
             self._range_label = QLabel("to")
             self._range_label.setStyleSheet(
-                f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;"
+                f"color: {paint_css('text.secondary')}; background: transparent; border: none;"
             )
             self._add_value_widget(self._range_label)
 
@@ -932,12 +934,12 @@ class SmartPlaylistEditor(QFrame):
 
         type_label = QLabel("Smart Playlist Editor")
         type_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS, QFont.Weight.Bold))
-        type_label.setStyleSheet(_subtle_label_css(Colors.TEXT_SECONDARY))
+        type_label.setStyleSheet(_subtle_label_css(paint_css("text.secondary")))
         meta_row.addWidget(type_label, 0, Qt.AlignmentFlag.AlignVCenter)
 
         source_label = QLabel("Rule-based playlist")
         source_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS))
-        source_label.setStyleSheet(_label_css(Colors.TEXT_TERTIARY))
+        source_label.setStyleSheet(_label_css(paint_css("text.tertiary")))
         meta_row.addWidget(source_label, 0, Qt.AlignmentFlag.AlignVCenter)
         meta_row.addStretch()
         title_col.addLayout(meta_row)
@@ -957,7 +959,7 @@ class SmartPlaylistEditor(QFrame):
         self.save_btn = QPushButton("Save Playlist")
         self.save_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.Bold))
         self.save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        _save_ic = glyph_icon("check-circle", 14, Colors.TEXT_ON_ACCENT)
+        _save_ic = glyph_icon("check-circle", 14, paint_css("control.primary.text"))
         if _save_ic:
             self.save_btn.setIcon(_save_ic)
             self.save_btn.setIconSize(QSize(14, 14))
@@ -986,7 +988,7 @@ class SmartPlaylistEditor(QFrame):
 
         lbl = QLabel("Match")
         lbl.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        lbl.setStyleSheet(_label_css(Colors.TEXT_SECONDARY))
+        lbl.setStyleSheet(_label_css(paint_css("text.secondary")))
         conj_row.addWidget(lbl)
 
         self.conjunction_combo = _RuleComboBox()
@@ -998,14 +1000,14 @@ class SmartPlaylistEditor(QFrame):
 
         lbl2 = QLabel("of the following rules")
         lbl2.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        lbl2.setStyleSheet(_label_css(Colors.TEXT_SECONDARY))
+        lbl2.setStyleSheet(_label_css(paint_css("text.secondary")))
         conj_row.addWidget(lbl2)
         conj_row.addStretch()
 
         self.add_rule_btn = QPushButton("Add Rule")
         self.add_rule_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.add_rule_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        _add_ic = glyph_icon("plus", 14, Colors.TEXT_SECONDARY)
+        _add_ic = glyph_icon("plus", 14, paint_css("text.secondary"))
         if _add_ic:
             self.add_rule_btn.setIcon(_add_ic)
             self.add_rule_btn.setIconSize(QSize(14, 14))
@@ -1078,7 +1080,7 @@ class SmartPlaylistEditor(QFrame):
         self._selected_by_label = QLabel("selected by")
         self._selected_by_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
         self._selected_by_label.setStyleSheet(
-            f"color: {Colors.TEXT_PRIMARY}; background: transparent; border: none;"
+            f"color: {paint_css('text.primary')}; background: transparent; border: none;"
         )
         limit_row.addWidget(self._selected_by_label)
 
@@ -1110,7 +1112,7 @@ class SmartPlaylistEditor(QFrame):
         sort_row.setSpacing(6)
         sort_lbl = QLabel("Sort Order")
         sort_lbl.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        sort_lbl.setStyleSheet(_label_css(Colors.TEXT_SECONDARY))
+        sort_lbl.setStyleSheet(_label_css(paint_css("text.secondary")))
         sort_row.addWidget(sort_lbl)
 
         self.sort_combo = QComboBox()
@@ -1367,12 +1369,12 @@ class RegularPlaylistEditor(QFrame):
 
         type_label = QLabel("Playlist Editor")
         type_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS, QFont.Weight.Bold))
-        type_label.setStyleSheet(_subtle_label_css(Colors.TEXT_SECONDARY))
+        type_label.setStyleSheet(_subtle_label_css(paint_css("text.secondary")))
         meta_row.addWidget(type_label, 0, Qt.AlignmentFlag.AlignVCenter)
 
         source_label = QLabel("Manual track playlist")
         source_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS))
-        source_label.setStyleSheet(_label_css(Colors.TEXT_TERTIARY))
+        source_label.setStyleSheet(_label_css(paint_css("text.tertiary")))
         meta_row.addWidget(source_label, 0, Qt.AlignmentFlag.AlignVCenter)
         meta_row.addStretch()
         title_col.addLayout(meta_row)
@@ -1392,7 +1394,7 @@ class RegularPlaylistEditor(QFrame):
         self.save_btn = QPushButton("Save")
         self.save_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.Bold))
         self.save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        _save_ic = glyph_icon("check-circle", 14, Colors.TEXT_ON_ACCENT)
+        _save_ic = glyph_icon("check-circle", 14, paint_css("control.primary.text"))
         if _save_ic:
             self.save_btn.setIcon(_save_ic)
             self.save_btn.setIconSize(QSize(14, 14))
@@ -1418,7 +1420,7 @@ class RegularPlaylistEditor(QFrame):
         sort_row.setSpacing(8)
         sort_label = QLabel("Sort Order")
         sort_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        sort_label.setStyleSheet(_label_css(Colors.TEXT_SECONDARY))
+        sort_label.setStyleSheet(_label_css(paint_css("text.secondary")))
         sort_row.addWidget(sort_label)
 
         self.sort_combo = QComboBox()
@@ -1445,9 +1447,9 @@ class RegularPlaylistEditor(QFrame):
         note_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         note_icon.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS, QFont.Weight.Bold))
         note_icon.setStyleSheet(
-            f"color: {Colors.ACCENT};"
+            f"color: {paint_css('status.info.text')};"
             "background: transparent;"
-            f"border: 1px solid {Colors.ACCENT_BORDER};"
+            f"border: 1px solid {paint_css('notice.info.border')};"
             "border-radius: 9px;"
         )
         note_layout.addWidget(note_icon, 0, Qt.AlignmentFlag.AlignTop)
@@ -1457,7 +1459,7 @@ class RegularPlaylistEditor(QFrame):
             add_tracks_note,
         )
         note_text.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        note_text.setStyleSheet(_label_css(Colors.TEXT_SECONDARY))
+        note_text.setStyleSheet(_label_css(paint_css("text.secondary")))
         note_text.setWordWrap(True)
         note_layout.addWidget(note_text, 1)
 
@@ -1537,8 +1539,8 @@ class NewPlaylistDialog(QDialog):
         self.setFixedSize((320), (200))
         self.setStyleSheet(f"""
             QDialog {{
-                background: {Colors.DIALOG_BG};
-                color: {Colors.TEXT_PRIMARY};
+                background: {paint_css('modal.background')};
+                color: {paint_css('text.primary')};
             }}
         """)
 
@@ -1550,13 +1552,13 @@ class NewPlaylistDialog(QDialog):
 
         title = QLabel("Create New Playlist")
         title.setFont(QFont(FONT_FAMILY, Metrics.FONT_TITLE, QFont.Weight.Bold))
-        title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
+        title.setStyleSheet(f"color: {paint_css('text.primary')};")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
         subtitle = QLabel("Choose a playlist type:")
         subtitle.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
-        subtitle.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
+        subtitle.setStyleSheet(f"color: {paint_css('text.secondary')};")
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(subtitle)
 
@@ -1572,7 +1574,7 @@ class NewPlaylistDialog(QDialog):
         self.regular_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
         self.regular_btn.setMinimumHeight(44)
         self.regular_btn.setStyleSheet(button_css("secondary", "lg"))
-        _ic = glyph_icon(_ICON_REGULAR, (20), Colors.TEXT_SECONDARY)
+        _ic = glyph_icon(_ICON_REGULAR, (20), paint_css("text.secondary"))
         if _ic:
             self.regular_btn.setIcon(_ic)
             self.regular_btn.setIconSize(_ic_sz)
@@ -1584,7 +1586,7 @@ class NewPlaylistDialog(QDialog):
         self.smart_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
         self.smart_btn.setMinimumHeight(44)
         self.smart_btn.setStyleSheet(accent_btn_css("lg"))
-        _ic = glyph_icon(_ICON_SMART, (20), Colors.TEXT_ON_ACCENT)
+        _ic = glyph_icon(_ICON_SMART, (20), paint_css("control.primary.text"))
         if _ic:
             self.smart_btn.setIcon(_ic)
             self.smart_btn.setIconSize(_ic_sz)

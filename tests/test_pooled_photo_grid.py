@@ -7,9 +7,10 @@ from PyQt6.QtCore import QPoint
 from PyQt6.QtGui import QColor, QContextMenuEvent, QPixmap
 from PyQt6.QtWidgets import QApplication, QLabel, QScrollArea, QWidget
 
-from iopenpod.gui.styles import Colors, display_accent_rgb
+from iopenpod.gui.styles import GRID_ART_CONTRAST_TARGET, current_theme, display_accent_rgb
 from iopenpod.gui.widgets.photoTile import PhotoGridTile
 from iopenpod.gui.widgets.pooledPhotoGrid import PhotoTileModel, PooledPhotoGridView
+from iopenpod.infrastructure.theme_renderer import Color
 
 
 def _mount_grid(
@@ -242,11 +243,14 @@ def test_photo_tile_uses_dominant_color_for_card_background(qtbot):
     tile = _as_photo_tile(grid.gridItems[0])
     display_rgb = display_accent_rgb(
         rgb,
-        background=Colors.BG_DARK,
-        target_ratio=Colors.GRID_ART_CONTRAST_TARGET,
+        background=current_theme().paint("canvas.default").css,
+        target_ratio=GRID_ART_CONTRAST_TARGET,
     )
+    backdrop = current_theme().paint("grid.card.fill").color
+    fill = Color(*display_rgb, 30).composite_over(backdrop).css
 
-    assert f"rgba({display_rgb[0]}, {display_rgb[1]}, {display_rgb[2]}, 30)" in tile.styleSheet()
+    assert f"background-color: {fill}" in tile.styleSheet()
+    assert "rgba(" not in tile.styleSheet()
 
 
 def test_photo_tile_respects_rounded_artwork_setting(qtbot):

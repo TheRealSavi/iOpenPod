@@ -28,13 +28,13 @@ from ..hidpi import scale_pixmap_for_display
 from ..styles import (
     FONT_FAMILY,
     LABEL_SECONDARY,
-    Colors,
     Metrics,
     accent_btn_css,
     btn_css,
     input_css,
     make_label,
     make_scroll_area,
+    paint_css,
 )
 from .podcastStates import PodcastStatePanel
 
@@ -57,7 +57,7 @@ class PodcastSearchDialog(QDialog):
         self.resize((620), (540))
         self.setStyleSheet(f"""
             QDialog {{
-                background: {Colors.DIALOG_BG};
+                background: {paint_css('modal.background')};
             }}
         """)
 
@@ -115,7 +115,7 @@ class PodcastSearchDialog(QDialog):
 
         scroll = make_scroll_area(extra_css=f"""
             QScrollArea {{
-                border: 1px solid {Colors.BORDER_SUBTLE};
+                border: 1px solid {paint_css('border.subtle')};
                 border-radius: {Metrics.BORDER_RADIUS_SM}px;
             }}
         """)
@@ -248,12 +248,12 @@ class _SearchResultCard(QFrame):
         self._result = result
         self.setStyleSheet(f"""
             _SearchResultCard {{
-                background: {Colors.SURFACE_ALT};
-                border: 1px solid {Colors.BORDER_SUBTLE};
+                background: {paint_css('surface.inset')};
+                border: 1px solid {paint_css('border.subtle')};
                 border-radius: {Metrics.BORDER_RADIUS_SM}px;
             }}
             _SearchResultCard:hover {{
-                background: {Colors.SURFACE_HOVER};
+                background: {paint_css('surface.hover')};
             }}
         """)
 
@@ -266,13 +266,13 @@ class _SearchResultCard(QFrame):
         self._art_label.setFixedSize((56), (56))
         self._art_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._art_label.setStyleSheet(f"""
-            background: {Colors.SURFACE_RAISED};
+            background: {paint_css('surface.raised')};
             border-radius: {Metrics.BORDER_RADIUS_SM}px;
-            color: {Colors.TEXT_TERTIARY};
+            color: {paint_css('text.tertiary')};
             font-size: {(20)}px;
         """)
         self._art_label.setText("◎")
-        _search_px = glyph_pixmap("broadcast", (24), Colors.TEXT_TERTIARY)
+        _search_px = glyph_pixmap("broadcast", (24), paint_css("text.tertiary"))
         if _search_px:
             self._art_label.setPixmap(_search_px)
         layout.addWidget(self._art_label)

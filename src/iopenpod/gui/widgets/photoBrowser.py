@@ -55,10 +55,10 @@ from iopenpod.sync.photos import (
 from ..glyphs import glyph_icon
 from ..styles import (
     FONT_FAMILY,
-    Colors,
     Metrics,
     context_menu_css,
     make_scroll_area,
+    paint_css,
 )
 from .browserChrome import (
     BrowserHeroHeader,
@@ -575,7 +575,7 @@ class PhotoBrowserWidget(QFrame):
         self.new_album_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.new_album_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.new_album_btn.setStyleSheet(chrome_action_btn_css())
-        new_album_icon = glyph_icon("plus", 14, Colors.TEXT_PRIMARY)
+        new_album_icon = glyph_icon("plus", 14, paint_css("text.primary"))
         if new_album_icon is not None:
             self.new_album_btn.setIcon(new_album_icon)
         header.actions_layout.addWidget(self.new_album_btn)
@@ -1348,7 +1348,7 @@ class PhotoBrowserWidget(QFrame):
         self._album_inner_layout.addWidget(btn)
 
     def _set_menu_icon(self, action, glyph_name: str, color: str | None = None) -> None:
-        icon = glyph_icon(glyph_name, 14, color or Colors.TEXT_PRIMARY)
+        icon = glyph_icon(glyph_name, 14, color or paint_css("text.primary"))
         if icon is not None and action is not None:
             action.setIcon(icon)
 
@@ -1421,7 +1421,7 @@ class PhotoBrowserWidget(QFrame):
             menu,
             "Delete Photo",
             glyph_name="trash",
-            color=Colors.DANGER,
+            color=paint_css("status.danger.text"),
             enabled=not actions_locked,
         )
 
@@ -1486,7 +1486,7 @@ class PhotoBrowserWidget(QFrame):
                 menu,
                 "Delete Album",
                 glyph_name="trash",
-                color=Colors.DANGER,
+                color=paint_css("status.danger.text"),
                 enabled=not actions_locked,
             )
 

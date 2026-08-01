@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from PyQt6.QtWidgets import QLabel
 
+from iopenpod.gui.styles import paint_css
 from iopenpod.gui.widgets.playlistBrowser import (
+    PlaylistInfoCard,
     PlaylistListPanel,
     _is_ipod_category_playlist,
     _is_regular_track_playlist,
@@ -159,3 +161,13 @@ def test_podcast_flag_playlist_gets_podcast_section_even_when_display_merged(qtb
 
     assert "REGULAR PLAYLISTS" in section_labels
     assert "PODCAST PLAYLISTS" in section_labels
+
+
+def test_playlist_info_card_uses_named_quiet_and_danger_component_paints(qtbot) -> None:
+    card = PlaylistInfoCard()
+    qtbot.addWidget(card)
+
+    assert paint_css("text.primary") in card.title_label.styleSheet()
+    assert paint_css("control.quiet.hover_fill") in card.edit_btn.styleSheet()
+    assert paint_css("status.danger.subtle_fill") in card.delete_btn.styleSheet()
+    assert paint_css("status.danger.border") in card.delete_btn.styleSheet()

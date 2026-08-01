@@ -29,11 +29,11 @@ from iopenpod.application import database_storage
 from ..styles import (
     FONT_FAMILY,
     MONO_FONT_FAMILY,
-    Colors,
     Metrics,
     _parse_color,
     accent_btn_css,
     button_css,
+    paint_css,
     table_css,
 )
 
@@ -132,9 +132,9 @@ class FieldSizeDistributionWidget(QWidget):
     def paintEvent(self, _event) -> None:  # type: ignore[override]
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.fillRect(self.rect(), self.palette().window())
+        painter.fillRect(self.rect(), _parse_color(paint_css("surface.default")))
         if not self._sizes:
-            painter.setPen(_parse_color(Colors.TEXT_TERTIARY))
+            painter.setPen(_parse_color(paint_css("text.tertiary")))
             painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "No field values found")
             return
 
@@ -149,13 +149,13 @@ class FieldSizeDistributionWidget(QWidget):
         bin_width = bins[0].end - bins[0].start
 
         painter.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
-        painter.setPen(_parse_color(Colors.TEXT_SECONDARY))
+        painter.setPen(_parse_color(paint_css("text.secondary")))
         painter.drawText(
             chart_left,
             18,
             f"Histogram · {len(bins)} automatic bin{'s' if len(bins) != 1 else ''} · {_byte_label(bin_width)}/bin",
         )
-        painter.setPen(QPen(_parse_color(Colors.BORDER_SUBTLE)))
+        painter.setPen(QPen(_parse_color(paint_css("border.subtle"))))
         baseline = histogram_top + histogram_height
         painter.drawLine(chart_left, baseline, chart_left + width, baseline)
         painter.drawLine(chart_left, histogram_top, chart_left, baseline)
@@ -165,9 +165,9 @@ class FieldSizeDistributionWidget(QWidget):
         for tick_index in range(tick_count + 1):
             count = round(maximum_count * tick_index / tick_count) if tick_count else 0
             tick_y = baseline - histogram_height * tick_index / max(1, tick_count)
-            painter.setPen(QPen(_parse_color(Colors.GRIDLINE)))
+            painter.setPen(QPen(_parse_color(paint_css("border.grid"))))
             painter.drawLine(chart_left, int(tick_y), chart_left + width, int(tick_y))
-            painter.setPen(_parse_color(Colors.TEXT_TERTIARY))
+            painter.setPen(_parse_color(paint_css("text.tertiary")))
             text = str(count)
             painter.drawText(
                 chart_left - 8 - painter.fontMetrics().horizontalAdvance(text),
@@ -178,7 +178,7 @@ class FieldSizeDistributionWidget(QWidget):
         painter.save()
         painter.translate(14, histogram_top + histogram_height / 2)
         painter.rotate(-90)
-        painter.setPen(_parse_color(Colors.TEXT_TERTIARY))
+        painter.setPen(_parse_color(paint_css("text.tertiary")))
         painter.drawText(-painter.fontMetrics().horizontalAdvance("Occurrences") // 2, 0, "Occurrences")
         painter.restore()
 
@@ -193,11 +193,11 @@ class FieldSizeDistributionWidget(QWidget):
                 int(histogram_top + histogram_height - height),
                 max(1, int(bar_width)),
                 max(1, int(height)),
-                _parse_color(Colors.ACCENT),
+                _parse_color(paint_css("data.accent.fill")),
             )
 
         painter.setFont(QFont(MONO_FONT_FAMILY, Metrics.FONT_XS))
-        painter.setPen(_parse_color(Colors.TEXT_TERTIARY))
+        painter.setPen(_parse_color(paint_css("text.tertiary")))
         painter.drawText(chart_left, histogram_top + histogram_height + 18, _byte_label(min(self._sizes)))
         maximum_text = _byte_label(max(self._sizes))
         painter.drawText(
@@ -210,7 +210,7 @@ class FieldSizeDistributionWidget(QWidget):
         assert summary is not None
         box_top = histogram_top + histogram_height + 58
         painter.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
-        painter.setPen(_parse_color(Colors.TEXT_SECONDARY))
+        painter.setPen(_parse_color(paint_css("text.secondary")))
         painter.drawText(chart_left, box_top - 16, "Box plot")
         scale_min = summary.minimum
         scale_max = summary.maximum
@@ -221,7 +221,7 @@ class FieldSizeDistributionWidget(QWidget):
             return int(chart_left + (value - scale_min) / (scale_max - scale_min) * width)
 
         center_y = box_top + 24
-        painter.setPen(QPen(_parse_color(Colors.TEXT_SECONDARY), 2))
+        painter.setPen(QPen(_parse_color(paint_css("text.secondary")), 2))
         painter.drawLine(x_for(summary.minimum), center_y, x_for(summary.maximum), center_y)
         painter.drawLine(x_for(summary.minimum), center_y - 8, x_for(summary.minimum), center_y + 8)
         painter.drawLine(x_for(summary.maximum), center_y - 8, x_for(summary.maximum), center_y + 8)
@@ -232,9 +232,9 @@ class FieldSizeDistributionWidget(QWidget):
             center_y - 14,
             max(2, right - left),
             28,
-            _parse_color(Colors.ACCENT_MUTED),
+            _parse_color(paint_css("data.accent.subtle_fill")),
         )
-        painter.setPen(QPen(_parse_color(Colors.ACCENT_LIGHT), 2))
+        painter.setPen(QPen(_parse_color(paint_css("data.accent.border")), 2))
         painter.drawRect(left, center_y - 14, max(2, right - left), 28)
         median_x = x_for(summary.median)
         painter.drawLine(median_x, center_y - 14, median_x, center_y + 14)
@@ -350,13 +350,13 @@ class DatabaseStorageFieldInspectorDialog(QDialog):
 
         title = QLabel(f"Inspect {self._label}", self)
         title.setFont(QFont(FONT_FAMILY, Metrics.FONT_XL, QFont.Weight.DemiBold))
-        title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
+        title.setStyleSheet(f"color: {paint_css('text.primary')};")
         root.addWidget(title)
 
         self.status_label = QLabel(self)
         self.status_label.setObjectName("databaseStorageInspectionStatus")
         self.status_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        self.status_label.setStyleSheet(f"color: {Colors.TEXT_TERTIARY};")
+        self.status_label.setStyleSheet(f"color: {paint_css('text.tertiary')};")
         self.status_label.setWordWrap(True)
         root.addWidget(self.status_label)
 
@@ -396,7 +396,11 @@ class DatabaseStorageFieldInspectorDialog(QDialog):
 
         summary_frame = QFrame(tab)
         summary_frame.setObjectName("databaseStorageFiveNumberSummary")
-        summary_frame.setStyleSheet(f"background: {Colors.SURFACE}; border: 1px solid {Colors.BORDER_SUBTLE}; border-radius: {Metrics.BORDER_RADIUS_SM}px;")
+        summary_frame.setStyleSheet(
+            f"background: {paint_css('surface.default')}; "
+            f"border: 1px solid {paint_css('border.subtle')}; "
+            f"border-radius: {Metrics.BORDER_RADIUS_SM}px;"
+        )
         summary_layout = QFormLayout(summary_frame)
         summary_layout.setContentsMargins(12, 10, 12, 10)
         summary_layout.setHorizontalSpacing(20)
@@ -412,7 +416,7 @@ class DatabaseStorageFieldInspectorDialog(QDialog):
             value = QLabel("—", summary_frame)
             value.setObjectName(f"databaseStorageSummary{key.title().replace('_', '')}")
             value.setFont(QFont(MONO_FONT_FAMILY, Metrics.FONT_SM))
-            value.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
+            value.setStyleSheet(f"color: {paint_css('text.primary')};")
             summary_layout.addRow(f"{title}:", value)
             self._summary_values[key] = value
         layout.addWidget(summary_frame)
@@ -436,7 +440,7 @@ class DatabaseStorageFieldInspectorDialog(QDialog):
         filter_row.addStretch(1)
         self.values_count_label = QLabel("", tab)
         self.values_count_label.setObjectName("databaseStorageInspectionValuesCount")
-        self.values_count_label.setStyleSheet(f"color: {Colors.TEXT_TERTIARY};")
+        self.values_count_label.setStyleSheet(f"color: {paint_css('text.tertiary')};")
         filter_row.addWidget(self.values_count_label)
         layout.addLayout(filter_row)
 

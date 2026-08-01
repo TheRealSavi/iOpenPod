@@ -8,7 +8,7 @@ from PyQt6.QtCore import QEvent, QObject, QPoint, QRect, QTimer, pyqtSignal
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import QFrame, QLabel, QScrollArea, QSizePolicy, QWidget
 
-from ..styles import FONT_FAMILY, Colors, Metrics
+from ..styles import FONT_FAMILY, Metrics, paint_css
 from .gridItem import GridImage, GridItem, GridItemModel
 
 if TYPE_CHECKING:
@@ -807,7 +807,7 @@ class SectionedPooledGridView(PooledGridView):
             )
         )
         header.setStyleSheet(
-            f"color: {Colors.TEXT_PRIMARY}; background: transparent; border: none;"
+            f"color: {paint_css('text.primary')}; background: transparent; border: none;"
         )
         header.hide()
         return header

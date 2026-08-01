@@ -14,7 +14,7 @@ from iopenpod.application.runtime import display_playlists_from_rows
 from iopenpod.sync.album_chapters import is_music_track, resolve_album_tracks
 
 from ..glyphs import glyph_icon
-from ..styles import Colors, context_menu_css
+from ..styles import context_menu_css, paint_css
 
 CTRL = "⌘" if sys.platform == "darwin" else "Ctrl"
 ALT = "⌥" if sys.platform == "darwin" else "Alt"
@@ -167,7 +167,7 @@ def build_track_context_menu(
             f"{host._edit_action_label(selected_snapshot)}\t{CTRL}+E"
         )
         if edit_act:
-            icon = glyph_icon("edit", 14, Colors.TEXT_PRIMARY)
+            icon = glyph_icon("edit", 14, paint_css("text.primary"))
             if icon is not None:
                 edit_act.setIcon(icon)
             edit_act.triggered.connect(
@@ -179,7 +179,7 @@ def build_track_context_menu(
         conversion_items = [dict(item) for item in chaptered_album_action.items]
         conversion_action = menu.addAction("Convert to a single chaptered track")
         if conversion_action:
-            icon = glyph_icon("chaptered-track", 14, Colors.TEXT_PRIMARY)
+            icon = glyph_icon("chaptered-track", 14, paint_css("text.primary"))
             if icon is not None:
                 conversion_action.setIcon(icon)
             enabled = all(
@@ -198,7 +198,7 @@ def build_track_context_menu(
     if len(selected_snapshot) == 1 and _chapter_count(selected_snapshot[0]) >= 2:
         split_act = menu.addAction("Split chapters into individual tracks")
         if split_act:
-            icon = glyph_icon("chaptered-track", 14, Colors.TEXT_PRIMARY)
+            icon = glyph_icon("chaptered-track", 14, paint_css("text.primary"))
             if icon is not None:
                 split_act.setIcon(icon)
             split_act.triggered.connect(
@@ -218,7 +218,7 @@ def build_track_context_menu(
             add_menu.setStyleSheet(menu_style)
             new_playlist_act = add_menu.addAction("New Playlist")
             if new_playlist_act:
-                icon = glyph_icon("plus", 14, Colors.TEXT_PRIMARY)
+                icon = glyph_icon("plus", 14, paint_css("text.primary"))
                 if icon is not None:
                     new_playlist_act.setIcon(icon)
                 new_playlist_act.triggered.connect(
@@ -257,7 +257,7 @@ def build_track_context_menu(
         f"Remove {count} Track{'s' if count != 1 else ''} from iPod"
     )
     if remove_ipod_act:
-        icon = glyph_icon("minus", 14, Colors.TEXT_PRIMARY)
+        icon = glyph_icon("minus", 14, paint_css("text.primary"))
         if icon is not None:
             remove_ipod_act.setIcon(icon)
         remove_ipod_act.triggered.connect(

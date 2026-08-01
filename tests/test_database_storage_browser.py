@@ -2,7 +2,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QLabel, QPushButton
 
 from iopenpod.application.database_storage import DatabaseStorageReport, StorageBreakdownNode
-from iopenpod.gui.styles import back_btn_css
+from iopenpod.gui.styles import back_btn_css, paint_css
 from iopenpod.gui.widgets.databaseStorageBrowser import DatabaseStorageBrowser
 
 
@@ -29,6 +29,8 @@ def test_database_storage_browser_summary_describes_sqlite_storage(qtbot) -> Non
     assert summary.text() == "SQLite library · 2.0 KB across .itdb files"
     assert "RAM budget" not in summary.text()
     assert "iTunesCDB" not in summary.text()
+    assert paint_css("table.row.fill") in browser.tree.styleSheet()
+    assert paint_css("table.row.selected_fill") in browser.tree.styleSheet()
 
 
 def test_database_storage_browser_back_button_emits_closed(qtbot) -> None:

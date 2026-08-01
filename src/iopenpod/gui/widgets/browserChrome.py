@@ -4,7 +4,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSplitter, QVBoxLayout, QWidget
 
-from ..styles import FONT_FAMILY, Colors, Metrics, button_css, panel_css
+from ..styles import FONT_FAMILY, Metrics, button_css, paint_css, panel_css
 
 
 def chrome_action_btn_css() -> str:
@@ -21,9 +21,9 @@ class BrowserHeroHeader(QFrame):
         self.setFixedHeight(48)
         self.setStyleSheet(f"""
             QFrame#browserHeroHeader {{
-                background: {Colors.SURFACE};
-                border-top: 1px solid {Colors.BORDER_SUBTLE};
-                border-bottom: 1px solid {Colors.BORDER_SUBTLE};
+                background: {paint_css('surface.default')};
+                border-top: 1px solid {paint_css('border.subtle')};
+                border-bottom: 1px solid {paint_css('border.subtle')};
                 border-left: none;
                 border-right: none;
             }}
@@ -63,7 +63,7 @@ class BrowserPane(QFrame):
         self.title_label = QLabel(title, self)
         self.title_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_TITLE, QFont.Weight.Bold))
         self.title_label.setStyleSheet(f"""
-            color:{Colors.TEXT_PRIMARY};
+            color:{paint_css('text.primary')};
             background:transparent;
             border:none;
             padding:8px 12px 4px 12px;
@@ -92,12 +92,12 @@ def style_browser_splitter(splitter: QSplitter) -> None:
         splitter.setHandleWidth(1)
     splitter.setStyleSheet(f"""
         QSplitter::handle {{
-            background: {Colors.BORDER_SUBTLE};
+            background: {paint_css('border.subtle')};
         }}
         QSplitter::handle:hover {{
-            background: {Colors.ACCENT};
+            background: {paint_css('control.primary.fill')};
         }}
         QSplitter::handle:pressed {{
-            background: {Colors.ACCENT_LIGHT};
+            background: {paint_css('control.primary.hover_fill')};
         }}
     """)

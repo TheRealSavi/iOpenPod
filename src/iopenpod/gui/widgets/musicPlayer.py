@@ -31,28 +31,43 @@ from ..glyphs import glyph_icon, glyph_pixmap
 from ..hidpi import effective_device_pixel_ratio, logical_to_physical
 from ..styles import (
     FONT_FAMILY,
-    Colors,
     Metrics,
+    current_theme,
 )
 from .formatters import format_duration_mmss
 
-_CLASSIC_REFERENCE_COLORS = {
-    "bar_top": "#f6f7f8",
-    "bar_mid": "#dfe2e5",
-    "bar_bottom": "#bcc2c8",
-    "panel_top": "#eef1f4",
-    "panel_mid": "#cfd5dc",
-    "panel_bottom": "#aeb8c1",
-    "panel_border": "#77838e",
-    "panel_highlight": "#ffffff",
-    "text": "#1f2328",
-    "text_secondary": "#38424a",
-    "text_tertiary": "#56616a",
-    "icon": "#51565b",
-    "icon_disabled": "#9da3a8",
-    "groove": "#a8adb2",
-    "groove_fill": "#79838c",
-    "handle": "#f7f8f9",
+_PLAYER_PAINT_NAMES = {
+    "accent": "player.accent",
+    "art_bg": "player.art.fill",
+    "art_border": "player.art.border",
+    "bar_top": "player.chrome.top",
+    "bar_mid": "player.chrome.middle",
+    "bar_bottom": "player.chrome.bottom",
+    "border": "player.slider.border",
+    "border_subtle": "player.slider.disabled_fill",
+    "disabled": "player.icon.disabled",
+    "groove_top": "player.slider.groove.top",
+    "groove_mid": "player.slider.groove.middle",
+    "groove_bottom": "player.slider.groove.bottom",
+    "groove_fill_top": "player.slider.fill.top",
+    "groove_fill_bottom": "player.slider.fill.bottom",
+    "handle_top": "player.slider.handle.top",
+    "handle_mid": "player.slider.handle.middle",
+    "handle_bottom": "player.slider.handle.bottom",
+    "hover": "player.control.hover_fill",
+    "icon": "player.icon",
+    "icon_disabled": "player.icon.disabled",
+    "inactive_star": "player.star.inactive",
+    "panel_top": "player.surface.top",
+    "panel_mid": "player.surface.middle",
+    "panel_bottom": "player.surface.bottom",
+    "panel_border": "player.surface.border",
+    "panel_highlight": "player.surface.highlight",
+    "pressed": "player.control.pressed_fill",
+    "star": "player.star.active",
+    "text": "player.text",
+    "text_secondary": "player.text.secondary",
+    "text_tertiary": "player.text.tertiary",
 }
 
 
@@ -120,124 +135,13 @@ def _paint_color(value: str, fallback: str = "#888888") -> QColor:
     return QColor(fallback)
 
 
-def _css_color(color: QColor) -> str:
-    if color.alpha() >= 255:
-        return color.name(QColor.NameFormat.HexRgb)
-    return f"rgba({color.red()},{color.green()},{color.blue()},{color.alpha()})"
-
-
-def _composite_color(foreground: str, background: str) -> str:
-    fg = _paint_color(foreground)
-    bg = _paint_color(background)
-    alpha = fg.alphaF()
-    inv_alpha = 1.0 - alpha
-    return _css_color(
-        QColor(
-            round(fg.red() * alpha + bg.red() * inv_alpha),
-            round(fg.green() * alpha + bg.green() * inv_alpha),
-            round(fg.blue() * alpha + bg.blue() * inv_alpha),
-        )
-    )
-
-
-def _mix_color(first: str, second: str, amount: float) -> str:
-    amount = max(0.0, min(1.0, float(amount)))
-    first_color = _paint_color(first)
-    second_color = _paint_color(second)
-    keep = 1.0 - amount
-    return _css_color(
-        QColor(
-            round(first_color.red() * keep + second_color.red() * amount),
-            round(first_color.green() * keep + second_color.green() * amount),
-            round(first_color.blue() * keep + second_color.blue() * amount),
-            round(first_color.alpha() * keep + second_color.alpha() * amount),
-        )
-    )
-
-
-def _theme_surface(color: str, background: str) -> str:
-    return _composite_color(color, background) if "rgba" in color else color
-
-
 def _player_theme_colors() -> dict[str, str]:
-    dark = getattr(Colors, "_active_mode", "dark") == "dark"
-    base = _theme_surface(Colors.DIALOG_BG, Colors.BG_DARK)
-    bg = _theme_surface(Colors.BG_DARK, base)
-    mid = _theme_surface(Colors.BG_MID, base)
-    surface = _theme_surface(Colors.SURFACE, base)
-    surface_alt = _theme_surface(Colors.SURFACE_ALT, base)
-    raised = _theme_surface(Colors.SURFACE_RAISED, base)
-    hover = _theme_surface(Colors.SURFACE_HOVER, base)
-    active = _theme_surface(Colors.SURFACE_ACTIVE, base)
-    border = _theme_surface(Colors.BORDER, base)
-    border_subtle = _theme_surface(Colors.BORDER_SUBTLE, base)
-    text = _theme_surface(Colors.TEXT_PRIMARY, base)
-    text_secondary = _theme_surface(Colors.TEXT_SECONDARY, base)
-    text_tertiary = _theme_surface(Colors.TEXT_TERTIARY, base)
-    disabled = _theme_surface(Colors.TEXT_DISABLED, base)
-    accent = _theme_surface(Colors.ACCENT, base)
+    """Expose the renderer-owned player paint catalog to Qt stylesheets."""
 
-    if dark:
-        bar_top = _mix_color(base, "#ffffff", 0.10)
-        bar_mid = _mix_color(_mix_color(base, mid, 0.50), "#ffffff", 0.05)
-        bar_bottom = _mix_color(mid, "#000000", 0.14)
-        panel_top = _mix_color(raised, "#ffffff", 0.10)
-        panel_mid = _mix_color(surface_alt, "#ffffff", 0.04)
-        panel_bottom = _mix_color(surface, "#000000", 0.16)
-        panel_highlight = _mix_color(panel_top, "#ffffff", 0.28)
-        groove_top = _mix_color(surface_alt, "#000000", 0.32)
-        groove_mid = _mix_color(raised, "#ffffff", 0.04)
-        groove_bottom = _mix_color(raised, "#ffffff", 0.12)
-        handle_top = _mix_color(panel_top, text, 0.36)
-        handle_mid = _mix_color(panel_mid, text, 0.24)
-        handle_bottom = _mix_color(panel_bottom, "#000000", 0.12)
-    else:
-        bar_top = _mix_color(base, "#ffffff", 0.58)
-        bar_mid = _mix_color(_mix_color(base, mid, 0.40), "#000000", 0.04)
-        bar_bottom = _mix_color(mid, "#000000", 0.12)
-        panel_top = _mix_color(raised, "#ffffff", 0.38)
-        panel_mid = _mix_color(surface_alt, "#000000", 0.03)
-        panel_bottom = _mix_color(surface, "#000000", 0.12)
-        panel_highlight = _mix_color(panel_top, "#ffffff", 0.55)
-        groove_top = _mix_color(surface_alt, "#000000", 0.22)
-        groove_mid = _mix_color(raised, "#000000", 0.06)
-        groove_bottom = _mix_color(raised, "#ffffff", 0.34)
-        handle_top = _mix_color(panel_top, "#ffffff", 0.58)
-        handle_mid = _mix_color(panel_mid, "#ffffff", 0.28)
-        handle_bottom = _mix_color(panel_bottom, "#000000", 0.16)
-
+    theme = current_theme()
     return {
-        "accent": accent,
-        "art_bg": _mix_color(panel_mid, bg, 0.08),
-        "art_border": _mix_color(border, text_tertiary, 0.18),
-        "bar_top": bar_top,
-        "bar_mid": bar_mid,
-        "bar_bottom": bar_bottom,
-        "border": border,
-        "border_subtle": border_subtle,
-        "disabled": disabled,
-        "groove_top": groove_top,
-        "groove_mid": groove_mid,
-        "groove_bottom": groove_bottom,
-        "groove_fill_top": _mix_color(accent, text, 0.10 if dark else 0.04),
-        "groove_fill_bottom": _mix_color(accent, "#000000", 0.18 if dark else 0.08),
-        "handle_top": handle_top,
-        "handle_mid": handle_mid,
-        "handle_bottom": handle_bottom,
-        "hover": hover,
-        "icon": text_secondary,
-        "icon_disabled": disabled,
-        "inactive_star": _mix_color(text_tertiary, base, 0.45),
-        "panel_top": panel_top,
-        "panel_mid": panel_mid,
-        "panel_bottom": panel_bottom,
-        "panel_border": _mix_color(border, text_tertiary, 0.22),
-        "panel_highlight": panel_highlight,
-        "pressed": active,
-        "star": _theme_surface(Colors.STAR, base),
-        "text": text,
-        "text_secondary": text_secondary,
-        "text_tertiary": text_tertiary,
+        name: theme.paint(paint_name).css
+        for name, paint_name in _PLAYER_PAINT_NAMES.items()
     }
 
 

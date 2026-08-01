@@ -163,6 +163,39 @@ def test_settings_persistence_migrates_legacy_single_theme(monkeypatch) -> None:
     assert loaded.theme == "catppuccin-latte"
 
 
+def test_settings_persistence_falls_back_when_a_selected_theme_file_is_removed(monkeypatch) -> None:
+    with repo_temp_dir() as tmp_path:
+        settings_dir = tmp_path / "settings"
+        settings_dir.mkdir()
+        # An existing directory means the user has already managed their
+        # themes; do not silently restore a deleted Catppuccin file.
+        (settings_dir / "themes").mkdir()
+        settings_path = settings_dir / "settings.json"
+        settings_path.write_text(
+            json.dumps(
+                {
+                    "theme_mode": "auto",
+                    "light_theme": "catppuccin-latte",
+                    "dark_theme": "catppuccin-mocha",
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(
+            settings_persistence,
+            "get_settings_path",
+            lambda: str(settings_path),
+        )
+
+        loaded = load_app_settings()
+        persisted = json.loads(settings_path.read_text(encoding="utf-8"))
+
+    assert loaded.light_theme == "light"
+    assert loaded.dark_theme == "dark"
+    assert persisted["light_theme"] == "light"
+    assert persisted["dark_theme"] == "dark"
+
+
 def test_settings_persistence_migrates_legacy_backup_false_to_ask(monkeypatch) -> None:
     with repo_temp_dir() as tmp_path:
         settings_dir = tmp_path / "settings"

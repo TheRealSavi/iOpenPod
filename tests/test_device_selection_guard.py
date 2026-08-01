@@ -16,6 +16,7 @@ from iopenpod.device.info import (
     set_current_device,
 )
 from iopenpod.gui import device_warnings
+from iopenpod.gui.styles import paint_css
 from iopenpod.gui.widgets import devicePicker
 from iopenpod.gui.widgets.devicePicker import DeviceCard, DevicePickerDialog
 
@@ -193,6 +194,9 @@ def test_device_card_can_be_deleted_by_its_click_handler(monkeypatch, qtbot) -> 
         display_name="iPod Classic",
     )
     card = DeviceCard(ipod)
+    card.setSelected(True)
+    assert paint_css("device.picker.selected_fill") in card.styleSheet()
+    assert paint_css("device.picker.selected_border") in card.styleSheet()
 
     def delete_card(_ipod: object) -> None:
         card.setParent(None)

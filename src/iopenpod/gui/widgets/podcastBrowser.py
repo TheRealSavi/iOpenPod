@@ -73,19 +73,23 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from iopenpod.infrastructure.theme_renderer import render_content_hero_paints
+
+from ..artwork_rendering import dominant_artwork_color_from_pixmap
 from ..glyphs import glyph_icon, glyph_pixmap
 from ..hidpi import scale_pixmap_for_display
 from ..styles import (
     FONT_FAMILY,
     LABEL_SECONDARY,
-    Colors,
     Metrics,
     accent_btn_css,
     btn_css,
     combo_css,
     context_menu_css,
+    current_theme,
     make_label,
     make_separator,
+    paint_css,
     progress_bar_css,
     sidebar_item_view_css,
     spin_css,
@@ -278,14 +282,14 @@ def _load_artwork_bytes(source: str) -> bytes | None:
 
 def _status_accent(status: str) -> str:
     if status == "On iPod":
-        return Colors.SUCCESS
+        return paint_css("status.success.text")
     if status == "Downloaded":
-        return Colors.ACCENT
+        return paint_css("control.primary.fill")
     if status == "Listened":
-        return Colors.WARNING
+        return paint_css("status.warning.text")
     if "Downloading" in status:
-        return Colors.WARNING
-    return Colors.TEXT_TERTIARY
+        return paint_css("status.warning.text")
+    return paint_css("text.tertiary")
 
 
 def _is_state_status(status: str) -> bool:
@@ -405,8 +409,8 @@ class _PodcastEpisodeCard(QFrame):
         self._art_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._art_label.setStyleSheet(f"""
             QLabel#podcastEpisodeArtwork {{
-                background: {Colors.SURFACE};
-                border: 1px solid {Colors.BORDER_SUBTLE};
+                background: {paint_css('surface.default')};
+                border: 1px solid {paint_css('border.subtle')};
                 border-radius: 7px;
             }}
         """)
@@ -416,7 +420,7 @@ class _PodcastEpisodeCard(QFrame):
             "",
             size=Metrics.FONT_SM,
             weight=QFont.Weight.DemiBold,
-            style=f"color: {Colors.ACCENT_LIGHT};",
+            style=f"color: {paint_css('control.primary.hover_fill')};",
         )
         self._podcast_label.setParent(self)
         self._podcast_label.setObjectName("podcastEpisodePodcast")
@@ -480,16 +484,16 @@ class _PodcastEpisodeCard(QFrame):
         self._add_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
         self._add_btn.setStyleSheet(
             btn_css(
-                bg=Colors.ACCENT_DIM,
-                bg_hover=Colors.ACCENT_HOVER,
-                bg_press=Colors.ACCENT_PRESS,
-                fg=Colors.TEXT_ON_ACCENT,
-                border=f"1px solid {Colors.ACCENT_BORDER}",
+                bg=paint_css("control.primary.fill"),
+                bg_hover=paint_css("control.primary.hover_fill"),
+                bg_press=paint_css("control.primary.pressed_fill"),
+                fg=paint_css("control.primary.text"),
+                border=f"1px solid {paint_css('control.primary.fill')}",
                 padding="3px 9px",
                 radius=Metrics.BORDER_RADIUS_SM,
             )
         )
-        add_icon = glyph_icon("plus", 13, Colors.TEXT_ON_ACCENT)
+        add_icon = glyph_icon("plus", 13, paint_css("control.primary.text"))
         if add_icon:
             self._add_btn.setIcon(add_icon)
             self._add_btn.setIconSize(QSize(13, 13))
@@ -516,15 +520,15 @@ class _PodcastEpisodeCard(QFrame):
         self._remove_btn.setStyleSheet(
             btn_css(
                 bg="transparent",
-                bg_hover=Colors.DANGER_DIM,
-                bg_press=Colors.DANGER_HOVER,
-                fg=Colors.DANGER,
-                border=f"1px solid {Colors.DANGER_BORDER}",
+                bg_hover=paint_css("status.danger.subtle_fill"),
+                bg_press=paint_css("status.danger.hover_fill"),
+                fg=paint_css("status.danger.text"),
+                border=f"1px solid {paint_css('status.danger.border')}",
                 padding="3px 9px",
                 radius=Metrics.BORDER_RADIUS_SM,
             )
         )
-        remove_icon = glyph_icon("minus", 13, Colors.DANGER)
+        remove_icon = glyph_icon("minus", 13, paint_css("status.danger.text"))
         if remove_icon:
             self._remove_btn.setIcon(remove_icon)
             self._remove_btn.setIconSize(QSize(13, 13))
@@ -793,8 +797,8 @@ class _PodcastEpisodeCard(QFrame):
         self._description_label.setGeometry(left, desc_y, width, desc_h)
 
     def _apply_style(self) -> None:
-        bg = Colors.ACCENT_MUTED if self._selected else Colors.SURFACE_RAISED
-        border = Colors.ACCENT_BORDER if self._selected else Colors.BORDER_SUBTLE
+        bg = paint_css("podcast.episode.selected_fill") if self._selected else paint_css("podcast.episode.fill")
+        border = paint_css("podcast.episode.selected_border") if self._selected else paint_css("podcast.episode.border")
         self.setStyleSheet(f"""
             QFrame#podcastEpisodeCard {{
                 background: {bg};
@@ -808,7 +812,7 @@ class _PodcastEpisodeCard(QFrame):
         self._status_label.setStyleSheet(f"""
             QLabel {{
                 color: {accent};
-                background: {Colors.SURFACE};
+                background: {paint_css('podcast.episode.status_fill')};
                 border: 1px solid {accent};
                 border-radius: 7px;
                 padding: 2px 8px;
@@ -1523,7 +1527,7 @@ class PodcastBrowser(QFrame):
         self._add_btn = QPushButton("Add Podcast")
         self._add_btn.setFont(QFont(FONT_FAMILY, (Metrics.FONT_SM)))
         self._add_btn.setStyleSheet(chrome_action_btn_css())
-        _add_ic = glyph_icon("plus", (14), Colors.TEXT_PRIMARY)
+        _add_ic = glyph_icon("plus", (14), paint_css("text.primary"))
         if _add_ic:
             self._add_btn.setIcon(_add_ic)
             self._add_btn.setIconSize(QSize((14), (14)))
@@ -1533,7 +1537,7 @@ class PodcastBrowser(QFrame):
         self._refresh_btn = QPushButton("Refresh All")
         self._refresh_btn.setFont(QFont(FONT_FAMILY, (Metrics.FONT_SM)))
         self._refresh_btn.setStyleSheet(chrome_action_btn_css())
-        _refresh_ic = glyph_icon("refresh", (14), Colors.TEXT_PRIMARY)
+        _refresh_ic = glyph_icon("refresh", (14), paint_css("text.primary"))
         if _refresh_ic:
             self._refresh_btn.setIcon(_refresh_ic)
             self._refresh_btn.setIconSize(QSize((14), (14)))
@@ -1543,7 +1547,7 @@ class PodcastBrowser(QFrame):
         self._sync_btn = QPushButton("Sync Podcasts")
         self._sync_btn.setFont(QFont(FONT_FAMILY, (Metrics.FONT_SM)))
         self._sync_btn.setStyleSheet(chrome_action_btn_css())
-        _sync_ic = glyph_icon("refresh", (14), Colors.TEXT_PRIMARY)
+        _sync_ic = glyph_icon("refresh", (14), paint_css("text.primary"))
         if _sync_ic:
             self._sync_btn.setIcon(_sync_ic)
             self._sync_btn.setIconSize(QSize((14), (14)))
@@ -1575,14 +1579,14 @@ class PodcastBrowser(QFrame):
         layout.addStretch()
 
         icon_lbl = QLabel()
-        _px = glyph_pixmap("broadcast", Metrics.FONT_ICON_XL, Colors.TEXT_TERTIARY)
+        _px = glyph_pixmap("broadcast", Metrics.FONT_ICON_XL, paint_css("text.tertiary"))
         if _px:
             icon_lbl.setPixmap(_px)
         else:
             icon_lbl.setText("◎")
             icon_lbl.setFont(QFont(FONT_FAMILY, Metrics.FONT_ICON_XL))
         icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        icon_lbl.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent;")
+        icon_lbl.setStyleSheet(f"color: {paint_css('text.tertiary')}; background: transparent;")
         layout.addWidget(icon_lbl)
 
         layout.addSpacing(12)
@@ -1614,7 +1618,7 @@ class PodcastBrowser(QFrame):
         cta_btn.setStyleSheet(accent_btn_css())
         cta_btn.setFixedHeight(38)
         cta_btn.setFixedWidth(240)
-        _cta_ic = glyph_icon("plus", (16), Colors.TEXT_ON_ACCENT)
+        _cta_ic = glyph_icon("plus", (16), paint_css("control.primary.text"))
         if _cta_ic:
             cta_btn.setIcon(_cta_ic)
             cta_btn.setIconSize(QSize((16), (16)))
@@ -1676,8 +1680,8 @@ class PodcastBrowser(QFrame):
         self._feed_header.setMaximumHeight(375)
         self._feed_header.setStyleSheet(f"""
             QFrame#heroHeader {{
-                background: {Colors.BG_DARK};
-                border-bottom: 1px solid {Colors.BORDER_SUBTLE};
+                background: {paint_css('canvas.default')};
+                border-bottom: 1px solid {paint_css('border.subtle')};
             }}
         """)
 
@@ -1697,9 +1701,9 @@ class PodcastBrowser(QFrame):
         self._feed_art.setFixedSize(art_size, art_size)
         self._feed_art.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._feed_art.setStyleSheet(f"""
-            background: {Colors.SURFACE};
+            background: {paint_css('surface.default')};
             border-radius: {Metrics.BORDER_RADIUS}px;
-            border: 1px solid {Colors.BORDER_SUBTLE};
+            border: 1px solid {paint_css('border.subtle')};
         """)
         self._set_feed_art_placeholder()
         body_lay.addWidget(self._feed_art, 0, Qt.AlignmentFlag.AlignTop)
@@ -1740,11 +1744,11 @@ class PodcastBrowser(QFrame):
         stats_row = QHBoxLayout()
         stats_row.setSpacing(12)
         self._feed_stat_episodes = make_label("", size=Metrics.FONT_SM,
-                                              style=f"color: {Colors.TEXT_SECONDARY};")
+                                              style=f"color: {paint_css('text.secondary')};")
         self._feed_stat_downloaded = make_label("", size=Metrics.FONT_SM,
-                                                style=f"color: {Colors.ACCENT};")
+                                                style=f"color: {paint_css('control.primary.fill')};")
         self._feed_stat_on_ipod = make_label("", size=Metrics.FONT_SM,
-                                             style=f"color: {Colors.SUCCESS};")
+                                             style=f"color: {paint_css('status.success.text')};")
         # hidden ghost label kept for _show_episodes compat
         self._feed_stat_extra = make_label("", size=Metrics.FONT_SM)
         self._feed_stat_extra.hide()
@@ -1769,7 +1773,7 @@ class PodcastBrowser(QFrame):
         hdr_layout.addWidget(make_separator())
 
         _lbl_css = (
-            f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;"
+            f"color: {paint_css('text.secondary')}; background: transparent; border: none;"
         )
         _combo_style = combo_css()
         _spin_style = spin_css(padding="2px 6px", font_size=Metrics.FONT_SM)
@@ -1856,7 +1860,7 @@ class PodcastBrowser(QFrame):
         self._progress_bar.setTextVisible(False)
         self._progress_bar.setRange(0, 100)
         self._progress_bar.setStyleSheet(
-            progress_bar_css(height=3, radius=1, bg=Colors.SURFACE)
+            progress_bar_css(height=3, radius=1, bg=paint_css("surface.default"))
         )
         self._progress_bar.hide()
         layout.addWidget(self._progress_bar)
@@ -1865,8 +1869,8 @@ class PodcastBrowser(QFrame):
         self._status_toast = QFrame()
         self._status_toast.setFixedHeight(32)
         self._status_toast.setStyleSheet(
-            f"background: {Colors.SURFACE_RAISED};"
-            f" border-top: 1px solid {Colors.BORDER_SUBTLE};"
+            f"background: {paint_css('surface.raised')};"
+            f" border-top: 1px solid {paint_css('border.subtle')};"
         )
         toast_lay = QHBoxLayout(self._status_toast)
         toast_lay.setContentsMargins(12, 0, 12, 0)
@@ -2335,13 +2339,13 @@ class PodcastBrowser(QFrame):
             STATUS_ON_IPOD,
         )
         if ep.status == STATUS_ON_IPOD:
-            return ("On iPod", _QC(Colors.SUCCESS))
+            return ("On iPod", _QC(paint_css("status.success.text")))
         if ep.status == STATUS_DOWNLOADED:
-            return ("Downloaded", _QC(Colors.ACCENT))
+            return ("Downloaded", _QC(paint_css("control.primary.fill")))
         if ep.status == STATUS_DOWNLOADING:
-            return ("Downloading…", _QC(Colors.WARNING))
+            return ("Downloading…", _QC(paint_css("status.warning.text")))
         if _episode_is_listened(ep):
-            return ("Listened", _QC(Colors.WARNING))
+            return ("Listened", _QC(paint_css("status.warning.text")))
         if ep.size_bytes and ep.size_bytes > 0:
             return (format_size(ep.size_bytes), None)
         return ("", None)
@@ -3214,12 +3218,12 @@ class PodcastBrowser(QFrame):
 
     def _artwork_placeholder_pixmap(self, size: int) -> QPixmap | None:
         """Create the gray square placeholder used when artwork is missing."""
-        glyph = glyph_pixmap("broadcast", max(16, int(size * 0.52)), Colors.TEXT_TERTIARY)
+        glyph = glyph_pixmap("broadcast", max(16, int(size * 0.52)), paint_css("text.tertiary"))
         if glyph is None:
             return None
 
         px = QPixmap(size, size)
-        px.fill(QColor(Colors.SURFACE_ALT))
+        px.fill(QColor(paint_css("surface.inset")))
         painter = QPainter(px)
         try:
             x = (size - glyph.width()) // 2
@@ -3229,103 +3233,51 @@ class PodcastBrowser(QFrame):
             painter.end()
         return px
 
-    def _apply_hero_color_from_pixmap(self, pixmap: QPixmap) -> None:
-        """Extract average color from pixmap using Qt only (no PIL, no encode)."""
-        try:
-            # Scale to a tiny thumbnail with Qt — fast nearest-neighbor
-            small = pixmap.scaled(
-                20, 20,
-                Qt.AspectRatioMode.IgnoreAspectRatio,
-                Qt.TransformationMode.FastTransformation,
-            )
-            img = small.toImage().convertToFormat(QImage.Format.Format_RGB888)
-            ptr = img.bits()
-            if ptr is None:
-                return
-            raw = bytes(ptr.asarray(img.width() * img.height() * 3))
-            n = img.width() * img.height()
-            if n == 0:
-                return
-            r = sum(raw[0::3]) // n
-            g = sum(raw[1::3]) // n
-            b = sum(raw[2::3]) // n
-            self._apply_feed_hero_color(r, g, b)
-        except Exception:
-            pass
-
     def _apply_hero_color_for_source(self, source: str, pixmap: QPixmap) -> None:
         cached = _artwork_color_cache.get(source)
         if cached is not None:
             self._apply_feed_hero_color(*cached)
             return
-        try:
-            small = pixmap.scaled(
-                20,
-                20,
-                Qt.AspectRatioMode.IgnoreAspectRatio,
-                Qt.TransformationMode.FastTransformation,
-            )
-            img = small.toImage().convertToFormat(QImage.Format.Format_RGB888)
-            ptr = img.bits()
-            if ptr is None:
-                return
-            raw = bytes(ptr.asarray(img.width() * img.height() * 3))
-            n = img.width() * img.height()
-            if n == 0:
-                return
-            color = (
-                sum(raw[0::3]) // n,
-                sum(raw[1::3]) // n,
-                sum(raw[2::3]) // n,
-            )
-            _artwork_color_cache[source] = color
-            self._apply_feed_hero_color(*color)
-        except Exception:
-            pass
+        color = dominant_artwork_color_from_pixmap(pixmap)
+        if color is None:
+            return
+        _artwork_color_cache[source] = color
+        self._apply_feed_hero_color(*color)
 
     def _apply_feed_hero_color(self, r: int, g: int, b: int) -> None:
         """Tint the hero header with the artwork's dominant color."""
-        if Colors._active_mode == "light":
-            glass_bg = "rgba(0, 0, 0, 20)"
-            glass_hover = "rgba(0, 0, 0, 28)"
-            glass_press = "rgba(0, 0, 0, 14)"
-            glass_border = "rgba(0, 0, 0, 24)"
-        else:
-            glass_bg = "rgba(255, 255, 255, 18)"
-            glass_hover = "rgba(255, 255, 255, 35)"
-            glass_press = "rgba(255, 255, 255, 12)"
-            glass_border = "rgba(255, 255, 255, 15)"
+        hero_paints = render_content_hero_paints(current_theme(), (r, g, b))
 
         self._feed_header.setStyleSheet(f"""
             QFrame#heroHeader {{
                 background: qlineargradient(
                     x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba({r}, {g}, {b}, 80),
-                    stop:1 {Colors.BG_DARK}
+                    stop:0 {hero_paints.header_tint.css},
+                    stop:1 {paint_css('canvas.default')}
                 );
-                border-bottom: 1px solid rgba({r}, {g}, {b}, 40);
+                border-bottom: 1px solid {hero_paints.header_border.css};
             }}
         """)
         self._feed_art.setStyleSheet(f"""
-            background: rgba({r}, {g}, {b}, 30);
+            background: {hero_paints.art_fill.css};
             border-radius: {Metrics.BORDER_RADIUS}px;
-            border: 1px solid rgba({r}, {g}, {b}, 50);
+            border: 1px solid {hero_paints.art_border.css};
         """)
         self._feed_title_label.setStyleSheet(
-            "color: " + Colors.TEXT_PRIMARY + "; background: transparent;")
+            "color: " + paint_css("text.primary") + "; background: transparent;")
         self._feed_author_label.setStyleSheet(
-            "color: " + Colors.TEXT_SECONDARY + "; background: transparent;")
+            "color: " + paint_css("text.secondary") + "; background: transparent;")
         self._feed_description_label.setStyleSheet(
-            "color: " + Colors.TEXT_SECONDARY + "; background: transparent;")
+            "color: " + paint_css("text.secondary") + "; background: transparent;")
         self._feed_detail_label.setStyleSheet(
-            "color: " + Colors.TEXT_TERTIARY + "; background: transparent;")
+            "color: " + paint_css("text.tertiary") + "; background: transparent;")
 
         _glass_css = btn_css(
-            bg=glass_bg,
-            bg_hover=glass_hover,
-            bg_press=glass_press,
-            fg=Colors.TEXT_PRIMARY,
-            border=f"1px solid {glass_border}",
+            bg=hero_paints.action_fill.css,
+            bg_hover=hero_paints.action_hover.css,
+            bg_press=hero_paints.action_pressed.css,
+            fg=paint_css("text.primary"),
+            border=f"1px solid {hero_paints.action_border.css}",
             padding="5px 12px",
             radius=Metrics.BORDER_RADIUS_SM,
         )
@@ -3336,26 +3288,26 @@ class PodcastBrowser(QFrame):
         """Reset the hero to the default (no artwork tint) style."""
         self._feed_header.setStyleSheet(f"""
             QFrame#heroHeader {{
-                background: {Colors.BG_DARK};
-                border-bottom: 1px solid {Colors.BORDER_SUBTLE};
+                background: {paint_css('canvas.default')};
+                border-bottom: 1px solid {paint_css('border.subtle')};
             }}
         """)
         self._feed_art.setStyleSheet(f"""
-            background: {Colors.SURFACE};
+            background: {paint_css('surface.default')};
             border-radius: {Metrics.BORDER_RADIUS}px;
-            border: 1px solid {Colors.BORDER_SUBTLE};
+            border: 1px solid {paint_css('border.subtle')};
         """)
         # Labels and buttons may not exist yet during initial construction
         if not hasattr(self, '_feed_title_label'):
             return
         self._feed_title_label.setStyleSheet(
-            "color: " + Colors.TEXT_PRIMARY + "; background: transparent;")
+            "color: " + paint_css("text.primary") + "; background: transparent;")
         self._feed_author_label.setStyleSheet(
-            "color: " + Colors.TEXT_SECONDARY + "; background: transparent;")
+            "color: " + paint_css("text.secondary") + "; background: transparent;")
         self._feed_description_label.setStyleSheet(
-            "color: " + Colors.TEXT_SECONDARY + "; background: transparent;")
+            "color: " + paint_css("text.secondary") + "; background: transparent;")
         self._feed_detail_label.setStyleSheet(
-            "color: " + Colors.TEXT_TERTIARY + "; background: transparent;")
+            "color: " + paint_css("text.tertiary") + "; background: transparent;")
         _default_css = btn_css(padding="5px 12px", radius=Metrics.BORDER_RADIUS_SM)
         for btn in self._hero_btns:
             btn.setStyleSheet(_default_css)

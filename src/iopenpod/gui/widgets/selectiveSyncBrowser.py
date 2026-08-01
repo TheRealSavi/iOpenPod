@@ -49,6 +49,7 @@ from iopenpod.infrastructure.media_folders import (
     media_folder_entries_to_settings,
     media_folder_paths,
 )
+from iopenpod.infrastructure.theme_renderer import render_content_hero_paints
 from iopenpod.itunesdb_shared.album_identity import (
     album_identity_from_track,
     group_tracks_by_album_identity,
@@ -60,14 +61,15 @@ from iopenpod.sync.photos import PCPhoto, PCPhotoLibrary, scan_pc_photos
 from ..glyphs import glyph_icon
 from ..styles import (
     FONT_FAMILY,
-    Colors,
     Design,
     Metrics,
     accent_btn_css,
     back_btn_css,
     btn_css,
     context_menu_css,
+    current_theme,
     make_scroll_area,
+    paint_css,
     progress_bar_css,
     sidebar_panel_css,
 )
@@ -584,8 +586,8 @@ class PCTrackListView(QWidget):
         self._hero.setMaximumHeight(312)
         self._hero.setStyleSheet(f"""
             QFrame#heroHeader {{
-                background: {Colors.BG_DARK};
-                border-bottom: 1px solid {Colors.BORDER_SUBTLE};
+                background: {paint_css("canvas.default")};
+                border-bottom: 1px solid {paint_css("border.subtle")};
             }}
         """)
         self._hero.setObjectName("heroHeader")
@@ -700,25 +702,26 @@ class PCTrackListView(QWidget):
 
     def setHeroColor(self, r: int, g: int, b: int):
         """Tint the hero header background with the artwork's dominant color."""
+        hero_paints = render_content_hero_paints(current_theme(), (r, g, b))
         self._hero.setStyleSheet(f"""
             QFrame#heroHeader {{
                 background: qlineargradient(
                     x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba({r}, {g}, {b}, 80),
-                    stop:1 {Colors.BG_DARK}
+                    stop:0 {hero_paints.header_tint.css},
+                    stop:1 {paint_css("canvas.default")}
                 );
-                border-bottom: 1px solid rgba({r}, {g}, {b}, 40);
+                border-bottom: 1px solid {hero_paints.header_border.css};
             }}
         """)
         self._hero_art.setStyleSheet(f"""
-            background: rgba({r}, {g}, {b}, 30);
+            background: {hero_paints.art_fill.css};
             border-radius: {Metrics.BORDER_RADIUS}px;
-            border: 1px solid rgba({r}, {g}, {b}, 50);
+            border: 1px solid {hero_paints.art_border.css};
         """)
-        self._title_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent;")
-        self._artist_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent;")
-        self._subtitle_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent;")
-        self._meta_label.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent;")
+        self._title_label.setStyleSheet(f"color: {paint_css('text.primary')}; background: transparent;")
+        self._artist_label.setStyleSheet(f"color: {paint_css('text.primary')}; background: transparent;")
+        self._subtitle_label.setStyleSheet(f"color: {paint_css('text.secondary')}; background: transparent;")
+        self._meta_label.setStyleSheet(f"color: {paint_css('text.tertiary')}; background: transparent;")
         _default_btn = btn_css(padding="5px 12px", radius=Metrics.BORDER_RADIUS_SM)
         self._back_btn.setStyleSheet(back_btn_css())
         self._sel_btn.setStyleSheet(_default_btn)
@@ -732,19 +735,19 @@ class PCTrackListView(QWidget):
         """Apply the default (non-tinted) hero styling."""
         self._hero.setStyleSheet(f"""
             QFrame#heroHeader {{
-                background: {Colors.BG_DARK};
-                border-bottom: 1px solid {Colors.BORDER_SUBTLE};
+                background: {paint_css("canvas.default")};
+                border-bottom: 1px solid {paint_css("border.subtle")};
             }}
         """)
         self._hero_art.setStyleSheet(f"""
-            background: {Colors.SURFACE};
+            background: {paint_css("surface.default")};
             border-radius: {Metrics.BORDER_RADIUS}px;
-            border: 1px solid {Colors.BORDER_SUBTLE};
+            border: 1px solid {paint_css("border.subtle")};
         """)
-        self._title_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent;")
-        self._artist_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent;")
-        self._subtitle_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent;")
-        self._meta_label.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent;")
+        self._title_label.setStyleSheet(f"color: {paint_css('text.primary')}; background: transparent;")
+        self._artist_label.setStyleSheet(f"color: {paint_css('text.primary')}; background: transparent;")
+        self._subtitle_label.setStyleSheet(f"color: {paint_css('text.secondary')}; background: transparent;")
+        self._meta_label.setStyleSheet(f"color: {paint_css('text.tertiary')}; background: transparent;")
         _default_btn = btn_css(padding="5px 12px", radius=Metrics.BORDER_RADIUS_SM)
         self._back_btn.setStyleSheet(back_btn_css())
         self._sel_btn.setStyleSheet(_default_btn)
@@ -764,7 +767,7 @@ class PCTrackListView(QWidget):
         else:
             self._hero_art.clear()
             from ..glyphs import glyph_icon
-            icon = glyph_icon(fallback_glyph, 48, Colors.TEXT_TERTIARY)
+            icon = glyph_icon(fallback_glyph, 48, paint_css("text.tertiary"))
             if icon:
                 self._hero_art.setPixmap(icon.pixmap(48, 48))
 
@@ -1496,7 +1499,7 @@ class SelectiveSyncBrowser(QWidget):
         self._header.setFixedHeight(44)
         self._header.setStyleSheet(f"""
             QFrame {{
-                background: {Colors.BG_DARK};
+                background: {paint_css("canvas.default")};
             }}
         """)
         hdr_lay = QHBoxLayout(self._header)
@@ -1513,12 +1516,12 @@ class SelectiveSyncBrowser(QWidget):
 
         self._title_label = QLabel("Selective Sync")
         self._title_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_TITLE, QFont.Weight.Bold))
-        self._title_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent;")
+        self._title_label.setStyleSheet(f"color: {paint_css('text.primary')}; background: transparent;")
         hdr_lay.addWidget(self._title_label)
 
         self._folder_label = QLabel()
         self._folder_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        self._folder_label.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent;")
+        self._folder_label.setStyleSheet(f"color: {paint_css('text.tertiary')}; background: transparent;")
         hdr_lay.addWidget(self._folder_label, 1)
 
         root.addWidget(self._header)
@@ -1527,8 +1530,8 @@ class SelectiveSyncBrowser(QWidget):
         self._storage_frame.setObjectName("selectiveSyncStorageProjection")
         self._storage_frame.setStyleSheet(f"""
             QFrame {{
-                background: {Colors.SURFACE};
-                border-bottom: 1px solid {Colors.BORDER_SUBTLE};
+                background: {paint_css("surface.default")};
+                border-bottom: 1px solid {paint_css("border.subtle")};
             }}
         """)
         storage_outer = QHBoxLayout(self._storage_frame)
@@ -1546,12 +1549,12 @@ class SelectiveSyncBrowser(QWidget):
         storage_top.setSpacing(8)
         self._storage_name = QLabel("iPod", self._storage_frame)
         self._storage_name.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
-        self._storage_name.setStyleSheet(f"color:{Colors.TEXT_PRIMARY}; background:transparent;")
+        self._storage_name.setStyleSheet(f"color:{paint_css('text.primary')}; background:transparent;")
         storage_top.addWidget(self._storage_name)
         storage_top.addStretch()
         self._storage_detail = QLabel("", self._storage_frame)
         self._storage_detail.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
-        self._storage_detail.setStyleSheet(f"color:{Colors.TEXT_TERTIARY}; background:transparent;")
+        self._storage_detail.setStyleSheet(f"color:{paint_css('text.tertiary')}; background:transparent;")
         storage_top.addWidget(self._storage_detail)
         storage_right.addLayout(storage_top)
 
@@ -1563,13 +1566,13 @@ class SelectiveSyncBrowser(QWidget):
         legend_row.setSpacing(12)
         self._storage_legend_labels: list[QLabel] = []
         for color_hex, text in (
-            (Colors.ACCENT, "Current"),
-            (Colors.SUCCESS, "Sync adds"),
-            (Colors.SYNC_FREED, "Freed"),
+            (paint_css("control.primary.fill"), "Current"),
+            (paint_css("status.success.text"), "Sync adds"),
+            (paint_css("status.success.text"), "Freed"),
         ):
             dot = QLabel(f"<span style='color:{color_hex};'>●</span> {text}", self._storage_frame)
             dot.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
-            dot.setStyleSheet(f"color:{Colors.TEXT_TERTIARY}; background:transparent;")
+            dot.setStyleSheet(f"color:{paint_css('text.tertiary')}; background:transparent;")
             legend_row.addWidget(dot)
             self._storage_legend_labels.append(dot)
         legend_row.addStretch()
@@ -1605,7 +1608,7 @@ class SelectiveSyncBrowser(QWidget):
             sep.setFrameShape(QFrame.Shape.HLine)
             sep.setFixedHeight(1)
             sep.setStyleSheet(
-                f"background: {Colors.BORDER_SUBTLE}; border: none; margin: 4px 6px;"
+                f"background: {paint_css('border.subtle')}; border: none; margin: 4px 6px;"
             )
             return sep
 
@@ -1661,8 +1664,8 @@ class SelectiveSyncBrowser(QWidget):
         self._action_tabs_frame.setVisible(False)
         self._action_tabs_frame.setStyleSheet(f"""
             QFrame {{
-                background: {Colors.BG_DARK};
-                border-bottom: 1px solid {Colors.BORDER_SUBTLE};
+                background: {paint_css("canvas.default")};
+                border-bottom: 1px solid {paint_css("border.subtle")};
             }}
         """)
         self._action_tabs_layout = QHBoxLayout(self._action_tabs_frame)
@@ -1685,7 +1688,7 @@ class SelectiveSyncBrowser(QWidget):
         # Stage headline
         self._loading_label = QLabel("Scanning library...", loading_page)
         self._loading_label.setStyleSheet(
-            f"color: {Colors.TEXT_PRIMARY}; font-size: {Metrics.FONT_HERO}pt;"
+            f"color: {paint_css('text.primary')}; font-size: {Metrics.FONT_HERO}pt;"
             f" font-weight: 500;"
         )
         self._loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1697,7 +1700,7 @@ class SelectiveSyncBrowser(QWidget):
         self._progress_bar = QProgressBar(loading_page)
         self._progress_bar.setFixedWidth(360)
         self._progress_bar.setTextVisible(False)
-        self._progress_bar.setStyleSheet(progress_bar_css(bg=Colors.BORDER_SUBTLE))
+        self._progress_bar.setStyleSheet(progress_bar_css(bg=paint_css("border.subtle")))
         lp_lay.addWidget(self._progress_bar, alignment=Qt.AlignmentFlag.AlignCenter)
 
         lp_lay.addSpacing(10)
@@ -1705,7 +1708,7 @@ class SelectiveSyncBrowser(QWidget):
         # ETA / counter
         self._eta_label = QLabel("", loading_page)
         self._eta_label.setStyleSheet(
-            f"color: {Colors.TEXT_TERTIARY}; font-size: {Metrics.FONT_MD}pt;"
+            f"color: {paint_css('text.tertiary')}; font-size: {Metrics.FONT_MD}pt;"
         )
         self._eta_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lp_lay.addWidget(self._eta_label)
@@ -1715,7 +1718,7 @@ class SelectiveSyncBrowser(QWidget):
         # Detail — current file
         self._progress_detail = QLabel("", loading_page)
         self._progress_detail.setStyleSheet(
-            f"color: {Colors.TEXT_TERTIARY}; font-size: {Metrics.FONT_LG}pt;"
+            f"color: {paint_css('text.tertiary')}; font-size: {Metrics.FONT_LG}pt;"
         )
         self._progress_detail.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._progress_detail.setWordWrap(False)
@@ -1797,8 +1800,8 @@ class SelectiveSyncBrowser(QWidget):
         self._footer.setFixedHeight(48)
         self._footer.setStyleSheet(f"""
             QFrame {{
-                background: {Colors.BG_DARK};
-                border-top: 1px solid {Colors.BORDER_SUBTLE};
+                background: {paint_css("canvas.default")};
+                border-top: 1px solid {paint_css("border.subtle")};
             }}
         """)
         ft_lay = QHBoxLayout(self._footer)
@@ -1807,7 +1810,7 @@ class SelectiveSyncBrowser(QWidget):
 
         self._count_label = QLabel()
         self._count_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
-        self._count_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent;")
+        self._count_label.setStyleSheet(f"color: {paint_css('text.secondary')}; background: transparent;")
         ft_lay.addWidget(self._count_label, 1)
 
         cancel_btn = QPushButton("Cancel")
@@ -1911,7 +1914,7 @@ class SelectiveSyncBrowser(QWidget):
             key: str,
             label: str,
             icon: str,
-            accent: str,
+            accent_paint: str,
             items: object,
             *,
             bucket: str,
@@ -1924,41 +1927,41 @@ class SelectiveSyncBrowser(QWidget):
                 "key": key,
                 "label": label,
                 "icon": icon,
-                "accent": accent,
+                "accent_paint": accent_paint,
                 "items": item_list,
                 "bucket": bucket,
                 "checked_by_default": checked_by_default,
             })
 
-        add_section("to_add", "Add Items", "plus", Colors.SUCCESS, getattr(plan, "to_add", ()), bucket="sync_items")
+        add_section("to_add", "Add Items", "plus", "sync.change.add.text", getattr(plan, "to_add", ()), bucket="sync_items")
         add_section(
             "to_remove",
             "Remove Items",
             "minus",
-            Colors.DANGER,
+            "sync.change.remove.text",
             getattr(plan, "to_remove", ()),
             bucket="sync_items",
             checked_by_default=bool(getattr(plan, "removals_pre_checked", False)),
         )
-        add_section("to_update_file", "Re-sync Files", "refresh", Colors.SYNC_CYAN, getattr(plan, "to_update_file", ()), bucket="sync_items")
-        add_section("to_update_metadata", "Update Details", "edit", Colors.SYNC_PURPLE, getattr(plan, "to_update_metadata", ()), bucket="sync_items")
-        add_section("to_update_artwork", "Update Artwork", "download", Colors.SYNC_MAGENTA, getattr(plan, "to_update_artwork", ()), bucket="sync_items")
-        add_section("to_sync_playcount", "Play Counts", "music", Colors.INFO, getattr(plan, "to_sync_playcount", ()), bucket="sync_items")
-        add_section("to_sync_rating", "Ratings", "star", Colors.WARNING, getattr(plan, "to_sync_rating", ()), bucket="sync_items")
+        add_section("to_update_file", "Re-sync Files", "refresh", "sync.change.file.text", getattr(plan, "to_update_file", ()), bucket="sync_items")
+        add_section("to_update_metadata", "Update Details", "edit", "sync.change.metadata.text", getattr(plan, "to_update_metadata", ()), bucket="sync_items")
+        add_section("to_update_artwork", "Update Artwork", "download", "sync.change.artwork.text", getattr(plan, "to_update_artwork", ()), bucket="sync_items")
+        add_section("to_sync_playcount", "Play Counts", "music", "sync.change.play_count.text", getattr(plan, "to_sync_playcount", ()), bucket="sync_items")
+        add_section("to_sync_rating", "Ratings", "star", "sync.change.rating.text", getattr(plan, "to_sync_rating", ()), bucket="sync_items")
 
-        add_section("playlists_to_add", "Add Playlists", "playlist", Colors.INFO, getattr(plan, "playlists_to_add", ()), bucket="playlists_to_add")
-        add_section("playlists_to_edit", "Update Playlists", "playlist", Colors.INFO, getattr(plan, "playlists_to_edit", ()), bucket="playlists_to_edit")
-        add_section("playlists_to_remove", "Remove Playlists", "playlist", Colors.DANGER, getattr(plan, "playlists_to_remove", ()), bucket="playlists_to_remove")
+        add_section("playlists_to_add", "Add Playlists", "playlist", "sync.change.play_count.text", getattr(plan, "playlists_to_add", ()), bucket="playlists_to_add")
+        add_section("playlists_to_edit", "Update Playlists", "playlist", "sync.change.play_count.text", getattr(plan, "playlists_to_edit", ()), bucket="playlists_to_edit")
+        add_section("playlists_to_remove", "Remove Playlists", "playlist", "sync.change.remove.text", getattr(plan, "playlists_to_remove", ()), bucket="playlists_to_remove")
 
         photo_plan = getattr(plan, "photo_plan", None)
         if photo_plan is not None:
-            add_section("photos_to_add", "Add Photos", "photo", Colors.SUCCESS, getattr(photo_plan, "photos_to_add", ()), bucket="photos_to_add")
-            add_section("photos_to_remove", "Remove Photos", "photo", Colors.DANGER, getattr(photo_plan, "photos_to_remove", ()), bucket="photos_to_remove", checked_by_default=False)
-            add_section("photos_to_update", "Update Photos", "photo", Colors.SYNC_PURPLE, getattr(photo_plan, "photos_to_update", ()), bucket="photos_to_update")
-            add_section("albums_to_add", "Create Photo Albums", "album", Colors.INFO, getattr(photo_plan, "albums_to_add", ()), bucket="albums_to_add")
-            add_section("albums_to_remove", "Remove Photo Albums", "album", Colors.DANGER, getattr(photo_plan, "albums_to_remove", ()), bucket="albums_to_remove", checked_by_default=False)
-            add_section("album_membership_adds", "Add to Photo Albums", "album", Colors.INFO, getattr(photo_plan, "album_membership_adds", ()), bucket="album_membership_adds")
-            add_section("album_membership_removes", "Remove from Photo Albums", "album", Colors.DANGER, getattr(photo_plan, "album_membership_removes", ()), bucket="album_membership_removes", checked_by_default=False)
+            add_section("photos_to_add", "Add Photos", "photo", "sync.change.add.text", getattr(photo_plan, "photos_to_add", ()), bucket="photos_to_add")
+            add_section("photos_to_remove", "Remove Photos", "photo", "sync.change.remove.text", getattr(photo_plan, "photos_to_remove", ()), bucket="photos_to_remove", checked_by_default=False)
+            add_section("photos_to_update", "Update Photos", "photo", "sync.change.metadata.text", getattr(photo_plan, "photos_to_update", ()), bucket="photos_to_update")
+            add_section("albums_to_add", "Create Photo Albums", "album", "sync.change.play_count.text", getattr(photo_plan, "albums_to_add", ()), bucket="albums_to_add")
+            add_section("albums_to_remove", "Remove Photo Albums", "album", "sync.change.remove.text", getattr(photo_plan, "albums_to_remove", ()), bucket="albums_to_remove", checked_by_default=False)
+            add_section("album_membership_adds", "Add to Photo Albums", "album", "sync.change.play_count.text", getattr(photo_plan, "album_membership_adds", ()), bucket="album_membership_adds")
+            add_section("album_membership_removes", "Remove from Photo Albums", "album", "sync.change.remove.text", getattr(photo_plan, "album_membership_removes", ()), bucket="album_membership_removes", checked_by_default=False)
 
         return sections
 
@@ -2034,8 +2037,8 @@ class SelectiveSyncBrowser(QWidget):
             btn = QPushButton(self._plan_action_tab_text(section))
             btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.DemiBold))
             btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-            btn.setStyleSheet(self._plan_action_tab_css(False, str(section["accent"])))
-            icon = glyph_icon(str(section["icon"]), 18, Colors.TEXT_SECONDARY)
+            btn.setStyleSheet(self._plan_action_tab_css(False, paint_css(str(section["accent_paint"]))))
+            icon = glyph_icon(str(section["icon"]), 18, paint_css("text.secondary"))
             if icon:
                 btn.setIcon(icon)
                 btn.setIconSize(QSize(18, 18))
@@ -2052,21 +2055,21 @@ class SelectiveSyncBrowser(QWidget):
     def _plan_action_tab_css(selected: bool, accent: str) -> str:
         if selected:
             return btn_css(
-                bg=Colors.ACCENT_MUTED,
-                bg_hover=Colors.ACCENT_DIM,
-                bg_press=Colors.ACCENT_PRESS,
+                bg=paint_css("sync.plan.tab.selected_fill"),
+                bg_hover=paint_css("sync.plan.tab.selected_hover_fill"),
+                bg_press=paint_css("sync.plan.tab.selected_pressed_fill"),
                 fg=accent,
-                border=f"1px solid {accent}",
+                border=f"1px solid {paint_css('sync.plan.tab.selected_border')}",
                 radius=Metrics.BORDER_RADIUS_SM,
                 padding="7px 13px",
                 extra="font-weight: 700;",
             )
         return btn_css(
             bg="transparent",
-            bg_hover=Colors.SURFACE_ACTIVE,
-            bg_press=Colors.SURFACE,
-            fg=Colors.TEXT_SECONDARY,
-            border=f"1px solid {Colors.BORDER_SUBTLE}",
+            bg_hover=paint_css("control.quiet.hover_fill"),
+            bg_press=paint_css("control.quiet.pressed_fill"),
+            fg=paint_css("text.secondary"),
+            border=f"1px solid {paint_css('border.subtle')}",
             radius=Metrics.BORDER_RADIUS_SM,
             padding="7px 13px",
             extra="font-weight: 600;",
@@ -2080,12 +2083,12 @@ class SelectiveSyncBrowser(QWidget):
         for section_key, btn in self._plan_action_buttons.items():
             source = self._plan_section_by_key[section_key]
             selected = section_key == key
-            accent = str(source["accent"])
+            accent = paint_css(str(source["accent_paint"]))
             btn.setStyleSheet(self._plan_action_tab_css(selected, accent))
             icon = glyph_icon(
                 str(source["icon"]),
                 18,
-                accent if selected else Colors.TEXT_SECONDARY,
+                accent if selected else paint_css("text.secondary"),
             )
             if icon:
                 btn.setIcon(icon)
@@ -3764,7 +3767,7 @@ class SelectiveSyncBrowser(QWidget):
             if projected > usage.total:
                 over = projected - usage.total
                 self._storage_detail.setStyleSheet(
-                    f"color:{Colors.DANGER}; font-size:{Metrics.FONT_MD}pt; "
+                    f"color:{paint_css('status.danger.text')}; font-size:{Metrics.FONT_MD}pt; "
                     f"font-family:{FONT_FAMILY}; background:transparent;"
                 )
                 self._storage_detail.setText(
@@ -3775,7 +3778,7 @@ class SelectiveSyncBrowser(QWidget):
                 free_after = max(usage.total - projected, 0)
                 net_sign = "+" if net_change >= 0 else "-"
                 self._storage_detail.setStyleSheet(
-                    f"color:{Colors.TEXT_TERTIARY}; font-size:{Metrics.FONT_MD}pt; "
+                    f"color:{paint_css('text.tertiary')}; font-size:{Metrics.FONT_MD}pt; "
                     f"font-family:{FONT_FAMILY}; background:transparent;"
                 )
                 self._storage_detail.setText(

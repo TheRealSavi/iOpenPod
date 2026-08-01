@@ -52,19 +52,21 @@ from iopenpod.application.jobs import (
     update_backup_snapshot_note,
 )
 from iopenpod.application.progress import ETATracker
+from iopenpod.infrastructure.theme_renderer import render_content_hero_paints
 
 from ..glyphs import glyph_pixmap
 from ..styles import (
     FONT_FAMILY,
     MONO_FONT_FAMILY,
-    Colors,
     Design,
     Metrics,
     accent_btn_css,
     back_btn_css,
     btn_css,
+    current_theme,
     danger_btn_css,
     make_scroll_area,
+    paint_css,
     panel_css,
     progress_bar_css,
     sidebar_nav_state,
@@ -186,7 +188,7 @@ class BackupDeviceNavItem(QFrame):
 
     def _apply_style(self) -> None:
         state = sidebar_nav_state(self._selected)
-        sub_color = Colors.SUCCESS if self._connected else Colors.TEXT_TERTIARY
+        sub_color = paint_css("status.success.text") if self._connected else paint_css("text.tertiary")
         self.setStyleSheet(f"""
             QFrame {{
                 background: {state.background};
@@ -198,7 +200,7 @@ class BackupDeviceNavItem(QFrame):
                 border: none;
             }}
             QFrame:focus {{
-                border: 2px solid {Colors.ACCENT};
+                border: 2px solid {paint_css('focus.border')};
             }}
         """)
         self._name.setStyleSheet(
@@ -252,12 +254,12 @@ class SnapshotCard(QFrame):
             or "The backup catalog failed validation."
         )
 
-        border_color = Colors.ACCENT_BORDER if is_latest else Colors.BORDER_SUBTLE
-        border_hover = Colors.ACCENT if is_latest else Colors.BORDER
+        border_color = paint_css("data.accent.border") if is_latest else paint_css("border.subtle")
+        border_hover = paint_css("data.accent.fill") if is_latest else paint_css("border.default")
 
         self.setStyleSheet(f"""
             QFrame {{
-                background: {Colors.SURFACE_ALT};
+                background: {paint_css('surface.inset')};
                 border: 1px solid {border_color};
                 border-radius: {Metrics.BORDER_RADIUS_LG}px;
             }}
@@ -280,14 +282,14 @@ class SnapshotCard(QFrame):
 
         date_label = QLabel(snapshot_info.display_date)
         date_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG, QFont.Weight.DemiBold))
-        date_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent; border: none;")
+        date_label.setStyleSheet(f"color: {paint_css('text.primary')}; background: transparent; border: none;")
         date_row.addWidget(date_label)
 
         if is_latest:
             latest_badge = QLabel("LATEST")
             latest_badge.setFont(QFont(FONT_FAMILY, (7), QFont.Weight.Bold))
             latest_badge.setStyleSheet(
-                f"color: {Colors.ACCENT}; background: {Colors.ACCENT_DIM}; "
+                f"color: {paint_css('control.primary.fill')}; background: {paint_css('data.accent.subtle_fill')}; "
                 f"border: none; border-radius: {(3)}px; padding: {(2)}px {(6)}px;"
             )
             latest_badge.setFixedHeight(18)
@@ -300,8 +302,8 @@ class SnapshotCard(QFrame):
                 "Verified automatically immediately before a restore"
             )
             safety_badge.setStyleSheet(
-                f"color: {Colors.WARNING}; background: transparent; "
-                f"border: 1px solid {Colors.WARNING}; border-radius: 3px; "
+                f"color: {paint_css('status.warning.text')}; background: transparent; "
+                f"border: 1px solid {paint_css('status.warning.text')}; border-radius: 3px; "
                 "padding: 2px 6px;"
             )
             safety_badge.setFixedHeight(18)
@@ -314,8 +316,8 @@ class SnapshotCard(QFrame):
             invalid_badge.setAccessibleName("Backup unavailable")
             invalid_badge.setAccessibleDescription(validation_error)
             invalid_badge.setStyleSheet(
-                f"color: {Colors.DANGER}; background: transparent; "
-                f"border: 1px solid {Colors.DANGER}; border-radius: 3px; "
+                f"color: {paint_css('status.danger.text')}; background: transparent; "
+                f"border: 1px solid {paint_css('status.danger.text')}; border-radius: 3px; "
                 "padding: 2px 6px;"
             )
             invalid_badge.setFixedHeight(18)
@@ -333,7 +335,7 @@ class SnapshotCard(QFrame):
         )
         stats_label = QLabel(stats_text)
         stats_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        stats_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;")
+        stats_label.setStyleSheet(f"color: {paint_css('text.secondary')}; background: transparent; border: none;")
         info_layout.addWidget(stats_label)
 
         # Delta line
@@ -347,16 +349,16 @@ class SnapshotCard(QFrame):
 
         if not snapshot_is_valid:
             delta_text = "Restore disabled — validation details below"
-            delta_color = Colors.DANGER
+            delta_color = paint_css("status.danger.text")
         elif delta_parts:
             delta_text = " · ".join(delta_parts) + " vs previous"
-            delta_color = Colors.TEXT_TERTIARY
+            delta_color = paint_css("text.tertiary")
         elif is_initial:
             delta_text = "Initial backup"
-            delta_color = Colors.ACCENT
+            delta_color = paint_css("control.primary.fill")
         else:
             delta_text = "No changes vs previous"
-            delta_color = Colors.TEXT_TERTIARY
+            delta_color = paint_css("text.tertiary")
 
         delta_label = QLabel(delta_text)
         delta_label.setFont(QFont(MONO_FONT_FAMILY, Metrics.FONT_SM))
@@ -386,7 +388,7 @@ class SnapshotCard(QFrame):
             detail_label.setObjectName("invalidCatalogDetails")
             detail_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
             detail_label.setStyleSheet(
-                f"color: {Colors.DANGER}; background: transparent; border: none;"
+                f"color: {paint_css('status.danger.text')}; background: transparent; border: none;"
             )
             detail_label.setWordWrap(True)
             detail_label.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -416,10 +418,10 @@ class SnapshotCard(QFrame):
         self._export_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
         self._export_btn.setFixedWidth(_btn_w)
         self._export_btn.setStyleSheet(btn_css(
-            bg=Colors.SURFACE_RAISED,
-            bg_hover=Colors.SURFACE_ACTIVE,
-            bg_press=Colors.SURFACE_ALT,
-            border=f"1px solid {Colors.BORDER}",
+            bg=paint_css("control.secondary.fill"),
+            bg_hover=paint_css("control.secondary.hover_fill"),
+            bg_press=paint_css("control.secondary.pressed_fill"),
+            border=f"1px solid {paint_css('border.default')}",
         ))
         self._export_btn.clicked.connect(
             lambda: self.export_requested.emit(self.snapshot_id)
@@ -578,14 +580,14 @@ class BackupBrowserWidget(QWidget):
         nav_title = QLabel("Backups")
         nav_title.setFont(QFont(FONT_FAMILY, Metrics.FONT_HERO, QFont.Weight.Bold))
         nav_title.setStyleSheet(
-            f"color: {Colors.TEXT_PRIMARY}; background: transparent; border: none;"
+            f"color: {paint_css('text.primary')}; background: transparent; border: none;"
         )
         sidebar_layout.addWidget(nav_title)
 
         self._devices_subtitle = QLabel("")
         self._devices_subtitle.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self._devices_subtitle.setStyleSheet(
-            f"color: {Colors.TEXT_TERTIARY}; background: transparent; border: none;"
+            f"color: {paint_css('text.tertiary')}; background: transparent; border: none;"
         )
         sidebar_layout.addWidget(self._devices_subtitle)
 
@@ -613,8 +615,8 @@ class BackupBrowserWidget(QWidget):
         self._device_hero.setObjectName("backupDeviceHero")
         self._device_hero.setStyleSheet(panel_css(
             "backupDeviceHero",
-            bg=Colors.BG_DARK,
-            border=f"0px solid transparent; border-bottom: 1px solid {Colors.BORDER_SUBTLE}",
+            bg=paint_css("canvas.default"),
+            border=f"0px solid transparent; border-bottom: 1px solid {paint_css('border.subtle')}",
             radius=0,
         ))
         hero_layout = QHBoxLayout(self._device_hero)
@@ -633,25 +635,25 @@ class BackupBrowserWidget(QWidget):
 
         self._title_label = QLabel("Device Backups")
         self._title_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_PAGE_TITLE, QFont.Weight.Bold))
-        self._title_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent;")
+        self._title_label.setStyleSheet(f"color: {paint_css('text.primary')}; background: transparent;")
         self._title_label.setWordWrap(True)
         hero_text.addWidget(self._title_label)
 
         self._device_model_label = QLabel("")
         self._device_model_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
-        self._device_model_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent;")
+        self._device_model_label.setStyleSheet(f"color: {paint_css('text.secondary')}; background: transparent;")
         self._device_model_label.setWordWrap(True)
         hero_text.addWidget(self._device_model_label)
 
         self._size_label = QLabel("")
         self._size_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        self._size_label.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent;")
+        self._size_label.setStyleSheet(f"color: {paint_css('text.tertiary')}; background: transparent;")
         self._size_label.setWordWrap(True)
         hero_text.addWidget(self._size_label)
 
         self._restore_status_label = QLabel("")
         self._restore_status_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        self._restore_status_label.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent;")
+        self._restore_status_label.setStyleSheet(f"color: {paint_css('text.tertiary')}; background: transparent;")
         hero_text.addWidget(self._restore_status_label)
 
         hero_actions = QHBoxLayout()
@@ -714,7 +716,7 @@ class BackupBrowserWidget(QWidget):
         self._progress_title.setFont(
             QFont(FONT_FAMILY, Metrics.FONT_PAGE_TITLE, QFont.Weight.Bold)
         )
-        self._progress_title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent;")
+        self._progress_title.setStyleSheet(f"color: {paint_css('text.primary')}; background: transparent;")
         self._progress_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._progress_title.setAccessibleName("Backup and restore operation status")
         prog_layout.addWidget(self._progress_title)
@@ -728,7 +730,7 @@ class BackupBrowserWidget(QWidget):
 
         self._progress_file = QLabel("")
         self._progress_file.setFont(QFont(MONO_FONT_FAMILY, Metrics.FONT_SM))
-        self._progress_file.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent;")
+        self._progress_file.setStyleSheet(f"color: {paint_css('text.tertiary')}; background: transparent;")
         self._progress_file.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._progress_file.setWordWrap(True)
         self._progress_file.setAccessibleName("Current backup or restore detail")
@@ -736,14 +738,14 @@ class BackupBrowserWidget(QWidget):
 
         self._progress_stats = QLabel("")
         self._progress_stats.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
-        self._progress_stats.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent;")
+        self._progress_stats.setStyleSheet(f"color: {paint_css('text.secondary')}; background: transparent;")
         self._progress_stats.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._progress_stats.setAccessibleName("Backup and restore file progress")
         prog_layout.addWidget(self._progress_stats)
 
         self._progress_eta = QLabel("")
         self._progress_eta.setFont(QFont(MONO_FONT_FAMILY, Metrics.FONT_SM))
-        self._progress_eta.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent;")
+        self._progress_eta.setStyleSheet(f"color: {paint_css('text.tertiary')}; background: transparent;")
         self._progress_eta.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._progress_eta.setAccessibleName("Backup and restore elapsed time")
         prog_layout.addWidget(self._progress_eta)
@@ -754,10 +756,10 @@ class BackupBrowserWidget(QWidget):
         self._progress_cancel_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
         self._progress_cancel_btn.setFixedWidth(120)
         self._progress_cancel_btn.setStyleSheet(btn_css(
-            bg=Colors.SURFACE_RAISED,
-            bg_hover=Colors.SURFACE_ACTIVE,
-            bg_press=Colors.SURFACE_ALT,
-            border=f"1px solid {Colors.BORDER}",
+            bg=paint_css("control.secondary.fill"),
+            bg_hover=paint_css("control.secondary.hover_fill"),
+            bg_press=paint_css("control.secondary.pressed_fill"),
+            border=f"1px solid {paint_css('border.default')}",
         ))
         self._progress_cancel_btn.clicked.connect(self._on_cancel)
         self._progress_cancel_btn.setAccessibleName("Cancel backup or restore")
@@ -778,14 +780,14 @@ class BackupBrowserWidget(QWidget):
         empty_layout.addStretch()
 
         empty_icon = QLabel()
-        px = glyph_pixmap("archive", Metrics.FONT_ICON_XL, Colors.TEXT_TERTIARY)
+        px = glyph_pixmap("archive", Metrics.FONT_ICON_XL, paint_css("text.tertiary"))
         if px:
             empty_icon.setPixmap(px)
         else:
             empty_icon.setText("●")
             empty_icon.setFont(QFont(FONT_FAMILY, Metrics.FONT_ICON_XL))
         empty_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        empty_icon.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent;")
+        empty_icon.setStyleSheet(f"color: {paint_css('text.tertiary')}; background: transparent;")
         empty_layout.addWidget(empty_icon)
 
         empty_layout.addSpacing(12)
@@ -797,7 +799,7 @@ class BackupBrowserWidget(QWidget):
             "Only new or changed files are stored, saving disk space."
         )
         self._empty_text.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
-        self._empty_text.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent;")
+        self._empty_text.setStyleSheet(f"color: {paint_css('text.secondary')}; background: transparent;")
         self._empty_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._empty_text.setWordWrap(True)
         empty_layout.addWidget(self._empty_text)
@@ -1429,18 +1431,18 @@ class BackupBrowserWidget(QWidget):
 
         if can_restore:
             status = "Connected — backup and restore available"
-            status_color = Colors.SUCCESS
+            status_color = paint_css("status.success.text")
         elif can_backup:
             status = (
                 "Connected — backup available; restore needs hardware identity"
             )
-            status_color = Colors.WARNING
+            status_color = paint_css("status.warning.text")
         elif self._device_connected:
             status = "Different iPod connected — restore disabled"
-            status_color = Colors.WARNING
+            status_color = paint_css("status.warning.text")
         else:
             status = "Connect this iPod to restore snapshots"
-            status_color = Colors.TEXT_TERTIARY
+            status_color = paint_css("text.tertiary")
         self._restore_status_label.setText(status)
         self._restore_status_label.setStyleSheet(
             f"color: {status_color}; background: transparent;"
@@ -1459,8 +1461,8 @@ class BackupBrowserWidget(QWidget):
         if not color:
             self._device_hero.setStyleSheet(f"""
                 QFrame#backupDeviceHero {{
-                    background: {Colors.BG_DARK};
-                    border-bottom: 1px solid {Colors.BORDER_SUBTLE};
+                    background: {paint_css('canvas.default')};
+                    border-bottom: 1px solid {paint_css('border.subtle')};
                 }}
             """)
             self._open_folder_btn.setStyleSheet(chrome_action_btn_css())
@@ -1468,33 +1470,24 @@ class BackupBrowserWidget(QWidget):
             return
 
         r, g, b = color
-        if Colors._active_mode == "light":
-            glass_bg = "rgba(0, 0, 0, 20)"
-            glass_hover = "rgba(0, 0, 0, 28)"
-            glass_press = "rgba(0, 0, 0, 14)"
-            glass_border = "rgba(0, 0, 0, 24)"
-        else:
-            glass_bg = "rgba(255, 255, 255, 18)"
-            glass_hover = "rgba(255, 255, 255, 35)"
-            glass_press = "rgba(255, 255, 255, 12)"
-            glass_border = "rgba(255, 255, 255, 15)"
+        hero_paints = render_content_hero_paints(current_theme(), (r, g, b))
 
         self._device_hero.setStyleSheet(f"""
             QFrame#backupDeviceHero {{
                 background: qlineargradient(
                     x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba({r}, {g}, {b}, 80),
-                    stop:1 {Colors.BG_DARK}
+                    stop:0 {hero_paints.header_tint.css},
+                    stop:1 {paint_css('canvas.default')}
                 );
-                border-bottom: 1px solid rgba({r}, {g}, {b}, 40);
+                border-bottom: 1px solid {hero_paints.header_border.css};
             }}
         """)
         overlay_css = btn_css(
-            bg=glass_bg,
-            bg_hover=glass_hover,
-            bg_press=glass_press,
-            fg=Colors.TEXT_PRIMARY,
-            border=f"1px solid {glass_border}",
+            bg=hero_paints.action_fill.css,
+            bg_hover=hero_paints.action_hover.css,
+            bg_press=hero_paints.action_pressed.css,
+            fg=paint_css("text.primary"),
+            border=f"1px solid {hero_paints.action_border.css}",
             padding="6px 10px",
             radius=Metrics.BORDER_RADIUS_SM,
         )
@@ -1510,7 +1503,7 @@ class BackupBrowserWidget(QWidget):
             self._device_art.setText("")
             return
 
-        px = glyph_pixmap("archive", Metrics.FONT_ICON_XL, Colors.TEXT_TERTIARY)
+        px = glyph_pixmap("archive", Metrics.FONT_ICON_XL, paint_css("text.tertiary"))
         if px:
             self._device_art.setPixmap(px)
             self._device_art.setText("")
