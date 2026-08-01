@@ -23,8 +23,25 @@ _FILETYPE_MAP: list[tuple[str, str]] = [
     ("AAC", "m4a"), ("M4A", "m4a"), ("Lossless", "m4a"),
     ("Protected", "m4p"), ("Audiobook", "m4b"),
     ("WAV", "wav"), ("AIFF", "aiff"),
-    ("M4V", "m4v"), ("MP4", "mp4"),
+    ("M4V", "m4v"), ("MP4", "mp4"), ("MOV", "m4v"),
 ]
+
+
+def ipod_filetype_for_extension(extension: str) -> str:
+    """Return the iTunesDB filetype for an on-device filename extension.
+
+    iTunesDB has no ``MOV`` code.  QuickTime movies are video payloads, so
+    they use the established ``M4V`` type instead of falling through to the
+    writer's MP3 default.
+    """
+    ext = extension.casefold().lstrip(".")
+    if ext in {"m4a", "aac", "alac"}:
+        return "m4a"
+    if ext in {"m4v", "mov"}:
+        return "m4v"
+    if ext in {"mp3", "mp4", "wav"}:
+        return ext
+    return ext or "mp3"
 
 
 def track_dict_to_info(t: dict) -> TrackInfo:
@@ -156,13 +173,8 @@ def pc_track_to_info(
                             recalculating from pc_track.video_kind. Used for
                             UPDATE operations to preserve the original type.
     """
-    ext = Path(ipod_location.replace(":", "/")).suffix.lower().lstrip(".")
-    if ext in ("m4a", "aac", "alac"):
-        filetype = "m4a"
-    elif ext == "mp3":
-        filetype = "mp3"
-    else:
-        filetype = ext
+    ext = Path(ipod_location.replace(":", "/")).suffix.lower()
+    filetype = ipod_filetype_for_extension(ext)
 
     # Rating: PCTrack already stores 0-100 (stars × 20), same as iPod
     rating = pc_track.rating or 0

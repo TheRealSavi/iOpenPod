@@ -5,7 +5,7 @@ Supported conversions:
     FLAC/AIFF      → ALAC (lossless) or lossy (AAC/MP3 when prefer_lossy is on)
     WAV            → copy, ALAC, or lossy depending on user settings
     OGG/Opus/WMA   → lossy (AAC/MP3)
-  Video           → M4V (H.264 Baseline + stereo AAC)
+  Video           → iPod M4V (H.264 Baseline + stereo AAC), or MOV for CEA-608
   Native formats  → re-encoded only when they exceed iPod hardware limits
 
 iPod hardware limits enforced on every output:
@@ -17,16 +17,17 @@ iPod hardware limits enforced on every output:
 import json as _json
 import logging
 import math
+import os
 import shutil
 import subprocess
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, replace
 from enum import Enum
 from functools import lru_cache
 from pathlib import Path
-from typing import ClassVar
+from typing import BinaryIO, ClassVar, Literal
 
 from ._formats import (
     IPOD_NATIVE_FORMATS,
@@ -53,6 +54,7 @@ _SP_KWARGS: dict = (
 IPOD_MAX_SAMPLE_RATE = 48_000   # Hz
 IPOD_MAX_CHANNELS = 2           # Stereo
 IPOD_MAX_BIT_DEPTH = 16         # ALAC/WAV ceiling
+IPOD_MAX_VIDEO_AUDIO_BITRATE_KBPS = 160
 
 # Fallback video limits when device detection fails.
 _DEFAULT_VIDEO_W = 640
@@ -67,6 +69,9 @@ class TranscodeTarget(Enum):
     AAC = "aac"
     MP3 = "mp3"
     VIDEO_H264 = "video_h264"
+    VIDEO_TRANSCODE_AUDIO = "video_transcode_audio"
+    VIDEO_TRANSCODE_VIDEO = "video_transcode_video"
+    VIDEO_REMUX = "video_remux"
     COPY = "copy"
 
 
@@ -75,7 +80,17 @@ _OUTPUT_EXT: dict[TranscodeTarget, str] = {
     TranscodeTarget.AAC: ".m4a",
     TranscodeTarget.MP3: ".mp3",
     TranscodeTarget.VIDEO_H264: ".m4v",
+    TranscodeTarget.VIDEO_TRANSCODE_AUDIO: ".m4v",
+    TranscodeTarget.VIDEO_TRANSCODE_VIDEO: ".m4v",
+    TranscodeTarget.VIDEO_REMUX: ".m4v",
 }
+
+_VIDEO_TRANSCODE_TARGETS: frozenset[TranscodeTarget] = frozenset({
+    TranscodeTarget.VIDEO_H264,
+    TranscodeTarget.VIDEO_TRANSCODE_AUDIO,
+    TranscodeTarget.VIDEO_TRANSCODE_VIDEO,
+    TranscodeTarget.VIDEO_REMUX,
+})
 
 _VALID_LOSSY_ENCODERS: frozenset[str] = frozenset(
     {"auto", "libfdk_aac", "aac_at", "aac", "libmp3lame", "libshine"}
@@ -265,6 +280,7 @@ class TranscodePlan:
     video_max_fps: int
     video_max_bitrate_kbps: int
     video_h264_level: str
+    video_output_muxer: Literal["ipod", "mov"] = "ipod"
     lossy_encoder: str = "aac"       # resolved encoder (e.g. "libfdk_aac")
     user_lossy_encoder: str = "auto"  # original user preference (e.g. "auto")
     lossy_quality: str = "balanced"
@@ -279,6 +295,8 @@ class TranscodePlan:
 
     @property
     def output_extension(self) -> str:
+        if self.target in _VIDEO_TRANSCODE_TARGETS and self.video_output_muxer == "mov":
+            return ".mov"
         return _OUTPUT_EXT.get(self.target, self.source_path.suffix)
 
     @property
@@ -289,8 +307,8 @@ class TranscodePlan:
             return "aac"
         if self.target == TranscodeTarget.MP3:
             return "mp3"
-        if self.target == TranscodeTarget.VIDEO_H264:
-            return "m4v"
+        if self.target in _VIDEO_TRANSCODE_TARGETS:
+            return "mov" if self.video_output_muxer == "mov" else "m4v"
         return self.source_path.suffix.lstrip(".")
 
     @property
@@ -336,6 +354,13 @@ class TranscodePlan:
 
         if self.target == TranscodeTarget.VIDEO_H264:
             return int((duration_seconds * self._estimated_video_kbps() * 1000) / 8)
+
+        if self.target in {
+            TranscodeTarget.VIDEO_REMUX,
+            TranscodeTarget.VIDEO_TRANSCODE_AUDIO,
+            TranscodeTarget.VIDEO_TRANSCODE_VIDEO,
+        }:
+            return source_size
 
         return source_size
 
@@ -412,6 +437,7 @@ def resolve_transcode_plan(
         prefer_lossy=prefer_lossy,
         options=options,
     )
+    video_output_muxer = _video_output_muxer(source_path, target)
     normalize_sample_rate = options.normalize_sample_rate
     mono_for_spoken = options.mono_for_spoken
     smart_quality_by_type = options.smart_quality_by_type
@@ -441,6 +467,7 @@ def resolve_transcode_plan(
         video_max_fps=max_fps,
         video_max_bitrate_kbps=max_bitrate_kbps,
         video_h264_level=h264_level,
+        video_output_muxer=video_output_muxer,
         lossy_encoder=lossy_policy.encoder,
         user_lossy_encoder=options.lossy_encoder,
         lossy_quality=options.lossy_quality,
@@ -728,60 +755,316 @@ def probe_audio(filepath: str | Path) -> AudioProperties:
     )
 
 
+@dataclass(frozen=True)
+class VideoStreamCompatibility:
+    """Compatibility of the first video and audio streams we map to output."""
+
+    probe_ok: bool = False
+    video_compatible: bool = False
+    audio_compatible: bool = False
+    has_audio: bool = False
+
+    @property
+    def is_fully_compatible(self) -> bool:
+        return self.probe_ok and self.video_compatible and self.audio_compatible
+
+
+def _parse_int(value: object) -> int | None:
+    try:
+        return int(str(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _h264_level_value(value: object) -> int | None:
+    """Normalize FFmpeg's numeric or dotted H.264 level to tenths."""
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        if "." in text:
+            return int(round(float(text) * 10))
+        return int(text)
+    except ValueError:
+        return None
+
+
+def _stream_bitrate_kbps(stream: dict) -> int | None:
+    bits_per_second = _parse_int(stream.get("bit_rate"))
+    if bits_per_second is None or bits_per_second <= 0:
+        return None
+    return math.ceil(bits_per_second / 1000)
+
+
+def _video_stream_is_compatible(
+    stream: dict,
+    *,
+    max_width: int,
+    max_height: int,
+    max_fps: int,
+    max_bitrate_kbps: int,
+    h264_level: str,
+) -> bool:
+    if str(stream.get("codec_name") or "").lower() != "h264":
+        return False
+    if str(stream.get("pix_fmt") or "").lower() != "yuv420p":
+        return False
+
+    width = _parse_int(stream.get("width"))
+    height = _parse_int(stream.get("height"))
+    if width is None or height is None or width <= 0 or height <= 0:
+        return False
+    if width > max_width or height > max_height:
+        return False
+
+    try:
+        numerator, denominator = (int(part) for part in str(stream.get("r_frame_rate") or "").split("/"))
+        fps = numerator / denominator
+    except (TypeError, ValueError, ZeroDivisionError):
+        return False
+    if fps > max_fps + 0.5:
+        return False
+
+    profile = str(stream.get("profile") or "").casefold()
+    if profile not in {"baseline", "constrained baseline"}:
+        return False
+    source_level = _h264_level_value(stream.get("level"))
+    target_level = _h264_level_value(h264_level)
+    if source_level is None or target_level is None or source_level > target_level:
+        return False
+
+    if max_bitrate_kbps > 0:
+        bitrate_kbps = _stream_bitrate_kbps(stream)
+        if bitrate_kbps is None or bitrate_kbps > max_bitrate_kbps:
+            return False
+    return True
+
+
+def _audio_stream_is_compatible(stream: dict) -> bool:
+    if str(stream.get("codec_name") or "").lower() != "aac":
+        return False
+    profile = str(stream.get("profile") or "").casefold()
+    if profile not in AudioProperties._COMPATIBLE_AAC_PROFILES:
+        return False
+
+    sample_rate = _parse_int(stream.get("sample_rate"))
+    channels = _parse_int(stream.get("channels"))
+    bitrate_kbps = _stream_bitrate_kbps(stream)
+    return (
+        sample_rate is not None
+        and 0 < sample_rate <= IPOD_MAX_SAMPLE_RATE
+        and channels is not None
+        and 0 < channels <= IPOD_MAX_CHANNELS
+        and bitrate_kbps is not None
+        and bitrate_kbps <= IPOD_MAX_VIDEO_AUDIO_BITRATE_KBPS
+    )
+
+
+def probe_video_stream_compatibility(
+    filepath: str | Path,
+    ffprobe_path: str | None = None,
+) -> VideoStreamCompatibility:
+    """Probe the first mapped video/audio streams against iPod limits.
+
+    Additional streams do not affect the result because the output commands
+    explicitly map only ``0:v:0`` and ``0:a:0?``.
+    """
+    probe = ffprobe_path or _find_ffprobe()
+    if not probe:
+        return VideoStreamCompatibility()
+
+    max_w, max_h, max_fps, max_bitrate, h264_level = _get_video_caps()
+    try:
+        result = subprocess.run(
+            [probe, "-v", "quiet", "-print_format", "json", "-show_streams", str(filepath)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=120,
+            **_SP_KWARGS,
+        )
+        if result.returncode != 0:
+            return VideoStreamCompatibility()
+        streams = _json.loads(result.stdout).get("streams", [])
+    except (OSError, subprocess.SubprocessError, _json.JSONDecodeError):
+        return VideoStreamCompatibility()
+
+    video_stream = next((stream for stream in streams if stream.get("codec_type") == "video"), None)
+    audio_stream = next((stream for stream in streams if stream.get("codec_type") == "audio"), None)
+    video_compatible = video_stream is not None and _video_stream_is_compatible(
+        video_stream,
+        max_width=max_w,
+        max_height=max_h,
+        max_fps=max_fps,
+        max_bitrate_kbps=max_bitrate,
+        h264_level=h264_level,
+    )
+    has_audio = audio_stream is not None
+    audio_compatible = not has_audio or _audio_stream_is_compatible(audio_stream)
+    return VideoStreamCompatibility(
+        probe_ok=True,
+        video_compatible=video_compatible,
+        audio_compatible=audio_compatible,
+        has_audio=has_audio,
+    )
+
+
 def probe_video_needs_transcode(
     filepath: str | Path,
     ffprobe_path: str | None = None,
 ) -> bool:
-    """True if a video file needs re-encoding for iPod compatibility."""
-    probe = ffprobe_path or _find_ffprobe()
-    if not probe:
-        return True
+    """True if either output-mapped A/V stream needs conversion."""
+    return not probe_video_stream_compatibility(filepath, ffprobe_path).is_fully_compatible
 
-    max_w, max_h, max_fps, *_ = _get_video_caps()
 
-    try:
-        r = subprocess.run(
-            [probe, "-v", "quiet", "-print_format", "json",
-             "-show_streams", str(filepath)],
-            capture_output=True, text=True,
-            encoding="utf-8", errors="replace",
-            timeout=120, **_SP_KWARGS,
-        )
-        if r.returncode != 0:
-            return True
-        streams = _json.loads(r.stdout).get("streams", [])
-    except Exception:
-        return True
+_IPOD_TX3G_SUBTITLE_CODEC = "mov_text"
+_IPOD_CEA608_CAPTION_CODEC = "eia_608"
+_IPOD_TIMED_TEXT_CODEC_TAGS: dict[str, str] = {
+    _IPOD_TX3G_SUBTITLE_CODEC: "tx3g",
+    _IPOD_CEA608_CAPTION_CODEC: "c608",
+}
 
-    video_ok = audio_ok = False
-    for s in streams:
-        ct = s.get("codec_type")
-        if ct == "video":
-            if s.get("codec_name", "").lower() != "h264":
-                return True
-            if "10" in s.get("pix_fmt", ""):
-                return True
-            if int(s.get("width", 9999)) > max_w:
-                return True
-            if int(s.get("height", 9999)) > max_h:
-                return True
-            # Check frame rate — r_frame_rate is a fraction string like "60/1"
-            r_fr = s.get("r_frame_rate", "0/1")
+
+@dataclass(frozen=True)
+class TimedTextStream:
+    """The FFprobe fields needed to validate an iPod timed-text stream."""
+
+    index: int
+    codec_name: str
+    codec_tag_string: str
+    display_width: int = 0
+    display_height: int = 0
+
+
+def _subtitle_streams(filepath: str | Path) -> list[TimedTextStream] | None:
+    """Return subtitle streams and their container codec tags, or ``None``.
+
+    The codec name alone is insufficient: ``mov_text`` is iPod-compatible only
+    with the MP4 ``tx3g`` sample entry and a non-empty display rectangle;
+    ``eia_608`` requires the QuickTime ``c608`` sample entry.  An FFmpeg
+    ``mov_text`` output without ``-s:s`` has a zero-sized track rectangle.  A
+    Classic selects that track but renders only a small gray corner artifact.
+    """
+    info = _run_ffprobe(
+        [
+            "-show_entries",
+            "stream=index,codec_type,codec_name,codec_tag_string,width,height",
+            str(filepath),
+        ],
+        timeout=120,
+    )
+    if not info:
+        return None
+
+    streams: list[TimedTextStream] = []
+    for stream in info.get("streams", []):
+        if stream.get("codec_type") == "subtitle":
             try:
-                num, den = (int(x) for x in r_fr.split("/"))
-                fps = num / den if den else 0
-                if fps > max_fps + 0.5:   # 0.5 tolerance for rounding
-                    return True
-            except (ValueError, ZeroDivisionError):
-                pass
-            video_ok = True
-        elif ct == "audio":
-            if s.get("codec_name", "").lower() != "aac":
-                return True
-            if int(s.get("channels", 0)) > 2:
-                return True
-            audio_ok = True
-    return not (video_ok and audio_ok)
+                streams.append(
+                    TimedTextStream(
+                        index=int(stream["index"]),
+                        codec_name=str(stream.get("codec_name") or "").casefold(),
+                        codec_tag_string=str(stream.get("codec_tag_string") or "").casefold(),
+                        display_width=_parse_int(stream.get("width")) or 0,
+                        display_height=_parse_int(stream.get("height")) or 0,
+                    ),
+                )
+            except (KeyError, TypeError, ValueError):
+                continue
+    return streams
+
+
+def _stream_is_natively_supported_by_ipod(
+    stream: TimedTextStream,
+    supported_codecs: frozenset[str],
+) -> bool:
+    """Whether *stream* has a target-supported iPod codec and sample entry."""
+    has_ipod_sample_entry = (
+        stream.codec_name in supported_codecs
+        and _IPOD_TIMED_TEXT_CODEC_TAGS.get(stream.codec_name)
+        == stream.codec_tag_string
+    )
+    if not has_ipod_sample_entry:
+        return False
+    if stream.codec_name == _IPOD_TX3G_SUBTITLE_CODEC:
+        return stream.display_width > 0 and stream.display_height > 0
+    return True
+
+
+def _video_output_muxer(
+    filepath: str | Path,
+    target: TranscodeTarget,
+) -> Literal["ipod", "mov"]:
+    """Choose the container required by compatible timed-text streams.
+
+    CEA-608 closed-caption tracks use QuickTime's ``c608`` sample entry.
+    FFmpeg can copy that entry only with the MOV muxer, while 3GPP timed text
+    (``tx3g``) works with FFmpeg's iPod M4V muxer.  This is evaluated only for
+    transformed video; direct copies keep their existing container and suffix.
+    """
+    if target not in _VIDEO_TRANSCODE_TARGETS:
+        return "ipod"
+
+    streams = _subtitle_streams(filepath)
+    if streams is None:
+        return "ipod"
+
+    supported_codecs = _device_supported_timed_text_codecs()
+    if any(
+        stream.codec_name == _IPOD_CEA608_CAPTION_CODEC
+        and _stream_is_natively_supported_by_ipod(stream, supported_codecs)
+        for stream in streams
+    ):
+        return "mov"
+    return "ipod"
+
+
+def _ipod_subtitle_stream_indexes(
+    filepath: str | Path,
+    *,
+    output_muxer: Literal["ipod", "mov"] | None = None,
+) -> list[int]:
+    """Return only timed-text streams natively supported by the target iPod.
+
+    MP4 timed text (``tx3g``) appears as ``mov_text`` in ffprobe.  QuickTime
+    CEA-608 closed-caption tracks (``c608``) appear as ``eia_608``.  Other
+    text and image subtitle formats are deliberately excluded until a dedicated
+    subtitle converter is available.
+
+    FFmpeg's iPod muxer cannot write an ``eia_608`` track.  Retain it only when
+    the output uses the QuickTime MOV muxer; direct copies keep their existing
+    container and suffix.
+    """
+    streams = _subtitle_streams(filepath)
+    if streams is None:
+        return []
+    supported_codecs = _device_supported_timed_text_codecs()
+    return [
+        stream.index
+        for stream in streams
+        if _stream_is_natively_supported_by_ipod(stream, supported_codecs)
+        and not (
+            output_muxer is not None
+            and output_muxer != "mov"
+            and stream.codec_name == _IPOD_CEA608_CAPTION_CODEC
+        )
+    ]
+
+
+def _video_subtitles_need_remux(filepath: str | Path) -> bool:
+    """Whether a stream-compatible video needs a remux to filter subtitles."""
+    streams = _subtitle_streams(filepath)
+    # If we cannot inspect subtitles, do not copy unknown tracks to a device.
+    if streams is None:
+        return True
+    if not streams:
+        return False
+    supported_codecs = _device_supported_timed_text_codecs()
+    return any(
+        not _stream_is_natively_supported_by_ipod(stream, supported_codecs)
+        for stream in streams
+    )
 
 
 def _probe_duration_us(filepath: str | Path) -> int:
@@ -805,7 +1088,7 @@ def _transcode_timeout_seconds(
     duration while keeping lower/upper bounds so wedged ffmpeg processes still
     get reaped eventually.
     """
-    if target == TranscodeTarget.VIDEO_H264:
+    if target in _VIDEO_TRANSCODE_TARGETS:
         floor_s = _VIDEO_TRANSCODE_TIMEOUT_FLOOR_S
         padding_s = _VIDEO_TRANSCODE_TIMEOUT_PADDING_S
         ceiling_s = _VIDEO_TRANSCODE_TIMEOUT_CEILING_S
@@ -818,7 +1101,7 @@ def _transcode_timeout_seconds(
         return floor_s
 
     duration_s = math.ceil(duration_us / 1_000_000)
-    if target == TranscodeTarget.VIDEO_H264:
+    if target in _VIDEO_TRANSCODE_TARGETS:
         return min(ceiling_s, max(floor_s, duration_s) + padding_s)
     return max(floor_s, min(ceiling_s, duration_s + padding_s))
 
@@ -918,6 +1201,41 @@ def _device_supports_alac() -> bool:
     return True
 
 
+def _device_supported_timed_text_codecs() -> frozenset[str]:
+    """Return the caption/subtitle codecs verified for the connected iPod.
+
+    Unknown devices return an empty set so that a sync never copies an
+    unverified soft-subtitle or closed-caption track.
+    """
+    try:
+        from iopenpod.device import capabilities_for_family_gen, get_current_device
+        dev = get_current_device()
+        if dev and dev.model_family:
+            caps = capabilities_for_family_gen(
+                dev.model_family, dev.generation or "",
+            )
+            if caps is not None:
+                supported: set[str] = set()
+                if caps.supports_tx3g_subtitles:
+                    supported.add(_IPOD_TX3G_SUBTITLE_CODEC)
+                if caps.supports_cea608_captions:
+                    supported.add(_IPOD_CEA608_CAPTION_CODEC)
+                return frozenset(supported)
+    except (ImportError, AttributeError, TypeError):
+        return frozenset()
+    return frozenset()
+
+
+def _device_supports_tx3g_subtitles() -> bool:
+    """Return whether the connected iPod can display MP4 timed text."""
+    return _IPOD_TX3G_SUBTITLE_CODEC in _device_supported_timed_text_codecs()
+
+
+def _device_supports_cea608_captions() -> bool:
+    """Return whether the connected iPod can display CEA-608 captions."""
+    return _IPOD_CEA608_CAPTION_CODEC in _device_supported_timed_text_codecs()
+
+
 def _is_native_lossy_audio(suffix: str, props: AudioProperties) -> bool:
     """Return True for native audio that is already lossy."""
     codec_name = props.codec_name.lower()
@@ -939,7 +1257,7 @@ def get_transcode_target(
     """Determine the target format for *filepath*.
 
     Decision tree:
-      1. Video → probe → VIDEO_H264 or COPY
+      1. Video → probe → VIDEO_H264, VIDEO_REMUX, or COPY
       2. Lossless source → ALAC (or AAC if prefer_lossy)
          WAV may copy instead when convert_wav_to_alac is disabled
       3. Lossy non-native → AAC
@@ -953,7 +1271,15 @@ def get_transcode_target(
     lossy_target = _resolve_lossy_target(options)
 
     # ── Non-native video — always transcode ─────────────────────────────
+    #
+    # ``.mov`` is a container extension rather than a codec guarantee. A
+    # number of iPod-targeted encoders use it for otherwise standard
+    # H.264/AAC MP4 payloads, which the iPod can play without re-encoding.
+    # Probe it just like MP4/M4V; the remaining non-native containers still
+    # need a conversion regardless of their streams.
     if suffix in _NON_NATIVE_VIDEO_EXTS:
+        if suffix == ".mov":
+            return _video_transcode_target(filepath)
         return TranscodeTarget.VIDEO_H264
 
     if prefer_lossy is None:
@@ -979,9 +1305,7 @@ def get_transcode_target(
     if suffix in IPOD_NATIVE_FORMATS:
         # Native video — probe codec compatibility
         if suffix in {".mp4", ".m4v"}:
-            return (TranscodeTarget.VIDEO_H264
-                    if probe_video_needs_transcode(filepath)
-                    else TranscodeTarget.COPY)
+            return _video_transcode_target(filepath)
 
         # Native audio — probe for iPod limits and codec compatibility
         props = probe_audio(filepath)
@@ -1023,6 +1347,20 @@ def get_transcode_target(
 
     # Unknown extension — AAC is the safest bet
     return lossy_target
+
+
+def _video_transcode_target(filepath: str | Path) -> TranscodeTarget:
+    """Choose the minimum safe A/V conversion for the mapped streams."""
+    compatibility = probe_video_stream_compatibility(filepath)
+    if not compatibility.probe_ok or not compatibility.video_compatible:
+        if compatibility.probe_ok and compatibility.audio_compatible:
+            return TranscodeTarget.VIDEO_TRANSCODE_VIDEO
+        return TranscodeTarget.VIDEO_H264
+    if not compatibility.audio_compatible:
+        return TranscodeTarget.VIDEO_TRANSCODE_AUDIO
+    if _video_subtitles_need_remux(filepath):
+        return TranscodeTarget.VIDEO_REMUX
+    return TranscodeTarget.COPY
 
 
 def needs_transcoding(
@@ -1308,45 +1646,105 @@ def _cmd_video(
     max_bitrate: int,
     h264_level: str,
     audio_encoder: str,
+    subtitle_stream_indexes: list[int] | None = None,
+    copy_video: bool = False,
+    copy_audio: bool = False,
+    output_muxer: Literal["ipod", "mov"] = "ipod",
 ) -> list[str]:
-    # Rotate portrait videos 90° CW when the target is landscape —
-    # a tiny centred strip wastes most of the iPod's fixed-landscape screen.
-    # passthrough=landscape means "leave landscape videos alone, only rotate
-    # portrait ones".  Applied before scaling so dimensions are correct.
-    vf_parts: list[str] = []
-    if max_w > max_h:
-        vf_parts.append("transpose=1:passthrough=landscape")
-    vf_parts.append(
-        f"scale={max_w}:{max_h}"
-        ":force_original_aspect_ratio=decrease,"
-        "scale='trunc(iw/2)*2':'trunc(ih/2)*2'"
-    )
-    # Cap frame rate to device maximum (handles 60fps sources for Nano 3G/4G,
-    # and prevents excessive bitrate on high-fps content)
-    vf_parts.append(f"fps=fps={max_fps}")
+    video_args: list[str]
+    if copy_video:
+        video_args = ["-c:v", "copy"]
+    else:
+        # Rotate portrait videos 90° CW when the target is landscape —
+        # a tiny centred strip wastes most of the iPod's fixed-landscape screen.
+        # passthrough=landscape means "leave landscape videos alone, only rotate
+        # portrait ones". Applied before scaling so dimensions are correct.
+        vf_parts: list[str] = []
+        if max_w > max_h:
+            vf_parts.append("transpose=1:passthrough=landscape")
+        vf_parts.append(
+            f"scale={max_w}:{max_h}"
+            ":force_original_aspect_ratio=decrease,"
+            "scale='trunc(iw/2)*2':'trunc(ih/2)*2'"
+        )
+        # Cap frame rate to device maximum (handles 60fps sources for Nano 3G/4G,
+        # and prevents excessive bitrate on high-fps content)
+        vf_parts.append(f"fps=fps={max_fps}")
 
-    # Hard bitrate ceiling — enforced on devices with Level 1.3 decoders
-    # (Nano 3G/4G: 768 kbps).  Uses a 2× buffer so the encoder has headroom.
-    bitrate_args: list[str] = []
-    if max_bitrate > 0:
-        bitrate_args = ["-maxrate", f"{max_bitrate}k", "-bufsize", f"{max_bitrate * 2}k"]
+        # Hard bitrate ceiling — enforced on devices with Level 1.3 decoders
+        # (Nano 3G/4G: 768 kbps). Uses a 2× buffer for encoder headroom.
+        bitrate_args: list[str] = []
+        if max_bitrate > 0:
+            bitrate_args = ["-maxrate", f"{max_bitrate}k", "-bufsize", f"{max_bitrate * 2}k"]
+        video_args = [
+            "-c:v", "libx264",
+            "-profile:v", "baseline", "-level", h264_level,
+            "-pix_fmt", "yuv420p",
+            "-tag:v", "avc1",
+            "-vf", ",".join(vf_parts),
+            "-crf", str(crf), "-preset", preset,
+            *bitrate_args,
+        ]
+
+    audio_args = (
+        ["-c:a", "copy"]
+        if copy_audio
+        else [
+            "-c:a", audio_encoder,
+            "-profile:a", "aac_low",
+            "-ac", str(IPOD_MAX_CHANNELS),
+            "-ar", str(IPOD_MAX_SAMPLE_RATE),
+            "-b:a", f"{IPOD_MAX_VIDEO_AUDIO_BITRATE_KBPS}k",
+        ]
+    )
+
+    subtitle_stream_indexes = subtitle_stream_indexes or []
+    subtitle_map_args = [
+        item
+        for index in subtitle_stream_indexes
+        for item in ("-map", f"0:{index}?")
+    ]
+    subtitle_codec_args = ["-c:s", "copy"] if subtitle_stream_indexes else []
 
     return [
         ffmpeg, "-i", src,
         "-map", "0:v:0", "-map", "0:a:0?",
-        "-vcodec", "libx264",
-        "-profile:v", "baseline", "-level", h264_level,
-        "-pix_fmt", "yuv420p",
-        "-tag:v", "avc1",
-        "-vf", ",".join(vf_parts),
-        "-crf", str(crf), "-preset", preset,
-        *bitrate_args,
-        "-acodec", audio_encoder,
-        "-ac", str(IPOD_MAX_CHANNELS),
-        "-ar", str(IPOD_MAX_SAMPLE_RATE),
-        "-b:a", "160k",
+        *subtitle_map_args,
+        "-map_metadata", "0",
+        *video_args,
+        *audio_args,
+        *subtitle_codec_args,
         "-movflags", "+faststart",
-        "-f", "ipod",
+        "-f", output_muxer,
+        "-y", dst,
+    ]
+
+
+def _cmd_video_remux(
+    ffmpeg: str,
+    src: str,
+    dst: str,
+    *,
+    subtitle_stream_indexes: list[int] | None = None,
+    output_muxer: Literal["ipod", "mov"] = "ipod",
+) -> list[str]:
+    """Copy compatible video/audio streams while retaining only native subtitles."""
+    subtitle_stream_indexes = subtitle_stream_indexes or []
+    subtitle_map_args = [
+        item
+        for index in subtitle_stream_indexes
+        for item in ("-map", f"0:{index}?")
+    ]
+    subtitle_codec_args = ["-c:s", "copy"] if subtitle_stream_indexes else []
+    return [
+        ffmpeg, "-i", src,
+        "-map", "0:v:0", "-map", "0:a:0?",
+        *subtitle_map_args,
+        "-map_metadata", "0",
+        "-c:v", "copy", "-c:a", "copy",
+        *subtitle_codec_args,
+        "-movflags", "+faststart",
+        "-f", output_muxer,
         "-y", dst,
     ]
 
@@ -1406,6 +1804,21 @@ def _build_ffmpeg_command(
             encoder=plan.lossy_encoder,
         )
 
+    subtitle_stream_indexes = _ipod_subtitle_stream_indexes(
+        source_path,
+        output_muxer=plan.video_output_muxer,
+    )
+    if plan.target == TranscodeTarget.VIDEO_REMUX:
+        return _cmd_video_remux(
+            ffmpeg,
+            src,
+            dst,
+            subtitle_stream_indexes=subtitle_stream_indexes,
+            output_muxer=plan.video_output_muxer,
+        )
+
+    copy_video = plan.target == TranscodeTarget.VIDEO_TRANSCODE_AUDIO
+    copy_audio = plan.target == TranscodeTarget.VIDEO_TRANSCODE_VIDEO
     return _cmd_video(
         ffmpeg,
         src,
@@ -1418,6 +1831,10 @@ def _build_ffmpeg_command(
         max_bitrate=plan.video_max_bitrate_kbps,
         h264_level=plan.video_h264_level,
         audio_encoder=_best_aac_encoder(options.ffmpeg_path),
+        subtitle_stream_indexes=subtitle_stream_indexes,
+        copy_video=copy_video,
+        copy_audio=copy_audio,
+        output_muxer=plan.video_output_muxer,
     )
 
 
@@ -1518,7 +1935,7 @@ def _run_transcode(
         duration_us = _probe_duration_us(source_path)
         timeout = _transcode_timeout_seconds(target, duration_us)
 
-        if progress_callback and target == TranscodeTarget.VIDEO_H264:
+        if progress_callback and target in _VIDEO_TRANSCODE_TARGETS:
             returncode, stderr = _run_ffmpeg_with_progress(
                 cmd, duration_us, progress_callback, timeout,
                 is_cancelled=is_cancelled,
@@ -1748,20 +2165,88 @@ def copy_metadata(source_path: str | Path, dest_path: str | Path) -> bool:
 
 def strip_metadata(file_path: str | Path) -> bool:
     """Remove user-facing tags/artwork from a media file in place."""
+    path = Path(file_path)
+    is_iso_media = path.suffix.casefold() in {".m4a", ".m4v", ".mov", ".mp4"}
     try:
         from mutagen._file import File as MutagenFile
 
-        audio = MutagenFile(file_path)
+        audio = MutagenFile(path)
         if audio is None:
-            return False
-        if audio.tags is None:
-            return True
-        if hasattr(audio, "delete"):
+            return _strip_iso_media_user_data(path) if is_iso_media else False
+        if audio.tags is not None and hasattr(audio, "delete"):
             audio.delete()
-            return True
-        audio.tags.clear()
-        audio.save()
-        return True
+        elif audio.tags is not None:
+            audio.tags.clear()
+            audio.save()
+        # Mutagen does not expose QuickTime's legacy ``moov/udta`` fields on
+        # every MOV variant (notably MOVs with a c608 track).  Scrub that
+        # user-data atom too, so a successful no-tags result cannot leave
+        # visible title/artist/album metadata on the device payload.
+        return _strip_iso_media_user_data(path) if is_iso_media else True
     except Exception as e:
-        logger.warning("Could not strip metadata from %s: %s", Path(file_path).name, e)
+        if is_iso_media and _strip_iso_media_user_data(path):
+            return True
+        logger.warning("Could not strip metadata from %s: %s", path.name, e)
         return False
+
+
+def _strip_iso_media_user_data(file_path: Path) -> bool:
+    """Neutralize global ``moov/udta`` metadata without moving media bytes.
+
+    Replacing the atom type with ``free`` retains its size, so ``stco``/``co64``
+    chunk offsets remain valid.  This is the only reliable fallback for MOV
+    variants whose legacy QuickTime metadata Mutagen does not surface.
+    """
+    try:
+        with file_path.open("r+b") as media_file:
+            media_file.seek(0, os.SEEK_END)
+            file_size = media_file.tell()
+            for atom_offset, atom_size, atom_type, header_size in _iso_media_atoms(
+                media_file,
+                start=0,
+                end=file_size,
+            ):
+                if atom_type != b"moov":
+                    continue
+                for child_offset, _child_size, child_type, _child_header_size in _iso_media_atoms(
+                    media_file,
+                    start=atom_offset + header_size,
+                    end=atom_offset + atom_size,
+                ):
+                    if child_type == b"udta":
+                        media_file.seek(child_offset + 4)
+                        media_file.write(b"free")
+            return True
+    except (OSError, ValueError) as exc:
+        logger.warning("Could not strip QuickTime user data from %s: %s", file_path.name, exc)
+        return False
+
+
+def _iso_media_atoms(
+    media_file: BinaryIO,
+    *,
+    start: int,
+    end: int,
+) -> Iterator[tuple[int, int, bytes, int]]:
+    """Yield validated ISO-media atom headers in one container payload."""
+    offset = start
+    while offset < end:
+        if end - offset < 8:
+            raise ValueError("truncated atom header")
+        media_file.seek(offset)
+        header = media_file.read(8)
+        atom_size = int.from_bytes(header[:4], "big")
+        atom_type = header[4:]
+        header_size = 8
+        if atom_size == 1:
+            extended_size = media_file.read(8)
+            if len(extended_size) != 8:
+                raise ValueError("truncated extended atom header")
+            atom_size = int.from_bytes(extended_size, "big")
+            header_size = 16
+        elif atom_size == 0:
+            atom_size = end - offset
+        if atom_size < header_size or offset + atom_size > end:
+            raise ValueError("invalid atom size")
+        yield offset, atom_size, atom_type, header_size
+        offset += atom_size

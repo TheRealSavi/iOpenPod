@@ -35,7 +35,7 @@ from .ipod_track_paths import expected_ipod_track_file_path
 logger = logging.getLogger(__name__)
 
 _ID3_EXTENSIONS = frozenset({".mp3", ".aac"})
-_MP4_EXTENSIONS = frozenset({".m4a", ".m4b", ".m4p", ".m4v", ".mp4"})
+_MP4_EXTENSIONS = frozenset({".m4a", ".m4b", ".m4p", ".m4v", ".mp4", ".mov"})
 _ROCKBOX_ART_MAX_DIMENSION = 500
 _ROCKBOX_ART_QUALITY = 88
 _ESTIMATED_TAG_OVERHEAD = 64 * 1024

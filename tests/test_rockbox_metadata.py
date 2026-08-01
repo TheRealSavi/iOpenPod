@@ -4,6 +4,7 @@ import base64
 import io
 from pathlib import Path
 
+import pytest
 from mutagen.id3 import ID3
 from mutagen.mp4 import MP4, MP4Cover
 from PIL import Image
@@ -102,10 +103,12 @@ def test_mp3_writer_materializes_database_metadata_and_rockbox_jpeg(
         assert image.info.get("progressive") is None
 
 
+@pytest.mark.parametrize("suffix", [".m4a", ".mov"])
 def test_mp4_writer_uses_native_atoms_and_replaces_stale_cover(
     tmp_path: Path,
+    suffix: str,
 ) -> None:
-    media_path = tmp_path / "track.m4a"
+    media_path = tmp_path / f"track{suffix}"
     media_path.write_bytes(_SILENT_M4A)
     original = MP4(media_path)
     original["\xa9nam"] = ["Stale title"]
@@ -114,7 +117,7 @@ def test_mp4_writer_uses_native_atoms_and_replaces_stale_cover(
 
     write_rockbox_track_metadata(
         media_path,
-        _track(":iPod_Control:Music:F00:track.m4a"),
+        _track(f":iPod_Control:Music:F00:track{suffix}"),
         artwork=_jpeg_artwork(),
     )
 

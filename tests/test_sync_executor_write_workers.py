@@ -1476,6 +1476,97 @@ def test_direct_copy_writes_metadata_stripped_payload_without_touching_source(
     assert not copied_from[0].exists()
 
 
+def test_direct_video_copy_strips_embedded_metadata(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    ipod_root = tmp_path / "ipod"
+    source = tmp_path / "source.m4v"
+    ipod_root.mkdir()
+    source.write_bytes(b"video-with-tags")
+
+    executor = SyncExecutor(
+        ipod_root,
+        max_workers=1,
+        max_device_write_workers=1,
+    )
+    transcode_plan = replace(
+        resolve_transcode_plan(source, options=executor.transcode_options),
+        target=TranscodeTarget.COPY,
+    )
+
+    stripped_inputs: list[Path] = []
+
+    def fake_strip_metadata(path: Path) -> bool:
+        assert path != source
+        stripped_inputs.append(path)
+        path.write_bytes(b"stripped-video")
+        return True
+
+    monkeypatch.setattr("iopenpod.sync.sync_executor.strip_metadata", fake_strip_metadata)
+
+    success, ipod_path, was_transcoded, err = executor._copy_to_ipod(source, transcode_plan)
+
+    assert success is True
+    assert err == ""
+    assert was_transcoded is False
+    assert ipod_path is not None
+    assert ipod_path.read_bytes() == b"stripped-video"
+    assert source.read_bytes() == b"video-with-tags"
+    assert stripped_inputs and not stripped_inputs[0].exists()
+
+
+def test_transcoded_video_strips_embedded_metadata(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    ipod_root = tmp_path / "ipod"
+    source = tmp_path / "source.mkv"
+    transcoded = tmp_path / "out.m4v"
+    ipod_root.mkdir()
+    source.write_bytes(b"source-video")
+    transcoded.write_bytes(b"transcoded-video-with-tags")
+
+    executor = SyncExecutor(
+        ipod_root,
+        max_workers=1,
+        max_device_write_workers=1,
+    )
+    transcode_plan = replace(
+        resolve_transcode_plan(source, options=executor.transcode_options),
+        target=TranscodeTarget.VIDEO_H264,
+    )
+
+    def fake_transcode(*_args, **_kwargs):
+        return TranscodeResult(
+            success=True,
+            source_path=source,
+            output_path=transcoded,
+            target_format=TranscodeTarget.VIDEO_H264,
+            was_transcoded=True,
+        )
+
+    stripped_inputs: list[Path] = []
+
+    def fake_strip_metadata(path: Path) -> bool:
+        assert path != transcoded
+        stripped_inputs.append(path)
+        path.write_bytes(b"stripped-transcoded-video")
+        return True
+
+    monkeypatch.setattr("iopenpod.sync.sync_executor.transcode", fake_transcode)
+    monkeypatch.setattr("iopenpod.sync.sync_executor.strip_metadata", fake_strip_metadata)
+
+    success, ipod_path, was_transcoded, err = executor._copy_to_ipod(source, transcode_plan)
+
+    assert success is True
+    assert err == ""
+    assert was_transcoded is True
+    assert ipod_path is not None
+    assert ipod_path.read_bytes() == b"stripped-transcoded-video"
+    assert stripped_inputs and not stripped_inputs[0].exists()
+
+
 def test_transcoded_file_is_stripped_before_device_write(
     monkeypatch,
     tmp_path: Path,

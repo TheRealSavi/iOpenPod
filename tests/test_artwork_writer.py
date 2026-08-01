@@ -68,6 +68,18 @@ def test_extract_art_accepts_direct_image_file(tmp_path) -> None:
     assert extract_art(str(image_path)) == image_path.read_bytes()
 
 
+def test_extract_art_uses_a_frame_for_mkv_video(tmp_path, monkeypatch) -> None:
+    video = tmp_path / "caption_probe.mkv"
+    video.write_bytes(b"video")
+    expected = b"jpeg-thumbnail"
+    monkeypatch.setattr(
+        "iopenpod.artworkdb_writer.art_extractor._extract_video_frame",
+        lambda path: expected,
+    )
+
+    assert extract_art(str(video)) == expected
+
+
 def _make_ipod_root(tmp_path: Path) -> tuple[Path, Path]:
     ipod_root = tmp_path / "ipod"
     artwork_dir = ipod_root / "iPod_Control" / "Artwork"
