@@ -255,9 +255,11 @@ def test_photo_picker_group_by_selected_toggle_controls_its_grid(qtbot) -> None:
     toggle = view._grid_header.findChild(QPushButton, "gridGroupBySelectedButton")
 
     assert toggle is not None and not toggle.isHidden()
+    assert toggle.isChecked()
+    assert view._photo_grid.isGroupedBySelected()
     toggle.click()
 
-    assert view._photo_grid.isGroupedBySelected()
+    assert not view._photo_grid.isGroupedBySelected()
 
 
 def test_photo_picker_moves_clicked_items_between_selection_sections(qtbot) -> None:

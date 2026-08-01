@@ -991,6 +991,7 @@ class PCPhotoListView(QWidget):
         self._grid_header = GridHeaderBar()
         self._grid_header.setCategory("Photos")
         self._grid_header.setSelectionGroupingAvailable(True)
+        self._grid_header.setGroupBySelected(True)
         self._grid_header.sort_changed.connect(self._on_sort_changed)
         self._grid_header.search_changed.connect(self._on_search_changed)
         self._grid_header.selection_grouping_changed.connect(
@@ -1003,6 +1004,9 @@ class PCPhotoListView(QWidget):
         self._photo_grid = PooledPhotoGridView(
             checkable=True,
             settings_service=self._settings_service,
+        )
+        self._photo_grid.setGroupBySelected(
+            self._grid_header.isGroupedBySelected()
         )
         self._photo_grid.currentIndexChanged.connect(self._on_current_photo_changed)
         self._photo_grid.checkedChanged.connect(self._on_photo_checked_changed)
@@ -1739,6 +1743,7 @@ class SelectiveSyncBrowser(QWidget):
 
         self._grid_header = GridHeaderBar()
         self._grid_header.setSelectionGroupingAvailable(True)
+        self._grid_header.setGroupBySelected(True)
         self._grid_header.sort_changed.connect(self._on_grid_sort)
         self._grid_header.search_changed.connect(self._on_grid_search)
         self._grid_header.selection_grouping_changed.connect(
