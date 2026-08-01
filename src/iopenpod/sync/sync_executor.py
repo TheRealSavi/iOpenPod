@@ -141,6 +141,8 @@ _SYNC_UNTIL_FULL_RESERVE_BYTES = SYNC_UNTIL_FULL_RESERVE_BYTES
 # Default number of Fxx music directories (most common across iPod models).
 _DEFAULT_MUSIC_DIRS = 20
 
+_ROCKBOX_REVALIDATION_INTERVAL_SECONDS = 5.0
+
 
 def _mhsd5_type_value(playlist: dict) -> int:
     return coerce_int(playlist.get("mhsd5_type", 0))
@@ -1489,6 +1491,8 @@ class SyncExecutor:
             before_device_mutation=self._revalidate_device_write_readiness,
             max_file_size_bytes=self._effective_max_file_size_bytes(),
             device_artwork_formats=(resolve_cover_art_format_definitions_for_device(self.device_info)),
+            defer_durability=True,
+            revalidate_interval_seconds=_ROCKBOX_REVALIDATION_INTERVAL_SECONDS,
         )
         ctx.result.rockbox_metadata_updated += pass_result.updated
         for failure in pass_result.failures:

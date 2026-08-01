@@ -8,6 +8,8 @@ from mutagen.id3 import ID3
 from mutagen.mp4 import MP4, MP4Cover
 from PIL import Image
 
+import iopenpod.device.virtual as virtual_device_module
+import iopenpod.sync.rockbox_metadata as rockbox_metadata_module
 from iopenpod.device.virtual import create_virtual_ipod
 from iopenpod.itunesdb_writer.mhit_writer import TrackInfo
 from iopenpod.sync.rockbox_metadata import (
@@ -58,6 +60,15 @@ def _track(location: str, *, title: str = "Final title") -> TrackInfo:
         sort_composer="Composer, Final",
         db_track_id=123,
     )
+
+
+def _create_metadata_test_ipod(monkeypatch, root: Path) -> None:
+    monkeypatch.setattr(
+        virtual_device_module,
+        "ensure_virtual_itunes_database",
+        lambda _root: None,
+    )
+    create_virtual_ipod(root, "MC297")
 
 
 def test_mp3_writer_materializes_database_metadata_and_rockbox_jpeg(
@@ -119,9 +130,10 @@ def test_mp4_writer_uses_native_atoms_and_replaces_stale_cover(
 
 
 def test_library_pass_visits_every_safe_track_and_updates_database_sizes(
+    monkeypatch,
     tmp_path: Path,
 ) -> None:
-    create_virtual_ipod(tmp_path, "MC297")
+    _create_metadata_test_ipod(monkeypatch, tmp_path)
     first = tmp_path / "iPod_Control" / "Music" / "F00" / "first.mp3"
     second = tmp_path / "iPod_Control" / "Music" / "F01" / "second.mp3"
     first.parent.mkdir(parents=True, exist_ok=True)
@@ -143,10 +155,55 @@ def test_library_pass_visits_every_safe_track_and_updates_database_sizes(
     assert tracks[1].size == second.stat().st_size
 
 
-def test_library_pass_rejects_a_database_path_outside_ipod_music(
+def test_library_pass_can_defer_per_track_durability_and_revalidation(
+    monkeypatch,
     tmp_path: Path,
 ) -> None:
-    create_virtual_ipod(tmp_path, "MC297")
+    _create_metadata_test_ipod(monkeypatch, tmp_path)
+    first = tmp_path / "iPod_Control" / "Music" / "F00" / "first.mp3"
+    second = tmp_path / "iPod_Control" / "Music" / "F01" / "second.mp3"
+    first.parent.mkdir(parents=True, exist_ok=True)
+    second.parent.mkdir(parents=True, exist_ok=True)
+    first.write_bytes(b"\xff\xfb\x90\x64" + b"\x00" * 128)
+    second.write_bytes(b"\xff\xfb\x90\x64" + b"\x00" * 128)
+    tracks = [
+        _track(":iPod_Control:Music:F00:first.mp3", title="First"),
+        _track(":iPod_Control:Music:F01:second.mp3", title="Second"),
+    ]
+    revalidations: list[None] = []
+    flushes: list[None] = []
+    disk_usage_calls: list[None] = []
+    free_space = rockbox_metadata_module.shutil.disk_usage(tmp_path)
+    monkeypatch.setattr(
+        rockbox_metadata_module,
+        "flush_written_file",
+        lambda _file: flushes.append(None),
+    )
+    monkeypatch.setattr(
+        rockbox_metadata_module.shutil,
+        "disk_usage",
+        lambda _path: (disk_usage_calls.append(None) or free_space),
+    )
+
+    result = write_rockbox_metadata_library(
+        tmp_path,
+        tracks,
+        before_device_mutation=lambda: revalidations.append(None),
+        defer_durability=True,
+        revalidate_interval_seconds=60,
+    )
+
+    assert result.updated == 2
+    assert revalidations == [None]
+    assert flushes == []
+    assert disk_usage_calls == [None]
+
+
+def test_library_pass_rejects_a_database_path_outside_ipod_music(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _create_metadata_test_ipod(monkeypatch, tmp_path)
     outside = tmp_path / "outside.mp3"
     outside.write_bytes(b"untouched")
     track = _track(":outside.mp3")

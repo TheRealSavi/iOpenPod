@@ -18,6 +18,7 @@ from collections import OrderedDict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from time import monotonic
 from typing import Any
 
 from PIL import Image, ImageOps
@@ -95,8 +96,13 @@ def write_rockbox_track_metadata(
     *,
     artwork: RockboxArtwork | None = None,
     max_file_size_bytes: int | None = None,
+    flush_after_write: bool = True,
 ) -> RockboxTrackWriteResult:
-    """Write final iTunesDB values to one media file using its native tags."""
+    """Write final iTunesDB values to one media file using its native tags.
+
+    Set ``flush_after_write`` to ``False`` only when the caller establishes a
+    filesystem-wide durability barrier after the complete batch.
+    """
 
     path = Path(file_path)
     suffix = path.suffix.casefold()
@@ -118,10 +124,9 @@ def write_rockbox_track_metadata(
     if max_file_size_bytes is not None and after_size > max_file_size_bytes:
         raise RockboxMetadataWriteError(f"Tagged file exceeds this filesystem's {max_file_size_bytes:,}-byte file-size limit")
 
-    # Mutagen closes its handle after saving. Reopen the changed file so the
-    # per-file barrier includes media tags, not only the later iTunesDB flush.
-    with path.open("rb+") as media_file:
-        flush_written_file(media_file)
+    if flush_after_write:
+        with path.open("rb+") as media_file:
+            flush_written_file(media_file)
 
     return RockboxTrackWriteResult(
         file_size=after_size,
@@ -139,6 +144,8 @@ def write_rockbox_metadata_library(
     before_device_mutation: Callable[[], None] | None = None,
     max_file_size_bytes: int | None = None,
     device_artwork_formats: Mapping[int, Any] | None = None,
+    defer_durability: bool = False,
+    revalidate_interval_seconds: float | None = None,
 ) -> RockboxMetadataPassResult:
     """Write tags for every track in the final library.
 
@@ -146,7 +153,15 @@ def write_rockbox_metadata_library(
     Artwork follows the same final-state policy as the ArtworkDB writer:
     unchanged tracks use current device artwork, changed/new tracks use their
     PC source, and an explicit clear removes embedded art.
+
+    When ``defer_durability`` is true, the caller must establish a
+    filesystem-wide durability barrier after the full library write. A
+    revalidation interval may be supplied by that caller to avoid repeating
+    an expensive device-readiness check for every track in a large library.
     """
+
+    if revalidate_interval_seconds is not None and revalidate_interval_seconds <= 0:
+        raise ValueError("revalidate_interval_seconds must be positive")
 
     root = Path(ipod_root)
     source_paths = {int(db_track_id): str(path) for db_track_id, path in (pc_file_paths or {}).items() if path}
@@ -162,6 +177,8 @@ def write_rockbox_metadata_library(
     bytes_delta = 0
     total = len(tracks)
     cancelled = False
+    last_revalidation_at: float | None = None
+    available_free_bytes = shutil.disk_usage(root).free
 
     for index, track in enumerate(tracks):
         if is_cancelled is not None and is_cancelled():
@@ -187,19 +204,26 @@ def write_rockbox_metadata_library(
         try:
             artwork = artwork_resolver.for_track(track)
             required_growth = _ESTIMATED_TAG_OVERHEAD + (len(artwork.data) if artwork else 0)
-            free_bytes = shutil.disk_usage(root).free
-            if free_bytes < required_growth + _DATABASE_WRITE_RESERVE:
+            if available_free_bytes < required_growth + _DATABASE_WRITE_RESERVE:
                 raise RockboxMetadataWriteError("Not enough free space to add tags while preserving the database-write reserve")
-            if before_device_mutation is not None:
+            should_revalidate = (
+                revalidate_interval_seconds is None
+                or last_revalidation_at is None
+                or monotonic() - last_revalidation_at >= revalidate_interval_seconds
+            )
+            if before_device_mutation is not None and should_revalidate:
                 before_device_mutation()
+                last_revalidation_at = monotonic()
             write_result = write_rockbox_track_metadata(
                 path,
                 track,
                 artwork=artwork,
                 max_file_size_bytes=max_file_size_bytes,
+                flush_after_write=not defer_durability,
             )
             track.size = write_result.file_size
             track.last_modified = int(path.stat().st_mtime)
+            available_free_bytes -= max(write_result.bytes_delta, 0)
             updated += 1
             bytes_delta += write_result.bytes_delta
         except DeviceWriteSafetyError:
@@ -210,6 +234,10 @@ def write_rockbox_metadata_library(
             unsupported += 1
             failures.append(RockboxMetadataFailure(location, str(exc)))
         except Exception as exc:
+            try:
+                available_free_bytes = shutil.disk_usage(root).free
+            except OSError:
+                pass
             logger.warning(
                 "Could not write Rockbox metadata to %s: %s",
                 path,

@@ -11,6 +11,7 @@ from typing import cast
 
 import pytest
 
+import iopenpod.sync.sync_executor as sync_executor_module
 from iopenpod.device.filesystem_profile import FilesystemProfile
 from iopenpod.device.write_guard import DatabaseGeneration, DeviceWriteSafetyError
 from iopenpod.itunesdb_writer.mhit_writer import TrackInfo
@@ -24,6 +25,7 @@ from iopenpod.sync.contracts import (
     SyncRequest,
     sync_plan_required_free_bytes,
 )
+from iopenpod.sync.database_commit import DatabaseCommitPayload
 from iopenpod.sync.mapping import MappingFile
 from iopenpod.sync.pc_library import PCTrack
 from iopenpod.sync.sync_executor import SyncExecutor, _ExecutionLifecycle, _SyncContext
@@ -115,6 +117,40 @@ def test_commit_file_mutations_writes_normal_database(monkeypatch, tmp_path: Pat
 
     assert writes == ["write"]
     assert not ctx.result.partial_save
+
+
+def test_rockbox_metadata_pass_defers_durability_to_sync_flush(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    executor = SyncExecutor(tmp_path)
+    ctx = _SyncContext(
+        plan=SyncPlan(),
+        mapping=MappingFile(),
+        progress_callback=None,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+    )
+    received: dict[str, object] = {}
+
+    def record_metadata_pass(*_args, **kwargs):
+        received.update(kwargs)
+        return SimpleNamespace(updated=0, failures=())
+
+    monkeypatch.setattr(
+        sync_executor_module,
+        "write_rockbox_metadata_library",
+        record_metadata_pass,
+    )
+
+    executor._execute_rockbox_metadata_pass(
+        ctx,
+        DatabaseCommitPayload(all_tracks=[]),
+    )
+
+    assert received["defer_durability"] is True
+    assert received["revalidate_interval_seconds"] == 5.0
 
 
 def test_execution_lifecycle_runs_named_phases_in_order(
