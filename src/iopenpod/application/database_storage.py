@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 import struct
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -31,6 +32,7 @@ class StorageBreakdownNode:
     bytes_used: int
     detail: str = ""
     kind: str = ""
+    mhod_type: int | None = None
     children: tuple[StorageBreakdownNode, ...] = ()
 
     def find(self, label: str) -> StorageBreakdownNode | None:
@@ -77,6 +79,7 @@ class _ChunkRecord:
 
 @dataclass(slots=True)
 class _DataObjectAccumulator:
+    mhod_type: int | None = None
     bytes_used: int = 0
     count: int = 0
     payload_bytes: int = 0
@@ -91,6 +94,102 @@ class _ContainerAccumulator:
     count: int = 0
     data_objects: dict[str, _DataObjectAccumulator] = field(default_factory=dict)
     children: dict[str, _ContainerAccumulator] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class TruncatableMhodField:
+    """A non-essential track text field that can be safely shortened."""
+
+    attribute: str
+    encoding: str
+
+
+_TRUNCATABLE_MHOD_FIELDS: dict[int, TruncatableMhodField] = {
+    7: TruncatableMhodField("eq_setting", "utf-16-le"),
+    8: TruncatableMhodField("comment", "utf-16-le"),
+    10: TruncatableMhodField("lyrics", "utf-16-le"),
+    13: TruncatableMhodField("grouping", "utf-16-le"),
+    14: TruncatableMhodField("description", "utf-16-le"),
+    15: TruncatableMhodField("podcast_enclosure_url", "utf-8"),
+    16: TruncatableMhodField("podcast_rss_url", "utf-8"),
+    18: TruncatableMhodField("subtitle", "utf-16-le"),
+    20: TruncatableMhodField("episode_id", "utf-16-le"),
+    21: TruncatableMhodField("network_name", "utf-16-le"),
+    24: TruncatableMhodField("keywords", "utf-16-le"),
+    25: TruncatableMhodField("show_locale", "utf-16-le"),
+    27: TruncatableMhodField("sort_name", "utf-16-le"),
+    28: TruncatableMhodField("sort_album", "utf-16-le"),
+    29: TruncatableMhodField("sort_album_artist", "utf-16-le"),
+    30: TruncatableMhodField("sort_composer", "utf-16-le"),
+    31: TruncatableMhodField("sort_show", "utf-16-le"),
+}
+
+
+def is_truncatable_mhod_type(mhod_type: int | None) -> bool:
+    """Return whether the MHOD type is exposed as a storage-saving control."""
+
+    return mhod_type in _TRUNCATABLE_MHOD_FIELDS
+
+
+def truncate_track_mhod_values(
+    tracks: Iterable[object],
+    mhod_type: int,
+    max_bytes: int,
+) -> int:
+    """Shorten one optional track field to a byte limit without splitting text.
+
+    A zero-byte limit removes the field entirely.  Lyrics also clear their
+    header flag so the rewritten database has neither a lyrics MHOD nor a
+    stale ``lyrics_flag``.
+    """
+
+    field = _TRUNCATABLE_MHOD_FIELDS.get(mhod_type)
+    if field is None:
+        raise ValueError(f"MHOD type {mhod_type} cannot be truncated")
+
+    limit = max(0, int(max_bytes))
+    changed = 0
+    for track in tracks:
+        value = getattr(track, field.attribute, None)
+        if not value:
+            if mhod_type == 10 and getattr(track, "has_lyrics", False):
+                _set_track_attribute(track, "has_lyrics", False)
+                changed += 1
+            continue
+
+        text = str(value)
+        shortened = _truncate_text_to_bytes(text, limit, field.encoding)
+        if shortened == text:
+            continue
+        setattr(track, field.attribute, shortened or None)
+        if mhod_type == 10:
+            _set_track_attribute(track, "has_lyrics", bool(shortened))
+        changed += 1
+    return changed
+
+
+def _truncate_text_to_bytes(text: str, max_bytes: int, encoding: str) -> str:
+    """Return the longest encodable prefix whose payload fits ``max_bytes``."""
+
+    if max_bytes <= 0:
+        return ""
+    encoded = text.encode(encoding)
+    if len(encoded) <= max_bytes:
+        return text
+
+    candidate = encoded[:max_bytes]
+    while candidate:
+        try:
+            return candidate.decode(encoding)
+        except UnicodeDecodeError:
+            candidate = candidate[:-1]
+    return ""
+
+
+def _set_track_attribute(track: object, attribute: str, value: object) -> None:
+    """Set a mutable TrackInfo-like attribute without constraining callers."""
+
+    setattr(track, attribute, value)
 
 
 def analyze_database_storage(
@@ -109,6 +208,36 @@ def analyze_database_storage(
     if uses_sqlite_db:
         return _analyze_sqlite_storage(database_path, ipod_root)
     return _analyze_classic_storage(database_path)
+
+
+def analyze_database_storage_bytes(
+    data: bytes,
+    *,
+    database_path: str = "Proposed iTunesDB",
+) -> DatabaseStorageReport:
+    """Build a classic iTunesDB report from an in-memory proposed database."""
+
+    from iopenpod.itunesdb_parser.parser import decompress_itunescdb
+
+    try:
+        logical = bytes(decompress_itunescdb(data))
+    except Exception as exc:
+        return DatabaseStorageReport(
+            mode="classic",
+            physical_bytes=len(data),
+            logical_bytes=0,
+            database_path=database_path,
+            note=f"Could not inspect proposed database: {exc}",
+        )
+
+    root = _build_classic_root(logical, physical_bytes=len(data))
+    return DatabaseStorageReport(
+        mode="classic",
+        physical_bytes=len(data),
+        logical_bytes=len(logical),
+        database_path=database_path,
+        roots=(root,) if root is not None else (),
+    )
 
 
 def _analyze_classic_storage(
@@ -134,17 +263,7 @@ def _analyze_classic_storage(
             note=str(exc),
         )
 
-    from iopenpod.itunesdb_parser.parser import decompress_itunescdb
-
-    logical = bytes(decompress_itunescdb(raw))
-    root = _build_classic_root(logical, physical_bytes=len(raw))
-    return DatabaseStorageReport(
-        mode="classic",
-        physical_bytes=len(raw),
-        logical_bytes=len(logical),
-        database_path=str(path),
-        roots=(root,) if root is not None else (),
-    )
+    return analyze_database_storage_bytes(raw, database_path=str(path))
 
 
 def _build_classic_root(
@@ -194,7 +313,7 @@ def _accumulate_container(
             label = _mhod_label(child.mhod_type)
             stats = accumulator.data_objects.setdefault(
                 label,
-                _DataObjectAccumulator(),
+                _DataObjectAccumulator(mhod_type=child.mhod_type),
             )
             stats.bytes_used += max(0, child.total_length)
             stats.count += 1
@@ -285,6 +404,7 @@ def _data_object_nodes(
             stats.bytes_used,
             detail=_mhod_detail(stats.count, stats.payload_bytes),
             kind="mhod",
+            mhod_type=stats.mhod_type,
         )
         for label, stats in sorted(
             data_objects.items(),
@@ -546,6 +666,7 @@ def _sqlite_object_nodes(path: Path) -> tuple[StorageBreakdownNode, ...]:
                     page_bytes.get(label, 0),
                     detail=detail,
                     kind=kind,
+                    mhod_type=10 if label.casefold() == "lyrics" else None,
                 )
             )
         return tuple(sorted(nodes, key=lambda node: (-node.bytes_used, node.label.lower())))

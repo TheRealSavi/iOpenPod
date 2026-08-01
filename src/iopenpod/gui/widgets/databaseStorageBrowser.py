@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QHeaderView,
+    QInputDialog,
     QLabel,
     QPushButton,
     QTreeWidget,
@@ -16,7 +17,11 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from iopenpod.application.database_storage import DatabaseStorageReport, StorageBreakdownNode
+from iopenpod.application.database_storage import (
+    DatabaseStorageReport,
+    StorageBreakdownNode,
+    is_truncatable_mhod_type,
+)
 
 from ..styles import (
     FONT_FAMILY,
@@ -36,11 +41,13 @@ class DatabaseStorageBrowser(QWidget):
     """Tree view of database storage usage."""
 
     closed = pyqtSignal()
+    truncate_requested = pyqtSignal(int, int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._report: DatabaseStorageReport | None = None
         self._max_database_bytes = 0
+        self._source_label = ""
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -90,7 +97,7 @@ class DatabaseStorageBrowser(QWidget):
 
         self.tree = QTreeWidget(self)
         self.tree.setObjectName("databaseStorageTree")
-        self.tree.setHeaderLabels(["Component", "Size", "Limit", "Details"])
+        self.tree.setHeaderLabels(["Component", "Size", "Limit", "Details", "Actions"])
         self.tree.setRootIsDecorated(True)
         self.tree.setIndentation(18)
         self.tree.setAlternatingRowColors(True)
@@ -134,6 +141,7 @@ class DatabaseStorageBrowser(QWidget):
             header_view.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
             header_view.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
             header_view.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+            header_view.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
         root.addWidget(self.tree, 1)
 
     def _build_explanation(self) -> QFrame:
@@ -221,10 +229,12 @@ class DatabaseStorageBrowser(QWidget):
         report: DatabaseStorageReport,
         *,
         max_database_bytes: int = 0,
+        source_label: str = "",
     ) -> None:
         """Render a new storage report."""
         self._report = report
         self._max_database_bytes = max(0, int(max_database_bytes or 0))
+        self._source_label = source_label
         self._refresh_summary()
         self.tree.clear()
         if not report.roots:
@@ -232,12 +242,15 @@ class DatabaseStorageBrowser(QWidget):
             return
 
         for node in report.roots:
-            self.tree.addTopLevelItem(self._item_for_node(node))
+            item = self._item_for_node(node)
+            self.tree.addTopLevelItem(item)
+            self._add_action_controls(item)
         self.tree.expandAll()
 
     def clear(self) -> None:
         self._report = None
         self._max_database_bytes = 0
+        self._source_label = ""
         self.summary_label.setText("")
         self.tree.clear()
 
@@ -247,10 +260,10 @@ class DatabaseStorageBrowser(QWidget):
             self.summary_label.setText("")
             return
 
-        parts = [self._summary_status(report)]
+        parts = [self._source_label, self._summary_status(report)]
         if report.note:
             parts.append(report.note)
-        self.summary_label.setText(" · ".join(parts))
+        self.summary_label.setText(" · ".join(part for part in parts if part))
 
     def _summary_status(self, report: DatabaseStorageReport) -> str:
         size = format_size(report.logical_bytes) or "0 B"
@@ -278,6 +291,7 @@ class DatabaseStorageBrowser(QWidget):
         ])
         item.setData(0, Qt.ItemDataRole.UserRole, node.kind)
         item.setData(1, Qt.ItemDataRole.UserRole, node.bytes_used)
+        item.setData(4, Qt.ItemDataRole.UserRole, node.mhod_type)
         if node.kind in {"mhod", "sqlite_table"}:
             item.setFont(0, QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.DemiBold))
         item.setFont(1, QFont(MONO_FONT_FAMILY, Metrics.FONT_SM))
@@ -285,6 +299,38 @@ class DatabaseStorageBrowser(QWidget):
         for child in node.children:
             item.addChild(self._item_for_node(child))
         return item
+
+    def _add_action_controls(self, item: QTreeWidgetItem) -> None:
+        mhod_type = item.data(4, Qt.ItemDataRole.UserRole)
+        if is_truncatable_mhod_type(mhod_type):
+            button = QPushButton("Truncate…", self.tree)
+            button.setObjectName("databaseStorageTruncateButton")
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.setToolTip("Set a maximum byte count for every value of this field")
+            button.clicked.connect(
+                lambda _checked=False, value=int(mhod_type), row=item: self._request_truncation(
+                    value,
+                    row.text(0),
+                )
+            )
+            self.tree.setItemWidget(item, 4, button)
+
+        for index in range(item.childCount()):
+            child = item.child(index)
+            if child is not None:
+                self._add_action_controls(child)
+
+    def _request_truncation(self, mhod_type: int, label: str) -> None:
+        max_bytes, accepted = QInputDialog.getInt(
+            self,
+            f"Truncate {label}",
+            f"Maximum bytes per {label} value (0 removes the field):",
+            2048,
+            0,
+            2**31 - 1,
+        )
+        if accepted:
+            self.truncate_requested.emit(mhod_type, max_bytes)
 
     def _percent_text(self, bytes_used: int) -> str:
         denominator = self._max_database_bytes

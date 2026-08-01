@@ -41,3 +41,33 @@ def test_database_storage_browser_back_button_emits_closed(qtbot) -> None:
     assert button.styleSheet() == back_btn_css()
     with qtbot.waitSignal(browser.closed):
         qtbot.mouseClick(button, Qt.MouseButton.LeftButton)
+
+
+def test_database_storage_browser_adds_truncate_control_for_lyrics(qtbot) -> None:
+    browser = DatabaseStorageBrowser()
+    qtbot.addWidget(browser)
+    report = DatabaseStorageReport(
+        mode="classic",
+        physical_bytes=2048,
+        logical_bytes=2048,
+        roots=(
+            StorageBreakdownNode(
+                "iTunesDB",
+                2048,
+                children=(
+                    StorageBreakdownNode(
+                        "Lyrics",
+                        1024,
+                        kind="mhod",
+                        mhod_type=10,
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    browser.load_report(report)
+    button = browser.findChild(QPushButton, "databaseStorageTruncateButton")
+
+    assert button is not None
+    assert button.text() == "Truncate…"

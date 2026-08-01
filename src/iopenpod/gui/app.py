@@ -4,7 +4,7 @@ import shutil
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 # Keep this before PyQt imports so Qt Multimedia logging rules are installed
 # before any Qt module can initialize multimedia plugins.
@@ -32,7 +32,10 @@ from iopenpod.application.controllers import (
     StartupDeviceRestoreController,
     StartupUpdateController,
 )
-from iopenpod.application.database_storage import analyze_database_storage
+from iopenpod.application.database_storage import (
+    analyze_database_storage,
+    analyze_database_storage_bytes,
+)
 from iopenpod.application.device_access import DeviceWriteAccessResult, check_ipod_write_access
 from iopenpod.application.device_identity import (
     identify_ipod_at_root,
@@ -53,6 +56,7 @@ from iopenpod.application.jobs import (
     ChapterSplitWorker,
     check_sync_tool_availability,
     DropScanWorker,
+    DatabaseStorageTrimWorker,
     EjectDeviceWorker,
     QuickWriteWorker,
     SyncToolAvailability,
@@ -856,6 +860,9 @@ class MainWindow(QMainWindow):
         # Database storage page
         self.databaseStorageBrowser = DatabaseStorageBrowser()
         self.databaseStorageBrowser.closed.connect(self.hideDatabaseStorage)
+        self.databaseStorageBrowser.truncate_requested.connect(
+            self._onDatabaseStorageTruncate
+        )
         self.centralStack.addWidget(self.databaseStorageBrowser)  # Index 5
 
         # No-device placeholder section (shown in content area; sidebar stays visible)
@@ -1475,6 +1482,10 @@ class MainWindow(QMainWindow):
             or (
                 self._keep_sync_results_visible_after_rescan
                 and self._is_sync_results_visible()
+            )
+            or (
+                getattr(self, "_database_storage_recovery", None) is not None
+                and self.centralStack.currentIndex() == _DATABASE_STORAGE_PAGE_INDEX
             )
         )
         self._keep_sync_results_visible_after_rescan = False
@@ -2734,6 +2745,7 @@ class MainWindow(QMainWindow):
 
     def showDatabaseStorage(self):
         """Show the database storage breakdown page."""
+        self._database_storage_recovery = None
         session = self.device_session_service.current_session()
         capabilities = getattr(session, "capabilities", None)
         report = analyze_database_storage(
@@ -2751,7 +2763,98 @@ class MainWindow(QMainWindow):
 
     def hideDatabaseStorage(self):
         """Return from database storage management to the main browsing view."""
+        self._database_storage_recovery = None
         self._show_default_page()
+
+    def showProposedDatabaseStorage(self, result: object) -> None:
+        """Inspect the database rejected by the iPod size guard."""
+
+        proposed_bytes = bytes(
+            getattr(result, "proposed_database_bytes", b"") or b""
+        )
+        recovery = getattr(result, "proposed_database_recovery", None)
+        if not proposed_bytes or recovery is None:
+            return
+
+        session = self.device_session_service.current_session()
+        capabilities = getattr(session, "capabilities", None)
+        self._database_storage_recovery = recovery
+        self.databaseStorageBrowser.load_report(
+            analyze_database_storage_bytes(proposed_bytes),
+            max_database_bytes=int(
+                getattr(capabilities, "max_database_bytes", 0) or 0
+            ),
+            source_label="Proposed database — not written to the iPod",
+        )
+        self.centralStack.setCurrentIndex(_DATABASE_STORAGE_PAGE_INDEX)
+
+    def _onDatabaseStorageTruncate(self, mhod_type: int, max_bytes: int) -> None:
+        """Rewrite the current or rejected database with one field shortened."""
+
+        worker = getattr(self, "_database_storage_trim_worker", None)
+        if worker is not None and worker.isRunning():
+            return
+
+        session = self.device_session_service.current_session()
+        capabilities = getattr(session, "capabilities", None)
+        self.databaseStorageBrowser.tree.setEnabled(False)
+        worker = DatabaseStorageTrimWorker(
+            str(getattr(self.device_manager, "device_path", "") or ""),
+            mhod_type=mhod_type,
+            max_bytes=max_bytes,
+            uses_sqlite_db=bool(getattr(capabilities, "uses_sqlite_db", False)),
+            recovery=getattr(self, "_database_storage_recovery", None),
+        )
+        self._database_storage_trim_worker = worker
+        worker.finished.connect(
+            lambda trim_result, active=worker: self._onDatabaseStorageTrimComplete(
+                trim_result,
+                active,
+            )
+        )
+        worker.error.connect(
+            lambda message, active=worker: self._onDatabaseStorageTrimError(
+                message,
+                active,
+            )
+        )
+        worker.start()
+
+    def _onDatabaseStorageTrimComplete(self, trim_result: object, worker: object) -> None:
+        if getattr(self, "_database_storage_trim_worker", None) is not worker:
+            return
+        self._database_storage_trim_worker = None
+        self.databaseStorageBrowser.tree.setEnabled(True)
+
+        recovery = getattr(trim_result, "recovery", None)
+        self._database_storage_recovery = recovery
+        session = self.device_session_service.current_session()
+        capabilities = getattr(session, "capabilities", None)
+        self.databaseStorageBrowser.load_report(
+            cast(Any, trim_result).report,
+            max_database_bytes=int(
+                getattr(capabilities, "max_database_bytes", 0) or 0
+            ),
+            source_label=(
+                "Proposed database — not written to the iPod"
+                if recovery is not None
+                else ""
+            ),
+        )
+        if getattr(trim_result, "committed", False):
+            changed = int(getattr(trim_result, "changed_tracks", 0) or 0)
+            QMessageBox.information(
+                self,
+                "Database Storage Updated",
+                f"Shortened this field on {changed:,} track(s) and rewrote the database.",
+            )
+
+    def _onDatabaseStorageTrimError(self, message: str, worker: object) -> None:
+        if getattr(self, "_database_storage_trim_worker", None) is not worker:
+            return
+        self._database_storage_trim_worker = None
+        self.databaseStorageBrowser.tree.setEnabled(True)
+        QMessageBox.critical(self, "Could Not Trim Database", message)
 
     def executeSyncPlan(self, selected_items):
         """Execute the selected sync actions."""
@@ -2865,7 +2968,7 @@ class MainWindow(QMainWindow):
             and getattr(settings, "normalize_tags_after_sync", False)
         )
         if failure_message:
-            QMessageBox.critical(self, "Sync Failed", failure_message)
+            self._showSyncFailureDialog(failure_message, result)
 
         # Desktop notification if app is not focused
         if not self.isActiveWindow():
@@ -2878,6 +2981,32 @@ class MainWindow(QMainWindow):
 
         # Reload the database to show changes (delay lets OS flush writes)
         QTimer.singleShot(500, self._rescanAfterSync)
+
+    def _showSyncFailureDialog(self, message: str, result: object) -> None:
+        """Show sync failure details and preserve a size-rejected DB for review."""
+
+        dialog = QMessageBox(self)
+        dialog.setIcon(QMessageBox.Icon.Critical)
+        dialog.setWindowTitle("Sync Failed")
+        dialog.setText(message)
+        close_button = dialog.addButton(QMessageBox.StandardButton.Close)
+        inspect_button = None
+        if (
+            getattr(result, "proposed_database_bytes", b"")
+            and getattr(result, "proposed_database_recovery", None) is not None
+        ):
+            inspect_button = dialog.addButton(
+                "Inspect Proposed Database",
+                QMessageBox.ButtonRole.ActionRole,
+            )
+            dialog.setInformativeText(
+                "The iPod was not given this oversized database. Inspect it to "
+                "shorten optional metadata fields and try writing it again."
+            )
+        dialog.setDefaultButton(close_button)
+        dialog.exec()
+        if dialog.clickedButton() is inspect_button:
+            self.showProposedDatabaseStorage(result)
 
     def _update_podcast_statuses(self):
         """Mark synced podcast episodes as 'on_ipod' in the subscription store."""

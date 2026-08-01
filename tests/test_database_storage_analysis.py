@@ -1,7 +1,12 @@
 import sqlite3
 import struct
 
-from iopenpod.application.database_storage import analyze_database_storage
+from iopenpod.application.database_storage import (
+    analyze_database_storage,
+    analyze_database_storage_bytes,
+)
+from iopenpod.itunesdb_writer.mhbd_writer import write_mhbd
+from iopenpod.itunesdb_writer.mhit_writer import TrackInfo
 
 
 def _chunk(tag: bytes, header: bytes, body: bytes = b"") -> bytes:
@@ -66,6 +71,25 @@ def test_analyze_database_storage_nests_data_objects_under_container(
     assert lyrics_node is not None
     assert title_node is not None
     assert lyrics_node.bytes_used > title_node.bytes_used
+    assert lyrics_node.mhod_type == 10
+
+
+def test_analyze_database_storage_bytes_inspects_unwritten_database() -> None:
+    data = write_mhbd(
+        [
+            TrackInfo(
+                title="Unwritten",
+                location=":iPod_Control:Music:F00:UNWRITTEN.m4a",
+                lyrics="long lyric " * 100,
+            )
+        ]
+    )
+
+    report = analyze_database_storage_bytes(data)
+
+    assert report.database_path == "Proposed iTunesDB"
+    assert report.logical_bytes == len(data)
+    assert report.find("Lyrics") is not None
 
 
 def test_analyze_database_storage_reports_sqlite_itdb_files(tmp_path) -> None:
@@ -90,3 +114,4 @@ def test_analyze_database_storage_reports_sqlite_itdb_files(tmp_path) -> None:
     assert extras_node.bytes_used == extras_path.stat().st_size
     assert lyrics_node is not None
     assert "1 row" in lyrics_node.detail
+    assert lyrics_node.mhod_type == 10

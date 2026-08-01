@@ -16,6 +16,14 @@ logger = logging.getLogger(__name__)
 class FileSizeLimitError(DeviceWriteSafetyError):
     """Raised before a file exceeds a device or filesystem size limit."""
 
+    proposed_database_bytes: bytes
+    proposed_database_filename: str
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.proposed_database_bytes = b""
+        self.proposed_database_filename = ""
+
 
 def allocated_size(logical_size: int, allocation_unit_size: int | None) -> int:
     """Return the conservative on-disk bytes used by one logical file."""

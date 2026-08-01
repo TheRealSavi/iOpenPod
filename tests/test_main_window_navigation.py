@@ -1189,6 +1189,21 @@ def test_post_sync_rescan_refreshes_library_without_leaving_results():
     assert scheduled_rebuild_pages == [1]
 
 
+def test_post_sync_rescan_keeps_proposed_database_inspector_visible():
+    window = _build_window_for_data_ready(
+        current_page_index=5,
+        sync_results_visible=False,
+    )
+    window._keep_sync_results_visible_after_rescan = True
+    window._database_storage_recovery = object()
+    window._apply_match_ipod_accent = lambda dev: False
+
+    _call_on_data_ready(window)
+
+    assert window.centralStack.set_indices == []
+    assert window.mainContentStack.set_indices == [0]
+
+
 def test_data_ready_preserves_settings_page():
     window = _build_window_for_data_ready(
         current_page_index=2,
@@ -1340,6 +1355,37 @@ def test_show_database_storage_loads_current_device_report(tmp_path) -> None:
     report, max_database_bytes = load_calls[-1]
     assert report.database_path == str(db_path)
     assert max_database_bytes == 64 * 1024 * 1024
+
+
+def test_show_proposed_database_storage_loads_rejected_database() -> None:
+    load_calls: list[tuple[DatabaseStorageReport, int, str]] = []
+    recovery = object()
+    window = SimpleNamespace(
+        centralStack=_FakeStack(),
+        databaseStorageBrowser=SimpleNamespace(
+            load_report=lambda report, *, max_database_bytes=0, source_label="": load_calls.append(
+                (report, max_database_bytes, source_label)
+            )
+        ),
+        device_session_service=SimpleNamespace(
+            current_session=lambda: SimpleNamespace(
+                capabilities=SimpleNamespace(max_database_bytes=1024),
+            )
+        ),
+    )
+    result = SimpleNamespace(
+        proposed_database_bytes=b"mhbd",
+        proposed_database_recovery=recovery,
+    )
+
+    MainWindow.showProposedDatabaseStorage(cast(Any, window), result)
+
+    assert window._database_storage_recovery is recovery
+    assert window.centralStack.set_indices == [5]
+    report, max_database_bytes, source_label = load_calls[-1]
+    assert report.database_path == "Proposed iTunesDB"
+    assert max_database_bytes == 1024
+    assert source_label == "Proposed database — not written to the iPod"
 
 
 def test_hide_database_storage_returns_to_default_page() -> None:

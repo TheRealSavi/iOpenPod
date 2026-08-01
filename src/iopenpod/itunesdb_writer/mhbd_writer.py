@@ -84,6 +84,7 @@ from iopenpod.device.filesystem import (
 )
 from iopenpod.device.path_safety import resolve_device_path
 from iopenpod.device.storage_safety import (
+    FileSizeLimitError,
     allocated_size,
     effective_max_file_size_bytes,
     require_file_size_supported,
@@ -1551,6 +1552,14 @@ def write_itunesdb(
             capabilities=capabilities,
             backup_sources=(itdb_path, existing_itdb_path) if backup else (),
         )
+    except FileSizeLimitError as exc:
+        # The caller can offer a storage inspector without ever writing this
+        # rejected database to the iPod.
+        exc.proposed_database_bytes = bytes(itdb_data)
+        exc.proposed_database_filename = db_filename
+        if pending_artwork:
+            pending_artwork.abort(before_remove=before_device_mutation)
+        raise
     except Exception:
         if pending_artwork:
             pending_artwork.abort(before_remove=before_device_mutation)

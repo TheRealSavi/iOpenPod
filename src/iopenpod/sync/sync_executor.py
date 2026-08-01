@@ -45,6 +45,7 @@ from iopenpod.device.path_safety import (
     resolve_device_path,
 )
 from iopenpod.device.storage_safety import (
+    FileSizeLimitError,
     allocated_size,
     effective_max_file_size_bytes,
     require_file_size_supported,
@@ -84,6 +85,7 @@ from .contracts import (
     SYNC_DB_WRITE_RESERVE_BYTES,
     SYNC_DISK_RESERVE_BYTES,
     SYNC_UNTIL_FULL_RESERVE_BYTES,
+    ProposedDatabaseRecovery,
     SyncItem,
     SyncOutcome,
     SyncPlan,
@@ -1714,6 +1716,16 @@ class SyncExecutor:
             self._revalidate_device_write_readiness()
             self._delete_playcounts_file()
 
+        except FileSizeLimitError as e:
+            if e.proposed_database_bytes:
+                ctx.result.proposed_database_bytes = e.proposed_database_bytes
+                ctx.result.proposed_database_recovery = ProposedDatabaseRecovery(
+                    payload=commit_payload,
+                    mapping=ctx.mapping,
+                )
+            ctx.result.errors.append(("database_size", str(e)))
+            ctx.result.success = False
+            logger.error("Database commit exceeded its size limit: %s", e)
         except DeviceWriteSafetyError as e:
             ctx.result.errors.append(("filesystem_safety", str(e)))
             ctx.result.success = False

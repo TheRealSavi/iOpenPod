@@ -537,6 +537,14 @@ class SyncProgress:
 
 
 @dataclass
+class ProposedDatabaseRecovery:
+    """Prepared sync state that can commit after reducing database metadata."""
+
+    payload: Any
+    mapping: MappingFile
+
+
+@dataclass
 class SyncOutcome:
     """Result of a sync operation."""
 
@@ -557,6 +565,8 @@ class SyncOutcome:
     scrobbles_submitted: int = 0
     errors: list[tuple[str, str]] = field(default_factory=list)
     partial_save: bool = False
+    proposed_database_bytes: bytes = b""
+    proposed_database_recovery: ProposedDatabaseRecovery | None = None
 
     @property
     def has_errors(self) -> bool:

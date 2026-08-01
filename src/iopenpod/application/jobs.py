@@ -2982,6 +2982,162 @@ class SyncExecuteWorker(QThread):
             ) from exc
 
 
+@dataclass(frozen=True)
+class DatabaseStorageTrimResult:
+    """The result of shortening optional database text fields."""
+
+    report: Any
+    changed_tracks: int
+    committed: bool
+    recovery: Any | None = None
+
+
+class DatabaseStorageTrimWorker(QThread):
+    """Rewrite an iPod database after shortening one optional MHOD field."""
+
+    finished = pyqtSignal(object)
+    error = pyqtSignal(str)
+
+    def __init__(
+        self,
+        ipod_path: str,
+        *,
+        mhod_type: int,
+        max_bytes: int,
+        uses_sqlite_db: bool,
+        recovery: Any | None = None,
+    ) -> None:
+        super().__init__()
+        self._ipod_path = Path(ipod_path)
+        self._mhod_type = mhod_type
+        self._max_bytes = max_bytes
+        self._uses_sqlite_db = uses_sqlite_db
+        self._recovery = recovery
+
+    def run(self) -> None:
+        try:
+            from iopenpod.application.database_storage import (
+                analyze_database_storage,
+                analyze_database_storage_bytes,
+                truncate_track_mhod_values,
+            )
+            from iopenpod.device.storage_safety import FileSizeLimitError
+            from iopenpod.sync.database_commit import write_database_commit
+            from iopenpod.sync.mapping import MappingManager
+
+            recovery = self._recovery
+            if recovery is None:
+                payload = self._current_database_payload()
+            else:
+                payload = recovery.payload
+
+            changed_tracks = truncate_track_mhod_values(
+                payload.all_tracks,
+                self._mhod_type,
+                self._max_bytes,
+            )
+            if changed_tracks == 0 and recovery is None:
+                self.finished.emit(
+                    DatabaseStorageTrimResult(
+                        report=self._current_report(analyze_database_storage),
+                        changed_tracks=0,
+                        committed=False,
+                    )
+                )
+                return
+
+            try:
+                written = write_database_commit(
+                    self._ipod_path,
+                    payload,
+                    protect_itunes=True,
+                )
+            except FileSizeLimitError as exc:
+                if recovery is None or not exc.proposed_database_bytes:
+                    raise
+                self.finished.emit(
+                    DatabaseStorageTrimResult(
+                        report=analyze_database_storage_bytes(
+                            exc.proposed_database_bytes,
+                            database_path=(
+                                exc.proposed_database_filename
+                                or "Proposed iTunesDB"
+                            ),
+                        ),
+                        changed_tracks=changed_tracks,
+                        committed=False,
+                        recovery=recovery,
+                    )
+                )
+                return
+
+            if not written:
+                raise RuntimeError("The trimmed database could not be written.")
+            if recovery is not None and MappingManager(self._ipod_path).save(
+                recovery.mapping
+            ) is False:
+                raise DeviceWriteSafetyError(
+                    "The trimmed database was written, but the iOpenPod mapping "
+                    "file could not be saved."
+                )
+
+            self.finished.emit(
+                DatabaseStorageTrimResult(
+                    report=self._current_report(analyze_database_storage),
+                    changed_tracks=changed_tracks,
+                    committed=True,
+                )
+            )
+        except Exception as exc:
+            logger.exception("Database storage trimming failed")
+            self.error.emit(str(exc))
+
+    def _current_database_payload(self):
+        from iopenpod.sync._db_io import read_existing_database
+        from iopenpod.sync._playlist_builder import build_and_evaluate_playlists
+        from iopenpod.sync._track_conversion import track_dict_to_info
+        from iopenpod.sync.database_commit import DatabaseCommitPayload
+
+        existing = read_existing_database(self._ipod_path, raise_on_error=True)
+        tracks_data = existing.get("tracks", [])
+        tracks = [track_dict_to_info(track) for track in tracks_data]
+        (
+            master_name,
+            master_playlist_id,
+            playlists,
+            podcast_master_name,
+            podcast_master_playlist_id,
+            podcast_playlists,
+            smart_playlists,
+        ) = build_and_evaluate_playlists(
+            tracks_data,
+            existing.get("dataset2_standard_playlists", []),
+            existing.get("dataset3_podcast_playlists", []),
+            existing.get("dataset5_smart_playlists", []),
+            tracks,
+        )
+        return DatabaseCommitPayload(
+            all_tracks=tracks,
+            playlists=playlists,
+            podcast_playlists=podcast_playlists,
+            smart_playlists=smart_playlists,
+            master_playlist_name=master_name,
+            master_playlist_id=master_playlist_id,
+            podcast_master_playlist_name=podcast_master_name,
+            podcast_master_playlist_id=podcast_master_playlist_id,
+        )
+
+    def _current_report(self, analyzer):
+        from iopenpod.device import resolve_itdb_path
+
+        database_path = resolve_itdb_path(str(self._ipod_path))
+        return analyzer(
+            database_path,
+            ipod_root=self._ipod_path,
+            uses_sqlite_db=self._uses_sqlite_db,
+        )
+
+
 class DropScanWorker(QThread):
     """Read metadata from dropped files and build a sync plan."""
 
