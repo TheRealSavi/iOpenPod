@@ -1,12 +1,15 @@
 from types import SimpleNamespace
 from typing import Any, cast
 
+from PyQt6.QtCore import Qt
+
 import iopenpod.gui.widgets.selectiveSyncBrowser as selective_sync_browser_module
 from iopenpod.gui.styles import accent_btn_css
 from iopenpod.gui.widgets.MBGridView import GridRecord, MusicBrowserGrid
 from iopenpod.gui.widgets.selectiveSyncBrowser import (
     PCMusicBrowserGrid,
     PCPhotoListView,
+    PCTrackListView,
     SelectiveSyncBrowser,
 )
 from iopenpod.gui.widgets.syncReview import StorageBarWidget
@@ -106,6 +109,59 @@ def test_done_selecting_uses_standard_primary_action_style(qtbot) -> None:
     qtbot.addWidget(browser)
 
     assert browser._done_btn.styleSheet() == accent_btn_css()
+
+
+def test_selective_sync_track_list_sorts_checkboxes_by_selected_state(qtbot) -> None:
+    settings = SimpleNamespace(track_list_columns_by_content={})
+    view = PCTrackListView(
+        settings_service=cast(
+            Any,
+            SimpleNamespace(
+                get_global_settings=lambda: settings,
+                get_effective_settings=lambda: settings,
+            ),
+        ),
+        device_sessions=cast(
+            Any,
+            SimpleNamespace(current_session=lambda: None),
+        ),
+    )
+    qtbot.addWidget(view)
+    tracks = [
+        _track("Selected 1", "Album/Selected 1.mp3"),
+        _track("Unselected", "Album/Unselected.mp3"),
+        _track("Selected 2", "Album/Selected 2.mp3"),
+    ]
+    view.setTracks(
+        tracks,
+        {
+            tracks[0].path: True,
+            tracks[1].path: False,
+            tracks[2].path: True,
+        },
+    )
+    table = view._browser_list.table
+    qtbot.waitUntil(
+        lambda: table.rowCount() == 3
+        and all(table.item(row, 0) is not None for row in range(3))
+    )
+
+    table.sortItems(0, Qt.SortOrder.DescendingOrder)
+    assert [table.item(row, 0).checkState() for row in range(3)] == [
+        Qt.CheckState.Checked,
+        Qt.CheckState.Checked,
+        Qt.CheckState.Unchecked,
+    ]
+
+    table.item(0, 0).setCheckState(Qt.CheckState.Unchecked)
+    qtbot.waitUntil(
+        lambda: [table.item(row, 0).checkState() for row in range(3)]
+        == [
+            Qt.CheckState.Checked,
+            Qt.CheckState.Unchecked,
+            Qt.CheckState.Unchecked,
+        ]
+    )
 
 
 def test_selective_sync_storage_bar_projects_normal_and_plan_selections(

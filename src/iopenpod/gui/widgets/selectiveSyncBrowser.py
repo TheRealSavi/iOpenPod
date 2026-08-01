@@ -452,6 +452,13 @@ _PC_DEFAULT_COLUMNS = [
 ]
 
 
+class _SelectionSortItem(QTableWidgetItem):
+    """A checkbox cell that orders rows by its selected state."""
+
+    def __lt__(self, other: QTableWidgetItem) -> bool:  # type: ignore[override]
+        return self.checkState().value < other.checkState().value
+
+
 class _PCMusicBrowserList:
     """Mixin-style wrapper that adapts MusicBrowserList for PC track display.
 
@@ -801,7 +808,7 @@ class PCTrackListView(QWidget):
             hh.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
 
         for row in range(t.rowCount()):
-            chk = QTableWidgetItem()
+            chk = _SelectionSortItem()
             chk.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
 
             # Find the path from the track dict via the row's anchor
@@ -821,6 +828,7 @@ class PCTrackListView(QWidget):
         except (TypeError, RuntimeError):
             pass
         t.cellChanged.connect(self._on_cell_changed)
+        self._resort_by_selection_if_needed()
 
     def _path_for_row(self, row: int) -> str | None:
         """Get the PC file path for a table row (accounts for sorting)."""
@@ -846,6 +854,15 @@ class PCTrackListView(QWidget):
         checked = item.checkState() == Qt.CheckState.Checked
         if path:
             self.toggled.emit(path, checked)
+        self._resort_by_selection_if_needed()
+
+    def _resort_by_selection_if_needed(self) -> None:
+        table = self._browser_list.table
+        header = table.horizontalHeader()
+        if header is None or not table.isSortingEnabled():
+            return
+        if header.sortIndicatorSection() == 0:
+            table.sortItems(0, header.sortIndicatorOrder())
 
     def setAllChecked(self, checked: bool):
         state = Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked
@@ -856,6 +873,7 @@ class PCTrackListView(QWidget):
             if item:
                 item.setCheckState(state)
         t.blockSignals(False)
+        self._resort_by_selection_if_needed()
 
     def updateCheckStates(self, selection: dict[str, bool]):
         """Refresh checkbox states from selection dict without emitting signals."""
@@ -870,6 +888,7 @@ class PCTrackListView(QWidget):
                     Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked
                 )
         t.blockSignals(False)
+        self._resort_by_selection_if_needed()
 
 
 # ── Photo list with checkboxes ──────────────────────────────────────────────
