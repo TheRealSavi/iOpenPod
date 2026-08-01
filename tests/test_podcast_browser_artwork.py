@@ -8,6 +8,11 @@ from PyQt6.QtCore import QPoint, Qt
 from PyQt6.QtGui import QColor, QContextMenuEvent, QPixmap
 from PyQt6.QtWidgets import QApplication, QLabel, QPushButton, QVBoxLayout, QWidget
 
+from iopenpod.application.services import (
+    DeviceSessionService,
+    LibraryService,
+    SettingsService,
+)
 from iopenpod.gui.styles import paint_css
 from iopenpod.gui.widgets.podcastBrowser import (
     _COMBINED_FEED_COLUMNS,
@@ -49,6 +54,19 @@ def test_episode_card_uses_resolved_episode_and_action_paints(qtbot) -> None:
     assert paint_css("podcast.episode.fill") in card.styleSheet()
     assert paint_css("control.primary.fill") in card._add_btn.styleSheet()
     assert paint_css("status.danger.subtle_fill") in card._remove_btn.styleSheet()
+
+
+def test_status_timeouts_are_cancelled_when_podcast_browser_is_destroyed(qtbot) -> None:
+    browser = PodcastBrowser(
+        cast(SettingsService, SimpleNamespace()),
+        cast(DeviceSessionService, SimpleNamespace()),
+        cast(LibraryService, SimpleNamespace(cache=lambda: object())),
+    )
+
+    browser._set_status("Saved", timeout_ms=1)
+    browser._set_action_status("Added", timeout_ms=1)
+    browser.deleteLater()
+    qtbot.wait(20)
 
 
 def test_read_local_artwork_bytes_reads_existing_file(tmp_path: Path) -> None:

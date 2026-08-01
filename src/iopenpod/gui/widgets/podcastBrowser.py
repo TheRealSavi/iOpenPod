@@ -1320,6 +1320,14 @@ class PodcastBrowser(QFrame):
         self._episode_dicts: list[dict] = []
         self._artwork_inflight: dict[str, list[Callable[[str, QPixmap], None]]] = {}
         self._episode_state_retry: Callable[[], None] | None = None
+        self._status_clear_text = ""
+        self._status_clear_timer = QTimer(self)
+        self._status_clear_timer.setSingleShot(True)
+        self._status_clear_timer.timeout.connect(self._clear_status_timeout)
+        self._action_status_clear_text = ""
+        self._action_status_clear_timer = QTimer(self)
+        self._action_status_clear_timer.setSingleShot(True)
+        self._action_status_clear_timer.timeout.connect(self._clear_action_timeout)
 
         self._build_ui()
 
@@ -3433,8 +3441,13 @@ class PodcastBrowser(QFrame):
     def _set_status(self, text: str, timeout_ms: int = 5000) -> None:
         """Set toolbar status text with auto-clear."""
         self._status_label.setText(text)
+        self._status_clear_timer.stop()
+        self._status_clear_text = text
         if timeout_ms > 0 and text:
-            QTimer.singleShot(timeout_ms, lambda: self._clear_status_if(text))
+            self._status_clear_timer.start(timeout_ms)
+
+    def _clear_status_timeout(self) -> None:
+        self._clear_status_if(self._status_clear_text)
 
     def _clear_status_if(self, expected: str) -> None:
         """Clear status only if it still shows the expected message."""
@@ -3444,12 +3457,17 @@ class PodcastBrowser(QFrame):
     def _set_action_status(self, text: str, timeout_ms: int = 5000) -> None:
         """Show the status toast with *text*, auto-hiding after *timeout_ms*."""
         self._action_status.setText(text)
+        self._action_status_clear_timer.stop()
+        self._action_status_clear_text = text
         if text:
             self._status_toast.show()
         else:
             self._status_toast.hide()
         if timeout_ms > 0 and text:
-            QTimer.singleShot(timeout_ms, lambda: self._clear_action_if(text))
+            self._action_status_clear_timer.start(timeout_ms)
+
+    def _clear_action_timeout(self) -> None:
+        self._clear_action_if(self._action_status_clear_text)
 
     def _clear_action_if(self, expected: str) -> None:
         if self._action_status.text() == expected:
