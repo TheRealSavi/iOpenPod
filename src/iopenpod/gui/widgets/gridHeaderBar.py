@@ -55,6 +55,7 @@ class GridHeaderBar(QFrame):
 
     sort_changed = pyqtSignal(str, bool)   # (sort_key, reverse)
     search_changed = pyqtSignal(str)       # filter query
+    selection_grouping_changed = pyqtSignal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -103,6 +104,15 @@ class GridHeaderBar(QFrame):
         self._sort_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._sort_btn.clicked.connect(self._show_sort_menu)
 
+        self._selection_group_btn = QPushButton()
+        self._selection_group_btn.setObjectName("gridGroupBySelectedButton")
+        self._selection_group_btn.setCheckable(True)
+        self._selection_group_btn.setFixedSize(control_size, control_size)
+        self._selection_group_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._selection_group_btn.toggled.connect(self._on_selection_grouping_toggled)
+        self._selection_group_btn.hide()
+        self._update_selection_grouping_button()
+
         self._search = QLineEdit()
         self._search.setObjectName("gridSearchField")
         self._search.setPlaceholderText(f"Find in {self._category}")
@@ -123,6 +133,7 @@ class GridHeaderBar(QFrame):
         layout.addWidget(self._title)
         layout.addStretch()
         layout.addWidget(self._sort_btn)
+        layout.addWidget(self._selection_group_btn)
         layout.addWidget(self._search)
 
     # ── Public API ────────────────────────────────────────────────────────────
@@ -142,6 +153,26 @@ class GridHeaderBar(QFrame):
         self._update_sort_accessibility()
         # Emit the default sort so grid is reset even if called from other paths
         self.sort_changed.emit("title", False)
+
+    def setSelectionGroupingAvailable(self, available: bool) -> None:
+        """Show the selected-item grouping control for supporting grids."""
+
+        self._selection_group_btn.setVisible(available)
+        if not available:
+            self.setGroupBySelected(False)
+
+    def setGroupBySelected(self, enabled: bool) -> None:
+        """Set whether a supporting grid separates selected items."""
+
+        enabled = bool(enabled)
+        if self._selection_group_btn.isChecked() == enabled:
+            return
+        self._selection_group_btn.setChecked(enabled)
+
+    def isGroupedBySelected(self) -> bool:
+        """Return whether the selected-item grouping control is enabled."""
+
+        return self._selection_group_btn.isChecked()
 
     # ── Internal ──────────────────────────────────────────────────────────────
 
@@ -166,6 +197,35 @@ class GridHeaderBar(QFrame):
         self._active_label = label
         self._update_sort_accessibility()
         self.sort_changed.emit(key, reverse)
+
+    def _on_selection_grouping_toggled(self, enabled: bool) -> None:
+        self._update_selection_grouping_button()
+        self.selection_grouping_changed.emit(enabled)
+
+    def _update_selection_grouping_button(self) -> None:
+        enabled = self._selection_group_btn.isChecked()
+        control_size = BROWSER_SEARCH_CONTROL_SIZE
+        self._selection_group_btn.setStyleSheet(btn_css(
+            bg=Colors.ACCENT_DIM if enabled else Colors.SURFACE_RAISED,
+            bg_hover=Colors.ACCENT_HOVER if enabled else Colors.SURFACE_HOVER,
+            bg_press=Colors.ACCENT_PRESS if enabled else Colors.SURFACE_ACTIVE,
+            border=f"1px solid {Colors.ACCENT_BORDER if enabled else Colors.BORDER}",
+            radius=control_size // 2,
+            padding="0px",
+        ))
+        icon = glyph_icon(
+            "check-circle",
+            18,
+            Colors.ACCENT if enabled else Colors.TEXT_SECONDARY,
+        )
+        if icon is not None:
+            self._selection_group_btn.setIcon(icon)
+            self._selection_group_btn.setIconSize(QSize(18, 18))
+        label = "Group by selected"
+        self._selection_group_btn.setAccessibleName(label)
+        self._selection_group_btn.setToolTip(
+            f"{label}: {'on' if enabled else 'off'}"
+        )
 
     def _update_sort_accessibility(self) -> None:
         label = f"Sort: {self._active_label}"

@@ -12,7 +12,7 @@ from iopenpod.search import SearchText, matches_search_words, prepare_search_tex
 from ..artwork_rendering import virtual_artwork_payload
 from .gridItem import GridItem as MusicBrowserGridItem
 from .gridItem import GridItemModel
-from .pooledGrid import PooledGridView
+from .pooledGrid import SectionedPooledGridView
 
 if TYPE_CHECKING:
     from iopenpod.application.services import DeviceSessionService, LibraryCacheLike, SettingsService
@@ -61,7 +61,7 @@ class ArtworkResult:
 CachedArtworkLookup = ArtworkResult | None | _ArtCacheUnset
 
 
-class MusicBrowserGrid(PooledGridView):
+class MusicBrowserGrid(SectionedPooledGridView):
     """Grid view that displays albums, artists, or genres as clickable items."""
 
     item_selected = pyqtSignal(dict)
@@ -75,8 +75,9 @@ class MusicBrowserGrid(PooledGridView):
         library_cache: "LibraryCacheLike | None" = None,
         settings_service: "SettingsService | None" = None,
         multi_select_enabled: bool = False,
+        section_titles: Sequence[str] = (),
     ):
-        super().__init__()
+        super().__init__(section_titles=section_titles)
         self._device_sessions = device_sessions
         self._library_cache = library_cache
         self._settings_service = settings_service
@@ -275,7 +276,7 @@ class MusicBrowserGrid(PooledGridView):
             reverse=self._sort_reverse,
         )
         selection_changed = self._prune_item_selection_to(self._visible_records)
-        self._set_viewport_records(
+        self.setSectionRecords(
             self._visible_records,
             reset_scroll=reset_scroll,
             preserve_selection=False,
@@ -283,6 +284,13 @@ class MusicBrowserGrid(PooledGridView):
         )
         if selection_changed:
             self.item_selection_changed.emit(self.selectedItemData())
+
+    def _on_section_records_changed(self, records: Sequence[Any]) -> None:
+        self._visible_records = [
+            record
+            for record in records
+            if isinstance(record, GridRecord)
+        ]
 
     def selectedItemData(self) -> list[dict[str, Any]]:
         """Return selected item payloads in the current visible grid order."""

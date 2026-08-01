@@ -1,7 +1,7 @@
 """Canonical shared grid interface for all media browsers."""
 
 from .gridItem import GridImage, GridItemModel, GridItemRenderState
-from .pooledCardGrid import PooledGridView, PooledWidgetState
+from .pooledCardGrid import PooledGridView, PooledWidgetState, SectionedPooledGridView
 
 __all__ = [
     "GridImage",
@@ -9,4 +9,5 @@ __all__ = [
     "GridItemRenderState",
     "PooledGridView",
     "PooledWidgetState",
+    "SectionedPooledGridView",
 ]

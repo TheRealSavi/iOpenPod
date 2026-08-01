@@ -14,11 +14,11 @@ import os
 import shutil
 import threading
 from collections import defaultdict, deque
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from PIL import Image, ImageOps
 from PyQt6.QtCore import QPoint, QSize, Qt, QThread, QTimer, pyqtSignal
@@ -277,6 +277,12 @@ class PCMusicBrowserGrid(MusicBrowserGrid):
     """Subclass of MusicBrowserGrid that loads artwork from embedded tags
     (or folder images) instead of the iPod ArtworkDB."""
 
+    _SELECTION_SECTION_TITLES = (
+        "Selected",
+        "Partially Selected",
+        "Unselected",
+    )
+
     def __init__(
         self,
         *,
@@ -287,9 +293,35 @@ class PCMusicBrowserGrid(MusicBrowserGrid):
             device_sessions=device_sessions,
             settings_service=settings_service,
             multi_select_enabled=True,
+            section_titles=self._SELECTION_SECTION_TITLES,
         )
         self._pc_art_map: dict[str, list[str]] = {}
         self._pc_mode = False
+        self._selection_section_resolver: Callable[[dict[str, Any]], str] | None = None
+
+    def setSelectionSectionResolver(
+        self,
+        resolver: Callable[[dict[str, Any]], str],
+    ) -> None:
+        """Set the live selection-state lookup for the category's records."""
+
+        self._selection_section_resolver = resolver
+        self.refreshSectionGrouping()
+
+    def setGroupBySelected(self, enabled: bool) -> None:
+        """Enable or disable selected-state sections for this category."""
+
+        self.setSectionGroupingEnabled(enabled)
+
+    def isGroupedBySelected(self) -> bool:
+        """Return whether selected-state sections are enabled."""
+
+        return self.isSectionGroupingEnabled()
+
+    def _section_title_for_record(self, record: object) -> str:
+        if isinstance(record, GridRecord) and self._selection_section_resolver:
+            return self._selection_section_resolver(record.payload)
+        return "Unselected"
 
     def loadPCCategory(self, groups: dict[str, dict]):
         """Populate the grid from PC track groups.
@@ -864,31 +896,43 @@ class PCTrackListView(QWidget):
         if header.sortIndicatorSection() == 0:
             table.sortItems(0, header.sortIndicatorOrder())
 
+    def _set_checkbox_states(
+        self,
+        state_for_path: Callable[[str], Qt.CheckState],
+    ) -> None:
+        """Update every checkbox before re-enabling a checked-state sort."""
+
+        table = self._browser_list.table
+        sorting_enabled = table.isSortingEnabled()
+        signals_were_blocked = table.blockSignals(True)
+        if sorting_enabled:
+            table.setSortingEnabled(False)
+        try:
+            for row in range(table.rowCount()):
+                item = table.item(row, 0)
+                if item is None:
+                    continue
+                path = str(item.data(Qt.ItemDataRole.UserRole) or "")
+                item.setCheckState(state_for_path(path))
+        finally:
+            table.blockSignals(signals_were_blocked)
+            if sorting_enabled:
+                table.setSortingEnabled(True)
+        self._resort_by_selection_if_needed()
+
     def setAllChecked(self, checked: bool):
         state = Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked
-        t = self._browser_list.table
-        t.blockSignals(True)
-        for row in range(t.rowCount()):
-            item = t.item(row, 0)
-            if item:
-                item.setCheckState(state)
-        t.blockSignals(False)
-        self._resort_by_selection_if_needed()
+        self._set_checkbox_states(lambda _path: state)
 
     def updateCheckStates(self, selection: dict[str, bool]):
         """Refresh checkbox states from selection dict without emitting signals."""
-        t = self._browser_list.table
-        t.blockSignals(True)
-        for row in range(t.rowCount()):
-            item = t.item(row, 0)
-            if item:
-                path = item.data(Qt.ItemDataRole.UserRole)
-                checked = selection.get(path, True) if path else True
-                item.setCheckState(
-                    Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked
-                )
-        t.blockSignals(False)
-        self._resort_by_selection_if_needed()
+        self._set_checkbox_states(
+            lambda path: (
+                Qt.CheckState.Checked
+                if selection.get(path, True)
+                else Qt.CheckState.Unchecked
+            )
+        )
 
 
 # ── Photo list with checkboxes ──────────────────────────────────────────────
@@ -911,6 +955,7 @@ class PCPhotoListView(QWidget):
         self._photos: list[PCPhoto] = []
         self._selection: dict[str, bool] = {}
         self._visible_photos: list[PCPhoto] = []
+        self._visible_photos_by_path: dict[str, PCPhoto] = {}
         self._search_query = ""
         self._sort_key = "title"
         self._sort_reverse = False
@@ -942,8 +987,12 @@ class PCPhotoListView(QWidget):
 
         self._grid_header = GridHeaderBar()
         self._grid_header.setCategory("Photos")
+        self._grid_header.setSelectionGroupingAvailable(True)
         self._grid_header.sort_changed.connect(self._on_sort_changed)
         self._grid_header.search_changed.connect(self._on_search_changed)
+        self._grid_header.selection_grouping_changed.connect(
+            self._on_selection_grouping_changed
+        )
         list_lay.addWidget(self._grid_header)
 
         self._photo_scroll = make_scroll_area()
@@ -1098,13 +1147,6 @@ class PCPhotoListView(QWidget):
         return PCPhotoListView._encode_pc_photo(path, max_size=_PC_PHOTO_PREVIEW_MAX)
 
     def _refresh_list(self) -> None:
-        current_index = self._photo_grid.currentIndex()
-        current_path = (
-            self._visible_photos[current_index].source_path
-            if 0 <= current_index < len(self._visible_photos)
-            else None
-        )
-
         self._load_token += 1
         self._preview_request_token += 1
         self._thumb_timer.stop()
@@ -1116,13 +1158,15 @@ class PCPhotoListView(QWidget):
         self._visible_photos = self._sort_photos(
             [photo for photo in self._photos if self._matches_search(photo)]
         )
+        self._visible_photos_by_path = {
+            photo.source_path: photo
+            for photo in self._visible_photos
+            if photo.source_path
+        }
         records: list[PhotoTileModel] = []
-        target_index = -1
-        for index, photo in enumerate(self._visible_photos):
+        for photo in self._visible_photos:
             title = photo.display_name or photo.source_path
             checked = self._selection.get(photo.source_path, True)
-            if current_path and photo.source_path == current_path:
-                target_index = index
             records.append(
                 PhotoTileModel(
                     key=photo.source_path,
@@ -1136,7 +1180,7 @@ class PCPhotoListView(QWidget):
             records,
             reset_scroll=False,
             preserve_selection=True,
-            fallback_index=target_index if target_index >= 0 else (0 if records else -1),
+            fallback_index=0 if records else -1,
         )
         self._queue_visible_photo_loads(self._load_token)
         if not records:
@@ -1153,6 +1197,9 @@ class PCPhotoListView(QWidget):
     def _on_search_changed(self, query: str):
         self._search_query = query.strip()
         self._refresh_list()
+
+    def _on_selection_grouping_changed(self, enabled: bool) -> None:
+        self._photo_grid.setGroupBySelected(enabled)
 
     def setAllChecked(self, checked: bool):
         for photo in self._visible_photos:
@@ -1178,10 +1225,10 @@ class PCPhotoListView(QWidget):
         next_queue: deque[tuple[str, int]] = deque()
         next_queued_paths: set[str] = set()
         for index in range(prefetch_start, prefetch_stop):
-            if not (0 <= index < len(self._visible_photos)):
+            record = self._photo_grid.recordAt(index)
+            if record is None:
                 continue
-            photo = self._visible_photos[index]
-            path = photo.source_path
+            path = str(record.key)
             if (
                 not path
                 or path in self._tile_pixmap_cache
@@ -1265,11 +1312,16 @@ class PCPhotoListView(QWidget):
             self._preview_request_token += 1
             self._viewer.clearPreview()
             return
-        if row >= len(self._visible_photos):
+        record = self._photo_grid.recordAt(row)
+        if record is None:
             self._preview_request_token += 1
             self._viewer.clearPreview()
             return
-        photo = self._visible_photos[row]
+        photo = self._visible_photos_by_path.get(str(record.key))
+        if photo is None:
+            self._preview_request_token += 1
+            self._viewer.clearPreview()
+            return
 
         album_names = sorted(name for name in photo.album_names if name)
         summary_parts = [", ".join(album_names) if album_names else "All Photos"]
@@ -1326,20 +1378,21 @@ class PCPhotoListView(QWidget):
         self._preview_pixmap_cache[path] = pixmap
 
         current_index = self._photo_grid.currentIndex()
-        if not (0 <= current_index < len(self._visible_photos)):
+        current_record = self._photo_grid.recordAt(current_index)
+        if current_record is None:
             return
-        current_photo = self._visible_photos[current_index]
-        if current_photo.source_path == path:
+        if str(current_record.key) == path:
             self._viewer.setPreviewPixmap(pixmap)
 
     def _on_photo_checked_changed(self, index: int, checked: bool) -> None:
-        if index < 0 or index >= len(self._visible_photos):
+        record = self._photo_grid.recordAt(index)
+        if record is None:
             return
-        photo = self._visible_photos[index]
-        prior = self._selection.get(photo.source_path, True)
-        self._selection[photo.source_path] = checked
+        path = str(record.key)
+        prior = self._selection.get(path, True)
+        self._selection[path] = checked
         if prior != checked:
-            self.toggled.emit(photo.source_path, checked)
+            self.toggled.emit(path, checked)
 
 
 # ── Main browser widget ─────────────────────────────────────────────────────
@@ -1682,8 +1735,12 @@ class SelectiveSyncBrowser(QWidget):
         grid_page_lay.setSpacing(0)
 
         self._grid_header = GridHeaderBar()
+        self._grid_header.setSelectionGroupingAvailable(True)
         self._grid_header.sort_changed.connect(self._on_grid_sort)
         self._grid_header.search_changed.connect(self._on_grid_search)
+        self._grid_header.selection_grouping_changed.connect(
+            self._on_grid_selection_grouping_changed
+        )
         grid_page_lay.addWidget(self._grid_header)
 
         self._grid_stack = QStackedWidget()
@@ -1697,6 +1754,7 @@ class SelectiveSyncBrowser(QWidget):
                 device_sessions=self._device_sessions,
                 settings_service=self._settings_service,
             )
+            grid.setSelectionSectionResolver(self._selection_section_for_grid_item)
             grid.item_selected.connect(self._on_grid_item_clicked)
             grid.item_context_requested.connect(self._on_grid_item_context_requested)
             scroll = make_scroll_area()
@@ -2072,13 +2130,25 @@ class SelectiveSyncBrowser(QWidget):
                 item_id = id(item)
                 track = self._plan_playlist_to_track(item, section_key, index, label)
                 self._all_tracks.append(track)
-                self._selected_tracks[track.path] = item_id in selected_ids
                 self._plan_track_key_to_selection[track.path] = (bucket, item_id)
+                self._set_selection_state(
+                    "track",
+                    track.path,
+                    item_id in selected_ids,
+                    refresh_grouping=False,
+                    sync_plan=False,
+                )
 
                 playlist = self._plan_playlist_to_discovery(item, section_key, index, track.path)
                 playlists.append(playlist)
-                self._selected_playlists[playlist.source_path] = item_id in selected_ids
                 self._plan_playlist_key_to_selection[playlist.source_path] = (bucket, item_id)
+                self._set_selection_state(
+                    "playlist",
+                    playlist.source_path,
+                    item_id in selected_ids,
+                    refresh_grouping=False,
+                    sync_plan=False,
+                )
             self._playlist_discovery = SimpleNamespace(playlists=tuple(playlists))
 
         elif section_key in _PLAN_PHOTO_SECTION_KEYS:
@@ -2087,8 +2157,14 @@ class SelectiveSyncBrowser(QWidget):
                 item_id = id(item)
                 photo = self._plan_item_to_photo(item, section_key, index, label)
                 photos.append(photo)
-                self._selected_photos[photo.source_path] = item_id in selected_ids
                 self._plan_photo_key_to_selection[photo.source_path] = (bucket, item_id)
+                self._set_selection_state(
+                    "photo",
+                    photo.source_path,
+                    item_id in selected_ids,
+                    refresh_grouping=False,
+                    sync_plan=False,
+                )
             self._all_photos = photos
             self._photo_library = PCPhotoLibrary(
                 sync_root="",
@@ -2101,8 +2177,14 @@ class SelectiveSyncBrowser(QWidget):
                 item_id = id(item)
                 track = self._plan_sync_item_to_track(item, section_key, index, label)
                 self._all_tracks.append(track)
-                self._selected_tracks[track.path] = item_id in selected_ids
                 self._plan_track_key_to_selection[track.path] = (bucket, item_id)
+                self._set_selection_state(
+                    "track",
+                    track.path,
+                    item_id in selected_ids,
+                    refresh_grouping=False,
+                    sync_plan=False,
+                )
 
         self._build_groups()
         self._apply_sidebar_visibility()
@@ -2384,51 +2466,119 @@ class SelectiveSyncBrowser(QWidget):
         else:
             selected_ids.discard(item_id)
 
-    def _set_plan_track_selection(self, path: str, checked: bool) -> bool:
-        changed = self._selected_tracks.get(path, True) != checked
-        self._selected_tracks[path] = checked
-        target = self._plan_track_key_to_selection.get(path)
-        if target is not None:
-            bucket, item_id = target
-            self._set_plan_selection_item(bucket, item_id, checked)
+    def _selection_mapping(self, selection_type: str) -> dict[str, bool]:
+        if selection_type == "track":
+            return self._selected_tracks
+        if selection_type == "photo":
+            return self._selected_photos
+        if selection_type == "playlist":
+            return self._selected_playlists
+        raise ValueError(f"Unknown selection type: {selection_type}")
+
+    def _plan_selection_target(
+        self,
+        selection_type: str,
+        path: str,
+    ) -> tuple[str, int] | None:
+        if selection_type == "track":
+            return self.__dict__.get("_plan_track_key_to_selection", {}).get(path)
+        if selection_type == "photo":
+            return self.__dict__.get("_plan_photo_key_to_selection", {}).get(path)
+        if selection_type == "playlist":
+            return self.__dict__.get("_plan_playlist_key_to_selection", {}).get(path)
+        raise ValueError(f"Unknown selection type: {selection_type}")
+
+    def _set_selection_state(
+        self,
+        selection_type: str,
+        path: str,
+        checked: bool,
+        *,
+        refresh_grouping: bool = True,
+        sync_plan: bool | None = None,
+    ) -> bool:
+        selections = self._selection_mapping(selection_type)
+        checked = bool(checked)
+        changed = selections.get(path, True) != checked
+        selections[path] = checked
+
+        if sync_plan is None:
+            sync_plan = self._is_plan_selection_mode()
+        if sync_plan:
+            target = self._plan_selection_target(selection_type, path)
+            if target is not None:
+                bucket, item_id = target
+                self._set_plan_selection_item(bucket, item_id, checked)
+
+        if changed and refresh_grouping and selection_type != "photo":
+            self._refresh_grid_selection_grouping()
         return changed
+
+    def _set_selection_states(
+        self,
+        selection_type: str,
+        paths: Iterable[str],
+        checked: bool,
+        *,
+        refresh_grouping: bool = True,
+    ) -> bool:
+        changed = False
+        for path in paths:
+            if not path:
+                continue
+            changed = self._set_selection_state(
+                selection_type,
+                path,
+                checked,
+                refresh_grouping=False,
+            ) or changed
+        if changed and refresh_grouping and selection_type != "photo":
+            self._refresh_grid_selection_grouping()
+        return changed
+
+    def _set_track_selection(self, path: str, checked: bool) -> bool:
+        return self._set_selection_state("track", path, checked)
+
+    def _set_photo_selection(self, path: str, checked: bool) -> bool:
+        return self._set_selection_state("photo", path, checked)
+
+    def _set_playlist_selection(self, path: str, checked: bool) -> bool:
+        return self._set_selection_state("playlist", path, checked)
+
+    def _set_plan_track_selection(self, path: str, checked: bool) -> bool:
+        return self._set_selection_state("track", path, checked, sync_plan=True)
 
     def _set_plan_photo_selection(self, path: str, checked: bool) -> bool:
-        changed = self._selected_photos.get(path, True) != checked
-        self._selected_photos[path] = checked
-        target = self._plan_photo_key_to_selection.get(path)
-        if target is not None:
-            bucket, item_id = target
-            self._set_plan_selection_item(bucket, item_id, checked)
-        return changed
+        return self._set_selection_state("photo", path, checked, sync_plan=True)
 
     def _set_plan_playlist_selection(self, path: str, checked: bool) -> bool:
-        changed = self._selected_playlists.get(path, True) != checked
-        self._selected_playlists[path] = checked
-        target = self._plan_playlist_key_to_selection.get(path)
-        if target is not None:
-            bucket, item_id = target
-            self._set_plan_selection_item(bucket, item_id, checked)
-        return changed
+        return self._set_selection_state("playlist", path, checked, sync_plan=True)
 
     def _set_current_plan_action_checked(self, checked: bool) -> None:
         section = self._plan_section_by_key.get(self._current_plan_section_key)
         if section is None:
             return
-        bucket = str(section["bucket"])
-        item_ids = {id(item) for item in self._list_plan_items(section.get("items"))}
-        selected_ids = self._plan_selection_state.setdefault(bucket, set())
-        if checked:
-            selected_ids.update(item_ids)
-        else:
-            selected_ids.difference_update(item_ids)
-
-        for path in list(self._selected_tracks):
-            self._selected_tracks[path] = checked
-        for path in list(self._selected_photos):
-            self._selected_photos[path] = checked
-        for path in list(self._selected_playlists):
-            self._selected_playlists[path] = checked
+        changed = False
+        changed = self._set_selection_states(
+            "track",
+            self._selected_tracks,
+            checked,
+            refresh_grouping=False,
+        ) or changed
+        changed = self._set_selection_states(
+            "photo",
+            self._selected_photos,
+            checked,
+            refresh_grouping=False,
+        ) or changed
+        changed = self._set_selection_states(
+            "playlist",
+            self._selected_playlists,
+            checked,
+            refresh_grouping=False,
+        ) or changed
+        if changed:
+            self._refresh_grid_selection_grouping()
         if self._content.currentIndex() == 2:
             self._track_list.setAllChecked(checked)
         if self._content.currentIndex() == 3:
@@ -3175,6 +3325,8 @@ class SelectiveSyncBrowser(QWidget):
             if grid and (grid._sort_key != "title" or grid._sort_reverse
                          or grid._search_query):
                 grid.resetFilters()
+            if grid:
+                grid.setGroupBySelected(self._grid_header.isGroupedBySelected())
             # Switch the inner grid stack to the right category
             scroll = self._grid_scrolls.get(mode)
             if scroll:
@@ -3196,6 +3348,51 @@ class SelectiveSyncBrowser(QWidget):
         grid = self._grids.get(self._current_mode)
         if grid:
             grid.setSearchFilter(query)
+
+    def _on_grid_selection_grouping_changed(self, enabled: bool) -> None:
+        grid = self._grids.get(self._current_mode)
+        if grid:
+            grid.setGroupBySelected(enabled)
+
+    def _selection_section_for_grid_item(self, item: dict[str, Any]) -> str:
+        """Classify a category card from its constituent track selections."""
+
+        category = str(item.get("category") or self._current_mode)
+        title = str(item.get("title") or "")
+        group = self._groups.get(category, {}).get(title)
+        if group is None:
+            return "Unselected"
+
+        states = [
+            self._selected_tracks.get(path, True)
+            for track in group.get("tracks", [])
+            if (path := str(getattr(track, "path", "") or ""))
+        ]
+        if not states:
+            source_path = str(group.get("source_path", "") or "")
+            if source_path:
+                return (
+                    "Selected"
+                    if self._selected_playlists.get(source_path, True)
+                    else "Unselected"
+                )
+            return "Unselected"
+        if all(states):
+            return "Selected"
+        if any(states):
+            return "Partially Selected"
+        return "Unselected"
+
+    def _refresh_grid_selection_grouping(self, mode: str | None = None) -> None:
+        grids_by_mode = getattr(self, "_grids", {})
+        grids = (
+            (grids_by_mode.get(mode),)
+            if mode is not None
+            else tuple(grids_by_mode.values())
+        )
+        for grid in grids:
+            if grid is not None:
+                grid.refreshSectionGrouping()
 
     def _highlight_mode(self, active: str):
         for cat, btn in self._mode_buttons.items():
@@ -3316,17 +3513,11 @@ class SelectiveSyncBrowser(QWidget):
         return tracks
 
     def _set_grid_tracks_checked(self, tracks: list, checked: bool):
-        changed = False
-        for track in tracks:
-            path = getattr(track, "path", "")
-            if not path:
-                continue
-            if self._is_plan_selection_mode():
-                changed = self._set_plan_track_selection(path, checked) or changed
-            else:
-                if self._selected_tracks.get(path, True) != checked:
-                    changed = True
-                self._selected_tracks[path] = checked
+        changed = self._set_selection_states(
+            "track",
+            (str(getattr(track, "path", "") or "") for track in tracks),
+            checked,
+        )
         content = self.__dict__.get("_content")
         if isinstance(content, QStackedWidget) and content.currentIndex() == 2:
             self._track_list.updateCheckStates(self._selected_tracks)
@@ -3337,7 +3528,7 @@ class SelectiveSyncBrowser(QWidget):
         if self._current_mode != "Playlists":
             return
         groups = self._groups.get("Playlists", {})
-        changed = False
+        paths: list[str] = []
         for item in items:
             key = item.get("title", "")
             group = groups.get(key)
@@ -3346,12 +3537,8 @@ class SelectiveSyncBrowser(QWidget):
             source_path = str(group.get("source_path", "") or "")
             if not source_path:
                 continue
-            if self._is_plan_selection_mode():
-                changed = self._set_plan_playlist_selection(source_path, checked) or changed
-            else:
-                if self._selected_playlists.get(source_path, True) != checked:
-                    changed = True
-                self._selected_playlists[source_path] = checked
+            paths.append(source_path)
+        changed = self._set_selection_states("playlist", paths, checked)
         if changed:
             self._update_footer()
 
@@ -3361,116 +3548,162 @@ class SelectiveSyncBrowser(QWidget):
         group = self._groups.get("Playlists", {}).get(self._current_group, {})
         return str(group.get("source_path", "") or "")
 
-    def _sync_current_playlist_selection_from_tracks(self) -> None:
+    def _sync_current_playlist_selection_from_tracks(
+        self,
+        *,
+        refresh_grouping: bool = True,
+    ) -> bool:
         source_path = self._current_playlist_source_path()
         if not source_path:
-            return
+            return False
         any_selected = any(
             self._selected_tracks.get(getattr(track, "path", ""), False)
             for track in self._current_group_tracks
         )
-        if self._is_plan_selection_mode():
-            self._set_plan_playlist_selection(source_path, any_selected)
-            return
-        self._selected_playlists[source_path] = any_selected
+        return self._set_selection_state(
+            "playlist",
+            source_path,
+            any_selected,
+            refresh_grouping=refresh_grouping,
+        )
 
     def _on_track_back(self):
         self._current_group = None
         self._current_group_tracks = []
+        self._refresh_grid_selection_grouping(self._current_mode)
         # Grid is still intact behind the track list — just switch back
         self._content.setCurrentIndex(1)
 
     # ── Checkbox toggling ────────────────────────────────────────────────
 
     def _on_track_toggled(self, path: str, checked: bool):
-        if self._is_plan_selection_mode():
-            self._set_plan_track_selection(path, checked)
-            self._sync_current_playlist_selection_from_tracks()
-            self._update_footer()
-            return
-        self._selected_tracks[path] = checked
-        self._sync_current_playlist_selection_from_tracks()
+        changed = self._set_selection_state(
+            "track",
+            path,
+            checked,
+            refresh_grouping=False,
+        )
+        changed = self._sync_current_playlist_selection_from_tracks(
+            refresh_grouping=False,
+        ) or changed
+        if changed:
+            self._refresh_grid_selection_grouping()
         self._update_footer()
 
     def _on_select_all(self):
         if self._is_plan_selection_mode():
             self._set_current_plan_action_checked(True)
             return
-        for path in self._selected_tracks:
-            self._selected_tracks[path] = True
-        for path in self._selected_photos:
-            self._selected_photos[path] = True
-        for path in self._selected_playlists:
-            self._selected_playlists[path] = True
+        changed = False
+        changed = self._set_selection_states(
+            "track",
+            self._selected_tracks,
+            True,
+            refresh_grouping=False,
+        ) or changed
+        changed = self._set_selection_states(
+            "photo",
+            self._selected_photos,
+            True,
+            refresh_grouping=False,
+        ) or changed
+        changed = self._set_selection_states(
+            "playlist",
+            self._selected_playlists,
+            True,
+            refresh_grouping=False,
+        ) or changed
         # Refresh track list if visible
         if self._content.currentIndex() == 2:
             self._track_list.setAllChecked(True)
         if self._content.currentIndex() == 3:
             self._photo_list.setAllChecked(True)
+        if changed:
+            self._refresh_grid_selection_grouping()
         self._update_footer()
 
     def _on_deselect_all(self):
         if self._is_plan_selection_mode():
             self._set_current_plan_action_checked(False)
             return
-        for path in self._selected_tracks:
-            self._selected_tracks[path] = False
-        for path in self._selected_photos:
-            self._selected_photos[path] = False
-        for path in self._selected_playlists:
-            self._selected_playlists[path] = False
+        changed = False
+        changed = self._set_selection_states(
+            "track",
+            self._selected_tracks,
+            False,
+            refresh_grouping=False,
+        ) or changed
+        changed = self._set_selection_states(
+            "photo",
+            self._selected_photos,
+            False,
+            refresh_grouping=False,
+        ) or changed
+        changed = self._set_selection_states(
+            "playlist",
+            self._selected_playlists,
+            False,
+            refresh_grouping=False,
+        ) or changed
         if self._content.currentIndex() == 2:
             self._track_list.setAllChecked(False)
         if self._content.currentIndex() == 3:
             self._photo_list.setAllChecked(False)
+        if changed:
+            self._refresh_grid_selection_grouping()
         self._update_footer()
 
     def _on_group_select_all(self):
         """Select all tracks in the current drilled-in group."""
-        for t in self._current_group_tracks:
-            if self._is_plan_selection_mode():
-                self._set_plan_track_selection(t.path, True)
-            else:
-                self._selected_tracks[t.path] = True
+        changed = self._set_selection_states(
+            "track",
+            (str(getattr(track, "path", "") or "") for track in self._current_group_tracks),
+            True,
+            refresh_grouping=False,
+        )
         source_path = self._current_playlist_source_path()
         if source_path:
-            if self._is_plan_selection_mode():
-                self._set_plan_playlist_selection(source_path, True)
-            else:
-                self._selected_playlists[source_path] = True
+            changed = self._set_selection_state(
+                "playlist",
+                source_path,
+                True,
+                refresh_grouping=False,
+            ) or changed
         self._track_list.setAllChecked(True)
+        if changed:
+            self._refresh_grid_selection_grouping()
         self._update_footer()
 
     def _on_group_deselect_all(self):
         """Deselect all tracks in the current drilled-in group."""
-        for t in self._current_group_tracks:
-            if self._is_plan_selection_mode():
-                self._set_plan_track_selection(t.path, False)
-            else:
-                self._selected_tracks[t.path] = False
+        changed = self._set_selection_states(
+            "track",
+            (str(getattr(track, "path", "") or "") for track in self._current_group_tracks),
+            False,
+            refresh_grouping=False,
+        )
         source_path = self._current_playlist_source_path()
         if source_path:
-            if self._is_plan_selection_mode():
-                self._set_plan_playlist_selection(source_path, False)
-            else:
-                self._selected_playlists[source_path] = False
+            changed = self._set_selection_state(
+                "playlist",
+                source_path,
+                False,
+                refresh_grouping=False,
+            ) or changed
         self._track_list.setAllChecked(False)
+        if changed:
+            self._refresh_grid_selection_grouping()
         self._update_footer()
 
     def _on_photo_toggled(self, path: str, checked: bool):
-        if self._is_plan_selection_mode():
-            self._set_plan_photo_selection(path, checked)
-            self._update_footer()
-            return
-        self._selected_photos[path] = checked
+        self._set_photo_selection(path, checked)
         self._update_footer()
 
     def _on_select_all_photos(self):
         if self._is_plan_selection_mode():
             self._set_current_plan_action_checked(True)
             return
-        for path in self._selected_photos:
-            self._selected_photos[path] = True
+        self._set_selection_states("photo", self._selected_photos, True)
         self._photo_list.setAllChecked(True)
         self._update_footer()
 
@@ -3478,8 +3711,7 @@ class SelectiveSyncBrowser(QWidget):
         if self._is_plan_selection_mode():
             self._set_current_plan_action_checked(False)
             return
-        for path in self._selected_photos:
-            self._selected_photos[path] = False
+        self._set_selection_states("photo", self._selected_photos, False)
         self._photo_list.setAllChecked(False)
         self._update_footer()
 

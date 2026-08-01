@@ -5,7 +5,7 @@ from typing import cast
 
 from PyQt6.QtCore import QPoint
 from PyQt6.QtGui import QColor, QContextMenuEvent, QPixmap
-from PyQt6.QtWidgets import QApplication, QScrollArea, QWidget
+from PyQt6.QtWidgets import QApplication, QLabel, QScrollArea, QWidget
 
 from iopenpod.gui.styles import Colors, display_accent_rgb
 from iopenpod.gui.widgets.photoTile import PhotoGridTile
@@ -50,6 +50,22 @@ def _build_records(count: int) -> list[PhotoTileModel]:
 def _as_photo_tile(widget: QWidget) -> PhotoGridTile:
     assert isinstance(widget, PhotoGridTile)
     return widget
+
+
+def _record_key_at(grid: PooledPhotoGridView, index: int) -> object:
+    record = grid.recordAt(index)
+    assert record is not None
+    return record.key
+
+
+def _record_is_unchecked(grid: PooledPhotoGridView, index: int) -> bool:
+    record = grid.recordAt(index)
+    return record is not None and not record.checked
+
+
+def _tile_is_unchecked(widget: QWidget) -> bool:
+    checkbox = _as_photo_tile(widget).checkbox
+    return checkbox is not None and not checkbox.isChecked()
 
 
 def _send_context_menu(widget: PhotoGridTile) -> None:
@@ -111,6 +127,83 @@ def test_pooled_photo_grid_preserves_checked_state_by_record_key(qtbot):
     checkbox = tile.checkbox
     assert checkbox is not None
     assert checkbox.isChecked() is True
+
+
+def test_pooled_photo_grid_groups_selected_records_under_section_headers(qtbot):
+    _scroll, grid = _mount_grid(qtbot, checkable=True)
+    records = [
+        PhotoTileModel(key="unselected-1", title="Unselected 1", checked=False),
+        PhotoTileModel(key="selected-1", title="Selected 1", checked=True),
+        PhotoTileModel(key="unselected-2", title="Unselected 2", checked=False),
+        PhotoTileModel(key="selected-2", title="Selected 2", checked=True),
+    ]
+
+    grid.setRecords(records, fallback_index=0)
+    grid.setGroupBySelected(True)
+    qtbot.waitUntil(lambda: len(grid.gridItems) == 4, timeout=2000)
+
+    assert [_record_key_at(grid, index) for index in range(grid.count())] == [
+        "selected-1",
+        "selected-2",
+        "unselected-1",
+        "unselected-2",
+    ]
+    selected_header = grid.findChild(QLabel, "selectedPhotoSectionHeader")
+    unselected_header = grid.findChild(QLabel, "unselectedPhotoSectionHeader")
+    assert selected_header is not None and not selected_header.isHidden()
+    assert unselected_header is not None and not unselected_header.isHidden()
+    assert selected_header.styleSheet().endswith("border: none;")
+    assert selected_header.y() < grid._visible_widgets[0].y()
+    assert unselected_header.y() < grid._visible_widgets[2].y()
+
+    grid.setRecordChecked("selected-1", False)
+
+    assert [_record_key_at(grid, index) for index in range(grid.count())] == [
+        "selected-2",
+        "unselected-1",
+        "selected-1",
+        "unselected-2",
+    ]
+
+
+def test_pooled_photo_grid_rebinds_same_order_selection_refreshes(qtbot):
+    _scroll, grid = _mount_grid(qtbot, checkable=True)
+    grid.setRecords(
+        [
+            PhotoTileModel(key="alpha", title="Alpha", checked=True),
+            PhotoTileModel(key="bravo", title="Bravo", checked=True),
+        ],
+        fallback_index=0,
+    )
+    grid.setGroupBySelected(True)
+    qtbot.waitUntil(lambda: len(grid.gridItems) == 2, timeout=2000)
+
+    grid.setRecords(
+        [
+            PhotoTileModel(key="alpha", title="Alpha", checked=False),
+            PhotoTileModel(key="bravo", title="Bravo", checked=False),
+        ],
+        reset_scroll=False,
+        fallback_index=0,
+    )
+
+    selected_header = grid.findChild(QLabel, "selectedPhotoSectionHeader")
+    unselected_header = grid.findChild(QLabel, "unselectedPhotoSectionHeader")
+    assert selected_header is not None
+    assert unselected_header is not None
+    qtbot.waitUntil(
+        lambda: all(
+            _record_is_unchecked(grid, index)
+            for index in range(grid.count())
+        )
+        and selected_header.isHidden()
+        and not unselected_header.isHidden(),
+        timeout=2000,
+    )
+    assert all(
+        _tile_is_unchecked(tile)
+        for tile in grid.gridItems
+    )
 
 
 def test_pooled_photo_grid_emits_context_menu_target(qtbot):

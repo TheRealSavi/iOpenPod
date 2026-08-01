@@ -44,3 +44,20 @@ def test_grid_header_category_updates_title_and_contextual_search(qtbot) -> None
     search = header.findChild(QLineEdit, "gridSearchField")
     assert title is not None and title.text() == "Artists"
     assert search is not None and search.placeholderText() == "Find in Artists"
+
+
+def test_grid_header_can_toggle_selected_item_grouping(qtbot) -> None:
+    header = GridHeaderBar()
+    qtbot.addWidget(header)
+    toggle = header.findChild(QPushButton, "gridGroupBySelectedButton")
+
+    assert toggle is not None
+    assert toggle.isHidden()
+
+    header.setSelectionGroupingAvailable(True)
+    with qtbot.waitSignal(header.selection_grouping_changed) as signal:
+        toggle.click()
+
+    assert signal.args == [True]
+    assert toggle.isChecked()
+    assert toggle.accessibleName() == "Group by selected"

@@ -5,9 +5,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
 from PyQt6.QtCore import QEvent, QObject, QPoint, QRect, QTimer, pyqtSignal
-from PyQt6.QtWidgets import QFrame, QScrollArea, QSizePolicy, QWidget
+from PyQt6.QtGui import QFont
+from PyQt6.QtWidgets import QFrame, QLabel, QScrollArea, QSizePolicy, QWidget
 
-from ..styles import Metrics
+from ..styles import FONT_FAMILY, Colors, Metrics
 from .gridItem import GridImage, GridItem, GridItemModel
 
 if TYPE_CHECKING:
@@ -56,7 +57,7 @@ class PooledGridView(QFrame):
         self._scroll_area: QScrollArea | None = None
         self._refresh_scheduled = False
         self._refresh_force = False
-        self._last_view_state: tuple[int, int, int, int] | None = None
+        self._last_view_state: tuple[object, ...] | None = None
 
         self._viewport_records: list[Any] = []
         self._widget_pool: list[QWidget] = []
@@ -125,6 +126,7 @@ class PooledGridView(QFrame):
             self._viewport_records = []
             self._record_index_by_key.clear()
 
+        self._clear_layout_chrome()
         self.setMinimumHeight(0)
         self.visibleIndicesChanged.emit(tuple())
 
@@ -334,13 +336,20 @@ class PooledGridView(QFrame):
         count = len(self._viewport_records)
         row_pitch = Metrics.GRID_ITEM_H + Metrics.GRID_SPACING
         margin = int(getattr(Metrics, "GRID_MARGIN_Y", Metrics.GRID_SPACING))
-        total_rows = (count + columns - 1) // columns if count else 0
-        total_height = (
-            margin * 2
-            + total_rows * Metrics.GRID_ITEM_H
-            + max(0, total_rows - 1) * Metrics.GRID_SPACING
+        total_height = self._layout_total_height(
+            count=count,
+            columns=columns,
+            margin=margin,
+            row_pitch=row_pitch,
         )
         self.setMinimumHeight(total_height)
+        self._update_layout_chrome(
+            count=count,
+            columns=columns,
+            width=width,
+            margin=margin,
+            row_pitch=row_pitch,
+        )
 
         if count == 0:
             self._recycle_all_visible_widgets()
@@ -356,7 +365,7 @@ class PooledGridView(QFrame):
             self._schedule_viewport_refresh(force=True)
             return
 
-        start_index, end_index = self._compute_visible_range(
+        visible_indices = tuple(self._visible_record_indices(
             count=count,
             columns=columns,
             scroll_value=scroll_value,
@@ -364,21 +373,21 @@ class PooledGridView(QFrame):
             margin=margin,
             row_pitch=row_pitch,
             row_buffer=_ROW_BUFFER,
-        )
+        ))
 
-        view_state = (start_index, end_index, columns, count)
+        view_state = (visible_indices, columns, count)
         if self._last_view_state == view_state and not self._refresh_force:
             return
 
         self._last_view_state = view_state
         self._refresh_force = False
 
-        needed_indices = set(range(start_index, end_index))
+        needed_indices = set(visible_indices)
         for index in list(self._visible_widgets.keys()):
             if index not in needed_indices:
                 self._release_widget(index)
 
-        for index in range(start_index, end_index):
+        for index in visible_indices:
             record = self._viewport_records[index]
             widget = self._visible_widgets.get(index)
             if widget is None:
@@ -398,14 +407,13 @@ class PooledGridView(QFrame):
                     record_identity=identity,
                 )
 
-            row = index // columns
-            col = index % columns
-            x = self._row_x_layout(
+            x, y = self._record_position(
+                index=index,
                 width=width,
-                column_count=columns,
-                column_index=col,
+                columns=columns,
+                margin=margin,
+                row_pitch=row_pitch,
             )
-            y = margin + row * (Metrics.GRID_ITEM_H + Metrics.GRID_SPACING)
             widget.setGeometry(QRect(x, y, Metrics.GRID_ITEM_W, Metrics.GRID_ITEM_H))
             self._apply_widget_selection(widget, index == self._current_index)
             widget.show()
@@ -482,6 +490,73 @@ class PooledGridView(QFrame):
         start_index = first_row * columns
         end_index = min(count, (last_row + 1) * columns)
         return start_index, end_index
+
+    def _layout_total_height(
+        self,
+        *,
+        count: int,
+        columns: int,
+        margin: int,
+        row_pitch: int,
+    ) -> int:
+        total_rows = (count + columns - 1) // columns if count else 0
+        return margin * 2 + total_rows * Metrics.GRID_ITEM_H + max(0, total_rows - 1) * Metrics.GRID_SPACING
+
+    def _visible_record_indices(
+        self,
+        *,
+        count: int,
+        columns: int,
+        scroll_value: int,
+        viewport_height: int,
+        margin: int,
+        row_pitch: int,
+        row_buffer: int,
+    ) -> Sequence[int]:
+        start_index, end_index = self._compute_visible_range(
+            count=count,
+            columns=columns,
+            scroll_value=scroll_value,
+            viewport_height=viewport_height,
+            margin=margin,
+            row_pitch=row_pitch,
+            row_buffer=row_buffer,
+        )
+        return range(start_index, end_index)
+
+    def _record_position(
+        self,
+        *,
+        index: int,
+        width: int,
+        columns: int,
+        margin: int,
+        row_pitch: int,
+    ) -> tuple[int, int]:
+        row = index // columns
+        col = index % columns
+        return (
+            self._row_x_layout(
+                width=width,
+                column_count=columns,
+                column_index=col,
+            ),
+            margin + row * row_pitch,
+        )
+
+    def _update_layout_chrome(
+        self,
+        *,
+        count: int,
+        columns: int,
+        width: int,
+        margin: int,
+        row_pitch: int,
+    ) -> None:
+        """Update non-record widgets that participate in this grid's layout."""
+
+    def _clear_layout_chrome(self) -> None:
+        """Clear non-record widgets when all grid content is removed."""
 
     def _acquire_widget(self) -> QWidget:
         if self._widget_pool:
@@ -606,6 +681,353 @@ class PooledGridView(QFrame):
 
     def _after_viewport_refresh(self) -> None:
         """Hook called after visible widgets have been refreshed."""
+
+
+@dataclass(frozen=True)
+class _SectionLayout:
+    title: str
+    first_index: int
+    count: int
+    header_y: int
+    tiles_y: int
+
+
+class SectionedPooledGridView(PooledGridView):
+    """Virtualized grid that can arrange records beneath named section headers."""
+
+    _SECTION_HEADER_HEIGHT = 30
+    _SECTION_GAP = 16
+
+    def __init__(
+        self,
+        *,
+        section_titles: Sequence[str] = (),
+        section_header_object_names: dict[str, str] | None = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(**kwargs)
+        self._section_titles = tuple(section_titles)
+        self._group_by_sections = False
+        self._section_source_records: list[Any] = []
+        self._section_layouts: tuple[_SectionLayout, ...] = ()
+        object_names = section_header_object_names or {}
+        self._section_headers = {
+            title: self._create_section_header(
+                object_names.get(title, f"pooledGridSectionHeader{index}"),
+                title,
+            )
+            for index, title in enumerate(self._section_titles)
+        }
+
+    def setSectionGroupingEnabled(self, enabled: bool) -> None:
+        """Enable or disable layout sections while preserving source order."""
+
+        enabled = bool(enabled) and bool(self._section_titles)
+        if self._group_by_sections == enabled:
+            return
+        self._group_by_sections = enabled
+        self._replace_section_display_records(
+            reset_scroll=False,
+            preserve_selection=True,
+            fallback_index=-1,
+        )
+
+    def isSectionGroupingEnabled(self) -> bool:
+        """Return whether records are currently separated into sections."""
+
+        return self._group_by_sections
+
+    def setRecords(
+        self,
+        records: Sequence[GridItemModel],
+        *,
+        reset_scroll: bool = True,
+        preserve_selection: bool = True,
+        fallback_index: int = -1,
+    ) -> None:
+        self.setSectionRecords(
+            records,
+            reset_scroll=reset_scroll,
+            preserve_selection=preserve_selection,
+            fallback_index=fallback_index,
+        )
+
+    def setSectionRecords(
+        self,
+        records: Sequence[Any],
+        *,
+        reset_scroll: bool = True,
+        preserve_selection: bool = True,
+        fallback_index: int = -1,
+    ) -> None:
+        """Set source records whose normal order is restored when grouping ends."""
+
+        keys = [self._record_identity(record) for record in records]
+        if len(keys) != len(set(keys)):
+            raise ValueError("Pooled grid record keys must be unique")
+        self._section_source_records = list(records)
+        self._replace_section_display_records(
+            reset_scroll=reset_scroll,
+            preserve_selection=preserve_selection,
+            fallback_index=fallback_index,
+        )
+
+    def refreshSectionGrouping(self) -> None:
+        """Reclassify source records after their selection state changes."""
+
+        if not self._group_by_sections:
+            return
+        self._replace_section_display_records(
+            reset_scroll=False,
+            preserve_selection=True,
+            fallback_index=-1,
+        )
+
+    def clearGrid(self, preserve_all_items: bool = False) -> None:
+        if not preserve_all_items:
+            self._section_source_records = []
+        super().clearGrid(preserve_all_items=preserve_all_items)
+
+    def setRecordChecked(self, key: Hashable, checked: bool) -> None:
+        super().setRecordChecked(key, checked)
+        self.refreshSectionGrouping()
+
+    def setAllRecordsChecked(self, checked: bool) -> None:
+        super().setAllRecordsChecked(checked)
+        self.refreshSectionGrouping()
+
+    def _create_section_header(self, object_name: str, text: str) -> QLabel:
+        header = QLabel(text, self)
+        header.setObjectName(object_name)
+        header.setFont(
+            QFont(
+                FONT_FAMILY,
+                Metrics.FONT_BROWSER_TITLE,
+                QFont.Weight.DemiBold,
+            )
+        )
+        header.setStyleSheet(
+            f"color: {Colors.TEXT_PRIMARY}; background: transparent; border: none;"
+        )
+        header.hide()
+        return header
+
+    def _section_title_for_record(self, record: Any) -> str:
+        """Return one configured section title for *record*."""
+
+        return self._section_titles[-1] if self._section_titles else ""
+
+    def _normalized_section_title(self, record: Any) -> str:
+        title = self._section_title_for_record(record)
+        if title in self._section_headers:
+            return title
+        return self._section_titles[-1] if self._section_titles else ""
+
+    def _grouped_records(self, records: Sequence[Any]) -> list[Any]:
+        if not self._group_by_sections:
+            return list(records)
+        records_by_section = {title: [] for title in self._section_titles}
+        for record in records:
+            records_by_section[self._normalized_section_title(record)].append(record)
+        return [
+            record
+            for title in self._section_titles
+            for record in records_by_section[title]
+        ]
+
+    def _replace_section_display_records(
+        self,
+        *,
+        reset_scroll: bool,
+        preserve_selection: bool,
+        fallback_index: int,
+    ) -> None:
+        records = self._grouped_records(self._section_source_records)
+        self._record_index_by_key = {
+            self._record_identity(record): index
+            for index, record in enumerate(records)
+        }
+        self._on_section_records_changed(records)
+        PooledGridView._set_viewport_records(
+            self,
+            records,
+            reset_scroll=reset_scroll,
+            preserve_selection=preserve_selection,
+            fallback_index=fallback_index,
+        )
+
+    def _on_section_records_changed(self, records: Sequence[Any]) -> None:
+        """Hook for subclasses with a separate source-record collection."""
+
+    def _layout_total_height(
+        self,
+        *,
+        count: int,
+        columns: int,
+        margin: int,
+        row_pitch: int,
+    ) -> int:
+        if not self._group_by_sections:
+            self._section_layouts = ()
+            return super()._layout_total_height(
+                count=count,
+                columns=columns,
+                margin=margin,
+                row_pitch=row_pitch,
+            )
+
+        self._section_layouts, content_bottom = self._build_section_layouts(
+            count=count,
+            columns=columns,
+            margin=margin,
+        )
+        return content_bottom + margin
+
+    def _visible_record_indices(
+        self,
+        *,
+        count: int,
+        columns: int,
+        scroll_value: int,
+        viewport_height: int,
+        margin: int,
+        row_pitch: int,
+        row_buffer: int,
+    ) -> Sequence[int]:
+        if not self._group_by_sections:
+            return super()._visible_record_indices(
+                count=count,
+                columns=columns,
+                scroll_value=scroll_value,
+                viewport_height=viewport_height,
+                margin=margin,
+                row_pitch=row_pitch,
+                row_buffer=row_buffer,
+            )
+
+        visible: list[int] = []
+        viewport_bottom = scroll_value + viewport_height
+        for section in self._section_layouts:
+            rows = (section.count + columns - 1) // columns
+            first_row = max(0, (scroll_value - section.tiles_y) // row_pitch)
+            last_row = min(
+                rows - 1,
+                (viewport_bottom - section.tiles_y) // row_pitch,
+            )
+            first_row = max(0, first_row - row_buffer)
+            last_row = min(rows - 1, last_row + row_buffer)
+            if last_row < first_row:
+                continue
+            start = section.first_index + first_row * columns
+            end = min(
+                section.first_index + section.count,
+                section.first_index + (last_row + 1) * columns,
+            )
+            visible.extend(range(start, end))
+        return visible
+
+    def _record_position(
+        self,
+        *,
+        index: int,
+        width: int,
+        columns: int,
+        margin: int,
+        row_pitch: int,
+    ) -> tuple[int, int]:
+        if not self._group_by_sections:
+            return super()._record_position(
+                index=index,
+                width=width,
+                columns=columns,
+                margin=margin,
+                row_pitch=row_pitch,
+            )
+
+        for section in self._section_layouts:
+            if section.first_index <= index < section.first_index + section.count:
+                section_index = index - section.first_index
+                return (
+                    self._row_x_layout(
+                        width=width,
+                        column_count=columns,
+                        column_index=section_index % columns,
+                    ),
+                    section.tiles_y + (section_index // columns) * row_pitch,
+                )
+        return super()._record_position(
+            index=index,
+            width=width,
+            columns=columns,
+            margin=margin,
+            row_pitch=row_pitch,
+        )
+
+    def _update_layout_chrome(
+        self,
+        *,
+        count: int,
+        columns: int,
+        width: int,
+        margin: int,
+        row_pitch: int,
+    ) -> None:
+        layouts_by_title = {layout.title: layout for layout in self._section_layouts}
+        margin_x = int(getattr(Metrics, "GRID_MARGIN_X", Metrics.GRID_SPACING))
+        for title, header in self._section_headers.items():
+            section = layouts_by_title.get(title)
+            if not self._group_by_sections or section is None:
+                header.hide()
+                continue
+            header.setGeometry(
+                margin_x,
+                section.header_y,
+                max(1, width - 2 * margin_x),
+                self._SECTION_HEADER_HEIGHT,
+            )
+            header.show()
+
+    def _clear_layout_chrome(self) -> None:
+        for header in self._section_headers.values():
+            header.hide()
+
+    def _on_item_checked(self, widget: GridItem, checked: bool) -> None:
+        super()._on_item_checked(widget, checked)
+        self.refreshSectionGrouping()
+
+    def _build_section_layouts(
+        self,
+        *,
+        count: int,
+        columns: int,
+        margin: int,
+    ) -> tuple[tuple[_SectionLayout, ...], int]:
+        section_counts = {title: 0 for title in self._section_titles}
+        for record in self._viewport_records:
+            section_counts[self._normalized_section_title(record)] += 1
+
+        layouts: list[_SectionLayout] = []
+        next_index = 0
+        y = margin
+        for title in self._section_titles:
+            section_count = section_counts[title]
+            if not section_count:
+                continue
+            header_y = y
+            tiles_y = header_y + self._SECTION_HEADER_HEIGHT
+            rows = (section_count + columns - 1) // columns
+            layouts.append(
+                _SectionLayout(title, next_index, section_count, header_y, tiles_y)
+            )
+            next_index += section_count
+            y = (
+                tiles_y
+                + rows * Metrics.GRID_ITEM_H
+                + max(0, rows - 1) * Metrics.GRID_SPACING
+            )
+            if next_index < count:
+                y += self._SECTION_GAP
+        return tuple(layouts), y
 
 
 # Compatibility name for callers that imported the former abstract base.
