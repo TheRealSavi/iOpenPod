@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 from typing import Any, cast
 
+import iopenpod.gui.widgets.selectiveSyncBrowser as selective_sync_browser_module
 from iopenpod.gui.styles import accent_btn_css
 from iopenpod.gui.widgets.MBGridView import GridRecord, MusicBrowserGrid
 from iopenpod.gui.widgets.selectiveSyncBrowser import (
@@ -8,6 +9,7 @@ from iopenpod.gui.widgets.selectiveSyncBrowser import (
     PCPhotoListView,
     SelectiveSyncBrowser,
 )
+from iopenpod.gui.widgets.syncReview import StorageBarWidget
 from iopenpod.sync.contracts import SyncAction, SyncItem, SyncPlan
 from iopenpod.sync.pc_library import PCTrack
 from iopenpod.sync.photos import (
@@ -104,6 +106,70 @@ def test_done_selecting_uses_standard_primary_action_style(qtbot) -> None:
     qtbot.addWidget(browser)
 
     assert browser._done_btn.styleSheet() == accent_btn_css()
+
+
+def test_selective_sync_storage_bar_projects_normal_and_plan_selections(
+    qtbot,
+    monkeypatch,
+) -> None:
+    session = SimpleNamespace(
+        device_path="/virtual-ipod",
+        discovered_ipod=None,
+        identity=None,
+    )
+    settings = SimpleNamespace(track_list_columns_by_content={})
+    browser = SelectiveSyncBrowser(
+        settings_service=cast(
+            Any,
+            SimpleNamespace(
+                get_global_settings=lambda: settings,
+                get_effective_settings=lambda: settings,
+            ),
+        ),
+        device_sessions=cast(
+            Any,
+            SimpleNamespace(current_session=lambda: session),
+        ),
+    )
+    qtbot.addWidget(browser)
+    monkeypatch.setattr(
+        selective_sync_browser_module.shutil,
+        "disk_usage",
+        lambda _path: SimpleNamespace(total=1_000, used=400),
+    )
+
+    track = _track("Song", "Album/Song.mp3")
+    photo = PCPhoto("photo", "Photo", source_path="/photos/photo.jpg", size=4)
+    browser._plan_selection_mode = False
+    browser._all_tracks = [track]
+    browser._all_photos = [photo]
+    browser._selected_tracks = {track.path: True}
+    browser._selected_photos = {photo.source_path: True}
+    browser._update_storage_projection()
+
+    assert isinstance(browser._storage_bar, StorageBarWidget)
+    assert not browser._storage_frame.isHidden()
+    assert browser._storage_bar._sync_delta == 5
+
+    added = SyncItem(action=SyncAction.ADD_TO_IPOD, pc_track=track)
+    removed = SyncItem(
+        action=SyncAction.REMOVE_FROM_IPOD,
+        ipod_track={"Title": "Removed", "size": 9},
+    )
+    added_photo = PhotoSyncItem("new-photo", "New Photo", size=4)
+    browser._plan_selection_mode = True
+    browser._plan_selection_sections = [
+        {"key": "to_add", "bucket": "sync_items", "items": [added]},
+        {"key": "to_remove", "bucket": "sync_items", "items": [removed]},
+        {"key": "photos_to_add", "bucket": "photos_to_add", "items": [added_photo]},
+    ]
+    browser._plan_selection_state = {
+        "sync_items": {id(added), id(removed)},
+        "photos_to_add": {id(added_photo)},
+    }
+    browser._update_storage_projection()
+
+    assert browser._storage_bar._sync_delta == -4
 
 
 def test_selective_sync_groups_unknown_albums_by_source_folder():

@@ -17,7 +17,7 @@ import shutil
 from typing import TYPE_CHECKING, Any
 
 from PyQt6.QtCore import QEvent, QObject, QRectF, QSize, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QPainter
+from PyQt6.QtGui import QFont, QPainter
 from PyQt6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -66,7 +66,7 @@ from iopenpod.sync.review_selection import build_selected_photo_plan
 from iopenpod.sync_progress_stages import friendly_stage_label, progress_stage_help
 
 from ..glyphs import glyph_icon, glyph_pixmap
-from ..styles import FONT_FAMILY, MONO_FONT_FAMILY, Colors, Design, Metrics, accent_btn_css, btn_css, button_css, make_scroll_area, progress_bar_css
+from ..styles import FONT_FAMILY, MONO_FONT_FAMILY, Colors, Design, Metrics, _parse_color, accent_btn_css, btn_css, button_css, make_scroll_area, progress_bar_css
 from .formatters import format_duration_mmss as _format_duration
 from .formatters import format_size as _format_size
 from .syncStagesPanel import DEFAULT_PIPELINE, SyncStagesPanel
@@ -147,7 +147,7 @@ def _short_display_path(path: str, *, parts_to_keep: int = 4) -> str:
 # ── StorageBarWidget ─────────────────────────────────────────────────────────
 
 
-class _StorageBarWidget(QWidget):
+class StorageBarWidget(QWidget):
     """Custom-painted segmented bar: [current used | sync delta | free]."""
 
     def __init__(self, parent=None):
@@ -173,7 +173,7 @@ class _StorageBarWidget(QWidget):
 
         # Background track
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QColor(Colors.BORDER_SUBTLE))
+        p.setBrush(_parse_color(Colors.BORDER_SUBTLE))
         p.drawRoundedRect(QRectF(0, 0, w, h), r, r)
 
         total = self._total
@@ -189,7 +189,7 @@ class _StorageBarWidget(QWidget):
 
             # Current used (accent blue)
             if used_px > 0:
-                p.setBrush(QColor(Colors.ACCENT))
+                p.setBrush(_parse_color(Colors.ACCENT))
                 p.drawRoundedRect(QRectF(0, 0, used_px, h), r, r)
                 # Square off right edge if there's a delta after
                 if delta_px > 0 and used_px > r:
@@ -197,7 +197,7 @@ class _StorageBarWidget(QWidget):
 
             # Sync delta (green = fits, warm orange = overflow)
             if delta_px > 0:
-                color = QColor(Colors.SYNC_ORANGE) if overflow else QColor(Colors.SUCCESS)
+                color = _parse_color(Colors.SYNC_ORANGE if overflow else Colors.SUCCESS)
                 p.setBrush(color)
                 right_edge = used_px + delta_px
                 p.drawRoundedRect(QRectF(used_px, 0, delta_px, h), r, r)
@@ -212,15 +212,15 @@ class _StorageBarWidget(QWidget):
 
             # Overflow stripe extending to full width
             if overflow:
-                p.setBrush(QColor(Colors.DANGER))
+                p.setBrush(_parse_color(Colors.DANGER))
                 p.drawRoundedRect(QRectF(0, 0, w, h), r, r)
                 # Redraw used and delta on top
                 if used_px > 0:
-                    p.setBrush(QColor(Colors.ACCENT))
+                    p.setBrush(_parse_color(Colors.ACCENT))
                     p.drawRoundedRect(QRectF(0, 0, used_px, h), r, r)
                     if used_px > r:
                         p.drawRect(QRectF(used_px - r, 0, r, h))
-                p.setBrush(QColor(Colors.SYNC_ORANGE))
+                p.setBrush(_parse_color(Colors.SYNC_ORANGE))
                 full_delta_px = w - used_px
                 p.drawRoundedRect(QRectF(used_px, 0, full_delta_px, h), r, r)
                 if used_px > 0:
@@ -232,13 +232,13 @@ class _StorageBarWidget(QWidget):
             freed_px = freed_frac * w
 
             if proj_used_px > 0:
-                p.setBrush(QColor(Colors.ACCENT))
+                p.setBrush(_parse_color(Colors.ACCENT))
                 p.drawRoundedRect(QRectF(0, 0, proj_used_px, h), r, r)
                 if freed_px > 0 and proj_used_px > r:
                     p.drawRect(QRectF(proj_used_px - r, 0, r, h))
 
             if freed_px > 0:
-                p.setBrush(QColor(Colors.SYNC_CYAN))  # teal for freed space
+                p.setBrush(_parse_color(Colors.SYNC_CYAN))  # teal for freed space
                 start = proj_used_px
                 p.drawRoundedRect(QRectF(start, 0, freed_px, h), r, r)
                 if proj_used_px > 0:
@@ -1463,7 +1463,7 @@ class SyncReviewWidget(QWidget):
         storage_right.addLayout(storage_top)
 
         # Custom painted segmented bar
-        self._storage_bar = _StorageBarWidget(self._storage_frame)
+        self._storage_bar = StorageBarWidget(self._storage_frame)
         storage_right.addWidget(self._storage_bar)
 
         # Legend row beneath bar

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import threading
 from collections import defaultdict, deque
 from collections.abc import Iterable
@@ -39,6 +40,7 @@ from PyQt6.QtWidgets import (
 )
 
 from iopenpod.application.progress import ETATracker
+from iopenpod.application.sync_review_model import sync_item_size_delta
 from iopenpod.artworkdb_writer.art_extractor import (
     extract_art,
     find_folder_art,
@@ -83,6 +85,7 @@ from .MBGridViewItem import MusicBrowserGridItem
 from .photoViewer import PhotoViewerPane
 from .pooledPhotoGrid import PhotoTileModel, PooledPhotoGridView
 from .sidebarNavButton import SidebarNavButton
+from .syncReview import StorageBarWidget
 
 log = logging.getLogger(__name__)
 
@@ -1448,6 +1451,61 @@ class SelectiveSyncBrowser(QWidget):
 
         root.addWidget(self._header)
 
+        self._storage_frame = QFrame()
+        self._storage_frame.setObjectName("selectiveSyncStorageProjection")
+        self._storage_frame.setStyleSheet(f"""
+            QFrame {{
+                background: {Colors.SURFACE};
+                border-bottom: 1px solid {Colors.BORDER_SUBTLE};
+            }}
+        """)
+        storage_outer = QHBoxLayout(self._storage_frame)
+        storage_outer.setContentsMargins(16, 8, 16, 8)
+        storage_outer.setSpacing(12)
+
+        self._storage_ipod_img = QLabel(self._storage_frame)
+        self._storage_ipod_img.setFixedSize(32, 32)
+        self._storage_ipod_img.setStyleSheet("background: transparent;")
+        storage_outer.addWidget(self._storage_ipod_img)
+
+        storage_right = QVBoxLayout()
+        storage_right.setSpacing(3)
+        storage_top = QHBoxLayout()
+        storage_top.setSpacing(8)
+        self._storage_name = QLabel("iPod", self._storage_frame)
+        self._storage_name.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
+        self._storage_name.setStyleSheet(f"color:{Colors.TEXT_PRIMARY}; background:transparent;")
+        storage_top.addWidget(self._storage_name)
+        storage_top.addStretch()
+        self._storage_detail = QLabel("", self._storage_frame)
+        self._storage_detail.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
+        self._storage_detail.setStyleSheet(f"color:{Colors.TEXT_TERTIARY}; background:transparent;")
+        storage_top.addWidget(self._storage_detail)
+        storage_right.addLayout(storage_top)
+
+        self._storage_bar = StorageBarWidget(self._storage_frame)
+        self._storage_bar.setObjectName("selectiveSyncStorageBar")
+        storage_right.addWidget(self._storage_bar)
+
+        legend_row = QHBoxLayout()
+        legend_row.setSpacing(12)
+        self._storage_legend_labels: list[QLabel] = []
+        for color_hex, text in (
+            (Colors.ACCENT, "Current"),
+            (Colors.SUCCESS, "Sync adds"),
+            (Colors.SYNC_FREED, "Freed"),
+        ):
+            dot = QLabel(f"<span style='color:{color_hex};'>●</span> {text}", self._storage_frame)
+            dot.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
+            dot.setStyleSheet(f"color:{Colors.TEXT_TERTIARY}; background:transparent;")
+            legend_row.addWidget(dot)
+            self._storage_legend_labels.append(dot)
+        legend_row.addStretch()
+        storage_right.addLayout(legend_row)
+        storage_outer.addLayout(storage_right, 1)
+        self._storage_frame.setVisible(False)
+        root.addWidget(self._storage_frame)
+
         # Body: sidebar + content
         body = QWidget()
         body_lay = QHBoxLayout(body)
@@ -1734,15 +1792,16 @@ class SelectiveSyncBrowser(QWidget):
             self._progress_detail.setText("")
             self._count_label.setText("No selectable sync changes")
             self._done_btn.setEnabled(True)
+        self._update_storage_projection()
 
     @staticmethod
     def _sync_item_size(item: object) -> int:
         estimated = getattr(item, "estimated_size", None)
-        if estimated is not None:
+        if estimated not in (None, 0):
             try:
                 return int(estimated or 0)
             except (TypeError, ValueError):
-                return 0
+                pass
         track = getattr(item, "pc_track", None)
         if track is not None:
             try:
@@ -1755,7 +1814,10 @@ class SelectiveSyncBrowser(QWidget):
                 return int(ipod.get("size", ipod.get("Size", 0)) or 0)
             except (TypeError, ValueError):
                 return 0
-        return 0
+        try:
+            return int(getattr(item, "size", 0) or 0)
+        except (TypeError, ValueError):
+            return 0
 
     @staticmethod
     def _list_plan_items(items: object) -> list[object]:
@@ -2380,6 +2442,7 @@ class SelectiveSyncBrowser(QWidget):
         else:
             self._count_label.setText("No selectable sync changes")
         self._done_btn.setEnabled(True)
+        self._update_storage_projection()
 
     def _cleanup_scan_worker(self):
         """Disconnect and clean up the current scan worker, if any."""
@@ -2589,6 +2652,7 @@ class SelectiveSyncBrowser(QWidget):
             for playlist in playlists
             if getattr(playlist, "source_path", "")
         }
+        self._update_storage_projection()
         self._build_groups()
         self._apply_sidebar_visibility()
         # Pick the first mode that actually has content.
@@ -3423,6 +3487,114 @@ class SelectiveSyncBrowser(QWidget):
             " · ".join(parts) if parts else "No music, photos, or playlists found"
         )
         self._done_btn.setEnabled((checked_tracks + checked_photos + checked_playlists) > 0)
+        self._update_storage_projection()
+
+    def _update_storage_projection(self) -> None:
+        """Render the selected media's projected iPod storage use."""
+
+        frame = self.__dict__.get("_storage_frame")
+        if not isinstance(frame, QFrame):
+            return
+        try:
+            session = self._device_sessions.current_session()
+            ipod_path = str(getattr(session, "device_path", "") or "")
+            if not ipod_path:
+                frame.hide()
+                return
+            usage = shutil.disk_usage(ipod_path)
+            net_change = self._selected_storage_delta()
+            self._set_storage_device_details(session)
+            self._storage_bar.set_values(usage.total, usage.used, net_change)
+            self._storage_legend_labels[0].setVisible(True)
+            self._storage_legend_labels[1].setVisible(net_change > 0)
+            self._storage_legend_labels[2].setVisible(net_change < 0)
+
+            projected = usage.used + net_change
+            if projected > usage.total:
+                over = projected - usage.total
+                self._storage_detail.setStyleSheet(
+                    f"color:{Colors.DANGER}; font-size:{Metrics.FONT_MD}pt; "
+                    f"font-family:{FONT_FAMILY}; background:transparent;"
+                )
+                self._storage_detail.setText(
+                    f"{format_size(projected)} / {format_size(usage.total)} "
+                    f"— {format_size(over)} over capacity!"
+                )
+            else:
+                free_after = max(usage.total - projected, 0)
+                net_sign = "+" if net_change >= 0 else "-"
+                self._storage_detail.setStyleSheet(
+                    f"color:{Colors.TEXT_TERTIARY}; font-size:{Metrics.FONT_MD}pt; "
+                    f"font-family:{FONT_FAMILY}; background:transparent;"
+                )
+                self._storage_detail.setText(
+                    f"{format_size(projected)} / {format_size(usage.total)} "
+                    f"({format_size(free_after)} free, "
+                    f"net {net_sign}{format_size(abs(net_change))})"
+                )
+            frame.show()
+        except Exception:
+            frame.hide()
+
+    def _set_storage_device_details(self, session: object) -> None:
+        from ..ipod_images import get_ipod_image
+
+        ipod = getattr(session, "discovered_ipod", None)
+        if ipod is None:
+            self._storage_ipod_img.clear()
+            self._storage_name.setText("iPod")
+            return
+
+        model_family = str(getattr(ipod, "model_family", "") or "")
+        generation = str(getattr(ipod, "generation", "") or "")
+        color = str(getattr(ipod, "color", "") or "")
+        pixmap = get_ipod_image(model_family, generation, size=32, color=color)
+        if pixmap and not pixmap.isNull():
+            self._storage_ipod_img.setPixmap(pixmap)
+        else:
+            self._storage_ipod_img.clear()
+        identity = getattr(session, "identity", None)
+        display_name = str(
+            getattr(identity, "display_name", "")
+            or getattr(ipod, "display_name", "")
+            or ""
+        )
+        self._storage_name.setText(display_name or "iPod")
+
+    def _selected_storage_delta(self) -> int:
+        if self._is_plan_selection_mode():
+            return self._selected_plan_storage_delta()
+
+        track_bytes = sum(
+            int(getattr(track, "size", 0) or 0)
+            for track in self._all_tracks
+            if self._selected_tracks.get(getattr(track, "path", ""), False)
+        )
+        photo_bytes = sum(
+            int(getattr(photo, "size", 0) or 0)
+            for photo in self._all_photos
+            if self._selected_photos.get(getattr(photo, "source_path", ""), False)
+        )
+        return track_bytes + photo_bytes
+
+    def _selected_plan_storage_delta(self) -> int:
+        bytes_to_add = 0
+        bytes_to_remove = 0
+        for section in self._plan_selection_sections:
+            selected_ids = self._plan_selection_state.get(str(section["bucket"]), set())
+            section_key = str(section["key"])
+            for item in self._list_plan_items(section.get("items")):
+                if id(item) not in selected_ids:
+                    continue
+                if section_key == "photos_to_add":
+                    bytes_to_add += self._sync_item_size(item)
+                elif section_key == "photos_to_remove":
+                    bytes_to_remove += self._sync_item_size(item)
+                else:
+                    added, removed = sync_item_size_delta(item)
+                    bytes_to_add += added
+                    bytes_to_remove += removed
+        return bytes_to_add - bytes_to_remove
 
     # ── Done / Cancel ────────────────────────────────────────────────────
 
