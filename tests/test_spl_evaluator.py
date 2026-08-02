@@ -6,6 +6,7 @@ from iopenpod.itunesdb_shared.device_time import DeviceTimeContext
 from iopenpod.itunesdb_shared.field_base import MAC_EPOCH_OFFSET
 from iopenpod.itunesdb_shared.mhod_defs import (
     SPL_AUTHORABLE_FIELD_IDS,
+    SPL_DATE_IDENTIFIER,
     SPL_HOST_BINARY_AND_FIELD_KEYS,
     SPL_HOST_BOOLEAN_FIELD_KEYS,
     SPL_HOST_DATE_FIELD_KEYS,
@@ -99,3 +100,20 @@ def test_absolute_date_rule_uses_the_device_timezone() -> None:
         track,
         time_context=DeviceTimeContext.from_timezone_name("America/New_York"),
     )
+
+
+def test_relative_date_rules_do_not_decode_the_ipod_date_marker() -> None:
+    """Relative rules use the marker as a format sentinel, not a timestamp."""
+    for field_id, track_key in ((0x17, "last_played"), (0x45, "last_skipped")):
+        assert eval_rule(
+            SmartPlaylistRule(
+                field_id=field_id,
+                action_id=0x02000200,
+                from_value=SPL_DATE_IDENTIFIER,
+                from_date=-1,
+                from_units=86400,
+                to_value=SPL_DATE_IDENTIFIER,
+                to_units=1,
+            ),
+            {track_key: 0},
+        )

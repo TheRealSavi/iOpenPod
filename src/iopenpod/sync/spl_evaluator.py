@@ -182,6 +182,19 @@ def _eval_date(
     and from_units to compute a relative threshold.
     """
     action = rule.action_id
+
+    # Relative rules use their value fields as iPod format markers, rather
+    # than absolute timestamps.  Evaluate them before decoding those markers.
+    if action == 0x00000200:  # is in the last
+        # from_date is the count, from_units is the unit size in seconds.
+        # libgpod: t += (splr->fromdate * splr->fromunits), where both are
+        # negative for a point in the past.
+        threshold = int(time.time()) + (rule.from_date * rule.from_units)
+        return track_val > threshold
+    if action == 0x02000200:  # is not in the last
+        threshold = int(time.time()) + (rule.from_date * rule.from_units)
+        return track_val <= threshold
+
     fv = _rule_date_to_unix(rule.from_value, time_context)
     tv = _rule_date_to_unix(rule.to_value, time_context)
 
@@ -198,17 +211,6 @@ def _eval_date(
             return track_val < fv
         case 0x02000040:  # is not before
             return track_val >= fv
-        case 0x00000200:  # is in the last
-            # from_date is the count, from_units is the unit size in seconds
-            # libgpod: t += (splr->fromdate * splr->fromunits)
-            #   ... where both are negative (time in the past)
-            now = int(time.time())
-            threshold = now + (rule.from_date * rule.from_units)
-            return track_val > threshold
-        case 0x02000200:  # is not in the last
-            now = int(time.time())
-            threshold = now + (rule.from_date * rule.from_units)
-            return track_val <= threshold
         case 0x00000100:  # is in the range
             lo, hi = min(fv, tv), max(fv, tv)
             return lo <= track_val <= hi
