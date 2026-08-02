@@ -1,10 +1,14 @@
-"""Materialize iTunesDB metadata in on-device media files for Rockbox.
+"""Materialize iTunesDB metadata in on-device media files.
 
 The stock iPod firmware reads metadata from iTunesDB, while Rockbox reads the
 media files.  This module keeps that compatibility pass behind one boundary:
 it resolves guarded iPod paths, writes the native tag structure for each
 supported container, embeds a Rockbox-compatible baseline JPEG, and updates
 ``TrackInfo.size`` so the subsequent iTunesDB commit remains accurate.
+
+The stock firmware is an exception for lyrics: it reads them from the media
+file.  The focused lyrics helpers below therefore write only native lyric tags
+without opting a device into the complete Rockbox metadata pass.
 """
 
 from __future__ import annotations
@@ -55,6 +59,10 @@ class RockboxMetadataWriteError(RuntimeError):
     """Raised when a media file cannot safely receive its Rockbox tags."""
 
 
+class UnsupportedLyricsTagFormat(ValueError):
+    """Raised when a media file cannot store the stock iPod lyrics tag."""
+
+
 @dataclass(frozen=True, slots=True)
 class RockboxArtwork:
     """Raw artwork input before Rockbox compatibility normalization."""
@@ -71,6 +79,24 @@ class RockboxTrackWriteResult:
     file_size: int
     bytes_delta: int
     written: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class LyricsMetadataFailure:
+    """One track that could not receive its native lyrics metadata."""
+
+    location: str
+    message: str
+
+
+@dataclass(frozen=True, slots=True)
+class LyricsMetadataPassResult:
+    """Aggregate result from writing only the stock iPod lyrics tags."""
+
+    updated: int = 0
+    bytes_delta: int = 0
+    failures: tuple[LyricsMetadataFailure, ...] = ()
+    cancelled: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,6 +141,151 @@ class RockboxMetadataPassResult:
 
 
 ProgressCallback = Callable[[int, int, str], None]
+
+
+def write_track_lyrics_metadata(
+    file_path: str | Path,
+    lyrics: str | None,
+    *,
+    max_file_size_bytes: int | None = None,
+    flush_after_write: bool = True,
+) -> RockboxTrackWriteResult:
+    """Write only a track's native lyrics tag, preserving all other tags.
+
+    The stock iPod firmware reads lyrics from ``USLT`` (ID3) or ``©lyr``
+    (MP4), unlike nearly all of its other metadata.  Passing an empty value
+    removes a previously embedded lyrics tag.
+    """
+
+    path = Path(file_path)
+    suffix = path.suffix.casefold()
+    if suffix not in _ID3_EXTENSIONS and suffix not in _MP4_EXTENSIONS:
+        raise UnsupportedLyricsTagFormat(
+            f"Lyrics metadata writing is not supported for {suffix or 'this file type'}"
+        )
+
+    expected_lyrics = _text(lyrics)
+    before_size = path.stat().st_size
+    if _lyrics_metadata_is_current(path, expected_lyrics):
+        return RockboxTrackWriteResult(
+            file_size=before_size,
+            bytes_delta=0,
+            written=False,
+        )
+
+    estimated_growth = _estimated_lyrics_tag_growth(expected_lyrics)
+    if (
+        max_file_size_bytes is not None
+        and before_size + estimated_growth > max_file_size_bytes
+    ):
+        raise RockboxMetadataWriteError(
+            "Adding lyrics metadata could exceed this filesystem's "
+            f"{max_file_size_bytes:,}-byte file-size limit"
+        )
+
+    if suffix in _ID3_EXTENSIONS:
+        _write_id3_lyrics_metadata(path, expected_lyrics)
+    else:
+        _write_mp4_lyrics_metadata(path, expected_lyrics)
+
+    after_size = path.stat().st_size
+    if max_file_size_bytes is not None and after_size > max_file_size_bytes:
+        raise RockboxMetadataWriteError(
+            f"Lyrics-tagged file exceeds this filesystem's {max_file_size_bytes:,}-byte file-size limit"
+        )
+
+    if flush_after_write:
+        with path.open("rb+") as media_file:
+            flush_written_file(media_file)
+
+    return RockboxTrackWriteResult(
+        file_size=after_size,
+        bytes_delta=after_size - before_size,
+    )
+
+
+def write_lyrics_metadata_library(
+    ipod_root: str | Path,
+    tracks: Sequence[TrackInfo],
+    *,
+    progress_callback: ProgressCallback | None = None,
+    is_cancelled: Callable[[], bool] | None = None,
+    before_device_mutation: Callable[[], None] | None = None,
+    max_file_size_bytes: int | None = None,
+    defer_durability: bool = False,
+) -> LyricsMetadataPassResult:
+    """Write only native lyrics tags for the supplied final-state tracks.
+
+    This intentionally has no artwork, source-file, or Rockbox validation
+    work.  It is used for files copied by the normal stock-iPod workflow and
+    for tracks whose lyrics change through a metadata-only sync.
+    """
+
+    root = Path(ipod_root)
+    cached_path_resolver = CachedIpodMusicPathResolver(root)
+    failures: list[LyricsMetadataFailure] = []
+    updated = 0
+    bytes_delta = 0
+    total = len(tracks)
+
+    for index, track in enumerate(tracks):
+        if is_cancelled is not None and is_cancelled():
+            return LyricsMetadataPassResult(
+                updated=updated,
+                bytes_delta=bytes_delta,
+                failures=tuple(failures),
+                cancelled=True,
+            )
+
+        location = str(track.location or "")
+        cached_file = cached_path_resolver.existing_regular_file(location)
+        if cached_file is not None:
+            path, _file_stat = cached_file
+        else:
+            path = expected_ipod_track_file_path(root, location)
+            if path is None:
+                failures.append(
+                    LyricsMetadataFailure(
+                        location,
+                        "Unsafe iPod media path; the file was not modified",
+                    )
+                )
+                _emit_progress(progress_callback, index + 1, total, location)
+                continue
+            if not path.is_file():
+                failures.append(
+                    LyricsMetadataFailure(location, "Referenced media file is missing")
+                )
+                _emit_progress(progress_callback, index + 1, total, path.name)
+                continue
+
+        try:
+            if before_device_mutation is not None:
+                before_device_mutation()
+            write_result = write_track_lyrics_metadata(
+                path,
+                track.lyrics,
+                max_file_size_bytes=max_file_size_bytes,
+                flush_after_write=not defer_durability,
+            )
+            final_stat = path.stat()
+            track.size = final_stat.st_size
+            track.last_modified = int(final_stat.st_mtime)
+            updated += int(write_result.written)
+            bytes_delta += write_result.bytes_delta
+        except DeviceWriteSafetyError:
+            raise
+        except Exception as exc:
+            logger.warning("Could not write lyrics metadata to %s: %s", path, exc)
+            failures.append(LyricsMetadataFailure(location, str(exc)))
+
+        _emit_progress(progress_callback, index + 1, total, path.name)
+
+    return LyricsMetadataPassResult(
+        updated=updated,
+        bytes_delta=bytes_delta,
+        failures=tuple(failures),
+    )
 
 
 def write_rockbox_track_metadata(
@@ -518,6 +689,26 @@ def _write_id3_metadata(
     tags.save(path, v1=0, v2_version=3)
 
 
+def _write_id3_lyrics_metadata(path: Path, lyrics: str) -> None:
+    """Replace just the ID3 unsynchronised-lyrics frame."""
+
+    from mutagen.id3 import ID3
+    from mutagen.id3._frames import USLT
+    from mutagen.id3._util import ID3NoHeaderError
+
+    try:
+        tags = ID3(path, v2_version=3)
+    except ID3NoHeaderError:
+        tags = ID3()
+
+    tags.delall("USLT")
+    if lyrics:
+        tags.add(USLT(encoding=3, lang="eng", desc="", text=lyrics))
+    # The stock firmware reliably understands ID3v2.3 lyrics frames.  Saving
+    # this focused update preserves all other frames without populating them.
+    tags.save(path, v1=0, v2_version=3)
+
+
 def _write_mp4_metadata(
     path: Path,
     track: TrackInfo,
@@ -562,6 +753,24 @@ def _write_mp4_metadata(
     audio.save()
 
 
+def _write_mp4_lyrics_metadata(path: Path, lyrics: str) -> None:
+    """Replace just the MP4 lyrics atom."""
+
+    from mutagen.mp4 import MP4
+
+    audio = MP4(path)
+    if audio.tags is None:
+        audio.add_tags()
+    tags = audio.tags
+    if tags is None:
+        raise RockboxMetadataWriteError("Could not create MP4 metadata atoms")
+    if lyrics:
+        tags["\xa9lyr"] = [lyrics]
+    else:
+        tags.pop("\xa9lyr", None)
+    audio.save()
+
+
 def _rockbox_metadata_is_current(
     path: Path,
     track: TrackInfo,
@@ -572,6 +781,40 @@ def _rockbox_metadata_is_current(
     if path.suffix.casefold() in _ID3_EXTENSIONS:
         return _id3_metadata_is_current(path, track, artwork)
     return _mp4_metadata_is_current(path, track, artwork)
+
+
+def _lyrics_metadata_is_current(path: Path, expected_lyrics: str) -> bool:
+    """Return whether a native media file already has the expected lyrics."""
+
+    if path.suffix.casefold() in _ID3_EXTENSIONS:
+        from mutagen.id3 import ID3
+        from mutagen.id3._util import ID3NoHeaderError
+
+        try:
+            tags = ID3(path)
+        except ID3NoHeaderError:
+            return not expected_lyrics
+        return _id3_text_matches(tags, "USLT", expected_lyrics)
+
+    from mutagen.mp4 import MP4
+
+    audio = MP4(path)
+    tags = audio.tags
+    if tags is None:
+        return not expected_lyrics
+    return _mp4_value_matches(
+        tags,
+        "\xa9lyr",
+        [expected_lyrics] if expected_lyrics else None,
+    )
+
+
+def _estimated_lyrics_tag_growth(lyrics: str) -> int:
+    """Conservative upper bound for a native lyrics atom or ID3 frame."""
+
+    if not lyrics:
+        return 0
+    return 4 * 1024 + len(lyrics.encode("utf-16-le"))
 
 
 def _id3_metadata_is_current(
@@ -1079,6 +1322,8 @@ class _ArtworkResolver:
 
 
 __all__ = [
+    "LyricsMetadataFailure",
+    "LyricsMetadataPassResult",
     "RockboxArtwork",
     "RockboxArtworkDatabaseState",
     "RockboxMetadataFailure",
@@ -1086,8 +1331,11 @@ __all__ = [
     "RockboxMetadataValidationMarker",
     "RockboxMetadataWriteError",
     "RockboxTrackWriteResult",
+    "UnsupportedLyricsTagFormat",
     "UnsupportedRockboxTagFormat",
     "rockbox_artwork_database_state",
+    "write_lyrics_metadata_library",
     "write_rockbox_metadata_library",
     "write_rockbox_track_metadata",
+    "write_track_lyrics_metadata",
 ]

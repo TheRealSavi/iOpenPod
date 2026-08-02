@@ -111,6 +111,7 @@ from .rockbox_metadata import (
     RockboxArtworkDatabaseState,
     RockboxMetadataValidationMarker,
     rockbox_artwork_database_state,
+    write_lyrics_metadata_library,
     write_rockbox_metadata_library,
 )
 from .source_identity import source_content_hash
@@ -1620,6 +1621,78 @@ class SyncExecutor:
                 pass_result.updated,
             )
 
+    def _execute_lyrics_metadata_pass(
+        self,
+        ctx: _SyncContext,
+        commit_payload: DatabaseCommitPayload,
+    ) -> None:
+        """Embed stock-firmware lyrics without materializing all file tags.
+
+        New and re-copied media files have had their ordinary tags stripped.
+        Metadata-only lyric edits also need a file rewrite because stock iPod
+        firmware reads lyrics from the media file rather than iTunesDB.
+        """
+
+        target_track_ids = {
+            coerce_int(track.db_track_id)
+            for track in ctx.new_tracks
+            if coerce_int(track.db_track_id)
+        }
+        target_track_ids.update(
+            coerce_int(item.db_track_id)
+            for item in ctx.plan.to_update_file
+            if coerce_int(item.db_track_id)
+        )
+        target_track_ids.update(
+            coerce_int(item.db_track_id)
+            for item in ctx.plan.to_update_metadata
+            if "lyrics" in item.metadata_changes and coerce_int(item.db_track_id)
+        )
+        tracks = [
+            track
+            for track in commit_payload.all_tracks
+            if coerce_int(track.db_track_id) in target_track_ids
+        ]
+        if not tracks:
+            return
+
+        ctx.progress(
+            "lyrics_metadata",
+            0,
+            len(tracks),
+            message="Preparing embedded lyrics",
+        )
+
+        def report_progress(current: int, total: int, label: str) -> None:
+            ctx.progress(
+                "lyrics_metadata",
+                current,
+                total,
+                message=f"Writing lyrics: {label}",
+            )
+
+        pass_result = write_lyrics_metadata_library(
+            self.ipod_path,
+            tracks,
+            progress_callback=report_progress,
+            is_cancelled=ctx.cancelled,
+            before_device_mutation=self._revalidate_device_write_readiness,
+            max_file_size_bytes=self._effective_max_file_size_bytes(),
+            defer_durability=True,
+        )
+        ctx.result.lyrics_metadata_updated += pass_result.updated
+        for failure in pass_result.failures:
+            label = failure.location or "unknown track"
+            ctx.result.errors.append(("lyrics_metadata", f"{label}: {failure.message}"))
+        if pass_result.failures:
+            logger.warning(
+                "Lyrics metadata pass updated %d track(s) with %d failure(s)",
+                pass_result.updated,
+                len(pass_result.failures),
+            )
+        else:
+            logger.info("Lyrics metadata pass updated %d track(s)", pass_result.updated)
+
     def _execute_write_and_finalize(self, ctx: _SyncContext) -> None:
         """Stage 7: assemble final track list, write database, backpatch and finalize."""
         # Define sub-steps so the progress bar advances smoothly through
@@ -1670,6 +1743,8 @@ class SyncExecutor:
         commit_payload = self._prepare_database_commit_payload(ctx, advance=_advance)
         if ctx.rockbox_metadata_support:
             self._execute_rockbox_metadata_pass(ctx, commit_payload)
+        else:
+            self._execute_lyrics_metadata_pass(ctx, commit_payload)
 
         try:
             # The inner writer calls our callback to advance the bar

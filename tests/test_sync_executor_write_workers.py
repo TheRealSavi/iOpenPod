@@ -157,6 +157,82 @@ def test_rockbox_metadata_pass_defers_durability_to_sync_flush(
     assert received["revalidate_interval_seconds"] == 5.0
 
 
+def test_lyrics_metadata_pass_targets_written_and_lyrics_changed_tracks(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    executor = SyncExecutor(tmp_path)
+    new_track = TrackInfo(
+        db_track_id=1,
+        title="New track",
+        location=":iPod_Control:Music:F00:new.mp3",
+        lyrics="New lyrics",
+    )
+    re_copied_track = TrackInfo(
+        db_track_id=2,
+        title="Re-copied track",
+        location=":iPod_Control:Music:F00:recopied.mp3",
+        lyrics="Existing lyrics",
+    )
+    lyrics_changed_track = TrackInfo(
+        db_track_id=3,
+        title="Cleared lyrics",
+        location=":iPod_Control:Music:F00:cleared.mp3",
+    )
+    untouched_track = TrackInfo(
+        db_track_id=4,
+        title="Untouched track",
+        location=":iPod_Control:Music:F00:untouched.mp3",
+        lyrics="Do not visit",
+    )
+    ctx = _SyncContext(
+        plan=SyncPlan(
+            to_update_file=[SyncItem(action=SyncAction.UPDATE_FILE, db_track_id=2)],
+            to_update_metadata=[
+                SyncItem(
+                    action=SyncAction.UPDATE_METADATA,
+                    db_track_id=3,
+                    metadata_changes={"lyrics": (None, "Old lyrics")},
+                )
+            ],
+        ),
+        mapping=MappingFile(),
+        progress_callback=None,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+    )
+    ctx.new_tracks = [new_track]
+    received: dict[str, object] = {}
+
+    def write_lyrics(_root, tracks, **kwargs):
+        received["track_ids"] = [track.db_track_id for track in tracks]
+        received.update(kwargs)
+        return SimpleNamespace(updated=3, failures=())
+
+    monkeypatch.setattr(
+        sync_executor_module,
+        "write_lyrics_metadata_library",
+        write_lyrics,
+    )
+
+    executor._execute_lyrics_metadata_pass(
+        ctx,
+        DatabaseCommitPayload(
+            all_tracks=[
+                new_track,
+                re_copied_track,
+                lyrics_changed_track,
+                untouched_track,
+            ]
+        ),
+    )
+
+    assert received["track_ids"] == [1, 2, 3]
+    assert received["defer_durability"] is True
+    assert ctx.result.lyrics_metadata_updated == 3
+
+
 def test_rockbox_metadata_progress_is_rate_limited(
     monkeypatch,
     tmp_path: Path,

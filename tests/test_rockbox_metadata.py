@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 from mutagen.id3 import ID3
+from mutagen.id3._frames import TIT2
 from mutagen.mp4 import MP4, MP4Cover
 from PIL import Image
 
@@ -17,8 +18,10 @@ from iopenpod.device.virtual import create_virtual_ipod
 from iopenpod.itunesdb_writer.mhit_writer import TrackInfo
 from iopenpod.sync.rockbox_metadata import (
     RockboxArtwork,
+    write_lyrics_metadata_library,
     write_rockbox_metadata_library,
     write_rockbox_track_metadata,
+    write_track_lyrics_metadata,
 )
 
 _SILENT_M4A = base64.b64decode(
@@ -103,6 +106,64 @@ def test_mp3_writer_materializes_database_metadata_and_rockbox_jpeg(
         assert image.width <= 500
         assert image.height <= 500
         assert image.info.get("progressive") is None
+
+
+def test_lyrics_writer_preserves_non_lyrics_id3_metadata(tmp_path: Path) -> None:
+    media_path = tmp_path / "track.mp3"
+    media_path.write_bytes(b"\xff\xfb\x90\x64" + b"\x00" * 256)
+    initial_tags = ID3()
+    initial_tags.add(TIT2(encoding=3, text=["Existing title"]))
+    initial_tags.save(media_path, v2_version=3)
+
+    result = write_track_lyrics_metadata(media_path, "Final lyrics")
+
+    tags = ID3(media_path)
+    assert result.written is True
+    assert str(tags["TIT2"]) == "Existing title"
+    assert str(tags["USLT::eng"]) == "Final lyrics"
+
+    write_track_lyrics_metadata(media_path, None)
+
+    assert ID3(media_path).getall("USLT") == []
+
+
+def test_lyrics_writer_preserves_non_lyrics_mp4_metadata(tmp_path: Path) -> None:
+    media_path = tmp_path / "track.m4a"
+    media_path.write_bytes(_SILENT_M4A)
+    original = MP4(media_path)
+    original["\xa9nam"] = ["Existing title"]
+    original.save()
+
+    result = write_track_lyrics_metadata(media_path, "Final lyrics")
+
+    tagged = MP4(media_path)
+    assert result.written is True
+    assert tagged["\xa9nam"] == ["Existing title"]
+    assert tagged["\xa9lyr"] == ["Final lyrics"]
+
+    write_track_lyrics_metadata(media_path, "")
+
+    assert "\xa9lyr" not in MP4(media_path)
+
+
+def test_lyrics_library_pass_updates_only_lyrics_and_track_size(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _create_metadata_test_ipod(monkeypatch, tmp_path)
+    media_path = tmp_path / "iPod_Control" / "Music" / "F00" / "track.mp3"
+    media_path.parent.mkdir(parents=True, exist_ok=True)
+    media_path.write_bytes(b"\xff\xfb\x90\x64" + b"\x00" * 256)
+    track = _track(":iPod_Control:Music:F00:track.mp3")
+
+    result = write_lyrics_metadata_library(tmp_path, [track])
+
+    tags = ID3(media_path)
+    assert result.updated == 1
+    assert result.failures == ()
+    assert str(tags["USLT::eng"]) == "Final lyrics"
+    assert "TIT2" not in tags
+    assert track.size == media_path.stat().st_size
 
 
 @pytest.mark.parametrize("suffix", [".m4a", ".mov"])
@@ -283,7 +344,7 @@ def test_validation_marker_falls_back_when_database_metadata_changes(
     monkeypatch.setattr(
         rockbox_metadata_module,
         "expected_ipod_track_file_path",
-        lambda *args: (full_resolutions.append(None) or original_resolver(*args)),
+        lambda *args: full_resolutions.append(None) or original_resolver(*args),
     )
 
     second = write_rockbox_metadata_library(
@@ -411,10 +472,7 @@ def test_library_pass_prefetches_unique_source_artwork_in_parallel(
     tmp_path: Path,
 ) -> None:
     _create_metadata_test_ipod(monkeypatch, tmp_path)
-    tracks = [
-        _track(f":iPod_Control:Music:F00:track-{index}.mp3")
-        for index in range(3)
-    ]
+    tracks = [_track(f":iPod_Control:Music:F00:track-{index}.mp3") for index in range(3)]
     for index, track in enumerate(tracks):
         track.db_track_id = index + 1
         media_path = tmp_path / "iPod_Control" / "Music" / "F00" / f"track-{index}.mp3"
@@ -609,7 +667,7 @@ def test_library_pass_can_defer_per_track_durability_and_revalidation(
     monkeypatch.setattr(
         rockbox_metadata_module.shutil,
         "disk_usage",
-        lambda _path: (disk_usage_calls.append(None) or free_space),
+        lambda _path: disk_usage_calls.append(None) or free_space,
     )
 
     result = write_rockbox_metadata_library(

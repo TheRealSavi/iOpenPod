@@ -2825,6 +2825,7 @@ class SyncReviewWidget(QWidget):
         removed = getattr(result, "tracks_removed", 0)
         updated_meta = getattr(result, "tracks_updated_metadata", 0)
         updated_file = getattr(result, "tracks_updated_file", 0)
+        embedded_lyrics = getattr(result, "lyrics_metadata_updated", 0)
         playcounts = getattr(result, "playcounts_synced", 0)
         ratings = getattr(result, "ratings_synced", 0)
         photos_added = getattr(result, "photos_added", 0)
@@ -2841,6 +2842,8 @@ class SyncReviewWidget(QWidget):
             lines.append(f"<span style='color: {paint_css('status.info.text')};'>Re-synced {updated_file} track{'s' if updated_file != 1 else ''}</span>")
         if updated_meta:
             lines.append(f"<span style='color: {paint_css('status.info.text')};'>Updated metadata for {updated_meta} track{'s' if updated_meta != 1 else ''}</span>")
+        if embedded_lyrics:
+            lines.append(f"<span style='color: {paint_css('status.info.text')};'>Wrote embedded lyrics to {embedded_lyrics} track{'s' if embedded_lyrics != 1 else ''}</span>")
         if playcounts:
             lines.append(f"<span style='color: {paint_css('status.info.text')};'>Recorded play counts for {playcounts} track{'s' if playcounts != 1 else ''}</span>")
         scrobbles = getattr(result, "scrobbles_submitted", 0)

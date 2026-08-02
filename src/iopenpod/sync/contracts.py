@@ -514,6 +514,7 @@ class SyncOutcome:
     photo_albums_added: int = 0
     photo_albums_removed: int = 0
     sound_check_computed: int = 0
+    lyrics_metadata_updated: int = 0
     rockbox_metadata_updated: int = 0
     scrobbles_submitted: int = 0
     errors: list[tuple[str, str]] = field(default_factory=list)
@@ -552,6 +553,8 @@ class SyncOutcome:
             lines.append(f"  Removed {self.photo_albums_removed} photo albums")
         if self.sound_check_computed:
             lines.append(f"  Computed Sound Check for {self.sound_check_computed} tracks")
+        if self.lyrics_metadata_updated:
+            lines.append(f"  Wrote embedded lyrics to {self.lyrics_metadata_updated} tracks")
         if self.rockbox_metadata_updated:
             lines.append(f"  Wrote Rockbox metadata to {self.rockbox_metadata_updated} tracks")
         if self.scrobbles_submitted:
