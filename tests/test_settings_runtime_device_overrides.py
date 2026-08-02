@@ -101,6 +101,10 @@ def test_rockbox_metadata_support_defaults_off() -> None:
     assert AppSettings().rockbox_metadata_support is False
 
 
+def test_max_backups_defaults_to_unlimited() -> None:
+    assert AppSettings().max_backups == 0
+
+
 def test_corrupt_device_settings_are_not_silently_overwritten(monkeypatch) -> None:
     with repo_temp_dir() as tmp_path:
         monkeypatch.setattr(settings_runtime, "_clear_transcoder_caches", lambda: None)

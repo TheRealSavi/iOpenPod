@@ -1934,7 +1934,7 @@ class SettingsPage(QWidget):
             "Oldest backups are automatically removed when the limit "
             "is exceeded.",
             options=["5", "10", "20", "Unlimited"],
-            current="10",
+            current="Unlimited",
         )
 
         self._backups_card = _SettingsCard(
@@ -2294,7 +2294,7 @@ class SettingsPage(QWidget):
 
         # Max backups → combo text
         max_map = {0: "Unlimited", 5: "5", 10: "10", 20: "20"}
-        mb_text = max_map.get(s.max_backups, "10")
+        mb_text = max_map.get(s.max_backups, "Unlimited")
         idx = self.max_backups.combo.findText(mb_text)
         if idx >= 0:
             self.max_backups.combo.setCurrentIndex(idx)

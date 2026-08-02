@@ -288,7 +288,7 @@ class AppSettings:
     backup_before_sync_mode: str = ""
     normalize_tags_after_sync: bool = False
     rockbox_metadata_support: bool = False
-    max_backups: int = 10
+    max_backups: int = 0
 
     def __post_init__(self) -> None:
         apply_backup_before_sync_mode(self)

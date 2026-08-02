@@ -1448,7 +1448,7 @@ class BackupManager:
         ipod_path: str | Path,
         progress_callback: Callable[[BackupProgress], None] | None = None,
         is_cancelled: Callable[[], bool] | None = None,
-        max_backups: int = 10,
+        max_backups: int = 0,
         *,
         reported_volume_format: str = "",
         expected_volume_identity_key: str = "",
