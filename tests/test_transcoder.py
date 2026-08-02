@@ -57,6 +57,53 @@ def test_video_transcode_command_allows_silent_sources() -> None:
     assert command[command.index("-f"):command.index("-f") + 2] == ["-f", "ipod"]
 
 
+def test_video_transcode_uses_aac_at_specific_options() -> None:
+    command = transcoder_module._cmd_video(
+        "ffmpeg",
+        "video.mp4",
+        "output.m4v",
+        crf=23,
+        preset="medium",
+        max_w=320,
+        max_h=240,
+        max_fps=30,
+        max_bitrate=0,
+        h264_level="1.3",
+        audio_encoder="aac_at",
+    )
+
+    assert ["-c:a", "aac_at"] == command[command.index("-c:a"):command.index("-c:a") + 2]
+    assert ["-aac_at_mode", "cbr"] == command[
+        command.index("-aac_at_mode"):command.index("-aac_at_mode") + 2
+    ]
+    assert "-profile:a" not in command
+
+
+def test_video_transcode_honors_the_resolved_lossy_encoder(monkeypatch) -> None:
+    monkeypatch.setattr(transcoder_module, "available_aac_encoders", lambda _path=None: {"aac", "aac_at"})
+    monkeypatch.setattr(transcoder_module, "_best_aac_encoder", lambda _path=None: "aac_at")
+    monkeypatch.setattr(
+        transcoder_module,
+        "get_transcode_target",
+        lambda *_args, **_kwargs: TranscodeTarget.VIDEO_H264,
+    )
+    monkeypatch.setattr(transcoder_module, "_subtitle_streams", lambda _path: [])
+    monkeypatch.setattr(transcoder_module, "_get_video_caps", lambda: (320, 240, 30, 0, "1.3"))
+
+    options = TranscodeOptions(lossy_encoder="aac")
+    plan = transcoder_module.resolve_transcode_plan("video.mp4", options=options)
+    command = transcoder_module._build_ffmpeg_command(
+        "ffmpeg",
+        plan.source_path,
+        plan.source_path.with_suffix(plan.output_extension),
+        plan,
+        options,
+    )
+
+    assert plan.lossy_encoder == "aac"
+    assert ["-c:a", "aac"] == command[command.index("-c:a"):command.index("-c:a") + 2]
+
+
 def test_video_transcode_command_copies_compatible_video_when_only_audio_is_incompatible() -> None:
     command = transcoder_module._cmd_video(
         "ffmpeg",

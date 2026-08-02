@@ -1686,17 +1686,7 @@ def _cmd_video(
             *bitrate_args,
         ]
 
-    audio_args = (
-        ["-c:a", "copy"]
-        if copy_audio
-        else [
-            "-c:a", audio_encoder,
-            "-profile:a", "aac_low",
-            "-ac", str(IPOD_MAX_CHANNELS),
-            "-ar", str(IPOD_MAX_SAMPLE_RATE),
-            "-b:a", f"{IPOD_MAX_VIDEO_AUDIO_BITRATE_KBPS}k",
-        ]
-    )
+    audio_args = ["-c:a", "copy"] if copy_audio else _video_aac_args(audio_encoder)
 
     subtitle_stream_indexes = subtitle_stream_indexes or []
     subtitle_map_args = [
@@ -1717,6 +1707,27 @@ def _cmd_video(
         "-movflags", "+faststart",
         "-f", output_muxer,
         "-y", dst,
+    ]
+
+
+def _video_aac_args(encoder: str) -> list[str]:
+    """Build AAC-LC audio options for an iPod video transcode.
+
+    ``aac_at`` is AudioToolbox's AAC-LC encoder, but it does not accept
+    FFmpeg's symbolic ``aac_low`` profile value.  Its CBR mode produces the
+    same iPod-compatible AAC-LC output through its own encoder option.
+    """
+    encoder_args = (
+        ["-aac_at_mode", "cbr"]
+        if encoder == "aac_at"
+        else ["-profile:a", "aac_low"]
+    )
+    return [
+        "-c:a", encoder,
+        *encoder_args,
+        "-ac", str(IPOD_MAX_CHANNELS),
+        "-ar", str(IPOD_MAX_SAMPLE_RATE),
+        "-b:a", f"{IPOD_MAX_VIDEO_AUDIO_BITRATE_KBPS}k",
     ]
 
 
@@ -1819,6 +1830,11 @@ def _build_ffmpeg_command(
 
     copy_video = plan.target == TranscodeTarget.VIDEO_TRANSCODE_AUDIO
     copy_audio = plan.target == TranscodeTarget.VIDEO_TRANSCODE_VIDEO
+    video_aac_encoder = (
+        plan.lossy_encoder
+        if plan.lossy_encoder in {"libfdk_aac", "aac_at", "aac"}
+        else _best_aac_encoder(options.ffmpeg_path)
+    )
     return _cmd_video(
         ffmpeg,
         src,
@@ -1830,7 +1846,7 @@ def _build_ffmpeg_command(
         max_fps=plan.video_max_fps,
         max_bitrate=plan.video_max_bitrate_kbps,
         h264_level=plan.video_h264_level,
-        audio_encoder=_best_aac_encoder(options.ffmpeg_path),
+        audio_encoder=video_aac_encoder,
         subtitle_stream_indexes=subtitle_stream_indexes,
         copy_video=copy_video,
         copy_audio=copy_audio,
