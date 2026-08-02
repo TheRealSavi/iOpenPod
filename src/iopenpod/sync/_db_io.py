@@ -334,18 +334,17 @@ def write_database(
         len(smart_playlists) if smart_playlists else 0,
     )
 
-    # Resolve capabilities once for the writer
+    # Preserve the selected device's resolved capability snapshot for the
+    # writer.  Reconstructing it from family/generation alone loses
+    # capacity/model-number distinctions (such as 80 GB 5.5G iPods' 64 MiB
+    # database limit) and any trusted SysInfo-derived overrides.
     capabilities = None
     try:
-        from iopenpod.device import (
-            capabilities_for_family_gen,
-            get_current_device_for_path,
-        )
+        from iopenpod.device import get_current_device_for_path
+
         dev = get_current_device_for_path(str(ipod_path))
         if dev and dev.model_family:
-            capabilities = capabilities_for_family_gen(
-                dev.model_family, dev.generation or "",
-            )
+            capabilities = dev.capabilities
     except Exception as exc:
         logger.debug("Could not load device capabilities: %s", exc)
 

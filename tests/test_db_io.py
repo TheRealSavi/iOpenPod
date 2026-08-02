@@ -6,7 +6,7 @@ from typing import cast
 
 import pytest
 
-from iopenpod.device import create_virtual_ipod
+from iopenpod.device import capabilities_for_family_gen, create_virtual_ipod
 from iopenpod.device.filesystem_profile import FilesystemProfile
 from iopenpod.device.write_guard import DeviceWriteGuard, DeviceWriteSafetyError
 from iopenpod.itunesdb_writer.mhit_writer import TrackInfo
@@ -29,6 +29,44 @@ def test_write_database_raises_original_writer_error_when_requested(
 
     with pytest.raises(WriterError, match="Offending image: /music/Album/cover.tif"):
         _db_io.write_database(tmp_path, [], raise_on_error=True)
+
+
+def test_write_database_preserves_capacity_specific_device_capabilities(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """The DB install path must retain the selected device's 64 MiB profile."""
+    from iopenpod import itunesdb_writer
+
+    high_memory_caps = capabilities_for_family_gen(
+        "iPod",
+        "5.5th Gen",
+        capacity="80GB",
+        model_number="MA448",
+    )
+    assert high_memory_caps is not None
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        "iopenpod.device.get_current_device_for_path",
+        lambda _path: SimpleNamespace(
+            model_family="iPod",
+            generation="5.5th Gen",
+            capacity="80GB",
+            model_number="MA448",
+            capabilities=high_memory_caps,
+        ),
+    )
+    monkeypatch.setattr(
+        itunesdb_writer,
+        "write_itunesdb",
+        lambda *_args, **kwargs: captured.update(kwargs) or True,
+    )
+    monkeypatch.setattr(_db_io, "verify_written_database", lambda *_args, **_kwargs: None)
+
+    assert _db_io.write_database(tmp_path, []) is True
+    assert captured["capabilities"] is high_memory_caps
+    assert high_memory_caps.max_database_bytes == 64 * 1024 * 1024
 
 
 def test_write_database_rejects_track_whose_committed_media_file_is_missing(
