@@ -138,6 +138,44 @@ def test_playcount_commit_checks_write_readiness_before_reading_database(
     assert reads == []
 
 
+def test_playcount_commit_uses_the_shared_device_writer_queue(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    from iopenpod.itunesdb_parser import playcounts
+
+    attempts: list[str] = []
+    guarded_commits: list[object] = []
+
+    class _Guard:
+        def __init__(self, *_args, **_kwargs) -> None:
+            attempts.append("created")
+
+        def __enter__(self):
+            attempts.append("entered")
+            return self
+
+        def __exit__(self, *_args) -> None:
+            attempts.append("released")
+
+    monkeypatch.setattr(
+        playcounts,
+        "parse_playcounts",
+        lambda _path: [SimpleNamespace(has_data=True)],
+    )
+    monkeypatch.setattr(_db_io, "inspect_device_write_readiness", lambda _path: object())
+    monkeypatch.setattr(_db_io, "volume_lock_key", lambda _profile: "test-volume")
+    monkeypatch.setattr(_db_io, "DeviceWriteGuard", _Guard)
+    monkeypatch.setattr(
+        _db_io,
+        "_commit_playcounts_guarded",
+        lambda *_args, **kwargs: guarded_commits.append(kwargs["write_guard"]) or True,
+    )
+    assert _db_io.commit_playcounts_if_needed(tmp_path) is True
+    assert attempts == ["created", "entered", "released"]
+    assert len(guarded_commits) == 1
+
+
 def test_playcount_cleanup_removes_only_contained_known_state_files(
     tmp_path: Path,
 ) -> None:
@@ -212,7 +250,7 @@ def test_guarded_playcount_commit_does_not_hide_cleanup_safety_failure(
     monkeypatch.setattr(
         _playlist_builder,
         "build_and_evaluate_playlists",
-        lambda *_args: ("iPod", 1, [], "Podcasts", 2, [], []),
+        lambda *_args, **_kwargs: ("iPod", 1, [], "Podcasts", 2, [], []),
     )
     monkeypatch.setattr(
         database_commit,

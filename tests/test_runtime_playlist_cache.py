@@ -4,7 +4,7 @@ import logging
 from types import SimpleNamespace
 
 from iopenpod.application import runtime
-from iopenpod.device.write_guard import DatabaseGeneration
+from iopenpod.device.write_guard import DatabaseGeneration, DeviceBusyError
 
 
 def test_cache_emits_load_failed_after_partial_device_load(monkeypatch) -> None:
@@ -84,6 +84,42 @@ def test_cache_rejects_database_changed_while_it_was_parsed(monkeypatch) -> None
 
     assert generation is None
     assert any("changed while iOpenPod was loading it" in error for error in errors)
+
+
+def test_cache_loads_when_playcount_commit_is_deferred(monkeypatch) -> None:
+    from iopenpod.itunesdb_parser import ipod_library
+    from iopenpod.sync import _db_io, photos
+
+    generation = DatabaseGeneration("iTunesDB", True, digest="unchanged")
+    merge_playcounts: list[bool] = []
+    monkeypatch.setattr(
+        runtime,
+        "capture_database_generation",
+        lambda _path: generation,
+    )
+    monkeypatch.setattr(
+        _db_io,
+        "commit_playcounts_if_needed",
+        lambda _path: (_ for _ in ()).throw(DeviceBusyError("another writer")),
+    )
+    monkeypatch.setattr(
+        ipod_library,
+        "load_ipod_library",
+        lambda *_args, **kwargs: (
+            merge_playcounts.append(kwargs["merge_playcounts"]) or {"mhlt": []}
+        ),
+    )
+    monkeypatch.setattr(photos, "read_photo_db", lambda _path: photos.PhotoDB())
+
+    data, _device_path, errors, returned_generation = runtime.iTunesDBCache()._load_data(
+        "/fake/ipod",
+        "/fake/ipod/iPod_Control/iTunes/iTunesDB",
+    )
+
+    assert data["mhlt"] == []
+    assert errors == []
+    assert returned_generation == generation
+    assert merge_playcounts == [True]
 
 
 def test_commit_user_playlists_hydrates_pending_playlist_into_live_cache(

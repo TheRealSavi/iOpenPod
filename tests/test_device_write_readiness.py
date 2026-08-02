@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import pytest
@@ -48,6 +49,44 @@ def test_inspect_write_readiness_returns_a_safe_profile(monkeypatch, tmp_path: P
     )
 
     assert profile is expected
+
+
+def test_safe_readiness_checks_do_not_log(monkeypatch, tmp_path: Path, caplog) -> None:
+    profile = _profile(tmp_path)
+    monkeypatch.setattr(
+        write_readiness,
+        "inspect_filesystem_profile",
+        lambda *_args, **_kwargs: profile,
+    )
+    monkeypatch.setattr(
+        write_readiness,
+        "revalidate_filesystem_profile",
+        lambda *_args, **_kwargs: FilesystemRevalidation(True, "", "", profile),
+    )
+    caplog.set_level(logging.DEBUG, logger=write_readiness.__name__)
+
+    write_readiness.inspect_device_write_readiness(tmp_path)
+    write_readiness.revalidate_device_write_readiness(profile)
+
+    assert caplog.records == []
+
+
+def test_unsafe_readiness_check_logs_a_warning(monkeypatch, tmp_path: Path, caplog) -> None:
+    unsafe = _profile(
+        tmp_path,
+        unsafe_write_reasons=("Linux HFS force mount is unsafe",),
+    )
+    monkeypatch.setattr(
+        write_readiness,
+        "inspect_filesystem_profile",
+        lambda *_args, **_kwargs: unsafe,
+    )
+    caplog.set_level(logging.WARNING, logger=write_readiness.__name__)
+
+    with pytest.raises(DeviceWriteSafetyError, match="force mount"):
+        write_readiness.inspect_device_write_readiness(tmp_path)
+
+    assert "Unsafe iPod filesystem profile inspected" in caplog.text
 
 
 def test_inspect_write_readiness_fails_closed_for_unsafe_mount(
@@ -146,4 +185,36 @@ def test_virtual_ipod_directory_may_live_below_a_host_mount(
         lambda *_args, **_kwargs: containing_volume,
     )
 
-    assert write_readiness.inspect_device_write_readiness(selected) is containing_volume
+    profile = write_readiness.inspect_device_write_readiness(selected)
+
+    assert profile.safe_for_writes
+    assert profile.mount_path == str(selected)
+    assert profile.identity.operating_system == "virtual"
+
+
+def test_virtual_ipod_readiness_synthesizes_a_revalidatable_identity(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    selected = tmp_path / "virtual-ipod"
+    selected.mkdir()
+    (selected / "iPodInfo.json").write_text("{}", encoding="utf-8")
+    incomplete_host_profile = _profile(
+        tmp_path,
+        mount_path=str(tmp_path),
+        filesystem_type="",
+        identity=VolumeIdentity("macos", "", "", ""),
+        detection_errors=("diskutil info failed",),
+    )
+    monkeypatch.setattr(
+        write_readiness,
+        "inspect_filesystem_profile",
+        lambda *_args, **_kwargs: incomplete_host_profile,
+    )
+
+    profile = write_readiness.inspect_device_write_readiness(selected)
+    revalidated = write_readiness.revalidate_device_write_readiness(profile)
+
+    assert profile.safe_for_writes
+    assert profile.identity == revalidated.identity
+    assert profile.identity.operating_system == "virtual"

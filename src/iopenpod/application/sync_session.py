@@ -199,6 +199,15 @@ class SyncSessionController(QObject):
         if not getattr(intent.plan, "has_changes", True):
             self.blocked.emit(SyncSessionBlocked("no_changes"))
             return
+        quick_ready, blocked_label = self._quick_writes.prepare_for_full_sync()
+        if not quick_ready:
+            self.blocked.emit(
+                SyncSessionBlocked(
+                    "quick_changes_saving",
+                    blocked_label or "quick changes",
+                )
+            )
+            return
         tools = self._tool_availability_check(settings)
         if tools.has_missing:
             self.missing_tools.emit(

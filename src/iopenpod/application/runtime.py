@@ -16,6 +16,7 @@ from PyQt6.QtCore import QObject, QRunnable, QThread, QThreadPool, pyqtSignal, p
 
 from iopenpod.device.write_guard import (
     DatabaseGeneration,
+    DeviceWriteSafetyError,
     ExternalDatabaseChangeError,
     capture_database_generation,
 )
@@ -1572,15 +1573,13 @@ class iTunesDBCache(QObject):
                 committed_playcounts = commit_playcounts_if_needed(
                     Path(device_path),
                 )
-            except Exception as exc:
+            except DeviceWriteSafetyError as exc:
+                # The parser merges uncommitted Play Counts into the in-memory
+                # library, so a transient writer conflict must not make the
+                # entire library load look broken to the user.
+                logger.debug("Deferred Play Counts auto-commit: %s", exc)
+            except Exception:
                 logger.warning("Play Counts auto-commit failed", exc_info=True)
-                from iopenpod.device.write_guard import DeviceWriteSafetyError
-
-                if isinstance(exc, DeviceWriteSafetyError):
-                    load_errors.append(
-                        "Play Counts were not committed because the iPod is not "
-                        f"safe to write: {exc}"
-                    )
 
             generation_before_parse = capture_database_generation(device_path)
             parsed = load_ipod_library(

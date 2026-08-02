@@ -24,7 +24,6 @@ from iopenpod.itunesdb_writer.mhyp_writer import PlaylistInfo
 
 logger = logging.getLogger(__name__)
 
-
 class DatabaseVerificationError(RuntimeError):
     """Raised when a freshly written iPod database fails read-back checks."""
 

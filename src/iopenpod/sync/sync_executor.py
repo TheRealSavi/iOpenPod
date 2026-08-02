@@ -21,9 +21,8 @@ import tempfile
 import threading
 import time
 from collections import Counter
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
-from contextlib import contextmanager
 from copy import copy
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -53,7 +52,6 @@ from iopenpod.device.storage_safety import (
 )
 from iopenpod.device.write_guard import (
     DatabaseGeneration,
-    DeviceBusyError,
     DeviceWriteGuard,
     DeviceWriteSafetyError,
 )
@@ -145,47 +143,6 @@ _SYNC_UNTIL_FULL_RESERVE_BYTES = SYNC_UNTIL_FULL_RESERVE_BYTES
 _DEFAULT_MUSIC_DIRS = 20
 
 _ROCKBOX_REVALIDATION_INTERVAL_SECONDS = 5.0
-_DEVICE_BUSY_RETRY_SECONDS = 10.0
-_DEVICE_BUSY_RETRY_INTERVAL_SECONDS = 0.25
-
-
-@contextmanager
-def _retrying_device_write_guard(
-    ipod_path: Path,
-    *,
-    volume_key: str,
-    expected_database_generation: DatabaseGeneration | None,
-) -> Iterator[DeviceWriteGuard]:
-    """Acquire the device guard, briefly waiting for iOpenPod's own helpers.
-
-    Device identification can asynchronously persist refreshed SysInfo data.
-    That short metadata write uses the same guard as a sync, so immediately
-    starting a sync would otherwise fail even though no other application is
-    managing the iPod.  The bounded wait still rejects a genuinely busy device
-    instead of bypassing the exclusive lock.
-    """
-    deadline = time.monotonic() + _DEVICE_BUSY_RETRY_SECONDS
-    while True:
-        guard = DeviceWriteGuard(
-            ipod_path,
-            volume_key=volume_key,
-            expected_database_generation=expected_database_generation,
-        )
-        try:
-            guard.__enter__()
-        except DeviceBusyError:
-            if time.monotonic() >= deadline:
-                raise
-            time.sleep(_DEVICE_BUSY_RETRY_INTERVAL_SECONDS)
-            continue
-        break
-
-    try:
-        yield guard
-    finally:
-        guard.__exit__(None, None, None)
-
-
 def _mhsd5_type_value(playlist: dict) -> int:
     return coerce_int(playlist.get("mhsd5_type", 0))
 
@@ -618,7 +575,7 @@ class SyncExecutor:
                         raise DeviceWriteSafetyError("A different volume is mounted at the selected iPod path. iOpenPod stopped before writing.")
                     self._filesystem_profile = profile
                     ctx.filesystem_profile = profile
-                    with _retrying_device_write_guard(
+                    with DeviceWriteGuard(
                         self.ipod_path,
                         volume_key=current_volume_key,
                         expected_database_generation=(self.expected_database_generation),

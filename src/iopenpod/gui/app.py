@@ -1348,6 +1348,17 @@ class MainWindow(QMainWindow):
         if path:
             access = check_ipod_write_access(path)
             if not access.writable:
+                if access.busy:
+                    logger.info("Selected iPod is busy in another iOpenPod process")
+                    self.sidebar.setEjectAvailable(True)
+                    QMessageBox.information(
+                        self,
+                        "iPod Busy",
+                        "Another iOpenPod process is currently writing to this "
+                        "iPod. The iPod remains selected; wait for that save to "
+                        "finish, then rescan it.",
+                    )
+                    return
                 message = _device_write_access_failure_message(access)
                 logger.error("Selected iPod is not writable: %s", access.reason)
                 if same_device_path(path, self.device_manager.device_path):

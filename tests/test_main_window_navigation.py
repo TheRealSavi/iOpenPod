@@ -522,6 +522,62 @@ def test_device_changed_keeps_unwritable_device_available_for_safe_eject(
     assert "mount -o remount,rw" not in criticals[0][1]
 
 
+def test_device_changed_keeps_busy_device_selected_without_recovery_guidance(
+    monkeypatch,
+) -> None:
+    calls: list[str] = []
+    informations: list[tuple[str, str]] = []
+    fake_pool = SimpleNamespace(clear=lambda: calls.append("clear_pool"))
+    device_manager = SimpleNamespace(device_path="/media/user/IPOD")
+    window = SimpleNamespace(
+        _theme_rebuild_timer=SimpleNamespace(isActive=lambda: False),
+        _pending_theme_rebuild=False,
+        _eject_only_device_path=None,
+        _eject_only_device_storage=None,
+        musicBrowser=SimpleNamespace(reloadData=lambda: calls.append("reload")),
+        sidebar=_FakeSidebar(),
+        device_manager=device_manager,
+        device_session_service=SimpleNamespace(current_session=lambda: SimpleNamespace()),
+        library_cache=SimpleNamespace(start_loading=lambda: calls.append("load")),
+        _apply_effective_theme=lambda: False,
+        _invalidate_tag_fix_scan=lambda: calls.append("invalidate_tag_scan"),
+        _reset_library_category_for_new_device=lambda path: calls.append(f"category:{path}"),
+    )
+    monkeypatch.setattr(
+        "iopenpod.gui.app.ThreadPoolSingleton.get_instance",
+        staticmethod(lambda: fake_pool),
+    )
+    monkeypatch.setattr("iopenpod.gui.imgMaker.clear_artwork_api", lambda: None)
+    monkeypatch.setattr(
+        "iopenpod.gui.app.check_ipod_write_access",
+        lambda path: DeviceWriteAccessResult(
+            writable=False,
+            reason="Another iOpenPod process is writing",
+            mount_path=path,
+            busy=True,
+        ),
+    )
+    monkeypatch.setattr(
+        "iopenpod.gui.app.QMessageBox.information",
+        lambda _parent, title, message: informations.append((title, message)),
+    )
+
+    MainWindow.onDeviceChanged(cast(Any, window), "/media/user/IPOD")
+
+    assert window.device_manager.device_path == "/media/user/IPOD"
+    assert window._eject_only_device_path is None
+    assert window.sidebar.eject_availability[-1] is True
+    assert "load" not in calls
+    assert informations == [
+        (
+            "iPod Busy",
+            "Another iOpenPod process is currently writing to this iPod. "
+            "The iPod remains selected; wait for that save to finish, then "
+            "rescan it.",
+        )
+    ]
+
+
 def test_eject_uses_read_only_device_candidate_when_no_active_device(
     monkeypatch,
 ) -> None:

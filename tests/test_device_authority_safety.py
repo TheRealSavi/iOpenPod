@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
 from contextlib import contextmanager
 from pathlib import Path
 
 from iopenpod.device import authority
 from iopenpod.device.info import DeviceInfo
 from iopenpod.device.virtual import create_virtual_ipod
+from iopenpod.device.write_guard import DeviceBusyError
 
 
 class _RecordingSession:
@@ -87,6 +89,31 @@ def test_live_sysinfo_cache_uses_atomic_guarded_writes(
 
     written_names = [path.name for path, _data, _subtree in session.writes]
     assert written_names == ["SysInfoExtended", authority.AUTHORITY_FILENAME]
+
+
+def test_live_sysinfo_cache_defers_when_an_iopenpod_writer_is_active(
+    monkeypatch,
+    tmp_path: Path,
+    caplog,
+) -> None:
+    (tmp_path / "iPod_Control" / "Device").mkdir(parents=True)
+
+    class BusySession:
+        def __enter__(self) -> None:
+            raise DeviceBusyError("busy")
+
+        def __exit__(self, *_args) -> None:
+            return None
+
+    monkeypatch.setattr(
+        authority,
+        "guarded_device_metadata_session",
+        lambda *_args, **_kwargs: BusySession(),
+    )
+    caplog.set_level(logging.WARNING, logger=authority.__name__)
+
+    assert authority.cache_sysinfo_extended(str(tmp_path), b"<plist><dict></dict></plist>") is False
+    assert caplog.records == []
 
 
 def test_update_sysinfo_skips_unidentified_partial_cache(tmp_path: Path) -> None:

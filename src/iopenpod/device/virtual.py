@@ -245,6 +245,8 @@ def load_virtual_ipod_info(
             setattr(info, field, value)
             info._field_sources[field] = VIRTUAL_IPOD_INFO_FILENAME
 
+    _populate_virtual_volume_identity(info, root)
+
     for field in (
         "uses_sqlite_db",
         "supports_sparse_artwork",
@@ -301,6 +303,21 @@ def load_virtual_ipod_info(
 
     info.identification_method = "filesystem"
     return info
+
+
+def _populate_virtual_volume_identity(info: DeviceInfo, root: Path) -> None:
+    """Attach the selected virtual root's queue key when host probing is weak."""
+    try:
+        from .filesystem_profile import inspect_filesystem_profile
+        from .virtual_identity import virtual_ipod_profile
+        from .write_readiness import volume_lock_key
+
+        profile = virtual_ipod_profile(inspect_filesystem_profile(root), root)
+    except OSError:
+        return
+    if profile.identity.is_complete:
+        info.volume_identity_key = volume_lock_key(profile)
+        info._field_sources["volume_identity_key"] = VIRTUAL_IPOD_INFO_FILENAME
 
 
 def _serial_suffix_by_model() -> dict[str, str]:

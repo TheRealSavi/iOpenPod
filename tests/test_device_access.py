@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from iopenpod.application import device_access
 from iopenpod.device import recovery
 from iopenpod.device.recovery import LinuxMountDetails, linux_filesystem_recovery_plan
-from iopenpod.device.write_guard import DeviceWriteSafetyError
+from iopenpod.device.write_guard import DeviceBusyError, DeviceWriteSafetyError
 
 
 def test_check_ipod_write_access_accepts_writable_ipod_root(
@@ -70,6 +70,40 @@ def test_check_ipod_write_access_reports_permission_denied(
     assert not result.writable
     assert result.mount_path == str(tmp_path)
     assert "Permission denied" in result.reason
+
+
+def test_check_ipod_write_access_reports_another_iopenpod_process_as_busy(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "iPod_Control" / "iTunes").mkdir(parents=True)
+    profile = SimpleNamespace()
+
+    class _BusyGuard:
+        def __enter__(self):
+            raise DeviceBusyError("Another iOpenPod process is writing")
+
+        def __exit__(self, *_args) -> None:
+            return None
+
+    monkeypatch.setattr(
+        device_access,
+        "inspect_device_write_readiness",
+        lambda _path: profile,
+    )
+    monkeypatch.setattr(device_access, "volume_lock_key", lambda _profile: "volume")
+    monkeypatch.setattr(
+        device_access,
+        "DeviceWriteGuard",
+        lambda *_args, **_kwargs: _BusyGuard(),
+    )
+
+    result = device_access.check_ipod_write_access(tmp_path)
+
+    assert result.writable is False
+    assert result.busy is True
+    assert result.mount_path == str(tmp_path)
+    assert "Another iOpenPod process" in result.reason
 
 
 def test_check_ipod_write_access_reports_linux_read_only_mount(

@@ -12,6 +12,7 @@ from .filesystem_profile import (
     inspect_filesystem_profile,
     revalidate_filesystem_profile,
 )
+from .virtual_identity import virtual_ipod_profile
 from .write_guard import DeviceWriteSafetyError
 
 logger = logging.getLogger(__name__)
@@ -41,11 +42,12 @@ def inspect_device_write_readiness(
         reported_volume_format=reported_volume_format,
         probe_case_sensitivity=False,
     )
-    _log_profile("inspected", profile)
-    _log_reported_format_mismatch(profile)
     requested = os.path.normcase(os.path.realpath(mount_path))
+    profile = virtual_ipod_profile(profile, requested)
+    is_virtual_ipod = profile.identity.operating_system == "virtual"
+    _log_unsafe_profile("inspected", profile)
+    _log_reported_format_mismatch(profile)
     observed_mount = os.path.normcase(os.path.realpath(profile.mount_path))
-    is_virtual_ipod = (Path(requested) / "iPodInfo.json").is_file()
     if requested != observed_mount and not is_virtual_ipod:
         raise DeviceWriteSafetyError(
             "The selected iPod path is not mounted as its own volume. "
@@ -77,17 +79,55 @@ def revalidate_device_write_readiness(
     probe_case_sensitivity: bool | None = None,
 ) -> FilesystemProfile:
     """Return current facts only if the original writable volume is unchanged."""
+    if retained_profile.identity.operating_system == "virtual":
+        return _revalidate_virtual_ipod_profile(
+            retained_profile,
+            probe_case_sensitivity=probe_case_sensitivity,
+        )
+
     result = revalidate_filesystem_profile(
         retained_profile,
         probe_case_sensitivity=probe_case_sensitivity,
     )
-    _log_profile("revalidated", result.current_profile)
+    _log_unsafe_profile("revalidated", result.current_profile)
     if not result.safe_to_continue:
         raise DeviceWriteSafetyError(
             "The iPod volume is no longer safe to write: "
             f"{result.reason} iOpenPod stopped before the next write."
         )
     return result.current_profile
+
+
+def _revalidate_virtual_ipod_profile(
+    retained_profile: FilesystemProfile,
+    *,
+    probe_case_sensitivity: bool | None,
+) -> FilesystemProfile:
+    """Recheck that the same virtual iPod root and marker are still present."""
+    requested_path = retained_profile.inspection_path or retained_profile.mount_path
+    host_profile = inspect_filesystem_profile(
+        requested_path,
+        reported_volume_format=retained_profile.reported_volume_format,
+        probe_case_sensitivity=probe_case_sensitivity is True,
+    )
+    current = virtual_ipod_profile(host_profile, requested_path)
+    _log_unsafe_profile("revalidated", current)
+    if current.identity.operating_system != "virtual":
+        raise DeviceWriteSafetyError(
+            "The virtual iPod metadata is no longer present at the selected "
+            "path. iOpenPod stopped before the next write."
+        )
+    if current.identity != retained_profile.identity:
+        raise DeviceWriteSafetyError(
+            "The virtual iPod root changed after inspection. iOpenPod stopped "
+            "before the next write."
+        )
+    if not current.safe_for_writes:
+        raise DeviceWriteSafetyError(
+            "The virtual iPod is no longer safe to write: "
+            f"{_unsafe_profile_message(current)}"
+        )
+    return current
 
 
 def volume_lock_key(profile: FilesystemProfile) -> str:
@@ -121,10 +161,12 @@ def _unsafe_profile_message(profile: FilesystemProfile) -> str:
     )
 
 
-def _log_profile(action: str, profile: FilesystemProfile) -> None:
+def _log_unsafe_profile(action: str, profile: FilesystemProfile) -> None:
+    if profile.safe_for_writes:
+        return
     identity = profile.identity
-    logger.info(
-        "iPod filesystem profile %s: selected=%s mount=%s actual=%s reported=%s "
+    logger.warning(
+        "Unsafe iPod filesystem profile %s: selected=%s mount=%s actual=%s reported=%s "
         "source=%s options=%s read_only=%s case_sensitive=%s "
         "max_file_bytes=%s max_name=%s allocation_unit=%s "
         "identity=%s/%s/%s/%s safe_for_writes=%s errors=%s",

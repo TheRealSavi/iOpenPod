@@ -171,14 +171,16 @@ def _controller(
     *,
     cache: _FakeLibraryCache | None = None,
     device_path: str = "/ipod",
+    settings_service: _FakeSettingsService | None = None,
     quick_writes: _FakeQuickWrites | None = None,
     tool_availability: SyncToolAvailability | None = None,
     podcast_input_provider: Any = None,
 ) -> SyncSessionController:
+    configured_settings = settings_service or _FakeSettingsService()
     return SyncSessionController(
         cast(DeviceManagerLike, _FakeDeviceManager(device_path)),
         cast(LibraryCacheLike, cache or _FakeLibraryCache()),
-        cast(SettingsService, _FakeSettingsService()),
+        cast(SettingsService, configured_settings),
         cast(DeviceSessionService, _FakeDeviceSessionService(device_path)),
         quick_writes or _FakeQuickWrites(),
         podcast_input_provider=podcast_input_provider,
@@ -249,6 +251,32 @@ def test_start_execution_emits_missing_tools_instead_of_creating_worker(qapp) ->
     assert controller.is_running() is False
 
 
+def test_start_execution_blocks_when_quick_changes_are_saving(qapp, monkeypatch) -> None:
+    workers: list[_FakeWorker] = []
+    monkeypatch.setattr(
+        "iopenpod.application.sync_session.SyncExecuteWorker",
+        lambda ipod_path, plan, **kwargs: (
+            workers.append(_FakeWorker(ipod_path=ipod_path, plan=plan, **kwargs))
+            or workers[-1]
+        ),
+    )
+    quick_writes = _FakeQuickWrites((False, "metadata edits"))
+    controller = _controller(quick_writes=quick_writes)
+    blocked: list[SyncSessionBlocked] = []
+    controller.blocked.connect(blocked.append)
+
+    controller.start_execution(
+        SyncExecutionIntent(plan=SyncPlan(to_add=[SyncItem(action=SyncAction.ADD_TO_IPOD)]))
+    )
+
+    assert quick_writes.calls == 1
+    assert blocked == [
+        SyncSessionBlocked(reason="quick_changes_saving", label="metadata edits")
+    ]
+    assert workers == []
+    assert controller.is_running() is False
+
+
 def test_start_execution_allows_rockbox_only_sync(qapp, monkeypatch) -> None:
     workers: list[_FakeWorker] = []
     monkeypatch.setattr(
@@ -258,8 +286,9 @@ def test_start_execution_allows_rockbox_only_sync(qapp, monkeypatch) -> None:
             or workers[-1]
         ),
     )
-    controller = _controller()
-    controller._settings_service.settings.rockbox_metadata_support = True
+    settings_service = _FakeSettingsService()
+    controller = _controller(settings_service=settings_service)
+    settings_service.settings.rockbox_metadata_support = True
     plan = SyncPlan(total_ipod_tracks=8)
 
     controller.start_execution(SyncExecutionIntent(plan=plan, skip_backup=True))
