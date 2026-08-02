@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import io
+import threading
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,7 @@ from PIL import Image
 
 import iopenpod.device.virtual as virtual_device_module
 import iopenpod.sync.rockbox_metadata as rockbox_metadata_module
+from iopenpod.artworkdb_writer.artwork_types import ExistingFormatRef
 from iopenpod.device.virtual import create_virtual_ipod
 from iopenpod.itunesdb_writer.mhit_writer import TrackInfo
 from iopenpod.sync.rockbox_metadata import (
@@ -132,6 +134,26 @@ def test_mp4_writer_uses_native_atoms_and_replaces_stale_cover(
     assert tagged["covr"][0].imageformat == MP4Cover.FORMAT_JPEG
 
 
+def test_mp4_writer_can_preserve_prevalidated_embedded_artwork(tmp_path: Path) -> None:
+    media_path = tmp_path / "track.m4a"
+    media_path.write_bytes(_SILENT_M4A)
+    track = _track(":iPod_Control:Music:F00:track.m4a", title="Before")
+    write_rockbox_track_metadata(media_path, track, artwork=_jpeg_artwork())
+    original_cover = bytes(MP4(media_path)["covr"][0])
+    track.title = "After"
+
+    write_rockbox_track_metadata(
+        media_path,
+        track,
+        force_write=True,
+        preserve_embedded_artwork=True,
+    )
+
+    tagged = MP4(media_path)
+    assert tagged["\xa9nam"] == ["After"]
+    assert bytes(tagged["covr"][0]) == original_cover
+
+
 def test_library_pass_visits_every_safe_track_and_updates_database_sizes(
     monkeypatch,
     tmp_path: Path,
@@ -156,6 +178,408 @@ def test_library_pass_visits_every_safe_track_and_updates_database_sizes(
     assert str(ID3(second)["TIT2"]) == "Second"
     assert tracks[0].size == first.stat().st_size
     assert tracks[1].size == second.stat().st_size
+
+
+def test_library_pass_skips_unchanged_id3_metadata(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _create_metadata_test_ipod(monkeypatch, tmp_path)
+    media_path = tmp_path / "iPod_Control" / "Music" / "F00" / "track.mp3"
+    media_path.parent.mkdir(parents=True, exist_ok=True)
+    media_path.write_bytes(b"\xff\xfb\x90\x64" + b"\x00" * 128)
+    track = _track(":iPod_Control:Music:F00:track.mp3")
+
+    write_rockbox_metadata_library(tmp_path, [track], defer_durability=True)
+    original_size = media_path.stat().st_size
+    monkeypatch.setattr(
+        rockbox_metadata_module,
+        "_write_id3_metadata",
+        lambda *_args: pytest.fail("unchanged ID3 metadata should not be rewritten"),
+    )
+
+    result = write_rockbox_metadata_library(tmp_path, [track], defer_durability=True)
+
+    assert result.updated == 0
+    assert result.bytes_delta == 0
+    assert media_path.stat().st_size == original_size
+
+
+def test_library_pass_uses_persisted_validation_marker_for_unchanged_track(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _create_metadata_test_ipod(monkeypatch, tmp_path)
+    media_path = tmp_path / "iPod_Control" / "Music" / "F00" / "track.mp3"
+    media_path.parent.mkdir(parents=True, exist_ok=True)
+    media_path.write_bytes(b"\xff\xfb\x90\x64" + b"\x00" * 128)
+    track = _track(":iPod_Control:Music:F00:track.mp3")
+
+    first = write_rockbox_metadata_library(tmp_path, [track], defer_durability=True)
+    monkeypatch.setattr(
+        rockbox_metadata_module,
+        "_rockbox_metadata_is_current",
+        lambda *_args: pytest.fail("a matching validation marker should skip tag parsing"),
+    )
+    monkeypatch.setattr(
+        rockbox_metadata_module,
+        "read_existing_artwork",
+        lambda *_args: pytest.fail("a matching validation marker should skip ArtworkDB loading"),
+    )
+
+    second = write_rockbox_metadata_library(
+        tmp_path,
+        [track],
+        defer_durability=True,
+        validation_markers=first.validation_markers,
+        validation_artwork_state=first.validation_artwork_state,
+    )
+
+    assert second.updated == 0
+    assert second.validated_from_marker == 1
+
+
+def test_validation_marker_avoids_full_path_resolution_for_safe_music_files(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _create_metadata_test_ipod(monkeypatch, tmp_path)
+    media_path = tmp_path / "iPod_Control" / "Music" / "F00" / "track.mp3"
+    media_path.parent.mkdir(parents=True, exist_ok=True)
+    media_path.write_bytes(b"\xff\xfb\x90\x64" + b"\x00" * 128)
+    track = _track(":iPod_Control:Music:F00:track.mp3")
+    first = write_rockbox_metadata_library(tmp_path, [track], defer_durability=True)
+    monkeypatch.setattr(
+        rockbox_metadata_module,
+        "expected_ipod_track_file_path",
+        lambda *_args: pytest.fail("matching marker should use its cached Music directory"),
+    )
+
+    second = write_rockbox_metadata_library(
+        tmp_path,
+        [track],
+        defer_durability=True,
+        validation_markers=first.validation_markers,
+        validation_artwork_state=first.validation_artwork_state,
+    )
+
+    assert second.updated == 0
+    assert second.validated_from_marker == 1
+
+
+def test_validation_marker_falls_back_when_database_metadata_changes(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _create_metadata_test_ipod(monkeypatch, tmp_path)
+    media_path = tmp_path / "iPod_Control" / "Music" / "F00" / "track.mp3"
+    media_path.parent.mkdir(parents=True, exist_ok=True)
+    media_path.write_bytes(b"\xff\xfb\x90\x64" + b"\x00" * 128)
+    track = _track(":iPod_Control:Music:F00:track.mp3", title="Before")
+    first = write_rockbox_metadata_library(tmp_path, [track], defer_durability=True)
+    track.title = "After"
+    full_resolutions: list[None] = []
+    original_resolver = rockbox_metadata_module.expected_ipod_track_file_path
+    monkeypatch.setattr(
+        rockbox_metadata_module,
+        "expected_ipod_track_file_path",
+        lambda *args: (full_resolutions.append(None) or original_resolver(*args)),
+    )
+
+    second = write_rockbox_metadata_library(
+        tmp_path,
+        [track],
+        defer_durability=True,
+        validation_markers=first.validation_markers,
+        validation_artwork_state=first.validation_artwork_state,
+    )
+
+    assert second.updated == 1
+    assert second.validated_from_marker == 0
+    assert full_resolutions == []
+    assert str(ID3(media_path)["TIT2"]) == "After"
+
+
+def test_validation_marker_never_follows_a_replaced_media_symlink(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _create_metadata_test_ipod(monkeypatch, tmp_path)
+    media_path = tmp_path / "iPod_Control" / "Music" / "F00" / "track.mp3"
+    media_path.parent.mkdir(parents=True, exist_ok=True)
+    media_path.write_bytes(b"\xff\xfb\x90\x64" + b"\x00" * 128)
+    track = _track(":iPod_Control:Music:F00:track.mp3")
+    first = write_rockbox_metadata_library(tmp_path, [track], defer_durability=True)
+    outside = tmp_path / "outside.mp3"
+    outside.write_bytes(b"outside")
+    media_path.unlink()
+    try:
+        media_path.symlink_to(outside)
+    except OSError as exc:
+        pytest.skip(f"file symlinks are unavailable: {exc}")
+
+    second = write_rockbox_metadata_library(
+        tmp_path,
+        [track],
+        defer_durability=True,
+        validation_markers=first.validation_markers,
+        validation_artwork_state=first.validation_artwork_state,
+    )
+
+    assert second.updated == 0
+    assert second.validated_from_marker == 0
+    assert second.failures[0].message == "Unsafe iPod media path; the file was not modified"
+
+
+def test_library_pass_reuses_verified_music_folders_for_new_tracks(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _create_metadata_test_ipod(monkeypatch, tmp_path)
+    media_path = tmp_path / "iPod_Control" / "Music" / "F00" / "track.mp3"
+    media_path.parent.mkdir(parents=True, exist_ok=True)
+    media_path.write_bytes(b"\xff\xfb\x90\x64" + b"\x00" * 128)
+    track = _track(":iPod_Control:Music:F00:track.mp3")
+    monkeypatch.setattr(
+        rockbox_metadata_module,
+        "expected_ipod_track_file_path",
+        lambda *_args: pytest.fail("conventional Music paths should reuse their verified folder"),
+    )
+
+    result = write_rockbox_metadata_library(tmp_path, [track], defer_durability=True)
+
+    assert result.updated == 1
+
+
+def test_library_pass_forces_planned_changes_without_first_parsing_the_tag(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _create_metadata_test_ipod(monkeypatch, tmp_path)
+    media_path = tmp_path / "iPod_Control" / "Music" / "F00" / "track.mp3"
+    media_path.parent.mkdir(parents=True, exist_ok=True)
+    media_path.write_bytes(b"\xff\xfb\x90\x64" + b"\x00" * 128)
+    track = _track(":iPod_Control:Music:F00:track.mp3")
+    monkeypatch.setattr(
+        rockbox_metadata_module,
+        "_rockbox_metadata_is_current",
+        lambda *_args: pytest.fail("a planned update should not parse the old tag first"),
+    )
+
+    result = write_rockbox_metadata_library(
+        tmp_path,
+        [track],
+        defer_durability=True,
+        force_write_track_ids={track.db_track_id},
+    )
+
+    assert result.updated == 1
+
+
+def test_library_pass_loads_existing_artwork_only_when_a_track_needs_it(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _create_metadata_test_ipod(monkeypatch, tmp_path)
+    media_path = tmp_path / "iPod_Control" / "Music" / "F00" / "track.mp3"
+    media_path.parent.mkdir(parents=True, exist_ok=True)
+    media_path.write_bytes(b"\xff\xfb\x90\x64" + b"\x00" * 128)
+    track = _track(":iPod_Control:Music:F00:track.mp3")
+    monkeypatch.setattr(
+        rockbox_metadata_module,
+        "read_existing_artwork",
+        lambda *_args: pytest.fail("source artwork should not load the whole ArtworkDB"),
+    )
+    monkeypatch.setattr(
+        rockbox_metadata_module,
+        "extract_art_with_folder",
+        lambda _source_path: _jpeg_artwork().data,
+    )
+
+    result = write_rockbox_metadata_library(
+        tmp_path,
+        [track],
+        pc_file_paths={track.db_track_id: "/host/source.mp3"},
+        defer_durability=True,
+    )
+
+    assert result.updated == 1
+
+
+def test_library_pass_prefetches_unique_source_artwork_in_parallel(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _create_metadata_test_ipod(monkeypatch, tmp_path)
+    tracks = [
+        _track(f":iPod_Control:Music:F00:track-{index}.mp3")
+        for index in range(3)
+    ]
+    for index, track in enumerate(tracks):
+        track.db_track_id = index + 1
+        media_path = tmp_path / "iPod_Control" / "Music" / "F00" / f"track-{index}.mp3"
+        media_path.parent.mkdir(parents=True, exist_ok=True)
+        media_path.write_bytes(b"\xff\xfb\x90\x64" + b"\x00" * 128)
+
+    started = threading.Barrier(3)
+    worker_threads: set[int] = set()
+
+    def extract_in_worker(_source_path: str) -> bytes:
+        worker_threads.add(threading.get_ident())
+        started.wait(timeout=2)
+        return _jpeg_artwork().data
+
+    monkeypatch.setattr(rockbox_metadata_module, "extract_art_with_folder", extract_in_worker)
+
+    result = write_rockbox_metadata_library(
+        tmp_path,
+        tracks,
+        pc_file_paths={track.db_track_id: f"/host/{track.db_track_id}.mp3" for track in tracks},
+        defer_durability=True,
+        force_write_track_ids={track.db_track_id for track in tracks},
+    )
+
+    assert result.updated == 3
+    assert len(worker_threads) == 3
+
+
+def test_planned_metadata_update_preserves_prevalidated_embedded_artwork(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _create_metadata_test_ipod(monkeypatch, tmp_path)
+    media_path = tmp_path / "iPod_Control" / "Music" / "F00" / "track.mp3"
+    media_path.parent.mkdir(parents=True, exist_ok=True)
+    media_path.write_bytes(b"\xff\xfb\x90\x64" + b"\x00" * 128)
+    track = _track(":iPod_Control:Music:F00:track.mp3", title="Before")
+    monkeypatch.setattr(
+        rockbox_metadata_module,
+        "extract_art_with_folder",
+        lambda _source_path: _jpeg_artwork().data,
+    )
+    first = write_rockbox_metadata_library(
+        tmp_path,
+        [track],
+        pc_file_paths={track.db_track_id: "/host/source.mp3"},
+        defer_durability=True,
+    )
+    original_cover = ID3(media_path).getall("APIC")[0].data
+    track.title = "After"
+    monkeypatch.setattr(
+        rockbox_metadata_module,
+        "read_existing_artwork",
+        lambda *_args: pytest.fail("a prevalidated cover should remain embedded"),
+    )
+
+    second = write_rockbox_metadata_library(
+        tmp_path,
+        [track],
+        defer_durability=True,
+        validation_markers=first.validation_markers,
+        validation_artwork_state=first.validation_artwork_state,
+        force_write_track_ids={track.db_track_id},
+        preserve_embedded_artwork_track_ids={track.db_track_id},
+    )
+
+    assert second.updated == 1
+    assert str(ID3(media_path)["TIT2"]) == "After"
+    assert ID3(media_path).getall("APIC")[0].data == original_cover
+
+
+def test_library_pass_skips_unchanged_mp4_metadata(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _create_metadata_test_ipod(monkeypatch, tmp_path)
+    media_path = tmp_path / "iPod_Control" / "Music" / "F00" / "track.m4a"
+    media_path.parent.mkdir(parents=True, exist_ok=True)
+    media_path.write_bytes(_SILENT_M4A)
+    track = _track(":iPod_Control:Music:F00:track.m4a")
+
+    write_rockbox_metadata_library(tmp_path, [track], defer_durability=True)
+    original_size = media_path.stat().st_size
+    monkeypatch.setattr(
+        rockbox_metadata_module,
+        "_write_mp4_metadata",
+        lambda *_args: pytest.fail("unchanged MP4 metadata should not be rewritten"),
+    )
+
+    result = write_rockbox_metadata_library(tmp_path, [track], defer_durability=True)
+
+    assert result.updated == 0
+    assert result.bytes_delta == 0
+    assert media_path.stat().st_size == original_size
+
+
+def test_library_pass_rewrites_changed_metadata(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _create_metadata_test_ipod(monkeypatch, tmp_path)
+    media_path = tmp_path / "iPod_Control" / "Music" / "F00" / "track.mp3"
+    media_path.parent.mkdir(parents=True, exist_ok=True)
+    media_path.write_bytes(b"\xff\xfb\x90\x64" + b"\x00" * 128)
+    track = _track(":iPod_Control:Music:F00:track.mp3", title="Before")
+
+    write_rockbox_metadata_library(tmp_path, [track], defer_durability=True)
+    track.title = "After"
+
+    result = write_rockbox_metadata_library(tmp_path, [track], defer_durability=True)
+
+    assert result.updated == 1
+    assert str(ID3(media_path)["TIT2"]) == "After"
+
+
+def test_artwork_resolver_reads_shared_existing_thumbnail_once(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    artwork_path = tmp_path / "F1000_1.ithmb"
+    artwork_path.write_bytes(b"data")
+    ref = ExistingFormatRef(
+        path=str(artwork_path),
+        ithmb_offset=0,
+        size=4,
+        width=1,
+        height=1,
+    )
+    monkeypatch.setattr(
+        rockbox_metadata_module,
+        "read_existing_artwork",
+        lambda *_args: {
+            1: {"song_id": 1, "formats": {1000: ref}},
+            2: {"song_id": 2, "formats": {1000: ref}},
+        },
+    )
+    monkeypatch.setattr(
+        rockbox_metadata_module,
+        "decode_pixels_for_format",
+        lambda *_args, **_kwargs: Image.new("RGB", (1, 1)),
+    )
+    original_open = open
+    thumbnail_reads: list[None] = []
+
+    def count_thumbnail_read(*args, **kwargs):
+        if args and args[0] == str(artwork_path):
+            thumbnail_reads.append(None)
+        return original_open(*args, **kwargs)
+
+    monkeypatch.setattr("builtins.open", count_thumbnail_read)
+    resolver = rockbox_metadata_module._ArtworkResolver(
+        tmp_path,
+        {},
+        device_artwork_formats={},
+    )
+
+    first_track = _track(":iPod_Control:Music:F00:first.mp3")
+    first_track.db_track_id = 1
+    first = resolver.for_track(first_track)
+    second_track = _track(":iPod_Control:Music:F00:second.mp3")
+    second_track.db_track_id = 2
+    second = resolver.for_track(second_track)
+
+    assert first == second
+    assert thumbnail_reads == [None]
 
 
 def test_library_pass_can_defer_per_track_durability_and_revalidation(

@@ -72,3 +72,25 @@ def test_load_propagates_unreadable_mapping_instead_of_treating_it_as_empty(
 
 def test_mapping_file_default_is_not_marked_corrupt() -> None:
     assert MappingFile().source_was_corrupt is False
+
+
+def test_mapping_round_trips_rockbox_metadata_validation_markers() -> None:
+    mapping = MappingFile()
+    markers = {
+        101: {
+            "file_size": 4_096,
+            "mtime_ns": 1_725_000_000_000_000_000,
+            "metadata_signature": "abc123",
+        },
+    }
+    artwork_state = {
+        "exists": True,
+        "file_size": 8_192,
+        "mtime_ns": 1_725_000_000_100_000_000,
+    }
+
+    mapping.set_rockbox_metadata_validation(markers, artwork_state)
+    loaded = MappingFile.from_dict(mapping.to_dict())
+
+    assert loaded.rockbox_metadata_markers == markers
+    assert loaded.rockbox_artwork_state == artwork_state

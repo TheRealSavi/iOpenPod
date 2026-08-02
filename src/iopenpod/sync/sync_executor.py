@@ -107,7 +107,12 @@ from .mapping import MappingFile, MappingManager
 from .path_identity import coerce_int, stable_path_key
 from .photos import apply_photo_sync_plan, read_photo_db
 from .plan_validator import validate_sync_plan
-from .rockbox_metadata import write_rockbox_metadata_library
+from .rockbox_metadata import (
+    RockboxArtworkDatabaseState,
+    RockboxMetadataValidationMarker,
+    rockbox_artwork_database_state,
+    write_rockbox_metadata_library,
+)
 from .source_identity import source_content_hash
 from .transcoder import (
     TranscodeOptions,
@@ -143,6 +148,7 @@ _SYNC_UNTIL_FULL_RESERVE_BYTES = SYNC_UNTIL_FULL_RESERVE_BYTES
 _DEFAULT_MUSIC_DIRS = 20
 
 _ROCKBOX_REVALIDATION_INTERVAL_SECONDS = 5.0
+_ROCKBOX_PROGRESS_INTERVAL_SECONDS = 0.1
 def _mhsd5_type_value(playlist: dict) -> int:
     return coerce_int(playlist.get("mhsd5_type", 0))
 
@@ -1478,23 +1484,121 @@ class SyncExecutor:
             len(tracks),
             message="Preparing Rockbox-compatible file metadata",
         )
-        pass_result = write_rockbox_metadata_library(
-            self.ipod_path,
-            tracks,
-            pc_file_paths=commit_payload.pc_file_paths,
-            progress_callback=lambda current, total, label: ctx.progress(
+        changed_track_ids = {
+            coerce_int(item.db_track_id)
+            for items in (
+                ctx.plan.to_add,
+                ctx.plan.to_update_file,
+                ctx.plan.to_update_metadata,
+                ctx.plan.to_update_artwork,
+            )
+            for item in items
+            if coerce_int(item.db_track_id)
+        }
+        changed_track_ids.update(
+            coerce_int(track.db_track_id)
+            for track in ctx.new_tracks
+            if coerce_int(track.db_track_id)
+        )
+        metadata_only_track_ids = {
+            coerce_int(item.db_track_id)
+            for item in ctx.plan.to_update_metadata
+            if coerce_int(item.db_track_id)
+        }
+        metadata_only_track_ids.difference_update(
+            coerce_int(item.db_track_id)
+            for items in (
+                ctx.plan.to_add,
+                ctx.plan.to_update_file,
+                ctx.plan.to_update_artwork,
+            )
+            for item in items
+            if coerce_int(item.db_track_id)
+        )
+        metadata_only_track_ids.difference_update(
+            coerce_int(track.db_track_id)
+            for track in ctx.new_tracks
+            if coerce_int(track.db_track_id)
+        )
+        validation_markers: dict[int, RockboxMetadataValidationMarker] = {}
+        for db_track_id, marker in ctx.mapping.rockbox_metadata_markers.items():
+            if db_track_id in changed_track_ids and db_track_id not in metadata_only_track_ids:
+                continue
+            try:
+                validation_markers[db_track_id] = RockboxMetadataValidationMarker(
+                    db_track_id=db_track_id,
+                    file_size=int(marker["file_size"]),
+                    mtime_ns=int(marker["mtime_ns"]),
+                    metadata_signature=str(marker["metadata_signature"]),
+                )
+            except (KeyError, TypeError, ValueError):
+                continue
+        validation_artwork_state: RockboxArtworkDatabaseState | None = None
+        if raw_artwork_state := ctx.mapping.rockbox_artwork_state:
+            try:
+                validation_artwork_state = RockboxArtworkDatabaseState(
+                    exists=bool(raw_artwork_state["exists"]),
+                    file_size=int(raw_artwork_state.get("file_size", 0)),
+                    mtime_ns=int(raw_artwork_state.get("mtime_ns", 0)),
+                )
+            except (KeyError, TypeError, ValueError):
+                pass
+        last_progress_at: float | None = None
+
+        def report_progress(current: int, total: int, label: str) -> None:
+            nonlocal last_progress_at
+            now = time.monotonic()
+            is_final = current >= total
+            if (
+                not is_final
+                and last_progress_at is not None
+                and now - last_progress_at < _ROCKBOX_PROGRESS_INTERVAL_SECONDS
+            ):
+                return
+            last_progress_at = now
+            ctx.progress(
                 "rockbox_metadata",
                 current,
                 total,
                 message=f"Writing Rockbox metadata: {label}",
-            ),
+            )
+
+        pass_result = write_rockbox_metadata_library(
+            self.ipod_path,
+            tracks,
+            pc_file_paths=commit_payload.pc_file_paths,
+            progress_callback=report_progress,
             is_cancelled=ctx.cancelled,
             before_device_mutation=self._revalidate_device_write_readiness,
             max_file_size_bytes=self._effective_max_file_size_bytes(),
             device_artwork_formats=(resolve_cover_art_format_definitions_for_device(self.device_info)),
             defer_durability=True,
             revalidate_interval_seconds=_ROCKBOX_REVALIDATION_INTERVAL_SECONDS,
+            validation_markers=validation_markers,
+            validation_artwork_state=validation_artwork_state,
+            force_write_track_ids=changed_track_ids,
+            preserve_embedded_artwork_track_ids=metadata_only_track_ids,
         )
+        if hasattr(pass_result, "validation_markers"):
+            marker_rows = {
+                db_track_id: {
+                    "file_size": marker.file_size,
+                    "mtime_ns": marker.mtime_ns,
+                    "metadata_signature": marker.metadata_signature,
+                }
+                for db_track_id, marker in pass_result.validation_markers.items()
+            }
+            artwork_state = getattr(pass_result, "validation_artwork_state", None)
+            artwork_state_row = (
+                {
+                    "exists": artwork_state.exists,
+                    "file_size": artwork_state.file_size,
+                    "mtime_ns": artwork_state.mtime_ns,
+                }
+                if artwork_state is not None
+                else None
+            )
+            ctx.mapping.set_rockbox_metadata_validation(marker_rows, artwork_state_row)
         ctx.result.rockbox_metadata_updated += pass_result.updated
         for failure in pass_result.failures:
             label = failure.location or "unknown track"
@@ -1597,6 +1701,17 @@ class SyncExecutor:
             self._backpatch_new_tracks(ctx)
 
             # Save mapping ONLY after successful DB write + backpatch.
+            if ctx.rockbox_metadata_support:
+                artwork_state = rockbox_artwork_database_state(self.ipod_path)
+                ctx.mapping.set_rockbox_artwork_state(
+                    {
+                        "exists": artwork_state.exists,
+                        "file_size": artwork_state.file_size,
+                        "mtime_ns": artwork_state.mtime_ns,
+                    }
+                    if artwork_state is not None
+                    else None
+                )
             self._revalidate_device_write_readiness()
             if self.mapping_manager.save(ctx.mapping) is False:
                 ctx.result.errors.append(

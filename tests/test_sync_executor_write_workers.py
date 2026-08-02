@@ -28,6 +28,10 @@ from iopenpod.sync.contracts import (
 from iopenpod.sync.database_commit import DatabaseCommitPayload
 from iopenpod.sync.mapping import MappingFile
 from iopenpod.sync.pc_library import PCTrack
+from iopenpod.sync.rockbox_metadata import (
+    RockboxArtworkDatabaseState,
+    RockboxMetadataValidationMarker,
+)
 from iopenpod.sync.sync_executor import SyncExecutor, _ExecutionLifecycle, _SyncContext
 from iopenpod.sync.sync_playlist_files import normalize_sync_playlist_path, sync_playlist_file_id
 from iopenpod.sync.transcoder import TranscodeResult, TranscodeTarget, resolve_transcode_plan
@@ -151,6 +155,161 @@ def test_rockbox_metadata_pass_defers_durability_to_sync_flush(
 
     assert received["defer_durability"] is True
     assert received["revalidate_interval_seconds"] == 5.0
+
+
+def test_rockbox_metadata_progress_is_rate_limited(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    executor = SyncExecutor(tmp_path)
+    progress_events = []
+    ctx = _SyncContext(
+        plan=SyncPlan(),
+        mapping=MappingFile(),
+        progress_callback=progress_events.append,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+    )
+
+    def emit_metadata_progress(*_args, **kwargs):
+        callback = kwargs["progress_callback"]
+        callback(1, 10, "first.mp3")
+        callback(2, 10, "second.mp3")
+        callback(10, 10, "last.mp3")
+        return SimpleNamespace(updated=0, failures=())
+
+    monotonic_values = iter((0.0, 0.01, 0.02))
+    monkeypatch.setattr(sync_executor_module.time, "monotonic", lambda: next(monotonic_values))
+    monkeypatch.setattr(
+        sync_executor_module,
+        "write_rockbox_metadata_library",
+        emit_metadata_progress,
+    )
+
+    executor._execute_rockbox_metadata_pass(
+        ctx,
+        DatabaseCommitPayload(all_tracks=[TrackInfo(title="Track", location=":iPod_Control:Music:F00:track.mp3")]),
+    )
+
+    assert [(event.current, event.total) for event in progress_events] == [
+        (0, 1),
+        (1, 10),
+        (10, 10),
+    ]
+
+
+def test_rockbox_metadata_pass_persists_validation_markers(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    executor = SyncExecutor(tmp_path)
+    mapping = MappingFile()
+    artwork_state = RockboxArtworkDatabaseState(exists=False)
+    existing_marker = RockboxMetadataValidationMarker(
+        db_track_id=11,
+        file_size=1_024,
+        mtime_ns=1_000,
+        metadata_signature="before",
+    )
+    mapping.set_rockbox_metadata_validation(
+        {
+            11: {
+                "file_size": existing_marker.file_size,
+                "mtime_ns": existing_marker.mtime_ns,
+                "metadata_signature": existing_marker.metadata_signature,
+            },
+        },
+        {"exists": False, "file_size": 0, "mtime_ns": 0},
+    )
+    ctx = _SyncContext(
+        plan=SyncPlan(),
+        mapping=mapping,
+        progress_callback=None,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+    )
+    returned_marker = RockboxMetadataValidationMarker(
+        db_track_id=11,
+        file_size=2_048,
+        mtime_ns=2_000,
+        metadata_signature="after",
+    )
+    received: dict[str, object] = {}
+
+    def record_metadata_pass(*_args, **kwargs):
+        received.update(kwargs)
+        return SimpleNamespace(
+            updated=0,
+            failures=(),
+            validation_markers={11: returned_marker},
+            validation_artwork_state=artwork_state,
+        )
+
+    monkeypatch.setattr(
+        sync_executor_module,
+        "write_rockbox_metadata_library",
+        record_metadata_pass,
+    )
+    track = TrackInfo(
+        title="Track",
+        location=":iPod_Control:Music:F00:track.mp3",
+        db_track_id=11,
+    )
+
+    executor._execute_rockbox_metadata_pass(
+        ctx,
+        DatabaseCommitPayload(all_tracks=[track]),
+    )
+
+    assert received["validation_markers"] == {11: existing_marker}
+    assert received["validation_artwork_state"] == artwork_state
+    assert ctx.mapping.rockbox_metadata_markers[11]["metadata_signature"] == "after"
+
+
+def test_rockbox_metadata_pass_forces_planned_track_updates(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    executor = SyncExecutor(tmp_path)
+    ctx = _SyncContext(
+        plan=SyncPlan(
+            to_update_metadata=[
+                SyncItem(action=SyncAction.UPDATE_METADATA, db_track_id=11),
+            ],
+        ),
+        mapping=MappingFile(),
+        progress_callback=None,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+    )
+    received: dict[str, object] = {}
+    monkeypatch.setattr(
+        sync_executor_module,
+        "write_rockbox_metadata_library",
+        lambda *_args, **kwargs: (
+            received.update(kwargs)
+            or SimpleNamespace(updated=0, failures=())
+        ),
+    )
+
+    executor._execute_rockbox_metadata_pass(
+        ctx,
+        DatabaseCommitPayload(
+            all_tracks=[
+                TrackInfo(
+                    title="Track",
+                    location=":iPod_Control:Music:F00:track.mp3",
+                    db_track_id=11,
+                ),
+            ],
+        ),
+    )
+
+    assert received["force_write_track_ids"] == {11}
+    assert received["preserve_embedded_artwork_track_ids"] == {11}
 
 
 def test_execution_lifecycle_runs_named_phases_in_order(

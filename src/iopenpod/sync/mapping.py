@@ -13,7 +13,8 @@ Location on iPod: /iPod_Control/iTunes/iOpenPod.json
 import json
 import logging
 import shutil
-from dataclasses import asdict, dataclass
+from collections.abc import Mapping
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -113,10 +114,12 @@ class MappingFile:
     the same song appears on multiple albums (same acoustic fingerprint).
     """
 
-    version: int = 5  # v5: optional aggregate/container metadata
+    version: int = 6  # v6: Rockbox tag-validation markers
     created: str = ""
     modified: str = ""
     _tracks: dict[str, list[TrackMapping]] | None = None
+    rockbox_metadata_markers: dict[int, dict[str, int | str]] = field(default_factory=dict)
+    rockbox_artwork_state: dict[str, int | bool] | None = None
     _db_track_id_index: dict[int, tuple[str, TrackMapping]] | None = None
     _source_was_corrupt: bool = False
 
@@ -318,9 +321,35 @@ class MappingFile:
                 result.append((fp, entry))
         return result
 
+    def set_rockbox_metadata_validation(
+        self,
+        markers: Mapping[int, Mapping[str, int | str]],
+        artwork_state: Mapping[str, int | bool] | None,
+    ) -> None:
+        """Replace cached Rockbox validation proofs from a completed pass."""
+
+        self.rockbox_metadata_markers = {
+            int(db_track_id): {
+                "file_size": int(marker["file_size"]),
+                "mtime_ns": int(marker["mtime_ns"]),
+                "metadata_signature": str(marker["metadata_signature"]),
+            }
+            for db_track_id, marker in markers.items()
+            if _is_rockbox_marker(marker)
+        }
+        self.rockbox_artwork_state = _normalize_rockbox_artwork_state(artwork_state)
+
+    def set_rockbox_artwork_state(
+        self,
+        artwork_state: Mapping[str, int | bool] | None,
+    ) -> None:
+        """Refresh the ArtworkDB portion of the Rockbox validation state."""
+
+        self.rockbox_artwork_state = _normalize_rockbox_artwork_state(artwork_state)
+
     def to_dict(self) -> dict:
         """Convert to JSON-serializable dict."""
-        return {
+        data = {
             "version": self.version,
             "created": self.created,
             "modified": self.modified,
@@ -329,13 +358,22 @@ class MappingFile:
                 for fp, entries in self.tracks.items()
             },
         }
+        if self.rockbox_artwork_state is not None:
+            data["rockboxMetadata"] = {
+                "markers": {
+                    str(db_track_id): marker
+                    for db_track_id, marker in self.rockbox_metadata_markers.items()
+                },
+                "artworkState": self.rockbox_artwork_state,
+            }
+        return data
 
     @classmethod
     def from_dict(cls, data: dict) -> "MappingFile":
         """Create from dict (JSON parsing).
 
         Handles v1 (single entry), v2 (list entries), v3 (db_track_id key),
-        v4 (source_hash), and v5 (aggregate metadata) formats.
+        v4 (source_hash), v5 (aggregate metadata), and v6 (Rockbox markers).
         """
         version = data.get("version", 1)
         tracks: dict[str, list[TrackMapping]] = {}
@@ -350,12 +388,73 @@ class MappingFile:
             else:
                 logger.warning(f"Unexpected track data format for {fp}: {type(track_data)}")
 
+        rockbox_markers, rockbox_artwork_state = _rockbox_metadata_validation_from_dict(data)
         return cls(
-            version=5,  # Always upgrade to current format
+            version=6,  # Always upgrade to current format
             created=data.get("created", ""),
             modified=data.get("modified", ""),
             _tracks=tracks,
+            rockbox_metadata_markers=rockbox_markers,
+            rockbox_artwork_state=rockbox_artwork_state,
         )
+
+
+def _is_rockbox_marker(marker: Mapping[str, int | str]) -> bool:
+    try:
+        return (
+            int(marker["file_size"]) >= 0
+            and int(marker["mtime_ns"]) >= 0
+            and bool(str(marker["metadata_signature"]))
+        )
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
+def _normalize_rockbox_artwork_state(
+    state: Mapping[str, int | bool] | None,
+) -> dict[str, int | bool] | None:
+    if state is None:
+        return None
+    try:
+        return {
+            "exists": bool(state["exists"]),
+            "file_size": max(0, int(state.get("file_size", 0))),
+            "mtime_ns": max(0, int(state.get("mtime_ns", 0))),
+        }
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _rockbox_metadata_validation_from_dict(
+    data: Mapping[str, object],
+) -> tuple[dict[int, dict[str, int | str]], dict[str, int | bool] | None]:
+    raw_rockbox = data.get("rockboxMetadata")
+    if not isinstance(raw_rockbox, Mapping):
+        return {}, None
+
+    markers: dict[int, dict[str, int | str]] = {}
+    raw_markers = raw_rockbox.get("markers")
+    if isinstance(raw_markers, Mapping):
+        for raw_db_track_id, raw_marker in raw_markers.items():
+            if not isinstance(raw_marker, Mapping):
+                continue
+            try:
+                db_track_id = int(raw_db_track_id)
+                marker = {
+                    "file_size": int(raw_marker["file_size"]),
+                    "mtime_ns": int(raw_marker["mtime_ns"]),
+                    "metadata_signature": str(raw_marker["metadata_signature"]),
+                }
+            except (KeyError, TypeError, ValueError):
+                continue
+            if db_track_id and _is_rockbox_marker(marker):
+                markers[db_track_id] = marker
+
+    raw_artwork_state = raw_rockbox.get("artworkState")
+    artwork_state = _normalize_rockbox_artwork_state(
+        raw_artwork_state if isinstance(raw_artwork_state, Mapping) else None,
+    )
+    return markers, artwork_state
 
 
 class MappingManager:
