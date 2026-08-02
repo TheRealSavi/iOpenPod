@@ -62,6 +62,30 @@ def test_shared_style_factories_consume_final_component_paints() -> None:
         styles._THEME_RUNTIME.replace(theme_snapshot)
 
 
+def test_blue_preset_overrides_the_theme_default_accent() -> None:
+    assert styles.resolve_accent_color("blue") == "blue"
+    assert styles.resolve_accent_color("preset-blue") == "#409cff"
+
+
+def test_neutral_match_ipod_blends_with_the_selected_theme_accent(monkeypatch) -> None:
+    monkeypatch.setattr(styles, "resolve_ipod_image_color", lambda _image: (128, 128, 128))
+
+    neutral_match = styles.resolve_accent_color("match-ipod", "silver-ipod.png")
+
+    assert neutral_match == "match-ipod-neutral:#808080"
+
+    theme_snapshot = current_theme()
+    try:
+        apply_theme("dark", "off", neutral_match)
+
+        accent = current_theme().paint("ACCENT")
+        assert accent.source_roles == ("custom_accent",)
+        assert accent.css != "#409cff"
+        assert accent.color.blue > accent.color.red
+    finally:
+        styles._THEME_RUNTIME.replace(theme_snapshot)
+
+
 def test_theme_selection_reports_non_accent_palette_changes(monkeypatch, tmp_path) -> None:
     """A rebuild is required when a same-accent theme changes other paints."""
 

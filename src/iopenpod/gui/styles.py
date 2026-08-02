@@ -183,8 +183,9 @@ def apply_theme_selection(
 
 # Named accent color presets (settings value → hex).
 ACCENT_PRESETS: dict[str, str] = {
-    "blue": "",           # empty = use theme default
+    "blue": "",           # legacy key: use theme default
     "match-ipod": "",     # resolved at runtime from device info
+    "preset-blue": "#409cff",
     "red": "#d94040",
     "orange": "#d98030",
     "gold": "#c8a840",

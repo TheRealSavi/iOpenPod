@@ -1735,7 +1735,7 @@ class MainWindow(QMainWindow):
 
         accent_hex = resolve_accent_color("match-ipod", img)
 
-        # Always apply the resolved accent, including "blue" fallback.
+        # Always apply the resolved accent, including the theme-default fallback.
         # This ensures switching from a colorful device to a gray/white/black
         # device resets the UI back to the default accent.
         return apply_theme_selection(

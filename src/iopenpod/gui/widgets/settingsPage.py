@@ -95,6 +95,21 @@ _GRID_ITEM_SIZE_DISPLAY = {
 _GRID_ITEM_SIZE_BY_TEXT = {
     text: size for size, text in _GRID_ITEM_SIZE_DISPLAY.items()
 }
+_ACCENT_COLOR_DISPLAY = {
+    "blue": "Theme Default",
+    "match-ipod": "Match iPod",
+    "preset-blue": "Blue",
+    "red": "Red",
+    "orange": "Orange",
+    "gold": "Gold",
+    "green": "Green",
+    "teal": "Teal",
+    "purple": "Purple",
+    "pink": "Pink",
+}
+_ACCENT_COLOR_BY_TEXT = {
+    text: color for color, text in _ACCENT_COLOR_DISPLAY.items()
+}
 
 
 # ── Reusable row widgets ────────────────────────────────────────────────────
@@ -1426,14 +1441,10 @@ class SettingsPage(QWidget):
 
         self.accent_color = ComboRow(
             "Accent Color",
-            "Customize the accent color used throughout the interface. "
+            "Theme Default uses the accent from the selected theme. "
             "Match iPod uses the body color of your connected iPod.",
-            options=[
-                "Blue (Default)", "Match iPod",
-                "Red", "Orange", "Gold", "Green",
-                "Teal", "Purple", "Pink",
-            ],
-            current="Blue (Default)",
+            options=list(_ACCENT_COLOR_DISPLAY.values()),
+            current=_ACCENT_COLOR_DISPLAY["blue"],
         )
 
         self.show_art = ToggleRow(
@@ -2238,13 +2249,10 @@ class SettingsPage(QWidget):
             self.high_contrast.combo.setCurrentIndex(idx)
 
         # Accent color
-        accent_display = {
-            "blue": "Blue (Default)", "match-ipod": "Match iPod",
-            "red": "Red", "orange": "Orange", "gold": "Gold",
-            "green": "Green", "teal": "Teal", "purple": "Purple",
-            "pink": "Pink",
-        }
-        ac_text = accent_display.get(s.accent_color, "Blue (Default)")
+        ac_text = _ACCENT_COLOR_DISPLAY.get(
+            s.accent_color,
+            _ACCENT_COLOR_DISPLAY["blue"],
+        )
         idx = self.accent_color.combo.findText(ac_text)
         if idx >= 0:
             self.accent_color.combo.setCurrentIndex(idx)
@@ -2666,13 +2674,7 @@ class SettingsPage(QWidget):
             s.high_contrast = hc_keys.get(self.high_contrast.value, "off")
 
         # Accent color
-        accent_keys = {
-            "Blue (Default)": "blue", "Match iPod": "match-ipod",
-            "Red": "red", "Orange": "orange", "Gold": "gold",
-            "Green": "green", "Teal": "teal", "Purple": "purple",
-            "Pink": "pink",
-        }
-        s.accent_color = accent_keys.get(self.accent_color.value, "blue")
+        s.accent_color = _ACCENT_COLOR_BY_TEXT.get(self.accent_color.value, "blue")
 
         if include_global_only:
             s.transcode_cache_dir = self.transcode_cache_dir.value
