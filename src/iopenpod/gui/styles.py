@@ -62,6 +62,8 @@ _THEME_RUNTIME = ThemeRuntime(_INITIAL_THEME)
 # the application. Theme files intentionally never configure these mechanics.
 ACCENT_CONTRAST_TARGET = 3.35
 GRID_ART_CONTRAST_TARGET = 3.35
+_MATCH_IPOD_NEUTRAL_PREFIX = "match-ipod-neutral:"
+_MATCH_IPOD_NEUTRAL_BLEND = 0.35
 
 
 def current_theme() -> ResolvedTheme:
@@ -142,7 +144,16 @@ def apply_theme(
         _detect_system_high_contrast() if high_contrast == "system" else high_contrast == "on"
     )
     accent_override = None
-    if accent_color and accent_color not in ("blue", "match-ipod"):
+    if accent_color.startswith(_MATCH_IPOD_NEUTRAL_PREFIX):
+        neutral_ipod = Color.try_from_hex(
+            accent_color.removeprefix(_MATCH_IPOD_NEUTRAL_PREFIX)
+        )
+        if neutral_ipod is not None:
+            accent_override = Color.from_hex(definition.colors["accent"]).mixed_with(
+                neutral_ipod,
+                _MATCH_IPOD_NEUTRAL_BLEND,
+            )
+    elif accent_color and accent_color not in ("blue", "match-ipod"):
         accent_override = Color.try_from_hex(accent_color)
     resolved_theme = render_theme(
         definition,
@@ -203,6 +214,8 @@ def resolve_accent_color(
     """Turn an ``accent_color`` setting value into a hex string.
 
     Returns ``"blue"`` (meaning use theme default) when no override applies.
+    Neutral Match iPod colors return an internal value that ``apply_theme``
+    blends with the selected theme's accent.
     """
     if setting == "blue":
         return "blue"
@@ -210,14 +223,14 @@ def resolve_accent_color(
         if ipod_image:
             rgb = resolve_ipod_image_color(ipod_image)
             if rgb is not None:
-                # Reject white/silver and black/gray iPods — they don't work
-                # as accent colors. Check saturation: achromatic colors have
-                # R, G, B values very close together; colorful ones are spread out.
+                # Achromatic finishes need the selected theme to retain a
+                # useful hue, so defer their blend until ``apply_theme`` has
+                # the selected theme's authored accent.
                 r_min, r_max = min(rgb), max(rgb)
                 saturation = r_max - r_min
-                # Saturation < 15 indicates grayscale (white/silver/black/gray)
+                # Saturation < 15 indicates grayscale (white/silver/black/gray).
                 if saturation < 15:
-                    return "blue"  # fall back to theme default
+                    return _MATCH_IPOD_NEUTRAL_PREFIX + f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
                 return f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
         return "blue"  # no iPod connected — fall back to default
     # Named preset
