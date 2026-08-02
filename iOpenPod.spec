@@ -1,9 +1,14 @@
 # -*- mode: python ; coding: utf-8 -*-
 import sys
-import platform as _platform
 import subprocess as _subprocess
 from pathlib import Path as _Path
+
+_spec_root = _Path(SPECPATH).resolve()
+if str(_spec_root) not in sys.path:
+    sys.path.insert(0, str(_spec_root))
+
 from PyInstaller.utils.hooks import copy_metadata
+from scripts.pyinstaller_helpers import wasmtime_binaries
 
 # Read version from pyproject.toml so it stays in sync
 _version = "0.0.0"
@@ -21,17 +26,12 @@ try:
     _ws = _iu.find_spec('wasmtime')
     if _ws and _ws.submodule_search_locations:
         _wpkg = _Path(list(_ws.submodule_search_locations)[0])
-        _machine = _platform.machine()
-        if _machine == 'AMD64':
-            _machine = 'x86_64'
-        elif _machine in ('arm64', 'ARM64'):
-            _machine = 'aarch64'
-        _wplat = _wpkg / f'{sys.platform}-{_machine}'
-        if _wplat.is_dir():
-            _wasmtime_binaries = [
-                (str(f), f'wasmtime/{_wplat.name}')
-                for f in _wplat.iterdir() if f.is_file()
-            ]
+        import platform as _platform
+        _wasmtime_binaries = wasmtime_binaries(
+            _wpkg,
+            platform=sys.platform,
+            machine=_platform.machine(),
+        )
 except Exception:
     pass
 
