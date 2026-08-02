@@ -14,22 +14,28 @@ import html
 import logging
 import os
 import shutil
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from PyQt6.QtCore import QEvent, QObject, QRectF, QSize, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QFont, QPainter
+from PyQt6.QtCore import QAbstractListModel, QEvent, QModelIndex, QObject, QRect, QRectF, QSize, Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QFont, QFontMetrics, QPainter
 from PyQt6.QtWidgets import (
+    QAbstractItemView,
     QCheckBox,
     QDialog,
     QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QListView,
     QMessageBox,
     QProgressBar,
     QPushButton,
     QSizePolicy,
     QStackedWidget,
+    QStyle,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
     QVBoxLayout,
     QWidget,
 )
@@ -194,9 +200,7 @@ class StorageBarWidget(QWidget):
 
             # Sync delta (green = fits, warm orange = overflow)
             if delta_px > 0:
-                color = _parse_color(
-                    paint_css("sync.storage.overflow_fill" if overflow else "sync.storage.add_fill")
-                )
+                color = _parse_color(paint_css("sync.storage.overflow_fill" if overflow else "sync.storage.add_fill"))
                 p.setBrush(color)
                 right_edge = used_px + delta_px
                 p.drawRoundedRect(QRectF(used_px, 0, delta_px, h), r, r)
@@ -875,6 +879,457 @@ class _DuplicateGroupWidget(QFrame):
 # ── SyncCategoryCard ────────────────────────────────────────────────────────
 
 
+_REVIEW_ROW_ROLE = int(Qt.ItemDataRole.UserRole) + 1
+_REVIEW_VISIBLE_ROWS = 5
+# A compact floor for title-only and one-line informational rows.  Track rows
+# grow from their measured detail text rather than inheriting a one-size-fits-
+# all height.
+_REVIEW_ROW_MIN_HEIGHT = 64
+_REVIEW_ROOT_INDEX = QModelIndex()
+
+
+@dataclass
+class _VirtualReviewRow:
+    """Data for one virtual sync-review row, without a per-item QWidget."""
+
+    sync_item: Any | None = None
+    kind: str = "info"
+    title: str = ""
+    detail: str = ""
+    badge: str = ""
+    checked: bool = False
+    checkable: bool = False
+    payload: Any = None
+    rendered: tuple[str, str, str, str] | None = None
+
+    def is_checked(self) -> bool:
+        return self.checked
+
+    def set_checked(self, state: bool) -> None:
+        self.checked = state
+
+
+def _virtual_track_row_content(item: Any) -> tuple[str, str, str, str]:
+    """Build the text for a track row only when the virtual view needs it."""
+
+    track = getattr(item, "pc_track", None)
+    ipod = getattr(item, "ipod_track", None)
+    if not isinstance(ipod, dict):
+        ipod = None
+    description = str(getattr(item, "description", "") or "")
+    badge = SyncTrackRow._ipod_size_badge(item, ipod, track)
+
+    title = description or "Sync item"
+    detail_lines: list[str] = []
+    tooltip_lines: list[str] = []
+
+    if is_sync_action(item, ACTION_ADD_TO_IPOD) and track:
+        title = track.title or track.filename
+        format_line = " · ".join(
+            part
+            for part in [
+                SyncTrackRow._track_context(track=track),
+                (track.extension or "").upper(),
+                f"Source {_format_size(track.size)}" if track.size else "",
+            ]
+            if part
+        )
+        detail_lines = [
+            format_line,
+            "Will be copied from your PC library to the iPod.",
+            f"Source: {_short_display_path(track.path)}" if getattr(track, "path", "") else "",
+        ]
+    elif is_sync_action(item, ACTION_REMOVE_FROM_IPOD):
+        if ipod:
+            title = ipod.get("Title", "Unknown")
+            reason = description.split(":")[0] if description else ""
+            detail_lines = [
+                SyncTrackRow._track_context(ipod=ipod),
+                "Will be deleted from the iPod.",
+                f"Reason: {reason}" if reason else "",
+                f"iPod location: {ipod.get('Location', 'Unknown')}",
+            ]
+        else:
+            title = description or "Unknown track"
+            detail_lines = ["Will clean up a stale iPod database entry.", f"Database track ID: {getattr(item, 'db_track_id', None)}"]
+    elif is_sync_action(item, ACTION_UPDATE_FILE):
+        if track:
+            title = track.title or track.filename or description or "File update"
+            detail_lines = [
+                SyncTrackRow._track_context(track=track),
+                "The source file changed; the iPod copy will be replaced.",
+                f"Source: {_short_display_path(track.path)}" if getattr(track, "path", "") else "",
+            ]
+        elif ipod:
+            title = ipod.get("Title") or description or "File update"
+            detail_lines = [SyncTrackRow._track_context(ipod=ipod), "The iPod copy will be re-synced.", description]
+        else:
+            title = description or "File update"
+            detail_lines = ["The file will be re-synced to the iPod."]
+    elif is_sync_action(item, ACTION_UPDATE_METADATA):
+        if track:
+            title = track.title or track.filename or description or "Metadata update"
+            context = SyncTrackRow._track_context(track=track)
+        elif ipod:
+            title = ipod.get("Title") or description or "Metadata update"
+            context = SyncTrackRow._track_context(ipod=ipod)
+        else:
+            title = description or "Metadata update"
+            context = ""
+        changes = metadata_change_parts(item)
+        if getattr(item, "aggregate_kind", None) == "chaptered_album" and description:
+            changes = [description, *changes]
+        detail_lines = [context, f"Will update iPod metadata from {'PC tags' if track else 'iOpenPod edit'}.", *(["Changes:", *changes] if changes else [description or "Metadata will be updated."])]
+    elif is_sync_action(item, ACTION_UPDATE_ARTWORK) and track:
+        title = track.title or track.filename
+        if not item.new_art_hash and item.old_art_hash:
+            artwork_action = "Album art will be removed from the iPod."
+        elif item.new_art_hash and not item.old_art_hash:
+            artwork_action = "Album art will be added to the iPod."
+        else:
+            artwork_action = "Album art will be refreshed on the iPod."
+        detail_lines = [SyncTrackRow._track_context(track=track), artwork_action]
+    elif is_sync_action(item, ACTION_SYNC_PLAYCOUNT) and track:
+        title = track.title or track.filename
+        stats = []
+        if item.play_count_delta > 0:
+            ipod_total = ipod.get("play_count_1", 0) if ipod else 0
+            stats.append(f"plays {max(ipod_total - item.play_count_delta, 0)} → {ipod_total}")
+        if item.skip_count_delta > 0:
+            ipod_skips = ipod.get("skip_count", 0) if ipod else 0
+            stats.append(f"skips {max(ipod_skips - item.skip_count_delta, 0)} → {ipod_skips}")
+        detail_lines = [SyncTrackRow._track_context(track=track), "New iPod listening activity will be synced.", "Activity: " + "; ".join(stats) if stats else ""]
+    elif is_sync_action(item, ACTION_SYNC_RATING):
+        if track:
+            title = track.title or track.filename
+            artist, album = track.artist or "Unknown", track.album or "Unknown"
+        elif ipod:
+            title = ipod.get("Title", "Unknown")
+            artist, album = ipod.get("Artist", "Unknown"), ipod.get("Album", "Unknown")
+        else:
+            title = "Unknown"
+            artist, album = "Unknown", "Unknown"
+        detail_lines = [
+            f"{artist} · {album}",
+            f"PC {_rating_to_stars(item.pc_rating)} · iPod {_rating_to_stars(item.ipod_rating)} · Result {_rating_to_stars(item.new_rating)}",
+            f"Strategy: {item.rating_strategy or 'iPod wins'}",
+        ]
+    else:
+        detail_lines = ["This item is part of the sync plan."]
+
+    if track:
+        tooltip_lines = [
+            f"Title: {track.title or track.filename}",
+            f"Artist: {track.artist or 'Unknown'}",
+            f"Album: {track.album or 'Unknown'}",
+            f"Path: {track.path}",
+        ]
+    elif ipod:
+        tooltip_lines = [
+            f"Title: {ipod.get('Title', 'Unknown')}",
+            f"Artist: {ipod.get('Artist', 'Unknown')}",
+            f"iPod Location: {ipod.get('Location', 'Unknown')}",
+        ]
+
+    return title, "\n".join(line for line in detail_lines if line), badge, "\n".join(tooltip_lines)
+
+
+class _SyncReviewRowsModel(QAbstractListModel):
+    """Virtualized row model for one sync-review category card."""
+
+    selection_changed = pyqtSignal()
+
+    def __init__(self, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self._rows: list[_VirtualReviewRow] = []
+
+    def rowCount(self, parent: QModelIndex = _REVIEW_ROOT_INDEX) -> int:  # type: ignore[override]
+        return 0 if parent.isValid() else len(self._rows)
+
+    def data(self, index: QModelIndex, role: int = int(Qt.ItemDataRole.DisplayRole)):  # type: ignore[override]
+        if not index.isValid() or not 0 <= index.row() < len(self._rows):
+            return None
+        row = self._rows[index.row()]
+        if role == _REVIEW_ROW_ROLE:
+            if row.kind == "track" and row.rendered is None:
+                row.rendered = _virtual_track_row_content(row.sync_item)
+            return row
+        if role == Qt.ItemDataRole.DisplayRole:
+            return row.title
+        if role == Qt.ItemDataRole.ToolTipRole:
+            if row.kind == "track" and row.rendered is None:
+                row.rendered = _virtual_track_row_content(row.sync_item)
+            return row.rendered[3] if row.rendered else ""
+        return None
+
+    def flags(self, index: QModelIndex) -> Qt.ItemFlag:  # type: ignore[override]
+        if not index.isValid() or not 0 <= index.row() < len(self._rows):
+            return Qt.ItemFlag.NoItemFlags
+        return Qt.ItemFlag.ItemIsEnabled
+
+    def append(self, row: _VirtualReviewRow) -> _VirtualReviewRow:
+        position = len(self._rows)
+        self.beginInsertRows(QModelIndex(), position, position)
+        self._rows.append(row)
+        self.endInsertRows()
+        return row
+
+    def toggle(self, index: QModelIndex) -> None:
+        if index.isValid() and 0 <= index.row() < len(self._rows):
+            row = self._rows[index.row()]
+            if row.checkable:
+                row.checked = not row.checked
+                self.dataChanged.emit(index, index, [_REVIEW_ROW_ROLE])
+                self.selection_changed.emit()
+
+    def set_all_checked(self, state: bool) -> None:
+        changed = False
+        for row in self._rows:
+            if row.checkable and row.checked != state:
+                row.checked = state
+                changed = True
+        if changed and self._rows:
+            self.dataChanged.emit(self.index(0, 0), self.index(len(self._rows) - 1, 0), [_REVIEW_ROW_ROLE])
+            self.selection_changed.emit()
+
+    def set_checked_item_ids(self, item_ids: set[int], *, kind: str) -> None:
+        changed = False
+        for row in self._rows:
+            if row.kind == kind and row.sync_item is not None:
+                checked = id(row.sync_item) in item_ids
+                if row.checked != checked:
+                    row.checked = checked
+                    changed = True
+        if changed and self._rows:
+            self.dataChanged.emit(self.index(0, 0), self.index(len(self._rows) - 1, 0), [_REVIEW_ROW_ROLE])
+            self.selection_changed.emit()
+
+
+class _SyncReviewRowsView(QListView):
+    """A virtual list that treats a click anywhere on a row as a check toggle."""
+
+    def mousePressEvent(self, event) -> None:  # type: ignore[override]
+        index = self.indexAt(event.position().toPoint())
+        model = self.model()
+        if isinstance(model, _SyncReviewRowsModel) and index.isValid():
+            model.toggle(index)
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+
+class _SyncReviewRowDelegate(QStyledItemDelegate):
+    """Paint sync-review rows directly instead of creating child widget trees."""
+
+    def __init__(self, category: str, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self._accent = _sync_review_paint(category)
+
+    @staticmethod
+    def _content(row: _VirtualReviewRow) -> tuple[str, str, str]:
+        if row.kind == "track":
+            title, detail, badge, _tooltip = row.rendered or _virtual_track_row_content(row.sync_item)
+            row.rendered = (title, detail, badge, _tooltip)
+            return title, detail, badge
+        return row.title, row.detail, row.badge
+
+    @staticmethod
+    def _text_width(option, row: _VirtualReviewRow, badge: str) -> int:
+        badge_width = 0
+        if badge:
+            badge_font = QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold)
+            badge_width = QFontMetrics(badge_font).horizontalAdvance(badge) + 20
+        checkbox_width = 31 if row.checkable else 0
+        return max(180, option.rect.width() - 24 - checkbox_width - badge_width)
+
+    @staticmethod
+    def _duplicate_track_parts(track: Any) -> tuple[str, str, str]:
+        filename = getattr(track, "filename", "") or os.path.basename(str(getattr(track, "path", "") or "")) or "Unknown file"
+        path = _short_display_path(str(getattr(track, "path", "") or ""))
+        size = int(getattr(track, "size", 0) or 0)
+        return filename, path, _format_size(size) if size else ""
+
+    @staticmethod
+    def _duplicate_tracks(row: _VirtualReviewRow) -> list[Any]:
+        return list(row.payload) if isinstance(row.payload, list) else []
+
+    def _duplicate_group_height(self, option, row: _VirtualReviewRow) -> int:
+        width = max(240, option.rect.width())
+        title_font = QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.DemiBold)
+        body_font = QFont(FONT_FAMILY, Metrics.FONT_SM)
+        title_metrics = QFontMetrics(title_font)
+        body_metrics = QFontMetrics(body_font)
+        summary_width = QFontMetrics(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold)).horizontalAdvance(row.badge) + 20
+        header_width = max(120, width - 24 - summary_width)
+        height = 10 + title_metrics.boundingRect(QRect(0, 0, header_width, 10_000), int(Qt.TextFlag.TextWordWrap), row.title).height()
+        height += body_metrics.boundingRect(QRect(0, 0, header_width, 10_000), int(Qt.TextFlag.TextWordWrap), row.detail).height()
+        height += (
+            body_metrics.boundingRect(
+                QRect(0, 0, header_width, 10_000),
+                int(Qt.TextFlag.TextWordWrap),
+                "First copy is synced; matching copies are skipped.",
+            ).height()
+            + 12
+        )
+
+        for track in self._duplicate_tracks(row):
+            filename, path, size = self._duplicate_track_parts(track)
+            size_width = QFontMetrics(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold)).horizontalAdvance(size) + 20 if size else 0
+            file_width = max(120, width - 24 - 68 - size_width)
+            file_height = body_metrics.boundingRect(QRect(0, 0, file_width, 10_000), int(Qt.TextFlag.TextWordWrap), filename).height()
+            path_height = body_metrics.boundingRect(QRect(0, 0, file_width, 10_000), int(Qt.TextFlag.TextWordWrap), path).height()
+            height += max(42, file_height + path_height + 10)
+        return max(_REVIEW_ROW_MIN_HEIGHT, height + 8)
+
+    @staticmethod
+    def _table_row_fill(row_index: int) -> str:
+        """Use the shared table stripe palette for review rows."""
+
+        return paint_css("table.row.fill" if row_index % 2 == 0 else "table.row.alternate_fill")
+
+    def _paint_duplicate_group(self, painter: QPainter, option, row: _VirtualReviewRow, row_index: int) -> None:
+        rect = option.rect
+        tracks = self._duplicate_tracks(row)
+        painter.save()
+        painter.fillRect(rect, _parse_color(self._table_row_fill(row_index)))
+        if option.state & QStyle.StateFlag.State_MouseOver:
+            painter.fillRect(rect, _parse_color(paint_css("surface.hover")))
+        painter.setPen(_parse_color(paint_css("border.subtle")))
+        painter.drawLine(rect.bottomLeft(), rect.bottomRight())
+
+        title_font = QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.DemiBold)
+        body_font = QFont(FONT_FAMILY, Metrics.FONT_SM)
+        summary_font = QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold)
+        summary_width = QFontMetrics(summary_font).horizontalAdvance(row.badge) + 20
+        summary_rect = QRect(rect.right() - 12 - summary_width, rect.top() + 10, summary_width, 28)
+        painter.setPen(_parse_color(_sync_review_paint("duplicate")))
+        painter.setBrush(_parse_color(_sync_review_paint("duplicate", "subtle_fill")))
+        painter.drawRoundedRect(QRectF(summary_rect), Metrics.BORDER_RADIUS_SM, Metrics.BORDER_RADIUS_SM)
+        painter.setFont(summary_font)
+        painter.drawText(summary_rect, int(Qt.AlignmentFlag.AlignCenter), row.badge)
+
+        text_left = rect.left() + 12
+        text_width = max(120, summary_rect.left() - 12 - text_left)
+        y = rect.top() + 10
+        painter.setFont(title_font)
+        painter.setPen(_parse_color(paint_css("text.primary")))
+        title_height = QFontMetrics(title_font).boundingRect(QRect(0, 0, text_width, 10_000), int(Qt.TextFlag.TextWordWrap), row.title).height()
+        painter.drawText(QRect(text_left, y, text_width, title_height), int(Qt.TextFlag.TextWordWrap), row.title)
+        y += title_height
+        painter.setFont(body_font)
+        painter.setPen(_parse_color(paint_css("text.tertiary")))
+        context_height = QFontMetrics(body_font).boundingRect(QRect(0, 0, text_width, 10_000), int(Qt.TextFlag.TextWordWrap), row.detail).height()
+        painter.drawText(QRect(text_left, y, text_width, context_height), int(Qt.TextFlag.TextWordWrap), row.detail)
+        y += context_height
+        help_text = "First copy is synced; matching copies are skipped."
+        help_height = QFontMetrics(body_font).boundingRect(QRect(0, 0, text_width, 10_000), int(Qt.TextFlag.TextWordWrap), help_text).height()
+        painter.drawText(QRect(text_left, y, text_width, help_height), int(Qt.TextFlag.TextWordWrap), help_text)
+        y += help_height + 8
+
+        for index, track in enumerate(tracks):
+            filename, path, size = self._duplicate_track_parts(track)
+            row_left = rect.left() + 12
+            status = "Synced" if index == 0 else "Skipped"
+            status_color = paint_css("status.success.text") if index == 0 else paint_css("text.secondary")
+            painter.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
+            painter.setPen(_parse_color(status_color))
+            painter.drawText(QRect(row_left, y, 58, 28), int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop), status)
+
+            size_width = 0
+            if size:
+                size_font = QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold)
+                size_width = QFontMetrics(size_font).horizontalAdvance(size) + 20
+                size_rect = QRect(rect.right() - 12 - size_width, y, size_width, 28)
+                painter.setPen(_parse_color(paint_css("border.subtle")))
+                painter.setBrush(_parse_color(paint_css("surface.inset")))
+                painter.drawRoundedRect(QRectF(size_rect), Metrics.BORDER_RADIUS_SM, Metrics.BORDER_RADIUS_SM)
+                painter.setFont(size_font)
+                painter.setPen(_parse_color(paint_css("text.secondary")))
+                painter.drawText(size_rect, int(Qt.AlignmentFlag.AlignCenter), size)
+
+            file_left = row_left + 68
+            file_width = max(120, rect.right() - 12 - size_width - file_left)
+            painter.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
+            painter.setPen(_parse_color(paint_css("text.primary")))
+            filename_height = QFontMetrics(painter.font()).boundingRect(QRect(0, 0, file_width, 10_000), int(Qt.TextFlag.TextWordWrap), filename).height()
+            painter.drawText(QRect(file_left, y, file_width, filename_height), int(Qt.TextFlag.TextWordWrap), filename)
+            painter.setFont(body_font)
+            painter.setPen(_parse_color(paint_css("text.tertiary")))
+            path_height = QFontMetrics(body_font).boundingRect(QRect(0, 0, file_width, 10_000), int(Qt.TextFlag.TextWordWrap), path).height()
+            painter.drawText(QRect(file_left, y + filename_height, file_width, path_height), int(Qt.TextFlag.TextWordWrap), path)
+            y += max(42, filename_height + path_height + 10)
+        painter.restore()
+
+    def sizeHint(self, option, index) -> QSize:  # type: ignore[override]
+        row = index.data(_REVIEW_ROW_ROLE)
+        if not isinstance(row, _VirtualReviewRow):
+            return QSize(option.rect.width(), _REVIEW_ROW_MIN_HEIGHT)
+        if row.kind == "duplicate_group":
+            return QSize(option.rect.width(), self._duplicate_group_height(option, row))
+        _title, detail, badge = self._content(row)
+        detail_font = QFont(FONT_FAMILY, Metrics.FONT_SM)
+        detail_bounds = QFontMetrics(detail_font).boundingRect(
+            QRect(0, 0, self._text_width(option, row, badge), 10_000),
+            int(Qt.TextFlag.TextWordWrap),
+            detail,
+        )
+        height = 10 + QFontMetrics(QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.DemiBold)).height() + 3 + detail_bounds.height() + 10
+        return QSize(option.rect.width(), max(_REVIEW_ROW_MIN_HEIGHT, height))
+
+    def paint(self, painter: QPainter, option, index) -> None:  # type: ignore[override]
+        row = index.data(_REVIEW_ROW_ROLE)
+        if not isinstance(row, _VirtualReviewRow):
+            return
+        if row.kind == "duplicate_group":
+            self._paint_duplicate_group(painter, option, row, index.row())
+            return
+        title, detail, badge = self._content(row)
+
+        rect = option.rect
+        painter.save()
+        painter.fillRect(rect, _parse_color(self._table_row_fill(index.row())))
+        if option.state & QStyle.StateFlag.State_MouseOver:
+            painter.fillRect(rect, _parse_color(paint_css("surface.hover")))
+        painter.setPen(_parse_color(paint_css("border.subtle")))
+        painter.drawLine(rect.bottomLeft(), rect.bottomRight())
+
+        text_left = rect.left() + 12
+        if row.checkable:
+            check_rect = QRect(text_left, rect.top() + (rect.height() - 18) // 2, 18, 18)
+            painter.setPen(_parse_color(self._accent if row.checked else paint_css("text.disabled")))
+            painter.setBrush(_parse_color(self._accent) if row.checked else Qt.BrushStyle.NoBrush)
+            painter.drawRoundedRect(QRectF(check_rect), 4, 4)
+            if row.checked:
+                painter.setPen(_parse_color(paint_css("canvas.default")))
+                check_font = QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.Bold)
+                painter.setFont(check_font)
+                painter.drawText(check_rect, int(Qt.AlignmentFlag.AlignCenter), "✓")
+            text_left = check_rect.right() + 13
+
+        badge_width = 0
+        if badge:
+            badge_font = QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold)
+            badge_width = QFontMetrics(badge_font).horizontalAdvance(badge) + 20
+            badge_rect = QRect(rect.right() - 12 - badge_width, rect.top() + 10, badge_width, 28)
+            painter.setPen(_parse_color(paint_css("border.subtle")))
+            painter.setBrush(_parse_color(paint_css("surface.inset")))
+            painter.drawRoundedRect(QRectF(badge_rect), Metrics.BORDER_RADIUS_SM, Metrics.BORDER_RADIUS_SM)
+            painter.setPen(_parse_color(paint_css("text.secondary")))
+            painter.setFont(badge_font)
+            painter.drawText(badge_rect, int(Qt.AlignmentFlag.AlignCenter), badge)
+
+        text_width = self._text_width(option, row, badge)
+        title_font = QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.DemiBold)
+        painter.setFont(title_font)
+        painter.setPen(_parse_color(paint_css("text.primary")))
+        painter.drawText(text_left, rect.top() + 25, QFontMetrics(title_font).elidedText(title, Qt.TextElideMode.ElideRight, text_width))
+        painter.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        painter.setPen(_parse_color(paint_css("text.tertiary")))
+        detail_rect = QRect(text_left, rect.top() + 32, text_width, rect.height() - 39)
+        painter.drawText(detail_rect, int(Qt.TextFlag.TextWordWrap), detail)
+        painter.restore()
+
+
 class SyncCategoryCard(QFrame):
     """Collapsible card for one category of sync actions."""
 
@@ -899,8 +1354,8 @@ class SyncCategoryCard(QFrame):
         self._checkable = checkable
         self._start_checked = start_checked
         self._count = count
-        self._track_rows: list[SyncTrackRow] = []
-        self._item_rows: list[_CheckableInfoRow] = []
+        self._track_rows: list[_VirtualReviewRow] = []
+        self._item_rows: list[_VirtualReviewRow] = []
         self._selection_key = ""
         accent = _sync_review_paint(category)
 
@@ -918,15 +1373,18 @@ class SyncCategoryCard(QFrame):
 
         # ── Header ──────────────────────────────────────────────
         self._header_frame = QFrame(self)
+        self._header_frame.setObjectName("syncCategoryHeader")
         self._header_frame.setCursor(Qt.CursorShape.PointingHandCursor)
         self._header_frame.setStyleSheet(f"""
-            QFrame {{
-                background: transparent;
+            QFrame#syncCategoryHeader {{
+                background: {paint_css("surface.inset")};
                 border: none;
-                border-radius: {Metrics.BORDER_RADIUS_SM}px;
+                border-bottom: 1px solid {paint_css("border.default")};
+                border-top-left-radius: {Metrics.BORDER_RADIUS_SM}px;
+                border-top-right-radius: {Metrics.BORDER_RADIUS_SM}px;
             }}
-            QFrame:hover {{
-                background: {paint_css("surface.hover")};
+            QFrame#syncCategoryHeader:hover {{
+                background: {paint_css("surface.raised")};
             }}
         """)
         hdr = QHBoxLayout(self._header_frame)
@@ -1024,13 +1482,42 @@ class SyncCategoryCard(QFrame):
 
         # ── Body (expandable) ───────────────────────────────────
         self._body = QWidget(self)
+        self._body.setObjectName("syncCategoryBody")
+        self._body.setStyleSheet(f"""
+            QWidget#syncCategoryBody {{
+                background: {paint_css("surface.default")};
+                border-bottom-left-radius: {Metrics.BORDER_RADIUS_SM}px;
+                border-bottom-right-radius: {Metrics.BORDER_RADIUS_SM}px;
+            }}
+        """)
         body_lay = QVBoxLayout(self._body)
-        body_lay.setContentsMargins(0, 0, 0, 0)
+        body_lay.setContentsMargins(8, 8, 8, 8)
         body_lay.setSpacing(0)
         self._body_layout = body_lay
         self._body.setMinimumHeight(0)
-        self._body.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        # The body is a compact review block, not a viewport.  Its child view
+        # owns the content height, so keeping this fixed prevents an expanded
+        # accordion from absorbing unused page space.
+        self._body.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         self._body.setMaximumHeight(16777215 if start_expanded else 0)
+
+        self._rows_model = _SyncReviewRowsModel(self)
+        self._rows_model.selection_changed.connect(self._on_row_toggled)
+        self._rows_view = _SyncReviewRowsView(self._body)
+        self._rows_view.setModel(self._rows_model)
+        self._rows_view.setItemDelegate(_SyncReviewRowDelegate(category, self._rows_view))
+        self._rows_view.setFrameShape(QFrame.Shape.NoFrame)
+        self._rows_view.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self._rows_view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._rows_view.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._rows_view.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        self._rows_view.setUniformItemSizes(False)
+        self._rows_view.setMouseTracking(True)
+        viewport = self._rows_view.viewport()
+        if viewport is not None:
+            viewport.setMouseTracking(True)
+        self._rows_view.setStyleSheet("background: transparent; border: none;")
+        self._body_layout.addWidget(self._rows_view)
 
         outer.addWidget(self._body)
 
@@ -1047,6 +1534,13 @@ class SyncCategoryCard(QFrame):
             return True
         return super().eventFilter(a0, a1)
 
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        """Re-measure visible rows when a card's wrapping width changes."""
+
+        super().resizeEvent(event)
+        if self._rows_model.rowCount():
+            self._update_rows_view_height()
+
     def _toggle_expanded(self, _ev=None):
         self._expanded = not self._expanded
         self._body.setMaximumHeight(16777215 if self._expanded else 0)
@@ -1060,15 +1554,7 @@ class SyncCategoryCard(QFrame):
             return
         checked = state == Qt.CheckState.Checked.value
         self._select_all_cb.setTristate(False)
-        for row in self._track_rows:
-            row.cb.blockSignals(True)
-            row.set_checked(checked)
-            row.cb.blockSignals(False)
-        for row in self._item_rows:
-            row.cb.blockSignals(True)
-            row.set_checked(checked)
-            row.cb.blockSignals(False)
-        self.selection_changed.emit()
+        self._rows_model.set_all_checked(checked)
 
     def _on_row_toggled(self):
         """Update the select-all checkbox tri-state and emit."""
@@ -1093,17 +1579,30 @@ class SyncCategoryCard(QFrame):
 
     # ── public API ──────────────────────────────────────────────
 
-    def add_track_row(self, item: Any) -> SyncTrackRow:
-        row = SyncTrackRow(item, self._category, checkable=self._checkable, parent=self)
-        if not self._start_checked:
-            row.set_checked(False)
-        row.toggled.connect(self._on_row_toggled)
-        self._body_layout.addWidget(row)
+    def add_track_row(self, item: Any) -> _VirtualReviewRow:
+        row = _VirtualReviewRow(sync_item=item, kind="track", checked=self._start_checked, checkable=self._checkable)
+        self._rows_model.append(row)
         self._track_rows.append(row)
+        self._update_rows_view_height_after_append()
         return row
 
     def add_info_row(self, title: str, detail: str = "", badge: str = ""):
-        self._body_layout.addWidget(_InfoRow(title, detail, self._category, badge, parent=self))
+        self._rows_model.append(_VirtualReviewRow(kind="info", title=title, detail=detail, badge=badge))
+        self._update_rows_view_height_after_append()
+
+    def add_duplicate_group(self, title: str, artist: str, album: str, tracks: list[Any]) -> None:
+        """Add a rich, virtual duplicate-group block without child row widgets."""
+
+        self._rows_model.append(
+            _VirtualReviewRow(
+                kind="duplicate_group",
+                title=title or "Duplicate track",
+                detail=" · ".join(part for part in [artist, album] if part),
+                badge=f"1 synced · {max(0, len(tracks) - 1)} skipped",
+                payload=tracks,
+            )
+        )
+        self._update_rows_view_height()
 
     def add_item_row(
         self,
@@ -1111,20 +1610,61 @@ class SyncCategoryCard(QFrame):
         title: str,
         detail: str = "",
         badge: str = "",
-    ) -> _CheckableInfoRow:
-        row = _CheckableInfoRow(
-            item,
-            title,
-            detail,
-            self._category,
-            checked=self._start_checked,
+    ) -> _VirtualReviewRow:
+        row = _VirtualReviewRow(
+            sync_item=item,
+            kind="item",
+            title=title,
+            detail=detail,
             badge=badge,
-            parent=self,
+            checked=self._start_checked,
+            checkable=self._checkable,
         )
-        row.toggled.connect(self._on_row_toggled)
-        self._body_layout.addWidget(row)
+        self._rows_model.append(row)
         self._item_rows.append(row)
+        self._update_rows_view_height_after_append()
         return row
+
+    def _update_rows_view_height_after_append(self) -> None:
+        """Avoid remeasuring hidden rows in large, bounded categories."""
+
+        if self._category == "duplicate" or self._rows_model.rowCount() <= _REVIEW_VISIBLE_ROWS:
+            self._update_rows_view_height()
+
+    def _update_rows_view_height(self) -> None:
+        """Let rich duplicate groups grow fully; bound only large selectable lists."""
+
+        margins = self._body_layout.contentsMargins()
+        body_width = self.width() - margins.left() - margins.right() - 2
+        viewport = self._rows_view.viewport()
+        measurement_width = max(1, body_width, viewport.width() if viewport is not None else 0)
+
+        if self._category == "duplicate":
+            delegate = self._rows_view.itemDelegate()
+            if isinstance(delegate, _SyncReviewRowDelegate):
+                option = QStyleOptionViewItem()
+                option.rect.setWidth(measurement_width)
+                height = sum(
+                    delegate.sizeHint(option, self._rows_model.index(index, 0)).height()
+                    for index in range(self._rows_model.rowCount())
+                )
+                self._rows_view.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+                self._rows_view.setFixedHeight(height)
+                return
+
+        visible_rows = min(self._rows_model.rowCount(), _REVIEW_VISIBLE_ROWS)
+        delegate = self._rows_view.itemDelegate()
+        if isinstance(delegate, _SyncReviewRowDelegate):
+            option = QStyleOptionViewItem()
+            option.rect.setWidth(measurement_width)
+            height = sum(
+                delegate.sizeHint(option, self._rows_model.index(index, 0)).height()
+                for index in range(visible_rows)
+            )
+        else:
+            height = visible_rows * _REVIEW_ROW_MIN_HEIGHT
+        self._rows_view.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._rows_view.setFixedHeight(height)
 
     def get_checked_items(self) -> list[Any]:
         return [r.sync_item for r in self._track_rows if r.is_checked()]
@@ -1136,14 +1676,7 @@ class SyncCategoryCard(QFrame):
         self._select_all_cb.blockSignals(True)
         self._select_all_cb.setChecked(state)
         self._select_all_cb.blockSignals(False)
-        for r in self._track_rows:
-            r.cb.blockSignals(True)
-            r.set_checked(state)
-            r.cb.blockSignals(False)
-        for r in self._item_rows:
-            r.cb.blockSignals(True)
-            r.set_checked(state)
-            r.cb.blockSignals(False)
+        self._rows_model.set_all_checked(state)
         self._on_row_toggled()
 
     def set_checked_item_ids(
@@ -1154,18 +1687,10 @@ class SyncCategoryCard(QFrame):
     ) -> None:
         """Set row checks from object-id buckets without emitting per-row churn."""
 
-        for row in self._track_rows:
-            if checked_track_ids is None:
-                continue
-            row.cb.blockSignals(True)
-            row.set_checked(id(row.sync_item) in checked_track_ids)
-            row.cb.blockSignals(False)
-        for row in self._item_rows:
-            if checked_item_ids is None:
-                continue
-            row.cb.blockSignals(True)
-            row.set_checked(id(row.sync_item) in checked_item_ids)
-            row.cb.blockSignals(False)
+        if checked_track_ids is not None:
+            self._rows_model.set_checked_item_ids(checked_track_ids, kind="track")
+        if checked_item_ids is not None:
+            self._rows_model.set_checked_item_ids(checked_item_ids, kind="item")
         self._on_row_toggled()
 
     def checked_count(self) -> int:
@@ -1687,10 +2212,7 @@ class SyncReviewWidget(QWidget):
         panel = QFrame(parent)
         panel.setObjectName("syncProgressExplanation")
         panel.setCursor(Qt.CursorShape.PointingHandCursor)
-        panel.setStyleSheet(
-            f"QFrame#syncProgressExplanation {{background:{paint_css('notice.info.fill')};border:1px solid {paint_css('notice.info.border')};border-radius:{Metrics.BORDER_RADIUS_MD}px;}}"
-            f"QFrame#syncProgressExplanation:hover {{background:{paint_css('notice.info.hover_fill')};}}"
-        )
+        panel.setStyleSheet(f"QFrame#syncProgressExplanation {{background:{paint_css('notice.info.fill')};border:1px solid {paint_css('notice.info.border')};border-radius:{Metrics.BORDER_RADIUS_MD}px;}}QFrame#syncProgressExplanation:hover {{background:{paint_css('notice.info.hover_fill')};}}")
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(12, 10, 12, 10)
         layout.setSpacing(8)
@@ -2527,16 +3049,7 @@ class SyncReviewWidget(QWidget):
                 artist = parts[0] if len(parts) >= 1 else ""
                 album = parts[1] if len(parts) >= 2 else ""
                 title = parts[2] if len(parts) >= 3 else fingerprint
-                card._body_layout.addWidget(
-                    _DuplicateGroupWidget(
-                        title,
-                        artist,
-                        album,
-                        tracks,
-                        "duplicate",
-                        parent=card,
-                    )
-                )
+                card.add_duplicate_group(title, artist, album, tracks)
             _insert_card(card)
 
         self._do_update_selection_count()
@@ -3154,7 +3667,7 @@ class SyncReviewWidget(QWidget):
         for card in self._category_cards:
             if card._track_rows:
                 for row in card._track_rows:
-                    if not isinstance(row, SyncTrackRow):
+                    if not isinstance(row, _VirtualReviewRow):
                         continue
                     total += 1
                     if row.is_checked():
