@@ -54,7 +54,8 @@ _SP_KWARGS: dict = (
 IPOD_MAX_SAMPLE_RATE = 48_000   # Hz
 IPOD_MAX_CHANNELS = 2           # Stereo
 IPOD_MAX_BIT_DEPTH = 16         # ALAC/WAV ceiling
-IPOD_MAX_VIDEO_AUDIO_BITRATE_KBPS = 160
+# Preserve reasonable audio quality for video transcodes.
+IPOD_MAX_VIDEO_AUDIO_BITRATE_KBPS = 320
 
 # Fallback video limits when device detection fails.
 _DEFAULT_VIDEO_W = 640
@@ -280,6 +281,7 @@ class TranscodePlan:
     video_max_fps: int
     video_max_bitrate_kbps: int
     video_h264_level: str
+    video_audio_bitrate_kbps: int | None = None
     video_output_muxer: Literal["ipod", "mov"] = "ipod"
     lossy_encoder: str = "aac"       # resolved encoder (e.g. "libfdk_aac")
     user_lossy_encoder: str = "auto"  # original user preference (e.g. "auto")
@@ -450,6 +452,9 @@ def resolve_transcode_plan(
     )
 
     max_width, max_height, max_fps, max_bitrate_kbps, h264_level = _get_video_caps()
+    video_audio_bitrate_kbps = None
+    if target in {TranscodeTarget.VIDEO_H264, TranscodeTarget.VIDEO_TRANSCODE_AUDIO}:
+        video_audio_bitrate_kbps = probe_audio(source_path).bitrate_kbps
 
     return TranscodePlan(
         source_path=source_path,
@@ -467,6 +472,7 @@ def resolve_transcode_plan(
         video_max_fps=max_fps,
         video_max_bitrate_kbps=max_bitrate_kbps,
         video_h264_level=h264_level,
+        video_audio_bitrate_kbps=video_audio_bitrate_kbps,
         video_output_muxer=video_output_muxer,
         lossy_encoder=lossy_policy.encoder,
         user_lossy_encoder=options.lossy_encoder,
@@ -699,6 +705,7 @@ class AudioProperties:
     sample_rate: int = 0
     bits_per_sample: int = 0
     channels: int = 0
+    bitrate_kbps: int | None = None
     codec_name: str = ""   # e.g. "aac", "mp3", "flac"
     profile: str = ""      # e.g. "LC", "HE-AAC", "HE-AACv2"
     probe_ok: bool = False  # False when ffprobe couldn't parse the file
@@ -733,10 +740,10 @@ class AudioProperties:
 
 
 def probe_audio(filepath: str | Path) -> AudioProperties:
-    """Probe the first audio stream for sample rate, bit depth, channels, and codec."""
+    """Probe the first audio stream for its properties and bitrate."""
     info = _run_ffprobe([
         "-select_streams", "a:0",
-        "-show_entries", "stream=sample_rate,bits_per_raw_sample,channels,codec_name,profile",
+        "-show_entries", "stream=sample_rate,bits_per_raw_sample,channels,bit_rate,codec_name,profile",
         str(filepath),
     ])
     if not info:
@@ -749,6 +756,7 @@ def probe_audio(filepath: str | Path) -> AudioProperties:
         sample_rate=int(s.get("sample_rate", 0)),
         bits_per_sample=int(s.get("bits_per_raw_sample", 0) or 0),
         channels=int(s.get("channels", 0)),
+        bitrate_kbps=_stream_bitrate_kbps(s),
         codec_name=s.get("codec_name", ""),
         profile=s.get("profile", ""),
         probe_ok=True,
@@ -1646,6 +1654,7 @@ def _cmd_video(
     max_bitrate: int,
     h264_level: str,
     audio_encoder: str,
+    audio_bitrate_kbps: int | None = None,
     subtitle_stream_indexes: list[int] | None = None,
     copy_video: bool = False,
     copy_audio: bool = False,
@@ -1686,7 +1695,10 @@ def _cmd_video(
             *bitrate_args,
         ]
 
-    audio_args = ["-c:a", "copy"] if copy_audio else _video_aac_args(audio_encoder)
+    audio_args = ["-c:a", "copy"] if copy_audio else _video_aac_args(
+        audio_encoder,
+        bitrate_kbps=audio_bitrate_kbps,
+    )
 
     subtitle_stream_indexes = subtitle_stream_indexes or []
     subtitle_map_args = [
@@ -1710,7 +1722,7 @@ def _cmd_video(
     ]
 
 
-def _video_aac_args(encoder: str) -> list[str]:
+def _video_aac_args(encoder: str, *, bitrate_kbps: int | None = None) -> list[str]:
     """Build AAC-LC audio options for an iPod video transcode.
 
     ``aac_at`` is AudioToolbox's AAC-LC encoder, but it does not accept
@@ -1722,12 +1734,16 @@ def _video_aac_args(encoder: str) -> list[str]:
         if encoder == "aac_at"
         else ["-profile:a", "aac_low"]
     )
+    target_bitrate_kbps = IPOD_MAX_VIDEO_AUDIO_BITRATE_KBPS
+    if bitrate_kbps is not None and bitrate_kbps > 0:
+        target_bitrate_kbps = min(bitrate_kbps, target_bitrate_kbps)
+
     return [
         "-c:a", encoder,
         *encoder_args,
         "-ac", str(IPOD_MAX_CHANNELS),
         "-ar", str(IPOD_MAX_SAMPLE_RATE),
-        "-b:a", f"{IPOD_MAX_VIDEO_AUDIO_BITRATE_KBPS}k",
+        "-b:a", f"{target_bitrate_kbps}k",
     ]
 
 
@@ -1847,6 +1863,7 @@ def _build_ffmpeg_command(
         max_bitrate=plan.video_max_bitrate_kbps,
         h264_level=plan.video_h264_level,
         audio_encoder=video_aac_encoder,
+        audio_bitrate_kbps=plan.video_audio_bitrate_kbps,
         subtitle_stream_indexes=subtitle_stream_indexes,
         copy_video=copy_video,
         copy_audio=copy_audio,

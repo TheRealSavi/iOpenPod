@@ -70,6 +70,7 @@ def test_video_transcode_uses_aac_at_specific_options() -> None:
         max_bitrate=0,
         h264_level="1.3",
         audio_encoder="aac_at",
+        audio_bitrate_kbps=480,
     )
 
     assert ["-c:a", "aac_at"] == command[command.index("-c:a"):command.index("-c:a") + 2]
@@ -77,6 +78,33 @@ def test_video_transcode_uses_aac_at_specific_options() -> None:
         command.index("-aac_at_mode"):command.index("-aac_at_mode") + 2
     ]
     assert "-profile:a" not in command
+    assert ["-b:a", "320k"] == command[command.index("-b:a"):command.index("-b:a") + 2]
+
+
+def test_video_transcode_keeps_lower_source_audio_bitrate(monkeypatch) -> None:
+    monkeypatch.setattr(
+        transcoder_module,
+        "get_transcode_target",
+        lambda *_args, **_kwargs: TranscodeTarget.VIDEO_H264,
+    )
+    monkeypatch.setattr(
+        transcoder_module,
+        "probe_audio",
+        lambda _path: AudioProperties(bitrate_kbps=128, probe_ok=True),
+    )
+    monkeypatch.setattr(transcoder_module, "_subtitle_streams", lambda _path: [])
+
+    plan = transcoder_module.resolve_transcode_plan("video.mp4")
+    command = transcoder_module._build_ffmpeg_command(
+        "ffmpeg",
+        plan.source_path,
+        plan.source_path.with_suffix(plan.output_extension),
+        plan,
+        TranscodeOptions(),
+    )
+
+    assert plan.video_audio_bitrate_kbps == 128
+    assert ["-b:a", "128k"] == command[command.index("-b:a"):command.index("-b:a") + 2]
 
 
 def test_video_transcode_honors_the_resolved_lossy_encoder(monkeypatch) -> None:
@@ -170,7 +198,7 @@ def test_video_probe_checks_only_the_mapped_primary_audio_and_video_streams(monk
             },
             {
                 "codec_type": "audio", "codec_name": "aac", "profile": "LC",
-                "sample_rate": "48000", "channels": 2, "bit_rate": "160000",
+                "sample_rate": "48000", "channels": 2, "bit_rate": "320000",
             },
             {"codec_type": "video", "codec_name": "hevc"},
             {"codec_type": "audio", "codec_name": "ac3"},
