@@ -57,7 +57,7 @@ class SyncAction(Enum):
     UPDATE_METADATA = auto()  # Metadata changed on PC, update iPod DB
     UPDATE_FILE = auto()  # Source file changed, re-copy/transcode
     UPDATE_ARTWORK = auto()  # Embedded art changed, re-extract
-    SYNC_PLAYCOUNT = auto()  # iPod has new plays to scrobble
+    SYNC_PLAYCOUNT = auto()  # iPod has pending plays to scrobble
     SYNC_RATING = auto()  # Rating differs, last-write-wins
     NO_ACTION = auto()  # Track is in sync
 
@@ -517,6 +517,7 @@ class SyncOutcome:
     lyrics_metadata_updated: int = 0
     rockbox_metadata_updated: int = 0
     scrobbles_submitted: int = 0
+    cleared_pending_scrobble_track_ids: tuple[int, ...] = ()
     errors: list[tuple[str, str]] = field(default_factory=list)
     partial_save: bool = False
     proposed_database_bytes: bytes = b""
@@ -593,6 +594,7 @@ class SyncRequest:
     on_cancel_with_partial: Callable[[int, int], bool] | None = None
     rockbox_metadata_support: bool = False
     sync_until_full: bool = False
+    scrobble_only: bool = False
     lastfm_api_key: str = ""
     lastfm_api_secret: str = ""
     lastfm_session_key: str = ""

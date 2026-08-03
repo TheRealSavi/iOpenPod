@@ -447,6 +447,9 @@ class LibraryCacheLike(Protocol):
     def get_tracks(self) -> list:
         ...
 
+    def clear_pending_scrobble_counts(self, db_track_ids: tuple[int, ...]) -> None:
+        ...
+
     def get_albums(self) -> list:
         ...
 

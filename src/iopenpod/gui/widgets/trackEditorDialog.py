@@ -585,7 +585,7 @@ _LABEL_OVERRIDES = {
     "mpeg_audio_type": "MPEG Audio Type",
     "app_rating": "Application Rating",
     "play_count_1": "Play Count",
-    "play_count_2": "Play Count Delta",
+    "play_count_2": "Unscrobbled Plays",
     "skip_count": "Skip Count",
     "eq_setting": "Equalizer",
     "date_added_to_itunes": "iTunes Date Added",
@@ -665,7 +665,7 @@ _FIELD_HELP = {
     "last_skipped": "Last skip time. Stored as a Unix timestamp and shown here as local date/time.",
     "date_added_to_itunes": "Original iTunes add date. Stored as a Unix timestamp and shown here as local date/time.",
     "play_count_1": "Main play count stored in iTunesDB after Play Counts deltas are merged.",
-    "play_count_2": "Transient iPod play delta slot used for scrobbling; cleared after sync.",
+    "play_count_2": "iPod plays waiting to be scrobbled. New device deltas accumulate here and the count clears after a scrobbler succeeds.",
     "app_rating": "Application-computed/backup rating slot used by libgpod conventions.",
     "store_track_id": "iTunes Store content identifier preserved from the database.",
     "store_encoder_version": "iTunes Store encoder/version metadata preserved from the database.",
@@ -679,7 +679,7 @@ _READ_ONLY_REASON_BY_KEY = {
     "Location": "the database path must match the actual file on the iPod",
     "filetype": "changing the codec marker without changing the file can make the track unplayable",
     "visible": "the writer currently always emits visible tracks",
-    "play_count_2": "this slot is transient and cleared after play-count sync",
+    "play_count_2": "this is iOpenPod's pending-scrobble queue and is managed automatically",
     "has_artwork": "it is derived from ArtworkDB entries",
 }
 

@@ -492,6 +492,7 @@ class MainWindow(QMainWindow):
         self._normalize_tags_after_sync_pending = False
         self._tag_fix_scan_generation = 0
         self._tag_fix_scan_worker: Worker | None = None
+        self._scrobble_only_running = False
         self._plan: SyncPlan | None = None
         self._last_pc_folder_entries = _media_folder_entries_from_settings(settings)
         self._last_pc_folders = media_folder_paths(self._last_pc_folder_entries)
@@ -576,6 +577,9 @@ class MainWindow(QMainWindow):
         self._sync_session.plan_failed.connect(self._onSyncError)
         self._sync_session.execution_complete.connect(self._onSyncExecuteComplete)
         self._sync_session.execution_failed.connect(self._onSyncExecuteError)
+        self._sync_session.scrobble_only_started.connect(
+            self._on_scrobble_only_started
+        )
         self._sync_session.partial_save_requested.connect(self._onConfirmPartialSave)
         self.syncReview.skip_backup_signal.connect(self._sync_session.request_skip_backup)
         self.syncReview.give_up_scrobble_signal.connect(self._sync_session.request_give_up_scrobble)
@@ -653,6 +657,20 @@ class MainWindow(QMainWindow):
                 self,
                 "Library Loading",
                 "Please wait for the iPod library to finish loading.",
+            )
+            return
+        if blocked.reason == "no_pending_scrobbles":
+            QMessageBox.information(
+                self,
+                "No Pending Plays",
+                "There are no iPod plays waiting to be scrobbled.",
+            )
+            return
+        if blocked.reason == "scrobbling_not_configured":
+            QMessageBox.information(
+                self,
+                "Connect a Scrobbling Service",
+                "Connect ListenBrainz or Last.fm in Settings before scrobbling.",
             )
             return
         if blocked.reason == "no_device":
@@ -764,6 +782,7 @@ class MainWindow(QMainWindow):
         self.sidebar.settingsButton.clicked.connect(self.showSettings)
         self.sidebar.backupButton.clicked.connect(self.showBackupBrowser)
         self.sidebar.tag_fixes_requested.connect(self._onIpodTagFixesRequested)
+        self.sidebar.scrobble_requested.connect(self._onScrobbleNowRequested)
         self.sidebar.manage_storage_requested.connect(self.showDatabaseStorage)
 
         self.mainContentStack = QStackedWidget()
@@ -1480,6 +1499,7 @@ class MainWindow(QMainWindow):
             database_path=database_path or "",
         )
         self.sidebar.setTagFixesAvailable(bool(tracks))
+        self._update_scrobble_availability(tracks)
         self._update_sidebar_visibility(classified)
         self.musicBrowser.browserTrack.clearTable(clear_cache=True)
         self._update_podcast_statuses()
@@ -1539,6 +1559,37 @@ class MainWindow(QMainWindow):
         self._notifier.notify(
             "iPod Tags Normalized",
             f"Staged {changed_fields:,} field edit{'s' if changed_fields != 1 else ''} across {changed_tracks:,} track{'s' if changed_tracks != 1 else ''}.",
+        )
+
+    def _onScrobbleNowRequested(self) -> None:
+        """Submit the durable pending-scrobble queue without a PC media sync."""
+        self._sync_session.start_scrobble_only()
+
+    def _on_scrobble_only_started(self) -> None:
+        self._scrobble_only_running = True
+        self.sidebar.setScrobbleAvailable(False)
+        self.centralStack.setCurrentIndex(1)
+
+    @staticmethod
+    def _pending_scrobble_count(tracks: list[dict]) -> int:
+        total = 0
+        for track in tracks:
+            try:
+                total += max(0, int(track.get("play_count_2", 0) or 0))
+            except (AttributeError, TypeError, ValueError):
+                continue
+        return total
+
+    def _update_scrobble_availability(self, tracks: list[dict] | None = None) -> None:
+        cache = self.library_cache
+        if not self.device_manager.device_path or not cache.is_ready():
+            self.sidebar.setScrobbleAvailable(False)
+            return
+        track_rows = tracks if tracks is not None else cache.get_tracks()
+        pending_count = self._pending_scrobble_count(track_rows)
+        self.sidebar.setScrobbleAvailable(
+            not self._scrobble_only_running and pending_count > 0,
+            pending_count,
         )
 
     def _current_ipod_tag_profile(self):
@@ -2883,6 +2934,8 @@ class MainWindow(QMainWindow):
 
     def _onSyncExecuteComplete(self, result):
         """Called when sync execution is complete."""
+        was_scrobble_only = bool(getattr(self, "_scrobble_only_running", False))
+        self._scrobble_only_running = False
         # Show styled results view instead of a plain message box
         self.syncReview.show_result(result)
         self._keep_sync_results_visible_after_rescan = True
@@ -2892,7 +2945,11 @@ class MainWindow(QMainWindow):
             getattr(device_manager, "device_path", "") or "",
         )
         settings = self.settings_service.get_effective_settings()
-        self._normalize_tags_after_sync_pending = bool(not failure_message and getattr(settings, "normalize_tags_after_sync", False))
+        self._normalize_tags_after_sync_pending = bool(
+            not was_scrobble_only
+            and not failure_message
+            and getattr(settings, "normalize_tags_after_sync", False)
+        )
         if failure_message:
             self._showSyncFailureDialog(failure_message, result)
 
@@ -2904,6 +2961,13 @@ class MainWindow(QMainWindow):
                 updated=getattr(result, "tracks_updated_metadata", 0) + getattr(result, "tracks_updated_file", 0),
                 errors=len(getattr(result, "errors", [])),
             )
+
+        if was_scrobble_only:
+            # The session reconciles only the committed queue rows in memory;
+            # avoid the full iTunesDB cache flush/reload for this maintenance
+            # action.
+            self._update_scrobble_availability()
+            return
 
         # Reload the database to show changes (delay lets OS flush writes)
         QTimer.singleShot(500, self._rescanAfterSync)
@@ -2967,6 +3031,10 @@ class MainWindow(QMainWindow):
 
     def _onSyncExecuteError(self, error_msg: str):
         """Called when sync execution fails."""
+        was_scrobble_only = bool(getattr(self, "_scrobble_only_running", False))
+        self._scrobble_only_running = False
+        if was_scrobble_only:
+            self._update_scrobble_availability()
         self._normalize_tags_after_sync_pending = False
         # Desktop notification if app is not focused
         if not self.isActiveWindow():

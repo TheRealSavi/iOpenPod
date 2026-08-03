@@ -53,6 +53,7 @@ class _FakeWorker:
         self.partial_save_responses: list[bool] = []
         self.skip_backup_requests = 0
         self.give_up_scrobble_requests = 0
+        self.scrobble_only = bool(kwargs.get("scrobble_only", False))
 
     def start(self) -> None:
         self.started = True
@@ -94,6 +95,7 @@ class _FakeLibraryCache:
             "mhlp_smart": [],
         }
         self.clear_pending_calls = 0
+        self.cleared_pending_scrobble_counts: list[tuple[int, ...]] = []
         self.database_generation = DatabaseGeneration(
             "iTunesDB",
             True,
@@ -102,6 +104,9 @@ class _FakeLibraryCache:
 
     def is_loading(self) -> bool:
         return self.loading
+
+    def is_ready(self) -> bool:
+        return not self.loading
 
     def get_tracks(self) -> list[dict]:
         return list(self.tracks)
@@ -120,6 +125,9 @@ class _FakeLibraryCache:
 
     def clear_pending_sync_state(self) -> None:
         self.clear_pending_calls += 1
+
+    def clear_pending_scrobble_counts(self, db_track_ids: tuple[int, ...]) -> None:
+        self.cleared_pending_scrobble_counts.append(db_track_ids)
 
     def get_database_generation(self) -> DatabaseGeneration:
         return self.database_generation
@@ -295,6 +303,115 @@ def test_start_execution_allows_rockbox_only_sync(qapp, monkeypatch) -> None:
 
     assert plan.rockbox_metadata_pass is True
     assert workers[0].started is True
+
+
+def test_start_scrobble_only_bypasses_media_tool_checks_and_backups(
+    qapp,
+    monkeypatch,
+) -> None:
+    workers: list[_FakeWorker] = []
+    monkeypatch.setattr(
+        "iopenpod.application.sync_session.SyncExecuteWorker",
+        lambda ipod_path, plan, **kwargs: (
+            workers.append(_FakeWorker(ipod_path=ipod_path, plan=plan, **kwargs))
+            or workers[-1]
+        ),
+    )
+    cache = _FakeLibraryCache()
+    cache.tracks = [
+        {
+            "db_track_id": 10,
+            "play_count_1": 12,
+            "play_count_2": 2,
+            "Title": "iPod Track",
+            "Artist": "Artist",
+        }
+    ]
+    settings_service = _FakeSettingsService()
+    settings_service.settings.listenbrainz_token = "token"
+    controller = _controller(
+        cache=cache,
+        settings_service=settings_service,
+        tool_availability=SyncToolAvailability(
+            missing_ffmpeg=True,
+            missing_fpcalc=True,
+            can_download=True,
+        ),
+    )
+    started: list[bool] = []
+    controller.scrobble_only_started.connect(lambda: started.append(True))
+
+    controller.start_scrobble_only()
+
+    assert started == [True]
+    assert len(workers) == 1
+    worker = workers[0]
+    assert worker.kwargs["skip_backup"] is True
+    assert worker.kwargs["scrobble_only"] is True
+    assert worker.kwargs["plan"].to_sync_playcount[0].play_count_delta == 2
+
+
+def test_start_scrobble_only_skips_full_sync_preparation(qapp, monkeypatch) -> None:
+    workers: list[_FakeWorker] = []
+    monkeypatch.setattr(
+        "iopenpod.application.sync_session.SyncExecuteWorker",
+        lambda ipod_path, plan, **kwargs: (
+            workers.append(_FakeWorker(ipod_path=ipod_path, plan=plan, **kwargs))
+            or workers[-1]
+        ),
+    )
+    cache = _FakeLibraryCache()
+    cache.tracks = [{"db_track_id": 10, "play_count_2": 1}]
+    settings_service = _FakeSettingsService()
+    settings_service.settings.listenbrainz_token = "token"
+    settings_service.settings.rockbox_metadata_support = True
+    quick_writes = _FakeQuickWrites((False, "metadata edits"))
+    controller = _controller(
+        cache=cache,
+        settings_service=settings_service,
+        quick_writes=quick_writes,
+    )
+
+    controller.start_scrobble_only()
+
+    assert quick_writes.calls == 0
+    assert len(workers) == 1
+    assert workers[0].kwargs["on_sync_complete"] is None
+    assert workers[0].kwargs["plan"].rockbox_metadata_pass is False
+
+
+def test_start_scrobble_only_requires_a_connected_service(qapp, monkeypatch) -> None:
+    workers: list[_FakeWorker] = []
+    monkeypatch.setattr(
+        "iopenpod.application.sync_session.SyncExecuteWorker",
+        lambda *args, **kwargs: workers.append(_FakeWorker(*args, **kwargs)),
+    )
+    cache = _FakeLibraryCache()
+    cache.tracks = [{"db_track_id": 10, "play_count_2": 1}]
+    controller = _controller(cache=cache)
+    blocked: list[SyncSessionBlocked] = []
+    controller.blocked.connect(blocked.append)
+
+    controller.start_scrobble_only()
+
+    assert blocked == [SyncSessionBlocked("scrobbling_not_configured")]
+    assert workers == []
+
+
+def test_scrobble_only_completion_reconciles_only_cleared_queue_rows(qapp) -> None:
+    cache = _FakeLibraryCache()
+    controller = _controller(cache=cache)
+    worker = _FakeWorker(scrobble_only=True)
+    worker._running = True
+    controller._execute_worker = worker
+    completed: list[Any] = []
+    controller.execution_complete.connect(completed.append)
+    result = SimpleNamespace(cleared_pending_scrobble_track_ids=(10, 12))
+
+    controller._on_execution_complete(result, worker)
+
+    assert cache.cleared_pending_scrobble_counts == [(10, 12)]
+    assert completed == [result]
 
 
 def test_start_planning_builds_full_sync_request_and_emits_plan_ready(

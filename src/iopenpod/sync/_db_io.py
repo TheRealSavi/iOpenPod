@@ -32,13 +32,14 @@ def read_existing_database(
     ipod_path: Path,
     *,
     raise_on_error: bool = False,
+    include_playcounts: bool = True,
 ) -> dict:
     """Read existing tracks, playlists, and smart playlists from iTunesDB.
 
-    Also reads the Play Counts file (if present) and merges per-track
-    deltas into the track dicts.  After merging:
+    When ``include_playcounts`` is true, also reads the Play Counts file (if
+    present) and merges per-track deltas into the track dicts. After merging:
     - ``play_count_1`` / ``skip_count`` are the new cumulative values
-    - ``play_count_2`` is the transient iPod play delta slot
+    - ``play_count_2`` is the durable queue of iPod plays awaiting scrobbling
     - ``recent_playcount`` / ``recent_skipcount`` are the Play Counts deltas
     - ``rating`` may be overridden if the user rated on the iPod
     """
@@ -115,22 +116,27 @@ def read_existing_database(
         hydrate_track_artwork_refs(tracks, itdb_path)
 
         # ── Merge Play Counts file (iPod-generated deltas) ──────────
-        pc_path = ipod_path / "iPod_Control" / "iTunes" / "Play Counts"
-        pc_entries = parse_playcounts(pc_path)
-        if pc_entries is not None:
-            if timezone_changed and any(entry.has_data for entry in pc_entries):
-                logger.warning(
-                    "iPod timezone changed since its last database sync "
-                    "(database=%s, current=%s); merging Play Counts with the "
-                    "current device zone. Plays before the change may be offset.",
-                    database_offset,
-                    device_time_context.name,
+        if include_playcounts:
+            pc_path = ipod_path / "iPod_Control" / "iTunes" / "Play Counts"
+            pc_entries = parse_playcounts(pc_path)
+            if pc_entries is not None:
+                if timezone_changed and any(entry.has_data for entry in pc_entries):
+                    logger.warning(
+                        "iPod timezone changed since its last database sync "
+                        "(database=%s, current=%s); merging Play Counts with the "
+                        "current device zone. Plays before the change may be offset.",
+                        database_offset,
+                        device_time_context.name,
+                    )
+                merge_playcounts(
+                    tracks, pc_entries, time_context=device_time_context,
                 )
-            merge_playcounts(
-                tracks, pc_entries, time_context=device_time_context,
-            )
+            else:
+                # No Play Counts file → zero deltas for all tracks
+                for t in tracks:
+                    t.setdefault("recent_playcount", 0)
+                    t.setdefault("recent_skipcount", 0)
         else:
-            # No Play Counts file → zero deltas for all tracks
             for t in tracks:
                 t.setdefault("recent_playcount", 0)
                 t.setdefault("recent_skipcount", 0)

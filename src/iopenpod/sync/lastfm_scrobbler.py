@@ -379,7 +379,7 @@ def scrobble_lastfm(
 # ── Orchestrator ────────────────────────────────────────────────────────────
 
 def build_scrobble_entries(playcount_items: list) -> list[ScrobbleEntry]:
-    """Build ScrobbleEntry list from sync plan playcount items."""
+    """Build entries from sync-plan items in the pending scrobble queue."""
     entries: list[ScrobbleEntry] = []
 
     for item in playcount_items:
@@ -447,7 +447,8 @@ def scrobble_plays(
     """Submit scrobbles to Last.fm.
 
     Args:
-        playcount_items: SyncItems with action=SYNC_PLAYCOUNT.
+        playcount_items: SyncItems with action=SYNC_PLAYCOUNT whose deltas
+            come from the durable pending scrobble queue.
         api_key: Last.fm API Key
         api_secret: Last.fm API Secret
         session_key: Last.fm user Session Key (sk)

@@ -423,7 +423,7 @@ COLUMN_CONFIG: dict[str, tuple[str, Callable[[int], str] | None]] = {
     "length": ("Time", format_duration),
     "rating": ("Rating", format_rating),
     "play_count_1": ("Plays", None),
-    "play_count_2": ("Plays (iPod)", None),
+    "play_count_2": ("Unscrobbled Plays", None),
     "skip_count": ("Skips", None),
     "last_played": ("Last Played", format_date),
     "last_skipped": ("Last Skipped", format_date),

@@ -947,6 +947,28 @@ class iTunesDBCache(QObject):
         data = self.get_data()
         return list(data.get("mhlt", [])) if data else []
 
+    def clear_pending_scrobble_counts(self, db_track_ids: tuple[int, ...]) -> None:
+        """Reconcile a committed pending-scrobble clear without reloading iTunesDB."""
+
+        target_ids = {int(db_track_id) for db_track_id in db_track_ids if db_track_id}
+        if not target_ids:
+            return
+
+        changed = False
+        with self._lock:
+            data = self._data
+            if data is None:
+                return
+            for track in data.get("mhlt", []):
+                if int(track.get("db_track_id", 0) or 0) not in target_ids:
+                    continue
+                if int(track.get("play_count_2", 0) or 0) == 0:
+                    continue
+                track["play_count_2"] = 0
+                changed = True
+        if changed:
+            self.data_ready.emit()
+
     def get_albums(self) -> list:
         data = self.get_data()
         return list(data.get("mhla", [])) if data else []

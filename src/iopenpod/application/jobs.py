@@ -2581,6 +2581,7 @@ class SyncExecuteWorker(QThread):
         expected_database_generation: DatabaseGeneration | None = None,
         on_sync_complete: Callable[[], None] | None = None,
         sync_until_full: bool = False,
+        scrobble_only: bool = False,
     ):
         super().__init__()
         self.ipod_path = ipod_path
@@ -2595,6 +2596,7 @@ class SyncExecuteWorker(QThread):
         self.expected_database_generation = expected_database_generation
         self.on_sync_complete = on_sync_complete
         self.sync_until_full = bool(sync_until_full)
+        self.scrobble_only = bool(scrobble_only)
         self._give_up_scrobble_requested = False
         self._partial_save_event: threading.Event | None = None
         self._partial_save_decision: list[bool] = [True]
@@ -2626,9 +2628,10 @@ class SyncExecuteWorker(QThread):
             from iopenpod.sync.mapping import MappingManager
 
             settings = self.settings
-            tools = check_sync_tool_availability(settings)
-            if tools.has_missing:
-                raise RuntimeError(f"{tools.tool_list} required before sync.\n\n{tools.install_help_text}")
+            if not self.scrobble_only:
+                tools = check_sync_tool_availability(settings)
+                if tools.has_missing:
+                    raise RuntimeError(f"{tools.tool_list} required before sync.\n\n{tools.install_help_text}")
 
             self._partial_save_event = threading.Event()
 
@@ -2642,7 +2645,7 @@ class SyncExecuteWorker(QThread):
                 evt.wait()
                 return self._partial_save_decision[0]
 
-            if not self.skip_backup:
+            if not self.skip_backup and not self.scrobble_only:
                 self._create_presync_backup(settings, SyncProgress)
 
             if getattr(self.plan, "mapping", None) is not None:
@@ -2678,17 +2681,32 @@ class SyncExecuteWorker(QThread):
                     transcode_cache_dir=settings.transcode_cache_dir or "",
                     max_cache_size_gb=settings.max_cache_size_gb,
                     dry_run=False,
-                    write_back_to_pc=settings.write_back_to_pc,
-                    compute_sound_check=settings.compute_sound_check,
-                    scrobble_on_sync=settings.scrobble_on_sync,
+                    write_back_to_pc=(
+                        False if self.scrobble_only else settings.write_back_to_pc
+                    ),
+                    compute_sound_check=(
+                        False
+                        if self.scrobble_only
+                        else settings.compute_sound_check
+                    ),
+                    scrobble_on_sync=(self.scrobble_only or settings.scrobble_on_sync),
                     listenbrainz_token=settings.listenbrainz_token or "",
                     listenbrainz_username=settings.listenbrainz_username or "",
                     lastfm_api_key=getattr(settings, "lastfm_api_key", ""),
                     lastfm_api_secret=getattr(settings, "lastfm_api_secret", ""),
                     lastfm_session_key=getattr(settings, "lastfm_session_key", ""),
                     lastfm_username=getattr(settings, "lastfm_username", ""),
-                    rockbox_metadata_support=bool(getattr(settings, "rockbox_metadata_support", False)),
-                    sync_until_full=self.sync_until_full,
+                    rockbox_metadata_support=(
+                        False
+                        if self.scrobble_only
+                        else bool(
+                            getattr(settings, "rockbox_metadata_support", False)
+                        )
+                    ),
+                    sync_until_full=(
+                        False if self.scrobble_only else self.sync_until_full
+                    ),
+                    scrobble_only=self.scrobble_only,
                     photo_sync_settings={
                         "rotate_tall_photos_for_device": (settings.rotate_tall_photos_for_device),
                         "fit_photo_thumbnails": settings.fit_photo_thumbnails,
@@ -2700,7 +2718,9 @@ class SyncExecuteWorker(QThread):
                 expected_database_generation=self.expected_database_generation,
                 progress_callback=on_engine_progress,
                 is_cancelled=self.isInterruptionRequested,
-                on_sync_complete=self.on_sync_complete,
+                on_sync_complete=(
+                    None if self.scrobble_only else self.on_sync_complete
+                ),
                 is_scrobble_cancelled=lambda: self._give_up_scrobble_requested,
                 on_cancel_with_partial=_on_cancel_with_partial,
             )

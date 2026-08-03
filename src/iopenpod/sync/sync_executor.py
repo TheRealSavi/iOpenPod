@@ -293,6 +293,7 @@ class _SyncContext:
     _is_cancelled: Callable[[], bool] | None
     sync_until_full: bool = False
     rockbox_metadata_support: bool = False
+    scrobble_only: bool = False
 
     # ── GUI-decoupled inputs (passed forward, not pulled from GUI) ──
     on_sync_complete: Callable[[], None] | None = None
@@ -401,6 +402,14 @@ class _ScrobbleServiceOutcome:
     accepted: int = 0
     errors: list[str] = field(default_factory=list)
     gave_up: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class _ScrobbleRunOutcome:
+    """Whether this sync can clear its durable pending-scrobble counts."""
+
+    clean_service_completed: bool = False
+    has_errors: bool = False
 
 
 class SyncExecutor:
@@ -513,13 +522,15 @@ class SyncExecutor:
         lastfm_username = getattr(request, "lastfm_username", "")
         sync_until_full = bool(getattr(request, "sync_until_full", False))
         rockbox_metadata_support = bool(getattr(request, "rockbox_metadata_support", False) or getattr(request.plan, "rockbox_metadata_pass", False))
+        scrobble_only = bool(getattr(request, "scrobble_only", False))
 
-        _clear_transcoder_caches()
-        # A crashed transcode can leave an unindexed reserved file behind.
-        # Maintenance happens before any new cache writes, so it cannot race a
-        # live conversion in this sync.
-        self.transcode_cache.cleanup()
-        self.transcode_cache.trim_to_limit()
+        if not scrobble_only:
+            _clear_transcoder_caches()
+            # A crashed transcode can leave an unindexed reserved file behind.
+            # Maintenance happens before any new cache writes, so it cannot race a
+            # live conversion in this sync.
+            self.transcode_cache.cleanup()
+            self.transcode_cache.trim_to_limit()
 
         ctx = self._build_sync_context(
             plan=request.plan,
@@ -540,6 +551,7 @@ class SyncExecutor:
             is_scrobble_cancelled=request.is_scrobble_cancelled,
             sync_until_full=sync_until_full,
             rockbox_metadata_support=rockbox_metadata_support,
+            scrobble_only=scrobble_only,
         )
         lifecycle = _ExecutionLifecycle(
             on_cancel_with_partial=request.on_cancel_with_partial,
@@ -666,6 +678,7 @@ class SyncExecutor:
         is_scrobble_cancelled: Callable[[], bool] | None,
         sync_until_full: bool,
         rockbox_metadata_support: bool,
+        scrobble_only: bool,
     ) -> _SyncContext:
         ctx = _SyncContext(
             plan,
@@ -677,6 +690,7 @@ class SyncExecutor:
         )
         ctx.sync_until_full = bool(sync_until_full)
         ctx.rockbox_metadata_support = bool(rockbox_metadata_support)
+        ctx.scrobble_only = bool(scrobble_only)
         ctx.on_sync_complete = on_sync_complete
         ctx.compute_sound_check = compute_sound_check
         ctx.scrobble_on_sync = scrobble_on_sync
@@ -703,10 +717,17 @@ class SyncExecutor:
 
         flush_ok = True
         try:
-            self._run_file_mutation_phase(ctx)
-            self._run_database_commit_phase(ctx, lifecycle)
+            if ctx.scrobble_only:
+                self._execute_playcount_sync(ctx)
+                if ctx.result.success and not ctx.cancelled():
+                    self._execute_write_and_finalize(ctx)
+            else:
+                self._run_file_mutation_phase(ctx)
+                self._run_database_commit_phase(ctx, lifecycle)
         finally:
-            if not ctx.dry_run:
+            if not ctx.dry_run and (
+                not ctx.scrobble_only or ctx.database_committed
+            ):
                 try:
                     # Never run a mount-scoped flush against a path that may
                     # now refer to a replacement volume or an ordinary host
@@ -738,7 +759,11 @@ class SyncExecutor:
                             flush_message,
                         )
                     )
-        if (ctx.database_committed or ctx.device_changes_committed) and flush_ok:
+        if (
+            not ctx.scrobble_only
+            and (ctx.database_committed or ctx.device_changes_committed)
+            and flush_ok
+        ):
             self._clear_gui_cache(ctx)
         ctx.result.success = not ctx.result.has_errors
 
@@ -1295,7 +1320,9 @@ class SyncExecutor:
 
     def _load_existing_database_into(self, ctx: _SyncContext) -> None:
         """Parse existing iPod database and populate ctx track/playlist state."""
-        existing_db = self._read_existing_database()
+        existing_db = self._read_existing_database(
+            include_playcounts=not ctx.scrobble_only
+        )
         ctx.existing_tracks_data = existing_db["tracks"]
         ctx.existing_dataset2_standard_playlists_raw = existing_db["dataset2_standard_playlists"]
         ctx.existing_dataset3_podcast_playlists_raw = existing_db["dataset3_podcast_playlists"]
@@ -1733,14 +1760,27 @@ class SyncExecutor:
             ctx.result.success = False
             return
 
-        # Scrobble before clearing transient play deltas or deleting Play
-        # Counts.  Each service receives its own snapshot of the original
-        # deltas, then the in-memory DB state is cleared once before write.
+        # Scrobble before clearing the durable pending-scrobble queue or
+        # deleting Play Counts. Each service receives an independent snapshot
+        # of the original counts. A clean result from any one service releases
+        # the shared queue only after every configured service has attempted it.
+        pending_queue_cleared = False
         if ctx.plan.to_sync_playcount:
-            self._execute_scrobble(ctx)
-            self._clear_playcount_deltas(ctx)
+            scrobble_outcome = self._execute_scrobble(ctx)
+            if scrobble_outcome.clean_service_completed:
+                self._clear_playcount_deltas(ctx)
+                pending_queue_cleared = True
 
         commit_payload = self._prepare_database_commit_payload(ctx, advance=_advance)
+        if ctx.scrobble_only:
+            self._execute_scrobble_only_database_write(
+                ctx,
+                commit_payload,
+                advance=_advance,
+                pending_queue_cleared=pending_queue_cleared,
+            )
+            return
+
         if ctx.rockbox_metadata_support:
             self._execute_rockbox_metadata_pass(ctx, commit_payload)
         else:
@@ -1860,6 +1900,70 @@ class SyncExecutor:
         except Exception as e:
             ctx.result.errors.append(("database write", str(e)))
             logger.exception("Database/post-write phase failed")
+
+    def _execute_scrobble_only_database_write(
+        self,
+        ctx: _SyncContext,
+        commit_payload: DatabaseCommitPayload,
+        *,
+        advance: Callable[[str], None],
+        pending_queue_cleared: bool,
+    ) -> None:
+        """Persist a pending-scrobble result without full-sync maintenance.
+
+        This path deliberately omits media metadata, mapping, podcast, photo,
+        iTunesPrefs, and Play Counts-file work. The database write and the
+        lifecycle's final durability flush remain required for the queue clear
+        to be safe.
+        """
+
+        try:
+            def _db_progress(message: str) -> None:
+                advance(message)
+
+            db_ok = write_database_commit(
+                self.ipod_path,
+                commit_payload,
+                progress_callback=_db_progress,
+                raise_on_error=True,
+                protect_itunes=False,
+                flush_after_write=False,
+                write_guard=ctx.write_guard,
+                filesystem_profile=ctx.filesystem_profile,
+            )
+            if not db_ok:
+                logger.error("Pending-scrobble database write returned failure")
+                ctx.result.success = False
+                ctx.result.errors.append(("database", "Database write failed"))
+                return
+
+            ctx.database_committed = True
+            ctx.device_changes_committed = True
+            if pending_queue_cleared:
+                ctx.result.cleared_pending_scrobble_track_ids = tuple(
+                    db_track_id
+                    for item in ctx.plan.to_sync_playcount
+                    if (db_track_id := coerce_int(item.db_track_id))
+                )
+            logger.info("Persisted pending-scrobble queue update")
+        except FileSizeLimitError as exc:
+            if exc.proposed_database_bytes:
+                ctx.result.proposed_database_bytes = exc.proposed_database_bytes
+                ctx.result.proposed_database_recovery = ProposedDatabaseRecovery(
+                    payload=commit_payload,
+                    mapping=ctx.mapping,
+                )
+            ctx.result.errors.append(("database_size", str(exc)))
+            ctx.result.success = False
+            logger.error("Pending-scrobble database write exceeded its size limit: %s", exc)
+        except DeviceWriteSafetyError as exc:
+            ctx.result.errors.append(("filesystem_safety", str(exc)))
+            ctx.result.success = False
+            logger.error("Pending-scrobble database write stopped by safety guard: %s", exc)
+        except Exception as exc:
+            ctx.result.errors.append(("database write", str(exc)))
+            ctx.result.success = False
+            logger.exception("Pending-scrobble database write failed")
 
     def _apply_playlist_commit_actions(self, ctx: _SyncContext) -> None:
         """Apply reviewed playlist add/edit/remove actions to commit sources."""
@@ -3732,10 +3836,10 @@ class SyncExecutor:
             )
             ctx.result.playcounts_synced += 1
 
-    def _execute_scrobble(self, ctx: _SyncContext) -> bool:
-        """Submit new plays to each connected scrobbling service."""
+    def _execute_scrobble(self, ctx: _SyncContext) -> _ScrobbleRunOutcome:
+        """Submit pending plays and report whether their shared queue can clear."""
         if not ctx.scrobble_on_sync:
-            return True
+            return _ScrobbleRunOutcome()
 
         listenbrainz_enabled = bool(ctx.listenbrainz_token)
         lastfm_configured = bool(ctx.lastfm_session_key)
@@ -3748,7 +3852,7 @@ class SyncExecutor:
         )
 
         if not listenbrainz_enabled and not lastfm_configured:
-            return True
+            return _ScrobbleRunOutcome()
 
         outcomes: list[_ScrobbleServiceOutcome] = []
 
@@ -3775,7 +3879,14 @@ class SyncExecutor:
             for error in outcome.errors:
                 ctx.result.errors.append((outcome.service_key, error))
 
-        return not any(outcome.errors for outcome in outcomes)
+        has_errors = any(outcome.errors for outcome in outcomes)
+        return _ScrobbleRunOutcome(
+            # A clean invocation counts as success even when the service
+            # ignored or deduplicated every entry.  Counts are shared across
+            # services, so later failures do not undo an earlier success.
+            clean_service_completed=any(not outcome.errors for outcome in outcomes),
+            has_errors=has_errors,
+        )
 
     @staticmethod
     def _format_scrobble_elapsed(seconds: float) -> str:
@@ -3843,7 +3954,7 @@ class SyncExecutor:
 
     @staticmethod
     def _clear_playcount_deltas(ctx: _SyncContext) -> None:
-        """Clear transient iPod play deltas after every scrobble service has run."""
+        """Clear the durable pending-scrobble queue after a clean submission."""
         for item in ctx.plan.to_sync_playcount:
             if item.db_track_id:
                 track_info = ctx.tracks_by_db_track_id.get(item.db_track_id)
@@ -4448,11 +4559,14 @@ class SyncExecutor:
 
     # ── Track Conversion ────────────────────────────────────────────────────
 
-    def _read_existing_database(self) -> dict:
+    def _read_existing_database(self, *, include_playcounts: bool = True) -> dict:
         """Read existing tracks, playlists, and smart playlists from iTunesDB."""
         from ._db_io import read_existing_database
 
-        return read_existing_database(self.ipod_path)
+        return read_existing_database(
+            self.ipod_path,
+            include_playcounts=include_playcounts,
+        )
 
     def _track_dict_to_info(self, t: dict) -> TrackInfo:
         """Convert parsed track dict to TrackInfo for writing."""

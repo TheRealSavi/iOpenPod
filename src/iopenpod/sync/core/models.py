@@ -95,6 +95,7 @@ class EngineOptions:
     lastfm_username: str = ""
     rockbox_metadata_support: bool = False
     sync_until_full: bool = False
+    scrobble_only: bool = False
     transaction_policy: EngineTransactionPolicy = EngineTransactionPolicy.USER_CHOICE
 
 

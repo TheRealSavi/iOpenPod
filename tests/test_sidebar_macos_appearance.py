@@ -1,3 +1,4 @@
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QLabel
 
 from iopenpod.gui.styles import Design, Metrics, current_theme, paint_css
@@ -30,6 +31,21 @@ def test_sidebar_uses_macos_source_list_metrics(qtbot) -> None:
     library_label = next(label for label in section_labels if label.text() == "Library")
     assert library_label.font().pointSize() == Metrics.FONT_SIDEBAR_SECTION
     assert any(label.text() == "Maintenance" for label in section_labels)
+    assert sidebar.scrobbleButton.text() == "Scrobble Now"
+    assert sidebar.scrobbleButton.isEnabled() is False
+
+
+def test_sidebar_scrobble_button_emits_request_for_pending_plays(qtbot) -> None:
+    sidebar = Sidebar()
+    qtbot.addWidget(sidebar)
+    requested: list[bool] = []
+    sidebar.scrobble_requested.connect(lambda: requested.append(True))
+    sidebar.setScrobbleAvailable(True, pending_play_count=2)
+
+    qtbot.mouseClick(sidebar.scrobbleButton, Qt.MouseButton.LeftButton)
+
+    assert requested == [True]
+    assert sidebar.scrobbleButton.badgeCount() == 2
 
 
 def test_sidebar_selection_is_neutral_instead_of_accent_colored(qtbot) -> None:

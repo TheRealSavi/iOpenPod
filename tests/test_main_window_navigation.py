@@ -84,6 +84,19 @@ def test_execute_sync_plan_stops_playback_before_removing_current_track(
     assert events == ["stop", "execute"]
 
 
+def test_scrobble_now_requests_scrobble_only_session() -> None:
+    requests: list[str] = []
+    window = SimpleNamespace(
+        _sync_session=SimpleNamespace(
+            start_scrobble_only=lambda: requests.append("scrobble"),
+        ),
+    )
+
+    MainWindow._onScrobbleNowRequested(cast(Any, window))
+
+    assert requests == ["scrobble"]
+
+
 class _FakeStack:
     def __init__(self, current_index: int = 0, current_widget=None):
         self._current_index = current_index
@@ -155,6 +168,7 @@ class _FakeSidebar:
         self.library_tabs_visible: list[bool] = []
         self.tag_fixes_available: list[bool] = []
         self.tag_fix_counts: list[tuple[int, int]] = []
+        self.scrobble_availability: list[tuple[bool, int]] = []
         self.device_info_updates: list[dict] = []
         self.eject_availability: list[bool] = []
         self.clear_count = 0
@@ -167,6 +181,13 @@ class _FakeSidebar:
 
     def setTagFixCount(self, field_count: int, track_count: int = 0) -> None:
         self.tag_fix_counts.append((field_count, track_count))
+
+    def setScrobbleAvailable(
+        self,
+        available: bool,
+        pending_play_count: int = 0,
+    ) -> None:
+        self.scrobble_availability.append((available, pending_play_count))
 
     def updateDeviceInfo(self, **kwargs) -> None:
         self.device_info_updates.append(kwargs)
@@ -331,6 +352,37 @@ def test_successful_sync_queues_silent_normalization_after_rescan(monkeypatch) -
     assert shown_results == [result]
     assert window._normalize_tags_after_sync_pending is True
     assert scheduled == [(500, window._rescanAfterSync)]
+
+
+def test_successful_scrobble_only_does_not_reload_itunesdb_cache(monkeypatch) -> None:
+    shown_results: list[object] = []
+    scheduled: list[tuple[int, object]] = []
+    availability_updates: list[None] = []
+    monkeypatch.setattr(
+        "iopenpod.gui.app.QTimer.singleShot",
+        lambda delay, callback: scheduled.append((delay, callback)),
+    )
+    window = SimpleNamespace(
+        _scrobble_only_running=True,
+        syncReview=SimpleNamespace(show_result=shown_results.append),
+        settings_service=SimpleNamespace(
+            get_effective_settings=lambda: AppSettings(
+                normalize_tags_after_sync=True,
+            )
+        ),
+        isActiveWindow=lambda: True,
+        _rescanAfterSync=lambda: None,
+        _update_scrobble_availability=lambda: availability_updates.append(None),
+        _normalize_tags_after_sync_pending=False,
+    )
+    result = SimpleNamespace(success=True, partial_save=False, errors=[])
+
+    MainWindow._onSyncExecuteComplete(cast(Any, window), result)
+
+    assert shown_results == [result]
+    assert window._normalize_tags_after_sync_pending is False
+    assert availability_updates == [None]
+    assert scheduled == []
 
 
 def test_post_sync_tag_scan_applies_silently_to_unchanged_cache() -> None:
@@ -1091,6 +1143,9 @@ def _build_window_for_data_ready(
         window.tag_fix_scan_schedules + 1,
     )
     window._is_sync_results_visible = MainWindow._is_sync_results_visible.__get__(window)
+    window._scrobble_only_running = False
+    window._pending_scrobble_count = MainWindow._pending_scrobble_count
+    window._update_scrobble_availability = MainWindow._update_scrobble_availability.__get__(window)
     window._refresh_default_page_state = MainWindow._refresh_default_page_state.__get__(window)
     window._show_default_page = MainWindow._show_default_page.__get__(window)
     window._should_show_default_page_on_data_ready = MainWindow._should_show_default_page_on_data_ready.__get__(window)

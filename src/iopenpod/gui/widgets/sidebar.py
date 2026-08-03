@@ -930,6 +930,7 @@ class Sidebar(QFrame):
     device_renamed = pyqtSignal(str)  # emits new iPod name
     eject_requested = pyqtSignal()    # emitted when the Eject button is clicked
     tag_fixes_requested = pyqtSignal()
+    scrobble_requested = pyqtSignal()
     manage_storage_requested = pyqtSignal()
 
     # Categories that only make sense on video-capable iPods
@@ -1030,6 +1031,17 @@ class Sidebar(QFrame):
         self.backupButton = SidebarNavButton("Backups", icon_name="archive")
         maintenance_layout.addWidget(self.backupButton)
 
+        self.scrobbleButton = SidebarNavButton(
+            "Scrobble Now",
+            icon_name="broadcast",
+        )
+        self.scrobbleButton.setToolTip(
+            "Submit pending iPod plays to your connected scrobbling services."
+        )
+        self.scrobbleButton.setEnabled(False)
+        self.scrobbleButton.clicked.connect(self.scrobble_requested.emit)
+        maintenance_layout.addWidget(self.scrobbleButton)
+
         self.tagFixButton = SidebarNavButton(
             "Normalize Tags",
             icon_name="check-circle",
@@ -1114,6 +1126,7 @@ class Sidebar(QFrame):
         self.device_card.clear()
         self.setTagFixesAvailable(False)
         self.setTagFixCount(0)
+        self.setScrobbleAvailable(False)
         # Show all categories again when no device is selected
         self.setVideoVisible(True)
         self.setPodcastVisible(True)
@@ -1125,6 +1138,27 @@ class Sidebar(QFrame):
 
     def setTagFixesAvailable(self, available: bool) -> None:
         self.tagFixButton.setEnabled(available)
+
+    def setScrobbleAvailable(
+        self,
+        available: bool,
+        pending_play_count: int = 0,
+    ) -> None:
+        """Enable manual scrobbling when this iPod has pending plays."""
+
+        pending_play_count = max(0, int(pending_play_count))
+        self.scrobbleButton.setEnabled(bool(available))
+        self.scrobbleButton.setBadgeCount(pending_play_count)
+        if pending_play_count:
+            play_word = "play" if pending_play_count == 1 else "plays"
+            self.scrobbleButton.setToolTip(
+                f"Submit {pending_play_count:,} pending iPod {play_word} "
+                "to your connected scrobbling services."
+            )
+        else:
+            self.scrobbleButton.setToolTip(
+                "No iPod plays are waiting to be scrobbled."
+            )
 
     def setTagFixCount(self, field_count: int, track_count: int = 0) -> None:
         """Update the pending normalization badge and explanatory tooltip."""

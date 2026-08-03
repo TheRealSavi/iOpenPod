@@ -81,7 +81,9 @@ def track_dict_to_info(t: dict) -> TrackInfo:
         # play_count_1 is the cumulative count (already includes any
         # Play Counts deltas folded into the DB or merged at load time).
         play_count=t.get("play_count_1", 0),
-        play_count_2=t.get("play_count_2", t.get("recent_playcount", 0)),
+        # The durable pending-scrobble queue is independent of the current
+        # physical Play Counts-file delta.
+        play_count_2=t.get("play_count_2", 0),
         skip_count=t.get("skip_count", 0),
         volume=t.get("volume", 0),
         start_time=t.get("start_time", 0),

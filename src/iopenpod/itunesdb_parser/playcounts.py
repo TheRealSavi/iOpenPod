@@ -198,7 +198,8 @@ def merge_playcounts(
     After calling this:
 
     - ``track["play_count_1"]`` is the **new cumulative** play count
-    - ``track["play_count_2"]`` is the **delta** play count from the iPod
+    - ``track["play_count_2"]`` is the cumulative count of iPod plays that
+      have not yet been scrobbled
     - ``track["skip_count"]`` is the **new cumulative** skip count
     - ``track["recent_playcount"]`` is the delta from this session
     - ``track["recent_skipcount"]`` is the delta from this session
@@ -227,7 +228,11 @@ def merge_playcounts(
         # --- Play count (additive) ---
         track["recent_playcount"] = entry.play_count
         track["play_count_1"] = track.get("play_count_1", 0) + entry.play_count
-        track["play_count_2"] = entry.play_count
+        # This slot survives Play Counts cleanup and is the durable queue of
+        # plays still awaiting scrobbling.  Never fold its existing value into
+        # the main play count: that count already included the older delta
+        # when it was originally imported.
+        track["play_count_2"] = track.get("play_count_2", 0) + entry.play_count
         if entry.play_count > 0:
             merged_plays += 1
 
@@ -264,11 +269,12 @@ def merge_playcounts(
             if unix_ts > track.get("last_skipped", 0):
                 track["last_skipped"] = unix_ts
 
-    # Tracks beyond the Play Counts entries get zero deltas
+    # Tracks beyond the Play Counts entries did not receive a new device
+    # delta.  Preserve their durable pending-scrobble count, which may have
+    # been imported during an earlier device selection.
     for i in range(count, len(tracks)):
         tracks[i]["recent_playcount"] = 0
         tracks[i]["recent_skipcount"] = 0
-        tracks[i]["play_count_2"] = 0
 
     logger.info(
         "Merged Play Counts: %d plays, %d skips, %d ratings across %d tracks",
