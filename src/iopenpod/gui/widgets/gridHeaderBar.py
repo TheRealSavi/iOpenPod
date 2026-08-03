@@ -56,11 +56,13 @@ class GridHeaderBar(QFrame):
     sort_changed = pyqtSignal(str, bool)   # (sort_key, reverse)
     search_changed = pyqtSignal(str)       # filter query
     selection_grouping_changed = pyqtSignal(bool)
+    artist_view_mode_changed = pyqtSignal(str)  # "grid" or "list"
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._category = "Albums"
         self._active_label = _DEFAULT_LABEL
+        self._artist_view_mode = "grid"
 
         self.setObjectName("gridHeaderBar")
         self.setFixedHeight(56)
@@ -113,6 +115,40 @@ class GridHeaderBar(QFrame):
         self._selection_group_btn.hide()
         self._update_selection_grouping_button()
 
+        self._artist_view_switch = QFrame()
+        self._artist_view_switch.setObjectName("artistViewModeSwitch")
+        self._artist_view_switch.setFixedSize(72, control_size)
+        self._artist_view_switch.setStyleSheet(f"""
+            QFrame#artistViewModeSwitch {{
+                background: {paint_css('control.secondary.fill')};
+                border: 1px solid {paint_css('border.default')};
+                border-radius: {control_size // 2}px;
+            }}
+        """)
+        artist_view_layout = QHBoxLayout(self._artist_view_switch)
+        artist_view_layout.setContentsMargins(3, 3, 3, 3)
+        artist_view_layout.setSpacing(0)
+
+        self._artist_grid_btn = self._make_artist_view_button(
+            "grid",
+            "Artist grid view",
+        )
+        self._artist_list_btn = self._make_artist_view_button(
+            "list",
+            "Artist list view",
+        )
+        self._artist_view_divider = QFrame()
+        self._artist_view_divider.setObjectName("artistViewModeDivider")
+        self._artist_view_divider.setFixedWidth(1)
+        self._artist_view_divider.setStyleSheet(
+            f"background: {paint_css('border.default')}; border: none;"
+        )
+        artist_view_layout.addWidget(self._artist_grid_btn)
+        artist_view_layout.addWidget(self._artist_view_divider)
+        artist_view_layout.addWidget(self._artist_list_btn)
+        self._artist_view_switch.hide()
+        self._update_artist_view_buttons()
+
         self._search = QLineEdit()
         self._search.setObjectName("gridSearchField")
         self._search.setPlaceholderText(f"Find in {self._category}")
@@ -133,6 +169,7 @@ class GridHeaderBar(QFrame):
         layout.addWidget(self._title)
         layout.addStretch()
         layout.addWidget(self._sort_btn)
+        layout.addWidget(self._artist_view_switch)
         layout.addWidget(self._selection_group_btn)
         layout.addWidget(self._search)
 
@@ -143,6 +180,24 @@ class GridHeaderBar(QFrame):
         self._category = category
         self._title.setText(category)
         self._search.setPlaceholderText(f"Find in {category}")
+        is_artist_category = category == "Artists"
+        self._artist_view_switch.setVisible(is_artist_category)
+
+    def artistViewMode(self) -> str:
+        """Return the selected Artists presentation mode."""
+
+        return self._artist_view_mode
+
+    def setArtistViewMode(self, mode: str) -> None:
+        """Select the Artists grid or sidebar-browser presentation mode."""
+
+        if mode not in {"grid", "list"}:
+            raise ValueError(f"Unknown artist view mode: {mode}")
+        if self._artist_view_mode == mode:
+            return
+        self._artist_view_mode = mode
+        self._update_artist_view_buttons()
+        self.artist_view_mode_changed.emit(mode)
 
     def resetState(self) -> None:
         """Reset search text and sort selection to defaults."""
@@ -175,6 +230,46 @@ class GridHeaderBar(QFrame):
         return self._selection_group_btn.isChecked()
 
     # ── Internal ──────────────────────────────────────────────────────────────
+
+    def _make_artist_view_button(self, mode: str, label: str) -> QPushButton:
+        button = QPushButton(self._artist_view_switch)
+        button.setObjectName(f"artist{mode.title()}ViewButton")
+        button.setCheckable(True)
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
+        button.setAccessibleName(label)
+        button.setToolTip(label)
+        icon = glyph_icon(mode, 18, paint_css("text.secondary"))
+        if icon is not None:
+            button.setIcon(icon)
+            button.setIconSize(QSize(18, 18))
+        button.clicked.connect(lambda _checked=False, selected_mode=mode: self.setArtistViewMode(selected_mode))
+        return button
+
+    def _update_artist_view_buttons(self) -> None:
+        for mode, button in (
+            ("grid", self._artist_grid_btn),
+            ("list", self._artist_list_btn),
+        ):
+            selected = mode == self._artist_view_mode
+            button.blockSignals(True)
+            button.setChecked(selected)
+            button.blockSignals(False)
+            button.setStyleSheet(btn_css(
+                bg=(
+                    paint_css("surface.active")
+                    if selected
+                    else "transparent"
+                ),
+                bg_hover=(
+                    paint_css("surface.hover")
+                    if not selected
+                    else paint_css("surface.active")
+                ),
+                bg_press=paint_css("surface.raised"),
+                border="none",
+                radius=14,
+                padding="0px",
+            ))
 
     def _show_sort_menu(self) -> None:
         menu = QMenu(self)

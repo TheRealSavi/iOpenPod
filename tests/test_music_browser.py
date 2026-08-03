@@ -3,19 +3,27 @@ from typing import Any, cast
 
 from PIL import Image
 from PyQt6.QtCore import QPoint
-from PyQt6.QtWidgets import QLineEdit, QSplitter
+from PyQt6.QtWidgets import QFrame, QLineEdit, QSplitter, QVBoxLayout, QWidget
 
 from iopenpod.gui import styles
-from iopenpod.gui.styles import apply_theme, context_menu_css, current_theme, paint_css
+from iopenpod.gui.styles import (
+    apply_theme,
+    context_menu_css,
+    current_theme,
+    make_scroll_area,
+    paint_css,
+)
 from iopenpod.gui.widgets import artworkUnifier as artwork_unifier_module
 from iopenpod.gui.widgets.artworkUnifier import (
     artwork_compare_hash,
     build_album_artwork_unify_context,
 )
-from iopenpod.gui.widgets.musicBrowser import MusicBrowser
+from iopenpod.gui.widgets.browserChrome import BrowserPane
+from iopenpod.gui.widgets.musicBrowser import MusicBrowser, artist_sidebar_panel_css
 from iopenpod.gui.widgets.trackContextMenu import resolve_grid_item_tracks
 from iopenpod.gui.widgets.trackListTitleBar import TrackListTitleBar
 from iopenpod.infrastructure.theme_renderer import render_track_title_bar_paints
+from iopenpod.itunesdb_shared.constants import MEDIA_TYPE_AUDIO
 
 
 def _build_browser(category: str = "Albums") -> Any:
@@ -77,6 +85,75 @@ def test_track_edits_do_not_reload_photo_browser() -> None:
     assert browser._tab_dirty["Photos"] is False
     assert scheduled == []
     assert visible_row_refreshes == []
+
+
+def test_artist_list_mode_scopes_the_existing_album_browser_to_the_selection() -> None:
+    calls: list[tuple] = []
+    browser = SimpleNamespace(
+        browserGrid=SimpleNamespace(
+            resetFilters=lambda: calls.append(("reset_grid",)),
+            populateGrid=lambda items: calls.append(("populate_grid", items)),
+        ),
+        browserTrack=SimpleNamespace(
+            clearFilter=lambda: calls.append(("clear_tracks",)),
+            loadTracks=lambda *, media_type_filter: calls.append(
+                ("load_tracks", media_type_filter)
+            ),
+        ),
+        trackListTitleBar=SimpleNamespace(
+            setTitle=lambda title: calls.append(("title", title)),
+            resetColor=lambda: calls.append(("reset_color",)),
+            setFullscreenMode=lambda enabled: calls.append(("fullscreen", enabled)),
+        ),
+        _artist_album_items=lambda artist: [{"title": f"{artist} Album"}],
+    )
+
+    MusicBrowser._load_artist_albums(cast(Any, browser), "Artist A")
+
+    assert calls == [
+        ("reset_grid",),
+        ("populate_grid", [{"title": "Artist A Album"}]),
+        ("clear_tracks",),
+        ("load_tracks", MEDIA_TYPE_AUDIO),
+        ("title", "Select an Album"),
+        ("reset_color",),
+        ("fullscreen", False),
+    ]
+
+
+def test_artist_list_sidebar_matches_the_photos_album_pane(qtbot) -> None:
+    apply_theme("dark")
+    host = QWidget()
+    host.setStyleSheet(f"background: {paint_css('canvas.default')};")
+    host.resize(440, 240)
+    qtbot.addWidget(host)
+
+    photo_sidebar = BrowserPane("", parent=host)
+    photo_sidebar.setGeometry(0, 0, 200, 240)
+    photo_scroll = make_scroll_area()
+    photo_inner = QWidget()
+    photo_inner.setStyleSheet("background: transparent; border: none;")
+    photo_scroll.setWidget(photo_inner)
+    photo_sidebar.addWidget(photo_scroll)
+
+    sidebar = QFrame(host)
+    sidebar.setObjectName("artistListSidebar")
+    sidebar.setGeometry(220, 0, 200, 240)
+    sidebar.setStyleSheet(artist_sidebar_panel_css())
+    layout = QVBoxLayout(sidebar)
+    layout.setContentsMargins(0, 0, 0, 0)
+
+    scroll = make_scroll_area()
+    inner = QFrame()
+    inner.setStyleSheet("background: transparent; border: none;")
+    scroll.setWidget(inner)
+    layout.addWidget(scroll)
+
+    host.show()
+    qtbot.waitUntil(host.isVisible)
+    image = host.grab().toImage()
+
+    assert image.pixelColor(230, 120) == image.pixelColor(10, 120)
 
 
 def test_context_menu_css_styles_disabled_rows_and_icon_gutter() -> None:

@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QLabel, QLineEdit, QPushButton
+from PyQt6.QtWidgets import QFrame, QLabel, QLineEdit, QPushButton
 
 from iopenpod.gui.styles import (
     BROWSER_SEARCH_CONTROL_SIZE,
@@ -45,6 +45,35 @@ def test_grid_header_category_updates_title_and_contextual_search(qtbot) -> None
     search = header.findChild(QLineEdit, "gridSearchField")
     assert title is not None and title.text() == "Artists"
     assert search is not None and search.placeholderText() == "Find in Artists"
+
+
+def test_grid_header_shows_segmented_artist_view_switcher(qtbot) -> None:
+    header = GridHeaderBar()
+    qtbot.addWidget(header)
+
+    switch = header.findChild(QFrame, "artistViewModeSwitch")
+    grid_button = header.findChild(QPushButton, "artistGridViewButton")
+    list_button = header.findChild(QPushButton, "artistListViewButton")
+
+    assert switch is not None and switch.isHidden()
+    assert grid_button is not None and grid_button.isChecked()
+    assert list_button is not None and not list_button.isChecked()
+
+    header.setCategory("Artists")
+
+    assert not switch.isHidden()
+    with qtbot.waitSignal(header.artist_view_mode_changed) as signal:
+        list_button.click()
+
+    assert signal.args == ["list"]
+    assert header.artistViewMode() == "list"
+    assert list_button.isChecked()
+    assert not grid_button.isChecked()
+
+    header.setCategory("Albums")
+
+    assert switch.isHidden()
+    assert header.artistViewMode() == "list"
 
 
 def test_grid_header_can_toggle_selected_item_grouping(qtbot) -> None:

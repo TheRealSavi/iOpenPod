@@ -5,13 +5,7 @@ from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import QSize, Qt, QTimer, pyqtSignal
-from PyQt6.QtWidgets import (
-    QFrame,
-    QSizePolicy,
-    QSplitter,
-    QStackedWidget,
-    QVBoxLayout,
-)
+from PyQt6.QtWidgets import QFrame, QSizePolicy, QSplitter, QStackedWidget, QVBoxLayout
 
 from iopenpod.itunesdb_shared.constants import (
     MEDIA_TYPE_AUDIO,
@@ -21,14 +15,17 @@ from iopenpod.itunesdb_shared.constants import (
     MEDIA_TYPE_VIDEO,
     MEDIA_TYPE_VIDEO_MASK,
 )
+from iopenpod.search import matches_search_words, prepare_search_text
 
-from ..styles import make_scroll_area, paint_css
+from ..styles import make_scroll_area, paint_css, panel_css
+from .browserChrome import style_browser_splitter
 from .gridHeaderBar import GridHeaderBar
 from .MBGridView import MusicBrowserGrid
 from .MBListView import MusicBrowserList
 from .photoBrowser import PhotoBrowserWidget
 from .playlistBrowser import PlaylistBrowser
 from .podcastBrowser import PodcastBrowser
+from .sidebarNavButton import SidebarNavButton
 from .trackContextMenu import (
     ChapteredAlbumMenuAction,
     resolve_grid_item_tracks,
@@ -37,6 +34,13 @@ from .trackContextMenu import (
 from .trackListTitleBar import TrackListTitleBar
 
 log = logging.getLogger(__name__)
+
+
+def artist_sidebar_panel_css() -> str:
+    """Match the flat browser-pane surface used by Photos' album list."""
+
+    return panel_css("artistListSidebar", radius=0)
+
 
 if TYPE_CHECKING:
     from iopenpod.application.services import (
@@ -66,6 +70,12 @@ class MusicBrowser(QFrame):
         self._library_service = libraries
         self._library_cache: LibraryCacheLike = libraries.cache()
         self._current_category = "Albums"
+        self._artist_view_mode = "grid"
+        self._artist_sidebar_sort_key = "title"
+        self._artist_sidebar_sort_reverse = False
+        self._artist_sidebar_search_query = ""
+        self._selected_artist: str | None = None
+        self._artist_buttons: dict[str, SidebarNavButton] = {}
         self._tab_dirty: dict[str, bool] = {
             "Playlists": True,
             "Podcasts": True,
@@ -102,17 +112,17 @@ class MusicBrowser(QFrame):
         self.browserGrid.attachScrollArea(self.browserGridScroll)
 
         self.gridHeaderBar = GridHeaderBar()
-        self.gridHeaderBar.sort_changed.connect(
-            lambda key, rev: self.browserGrid.setSort(key, rev)
+        self.gridHeaderBar.sort_changed.connect(self._on_grid_sort_changed)
+        self.gridHeaderBar.search_changed.connect(self._on_grid_search_changed)
+        self.gridHeaderBar.artist_view_mode_changed.connect(
+            self._on_artist_view_mode_changed
         )
-        self.gridHeaderBar.search_changed.connect(self.browserGrid.setSearchFilter)
 
         self.gridContainer = QFrame()
         self.gridContainer.setMinimumSize(0, 0)
         gridContainerLayout = QVBoxLayout(self.gridContainer)
         gridContainerLayout.setContentsMargins(0, 0, 0, 0)
         gridContainerLayout.setSpacing(0)
-        gridContainerLayout.addWidget(self.gridHeaderBar)
         gridContainerLayout.addWidget(self.browserGridScroll)
 
         self.gridTrackSplitter.addWidget(self.gridContainer)
@@ -171,6 +181,46 @@ class MusicBrowser(QFrame):
             }}
         """)
 
+        # Artists list mode keeps the established grid/track browser on the
+        # right and adds only a source-list sidebar on the left.  The shared
+        # GridHeaderBar is intentionally outside this splitter so it remains
+        # mounted while the two Artists presentations are switched.
+        self.artistListSplitter = QSplitter(Qt.Orientation.Horizontal)
+        style_browser_splitter(self.artistListSplitter)
+
+        self.artistSidebar = QFrame(self.artistListSplitter)
+        self.artistSidebar.setObjectName("artistListSidebar")
+        self.artistSidebar.setMinimumWidth(220)
+        self.artistSidebar.setStyleSheet(artist_sidebar_panel_css())
+        artist_sidebar_layout = QVBoxLayout(self.artistSidebar)
+        artist_sidebar_layout.setContentsMargins(0, 0, 0, 0)
+        artist_sidebar_layout.setSpacing(0)
+
+        self.artistSidebarScroll = make_scroll_area()
+        self.artistSidebarInner = QFrame()
+        self.artistSidebarInner.setObjectName("artistListSidebarInner")
+        self.artistSidebarInner.setStyleSheet("background: transparent; border: none;")
+        self.artistSidebarLayout = QVBoxLayout(self.artistSidebarInner)
+        self.artistSidebarLayout.setContentsMargins(8, 8, 8, 8)
+        self.artistSidebarLayout.setSpacing(2)
+        self.artistSidebarLayout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.artistSidebarScroll.setWidget(self.artistSidebarInner)
+        artist_sidebar_layout.addWidget(self.artistSidebarScroll)
+
+        self.artistListSplitter.addWidget(self.artistSidebar)
+        self.artistListSplitter.addWidget(self.gridTrackSplitter)
+        self.artistListSplitter.setStretchFactor(0, 0)
+        self.artistListSplitter.setStretchFactor(1, 1)
+        self.artistListSplitter.setSizes([240, 760])
+        self.artistSidebar.hide()
+
+        self.libraryBrowserPage = QFrame()
+        library_browser_layout = QVBoxLayout(self.libraryBrowserPage)
+        library_browser_layout.setContentsMargins(0, 0, 0, 0)
+        library_browser_layout.setSpacing(0)
+        library_browser_layout.addWidget(self.gridHeaderBar)
+        library_browser_layout.addWidget(self.artistListSplitter, 1)
+
         # Set initial sizes (60% grid, 40% tracks) or restore from settings
         try:
             saved = self._settings_service.get_effective_settings().splitter_sizes
@@ -205,9 +255,10 @@ class MusicBrowser(QFrame):
             libraries=self._library_service,
         )
 
-        # Use a stacked widget to toggle between grid/track and playlist views
+        # Use a stacked widget to toggle between the library, playlist, and
+        # dedicated media-browser views.
         self.stack = QStackedWidget()
-        self.stack.addWidget(self.gridTrackSplitter)   # index 0
+        self.stack.addWidget(self.libraryBrowserPage)  # index 0
         self.stack.addWidget(self.playlistBrowser)      # index 1
         self.stack.addWidget(self.podcastBrowser)       # index 2
         self.stack.addWidget(self.photoBrowser)         # index 3
@@ -296,6 +347,8 @@ class MusicBrowser(QFrame):
         """Reload data from the current device."""
         self.browserGrid.clearGrid()
         self.browserTrack.clearTable(clear_cache=True)
+        self._clear_artist_sidebar()
+        self._selected_artist = None
         self.playlistBrowser.clear()
         self.podcastBrowser.clear()
         self.photoBrowser.clear()
@@ -312,6 +365,168 @@ class MusicBrowser(QFrame):
             self._settings_service.save_global_settings(s)
         except Exception:
             log.debug("Failed to save splitter sizes", exc_info=True)
+
+    def _on_grid_sort_changed(self, key: str, reverse: bool) -> None:
+        """Send shared header sorting to the active Artists presentation."""
+
+        if self._is_artist_list_view_active():
+            self._artist_sidebar_sort_key = key
+            self._artist_sidebar_sort_reverse = reverse
+            self._rebuild_artist_sidebar()
+            return
+        self.browserGrid.setSort(key, reverse)
+
+    def _on_grid_search_changed(self, query: str) -> None:
+        """Send shared header search to the active Artists presentation."""
+
+        if self._is_artist_list_view_active():
+            self._artist_sidebar_search_query = query
+            self._rebuild_artist_sidebar()
+            return
+        self.browserGrid.setSearchFilter(query)
+
+    def _on_artist_view_mode_changed(self, mode: str) -> None:
+        """Switch Artist presentations without remounting the shared header."""
+
+        self._artist_view_mode = mode
+        if self._current_category != "Artists":
+            return
+        self._schedule_refresh_current_category()
+
+    def _is_artist_list_view_active(self) -> bool:
+        return self._current_category == "Artists" and self._artist_view_mode == "list"
+
+    def _clear_artist_sidebar(self) -> None:
+        self._artist_buttons.clear()
+        while self.artistSidebarLayout.count():
+            item = self.artistSidebarLayout.takeAt(0)
+            widget = item.widget() if item is not None else None
+            if widget is not None:
+                widget.deleteLater()
+
+    def _artist_sidebar_items(self) -> list[dict]:
+        """Build the currently visible Artists source-list rows."""
+
+        from iopenpod.application.runtime import build_artist_list
+
+        cache = self._library_cache
+        if cache is None or not cache.is_ready():
+            return []
+
+        items = build_artist_list(cache)
+        if self._artist_sidebar_search_query:
+            items = [
+                item
+                for item in items
+                if matches_search_words(
+                    self._artist_sidebar_search_query,
+                    (prepare_search_text(str(item.get("title") or "")),),
+                    fuzzy_min_length=3,
+                    fuzzy_threshold=0.78,
+                )
+            ]
+
+        def sort_key(item: dict):
+            value = item.get(self._artist_sidebar_sort_key)
+            return value.casefold() if isinstance(value, str) else value or 0
+
+        return sorted(
+            items,
+            key=sort_key,
+            reverse=self._artist_sidebar_sort_reverse,
+        )
+
+    def _rebuild_artist_sidebar(self) -> None:
+        """Refresh the list-mode source list and retain a valid selection."""
+
+        if not self._is_artist_list_view_active():
+            return
+
+        artist_items = self._artist_sidebar_items()
+        visible_artists = [str(item.get("title") or "") for item in artist_items]
+        self._clear_artist_sidebar()
+        for artist in visible_artists:
+            if not artist:
+                continue
+            button = SidebarNavButton(artist, self.artistSidebarInner)
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.clicked.connect(
+                lambda _checked=False, artist_name=artist: self._select_artist(artist_name)
+            )
+            self._artist_buttons[artist] = button
+            self.artistSidebarLayout.addWidget(button)
+        self.artistSidebarLayout.addStretch()
+
+        next_artist = self._selected_artist
+        if next_artist not in self._artist_buttons:
+            next_artist = next(iter(self._artist_buttons), None)
+        if next_artist is None:
+            self._selected_artist = None
+            self.browserGrid.clearGrid()
+            self.trackListTitleBar.setTitle("Select an Artist")
+            self.trackListTitleBar.resetColor()
+            self.trackListTitleBar.setFullscreenMode(False)
+            return
+        self._select_artist(next_artist)
+
+    def _select_artist(self, artist: str) -> None:
+        """Select an artist from the source list and load that artist's albums."""
+
+        if artist not in self._artist_buttons:
+            return
+        self._selected_artist = artist
+        for artist_name, button in self._artist_buttons.items():
+            button.setSelected(artist_name == artist)
+        self._load_artist_albums(artist)
+
+    def _artist_album_items(self, artist: str) -> list[dict]:
+        """Return album grid entries containing music credited to *artist*."""
+
+        from iopenpod.application.runtime import build_album_list
+
+        cache = self._library_cache
+        if cache is None or not cache.is_ready():
+            return []
+
+        artist_tracks = cache.get_artist_index().get(artist, [])
+        album_ids = {
+            track.get("album_id")
+            for track in artist_tracks
+            if track.get("album_id") is not None
+        }
+        album_pairs = {
+            (
+                str(track.get("Album") or ""),
+                str(track.get("Album Artist") or track.get("Artist") or ""),
+            )
+            for track in artist_tracks
+        }
+        album_titles = {str(track.get("Album") or "") for track in artist_tracks}
+
+        result: list[dict] = []
+        for item in build_album_list(cache):
+            album_id = item.get("filter_value") if item.get("filter_key") == "album_id" else None
+            album = str(item.get("album") or item.get("title") or "")
+            album_artist = str(item.get("artist") or "")
+            if (
+                album_id in album_ids
+                or (album, album_artist) in album_pairs
+                or album_artist == artist
+                or (not album_ids and album in album_titles)
+            ):
+                result.append(item)
+        return result
+
+    def _load_artist_albums(self, artist: str) -> None:
+        """Show an Artist's albums in the normal album-grid-and-track-list pane."""
+
+        self.browserGrid.resetFilters()
+        self.browserGrid.populateGrid(self._artist_album_items(artist))
+        self.browserTrack.clearFilter()
+        self.browserTrack.loadTracks(media_type_filter=MEDIA_TYPE_AUDIO)
+        self.trackListTitleBar.setTitle("Select an Album")
+        self.trackListTitleBar.resetColor()
+        self.trackListTitleBar.setFullscreenMode(False)
 
     def _apply_constrained_splitter_sizes(self):
         """Apply splitter sizing with constraint: track list <= 50% of window height.
@@ -376,7 +591,9 @@ class MusicBrowser(QFrame):
         if category == "Tracks":
             self.stack.setCurrentIndex(0)
             # Hide entire grid container (header + grid) for fullscreen tracklist
+            self.gridHeaderBar.hide()
             self.gridContainer.hide()
+            self.artistSidebar.hide()
             self.browserGrid.clearGrid()  # Clear grid to cancel pending image loads
             self.browserTrack.clearTable()  # Clear track list before reloading
             self.browserTrack.clearFilter()
@@ -411,7 +628,9 @@ class MusicBrowser(QFrame):
             # Non-music audio categories — hide entire grid container for fullscreen tracklist
             log.debug(f"  Showing {category} view")
             self.stack.setCurrentIndex(0)
+            self.gridHeaderBar.hide()
             self.gridContainer.hide()
+            self.artistSidebar.hide()
             self.browserGrid.clearGrid()
             self.browserTrack.clearTable()
             self.browserTrack.clearFilter()
@@ -429,7 +648,9 @@ class MusicBrowser(QFrame):
                 "Music Videos": MEDIA_TYPE_MUSIC_VIDEO,
             }
             self.stack.setCurrentIndex(0)
+            self.gridHeaderBar.hide()
             self.gridContainer.hide()
+            self.artistSidebar.hide()
             self.browserGrid.clearGrid()
             self.browserTrack.clearTable()
             self.browserTrack.clearFilter()
@@ -441,19 +662,29 @@ class MusicBrowser(QFrame):
         else:
             self.stack.setCurrentIndex(0)
             # Show grid for Albums, Artists, Genres
+            self.gridHeaderBar.show()
             self.gridContainer.show()
             self.gridHeaderBar.setCategory(category)
+            if category == "Artists" and self._artist_view_mode == "list":
+                self._artist_sidebar_search_query = ""
             self.gridHeaderBar.resetState()
 
-            self.browserGrid.resetFilters()
-            self.browserGrid.loadCategory(category)
-            # Pre-load audio-only tracks so filterByAlbum/Artist/Genre
-            # won't include video tracks in results.
-            self.browserTrack.loadTracks(media_type_filter=MEDIA_TYPE_AUDIO)
-            self.browserTrack.clearFilter()
-            self.trackListTitleBar.setTitle(f"Select a{'n' if category[0] in 'AE' else ''} {category[:-1]}")
-            self.trackListTitleBar.resetColor()
-            self.trackListTitleBar.setFullscreenMode(False)
+            if category == "Artists" and self._artist_view_mode == "list":
+                self.artistSidebar.show()
+                self._rebuild_artist_sidebar()
+            else:
+                self.artistSidebar.hide()
+                self.browserGrid.resetFilters()
+                self.browserGrid.loadCategory(category)
+                # Pre-load audio-only tracks so filterByAlbum/Artist/Genre
+                # won't include video tracks in results.
+                self.browserTrack.clearFilter()
+                self.browserTrack.loadTracks(media_type_filter=MEDIA_TYPE_AUDIO)
+                self.trackListTitleBar.setTitle(
+                    f"Select a{'n' if category[0] in 'AE' else ''} {category[:-1]}"
+                )
+                self.trackListTitleBar.resetColor()
+                self.trackListTitleBar.setFullscreenMode(False)
 
             # Apply constrained splitter sizes (50% grid max, 50% track list min)
             self._apply_constrained_splitter_sizes()
@@ -499,7 +730,13 @@ class MusicBrowser(QFrame):
 
     def _onGridItemContextRequested(self, items: object, global_pos) -> None:
         """Show the shared track menu for grouped grid items."""
-        if self._current_category not in {"Albums", "Artists", "Genres"}:
+        grid_category = (
+            "Albums"
+            if self._current_category == "Artists"
+            and getattr(self, "_artist_view_mode", "grid") == "list"
+            else self._current_category
+        )
+        if grid_category not in {"Albums", "Artists", "Genres"}:
             return
         if not isinstance(items, list):
             return
@@ -508,7 +745,7 @@ class MusicBrowser(QFrame):
             dict(item)
             for item in items
             if isinstance(item, dict)
-            and item.get("category", self._current_category) == self._current_category
+            and item.get("category", grid_category) == grid_category
         ]
         if not grid_items:
             return
@@ -517,7 +754,7 @@ class MusicBrowser(QFrame):
         if not selected_tracks:
             return
 
-        if self._current_category == "Albums":
+        if grid_category == "Albums":
             show_track_context_menu(
                 self,
                 self.browserTrack,
