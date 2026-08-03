@@ -7,7 +7,7 @@ _spec_root = _Path(SPECPATH).resolve()
 if str(_spec_root) not in sys.path:
     sys.path.insert(0, str(_spec_root))
 
-from PyInstaller.utils.hooks import copy_metadata
+from PyInstaller.utils.hooks import collect_data_files, copy_metadata
 from scripts.pyinstaller_helpers import wasmtime_binaries
 
 # Read version from pyproject.toml so it stays in sync
@@ -98,11 +98,13 @@ a = Analysis(
         ('src/iopenpod/assets', 'iopenpod/assets'),
         ('src/iopenpod/themes', 'iopenpod/themes'),
         ('src/iopenpod/itunesdb_writer/wasm', 'iopenpod/itunesdb_writer/wasm'),
+        *collect_data_files('tzdata'),
         *copy_metadata('iopenpod'),
     ],
     hiddenimports=[
         'usb.backend.libusb1',
         'packaging.version',
+        'tzdata',
         'wasmtime',
     ],
     hookspath=[],

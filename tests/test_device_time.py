@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import zoneinfo
 from datetime import UTC, datetime
 from io import BytesIO
 
@@ -68,6 +69,23 @@ def test_classic_preferences_selects_rome_timezone(tmp_path) -> None:
         -14_400,
         now=int(datetime(2026, 8, 1, 10, tzinfo=UTC).timestamp()),
     )
+
+
+def test_classic_preferences_uses_bundled_timezone_data_when_system_data_is_missing(tmp_path) -> None:
+    preferences = tmp_path / "iPod_Control" / "Device" / "Preferences"
+    preferences.parent.mkdir(parents=True)
+    raw = bytearray(2956)
+    raw[0xB70:0xB72] = (0x29).to_bytes(2, "little")
+    preferences.write_bytes(raw)
+
+    zoneinfo.reset_tzpath(())
+    try:
+        context = read_device_time_context(tmp_path)
+    finally:
+        zoneinfo.reset_tzpath()
+
+    assert context.name == "America/New_York"
+    assert context.city_id == 0x29
 
 
 def test_play_count_merge_never_uses_the_host_timezone() -> None:
