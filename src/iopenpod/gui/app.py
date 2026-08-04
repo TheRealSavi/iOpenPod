@@ -97,6 +97,7 @@ from iopenpod.gui.widgets.databaseStorageBrowser import DatabaseStorageBrowser
 from iopenpod.gui.widgets.databaseStorageInspectionDialog import (
     DatabaseStorageFieldInspectorDialog,
 )
+from iopenpod.gui.widgets.itunesdbForensics import ITunesDBForensicsDialog
 from iopenpod.gui.widgets.dropOverlay import DropOverlayWidget
 from iopenpod.gui.widgets.formatters import format_size
 from iopenpod.gui.widgets.musicBrowser import MusicBrowser
@@ -839,6 +840,7 @@ class MainWindow(QMainWindow):
         self.databaseStorageBrowser = DatabaseStorageBrowser()
         self.databaseStorageBrowser.closed.connect(self.hideDatabaseStorage)
         self.databaseStorageBrowser.inspect_requested.connect(self._onDatabaseStorageInspect)
+        self.databaseStorageBrowser.forensics_requested.connect(self.showITunesDBForensics)
         self.centralStack.addWidget(self.databaseStorageBrowser)  # Index 5
 
         # No-device placeholder section (shown in content area; sidebar stays visible)
@@ -2694,6 +2696,20 @@ class MainWindow(QMainWindow):
         self._database_storage_recovery = None
         self._database_storage_proposed_bytes = b""
         self._show_default_page()
+
+    def showITunesDBForensics(self) -> None:
+        """Open the standalone byte-walk tool with the current database preselected."""
+        dialog = getattr(self, "_itunesdb_forensics_dialog", None)
+        if dialog is not None and dialog.isVisible():
+            dialog.raise_()
+            dialog.activateWindow()
+            return
+        session = self.device_session_service.current_session()
+        default_path = str(getattr(session, "itunesdb_path", "") or "")
+        dialog = ITunesDBForensicsDialog(default_path, self)
+        dialog.finished.connect(lambda _result: setattr(self, "_itunesdb_forensics_dialog", None))
+        self._itunesdb_forensics_dialog = dialog
+        dialog.open()
 
     def showProposedDatabaseStorage(self, result: object) -> None:
         """Inspect the database rejected by the iPod size guard."""

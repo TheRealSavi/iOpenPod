@@ -28,7 +28,9 @@ MHYP_FIELDS: list[FieldDef] = [
     _u64("db_id_2", 0x3C, section_type=_S, min_header_length=0x44),
     _u64("playlist_id_2", 0x44, section_type=_S, min_header_length=0x4C),
     _u16("mhsd5_type", 0x50, section_type=_S, min_header_length=0x52),
-    _u16("mhsd5_type_2", 0x52, section_type=_S, min_header_length=0x54),
+    # Observed as 25 (0x0019) in iTunes-created "Phase Music" playlists.
+    # Its precise firmware meaning is not yet proven; retain the exact u16.
+    _u16("phase_game_flag", 0x52, section_type=_S, min_header_length=0x54),
     _u32("mhsd5_special_flag", 0x54, section_type=_S, min_header_length=0x58),
     _u32("timestamp_2", 0x58, section_type=_S, min_header_length=0x5C,
          read_transform=mac_to_unix, write_transform=unix_to_mac),

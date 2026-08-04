@@ -183,6 +183,11 @@ def _mhsd5_type_value(playlist: dict) -> int:
     return coerce_int(playlist.get("mhsd5_type", 0))
 
 
+def _phase_game_flag_value(playlist: dict) -> int:
+    """Return the exact observed MHYP +0x52 word for round-trip writing."""
+    return coerce_int(playlist.get("phase_game_flag", 0))
+
+
 def build_and_evaluate_playlists(
     existing_tracks_data: list[dict],
     dataset2_standard_playlists_raw: list[dict],
@@ -469,6 +474,7 @@ def _build_standard_dataset_playlists(
             sortorder=pl.get("sort_order", 0),
             podcast_flag=pl.get("podcast_flag", 0),
             mhsd5_type=_mhsd5_type_value(pl),
+            phase_game_flag=_phase_game_flag_value(pl),
             raw_mhod100=decode_raw_blob(pl.get("playlist_prefs")),
             raw_mhod102=decode_raw_blob(pl.get("playlist_settings")),
             raw_mhod55=_playlist_property_plist_raw(pl),
@@ -552,6 +558,7 @@ def _build_smart_playlists(
             track_ids=track_ids,
             sortorder=pl.get("sort_order", 0),
             mhsd5_type=mhsd5_type,
+            phase_game_flag=_phase_game_flag_value(pl),
             raw_mhod100=decode_raw_blob(pl.get("playlist_prefs")),
             raw_mhod102=decode_raw_blob(pl.get("playlist_settings")),
             raw_mhod55=_playlist_property_plist_raw(pl),

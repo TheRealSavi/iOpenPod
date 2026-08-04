@@ -91,7 +91,11 @@ def parse_mhod(
         # Unknown MHOD type — return stub.
         mhod["string"] = ""
 
-    return {"next_offset": offset + chunk_length, "data": mhod}
+    return {
+        "next_offset": offset + chunk_length,
+        "data": mhod,
+        "_body_end": offset + header_length,
+    }
 
 
 # ────────────────────────────────────────────────────────────────────

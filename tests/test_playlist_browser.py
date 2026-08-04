@@ -171,3 +171,14 @@ def test_playlist_info_card_uses_named_quiet_and_danger_component_paints(qtbot) 
     assert paint_css("control.quiet.hover_fill") in card.edit_btn.styleSheet()
     assert paint_css("status.danger.subtle_fill") in card.delete_btn.styleSheet()
     assert paint_css("status.danger.border") in card.delete_btn.styleSheet()
+
+
+def test_playlist_info_card_shows_phase_game_flag_exact_value(qtbot) -> None:
+    card = PlaylistInfoCard()
+    qtbot.addWidget(card)
+
+    card.showPlaylist({"Title": "Phase Music", "phase_game_flag": 25}, [])
+
+    detail_text = [label.text() for label in card.findChildren(QLabel)]
+    assert "Phase Game Flag" in detail_text
+    assert "25 (0x0019; observed Phase Music value)" in detail_text

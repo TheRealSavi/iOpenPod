@@ -27,8 +27,12 @@ def parse_playlist(
     mhyp["mhod_children"], mhip_start = parse_children(
         data, body_start, mhyp["mhod_child_count"],
     )
-    mhyp["mhip_children"], _ = parse_children(
+    mhyp["mhip_children"], child_end = parse_children(
         data, mhip_start, mhyp["mhip_child_count"],
     )
 
-    return {"next_offset": offset + chunk_length, "data": mhyp}
+    return {
+        "next_offset": offset + chunk_length,
+        "data": mhyp,
+        "_body_end": child_end,
+    }

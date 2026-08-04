@@ -864,6 +864,14 @@ class PlaylistInfoCard(QFrame):
 
         if is_podcast:
             self._add_detail_row("Podcast Flag", "Yes")
+
+        phase_game_flag = _int_value(playlist.get("phase_game_flag"))
+        if phase_game_flag:
+            self._add_detail_row(
+                "Phase Game Flag",
+                f"{phase_game_flag} (0x{phase_game_flag:04X}; observed Phase Music value)",
+            )
+
         string_mhod_count = playlist.get("string_mhod_child_count", 0)
         self._add_detail_row("String MHODs", str(string_mhod_count))
 

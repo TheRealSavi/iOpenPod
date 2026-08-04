@@ -27,6 +27,7 @@ from ..styles import (
     MONO_FONT_FAMILY,
     Metrics,
     back_btn_css,
+    button_css,
     paint_css,
 )
 from .formatters import format_size
@@ -41,6 +42,7 @@ class DatabaseStorageBrowser(QWidget):
 
     closed = pyqtSignal()
     inspect_requested = pyqtSignal(int, str)
+    forensics_requested = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -92,6 +94,14 @@ class DatabaseStorageBrowser(QWidget):
         title_col.addWidget(self.summary_label)
 
         header_layout.addLayout(title_col, 1)
+
+        self.forensics_button = QPushButton("Byte-Walk Inspector", header)
+        self.forensics_button.setObjectName("databaseStorageForensicsButton")
+        self.forensics_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.forensics_button.setToolTip("Generate or inspect a forensic iTunesDB byte-walk JSON")
+        self.forensics_button.setStyleSheet(button_css("secondary", "sm"))
+        self.forensics_button.clicked.connect(self.forensics_requested.emit)
+        header_layout.addWidget(self.forensics_button, 0, Qt.AlignmentFlag.AlignVCenter)
         root.addWidget(header)
 
         root.addWidget(self._build_explanation())

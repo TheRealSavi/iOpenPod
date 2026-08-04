@@ -24,7 +24,11 @@ def parse_track_item(
 ) -> ParseResult:
     """Parse an MHIT (Track Item) chunk and its MHOD children."""
     mhit = idb.read_fields(data, offset, "mhit", header_length)
-    mhit["children"], _ = parse_children(
+    mhit["children"], child_end = parse_children(
         data, offset + header_length, mhit["child_count"],
     )
-    return {"next_offset": offset + chunk_length, "data": mhit}
+    return {
+        "next_offset": offset + chunk_length,
+        "data": mhit,
+        "_body_end": child_end,
+    }

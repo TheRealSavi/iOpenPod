@@ -25,6 +25,7 @@ Header layout (MHYP_HEADER_SIZE = 184 bytes):
     +0x3C: db_id_2 (8B) — MHBD database ID reference (non-master)
     +0x44: playlist_id_copy (8B)
     +0x50: mhsd5_type (2B) — browsing category for dataset 5
+    +0x52: phase_game_flag (2B) — observed as 25 in Phase Music
     +0x58: timestamp_copy (4B Mac)
 
 Cross-referenced against:
@@ -120,6 +121,10 @@ class PlaylistInfo:
     # (per libgpod: 0=None, 2=Movies, 3=TV Shows, 4=Music, 5=Audiobooks, 6=Ringtones, 7=MovieRentals)
     mhsd5_type: int = 0
 
+    # Exact raw u16 at MHYP +0x52. Observed as 25 (0x0019) on iTunes-created
+    # Phase Music playlists; its precise firmware meaning is not yet proven.
+    phase_game_flag: int = 0
+
     # Opaque blobs preserved from parsed data for round-trip fidelity
     raw_mhod100: bytes | None = None   # Playlist prefs (type 100 body)
     raw_mhod102: bytes | None = None   # Playlist settings (type 102 body)
@@ -153,6 +158,7 @@ def write_mhyp(
     smart_prefs: SmartPlaylistPrefs | None = None,
     smart_rules: SmartPlaylistRules | None = None,
     mhsd5_type: int = 0,
+    phase_game_flag: int = 0,
     raw_mhod100: bytes | None = None,
     raw_mhod102: bytes | None = None,
     raw_mhod55: bytes | None = None,
@@ -203,6 +209,9 @@ def write_mhyp(
                      and smart_rules must be set for a smart playlist.
         smart_rules: Smart playlist rules (MHOD 51).
         mhsd5_type: Browsing category for dataset 5 smart playlists.
+        phase_game_flag: Exact u16 stored at MHYP +0x52. Observed value 25
+                         (0x0019) identifies iTunes-created Phase Music
+                         playlists in the sample; its meaning is unproven.
         raw_mhod100: If provided, use this raw body for MHOD type 100 instead
                      of generating a default one.
         raw_mhod102: If provided, write an MHOD type 102 with this raw body.
@@ -341,16 +350,18 @@ def write_mhyp(
         values['db_id_2'] = db_id_2
         values['playlist_id_2'] = playlist_id
 
-    # mhsd5_type — browsing category for dataset 5 smart playlists.
-    # libgpod writes the same value at +0x50 and +0x52, plus a non-zero
-    # special flag at +0x54 for RINGTONES(6) and MOVIE_RENTALS(7). We follow
-    # libgpod's public mirror (1); older iOpenPod comments used 0x200, so keep
-    # this on the sample-validation list.
+    # mhsd5_type is the browsing category at +0x50. libgpod mirrors that
+    # value into +0x52 for its dataset-5 categories, so preserve that legacy
+    # behaviour when an explicit phase_game_flag is absent. Separately, +0x52
+    # is observed as 25 (0x0019) in iTunes-created Phase Music playlists.
     if mhsd5_type:
         values['mhsd5_type'] = mhsd5_type
-        values['mhsd5_type_2'] = mhsd5_type
         if mhsd5_type in (6, 7):
             values['mhsd5_special_flag'] = 1
+
+    effective_phase_game_flag = phase_game_flag or mhsd5_type
+    if effective_phase_game_flag:
+        values['phase_game_flag'] = effective_phase_game_flag
 
     write_fields(header, 0, 'mhyp', values, MHYP_HEADER_SIZE)
 
@@ -537,6 +548,7 @@ def write_playlist(
         smart_prefs=playlist.smart_prefs,
         smart_rules=playlist.smart_rules,
         mhsd5_type=playlist.mhsd5_type,
+        phase_game_flag=playlist.phase_game_flag,
         raw_mhod100=playlist.raw_mhod100,
         raw_mhod102=playlist.raw_mhod102,
         raw_mhod55=playlist.raw_mhod55,
