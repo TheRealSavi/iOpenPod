@@ -245,7 +245,7 @@ def test_metadata_text_falls_back_for_none_and_blank_values() -> None:
     assert pc_library_module.PCLibrary._metadata_text({"title": " Song "}, "title", "fallback") == "Song"
 
 
-def test_video_scan_reads_embedded_metadata_without_artwork_or_thumbnail_decode(
+def test_video_scan_imports_embedded_chapters_without_artwork_or_codec_probe(
     tmp_path,
     monkeypatch,
 ) -> None:
@@ -282,7 +282,7 @@ def test_video_scan_reads_embedded_metadata_without_artwork_or_thumbnail_decode(
     monkeypatch.setattr(
         downloader,
         "extract_chapters",
-        lambda _path: scan_calls.append("chapters") or None,
+        lambda _path: scan_calls.append("chapters") or [{"startpos": 0, "title": "Prologue"}],
     )
     monkeypatch.setattr(
         transcoder,
@@ -297,7 +297,8 @@ def test_video_scan_reads_embedded_metadata_without_artwork_or_thumbnail_decode(
     assert track.title == "Video title"
     assert track.artist == "Video artist"
     assert track.album == "Video album"
-    assert scan_calls == ["mutagen"]
+    assert track.chapters == [{"startpos": 0, "title": "Prologue"}]
+    assert scan_calls == ["mutagen", "chapters"]
 
 
 def test_video_scan_reads_mp4_duration_without_external_probe(

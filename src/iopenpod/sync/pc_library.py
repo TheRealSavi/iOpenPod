@@ -889,7 +889,7 @@ class PCLibrary:
         # iPod DB chapter timelines are format-agnostic; embedded chapters are
         # only a source/import convenience when the container exposes them.
         chapters = None
-        if not is_video and ext in MEDIA_EXTENSIONS:
+        if ext in MEDIA_EXTENSIONS:
             try:
                 from iopenpod.podcasts.downloader import extract_chapters
                 chapters = extract_chapters(str(file_path))
