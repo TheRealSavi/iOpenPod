@@ -139,8 +139,10 @@ def test_forensic_json_keeps_readable_fields_and_raw_phase_evidence(tmp_path) ->
     assert gap == {
         "at": "0x004C",
         "byte_length": 4,
+        "field": "unk0x4C",
+        "value": 0,
         "hex": "00 00 00 00",
-        "status": "unmapped",
+        "status": "observed",
     }
     assert title_text["hex"] == _spaced_hex(phase_title)
     assert title_text["value"] == "Phase Music"
@@ -180,6 +182,36 @@ def test_forensic_parse_preserves_unknown_mhod_body_verbatim() -> None:
     assert parsed["data"]["mhod_type"] == 0xBEEF
     assert parsed["_raw_chunk"]["raw_header"] == bytes(chunk[:24])
     assert parsed["_raw_chunk"]["unparsed_bytes"] == body
+
+
+def test_forensic_parse_reads_extended_mhia_album_fields() -> None:
+    album = bytearray(0x58)
+    struct.pack_into("<4sII", album, 0, b"mhia", 0x58, 0x58)
+    struct.pack_into("<I", album, 0x0C, 0)  # child count
+    struct.pack_into("<I", album, 0x10, 42)  # album_id
+    struct.pack_into("<Q", album, 0x14, 0x1234)  # sql_id
+    struct.pack_into("<H", album, 0x1C, 4)  # platform_flag
+    struct.pack_into("<Q", album, 0x20, 0x5678)  # representative track db_id
+    album[0x28] = 80
+    album[0x29] = 0x20
+    struct.pack_into("<I", album, 0x2C, 3)
+
+    with preserve_raw_chunks(True):
+        parsed, chunk_type = parse_chunk(album, 0)
+
+    assert chunk_type == "mhia"
+    assert parsed["data"] == {
+        "child_count": 0,
+        "album_id": 42,
+        "sql_id": 0x1234,
+        "platform_flag": 4,
+        "album_compilation_flag": 0,
+        "album_track_db_id": 0x5678,
+        "album_rating": 80,
+        "unk0x29_rating_flag": 0x20,
+        "season_number": 3,
+        "children": [],
+    }
 
 
 def test_forensic_parse_preserves_genius_dataset_payload_verbatim() -> None:

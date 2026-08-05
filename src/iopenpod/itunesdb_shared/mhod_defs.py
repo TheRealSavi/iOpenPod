@@ -58,7 +58,9 @@ HEDR_SIZE = 28  # hedr atom is always 28 bytes
 
 MHOD_FIELDS: list[FieldDef] = [
     _u32("mhod_type", 0x0C, section_type=_S, required=True),
+    # Classic 6.5G snapshot (2026-08-04): zero in all 129,496 MHOD headers.
     _u32("unk0x10", 0x10, section_type=_S),
+    # Classic 6.5G snapshot (2026-08-04): zero in all 129,496 MHOD headers.
     _u32("unk0x14", 0x14, section_type=_S),
 ]
 
@@ -89,7 +91,9 @@ PODCAST_URL_MHOD_TYPES = {15, 16}
 # Chapter data MHOD type — big-endian atom tree (sean/chap/name/hedr).
 CHAPTER_DATA_MHOD_TYPES = {17}
 
-# Binary / opaque MHOD types — stored as raw hex for round-tripping.
+# Binary / opaque MHOD types — stored as raw hex for round-tripping. The
+# Classic 6.5G sample's type 32 is an 84-byte AVC/H.264 video descriptor;
+# see the research log before attempting to assign its subfields.
 BINARY_BLOB_MHOD_TYPES = {32}
 
 # Non-string MHOD types with dedicated binary formats.
@@ -158,10 +162,12 @@ def mhod_string_length(data, offset) -> int:
 
 
 def mhod_string_unk0x20(data, offset) -> int:
+    """Opaque string-subheader value; all 80,504 Classic sample values are 1."""
     return struct.unpack("<I", data[offset + 0x20:offset + 0x24])[0]
 
 
 def mhod_string_unk0x24(data, offset) -> int:
+    """Opaque string-subheader value; all 80,504 Classic sample values are 0."""
     return struct.unpack("<I", data[offset + 0x24:offset + 0x28])[0]
 
 
@@ -774,7 +780,10 @@ def mhod53_count(data, body_offset) -> int:
 # MHOD Type 100 — Playlist Position (MHIP context)
 # ============================================================
 # In MHIP context (body ≤ 20 bytes):
-#   +0x00: position (4 bytes LE) — 0-based track position in playlist
+#   +0x00: position (4 bytes LE) — playlist-specific ordering key.
+# Classic 6.5G snapshot: 47,730 entries are unique and strictly increasing
+# within each of 168 playlists, but not 0-based; they equal MHIP group_id for
+# every entry in 166 of those playlists. Preserve the generic field name.
 
 def mhod100_position(data, body_offset) -> int:
     return struct.unpack("<I", data[body_offset:body_offset + 4])[0]

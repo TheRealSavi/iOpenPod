@@ -79,7 +79,9 @@ def parse_mhod(
         mhod["data"] = _parse_chapter_data(data, body_offset, body_length)
 
     elif mhod_type in idb.mhod_defs.BINARY_BLOB_MHOD_TYPES:
-        # Binary blob types (32=video track data).
+        # Binary blob types (32=video track data). Classic 6.5G samples are
+        # fixed 84-byte AVC descriptors with several repeatable fields, but
+        # their complete subfield contract is not yet confirmed; preserve raw.
         blob_length = chunk_length - header_length
         blob = data[offset + header_length:offset + header_length + blob_length]
         mhod["string"] = blob.hex()
@@ -478,7 +480,12 @@ def _parse_mhod102(
     body_offset: int,
     body_length: int,
 ) -> dict[str, Any]:
-    """Parse MHOD type 102 — playlist settings (opaque binary blob)."""
+    """Parse MHOD type 102 — playlist settings (opaque binary blob).
+
+    In the Classic 6.5G snapshot, all 173 bodies are 332 bytes: 166 contain
+    no non-zero bytes, six share one small non-zero pattern, and the Music
+    playlist has a distinct pattern. Retain the raw body pending semantics.
+    """
     return {
         "fields": _scan_nonzero_fields(data, body_offset, body_length),
         # Preserve raw bytes for round-trip fidelity.
