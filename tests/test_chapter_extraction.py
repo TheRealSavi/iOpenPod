@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from iopenpod.podcasts.downloader import _read_nero_chapters
+from io import BytesIO
+
+from iopenpod.podcasts import downloader
+from iopenpod.podcasts.downloader import _read_nero_chapters, extract_chapters
 
 
 def _atom(kind: bytes, body: bytes) -> bytes:
@@ -31,6 +34,46 @@ def test_nero_chapter_reader_reads_moov_udta_chpl_atom(tmp_path) -> None:
     path.write_bytes(_mp4_with_chpl([(0, "Intro"), (65_000, "Part One")]))
 
     assert _read_nero_chapters(str(path)) == [
+        {"startpos": 0, "title": "Intro"},
+        {"startpos": 65_000, "title": "Part One"},
+    ]
+
+
+def test_nero_chapter_reader_uses_bounded_reads(monkeypatch) -> None:
+    class BoundedReader(BytesIO):
+        def read(self, size: int = -1) -> bytes:
+            assert size >= 0
+            return super().read(size)
+
+    media = _mp4_with_chpl([(0, "Intro"), (65_000, "Part One")])
+    monkeypatch.setattr(
+        downloader,
+        "open",
+        lambda *_args, **_kwargs: BoundedReader(media),
+        raising=False,
+    )
+
+    assert _read_nero_chapters("chaptered.m4v") == [
+        {"startpos": 0, "title": "Intro"},
+        {"startpos": 65_000, "title": "Part One"},
+    ]
+
+
+def test_chapter_extraction_reads_nero_chapters_from_m4v(tmp_path) -> None:
+    path = tmp_path / "chaptered.m4v"
+    path.write_bytes(_mp4_with_chpl([(0, "Intro"), (65_000, "Part One")]))
+
+    assert extract_chapters(str(path)) == [
+        {"startpos": 0, "title": "Intro"},
+        {"startpos": 65_000, "title": "Part One"},
+    ]
+
+
+def test_chapter_extraction_reads_nero_chapters_from_mov(tmp_path) -> None:
+    path = tmp_path / "chaptered.mov"
+    path.write_bytes(_mp4_with_chpl([(0, "Intro"), (65_000, "Part One")]))
+
+    assert extract_chapters(str(path)) == [
         {"startpos": 0, "title": "Intro"},
         {"startpos": 65_000, "title": "Part One"},
     ]

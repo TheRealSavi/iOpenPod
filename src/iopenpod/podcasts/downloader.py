@@ -15,7 +15,7 @@ import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import BinaryIO, Protocol
 from urllib.parse import unquote, urlparse
 
 import requests
@@ -552,7 +552,7 @@ def extract_chapters(file_path: str) -> list[dict] | None:
     The iPod database chapter timeline is separate from file metadata and can
     be written for any track.  This helper only imports chapters when a source
     file/container exposes them.  Supports:
-      - MP4/M4A/M4B: Nero chapters (``chpl`` atom) and QuickTime chapter tracks
+      - MP4/M4V/MOV/M4A/M4B: Nero chapters (``chpl`` atom) and QuickTime chapter tracks
       - MP3: ID3v2 CHAP frames
       - Any ffprobe-readable container with chapter entries
 
@@ -564,7 +564,7 @@ def extract_chapters(file_path: str) -> list[dict] | None:
 
     ext = Path(file_path).suffix.lower()
     try:
-        if ext in (".m4a", ".m4b", ".mp4", ".aac"):
+        if ext in (".m4a", ".m4b", ".m4v", ".mov", ".mp4", ".aac"):
             return _chapters_from_mp4(file_path)
         if ext == ".mp3":
             return _chapters_from_mp3(file_path) or _read_ffprobe_chapters(file_path)
@@ -595,92 +595,105 @@ def _chapters_from_mp4(file_path: str) -> list[dict] | None:
 def _read_nero_chapters(file_path: str) -> list[dict] | None:
     """Read Nero-style chpl chapters from raw MP4 bytes."""
     import struct
+
     with open(file_path, "rb") as f:
-        data = f.read()
-
-    body = _find_mp4_atom_body(data, (b"moov", b"udta", b"chpl"))
-    if body is None:
-        return None
-
-    # chpl atom body: version/flags(4), unk(1),
-    # chapter_count(4 for v1, 1 for v0), then entries.
-    pos = 0
-
-    if pos + 5 > len(body):
-        return None
-    version = body[pos]
-    pos += 5  # version(4) + unknown(1)
-
-    if version == 1:
-        if pos + 4 > len(body):
+        f.seek(0, os.SEEK_END)
+        body_range = _find_mp4_atom_range(
+            f,
+            start=0,
+            end=f.tell(),
+            path=(b"moov", b"udta", b"chpl"),
+        )
+        if body_range is None:
             return None
-        count = struct.unpack(">I", body[pos:pos + 4])[0]
-        pos += 4
-    else:
-        if pos >= len(body):
-            return None
-        count = body[pos]
-        pos += 1
 
-    if count == 0 or count > _MAX_CHAPTER_COUNT:
-        return None
+        body_start, _body_end = body_range
+        f.seek(body_start)
+        header = f.read(5)
+        if len(header) != 5:
+            return None
 
-    chapters = []
-    for _ in range(count):
-        if pos + 9 > len(body):
+        version = header[0]
+        if version == 1:
+            count_data = f.read(4)
+            if len(count_data) != 4:
+                return None
+            count = struct.unpack(">I", count_data)[0]
+        else:
+            count_data = f.read(1)
+            if len(count_data) != 1:
+                return None
+            count = count_data[0]
+
+        if count == 0 or count > _MAX_CHAPTER_COUNT:
             return None
-        # timestamp: 8 bytes (100-nanosecond units)
-        ts = struct.unpack(">Q", body[pos:pos + 8])[0]
-        ms = ts // 10_000
-        name_len = body[pos + 8]
-        pos += 9
-        if pos + name_len > len(body):
-            return None
-        title = body[pos:pos + name_len].decode("utf-8", errors="replace")
-        pos += name_len
-        chapters.append({"startpos": int(ms), "title": title})
+
+        chapters = []
+        for _ in range(count):
+            entry = f.read(9)
+            if len(entry) != 9:
+                return None
+            ms = struct.unpack(">Q", entry[:8])[0] // 10_000
+            title_data = f.read(entry[8])
+            if len(title_data) != entry[8]:
+                return None
+            chapters.append(
+                {
+                    "startpos": int(ms),
+                    "title": title_data.decode("utf-8", errors="replace"),
+                }
+            )
 
     return _plausible_chapters(chapters)
 
 
-def _find_mp4_atom_body(data: bytes, path: tuple[bytes, ...]) -> bytes | None:
-    """Return the body for an MP4 atom at *path*.
-
-    This deliberately walks the MP4 atom tree instead of searching for a raw
-    fourcc byte sequence. Audio payloads can contain arbitrary ``chpl`` bytes
-    that are not metadata atoms.
-    """
+def _find_mp4_atom_range(
+    media_file: BinaryIO,
+    *,
+    start: int,
+    end: int,
+    path: tuple[bytes, ...],
+) -> tuple[int, int] | None:
+    """Return the byte range for a nested MP4 atom without loading media data."""
     if not path:
-        return data
+        return start, end
 
     needle = path[0]
-    for atom_type, body_start, body_end in _iter_mp4_atoms(data, 0, len(data)):
+    for atom_type, body_start, body_end in _iter_mp4_file_atoms(media_file, start, end):
         if atom_type != needle:
             continue
-        body = data[body_start:body_end]
         if len(path) == 1:
-            return body
+            return body_start, body_end
         if atom_type not in _MP4_CONTAINER_ATOMS:
             return None
-        found = _find_mp4_atom_body(body, path[1:])
-        if found is not None:
-            return found
+        return _find_mp4_atom_range(
+            media_file,
+            start=body_start,
+            end=body_end,
+            path=path[1:],
+        )
     return None
 
 
-def _iter_mp4_atoms(data: bytes, start: int, end: int):
+def _iter_mp4_file_atoms(media_file: BinaryIO, start: int, end: int):
+    """Yield MP4 atom body ranges while reading only atom headers."""
     import struct
 
     pos = start
     while pos + 8 <= end:
-        size = struct.unpack(">I", data[pos:pos + 4])[0]
-        atom_type = data[pos + 4:pos + 8]
+        media_file.seek(pos)
+        header = media_file.read(8)
+        if len(header) != 8:
+            return
+        size = struct.unpack(">I", header[:4])[0]
+        atom_type = header[4:]
         header_size = 8
 
         if size == 1:
-            if pos + 16 > end:
+            extended_size = media_file.read(8)
+            if len(extended_size) != 8:
                 return
-            size = struct.unpack(">Q", data[pos + 8:pos + 16])[0]
+            size = struct.unpack(">Q", extended_size)[0]
             header_size = 16
         elif size == 0:
             size = end - pos
