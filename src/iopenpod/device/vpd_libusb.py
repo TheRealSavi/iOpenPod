@@ -556,6 +556,21 @@ def write_sysinfo(
 # High-level identification — single entry point for all callers
 # ──────────────────────────────────────────────────────────────────────
 
+
+def _apple_product_serial(vpd_info: dict) -> str:
+    """Return the Apple product serial from a vendor or standard VPD field.
+
+    Older iPods may expose their product serial only through standard SCSI VPD
+    page 0x80. The macOS IOKit adapter calls that field ``vpd_serial`` because
+    vendor SysInfoExtended pages use the conventional ``SerialNumber`` key.
+    Both identify the same Apple serial here.
+    """
+
+    return str(
+        vpd_info.get("SerialNumber") or vpd_info.get("vpd_serial") or ""
+    ).strip()
+
+
 def identify_via_vpd(
     mount_path: str = "",
     usb_pid: int = 0,
@@ -621,7 +636,7 @@ def identify_via_vpd(
         )
         return None
 
-    apple_serial = vpd_info.get("SerialNumber", "")
+    apple_serial = _apple_product_serial(vpd_info)
     if not apple_serial:
         logger.debug(
             "identify_via_vpd: VPD returned no Apple serial source=%s keys=%d",
@@ -629,6 +644,7 @@ def identify_via_vpd(
             len([key for key in vpd_info if not str(key).startswith("_")]),
         )
         return None
+    vpd_info.setdefault("SerialNumber", apple_serial)
 
     # ── Step 2: Resolve model from the longest serial suffix ──────
     vpd_fw_guid = vpd_info.get("FireWireGUID") or vpd_info.get("usb_serial", "")
@@ -731,7 +747,8 @@ def _vpd_query_any_platform(
             from .vpd_iokit import query_ipod_vpd as iokit_query
 
             vpd = iokit_query(usb_pid=usb_pid, serial_filter=firewire_guid)
-            if vpd and vpd.get("SerialNumber"):
+            if vpd and _apple_product_serial(vpd):
+                vpd.setdefault("SerialNumber", _apple_product_serial(vpd))
                 vpd["_source"] = "scsi_vpd"
                 vpd["_transport"] = "iokit_scsi_vpd"
                 logger.debug("_vpd_query_any_platform: IOKit SCSI success")
