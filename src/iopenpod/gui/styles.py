@@ -411,8 +411,8 @@ class Metrics:
     }
 
     SIDEBAR_WIDTH = 288
-    SCROLLBAR_W = 10
-    SCROLLBAR_MIN_H = 44
+    SCROLLBAR_W = 8
+    SCROLLBAR_MIN_H = 36
 
     BTN_PADDING_V = 8
     BTN_PADDING_H = 16
@@ -534,30 +534,57 @@ class Design:
 
 # ── Custom proxy style for scrollbar painting ───────────────────────────────
 
-class DarkScrollbarStyle(QProxyStyle):
-    """Overrides Fusion scrollbar painting with thin, dark, rounded bars.
 
-    Qt stylesheet-based scrollbar styling is unreliable on Windows with
-    Fusion (CSS is silently ignored). This proxy style paints scrollbars
-    directly via QPainter so they always render correctly.
+@dataclass(frozen=True)
+class ScrollbarAppearance:
+    """Shared scrollbar contract for the proxy and the QSS fallback adapter."""
+
+    width: int
+    min_handle_extent: int
+    edge_inset: int
+    thumb_paint: str
+    thumb_hover_paint: str
+    thumb_press_paint: str
+
+
+def scrollbar_appearance() -> ScrollbarAppearance:
+    """Return the one theme-aware visual contract for every app scrollbar."""
+
+    return ScrollbarAppearance(
+        width=Metrics.SCROLLBAR_W,
+        min_handle_extent=Metrics.SCROLLBAR_MIN_H,
+        edge_inset=2,
+        thumb_paint="effect.scrollbar.thumb",
+        thumb_hover_paint="effect.scrollbar.thumb_hover",
+        thumb_press_paint="effect.scrollbar.thumb_press",
+    )
+
+
+class DarkScrollbarStyle(QProxyStyle):
+    """Primary renderer for the shared iOpenPod scrollbar appearance.
+
+    Most views reach this renderer through the application's global proxy
+    style.  A nested view whose ancestor stylesheet replaces proxy painting
+    uses ``scrollbar_css()`` instead; both adapters consume
+    ``scrollbar_appearance()``.
     """
 
     @property
     def _min_handle(self):
-        return (36)
+        return scrollbar_appearance().min_handle_extent
     _TRACK = QColor(0, 0, 0, 0)           # invisible track
 
     @property
     def _thumb(self):
-        return paint_qcolor("effect.scrollbar.thumb")
+        return paint_qcolor(scrollbar_appearance().thumb_paint)
 
     @property
     def _thumb_hover(self):
-        return paint_qcolor("effect.scrollbar.thumb_hover")
+        return paint_qcolor(scrollbar_appearance().thumb_hover_paint)
 
     @property
     def _thumb_press(self):
-        return paint_qcolor("effect.scrollbar.thumb_press")
+        return paint_qcolor(scrollbar_appearance().thumb_press_paint)
 
     _CLICKABLE_TYPES = (QAbstractButton, QComboBox, QGroupBox, QTabBar)
 
@@ -606,12 +633,13 @@ class DarkScrollbarStyle(QProxyStyle):
     # -- Metrics: make scrollbars thin --
 
     def pixelMetric(self, metric, option=None, widget=None):
+        appearance = scrollbar_appearance()
         if metric in (
             QStyle.PixelMetric.PM_ScrollBarExtent,
         ):
-            return max(4, (8))
+            return max(4, appearance.width)
         if metric == QStyle.PixelMetric.PM_ScrollBarSliderMin:
-            return (36)
+            return appearance.min_handle_extent
         return super().pixelMetric(metric, option, widget)
 
     # -- Sub-control rectangles --
@@ -727,18 +755,18 @@ class DarkScrollbarStyle(QProxyStyle):
 
             horiz = option.orientation == Qt.Orientation.Horizontal
             # Inset to create a floating pill centered in the track
-            pad = 2  # padding from edge of scrollbar track
+            pad = scrollbar_appearance().edge_inset
             if horiz:
                 thumb_h = max(slider.height() - pad * 2, 4)
                 adj = QRect(
-                    slider.x() + 2, slider.y() + pad,
-                    slider.width() - 4, thumb_h,
+                    slider.x() + pad, slider.y() + pad,
+                    slider.width() - pad * 2, thumb_h,
                 )
             else:
                 thumb_w = max(slider.width() - pad * 2, 4)
                 adj = QRect(
-                    slider.x() + pad, slider.y() + 2,
-                    thumb_w, slider.height() - 4,
+                    slider.x() + pad, slider.y() + pad,
+                    thumb_w, slider.height() - pad * 2,
                 )
 
             painter.setPen(Qt.PenStyle.NoPen)
@@ -760,92 +788,55 @@ class DarkScrollbarStyle(QProxyStyle):
         super().drawPrimitive(element, option, painter, widget)
 
 
-# ── Reusable stylesheet fragments ───────────────────────────────────────────
+def scrollbar_css(
+    *,
+    owner_selector: str = "",
+    orient: str = "vertical",
+) -> str:
+    """Return the shared QSS fallback for a proxy-style-wrapped scrollbar.
 
-def scrollbar_css(width: int | None = None, orient: str = "vertical") -> str:
-    """Minimal modern scrollbar — thin track, rounded thumb.
-
-    Covers every pseudo-element so that native platform chrome never leaks
-    through (especially on Windows where the default blue bar is visible
-    if any sub-element is left unstyled).
+    This is intentionally limited to views where a local ancestor stylesheet
+    prevents ``DarkScrollbarStyle`` from painting the nested scrollbar.
+    ``QScrollBar::handle:vertical`` is the Qt-required selector order.
     """
-    if width is None:
-        width = Metrics.SCROLLBAR_W
-    bar = f"QScrollBar:{orient}"
-    r = max(width // 2, 1)
-    # Theme-adaptive handle colors
-    sb_handle = paint_css("border.default")
-    sb_hover = paint_css("text.disabled")
-    sb_press = paint_css("text.tertiary")
-    if orient == "vertical":
-        return f"""
-            {bar} {{
-                background: transparent;
-                width: {width}px;
-                margin: 0;
-                padding: 2px 1px;
-                border: none;
-            }}
-            {bar}::handle {{
-                background: {sb_handle};
-                border-radius: {r}px;
-                min-height: {Metrics.SCROLLBAR_MIN_H}px;
-            }}
-            {bar}::handle:hover {{
-                background: {sb_hover};
-            }}
-            {bar}::handle:pressed {{
-                background: {sb_press};
-            }}
-            {bar}::add-line, {bar}::sub-line {{
-                border: none; background: none; height: 0px; width: 0px;
-            }}
-            {bar}::add-page, {bar}::sub-page {{
-                background: none;
-            }}
-            {bar}::up-arrow, {bar}::down-arrow {{
-                background: none; width: 0px; height: 0px;
-            }}
-        """
-    else:
-        return f"""
-            {bar} {{
-                background: transparent;
-                height: {width}px;
-                margin: 0;
-                padding: 1px 2px;
-                border: none;
-            }}
-            {bar}::handle {{
-                background: {sb_handle};
-                border-radius: {r}px;
-                min-width: {Metrics.SCROLLBAR_MIN_H}px;
-            }}
-            {bar}::handle:hover {{
-                background: {sb_hover};
-            }}
-            {bar}::handle:pressed {{
-                background: {sb_press};
-            }}
-            {bar}::add-line, {bar}::sub-line {{
-                border: none; background: none; height: 0px; width: 0px;
-            }}
-            {bar}::add-page, {bar}::sub-page {{
-                background: none;
-            }}
-            {bar}::left-arrow, {bar}::right-arrow {{
-                background: none; width: 0px; height: 0px;
-            }}
-        """
 
+    appearance = scrollbar_appearance()
+    scope = f"{owner_selector} " if owner_selector else ""
+    bar = f"{scope}QScrollBar"
+    oriented_bar = f"{bar}:{orient}"
+    handle = f"{bar}::handle:{orient}"
+    add_line = f"{bar}::add-line:{orient}"
+    sub_line = f"{bar}::sub-line:{orient}"
+    add_page = f"{bar}::add-page:{orient}"
+    sub_page = f"{bar}::sub-page:{orient}"
+    radius = max((appearance.width - appearance.edge_inset * 2) // 2, 1)
+    extent = "width" if orient == "vertical" else "height"
+    min_extent = "min-height" if orient == "vertical" else "min-width"
+    arrows = ("up-arrow", "down-arrow") if orient == "vertical" else ("left-arrow", "right-arrow")
 
-def scrollbar_corner_css() -> str:
-    """Style the corner widget where horizontal & vertical scrollbars meet."""
-    return """
-        QAbstractScrollArea::corner {
+    return f"""
+        {oriented_bar} {{
             background: transparent;
+            {extent}: {appearance.width}px;
+            margin: 0;
+            padding: {appearance.edge_inset}px;
             border: none;
-        }
+        }}
+        {handle} {{
+            background: {paint_css(appearance.thumb_paint)};
+            border: none;
+            border-radius: {radius}px;
+            {min_extent}: {appearance.min_handle_extent}px;
+        }}
+        {handle}:hover {{ background: {paint_css(appearance.thumb_hover_paint)}; }}
+        {handle}:pressed {{ background: {paint_css(appearance.thumb_press_paint)}; }}
+        {add_line}, {sub_line} {{
+            border: none; background: none; height: 0px; width: 0px;
+        }}
+        {add_page}, {sub_page} {{ background: transparent; }}
+        {bar}::{arrows[0]}:{orient}, {bar}::{arrows[1]}:{orient} {{
+            image: none; background: transparent; width: 0px; height: 0px;
+        }}
     """
 
 
@@ -1753,7 +1744,9 @@ def make_scroll_area(
     transparent : bool
         Use transparent background with no border.
     extra_css : str
-        Additional CSS to append.
+        Additional CSS for the scroll area itself or its content. Scrollbar
+        CSS is intentionally rejected: use the shared ``scrollbar_css()``
+        fallback only when a nested view cannot use the global proxy renderer.
     """
     from PyQt6.QtCore import Qt as _Qt
     from PyQt6.QtGui import QColor as _QColor
@@ -1785,11 +1778,13 @@ def make_scroll_area(
             vpw.setPalette(pal)
             vpw.setAutoFillBackground(False)
 
-    css = ""
+    if re.search(r"\bQScrollBar\b", extra_css):
+        raise ValueError(
+            "Scrollbar styling belongs to scrollbar_css() and DarkScrollbarStyle; "
+            "do not add local QScrollBar QSS."
+        )
     if extra_css:
-        css = f"{css}\n{extra_css}" if css else extra_css
-    if css:
-        scroll.setStyleSheet(css)
+        scroll.setStyleSheet(extra_css)
 
     return scroll
 

@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from PyQt6.QtCore import QAbstractListModel, QEvent, QModelIndex, QObject, QRect, QRectF, QSize, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QFont, QFontMetrics, QPainter
+from PyQt6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPalette, QPen
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -72,7 +72,7 @@ from iopenpod.sync.review_selection import build_selected_photo_plan
 from iopenpod.sync_progress_stages import friendly_stage_label, progress_stage_help
 
 from ..glyphs import glyph_icon, glyph_pixmap
-from ..styles import FONT_FAMILY, MONO_FONT_FAMILY, Design, Metrics, _parse_color, accent_btn_css, btn_css, button_css, make_scroll_area, paint_css, progress_bar_css
+from ..styles import FONT_FAMILY, MONO_FONT_FAMILY, Design, Metrics, _parse_color, accent_btn_css, btn_css, button_css, make_scroll_area, paint_css, progress_bar_css, scrollbar_css
 from .formatters import format_duration_mmss as _format_duration
 from .formatters import format_size as _format_size
 from .syncStagesPanel import DEFAULT_PIPELINE, SyncStagesPanel
@@ -158,13 +158,33 @@ _TRANSCODE_TARGET_LABELS = {
 }
 
 
-def _planned_transfer_summary(item: Any) -> str:
-    """Describe whether a planned add copies or transcodes its source file."""
+@dataclass(frozen=True)
+class _TransferPresentation:
+    """The compact, user-facing explanation of one planned file transfer."""
+
+    source_label: str
+    target_label: str
+    target_detail: str
+    reason: str
+
+
+def _planned_transfer_presentation(item: Any) -> _TransferPresentation | None:
+    """Build the source-to-iPod presentation from a resolved transcode plan."""
+    track = getattr(item, "pc_track", None)
     plan = getattr(item, "transcode_plan", None)
     target = getattr(plan, "target", None)
     target_value = str(getattr(target, "value", target) or "").lower()
-    if not target_value or target_value == "copy":
-        return "Will be copied from your PC library to the iPod."
+    if track is None or not target_value:
+        return None
+
+    source_label = str(getattr(track, "extension", "") or "source").lstrip(".").upper()
+    if target_value == "copy":
+        return _TransferPresentation(
+            source_label=source_label,
+            target_label="Copy",
+            target_detail="No conversion",
+            reason="This source is already compatible with the iPod.",
+        )
 
     target_label = _TRANSCODE_TARGET_LABELS.get(target_value, target_value.upper())
     details: list[str] = []
@@ -176,9 +196,54 @@ def _planned_transfer_summary(item: Any) -> str:
         and bool(getattr(plan, "is_spoken", False))
         and bool(getattr(plan, "mono_for_spoken", False))
     ):
-        details.append("mono")
-    suffix = f" ({', '.join(details)})" if details else ""
-    return f"Will be transcoded to {target_label}{suffix} before syncing to the iPod."
+        details.append("Mono")
+    if target_value == "alac":
+        details.append("Lossless")
+
+    if bool(getattr(plan, "is_spoken", False)):
+        media_kind = SyncTrackRow._media_kind_from_track(track)
+        reason = f"{media_kind or 'Spoken-word'} media uses your spoken-word quality setting."
+    elif target_value == "alac":
+        reason = "Lossless audio is preserved in an iPod-compatible format."
+    elif target_value.startswith("video_"):
+        reason = "The source needs an iPod-compatible video format."
+    else:
+        reason = f"Your iPod sync encoding setting selects {target_label}."
+
+    return _TransferPresentation(
+        source_label=source_label,
+        target_label=target_label,
+        target_detail=" · ".join(details),
+        reason=reason,
+    )
+
+
+def _planned_transfer_summary(item: Any) -> str:
+    """Return a plain-text transfer explanation for tooltips and accessibility."""
+    presentation = _planned_transfer_presentation(item)
+    if presentation is None:
+        return "Will be copied from your PC library to the iPod."
+    target = presentation.target_label
+    detail = f" · {presentation.target_detail}" if presentation.target_detail else ""
+    return f"{presentation.source_label} → {target}{detail}\nWhy: {presentation.reason}"
+
+
+def _transfer_row_context(item: Any) -> str:
+    """Return the track context that accompanies the visual transfer strip."""
+    track = getattr(item, "pc_track", None)
+    if track is None:
+        return ""
+    context = SyncTrackRow._track_context(track=track)
+    if is_sync_action(item, ACTION_UPDATE_FILE):
+        return f"{context} · Replaces the older iPod copy" if context else "Replaces the older iPod copy"
+    return context
+
+
+def _transfer_row_source(item: Any) -> str:
+    """Return the source path footer for a visual transfer strip."""
+    track = getattr(item, "pc_track", None)
+    path = str(getattr(track, "path", "") or "")
+    return f"Source: {_short_display_path(path)}" if path else ""
 
 
 # ── StorageBarWidget ─────────────────────────────────────────────────────────
@@ -287,6 +352,94 @@ class StorageBarWidget(QWidget):
 # ── SyncTrackRow ────────────────────────────────────────────────────────────
 
 
+class TransferPlanPanel(QFrame):
+    """A small source → target card that makes a transcode decision scannable."""
+
+    def __init__(self, category: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        accent = _sync_review_paint(category)
+        self.setObjectName("transferPlanPanel")
+        self.setStyleSheet(
+            f"""
+            QFrame#transferPlanPanel {{
+                background: {paint_css("surface.inset")};
+                border: 1px solid {paint_css("border.subtle")};
+                border-radius: {Metrics.BORDER_RADIUS_SM}px;
+            }}
+            QFrame#transferSourcePill {{
+                background: {paint_css("surface.raised")};
+                border: 1px solid {paint_css("border.subtle")};
+                border-radius: {Metrics.BORDER_RADIUS_SM}px;
+            }}
+            QFrame#transferTargetPill {{
+                background: {_sync_review_paint(category, "subtle_fill")};
+                border: 1px solid {_sync_review_paint(category, "subtle_border")};
+                border-radius: {Metrics.BORDER_RADIUS_SM}px;
+            }}
+            """
+        )
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(8, 6, 8, 6)
+        outer.setSpacing(4)
+
+        flow = QHBoxLayout()
+        flow.setContentsMargins(0, 0, 0, 0)
+        flow.setSpacing(6)
+
+        source_pill = QFrame(self)
+        source_pill.setObjectName("transferSourcePill")
+        source_layout = QHBoxLayout(source_pill)
+        source_layout.setContentsMargins(7, 3, 7, 3)
+        self.source_label = QLabel(source_pill)
+        self.source_label.setFont(QFont(MONO_FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
+        self.source_label.setStyleSheet(f"color:{paint_css('text.secondary')}; background:transparent; border:none;")
+        source_layout.addWidget(self.source_label)
+        flow.addWidget(source_pill)
+
+        arrow_label = QLabel("→", self)
+        arrow_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG, QFont.Weight.DemiBold))
+        arrow_label.setStyleSheet(f"color:{accent}; background:transparent; border:none;")
+        arrow_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        flow.addWidget(arrow_label)
+
+        target_pill = QFrame(self)
+        target_pill.setObjectName("transferTargetPill")
+        target_layout = QHBoxLayout(target_pill)
+        target_layout.setContentsMargins(7, 3, 7, 3)
+        target_layout.setSpacing(5)
+        self.target_label = QLabel(target_pill)
+        self.target_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
+        self.target_label.setStyleSheet(f"color:{accent}; background:transparent; border:none;")
+        target_layout.addWidget(self.target_label)
+        self.target_detail_label = QLabel(target_pill)
+        self.target_detail_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        self.target_detail_label.setStyleSheet(f"color:{paint_css('text.secondary')}; background:transparent; border:none;")
+        target_layout.addWidget(self.target_detail_label)
+        flow.addWidget(target_pill)
+        flow.addStretch(1)
+        outer.addLayout(flow)
+
+        self.reason_label = QLabel(self)
+        self.reason_label.setWordWrap(True)
+        self.reason_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        self.reason_label.setStyleSheet(f"color:{paint_css('text.tertiary')}; background:transparent; border:none;")
+        outer.addWidget(self.reason_label)
+        self.setVisible(False)
+
+    def set_presentation(self, presentation: _TransferPresentation | None) -> None:
+        """Update the displayed transfer target without exposing plan internals."""
+        if presentation is None:
+            self.setVisible(False)
+            return
+        self.source_label.setText(presentation.source_label)
+        self.target_label.setText(presentation.target_label)
+        self.target_detail_label.setText(presentation.target_detail)
+        self.target_detail_label.setVisible(bool(presentation.target_detail))
+        self.reason_label.setText(f"Why: {presentation.reason}")
+        self.setVisible(True)
+
+
 class SyncTrackRow(QFrame):
     """A two-line row representing one sync item inside a category card."""
 
@@ -354,6 +507,9 @@ class SyncTrackRow(QFrame):
         self.title_label.setMinimumWidth(0)
         self.title_label.setWordWrap(True)
         text_col.addWidget(self.title_label)
+
+        self.transfer_panel = TransferPlanPanel(category, self)
+        text_col.addWidget(self.transfer_panel)
 
         self.detail_label = QLabel(self)
         self.detail_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
@@ -451,6 +607,7 @@ class SyncTrackRow(QFrame):
             ipod = None
         description = str(getattr(item, "description", "") or "")
         self.badge_label.setText(self._ipod_size_badge(item, ipod, track))
+        self.transfer_panel.set_presentation(_planned_transfer_presentation(item))
 
         if is_sync_action(item, ACTION_ADD_TO_IPOD) and track:
             self.title_label.setText(track.title or track.filename)
@@ -465,7 +622,6 @@ class SyncTrackRow(QFrame):
             )
             self._set_detail_lines(
                 format_line,
-                _planned_transfer_summary(item),
                 f"Source: {self._short_path(track.path)}" if getattr(track, "path", "") else "",
             )
 
@@ -992,6 +1148,7 @@ def _virtual_track_row_content(item: Any) -> tuple[str, str, str, str]:
             detail_lines = [
                 SyncTrackRow._track_context(track=track),
                 "The source file changed; the iPod copy will be replaced.",
+                _planned_transfer_summary(item),
                 f"Source: {_short_display_path(track.path)}" if getattr(track, "path", "") else "",
             ]
         elif ipod:
@@ -1158,6 +1315,8 @@ class _SyncReviewRowDelegate(QStyledItemDelegate):
     def __init__(self, category: str, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._accent = _sync_review_paint(category)
+        self._accent_fill = _sync_review_paint(category, "subtle_fill")
+        self._accent_border = _sync_review_paint(category, "subtle_border")
 
     @staticmethod
     def _content(row: _VirtualReviewRow) -> tuple[str, str, str]:
@@ -1175,6 +1334,91 @@ class _SyncReviewRowDelegate(QStyledItemDelegate):
             badge_width = QFontMetrics(badge_font).horizontalAdvance(badge) + 20
         checkbox_width = 31 if row.checkable else 0
         return max(180, option.rect.width() - 24 - checkbox_width - badge_width)
+
+    @staticmethod
+    def _transfer_presentation(row: _VirtualReviewRow) -> _TransferPresentation | None:
+        if row.kind != "track" or row.sync_item is None:
+            return None
+        return _planned_transfer_presentation(row.sync_item)
+
+    @staticmethod
+    def _transfer_route_sizes(presentation: _TransferPresentation, width: int) -> tuple[int, int]:
+        source_font = QFont(MONO_FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold)
+        target_font = QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold)
+        source_width = QFontMetrics(source_font).horizontalAdvance(presentation.source_label) + 16
+        target_text = " · ".join(part for part in (presentation.target_label, presentation.target_detail) if part)
+        target_width = QFontMetrics(target_font).horizontalAdvance(target_text) + 16
+        available_target_width = max(64, width - source_width - 34)
+        return source_width, min(target_width, available_target_width)
+
+    def _transfer_strip_height(self, presentation: _TransferPresentation, width: int) -> int:
+        reason_font = QFont(FONT_FAMILY, Metrics.FONT_SM)
+        reason_height = QFontMetrics(reason_font).boundingRect(
+            QRect(0, 0, width, 10_000),
+            int(Qt.TextFlag.TextWordWrap),
+            f"Why: {presentation.reason}",
+        ).height()
+        return 28 + 4 + reason_height
+
+    def _paint_transfer_strip(self, painter: QPainter, rect: QRect, presentation: _TransferPresentation) -> int:
+        """Paint the compact source → target card used in virtualized rows."""
+        source_font = QFont(MONO_FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold)
+        target_font = QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold)
+        body_font = QFont(FONT_FAMILY, Metrics.FONT_SM)
+        source_width, target_width = self._transfer_route_sizes(presentation, rect.width())
+        route_height = 28
+        source_rect = QRect(rect.left(), rect.top(), source_width, route_height)
+        arrow_rect = QRect(source_rect.right() + 6, rect.top(), 22, route_height)
+        target_rect = QRect(arrow_rect.right() + 6, rect.top(), target_width, route_height)
+
+        painter.setPen(_parse_color(paint_css("border.subtle")))
+        painter.setBrush(_parse_color(paint_css("surface.raised")))
+        painter.drawRoundedRect(QRectF(source_rect), Metrics.BORDER_RADIUS_SM, Metrics.BORDER_RADIUS_SM)
+        painter.setFont(source_font)
+        painter.setPen(_parse_color(paint_css("text.secondary")))
+        painter.drawText(source_rect, int(Qt.AlignmentFlag.AlignCenter), presentation.source_label)
+
+        painter.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG, QFont.Weight.DemiBold))
+        painter.setPen(_parse_color(self._accent))
+        painter.drawText(arrow_rect, int(Qt.AlignmentFlag.AlignCenter), "→")
+
+        painter.setPen(_parse_color(self._accent_border))
+        painter.setBrush(_parse_color(self._accent_fill))
+        painter.drawRoundedRect(QRectF(target_rect), Metrics.BORDER_RADIUS_SM, Metrics.BORDER_RADIUS_SM)
+        target_text = " · ".join(part for part in (presentation.target_label, presentation.target_detail) if part)
+        painter.setFont(target_font)
+        painter.setPen(_parse_color(self._accent))
+        painter.drawText(
+            target_rect.adjusted(7, 0, -7, 0),
+            int(Qt.AlignmentFlag.AlignCenter),
+            QFontMetrics(target_font).elidedText(target_text, Qt.TextElideMode.ElideRight, max(1, target_rect.width() - 14)),
+        )
+
+        reason_rect = QRect(rect.left(), rect.top() + route_height + 4, rect.width(), max(1, rect.height() - route_height - 4))
+        painter.setFont(body_font)
+        painter.setPen(_parse_color(paint_css("text.tertiary")))
+        painter.drawText(reason_rect, int(Qt.TextFlag.TextWordWrap), f"Why: {presentation.reason}")
+        return self._transfer_strip_height(presentation, rect.width())
+
+    def _paint_checkbox(self, painter: QPainter, rect: QRect, checked: bool) -> None:
+        """Paint a compact vector checkbox without relying on a font glyph."""
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(_parse_color(self._accent if checked else paint_css("border.default")))
+        painter.setBrush(_parse_color(self._accent if checked else paint_css("surface.raised")))
+        painter.drawRoundedRect(QRectF(rect), 5, 5)
+        if not checked:
+            return
+
+        tick = QPainterPath()
+        tick.moveTo(rect.left() + 4, rect.top() + 9)
+        tick.lineTo(rect.left() + 7, rect.top() + 12)
+        tick.lineTo(rect.left() + 13, rect.top() + 5)
+        tick_pen = QPen(_parse_color(paint_css("control.primary.text")), 2.2)
+        tick_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        tick_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(tick_pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawPath(tick)
 
     @staticmethod
     def _duplicate_track_parts(track: Any) -> tuple[str, str, str]:
@@ -1300,7 +1544,28 @@ class _SyncReviewRowDelegate(QStyledItemDelegate):
             return QSize(option.rect.width(), _REVIEW_ROW_MIN_HEIGHT)
         if row.kind == "duplicate_group":
             return QSize(option.rect.width(), self._duplicate_group_height(option, row))
-        _title, detail, badge = self._content(row)
+        title, detail, badge = self._content(row)
+        presentation = self._transfer_presentation(row)
+        if presentation is not None:
+            text_width = self._text_width(option, row, badge)
+            title_font = QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.DemiBold)
+            body_font = QFont(FONT_FAMILY, Metrics.FONT_SM)
+            context = _transfer_row_context(row.sync_item)
+            source = _transfer_row_source(row.sync_item)
+            context_height = QFontMetrics(body_font).boundingRect(
+                QRect(0, 0, text_width, 10_000),
+                int(Qt.TextFlag.TextWordWrap),
+                context,
+            ).height() if context else 0
+            source_height = QFontMetrics(body_font).boundingRect(
+                QRect(0, 0, text_width, 10_000),
+                int(Qt.TextFlag.TextWordWrap),
+                source,
+            ).height() if source else 0
+            height = 10 + QFontMetrics(title_font).height() + 3 + context_height
+            height += (3 if context else 0) + self._transfer_strip_height(presentation, text_width)
+            height += (3 + source_height if source else 0) + 10
+            return QSize(option.rect.width(), max(_REVIEW_ROW_MIN_HEIGHT, height))
         detail_font = QFont(FONT_FAMILY, Metrics.FONT_SM)
         detail_bounds = QFontMetrics(detail_font).boundingRect(
             QRect(0, 0, self._text_width(option, row, badge), 10_000),
@@ -1318,6 +1583,7 @@ class _SyncReviewRowDelegate(QStyledItemDelegate):
             self._paint_duplicate_group(painter, option, row, index.row())
             return
         title, detail, badge = self._content(row)
+        presentation = self._transfer_presentation(row)
 
         rect = option.rect
         painter.save()
@@ -1330,14 +1596,7 @@ class _SyncReviewRowDelegate(QStyledItemDelegate):
         text_left = rect.left() + 12
         if row.checkable:
             check_rect = QRect(text_left, rect.top() + (rect.height() - 18) // 2, 18, 18)
-            painter.setPen(_parse_color(self._accent if row.checked else paint_css("text.disabled")))
-            painter.setBrush(_parse_color(self._accent) if row.checked else Qt.BrushStyle.NoBrush)
-            painter.drawRoundedRect(QRectF(check_rect), 4, 4)
-            if row.checked:
-                painter.setPen(_parse_color(paint_css("canvas.default")))
-                check_font = QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.Bold)
-                painter.setFont(check_font)
-                painter.drawText(check_rect, int(Qt.AlignmentFlag.AlignCenter), "✓")
+            self._paint_checkbox(painter, check_rect, row.checked)
             text_left = check_rect.right() + 13
 
         badge_width = 0
@@ -1357,6 +1616,38 @@ class _SyncReviewRowDelegate(QStyledItemDelegate):
         painter.setFont(title_font)
         painter.setPen(_parse_color(paint_css("text.primary")))
         painter.drawText(text_left, rect.top() + 25, QFontMetrics(title_font).elidedText(title, Qt.TextElideMode.ElideRight, text_width))
+        if presentation is not None:
+            body_font = QFont(FONT_FAMILY, Metrics.FONT_SM)
+            y = rect.top() + 32
+            context = _transfer_row_context(row.sync_item)
+            if context:
+                painter.setFont(body_font)
+                painter.setPen(_parse_color(paint_css("text.tertiary")))
+                context_rect = QRect(text_left, y, text_width, rect.bottom() - y)
+                context_height = QFontMetrics(body_font).boundingRect(
+                    QRect(0, 0, text_width, 10_000),
+                    int(Qt.TextFlag.TextWordWrap),
+                    context,
+                ).height()
+                painter.drawText(context_rect, int(Qt.TextFlag.TextWordWrap), context)
+                y += context_height + 3
+
+            strip_height = self._transfer_strip_height(presentation, text_width)
+            self._paint_transfer_strip(
+                painter,
+                QRect(text_left, y, text_width, strip_height),
+                presentation,
+            )
+            y += strip_height
+
+            source = _transfer_row_source(row.sync_item)
+            if source:
+                y += 3
+                painter.setFont(body_font)
+                painter.setPen(_parse_color(paint_css("text.tertiary")))
+                painter.drawText(QRect(text_left, y, text_width, rect.bottom() - y), int(Qt.TextFlag.TextWordWrap), source)
+            painter.restore()
+            return
         painter.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         painter.setPen(_parse_color(paint_css("text.tertiary")))
         detail_rect = QRect(text_left, rect.top() + 32, text_width, rect.height() - 39)
@@ -1538,6 +1829,7 @@ class SyncCategoryCard(QFrame):
         self._rows_model = _SyncReviewRowsModel(self)
         self._rows_model.selection_changed.connect(self._on_row_toggled)
         self._rows_view = _SyncReviewRowsView(self._body)
+        self._rows_view.setObjectName("syncReviewRowsView")
         self._rows_view.setModel(self._rows_model)
         self._rows_view.setItemDelegate(_SyncReviewRowDelegate(category, self._rows_view))
         self._rows_view.setFrameShape(QFrame.Shape.NoFrame)
@@ -1550,7 +1842,20 @@ class SyncCategoryCard(QFrame):
         viewport = self._rows_view.viewport()
         if viewport is not None:
             viewport.setMouseTracking(True)
-        self._rows_view.setStyleSheet("background: transparent; border: none;")
+        row_palette = self._rows_view.palette()
+        row_palette.setColor(QPalette.ColorRole.Window, QColor(0, 0, 0, 0))
+        row_palette.setColor(QPalette.ColorRole.Base, QColor(0, 0, 0, 0))
+        self._rows_view.setPalette(row_palette)
+        self._rows_view.setAutoFillBackground(False)
+        self._rows_view.setStyleSheet(
+            f"""
+            QListView#syncReviewRowsView {{ background: transparent; border: none; }}
+            {scrollbar_css(owner_selector="QListView#syncReviewRowsView")}
+            """
+        )
+        if viewport is not None:
+            viewport.setPalette(row_palette)
+            viewport.setAutoFillBackground(False)
         self._body_layout.addWidget(self._rows_view)
 
         outer.addWidget(self._body)

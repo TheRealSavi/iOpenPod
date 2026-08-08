@@ -14,7 +14,7 @@ from iopenpod.gui.widgets.syncReview import (
 )
 from iopenpod.sync.contracts import SyncAction, SyncItem, SyncPlan
 from iopenpod.sync.pc_library import PCTrack
-from iopenpod.sync.transcoder import TranscodeTarget
+from iopenpod.sync.transcoder import TranscodePlan, TranscodeTarget
 
 
 def _review_widget(qtbot) -> SyncReviewWidget:
@@ -101,24 +101,36 @@ def test_short_virtual_rows_size_to_their_content(qtbot) -> None:
     assert card._rows_view.height() == row_height
 
 
-def test_sync_review_describes_planned_spoken_word_transcoding(qtbot) -> None:
+def test_sync_review_shows_spoken_word_transcode_target_and_reason(qtbot) -> None:
+    track = _track(1)
+    track.is_audiobook = True
+    track.extension = "m4b"
     item = SyncItem(
         SyncAction.ADD_TO_IPOD,
-        pc_track=_track(1),
-        transcode_plan=SimpleNamespace(
-            target=TranscodeTarget.AAC,
-            cache_bitrate_kbps=64,
-            is_spoken=True,
-            mono_for_spoken=True,
+        pc_track=track,
+        transcode_plan=cast(
+            TranscodePlan,
+            SimpleNamespace(
+                target=TranscodeTarget.AAC,
+                cache_bitrate_kbps=64,
+                is_spoken=True,
+                mono_for_spoken=True,
+            ),
         ),
     )
     row = SyncTrackRow(item, "add")
     qtbot.addWidget(row)
+    row.show()
 
-    expected = "Will be transcoded to AAC (64 kbps, mono) before syncing to the iPod."
+    assert row.transfer_panel.isVisible()
+    assert row.transfer_panel.source_label.text() == "M4B"
+    assert row.transfer_panel.target_label.text() == "AAC"
+    assert row.transfer_panel.target_detail_label.text() == "64 kbps · Mono"
+    assert row.transfer_panel.reason_label.text() == "Why: Audiobook media uses your spoken-word quality setting."
 
-    assert expected in row.detail_label.text()
-    assert expected in _virtual_track_row_content(item)[1]
+    virtual_detail = _virtual_track_row_content(item)[1]
+    assert "M4B → AAC · 64 kbps · Mono" in virtual_detail
+    assert "Why: Audiobook media uses your spoken-word quality setting." in virtual_detail
 
 
 def test_virtual_row_click_can_select_a_removal_and_fit_its_details(qtbot) -> None:

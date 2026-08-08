@@ -41,8 +41,8 @@ def test_nero_chapter_reader_reads_moov_udta_chpl_atom(tmp_path) -> None:
 
 def test_nero_chapter_reader_uses_bounded_reads(monkeypatch) -> None:
     class BoundedReader(BytesIO):
-        def read(self, size: int = -1) -> bytes:
-            assert size >= 0
+        def read(self, size: int | None = -1) -> bytes:
+            assert size is not None and size >= 0
             return super().read(size)
 
     media = _mp4_with_chpl([(0, "Intro"), (65_000, "Part One")])

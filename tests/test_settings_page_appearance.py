@@ -1,3 +1,6 @@
+from typing import cast
+
+from iopenpod.application.services import DeviceSessionService, SettingsService
 from iopenpod.gui.styles import paint_css
 from iopenpod.gui.widgets import settingsPage
 
@@ -24,7 +27,10 @@ def test_settings_rows_use_resolved_surface_and_control_paints(qtbot) -> None:
 
 
 def test_reencode_lossy_control_respects_device_settings_scope(qtbot) -> None:
-    page = settingsPage.SettingsPage(settings_service=object(), device_sessions=object())
+    page = settingsPage.SettingsPage(
+        settings_service=cast(SettingsService, object()),
+        device_sessions=cast(DeviceSessionService, object()),
+    )
     qtbot.addWidget(page)
 
     page._set_device_rows_enabled(False)
