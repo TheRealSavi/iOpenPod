@@ -580,7 +580,11 @@ class DevicePickerDialog(QDialog):
                 continue
             if not claim_unidentified_ipod_auto_prompt(ipod):
                 continue
-            show_unidentified_ipod_warning(self, ipod)
+            show_unidentified_ipod_warning(
+                self,
+                ipod,
+                after_close=self._start_scan,
+            )
             return
 
     def _on_scan_error(self, error_msg: str, worker=None) -> None:
