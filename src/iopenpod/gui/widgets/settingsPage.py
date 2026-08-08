@@ -2001,43 +2001,7 @@ class SettingsPage(QWidget):
             label.setVisible(visible)
 
     def _set_device_rows_enabled(self, enabled: bool) -> None:
-        rows = [
-            self.accent_color,
-            self.show_art,
-            self.write_back,
-            self.compute_sound_check,
-            self.normalize_tags_after_sync,
-            self.rockbox_metadata_support,
-            self.rotate_tall_photos,
-            self.fit_photo_thumbnails,
-            self.rating_strategy,
-            self.lossy_encoder,
-            self.lossy_quality,
-            self.bitrate_mode,
-            self.music_lossy_cbr_bitrate,
-            self.vbr_level,
-            self.spoken_lossy_cbr_bitrate,
-            self.prefer_lossy,
-            self.convert_wav_to_alac,
-            self.mono_for_spoken,
-            self.smart_quality_by_type,
-            self.normalize_sample_rate,
-            self.aac_cutoff,
-            self.fdk_afterburner,
-            self.aac_tns,
-            self.aac_pns,
-            self.aac_ms_stereo,
-            self.aac_intensity_stereo,
-            self.video_crf,
-            self.video_preset,
-            self.sync_workers,
-            self.device_write_workers,
-            self.scrobble_on_sync,
-            self.listenbrainz_token_row,
-            self.lastfm_auth_row,
-            self.backup_before_sync,
-        ]
-        for row in rows:
+        for row in self._device_overridable_rows():
             row.setEnabled(enabled)
 
     def _device_overridable_rows(self) -> list:
@@ -2050,6 +2014,7 @@ class SettingsPage(QWidget):
             self.lossy_encoder, self.lossy_quality, self.bitrate_mode,
             self.music_lossy_cbr_bitrate, self.vbr_level,
             self.spoken_lossy_cbr_bitrate, self.prefer_lossy,
+            self.always_encode_lossy,
             self.convert_wav_to_alac,
             self.mono_for_spoken, self.smart_quality_by_type,
             self.normalize_sample_rate, self.aac_cutoff,

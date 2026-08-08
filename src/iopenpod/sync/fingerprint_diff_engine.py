@@ -95,7 +95,11 @@ def resolve_track_transcode_plan(
     options: TranscodeOptions | None = None,
 ) -> tuple[TranscodePlan, int]:
     """Resolve transfer policy and estimated output size for a PC track."""
-    plan = resolve_transcode_plan(pc_track.path, options=options)
+    plan = resolve_transcode_plan(
+        pc_track.path,
+        is_spoken_content=pc_track.is_podcast or pc_track.is_audiobook,
+        options=options,
+    )
     estimated_size = plan.estimate_output_size(
         source_size=pc_track.size,
         duration_ms=pc_track.duration_ms,

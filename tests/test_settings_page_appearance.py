@@ -21,3 +21,13 @@ def test_settings_rows_use_resolved_surface_and_control_paints(qtbot) -> None:
     assert paint_css("border.subtle") in standalone_row.styleSheet()
     assert paint_css("control.primary.fill") in toggle.checkbox.styleSheet()
     assert paint_css("surface.inset") in card.styleSheet()
+
+
+def test_reencode_lossy_control_respects_device_settings_scope(qtbot) -> None:
+    page = settingsPage.SettingsPage(settings_service=object(), device_sessions=object())
+    qtbot.addWidget(page)
+
+    page._set_device_rows_enabled(False)
+
+    assert page.always_encode_lossy.isEnabled() is False
+    assert page.always_encode_lossy in page._device_overridable_rows()

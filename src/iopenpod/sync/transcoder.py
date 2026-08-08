@@ -418,6 +418,7 @@ def resolve_transcode_plan(
     *,
     aac_quality: str | None = None,
     prefer_lossy: bool | None = None,
+    is_spoken_content: bool = False,
     options: TranscodeOptions | None = None,
 ) -> TranscodePlan:
     """Resolve the full transcode policy for *filepath*.
@@ -427,6 +428,8 @@ def resolve_transcode_plan(
 
     ``aac_quality`` is a legacy override hint.  Only ``"spoken"`` is treated
     specially; all other values are normalized to music quality.
+    ``is_spoken_content`` carries audiobook or podcast classification from the
+    library scanner when the source file does not have usable MP4 tags.
     """
     source_path = Path(filepath)
     options = (options or TranscodeOptions()).normalized()
@@ -448,6 +451,7 @@ def resolve_transcode_plan(
         source_path,
         target,
         aac_quality=aac_quality,
+        is_spoken_content=is_spoken_content,
         smart_quality_by_type=smart_quality_by_type,
     )
 
@@ -489,6 +493,7 @@ def _resolve_effective_quality(
     target: TranscodeTarget,
     *,
     aac_quality: str | None,
+    is_spoken_content: bool,
     smart_quality_by_type: bool,
 ) -> str:
     """Resolve legacy quality hint plus spoken-word auto-detection."""
@@ -499,6 +504,8 @@ def _resolve_effective_quality(
         return "spoken"
 
     if target in {TranscodeTarget.AAC, TranscodeTarget.MP3}:
+        if is_spoken_content:
+            return "spoken"
         media_type = _probe_media_type(source_path)
         if media_type in _SPOKEN_STIK_VALUES:
             return "spoken"
@@ -1780,7 +1787,7 @@ def _resolve_lossy_runtime(plan: TranscodePlan) -> tuple[str, bool]:
     """Resolve per-file lossy quality and downmix policy from a plan."""
     if plan.smart_quality_by_type and plan.target in {TranscodeTarget.AAC, TranscodeTarget.MP3} and plan.is_spoken:
         logger.debug(
-            "smart_quality_by_type: spoken-word tags detected for %s",
+            "smart_quality_by_type: spoken-word content detected for %s",
             plan.source_path.name,
         )
 

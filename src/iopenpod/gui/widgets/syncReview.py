@@ -147,6 +147,40 @@ def _short_display_path(path: str, *, parts_to_keep: int = 4) -> str:
     return normalized
 
 
+_TRANSCODE_TARGET_LABELS = {
+    "aac": "AAC",
+    "alac": "ALAC",
+    "mp3": "MP3",
+    "video_h264": "H.264 video",
+    "video_transcode_audio": "iPod-compatible audio",
+    "video_transcode_video": "iPod-compatible video",
+    "video_remux": "iPod-compatible video",
+}
+
+
+def _planned_transfer_summary(item: Any) -> str:
+    """Describe whether a planned add copies or transcodes its source file."""
+    plan = getattr(item, "transcode_plan", None)
+    target = getattr(plan, "target", None)
+    target_value = str(getattr(target, "value", target) or "").lower()
+    if not target_value or target_value == "copy":
+        return "Will be copied from your PC library to the iPod."
+
+    target_label = _TRANSCODE_TARGET_LABELS.get(target_value, target_value.upper())
+    details: list[str] = []
+    bitrate_kbps = getattr(plan, "cache_bitrate_kbps", None)
+    if isinstance(bitrate_kbps, int) and bitrate_kbps > 0:
+        details.append(f"{bitrate_kbps} kbps")
+    if (
+        target_value in {"aac", "mp3"}
+        and bool(getattr(plan, "is_spoken", False))
+        and bool(getattr(plan, "mono_for_spoken", False))
+    ):
+        details.append("mono")
+    suffix = f" ({', '.join(details)})" if details else ""
+    return f"Will be transcoded to {target_label}{suffix} before syncing to the iPod."
+
+
 # ── StorageBarWidget ─────────────────────────────────────────────────────────
 
 
@@ -431,7 +465,7 @@ class SyncTrackRow(QFrame):
             )
             self._set_detail_lines(
                 format_line,
-                "Will be copied from your PC library to the iPod.",
+                _planned_transfer_summary(item),
                 f"Source: {self._short_path(track.path)}" if getattr(track, "path", "") else "",
             )
 
@@ -936,7 +970,7 @@ def _virtual_track_row_content(item: Any) -> tuple[str, str, str, str]:
         )
         detail_lines = [
             format_line,
-            "Will be copied from your PC library to the iPod.",
+            _planned_transfer_summary(item),
             f"Source: {_short_display_path(track.path)}" if getattr(track, "path", "") else "",
         ]
     elif is_sync_action(item, ACTION_REMOVE_FROM_IPOD):

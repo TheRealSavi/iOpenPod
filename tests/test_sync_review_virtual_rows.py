@@ -1,13 +1,20 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any, cast
 
 from PyQt6.QtCore import QPoint, Qt
 from PyQt6.QtWidgets import QStyleOptionViewItem, QVBoxLayout, QWidget
 
-from iopenpod.gui.widgets.syncReview import SyncCategoryCard, SyncReviewWidget, SyncTrackRow
+from iopenpod.gui.widgets.syncReview import (
+    SyncCategoryCard,
+    SyncReviewWidget,
+    SyncTrackRow,
+    _virtual_track_row_content,
+)
 from iopenpod.sync.contracts import SyncAction, SyncItem, SyncPlan
 from iopenpod.sync.pc_library import PCTrack
+from iopenpod.sync.transcoder import TranscodeTarget
 
 
 def _review_widget(qtbot) -> SyncReviewWidget:
@@ -92,6 +99,26 @@ def test_short_virtual_rows_size_to_their_content(qtbot) -> None:
     row_height = delegate.sizeHint(option, card._rows_model.index(0, 0)).height()
     assert row_height < 100
     assert card._rows_view.height() == row_height
+
+
+def test_sync_review_describes_planned_spoken_word_transcoding(qtbot) -> None:
+    item = SyncItem(
+        SyncAction.ADD_TO_IPOD,
+        pc_track=_track(1),
+        transcode_plan=SimpleNamespace(
+            target=TranscodeTarget.AAC,
+            cache_bitrate_kbps=64,
+            is_spoken=True,
+            mono_for_spoken=True,
+        ),
+    )
+    row = SyncTrackRow(item, "add")
+    qtbot.addWidget(row)
+
+    expected = "Will be transcoded to AAC (64 kbps, mono) before syncing to the iPod."
+
+    assert expected in row.detail_label.text()
+    assert expected in _virtual_track_row_content(item)[1]
 
 
 def test_virtual_row_click_can_select_a_removal_and_fit_its_details(qtbot) -> None:

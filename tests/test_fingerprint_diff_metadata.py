@@ -1,7 +1,12 @@
-from iopenpod.sync.fingerprint_diff_engine import FingerprintDiffEngine
+import iopenpod.sync.transcoder as transcoder_module
+from iopenpod.sync.fingerprint_diff_engine import (
+    FingerprintDiffEngine,
+    resolve_track_transcode_plan,
+)
 from iopenpod.sync.mapping import TrackMapping
 from iopenpod.sync.pc_library import PCTrack
 from iopenpod.sync.source_identity import source_content_hash
+from iopenpod.sync.transcoder import AudioProperties, TranscodeOptions, TranscodeTarget
 
 
 def _track(
@@ -89,6 +94,62 @@ def test_metadata_compare_does_not_demote_folder_guesses_to_scanner_defaults() -
     )
 
     assert changes == {}
+
+
+def test_sync_plan_uses_audiobook_classification_for_spoken_transcoding(
+    monkeypatch,
+) -> None:
+    """An .m4b can be classified as an audiobook without a `stik` tag."""
+    monkeypatch.setattr(
+        transcoder_module,
+        "probe_audio",
+        lambda _path: AudioProperties(
+            sample_rate=44100,
+            bits_per_sample=0,
+            channels=2,
+            codec_name="aac",
+            profile="LC",
+            probe_ok=True,
+        ),
+    )
+    monkeypatch.setattr(
+        transcoder_module,
+        "available_aac_encoders",
+        lambda _path=None: {"aac"},
+    )
+    monkeypatch.setattr(
+        transcoder_module,
+        "_best_aac_encoder",
+        lambda _path=None: "aac",
+    )
+    options = TranscodeOptions(
+        always_encode_lossy=True,
+        lossy_encoder="aac",
+        music_lossy_cbr_bitrate=256,
+        spoken_lossy_cbr_bitrate=64,
+    )
+    track = _track(
+        path="/audiobooks/untagged-book.m4b",
+        relative_path="untagged-book.m4b",
+        filename="untagged-book.m4b",
+        extension=".m4b",
+    )
+    track.is_audiobook = True
+
+    plan, estimated_size = resolve_track_transcode_plan(track, options)
+    command = transcoder_module._build_ffmpeg_command(
+        "ffmpeg",
+        plan.source_path,
+        plan.source_path.with_suffix(plan.output_extension),
+        plan,
+        options,
+    )
+
+    assert plan.target == TranscodeTarget.AAC
+    assert plan.effective_quality == "spoken"
+    assert estimated_size == 8_000
+    assert ["-ac", "1"] == command[command.index("-ac"):command.index("-ac") + 2]
+    assert ["-b:a", "64k"] == command[command.index("-b:a"):command.index("-b:a") + 2]
 
 
 def test_metadata_compare_does_not_demote_sound_check_to_absent_zero() -> None:
