@@ -20,7 +20,7 @@ Header layout (MHYP_HEADER_SIZE = 184 bytes):
     +0x1C: playlist_id (8B)
     +0x24: unk1 (4B)
     +0x28: string_mhod_count (2B)
-    +0x2A: podcast_flag (2B) — 0=normal, 1=podcast playlist (u16, libgpod podcastflag)
+    +0x2A: playlist_kind_flags (2B) — bit 0=podcast, 0x0100=folder
     +0x2C: sort_order (4B)
     +0x3C: db_id_2 (8B) — MHBD database ID reference (non-master)
     +0x44: playlist_id_copy (8B)
@@ -40,9 +40,6 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from .mhit_writer import TrackInfo
-
 from iopenpod.itunesdb_shared.constants import MHOD_TYPE_ALBUM, MHOD_TYPE_TITLE
 from iopenpod.itunesdb_shared.field_base import write_fields, write_generic_header
 from iopenpod.itunesdb_shared.mhod_defs import (
@@ -52,6 +49,13 @@ from iopenpod.itunesdb_shared.mhod_defs import (
     write_mhod_header,
 )
 from iopenpod.itunesdb_shared.mhyp_defs import MHYP_HEADER_SIZE
+from iopenpod.itunesdb_shared.playlist_kinds import (
+    is_playlist_folder,
+    is_podcast_playlist,
+)
+from iopenpod.itunesdb_shared.playlist_kinds import (
+    playlist_kind_flags as normalize_playlist_kind_flags,
+)
 
 from .mhip_writer import write_mhip, write_mhip_podcast_group
 from .mhod52_writer import write_library_indices
@@ -64,6 +68,9 @@ from .mhod_spl_writer import (
     write_mhod102,
 )
 from .mhod_writer import write_mhod_string
+
+if TYPE_CHECKING:
+    from .mhit_writer import TrackInfo
 
 
 def _display_text(value: object, default: str) -> str:
@@ -111,7 +118,11 @@ class PlaylistInfo:
     #       are written at the extended offsets +0x3C/+0x44 (skipped
     #       when master=True, matching libgpod behaviour).
     sortorder: int = 0                   # 0=default, 1=manual, 3=title ...
-    podcast_flag: int = 0                # 0x2A: 0=normal, 1=podcast playlist (u16)
+    # Compatibility spelling for the complete raw word at +0x2A. Historically
+    # callers treated any non-zero value as Podcasts; use is_podcast instead.
+    podcast_flag: int = 0
+    playlist_kind_flags: int | None = None
+    parent_folder_playlist_id: int = 0
 
     # Smart playlist fields (both must be set for a smart playlist)
     smart_prefs: SmartPlaylistPrefs | None = None
@@ -134,6 +145,29 @@ class PlaylistInfo:
     # Per-MHIP metadata preserved from parsed data for round-trip fidelity.
     # When provided, must be the same length as track_ids and in the same order.
     item_metadata: list[PlaylistItemMeta] | None = None
+
+    def __post_init__(self) -> None:
+        # Keep legacy callers/readers whole while establishing the accurately
+        # named field as the canonical representation for new code.
+        raw = normalize_playlist_kind_flags(
+            self.podcast_flag
+            if self.playlist_kind_flags is None
+            else self.playlist_kind_flags
+        )
+        self.playlist_kind_flags = raw
+        self.podcast_flag = raw
+
+    @property
+    def kind_flags(self) -> int:
+        return normalize_playlist_kind_flags(self.playlist_kind_flags)
+
+    @property
+    def is_podcast(self) -> bool:
+        return is_podcast_playlist(self.kind_flags)
+
+    @property
+    def is_folder(self) -> bool:
+        return is_playlist_folder(self.kind_flags)
 
     @property
     def is_smart(self) -> bool:
@@ -168,6 +202,8 @@ def write_mhyp(
     podcast_grouping: bool = False,
     track_album_map: dict[int, str] | None = None,
     next_mhip_id_start: int = 1,
+    playlist_kind_flags: int | None = None,
+    parent_folder_playlist_id: int = 0,
 ) -> bytes:
     """
     Write a complete MHYP (playlist) chunk with MHODs and MHIPs.
@@ -199,8 +235,10 @@ def write_mhyp(
                     (matches libgpod, which zeros these for type=1).
         timestamp: Creation timestamp (now if not provided)
         sortorder: Sort order (0 = manual)
-        podcast_flag: 0x2A — 0=normal playlist, 1=podcast playlist (u16,
-                     matching libgpod podcastflag).
+        podcast_flag: Compatibility input for the raw +0x2A kind word.
+        playlist_kind_flags: Preferred raw +0x2A kind word. Bit 0 marks a
+                     podcast playlist and 0x0100 marks a playlist folder.
+        parent_folder_playlist_id: Parent folder's 64-bit playlist ID at +0x30.
         tracks: List of TrackInfo objects (required for Master Playlist to
                 generate library index MHODs type 52/53)
         db_id_2: Database-wide ID from MHBD offset 0x24. Written at MHYP offset
@@ -338,7 +376,10 @@ def write_mhyp(
         'timestamp': timestamp,
         'playlist_id': playlist_id,
         'string_mhod_child_count': 1 + description_count,
-        'podcast_flag': podcast_flag,
+        'playlist_kind_flags': (
+            podcast_flag if playlist_kind_flags is None else playlist_kind_flags
+        ),
+        'parent_folder_playlist_id': parent_folder_playlist_id,
         'sort_order': sortorder,
         'timestamp_2': timestamp,
     }
@@ -525,7 +566,7 @@ def write_playlist(
     Args:
         playlist: A PlaylistInfo instance.
         db_id_2: Database-wide ID from MHBD offset 0x24.
-        podcast_grouping: When True and playlist.podcast_flag is set,
+        podcast_grouping: When True and the playlist's podcast bit is set,
                      generate grouped MHIPs for podcast episodes.
         track_album_map: track_id → album name (required when
                      podcast_grouping applies).
@@ -536,7 +577,7 @@ def write_playlist(
         Complete MHYP chunk bytes.
     """
     # Only apply podcast grouping to actual podcast playlists
-    use_grouping = podcast_grouping and bool(playlist.podcast_flag)
+    use_grouping = podcast_grouping and playlist.is_podcast
     return write_mhyp(
         name=playlist.name,
         track_ids=playlist.track_ids,
@@ -544,6 +585,8 @@ def write_playlist(
         master=playlist.master,
         sortorder=playlist.sortorder,
         podcast_flag=playlist.podcast_flag,
+        playlist_kind_flags=playlist.kind_flags,
+        parent_folder_playlist_id=playlist.parent_folder_playlist_id,
         db_id_2=db_id_2,
         smart_prefs=playlist.smart_prefs,
         smart_rules=playlist.smart_rules,

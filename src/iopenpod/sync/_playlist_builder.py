@@ -10,6 +10,7 @@ import logging
 
 from iopenpod.itunesdb_shared.constants import MEDIA_TYPE_PODCAST
 from iopenpod.itunesdb_shared.device_time import DeviceTimeContext
+from iopenpod.itunesdb_shared.playlist_hierarchy import reconcile_playlist_hierarchy
 from iopenpod.itunesdb_shared.playlist_properties import (
     playlist_description_from_row,
     playlist_property_raw_body_for_write,
@@ -214,6 +215,16 @@ def build_and_evaluate_playlists(
     from ._track_conversion import trackinfo_to_eval_dict
     from .spl_evaluator import spl_update
 
+    # Folder rows and their children are mirrored independently in datasets 2
+    # and 3. Reconcile each list before deriving lookups or evaluating rules so
+    # both mirrors retain valid parent links, membership, and physical order.
+    dataset2_standard_playlists_raw = reconcile_playlist_hierarchy(
+        dataset2_standard_playlists_raw
+    )
+    dataset3_podcast_playlists_raw = reconcile_playlist_hierarchy(
+        dataset3_podcast_playlists_raw
+    )
+
     old_tid_to_db_track_id: dict[int, int] = {}
     for t in existing_tracks_data:
         tid = coerce_int(t.get("track_id", 0))
@@ -327,7 +338,7 @@ def _sync_podcast_playlist_membership(
     targets = [
         playlist
         for playlist in [*playlists, *podcast_playlists]
-        if playlist.podcast_flag
+        if playlist.is_podcast
     ]
 
     if not targets and podcast_db_track_ids:
@@ -473,6 +484,13 @@ def _build_standard_dataset_playlists(
             master=False,
             sortorder=pl.get("sort_order", 0),
             podcast_flag=pl.get("podcast_flag", 0),
+            playlist_kind_flags=pl.get("playlist_kind_flags"),
+            parent_folder_playlist_id=coerce_int(
+                pl.get(
+                    "parent_folder_playlist_id",
+                    pl.get("unk0x30_playlist_ref", 0),
+                )
+            ),
             mhsd5_type=_mhsd5_type_value(pl),
             phase_game_flag=_phase_game_flag_value(pl),
             raw_mhod100=decode_raw_blob(pl.get("playlist_prefs")),
@@ -490,7 +508,7 @@ def _build_standard_dataset_playlists(
         if prefs_data and rules_data:
             info.smart_prefs = prefs_from_parsed(prefs_data)
             info.smart_rules = rules_from_parsed(rules_data)
-            if info.smart_prefs.live_update:
+            if info.smart_prefs.live_update and not info.is_folder:
                 matched_db_track_ids = spl_update(
                     info.smart_prefs,
                     info.smart_rules,
@@ -604,7 +622,12 @@ def _reevaluate_live_update(
 ) -> None:
     """Re-evaluate all live-update SPLs against the final track list."""
     for info in list(playlists) + [s for s in smart_playlists if not s.mhsd5_type]:
-        if info.smart_prefs and info.smart_rules and info.smart_prefs.live_update:
+        if (
+            info.smart_prefs
+            and info.smart_rules
+            and info.smart_prefs.live_update
+            and not info.is_folder
+        ):
             playlist_lookup = _playlist_lookup_from_infos([playlists, smart_playlists])
             matched_db_track_ids = spl_update(
                 info.smart_prefs,

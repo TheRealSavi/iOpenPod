@@ -38,6 +38,11 @@ from iopenpod.application.jobs import (
 )
 from iopenpod.application.runtime import display_playlists_from_rows
 from iopenpod.itunesdb_shared.constants import MHOD_TYPE_TITLE
+from iopenpod.itunesdb_shared.playlist_kinds import (
+    is_playlist_folder,
+    is_podcast_playlist,
+)
+from iopenpod.itunesdb_shared.playlist_lifecycle import playlist_edit_payload
 from iopenpod.itunesdb_shared.playlist_properties import playlist_description_from_row
 
 from ..glyphs import glyph_icon, glyph_pixmap
@@ -86,6 +91,7 @@ if TYPE_CHECKING:
 _ICON_REGULAR = "playlist"
 _ICON_SMART = "filter"
 _ICON_PODCAST = "broadcast"
+_ICON_FOLDER = "folder"
 _ICON_MASTER = "home"
 _ICON_CATEGORY = "grid"
 
@@ -140,6 +146,7 @@ def _is_user_smart_playlist(playlist: dict | None) -> bool:
     return bool(
         playlist
         and playlist.get("smart_playlist_data")
+        and not is_playlist_folder(playlist)
         and not _is_ipod_category_playlist(playlist)
     )
 
@@ -152,11 +159,13 @@ def _is_regular_track_playlist(playlist: dict | None) -> bool:
         return False
     if playlist.get("master_flag") or _is_ipod_category_playlist(playlist):
         return False
+    if is_playlist_folder(playlist):
+        return False
     if _is_display_merged_playlist(playlist):
         return False
     if _is_user_smart_playlist(playlist):
         return False
-    if playlist.get("podcast_flag", 0) == 1:
+    if is_podcast_playlist(playlist):
         return False
     if playlist.get("_source") in ("category", "smart"):
         return False
@@ -617,8 +626,9 @@ class PlaylistInfoCard(QFrame):
 
         title = playlist.get("Title", "Untitled")
         is_master = bool(playlist.get("master_flag"))
+        is_folder = is_playlist_folder(playlist)
         is_smart = _is_user_smart_playlist(playlist)
-        is_podcast = playlist.get("podcast_flag", 0) == 1
+        is_podcast = is_podcast_playlist(playlist) and not is_folder
         is_category = _is_ipod_category_playlist(playlist)
         source = "category" if is_category else playlist.get("_source", "regular")
 
@@ -630,7 +640,9 @@ class PlaylistInfoCard(QFrame):
 
         # ── Type badge ──
         origin_label = _mhsd_type_label(playlist)
-        if _is_display_merged_playlist(playlist):
+        if is_folder:
+            self.type_label.setText(f"{origin_label} Playlist Folder")
+        elif _is_display_merged_playlist(playlist):
             self.type_label.setText(f"{origin_label} Playlist")
         elif is_category:
             self.type_label.setText(f"{origin_label} Internal Browsing Category")
@@ -678,6 +690,8 @@ class PlaylistInfoCard(QFrame):
         playlist: dict,
     ) -> str:
         dataset_label = _mhsd_type_label(playlist)
+        if is_playlist_folder(playlist):
+            return f"{dataset_label} playlist folder"
         if _is_display_merged_playlist(playlist):
             return f"{dataset_label} rows with the same playlist ID"
         if is_category:
@@ -856,8 +870,23 @@ class PlaylistInfoCard(QFrame):
         flag2 = playlist.get("flag2", 0)
         flag3 = playlist.get("flag3", 0)
 
-        type_str = "Master" if is_master else "Normal (visible)"
+        if is_master:
+            type_str = "Master"
+        elif is_playlist_folder(playlist):
+            type_str = "Playlist Folder"
+        else:
+            type_str = "Normal (visible)"
         self._add_detail_row("Playlist Type", type_str)
+
+        kind_flags = _int_value(
+            playlist.get("playlist_kind_flags", playlist.get("podcast_flag"))
+        )
+        if kind_flags:
+            self._add_detail_row("Playlist Kind Flags", f"0x{kind_flags:04X}")
+
+        parent_folder_id = _int_value(playlist.get("parent_folder_playlist_id"))
+        if parent_folder_id:
+            self._add_detail_row("Parent Folder ID", f"0x{parent_folder_id:016X}")
 
         if flag1 or flag2 or flag3:
             self._add_detail_row("Flag Bytes", f"f1={flag1}  f2={flag2}  f3={flag3}")
@@ -1124,18 +1153,35 @@ class PlaylistListPanel(QFrame):
         # Categorize by playlist contents. MHSD location is shown separately as
         # type metadata, and type 5 rows with category markers are internal
         # browsing categories.
+        folders: list[dict] = []
         regular: list[dict] = []
         smart: list[dict] = []
         podcast: list[dict] = []
         category: list[dict] = []
         master: dict | None = None
 
+        folder_ids = {
+            _int_value(playlist.get("playlist_id"))
+            for playlist in playlists
+            if is_playlist_folder(playlist)
+            and _int_value(playlist.get("playlist_id"))
+        }
+        foldered_rows = {
+            id(playlist)
+            for playlist in playlists
+            if _int_value(playlist.get("parent_folder_playlist_id")) in folder_ids
+        }
+
         for pl in playlists:
             if _is_ipod_category_playlist(pl):
                 category.append(pl)
             elif pl.get("master_flag"):
                 master = pl
-            elif pl.get("podcast_flag", 0) == 1:
+            elif is_playlist_folder(pl):
+                folders.append(pl)
+            elif id(pl) in foldered_rows:
+                continue
+            elif is_podcast_playlist(pl):
                 podcast.append(pl)
             elif _is_user_smart_playlist(pl):
                 smart.append(pl)
@@ -1143,6 +1189,43 @@ class PlaylistListPanel(QFrame):
                 regular.append(pl)
 
         # Build sections
+        if folders:
+            self._add_section("PLAYLIST FOLDERS")
+            children_by_parent: dict[int, list[dict]] = {}
+            for playlist in playlists:
+                parent_id = _int_value(playlist.get("parent_folder_playlist_id"))
+                if parent_id in folder_ids:
+                    children_by_parent.setdefault(parent_id, []).append(playlist)
+
+            rendered: set[int] = set()
+
+            def add_folder_tree(folder: dict, depth: int) -> None:
+                folder_identity = id(folder)
+                if folder_identity in rendered:
+                    return
+                rendered.add(folder_identity)
+                self._add_playlist_button(folder, _ICON_FOLDER, depth=depth)
+                folder_id = _int_value(folder.get("playlist_id"))
+                for child in children_by_parent.get(folder_id, []):
+                    if is_playlist_folder(child):
+                        add_folder_tree(child, depth + 1)
+                    else:
+                        icon, dimmed = self._playlist_button_appearance(child)
+                        self._add_playlist_button(
+                            child,
+                            icon,
+                            dimmed=dimmed,
+                            depth=depth + 1,
+                        )
+
+            for folder in folders:
+                parent_id = _int_value(folder.get("parent_folder_playlist_id"))
+                if parent_id not in folder_ids:
+                    add_folder_tree(folder, 0)
+            # Malformed/cyclic parent links still remain reachable in the UI.
+            for folder in folders:
+                add_folder_tree(folder, 0)
+
         if regular:
             self._add_section("REGULAR PLAYLISTS")
             for pl in regular:
@@ -1169,7 +1252,7 @@ class PlaylistListPanel(QFrame):
             self._add_playlist_button(master, _ICON_MASTER, dimmed=True)
 
         # Empty state
-        if not regular and not smart and not podcast and not category and master is None:
+        if not folders and not regular and not smart and not podcast and not category and master is None:
             empty_container = QWidget()
             empty_container.setStyleSheet("background: transparent; border: none;")
             empty_vbox = QVBoxLayout(empty_container)
@@ -1241,7 +1324,26 @@ class PlaylistListPanel(QFrame):
         lbl = make_sidebar_section_header(text)
         self._inner_layout.addWidget(lbl)
 
-    def _add_playlist_button(self, playlist: dict, icon_name: str, dimmed: bool = False) -> None:
+    @staticmethod
+    def _playlist_button_appearance(playlist: dict) -> tuple[str, bool]:
+        if _is_ipod_category_playlist(playlist):
+            return _ICON_CATEGORY, True
+        if is_podcast_playlist(playlist):
+            return _ICON_PODCAST, False
+        if _is_user_smart_playlist(playlist):
+            return _ICON_SMART, False
+        if playlist.get("master_flag"):
+            return _ICON_MASTER, True
+        return _ICON_REGULAR, False
+
+    def _add_playlist_button(
+        self,
+        playlist: dict,
+        icon_name: str,
+        dimmed: bool = False,
+        *,
+        depth: int = 0,
+    ) -> None:
         title = playlist.get("Title", "Untitled")
         count = playlist.get("mhip_child_count", 0)
         is_master = bool(playlist.get("master_flag"))
@@ -1255,6 +1357,7 @@ class PlaylistListPanel(QFrame):
             btn_text += f"  ({count})"
 
         btn = SidebarNavButton(btn_text, icon_name=icon_name)
+        btn.setProperty("playlistDepth", depth)
         btn.setToolTip(f"{title}\n{count} tracks\n{_mhsd_type_label(playlist)}")
         btn.setDimmed(dimmed)
 
@@ -1263,7 +1366,15 @@ class PlaylistListPanel(QFrame):
         self._button_icons[idx] = icon_name
         btn.clicked.connect(lambda checked, i=idx: self._on_click(i))
 
-        self._inner_layout.addWidget(btn)
+        row = QWidget(self._inner)
+        row.setObjectName("playlistHierarchyRow")
+        row.setStyleSheet("background: transparent; border: none;")
+        row.setProperty("playlistDepth", depth)
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(depth * 16, 0, 0, 0)
+        row_layout.setSpacing(0)
+        row_layout.addWidget(btn)
+        self._inner_layout.addWidget(row)
         self._buttons.append(btn)
 
     def _on_click(self, index: int) -> None:
@@ -1547,6 +1658,8 @@ class PlaylistBrowser(QFrame):
                     str(pl.get("Title", "")),
                     _int_value(pl.get("mhip_child_count")),
                     _int_value(pl.get("master_flag")),
+                    _int_value(pl.get("playlist_kind_flags", pl.get("podcast_flag"))),
+                    _int_value(pl.get("parent_folder_playlist_id")),
                     str(pl.get("_source", "")),
                 )
                 for pl in playlists
@@ -1628,9 +1741,11 @@ class PlaylistBrowser(QFrame):
         # Color the title bar based on playlist type
         if _is_ipod_category_playlist(playlist):
             self.trackTitleBar.resetColor()
+        elif is_playlist_folder(playlist):
+            self.trackTitleBar.resetColor()
         elif _is_user_smart_playlist(playlist):
             self.trackTitleBar.setColor(*_playlist_paint_rgb("smart"))
-        elif playlist.get("podcast_flag", 0) == 1:
+        elif is_podcast_playlist(playlist):
             self.trackTitleBar.setColor(*_playlist_paint_rgb("podcast"))
         elif playlist.get("master_flag"):
             self.trackTitleBar.setColor(*_playlist_paint_rgb("master"))
@@ -1646,17 +1761,25 @@ class PlaylistBrowser(QFrame):
 
     def _onNewPlaylist(self, kind: str) -> None:
         """Handle the 'New Playlist' button from the list panel."""
+        playlists = display_playlists_from_rows(self._library_cache.get_playlists())
         if kind == "smart":
-            self.editor.set_playlist_options(
-                display_playlists_from_rows(self._library_cache.get_playlists())
-            )
+            self.editor.set_playlist_options(playlists)
             self.editor.new_playlist()
             self._switchToEditor(1)
             self.trackTitleBar.setTitle("New Smart Playlist")
             self.trackTitleBar.setColor(*_playlist_paint_rgb("smart"))
             self.trackList.clearTable()
             self._set_empty_regular_playlist_notice(None, 0)
+        elif kind == "folder":
+            self.regularEditor.set_playlist_options(playlists)
+            self.regularEditor.new_folder()
+            self._switchToEditor(2)
+            self.trackTitleBar.setTitle("New Playlist Folder")
+            self.trackTitleBar.resetColor()
+            self.trackList.clearTable()
+            self._set_empty_regular_playlist_notice(None, 0)
         else:
+            self.regularEditor.set_playlist_options(playlists)
             self.regularEditor.new_playlist()
             self._switchToEditor(2)
             self.trackTitleBar.setTitle("New Playlist")
@@ -1670,13 +1793,19 @@ class PlaylistBrowser(QFrame):
             return
         if _is_ipod_category_playlist(self._current_playlist):
             return
-        if _is_user_smart_playlist(self._current_playlist):
+        playlists = display_playlists_from_rows(self._library_cache.get_playlists())
+        if is_playlist_folder(self._current_playlist):
+            self.regularEditor.set_playlist_options(playlists)
+            self.regularEditor.edit_playlist(self._current_playlist)
+            self._switchToEditor(2)
+        elif _is_user_smart_playlist(self._current_playlist):
             self.editor.set_playlist_options(
-                display_playlists_from_rows(self._library_cache.get_playlists())
+                playlists
             )
             self.editor.edit_playlist(self._current_playlist)
             self._switchToEditor(1)
         elif not self._current_playlist.get("master_flag"):
+            self.regularEditor.set_playlist_options(playlists)
             self.regularEditor.edit_playlist(self._current_playlist)
             self._switchToEditor(2)
 
@@ -1687,10 +1816,16 @@ class PlaylistBrowser(QFrame):
             return
 
         title = playlist.get("Title", "Untitled")
+        consequence = ""
+        if is_playlist_folder(playlist):
+            consequence = (
+                "\n\nItems directly inside this folder will be moved up one level; "
+                "they will not be deleted."
+            )
         reply = QMessageBox.question(
             self, "Delete Playlist",
             f"Are you sure you want to delete '{title}'?\n\n"
-            "This will remove the playlist from the iPod immediately.",
+            f"This will remove the playlist from the iPod immediately.{consequence}",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -1725,7 +1860,10 @@ class PlaylistBrowser(QFrame):
 
         title = playlist_data.get("Title", "Untitled")
         self.trackTitleBar.setTitle(title)
-        if _is_user_smart_playlist(playlist_data):
+        if is_playlist_folder(playlist_data):
+            self.trackTitleBar.resetColor()
+            self._set_empty_regular_playlist_notice(None, 0)
+        elif _is_user_smart_playlist(playlist_data):
             self.trackTitleBar.setColor(*_playlist_paint_rgb("smart"))
             self._set_empty_regular_playlist_notice(None, 0)
         else:
@@ -1765,6 +1903,23 @@ class PlaylistBrowser(QFrame):
         """Remove a playlist from cache and rewrite the iPod database."""
         cache = self._library_cache
         pid = playlist.get("playlist_id", 0)
+
+        if is_playlist_folder(playlist):
+            promoted_parent_id = _int_value(
+                playlist.get("parent_folder_playlist_id")
+            )
+            for child in display_playlists_from_rows(cache.get_playlists()):
+                if _int_value(child.get("parent_folder_playlist_id")) != _int_value(pid):
+                    continue
+                cache.save_user_playlist(
+                    playlist_edit_payload(
+                        child,
+                        {
+                            "parent_folder_playlist_id": promoted_parent_id,
+                            "unk0x30_playlist_ref": promoted_parent_id,
+                        },
+                    )
+                )
 
         dataset_type = None if _is_display_merged_playlist(playlist) else _playlist_dataset_type(playlist)
         cache.remove_user_playlist(pid, dataset_type)

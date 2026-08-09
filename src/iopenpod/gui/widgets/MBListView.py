@@ -46,6 +46,10 @@ from iopenpod.itunesdb_shared.constants import (
     MEDIA_TYPE_VIDEO_MASK,
     MEDIA_TYPE_VIDEO_PODCAST,
 )
+from iopenpod.itunesdb_shared.playlist_kinds import (
+    is_playlist_folder,
+    is_podcast_playlist,
+)
 from iopenpod.search import SearchText, matches_search, prepare_search_text
 
 from ..artwork_rendering import (
@@ -1221,13 +1225,15 @@ class MusicBrowserList(QFrame):
         pl = self._current_playlist
         if pl.get("master_flag"):
             return False
+        if is_playlist_folder(pl):
+            return False
         if (
             pl.get("smart_playlist_data")
             or _is_ipod_category_playlist(pl)
             or pl.get("_source") == "smart"
         ):
             return False
-        if pl.get("podcast_flag", 0) == 1 and not _is_display_merged_playlist(pl):
+        if is_podcast_playlist(pl) and not _is_display_merged_playlist(pl):
             return False
         # Only allow manual reorder when sort_order is Manual (1) or Default (0)
         sort_order = pl.get("sort_order", 0)

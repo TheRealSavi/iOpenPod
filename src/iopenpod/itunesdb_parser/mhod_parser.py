@@ -214,7 +214,16 @@ def _parse_mhod51(
     CRITICAL: The SLst blob uses BIG-ENDIAN encoding for ALL multi-byte
     integers — the only part of the iTunesDB that does so.
     """
-    if body_length < 16:
+    return _parse_slst(data, body_offset, body_length)
+
+
+def _parse_slst(
+    data: bytes | bytearray,
+    body_offset: int,
+    body_length: int,
+) -> dict[str, Any]:
+    """Parse one root or nested SLst rules container."""
+    if body_length < idb.mhod_defs.SLST_HEADER_SIZE:
         logger.warning("MHOD51 (SPLRules) body too short: %d bytes", body_length)
         return {}
 
@@ -238,7 +247,11 @@ def _parse_mhod51(
     for _ in range(rule_count):
         if rule_offset + defs.SPL_RULE_HEADER_SIZE > body_offset + body_length:
             break
-        rule, rule_total_size = _parse_spl_rule(data, rule_offset)
+        rule, rule_total_size = _parse_spl_rule(
+            data,
+            rule_offset,
+            body_offset + body_length,
+        )
         rules.append(rule)
         rule_offset += rule_total_size
 
@@ -249,6 +262,7 @@ def _parse_mhod51(
 def _parse_spl_rule(
     data: bytes | bytearray,
     rule_offset: int,
+    container_end: int | None = None,
 ) -> tuple[dict[str, Any], int]:
     """Parse a single SPL rule starting at *rule_offset*.
 
@@ -269,6 +283,23 @@ def _parse_spl_rule(
 
     data_offset = rule_offset + defs.SPL_RULE_HEADER_SIZE
 
+    available_end = len(data) if container_end is None else min(container_end, len(data))
+    available_length = max(0, min(data_length, available_end - data_offset))
+    header_bytes = defs.mhod_spl_rule_header_bytes(data, rule_offset)
+    group_marker = defs.mhod_spl_rule_group_marker(data, rule_offset)
+    if (
+        field_id == 0
+        and rule["action_id"] == 1
+        and group_marker == defs.SPL_GROUP_MARKER
+        and data_length >= defs.SLST_HEADER_SIZE
+        and available_length == data_length
+        and bytes(data[data_offset:data_offset + 4]) == b"SLst"
+    ):
+        rule["header_bytes"] = header_bytes
+        rule["group_marker"] = group_marker
+        rule["group"] = _parse_slst(data, data_offset, available_length)
+        return rule, defs.SPL_RULE_HEADER_SIZE + data_length
+
     field_type = defs.spl_get_field_type(field_id)
 
     string_action = bool(rule["action_id"] & 0x01000000)
@@ -285,6 +316,13 @@ def _parse_spl_rule(
             rule["inferred_field_type"] = "string"
     else:
         # Numeric rule data (INT, DATE, BOOLEAN, PLAYLIST, BINARY_AND).
+        if available_length < defs.SPL_RULE_DATA_SIZE:
+            rule["header_bytes"] = header_bytes
+            rule["group_marker"] = group_marker
+            rule["raw_data"] = bytes(
+                data[data_offset:data_offset + available_length]
+            )
+            return rule, defs.SPL_RULE_HEADER_SIZE + data_length
         rule["from_value"] = defs.mhod_spl_rule_from_value(data, data_offset)
         rule["from_date"] = defs.mhod_spl_rule_from_date(data, data_offset)
         rule["from_units"] = defs.mhod_spl_rule_from_units(data, data_offset)

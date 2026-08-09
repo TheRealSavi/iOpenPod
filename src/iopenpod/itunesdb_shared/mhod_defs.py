@@ -22,7 +22,7 @@ MHOD_STRING_SUBHEADER_SIZE = 16       # encoding(4) + length(4) + unk0x20(4) + u
 MHOD_STRING_DATA_OFFSET = 0x28        # string data start (header + sub-header)
 
 # ── SPLPref body (MHOD type 50) ───────────────────────────
-SPLPREF_BODY_SIZE = 132
+SPLPREF_BODY_SIZE = 72
 
 # ── SLst rule data (MHOD type 51) non-string body size ────
 SPL_RULE_DATA_SIZE = 0x44  # 68 bytes
@@ -280,7 +280,8 @@ SPL_LIMIT_SORT_MAP = {
 #
 # SLst header (136 bytes):
 #   +0x00: 'SLst' magic (4 bytes)
-#   +0x04: unk004 (4 bytes BE) — usually 0
+#   +0x04: unk004 (4 bytes BE) — observed/default 0x00010001;
+#           likely a format/version word, preserved verbatim
 #   +0x08: rule_count (4 bytes BE)
 #   +0x0C: conjunction (4 bytes BE) — 0=AND, 1=OR
 #   +0x10: padding (120 bytes)
@@ -288,6 +289,7 @@ SPL_LIMIT_SORT_MAP = {
 # All SLst header functions take body_offset = start of SLst data.
 
 SLST_HEADER_SIZE = 136
+SLST_DEFAULT_UNK004 = 0x00010001
 
 
 def mhod_slst_magic(data, body_offset) -> bytes:
@@ -314,13 +316,17 @@ def mhod_slst_conjunction(data, body_offset) -> int:
 # Rule layout:
 #   +0x00: field (4 bytes BE) — what field to match (see SPL_FIELD_MAP)
 #   +0x04: action (4 bytes BE) — comparison operator (see SPL_ACTION_MAP)
-#   +0x08: padding (44 bytes)
+#   +0x08: group marker (4 bytes BE; zero for leaves)
+#   +0x0C: opaque group header tail / leaf padding (40 bytes)
 #   +0x34: data_length (4 bytes BE) — byte length of following data
 #   +0x38: data (data_length bytes)
 #
 # Total rule size = 56 + data_length.
 
 SPL_RULE_HEADER_SIZE = 56
+SPL_GROUP_MARKER = 0x01000000
+SPL_GROUP_HEADER_BYTES_OFFSET = 0x0C
+SPL_GROUP_HEADER_BYTES_SIZE = 40
 
 
 def mhod_spl_rule_field(data, rule_offset) -> int:
@@ -329,6 +335,22 @@ def mhod_spl_rule_field(data, rule_offset) -> int:
 
 def mhod_spl_rule_action(data, rule_offset) -> int:
     return struct.unpack(">I", data[rule_offset + 4:rule_offset + 8])[0]
+
+
+def mhod_spl_rule_header_bytes(data, rule_offset) -> bytes:
+    """Return the opaque 40-byte group-header tail after its marker.
+
+    Leaf rules contain zero padding across both the marker position and this
+    tail. Group wrappers use the preceding word as a semantic marker and
+    retain these remaining bytes verbatim.
+    """
+    start = rule_offset + SPL_GROUP_HEADER_BYTES_OFFSET
+    return bytes(data[start:start + SPL_GROUP_HEADER_BYTES_SIZE])
+
+
+def mhod_spl_rule_group_marker(data, rule_offset) -> int:
+    """Return the big-endian marker at rule +0x08."""
+    return struct.unpack(">I", data[rule_offset + 8:rule_offset + 12])[0]
 
 
 def mhod_spl_rule_data_length(data, rule_offset) -> int:

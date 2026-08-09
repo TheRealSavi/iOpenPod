@@ -415,18 +415,57 @@ def _mhod_slst_annotations(
                     encoding="u32be",
                     status="known",
                 ),
-                _annotation(cursor + 8, cursor + 52, status="padding"),
-                _annotation(
-                    cursor + 52,
-                    cursor + 56,
-                    field="rule_data_length",
-                    value=data_length,
-                    encoding="u32be",
-                    status="known",
-                ),
             ),
         )
-        if "string_value" in rule:
+        parsed_group = rule.get("group")
+        if isinstance(parsed_group, dict):
+            header_bytes = rule.get("header_bytes", b"")
+            header_tail = (
+                bytes(header_bytes)
+                if isinstance(header_bytes, (bytes, bytearray))
+                else b""
+            )
+            annotations.extend(
+                (
+                    _annotation(
+                        cursor + 8,
+                        cursor + 12,
+                        field="group_marker",
+                        value=_json_value(rule.get("group_marker")),
+                        encoding="u32be",
+                        status="known",
+                    ),
+                    _annotation(
+                        cursor + 12,
+                        cursor + 52,
+                        field="group_header_bytes",
+                        value=_json_value(header_tail),
+                        status="observed",
+                    ),
+                ),
+            )
+        else:
+            annotations.append(_annotation(cursor + 8, cursor + 52, status="padding"))
+        annotations.append(
+            _annotation(
+                cursor + 52,
+                cursor + 56,
+                field="rule_data_length",
+                value=data_length,
+                encoding="u32be",
+                status="known",
+            ),
+        )
+
+        if isinstance(parsed_group, dict):
+            annotations.extend(
+                _mhod_slst_annotations(
+                    rule_data_start,
+                    rule_end,
+                    parsed_group,
+                ),
+            )
+        elif "string_value" in rule:
             annotations.append(
                 _annotation(
                     rule_data_start,

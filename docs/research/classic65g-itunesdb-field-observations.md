@@ -173,8 +173,8 @@ reads the first 0x6C bytes of each header and creates a runtime playlist.
 
 | Offset | Parser field | Observation | Firmware correlation / interpretation |
 | --- | --- | --- | --- |
-| `0x2A` | `podcast_flag` | `0` in 159 rows, `0x0100` in 12, and `1` in 2. | In this loader, only bit 0 is copied to the runtime playlist flag. `0x0100` therefore has a different role here or is interpreted elsewhere. |
-| `0x30` | `unk0x30_playlist_ref` | Non-zero in 146 rows, with six distinct 64-bit values. Every value exactly equals the `playlist_id` of another MHYP row; each target has `podcast_flag = 0x0100`. | The loader passes this 64-bit pair to `FUN_08039F70`, so it is live parser input. It is an opaque playlist-reference candidate, plausibly a podcast hierarchy link. |
+| `0x2A` | `playlist_kind_flags` (`podcast_flag` compatibility alias) | `0` in 159 rows, `0x0100` in 12, and `1` in 2. | Bit `0x0001` marks Podcasts; bit `0x0100` marks a playlist folder. The six logical folders occur once in each of datasets 2 and 3. |
+| `0x30` | `parent_folder_playlist_id` (`unk0x30_playlist_ref` compatibility alias) | Non-zero in 146 rows, with six distinct 64-bit values. Every value exactly equals the `playlist_id` of a folder MHYP. | This is the child-to-parent folder link. It agrees exactly with physical child order, each folder's OR-of-Playlist MHOD 51 rules, and its materialized membership union. |
 | `0x38` | `unk0x38` | Zero in all 173 headers. | No meaning inferred. |
 | `0x3C` | `db_id_2` | One non-zero 64-bit value occurs in 166 rows; seven rows contain zero. | The parsed field is retained; no additional semantic inference from this sample. |
 | `0x44` | `playlist_id_2` | Equals the row's primary `playlist_id` in 166 rows; the remaining seven rows are zero. | Strong mirror relationship within this sample. |
@@ -182,9 +182,17 @@ reads the first 0x6C bytes of each header and creates a runtime playlist.
 | `0x50` / `0x52` | `mhsd5_type` / `phase_game_flag` | `mhsd5_type` is non-zero only once each for 2, 3, 4, 5, and 7, and those rows are the built-in Movies, TV Shows, Music, Books, and Rentals playlists respectively. It equals `phase_game_flag` on those five rows. `phase_game_flag` otherwise is `0x0100` (88), `0x010B` (2), `0x0019` (2), or zero (76). | `mhsd5_type` has a strong built-in content-category relationship in this sample. `phase_game_flag` is a historical, provisional name—not evidence that all non-zero values concern games or that it normally mirrors `mhsd5_type`. |
 | `0x54` | `mhsd5_special_flag` | Zero in 124 rows, `0x01000000` in 48, and `1` in one. | Treat as an opaque u32; the 0x01000000 representation is especially important to preserve verbatim. |
 
-The 146 `+0x30` references lead to only six target rows.  Those targets are
-all playlist rows with `podcast_flag = 0x0100`; this is a structural
-relationship, not just a correlation with track media type.
+The 146 `+0x30` references lead to six logical folder targets, each duplicated
+in datasets 2 and 3. Every non-zero reference is a valid folder parent; the 73
+children in each dataset form contiguous blocks after their parents. Each
+folder's MHOD 51 child-ID order and duplicate-free MHIP union independently
+confirm the same topology.
+
+Folders may also be children of other folders: a nested folder uses the same
+`+0x30` parent link, participates as a direct child in its parent's Playlist
+rule, and contributes its recursively aggregated membership. This supplied
+database contains no nested-folder instance, so its counts describe a
+single-layer example rather than a format restriction.
 
 Static tracing of the same loader adds the following data flow: `master_flag`
 selects a separate construction branch, `flag1` low bit becomes a runtime

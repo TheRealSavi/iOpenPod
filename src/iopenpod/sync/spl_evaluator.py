@@ -52,6 +52,7 @@ from iopenpod.itunesdb_shared.mhod_defs import (
     SPL_LIMIT_TYPE_SONGS,
 )
 from iopenpod.itunesdb_writer.mhod_spl_writer import (
+    RuleGroup,
     SmartPlaylistPrefs,
     SmartPlaylistRule,
     SmartPlaylistRules,
@@ -285,7 +286,7 @@ def _eval_playlist(
 
 
 def eval_rule(
-    rule: SmartPlaylistRule,
+    rule: SmartPlaylistRule | RuleGroup,
     track: dict,
     playlist_lookup: dict[int, set[int]] | None = None,
     time_context: DeviceTimeContext | None = None,
@@ -301,6 +302,14 @@ def eval_rule(
     Returns:
         True if the track matches the rule.
     """
+    if isinstance(rule, RuleGroup):
+        return _eval_rule_container(
+            rule.group,
+            track,
+            playlist_lookup,
+            time_context,
+        )
+
     ft = SPL_FIELD_TYPE_MAP.get(rule.field_id)
 
     if rule.field_id == 0x3C and rule.action_id in (0x00000400, 0x02000400):
@@ -326,6 +335,24 @@ def eval_rule(
         case _:
             # Unknown field type — default to no match
             return False
+
+
+def _eval_rule_container(
+    rules: SmartPlaylistRules,
+    track: dict,
+    playlist_lookup: dict[int, set[int]] | None,
+    time_context: DeviceTimeContext | None,
+) -> bool:
+    """Evaluate one root or nested rules container."""
+    if rules.conjunction.upper() == "OR":
+        return any(
+            eval_rule(node, track, playlist_lookup, time_context)
+            for node in rules.rules
+        )
+    return all(
+        eval_rule(node, track, playlist_lookup, time_context)
+        for node in rules.rules
+    )
 
 
 # ────────────────────────────────────────────────────────────
@@ -417,27 +444,12 @@ def spl_update(
             continue
 
         if prefs.check_rules and rules.rules:
-            # Evaluate rules with AND/OR conjunction
-            is_and = rules.conjunction == "AND"
-            match_result = is_and  # start True for AND, False for OR
-
-            for rule in rules.rules:
-                rule_truth = eval_rule(
-                    rule, track, playlist_lookup, time_context=time_context,
-                )
-
-                if is_and:
-                    if not rule_truth:
-                        match_result = False
-                        break
-                else:  # OR
-                    if rule_truth:
-                        match_result = True
-                        break
-
-            # No rules → everything matches (libgpod behavior)
-            if not rules.rules:
-                match_result = True
+            match_result = _eval_rule_container(
+                rules,
+                track,
+                playlist_lookup,
+                time_context,
+            )
 
             if match_result:
                 selected.append(track)

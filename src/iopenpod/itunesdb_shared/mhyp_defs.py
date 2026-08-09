@@ -28,16 +28,14 @@ MHYP_FIELDS: list[FieldDef] = [
     _u64("playlist_id", 0x1C, section_type=_S),
     _u32("unk0x24", 0x24, section_type=_S),
     _u16("string_mhod_child_count", 0x28, section_type=_S),
-    # Classic 6.5G snapshot: 0x0100 on 12 rows and 1 on two. Firmware parser
-    # 0x0807DD8C only copies bit 0 into its runtime playlist flag.
-    _u16("podcast_flag", 0x2A, section_type=_S),
+    # Raw playlist-kind flags. Bit 0 marks Podcasts; 0x0100 marks a playlist
+    # folder. Keep the complete word because other bits remain format evidence.
+    _u16("playlist_kind_flags", 0x2A, section_type=_S),
     # The 2.0.1 loader converts non-zero values through FUN_080BFAFC before
     # writing a runtime sort/configuration field.
     _u32("sort_order", 0x2C, section_type=_S),
-    # 146 of 173 Classic 6.5G rows contain one of six non-zero IDs here. Each
-    # is another MHYP playlist_id with podcast_flag=0x0100; 0x0807DD8C consumes
-    # this pair of u32s. Preserve as an opaque playlist-reference candidate.
-    _u64("unk0x30_playlist_ref", 0x30, section_type=_S, default=0),
+    # Children of playlist folders store the parent's MHYP playlist_id here.
+    _u64("parent_folder_playlist_id", 0x30, section_type=_S, default=0),
     # Classic 6.5G snapshot (2026-08-04): zero in all 173 MHYP headers. The
     # 2.0.1 loader still copies this u32 to runtime playlist offset +0x1C0.
     _u32("unk0x38", 0x38, section_type=_S, default=0),

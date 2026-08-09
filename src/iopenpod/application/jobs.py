@@ -27,6 +27,10 @@ from iopenpod.device.write_guard import (
     capture_database_generation,
 )
 from iopenpod.infrastructure.media_folders import media_folder_paths
+from iopenpod.itunesdb_shared.playlist_kinds import (
+    is_playlist_folder,
+    is_podcast_playlist,
+)
 
 from .dropped_files import (
     append_unique_path,
@@ -715,7 +719,9 @@ def _is_regular_import_target_playlist(playlist: dict) -> bool:
         return False
     if playlist.get("smart_playlist_data") or playlist.get("smart_playlist_rules"):
         return False
-    if playlist.get("podcast_flag") or playlist.get("_source") == "podcast":
+    if is_podcast_playlist(playlist) or playlist.get("_source") == "podcast":
+        return False
+    if is_playlist_folder(playlist):
         return False
     if _is_ipod_category_playlist(playlist):
         return False

@@ -11,6 +11,10 @@ from PyQt6.QtCore import QPoint
 from PyQt6.QtWidgets import QMenu, QWidget
 
 from iopenpod.application.runtime import display_playlists_from_rows
+from iopenpod.itunesdb_shared.playlist_kinds import (
+    is_playlist_folder,
+    is_podcast_playlist,
+)
 from iopenpod.sync.album_chapters import is_music_track, resolve_album_tracks
 
 from ..glyphs import glyph_icon
@@ -125,11 +129,12 @@ def _is_editable_regular_playlist(playlist: dict | None) -> bool:
     return bool(
         playlist
         and not playlist.get("master_flag")
+        and not is_playlist_folder(playlist)
         and not playlist.get("smart_playlist_data")
         and not _is_ipod_category_playlist(playlist)
         and playlist.get("_source") not in ("smart", "category")
         and (
-            playlist.get("podcast_flag", 0) != 1
+            not is_podcast_playlist(playlist)
             or _is_display_merged_playlist(playlist)
         )
     )

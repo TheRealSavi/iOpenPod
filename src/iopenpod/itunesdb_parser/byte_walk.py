@@ -123,6 +123,7 @@ class ByteWalkChunkCache:
     ) -> ByteWalkChunkLoad:
         key = (kind, Path(path).resolve(), entry.json_offset)
         with self._lock:
+            generation = self._generation
             cached = self._items.get(key)
             if cached is not None:
                 self._items.move_to_end(key)
@@ -132,7 +133,6 @@ class ByteWalkChunkCache:
                 in_flight = _ChunkLoadInFlight(Event())
                 self._in_flight[key] = in_flight
                 is_loader = True
-                generation = self._generation
             else:
                 is_loader = False
 

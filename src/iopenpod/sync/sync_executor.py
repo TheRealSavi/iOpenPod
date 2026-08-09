@@ -68,6 +68,7 @@ from iopenpod.itunesdb_shared.constants import (
     MEDIA_TYPE_VIDEO_PODCAST,
 )
 from iopenpod.itunesdb_shared.device_time import DeviceTimeContext
+from iopenpod.itunesdb_shared.playlist_kinds import is_podcast_playlist
 from iopenpod.itunesdb_writer.mhit_writer import TrackInfo
 from iopenpod.itunesdb_writer.mhyp_writer import PlaylistInfo
 
@@ -171,7 +172,7 @@ def _playlist_dataset_type(playlist: dict) -> int:
         return 5
     if _is_ipod_category_playlist(playlist):
         return 5
-    if playlist.get("podcast_flag", 0) == 1 or playlist.get("_source") == "podcast":
+    if is_podcast_playlist(playlist) or playlist.get("_source") == "podcast":
         return 3
     return 2 if playlist.get("playlist_id") else 0
 
@@ -198,7 +199,7 @@ def _is_regular_playlist_mirror_candidate(playlist: dict) -> bool:
         return False
     if _is_ipod_category_playlist(playlist):
         return False
-    if playlist.get("podcast_flag", 0) == 1 or playlist.get("_source") == "podcast":
+    if is_podcast_playlist(playlist) or playlist.get("_source") == "podcast":
         return False
     return True
 

@@ -68,6 +68,7 @@ from iopenpod.infrastructure.settings_schema import (
     BACKUP_BEFORE_SYNC_AUTO,
     normalize_backup_before_sync_mode,
 )
+from iopenpod.itunesdb_shared.playlist_kinds import is_playlist_folder
 from iopenpod.sync.review_selection import build_selected_photo_plan
 from iopenpod.sync_progress_stages import friendly_stage_label, progress_stage_help
 
@@ -3067,6 +3068,8 @@ class SyncReviewWidget(QWidget):
             def _playlist_kind(pl: dict[str, Any]) -> str:
                 if pl.get("_source") == "sync_playlist_file":
                     return "Synced playlist file"
+                if is_playlist_folder(pl):
+                    return "Playlist folder"
                 return "Smart playlist" if pl.get("smart_playlist_data") else "Regular playlist"
 
             def _playlist_badge(pl: dict[str, Any], fallback: str) -> str:
