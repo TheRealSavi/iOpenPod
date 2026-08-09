@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -33,8 +34,9 @@ from iopenpod.itunesdb_parser.byte_walk import (
     ByteWalkChunkCache,
     ByteWalkChunkIndexEntry,
     ByteWalkChunkLoad,
+    ByteWalkDocumentIndex,
     hex_interpretations,
-    index_byte_walk_json,
+    index_byte_walk_document,
 )
 from iopenpod.itunesdb_parser.forensics import export_forensic_json
 
@@ -86,6 +88,7 @@ class ITunesDBForensicsDialog(QDialog):
         self._default_itunesdb_path = default_itunesdb_path
         self._json_path: Path | None = None
         self._entries: list[ByteWalkChunkIndexEntry] = []
+        self._children_by_parent: dict[int, tuple[ByteWalkChunkIndexEntry, ...]] = {}
         self._chunk_cache = ByteWalkChunkCache()
         self._index_worker: Worker | None = None
         self._chunk_worker: Worker | None = None
@@ -382,8 +385,8 @@ class ITunesDBForensicsDialog(QDialog):
         worker = Worker(export_forensic_json, str(source), str(destination))
         self._export_worker = worker
         worker.signals.result.connect(self._on_export_complete)
-        worker.signals.error.connect(lambda payload: self._on_worker_error(payload, "export"))
-        worker.signals.finished.connect(lambda active=worker: self._reap_worker("_export_worker", active))
+        worker.signals.error.connect(partial(self._on_worker_error, operation="export"))
+        worker.signals.finished.connect(partial(self._reap_worker, "_export_worker", worker))
         ThreadPoolSingleton.get_instance().start(worker)
 
     def open_byte_walk_json(self, path: str | Path) -> None:
@@ -402,17 +405,18 @@ class ITunesDBForensicsDialog(QDialog):
         self._chunk_render_parent = None
         self._json_path = Path(path)
         self._entries = []
+        self._children_by_parent = {}
         self.results_tree.clear()
         self.chunk_tree.clear()
         self._clear_hierarchy_context()
         self.chunk_label.setText("Indexing byte-walk JSON…")
         self._set_results_interaction_enabled(False)
         self._set_busy(f"Indexing {self._json_path.name} without loading its byte tree into memory…", "index")
-        worker = Worker(index_byte_walk_json, self._json_path)
+        worker = Worker(index_byte_walk_document, self._json_path)
         self._index_worker = worker
         worker.signals.result.connect(self._on_index_complete)
-        worker.signals.error.connect(lambda payload: self._on_worker_error(payload, "index"))
-        worker.signals.finished.connect(lambda active=worker: self._reap_worker("_index_worker", active))
+        worker.signals.error.connect(partial(self._on_worker_error, operation="index"))
+        worker.signals.finished.connect(partial(self._reap_worker, "_index_worker", worker))
         ThreadPoolSingleton.get_instance().start(worker)
 
     @pyqtSlot(object)
@@ -424,11 +428,12 @@ class ITunesDBForensicsDialog(QDialog):
     @pyqtSlot(object)
     def _on_index_complete(self, result: object) -> None:
         self._index_worker = None
-        self._entries = (
-            [entry for entry in result if isinstance(entry, ByteWalkChunkIndexEntry)]
-            if isinstance(result, list)
-            else []
-        )
+        if isinstance(result, ByteWalkDocumentIndex):
+            self._entries = result.entries
+            self._children_by_parent = result.children_by_parent
+        else:
+            self._entries = []
+            self._children_by_parent = {}
         self._set_idle(
             f"Indexed {len(self._entries):,} chunks. Search by caption, chunk type, or file offset.",
             "index",
@@ -544,15 +549,12 @@ class ITunesDBForensicsDialog(QDialog):
         self._clear_hierarchy_context()
         self.chunk_label.setText(f"Loading {entry.caption}…")
         self._set_busy(f"Loading {entry.caption} for inspection…", "chunk")
-        worker = Worker(self._chunk_cache.load, self._json_path, entry)
+        children = self._children_by_parent.get(entry.json_offset, ())
+        worker = Worker(self._chunk_cache.load_outline, self._json_path, entry, children)
         self._chunk_worker = worker
-        worker.signals.result.connect(
-            lambda result, active_request_id=request_id: self._on_chunk_complete(result, active_request_id),
-        )
-        worker.signals.error.connect(
-            lambda payload, active_request_id=request_id: self._on_chunk_error(payload, active_request_id),
-        )
-        worker.signals.finished.connect(lambda active=worker: self._reap_worker("_chunk_worker", active))
+        worker.signals.result.connect(partial(self._on_chunk_complete, request_id=request_id))
+        worker.signals.error.connect(partial(self._on_chunk_error, request_id=request_id))
+        worker.signals.finished.connect(partial(self._reap_worker, "_chunk_worker", worker))
         ThreadPoolSingleton.get_instance().start(worker)
 
     def _on_chunk_complete(self, result: object, request_id: int | None = None) -> None:
@@ -606,12 +608,71 @@ class ITunesDBForensicsDialog(QDialog):
         entry = item.data(0, _ENTRY_ROLE)
         if not isinstance(entry, dict) or not isinstance(entry.get("chunk"), dict):
             return
+        indexed_entry = entry.get("indexed_chunk")
+        if isinstance(indexed_entry, ByteWalkChunkIndexEntry):
+            self._load_indexed_child(item, indexed_entry)
+            return
         item.takeChildren()
         item.setData(0, _POPULATED_ROLE, True)
         nested = entry["chunk"]
         caption = str(nested.get("caption", nested.get("chunk", "chunk")))
         self._set_busy(f"Loading {caption} byte spans…", "chunk_tree")
         self._start_chunk_entry_render(item, nested, "chunk_tree", f"Expanded {caption}.")
+
+    def _load_indexed_child(
+        self,
+        item: QTreeWidgetItem,
+        entry: ByteWalkChunkIndexEntry,
+    ) -> None:
+        """Load a child outline only after its tree item is expanded."""
+        if self._json_path is None:
+            return
+        if self._chunk_worker is not None:
+            self._chunk_worker.cancel()
+        self._chunk_request_id += 1
+        request_id = self._chunk_request_id
+        caption = entry.caption or entry.chunk_type
+        item.takeChildren()
+        item.addChild(QTreeWidgetItem(["", "", "Loading direct byte spans…", "", ""]))
+        self._set_busy(f"Loading {caption} byte spans…", "chunk_tree")
+        children = self._children_by_parent.get(entry.json_offset, ())
+        worker = Worker(self._chunk_cache.load_outline, self._json_path, entry, children)
+        self._chunk_worker = worker
+        worker.signals.result.connect(
+            partial(self._on_nested_chunk_complete, item, request_id=request_id),
+        )
+        worker.signals.error.connect(
+            partial(self._on_nested_chunk_error, request_id=request_id),
+        )
+        worker.signals.finished.connect(partial(self._reap_worker, "_chunk_worker", worker))
+        ThreadPoolSingleton.get_instance().start(worker)
+
+    def _on_nested_chunk_complete(
+        self,
+        item: QTreeWidgetItem,
+        result: object,
+        request_id: int,
+    ) -> None:
+        """Render an asynchronously loaded child only if it is still current."""
+        if request_id != self._chunk_request_id or item.treeWidget() is not self.chunk_tree:
+            return
+        self._chunk_worker = None
+        if not isinstance(result, ByteWalkChunkLoad):
+            self._set_idle("The expanded chunk could not be loaded.", "chunk_tree")
+            return
+        chunk = result.chunk
+        item.takeChildren()
+        item.setData(0, _ENTRY_ROLE, {"chunk": chunk})
+        item.setData(0, _POPULATED_ROLE, True)
+        cache_note = " from cache" if result.was_cached else ""
+        caption = str(chunk.get("caption", chunk.get("chunk", "chunk")))
+        self._start_chunk_entry_render(item, chunk, "chunk_tree", f"Expanded {caption}{cache_note}.")
+
+    def _on_nested_chunk_error(self, payload: tuple, request_id: int) -> None:
+        if request_id != self._chunk_request_id:
+            return
+        self._chunk_worker = None
+        self._on_worker_error(payload, "chunk_tree")
 
     def _start_chunk_entry_render(
         self,
@@ -655,6 +716,8 @@ class ITunesDBForensicsDialog(QDialog):
             self._chunk_render_timer.start(0)
             return
         self.chunk_tree.setEnabled(True)
+        self._pending_chunk_entries = []
+        self._chunk_render_parent = None
         self._set_idle(self._chunk_render_complete_text, self._chunk_render_operation)
 
     def _add_chunk_entry(self, parent: QTreeWidgetItem, entry: dict[str, Any]) -> None:

@@ -12,9 +12,11 @@ from iopenpod.gui.widgets.itunesdbForensics import ITunesDBForensicsDialog
 from iopenpod.itunesdb_parser.byte_walk import (
     ByteWalkChunkCache,
     ByteWalkChunkIndexEntry,
+    build_chunk_hierarchy,
     hex_interpretations,
     index_byte_walk_json,
     load_indexed_chunk,
+    load_indexed_chunk_outline,
 )
 from iopenpod.itunesdb_parser.forensics import export_forensic_json
 from iopenpod.itunesdb_writer.mhbd_writer import write_mhbd
@@ -46,6 +48,51 @@ def test_byte_walk_index_loads_one_phase_chunk_without_loading_the_document(tmp_
     assert chunk["caption"] == "Playlist: Phase Music"
     assert marker["hex"] == "19 00"
     assert marker["value"] == 25
+
+
+def test_root_outline_loads_only_its_header_and_direct_child_references(tmp_path, monkeypatch) -> None:
+    output = _phase_byte_walk(tmp_path)
+    entries = index_byte_walk_json(output)
+    hierarchy = build_chunk_hierarchy(entries)
+    root = next(entry for entry in entries if entry.chunk_type == "mhbd")
+    parsed_lengths: list[int] = []
+
+    import iopenpod.itunesdb_parser.byte_walk as byte_walk
+
+    original_loads = byte_walk.json.loads
+
+    def record_load_size(payload, *args, **kwargs):
+        parsed_lengths.append(len(payload))
+        return original_loads(payload, *args, **kwargs)
+
+    monkeypatch.setattr(byte_walk.json, "loads", record_load_size)
+
+    outline = load_indexed_chunk_outline(output, root, hierarchy[root.json_offset])
+
+    nested = [entry for entry in outline["bytes"] if isinstance(entry.get("chunk"), dict)]
+    assert len(nested) == len(hierarchy[root.json_offset])
+    assert all("bytes" not in entry["chunk"] for entry in nested)
+    assert max(parsed_lengths) < 2_048
+
+
+def test_outline_cache_reuses_the_root_without_retaining_descendants(tmp_path) -> None:
+    output = _phase_byte_walk(tmp_path)
+    entries = index_byte_walk_json(output)
+    hierarchy = build_chunk_hierarchy(entries)
+    root = next(entry for entry in entries if entry.chunk_type == "mhbd")
+    cache = ByteWalkChunkCache()
+
+    first = cache.load_outline(output, root, hierarchy[root.json_offset])
+    second = cache.load_outline(output, root, hierarchy[root.json_offset])
+
+    assert first.was_cached is False
+    assert second.was_cached is True
+    assert first.chunk is second.chunk
+    assert all(
+        "bytes" not in entry["chunk"]
+        for entry in first.chunk["bytes"]
+        if isinstance(entry.get("chunk"), dict)
+    )
 
 
 def test_chunk_cache_reuses_the_selected_chunk(tmp_path, monkeypatch) -> None:
@@ -106,6 +153,36 @@ def test_chunk_cache_coalesces_simultaneous_loads(tmp_path, monkeypatch) -> None
     assert first.chunk == second.chunk
     assert {first.was_cached, second.was_cached} == {False, True}
     assert calls == 1
+
+
+def test_clearing_cache_prevents_an_old_load_from_being_retained(tmp_path, monkeypatch) -> None:
+    output = _phase_byte_walk(tmp_path)
+    phase = next(entry for entry in index_byte_walk_json(output) if entry.caption == "Playlist: Phase Music")
+    cache = ByteWalkChunkCache()
+    started = Event()
+    release = Event()
+    calls = 0
+    original_loader = load_indexed_chunk
+
+    def delayed_load(path, entry):
+        nonlocal calls
+        calls += 1
+        started.set()
+        assert release.wait(timeout=5)
+        return original_loader(path, entry)
+
+    monkeypatch.setattr("iopenpod.itunesdb_parser.byte_walk.load_indexed_chunk", delayed_load)
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(cache.load, output, phase)
+        assert started.wait(timeout=5)
+        cache.clear()
+        release.set()
+        assert future.result(timeout=5).was_cached is False
+
+    refreshed = cache.load(output, phase)
+
+    assert refreshed.was_cached is False
+    assert calls == 2
 
 
 def test_hex_interpretations_accept_hexdump_punctuation_and_reports_encodings() -> None:
@@ -191,14 +268,27 @@ def test_inspector_keeps_the_selected_tree_hierarchy_visible(qtbot) -> None:
     assert dialog.hierarchy_path_label.text() == "mhbd — Database  ›  mhsd — Track dataset"
 
 
-def test_inspector_lists_every_chunk_and_allows_selecting_the_mhbd_root(qtbot, tmp_path) -> None:
+def test_inspector_lists_every_chunk_and_opens_mhbd_without_loading_descendants(
+    qtbot,
+    tmp_path,
+    monkeypatch,
+) -> None:
     output = _phase_byte_walk(tmp_path)
     entries = index_byte_walk_json(output)
     dialog = ITunesDBForensicsDialog()
     qtbot.addWidget(dialog)
 
+    def fail_if_a_full_chunk_is_loaded(*_args) -> None:
+        raise AssertionError("opening mhbd must not deserialize a nested chunk tree")
+
+    monkeypatch.setattr(
+        "iopenpod.itunesdb_parser.byte_walk.load_indexed_chunk",
+        fail_if_a_full_chunk_is_loaded,
+    )
+
     dialog._json_path = output
     dialog._entries = entries
+    dialog._children_by_parent = build_chunk_hierarchy(entries)
     dialog._refresh_results()
 
     assert dialog.results_tree.topLevelItemCount() == len(entries)
@@ -218,6 +308,45 @@ def test_inspector_lists_every_chunk_and_allows_selecting_the_mhbd_root(qtbot, t
     root = dialog.chunk_tree.topLevelItem(0)
     assert root is not None
     assert root.text(2).startswith("mhbd")
+    qtbot.waitUntil(lambda: root.childCount() > 0)
+    child = next(
+        nested
+        for index in range(root.childCount())
+        if (nested := root.child(index)) is not None and nested.text(2).startswith("mhsd")
+    )
+    child_entry = child.data(0, int(Qt.ItemDataRole.UserRole))
+    assert isinstance(child_entry, dict)
+    assert isinstance(child_entry.get("indexed_chunk"), ByteWalkChunkIndexEntry)
+    assert "bytes" not in child_entry["chunk"]
+
+
+def test_expanding_an_indexed_dataset_keeps_its_header_fields_visible(qtbot, tmp_path) -> None:
+    output = _phase_byte_walk(tmp_path)
+    entries = index_byte_walk_json(output)
+    hierarchy = build_chunk_hierarchy(entries)
+    root_entry = next(entry for entry in entries if entry.chunk_type == "mhbd")
+    root_outline = load_indexed_chunk_outline(output, root_entry, hierarchy[root_entry.json_offset])
+    dialog = ITunesDBForensicsDialog()
+    qtbot.addWidget(dialog)
+    dialog._json_path = output
+    dialog._children_by_parent = hierarchy
+    dialog._on_chunk_complete(root_outline)
+
+    root = dialog.chunk_tree.topLevelItem(0)
+    assert root is not None
+    dataset = next(
+        child
+        for index in range(root.childCount())
+        if (child := root.child(index)) is not None and child.text(2).startswith("mhsd")
+    )
+    dataset.setExpanded(True)
+
+    qtbot.waitUntil(lambda: bool(dataset.data(0, int(Qt.ItemDataRole.UserRole)).get("chunk", {}).get("bytes")))
+    assert any(
+        child is not None and child.text(3) != "nested chunk"
+        for index in range(dataset.childCount())
+        if (child := dataset.child(index)) is not None
+    )
 
 
 def test_inspector_renders_result_lists_larger_than_one_thousand(qtbot) -> None:
