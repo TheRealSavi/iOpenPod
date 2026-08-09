@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import json
 import mmap
+from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
+from threading import Event, RLock
 from typing import Any
 
 _CHUNK_MARKER = b'"chunk": "'
@@ -26,6 +28,110 @@ class ByteWalkChunkIndexEntry:
     caption: str
     file_offset: int
     byte_length: int
+
+
+@dataclass(frozen=True, slots=True)
+class ByteWalkChunkLoad:
+    """A selected chunk and whether the cache avoided an on-disk parse."""
+
+    chunk: dict[str, Any]
+    was_cached: bool
+
+
+@dataclass(slots=True)
+class _ChunkLoadInFlight:
+    """Result hand-off for simultaneous requests for one uncached chunk."""
+
+    completed: Event
+    chunk: dict[str, Any] | None = None
+    error: BaseException | None = None
+
+
+class ByteWalkChunkCache:
+    """Thread-safe, bounded LRU cache for chunks opened by the inspector.
+
+    A byte-walk chunk is a decoded JSON object and can be substantially larger
+    than its source bytes.  The cache consequently uses a deliberately high
+    multiple of the source length as its budget: frequently inspected small
+    chunks stay warm, while a selected database root cannot grow the
+    inspector's memory without bound.
+    """
+
+    def __init__(self, *, max_entries: int = 16, max_bytes: int = 16 * 1024 * 1024) -> None:
+        if max_entries < 1:
+            raise ValueError("max_entries must be positive")
+        if max_bytes < 1:
+            raise ValueError("max_bytes must be positive")
+        self._max_entries = max_entries
+        self._max_bytes = max_bytes
+        self._items: OrderedDict[tuple[Path, int], tuple[dict[str, Any], int]] = OrderedDict()
+        self._in_flight: dict[tuple[Path, int], _ChunkLoadInFlight] = {}
+        self._cached_bytes = 0
+        self._lock = RLock()
+
+    def clear(self) -> None:
+        """Discard all cached chunks, normally after opening another document."""
+        with self._lock:
+            self._items.clear()
+            self._cached_bytes = 0
+
+    def load(
+        self,
+        path: str | Path,
+        entry: ByteWalkChunkIndexEntry,
+    ) -> ByteWalkChunkLoad:
+        """Load *entry*, returning it with whether it was served from cache."""
+        key = (Path(path).resolve(), entry.json_offset)
+        with self._lock:
+            cached = self._items.get(key)
+            if cached is not None:
+                self._items.move_to_end(key)
+                return ByteWalkChunkLoad(cached[0], was_cached=True)
+            in_flight = self._in_flight.get(key)
+            if in_flight is None:
+                in_flight = _ChunkLoadInFlight(Event())
+                self._in_flight[key] = in_flight
+                is_loader = True
+            else:
+                is_loader = False
+
+        if not is_loader:
+            in_flight.completed.wait()
+            if in_flight.error is not None:
+                raise in_flight.error
+            if in_flight.chunk is None:
+                raise RuntimeError("chunk load completed without a result")
+            return ByteWalkChunkLoad(in_flight.chunk, was_cached=True)
+
+        try:
+            chunk = load_indexed_chunk(path, entry)
+        except BaseException as exc:
+            with self._lock:
+                in_flight.error = exc
+                in_flight.completed.set()
+                self._in_flight.pop(key, None)
+            raise
+        self._store(key, chunk, entry.byte_length)
+        with self._lock:
+            in_flight.chunk = chunk
+            in_flight.completed.set()
+            self._in_flight.pop(key, None)
+        return ByteWalkChunkLoad(chunk, was_cached=False)
+
+    def _store(self, key: tuple[Path, int], chunk: dict[str, Any], byte_length: int) -> None:
+        """Cache a chunk when it fits, evicting least-recently-used entries."""
+        estimated_size = max(byte_length * 8, 1_024)
+        if estimated_size > self._max_bytes:
+            return
+        with self._lock:
+            existing = self._items.pop(key, None)
+            if existing is not None:
+                self._cached_bytes -= existing[1]
+            self._items[key] = (chunk, estimated_size)
+            self._cached_bytes += estimated_size
+            while self._items and (len(self._items) > self._max_entries or self._cached_bytes > self._max_bytes):
+                _, (_, evicted_size) = self._items.popitem(last=False)
+                self._cached_bytes -= evicted_size
 
 
 def _json_string_at(data: mmap.mmap, quote_offset: int) -> tuple[str, int]:
