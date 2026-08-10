@@ -2,20 +2,31 @@
 #
 # The USB descriptor serial and the default SCSI page 0x83 identifier are the
 # iPod's FireWire GUID.  Apple stores the product serial used for exact model
-# lookup on SCSI VPD page 0x80.  systemd-udevd already runs scsi_id as root for
-# storage discovery, so capture page 0x80 in a separate iOpenPod property while
-# leaving the standard ID_SERIAL values and device-node permissions untouched.
+# lookup on SCSI VPD page 0x80.  udev already uses scsi_id for storage
+# discovery, so capture page 0x80 in a separate iOpenPod property while leaving
+# the standard ID_SERIAL values and device-node permissions untouched.
+#
+# Keep the non-absolute scsi_id name: udev resolves helper programs from its
+# configured helper directory, which varies across distributions.  The legacy
+# --whitelisted spelling is intentional for compatibility with older udev/eudev
+# while remaining accepted by current systemd-udev.
 ACTION=="add|change", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", \
   ENV{ID_IOPENPOD_RULE_VERSION}="", \
   ENV{ID_IOPENPOD_PRODUCT_SERIAL}=""
 
+# Set the version marker before probing the serial.  If the probe fails, the
+# application can distinguish "rule matched" from "rule never ran".
 ACTION=="add|change", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", \
   ATTRS{vendor}=="Apple*", ATTRS{model}=="iPod*", \
-  ENV{ID_IOPENPOD_RULE_VERSION}="1"
+  ENV{ID_IOPENPOD_RULE_VERSION}="2"
 
 ACTION=="add|change", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", \
   ATTRS{vendor}=="Apple*", ATTRS{model}=="iPod*", \
   PROGRAM=="scsi_id --page=0x80 --whitelisted --device=/dev/%k", \
-  RESULT=="SApple*iPod*", ENV{ID_IOPENPOD_PRODUCT_SERIAL}="%c{3}", \
+  RESULT=="SApple*iPod*", ENV{ID_IOPENPOD_PRODUCT_SERIAL}="%c{3}"
+
+# Only create the convenience symlink after a non-empty product serial exists.
+ACTION=="add|change", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", \
+  ENV{ID_IOPENPOD_PRODUCT_SERIAL}=="?*", \
   SYMLINK+="disk/by-id/ipod-$env{ID_IOPENPOD_PRODUCT_SERIAL}", \
   OPTIONS+="string_escape=replace"

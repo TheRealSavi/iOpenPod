@@ -64,6 +64,17 @@ sudo rm /etc/udev/rules.d/61-iopenpod.rules
 sudo udevadm control --reload-rules
 ```
 
+### Atomic desktops, Bazzite, Distrobox, and Toolbox
+
+On Fedora Atomic-style systems such as Bazzite, run the generated setup command
+on the host system, not inside Distrobox, Toolbox, or another container. The rule
+must be installed into the host udev configuration so the host udev daemon can
+reload it and republish the selected iPod's block-device properties.
+
+The generated setup command refuses to continue inside common container
+environments because installing `/etc/udev/rules.d/61-iopenpod.rules` there would
+modify the container filesystem instead of the host.
+
 ## Distribution and sandbox packaging
 
 Native distribution packages should install this same bundled rule into the
