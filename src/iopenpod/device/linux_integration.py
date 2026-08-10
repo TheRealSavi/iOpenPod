@@ -81,6 +81,7 @@ def _setup_instructions(mount_path: str) -> str:
     mount = shlex.quote(str(mount_path))
     rule = udev_rule_text().rstrip()
     return f"""\
+(
 set -eu
 
 MOUNT={mount}
@@ -284,6 +285,7 @@ run_as_root udevadm test --action=change "$SYSPATH" 2>&1 \\
   >&2 || true
 
 die "rule installed, but the Apple product serial was not published; diagnostics are above"
+)
 """
 
 
@@ -323,9 +325,7 @@ def describe_linux_identity_integration(
         )
     return LinuxIdentityIntegration(
         LinuxIntegrationState.REFRESH_REQUIRED,
-        "The identity rule is installed, but this iPod has not published its "
-        "Apple product serial. Reinstalling and triggering only this block "
-        "device will retry without disconnecting it.",
+        "The identity rule is installed, but this iPod has not published its Apple product serial. Reinstalling and triggering only this block device will retry without disconnecting it.",
         instructions,
     )
 
