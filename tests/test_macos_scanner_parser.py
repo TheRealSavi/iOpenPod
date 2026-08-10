@@ -10,6 +10,10 @@ paired with an iPod's BSD whole-disk name.
 
 from __future__ import annotations
 
+import sys
+from types import ModuleType
+
+from iopenpod.device import vpd_libusb
 from iopenpod.device.scanner import _parse_macos_ioreg_bsd_serials
 
 _SINGLE_IPOD = """\
@@ -109,3 +113,30 @@ def test_parser_normalises_serial_whitespace_and_case() -> None:
     |   "BSD Name" = "disk2"
 """
     assert _parse_macos_ioreg_bsd_serials(sample) == {"disk2": "ABC123DEF"}
+
+
+def test_macos_vpd_page_80_serial_is_accepted_for_model_lookup(monkeypatch) -> None:
+    """Older iPods expose their Apple serial on standard VPD page 0x80."""
+
+    iokit = ModuleType("iopenpod.device.vpd_iokit")
+    monkeypatch.setattr(
+        iokit,
+        "query_ipod_vpd",
+        lambda **_kwargs: {
+            "vpd_serial": "8P840FNRH",
+            "usb_pid": 0x1201,
+        },
+        raising=False,
+    )
+    monkeypatch.setattr(vpd_libusb.sys, "platform", "darwin")
+    monkeypatch.setitem(sys.modules, "iopenpod.device.vpd_iokit", iokit)
+
+    result = vpd_libusb.identify_via_vpd(
+        mount_path="",
+        usb_pid=0x1201,
+        write_sysinfo_to_device=False,
+    )
+
+    assert result is not None
+    assert result["serial"] == "8P840FNRH"
+    assert result["model_number"] == "M8976"

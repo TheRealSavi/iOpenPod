@@ -33,6 +33,7 @@ def test_create_virtual_ipod_seeds_identity_and_layout(tmp_path) -> None:
     assert device.serial.endswith(payload["serial_suffix"])
     assert device.firewire_id_bytes == bytes.fromhex(payload["firewire_guid"])
     assert device.checksum_type == ChecksumType.HASH58
+    assert device.volume_identity_key.startswith("virtual|")
 
 
 def test_virtual_ipod_loads_through_normal_identification(tmp_path) -> None:

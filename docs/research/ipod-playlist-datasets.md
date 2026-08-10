@@ -150,18 +150,41 @@ list exists.
 
 ## Playlist Folders
 
-Modern iTunes/Music libraries have playlist folders, but this audit has not
-found a libgpod/iPodLinux-backed iPod `mhsd`/`mhyp` folder model equivalent to
-the dataset-3 podcast grouping above. The known on-device grouping mechanism we
-can prove today is item-level `mhip` grouping inside the dataset-3 Podcasts
-playlist.
+The iTunes-authored database attached to iOpenPod issue 165 proves a separate
+playlist-folder model. It is not dataset-3 podcast `mhip` grouping.
 
-Policy until we have device samples:
+Four redundant representations agree in both dataset 2 and dataset 3:
 
-- Do not encode playlist folders by reusing dataset-3 podcast group headers.
-- Do not infer folders from duplicate playlist IDs, titles, or sort order.
-- If a future sample shows real on-device playlist folder metadata, preserve
-  its parent dataset and raw fields first, then add a separate writer path.
+- A folder `mhyp` has bit `0x0100` set in the raw word at `+0x2A`. Bit
+  `0x0001` in that same word remains the Podcasts marker, so consumers must
+  test bits rather than the truthiness of the historical `podcast_flag` name.
+- A child `mhyp` stores its parent folder's 64-bit `playlist_id` at `+0x30`.
+- Each folder row is immediately followed by its children in physical order.
+- The folder's MHOD 51 contains an OR list of Playlist-field (`0x28`), action
+  `1` rules targeting those child IDs in the same order. Its materialized
+  `mhip` membership is the duplicate-free union of its children's membership.
+
+The sample has six logical folders in each mirrored dataset and 73 linked
+children per dataset, with no exceptions to these relationships. Its six
+folders happen to use one layer, but folders may themselves carry the same
+`+0x30` parent link and nest within other folders. The format therefore forms a
+recursive hierarchy even though this particular database has no nested-folder
+instance.
+
+iOpenPod policy:
+
+- Preserve the complete `+0x2A` word as `playlist_kind_flags`; retain
+  `podcast_flag` only as a compatibility alias.
+- Expose semantic `is_podcast` and `is_folder` bit tests and never route a
+  folder through podcast grouping.
+- Preserve `parent_folder_playlist_id` at `+0x30` independently in each MHSD
+  dataset.
+- Before writing, emit the hierarchy in stable preorder and rebuild each
+  folder's direct-child Playlist rules and recursive aggregate membership from
+  the child links. Invalid, missing, self-referential, or cyclic parent links
+  are detached rather than guessed.
+- Folders may be selected for aggregate playback, but direct track-membership
+  editing targets their children instead.
 
 ## Dataset 5: Firmware Category / Smart Playlist List
 
@@ -211,10 +234,25 @@ Smart playlists are represented by playlist-level MHODs:
 
 - `mhod` type `50`: smart playlist preferences (`SPLPref`), including live
   update, rule enable, limit enable, limit type/sort/value, and checked-only
-  behavior.
+  behavior. Every type-50 body in the issue-165 sample is 72 bytes (96 bytes
+  including the MHOD header).
 - `mhod` type `51`: smart playlist rules (`SLst`). Rule payloads switch to
   big-endian structures after the rule-list marker.
 - Optional `mhod` type `102`: playlist settings blob.
+
+MHOD 51 is a recursive boolean-expression tree, not necessarily one flat rule
+array. A group wrapper has big-endian `field_id = 0`, `action_id = 1`, marker
+`0x01000000` at rule offset `+0x08`, 40 more preserved header bytes, and a
+length-prefixed complete nested `SLst` payload at `+0x38`. The nested container
+has its own AND/OR conjunction and child rules. All 267 root and nested `SLst`
+containers in the sample carry `unk004 = 0x00010001`; preserve that word and
+use it as the writer default.
+
+The populated sample reaches one group layer below the root. Its `This is...`
+playlists confirm expressions such as `(Artist OR Name) AND (recent OR rating
+OR plays) AND (not Holiday AND not one-star)`. The grammar is recursive and the
+iTunes UI can construct deeper nesting, so parser, writer, evaluator, and
+editor must recurse without flattening or rewriting unknown wrapper bytes.
 
 User-visible smart playlists can live in dataset 2 if we want them under
 Playlists. Dataset-5 built-in categories are also smart-ish rows, but should

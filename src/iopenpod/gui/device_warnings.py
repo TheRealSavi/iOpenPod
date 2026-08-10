@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
 
 from PyQt6.QtCore import QUrl
 from PyQt6.QtGui import QDesktopServices
@@ -50,15 +51,22 @@ class LinuxIdentitySetupReviewDialog(QDialog):
         self,
         parent: QWidget | None,
         setup_instructions: str,
+        *,
+        after_close: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Review Linux iPod Setup")
+        self.setWindowTitle("Linux iPod Identification Setup")
+        self.setMinimumSize(680, 440)
         self.resize(760, 480)
+        self._after_close = after_close
+        self._close_notified = False
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 16)
+        layout.setSpacing(12)
         explanation = QLabel(
-            "Review these host commands before copying them. They install the "
-            "iOpenPod udev rule and trigger only the selected iPod block device."
+            "Copy these commands into a host terminal and run them. They install "
+            "the iOpenPod udev rule and trigger only the selected iPod block device."
         )
         explanation.setWordWrap(True)
         layout.addWidget(explanation)
@@ -76,22 +84,49 @@ class LinuxIdentitySetupReviewDialog(QDialog):
         self._copy_status_label.setAccessibleName("Copy status")
         layout.addWidget(self._copy_status_label)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
-        copy_button = buttons.addButton(
+        self._next_step_label = QLabel(
+            "When you're finished, close this window to scan for your iPod again."
+        )
+        self._next_step_label.setWordWrap(True)
+        layout.addWidget(self._next_step_label)
+
+        self._buttons = QDialogButtonBox()
+        copy_button = self._buttons.addButton(
             "Copy Commands",
             QDialogButtonBox.ButtonRole.ActionRole,
         )
         if copy_button is not None:
             copy_button.clicked.connect(self._copy_commands)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
+        done_button = self._buttons.addButton(
+            "Done",
+            QDialogButtonBox.ButtonRole.AcceptRole,
+        )
+        if done_button is not None:
+            done_button.clicked.connect(self.accept)
+        self._buttons.rejected.connect(self.reject)
+        self.finished.connect(self._notify_after_close)
+        layout.addWidget(self._buttons)
 
     def _copy_commands(self) -> None:
-        QApplication.clipboard().setText(self.commands.toPlainText())
+        clipboard = QApplication.clipboard()
+        if clipboard is None:
+            self._copy_status_label.setText(
+                "Clipboard unavailable. Select the commands and copy them manually."
+            )
+            return
+        clipboard.setText(self.commands.toPlainText())
         self._copy_status_label.setText(
             "Commands copied. Paste them into a host terminal, review once "
             "more, and run them."
         )
+
+    def _notify_after_close(self, _result: int) -> None:
+        """Refresh the device picker once the user has completed the setup step."""
+
+        if self._close_notified or self._after_close is None:
+            return
+        self._close_notified = True
+        self._after_close()
 
 
 def show_unidentified_ipod_warning(
@@ -99,6 +134,7 @@ def show_unidentified_ipod_warning(
     ipod: object | None,
     *,
     automatic: bool = False,
+    after_close: Callable[[], None] | None = None,
 ) -> None:
     """Explain why an unidentified iPod cannot be selected and offer reporting."""
 
@@ -132,14 +168,14 @@ def show_unidentified_ipod_warning(
         )
         message.setInformativeText(
             f"{integration.explanation}\n\n"
-            "Copy the setup below and run it in a host terminal. Then return "
-            "to iOpenPod, open Select Device if needed, and click Rescan. "
+            "Open the setup commands, copy them into a host terminal, and run "
+            "them. When you finish, close the setup window and iOpenPod will "
+            "scan for this iPod again. "
             "The setup installs a narrow udev rule that publishes only the "
             "serial; it does not grant raw-disk access or disconnect the iPod."
         )
-        message.setDetailedText(linux_setup)
         linux_setup_button = message.addButton(
-            "Review Linux Setup",
+            "View Setup Commands",
             QMessageBox.ButtonRole.ActionRole,
         )
 
@@ -158,13 +194,17 @@ def show_unidentified_ipod_warning(
         )
 
     report_button = message.addButton(
-        "Report on GitHub",
+        "Report Issue",
         QMessageBox.ButtonRole.ActionRole,
     )
     message.addButton(QMessageBox.StandardButton.Close)
     message.exec()
     clicked = message.clickedButton()
     if clicked is linux_setup_button and linux_setup:
-        LinuxIdentitySetupReviewDialog(parent, linux_setup).exec()
+        LinuxIdentitySetupReviewDialog(
+            parent,
+            linux_setup,
+            after_close=after_close,
+        ).exec()
     elif clicked is report_button:
         QDesktopServices.openUrl(QUrl(GITHUB_IDENTIFICATION_ISSUE_URL))

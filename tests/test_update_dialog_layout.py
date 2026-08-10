@@ -3,6 +3,7 @@ from __future__ import annotations
 from PyQt6.QtWidgets import QApplication, QFrame, QPushButton
 
 from iopenpod.gui.auto_updater import InstallMethod, UpdateResult
+from iopenpod.gui.styles import paint_css
 from iopenpod.gui.widgets import updateDialog
 
 
@@ -69,3 +70,28 @@ def test_update_available_dialog_does_not_stretch_command_panel_when_resized_tal
     _lay_out(dialog, 1000, 900)
 
     assert command_panel.height() <= compact_height + 4
+
+
+def test_update_status_dialog_uses_semantic_success_and_warning_paints(qtbot) -> None:
+    method = _source_checkout_method()
+    success = updateDialog.UpdateStatusDialog(
+        UpdateResult(update_available=False, current_version="1.0.65"),
+        method=method,
+    )
+    warning = updateDialog.UpdateStatusDialog(
+        UpdateResult(update_available=False, error="The update service is unavailable."),
+        method=method,
+    )
+    qtbot.addWidget(success)
+    qtbot.addWidget(warning)
+
+    success_panel = success.findChild(QFrame, "UpdateStatusPanel")
+    warning_panel = warning.findChild(QFrame, "UpdateStatusPanel")
+
+    assert paint_css("modal.background") in success.styleSheet()
+    assert success_panel is not None
+    assert paint_css("status.success.subtle_fill") in success_panel.styleSheet()
+    assert paint_css("status.success.border") in success_panel.styleSheet()
+    assert warning_panel is not None
+    assert paint_css("status.warning.subtle_fill") in warning_panel.styleSheet()
+    assert paint_css("status.warning.border") in warning_panel.styleSheet()

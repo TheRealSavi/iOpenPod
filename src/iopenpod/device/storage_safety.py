@@ -3,15 +3,26 @@
 from __future__ import annotations
 
 import ctypes
+import logging
 import os
 import sys
 from pathlib import Path
 
 from .write_guard import DeviceWriteSafetyError
 
+logger = logging.getLogger(__name__)
+
 
 class FileSizeLimitError(DeviceWriteSafetyError):
     """Raised before a file exceeds a device or filesystem size limit."""
+
+    proposed_database_bytes: bytes
+    proposed_database_filename: str
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.proposed_database_bytes = b""
+        self.proposed_database_filename = ""
 
 
 def allocated_size(logical_size: int, allocation_unit_size: int | None) -> int:
@@ -61,11 +72,7 @@ def effective_max_file_size_bytes(
     device_limit: int | None,
 ) -> int | None:
     """Return the strictest positive file-size limit supplied by either source."""
-    limits = [
-        int(limit)
-        for limit in (filesystem_limit, device_limit)
-        if limit is not None and int(limit) > 0
-    ]
+    limits = [int(limit) for limit in (filesystem_limit, device_limit) if limit is not None and int(limit) > 0]
     return min(limits) if limits else None
 
 
@@ -80,12 +87,18 @@ def require_file_size_supported(
     limit = int(max_file_size_bytes or 0)
     if limit <= 0 or size <= limit:
         return
-    raise FileSizeLimitError(
-        f"{display_name} is {_format_size(size)}, exceeding the "
-        f"{_format_size(limit)} maximum supported by this iPod or its "
-        "filesystem. iOpenPod stopped before writing the file."
+    logger.debug(
+        "File-size safety guard rejected write: display_name=%s file_size_bytes=%d max_file_size_bytes=%d",
+        display_name,
+        size,
+        limit,
     )
+    raise FileSizeLimitError(f"{display_name} is {_format_size(size)}, exceeding the {_format_size(limit)} maximum supported by this iPod or its filesystem. iOpenPod stopped before writing the file.")
 
 
 def _format_size(size: int) -> str:
-    return f"{size / 1024**3:.1f} GB"
+    if size >= 0.1 * 1024**3:
+        return f"{size / 1024**3:.1f} GB"
+    if size >= 1024**2:
+        return f"{size / 1024**2:.1f} MB"
+    return f"{size / 1024:.1f} KB"

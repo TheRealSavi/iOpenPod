@@ -95,7 +95,11 @@ def resolve_track_transcode_plan(
     options: TranscodeOptions | None = None,
 ) -> tuple[TranscodePlan, int]:
     """Resolve transfer policy and estimated output size for a PC track."""
-    plan = resolve_transcode_plan(pc_track.path, options=options)
+    plan = resolve_transcode_plan(
+        pc_track.path,
+        is_spoken_content=pc_track.is_podcast or pc_track.is_audiobook,
+        options=options,
+    )
     estimated_size = plan.estimate_output_size(
         source_size=pc_track.size,
         duration_ms=pc_track.duration_ms,
@@ -1941,16 +1945,10 @@ class FingerprintDiffEngine:
                 description=f"Art missing on iPod: {track_name}",
             ))
 
-        # Play count: scrobble iPod deltas from Play Counts file.
-        # iPod plays belong to the iPod, PC plays belong to the PC.
-        # We never sync play counts between the two — we just scrobble
-        # the iPod delta so the user's connected services stay up to date.
-        #
-        # Prefer the iTunesDB play_count_2 slot; fall back to the
-        # Play Counts file-derived delta when present.
+        # Play count: scrobble the durable queue of iPod plays waiting to be
+        # submitted.  The current Play Counts-file delta has already been
+        # added to this field while the database was loaded.
         ipod_play_delta = ipod_track.get("play_count_2", 0)
-        if not ipod_play_delta:
-            ipod_play_delta = ipod_track.get("recent_playcount", 0)
         ipod_skip_delta = ipod_track.get("recent_skipcount", 0)
 
         if ipod_play_delta > 0 or ipod_skip_delta > 0:

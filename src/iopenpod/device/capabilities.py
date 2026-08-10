@@ -56,6 +56,20 @@ class DeviceCapabilities:
     # ── Media type support ─────────────────────────────────────────────
     supports_video: bool = False
     """Device can play video files (mediatype & VIDEO != 0)."""
+    supports_tx3g_subtitles: bool = False
+    """Device can display MP4 timed-text subtitle tracks (``tx3g``).
+
+    This is intentionally distinct from ``supports_video``: the 5th/5.5th
+    generation iPod Video plays video but does not support soft subtitles.
+    """
+    supports_cea608_captions: bool = False
+    """Device can display QuickTime CEA-608 closed-caption tracks (``c608``).
+
+    CEA-608 captioning is a separate ``clcp`` track from MP4 timed-text
+    subtitles (``tx3g``).  Both capabilities first appear on the 2007
+    video iPods, but they must remain independent because their on-file
+    codecs and the device's playback controls are different.
+    """
     supports_podcast: bool = True
     """Device supports podcast mhsd types (type 3).  False only for
     very early iPods (1G–3G) and iPod Mobile."""
@@ -254,6 +268,8 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
     ("iPod Classic", "6th Gen"): DeviceCapabilities(
         checksum=ChecksumType.HASH58,
         supports_video=True,
+        supports_tx3g_subtitles=True,
+        supports_cea608_captions=True,
         supports_gapless=True,
         supports_artwork=True,
         supports_photo=True,
@@ -270,10 +286,13 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         db_version=0x30,
         max_video_width=640,
         max_video_height=480,
+        max_video_bitrate=2500,
     ),
     ("iPod Classic", "6.5th Gen"): DeviceCapabilities(
         checksum=ChecksumType.HASH58,
         supports_video=True,
+        supports_tx3g_subtitles=True,
+        supports_cea608_captions=True,
         supports_gapless=True,
         supports_artwork=True,
         supports_photo=True,
@@ -290,10 +309,13 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         db_version=0x30,
         max_video_width=640,
         max_video_height=480,
+        max_video_bitrate=2500,
     ),
     ("iPod Classic", "7th Gen"): DeviceCapabilities(
         checksum=ChecksumType.HASH58,
         supports_video=True,
+        supports_tx3g_subtitles=True,
+        supports_cea608_captions=True,
         supports_gapless=True,
         supports_artwork=True,
         supports_photo=True,
@@ -310,6 +332,7 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         db_version=0x30,
         max_video_width=640,
         max_video_height=480,
+        max_video_bitrate=2500,
     ),
 
     # ── iPod Mini ─────────────────────────────────────────────────────
@@ -359,6 +382,8 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
     ("iPod Nano", "3rd Gen"): DeviceCapabilities(
         checksum=ChecksumType.HASH58,
         supports_video=True,
+        supports_tx3g_subtitles=True,
+        supports_cea608_captions=True,
         supports_gapless=True,
         supports_artwork=True,
         supports_photo=True,
@@ -386,6 +411,8 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
     ("iPod Nano", "4th Gen"): DeviceCapabilities(
         checksum=ChecksumType.HASH58,
         supports_video=True,
+        supports_tx3g_subtitles=True,
+        supports_cea608_captions=True,
         supports_gapless=True,
         supports_artwork=True,
         supports_photo=True,
@@ -417,6 +444,8 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
     ("iPod Nano", "5th Gen"): DeviceCapabilities(
         checksum=ChecksumType.HASH72,
         supports_video=True,
+        supports_tx3g_subtitles=True,
+        supports_cea608_captions=True,
         supports_gapless=True,
         supports_artwork=True,
         supports_photo=True,
@@ -470,6 +499,8 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
     ("iPod Nano", "7th Gen"): DeviceCapabilities(
         checksum=ChecksumType.HASHAB,
         supports_video=True,
+        supports_tx3g_subtitles=True,
+        supports_cea608_captions=True,
         supports_gapless=True,
         supports_artwork=True,
         supports_photo=True,

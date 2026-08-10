@@ -1,116 +1,31 @@
-import re
-
 from PyQt6.QtCore import QPoint, QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QAction, QColor, QFont
+from PyQt6.QtGui import QAction, QFont
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QWidget
+
+from iopenpod.infrastructure.theme_renderer import TrackTitleBarPaints, render_track_title_bar_paints
 
 from ..glyphs import glyph_icon
 from ..styles import (
     FONT_FAMILY,
-    Colors,
     Metrics,
-    display_accent_rgb,
+    current_theme,
     icon_btn_css,
-    text_rgb_for_background,
 )
 
-_TITLE_BAR_CONTRAST_TARGET = 2.95
 _TITLE_BAR_CORNER_RADIUS = 8
-_ALBUM_BAR_TOP_MIX = 0.14
-_ALBUM_BAR_BOTTOM_MIX = 0.24
-_ALBUM_BAR_TOP_ALPHA = 92
-_ALBUM_BAR_MID_ALPHA = 70
-_ALBUM_BAR_BOTTOM_ALPHA = 60
-_ALBUM_BAR_LIGHT_TOP_MIX = 0.08
-_ALBUM_BAR_LIGHT_BOTTOM_MIX = 0.22
-_ALBUM_BAR_LIGHT_TOP_ALPHA = 132
-_ALBUM_BAR_LIGHT_MID_ALPHA = 112
-_ALBUM_BAR_LIGHT_BOTTOM_ALPHA = 96
 _TITLE_BAR_SEARCH_WIDTH = 190
 _TITLE_BAR_SEARCH_HEIGHT = 28
 
 
-def _mix_rgb(
-    left: tuple[int, int, int],
-    right: tuple[int, int, int],
-    amount: float,
-) -> tuple[int, int, int]:
-    amount = max(0.0, min(1.0, float(amount)))
-    left_red, left_green, left_blue = left
-    right_red, right_green, right_blue = right
-    return (
-        int(round((left_red * (1.0 - amount)) + (right_red * amount))),
-        int(round((left_green * (1.0 - amount)) + (right_green * amount))),
-        int(round((left_blue * (1.0 - amount)) + (right_blue * amount))),
-    )
-
-
-def _css_rgb(rgb: tuple[int, int, int]) -> str:
-    return f"rgb({rgb[0]},{rgb[1]},{rgb[2]})"
-
-
-def _css_rgba(rgb: tuple[int, int, int], alpha: int) -> str:
-    return f"rgba({rgb[0]},{rgb[1]},{rgb[2]},{alpha})"
-
-
-def _css_to_rgb(css: str, fallback: tuple[int, int, int]) -> tuple[int, int, int]:
-    color = QColor(css)
-    if color.isValid():
-        return color.red(), color.green(), color.blue()
-
-    match = re.match(
-        r"rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)",
-        str(css).strip(),
-    )
-    if not match:
-        return fallback
-    return (
-        max(0, min(255, int(match.group(1)))),
-        max(0, min(255, int(match.group(2)))),
-        max(0, min(255, int(match.group(3)))),
-    )
-
-
-def _album_bar_mix() -> tuple[float, float]:
-    if getattr(Colors, "_active_mode", "dark") == "light":
-        return _ALBUM_BAR_LIGHT_TOP_MIX, _ALBUM_BAR_LIGHT_BOTTOM_MIX
-    return _ALBUM_BAR_TOP_MIX, _ALBUM_BAR_BOTTOM_MIX
-
-
-def _album_bar_alphas() -> tuple[int, int, int]:
-    if getattr(Colors, "_active_mode", "dark") == "light":
-        return (
-            _ALBUM_BAR_LIGHT_TOP_ALPHA,
-            _ALBUM_BAR_LIGHT_MID_ALPHA,
-            _ALBUM_BAR_LIGHT_BOTTOM_ALPHA,
-        )
-    return _ALBUM_BAR_TOP_ALPHA, _ALBUM_BAR_MID_ALPHA, _ALBUM_BAR_BOTTOM_ALPHA
-
-
-def _title_bar_css(
-    *,
-    bg_rgb: tuple[int, int, int],
-    top_rgb: tuple[int, int, int],
-    bottom_rgb: tuple[int, int, int],
-    border_rgb: tuple[int, int, int],
-    text_rgb: tuple[int, int, int],
-    text_secondary_rgb: tuple[int, int, int],
-    album_tint_gradient: bool = False,
-) -> str:
-    """Generate a refined, contrast-limited title bar stylesheet."""
-    text_color = _css_rgb(text_rgb)
-    text_secondary = _css_rgba(text_secondary_rgb, 205)
-    button_bg = _css_rgba(text_rgb, 18)
-    button_hover = _css_rgba(text_rgb, 30)
-    button_press = _css_rgba(text_rgb, 24)
-    if album_tint_gradient:
-        top_alpha, mid_alpha, bottom_alpha = _album_bar_alphas()
+def _title_bar_css(paints: TrackTitleBarPaints) -> str:
+    """Adapt renderer-owned title-bar paints to the Qt stylesheet."""
+    if paints.gradient_middle is not None:
         background_css = f"""
             background: qlineargradient(
                 x1: 0, y1: 0, x2: 0, y2: 1,
-                stop: 0 {_css_rgba(top_rgb, top_alpha)},
-                stop: 0.58 {_css_rgba(bg_rgb, mid_alpha)},
-                stop: 1 {_css_rgba(bottom_rgb, bottom_alpha)}
+                stop: 0 {paints.gradient_top.css},
+                stop: 0.58 {paints.gradient_middle.css},
+                stop: 1 {paints.gradient_bottom.css}
             );
         """
         border_css = ""
@@ -118,11 +33,11 @@ def _title_bar_css(
         background_css = f"""
             background: qlineargradient(
                 x1: 0, y1: 0, x2: 0, y2: 1,
-                stop: 0 {_css_rgba(top_rgb, 190)},
-                stop: 1 {_css_rgba(bottom_rgb, 178)}
+                stop: 0 {paints.gradient_top.css},
+                stop: 1 {paints.gradient_bottom.css}
             );
         """
-        border_css = f"border-bottom: 1px solid {_css_rgba(border_rgb, 130)};"
+        border_css = f"border-bottom: 1px solid {paints.border.css};" if paints.border else ""
 
     return f"""
         QFrame {{
@@ -137,85 +52,38 @@ def _title_bar_css(
         QLabel {{
             font-weight: 700;
             font-size: {Metrics.FONT_TITLE}pt;
-            color: {text_color};
+            color: {paints.title_text.css};
             background: transparent;
         }}
     """ + icon_btn_css(
         28,
-        bg=button_bg,
-        bg_hover=button_hover,
-        bg_press=button_press,
-        fg=text_secondary,
+        bg=paints.button_fill.css,
+        bg_hover=paints.button_hover.css,
+        bg_press=paints.button_pressed.css,
+        fg=paints.secondary_text.css,
         radius=6,
     )
 
 
-def _title_bar_search_css(
-    text_rgb: tuple[int, int, int],
-    text_secondary_rgb: tuple[int, int, int],
-) -> str:
-    """Search treatment that remains legible over dynamic title-bar colors."""
+def _title_bar_search_css(paints: TrackTitleBarPaints) -> str:
+    """Adapt renderer-owned search paints to the Qt stylesheet."""
     return f"""
         QLineEdit#trackListTitleSearchField {{
-            background: {_css_rgba(text_rgb, 20)};
-            border: 1px solid {_css_rgba(text_rgb, 42)};
+            background: {paints.search_fill.css};
+            border: 1px solid {paints.search_border.css};
             border-radius: {_TITLE_BAR_SEARCH_HEIGHT // 2}px;
-            color: {_css_rgb(text_secondary_rgb)};
-            placeholder-text-color: {_css_rgba(text_secondary_rgb, 220)};
+            color: {paints.search_text.css};
+            placeholder-text-color: {paints.search_placeholder.css};
             padding: 0px 10px;
             font-size: {Metrics.FONT_BROWSER_SEARCH}pt;
             font-weight: 500;
         }}
         QLineEdit#trackListTitleSearchField:focus {{
-            background: {_css_rgba(text_rgb, 32)};
-            border-color: {_css_rgba(text_rgb, 88)};
-            color: {_css_rgb(text_rgb)};
+            background: {paints.search_focus_fill.css};
+            border-color: {paints.search_focus_border.css};
+            color: {paints.search_focus_text.css};
         }}
     """
-
-
-def _resolve_bar_palette(
-    base_rgb: tuple[int, int, int],
-    *,
-    text: tuple[int, int, int] | None = None,
-    text_secondary: tuple[int, int, int] | None = None,
-    contrast_ensured: bool = False,
-) -> dict[str, tuple[int, int, int]]:
-    """Limit and shape a title-bar palette so it sits comfortably in the app."""
-    if contrast_ensured:
-        bg = base_rgb
-    else:
-        bg = display_accent_rgb(
-            base_rgb,
-            background=Colors.BG_DARK,
-            target_ratio=_TITLE_BAR_CONTRAST_TARGET,
-        )
-    if contrast_ensured:
-        top_mix, bottom_mix = _album_bar_mix()
-        top = _mix_rgb(bg, (255, 255, 255), top_mix)
-        bottom = _mix_rgb(bg, (0, 0, 0), bottom_mix)
-    else:
-        top = _mix_rgb(bg, (255, 255, 255), 0.08)
-        bottom = _mix_rgb(bg, (0, 0, 0), 0.16)
-    if contrast_ensured:
-        fallback_text = text_rgb_for_background(bg)
-        primary_text = _css_to_rgb(Colors.TEXT_PRIMARY, fallback_text)
-        secondary_text = _css_to_rgb(
-            Colors.TEXT_SECONDARY,
-            _mix_rgb(primary_text, bg, 0.3),
-        )
-    else:
-        primary_text = text or text_rgb_for_background(bg)
-        secondary_text = text_secondary or _mix_rgb(primary_text, bg, 0.3)
-    border = _mix_rgb(bg, (0, 0, 0), 0.28)
-    return {
-        "bg": bg,
-        "top": top,
-        "bottom": bottom,
-        "border": border,
-        "text": primary_text,
-        "text_secondary": secondary_text,
-    }
 
 
 class TrackListTitleBar(QFrame):
@@ -282,17 +150,24 @@ class TrackListTitleBar(QFrame):
         """Synchronize the title-bar field with its attached track list."""
         self.search.setText(query)
 
-    def setColor(self, r: int, g: int, b: int,
-                 text: tuple | None = None, text_secondary: tuple | None = None,
-                 contrast_ensured: bool = False):
+    def setColor(
+        self,
+        r: int,
+        g: int,
+        b: int,
+        text: tuple[int, int, int] | None = None,
+        text_secondary: tuple[int, int, int] | None = None,
+        contrast_ensured: bool = False,
+    ):
         """Set the title bar color using a limited, contrast-aware palette."""
-        palette = _resolve_bar_palette(
+        paints = render_track_title_bar_paints(
+            current_theme(),
             (r, g, b),
-            text=text,
-            text_secondary=text_secondary,
+            text_rgb=text,
+            text_secondary_rgb=text_secondary,
             contrast_ensured=contrast_ensured,
         )
-        self._apply_palette(palette, album_tint_gradient=contrast_ensured)
+        self._apply_paints(paints)
 
     def setFullscreenMode(self, fullscreen: bool):
         """Enable/disable fullscreen mode. Hides buttons and disables dragging."""
@@ -303,7 +178,12 @@ class TrackListTitleBar(QFrame):
 
     def resetColor(self):
         """Reset to the default limited title-bar palette."""
-        self._apply_palette(_resolve_bar_palette(Colors.PLAYLIST_REGULAR))
+        self._apply_paints(
+            render_track_title_bar_paints(
+                current_theme(),
+                current_theme().paint("playlist.regular").color.rgb,
+            )
+        )
 
     def _set_handle_color(self):
         """Keep the splitter handle invisible in every interaction state."""
@@ -319,39 +199,15 @@ class TrackListTitleBar(QFrame):
             }}
         """)
 
-    def _apply_palette(
-        self,
-        palette: dict[str, tuple[int, int, int]],
-        *,
-        album_tint_gradient: bool = False,
-    ) -> None:
-        self.setStyleSheet(
-            _title_bar_css(
-                bg_rgb=palette["bg"],
-                top_rgb=palette["top"],
-                bottom_rgb=palette["bottom"],
-                border_rgb=palette["border"],
-                text_rgb=palette["text"],
-                text_secondary_rgb=palette["text_secondary"],
-                album_tint_gradient=album_tint_gradient,
-            )
-        )
+    def _apply_paints(self, paints: TrackTitleBarPaints) -> None:
+        self.setStyleSheet(_title_bar_css(paints))
         self._set_handle_color()
-        self._refresh_button_icons(palette["text_secondary"])
-        self._refresh_search_style(
-            palette["text"],
-            palette["text_secondary"],
-        )
+        self._refresh_button_icons(paints.icon_text.css)
+        self._refresh_search_style(paints)
 
-    def _refresh_search_style(
-        self,
-        text_rgb: tuple[int, int, int],
-        text_secondary_rgb: tuple[int, int, int],
-    ) -> None:
-        self.search.setStyleSheet(
-            _title_bar_search_css(text_rgb, text_secondary_rgb)
-        )
-        icon = glyph_icon("search", 15, _css_rgb(text_secondary_rgb))
+    def _refresh_search_style(self, paints: TrackTitleBarPaints) -> None:
+        self.search.setStyleSheet(_title_bar_search_css(paints))
+        icon = glyph_icon("search", 15, paints.icon_text.css)
         if icon is None:
             return
         if self._search_icon_action is None:
@@ -362,8 +218,8 @@ class TrackListTitleBar(QFrame):
         else:
             self._search_icon_action.setIcon(icon)
 
-    def _refresh_button_icons(self, rgb: tuple[int, int, int]) -> None:
-        down_icon = glyph_icon("chevron-down", 18, _css_rgb(rgb))
+    def _refresh_button_icons(self, color: str) -> None:
+        down_icon = glyph_icon("chevron-down", 18, color)
         if down_icon:
             self.button1.setIcon(down_icon)
             self.button1.setIconSize(self._icon_size)
@@ -371,7 +227,7 @@ class TrackListTitleBar(QFrame):
         else:
             self.button1.setText("▼")
 
-        up_icon = glyph_icon("chevron-up", 18, _css_rgb(rgb))
+        up_icon = glyph_icon("chevron-up", 18, color)
         if up_icon:
             self.button2.setIcon(up_icon)
             self.button2.setIconSize(self._icon_size)

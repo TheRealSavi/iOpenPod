@@ -6,7 +6,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from iopenpod.device.recovery import LinuxMountDetails, linux_mount_details
-from iopenpod.device.write_guard import DeviceWriteGuard, DeviceWriteSafetyError
+from iopenpod.device.write_guard import (
+    DeviceBusyError,
+    DeviceWriteGuard,
+    DeviceWriteSafetyError,
+)
 from iopenpod.device.write_readiness import (
     inspect_device_write_readiness,
     revalidate_device_write_readiness,
@@ -20,6 +24,7 @@ class DeviceWriteAccessResult:
     reason: str = ""
     mount_path: str = ""
     mount: LinuxMountDetails | None = None
+    busy: bool = False
 
 
 def _access_failure(
@@ -57,6 +62,15 @@ def check_ipod_write_access(ipod_path: str | Path) -> DeviceWriteAccessResult:
                 profile,
                 probe_case_sensitivity=True,
             )
+    except DeviceBusyError as exc:
+        reason = str(exc).strip() or exc.__class__.__name__
+        return DeviceWriteAccessResult(
+            writable=False,
+            reason=reason,
+            mount_path=str(root),
+            mount=mount,
+            busy=True,
+        )
     except DeviceWriteSafetyError as exc:
         reason = str(exc).strip() or exc.__class__.__name__
         return _access_failure(root, reason, mount)

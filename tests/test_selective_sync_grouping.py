@@ -1,13 +1,20 @@
 from types import SimpleNamespace
 from typing import Any, cast
 
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QCheckBox, QPushButton, QScrollArea, QTableWidget
+
+import iopenpod.gui.widgets.selectiveSyncBrowser as selective_sync_browser_module
 from iopenpod.gui.styles import accent_btn_css
 from iopenpod.gui.widgets.MBGridView import GridRecord, MusicBrowserGrid
+from iopenpod.gui.widgets.photoTile import PhotoGridTile
 from iopenpod.gui.widgets.selectiveSyncBrowser import (
     PCMusicBrowserGrid,
     PCPhotoListView,
+    PCTrackListView,
     SelectiveSyncBrowser,
 )
+from iopenpod.gui.widgets.syncReview import StorageBarWidget
 from iopenpod.sync.contracts import SyncAction, SyncItem, SyncPlan
 from iopenpod.sync.pc_library import PCTrack
 from iopenpod.sync.photos import (
@@ -74,6 +81,36 @@ def _browser_with_tracks(tracks: list[PCTrack]) -> SelectiveSyncBrowser:
     return browser
 
 
+def _check_state_at(table: QTableWidget, row: int) -> Qt.CheckState:
+    item = table.item(row, 0)
+    assert item is not None
+    return item.checkState()
+
+
+def _set_check_state_at(
+    table: QTableWidget,
+    row: int,
+    check_state: Qt.CheckState,
+) -> None:
+    item = table.item(row, 0)
+    assert item is not None
+    item.setCheckState(check_state)
+
+
+def _photo_record_key_at(view: PCPhotoListView, index: int) -> object:
+    record = view._photo_grid.recordAt(index)
+    assert record is not None
+    return record.key
+
+
+def _photo_checkbox_at(view: PCPhotoListView, index: int) -> QCheckBox:
+    tile = view._photo_grid._visible_widgets[index]
+    assert isinstance(tile, PhotoGridTile)
+    checkbox = tile.checkbox
+    assert checkbox is not None
+    return checkbox
+
+
 def test_selective_sync_photo_search_matches_symbol_variants() -> None:
     photo = PCPhoto(
         visual_hash="hash",
@@ -104,6 +141,491 @@ def test_done_selecting_uses_standard_primary_action_style(qtbot) -> None:
     qtbot.addWidget(browser)
 
     assert browser._done_btn.styleSheet() == accent_btn_css()
+
+
+def test_selective_sync_track_list_sorts_checkboxes_by_selected_state(qtbot) -> None:
+    settings = SimpleNamespace(track_list_columns_by_content={})
+    view = PCTrackListView(
+        settings_service=cast(
+            Any,
+            SimpleNamespace(
+                get_global_settings=lambda: settings,
+                get_effective_settings=lambda: settings,
+            ),
+        ),
+        device_sessions=cast(
+            Any,
+            SimpleNamespace(current_session=lambda: None),
+        ),
+    )
+    qtbot.addWidget(view)
+    tracks = [
+        _track("Selected 1", "Album/Selected 1.mp3"),
+        _track("Unselected", "Album/Unselected.mp3"),
+        _track("Selected 2", "Album/Selected 2.mp3"),
+    ]
+    view.setTracks(
+        tracks,
+        {
+            tracks[0].path: True,
+            tracks[1].path: False,
+            tracks[2].path: True,
+        },
+    )
+    table = view._browser_list.table
+    qtbot.waitUntil(
+        lambda: table.rowCount() == 3
+        and all(table.item(row, 0) is not None for row in range(3))
+    )
+
+    table.sortItems(0, Qt.SortOrder.DescendingOrder)
+    assert [_check_state_at(table, row) for row in range(3)] == [
+        Qt.CheckState.Checked,
+        Qt.CheckState.Checked,
+        Qt.CheckState.Unchecked,
+    ]
+
+    _set_check_state_at(table, 0, Qt.CheckState.Unchecked)
+    qtbot.waitUntil(
+        lambda: [_check_state_at(table, row) for row in range(3)]
+        == [
+            Qt.CheckState.Checked,
+            Qt.CheckState.Unchecked,
+            Qt.CheckState.Unchecked,
+        ]
+    )
+
+
+def test_selective_sync_track_list_bulk_changes_all_sorted_checkboxes(qtbot) -> None:
+    settings = SimpleNamespace(track_list_columns_by_content={})
+    view = PCTrackListView(
+        settings_service=cast(
+            Any,
+            SimpleNamespace(
+                get_global_settings=lambda: settings,
+                get_effective_settings=lambda: settings,
+            ),
+        ),
+        device_sessions=cast(
+            Any,
+            SimpleNamespace(current_session=lambda: None),
+        ),
+    )
+    qtbot.addWidget(view)
+    tracks = [
+        _track("Selected 1", "Album/Selected 1.mp3"),
+        _track("Unselected 1", "Album/Unselected 1.mp3"),
+        _track("Selected 2", "Album/Selected 2.mp3"),
+        _track("Unselected 2", "Album/Unselected 2.mp3"),
+    ]
+    view.setTracks(
+        tracks,
+        {
+            tracks[0].path: True,
+            tracks[1].path: False,
+            tracks[2].path: True,
+            tracks[3].path: False,
+        },
+    )
+    table = view._browser_list.table
+    qtbot.waitUntil(
+        lambda: table.rowCount() == 4
+        and all(table.item(row, 0) is not None for row in range(4))
+    )
+    table.sortItems(0, Qt.SortOrder.DescendingOrder)
+
+    view.setAllChecked(False)
+
+    assert all(
+        _check_state_at(table, row) == Qt.CheckState.Unchecked
+        for row in range(table.rowCount())
+    )
+
+    view.setAllChecked(True)
+
+    assert all(
+        _check_state_at(table, row) == Qt.CheckState.Checked
+        for row in range(table.rowCount())
+    )
+
+
+def test_photo_picker_group_by_selected_toggle_controls_its_grid(qtbot) -> None:
+    view = PCPhotoListView()
+    qtbot.addWidget(view)
+    toggle = view._grid_header.findChild(QPushButton, "gridGroupBySelectedButton")
+
+    assert toggle is not None and not toggle.isHidden()
+    assert toggle.isChecked()
+    assert view._photo_grid.isGroupedBySelected()
+    toggle.click()
+
+    assert not view._photo_grid.isGroupedBySelected()
+
+
+def test_photo_picker_moves_clicked_items_between_selection_sections(qtbot) -> None:
+    view = PCPhotoListView()
+    qtbot.addWidget(view)
+    view.resize(1000, 700)
+    view.show()
+    photos = [
+        PCPhoto("a", "Alpha", source_path="/photos/alpha.jpg", size=1),
+        PCPhoto("b", "Bravo", source_path="/photos/bravo.jpg", size=1),
+        PCPhoto("c", "Charlie", source_path="/photos/charlie.jpg", size=1),
+        PCPhoto("d", "Delta", source_path="/photos/delta.jpg", size=1),
+    ]
+    selection = {
+        photos[0].source_path: False,
+        photos[1].source_path: True,
+        photos[2].source_path: False,
+        photos[3].source_path: True,
+    }
+    view.setPhotos(photos, selection)
+    view._photo_grid.setGroupBySelected(True)
+    qtbot.waitUntil(lambda: len(view._photo_grid.gridItems) == 4, timeout=2000)
+
+    assert [
+        _photo_record_key_at(view, index)
+        for index in range(view._photo_grid.count())
+    ] == [
+        photos[1].source_path,
+        photos[3].source_path,
+        photos[0].source_path,
+        photos[2].source_path,
+    ]
+
+    delta_index = next(
+        index
+        for index in range(view._photo_grid.count())
+        if _photo_record_key_at(view, index) == photos[3].source_path
+    )
+    _photo_checkbox_at(view, delta_index).click()
+
+    qtbot.waitUntil(
+        lambda: [
+            _photo_record_key_at(view, index)
+            for index in range(view._photo_grid.count())
+        ]
+        == [
+            photos[1].source_path,
+            photos[0].source_path,
+            photos[2].source_path,
+            photos[3].source_path,
+        ],
+        timeout=2000,
+    )
+    assert selection[photos[3].source_path] is False
+
+
+def test_plan_photo_picker_moves_clicked_items_between_selection_sections(qtbot) -> None:
+    settings = SimpleNamespace(track_list_columns_by_content={})
+    browser = SelectiveSyncBrowser(
+        settings_service=cast(
+            Any,
+            SimpleNamespace(
+                get_global_settings=lambda: settings,
+                get_effective_settings=lambda: settings,
+            ),
+        ),
+        device_sessions=cast(
+            Any,
+            SimpleNamespace(current_session=lambda: None),
+        ),
+    )
+    qtbot.addWidget(browser)
+    browser.resize(1000, 700)
+    browser.show()
+    photos = [
+        PhotoSyncItem("a", "Alpha", source_path="/photos/alpha.jpg"),
+        PhotoSyncItem("b", "Bravo", source_path="/photos/bravo.jpg"),
+        PhotoSyncItem("c", "Charlie", source_path="/photos/charlie.jpg"),
+        PhotoSyncItem("d", "Delta", source_path="/photos/delta.jpg"),
+    ]
+    photo_plan = PhotoSyncPlan()
+    photo_plan.photos_to_add = photos
+    browser.load_sync_plan(
+        SyncPlan(photo_plan=photo_plan),
+        {"photos_to_add": {id(photos[1]), id(photos[3])}},
+    )
+    view = browser._photo_list
+    view._photo_grid.setGroupBySelected(True)
+    qtbot.waitUntil(lambda: len(view._photo_grid.gridItems) == 4, timeout=2000)
+
+    assert [
+        _photo_record_key_at(view, index)
+        for index in range(view._photo_grid.count())
+    ] == [
+        photos[1].source_path,
+        photos[3].source_path,
+        photos[0].source_path,
+        photos[2].source_path,
+    ]
+
+    delta_index = next(
+        index
+        for index in range(view._photo_grid.count())
+        if _photo_record_key_at(view, index) == photos[3].source_path
+    )
+    _photo_checkbox_at(view, delta_index).click()
+
+    qtbot.waitUntil(
+        lambda: [
+            _photo_record_key_at(view, index)
+            for index in range(view._photo_grid.count())
+        ]
+        == [
+            photos[1].source_path,
+            photos[0].source_path,
+            photos[2].source_path,
+            photos[3].source_path,
+        ],
+        timeout=2000,
+    )
+    assert photos[3].source_path not in browser._selected_photos or not browser._selected_photos[photos[3].source_path]
+    assert id(photos[3]) not in browser._plan_selection_state["photos_to_add"]
+
+
+def test_pc_category_grid_groups_selected_partial_and_unselected_records(qtbot) -> None:
+    grid = PCMusicBrowserGrid()
+    scroll = QScrollArea()
+    scroll.setWidgetResizable(True)
+    scroll.setWidget(grid)
+    grid.attachScrollArea(scroll)
+    qtbot.addWidget(scroll)
+    scroll.resize(920, 620)
+    scroll.show()
+    states = {
+        "Alpha Partial": "Partially Selected",
+        "Bravo Selected": "Selected",
+        "Charlie Unselected": "Unselected",
+    }
+    grid.setSelectionSectionResolver(lambda item: states[str(item["title"])])
+    grid._set_source_items(
+        [
+            {
+                "title": title,
+                "album": title,
+                "category": "Albums",
+                "filter_key": "album",
+                "filter_value": title,
+            }
+            for title in states
+        ],
+        reset_scroll=False,
+    )
+
+    grid.setGroupBySelected(True)
+    qtbot.waitUntil(
+        lambda: all(
+            not header.isHidden()
+            for header in grid._section_headers.values()
+        ),
+        timeout=2000,
+    )
+
+    assert [record.title for record in grid._visible_records] == [
+        "Bravo Selected",
+        "Alpha Partial",
+        "Charlie Unselected",
+    ]
+    assert list(grid._section_headers) == [
+        "Selected",
+        "Partially Selected",
+        "Unselected",
+    ]
+    assert all(
+        header.styleSheet().endswith("border: none;")
+        for header in grid._section_headers.values()
+    )
+
+    states["Charlie Unselected"] = "Selected"
+    grid.refreshSectionGrouping()
+
+    assert [record.title for record in grid._visible_records] == [
+        "Bravo Selected",
+        "Charlie Unselected",
+        "Alpha Partial",
+    ]
+
+    grid.setGroupBySelected(False)
+
+    assert [record.title for record in grid._visible_records] == [
+        "Alpha Partial",
+        "Bravo Selected",
+        "Charlie Unselected",
+    ]
+
+
+def test_pc_category_grid_keeps_active_sort_within_selection_sections(qtbot) -> None:
+    grid = PCMusicBrowserGrid()
+    qtbot.addWidget(grid)
+    states = {
+        "Selected Low": "Selected",
+        "Selected High": "Selected",
+        "Partial": "Partially Selected",
+        "Unselected": "Unselected",
+    }
+    years = {
+        "Selected Low": 10,
+        "Selected High": 40,
+        "Partial": 30,
+        "Unselected": 20,
+    }
+    grid.setSelectionSectionResolver(lambda item: states[str(item["title"])])
+    grid._set_source_items(
+        [
+            {
+                "title": title,
+                "album": title,
+                "category": "Albums",
+                "filter_key": "album",
+                "filter_value": title,
+                "year": years[title],
+            }
+            for title in states
+        ],
+        reset_scroll=False,
+    )
+
+    grid.setGroupBySelected(True)
+    grid.setSort("year", reverse=True)
+
+    assert [record.title for record in grid._visible_records] == [
+        "Selected High",
+        "Selected Low",
+        "Partial",
+        "Unselected",
+    ]
+
+    states["Partial"] = "Selected"
+    grid.refreshSectionGrouping()
+
+    assert [record.title for record in grid._visible_records] == [
+        "Selected High",
+        "Partial",
+        "Selected Low",
+        "Unselected",
+    ]
+
+
+def test_selective_sync_classifies_category_cards_from_track_selection() -> None:
+    tracks = [
+        _track("Album A 1", "Album A/01.mp3"),
+        _track("Album A 2", "Album A/02.mp3"),
+        _track("Album B", "Album B/01.mp3"),
+        _track("Album C", "Album C/01.mp3"),
+    ]
+    browser = _browser_with_tracks(tracks)
+    browser._current_mode = "Albums"
+    browser._selected_tracks = {
+        tracks[0].path: True,
+        tracks[1].path: False,
+        tracks[2].path: True,
+        tracks[3].path: False,
+    }
+    browser._build_groups()
+
+    assert browser._selection_section_for_grid_item(
+        {"category": "Albums", "title": "Album A"}
+    ) == "Partially Selected"
+    assert browser._selection_section_for_grid_item(
+        {"category": "Albums", "title": "Album B"}
+    ) == "Selected"
+    assert browser._selection_section_for_grid_item(
+        {"category": "Albums", "title": "Album C"}
+    ) == "Unselected"
+
+
+def test_plan_bulk_selection_refreshes_category_grouping() -> None:
+    item = object()
+    browser = SelectiveSyncBrowser.__new__(SelectiveSyncBrowser)
+    browser._plan_selection_mode = True
+    browser._plan_section_by_key = {
+        "tracks": {"bucket": "tracks", "items": [item]},
+    }
+    browser._current_plan_section_key = "tracks"
+    browser._plan_selection_state = {"tracks": set()}
+    browser._selected_tracks = {"/music/song.mp3": False}
+    browser._selected_photos = {}
+    browser._selected_playlists = {}
+    browser_any = cast(Any, browser)
+    browser_any._content = SimpleNamespace(currentIndex=lambda: 0)
+    refreshes: list[None] = []
+    browser_any._refresh_grid_selection_grouping = lambda _mode=None: refreshes.append(None)
+    browser_any._update_plan_footer = lambda: None
+
+    browser._on_select_all()
+
+    assert browser._selected_tracks["/music/song.mp3"] is True
+    assert refreshes == [None]
+
+    browser._on_deselect_all()
+
+    assert browser._selected_tracks["/music/song.mp3"] is False
+    assert refreshes == [None, None]
+
+
+def test_selective_sync_storage_bar_projects_normal_and_plan_selections(
+    qtbot,
+    monkeypatch,
+) -> None:
+    session = SimpleNamespace(
+        device_path="/virtual-ipod",
+        discovered_ipod=None,
+        identity=None,
+    )
+    settings = SimpleNamespace(track_list_columns_by_content={})
+    browser = SelectiveSyncBrowser(
+        settings_service=cast(
+            Any,
+            SimpleNamespace(
+                get_global_settings=lambda: settings,
+                get_effective_settings=lambda: settings,
+            ),
+        ),
+        device_sessions=cast(
+            Any,
+            SimpleNamespace(current_session=lambda: session),
+        ),
+    )
+    qtbot.addWidget(browser)
+    monkeypatch.setattr(
+        selective_sync_browser_module.shutil,
+        "disk_usage",
+        lambda _path: SimpleNamespace(total=1_000, used=400),
+    )
+
+    track = _track("Song", "Album/Song.mp3")
+    photo = PCPhoto("photo", "Photo", source_path="/photos/photo.jpg", size=4)
+    browser._plan_selection_mode = False
+    browser._all_tracks = [track]
+    browser._all_photos = [photo]
+    browser._selected_tracks = {track.path: True}
+    browser._selected_photos = {photo.source_path: True}
+    browser._update_storage_projection()
+
+    assert isinstance(browser._storage_bar, StorageBarWidget)
+    assert not browser._storage_frame.isHidden()
+    assert browser._storage_bar._sync_delta == 5
+
+    added = SyncItem(action=SyncAction.ADD_TO_IPOD, pc_track=track)
+    removed = SyncItem(
+        action=SyncAction.REMOVE_FROM_IPOD,
+        ipod_track={"Title": "Removed", "size": 9},
+    )
+    added_photo = PhotoSyncItem("new-photo", "New Photo", size=4)
+    browser._plan_selection_mode = True
+    browser._plan_selection_sections = [
+        {"key": "to_add", "bucket": "sync_items", "items": [added]},
+        {"key": "to_remove", "bucket": "sync_items", "items": [removed]},
+        {"key": "photos_to_add", "bucket": "photos_to_add", "items": [added_photo]},
+    ]
+    browser._plan_selection_state = {
+        "sync_items": {id(added), id(removed)},
+        "photos_to_add": {id(added_photo)},
+    }
+    browser._update_storage_projection()
+
+    assert browser._storage_bar._sync_delta == -4
 
 
 def test_selective_sync_groups_unknown_albums_by_source_folder():

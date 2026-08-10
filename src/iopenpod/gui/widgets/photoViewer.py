@@ -17,7 +17,15 @@ from PyQt6.QtWidgets import (
 )
 
 from ..glyphs import glyph_icon
-from ..styles import FONT_FAMILY, Colors, Metrics, btn_css, chip_btn_css, danger_btn_css, panel_css
+from ..styles import (
+    FONT_FAMILY,
+    Metrics,
+    btn_css,
+    chip_btn_css,
+    danger_btn_css,
+    paint_css,
+    panel_css,
+)
 
 
 def pil_to_pixmap(img) -> QPixmap:
@@ -62,7 +70,7 @@ class PhotoViewerPane(QFrame):
         self._heading_label = QLabel(heading, self)
         self._heading_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
         self._heading_label.setStyleSheet(
-            f"color: {Colors.TEXT_TERTIARY}; background: transparent; text-transform: uppercase;"
+            f"color: {paint_css('text.tertiary')}; background: transparent; text-transform: uppercase;"
         )
         if heading:
             layout.addWidget(self._heading_label)
@@ -72,13 +80,17 @@ class PhotoViewerPane(QFrame):
         self.title_label = QLabel(empty_title, self)
         self.title_label.setWordWrap(True)
         self.title_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_PAGE_TITLE, QFont.Weight.Bold))
-        self.title_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent;")
+        self.title_label.setStyleSheet(
+            f"color: {paint_css('text.primary')}; background: transparent;"
+        )
         layout.addWidget(self.title_label)
 
         self.summary_label = QLabel(empty_summary, self)
         self.summary_label.setWordWrap(True)
         self.summary_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
-        self.summary_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent;")
+        self.summary_label.setStyleSheet(
+            f"color: {paint_css('text.secondary')}; background: transparent;"
+        )
         layout.addWidget(self.summary_label)
 
         self._variant_row = QWidget(self)
@@ -89,7 +101,7 @@ class PhotoViewerPane(QFrame):
         self._variant_label = QLabel("IDs", self._variant_row)
         self._variant_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
         self._variant_label.setStyleSheet(
-            f"color: {Colors.TEXT_TERTIARY}; background: transparent; text-transform: uppercase;"
+            f"color: {paint_css('text.tertiary')}; background: transparent; text-transform: uppercase;"
         )
         variant_row_layout.addWidget(self._variant_label)
 
@@ -116,12 +128,12 @@ class PhotoViewerPane(QFrame):
         self._content_splitter.splitterMoved.connect(lambda _pos, _index: self._apply_scaled_pixmap())
         self._content_splitter.setStyleSheet(f"""
             QSplitter::handle {{
-                background: {Colors.BORDER_SUBTLE};
+                background: {paint_css('border.subtle')};
                 margin: 2px 0;
                 border-radius: 3px;
             }}
             QSplitter::handle:hover {{
-                background: {Colors.BORDER};
+                background: {paint_css('border.default')};
             }}
         """)
         layout.addWidget(self._content_splitter, 1)
@@ -139,9 +151,9 @@ class PhotoViewerPane(QFrame):
         self.preview_label.setStyleSheet(f"""
             QLabel {{
                 background: transparent;
-                border: 1px solid {Colors.BORDER_SUBTLE};
+                border: 1px solid {paint_css('border.subtle')};
                 border-radius: {Metrics.BORDER_RADIUS_LG + 2}px;
-                color: {Colors.TEXT_TERTIARY};
+                color: {paint_css('text.tertiary')};
                 padding: 12px;
             }}
         """)
@@ -156,7 +168,7 @@ class PhotoViewerPane(QFrame):
         self._details_label = QLabel("Device Metadata", details_host)
         self._details_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
         self._details_label.setStyleSheet(
-            f"color: {Colors.TEXT_TERTIARY}; background: transparent; text-transform: uppercase;"
+            f"color: {paint_css('text.tertiary')}; background: transparent; text-transform: uppercase;"
         )
         details_layout.addWidget(self._details_label)
 
@@ -172,8 +184,8 @@ class PhotoViewerPane(QFrame):
         self.meta_tree.setStyleSheet(f"""
             QTreeWidget {{
                 background: transparent;
-                color: {Colors.TEXT_PRIMARY};
-                border: 1px solid {Colors.BORDER_SUBTLE};
+                color: {paint_css('text.primary')};
+                border: 1px solid {paint_css('border.subtle')};
                 border-radius: {Metrics.BORDER_RADIUS_SM}px;
                 padding: 4px;
             }}
@@ -181,14 +193,14 @@ class PhotoViewerPane(QFrame):
                 padding: 3px 2px;
             }}
             QTreeWidget::item:selected {{
-                background: {Colors.SURFACE_ACTIVE};
-                color: {Colors.TEXT_PRIMARY};
+                background: {paint_css('selection.fill')};
+                color: {paint_css('text.primary')};
             }}
             QHeaderView::section {{
-                background: {Colors.SURFACE_RAISED};
-                color: {Colors.TEXT_SECONDARY};
+                background: {paint_css('surface.raised')};
+                color: {paint_css('text.secondary')};
                 border: none;
-                border-bottom: 1px solid {Colors.BORDER_SUBTLE};
+                border-bottom: 1px solid {paint_css('border.subtle')};
                 padding: 6px;
                 font-weight: 600;
             }}
@@ -238,7 +250,11 @@ class PhotoViewerPane(QFrame):
                 if danger
                 else btn_css(padding="5px 10px", radius=Metrics.BORDER_RADIUS_SM)
             )
-            icon_color = Colors.DANGER if danger else Colors.TEXT_SECONDARY
+            icon_color = (
+                paint_css("status.danger.text")
+                if danger
+                else paint_css("text.secondary")
+            )
             icon = glyph_icon(glyph_name, 14, icon_color)
             if icon is not None:
                 btn.setIcon(icon)

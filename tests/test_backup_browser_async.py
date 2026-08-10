@@ -1,6 +1,9 @@
 from types import SimpleNamespace
 from typing import Any, cast
 
+from PyQt6.QtWidgets import QLabel
+
+from iopenpod.gui.styles import paint_css
 from iopenpod.gui.widgets import backupBrowser as backup_browser
 from iopenpod.gui.widgets.backupBrowser import (
     BackupBrowserWidget,
@@ -109,6 +112,10 @@ def test_invalid_snapshot_card_disables_delete_with_accessible_reason(qapp) -> N
     assert card._delete_btn.isEnabled() is False
     assert "catalog" in card._delete_btn.toolTip().lower()
     assert "checksum" in card._delete_btn.accessibleDescription().lower()
+    assert paint_css("surface.inset") in card.styleSheet()
+    invalid_details = card.findChild(QLabel, "invalidCatalogDetails")
+    assert invalid_details is not None
+    assert paint_css("status.danger.text") in invalid_details.styleSheet()
 
 
 def test_snapshot_card_provides_an_empty_editable_note(qapp) -> None:

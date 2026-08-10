@@ -11,7 +11,7 @@ from uuid import uuid4
 import pytest
 from PIL import Image
 from PyQt6.QtCore import QEvent, QPoint, Qt
-from PyQt6.QtGui import QKeyEvent
+from PyQt6.QtGui import QColor, QKeyEvent, QPixmap
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QComboBox, QDialog, QHeaderView, QLabel, QLineEdit, QMenu, QPushButton, QSlider, QSplitter, QTableWidget, QTableWidgetItem, QTreeWidget
 
@@ -22,9 +22,9 @@ from iopenpod.gui.imgMaker import ArtworkFormatPreview, TrackArtworkPreview, get
 from iopenpod.gui.styles import (
     BROWSER_SEARCH_CONTROL_SIZE,
     BROWSER_SEARCH_FIELD_WIDTH,
-    Colors,
     Metrics,
     browser_search_field_css,
+    paint_css,
 )
 from iopenpod.gui.widgets.MBListView import (
     _OPEN_TRACK_SHORTCUT,
@@ -447,6 +447,8 @@ def test_tracklist_search_section_sits_above_table(qtbot) -> None:
     assert view._search_field.size().width() == BROWSER_SEARCH_FIELD_WIDTH
     assert view._search_field.size().height() == BROWSER_SEARCH_CONTROL_SIZE
     assert view._search_field.styleSheet() == browser_search_field_css()
+    assert paint_css("surface.default") in view._search_bar.styleSheet()
+    assert paint_css("border.subtle") in view._search_bar.styleSheet()
     search_layout = view._search_bar.layout()
     assert search_layout is not None
     assert search_layout.indexOf(view._search_field) == 1
@@ -599,6 +601,39 @@ def test_tracklist_population_does_not_decode_shared_artwork_on_ui_thread(
     assert art_item is not None
     assert art_item.data(Qt.ItemDataRole.UserRole + 2) == 1
     assert art_item.icon().isNull()
+
+
+def test_tracklist_artwork_is_centered_in_its_column(qtbot) -> None:
+    """Artwork is optically centered rather than offset by cell text padding."""
+    view = _mount_list(qtbot, show_art_override=True)
+    thumbnail = QPixmap(32, 32)
+    thumbnail.fill(QColor("#ff00ff"))
+    view._art_cache[1] = thumbnail
+
+    _load_content(
+        qtbot,
+        view,
+        tracks=[_many_tracks_with_art(1)[0]],
+        media_type_filter=None,
+    )
+    qtbot.wait(20)
+
+    item = _table_item(view.table, 0, 0)
+    cell_rect = view.table.visualItemRect(item)
+    viewport = view.table.viewport()
+    assert viewport is not None
+    image = viewport.grab().toImage()
+    thumbnail_xs = [
+        x
+        for y in range(image.height())
+        for x in range(image.width())
+        if image.pixelColor(x, y).name() == "#ff00ff"
+    ]
+
+    assert thumbnail_xs
+    scale = image.devicePixelRatio()
+    cell_center = (cell_rect.left() + cell_rect.right()) * scale
+    assert abs(min(thumbnail_xs) + max(thumbnail_xs) - cell_center) <= 1
 
 
 def _drag_header_section(
@@ -1511,6 +1546,8 @@ def test_volume_context_menu_uses_slider_widget(qtbot) -> None:
     assert slider.maximum() == 255
     assert slider.value() == 64
     assert value_label.text() == "+25%"
+    assert paint_css("control.primary.fill") in widget.styleSheet()
+    assert paint_css("focus.border") in widget.styleSheet()
 
     slider.setValue(128)
 
@@ -2041,8 +2078,8 @@ def test_chapter_table_editor_is_opaque_and_selects_current_text(qtbot) -> None:
     qtbot.waitUntil(lambda: timeline._table.findChild(QLineEdit) is not None, timeout=1000)
     editor = timeline._table.findChild(QLineEdit)
     assert editor is not None
-    assert f"background-color: {Colors.DROPDOWN_BG}" in editor.styleSheet()
-    assert Colors.SURFACE_ALT not in editor.styleSheet()
+    assert f"background-color: {paint_css('menu.background')}" in editor.styleSheet()
+    assert paint_css("surface.inset") not in editor.styleSheet()
     qtbot.waitUntil(lambda: editor.selectedText() == "Intro", timeout=1000)
 
 

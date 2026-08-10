@@ -245,7 +245,7 @@ def test_metadata_text_falls_back_for_none_and_blank_values() -> None:
     assert pc_library_module.PCLibrary._metadata_text({"title": " Song "}, "title", "fallback") == "Song"
 
 
-def test_video_scan_never_extracts_artwork_or_decodes_thumbnail(
+def test_video_scan_imports_embedded_chapters_without_artwork_or_codec_probe(
     tmp_path,
     monkeypatch,
 ) -> None:
@@ -261,14 +261,19 @@ def test_video_scan_never_extracts_artwork_or_decodes_thumbnail(
         @staticmethod
         def File(_path):
             scan_calls.append("mutagen")
-            return None
+            return type(
+                "MP4File",
+                (),
+                {
+                    "tags": {
+                        "\xa9nam": ["Video title"],
+                        "\xa9ART": ["Video artist"],
+                        "\xa9alb": ["Video album"],
+                    },
+                },
+            )()
 
     monkeypatch.setattr(pc_library_module, "mutagen", RecordingMutagen())
-    monkeypatch.setattr(
-        PCLibrary,
-        "_extract_metadata",
-        lambda self, audio, ext, file_path=None: scan_calls.append("metadata") or {},
-    )
     monkeypatch.setattr(
         art_extractor,
         "extract_art_with_folder",
@@ -277,7 +282,7 @@ def test_video_scan_never_extracts_artwork_or_decodes_thumbnail(
     monkeypatch.setattr(
         downloader,
         "extract_chapters",
-        lambda _path: scan_calls.append("chapters") or None,
+        lambda _path: scan_calls.append("chapters") or [{"startpos": 0, "title": "Prologue"}],
     )
     monkeypatch.setattr(
         transcoder,
@@ -289,7 +294,11 @@ def test_video_scan_never_extracts_artwork_or_decodes_thumbnail(
 
     assert track is not None
     assert track.is_video is True
-    assert scan_calls == []
+    assert track.title == "Video title"
+    assert track.artist == "Video artist"
+    assert track.album == "Video album"
+    assert track.chapters == [{"startpos": 0, "title": "Prologue"}]
+    assert scan_calls == ["mutagen", "chapters"]
 
 
 def test_video_scan_reads_mp4_duration_without_external_probe(
@@ -309,3 +318,64 @@ def test_video_scan_reads_mp4_duration_without_external_probe(
 
     assert track is not None
     assert track.duration_ms == 90_250
+
+
+def test_video_scan_uses_format_metadata_for_mkv(tmp_path, monkeypatch) -> None:
+    video = tmp_path / "caption_probe.mkv"
+    video.write_bytes(b"video")
+    calls: list[tuple[object, str, Path | None]] = []
+
+    def fake_metadata(self, audio, ext, file_path=None):
+        calls.append((audio, ext, file_path))
+        return {
+            "title": "MKV title",
+            "artist": "MKV artist",
+            "album": "MKV album",
+            "duration_ms": 12_345,
+        }
+
+    monkeypatch.setattr(PCLibrary, "_extract_metadata", fake_metadata)
+
+    track = PCLibrary(tmp_path)._read_track(video, library_root=tmp_path)
+
+    assert track is not None
+    assert track.title == "MKV title"
+    assert track.artist == "MKV artist"
+    assert track.album == "MKV album"
+    assert track.duration_ms == 12_345
+    assert calls == [(None, ".mkv", video)]
+
+
+def test_video_scan_uses_format_metadata_for_untagged_mov(tmp_path, monkeypatch) -> None:
+    video = tmp_path / "caption_probe.mov"
+    video.write_bytes(b"video")
+    mutagen_file = type("MOVFile", (), {"tags": {}})()
+    calls: list[object] = []
+
+    class FakeMutagen:
+        @staticmethod
+        def File(_path):
+            return mutagen_file
+
+    def fake_metadata(self, audio, ext, file_path=None):
+        calls.append(audio)
+        if audio is not None:
+            return {}
+        return {
+            "title": "MOV title",
+            "artist": "MOV artist",
+            "album": "MOV album",
+            "duration_ms": 12_345,
+        }
+
+    monkeypatch.setattr(pc_library_module, "mutagen", FakeMutagen())
+    monkeypatch.setattr(PCLibrary, "_extract_metadata", fake_metadata)
+
+    track = PCLibrary(tmp_path)._read_track(video, library_root=tmp_path)
+
+    assert track is not None
+    assert track.title == "MOV title"
+    assert track.artist == "MOV artist"
+    assert track.album == "MOV album"
+    assert track.duration_ms == 12_345
+    assert calls == [mutagen_file, None]

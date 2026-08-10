@@ -24,7 +24,6 @@ from iopenpod.itunesdb_writer.mhyp_writer import PlaylistInfo
 
 logger = logging.getLogger(__name__)
 
-
 class DatabaseVerificationError(RuntimeError):
     """Raised when a freshly written iPod database fails read-back checks."""
 
@@ -33,13 +32,14 @@ def read_existing_database(
     ipod_path: Path,
     *,
     raise_on_error: bool = False,
+    include_playcounts: bool = True,
 ) -> dict:
     """Read existing tracks, playlists, and smart playlists from iTunesDB.
 
-    Also reads the Play Counts file (if present) and merges per-track
-    deltas into the track dicts.  After merging:
+    When ``include_playcounts`` is true, also reads the Play Counts file (if
+    present) and merges per-track deltas into the track dicts. After merging:
     - ``play_count_1`` / ``skip_count`` are the new cumulative values
-    - ``play_count_2`` is the transient iPod play delta slot
+    - ``play_count_2`` is the durable queue of iPod plays awaiting scrobbling
     - ``recent_playcount`` / ``recent_skipcount`` are the Play Counts deltas
     - ``rating`` may be overridden if the user rated on the iPod
     """
@@ -59,6 +59,7 @@ def read_existing_database(
         "dataset2_standard_playlists": [],
         "dataset3_podcast_playlists": [],
         "dataset5_smart_playlists": [],
+        "playcounts_timezone_changed": False,
     }
     from iopenpod.device import resolve_itdb_path
     _resolved = resolve_itdb_path(str(ipod_path))
@@ -69,7 +70,34 @@ def read_existing_database(
         return empty
 
     try:
-        raw = parse_itunesdb(str(itdb_path))
+        # The header records the zone in which this database was last
+        # written.  Device/Preferences records the zone the iPod is using
+        # right now.  They may differ when the user changes the clock on the
+        # iPod between syncs (as a real Classic trace demonstrated).
+        with itdb_path.open("rb") as db_file:
+            header = db_file.read(0x70)
+        database_offset: int | None = None
+        if len(header) >= 0x70 and header[:4] == b"mhbd":
+            database_offset = struct.unpack_from("<i", header, 0x6C)[0]
+
+        from iopenpod.itunesdb_shared.device_time import (
+            DeviceTimeContext,
+            read_device_time_context,
+            timezone_changed_since_database,
+        )
+
+        device_time_context = read_device_time_context(
+            ipod_path, database_offset=database_offset,
+        )
+        timezone_changed = timezone_changed_since_database(
+            device_time_context, database_offset,
+        )
+        database_time_context = (
+            DeviceTimeContext.fixed_offset(database_offset)
+            if timezone_changed and database_offset is not None
+            else device_time_context
+        )
+        raw = parse_itunesdb(str(itdb_path), time_context=database_time_context)
         data = extract_datasets(raw)
         tracks = data.get("mhlt", [])
 
@@ -88,12 +116,27 @@ def read_existing_database(
         hydrate_track_artwork_refs(tracks, itdb_path)
 
         # ── Merge Play Counts file (iPod-generated deltas) ──────────
-        pc_path = ipod_path / "iPod_Control" / "iTunes" / "Play Counts"
-        pc_entries = parse_playcounts(pc_path)
-        if pc_entries is not None:
-            merge_playcounts(tracks, pc_entries)
+        if include_playcounts:
+            pc_path = ipod_path / "iPod_Control" / "iTunes" / "Play Counts"
+            pc_entries = parse_playcounts(pc_path)
+            if pc_entries is not None:
+                if timezone_changed and any(entry.has_data for entry in pc_entries):
+                    logger.warning(
+                        "iPod timezone changed since its last database sync "
+                        "(database=%s, current=%s); merging Play Counts with the "
+                        "current device zone. Plays before the change may be offset.",
+                        database_offset,
+                        device_time_context.name,
+                    )
+                merge_playcounts(
+                    tracks, pc_entries, time_context=device_time_context,
+                )
+            else:
+                # No Play Counts file → zero deltas for all tracks
+                for t in tracks:
+                    t.setdefault("recent_playcount", 0)
+                    t.setdefault("recent_skipcount", 0)
         else:
-            # No Play Counts file → zero deltas for all tracks
             for t in tracks:
                 t.setdefault("recent_playcount", 0)
                 t.setdefault("recent_skipcount", 0)
@@ -160,6 +203,8 @@ def read_existing_database(
             "dataset2_standard_playlists": dataset2_standard_playlists,
             "dataset3_podcast_playlists": dataset3_podcast_playlists,
             "dataset5_smart_playlists": dataset5_smart_playlists,
+            "playcounts_timezone_changed": timezone_changed,
+            "device_time_context": device_time_context,
         }
     except Exception as e:
         logger.error("Failed to parse iTunesDB: %s", e)
@@ -295,18 +340,17 @@ def write_database(
         len(smart_playlists) if smart_playlists else 0,
     )
 
-    # Resolve capabilities once for the writer
+    # Preserve the selected device's resolved capability snapshot for the
+    # writer.  Reconstructing it from family/generation alone loses
+    # capacity/model-number distinctions (such as 80 GB 5.5G iPods' 64 MiB
+    # database limit) and any trusted SysInfo-derived overrides.
     capabilities = None
     try:
-        from iopenpod.device import (
-            capabilities_for_family_gen,
-            get_current_device_for_path,
-        )
+        from iopenpod.device import get_current_device_for_path
+
         dev = get_current_device_for_path(str(ipod_path))
         if dev and dev.model_family:
-            capabilities = capabilities_for_family_gen(
-                dev.model_family, dev.generation or "",
-            )
+            capabilities = dev.capabilities
     except Exception as exc:
         logger.debug("Could not load device capabilities: %s", exc)
 
@@ -502,6 +546,7 @@ def _commit_playcounts_guarded(
         existing.get("dataset3_podcast_playlists", []),
         existing.get("dataset5_smart_playlists", []),
         all_tracks,
+        time_context=existing.get("device_time_context"),
     )
 
     from .database_commit import DatabaseCommitPayload, write_database_commit

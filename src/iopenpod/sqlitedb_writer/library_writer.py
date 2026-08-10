@@ -578,7 +578,6 @@ def write_library_itdb(
     smart_playlists: list[PlaylistInfo] | None = None,
     master_playlist_name: str = "iPod",
     db_pid: int = 0,
-    tz_offset: int = 0,
 ) -> list[int]:
     """Write Library.itdb SQLite database.
 
@@ -589,7 +588,6 @@ def write_library_itdb(
         smart_playlists: Smart playlists for dataset 5.
         master_playlist_name: Name for the master playlist.
         db_pid: Database persistent ID (from mhbd db_id).
-        tz_offset: Timezone offset in seconds (positive = east of UTC).
 
     Returns:
         List of playlist PIDs in order: [master_pid, *playlist_pids, *smart_playlist_pids].
@@ -851,7 +849,7 @@ def write_library_itdb(
             )
 
         # ── Write items (tracks) ──────────────────────────────────────────
-        now_cd = _unix_to_coredata(int(time.time()), tz_offset)
+        now_cd = _unix_to_coredata(int(time.time()))
 
         total_audio_size = 0
         total_video_size = 0
@@ -885,8 +883,8 @@ def write_library_itdb(
                 total_audio_size += track.size
 
             # Timestamps
-            date_mod = _unix_to_coredata(track.last_modified or track.date_added, tz_offset) if (track.last_modified or track.date_added) else now_cd
-            date_released = _unix_to_coredata(track.date_released, tz_offset) if track.date_released else 0
+            date_mod = _unix_to_coredata(track.last_modified or track.date_added) if (track.last_modified or track.date_added) else now_cd
+            date_released = _unix_to_coredata(track.date_released) if track.date_released else 0
 
             # Artwork: iTunes uses artwork_status=1 when art is present
             art_status = 1 if track.mhii_link else 0

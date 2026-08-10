@@ -68,7 +68,7 @@ def eject_ipod(
     # eject API: doing so could unmount or power off the host volume that
     # contains the directory.
     if (path / "iPodInfo.json").is_file():
-        logger.info("Virtual iPod needs no operating-system eject: %s", path)
+        logger.debug("Virtual iPod needs no operating-system eject: %s", path)
         return True, "Virtual iPod closed; no operating-system eject was needed."
 
     try:
@@ -130,7 +130,7 @@ def _inspect_eject_volume(
             "The mounted volume identity could not be verified. Use the "
             "operating system's eject control for this iPod."
         )
-    logger.info(
+    logger.debug(
         "Safe eject volume inspected: mount=%s filesystem=%s reported=%s "
         "source=%s identity=%s",
         profile.mount_path,

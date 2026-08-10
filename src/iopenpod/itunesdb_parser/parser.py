@@ -20,7 +20,12 @@ import os
 import zlib
 from typing import Any, BinaryIO
 
-from ._parsing import UINT32_LE
+from iopenpod.itunesdb_shared.device_time import (
+    DeviceTimeContext,
+    use_device_time_context,
+)
+
+from ._parsing import UINT32_LE, preserve_raw_chunks
 from .exceptions import CorruptHeaderError
 
 logger = logging.getLogger(__name__)
@@ -74,12 +79,20 @@ def decompress_itunescdb(data: bytes | bytearray) -> bytes | bytearray:
     return data[:header_length] + decompressed
 
 
-def parse_itunesdb(file: str | os.PathLike[str] | BinaryIO) -> dict[str, Any]:
+def parse_itunesdb(
+    file: str | os.PathLike[str] | BinaryIO,
+    *,
+    time_context: DeviceTimeContext | None = None,
+    preserve_raw: bool = False,
+) -> dict[str, Any]:
     """Parse an iTunesDB (or iTunesCDB) file into a nested dict tree.
 
     Args:
         file: A filesystem path (``str`` or ``os.PathLike``) or an open
               binary file-like object positioned at the start of the data.
+        preserve_raw: When true, retain each chunk's raw header and every
+            unparsed body/trailer byte under ``_raw_chunk``. Use this for
+            forensic analysis; normal library loading should leave it false.
 
     Returns:
         Dict representation of the mhbd root chunk and all children.
@@ -113,6 +126,15 @@ def parse_itunesdb(file: str | os.PathLike[str] | BinaryIO) -> dict[str, Any]:
     data = decompress_itunescdb(data)
 
     reset_unknown_chunk_summary()
-    parsed, _chunk_type = parse_chunk(data, 0)
-    log_unknown_chunk_summary()
-    return parsed["data"]
+    with preserve_raw_chunks(preserve_raw):
+        if time_context is None:
+            parsed, _chunk_type = parse_chunk(data, 0)
+        else:
+            with use_device_time_context(time_context):
+                parsed, _chunk_type = parse_chunk(data, 0)
+        log_unknown_chunk_summary()
+
+    result = parsed["data"]
+    if preserve_raw and isinstance(result, dict) and "_raw_chunk" in parsed:
+        result["_raw_chunk"] = parsed["_raw_chunk"]
+    return result

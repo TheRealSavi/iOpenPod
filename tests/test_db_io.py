@@ -6,7 +6,7 @@ from typing import cast
 
 import pytest
 
-from iopenpod.device import create_virtual_ipod
+from iopenpod.device import capabilities_for_family_gen, create_virtual_ipod
 from iopenpod.device.filesystem_profile import FilesystemProfile
 from iopenpod.device.write_guard import DeviceWriteGuard, DeviceWriteSafetyError
 from iopenpod.itunesdb_writer.mhit_writer import TrackInfo
@@ -29,6 +29,44 @@ def test_write_database_raises_original_writer_error_when_requested(
 
     with pytest.raises(WriterError, match="Offending image: /music/Album/cover.tif"):
         _db_io.write_database(tmp_path, [], raise_on_error=True)
+
+
+def test_write_database_preserves_capacity_specific_device_capabilities(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """The DB install path must retain the selected device's 64 MiB profile."""
+    from iopenpod import itunesdb_writer
+
+    high_memory_caps = capabilities_for_family_gen(
+        "iPod",
+        "5.5th Gen",
+        capacity="80GB",
+        model_number="MA448",
+    )
+    assert high_memory_caps is not None
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        "iopenpod.device.get_current_device_for_path",
+        lambda _path: SimpleNamespace(
+            model_family="iPod",
+            generation="5.5th Gen",
+            capacity="80GB",
+            model_number="MA448",
+            capabilities=high_memory_caps,
+        ),
+    )
+    monkeypatch.setattr(
+        itunesdb_writer,
+        "write_itunesdb",
+        lambda *_args, **kwargs: captured.update(kwargs) or True,
+    )
+    monkeypatch.setattr(_db_io, "verify_written_database", lambda *_args, **_kwargs: None)
+
+    assert _db_io.write_database(tmp_path, []) is True
+    assert captured["capabilities"] is high_memory_caps
+    assert high_memory_caps.max_database_bytes == 64 * 1024 * 1024
 
 
 def test_write_database_rejects_track_whose_committed_media_file_is_missing(
@@ -138,6 +176,44 @@ def test_playcount_commit_checks_write_readiness_before_reading_database(
     assert reads == []
 
 
+def test_playcount_commit_uses_the_shared_device_writer_queue(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    from iopenpod.itunesdb_parser import playcounts
+
+    attempts: list[str] = []
+    guarded_commits: list[object] = []
+
+    class _Guard:
+        def __init__(self, *_args, **_kwargs) -> None:
+            attempts.append("created")
+
+        def __enter__(self):
+            attempts.append("entered")
+            return self
+
+        def __exit__(self, *_args) -> None:
+            attempts.append("released")
+
+    monkeypatch.setattr(
+        playcounts,
+        "parse_playcounts",
+        lambda _path: [SimpleNamespace(has_data=True)],
+    )
+    monkeypatch.setattr(_db_io, "inspect_device_write_readiness", lambda _path: object())
+    monkeypatch.setattr(_db_io, "volume_lock_key", lambda _profile: "test-volume")
+    monkeypatch.setattr(_db_io, "DeviceWriteGuard", _Guard)
+    monkeypatch.setattr(
+        _db_io,
+        "_commit_playcounts_guarded",
+        lambda *_args, **kwargs: guarded_commits.append(kwargs["write_guard"]) or True,
+    )
+    assert _db_io.commit_playcounts_if_needed(tmp_path) is True
+    assert attempts == ["created", "entered", "released"]
+    assert len(guarded_commits) == 1
+
+
 def test_playcount_cleanup_removes_only_contained_known_state_files(
     tmp_path: Path,
 ) -> None:
@@ -212,7 +288,7 @@ def test_guarded_playcount_commit_does_not_hide_cleanup_safety_failure(
     monkeypatch.setattr(
         _playlist_builder,
         "build_and_evaluate_playlists",
-        lambda *_args: ("iPod", 1, [], "Podcasts", 2, [], []),
+        lambda *_args, **_kwargs: ("iPod", 1, [], "Podcasts", 2, [], []),
     )
     monkeypatch.setattr(
         database_commit,

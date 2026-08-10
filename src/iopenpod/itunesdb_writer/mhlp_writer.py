@@ -22,6 +22,7 @@ Cross-referenced against:
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -33,8 +34,55 @@ from iopenpod.itunesdb_shared.field_base import (
     write_list_chunk,
     write_list_header,
 )
+from iopenpod.itunesdb_shared.playlist_hierarchy import reconcile_playlist_hierarchy
 
+from .mhod_spl_writer import prefs_from_parsed, rules_from_parsed
 from .mhyp_writer import write_master_playlist, write_playlist
+
+
+def _reconcile_playlist_infos(
+    playlists: list[PlaylistInfo],
+) -> list[PlaylistInfo]:
+    """Apply the shared folder contract to cloned writer inputs."""
+
+    rows = reconcile_playlist_hierarchy(
+        {
+            "_playlist_info_index": index,
+            "playlist_id": playlist.playlist_id,
+            "playlist_kind_flags": playlist.kind_flags,
+            "podcast_flag": playlist.podcast_flag,
+            "is_folder": playlist.is_folder,
+            "is_podcast": playlist.is_podcast,
+            "parent_folder_playlist_id": playlist.parent_folder_playlist_id,
+            "items": [
+                {"db_track_id": track_id} for track_id in playlist.track_ids
+            ],
+        }
+        for index, playlist in enumerate(playlists)
+    )
+
+    reconciled: list[PlaylistInfo] = []
+    for row in rows:
+        playlist = playlists[int(row["_playlist_info_index"])]
+        track_ids = [int(item["db_track_id"]) for item in row.get("items", [])]
+        changes = {
+            "track_ids": track_ids,
+            "podcast_flag": int(row["playlist_kind_flags"]),
+            "playlist_kind_flags": int(row["playlist_kind_flags"]),
+            "parent_folder_playlist_id": int(row["parent_folder_playlist_id"]),
+        }
+        if row["is_folder"]:
+            changes.update({
+                "smart_prefs": (
+                    playlist.smart_prefs
+                    if playlist.smart_prefs is not None
+                    else prefs_from_parsed(row["smart_playlist_data"])
+                ),
+                "smart_rules": rules_from_parsed(row["smart_playlist_rules"]),
+                "item_metadata": None,
+            })
+        reconciled.append(replace(playlist, **changes))
+    return reconciled
 
 
 def write_mhlp_empty() -> bytes:
@@ -104,7 +152,7 @@ def write_mhlp_with_playlists(
     chunks.append(master)
 
     # Write all user playlists (regular and smart).
-    for pl in playlists:
+    for pl in _reconcile_playlist_infos(playlists):
         chunks.append(write_playlist(pl, db_id_2=db_id_2))
 
     return write_mhlp(chunks)
@@ -126,7 +174,7 @@ def write_mhlp_with_playlists_type3(
     Dataset 3 is structurally another MHLP, but firmware treats it as the
     type-3 playlist list. Playlist rows are not reclassified here;
     the only dataset-3-specific write behavior is that entries marked as
-    podcast (``podcast_flag == 1``) use the grouped MHIP structure described
+    podcast (bit 0 of ``playlist_kind_flags``) use the grouped MHIP structure described
     by libgpod's ``write_podcast_mhips()``.
 
     In the grouped structure, podcast episodes are nested under their
@@ -162,7 +210,7 @@ def write_mhlp_with_playlists_type3(
     )
     chunks.append(master)
 
-    for pl in playlists:
+    for pl in _reconcile_playlist_infos(playlists):
         chunks.append(write_playlist(
             pl, db_id_2=db_id_2,
             podcast_grouping=True,
@@ -207,7 +255,7 @@ def write_mhlp_smart(
         return write_mhlp_empty()
 
     chunks = []
-    for pl in playlists:
+    for pl in _reconcile_playlist_infos(playlists):
         chunks.append(write_playlist(pl, db_id_2=db_id_2))
 
     return write_mhlp(chunks)

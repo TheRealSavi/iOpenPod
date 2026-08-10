@@ -1,4 +1,5 @@
 import sys
+from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -16,6 +17,7 @@ from iopenpod.device.info import (
     set_current_device,
 )
 from iopenpod.gui import device_warnings
+from iopenpod.gui.styles import paint_css
 from iopenpod.gui.widgets import devicePicker
 from iopenpod.gui.widgets.devicePicker import DeviceCard, DevicePickerDialog
 
@@ -193,6 +195,9 @@ def test_device_card_can_be_deleted_by_its_click_handler(monkeypatch, qtbot) -> 
         display_name="iPod Classic",
     )
     card = DeviceCard(ipod)
+    card.setSelected(True)
+    assert paint_css("device.picker.selected_fill") in card.styleSheet()
+    assert paint_css("device.picker.selected_border") in card.styleSheet()
 
     def delete_card(_ipod: object) -> None:
         card.setParent(None)
@@ -279,10 +284,8 @@ def test_linux_unidentified_warning_offers_safe_host_setup(
     assert len(shown_messages) == 1
     message = shown_messages[0]
     button_labels = {button.text() for button in message.buttons()}
-    assert "Review Linux Setup" in button_labels
-    assert "/etc/udev/rules.d/61-iopenpod.rules" in message.detailedText()
-    assert "udevadm trigger" in message.detailedText()
-    assert 'TAG+="uaccess"' not in message.detailedText()
+    assert button_labels == {"View Setup Commands", "Report Issue", "Close"}
+    assert message.detailedText() == ""
 
 
 def test_linux_setup_commands_are_visible_before_copying(qtbot) -> None:
@@ -293,6 +296,28 @@ def test_linux_setup_commands_are_visible_before_copying(qtbot) -> None:
     assert dialog.commands.isReadOnly()
     assert dialog.commands.toPlainText() == commands
     assert dialog.commands.accessibleName() == "Linux iPod host setup commands"
+    assert "close this window to scan" in dialog._next_step_label.text().lower()
+    assert {button.text() for button in dialog._buttons.buttons()} == {
+        "Copy Commands",
+        "Done",
+    }
+
+
+def test_linux_setup_refreshes_device_picker_when_review_is_closed(
+    qtbot,
+) -> None:
+    commands = "sudo install example\n"
+    refreshes: list[None] = []
+    dialog = device_warnings.LinuxIdentitySetupReviewDialog(
+        None,
+        commands,
+        after_close=lambda: refreshes.append(None),
+    )
+    qtbot.addWidget(dialog)
+
+    dialog.reject()
+
+    assert refreshes == [None]
 
 
 def test_picker_automatically_offers_linux_setup_once_per_ipod(
@@ -305,15 +330,16 @@ def test_picker_automatically_offers_linux_setup_once_per_ipod(
     ipod = create_virtual_ipod(tmp_path, "MB565")
     ipod.model_number = ""
     ipod.serial = ""
-    warnings: list[object] = []
+    warnings: list[tuple[object, Callable[[], None]]] = []
     monkeypatch.setattr(devicePicker.sys, "platform", "linux")
     monkeypatch.setattr(
         devicePicker,
         "show_unidentified_ipod_warning",
-        lambda _parent, device: warnings.append(device),
+        lambda _parent, device, **kwargs: warnings.append((device, kwargs["after_close"])),
     )
     device_warnings._AUTOMATIC_WARNING_KEYS.clear()
-    dialog = SimpleNamespace()
+    rescans: list[None] = []
+    dialog = SimpleNamespace(_start_scan=lambda: rescans.append(None))
 
     DevicePickerDialog._offer_linux_identity_setup(
         cast(Any, dialog),
@@ -324,4 +350,8 @@ def test_picker_automatically_offers_linux_setup_once_per_ipod(
         [ipod],
     )
 
-    assert warnings == [ipod]
+    assert len(warnings) == 1
+    warned_ipod, after_close = warnings[0]
+    assert warned_ipod is ipod
+    after_close()
+    assert rescans == [None]

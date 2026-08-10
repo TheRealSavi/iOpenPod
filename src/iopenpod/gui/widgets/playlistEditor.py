@@ -34,6 +34,7 @@ from iopenpod.itunesdb_shared.constants import PLAYLIST_SORT_ORDER_MAP
 from iopenpod.itunesdb_shared.field_base import MAC_EPOCH_OFFSET
 from iopenpod.itunesdb_shared.mhod_defs import (
     SPL_ACTION_MAP,
+    SPL_AUTHORABLE_FIELD_IDS,
     SPL_CHOICE_FIELD_IDS,
     SPL_CHOICE_UNKNOWN_LABELS,
     SPL_CHOICE_VALUE_MAP,
@@ -66,6 +67,11 @@ from iopenpod.itunesdb_shared.mhod_defs import (
     SPLFT_INT,
     SPLFT_STRING,
 )
+from iopenpod.itunesdb_shared.playlist_kinds import (
+    PLAYLIST_KIND_FOLDER,
+    PLAYLIST_KIND_PODCAST,
+    is_playlist_folder,
+)
 from iopenpod.itunesdb_shared.playlist_lifecycle import playlist_edit_payload
 from iopenpod.itunesdb_shared.playlist_properties import (
     playlist_description_from_row,
@@ -75,7 +81,6 @@ from iopenpod.itunesdb_shared.playlist_properties import (
 from ..glyphs import glyph_icon
 from ..styles import (
     FONT_FAMILY,
-    Colors,
     Design,
     Metrics,
     accent_btn_css,
@@ -86,6 +91,7 @@ from ..styles import (
     input_css,
     make_scroll_area,
     make_separator,
+    paint_css,
     panel_css,
     spin_css,
     title_input_css,
@@ -118,7 +124,7 @@ _FIELD_LABEL_OVERRIDES = {
     0x02: "Name",
     0x3E: "Video Show",
 }
-_UNSUPPORTED_FIELD_IDS = frozenset({0x39, 0x3E, 0x3F})
+_UNSUPPORTED_FIELD_IDS = frozenset(_FIELD_OPTION_IDS) - SPL_AUTHORABLE_FIELD_IDS
 
 FIELD_DEFS: dict[int, tuple[str, int]] = {
     field_id: (
@@ -278,7 +284,7 @@ def _int_display_value(field_id: int, raw_value: int) -> int:
 def _int_raw_value(field_id: int, display_value: int, *, upper_bound: bool = False) -> int:
     if field_id in (0x19, 0x5A):
         raw = max(0, min(5, int(display_value))) * 20
-        return raw + 9 if upper_bound and raw else raw
+        return raw + 9 if upper_bound else raw
     if field_id == 0x0C:
         return max(0, int(display_value)) * 1024 * 1024
     return int(display_value)
@@ -308,7 +314,9 @@ def _label_css(color: str) -> str:
     return f"color: {color}; background: transparent; border: none;"
 
 
-def _subtle_label_css(color: str = Colors.TEXT_TERTIARY) -> str:
+def _subtle_label_css(color: str | None = None) -> str:
+    if color is None:
+        color = paint_css("text.tertiary")
     return (
         f"color: {color}; background: transparent; border: none;"
         " text-transform: uppercase;"
@@ -322,7 +330,7 @@ def _title_input_css() -> str:
 def _editor_panel_css(object_name: str) -> str:
     return panel_css(
         object_name,
-        bg=Colors.SURFACE_ALT,
+        bg=paint_css("surface.inset"),
         radius=Metrics.BORDER_RADIUS_SM,
     )
 
@@ -330,8 +338,8 @@ def _editor_panel_css(object_name: str) -> str:
 def _editor_notice_css(object_name: str) -> str:
     return panel_css(
         object_name,
-        bg=Colors.ACCENT_MUTED,
-        border=f"1px solid {Colors.ACCENT_BORDER}",
+        bg=paint_css("notice.info.fill"),
+        border=f"1px solid {paint_css('notice.info.border')}",
         radius=Metrics.BORDER_RADIUS_SM,
     )
 
@@ -345,7 +353,7 @@ def _section_header(text: str) -> QWidget:
 
     label = QLabel(text, widget)
     label.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS, QFont.Weight.Bold))
-    label.setStyleSheet(_subtle_label_css(Colors.TEXT_SECONDARY))
+    label.setStyleSheet(_subtle_label_css(paint_css("text.secondary")))
     layout.addWidget(label)
     layout.addWidget(make_separator(), 1)
     return widget
@@ -353,7 +361,7 @@ def _section_header(text: str) -> QWidget:
 
 def _section_label_style() -> str:
     return (
-        f"color: {Colors.TEXT_TERTIARY}; background: transparent; border: none; "
+        f"color: {paint_css('text.tertiary')}; background: transparent; border: none; "
         f"font-size: {Metrics.FONT_SM}pt; font-weight: bold;"
     )
 
@@ -418,6 +426,7 @@ class SmartRuleRow(QFrame):
         self.setMinimumHeight(40)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._playlist_options = playlist_options or []
+        self._original_rule: dict = {}
 
         self._layout = QHBoxLayout(self)
         self._layout.setContentsMargins(0, 5, 0, 5)
@@ -456,7 +465,7 @@ class SmartRuleRow(QFrame):
 
         # ── Remove button ──
         self.remove_btn = QPushButton()
-        _close_ic = glyph_icon("close", 12, Colors.DANGER)
+        _close_ic = glyph_icon("close", 12, paint_css("status.danger.text"))
         if _close_ic:
             self.remove_btn.setIcon(_close_ic)
         else:
@@ -508,13 +517,12 @@ class SmartRuleRow(QFrame):
         aid = self.action_combo.currentData()
         field_name, ft = FIELD_DEFS.get(fid, ("Unknown", SPLFT_STRING))
 
-        data: dict = {
-            "field_id": fid or 0x02,
-            "action_id": aid or 0x00000001,
-            # Human-readable keys expected by format_smart_rule()
-            "field": self.field_combo.currentText() or field_name,
-            "action": self.action_combo.currentText() or "?",
-            "field_type": ft,
+        data: dict = dict(self._original_rule)
+        same_rule_kind = (
+            fid == self._original_rule.get("field_id")
+            and aid == self._original_rule.get("action_id")
+        )
+        raw_defaults = {
             "string_value": None,
             "from_value": 0,
             "to_value": 0,
@@ -522,7 +530,25 @@ class SmartRuleRow(QFrame):
             "to_date": 0,
             "from_units": 0,
             "to_units": 0,
+            "unk052": 0,
+            "unk056": 0,
+            "unk060": 0,
+            "unk064": 0,
+            "unk068": 0,
         }
+        if same_rule_kind:
+            for key, value in raw_defaults.items():
+                data.setdefault(key, value)
+        else:
+            data.update(raw_defaults)
+        data.update({
+            "field_id": fid or 0x02,
+            "action_id": aid or 0x00000001,
+            # Human-readable keys expected by format_smart_rule()
+            "field": self.field_combo.currentText() or field_name,
+            "action": self.action_combo.currentText() or "?",
+            "field_type": ft,
+        })
 
         if ft == SPLFT_STRING:
             w: QLineEdit | None = self._find_widget(QLineEdit)  # type: ignore[assignment]
@@ -539,8 +565,11 @@ class SmartRuleRow(QFrame):
             spins: list[QSpinBox] = self._find_widgets(QSpinBox)  # type: ignore[assignment]
             if spins:
                 data["from_value"] = _int_raw_value(fid, spins[0].value())
-            if len(spins) > 1:
+            if aid in (0x00000100, 0x02000100) and len(spins) > 1:
                 data["to_value"] = _int_raw_value(fid, spins[1].value(), upper_bound=True)
+            if not same_rule_kind:
+                data["from_units"] = 1
+                data["to_units"] = 1
             # Rating special case — compute star values for formatter
             if fid == 0x19:  # Rating
                 data["from_value_stars"] = spins[0].value() if spins else 0
@@ -575,6 +604,7 @@ class SmartRuleRow(QFrame):
 
     def set_rule_data(self, rule: dict) -> None:
         """Populate the row from a parsed rule dict."""
+        self._original_rule = dict(rule)
         fid = rule.get("field_id", 0x02)
         aid = rule.get("action_id", 0x01000002)
 
@@ -628,7 +658,7 @@ class SmartRuleRow(QFrame):
                 idx = unit_combo.findData(units)
                 if idx >= 0:
                     unit_combo.setCurrentIndex(idx)
-            if date_edits:
+            if date_edits and aid not in (0x00000200, 0x02000200):
                 date_edits[0].setDate(_date_from_mac_timestamp(rule.get("from_value", 0)))
                 if len(date_edits) > 1:
                     date_edits[1].setDate(_date_from_mac_timestamp(rule.get("to_value", 0)))
@@ -694,7 +724,7 @@ class SmartRuleRow(QFrame):
             # "in range" needs a second spin
             self._range_label = QLabel("to")
             self._range_label.setStyleSheet(
-                f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;"
+                f"color: {paint_css('text.secondary')}; background: transparent; border: none;"
             )
             self._range_label.setVisible(False)
             self._add_value_widget(self._range_label)
@@ -720,7 +750,7 @@ class SmartRuleRow(QFrame):
 
             self._range_label = QLabel("to")
             self._range_label.setStyleSheet(
-                f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;"
+                f"color: {paint_css('text.secondary')}; background: transparent; border: none;"
             )
             self._add_value_widget(self._range_label)
 
@@ -882,6 +912,173 @@ class SmartRuleRow(QFrame):
 # SmartPlaylistEditor — full editor panel
 # ─────────────────────────────────────────────────────────────────────────────
 
+class SmartRuleGroup(QFrame):
+    """Recursive ALL/ANY container used by the smart-playlist editor."""
+
+    remove_clicked = pyqtSignal(object)
+    changed = pyqtSignal()
+
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        *,
+        playlist_options: list[tuple[int, str]] | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setObjectName("smartRuleGroup")
+        self.setStyleSheet(
+            f"QFrame#smartRuleGroup {{ background: {paint_css('surface.default')};"
+            f" border: 1px solid {paint_css('border.subtle')};"
+            f" border-radius: {Metrics.BORDER_RADIUS_SM}px; }}"
+        )
+        self._playlist_options = playlist_options or []
+        self._items: list[SmartRuleRow | SmartRuleGroup] = []
+        self._rule_metadata: dict = {}
+        self._group_metadata: dict = {"unk004": 0x00010001}
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 8, 10, 9)
+        layout.setSpacing(5)
+
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(6)
+
+        label = QLabel("Match")
+        label.setStyleSheet(_label_css(paint_css("text.secondary")))
+        header.addWidget(label)
+
+        self.conjunction_combo = _RuleComboBox()
+        self.conjunction_combo.setObjectName("smartRuleGroupConjunction")
+        self.conjunction_combo.setStyleSheet(_combo_css())
+        self.conjunction_combo.addItem("all", "AND")
+        self.conjunction_combo.addItem("any", "OR")
+        self.conjunction_combo.setFixedWidth(70)
+        self.conjunction_combo.currentIndexChanged.connect(self.changed.emit)
+        header.addWidget(self.conjunction_combo)
+
+        suffix = QLabel("of these")
+        suffix.setStyleSheet(_label_css(paint_css("text.secondary")))
+        header.addWidget(suffix)
+        header.addStretch()
+
+        self.add_rule_btn = QPushButton("Add Rule")
+        self.add_rule_btn.setObjectName("smartRuleGroupAddRule")
+        self.add_rule_btn.setStyleSheet(button_css("quiet", "sm"))
+        self.add_rule_btn.clicked.connect(self.add_rule)
+        header.addWidget(self.add_rule_btn)
+
+        self.add_group_btn = QPushButton("Add Group")
+        self.add_group_btn.setObjectName("smartRuleGroupAddGroup")
+        self.add_group_btn.setStyleSheet(button_css("quiet", "sm"))
+        self.add_group_btn.clicked.connect(self.add_group)
+        header.addWidget(self.add_group_btn)
+
+        self.remove_btn = QPushButton("Remove Group")
+        self.remove_btn.setObjectName("smartRuleGroupRemove")
+        self.remove_btn.setStyleSheet(_remove_btn_css())
+        self.remove_btn.clicked.connect(lambda: self.remove_clicked.emit(self))
+        header.addWidget(self.remove_btn)
+        layout.addLayout(header)
+
+        self._items_widget = QWidget(self)
+        self._items_widget.setStyleSheet("background: transparent; border: none;")
+        self._items_layout = QVBoxLayout(self._items_widget)
+        self._items_layout.setContentsMargins(14, 0, 0, 0)
+        self._items_layout.setSpacing(4)
+        self._items_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        layout.addWidget(self._items_widget)
+
+    def set_playlist_options(self, playlist_options: list[tuple[int, str]]) -> None:
+        self._playlist_options = playlist_options
+        for item in self._items:
+            item.set_playlist_options(playlist_options)
+
+    def set_rule_data(self, rule: dict) -> None:
+        """Load one parser group wrapper, retaining its opaque header fields."""
+        self._rule_metadata = {key: value for key, value in rule.items() if key != "group"}
+        raw_group = rule.get("group")
+        group = raw_group if isinstance(raw_group, dict) else {}
+        self._group_metadata = {
+            key: value for key, value in group.items() if key not in ("conjunction", "rules")
+        }
+        conjunction = group.get("conjunction", "AND")
+        if isinstance(conjunction, int):
+            conjunction = "OR" if conjunction == 1 else "AND"
+        index = self.conjunction_combo.findData(str(conjunction).upper())
+        self.conjunction_combo.setCurrentIndex(max(0, index))
+        self.clear_rules()
+        rules = group.get("rules", [])
+        if isinstance(rules, list):
+            for child in rules:
+                if isinstance(child, dict):
+                    self._add_rule_data(child)
+
+    def get_rule_data(self) -> dict:
+        group = dict(self._group_metadata)
+        group.update({
+            "conjunction": self.conjunction_combo.currentData() or "AND",
+            "rules": [item.get_rule_data() for item in self._items],
+        })
+        if "rule_count" in group:
+            group["rule_count"] = len(group["rules"])
+        wrapper = dict(self._rule_metadata)
+        wrapper.setdefault("field_id", 0)
+        wrapper.setdefault("action_id", 1)
+        wrapper.setdefault("group_marker", 0x01000000)
+        wrapper.setdefault("header_bytes", b"\0" * 40)
+        wrapper["group"] = group
+        return wrapper
+
+    def add_rule(self) -> SmartRuleRow:
+        row = SmartRuleRow(playlist_options=self._playlist_options)
+        row.remove_clicked.connect(self._remove_item)
+        row.changed.connect(self.changed.emit)
+        self._items_layout.addWidget(row)
+        self._items.append(row)
+        self.changed.emit()
+        return row
+
+    def add_group(self) -> SmartRuleGroup:
+        group = SmartRuleGroup(playlist_options=self._playlist_options)
+        group.remove_clicked.connect(self._remove_item)
+        group.changed.connect(self.changed.emit)
+        group.add_rule()
+        self._items_layout.addWidget(group)
+        self._items.append(group)
+        self.changed.emit()
+        return group
+
+    def clear_rules(self) -> None:
+        for item in self._items:
+            _delete_embedded_widget(item)
+        self._items.clear()
+
+    def _add_rule_data(self, rule: dict) -> SmartRuleRow | SmartRuleGroup:
+        if isinstance(rule.get("group"), dict):
+            group = SmartRuleGroup(playlist_options=self._playlist_options)
+            group.remove_clicked.connect(self._remove_item)
+            group.changed.connect(self.changed.emit)
+            group.set_rule_data(rule)
+            item: SmartRuleRow | SmartRuleGroup = group
+        else:
+            row = SmartRuleRow(playlist_options=self._playlist_options)
+            row.remove_clicked.connect(self._remove_item)
+            row.changed.connect(self.changed.emit)
+            row.set_rule_data(rule)
+            item = row
+        self._items_layout.addWidget(item)
+        self._items.append(item)
+        return item
+
+    def _remove_item(self, item: SmartRuleRow | SmartRuleGroup) -> None:
+        if item not in self._items:
+            return
+        self._items.remove(item)
+        _delete_embedded_widget(item)
+        self.changed.emit()
+
+
 class SmartPlaylistEditor(QFrame):
     """Full smart playlist editor replacing the info card when editing."""
 
@@ -899,6 +1096,7 @@ class SmartPlaylistEditor(QFrame):
         ))
 
         self._editing_playlist: dict | None = None  # None → new playlist
+        self._playlist_rows: list[dict] = []
         self._playlist_options: list[tuple[int, str]] = []
 
         root = QVBoxLayout(self)
@@ -932,12 +1130,12 @@ class SmartPlaylistEditor(QFrame):
 
         type_label = QLabel("Smart Playlist Editor")
         type_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS, QFont.Weight.Bold))
-        type_label.setStyleSheet(_subtle_label_css(Colors.TEXT_SECONDARY))
+        type_label.setStyleSheet(_subtle_label_css(paint_css("text.secondary")))
         meta_row.addWidget(type_label, 0, Qt.AlignmentFlag.AlignVCenter)
 
         source_label = QLabel("Rule-based playlist")
         source_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS))
-        source_label.setStyleSheet(_label_css(Colors.TEXT_TERTIARY))
+        source_label.setStyleSheet(_label_css(paint_css("text.tertiary")))
         meta_row.addWidget(source_label, 0, Qt.AlignmentFlag.AlignVCenter)
         meta_row.addStretch()
         title_col.addLayout(meta_row)
@@ -957,7 +1155,7 @@ class SmartPlaylistEditor(QFrame):
         self.save_btn = QPushButton("Save Playlist")
         self.save_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.Bold))
         self.save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        _save_ic = glyph_icon("check-circle", 14, Colors.TEXT_ON_ACCENT)
+        _save_ic = glyph_icon("check-circle", 14, paint_css("control.primary.text"))
         if _save_ic:
             self.save_btn.setIcon(_save_ic)
             self.save_btn.setIconSize(QSize(14, 14))
@@ -986,7 +1184,7 @@ class SmartPlaylistEditor(QFrame):
 
         lbl = QLabel("Match")
         lbl.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        lbl.setStyleSheet(_label_css(Colors.TEXT_SECONDARY))
+        lbl.setStyleSheet(_label_css(paint_css("text.secondary")))
         conj_row.addWidget(lbl)
 
         self.conjunction_combo = _RuleComboBox()
@@ -998,20 +1196,28 @@ class SmartPlaylistEditor(QFrame):
 
         lbl2 = QLabel("of the following rules")
         lbl2.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        lbl2.setStyleSheet(_label_css(Colors.TEXT_SECONDARY))
+        lbl2.setStyleSheet(_label_css(paint_css("text.secondary")))
         conj_row.addWidget(lbl2)
         conj_row.addStretch()
 
         self.add_rule_btn = QPushButton("Add Rule")
         self.add_rule_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.add_rule_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        _add_ic = glyph_icon("plus", 14, Colors.TEXT_SECONDARY)
+        _add_ic = glyph_icon("plus", 14, paint_css("text.secondary"))
         if _add_ic:
             self.add_rule_btn.setIcon(_add_ic)
             self.add_rule_btn.setIconSize(QSize(14, 14))
         self.add_rule_btn.setStyleSheet(button_css("quiet", "sm"))
         self.add_rule_btn.clicked.connect(self._add_empty_rule)
         conj_row.addWidget(self.add_rule_btn, 0, Qt.AlignmentFlag.AlignRight)
+
+        self.add_group_btn = QPushButton("Add Group")
+        self.add_group_btn.setObjectName("smartPlaylistAddGroup")
+        self.add_group_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        self.add_group_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.add_group_btn.setStyleSheet(button_css("quiet", "sm"))
+        self.add_group_btn.clicked.connect(self._add_group)
+        conj_row.addWidget(self.add_group_btn, 0, Qt.AlignmentFlag.AlignRight)
         rules_panel_layout.addLayout(conj_row)
 
         self._rules_scroll = make_scroll_area(
@@ -1037,7 +1243,8 @@ class SmartPlaylistEditor(QFrame):
         self._rules_scroll.setWidget(self._rules_widget)
         rules_panel_layout.addWidget(self._rules_scroll, stretch=1)
 
-        self._rule_rows: list[SmartRuleRow] = []
+        self._rule_rows: list[SmartRuleRow | SmartRuleGroup] = []
+        self._rules_metadata: dict = {"unk004": 0x00010001}
         root.addWidget(rules_panel, stretch=1)
 
         root.addWidget(_section_header("Behavior"))
@@ -1048,6 +1255,23 @@ class SmartPlaylistEditor(QFrame):
         opts = QVBoxLayout(opts_panel)
         opts.setContentsMargins(10, 8, 10, 9)
         opts.setSpacing(8)
+
+        parent_row = QHBoxLayout()
+        parent_row.setContentsMargins(0, 0, 0, 0)
+        parent_row.setSpacing(6)
+        self.parent_folder_label = QLabel("Parent Folder")
+        self.parent_folder_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        self.parent_folder_label.setStyleSheet(_label_css(paint_css("text.secondary")))
+        parent_row.addWidget(self.parent_folder_label)
+
+        self.parent_folder_combo = QComboBox()
+        self.parent_folder_combo.setObjectName("smartPlaylistParentFolder")
+        self.parent_folder_combo.setStyleSheet(_combo_css())
+        self.parent_folder_combo.setMinimumWidth(180)
+        self.parent_folder_combo.addItem("No parent (top level)", 0)
+        parent_row.addWidget(self.parent_folder_combo)
+        parent_row.addStretch()
+        opts.addLayout(parent_row)
 
         # Limit row
         limit_row = QHBoxLayout()
@@ -1078,7 +1302,7 @@ class SmartPlaylistEditor(QFrame):
         self._selected_by_label = QLabel("selected by")
         self._selected_by_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
         self._selected_by_label.setStyleSheet(
-            f"color: {Colors.TEXT_PRIMARY}; background: transparent; border: none;"
+            f"color: {paint_css('text.primary')}; background: transparent; border: none;"
         )
         limit_row.addWidget(self._selected_by_label)
 
@@ -1092,6 +1316,12 @@ class SmartPlaylistEditor(QFrame):
 
         limit_row.addStretch()
         opts.addLayout(limit_row)
+
+        # Rule matching
+        self.check_rules_check = QCheckBox("Match rules")
+        self.check_rules_check.setStyleSheet(_checkbox_css())
+        self.check_rules_check.setChecked(True)
+        opts.addWidget(self.check_rules_check)
 
         # Live updating
         self.live_update_check = QCheckBox("Live updating")
@@ -1110,7 +1340,7 @@ class SmartPlaylistEditor(QFrame):
         sort_row.setSpacing(6)
         sort_lbl = QLabel("Sort Order")
         sort_lbl.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        sort_lbl.setStyleSheet(_label_css(Colors.TEXT_SECONDARY))
+        sort_lbl.setStyleSheet(_label_css(paint_css("text.secondary")))
         sort_row.addWidget(sort_lbl)
 
         self.sort_combo = QComboBox()
@@ -1129,6 +1359,7 @@ class SmartPlaylistEditor(QFrame):
     # ─────────────────────────────────────────────────────────────
 
     def set_playlist_options(self, playlists: list[dict]) -> None:
+        self._playlist_rows = list(playlists)
         options: list[tuple[int, str]] = []
         seen: set[int] = set()
         for playlist in playlists:
@@ -1144,6 +1375,7 @@ class SmartPlaylistEditor(QFrame):
         self._playlist_options = options
         for row in self._rule_rows:
             row.set_playlist_options(options)
+        self._populate_parent_folder_combo()
 
     def new_playlist(self) -> None:
         """Set up for creating a brand-new smart playlist."""
@@ -1151,8 +1383,11 @@ class SmartPlaylistEditor(QFrame):
         self.name_input.setText("")
         self.name_input.setPlaceholderText("New Smart Playlist")
         self.description_input.setText("")
+        self._populate_parent_folder_combo(0)
+        self._rules_metadata = {"unk004": 0x00010001}
         self.conjunction_combo.setCurrentIndex(0)  # all (AND)
         self.limit_check.setChecked(False)
+        self.check_rules_check.setChecked(True)
         self.live_update_check.setChecked(True)
         self.match_checked_check.setChecked(False)
         self.sort_combo.setCurrentIndex(0)  # Manual
@@ -1168,9 +1403,18 @@ class SmartPlaylistEditor(QFrame):
 
         prefs = playlist.get("smart_playlist_data", {})
         rules = playlist.get("smart_playlist_rules", {})
+        self._rules_metadata = {
+            key: value for key, value in rules.items() if key not in ("conjunction", "rules")
+        }
+        parent_folder_id = int(playlist.get("parent_folder_playlist_id", 0) or 0)
+        self._populate_parent_folder_combo(parent_folder_id)
 
         # Conjunction
         conj = rules.get("conjunction", "AND")
+        if isinstance(conj, int):
+            conj = "OR" if conj == 1 else "AND"
+        else:
+            conj = str(conj).upper()
         idx = self.conjunction_combo.findData(conj)
         if idx >= 0:
             self.conjunction_combo.setCurrentIndex(idx)
@@ -1182,11 +1426,15 @@ class SmartPlaylistEditor(QFrame):
         lt_idx = self.limit_type_combo.findData(prefs.get("limit_type", 0x03))
         if lt_idx >= 0:
             self.limit_type_combo.setCurrentIndex(lt_idx)
-        ls_idx = self.limit_sort_combo.findData(prefs.get("limit_sort", 0x02))
+        limit_sort = prefs.get("limit_sort", 0x02)
+        if prefs.get("reverse_sort", False):
+            limit_sort |= 0x80000000
+        ls_idx = self.limit_sort_combo.findData(limit_sort)
         if ls_idx >= 0:
             self.limit_sort_combo.setCurrentIndex(ls_idx)
 
-        # Live update & match checked
+        # Rule matching, live update & match checked
+        self.check_rules_check.setChecked(prefs.get("check_rules", True))
         self.live_update_check.setChecked(prefs.get("live_update", True))
         self.match_checked_check.setChecked(prefs.get("match_checked_only", False))
 
@@ -1201,12 +1449,8 @@ class SmartPlaylistEditor(QFrame):
         # Rules
         self._clear_rules()
         rule_list = rules.get("rules", [])
-        if not rule_list:
-            self._add_empty_rule()
-        else:
-            for r in rule_list:
-                row = self._add_empty_rule()
-                row.set_rule_data(r)
+        for r in rule_list:
+            self._add_rule_data(r)
 
         self.name_input.setFocus()
         self.name_input.selectAll()
@@ -1218,25 +1462,31 @@ class SmartPlaylistEditor(QFrame):
             Title, isSmartPlaylist, smart_playlist_data, smart_playlist_rules, _isNew
         """
         rules = [row.get_rule_data() for row in self._rule_rows]
+        rules_data = dict(self._rules_metadata)
+        rules_data.update({
+            "conjunction": self.conjunction_combo.currentData() or "AND",
+            "rules": rules,
+        })
+        if "rule_count" in rules_data:
+            rules_data["rule_count"] = len(rules)
 
         changes = {
             "Title": self.name_input.text().strip() or "Untitled Playlist",
             "_isNew": self._editing_playlist is None,
             "_source": "regular",
             "sort_order": self.sort_combo.currentData() or 1,
+            "parent_folder_playlist_id": self.parent_folder_combo.currentData() or 0,
+            "unk0x30_playlist_ref": self.parent_folder_combo.currentData() or 0,
             "smart_playlist_data": {
                 "live_update": self.live_update_check.isChecked(),
-                "check_rules": True,
+                "check_rules": self.check_rules_check.isChecked(),
                 "check_limits": self.limit_check.isChecked(),
                 "limit_type": self.limit_type_combo.currentData() or 0x03,
                 "limit_sort": self.limit_sort_combo.currentData() or 0x02,
                 "limit_value": self.limit_value_spin.value(),
                 "match_checked_only": self.match_checked_check.isChecked(),
             },
-            "smart_playlist_rules": {
-                "conjunction": self.conjunction_combo.currentData() or "AND",
-                "rules": rules,
-            },
+            "smart_playlist_rules": rules_data,
         }
         changes.update(
             playlist_description_update_fields(
@@ -1250,6 +1500,29 @@ class SmartPlaylistEditor(QFrame):
     # Internal
     # ─────────────────────────────────────────────────────────────
 
+    def _populate_parent_folder_combo(self, selected_id: int | None = None) -> None:
+        if selected_id is None:
+            selected_id = int(self.parent_folder_combo.currentData() or 0)
+        editing_id = int((self._editing_playlist or {}).get("playlist_id", 0) or 0)
+        self.parent_folder_combo.blockSignals(True)
+        self.parent_folder_combo.clear()
+        self.parent_folder_combo.addItem("No parent (top level)", 0)
+        seen: set[int] = set()
+        for playlist in self._playlist_rows:
+            playlist_id = int(playlist.get("playlist_id", 0) or 0)
+            if not playlist_id or playlist_id in seen or playlist_id == editing_id:
+                continue
+            if not is_playlist_folder(playlist):
+                continue
+            seen.add(playlist_id)
+            self.parent_folder_combo.addItem(
+                str(playlist.get("Title") or f"Folder {playlist_id}"),
+                playlist_id,
+            )
+        index = self.parent_folder_combo.findData(selected_id)
+        self.parent_folder_combo.setCurrentIndex(max(0, index))
+        self.parent_folder_combo.blockSignals(False)
+
     def _add_empty_rule(self) -> SmartRuleRow:
         row = SmartRuleRow(playlist_options=self._playlist_options)
         row.remove_clicked.connect(self._remove_rule)
@@ -1258,13 +1531,34 @@ class SmartPlaylistEditor(QFrame):
         self._rule_rows.append(row)
         return row
 
-    def _remove_rule(self, row: SmartRuleRow) -> None:
+    def _add_group(self) -> SmartRuleGroup:
+        group = SmartRuleGroup(playlist_options=self._playlist_options)
+        group.remove_clicked.connect(self._remove_rule)
+        group.add_rule()
+        self._rules_layout.addWidget(group)
+        self._rule_rows.append(group)
+        return group
+
+    def _add_rule_data(self, rule: dict) -> SmartRuleRow | SmartRuleGroup:
+        if isinstance(rule.get("group"), dict):
+            group = SmartRuleGroup(playlist_options=self._playlist_options)
+            group.remove_clicked.connect(self._remove_rule)
+            group.set_rule_data(rule)
+            item: SmartRuleRow | SmartRuleGroup = group
+        else:
+            row = SmartRuleRow(playlist_options=self._playlist_options)
+            row.remove_clicked.connect(self._remove_rule)
+            row.changed.connect(lambda: None)
+            row.set_rule_data(rule)
+            item = row
+        self._rules_layout.addWidget(item)
+        self._rule_rows.append(item)
+        return item
+
+    def _remove_rule(self, row: SmartRuleRow | SmartRuleGroup) -> None:
         if row in self._rule_rows:
             self._rule_rows.remove(row)
             _delete_embedded_widget(row)
-        # Always keep at least one rule
-        if not self._rule_rows:
-            self._add_empty_rule()
 
     def _clear_rules(self) -> None:
         for row in self._rule_rows:
@@ -1335,6 +1629,8 @@ class RegularPlaylistEditor(QFrame):
         ))
 
         self._editing_playlist: dict | None = None  # None → new playlist
+        self._creating_folder = False
+        self._playlist_rows: list[dict] = []
 
         root = QVBoxLayout(self)
         root.setContentsMargins(16, 14, 16, 14)
@@ -1365,15 +1661,15 @@ class RegularPlaylistEditor(QFrame):
         meta_row.setContentsMargins(0, 0, 0, 0)
         meta_row.setSpacing(6)
 
-        type_label = QLabel("Playlist Editor")
-        type_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS, QFont.Weight.Bold))
-        type_label.setStyleSheet(_subtle_label_css(Colors.TEXT_SECONDARY))
-        meta_row.addWidget(type_label, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.type_label = QLabel("Playlist Editor")
+        self.type_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS, QFont.Weight.Bold))
+        self.type_label.setStyleSheet(_subtle_label_css(paint_css("text.secondary")))
+        meta_row.addWidget(self.type_label, 0, Qt.AlignmentFlag.AlignVCenter)
 
-        source_label = QLabel("Manual track playlist")
-        source_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS))
-        source_label.setStyleSheet(_label_css(Colors.TEXT_TERTIARY))
-        meta_row.addWidget(source_label, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.source_label = QLabel("Manual track playlist")
+        self.source_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS))
+        self.source_label.setStyleSheet(_label_css(paint_css("text.tertiary")))
+        meta_row.addWidget(self.source_label, 0, Qt.AlignmentFlag.AlignVCenter)
         meta_row.addStretch()
         title_col.addLayout(meta_row)
         header.addLayout(title_col, 1)
@@ -1392,7 +1688,7 @@ class RegularPlaylistEditor(QFrame):
         self.save_btn = QPushButton("Save")
         self.save_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.Bold))
         self.save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        _save_ic = glyph_icon("check-circle", 14, Colors.TEXT_ON_ACCENT)
+        _save_ic = glyph_icon("check-circle", 14, paint_css("control.primary.text"))
         if _save_ic:
             self.save_btn.setIcon(_save_ic)
             self.save_btn.setIconSize(QSize(14, 14))
@@ -1418,7 +1714,7 @@ class RegularPlaylistEditor(QFrame):
         sort_row.setSpacing(8)
         sort_label = QLabel("Sort Order")
         sort_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        sort_label.setStyleSheet(_label_css(Colors.TEXT_SECONDARY))
+        sort_label.setStyleSheet(_label_css(paint_css("text.secondary")))
         sort_row.addWidget(sort_label)
 
         self.sort_combo = QComboBox()
@@ -1430,6 +1726,24 @@ class RegularPlaylistEditor(QFrame):
         sort_row.addWidget(self.sort_combo)
         sort_row.addStretch()
         settings_layout.addLayout(sort_row)
+
+        parent_row = QHBoxLayout()
+        parent_row.setContentsMargins(0, 0, 0, 0)
+        parent_row.setSpacing(8)
+        self.parent_folder_label = QLabel("Parent Folder")
+        self.parent_folder_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        self.parent_folder_label.setStyleSheet(_label_css(paint_css("text.secondary")))
+        parent_row.addWidget(self.parent_folder_label)
+
+        self.parent_folder_combo = QComboBox()
+        self.parent_folder_combo.setObjectName("playlistParentFolder")
+        self.parent_folder_combo.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        self.parent_folder_combo.setMinimumWidth(180)
+        self.parent_folder_combo.setStyleSheet(_combo_css())
+        self.parent_folder_combo.addItem("No parent (top level)", 0)
+        parent_row.addWidget(self.parent_folder_combo)
+        parent_row.addStretch()
+        settings_layout.addLayout(parent_row)
 
         root.addWidget(settings_panel)
 
@@ -1445,21 +1759,21 @@ class RegularPlaylistEditor(QFrame):
         note_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         note_icon.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS, QFont.Weight.Bold))
         note_icon.setStyleSheet(
-            f"color: {Colors.ACCENT};"
+            f"color: {paint_css('status.info.text')};"
             "background: transparent;"
-            f"border: 1px solid {Colors.ACCENT_BORDER};"
+            f"border: 1px solid {paint_css('notice.info.border')};"
             "border-radius: 9px;"
         )
         note_layout.addWidget(note_icon, 0, Qt.AlignmentFlag.AlignTop)
 
-        note_text = QLabel(
+        self.note_text = QLabel(
             "To add tracks, right-click a library track and choose this playlist from Add to Playlist.",
             add_tracks_note,
         )
-        note_text.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        note_text.setStyleSheet(_label_css(Colors.TEXT_SECONDARY))
-        note_text.setWordWrap(True)
-        note_layout.addWidget(note_text, 1)
+        self.note_text.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        self.note_text.setStyleSheet(_label_css(paint_css("text.secondary")))
+        self.note_text.setWordWrap(True)
+        note_layout.addWidget(self.note_text, 1)
 
         root.addWidget(add_tracks_note)
         root.addStretch()
@@ -1468,18 +1782,39 @@ class RegularPlaylistEditor(QFrame):
     # Public API
     # ─────────────────────────────────────────────────────────────
 
+    def set_playlist_options(self, playlists: list[dict]) -> None:
+        """Set rows used by the parent-folder chooser."""
+        self._playlist_rows = list(playlists)
+        self._populate_parent_folder_combo()
+
     def new_playlist(self) -> None:
         """Set up for creating a brand-new regular playlist."""
         self._editing_playlist = None
+        self._creating_folder = False
         self.name_input.setText("")
         self.name_input.setPlaceholderText("New Playlist")
         self.description_input.setText("")
         self.sort_combo.setCurrentIndex(0)  # Manual
+        self._populate_parent_folder_combo(0)
+        self._update_kind_labels()
+        self.name_input.setFocus()
+
+    def new_folder(self) -> None:
+        """Set up for creating a playlist folder."""
+        self._editing_playlist = None
+        self._creating_folder = True
+        self.name_input.setText("")
+        self.name_input.setPlaceholderText("New Playlist Folder")
+        self.description_input.setText("")
+        self.sort_combo.setCurrentIndex(0)
+        self._populate_parent_folder_combo(0)
+        self._update_kind_labels()
         self.name_input.setFocus()
 
     def edit_playlist(self, playlist: dict) -> None:
         """Populate the editor from an existing regular playlist dict."""
         self._editing_playlist = playlist
+        self._creating_folder = is_playlist_folder(playlist)
         self.name_input.setText(playlist.get("Title", ""))
         self.description_input.setText(playlist_description_from_row(playlist))
 
@@ -1491,6 +1826,10 @@ class RegularPlaylistEditor(QFrame):
         else:
             self.sort_combo.setCurrentIndex(0)
 
+        parent_folder_id = int(playlist.get("parent_folder_playlist_id", 0) or 0)
+        self._populate_parent_folder_combo(parent_folder_id)
+        self._update_kind_labels()
+
         self.name_input.setFocus()
         self.name_input.selectAll()
 
@@ -1499,14 +1838,32 @@ class RegularPlaylistEditor(QFrame):
 
         Returns a dict with keys matching the parsed playlist format.
         """
+        parent_folder_id = self.parent_folder_combo.currentData() or 0
         changes: dict = {
             "Title": self.name_input.text().strip() or "Untitled Playlist",
             "_isNew": self._editing_playlist is None,
             "_source": "regular",
             "sort_order": self.sort_combo.currentData() or 1,
+            "parent_folder_playlist_id": parent_folder_id,
+            "unk0x30_playlist_ref": parent_folder_id,
         }
         if self._editing_playlist is None:
             changes["items"] = []
+        if self._creating_folder:
+            existing_flags = int(
+                (self._editing_playlist or {}).get(
+                    "playlist_kind_flags",
+                    (self._editing_playlist or {}).get("podcast_flag", 0),
+                )
+                or 0
+            )
+            kind_flags = (existing_flags | PLAYLIST_KIND_FOLDER) & ~PLAYLIST_KIND_PODCAST
+            changes.update({
+                "playlist_kind_flags": kind_flags,
+                "podcast_flag": kind_flags,
+                "is_folder": True,
+                "is_podcast": False,
+            })
         changes.update(
             playlist_description_update_fields(
                 self.description_input.text().strip(),
@@ -1518,6 +1875,60 @@ class RegularPlaylistEditor(QFrame):
     # ─────────────────────────────────────────────────────────────
     # Internal
     # ─────────────────────────────────────────────────────────────
+
+    def _populate_parent_folder_combo(self, selected_id: int | None = None) -> None:
+        if selected_id is None:
+            selected_id = int(self.parent_folder_combo.currentData() or 0)
+        editing_id = int((self._editing_playlist or {}).get("playlist_id", 0) or 0)
+        excluded = {editing_id} if editing_id else set()
+        changed = True
+        while changed:
+            changed = False
+            for playlist in self._playlist_rows:
+                playlist_id = int(playlist.get("playlist_id", 0) or 0)
+                parent_id = int(playlist.get("parent_folder_playlist_id", 0) or 0)
+                if playlist_id and parent_id in excluded and playlist_id not in excluded:
+                    excluded.add(playlist_id)
+                    changed = True
+
+        self.parent_folder_combo.blockSignals(True)
+        self.parent_folder_combo.clear()
+        self.parent_folder_combo.addItem("No parent (top level)", 0)
+        seen: set[int] = set()
+        for playlist in self._playlist_rows:
+            playlist_id = int(playlist.get("playlist_id", 0) or 0)
+            if not playlist_id or playlist_id in seen or playlist_id in excluded:
+                continue
+            if not is_playlist_folder(playlist):
+                continue
+            seen.add(playlist_id)
+            self.parent_folder_combo.addItem(
+                str(playlist.get("Title") or f"Folder {playlist_id}"),
+                playlist_id,
+            )
+        index = self.parent_folder_combo.findData(selected_id)
+        self.parent_folder_combo.setCurrentIndex(max(0, index))
+        self.parent_folder_combo.blockSignals(False)
+
+    def _update_kind_labels(self) -> None:
+        self.parent_folder_label.setVisible(True)
+        self.parent_folder_combo.setVisible(True)
+        self.parent_folder_combo.setEnabled(True)
+        if self._creating_folder:
+            self.type_label.setText("Playlist Folder Editor")
+            self.source_label.setText("Groups playlists and aggregates their tracks")
+            self.note_text.setText(
+                "Folder contents are managed by moving playlists into or out of this folder."
+            )
+            self.save_btn.setText("Save Folder")
+        else:
+            self.type_label.setText("Playlist Editor")
+            self.source_label.setText("Manual track playlist")
+            self.note_text.setText(
+                "To add tracks, right-click a library track and choose this playlist "
+                "from Add to Playlist."
+            )
+            self.save_btn.setText("Save")
 
     def _on_save(self) -> None:
         data = self.get_playlist_data()
@@ -1534,11 +1945,11 @@ class NewPlaylistDialog(QDialog):
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setWindowTitle("New Playlist")
-        self.setFixedSize((320), (200))
+        self.setFixedSize((440), (200))
         self.setStyleSheet(f"""
             QDialog {{
-                background: {Colors.DIALOG_BG};
-                color: {Colors.TEXT_PRIMARY};
+                background: {paint_css('modal.background')};
+                color: {paint_css('text.primary')};
             }}
         """)
 
@@ -1550,13 +1961,13 @@ class NewPlaylistDialog(QDialog):
 
         title = QLabel("Create New Playlist")
         title.setFont(QFont(FONT_FAMILY, Metrics.FONT_TITLE, QFont.Weight.Bold))
-        title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
+        title.setStyleSheet(f"color: {paint_css('text.primary')};")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
         subtitle = QLabel("Choose a playlist type:")
         subtitle.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
-        subtitle.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
+        subtitle.setStyleSheet(f"color: {paint_css('text.secondary')};")
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(subtitle)
 
@@ -1567,12 +1978,24 @@ class NewPlaylistDialog(QDialog):
 
         _ic_sz = QSize((20), (20))
 
+        # Playlist folder button
+        self.folder_btn = QPushButton("Folder")
+        self.folder_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
+        self.folder_btn.setMinimumHeight(44)
+        self.folder_btn.setStyleSheet(button_css("secondary", "lg"))
+        _ic = glyph_icon("folder", (20), paint_css("text.secondary"))
+        if _ic:
+            self.folder_btn.setIcon(_ic)
+            self.folder_btn.setIconSize(_ic_sz)
+        self.folder_btn.clicked.connect(lambda: self._select("folder"))
+        btn_row.addWidget(self.folder_btn)
+
         # Regular playlist button
         self.regular_btn = QPushButton("Regular")
         self.regular_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
         self.regular_btn.setMinimumHeight(44)
         self.regular_btn.setStyleSheet(button_css("secondary", "lg"))
-        _ic = glyph_icon(_ICON_REGULAR, (20), Colors.TEXT_SECONDARY)
+        _ic = glyph_icon(_ICON_REGULAR, (20), paint_css("text.secondary"))
         if _ic:
             self.regular_btn.setIcon(_ic)
             self.regular_btn.setIconSize(_ic_sz)
@@ -1584,7 +2007,7 @@ class NewPlaylistDialog(QDialog):
         self.smart_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
         self.smart_btn.setMinimumHeight(44)
         self.smart_btn.setStyleSheet(accent_btn_css("lg"))
-        _ic = glyph_icon(_ICON_SMART, (20), Colors.TEXT_ON_ACCENT)
+        _ic = glyph_icon(_ICON_SMART, (20), paint_css("control.primary.text"))
         if _ic:
             self.smart_btn.setIcon(_ic)
             self.smart_btn.setIconSize(_ic_sz)

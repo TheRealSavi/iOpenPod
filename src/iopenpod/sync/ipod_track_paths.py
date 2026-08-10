@@ -9,6 +9,8 @@ checks, exports, and execution resolve the same device file.
 
 from __future__ import annotations
 
+import os
+import stat
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -16,6 +18,61 @@ from typing import Any
 from iopenpod.device.path_safety import UnsafeDevicePathError, resolve_device_path
 
 _TRACKS_SUBTREE = Path("iPod_Control") / "Music"
+
+
+class CachedIpodMusicPathResolver:
+    """Validate conventional Music paths while reusing safe folder resolution.
+
+    iTunesDB usually stores paths directly below one of the ``Music/Fxx``
+    directories. Once the directory itself has passed ``resolve_device_path``,
+    repeated batch operations only need to reject a link at the file leaf.
+    Less conventional locations intentionally fall back to the full resolver.
+    """
+
+    def __init__(self, ipod_root: str | Path) -> None:
+        self._root = Path(ipod_root)
+        self._folders: dict[str, Path | None] = {}
+
+    def existing_regular_file(
+        self,
+        track_or_location: Mapping[str, Any] | str | Path | None,
+    ) -> tuple[Path, os.stat_result] | None:
+        """Return a safe direct Music file and its lstat result when available."""
+
+        location = _coerce_location(track_or_location)
+        relative_location = _device_relative_track_location(_strip_file_uri(location))
+        if relative_location is None:
+            return None
+        parts = Path(relative_location).parts
+        if (
+            len(parts) != 4
+            or tuple(parts[:2]) != ("iPod_Control", "Music")
+            or any(not part or part in {".", ".."} or ":" in part for part in parts)
+        ):
+            return None
+
+        folder_name, file_name = parts[2:]
+        if folder_name not in self._folders:
+            try:
+                self._folders[folder_name] = resolve_device_path(
+                    self._root,
+                    _TRACKS_SUBTREE / folder_name,
+                    allowed_subtree=_TRACKS_SUBTREE,
+                )
+            except UnsafeDevicePathError:
+                self._folders[folder_name] = None
+        folder = self._folders[folder_name]
+        if folder is None:
+            return None
+
+        candidate = folder / file_name
+        try:
+            metadata = candidate.lstat()
+        except OSError:
+            return None
+        if not stat.S_ISREG(metadata.st_mode):
+            return None
+        return candidate, metadata
 
 
 def expected_ipod_track_file_path(

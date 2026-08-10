@@ -33,8 +33,16 @@ def parse_dataset(
         except UnicodeDecodeError:
             mhsd["genius_cuid"] = raw_payload.hex()
         mhsd["children"] = []
-        return {"next_offset": offset + chunk_length, "data": mhsd}
+        return {
+            "next_offset": offset + chunk_length,
+            "data": mhsd,
+            "_body_end": offset + header_length,
+        }
 
     # MHSD always has exactly one child.
-    mhsd["children"], _ = parse_children(data, offset + header_length, 1)
-    return {"next_offset": offset + chunk_length, "data": mhsd}
+    mhsd["children"], child_end = parse_children(data, offset + header_length, 1)
+    return {
+        "next_offset": offset + chunk_length,
+        "data": mhsd,
+        "_body_end": child_end,
+    }

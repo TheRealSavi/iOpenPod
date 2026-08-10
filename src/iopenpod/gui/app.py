@@ -4,7 +4,7 @@ import shutil
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 # Keep this before PyQt imports so Qt Multimedia logging rules are installed
 # before any Qt module can initialize multimedia plugins.
@@ -32,7 +32,10 @@ from iopenpod.application.controllers import (
     StartupDeviceRestoreController,
     StartupUpdateController,
 )
-from iopenpod.application.database_storage import analyze_database_storage
+from iopenpod.application.database_storage import (
+    analyze_database_storage,
+    analyze_database_storage_bytes,
+)
 from iopenpod.application.device_access import DeviceWriteAccessResult, check_ipod_write_access
 from iopenpod.application.device_identity import (
     identify_ipod_at_root,
@@ -52,7 +55,9 @@ from iopenpod.application.jobs import (
     ChapterSplitRequest,
     ChapterSplitWorker,
     check_sync_tool_availability,
+    DatabaseStorageFieldInspectionWorker,
     DropScanWorker,
+    DatabaseStorageTrimWorker,
     EjectDeviceWorker,
     QuickWriteWorker,
     SyncToolAvailability,
@@ -79,9 +84,20 @@ from iopenpod.gui.device_warnings import show_unidentified_ipod_warning
 from iopenpod.gui.glyphs import glyph_pixmap
 from iopenpod.gui.internal_drag import is_iopenpod_export_drag
 from iopenpod.gui.notifications import Notifier
-from iopenpod.gui.styles import FONT_FAMILY, Colors, Metrics, accent_btn_css, button_css, progress_bar_css
+from iopenpod.gui.styles import (
+    FONT_FAMILY,
+    Metrics,
+    accent_btn_css,
+    button_css,
+    paint_css,
+    progress_bar_css,
+)
 from iopenpod.gui.widgets.backupBrowser import BackupBrowserWidget
 from iopenpod.gui.widgets.databaseStorageBrowser import DatabaseStorageBrowser
+from iopenpod.gui.widgets.databaseStorageInspectionDialog import (
+    DatabaseStorageFieldInspectorDialog,
+)
+from iopenpod.gui.widgets.itunesdbForensics import ITunesDBForensicsDialog
 from iopenpod.gui.widgets.dropOverlay import DropOverlayWidget
 from iopenpod.gui.widgets.formatters import format_size
 from iopenpod.gui.widgets.musicBrowser import MusicBrowser
@@ -189,7 +205,7 @@ def _label_css(color: str) -> str:
 def _apply_dialog_background(dialog: QDialog) -> None:
     dialog.setAutoFillBackground(True)
     palette = dialog.palette()
-    palette.setColor(QPalette.ColorRole.Window, QColor(Colors.DIALOG_BG))
+    palette.setColor(QPalette.ColorRole.Window, QColor(paint_css("modal.background")))
     dialog.setPalette(palette)
 
 
@@ -221,69 +237,61 @@ def _looks_like_device_access_error(text: object) -> bool:
 def _linux_recovery_guidance(plan: LinuxFilesystemRecoveryPlan) -> str:
     """Render conservative recovery copy from device-layer mount facts."""
     lines = [
-        "On Linux, reconnect the iPod first. If it remains read-only, do not "
-        "force or remount it read-write; that can worsen filesystem damage.",
+        "On Linux, reconnect the iPod first. If it remains read-only, do not force or remount it read-write; that can worsen filesystem damage.",
         "",
     ]
     if plan.source or plan.filesystem:
-        lines.extend([
-            "Detected mount: "
-            f"{plan.source or 'unknown device'} "
-            f"({plan.filesystem or 'unknown filesystem'}).",
+        lines.extend(
+            [
+                f"Detected mount: {plan.source or 'unknown device'} ({plan.filesystem or 'unknown filesystem'}).",
+                "",
+            ]
+        )
+    lines.extend(
+        [
+            "Unmount it before running any filesystem check:",
+            f"  {plan.unmount_command}",
             "",
-        ])
-    lines.extend([
-        "Unmount it before running any filesystem check:",
-        f"  {plan.unmount_command}",
-        "",
-    ])
+        ]
+    )
 
     if not plan.source or not plan.filesystem:
-        lines.extend([
-            "Identify the exact device and filesystem before choosing a checker:",
-            f"  {plan.identify_command}",
-            "",
-        ])
+        lines.extend(
+            [
+                "Identify the exact device and filesystem before choosing a checker:",
+                f"  {plan.identify_command}",
+                "",
+            ]
+        )
 
     if plan.kind == "fat":
         if plan.checker_command:
-            lines.extend([
-                "For FAT, start with a read-only check:",
-                f"  {plan.checker_command}",
-                "Review the result and back up recoverable data before choosing a repair mode.",
-            ])
-        else:
-            lines.append(
-                "For FAT, use fsck.fat only after substituting the exact unmounted device; "
-                "start with its non-writing (-n) mode."
+            lines.extend(
+                [
+                    "For FAT, start with a read-only check:",
+                    f"  {plan.checker_command}",
+                    "Review the result and back up recoverable data before choosing a repair mode.",
+                ]
             )
+        else:
+            lines.append("For FAT, use fsck.fat only after substituting the exact unmounted device; start with its non-writing (-n) mode.")
     elif plan.kind == "exfat":
         if plan.checker_command:
-            lines.extend([
-                "For exFAT, start with a read-only check:",
-                f"  {plan.checker_command}",
-                "Review the result and back up recoverable data before choosing a repair mode.",
-            ])
-        else:
-            lines.append(
-                "For exFAT, identify the exact unmounted device and start with "
-                "fsck.exfat's non-writing (-n) mode."
+            lines.extend(
+                [
+                    "For exFAT, start with a read-only check:",
+                    f"  {plan.checker_command}",
+                    "Review the result and back up recoverable data before choosing a repair mode.",
+                ]
             )
+        else:
+            lines.append("For exFAT, identify the exact unmounted device and start with fsck.exfat's non-writing (-n) mode.")
     elif plan.kind == "mac":
-        lines.append(
-            "This is a Mac-formatted iPod. Do not run a FAT checker or force Linux "
-            "write access; check or repair it on macOS with Disk Utility First Aid."
-        )
+        lines.append("This is a Mac-formatted iPod. Do not run a FAT checker or force Linux write access; check or repair it on macOS with Disk Utility First Aid.")
     elif plan.kind == "ntfs":
-        lines.append(
-            "For NTFS, keep it unmounted on Linux and use Windows drive Error Checking "
-            "or chkdsk after backing up recoverable data."
-        )
+        lines.append("For NTFS, keep it unmounted on Linux and use Windows drive Error Checking or chkdsk after backing up recoverable data.")
     else:
-        lines.append(
-            "Use only the checker that matches the detected filesystem and exact device. "
-            "Do not run a checker while the iPod is mounted."
-        )
+        lines.append("Use only the checker that matches the detected filesystem and exact device. Do not run a checker while the iPod is mounted.")
 
     return "\n".join(lines)
 
@@ -306,10 +314,7 @@ def _filesystem_recovery_guidance(
 
     detected = ""
     if filesystem or source:
-        detected = (
-            "\n\nDetected volume: "
-            f"{source or mount_path} ({filesystem or 'unknown filesystem'})."
-        )
+        detected = f"\n\nDetected volume: {source or mount_path} ({filesystem or 'unknown filesystem'})."
 
     if sys.platform == "darwin":
         return (
@@ -334,13 +339,7 @@ def _filesystem_recovery_guidance(
             "before using iTunes Restore."
         )
 
-    return (
-        "Reconnect the iPod first. If it remains read-only or reports I/O "
-        "errors, stop syncing and do not force write access."
-        f"{detected}\n\n"
-        "Use only your operating system's filesystem checker for the exact "
-        "iPod volume, after backing up any recoverable data."
-    )
+    return f"Reconnect the iPod first. If it remains read-only or reports I/O errors, stop syncing and do not force write access.{detected}\n\nUse only your operating system's filesystem checker for the exact iPod volume, after backing up any recoverable data."
 
 
 def _device_write_access_failure_message(access: DeviceWriteAccessResult) -> str:
@@ -354,15 +353,17 @@ def _device_write_access_failure_message(access: DeviceWriteAccessResult) -> str
     ]
     if access.mount is not None:
         lines.append(f"Mount: {access.mount.summary}")
-    lines.extend([
-        f"System error: {access.reason or 'write access check failed'}",
-        "",
-        _filesystem_recovery_guidance(
-            mount_path,
-            filesystem=filesystem,
-            source=source,
-        ),
-    ])
+    lines.extend(
+        [
+            f"System error: {access.reason or 'write access check failed'}",
+            "",
+            _filesystem_recovery_guidance(
+                mount_path,
+                filesystem=filesystem,
+                source=source,
+            ),
+        ]
+    )
     return "\n".join(lines)
 
 
@@ -433,12 +434,7 @@ def _sync_execute_failure_message(result: Any, mount_path: str = "") -> str | No
     text = str(msg).strip() or str(desc).strip()
     if prioritized is not None:
         mount = mount_path.strip() or "the iPod mount"
-        return (
-            "iOpenPod cannot write to this iPod.\n\n"
-            f"Mount path: {mount}\n"
-            f"System error: {text or 'write access check failed'}\n\n"
-            + _filesystem_recovery_guidance(mount)
-        )
+        return f"iOpenPod cannot write to this iPod.\n\nMount path: {mount}\nSystem error: {text or 'write access check failed'}\n\n" + _filesystem_recovery_guidance(mount)
     return text or "Sync failed before making changes."
 
 
@@ -448,12 +444,7 @@ def _library_load_failure_message(mount_path: str, error_msg: str) -> str:
         return f"iOpenPod could not load this iPod library.\n\n{error_text}"
 
     mount = mount_path.strip() or "the iPod mount"
-    return (
-        "iOpenPod could not read this iPod cleanly.\n\n"
-        f"Mount path: {mount}\n"
-        f"System error: {error_text}\n\n"
-        + _filesystem_recovery_guidance(mount)
-    )
+    return f"iOpenPod could not read this iPod cleanly.\n\nMount path: {mount}\nSystem error: {error_text}\n\n" + _filesystem_recovery_guidance(mount)
 
 
 class MainWindow(QMainWindow):
@@ -502,6 +493,7 @@ class MainWindow(QMainWindow):
         self._normalize_tags_after_sync_pending = False
         self._tag_fix_scan_generation = 0
         self._tag_fix_scan_worker: Worker | None = None
+        self._scrobble_only_running = False
         self._plan: SyncPlan | None = None
         self._last_pc_folder_entries = _media_folder_entries_from_settings(settings)
         self._last_pc_folders = media_folder_paths(self._last_pc_folder_entries)
@@ -511,9 +503,7 @@ class MainWindow(QMainWindow):
             self._last_device_path,
             self,
         )
-        self._startup_restore.identification_rejected.connect(
-            self._on_unidentified_ipod
-        )
+        self._startup_restore.identification_rejected.connect(self._on_unidentified_ipod)
         self._startup_updates = StartupUpdateController(
             self._create_update_checker,
             self,
@@ -582,28 +572,21 @@ class MainWindow(QMainWindow):
         )
         self._sync_session.blocked.connect(self._on_sync_session_blocked)
         self._sync_session.missing_tools.connect(self._on_sync_session_missing_tools)
-        self._sync_session.planning_started.connect(
-            self._on_sync_session_planning_started
-        )
+        self._sync_session.planning_started.connect(self._on_sync_session_planning_started)
         self._connect_sync_session_review_signals()
         self._sync_session.plan_ready.connect(self._onSyncDiffComplete)
         self._sync_session.plan_failed.connect(self._onSyncError)
         self._sync_session.execution_complete.connect(self._onSyncExecuteComplete)
         self._sync_session.execution_failed.connect(self._onSyncExecuteError)
+        self._sync_session.scrobble_only_started.connect(
+            self._on_scrobble_only_started
+        )
         self._sync_session.partial_save_requested.connect(self._onConfirmPartialSave)
         self.syncReview.skip_backup_signal.connect(self._sync_session.request_skip_backup)
-        self.syncReview.give_up_scrobble_signal.connect(
-            self._sync_session.request_give_up_scrobble
-        )
-        self._quick_write_controller.save_status_changed.connect(
-            self.sidebar.show_save_indicator
-        )
-        self._quick_write_controller.metadata_failed.connect(
-            self._on_quick_meta_failed
-        )
-        self._quick_write_controller.playlist_failed.connect(
-            self._on_quick_meta_failed
-        )
+        self.syncReview.give_up_scrobble_signal.connect(self._sync_session.request_give_up_scrobble)
+        self._quick_write_controller.save_status_changed.connect(self.sidebar.show_save_indicator)
+        self._quick_write_controller.metadata_failed.connect(self._on_quick_meta_failed)
+        self._quick_write_controller.playlist_failed.connect(self._on_quick_meta_failed)
 
         # Drop overlay (created after _build_ui so it sits on top)
         self._drop_overlay = DropOverlayWidget(self)
@@ -622,21 +605,15 @@ class MainWindow(QMainWindow):
         self.musicBrowser.photoBrowser.bind_cache(self.library_cache)
 
         # Schedule an immediate write whenever track flags are edited in the UI
-        self.library_cache.tracks_changed.connect(
-            self._quick_write_controller.schedule_metadata_write
-        )
+        self.library_cache.tracks_changed.connect(self._quick_write_controller.schedule_metadata_write)
         self.library_cache.tracks_changed.connect(self._schedule_tag_fix_scan)
 
         # Instant playlist sync whenever playlists are added/edited via context menu
-        self.library_cache.playlist_quick_sync.connect(
-            self._quick_write_controller.schedule_playlist_sync
-        )
+        self.library_cache.playlist_quick_sync.connect(self._quick_write_controller.schedule_playlist_sync)
 
         self._show_default_page()
         self._startup_restore.start_later(100)
-        self._startup_updates.update_available.connect(
-            self._handle_startup_update_result
-        )
+        self._startup_updates.update_available.connect(self._handle_startup_update_result)
         self._startup_updates.start_later(2000)
 
     @pyqtSlot(object)
@@ -673,10 +650,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(
                 self,
                 "Quick Changes Still Saving",
-                (
-                    "iOpenPod is still saving pending quick changes. "
-                    f"Please wait for {label} to finish before starting a full sync."
-                ),
+                (f"iOpenPod is still saving pending quick changes. Please wait for {label} to finish before starting a full sync."),
             )
             return
         if blocked.reason == "library_loading":
@@ -684,6 +658,20 @@ class MainWindow(QMainWindow):
                 self,
                 "Library Loading",
                 "Please wait for the iPod library to finish loading.",
+            )
+            return
+        if blocked.reason == "no_pending_scrobbles":
+            QMessageBox.information(
+                self,
+                "No Pending Plays",
+                "There are no iPod plays waiting to be scrobbled.",
+            )
+            return
+        if blocked.reason == "scrobbling_not_configured":
+            QMessageBox.information(
+                self,
+                "Connect a Scrobbling Service",
+                "Connect ListenBrainz or Last.fm in Settings before scrobbling.",
             )
             return
         if blocked.reason == "no_device":
@@ -706,6 +694,7 @@ class MainWindow(QMainWindow):
             if dlg.exec() == QDialog.DialogCode.Accepted:
                 execution_intent = missing.execution_intent
                 if execution_intent is not None:
+
                     def resume_execution() -> None:
                         self._sync_session.start_execution(execution_intent)
 
@@ -737,15 +726,9 @@ class MainWindow(QMainWindow):
     def _connect_sync_session_review_signals(self) -> None:
         """Route session updates to whichever review widget is currently active."""
 
-        self._sync_session.planning_progress.connect(
-            self._on_sync_session_planning_progress
-        )
-        self._sync_session.execution_started.connect(
-            self._on_sync_session_execution_started
-        )
-        self._sync_session.execution_progress.connect(
-            self._on_sync_session_execution_progress
-        )
+        self._sync_session.planning_progress.connect(self._on_sync_session_planning_progress)
+        self._sync_session.execution_started.connect(self._on_sync_session_execution_started)
+        self._sync_session.execution_progress.connect(self._on_sync_session_execution_progress)
 
     def _on_sync_session_planning_progress(
         self,
@@ -800,6 +783,7 @@ class MainWindow(QMainWindow):
         self.sidebar.settingsButton.clicked.connect(self.showSettings)
         self.sidebar.backupButton.clicked.connect(self.showBackupBrowser)
         self.sidebar.tag_fixes_requested.connect(self._onIpodTagFixesRequested)
+        self.sidebar.scrobble_requested.connect(self._onScrobbleNowRequested)
         self.sidebar.manage_storage_requested.connect(self.showDatabaseStorage)
 
         self.mainContentStack = QStackedWidget()
@@ -826,9 +810,7 @@ class MainWindow(QMainWindow):
         self.settingsPage.closed.connect(self.hideSettings)
         self.settingsPage.theme_changed.connect(self._on_theme_changed)
         self.settingsPage.player_position_changed.connect(self._apply_player_position)
-        self.settingsPage.artwork_appearance_changed.connect(
-            self._on_artwork_appearance_changed
-        )
+        self.settingsPage.artwork_appearance_changed.connect(self._on_artwork_appearance_changed)
         self.centralStack.addWidget(self.settingsPage)  # Index 2
 
         # Backup browser page
@@ -843,6 +825,7 @@ class MainWindow(QMainWindow):
 
         # Selective sync browser page
         from iopenpod.gui.widgets.selectiveSyncBrowser import SelectiveSyncBrowser
+
         self.selectiveSyncBrowser = SelectiveSyncBrowser(
             settings_service=self.settings_service,
             device_sessions=self.device_session_service,
@@ -856,6 +839,8 @@ class MainWindow(QMainWindow):
         # Database storage page
         self.databaseStorageBrowser = DatabaseStorageBrowser()
         self.databaseStorageBrowser.closed.connect(self.hideDatabaseStorage)
+        self.databaseStorageBrowser.inspect_requested.connect(self._onDatabaseStorageInspect)
+        self.databaseStorageBrowser.forensics_requested.connect(self.showITunesDBForensics)
         self.centralStack.addWidget(self.databaseStorageBrowser)  # Index 5
 
         # No-device placeholder section (shown in content area; sidebar stays visible)
@@ -869,16 +854,13 @@ class MainWindow(QMainWindow):
         title = QLabel("Select an iPod to continue")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setFont(QFont(FONT_FAMILY, Metrics.FONT_XXL, QFont.Weight.DemiBold))
-        title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent;")
+        title.setStyleSheet(f"color: {paint_css('text.primary')}; background: transparent;")
         no_device_layout.addWidget(title)
 
-        subtitle = QLabel(
-            "No device is currently selected.\n"
-            "Choose an iPod to access your library and sync tools."
-        )
+        subtitle = QLabel("No device is currently selected.\nChoose an iPod to access your library and sync tools.")
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         subtitle.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
-        subtitle.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent;")
+        subtitle.setStyleSheet(f"color: {paint_css('text.tertiary')}; background: transparent;")
         no_device_layout.addWidget(subtitle)
 
         select_btn = QPushButton("Select Device")
@@ -896,7 +878,7 @@ class MainWindow(QMainWindow):
 
         no_device_layout.addStretch(2)
 
-        self.mainContentStack.addWidget(self.musicBrowser)   # Index 0
+        self.mainContentStack.addWidget(self.musicBrowser)  # Index 0
         self.mainContentStack.addWidget(self.noDeviceWidget)  # Index 1
 
         self.loadingDeviceWidget = QWidget()
@@ -908,13 +890,13 @@ class MainWindow(QMainWindow):
         loading_title = QLabel("Loading iPod...")
         loading_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         loading_title.setFont(QFont(FONT_FAMILY, Metrics.FONT_XXL, QFont.Weight.DemiBold))
-        loading_title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent;")
+        loading_title.setStyleSheet(f"color: {paint_css('text.primary')}; background: transparent;")
         loading_layout.addWidget(loading_title)
 
         loading_subtitle = QLabel("Reading library and device settings.")
         loading_subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         loading_subtitle.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
-        loading_subtitle.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent;")
+        loading_subtitle.setStyleSheet(f"color: {paint_css('text.tertiary')}; background: transparent;")
         loading_layout.addWidget(loading_subtitle)
         loading_layout.addStretch(2)
 
@@ -930,9 +912,7 @@ class MainWindow(QMainWindow):
             settings = self.settings_service.get_effective_settings()
         except Exception:
             return PLAYER_POSITION_TOP
-        return normalize_player_position(
-            getattr(settings, "player_position", PLAYER_POSITION_TOP)
-        )
+        return normalize_player_position(getattr(settings, "player_position", PLAYER_POSITION_TOP))
 
     def _apply_player_position(self) -> None:
         position = self._current_player_position()
@@ -954,11 +934,7 @@ class MainWindow(QMainWindow):
         tracks: list,
         index: int,
     ) -> None:
-        playback_tracks = [
-            candidate
-            for candidate in tracks
-            if isinstance(candidate, dict)
-        ] or [track]
+        playback_tracks = [candidate for candidate in tracks if isinstance(candidate, dict)] or [track]
         if not (0 <= index < len(playback_tracks)):
             try:
                 index = playback_tracks.index(track)
@@ -1169,9 +1145,7 @@ class MainWindow(QMainWindow):
             self.musicPlayer.setArtworkData(None)
             return
 
-        sharpen = bool(
-            getattr(self.settings_service.get_effective_settings(), "sharpen_artwork", True)
-        )
+        sharpen = bool(getattr(self.settings_service.get_effective_settings(), "sharpen_artwork", True))
         worker = Worker(
             self._loadPlayerArtworkData,
             artwork_id,
@@ -1247,10 +1221,7 @@ class MainWindow(QMainWindow):
 
     def _is_sync_results_visible(self) -> bool:
         """Return whether the user is currently looking at sync results."""
-        return (
-            self.centralStack.currentWidget() is self.syncReview
-            and self.syncReview.stack.currentIndex() == 3
-        )
+        return self.centralStack.currentWidget() is self.syncReview and self.syncReview.stack.currentIndex() == 3
 
     def _should_show_default_page_on_data_ready(self) -> bool:
         """Only let library refreshes navigate when the main page is active."""
@@ -1290,9 +1261,7 @@ class MainWindow(QMainWindow):
 
             # Restore page and settings state
             self.settingsPage.load_from_settings()
-            self.centralStack.setCurrentIndex(
-                min(restore_page, self.centralStack.count() - 1)
-            )
+            self.centralStack.setCurrentIndex(min(restore_page, self.centralStack.count() - 1))
 
             # If cache is loaded, reload UI from cache.
             # Use get_data() rather than get_tracks() so device info still
@@ -1361,14 +1330,7 @@ class MainWindow(QMainWindow):
                     global_settings.last_device_path = folder
                     self.settings_service.save_global_settings(global_settings)
             else:
-                QMessageBox.warning(
-                    self,
-                    "Invalid iPod Folder",
-                    "The selected folder does not appear to be a valid iPod root.\n\n"
-                    "Expected structure:\n"
-                    "  <selected folder>/iPod_Control/iTunes/\n\n"
-                    "Please select the root folder of your iPod."
-                )
+                QMessageBox.warning(self, "Invalid iPod Folder", "The selected folder does not appear to be a valid iPod root.\n\nExpected structure:\n  <selected folder>/iPod_Control/iTunes/\n\nPlease select the root folder of your iPod.")
 
     @pyqtSlot(str, object)
     def _on_unidentified_ipod(self, _path: str, ipod: object) -> None:
@@ -1395,6 +1357,7 @@ class MainWindow(QMainWindow):
         thread_pool.clear()
 
         from .imgMaker import clear_artwork_api
+
         clear_artwork_api()
 
         if self._apply_effective_theme():
@@ -1406,6 +1369,17 @@ class MainWindow(QMainWindow):
         if path:
             access = check_ipod_write_access(path)
             if not access.writable:
+                if access.busy:
+                    logger.info("Selected iPod is busy in another iOpenPod process")
+                    self.sidebar.setEjectAvailable(True)
+                    QMessageBox.information(
+                        self,
+                        "iPod Busy",
+                        "Another iOpenPod process is currently writing to this "
+                        "iPod. The iPod remains selected; wait for that save to "
+                        "finish, then rescan it.",
+                    )
+                    return
                 message = _device_write_access_failure_message(access)
                 logger.error("Selected iPod is not writable: %s", access.reason)
                 if same_device_path(path, self.device_manager.device_path):
@@ -1470,13 +1444,7 @@ class MainWindow(QMainWindow):
     def onDataReady(self):
         """Called when iTunesDB data is loaded and ready."""
         cache = self.library_cache
-        keep_current_page_visible = (
-            not self._should_show_default_page_on_data_ready()
-            or (
-                self._keep_sync_results_visible_after_rescan
-                and self._is_sync_results_visible()
-            )
-        )
+        keep_current_page_visible = not self._should_show_default_page_on_data_ready() or (self._keep_sync_results_visible_after_rescan and self._is_sync_results_visible()) or (getattr(self, "_database_storage_recovery", None) is not None and self.centralStack.currentIndex() == _DATABASE_STORAGE_PAGE_INDEX)
         self._keep_sync_results_visible_after_rescan = False
         if keep_current_page_visible:
             self._refresh_default_page_state()
@@ -1490,6 +1458,7 @@ class MainWindow(QMainWindow):
         classified = self._classify_tracks(tracks)
 
         from iopenpod.itunesdb_shared.constants import get_version_name
+
         session = self.device_session_service.current_session()
         device_identity = session.identity
 
@@ -1501,16 +1470,12 @@ class MainWindow(QMainWindow):
         # Refresh disk usage so the storage bar reflects post-sync changes
         refresh_device_disk_usage(self.device_manager.discovered_ipod)
 
-        device_name = (
-            MainWindow._device_name_from_playlists(playlists)
-            or (device_identity.ipod_name if device_identity else "")
-            or "Unk iPod"
-        )
+        device_name = MainWindow._device_name_from_playlists(playlists) or (device_identity.ipod_name if device_identity else "") or "Unk iPod"
         model = device_identity.display_name if device_identity else "Unk iPod"
 
-        db_version_hex = db_data.get('VersionHex', '') if db_data else ''
-        db_version_name = get_version_name(db_version_hex) if db_version_hex else ''
-        database_id = db_data.get('DatabaseID', 0) if db_data else 0
+        db_version_hex = db_data.get("VersionHex", "") if db_data else ""
+        db_version_name = get_version_name(db_version_hex) if db_version_hex else ""
+        database_id = db_data.get("DatabaseID", 0) if db_data else 0
         database_path = getattr(session, "itunesdb_path", None)
         capabilities = getattr(session, "capabilities", None)
 
@@ -1530,16 +1495,13 @@ class MainWindow(QMainWindow):
             device_info=self.device_manager.discovered_ipod,
             database_size_bytes=_database_file_size_bytes(
                 database_path,
-                uses_sqlite_db=bool(
-                    getattr(capabilities, "uses_sqlite_db", False)
-                ),
+                uses_sqlite_db=bool(getattr(capabilities, "uses_sqlite_db", False)),
             ),
-            max_database_bytes=int(
-                getattr(capabilities, "max_database_bytes", 0) or 0
-            ),
+            max_database_bytes=int(getattr(capabilities, "max_database_bytes", 0) or 0),
             database_path=database_path or "",
         )
         self.sidebar.setTagFixesAvailable(bool(tracks))
+        self._update_scrobble_availability(tracks)
         self._update_sidebar_visibility(classified)
         self.musicBrowser.browserTrack.clearTable(clear_cache=True)
         self._update_podcast_statuses()
@@ -1598,8 +1560,38 @@ class MainWindow(QMainWindow):
         changed_fields = sum(len(changes) for changes in suggestion.changes_by_track.values())
         self._notifier.notify(
             "iPod Tags Normalized",
-            f"Staged {changed_fields:,} field edit{'s' if changed_fields != 1 else ''} "
-            f"across {changed_tracks:,} track{'s' if changed_tracks != 1 else ''}.",
+            f"Staged {changed_fields:,} field edit{'s' if changed_fields != 1 else ''} across {changed_tracks:,} track{'s' if changed_tracks != 1 else ''}.",
+        )
+
+    def _onScrobbleNowRequested(self) -> None:
+        """Submit the durable pending-scrobble queue without a PC media sync."""
+        self._sync_session.start_scrobble_only()
+
+    def _on_scrobble_only_started(self) -> None:
+        self._scrobble_only_running = True
+        self.sidebar.setScrobbleAvailable(False)
+        self.centralStack.setCurrentIndex(1)
+
+    @staticmethod
+    def _pending_scrobble_count(tracks: list[dict]) -> int:
+        total = 0
+        for track in tracks:
+            try:
+                total += max(0, int(track.get("play_count_2", 0) or 0))
+            except (AttributeError, TypeError, ValueError):
+                continue
+        return total
+
+    def _update_scrobble_availability(self, tracks: list[dict] | None = None) -> None:
+        cache = self.library_cache
+        if not self.device_manager.device_path or not cache.is_ready():
+            self.sidebar.setScrobbleAvailable(False)
+            return
+        track_rows = tracks if tracks is not None else cache.get_tracks()
+        pending_count = self._pending_scrobble_count(track_rows)
+        self.sidebar.setScrobbleAvailable(
+            not self._scrobble_only_running and pending_count > 0,
+            pending_count,
         )
 
     def _current_ipod_tag_profile(self):
@@ -1624,11 +1616,14 @@ class MainWindow(QMainWindow):
         return index_ipod_library_tag_fixes(track_snapshot, profile=profile)
 
     def _invalidate_tag_fix_scan(self) -> None:
-        self._tag_fix_scan_generation = getattr(
-            self,
-            "_tag_fix_scan_generation",
-            0,
-        ) + 1
+        self._tag_fix_scan_generation = (
+            getattr(
+                self,
+                "_tag_fix_scan_generation",
+                0,
+            )
+            + 1
+        )
         timer = getattr(self, "_tag_fix_scan_timer", None)
         if timer is not None:
             timer.stop()
@@ -1663,10 +1658,7 @@ class MainWindow(QMainWindow):
             return
 
         settings = self.settings_service.get_effective_settings()
-        apply_after_scan = bool(
-            self._normalize_tags_after_sync_pending
-            and getattr(settings, "normalize_tags_after_sync", False)
-        )
+        apply_after_scan = bool(self._normalize_tags_after_sync_pending and getattr(settings, "normalize_tags_after_sync", False))
         if self._normalize_tags_after_sync_pending and not apply_after_scan:
             self._normalize_tags_after_sync_pending = False
 
@@ -1683,11 +1675,7 @@ class MainWindow(QMainWindow):
             self._current_ipod_tag_profile(),
         )
         self._tag_fix_scan_worker = worker
-        worker.signals.result.connect(
-            lambda result, token=generation, count=track_count, apply=apply_after_scan: (
-                self._on_tag_fix_scan_ready(result, token, count, apply)
-            )
-        )
+        worker.signals.result.connect(lambda result, token=generation, count=track_count, apply=apply_after_scan: self._on_tag_fix_scan_ready(result, token, count, apply))
         worker.signals.error.connect(
             lambda error, token=generation: self._on_tag_fix_scan_failed(
                 error,
@@ -1726,11 +1714,7 @@ class MainWindow(QMainWindow):
         self._normalize_tags_after_sync_pending = False
         if not result.changes_by_index:
             return
-        changes_by_track = {
-            id(tracks[index]): changes
-            for index, changes in result.changes_by_index.items()
-            if 0 <= index < len(tracks)
-        }
+        changes_by_track = {id(tracks[index]): changes for index, changes in result.changes_by_index.items() if 0 <= index < len(tracks)}
         self.library_cache.update_track_flags_by_track(tracks, changes_by_track)
         logger.info(
             "Applied silent post-sync tag normalization: %d fields across %d tracks",
@@ -1761,7 +1745,11 @@ class MainWindow(QMainWindow):
 
     def _apply_effective_theme(self, dev=None) -> bool:
         """Apply the currently effective theme/accent and report visual changes."""
-        from iopenpod.gui.styles import Colors, Metrics, resolve_accent_color
+        from iopenpod.gui.styles import (
+            Metrics,
+            apply_theme_selection,
+            resolve_accent_color,
+        )
 
         s = self.settings_service.get_effective_settings()
         if dev is None:
@@ -1771,14 +1759,17 @@ class MainWindow(QMainWindow):
         if s.accent_color == "match-ipod":
             img = resolve_device_image_filename(dev)
 
-        old_accent = Colors.ACCENT
         accent_hex = resolve_accent_color(s.accent_color, img)
-        Colors.apply_theme_selection(
-            s.theme_mode, s.light_theme, s.dark_theme, s.high_contrast, accent_hex
+        accent_changed = apply_theme_selection(
+            s.theme_mode,
+            s.light_theme,
+            s.dark_theme,
+            s.high_contrast,
+            accent_hex,
         )
         Metrics.apply_font_scale(s.font_scale)
         Metrics.apply_grid_item_scale(getattr(s, "grid_item_size", "large"))
-        return Colors.ACCENT != old_accent
+        return accent_changed
 
     def _apply_match_ipod_accent(self, dev=None):
         """Re-apply accent color when 'match-ipod' is active and device is known.
@@ -1793,17 +1784,20 @@ class MainWindow(QMainWindow):
 
         img = resolve_device_image_filename(dev)
 
-        from iopenpod.gui.styles import Colors, resolve_accent_color
+        from iopenpod.gui.styles import apply_theme_selection, resolve_accent_color
+
         accent_hex = resolve_accent_color("match-ipod", img)
 
-        # Always apply the resolved accent, including "blue" fallback.
+        # Always apply the resolved accent, including the theme-default fallback.
         # This ensures switching from a colorful device to a gray/white/black
         # device resets the UI back to the default accent.
-        old_accent = Colors.ACCENT
-        Colors.apply_theme_selection(
-            s.theme_mode, s.light_theme, s.dark_theme, s.high_contrast, accent_hex
+        return apply_theme_selection(
+            s.theme_mode,
+            s.light_theme,
+            s.dark_theme,
+            s.high_contrast,
+            accent_hex,
         )
-        return Colors.ACCENT != old_accent
 
     @staticmethod
     def _classify_tracks(tracks: list) -> dict[str, list]:
@@ -1814,6 +1808,7 @@ class MainWindow(QMainWindow):
             MEDIA_TYPE_PODCAST,
             MEDIA_TYPE_VIDEO_MASK,
         )
+
         audio, video, podcast, audiobook = [], [], [], []
         for t in tracks:
             mt = t.get("media_type", 1)
@@ -1878,10 +1873,7 @@ class MainWindow(QMainWindow):
     def _onRenameFailed(self, error_msg: str):
         """Device rename write failed."""
         logger.error("iPod rename failed: %s", error_msg)
-        QMessageBox.critical(
-            self, "Rename Failed",
-            f"Failed to rename iPod:\n{error_msg}"
-        )
+        QMessageBox.critical(self, "Rename Failed", f"Failed to rename iPod:\n{error_msg}")
 
     # ── Eject ──────────────────────────────────────────────────────────
 
@@ -1894,8 +1886,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(
                 self,
                 "Save In Progress",
-                f"iOpenPod is still saving {label} to the iPod. "
-                "Try ejecting again when the save finishes.",
+                f"iOpenPod is still saving {label} to the iPod. Try ejecting again when the save finishes.",
             )
             return False
 
@@ -1911,6 +1902,7 @@ class MainWindow(QMainWindow):
 
         try:
             from .imgMaker import clear_artwork_api
+
             clear_artwork_api()
         except Exception:
             logger.debug("Failed to clear artwork cache before eject", exc_info=True)
@@ -1922,8 +1914,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(
                 self,
                 "Still Reading iPod",
-                "iOpenPod is still finishing background reads from the iPod. "
-                "Try ejecting again in a moment.",
+                "iOpenPod is still finishing background reads from the iPod. Try ejecting again in a moment.",
             )
             return False
 
@@ -1939,10 +1930,7 @@ class MainWindow(QMainWindow):
             return
 
         if self._is_sync_running():
-            QMessageBox.warning(
-                self, "Sync In Progress",
-                "Please wait for the current sync to finish before ejecting."
-            )
+            QMessageBox.warning(self, "Sync In Progress", "Please wait for the current sync to finish before ejecting.")
             return
 
         # Flush any pending in-memory edits before pulling the volume out.
@@ -1987,41 +1975,26 @@ class MainWindow(QMainWindow):
             self._eject_worker.deleteLater()
             self._eject_worker = None
         # Re-enable the button so the user can retry.
-        has_device = bool(
-            self.device_manager.device_path or self._eject_only_device_path
-        )
+        has_device = bool(self.device_manager.device_path or self._eject_only_device_path)
         self.sidebar.setEjectAvailable(has_device)
         try:
             if self.library_cache.is_ready():
                 self.onDataReady()
         except Exception:
             logger.debug("Failed to restore UI after eject failure", exc_info=True)
-        QMessageBox.critical(
-            self, "Eject Failed",
-            f"Failed to eject the iPod:\n{error_msg}"
-        )
+        QMessageBox.critical(self, "Eject Failed", f"Failed to eject the iPod:\n{error_msg}")
 
     def _is_sync_running(self) -> bool:
         sync_session = getattr(self, "_sync_session", None)
         return (
             (sync_session is not None and sync_session.is_running())
             or (self._back_sync_worker is not None and self._back_sync_worker.isRunning())
-            or (
-                self._album_conversion_worker is not None
-                and self._album_conversion_worker.isRunning()
-            )
-            or (
-                self._chapter_split_worker is not None
-                and self._chapter_split_worker.isRunning()
-            )
+            or (self._album_conversion_worker is not None and self._album_conversion_worker.isRunning())
+            or (self._chapter_split_worker is not None and self._chapter_split_worker.isRunning())
         )
 
     def _on_quick_meta_failed(self, error_msg: str):
-        QMessageBox.warning(
-            self, "Save Failed",
-            f"Could not save quick changes to iPod:\n{error_msg}\n\n"
-            "iOpenPod is reloading the device view from the iPod."
-        )
+        QMessageBox.warning(self, "Save Failed", f"Could not save quick changes to iPod:\n{error_msg}\n\niOpenPod is reloading the device view from the iPod.")
 
     def _create_back_sync_artwork_provider(self, ipod_path: str):
         """Build a GUI-side artwork provider for the app-core Back Sync job."""
@@ -2042,12 +2015,7 @@ class MainWindow(QMainWindow):
             return None
 
         def _track_artwork_id(track: dict) -> int | None:
-            artwork_id = (
-                track.get("artwork_id_ref")
-                or track.get("mhii_link")
-                or track.get("mhiiLink")
-                or 0
-            )
+            artwork_id = track.get("artwork_id_ref") or track.get("mhii_link") or track.get("mhiiLink") or 0
             if not artwork_id:
                 return None
             try:
@@ -2125,12 +2093,8 @@ class MainWindow(QMainWindow):
             self._back_sync_worker = worker
             self._retain_back_sync_worker(worker)
             worker.progress.connect(self.syncReview.update_progress)
-            worker.finished.connect(
-                lambda result, w=worker: self._onBackSyncComplete(result, w)
-            )
-            worker.error.connect(
-                lambda error, w=worker: self._onBackSyncError(error, w)
-            )
+            worker.finished.connect(lambda result, w=worker: self._onBackSyncComplete(result, w))
+            worker.error.connect(lambda error, w=worker: self._onBackSyncError(error, w))
             worker.start()
             return
 
@@ -2148,9 +2112,7 @@ class MainWindow(QMainWindow):
         self._last_pc_folder_entries = entries
         self._last_pc_folders = media_folder_paths(entries)
         global_settings = self.settings_service.get_global_settings()
-        global_settings.media_folder = (
-            self._last_pc_folders[0] if self._last_pc_folders else ""
-        )
+        global_settings.media_folder = self._last_pc_folders[0] if self._last_pc_folders else ""
         global_settings.media_folders = list(entries)
         self.settings_service.save_global_settings(global_settings)
 
@@ -2184,7 +2146,7 @@ class MainWindow(QMainWindow):
     @pyqtSlot()
     def _on_tools_downloaded(self):
         """Called on main thread after tool downloads finish."""
-        if hasattr(self, '_dl_progress') and self._dl_progress:
+        if hasattr(self, "_dl_progress") and self._dl_progress:
             self._dl_progress.close()
             self._dl_progress = None
         planning_intent = getattr(self, "_pending_tool_sync_intent", None)
@@ -2202,7 +2164,7 @@ class MainWindow(QMainWindow):
     @pyqtSlot(str)
     def _on_tools_download_failed(self, error_msg: str):
         """Called on main thread if automatic tool download fails."""
-        if hasattr(self, '_dl_progress') and self._dl_progress:
+        if hasattr(self, "_dl_progress") and self._dl_progress:
             self._dl_progress.close()
             self._dl_progress = None
         self._pending_tool_sync_intent = None
@@ -2306,12 +2268,8 @@ class MainWindow(QMainWindow):
         )
         self._album_conversion_worker = worker
         worker.progress.connect(self.syncReview.update_progress)
-        worker.finished.connect(
-            lambda result, w=worker: self._onAlbumConversionComplete(result, w)
-        )
-        worker.error.connect(
-            lambda error, w=worker: self._onAlbumConversionError(error, w)
-        )
+        worker.finished.connect(lambda result, w=worker: self._onAlbumConversionComplete(result, w))
+        worker.error.connect(lambda error, w=worker: self._onAlbumConversionError(error, w))
         worker.start()
 
     def _album_conversion_artwork_bytes(
@@ -2322,21 +2280,13 @@ class MainWindow(QMainWindow):
         artwork_id = album_item.get("artwork_id_ref")
         if not artwork_id:
             artwork_id = next(
-                (
-                    track.get("artwork_id_ref")
-                    for track in album_tracks
-                    if track.get("artwork_id_ref")
-                ),
+                (track.get("artwork_id_ref") for track in album_tracks if track.get("artwork_id_ref")),
                 None,
             )
         return self._artwork_bytes_for_id(artwork_id, "album conversion")
 
     def _track_artwork_bytes(self, track: dict) -> bytes | None:
-        artwork_id = (
-            track.get("artwork_id_ref")
-            or track.get("mhii_link")
-            or track.get("mhiiLink")
-        )
+        artwork_id = track.get("artwork_id_ref") or track.get("mhii_link") or track.get("mhiiLink")
         return self._artwork_bytes_for_id(artwork_id, "chapter split")
 
     def _artwork_bytes_for_id(self, artwork_id: object, context: str) -> bytes | None:
@@ -2453,12 +2403,8 @@ class MainWindow(QMainWindow):
         )
         self._chapter_split_worker = worker
         worker.progress.connect(self.syncReview.update_progress)
-        worker.finished.connect(
-            lambda result, w=worker: self._onChapterSplitComplete(result, w)
-        )
-        worker.error.connect(
-            lambda error, w=worker: self._onChapterSplitError(error, w)
-        )
+        worker.finished.connect(lambda result, w=worker: self._onChapterSplitComplete(result, w))
+        worker.error.connect(lambda error, w=worker: self._onChapterSplitError(error, w))
         worker.start()
 
     def _onChapterSplitComplete(self, result, worker=None) -> None:
@@ -2540,9 +2486,7 @@ class MainWindow(QMainWindow):
 
         self._back_sync_workers.append(worker)
         try:
-            QThread.finished.__get__(worker, type(worker)).connect(
-                lambda w=worker: self._reap_back_sync_worker(w)
-            )
+            QThread.finished.__get__(worker, type(worker)).connect(lambda w=worker: self._reap_back_sync_worker(w))
         except Exception:
             # Tests may use lightweight worker fakes that are not QThreads.
             pass
@@ -2572,9 +2516,7 @@ class MainWindow(QMainWindow):
 
         self._cancelled_workers.append(worker)
         try:
-            QThread.finished.__get__(worker, type(worker)).connect(
-                lambda w=worker: self._reap_cancelled_worker(w)
-            )
+            QThread.finished.__get__(worker, type(worker)).connect(lambda w=worker: self._reap_cancelled_worker(w))
         except Exception:
             pass
 
@@ -2734,6 +2676,8 @@ class MainWindow(QMainWindow):
 
     def showDatabaseStorage(self):
         """Show the database storage breakdown page."""
+        self._database_storage_recovery = None
+        self._database_storage_proposed_bytes = b""
         session = self.device_session_service.current_session()
         capabilities = getattr(session, "capabilities", None)
         report = analyze_database_storage(
@@ -2743,15 +2687,176 @@ class MainWindow(QMainWindow):
         )
         self.databaseStorageBrowser.load_report(
             report,
-            max_database_bytes=int(
-                getattr(capabilities, "max_database_bytes", 0) or 0
-            ),
+            max_database_bytes=int(getattr(capabilities, "max_database_bytes", 0) or 0),
         )
         self.centralStack.setCurrentIndex(_DATABASE_STORAGE_PAGE_INDEX)
 
     def hideDatabaseStorage(self):
         """Return from database storage management to the main browsing view."""
+        self._database_storage_recovery = None
+        self._database_storage_proposed_bytes = b""
         self._show_default_page()
+
+    def showITunesDBForensics(self) -> None:
+        """Open the standalone byte-walk tool with the current database preselected."""
+        dialog = getattr(self, "_itunesdb_forensics_dialog", None)
+        if dialog is not None and dialog.isVisible():
+            dialog.raise_()
+            dialog.activateWindow()
+            return
+        session = self.device_session_service.current_session()
+        default_path = str(getattr(session, "itunesdb_path", "") or "")
+        dialog = ITunesDBForensicsDialog(default_path, self)
+        dialog.finished.connect(lambda _result: setattr(self, "_itunesdb_forensics_dialog", None))
+        self._itunesdb_forensics_dialog = dialog
+        dialog.open()
+
+    def showProposedDatabaseStorage(self, result: object) -> None:
+        """Inspect the database rejected by the iPod size guard."""
+
+        proposed_bytes = bytes(getattr(result, "proposed_database_bytes", b"") or b"")
+        recovery = getattr(result, "proposed_database_recovery", None)
+        if not proposed_bytes or recovery is None:
+            return
+
+        session = self.device_session_service.current_session()
+        capabilities = getattr(session, "capabilities", None)
+        self._database_storage_recovery = recovery
+        self._database_storage_proposed_bytes = proposed_bytes
+        self.databaseStorageBrowser.load_report(
+            analyze_database_storage_bytes(proposed_bytes),
+            max_database_bytes=int(getattr(capabilities, "max_database_bytes", 0) or 0),
+            source_label="Proposed database — not written to the iPod",
+        )
+        self.centralStack.setCurrentIndex(_DATABASE_STORAGE_PAGE_INDEX)
+
+    def _onDatabaseStorageInspect(self, mhod_type: int, label: str) -> None:
+        """Open a field inspector and load its values off the GUI thread."""
+
+        worker = getattr(self, "_database_storage_inspection_worker", None)
+        if worker is not None and worker.isRunning():
+            return
+
+        active_dialog = getattr(self, "_database_storage_inspection_dialog", None)
+        if active_dialog is not None:
+            active_dialog.close()
+        dialog = DatabaseStorageFieldInspectorDialog(mhod_type, label, self)
+        dialog.truncate_requested.connect(self._onDatabaseStorageTruncate)
+        self._database_storage_inspection_dialog = dialog
+        dialog.open()
+
+        session = self.device_session_service.current_session()
+        capabilities = getattr(session, "capabilities", None)
+        worker = DatabaseStorageFieldInspectionWorker(
+            str(getattr(session, "itunesdb_path", "") or ""),
+            str(getattr(self.device_manager, "device_path", "") or ""),
+            mhod_type=mhod_type,
+            uses_sqlite_db=bool(getattr(capabilities, "uses_sqlite_db", False)),
+            proposed_database_bytes=bytes(getattr(self, "_database_storage_proposed_bytes", b"") or b""),
+        )
+        self._database_storage_inspection_worker = worker
+        worker.finished.connect(
+            lambda inspection, active=worker, target=dialog: self._onDatabaseStorageInspectionComplete(
+                inspection,
+                active,
+                target,
+            )
+        )
+        worker.error.connect(
+            lambda message, active=worker, target=dialog: self._onDatabaseStorageInspectionError(
+                message,
+                active,
+                target,
+            )
+        )
+        worker.start()
+
+    def _onDatabaseStorageInspectionComplete(
+        self,
+        inspection: object,
+        worker: object,
+        dialog: DatabaseStorageFieldInspectorDialog,
+    ) -> None:
+        if getattr(self, "_database_storage_inspection_worker", None) is not worker:
+            return
+        self._database_storage_inspection_worker = None
+        if dialog.isVisible():
+            dialog.load_inspection(cast(Any, inspection))
+
+    def _onDatabaseStorageInspectionError(
+        self,
+        message: str,
+        worker: object,
+        dialog: DatabaseStorageFieldInspectorDialog,
+    ) -> None:
+        if getattr(self, "_database_storage_inspection_worker", None) is not worker:
+            return
+        self._database_storage_inspection_worker = None
+        if dialog.isVisible():
+            dialog.show_error(f"Could not inspect this field: {message}")
+
+    def _onDatabaseStorageTruncate(self, mhod_type: int, max_bytes: int) -> None:
+        """Rewrite the current or rejected database with one field shortened."""
+
+        worker = getattr(self, "_database_storage_trim_worker", None)
+        if worker is not None and worker.isRunning():
+            return
+
+        session = self.device_session_service.current_session()
+        capabilities = getattr(session, "capabilities", None)
+        self.databaseStorageBrowser.tree.setEnabled(False)
+        worker = DatabaseStorageTrimWorker(
+            str(getattr(self.device_manager, "device_path", "") or ""),
+            mhod_type=mhod_type,
+            max_bytes=max_bytes,
+            uses_sqlite_db=bool(getattr(capabilities, "uses_sqlite_db", False)),
+            recovery=getattr(self, "_database_storage_recovery", None),
+        )
+        self._database_storage_trim_worker = worker
+        worker.finished.connect(
+            lambda trim_result, active=worker: self._onDatabaseStorageTrimComplete(
+                trim_result,
+                active,
+            )
+        )
+        worker.error.connect(
+            lambda message, active=worker: self._onDatabaseStorageTrimError(
+                message,
+                active,
+            )
+        )
+        worker.start()
+
+    def _onDatabaseStorageTrimComplete(self, trim_result: object, worker: object) -> None:
+        if getattr(self, "_database_storage_trim_worker", None) is not worker:
+            return
+        self._database_storage_trim_worker = None
+        self.databaseStorageBrowser.tree.setEnabled(True)
+
+        recovery = getattr(trim_result, "recovery", None)
+        self._database_storage_recovery = recovery
+        self._database_storage_proposed_bytes = bytes(getattr(trim_result, "proposed_database_bytes", b"") or b"")
+        session = self.device_session_service.current_session()
+        capabilities = getattr(session, "capabilities", None)
+        self.databaseStorageBrowser.load_report(
+            cast(Any, trim_result).report,
+            max_database_bytes=int(getattr(capabilities, "max_database_bytes", 0) or 0),
+            source_label=("Proposed database — not written to the iPod" if recovery is not None else ""),
+        )
+        if getattr(trim_result, "committed", False):
+            changed = int(getattr(trim_result, "changed_tracks", 0) or 0)
+            QMessageBox.information(
+                self,
+                "Database Storage Updated",
+                f"Shortened this field on {changed:,} track(s) and rewrote the database.",
+            )
+
+    def _onDatabaseStorageTrimError(self, message: str, worker: object) -> None:
+        if getattr(self, "_database_storage_trim_worker", None) is not worker:
+            return
+        self._database_storage_trim_worker = None
+        self.databaseStorageBrowser.tree.setEnabled(True)
+        QMessageBox.critical(self, "Could Not Trim Database", message)
 
     def executeSyncPlan(self, selected_items):
         """Execute the selected sync actions."""
@@ -2763,19 +2868,13 @@ class MainWindow(QMainWindow):
 
         original_plan = self._plan  # stored in _onSyncDiffComplete
 
-        selected_playlists = (
-            self.syncReview.get_selected_playlist_changes()
-            if original_plan
-            else None
-        )
+        selected_playlists = self.syncReview.get_selected_playlist_changes() if original_plan else None
 
         filtered_plan = build_filtered_sync_plan(
             original_plan,
             selected_items,
             selected_playlists=selected_playlists,
-            selected_photo_plan=(
-                self.syncReview.get_selected_photo_plan() if original_plan else None
-            ),
+            selected_photo_plan=(self.syncReview.get_selected_photo_plan() if original_plan else None),
         )
 
         if not filtered_plan.has_changes:
@@ -2799,7 +2898,7 @@ class MainWindow(QMainWindow):
                 self._stopPlayback()
 
         # Respect the user's pre-sync backup choice from the prompt
-        skip_backup = getattr(self.syncReview, '_skip_presync_backup', False)
+        skip_backup = getattr(self.syncReview, "_skip_presync_backup", False)
 
         self._sync_session.start_execution(
             SyncExecutionIntent(
@@ -2851,6 +2950,8 @@ class MainWindow(QMainWindow):
 
     def _onSyncExecuteComplete(self, result):
         """Called when sync execution is complete."""
+        was_scrobble_only = bool(getattr(self, "_scrobble_only_running", False))
+        self._scrobble_only_running = False
         # Show styled results view instead of a plain message box
         self.syncReview.show_result(result)
         self._keep_sync_results_visible_after_rescan = True
@@ -2861,23 +2962,51 @@ class MainWindow(QMainWindow):
         )
         settings = self.settings_service.get_effective_settings()
         self._normalize_tags_after_sync_pending = bool(
-            not failure_message
+            not was_scrobble_only
+            and not failure_message
             and getattr(settings, "normalize_tags_after_sync", False)
         )
         if failure_message:
-            QMessageBox.critical(self, "Sync Failed", failure_message)
+            self._showSyncFailureDialog(failure_message, result)
 
         # Desktop notification if app is not focused
         if not self.isActiveWindow():
             self._notifier.notify_sync_complete(
-                added=getattr(result, 'tracks_added', 0),
-                removed=getattr(result, 'tracks_removed', 0),
-                updated=getattr(result, 'tracks_updated_metadata', 0) + getattr(result, 'tracks_updated_file', 0),
-                errors=len(getattr(result, 'errors', [])),
+                added=getattr(result, "tracks_added", 0),
+                removed=getattr(result, "tracks_removed", 0),
+                updated=getattr(result, "tracks_updated_metadata", 0) + getattr(result, "tracks_updated_file", 0),
+                errors=len(getattr(result, "errors", [])),
             )
+
+        if was_scrobble_only:
+            # The session reconciles only the committed queue rows in memory;
+            # avoid the full iTunesDB cache flush/reload for this maintenance
+            # action.
+            self._update_scrobble_availability()
+            return
 
         # Reload the database to show changes (delay lets OS flush writes)
         QTimer.singleShot(500, self._rescanAfterSync)
+
+    def _showSyncFailureDialog(self, message: str, result: object) -> None:
+        """Show sync failure details and preserve a size-rejected DB for review."""
+
+        dialog = QMessageBox(self)
+        dialog.setIcon(QMessageBox.Icon.Critical)
+        dialog.setWindowTitle("Sync Failed")
+        dialog.setText(message)
+        close_button = dialog.addButton(QMessageBox.StandardButton.Close)
+        inspect_button = None
+        if getattr(result, "proposed_database_bytes", b"") and getattr(result, "proposed_database_recovery", None) is not None:
+            inspect_button = dialog.addButton(
+                "Inspect Proposed Database",
+                QMessageBox.ButtonRole.ActionRole,
+            )
+            dialog.setInformativeText("The iPod was not given this oversized database. Inspect it to shorten optional metadata fields and try writing it again.")
+        dialog.setDefaultButton(close_button)
+        dialog.exec()
+        if dialog.clickedButton() is inspect_button:
+            self.showProposedDatabaseStorage(result)
 
     def _update_podcast_statuses(self):
         """Mark synced podcast episodes as 'on_ipod' in the subscription store."""
@@ -2908,6 +3037,7 @@ class MainWindow(QMainWindow):
 
         # Clear artwork cache — sync may have added/changed album art
         from .imgMaker import clear_artwork_api
+
         clear_artwork_api()
 
         # Clear UI so the reload starts from a clean slate
@@ -2917,6 +3047,10 @@ class MainWindow(QMainWindow):
 
     def _onSyncExecuteError(self, error_msg: str):
         """Called when sync execution fails."""
+        was_scrobble_only = bool(getattr(self, "_scrobble_only_running", False))
+        self._scrobble_only_running = False
+        if was_scrobble_only:
+            self._update_scrobble_availability()
         self._normalize_tags_after_sync_pending = False
         # Desktop notification if app is not focused
         if not self.isActiveWindow():
@@ -2925,11 +3059,7 @@ class MainWindow(QMainWindow):
         msg = f"Sync failed:\n\n{error_msg}"
 
         QMessageBox.critical(self, "Sync Error", msg)
-        if (
-            "pre-sync backup could not be completed safely"
-            in error_msg.casefold()
-            and self._plan is not None
-        ):
+        if "pre-sync backup could not be completed safely" in error_msg.casefold() and self._plan is not None:
             # No iPod mutation began. Keep the reviewed plan available so the
             # user can fix the backup location and retry, or deliberately use
             # the existing Sync Without Backup path.
@@ -2941,23 +3071,16 @@ class MainWindow(QMainWindow):
         """Called from the sync worker when the user cancels mid-sync with tracks already copied.
         Shows a dialog asking whether to save the partial database, then unblocks the worker."""
         tracks_word = "track" if n_added == 1 else "tracks"
-        skipped_line = (
-            f"{n_skipped} more {'track was' if n_skipped == 1 else 'tracks were'} not copied."
-            if n_skipped > 0 else ""
-        )
+        skipped_line = f"{n_skipped} more {'track was' if n_skipped == 1 else 'tracks were'} not copied." if n_skipped > 0 else ""
 
         msg = QMessageBox(self)
         msg.setWindowTitle("Save Partial Sync?")
         msg.setIcon(QMessageBox.Icon.Question)
-        msg.setText(
-            f"{n_added} {tracks_word} were successfully copied to your iPod before the sync was cancelled."
-        )
+        msg.setText(f"{n_added} {tracks_word} were successfully copied to your iPod before the sync was cancelled.")
         detail = "Would you like to save these tracks to your iPod's database?"
         if skipped_line:
             detail = skipped_line + "\n\n" + detail
-        detail += (
-            "\n\nIf you discard, the copied files will be cleaned up automatically the next time you sync."
-        )
+        detail += "\n\nIf you discard, the copied files will be cleaned up automatically the next time you sync."
         msg.setInformativeText(detail)
         save_btn = msg.addButton("Save Partial Database", QMessageBox.ButtonRole.AcceptRole)
         discard_btn = msg.addButton("Discard", QMessageBox.ButtonRole.RejectRole)
@@ -2965,14 +3088,14 @@ class MainWindow(QMainWindow):
         msg.exec()
 
         # Default to save if dialog was closed via X button (no explicit choice)
-        save = (msg.clickedButton() != discard_btn)
+        save = msg.clickedButton() != discard_btn
         self._sync_session.respond_to_partial_save(save)
 
     # ── Drag-and-drop support ──────────────────────────────────────────────
 
     def resizeEvent(self, a0):
         super().resizeEvent(a0)
-        if hasattr(self, '_drop_overlay') and self._drop_overlay.isVisible():
+        if hasattr(self, "_drop_overlay") and self._drop_overlay.isVisible():
             self._drop_overlay.setGeometry(self.rect())
 
     def dragEnterEvent(self, a0):
@@ -3063,10 +3186,7 @@ class MainWindow(QMainWindow):
                 return
 
         # Remember whether we already have a plan to merge into
-        self._drop_merge = (
-            self._plan is not None
-            and self.centralStack.currentIndex() == 1
-        )
+        self._drop_merge = self._plan is not None and self.centralStack.currentIndex() == 1
 
         # Switch to sync review and show loading
         self.centralStack.setCurrentIndex(1)
@@ -3085,9 +3205,7 @@ class MainWindow(QMainWindow):
             supports_podcast=supports_podcast,
             supports_photo=supports_photo,
             photo_sync_settings={
-                "rotate_tall_photos_for_device": (
-                    settings.rotate_tall_photos_for_device
-                ),
+                "rotate_tall_photos_for_device": (settings.rotate_tall_photos_for_device),
                 "fit_photo_thumbnails": settings.fit_photo_thumbnails,
             },
         )
@@ -3136,9 +3254,7 @@ class MainWindow(QMainWindow):
             self.show()
             self.raise_()
             self.activateWindow()
-            notice_title, notice_message = (
-                self.backupBrowser.app_close_block_notice()
-            )
+            notice_title, notice_message = self.backupBrowser.app_close_block_notice()
             QMessageBox.information(
                 self,
                 notice_title,
@@ -3163,10 +3279,7 @@ class MainWindow(QMainWindow):
         self._startup_updates.stop(3000)
         self._sync_session.shutdown(3000)
         back_sync_workers = list(getattr(self, "_back_sync_workers", []))
-        if (
-            self._back_sync_worker is not None
-            and self._back_sync_worker not in back_sync_workers
-        ):
+        if self._back_sync_worker is not None and self._back_sync_worker not in back_sync_workers:
             back_sync_workers.append(self._back_sync_worker)
         for worker in back_sync_workers:
             if worker.isRunning():
@@ -3196,6 +3309,7 @@ class MainWindow(QMainWindow):
 # Dialogs
 # ============================================================================
 
+
 class _MissingToolsDialog(QDialog):
     """Clear, focused setup prompt for external sync tools."""
 
@@ -3217,7 +3331,7 @@ class _MissingToolsDialog(QDialog):
 
         # Icon + title row
         icon_label = QLabel()
-        _warnpx = glyph_pixmap("warning-triangle", Metrics.FONT_ICON_MD, Colors.WARNING)
+        _warnpx = glyph_pixmap("warning-triangle", Metrics.FONT_ICON_MD, paint_css("status.warning.text"))
         if _warnpx:
             icon_label.setPixmap(_warnpx)
         else:
@@ -3228,14 +3342,14 @@ class _MissingToolsDialog(QDialog):
 
         title = QLabel("Set up Sync Tools")
         title.setFont(QFont(FONT_FAMILY, Metrics.FONT_TITLE, QFont.Weight.Bold))
-        title.setStyleSheet(_label_css(Colors.TEXT_PRIMARY))
+        title.setStyleSheet(_label_css(paint_css("text.primary")))
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setWordWrap(True)
         layout.addWidget(title)
 
         tools_label = QLabel(tool_list)
         tools_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.DemiBold))
-        tools_label.setStyleSheet(_label_css(Colors.WARNING))
+        tools_label.setStyleSheet(_label_css(paint_css("status.warning.text")))
         tools_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         tools_label.setWordWrap(True)
         layout.addWidget(tools_label)
@@ -3243,19 +3357,12 @@ class _MissingToolsDialog(QDialog):
         layout.addSpacing(2)
 
         if can_download:
-            body = QLabel(
-                "iOpenPod needs these tools to prepare and sync your media.\n"
-                "Download them automatically now? (~80 MB)"
-            )
+            body = QLabel("iOpenPod needs these tools to prepare and sync your media.\nDownload them automatically now? (~80 MB)")
         else:
             body = QLabel(detail_lines)
         body.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
-        body.setStyleSheet(_label_css(Colors.TEXT_SECONDARY))
-        body.setAlignment(
-            Qt.AlignmentFlag.AlignCenter
-            if can_download
-            else Qt.AlignmentFlag.AlignLeft
-        )
+        body.setStyleSheet(_label_css(paint_css("text.secondary")))
+        body.setAlignment(Qt.AlignmentFlag.AlignCenter if can_download else Qt.AlignmentFlag.AlignLeft)
         body.setWordWrap(True)
         layout.addWidget(body)
 
@@ -3303,8 +3410,7 @@ class _DownloadProgressDialog(QDialog):
         self.setFixedSize((380), (180))
         self.setModal(True)
         self.setWindowFlags(
-            self.windowFlags()
-            & ~Qt.WindowType.WindowCloseButtonHint  # type: ignore[operator]
+            self.windowFlags() & ~Qt.WindowType.WindowCloseButtonHint  # type: ignore[operator]
         )
         _apply_dialog_background(self)
 
@@ -3314,13 +3420,13 @@ class _DownloadProgressDialog(QDialog):
 
         title = QLabel("Downloading Tools…")
         title.setFont(QFont(FONT_FAMILY, Metrics.FONT_XXL, QFont.Weight.Bold))
-        title.setStyleSheet(_label_css(Colors.TEXT_PRIMARY))
+        title.setStyleSheet(_label_css(paint_css("text.primary")))
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
         self._status = QLabel("Preparing download…")
         self._status.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
-        self._status.setStyleSheet(_label_css(Colors.TEXT_SECONDARY))
+        self._status.setStyleSheet(_label_css(paint_css("text.secondary")))
         self._status.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self._status)
 
@@ -3328,7 +3434,7 @@ class _DownloadProgressDialog(QDialog):
         bar.setRange(0, 0)  # indeterminate
         bar.setFixedHeight(6)
         bar.setTextVisible(False)
-        bar.setStyleSheet(progress_bar_css(height=6, radius=3, bg=Colors.SURFACE))
+        bar.setStyleSheet(progress_bar_css(height=6, radius=3, bg=paint_css("surface.default")))
         layout.addWidget(bar)
 
         layout.addStretch()

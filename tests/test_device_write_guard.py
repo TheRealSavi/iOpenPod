@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
+from threading import Event, Thread
 
 import pytest
 
@@ -62,6 +64,25 @@ def test_guard_can_lock_volume_without_reading_database(
         pass
 
 
+def test_successful_writer_guard_is_quiet_at_info_level(
+    tmp_path: Path,
+    caplog,
+) -> None:
+    ipod_root = tmp_path / "ipod"
+    ipod_root.mkdir()
+    caplog.set_level(logging.INFO, logger=write_guard.__name__)
+
+    with DeviceWriteGuard(
+        ipod_root,
+        volume_key="volume-123",
+        track_database_generation=False,
+        lock_dir=tmp_path / "locks",
+    ):
+        pass
+
+    assert caplog.records == []
+
+
 def _database(ipod_root: Path, contents: bytes = b"mhbd-original") -> Path:
     path = ipod_root / "iPod_Control" / "iTunes" / "iTunesDB"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -88,6 +109,64 @@ def test_only_one_writer_can_hold_a_device_guard(
     # The guard must be available again after the first writer exits.
     with DeviceWriteGuard(ipod_root, volume_key="volume-123", lock_dir=lock_dir):
         pass
+
+
+def test_in_process_writers_wait_in_a_device_queue(tmp_path: Path) -> None:
+    ipod_root = tmp_path / "ipod"
+    ipod_root.mkdir()
+    lock_dir = tmp_path / "locks"
+    first_acquired = Event()
+    release_first = Event()
+    second_started = Event()
+    second_acquired = Event()
+    order: list[str] = []
+    errors: list[BaseException] = []
+
+    def first_writer() -> None:
+        try:
+            with DeviceWriteGuard(
+                ipod_root,
+                volume_key="volume-123",
+                track_database_generation=False,
+                lock_dir=lock_dir,
+            ):
+                order.append("first")
+                first_acquired.set()
+                assert release_first.wait(timeout=2)
+        except BaseException as exc:
+            errors.append(exc)
+
+    def second_writer() -> None:
+        try:
+            assert first_acquired.wait(timeout=2)
+            second_started.set()
+            with DeviceWriteGuard(
+                ipod_root,
+                volume_key="volume-123",
+                track_database_generation=False,
+                lock_dir=lock_dir,
+            ):
+                order.append("second")
+                second_acquired.set()
+        except BaseException as exc:
+            errors.append(exc)
+
+    first = Thread(target=first_writer)
+    second = Thread(target=second_writer)
+    first.start()
+    assert first_acquired.wait(timeout=2)
+    second.start()
+    assert second_started.wait(timeout=2)
+    assert not second_acquired.wait(timeout=0.1)
+
+    release_first.set()
+    first.join(timeout=2)
+    second.join(timeout=2)
+
+    assert not first.is_alive()
+    assert not second.is_alive()
+    assert errors == []
+    assert order == ["first", "second"]
 
 
 def test_mount_aliases_share_one_underlying_volume_lock(tmp_path: Path) -> None:

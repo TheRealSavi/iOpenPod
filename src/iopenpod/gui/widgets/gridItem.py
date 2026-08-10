@@ -9,16 +9,18 @@ from PyQt6.QtCore import QPoint, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QContextMenuEvent, QCursor, QFont, QImage, QMouseEvent, QPixmap
 from PyQt6.QtWidgets import QCheckBox, QFrame, QHBoxLayout, QLabel, QVBoxLayout
 
+from iopenpod.infrastructure.theme_renderer import render_artwork_grid_card_paints
+
 from ..artwork_rendering import nested_artwork_radius, rounded_artwork_pixmap
 from ..glyphs import glyph_pixmap
 from ..hidpi import scale_pixmap_for_display
 from ..styles import (
     FONT_FAMILY,
-    Colors,
     Metrics,
     checkbox_css,
-    current_accent_rgb,
+    current_theme,
     display_accent_rgb,
+    paint_css,
     text_rgb_for_background,
 )
 from .scrollingLabel import ScrollingLabel
@@ -50,25 +52,13 @@ class GridItemRenderState:
     display_album_colors: dict[str, Any] | None = None
 
 
-_GRID_CARD_TINT_DARK = (30, 25, 55, 45)
-_GRID_CARD_TINT_LIGHT = (48, 40, 82, 68)
+_GRID_ART_CONTRAST_TARGET = 3.35
 
 
 def _grid_metric(name: str, fallback: int) -> int:
     """Read current grid tokens while remaining compatible with older themes."""
 
     return int(getattr(Metrics, name, fallback))
-
-
-def _grid_card_tint_alphas() -> tuple[int, int | None, int, int | None]:
-    values = (
-        _GRID_CARD_TINT_LIGHT
-        if getattr(Colors, "_active_mode", "dark") == "light"
-        else _GRID_CARD_TINT_DARK
-    )
-    if hasattr(Metrics, "GRID_CARD_RADIUS"):
-        return values[0], None, values[2], None
-    return values
 
 
 class GridItem(QFrame):
@@ -327,12 +317,7 @@ class GridItem(QFrame):
         self._apply_style()
 
     def _render_placeholder(self, glyph_name: str) -> None:
-        r, g, b = display_accent_rgb(
-            current_accent_rgb(),
-            background=Colors.BG_DARK,
-            target_ratio=Colors.GRID_ART_CONTRAST_TARGET,
-        )
-        pixmap = glyph_pixmap(glyph_name, Metrics.FONT_ICON_LG, Colors.TEXT_TERTIARY)
+        pixmap = glyph_pixmap(glyph_name, Metrics.FONT_ICON_LG, paint_css("text.tertiary"))
         if pixmap:
             self.image_label.setPixmap(pixmap)
             self.image_label.setText("")
@@ -341,10 +326,10 @@ class GridItem(QFrame):
             self.image_label.setText(glyph_name.title())
             self.image_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.image_label.setStyleSheet(f"""
-            background: rgba({r}, {g}, {b}, 14);
+            background: {paint_css('grid.art.placeholder_fill')};
             border: none;
             border-radius: {_grid_metric("GRID_ART_RADIUS", Metrics.BORDER_RADIUS)}px;
-            color: {Colors.TEXT_TERTIARY};
+            color: {paint_css('text.tertiary')};
         """)
 
     def _render_image(self, image: GridImage) -> None:
@@ -392,8 +377,8 @@ class GridItem(QFrame):
             return GridItemRenderState()
         display_color = display_accent_rgb(
             dominant_color,
-            background=Colors.BG_DARK,
-            target_ratio=Colors.GRID_ART_CONTRAST_TARGET,
+            background=paint_css("canvas.default"),
+            target_ratio=_GRID_ART_CONTRAST_TARGET,
         )
         display_album = None
         if album_colors:
@@ -417,35 +402,25 @@ class GridItem(QFrame):
 
     def _apply_style(self) -> None:
         if self._selected:
-            background = Colors.ACCENT_MUTED
-            hover = Colors.ACCENT_DIM
-            border = f"2px solid {Colors.ACCENT_BORDER}"
+            background = paint_css("grid.card.selected_fill")
+            hover = paint_css("grid.card.selected_hover_fill")
+            border = f"2px solid {paint_css('grid.card.selected_border')}"
             hover_border = border
-            title_color = Colors.TEXT_PRIMARY
+            title_color = paint_css("text.primary")
         elif self._render_state.display_dominant_color:
             r, g, b = self._render_state.display_dominant_color
-            normal_alpha, border_alpha, hover_alpha, hover_border_alpha = (
-                _grid_card_tint_alphas()
-            )
-            background = f"rgba({r}, {g}, {b}, {normal_alpha})"
-            hover = f"rgba({r}, {g}, {b}, {hover_alpha})"
-            border = (
-                "none"
-                if border_alpha is None
-                else f"1px solid rgba({r}, {g}, {b}, {border_alpha})"
-            )
-            hover_border = (
-                "none"
-                if hover_border_alpha is None
-                else f"1px solid rgba({r}, {g}, {b}, {hover_border_alpha})"
-            )
-            title_color = Colors.TEXT_PRIMARY
+            artwork_paints = render_artwork_grid_card_paints(current_theme(), (r, g, b))
+            background = artwork_paints.normal_fill.css
+            hover = artwork_paints.hover_fill.css
+            border = "none"
+            hover_border = "none"
+            title_color = paint_css("text.primary")
         else:
-            background = Colors.SURFACE_RAISED
-            hover = Colors.SURFACE_ACTIVE
-            border = f"1px solid {Colors.BORDER_SUBTLE}"
+            background = paint_css("grid.card.fill")
+            hover = paint_css("grid.card.hover_fill")
+            border = f"1px solid {paint_css('grid.card.border')}"
             hover_border = border
-            title_color = Colors.TEXT_PRIMARY
+            title_color = paint_css("text.primary")
 
         if self._selected:
             hover_border = border
@@ -455,7 +430,7 @@ class GridItem(QFrame):
                 background-color: {background};
                 border: {border};
                 border-radius: {_grid_metric("GRID_CARD_RADIUS", Metrics.BORDER_RADIUS_XL)}px;
-                color: {Colors.TEXT_PRIMARY};
+                color: {paint_css('text.primary')};
             }}
             QFrame#unifiedGridItem:hover {{
                 background-color: {hover};
@@ -464,7 +439,7 @@ class GridItem(QFrame):
         """)
         self.image_frame.setStyleSheet(f"""
             QFrame#unifiedGridItemImageFrame {{
-                background: {Colors.SURFACE_ALT};
+                background: {paint_css('grid.art.background')};
                 border: none;
                 border-radius: {_grid_metric("GRID_ART_RADIUS", Metrics.BORDER_RADIUS)}px;
             }}
@@ -480,7 +455,7 @@ class GridItem(QFrame):
             f"border: none; background: transparent; color: {title_color};"
         )
         self.subtitle_label.setStyleSheet(
-            f"border: none; background: transparent; color: {Colors.TEXT_SECONDARY};"
+            f"border: none; background: transparent; color: {paint_css('text.secondary')};"
         )
         if self.checkbox is not None:
             self.checkbox.setStyleSheet(checkbox_css())

@@ -24,7 +24,6 @@ import os
 import random
 import shutil
 import tempfile
-import time
 from collections.abc import Callable
 
 from iopenpod.device import ChecksumType, DeviceCapabilities, detect_checksum_type, get_firewire_id
@@ -172,12 +171,6 @@ def write_sqlite_databases(
         before_device_mutation()
         os.makedirs(itlp_path, exist_ok=True)
 
-    # Determine timezone offset
-    if time.daylight:
-        tz_offset = -time.altzone
-    else:
-        tz_offset = -time.timezone
-
     # Determine checksum type
     checksum_type = ChecksumType.NONE
     if capabilities:
@@ -235,7 +228,6 @@ def write_sqlite_databases(
                 smart_playlists=smart_playlists,
                 master_playlist_name=master_playlist_name,
                 db_pid=db_pid,
-                tz_offset=tz_offset,
             )
 
             # 2. Locations.itdb (file path mappings)
@@ -243,7 +235,6 @@ def write_sqlite_databases(
             write_locations_itdb(
                 path=loc_path,
                 tracks=tracks,
-                tz_offset=tz_offset,
             )
 
             # 3. Dynamic.itdb (play counts, ratings, bookmarks)
@@ -252,7 +243,6 @@ def write_sqlite_databases(
                 path=dyn_path,
                 tracks=tracks,
                 playlist_pids=playlist_pids,
-                tz_offset=tz_offset,
             )
 
             # 4. Extras.itdb (lyrics, chapters)

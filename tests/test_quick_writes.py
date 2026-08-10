@@ -10,7 +10,7 @@ import pytest
 from iopenpod.device.write_guard import DatabaseGeneration
 from iopenpod.itunesdb_shared.constants import MEDIA_TYPE_PODCAST
 from iopenpod.itunesdb_writer.mhit_writer import TrackInfo
-from iopenpod.itunesdb_writer.mhyp_writer import write_mhyp
+from iopenpod.itunesdb_writer.mhyp_writer import write_mhyp, write_playlist
 from iopenpod.sync import quick_writes
 from iopenpod.sync._playlist_builder import build_and_evaluate_playlists
 from iopenpod.sync._track_conversion import track_dict_to_info
@@ -612,6 +612,58 @@ def test_user_smart_playlist_in_visible_bucket_is_evaluated() -> None:
     assert smart_playlists == []
 
 
+def test_static_user_smart_playlist_keeps_existing_membership() -> None:
+    tracks = [
+        TrackInfo(
+            title="Pinned",
+            location=":iPod_Control:Music:F00:PINNED.mp3",
+            track_id=10,
+            db_track_id=100,
+        ),
+        TrackInfo(
+            title="Would Match",
+            location=":iPod_Control:Music:F00:MATCH.mp3",
+            track_id=11,
+            db_track_id=101,
+        ),
+    ]
+
+    _master_name, _master_id, playlists, _podcast_master, _podcast_master_id, _podcast_playlists, _smart_playlists = build_and_evaluate_playlists(
+        [
+            {"track_id": 10, "db_track_id": 100, "Title": "Pinned"},
+            {"track_id": 11, "db_track_id": 101, "Title": "Would Match"},
+        ],
+        [
+            {"playlist_id": 1, "Title": "iPod", "master_flag": 1},
+            {
+                "playlist_id": 2,
+                "Title": "Frozen Smart",
+                "items": [{"track_id": 10}],
+                "smart_playlist_data": {
+                    "live_update": False,
+                    "check_rules": True,
+                    "check_limits": False,
+                },
+                "smart_playlist_rules": {
+                    "conjunction": "AND",
+                    "rules": [{
+                        "field_id": 0x02,
+                        "action_id": 0x01000001,
+                        "string_value": "Would Match",
+                    }],
+                },
+            },
+        ],
+        [],
+        [],
+        tracks,
+    )
+
+    frozen = next(playlist for playlist in playlists if playlist.playlist_id == 2)
+    assert frozen.is_smart
+    assert frozen.track_ids == [100]
+
+
 def test_dataset2_standard_playlists_win_over_dataset3_podcast_mirror() -> None:
     track = TrackInfo(
         title="Song",
@@ -1006,6 +1058,31 @@ def test_mhsd5_ringtones_and_rentals_special_flag_matches_libgpod() -> None:
     assert struct.unpack_from("<H", data, 0x50)[0] == 7
     assert struct.unpack_from("<H", data, 0x52)[0] == 7
     assert struct.unpack_from("<I", data, 0x54)[0] == 1
+
+
+def test_playlist_builder_preserves_phase_game_flag_for_writer() -> None:
+    (
+        _master,
+        _master_id,
+        playlists,
+        _podcast_master,
+        _podcast_master_id,
+        _podcast_playlists,
+        _smart,
+    ) = build_and_evaluate_playlists(
+        [],
+        [
+            {"playlist_id": 1, "Title": "iPod", "master_flag": 1},
+            {"playlist_id": 2, "Title": "Phase Music", "phase_game_flag": 25},
+        ],
+        [],
+        [],
+        [],
+    )
+
+    assert len(playlists) == 1
+    assert playlists[0].phase_game_flag == 25
+    assert struct.unpack_from("<H", write_playlist(playlists[0]), 0x52)[0] == 25
 
 
 def test_dataset5_marker_in_dataset2_bucket_is_preserved_without_repair() -> None:

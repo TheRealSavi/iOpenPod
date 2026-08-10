@@ -78,6 +78,13 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
+          $wasmtimeRuntime = '.\dist\iOpenPod\_internal\wasmtime\win32-aarch64'
+          if (-not (Test-Path $wasmtimeRuntime)) {
+            throw "Windows-on-ARM Wasmtime runtime is missing: $wasmtimeRuntime"
+          }
+          if (-not (Get-ChildItem $wasmtimeRuntime -Filter '*.dll')) {
+            throw "Windows-on-ARM Wasmtime runtime contains no DLL: $wasmtimeRuntime"
+          }
           $process = Start-Process `
             -FilePath .\dist\iOpenPod\iOpenPod.exe `
             -ArgumentList --check-linux-udev-rule `

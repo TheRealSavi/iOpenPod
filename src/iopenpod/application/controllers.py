@@ -248,7 +248,7 @@ class QuickWriteController(QObject):
         ):
             return
 
-        logger.info(
+        logger.debug(
             "Quick write: %d track edit(s), %d artwork edit(s), %d playlist edit(s)",
             len(edits),
             len(artwork_edits),
@@ -328,7 +328,7 @@ class QuickWriteController(QObject):
             self._quick_worker.deleteLater()
             self._quick_worker = None
         if result.success:
-            logger.info("Quick write completed successfully")
+            logger.debug("Quick write completed successfully")
             if getattr(result, "newer_changes_pending", False):
                 self._force_snapshot_write = True
                 self.save_status_changed.emit("saving")

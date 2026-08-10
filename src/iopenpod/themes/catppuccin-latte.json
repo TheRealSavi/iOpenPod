@@ -1,0 +1,14 @@
+{
+  "name": "Catppuccin Latte",
+  "type": "light",
+  "colors": {
+    "accent": "#1e66f5", "accent_light": "#7287fd",
+    "background": "#eff1f5", "background_alt": "#e6e9ef",
+    "surface": "#e7e9ef", "surface_alt": "#ccd0da", "surface_raised": "#bcc0cc", "surface_hover": "#acb0be", "surface_active": "#b5b9c6",
+    "menu_background": "#eff1f5", "dialog_background": "#eff1f5", "tooltip_background": "#e6e9ef",
+    "text_primary": "#4c4f69", "text_secondary": "#5c5f77", "text_tertiary": "#6c6f85", "text_disabled": "#9ca0b0",
+    "border": "#babeca", "border_subtle": "#d4d7e0", "gridline": "#c7cbd5", "danger": "#d20f39", "success": "#40a02b", "warning": "#df8e1d", "info": "#04a5e5", "star": "#df8e1d",
+    "sync_cyan": "#179299", "sync_purple": "#8839ef", "sync_magenta": "#ea76cb", "sync_orange": "#fe640b", "sync_freed": "#179299",
+    "playlist_smart": "#8839ef", "playlist_podcast": "#40a02b", "playlist_master": "#8c8fa1", "playlist_regular": "#1e66f5"
+  }
+}

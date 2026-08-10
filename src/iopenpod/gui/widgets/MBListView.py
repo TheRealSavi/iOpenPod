@@ -28,6 +28,9 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QMenu,
     QSlider,
+    QStyle,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -43,6 +46,10 @@ from iopenpod.itunesdb_shared.constants import (
     MEDIA_TYPE_VIDEO_MASK,
     MEDIA_TYPE_VIDEO_PODCAST,
 )
+from iopenpod.itunesdb_shared.playlist_kinds import (
+    is_playlist_folder,
+    is_podcast_playlist,
+)
 from iopenpod.search import SearchText, matches_search, prepare_search_text
 
 from ..artwork_rendering import (
@@ -57,10 +64,10 @@ from ..styles import (
     BROWSER_SEARCH_CONTROL_SIZE,
     BROWSER_SEARCH_FIELD_WIDTH,
     FONT_FAMILY,
-    Colors,
     Metrics,
     browser_search_field_css,
     context_menu_css,
+    paint_css,
     table_css,
 )
 from ..system_open import open_files_with_app_picker, open_files_with_default_app
@@ -420,7 +427,7 @@ COLUMN_CONFIG: dict[str, tuple[str, Callable[[int], str] | None]] = {
     "length": ("Time", format_duration),
     "rating": ("Rating", format_rating),
     "play_count_1": ("Plays", None),
-    "play_count_2": ("Plays (iPod)", None),
+    "play_count_2": ("Unscrobbled Plays", None),
     "skip_count": ("Skips", None),
     "last_played": ("Last Played", format_date),
     "last_skipped": ("Last Skipped", format_date),
@@ -681,6 +688,52 @@ class _SortableItem(QTableWidgetItem):
         return (self.text() or "") < (other.text() or "")
 
 
+class _ArtworkItemDelegate(QStyledItemDelegate):
+    """Paint artwork icons centered without changing ordinary cell rendering."""
+
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__(parent)
+        self._is_artwork_column = False
+
+    def set_artwork_column_visible(self, visible: bool) -> None:
+        self._is_artwork_column = visible
+
+    def paint(self, painter: QPainter, option, index) -> None:  # type: ignore[override]
+        if not self._is_artwork_column:
+            super().paint(painter, option, index)
+            return
+
+        item_option = QStyleOptionViewItem(option)
+        self.initStyleOption(item_option, index)
+        icon = item_option.icon
+        if icon.isNull():
+            super().paint(painter, option, index)
+            return
+        pixmap = icon.pixmap(item_option.decorationSize)
+        if pixmap.isNull():
+            super().paint(painter, option, index)
+            return
+
+        item_option.icon = QIcon()
+        item_option.features &= ~QStyleOptionViewItem.ViewItemFeature.HasDecoration
+        style = item_option.widget.style() if item_option.widget else QApplication.style()
+        if style is None:
+            super().paint(painter, option, index)
+            return
+        style.drawControl(
+            QStyle.ControlElement.CE_ItemViewItem,
+            item_option,
+            painter,
+            item_option.widget,
+        )
+        size = pixmap.deviceIndependentSize().toSize()
+        painter.drawPixmap(
+            item_option.rect.x() + (item_option.rect.width() - size.width()) // 2,
+            item_option.rect.y() + (item_option.rect.height() - size.height()) // 2,
+            pixmap,
+        )
+
+
 # =============================================================================
 # _DragProgressWidget — floating overlay showing per-track prep progress
 # =============================================================================
@@ -736,16 +789,16 @@ class _DragProgressWidget(QWidget):
     def _apply_style(self) -> None:
         self._container.setStyleSheet(f"""
             QFrame#dpWrap {{
-                background: {Colors.SURFACE_RAISED};
-                border: 1px solid {Colors.BORDER};
+                background: {paint_css('surface.raised')};
+                border: 1px solid {paint_css('border.default')};
                 border-radius: 8px;
             }}
             QLabel {{
-                color: {Colors.TEXT_PRIMARY};
+                color: {paint_css('text.primary')};
                 background: transparent;
             }}
             QFrame[frameShape="4"] {{
-                color: {Colors.BORDER_SUBTLE};
+                color: {paint_css('border.subtle')};
                 background: transparent;
             }}
         """)
@@ -754,12 +807,12 @@ class _DragProgressWidget(QWidget):
         if 0 <= idx < len(self._rows):
             lbl = self._rows[idx]
             lbl.setText(lbl.text().replace("  ○  ", "  ✓  "))
-            lbl.setStyleSheet(f"color: {Colors.ACCENT_LIGHT}; background: transparent;")
+            lbl.setStyleSheet(f"color: {paint_css('control.primary.hover_fill')}; background: transparent;")
             self._done += 1
             if self._done == len(self._rows):
                 self._header.setText("Starting drag…")
                 self._header.setStyleSheet(
-                    f"color: {Colors.ACCENT_LIGHT}; background: transparent;"
+                    f"color: {paint_css('control.primary.hover_fill')}; background: transparent;"
                 )
 
 
@@ -912,13 +965,15 @@ class MusicBrowserList(QFrame):
         self.table = QTableWidget()
         self._layout.addWidget(self.table)
         self._setup_table()
+        self._artwork_delegate = _ArtworkItemDelegate(self.table)
+        self.table.setItemDelegateForColumn(0, self._artwork_delegate)
 
         # Status bar (track count)
         self._status_label = QLabel()
         self._status_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self._status_label.setStyleSheet(
-            f"color: {Colors.TEXT_SECONDARY}; padding: 3px 8px;"
-            f" border-top: 1px solid {Colors.BORDER_SUBTLE};"
+            f"color: {paint_css('text.secondary')}; padding: 3px 8px;"
+            f" border-top: 1px solid {paint_css('border.subtle')};"
             " background: transparent;"
         )
         self._layout.addWidget(self._status_label)
@@ -1008,9 +1063,9 @@ class MusicBrowserList(QFrame):
         bar.setFixedHeight(46)
         bar.setStyleSheet(
             f"QFrame#trackListSearchBar {{"
-            f"background:{Colors.SURFACE};"
+            f"background:{paint_css('surface.default')};"
             f"border:none;"
-            f"border-bottom:1px solid {Colors.BORDER_SUBTLE};"
+            f"border-bottom:1px solid {paint_css('border.subtle')};"
             f"}}"
         )
 
@@ -1036,7 +1091,7 @@ class MusicBrowserList(QFrame):
             BROWSER_SEARCH_CONTROL_SIZE,
         )
         self._search_field.setStyleSheet(browser_search_field_css())
-        search_icon = glyph_icon("search", 16, Colors.TEXT_TERTIARY)
+        search_icon = glyph_icon("search", 16, paint_css("text.tertiary"))
         if search_icon is not None:
             self._search_field.addAction(
                 search_icon,
@@ -1170,13 +1225,15 @@ class MusicBrowserList(QFrame):
         pl = self._current_playlist
         if pl.get("master_flag"):
             return False
+        if is_playlist_folder(pl):
+            return False
         if (
             pl.get("smart_playlist_data")
             or _is_ipod_category_playlist(pl)
             or pl.get("_source") == "smart"
         ):
             return False
-        if pl.get("podcast_flag", 0) == 1 and not _is_display_merged_playlist(pl):
+        if is_podcast_playlist(pl) and not _is_display_merged_playlist(pl):
             return False
         # Only allow manual reorder when sort_order is Manual (1) or Default (0)
         sort_order = pl.get("sort_order", 0)
@@ -1815,6 +1872,7 @@ class MusicBrowserList(QFrame):
                 )
             else:
                 self._show_art = self._show_art_override
+            self._artwork_delegate.set_artwork_column_visible(self._show_art)
 
             # Capture state for this load
             load_id = self._load_id
@@ -1957,7 +2015,7 @@ class MusicBrowserList(QFrame):
                 item.setData(Qt.ItemDataRole.UserRole, numeric)
 
             if key == "rating" and display:
-                item.setForeground(_named_qcolor(Colors.STAR))
+                item.setForeground(_named_qcolor(paint_css("data.rating.text")))
             if key == "explicit_flag":
                 self._apply_explicit_cell_visuals(item, raw_value)
             if key in NUMERIC_COLUMNS:
@@ -2484,10 +2542,10 @@ class MusicBrowserList(QFrame):
 
         if flag == 1:
             svg_name = "advisory-explicit"
-            svg_color = Colors.DANGER
+            svg_color = paint_css("status.danger.text")
         else:
             svg_name = "advisory-clean"
-            svg_color = Colors.SUCCESS
+            svg_color = paint_css("status.success.text")
 
         svg_icon = glyph_icon(svg_name, size, color=svg_color)
         if svg_icon is not None:
@@ -2495,12 +2553,14 @@ class MusicBrowserList(QFrame):
             return svg_icon
 
         if flag == 1:
-            bg = _named_qcolor(Colors.DANGER)
-            border = _named_qcolor(Colors.DANGER_BORDER)
+            bg = _named_qcolor(paint_css("status.danger.text"))
+            border = _named_qcolor(paint_css("status.danger.badge_border"))
+            text = _named_qcolor(paint_css("status.danger.on_fill_text"))
             glyph = "E"
         else:
-            bg = _named_qcolor(Colors.SUCCESS)
-            border = _named_qcolor(Colors.SUCCESS_BORDER)
+            bg = _named_qcolor(paint_css("status.success.text"))
+            border = _named_qcolor(paint_css("status.success.badge_border"))
+            text = _named_qcolor(paint_css("status.success.on_fill_text"))
             glyph = "C"
 
         px = QPixmap(size, size)
@@ -2516,7 +2576,7 @@ class MusicBrowserList(QFrame):
 
         font = QFont(FONT_FAMILY, max(7, size - 6), QFont.Weight.Bold)
         painter.setFont(font)
-        painter.setPen(_named_qcolor(Colors.TEXT_ON_ACCENT))
+        painter.setPen(text)
         painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, glyph)
         painter.end()
 
@@ -2534,7 +2594,7 @@ class MusicBrowserList(QFrame):
             icon = self._advisory_badge_icon(1)
             if icon is not None:
                 cell.setIcon(icon)
-            cell.setForeground(_named_qcolor(Colors.DANGER))
+            cell.setForeground(_named_qcolor(paint_css("status.danger.text")))
             cell.setToolTip("Content Advisory: Explicit")
             return
 
@@ -2542,11 +2602,11 @@ class MusicBrowserList(QFrame):
             icon = self._advisory_badge_icon(2)
             if icon is not None:
                 cell.setIcon(icon)
-            cell.setForeground(_named_qcolor(Colors.SUCCESS))
+            cell.setForeground(_named_qcolor(paint_css("status.success.text")))
             cell.setToolTip("Content Advisory: Clean")
             return
 
-        cell.setForeground(_named_qcolor(Colors.TEXT_TERTIARY))
+        cell.setForeground(_named_qcolor(paint_css("text.tertiary")))
 
     def _update_status(self) -> None:
         """Update the status label with track count info."""
@@ -3356,7 +3416,7 @@ class MusicBrowserList(QFrame):
             open_label = f"Open {len(selected)} Track Files"
         open_act = menu.addAction(f"{open_label}\t{_OPEN_TRACK_SHORTCUT}")
         if open_act:
-            icon = glyph_icon("music", 14, Colors.TEXT_PRIMARY)
+            icon = glyph_icon("music", 14, paint_css("text.primary"))
             if icon is not None:
                 open_act.setIcon(icon)
             open_act.setEnabled(bool(paths))
@@ -3371,7 +3431,7 @@ class MusicBrowserList(QFrame):
 
         open_with_act = menu.addAction(f"Open With...\t{_OPEN_WITH_TRACK_SHORTCUT}")
         if open_with_act:
-            icon = glyph_icon("folder", 14, Colors.TEXT_PRIMARY)
+            icon = glyph_icon("folder", 14, paint_css("text.primary"))
             if icon is not None:
                 open_with_act.setIcon(icon)
             can_open_with = len(selected) == 1 and n_paths == 1
@@ -3418,7 +3478,7 @@ class MusicBrowserList(QFrame):
         if act is None:
             return None
 
-        icon = glyph_icon("broadcast", 14, Colors.TEXT_PRIMARY)
+        icon = glyph_icon("broadcast", 14, paint_css("text.primary"))
         if icon is not None:
             act.setIcon(icon)
 
@@ -3637,40 +3697,40 @@ class MusicBrowserList(QFrame):
         widget.setStyleSheet(
             f"""
             QWidget#volumeAdjustmentWidget {{
-                background: {Colors.SURFACE};
-                color: {Colors.TEXT_PRIMARY};
+                background: {paint_css('surface.default')};
+                color: {paint_css('text.primary')};
             }}
             QLabel {{
-                color: {Colors.TEXT_SECONDARY};
+                color: {paint_css('text.secondary')};
                 background: transparent;
                 font-family: {FONT_FAMILY};
                 font-size: {Metrics.FONT_XS}pt;
             }}
             QLabel#volumeAdjustmentValueLabel {{
-                color: {Colors.TEXT_PRIMARY};
+                color: {paint_css('text.primary')};
                 font-size: {Metrics.FONT_SM}pt;
                 font-weight: 600;
             }}
             QSlider::groove:horizontal {{
                 height: 4px;
                 border-radius: 2px;
-                background: {Colors.BORDER};
+                background: {paint_css('border.default')};
             }}
             QSlider::sub-page:horizontal {{
                 border-radius: 2px;
-                background: {Colors.ACCENT};
+                background: {paint_css('control.primary.fill')};
             }}
             QSlider::handle:horizontal {{
                 width: 14px;
                 height: 14px;
                 margin: -5px 0;
                 border-radius: 7px;
-                background: {Colors.TEXT_PRIMARY};
-                border: 1px solid {Colors.BORDER};
+                background: {paint_css('control.secondary.fill')};
+                border: 1px solid {paint_css('border.default')};
             }}
             QSlider::handle:horizontal:hover {{
-                background: {Colors.TEXT_ON_ACCENT};
-                border-color: {Colors.ACCENT_BORDER};
+                background: {paint_css('control.secondary.hover_fill')};
+                border-color: {paint_css('focus.border')};
             }}
             """
         )

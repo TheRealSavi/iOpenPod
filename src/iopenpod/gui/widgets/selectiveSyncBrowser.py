@@ -11,13 +11,14 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import threading
 from collections import defaultdict, deque
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from PIL import Image, ImageOps
 from PyQt6.QtCore import QPoint, QSize, Qt, QThread, QTimer, pyqtSignal
@@ -39,6 +40,7 @@ from PyQt6.QtWidgets import (
 )
 
 from iopenpod.application.progress import ETATracker
+from iopenpod.application.sync_review_model import sync_item_size_delta
 from iopenpod.artworkdb_writer.art_extractor import (
     extract_art,
     find_folder_art,
@@ -47,6 +49,7 @@ from iopenpod.infrastructure.media_folders import (
     media_folder_entries_to_settings,
     media_folder_paths,
 )
+from iopenpod.infrastructure.theme_renderer import render_content_hero_paints
 from iopenpod.itunesdb_shared.album_identity import (
     album_identity_from_track,
     group_tracks_by_album_identity,
@@ -58,14 +61,15 @@ from iopenpod.sync.photos import PCPhoto, PCPhotoLibrary, scan_pc_photos
 from ..glyphs import glyph_icon
 from ..styles import (
     FONT_FAMILY,
-    Colors,
     Design,
     Metrics,
     accent_btn_css,
     back_btn_css,
     btn_css,
     context_menu_css,
+    current_theme,
     make_scroll_area,
+    paint_css,
     progress_bar_css,
     sidebar_panel_css,
 )
@@ -83,6 +87,7 @@ from .MBGridViewItem import MusicBrowserGridItem
 from .photoViewer import PhotoViewerPane
 from .pooledPhotoGrid import PhotoTileModel, PooledPhotoGridView
 from .sidebarNavButton import SidebarNavButton
+from .syncReview import StorageBarWidget
 
 log = logging.getLogger(__name__)
 
@@ -274,6 +279,12 @@ class PCMusicBrowserGrid(MusicBrowserGrid):
     """Subclass of MusicBrowserGrid that loads artwork from embedded tags
     (or folder images) instead of the iPod ArtworkDB."""
 
+    _SELECTION_SECTION_TITLES = (
+        "Selected",
+        "Partially Selected",
+        "Unselected",
+    )
+
     def __init__(
         self,
         *,
@@ -284,9 +295,35 @@ class PCMusicBrowserGrid(MusicBrowserGrid):
             device_sessions=device_sessions,
             settings_service=settings_service,
             multi_select_enabled=True,
+            section_titles=self._SELECTION_SECTION_TITLES,
         )
         self._pc_art_map: dict[str, list[str]] = {}
         self._pc_mode = False
+        self._selection_section_resolver: Callable[[dict[str, Any]], str] | None = None
+
+    def setSelectionSectionResolver(
+        self,
+        resolver: Callable[[dict[str, Any]], str],
+    ) -> None:
+        """Set the live selection-state lookup for the category's records."""
+
+        self._selection_section_resolver = resolver
+        self.refreshSectionGrouping()
+
+    def setGroupBySelected(self, enabled: bool) -> None:
+        """Enable or disable selected-state sections for this category."""
+
+        self.setSectionGroupingEnabled(enabled)
+
+    def isGroupedBySelected(self) -> bool:
+        """Return whether selected-state sections are enabled."""
+
+        return self.isSectionGroupingEnabled()
+
+    def _section_title_for_record(self, record: object) -> str:
+        if isinstance(record, GridRecord) and self._selection_section_resolver:
+            return self._selection_section_resolver(record.payload)
+        return "Unselected"
 
     def loadPCCategory(self, groups: dict[str, dict]):
         """Populate the grid from PC track groups.
@@ -449,6 +486,13 @@ _PC_DEFAULT_COLUMNS = [
 ]
 
 
+class _SelectionSortItem(QTableWidgetItem):
+    """A checkbox cell that orders rows by its selected state."""
+
+    def __lt__(self, other: QTableWidgetItem) -> bool:  # type: ignore[override]
+        return self.checkState().value < other.checkState().value
+
+
 class _PCMusicBrowserList:
     """Mixin-style wrapper that adapts MusicBrowserList for PC track display.
 
@@ -542,8 +586,8 @@ class PCTrackListView(QWidget):
         self._hero.setMaximumHeight(312)
         self._hero.setStyleSheet(f"""
             QFrame#heroHeader {{
-                background: {Colors.BG_DARK};
-                border-bottom: 1px solid {Colors.BORDER_SUBTLE};
+                background: {paint_css("canvas.default")};
+                border-bottom: 1px solid {paint_css("border.subtle")};
             }}
         """)
         self._hero.setObjectName("heroHeader")
@@ -658,25 +702,26 @@ class PCTrackListView(QWidget):
 
     def setHeroColor(self, r: int, g: int, b: int):
         """Tint the hero header background with the artwork's dominant color."""
+        hero_paints = render_content_hero_paints(current_theme(), (r, g, b))
         self._hero.setStyleSheet(f"""
             QFrame#heroHeader {{
                 background: qlineargradient(
                     x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba({r}, {g}, {b}, 80),
-                    stop:1 {Colors.BG_DARK}
+                    stop:0 {hero_paints.header_tint.css},
+                    stop:1 {paint_css("canvas.default")}
                 );
-                border-bottom: 1px solid rgba({r}, {g}, {b}, 40);
+                border-bottom: 1px solid {hero_paints.header_border.css};
             }}
         """)
         self._hero_art.setStyleSheet(f"""
-            background: rgba({r}, {g}, {b}, 30);
+            background: {hero_paints.art_fill.css};
             border-radius: {Metrics.BORDER_RADIUS}px;
-            border: 1px solid rgba({r}, {g}, {b}, 50);
+            border: 1px solid {hero_paints.art_border.css};
         """)
-        self._title_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent;")
-        self._artist_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent;")
-        self._subtitle_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent;")
-        self._meta_label.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent;")
+        self._title_label.setStyleSheet(f"color: {paint_css('text.primary')}; background: transparent;")
+        self._artist_label.setStyleSheet(f"color: {paint_css('text.primary')}; background: transparent;")
+        self._subtitle_label.setStyleSheet(f"color: {paint_css('text.secondary')}; background: transparent;")
+        self._meta_label.setStyleSheet(f"color: {paint_css('text.tertiary')}; background: transparent;")
         _default_btn = btn_css(padding="5px 12px", radius=Metrics.BORDER_RADIUS_SM)
         self._back_btn.setStyleSheet(back_btn_css())
         self._sel_btn.setStyleSheet(_default_btn)
@@ -690,19 +735,19 @@ class PCTrackListView(QWidget):
         """Apply the default (non-tinted) hero styling."""
         self._hero.setStyleSheet(f"""
             QFrame#heroHeader {{
-                background: {Colors.BG_DARK};
-                border-bottom: 1px solid {Colors.BORDER_SUBTLE};
+                background: {paint_css("canvas.default")};
+                border-bottom: 1px solid {paint_css("border.subtle")};
             }}
         """)
         self._hero_art.setStyleSheet(f"""
-            background: {Colors.SURFACE};
+            background: {paint_css("surface.default")};
             border-radius: {Metrics.BORDER_RADIUS}px;
-            border: 1px solid {Colors.BORDER_SUBTLE};
+            border: 1px solid {paint_css("border.subtle")};
         """)
-        self._title_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent;")
-        self._artist_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent;")
-        self._subtitle_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent;")
-        self._meta_label.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent;")
+        self._title_label.setStyleSheet(f"color: {paint_css('text.primary')}; background: transparent;")
+        self._artist_label.setStyleSheet(f"color: {paint_css('text.primary')}; background: transparent;")
+        self._subtitle_label.setStyleSheet(f"color: {paint_css('text.secondary')}; background: transparent;")
+        self._meta_label.setStyleSheet(f"color: {paint_css('text.tertiary')}; background: transparent;")
         _default_btn = btn_css(padding="5px 12px", radius=Metrics.BORDER_RADIUS_SM)
         self._back_btn.setStyleSheet(back_btn_css())
         self._sel_btn.setStyleSheet(_default_btn)
@@ -722,7 +767,7 @@ class PCTrackListView(QWidget):
         else:
             self._hero_art.clear()
             from ..glyphs import glyph_icon
-            icon = glyph_icon(fallback_glyph, 48, Colors.TEXT_TERTIARY)
+            icon = glyph_icon(fallback_glyph, 48, paint_css("text.tertiary"))
             if icon:
                 self._hero_art.setPixmap(icon.pixmap(48, 48))
 
@@ -798,7 +843,7 @@ class PCTrackListView(QWidget):
             hh.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
 
         for row in range(t.rowCount()):
-            chk = QTableWidgetItem()
+            chk = _SelectionSortItem()
             chk.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
 
             # Find the path from the track dict via the row's anchor
@@ -818,6 +863,7 @@ class PCTrackListView(QWidget):
         except (TypeError, RuntimeError):
             pass
         t.cellChanged.connect(self._on_cell_changed)
+        self._resort_by_selection_if_needed()
 
     def _path_for_row(self, row: int) -> str | None:
         """Get the PC file path for a table row (accounts for sorting)."""
@@ -843,30 +889,53 @@ class PCTrackListView(QWidget):
         checked = item.checkState() == Qt.CheckState.Checked
         if path:
             self.toggled.emit(path, checked)
+        self._resort_by_selection_if_needed()
+
+    def _resort_by_selection_if_needed(self) -> None:
+        table = self._browser_list.table
+        header = table.horizontalHeader()
+        if header is None or not table.isSortingEnabled():
+            return
+        if header.sortIndicatorSection() == 0:
+            table.sortItems(0, header.sortIndicatorOrder())
+
+    def _set_checkbox_states(
+        self,
+        state_for_path: Callable[[str], Qt.CheckState],
+    ) -> None:
+        """Update every checkbox before re-enabling a checked-state sort."""
+
+        table = self._browser_list.table
+        sorting_enabled = table.isSortingEnabled()
+        signals_were_blocked = table.blockSignals(True)
+        if sorting_enabled:
+            table.setSortingEnabled(False)
+        try:
+            for row in range(table.rowCount()):
+                item = table.item(row, 0)
+                if item is None:
+                    continue
+                path = str(item.data(Qt.ItemDataRole.UserRole) or "")
+                item.setCheckState(state_for_path(path))
+        finally:
+            table.blockSignals(signals_were_blocked)
+            if sorting_enabled:
+                table.setSortingEnabled(True)
+        self._resort_by_selection_if_needed()
 
     def setAllChecked(self, checked: bool):
         state = Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked
-        t = self._browser_list.table
-        t.blockSignals(True)
-        for row in range(t.rowCount()):
-            item = t.item(row, 0)
-            if item:
-                item.setCheckState(state)
-        t.blockSignals(False)
+        self._set_checkbox_states(lambda _path: state)
 
     def updateCheckStates(self, selection: dict[str, bool]):
         """Refresh checkbox states from selection dict without emitting signals."""
-        t = self._browser_list.table
-        t.blockSignals(True)
-        for row in range(t.rowCount()):
-            item = t.item(row, 0)
-            if item:
-                path = item.data(Qt.ItemDataRole.UserRole)
-                checked = selection.get(path, True) if path else True
-                item.setCheckState(
-                    Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked
-                )
-        t.blockSignals(False)
+        self._set_checkbox_states(
+            lambda path: (
+                Qt.CheckState.Checked
+                if selection.get(path, True)
+                else Qt.CheckState.Unchecked
+            )
+        )
 
 
 # ── Photo list with checkboxes ──────────────────────────────────────────────
@@ -889,6 +958,7 @@ class PCPhotoListView(QWidget):
         self._photos: list[PCPhoto] = []
         self._selection: dict[str, bool] = {}
         self._visible_photos: list[PCPhoto] = []
+        self._visible_photos_by_path: dict[str, PCPhoto] = {}
         self._search_query = ""
         self._sort_key = "title"
         self._sort_reverse = False
@@ -920,8 +990,13 @@ class PCPhotoListView(QWidget):
 
         self._grid_header = GridHeaderBar()
         self._grid_header.setCategory("Photos")
+        self._grid_header.setSelectionGroupingAvailable(True)
+        self._grid_header.setGroupBySelected(True)
         self._grid_header.sort_changed.connect(self._on_sort_changed)
         self._grid_header.search_changed.connect(self._on_search_changed)
+        self._grid_header.selection_grouping_changed.connect(
+            self._on_selection_grouping_changed
+        )
         list_lay.addWidget(self._grid_header)
 
         self._photo_scroll = make_scroll_area()
@@ -929,6 +1004,9 @@ class PCPhotoListView(QWidget):
         self._photo_grid = PooledPhotoGridView(
             checkable=True,
             settings_service=self._settings_service,
+        )
+        self._photo_grid.setGroupBySelected(
+            self._grid_header.isGroupedBySelected()
         )
         self._photo_grid.currentIndexChanged.connect(self._on_current_photo_changed)
         self._photo_grid.checkedChanged.connect(self._on_photo_checked_changed)
@@ -1076,13 +1154,6 @@ class PCPhotoListView(QWidget):
         return PCPhotoListView._encode_pc_photo(path, max_size=_PC_PHOTO_PREVIEW_MAX)
 
     def _refresh_list(self) -> None:
-        current_index = self._photo_grid.currentIndex()
-        current_path = (
-            self._visible_photos[current_index].source_path
-            if 0 <= current_index < len(self._visible_photos)
-            else None
-        )
-
         self._load_token += 1
         self._preview_request_token += 1
         self._thumb_timer.stop()
@@ -1094,13 +1165,15 @@ class PCPhotoListView(QWidget):
         self._visible_photos = self._sort_photos(
             [photo for photo in self._photos if self._matches_search(photo)]
         )
+        self._visible_photos_by_path = {
+            photo.source_path: photo
+            for photo in self._visible_photos
+            if photo.source_path
+        }
         records: list[PhotoTileModel] = []
-        target_index = -1
-        for index, photo in enumerate(self._visible_photos):
+        for photo in self._visible_photos:
             title = photo.display_name or photo.source_path
             checked = self._selection.get(photo.source_path, True)
-            if current_path and photo.source_path == current_path:
-                target_index = index
             records.append(
                 PhotoTileModel(
                     key=photo.source_path,
@@ -1114,7 +1187,7 @@ class PCPhotoListView(QWidget):
             records,
             reset_scroll=False,
             preserve_selection=True,
-            fallback_index=target_index if target_index >= 0 else (0 if records else -1),
+            fallback_index=0 if records else -1,
         )
         self._queue_visible_photo_loads(self._load_token)
         if not records:
@@ -1131,6 +1204,9 @@ class PCPhotoListView(QWidget):
     def _on_search_changed(self, query: str):
         self._search_query = query.strip()
         self._refresh_list()
+
+    def _on_selection_grouping_changed(self, enabled: bool) -> None:
+        self._photo_grid.setGroupBySelected(enabled)
 
     def setAllChecked(self, checked: bool):
         for photo in self._visible_photos:
@@ -1156,10 +1232,10 @@ class PCPhotoListView(QWidget):
         next_queue: deque[tuple[str, int]] = deque()
         next_queued_paths: set[str] = set()
         for index in range(prefetch_start, prefetch_stop):
-            if not (0 <= index < len(self._visible_photos)):
+            record = self._photo_grid.recordAt(index)
+            if record is None:
                 continue
-            photo = self._visible_photos[index]
-            path = photo.source_path
+            path = str(record.key)
             if (
                 not path
                 or path in self._tile_pixmap_cache
@@ -1243,11 +1319,16 @@ class PCPhotoListView(QWidget):
             self._preview_request_token += 1
             self._viewer.clearPreview()
             return
-        if row >= len(self._visible_photos):
+        record = self._photo_grid.recordAt(row)
+        if record is None:
             self._preview_request_token += 1
             self._viewer.clearPreview()
             return
-        photo = self._visible_photos[row]
+        photo = self._visible_photos_by_path.get(str(record.key))
+        if photo is None:
+            self._preview_request_token += 1
+            self._viewer.clearPreview()
+            return
 
         album_names = sorted(name for name in photo.album_names if name)
         summary_parts = [", ".join(album_names) if album_names else "All Photos"]
@@ -1304,20 +1385,21 @@ class PCPhotoListView(QWidget):
         self._preview_pixmap_cache[path] = pixmap
 
         current_index = self._photo_grid.currentIndex()
-        if not (0 <= current_index < len(self._visible_photos)):
+        current_record = self._photo_grid.recordAt(current_index)
+        if current_record is None:
             return
-        current_photo = self._visible_photos[current_index]
-        if current_photo.source_path == path:
+        if str(current_record.key) == path:
             self._viewer.setPreviewPixmap(pixmap)
 
     def _on_photo_checked_changed(self, index: int, checked: bool) -> None:
-        if index < 0 or index >= len(self._visible_photos):
+        record = self._photo_grid.recordAt(index)
+        if record is None:
             return
-        photo = self._visible_photos[index]
-        prior = self._selection.get(photo.source_path, True)
-        self._selection[photo.source_path] = checked
+        path = str(record.key)
+        prior = self._selection.get(path, True)
+        self._selection[path] = checked
         if prior != checked:
-            self.toggled.emit(photo.source_path, checked)
+            self.toggled.emit(path, checked)
 
 
 # ── Main browser widget ─────────────────────────────────────────────────────
@@ -1421,7 +1503,7 @@ class SelectiveSyncBrowser(QWidget):
         self._header.setFixedHeight(44)
         self._header.setStyleSheet(f"""
             QFrame {{
-                background: {Colors.BG_DARK};
+                background: {paint_css("canvas.default")};
             }}
         """)
         hdr_lay = QHBoxLayout(self._header)
@@ -1438,15 +1520,70 @@ class SelectiveSyncBrowser(QWidget):
 
         self._title_label = QLabel("Selective Sync")
         self._title_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_TITLE, QFont.Weight.Bold))
-        self._title_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent;")
+        self._title_label.setStyleSheet(f"color: {paint_css('text.primary')}; background: transparent;")
         hdr_lay.addWidget(self._title_label)
 
         self._folder_label = QLabel()
         self._folder_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-        self._folder_label.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent;")
+        self._folder_label.setStyleSheet(f"color: {paint_css('text.tertiary')}; background: transparent;")
         hdr_lay.addWidget(self._folder_label, 1)
 
         root.addWidget(self._header)
+
+        self._storage_frame = QFrame()
+        self._storage_frame.setObjectName("selectiveSyncStorageProjection")
+        self._storage_frame.setStyleSheet(f"""
+            QFrame {{
+                background: {paint_css("surface.default")};
+                border-bottom: 1px solid {paint_css("border.subtle")};
+            }}
+        """)
+        storage_outer = QHBoxLayout(self._storage_frame)
+        storage_outer.setContentsMargins(16, 8, 16, 8)
+        storage_outer.setSpacing(12)
+
+        self._storage_ipod_img = QLabel(self._storage_frame)
+        self._storage_ipod_img.setFixedSize(32, 32)
+        self._storage_ipod_img.setStyleSheet("background: transparent;")
+        storage_outer.addWidget(self._storage_ipod_img)
+
+        storage_right = QVBoxLayout()
+        storage_right.setSpacing(3)
+        storage_top = QHBoxLayout()
+        storage_top.setSpacing(8)
+        self._storage_name = QLabel("iPod", self._storage_frame)
+        self._storage_name.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
+        self._storage_name.setStyleSheet(f"color:{paint_css('text.primary')}; background:transparent;")
+        storage_top.addWidget(self._storage_name)
+        storage_top.addStretch()
+        self._storage_detail = QLabel("", self._storage_frame)
+        self._storage_detail.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
+        self._storage_detail.setStyleSheet(f"color:{paint_css('text.tertiary')}; background:transparent;")
+        storage_top.addWidget(self._storage_detail)
+        storage_right.addLayout(storage_top)
+
+        self._storage_bar = StorageBarWidget(self._storage_frame)
+        self._storage_bar.setObjectName("selectiveSyncStorageBar")
+        storage_right.addWidget(self._storage_bar)
+
+        legend_row = QHBoxLayout()
+        legend_row.setSpacing(12)
+        self._storage_legend_labels: list[QLabel] = []
+        for color_hex, text in (
+            (paint_css("control.primary.fill"), "Current"),
+            (paint_css("status.success.text"), "Sync adds"),
+            (paint_css("status.success.text"), "Freed"),
+        ):
+            dot = QLabel(f"<span style='color:{color_hex};'>●</span> {text}", self._storage_frame)
+            dot.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
+            dot.setStyleSheet(f"color:{paint_css('text.tertiary')}; background:transparent;")
+            legend_row.addWidget(dot)
+            self._storage_legend_labels.append(dot)
+        legend_row.addStretch()
+        storage_right.addLayout(legend_row)
+        storage_outer.addLayout(storage_right, 1)
+        self._storage_frame.setVisible(False)
+        root.addWidget(self._storage_frame)
 
         # Body: sidebar + content
         body = QWidget()
@@ -1475,7 +1612,7 @@ class SelectiveSyncBrowser(QWidget):
             sep.setFrameShape(QFrame.Shape.HLine)
             sep.setFixedHeight(1)
             sep.setStyleSheet(
-                f"background: {Colors.BORDER_SUBTLE}; border: none; margin: 4px 6px;"
+                f"background: {paint_css('border.subtle')}; border: none; margin: 4px 6px;"
             )
             return sep
 
@@ -1531,8 +1668,8 @@ class SelectiveSyncBrowser(QWidget):
         self._action_tabs_frame.setVisible(False)
         self._action_tabs_frame.setStyleSheet(f"""
             QFrame {{
-                background: {Colors.BG_DARK};
-                border-bottom: 1px solid {Colors.BORDER_SUBTLE};
+                background: {paint_css("canvas.default")};
+                border-bottom: 1px solid {paint_css("border.subtle")};
             }}
         """)
         self._action_tabs_layout = QHBoxLayout(self._action_tabs_frame)
@@ -1555,7 +1692,7 @@ class SelectiveSyncBrowser(QWidget):
         # Stage headline
         self._loading_label = QLabel("Scanning library...", loading_page)
         self._loading_label.setStyleSheet(
-            f"color: {Colors.TEXT_PRIMARY}; font-size: {Metrics.FONT_HERO}pt;"
+            f"color: {paint_css('text.primary')}; font-size: {Metrics.FONT_HERO}pt;"
             f" font-weight: 500;"
         )
         self._loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1567,7 +1704,7 @@ class SelectiveSyncBrowser(QWidget):
         self._progress_bar = QProgressBar(loading_page)
         self._progress_bar.setFixedWidth(360)
         self._progress_bar.setTextVisible(False)
-        self._progress_bar.setStyleSheet(progress_bar_css(bg=Colors.BORDER_SUBTLE))
+        self._progress_bar.setStyleSheet(progress_bar_css(bg=paint_css("border.subtle")))
         lp_lay.addWidget(self._progress_bar, alignment=Qt.AlignmentFlag.AlignCenter)
 
         lp_lay.addSpacing(10)
@@ -1575,7 +1712,7 @@ class SelectiveSyncBrowser(QWidget):
         # ETA / counter
         self._eta_label = QLabel("", loading_page)
         self._eta_label.setStyleSheet(
-            f"color: {Colors.TEXT_TERTIARY}; font-size: {Metrics.FONT_MD}pt;"
+            f"color: {paint_css('text.tertiary')}; font-size: {Metrics.FONT_MD}pt;"
         )
         self._eta_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lp_lay.addWidget(self._eta_label)
@@ -1585,7 +1722,7 @@ class SelectiveSyncBrowser(QWidget):
         # Detail — current file
         self._progress_detail = QLabel("", loading_page)
         self._progress_detail.setStyleSheet(
-            f"color: {Colors.TEXT_TERTIARY}; font-size: {Metrics.FONT_LG}pt;"
+            f"color: {paint_css('text.tertiary')}; font-size: {Metrics.FONT_LG}pt;"
         )
         self._progress_detail.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._progress_detail.setWordWrap(False)
@@ -1605,8 +1742,13 @@ class SelectiveSyncBrowser(QWidget):
         grid_page_lay.setSpacing(0)
 
         self._grid_header = GridHeaderBar()
+        self._grid_header.setSelectionGroupingAvailable(True)
+        self._grid_header.setGroupBySelected(True)
         self._grid_header.sort_changed.connect(self._on_grid_sort)
         self._grid_header.search_changed.connect(self._on_grid_search)
+        self._grid_header.selection_grouping_changed.connect(
+            self._on_grid_selection_grouping_changed
+        )
         grid_page_lay.addWidget(self._grid_header)
 
         self._grid_stack = QStackedWidget()
@@ -1620,6 +1762,7 @@ class SelectiveSyncBrowser(QWidget):
                 device_sessions=self._device_sessions,
                 settings_service=self._settings_service,
             )
+            grid.setSelectionSectionResolver(self._selection_section_for_grid_item)
             grid.item_selected.connect(self._on_grid_item_clicked)
             grid.item_context_requested.connect(self._on_grid_item_context_requested)
             scroll = make_scroll_area()
@@ -1662,8 +1805,8 @@ class SelectiveSyncBrowser(QWidget):
         self._footer.setFixedHeight(48)
         self._footer.setStyleSheet(f"""
             QFrame {{
-                background: {Colors.BG_DARK};
-                border-top: 1px solid {Colors.BORDER_SUBTLE};
+                background: {paint_css("canvas.default")};
+                border-top: 1px solid {paint_css("border.subtle")};
             }}
         """)
         ft_lay = QHBoxLayout(self._footer)
@@ -1672,7 +1815,7 @@ class SelectiveSyncBrowser(QWidget):
 
         self._count_label = QLabel()
         self._count_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
-        self._count_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent;")
+        self._count_label.setStyleSheet(f"color: {paint_css('text.secondary')}; background: transparent;")
         ft_lay.addWidget(self._count_label, 1)
 
         cancel_btn = QPushButton("Cancel")
@@ -1734,15 +1877,16 @@ class SelectiveSyncBrowser(QWidget):
             self._progress_detail.setText("")
             self._count_label.setText("No selectable sync changes")
             self._done_btn.setEnabled(True)
+        self._update_storage_projection()
 
     @staticmethod
     def _sync_item_size(item: object) -> int:
         estimated = getattr(item, "estimated_size", None)
-        if estimated is not None:
+        if estimated not in (None, 0):
             try:
                 return int(estimated or 0)
             except (TypeError, ValueError):
-                return 0
+                pass
         track = getattr(item, "pc_track", None)
         if track is not None:
             try:
@@ -1755,7 +1899,10 @@ class SelectiveSyncBrowser(QWidget):
                 return int(ipod.get("size", ipod.get("Size", 0)) or 0)
             except (TypeError, ValueError):
                 return 0
-        return 0
+        try:
+            return int(getattr(item, "size", 0) or 0)
+        except (TypeError, ValueError):
+            return 0
 
     @staticmethod
     def _list_plan_items(items: object) -> list[object]:
@@ -1772,7 +1919,7 @@ class SelectiveSyncBrowser(QWidget):
             key: str,
             label: str,
             icon: str,
-            accent: str,
+            accent_paint: str,
             items: object,
             *,
             bucket: str,
@@ -1785,41 +1932,41 @@ class SelectiveSyncBrowser(QWidget):
                 "key": key,
                 "label": label,
                 "icon": icon,
-                "accent": accent,
+                "accent_paint": accent_paint,
                 "items": item_list,
                 "bucket": bucket,
                 "checked_by_default": checked_by_default,
             })
 
-        add_section("to_add", "Add Items", "plus", Colors.SUCCESS, getattr(plan, "to_add", ()), bucket="sync_items")
+        add_section("to_add", "Add Items", "plus", "sync.change.add.text", getattr(plan, "to_add", ()), bucket="sync_items")
         add_section(
             "to_remove",
             "Remove Items",
             "minus",
-            Colors.DANGER,
+            "sync.change.remove.text",
             getattr(plan, "to_remove", ()),
             bucket="sync_items",
             checked_by_default=bool(getattr(plan, "removals_pre_checked", False)),
         )
-        add_section("to_update_file", "Re-sync Files", "refresh", Colors.SYNC_CYAN, getattr(plan, "to_update_file", ()), bucket="sync_items")
-        add_section("to_update_metadata", "Update Details", "edit", Colors.SYNC_PURPLE, getattr(plan, "to_update_metadata", ()), bucket="sync_items")
-        add_section("to_update_artwork", "Update Artwork", "download", Colors.SYNC_MAGENTA, getattr(plan, "to_update_artwork", ()), bucket="sync_items")
-        add_section("to_sync_playcount", "Play Counts", "music", Colors.INFO, getattr(plan, "to_sync_playcount", ()), bucket="sync_items")
-        add_section("to_sync_rating", "Ratings", "star", Colors.WARNING, getattr(plan, "to_sync_rating", ()), bucket="sync_items")
+        add_section("to_update_file", "Re-sync Files", "refresh", "sync.change.file.text", getattr(plan, "to_update_file", ()), bucket="sync_items")
+        add_section("to_update_metadata", "Update Details", "edit", "sync.change.metadata.text", getattr(plan, "to_update_metadata", ()), bucket="sync_items")
+        add_section("to_update_artwork", "Update Artwork", "download", "sync.change.artwork.text", getattr(plan, "to_update_artwork", ()), bucket="sync_items")
+        add_section("to_sync_playcount", "Play Counts", "music", "sync.change.play_count.text", getattr(plan, "to_sync_playcount", ()), bucket="sync_items")
+        add_section("to_sync_rating", "Ratings", "star", "sync.change.rating.text", getattr(plan, "to_sync_rating", ()), bucket="sync_items")
 
-        add_section("playlists_to_add", "Add Playlists", "playlist", Colors.INFO, getattr(plan, "playlists_to_add", ()), bucket="playlists_to_add")
-        add_section("playlists_to_edit", "Update Playlists", "playlist", Colors.INFO, getattr(plan, "playlists_to_edit", ()), bucket="playlists_to_edit")
-        add_section("playlists_to_remove", "Remove Playlists", "playlist", Colors.DANGER, getattr(plan, "playlists_to_remove", ()), bucket="playlists_to_remove")
+        add_section("playlists_to_add", "Add Playlists", "playlist", "sync.change.play_count.text", getattr(plan, "playlists_to_add", ()), bucket="playlists_to_add")
+        add_section("playlists_to_edit", "Update Playlists", "playlist", "sync.change.play_count.text", getattr(plan, "playlists_to_edit", ()), bucket="playlists_to_edit")
+        add_section("playlists_to_remove", "Remove Playlists", "playlist", "sync.change.remove.text", getattr(plan, "playlists_to_remove", ()), bucket="playlists_to_remove")
 
         photo_plan = getattr(plan, "photo_plan", None)
         if photo_plan is not None:
-            add_section("photos_to_add", "Add Photos", "photo", Colors.SUCCESS, getattr(photo_plan, "photos_to_add", ()), bucket="photos_to_add")
-            add_section("photos_to_remove", "Remove Photos", "photo", Colors.DANGER, getattr(photo_plan, "photos_to_remove", ()), bucket="photos_to_remove", checked_by_default=False)
-            add_section("photos_to_update", "Update Photos", "photo", Colors.SYNC_PURPLE, getattr(photo_plan, "photos_to_update", ()), bucket="photos_to_update")
-            add_section("albums_to_add", "Create Photo Albums", "album", Colors.INFO, getattr(photo_plan, "albums_to_add", ()), bucket="albums_to_add")
-            add_section("albums_to_remove", "Remove Photo Albums", "album", Colors.DANGER, getattr(photo_plan, "albums_to_remove", ()), bucket="albums_to_remove", checked_by_default=False)
-            add_section("album_membership_adds", "Add to Photo Albums", "album", Colors.INFO, getattr(photo_plan, "album_membership_adds", ()), bucket="album_membership_adds")
-            add_section("album_membership_removes", "Remove from Photo Albums", "album", Colors.DANGER, getattr(photo_plan, "album_membership_removes", ()), bucket="album_membership_removes", checked_by_default=False)
+            add_section("photos_to_add", "Add Photos", "photo", "sync.change.add.text", getattr(photo_plan, "photos_to_add", ()), bucket="photos_to_add")
+            add_section("photos_to_remove", "Remove Photos", "photo", "sync.change.remove.text", getattr(photo_plan, "photos_to_remove", ()), bucket="photos_to_remove", checked_by_default=False)
+            add_section("photos_to_update", "Update Photos", "photo", "sync.change.metadata.text", getattr(photo_plan, "photos_to_update", ()), bucket="photos_to_update")
+            add_section("albums_to_add", "Create Photo Albums", "album", "sync.change.play_count.text", getattr(photo_plan, "albums_to_add", ()), bucket="albums_to_add")
+            add_section("albums_to_remove", "Remove Photo Albums", "album", "sync.change.remove.text", getattr(photo_plan, "albums_to_remove", ()), bucket="albums_to_remove", checked_by_default=False)
+            add_section("album_membership_adds", "Add to Photo Albums", "album", "sync.change.play_count.text", getattr(photo_plan, "album_membership_adds", ()), bucket="album_membership_adds")
+            add_section("album_membership_removes", "Remove from Photo Albums", "album", "sync.change.remove.text", getattr(photo_plan, "album_membership_removes", ()), bucket="album_membership_removes", checked_by_default=False)
 
         return sections
 
@@ -1895,8 +2042,8 @@ class SelectiveSyncBrowser(QWidget):
             btn = QPushButton(self._plan_action_tab_text(section))
             btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.DemiBold))
             btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-            btn.setStyleSheet(self._plan_action_tab_css(False, str(section["accent"])))
-            icon = glyph_icon(str(section["icon"]), 18, Colors.TEXT_SECONDARY)
+            btn.setStyleSheet(self._plan_action_tab_css(False, paint_css(str(section["accent_paint"]))))
+            icon = glyph_icon(str(section["icon"]), 18, paint_css("text.secondary"))
             if icon:
                 btn.setIcon(icon)
                 btn.setIconSize(QSize(18, 18))
@@ -1913,21 +2060,21 @@ class SelectiveSyncBrowser(QWidget):
     def _plan_action_tab_css(selected: bool, accent: str) -> str:
         if selected:
             return btn_css(
-                bg=Colors.ACCENT_MUTED,
-                bg_hover=Colors.ACCENT_DIM,
-                bg_press=Colors.ACCENT_PRESS,
+                bg=paint_css("sync.plan.tab.selected_fill"),
+                bg_hover=paint_css("sync.plan.tab.selected_hover_fill"),
+                bg_press=paint_css("sync.plan.tab.selected_pressed_fill"),
                 fg=accent,
-                border=f"1px solid {accent}",
+                border=f"1px solid {paint_css('sync.plan.tab.selected_border')}",
                 radius=Metrics.BORDER_RADIUS_SM,
                 padding="7px 13px",
                 extra="font-weight: 700;",
             )
         return btn_css(
             bg="transparent",
-            bg_hover=Colors.SURFACE_ACTIVE,
-            bg_press=Colors.SURFACE,
-            fg=Colors.TEXT_SECONDARY,
-            border=f"1px solid {Colors.BORDER_SUBTLE}",
+            bg_hover=paint_css("control.quiet.hover_fill"),
+            bg_press=paint_css("control.quiet.pressed_fill"),
+            fg=paint_css("text.secondary"),
+            border=f"1px solid {paint_css('border.subtle')}",
             radius=Metrics.BORDER_RADIUS_SM,
             padding="7px 13px",
             extra="font-weight: 600;",
@@ -1941,12 +2088,12 @@ class SelectiveSyncBrowser(QWidget):
         for section_key, btn in self._plan_action_buttons.items():
             source = self._plan_section_by_key[section_key]
             selected = section_key == key
-            accent = str(source["accent"])
+            accent = paint_css(str(source["accent_paint"]))
             btn.setStyleSheet(self._plan_action_tab_css(selected, accent))
             icon = glyph_icon(
                 str(source["icon"]),
                 18,
-                accent if selected else Colors.TEXT_SECONDARY,
+                accent if selected else paint_css("text.secondary"),
             )
             if icon:
                 btn.setIcon(icon)
@@ -1991,13 +2138,25 @@ class SelectiveSyncBrowser(QWidget):
                 item_id = id(item)
                 track = self._plan_playlist_to_track(item, section_key, index, label)
                 self._all_tracks.append(track)
-                self._selected_tracks[track.path] = item_id in selected_ids
                 self._plan_track_key_to_selection[track.path] = (bucket, item_id)
+                self._set_selection_state(
+                    "track",
+                    track.path,
+                    item_id in selected_ids,
+                    refresh_grouping=False,
+                    sync_plan=False,
+                )
 
                 playlist = self._plan_playlist_to_discovery(item, section_key, index, track.path)
                 playlists.append(playlist)
-                self._selected_playlists[playlist.source_path] = item_id in selected_ids
                 self._plan_playlist_key_to_selection[playlist.source_path] = (bucket, item_id)
+                self._set_selection_state(
+                    "playlist",
+                    playlist.source_path,
+                    item_id in selected_ids,
+                    refresh_grouping=False,
+                    sync_plan=False,
+                )
             self._playlist_discovery = SimpleNamespace(playlists=tuple(playlists))
 
         elif section_key in _PLAN_PHOTO_SECTION_KEYS:
@@ -2006,8 +2165,14 @@ class SelectiveSyncBrowser(QWidget):
                 item_id = id(item)
                 photo = self._plan_item_to_photo(item, section_key, index, label)
                 photos.append(photo)
-                self._selected_photos[photo.source_path] = item_id in selected_ids
                 self._plan_photo_key_to_selection[photo.source_path] = (bucket, item_id)
+                self._set_selection_state(
+                    "photo",
+                    photo.source_path,
+                    item_id in selected_ids,
+                    refresh_grouping=False,
+                    sync_plan=False,
+                )
             self._all_photos = photos
             self._photo_library = PCPhotoLibrary(
                 sync_root="",
@@ -2020,8 +2185,14 @@ class SelectiveSyncBrowser(QWidget):
                 item_id = id(item)
                 track = self._plan_sync_item_to_track(item, section_key, index, label)
                 self._all_tracks.append(track)
-                self._selected_tracks[track.path] = item_id in selected_ids
                 self._plan_track_key_to_selection[track.path] = (bucket, item_id)
+                self._set_selection_state(
+                    "track",
+                    track.path,
+                    item_id in selected_ids,
+                    refresh_grouping=False,
+                    sync_plan=False,
+                )
 
         self._build_groups()
         self._apply_sidebar_visibility()
@@ -2303,51 +2474,119 @@ class SelectiveSyncBrowser(QWidget):
         else:
             selected_ids.discard(item_id)
 
-    def _set_plan_track_selection(self, path: str, checked: bool) -> bool:
-        changed = self._selected_tracks.get(path, True) != checked
-        self._selected_tracks[path] = checked
-        target = self._plan_track_key_to_selection.get(path)
-        if target is not None:
-            bucket, item_id = target
-            self._set_plan_selection_item(bucket, item_id, checked)
+    def _selection_mapping(self, selection_type: str) -> dict[str, bool]:
+        if selection_type == "track":
+            return self._selected_tracks
+        if selection_type == "photo":
+            return self._selected_photos
+        if selection_type == "playlist":
+            return self._selected_playlists
+        raise ValueError(f"Unknown selection type: {selection_type}")
+
+    def _plan_selection_target(
+        self,
+        selection_type: str,
+        path: str,
+    ) -> tuple[str, int] | None:
+        if selection_type == "track":
+            return self.__dict__.get("_plan_track_key_to_selection", {}).get(path)
+        if selection_type == "photo":
+            return self.__dict__.get("_plan_photo_key_to_selection", {}).get(path)
+        if selection_type == "playlist":
+            return self.__dict__.get("_plan_playlist_key_to_selection", {}).get(path)
+        raise ValueError(f"Unknown selection type: {selection_type}")
+
+    def _set_selection_state(
+        self,
+        selection_type: str,
+        path: str,
+        checked: bool,
+        *,
+        refresh_grouping: bool = True,
+        sync_plan: bool | None = None,
+    ) -> bool:
+        selections = self._selection_mapping(selection_type)
+        checked = bool(checked)
+        changed = selections.get(path, True) != checked
+        selections[path] = checked
+
+        if sync_plan is None:
+            sync_plan = self._is_plan_selection_mode()
+        if sync_plan:
+            target = self._plan_selection_target(selection_type, path)
+            if target is not None:
+                bucket, item_id = target
+                self._set_plan_selection_item(bucket, item_id, checked)
+
+        if changed and refresh_grouping and selection_type != "photo":
+            self._refresh_grid_selection_grouping()
         return changed
+
+    def _set_selection_states(
+        self,
+        selection_type: str,
+        paths: Iterable[str],
+        checked: bool,
+        *,
+        refresh_grouping: bool = True,
+    ) -> bool:
+        changed = False
+        for path in paths:
+            if not path:
+                continue
+            changed = self._set_selection_state(
+                selection_type,
+                path,
+                checked,
+                refresh_grouping=False,
+            ) or changed
+        if changed and refresh_grouping and selection_type != "photo":
+            self._refresh_grid_selection_grouping()
+        return changed
+
+    def _set_track_selection(self, path: str, checked: bool) -> bool:
+        return self._set_selection_state("track", path, checked)
+
+    def _set_photo_selection(self, path: str, checked: bool) -> bool:
+        return self._set_selection_state("photo", path, checked)
+
+    def _set_playlist_selection(self, path: str, checked: bool) -> bool:
+        return self._set_selection_state("playlist", path, checked)
+
+    def _set_plan_track_selection(self, path: str, checked: bool) -> bool:
+        return self._set_selection_state("track", path, checked, sync_plan=True)
 
     def _set_plan_photo_selection(self, path: str, checked: bool) -> bool:
-        changed = self._selected_photos.get(path, True) != checked
-        self._selected_photos[path] = checked
-        target = self._plan_photo_key_to_selection.get(path)
-        if target is not None:
-            bucket, item_id = target
-            self._set_plan_selection_item(bucket, item_id, checked)
-        return changed
+        return self._set_selection_state("photo", path, checked, sync_plan=True)
 
     def _set_plan_playlist_selection(self, path: str, checked: bool) -> bool:
-        changed = self._selected_playlists.get(path, True) != checked
-        self._selected_playlists[path] = checked
-        target = self._plan_playlist_key_to_selection.get(path)
-        if target is not None:
-            bucket, item_id = target
-            self._set_plan_selection_item(bucket, item_id, checked)
-        return changed
+        return self._set_selection_state("playlist", path, checked, sync_plan=True)
 
     def _set_current_plan_action_checked(self, checked: bool) -> None:
         section = self._plan_section_by_key.get(self._current_plan_section_key)
         if section is None:
             return
-        bucket = str(section["bucket"])
-        item_ids = {id(item) for item in self._list_plan_items(section.get("items"))}
-        selected_ids = self._plan_selection_state.setdefault(bucket, set())
-        if checked:
-            selected_ids.update(item_ids)
-        else:
-            selected_ids.difference_update(item_ids)
-
-        for path in list(self._selected_tracks):
-            self._selected_tracks[path] = checked
-        for path in list(self._selected_photos):
-            self._selected_photos[path] = checked
-        for path in list(self._selected_playlists):
-            self._selected_playlists[path] = checked
+        changed = False
+        changed = self._set_selection_states(
+            "track",
+            self._selected_tracks,
+            checked,
+            refresh_grouping=False,
+        ) or changed
+        changed = self._set_selection_states(
+            "photo",
+            self._selected_photos,
+            checked,
+            refresh_grouping=False,
+        ) or changed
+        changed = self._set_selection_states(
+            "playlist",
+            self._selected_playlists,
+            checked,
+            refresh_grouping=False,
+        ) or changed
+        if changed:
+            self._refresh_grid_selection_grouping()
         if self._content.currentIndex() == 2:
             self._track_list.setAllChecked(checked)
         if self._content.currentIndex() == 3:
@@ -2380,6 +2619,7 @@ class SelectiveSyncBrowser(QWidget):
         else:
             self._count_label.setText("No selectable sync changes")
         self._done_btn.setEnabled(True)
+        self._update_storage_projection()
 
     def _cleanup_scan_worker(self):
         """Disconnect and clean up the current scan worker, if any."""
@@ -2589,6 +2829,7 @@ class SelectiveSyncBrowser(QWidget):
             for playlist in playlists
             if getattr(playlist, "source_path", "")
         }
+        self._update_storage_projection()
         self._build_groups()
         self._apply_sidebar_visibility()
         # Pick the first mode that actually has content.
@@ -3092,6 +3333,8 @@ class SelectiveSyncBrowser(QWidget):
             if grid and (grid._sort_key != "title" or grid._sort_reverse
                          or grid._search_query):
                 grid.resetFilters()
+            if grid:
+                grid.setGroupBySelected(self._grid_header.isGroupedBySelected())
             # Switch the inner grid stack to the right category
             scroll = self._grid_scrolls.get(mode)
             if scroll:
@@ -3113,6 +3356,51 @@ class SelectiveSyncBrowser(QWidget):
         grid = self._grids.get(self._current_mode)
         if grid:
             grid.setSearchFilter(query)
+
+    def _on_grid_selection_grouping_changed(self, enabled: bool) -> None:
+        grid = self._grids.get(self._current_mode)
+        if grid:
+            grid.setGroupBySelected(enabled)
+
+    def _selection_section_for_grid_item(self, item: dict[str, Any]) -> str:
+        """Classify a category card from its constituent track selections."""
+
+        category = str(item.get("category") or self._current_mode)
+        title = str(item.get("title") or "")
+        group = self._groups.get(category, {}).get(title)
+        if group is None:
+            return "Unselected"
+
+        states = [
+            self._selected_tracks.get(path, True)
+            for track in group.get("tracks", [])
+            if (path := str(getattr(track, "path", "") or ""))
+        ]
+        if not states:
+            source_path = str(group.get("source_path", "") or "")
+            if source_path:
+                return (
+                    "Selected"
+                    if self._selected_playlists.get(source_path, True)
+                    else "Unselected"
+                )
+            return "Unselected"
+        if all(states):
+            return "Selected"
+        if any(states):
+            return "Partially Selected"
+        return "Unselected"
+
+    def _refresh_grid_selection_grouping(self, mode: str | None = None) -> None:
+        grids_by_mode = getattr(self, "_grids", {})
+        grids = (
+            (grids_by_mode.get(mode),)
+            if mode is not None
+            else tuple(grids_by_mode.values())
+        )
+        for grid in grids:
+            if grid is not None:
+                grid.refreshSectionGrouping()
 
     def _highlight_mode(self, active: str):
         for cat, btn in self._mode_buttons.items():
@@ -3233,17 +3521,11 @@ class SelectiveSyncBrowser(QWidget):
         return tracks
 
     def _set_grid_tracks_checked(self, tracks: list, checked: bool):
-        changed = False
-        for track in tracks:
-            path = getattr(track, "path", "")
-            if not path:
-                continue
-            if self._is_plan_selection_mode():
-                changed = self._set_plan_track_selection(path, checked) or changed
-            else:
-                if self._selected_tracks.get(path, True) != checked:
-                    changed = True
-                self._selected_tracks[path] = checked
+        changed = self._set_selection_states(
+            "track",
+            (str(getattr(track, "path", "") or "") for track in tracks),
+            checked,
+        )
         content = self.__dict__.get("_content")
         if isinstance(content, QStackedWidget) and content.currentIndex() == 2:
             self._track_list.updateCheckStates(self._selected_tracks)
@@ -3254,7 +3536,7 @@ class SelectiveSyncBrowser(QWidget):
         if self._current_mode != "Playlists":
             return
         groups = self._groups.get("Playlists", {})
-        changed = False
+        paths: list[str] = []
         for item in items:
             key = item.get("title", "")
             group = groups.get(key)
@@ -3263,12 +3545,8 @@ class SelectiveSyncBrowser(QWidget):
             source_path = str(group.get("source_path", "") or "")
             if not source_path:
                 continue
-            if self._is_plan_selection_mode():
-                changed = self._set_plan_playlist_selection(source_path, checked) or changed
-            else:
-                if self._selected_playlists.get(source_path, True) != checked:
-                    changed = True
-                self._selected_playlists[source_path] = checked
+            paths.append(source_path)
+        changed = self._set_selection_states("playlist", paths, checked)
         if changed:
             self._update_footer()
 
@@ -3278,116 +3556,162 @@ class SelectiveSyncBrowser(QWidget):
         group = self._groups.get("Playlists", {}).get(self._current_group, {})
         return str(group.get("source_path", "") or "")
 
-    def _sync_current_playlist_selection_from_tracks(self) -> None:
+    def _sync_current_playlist_selection_from_tracks(
+        self,
+        *,
+        refresh_grouping: bool = True,
+    ) -> bool:
         source_path = self._current_playlist_source_path()
         if not source_path:
-            return
+            return False
         any_selected = any(
             self._selected_tracks.get(getattr(track, "path", ""), False)
             for track in self._current_group_tracks
         )
-        if self._is_plan_selection_mode():
-            self._set_plan_playlist_selection(source_path, any_selected)
-            return
-        self._selected_playlists[source_path] = any_selected
+        return self._set_selection_state(
+            "playlist",
+            source_path,
+            any_selected,
+            refresh_grouping=refresh_grouping,
+        )
 
     def _on_track_back(self):
         self._current_group = None
         self._current_group_tracks = []
+        self._refresh_grid_selection_grouping(self._current_mode)
         # Grid is still intact behind the track list — just switch back
         self._content.setCurrentIndex(1)
 
     # ── Checkbox toggling ────────────────────────────────────────────────
 
     def _on_track_toggled(self, path: str, checked: bool):
-        if self._is_plan_selection_mode():
-            self._set_plan_track_selection(path, checked)
-            self._sync_current_playlist_selection_from_tracks()
-            self._update_footer()
-            return
-        self._selected_tracks[path] = checked
-        self._sync_current_playlist_selection_from_tracks()
+        changed = self._set_selection_state(
+            "track",
+            path,
+            checked,
+            refresh_grouping=False,
+        )
+        changed = self._sync_current_playlist_selection_from_tracks(
+            refresh_grouping=False,
+        ) or changed
+        if changed:
+            self._refresh_grid_selection_grouping()
         self._update_footer()
 
     def _on_select_all(self):
         if self._is_plan_selection_mode():
             self._set_current_plan_action_checked(True)
             return
-        for path in self._selected_tracks:
-            self._selected_tracks[path] = True
-        for path in self._selected_photos:
-            self._selected_photos[path] = True
-        for path in self._selected_playlists:
-            self._selected_playlists[path] = True
+        changed = False
+        changed = self._set_selection_states(
+            "track",
+            self._selected_tracks,
+            True,
+            refresh_grouping=False,
+        ) or changed
+        changed = self._set_selection_states(
+            "photo",
+            self._selected_photos,
+            True,
+            refresh_grouping=False,
+        ) or changed
+        changed = self._set_selection_states(
+            "playlist",
+            self._selected_playlists,
+            True,
+            refresh_grouping=False,
+        ) or changed
         # Refresh track list if visible
         if self._content.currentIndex() == 2:
             self._track_list.setAllChecked(True)
         if self._content.currentIndex() == 3:
             self._photo_list.setAllChecked(True)
+        if changed:
+            self._refresh_grid_selection_grouping()
         self._update_footer()
 
     def _on_deselect_all(self):
         if self._is_plan_selection_mode():
             self._set_current_plan_action_checked(False)
             return
-        for path in self._selected_tracks:
-            self._selected_tracks[path] = False
-        for path in self._selected_photos:
-            self._selected_photos[path] = False
-        for path in self._selected_playlists:
-            self._selected_playlists[path] = False
+        changed = False
+        changed = self._set_selection_states(
+            "track",
+            self._selected_tracks,
+            False,
+            refresh_grouping=False,
+        ) or changed
+        changed = self._set_selection_states(
+            "photo",
+            self._selected_photos,
+            False,
+            refresh_grouping=False,
+        ) or changed
+        changed = self._set_selection_states(
+            "playlist",
+            self._selected_playlists,
+            False,
+            refresh_grouping=False,
+        ) or changed
         if self._content.currentIndex() == 2:
             self._track_list.setAllChecked(False)
         if self._content.currentIndex() == 3:
             self._photo_list.setAllChecked(False)
+        if changed:
+            self._refresh_grid_selection_grouping()
         self._update_footer()
 
     def _on_group_select_all(self):
         """Select all tracks in the current drilled-in group."""
-        for t in self._current_group_tracks:
-            if self._is_plan_selection_mode():
-                self._set_plan_track_selection(t.path, True)
-            else:
-                self._selected_tracks[t.path] = True
+        changed = self._set_selection_states(
+            "track",
+            (str(getattr(track, "path", "") or "") for track in self._current_group_tracks),
+            True,
+            refresh_grouping=False,
+        )
         source_path = self._current_playlist_source_path()
         if source_path:
-            if self._is_plan_selection_mode():
-                self._set_plan_playlist_selection(source_path, True)
-            else:
-                self._selected_playlists[source_path] = True
+            changed = self._set_selection_state(
+                "playlist",
+                source_path,
+                True,
+                refresh_grouping=False,
+            ) or changed
         self._track_list.setAllChecked(True)
+        if changed:
+            self._refresh_grid_selection_grouping()
         self._update_footer()
 
     def _on_group_deselect_all(self):
         """Deselect all tracks in the current drilled-in group."""
-        for t in self._current_group_tracks:
-            if self._is_plan_selection_mode():
-                self._set_plan_track_selection(t.path, False)
-            else:
-                self._selected_tracks[t.path] = False
+        changed = self._set_selection_states(
+            "track",
+            (str(getattr(track, "path", "") or "") for track in self._current_group_tracks),
+            False,
+            refresh_grouping=False,
+        )
         source_path = self._current_playlist_source_path()
         if source_path:
-            if self._is_plan_selection_mode():
-                self._set_plan_playlist_selection(source_path, False)
-            else:
-                self._selected_playlists[source_path] = False
+            changed = self._set_selection_state(
+                "playlist",
+                source_path,
+                False,
+                refresh_grouping=False,
+            ) or changed
         self._track_list.setAllChecked(False)
+        if changed:
+            self._refresh_grid_selection_grouping()
         self._update_footer()
 
     def _on_photo_toggled(self, path: str, checked: bool):
-        if self._is_plan_selection_mode():
-            self._set_plan_photo_selection(path, checked)
-            self._update_footer()
-            return
-        self._selected_photos[path] = checked
+        self._set_photo_selection(path, checked)
         self._update_footer()
 
     def _on_select_all_photos(self):
         if self._is_plan_selection_mode():
             self._set_current_plan_action_checked(True)
             return
-        for path in self._selected_photos:
-            self._selected_photos[path] = True
+        self._set_selection_states("photo", self._selected_photos, True)
         self._photo_list.setAllChecked(True)
         self._update_footer()
 
@@ -3395,8 +3719,7 @@ class SelectiveSyncBrowser(QWidget):
         if self._is_plan_selection_mode():
             self._set_current_plan_action_checked(False)
             return
-        for path in self._selected_photos:
-            self._selected_photos[path] = False
+        self._set_selection_states("photo", self._selected_photos, False)
         self._photo_list.setAllChecked(False)
         self._update_footer()
 
@@ -3423,6 +3746,114 @@ class SelectiveSyncBrowser(QWidget):
             " · ".join(parts) if parts else "No music, photos, or playlists found"
         )
         self._done_btn.setEnabled((checked_tracks + checked_photos + checked_playlists) > 0)
+        self._update_storage_projection()
+
+    def _update_storage_projection(self) -> None:
+        """Render the selected media's projected iPod storage use."""
+
+        frame = self.__dict__.get("_storage_frame")
+        if not isinstance(frame, QFrame):
+            return
+        try:
+            session = self._device_sessions.current_session()
+            ipod_path = str(getattr(session, "device_path", "") or "")
+            if not ipod_path:
+                frame.hide()
+                return
+            usage = shutil.disk_usage(ipod_path)
+            net_change = self._selected_storage_delta()
+            self._set_storage_device_details(session)
+            self._storage_bar.set_values(usage.total, usage.used, net_change)
+            self._storage_legend_labels[0].setVisible(True)
+            self._storage_legend_labels[1].setVisible(net_change > 0)
+            self._storage_legend_labels[2].setVisible(net_change < 0)
+
+            projected = usage.used + net_change
+            if projected > usage.total:
+                over = projected - usage.total
+                self._storage_detail.setStyleSheet(
+                    f"color:{paint_css('status.danger.text')}; font-size:{Metrics.FONT_MD}pt; "
+                    f"font-family:{FONT_FAMILY}; background:transparent;"
+                )
+                self._storage_detail.setText(
+                    f"{format_size(projected)} / {format_size(usage.total)} "
+                    f"— {format_size(over)} over capacity!"
+                )
+            else:
+                free_after = max(usage.total - projected, 0)
+                net_sign = "+" if net_change >= 0 else "-"
+                self._storage_detail.setStyleSheet(
+                    f"color:{paint_css('text.tertiary')}; font-size:{Metrics.FONT_MD}pt; "
+                    f"font-family:{FONT_FAMILY}; background:transparent;"
+                )
+                self._storage_detail.setText(
+                    f"{format_size(projected)} / {format_size(usage.total)} "
+                    f"({format_size(free_after)} free, "
+                    f"net {net_sign}{format_size(abs(net_change))})"
+                )
+            frame.show()
+        except Exception:
+            frame.hide()
+
+    def _set_storage_device_details(self, session: object) -> None:
+        from ..ipod_images import get_ipod_image
+
+        ipod = getattr(session, "discovered_ipod", None)
+        if ipod is None:
+            self._storage_ipod_img.clear()
+            self._storage_name.setText("iPod")
+            return
+
+        model_family = str(getattr(ipod, "model_family", "") or "")
+        generation = str(getattr(ipod, "generation", "") or "")
+        color = str(getattr(ipod, "color", "") or "")
+        pixmap = get_ipod_image(model_family, generation, size=32, color=color)
+        if pixmap and not pixmap.isNull():
+            self._storage_ipod_img.setPixmap(pixmap)
+        else:
+            self._storage_ipod_img.clear()
+        identity = getattr(session, "identity", None)
+        display_name = str(
+            getattr(identity, "display_name", "")
+            or getattr(ipod, "display_name", "")
+            or ""
+        )
+        self._storage_name.setText(display_name or "iPod")
+
+    def _selected_storage_delta(self) -> int:
+        if self._is_plan_selection_mode():
+            return self._selected_plan_storage_delta()
+
+        track_bytes = sum(
+            int(getattr(track, "size", 0) or 0)
+            for track in self._all_tracks
+            if self._selected_tracks.get(getattr(track, "path", ""), False)
+        )
+        photo_bytes = sum(
+            int(getattr(photo, "size", 0) or 0)
+            for photo in self._all_photos
+            if self._selected_photos.get(getattr(photo, "source_path", ""), False)
+        )
+        return track_bytes + photo_bytes
+
+    def _selected_plan_storage_delta(self) -> int:
+        bytes_to_add = 0
+        bytes_to_remove = 0
+        for section in self._plan_selection_sections:
+            selected_ids = self._plan_selection_state.get(str(section["bucket"]), set())
+            section_key = str(section["key"])
+            for item in self._list_plan_items(section.get("items")):
+                if id(item) not in selected_ids:
+                    continue
+                if section_key == "photos_to_add":
+                    bytes_to_add += self._sync_item_size(item)
+                elif section_key == "photos_to_remove":
+                    bytes_to_remove += self._sync_item_size(item)
+                else:
+                    added, removed = sync_item_size_delta(item)
+                    bytes_to_add += added
+                    bytes_to_remove += removed
+        return bytes_to_add - bytes_to_remove
 
     # ── Done / Cancel ────────────────────────────────────────────────────
 

@@ -9,14 +9,17 @@ import stat
 import sys
 import tempfile
 import threading
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
-from typing import BinaryIO
+from typing import Any, BinaryIO, cast
 
 logger = logging.getLogger(__name__)
 
 _ACTIVE_WRITERS: set[str] = set()
-_ACTIVE_WRITERS_LOCK = threading.Lock()
+_ACTIVE_WRITER_THREADS: dict[str, int] = {}
+_WAITING_WRITERS: dict[str, deque[object]] = {}
+_ACTIVE_WRITERS_CONDITION = threading.Condition()
 _HASH_CHUNK_SIZE = 1024 * 1024
 
 
@@ -76,6 +79,7 @@ class DeviceWriteGuard:
         expected_database_generation: DatabaseGeneration | None = None,
         track_database_generation: bool = True,
         lock_dir: str | Path | None = None,
+        queue_in_process: bool = True,
     ) -> None:
         self.ipod_path = Path(os.path.realpath(ipod_path))
         identity_key = _writer_lock_identity(
@@ -95,8 +99,10 @@ class DeviceWriteGuard:
         self.lock_path = base_dir / f"{self._writer_key}.lock"
         self._expected_database_generation = expected_database_generation
         self._track_database_generation = bool(track_database_generation)
+        self._queue_in_process = bool(queue_in_process)
         self._file: BinaryIO | None = None
         self._entered = False
+        self._in_process_reserved = False
         self._database_generation: DatabaseGeneration | None = None
 
     def __enter__(self) -> DeviceWriteGuard:
@@ -142,7 +148,7 @@ class DeviceWriteGuard:
                     )
             self._database_generation = current_generation
             self._entered = True
-            logger.info(
+            logger.debug(
                 "Acquired exclusive iPod writer guard: mount=%s lock=%s database=%s",
                 self.ipod_path,
                 self.lock_path,
@@ -186,13 +192,43 @@ class DeviceWriteGuard:
         self._database_generation = capture_database_generation(self.ipod_path)
 
     def _reserve_in_process(self) -> None:
-        with _ACTIVE_WRITERS_LOCK:
-            if self._writer_key in _ACTIVE_WRITERS:
+        """Join the per-device FIFO queue before attempting the file lock."""
+        ticket = object()
+        thread_id = threading.get_ident()
+        with _ACTIVE_WRITERS_CONDITION:
+            if _ACTIVE_WRITER_THREADS.get(self._writer_key) == thread_id:
                 raise DeviceBusyError(
-                    "iOpenPod is already writing to this iPod. Wait for that "
-                    "operation to finish, then try again."
+                    "This iOpenPod operation is already writing to this iPod. "
+                    "Nested device write sessions are not supported."
                 )
-            _ACTIVE_WRITERS.add(self._writer_key)
+            if not self._queue_in_process:
+                if self._writer_key in _ACTIVE_WRITERS:
+                    raise DeviceBusyError(
+                        "iOpenPod is already writing to this location. Wait for "
+                        "that operation to finish, then try again."
+                    )
+                _ACTIVE_WRITERS.add(self._writer_key)
+                _ACTIVE_WRITER_THREADS[self._writer_key] = thread_id
+                self._in_process_reserved = True
+                return
+            queue = _WAITING_WRITERS.setdefault(self._writer_key, deque())
+            queue.append(ticket)
+            try:
+                while self._writer_key in _ACTIVE_WRITERS or queue[0] is not ticket:
+                    _ACTIVE_WRITERS_CONDITION.wait()
+                queue.popleft()
+                if not queue:
+                    del _WAITING_WRITERS[self._writer_key]
+                _ACTIVE_WRITERS.add(self._writer_key)
+                _ACTIVE_WRITER_THREADS[self._writer_key] = thread_id
+                self._in_process_reserved = True
+            except BaseException:
+                if ticket in queue:
+                    queue.remove(ticket)
+                if not queue:
+                    _WAITING_WRITERS.pop(self._writer_key, None)
+                _ACTIVE_WRITERS_CONDITION.notify_all()
+                raise
 
     def _write_owner_metadata(self) -> None:
         if self._file is None:
@@ -215,10 +251,14 @@ class DeviceWriteGuard:
                 logger.warning("Could not release iPod writer lock cleanly: %s", exc)
             finally:
                 lock_file.close()
-        with _ACTIVE_WRITERS_LOCK:
-            _ACTIVE_WRITERS.discard(self._writer_key)
+        if self._in_process_reserved:
+            with _ACTIVE_WRITERS_CONDITION:
+                _ACTIVE_WRITERS.discard(self._writer_key)
+                _ACTIVE_WRITER_THREADS.pop(self._writer_key, None)
+                self._in_process_reserved = False
+                _ACTIVE_WRITERS_CONDITION.notify_all()
         if self._entered:
-            logger.info("Released exclusive iPod writer guard: mount=%s", self.ipod_path)
+            logger.debug("Released exclusive iPod writer guard: mount=%s", self.ipod_path)
         self._entered = False
 
 
@@ -393,6 +433,11 @@ def _open_windows_lock_file_safely(path: Path) -> BinaryIO:
     import msvcrt
     from ctypes import wintypes
 
+    # These APIs are intentionally Windows-only.  Their names are absent from
+    # the non-Windows ctypes/msvcrt stubs Pylance uses on macOS and Linux.
+    windows_ctypes = cast(Any, ctypes)
+    windows_msvcrt = cast(Any, msvcrt)
+
     generic_read = 0x80000000
     generic_write = 0x40000000
     share_read = 0x00000001
@@ -417,7 +462,7 @@ def _open_windows_lock_file_safely(path: Path) -> BinaryIO:
             ("nFileIndexLow", wintypes.DWORD),
         ]
 
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32 = windows_ctypes.WinDLL("kernel32", use_last_error=True)
     create_file = kernel32.CreateFileW
     create_file.argtypes = (
         wintypes.LPCWSTR,
@@ -452,20 +497,20 @@ def _open_windows_lock_file_safely(path: Path) -> BinaryIO:
     if handle == invalid_handle:
         raise DeviceWriteSafetyError(
             "Could not open the host-side iPod lock file safely: "
-            f"{ctypes.WinError(ctypes.get_last_error())}"
+            f"{windows_ctypes.WinError(windows_ctypes.get_last_error())}"
         )
 
     try:
         information = _ByHandleFileInformation()
         if not get_file_information(handle, ctypes.byref(information)):
-            raise ctypes.WinError(ctypes.get_last_error())
+            raise windows_ctypes.WinError(windows_ctypes.get_last_error())
         unsafe_attributes = file_attribute_directory | file_attribute_reparse_point
         if information.dwFileAttributes & unsafe_attributes:
             raise DeviceWriteSafetyError(
                 "The host-side iPod lock path is a link, reparse point, or "
                 "non-file. iOpenPod stopped before writing."
             )
-        descriptor = msvcrt.open_osfhandle(
+        descriptor = windows_msvcrt.open_osfhandle(
             int(handle),
             os.O_RDWR | getattr(os, "O_BINARY", 0),
         )

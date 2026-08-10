@@ -1,11 +1,20 @@
+import re
+import shutil
+import tempfile
+import zipfile
 from pathlib import Path
 
 from iopenpod.gui.auto_updater import (
     InstallMethod,
     UpdateResult,
     _resolve_install_target,
+    _staging_root_for,
+    _validate_staged_payload,
+    _write_unix_bootstrap,
+    _write_windows_bootstrap,
     build_update_guidance,
     detect_install_method,
+    stage_update,
 )
 
 
@@ -126,3 +135,112 @@ def test_build_update_guidance_for_appimage_stays_manual() -> None:
     assert guidance.can_auto_install is False
     assert guidance.release_asset_hint == "iOpenPod-Linux-x86_64.AppImage"
     assert "chmod +x iOpenPod-Linux-x86_64.AppImage" in guidance.commands
+
+
+def test_windows_bootstrap_deletes_only_runtime_payload() -> None:
+    staging = Path(tempfile.mkdtemp(prefix="iopenpod-staging-"))
+    script: Path | None = None
+    try:
+        script = _write_windows_bootstrap(
+            12345,
+            Path("C:/Users/example/Apps/iOpenPod"),
+            staging,
+            "iOpenPod.exe",
+        )
+        content = script.read_text(encoding="utf-8")
+
+        assert "robocopy \"%STAGED_DIR%\" \"%APP_DIR%\" /E" in content
+        assert 'robocopy "%STAGED_DIR%" "%APP_DIR%" /MIR' not in content
+        assert 'del /f /q "%APP_EXE%"' in content
+        assert 'rmdir /s /q "%APP_INTERNAL%"' in content
+        assert 'rmdir /s /q "%APP_DIR%"' not in content
+        assert ".bak" not in content
+    finally:
+        if script is not None:
+            script.unlink(missing_ok=True)
+        shutil.rmtree(staging, ignore_errors=True)
+
+
+def test_unix_bootstrap_overlays_without_removing_install_directory() -> None:
+    staging = Path(tempfile.mkdtemp(prefix="iopenpod-staging-"))
+    script: Path | None = None
+    try:
+        script = _write_unix_bootstrap(
+            12345,
+            Path("/opt/iOpenPod"),
+            staging,
+            "iOpenPod",
+            platform="linux",
+        )
+        content = script.read_text(encoding="utf-8")
+
+        assert '/bin/cp -a "$STAGED_DIR/." "$APP_DIR/"' in content
+        assert 'rm -rf "$APP_DIR"' not in content
+        assert ".bak" not in content
+        assert "mv \"$APP_DIR\"" not in content
+    finally:
+        if script is not None:
+            script.unlink(missing_ok=True)
+        shutil.rmtree(staging, ignore_errors=True)
+
+
+def test_macos_bootstrap_overlays_bundle_without_backup_swap() -> None:
+    staging = Path(tempfile.mkdtemp(prefix="iopenpod-staging-"))
+    script: Path | None = None
+    ops_script: Path | None = None
+    try:
+        script = _write_unix_bootstrap(
+            12345,
+            Path("/Applications/iOpenPod.app"),
+            staging,
+            "Contents/MacOS/iOpenPod",
+            platform="darwin",
+        )
+        content = script.read_text(encoding="utf-8")
+        match = re.search(r"if /bin/sh (?P<path>\S+); then", content)
+        assert match is not None
+        ops_script = Path(match.group("path"))
+        ops_content = ops_script.read_text(encoding="utf-8")
+
+        assert '/usr/bin/ditto "$STAGED_DIR" "$APP_DIR"' in ops_content
+        assert ".bak" not in ops_content
+        assert "mv \"$APP_DIR\"" not in ops_content
+        assert 'rm -rf "$APP_DIR"' not in ops_content
+    finally:
+        if script is not None:
+            script.unlink(missing_ok=True)
+        if ops_script is not None:
+            ops_script.unlink(missing_ok=True)
+        shutil.rmtree(staging, ignore_errors=True)
+
+
+def test_staging_root_must_be_updater_owned_temp_directory(tmp_path: Path) -> None:
+    arbitrary_dir = tmp_path / "not-iopenpod-staging"
+    arbitrary_dir.mkdir()
+
+    try:
+        _staging_root_for(arbitrary_dir)
+    except ValueError as exc:
+        assert "updater-owned" in str(exc)
+    else:
+        raise AssertionError("arbitrary directory was accepted as update staging")
+
+
+def test_stage_update_rejects_unexpected_windows_top_level_file(tmp_path: Path) -> None:
+    archive = tmp_path / "iOpenPod-Windows.zip"
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("iOpenPod.exe", "binary")
+        zf.writestr("_internal/runtime.dll", "runtime")
+        zf.writestr("notes-from-user.txt", "must not be copied")
+
+    assert stage_update(archive, platform="win32") is None
+
+
+def test_validate_staged_payload_accepts_only_expected_linux_layout(tmp_path: Path) -> None:
+    staged = tmp_path / "iOpenPod"
+    staged.mkdir()
+    executable = staged / "iOpenPod"
+    executable.write_text("binary", encoding="utf-8")
+    (staged / "_internal").mkdir()
+
+    _validate_staged_payload(staged, "linux")

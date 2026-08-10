@@ -11,6 +11,7 @@ from typing import cast
 
 import pytest
 
+import iopenpod.sync.sync_executor as sync_executor_module
 from iopenpod.device.filesystem_profile import FilesystemProfile
 from iopenpod.device.write_guard import DatabaseGeneration, DeviceWriteSafetyError
 from iopenpod.itunesdb_writer.mhit_writer import TrackInfo
@@ -24,8 +25,13 @@ from iopenpod.sync.contracts import (
     SyncRequest,
     sync_plan_required_free_bytes,
 )
+from iopenpod.sync.database_commit import DatabaseCommitPayload
 from iopenpod.sync.mapping import MappingFile
 from iopenpod.sync.pc_library import PCTrack
+from iopenpod.sync.rockbox_metadata import (
+    RockboxArtworkDatabaseState,
+    RockboxMetadataValidationMarker,
+)
 from iopenpod.sync.sync_executor import SyncExecutor, _ExecutionLifecycle, _SyncContext
 from iopenpod.sync.sync_playlist_files import normalize_sync_playlist_path, sync_playlist_file_id
 from iopenpod.sync.transcoder import TranscodeResult, TranscodeTarget, resolve_transcode_plan
@@ -115,6 +121,271 @@ def test_commit_file_mutations_writes_normal_database(monkeypatch, tmp_path: Pat
 
     assert writes == ["write"]
     assert not ctx.result.partial_save
+
+
+def test_rockbox_metadata_pass_defers_durability_to_sync_flush(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    executor = SyncExecutor(tmp_path)
+    ctx = _SyncContext(
+        plan=SyncPlan(),
+        mapping=MappingFile(),
+        progress_callback=None,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+    )
+    received: dict[str, object] = {}
+
+    def record_metadata_pass(*_args, **kwargs):
+        received.update(kwargs)
+        return SimpleNamespace(updated=0, failures=())
+
+    monkeypatch.setattr(
+        sync_executor_module,
+        "write_rockbox_metadata_library",
+        record_metadata_pass,
+    )
+
+    executor._execute_rockbox_metadata_pass(
+        ctx,
+        DatabaseCommitPayload(all_tracks=[]),
+    )
+
+    assert received["defer_durability"] is True
+    assert received["revalidate_interval_seconds"] == 5.0
+
+
+def test_lyrics_metadata_pass_targets_written_and_lyrics_changed_tracks(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    executor = SyncExecutor(tmp_path)
+    new_track = TrackInfo(
+        db_track_id=1,
+        title="New track",
+        location=":iPod_Control:Music:F00:new.mp3",
+        lyrics="New lyrics",
+    )
+    re_copied_track = TrackInfo(
+        db_track_id=2,
+        title="Re-copied track",
+        location=":iPod_Control:Music:F00:recopied.mp3",
+        lyrics="Existing lyrics",
+    )
+    lyrics_changed_track = TrackInfo(
+        db_track_id=3,
+        title="Cleared lyrics",
+        location=":iPod_Control:Music:F00:cleared.mp3",
+    )
+    untouched_track = TrackInfo(
+        db_track_id=4,
+        title="Untouched track",
+        location=":iPod_Control:Music:F00:untouched.mp3",
+        lyrics="Do not visit",
+    )
+    ctx = _SyncContext(
+        plan=SyncPlan(
+            to_update_file=[SyncItem(action=SyncAction.UPDATE_FILE, db_track_id=2)],
+            to_update_metadata=[
+                SyncItem(
+                    action=SyncAction.UPDATE_METADATA,
+                    db_track_id=3,
+                    metadata_changes={"lyrics": (None, "Old lyrics")},
+                )
+            ],
+        ),
+        mapping=MappingFile(),
+        progress_callback=None,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+    )
+    ctx.new_tracks = [new_track]
+    received: dict[str, object] = {}
+
+    def write_lyrics(_root, tracks, **kwargs):
+        received["track_ids"] = [track.db_track_id for track in tracks]
+        received.update(kwargs)
+        return SimpleNamespace(updated=3, failures=())
+
+    monkeypatch.setattr(
+        sync_executor_module,
+        "write_lyrics_metadata_library",
+        write_lyrics,
+    )
+
+    executor._execute_lyrics_metadata_pass(
+        ctx,
+        DatabaseCommitPayload(
+            all_tracks=[
+                new_track,
+                re_copied_track,
+                lyrics_changed_track,
+                untouched_track,
+            ]
+        ),
+    )
+
+    assert received["track_ids"] == [1, 2, 3]
+    assert received["defer_durability"] is True
+    assert ctx.result.lyrics_metadata_updated == 3
+
+
+def test_rockbox_metadata_progress_is_rate_limited(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    executor = SyncExecutor(tmp_path)
+    progress_events = []
+    ctx = _SyncContext(
+        plan=SyncPlan(),
+        mapping=MappingFile(),
+        progress_callback=progress_events.append,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+    )
+
+    def emit_metadata_progress(*_args, **kwargs):
+        callback = kwargs["progress_callback"]
+        callback(1, 10, "first.mp3")
+        callback(2, 10, "second.mp3")
+        callback(10, 10, "last.mp3")
+        return SimpleNamespace(updated=0, failures=())
+
+    monotonic_values = iter((0.0, 0.01, 0.02))
+    monkeypatch.setattr(sync_executor_module.time, "monotonic", lambda: next(monotonic_values))
+    monkeypatch.setattr(
+        sync_executor_module,
+        "write_rockbox_metadata_library",
+        emit_metadata_progress,
+    )
+
+    executor._execute_rockbox_metadata_pass(
+        ctx,
+        DatabaseCommitPayload(all_tracks=[TrackInfo(title="Track", location=":iPod_Control:Music:F00:track.mp3")]),
+    )
+
+    assert [(event.current, event.total) for event in progress_events] == [
+        (0, 1),
+        (1, 10),
+        (10, 10),
+    ]
+
+
+def test_rockbox_metadata_pass_persists_validation_markers(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    executor = SyncExecutor(tmp_path)
+    mapping = MappingFile()
+    artwork_state = RockboxArtworkDatabaseState(exists=False)
+    existing_marker = RockboxMetadataValidationMarker(
+        db_track_id=11,
+        file_size=1_024,
+        mtime_ns=1_000,
+        metadata_signature="before",
+    )
+    mapping.set_rockbox_metadata_validation(
+        {
+            11: {
+                "file_size": existing_marker.file_size,
+                "mtime_ns": existing_marker.mtime_ns,
+                "metadata_signature": existing_marker.metadata_signature,
+            },
+        },
+        {"exists": False, "file_size": 0, "mtime_ns": 0},
+    )
+    ctx = _SyncContext(
+        plan=SyncPlan(),
+        mapping=mapping,
+        progress_callback=None,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+    )
+    returned_marker = RockboxMetadataValidationMarker(
+        db_track_id=11,
+        file_size=2_048,
+        mtime_ns=2_000,
+        metadata_signature="after",
+    )
+    received: dict[str, object] = {}
+
+    def record_metadata_pass(*_args, **kwargs):
+        received.update(kwargs)
+        return SimpleNamespace(
+            updated=0,
+            failures=(),
+            validation_markers={11: returned_marker},
+            validation_artwork_state=artwork_state,
+        )
+
+    monkeypatch.setattr(
+        sync_executor_module,
+        "write_rockbox_metadata_library",
+        record_metadata_pass,
+    )
+    track = TrackInfo(
+        title="Track",
+        location=":iPod_Control:Music:F00:track.mp3",
+        db_track_id=11,
+    )
+
+    executor._execute_rockbox_metadata_pass(
+        ctx,
+        DatabaseCommitPayload(all_tracks=[track]),
+    )
+
+    assert received["validation_markers"] == {11: existing_marker}
+    assert received["validation_artwork_state"] == artwork_state
+    assert ctx.mapping.rockbox_metadata_markers[11]["metadata_signature"] == "after"
+
+
+def test_rockbox_metadata_pass_forces_planned_track_updates(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    executor = SyncExecutor(tmp_path)
+    ctx = _SyncContext(
+        plan=SyncPlan(
+            to_update_metadata=[
+                SyncItem(action=SyncAction.UPDATE_METADATA, db_track_id=11),
+            ],
+        ),
+        mapping=MappingFile(),
+        progress_callback=None,
+        dry_run=False,
+        write_back_to_pc=False,
+        _is_cancelled=None,
+    )
+    received: dict[str, object] = {}
+    monkeypatch.setattr(
+        sync_executor_module,
+        "write_rockbox_metadata_library",
+        lambda *_args, **kwargs: (
+            received.update(kwargs)
+            or SimpleNamespace(updated=0, failures=())
+        ),
+    )
+
+    executor._execute_rockbox_metadata_pass(
+        ctx,
+        DatabaseCommitPayload(
+            all_tracks=[
+                TrackInfo(
+                    title="Track",
+                    location=":iPod_Control:Music:F00:track.mp3",
+                    db_track_id=11,
+                ),
+            ],
+        ),
+    )
+
+    assert received["force_write_track_ids"] == {11}
+    assert received["preserve_embedded_artwork_track_ids"] == {11}
 
 
 def test_execution_lifecycle_runs_named_phases_in_order(
@@ -1438,6 +1709,97 @@ def test_direct_copy_writes_metadata_stripped_payload_without_touching_source(
     assert source.read_bytes() == b"source-with-tags"
     assert copied_from and copied_from[0] != source
     assert not copied_from[0].exists()
+
+
+def test_direct_video_copy_strips_embedded_metadata(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    ipod_root = tmp_path / "ipod"
+    source = tmp_path / "source.m4v"
+    ipod_root.mkdir()
+    source.write_bytes(b"video-with-tags")
+
+    executor = SyncExecutor(
+        ipod_root,
+        max_workers=1,
+        max_device_write_workers=1,
+    )
+    transcode_plan = replace(
+        resolve_transcode_plan(source, options=executor.transcode_options),
+        target=TranscodeTarget.COPY,
+    )
+
+    stripped_inputs: list[Path] = []
+
+    def fake_strip_metadata(path: Path) -> bool:
+        assert path != source
+        stripped_inputs.append(path)
+        path.write_bytes(b"stripped-video")
+        return True
+
+    monkeypatch.setattr("iopenpod.sync.sync_executor.strip_metadata", fake_strip_metadata)
+
+    success, ipod_path, was_transcoded, err = executor._copy_to_ipod(source, transcode_plan)
+
+    assert success is True
+    assert err == ""
+    assert was_transcoded is False
+    assert ipod_path is not None
+    assert ipod_path.read_bytes() == b"stripped-video"
+    assert source.read_bytes() == b"video-with-tags"
+    assert stripped_inputs and not stripped_inputs[0].exists()
+
+
+def test_transcoded_video_strips_embedded_metadata(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    ipod_root = tmp_path / "ipod"
+    source = tmp_path / "source.mkv"
+    transcoded = tmp_path / "out.m4v"
+    ipod_root.mkdir()
+    source.write_bytes(b"source-video")
+    transcoded.write_bytes(b"transcoded-video-with-tags")
+
+    executor = SyncExecutor(
+        ipod_root,
+        max_workers=1,
+        max_device_write_workers=1,
+    )
+    transcode_plan = replace(
+        resolve_transcode_plan(source, options=executor.transcode_options),
+        target=TranscodeTarget.VIDEO_H264,
+    )
+
+    def fake_transcode(*_args, **_kwargs):
+        return TranscodeResult(
+            success=True,
+            source_path=source,
+            output_path=transcoded,
+            target_format=TranscodeTarget.VIDEO_H264,
+            was_transcoded=True,
+        )
+
+    stripped_inputs: list[Path] = []
+
+    def fake_strip_metadata(path: Path) -> bool:
+        assert path != transcoded
+        stripped_inputs.append(path)
+        path.write_bytes(b"stripped-transcoded-video")
+        return True
+
+    monkeypatch.setattr("iopenpod.sync.sync_executor.transcode", fake_transcode)
+    monkeypatch.setattr("iopenpod.sync.sync_executor.strip_metadata", fake_strip_metadata)
+
+    success, ipod_path, was_transcoded, err = executor._copy_to_ipod(source, transcode_plan)
+
+    assert success is True
+    assert err == ""
+    assert was_transcoded is True
+    assert ipod_path is not None
+    assert ipod_path.read_bytes() == b"stripped-transcoded-video"
+    assert stripped_inputs and not stripped_inputs[0].exists()
 
 
 def test_transcoded_file_is_stripped_before_device_write(

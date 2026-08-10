@@ -35,6 +35,7 @@ from .metadata_write import (
     DeviceMetadataWriteSession,
     guarded_device_metadata_session,
 )
+from .write_guard import DeviceBusyError
 
 if TYPE_CHECKING:
     from .info import DeviceInfo
@@ -379,7 +380,7 @@ def _write_sysinfo_file(
         "\n".join(lines) + "\n",
         allowed_subtree=_DEVICE_SUBTREE,
     )
-    logger.info("Wrote SysInfo (%d fields) to %s", len(lines), path)
+    logger.debug("Wrote SysInfo (%d fields) to %s", len(lines), path)
 
 
 def _normalise_sysinfo_extended(raw_xml: bytes | str) -> bytes:
@@ -443,6 +444,13 @@ def cache_sysinfo_extended(
                 metadata=metadata,
                 session=session,
             )
+    except DeviceBusyError as exc:
+        logger.debug(
+            "Deferred SysInfoExtended cache because another iOpenPod writer "
+            "is active: %s",
+            exc,
+        )
+        return False
     except Exception as exc:
         logger.warning("Failed to safely cache SysInfoExtended: %s", exc)
         return False

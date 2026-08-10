@@ -22,7 +22,7 @@ MHOD_STRING_SUBHEADER_SIZE = 16       # encoding(4) + length(4) + unk0x20(4) + u
 MHOD_STRING_DATA_OFFSET = 0x28        # string data start (header + sub-header)
 
 # ── SPLPref body (MHOD type 50) ───────────────────────────
-SPLPREF_BODY_SIZE = 132
+SPLPREF_BODY_SIZE = 72
 
 # ── SLst rule data (MHOD type 51) non-string body size ────
 SPL_RULE_DATA_SIZE = 0x44  # 68 bytes
@@ -58,7 +58,9 @@ HEDR_SIZE = 28  # hedr atom is always 28 bytes
 
 MHOD_FIELDS: list[FieldDef] = [
     _u32("mhod_type", 0x0C, section_type=_S, required=True),
+    # Classic 6.5G snapshot (2026-08-04): zero in all 129,496 MHOD headers.
     _u32("unk0x10", 0x10, section_type=_S),
+    # Classic 6.5G snapshot (2026-08-04): zero in all 129,496 MHOD headers.
     _u32("unk0x14", 0x14, section_type=_S),
 ]
 
@@ -89,7 +91,9 @@ PODCAST_URL_MHOD_TYPES = {15, 16}
 # Chapter data MHOD type — big-endian atom tree (sean/chap/name/hedr).
 CHAPTER_DATA_MHOD_TYPES = {17}
 
-# Binary / opaque MHOD types — stored as raw hex for round-tripping.
+# Binary / opaque MHOD types — stored as raw hex for round-tripping. The
+# Classic 6.5G sample's type 32 is an 84-byte AVC/H.264 video descriptor;
+# see the research log before attempting to assign its subfields.
 BINARY_BLOB_MHOD_TYPES = {32}
 
 # Non-string MHOD types with dedicated binary formats.
@@ -158,10 +162,12 @@ def mhod_string_length(data, offset) -> int:
 
 
 def mhod_string_unk0x20(data, offset) -> int:
+    """Opaque string-subheader value; all 80,504 Classic sample values are 1."""
     return struct.unpack("<I", data[offset + 0x20:offset + 0x24])[0]
 
 
 def mhod_string_unk0x24(data, offset) -> int:
+    """Opaque string-subheader value; all 80,504 Classic sample values are 0."""
     return struct.unpack("<I", data[offset + 0x24:offset + 0x28])[0]
 
 
@@ -274,7 +280,8 @@ SPL_LIMIT_SORT_MAP = {
 #
 # SLst header (136 bytes):
 #   +0x00: 'SLst' magic (4 bytes)
-#   +0x04: unk004 (4 bytes BE) — usually 0
+#   +0x04: unk004 (4 bytes BE) — observed/default 0x00010001;
+#           likely a format/version word, preserved verbatim
 #   +0x08: rule_count (4 bytes BE)
 #   +0x0C: conjunction (4 bytes BE) — 0=AND, 1=OR
 #   +0x10: padding (120 bytes)
@@ -282,6 +289,7 @@ SPL_LIMIT_SORT_MAP = {
 # All SLst header functions take body_offset = start of SLst data.
 
 SLST_HEADER_SIZE = 136
+SLST_DEFAULT_UNK004 = 0x00010001
 
 
 def mhod_slst_magic(data, body_offset) -> bytes:
@@ -308,13 +316,17 @@ def mhod_slst_conjunction(data, body_offset) -> int:
 # Rule layout:
 #   +0x00: field (4 bytes BE) — what field to match (see SPL_FIELD_MAP)
 #   +0x04: action (4 bytes BE) — comparison operator (see SPL_ACTION_MAP)
-#   +0x08: padding (44 bytes)
+#   +0x08: group marker (4 bytes BE; zero for leaves)
+#   +0x0C: opaque group header tail / leaf padding (40 bytes)
 #   +0x34: data_length (4 bytes BE) — byte length of following data
 #   +0x38: data (data_length bytes)
 #
 # Total rule size = 56 + data_length.
 
 SPL_RULE_HEADER_SIZE = 56
+SPL_GROUP_MARKER = 0x01000000
+SPL_GROUP_HEADER_BYTES_OFFSET = 0x0C
+SPL_GROUP_HEADER_BYTES_SIZE = 40
 
 
 def mhod_spl_rule_field(data, rule_offset) -> int:
@@ -323,6 +335,22 @@ def mhod_spl_rule_field(data, rule_offset) -> int:
 
 def mhod_spl_rule_action(data, rule_offset) -> int:
     return struct.unpack(">I", data[rule_offset + 4:rule_offset + 8])[0]
+
+
+def mhod_spl_rule_header_bytes(data, rule_offset) -> bytes:
+    """Return the opaque 40-byte group-header tail after its marker.
+
+    Leaf rules contain zero padding across both the marker position and this
+    tail. Group wrappers use the preceding word as a semantic marker and
+    retain these remaining bytes verbatim.
+    """
+    start = rule_offset + SPL_GROUP_HEADER_BYTES_OFFSET
+    return bytes(data[start:start + SPL_GROUP_HEADER_BYTES_SIZE])
+
+
+def mhod_spl_rule_group_marker(data, rule_offset) -> int:
+    """Return the big-endian marker at rule +0x08."""
+    return struct.unpack(">I", data[rule_offset + 8:rule_offset + 12])[0]
 
 
 def mhod_spl_rule_data_length(data, rule_offset) -> int:
@@ -487,6 +515,11 @@ SPL_ACTION_MAP = {
 
 SPL_DATE_RELATIVE_ACTION_IDS = {0x00000200, 0x02000200}
 
+# Required in both value slots for relative date rules (e.g. "is in the
+# last 7 days"). The actual relative amount and unit live in from_date and
+# from_units. iPod firmware uses this marker to recognize the rule format.
+SPL_DATE_IDENTIFIER = 0x2DAE2DAE2DAE2DAE
+
 # Field type enum (from libgpod ItdbSPLFieldType — values start at 1)
 SPLFT_STRING = 1
 SPLFT_INT = 2
@@ -556,6 +589,90 @@ SPL_FIELD_TYPE_MAP = {
     0x85: SPLFT_BINARY_AND,  # Location
     0x3C: SPLFT_INT,       # Media Kind
 }
+
+# ── Smart Playlist host-evaluation compatibility ──────────────────────────
+#
+# The writer preserves any parsed field, but a field is only authorable in the
+# editor when iOpenPod can also calculate its initial membership during a
+# sync. These maps are the one source of truth for the evaluator's expected
+# track-dict keys and the editor's supported-field policy.
+SPL_HOST_STRING_FIELD_KEYS: dict[int, str] = {
+    0x02: "Title",
+    0x03: "Album",
+    0x04: "Artist",
+    0x08: "Genre",
+    0x09: "filetype",
+    0x0E: "Comment",
+    0x12: "Composer",
+    0x27: "Grouping",
+    0x36: "Description Text",
+    0x37: "Category",
+    0x3E: "Show",
+    0x47: "Album Artist",
+    0x4E: "Sort Title",
+    0x4F: "Sort Album",
+    0x50: "Sort Artist",
+    0x51: "Sort Album Artist",
+    0x52: "Sort Composer",
+    0x53: "Sort Show",
+}
+
+SPL_HOST_INT_FIELD_KEYS: dict[int, str] = {
+    0x05: "bitrate",
+    0x06: "sample_rate_1",
+    0x07: "year",
+    0x0B: "track_number",
+    0x0C: "size",
+    0x0D: "length",
+    0x16: "play_count_1",
+    0x18: "disc_number",
+    0x19: "rating",
+    0x23: "bpm",
+    0x39: "podcast_flag",
+    0x3C: "media_type",
+    0x3F: "season_number",
+    0x44: "skip_count",
+}
+
+SPL_HOST_DATE_FIELD_KEYS: dict[int, str] = {
+    0x0A: "last_modified",
+    0x10: "date_added",
+    0x17: "last_played",
+    0x45: "last_skipped",
+}
+
+SPL_HOST_BOOLEAN_FIELD_KEYS: dict[int, str] = {
+    0x1D: "checked_flag",
+    0x1F: "compilation_flag",
+    0x25: "has_artwork",
+    0x29: "purchased_flag",
+}
+
+SPL_HOST_BINARY_AND_FIELD_KEYS: dict[int, str] = {
+    0x85: "location_kind",
+}
+
+SPL_HOST_EVALUABLE_FIELD_IDS = frozenset(
+    {
+        *SPL_HOST_STRING_FIELD_KEYS,
+        *SPL_HOST_INT_FIELD_KEYS,
+        *SPL_HOST_DATE_FIELD_KEYS,
+        *SPL_HOST_BOOLEAN_FIELD_KEYS,
+        *SPL_HOST_BINARY_AND_FIELD_KEYS,
+        0x28,  # Playlist membership is supplied separately by the builder.
+    }
+)
+
+# These fields are understood by the host evaluator but remain unavailable for
+# new rules until we have sufficient device-format evidence. All other known
+# fields that are not host-evaluable stay visible as disabled parsed values,
+# rather than creating playlists whose initial membership iOpenPod cannot
+# calculate correctly.
+SPL_AUTHORABLE_FIELD_IDS = SPL_HOST_EVALUABLE_FIELD_IDS - frozenset({
+    0x39,  # Podcast
+    0x3E,  # TV Show
+    0x3F,  # Season Number
+})
 
 # Smart playlist fields whose values are chosen from an iTunes menu instead of
 # typed freely. These still use the normal SLst numeric payload; the tables here
@@ -685,7 +802,10 @@ def mhod53_count(data, body_offset) -> int:
 # MHOD Type 100 — Playlist Position (MHIP context)
 # ============================================================
 # In MHIP context (body ≤ 20 bytes):
-#   +0x00: position (4 bytes LE) — 0-based track position in playlist
+#   +0x00: position (4 bytes LE) — playlist-specific ordering key.
+# Classic 6.5G snapshot: 47,730 entries are unique and strictly increasing
+# within each of 168 playlists, but not 0-based; they equal MHIP group_id for
+# every entry in 166 of those playlists. Preserve the generic field name.
 
 def mhod100_position(data, body_offset) -> int:
     return struct.unpack("<I", data[body_offset:body_offset + 4])[0]

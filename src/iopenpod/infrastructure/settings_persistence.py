@@ -20,6 +20,7 @@ from .settings_schema import (
     normalize_player_position,
     normalize_theme_preferences,
 )
+from .theme_catalog import load_theme_catalog, theme_directory
 
 
 def save_app_settings(settings: AppSettings) -> None:
@@ -32,6 +33,18 @@ def save_app_settings(settings: AppSettings) -> None:
     os.makedirs(active_dir, exist_ok=True)
 
     path = os.path.join(active_dir, "settings.json")
+    catalog = load_theme_catalog(theme_directory(path), seed_bundled=True)
+    catalog.normalize_settings(settings)
+    _write_settings_file(path, settings)
+
+    default_dir = default_settings_dir()
+    if settings.settings_dir and settings.settings_dir != default_dir:
+        write_settings_redirect(default_dir, settings.settings_dir)
+
+
+def _write_settings_file(path: str, settings: AppSettings) -> None:
+    """Atomically write settings to one already-resolved settings path."""
+
     tmp = path + ".tmp"
     try:
         with open(tmp, "w", encoding="utf-8") as file:
@@ -43,11 +56,6 @@ def save_app_settings(settings: AppSettings) -> None:
         except OSError:
             pass
         raise
-
-    default_dir = default_settings_dir()
-    if settings.settings_dir and settings.settings_dir != default_dir:
-        write_settings_redirect(default_dir, settings.settings_dir)
-
 
 def write_settings_redirect(default_dir: str, custom_dir: str) -> None:
     """Write a minimal redirect file at the default settings location."""
@@ -67,6 +75,9 @@ def load_app_settings() -> AppSettings:
     path = get_settings_path()
     settings = AppSettings()
     if not os.path.exists(path):
+        # First launch creates the editable theme directory and seeds the
+        # migrated Catppuccin files exactly once.
+        load_theme_catalog(theme_directory(path), seed_bundled=True)
         return settings
     try:
         with open(path, encoding="utf-8") as file:
@@ -98,10 +109,26 @@ def load_app_settings() -> AppSettings:
             settings.backup_before_sync_mode == BACKUP_BEFORE_SYNC_AUTO
         )
         settings.player_position = normalize_player_position(settings.player_position)
+        theme_before = (
+            settings.theme,
+            settings.theme_mode,
+            settings.light_theme,
+            settings.dark_theme,
+        )
         normalize_theme_preferences(
             settings,
             migrate_legacy_theme="theme_mode" not in data,
         )
+        catalog = load_theme_catalog(theme_directory(path), seed_bundled=True)
+        catalog.normalize_settings(settings)
+        theme_after = (
+            settings.theme,
+            settings.theme_mode,
+            settings.light_theme,
+            settings.dark_theme,
+        )
+        if theme_after != theme_before:
+            _write_settings_file(path, settings)
 
     except (json.JSONDecodeError, UnicodeDecodeError, OSError):
         pass

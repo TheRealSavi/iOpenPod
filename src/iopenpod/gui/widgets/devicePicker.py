@@ -41,13 +41,13 @@ from ..device_warnings import (
 from ..ipod_images import get_ipod_image
 from ..styles import (
     FONT_FAMILY,
-    Colors,
     Metrics,
     accent_btn_css,
     button_css,
     combo_css,
     input_css,
     make_scroll_area,
+    paint_css,
 )
 
 logger = logging.getLogger(__name__)
@@ -75,7 +75,7 @@ class VirtualIPodDialog(QDialog):
 
         title = QLabel("Create Virtual iPod")
         title.setFont(QFont(FONT_FAMILY, Metrics.FONT_XL, QFont.Weight.Bold))
-        title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
+        title.setStyleSheet(f"color: {paint_css('text.primary')};")
         layout.addWidget(title)
 
         self._model_combo = QComboBox()
@@ -83,7 +83,7 @@ class VirtualIPodDialog(QDialog):
         self._model_combo.setStyleSheet(combo_css(padding="7px 10px"))
         model_label = QLabel("iPod Model")
         model_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
-        model_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
+        model_label.setStyleSheet(f"color: {paint_css('text.secondary')};")
         layout.addWidget(model_label)
         layout.addWidget(self._model_combo)
 
@@ -105,7 +105,7 @@ class VirtualIPodDialog(QDialog):
 
         directory_label = QLabel("Directory")
         directory_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
-        directory_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
+        directory_label.setStyleSheet(f"color: {paint_css('text.secondary')};")
         layout.addWidget(directory_label)
         layout.addLayout(directory_row)
 
@@ -300,7 +300,9 @@ class DeviceCard(QFrame):
             ipod_name_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG, QFont.Weight.Bold))
             ipod_name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             ipod_name_label.setWordWrap(True)
-            ipod_name_label.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent; border: none;")
+            ipod_name_label.setStyleSheet(
+                f"color: {paint_css('text.primary')}; background: transparent; border: none;"
+            )
             layout.addWidget(ipod_name_label)
 
         # Model name
@@ -310,7 +312,11 @@ class DeviceCard(QFrame):
         name_label.setFont(QFont(FONT_FAMILY, name_font_size, name_font_weight))
         name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         name_label.setWordWrap(True)
-        name_color = Colors.TEXT_SECONDARY if ipod.ipod_name else Colors.TEXT_PRIMARY
+        name_color = (
+            paint_css("text.secondary")
+            if ipod.ipod_name
+            else paint_css("text.primary")
+        )
         name_label.setStyleSheet(f"color: {name_color}; background: transparent; border: none;")
         layout.addWidget(name_label)
 
@@ -319,7 +325,7 @@ class DeviceCard(QFrame):
             warning_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
             warning_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             warning_label.setStyleSheet(
-                f"color: {Colors.WARNING}; background: transparent; border: none;"
+                f"color: {paint_css('status.warning.text')}; background: transparent; border: none;"
             )
             layout.addWidget(warning_label)
 
@@ -327,25 +333,24 @@ class DeviceCard(QFrame):
         if self._selected:
             self.setStyleSheet(f"""
                 DeviceCard {{
-                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                        stop:0 {Colors.ACCENT_BORDER}, stop:1 {Colors.ACCENT_DARK});
-                    border: 2px solid {Colors.ACCENT};
+                    background: {paint_css('device.picker.selected_fill')};
+                    border: 2px solid {paint_css('device.picker.selected_border')};
                     border-radius: {Metrics.BORDER_RADIUS_XL}px;
                 }}
             """)
         elif hovered:
             self.setStyleSheet(f"""
                 DeviceCard {{
-                    background: {Colors.SURFACE_HOVER};
-                    border: 1px solid {Colors.BORDER};
+                    background: {paint_css('surface.hover')};
+                    border: 1px solid {paint_css('border.default')};
                     border-radius: {Metrics.BORDER_RADIUS_XL}px;
                 }}
             """)
         else:
             self.setStyleSheet(f"""
                 DeviceCard {{
-                    background: {Colors.SURFACE_ALT};
-                    border: 1px solid {Colors.BORDER_SUBTLE};
+                    background: {paint_css('surface.inset')};
+                    border: 1px solid {paint_css('border.subtle')};
                     border-radius: {Metrics.BORDER_RADIUS_XL}px;
                 }}
             """)
@@ -430,12 +435,12 @@ class DevicePickerDialog(QDialog):
         # Title
         title = QLabel("Select your iPod")
         title.setFont(QFont(FONT_FAMILY, Metrics.FONT_PAGE_TITLE, QFont.Weight.Bold))
-        title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY};")
+        title.setStyleSheet(f"color: {paint_css('text.primary')};")
         layout.addWidget(title)
 
         subtitle = QLabel("Scanning for connected iPods...")
         subtitle.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
-        subtitle.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
+        subtitle.setStyleSheet(f"color: {paint_css('text.secondary')};")
         self._subtitle = subtitle
         layout.addWidget(subtitle)
 
@@ -457,7 +462,7 @@ class DevicePickerDialog(QDialog):
             "You can also use the button below to select a folder manually."
         )
         self._no_devices_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
-        self._no_devices_label.setStyleSheet(f"color: {Colors.TEXT_TERTIARY};")
+        self._no_devices_label.setStyleSheet(f"color: {paint_css('text.tertiary')};")
         self._no_devices_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._no_devices_label.setWordWrap(True)
         self._no_devices_label.hide()
@@ -466,7 +471,7 @@ class DevicePickerDialog(QDialog):
         # Separator
         sep = QFrame()
         sep.setFixedHeight(1)
-        sep.setStyleSheet(f"background: {Colors.BORDER_SUBTLE};")
+        sep.setStyleSheet(f"background: {paint_css('border.subtle')};")
         layout.addWidget(sep)
 
         # Bottom buttons
@@ -575,7 +580,11 @@ class DevicePickerDialog(QDialog):
                 continue
             if not claim_unidentified_ipod_auto_prompt(ipod):
                 continue
-            show_unidentified_ipod_warning(self, ipod)
+            show_unidentified_ipod_warning(
+                self,
+                ipod,
+                after_close=self._start_scan,
+            )
             return
 
     def _on_scan_error(self, error_msg: str, worker=None) -> None:

@@ -190,6 +190,7 @@ class SyncEngine:
             is_scrobble_cancelled=request.is_scrobble_cancelled,
             on_cancel_with_partial=request.on_cancel_with_partial,
             sync_until_full=request.options.sync_until_full,
+            scrobble_only=request.options.scrobble_only,
         )
         self._emit(request, EngineStage.EXECUTE_FILES, message="Applying file changes")
         return executor.execute_request(sync_request)

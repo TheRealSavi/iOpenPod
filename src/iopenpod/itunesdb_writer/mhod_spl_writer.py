@@ -12,14 +12,20 @@ Based on libgpod's SPLPref/SPLRules structs in itdb_spl.c / itdb_itunesdb.c
 and the parser in src/iopenpod/itunesdb_parser/mhod_parser.py.
 """
 
+from __future__ import annotations
+
 import struct
 from dataclasses import dataclass, field
 from typing import Any
 
 from iopenpod.itunesdb_shared.mhod_defs import (
     MHOD_HEADER_SIZE,
+    SLST_DEFAULT_UNK004,
     SLST_HEADER_SIZE,
+    SPL_DATE_IDENTIFIER,
     SPL_DATE_RELATIVE_ACTION_IDS,
+    SPL_GROUP_HEADER_BYTES_SIZE,
+    SPL_GROUP_MARKER,
     SPL_RULE_DATA_SIZE,
     SPL_RULE_HEADER_SIZE,
     SPLFT_DATE,
@@ -122,8 +128,19 @@ class SmartPlaylistRules:
     conjunction: "AND" (match all) or "OR" (match any)
     """
     conjunction: str = "AND"  # "AND" or "OR"
-    rules: list[SmartPlaylistRule] = field(default_factory=list)
-    unk004: int = 0  # SLst header +0x04, usually 0 (preserved for round-trip)
+    rules: list[SmartPlaylistRule | RuleGroup] = field(default_factory=list)
+    unk004: int = SLST_DEFAULT_UNK004
+
+
+@dataclass
+class RuleGroup:
+    """A recursive rule node whose payload is another complete SLst."""
+
+    group: SmartPlaylistRules = field(default_factory=SmartPlaylistRules)
+    field_id: int = 0
+    action_id: int = 1
+    group_marker: int = SPL_GROUP_MARKER
+    header_bytes: bytes | None = None
 
 
 def _signed_i64(value: int) -> int:
@@ -149,7 +166,7 @@ def _normalize_relative_date_fields(
             normalized_from_date = -(amount // units)
         else:
             normalized_from_date = -amount
-    return 0, normalized_from_date
+    return SPL_DATE_IDENTIFIER, normalized_from_date
 
 
 # ────────────────────────────────────────────────────────────
@@ -182,7 +199,7 @@ def write_mhod50(prefs: SmartPlaylistPrefs) -> bytes:
     body[12] = 1 if prefs.match_checked_only else 0
     body[13] = reverse
 
-    # Remaining bytes (14..131) are zero padding
+    # Remaining bytes (14..71) are zero padding
 
     return write_mhod_header(50, MHOD_HEADER_SIZE + SPLPREF_BODY_SIZE) + bytes(body)
 
@@ -191,18 +208,39 @@ def write_mhod50(prefs: SmartPlaylistPrefs) -> bytes:
 # MHOD Type 51 — Smart Playlist Rules (SLst)
 # ────────────────────────────────────────────────────────────
 
-def _write_spl_rule(rule: SmartPlaylistRule) -> bytes:
+def _write_spl_rule(rule: SmartPlaylistRule | RuleGroup) -> bytes:
     """Write a single SLst rule entry (big-endian).
 
     Rule layout:
         +0x00: field     (4 BE)
         +0x04: action    (4 BE)
-        +0x08: padding   (44 bytes)
+        +0x08: marker    (4 BE; 0x01000000 for groups, zero for leaves)
+        +0x0C: header    (40 bytes; opaque for groups, padding for leaves)
         +0x34: length    (4 BE) — byte length of data
         +0x38: data      (length bytes)
 
     Total = SPL_RULE_HEADER_SIZE + data_length.
     """
+    if isinstance(rule, RuleGroup):
+        nested_slst = _write_slst(rule.group)
+        if rule.header_bytes is None:
+            header_bytes = bytes(SPL_GROUP_HEADER_BYTES_SIZE)
+        else:
+            header_bytes = bytes(rule.header_bytes)
+        if len(header_bytes) != SPL_GROUP_HEADER_BYTES_SIZE:
+            raise ValueError(
+                "RuleGroup.header_bytes must contain exactly "
+                f"{SPL_GROUP_HEADER_BYTES_SIZE} bytes"
+            )
+
+        rule_header = bytearray(SPL_RULE_HEADER_SIZE)
+        struct.pack_into(">I", rule_header, 0x00, _u32(rule.field_id))
+        struct.pack_into(">I", rule_header, 0x04, _u32(rule.action_id))
+        struct.pack_into(">I", rule_header, 0x08, _u32(rule.group_marker))
+        rule_header[0x0C:0x34] = header_bytes
+        struct.pack_into(">I", rule_header, 0x34, len(nested_slst))
+        return bytes(rule_header) + nested_slst
+
     ft = spl_get_field_type(rule.field_id)
 
     if ft == SPLFT_STRING and rule.string_value is not None:
@@ -216,20 +254,26 @@ def _write_spl_rule(rule: SmartPlaylistRule) -> bytes:
         data_section = bytearray(SPL_RULE_DATA_SIZE)
         from_value = rule.from_value
         from_date = rule.from_date
+        to_value = rule.to_value
+        to_date = rule.to_date
+        to_units = rule.to_units
         if ft == SPLFT_DATE and rule.action_id in SPL_DATE_RELATIVE_ACTION_IDS:
             from_value, from_date = _normalize_relative_date_fields(
                 from_value,
                 from_date,
                 rule.from_units,
             )
+            to_value = SPL_DATE_IDENTIFIER
+            to_date = 0
+            to_units = 1
         # from_value, to_value, from_units, to_units use unsigned '>Q' format.
         # Mask defensively so legacy in-memory rules with signed values still pack.
         struct.pack_into('>Q', data_section, 0x00, _u64(from_value))
         struct.pack_into('>q', data_section, 0x08, _i64(from_date))
         struct.pack_into('>Q', data_section, 0x10, _u64(rule.from_units))
-        struct.pack_into('>Q', data_section, 0x18, _u64(rule.to_value))
-        struct.pack_into('>q', data_section, 0x20, _i64(rule.to_date))
-        struct.pack_into('>Q', data_section, 0x28, _u64(rule.to_units))
+        struct.pack_into('>Q', data_section, 0x18, _u64(to_value))
+        struct.pack_into('>q', data_section, 0x20, _i64(to_date))
+        struct.pack_into('>Q', data_section, 0x28, _u64(to_units))
         struct.pack_into('>I', data_section, 0x30, _u32(rule.unk052))
         struct.pack_into('>I', data_section, 0x34, _u32(rule.unk056))
         struct.pack_into('>I', data_section, 0x38, _u32(rule.unk060))
@@ -247,14 +291,8 @@ def _write_spl_rule(rule: SmartPlaylistRule) -> bytes:
     return bytes(rule_header) + data_section
 
 
-def write_mhod51(rules_data: SmartPlaylistRules) -> bytes:
-    """Write MHOD type 51 (smart playlist rules / SLst).
-
-    The entire SLst blob is big-endian.
-
-    Returns:
-        Complete MHOD chunk bytes.
-    """
+def _write_slst(rules_data: SmartPlaylistRules) -> bytes:
+    """Write one root or nested SLst container."""
     # Build SLst header
     slst_header = bytearray(SLST_HEADER_SIZE)
     slst_header[0:4] = b'SLst'
@@ -267,7 +305,18 @@ def write_mhod51(rules_data: SmartPlaylistRules) -> bytes:
     # Build individual rules
     rules_bytes = b''.join(_write_spl_rule(r) for r in rules_data.rules)
 
-    slst_body = bytes(slst_header) + rules_bytes
+    return bytes(slst_header) + rules_bytes
+
+
+def write_mhod51(rules_data: SmartPlaylistRules) -> bytes:
+    """Write MHOD type 51 (smart playlist rules / SLst).
+
+    The entire SLst blob is big-endian.
+
+    Returns:
+        Complete MHOD chunk bytes.
+    """
+    slst_body = _write_slst(rules_data)
 
     return write_mhod_header(51, MHOD_HEADER_SIZE + len(slst_body)) + slst_body
 
@@ -338,6 +387,25 @@ def rules_from_parsed(parsed: dict) -> SmartPlaylistRules:
     """
     rules = []
     for r in parsed.get("rules", []):
+        parsed_group = r.get("group")
+        if isinstance(parsed_group, dict):
+            raw_header = r.get("header_bytes")
+            header_bytes = (
+                bytes(raw_header)
+                if isinstance(raw_header, (bytes, bytearray))
+                else None
+            )
+            rules.append(
+                RuleGroup(
+                    field_id=r.get("field_id", 0),
+                    action_id=r.get("action_id", 1),
+                    group_marker=r.get("group_marker", SPL_GROUP_MARKER),
+                    header_bytes=header_bytes,
+                    group=rules_from_parsed(parsed_group),
+                )
+            )
+            continue
+
         field_id = r.get("field_id", 0)
         action_id = r.get("action_id", 0)
         from_value = r.get("from_value", 0)
@@ -376,5 +444,5 @@ def rules_from_parsed(parsed: dict) -> SmartPlaylistRules:
     return SmartPlaylistRules(
         conjunction=conj,
         rules=rules,
-        unk004=parsed.get("unk004", 0),
+        unk004=parsed.get("unk004", SLST_DEFAULT_UNK004),
     )

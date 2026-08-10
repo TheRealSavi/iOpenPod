@@ -55,6 +55,7 @@ from iopenpod.device.storage_safety import (
     existing_file_allocated_size,
     require_file_size_supported,
 )
+from iopenpod.device.virtual_identity import virtual_ipod_profile
 from iopenpod.device.write_guard import (
     DeviceBusyError,
     DeviceWriteGuard,
@@ -235,6 +236,10 @@ def _locked_backup_repository(backup_root: Path):
                 backup_root,
                 volume_key=identity,
                 track_database_generation=False,
+                # Repository maintenance is not an iPod mutation.  It must
+                # fail fast so a second backup cannot silently block a GUI
+                # operation behind a long-running archive writer.
+                queue_in_process=False,
             )
             try:
                 guard.__enter__()
@@ -417,12 +422,21 @@ def _repository_locked_create(
                 if "ipod_path" in kwargs
                 else (args[0] if args else "")
             )
-            volume_key = str(
-                kwargs.get("expected_volume_identity_key", "") or ipod_path
+            source_profile = _inspect_backup_source(
+                Path(str(ipod_path or "")),
+                reported_volume_format=str(
+                    kwargs.get("reported_volume_format", "") or ""
+                ),
+                expected_volume_identity_key=str(
+                    kwargs.get("expected_volume_identity_key", "") or ""
+                ),
+                allow_uninitialized_source=bool(
+                    kwargs.get("_allow_uninitialized_source", False)
+                ),
             )
             with DeviceWriteGuard(
                 str(ipod_path),
-                volume_key=volume_key,
+                volume_key=volume_lock_key(source_profile),
                 track_database_generation=True,
             ) as device_guard:
                 manager._active_device_guard = device_guard
@@ -1191,9 +1205,12 @@ def _inspect_backup_source(
     allow_uninitialized_source: bool = False,
 ) -> FilesystemProfile:
     """Capture and validate the scan-time identity for a read-only backup pass."""
-    profile = inspect_filesystem_profile(
+    profile = virtual_ipod_profile(
+        inspect_filesystem_profile(
+            mount_path,
+            reported_volume_format=reported_volume_format,
+        ),
         mount_path,
-        reported_volume_format=reported_volume_format,
     )
     requested = os.path.normcase(os.path.realpath(mount_path))
     observed_mount = os.path.normcase(os.path.realpath(profile.mount_path))
@@ -1228,7 +1245,7 @@ def _inspect_backup_source(
             "A different volume is mounted at the selected iPod path. "
             "iOpenPod stopped before creating a mixed-device backup."
         )
-    logger.info(
+    logger.debug(
         "Backup source filesystem: mount=%s actual=%s reported=%s identity=%s",
         profile.mount_path,
         profile.filesystem_type or "unknown",
@@ -1243,9 +1260,12 @@ def _revalidate_backup_source(
     *,
     allow_uninitialized_source: bool = False,
 ) -> None:
-    current = inspect_filesystem_profile(
+    current = virtual_ipod_profile(
+        inspect_filesystem_profile(
+            retained.inspection_path or retained.mount_path,
+            reported_volume_format=retained.reported_volume_format,
+        ),
         retained.inspection_path or retained.mount_path,
-        reported_volume_format=retained.reported_volume_format,
     )
     if (
         not current.identity.is_complete
@@ -1428,7 +1448,7 @@ class BackupManager:
         ipod_path: str | Path,
         progress_callback: Callable[[BackupProgress], None] | None = None,
         is_cancelled: Callable[[], bool] | None = None,
-        max_backups: int = 10,
+        max_backups: int = 0,
         *,
         reported_volume_format: str = "",
         expected_volume_identity_key: str = "",
@@ -1909,10 +1929,15 @@ class BackupManager:
                 "GUID for the connected iPod."
             )
 
-        volume_key = str(expected_volume_identity_key or ipod_path)
+        source_profile = _inspect_backup_source(
+            Path(ipod_path),
+            reported_volume_format=reported_volume_format,
+            expected_volume_identity_key=expected_volume_identity_key,
+            allow_uninitialized_source=True,
+        )
         with DeviceWriteGuard(
             ipod_path,
-            volume_key=volume_key,
+            volume_key=volume_lock_key(source_profile),
             track_database_generation=True,
         ) as device_guard:
             self._active_device_guard = device_guard

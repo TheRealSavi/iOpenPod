@@ -19,6 +19,7 @@ from iopenpod.device.write_readiness import (
     revalidate_device_write_readiness,
     volume_lock_key,
 )
+from iopenpod.itunesdb_shared.playlist_kinds import is_podcast_playlist
 from iopenpod.itunesdb_writer.mhit_writer import TrackInfo
 
 from .database_commit import DatabaseCommitPayload, write_database_commit
@@ -304,7 +305,7 @@ def _is_regular_playlist_mirror_candidate(playlist: dict[str, Any]) -> bool:
         return False
     if _is_ipod_category_playlist(playlist):
         return False
-    if playlist.get("podcast_flag", 0) == 1 or playlist.get("_source") == "podcast":
+    if is_podcast_playlist(playlist) or playlist.get("_source") == "podcast":
         return False
     return True
 

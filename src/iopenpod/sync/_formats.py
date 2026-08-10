@@ -34,7 +34,9 @@ NON_NATIVE_LOSSY: frozenset[str] = frozenset({
     ".ogg", ".opus", ".wma", ".aa", ".aax",
 })
 
-# Non-native video → H.264/AAC re-encode
+# Non-native video containers. ``.mov`` is probed because it may already
+# contain an iPod-compatible H.264/AAC MP4 payload; the remaining formats are
+# always re-encoded.
 NON_NATIVE_VIDEO: frozenset[str] = frozenset({
     ".mov", ".mkv", ".avi", ".webm", ".wmv", ".mpg", ".mpeg", ".3gp",
     ".3g2", ".flv", ".mts", ".m2ts", ".ts", ".ogv",
@@ -55,7 +57,7 @@ PLAYLIST_EXTENSIONS: frozenset[str] = frozenset({
 NEEDS_TRANSCODING: frozenset[str] = NON_NATIVE_LOSSLESS | NON_NATIVE_LOSSY
 
 # Video containers that always need re-encoding (non-iPod containers)
-VIDEO_ALWAYS_TRANSCODE: frozenset[str] = NON_NATIVE_VIDEO
+VIDEO_ALWAYS_TRANSCODE: frozenset[str] = NON_NATIVE_VIDEO - frozenset({".mov"})
 
 # Video containers that MIGHT be iPod-native (need ffprobe to confirm codec)
 VIDEO_PROBE_CONTAINERS: frozenset[str] = IPOD_NATIVE_VIDEO

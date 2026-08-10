@@ -4,7 +4,7 @@ import logging
 from types import SimpleNamespace
 
 from iopenpod.application import runtime
-from iopenpod.device.write_guard import DatabaseGeneration
+from iopenpod.device.write_guard import DatabaseGeneration, DeviceBusyError
 
 
 def test_cache_emits_load_failed_after_partial_device_load(monkeypatch) -> None:
@@ -84,6 +84,42 @@ def test_cache_rejects_database_changed_while_it_was_parsed(monkeypatch) -> None
 
     assert generation is None
     assert any("changed while iOpenPod was loading it" in error for error in errors)
+
+
+def test_cache_loads_when_playcount_commit_is_deferred(monkeypatch) -> None:
+    from iopenpod.itunesdb_parser import ipod_library
+    from iopenpod.sync import _db_io, photos
+
+    generation = DatabaseGeneration("iTunesDB", True, digest="unchanged")
+    merge_playcounts: list[bool] = []
+    monkeypatch.setattr(
+        runtime,
+        "capture_database_generation",
+        lambda _path: generation,
+    )
+    monkeypatch.setattr(
+        _db_io,
+        "commit_playcounts_if_needed",
+        lambda _path: (_ for _ in ()).throw(DeviceBusyError("another writer")),
+    )
+    monkeypatch.setattr(
+        ipod_library,
+        "load_ipod_library",
+        lambda *_args, **kwargs: (
+            merge_playcounts.append(kwargs["merge_playcounts"]) or {"mhlt": []}
+        ),
+    )
+    monkeypatch.setattr(photos, "read_photo_db", lambda _path: photos.PhotoDB())
+
+    data, _device_path, errors, returned_generation = runtime.iTunesDBCache()._load_data(
+        "/fake/ipod",
+        "/fake/ipod/iPod_Control/iTunes/iTunesDB",
+    )
+
+    assert data["mhlt"] == []
+    assert errors == []
+    assert returned_generation == generation
+    assert merge_playcounts == [True]
 
 
 def test_commit_user_playlists_hydrates_pending_playlist_into_live_cache(
@@ -271,6 +307,292 @@ def test_remove_user_playlist_removes_live_playlist(monkeypatch) -> None:
 
     assert cache.remove_user_playlist(2) is True
     assert [playlist["playlist_id"] for playlist in cache.get_playlists()] == [1]
+
+
+def test_cache_rebuilds_playlist_folder_membership_from_its_children(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        runtime.DeviceManager,
+        "get_instance",
+        classmethod(lambda cls: SimpleNamespace(device_path="/fake/ipod")),
+    )
+
+    cache = runtime.iTunesDBCache()
+    cache.set_data(
+        {
+            "mhlt": [],
+            "mhlp": [
+                {
+                    "playlist_id": 100,
+                    "Title": "Folder",
+                    "playlist_kind_flags": 0x0100,
+                    "podcast_flag": 0x0100,
+                    "is_folder": True,
+                    "items": [{"track_id": 999}],
+                },
+                {
+                    "playlist_id": 101,
+                    "Title": "Child A",
+                    "parent_folder_playlist_id": 100,
+                    "items": [{"track_id": 1}, {"track_id": 2}],
+                },
+                {
+                    "playlist_id": 102,
+                    "Title": "Child B",
+                    "parent_folder_playlist_id": 100,
+                    "items": [{"track_id": 2}, {"track_id": 3}],
+                },
+            ],
+            "mhlp_podcast": [],
+            "mhlp_smart": [],
+        },
+        "/fake/ipod",
+    )
+
+    playlists = cache.get_playlists()
+
+    assert [playlist["playlist_id"] for playlist in playlists] == [100, 101, 102]
+    folder = playlists[0]
+    assert [item["track_id"] for item in folder["items"]] == [1, 2, 3]
+    assert folder["mhip_child_count"] == 3
+    assert [
+        rule["from_value"] for rule in folder["smart_playlist_rules"]["rules"]
+    ] == [101, 102]
+
+
+def test_playlist_getter_reuses_prepared_hierarchy(monkeypatch) -> None:
+    monkeypatch.setattr(
+        runtime.DeviceManager,
+        "get_instance",
+        classmethod(lambda cls: SimpleNamespace(device_path="/fake/ipod")),
+    )
+    reconcile_calls = 0
+    real_reconcile = runtime.reconcile_playlist_hierarchy
+
+    def counted_reconcile(rows):
+        nonlocal reconcile_calls
+        reconcile_calls += 1
+        return real_reconcile(rows)
+
+    monkeypatch.setattr(runtime, "reconcile_playlist_hierarchy", counted_reconcile)
+    cache = runtime.iTunesDBCache()
+    cache.set_data(
+        {
+            "mhlt": [],
+            "mhlp": [
+                {
+                    "playlist_id": 100,
+                    "Title": "Folder",
+                    "playlist_kind_flags": 0x0100,
+                    "items": [],
+                },
+                {
+                    "playlist_id": 101,
+                    "Title": "Child",
+                    "parent_folder_playlist_id": 100,
+                    "items": [{"track_id": 1}],
+                },
+            ],
+            "mhlp_podcast": [],
+            "mhlp_smart": [],
+        },
+        "/fake/ipod",
+    )
+    preparation_calls = reconcile_calls
+
+    first = cache.get_playlists()
+    second = cache.get_playlists()
+
+    assert preparation_calls > 0
+    assert reconcile_calls == preparation_calls
+    assert first == second
+    assert [item["track_id"] for item in first[0]["items"]] == [1]
+    first[0]["Title"] = "Caller mutation"
+    assert cache.get_playlists()[0]["Title"] == "Folder"
+
+
+def test_staged_leaf_edit_refreshes_prepared_recursive_folder_ancestors(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        runtime.DeviceManager,
+        "get_instance",
+        classmethod(lambda cls: SimpleNamespace(device_path="/fake/ipod")),
+    )
+    reconcile_calls = 0
+    real_reconcile = runtime.reconcile_playlist_hierarchy
+
+    def counted_reconcile(rows):
+        nonlocal reconcile_calls
+        reconcile_calls += 1
+        return real_reconcile(rows)
+
+    monkeypatch.setattr(runtime, "reconcile_playlist_hierarchy", counted_reconcile)
+    cache = runtime.iTunesDBCache()
+    cache.set_data(
+        {
+            "mhlt": [],
+            "mhlp": [
+                {
+                    "playlist_id": 100,
+                    "Title": "Outer",
+                    "playlist_kind_flags": 0x0100,
+                    "items": [],
+                },
+                {
+                    "playlist_id": 101,
+                    "Title": "Inner",
+                    "playlist_kind_flags": 0x0100,
+                    "parent_folder_playlist_id": 100,
+                    "items": [],
+                },
+                {
+                    "playlist_id": 102,
+                    "Title": "Leaf",
+                    "parent_folder_playlist_id": 101,
+                    "items": [{"track_id": 1}],
+                },
+            ],
+            "mhlp_podcast": [],
+            "mhlp_smart": [],
+        },
+        "/fake/ipod",
+    )
+    preparation_calls = reconcile_calls
+
+    cache.save_user_playlist(
+        {
+            "playlist_id": 102,
+            "Title": "Leaf",
+            "_isNew": False,
+            "_mhsd_dataset_type": 2,
+            "_mhsd_result_key": "mhlp",
+            "parent_folder_playlist_id": 101,
+            "items": [{"track_id": 2}],
+        }
+    )
+
+    playlists = cache.get_playlists()
+    assert reconcile_calls == preparation_calls
+    assert [row["playlist_id"] for row in playlists] == [100, 101, 102]
+    assert [item["track_id"] for item in playlists[0]["items"]] == [2]
+    assert [item["track_id"] for item in playlists[1]["items"]] == [2]
+
+    cache.invalidate()
+    assert cache.get_playlists() == []
+
+
+def test_committing_nested_leaf_edit_hydrates_live_folder_aggregates(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        runtime.DeviceManager,
+        "get_instance",
+        classmethod(lambda cls: SimpleNamespace(device_path="/fake/ipod")),
+    )
+    cache = runtime.iTunesDBCache()
+    cache.set_data(
+        {
+            "mhlt": [],
+            "mhlp": [
+                {
+                    "playlist_id": 100,
+                    "Title": "Outer",
+                    "playlist_kind_flags": 0x0100,
+                    "items": [],
+                },
+                {
+                    "playlist_id": 101,
+                    "Title": "Inner",
+                    "playlist_kind_flags": 0x0100,
+                    "parent_folder_playlist_id": 100,
+                    "items": [],
+                },
+                {
+                    "playlist_id": 102,
+                    "Title": "Leaf",
+                    "parent_folder_playlist_id": 101,
+                    "items": [{"track_id": 1}],
+                },
+            ],
+            "mhlp_podcast": [],
+            "mhlp_smart": [],
+        },
+        "/fake/ipod",
+    )
+    cache.save_user_playlist(
+        {
+            "playlist_id": 102,
+            "Title": "Leaf",
+            "_isNew": False,
+            "_mhsd_dataset_type": 2,
+            "_mhsd_result_key": "mhlp",
+            "parent_folder_playlist_id": 101,
+            "items": [{"track_id": 2}],
+        }
+    )
+
+    cache.commit_user_playlists()
+
+    data = cache.get_data()
+    assert data is not None
+    by_id = {row["playlist_id"]: row for row in data["mhlp"]}
+    assert [item["track_id"] for item in by_id[100]["items"]] == [2]
+    assert [item["track_id"] for item in by_id[101]["items"]] == [2]
+    assert [item["track_id"] for item in by_id[102]["items"]] == [2]
+    assert [
+        rule["from_value"]
+        for rule in by_id[100]["smart_playlist_rules"]["rules"]
+    ] == [101]
+    assert [
+        rule["from_value"]
+        for rule in by_id[101]["smart_playlist_rules"]["rules"]
+    ] == [102]
+    assert by_id[100]["parent_folder_playlist_id"] == 0
+    assert by_id[101]["parent_folder_playlist_id"] == 100
+    assert by_id[102]["parent_folder_playlist_id"] == 101
+
+
+def test_removing_playlist_folder_detaches_surviving_children(monkeypatch) -> None:
+    monkeypatch.setattr(
+        runtime.DeviceManager,
+        "get_instance",
+        classmethod(lambda cls: SimpleNamespace(device_path="/fake/ipod")),
+    )
+
+    cache = runtime.iTunesDBCache()
+    cache.set_data(
+        {
+            "mhlt": [],
+            "mhlp": [
+                {
+                    "playlist_id": 100,
+                    "Title": "Folder",
+                    "playlist_kind_flags": 0x0100,
+                    "is_folder": True,
+                    "items": [],
+                },
+                {
+                    "playlist_id": 101,
+                    "Title": "Child",
+                    "parent_folder_playlist_id": 100,
+                    "unk0x30_playlist_ref": 100,
+                    "items": [{"track_id": 1}],
+                },
+            ],
+            "mhlp_podcast": [],
+            "mhlp_smart": [],
+        },
+        "/fake/ipod",
+    )
+
+    assert cache.remove_user_playlist(100) is True
+
+    child = cache.get_playlists()[0]
+    assert child["playlist_id"] == 101
+    assert child["parent_folder_playlist_id"] == 0
+    assert child["unk0x30_playlist_ref"] == 0
 
 
 def test_remove_user_playlist_rejects_master_playlist(monkeypatch) -> None:
