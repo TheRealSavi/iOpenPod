@@ -17,8 +17,10 @@ permalink: /
             <a class="site-wordmark" href="./" aria-label="iOpenPod home"><span class="site-wordmark__mark">i</span>OpenPod</a>
             <div class="site-nav__links">
                 <a href="install-help/">Help</a>
+                <a href="https://github.com/TheRealSavi/iOpenPod">Source</a>
                 <a href="https://discord.gg/9Yy499Tf5d">Discord</a>
                 <a href="https://ko-fi.com/johngibbons">Donate</a>
+                <a href="#install">Download</a>
                 <button type="button" class="site-nav__action theme-toggle" data-theme-toggle aria-pressed="false" aria-label="Switch to dark mode">Dark mode</button>
             </div>
         </div>
@@ -27,8 +29,15 @@ permalink: /
     <header class="product-hero">
         <div class="container hero-grid">
             <div class="hero-copy">
-                <p class="platform-line">Free and open source for Windows, macOS, and Linux.</p>
                 <h1>Your iPod, without iTunes.</h1>
+                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 15px; margin-bottom: 25px;">
+                    <a href="https://github.com/TheRealSavi/iOpenPod/" target="_blank" rel="noopener noreferrer">
+                        <img src="https://img.shields.io/github/stars/TheRealSavi/iOpenPod?style=for-the-badge&logo=github" alt="GitHub Stars">
+                    </a>
+                    <a href="https://github.com/TheRealSavi/iOpenPod/" target="_blank" rel="noopener noreferrer">
+                        <img src="https://img.shields.io/pypi/dm/iopenpod?style=for-the-badge&logo=python&logoColor=white&color=0a6fdb&label=Active%20Users" alt="PyPI Downloads">
+                    </a>
+                </div>
                 <p class="tagline">Browse albums and tracks, play music, edit metadata, and sync your library. FLAC, artwork, video, photos, podcasts, and audiobooks.</p>
                 <div class="cta">
                     <a href="#install" class="btn btn-primary">Install options</a>
@@ -43,6 +52,7 @@ permalink: /
                          width="1666" height="1090" fetchpriority="high"
                          alt="iOpenPod showing a connected iPod, album artwork browser, playback controls, and track details">
                 </button>
+                <p class="platform-line hero-screenshot__line">Free and open source for Windows, macOS, and Linux.</p>
             </figure>
         </div>
     </header>
@@ -354,6 +364,33 @@ permalink: /
             </p>
         </section>
 
+        <section class="section" id="migration">
+            <div class="section-header">
+                <h2>Migrating from legacy tools</h2>
+            </div>
+            <div class="feature-grid">
+                <div class="feature-card">
+                    <h3>Built for abandoned tools</h3>
+                    <p>iOpenPod is a modern, actively maintained replacement for gtkpod, YamiPod, CopyPod, and EphPod.</p>
+                </div>
+                <div class="feature-card">
+                    <h3>No libgpod dependency problems</h3>
+                    <p>Older iTunes alternatives often depend on the abandoned libgpod C library. iOpenPod uses a custom
+                        pure-Python parsing engine instead, which avoids libgpod warnings and checksum corruption issues on
+                        newer iPods.</p>
+                </div>
+                <div class="feature-card">
+                    <h3>Free on every platform</h3>
+                    <p>Linux, Windows, and macOS builds are fully featured and free, without sponsorship walls or paywalls.</p>
+                </div>
+                <div class="feature-card">
+                    <h3>Safe syncing</h3>
+                    <p>Pre-sync change review and automatic device snapshot backups help keep your iPod database from being
+                        corrupted or wiped during a transfer.</p>
+                </div>
+            </div>
+        </section>
+
         <!-- FAQ -->
         <section class="section">
             <div class="section-header">
@@ -377,6 +414,18 @@ permalink: /
                         <svg aria-hidden="true" class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
                     </summary>
                     <p>Yes. iOpenPod converts unsupported audio and video formats to iPod-compatible output during sync. FFmpeg with ffprobe is required for transcoding and media probing.</p>
+                </details>
+                <details>
+                    <summary>Is iOpenPod related to OpenPod.io or OpenPod?
+                        <svg aria-hidden="true" class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    </summary>
+                    <p>No. iOpenPod is a distinct, active, modern open-source iPod management tool and is not affiliated with OpenPod.io or OpenPod.</p>
+                </details>
+                <details>
+                    <summary>What should I use if I am migrating from gtkpod, YamiPod, CopyPod, EphPod, Strawberry, or Clementine?
+                        <svg aria-hidden="true" class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    </summary>
+                    <p>iOpenPod is a modern replacement for abandoned iPod managers like gtkpod, YamiPod, CopyPod, and EphPod. If you are coming from Strawberry or Clementine, iOpenPod avoids libgpod dependency errors, stays free on Linux, Windows, and macOS, and adds safer sync review with automatic device snapshot backups.</p>
                 </details>
                 <details>
                     <summary>Does it work on Linux and macOS?

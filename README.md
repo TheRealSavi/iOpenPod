@@ -2,10 +2,13 @@
 
 **Sync, manage, and listen to your iPod**
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Platform: Win | Mac | Linux](https://img.shields.io/badge/Platform-Win%20%7C%20Mac%20%7C%20Linux-lightgrey.svg)](#download)
-[![GitHub Release](https://img.shields.io/github/v/release/TheRealSavi/iOpenPod)](https://github.com/TheRealSavi/iOpenPod/releases/latest)
-[![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/9Yy499Tf5d)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=plastic)](LICENSE)
+[![Platform: Win | Mac | Linux](https://img.shields.io/badge/Platform-Win%20%7C%20Mac%20%7C%20Linux-2ea44f.svg?style=plastic)](#download-and-install)
+[![GitHub Release](https://img.shields.io/github/v/release/TheRealSavi/iOpenPod?style=plastic&color=0a6fdb)](https://github.com/TheRealSavi/iOpenPod/releases/latest)
+[![GitHub Stars](https://img.shields.io/github/stars/TheRealSavi/iOpenPod?style=plastic&color=6e5494)](https://github.com/TheRealSavi/iOpenPod/stargazers)
+[![PyPI Downloads](https://img.shields.io/pypi/dm/iopenpod?style=plastic&color=0a6fdb)](https://pypi.org/project/iopenpod/)
+[![Discord](https://img.shields.io/badge/Discord-Join-5865F2?style=plastic)](https://discord.gg/9Yy499Tf5d)
+
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/johngibbons)
 
 iOpenPod is a free, cross-platform iPod manager and iTunes alternative for Linux, macOS, and Windows enabling FLAC to ALAC auto-conversion, iTunesDB metadata editing, and native podcast syncing. Built on Python and PyQt6, it allows you to browse and edit your iPod library, sync media from your PC, and seamlessly preserve iPod-specific database behaviors.
@@ -177,6 +180,16 @@ Please open an issue before starting major changes, or use the [Discord server](
 - [libgpod](https://github.com/gtkpod/libgpod) - C library for iPod database access (the reference implementation this project learned from)
 - [gtkpod](https://github.com/gtkpod/gtkpod) - GTK+ iPod manager
 - [Rockbox](https://www.rockbox.org/) - Open-source firmware replacement for iPods
+
+## Migrating from Legacy Tools & iTunes Alternatives
+
+iOpenPod is built as a modern, actively maintained replacement for abandoned iPod management software like **gtkpod**, **YamiPod**, **CopyPod**, and **EphPod**.
+
+If you are migrating from other open-source iTunes alternatives like **Strawberry Music Player** or **Clementine**, iOpenPod resolves several common device syncing issues:
+
+- **No `libgpod` dependency errors:** Other players rely on the abandoned `libgpod` C library. This often results in "compiled without libgpod support" warnings on Linux, or "unsupported checksum" database corruption when syncing 6th-generation Classics and modern Nanos. iOpenPod utilizes a custom, pure-Python parsing engine to bypass these legacy limitations and safely write modern database checksums.
+- **100% Free on all platforms:** Unlike some alternatives that lock their Windows and macOS builds behind monthly sponsorships or paywalls, iOpenPod provides fully featured native releases for Linux, Windows, and macOS completely free of charge.
+- **Safe Syncing:** Our pre-sync change review and automatic device snapshot backups ensure your iPod's database is never accidentally corrupted or wiped during a transfer.
 
 ---
 

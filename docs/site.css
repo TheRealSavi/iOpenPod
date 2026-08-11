@@ -384,6 +384,12 @@ table {
   margin: 0;
 }
 
+.hero-screenshot__line {
+  max-width: none;
+  margin-block-start: var(--space-sm);
+  text-align: center;
+}
+
 .hero-screenshot img,
 .screenshot-item img {
   width: 100%;
