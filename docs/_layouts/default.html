@@ -7,6 +7,18 @@
   {% capture software_id %}{{ site_home_url }}#softwareapplication{% endcapture %}
   {% capture webpage_id %}{{ canonical_url }}#webpage{% endcapture %}
   {% capture faq_id %}{{ canonical_url }}#faq{% endcapture %}
+  <script>
+  (() => {
+    try {
+      const theme = localStorage.getItem("iopenpod-theme");
+      if (theme === "light" || theme === "dark") {
+        document.documentElement.dataset.theme = theme;
+      }
+    } catch (error) {
+      void error;
+    }
+  })();
+  </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>{{ page.title | default: site.title }}</title>
@@ -39,6 +51,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700&amp;family=Geist:wght@400;700&amp;family=Geist+Mono:wght@400;700&amp;display=swap">
     <link rel="stylesheet" href="{{ '/site.min.css' | relative_url }}">
+    <link rel="stylesheet" href="{{ '/theme.min.css' | relative_url }}">
 
     <script type="application/ld+json">
     {
@@ -112,5 +125,6 @@
 <body class="{{ page.body_class | default: '' }}">
     {{ content }}
     <script src="{{ '/site.min.js' | relative_url }}" defer></script>
+  <script src="{{ '/theme.min.js' | relative_url }}" defer></script>
 </body>
 </html>

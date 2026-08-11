@@ -1,22 +1,22 @@
 /* iOpenPod web design tokens · single runtime source */
 :root {
-  --color-paper: oklch(98% 0.008 250);
-  --color-paper-2: oklch(95% 0.015 250);
-  --color-paper-3: oklch(92% 0.018 250);
-  --color-rule: oklch(86% 0.014 250);
-  --color-rule-2: oklch(74% 0.016 250);
-  --color-neutral: oklch(55% 0.014 250);
-  --color-muted: oklch(43% 0.014 250);
-  --color-ink-2: oklch(32% 0.018 250);
-  --color-ink: oklch(20% 0.020 250);
-  --color-accent: oklch(50% 0.160 250);
-  --color-accent-ink: oklch(98% 0.008 250);
-  --color-focus: oklch(44% 0.190 250);
-  --color-success: oklch(42% 0.130 145);
-  --color-warning: oklch(48% 0.130 75);
-  --color-error: oklch(48% 0.170 25);
-  --color-overlay: oklch(18% 0.018 250 / 72%);
-  --color-shadow: oklch(26% 0.020 250 / 12%);
+  --color-paper: #f0f0f5;
+  --color-paper-2: #e8e8f0;
+  --color-paper-3: #e3e3e8;
+  --color-rule: #d9d9de;
+  --color-rule-2: #c1c1c5;
+  --color-neutral: #6c6c6e;
+  --color-muted: #929295;
+  --color-ink-2: #6c6c6e;
+  --color-ink: #212122;
+  --color-accent: #0a6fdb;
+  --color-accent-ink: #ffffff;
+  --color-focus: #0a6fdb;
+  --color-success: #2b8a3e;
+  --color-warning: #e07700;
+  --color-error: #d9363e;
+  --color-overlay: rgb(255 255 255 / 72%);
+  --color-shadow: rgb(0 0 0 / 12%);
 
   --font-display: "Bricolage Grotesque", "Arial Narrow", sans-serif;
   --font-body: "Geist", "Aptos", sans-serif;

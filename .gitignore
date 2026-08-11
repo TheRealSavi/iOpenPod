@@ -172,6 +172,10 @@ cython_debug/
 /tests/fixtures/fake_music_library
 /docs/flow
 .pytest-bootstrap-safety/
+Gemfile
+Gemfile.lock
+/_site
+/_site-check
 
 # macOS
 .DS_Store
