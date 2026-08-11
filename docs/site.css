@@ -212,11 +212,24 @@ table {
 }
 
 .site-nav {
-  position: relative;
+  position: sticky;
+  inset-block-start: 0;
   z-index: var(--z-sticky);
   min-height: var(--nav-height);
   border-block-end: var(--rule-hair) solid var(--color-rule);
   background-color: var(--color-paper);
+}
+
+.home-page .site-nav,
+.help-page .site-nav {
+  position: fixed;
+  inset-inline: 0;
+  inset-block-start: 0;
+}
+
+.home-page .product-hero,
+.help-page .hero {
+  margin-block-start: var(--nav-height);
 }
 
 .site-nav__inner {
@@ -1263,15 +1276,19 @@ pre,
 }
 
 .site-nav {
-  position: relative;
+  position: sticky;
+  inset-block-start: 0;
   border-block-end: 0;
   background-color: var(--color-paper);
 }
 
 .site-nav__links {
   display: flex;
+  flex-wrap: nowrap;
   align-items: center;
+  justify-content: flex-end;
   gap: var(--space-xs);
+  min-width: 0;
 }
 
 .site-nav__inner,
@@ -1286,6 +1303,7 @@ pre,
 
 .site-nav__links > a {
   display: inline-flex;
+  flex: 0 0 auto;
   min-height: var(--control-hit);
   align-items: center;
   color: var(--color-ink-2);
@@ -1295,8 +1313,44 @@ pre,
   white-space: nowrap;
 }
 
+.site-nav__action {
+  flex: 0 0 auto;
+}
+
 .site-nav__links > a:last-child {
   color: var(--color-accent);
+}
+
+@media (max-width: 44rem) {
+  .home-page .site-nav__links > a[href="https://ko-fi.com/johngibbons"],
+  .help-page .site-nav__links > a[href="https://ko-fi.com/johngibbons"] {
+    display: none;
+  }
+}
+
+@media (max-width: 38rem) {
+  .home-page .site-nav__links > a[href="https://discord.gg/9Yy499Tf5d"],
+  .help-page .site-nav__links > a[href="https://discord.gg/9Yy499Tf5d"] {
+    display: none;
+  }
+
+  .home-page .site-nav__links > a[href="#install"] {
+    display: none;
+  }
+}
+
+@media (max-width: 34rem) {
+  .home-page .site-nav__links > a[href="https://github.com/TheRealSavi/iOpenPod"],
+  .help-page .site-nav__links > a[href="https://github.com/TheRealSavi/iOpenPod"] {
+    display: none;
+  }
+}
+
+@media (max-width: 30rem) {
+  .home-page .site-nav__links > a[href="install-help/"],
+  .help-page .site-nav__links > a[href="../"] {
+    display: none;
+  }
 }
 
 .site-nav__action,

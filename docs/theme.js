@@ -43,7 +43,7 @@
     const currentTheme = activeTheme();
     const nextTheme = currentTheme === "dark" ? "light" : "dark";
 
-    toggle.textContent = nextTheme === "dark" ? "☾" : "☀";
+    toggle.textContent = nextTheme === "dark" ? "🌙" : "☀️";
     toggle.setAttribute("aria-label", `Switch to ${nextTheme} mode`);
     toggle.setAttribute("aria-pressed", currentTheme === "dark" ? "true" : "false");
     toggle.dataset.themeCurrent = currentTheme;
