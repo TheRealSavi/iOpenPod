@@ -1,23 +1,110 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>iOpenPod Install Help and Troubleshooting</title>
-    <meta name="description" content="Friendly iOpenPod install help for Windows, macOS, and Linux, including native builds, uv, pipx, helper tools, and common troubleshooting.">
-    <link rel="canonical" href="https://therealsavi.github.io/iOpenPod/install-help.html">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700&amp;family=Geist:wght@400;700&amp;family=Geist+Mono:wght@400;700&amp;display=swap">
-    <link rel="stylesheet" href="site.css">
-</head>
-<body class="help-page">
+---
+title: iOpenPod Install Help and Troubleshooting
+description: Friendly iOpenPod install help for Windows, macOS, and Linux, including native builds, uv, pipx, helper tools, and common troubleshooting.
+og_title: iOpenPod Install Help and Troubleshooting
+og_description: Step-by-step setup and troubleshooting for iOpenPod on Windows, macOS, and Linux.
+body_class: help-page
+permalink: /install-help/
+---
+        {% capture canonical_url %}{{ site.url }}{{ site.baseurl }}{{ page.url }}{% endcapture %}
+        {% capture site_home_url %}{{ site.url }}{{ site.baseurl }}/{% endcapture %}
+        {% capture software_id %}{{ site_home_url }}#softwareapplication{% endcapture %}
+        {% capture webpage_id %}{{ canonical_url }}#webpage{% endcapture %}
+        <script type="application/ld+json">
+        {
+            "@context": "https://schema.org",
+            "@type": "HowTo",
+            "@id": "{{ canonical_url }}#howto",
+            "name": "Install iOpenPod with uv",
+            "description": "Install iOpenPod with uv and launch it from your terminal.",
+            "url": "{{ canonical_url }}",
+            "isPartOf": { "@id": "{{ webpage_id }}" },
+            "about": { "@id": "{{ software_id }}" },
+            "step": [
+                {
+                    "@type": "HowToStep",
+                    "@id": "{{ canonical_url }}#howto-step-install-uv",
+                    "name": "Install uv if needed",
+                    "text": "If uv is not installed, follow the official uv install guide. Then reopen your terminal."
+                },
+                {
+                    "@type": "HowToStep",
+                    "@id": "{{ canonical_url }}#howto-step-install-iopenpod",
+                    "name": "Install iOpenPod",
+                    "text": "Run: uv tool install iopenpod"
+                },
+                {
+                    "@type": "HowToStep",
+                    "@id": "{{ canonical_url }}#howto-step-launch-iopenpod",
+                    "name": "Launch iOpenPod",
+                    "text": "Run: iopenpod"
+                }
+            ]
+        }
+        </script>
+        <script type="application/ld+json">
+        {
+            "@context": "https://schema.org",
+            "@type": "FAQPage",
+            "@id": "{{ canonical_url }}#faq",
+            "url": "{{ canonical_url }}",
+            "isPartOf": { "@id": "{{ webpage_id }}" },
+            "about": { "@id": "{{ software_id }}" },
+            "mainEntity": [
+                {
+                    "@type": "Question",
+                    "@id": "{{ canonical_url }}#faq-iopenpod-not-recognized",
+                    "name": "iopenpod is not recognized",
+                    "acceptedAnswer": {
+                        "@type": "Answer",
+                        "text": "Your terminal cannot find the command yet. For uv installs, run uv tool update-shell. For pipx installs, run pipx ensurepath. Close and reopen the terminal. On Windows, sign out and back in if PATH still has not updated."
+                    }
+                },
+                {
+                    "@type": "Question",
+                    "@id": "{{ canonical_url }}#faq-pipx-python-too-old",
+                    "name": "pipx install iopenpod says Python is too old",
+                    "acceptedAnswer": {
+                        "@type": "Answer",
+                        "text": "iOpenPod requires Python 3.11 or newer. Run pipx install --python python3.11 iopenpod. On Windows, list installed Python versions with py -0p."
+                    }
+                },
+                {
+                    "@type": "Question",
+                    "@id": "{{ canonical_url }}#faq-uv-cannot-download-python",
+                    "name": "uv tool install iopenpod cannot download Python",
+                    "acceptedAnswer": {
+                        "@type": "Answer",
+                        "text": "Managed computers may block downloads, proxies, or TLS inspection. Try another network, install Python 3.11 or newer yourself, or use a native build."
+                    }
+                },
+                {
+                    "@type": "Question",
+                    "@id": "{{ canonical_url }}#faq-linux-qt-xcb",
+                    "name": "Linux says the Qt xcb platform plugin could not load",
+                    "acceptedAnswer": {
+                        "@type": "Answer",
+                        "text": "A Qt desktop library is missing. On Debian or Ubuntu, start with sudo apt install libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-xkb1 libxkbcommon0 libxkbcommon-x11-0. On a Wayland-only desktop, you can also try QT_QPA_PLATFORM=wayland iopenpod."
+                    }
+                },
+                {
+                    "@type": "Question",
+                    "@id": "{{ canonical_url }}#faq-missing-helper-tools",
+                    "name": "FFmpeg, ffprobe, or fpcalc is missing",
+                    "acceptedAnswer": {
+                        "@type": "Answer",
+                        "text": "Install the missing helper tool, restart iOpenPod, then check with ffmpeg -version, ffprobe -version, and fpcalc -version."
+                    }
+                }
+            ]
+        }
+        </script>
     <a class="skip-link" href="#main-content">Skip to content</a>
     <nav class="site-nav" aria-label="Primary navigation">
         <div class="container site-nav__inner">
-            <a class="site-wordmark" href="./" aria-label="iOpenPod home"><span class="site-wordmark__mark">i</span>OpenPod</a>
+            <a class="site-wordmark" href="../" aria-label="iOpenPod home"><span class="site-wordmark__mark">i</span>OpenPod</a>
             <div class="site-nav__links">
-                <a href="./">Home</a>
+                <a href="../">Home</a>
                 <a href="https://discord.gg/9Yy499Tf5d">Discord</a>
                 <a href="https://ko-fi.com/johngibbons">Donate</a>
             </div>
@@ -25,8 +112,8 @@
     </nav>
     <header class="hero">
         <div class="wrap">
-            <h1>Let’s get iOpenPod running.</h1>
-            <p class="lead">Choose the path that feels right for you. If anything gets in the way, the fixes are organized below.</p>
+            <h1>Get iOpenPod running.</h1>
+            <p class="lead">Pick the install path that fits your machine. If it fails, the fixes are below.</p>
             <div class="button-row">
                 <a class="button-link primary" href="#native">Download the app</a>
                 <a class="button-link" href="#fixes">I need help</a>
@@ -37,13 +124,13 @@
     <div class="wrap page">
         <aside class="sidebar" aria-label="Help navigation">
             <div class="sidebar-inner">
-                <p class="sidebar-title">Find what you need</p>
+                <p class="sidebar-title">Jump to a section</p>
                 <nav class="side-nav">
                     <a href="#start">Start here</a>
-                    <a href="#native">Native apps</a>
+                    <a href="#native">Native builds</a>
                     <a href="#python">uv and pipx</a>
-                    <a href="#tools">Helper tools</a>
-                    <a href="#fixes">Troubleshooting</a>
+                    <a href="#tools">Needed tools</a>
+                    <a href="#fixes">Common fixes</a>
                     <a href="#community">Discord community</a>
                 </nav>
             </div>
@@ -51,13 +138,13 @@
 
         <main id="main-content">
             <section id="start">
-                <h2>Choose what feels easiest</h2>
+                <h2>Pick an install path</h2>
 
                 <div class="option-grid">
                     <article class="choice">
                         <span class="tag">Terminal</span>
                         <h3>Use uv</h3>
-                        <p>Best if you can copy terminal commands. uv keeps iOpenPod isolated and can manage Python for you.</p>
+                        <p>Best if you can copy terminal commands. uv keeps iOpenPod isolated and can handle Python for you.</p>
                         <div class="choice-actions">
                             <div class="button-row">
                                 <a class="button-link" href="#uv-install">uv steps</a>
@@ -92,7 +179,7 @@
             </section>
 
             <section id="native">
-                <h2>Native Apps</h2>
+                <h2>Native builds</h2>
                 <div class="button-row">
                     <a class="button-link primary" href="https://github.com/TheRealSavi/iOpenPod/releases/latest">Latest release</a>
                 </div>
@@ -140,23 +227,23 @@
 
                             <div class="step-gallery" aria-label="macOS security approval screenshots">
                                 <figure class="step-card wide">
-                                    <img src="MacOS_Install_IMGS/macOS_Step1.png" width="1840" height="1368" loading="lazy" alt="Finder window showing iOpenPod.app selected before first launch">
+                                    <img src="MacOS_Install_IMGS/macOS_Step1.webp" width="1840" height="1368" loading="lazy" alt="Finder window showing iOpenPod.app selected before first launch">
                                     <figcaption>1. Open <code>iOpenPod.app</code> from Finder.</figcaption>
                                 </figure>
                                 <figure class="step-card">
-                                    <img src="MacOS_Install_IMGS/macOS_Step2.png" width="520" height="598" loading="lazy" alt="macOS warning dialog saying iOpenPod.app was not opened and showing Done">
+                                    <img src="MacOS_Install_IMGS/macOS_Step2.webp" width="520" height="598" loading="lazy" alt="macOS warning dialog saying iOpenPod.app was not opened and showing Done">
                                     <figcaption>2. Choose <strong>Done</strong>.</figcaption>
                                 </figure>
                                 <figure class="step-card wide">
-                                    <img src="MacOS_Install_IMGS/macOS_Step3.png" width="1446" height="1632" loading="lazy" alt="Privacy and Security settings showing iOpenPod was blocked and an Open Anyway button">
+                                    <img src="MacOS_Install_IMGS/macOS_Step3.webp" width="1446" height="1632" loading="lazy" alt="Privacy and Security settings showing iOpenPod was blocked and an Open Anyway button">
                                     <figcaption>3. Choose <strong>Open Anyway</strong> in Privacy &amp; Security.</figcaption>
                                 </figure>
                                 <figure class="step-card">
-                                    <img src="MacOS_Install_IMGS/macOS_Step4.png" width="520" height="700" loading="lazy" alt="macOS confirmation dialog asking whether to open iOpenPod.app and showing Open Anyway">
+                                    <img src="MacOS_Install_IMGS/macOS_Step4.webp" width="520" height="700" loading="lazy" alt="macOS confirmation dialog asking whether to open iOpenPod.app and showing Open Anyway">
                                     <figcaption>4. Confirm with <strong>Open Anyway</strong>.</figcaption>
                                 </figure>
                                 <figure class="step-card">
-                                    <img src="MacOS_Install_IMGS/macOS_Step5.png" width="520" height="692" loading="lazy" alt="macOS authentication dialog asking for Touch ID or administrator password">
+                                    <img src="MacOS_Install_IMGS/macOS_Step5.webp" width="520" height="692" loading="lazy" alt="macOS authentication dialog asking for Touch ID or administrator password">
                                     <figcaption>5. Use Touch ID or enter an admin password.</figcaption>
                                 </figure>
                             </div>
@@ -233,7 +320,7 @@ pipx uninstall iopenpod</code></pre>
             </section>
 
             <section id="tools">
-                <h2>Helper Tools</h2>
+                <h2>Needed tools</h2>
 
                 <div class="tool-grid">
                     <article class="tool-card">
@@ -310,7 +397,7 @@ ffprobe -version</code></pre>
             </section>
 
             <section id="fixes">
-                <h2>Troubleshooting</h2>
+                <h2>Common fixes</h2>
 
                 <div class="details-list">
                     <details class="help-item">
@@ -518,5 +605,3 @@ python -m pip uninstall iopenpod</code></pre>
             </div>
         </div>
     </footer>
-</body>
-</html>
