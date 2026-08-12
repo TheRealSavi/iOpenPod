@@ -1,3 +1,5 @@
+# Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V4
+# Hallmark · genre: modern-minimal · macrostructure: Workbench · theme: iOpenPod runtime · enrichment: none · contrast: pass
 """
 PlaylistEditor — Create & edit smart and regular playlists.
 
@@ -15,6 +17,7 @@ from datetime import UTC, datetime
 from PyQt6.QtCore import QDate, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QFont, QWheelEvent
 from PyQt6.QtWidgets import (
+    QBoxLayout,
     QCheckBox,
     QComboBox,
     QDateEdit,
@@ -87,7 +90,7 @@ from ..styles import (
     button_css,
     checkbox_css,
     combo_css,
-    danger_btn_css,
+    icon_btn_css,
     input_css,
     make_scroll_area,
     make_separator,
@@ -314,17 +317,19 @@ def _label_css(color: str) -> str:
     return f"color: {color}; background: transparent; border: none;"
 
 
-def _subtle_label_css(color: str | None = None) -> str:
-    if color is None:
-        color = paint_css("text.tertiary")
-    return (
-        f"color: {color}; background: transparent; border: none;"
-        " text-transform: uppercase;"
+def _title_input_css(min_content_height: int) -> str:
+    return title_input_css(min_height=min_content_height)
+
+
+def _configure_title_input(line_edit: QLineEdit) -> None:
+    """Keep title glyphs clear after the application QSS cascade is applied."""
+    line_edit.setFont(QFont(FONT_FAMILY, Metrics.FONT_PAGE_TITLE, QFont.Weight.Bold))
+    min_content_height = max(
+        Design.CONTROL_HEIGHT_LG,
+        line_edit.fontMetrics().height() + (Design.GRID * 2),
     )
-
-
-def _title_input_css() -> str:
-    return title_input_css()
+    line_edit.setStyleSheet(_title_input_css(min_content_height))
+    line_edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
 
 def _editor_panel_css(object_name: str) -> str:
@@ -344,7 +349,7 @@ def _editor_notice_css(object_name: str) -> str:
     )
 
 
-def _section_header(text: str) -> QWidget:
+def _section_toolbar(text: str, *actions: QPushButton) -> QWidget:
     widget = QWidget()
     widget.setStyleSheet("background: transparent; border: none;")
     layout = QHBoxLayout(widget)
@@ -352,10 +357,12 @@ def _section_header(text: str) -> QWidget:
     layout.setSpacing(8)
 
     label = QLabel(text, widget)
-    label.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS, QFont.Weight.Bold))
-    label.setStyleSheet(_subtle_label_css(paint_css("text.secondary")))
+    label.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG, QFont.Weight.DemiBold))
+    label.setStyleSheet(_label_css(paint_css("text.primary")))
     layout.addWidget(label)
-    layout.addWidget(make_separator(), 1)
+    layout.addStretch()
+    for action in actions:
+        layout.addWidget(action)
     return widget
 
 
@@ -366,8 +373,32 @@ def _section_label_style() -> str:
     )
 
 
+def _rule_action_btn_css() -> str:
+    return (
+        button_css("secondary", "sm")
+        + f"""
+        QPushButton:focus {{
+            border-color: {paint_css("focus.border")};
+        }}
+    """
+    )
+
+
 def _remove_btn_css() -> str:
-    return danger_btn_css("sm")
+    return (
+        icon_btn_css(
+            bg=paint_css("surface.raised"),
+            bg_hover=paint_css("status.danger.subtle_fill"),
+            bg_press=paint_css("status.danger.hover_fill"),
+            fg=paint_css("status.danger.text"),
+            border=f"1px solid {paint_css('border.subtle')}",
+        )
+        + f"""
+        QPushButton:focus {{
+            border-color: {paint_css("focus.border")};
+        }}
+    """
+    )
 
 
 class _RuleComboBox(QComboBox):
@@ -429,7 +460,7 @@ class SmartRuleRow(QFrame):
         self._original_rule: dict = {}
 
         self._layout = QHBoxLayout(self)
-        self._layout.setContentsMargins(0, 5, 0, 5)
+        self._layout.setContentsMargins(0, 4, 0, 4)
         self._layout.setSpacing(8)
 
         # ── Field selector ──
@@ -465,17 +496,17 @@ class SmartRuleRow(QFrame):
 
         # ── Remove button ──
         self.remove_btn = QPushButton()
-        _close_ic = glyph_icon("close", 12, paint_css("status.danger.text"))
+        _close_ic = glyph_icon("trash", 14, paint_css("status.danger.text"))
         if _close_ic:
             self.remove_btn.setIcon(_close_ic)
         else:
-            self.remove_btn.setText("✕")
+            self.remove_btn.setText("−")
         self.remove_btn.setFixedSize(
             Design.ICON_BUTTON_SIZE,
             Design.ICON_BUTTON_SIZE,
         )
         self.remove_btn.setStyleSheet(_remove_btn_css())
-        self.remove_btn.setToolTip("Remove this rule")
+        self.remove_btn.setToolTip("Delete rule")
         self.remove_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.remove_btn.clicked.connect(lambda: self.remove_clicked.emit(self))
         self._layout.addWidget(self.remove_btn)
@@ -923,26 +954,26 @@ class SmartRuleGroup(QFrame):
         parent: QWidget | None = None,
         *,
         playlist_options: list[tuple[int, str]] | None = None,
+        depth: int = 1,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("smartRuleGroup")
-        self.setStyleSheet(
-            f"QFrame#smartRuleGroup {{ background: {paint_css('surface.default')};"
-            f" border: 1px solid {paint_css('border.subtle')};"
-            f" border-radius: {Metrics.BORDER_RADIUS_SM}px; }}"
-        )
+        self._depth = max(1, int(depth))
+        group_fill = paint_css("table.row.alternate_fill") if self._depth % 2 else paint_css("table.row.fill")
+        self.setStyleSheet(f"QFrame#smartRuleGroup {{ background: {group_fill}; border: 1px solid {paint_css('border.subtle')}; border-radius: {Metrics.BORDER_RADIUS_SM}px; }}")
+        self.setProperty("ruleGroupDepth", self._depth)
         self._playlist_options = playlist_options or []
         self._items: list[SmartRuleRow | SmartRuleGroup] = []
         self._rule_metadata: dict = {}
         self._group_metadata: dict = {"unk004": 0x00010001}
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 8, 10, 9)
-        layout.setSpacing(5)
+        layout.setContentsMargins(12, 8, 12, 12)
+        layout.setSpacing(8)
 
         header = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
-        header.setSpacing(6)
+        header.setSpacing(8)
 
         label = QLabel("Match")
         label.setStyleSheet(_label_css(paint_css("text.secondary")))
@@ -953,7 +984,7 @@ class SmartRuleGroup(QFrame):
         self.conjunction_combo.setStyleSheet(_combo_css())
         self.conjunction_combo.addItem("all", "AND")
         self.conjunction_combo.addItem("any", "OR")
-        self.conjunction_combo.setFixedWidth(70)
+        self.conjunction_combo.setFixedWidth(72)
         self.conjunction_combo.currentIndexChanged.connect(self.changed.emit)
         header.addWidget(self.conjunction_combo)
 
@@ -964,19 +995,45 @@ class SmartRuleGroup(QFrame):
 
         self.add_rule_btn = QPushButton("Add Rule")
         self.add_rule_btn.setObjectName("smartRuleGroupAddRule")
-        self.add_rule_btn.setStyleSheet(button_css("quiet", "sm"))
+        self.add_rule_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        add_rule_icon = glyph_icon("plus", 14, paint_css("text.secondary"))
+        if add_rule_icon is not None:
+            self.add_rule_btn.setIcon(add_rule_icon)
+            self.add_rule_btn.setIconSize(QSize(14, 14))
+        self.add_rule_btn.setStyleSheet(_rule_action_btn_css())
+        self.add_rule_btn.setToolTip("Add a rule to this group")
+        self.add_rule_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.add_rule_btn.clicked.connect(self.add_rule)
         header.addWidget(self.add_rule_btn)
 
         self.add_group_btn = QPushButton("Add Group")
         self.add_group_btn.setObjectName("smartRuleGroupAddGroup")
-        self.add_group_btn.setStyleSheet(button_css("quiet", "sm"))
+        self.add_group_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        add_group_icon = glyph_icon("folder", 14, paint_css("text.secondary"))
+        if add_group_icon is not None:
+            self.add_group_btn.setIcon(add_group_icon)
+            self.add_group_btn.setIconSize(QSize(14, 14))
+        self.add_group_btn.setStyleSheet(_rule_action_btn_css())
+        self.add_group_btn.setToolTip("Add a nested rule group")
+        self.add_group_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.add_group_btn.clicked.connect(self.add_group)
         header.addWidget(self.add_group_btn)
 
-        self.remove_btn = QPushButton("Remove Group")
+        self.remove_btn = QPushButton()
         self.remove_btn.setObjectName("smartRuleGroupRemove")
+        remove_icon = glyph_icon("trash", 14, paint_css("status.danger.text"))
+        if remove_icon is not None:
+            self.remove_btn.setIcon(remove_icon)
+            self.remove_btn.setIconSize(QSize(14, 14))
+        else:
+            self.remove_btn.setText("−")
+        self.remove_btn.setFixedSize(
+            Design.ICON_BUTTON_SIZE,
+            Design.ICON_BUTTON_SIZE,
+        )
         self.remove_btn.setStyleSheet(_remove_btn_css())
+        self.remove_btn.setToolTip("Delete group")
+        self.remove_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.remove_btn.clicked.connect(lambda: self.remove_clicked.emit(self))
         header.addWidget(self.remove_btn)
         layout.addLayout(header)
@@ -984,7 +1041,7 @@ class SmartRuleGroup(QFrame):
         self._items_widget = QWidget(self)
         self._items_widget.setStyleSheet("background: transparent; border: none;")
         self._items_layout = QVBoxLayout(self._items_widget)
-        self._items_layout.setContentsMargins(14, 0, 0, 0)
+        self._items_layout.setContentsMargins(16, 0, 0, 0)
         self._items_layout.setSpacing(4)
         self._items_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         layout.addWidget(self._items_widget)
@@ -1040,7 +1097,10 @@ class SmartRuleGroup(QFrame):
         return row
 
     def add_group(self) -> SmartRuleGroup:
-        group = SmartRuleGroup(playlist_options=self._playlist_options)
+        group = SmartRuleGroup(
+            playlist_options=self._playlist_options,
+            depth=self._depth + 1,
+        )
         group.remove_clicked.connect(self._remove_item)
         group.changed.connect(self.changed.emit)
         group.add_rule()
@@ -1056,7 +1116,10 @@ class SmartRuleGroup(QFrame):
 
     def _add_rule_data(self, rule: dict) -> SmartRuleRow | SmartRuleGroup:
         if isinstance(rule.get("group"), dict):
-            group = SmartRuleGroup(playlist_options=self._playlist_options)
+            group = SmartRuleGroup(
+                playlist_options=self._playlist_options,
+                depth=self._depth + 1,
+            )
             group.remove_clicked.connect(self._remove_item)
             group.changed.connect(self.changed.emit)
             group.set_rule_data(rule)
@@ -1084,29 +1147,27 @@ class SmartPlaylistEditor(QFrame):
 
     saved = pyqtSignal(dict)      # emits the full playlist dict
     cancelled = pyqtSignal()
+    preview_changed = pyqtSignal()
     _RULES_PANEL_MIN_HEIGHT = 220
     _RULES_SCROLL_MIN_HEIGHT = 150
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setObjectName("smartPlaylistEditor")
-        self.setStyleSheet(panel_css(
-            "smartPlaylistEditor",
-            radius=Metrics.BORDER_RADIUS_LG,
-        ))
+        self.setStyleSheet(f"QFrame#smartPlaylistEditor {{ background: {paint_css('surface.default')}; border: none; }}")
 
         self._editing_playlist: dict | None = None  # None → new playlist
         self._playlist_rows: list[dict] = []
         self._playlist_options: list[tuple[int, str]] = []
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(16, 14, 16, 14)
-        root.setSpacing(10)
+        root.setContentsMargins(16, 16, 16, 16)
+        root.setSpacing(12)
 
         # ── Identity + actions ─────────────────────────────────
         header = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
-        header.setSpacing(10)
+        header.setSpacing(12)
 
         title_col = QVBoxLayout()
         title_col.setContentsMargins(0, 0, 0, 0)
@@ -1114,8 +1175,7 @@ class SmartPlaylistEditor(QFrame):
 
         self.name_input = QLineEdit()
         self.name_input.setPlaceholderText("Playlist Name")
-        self.name_input.setFont(QFont(FONT_FAMILY, Metrics.FONT_PAGE_TITLE, QFont.Weight.Bold))
-        self.name_input.setStyleSheet(_title_input_css())
+        _configure_title_input(self.name_input)
         title_col.addWidget(self.name_input)
 
         self.description_input = QLineEdit()
@@ -1124,26 +1184,11 @@ class SmartPlaylistEditor(QFrame):
         self.description_input.setStyleSheet(_input_css())
         title_col.addWidget(self.description_input)
 
-        meta_row = QHBoxLayout()
-        meta_row.setContentsMargins(0, 0, 0, 0)
-        meta_row.setSpacing(6)
-
-        type_label = QLabel("Smart Playlist Editor")
-        type_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS, QFont.Weight.Bold))
-        type_label.setStyleSheet(_subtle_label_css(paint_css("text.secondary")))
-        meta_row.addWidget(type_label, 0, Qt.AlignmentFlag.AlignVCenter)
-
-        source_label = QLabel("Rule-based playlist")
-        source_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS))
-        source_label.setStyleSheet(_label_css(paint_css("text.tertiary")))
-        meta_row.addWidget(source_label, 0, Qt.AlignmentFlag.AlignVCenter)
-        meta_row.addStretch()
-        title_col.addLayout(meta_row)
         header.addLayout(title_col, 1)
 
         btn_row = QHBoxLayout()
         btn_row.setContentsMargins(0, 0, 0, 0)
-        btn_row.setSpacing(6)
+        btn_row.setSpacing(8)
 
         self.cancel_btn = QPushButton("Cancel")
         self.cancel_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
@@ -1167,20 +1212,44 @@ class SmartPlaylistEditor(QFrame):
         root.addLayout(header)
         root.addWidget(make_separator())
 
-        root.addWidget(_section_header("Rules"))
+        body = QBoxLayout(QBoxLayout.Direction.LeftToRight)
+        body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(16)
+        self._body_layout = body
+
+        rules_column = QVBoxLayout()
+        rules_column.setContentsMargins(0, 0, 0, 0)
+        rules_column.setSpacing(8)
+
+        settings_column_widget = QWidget()
+        settings_column_widget.setObjectName("smartPlaylistSettingsRail")
+        settings_column_widget.setStyleSheet("background: transparent; border: none;")
+        settings_column_widget.setMinimumWidth(320)
+        settings_column_widget.setMaximumWidth(420)
+        self._settings_rail = settings_column_widget
+        settings_column = QVBoxLayout(settings_column_widget)
+        settings_column.setContentsMargins(0, 0, 0, 0)
+        settings_column.setSpacing(8)
 
         rules_panel = QFrame()
         rules_panel.setObjectName("smartPlaylistRulesPanel")
-        rules_panel.setStyleSheet(_editor_panel_css("smartPlaylistRulesPanel"))
+        rules_panel.setStyleSheet(
+            panel_css(
+                "smartPlaylistRulesPanel",
+                bg=paint_css("table.row.fill"),
+                border=f"1px solid {paint_css('border.subtle')}",
+                radius=Metrics.BORDER_RADIUS_SM,
+            )
+        )
         rules_panel.setMinimumHeight(self._RULES_PANEL_MIN_HEIGHT)
         rules_panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         rules_panel_layout = QVBoxLayout(rules_panel)
-        rules_panel_layout.setContentsMargins(12, 10, 12, 12)
+        rules_panel_layout.setContentsMargins(12, 12, 12, 12)
         rules_panel_layout.setSpacing(8)
 
         conj_row = QHBoxLayout()
         conj_row.setContentsMargins(0, 0, 0, 0)
-        conj_row.setSpacing(6)
+        conj_row.setSpacing(8)
 
         lbl = QLabel("Match")
         lbl.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
@@ -1191,7 +1260,8 @@ class SmartPlaylistEditor(QFrame):
         self.conjunction_combo.setStyleSheet(_combo_css())
         self.conjunction_combo.addItem("all", "AND")
         self.conjunction_combo.addItem("any", "OR")
-        self.conjunction_combo.setFixedWidth(70)
+        self.conjunction_combo.setFixedWidth(72)
+        self.conjunction_combo.currentIndexChanged.connect(self._notify_preview_changed)
         conj_row.addWidget(self.conjunction_combo)
 
         lbl2 = QLabel("of the following rules")
@@ -1207,17 +1277,21 @@ class SmartPlaylistEditor(QFrame):
         if _add_ic:
             self.add_rule_btn.setIcon(_add_ic)
             self.add_rule_btn.setIconSize(QSize(14, 14))
-        self.add_rule_btn.setStyleSheet(button_css("quiet", "sm"))
+        self.add_rule_btn.setStyleSheet(_rule_action_btn_css())
+        self.add_rule_btn.setToolTip("Add a rule")
         self.add_rule_btn.clicked.connect(self._add_empty_rule)
-        conj_row.addWidget(self.add_rule_btn, 0, Qt.AlignmentFlag.AlignRight)
 
         self.add_group_btn = QPushButton("Add Group")
         self.add_group_btn.setObjectName("smartPlaylistAddGroup")
         self.add_group_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.add_group_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.add_group_btn.setStyleSheet(button_css("quiet", "sm"))
+        _group_ic = glyph_icon("folder", 14, paint_css("text.secondary"))
+        if _group_ic:
+            self.add_group_btn.setIcon(_group_ic)
+            self.add_group_btn.setIconSize(QSize(14, 14))
+        self.add_group_btn.setStyleSheet(_rule_action_btn_css())
+        self.add_group_btn.setToolTip("Add a nested rule group")
         self.add_group_btn.clicked.connect(self._add_group)
-        conj_row.addWidget(self.add_group_btn, 0, Qt.AlignmentFlag.AlignRight)
         rules_panel_layout.addLayout(conj_row)
 
         self._rules_scroll = make_scroll_area(
@@ -1237,7 +1311,7 @@ class SmartPlaylistEditor(QFrame):
         self._rules_widget = QWidget()
         self._rules_widget.setStyleSheet("background: transparent;")
         self._rules_layout = QVBoxLayout(self._rules_widget)
-        self._rules_layout.setContentsMargins(0, 2, 0, 2)
+        self._rules_layout.setContentsMargins(0, 4, 0, 4)
         self._rules_layout.setSpacing(4)
         self._rules_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self._rules_scroll.setWidget(self._rules_widget)
@@ -1245,20 +1319,19 @@ class SmartPlaylistEditor(QFrame):
 
         self._rule_rows: list[SmartRuleRow | SmartRuleGroup] = []
         self._rules_metadata: dict = {"unk004": 0x00010001}
-        root.addWidget(rules_panel, stretch=1)
-
-        root.addWidget(_section_header("Behavior"))
+        rules_column.addWidget(_section_toolbar("Rules", self.add_rule_btn, self.add_group_btn))
+        rules_column.addWidget(rules_panel, stretch=1)
 
         opts_panel = QFrame()
         opts_panel.setObjectName("smartPlaylistBehaviorPanel")
         opts_panel.setStyleSheet(_editor_panel_css("smartPlaylistBehaviorPanel"))
         opts = QVBoxLayout(opts_panel)
-        opts.setContentsMargins(10, 8, 10, 9)
+        opts.setContentsMargins(12, 12, 12, 12)
         opts.setSpacing(8)
 
         parent_row = QHBoxLayout()
         parent_row.setContentsMargins(0, 0, 0, 0)
-        parent_row.setSpacing(6)
+        parent_row.setSpacing(8)
         self.parent_folder_label = QLabel("Parent Folder")
         self.parent_folder_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.parent_folder_label.setStyleSheet(_label_css(paint_css("text.secondary")))
@@ -1276,7 +1349,7 @@ class SmartPlaylistEditor(QFrame):
         # Limit row
         limit_row = QHBoxLayout()
         limit_row.setContentsMargins(0, 0, 0, 0)
-        limit_row.setSpacing(6)
+        limit_row.setSpacing(8)
 
         self.limit_check = QCheckBox("Limit to")
         self.limit_check.setStyleSheet(_checkbox_css())
@@ -1289,6 +1362,7 @@ class SmartPlaylistEditor(QFrame):
         self.limit_value_spin.setStyleSheet(_spinbox_css())
         self.limit_value_spin.setFixedWidth(80)
         self.limit_value_spin.setEnabled(False)
+        self.limit_value_spin.valueChanged.connect(self._notify_preview_changed)
         limit_row.addWidget(self.limit_value_spin)
 
         self.limit_type_combo = QComboBox()
@@ -1297,14 +1371,18 @@ class SmartPlaylistEditor(QFrame):
             self.limit_type_combo.addItem(lt_name, lt_id)
         self.limit_type_combo.setFixedWidth(90)
         self.limit_type_combo.setEnabled(False)
+        self.limit_type_combo.currentIndexChanged.connect(self._notify_preview_changed)
         limit_row.addWidget(self.limit_type_combo)
+        limit_row.addStretch()
+        opts.addLayout(limit_row)
 
-        self._selected_by_label = QLabel("selected by")
-        self._selected_by_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_LG))
-        self._selected_by_label.setStyleSheet(
-            f"color: {paint_css('text.primary')}; background: transparent; border: none;"
-        )
-        limit_row.addWidget(self._selected_by_label)
+        selected_by_row = QHBoxLayout()
+        selected_by_row.setContentsMargins(0, 0, 0, 0)
+        selected_by_row.setSpacing(8)
+        self._selected_by_label = QLabel("Select by")
+        self._selected_by_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
+        self._selected_by_label.setStyleSheet(f"color: {paint_css('text.secondary')}; background: transparent; border: none;")
+        selected_by_row.addWidget(self._selected_by_label)
 
         self.limit_sort_combo = QComboBox()
         self.limit_sort_combo.setStyleSheet(_combo_css())
@@ -1312,15 +1390,16 @@ class SmartPlaylistEditor(QFrame):
             self.limit_sort_combo.addItem(ls_name, ls_id)
         self.limit_sort_combo.setFixedWidth(170)
         self.limit_sort_combo.setEnabled(False)
-        limit_row.addWidget(self.limit_sort_combo)
-
-        limit_row.addStretch()
-        opts.addLayout(limit_row)
+        self.limit_sort_combo.currentIndexChanged.connect(self._notify_preview_changed)
+        selected_by_row.addWidget(self.limit_sort_combo)
+        selected_by_row.addStretch()
+        opts.addLayout(selected_by_row)
 
         # Rule matching
         self.check_rules_check = QCheckBox("Match rules")
         self.check_rules_check.setStyleSheet(_checkbox_css())
         self.check_rules_check.setChecked(True)
+        self.check_rules_check.toggled.connect(self._notify_preview_changed)
         opts.addWidget(self.check_rules_check)
 
         # Live updating
@@ -1332,12 +1411,13 @@ class SmartPlaylistEditor(QFrame):
         # Match only checked
         self.match_checked_check = QCheckBox("Match only checked items")
         self.match_checked_check.setStyleSheet(_checkbox_css())
+        self.match_checked_check.toggled.connect(self._notify_preview_changed)
         opts.addWidget(self.match_checked_check)
 
         # Sort order
         sort_row = QHBoxLayout()
         sort_row.setContentsMargins(0, 0, 0, 0)
-        sort_row.setSpacing(6)
+        sort_row.setSpacing(8)
         sort_lbl = QLabel("Sort Order")
         sort_lbl.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         sort_lbl.setStyleSheet(_label_css(paint_css("text.secondary")))
@@ -1348,11 +1428,29 @@ class SmartPlaylistEditor(QFrame):
         self.sort_combo.setFixedWidth(170)
         for s_id, s_name in PLAYLIST_SORT_ORDERS:
             self.sort_combo.addItem(s_name, s_id)
+        self.sort_combo.currentIndexChanged.connect(self._notify_preview_changed)
         sort_row.addWidget(self.sort_combo)
         sort_row.addStretch()
         opts.addLayout(sort_row)
 
-        root.addWidget(opts_panel)
+        settings_column.addWidget(_section_toolbar("Behavior"))
+        settings_column.addWidget(opts_panel)
+        settings_column.addStretch()
+
+        body.addLayout(rules_column, 1)
+        body.addWidget(settings_column_widget)
+        root.addLayout(body, 1)
+        self._update_body_layout()
+
+    def resizeEvent(self, a0) -> None:
+        super().resizeEvent(a0)
+        self._update_body_layout()
+
+    def _update_body_layout(self) -> None:
+        compact = self.width() < 960
+        self._body_layout.setDirection(QBoxLayout.Direction.TopToBottom if compact else QBoxLayout.Direction.LeftToRight)
+        self._settings_rail.setMinimumWidth(0 if compact else 320)
+        self._settings_rail.setMaximumWidth(16777215 if compact else 420)
 
     # ─────────────────────────────────────────────────────────────
     # Public API
@@ -1461,6 +1559,31 @@ class SmartPlaylistEditor(QFrame):
         Returns a dict with keys matching the parsed playlist format:
             Title, isSmartPlaylist, smart_playlist_data, smart_playlist_rules, _isNew
         """
+        smart_state = self._smart_state()
+
+        changes = {
+            "Title": self.name_input.text().strip() or "Untitled Playlist",
+            "_isNew": self._editing_playlist is None,
+            "_source": "regular",
+            "sort_order": self.sort_combo.currentData() or 1,
+            "parent_folder_playlist_id": self.parent_folder_combo.currentData() or 0,
+            "unk0x30_playlist_ref": self.parent_folder_combo.currentData() or 0,
+            "smart_playlist_data": smart_state["smart_playlist_data"],
+            "smart_playlist_rules": smart_state["smart_playlist_rules"],
+        }
+        changes.update(
+            playlist_description_update_fields(
+                self.description_input.text().strip(),
+                self._editing_playlist,
+            )
+        )
+        return playlist_edit_payload(self._editing_playlist, changes)
+
+    def get_preview_data(self) -> dict:
+        """Return the current rule state used by the transient live preview."""
+        return self._smart_state()
+
+    def _smart_state(self) -> dict:
         rules = [row.get_rule_data() for row in self._rule_rows]
         rules_data = dict(self._rules_metadata)
         rules_data.update({
@@ -1470,13 +1593,7 @@ class SmartPlaylistEditor(QFrame):
         if "rule_count" in rules_data:
             rules_data["rule_count"] = len(rules)
 
-        changes = {
-            "Title": self.name_input.text().strip() or "Untitled Playlist",
-            "_isNew": self._editing_playlist is None,
-            "_source": "regular",
-            "sort_order": self.sort_combo.currentData() or 1,
-            "parent_folder_playlist_id": self.parent_folder_combo.currentData() or 0,
-            "unk0x30_playlist_ref": self.parent_folder_combo.currentData() or 0,
+        return {
             "smart_playlist_data": {
                 "live_update": self.live_update_check.isChecked(),
                 "check_rules": self.check_rules_check.isChecked(),
@@ -1487,14 +1604,8 @@ class SmartPlaylistEditor(QFrame):
                 "match_checked_only": self.match_checked_check.isChecked(),
             },
             "smart_playlist_rules": rules_data,
+            "sort_order": self.sort_combo.currentData() or 1,
         }
-        changes.update(
-            playlist_description_update_fields(
-                self.description_input.text().strip(),
-                self._editing_playlist,
-            )
-        )
-        return playlist_edit_payload(self._editing_playlist, changes)
 
     # ─────────────────────────────────────────────────────────────
     # Internal
@@ -1526,14 +1637,19 @@ class SmartPlaylistEditor(QFrame):
     def _add_empty_rule(self) -> SmartRuleRow:
         row = SmartRuleRow(playlist_options=self._playlist_options)
         row.remove_clicked.connect(self._remove_rule)
-        row.changed.connect(lambda: None)  # future: live preview
+        row.changed.connect(self._notify_preview_changed)
         self._rules_layout.addWidget(row)
         self._rule_rows.append(row)
+        self._notify_preview_changed()
         return row
 
     def _add_group(self) -> SmartRuleGroup:
-        group = SmartRuleGroup(playlist_options=self._playlist_options)
+        group = SmartRuleGroup(
+            playlist_options=self._playlist_options,
+            depth=1,
+        )
         group.remove_clicked.connect(self._remove_rule)
+        group.changed.connect(self._notify_preview_changed)
         group.add_rule()
         self._rules_layout.addWidget(group)
         self._rule_rows.append(group)
@@ -1541,14 +1657,18 @@ class SmartPlaylistEditor(QFrame):
 
     def _add_rule_data(self, rule: dict) -> SmartRuleRow | SmartRuleGroup:
         if isinstance(rule.get("group"), dict):
-            group = SmartRuleGroup(playlist_options=self._playlist_options)
+            group = SmartRuleGroup(
+                playlist_options=self._playlist_options,
+                depth=1,
+            )
             group.remove_clicked.connect(self._remove_rule)
+            group.changed.connect(self._notify_preview_changed)
             group.set_rule_data(rule)
             item: SmartRuleRow | SmartRuleGroup = group
         else:
             row = SmartRuleRow(playlist_options=self._playlist_options)
             row.remove_clicked.connect(self._remove_rule)
-            row.changed.connect(lambda: None)
+            row.changed.connect(self._notify_preview_changed)
             row.set_rule_data(rule)
             item = row
         self._rules_layout.addWidget(item)
@@ -1559,6 +1679,7 @@ class SmartPlaylistEditor(QFrame):
         if row in self._rule_rows:
             self._rule_rows.remove(row)
             _delete_embedded_widget(row)
+            self._notify_preview_changed()
 
     def _clear_rules(self) -> None:
         for row in self._rule_rows:
@@ -1569,6 +1690,10 @@ class SmartPlaylistEditor(QFrame):
         self.limit_value_spin.setEnabled(checked)
         self.limit_type_combo.setEnabled(checked)
         self.limit_sort_combo.setEnabled(checked)
+        self._notify_preview_changed()
+
+    def _notify_preview_changed(self, *_args) -> None:
+        self.preview_changed.emit()
 
     def _on_save(self) -> None:
         data = self.get_playlist_data()
@@ -1623,23 +1748,20 @@ class RegularPlaylistEditor(QFrame):
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setObjectName("regularPlaylistEditor")
-        self.setStyleSheet(panel_css(
-            "regularPlaylistEditor",
-            radius=Metrics.BORDER_RADIUS_LG,
-        ))
+        self.setStyleSheet(f"QFrame#regularPlaylistEditor {{ background: {paint_css('surface.default')}; border: none; }}")
 
         self._editing_playlist: dict | None = None  # None → new playlist
         self._creating_folder = False
         self._playlist_rows: list[dict] = []
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(16, 14, 16, 14)
-        root.setSpacing(10)
+        root.setContentsMargins(16, 16, 16, 16)
+        root.setSpacing(12)
 
         # ── Identity + actions ─────────────────────────────────
         header = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
-        header.setSpacing(10)
+        header.setSpacing(12)
 
         title_col = QVBoxLayout()
         title_col.setContentsMargins(0, 0, 0, 0)
@@ -1647,8 +1769,7 @@ class RegularPlaylistEditor(QFrame):
 
         self.name_input = QLineEdit()
         self.name_input.setPlaceholderText("Playlist Name")
-        self.name_input.setFont(QFont(FONT_FAMILY, Metrics.FONT_PAGE_TITLE, QFont.Weight.Bold))
-        self.name_input.setStyleSheet(_title_input_css())
+        _configure_title_input(self.name_input)
         title_col.addWidget(self.name_input)
 
         self.description_input = QLineEdit()
@@ -1657,26 +1778,11 @@ class RegularPlaylistEditor(QFrame):
         self.description_input.setStyleSheet(_input_css())
         title_col.addWidget(self.description_input)
 
-        meta_row = QHBoxLayout()
-        meta_row.setContentsMargins(0, 0, 0, 0)
-        meta_row.setSpacing(6)
-
-        self.type_label = QLabel("Playlist Editor")
-        self.type_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS, QFont.Weight.Bold))
-        self.type_label.setStyleSheet(_subtle_label_css(paint_css("text.secondary")))
-        meta_row.addWidget(self.type_label, 0, Qt.AlignmentFlag.AlignVCenter)
-
-        self.source_label = QLabel("Manual track playlist")
-        self.source_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_XS))
-        self.source_label.setStyleSheet(_label_css(paint_css("text.tertiary")))
-        meta_row.addWidget(self.source_label, 0, Qt.AlignmentFlag.AlignVCenter)
-        meta_row.addStretch()
-        title_col.addLayout(meta_row)
         header.addLayout(title_col, 1)
 
         btn_row = QHBoxLayout()
         btn_row.setContentsMargins(0, 0, 0, 0)
-        btn_row.setSpacing(6)
+        btn_row.setSpacing(8)
 
         self.cancel_btn = QPushButton("Cancel")
         self.cancel_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
@@ -1700,11 +1806,12 @@ class RegularPlaylistEditor(QFrame):
         root.addLayout(header)
         root.addWidget(make_separator())
 
-        root.addWidget(_section_header("Settings"))
+        root.addWidget(_section_toolbar("Details"))
 
         settings_panel = QFrame()
         settings_panel.setObjectName("regularPlaylistSettingsPanel")
         settings_panel.setStyleSheet(_editor_panel_css("regularPlaylistSettingsPanel"))
+        settings_panel.setMaximumWidth(640)
         settings_layout = QVBoxLayout(settings_panel)
         settings_layout.setContentsMargins(10, 8, 10, 9)
         settings_layout.setSpacing(8)
@@ -1767,7 +1874,7 @@ class RegularPlaylistEditor(QFrame):
         note_layout.addWidget(note_icon, 0, Qt.AlignmentFlag.AlignTop)
 
         self.note_text = QLabel(
-            "To add tracks, right-click a library track and choose this playlist from Add to Playlist.",
+            "Add tracks from the library: right-click a track, then choose Add to Playlist.",
             add_tracks_note,
         )
         self.note_text.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
@@ -1915,20 +2022,11 @@ class RegularPlaylistEditor(QFrame):
         self.parent_folder_combo.setVisible(True)
         self.parent_folder_combo.setEnabled(True)
         if self._creating_folder:
-            self.type_label.setText("Playlist Folder Editor")
-            self.source_label.setText("Groups playlists and aggregates their tracks")
-            self.note_text.setText(
-                "Folder contents are managed by moving playlists into or out of this folder."
-            )
+            self.note_text.setText("Move playlists into or out of this folder from the playlist sidebar.")
             self.save_btn.setText("Save Folder")
         else:
-            self.type_label.setText("Playlist Editor")
-            self.source_label.setText("Manual track playlist")
-            self.note_text.setText(
-                "To add tracks, right-click a library track and choose this playlist "
-                "from Add to Playlist."
-            )
-            self.save_btn.setText("Save")
+            self.note_text.setText("Add tracks from the library: right-click a track, then choose Add to Playlist.")
+            self.save_btn.setText("Save Playlist")
 
     def _on_save(self) -> None:
         data = self.get_playlist_data()

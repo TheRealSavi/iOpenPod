@@ -1506,9 +1506,6 @@ class MusicBrowserList(QFrame):
             track_id_index: Mapping of trackID -> full track dict.
             playlist: The playlist dict (stored for context menu actions).
         """
-        self._current_filter = {"type": "playlist"}
-        self._is_playlist_mode = True
-        self._current_playlist = playlist
         # Resolve trackIDs to track dicts, preserving playlist order
         tracks: list[dict] = []
         for tid in track_ids:
@@ -1523,6 +1520,31 @@ class MusicBrowserList(QFrame):
                 from iopenpod.sync._playlist_builder import sort_tracks_by_order
                 tracks = sort_tracks_by_order(tracks, sort_order)
 
+        self._show_playlist_tracks(tracks, playlist, filter_type="playlist")
+
+    def showComputedPlaylist(
+        self,
+        tracks: list[dict],
+        playlist: dict | None = None,
+    ) -> None:
+        """Show an already evaluated and sorted transient playlist result.
+
+        The expensive matching and sorting work is expected to be complete.
+        Table rows are still populated incrementally by ``_populate_table``.
+        """
+        self._show_playlist_tracks(tracks, playlist, filter_type="playlist_preview")
+
+    def _show_playlist_tracks(
+        self,
+        tracks: list[dict],
+        playlist: dict | None,
+        *,
+        filter_type: str,
+    ) -> None:
+        self._current_filter = {"type": filter_type}
+        self._is_playlist_mode = True
+        self._current_playlist = playlist
+        self._search_text_cache.clear()
         self._set_track_scope(tracks)
         self._setup_columns()
         self._populate_table()

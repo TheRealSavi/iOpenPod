@@ -1,0 +1,14 @@
+{
+  "date": "2026-08-12",
+  "font_stack": "Platform-native UI font with bundled Noto Sans fallbacks",
+  "palette": "Central ThemeRuntime paints consumed through paint_css()",
+  "motion": "motion-cut; native Qt interaction feedback only",
+  "spacing": "4px Design.GRID",
+  "framework": "PyQt6 desktop application",
+  "preserve": [
+    "font stack",
+    "theme runtime",
+    "semantic paint vocabulary",
+    "4px spacing grid"
+  ]
+}

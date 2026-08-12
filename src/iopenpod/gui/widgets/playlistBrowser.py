@@ -1,3 +1,5 @@
+# Hallmark · pre-emit critique: P5 H5 E4 S5 R5 V4
+# Hallmark · genre: modern-minimal · macrostructure: Workbench · theme: iOpenPod runtime · enrichment: none · contrast: pass
 """
 PlaylistBrowser — Dedicated playlist browsing widget.
 """
@@ -8,14 +10,16 @@ import logging
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from PyQt6.QtCore import QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QPalette
+from PyQt6.QtCore import QByteArray, QMimeData, QPoint, QSize, Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QAction, QColor, QDrag, QFont, QPalette
 from PyQt6.QtWidgets import (
+    QApplication,
     QDialog,
     QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QMessageBox,
     QProgressBar,
     QPushButton,
@@ -36,7 +40,17 @@ from iopenpod.application.jobs import (
 from iopenpod.application.jobs import (
     PlaylistWriteWorker as _PlaylistWriteWorker,
 )
-from iopenpod.application.runtime import display_playlists_from_rows
+from iopenpod.application.runtime import (
+    CancellationToken,
+    ThreadPoolSingleton,
+    Worker,
+    display_playlists_from_rows,
+)
+from iopenpod.application.smart_playlist_preview import (
+    SmartPlaylistPreviewRequest,
+    SmartPlaylistPreviewResult,
+    compute_smart_playlist_preview,
+)
 from iopenpod.itunesdb_shared.constants import MHOD_TYPE_TITLE
 from iopenpod.itunesdb_shared.playlist_kinds import (
     is_playlist_folder,
@@ -46,10 +60,12 @@ from iopenpod.itunesdb_shared.playlist_lifecycle import playlist_edit_payload
 from iopenpod.itunesdb_shared.playlist_properties import playlist_description_from_row
 
 from ..glyphs import glyph_icon, glyph_pixmap
+from ..internal_drag import IOP_PLAYLIST_DRAG_MIME, is_iopenpod_playlist_drag
 from ..styles import (
     FONT_FAMILY,
     Metrics,
     btn_css,
+    context_menu_css,
     current_theme,
     make_detail_row,
     make_scroll_area,
@@ -216,6 +232,79 @@ def _int_value(value: object) -> int:
         except ValueError:
             return 0
     return 0
+
+
+def _playlist_is_editable(playlist: dict | None) -> bool:
+    if not playlist or playlist.get("master_flag") or _is_ipod_category_playlist(playlist):
+        return False
+    return _is_display_merged_playlist(playlist) or not is_podcast_playlist(playlist)
+
+
+def _playlist_is_deletable(playlist: dict | None) -> bool:
+    return bool(playlist and not playlist.get("master_flag") and not _is_ipod_category_playlist(playlist))
+
+
+def _playlist_descendant_ids(
+    playlist: dict,
+    playlists: list[dict],
+) -> set[int]:
+    """Return IDs that cannot be parent targets for ``playlist``."""
+    playlist_id = _int_value(playlist.get("playlist_id"))
+    excluded = {playlist_id} if playlist_id else set()
+    if not is_playlist_folder(playlist):
+        return excluded
+
+    changed = True
+    while changed:
+        changed = False
+        for candidate in playlists:
+            candidate_id = _int_value(candidate.get("playlist_id"))
+            parent_id = _int_value(candidate.get("parent_folder_playlist_id"))
+            if candidate_id and parent_id in excluded and candidate_id not in excluded:
+                excluded.add(candidate_id)
+                changed = True
+    return excluded
+
+
+def _playlist_parent_folder_options(
+    playlist: dict,
+    playlists: list[dict],
+) -> list[tuple[int, str]]:
+    """Build safe, path-labelled folder targets for move commands."""
+    excluded = _playlist_descendant_ids(playlist, playlists)
+    by_id = {_int_value(row.get("playlist_id")): row for row in playlists if _int_value(row.get("playlist_id"))}
+
+    def folder_path(folder: dict) -> str:
+        parts = [str(folder.get("Title") or "Untitled Folder")]
+        seen = {_int_value(folder.get("playlist_id"))}
+        parent_id = _int_value(folder.get("parent_folder_playlist_id"))
+        while parent_id and parent_id not in seen:
+            parent = by_id.get(parent_id)
+            if not parent or not is_playlist_folder(parent):
+                break
+            parts.append(str(parent.get("Title") or "Untitled Folder"))
+            seen.add(parent_id)
+            parent_id = _int_value(parent.get("parent_folder_playlist_id"))
+        return " › ".join(reversed(parts))
+
+    options = [(_int_value(candidate.get("playlist_id")), folder_path(candidate)) for candidate in playlists if is_playlist_folder(candidate) and _int_value(candidate.get("playlist_id")) not in excluded]
+    return sorted(options, key=lambda option: option[1].casefold())
+
+
+def _decode_playlist_drag_index(mime: object) -> int | None:
+    if not is_iopenpod_playlist_drag(mime):
+        return None
+    data = getattr(mime, "data", None)
+    if not callable(data):
+        return None
+    try:
+        payload = data(IOP_PLAYLIST_DRAG_MIME)
+        if not isinstance(payload, QByteArray | bytes | bytearray):
+            return None
+        raw_payload = payload.data() if isinstance(payload, QByteArray) else bytes(payload)
+        return int(raw_payload.decode("ascii"))
+    except (TypeError, ValueError, UnicodeDecodeError):
+        return None
 
 
 def _mhip_title_from_children(item: dict) -> str:
@@ -659,13 +748,9 @@ class PlaylistInfoCard(QFrame):
 
         # Display-merged rows are editable as one logical playlist; cache saves
         # fan out to each represented MHSD row.
-        editable = (
-            not is_master
-            and not is_category
-            and (_is_display_merged_playlist(playlist) or not is_podcast)
-        )
+        editable = _playlist_is_editable(playlist)
         self.edit_btn.setVisible(editable)
-        deletable = not is_master and not is_category
+        deletable = _playlist_is_deletable(playlist)
         self.delete_btn.setVisible(deletable)
         # Show evaluate button for any smart playlist (except master and categories)
         self.evaluate_btn.setVisible(is_smart and not is_master and not is_category)
@@ -1112,9 +1197,144 @@ class PlaylistInfoCard(QFrame):
 # PlaylistListPanel — left-hand scrollable list of playlists
 # =============================================================================
 
+
+class _PlaylistDropSurface(QWidget):
+    """Sidebar background drop target for moving a playlist to top level."""
+
+    move_to_top_requested = pyqtSignal(int)
+
+    def __init__(self, validator, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._validator = validator
+        self.setAcceptDrops(True)
+
+    def _accepts(self, event) -> bool:
+        if event is None:
+            return False
+        source_index = _decode_playlist_drag_index(event.mimeData())
+        return source_index is not None and bool(self._validator(source_index, 0))
+
+    def dragEnterEvent(self, a0) -> None:
+        if a0 is None:
+            return
+        if self._accepts(a0):
+            a0.acceptProposedAction()
+        else:
+            a0.ignore()
+
+    def dragMoveEvent(self, a0) -> None:
+        if a0 is None:
+            return
+        if self._accepts(a0):
+            a0.acceptProposedAction()
+        else:
+            a0.ignore()
+
+    def dropEvent(self, a0) -> None:
+        if a0 is None:
+            return
+        if not self._accepts(a0):
+            a0.ignore()
+            return
+        source_index = _decode_playlist_drag_index(a0.mimeData())
+        if source_index is not None:
+            self.move_to_top_requested.emit(source_index)
+            a0.acceptProposedAction()
+
+
+class _PlaylistNavButton(SidebarNavButton):
+    """Playlist row with native drag source and folder drop-target behavior."""
+
+    move_requested = pyqtSignal(int, object)
+
+    def __init__(
+        self,
+        text: str,
+        *,
+        source_index: int,
+        target_folder_id: int,
+        draggable: bool,
+        validator,
+        icon_name: str,
+    ) -> None:
+        super().__init__(text, icon_name=icon_name)
+        self._source_index = source_index
+        self._target_folder_id = target_folder_id
+        self._draggable = draggable
+        self._validator = validator
+        self._drag_start: QPoint | None = None
+        self.setAcceptDrops(bool(target_folder_id))
+
+    def mousePressEvent(self, e) -> None:
+        if e is not None and e.button() == Qt.MouseButton.LeftButton:
+            self._drag_start = e.position().toPoint()
+        super().mousePressEvent(e)
+
+    def mouseMoveEvent(self, a0) -> None:
+        if not self._draggable or a0 is None or self._drag_start is None or not (a0.buttons() & Qt.MouseButton.LeftButton):
+            super().mouseMoveEvent(a0)
+            return
+        distance = (a0.position().toPoint() - self._drag_start).manhattanLength()
+        if distance < QApplication.startDragDistance():
+            super().mouseMoveEvent(a0)
+            return
+
+        mime = QMimeData()
+        mime.setData(
+            IOP_PLAYLIST_DRAG_MIME,
+            QByteArray(str(self._source_index).encode("ascii")),
+        )
+        drag = QDrag(self)
+        drag.setMimeData(mime)
+        drag.setPixmap(self.grab())
+        drag.setHotSpot(a0.position().toPoint())
+        drag.exec(Qt.DropAction.MoveAction)
+        self._drag_start = None
+
+    def mouseReleaseEvent(self, e) -> None:
+        self._drag_start = None
+        super().mouseReleaseEvent(e)
+
+    def _accepts(self, event) -> bool:
+        if event is None or not self._target_folder_id:
+            return False
+        source_index = _decode_playlist_drag_index(event.mimeData())
+        return source_index is not None and bool(self._validator(source_index, self._target_folder_id))
+
+    def dragEnterEvent(self, a0) -> None:
+        if a0 is None:
+            return
+        if self._accepts(a0):
+            a0.acceptProposedAction()
+        else:
+            a0.ignore()
+
+    def dragMoveEvent(self, a0) -> None:
+        if a0 is None:
+            return
+        if self._accepts(a0):
+            a0.acceptProposedAction()
+        else:
+            a0.ignore()
+
+    def dropEvent(self, a0) -> None:
+        if a0 is None:
+            return
+        if not self._accepts(a0):
+            a0.ignore()
+            return
+        source_index = _decode_playlist_drag_index(a0.mimeData())
+        if source_index is not None:
+            self.move_requested.emit(source_index, self._target_folder_id)
+            a0.acceptProposedAction()
+
+
 class PlaylistListPanel(QFrame):
     """Scrollable list of playlists grouped by type with section headers."""
     playlist_selected = pyqtSignal(dict)  # Emits the full playlist dict
+    playlist_edit_requested = pyqtSignal(dict)
+    playlist_delete_requested = pyqtSignal(dict)
+    playlist_move_requested = pyqtSignal(dict, object)
 
     def __init__(self):
         super().__init__()
@@ -1129,18 +1349,20 @@ class PlaylistListPanel(QFrame):
         self._scroll = make_scroll_area()
         outer.addWidget(self._scroll, 1)
 
-        self._inner = QWidget()
+        self._inner = _PlaylistDropSurface(self._can_move_index)
         self._inner.setStyleSheet("background: transparent;")
+        self._inner.move_to_top_requested.connect(lambda source_index: self._emit_move(source_index, 0))
         self._inner_layout = QVBoxLayout(self._inner)
         self._inner_layout.setContentsMargins(0, 0, 0, 0)
         self._inner_layout.setSpacing(4)
         self._inner_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self._scroll.setWidget(self._inner)
 
-        self._buttons: list[SidebarNavButton] = []
+        self._buttons: list[_PlaylistNavButton] = []
         self._button_icons: dict[int, str] = {}  # button index -> icon name
         self._selected_btn: SidebarNavButton | None = None
         self._playlist_map: dict[int, dict] = {}  # button index -> playlist dict
+        self._playlist_rows: list[dict] = []
 
     # ─────────────────────────────────────────────────────────────
     # Public API
@@ -1149,6 +1371,7 @@ class PlaylistListPanel(QFrame):
     def loadPlaylists(self, playlists: list[dict]) -> None:
         """Populate the panel with playlists grouped by type."""
         self._clear()
+        self._playlist_rows = list(playlists)
 
         # Categorize by playlist contents. MHSD location is shown separately as
         # type metadata, and type 5 rows with category markers are internal
@@ -1309,6 +1532,7 @@ class PlaylistListPanel(QFrame):
         self._button_icons.clear()
         self._selected_btn = None
         self._playlist_map.clear()
+        self._playlist_rows.clear()
         while self._inner_layout.count():
             item = self._inner_layout.takeAt(0)
             w = item.widget() if item else None
@@ -1356,15 +1580,31 @@ class PlaylistListPanel(QFrame):
         if count > 0:
             btn_text += f"  ({count})"
 
-        btn = SidebarNavButton(btn_text, icon_name=icon_name)
+        idx = len(self._buttons)
+        playlist_id = _int_value(playlist.get("playlist_id"))
+        movable = _playlist_is_editable(playlist) and bool(playlist_id)
+        btn = _PlaylistNavButton(
+            btn_text,
+            source_index=idx,
+            target_folder_id=playlist_id if is_playlist_folder(playlist) else 0,
+            draggable=movable,
+            validator=self._can_move_index,
+            icon_name=icon_name,
+        )
         btn.setProperty("playlistDepth", depth)
-        btn.setToolTip(f"{title}\n{count} tracks\n{_mhsd_type_label(playlist)}")
+        tooltip_lines = [title, f"{count} tracks", _mhsd_type_label(playlist)]
+        if movable:
+            tooltip_lines.append("Right-click to manage • drag to move")
+        btn.setToolTip("\n".join(tooltip_lines))
         btn.setDimmed(dimmed)
 
-        idx = len(self._buttons)
         self._playlist_map[idx] = playlist
         self._button_icons[idx] = icon_name
         btn.clicked.connect(lambda checked, i=idx: self._on_click(i))
+        btn.move_requested.connect(self._emit_move)
+        if _playlist_is_editable(playlist) or _playlist_is_deletable(playlist):
+            btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+            btn.customContextMenuRequested.connect(lambda pos, i=idx, button=btn: self._show_context_menu(i, button, pos))
 
         row = QWidget(self._inner)
         row.setObjectName("playlistHierarchyRow")
@@ -1376,6 +1616,102 @@ class PlaylistListPanel(QFrame):
         row_layout.addWidget(btn)
         self._inner_layout.addWidget(row)
         self._buttons.append(btn)
+
+    def _can_move_index(self, source_index: int, parent_folder_id: int) -> bool:
+        playlist = self._playlist_map.get(source_index)
+        if playlist is None or not _playlist_is_editable(playlist):
+            return False
+        current_parent = _int_value(playlist.get("parent_folder_playlist_id"))
+        if current_parent == parent_folder_id:
+            return False
+        if parent_folder_id == 0:
+            return True
+        valid_parent_ids = {
+            folder_id
+            for folder_id, _label in _playlist_parent_folder_options(
+                playlist,
+                self._playlist_rows,
+            )
+        }
+        return parent_folder_id in valid_parent_ids
+
+    def _emit_move(self, source_index: int, parent_folder_id: int) -> None:
+        playlist = self._playlist_map.get(source_index)
+        if playlist and self._can_move_index(source_index, parent_folder_id):
+            self.playlist_move_requested.emit(playlist, parent_folder_id)
+
+    @staticmethod
+    def _add_menu_action(menu: QMenu, text: str) -> QAction:
+        action = QAction(text, menu)
+        menu.addAction(action)
+        return action
+
+    @staticmethod
+    def _set_action_icon(
+        action: QAction,
+        name: str,
+        paint_name: str = "text.secondary",
+    ) -> None:
+        icon = glyph_icon(name, 14, paint_css(paint_name))
+        if icon is not None:
+            action.setIcon(icon)
+
+    def _build_context_menu(self, index: int, parent: QWidget) -> QMenu:
+        playlist = self._playlist_map[index]
+        menu = QMenu(parent)
+        menu.setStyleSheet(context_menu_css())
+        item_label = "Folder" if is_playlist_folder(playlist) else "Smart Playlist" if _is_user_smart_playlist(playlist) else "Playlist"
+
+        if _playlist_is_editable(playlist):
+            edit_action = self._add_menu_action(menu, f"Edit {item_label}…")
+            self._set_action_icon(edit_action, "edit")
+            edit_action.triggered.connect(lambda checked=False, row=playlist: self.playlist_edit_requested.emit(row))
+
+            current_parent = _int_value(playlist.get("parent_folder_playlist_id"))
+            folder_options = _playlist_parent_folder_options(
+                playlist,
+                self._playlist_rows,
+            )
+            if current_parent or folder_options:
+                move_menu = QMenu("Move to Folder", menu)
+                menu.addMenu(move_menu)
+                folder_icon = glyph_icon("folder", 14, paint_css("text.secondary"))
+                if folder_icon is not None:
+                    move_menu.setIcon(folder_icon)
+
+                top_action = self._add_menu_action(move_menu, "Top Level")
+                top_action.setCheckable(True)
+                top_action.setChecked(current_parent == 0)
+                top_action.setEnabled(current_parent != 0)
+                top_action.triggered.connect(lambda checked=False, i=index: self._emit_move(i, 0))
+
+                if folder_options:
+                    move_menu.addSeparator()
+                    for folder_id, label in folder_options:
+                        action = self._add_menu_action(move_menu, label)
+                        action.setCheckable(True)
+                        action.setChecked(folder_id == current_parent)
+                        action.setEnabled(folder_id != current_parent)
+                        action.triggered.connect(lambda checked=False, i=index, target=folder_id: self._emit_move(i, target))
+
+        if _playlist_is_deletable(playlist):
+            if not menu.isEmpty():
+                menu.addSeparator()
+            delete_action = self._add_menu_action(menu, f"Delete {item_label}…")
+            self._set_action_icon(delete_action, "trash", "status.danger.text")
+            delete_action.triggered.connect(lambda checked=False, row=playlist: self.playlist_delete_requested.emit(row))
+        return menu
+
+    def _show_context_menu(
+        self,
+        index: int,
+        button: SidebarNavButton,
+        position,
+    ) -> None:
+        self._on_click(index)
+        menu = self._build_context_menu(index, button)
+        if not menu.isEmpty():
+            menu.exec(button.mapToGlobal(position))
 
     def _on_click(self, index: int) -> None:
         # Reset previous selection
@@ -1406,6 +1742,7 @@ class PlaylistBrowser(QFrame):
 
     track_activated = pyqtSignal(dict)
     playback_requested = pyqtSignal(dict, list, int)
+    _SMART_PREVIEW_DEBOUNCE_MS: int = 300
 
     def __init__(
         self,
@@ -1420,6 +1757,13 @@ class PlaylistBrowser(QFrame):
         self._current_playlist: dict | None = None
         self._editing = False
         self._playlist_signature: tuple | None = None
+        self._write_completion_notice = True
+        self._smart_preview_generation = 0
+        self._smart_preview_worker: Worker | None = None
+        self._smart_preview_token: CancellationToken | None = None
+        self._smart_preview_timer = QTimer(self)
+        self._smart_preview_timer.setSingleShot(True)
+        self._smart_preview_timer.timeout.connect(self._startSmartPlaylistPreview)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -1450,6 +1794,9 @@ class PlaylistBrowser(QFrame):
         # ── Left: playlist list panel ──
         self.listPanel = PlaylistListPanel()
         self.listPanel.playlist_selected.connect(self._onPlaylistSelected)
+        self.listPanel.playlist_edit_requested.connect(self._onPlaylistEditRequested)
+        self.listPanel.playlist_delete_requested.connect(self._onPlaylistDeleteRequested)
+        self.listPanel.playlist_move_requested.connect(self._onPlaylistMoveRequested)
         self._sidebar_pane = BrowserPane(
             "Playlists",
             min_width=220,
@@ -1480,6 +1827,7 @@ class PlaylistBrowser(QFrame):
         self.editor = SmartPlaylistEditor()
         self.editor.saved.connect(self._onEditorSaved)
         self.editor.cancelled.connect(self._onEditorCancelled)
+        self.editor.preview_changed.connect(self._scheduleSmartPlaylistPreview)
         self._topStack.addWidget(self.editor)
 
         # Regular playlist editor (page 2)
@@ -1581,6 +1929,11 @@ class PlaylistBrowser(QFrame):
         self._content_splitter.setStretchFactor(1, 1)
         self._content_splitter.setSizes([240, 760])
 
+        for signal_name in ("tracks_changed", "playlists_changed"):
+            signal = getattr(self._library_cache, signal_name, None)
+            if signal is not None:
+                signal.connect(self._onSmartPlaylistPreviewLibraryChanged)
+
     def _set_empty_regular_playlist_notice(
         self,
         _playlist: dict | None,
@@ -1632,6 +1985,10 @@ class PlaylistBrowser(QFrame):
             self.listPanel.loadPlaylists(playlists)
             self._playlist_signature = signature
 
+        if self._editing:
+            self._scheduleSmartPlaylistPreview()
+            return
+
         if current_pid:
             if self.listPanel.selectPlaylistById(current_pid, current_dataset):
                 return
@@ -1678,6 +2035,8 @@ class PlaylistBrowser(QFrame):
         """
         self._topStack.setCurrentIndex(page)
         self._editing = True
+        if page != 1:
+            self._cancelSmartPlaylistPreview()
         self._set_empty_regular_playlist_notice(None, 0)
         current_page = self._topStack.currentWidget()
         min_height = current_page.minimumSizeHint().height() if current_page else 0
@@ -1688,6 +2047,7 @@ class PlaylistBrowser(QFrame):
 
     def _switchToBrowse(self) -> None:
         """Show the info card (default view)."""
+        self._cancelSmartPlaylistPreview()
         self._topStack.setCurrentIndex(0)
         self._editing = False
         self._topStack.setMinimumHeight(0)
@@ -1759,6 +2119,53 @@ class PlaylistBrowser(QFrame):
             self.trackList.clearTable()
         self._set_empty_regular_playlist_notice(playlist, len(resolved_tracks))
 
+    def _onPlaylistEditRequested(self, playlist: dict) -> None:
+        self._onPlaylistSelected(playlist)
+        self._onEditClicked()
+
+    def _onPlaylistDeleteRequested(self, playlist: dict) -> None:
+        self._onPlaylistSelected(playlist)
+        self._onDeleteClicked()
+
+    def _onPlaylistMoveRequested(
+        self,
+        playlist: dict,
+        parent_folder_id: int,
+    ) -> None:
+        """Move a playlist immediately from the sidebar management UI."""
+        if not _playlist_is_editable(playlist):
+            return
+        playlists = display_playlists_from_rows(self._library_cache.get_playlists())
+        valid_parent_ids = {
+            folder_id
+            for folder_id, _label in _playlist_parent_folder_options(
+                playlist,
+                playlists,
+            )
+        }
+        if parent_folder_id and parent_folder_id not in valid_parent_ids:
+            return
+        if _int_value(playlist.get("parent_folder_playlist_id")) == parent_folder_id:
+            return
+
+        moved = playlist_edit_payload(
+            playlist,
+            {
+                "parent_folder_playlist_id": parent_folder_id,
+                "unk0x30_playlist_ref": parent_folder_id,
+            },
+        )
+        self._library_cache.save_user_playlist(moved)
+        self._current_playlist = moved
+        self._refreshList()
+        dataset_type = None if _is_display_merged_playlist(moved) else _playlist_dataset_type(moved)
+        if not self.listPanel.selectPlaylistById(
+            _int_value(moved.get("playlist_id")),
+            dataset_type,
+        ):
+            self._onPlaylistSelected(moved)
+        self._writePlaylistToIPod(moved, notify=False)
+
     def _onNewPlaylist(self, kind: str) -> None:
         """Handle the 'New Playlist' button from the list panel."""
         playlists = display_playlists_from_rows(self._library_cache.get_playlists())
@@ -1770,6 +2177,7 @@ class PlaylistBrowser(QFrame):
             self.trackTitleBar.setColor(*_playlist_paint_rgb("smart"))
             self.trackList.clearTable()
             self._set_empty_regular_playlist_notice(None, 0)
+            self._scheduleSmartPlaylistPreview(immediate=True)
         elif kind == "folder":
             self.regularEditor.set_playlist_options(playlists)
             self.regularEditor.new_folder()
@@ -1804,6 +2212,7 @@ class PlaylistBrowser(QFrame):
             )
             self.editor.edit_playlist(self._current_playlist)
             self._switchToEditor(1)
+            self._scheduleSmartPlaylistPreview(immediate=True)
         elif not self._current_playlist.get("master_flag"):
             self.regularEditor.set_playlist_options(playlists)
             self.regularEditor.edit_playlist(self._current_playlist)
@@ -1892,6 +2301,104 @@ class PlaylistBrowser(QFrame):
             self._onPlaylistSelected(self._current_playlist)
 
     # ─────────────────────────────────────────────────────────────
+    # Read-only smart-playlist live preview
+    # ─────────────────────────────────────────────────────────────
+
+    def _isSmartPlaylistPreviewActive(self) -> bool:
+        return bool(self._editing and self._topStack.currentIndex() == 1 and self._library_cache.is_ready())
+
+    def _onSmartPlaylistPreviewLibraryChanged(self, *_args) -> None:
+        """Recompute when the read-only library inputs change during editing."""
+        self._scheduleSmartPlaylistPreview()
+
+    def _scheduleSmartPlaylistPreview(
+        self,
+        *_args,
+        immediate: bool = False,
+    ) -> None:
+        """Debounce edits and invalidate any older in-flight computation."""
+        if not self._isSmartPlaylistPreviewActive():
+            return
+
+        self._cancelSmartPlaylistPreview()
+        self.trackTitleBar.setTitle("Live Preview · Updating…")
+        self.trackTitleBar.setColor(*_playlist_paint_rgb("smart"))
+        self._smart_preview_timer.start(0 if immediate else self._SMART_PREVIEW_DEBOUNCE_MS)
+
+    def _cancelSmartPlaylistPreview(self) -> None:
+        self._smart_preview_timer.stop()
+        self._smart_preview_generation += 1
+
+        worker = self._smart_preview_worker
+        if worker is not None:
+            worker.cancel()
+        token = self._smart_preview_token
+        if token is not None:
+            token.cancel()
+
+        self._smart_preview_worker = None
+        self._smart_preview_token = None
+
+    def _startSmartPlaylistPreview(self) -> None:
+        if not self._isSmartPlaylistPreviewActive():
+            return
+
+        preview_data = self.editor.get_preview_data()
+        request = SmartPlaylistPreviewRequest(
+            generation=self._smart_preview_generation,
+            preferences=preview_data["smart_playlist_data"],
+            rules=preview_data["smart_playlist_rules"],
+            sort_order=int(preview_data.get("sort_order", 1) or 1),
+        )
+        token = CancellationToken()
+        worker = Worker(
+            compute_smart_playlist_preview,
+            request,
+            self._library_cache,
+            token.is_cancelled,
+        )
+        worker.signals.result.connect(self._onSmartPlaylistPreviewReady)
+        worker.signals.error.connect(
+            lambda error, generation=request.generation: self._onSmartPlaylistPreviewFailed(
+                generation,
+                error,
+            )
+        )
+        self._smart_preview_token = token
+        self._smart_preview_worker = worker
+        ThreadPoolSingleton.get_instance().start(worker)
+
+    def _onSmartPlaylistPreviewReady(self, result: object) -> None:
+        if not isinstance(result, SmartPlaylistPreviewResult):
+            return
+        if result.generation != self._smart_preview_generation or not self._isSmartPlaylistPreviewActive():
+            return
+
+        preview_state = self.editor.get_preview_data()
+        preview_context = {
+            "_source": "preview",
+            "sort_order": preview_state["sort_order"],
+            "smart_playlist_data": preview_state["smart_playlist_data"],
+            "smart_playlist_rules": preview_state["smart_playlist_rules"],
+        }
+        self.trackList.showComputedPlaylist(result.tracks, preview_context)
+        count = len(result.tracks)
+        noun = "track" if count == 1 else "tracks"
+        self.trackTitleBar.setTitle(f"Live Preview · {count:,} {noun}")
+
+    def _onSmartPlaylistPreviewFailed(
+        self,
+        generation: int,
+        error_info: tuple,
+    ) -> None:
+        if generation != self._smart_preview_generation:
+            return
+        if not self._isSmartPlaylistPreviewActive():
+            return
+        self.trackTitleBar.setTitle("Live Preview · Unavailable")
+        log.error("Smart playlist preview failed: %s", error_info)
+
+    # ─────────────────────────────────────────────────────────────
     # Write playlist to iPod (shared by Save + Evaluate Now)
     # ─────────────────────────────────────────────────────────────
 
@@ -1972,11 +2479,19 @@ class PlaylistBrowser(QFrame):
     # Write playlist to iPod (shared by Save + Evaluate Now)
     # ─────────────────────────────────────────────────────────────
 
-    def _writePlaylistToIPod(self, playlist: dict) -> None:
+    def _writePlaylistToIPod(
+        self,
+        playlist: dict,
+        *,
+        notify: bool = True,
+    ) -> None:
         """Kick off a background write of the full database to the iPod.
 
         Used after both editor Save and Evaluate Now.
         """
+
+        self._write_completion_notice = notify
+
         # Show a saving indicator on the info card
         self.infoCard.edit_btn.setEnabled(False)
         self.infoCard.evaluate_btn.setEnabled(False)
@@ -2008,16 +2523,19 @@ class PlaylistBrowser(QFrame):
         if is_smart:
             log.info("Playlist '%s': %d tracks matched → written to iPod",
                      playlist_name, matched_count)
-            QMessageBox.information(
-                self, "Playlist Saved",
-                f"'{playlist_name}' saved to iPod: {matched_count} tracks matched."
-            )
+            if self._write_completion_notice:
+                QMessageBox.information(
+                    self, "Playlist Saved",
+                    f"'{playlist_name}' saved to iPod: {matched_count} tracks matched."
+                )
         else:
             log.info("Playlist '%s' written to iPod", playlist_name)
-            QMessageBox.information(
-                self, "Playlist Saved",
-                f"'{playlist_name}' saved to iPod."
-            )
+            if self._write_completion_notice:
+                QMessageBox.information(
+                    self, "Playlist Saved",
+                    f"'{playlist_name}' saved to iPod."
+                )
+        self._write_completion_notice = True
 
     def _onWriteFailed(self, error_msg: str) -> None:
         """Playlist write failed."""
@@ -2028,6 +2546,7 @@ class PlaylistBrowser(QFrame):
             self.infoCard.evaluate_btn.setVisible(False)
 
         log.error("Playlist write failed: %s", error_msg)
+        self._write_completion_notice = True
         QMessageBox.critical(
             self, "Save Failed",
             f"Failed to write playlist to iPod:\n{error_msg}"

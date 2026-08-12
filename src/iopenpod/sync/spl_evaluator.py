@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import random
 import time
+from collections.abc import Callable
 
 from iopenpod.itunesdb_shared.device_time import (
     DeviceTimeContext,
@@ -418,6 +419,8 @@ def spl_update(
     tracks: list[dict],
     playlist_lookup: dict[int, set[int]] | None = None,
     time_context: DeviceTimeContext | None = None,
+    *,
+    is_cancelled: Callable[[], bool] | None = None,
 ) -> list[int]:
     """Evaluate smart playlist rules and return matching track IDs.
 
@@ -437,7 +440,9 @@ def spl_update(
     # Phase 1: rule matching
     selected: list[dict] = []
 
-    for track in tracks:
+    for index, track in enumerate(tracks):
+        if index % 128 == 0 and is_cancelled is not None and is_cancelled():
+            return []
         # Skip unchecked tracks if match_checked_only is set
         # (checked_flag=0 means checked, checked_flag=1 means unchecked in the parser)
         if prefs.match_checked_only and track.get("checked_flag", 0) != 0:
@@ -460,6 +465,9 @@ def spl_update(
     if not selected:
         return []
 
+    if is_cancelled is not None and is_cancelled():
+        return []
+
     # Phase 2: apply limits
     if prefs.check_limits:
         # Sort the selected tracks
@@ -474,7 +482,9 @@ def spl_update(
         running_total = 0.0
         limited: list[dict] = []
 
-        for track in selected:
+        for index, track in enumerate(selected):
+            if index % 128 == 0 and is_cancelled is not None and is_cancelled():
+                return []
             contribution = _track_limit_value(track, prefs.limit_type)
             if running_total + contribution <= prefs.limit_value:
                 running_total += contribution
@@ -492,6 +502,8 @@ def spl_update_from_parsed(
     tracks: list[dict],
     playlist_lookup: dict[int, set[int]] | None = None,
     time_context: DeviceTimeContext | None = None,
+    *,
+    is_cancelled: Callable[[], bool] | None = None,
 ) -> list[int]:
     """Convenience wrapper that accepts parsed dicts directly from the parser.
 
@@ -502,7 +514,14 @@ def spl_update_from_parsed(
 
     prefs = prefs_from_parsed(parsed_prefs)
     rules = rules_from_parsed(parsed_rules)
-    return spl_update(prefs, rules, tracks, playlist_lookup, time_context)
+    return spl_update(
+        prefs,
+        rules,
+        tracks,
+        playlist_lookup,
+        time_context,
+        is_cancelled=is_cancelled,
+    )
 
 
 def spl_update_all(

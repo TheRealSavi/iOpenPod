@@ -1019,6 +1019,7 @@ def icon_btn_css(
     bg_hover: str | None = None,
     bg_press: str | None = None,
     fg: str | None = None,
+    border: str = "none",
     radius: int | None = None,
 ) -> str:
     """Square icon/symbol button with stable hit target."""
@@ -1037,7 +1038,7 @@ def icon_btn_css(
         bg_hover=bg_hover,
         bg_press=bg_press,
         fg=fg,
-        border="none",
+        border=border,
         radius=radius,
         padding="0px",
         bg_disabled="transparent",
@@ -1295,8 +1296,11 @@ def checkbox_css(font_size: int | None = None) -> str:
     """
 
 
-def title_input_css() -> str:
-    """Borderless title-edit field used in editor headers."""
+def title_input_css(*, min_height: int | None = None) -> str:
+    """Borderless title field with an optional QSS content-box minimum."""
+    min_height_rule = (
+        f"min-height: {min_height}px;" if min_height is not None else ""
+    )
     return f"""
         QLineEdit {{
             background: transparent;
@@ -1306,7 +1310,8 @@ def title_input_css() -> str:
             font-family: {_CSS_FONT_STACK};
             font-size: {Metrics.FONT_PAGE_TITLE}pt;
             font-weight: {Design.BUTTON_WEIGHT_STRONG};
-            padding: 0px 0px 2px 0px;
+            padding: 4px 2px 4px 2px;
+            {min_height_rule}
         }}
         QLineEdit:hover {{
             border-bottom-color: {paint_css('border.default')};

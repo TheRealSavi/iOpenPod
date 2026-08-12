@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QSpinBox
+from PyQt6.QtWidgets import QLineEdit, QSpinBox
 
 from iopenpod.gui.widgets.formatters import format_smart_rule, format_smart_rules_summary
 from iopenpod.gui.widgets.playlistEditor import (
@@ -586,3 +586,39 @@ def test_smart_editor_moves_playlist_into_a_parent_folder(qtbot) -> None:
     assert saved["parent_folder_playlist_id"] == 10
     assert saved["unk0x30_playlist_ref"] == 10
     assert editor.parent_folder_combo.findData(20) == -1
+
+
+def test_smart_editor_emits_preview_changes_for_rules_and_match_behavior(qtbot) -> None:
+    editor = SmartPlaylistEditor()
+    qtbot.addWidget(editor)
+    editor.new_playlist()
+
+    with qtbot.waitSignal(editor.preview_changed):
+        editor.check_rules_check.setChecked(False)
+
+    row = editor._rule_rows[0]
+    assert isinstance(row, SmartRuleRow)
+    value_input = row._find_widget(QLineEdit)
+    assert isinstance(value_input, QLineEdit)
+    with qtbot.waitSignal(editor.preview_changed):
+        value_input.setText("Beatles")
+
+
+def test_smart_editor_preview_data_is_a_non_persisting_rule_snapshot(qtbot) -> None:
+    editor = SmartPlaylistEditor()
+    qtbot.addWidget(editor)
+    editor.new_playlist()
+    editor.limit_check.setChecked(True)
+    editor.limit_value_spin.setValue(12)
+    editor.sort_combo.setCurrentIndex(editor.sort_combo.findData(3))
+
+    preview = editor.get_preview_data()
+
+    assert set(preview) == {
+        "smart_playlist_data",
+        "smart_playlist_rules",
+        "sort_order",
+    }
+    assert preview["smart_playlist_data"]["check_limits"] is True
+    assert preview["smart_playlist_data"]["limit_value"] == 12
+    assert preview["sort_order"] == 3

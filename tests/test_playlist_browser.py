@@ -1,16 +1,19 @@
 from __future__ import annotations
 
+import threading
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QByteArray, QMimeData, QObject, Qt, pyqtSignal
 from PyQt6.QtWidgets import QLabel
 
+from iopenpod.application import runtime
 from iopenpod.application.services import (
     DeviceSessionService,
     LibraryService,
     SettingsService,
 )
+from iopenpod.application.smart_playlist_preview import SmartPlaylistPreviewResult
 from iopenpod.gui.styles import paint_css
 from iopenpod.gui.widgets import playlistBrowser as playlist_browser_module
 from iopenpod.gui.widgets.playlistBrowser import (
@@ -20,6 +23,7 @@ from iopenpod.gui.widgets.playlistBrowser import (
     _is_ipod_category_playlist,
     _is_regular_track_playlist,
     _is_user_smart_playlist,
+    _playlist_parent_folder_options,
     _podcast_grouping_summary,
 )
 from iopenpod.gui.widgets.sidebarNavButton import SidebarNavButton
@@ -258,6 +262,120 @@ def test_playlist_list_renders_folder_hierarchy_and_selects_folder_aggregate(qtb
     assert emitted.args == [folder]
 
 
+def test_playlist_move_targets_exclude_self_and_descendants_and_show_paths() -> None:
+    moving = {
+        "Title": "Moving Folder",
+        "playlist_id": 20,
+        "is_folder": True,
+        "parent_folder_playlist_id": 10,
+    }
+    playlists = [
+        {"Title": "Root", "playlist_id": 10, "is_folder": True},
+        moving,
+        {
+            "Title": "Child",
+            "playlist_id": 30,
+            "is_folder": True,
+            "parent_folder_playlist_id": 20,
+        },
+        {"Title": "Cabinet", "playlist_id": 40, "is_folder": True},
+        {
+            "Title": "Shelf",
+            "playlist_id": 50,
+            "is_folder": True,
+            "parent_folder_playlist_id": 40,
+        },
+    ]
+
+    assert _playlist_parent_folder_options(moving, playlists) == [
+        (40, "Cabinet"),
+        (50, "Cabinet › Shelf"),
+        (10, "Root"),
+    ]
+
+
+def test_playlist_context_menu_hides_move_when_no_valid_target_exists(qtbot) -> None:
+    panel = PlaylistListPanel()
+    qtbot.addWidget(panel)
+    folder = {"Title": "Folder", "playlist_id": 10, "is_folder": True}
+    child = {
+        "Title": "Child",
+        "playlist_id": 11,
+        "parent_folder_playlist_id": 10,
+    }
+    panel.loadPlaylists([folder, child])
+    folder_index = next(index for index, playlist in panel._playlist_map.items() if playlist is folder)
+
+    menu = panel._build_context_menu(folder_index, panel)
+    action_texts = [action.text() for action in menu.actions() if not action.isSeparator()]
+    assert action_texts == ["Edit Folder…", "Delete Folder…"]
+
+
+def test_playlist_context_move_emits_new_parent(qtbot) -> None:
+    panel = PlaylistListPanel()
+    qtbot.addWidget(panel)
+    folder = {"Title": "Folder", "playlist_id": 10, "is_folder": True}
+    playlist = {"Title": "Loose", "playlist_id": 20}
+    panel.loadPlaylists([folder, playlist])
+    playlist_index = next(index for index, row in panel._playlist_map.items() if row is playlist)
+    menu = panel._build_context_menu(playlist_index, panel)
+    move_action = next(action for action in menu.actions() if action.text() == "Move to Folder")
+    move_menu = move_action.menu()
+    assert move_menu is not None
+    folder_action = next(action for action in move_menu.actions() if action.text() == "Folder")
+
+    with qtbot.waitSignal(panel.playlist_move_requested) as emitted:
+        folder_action.trigger()
+
+    assert emitted.args == [playlist, 10]
+
+
+def test_playlist_context_move_preserves_64_bit_folder_id(qtbot) -> None:
+    panel = PlaylistListPanel()
+    qtbot.addWidget(panel)
+    folder_id = 0x7ABC_DEF0_1234_5678
+    folder = {"Title": "Folder", "playlist_id": folder_id, "is_folder": True}
+    playlist = {"Title": "Loose", "playlist_id": 0x6ABC_DEF0_1234_5678}
+    panel.loadPlaylists([folder, playlist])
+    playlist_index = next(index for index, row in panel._playlist_map.items() if row is playlist)
+    menu = panel._build_context_menu(playlist_index, panel)
+    move_action = next(action for action in menu.actions() if action.text() == "Move to Folder")
+    move_menu = move_action.menu()
+    assert move_menu is not None
+    folder_action = next(action for action in move_menu.actions() if action.text() == "Folder")
+
+    with qtbot.waitSignal(panel.playlist_move_requested) as emitted:
+        folder_action.trigger()
+
+    assert emitted.args == [playlist, folder_id]
+
+
+def test_playlist_drop_preserves_64_bit_folder_id(qtbot) -> None:
+    panel = PlaylistListPanel()
+    qtbot.addWidget(panel)
+    folder_id = 0x7ABC_DEF0_1234_5678
+    folder = {"Title": "Folder", "playlist_id": folder_id, "is_folder": True}
+    playlist = {"Title": "Loose", "playlist_id": 0x6ABC_DEF0_1234_5678}
+    panel.loadPlaylists([folder, playlist])
+    source_index = next(index for index, row in panel._playlist_map.items() if row is playlist)
+    target_button = next(button for index, button in enumerate(panel._buttons) if panel._playlist_map[index] is folder)
+    mime = QMimeData()
+    mime.setData(
+        playlist_browser_module.IOP_PLAYLIST_DRAG_MIME,
+        QByteArray(str(source_index).encode("ascii")),
+    )
+    event = SimpleNamespace(
+        mimeData=lambda: mime,
+        acceptProposedAction=lambda: None,
+        ignore=lambda: None,
+    )
+
+    with qtbot.waitSignal(panel.playlist_move_requested) as emitted:
+        target_button.dropEvent(cast(Any, event))
+
+    assert emitted.args == [playlist, folder_id]
+
+
 def test_reconciled_folder_with_aggregate_rules_stays_a_folder_in_gui(qtbot) -> None:
     folder = {
         "Title": "Algorithms",
@@ -317,13 +435,25 @@ class _DeleteTestCache:
         self.removed.append((playlist_id, dataset_type))
 
 
-def _playlist_browser_for_delete_test(qtbot, cache: _DeleteTestCache) -> PlaylistBrowser:
-    settings = SimpleNamespace(
-        get_global_settings=lambda: SimpleNamespace(track_list_columns_by_content={})
-    )
-    device_sessions = SimpleNamespace(
-        current_session=lambda: SimpleNamespace(device_path="", storage=None)
-    )
+class _MoveTestCache(_DeleteTestCache):
+    def is_ready(self) -> bool:
+        return True
+
+    def get_track_id_index(self) -> dict[int, dict]:
+        return {}
+
+    def save_user_playlist(self, playlist: dict) -> None:
+        super().save_user_playlist(playlist)
+        playlist_id = playlist.get("playlist_id")
+        self.playlists = [playlist if row.get("playlist_id") == playlist_id else row for row in self.playlists]
+
+
+def _playlist_browser_for_delete_test(
+    qtbot,
+    cache: _DeleteTestCache | runtime.iTunesDBCache,
+) -> PlaylistBrowser:
+    settings = SimpleNamespace(get_global_settings=lambda: SimpleNamespace(track_list_columns_by_content={}))
+    device_sessions = SimpleNamespace(current_session=lambda: SimpleNamespace(device_path="", storage=None))
     libraries = SimpleNamespace(cache=lambda: cache)
     browser = PlaylistBrowser(
         cast(SettingsService, settings),
@@ -332,6 +462,213 @@ def _playlist_browser_for_delete_test(qtbot, cache: _DeleteTestCache) -> Playlis
     )
     qtbot.addWidget(browser)
     return browser
+
+
+class _PreviewTestCache(QObject):
+    tracks_changed = pyqtSignal()
+    playlists_changed = pyqtSignal()
+    playlist_quick_sync = pyqtSignal()
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.track_rows = [
+            {"track_id": 1, "Title": "One", "Artist": "First"},
+            {"track_id": 2, "Title": "Two", "Artist": "Second"},
+        ]
+        self.track_read_threads: list[int] = []
+        self.write_attempts = 0
+
+    def is_ready(self) -> bool:
+        return True
+
+    def get_tracks(self) -> list[dict]:
+        self.track_read_threads.append(threading.get_ident())
+        return list(self.track_rows)
+
+    def get_playlists(self) -> list[dict]:
+        return []
+
+    def get_data(self) -> dict:
+        return {}
+
+    def save_user_playlist(self, _playlist: dict) -> None:
+        self.write_attempts += 1
+        raise AssertionError("preview unexpectedly persisted a playlist")
+
+
+def _playlist_browser_for_preview_test(
+    qtbot,
+    cache: _PreviewTestCache,
+) -> PlaylistBrowser:
+    global_settings = SimpleNamespace(track_list_columns_by_content={})
+    effective_settings = SimpleNamespace(show_art_in_tracklist=False)
+    settings = SimpleNamespace(
+        get_global_settings=lambda: global_settings,
+        get_effective_settings=lambda: effective_settings,
+    )
+    device_sessions = SimpleNamespace(current_session=lambda: SimpleNamespace(device_path="", storage=None))
+    libraries = SimpleNamespace(cache=lambda: cache)
+    browser = PlaylistBrowser(
+        cast(SettingsService, settings),
+        cast(DeviceSessionService, device_sessions),
+        cast(LibraryService, libraries),
+    )
+    qtbot.addWidget(browser)
+    return browser
+
+
+def test_smart_playlist_editor_preview_runs_off_thread_and_never_persists(qtbot) -> None:
+    cache = _PreviewTestCache()
+    browser = _playlist_browser_for_preview_test(qtbot, cache)
+    ui_thread_id = threading.get_ident()
+
+    browser._onNewPlaylist("smart")
+    browser.editor.check_rules_check.setChecked(False)
+
+    qtbot.waitUntil(
+        lambda: browser.trackTitleBar.title.text() == "Live Preview · 2 tracks",
+        timeout=5000,
+    )
+
+    assert cache.track_read_threads
+    assert all(thread_id != ui_thread_id for thread_id in cache.track_read_threads)
+    assert [track["track_id"] for track in browser.trackList.tracks] == [1, 2]
+    assert cache.write_attempts == 0
+
+
+def test_smart_playlist_preview_debounces_rapid_editor_changes(qtbot) -> None:
+    cache = _PreviewTestCache()
+    browser = _playlist_browser_for_preview_test(qtbot, cache)
+    browser._SMART_PREVIEW_DEBOUNCE_MS = 30
+    browser._onNewPlaylist("smart")
+    browser.editor.check_rules_check.setChecked(False)
+    qtbot.waitUntil(lambda: len(cache.track_read_threads) == 1, timeout=5000)
+    qtbot.waitUntil(
+        lambda: browser.trackTitleBar.title.text() == "Live Preview · 2 tracks",
+        timeout=5000,
+    )
+
+    cache.track_read_threads.clear()
+    browser.editor.check_rules_check.setChecked(True)
+    browser.editor.check_rules_check.setChecked(False)
+    browser.editor.check_rules_check.setChecked(True)
+
+    qtbot.waitUntil(lambda: len(cache.track_read_threads) == 1, timeout=5000)
+    qtbot.wait(100)
+    assert len(cache.track_read_threads) == 1
+
+
+def test_smart_playlist_preview_ignores_an_older_generation(qtbot, monkeypatch) -> None:
+    cache = _PreviewTestCache()
+    browser = _playlist_browser_for_preview_test(qtbot, cache)
+    browser._onNewPlaylist("smart")
+    calls: list[list[dict]] = []
+    monkeypatch.setattr(
+        browser.trackList,
+        "showComputedPlaylist",
+        lambda tracks, _playlist: calls.append(tracks),
+    )
+
+    browser._onSmartPlaylistPreviewReady(
+        SmartPlaylistPreviewResult(
+            generation=browser._smart_preview_generation - 1,
+            tracks=cache.track_rows,
+        )
+    )
+
+    assert calls == []
+
+
+def test_sidebar_move_persists_parent_and_writes_silently(qtbot, monkeypatch) -> None:
+    folder = {"Title": "Folder", "playlist_id": 10, "is_folder": True}
+    playlist = {"Title": "Loose", "playlist_id": 20}
+    cache = _DeleteTestCache([folder, playlist])
+    browser = _playlist_browser_for_delete_test(qtbot, cache)
+    write_calls: list[tuple[dict, bool]] = []
+    monkeypatch.setattr(browser, "_refreshList", lambda: None)
+    monkeypatch.setattr(browser.listPanel, "selectPlaylistById", lambda *_args: False)
+    monkeypatch.setattr(browser, "_onPlaylistSelected", lambda _playlist: None)
+    monkeypatch.setattr(
+        browser,
+        "_writePlaylistToIPod",
+        lambda row, *, notify=True: write_calls.append((row, notify)),
+    )
+
+    browser._onPlaylistMoveRequested(playlist, 10)
+
+    assert len(cache.saved) == 1
+    assert cache.saved[0]["parent_folder_playlist_id"] == 10
+    assert cache.saved[0]["unk0x30_playlist_ref"] == 10
+    assert write_calls == [(cache.saved[0], False)]
+
+
+def test_context_menu_move_updates_visible_playlist_hierarchy(qtbot, monkeypatch) -> None:
+    folder = {"Title": "Folder", "playlist_id": 10, "is_folder": True}
+    playlist = {"Title": "Loose", "playlist_id": 20}
+    cache = _MoveTestCache([folder, playlist])
+    browser = _playlist_browser_for_delete_test(qtbot, cache)
+    monkeypatch.setattr(browser, "_writePlaylistToIPod", lambda *_args, **_kwargs: None)
+    browser.loadPlaylists()
+
+    playlist_index = next(index for index, row in browser.listPanel._playlist_map.items() if row.get("playlist_id") == 20)
+    menu = browser.listPanel._build_context_menu(playlist_index, browser.listPanel)
+    move_action = next(action for action in menu.actions() if action.text() == "Move to Folder")
+    move_menu = move_action.menu()
+    assert move_menu is not None
+    folder_action = next(action for action in move_menu.actions() if action.text() == "Folder")
+
+    folder_action.trigger()
+
+    assert cache.saved[-1]["parent_folder_playlist_id"] == 10
+    moved_button = next(button for button in browser.listPanel.findChildren(SidebarNavButton) if button.toolTip().splitlines()[0] == "Loose")
+    assert moved_button.property("playlistDepth") == 1
+
+
+def test_context_menu_move_updates_production_cache_hierarchy(qtbot, monkeypatch) -> None:
+    monkeypatch.setattr(
+        runtime.DeviceManager,
+        "get_instance",
+        classmethod(lambda cls: SimpleNamespace(device_path="/fake/ipod")),
+    )
+    cache = runtime.iTunesDBCache()
+    cache.set_data(
+        {
+            "mhlt": [],
+            "mhlp": [
+                {
+                    "Title": "Folder",
+                    "playlist_id": 10,
+                    "playlist_kind_flags": 0x0100,
+                    "podcast_flag": 0x0100,
+                    "is_folder": True,
+                    "_mhsd_dataset_type": 2,
+                },
+                {
+                    "Title": "Loose",
+                    "playlist_id": 20,
+                    "_mhsd_dataset_type": 2,
+                },
+            ],
+            "mhlp_podcast": [],
+            "mhlp_smart": [],
+        },
+        "/fake/ipod",
+    )
+    browser = _playlist_browser_for_delete_test(qtbot, cache)
+    monkeypatch.setattr(browser, "_writePlaylistToIPod", lambda *_args, **_kwargs: None)
+    browser.loadPlaylists()
+
+    playlist_index = next(index for index, row in browser.listPanel._playlist_map.items() if row.get("playlist_id") == 20)
+    menu = browser.listPanel._build_context_menu(playlist_index, browser.listPanel)
+    move_action = next(action for action in menu.actions() if action.text() == "Move to Folder")
+    move_menu = move_action.menu()
+    assert move_menu is not None
+    folder_action = next(action for action in move_menu.actions() if action.text() == "Folder")
+
+    folder_action.trigger()
+
+    moved = next(row for row in cache.get_display_playlists() if row.get("playlist_id") == 20)
+    assert moved["parent_folder_playlist_id"] == 10
 
 
 def test_deleting_nested_folder_promotes_direct_children_to_its_parent(
