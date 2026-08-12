@@ -645,6 +645,29 @@ def capabilities_for_family_gen(
     return None
 
 
+def has_uniform_write_profile_for_usb_pid(usb_pid: int) -> bool:
+    """Return whether a normal-mode PID selects one unambiguous write profile."""
+
+    from .models import catalog_variants_for_normal_usb_pid
+
+    variants = catalog_variants_for_normal_usb_pid(usb_pid)
+    if not variants:
+        return False
+    profiles = [
+        capabilities_for_family_gen(
+            variant.family,
+            variant.generation,
+            capacity=variant.capacity,
+            model_number=variant.model_number,
+        )
+        for variant in variants
+    ]
+    first_profile = profiles[0]
+    return first_profile is not None and all(
+        profile == first_profile for profile in profiles[1:]
+    )
+
+
 def cover_art_formats_for_family_gen(
     family: str,
     generation: str,

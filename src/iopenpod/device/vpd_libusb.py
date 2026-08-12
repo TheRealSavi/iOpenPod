@@ -558,17 +558,148 @@ def write_sysinfo(
 
 
 def _apple_product_serial(vpd_info: dict) -> str:
-    """Return the Apple product serial from a vendor or standard VPD field.
+    """Validate an Apple product-serial candidate from live device data.
 
-    Older iPods may expose their product serial only through standard SCSI VPD
-    page 0x80. The macOS IOKit adapter calls that field ``vpd_serial`` because
-    vendor SysInfoExtended pages use the conventional ``SerialNumber`` key.
-    Both identify the same Apple serial here.
+    ``SerialNumber`` is the vendor SysInfoExtended product serial.  Standard
+    SCSI page 0x80 supplies a *unit* serial under ``vpd_serial``; it is retained
+    as raw evidence and may only double as product identity when it has the
+    expected Apple serial shape.
     """
 
-    return str(
+    serial = str(
         vpd_info.get("SerialNumber") or vpd_info.get("vpd_serial") or ""
-    ).strip()
+    ).replace(" ", "").strip().upper()
+    # Published click-wheel-era Apple product serials are 11 or 12
+    # alphanumeric characters.  Short VPD page-0x80 payloads can instead be a
+    # storage LUN/unit identifier (issue #167 returned the single byte "4").
+    if len(serial) not in (11, 12) or not serial.isalnum():
+        return ""
+    return serial
+
+
+def consumer_safe_vpd_info(result: dict) -> dict:
+    """Return VPD data safe for identity parsing, caching, and device writes.
+
+    The original ``result['vpd_info']`` remains untouched diagnostic evidence.
+    When product-serial validation failed, this copy removes ``SerialNumber``
+    from both the parsed mapping and its XML representation while retaining the
+    independent page-0x80 ``vpd_serial`` unit identifier.
+    """
+
+    raw = result.get("vpd_info") or {}
+    safe = dict(raw)
+    if not result.get("serial_rejected_reason"):
+        if result.get("serial"):
+            safe["SerialNumber"] = result["serial"]
+        return safe
+
+    safe.pop("SerialNumber", None)
+    raw_xml = safe.get("vpd_raw_xml")
+    if not raw_xml:
+        return safe
+
+    parsed = _parse_vpd_xml(raw_xml)
+    if not parsed:
+        # An opaque rejected payload must not enter an operational cache.
+        safe.pop("vpd_raw_xml", None)
+        return safe
+    parsed.pop("SerialNumber", None)
+    safe["vpd_raw_xml"] = plistlib.dumps(parsed, fmt=plistlib.FMT_XML)
+    return safe
+
+
+def _validated_result_from_vpd_info(
+    vpd_info: dict,
+    *,
+    mount_path: str = "",
+    usb_pid: int = 0,
+    firewire_guid: str = "",
+) -> dict:
+    """Build consumer identity from a raw VPD record without mutating it."""
+
+    apple_serial = _apple_product_serial(vpd_info)
+    raw_unit_serial = str(vpd_info.get("vpd_serial") or "").strip()
+    raw_product_serial = str(vpd_info.get("SerialNumber") or "").strip()
+    if not apple_serial:
+        logger.debug(
+            "VPD serial rejected as Apple product identity candidate=%r "
+            "unit_serial=%r source=%s keys=%d",
+            raw_product_serial or None,
+            raw_unit_serial or None,
+            vpd_info.get("_source", "unknown"),
+            len([key for key in vpd_info if not str(key).startswith("_")]),
+        )
+
+    vpd_fw_guid = vpd_info.get("FireWireGUID") or vpd_info.get("usb_serial", "")
+    result: dict = {
+        "serial": apple_serial,
+        "firewire_guid": str(vpd_fw_guid).upper() or firewire_guid,
+        "firmware": (
+            vpd_info.get("FireWireVersion")
+            or vpd_info.get("scsi_revision")
+            or vpd_info.get("VisibleBuildID")
+            or vpd_info.get("BuildID", "")
+        ),
+        "model_number": "",
+        "model_family": "",
+        "generation": "",
+        "capacity": "",
+        "color": "",
+        "mount_path": mount_path,
+        "sysinfo_written": False,
+        "vpd_info": vpd_info,
+        "source": vpd_info.get("_source", "vpd"),
+    }
+    if (raw_product_serial or raw_unit_serial) and not apple_serial:
+        result["serial_rejected_reason"] = "invalid_apple_product_serial"
+
+    try:
+        from .lookup import lookup_by_serial, usb_pid_identity_conflicts
+        from .models import USB_PID_TO_MODEL
+
+        lookup = lookup_by_serial(apple_serial) if apple_serial else None
+        if lookup:
+            model_num, info = lookup
+            try:
+                resolved_pid = int(vpd_info.get("usb_pid") or usb_pid or 0)
+            except (TypeError, ValueError):
+                resolved_pid = usb_pid
+            pid_hint = USB_PID_TO_MODEL.get(resolved_pid)
+            if pid_hint and usb_pid_identity_conflicts(
+                info[0], info[1], pid_hint[0], pid_hint[1]
+            ):
+                logger.warning(
+                    "VPD serial ignored serial=%s model=%s because it "
+                    "conflicts with USB PID identity %s %s",
+                    apple_serial,
+                    model_num,
+                    pid_hint[0],
+                    pid_hint[1],
+                )
+                result["serial"] = ""
+                result["serial_rejected_reason"] = "usb_pid_conflict"
+                lookup = None
+        if lookup:
+            model_num, info = lookup
+            result.update({
+                "model_number": model_num,
+                "model_family": info[0],
+                "generation": info[1],
+                "capacity": info[2],
+                "color": info[3],
+            })
+            logger.debug(
+                "VPD serial=%s → %s %s %s %s (%s)",
+                apple_serial,
+                info[0],
+                info[1],
+                info[2],
+                info[3],
+                model_num,
+            )
+    except ImportError:
+        pass
+    return result
 
 
 def identify_via_vpd(
@@ -603,10 +734,12 @@ def identify_via_vpd(
     Returns
     -------
     dict or None
-        ``serial``, ``firewire_guid``, ``firmware``, ``model_number``,
+        Validated ``serial``, ``firewire_guid``, ``firmware``, ``model_number``,
         ``model_family``, ``generation``, ``capacity``, ``color``,
         ``mount_path`` (may differ from input after pyusb remount),
-        ``sysinfo_written`` (bool), ``vpd_info`` (raw VPD dict).
+        ``sysinfo_written`` (bool), and ``vpd_info`` (raw VPD dict).  Rejected
+        serial candidates remain in ``vpd_info`` and are never promoted to
+        the consumer-facing ``serial`` field.
     """
     if sys.platform == "win32":
         logger.debug(
@@ -636,55 +769,13 @@ def identify_via_vpd(
         )
         return None
 
-    apple_serial = _apple_product_serial(vpd_info)
-    if not apple_serial:
-        logger.debug(
-            "identify_via_vpd: VPD returned no Apple serial source=%s keys=%d",
-            vpd_info.get("_source", "unknown"),
-            len([key for key in vpd_info if not str(key).startswith("_")]),
-        )
-        return None
-    vpd_info.setdefault("SerialNumber", apple_serial)
-
-    # ── Step 2: Resolve model from the longest serial suffix ──────
-    vpd_fw_guid = vpd_info.get("FireWireGUID") or vpd_info.get("usb_serial", "")
-    result: dict = {
-        "serial": apple_serial,
-        "firewire_guid": vpd_fw_guid.upper() or firewire_guid,
-        "firmware": (
-            vpd_info.get("FireWireVersion")
-            or vpd_info.get("scsi_revision")
-            or vpd_info.get("VisibleBuildID")
-            or vpd_info.get("BuildID", "")
-        ),
-        "model_number": "",
-        "model_family": "",
-        "generation": "",
-        "capacity": "",
-        "color": "",
-        "mount_path": mount_path,
-        "sysinfo_written": False,
-        "vpd_info": vpd_info,
-        "source": vpd_info.get("_source", "vpd"),
-    }
-
-    try:
-        from .lookup import lookup_by_serial
-
-        lookup = lookup_by_serial(apple_serial)
-        if lookup:
-            model_num, info = lookup
-            result["model_number"] = model_num
-            result["model_family"] = info[0]
-            result["generation"] = info[1]
-            result["capacity"] = info[2]
-            result["color"] = info[3]
-            logger.debug(
-                "identify_via_vpd: serial=%s → %s %s %s %s (%s)",
-                apple_serial, info[0], info[1], info[2], info[3], model_num,
-            )
-    except ImportError:
-        pass
+    # ── Step 2: Expose raw VPD and resolve only validated identity ─
+    result = _validated_result_from_vpd_info(
+        vpd_info,
+        mount_path=mount_path,
+        usb_pid=usb_pid,
+        firewire_guid=firewire_guid,
+    )
 
     # ── Step 3: Handle pyusb remount (non-Windows, non-IOKit) ─────
     used_pyusb = vpd_info.get("_used_pyusb", False)
@@ -695,7 +786,7 @@ def identify_via_vpd(
     effective_path = result["mount_path"]
     if write_sysinfo_to_device and effective_path and os.path.exists(effective_path):
         try:
-            wrote = write_sysinfo(effective_path, vpd_info)
+            wrote = write_sysinfo(effective_path, consumer_safe_vpd_info(result))
             result["sysinfo_written"] = wrote
             if wrote:
                 logger.info("identify_via_vpd: wrote SysInfo to %s", effective_path)
@@ -747,8 +838,7 @@ def _vpd_query_any_platform(
             from .vpd_iokit import query_ipod_vpd as iokit_query
 
             vpd = iokit_query(usb_pid=usb_pid, serial_filter=firewire_guid)
-            if vpd and _apple_product_serial(vpd):
-                vpd.setdefault("SerialNumber", _apple_product_serial(vpd))
+            if vpd:
                 vpd["_source"] = "scsi_vpd"
                 vpd["_transport"] = "iokit_scsi_vpd"
                 logger.debug("_vpd_query_any_platform: IOKit SCSI success")
@@ -768,7 +858,7 @@ def _vpd_query_any_platform(
                 usb_pid=usb_pid,
                 serial_filter=firewire_guid,
             )
-            if vpd and vpd.get("SerialNumber"):
+            if vpd:
                 scsi_vpd = vpd
         except ImportError:
             logger.debug(
@@ -787,7 +877,7 @@ def _vpd_query_any_platform(
                 usb_pid=usb_pid,
                 serial_filter=firewire_guid,
             )
-            if vpd and vpd.get("SerialNumber"):
+            if vpd:
                 scsi_vpd = vpd
         except ImportError:
             logger.debug("_vpd_query_any_platform: iopenpod.device.vpd_linux not available")
@@ -812,7 +902,7 @@ def _vpd_query_any_platform(
     if scsi_vpd is None and pyusb_allowed:
         try:
             vpd = query_ipod_vpd(usb_pid=usb_pid, serial_filter=firewire_guid)
-            if vpd and vpd.get("SerialNumber"):
+            if vpd:
                 vpd["_used_pyusb"] = True
                 vpd.setdefault("_source", "scsi_vpd")
                 vpd.setdefault("_transport", "usb_bulk_scsi_vpd")
@@ -1288,39 +1378,42 @@ def main() -> int:
         print("No iPods found or query failed.")
         return 1
 
-    for info in all_info:
-        pid = info.get("usb_pid", 0)
-        serial = info.get("SerialNumber", info.get("usb_serial", "?"))
-        fw_guid = info.get("FireWireGUID", info.get("usb_serial", ""))
-        family_id = info.get("FamilyID", "?")
-        build_id = info.get("VisibleBuildID", info.get("BuildID", "?"))
+    validated_results = [
+        _validated_result_from_vpd_info(
+            raw,
+            usb_pid=int(raw.get("usb_pid") or 0),
+        )
+        for raw in all_info
+    ]
+
+    for result in validated_results:
+        raw = result["vpd_info"]
+        pid = raw.get("usb_pid", 0)
+        fw_guid = result["firewire_guid"]
+        family_id = raw.get("FamilyID", "?")
+        build_id = raw.get("VisibleBuildID", raw.get("BuildID", "?"))
 
         print(f"{'=' * 60}")
         print(f"iPod (USB PID 0x{pid:04X})")
         print(f"{'=' * 60}")
-        print(f"  Apple Serial:    {serial}")
+        print(f"  Apple Serial:    {result['serial'] or '?'}")
+        print(f"  Raw Product SN:  {raw.get('SerialNumber', '?')}")
+        print(f"  VPD Unit Serial: {raw.get('vpd_serial', '?')}")
+        if result.get("serial_rejected_reason"):
+            print(f"  Serial Rejected: {result['serial_rejected_reason']}")
         print(f"  FireWire GUID:   {fw_guid}")
         print(f"  FamilyID:        {family_id}")
-        print(f"  UpdaterFamilyID: {info.get('UpdaterFamilyID', '?')}")
+        print(f"  UpdaterFamilyID: {raw.get('UpdaterFamilyID', '?')}")
         print(f"  BuildID:         {build_id}")
-        print(f"  SCSI Vendor:     {info.get('scsi_vendor', '?')}")
-        print(f"  SCSI Product:    {info.get('scsi_product', '?')}")
-        print(f"  SCSI Revision:   {info.get('scsi_revision', '?')}")
+        print(f"  SCSI Vendor:     {raw.get('scsi_vendor', '?')}")
+        print(f"  SCSI Product:    {raw.get('scsi_product', '?')}")
+        print(f"  SCSI Revision:   {raw.get('scsi_revision', '?')}")
 
-        # Try serial-suffix model lookup
-        apple_serial = info.get("SerialNumber", "")
-        if apple_serial and len(apple_serial) >= 3:
-            try:
-                from .lookup import lookup_by_serial
-                result = lookup_by_serial(apple_serial)
-                if result:
-                    model_num, model_info = result
-                    print(f"\n  Model:           {model_info[0]} {model_info[1]}")
-                    print(f"  Capacity:        {model_info[2]}")
-                    print(f"  Color:           {model_info[3]}")
-                    print(f"  Model Number:    {model_num}")
-            except ImportError:
-                pass
+        if result["model_number"]:
+            print(f"\n  Model:           {result['model_family']} {result['generation']}")
+            print(f"  Capacity:        {result['capacity']}")
+            print(f"  Color:           {result['color']}")
+            print(f"  Model Number:    {result['model_number']}")
 
         print()
 
@@ -1333,9 +1426,10 @@ def main() -> int:
             print("Waiting for iPods to remount...")
             time.sleep(8)
 
-        for info in all_info:
-            usb_ser = info.get("usb_serial", "")
-            pid = info.get("usb_pid", 0)
+        for result in validated_results:
+            raw = result["vpd_info"]
+            usb_ser = raw.get("usb_serial", "")
+            pid = raw.get("usb_pid", 0)
 
             # Use --path if provided, otherwise auto-detect mount point
             if args.path:
@@ -1352,7 +1446,7 @@ def main() -> int:
 
             if mount:
                 print(f"Writing SysInfo for PID 0x{pid:04X} to {mount}...")
-                if write_sysinfo(mount, info):
+                if write_sysinfo(mount, consumer_safe_vpd_info(result)):
                     print("  Done!")
                 else:
                     print("  WARNING: SysInfo write failed")

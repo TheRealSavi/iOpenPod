@@ -16,6 +16,19 @@ Sources
 - libgpod ``itdb_device.c``
 """
 
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class CatalogModelVariant:
+    """A named view of one model-table entry used for safety decisions."""
+
+    model_number: str
+    family: str
+    generation: str
+    capacity: str
+    color: str
+
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗
 # ║  Comprehensive iPod model database                                      ║
@@ -343,22 +356,37 @@ def _normalized_text(value: str | None) -> str:
     return " ".join(str(value or "").strip().casefold().split())
 
 
-def _canonical_model_number_info(
+def catalog_variant_for_model_number(
     model_number: str | None,
-) -> tuple[str, str, str, str] | None:
+) -> CatalogModelVariant | None:
+    """Return the exact catalog entry represented by a device model string."""
+
     if not model_number:
         return None
-
     normalized = str(model_number).strip().upper()
     candidates = [normalized]
     if normalized and not normalized.startswith("M") and len(normalized) > 1:
         candidates.append("M" + normalized[1:])
-
     for candidate in candidates:
-        info = IPOD_MODELS.get(candidate)
-        if info:
-            return info
+        model_info = IPOD_MODELS.get(candidate)
+        if model_info is not None:
+            return CatalogModelVariant(
+                model_number=candidate,
+                family=model_info[0],
+                generation=model_info[1],
+                capacity=model_info[2],
+                color=model_info[3],
+            )
     return None
+
+
+def _canonical_model_number_info(
+    model_number: str | None,
+) -> tuple[str, str, str, str] | None:
+    variant = catalog_variant_for_model_number(model_number)
+    if variant is None:
+        return None
+    return variant.family, variant.generation, variant.capacity, variant.color
 
 
 def canonicalize_model_identity(
@@ -487,6 +515,63 @@ IPOD_RECOVERY_USB_PIDS: frozenset[int] = frozenset({
 })
 
 IPOD_USB_PIDS: frozenset[int] = frozenset(USB_PID_TO_MODEL)
+
+
+# Some normal-mode PIDs deliberately collapse multiple generations.  Keep the
+# bounded candidate set here, beside the PID catalog, so safety consumers do not
+# turn an empty generation into "every model in this family" by accident.
+_AMBIGUOUS_NORMAL_PID_IDENTITIES: dict[int, tuple[tuple[str, str], ...]] = {
+    0x1202: (("iPod", "1st Gen"), ("iPod", "2nd Gen")),
+    0x1204: (("iPod", "4th Gen (photo)"), ("iPod", "4th Gen (color)")),
+    0x1205: (("iPod Mini", "1st Gen"), ("iPod Mini", "2nd Gen")),
+    0x1209: (("iPod", "5th Gen"), ("iPod", "5.5th Gen")),
+    0x1261: (
+        ("iPod Classic", "6th Gen"),
+        ("iPod Classic", "6.5th Gen"),
+        ("iPod Classic", "7th Gen"),
+    ),
+}
+
+
+def catalog_variants_for_normal_usb_pid(
+    usb_pid: int,
+) -> tuple[CatalogModelVariant, ...]:
+    """Return every catalogued model a normal-mode USB PID can represent.
+
+    Recovery-mode identifiers and coarse PIDs whose candidate generations are
+    not bounded by the catalog intentionally return no variants.
+    """
+
+    if usb_pid in IPOD_RECOVERY_USB_PIDS:
+        return ()
+    mapped_identity = USB_PID_TO_MODEL.get(usb_pid)
+    if mapped_identity is None:
+        return ()
+
+    family, generation, _color = canonicalize_model_identity(*mapped_identity)
+    identities = _AMBIGUOUS_NORMAL_PID_IDENTITIES.get(
+        usb_pid,
+        ((family, generation),) if generation else (),
+    )
+    canonical_identities = {
+        canonicalize_model_identity(candidate_family, candidate_generation)[:2]
+        for candidate_family, candidate_generation in identities
+    }
+    if not canonical_identities:
+        return ()
+
+    return tuple(
+        CatalogModelVariant(
+            model_number=model_number,
+            family=model_info[0],
+            generation=model_info[1],
+            capacity=model_info[2],
+            color=model_info[3],
+        )
+        for model_number, model_info in IPOD_MODELS.items()
+        if canonicalize_model_identity(model_info[0], model_info[1])[:2]
+        in canonical_identities
+    )
 
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗

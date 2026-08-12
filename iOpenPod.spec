@@ -90,10 +90,20 @@ if sys.platform == 'linux':
         if _path:
             _linux_qt_xcb_binaries.append((_path, '.'))
 
+_libusb_binaries = []
+try:
+    import libusb_package
+
+    _libusb_path = libusb_package.get_library_path()
+    if _libusb_path:
+        _libusb_binaries.append((str(_libusb_path), 'libusb_package'))
+except Exception:
+    pass
+
 a = Analysis(
     ['src/iopenpod/__main__.py'],
     pathex=[],
-    binaries=[*_wasmtime_binaries, *_linux_qt_xcb_binaries],
+    binaries=[*_wasmtime_binaries, *_linux_qt_xcb_binaries, *_libusb_binaries],
     datas=[
         ('src/iopenpod/assets', 'iopenpod/assets'),
         ('src/iopenpod/themes', 'iopenpod/themes'),
@@ -102,6 +112,7 @@ a = Analysis(
         *copy_metadata('iopenpod'),
     ],
     hiddenimports=[
+        'libusb_package',
         'usb.backend.libusb1',
         'packaging.version',
         'tzdata',

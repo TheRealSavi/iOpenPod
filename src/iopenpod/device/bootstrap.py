@@ -13,7 +13,7 @@ from .info import (
     DeviceInfo,
     get_current_device,
     get_firewire_id,
-    require_exact_model_number,
+    require_safe_device_profile,
     resolve_itdb_path,
     set_current_device,
 )
@@ -38,7 +38,7 @@ def ensure_device_itunes_database(
     """
 
     root = Path(ipod_path).expanduser().resolve()
-    require_exact_model_number(device_info)
+    require_safe_device_profile(device_info)
     _require_verified_ipod_root(root, device_info)
     existing = resolve_itdb_path(str(root))
     if existing:

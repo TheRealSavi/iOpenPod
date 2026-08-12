@@ -2170,7 +2170,7 @@ def _extract_ipod_name(ipod_path: str) -> str:
     return ""
 
 
-def _ipod_name_from_data(data: bytes) -> str:
+def _ipod_name_from_data(data: bytes | bytearray) -> str:
     """Extract iPod name from a fully in-memory (decompressed) database."""
     import io
     return _ipod_name_from_stream(io.BytesIO(data))
@@ -2384,6 +2384,10 @@ def _try_vpd_identification(ipod: DeviceInfo) -> None:
     if result is None:
         return
 
+    vpd_raw = result.get("vpd_info") or {}
+    if vpd_raw:
+        ipod.raw_identity_evidence.setdefault("vpd", []).append(dict(vpd_raw))
+
     # Apply resolved fields
     if result["model_number"]:
         ipod.model_number = result["model_number"]
@@ -2485,6 +2489,11 @@ def _identify_ipod_mount(mount_path: str, display_name: str) -> DeviceInfo:
     ipod.serial = resolved.get("serial", "")
     ipod.firmware = resolved.get("firmware", "")
     ipod.usb_pid = resolved.get("usb_pid", 0)
+    # _probe_hardware is a current, mount-anchored observation on every
+    # platform.  Keep it process-local so persisted provenance cannot imitate
+    # fresh hardware evidence on a later scan.
+    if hw.get("usb_pid"):
+        ipod._live_usb_pid = int(hw["usb_pid"])
     ipod.hashing_scheme = resolved.get("hashing_scheme", -1)
     ipod.identification_method = resolved.get("identification_method", "filesystem")
     # `DeviceInfo.raw_identity_evidence` expects lists of evidence dicts;

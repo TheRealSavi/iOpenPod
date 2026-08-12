@@ -187,6 +187,9 @@ class DeviceInfo:
     # ── Provenance ────────────────────────────────────────────────────
     identification_method: str = "unknown"
     _field_sources: dict[str, str] = field(default_factory=dict, init=False, repr=False)
+    # Current-process hardware observation; deliberately never persisted in
+    # SysInfo authority metadata.
+    _live_usb_pid: int = field(default=0, init=False, repr=False)
 
     # ── Computed helpers ──────────────────────────────────────────────
 
@@ -765,13 +768,112 @@ def _canonicalize_device_identity(info: DeviceInfo) -> None:
 
 
 class UnidentifiedDeviceError(ValueError):
-    """Raised when code tries to activate an iPod without an exact model."""
+    """Raised when code tries to activate an iPod without a safe profile."""
 
 
 def has_exact_model_number(info: object | None) -> bool:
-    """Return whether *info* has the exact model number required for use."""
+    """Return whether *info* carries an exact catalogued model number."""
 
-    return bool(str(getattr(info, "model_number", "") or "").strip())
+    from .models import catalog_variant_for_model_number
+
+    return catalog_variant_for_model_number(
+        str(getattr(info, "model_number", "") or "")
+    ) is not None
+
+
+def has_safe_device_profile(info: object | None) -> bool:
+    """Return whether *info* identifies one unambiguous write profile.
+
+    A catalogued model with matching identity fields is sufficient unless live
+    hardware contradicts it.  Without one, a current-process hardware PID is
+    sufficient only when it resolves a concrete family/generation and every
+    catalogued variant has the same write-affecting capabilities.
+    """
+
+    if info is None:
+        return False
+
+    from .models import (
+        IPOD_RECOVERY_USB_PIDS,
+        USB_PID_TO_MODEL,
+        canonicalize_model_identity,
+        catalog_variant_for_model_number,
+        catalog_variants_for_normal_usb_pid,
+    )
+
+    exact_variant = catalog_variant_for_model_number(
+        str(getattr(info, "model_number", "") or "")
+    )
+    try:
+        usb_pid = int(getattr(info, "usb_pid", 0) or 0)
+    except (TypeError, ValueError):
+        return False
+    sources = getattr(info, "_field_sources", {}) or {}
+    try:
+        live_usb_pid = int(getattr(info, "_live_usb_pid", 0) or 0)
+    except (TypeError, ValueError):
+        return False
+    if live_usb_pid and live_usb_pid != usb_pid:
+        return False
+    live_pid_matches = (
+        usb_pid != 0
+        and live_usb_pid == usb_pid
+    )
+    family, generation, _color = canonicalize_model_identity(
+        str(getattr(info, "model_family", "") or ""),
+        str(getattr(info, "generation", "") or ""),
+    )
+
+    if exact_variant is not None:
+        exact_family, exact_generation, _color = canonicalize_model_identity(
+            exact_variant.family,
+            exact_variant.generation,
+        )
+        if (family, generation) != (exact_family, exact_generation):
+            return False
+        if not live_pid_matches:
+            return True
+        if usb_pid in IPOD_RECOVERY_USB_PIDS:
+            return False
+        pid_candidates = catalog_variants_for_normal_usb_pid(usb_pid)
+        if pid_candidates:
+            return any(
+                candidate.model_number == exact_variant.model_number
+                for candidate in pid_candidates
+            )
+
+        pid_identity = USB_PID_TO_MODEL.get(usb_pid)
+        if pid_identity is None:
+            return False
+        from .lookup import usb_pid_identity_conflicts
+
+        return not usb_pid_identity_conflicts(
+            exact_variant.family,
+            exact_variant.generation,
+            pid_identity[0],
+            pid_identity[1],
+        )
+
+    if not live_pid_matches:
+        return False
+
+    from .capabilities import has_uniform_write_profile_for_usb_pid
+
+    pid_identity = USB_PID_TO_MODEL.get(usb_pid)
+    if pid_identity is None:
+        return False
+    pid_family, pid_generation, _color = canonicalize_model_identity(*pid_identity)
+    if family != pid_family or sources.get("model_family") != "usb_pid":
+        return False
+    if not pid_generation:
+        # Existing writers consume a concrete family/generation profile.  Do not
+        # activate a cross-generation PID even when today's candidate profiles
+        # happen to compare equal.
+        return False
+    if generation != pid_generation or sources.get("generation") != "usb_pid":
+        return False
+
+    return has_uniform_write_profile_for_usb_pid(usb_pid)
 
 
 def require_exact_model_number(info: object) -> None:
@@ -783,6 +885,18 @@ def require_exact_model_number(info: object) -> None:
     raise UnidentifiedDeviceError(
         f"Refusing to activate unidentified iPod at {path}: "
         "no exact model number was resolved"
+    )
+
+
+def require_safe_device_profile(info: object) -> None:
+    """Reject an iPod whose evidence cannot select one safe write profile."""
+
+    if has_safe_device_profile(info):
+        return
+    path = str(getattr(info, "path", "") or "unknown mount")
+    raise UnidentifiedDeviceError(
+        f"Refusing to activate unidentified iPod at {path}: "
+        "no safe device profile was resolved"
     )
 
 
@@ -843,7 +957,7 @@ def get_current_device_for_path(ipod_path: str | os.PathLike[str]) -> DeviceInfo
 def set_current_device(info: DeviceInfo | None) -> None:
     """Store *info* as the active device (called once during selection)."""
     if info is not None:
-        require_exact_model_number(info)
+        require_safe_device_profile(info)
     _Store._get().current = info
     if info is not None:
         logger.info(
@@ -1616,6 +1730,13 @@ def _start_live_identity_validation(info: DeviceInfo) -> None:
                 return
 
             vpd_raw = result.get("vpd_info") or {}
+            if vpd_raw:
+                evidence = info.raw_identity_evidence.setdefault("vpd", [])
+                if vpd_raw not in evidence:
+                    evidence.append(dict(vpd_raw))
+            from .vpd_libusb import consumer_safe_vpd_info
+
+            consumer_vpd = consumer_safe_vpd_info(result)
             live_source = str(vpd_raw.get("_source") or result.get("source") or "vpd")
             logger.debug(
                 "Live identity validation result: mount=%s source=%s "
@@ -1628,7 +1749,7 @@ def _start_live_identity_validation(info: DeviceInfo) -> None:
             _log_live_validation_differences(cached, result, live_source)
             _cache_live_sysinfo_extended(
                 cached.path,
-                vpd_raw,
+                consumer_vpd,
                 live_source,
                 cached.volume_identity_key,
             )
@@ -1658,13 +1779,13 @@ def _start_live_identity_validation(info: DeviceInfo) -> None:
 
                 parsed = (
                     parse_sysinfo_extended(
-                        vpd_raw["vpd_raw_xml"],
+                        consumer_vpd["vpd_raw_xml"],
                         source=live_source,
                         live=True,
                     )
-                    if vpd_raw.get("vpd_raw_xml")
+                    if consumer_vpd.get("vpd_raw_xml")
                     else ParsedSysInfoExtended(
-                        plist=vpd_raw,
+                        plist=consumer_vpd,
                         source=live_source,
                         live=True,
                     )
@@ -1683,7 +1804,7 @@ def _start_live_identity_validation(info: DeviceInfo) -> None:
                     "scsi_product",
                     "scsi_revision",
                 ):
-                    value = vpd_raw.get(fld)
+                    value = consumer_vpd.get(fld)
                     if value not in (None, "", b""):
                         identity[fld] = value
                         identity_sources[fld] = live_source
@@ -2070,6 +2191,12 @@ def _enrich_from_hardware_probe(info: DeviceInfo) -> None:
     # On Windows, FW GUID comes from the device tree walk specifically
     _fw_source = "device_tree" if _hw_method in ("ioctl", "wmi") else _hw_method
 
+    # Keep the current mount-anchored hardware observation separate from
+    # persisted source labels on every platform.  Authority metadata may restore
+    # an old provenance value, but it cannot restore this process-local evidence.
+    if hw.get("usb_pid"):
+        info._live_usb_pid = int(hw["usb_pid"])
+
     # Merge hardware results into DeviceInfo (never overwrite existing)
     if not info.firewire_guid and hw.get("firewire_guid"):
         guid_hex = hw["firewire_guid"]
@@ -2159,13 +2286,20 @@ def _enrich_from_usb_vpd(info: DeviceInfo) -> None:
 
     vpd_raw = result.get("vpd_info") or {}
     vpd_source = str(vpd_raw.get("_source") or result.get("source") or "vpd")
+    if vpd_raw:
+        evidence = info.raw_identity_evidence.setdefault("vpd", [])
+        if vpd_raw not in evidence:
+            evidence.append(dict(vpd_raw))
+    from .vpd_libusb import consumer_safe_vpd_info
+
+    consumer_vpd = consumer_safe_vpd_info(result)
     logger.debug(
         "enrich: live VPD query result source=%s identity=[%s] caps=[%s]",
         vpd_source,
         format_fields(result, IDENTITY_FIELDS),
         format_fields(vpd_raw, CAPABILITY_FIELDS, include_false=True),
     )
-    _cache_live_sysinfo_extended(info.path, vpd_raw, vpd_source)
+    _cache_live_sysinfo_extended(info.path, consumer_vpd, vpd_source)
 
     # Apply VPD-derived fields to DeviceInfo
     _set_field_from_source(
@@ -2223,15 +2357,15 @@ def _enrich_from_usb_vpd(info: DeviceInfo) -> None:
         )
 
         parsed: ParsedSysInfoExtended | None = None
-        if vpd_raw.get("vpd_raw_xml"):
+        if consumer_vpd.get("vpd_raw_xml"):
             parsed = parse_sysinfo_extended(
-                vpd_raw["vpd_raw_xml"],
+                consumer_vpd["vpd_raw_xml"],
                 source=vpd_source,
                 live=True,
             )
-        elif isinstance(vpd_raw, dict):
+        elif isinstance(consumer_vpd, dict):
             parsed = ParsedSysInfoExtended(
-                plist=vpd_raw,
+                plist=consumer_vpd,
                 source=vpd_source,
                 live=True,
             )
@@ -2250,7 +2384,7 @@ def _enrich_from_usb_vpd(info: DeviceInfo) -> None:
                 "scsi_product",
                 "scsi_revision",
             ):
-                value = vpd_raw.get(fld)
+                value = consumer_vpd.get(fld)
                 if value not in (None, "", b""):
                     identity[fld] = value
                     identity_sources[fld] = vpd_source

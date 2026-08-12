@@ -85,7 +85,7 @@ def _candidate_libusb_paths() -> list[Path]:
     try:
         import libusb_package  # type: ignore
 
-        path = libusb_package.find_library()
+        path = libusb_package.get_library_path()
         if path:
             candidates.append(Path(path))
     except Exception:

@@ -84,11 +84,11 @@ class StartupDeviceRestoreController(QObject):
                 path,
             )
             return
-        from iopenpod.device import has_exact_model_number
+        from iopenpod.device import has_safe_device_profile
 
-        if not has_exact_model_number(ipod):
+        if not has_safe_device_profile(ipod):
             logger.warning(
-                "Fast resume rejected unidentified iPod at '%s': no model number",
+                "Fast resume rejected unidentified iPod at '%s': no safe profile",
                 path,
             )
             self.identification_rejected.emit(path, ipod)

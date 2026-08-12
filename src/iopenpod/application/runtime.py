@@ -900,9 +900,9 @@ class DeviceManager(QObject):
     @discovered_ipod.setter
     def discovered_ipod(self, ipod: DeviceInfoLike | None) -> None:
         if ipod is not None:
-            from iopenpod.device import require_exact_model_number
+            from iopenpod.device import require_safe_device_profile
 
-            require_exact_model_number(ipod)
+            require_safe_device_profile(ipod)
         self._sync_device_info(ipod)
         self._discovered_ipod = ipod
 
@@ -972,10 +972,10 @@ class DeviceManager(QObject):
             from iopenpod.device import (
                 DeviceInfo,
                 ensure_device_itunes_database,
-                require_exact_model_number,
+                require_safe_device_profile,
             )
 
-            require_exact_model_number(self._discovered_ipod)
+            require_safe_device_profile(self._discovered_ipod)
             if isinstance(self._discovered_ipod, DeviceInfo):
                 try:
                     ensure_device_itunes_database(path, self._discovered_ipod)

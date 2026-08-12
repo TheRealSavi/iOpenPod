@@ -79,7 +79,7 @@ from iopenpod.application.sync_session import (
     SyncSessionController,
     SyncSessionMissingTools,
 )
-from iopenpod.device import has_exact_model_number
+from iopenpod.device import has_safe_device_profile
 from iopenpod.gui.device_warnings import show_unidentified_ipod_warning
 from iopenpod.gui.glyphs import glyph_pixmap
 from iopenpod.gui.internal_drag import is_iopenpod_export_drag
@@ -1318,7 +1318,7 @@ class MainWindow(QMainWindow):
                         return
                     folder = selected_ipod.path or folder
 
-                if not has_exact_model_number(selected_ipod):
+                if not has_safe_device_profile(selected_ipod):
                     self._on_unidentified_ipod(folder, selected_ipod)
                     return
 
@@ -1334,7 +1334,7 @@ class MainWindow(QMainWindow):
 
     @pyqtSlot(str, object)
     def _on_unidentified_ipod(self, _path: str, ipod: object) -> None:
-        """Warn without activating an iPod whose exact model is unknown."""
+        """Warn without activating an iPod whose write profile is ambiguous."""
         show_unidentified_ipod_warning(self, ipod, automatic=True)
 
     def onDeviceChanged(self, path: str):

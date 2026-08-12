@@ -32,7 +32,7 @@ from PyQt6.QtWidgets import (
 
 from iopenpod.application.device_identity import linux_identity_setup_guidance
 from iopenpod.application.jobs import DeviceScanWorker
-from iopenpod.device import has_exact_model_number
+from iopenpod.device import has_safe_device_profile
 
 from ..device_warnings import (
     claim_unidentified_ipod_auto_prompt,
@@ -320,7 +320,7 @@ class DeviceCard(QFrame):
         name_label.setStyleSheet(f"color: {name_color}; background: transparent; border: none;")
         layout.addWidget(name_label)
 
-        if not has_exact_model_number(ipod):
+        if not has_safe_device_profile(ipod):
             warning_label = QLabel("Identification failed")
             warning_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.DemiBold))
             warning_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -562,7 +562,7 @@ class DevicePickerDialog(QDialog):
                 self._cards.append(card)
 
             # If only one iPod found, auto-select it
-            if len(ipods) == 1 and has_exact_model_number(ipods[0]):
+            if len(ipods) == 1 and has_safe_device_profile(ipods[0]):
                 self._on_card_clicked(ipods[0])
             self._offer_linux_identity_setup(ipods)
         else:
@@ -641,7 +641,7 @@ class DevicePickerDialog(QDialog):
 
     def _on_card_clicked(self, ipod: Any):
         """Handle a device card being clicked."""
-        if not has_exact_model_number(ipod):
+        if not has_safe_device_profile(ipod):
             self.selected_path = ""
             self.selected_ipod = None
             for card in self._cards:
@@ -662,8 +662,8 @@ class DevicePickerDialog(QDialog):
         self._select_btn.setText(f"Select ({ipod.mount_name})")
 
     def accept(self) -> None:
-        """Accept only a scanned device with a model number or a manual path."""
-        if self.selected_ipod is not None and not has_exact_model_number(
+        """Accept only a scanned device with a safe profile or a manual path."""
+        if self.selected_ipod is not None and not has_safe_device_profile(
             self.selected_ipod
         ):
             show_unidentified_ipod_warning(self, self.selected_ipod)

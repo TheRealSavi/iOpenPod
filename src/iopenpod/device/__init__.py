@@ -68,9 +68,11 @@ from .info import (
     get_current_device_for_path,
     get_firewire_id,
     has_exact_model_number,
+    has_safe_device_profile,
     itdb_write_filename,
     read_sysinfo,
     require_exact_model_number,
+    require_safe_device_profile,
     resolve_itdb_path,
     set_current_device,
 )
