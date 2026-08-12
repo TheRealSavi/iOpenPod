@@ -2456,7 +2456,26 @@ class SyncExecutor:
                 "Ignoring stale transcode plan for %s; resolving from executor settings",
                 source_path.name,
             )
-        return resolve_transcode_plan(source_path, options=self.transcode_options)
+        return self._resolve_transcode_plan_for_item_source(item, source_path)
+
+    def _resolve_transcode_plan_for_item_source(
+        self,
+        item: SyncItem,
+        source_path: Path,
+    ) -> TranscodePlan:
+        pc_track = item.pc_track
+        is_spoken_content = bool(
+            pc_track is not None
+            and (
+                getattr(pc_track, "is_podcast", False)
+                or getattr(pc_track, "is_audiobook", False)
+            )
+        )
+        return resolve_transcode_plan(
+            source_path,
+            is_spoken_content=is_spoken_content,
+            options=self.transcode_options,
+        )
 
     def _execute_removes(self, ctx: _SyncContext) -> None:
         # Combine user-selected removals with mandatory integrity removals
@@ -3525,7 +3544,9 @@ class SyncExecutor:
             artwork_source_cache[feed_url] = source
             return source
 
-        def _apply_episode_info(pc, info) -> None:
+        def _apply_episode_info(item: SyncItem, info) -> None:
+            pc = item.pc_track
+            assert pc is not None
             pc.path = info.path
             pc.size = info.size
             pc.mtime = info.mtime
@@ -3541,6 +3562,15 @@ class SyncExecutor:
             if info.art_hash is not None or not getattr(pc, "art_hash", None):
                 pc.art_hash = info.art_hash
             pc.needs_transcoding = pc.extension not in IPOD_NATIVE_AUDIO
+            transcode_plan = self._resolve_transcode_plan_for_item_source(
+                item,
+                Path(pc.path),
+            )
+            item.transcode_plan = transcode_plan
+            item.estimated_size = transcode_plan.estimate_output_size(
+                source_size=pc.size,
+                duration_ms=pc.duration_ms,
+            )
 
         pending_estimates = [
             max(
@@ -3585,7 +3615,7 @@ class SyncExecutor:
                     artwork_url=_artwork_source(pc.podcast_url or ""),
                     device_safety=source_safety,
                 )
-                _apply_episode_info(pc, info)
+                _apply_episode_info(item, info)
             except DeviceWriteSafetyError:
                 raise
             except OSError as exc:
@@ -3678,7 +3708,7 @@ class SyncExecutor:
                     cancel_token=ctx,
                     device_safety=download_safety,
                 )
-                _apply_episode_info(pc, info)
+                _apply_episode_info(item, info)
                 completed_download_bytes += max(
                     int(info.size or 0),
                     last_downloaded,
