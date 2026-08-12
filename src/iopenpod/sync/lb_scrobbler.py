@@ -37,6 +37,8 @@ import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+from iopenpod.infrastructure.version import get_version
+
 logger = logging.getLogger(__name__)
 
 # ── ListenBrainz constants ──────────────────────────────────────────────────
@@ -47,12 +49,15 @@ LISTENBRAINZ_API_ROOT = "https://api.listenbrainz.org"
 # Submission client identity — included in every listen payload so
 # ListenBrainz can attribute the source.
 SUBMISSION_CLIENT = "iOpenPod"
-SUBMISSION_CLIENT_VERSION = "1.0.0"
+SUBMISSION_CLIENT_VERSION = get_version()
 MEDIA_PLAYER = "iPod"
-IMPORT_SERVICE = "iopenpod"
 
 # The minimum acceptable value for listened_at (from LB source).
 LISTEN_MINIMUM_TS = 1033430400  # 2002-10-01 00:00:00 UTC
+
+# ListenBrainz validates submitted folksonomy tags against these limits.
+MAX_TAGS_PER_LISTEN = 50
+MAX_TAG_SIZE = 64
 
 # Conservative batch size.  The API allows up to 1 000 per request but
 # smaller batches are friendlier to rate limits and reduce the blast
@@ -267,68 +272,16 @@ def listenbrainz_validate_token(token: str) -> str | None:
     return None
 
 
-# ── Public API: latest-import tracking ──────────────────────────────────────
-
-def get_latest_import(
-    username: str,
-    token: str = "",
-    service: str = IMPORT_SERVICE,
-    *,
-    on_timeout: Callable[[float, int, int], None] | None = None,
-    should_abort: Callable[[], bool] | None = None,
-) -> int:
-    """Get the Unix timestamp of the newest listen previously imported.
-
-    Returns 0 if the user has never imported.
-    """
-    try:
-        data, _rl = _make_request(
-            "GET", "/1/latest-import",
-            token=token,
-            params={"user_name": username, "service": service},
-            timeout=15,
-            on_timeout=on_timeout,
-            should_abort=should_abort,
-        )
-        return int(data.get("latest_import", 0))
-    except ScrobbleAborted:
-        raise
-    except Exception as exc:
-        logger.warning("Failed to get latest import timestamp: %s", exc)
-        return 0
-
-
-def set_latest_import(
-    ts: int,
-    token: str,
-    service: str = IMPORT_SERVICE,
-    *,
-    on_timeout: Callable[[float, int, int], None] | None = None,
-    should_abort: Callable[[], bool] | None = None,
-) -> bool:
-    """Update the latest-import timestamp for the authenticated user.
-
-    Returns `True` on success.
-    """
-    try:
-        body = json.dumps({"ts": ts, "service": service}).encode("utf-8")
-        data, _rl = _make_request(
-            "POST", "/1/latest-import",
-            token=token,
-            body=body,
-            timeout=15,
-            on_timeout=on_timeout,
-            should_abort=should_abort,
-        )
-        return data.get("status") == "ok"
-    except ScrobbleAborted:
-        raise
-    except Exception as exc:
-        logger.warning("Failed to set latest import timestamp: %s", exc)
-        return False
-
-
 # ── Public API: submit listens ──────────────────────────────────────────────
+
+def _genre_tags(genre: str) -> list[str]:
+    """Return API-safe tags from a semicolon-delimited genre value."""
+    tags = (
+        part.strip()[:MAX_TAG_SIZE]
+        for part in genre.split(";")
+        if part.strip()
+    )
+    return list(tags)[:MAX_TAGS_PER_LISTEN]
 
 def _build_listen_payload(entry: ScrobbleEntry) -> dict:
     """Convert a ScrobbleEntry into a ListenBrainz listen dict.
@@ -344,7 +297,7 @@ def _build_listen_payload(entry: ScrobbleEntry) -> dict:
     if entry.duration_secs > 0:
         additional_info["duration_ms"] = entry.duration_secs * 1000
     if entry.track_number > 0:
-        additional_info["tracknumber"] = entry.track_number
+        additional_info["tracknumber"] = str(entry.track_number)
     if entry.disc_number > 0:
         additional_info["discnumber"] = entry.disc_number
     if entry.isrc:
@@ -352,7 +305,9 @@ def _build_listen_payload(entry: ScrobbleEntry) -> dict:
     if entry.recording_mbid:
         additional_info["recording_mbid"] = entry.recording_mbid
     if entry.genre:
-        additional_info["tags"] = [entry.genre]
+        genre_tags = _genre_tags(entry.genre)
+        if genre_tags:
+            additional_info["tags"] = genre_tags
 
     listen: dict = {
         "listened_at": entry.timestamp,
@@ -380,8 +335,10 @@ def scrobble_listenbrainz(
 
     Sends batches of up to ``BATCH_SIZE`` listens using the ``import``
     listen type.  Respects rate-limit headers and retries on 429.
-    After a successful submission the ``latest-import`` timestamp is
-    updated so that ListenBrainz knows how far we've imported.
+    The durable iPod play-count queue remains the source of truth for which
+    plays are pending. ListenBrainz's ``latest-import`` endpoint is reserved
+    for its fixed set of external import services and cannot represent
+    iOpenPod.
     """
     result = ScrobbleResult()
     if not entries or not token:
@@ -394,37 +351,8 @@ def scrobble_listenbrainz(
         logger.info("Skipped %d entries with timestamp below LISTEN_MINIMUM_TS", skipped)
         result.ignored += skipped
 
-    if listenbrainz_username:
-        try:
-            latest_import = get_latest_import(
-                listenbrainz_username,
-                token,
-                service=IMPORT_SERVICE,
-                on_timeout=on_timeout,
-                should_abort=should_abort,
-            )
-        except ScrobbleAborted:
-            result.errors.append("User gave up while connecting to ListenBrainz")
-            logger.info("ListenBrainz latest-import lookup aborted by user")
-            return result
-        if latest_import > 0:
-            filtered_entries = [
-                entry for entry in valid_entries if entry.timestamp > latest_import
-            ]
-            skipped = len(valid_entries) - len(filtered_entries)
-            if skipped:
-                logger.info(
-                    "Skipped %d entries at or before latest-import %d",
-                    skipped,
-                    latest_import,
-                )
-                result.ignored += skipped
-            valid_entries = filtered_entries
-
     if not valid_entries:
         return result
-
-    max_ts = 0  # track the newest timestamp we submit
 
     for batch_start in range(0, len(valid_entries), BATCH_SIZE):
         batch = valid_entries[batch_start:batch_start + BATCH_SIZE]
@@ -449,8 +377,6 @@ def scrobble_listenbrainz(
 
             if resp_data.get("status") == "ok":
                 result.accepted += len(batch)
-                batch_max = max(e.timestamp for e in batch)
-                max_ts = max(max_ts, batch_max)
             else:
                 result.errors.append(
                     f"Unexpected response: {resp_data}"
@@ -472,27 +398,6 @@ def scrobble_listenbrainz(
         except Exception as exc:
             result.errors.append(f"Batch at index {batch_start}: {exc}")
             logger.error("ListenBrainz batch error: %s", exc)
-
-    # Update latest-import so LB knows how far we've gotten.
-    if max_ts > 0:
-        try:
-            if not set_latest_import(
-                max_ts,
-                token,
-                service=IMPORT_SERVICE,
-                on_timeout=on_timeout,
-                should_abort=should_abort,
-            ):
-                result.errors.append(
-                    "Latest-import timestamp could not be updated; "
-                    "future duplicate protection may be affected"
-                )
-        except ScrobbleAborted:
-            result.errors.append(
-                "Latest-import update aborted after submission; "
-                "future duplicate protection may be affected"
-            )
-            logger.info("ListenBrainz latest-import update aborted by user")
 
     logger.info(
         "ListenBrainz: %d submitted, %d accepted, %d ignored, %d errors",
@@ -600,9 +505,10 @@ def build_scrobble_entries(
             continue
 
         # Get last_played timestamp (Unix epoch)
+        now = int(time.time())
         last_played = ipod.get("last_played", 0)
-        if last_played <= 0:
-            last_played = int(time.time())
+        if last_played <= 0 or last_played > now:
+            last_played = now
 
         # Generate timestamps for each play, spaced backwards by duration.
         # ListenBrainz expects listened_at to be the playback start time,
@@ -612,7 +518,7 @@ def build_scrobble_entries(
             ts = last_played - ((play_idx + 1) * play_spacing_secs)
             # Ensure timestamp is positive and >= LISTEN_MINIMUM_TS
             if ts < LISTEN_MINIMUM_TS:
-                ts = int(time.time()) - ((play_idx + 1) * play_spacing_secs)
+                ts = now - ((play_idx + 1) * play_spacing_secs)
 
             entries.append(ScrobbleEntry(
                 artist=artist,
