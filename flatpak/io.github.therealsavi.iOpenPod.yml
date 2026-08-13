@@ -25,6 +25,8 @@ finish-args:
   - --socket=x11
   # Allow the app to open a Wayland window.
   - --socket=wayland
+  # Allow audio playback via the host PulseAudio server.
+  - --socket=pulseaudio
   # Give the app access to all host devices, including USB (for iPod).
   - --device=all
   # Allow outbound network access (podcast downloads, artwork, update checks).
