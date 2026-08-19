@@ -139,6 +139,8 @@ if sys.platform == 'linux':
     ]
 pyz = PYZ(a.pure)
 
+_use_upx = sys.platform != 'linux'
+
 exe = EXE(
     pyz,
     a.scripts,
@@ -148,7 +150,7 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=_use_upx,
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -162,7 +164,7 @@ coll = COLLECT(
     a.binaries,
     a.datas,
     strip=False,
-    upx=True,
+    upx=_use_upx,
     upx_exclude=[],
     name='iOpenPod',
 )
