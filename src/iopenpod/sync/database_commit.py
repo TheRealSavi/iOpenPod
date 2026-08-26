@@ -116,6 +116,11 @@ def write_database_commit(
         ),
         before_database_replace=write_guard.assert_database_unchanged,
         before_device_mutation=_before_device_mutation,
+        max_file_size_bytes=getattr(
+            filesystem_profile,
+            "max_file_size_bytes",
+            None,
+        ),
     )
     if not db_ok:
         return False

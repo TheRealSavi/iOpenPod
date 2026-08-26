@@ -68,8 +68,25 @@ from .rgb565 import get_artwork_format_definitions, get_artwork_formats, image_f
 
 logger = logging.getLogger(__name__)
 
-ITHMB_MAX_SIZE_BYTES = 32 * 1000 * 1000
-"""Performance budget for one mutable ITHMB shard before opening the next N."""
+ITHMB_MAX_SIZE_BYTES = 4 * 1024**3 - 1
+"""Fallback per-file budget for one mutable ITHMB shard before opening the
+next N, used only when a real filesystem-observed limit isn't available
+(``write_artworkdb``'s ``max_file_size_bytes`` argument is None).
+
+This used to be a fixed 32MB "performance budget" unrelated to any real
+device/filesystem constraint. Confirmed live on a real 6th Gen iPod
+Classic (2026-08-26): rolling artwork over to a new numbered .ithmb file
+once the current one passed 32MB produced *total* on-device album art
+failure past ~1,500-1,800 tracks, while a genuine Apple iTunes sync of
+the same device wrote a single 335MB .ithmb (no rollover at all) and
+rendered correctly -- ruling out total ArtworkDB bytes as the actual
+constraint. The real limit is the filesystem's own max file size (4GiB-1
+on FAT32/vfat, the filesystem every AlbumArt-capable iPod Classic/Nano
+uses -- see device/filesystem_profile.py's own _MAX_FILE_SIZE_BYTES,
+which was never threaded into this writer). Prefer passing a real
+max_file_size_bytes (e.g. from a FilesystemProfile) over relying on this
+fallback.
+"""
 
 # Backward-compatible test/downstream hook. Production extraction uses
 # ``extract_art_with_source`` unless this symbol has been monkeypatched.
@@ -101,6 +118,7 @@ def _select_ithmb_rewrite_plan(
     existing_art: Mapping[int, dict],
     decisions: Mapping[int, TrackArtworkDecision],
     new_artwork: Mapping[ArtworkAssetRef, ArtworkPayload],
+    max_file_size_bytes: int,
 ) -> tuple[dict[int, set[str]], dict[int, int]]:
     """Choose the lowest numbered file that can hold each new artwork format."""
     indexed_filenames: dict[int, dict[int, str]] = defaultdict(dict)
@@ -147,7 +165,7 @@ def _select_ithmb_rewrite_plan(
         for index in range(1, max_existing_index + 2):
             filename = filenames.get(index, _ithmb_filename(format_id, index))
             total_bytes = preserved_bytes_by_file[(format_id, filename)] + total_new_bytes
-            if total_bytes <= ITHMB_MAX_SIZE_BYTES:
+            if total_bytes <= max_file_size_bytes:
                 rewrite_filenames[format_id] = {filename}
                 writable_start_indices[format_id] = index - 1
                 break
@@ -161,14 +179,14 @@ def _select_ithmb_rewrite_plan(
                     preserved_bytes_by_file[(format_id, filename)]
                     + largest_new_payload
                 )
-                if total_bytes <= ITHMB_MAX_SIZE_BYTES:
+                if total_bytes <= max_file_size_bytes:
                     rewrite_filenames[format_id] = {filename}
                     writable_start_indices[format_id] = index - 1
                     break
             else:
                 raise RuntimeError(
                     f"Artwork format {format_id} has a {largest_new_payload}-byte "
-                    f"payload, exceeding the {ITHMB_MAX_SIZE_BYTES}-byte ITHMB "
+                    f"payload, exceeding the {max_file_size_bytes}-byte ITHMB "
                     "file limit."
                 )
 
@@ -1012,6 +1030,7 @@ def write_artworkdb(
     defer_commit: bool = False,
     progress_callback: Callable[[str], None] | None = None,
     before_device_mutation: Callable[[], None] | None = None,
+    max_file_size_bytes: int | None = None,
 ) -> dict | PendingArtworkWrite:
     """
     Write ArtworkDB and ithmb files for an iPod.
@@ -1041,6 +1060,12 @@ def write_artworkdb(
                          If None, auto-detected from existing ArtworkDB / SysInfo.
         defer_commit: If True, return a PendingArtworkWrite instead of committing
                       immediately.
+        max_file_size_bytes: Real per-file limit for the target filesystem
+                      (e.g. a FilesystemProfile's max_file_size_bytes),
+                      used instead of the module-level ITHMB_MAX_SIZE_BYTES
+                      fallback when provided. Prefer passing this — see
+                      ITHMB_MAX_SIZE_BYTES's own docstring for why an
+                      arbitrary fallback budget is best avoided.
 
     Returns:
         If ``defer_commit=False`` (default): dict mapping track db_track_id →
@@ -1049,6 +1074,9 @@ def write_artworkdb(
         If ``defer_commit=True``: a ``PendingArtworkWrite`` with the
         mapping in ``.db_track_id_to_art_info`` and a ``.commit()`` method.
     """
+    effective_max_file_size_bytes = (
+        max_file_size_bytes if max_file_size_bytes is not None else ITHMB_MAX_SIZE_BYTES
+    )
     artwork_subtree = os.path.join("iPod_Control", "Artwork")
     artwork_dir = str(
         resolve_device_path(
@@ -1128,7 +1156,9 @@ def write_artworkdb(
         progress_callback=progress_callback,
     )
     rewrite_filenames, writable_start_indices = (
-        _select_ithmb_rewrite_plan(existing_art, decisions, unique_converted)
+        _select_ithmb_rewrite_plan(
+            existing_art, decisions, unique_converted, effective_max_file_size_bytes
+        )
         if unique_converted
         else ({}, {})
     )
@@ -1311,7 +1341,7 @@ def write_artworkdb(
         state = ithmb_state[fmt_id]
         if fmt_id not in ithmb_files:
             _open_next_ithmb(fmt_id)
-        elif state["offset"] > 0 and state["offset"] + len(data) > ITHMB_MAX_SIZE_BYTES:
+        elif state["offset"] > 0 and state["offset"] + len(data) > effective_max_file_size_bytes:
             _open_next_ithmb(fmt_id)
 
         filename = _ithmb_filename(fmt_id, state["index"])

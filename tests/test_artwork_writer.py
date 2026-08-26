@@ -1523,8 +1523,66 @@ def test_read_existing_artwork_uses_mhni_filename_for_numbered_ithmb(
     assert ref.ithmb_offset == 4
 
 
-def test_ithmb_shard_budget_limits_mutable_tail_rewrite_size() -> None:
-    assert aw.ITHMB_MAX_SIZE_BYTES == 32 * 1000 * 1000
+def test_ithmb_shard_budget_defaults_to_fat32_max_file_size() -> None:
+    # Was a fixed 32MB "performance budget" -- confirmed live (see
+    # ITHMB_MAX_SIZE_BYTES's own docstring) that rolling over at 32MB,
+    # rather than at a real filesystem limit, is what broke on-device
+    # album art rendering on a real device past ~1,500-1,800 tracks.
+    # Real Apple iTunes doesn't roll over at 32MB either -- it wrote a
+    # single 335MB .ithmb for the same library and rendered correctly.
+    assert aw.ITHMB_MAX_SIZE_BYTES == 4 * 1024**3 - 1
+
+
+def test_write_artworkdb_max_file_size_bytes_overrides_module_default(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    # Same scenario as test_write_artworkdb_rolls_owned_formats_to_next_
+    # numbered_ithmb below, but exercising the new max_file_size_bytes
+    # argument (what a real caller with a live FilesystemProfile should
+    # pass) instead of monkeypatching the module-level fallback constant.
+    ipod_root, artwork_dir = _make_ipod_root(tmp_path)
+    tracks = [_make_track(1), _make_track(2), _make_track(3)]
+    pc_paths = {}
+    for track in tracks:
+        pc_file = tmp_path / f"song-{track.db_track_id}.mp3"
+        pc_file.write_bytes(b"music")
+        pc_paths[track.db_track_id] = str(pc_file)
+
+    monkeypatch.setattr(aw, "get_artwork_format_definitions", lambda _ipod_path: {})
+    monkeypatch.setattr(
+        aw,
+        "extract_art_with_folder",
+        lambda path: Path(path).name.encode("ascii"),
+    )
+    monkeypatch.setattr(
+        aw,
+        "image_from_bytes",
+        lambda data: Image.new("RGB", (1, 1), (data[0], 0, 0)),
+    )
+    monkeypatch.setattr(
+        aw,
+        "encode_image_for_format",
+        lambda _img, fmt_id, *_args, **_kwargs: aw.EncodedFormatPayload(
+            data=bytes([fmt_id % 256]) * 4,
+            width=1,
+            height=1,
+            size=4,
+            stride_pixels=1,
+        ),
+    )
+
+    result = aw.write_artworkdb(
+        str(ipod_root),
+        tracks,
+        pc_file_paths=pc_paths,
+        artwork_formats={REQUIRED_FMT: (1, 1)},
+        max_file_size_bytes=8,
+    )
+
+    assert set(result) == {1, 2, 3}
+    assert (artwork_dir / f"F{REQUIRED_FMT}_1.ithmb").read_bytes() == bytes([REQUIRED_FMT % 256]) * 8
+    assert (artwork_dir / f"F{REQUIRED_FMT}_2.ithmb").read_bytes() == bytes([REQUIRED_FMT % 256]) * 4
 
 
 def test_write_artworkdb_rolls_owned_formats_to_next_numbered_ithmb(

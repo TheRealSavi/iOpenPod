@@ -881,6 +881,7 @@ def write_itunesdb(
     progress_callback: Callable[[str], None] | None = None,
     before_database_replace: Callable[[], None] | None = None,
     before_device_mutation: Callable[[], None] | None = None,
+    max_file_size_bytes: int | None = None,
 ) -> bool:
     """
     Write a complete iTunesDB to an iPod.
@@ -913,6 +914,11 @@ def write_itunesdb(
                       from the current device if not provided.
         master_playlist_name: Display name for the auto-generated master playlist.
         master_playlist_id: Existing dataset 2 master playlist ID, if any.
+        max_file_size_bytes: Real per-file limit for the target filesystem
+                      (e.g. a FilesystemProfile's max_file_size_bytes),
+                      passed through to write_artworkdb(). See that
+                      function's own docstring / ITHMB_MAX_SIZE_BYTES for
+                      why passing this real value matters.
 
     Returns:
         True if successful
@@ -1144,6 +1150,21 @@ def write_itunesdb(
     # --- Write ArtworkDB if the caller requested artwork reconciliation ---
     pending_artwork = None  # PendingArtworkWrite if defer_commit used
     if pc_file_paths is not None:
+        # Resolve the real per-file filesystem limit for ithmb chunking
+        # (see write_artworkdb's own max_file_size_bytes/
+        # ITHMB_MAX_SIZE_BYTES docstrings for why this matters) when the
+        # caller hasn't already supplied one from a live FilesystemProfile
+        # it's holding. Same inspect_device_write_readiness() call
+        # _preflight_database_install() makes later for the overall
+        # database size check -- best-effort: leaves max_file_size_bytes
+        # as None (write_artworkdb's own fallback) rather than failing the
+        # whole write if inspection isn't possible.
+        if max_file_size_bytes is None:
+            try:
+                max_file_size_bytes = inspect_device_write_readiness(ipod_path).max_file_size_bytes
+            except Exception as e:
+                logger.debug("Could not resolve filesystem max file size for ithmb chunking: %s", e)
+
         artwork_formats = None
         if capabilities is not None and not capabilities.supports_artwork:
             try:
@@ -1192,6 +1213,7 @@ def write_itunesdb(
                 defer_commit=True,
                 progress_callback=_progress,
                 before_device_mutation=_before_precommit_mutation,
+                max_file_size_bytes=max_file_size_bytes,
             )
 
             # Extract the mapping — works for both deferred and immediate results

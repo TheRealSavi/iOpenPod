@@ -318,6 +318,7 @@ def write_database(
     case_sensitive_paths: bool | None = None,
     before_database_replace: Callable[[], None] | None = None,
     before_device_mutation: Callable[[], None] | None = None,
+    max_file_size_bytes: int | None = None,
 ) -> bool:
     """Write tracks to iTunesDB (and ArtworkDB if pc_file_paths provided).
 
@@ -370,6 +371,7 @@ def write_database(
             progress_callback=progress_callback,
             before_database_replace=before_database_replace,
             before_device_mutation=before_device_mutation,
+            max_file_size_bytes=max_file_size_bytes,
         )
     except Exception as e:
         logger.exception(
