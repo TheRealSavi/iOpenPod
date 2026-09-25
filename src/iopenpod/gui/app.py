@@ -2503,6 +2503,7 @@ class MainWindow(QMainWindow):
         cache_dir = settings.transcode_cache_dir or ""
 
         ipod_playlists = self.library_cache.get_playlists() or []
+        from iopenpod.itunesdb_shared.playlist_kinds import is_playlist_folder
 
         # Resolve the Subsonic playlist mapping.  When the user has selected
         # playlists, fetch their names so we can show a mapping dialog (New vs
@@ -2528,6 +2529,7 @@ class MainWindow(QMainWindow):
                     for p in ipod_playlists
                     if (p.get("playlist_id") or p.get("Playlist ID"))
                     and not p.get("master_flag")
+                    and not is_playlist_folder(p)
                 ]
                 dlg = SubsonicPlaylistMappingDialog(
                     self,
