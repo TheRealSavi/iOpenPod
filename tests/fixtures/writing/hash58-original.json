@@ -1,0 +1,22 @@
+{
+  "source": "Original iOpenPod src/iopenpod/itunesdb_writer/hash58.py",
+  "source_sha256": "a316aca97b441e10850e4abd5a52ef35eaba26556815c2eebed5f5ad12c06c4f",
+  "pattern": "1024 bytes: (index * 37 + 11) % 256; mhbd marker, 244-byte header, 1024-byte total",
+  "vectors": [
+    {
+      "guid": "0000000000000000",
+      "hash58": "925b8778aaba0f2eb81f40d4cf70ae74b654f5c8",
+      "output_sha256": "3512271f37fbb8f17c311dd31e929ab625a8b258d1316f2217b1d497b37515d5"
+    },
+    {
+      "guid": "0011223344556677",
+      "hash58": "fdbe07ecd784c50ddcb126dd2d96cca9e1b34e94",
+      "output_sha256": "08ac527dfbd64c376e6f504cd807016030724b5490b764747bc3ba4aa60e64da"
+    },
+    {
+      "guid": "ffffffffffffffff",
+      "hash58": "87fa95ec1b8aba7bdd1c870ab41d11d297b4e048",
+      "output_sha256": "bccb29864915748b7e8602ff1e2b34ef5d1fc318e79b507f623978e4060a3e46"
+    }
+  ]
+}

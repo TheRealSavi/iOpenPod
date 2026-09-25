@@ -1,0 +1,7 @@
+rust-ciborium-io 0.2.0
+Source: https://static.crates.io/crates/ciborium-io/ciborium-io-0.2.0.crate
+Archive SHA-256: 346de753af073cc87b52b2083a506b38ac176a44cfb05497b622e27be899b369
+
+These notices are preserved from the upstream source distribution.
+This may include notices for upstream components not used in iOpenPod.
+Each component retains its own license; inclusion is not relicensing.

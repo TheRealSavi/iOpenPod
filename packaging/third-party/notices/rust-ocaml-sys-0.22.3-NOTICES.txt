@@ -1,0 +1,7 @@
+rust-ocaml-sys 0.22.3
+Source: https://static.crates.io/crates/ocaml-sys/ocaml-sys-0.22.3.crate
+Archive SHA-256: 73ec6ca7d41458442627435afb8f4671e83fd642e8a560171d671a1f679aa3cf
+
+These notices are preserved from the upstream source distribution.
+This may include notices for upstream components not used in iOpenPod.
+Each component retains its own license; inclusion is not relicensing.

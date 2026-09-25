@@ -1,0 +1,7 @@
+rust-winapi-x86_64-pc-windows-gnu 0.4.0
+Source: https://static.crates.io/crates/winapi-x86_64-pc-windows-gnu/winapi-x86_64-pc-windows-gnu-0.4.0.crate
+Archive SHA-256: 712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f
+
+These notices are preserved from the upstream source distribution.
+This may include notices for upstream components not used in iOpenPod.
+Each component retains its own license; inclusion is not relicensing.

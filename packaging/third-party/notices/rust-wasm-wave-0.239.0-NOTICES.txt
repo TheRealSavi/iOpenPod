@@ -1,0 +1,7 @@
+rust-wasm-wave 0.239.0
+Source: https://static.crates.io/crates/wasm-wave/wasm-wave-0.239.0.crate
+Archive SHA-256: eb21d7c71e0571ca78cc756606094d8d973116b7eaba8d40a23e7c4859061920
+
+These notices are preserved from the upstream source distribution.
+This may include notices for upstream components not used in iOpenPod.
+Each component retains its own license; inclusion is not relicensing.

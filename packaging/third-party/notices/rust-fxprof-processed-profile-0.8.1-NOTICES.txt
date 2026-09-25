@@ -1,0 +1,7 @@
+rust-fxprof-processed-profile 0.8.1
+Source: https://static.crates.io/crates/fxprof-processed-profile/fxprof-processed-profile-0.8.1.crate
+Archive SHA-256: 25234f20a3ec0a962a61770cfe39ecf03cb529a6e474ad8cff025ed497eda557
+
+These notices are preserved from the upstream source distribution.
+This may include notices for upstream components not used in iOpenPod.
+Each component retains its own license; inclusion is not relicensing.

@@ -1,0 +1,7 @@
+rust-souper-ir 2.1.0
+Source: https://static.crates.io/crates/souper-ir/souper-ir-2.1.0.crate
+Archive SHA-256: a50c18ce33988e1973003afbaa66e6a465ad7a614dc33f246879ccc209c2c044
+
+These notices are preserved from the upstream source distribution.
+This may include notices for upstream components not used in iOpenPod.
+Each component retains its own license; inclusion is not relicensing.

@@ -1,0 +1,8 @@
+<svg width="24" height="24" fill="none" viewBox="0 0 24 24">
+  <path d="M12 20.25V13.5M12 13.5L7.5 9.75M12 13.5L16.75 9.25M7.5 9.75L4.5 6.75M7.5 9.75L6.25 5.25M16.75 9.25L19.75 6M16.75 9.25L18 4.75" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"/>
+  <circle cx="4.25" cy="6.5" r="1.25" stroke="currentColor" stroke-width="1.5"/>
+  <circle cx="6" cy="4.75" r="1" fill="currentColor"/>
+  <circle cx="20" cy="5.75" r="1.25" stroke="currentColor" stroke-width="1.5"/>
+  <circle cx="18.25" cy="4.25" r="1" fill="currentColor"/>
+  <circle cx="12" cy="20.25" r="1.25" stroke="currentColor" stroke-width="1.5"/>
+</svg>

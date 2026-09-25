@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=iOpenPod
+Comment=Manage your iPod media library without iTunes
+Exec=iOpenPod
+Icon=io.github.therealsavi.iOpenPod
+Categories=AudioVideo;Audio;Utility;
+Keywords=iPod;Music;Sync;
+Terminal=false
+StartupNotify=true
+StartupWMClass=iOpenPod

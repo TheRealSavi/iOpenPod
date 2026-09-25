@@ -1,0 +1,7 @@
+rust-torch-sys 0.17.0
+Source: https://static.crates.io/crates/torch-sys/torch-sys-0.17.0.crate
+Archive SHA-256: ef116d446d79bb2447748550baee86850d2d32d366cc9bdd4b217bdbe10cac63
+
+These notices are preserved from the upstream source distribution.
+This may include notices for upstream components not used in iOpenPod.
+Each component retains its own license; inclusion is not relicensing.

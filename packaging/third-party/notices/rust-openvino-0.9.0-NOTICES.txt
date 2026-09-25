@@ -1,0 +1,7 @@
+rust-openvino 0.9.0
+Source: https://static.crates.io/crates/openvino/openvino-0.9.0.crate
+Archive SHA-256: 3308ec088481c27b5b521598ced2d5d5f67253d9639f5a3cce5a2ea4c4062a94
+
+These notices are preserved from the upstream source distribution.
+This may include notices for upstream components not used in iOpenPod.
+Each component retains its own license; inclusion is not relicensing.

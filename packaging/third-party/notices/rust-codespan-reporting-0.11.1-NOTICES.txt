@@ -1,0 +1,7 @@
+rust-codespan-reporting 0.11.1
+Source: https://static.crates.io/crates/codespan-reporting/codespan-reporting-0.11.1.crate
+Archive SHA-256: 3538270d33cc669650c4b093848450d380def10c331d38c768e34cac80576e6e
+
+These notices are preserved from the upstream source distribution.
+This may include notices for upstream components not used in iOpenPod.
+Each component retains its own license; inclusion is not relicensing.

@@ -1,0 +1,7 @@
+rust-crunchy 0.2.2
+Source: https://static.crates.io/crates/crunchy/crunchy-0.2.2.crate
+Archive SHA-256: 7a81dae078cea95a014a339291cec439d2f232ebe854a9d672b796c6afafa9b7
+
+These notices are preserved from the upstream source distribution.
+This may include notices for upstream components not used in iOpenPod.
+Each component retains its own license; inclusion is not relicensing.

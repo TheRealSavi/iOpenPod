@@ -1,0 +1,7 @@
+rust-wat 1.239.0
+Source: https://static.crates.io/crates/wat/wat-1.239.0.crate
+Archive SHA-256: 3e1c941927d34709f255558166f8901a2005f8ab4a9650432e9281b7cc6f3b75
+
+These notices are preserved from the upstream source distribution.
+This may include notices for upstream components not used in iOpenPod.
+Each component retains its own license; inclusion is not relicensing.

@@ -1,0 +1,7 @@
+rust-openvino-finder 0.9.0
+Source: https://static.crates.io/crates/openvino-finder/openvino-finder-0.9.0.crate
+Archive SHA-256: bba5393f3522f98d9c4703a6a73afc7feff2bf9cc00a0722957b54c44ecda5fe
+
+These notices are preserved from the upstream source distribution.
+This may include notices for upstream components not used in iOpenPod.
+Each component retains its own license; inclusion is not relicensing.

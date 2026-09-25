@@ -1,0 +1,47 @@
+charset-normalizer 3.5.1
+Source: https://files.pythonhosted.org/packages/e5/3f/143b048436775b0f76ac3eec145c019e8173ccc2885c8f20319b996d5e83/charset_normalizer-3.5.1.tar.gz
+Archive SHA-256: 6117b84ea48435e5356dc737f5121485c30920ba43375fa7b434fd753df0eac3
+
+These notices are preserved from the upstream source distribution.
+This may include notices for upstream components not used in iOpenPod.
+Each component retains its own license; inclusion is not relicensing.
+
+========================================================================
+Source file: charset_normalizer-3.5.1/LICENSE
+========================================================================
+
+MIT License
+
+Copyright (c) 2025 TAHRI Ahmed R.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+========================================================================
+Source file: charset_normalizer-3.5.1/data/NOTICE.md
+========================================================================
+
+Included and Redistributed Files
+---------------------------------
+
+17 files are included in the source distribution tar. They are used to verify the standard functions of
+this library. They are mandatory to run `pytest` but not required to make the lib usable after install.
+They DO NOT guarantee that the detection-coverage will not regress.
+
+Those are EITHER pulled from Wikipedia _(CC-BY-SA)_ OR public domain archive.
+You SHALL NOT modify any of those files without explicit approval.

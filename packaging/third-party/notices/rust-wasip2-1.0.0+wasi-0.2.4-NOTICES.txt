@@ -1,0 +1,7 @@
+rust-wasip2 1.0.0+wasi-0.2.4
+Source: https://static.crates.io/crates/wasip2/wasip2-1.0.0+wasi-0.2.4.crate
+Archive SHA-256: 03fa2761397e5bd52002cd7e73110c71af2109aca4e521a9f40473fe685b0a24
+
+These notices are preserved from the upstream source distribution.
+This may include notices for upstream components not used in iOpenPod.
+Each component retains its own license; inclusion is not relicensing.

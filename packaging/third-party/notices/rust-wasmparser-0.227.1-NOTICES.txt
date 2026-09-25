@@ -1,0 +1,7 @@
+rust-wasmparser 0.227.1
+Source: https://static.crates.io/crates/wasmparser/wasmparser-0.227.1.crate
+Archive SHA-256: 0f51cad774fb3c9461ab9bccc9c62dfb7388397b5deda31bf40e8108ccd678b2
+
+These notices are preserved from the upstream source distribution.
+This may include notices for upstream components not used in iOpenPod.
+Each component retains its own license; inclusion is not relicensing.

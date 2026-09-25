@@ -1,0 +1,7 @@
+winrt-windows-foundation 3.2.1
+Source: https://files.pythonhosted.org/packages/0c/55/098ce7ea0679efcc1298b269c48768f010b6c68f90c588f654ec874c8a74/winrt_windows_foundation-3.2.1.tar.gz
+Archive SHA-256: ad2f1fcaa6c34672df45527d7c533731fdf65b67c4638c2b4aca949f6eec0656
+
+These notices are preserved from the upstream source distribution.
+This may include notices for upstream components not used in iOpenPod.
+Each component retains its own license; inclusion is not relicensing.

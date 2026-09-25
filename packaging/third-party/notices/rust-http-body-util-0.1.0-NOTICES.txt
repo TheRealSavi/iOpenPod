@@ -1,0 +1,7 @@
+rust-http-body-util 0.1.0
+Source: https://static.crates.io/crates/http-body-util/http-body-util-0.1.0.crate
+Archive SHA-256: 41cb79eb393015dadd30fc252023adb0b2400a0caee0fa2a077e6e21a551e840
+
+These notices are preserved from the upstream source distribution.
+This may include notices for upstream components not used in iOpenPod.
+Each component retains its own license; inclusion is not relicensing.

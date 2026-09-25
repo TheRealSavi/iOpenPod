@@ -1,0 +1,7 @@
+rust-wit-bindgen-rt 0.33.0
+Source: https://static.crates.io/crates/wit-bindgen-rt/wit-bindgen-rt-0.33.0.crate
+Archive SHA-256: 3268f3d866458b787f390cf61f4bbb563b922d091359f9608842999eaee3943c
+
+These notices are preserved from the upstream source distribution.
+This may include notices for upstream components not used in iOpenPod.
+Each component retains its own license; inclusion is not relicensing.

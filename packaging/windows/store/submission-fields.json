@@ -1,0 +1,163 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Copy-ready Partner Center fields; not a Microsoft submission API payload.",
+  "preparedDate": "2026-09-25",
+  "publicationStatus": "Local preparation only; no Partner Center submission or hosting is asserted.",
+  "product": {
+    "storeId": "9P2LXCHHWLG9",
+    "packageIdentityName": "TheRealSavi.iOpenPod",
+    "publisher": "CN=FB5CD908-9397-4B6A-B014-49E83AB6CE1A",
+    "publisherDisplayName": "TheRealSavi",
+    "packageFamilyName": "TheRealSavi.iOpenPod_gncxjke9mmtsj",
+    "packageVersion": "2.0.0.0",
+    "architecture": "x64",
+    "targetDeviceFamily": "Windows.Desktop",
+    "minimumWindowsVersion": "10.0.19041.0",
+    "primaryCategory": "Music",
+    "secondaryCategory": "Utilities + tools",
+    "subcategory": null,
+    "hardwarePreferences": [
+      "Keyboard",
+      "Mouse"
+    ],
+    "allowMicrosoftToTargetFutureDeviceFamilies": false
+  },
+  "pricingAndAvailability": {
+    "basePrice": "Free",
+    "trial": "None",
+    "visibility": "Public",
+    "publishingHold": "Do not publish until the owner selects Publish now.",
+    "markets": "Use verified account eligibility; do not enable markets requiring unprovided regulatory details."
+  },
+  "listing": {
+    "locale": "en-us",
+    "title": "iOpenPod",
+    "description": "Sync and media conversion require separately installed FFmpeg, FFprobe, and Chromaprint (fpcalc), available on your Windows PATH. These command-line tools are not included or downloaded by iOpenPod. A compatible iPod mounted as a Windows drive is required for device management.\n\nBring your iPod library back into your hands. iOpenPod is a free, open-source desktop app for browsing, organizing, and synchronizing your own music, videos, playlists, and photos without iTunes.\n\nBrowse albums and tracks with artwork, search your library, edit metadata and ratings, and organize playlists and Smart Playlists. Play supported local tracks with Windows media controls and explore the music-reactive Synesthesia visualizer.\n\nChoose media folders on your computer, select what belongs on your iPod, and review additions, updates, and removals before Sync. Device-aware preparation converts media when needed. Fingerprint matching helps recognize recordings across format or metadata changes.\n\nBrowse and export supported iPod photos, manage Photo Albums, and keep local Backup Snapshots for recovery. Library edits save automatically by default; turn on Draft all changes if you prefer to review them before saving.\n\nBrowse podcast subscriptions, find shows through Apple's public podcast directory, and refresh RSS feeds and artwork. Internet access is needed for these features. Your local media library is not uploaded to the developer.\n\niOpenPod targets filesystem-accessible iPod classic, mini, and nano families. Features depend on the device. iPod touch, iPhone, and iPod shuffle are not supported by this release. Your iPod must already be readable and writable in Windows; no filesystem drivers are included. DRM-protected media is not supported.\n\nAll features are free. Optional donations through Ko-fi support development and do not unlock features. Microsoft is not the fundraiser or sponsor. No iOpenPod account is required.\n\niOpenPod is free software under GPLv3 or later, with third-party notices included. It is an independent project and is not affiliated with or endorsed by Apple Inc. iPod and iTunes are trademarks of Apple Inc. Manage only media you have the right to use, and keep backups of irreplaceable files.",
+    "shortDescription": "Browse, organize, and sync your iPod library with a free, open-source desktop app. Supports music, playlists, photos, and local backups. Sync requires separately installed FFmpeg, FFprobe, and Chromaprint.",
+    "features": [
+      "Browse albums, tracks, artwork, and playlists on a compatible iPod.",
+      "Edit metadata, ratings, playlists, and Smart Playlists.",
+      "Review selected additions, updates, and removals before Sync.",
+      "Match recordings using locally calculated acoustic fingerprints.",
+      "Browse and export supported photos and manage Photo Albums.",
+      "Create and manage local Backup Snapshots.",
+      "Play supported tracks with Windows media controls.",
+      "Explore music-reactive Synesthesia visuals.",
+      "Search podcast feeds and manage subscriptions on your iPod.",
+      "Choose light, dark, or system appearance.",
+      "All features are free; donations are optional."
+    ],
+    "keywords": [
+      "music library",
+      "media manager",
+      "playlist editor",
+      "music sync",
+      "audio player",
+      "photo backup",
+      "podcast organizer"
+    ],
+    "copyrightAndTrademarkInfo": "Copyright 2025-2026 John Gibbons. iPod and iTunes are trademarks of Apple Inc. iOpenPod is independent and is not affiliated with or endorsed by Apple Inc.",
+    "licenseTerms": "iOpenPod is licensed under the GNU General Public License, version 3 or (at your option) any later version. The complete license is available at https://www.gnu.org/licenses/gpl-3.0.html and is included with the app. Copyright 2025-2026 John Gibbons. This software is provided without warranty to the extent permitted by law. You may use, study, modify, and redistribute it under the GPL. Third-party components retain their own notices and applicable licenses supplied with the app. Matching source code and build materials accompany each public release; see https://therealsavi.github.io/iOpenPod/iopenpod-2/license.html for the release downloads. No additional restriction on GPL-granted rights is imposed by the developer. Optional donations confer no additional features or license rights. The application icon by DJShott is used under separate permission for iOpenPod updates, not a blanket GPL or standalone-art reuse license.",
+    "developedBy": "John Gibbons",
+    "releaseNotes": "",
+    "minimumHardware": [
+      "Compatible iPod mounted as a readable and writable Windows drive for device management.",
+      "FFmpeg and FFprobe installed separately and available on PATH for probing and conversion.",
+      "Chromaprint fpcalc installed separately and available on PATH for fingerprint matching during Sync.",
+      "Internet access for podcast search, feed refresh, and remote artwork.",
+      "Free space for selected media, temporary conversion files, and any Backup Snapshots.",
+      "Graphics hardware and drivers supporting Direct3D 11 for Synesthesia visuals."
+    ],
+    "recommendedHardware": [],
+    "screenshots": [
+      {
+        "file": "screenshots/01-album-library.png",
+        "caption": "Browse your iPod music by album, artist, genre, or track. Shown with a fictional sample library.",
+        "deviceFamily": "Desktop"
+      },
+      {
+        "file": "screenshots/02-album-details.png",
+        "caption": "Open an album to browse its tracks, metadata, ratings, and artwork.",
+        "deviceFamily": "Desktop"
+      },
+      {
+        "file": "screenshots/03-playlists.png",
+        "caption": "Browse and organize playlists with track details and a cover-art overview.",
+        "deviceFamily": "Desktop"
+      },
+      {
+        "file": "screenshots/04-photo-library.png",
+        "caption": "Browse photo albums and inspect the image representations stored on a supported iPod. Sample illustrations shown.",
+        "deviceFamily": "Desktop"
+      },
+      {
+        "file": "screenshots/05-sync-review.png",
+        "caption": "Review selected changes before syncing media from your computer to your iPod. No changes are applied in this sample.",
+        "deviceFamily": "Desktop"
+      },
+      {
+        "file": "screenshots/06-about-and-credits.png",
+        "caption": "Free and open source, with optional donations and acknowledgements for the projects that make iOpenPod possible.",
+        "deviceFamily": "Desktop"
+      }
+    ],
+    "appTileIcon": {
+      "file": "assets/store-logo-300.png",
+      "dimensions": "300x300"
+    }
+  },
+  "supportAndPrivacy": {
+    "accessesCollectsOrTransmitsPersonalInformation": true,
+    "supportContact": "johngibbons167@gmail.com",
+    "privacyPolicyTextFile": "privacy.md",
+    "privacyPolicyCandidateUrl": "https://therealsavi.github.io/iOpenPod/iopenpod-2/privacy.html",
+    "supportCandidateUrl": "https://therealsavi.github.io/iOpenPod/iopenpod-2/support.html",
+    "websiteCandidateUrl": "https://therealsavi.github.io/iOpenPod/iopenpod-2/support.html",
+    "licenseCandidateUrl": "https://therealsavi.github.io/iOpenPod/iopenpod-2/license.html",
+    "candidateUrlsPublishedAndVerified": false,
+    "sourceReleaseUrl": null,
+    "note": "Publish and anonymously verify candidate URLs and exact matching source artifacts before public distribution. The development repository is private."
+  },
+  "productDeclarations": {
+    "purchasesOutsideMicrosoftCommerce": true,
+    "paymentExplanation": "Optional Ko-fi donation in external browser; no paid features or digital goods; no Microsoft commerce. Microsoft is not the fundraiser or sponsor.",
+    "testedToMeetAccessibilityGuidelines": false,
+    "installOnAlternateDrives": true,
+    "includeDataInAutomaticOneDriveBackups": false,
+    "gameRecordingAndBroadcast": false,
+    "penAndInk": false,
+    "generativeAI": false,
+    "accountRequired": false,
+    "advertising": false,
+    "mixedReality": false
+  },
+  "ageRatings": {
+    "iarcRatingId": null,
+    "status": "Generate in the actual Partner Center IARC questionnaire; do not invent a rating.",
+    "evidenceFile": "listing.md",
+    "categoryBasis": "Non-game music/media application.",
+    "userCommunication": false,
+    "userContentPublishing": false,
+    "locationSharing": false,
+    "realOrSimulatedGambling": false,
+    "paidDigitalGoods": false,
+    "uncuratedPodcastDirectoryAndUserSelectedMedia": true,
+    "note": "Disclose third-party catalog/media content and optional donations according to actual question wording; do not claim all accessible content is suitable for children."
+  },
+  "certification": {
+    "notes": "iOpenPod is a free, GPLv3-or-later Windows desktop application for managing a user's filesystem-accessible iPod and local media. It is built with Python and Qt and packaged as an x64 MSIX. No iOpenPod account, subscription, payment, or administrator access is required to launch or use the application.\n\nHardware: device management needs a compatible iPod classic, mini, or nano mounted as a readable/writable Windows drive. iPod touch, iPhone, and iPod shuffle are unsupported. The app does not install drivers or NT services. It does not format devices. Different iPod models expose different features. Please use test media and a test device for write workflows.\n\nExternal dependencies: scanning, acoustic fingerprint matching, and conversion/Sync require separately installed ffmpeg.exe, ffprobe.exe, and Chromaprint fpcalc.exe on the current user's PATH. They are not bundled or downloaded. This is disclosed at the beginning of the Store description and in support instructions. The app detects missing helpers and blocks affected operations before changing the iPod. Qt's ordinary playback libraries are included. The app can launch, show Settings, browse a compatible connected library, and play supported media without all command-line tools.\n\nBasic check: launch from Start; open Settings and switch light/dark/system appearance; open the Device Picker. A machine without an iPod should show no available device rather than fail. Close and reopen the app to verify settings persistence.\n\nDevice check: connect a test iPod, select it, browse Albums and Tracks, and play a supported track. Check Windows media controls. Create a Backup Snapshot before testing writes. Library edits save automatically; enable Draft all changes to use manual review/save. For Sync, choose local test media folders, allow scanning, select media, inspect Review, and choose Sync Selected. Check the resulting library after reconnecting. Eject only after operations finish.\n\nPodcast check: with a supported iPod selected, open Podcasts, use Add Podcast to search Apple's public directory or add a public HTTPS RSS feed, and refresh the show. Opening podcast pages may automatically refresh subscribed feeds and request artwork. These actions require Internet access but no Apple account. Third-party feeds can change or become unavailable. The app does not provide general web browsing or user-to-user publishing/messaging.\n\nData: media processing, acoustic fingerprints, settings, backups, and logs are local. Podcast queries/feed/artwork requests contact Apple and feed/image hosts. Windows media controls receive current-track metadata. There is no developer analytics or automatic crash upload. A privacy policy is provided. Diagnostic logs are user-shareable only; no login credentials are needed for certification.\n\nPayments: Settings has an optional Donate button that opens the developer's Ko-fi page in the system browser. Ko-fi and its payment providers handle confirmation and payment details over their secure transaction flow. No donation is required and no features/content are unlocked. Microsoft is not the fundraiser or sponsor. This external donation flow is declared in Product declarations.\n\nLicense: GPLv3-or-later for iOpenPod, with separate third-party notices and exact corresponding-source release materials. Please use the supplied custom license terms instead of treating the application as proprietary. Attribution includes Dylan Staley's HASHAB WebAssembly implementation and thanks to libgpod/gtkpod contributors.",
+    "restrictedCapabilities": {
+      "runFullTrust": "iOpenPod is a packaged desktop application with a Python runtime and Qt GUI that must run outside AppContainer. It uses ordinary desktop filesystem APIs to read the local media folders the user selects and to manage an explicitly selected removable iPod volume. It reads device identity using Windows storage/Plug and Play APIs, uses verified staged filesystem transactions for library/media updates and backup/restore, and requests native safe ejection. It starts user-installed FFmpeg/FFprobe/fpcalc processes for local media inspection, conversion, and acoustic fingerprints. Qt provides local playback and Direct3D 11 visualizations; WinRT publishes current-track metadata to Windows media controls. These desktop APIs and user-selected removable-media workflows require runFullTrust. The executable is asInvoker, does not request administrator elevation, does not install services/drivers, and does not download or execute remote code. It stores mutable state in user locations, not its installed package directory."
+    },
+    "credentials": "None required.",
+    "packageFile": null,
+    "packageSha256": null,
+    "exactBuildWackReport": null,
+    "evidenceNote": "Populate from the final release record; previous preview WACK passes do not certify another package."
+  },
+  "accountSpecificFields": {
+    "verification": "Use existing verified Partner Center account records.",
+    "phoneAndPostalAddress": "Do not invent; provide only if required for chosen account/markets.",
+    "traderStatus": "Owner/account legal fact; no assertion made from free pricing alone."
+  }
+}

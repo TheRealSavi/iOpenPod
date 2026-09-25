@@ -1,0 +1,7 @@
+winrt-windows-storage-streams 3.2.1
+Source: https://files.pythonhosted.org/packages/00/50/f4488b07281566e3850fcae1021f0285c9653992f60a915e15567047db63/winrt_windows_storage_streams-3.2.1.tar.gz
+Archive SHA-256: 476f522722751eb0b571bc7802d85a82a3cae8b1cce66061e6e758f525e7b80f
+
+These notices are preserved from the upstream source distribution.
+This may include notices for upstream components not used in iOpenPod.
+Each component retains its own license; inclusion is not relicensing.

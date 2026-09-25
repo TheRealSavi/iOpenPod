@@ -1,0 +1,547 @@
+---
+title: iOpenPod - Desktop iPod Manager for Windows, macOS, and Linux
+description: iOpenPod is a free, open-source desktop application for managing iPods without iTunes. Browse, edit, sync, transcode, manage podcasts and playlists, write artwork and photos, and back up device data.
+keywords: iPod sync tool, iPod Classic manager, iTunes alternative, iTunesDB, iPod music sync, open source iPod, iPod Linux, iPod Windows, iPod manager without iTunes, FLAC to iPod, iPod Nano sync, iPod podcast manager, download iPod manager, Linux iPod sync tool
+og_title: iOpenPod - Desktop iPod Manager
+og_description: Manage iPods without iTunes. Browse, edit, sync, transcode, manage podcasts and playlists, write artwork and photos, and back up device data.
+og_image: https://therealsavi.github.io/iOpenPod/screenshots/hero.webp
+twitter_description: Free, open-source desktop application for managing iPods on Windows, macOS, and Linux.
+include_faq_schema: true
+body_class: home-page
+permalink: /
+---
+    <a class="skip-link" href="#main-content">Skip to content</a>
+
+    <nav class="site-nav" aria-label="Primary navigation">
+        <div class="container site-nav__inner">
+            <a class="site-wordmark" href="./" aria-label="iOpenPod home"><span class="site-wordmark__mark">i</span>OpenPod</a>
+            <div class="site-nav__links">
+                <a href="install-help/">Help</a>
+                <a href="https://github.com/TheRealSavi/iOpenPod">Source</a>
+                <a href="https://discord.gg/9Yy499Tf5d">Discord</a>
+                <a href="https://ko-fi.com/johngibbons">Donate</a>
+                <a href="#install">Download</a>
+                <button type="button" class="site-nav__action theme-toggle" data-theme-toggle aria-pressed="false" aria-label="Switch to dark mode">🌙</button>
+            </div>
+        </div>
+    </nav>
+
+    <header class="product-hero">
+        <div class="container hero-grid">
+            <div class="hero-copy">
+                <h1>Your iPod, without iTunes.</h1>
+                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 15px; margin-bottom: 25px;">
+                    <a href="https://github.com/TheRealSavi/iOpenPod/" target="_blank" rel="noopener noreferrer">
+                        <img src="https://img.shields.io/github/stars/TheRealSavi/iOpenPod?style=for-the-badge&logo=github" alt="GitHub Stars">
+                    </a>
+                    <a href="https://github.com/TheRealSavi/iOpenPod/" target="_blank" rel="noopener noreferrer">
+                        <img src="https://img.shields.io/pypi/dm/iopenpod?style=for-the-badge&logo=python&logoColor=white&color=0a6fdb&label=Active%20Users" alt="PyPI Downloads">
+                    </a>
+                </div>
+                <p class="tagline">Browse albums and tracks, play music, edit metadata, and sync your library. FLAC, artwork, video, photos, podcasts, and audiobooks.</p>
+                <div class="cta">
+                    <a href="#install" class="btn btn-primary">Install options</a>
+                </div>
+            </div>
+
+            <figure class="hero-screenshot">
+                <button type="button" class="image-viewer-trigger"
+                        data-viewer-caption="Browse a connected iPod by album while playing music and viewing track details"
+                        aria-label="Open screenshot: iPod library view">
+                    <img src="screenshots/hero.webp"
+                         width="1666" height="1090" fetchpriority="high"
+                         alt="iOpenPod showing a connected iPod, album artwork browser, playback controls, and track details">
+                </button>
+                <p class="platform-line hero-screenshot__line">Free and open source for Windows, macOS, and Linux.</p>
+            </figure>
+        </div>
+    </header>
+
+    <main class="container" id="main-content">
+
+        <!-- Features -->
+        <section class="section" id="features">
+            <div class="section-header">
+                <h2>What iOpenPod does</h2>
+            </div>
+
+            <!-- Three primary pillars -->
+            <div class="feature-pillars">
+                <div class="feature-pillar">
+                    <h3>FLAC goes in, iPod files come out</h3>
+                    <p>Add FLAC and other unsupported audio. iOpenPod converts it with FFmpeg, caches the result, and writes an iPod-ready copy.</p>
+                </div>
+                <div class="feature-pillar">
+                    <h3>Video and photos, automatically</h3>
+                    <p>iOpenPod prepares unsupported video and photos for the formats and sizes your iPod expects. No HandBrake pass. No manual resizing.</p>
+                </div>
+                <div class="feature-pillar">
+                    <h3>Review first. Restore if needed.</h3>
+                    <p>See additions, removals, artwork, metadata, and storage use before syncing. Device snapshots give you a way back.</p>
+                </div>
+            </div>
+
+            <!-- Supporting features -->
+            <details class="feature-more">
+                <summary>More features</summary>
+                <div class="feature-grid">
+                <div class="feature-card">
+                    <h3>Podcasts</h3>
+                    <p>Subscribe, set retention, track listened status, and add episodes to an iPod.</p>
+                </div>
+                <div class="feature-card">
+                    <h3>Scrobbling</h3>
+                    <p>Send play history to ListenBrainz or Last.FM during sync.</p>
+                </div>
+                <div class="feature-card">
+                    <h3>Playlists &amp; Smart Playlists</h3>
+                    <p>Manage standard playlists or build smart playlists with filters, live updating, limits, and sort order.</p>
+                </div>
+                <div class="feature-card">
+                    <h3>Play Counts &amp; Ratings</h3>
+                    <p>Read play counts, ratings, and skip counts from the iPod and sync them back to your PC metadata where supported.</p>
+                </div>
+                <div class="feature-card">
+                    <h3>Drag and Drop</h3>
+                    <p>Copy files directly to the iPod without using the full sync workflow.</p>
+                </div>
+                <div class="feature-card">
+                    <h3>Artwork</h3>
+                    <p>Change cover art, inspect iPod artwork, and write device compatible files.</p>
+                </div>
+                <div class="feature-card">
+                    <h3>Media Types</h3>
+                    <p>Music, audiobooks, podcasts, videos, and photos all work.</p>
+                </div>
+                <div class="feature-card">
+                    <h3>Settings</h3>
+                    <p>Set the encoder, bitrate, lossless mode, sample rate, and spoken-word output.</p>
+                </div>
+                <div class="feature-card">
+                    <h3>Backups</h3>
+                    <p>Browse snapshots by device and restore only when the connected iPod matches.</p>
+                </div>
+                </div>
+            </details>
+        </section>
+
+        <!-- Screenshots -->
+        <section class="section" id="screenshots">
+            <div class="section-header">
+                <h2>See it in action</h2>
+            </div>
+            <div class="screenshot-gallery">
+                <div class="screenshot-item">
+                    <button type="button" class="image-viewer-trigger"
+                            data-viewer-caption="Choose folders and scan each one for music, video, photos, or playlists"
+                            aria-label="Open screenshot: choose PC media folders and scan types">
+                            <img src="screenshots/syncmedia.webp"
+                             width="1662" height="1086" loading="lazy"
+                             alt="iOpenPod folder selection with separate music, video, photo, playlist, and recursive scan options">
+                    </button>
+                    <div class="caption">Choose folders and what iOpenPod scans in each one</div>
+                </div>
+                <div class="screenshot-item">
+                    <button type="button" class="image-viewer-trigger"
+                            data-viewer-caption="Review storage impact and every pending sync change before writing"
+                            aria-label="Open screenshot: review pending sync changes and storage impact">
+                            <img src="screenshots/syncreview.webp"
+                             width="1666" height="1090" loading="lazy"
+                             alt="iOpenPod sync review summarizing additions, removals, metadata, ratings, playlists, photos, and storage impact">
+                    </button>
+                    <div class="caption">Review the sync plan and storage impact</div>
+                </div>
+                <div class="screenshot-item">
+                    <button type="button" class="image-viewer-trigger"
+                            data-viewer-caption="Manage subscriptions, listened status, and which episodes go to the iPod"
+                            aria-label="Open screenshot: manage podcast subscriptions and episodes">
+                            <img src="screenshots/podcasts.webp"
+                             width="1666" height="1090" loading="lazy"
+                             alt="iOpenPod podcast manager showing a subscription, episode retention controls, listened status, and Add to iPod actions">
+                    </button>
+                    <div class="caption">Choose which podcast episodes go to the iPod</div>
+                </div>
+                <details class="screenshot-more">
+                    <summary>See six more screenshots</summary>
+                    <div class="screenshot-gallery screenshot-gallery-more">
+                <div class="screenshot-item">
+                    <button type="button" class="image-viewer-trigger"
+                            data-viewer-caption="Drill into the sync plan and choose individual ratings or other changes"
+                            aria-label="Open screenshot: choose individual sync changes">
+                            <img src="screenshots/syncreview2.webp"
+                             width="1666" height="1090" loading="lazy"
+                             alt="iOpenPod sync selection editor showing rating changes grouped by album and selectable change categories">
+                    </button>
+                    <div class="caption">Choose individual changes</div>
+                </div>
+                <div class="screenshot-item">
+                    <button type="button" class="image-viewer-trigger"
+                            data-viewer-caption="Change artwork and inspect the iPod artwork database fields"
+                            aria-label="Open screenshot: edit artwork and inspect iPod fields">
+                            <img src="screenshots/trackedits.webp"
+                             width="1665" height="1087" loading="lazy"
+                             alt="iOpenPod track editor showing assigned artwork, thumbnail formats, and ArtworkDB fields">
+                    </button>
+                    <div class="caption">Edit artwork and database fields</div>
+                </div>
+                <div class="screenshot-item">
+                    <button type="button" class="image-viewer-trigger"
+                            data-viewer-caption="Manage shuffle, resume, gapless, advisory, and visibility flags"
+                            aria-label="Open screenshot: manage track playback options and flags">
+                            <img src="screenshots/trackedits2.webp"
+                             width="1664" height="1088" loading="lazy"
+                             alt="iOpenPod track editor showing playback, gapless, advisory, compilation, and visibility options">
+                    </button>
+                    <div class="caption">Set playback flags</div>
+                </div>
+                <div class="screenshot-item">
+                    <button type="button" class="image-viewer-trigger"
+                            data-viewer-caption="Build smart playlists with rules, live updates, limits, and sorting"
+                            aria-label="Open screenshot: build a smart playlist with live rules">
+                            <img src="screenshots/smartplaylists.webp"
+                             width="1666" height="1090" loading="lazy"
+                             alt="iOpenPod smart playlist editor with year and genre rules, live updating, sort order, and matching tracks">
+                    </button>
+                    <div class="caption">Build smart playlists</div>
+                </div>
+                <div class="screenshot-item">
+                    <button type="button" class="image-viewer-trigger"
+                            data-viewer-caption="Tune lossy, lossless, sample-rate, and spoken-word transcoding"
+                            aria-label="Open screenshot: configure audio transcoding">
+                            <img src="screenshots/settings.webp"
+                             width="1666" height="1090" loading="lazy"
+                             alt="iOpenPod audio transcoding settings for encoder, bitrate, ALAC conversion, sample rate, and spoken-word output">
+                    </button>
+                    <div class="caption">Set conversion options</div>
+                </div>
+                <div class="screenshot-item">
+                    <button type="button" class="image-viewer-trigger"
+                            data-viewer-caption="Browse backups by device and restore only to the matching iPod"
+                            aria-label="Open screenshot: browse device backups safely">
+                            <img src="screenshots/backups.webp"
+                             width="1666" height="1090" loading="lazy"
+                             alt="iOpenPod backup browser showing device-specific snapshots and a restore action disabled for a different connected iPod">
+                    </button>
+                    <div class="caption">Keep backups of multiple devices</div>
+                </div>
+                    </div>
+                </details>
+            </div>
+        </section>
+
+        <!-- Supported devices -->
+        <section class="section">
+            <div class="section-header">
+                <h2>Supported iPods</h2>
+            </div>
+            <table class="device-table">
+                <thead>
+                    <tr><th>Device</th><th>Status</th><th>Notes</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>iPod "Classic" (all generations 1st-7th)</td><td class="status-ok">Supported</td><td></td></tr>
+                    <tr><td>iPod Mini (all generations 1st and 2nd)</td><td class="status-ok">Supported</td><td></td></tr>
+                    <tr><td>iPod Nano (all generations 1st-7th)</td><td class="status-ok">Supported</td><td></td></tr>
+                    <tr><td>iPod Shuffle</td><td class="status-soon">Planned</td><td>Shuffle uses a different database structure. ETA ~4 mo.</td></tr>
+                    <tr><td>iPod Touch</td><td class="status-soon">Not planned</td><td>Touch requires non-file-system device protocols.</td></tr>
+                </tbody>
+            </table>
+        </section>
+
+        <!-- Download -->
+        <section class="section" id="install">
+            <div class="section-header">
+                <h2>Install options</h2>
+            </div>
+            <h3 class="install-subhead">Install from PyPI</h3>
+            <p class="install-subtext">
+                Use <code>pip</code>, <code>pipx</code>, or <code>uv tool</code>. After install, run <code>iopenpod</code>.
+            </p>
+            <div class="install-grid">
+                <article class="install-card">
+                    <h3><code>pip</code></h3>
+                    <p>Installs iOpenPod into your current Python environment.</p>
+                    <div class="terminal">
+                        <div class="terminal-line">
+                            <span class="terminal-prompt">$</span>
+                            <span class="terminal-cmd"><em>python -m pip install iopenpod</em></span>
+                        </div>
+                        <div class="terminal-line">
+                            <span class="terminal-prompt">$</span>
+                            <span class="terminal-cmd"><em>iopenpod</em></span>
+                        </div>
+                    </div>
+                    <p class="install-hint">Upgrade with <code>python -m pip install --upgrade iopenpod</code>.</p>
+                </article>
+                <article class="install-card">
+                    <h3><code>pipx</code></h3>
+                    <p>Creates an isolated app environment and exposes the <code>iopenpod</code> command.</p>
+                    <div class="terminal">
+                        <div class="terminal-line">
+                            <span class="terminal-prompt">$</span>
+                            <span class="terminal-cmd"><em>pipx install iopenpod</em></span>
+                        </div>
+                        <div class="terminal-line">
+                            <span class="terminal-prompt">$</span>
+                            <span class="terminal-cmd"><em>iopenpod</em></span>
+                        </div>
+                    </div>
+                    <p class="install-hint">Upgrade with <code>pipx upgrade iopenpod</code>.</p>
+                </article>
+                <article class="install-card">
+                    <h3><code>uv tool</code></h3>
+                    <p>If you already use uv, this gives you the same isolated app-style install.</p>
+                    <div class="terminal">
+                        <div class="terminal-line">
+                            <span class="terminal-prompt">$</span>
+                            <span class="terminal-cmd"><em>uv tool install iopenpod</em></span>
+                        </div>
+                        <div class="terminal-line">
+                            <span class="terminal-prompt">$</span>
+                            <span class="terminal-cmd"><em>iopenpod</em></span>
+                        </div>
+                    </div>
+                    <p class="install-hint">Upgrade with <code>uv tool upgrade iopenpod</code>.</p>
+                </article>
+            </div>
+            <h3 class="install-subhead">Latest release builds</h3>
+            <p class="install-subtext">
+                Native builds do not need Python.
+            </p>
+            <div class="download-cta">
+                <a href="https://github.com/TheRealSavi/iOpenPod/releases/latest" class="btn btn-primary">Download</a>
+                <a href="install-help/" class="btn btn-secondary">Install help</a>
+            </div>
+            <div class="download-table-wrap">
+                <table class="download-table">
+                    <thead>
+                        <tr><th>Platform</th><th>File</th><th>Instructions</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>Windows</td><td>iOpenPod-Windows.zip</td><td>Extract the archive and run iOpenPod.exe.</td></tr>
+                        <tr><td>macOS</td><td>iOpenPod-macOS.zip</td><td>Extract the archive and run iOpenPod.app. You may need to allow the app in System Settings.</td></tr>
+                        <tr><td>Linux (recommended)</td><td>iOpenPod-Linux-x86_64.AppImage</td><td>Run <code>chmod a+x ./iOpenPod-Linux-x86_64.AppImage</code>, then launch the AppImage.</td></tr>
+                        <tr><td>Linux (Arch-based)</td><td><a href="https://aur.archlinux.org/packages/iopenpod">iopenpod</a> (AUR)</td><td>Install from the AUR.</td></tr>
+                        <tr><td>Linux (tarball)</td><td>iOpenPod-Linux.tar.gz</td><td>Extract the archive and run ./iOpenPod.</td></tr>
+                        <tr><td>Linux (Flatpak)</td><td>iOpenPod-Linux.flatpak</td><td>If present on the release, install with Flatpak.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <p class="prereq-note">
+                Need setup help? Open the <a href="install-help/">Install Help page</a>.<br>
+                Python package installs need Python 3.11+. If <code>iopenpod</code> is not on your PATH, run <code>pipx ensurepath</code> for pipx or <code>uv tool update-shell</code> for uv tool.<br>
+                Update with the same tool you used to install it.<br>
+                Install <a href="https://ffmpeg.org/">FFmpeg</a> with <code>ffprobe</code> for transcoding and media probing, and <a href="https://acoustid.org/chromaprint">Chromaprint</a> for acoustic fingerprinting during sync.<br>
+                If Linux throws a Qt <code>xcb</code> error, install the XCB runtime packages listed on the Install Help page.
+            </p>
+        </section>
+
+        <!-- Developers -->
+        <section class="section" id="developers">
+            <div class="section-header">
+                <h2>For developers</h2>
+            </div>
+            <div class="terminal">
+                <div class="terminal-line">
+                    <span class="terminal-prompt">$</span>
+                    <span class="terminal-cmd">git clone https://github.com/TheRealSavi/iOpenPod.git</span>
+                </div>
+                <div class="terminal-line">
+                    <span class="terminal-prompt">$</span>
+                    <span class="terminal-cmd">cd iOpenPod</span>
+                </div>
+                <div class="terminal-line">
+                    <span class="terminal-prompt">$</span>
+                    <span class="terminal-cmd"><em>uv sync</em></span>
+                </div>
+                <div class="terminal-line">
+                    <span class="terminal-prompt">$</span>
+                    <span class="terminal-cmd"><em>uv run iopenpod</em></span>
+                </div>
+            </div>
+            <p class="prereq-note">
+                <code>uv sync</code> installs dependencies into a local virtual environment. FFmpeg with <code>ffprobe</code> and Chromaprint are needed for full sync functionality.
+            </p>
+        </section>
+
+        <section class="section" id="migration">
+            <div class="section-header">
+                <h2>Migrating from legacy tools</h2>
+            </div>
+            <div class="feature-grid">
+                <div class="feature-card">
+                    <h3>Built for abandoned tools</h3>
+                    <p>iOpenPod is a modern, actively maintained replacement for gtkpod, YamiPod, CopyPod, and EphPod.</p>
+                </div>
+                <div class="feature-card">
+                    <h3>No libgpod dependency problems</h3>
+                    <p>Older iTunes alternatives often depend on the abandoned libgpod C library. iOpenPod uses a custom
+                        pure-Python parsing engine instead, which avoids libgpod warnings and checksum corruption issues on
+                        newer iPods.</p>
+                </div>
+                <div class="feature-card">
+                    <h3>Free on every platform</h3>
+                    <p>Linux, Windows, and macOS builds are fully featured and free, without sponsorship walls or paywalls.</p>
+                </div>
+                <div class="feature-card">
+                    <h3>Safe syncing</h3>
+                    <p>Pre-sync change review and automatic device snapshot backups help keep your iPod database from being
+                        corrupted or wiped during a transfer.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="section">
+            <div class="section-header">
+                <h2>Frequently Asked Questions</h2>
+            </div>
+            <div class="faq-list">
+                <details>
+                    <summary>How do I sync my iPod without iTunes?
+                        <svg aria-hidden="true" class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    </summary>
+                    <p>Install iOpenPod from PyPI with pip, pipx, or uv tool, or download a native release build. Launch it, connect your iPod as a mounted drive, choose your media folders, review the changes, and apply the sync plan.</p>
+                </details>
+                <details>
+                    <summary>Do I need Python to use iOpenPod?
+                        <svg aria-hidden="true" class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    </summary>
+                    <p>PyPI installs require Python 3.11 or newer. Native builds do not need a separate Python install.</p>
+                </details>
+                <details>
+                    <summary>Can I put FLAC files on an iPod?
+                        <svg aria-hidden="true" class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    </summary>
+                    <p>Yes. iOpenPod converts unsupported audio and video formats to iPod-compatible output during sync. FFmpeg with ffprobe is required for transcoding and media probing.</p>
+                </details>
+                <details>
+                    <summary>Is iOpenPod related to OpenPod.io or OpenPod?
+                        <svg aria-hidden="true" class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    </summary>
+                    <p>No. iOpenPod is a distinct, active, modern open-source iPod management tool and is not affiliated with OpenPod.io or OpenPod.</p>
+                </details>
+                <details>
+                    <summary>What should I use if I am migrating from gtkpod, YamiPod, CopyPod, EphPod, Strawberry, or Clementine?
+                        <svg aria-hidden="true" class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    </summary>
+                    <p>iOpenPod is a modern replacement for abandoned iPod managers like gtkpod, YamiPod, CopyPod, and EphPod. If you are coming from Strawberry or Clementine, iOpenPod avoids libgpod dependency errors, stays free on Linux, Windows, and macOS, and adds safer sync review with automatic device snapshot backups.</p>
+                </details>
+                <details>
+                    <summary>Does it work on Linux and macOS?
+                        <svg aria-hidden="true" class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    </summary>
+                    <p>Yes. iOpenPod supports Windows, macOS, and Linux. PyPI installs are recommened, and native builds are available for easy install.</p>
+                </details>
+                <details>
+                    <summary>Will syncing erase my iPod?
+                        <svg aria-hidden="true" class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    </summary>
+                    <p>No. iOpenPod shows the changes before writing anything, and backs up your database before every sync.</p>
+                </details>
+                <details>
+                    <summary>Can I add files without a full sync?
+                        <svg aria-hidden="true" class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    </summary>
+                    <p>Yes. Drag and drop files into iOpenPod and they go straight to your iPod. No sync setup needed.</p>
+                </details>
+                <details>
+                    <summary>My iPod was previously managed by iTunes. Will I lose my music?
+                        <svg aria-hidden="true" class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    </summary>
+                    <p>No. iOpenPod reads the existing iTunesDB on your iPod and shows what is already on it. You can browse, edit, and add tracks without touching the current library. Sync only changes what you approve in the review step.</p>
+                </details>
+                <details>
+                    <summary>My iPod isn't being detected. What should I do?
+                        <svg aria-hidden="true" class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    </summary>
+                    <p>Make sure the iPod is mounted as a drive and visible in File Explorer, Finder, or your Linux file manager. If it still is not working, open an issue with your iPod model, OS, and <code>iopenpod.log</code>.</p>
+                    <p>To find the log in iOpenPod, open <strong>Settings &gt; Storage</strong>, then click <strong>Open</strong> next to <strong>Log Location</strong>.</p>
+                </details>
+                <details>
+                    <summary>How do I find the iOpenPod log file?
+                        <svg aria-hidden="true" class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    </summary>
+                    <p>Open <strong>Settings &gt; Storage</strong>, then click <strong>Open</strong> next to <strong>Log Location</strong>. Attach <code>iopenpod.log</code> when reporting a bug.</p>
+                </details>
+                <details>
+                    <summary>Do I need FFmpeg, ffprobe, and Chromaprint installed?
+                        <svg aria-hidden="true" class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    </summary>
+                    <p>Yes for full sync functionality. FFmpeg with ffprobe is required for transcoding and media probing, and Chromaprint is required for acoustic fingerprinting during sync.</p>
+                </details>
+                <details>
+                    <summary>What happens if something goes wrong mid-sync?
+                        <svg aria-hidden="true" class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    </summary>
+                    <p>iOpenPod takes a full snapshot of your iPod's database before every sync begins. If anything goes wrong, open the Backups panel and restore the previous snapshot with one click.</p>
+                </details>
+                <details>
+                    <summary>Does iOpenPod send any data to the internet?
+                        <svg aria-hidden="true" class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    </summary>
+                    <p>Only when you trigger it. That covers update checks, scrobbling, and podcast searches. Nothing runs in the background, and there is no telemetry.</p>
+                </details>
+                <details>
+                    <summary>Can I sync the same iPod from multiple computers?
+                        <svg aria-hidden="true" class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    </summary>
+                    <p>Yes. The fingerprint-to-database mapping lives on the iPod itself, so the device carries its own identity. Each PC re-fingerprints its local library on first sync, then matches against what is already on the device.</p>
+                </details>
+                <details>
+                    <summary>Does iOpenPod support iPod Touch?
+                        <svg aria-hidden="true" class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    </summary>
+                    <p>Not currently. iPod Touch uses non-file-system device protocols instead of the iTunesDB-style storage used by classic iPods.</p>
+                </details>
+            </div>
+        </section>
+
+        <section class="section community-section" id="community">
+            <h2>Join the iOpenPod community</h2>
+            <div class="community-action">
+                <p>Meet other iPod owners, suggest features, share feedback, and get help when something isn’t working.</p>
+                <a class="btn btn-primary" href="https://discord.gg/9Yy499Tf5d">Join us on Discord</a>
+            </div>
+        </section>
+
+        <div class="section support-section">
+            <div class="support-banner">
+                <div class="support-banner-text">
+                    <svg aria-hidden="true" viewBox="0 0 24 24">
+                        <path d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12Z"/>
+                    </svg>
+                    <span>iOpenPod is free and open source. Donations are optional and help support development.</span>
+                </div>
+                <a href="https://ko-fi.com/johngibbons" target="_blank" rel="noopener" class="btn-kofi">
+                    <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12Z"/></svg>
+                    Support on Ko-fi
+                </a>
+            </div>
+        </div>
+
+    </main>
+
+    <div class="image-viewer" id="image-viewer" aria-hidden="true">
+        <div class="image-viewer-dialog" role="dialog" aria-modal="true" aria-labelledby="image-viewer-caption">
+            <button type="button" class="image-viewer-close" aria-label="Close image viewer">&times;</button>
+            <img id="image-viewer-image" width="1666" height="1090" alt="">
+            <p class="image-viewer-caption" id="image-viewer-caption"></p>
+        </div>
+    </div>
+
+    <footer class="site-footer">
+        <div class="container">
+            <p class="footer-statement">Your iPod, without iTunes.</p>
+            <div class="footer-line">
+                <div class="footer-links">
+                    <a href="https://github.com/TheRealSavi">John Gibbons</a>
+                    <a href="https://github.com/TheRealSavi/iOpenPod">Source Code</a>
+                    <a href="https://github.com/TheRealSavi/iOpenPod/issues">Report Issues</a>
+                    <a href="https://discord.gg/9Yy499Tf5d">Discord</a>
+                    <a href="https://ko-fi.com/johngibbons">Ko-fi</a>
+                </div>
+                <p><span class="site-wordmark"><span class="site-wordmark__mark">i</span>OpenPod</span> · MIT License &copy; 2025–2026</p>
+            </div>
+        </div>
+    </footer>

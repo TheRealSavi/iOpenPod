@@ -1,0 +1,11 @@
+--- libsndfile-1.2.2/CMakeLists.txt
++++ libsndfile-1.2.2/CMakeLists.txt
+@@ -448,7 +448,7 @@
+ 		set (PACKAGE_VERSION ${CPACK_PACKAGE_VERSION})
+ 
+ 		configure_file (src/version-metadata.rc.in src/version-metadata.rc @ONLY)
+-		target_sources (sndfile PRIVATE ${PROJECT_BINARY_DIR}/src/version-metadata.rc)
++		# iOpenPod portable build: omit cosmetic VERSIONINFO resource.
+ 	endif ()
+ 
+ 

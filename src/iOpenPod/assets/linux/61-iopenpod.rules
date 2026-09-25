@@ -1,0 +1,24 @@
+# Expose an iPod's Apple product serial without granting raw-disk access.
+#
+# The USB descriptor serial is the transport/FireWire GUID. Apple stores the
+# product serial used for exact model lookup on SCSI VPD page 0x80. udev's
+# scsi_id helper performs that one bounded read as root and publishes only the
+# resulting serial; device-node permissions remain unchanged.
+
+ACTION=="add|change", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", \
+  ENV{ID_IOPENPOD_RULE_VERSION}="", \
+  ENV{ID_IOPENPOD_PRODUCT_SERIAL}=""
+
+ACTION=="add|change", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", \
+  ATTRS{vendor}=="Apple*", ATTRS{model}=="iPod*", \
+  ENV{ID_IOPENPOD_RULE_VERSION}="2"
+
+ACTION=="add|change", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", \
+  ATTRS{vendor}=="Apple*", ATTRS{model}=="iPod*", \
+  PROGRAM=="scsi_id --page=0x80 --whitelisted --device=/dev/%k", \
+  RESULT=="SApple*iPod*", ENV{ID_IOPENPOD_PRODUCT_SERIAL}="%c{3}"
+
+ACTION=="add|change", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", \
+  ENV{ID_IOPENPOD_PRODUCT_SERIAL}=="?*", \
+  SYMLINK+="disk/by-id/ipod-$env{ID_IOPENPOD_PRODUCT_SERIAL}", \
+  OPTIONS+="string_escape=replace"

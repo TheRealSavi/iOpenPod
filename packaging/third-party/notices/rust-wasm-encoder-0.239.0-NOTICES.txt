@@ -1,0 +1,7 @@
+rust-wasm-encoder 0.239.0
+Source: https://static.crates.io/crates/wasm-encoder/wasm-encoder-0.239.0.crate
+Archive SHA-256: 5be00faa2b4950c76fe618c409d2c3ea5a3c9422013e079482d78544bb2d184c
+
+These notices are preserved from the upstream source distribution.
+This may include notices for upstream components not used in iOpenPod.
+Each component retains its own license; inclusion is not relicensing.

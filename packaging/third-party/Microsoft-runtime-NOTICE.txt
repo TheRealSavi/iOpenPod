@@ -1,0 +1,26 @@
+Microsoft Visual C++ runtime and OpenMP runtime
+Copyright Microsoft Corporation. All rights reserved.
+
+The Windows application contains Microsoft runtime files supplied with the
+Windows distributions of Python, Qt/PySide/Shiboken, NumPy, SciPy, scikit-learn,
+llvmlite, and PyWinRT. These components remain Microsoft Distributable Code;
+they are not relicensed under the iOpenPod GPL grant.
+
+Retain the additional Windows binary distribution conditions in the accompanying
+Python-Windows-Binary-LICENSE.txt. In particular, preserve Microsoft's notices,
+do not imply Microsoft's endorsement, distribute the Microsoft components only
+for Microsoft platforms, and preserve the applicable Microsoft protections when
+further distributing those components. These conditions apply to Microsoft's
+components, not to Python, iOpenPod source, or separately licensed libraries.
+
+The package uses the unmodified runtime DLLs supplied by those upstream Windows
+distributions. Some upstream wheels give their DLL files unique names to avoid
+dependency conflicts. The original component bytes and notices are retained.
+
+Microsoft's runtime license terms and redistribution documentation:
+https://visualstudio.microsoft.com/license-terms/
+https://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files
+
+The Windows operating system supplies the kernel and Universal CRT system
+libraries. The separately rebuilt libsndfile imports those system libraries and
+does not redistribute an additional Microsoft runtime.

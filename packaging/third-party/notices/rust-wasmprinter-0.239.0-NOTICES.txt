@@ -1,0 +1,7 @@
+rust-wasmprinter 0.239.0
+Source: https://static.crates.io/crates/wasmprinter/wasmprinter-0.239.0.crate
+Archive SHA-256: b3981f3d51f39f24f5fc90f93049a90f08dbbca8deba602cd46bb8ca67a94718
+
+These notices are preserved from the upstream source distribution.
+This may include notices for upstream components not used in iOpenPod.
+Each component retains its own license; inclusion is not relicensing.

@@ -1,0 +1,7 @@
+rust-wasip1 1.0.0
+Source: https://static.crates.io/crates/wasip1/wasip1-1.0.0.crate
+Archive SHA-256: b5e26842486624357dbeb8f0381cf1fb42f022291fd787d4a816768fec8cc760
+
+These notices are preserved from the upstream source distribution.
+This may include notices for upstream components not used in iOpenPod.
+Each component retains its own license; inclusion is not relicensing.

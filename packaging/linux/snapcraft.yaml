@@ -1,0 +1,40 @@
+# Local confinement candidate. Store publication requires the tests in packaging.md.
+name: iopenpod
+base: core24
+adopt-info: iopenpod
+summary: Manage your iPod media library without iTunes
+description: |
+  Browse and edit music, playlists, artwork, and photos on filesystem-accessible
+  iPods, with reviewed synchronization and recoverable device changes.
+grade: devel
+confinement: strict
+platforms:
+  amd64:
+apps:
+  iopenpod:
+    command: lib/iopenpod/iOpenPod
+    desktop: share/applications/io.github.therealsavi.iOpenPod.desktop
+    environment:
+      QT_QPA_PLATFORM: xcb
+    plugs: [home, removable-media, network, audio-playback, x11, desktop, desktop-legacy, opengl, udisks2, hardware-observe]
+parts:
+  iopenpod:
+    plugin: dump
+    source: build/linux-root
+    override-pull: |
+      craftctl default
+      craftctl set version="$(cat "$CRAFT_PART_SRC/version.txt")"
+    stage-packages:
+      - libegl1
+      - libgl1
+      - libxkbcommon0
+      - libxkbcommon-x11-0
+      - libxcb-cursor0
+      - libxcb-icccm4
+      - libxcb-image0
+      - libxcb-keysyms1
+      - libxcb-render-util0
+      - libxcb-xkb1
+      - libdbus-1-3
+      - libasound2t64
+      - libpulse0

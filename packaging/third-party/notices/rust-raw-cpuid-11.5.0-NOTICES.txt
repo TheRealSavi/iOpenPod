@@ -1,0 +1,62 @@
+rust-raw-cpuid 11.5.0
+Source: https://static.crates.io/crates/raw-cpuid/raw-cpuid-11.5.0.crate
+Archive SHA-256: c6df7ab838ed27997ba19a4664507e6f82b41fe6e20be42929332156e5e85146
+
+These notices are preserved from the upstream source distribution.
+This may include notices for upstream components not used in iOpenPod.
+Each component retains its own license; inclusion is not relicensing.
+
+========================================================================
+Source file: raw-cpuid-11.5.0/AUTHORS
+========================================================================
+
+Gerd Zellweger <mail@gerdzellweger.com>
+Bence Meszaros <bence.me@gmail.com>
+Rafal Mielniczuk <rafalm3@gmail.com>
+Stefan Lankes <slankes@eonerc.rwth-aachen.de>
+Mingshen Sun <bob@mssun.me>
+Niklas Fiekas <niklas.fiekas@backscattering.de>
+Philipp Schuster <phip1611@gmail.com>
+Gabriel Majeri <gabriel.majeri6@gmail.com>
+Bruce Mitchener <bruce.mitchener@gmail.com>
+John Ericson <Ericson2314@Yahoo.com>
+Paul Sbarra <Sbarra.Paul@gmail.com>
+Pireax <pim.remkes@gmail.com>
+Tyler Hall <tylerwhall@gmail.com>
+Alex McKenna <alexmckenna@outlook.com>
+Benoît du Garreau <bdgdlm@outlook.com>
+Colin Finck <mail@colinfinck.de>
+Gabriel <g2p.code@gmail.com>
+John Bartholomew <jpa.bartholomew@gmail.com>
+Nathaniel McCallum <npmccallum@redhat.com>
+Olivier Lemasle <o.lemasle@gmail.com>
+IsaacDynamo <61521674+IsaacDynamo@users.noreply.github.com>
+Zavier Divelbiss <semiviral@gmail.com>
+Umio Yasuno <53935716+Umio-Yasuno@users.noreply.github.com>
+Matt Keeter <matt.j.keeter@gmail.com>
+
+========================================================================
+Source file: raw-cpuid-11.5.0/LICENSE.md
+========================================================================
+
+The MIT License (MIT)
+
+Copyright (c) 2015 Gerd Zellweger
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.

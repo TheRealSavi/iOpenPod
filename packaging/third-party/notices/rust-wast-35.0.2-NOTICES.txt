@@ -1,0 +1,7 @@
+rust-wast 35.0.2
+Source: https://static.crates.io/crates/wast/wast-35.0.2.crate
+Archive SHA-256: 2ef140f1b49946586078353a453a1d28ba90adfc54dde75710bc1931de204d68
+
+These notices are preserved from the upstream source distribution.
+This may include notices for upstream components not used in iOpenPod.
+Each component retains its own license; inclusion is not relicensing.

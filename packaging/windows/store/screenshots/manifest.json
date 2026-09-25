@@ -1,0 +1,54 @@
+{
+  "resolution": "1920x1080",
+  "source": "Unmodified iOpenPod application widgets rendered by Qt on Windows with deterministic synthetic data.",
+  "screenshots": [
+    {
+      "file": "01-album-library.png",
+      "caption": "Browse your iPod music by album, artist, genre, or track. Shown with a fictional sample library.",
+      "width": 1920,
+      "height": 1080,
+      "bytes": 276311,
+      "sha256": "cc72ab49d7bd66082380ab714e72aa65dd22e7308ac4e2952fa409be3b40bf69"
+    },
+    {
+      "file": "02-album-details.png",
+      "caption": "Open an album to browse its tracks, metadata, ratings, and artwork.",
+      "width": 1920,
+      "height": 1080,
+      "bytes": 131509,
+      "sha256": "bdddf65cae9579eff7f72f1ae74c12b212ed96331021f98c079e5d99bee94ce4"
+    },
+    {
+      "file": "03-playlists.png",
+      "caption": "Browse and organize playlists with track details and a cover-art overview.",
+      "width": 1920,
+      "height": 1080,
+      "bytes": 233517,
+      "sha256": "ec9122845214100a4ee57bec202ad2ea18eb486f3d5b1113bd5e438cdfac8a62"
+    },
+    {
+      "file": "04-photo-library.png",
+      "caption": "Browse photo albums and inspect the image representations stored on a supported iPod. Sample illustrations shown.",
+      "width": 1920,
+      "height": 1080,
+      "bytes": 146962,
+      "sha256": "700443a24ad96e3d0050eb3e6e307264ea9d36c02a9cc71efbc7bb478628d5e3"
+    },
+    {
+      "file": "05-sync-review.png",
+      "caption": "Review selected changes before syncing media from your computer to your iPod. No changes are applied in this sample.",
+      "width": 1920,
+      "height": 1080,
+      "bytes": 105328,
+      "sha256": "0ce62e6ad180994116c6794ca927428537095b2dde444ffbd2371fc4248d936d"
+    },
+    {
+      "file": "06-about-and-credits.png",
+      "caption": "Free and open source, with optional donations and acknowledgements for the projects that make iOpenPod possible.",
+      "width": 1920,
+      "height": 1080,
+      "bytes": 101595,
+      "sha256": "8561196c725af506357550cf5e3695ee69a9fa1f59053f814221a64009541fd3"
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+rust-wasmi 0.43.1
+Source: https://static.crates.io/crates/wasmi/wasmi-0.43.1.crate
+Archive SHA-256: 3cd93c135ccbe88cfd00992c9c49778d364417bdb5cfb360eac60fe2d4d34676
+
+These notices are preserved from the upstream source distribution.
+This may include notices for upstream components not used in iOpenPod.
+Each component retains its own license; inclusion is not relicensing.

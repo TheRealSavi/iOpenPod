@@ -1,0 +1,7 @@
+rust-safetensors 0.3.3
+Source: https://static.crates.io/crates/safetensors/safetensors-0.3.3.crate
+Archive SHA-256: d93279b86b3de76f820a8854dd06cbc33cfa57a417b19c47f6a25280112fb1df
+
+These notices are preserved from the upstream source distribution.
+This may include notices for upstream components not used in iOpenPod.
+Each component retains its own license; inclusion is not relicensing.

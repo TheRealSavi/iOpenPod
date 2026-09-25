@@ -1,0 +1,7 @@
+rust-anes 0.1.6
+Source: https://static.crates.io/crates/anes/anes-0.1.6.crate
+Archive SHA-256: 4b46cbb362ab8752921c97e041f5e366ee6297bd428a31275b9fcf1e380f7299
+
+These notices are preserved from the upstream source distribution.
+This may include notices for upstream components not used in iOpenPod.
+Each component retains its own license; inclusion is not relicensing.

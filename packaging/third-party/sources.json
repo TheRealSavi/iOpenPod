@@ -1,0 +1,4907 @@
+[
+  {
+    "name": "audioread",
+    "version": "3.1.0",
+    "url": "https://files.pythonhosted.org/packages/a1/4a/874ecf9b472f998130c2b5e145dcdb9f6131e84786111489103b66772143/audioread-3.1.0.tar.gz",
+    "sha256": "1c4ab2f2972764c896a8ac61ac53e261c8d29f0c6ccd652f84e18f08a4cab190",
+    "filename": "audioread-3.1.0.tar.gz",
+    "kind": "python-sdist",
+    "size": 20082
+  },
+  {
+    "name": "certifi",
+    "version": "2026.7.22",
+    "url": "https://files.pythonhosted.org/packages/a3/c2/24167ea9858356b47a87a50d39908bfdb72ceeefe0041586e704e5376b3a/certifi-2026.7.22.tar.gz",
+    "sha256": "741e2c3b351ddf169a738da9f2c048608ff7f2c5cc02f1ebc6b118bb090d5d55",
+    "filename": "certifi-2026.7.22.tar.gz",
+    "kind": "python-sdist",
+    "size": 138112
+  },
+  {
+    "name": "cffi",
+    "version": "2.1.1",
+    "url": "https://files.pythonhosted.org/packages/9e/ef/008a1939e372c06329a3fce4279c02f328488f3526744906eeec3da7ad5f/cffi-2.1.1.tar.gz",
+    "sha256": "dd31f52ea1086513bb9df30f8fcee9b8918323ae067a3d5b78bc826a000712be",
+    "filename": "cffi-2.1.1.tar.gz",
+    "kind": "python-sdist",
+    "size": 530807
+  },
+  {
+    "name": "charset-normalizer",
+    "version": "3.5.1",
+    "url": "https://files.pythonhosted.org/packages/e5/3f/143b048436775b0f76ac3eec145c019e8173ccc2885c8f20319b996d5e83/charset_normalizer-3.5.1.tar.gz",
+    "sha256": "6117b84ea48435e5356dc737f5121485c30920ba43375fa7b434fd753df0eac3",
+    "filename": "charset_normalizer-3.5.1.tar.gz",
+    "kind": "python-sdist",
+    "size": 171764
+  },
+  {
+    "name": "cloudpickle",
+    "version": "3.1.2",
+    "url": "https://files.pythonhosted.org/packages/27/fb/576f067976d320f5f0114a8d9fa1215425441bb35627b1993e5afd8111e5/cloudpickle-3.1.2.tar.gz",
+    "sha256": "7fda9eb655c9c230dab534f1983763de5835249750e85fbcef43aaa30a9a2414",
+    "filename": "cloudpickle-3.1.2.tar.gz",
+    "kind": "python-sdist",
+    "size": 22330
+  },
+  {
+    "name": "colorama",
+    "version": "0.4.6",
+    "url": "https://files.pythonhosted.org/packages/d8/53/6f443c9a4a8358a93a6792e2acffb9d9d5cb0a5cfd8802644b7b1c9a02e4/colorama-0.4.6.tar.gz",
+    "sha256": "08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44",
+    "filename": "colorama-0.4.6.tar.gz",
+    "kind": "python-sdist",
+    "size": 27697
+  },
+  {
+    "name": "decorator",
+    "version": "5.3.1",
+    "url": "https://files.pythonhosted.org/packages/60/8b/32f9823da46cde7df2087faa08cd98d01b908f8dcab982cdba9c84e85355/decorator-5.3.1.tar.gz",
+    "sha256": "4cbcdd55a6efadb9dbea26b858f4fb3264567b52d69ca0d25b721b553f60ea82",
+    "filename": "decorator-5.3.1.tar.gz",
+    "kind": "python-sdist",
+    "size": 58084
+  },
+  {
+    "name": "feedparser",
+    "version": "6.0.14",
+    "url": "https://files.pythonhosted.org/packages/37/8a/a53da4a77352045d277978a2df322d5379369f9deb1707178899ff7e1121/feedparser-6.0.14.tar.gz",
+    "sha256": "088679b0c4b543ee211a820dd544698c76a402122eae7473c04a43425f283d06",
+    "filename": "feedparser-6.0.14.tar.gz",
+    "kind": "python-sdist",
+    "size": 286108
+  },
+  {
+    "name": "feedparser-sgmllib",
+    "version": "2.1.0",
+    "url": "https://files.pythonhosted.org/packages/da/df/38596299216e5c22d60ed7f97902bb2bc72cfb95f732400f4fa976fd2e62/feedparser_sgmllib-2.1.0.tar.gz",
+    "sha256": "61facf2918c4389b5b00714f76c5e03431ffcd94cd1f51d657edd6cd7c396579",
+    "filename": "feedparser_sgmllib-2.1.0.tar.gz",
+    "kind": "python-sdist",
+    "size": 26845
+  },
+  {
+    "name": "idna",
+    "version": "3.19",
+    "url": "https://files.pythonhosted.org/packages/5f/f7/abb373e5757eaec4b922b92f97ec8d6d7e057cf06778247604fbc4e7c3f3/idna-3.19.tar.gz",
+    "sha256": "5e0811a4383b21dc5838069f801c4fb62113b7447663d2530d2bd6e77b49bf15",
+    "filename": "idna-3.19.tar.gz",
+    "kind": "python-sdist",
+    "size": 215237
+  },
+  {
+    "name": "importlib-resources",
+    "version": "7.1.0",
+    "url": "https://files.pythonhosted.org/packages/e4/06/b56dfa750b44e86157093bc8fca0ab81dccbf5260510de4eaf1cb69b5b99/importlib_resources-7.1.0.tar.gz",
+    "sha256": "0722d4c6212489c530f2a145a34c0a7a3b4721bc96a15fada5930e2a0b760708",
+    "filename": "importlib_resources-7.1.0.tar.gz",
+    "kind": "python-sdist",
+    "size": 44985
+  },
+  {
+    "name": "joblib",
+    "version": "1.6.0",
+    "url": "https://files.pythonhosted.org/packages/d5/1d/537ab090f302b838943a1b56497dd53059b9a9b46a074936470173a2e207/joblib-1.6.0.tar.gz",
+    "sha256": "2ccc96785b12046c08fd6d55839c12857831b54a3c1673ffadd2f04bfc4eda03",
+    "filename": "joblib-1.6.0.tar.gz",
+    "kind": "python-sdist",
+    "size": 327903
+  },
+  {
+    "name": "lazy-loader",
+    "version": "0.5",
+    "url": "https://files.pythonhosted.org/packages/49/ac/21a1f8aa3777f5658576777ea76bfb124b702c520bbe90edf4ae9915eafa/lazy_loader-0.5.tar.gz",
+    "sha256": "717f9179a0dbed357012ddad50a5ad3d5e4d9a0b8712680d4e687f5e6e6ed9b3",
+    "filename": "lazy_loader-0.5.tar.gz",
+    "kind": "python-sdist",
+    "size": 15294
+  },
+  {
+    "name": "librosa",
+    "version": "0.11.0",
+    "url": "https://files.pythonhosted.org/packages/64/36/360b5aafa0238e29758729e9486c6ed92a6f37fa403b7875e06c115cdf4a/librosa-0.11.0.tar.gz",
+    "sha256": "f5ed951ca189b375bbe2e33b2abd7e040ceeee302b9bbaeeffdfddb8d0ace908",
+    "filename": "librosa-0.11.0.tar.gz",
+    "kind": "python-sdist",
+    "size": 327001
+  },
+  {
+    "name": "llvmlite",
+    "version": "0.49.0",
+    "url": "https://files.pythonhosted.org/packages/43/27/72ae94ea5c8f7349ec1c229d4cd058feb799cbd0833ad6d1b47c919b37b7/llvmlite-0.49.0.tar.gz",
+    "sha256": "00f16db782f4a13c78c5804aedc434e46794a77e89999a168f9401106270e50a",
+    "filename": "llvmlite-0.49.0.tar.gz",
+    "kind": "python-sdist",
+    "size": 194467
+  },
+  {
+    "name": "msgpack",
+    "version": "1.2.2",
+    "url": "https://files.pythonhosted.org/packages/6d/44/ea2100ec54d30c46ee9dba10a3bfb79b655e96c6df237238a3234c75869b/msgpack-1.2.2.tar.gz",
+    "sha256": "9eb0b0e602064527a045ea28c4f174ed69383587e29cebe28947e3b84106eb2a",
+    "filename": "msgpack-1.2.2.tar.gz",
+    "kind": "python-sdist",
+    "size": 187025
+  },
+  {
+    "name": "mutagen",
+    "version": "1.48.1",
+    "url": "https://files.pythonhosted.org/packages/df/70/1675da133ea92227da41bf5b24e1c66be597ff736a1533ade41da986852f/mutagen-1.48.1.tar.gz",
+    "sha256": "8f95637ab9f6f305cec6bd1294e197debe207998e3e068596563c74f86b0a173",
+    "filename": "mutagen-1.48.1.tar.gz",
+    "kind": "python-sdist",
+    "size": 1276978
+  },
+  {
+    "name": "narwhals",
+    "version": "2.26.0",
+    "url": "https://files.pythonhosted.org/packages/35/68/5351e34623d253423240ea7de3f8fc74fa8ab14b1ab3c0ec4ac8997413c9/narwhals-2.26.0.tar.gz",
+    "sha256": "6b9cadca82f375c7e4cf584fdc86ca25da54827307a9c58f94547ee6104b82dd",
+    "filename": "narwhals-2.26.0.tar.gz",
+    "kind": "python-sdist",
+    "size": 686970
+  },
+  {
+    "name": "numba",
+    "version": "0.67.0",
+    "url": "https://files.pythonhosted.org/packages/7a/90/2544f4e3a61e501d6c9a5418fd4b905323222693d54a02cab0106a0af865/numba-0.67.0.tar.gz",
+    "sha256": "cd75aa535b33fa05d9d930b1ae8af9f97a2881e96d72dfb38ec9b78284d9f851",
+    "filename": "numba-0.67.0.tar.gz",
+    "kind": "python-sdist",
+    "size": 2836515
+  },
+  {
+    "name": "numpy",
+    "version": "2.5.3",
+    "url": "https://files.pythonhosted.org/packages/13/01/11703282db468b85f6f7b8c7f22d058de5970d5c7e60a3a8aaa313c3de36/numpy-2.5.3.tar.gz",
+    "sha256": "df2d5874ff183595a4ba404edd04f6bd9b5505c1d7708573f6a6c17489a67563",
+    "filename": "numpy-2.5.3.tar.gz",
+    "kind": "python-sdist",
+    "size": 20791231
+  },
+  {
+    "name": "packaging",
+    "version": "26.3",
+    "url": "https://files.pythonhosted.org/packages/7d/fa/3944b40b07da9ce895c0e6303a5ab7d53da063554f534556b134a54d6093/packaging-26.3.tar.gz",
+    "sha256": "94edc256424af38762eb31306eed28beb9f0efc50a8837492c9d6fd6004aed79",
+    "filename": "packaging-26.3.tar.gz",
+    "kind": "python-sdist",
+    "size": 313412
+  },
+  {
+    "name": "pillow",
+    "version": "12.3.0",
+    "url": "https://files.pythonhosted.org/packages/1c/3d/bb7fca845737cf9d7dbde16ed1843984665ff2e0a518f5db43e77ec540b9/pillow-12.3.0.tar.gz",
+    "sha256": "3b8182a766685eaa002637e28b4ec8d6b18819a0c71f579bf0dbaa5830297cce",
+    "filename": "pillow-12.3.0.tar.gz",
+    "kind": "python-sdist",
+    "size": 47025035
+  },
+  {
+    "name": "platformdirs",
+    "version": "4.11.8",
+    "url": "https://files.pythonhosted.org/packages/53/18/f3bb8ef0d3b930692343da8aa4d3cbcd6749477c053959395ac81965a6e9/platformdirs-4.11.8.tar.gz",
+    "sha256": "f23abafea7dd4276d1f29104b83598d7dcc567cafd07c9c951e66665645437fc",
+    "filename": "platformdirs-4.11.8.tar.gz",
+    "kind": "python-sdist",
+    "size": 37182
+  },
+  {
+    "name": "pooch",
+    "version": "1.9.0",
+    "url": "https://files.pythonhosted.org/packages/83/43/85ef45e8b36c6a48546af7b266592dc32d7f67837a6514d111bced6d7d75/pooch-1.9.0.tar.gz",
+    "sha256": "de46729579b9857ffd3e741987a2f6d5e0e03219892c167c6578c0091fb511ed",
+    "filename": "pooch-1.9.0.tar.gz",
+    "kind": "python-sdist",
+    "size": 61788
+  },
+  {
+    "name": "pycparser",
+    "version": "3.0",
+    "url": "https://files.pythonhosted.org/packages/1b/7d/92392ff7815c21062bea51aa7b87d45576f649f16458d78b7cf94b9ab2e6/pycparser-3.0.tar.gz",
+    "sha256": "600f49d217304a5902ac3c37e1281c9fe94e4d0489de643a9504c5cdfdfc6b29",
+    "filename": "pycparser-3.0.tar.gz",
+    "kind": "python-sdist",
+    "size": 103492
+  },
+  {
+    "name": "pycryptodome",
+    "version": "3.23.0",
+    "url": "https://files.pythonhosted.org/packages/8e/a6/8452177684d5e906854776276ddd34eca30d1b1e15aa1ee9cefc289a33f5/pycryptodome-3.23.0.tar.gz",
+    "sha256": "447700a657182d60338bab09fdb27518f8856aecd80ae4c6bdddb67ff5da44ef",
+    "filename": "pycryptodome-3.23.0.tar.gz",
+    "kind": "python-sdist",
+    "size": 4921276
+  },
+  {
+    "name": "pyinstaller",
+    "version": "6.22.3",
+    "url": "https://files.pythonhosted.org/packages/63/41/f90302845945abd4ed647933ff5ee7c6ac93983187be67f897b6cb613331/pyinstaller-6.22.3.tar.gz",
+    "sha256": "05eb2f5615503e72939a7224d68b4aff572c6b0438ee4a17d0a4b481f399362d",
+    "filename": "pyinstaller-6.22.3.tar.gz",
+    "kind": "python-sdist",
+    "size": 4437180
+  },
+  {
+    "name": "requests",
+    "version": "2.34.2",
+    "url": "https://files.pythonhosted.org/packages/ac/c3/e2a2b89f2d3e2179abd6d00ebd70bff6273f37fb3e0cc209f48b39d00cbf/requests-2.34.2.tar.gz",
+    "sha256": "f288924cae4e29463698d6d60bc6a4da69c89185ad1e0bcc4104f584e960b9ed",
+    "filename": "requests-2.34.2.tar.gz",
+    "kind": "python-sdist",
+    "size": 142856
+  },
+  {
+    "name": "scikit-learn",
+    "version": "1.9.1",
+    "url": "https://files.pythonhosted.org/packages/d2/eb/eaf5e07fcc0da7149b0e084f24e54edd7441b9a89ce7e034032ae97fe3a0/scikit_learn-1.9.1.tar.gz",
+    "sha256": "629cada3e33e2b9bf376cdc7614a47a4140b8aedc1d836579e359736fbd82977",
+    "filename": "scikit_learn-1.9.1.tar.gz",
+    "kind": "python-sdist",
+    "size": 7786908
+  },
+  {
+    "name": "scipy",
+    "version": "1.18.1",
+    "url": "https://files.pythonhosted.org/packages/7e/74/66de6258867beb2ef08f35f9f2ac017a52cacd5081714d239ff1a442d458/scipy-1.18.1.tar.gz",
+    "sha256": "52c4b7422442aba924d03ad4019852b08a92e64ea187b933135687bfe2747307",
+    "filename": "scipy-1.18.1.tar.gz",
+    "kind": "python-sdist",
+    "size": 30781235
+  },
+  {
+    "name": "soundfile",
+    "version": "0.14.0",
+    "url": "https://files.pythonhosted.org/packages/d2/db/949331952a6fb1c5b12e9de80fd08747966c2039d1a61db4764fbd3981c2/soundfile-0.14.0.tar.gz",
+    "sha256": "ba1c1a2d618bca5c406647c83b89f07cc8810fa506a50622a6993ba130c1de11",
+    "filename": "soundfile-0.14.0.tar.gz",
+    "kind": "python-sdist",
+    "size": 47842
+  },
+  {
+    "name": "soxr",
+    "version": "1.1.0",
+    "url": "https://files.pythonhosted.org/packages/ed/11/27cebce4a108f77afea7c80545115536b45e3f11ebfb914f638fdd9ba847/soxr-1.1.0.tar.gz",
+    "sha256": "9f228ae21c78fa9359ca98d8a5e8e91f30639e438e574133dace62c5b5309e44",
+    "filename": "soxr-1.1.0.tar.gz",
+    "kind": "python-sdist",
+    "size": 173067
+  },
+  {
+    "name": "threadpoolctl",
+    "version": "3.6.0",
+    "url": "https://files.pythonhosted.org/packages/b7/4d/08c89e34946fce2aec4fbb45c9016efd5f4d7f24af8e5d93296e935631d8/threadpoolctl-3.6.0.tar.gz",
+    "sha256": "8ab8b4aa3491d812b623328249fab5302a68d2d71745c8a4c719a2fcaba9f44e",
+    "filename": "threadpoolctl-3.6.0.tar.gz",
+    "kind": "python-sdist",
+    "size": 21274
+  },
+  {
+    "name": "tqdm",
+    "version": "4.70.0",
+    "url": "https://files.pythonhosted.org/packages/21/3b/6c24bec5be5e743ffd99576daa5cc077722fc7d5bbc00bd133fa0c698dc6/tqdm-4.70.0.tar.gz",
+    "sha256": "55b0b0dbd97462d06ebee91e4dac24ed4d4702be82b24f07e6c1d27e08cea220",
+    "filename": "tqdm-4.70.0.tar.gz",
+    "kind": "python-sdist",
+    "size": 795438
+  },
+  {
+    "name": "typing-extensions",
+    "version": "4.16.0",
+    "url": "https://files.pythonhosted.org/packages/f6/cc/6253133b5bb138fc3306cebfbda2c520f545d36b5be2c7255cc528bb45d6/typing_extensions-4.16.0.tar.gz",
+    "sha256": "dc983d19a509c94dba722ee6abd33940f7c05a89e243c47e907eb4db6f1a43e5",
+    "filename": "typing_extensions-4.16.0.tar.gz",
+    "kind": "python-sdist",
+    "size": 113555
+  },
+  {
+    "name": "urllib3",
+    "version": "2.7.0",
+    "url": "https://files.pythonhosted.org/packages/53/0c/06f8b233b8fd13b9e5ee11424ef85419ba0d8ba0b3138bf360be2ff56953/urllib3-2.7.0.tar.gz",
+    "sha256": "231e0ec3b63ceb14667c67be60f2f2c40a518cb38b03af60abc813da26505f4c",
+    "filename": "urllib3-2.7.0.tar.gz",
+    "kind": "python-sdist",
+    "size": 433602
+  },
+  {
+    "name": "wasmtime",
+    "version": "38.0.0",
+    "url": "https://files.pythonhosted.org/packages/78/79/3d055ce7a0a237941d1910f32a1b6692dee4021d0cb709a97d2feb3f1ef3/wasmtime-38.0.0.tar.gz",
+    "sha256": "75d38a075571756543266df782979fc2204cafd1fb7f3ebbb901e05df916dd34",
+    "filename": "wasmtime-38.0.0.tar.gz",
+    "kind": "python-sdist",
+    "size": 147265
+  },
+  {
+    "name": "winrt-runtime",
+    "version": "3.2.1",
+    "url": "https://files.pythonhosted.org/packages/16/dd/acdd527c1d890c8f852cc2af644aa6c160974e66631289420aa871b05e65/winrt_runtime-3.2.1.tar.gz",
+    "sha256": "c8dca19e12b234ae6c3dadf1a4d0761b51e708457492c13beb666556958801ea",
+    "filename": "winrt_runtime-3.2.1.tar.gz",
+    "kind": "python-sdist",
+    "size": 21721
+  },
+  {
+    "name": "winrt-windows-foundation",
+    "version": "3.2.1",
+    "url": "https://files.pythonhosted.org/packages/0c/55/098ce7ea0679efcc1298b269c48768f010b6c68f90c588f654ec874c8a74/winrt_windows_foundation-3.2.1.tar.gz",
+    "sha256": "ad2f1fcaa6c34672df45527d7c533731fdf65b67c4638c2b4aca949f6eec0656",
+    "filename": "winrt_windows_foundation-3.2.1.tar.gz",
+    "kind": "python-sdist",
+    "size": 30485
+  },
+  {
+    "name": "winrt-windows-foundation-collections",
+    "version": "3.2.1",
+    "url": "https://files.pythonhosted.org/packages/ef/62/d21e3f1eeb8d47077887bbf0c3882c49277a84d8f98f7c12bda64d498a07/winrt_windows_foundation_collections-3.2.1.tar.gz",
+    "sha256": "0eff1ad0d8d763ad17e9e7bbd0c26a62b27215016393c05b09b046d6503ae6d5",
+    "filename": "winrt_windows_foundation_collections-3.2.1.tar.gz",
+    "kind": "python-sdist",
+    "size": 16043
+  },
+  {
+    "name": "winrt-windows-media",
+    "version": "3.2.1",
+    "url": "https://files.pythonhosted.org/packages/3a/ef/8d1c260ec951fe6ce0bafdcf24d490dffe1e05f4f2148cfc1c81dd78e3f5/winrt_windows_media-3.2.1.tar.gz",
+    "sha256": "f833e1ef45c0ffbe60cb6a7d60af8cb925385fc600f86069d1eb9d784fd77f8b",
+    "filename": "winrt_windows_media-3.2.1.tar.gz",
+    "kind": "python-sdist",
+    "size": 28856
+  },
+  {
+    "name": "winrt-windows-media-interop",
+    "version": "3.2.1",
+    "url": "https://files.pythonhosted.org/packages/45/57/cb67cceafab9f5dc36fa571e4924eac3ff33cb6c3090a673cc7022b41ac4/winrt_windows_media_interop-3.2.1.tar.gz",
+    "sha256": "f0b975333ab684ece01a73221141351ae21d96ea125e465121d63a2970757508",
+    "filename": "winrt_windows_media_interop-3.2.1.tar.gz",
+    "kind": "python-sdist",
+    "size": 3282
+  },
+  {
+    "name": "winrt-windows-storage-streams",
+    "version": "3.2.1",
+    "url": "https://files.pythonhosted.org/packages/00/50/f4488b07281566e3850fcae1021f0285c9653992f60a915e15567047db63/winrt_windows_storage_streams-3.2.1.tar.gz",
+    "sha256": "476f522722751eb0b571bc7802d85a82a3cae8b1cce66061e6e758f525e7b80f",
+    "filename": "winrt_windows_storage_streams-3.2.1.tar.gz",
+    "kind": "python-sdist",
+    "size": 34335
+  },
+  {
+    "name": "qtbase",
+    "version": "6.11.2",
+    "url": "https://download.qt.io/archive/qt/6.11/6.11.2/submodules/qtbase-everywhere-src-6.11.2.tar.xz",
+    "filename": "qtbase-everywhere-src-6.11.2.tar.xz",
+    "kind": "native-source",
+    "sha256": "5b2e00eccaf5a4d8c14134ffa0ea8dfd0a35ae1ffc7f8d87fa4305a1ed23cf22",
+    "size": 50582668
+  },
+  {
+    "name": "qtdeclarative",
+    "version": "6.11.2",
+    "url": "https://download.qt.io/archive/qt/6.11/6.11.2/submodules/qtdeclarative-everywhere-src-6.11.2.tar.xz",
+    "filename": "qtdeclarative-everywhere-src-6.11.2.tar.xz",
+    "kind": "native-source",
+    "sha256": "215b7b70517e380123eabc6b92243f3c47b6f016a91d126057dbe53551c6b430",
+    "size": 38780392
+  },
+  {
+    "name": "qtmultimedia",
+    "version": "6.11.2",
+    "url": "https://download.qt.io/archive/qt/6.11/6.11.2/submodules/qtmultimedia-everywhere-src-6.11.2.tar.xz",
+    "filename": "qtmultimedia-everywhere-src-6.11.2.tar.xz",
+    "kind": "native-source",
+    "sha256": "967b5e02ec6b793cdb360622cd6e703132836af983208d678dae4b50f109cd9f",
+    "size": 10255120
+  },
+  {
+    "name": "qtsvg",
+    "version": "6.11.2",
+    "url": "https://download.qt.io/archive/qt/6.11/6.11.2/submodules/qtsvg-everywhere-src-6.11.2.tar.xz",
+    "filename": "qtsvg-everywhere-src-6.11.2.tar.xz",
+    "kind": "native-source",
+    "sha256": "d594337feca84c26fb67fe87b85e6a5c12fda404b611d905f9d138210c311876",
+    "size": 2341860
+  },
+  {
+    "name": "qtimageformats",
+    "version": "6.11.2",
+    "url": "https://download.qt.io/archive/qt/6.11/6.11.2/submodules/qtimageformats-everywhere-src-6.11.2.tar.xz",
+    "filename": "qtimageformats-everywhere-src-6.11.2.tar.xz",
+    "kind": "native-source",
+    "sha256": "cecd8900f34b6550076309bc94f62f828008b633a4239e0a08c86788f41001f8",
+    "size": 2050424
+  },
+  {
+    "name": "qtshadertools",
+    "version": "6.11.2",
+    "url": "https://download.qt.io/archive/qt/6.11/6.11.2/submodules/qtshadertools-everywhere-src-6.11.2.tar.xz",
+    "filename": "qtshadertools-everywhere-src-6.11.2.tar.xz",
+    "kind": "native-source",
+    "sha256": "805046b8b7757665586890b375940047e874ae3ab00adb6d3f2b38fc6b200b1c",
+    "size": 1216816
+  },
+  {
+    "name": "qttools",
+    "version": "6.11.2",
+    "url": "https://download.qt.io/archive/qt/6.11/6.11.2/submodules/qttools-everywhere-src-6.11.2.tar.xz",
+    "filename": "qttools-everywhere-src-6.11.2.tar.xz",
+    "kind": "native-source",
+    "sha256": "9ea75af35c512f7e09e61c8c3af3997f13b4d43bb099cf43fcec470126b4041e",
+    "size": 10226452
+  },
+  {
+    "name": "qttranslations",
+    "version": "6.11.2",
+    "url": "https://download.qt.io/archive/qt/6.11/6.11.2/submodules/qttranslations-everywhere-src-6.11.2.tar.xz",
+    "filename": "qttranslations-everywhere-src-6.11.2.tar.xz",
+    "kind": "native-source",
+    "sha256": "021684c1a7937a9fabc3b056a6698ad5978794caf9ac190fd6cc11399e67c014",
+    "size": 1691056
+  },
+  {
+    "name": "pyside-setup",
+    "version": "6.11.2",
+    "url": "https://download.qt.io/official_releases/QtForPython/pyside6/PySide6-6.11.2-src/pyside-setup-everywhere-src-6.11.2.tar.xz",
+    "filename": "pyside-setup-everywhere-src-6.11.2.tar.xz",
+    "kind": "native-source",
+    "sha256": "cba47efbaad1bedd529725cbc14e21f156c7a19366f07b3edfbb076ffd7afdf8",
+    "size": 18053248
+  },
+  {
+    "name": "ffmpeg",
+    "version": "7.1.5",
+    "url": "https://ffmpeg.org/releases/ffmpeg-7.1.5.tar.xz",
+    "filename": "ffmpeg-7.1.5.tar.xz",
+    "kind": "native-source",
+    "sha256": "de668509caf9e35e3cd162473441fdb29538c6d96ed080292b3cf9e6fc5d558f",
+    "size": 11050340
+  },
+  {
+    "name": "python-build-standalone",
+    "version": "20260825",
+    "url": "https://github.com/astral-sh/python-build-standalone/archive/refs/tags/20260825.tar.gz",
+    "filename": "python-build-standalone-20260825.tar.gz",
+    "kind": "native-source",
+    "sha256": "147408cc205f7d02c167248d6fcd21a7c8a9a9f6814bb06cefd810cd95b903fe",
+    "size": 438873
+  },
+  {
+    "name": "hashab",
+    "version": "f80d46432204c6238cad7d8ca3b3dd52ea66836b",
+    "url": "https://github.com/dstaley/hashab/archive/f80d46432204c6238cad7d8ca3b3dd52ea66836b.tar.gz",
+    "filename": "hashab-f80d46432204c6238cad7d8ca3b3dd52ea66836b.tar.gz",
+    "kind": "native-source",
+    "sha256": "e3901390c48fce394054b5e34f056c275c02a1768b73c56f2ea021fd00731df2",
+    "size": 442933
+  },
+  {
+    "name": "cpython-3.12",
+    "version": "3.12.14",
+    "url": "https://www.python.org/ftp/python/3.12.14/Python-3.12.14.tar.xz",
+    "filename": "Python-3.12.14.tar.xz",
+    "kind": "native-source",
+    "sha256": "5c8462af5790baf43a321a1559dbe0db06d1be4300fb85fb53c40060668e548a",
+    "size": 20820300
+  },
+  {
+    "name": "openssl-3.5",
+    "version": "3.5.8",
+    "url": "https://github.com/openssl/openssl/releases/download/openssl-3.5.8/openssl-3.5.8.tar.gz",
+    "filename": "openssl-3.5.8.tar.gz",
+    "kind": "native-source",
+    "sha256": "a8f84a39918ec6415ce765d9b429d313ba97b8143169c172e734b9514464f5b2",
+    "size": 53213818
+  },
+  {
+    "name": "libffi",
+    "version": "3.4.8",
+    "url": "https://github.com/libffi/libffi/releases/download/v3.4.8/libffi-3.4.8.tar.gz",
+    "filename": "libffi-3.4.8.tar.gz",
+    "kind": "native-source",
+    "sha256": "bc9842a18898bfacb0ed1252c4febcc7e78fa139fd27fdc7a3e30d9d9356119b",
+    "size": 1397992
+  },
+  {
+    "name": "sqlite",
+    "version": "3530100",
+    "url": "https://www.sqlite.org/2026/sqlite-autoconf-3530100.tar.gz",
+    "filename": "sqlite-autoconf-3530100.tar.gz",
+    "kind": "native-source",
+    "sha256": "83e6b2020a034e9a7ad4a72feea59e1ad52f162e09cbd26735a3ffb98359fc4f",
+    "size": 3275272
+  },
+  {
+    "name": "zlib",
+    "version": "1.3.2",
+    "url": "https://github.com/madler/zlib/releases/download/v1.3.2/zlib-1.3.2.tar.gz",
+    "filename": "zlib-1.3.2.tar.gz",
+    "kind": "native-source",
+    "sha256": "bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16",
+    "size": 1502830
+  },
+  {
+    "name": "bzip2",
+    "version": "1.0.8",
+    "url": "https://astral-sh.github.io/mirror/files/bzip2-1.0.8.tar.gz",
+    "filename": "bzip2-1.0.8.tar.gz",
+    "kind": "native-source",
+    "sha256": "ab5a03176ee106d3f0fa90e381da478ddae405918153cca248e682cd0c4a2269",
+    "size": 810029
+  },
+  {
+    "name": "xz",
+    "version": "5.8.3",
+    "url": "https://github.com/tukaani-project/xz/releases/download/v5.8.3/xz-5.8.3.tar.gz",
+    "filename": "xz-5.8.3.tar.gz",
+    "kind": "native-source",
+    "sha256": "3d3a1b973af218114f4f889bbaa2f4c037deaae0c8e815eec381c3d546b974a0",
+    "size": 2771455
+  },
+  {
+    "name": "expat",
+    "version": "2.8.3",
+    "url": "https://github.com/libexpat/libexpat/releases/download/R_2_8_3/expat-2.8.3.tar.xz",
+    "filename": "expat-2.8.3.tar.xz",
+    "kind": "native-source",
+    "sha256": "f6256df90c906773d344da084402b7d3e4f22ed41b1a59c989098a83d3ea0c85",
+    "size": 517264
+  },
+  {
+    "name": "mpdecimal",
+    "version": "4.0.0",
+    "url": "https://astral-sh.github.io/mirror/files/mpdecimal-4.0.0.tar.gz",
+    "filename": "mpdecimal-4.0.0.tar.gz",
+    "kind": "native-source",
+    "sha256": "942445c3245b22730fd41a67a7c5c231d11cb1b9936b9c0f76334fb7d0b4468c",
+    "size": 315325
+  },
+  {
+    "name": "pillow-build",
+    "version": "12.3.0",
+    "url": "https://github.com/python-pillow/Pillow/archive/refs/tags/12.3.0.tar.gz",
+    "filename": "pillow-build-12.3.0.tar.gz",
+    "kind": "native-source",
+    "sha256": "d7ce60fdf8b3d3b4370ea213834d7c852b1ca16396d4e75e5046be815b11b2fb",
+    "size": 47120631
+  },
+  {
+    "name": "libsndfile",
+    "version": "1.2.2",
+    "url": "https://github.com/libsndfile/libsndfile/releases/download/1.2.2/libsndfile-1.2.2.tar.xz",
+    "filename": "libsndfile-1.2.2.tar.xz",
+    "kind": "native-source",
+    "sha256": "3799ca9924d3125038880367bf1468e53a1b7e3686a934f098b7e1d286cdb80e",
+    "size": 730760
+  },
+  {
+    "name": "mesa",
+    "version": "11.2.2",
+    "url": "https://archive.mesa3d.org/older-versions/11.x/11.2.2/mesa-11.2.2.tar.xz",
+    "filename": "mesa-11.2.2.tar.xz",
+    "kind": "native-source",
+    "sha256": "40e148812388ec7c6d7b6657d5a16e2e8dabba8b97ddfceea5197947647bdfb4",
+    "size": 7860932
+  },
+  {
+    "name": "llvm-mesa",
+    "version": "3.6.2",
+    "url": "https://releases.llvm.org/3.6.2/llvm-3.6.2.src.tar.xz",
+    "filename": "llvm-mesa-3.6.2.tar.xz",
+    "kind": "native-source",
+    "sha256": "f60dc158bfda6822de167e87275848969f0558b3134892ff54fced87e4667b94",
+    "size": 12802380
+  },
+  {
+    "name": "zlib-ffmpeg",
+    "version": "1.3.1",
+    "url": "https://zlib.net/fossils/zlib-1.3.1.tar.gz",
+    "filename": "zlib-ffmpeg-1.3.1.tar.gz",
+    "kind": "native-source",
+    "sha256": "9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23",
+    "size": 1512791
+  },
+  {
+    "name": "pywinrt",
+    "version": "3.2.1",
+    "url": "https://github.com/pywinrt/pywinrt/archive/refs/tags/v3.2.1.tar.gz",
+    "filename": "pywinrt-3.2.1.tar.gz",
+    "kind": "native-source",
+    "sha256": "657f3d3cf3c33b66b263daeb306baf87cb16d408b4f8b6cfdd40bc18a9a56312",
+    "size": 20006810
+  },
+  {
+    "name": "wasmtime-native",
+    "version": "38.0.1",
+    "url": "https://github.com/bytecodealliance/wasmtime/archive/refs/tags/v38.0.1.tar.gz",
+    "filename": "wasmtime-native-38.0.1.tar.gz",
+    "kind": "native-source",
+    "sha256": "ae5f666cbfe786b7a0bb32c23d56daecaf01245b49de53b398ede0ae4432b2a0",
+    "size": 25818170
+  },
+  {
+    "name": "llvm-llvmlite",
+    "version": "22.1.0",
+    "url": "https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.0/llvm-project-22.1.0.src.tar.xz",
+    "filename": "llvm-llvmlite-22.1.0.tar.xz",
+    "kind": "native-source",
+    "sha256": "25d2e2adc4356d758405dd885fcfd6447bce82a90eb78b6b87ce0934bd077173",
+    "size": 167040408
+  },
+  {
+    "name": "rust-addr2line",
+    "version": "0.24.1",
+    "url": "https://static.crates.io/crates/addr2line/addr2line-0.24.1.crate",
+    "filename": "rust-addr2line-0.24.1.tar.gz",
+    "sha256": "f5fb1d8e4442bd405fdfd1dacb42792696b0cf9cb15882e5d097b742a676d375",
+    "kind": "rust-source",
+    "size": 41554
+  },
+  {
+    "name": "rust-addr2line",
+    "version": "0.25.0",
+    "url": "https://static.crates.io/crates/addr2line/addr2line-0.25.0.crate",
+    "filename": "rust-addr2line-0.25.0.tar.gz",
+    "sha256": "9acbfca36652500c911ddb767ed433e3ed99b032b5d935be73c6923662db1d43",
+    "kind": "rust-source",
+    "size": 41982
+  },
+  {
+    "name": "rust-adler2",
+    "version": "2.0.0",
+    "url": "https://static.crates.io/crates/adler2/adler2-2.0.0.crate",
+    "filename": "rust-adler2-2.0.0.tar.gz",
+    "sha256": "512761e0bb2578dd7380c6baaa0f4ce03e84f95e960231d1dec8bf4d7d6e2627",
+    "kind": "rust-source",
+    "size": 13529
+  },
+  {
+    "name": "rust-aes",
+    "version": "0.8.4",
+    "url": "https://static.crates.io/crates/aes/aes-0.8.4.crate",
+    "filename": "rust-aes-0.8.4.tar.gz",
+    "sha256": "b169f7a6d4742236a0a00c541b845991d0ac43e546831af1249753ab4c3aa3a0",
+    "kind": "rust-source",
+    "size": 124812
+  },
+  {
+    "name": "rust-aho-corasick",
+    "version": "1.0.2",
+    "url": "https://static.crates.io/crates/aho-corasick/aho-corasick-1.0.2.crate",
+    "filename": "rust-aho-corasick-1.0.2.tar.gz",
+    "sha256": "43f6cb1bf222025340178f382c426f13757b2960e89779dfcb319c32542a5a41",
+    "kind": "rust-source",
+    "size": 167694
+  },
+  {
+    "name": "rust-allocator-api2",
+    "version": "0.2.20",
+    "url": "https://static.crates.io/crates/allocator-api2/allocator-api2-0.2.20.crate",
+    "filename": "rust-allocator-api2-0.2.20.tar.gz",
+    "sha256": "45862d1c77f2228b9e10bc609d5bc203d86ebc9b87ad8d5d5167a6c9abf739d9",
+    "kind": "rust-source",
+    "size": 63549
+  },
+  {
+    "name": "rust-ambient-authority",
+    "version": "0.0.2",
+    "url": "https://static.crates.io/crates/ambient-authority/ambient-authority-0.0.2.crate",
+    "filename": "rust-ambient-authority-0.0.2.tar.gz",
+    "sha256": "e9d4ee0d472d1cd2e28c97dfa124b3d8d992e10eb0a035f33f5d12e3a177ba3b",
+    "kind": "rust-source",
+    "size": 14867
+  },
+  {
+    "name": "rust-android_system_properties",
+    "version": "0.1.5",
+    "url": "https://static.crates.io/crates/android_system_properties/android_system_properties-0.1.5.crate",
+    "filename": "rust-android_system_properties-0.1.5.tar.gz",
+    "sha256": "819e7219dbd41043ac279b19830f2efc897156490d7fd6ea916720117ee66311",
+    "kind": "rust-source",
+    "size": 5243
+  },
+  {
+    "name": "rust-anes",
+    "version": "0.1.6",
+    "url": "https://static.crates.io/crates/anes/anes-0.1.6.crate",
+    "filename": "rust-anes-0.1.6.tar.gz",
+    "sha256": "4b46cbb362ab8752921c97e041f5e366ee6297bd428a31275b9fcf1e380f7299",
+    "kind": "rust-source",
+    "size": 23857
+  },
+  {
+    "name": "rust-anstream",
+    "version": "0.6.15",
+    "url": "https://static.crates.io/crates/anstream/anstream-0.6.15.crate",
+    "filename": "rust-anstream-0.6.15.tar.gz",
+    "sha256": "64e15c1ab1f89faffbf04a634d5e1962e9074f2741eef6d97f3c4e322426d526",
+    "kind": "rust-source",
+    "size": 29231
+  },
+  {
+    "name": "rust-anstyle",
+    "version": "1.0.8",
+    "url": "https://static.crates.io/crates/anstyle/anstyle-1.0.8.crate",
+    "filename": "rust-anstyle-1.0.8.tar.gz",
+    "sha256": "1bec1de6f59aedf83baf9ff929c98f2ad654b97c9510f4e70cf6f661d49fd5b1",
+    "kind": "rust-source",
+    "size": 15771
+  },
+  {
+    "name": "rust-anstyle-parse",
+    "version": "0.2.1",
+    "url": "https://static.crates.io/crates/anstyle-parse/anstyle-parse-0.2.1.crate",
+    "filename": "rust-anstyle-parse-0.2.1.tar.gz",
+    "sha256": "938874ff5980b03a87c5524b3ae5b59cf99b1d6bc836848df7bc5ada9643c333",
+    "kind": "rust-source",
+    "size": 24802
+  },
+  {
+    "name": "rust-anstyle-query",
+    "version": "1.1.2",
+    "url": "https://static.crates.io/crates/anstyle-query/anstyle-query-1.1.2.crate",
+    "filename": "rust-anstyle-query-1.1.2.tar.gz",
+    "sha256": "79947af37f4177cfead1110013d678905c37501914fba0efea834c3fe9a8d60c",
+    "kind": "rust-source",
+    "size": 9969
+  },
+  {
+    "name": "rust-anstyle-wincon",
+    "version": "3.0.4",
+    "url": "https://static.crates.io/crates/anstyle-wincon/anstyle-wincon-3.0.4.crate",
+    "filename": "rust-anstyle-wincon-3.0.4.tar.gz",
+    "sha256": "5bf74e1b6e971609db8ca7a9ce79fd5768ab6ae46441c572e46cf596f59e57f8",
+    "kind": "rust-source",
+    "size": 12234
+  },
+  {
+    "name": "rust-anyhow",
+    "version": "1.0.93",
+    "url": "https://static.crates.io/crates/anyhow/anyhow-1.0.93.crate",
+    "filename": "rust-anyhow-1.0.93.tar.gz",
+    "sha256": "4c95c10ba0b00a02636238b814946408b1322d5ac4760326e6fb8ec956d85775",
+    "kind": "rust-source",
+    "size": 47490
+  },
+  {
+    "name": "rust-arbitrary",
+    "version": "1.4.1",
+    "url": "https://static.crates.io/crates/arbitrary/arbitrary-1.4.1.crate",
+    "filename": "rust-arbitrary-1.4.1.tar.gz",
+    "sha256": "dde20b3d026af13f561bdd0f15edf01fc734f0dafcedbaf42bba506a9517f223",
+    "kind": "rust-source",
+    "size": 36816
+  },
+  {
+    "name": "rust-arbtest",
+    "version": "0.3.1",
+    "url": "https://static.crates.io/crates/arbtest/arbtest-0.3.1.crate",
+    "filename": "rust-arbtest-0.3.1.tar.gz",
+    "sha256": "23909d5fb517fac2a8a4c887e847dbe41dd22ec46914586f5727980d0a193fdc",
+    "kind": "rust-source",
+    "size": 12347
+  },
+  {
+    "name": "rust-arrayvec",
+    "version": "0.7.6",
+    "url": "https://static.crates.io/crates/arrayvec/arrayvec-0.7.6.crate",
+    "filename": "rust-arrayvec-0.7.6.tar.gz",
+    "sha256": "7c02d123df017efcdfbd739ef81735b36c5ba83ec3c59c80a9d7ecc718f92e50",
+    "kind": "rust-source",
+    "size": 31237
+  },
+  {
+    "name": "rust-async-trait",
+    "version": "0.1.71",
+    "url": "https://static.crates.io/crates/async-trait/async-trait-0.1.71.crate",
+    "filename": "rust-async-trait-0.1.71.tar.gz",
+    "sha256": "a564d521dd56509c4c47480d00b80ee55f7e385ae48db5744c67ad50c92d2ebf",
+    "kind": "rust-source",
+    "size": 28703
+  },
+  {
+    "name": "rust-autocfg",
+    "version": "1.1.0",
+    "url": "https://static.crates.io/crates/autocfg/autocfg-1.1.0.crate",
+    "filename": "rust-autocfg-1.1.0.tar.gz",
+    "sha256": "d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa",
+    "kind": "rust-source",
+    "size": 13272
+  },
+  {
+    "name": "rust-backtrace",
+    "version": "0.3.75",
+    "url": "https://static.crates.io/crates/backtrace/backtrace-0.3.75.crate",
+    "filename": "rust-backtrace-0.3.75.tar.gz",
+    "sha256": "6806a6321ec58106fea15becdad98371e28d92ccbc7c8f1b3b6dd724fe8f1002",
+    "kind": "rust-source",
+    "size": 92665
+  },
+  {
+    "name": "rust-base64",
+    "version": "0.22.1",
+    "url": "https://static.crates.io/crates/base64/base64-0.22.1.crate",
+    "filename": "rust-base64-0.22.1.tar.gz",
+    "sha256": "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6",
+    "kind": "rust-source",
+    "size": 81597
+  },
+  {
+    "name": "rust-base64ct",
+    "version": "1.6.0",
+    "url": "https://static.crates.io/crates/base64ct/base64ct-1.6.0.crate",
+    "filename": "rust-base64ct-1.6.0.tar.gz",
+    "sha256": "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b",
+    "kind": "rust-source",
+    "size": 28870
+  },
+  {
+    "name": "rust-beef",
+    "version": "0.5.2",
+    "url": "https://static.crates.io/crates/beef/beef-0.5.2.crate",
+    "filename": "rust-beef-0.5.2.tar.gz",
+    "sha256": "3a8241f3ebb85c056b509d4327ad0358fbbba6ffb340bf388f26350aeda225b1",
+    "kind": "rust-source",
+    "size": 15275
+  },
+  {
+    "name": "rust-bindgen",
+    "version": "0.71.1",
+    "url": "https://static.crates.io/crates/bindgen/bindgen-0.71.1.crate",
+    "filename": "rust-bindgen-0.71.1.tar.gz",
+    "sha256": "5f58bf3d7db68cfbac37cfc485a8d711e87e064c3d0fe0435b92f7a407f9d6b3",
+    "kind": "rust-source",
+    "size": 237785
+  },
+  {
+    "name": "rust-bit-set",
+    "version": "0.5.2",
+    "url": "https://static.crates.io/crates/bit-set/bit-set-0.5.2.crate",
+    "filename": "rust-bit-set-0.5.2.tar.gz",
+    "sha256": "6e11e16035ea35e4e5997b393eacbf6f63983188f7a2ad25bfb13465f5ad59de",
+    "kind": "rust-source",
+    "size": 14093
+  },
+  {
+    "name": "rust-bit-vec",
+    "version": "0.6.3",
+    "url": "https://static.crates.io/crates/bit-vec/bit-vec-0.6.3.crate",
+    "filename": "rust-bit-vec-0.6.3.tar.gz",
+    "sha256": "349f9b6a179ed607305526ca489b34ad0a41aed5f7980fa90eb03160b69598fb",
+    "kind": "rust-source",
+    "size": 19927
+  },
+  {
+    "name": "rust-bitflags",
+    "version": "1.3.2",
+    "url": "https://static.crates.io/crates/bitflags/bitflags-1.3.2.crate",
+    "filename": "rust-bitflags-1.3.2.tar.gz",
+    "sha256": "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a",
+    "kind": "rust-source",
+    "size": 23021
+  },
+  {
+    "name": "rust-bitflags",
+    "version": "2.6.0",
+    "url": "https://static.crates.io/crates/bitflags/bitflags-2.6.0.crate",
+    "filename": "rust-bitflags-2.6.0.tar.gz",
+    "sha256": "b048fb63fd8b5923fc5aa7b340d8e156aec7ec02f0c78fa8a6ddc2613f6f71de",
+    "kind": "rust-source",
+    "size": 45357
+  },
+  {
+    "name": "rust-bitmaps",
+    "version": "2.1.0",
+    "url": "https://static.crates.io/crates/bitmaps/bitmaps-2.1.0.crate",
+    "filename": "rust-bitmaps-2.1.0.tar.gz",
+    "sha256": "031043d04099746d8db04daf1fa424b2bc8bd69d92b25962dcde24da39ab64a2",
+    "kind": "rust-source",
+    "size": 16717
+  },
+  {
+    "name": "rust-block-buffer",
+    "version": "0.10.2",
+    "url": "https://static.crates.io/crates/block-buffer/block-buffer-0.10.2.crate",
+    "filename": "rust-block-buffer-0.10.2.tar.gz",
+    "sha256": "0bf7fe51849ea569fd452f37822f606a5cabb684dc918707a0193fd4664ff324",
+    "kind": "rust-source",
+    "size": 10258
+  },
+  {
+    "name": "rust-bstr",
+    "version": "1.6.0",
+    "url": "https://static.crates.io/crates/bstr/bstr-1.6.0.crate",
+    "filename": "rust-bstr-1.6.0.tar.gz",
+    "sha256": "6798148dccfbff0fae41c7574d2fa8f1ef3492fba0face179de5d8d447d67b05",
+    "kind": "rust-source",
+    "size": 385877
+  },
+  {
+    "name": "rust-bumpalo",
+    "version": "3.16.0",
+    "url": "https://static.crates.io/crates/bumpalo/bumpalo-3.16.0.crate",
+    "filename": "rust-bumpalo-3.16.0.tar.gz",
+    "sha256": "79296716171880943b8470b5f8d03aa55eb2e645a4874bdbb28adb49162e012c",
+    "kind": "rust-source",
+    "size": 85677
+  },
+  {
+    "name": "rust-byteorder",
+    "version": "1.4.3",
+    "url": "https://static.crates.io/crates/byteorder/byteorder-1.4.3.crate",
+    "filename": "rust-byteorder-1.4.3.tar.gz",
+    "sha256": "14c189c53d098945499cdfa7ecc63567cf3886b3332b312a5b4585d8d3a6a610",
+    "kind": "rust-source",
+    "size": 22512
+  },
+  {
+    "name": "rust-bytes",
+    "version": "1.5.0",
+    "url": "https://static.crates.io/crates/bytes/bytes-1.5.0.crate",
+    "filename": "rust-bytes-1.5.0.tar.gz",
+    "sha256": "a2bd12c1caf447e69cd4528f47f94d203fd2582878ecb9e9465484c4148a8223",
+    "kind": "rust-source",
+    "size": 58909
+  },
+  {
+    "name": "rust-bytesize",
+    "version": "2.0.1",
+    "url": "https://static.crates.io/crates/bytesize/bytesize-2.0.1.crate",
+    "filename": "rust-bytesize-2.0.1.tar.gz",
+    "sha256": "a3c8f83209414aacf0eeae3cf730b18d6981697fba62f200fcfb92b9f082acba",
+    "kind": "rust-source",
+    "size": 18922
+  },
+  {
+    "name": "rust-bzip2",
+    "version": "0.4.4",
+    "url": "https://static.crates.io/crates/bzip2/bzip2-0.4.4.crate",
+    "filename": "rust-bzip2-0.4.4.tar.gz",
+    "sha256": "bdb116a6ef3f6c3698828873ad02c3014b3c85cadb88496095628e3ef1e347f8",
+    "kind": "rust-source",
+    "size": 34197
+  },
+  {
+    "name": "rust-bzip2-sys",
+    "version": "0.1.11+1.0.8",
+    "url": "https://static.crates.io/crates/bzip2-sys/bzip2-sys-0.1.11+1.0.8.crate",
+    "filename": "rust-bzip2-sys-0.1.11+1.0.8.tar.gz",
+    "sha256": "736a955f3fa7875102d57c82b8cac37ec45224a07fd32d58f9f7a186b6cd4cdc",
+    "kind": "rust-source",
+    "size": 633444
+  },
+  {
+    "name": "rust-camino",
+    "version": "1.1.4",
+    "url": "https://static.crates.io/crates/camino/camino-1.1.4.crate",
+    "filename": "rust-camino-1.1.4.tar.gz",
+    "sha256": "c530edf18f37068ac2d977409ed5cd50d53d73bc653c7647b48eb78976ac9ae2",
+    "kind": "rust-source",
+    "size": 32290
+  },
+  {
+    "name": "rust-cap-fs-ext",
+    "version": "3.4.4",
+    "url": "https://static.crates.io/crates/cap-fs-ext/cap-fs-ext-3.4.4.crate",
+    "filename": "rust-cap-fs-ext-3.4.4.tar.gz",
+    "sha256": "e41cc18551193fe8fa6f15c1e3c799bc5ec9e2cfbfaa8ed46f37013e3e6c173c",
+    "kind": "rust-source",
+    "size": 21719
+  },
+  {
+    "name": "rust-cap-net-ext",
+    "version": "3.4.4",
+    "url": "https://static.crates.io/crates/cap-net-ext/cap-net-ext-3.4.4.crate",
+    "filename": "rust-cap-net-ext-3.4.4.tar.gz",
+    "sha256": "9f83833816c66c986e913b22ac887cec216ea09301802054316fc5301809702c",
+    "kind": "rust-source",
+    "size": 14227
+  },
+  {
+    "name": "rust-cap-primitives",
+    "version": "3.4.4",
+    "url": "https://static.crates.io/crates/cap-primitives/cap-primitives-3.4.4.crate",
+    "filename": "rust-cap-primitives-3.4.4.tar.gz",
+    "sha256": "0a1e394ed14f39f8bc26f59d4c0c010dbe7f0a1b9bafff451b1f98b67c8af62a",
+    "kind": "rust-source",
+    "size": 93076
+  },
+  {
+    "name": "rust-cap-rand",
+    "version": "3.4.4",
+    "url": "https://static.crates.io/crates/cap-rand/cap-rand-3.4.4.crate",
+    "filename": "rust-cap-rand-3.4.4.tar.gz",
+    "sha256": "0acb89ccf798a28683f00089d0630dfaceec087234eae0d308c05ddeaa941b40",
+    "kind": "rust-source",
+    "size": 9691
+  },
+  {
+    "name": "rust-cap-std",
+    "version": "3.4.4",
+    "url": "https://static.crates.io/crates/cap-std/cap-std-3.4.4.crate",
+    "filename": "rust-cap-std-3.4.4.tar.gz",
+    "sha256": "07c0355ca583dd58f176c3c12489d684163861ede3c9efa6fd8bba314c984189",
+    "kind": "rust-source",
+    "size": 36231
+  },
+  {
+    "name": "rust-cap-time-ext",
+    "version": "3.4.4",
+    "url": "https://static.crates.io/crates/cap-time-ext/cap-time-ext-3.4.4.crate",
+    "filename": "rust-cap-time-ext-3.4.4.tar.gz",
+    "sha256": "491af520b8770085daa0466978c75db90368c71896523f2464214e38359b1a5b",
+    "kind": "rust-source",
+    "size": 12204
+  },
+  {
+    "name": "rust-capstone",
+    "version": "0.13.0",
+    "url": "https://static.crates.io/crates/capstone/capstone-0.13.0.crate",
+    "filename": "rust-capstone-0.13.0.tar.gz",
+    "sha256": "015ef5d5ca1743e3f94af9509ba6bd2886523cfee46e48d15c2ef5216fd4ac9a",
+    "kind": "rust-source",
+    "size": 104684
+  },
+  {
+    "name": "rust-capstone-sys",
+    "version": "0.17.0",
+    "url": "https://static.crates.io/crates/capstone-sys/capstone-sys-0.17.0.crate",
+    "filename": "rust-capstone-sys-0.17.0.tar.gz",
+    "sha256": "2267cb8d16a1e4197863ec4284ffd1aec26fe7e57c58af46b02590a0235809a0",
+    "kind": "rust-source",
+    "size": 4912005
+  },
+  {
+    "name": "rust-cargo-platform",
+    "version": "0.1.2",
+    "url": "https://static.crates.io/crates/cargo-platform/cargo-platform-0.1.2.crate",
+    "filename": "rust-cargo-platform-0.1.2.tar.gz",
+    "sha256": "cbdb825da8a5df079a43676dbe042702f1707b1109f713a01420fbb4cc71fa27",
+    "kind": "rust-source",
+    "size": 11645
+  },
+  {
+    "name": "rust-cargo_metadata",
+    "version": "0.19.2",
+    "url": "https://static.crates.io/crates/cargo_metadata/cargo_metadata-0.19.2.crate",
+    "filename": "rust-cargo_metadata-0.19.2.tar.gz",
+    "sha256": "dd5eb614ed4c27c5d706420e4320fbe3216ab31fa1c33cd8246ac36dae4479ba",
+    "kind": "rust-source",
+    "size": 28370
+  },
+  {
+    "name": "rust-cast",
+    "version": "0.3.0",
+    "url": "https://static.crates.io/crates/cast/cast-0.3.0.crate",
+    "filename": "rust-cast-0.3.0.tar.gz",
+    "sha256": "37b2a672a2cb129a2e41c10b1224bb368f9f37a2b16b612598138befd7b37eb5",
+    "kind": "rust-source",
+    "size": 11452
+  },
+  {
+    "name": "rust-cc",
+    "version": "1.2.22",
+    "url": "https://static.crates.io/crates/cc/cc-1.2.22.crate",
+    "filename": "rust-cc-1.2.22.tar.gz",
+    "sha256": "32db95edf998450acc7881c932f94cd9b05c87b4b2599e8bab064753da4acfd1",
+    "kind": "rust-source",
+    "size": 106294
+  },
+  {
+    "name": "rust-cexpr",
+    "version": "0.6.0",
+    "url": "https://static.crates.io/crates/cexpr/cexpr-0.6.0.crate",
+    "filename": "rust-cexpr-0.6.0.tar.gz",
+    "sha256": "6fac387a98bb7c37292057cffc56d62ecb629900026402633ae9160df93a8766",
+    "kind": "rust-source",
+    "size": 17966
+  },
+  {
+    "name": "rust-cfg-if",
+    "version": "1.0.0",
+    "url": "https://static.crates.io/crates/cfg-if/cfg-if-1.0.0.crate",
+    "filename": "rust-cfg-if-1.0.0.tar.gz",
+    "sha256": "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd",
+    "kind": "rust-source",
+    "size": 7934
+  },
+  {
+    "name": "rust-ciborium",
+    "version": "0.2.0",
+    "url": "https://static.crates.io/crates/ciborium/ciborium-0.2.0.crate",
+    "filename": "rust-ciborium-0.2.0.tar.gz",
+    "sha256": "b0c137568cc60b904a7724001b35ce2630fd00d5d84805fbb608ab89509d788f",
+    "kind": "rust-source",
+    "size": 30130
+  },
+  {
+    "name": "rust-ciborium-io",
+    "version": "0.2.0",
+    "url": "https://static.crates.io/crates/ciborium-io/ciborium-io-0.2.0.crate",
+    "filename": "rust-ciborium-io-0.2.0.tar.gz",
+    "sha256": "346de753af073cc87b52b2083a506b38ac176a44cfb05497b622e27be899b369",
+    "kind": "rust-source",
+    "size": 2738
+  },
+  {
+    "name": "rust-ciborium-ll",
+    "version": "0.2.0",
+    "url": "https://static.crates.io/crates/ciborium-ll/ciborium-ll-0.2.0.crate",
+    "filename": "rust-ciborium-ll-0.2.0.tar.gz",
+    "sha256": "213030a2b5a4e0c0892b6652260cf6ccac84827b83a85a534e178e3906c4cf1b",
+    "kind": "rust-source",
+    "size": 10740
+  },
+  {
+    "name": "rust-cipher",
+    "version": "0.4.4",
+    "url": "https://static.crates.io/crates/cipher/cipher-0.4.4.crate",
+    "filename": "rust-cipher-0.4.4.tar.gz",
+    "sha256": "773f3b9af64447d2ce9850330c473515014aa235e6a783b02db81ff39e4a3dad",
+    "kind": "rust-source",
+    "size": 19073
+  },
+  {
+    "name": "rust-clang-sys",
+    "version": "1.8.1",
+    "url": "https://static.crates.io/crates/clang-sys/clang-sys-1.8.1.crate",
+    "filename": "rust-clang-sys-1.8.1.tar.gz",
+    "sha256": "0b023947811758c97c59bf9d1c188fd619ad4718dcaa767947df1cadb14f39f4",
+    "kind": "rust-source",
+    "size": 44009
+  },
+  {
+    "name": "rust-clap",
+    "version": "4.5.36",
+    "url": "https://static.crates.io/crates/clap/clap-4.5.36.crate",
+    "filename": "rust-clap-4.5.36.tar.gz",
+    "sha256": "2df961d8c8a0d08aa9945718ccf584145eee3f3aa06cddbeac12933781102e04",
+    "kind": "rust-source",
+    "size": 56958
+  },
+  {
+    "name": "rust-clap_builder",
+    "version": "4.5.36",
+    "url": "https://static.crates.io/crates/clap_builder/clap_builder-4.5.36.crate",
+    "filename": "rust-clap_builder-4.5.36.tar.gz",
+    "sha256": "132dbda40fb6753878316a489d5a1242a8ef2f0d9e47ba01c951ea8aa7d013a5",
+    "kind": "rust-source",
+    "size": 168438
+  },
+  {
+    "name": "rust-clap_complete",
+    "version": "4.5.28",
+    "url": "https://static.crates.io/crates/clap_complete/clap_complete-4.5.28.crate",
+    "filename": "rust-clap_complete-4.5.28.tar.gz",
+    "sha256": "9b378c786d3bde9442d2c6dd7e6080b2a818db2b96e30d6e7f1b6d224eb617d3",
+    "kind": "rust-source",
+    "size": 46250
+  },
+  {
+    "name": "rust-clap_derive",
+    "version": "4.5.32",
+    "url": "https://static.crates.io/crates/clap_derive/clap_derive-4.5.32.crate",
+    "filename": "rust-clap_derive-4.5.32.tar.gz",
+    "sha256": "09176aae279615badda0765c0c0b3f6ed53f4709118af73cf4655d85d1530cd7",
+    "kind": "rust-source",
+    "size": 33441
+  },
+  {
+    "name": "rust-clap_lex",
+    "version": "0.7.4",
+    "url": "https://static.crates.io/crates/clap_lex/clap_lex-0.7.4.crate",
+    "filename": "rust-clap_lex-0.7.4.tar.gz",
+    "sha256": "f46ad14479a25103f283c0f10005961cf086d8dc42205bb44c46ac563475dca6",
+    "kind": "rust-source",
+    "size": 12858
+  },
+  {
+    "name": "rust-cobs",
+    "version": "0.2.3",
+    "url": "https://static.crates.io/crates/cobs/cobs-0.2.3.crate",
+    "filename": "rust-cobs-0.2.3.tar.gz",
+    "sha256": "67ba02a97a2bd10f4b59b25c7973101c79642302776489e030cd13cdab09ed15",
+    "kind": "rust-source",
+    "size": 12576
+  },
+  {
+    "name": "rust-codespan-reporting",
+    "version": "0.11.1",
+    "url": "https://static.crates.io/crates/codespan-reporting/codespan-reporting-0.11.1.crate",
+    "filename": "rust-codespan-reporting-0.11.1.tar.gz",
+    "sha256": "3538270d33cc669650c4b093848450d380def10c331d38c768e34cac80576e6e",
+    "kind": "rust-source",
+    "size": 48963
+  },
+  {
+    "name": "rust-colorchoice",
+    "version": "1.0.0",
+    "url": "https://static.crates.io/crates/colorchoice/colorchoice-1.0.0.crate",
+    "filename": "rust-colorchoice-1.0.0.tar.gz",
+    "sha256": "acbf1af155f9b9ef647e42cdc158db4b64a1b61f743629225fde6f3e0be2a7c7",
+    "kind": "rust-source",
+    "size": 6857
+  },
+  {
+    "name": "rust-console",
+    "version": "0.15.8",
+    "url": "https://static.crates.io/crates/console/console-0.15.8.crate",
+    "filename": "rust-console-0.15.8.tar.gz",
+    "sha256": "0e1f83fc076bd6dd27517eacdf25fef6c4dfe5f1d7448bafaaf3a26f13b5e4eb",
+    "kind": "rust-source",
+    "size": 36364
+  },
+  {
+    "name": "rust-constant_time_eq",
+    "version": "0.1.5",
+    "url": "https://static.crates.io/crates/constant_time_eq/constant_time_eq-0.1.5.crate",
+    "filename": "rust-constant_time_eq-0.1.5.tar.gz",
+    "sha256": "245097e9a4535ee1e3e3931fcfcd55a796a44c643e8596ff6566d68f09b87bbc",
+    "kind": "rust-source",
+    "size": 4936
+  },
+  {
+    "name": "rust-core-foundation",
+    "version": "0.9.4",
+    "url": "https://static.crates.io/crates/core-foundation/core-foundation-0.9.4.crate",
+    "filename": "rust-core-foundation-0.9.4.tar.gz",
+    "sha256": "91e195e091a93c46f7102ec7818a2aa394e1e1771c3ab4825963fa03e45afb8f",
+    "kind": "rust-source",
+    "size": 27743
+  },
+  {
+    "name": "rust-core-foundation-sys",
+    "version": "0.8.6",
+    "url": "https://static.crates.io/crates/core-foundation-sys/core-foundation-sys-0.8.6.crate",
+    "filename": "rust-core-foundation-sys-0.8.6.tar.gz",
+    "sha256": "06ea2b9bc92be3c2baa9334a323ebca2d6f074ff852cd1d7b11064035cd3868f",
+    "kind": "rust-source",
+    "size": 37629
+  },
+  {
+    "name": "rust-cpp_demangle",
+    "version": "0.4.3",
+    "url": "https://static.crates.io/crates/cpp_demangle/cpp_demangle-0.4.3.crate",
+    "filename": "rust-cpp_demangle-0.4.3.tar.gz",
+    "sha256": "7e8227005286ec39567949b33df9896bcadfa6051bccca2488129f108ca23119",
+    "kind": "rust-source",
+    "size": 78861
+  },
+  {
+    "name": "rust-cpufeatures",
+    "version": "0.2.7",
+    "url": "https://static.crates.io/crates/cpufeatures/cpufeatures-0.2.7.crate",
+    "filename": "rust-cpufeatures-0.2.7.tar.gz",
+    "sha256": "3e4c1eaa2012c47becbbad2ab175484c2a84d1185b566fb2cc5b8707343dfe58",
+    "kind": "rust-source",
+    "size": 11563
+  },
+  {
+    "name": "rust-crc32fast",
+    "version": "1.3.2",
+    "url": "https://static.crates.io/crates/crc32fast/crc32fast-1.3.2.crate",
+    "filename": "rust-crc32fast-1.3.2.tar.gz",
+    "sha256": "b540bd8bc810d3885c6ea91e2018302f68baba2129ab3e88f32389ee9370880d",
+    "kind": "rust-source",
+    "size": 38661
+  },
+  {
+    "name": "rust-criterion",
+    "version": "0.6.0",
+    "url": "https://static.crates.io/crates/criterion/criterion-0.6.0.crate",
+    "filename": "rust-criterion-0.6.0.tar.gz",
+    "sha256": "3bf7af66b0989381bd0be551bd7cc91912a655a58c6918420c9527b1fd8b4679",
+    "kind": "rust-source",
+    "size": 119470
+  },
+  {
+    "name": "rust-criterion-plot",
+    "version": "0.5.0",
+    "url": "https://static.crates.io/crates/criterion-plot/criterion-plot-0.5.0.crate",
+    "filename": "rust-criterion-plot-0.5.0.tar.gz",
+    "sha256": "6b50826342786a51a89e2da3a28f1c32b06e387201bc2d19791f622c673706b1",
+    "kind": "rust-source",
+    "size": 22706
+  },
+  {
+    "name": "rust-crossbeam-deque",
+    "version": "0.8.1",
+    "url": "https://static.crates.io/crates/crossbeam-deque/crossbeam-deque-0.8.1.crate",
+    "filename": "rust-crossbeam-deque-0.8.1.tar.gz",
+    "sha256": "6455c0ca19f0d2fbf751b908d5c55c1f5cbc65e03c4225427254b46890bdde1e",
+    "kind": "rust-source",
+    "size": 20852
+  },
+  {
+    "name": "rust-crossbeam-epoch",
+    "version": "0.9.18",
+    "url": "https://static.crates.io/crates/crossbeam-epoch/crossbeam-epoch-0.9.18.crate",
+    "filename": "rust-crossbeam-epoch-0.9.18.tar.gz",
+    "sha256": "5b82ac4a3c2ca9c3460964f020e1402edd5753411d7737aa39c3714ad1b5420e",
+    "kind": "rust-source",
+    "size": 46875
+  },
+  {
+    "name": "rust-crossbeam-utils",
+    "version": "0.8.20",
+    "url": "https://static.crates.io/crates/crossbeam-utils/crossbeam-utils-0.8.20.crate",
+    "filename": "rust-crossbeam-utils-0.8.20.tar.gz",
+    "sha256": "22ec99545bb0ed0ea7bb9b8e1e9122ea386ff8a48c0922e43f36d45ab09e0e80",
+    "kind": "rust-source",
+    "size": 42487
+  },
+  {
+    "name": "rust-crunchy",
+    "version": "0.2.2",
+    "url": "https://static.crates.io/crates/crunchy/crunchy-0.2.2.crate",
+    "filename": "rust-crunchy-0.2.2.tar.gz",
+    "sha256": "7a81dae078cea95a014a339291cec439d2f232ebe854a9d672b796c6afafa9b7",
+    "kind": "rust-source",
+    "size": 2995
+  },
+  {
+    "name": "rust-crypto-common",
+    "version": "0.1.6",
+    "url": "https://static.crates.io/crates/crypto-common/crypto-common-0.1.6.crate",
+    "filename": "rust-crypto-common-0.1.6.tar.gz",
+    "sha256": "1bfb12502f3fc46cca1bb51ac28df9d618d813cdc3d2f25b9fe775a34af26bb3",
+    "kind": "rust-source",
+    "size": 8760
+  },
+  {
+    "name": "rust-cty",
+    "version": "0.2.2",
+    "url": "https://static.crates.io/crates/cty/cty-0.2.2.crate",
+    "filename": "rust-cty-0.2.2.tar.gz",
+    "sha256": "b365fabc795046672053e29c954733ec3b05e4be654ab130fe8f1f94d7051f35",
+    "kind": "rust-source",
+    "size": 7230
+  },
+  {
+    "name": "rust-debugid",
+    "version": "0.8.0",
+    "url": "https://static.crates.io/crates/debugid/debugid-0.8.0.crate",
+    "filename": "rust-debugid-0.8.0.tar.gz",
+    "sha256": "bef552e6f588e446098f6ba40d89ac146c8c7b64aade83c051ee00bb5d2bc18d",
+    "kind": "rust-source",
+    "size": 12757
+  },
+  {
+    "name": "rust-deranged",
+    "version": "0.3.11",
+    "url": "https://static.crates.io/crates/deranged/deranged-0.3.11.crate",
+    "filename": "rust-deranged-0.3.11.tar.gz",
+    "sha256": "b42b6fa04a440b495c8b04d0e71b707c585f83cb9cb28cf8cd0d976c315e31b4",
+    "kind": "rust-source",
+    "size": 18043
+  },
+  {
+    "name": "rust-derive_arbitrary",
+    "version": "1.4.0",
+    "url": "https://static.crates.io/crates/derive_arbitrary/derive_arbitrary-1.4.0.crate",
+    "filename": "rust-derive_arbitrary-1.4.0.tar.gz",
+    "sha256": "d475dfebcb4854d596b17b09f477616f80f17a550517f2b3615d8c205d5c802b",
+    "kind": "rust-source",
+    "size": 11518
+  },
+  {
+    "name": "rust-digest",
+    "version": "0.10.7",
+    "url": "https://static.crates.io/crates/digest/digest-0.10.7.crate",
+    "filename": "rust-digest-0.10.7.tar.gz",
+    "sha256": "9ed9a281f7bc9b7576e61468ba615a66a5c8cfdff42420a70aa82701a3b1e292",
+    "kind": "rust-source",
+    "size": 19557
+  },
+  {
+    "name": "rust-directories-next",
+    "version": "2.0.0",
+    "url": "https://static.crates.io/crates/directories-next/directories-next-2.0.0.crate",
+    "filename": "rust-directories-next-2.0.0.tar.gz",
+    "sha256": "339ee130d97a610ea5a5872d2bbb130fdf68884ff09d3028b81bec8a1ac23bbc",
+    "kind": "rust-source",
+    "size": 15153
+  },
+  {
+    "name": "rust-dirs-sys-next",
+    "version": "0.1.2",
+    "url": "https://static.crates.io/crates/dirs-sys-next/dirs-sys-next-0.1.2.crate",
+    "filename": "rust-dirs-sys-next-0.1.2.tar.gz",
+    "sha256": "4ebda144c4fe02d1f7ea1a7d9641b6fc6b580adcfa024ae48797ecdeb6825b4d",
+    "kind": "rust-source",
+    "size": 10681
+  },
+  {
+    "name": "rust-displaydoc",
+    "version": "0.2.5",
+    "url": "https://static.crates.io/crates/displaydoc/displaydoc-0.2.5.crate",
+    "filename": "rust-displaydoc-0.2.5.tar.gz",
+    "sha256": "97369cbbc041bc366949bc74d34658d6cda5621039731c6310521892a3a20ae0",
+    "kind": "rust-source",
+    "size": 24219
+  },
+  {
+    "name": "rust-dlmalloc",
+    "version": "0.2.4",
+    "url": "https://static.crates.io/crates/dlmalloc/dlmalloc-0.2.4.crate",
+    "filename": "rust-dlmalloc-0.2.4.tar.gz",
+    "sha256": "203540e710bfadb90e5e29930baf5d10270cec1f43ab34f46f78b147b2de715a",
+    "kind": "rust-source",
+    "size": 82760
+  },
+  {
+    "name": "rust-downcast-rs",
+    "version": "2.0.1",
+    "url": "https://static.crates.io/crates/downcast-rs/downcast-rs-2.0.1.crate",
+    "filename": "rust-downcast-rs-2.0.1.tar.gz",
+    "sha256": "ea8a8b81cacc08888170eef4d13b775126db426d0b348bee9d18c2c1eaf123cf",
+    "kind": "rust-source",
+    "size": 12492
+  },
+  {
+    "name": "rust-easy-smt",
+    "version": "0.2.2",
+    "url": "https://static.crates.io/crates/easy-smt/easy-smt-0.2.2.crate",
+    "filename": "rust-easy-smt-0.2.2.tar.gz",
+    "sha256": "2cc74633db03a8b18de7c933fbd72402d45dfaf2d1736c1fd8ff9bbe461b4572",
+    "kind": "rust-source",
+    "size": 21713
+  },
+  {
+    "name": "rust-egg",
+    "version": "0.6.0",
+    "url": "https://static.crates.io/crates/egg/egg-0.6.0.crate",
+    "filename": "rust-egg-0.6.0.tar.gz",
+    "sha256": "05a6c0bbc92278f84e742f08c0ab9cb16a987376cd2bc39d228ef9c74d98d6f7",
+    "kind": "rust-source",
+    "size": 81685
+  },
+  {
+    "name": "rust-either",
+    "version": "1.13.0",
+    "url": "https://static.crates.io/crates/either/either-1.13.0.crate",
+    "filename": "rust-either-1.13.0.tar.gz",
+    "sha256": "60b1af1c220855b6ceac025d3f6ecdd2b7c4894bfe9cd9bda4fbb4bc7c0d4cf0",
+    "kind": "rust-source",
+    "size": 19169
+  },
+  {
+    "name": "rust-embedded-io",
+    "version": "0.4.0",
+    "url": "https://static.crates.io/crates/embedded-io/embedded-io-0.4.0.crate",
+    "filename": "rust-embedded-io-0.4.0.tar.gz",
+    "sha256": "ef1a6892d9eef45c8fa6b9e0086428a2cca8491aca8f787c534a3d6d0bcb3ced",
+    "kind": "rust-source",
+    "size": 12901
+  },
+  {
+    "name": "rust-encode_unicode",
+    "version": "0.3.6",
+    "url": "https://static.crates.io/crates/encode_unicode/encode_unicode-0.3.6.crate",
+    "filename": "rust-encode_unicode-0.3.6.tar.gz",
+    "sha256": "a357d28ed41a50f9c765dbfe56cbc04a64e53e5fc58ba79fbc34c10ef3df831f",
+    "kind": "rust-source",
+    "size": 45741
+  },
+  {
+    "name": "rust-encoding_rs",
+    "version": "0.8.31",
+    "url": "https://static.crates.io/crates/encoding_rs/encoding_rs-0.8.31.crate",
+    "filename": "rust-encoding_rs-0.8.31.tar.gz",
+    "sha256": "9852635589dc9f9ea1b6fe9f05b50ef208c85c834a562f0c6abb1c475736ec2b",
+    "kind": "rust-source",
+    "size": 1370113
+  },
+  {
+    "name": "rust-env_filter",
+    "version": "0.1.2",
+    "url": "https://static.crates.io/crates/env_filter/env_filter-0.1.2.crate",
+    "filename": "rust-env_filter-0.1.2.tar.gz",
+    "sha256": "4f2c92ceda6ceec50f43169f9ee8424fe2db276791afde7b2cd8bc084cb376ab",
+    "kind": "rust-source",
+    "size": 13327
+  },
+  {
+    "name": "rust-env_logger",
+    "version": "0.10.0",
+    "url": "https://static.crates.io/crates/env_logger/env_logger-0.10.0.crate",
+    "filename": "rust-env_logger-0.10.0.tar.gz",
+    "sha256": "85cdab6a89accf66733ad5a1693a4dcced6aeff64602b634530dd73c1f3ee9f0",
+    "kind": "rust-source",
+    "size": 36574
+  },
+  {
+    "name": "rust-env_logger",
+    "version": "0.11.5",
+    "url": "https://static.crates.io/crates/env_logger/env_logger-0.11.5.crate",
+    "filename": "rust-env_logger-0.11.5.tar.gz",
+    "sha256": "e13fa619b91fb2381732789fc5de83b45675e882f66623b7d8cb4f643017018d",
+    "kind": "rust-source",
+    "size": 30683
+  },
+  {
+    "name": "rust-equivalent",
+    "version": "1.0.1",
+    "url": "https://static.crates.io/crates/equivalent/equivalent-1.0.1.crate",
+    "filename": "rust-equivalent-1.0.1.tar.gz",
+    "sha256": "5443807d6dff69373d433ab9ef5378ad8df50ca6298caf15de6e52e24aaf54d5",
+    "kind": "rust-source",
+    "size": 6615
+  },
+  {
+    "name": "rust-errno",
+    "version": "0.3.10",
+    "url": "https://static.crates.io/crates/errno/errno-0.3.10.crate",
+    "filename": "rust-errno-0.3.10.tar.gz",
+    "sha256": "33d852cb9b869c2a9b3df2f71a3074817f01e1844f839a144f5fcef059a4eb5d",
+    "kind": "rust-source",
+    "size": 11824
+  },
+  {
+    "name": "rust-escape8259",
+    "version": "0.5.2",
+    "url": "https://static.crates.io/crates/escape8259/escape8259-0.5.2.crate",
+    "filename": "rust-escape8259-0.5.2.tar.gz",
+    "sha256": "ba4f4911e3666fcd7826997b4745c8224295a6f3072f1418c3067b97a67557ee",
+    "kind": "rust-source",
+    "size": 5462
+  },
+  {
+    "name": "rust-fallible-iterator",
+    "version": "0.3.0",
+    "url": "https://static.crates.io/crates/fallible-iterator/fallible-iterator-0.3.0.crate",
+    "filename": "rust-fallible-iterator-0.3.0.tar.gz",
+    "sha256": "2acce4a10f12dc2fb14a218589d4f1f62ef011b2d0cc4b3cb1bba8e94da14649",
+    "kind": "rust-source",
+    "size": 19639
+  },
+  {
+    "name": "rust-fastrand",
+    "version": "2.3.0",
+    "url": "https://static.crates.io/crates/fastrand/fastrand-2.3.0.crate",
+    "filename": "rust-fastrand-2.3.0.tar.gz",
+    "sha256": "37909eebbb50d72f9059c3b6d82c0463f2ff062c9e95845c43a6c9c0355411be",
+    "kind": "rust-source",
+    "size": 15076
+  },
+  {
+    "name": "rust-fd-lock",
+    "version": "4.0.2",
+    "url": "https://static.crates.io/crates/fd-lock/fd-lock-4.0.2.crate",
+    "filename": "rust-fd-lock-4.0.2.tar.gz",
+    "sha256": "7e5768da2206272c81ef0b5e951a41862938a6070da63bcea197899942d3b947",
+    "kind": "rust-source",
+    "size": 13675
+  },
+  {
+    "name": "rust-file-per-thread-logger",
+    "version": "0.2.0",
+    "url": "https://static.crates.io/crates/file-per-thread-logger/file-per-thread-logger-0.2.0.crate",
+    "filename": "rust-file-per-thread-logger-0.2.0.tar.gz",
+    "sha256": "8a3cc21c33af89af0930c8cae4ade5e6fdc17b5d2c97b3d2e2edb67a1cf683f3",
+    "kind": "rust-source",
+    "size": 10049
+  },
+  {
+    "name": "rust-filecheck",
+    "version": "0.5.0",
+    "url": "https://static.crates.io/crates/filecheck/filecheck-0.5.0.crate",
+    "filename": "rust-filecheck-0.5.0.tar.gz",
+    "sha256": "2fe00b427b7c4835f8b82170eb7b9a63634376b63d73b9a9093367e82570bbaa",
+    "kind": "rust-source",
+    "size": 21116
+  },
+  {
+    "name": "rust-filetime",
+    "version": "0.2.16",
+    "url": "https://static.crates.io/crates/filetime/filetime-0.2.16.crate",
+    "filename": "rust-filetime-0.2.16.tar.gz",
+    "sha256": "c0408e2626025178a6a7f7ffc05a25bc47103229f19c113755de7bf63816290c",
+    "kind": "rust-source",
+    "size": 14502
+  },
+  {
+    "name": "rust-fixedbitset",
+    "version": "0.4.2",
+    "url": "https://static.crates.io/crates/fixedbitset/fixedbitset-0.4.2.crate",
+    "filename": "rust-fixedbitset-0.4.2.tar.gz",
+    "sha256": "0ce7134b9999ecaf8bcd65542e436736ef32ddca1b3e06094cb6ec5755203b80",
+    "kind": "rust-source",
+    "size": 15954
+  },
+  {
+    "name": "rust-flagset",
+    "version": "0.4.3",
+    "url": "https://static.crates.io/crates/flagset/flagset-0.4.3.crate",
+    "filename": "rust-flagset-0.4.3.tar.gz",
+    "sha256": "cda653ca797810c02f7ca4b804b40b8b95ae046eb989d356bce17919a8c25499",
+    "kind": "rust-source",
+    "size": 13054
+  },
+  {
+    "name": "rust-flate2",
+    "version": "1.1.0",
+    "url": "https://static.crates.io/crates/flate2/flate2-1.1.0.crate",
+    "filename": "rust-flate2-1.1.0.tar.gz",
+    "sha256": "11faaf5a5236997af9848be0bef4db95824b1d534ebc64d0f0c6cf3e67bd38dc",
+    "kind": "rust-source",
+    "size": 110650
+  },
+  {
+    "name": "rust-fnv",
+    "version": "1.0.7",
+    "url": "https://static.crates.io/crates/fnv/fnv-1.0.7.crate",
+    "filename": "rust-fnv-1.0.7.tar.gz",
+    "sha256": "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1",
+    "kind": "rust-source",
+    "size": 11266
+  },
+  {
+    "name": "rust-foldhash",
+    "version": "0.1.3",
+    "url": "https://static.crates.io/crates/foldhash/foldhash-0.1.3.crate",
+    "filename": "rust-foldhash-0.1.3.tar.gz",
+    "sha256": "f81ec6369c545a7d40e4589b5597581fa1c441fe1cce96dd1de43159910a36a2",
+    "kind": "rust-source",
+    "size": 13712
+  },
+  {
+    "name": "rust-foreign-types",
+    "version": "0.3.2",
+    "url": "https://static.crates.io/crates/foreign-types/foreign-types-0.3.2.crate",
+    "filename": "rust-foreign-types-0.3.2.tar.gz",
+    "sha256": "f6f339eb8adc052cd2ca78910fda869aefa38d22d5cb648e6485e4d3fc06f3b1",
+    "kind": "rust-source",
+    "size": 7504
+  },
+  {
+    "name": "rust-foreign-types-shared",
+    "version": "0.1.1",
+    "url": "https://static.crates.io/crates/foreign-types-shared/foreign-types-shared-0.1.1.crate",
+    "filename": "rust-foreign-types-shared-0.1.1.tar.gz",
+    "sha256": "00b0228411908ca8685dba7fc2cdd70ec9990a6e753e89b6ac91a84c40fbaf4b",
+    "kind": "rust-source",
+    "size": 5672
+  },
+  {
+    "name": "rust-form_urlencoded",
+    "version": "1.2.1",
+    "url": "https://static.crates.io/crates/form_urlencoded/form_urlencoded-1.2.1.crate",
+    "filename": "rust-form_urlencoded-1.2.1.tar.gz",
+    "sha256": "e13624c2627564efccf4934284bdd98cbaa14e79b0b5a141218e507b3a823456",
+    "kind": "rust-source",
+    "size": 8969
+  },
+  {
+    "name": "rust-fs-set-times",
+    "version": "0.20.1",
+    "url": "https://static.crates.io/crates/fs-set-times/fs-set-times-0.20.1.crate",
+    "filename": "rust-fs-set-times-0.20.1.tar.gz",
+    "sha256": "033b337d725b97690d86893f9de22b67b80dcc4e9ad815f348254c38119db8fb",
+    "kind": "rust-source",
+    "size": 14607
+  },
+  {
+    "name": "rust-fslock",
+    "version": "0.2.1",
+    "url": "https://static.crates.io/crates/fslock/fslock-0.2.1.crate",
+    "filename": "rust-fslock-0.2.1.tar.gz",
+    "sha256": "04412b8935272e3a9bae6f48c7bfff74c2911f60525404edfdd28e49884c3bfb",
+    "kind": "rust-source",
+    "size": 13463
+  },
+  {
+    "name": "rust-futures",
+    "version": "0.3.31",
+    "url": "https://static.crates.io/crates/futures/futures-0.3.31.crate",
+    "filename": "rust-futures-0.3.31.tar.gz",
+    "sha256": "65bc07b1a8bc7c85c5f2e110c476c7389b4554ba72af57d8445ea63a576b0876",
+    "kind": "rust-source",
+    "size": 54953
+  },
+  {
+    "name": "rust-futures-channel",
+    "version": "0.3.31",
+    "url": "https://static.crates.io/crates/futures-channel/futures-channel-0.3.31.crate",
+    "filename": "rust-futures-channel-0.3.31.tar.gz",
+    "sha256": "2dff15bf788c671c1934e366d07e30c1814a8ef514e1af724a602e8a2fbe1b10",
+    "kind": "rust-source",
+    "size": 31971
+  },
+  {
+    "name": "rust-futures-core",
+    "version": "0.3.31",
+    "url": "https://static.crates.io/crates/futures-core/futures-core-0.3.31.crate",
+    "filename": "rust-futures-core-0.3.31.tar.gz",
+    "sha256": "05f29059c0c2090612e8d742178b0580d2dc940c837851ad723096f87af6663e",
+    "kind": "rust-source",
+    "size": 14318
+  },
+  {
+    "name": "rust-futures-executor",
+    "version": "0.3.31",
+    "url": "https://static.crates.io/crates/futures-executor/futures-executor-0.3.31.crate",
+    "filename": "rust-futures-executor-0.3.31.tar.gz",
+    "sha256": "1e28d1d997f585e54aebc3f97d39e72338912123a67330d723fdbb564d646c9f",
+    "kind": "rust-source",
+    "size": 17965
+  },
+  {
+    "name": "rust-futures-io",
+    "version": "0.3.31",
+    "url": "https://static.crates.io/crates/futures-io/futures-io-0.3.31.crate",
+    "filename": "rust-futures-io-0.3.31.tar.gz",
+    "sha256": "9e5c1b78ca4aae1ac06c48a526a655760685149f0d465d21f37abfe57ce075c6",
+    "kind": "rust-source",
+    "size": 9047
+  },
+  {
+    "name": "rust-futures-macro",
+    "version": "0.3.31",
+    "url": "https://static.crates.io/crates/futures-macro/futures-macro-0.3.31.crate",
+    "filename": "rust-futures-macro-0.3.31.tar.gz",
+    "sha256": "162ee34ebcb7c64a8abebc059ce0fee27c2262618d7b60ed8faf72fef13c3650",
+    "kind": "rust-source",
+    "size": 11341
+  },
+  {
+    "name": "rust-futures-sink",
+    "version": "0.3.31",
+    "url": "https://static.crates.io/crates/futures-sink/futures-sink-0.3.31.crate",
+    "filename": "rust-futures-sink-0.3.31.tar.gz",
+    "sha256": "e575fab7d1e0dcb8d0c7bcf9a63ee213816ab51902e6d244a95819acacf1d4f7",
+    "kind": "rust-source",
+    "size": 7958
+  },
+  {
+    "name": "rust-futures-task",
+    "version": "0.3.31",
+    "url": "https://static.crates.io/crates/futures-task/futures-task-0.3.31.crate",
+    "filename": "rust-futures-task-0.3.31.tar.gz",
+    "sha256": "f90f7dce0722e95104fcb095585910c0977252f286e354b5e3bd38902cd99988",
+    "kind": "rust-source",
+    "size": 11217
+  },
+  {
+    "name": "rust-futures-util",
+    "version": "0.3.31",
+    "url": "https://static.crates.io/crates/futures-util/futures-util-0.3.31.crate",
+    "filename": "rust-futures-util-0.3.31.tar.gz",
+    "sha256": "9fa08315bb612088cc391249efdc3bc77536f16c91f6cf495e6fbe85b20a4a81",
+    "kind": "rust-source",
+    "size": 162124
+  },
+  {
+    "name": "rust-fxprof-processed-profile",
+    "version": "0.8.1",
+    "url": "https://static.crates.io/crates/fxprof-processed-profile/fxprof-processed-profile-0.8.1.crate",
+    "filename": "rust-fxprof-processed-profile-0.8.1.tar.gz",
+    "sha256": "25234f20a3ec0a962a61770cfe39ecf03cb529a6e474ad8cff025ed497eda557",
+    "kind": "rust-source",
+    "size": 45896
+  },
+  {
+    "name": "rust-generic-array",
+    "version": "0.14.5",
+    "url": "https://static.crates.io/crates/generic-array/generic-array-0.14.5.crate",
+    "filename": "rust-generic-array-0.14.5.tar.gz",
+    "sha256": "fd48d33ec7f05fbfa152300fdad764757cbded343c1aa1cff2fbaf4134851803",
+    "kind": "rust-source",
+    "size": 28915
+  },
+  {
+    "name": "rust-getrandom",
+    "version": "0.2.15",
+    "url": "https://static.crates.io/crates/getrandom/getrandom-0.2.15.crate",
+    "filename": "rust-getrandom-0.2.15.tar.gz",
+    "sha256": "c4567c8db10ae91089c99af84c68c38da3ec2f087c3f82960bcdbf3656b6f4d7",
+    "kind": "rust-source",
+    "size": 37163
+  },
+  {
+    "name": "rust-getrandom",
+    "version": "0.3.1",
+    "url": "https://static.crates.io/crates/getrandom/getrandom-0.3.1.crate",
+    "filename": "rust-getrandom-0.3.1.tar.gz",
+    "sha256": "43a49c392881ce6d5c3b8cb70f98717b7c07aabbdff06687b9030dbfbe2725f8",
+    "kind": "rust-source",
+    "size": 42449
+  },
+  {
+    "name": "rust-gimli",
+    "version": "0.31.1",
+    "url": "https://static.crates.io/crates/gimli/gimli-0.31.1.crate",
+    "filename": "rust-gimli-0.31.1.tar.gz",
+    "sha256": "07e28edb80900c19c28f1072f2e8aeca7fa06b23cd4169cefe1af5aa3260783f",
+    "kind": "rust-source",
+    "size": 279515
+  },
+  {
+    "name": "rust-gimli",
+    "version": "0.32.0",
+    "url": "https://static.crates.io/crates/gimli/gimli-0.32.0.crate",
+    "filename": "rust-gimli-0.32.0.tar.gz",
+    "sha256": "93563d740bc9ef04104f9ed6f86f1e3275c2cdafb95664e26584b9ca807a8ffe",
+    "kind": "rust-source",
+    "size": 286715
+  },
+  {
+    "name": "rust-glob",
+    "version": "0.3.1",
+    "url": "https://static.crates.io/crates/glob/glob-0.3.1.crate",
+    "filename": "rust-glob-0.3.1.tar.gz",
+    "sha256": "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b",
+    "kind": "rust-source",
+    "size": 18880
+  },
+  {
+    "name": "rust-gzip-header",
+    "version": "1.0.0",
+    "url": "https://static.crates.io/crates/gzip-header/gzip-header-1.0.0.crate",
+    "filename": "rust-gzip-header-1.0.0.tar.gz",
+    "sha256": "95cc527b92e6029a62960ad99aa8a6660faa4555fe5f731aab13aa6a921795a2",
+    "kind": "rust-source",
+    "size": 12445
+  },
+  {
+    "name": "rust-h2",
+    "version": "0.4.4",
+    "url": "https://static.crates.io/crates/h2/h2-0.4.4.crate",
+    "filename": "rust-h2-0.4.4.tar.gz",
+    "sha256": "816ec7294445779408f36fe57bc5b7fc1cf59664059096c65f905c1c61f58069",
+    "kind": "rust-source",
+    "size": 168905
+  },
+  {
+    "name": "rust-half",
+    "version": "1.8.2",
+    "url": "https://static.crates.io/crates/half/half-1.8.2.crate",
+    "filename": "rust-half-1.8.2.tar.gz",
+    "sha256": "eabb4a44450da02c90444cf74558da904edde8fb4e9035a9a6a4e15445af0bd7",
+    "kind": "rust-source",
+    "size": 41874
+  },
+  {
+    "name": "rust-half",
+    "version": "2.4.1",
+    "url": "https://static.crates.io/crates/half/half-2.4.1.crate",
+    "filename": "rust-half-2.4.1.tar.gz",
+    "sha256": "6dd08c532ae367adf81c312a4580bc67f1d0fe8bc9c460520283f4c0ff277888",
+    "kind": "rust-source",
+    "size": 50892
+  },
+  {
+    "name": "rust-hashbrown",
+    "version": "0.12.3",
+    "url": "https://static.crates.io/crates/hashbrown/hashbrown-0.12.3.crate",
+    "filename": "rust-hashbrown-0.12.3.tar.gz",
+    "sha256": "8a9ee70c43aaf417c914396645a0fa852624801b24ebb7ae78fe8272889ac888",
+    "kind": "rust-source",
+    "size": 102968
+  },
+  {
+    "name": "rust-hashbrown",
+    "version": "0.15.2",
+    "url": "https://static.crates.io/crates/hashbrown/hashbrown-0.15.2.crate",
+    "filename": "rust-hashbrown-0.15.2.tar.gz",
+    "sha256": "bf151400ff0baff5465007dd2f3e717f3fe502074ca563069ce3a6629d07b289",
+    "kind": "rust-source",
+    "size": 138478
+  },
+  {
+    "name": "rust-heck",
+    "version": "0.4.1",
+    "url": "https://static.crates.io/crates/heck/heck-0.4.1.crate",
+    "filename": "rust-heck-0.4.1.tar.gz",
+    "sha256": "95505c38b4572b2d910cecb0281560f54b440a19336cbbcb27bf6ce6adc6f5a8",
+    "kind": "rust-source",
+    "size": 11567
+  },
+  {
+    "name": "rust-heck",
+    "version": "0.5.0",
+    "url": "https://static.crates.io/crates/heck/heck-0.5.0.crate",
+    "filename": "rust-heck-0.5.0.tar.gz",
+    "sha256": "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea",
+    "kind": "rust-source",
+    "size": 11517
+  },
+  {
+    "name": "rust-hermit-abi",
+    "version": "0.3.9",
+    "url": "https://static.crates.io/crates/hermit-abi/hermit-abi-0.3.9.crate",
+    "filename": "rust-hermit-abi-0.3.9.tar.gz",
+    "sha256": "d231dfb89cfffdbc30e7fc41579ed6066ad03abda9e567ccafae602b97ec5024",
+    "kind": "rust-source",
+    "size": 16165
+  },
+  {
+    "name": "rust-hmac",
+    "version": "0.12.1",
+    "url": "https://static.crates.io/crates/hmac/hmac-0.12.1.crate",
+    "filename": "rust-hmac-0.12.1.tar.gz",
+    "sha256": "6c49c37c09c17a53d937dfbb742eb3a961d65a994e6bcdcf37e7399d0cc8ab5e",
+    "kind": "rust-source",
+    "size": 42657
+  },
+  {
+    "name": "rust-home",
+    "version": "0.5.9",
+    "url": "https://static.crates.io/crates/home/home-0.5.9.crate",
+    "filename": "rust-home-0.5.9.tar.gz",
+    "sha256": "e3d1354bf6b7235cb4a0576c2619fd4ed18183f689b12b006a0ee7329eeff9a5",
+    "kind": "rust-source",
+    "size": 8760
+  },
+  {
+    "name": "rust-http",
+    "version": "1.0.0",
+    "url": "https://static.crates.io/crates/http/http-1.0.0.crate",
+    "filename": "rust-http-1.0.0.tar.gz",
+    "sha256": "b32afd38673a8016f7c9ae69e5af41a58f81b1d31689040f2f1959594ce194ea",
+    "kind": "rust-source",
+    "size": 100981
+  },
+  {
+    "name": "rust-http-body",
+    "version": "1.0.0",
+    "url": "https://static.crates.io/crates/http-body/http-body-1.0.0.crate",
+    "filename": "rust-http-body-1.0.0.tar.gz",
+    "sha256": "1cac85db508abc24a2e48553ba12a996e87244a0395ce011e62b37158745d643",
+    "kind": "rust-source",
+    "size": 5411
+  },
+  {
+    "name": "rust-http-body-util",
+    "version": "0.1.0",
+    "url": "https://static.crates.io/crates/http-body-util/http-body-util-0.1.0.crate",
+    "filename": "rust-http-body-util-0.1.0.tar.gz",
+    "sha256": "41cb79eb393015dadd30fc252023adb0b2400a0caee0fa2a077e6e21a551e840",
+    "kind": "rust-source",
+    "size": 10368
+  },
+  {
+    "name": "rust-httparse",
+    "version": "1.8.0",
+    "url": "https://static.crates.io/crates/httparse/httparse-1.8.0.crate",
+    "filename": "rust-httparse-1.8.0.tar.gz",
+    "sha256": "d897f394bad6a705d5f4104762e116a75639e470d80901eed05a860a95cb1904",
+    "kind": "rust-source",
+    "size": 29954
+  },
+  {
+    "name": "rust-httpdate",
+    "version": "1.0.2",
+    "url": "https://static.crates.io/crates/httpdate/httpdate-1.0.2.crate",
+    "filename": "rust-httpdate-1.0.2.tar.gz",
+    "sha256": "c4a1e36c821dbe04574f602848a19f742f4fb3c98d40449f11bcad18d6b17421",
+    "kind": "rust-source",
+    "size": 10673
+  },
+  {
+    "name": "rust-humantime",
+    "version": "2.1.0",
+    "url": "https://static.crates.io/crates/humantime/humantime-2.1.0.crate",
+    "filename": "rust-humantime-2.1.0.tar.gz",
+    "sha256": "9a3a5bfb195931eeb336b2a7b4d761daec841b97f947d34394601737a7bba5e4",
+    "kind": "rust-source",
+    "size": 16749
+  },
+  {
+    "name": "rust-hyper",
+    "version": "1.0.1",
+    "url": "https://static.crates.io/crates/hyper/hyper-1.0.1.crate",
+    "filename": "rust-hyper-1.0.1.tar.gz",
+    "sha256": "403f9214f3e703236b221f1a9cd88ec8b4adfa5296de01ab96216361f4692f56",
+    "kind": "rust-source",
+    "size": 139013
+  },
+  {
+    "name": "rust-iana-time-zone",
+    "version": "0.1.61",
+    "url": "https://static.crates.io/crates/iana-time-zone/iana-time-zone-0.1.61.crate",
+    "filename": "rust-iana-time-zone-0.1.61.tar.gz",
+    "sha256": "235e081f3925a06703c2d0117ea8b91f042756fd6e7a6e5d901e8ca1a996b220",
+    "kind": "rust-source",
+    "size": 27685
+  },
+  {
+    "name": "rust-iana-time-zone-haiku",
+    "version": "0.1.2",
+    "url": "https://static.crates.io/crates/iana-time-zone-haiku/iana-time-zone-haiku-0.1.2.crate",
+    "filename": "rust-iana-time-zone-haiku-0.1.2.tar.gz",
+    "sha256": "f31827a206f56af32e590ba56d5d2d085f558508192593743f16b2306495269f",
+    "kind": "rust-source",
+    "size": 7185
+  },
+  {
+    "name": "rust-icu_collections",
+    "version": "1.5.0",
+    "url": "https://static.crates.io/crates/icu_collections/icu_collections-1.5.0.crate",
+    "filename": "rust-icu_collections-1.5.0.tar.gz",
+    "sha256": "db2fa452206ebee18c4b5c2274dbf1de17008e874b4dc4f0aea9d01ca79e4526",
+    "kind": "rust-source",
+    "size": 82762
+  },
+  {
+    "name": "rust-icu_locid",
+    "version": "1.5.0",
+    "url": "https://static.crates.io/crates/icu_locid/icu_locid-1.5.0.crate",
+    "filename": "rust-icu_locid-1.5.0.tar.gz",
+    "sha256": "13acbb8371917fc971be86fc8057c41a64b521c184808a698c02acc242dbf637",
+    "kind": "rust-source",
+    "size": 55131
+  },
+  {
+    "name": "rust-icu_locid_transform",
+    "version": "1.5.0",
+    "url": "https://static.crates.io/crates/icu_locid_transform/icu_locid_transform-1.5.0.crate",
+    "filename": "rust-icu_locid_transform-1.5.0.tar.gz",
+    "sha256": "01d11ac35de8e40fdeda00d9e1e9d92525f3f9d887cdd7aa81d727596788b54e",
+    "kind": "rust-source",
+    "size": 29094
+  },
+  {
+    "name": "rust-icu_locid_transform_data",
+    "version": "1.5.0",
+    "url": "https://static.crates.io/crates/icu_locid_transform_data/icu_locid_transform_data-1.5.0.crate",
+    "filename": "rust-icu_locid_transform_data-1.5.0.tar.gz",
+    "sha256": "fdc8ff3388f852bede6b579ad4e978ab004f139284d7b28715f773507b946f6e",
+    "kind": "rust-source",
+    "size": 44727
+  },
+  {
+    "name": "rust-icu_normalizer",
+    "version": "1.5.0",
+    "url": "https://static.crates.io/crates/icu_normalizer/icu_normalizer-1.5.0.crate",
+    "filename": "rust-icu_normalizer-1.5.0.tar.gz",
+    "sha256": "19ce3e0da2ec68599d193c93d088142efd7f9c5d6fc9b803774855747dc6a84f",
+    "kind": "rust-source",
+    "size": 53113
+  },
+  {
+    "name": "rust-icu_normalizer_data",
+    "version": "1.5.0",
+    "url": "https://static.crates.io/crates/icu_normalizer_data/icu_normalizer_data-1.5.0.crate",
+    "filename": "rust-icu_normalizer_data-1.5.0.tar.gz",
+    "sha256": "f8cafbf7aa791e9b22bec55a167906f9e1215fd475cd22adfcf660e03e989516",
+    "kind": "rust-source",
+    "size": 50561
+  },
+  {
+    "name": "rust-icu_properties",
+    "version": "1.5.1",
+    "url": "https://static.crates.io/crates/icu_properties/icu_properties-1.5.1.crate",
+    "filename": "rust-icu_properties-1.5.1.tar.gz",
+    "sha256": "93d6020766cfc6302c15dbbc9c8778c37e62c14427cb7f6e601d849e092aeef5",
+    "kind": "rust-source",
+    "size": 64479
+  },
+  {
+    "name": "rust-icu_properties_data",
+    "version": "1.5.0",
+    "url": "https://static.crates.io/crates/icu_properties_data/icu_properties_data-1.5.0.crate",
+    "filename": "rust-icu_properties_data-1.5.0.tar.gz",
+    "sha256": "67a8effbc3dd3e4ba1afa8ad918d5684b8868b3b26500753effea8d2eed19569",
+    "kind": "rust-source",
+    "size": 227993
+  },
+  {
+    "name": "rust-icu_provider",
+    "version": "1.5.0",
+    "url": "https://static.crates.io/crates/icu_provider/icu_provider-1.5.0.crate",
+    "filename": "rust-icu_provider-1.5.0.tar.gz",
+    "sha256": "6ed421c8a8ef78d3e2dbc98a973be2f3770cb42b606e3ab18d6237c4dfde68d9",
+    "kind": "rust-source",
+    "size": 52722
+  },
+  {
+    "name": "rust-icu_provider_macros",
+    "version": "1.5.0",
+    "url": "https://static.crates.io/crates/icu_provider_macros/icu_provider_macros-1.5.0.crate",
+    "filename": "rust-icu_provider_macros-1.5.0.tar.gz",
+    "sha256": "1ec89e9337638ecdc08744df490b221a7399bf8d164eb52a665454e60e075ad6",
+    "kind": "rust-source",
+    "size": 6436
+  },
+  {
+    "name": "rust-id-arena",
+    "version": "2.2.1",
+    "url": "https://static.crates.io/crates/id-arena/id-arena-2.2.1.crate",
+    "filename": "rust-id-arena-2.2.1.tar.gz",
+    "sha256": "25a2bc672d1148e28034f176e01fffebb08b35768468cc954630da77a1449005",
+    "kind": "rust-source",
+    "size": 12203
+  },
+  {
+    "name": "rust-idna",
+    "version": "1.0.3",
+    "url": "https://static.crates.io/crates/idna/idna-1.0.3.crate",
+    "filename": "rust-idna-1.0.3.tar.gz",
+    "sha256": "686f825264d630750a544639377bae737628043f20d38bbc029e8f29ea968a7e",
+    "kind": "rust-source",
+    "size": 142515
+  },
+  {
+    "name": "rust-idna_adapter",
+    "version": "1.2.0",
+    "url": "https://static.crates.io/crates/idna_adapter/idna_adapter-1.2.0.crate",
+    "filename": "rust-idna_adapter-1.2.0.tar.gz",
+    "sha256": "daca1df1c957320b2cf139ac61e7bd64fed304c5040df000a745aa1de3b4ef71",
+    "kind": "rust-source",
+    "size": 8206
+  },
+  {
+    "name": "rust-im-rc",
+    "version": "15.1.0",
+    "url": "https://static.crates.io/crates/im-rc/im-rc-15.1.0.crate",
+    "filename": "rust-im-rc-15.1.0.tar.gz",
+    "sha256": "af1955a75fa080c677d3972822ec4bad316169ab1cfc6c257a942c2265dbe5fe",
+    "kind": "rust-source",
+    "size": 194077
+  },
+  {
+    "name": "rust-indexmap",
+    "version": "1.9.1",
+    "url": "https://static.crates.io/crates/indexmap/indexmap-1.9.1.crate",
+    "filename": "rust-indexmap-1.9.1.tar.gz",
+    "sha256": "10a35a97730320ffe8e2d410b5d3b69279b98d2c14bdb8b70ea89ecf7888d41e",
+    "kind": "rust-source",
+    "size": 54114
+  },
+  {
+    "name": "rust-indexmap",
+    "version": "2.7.0",
+    "url": "https://static.crates.io/crates/indexmap/indexmap-2.7.0.crate",
+    "filename": "rust-indexmap-2.7.0.tar.gz",
+    "sha256": "62f822373a4fe84d4bb149bf54e584a7f4abec90e072ed49cda0edea5b95471f",
+    "kind": "rust-source",
+    "size": 85335
+  },
+  {
+    "name": "rust-indicatif",
+    "version": "0.13.0",
+    "url": "https://static.crates.io/crates/indicatif/indicatif-0.13.0.crate",
+    "filename": "rust-indicatif-0.13.0.tar.gz",
+    "sha256": "8572bccfb0665e70b7faf44ee28841b8e0823450cd4ad562a76b5a3c4bf48487",
+    "kind": "rust-source",
+    "size": 29534
+  },
+  {
+    "name": "rust-inout",
+    "version": "0.1.3",
+    "url": "https://static.crates.io/crates/inout/inout-0.1.3.crate",
+    "filename": "rust-inout-0.1.3.tar.gz",
+    "sha256": "a0c10553d664a4d0bcff9f4215d0aac67a639cc68ef660840afe309b807bc9f5",
+    "kind": "rust-source",
+    "size": 10743
+  },
+  {
+    "name": "rust-instant",
+    "version": "0.1.12",
+    "url": "https://static.crates.io/crates/instant/instant-0.1.12.crate",
+    "filename": "rust-instant-0.1.12.tar.gz",
+    "sha256": "7a5bbe824c507c5da5956355e86a746d82e0e1464f65d862cc5e71da70e94b2c",
+    "kind": "rust-source",
+    "size": 6128
+  },
+  {
+    "name": "rust-io-extras",
+    "version": "0.18.3",
+    "url": "https://static.crates.io/crates/io-extras/io-extras-0.18.3.crate",
+    "filename": "rust-io-extras-0.18.3.tar.gz",
+    "sha256": "7d45fd7584f9b67ac37bc041212d06bfac0700b36456b05890d36a3b626260eb",
+    "kind": "rust-source",
+    "size": 34322
+  },
+  {
+    "name": "rust-io-lifetimes",
+    "version": "2.0.3",
+    "url": "https://static.crates.io/crates/io-lifetimes/io-lifetimes-2.0.3.crate",
+    "filename": "rust-io-lifetimes-2.0.3.tar.gz",
+    "sha256": "5a611371471e98973dbcab4e0ec66c31a10bc356eeb4d54a0e05eac8158fe38c",
+    "kind": "rust-source",
+    "size": 29216
+  },
+  {
+    "name": "rust-ipnet",
+    "version": "2.5.0",
+    "url": "https://static.crates.io/crates/ipnet/ipnet-2.5.0.crate",
+    "filename": "rust-ipnet-2.5.0.tar.gz",
+    "sha256": "879d54834c8c76457ef4293a689b2a8c59b076067ad77b15efafbb05f92a592b",
+    "kind": "rust-source",
+    "size": 25808
+  },
+  {
+    "name": "rust-is-terminal",
+    "version": "0.4.10",
+    "url": "https://static.crates.io/crates/is-terminal/is-terminal-0.4.10.crate",
+    "filename": "rust-is-terminal-0.4.10.tar.gz",
+    "sha256": "0bad00257d07be169d870ab665980b06cdb366d792ad690bf2e76876dc503455",
+    "kind": "rust-source",
+    "size": 7683
+  },
+  {
+    "name": "rust-is_terminal_polyfill",
+    "version": "1.70.1",
+    "url": "https://static.crates.io/crates/is_terminal_polyfill/is_terminal_polyfill-1.70.1.crate",
+    "filename": "rust-is_terminal_polyfill-1.70.1.tar.gz",
+    "sha256": "7943c866cc5cd64cbc25b2e01621d07fa8eb2a1a23160ee81ce38704e97b8ecf",
+    "kind": "rust-source",
+    "size": 7492
+  },
+  {
+    "name": "rust-itertools",
+    "version": "0.10.5",
+    "url": "https://static.crates.io/crates/itertools/itertools-0.10.5.crate",
+    "filename": "rust-itertools-0.10.5.tar.gz",
+    "sha256": "b0fd2260e829bddf4cb6ea802289de2f86d6a7a690192fbe91b3f46e0f2c8473",
+    "kind": "rust-source",
+    "size": 115354
+  },
+  {
+    "name": "rust-itertools",
+    "version": "0.13.0",
+    "url": "https://static.crates.io/crates/itertools/itertools-0.13.0.crate",
+    "filename": "rust-itertools-0.13.0.tar.gz",
+    "sha256": "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186",
+    "kind": "rust-source",
+    "size": 146261
+  },
+  {
+    "name": "rust-itertools",
+    "version": "0.14.0",
+    "url": "https://static.crates.io/crates/itertools/itertools-0.14.0.crate",
+    "filename": "rust-itertools-0.14.0.tar.gz",
+    "sha256": "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285",
+    "kind": "rust-source",
+    "size": 152715
+  },
+  {
+    "name": "rust-itoa",
+    "version": "1.0.14",
+    "url": "https://static.crates.io/crates/itoa/itoa-1.0.14.crate",
+    "filename": "rust-itoa-1.0.14.tar.gz",
+    "sha256": "d75a2a4b1b190afb6f5425f10f6a8f959d2ea0b9c2b1d79553551850539e4674",
+    "kind": "rust-source",
+    "size": 11210
+  },
+  {
+    "name": "rust-ittapi",
+    "version": "0.4.0",
+    "url": "https://static.crates.io/crates/ittapi/ittapi-0.4.0.crate",
+    "filename": "rust-ittapi-0.4.0.tar.gz",
+    "sha256": "6b996fe614c41395cdaedf3cf408a9534851090959d90d54a535f675550b64b1",
+    "kind": "rust-source",
+    "size": 7446
+  },
+  {
+    "name": "rust-ittapi-sys",
+    "version": "0.4.0",
+    "url": "https://static.crates.io/crates/ittapi-sys/ittapi-sys-0.4.0.crate",
+    "filename": "rust-ittapi-sys-0.4.0.tar.gz",
+    "sha256": "52f5385394064fa2c886205dba02598013ce83d3e92d33dbdc0c52fe0e7bf4fc",
+    "kind": "rust-source",
+    "size": 144943
+  },
+  {
+    "name": "rust-jobserver",
+    "version": "0.1.32",
+    "url": "https://static.crates.io/crates/jobserver/jobserver-0.1.32.crate",
+    "filename": "rust-jobserver-0.1.32.tar.gz",
+    "sha256": "48d1dbcbbeb6a7fec7e059840aa538bd62aaccf972c7346c4d9d2059312853d0",
+    "kind": "rust-source",
+    "size": 27549
+  },
+  {
+    "name": "rust-js-sys",
+    "version": "0.3.74",
+    "url": "https://static.crates.io/crates/js-sys/js-sys-0.3.74.crate",
+    "filename": "rust-js-sys-0.3.74.tar.gz",
+    "sha256": "a865e038f7f6ed956f788f0d7d60c541fff74c7bd74272c5d4cf15c63743e705",
+    "kind": "rust-source",
+    "size": 54505
+  },
+  {
+    "name": "rust-json-from-wast",
+    "version": "0.239.0",
+    "url": "https://static.crates.io/crates/json-from-wast/json-from-wast-0.239.0.crate",
+    "filename": "rust-json-from-wast-0.239.0.tar.gz",
+    "sha256": "10e0969e6cddea32e749f84d2422e042699c3dbc24f33b3f089859db7d75185b",
+    "kind": "rust-source",
+    "size": 9514
+  },
+  {
+    "name": "rust-lazy_static",
+    "version": "1.4.0",
+    "url": "https://static.crates.io/crates/lazy_static/lazy_static-1.4.0.crate",
+    "filename": "rust-lazy_static-1.4.0.tar.gz",
+    "sha256": "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646",
+    "kind": "rust-source",
+    "size": 10443
+  },
+  {
+    "name": "rust-leb128",
+    "version": "0.2.5",
+    "url": "https://static.crates.io/crates/leb128/leb128-0.2.5.crate",
+    "filename": "rust-leb128-0.2.5.tar.gz",
+    "sha256": "884e2677b40cc8c339eaefcb701c32ef1fd2493d71118dc0ca4b6a736c93bd67",
+    "kind": "rust-source",
+    "size": 11843
+  },
+  {
+    "name": "rust-leb128fmt",
+    "version": "0.1.0",
+    "url": "https://static.crates.io/crates/leb128fmt/leb128fmt-0.1.0.crate",
+    "filename": "rust-leb128fmt-0.1.0.tar.gz",
+    "sha256": "09edd9e8b54e49e587e4f6295a7d29c3ea94d469cb40ab8ca70b288248a81db2",
+    "kind": "rust-source",
+    "size": 14138
+  },
+  {
+    "name": "rust-libc",
+    "version": "0.2.171",
+    "url": "https://static.crates.io/crates/libc/libc-0.2.171.crate",
+    "filename": "rust-libc-0.2.171.tar.gz",
+    "sha256": "c19937216e9d3aa9956d9bb8dfc0b0c8beb6058fc4f7a4dc4d850edf86a237d6",
+    "kind": "rust-source",
+    "size": 785246
+  },
+  {
+    "name": "rust-libfuzzer-sys",
+    "version": "0.4.8",
+    "url": "https://static.crates.io/crates/libfuzzer-sys/libfuzzer-sys-0.4.8.crate",
+    "filename": "rust-libfuzzer-sys-0.4.8.tar.gz",
+    "sha256": "9b9569d2f74e257076d8c6bfa73fb505b46b851e51ddaecc825944aa3bed17fa",
+    "kind": "rust-source",
+    "size": 131151
+  },
+  {
+    "name": "rust-libloading",
+    "version": "0.8.6",
+    "url": "https://static.crates.io/crates/libloading/libloading-0.8.6.crate",
+    "filename": "rust-libloading-0.8.6.tar.gz",
+    "sha256": "fc2f4eb4bc735547cfed7c0a4922cbd04a4655978c09b54f1f7b228750664c34",
+    "kind": "rust-source",
+    "size": 28922
+  },
+  {
+    "name": "rust-libm",
+    "version": "0.2.11",
+    "url": "https://static.crates.io/crates/libm/libm-0.2.11.crate",
+    "filename": "rust-libm-0.2.11.tar.gz",
+    "sha256": "8355be11b20d696c8f18f6cc018c4e372165b1fa8126cef092399c9951984ffa",
+    "kind": "rust-source",
+    "size": 111477
+  },
+  {
+    "name": "rust-libtest-mimic",
+    "version": "0.8.1",
+    "url": "https://static.crates.io/crates/libtest-mimic/libtest-mimic-0.8.1.crate",
+    "filename": "rust-libtest-mimic-0.8.1.tar.gz",
+    "sha256": "5297962ef19edda4ce33aaa484386e0a5b3d7f2f4e037cbeee00503ef6b29d33",
+    "kind": "rust-source",
+    "size": 27812
+  },
+  {
+    "name": "rust-linux-raw-sys",
+    "version": "0.4.14",
+    "url": "https://static.crates.io/crates/linux-raw-sys/linux-raw-sys-0.4.14.crate",
+    "filename": "rust-linux-raw-sys-0.4.14.tar.gz",
+    "sha256": "78b3ae25bc7c8c38cec158d1f2757ee79e9b3740fbc7ccf0e59e4b08d793fa89",
+    "kind": "rust-source",
+    "size": 1826665
+  },
+  {
+    "name": "rust-linux-raw-sys",
+    "version": "0.9.3",
+    "url": "https://static.crates.io/crates/linux-raw-sys/linux-raw-sys-0.9.3.crate",
+    "filename": "rust-linux-raw-sys-0.9.3.tar.gz",
+    "sha256": "fe7db12097d22ec582439daf8618b8fdd1a7bef6270e9af3b1ebcd30893cf413",
+    "kind": "rust-source",
+    "size": 2311047
+  },
+  {
+    "name": "rust-listenfd",
+    "version": "1.0.0",
+    "url": "https://static.crates.io/crates/listenfd/listenfd-1.0.0.crate",
+    "filename": "rust-listenfd-1.0.0.tar.gz",
+    "sha256": "14e4fcc00ff6731d94b70e16e71f43bda62883461f31230742e3bc6dddf12988",
+    "kind": "rust-source",
+    "size": 18269
+  },
+  {
+    "name": "rust-litemap",
+    "version": "0.7.4",
+    "url": "https://static.crates.io/crates/litemap/litemap-0.7.4.crate",
+    "filename": "rust-litemap-0.7.4.tar.gz",
+    "sha256": "4ee93343901ab17bd981295f2cf0026d4ad018c7c31ba84549a4ddbb47a45104",
+    "kind": "rust-source",
+    "size": 28257
+  },
+  {
+    "name": "rust-log",
+    "version": "0.4.27",
+    "url": "https://static.crates.io/crates/log/log-0.4.27.crate",
+    "filename": "rust-log-0.4.27.tar.gz",
+    "sha256": "13dc2df351e3202783a1fe0d44375f7295ffb4049267b0f3018346dc122a1d94",
+    "kind": "rust-source",
+    "size": 48120
+  },
+  {
+    "name": "rust-logos",
+    "version": "0.14.2",
+    "url": "https://static.crates.io/crates/logos/logos-0.14.2.crate",
+    "filename": "rust-logos-0.14.2.tar.gz",
+    "sha256": "1c6b6e02facda28ca5fb8dbe4b152496ba3b1bd5a4b40bb2b1b2d8ad74e0f39b",
+    "kind": "rust-source",
+    "size": 1460673
+  },
+  {
+    "name": "rust-logos-codegen",
+    "version": "0.14.2",
+    "url": "https://static.crates.io/crates/logos-codegen/logos-codegen-0.14.2.crate",
+    "filename": "rust-logos-codegen-0.14.2.tar.gz",
+    "sha256": "b32eb6b5f26efacd015b000bfc562186472cd9b34bdba3f6b264e2a052676d10",
+    "kind": "rust-source",
+    "size": 43012
+  },
+  {
+    "name": "rust-logos-derive",
+    "version": "0.14.2",
+    "url": "https://static.crates.io/crates/logos-derive/logos-derive-0.14.2.crate",
+    "filename": "rust-logos-derive-0.14.2.tar.gz",
+    "sha256": "3e5d0c5463c911ef55624739fc353238b4e310f0144be1f875dc42fec6bfd5ec",
+    "kind": "rust-source",
+    "size": 7580
+  },
+  {
+    "name": "rust-mach2",
+    "version": "0.4.2",
+    "url": "https://static.crates.io/crates/mach2/mach2-0.4.2.crate",
+    "filename": "rust-mach2-0.4.2.tar.gz",
+    "sha256": "19b955cdeb2a02b9117f121ce63aa52d08ade45de53e48fe6a38b39c10f6f709",
+    "kind": "rust-source",
+    "size": 21889
+  },
+  {
+    "name": "rust-matchers",
+    "version": "0.1.0",
+    "url": "https://static.crates.io/crates/matchers/matchers-0.1.0.crate",
+    "filename": "rust-matchers-0.1.0.tar.gz",
+    "sha256": "8263075bb86c5a1b1427b5ae862e8889656f126e9f77c484496e8b47cf5c5558",
+    "kind": "rust-source",
+    "size": 6948
+  },
+  {
+    "name": "rust-matrixmultiply",
+    "version": "0.3.9",
+    "url": "https://static.crates.io/crates/matrixmultiply/matrixmultiply-0.3.9.crate",
+    "filename": "rust-matrixmultiply-0.3.9.tar.gz",
+    "sha256": "9380b911e3e96d10c1f415da0876389aaf1b56759054eeb0de7df940c456ba1a",
+    "kind": "rust-source",
+    "size": 57819
+  },
+  {
+    "name": "rust-maybe-owned",
+    "version": "0.3.4",
+    "url": "https://static.crates.io/crates/maybe-owned/maybe-owned-0.3.4.crate",
+    "filename": "rust-maybe-owned-0.3.4.tar.gz",
+    "sha256": "4facc753ae494aeb6e3c22f839b158aebd4f9270f55cd3c79906c45476c47ab4",
+    "kind": "rust-source",
+    "size": 14308
+  },
+  {
+    "name": "rust-memchr",
+    "version": "2.5.0",
+    "url": "https://static.crates.io/crates/memchr/memchr-2.5.0.crate",
+    "filename": "rust-memchr-2.5.0.tar.gz",
+    "sha256": "2dffe52ecf27772e601905b7522cb4ef790d2cc203488bbd0e2fe85fcb74566d",
+    "kind": "rust-source",
+    "size": 65812
+  },
+  {
+    "name": "rust-memfd",
+    "version": "0.6.4",
+    "url": "https://static.crates.io/crates/memfd/memfd-0.6.4.crate",
+    "filename": "rust-memfd-0.6.4.tar.gz",
+    "sha256": "b2cffa4ad52c6f791f4f8b15f0c05f9824b2ced1160e88cc393d64fff9a8ac64",
+    "kind": "rust-source",
+    "size": 12820
+  },
+  {
+    "name": "rust-memmap2",
+    "version": "0.2.3",
+    "url": "https://static.crates.io/crates/memmap2/memmap2-0.2.3.crate",
+    "filename": "rust-memmap2-0.2.3.tar.gz",
+    "sha256": "723e3ebdcdc5c023db1df315364573789f8857c11b631a2fdfad7c00f5c046b4",
+    "kind": "rust-source",
+    "size": 17669
+  },
+  {
+    "name": "rust-minimal-lexical",
+    "version": "0.2.1",
+    "url": "https://static.crates.io/crates/minimal-lexical/minimal-lexical-0.2.1.crate",
+    "filename": "rust-minimal-lexical-0.2.1.tar.gz",
+    "sha256": "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a",
+    "kind": "rust-source",
+    "size": 94841
+  },
+  {
+    "name": "rust-miniz_oxide",
+    "version": "0.8.9",
+    "url": "https://static.crates.io/crates/miniz_oxide/miniz_oxide-0.8.9.crate",
+    "filename": "rust-miniz_oxide-0.8.9.tar.gz",
+    "sha256": "1fa76a2c86f704bdb222d66965fb3d63269ce38518b83cb0575fca855ebb6316",
+    "kind": "rust-source",
+    "size": 67132
+  },
+  {
+    "name": "rust-mio",
+    "version": "1.0.3",
+    "url": "https://static.crates.io/crates/mio/mio-1.0.3.crate",
+    "filename": "rust-mio-1.0.3.tar.gz",
+    "sha256": "2886843bf800fba2e3377cff24abf6379b4c4d5c6681eaf9ea5b0d15090450bd",
+    "kind": "rust-source",
+    "size": 103703
+  },
+  {
+    "name": "rust-multi-stash",
+    "version": "0.2.0",
+    "url": "https://static.crates.io/crates/multi-stash/multi-stash-0.2.0.crate",
+    "filename": "rust-multi-stash-0.2.0.tar.gz",
+    "sha256": "685a9ac4b61f4e728e1d2c6a7844609c16527aeb5e6c865915c08e619c16410f",
+    "kind": "rust-source",
+    "size": 10938
+  },
+  {
+    "name": "rust-mutatis",
+    "version": "0.3.2",
+    "url": "https://static.crates.io/crates/mutatis/mutatis-0.3.2.crate",
+    "filename": "rust-mutatis-0.3.2.tar.gz",
+    "sha256": "31be5d2bfb418a4362eec78ca556ce9a15542a00d389860c3bf3adc132edb1d9",
+    "kind": "rust-source",
+    "size": 47307
+  },
+  {
+    "name": "rust-native-tls",
+    "version": "0.2.14",
+    "url": "https://static.crates.io/crates/native-tls/native-tls-0.2.14.crate",
+    "filename": "rust-native-tls-0.2.14.tar.gz",
+    "sha256": "87de3442987e9dbec73158d5c715e7ad9072fda936bb03d19d7fa10e00520f0e",
+    "kind": "rust-source",
+    "size": 29385
+  },
+  {
+    "name": "rust-ndarray",
+    "version": "0.15.6",
+    "url": "https://static.crates.io/crates/ndarray/ndarray-0.15.6.crate",
+    "filename": "rust-ndarray-0.15.6.tar.gz",
+    "sha256": "adb12d4e967ec485a5f71c6311fe28158e9d6f4bc4a447b474184d0f91a8fa32",
+    "kind": "rust-source",
+    "size": 275225
+  },
+  {
+    "name": "rust-nom",
+    "version": "7.1.3",
+    "url": "https://static.crates.io/crates/nom/nom-7.1.3.crate",
+    "filename": "rust-nom-7.1.3.tar.gz",
+    "sha256": "d273983c5a657a70a3e8f2a01329822f3b8c8172b73826411a55751e404a0a4a",
+    "kind": "rust-source",
+    "size": 117570
+  },
+  {
+    "name": "rust-nu-ansi-term",
+    "version": "0.46.0",
+    "url": "https://static.crates.io/crates/nu-ansi-term/nu-ansi-term-0.46.0.crate",
+    "filename": "rust-nu-ansi-term-0.46.0.tar.gz",
+    "sha256": "77a8165726e8236064dbb45459242600304b42a5ea24ee2948e18e023bf7ba84",
+    "kind": "rust-source",
+    "size": 24311
+  },
+  {
+    "name": "rust-num-complex",
+    "version": "0.4.6",
+    "url": "https://static.crates.io/crates/num-complex/num-complex-0.4.6.crate",
+    "filename": "rust-num-complex-0.4.6.tar.gz",
+    "sha256": "73f88a1307638156682bada9d7604135552957b7818057dcef22705b4d509495",
+    "kind": "rust-source",
+    "size": 30352
+  },
+  {
+    "name": "rust-num-conv",
+    "version": "0.1.0",
+    "url": "https://static.crates.io/crates/num-conv/num-conv-0.1.0.crate",
+    "filename": "rust-num-conv-0.1.0.tar.gz",
+    "sha256": "51d515d32fb182ee37cda2ccdcb92950d6a3c2893aa280e540671c2cd0f3b1d9",
+    "kind": "rust-source",
+    "size": 7444
+  },
+  {
+    "name": "rust-num-integer",
+    "version": "0.1.46",
+    "url": "https://static.crates.io/crates/num-integer/num-integer-0.1.46.crate",
+    "filename": "rust-num-integer-0.1.46.tar.gz",
+    "sha256": "7969661fd2958a5cb096e56c8e1ad0444ac2bbcd0061bd28660485a44879858f",
+    "kind": "rust-source",
+    "size": 22331
+  },
+  {
+    "name": "rust-num-traits",
+    "version": "0.2.19",
+    "url": "https://static.crates.io/crates/num-traits/num-traits-0.2.19.crate",
+    "filename": "rust-num-traits-0.2.19.tar.gz",
+    "sha256": "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841",
+    "kind": "rust-source",
+    "size": 51631
+  },
+  {
+    "name": "rust-num_cpus",
+    "version": "1.16.0",
+    "url": "https://static.crates.io/crates/num_cpus/num_cpus-1.16.0.crate",
+    "filename": "rust-num_cpus-1.16.0.tar.gz",
+    "sha256": "4161fcb6d602d4d2081af7c3a45852d875a03dd337a6bfdd6e06407b61342a43",
+    "kind": "rust-source",
+    "size": 15713
+  },
+  {
+    "name": "rust-number_prefix",
+    "version": "0.3.0",
+    "url": "https://static.crates.io/crates/number_prefix/number_prefix-0.3.0.crate",
+    "filename": "rust-number_prefix-0.3.0.tar.gz",
+    "sha256": "17b02fc0ff9a9e4b35b3342880f48e896ebf69f2967921fe8646bf5b7125956a",
+    "kind": "rust-source",
+    "size": 6291
+  },
+  {
+    "name": "rust-object",
+    "version": "0.36.5",
+    "url": "https://static.crates.io/crates/object/object-0.36.5.crate",
+    "filename": "rust-object-0.36.5.tar.gz",
+    "sha256": "aedf0a2d09c573ed1d8d85b30c119153926a2b36dce0ab28322c09a117a4683e",
+    "kind": "rust-source",
+    "size": 327435
+  },
+  {
+    "name": "rust-object",
+    "version": "0.37.3",
+    "url": "https://static.crates.io/crates/object/object-0.37.3.crate",
+    "filename": "rust-object-0.37.3.tar.gz",
+    "sha256": "ff76201f031d8863c38aa7f905eca4f53abbfa15f609db4277d44cd8938f33fe",
+    "kind": "rust-source",
+    "size": 344032
+  },
+  {
+    "name": "rust-ocaml-boxroot-sys",
+    "version": "0.2.0",
+    "url": "https://static.crates.io/crates/ocaml-boxroot-sys/ocaml-boxroot-sys-0.2.0.crate",
+    "filename": "rust-ocaml-boxroot-sys-0.2.0.tar.gz",
+    "sha256": "5186393bfbee4ce2bc5bbb82beafb77e85c1d0a557e3cfc8c8a0d63d7845fed5",
+    "kind": "rust-source",
+    "size": 12152
+  },
+  {
+    "name": "rust-ocaml-interop",
+    "version": "0.8.8",
+    "url": "https://static.crates.io/crates/ocaml-interop/ocaml-interop-0.8.8.crate",
+    "filename": "rust-ocaml-interop-0.8.8.tar.gz",
+    "sha256": "2e01e08412a7e072a90a225d2ae49a2860aeea853ce673bc63891dbf86aed063",
+    "kind": "rust-source",
+    "size": 29915
+  },
+  {
+    "name": "rust-ocaml-sys",
+    "version": "0.22.3",
+    "url": "https://static.crates.io/crates/ocaml-sys/ocaml-sys-0.22.3.crate",
+    "filename": "rust-ocaml-sys-0.22.3.tar.gz",
+    "sha256": "73ec6ca7d41458442627435afb8f4671e83fd642e8a560171d671a1f679aa3cf",
+    "kind": "rust-source",
+    "size": 8550
+  },
+  {
+    "name": "rust-once_cell",
+    "version": "1.19.0",
+    "url": "https://static.crates.io/crates/once_cell/once_cell-1.19.0.crate",
+    "filename": "rust-once_cell-1.19.0.tar.gz",
+    "sha256": "3fdb12b2476b595f9358c5161aa467c2438859caa136dec86c26fdd2efe17b92",
+    "kind": "rust-source",
+    "size": 33046
+  },
+  {
+    "name": "rust-oorandom",
+    "version": "11.1.3",
+    "url": "https://static.crates.io/crates/oorandom/oorandom-11.1.3.crate",
+    "filename": "rust-oorandom-11.1.3.tar.gz",
+    "sha256": "0ab1bc2a289d34bd04a330323ac98a1b4bc82c9d9fcb1e66b63caa84da26b575",
+    "kind": "rust-source",
+    "size": 10068
+  },
+  {
+    "name": "rust-openssl",
+    "version": "0.10.73",
+    "url": "https://static.crates.io/crates/openssl/openssl-0.10.73.crate",
+    "filename": "rust-openssl-0.10.73.tar.gz",
+    "sha256": "8505734d46c8ab1e19a1dce3aef597ad87dcb4c37e7188231769bd6bd51cebf8",
+    "kind": "rust-source",
+    "size": 283994
+  },
+  {
+    "name": "rust-openssl-macros",
+    "version": "0.1.1",
+    "url": "https://static.crates.io/crates/openssl-macros/openssl-macros-0.1.1.crate",
+    "filename": "rust-openssl-macros-0.1.1.tar.gz",
+    "sha256": "a948666b637a0f465e8564c73e89d4dde00d72d4d473cc972f390fc3dcee7d9c",
+    "kind": "rust-source",
+    "size": 5601
+  },
+  {
+    "name": "rust-openssl-probe",
+    "version": "0.1.6",
+    "url": "https://static.crates.io/crates/openssl-probe/openssl-probe-0.1.6.crate",
+    "filename": "rust-openssl-probe-0.1.6.tar.gz",
+    "sha256": "d05e27ee213611ffe7d6348b942e8f942b37114c00cc03cec254295a4a17852e",
+    "kind": "rust-source",
+    "size": 8128
+  },
+  {
+    "name": "rust-openssl-sys",
+    "version": "0.9.109",
+    "url": "https://static.crates.io/crates/openssl-sys/openssl-sys-0.9.109.crate",
+    "filename": "rust-openssl-sys-0.9.109.tar.gz",
+    "sha256": "90096e2e47630d78b7d1c20952dc621f957103f8bc2c8359ec81290d75238571",
+    "kind": "rust-source",
+    "size": 78247
+  },
+  {
+    "name": "rust-openvino",
+    "version": "0.9.0",
+    "url": "https://static.crates.io/crates/openvino/openvino-0.9.0.crate",
+    "filename": "rust-openvino-0.9.0.tar.gz",
+    "sha256": "3308ec088481c27b5b521598ced2d5d5f67253d9639f5a3cce5a2ea4c4062a94",
+    "kind": "rust-source",
+    "size": 21085
+  },
+  {
+    "name": "rust-openvino-finder",
+    "version": "0.9.0",
+    "url": "https://static.crates.io/crates/openvino-finder/openvino-finder-0.9.0.crate",
+    "filename": "rust-openvino-finder-0.9.0.tar.gz",
+    "sha256": "bba5393f3522f98d9c4703a6a73afc7feff2bf9cc00a0722957b54c44ecda5fe",
+    "kind": "rust-source",
+    "size": 7798
+  },
+  {
+    "name": "rust-openvino-sys",
+    "version": "0.9.0",
+    "url": "https://static.crates.io/crates/openvino-sys/openvino-sys-0.9.0.crate",
+    "filename": "rust-openvino-sys-0.9.0.tar.gz",
+    "sha256": "da7d035914ff5c8e12d7e05982929fb275e6f06eafcbe529f316001760b08786",
+    "kind": "rust-source",
+    "size": 40972
+  },
+  {
+    "name": "rust-ort",
+    "version": "2.0.0-rc.2",
+    "url": "https://static.crates.io/crates/ort/ort-2.0.0-rc.2.crate",
+    "filename": "rust-ort-2.0.0-rc.2.tar.gz",
+    "sha256": "0bc80894094c6a875bfac64415ed456fa661081a278a035e22be661305c87e14",
+    "kind": "rust-source",
+    "size": 73240
+  },
+  {
+    "name": "rust-ort-sys",
+    "version": "2.0.0-rc.2",
+    "url": "https://static.crates.io/crates/ort-sys/ort-sys-2.0.0-rc.2.crate",
+    "filename": "rust-ort-sys-2.0.0-rc.2.tar.gz",
+    "sha256": "b3d9c1373fc813d3f024d394f621f4c6dde0734c79b1c17113c3bb5bf0084bbe",
+    "kind": "rust-source",
+    "size": 30446
+  },
+  {
+    "name": "rust-overload",
+    "version": "0.1.1",
+    "url": "https://static.crates.io/crates/overload/overload-0.1.1.crate",
+    "filename": "rust-overload-0.1.1.tar.gz",
+    "sha256": "b15813163c1d831bf4a13c3610c05c0d03b39feb07f7e09fa234dac9b15aaf39",
+    "kind": "rust-source",
+    "size": 24439
+  },
+  {
+    "name": "rust-password-hash",
+    "version": "0.4.2",
+    "url": "https://static.crates.io/crates/password-hash/password-hash-0.4.2.crate",
+    "filename": "rust-password-hash-0.4.2.tar.gz",
+    "sha256": "7676374caaee8a325c9e7a2ae557f216c5563a171d6997b0ef8a65af35147700",
+    "kind": "rust-source",
+    "size": 26099
+  },
+  {
+    "name": "rust-paste",
+    "version": "1.0.7",
+    "url": "https://static.crates.io/crates/paste/paste-1.0.7.crate",
+    "filename": "rust-paste-1.0.7.tar.gz",
+    "sha256": "0c520e05135d6e763148b6426a837e239041653ba7becd2e538c076c738025fc",
+    "kind": "rust-source",
+    "size": 18285
+  },
+  {
+    "name": "rust-pbkdf2",
+    "version": "0.11.0",
+    "url": "https://static.crates.io/crates/pbkdf2/pbkdf2-0.11.0.crate",
+    "filename": "rust-pbkdf2-0.11.0.tar.gz",
+    "sha256": "83a0692ec44e4cf1ef28ca317f14f8f07da2d95ec3fa01f86e4467b725e60917",
+    "kind": "rust-source",
+    "size": 13229
+  },
+  {
+    "name": "rust-percent-encoding",
+    "version": "2.3.1",
+    "url": "https://static.crates.io/crates/percent-encoding/percent-encoding-2.3.1.crate",
+    "filename": "rust-percent-encoding-2.3.1.tar.gz",
+    "sha256": "e3148f5046208a5d56bcfc03053e3ca6334e51da8dfb19b6cdc8b306fae3283e",
+    "kind": "rust-source",
+    "size": 10235
+  },
+  {
+    "name": "rust-petgraph",
+    "version": "0.6.5",
+    "url": "https://static.crates.io/crates/petgraph/petgraph-0.6.5.crate",
+    "filename": "rust-petgraph-0.6.5.tar.gz",
+    "sha256": "b4c5cc86750666a3ed20bdaf5ca2a0344f9c67674cae0515bec2da16fbaa47db",
+    "kind": "rust-source",
+    "size": 710970
+  },
+  {
+    "name": "rust-pin-project-lite",
+    "version": "0.2.14",
+    "url": "https://static.crates.io/crates/pin-project-lite/pin-project-lite-0.2.14.crate",
+    "filename": "rust-pin-project-lite-0.2.14.tar.gz",
+    "sha256": "bda66fc9667c18cb2758a2ac84d1167245054bcf85d5d1aaa6923f45801bdd02",
+    "kind": "rust-source",
+    "size": 28817
+  },
+  {
+    "name": "rust-pin-utils",
+    "version": "0.1.0",
+    "url": "https://static.crates.io/crates/pin-utils/pin-utils-0.1.0.crate",
+    "filename": "rust-pin-utils-0.1.0.tar.gz",
+    "sha256": "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184",
+    "kind": "rust-source",
+    "size": 7580
+  },
+  {
+    "name": "rust-pkg-config",
+    "version": "0.3.29",
+    "url": "https://static.crates.io/crates/pkg-config/pkg-config-0.3.29.crate",
+    "filename": "rust-pkg-config-0.3.29.tar.gz",
+    "sha256": "2900ede94e305130c13ddd391e0ab7cbaeb783945ae07a279c268cb05109c6cb",
+    "kind": "rust-source",
+    "size": 20563
+  },
+  {
+    "name": "rust-postcard",
+    "version": "1.0.8",
+    "url": "https://static.crates.io/crates/postcard/postcard-1.0.8.crate",
+    "filename": "rust-postcard-1.0.8.tar.gz",
+    "sha256": "a55c51ee6c0db07e68448e336cf8ea4131a620edefebf9893e759b2d793420f8",
+    "kind": "rust-source",
+    "size": 53813
+  },
+  {
+    "name": "rust-powerfmt",
+    "version": "0.2.0",
+    "url": "https://static.crates.io/crates/powerfmt/powerfmt-0.2.0.crate",
+    "filename": "rust-powerfmt-0.2.0.tar.gz",
+    "sha256": "439ee305def115ba05938db6eb1644ff94165c5ab5e9420d1c1bcedbba909391",
+    "kind": "rust-source",
+    "size": 15165
+  },
+  {
+    "name": "rust-ppv-lite86",
+    "version": "0.2.16",
+    "url": "https://static.crates.io/crates/ppv-lite86/ppv-lite86-0.2.16.crate",
+    "filename": "rust-ppv-lite86-0.2.16.tar.gz",
+    "sha256": "eb9f9e6e233e5c4a35559a617bf40a4ec447db2e84c20b55a6f83167b7e57872",
+    "kind": "rust-source",
+    "size": 22245
+  },
+  {
+    "name": "rust-prettyplease",
+    "version": "0.2.31",
+    "url": "https://static.crates.io/crates/prettyplease/prettyplease-0.2.31.crate",
+    "filename": "rust-prettyplease-0.2.31.tar.gz",
+    "sha256": "5316f57387668042f561aae71480de936257848f9c43ce528e311d89a07cadeb",
+    "kind": "rust-source",
+    "size": 72021
+  },
+  {
+    "name": "rust-proc-macro2",
+    "version": "1.0.92",
+    "url": "https://static.crates.io/crates/proc-macro2/proc-macro2-1.0.92.crate",
+    "filename": "rust-proc-macro2-1.0.92.tar.gz",
+    "sha256": "37d3544b3f2748c54e147655edb5025752e2303145b5aefb3c3ea2c78b973bb0",
+    "kind": "rust-source",
+    "size": 52353
+  },
+  {
+    "name": "rust-proptest",
+    "version": "1.0.0",
+    "url": "https://static.crates.io/crates/proptest/proptest-1.0.0.crate",
+    "filename": "rust-proptest-1.0.0.tar.gz",
+    "sha256": "1e0d9cc07f18492d879586c92b485def06bc850da3118075cd45d50e9c95b0e5",
+    "kind": "rust-source",
+    "size": 189237
+  },
+  {
+    "name": "rust-quick-error",
+    "version": "1.2.3",
+    "url": "https://static.crates.io/crates/quick-error/quick-error-1.2.3.crate",
+    "filename": "rust-quick-error-1.2.3.tar.gz",
+    "sha256": "a1d01941d82fa2ab50be1e79e6714289dd7cde78eba4c074bc5a4374f650dfe0",
+    "kind": "rust-source",
+    "size": 15066
+  },
+  {
+    "name": "rust-quick-error",
+    "version": "2.0.1",
+    "url": "https://static.crates.io/crates/quick-error/quick-error-2.0.1.crate",
+    "filename": "rust-quick-error-2.0.1.tar.gz",
+    "sha256": "a993555f31e5a609f617c12db6250dedcac1b0a85076912c436e6fc9b2c8e6a3",
+    "kind": "rust-source",
+    "size": 14265
+  },
+  {
+    "name": "rust-quote",
+    "version": "1.0.36",
+    "url": "https://static.crates.io/crates/quote/quote-1.0.36.crate",
+    "filename": "rust-quote-1.0.36.tar.gz",
+    "sha256": "0fa76aaf39101c457836aec0ce2316dbdc3ab723cdda1c6bd4e6ad4208acaca7",
+    "kind": "rust-source",
+    "size": 28507
+  },
+  {
+    "name": "rust-rand",
+    "version": "0.8.5",
+    "url": "https://static.crates.io/crates/rand/rand-0.8.5.crate",
+    "filename": "rust-rand-0.8.5.tar.gz",
+    "sha256": "34af8d1a0e25924bc5b7c43c079c942339d8f0a8b57c39049bef581b46327404",
+    "kind": "rust-source",
+    "size": 87113
+  },
+  {
+    "name": "rust-rand",
+    "version": "0.9.2",
+    "url": "https://static.crates.io/crates/rand/rand-0.9.2.crate",
+    "filename": "rust-rand-0.9.2.tar.gz",
+    "sha256": "6db2770f06117d490610c7488547d543617b21bfa07796d7a12f6f1bd53850d1",
+    "kind": "rust-source",
+    "size": 99930
+  },
+  {
+    "name": "rust-rand_chacha",
+    "version": "0.3.1",
+    "url": "https://static.crates.io/crates/rand_chacha/rand_chacha-0.3.1.crate",
+    "filename": "rust-rand_chacha-0.3.1.tar.gz",
+    "sha256": "e6c10a63a0fa32252be49d21e7709d4d4baf8d231c2dbce1eaa8141b9b127d88",
+    "kind": "rust-source",
+    "size": 15251
+  },
+  {
+    "name": "rust-rand_chacha",
+    "version": "0.9.0",
+    "url": "https://static.crates.io/crates/rand_chacha/rand_chacha-0.9.0.crate",
+    "filename": "rust-rand_chacha-0.9.0.tar.gz",
+    "sha256": "d3022b5f1df60f26e1ffddd6c66e8aa15de382ae63b3a0c1bfc0e4d3e3f325cb",
+    "kind": "rust-source",
+    "size": 18258
+  },
+  {
+    "name": "rust-rand_core",
+    "version": "0.6.3",
+    "url": "https://static.crates.io/crates/rand_core/rand_core-0.6.3.crate",
+    "filename": "rust-rand_core-0.6.3.tar.gz",
+    "sha256": "d34f1408f55294453790c48b2f1ebbb1c5b4b7563eb1f418bcfcfdbb06ebb4e7",
+    "kind": "rust-source",
+    "size": 21938
+  },
+  {
+    "name": "rust-rand_core",
+    "version": "0.9.3",
+    "url": "https://static.crates.io/crates/rand_core/rand_core-0.9.3.crate",
+    "filename": "rust-rand_core-0.9.3.tar.gz",
+    "sha256": "99d9a13982dcf210057a8a78572b2217b667c3beacbf3a0d8b454f6f82837d38",
+    "kind": "rust-source",
+    "size": 24543
+  },
+  {
+    "name": "rust-rand_xorshift",
+    "version": "0.3.0",
+    "url": "https://static.crates.io/crates/rand_xorshift/rand_xorshift-0.3.0.crate",
+    "filename": "rust-rand_xorshift-0.3.0.tar.gz",
+    "sha256": "d25bf25ec5ae4a3f1b92f929810509a2f53d7dca2f50b794ff57e3face536c8f",
+    "kind": "rust-source",
+    "size": 9121
+  },
+  {
+    "name": "rust-rand_xoshiro",
+    "version": "0.6.0",
+    "url": "https://static.crates.io/crates/rand_xoshiro/rand_xoshiro-0.6.0.crate",
+    "filename": "rust-rand_xoshiro-0.6.0.tar.gz",
+    "sha256": "6f97cdb2a36ed4183de61b2f824cc45c9f1037f28afe0a322e9fff4c108b5aaa",
+    "kind": "rust-source",
+    "size": 17125
+  },
+  {
+    "name": "rust-raw-cpuid",
+    "version": "11.5.0",
+    "url": "https://static.crates.io/crates/raw-cpuid/raw-cpuid-11.5.0.crate",
+    "filename": "rust-raw-cpuid-11.5.0.tar.gz",
+    "sha256": "c6df7ab838ed27997ba19a4664507e6f82b41fe6e20be42929332156e5e85146",
+    "kind": "rust-source",
+    "size": 111596
+  },
+  {
+    "name": "rust-rawpointer",
+    "version": "0.2.1",
+    "url": "https://static.crates.io/crates/rawpointer/rawpointer-0.2.1.crate",
+    "filename": "rust-rawpointer-0.2.1.tar.gz",
+    "sha256": "60a357793950651c4ed0f3f52338f53b2f809f32d83a07f72909fa13e4c6c1e3",
+    "kind": "rust-source",
+    "size": 7490
+  },
+  {
+    "name": "rust-rayon",
+    "version": "1.5.3",
+    "url": "https://static.crates.io/crates/rayon/rayon-1.5.3.crate",
+    "filename": "rust-rayon-1.5.3.tar.gz",
+    "sha256": "bd99e5772ead8baa5215278c9b15bf92087709e9c1b2d1f97cdb5a183c933a7d",
+    "kind": "rust-source",
+    "size": 167246
+  },
+  {
+    "name": "rust-rayon-core",
+    "version": "1.12.0",
+    "url": "https://static.crates.io/crates/rayon-core/rayon-core-1.12.0.crate",
+    "filename": "rust-rayon-core-1.12.0.tar.gz",
+    "sha256": "5ce3fb6ad83f861aac485e76e1985cd109d9a3713802152be56c3b1f0e0658ed",
+    "kind": "rust-source",
+    "size": 70081
+  },
+  {
+    "name": "rust-redox_syscall",
+    "version": "0.2.13",
+    "url": "https://static.crates.io/crates/redox_syscall/redox_syscall-0.2.13.crate",
+    "filename": "rust-redox_syscall-0.2.13.tar.gz",
+    "sha256": "62f25bc4c7e55e0b0b7a1d43fb893f4fa1361d0abe38b9ce4f323c2adfe6ef42",
+    "kind": "rust-source",
+    "size": 23759
+  },
+  {
+    "name": "rust-redox_users",
+    "version": "0.4.3",
+    "url": "https://static.crates.io/crates/redox_users/redox_users-0.4.3.crate",
+    "filename": "rust-redox_users-0.4.3.tar.gz",
+    "sha256": "b033d837a7cf162d7993aded9304e30a83213c648b6e389db233191f891e5c2b",
+    "kind": "rust-source",
+    "size": 15353
+  },
+  {
+    "name": "rust-regalloc2",
+    "version": "0.13.2",
+    "url": "https://static.crates.io/crates/regalloc2/regalloc2-0.13.2.crate",
+    "filename": "rust-regalloc2-0.13.2.tar.gz",
+    "sha256": "efd8138ce7c3d7c13be4f61893154b5d711bd798d2d7be3ecb8dcc7e7a06ca98",
+    "kind": "rust-source",
+    "size": 144870
+  },
+  {
+    "name": "rust-regex",
+    "version": "1.9.1",
+    "url": "https://static.crates.io/crates/regex/regex-1.9.1.crate",
+    "filename": "rust-regex-1.9.1.tar.gz",
+    "sha256": "b2eae68fc220f7cf2532e4494aded17545fce192d59cd996e0fe7887f4ceb575",
+    "kind": "rust-source",
+    "size": 251978
+  },
+  {
+    "name": "rust-regex-automata",
+    "version": "0.1.10",
+    "url": "https://static.crates.io/crates/regex-automata/regex-automata-0.1.10.crate",
+    "filename": "rust-regex-automata-0.1.10.tar.gz",
+    "sha256": "6c230d73fb8d8c1b9c0b3135c5142a8acee3a0558fb8db5cf1cb65f8d7862132",
+    "kind": "rust-source",
+    "size": 114533
+  },
+  {
+    "name": "rust-regex-automata",
+    "version": "0.3.3",
+    "url": "https://static.crates.io/crates/regex-automata/regex-automata-0.3.3.crate",
+    "filename": "rust-regex-automata-0.3.3.tar.gz",
+    "sha256": "39354c10dd07468c2e73926b23bb9c2caca74c5501e38a35da70406f1d923310",
+    "kind": "rust-source",
+    "size": 604301
+  },
+  {
+    "name": "rust-regex-syntax",
+    "version": "0.6.25",
+    "url": "https://static.crates.io/crates/regex-syntax/regex-syntax-0.6.25.crate",
+    "filename": "rust-regex-syntax-0.6.25.tar.gz",
+    "sha256": "f497285884f3fcff424ffc933e56d7cbca511def0c9831a7f9b5f6153e3cc89b",
+    "kind": "rust-source",
+    "size": 293293
+  },
+  {
+    "name": "rust-regex-syntax",
+    "version": "0.7.4",
+    "url": "https://static.crates.io/crates/regex-syntax/regex-syntax-0.7.4.crate",
+    "filename": "rust-regex-syntax-0.7.4.tar.gz",
+    "sha256": "e5ea92a5b6195c6ef2a0295ea818b312502c6fc94dde986c5553242e18fd4ce2",
+    "kind": "rust-source",
+    "size": 343365
+  },
+  {
+    "name": "rust-regex-syntax",
+    "version": "0.8.5",
+    "url": "https://static.crates.io/crates/regex-syntax/regex-syntax-0.8.5.crate",
+    "filename": "rust-regex-syntax-0.8.5.tar.gz",
+    "sha256": "2b15c43186be67a4fd63bee50d0303afffcef381492ebe2c5d87f324e1b8815c",
+    "kind": "rust-source",
+    "size": 357541
+  },
+  {
+    "name": "rust-region",
+    "version": "3.0.2",
+    "url": "https://static.crates.io/crates/region/region-3.0.2.crate",
+    "filename": "rust-region-3.0.2.tar.gz",
+    "sha256": "e6b6ebd13bc009aef9cd476c1310d49ac354d36e240cf1bd753290f3dc7199a7",
+    "kind": "rust-source",
+    "size": 22388
+  },
+  {
+    "name": "rust-ring",
+    "version": "0.17.14",
+    "url": "https://static.crates.io/crates/ring/ring-0.17.14.crate",
+    "filename": "rust-ring-0.17.14.tar.gz",
+    "sha256": "a4689e6c2294d81e88dc6261c768b63bc4fcdb852be6d1352498b114f61383b7",
+    "kind": "rust-source",
+    "size": 1502610
+  },
+  {
+    "name": "rust-rustc-demangle",
+    "version": "0.1.24",
+    "url": "https://static.crates.io/crates/rustc-demangle/rustc-demangle-0.1.24.crate",
+    "filename": "rust-rustc-demangle-0.1.24.tar.gz",
+    "sha256": "719b953e2095829ee67db738b3bfa9fa368c94900df327b3f07fe6e794d2fe1f",
+    "kind": "rust-source",
+    "size": 29047
+  },
+  {
+    "name": "rust-rustc-hash",
+    "version": "2.1.1",
+    "url": "https://static.crates.io/crates/rustc-hash/rustc-hash-2.1.1.crate",
+    "filename": "rust-rustc-hash-2.1.1.tar.gz",
+    "sha256": "357703d41365b4b27c590e3ed91eabb1b663f07c4c084095e60cbed4362dff0d",
+    "kind": "rust-source",
+    "size": 14154
+  },
+  {
+    "name": "rust-rustix",
+    "version": "0.38.43",
+    "url": "https://static.crates.io/crates/rustix/rustix-0.38.43.crate",
+    "filename": "rust-rustix-0.38.43.tar.gz",
+    "sha256": "a78891ee6bf2340288408954ac787aa063d8e8817e9f53abb37c695c6d834ef6",
+    "kind": "rust-source",
+    "size": 379134
+  },
+  {
+    "name": "rust-rustix",
+    "version": "1.0.3",
+    "url": "https://static.crates.io/crates/rustix/rustix-1.0.3.crate",
+    "filename": "rust-rustix-1.0.3.tar.gz",
+    "sha256": "e56a18552996ac8d29ecc3b190b4fdbb2d91ca4ec396de7bbffaf43f3d637e96",
+    "kind": "rust-source",
+    "size": 413960
+  },
+  {
+    "name": "rust-rustix-linux-procfs",
+    "version": "0.1.1",
+    "url": "https://static.crates.io/crates/rustix-linux-procfs/rustix-linux-procfs-0.1.1.crate",
+    "filename": "rust-rustix-linux-procfs-0.1.1.tar.gz",
+    "sha256": "2fc84bf7e9aa16c4f2c758f27412dc9841341e16aa682d9c7ac308fe3ee12056",
+    "kind": "rust-source",
+    "size": 17465
+  },
+  {
+    "name": "rust-rustls",
+    "version": "0.22.4",
+    "url": "https://static.crates.io/crates/rustls/rustls-0.22.4.crate",
+    "filename": "rust-rustls-0.22.4.tar.gz",
+    "sha256": "bf4ef73721ac7bcd79b2b315da7779d8fc09718c6b3d2d1b2d94850eb8c18432",
+    "kind": "rust-source",
+    "size": 333681
+  },
+  {
+    "name": "rust-rustls",
+    "version": "0.23.7",
+    "url": "https://static.crates.io/crates/rustls/rustls-0.23.7.crate",
+    "filename": "rust-rustls-0.23.7.tar.gz",
+    "sha256": "ebbbdb961df0ad3f2652da8f3fdc4b36122f568f968f45ad3316f26c025c677b",
+    "kind": "rust-source",
+    "size": 381800
+  },
+  {
+    "name": "rust-rustls-pki-types",
+    "version": "1.3.1",
+    "url": "https://static.crates.io/crates/rustls-pki-types/rustls-pki-types-1.3.1.crate",
+    "filename": "rust-rustls-pki-types-1.3.1.tar.gz",
+    "sha256": "5ede67b28608b4c60685c7d54122d4400d90f62b40caee7700e700380a390fa8",
+    "kind": "rust-source",
+    "size": 21637
+  },
+  {
+    "name": "rust-rustls-webpki",
+    "version": "0.102.2",
+    "url": "https://static.crates.io/crates/rustls-webpki/rustls-webpki-0.102.2.crate",
+    "filename": "rust-rustls-webpki-0.102.2.tar.gz",
+    "sha256": "faaa0a62740bedb9b2ef5afa303da42764c012f743917351dc9a237ea1663610",
+    "kind": "rust-source",
+    "size": 196881
+  },
+  {
+    "name": "rust-rustversion",
+    "version": "1.0.14",
+    "url": "https://static.crates.io/crates/rustversion/rustversion-1.0.14.crate",
+    "filename": "rust-rustversion-1.0.14.tar.gz",
+    "sha256": "7ffc183a10b4478d04cbbbfc96d0873219d962dd5accaff2ffbd4ceb7df837f4",
+    "kind": "rust-source",
+    "size": 17261
+  },
+  {
+    "name": "rust-rusty-fork",
+    "version": "0.3.0",
+    "url": "https://static.crates.io/crates/rusty-fork/rusty-fork-0.3.0.crate",
+    "filename": "rust-rusty-fork-0.3.0.tar.gz",
+    "sha256": "cb3dcc6e454c328bb824492db107ab7c0ae8fcffe4ad210136ef014458c1bc4f",
+    "kind": "rust-source",
+    "size": 19881
+  },
+  {
+    "name": "rust-ryu",
+    "version": "1.0.9",
+    "url": "https://static.crates.io/crates/ryu/ryu-1.0.9.crate",
+    "filename": "rust-ryu-1.0.9.tar.gz",
+    "sha256": "73b4b750c782965c211b42f022f59af1fbceabdd026623714f104152f1ec149f",
+    "kind": "rust-source",
+    "size": 48391
+  },
+  {
+    "name": "rust-safetensors",
+    "version": "0.3.3",
+    "url": "https://static.crates.io/crates/safetensors/safetensors-0.3.3.crate",
+    "filename": "rust-safetensors-0.3.3.tar.gz",
+    "sha256": "d93279b86b3de76f820a8854dd06cbc33cfa57a417b19c47f6a25280112fb1df",
+    "kind": "rust-source",
+    "size": 17803
+  },
+  {
+    "name": "rust-same-file",
+    "version": "1.0.6",
+    "url": "https://static.crates.io/crates/same-file/same-file-1.0.6.crate",
+    "filename": "rust-same-file-1.0.6.tar.gz",
+    "sha256": "93fc1dc3aaa9bfed95e02e6eadabb4baf7e3078b0bd1b4d7b6b0b68378900502",
+    "kind": "rust-source",
+    "size": 10183
+  },
+  {
+    "name": "rust-schannel",
+    "version": "0.1.27",
+    "url": "https://static.crates.io/crates/schannel/schannel-0.1.27.crate",
+    "filename": "rust-schannel-0.1.27.tar.gz",
+    "sha256": "1f29ebaa345f945cec9fbbc532eb307f0fdad8161f281b6369539c8d84876b3d",
+    "kind": "rust-source",
+    "size": 42772
+  },
+  {
+    "name": "rust-security-framework",
+    "version": "2.11.1",
+    "url": "https://static.crates.io/crates/security-framework/security-framework-2.11.1.crate",
+    "filename": "rust-security-framework-2.11.1.tar.gz",
+    "sha256": "897b2245f0b511c87893af39b033e5ca9cce68824c4d7e7630b5a1d339658d02",
+    "kind": "rust-source",
+    "size": 80188
+  },
+  {
+    "name": "rust-security-framework-sys",
+    "version": "2.14.0",
+    "url": "https://static.crates.io/crates/security-framework-sys/security-framework-sys-2.14.0.crate",
+    "filename": "rust-security-framework-sys-2.14.0.tar.gz",
+    "sha256": "49db231d56a190491cb4aeda9527f1ad45345af50b0851622a7adb8c03b01c32",
+    "kind": "rust-source",
+    "size": 20537
+  },
+  {
+    "name": "rust-semver",
+    "version": "1.0.17",
+    "url": "https://static.crates.io/crates/semver/semver-1.0.17.crate",
+    "filename": "rust-semver-1.0.17.tar.gz",
+    "sha256": "bebd363326d05ec3e2f532ab7660680f3b02130d780c299bca73469d521bc0ed",
+    "kind": "rust-source",
+    "size": 29685
+  },
+  {
+    "name": "rust-serde",
+    "version": "1.0.215",
+    "url": "https://static.crates.io/crates/serde/serde-1.0.215.crate",
+    "filename": "rust-serde-1.0.215.tar.gz",
+    "sha256": "6513c1ad0b11a9376da888e3e0baa0077f1aed55c17f50e7b2397136129fb88f",
+    "kind": "rust-source",
+    "size": 78527
+  },
+  {
+    "name": "rust-serde_derive",
+    "version": "1.0.215",
+    "url": "https://static.crates.io/crates/serde_derive/serde_derive-1.0.215.crate",
+    "filename": "rust-serde_derive-1.0.215.tar.gz",
+    "sha256": "ad1e866f866923f252f05c889987993144fb74e722403468a4ebd70c3cd756c0",
+    "kind": "rust-source",
+    "size": 57092
+  },
+  {
+    "name": "rust-serde_json",
+    "version": "1.0.140",
+    "url": "https://static.crates.io/crates/serde_json/serde_json-1.0.140.crate",
+    "filename": "rust-serde_json-1.0.140.tar.gz",
+    "sha256": "20068b6e96dc6c9bd23e01df8827e6c7e1f2fddd43c21810382803c136b99373",
+    "kind": "rust-source",
+    "size": 154852
+  },
+  {
+    "name": "rust-serde_spanned",
+    "version": "0.6.5",
+    "url": "https://static.crates.io/crates/serde_spanned/serde_spanned-0.6.5.crate",
+    "filename": "rust-serde_spanned-0.6.5.tar.gz",
+    "sha256": "eb3622f419d1296904700073ea6cc23ad690adbd66f13ea683df73298736f0c1",
+    "kind": "rust-source",
+    "size": 8349
+  },
+  {
+    "name": "rust-serde_yaml",
+    "version": "0.9.34+deprecated",
+    "url": "https://static.crates.io/crates/serde_yaml/serde_yaml-0.9.34+deprecated.crate",
+    "filename": "rust-serde_yaml-0.9.34+deprecated.tar.gz",
+    "sha256": "6a8b1a1a2ebf674015cc02edccce75287f1a0130d394307b36743c2f5d504b47",
+    "kind": "rust-source",
+    "size": 65290
+  },
+  {
+    "name": "rust-sha1",
+    "version": "0.10.6",
+    "url": "https://static.crates.io/crates/sha1/sha1-0.10.6.crate",
+    "filename": "rust-sha1-0.10.6.tar.gz",
+    "sha256": "e3bf829a2d51ab4a5ddf1352d8470c140cadc8301b2ae1789db023f01cedd6ba",
+    "kind": "rust-source",
+    "size": 13517
+  },
+  {
+    "name": "rust-sha2",
+    "version": "0.10.2",
+    "url": "https://static.crates.io/crates/sha2/sha2-0.10.2.crate",
+    "filename": "rust-sha2-0.10.2.tar.gz",
+    "sha256": "55deaec60f81eefe3cce0dc50bda92d6d8e88f2a27df7c5033b42afeb1ed2676",
+    "kind": "rust-source",
+    "size": 20213
+  },
+  {
+    "name": "rust-sharded-slab",
+    "version": "0.1.4",
+    "url": "https://static.crates.io/crates/sharded-slab/sharded-slab-0.1.4.crate",
+    "filename": "rust-sharded-slab-0.1.4.tar.gz",
+    "sha256": "900fba806f70c630b0a382d0d825e17a0f19fcd059a2ade1ff237bcddf446b31",
+    "kind": "rust-source",
+    "size": 52479
+  },
+  {
+    "name": "rust-shlex",
+    "version": "1.3.0",
+    "url": "https://static.crates.io/crates/shlex/shlex-1.3.0.crate",
+    "filename": "rust-shlex-1.3.0.tar.gz",
+    "sha256": "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64",
+    "kind": "rust-source",
+    "size": 18713
+  },
+  {
+    "name": "rust-shuffling-allocator",
+    "version": "1.1.2",
+    "url": "https://static.crates.io/crates/shuffling-allocator/shuffling-allocator-1.1.2.crate",
+    "filename": "rust-shuffling-allocator-1.1.2.tar.gz",
+    "sha256": "4ee9977fa98489d9006f4ab26fc5cbe2a139985baed09d2ec08dee6e506fc496",
+    "kind": "rust-source",
+    "size": 12318
+  },
+  {
+    "name": "rust-signal-hook-registry",
+    "version": "1.4.1",
+    "url": "https://static.crates.io/crates/signal-hook-registry/signal-hook-registry-1.4.1.crate",
+    "filename": "rust-signal-hook-registry-1.4.1.tar.gz",
+    "sha256": "d8229b473baa5980ac72ef434c4415e70c4b5e71b423043adb4ba059f89c99a1",
+    "kind": "rust-source",
+    "size": 17987
+  },
+  {
+    "name": "rust-similar",
+    "version": "2.2.0",
+    "url": "https://static.crates.io/crates/similar/similar-2.2.0.crate",
+    "filename": "rust-similar-2.2.0.tar.gz",
+    "sha256": "62ac7f900db32bf3fd12e0117dd3dc4da74bc52ebaac97f39668446d89694803",
+    "kind": "rust-source",
+    "size": 50996
+  },
+  {
+    "name": "rust-sized-chunks",
+    "version": "0.6.5",
+    "url": "https://static.crates.io/crates/sized-chunks/sized-chunks-0.6.5.crate",
+    "filename": "rust-sized-chunks-0.6.5.tar.gz",
+    "sha256": "16d69225bde7a69b235da73377861095455d298f2b970996eec25ddbb42b3d1e",
+    "kind": "rust-source",
+    "size": 43628
+  },
+  {
+    "name": "rust-slab",
+    "version": "0.4.7",
+    "url": "https://static.crates.io/crates/slab/slab-0.4.7.crate",
+    "filename": "rust-slab-0.4.7.tar.gz",
+    "sha256": "4614a76b2a8be0058caa9dbbaf66d988527d86d003c11a94fbd335d7661edcef",
+    "kind": "rust-source",
+    "size": 16647
+  },
+  {
+    "name": "rust-smallvec",
+    "version": "1.13.2",
+    "url": "https://static.crates.io/crates/smallvec/smallvec-1.13.2.crate",
+    "filename": "rust-smallvec-1.13.2.tar.gz",
+    "sha256": "3c5e1a9a646d36c3599cd173a41282daf47c44583ad367b8e6837255952e5c67",
+    "kind": "rust-source",
+    "size": 35216
+  },
+  {
+    "name": "rust-socket2",
+    "version": "0.5.7",
+    "url": "https://static.crates.io/crates/socket2/socket2-0.5.7.crate",
+    "filename": "rust-socket2-0.5.7.tar.gz",
+    "sha256": "ce305eb0b4296696835b71df73eb912e0f1ffd2556a501fcede6e0c50349191c",
+    "kind": "rust-source",
+    "size": 55758
+  },
+  {
+    "name": "rust-souper-ir",
+    "version": "2.1.0",
+    "url": "https://static.crates.io/crates/souper-ir/souper-ir-2.1.0.crate",
+    "filename": "rust-souper-ir-2.1.0.tar.gz",
+    "sha256": "a50c18ce33988e1973003afbaa66e6a465ad7a614dc33f246879ccc209c2c044",
+    "kind": "rust-source",
+    "size": 17732
+  },
+  {
+    "name": "rust-spin",
+    "version": "0.9.8",
+    "url": "https://static.crates.io/crates/spin/spin-0.9.8.crate",
+    "filename": "rust-spin-0.9.8.tar.gz",
+    "sha256": "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67",
+    "kind": "rust-source",
+    "size": 38958
+  },
+  {
+    "name": "rust-stable_deref_trait",
+    "version": "1.2.0",
+    "url": "https://static.crates.io/crates/stable_deref_trait/stable_deref_trait-1.2.0.crate",
+    "filename": "rust-stable_deref_trait-1.2.0.tar.gz",
+    "sha256": "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3",
+    "kind": "rust-source",
+    "size": 8054
+  },
+  {
+    "name": "rust-static_assertions",
+    "version": "1.1.0",
+    "url": "https://static.crates.io/crates/static_assertions/static_assertions-1.1.0.crate",
+    "filename": "rust-static_assertions-1.1.0.tar.gz",
+    "sha256": "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f",
+    "kind": "rust-source",
+    "size": 18480
+  },
+  {
+    "name": "rust-string-interner",
+    "version": "0.19.0",
+    "url": "https://static.crates.io/crates/string-interner/string-interner-0.19.0.crate",
+    "filename": "rust-string-interner-0.19.0.tar.gz",
+    "sha256": "23de088478b31c349c9ba67816fa55d9355232d63c3afea8bf513e31f0f1d2c0",
+    "kind": "rust-source",
+    "size": 31797
+  },
+  {
+    "name": "rust-strsim",
+    "version": "0.11.1",
+    "url": "https://static.crates.io/crates/strsim/strsim-0.11.1.crate",
+    "filename": "rust-strsim-0.11.1.tar.gz",
+    "sha256": "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f",
+    "kind": "rust-source",
+    "size": 14266
+  },
+  {
+    "name": "rust-strum",
+    "version": "0.24.1",
+    "url": "https://static.crates.io/crates/strum/strum-0.24.1.crate",
+    "filename": "rust-strum-0.24.1.tar.gz",
+    "sha256": "063e6045c0e62079840579a7e47a355ae92f60eb74daaf156fb1e84ba164e63f",
+    "kind": "rust-source",
+    "size": 5636
+  },
+  {
+    "name": "rust-strum_macros",
+    "version": "0.24.3",
+    "url": "https://static.crates.io/crates/strum_macros/strum_macros-0.24.3.crate",
+    "filename": "rust-strum_macros-0.24.3.tar.gz",
+    "sha256": "1e385be0d24f186b4ce2f9982191e7101bb737312ad61c1f2f984f34bcf85d59",
+    "kind": "rust-source",
+    "size": 20696
+  },
+  {
+    "name": "rust-subtle",
+    "version": "2.5.0",
+    "url": "https://static.crates.io/crates/subtle/subtle-2.5.0.crate",
+    "filename": "rust-subtle-2.5.0.tar.gz",
+    "sha256": "81cdd64d312baedb58e21336b31bc043b77e01cc99033ce76ef539f78e965ebc",
+    "kind": "rust-source",
+    "size": 13909
+  },
+  {
+    "name": "rust-symbolic_expressions",
+    "version": "5.0.3",
+    "url": "https://static.crates.io/crates/symbolic_expressions/symbolic_expressions-5.0.3.crate",
+    "filename": "rust-symbolic_expressions-5.0.3.tar.gz",
+    "sha256": "7c68d531d83ec6c531150584c42a4290911964d5f0d79132b193b67252a23b71",
+    "kind": "rust-source",
+    "size": 14864
+  },
+  {
+    "name": "rust-syn",
+    "version": "1.0.92",
+    "url": "https://static.crates.io/crates/syn/syn-1.0.92.crate",
+    "filename": "rust-syn-1.0.92.tar.gz",
+    "sha256": "7ff7c592601f11445996a06f8ad0c27f094a58857c2f89e97974ab9235b92c52",
+    "kind": "rust-source",
+    "size": 236605
+  },
+  {
+    "name": "rust-syn",
+    "version": "2.0.100",
+    "url": "https://static.crates.io/crates/syn/syn-2.0.100.crate",
+    "filename": "rust-syn-2.0.100.tar.gz",
+    "sha256": "b09a44accad81e1ba1cd74a32461ba89dee89095ba17b32f5d03683b1b1fc2a0",
+    "kind": "rust-source",
+    "size": 297947
+  },
+  {
+    "name": "rust-synstructure",
+    "version": "0.13.1",
+    "url": "https://static.crates.io/crates/synstructure/synstructure-0.13.1.crate",
+    "filename": "rust-synstructure-0.13.1.tar.gz",
+    "sha256": "c8af7666ab7b6390ab78131fb5b0fce11d6b7a6951602017c35fa82800708971",
+    "kind": "rust-source",
+    "size": 18327
+  },
+  {
+    "name": "rust-system-interface",
+    "version": "0.27.1",
+    "url": "https://static.crates.io/crates/system-interface/system-interface-0.27.1.crate",
+    "filename": "rust-system-interface-0.27.1.tar.gz",
+    "sha256": "9aef1f9d4c1dbdd1cb3a63be9efd2f04d8ddbc919d46112982c76818ffc2f1a7",
+    "kind": "rust-source",
+    "size": 31787
+  },
+  {
+    "name": "rust-tar",
+    "version": "0.4.41",
+    "url": "https://static.crates.io/crates/tar/tar-0.4.41.crate",
+    "filename": "rust-tar-0.4.41.tar.gz",
+    "sha256": "cb797dad5fb5b76fcf519e702f4a589483b5ef06567f160c392832c1f5e44909",
+    "kind": "rust-source",
+    "size": 51871
+  },
+  {
+    "name": "rust-target-lexicon",
+    "version": "0.13.0",
+    "url": "https://static.crates.io/crates/target-lexicon/target-lexicon-0.13.0.crate",
+    "filename": "rust-target-lexicon-0.13.0.tar.gz",
+    "sha256": "4ff4a4048091358129767b8a200d6927f58876c8b5ea16fb7b0222d43b79bfa8",
+    "kind": "rust-source",
+    "size": 27916
+  },
+  {
+    "name": "rust-tch",
+    "version": "0.17.0",
+    "url": "https://static.crates.io/crates/tch/tch-0.17.0.crate",
+    "filename": "rust-tch-0.17.0.tar.gz",
+    "sha256": "3585f5bbf1ddf2498d7586bf870c7bb785a0bf1be09c54d0f93fce51d5f3c7fc",
+    "kind": "rust-source",
+    "size": 1897290
+  },
+  {
+    "name": "rust-tempfile",
+    "version": "3.21.0",
+    "url": "https://static.crates.io/crates/tempfile/tempfile-3.21.0.crate",
+    "filename": "rust-tempfile-3.21.0.tar.gz",
+    "sha256": "15b61f8f20e3a6f7e0649d825294eaf317edce30f82cf6026e7e4cb9222a7d1e",
+    "kind": "rust-source",
+    "size": 42581
+  },
+  {
+    "name": "rust-termcolor",
+    "version": "1.4.1",
+    "url": "https://static.crates.io/crates/termcolor/termcolor-1.4.1.crate",
+    "filename": "rust-termcolor-1.4.1.tar.gz",
+    "sha256": "06794f8f6c5c898b3275aebefa6b8a1cb24cd2c6c79397ab15774837a0bc5755",
+    "kind": "rust-source",
+    "size": 18773
+  },
+  {
+    "name": "rust-terminal_size",
+    "version": "0.4.2",
+    "url": "https://static.crates.io/crates/terminal_size/terminal_size-0.4.2.crate",
+    "filename": "rust-terminal_size-0.4.2.tar.gz",
+    "sha256": "45c6481c4829e4cc63825e62c49186a34538b7b2750b73b266581ffb612fb5ed",
+    "kind": "rust-source",
+    "size": 9976
+  },
+  {
+    "name": "rust-test-log",
+    "version": "0.2.11",
+    "url": "https://static.crates.io/crates/test-log/test-log-0.2.11.crate",
+    "filename": "rust-test-log-0.2.11.tar.gz",
+    "sha256": "38f0c854faeb68a048f0f2dc410c5ddae3bf83854ef0e4977d58306a5edef50e",
+    "kind": "rust-source",
+    "size": 10228
+  },
+  {
+    "name": "rust-thiserror",
+    "version": "1.0.65",
+    "url": "https://static.crates.io/crates/thiserror/thiserror-1.0.65.crate",
+    "filename": "rust-thiserror-1.0.65.tar.gz",
+    "sha256": "5d11abd9594d9b38965ef50805c5e469ca9cc6f197f883f717e0269a3057b3d5",
+    "kind": "rust-source",
+    "size": 21825
+  },
+  {
+    "name": "rust-thiserror",
+    "version": "2.0.12",
+    "url": "https://static.crates.io/crates/thiserror/thiserror-2.0.12.crate",
+    "filename": "rust-thiserror-2.0.12.tar.gz",
+    "sha256": "567b8a2dae586314f7be2a752ec7474332959c6460e02bde30d702a66d488708",
+    "kind": "rust-source",
+    "size": 28693
+  },
+  {
+    "name": "rust-thiserror-impl",
+    "version": "1.0.65",
+    "url": "https://static.crates.io/crates/thiserror-impl/thiserror-impl-1.0.65.crate",
+    "filename": "rust-thiserror-impl-1.0.65.tar.gz",
+    "sha256": "ae71770322cbd277e69d762a16c444af02aa0575ac0d174f0b9562d3b37f8602",
+    "kind": "rust-source",
+    "size": 16077
+  },
+  {
+    "name": "rust-thiserror-impl",
+    "version": "2.0.12",
+    "url": "https://static.crates.io/crates/thiserror-impl/thiserror-impl-2.0.12.crate",
+    "filename": "rust-thiserror-impl-2.0.12.tar.gz",
+    "sha256": "7f7cf42b4507d8ea322120659672cf1b9dbb93f8f2d4ecfd6e51350ff5b17a1d",
+    "kind": "rust-source",
+    "size": 21141
+  },
+  {
+    "name": "rust-thread_local",
+    "version": "1.1.4",
+    "url": "https://static.crates.io/crates/thread_local/thread_local-1.1.4.crate",
+    "filename": "rust-thread_local-1.1.4.tar.gz",
+    "sha256": "5516c27b78311c50bf42c071425c560ac799b11c30b31f87e3081965fe5e0180",
+    "kind": "rust-source",
+    "size": 13106
+  },
+  {
+    "name": "rust-time",
+    "version": "0.3.36",
+    "url": "https://static.crates.io/crates/time/time-0.3.36.crate",
+    "filename": "rust-time-0.3.36.tar.gz",
+    "sha256": "5dfd88e563464686c916c7e46e623e520ddc6d79fa6641390f2e3fa86e83e885",
+    "kind": "rust-source",
+    "size": 119805
+  },
+  {
+    "name": "rust-time-core",
+    "version": "0.1.2",
+    "url": "https://static.crates.io/crates/time-core/time-core-0.1.2.crate",
+    "filename": "rust-time-core-0.1.2.tar.gz",
+    "sha256": "ef927ca75afb808a4d64dd374f00a2adf8d0fcff8e7b184af886c3c87ec4a3f3",
+    "kind": "rust-source",
+    "size": 7191
+  },
+  {
+    "name": "rust-tinystr",
+    "version": "0.7.6",
+    "url": "https://static.crates.io/crates/tinystr/tinystr-0.7.6.crate",
+    "filename": "rust-tinystr-0.7.6.tar.gz",
+    "sha256": "9117f5d4db391c1cf6927e7bea3db74b9a1c1add8f7eda9ffd5364f40f57b82f",
+    "kind": "rust-source",
+    "size": 16971
+  },
+  {
+    "name": "rust-tinytemplate",
+    "version": "1.2.1",
+    "url": "https://static.crates.io/crates/tinytemplate/tinytemplate-1.2.1.crate",
+    "filename": "rust-tinytemplate-1.2.1.tar.gz",
+    "sha256": "be4d6b5f19ff7664e8c98d03e2139cb510db9b0a60b55f8e8709b689d939b6bc",
+    "kind": "rust-source",
+    "size": 26490
+  },
+  {
+    "name": "rust-tokio",
+    "version": "1.44.2",
+    "url": "https://static.crates.io/crates/tokio/tokio-1.44.2.crate",
+    "filename": "rust-tokio-1.44.2.tar.gz",
+    "sha256": "e6b88822cbe49de4185e3a4cbf8321dd487cf5fe0c5c65695fef6346371e9c48",
+    "kind": "rust-source",
+    "size": 841618
+  },
+  {
+    "name": "rust-tokio-macros",
+    "version": "2.5.0",
+    "url": "https://static.crates.io/crates/tokio-macros/tokio-macros-2.5.0.crate",
+    "filename": "rust-tokio-macros-2.5.0.tar.gz",
+    "sha256": "6e06d43f1345a3bcd39f6a56dbb7dcab2ba47e68e8ac134855e7e2bdbaf8cab8",
+    "kind": "rust-source",
+    "size": 12617
+  },
+  {
+    "name": "rust-tokio-native-tls",
+    "version": "0.3.1",
+    "url": "https://static.crates.io/crates/tokio-native-tls/tokio-native-tls-0.3.1.crate",
+    "filename": "rust-tokio-native-tls-0.3.1.tar.gz",
+    "sha256": "bbae76ab933c85776efabc971569dd6119c580d8f5d448769dec1764bf796ef2",
+    "kind": "rust-source",
+    "size": 20676
+  },
+  {
+    "name": "rust-tokio-rustls",
+    "version": "0.25.0",
+    "url": "https://static.crates.io/crates/tokio-rustls/tokio-rustls-0.25.0.crate",
+    "filename": "rust-tokio-rustls-0.25.0.tar.gz",
+    "sha256": "775e0c0f0adb3a2f22a00c4745d728b479985fc15ee7ca6a2608388c5569860f",
+    "kind": "rust-source",
+    "size": 30541
+  },
+  {
+    "name": "rust-tokio-util",
+    "version": "0.7.4",
+    "url": "https://static.crates.io/crates/tokio-util/tokio-util-0.7.4.crate",
+    "filename": "rust-tokio-util-0.7.4.tar.gz",
+    "sha256": "0bb2e075f03b3d66d8d8785356224ba688d2906a371015e225beeb65ca92c740",
+    "kind": "rust-source",
+    "size": 93424
+  },
+  {
+    "name": "rust-toml",
+    "version": "0.8.10",
+    "url": "https://static.crates.io/crates/toml/toml-0.8.10.crate",
+    "filename": "rust-toml-0.8.10.tar.gz",
+    "sha256": "9a9aad4a3066010876e8dcf5a8a06e70a558751117a145c6ce2b82c2e2054290",
+    "kind": "rust-source",
+    "size": 50667
+  },
+  {
+    "name": "rust-toml_datetime",
+    "version": "0.6.5",
+    "url": "https://static.crates.io/crates/toml_datetime/toml_datetime-0.6.5.crate",
+    "filename": "rust-toml_datetime-0.6.5.tar.gz",
+    "sha256": "3550f4e9685620ac18a50ed434eb3aec30db8ba93b0287467bca5826ea25baf1",
+    "kind": "rust-source",
+    "size": 10910
+  },
+  {
+    "name": "rust-toml_edit",
+    "version": "0.22.4",
+    "url": "https://static.crates.io/crates/toml_edit/toml_edit-0.22.4.crate",
+    "filename": "rust-toml_edit-0.22.4.tar.gz",
+    "sha256": "0c9ffdf896f8daaabf9b66ba8e77ea1ed5ed0f72821b398aba62352e95062951",
+    "kind": "rust-source",
+    "size": 102719
+  },
+  {
+    "name": "rust-torch-sys",
+    "version": "0.17.0",
+    "url": "https://static.crates.io/crates/torch-sys/torch-sys-0.17.0.crate",
+    "filename": "rust-torch-sys-0.17.0.tar.gz",
+    "sha256": "ef116d446d79bb2447748550baee86850d2d32d366cc9bdd4b217bdbe10cac63",
+    "kind": "rust-source",
+    "size": 224187
+  },
+  {
+    "name": "rust-tracing",
+    "version": "0.1.37",
+    "url": "https://static.crates.io/crates/tracing/tracing-0.1.37.crate",
+    "filename": "rust-tracing-0.1.37.tar.gz",
+    "sha256": "8ce8c33a8d48bd45d624a6e523445fd21ec13d3653cd51f681abf67418f54eb8",
+    "kind": "rust-source",
+    "size": 73888
+  },
+  {
+    "name": "rust-tracing-attributes",
+    "version": "0.1.26",
+    "url": "https://static.crates.io/crates/tracing-attributes/tracing-attributes-0.1.26.crate",
+    "filename": "rust-tracing-attributes-0.1.26.tar.gz",
+    "sha256": "5f4f31f56159e98206da9efd823404b79b6ef3143b4a7ab76e67b1751b25a4ab",
+    "kind": "rust-source",
+    "size": 32060
+  },
+  {
+    "name": "rust-tracing-core",
+    "version": "0.1.31",
+    "url": "https://static.crates.io/crates/tracing-core/tracing-core-0.1.31.crate",
+    "filename": "rust-tracing-core-0.1.31.tar.gz",
+    "sha256": "0955b8137a1df6f1a2e9a37d8a6656291ff0297c1a97c24e0d8425fe2312f79a",
+    "kind": "rust-source",
+    "size": 61263
+  },
+  {
+    "name": "rust-tracing-log",
+    "version": "0.1.3",
+    "url": "https://static.crates.io/crates/tracing-log/tracing-log-0.1.3.crate",
+    "filename": "rust-tracing-log-0.1.3.tar.gz",
+    "sha256": "78ddad33d2d10b1ed7eb9d1f518a5674713876e97e5bb9b7345a7984fbb4f922",
+    "kind": "rust-source",
+    "size": 20549
+  },
+  {
+    "name": "rust-tracing-subscriber",
+    "version": "0.3.17",
+    "url": "https://static.crates.io/crates/tracing-subscriber/tracing-subscriber-0.3.17.crate",
+    "filename": "rust-tracing-subscriber-0.3.17.tar.gz",
+    "sha256": "30a651bc37f915e81f087d86e62a18eec5f79550c7faff886f7090b4ea757c77",
+    "kind": "rust-source",
+    "size": 191711
+  },
+  {
+    "name": "rust-try-lock",
+    "version": "0.2.4",
+    "url": "https://static.crates.io/crates/try-lock/try-lock-0.2.4.crate",
+    "filename": "rust-try-lock-0.2.4.tar.gz",
+    "sha256": "3528ecfd12c466c6f163363caf2d02a71161dd5e1cc6ae7b34207ea2d42d81ed",
+    "kind": "rust-source",
+    "size": 4467
+  },
+  {
+    "name": "rust-typenum",
+    "version": "1.15.0",
+    "url": "https://static.crates.io/crates/typenum/typenum-1.15.0.crate",
+    "filename": "rust-typenum-1.15.0.tar.gz",
+    "sha256": "dcf81ac59edc17cc8697ff311e8f5ef2d99fcbd9817b34cec66f90b6c3dfd987",
+    "kind": "rust-source",
+    "size": 40741
+  },
+  {
+    "name": "rust-unicode-ident",
+    "version": "1.0.8",
+    "url": "https://static.crates.io/crates/unicode-ident/unicode-ident-1.0.8.crate",
+    "filename": "rust-unicode-ident-1.0.8.tar.gz",
+    "sha256": "e5464a87b239f13a63a501f2701565754bae92d243d4bb7eb12f6d57d2269bf4",
+    "kind": "rust-source",
+    "size": 41962
+  },
+  {
+    "name": "rust-unicode-segmentation",
+    "version": "1.11.0",
+    "url": "https://static.crates.io/crates/unicode-segmentation/unicode-segmentation-1.11.0.crate",
+    "filename": "rust-unicode-segmentation-1.11.0.tar.gz",
+    "sha256": "d4c87d22b6e3f4a18d4d40ef354e97c90fcb14dd91d7dc0aa9d8a1172ebf7202",
+    "kind": "rust-source",
+    "size": 102740
+  },
+  {
+    "name": "rust-unicode-width",
+    "version": "0.1.9",
+    "url": "https://static.crates.io/crates/unicode-width/unicode-width-0.1.9.crate",
+    "filename": "rust-unicode-width-0.1.9.tar.gz",
+    "sha256": "3ed742d4ea2bd1176e236172c8429aaf54486e7ac098db29ffe6529e0ce50973",
+    "kind": "rust-source",
+    "size": 16745
+  },
+  {
+    "name": "rust-unicode-width",
+    "version": "0.2.0",
+    "url": "https://static.crates.io/crates/unicode-width/unicode-width-0.2.0.crate",
+    "filename": "rust-unicode-width-0.2.0.tar.gz",
+    "sha256": "1fc81956842c57dac11422a97c3b8195a1ff727f06e85c84ed2e8aa277c9a0fd",
+    "kind": "rust-source",
+    "size": 271509
+  },
+  {
+    "name": "rust-unicode-xid",
+    "version": "0.2.3",
+    "url": "https://static.crates.io/crates/unicode-xid/unicode-xid-0.2.3.crate",
+    "filename": "rust-unicode-xid-0.2.3.tar.gz",
+    "sha256": "957e51f3646910546462e67d5f7599b9e4fb8acdd304b087a6494730f9eebf04",
+    "kind": "rust-source",
+    "size": 15174
+  },
+  {
+    "name": "rust-unsafe-libyaml",
+    "version": "0.2.11",
+    "url": "https://static.crates.io/crates/unsafe-libyaml/unsafe-libyaml-0.2.11.crate",
+    "filename": "rust-unsafe-libyaml-0.2.11.tar.gz",
+    "sha256": "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861",
+    "kind": "rust-source",
+    "size": 62101
+  },
+  {
+    "name": "rust-untrusted",
+    "version": "0.9.0",
+    "url": "https://static.crates.io/crates/untrusted/untrusted-0.9.0.crate",
+    "filename": "rust-untrusted-0.9.0.tar.gz",
+    "sha256": "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1",
+    "kind": "rust-source",
+    "size": 14447
+  },
+  {
+    "name": "rust-ureq",
+    "version": "2.10.0",
+    "url": "https://static.crates.io/crates/ureq/ureq-2.10.0.crate",
+    "filename": "rust-ureq-2.10.0.tar.gz",
+    "sha256": "72139d247e5f97a3eff96229a7ae85ead5328a39efe76f8bf5a06313d505b6ea",
+    "kind": "rust-source",
+    "size": 112894
+  },
+  {
+    "name": "rust-url",
+    "version": "2.5.4",
+    "url": "https://static.crates.io/crates/url/url-2.5.4.crate",
+    "filename": "rust-url-2.5.4.tar.gz",
+    "sha256": "32f8b686cadd1473f4bd0117a5d28d36b1ade384ea9b5069a1c40aefed7fda60",
+    "kind": "rust-source",
+    "size": 81097
+  },
+  {
+    "name": "rust-utf16_iter",
+    "version": "1.0.5",
+    "url": "https://static.crates.io/crates/utf16_iter/utf16_iter-1.0.5.crate",
+    "filename": "rust-utf16_iter-1.0.5.tar.gz",
+    "sha256": "c8232dd3cdaed5356e0f716d285e4b40b932ac434100fe9b7e0e8e935b9e6246",
+    "kind": "rust-source",
+    "size": 9736
+  },
+  {
+    "name": "rust-utf8_iter",
+    "version": "1.0.4",
+    "url": "https://static.crates.io/crates/utf8_iter/utf8_iter-1.0.4.crate",
+    "filename": "rust-utf8_iter-1.0.4.tar.gz",
+    "sha256": "b6c140620e7ffbb22c2dee59cafe6084a59b5ffc27a8859a5f0d494b5d52b6be",
+    "kind": "rust-source",
+    "size": 10437
+  },
+  {
+    "name": "rust-utf8parse",
+    "version": "0.2.1",
+    "url": "https://static.crates.io/crates/utf8parse/utf8parse-0.2.1.crate",
+    "filename": "rust-utf8parse-0.2.1.tar.gz",
+    "sha256": "711b9620af191e0cdc7468a8d14e709c3dcdb115b36f838e601583af800a370a",
+    "kind": "rust-source",
+    "size": 13435
+  },
+  {
+    "name": "rust-uuid",
+    "version": "1.0.0",
+    "url": "https://static.crates.io/crates/uuid/uuid-1.0.0.crate",
+    "filename": "rust-uuid-1.0.0.tar.gz",
+    "sha256": "8cfcd319456c4d6ea10087ed423473267e1a071f3bc0aa89f80d60997843c6f0",
+    "kind": "rust-source",
+    "size": 48627
+  },
+  {
+    "name": "rust-v8",
+    "version": "137.2.0",
+    "url": "https://static.crates.io/crates/v8/v8-137.2.0.crate",
+    "filename": "rust-v8-137.2.0.tar.gz",
+    "sha256": "d2b387c1c5731284e756c03280032068e68e5b52f6c4714492403c30f650ad52",
+    "kind": "rust-source",
+    "size": 34059808
+  },
+  {
+    "name": "rust-valuable",
+    "version": "0.1.0",
+    "url": "https://static.crates.io/crates/valuable/valuable-0.1.0.crate",
+    "filename": "rust-valuable-0.1.0.tar.gz",
+    "sha256": "830b7e5d4d90034032940e4ace0d9a9a057e7a45cd94e6c007832e39edb82f6d",
+    "kind": "rust-source",
+    "size": 27718
+  },
+  {
+    "name": "rust-vcpkg",
+    "version": "0.2.15",
+    "url": "https://static.crates.io/crates/vcpkg/vcpkg-0.2.15.crate",
+    "filename": "rust-vcpkg-0.2.15.tar.gz",
+    "sha256": "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426",
+    "kind": "rust-source",
+    "size": 228735
+  },
+  {
+    "name": "rust-version_check",
+    "version": "0.9.4",
+    "url": "https://static.crates.io/crates/version_check/version_check-0.9.4.crate",
+    "filename": "rust-version_check-0.9.4.tar.gz",
+    "sha256": "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f",
+    "kind": "rust-source",
+    "size": 14895
+  },
+  {
+    "name": "rust-wait-timeout",
+    "version": "0.2.0",
+    "url": "https://static.crates.io/crates/wait-timeout/wait-timeout-0.2.0.crate",
+    "filename": "rust-wait-timeout-0.2.0.tar.gz",
+    "sha256": "9f200f5b12eb75f8c1ed65abd4b2db8a6e1b138a20de009dacee265a2498f3f6",
+    "kind": "rust-source",
+    "size": 12441
+  },
+  {
+    "name": "rust-walkdir",
+    "version": "2.3.3",
+    "url": "https://static.crates.io/crates/walkdir/walkdir-2.3.3.crate",
+    "filename": "rust-walkdir-2.3.3.tar.gz",
+    "sha256": "36df944cda56c7d8d8b7496af378e6b16de9284591917d307c9b4d313c44e698",
+    "kind": "rust-source",
+    "size": 23125
+  },
+  {
+    "name": "rust-want",
+    "version": "0.3.0",
+    "url": "https://static.crates.io/crates/want/want-0.3.0.crate",
+    "filename": "rust-want-0.3.0.tar.gz",
+    "sha256": "1ce8a968cb1cd110d136ff8b819a556d6fb6d919363c61534f6860c7eb172ba0",
+    "kind": "rust-source",
+    "size": 6550
+  },
+  {
+    "name": "rust-wasi",
+    "version": "0.11.0+wasi-snapshot-preview1",
+    "url": "https://static.crates.io/crates/wasi/wasi-0.11.0+wasi-snapshot-preview1.crate",
+    "filename": "rust-wasi-0.11.0+wasi-snapshot-preview1.tar.gz",
+    "sha256": "9c8d87e72b64a3b4db28d11ce29237c246188f4f51057d65a7eab63b7987e423",
+    "kind": "rust-source",
+    "size": 28131
+  },
+  {
+    "name": "rust-wasi",
+    "version": "0.13.3+wasi-0.2.2",
+    "url": "https://static.crates.io/crates/wasi/wasi-0.13.3+wasi-0.2.2.crate",
+    "filename": "rust-wasi-0.13.3+wasi-0.2.2.tar.gz",
+    "sha256": "26816d2e1a4a36a2940b96c5296ce403917633dff8f3440e9b236ed6f6bacad2",
+    "kind": "rust-source",
+    "size": 136754
+  },
+  {
+    "name": "rust-wasi-nn",
+    "version": "0.6.0",
+    "url": "https://static.crates.io/crates/wasi-nn/wasi-nn-0.6.0.crate",
+    "filename": "rust-wasi-nn-0.6.0.tar.gz",
+    "sha256": "7031683cc05a71515d9200fb159b28d717ded3c40dbb979d1602cf46f3a68f40",
+    "kind": "rust-source",
+    "size": 8403
+  },
+  {
+    "name": "rust-wasip1",
+    "version": "1.0.0",
+    "url": "https://static.crates.io/crates/wasip1/wasip1-1.0.0.crate",
+    "filename": "rust-wasip1-1.0.0.tar.gz",
+    "sha256": "b5e26842486624357dbeb8f0381cf1fb42f022291fd787d4a816768fec8cc760",
+    "kind": "rust-source",
+    "size": 26437
+  },
+  {
+    "name": "rust-wasip2",
+    "version": "1.0.0+wasi-0.2.4",
+    "url": "https://static.crates.io/crates/wasip2/wasip2-1.0.0+wasi-0.2.4.crate",
+    "filename": "rust-wasip2-1.0.0+wasi-0.2.4.tar.gz",
+    "sha256": "03fa2761397e5bd52002cd7e73110c71af2109aca4e521a9f40473fe685b0a24",
+    "kind": "rust-source",
+    "size": 132019
+  },
+  {
+    "name": "rust-wasm-bindgen",
+    "version": "0.2.97",
+    "url": "https://static.crates.io/crates/wasm-bindgen/wasm-bindgen-0.2.97.crate",
+    "filename": "rust-wasm-bindgen-0.2.97.tar.gz",
+    "sha256": "d15e63b4482863c109d70a7b8706c1e364eb6ea449b201a76c5b89cedcec2d5c",
+    "kind": "rust-source",
+    "size": 45515
+  },
+  {
+    "name": "rust-wasm-bindgen-backend",
+    "version": "0.2.97",
+    "url": "https://static.crates.io/crates/wasm-bindgen-backend/wasm-bindgen-backend-0.2.97.crate",
+    "filename": "rust-wasm-bindgen-backend-0.2.97.tar.gz",
+    "sha256": "8d36ef12e3aaca16ddd3f67922bc63e48e953f126de60bd33ccc0101ef9998cd",
+    "kind": "rust-source",
+    "size": 31099
+  },
+  {
+    "name": "rust-wasm-bindgen-macro",
+    "version": "0.2.97",
+    "url": "https://static.crates.io/crates/wasm-bindgen-macro/wasm-bindgen-macro-0.2.97.crate",
+    "filename": "rust-wasm-bindgen-macro-0.2.97.tar.gz",
+    "sha256": "705440e08b42d3e4b36de7d66c944be628d579796b8090bfa3471478a2260051",
+    "kind": "rust-source",
+    "size": 7146
+  },
+  {
+    "name": "rust-wasm-bindgen-macro-support",
+    "version": "0.2.97",
+    "url": "https://static.crates.io/crates/wasm-bindgen-macro-support/wasm-bindgen-macro-support-0.2.97.crate",
+    "filename": "rust-wasm-bindgen-macro-support-0.2.97.tar.gz",
+    "sha256": "98c9ae5a76e46f4deecd0f0255cc223cfa18dc9b261213b8aa0c7b36f61b3f1d",
+    "kind": "rust-source",
+    "size": 22824
+  },
+  {
+    "name": "rust-wasm-bindgen-shared",
+    "version": "0.2.97",
+    "url": "https://static.crates.io/crates/wasm-bindgen-shared/wasm-bindgen-shared-0.2.97.crate",
+    "filename": "rust-wasm-bindgen-shared-0.2.97.tar.gz",
+    "sha256": "6ee99da9c5ba11bd675621338ef6fa52296b76b83305e9b6e5c77d4c286d6d49",
+    "kind": "rust-source",
+    "size": 7771
+  },
+  {
+    "name": "rust-wasm-compose",
+    "version": "0.239.0",
+    "url": "https://static.crates.io/crates/wasm-compose/wasm-compose-0.239.0.crate",
+    "filename": "rust-wasm-compose-0.239.0.tar.gz",
+    "sha256": "d0ec5bc51a265c73434ede0659536ac9af486eebf0397ff073bfb19093421cd8",
+    "kind": "rust-source",
+    "size": 53875
+  },
+  {
+    "name": "rust-wasm-encoder",
+    "version": "0.239.0",
+    "url": "https://static.crates.io/crates/wasm-encoder/wasm-encoder-0.239.0.crate",
+    "filename": "rust-wasm-encoder-0.239.0.tar.gz",
+    "sha256": "5be00faa2b4950c76fe618c409d2c3ea5a3c9422013e079482d78544bb2d184c",
+    "kind": "rust-source",
+    "size": 83923
+  },
+  {
+    "name": "rust-wasm-metadata",
+    "version": "0.239.0",
+    "url": "https://static.crates.io/crates/wasm-metadata/wasm-metadata-0.239.0.crate",
+    "filename": "rust-wasm-metadata-0.239.0.tar.gz",
+    "sha256": "20b3ec880a9ac69ccd92fbdbcf46ee833071cf09f82bb005b2327c7ae6025ae2",
+    "kind": "rust-source",
+    "size": 21463
+  },
+  {
+    "name": "rust-wasm-mutate",
+    "version": "0.239.0",
+    "url": "https://static.crates.io/crates/wasm-mutate/wasm-mutate-0.239.0.crate",
+    "filename": "rust-wasm-mutate-0.239.0.tar.gz",
+    "sha256": "27725e1c0a17d26b106d3f1f33b7d9734f0303973a0d61aeda548a421e6ee121",
+    "kind": "rust-source",
+    "size": 91332
+  },
+  {
+    "name": "rust-wasm-smith",
+    "version": "0.239.0",
+    "url": "https://static.crates.io/crates/wasm-smith/wasm-smith-0.239.0.crate",
+    "filename": "rust-wasm-smith-0.239.0.tar.gz",
+    "sha256": "740315856034a7417b7d291bdfe0d7ff34a6b08541fa10af47d7a00c694cac1e",
+    "kind": "rust-source",
+    "size": 101510
+  },
+  {
+    "name": "rust-wasm-wave",
+    "version": "0.239.0",
+    "url": "https://static.crates.io/crates/wasm-wave/wasm-wave-0.239.0.crate",
+    "filename": "rust-wasm-wave-0.239.0.tar.gz",
+    "sha256": "eb21d7c71e0571ca78cc756606094d8d973116b7eaba8d40a23e7c4859061920",
+    "kind": "rust-source",
+    "size": 43686
+  },
+  {
+    "name": "rust-wasmi",
+    "version": "0.43.1",
+    "url": "https://static.crates.io/crates/wasmi/wasmi-0.43.1.crate",
+    "filename": "rust-wasmi-0.43.1.tar.gz",
+    "sha256": "3cd93c135ccbe88cfd00992c9c49778d364417bdb5cfb360eac60fe2d4d34676",
+    "kind": "rust-source",
+    "size": 322977
+  },
+  {
+    "name": "rust-wasmi_collections",
+    "version": "0.43.1",
+    "url": "https://static.crates.io/crates/wasmi_collections/wasmi_collections-0.43.1.crate",
+    "filename": "rust-wasmi_collections-0.43.1.tar.gz",
+    "sha256": "55e817a9a96149aa3ddb84c44c6fe37ed608d53136d794d4d3cd8019de11fb42",
+    "kind": "rust-source",
+    "size": 19224
+  },
+  {
+    "name": "rust-wasmi_core",
+    "version": "0.43.1",
+    "url": "https://static.crates.io/crates/wasmi_core/wasmi_core-0.43.1.crate",
+    "filename": "rust-wasmi_core-0.43.1.tar.gz",
+    "sha256": "24f5adb8c394f8fb66653ce0a00e3a109fed285f3351a4b5854c1300ac8d3b20",
+    "kind": "rust-source",
+    "size": 30560
+  },
+  {
+    "name": "rust-wasmi_ir",
+    "version": "0.43.1",
+    "url": "https://static.crates.io/crates/wasmi_ir/wasmi_ir-0.43.1.crate",
+    "filename": "rust-wasmi_ir-0.43.1.tar.gz",
+    "sha256": "6e532ea88ccdbe2889ed3c00a8733971e1160c9a73a4dcee2fdec47fb3ee8ba4",
+    "kind": "rust-source",
+    "size": 34913
+  },
+  {
+    "name": "rust-wasmparser",
+    "version": "0.227.1",
+    "url": "https://static.crates.io/crates/wasmparser/wasmparser-0.227.1.crate",
+    "filename": "rust-wasmparser-0.227.1.tar.gz",
+    "sha256": "0f51cad774fb3c9461ab9bccc9c62dfb7388397b5deda31bf40e8108ccd678b2",
+    "kind": "rust-source",
+    "size": 247368
+  },
+  {
+    "name": "rust-wasmparser",
+    "version": "0.239.0",
+    "url": "https://static.crates.io/crates/wasmparser/wasmparser-0.239.0.crate",
+    "filename": "rust-wasmparser-0.239.0.tar.gz",
+    "sha256": "8c9d90bb93e764f6beabf1d02028c70a2156a6583e63ac4218dd07ef733368b0",
+    "kind": "rust-source",
+    "size": 260621
+  },
+  {
+    "name": "rust-wasmprinter",
+    "version": "0.239.0",
+    "url": "https://static.crates.io/crates/wasmprinter/wasmprinter-0.239.0.crate",
+    "filename": "rust-wasmprinter-0.239.0.tar.gz",
+    "sha256": "b3981f3d51f39f24f5fc90f93049a90f08dbbca8deba602cd46bb8ca67a94718",
+    "kind": "rust-source",
+    "size": 44254
+  },
+  {
+    "name": "rust-wast",
+    "version": "35.0.2",
+    "url": "https://static.crates.io/crates/wast/wast-35.0.2.crate",
+    "filename": "rust-wast-35.0.2.tar.gz",
+    "sha256": "2ef140f1b49946586078353a453a1d28ba90adfc54dde75710bc1931de204d68",
+    "kind": "rust-source",
+    "size": 90940
+  },
+  {
+    "name": "rust-wast",
+    "version": "239.0.0",
+    "url": "https://static.crates.io/crates/wast/wast-239.0.0.crate",
+    "filename": "rust-wast-239.0.0.tar.gz",
+    "sha256": "9139176fe8a2590e0fb174cdcaf373b224cb93c3dde08e4297c1361d2ba1ea5d",
+    "kind": "rust-source",
+    "size": 156209
+  },
+  {
+    "name": "rust-wat",
+    "version": "1.239.0",
+    "url": "https://static.crates.io/crates/wat/wat-1.239.0.crate",
+    "filename": "rust-wat-1.239.0.tar.gz",
+    "sha256": "3e1c941927d34709f255558166f8901a2005f8ab4a9650432e9281b7cc6f3b75",
+    "kind": "rust-source",
+    "size": 8406
+  },
+  {
+    "name": "rust-web-sys",
+    "version": "0.3.57",
+    "url": "https://static.crates.io/crates/web-sys/web-sys-0.3.57.crate",
+    "filename": "rust-web-sys-0.3.57.tar.gz",
+    "sha256": "7b17e741662c70c8bd24ac5c5b18de314a2c26c32bf8346ee1e6f53de919c283",
+    "kind": "rust-source",
+    "size": 686563
+  },
+  {
+    "name": "rust-webpki-roots",
+    "version": "0.26.1",
+    "url": "https://static.crates.io/crates/webpki-roots/webpki-roots-0.26.1.crate",
+    "filename": "rust-webpki-roots-0.26.1.tar.gz",
+    "sha256": "b3de34ae270483955a94f4b21bdaaeb83d508bb84a01435f393818edb0012009",
+    "kind": "rust-source",
+    "size": 249748
+  },
+  {
+    "name": "rust-which",
+    "version": "6.0.3",
+    "url": "https://static.crates.io/crates/which/which-6.0.3.crate",
+    "filename": "rust-which-6.0.3.tar.gz",
+    "sha256": "b4ee928febd44d98f2f459a4a79bd4d928591333a494a10a868418ac1b39cf1f",
+    "kind": "rust-source",
+    "size": 16937
+  },
+  {
+    "name": "rust-winapi",
+    "version": "0.3.9",
+    "url": "https://static.crates.io/crates/winapi/winapi-0.3.9.crate",
+    "filename": "rust-winapi-0.3.9.tar.gz",
+    "sha256": "5c839a674fcd7a98952e593242ea400abe93992746761e38641405d28b00f419",
+    "kind": "rust-source",
+    "size": 1200382
+  },
+  {
+    "name": "rust-winapi-i686-pc-windows-gnu",
+    "version": "0.4.0",
+    "url": "https://static.crates.io/crates/winapi-i686-pc-windows-gnu/winapi-i686-pc-windows-gnu-0.4.0.crate",
+    "filename": "rust-winapi-i686-pc-windows-gnu-0.4.0.tar.gz",
+    "sha256": "ac3b87c63620426dd9b991e5ce0329eff545bccbbb34f3be09ff6fb6ab51b7b6",
+    "kind": "rust-source",
+    "size": 2918815
+  },
+  {
+    "name": "rust-winapi-util",
+    "version": "0.1.5",
+    "url": "https://static.crates.io/crates/winapi-util/winapi-util-0.1.5.crate",
+    "filename": "rust-winapi-util-0.1.5.tar.gz",
+    "sha256": "70ec6ce85bb158151cae5e5c87f95a8e97d2c0c4b001223f33a334e3ce5de178",
+    "kind": "rust-source",
+    "size": 10164
+  },
+  {
+    "name": "rust-winapi-x86_64-pc-windows-gnu",
+    "version": "0.4.0",
+    "url": "https://static.crates.io/crates/winapi-x86_64-pc-windows-gnu/winapi-x86_64-pc-windows-gnu-0.4.0.crate",
+    "filename": "rust-winapi-x86_64-pc-windows-gnu-0.4.0.tar.gz",
+    "sha256": "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f",
+    "kind": "rust-source",
+    "size": 2947998
+  },
+  {
+    "name": "rust-windows",
+    "version": "0.52.0",
+    "url": "https://static.crates.io/crates/windows/windows-0.52.0.crate",
+    "filename": "rust-windows-0.52.0.tar.gz",
+    "sha256": "e48a53791691ab099e5e2ad123536d0fff50652600abaf43bbf952894110d0be",
+    "kind": "rust-source",
+    "size": 11843715
+  },
+  {
+    "name": "rust-windows-core",
+    "version": "0.52.0",
+    "url": "https://static.crates.io/crates/windows-core/windows-core-0.52.0.crate",
+    "filename": "rust-windows-core-0.52.0.tar.gz",
+    "sha256": "33ab640c8d7e35bf8ba19b884ba838ceb4fba93a4e8c65a9059d08afcfc683d9",
+    "kind": "rust-source",
+    "size": 42154
+  },
+  {
+    "name": "rust-windows-implement",
+    "version": "0.52.0",
+    "url": "https://static.crates.io/crates/windows-implement/windows-implement-0.52.0.crate",
+    "filename": "rust-windows-implement-0.52.0.tar.gz",
+    "sha256": "12168c33176773b86799be25e2a2ba07c7aab9968b37541f1094dbd7a60c8946",
+    "kind": "rust-source",
+    "size": 8705
+  },
+  {
+    "name": "rust-windows-interface",
+    "version": "0.52.0",
+    "url": "https://static.crates.io/crates/windows-interface/windows-interface-0.52.0.crate",
+    "filename": "rust-windows-interface-0.52.0.tar.gz",
+    "sha256": "9d8dc32e0095a7eeccebd0e3f09e9509365ecb3fc6ac4d6f5f14a3f6392942d1",
+    "kind": "rust-source",
+    "size": 9685
+  },
+  {
+    "name": "rust-windows-sys",
+    "version": "0.52.0",
+    "url": "https://static.crates.io/crates/windows-sys/windows-sys-0.52.0.crate",
+    "filename": "rust-windows-sys-0.52.0.tar.gz",
+    "sha256": "282be5f36a8ce781fad8c8ae18fa3f9beff57ec1b52cb3de0789201425d9a33d",
+    "kind": "rust-source",
+    "size": 2576877
+  },
+  {
+    "name": "rust-windows-sys",
+    "version": "0.59.0",
+    "url": "https://static.crates.io/crates/windows-sys/windows-sys-0.59.0.crate",
+    "filename": "rust-windows-sys-0.59.0.tar.gz",
+    "sha256": "1e38bc4d79ed67fd075bcc251a1c39b32a1776bbe92e5bef1f0bf1f8c531853b",
+    "kind": "rust-source",
+    "size": 2387323
+  },
+  {
+    "name": "rust-windows-sys",
+    "version": "0.60.2",
+    "url": "https://static.crates.io/crates/windows-sys/windows-sys-0.60.2.crate",
+    "filename": "rust-windows-sys-0.60.2.tar.gz",
+    "sha256": "f2f500e4d28234f72040990ec9d39e3a6b950f9f22d3dba18416c35882612bcb",
+    "kind": "rust-source",
+    "size": 2518479
+  },
+  {
+    "name": "rust-windows-targets",
+    "version": "0.52.6",
+    "url": "https://static.crates.io/crates/windows-targets/windows-targets-0.52.6.crate",
+    "filename": "rust-windows-targets-0.52.6.tar.gz",
+    "sha256": "9b724f72796e036ab90c1021d4780d4d3d648aca59e491e6b98e725b84e99973",
+    "kind": "rust-source",
+    "size": 6403
+  },
+  {
+    "name": "rust-windows-targets",
+    "version": "0.53.2",
+    "url": "https://static.crates.io/crates/windows-targets/windows-targets-0.53.2.crate",
+    "filename": "rust-windows-targets-0.53.2.tar.gz",
+    "sha256": "c66f69fcc9ce11da9966ddb31a40968cad001c5bedeb5c2b82ede4253ab48aef",
+    "kind": "rust-source",
+    "size": 7046
+  },
+  {
+    "name": "rust-windows_aarch64_gnullvm",
+    "version": "0.52.6",
+    "url": "https://static.crates.io/crates/windows_aarch64_gnullvm/windows_aarch64_gnullvm-0.52.6.crate",
+    "filename": "rust-windows_aarch64_gnullvm-0.52.6.tar.gz",
+    "sha256": "32a4622180e7a0ec044bb555404c800bc9fd9ec262ec147edd5989ccd0c02cd3",
+    "kind": "rust-source",
+    "size": 435718
+  },
+  {
+    "name": "rust-windows_aarch64_gnullvm",
+    "version": "0.53.0",
+    "url": "https://static.crates.io/crates/windows_aarch64_gnullvm/windows_aarch64_gnullvm-0.53.0.crate",
+    "filename": "rust-windows_aarch64_gnullvm-0.53.0.tar.gz",
+    "sha256": "86b8d5f90ddd19cb4a147a5fa63ca848db3df085e25fee3cc10b39b6eebae764",
+    "kind": "rust-source",
+    "size": 782443
+  },
+  {
+    "name": "rust-windows_aarch64_msvc",
+    "version": "0.52.6",
+    "url": "https://static.crates.io/crates/windows_aarch64_msvc/windows_aarch64_msvc-0.52.6.crate",
+    "filename": "rust-windows_aarch64_msvc-0.52.6.tar.gz",
+    "sha256": "09ec2a7bb152e2252b53fa7803150007879548bc709c039df7627cabbd05d469",
+    "kind": "rust-source",
+    "size": 832615
+  },
+  {
+    "name": "rust-windows_aarch64_msvc",
+    "version": "0.53.0",
+    "url": "https://static.crates.io/crates/windows_aarch64_msvc/windows_aarch64_msvc-0.53.0.crate",
+    "filename": "rust-windows_aarch64_msvc-0.53.0.tar.gz",
+    "sha256": "c7651a1f62a11b8cbd5e0d42526e55f2c99886c77e007179efff86c2b137e66c",
+    "kind": "rust-source",
+    "size": 834446
+  },
+  {
+    "name": "rust-windows_i686_gnu",
+    "version": "0.52.6",
+    "url": "https://static.crates.io/crates/windows_i686_gnu/windows_i686_gnu-0.52.6.crate",
+    "filename": "rust-windows_i686_gnu-0.52.6.tar.gz",
+    "sha256": "8e9b5ad5ab802e97eb8e295ac6720e509ee4c243f69d781394014ebfe8bbfa0b",
+    "kind": "rust-source",
+    "size": 880402
+  },
+  {
+    "name": "rust-windows_i686_gnu",
+    "version": "0.53.0",
+    "url": "https://static.crates.io/crates/windows_i686_gnu/windows_i686_gnu-0.53.0.crate",
+    "filename": "rust-windows_i686_gnu-0.53.0.tar.gz",
+    "sha256": "c1dc67659d35f387f5f6c479dc4e28f1d4bb90ddd1a5d3da2e5d97b42d6272c3",
+    "kind": "rust-source",
+    "size": 936973
+  },
+  {
+    "name": "rust-windows_i686_gnullvm",
+    "version": "0.52.6",
+    "url": "https://static.crates.io/crates/windows_i686_gnullvm/windows_i686_gnullvm-0.52.6.crate",
+    "filename": "rust-windows_i686_gnullvm-0.52.6.tar.gz",
+    "sha256": "0eee52d38c090b3caa76c563b86c3a4bd71ef1a819287c19d586d7334ae8ed66",
+    "kind": "rust-source",
+    "size": 475940
+  },
+  {
+    "name": "rust-windows_i686_gnullvm",
+    "version": "0.53.0",
+    "url": "https://static.crates.io/crates/windows_i686_gnullvm/windows_i686_gnullvm-0.53.0.crate",
+    "filename": "rust-windows_i686_gnullvm-0.53.0.tar.gz",
+    "sha256": "9ce6ccbdedbf6d6354471319e781c0dfef054c81fbc7cf83f338a4296c0cae11",
+    "kind": "rust-source",
+    "size": 854056
+  },
+  {
+    "name": "rust-windows_i686_msvc",
+    "version": "0.52.6",
+    "url": "https://static.crates.io/crates/windows_i686_msvc/windows_i686_msvc-0.52.6.crate",
+    "filename": "rust-windows_i686_msvc-0.52.6.tar.gz",
+    "sha256": "240948bc05c5e7c6dabba28bf89d89ffce3e303022809e73deaefe4f6ec56c66",
+    "kind": "rust-source",
+    "size": 901163
+  },
+  {
+    "name": "rust-windows_i686_msvc",
+    "version": "0.53.0",
+    "url": "https://static.crates.io/crates/windows_i686_msvc/windows_i686_msvc-0.53.0.crate",
+    "filename": "rust-windows_i686_msvc-0.53.0.tar.gz",
+    "sha256": "581fee95406bb13382d2f65cd4a908ca7b1e4c2f1917f143ba16efe98a589b5d",
+    "kind": "rust-source",
+    "size": 903450
+  },
+  {
+    "name": "rust-windows_x86_64_gnu",
+    "version": "0.52.6",
+    "url": "https://static.crates.io/crates/windows_x86_64_gnu/windows_x86_64_gnu-0.52.6.crate",
+    "filename": "rust-windows_x86_64_gnu-0.52.6.tar.gz",
+    "sha256": "147a5c80aabfbf0c7d901cb5895d1de30ef2907eb21fbbab29ca94c5b08b1a78",
+    "kind": "rust-source",
+    "size": 836363
+  },
+  {
+    "name": "rust-windows_x86_64_gnu",
+    "version": "0.53.0",
+    "url": "https://static.crates.io/crates/windows_x86_64_gnu/windows_x86_64_gnu-0.53.0.crate",
+    "filename": "rust-windows_x86_64_gnu-0.53.0.tar.gz",
+    "sha256": "2e55b5ac9ea33f2fc1716d1742db15574fd6fc8dadc51caab1c16a3d3b4190ba",
+    "kind": "rust-source",
+    "size": 902585
+  },
+  {
+    "name": "rust-windows_x86_64_gnullvm",
+    "version": "0.52.6",
+    "url": "https://static.crates.io/crates/windows_x86_64_gnullvm/windows_x86_64_gnullvm-0.52.6.crate",
+    "filename": "rust-windows_x86_64_gnullvm-0.52.6.tar.gz",
+    "sha256": "24d5b23dc417412679681396f2b49f3de8c1473deb516bd34410872eff51ed0d",
+    "kind": "rust-source",
+    "size": 435707
+  },
+  {
+    "name": "rust-windows_x86_64_gnullvm",
+    "version": "0.53.0",
+    "url": "https://static.crates.io/crates/windows_x86_64_gnullvm/windows_x86_64_gnullvm-0.53.0.crate",
+    "filename": "rust-windows_x86_64_gnullvm-0.53.0.tar.gz",
+    "sha256": "0a6e035dd0599267ce1ee132e51c27dd29437f63325753051e71dd9e42406c57",
+    "kind": "rust-source",
+    "size": 782434
+  },
+  {
+    "name": "rust-windows_x86_64_msvc",
+    "version": "0.52.6",
+    "url": "https://static.crates.io/crates/windows_x86_64_msvc/windows_x86_64_msvc-0.52.6.crate",
+    "filename": "rust-windows_x86_64_msvc-0.52.6.tar.gz",
+    "sha256": "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec",
+    "kind": "rust-source",
+    "size": 832564
+  },
+  {
+    "name": "rust-windows_x86_64_msvc",
+    "version": "0.53.0",
+    "url": "https://static.crates.io/crates/windows_x86_64_msvc/windows_x86_64_msvc-0.53.0.crate",
+    "filename": "rust-windows_x86_64_msvc-0.53.0.tar.gz",
+    "sha256": "271414315aff87387382ec3d271b52d7ae78726f5d44ac98b4f4030c91880486",
+    "kind": "rust-source",
+    "size": 834400
+  },
+  {
+    "name": "rust-winnow",
+    "version": "0.5.39",
+    "url": "https://static.crates.io/crates/winnow/winnow-0.5.39.crate",
+    "filename": "rust-winnow-0.5.39.tar.gz",
+    "sha256": "5389a154b01683d28c77f8f68f49dea75f0a4da32557a58f68ee51ebba472d29",
+    "kind": "rust-source",
+    "size": 159300
+  },
+  {
+    "name": "rust-winsafe",
+    "version": "0.0.19",
+    "url": "https://static.crates.io/crates/winsafe/winsafe-0.0.19.crate",
+    "filename": "rust-winsafe-0.0.19.tar.gz",
+    "sha256": "d135d17ab770252ad95e9a872d365cf3090e3be864a34ab46f48555993efc904",
+    "kind": "rust-source",
+    "size": 492820
+  },
+  {
+    "name": "rust-winx",
+    "version": "0.36.3",
+    "url": "https://static.crates.io/crates/winx/winx-0.36.3.crate",
+    "filename": "rust-winx-0.36.3.tar.gz",
+    "sha256": "f9643b83820c0cd246ecabe5fa454dd04ba4fa67996369466d0747472d337346",
+    "kind": "rust-source",
+    "size": 13696
+  },
+  {
+    "name": "rust-wit-bindgen",
+    "version": "0.45.1",
+    "url": "https://static.crates.io/crates/wit-bindgen/wit-bindgen-0.45.1.crate",
+    "filename": "rust-wit-bindgen-0.45.1.tar.gz",
+    "sha256": "5c573471f125075647d03df72e026074b7203790d41351cd6edc96f46bcccd36",
+    "kind": "rust-source",
+    "size": 60395
+  },
+  {
+    "name": "rust-wit-bindgen",
+    "version": "0.46.0",
+    "url": "https://static.crates.io/crates/wit-bindgen/wit-bindgen-0.46.0.crate",
+    "filename": "rust-wit-bindgen-0.46.0.tar.gz",
+    "sha256": "f17a85883d4e6d00e8a97c586de764dabcc06133f7f1d55dce5cdc070ad7fe59",
+    "kind": "rust-source",
+    "size": 60508
+  },
+  {
+    "name": "rust-wit-bindgen-core",
+    "version": "0.46.0",
+    "url": "https://static.crates.io/crates/wit-bindgen-core/wit-bindgen-core-0.46.0.crate",
+    "filename": "rust-wit-bindgen-core-0.46.0.tar.gz",
+    "sha256": "cabd629f94da277abc739c71353397046401518efb2c707669f805205f0b9890",
+    "kind": "rust-source",
+    "size": 34968
+  },
+  {
+    "name": "rust-wit-bindgen-rt",
+    "version": "0.33.0",
+    "url": "https://static.crates.io/crates/wit-bindgen-rt/wit-bindgen-rt-0.33.0.crate",
+    "filename": "rust-wit-bindgen-rt-0.33.0.tar.gz",
+    "sha256": "3268f3d866458b787f390cf61f4bbb563b922d091359f9608842999eaee3943c",
+    "kind": "rust-source",
+    "size": 3357
+  },
+  {
+    "name": "rust-wit-bindgen-rust",
+    "version": "0.46.0",
+    "url": "https://static.crates.io/crates/wit-bindgen-rust/wit-bindgen-rust-0.46.0.crate",
+    "filename": "rust-wit-bindgen-rust-0.46.0.tar.gz",
+    "sha256": "9a4232e841089fa5f3c4fc732a92e1c74e1a3958db3b12f1de5934da2027f1f4",
+    "kind": "rust-source",
+    "size": 55936
+  },
+  {
+    "name": "rust-wit-bindgen-rust-macro",
+    "version": "0.46.0",
+    "url": "https://static.crates.io/crates/wit-bindgen-rust-macro/wit-bindgen-rust-macro-0.46.0.crate",
+    "filename": "rust-wit-bindgen-rust-macro-0.46.0.tar.gz",
+    "sha256": "1e0d4698c2913d8d9c2b220d116409c3f51a7aa8d7765151b886918367179ee9",
+    "kind": "rust-source",
+    "size": 14155
+  },
+  {
+    "name": "rust-wit-component",
+    "version": "0.239.0",
+    "url": "https://static.crates.io/crates/wit-component/wit-component-0.239.0.crate",
+    "filename": "rust-wit-component-0.239.0.tar.gz",
+    "sha256": "88a866b19dba2c94d706ec58c92a4c62ab63e482b4c935d2a085ac94caecb136",
+    "kind": "rust-source",
+    "size": 240624
+  },
+  {
+    "name": "rust-wit-parser",
+    "version": "0.239.0",
+    "url": "https://static.crates.io/crates/wit-parser/wit-parser-0.239.0.crate",
+    "filename": "rust-wit-parser-0.239.0.tar.gz",
+    "sha256": "55c92c939d667b7bf0c6bf2d1f67196529758f99a2a45a3355cc56964fd5315d",
+    "kind": "rust-source",
+    "size": 155729
+  },
+  {
+    "name": "rust-witx",
+    "version": "0.9.1",
+    "url": "https://static.crates.io/crates/witx/witx-0.9.1.crate",
+    "filename": "rust-witx-0.9.1.tar.gz",
+    "sha256": "e366f27a5cabcddb2706a78296a40b8fcc451e1a6aba2fc1d94b4a01bdaaef4b",
+    "kind": "rust-source",
+    "size": 45928
+  },
+  {
+    "name": "rust-write16",
+    "version": "1.0.0",
+    "url": "https://static.crates.io/crates/write16/write16-1.0.0.crate",
+    "filename": "rust-write16-1.0.0.tar.gz",
+    "sha256": "d1890f4022759daae28ed4fe62859b1236caebfc61ede2f63ed4e695f3f6d936",
+    "kind": "rust-source",
+    "size": 7218
+  },
+  {
+    "name": "rust-writeable",
+    "version": "0.5.5",
+    "url": "https://static.crates.io/crates/writeable/writeable-0.5.5.crate",
+    "filename": "rust-writeable-0.5.5.tar.gz",
+    "sha256": "1e9df38ee2d2c3c5948ea468a8406ff0db0b29ae1ffde1bcf20ef305bcc95c51",
+    "kind": "rust-source",
+    "size": 22354
+  },
+  {
+    "name": "rust-xattr",
+    "version": "1.3.1",
+    "url": "https://static.crates.io/crates/xattr/xattr-1.3.1.crate",
+    "filename": "rust-xattr-1.3.1.tar.gz",
+    "sha256": "8da84f1a25939b27f6820d92aed108f83ff920fdf11a7b19366c27c4cda81d4f",
+    "kind": "rust-source",
+    "size": 12580
+  },
+  {
+    "name": "rust-yoke",
+    "version": "0.7.5",
+    "url": "https://static.crates.io/crates/yoke/yoke-0.7.5.crate",
+    "filename": "rust-yoke-0.7.5.tar.gz",
+    "sha256": "120e6aef9aa629e3d4f52dc8cc43a015c7724194c97dfaf45180d2daf2b77f40",
+    "kind": "rust-source",
+    "size": 29673
+  },
+  {
+    "name": "rust-yoke-derive",
+    "version": "0.7.5",
+    "url": "https://static.crates.io/crates/yoke-derive/yoke-derive-0.7.5.crate",
+    "filename": "rust-yoke-derive-0.7.5.tar.gz",
+    "sha256": "2380878cad4ac9aac1e2435f3eb4020e8374b5f13c296cb75b4620ff8e229154",
+    "kind": "rust-source",
+    "size": 7525
+  },
+  {
+    "name": "rust-zerofrom",
+    "version": "0.1.5",
+    "url": "https://static.crates.io/crates/zerofrom/zerofrom-0.1.5.crate",
+    "filename": "rust-zerofrom-0.1.5.tar.gz",
+    "sha256": "cff3ee08c995dee1859d998dea82f7374f2826091dd9cd47def953cae446cd2e",
+    "kind": "rust-source",
+    "size": 5091
+  },
+  {
+    "name": "rust-zerofrom-derive",
+    "version": "0.1.5",
+    "url": "https://static.crates.io/crates/zerofrom-derive/zerofrom-derive-0.1.5.crate",
+    "filename": "rust-zerofrom-derive-0.1.5.tar.gz",
+    "sha256": "595eed982f7d355beb85837f651fa22e90b3c044842dc7f2c2842c086f295808",
+    "kind": "rust-source",
+    "size": 8285
+  },
+  {
+    "name": "rust-zeroize",
+    "version": "1.7.0",
+    "url": "https://static.crates.io/crates/zeroize/zeroize-1.7.0.crate",
+    "filename": "rust-zeroize-1.7.0.tar.gz",
+    "sha256": "525b4ec142c6b68a2d10f01f7bbf6755599ca3f81ea53b8431b7dd348f5fdb2d",
+    "kind": "rust-source",
+    "size": 19039
+  },
+  {
+    "name": "rust-zerovec",
+    "version": "0.10.4",
+    "url": "https://static.crates.io/crates/zerovec/zerovec-0.10.4.crate",
+    "filename": "rust-zerovec-0.10.4.tar.gz",
+    "sha256": "aa2b893d79df23bfb12d5461018d408ea19dfafe76c2c7ef6d4eba614f8ff079",
+    "kind": "rust-source",
+    "size": 126398
+  },
+  {
+    "name": "rust-zerovec-derive",
+    "version": "0.10.3",
+    "url": "https://static.crates.io/crates/zerovec-derive/zerovec-derive-0.10.3.crate",
+    "filename": "rust-zerovec-derive-0.10.3.tar.gz",
+    "sha256": "6eafa6dfb17584ea3e2bd6e76e0cc15ad7af12b09abdd1ca55961bed9b1063c6",
+    "kind": "rust-source",
+    "size": 19438
+  },
+  {
+    "name": "rust-zip",
+    "version": "0.6.6",
+    "url": "https://static.crates.io/crates/zip/zip-0.6.6.crate",
+    "filename": "rust-zip-0.6.6.tar.gz",
+    "sha256": "760394e246e4c28189f19d488c058bf16f564016aefac5d32bb1f3b51d5e9261",
+    "kind": "rust-source",
+    "size": 65789
+  },
+  {
+    "name": "rust-zstd",
+    "version": "0.11.2+zstd.1.5.2",
+    "url": "https://static.crates.io/crates/zstd/zstd-0.11.2+zstd.1.5.2.crate",
+    "filename": "rust-zstd-0.11.2+zstd.1.5.2.tar.gz",
+    "sha256": "20cc960326ece64f010d2d2107537f26dc589a6573a316bd5b1dba685fa5fde4",
+    "kind": "rust-source",
+    "size": 28987
+  },
+  {
+    "name": "rust-zstd",
+    "version": "0.13.0",
+    "url": "https://static.crates.io/crates/zstd/zstd-0.13.0.crate",
+    "filename": "rust-zstd-0.13.0.tar.gz",
+    "sha256": "bffb3309596d527cfcba7dfc6ed6052f1d39dfbd7c867aa2e865e4a449c10110",
+    "kind": "rust-source",
+    "size": 28911
+  },
+  {
+    "name": "rust-zstd-safe",
+    "version": "5.0.2+zstd.1.5.2",
+    "url": "https://static.crates.io/crates/zstd-safe/zstd-safe-5.0.2+zstd.1.5.2.crate",
+    "filename": "rust-zstd-safe-5.0.2+zstd.1.5.2.tar.gz",
+    "sha256": "1d2a5585e04f9eea4b2a3d1eca508c4dee9592a89ef6f450c11719da0726f4db",
+    "kind": "rust-source",
+    "size": 17273
+  },
+  {
+    "name": "rust-zstd-safe",
+    "version": "7.0.0",
+    "url": "https://static.crates.io/crates/zstd-safe/zstd-safe-7.0.0.crate",
+    "filename": "rust-zstd-safe-7.0.0.tar.gz",
+    "sha256": "43747c7422e2924c11144d5229878b98180ef8b06cca4ab5af37afc8a8d8ea3e",
+    "kind": "rust-source",
+    "size": 20463
+  },
+  {
+    "name": "rust-zstd-sys",
+    "version": "2.0.9+zstd.1.5.5",
+    "url": "https://static.crates.io/crates/zstd-sys/zstd-sys-2.0.9+zstd.1.5.5.crate",
+    "filename": "rust-zstd-sys-2.0.9+zstd.1.5.5.tar.gz",
+    "sha256": "9e16efa8a874a0481a574084d34cc26fdb3b99627480f785888deb6386506656",
+    "kind": "rust-source",
+    "size": 728791
+  },
+  {
+    "name": "zig-runtime",
+    "version": "0.14.1",
+    "url": "https://ziglang.org/download/0.14.1/zig-0.14.1.tar.xz",
+    "sha256": "237f8abcc8c3fd68c70c66cdbf63dce4fb5ad4a2e6225ac925e3d5b4c388f203",
+    "size": 17787696,
+    "filename": "zig-runtime-0.14.1.tar.xz",
+    "kind": "native-source"
+  },
+  {
+    "name": "openblas-numpy",
+    "version": "446c436e10450c348169808f1a6b3fae0925c9f7",
+    "url": "https://github.com/OpenMathLib/OpenBLAS/archive/446c436e10450c348169808f1a6b3fae0925c9f7.tar.gz",
+    "filename": "openblas-numpy-446c436e10450c348169808f1a6b3fae0925c9f7.tar.gz",
+    "kind": "native-source",
+    "sha256": "ddecf3872f66f556aed35dabe9e04e663f014b05052b989288f28fc9a883afe0",
+    "size": 25546951
+  },
+  {
+    "name": "openblas-numpy-build",
+    "version": "v0.3.34.106.0",
+    "url": "https://github.com/MacPython/openblas-libs/archive/refs/tags/v0.3.34.106.0.tar.gz",
+    "filename": "openblas-numpy-build-v0.3.34.106.0.tar.gz",
+    "kind": "native-source",
+    "sha256": "7f24a96042d650fdbdec7de83e761d2eb234fdbcd5a0ebac0018850f133770ce",
+    "size": 410800
+  },
+  {
+    "name": "openblas-scipy",
+    "version": "5ffbf38b41a1fe494d038efcb09cf22f4d527c22",
+    "url": "https://github.com/OpenMathLib/OpenBLAS/archive/5ffbf38b41a1fe494d038efcb09cf22f4d527c22.tar.gz",
+    "filename": "openblas-scipy-5ffbf38b41a1fe494d038efcb09cf22f4d527c22.tar.gz",
+    "kind": "native-source",
+    "sha256": "51257fb2f0aa7b4c23d9cf0302500b817dc82c0022ee681b24f9ab82dfd10312",
+    "size": 25268137
+  },
+  {
+    "name": "openblas-scipy-build",
+    "version": "v0.3.31.22.0",
+    "url": "https://github.com/MacPython/openblas-libs/archive/refs/tags/v0.3.31.22.0.tar.gz",
+    "filename": "openblas-scipy-build-v0.3.31.22.0.tar.gz",
+    "kind": "native-source",
+    "sha256": "cc4b804fa064c543fd129a21ee8d7379447e18bb24c9a039005096e867187a51",
+    "size": 408398
+  }
+]

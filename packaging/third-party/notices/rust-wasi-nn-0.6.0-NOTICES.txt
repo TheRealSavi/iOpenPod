@@ -1,0 +1,7 @@
+rust-wasi-nn 0.6.0
+Source: https://static.crates.io/crates/wasi-nn/wasi-nn-0.6.0.crate
+Archive SHA-256: 7031683cc05a71515d9200fb159b28d717ded3c40dbb979d1602cf46f3a68f40
+
+These notices are preserved from the upstream source distribution.
+This may include notices for upstream components not used in iOpenPod.
+Each component retains its own license; inclusion is not relicensing.

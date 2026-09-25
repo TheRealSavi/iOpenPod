@@ -1,0 +1,1885 @@
+scipy 1.18.1
+Source: https://files.pythonhosted.org/packages/7e/74/66de6258867beb2ef08f35f9f2ac017a52cacd5081714d239ff1a442d458/scipy-1.18.1.tar.gz
+Archive SHA-256: 52c4b7422442aba924d03ad4019852b08a92e64ea187b933135687bfe2747307
+
+These notices are preserved from the upstream source distribution.
+This may include notices for upstream components not used in iOpenPod.
+Each component retains its own license; inclusion is not relicensing.
+
+========================================================================
+Source file: scipy-1.18.1/LICENSE.txt
+========================================================================
+
+Copyright (c) 2001-2002 Enthought, Inc. 2003, SciPy Developers.
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions
+are met:
+
+1. Redistributions of source code must retain the above copyright
+   notice, this list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above
+   copyright notice, this list of conditions and the following
+   disclaimer in the documentation and/or other materials provided
+   with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its
+   contributors may be used to endorse or promote products derived
+   from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+========================================================================
+Source file: scipy-1.18.1/LICENSES_bundled.txt
+========================================================================
+
+
+----
+
+The SciPy repository and source distributions bundle a number of libraries that
+are compatibly licensed.  We list these here.
+
+
+Name: fast_matrix_market
+Files: scipy/io/_fast_matrix_market/*
+License: BSD-2-Clause
+  For details, see scipy/io/_fast_matrix_market/LICENSE.txt
+
+Name: pystreambuf
+Files: scipy/io/_fast_matrix_market/src/pystreambuf.h
+License: BSD-3-Clause
+  For details, see the header inside scipy/io/_fast_matrix_market/src/pystreambuf.h
+
+Name: fast_float
+Files: scipy/io/_fast_matrix_market/fast_matrix_market/dependencies/fast_float/*
+License: MIT
+  For details, see scipy/io/_fast_matrix_market/fast_matrix_market/dependencies/fast_float/LICENSE-MIT
+
+Name: ryu
+Files: scipy/io/_fast_matrix_market/fast_matrix_market/dependencies/ryu/*
+License: BSL-1.0
+  For details, see scipy/io/_fast_matrix_market/fast_matrix_market/dependencies/ryu/LICENSE-Boost
+
+Name: L-BFGS-B
+Files: scipy/optimize/lbfgsb/[__lbfgsb.h,__lbfgsb.c]
+License: BSD-3-Clause
+  For details, see scipy/optimize/__lbfgsb.c
+
+Name: LAPJVsp
+Files: scipy/sparse/csgraph/_matching.pyx
+License: BSD-3-Clause
+Copyright 1987-, A. Volgenant/Amsterdam School of Economics,
+                 University of Amsterdam
+
+  Distributed under 3-clause BSD license with permission from
+  University of Amsterdam.
+
+  Redistribution and use in source and binary forms, with or without
+  modification, are permitted provided that the following conditions are met:
+
+  1. Redistributions of source code must retain the above copyright notice,
+     this list of conditions and the following disclaimer.
+
+  2. Redistributions in binary form must reproduce the above copyright notice,
+     this list of conditions and the following disclaimer in the documentation
+    and/or other materials provided with the distribution.
+
+  3. Neither the name of the copyright holder nor the names of its contributors
+     may be used to endorse or promote products derived from this software
+    without specific prior written permission.
+
+  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+  ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+  LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+  CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+  SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+  INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+  CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+  ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+  POSSIBILITY OF SUCH DAMAGE.
+
+
+Name: SuperLU
+Files: scipy/sparse/linalg/_dsolve/SuperLU/*
+License: BSD-3-Clause
+  For details, see scipy/sparse/linalg/_dsolve/SuperLU/License.txt
+
+Name: ARPACK
+Files: scipy/sparse/linalg/_eigen/arpack/ARPACK/*
+License: BSD-3-Clause
+  For details, see scipy/sparse/linalg/_eigen/arpack/ARPACK/COPYING
+
+Name: Qhull
+Files: subprojects/qhull_r/libqhull_r/*
+License: Qhull
+  For details, see subprojects/qhull_r/libqhull_r/COPYING.txt
+
+Name: xsf
+Files: subprojects/xsf/*
+License: BSD-3-Clause AND MIT AND BSD-3-Clause-LBNL AND Apache-2.0 WITH LLVM-exception
+  For details, see subprojects/xsf/LICENSE and
+  subprojects/xsf/LICENSES_bundled.txt
+
+Name: pyduccfft
+Files: scipy/fft/_duccfft/pyduccfft.cxx
+License: 3-Clause BSD
+  For details, see scipy/fft/_duccfft/LICENSE.md
+
+Name: ducc0
+Files: subprojects/duccfft/ducc0/*
+License: 3-Clause BSD
+  For details, see subprojects/duccfft/LICENSE.md
+
+Name: uarray
+Files: scipy/_lib/_uarray/*
+License: BSD-3-Clause
+  For details, see scipy/_lib/_uarray/LICENSE
+
+Name: ampgo
+Files: benchmarks/benchmarks/go_benchmark_functions/*.py
+License: MIT
+  Functions for testing global optimizers, forked from the AMPGO project,
+  https://code.google.com/archive/p/ampgo
+
+Name: pybind11
+Files: no source files are included, however pybind11 binary artifacts are
+  included with every binary build of SciPy.
+License: BSD-3-Clause
+  Copyright (c) 2016 Wenzel Jakob <wenzel.jakob@epfl.ch>, All rights reserved.
+
+  Redistribution and use in source and binary forms, with or without
+  modification, are permitted provided that the following conditions are met:
+
+  1. Redistributions of source code must retain the above copyright notice, this
+     list of conditions and the following disclaimer.
+
+  2. Redistributions in binary form must reproduce the above copyright notice,
+     this list of conditions and the following disclaimer in the documentation
+     and/or other materials provided with the distribution.
+
+  3. Neither the name of the copyright holder nor the names of its contributors
+     may be used to endorse or promote products derived from this software
+     without specific prior written permission.
+
+  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+  ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+  WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+  DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+  FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+  DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+  SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+  CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+Name: HiGHS
+Files: subprojects/highs/*
+License: MIT
+  For details, see subprojects/highs/LICENSE.txt
+
+Name: Boost
+Files: subprojects/boost_math/math/*
+License: BSL-1.0
+  For details, see subprojects/boost_math/math/LICENSE
+
+Name: Biasedurn
+Files: scipy/stats/biasedurn/*
+License: BSD-3-Clause
+  For details, see scipy/stats/biasedurn/license.txt
+
+Name: UNU.RAN
+Files: subprojects/unuran/unuran/*
+License: BSD-3-Clause
+  For details, see subprojects/unuran/unuran/license.txt
+
+Name: NumPy
+Files: scipy/stats/libnpyrandom/[logfactorial.h,logfactorial.c]
+License: BSD-3-Clause
+  For details, see header inside scipy/stats/libnpyrandom/logfactorial.h
+  and scipy/stats/libnpyrandom/logfactorial.c
+
+Name: array-api-compat
+Files: subprojects/array_api_compat/array_api_compat/*
+License: MIT
+  For details, see subprojects/array_api_compat/array_api_compat/LICENSE
+
+Name: array-api-extra
+Files: subprojects/array_api_extra/*
+License: MIT
+  For details, see subprojects/array_api_extra/LICENSE
+
+Name: Tempita
+Files: scipy/_build_utils/tempita/*
+License: MIT
+  For details, see scipy/_build_utils/tempita/LICENSE.txt
+
+Name: Chebfun
+Files: scipy/interpolate/[_bary_rational.py, tests/test_bary_rational.py]
+License: BSD-3-Clause
+  For details, see scipy/interpolate/_bary_rational.py
+
+Name: getLebedevSphere
+Files: scipy/integrate/_lebedev.py
+License: BSD-2-Clause
+  For details, see scipy/integrate/_lebedev.py
+
+Name: prima
+Files: subprojects/pyprima/pyprima
+License: BSD-3-Clause
+  For details, see subprojects/pyprima/pyprima/LICENCE.txt
+
+Name: packaging.version
+Files: scipy/_external/packaging_version/*
+License: BSD-3-Clause
+  For details, see scipy/_external/src/LICENSE.BSD
+
+========================================================================
+Source file: scipy-1.18.1/doc/source/_static/scipy-mathjax/LICENSE
+========================================================================
+
+
+                                 Apache License
+                           Version 2.0, January 2004
+                        http://www.apache.org/licenses/
+
+   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+
+   1. Definitions.
+
+      "License" shall mean the terms and conditions for use, reproduction,
+      and distribution as defined by Sections 1 through 9 of this document.
+
+      "Licensor" shall mean the copyright owner or entity authorized by
+      the copyright owner that is granting the License.
+
+      "Legal Entity" shall mean the union of the acting entity and all
+      other entities that control, are controlled by, or are under common
+      control with that entity. For the purposes of this definition,
+      "control" means (i) the power, direct or indirect, to cause the
+      direction or management of such entity, whether by contract or
+      otherwise, or (ii) ownership of fifty percent (50%) or more of the
+      outstanding shares, or (iii) beneficial ownership of such entity.
+
+      "You" (or "Your") shall mean an individual or Legal Entity
+      exercising permissions granted by this License.
+
+      "Source" form shall mean the preferred form for making modifications,
+      including but not limited to software source code, documentation
+      source, and configuration files.
+
+      "Object" form shall mean any form resulting from mechanical
+      transformation or translation of a Source form, including but
+      not limited to compiled object code, generated documentation,
+      and conversions to other media types.
+
+      "Work" shall mean the work of authorship, whether in Source or
+      Object form, made available under the License, as indicated by a
+      copyright notice that is included in or attached to the work
+      (an example is provided in the Appendix below).
+
+      "Derivative Works" shall mean any work, whether in Source or Object
+      form, that is based on (or derived from) the Work and for which the
+      editorial revisions, annotations, elaborations, or other modifications
+      represent, as a whole, an original work of authorship. For the purposes
+      of this License, Derivative Works shall not include works that remain
+      separable from, or merely link (or bind by name) to the interfaces of,
+      the Work and Derivative Works thereof.
+
+      "Contribution" shall mean any work of authorship, including
+      the original version of the Work and any modifications or additions
+      to that Work or Derivative Works thereof, that is intentionally
+      submitted to Licensor for inclusion in the Work by the copyright owner
+      or by an individual or Legal Entity authorized to submit on behalf of
+      the copyright owner. For the purposes of this definition, "submitted"
+      means any form of electronic, verbal, or written communication sent
+      to the Licensor or its representatives, including but not limited to
+      communication on electronic mailing lists, source code control systems,
+      and issue tracking systems that are managed by, or on behalf of, the
+      Licensor for the purpose of discussing and improving the Work, but
+      excluding communication that is conspicuously marked or otherwise
+      designated in writing by the copyright owner as "Not a Contribution."
+
+      "Contributor" shall mean Licensor and any individual or Legal Entity
+      on behalf of whom a Contribution has been received by Licensor and
+      subsequently incorporated within the Work.
+
+   2. Grant of Copyright License. Subject to the terms and conditions of
+      this License, each Contributor hereby grants to You a perpetual,
+      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+      copyright license to reproduce, prepare Derivative Works of,
+      publicly display, publicly perform, sublicense, and distribute the
+      Work and such Derivative Works in Source or Object form.
+
+   3. Grant of Patent License. Subject to the terms and conditions of
+      this License, each Contributor hereby grants to You a perpetual,
+      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+      (except as stated in this section) patent license to make, have made,
+      use, offer to sell, sell, import, and otherwise transfer the Work,
+      where such license applies only to those patent claims licensable
+      by such Contributor that are necessarily infringed by their
+      Contribution(s) alone or by combination of their Contribution(s)
+      with the Work to which such Contribution(s) was submitted. If You
+      institute patent litigation against any entity (including a
+      cross-claim or counterclaim in a lawsuit) alleging that the Work
+      or a Contribution incorporated within the Work constitutes direct
+      or contributory patent infringement, then any patent licenses
+      granted to You under this License for that Work shall terminate
+      as of the date such litigation is filed.
+
+   4. Redistribution. You may reproduce and distribute copies of the
+      Work or Derivative Works thereof in any medium, with or without
+      modifications, and in Source or Object form, provided that You
+      meet the following conditions:
+
+      (a) You must give any other recipients of the Work or
+          Derivative Works a copy of this License; and
+
+      (b) You must cause any modified files to carry prominent notices
+          stating that You changed the files; and
+
+      (c) You must retain, in the Source form of any Derivative Works
+          that You distribute, all copyright, patent, trademark, and
+          attribution notices from the Source form of the Work,
+          excluding those notices that do not pertain to any part of
+          the Derivative Works; and
+
+      (d) If the Work includes a "NOTICE" text file as part of its
+          distribution, then any Derivative Works that You distribute must
+          include a readable copy of the attribution notices contained
+          within such NOTICE file, excluding those notices that do not
+          pertain to any part of the Derivative Works, in at least one
+          of the following places: within a NOTICE text file distributed
+          as part of the Derivative Works; within the Source form or
+          documentation, if provided along with the Derivative Works; or,
+          within a display generated by the Derivative Works, if and
+          wherever such third-party notices normally appear. The contents
+          of the NOTICE file are for informational purposes only and
+          do not modify the License. You may add Your own attribution
+          notices within Derivative Works that You distribute, alongside
+          or as an addendum to the NOTICE text from the Work, provided
+          that such additional attribution notices cannot be construed
+          as modifying the License.
+
+      You may add Your own copyright statement to Your modifications and
+      may provide additional or different license terms and conditions
+      for use, reproduction, or distribution of Your modifications, or
+      for any such Derivative Works as a whole, provided Your use,
+      reproduction, and distribution of the Work otherwise complies with
+      the conditions stated in this License.
+
+   5. Submission of Contributions. Unless You explicitly state otherwise,
+      any Contribution intentionally submitted for inclusion in the Work
+      by You to the Licensor shall be under the terms and conditions of
+      this License, without any additional terms or conditions.
+      Notwithstanding the above, nothing herein shall supersede or modify
+      the terms of any separate license agreement you may have executed
+      with Licensor regarding such Contributions.
+
+   6. Trademarks. This License does not grant permission to use the trade
+      names, trademarks, service marks, or product names of the Licensor,
+      except as required for reasonable and customary use in describing the
+      origin of the Work and reproducing the content of the NOTICE file.
+
+   7. Disclaimer of Warranty. Unless required by applicable law or
+      agreed to in writing, Licensor provides the Work (and each
+      Contributor provides its Contributions) on an "AS IS" BASIS,
+      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+      implied, including, without limitation, any warranties or conditions
+      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
+      PARTICULAR PURPOSE. You are solely responsible for determining the
+      appropriateness of using or redistributing the Work and assume any
+      risks associated with Your exercise of permissions under this License.
+
+   8. Limitation of Liability. In no event and under no legal theory,
+      whether in tort (including negligence), contract, or otherwise,
+      unless required by applicable law (such as deliberate and grossly
+      negligent acts) or agreed to in writing, shall any Contributor be
+      liable to You for damages, including any direct, indirect, special,
+      incidental, or consequential damages of any character arising as a
+      result of this License or out of the use or inability to use the
+      Work (including but not limited to damages for loss of goodwill,
+      work stoppage, computer failure or malfunction, or any and all
+      other commercial damages or losses), even if such Contributor
+      has been advised of the possibility of such damages.
+
+   9. Accepting Warranty or Additional Liability. While redistributing
+      the Work or Derivative Works thereof, You may choose to offer,
+      and charge a fee for, acceptance of support, warranty, indemnity,
+      or other liability obligations and/or rights consistent with this
+      License. However, in accepting such obligations, You may act only
+      on Your own behalf and on Your sole responsibility, not on behalf
+      of any other Contributor, and only if You agree to indemnify,
+      defend, and hold each Contributor harmless for any liability
+      incurred by, or claims asserted against, such Contributor by reason
+      of your accepting any such warranty or additional liability.
+
+   END OF TERMS AND CONDITIONS
+
+   APPENDIX: How to apply the Apache License to your work.
+
+      To apply the Apache License to your work, attach the following
+      boilerplate notice, with the fields enclosed by brackets "[]"
+      replaced with your own identifying information. (Don't include
+      the brackets!)  The text should be enclosed in the appropriate
+      comment syntax for the file format. We also recommend that a
+      file or class name and description of purpose be included on the
+      same "printed page" as the copyright notice for easier
+      identification within third-party archives.
+
+   Copyright [yyyy] [name of copyright owner]
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+
+========================================================================
+Source file: scipy-1.18.1/scipy/_build_utils/tempita/LICENSE.txt
+========================================================================
+
+Copyright (c) 2008 Ian Bicking and Contributors
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+========================================================================
+Source file: scipy-1.18.1/scipy/_external/packaging_version/src/LICENSE.BSD
+========================================================================
+
+Copyright (c) Donald Stufft and individual contributors.
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+    1. Redistributions of source code must retain the above copyright notice,
+       this list of conditions and the following disclaimer.
+
+    2. Redistributions in binary form must reproduce the above copyright
+       notice, this list of conditions and the following disclaimer in the
+       documentation and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+========================================================================
+Source file: scipy-1.18.1/scipy/_lib/_uarray/LICENSE
+========================================================================
+
+BSD 3-Clause License
+
+Copyright (c) 2018, Quansight-Labs
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice, this
+  list of conditions and the following disclaimer.
+
+* Redistributions in binary form must reproduce the above copyright notice,
+  this list of conditions and the following disclaimer in the documentation
+  and/or other materials provided with the distribution.
+
+* Neither the name of the copyright holder nor the names of its
+  contributors may be used to endorse or promote products derived from
+  this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+========================================================================
+Source file: scipy-1.18.1/scipy/fft/_duccfft/LICENSE.md
+========================================================================
+
+Copyright (C) 2010-2019 Max-Planck-Society
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification,
+are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice, this
+  list of conditions and the following disclaimer.
+* Redistributions in binary form must reproduce the above copyright notice, this
+  list of conditions and the following disclaimer in the documentation and/or
+  other materials provided with the distribution.
+* Neither the name of the copyright holder nor the names of its contributors may
+  be used to endorse or promote products derived from this software without
+  specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+========================================================================
+Source file: scipy-1.18.1/scipy/integrate/src/LICENSE_DOP
+========================================================================
+
+Copyright (C) 2025 SciPy developers
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+    a. Redistributions of source code must retain the above copyright notice,
+       this list of conditions and the following disclaimer.
+    b. Redistributions in binary form must reproduce the above copyright
+       notice, this list of conditions and the following disclaimer in the
+       documentation and/or other materials provided with the distribution.
+    c. Names of the SciPy Developers may not be used to endorse or promote
+       products derived from this software without specific prior written
+       permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS
+BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY,
+OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+THE POSSIBILITY OF SUCH DAMAGE.
+
+
+DOP library consisting Dormand-Prince (4)5 and 8(5,3) integrators, is a
+C translation of the Fortran code written by Ernst Hairer, and Gerhard
+Wanner with the original descriptions below.
+
+* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+    NUMERICAL SOLUTION OF A SYSTEM OF FIRST 0RDER
+    ORDINARY DIFFERENTIAL EQUATIONS  Y'=F(X,Y).
+    THIS IS AN EXPLICIT RUNGE-KUTTA METHOD OF ORDER 8(5,3)
+    DUE TO DORMAND & PRINCE (WITH STEPSIZE CONTROL AND
+    DENSE OUTPUT)
+
+    AUTHORS: E. HAIRER AND G. WANNER
+             UNIVERSITE DE GENEVE, DEPT. DE MATHEMATIQUES
+             CH-1211 GENEVE 24, SWITZERLAND
+             E-MAIL:  Ernst.Hairer@math.unige.ch
+                      Gerhard.Wanner@math.unige.ch
+
+    THIS CODE IS DESCRIBED IN:
+        E. HAIRER, S.P. NORSETT AND G. WANNER, SOLVING ORDINARY
+        DIFFERENTIAL EQUATIONS I. NONSTIFF PROBLEMS. 2ND EDITION.
+        SPRINGER SERIES IN COMPUTATIONAL MATHEMATICS,
+        SPRINGER-VERLAG (1993)
+
+    VERSION OF APRIL 25, 1996
+    (latest correction of a small bug: August 8, 2005)
+
+* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+    NUMERICAL SOLUTION OF A SYSTEM OF FIRST 0RDER
+    ORDINARY DIFFERENTIAL EQUATIONS  Y'=F(X,Y).
+    THIS IS AN EXPLICIT RUNGE-KUTTA METHOD OF ORDER (4)5
+    DUE TO DORMAND & PRINCE (WITH STEPSIZE CONTROL AND
+    DENSE OUTPUT).
+
+    AUTHORS: E. HAIRER AND G. WANNER
+             UNIVERSITE DE GENEVE, DEPT. DE MATHEMATIQUES
+             CH-1211 GENEVE 24, SWITZERLAND
+             E-MAIL:  Ernst.Hairer@math.unige.ch
+                      Gerhard.Wanner@math.unige.ch
+
+    THIS CODE IS DESCRIBED IN:
+        E. HAIRER, S.P. NORSETT AND G. WANNER, SOLVING ORDINARY
+        DIFFERENTIAL EQUATIONS I. NONSTIFF PROBLEMS. 2ND EDITION.
+        SPRINGER SERIES IN COMPUTATIONAL MATHEMATICS,
+        SPRINGER-VERLAG (1993)
+
+    VERSION OF APRIL 25, 1996
+* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+========================================================================
+Source file: scipy-1.18.1/scipy/io/_fast_matrix_market/LICENSE.txt
+========================================================================
+
+Copyright (C) 2020-2023 Adam Lugowski
+
+Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+========================================================================
+Source file: scipy-1.18.1/scipy/io/_fast_matrix_market/fast_matrix_market/dependencies/fast_float/LICENSE-MIT
+========================================================================
+
+MIT License
+
+Copyright (c) 2021 The fast_float authors
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+========================================================================
+Source file: scipy-1.18.1/scipy/io/_fast_matrix_market/fast_matrix_market/dependencies/ryu/LICENSE-Boost
+========================================================================
+
+Boost Software License - Version 1.0 - August 17th, 2003
+
+Permission is hereby granted, free of charge, to any person or organization
+obtaining a copy of the software and accompanying documentation covered by
+this license (the "Software") to use, reproduce, display, distribute,
+execute, and transmit the Software, and to prepare derivative works of the
+Software, and to permit third-parties to whom the Software is furnished to
+do so, all subject to the following:
+
+The copyright notices in the Software and this entire statement, including
+the above license grant, this restriction and the following disclaimer,
+must be included in all copies of the Software, in whole or in part, and
+all derivative works of the Software, unless such copies or derivative
+works are solely in the form of machine-executable object code generated by
+a source language processor.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, TITLE AND NON-INFRINGEMENT. IN NO EVENT
+SHALL THE COPYRIGHT HOLDERS OR ANYONE DISTRIBUTING THE SOFTWARE BE LIABLE
+FOR ANY DAMAGES OR OTHER LIABILITY, WHETHER IN CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+========================================================================
+Source file: scipy-1.18.1/scipy/ndimage/LICENSE.txt
+========================================================================
+
+Copyright (C) 2003-2005 Peter J. Verveer
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright
+   notice, this list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above
+   copyright notice, this list of conditions and the following
+   disclaimer in the documentation and/or other materials provided
+   with the distribution.
+
+3. The name of the author may not be used to endorse or promote
+   products derived from this software without specific prior 
+   written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT,
+INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
+IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+
+========================================================================
+Source file: scipy-1.18.1/scipy/optimize/_direct/AUTHORS
+========================================================================
+
+C conversion: Steven G. Johnson (stevenj@alum.mit.edu)
+Original Fortran code: Joerg.M.Gablonsky (jmgablon@mailandnews.com)
+
+========================================================================
+Source file: scipy-1.18.1/scipy/optimize/_direct/COPYING
+========================================================================
+
+This code is based on the DIRECT 2.0.4 Fortran code by Gablonsky et al. at
+	http://www4.ncsu.edu/~ctk/SOFTWARE/DIRECTv204.tar.gz
+The C version was initially converted via f2c and then cleaned up and
+reorganized by Steven G. Johnson (stevenj@alum.mit.edu), August 2007.
+
+******** Copyright and license for the original Fortran DIRECT code ********
+Copyright (c) 1999, 2000, 2001 North Carolina State University
+
+This program is distributed under the MIT License (see
+http://www.opensource.org/licenses/mit-license.php):
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+of the Software, and to permit persons to whom the Software is furnished to do
+so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+========================================================================
+Source file: scipy-1.18.1/scipy/optimize/tnc/LICENSE
+========================================================================
+
+Copyright (c) 2002-2005, Jean-Sebastien Roy (js@jeannot.org)
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+========================================================================
+Source file: scipy-1.18.1/scipy/sparse/linalg/_dsolve/SuperLU/License.txt
+========================================================================
+
+Copyright (c) 2003, The Regents of the University of California, through
+Lawrence Berkeley National Laboratory (subject to receipt of any required 
+approvals from U.S. Dept. of Energy) 
+
+All rights reserved. 
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met: 
+
+(1) Redistributions of source code must retain the above copyright notice,
+this list of conditions and the following disclaimer. 
+(2) Redistributions in binary form must reproduce the above copyright notice,
+this list of conditions and the following disclaimer in the documentation
+and/or other materials provided with the distribution. 
+(3) Neither the name of Lawrence Berkeley National Laboratory, U.S. Dept. of
+Energy nor the names of its contributors may be used to endorse or promote
+products derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
+IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+========================================================================
+Source file: scipy-1.18.1/scipy/sparse/linalg/_eigen/arpack/arnaud/LICENSE
+========================================================================
+
+Author: Ilhan Polat
+Copyright (C) 2025 SciPy developers
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+ a. Redistributions of source code must retain the above copyright notice,
+    this list of conditions and the following disclaimer.
+ b. Redistributions in binary form must reproduce the above copyright
+    notice, this list of conditions and the following disclaimer in the
+    documentation and/or other materials provided with the distribution.
+ c. Names of the SciPy Developers may not be used to endorse or promote
+    products derived from this software without specific prior written
+    permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS
+BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY,
+OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+THE POSSIBILITY OF SUCH DAMAGE.
+
+========================================================================
+Source file: scipy-1.18.1/scipy/sparse/linalg/_propack/PROPACK/LICENSE
+========================================================================
+
+Author: Ilhan Polat
+Copyright (C) 2025 SciPy developers
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+ a. Redistributions of source code must retain the above copyright notice,
+    this list of conditions and the following disclaimer.
+ b. Redistributions in binary form must reproduce the above copyright
+    notice, this list of conditions and the following disclaimer in the
+    documentation and/or other materials provided with the distribution.
+ c. Names of the SciPy Developers may not be used to endorse or promote
+    products derived from this software without specific prior written
+    permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS
+BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY,
+OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+THE POSSIBILITY OF SUCH DAMAGE.
+
+========================================================================
+Source file: scipy-1.18.1/scipy/spatial/COPYING_QHULL.txt
+========================================================================
+
+                    Qhull, Copyright (c) 1993-2020
+                    
+                            C.B. Barber
+                           Arlington, MA 
+                          
+                               and
+
+       The National Science and Technology Research Center for
+        Computation and Visualization of Geometric Structures
+                        (The Geometry Center)
+                       University of Minnesota
+
+                       email: qhull@qhull.org
+
+This software includes Qhull from C.B. Barber and The Geometry Center.  
+Files derived from Qhull 1.0 are copyrighted by the Geometry Center.  The
+remaining files are copyrighted by C.B. Barber.  Qhull is free software 
+and may be obtained via http from www.qhull.org.  It may be freely copied, 
+modified, and redistributed under the following conditions:
+
+1. All copyright notices must remain intact in all files.
+
+2. A copy of this text file must be distributed along with any copies 
+   of Qhull that you redistribute; this includes copies that you have 
+   modified, or copies of programs or other software products that 
+   include Qhull.
+
+3. If you modify Qhull, you must include a notice giving the
+   name of the person performing the modification, the date of
+   modification, and the reason for such modification.
+
+4. When distributing modified versions of Qhull, or other software 
+   products that include Qhull, you must provide notice that the original 
+   source code may be obtained as noted above.
+
+5. There is no warranty or other guarantee of fitness for Qhull, it is 
+   provided solely "as is".  Bug reports or fixes may be sent to 
+   qhull_bug@qhull.org; the authors may or may not act on them as 
+   they desire.
+
+========================================================================
+Source file: scipy-1.18.1/scipy/stats/biasedurn/license.txt
+========================================================================
+
+---------- Forwarded message ---------
+From: Agner Fog <agner@agner.org>
+Date: Wed, Jul 22, 2020 at 8:54 PM
+Subject: Re: Add BiasedUrn to SciPy?
+To: Matt Haberland <mhaberla@calpoly.edu>
+Cc: Warren Weckesser <warren.weckesser@gmail.com>
+
+Dear Matt The C++ code for these distributions without binding to the R project
+are available here: 
+https://www.agner.org/random/stocc.zip
+You have my permission to use it in SciPy under the new BSD license. 
+Best regards, 
+Agner Fog
+ 
+On 22/07/2020 17.05, Matt Haberland wrote:
+Hi Agner, I'm a maintainer of the Python scientific computing library SciPy, 
+and I'm working on improving the capabilities of our statistics subpackage 
+scipy.stats. We'd like to add both Fisher's and Wallenius' noncentral 
+hypergeometric distributions, but these look quite challenging to implement.
+We found your BiasedUrn package, and we'd love to wrap it, but we can't 
+include GPL-3 licensed code under our BSD-new license. Would you consider
+re-licensing BiasedUrn under a more permissive license, such as BSD-new or
+MIT, so we can include it in SciPy? 
+Thank you for considering it!
+Matt 
+-- 
+Matt Haberland 
+Assistant Professor
+BioResource and Agricultural Engineering
+08A-3K, Cal Poly
+
+========================================================================
+Source file: scipy-1.18.1/subprojects/array_api_compat/array_api_compat/LICENSE
+========================================================================
+
+MIT License
+
+Copyright (c) 2022 Consortium for Python Data API Standards
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+========================================================================
+Source file: scipy-1.18.1/subprojects/array_api_extra/LICENSE
+========================================================================
+
+MIT License
+
+Copyright (c) 2024 Consortium for Python Data API Standards
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+========================================================================
+Source file: scipy-1.18.1/subprojects/boost_math/math/LICENSE
+========================================================================
+
+Boost Software License - Version 1.0 - August 17th, 2003
+
+Permission is hereby granted, free of charge, to any person or organization
+obtaining a copy of the software and accompanying documentation covered by
+this license (the "Software") to use, reproduce, display, distribute,
+execute, and transmit the Software, and to prepare derivative works of the
+Software, and to permit third-parties to whom the Software is furnished to
+do so, all subject to the following:
+
+The copyright notices in the Software and this entire statement, including
+the above license grant, this restriction and the following disclaimer,
+must be included in all copies of the Software, in whole or in part, and
+all derivative works of the Software, unless such copies or derivative
+works are solely in the form of machine-executable object code generated by
+a source language processor.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, TITLE AND NON-INFRINGEMENT. IN NO EVENT
+SHALL THE COPYRIGHT HOLDERS OR ANYONE DISTRIBUTING THE SOFTWARE BE LIABLE
+FOR ANY DAMAGES OR OTHER LIABILITY, WHETHER IN CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+========================================================================
+Source file: scipy-1.18.1/subprojects/cobyqa/.github/workflows/license.yml
+========================================================================
+
+# Update copyright years in license file
+
+name: license
+
+on:
+  schedule:
+    - cron: '0 0 1 1 *'
+  workflow_dispatch:
+
+jobs:
+  update_license:
+    name: Update license year
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Update license year
+        uses: FantasticFiasco/action-update-license-year@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+========================================================================
+Source file: scipy-1.18.1/subprojects/cobyqa/LICENSE
+========================================================================
+
+BSD 3-Clause License
+
+Copyright (c) 2021-2026, Tom M. Ragonneau and Zaikun Zhang
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its
+   contributors may be used to endorse or promote products derived from
+   this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+========================================================================
+Source file: scipy-1.18.1/subprojects/cobyqa/doc/source/license.rst
+========================================================================
+
+COBYQA license
+==============
+
+.. include:: ../../LICENSE
+    :literal:
+
+========================================================================
+Source file: scipy-1.18.1/subprojects/duccfft/LICENSE.md
+========================================================================
+
+Copyright (C) 2010-2019 Max-Planck-Society
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification,
+are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice, this
+  list of conditions and the following disclaimer.
+* Redistributions in binary form must reproduce the above copyright notice, this
+  list of conditions and the following disclaimer in the documentation and/or
+  other materials provided with the distribution.
+* Neither the name of the copyright holder nor the names of its contributors may
+  be used to endorse or promote products derived from this software without
+  specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+========================================================================
+Source file: scipy-1.18.1/subprojects/highs/AUTHORS
+========================================================================
+
+Main Authors:
+
+Julian Hall
+Ivet Galabova
+Qi Huangfu
+Leona Gottwald
+Michael Feldmeier
+
+========================================================================
+Source file: scipy-1.18.1/subprojects/highs/LICENSE.txt
+========================================================================
+
+MIT License
+
+Copyright (c) 2024 HiGHS
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+========================================================================
+Source file: scipy-1.18.1/subprojects/highs/extern/LICENCE_1_0.txt
+========================================================================
+
+Boost Software License - Version 1.0 - August 17th, 2003
+
+Permission is hereby granted, free of charge, to any person or organization
+obtaining a copy of the software and accompanying documentation covered by
+this license (the "Software") to use, reproduce, display, distribute,
+execute, and transmit the Software, and to prepare derivative works of the
+Software, and to permit third-parties to whom the Software is furnished to
+do so, all subject to the following:
+
+The copyright notices in the Software and this entire statement, including
+the above license grant, this restriction and the following disclaimer,
+must be included in all copies of the Software, in whole or in part, and
+all derivative works of the Software, unless such copies or derivative
+works are solely in the form of machine-executable object code generated by
+a source language processor.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, TITLE AND NON-INFRINGEMENT. IN NO EVENT
+SHALL THE COPYRIGHT HOLDERS OR ANYONE DISTRIBUTING THE SOFTWARE BE LIABLE
+FOR ANY DAMAGES OR OTHER LIABILITY, WHETHER IN CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+========================================================================
+Source file: scipy-1.18.1/subprojects/highs/extern/filereaderlp/LICENSE
+========================================================================
+
+Copyright (c) 2020 Michael Feldmeier
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+========================================================================
+Source file: scipy-1.18.1/subprojects/highs/extern/pdqsort/license.txt
+========================================================================
+
+Copyright (c) 2021 Orson Peters <orsonpeters@gmail.com>
+
+This software is provided 'as-is', without any express or implied warranty. In no event will the
+authors be held liable for any damages arising from the use of this software.
+
+Permission is granted to anyone to use this software for any purpose, including commercial
+applications, and to alter it and redistribute it freely, subject to the following restrictions:
+
+1. The origin of this software must not be misrepresented; you must not claim that you wrote the
+   original software. If you use this software in a product, an acknowledgment in the product
+   documentation would be appreciated but is not required.
+
+2. Altered source versions must be plainly marked as such, and must not be misrepresented as
+   being the original software.
+
+3. This notice may not be removed or altered from any source distribution.
+
+========================================================================
+Source file: scipy-1.18.1/subprojects/pyprima/pyprima/LICENCE.txt
+========================================================================
+
+BSD 3-Clause License
+
+Copyright (c) 2020--2025, Zaikun ZHANG ( https://www.zhangzk.net )
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its
+   contributors may be used to endorse or promote products derived from
+   this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+========================================================================
+Source file: scipy-1.18.1/subprojects/qhull_r/libqhull_r/COPYING.txt
+========================================================================
+
+                    Qhull, Copyright (c) 1993-2020
+                    
+                            C.B. Barber
+                           Arlington, MA 
+                          
+                               and
+
+       The National Science and Technology Research Center for
+        Computation and Visualization of Geometric Structures
+                        (The Geometry Center)
+                       University of Minnesota
+
+                       email: qhull@qhull.org
+
+This software includes Qhull from C.B. Barber and The Geometry Center.  
+Files derived from Qhull 1.0 are copyrighted by the Geometry Center.  The
+remaining files are copyrighted by C.B. Barber.  Qhull is free software 
+and may be obtained via http from www.qhull.org.  It may be freely copied, 
+modified, and redistributed under the following conditions:
+
+1. All copyright notices must remain intact in all files.
+
+2. A copy of this text file must be distributed along with any copies 
+   of Qhull that you redistribute; this includes copies that you have 
+   modified, or copies of programs or other software products that 
+   include Qhull.
+
+3. If you modify Qhull, you must include a notice giving the
+   name of the person performing the modification, the date of
+   modification, and the reason for such modification.
+
+4. When distributing modified versions of Qhull, or other software 
+   products that include Qhull, you must provide notice that the original 
+   source code may be obtained as noted above.
+
+5. There is no warranty or other guarantee of fitness for Qhull, it is 
+   provided solely "as is".  Bug reports or fixes may be sent to 
+   qhull_bug@qhull.org; the authors may or may not act on them as 
+   they desire.
+
+========================================================================
+Source file: scipy-1.18.1/subprojects/unuran/license.txt
+========================================================================
+
+Permission was granted on 23 March 2021 by Josef Leydold (josef.leydold@wu.ac.at) and Wolfgang Hoermann (hormannw@bound.edu.tr)
+to use the UNU.RAN code excluding the uniform random number generator in src/uniform/mrg31k3p.c (copyright by Renee Touzin)
+under the BSD licence. The following files have been removed from the original library:
+
+    unuran-1.8.1/COPYING
+    unuran-1.8.1/INSTALL
+    unuran-1.8.1/Makefile.am
+    unuran-1.8.1/Makefile.in
+    unuran-1.8.1/NEWS
+    unuran-1.8.1/UPGRADE
+    unuran-1.8.1/acinclude.m4
+    unuran-1.8.1/aclocal.m4
+    unuran-1.8.1/autoconf/config.guess
+    unuran-1.8.1/autoconf/config.sub
+    unuran-1.8.1/autoconf/depcomp
+    unuran-1.8.1/autoconf/install-sh
+    unuran-1.8.1/autoconf/ltmain.sh
+    unuran-1.8.1/autoconf/mdate-sh
+    unuran-1.8.1/autoconf/missing
+    unuran-1.8.1/autogen.sh
+    unuran-1.8.1/configure
+    unuran-1.8.1/doc/Makefile.am
+    unuran-1.8.1/doc/Makefile.in
+    unuran-1.8.1/doc/figures/Makefile.am
+    unuran-1.8.1/doc/figures/Makefile.in
+    unuran-1.8.1/doc/figures/discrete_inversion.eps
+    unuran-1.8.1/doc/figures/discrete_inversion.pdf
+    unuran-1.8.1/doc/figures/discrete_inversion.png
+    unuran-1.8.1/doc/figures/discrete_inversion.txt
+    unuran-1.8.1/doc/figures/inversion.eps
+    unuran-1.8.1/doc/figures/inversion.pdf
+    unuran-1.8.1/doc/figures/inversion.png
+    unuran-1.8.1/doc/figures/inversion.txt
+    unuran-1.8.1/doc/figures/rejection_from_constant_hat.eps
+    unuran-1.8.1/doc/figures/rejection_from_constant_hat.pdf
+    unuran-1.8.1/doc/figures/rejection_from_constant_hat.png
+    unuran-1.8.1/doc/figures/rejection_from_constant_hat.txt
+    unuran-1.8.1/doc/figures/rou-cauchy.eps
+    unuran-1.8.1/doc/figures/rou-cauchy.pdf
+    unuran-1.8.1/doc/figures/rou-cauchy.png
+    unuran-1.8.1/doc/figures/rou-cauchy.txt
+    unuran-1.8.1/doc/figures/texpict2img.pl
+    unuran-1.8.1/doc/src/Makefile.am
+    unuran-1.8.1/doc/src/Makefile.in
+    unuran-1.8.1/doc/src/README
+    unuran-1.8.1/doc/src/arvag.dh
+    unuran-1.8.1/doc/src/error_debug.dh
+    unuran-1.8.1/doc/src/examples.dh
+    unuran-1.8.1/doc/src/glossary.dh
+    unuran-1.8.1/doc/src/index.dh
+    unuran-1.8.1/doc/src/installation.dh
+    unuran-1.8.1/doc/src/intro.dh
+    unuran-1.8.1/doc/src/make_texi.pl
+    unuran-1.8.1/doc/src/methods.dh
+    unuran-1.8.1/doc/src/methods_cemp.texi
+    unuran-1.8.1/doc/src/methods_cont.texi
+    unuran-1.8.1/doc/src/methods_cvec.texi
+    unuran-1.8.1/doc/src/methods_cvemp.texi
+    unuran-1.8.1/doc/src/methods_discr.texi
+    unuran-1.8.1/doc/src/methods_matr.texi
+    unuran-1.8.1/doc/src/methods_mcmc.texi
+    unuran-1.8.1/doc/src/misc.dh
+    unuran-1.8.1/doc/src/ref_example0.texi
+    unuran-1.8.1/doc/src/ref_example0_str.texi
+    unuran-1.8.1/doc/src/ref_example1.texi
+    unuran-1.8.1/doc/src/ref_example1_str.texi
+    unuran-1.8.1/doc/src/ref_example2.texi
+    unuran-1.8.1/doc/src/ref_example2_str.texi
+    unuran-1.8.1/doc/src/ref_example3.texi
+    unuran-1.8.1/doc/src/ref_example3_str.texi
+    unuran-1.8.1/doc/src/ref_example_FuncStr.texi
+    unuran-1.8.1/doc/src/ref_example_anti.texi
+    unuran-1.8.1/doc/src/ref_example_anti_str.texi
+    unuran-1.8.1/doc/src/ref_example_cext.texi
+    unuran-1.8.1/doc/src/ref_example_cont.texi
+    unuran-1.8.1/doc/src/ref_example_cont_str.texi
+    unuran-1.8.1/doc/src/ref_example_dext.texi
+    unuran-1.8.1/doc/src/ref_example_discr.texi
+    unuran-1.8.1/doc/src/ref_example_discr_str.texi
+    unuran-1.8.1/doc/src/ref_example_emp.texi
+    unuran-1.8.1/doc/src/ref_example_emp_str.texi
+    unuran-1.8.1/doc/src/ref_example_gsl.texi
+    unuran-1.8.1/doc/src/ref_example_mixt.texi
+    unuran-1.8.1/doc/src/ref_example_mixt_inv.texi
+    unuran-1.8.1/doc/src/ref_example_rngstreams.texi
+    unuran-1.8.1/doc/src/ref_example_vemp.texi
+    unuran-1.8.1/doc/src/ref_example_win32_1.texi
+    unuran-1.8.1/doc/src/ref_example_win32_2.texi
+    unuran-1.8.1/doc/src/references.dh
+    unuran-1.8.1/doc/src/stddist.dh
+    unuran-1.8.1/doc/src/texinfo.tex
+    unuran-1.8.1/doc/src/top.dh
+    unuran-1.8.1/doc/src/unuran_src.texi
+    unuran-1.8.1/doc/stamp-1
+    unuran-1.8.1/doc/stamp-vti
+    unuran-1.8.1/doc/unuran.html
+    unuran-1.8.1/doc/unuran.info
+    unuran-1.8.1/doc/unuran.pdf
+    unuran-1.8.1/doc/unuran.texi
+    unuran-1.8.1/doc/unuran.txt
+    unuran-1.8.1/doc/unuran_win32.html
+    unuran-1.8.1/doc/unuran_win32.info
+    unuran-1.8.1/doc/unuran_win32.pdf
+    unuran-1.8.1/doc/unuran_win32.texi
+    unuran-1.8.1/doc/unuran_win32_libname.texi
+    unuran-1.8.1/doc/version.texi
+    unuran-1.8.1/doc/version_win32.texi
+    unuran-1.8.1/examples/Makefile.am
+    unuran-1.8.1/examples/Makefile.in
+    unuran-1.8.1/examples/example0.c
+    unuran-1.8.1/examples/example0_str.c
+    unuran-1.8.1/examples/example1.c
+    unuran-1.8.1/examples/example1_str.c
+    unuran-1.8.1/examples/example2.c
+    unuran-1.8.1/examples/example2_str.c
+    unuran-1.8.1/examples/example3.c
+    unuran-1.8.1/examples/example3_str.c
+    unuran-1.8.1/examples/example_FuncStr.c
+    unuran-1.8.1/examples/example_anti.c
+    unuran-1.8.1/examples/example_anti_str.c
+    unuran-1.8.1/examples/example_cext.c
+    unuran-1.8.1/examples/example_cont.c
+    unuran-1.8.1/examples/example_cont_str.c
+    unuran-1.8.1/examples/example_cpp.cpp
+    unuran-1.8.1/examples/example_dext.c
+    unuran-1.8.1/examples/example_discr.c
+    unuran-1.8.1/examples/example_discr_str.c
+    unuran-1.8.1/examples/example_emp.c
+    unuran-1.8.1/examples/example_emp_str.c
+    unuran-1.8.1/examples/example_errorhandler.c
+    unuran-1.8.1/examples/example_gsl.c
+    unuran-1.8.1/examples/example_mcorr.c
+    unuran-1.8.1/examples/example_mixt.c
+    unuran-1.8.1/examples/example_mixt_inv.c
+    unuran-1.8.1/examples/example_prng.c
+    unuran-1.8.1/examples/example_prng_str.c
+    unuran-1.8.1/examples/example_rngstreams.c
+    unuran-1.8.1/examples/example_vemp.c
+    unuran-1.8.1/experiments/Makefile.am
+    unuran-1.8.1/experiments/Makefile.in
+    unuran-1.8.1/experiments/make_timing_table.c
+    unuran-1.8.1/experiments/timings_chap_10.conf
+    unuran-1.8.1/experiments/timings_chap_8.conf
+    unuran-1.8.1/scripts/Makefile.am
+    unuran-1.8.1/scripts/Makefile.in
+    unuran-1.8.1/scripts/compute_machine_constants.c
+    unuran-1.8.1/scripts/make_urng_header.pl
+    unuran-1.8.1/scripts/merge_h.pl
+    unuran-1.8.1/scripts/read_PDF.pl
+    unuran-1.8.1/scripts/remove_comments.pl
+    unuran-1.8.1/scripts/run_valgrind.sh
+    unuran-1.8.1/scripts/win32/Makefile.win32
+    unuran-1.8.1/scripts/win32/build.sh
+    unuran-1.8.1/scripts/win32/example1.c
+    unuran-1.8.1/scripts/win32/example2.c
+    unuran-1.8.1/scripts/win32/make_dll_def.pl
+    unuran-1.8.1/src/Makefile.am
+    unuran-1.8.1/src/Makefile.in
+    unuran-1.8.1/src/README
+    unuran-1.8.1/src/distr/Makefile.am
+    unuran-1.8.1/src/distr/Makefile.in
+    unuran-1.8.1/src/distributions/Makefile.am
+    unuran-1.8.1/src/distributions/Makefile.in
+    unuran-1.8.1/src/distributions/README
+    unuran-1.8.1/src/methods/Makefile.am
+    unuran-1.8.1/src/methods/Makefile.in
+    unuran-1.8.1/src/parser/Makefile.am
+    unuran-1.8.1/src/parser/Makefile.in
+    unuran-1.8.1/src/parser/functparser_doc.dh
+    unuran-1.8.1/src/parser/make_stringparser.pl
+    unuran-1.8.1/src/parser/stringparser_doc.dh
+    unuran-1.8.1/src/specfunct/Makefile.am
+    unuran-1.8.1/src/specfunct/Makefile.in
+    unuran-1.8.1/src/tests/Makefile.am
+    unuran-1.8.1/src/tests/Makefile.in
+    unuran-1.8.1/src/uniform/Makefile.am
+    unuran-1.8.1/src/uniform/Makefile.in
+    unuran-1.8.1/src/uniform/fish.c
+    unuran-1.8.1/src/uniform/mrg31k3p.c
+    unuran-1.8.1/src/uniform/mstd.c
+    unuran-1.8.1/src/uniform/unuran_urng_gsl.h
+    unuran-1.8.1/src/uniform/unuran_urng_prng.h
+    unuran-1.8.1/src/uniform/unuran_urng_rngstreams.h
+    unuran-1.8.1/src/uniform/urng_builtin.c
+    unuran-1.8.1/src/uniform/urng_builtin.h
+    unuran-1.8.1/src/uniform/urng_fvoid.c
+    unuran-1.8.1/src/uniform/urng_fvoid.h
+    unuran-1.8.1/src/uniform/urng_gsl.c
+    unuran-1.8.1/src/uniform/urng_gsl.h
+    unuran-1.8.1/src/uniform/urng_gslqrng.c
+    unuran-1.8.1/src/uniform/urng_gslqrng.h
+    unuran-1.8.1/src/uniform/urng_prng.c
+    unuran-1.8.1/src/uniform/urng_prng.h
+    unuran-1.8.1/src/uniform/urng_randomshift.c
+    unuran-1.8.1/src/uniform/urng_randomshift.h
+    unuran-1.8.1/src/uniform/urng_rngstreams.c
+    unuran-1.8.1/src/uniform/urng_rngstreams.h
+    unuran-1.8.1/src/unuran.h.in
+    unuran-1.8.1/src/urng/Makefile.am
+    unuran-1.8.1/src/urng/Makefile.in
+    unuran-1.8.1/src/utils/Makefile.am
+    unuran-1.8.1/src/utils/Makefile.in
+    unuran-1.8.1/tests/Makefile.am
+    unuran-1.8.1/tests/Makefile.in
+    unuran-1.8.1/tests/README.conf
+    unuran-1.8.1/tests/make_test_files.pl
+    unuran-1.8.1/tests/t_arou.c
+    unuran-1.8.1/tests/t_arou.conf
+    unuran-1.8.1/tests/t_ars.c
+    unuran-1.8.1/tests/t_ars.conf
+    unuran-1.8.1/tests/t_auto.c
+    unuran-1.8.1/tests/t_auto.conf
+    unuran-1.8.1/tests/t_cext.c
+    unuran-1.8.1/tests/t_cext.conf
+    unuran-1.8.1/tests/t_cstd.c
+    unuran-1.8.1/tests/t_cstd.conf
+    unuran-1.8.1/tests/t_dari.c
+    unuran-1.8.1/tests/t_dari.conf
+    unuran-1.8.1/tests/t_dau.c
+    unuran-1.8.1/tests/t_dau.conf
+    unuran-1.8.1/tests/t_deprecated_tdrgw.c
+    unuran-1.8.1/tests/t_deprecated_vmt.c
+    unuran-1.8.1/tests/t_deprecated_vmt.conf
+    unuran-1.8.1/tests/t_dext.c
+    unuran-1.8.1/tests/t_dext.conf
+    unuran-1.8.1/tests/t_dgt.c
+    unuran-1.8.1/tests/t_dgt.conf
+    unuran-1.8.1/tests/t_distr.c
+    unuran-1.8.1/tests/t_distr.conf
+    unuran-1.8.1/tests/t_distr_cemp.c
+    unuran-1.8.1/tests/t_distr_cemp.conf
+    unuran-1.8.1/tests/t_distr_condi.c
+    unuran-1.8.1/tests/t_distr_condi.conf
+    unuran-1.8.1/tests/t_distr_cont.c
+    unuran-1.8.1/tests/t_distr_cont.conf
+    unuran-1.8.1/tests/t_distr_corder.c
+    unuran-1.8.1/tests/t_distr_corder.conf
+    unuran-1.8.1/tests/t_distr_cvec.c
+    unuran-1.8.1/tests/t_distr_cvec.conf
+    unuran-1.8.1/tests/t_distr_cvemp.c
+    unuran-1.8.1/tests/t_distr_cvemp.conf
+    unuran-1.8.1/tests/t_distr_cxtrans.c
+    unuran-1.8.1/tests/t_distr_cxtrans.conf
+    unuran-1.8.1/tests/t_distr_discr.c
+    unuran-1.8.1/tests/t_distr_discr.conf
+    unuran-1.8.1/tests/t_distr_matr.c
+    unuran-1.8.1/tests/t_distr_matr.conf
+    unuran-1.8.1/tests/t_dsrou.c
+    unuran-1.8.1/tests/t_dsrou.conf
+    unuran-1.8.1/tests/t_dss.c
+    unuran-1.8.1/tests/t_dss.conf
+    unuran-1.8.1/tests/t_dstd.c
+    unuran-1.8.1/tests/t_dstd.conf
+    unuran-1.8.1/tests/t_empk.c
+    unuran-1.8.1/tests/t_empk.conf
+    unuran-1.8.1/tests/t_empl.c
+    unuran-1.8.1/tests/t_empl.conf
+    unuran-1.8.1/tests/t_gibbs.c
+    unuran-1.8.1/tests/t_gibbs.conf
+    unuran-1.8.1/tests/t_hinv.c
+    unuran-1.8.1/tests/t_hinv.conf
+    unuran-1.8.1/tests/t_hist.c
+    unuran-1.8.1/tests/t_hist.conf
+    unuran-1.8.1/tests/t_hitro.c
+    unuran-1.8.1/tests/t_hrb.c
+    unuran-1.8.1/tests/t_hrb.conf
+    unuran-1.8.1/tests/t_hrd.c
+    unuran-1.8.1/tests/t_hrd.conf
+    unuran-1.8.1/tests/t_hri.c
+    unuran-1.8.1/tests/t_hri.conf
+    unuran-1.8.1/tests/t_info.c
+    unuran-1.8.1/tests/t_info.conf
+    unuran-1.8.1/tests/t_itdr.c
+    unuran-1.8.1/tests/t_itdr.conf
+    unuran-1.8.1/tests/t_mcorr.c
+    unuran-1.8.1/tests/t_mcorr.conf
+    unuran-1.8.1/tests/t_mixt.c
+    unuran-1.8.1/tests/t_mvstd.c
+    unuran-1.8.1/tests/t_mvstd.conf
+    unuran-1.8.1/tests/t_mvtdr.c
+    unuran-1.8.1/tests/t_ninv.c
+    unuran-1.8.1/tests/t_ninv.conf
+    unuran-1.8.1/tests/t_norta.c
+    unuran-1.8.1/tests/t_norta.conf
+    unuran-1.8.1/tests/t_nrou.c
+    unuran-1.8.1/tests/t_nrou.conf
+    unuran-1.8.1/tests/t_pinv
+    unuran-1.8.1/tests/t_pinv.c
+    unuran-1.8.1/tests/t_srou.c
+    unuran-1.8.1/tests/t_srou.conf
+    unuran-1.8.1/tests/t_ssr.c
+    unuran-1.8.1/tests/t_ssr.conf
+    unuran-1.8.1/tests/t_stringparser.c
+    unuran-1.8.1/tests/t_stringparser.conf
+    unuran-1.8.1/tests/t_tabl.c
+    unuran-1.8.1/tests/t_tabl.conf
+    unuran-1.8.1/tests/t_tdr.c
+    unuran-1.8.1/tests/t_tdr.conf
+    unuran-1.8.1/tests/t_tdr_gw.c
+    unuran-1.8.1/tests/t_tdr_gw.conf
+    unuran-1.8.1/tests/t_tdr_ia.c
+    unuran-1.8.1/tests/t_tdr_ia.conf
+    unuran-1.8.1/tests/t_tdr_ps.c
+    unuran-1.8.1/tests/t_tdr_ps.conf
+    unuran-1.8.1/tests/t_unif.c
+    unuran-1.8.1/tests/t_unif.conf
+    unuran-1.8.1/tests/t_unur_error.c
+    unuran-1.8.1/tests/t_unur_error.conf
+    unuran-1.8.1/tests/t_unur_tests.c
+    unuran-1.8.1/tests/t_unur_tests.conf
+    unuran-1.8.1/tests/t_urng.c
+    unuran-1.8.1/tests/t_urng.conf
+    unuran-1.8.1/tests/t_utdr.c
+    unuran-1.8.1/tests/t_utdr.conf
+    unuran-1.8.1/tests/t_util_matrix.c
+    unuran-1.8.1/tests/t_util_matrix.conf
+    unuran-1.8.1/tests/t_vempk.c
+    unuran-1.8.1/tests/t_vempk.conf
+    unuran-1.8.1/tests/t_vnrou.c
+    unuran-1.8.1/tests/t_vnrou.conf
+    unuran-1.8.1/tests/t_x_gen.c
+    unuran-1.8.1/tests/t_x_gen.conf
+    unuran-1.8.1/tests/test_StdDistr.c
+    unuran-1.8.1/tests/test_StdDistr.m
+    unuran-1.8.1/tests/test_functionparser.c
+    unuran-1.8.1/tests/test_functionparser.m
+    unuran-1.8.1/tests/testcounter.c
+    unuran-1.8.1/tests/testdistributions/Makefile.am
+    unuran-1.8.1/tests/testdistributions/Makefile.in
+    unuran-1.8.1/tests/testdistributions/c_sawtooth_contpdf.c
+    unuran-1.8.1/tests/testdistributions/c_sawtooth_discpdf.c
+    unuran-1.8.1/tests/testdistributions/c_w_pdf_from_logpdf.c
+    unuran-1.8.1/tests/testdistributions/c_with_multiple_of_pdf.c
+    unuran-1.8.1/tests/testdistributions/c_wo_logpdf.c
+    unuran-1.8.1/tests/testdistributions/testdistributions.h
+    unuran-1.8.1/tests/testdistributions/vc_cauchy_RoU_ball.c
+    unuran-1.8.1/tests/testdistributions/vc_special_correlations_ar1.c
+    unuran-1.8.1/tests/testdistributions/vc_special_correlations_constantrho.c
+    unuran-1.8.1/tests/testdistributions/vc_w_marginals.c
+    unuran-1.8.1/tests/testdistributions/vc_wo_logpdf.c
+    unuran-1.8.1/tests/testroutines.c
+    unuran-1.8.1/tests/testunuran.h
+    unuran-1.8.1/src/distr/deprecated_distr.c
+    unuran-1.8.1/src/distr/deprecated_distr.h
+    unuran-1.8.1/src/methods/deprecated_methods.c
+    unuran-1.8.1/src/methods/deprecated_methods.h
+    unuran-1.8.1/src/methods/deprecated_tdrgw.h
+    unuran-1.8.1/src/methods/deprecated_vmt.c
+    unuran-1.8.1/src/methods/deprecated_vmt.h
+    unuran-1.8.1/src/methods/deprecated_vmt_struct.h
+    unuran-1.8.1/src/parser/stringparser_lists.ch.in
+
+UNU.RAN relies on a modified version of the library Cephes, see ./src/src/specfunct/cephes_source.h
+
+========================================================================
+Source file: scipy-1.18.1/subprojects/xsf/LICENSE
+========================================================================
+
+BSD 3-Clause License
+
+Copyright (c) 2024, SciPy
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its
+   contributors may be used to endorse or promote products derived from
+   this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+========================================================================
+Source file: scipy-1.18.1/subprojects/xsf/LICENSES_bundled.txt
+========================================================================
+
+xsf bundles several libraries that are compatibly licensed. We list these here.
+
+Name: Cephes
+Files: include/xsf/cephes/*
+License: BSD-3-Clause
+  Distributed under 3-clause BSD license with permission from the author,
+  see https://lists.debian.org/debian-legal/2004/12/msg00295.html
+
+  Cephes Math Library Release 2.8:  June, 2000
+  Copyright 1984, 1995, 2000 by Stephen L. Moshier
+
+  This software is derived from the Cephes Math Library and is
+  incorporated herein by permission of the author.
+
+  All rights reserved.
+
+  Redistribution and use in source and binary forms, with or without
+  modification, are permitted provided that the following conditions are met:
+      * Redistributions of source code must retain the above copyright
+        notice, this list of conditions and the following disclaimer.
+      * Redistributions in binary form must reproduce the above copyright
+        notice, this list of conditions and the following disclaimer in the
+        documentation and/or other materials provided with the distribution.
+      * Neither the name of the <organization> nor the
+        names of its contributors may be used to endorse or promote products
+        derived from this software without specific prior written permission.
+
+  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+  ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+  WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+  DISCLAIMED. IN NO EVENT SHALL <COPYRIGHT HOLDER> BE LIABLE FOR ANY
+  DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+  (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+  LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+  ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+Name: Faddeeva
+Files: include/xsf/faddeeva.h
+License: MIT
+  Copyright (c) 2012 Massachusetts Institute of Technology
+
+  Permission is hereby granted, free of charge, to any person obtaining
+  a copy of this software and associated documentation files (the
+  "Software"), to deal in the Software without restriction, including
+  without limitation the rights to use, copy, modify, merge, publish,
+  distribute, sublicense, and/or sell copies of the Software, and to
+  permit persons to whom the Software is furnished to do so, subject to
+  the following conditions:
+
+  The above copyright notice and this permission notice shall be
+  included in all copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+  EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+  MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+  NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+  LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+  OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+  WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Name: qd
+Files: include/xsf/cephes/dd_real.h
+License: BSD-3-Clause-LBNL
+  This work was supported by the Director, Office of Science, Division
+  of Mathematical, Information, and Computational Sciences of the
+  U.S. Department of Energy under contract numbers DE-AC03-76SF00098 and
+  DE-AC02-05CH11231.
+
+  Copyright (c) 2003-2009, The Regents of the University of California,
+  through Lawrence Berkeley National Laboratory (subject to receipt of
+  any required approvals from U.S. Dept. of Energy) All rights reserved.
+
+  1. Redistribution and use in source and binary forms, with or
+  without modification, are permitted provided that the following
+  conditions are met:
+
+  (1) Redistributions of source code must retain the copyright
+  notice, this list of conditions and the following disclaimer.
+
+  (2) Redistributions in binary form must reproduce the copyright
+  notice, this list of conditions and the following disclaimer in
+  the documentation and/or other materials provided with the
+  distribution.
+
+  (3) Neither the name of the University of California, Lawrence
+  Berkeley National Laboratory, U.S. Dept. of Energy nor the names
+  of its contributors may be used to endorse or promote products
+  derived from this software without specific prior written
+  permission.
+
+  2. THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+  A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+  OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+  LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+  3. You are under no obligation whatsoever to provide any bug fixes,
+  patches, or upgrades to the features, functionality or performance of
+  the source code ("Enhancements") to anyone; however, if you choose to
+  make your Enhancements available either publicly, or directly to
+  Lawrence Berkeley National Laboratory, without imposing a separate
+  written license agreement for such Enhancements, then you hereby grant
+  the following license: a non-exclusive, royalty-free perpetual license
+  to install, use, modify, prepare derivative works, incorporate into
+  other computer software, distribute, and sublicense such enhancements
+  or derivative works thereof, in binary and source code form.
+
+Name: mdspan
+Files: include/xsf/third_party/kokkos/mdspan.hpp
+License: Apache-2.0 WITH LLVM-exception
+  For details, see include/xsf/third_party/kokkos/mdspan.hpp

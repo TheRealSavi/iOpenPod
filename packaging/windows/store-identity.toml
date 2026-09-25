@@ -1,0 +1,8 @@
+# Public identifiers from the iOpenPod listing in Microsoft Partner Center.
+# These are package metadata, not signing credentials.
+name = "TheRealSavi.iOpenPod"
+publisher = "CN=FB5CD908-9397-4B6A-B014-49E83AB6CE1A"
+publisher_display_name = "TheRealSavi"
+store_id = "9P2LXCHHWLG9"
+package_family_name = "TheRealSavi.iOpenPod_gncxjke9mmtsj"
+package_sid = "S-1-15-2-3217256207-1113745441-394109889-2428521660-2671115195-2036667267-1488106813"

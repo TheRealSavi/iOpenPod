@@ -1,0 +1,57 @@
+{
+  "audit_date": "2026-09-25",
+  "ffmpeg": {
+    "av_version_info": "7.1.5",
+    "avutil_configuration": "--prefix=/c/FFmpeg-n7.1.5/build/msvc/installed --disable-programs --disable-doc --disable-debug --enable-network --disable-lzma --enable-pic --disable-vulkan --disable-v4l2-m2m --disable-decoder=truemotion1 --disable-avdevice --disable-avfilter --enable-zlib --extra-cflags='-IC:/zlib-1.3.1/build/amd64' --extra-ldflags='-LIBPATH:C:/zlib-1.3.1/build/amd64' --toolchain=msvc --enable-shared --disable-static",
+    "avutil_license": "LGPL version 2.1 or later"
+  },
+  "python_windows_license": {
+    "source": "python-build-standalone20260825 install_only LICENSE.txt",
+    "sha256": "886a0ead2d89030ee62dbff52b04e47ab91998341295bb9c56fb952b4e081c7a"
+  },
+  "soundfile_replacement": {
+    "name": "libsndfile",
+    "version": "1.2.2",
+    "sha256": "0b862436ce564700e0c5b05a21529d277d935aaf5c34c616bc50262460bb5faf",
+    "size": 710656,
+    "compiler": "Zig 0.14.1 (Clang 19.1.7), x86_64-windows-gnu",
+    "cmake": "4.1.3",
+    "ninja": "1.13.0",
+    "config": {
+      "BUILD_SHARED_LIBS": true,
+      "ENABLE_EXTERNAL_LIBS": false,
+      "ENABLE_MPEG": false,
+      "BUILD_TESTING": false,
+      "BUILD_PROGRAMS": false,
+      "BUILD_EXAMPLES": false,
+      "CMAKE_BUILD_TYPE": "Release"
+    },
+    "source": "libsndfile-1.2.2.tar.xz",
+    "source_sha256": "3799ca9924d3125038880367bf1468e53a1b7e3686a934f098b7e1d286cdb80e",
+    "patch": "packaging/third-party/libsndfile-no-version-resource.patch",
+    "imports": [
+      "KERNEL32.dll",
+      "api-ms-win-crt-convert-l1-1-0.dll",
+      "api-ms-win-crt-environment-l1-1-0.dll",
+      "api-ms-win-crt-filesystem-l1-1-0.dll",
+      "api-ms-win-crt-heap-l1-1-0.dll",
+      "api-ms-win-crt-math-l1-1-0.dll",
+      "api-ms-win-crt-private-l1-1-0.dll",
+      "api-ms-win-crt-runtime-l1-1-0.dll",
+      "api-ms-win-crt-stdio-l1-1-0.dll",
+      "api-ms-win-crt-string-l1-1-0.dll",
+      "api-ms-win-crt-time-l1-1-0.dll",
+      "api-ms-win-crt-locale-l1-1-0.dll"
+    ],
+    "verification": [
+      "SoundFile FLOAT WAV exact roundtrip at22050Hz",
+      "librosa HPSS32x16",
+      "MPEG and FLAC formats absent"
+    ]
+  },
+  "application_assets": {
+    "device_images": "Original Apple AMPDevices.framework icons replaced by project-authored illustrations for release.",
+    "app_icon": "DJShott explicit permission for use in future iOpenPod updates; see application icon NOTICE.",
+    "glyphs": "Introduced in project commit575bff5c00cc6dd0548cc60e147b0d1f477d1302; no external source or license claim found."
+  }
+}

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>com.apple.mobile.iTunes.SQLMusicLibraryPostProcessCommands</key>
+	<dict>
+		<key>SQLCommands</key>
+		<dict>
+			<key>CreateItemArtistIndex</key>
+			<string>CREATE INDEX IF NOT EXISTS item_idx_artist ON item (artist);</string>
+		</dict>
+		<key>UserVersionCommandSets</key>
+		<dict>
+			<key>8</key>
+			<dict>
+				<key>Commands</key>
+				<array>
+					<string>CreateItemArtistIndex</string>
+				</array>
+			</dict>
+		</dict>
+	</dict>
+</dict>
+</plist>

@@ -1,0 +1,512 @@
+{
+  "reference": "Original iOpenPod: ipodTagNormalizer.py and test_ipod_tag_normalizer.py",
+  "source_sha256": "c122c95d8da19731d9986779e1cc024439f120835817945549297a632d5e56cd",
+  "cases": [
+    {
+      "name": "test_ipod_tag_suggestion_moves_featured_artist_to_title",
+      "tracks": [
+        {
+          "db_track_id": 1,
+          "Title": "Lead Single",
+          "Artist": "Album Artist feat. Guest",
+          "Album": "Record",
+          "Album Artist": "Album Artist"
+        },
+        {
+          "db_track_id": 2,
+          "Title": "Deep Cut",
+          "Artist": "Album Artist",
+          "Album": "Record",
+          "Album Artist": "Album Artist"
+        }
+      ],
+      "profile": {
+        "label": "iPod Classic 7th Gen",
+        "has_cover_flow": true,
+        "album_artist_aware": false
+      },
+      "changes": [
+        {
+          "Artist": "Album Artist",
+          "Title": "Lead Single (feat. Guest)",
+          "Sort Artist": "Album Artist",
+          "Sort Album Artist": "Album Artist",
+          "Sort Album": "Record"
+        },
+        {
+          "Sort Artist": "Album Artist",
+          "Sort Album Artist": "Album Artist",
+          "Sort Album": "Record"
+        }
+      ],
+      "warnings": [
+        "Album Artist is preserved, but this profile treats Artist as the safer iPod grouping field.",
+        "Cover Flow devices are sensitive to Artist+Album differences and same-name albums."
+      ]
+    },
+    {
+      "name": "test_ipod_tag_suggestion_uses_album_artist_as_artist_for_grouping",
+      "tracks": [
+        {
+          "db_track_id": 1,
+          "Title": "Song A",
+          "Artist": "Artist feat. Guest",
+          "Album": "Record",
+          "Album Artist": "Artist"
+        },
+        {
+          "db_track_id": 2,
+          "Title": "Song B",
+          "Artist": "Artist",
+          "Album": "Record",
+          "Album Artist": "Artist"
+        }
+      ],
+      "profile": {
+        "label": "Generic iPod",
+        "has_cover_flow": false,
+        "album_artist_aware": false
+      },
+      "changes": [
+        {
+          "Artist": "Artist",
+          "Title": "Song A (feat. Guest)",
+          "Sort Artist": "Artist",
+          "Sort Album Artist": "Artist",
+          "Sort Album": "Record"
+        },
+        {
+          "Sort Artist": "Artist",
+          "Sort Album Artist": "Artist",
+          "Sort Album": "Record"
+        }
+      ],
+      "warnings": [
+        "Album Artist is preserved, but this profile treats Artist as the safer iPod grouping field."
+      ]
+    },
+    {
+      "name": "test_ipod_tag_suggestion_keeps_artist_on_album_artist_aware_profiles",
+      "tracks": [
+        {
+          "db_track_id": 1,
+          "Title": "Song A",
+          "Artist": "Artist feat. Guest",
+          "Album": "Record",
+          "Album Artist": "Artist"
+        }
+      ],
+      "profile": {
+        "label": "iPod Nano 7th Gen",
+        "has_cover_flow": false,
+        "album_artist_aware": true
+      },
+      "changes": [
+        {
+          "Sort Artist": "Artist feat. Guest",
+          "Sort Album Artist": "Artist",
+          "Sort Album": "Record"
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "name": "test_ipod_tag_suggestion_disambiguates_same_album_titles_across_library",
+      "tracks": [
+        {
+          "db_track_id": 1,
+          "Title": "Song A",
+          "Artist": "One",
+          "Album": "Greatest Hits",
+          "Album Artist": "One"
+        },
+        {
+          "db_track_id": 2,
+          "Title": "Song B",
+          "Artist": "Two",
+          "Album": "Greatest Hits",
+          "Album Artist": "Two"
+        }
+      ],
+      "profile": {
+        "label": "Generic iPod",
+        "has_cover_flow": false,
+        "album_artist_aware": false
+      },
+      "changes": [
+        {
+          "Album": "Greatest Hits (One)",
+          "Sort Artist": "One",
+          "Sort Album Artist": "One",
+          "Sort Album": "Greatest Hits (One)"
+        },
+        {
+          "Album": "Greatest Hits (Two)",
+          "Sort Artist": "Two",
+          "Sort Album Artist": "Two",
+          "Sort Album": "Greatest Hits (Two)"
+        }
+      ],
+      "warnings": [
+        "Album Artist is preserved, but this profile treats Artist as the safer iPod grouping field."
+      ]
+    },
+    {
+      "name": "test_ipod_tag_suggestion_marks_true_compilation",
+      "tracks": [
+        {
+          "db_track_id": 1,
+          "Title": "A",
+          "Artist": "One",
+          "Album": "Sampler"
+        },
+        {
+          "db_track_id": 2,
+          "Title": "B",
+          "Artist": "Two",
+          "Album": "Sampler"
+        }
+      ],
+      "profile": {
+        "label": "Generic iPod",
+        "has_cover_flow": false,
+        "album_artist_aware": false
+      },
+      "changes": [
+        {
+          "Album Artist": "Various Artists",
+          "compilation_flag": 1,
+          "Sort Artist": "One",
+          "Sort Album Artist": "Various Artists",
+          "Sort Album": "Sampler"
+        },
+        {
+          "Album Artist": "Various Artists",
+          "compilation_flag": 1,
+          "Sort Artist": "Two",
+          "Sort Album Artist": "Various Artists",
+          "Sort Album": "Sampler"
+        }
+      ],
+      "warnings": [
+        "Album Artist is preserved, but this profile treats Artist as the safer iPod grouping field."
+      ]
+    },
+    {
+      "name": "test_ipod_tag_suggestion_preserves_track_artists_on_marked_compilation",
+      "tracks": [
+        {
+          "db_track_id": 1,
+          "Title": "A",
+          "Artist": "One",
+          "Album": "Sampler",
+          "Album Artist": "Various Artists",
+          "compilation_flag": 1
+        },
+        {
+          "db_track_id": 2,
+          "Title": "B",
+          "Artist": "Two",
+          "Album": "Sampler",
+          "Album Artist": "Various Artists",
+          "compilation_flag": 1
+        }
+      ],
+      "profile": {
+        "label": "Generic iPod",
+        "has_cover_flow": false,
+        "album_artist_aware": false
+      },
+      "changes": [
+        {
+          "Sort Artist": "One",
+          "Sort Album Artist": "Various Artists",
+          "Sort Album": "Sampler"
+        },
+        {
+          "Sort Artist": "Two",
+          "Sort Album Artist": "Various Artists",
+          "Sort Album": "Sampler"
+        }
+      ],
+      "warnings": [
+        "Album Artist is preserved, but this profile treats Artist as the safer iPod grouping field."
+      ]
+    },
+    {
+      "name": "test_ipod_tag_suggestion_normalizes_explicit_compilation_across_album",
+      "tracks": [
+        {
+          "db_track_id": 1,
+          "Title": "A",
+          "Artist": "One",
+          "Album": "Sampler",
+          "Album Artist": "Soundtrack",
+          "compilation_flag": 1
+        },
+        {
+          "db_track_id": 2,
+          "Title": "B",
+          "Artist": "One",
+          "Album": "Sampler",
+          "Album Artist": "Soundtrack",
+          "compilation_flag": 0
+        }
+      ],
+      "profile": {
+        "label": "iPod Nano 7th Gen",
+        "has_cover_flow": false,
+        "album_artist_aware": true
+      },
+      "changes": [
+        {
+          "Album Artist": "Various Artists",
+          "Sort Artist": "One",
+          "Sort Album Artist": "Various Artists",
+          "Sort Album": "Sampler"
+        },
+        {
+          "Album Artist": "Various Artists",
+          "compilation_flag": 1,
+          "Sort Artist": "One",
+          "Sort Album Artist": "Various Artists",
+          "Sort Album": "Sampler"
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "name": "test_explicit_compilation_does_not_capture_same_name_album",
+      "tracks": [
+        {
+          "db_track_id": 1,
+          "Title": "A",
+          "Artist": "One",
+          "Album": "Sampler",
+          "Album Artist": "Soundtrack",
+          "compilation_flag": 1
+        },
+        {
+          "db_track_id": 2,
+          "Title": "B",
+          "Artist": "Band",
+          "Album": "Sampler",
+          "Album Artist": "Band",
+          "compilation_flag": 0
+        }
+      ],
+      "profile": {
+        "label": "iPod Nano 7th Gen",
+        "has_cover_flow": false,
+        "album_artist_aware": true
+      },
+      "changes": [
+        {
+          "Album Artist": "Various Artists",
+          "Sort Artist": "One",
+          "Sort Album Artist": "Various Artists",
+          "Sort Album": "Sampler"
+        },
+        {
+          "Sort Artist": "Band",
+          "Sort Album Artist": "Band",
+          "Sort Album": "Sampler"
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "name": "test_ipod_library_suggestion_populates_article_aware_sort_fields",
+      "tracks": [
+        {
+          "db_track_id": 1,
+          "Title": "A",
+          "Artist": "The Smashing Pumpkins",
+          "Album": "The Album",
+          "Composer": "The Composer",
+          "Sort Artist": "The Smashing Pumpkins"
+        },
+        {
+          "db_track_id": 2,
+          "Title": "B",
+          "Artist": "The Smashing Pumpkins",
+          "Album": "The Album",
+          "Composer": "The Composer"
+        }
+      ],
+      "profile": {
+        "label": "Generic iPod",
+        "has_cover_flow": false,
+        "album_artist_aware": false
+      },
+      "changes": [
+        {
+          "Sort Artist": "Smashing Pumpkins, The",
+          "Sort Album": "Album, The",
+          "Sort Composer": "Composer, The"
+        },
+        {
+          "Sort Artist": "Smashing Pumpkins, The",
+          "Sort Album": "Album, The",
+          "Sort Composer": "Composer, The"
+        }
+      ],
+      "warnings": [
+        "Album Artist is preserved, but this profile treats Artist as the safer iPod grouping field."
+      ]
+    },
+    {
+      "name": "test_ipod_library_suggestion_reuses_existing_custom_sort_for_same_artist",
+      "tracks": [
+        {
+          "db_track_id": 1,
+          "Title": "A",
+          "Artist": "Elvis Costello",
+          "Album": "Record",
+          "Sort Artist": "Costello, Elvis"
+        },
+        {
+          "db_track_id": 2,
+          "Title": "B",
+          "Artist": "Elvis Costello",
+          "Album": "Record"
+        }
+      ],
+      "profile": {
+        "label": "Generic iPod",
+        "has_cover_flow": false,
+        "album_artist_aware": false
+      },
+      "changes": [
+        {
+          "Sort Album": "Record"
+        },
+        {
+          "Sort Artist": "Costello, Elvis",
+          "Sort Album": "Record"
+        }
+      ],
+      "warnings": [
+        "Album Artist is preserved, but this profile treats Artist as the safer iPod grouping field."
+      ]
+    },
+    {
+      "name": "test_library_suggestion_uses_library_sort_canonical",
+      "tracks": [
+        {
+          "db_track_id": 1,
+          "Title": "A",
+          "Artist": "Elvis Costello",
+          "Album": "Record"
+        },
+        {
+          "db_track_id": 2,
+          "Title": "B",
+          "Artist": "Elvis Costello",
+          "Album": "Record",
+          "Sort Artist": "Costello, Elvis"
+        }
+      ],
+      "profile": {
+        "label": "Generic iPod",
+        "has_cover_flow": false,
+        "album_artist_aware": false
+      },
+      "changes": [
+        {
+          "Sort Artist": "Costello, Elvis",
+          "Sort Album": "Record"
+        },
+        {
+          "Sort Album": "Record"
+        }
+      ],
+      "warnings": [
+        "Album Artist is preserved, but this profile treats Artist as the safer iPod grouping field."
+      ]
+    },
+    {
+      "name": "controls_and_existing_featured_title",
+      "tracks": [
+        {
+          "Title": " The\tSong\n(feat. Guest) ",
+          "Artist": "The Artist feat. Guest",
+          "Album": " An Album\u0000 ",
+          "Album Artist": "The Artist",
+          "Composer": " A Writer ",
+          "Sort Show": " Show\nName "
+        }
+      ],
+      "profile": {
+        "label": "Generic iPod",
+        "has_cover_flow": false,
+        "album_artist_aware": false
+      },
+      "changes": [
+        {
+          "Title": "The Song (feat. Guest)",
+          "Album": "An Album",
+          "Composer": "A Writer",
+          "Sort Show": "Show Name",
+          "Artist": "The Artist",
+          "Sort Artist": "Artist, The",
+          "Sort Album Artist": "Artist, The",
+          "Sort Album": "Album, An",
+          "Sort Composer": "Writer, A"
+        }
+      ],
+      "warnings": [
+        "Album Artist is preserved, but this profile treats Artist as the safer iPod grouping field."
+      ]
+    },
+    {
+      "name": "empty_metadata",
+      "tracks": [
+        {}
+      ],
+      "profile": {
+        "label": "Generic iPod",
+        "has_cover_flow": false,
+        "album_artist_aware": false
+      },
+      "changes": [
+        {}
+      ],
+      "warnings": [
+        "Album Artist is preserved, but this profile treats Artist as the safer iPod grouping field."
+      ]
+    },
+    {
+      "name": "canonical_tie",
+      "tracks": [
+        {
+          "Artist": "Artist",
+          "Album": "Z",
+          "Sort Artist": "zebra"
+        },
+        {
+          "Artist": "Artist",
+          "Album": "Z",
+          "Sort Artist": "Alpha"
+        }
+      ],
+      "profile": {
+        "label": "Generic iPod",
+        "has_cover_flow": false,
+        "album_artist_aware": false
+      },
+      "changes": [
+        {
+          "Sort Artist": "Alpha",
+          "Sort Album": "Z"
+        },
+        {
+          "Sort Album": "Z"
+        }
+      ],
+      "warnings": [
+        "Album Artist is preserved, but this profile treats Artist as the safer iPod grouping field."
+      ]
+    }
+  ]
+}

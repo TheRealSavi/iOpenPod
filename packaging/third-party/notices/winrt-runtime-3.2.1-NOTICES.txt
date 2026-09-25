@@ -1,0 +1,7 @@
+winrt-runtime 3.2.1
+Source: https://files.pythonhosted.org/packages/16/dd/acdd527c1d890c8f852cc2af644aa6c160974e66631289420aa871b05e65/winrt_runtime-3.2.1.tar.gz
+Archive SHA-256: c8dca19e12b234ae6c3dadf1a4d0761b51e708457492c13beb666556958801ea
+
+These notices are preserved from the upstream source distribution.
+This may include notices for upstream components not used in iOpenPod.
+Each component retains its own license; inclusion is not relicensing.

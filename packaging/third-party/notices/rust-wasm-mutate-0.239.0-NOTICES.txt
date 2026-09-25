@@ -1,0 +1,7 @@
+rust-wasm-mutate 0.239.0
+Source: https://static.crates.io/crates/wasm-mutate/wasm-mutate-0.239.0.crate
+Archive SHA-256: 27725e1c0a17d26b106d3f1f33b7d9734f0303973a0d61aeda548a421e6ee121
+
+These notices are preserved from the upstream source distribution.
+This may include notices for upstream components not used in iOpenPod.
+Each component retains its own license; inclusion is not relicensing.

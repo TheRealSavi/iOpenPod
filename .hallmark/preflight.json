@@ -1,0 +1,19 @@
+{
+  "scanned_at": "2026-09-18",
+  "framework": "PySide6 6.11.2 / QWidget",
+  "font_stack": "Native QFontDatabase body/display fonts with a platform monospace fallback",
+  "palette": "Semantic ThemeTokens rendered through QPalette and application-wide QSS; cool gray surfaces with an iPod-blue signal accent",
+  "motion": "motion-cut; no decorative animation dependency",
+  "spacing": "Shared four-point LayoutTokens rhythm with two-pixel optical corrections",
+  "preserved": [
+    "native platform typography",
+    "Porcelain Light, Slate Dark, and Original iOpenPod Dark semantic palettes",
+    "application-wide theme ownership in GUI/presentation/theme",
+    "four-point desktop spacing and logical-pixel metrics"
+  ],
+  "introduced": [
+    "Hallmark component-state and contrast review",
+    "cross-platform palette-aware checkbox indicator painting",
+    "flat source-list disclosure pattern for Host Media Library folders"
+  ]
+}

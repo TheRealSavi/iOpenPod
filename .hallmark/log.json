@@ -1,0 +1,148 @@
+[
+  {
+    "date": "2026-09-18",
+    "macrostructure": "Narrative Workflow",
+    "theme": "custom",
+    "theme_axes": "light and dark / native sans / cool blue",
+    "vibe": "focused staged desktop sync planner",
+    "enrichment": "none",
+    "brief": "Full-window Sources, scan, Host selection, and review flow with source-isolated Library pages",
+    "scope": "app"
+  },
+  {
+    "date": "2026-09-18",
+    "macrostructure": "Workbench",
+    "theme": "custom",
+    "theme_axes": "light and dark / native sans / cool blue",
+    "vibe": "technical utilitarian reconciliation ledger",
+    "enrichment": "none",
+    "brief": "Virtualized Sync Plan summary, filters, and Track/Photo reconciliation table",
+    "scope": "app"
+  },
+  {
+    "date": "2026-09-16",
+    "macrostructure": "Full-height Playback Band",
+    "theme": "custom",
+    "theme_axes": "light and dark / native sans / cool blue",
+    "vibe": "tactile centered desktop playback surface",
+    "enrichment": "current Track artwork",
+    "brief": "Reference-informed Player with left transport and volume, a full-height center well, and far-right Queue",
+    "scope": "app-shell component"
+  },
+  {
+    "date": "2026-09-14",
+    "macrostructure": "Shared Browser Chrome",
+    "theme": "custom",
+    "theme_axes": "light and dark / native sans / cool blue",
+    "vibe": "quiet compact consistent desktop source navigation",
+    "enrichment": "none",
+    "brief": "Unify Photos, Podcasts, and Backups on one compact Page Header and Source List rail",
+    "scope": "app"
+  },
+  {
+    "date": "2026-09-14",
+    "macrostructure": "Player-Launched Visual Field",
+    "theme": "custom",
+    "theme_axes": "dark ink and full color / native Player controls / music-derived spectrum",
+    "vibe": "immersive synchronized graphics-only visual instrument",
+    "enrichment": "one quiet Player glyph above the rating and a full-bleed renderer with no internal chrome",
+    "brief": "Integrate Synesthesia into Player-owned playback and remove its standalone navigation and controls"
+  },
+  {
+    "date": "2026-09-14",
+    "macrostructure": "Directed Shot Sequence",
+    "theme": "custom",
+    "theme_axes": "dark ink and full color / spatial cinematography / music-derived spectrum",
+    "vibe": "immersive cinematic otherworldly music-directed exploration",
+    "enrichment": "establishing, tracking, orbital, inspection, fly-through, and reveal camera shots across eight procedural Scenes",
+    "brief": "Direct the Synesthesia camera through composed viewpoints while preserving music causality"
+  },
+  {
+    "date": "2026-09-13",
+    "macrostructure": "Kinetic Camera Journey",
+    "theme": "custom",
+    "theme_axes": "dark ink and full color / spatial choreography / music-derived spectrum",
+    "vibe": "cinematic kinetic otherworldly directional journey",
+    "enrichment": "scene-specific travel, orbit, depth, waveform deformation, parallax, and camera motion",
+    "brief": "Turn procedural Synesthesia Scenes from animated overlays into music-driven journeys"
+  },
+  {
+    "date": "2026-09-13",
+    "macrostructure": "Cinematic Scene Stage",
+    "theme": "custom",
+    "theme_axes": "dark ink and full color / native sans and mono / music-derived spectrum",
+    "vibe": "atmospheric kinetic playful scene-directed visual instrument",
+    "enrichment": "Magnetosphere, Ribbon Cascade, Warp Tunnel, Mirror Wave, Prismatic Veil, Lattice Cathedral, Solar Bloom, and Star Chamber",
+    "brief": "Mood-directed procedural scene library informed by the classic iTunes visualizer and Magnetosphere references"
+  },
+  {
+    "date": "2026-09-13",
+    "macrostructure": "Full-bleed Field Plate",
+    "theme": "custom",
+    "theme_axes": "dark ink / native sans and mono / iPod blue signal / music-derived spectrum",
+    "vibe": "nocturnal kinetic playful visual instrument",
+    "enrichment": "live Track Analysis driving ambient matter, comets, filaments, bursts, lasers, rifts, and source flares",
+    "brief": "Sparse annotated transport over a full-bleed Coupled Field with distinct evidence-driven GPU phenomena"
+  },
+  {
+    "date": "2026-09-12",
+    "macrostructure": "Archive Ledger",
+    "theme": "custom",
+    "theme_axes": "light and dark / native sans / cool blue",
+    "vibe": "calm exact desktop backup utility",
+    "enrichment": "device-specific iPod artwork",
+    "brief": "Persistent archive rail, contextual device masthead, and verified Backup Snapshot ledger"
+  },
+  {
+    "date": "2026-09-12",
+    "macrostructure": "Catalogue",
+    "theme": "custom",
+    "theme_axes": "light and dark / native sans / cool blue",
+    "vibe": "editorial premium podcast library",
+    "enrichment": "real feed and device artwork",
+    "brief": "Artwork-led Podcast show shelf, selected-show masthead, editorial episode stream, and visual discovery dialog"
+  },
+  {
+    "date": "2026-08-31",
+    "macrostructure": "Balanced Player Rail",
+    "theme": "custom",
+    "theme_axes": "light and dark / native sans / cool blue",
+    "vibe": "soft exact desktop media controls",
+    "enrichment": "none",
+    "brief": "Centered three-zone Player with runtime-only Queue and newest-first History pane"
+  },
+  {
+    "date": "2026-08-28",
+    "macrostructure": "Split Rail Library",
+    "theme": "custom",
+    "theme_axes": "light and dark / native sans / cool blue",
+    "vibe": "quiet compact desktop music library",
+    "enrichment": "Tier-A deterministic placeholder artwork",
+    "brief": "Draggable Track context search, single-line Browser headers, evenly distributed album grid, and semantic cursors"
+  },
+  {
+    "date": "2026-08-28",
+    "macrostructure": "Ecosystem Index",
+    "theme": "custom",
+    "theme_axes": "light and dark / native sans / cool blue",
+    "vibe": "calm technical desktop music utility",
+    "enrichment": "Tier-A deterministic placeholder artwork",
+    "brief": "Original-informed iOpenPod application shell with virtualized Library views"
+  },
+  {
+    "date": "2026-08-28",
+    "macrostructure": "Theme foundation (no page build)",
+    "theme": "custom",
+    "theme_axes": "light and dark / native sans / cool blue",
+    "vibe": "quiet precise desktop music utility",
+    "enrichment": "none",
+    "brief": "Original-informed semantic palette and metric foundation for iOpenPod 2.0"
+  },
+  {
+    "date": "2026-08-28",
+    "macrostructure": "Workbench",
+    "theme": "Cobalt",
+    "enrichment": "none",
+    "brief": "Minimal read-only iTunesDB library proof of concept in PySide6"
+  }
+]

@@ -1,0 +1,7 @@
+rust-json-from-wast 0.239.0
+Source: https://static.crates.io/crates/json-from-wast/json-from-wast-0.239.0.crate
+Archive SHA-256: 10e0969e6cddea32e749f84d2422e042699c3dbc24f33b3f089859db7d75185b
+
+These notices are preserved from the upstream source distribution.
+This may include notices for upstream components not used in iOpenPod.
+Each component retains its own license; inclusion is not relicensing.

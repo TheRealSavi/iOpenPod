@@ -1,0 +1,21 @@
+iOpenPod application icon
+Creator: DJShott
+Used with the creator's permission for iOpenPod updates.
+
+The project owner supplied a screenshot of the creator's Ko-fi message on
+2026-09-25. It states:
+
+"I designed an icon inspired by the original iTunes icon that I'm using on my
+install (for extra nostalgia) feel free to use this in future updates to the app
+if you like it."
+
+This is an asset-specific permission, not an MIT or GPL license grant. The
+application's GPL grant does not purport to relicense this artwork. No separate
+permission for unrelated uses or relicensing of the artwork is asserted.
+
+The 256-pixel master has SHA-256:
+3cdc1d8d98c707209e415e4824793f71ed1a1c53c541161abee3def3f63a6dbe
+
+The application icon sizes, Windows tiles, and macOS icon container are derived
+from this master. No Apple authorship, license, affiliation, or endorsement is
+claimed by iOpenPod.

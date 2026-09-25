@@ -1,0 +1,19 @@
+title: iOpenPod
+baseurl: /iOpenPod
+url: https://therealsavi.github.io
+author: John Gibbons
+description: Free, open-source desktop application for managing iPods without iTunes.
+default_og_image: https://therealsavi.github.io/iOpenPod/screenshots/hero.webp
+google_site_verification: google9044a61ef03e1fae
+
+plugins:
+  - jekyll-sitemap
+
+permalink: pretty
+
+defaults:
+  - scope:
+      path: ""
+      type: pages
+    values:
+      layout: default

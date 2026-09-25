@@ -1,0 +1,7 @@
+rust-valuable 0.1.0
+Source: https://static.crates.io/crates/valuable/valuable-0.1.0.crate
+Archive SHA-256: 830b7e5d4d90034032940e4ace0d9a9a057e7a45cd94e6c007832e39edb82f6d
+
+These notices are preserved from the upstream source distribution.
+This may include notices for upstream components not used in iOpenPod.
+Each component retains its own license; inclusion is not relicensing.

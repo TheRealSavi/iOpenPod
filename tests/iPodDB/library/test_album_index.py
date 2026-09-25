@@ -1,0 +1,255 @@
+"""Sort 36 through the public API, with ordering extracted from captured bytes."""
+
+import base64
+import hashlib
+import json
+from dataclasses import replace
+from pathlib import Path
+
+import pytest
+
+from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
+from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
+from iPodDB.iTunesDB.shared.chunk_defs.mhip import MhipHeader
+from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.library_index_mhod import (
+    MhodLibraryIndexPayload,
+)
+from iPodDB.iTunesDB.shared.chunk_defs.mhsd import MhsdHeader
+from iPodDB.iTunesDB.shared.chunk_defs.mhyp import MhypHeader
+from iPodDB.library import (
+    IPodLibrary,
+    Track,
+    TrackMetadata,
+    WriteResources,
+    _album_index,
+)
+from iPodDB.library.writing import FileDependency, PreparedMedia
+from iPodDB.shared.chunk import DatabaseDocument
+
+FIXTURES = Path(__file__).parents[2] / "fixtures" / "iTunesDB"
+
+
+def captured_source() -> IPodLibrary:
+    data = base64.b64decode(
+        b"".join((FIXTURES / "captured-album-index-36.b64").read_bytes().split()),
+        validate=True,
+    )
+    manifest = json.loads((FIXTURES / "captured-album-index-36.json").read_text())
+    assert hashlib.sha256(data).hexdigest() == manifest["fixture_sha256"]
+    return IPodLibrary(data)
+
+
+def index_tracks(data: bytes) -> dict[int, tuple[int, ...]]:
+    result: dict[int, tuple[int, ...]] = {}
+    for ds in parse_iTunesDB(data).find_chunks(MhsdHeader):
+        for master in ds.find_chunks(MhypHeader):
+            if not master.chunk.header.master_flag:
+                continue
+            ids = tuple(
+                c.header.track_id
+                for c in master.chunk.children
+                if isinstance(c.header, MhipHeader)
+            )
+            for c in master.chunk.children:
+                if _album_index.is_album_index(c):
+                    assert isinstance(c.payload, MhodLibraryIndexPayload)
+                    result[ds.chunk.header.dataset_type] = tuple(
+                        ids[i] for i in c.payload.indices
+                    )
+    return result
+
+
+def test_captured_order_and_noop_are_exact() -> None:
+    source = captured_source()
+    original = source.serialize().itunes
+    manifest = json.loads((FIXTURES / "captured-album-index-36.json").read_text())
+    assert index_tracks(original) == {
+        int(kind): tuple(ids) for kind, ids in manifest["ordered_track_ids"].items()
+    }
+    result = source.prepare(source.analyze(source.begin_draft()))
+    assert result.prepared is not None, result.issues
+    assert result.prepared.itunes == original
+
+
+@pytest.mark.parametrize("field", ["title", "rating", "sort_title"])
+def test_unrelated_edits_preserve_the_captured_album_order(field: str) -> None:
+    source = captured_source()
+    original = source.serialize().itunes
+    first, *others = source.snapshot.tracks
+    if field == "sort_title":
+        changed = replace(first, metadata=replace(first.metadata, sort_title="ZZZ"))
+    elif field == "title":
+        changed = replace(first, title="ZZZ")
+    else:
+        changed = replace(first, rating=80)
+    desired = replace(source.snapshot, tracks=(changed, *others))
+    result = source.prepare(source.analyze(source.begin_draft(desired)))
+    assert result.prepared is not None, result.issues
+    assert index_tracks(result.prepared.itunes) == index_tracks(original)
+    assert source.serialize().itunes == original
+
+
+def test_master_reordering_remaps_positions_and_keeps_captured_ties() -> None:
+    source = captured_source()
+    original = source.serialize().itunes
+    desired = replace(source.snapshot, tracks=tuple(reversed(source.snapshot.tracks)))
+    result = source.prepare(
+        source.analyze(source.begin_draft(desired)),
+        WriteResources(pending_playback_sidecars=False),
+    )
+    assert result.prepared is not None, result.issues
+    assert index_tracks(result.prepared.itunes) == index_tracks(original)
+
+
+def test_album_sort_edit_moves_the_whole_native_album() -> None:
+    source = captured_source()
+    original = source.serialize().itunes
+    before = index_tracks(original)[3]
+    # The first captured album is a-ha; move it after all named artists.
+    first_id = before[0]
+    first = next(t for t in source.snapshot.tracks if t.track_id == first_id)
+    assert first.ipod is not None
+    album_id = first.ipod.album_id
+    members = {
+        t.track_id
+        for t in source.snapshot.tracks
+        if t.ipod and t.ipod.album_id == album_id
+    }
+    desired = replace(
+        source.snapshot,
+        tracks=tuple(
+            replace(t, metadata=replace(t.metadata, sort_album_artist="ZZZ"))
+            if t.track_id in members
+            else t
+            for t in source.snapshot.tracks
+        ),
+    )
+    result = source.prepare(source.analyze(source.begin_draft(desired)))
+    assert result.prepared is not None, result.issues
+    after = index_tracks(result.prepared.itunes)[3]
+    assert tuple(i for i in after if i not in members) == tuple(
+        i for i in before if i not in members
+    )
+    assert after.index(first_id) > before.index(first_id)
+    assert tuple(i for i in after if i in members) == tuple(
+        i for i in before if i in members
+    )
+
+
+def test_track_removal_filters_the_captured_order() -> None:
+    source = captured_source()
+    removed = 57365  # A nonrepresentative Track from the captured Diamonds album.
+    original = source.serialize().itunes
+    desired = replace(
+        source.snapshot,
+        tracks=tuple(t for t in source.snapshot.tracks if t.track_id != removed),
+    )
+    result = source.prepare(
+        source.analyze(source.begin_draft(desired, delete_omissions=True)),
+        WriteResources(pending_playback_sidecars=False),
+    )
+    assert result.prepared is not None, result.issues
+    assert index_tracks(result.prepared.itunes) == {
+        kind: tuple(i for i in ids if i != removed)
+        for kind, ids in index_tracks(original).items()
+    }
+
+
+@pytest.mark.parametrize("existing_album", [False, True])
+def test_track_addition_joins_the_correct_album(existing_album: bool) -> None:
+    source = captured_source()
+    original = index_tracks(source.serialize().itunes)[3]
+    first = next(t for t in source.snapshot.tracks if t.track_id == original[0])
+    track = Track(
+        -1,
+        "Added",
+        first.artist if existing_album else "QQQ artist",
+        first.album if existing_album else "QQQ album",
+        1000,
+        album_artist=first.album_artist if existing_album else "QQQ artist",
+        size_bytes=4,
+        track_number=2,
+        metadata=TrackMetadata(
+            location="iPod_Control/Music/F00/added.mp3",
+            sample_rate_hz=44100,
+            file_format="MPEG audio file",
+            sort_album=first.metadata.sort_album if existing_album else "",
+            disc_number=1,
+        ),
+    )
+    media = PreparedMedia(
+        -1,
+        FileDependency(track.metadata.location, 4, hashlib.sha256(b"test").hexdigest()),
+        int.from_bytes(b"MP3 ", "big"),
+        1,
+        0xFFFF,
+        12,
+        0,
+    )
+    desired = replace(source.snapshot, tracks=(*source.snapshot.tracks, track))
+    result = source.prepare(
+        source.analyze(source.begin_draft(desired)),
+        WriteResources(media=(media,), pending_playback_sidecars=False),
+    )
+    assert result.prepared is not None, result.issues
+    identity = next(
+        m.output_id
+        for m in result.prepared.identities
+        if m.subject == "track" and m.draft_id == -1
+    )
+    for order in index_tracks(result.prepared.itunes).values():
+        assert tuple(i for i in order if i != identity) == original
+        assert order.count(identity) == 1
+        if existing_album:
+            assert order.index(identity) == order.index(first.track_id) + 1
+
+
+def test_disc_and_track_edits_update_member_order_and_review_effect() -> None:
+    source = captured_source()
+    track_id = 57365
+    desired = replace(
+        source.snapshot,
+        tracks=tuple(
+            replace(t, track_number=1, metadata=replace(t.metadata, disc_number=1))
+            if t.track_id == track_id
+            else t
+            for t in source.snapshot.tracks
+        ),
+    )
+    plan = source.analyze(source.begin_draft(desired))
+    assert plan.resolution is not None
+    assert any("sort type 36" in e.reason for e in plan.resolution.effects)
+    result = source.prepare(plan)
+    assert result.prepared is not None, result.issues
+    order = index_tracks(result.prepared.itunes)[3]
+    assert order.index(57371) < order.index(57365) < order.index(57373)
+
+
+def test_verifier_rejects_an_incorrect_album_index_writer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = captured_source()
+    original = source.serialize().itunes
+    writer = _album_index.prepare_album_index
+
+    def corrupt(
+        source_document: DatabaseDocument[MhbdHeader],
+        candidate: DatabaseDocument[MhbdHeader],
+        previous: tuple[Track, ...],
+        desired: tuple[Track, ...],
+        original_payload: MhodLibraryIndexPayload,
+    ) -> MhodLibraryIndexPayload:
+        payload = writer(
+            source_document, candidate, previous, desired, original_payload
+        )
+        return replace(payload, indices=tuple(reversed(payload.indices)))
+
+    monkeypatch.setattr(_album_index, "prepare_album_index", corrupt)
+    desired = replace(source.snapshot, tracks=tuple(reversed(source.snapshot.tracks)))
+    result = source.prepare(
+        source.analyze(source.begin_draft(desired)),
+        WriteResources(pending_playback_sidecars=False),
+    )
+    assert result.prepared is None
+    assert any(i.code == "verification.playlist_index" for i in result.issues)
+    assert source.serialize().itunes == original

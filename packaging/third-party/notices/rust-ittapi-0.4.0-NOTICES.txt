@@ -1,0 +1,7 @@
+rust-ittapi 0.4.0
+Source: https://static.crates.io/crates/ittapi/ittapi-0.4.0.crate
+Archive SHA-256: 6b996fe614c41395cdaedf3cf408a9534851090959d90d54a535f675550b64b1
+
+These notices are preserved from the upstream source distribution.
+This may include notices for upstream components not used in iOpenPod.
+Each component retains its own license; inclusion is not relicensing.

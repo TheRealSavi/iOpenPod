@@ -1,0 +1,56 @@
+name: Health
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  health:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+    runs-on: ${{ matrix.os }}
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libxkbcommon0 libdbus-1-3 udev
+
+      - name: Install project and dev dependencies
+        run: uv sync --locked --all-groups
+
+      - name: Check lockfile
+        run: uv lock --check
+
+      - name: Check formatting
+        run: uv run ruff format --check .
+
+      - name: Lint Python
+        run: uv run ruff check .
+
+      - name: Lint Markdown
+        run: uv run rumdl check .
+
+      - name: Type check
+        run: uv run mypy
+
+      - name: Test, including 1x/1.5x/2x display probes
+        run: uv run pytest

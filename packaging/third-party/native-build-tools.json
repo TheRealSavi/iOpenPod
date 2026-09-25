@@ -1,0 +1,26 @@
+[
+  {
+    "name": "zig",
+    "version": "0.14.1",
+    "url": "https://ziglang.org/download/0.14.1/zig-x86_64-windows-0.14.1.zip",
+    "sha256": "554f5378228923ffd558eac35e21af020c73789d87afeabf4bfd16f2e6feed2c",
+    "filename": "zig-x86_64-windows-0.14.1.zip",
+    "size": 82229343
+  },
+  {
+    "name": "cmake",
+    "version": "4.1.3",
+    "url": "https://files.pythonhosted.org/packages/c1/51/2bc56a4d8d9c2680913f1a7e0b7a33e48100f336df91176b74dda6dff8b3/cmake-4.1.3-py3-none-win_amd64.whl",
+    "sha256": "fd5a2ea9a38c6109036d8c912a7db4df2de241cfbc00b7424ae246494387da80",
+    "filename": "cmake-4.1.3-py3-none-win_amd64.whl",
+    "size": 37545974
+  },
+  {
+    "name": "ninja",
+    "version": "1.13.0",
+    "url": "https://files.pythonhosted.org/packages/29/45/c0adfbfb0b5895aa18cec400c535b4f7ff3e52536e0403602fc1a23f7de9/ninja-1.13.0-py3-none-win_amd64.whl",
+    "sha256": "fb8ee8719f8af47fed145cced4a85f0755dd55d45b2bddaf7431fa89803c5f3e",
+    "filename": "ninja-1.13.0-py3-none-win_amd64.whl",
+    "size": 309975
+  }
+]

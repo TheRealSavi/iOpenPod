@@ -1,0 +1,7 @@
+winrt-windows-media-interop 3.2.1
+Source: https://files.pythonhosted.org/packages/45/57/cb67cceafab9f5dc36fa571e4924eac3ff33cb6c3090a673cc7022b41ac4/winrt_windows_media_interop-3.2.1.tar.gz
+Archive SHA-256: f0b975333ab684ece01a73221141351ae21d96ea125e465121d63a2970757508
+
+These notices are preserved from the upstream source distribution.
+This may include notices for upstream components not used in iOpenPod.
+Each component retains its own license; inclusion is not relicensing.
