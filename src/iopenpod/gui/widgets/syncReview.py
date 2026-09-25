@@ -4828,7 +4828,7 @@ class SubsonicPlaylistMappingDialog(QDialog):
 
         title = QLabel("Subsonic Sync")
         title.setFont(QFont(FONT_FAMILY, Metrics.FONT_HERO, QFont.Weight.Bold))
-        title.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent;")
+        title.setStyleSheet(f"color: {paint_css('text.primary')}; background: transparent;")
         layout.addWidget(title)
 
         tabs = QTabWidget()
@@ -4843,20 +4843,14 @@ class SubsonicPlaylistMappingDialog(QDialog):
         cancel_btn = QPushButton("Cancel")
         cancel_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
         cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        cancel_btn.setStyleSheet(btn_css(
-            bg="transparent", bg_hover=Colors.SURFACE_ACTIVE,
-            fg=Colors.TEXT_SECONDARY, border=f"1px solid {Colors.BORDER}",
-        ))
+        cancel_btn.setStyleSheet(button_css("secondary", "md"))
         cancel_btn.clicked.connect(self.reject)
         btns.addWidget(cancel_btn)
 
         ok_btn = QPushButton("Continue")
         ok_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD, QFont.Weight.DemiBold))
         ok_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        ok_btn.setStyleSheet(btn_css(
-            bg=Colors.ACCENT, bg_hover=Colors.ACCENT_LIGHT, bg_press=Colors.ACCENT,
-            fg=Colors.TEXT_ON_ACCENT, border="none",
-        ))
+        ok_btn.setStyleSheet(button_css("primary", "md"))
         ok_btn.clicked.connect(self._accept)
         btns.addWidget(ok_btn)
         layout.addLayout(btns)
@@ -4876,7 +4870,7 @@ class SubsonicPlaylistMappingDialog(QDialog):
         )
         hint.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         hint.setWordWrap(True)
-        hint.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent;")
+        hint.setStyleSheet(f"color: {paint_css('text.secondary')}; background: transparent;")
         layout.addWidget(hint)
 
         scroll = make_scroll_area()
@@ -4889,13 +4883,13 @@ class SubsonicPlaylistMappingDialog(QDialog):
         if not self._subsonic:
             empty = QLabel("No Subsonic playlists selected.")
             empty.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
-            empty.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent;")
+            empty.setStyleSheet(f"color: {paint_css('text.tertiary')}; background: transparent;")
             rows.addWidget(empty)
         else:
             for sid, name in self._subsonic:
                 row = QFrame()
                 row.setStyleSheet(
-                    f"QFrame {{ background: {Colors.SURFACE}; border-radius: 6px; }}"
+                    f"QFrame {{ background: {paint_css('surface.default')}; border-radius: 6px; }}"
                 )
                 rl = QHBoxLayout(row)
                 rl.setContentsMargins(12, 10, 12, 10)
@@ -4903,7 +4897,7 @@ class SubsonicPlaylistMappingDialog(QDialog):
 
                 lbl = QLabel(name or sid)
                 lbl.setFont(QFont(FONT_FAMILY, Metrics.FONT_MD))
-                lbl.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent;")
+                lbl.setStyleSheet(f"color: {paint_css('text.primary')}; background: transparent;")
                 rl.addWidget(lbl, stretch=1)
 
                 combo = QComboBox()
@@ -4954,7 +4948,7 @@ class SubsonicPlaylistMappingDialog(QDialog):
         )
         hint.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         hint.setWordWrap(True)
-        hint.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; background: transparent;")
+        hint.setStyleSheet(f"color: {paint_css('text.secondary')}; background: transparent;")
         layout.addWidget(hint)
 
         scroll = make_scroll_area()
@@ -4976,7 +4970,7 @@ class SubsonicPlaylistMappingDialog(QDialog):
 
             row = QFrame()
             row.setStyleSheet(
-                f"QFrame {{ background: {Colors.SURFACE}; border-radius: 6px; }}"
+                f"QFrame {{ background: {paint_css('surface.default')}; border-radius: 6px; }}"
             )
             rl = QVBoxLayout(row)
             rl.setContentsMargins(12, 10, 12, 10)
@@ -4985,7 +4979,7 @@ class SubsonicPlaylistMappingDialog(QDialog):
             # Header
             header = QLabel(f"{sub_name} (remote)  →  {ipod_name} (local)")
             header.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM, QFont.Weight.Bold))
-            header.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; background: transparent;")
+            header.setStyleSheet(f"color: {paint_css('text.primary')}; background: transparent;")
             rl.addWidget(header)
 
             group = QButtonGroup(row)
@@ -5006,8 +5000,8 @@ class SubsonicPlaylistMappingDialog(QDialog):
             for rb in (rb_overwrite, rb_add, rb_local_overwrite, rb_local_add):
                 rb.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
                 rb.setStyleSheet(
-                    f"QRadioButton {{ color: {Colors.TEXT_PRIMARY}; background: transparent; }}"
-                    f"QRadioButton:disabled {{ color: {Colors.TEXT_TERTIARY}; }}"
+                    f"QRadioButton {{ color: {paint_css('text.primary')}; background: transparent; }}"
+                    f"QRadioButton:disabled {{ color: {paint_css('text.tertiary')}; }}"
                 )
                 options.addWidget(rb)
 
@@ -5040,7 +5034,7 @@ class SubsonicPlaylistMappingDialog(QDialog):
             )
             empty.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
             empty.setWordWrap(True)
-            empty.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; background: transparent;")
+            empty.setStyleSheet(f"color: {paint_css('text.tertiary')}; background: transparent;")
             rows.addWidget(empty)
 
         rows.addStretch()

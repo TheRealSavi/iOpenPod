@@ -292,7 +292,7 @@ class _SubsonicServerRow(SettingRow):
         self.status_label = QLabel("")
         self.status_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.status_label.setStyleSheet(
-            f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;"
+            f"color: {paint_css('text.secondary')}; background: transparent; border: none;"
         )
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignRight)
         right_layout.addWidget(self.status_label)
@@ -333,10 +333,7 @@ class _SubsonicServerRow(SettingRow):
         self.test_btn.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.test_btn.setFixedWidth(70)
         self.test_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.test_btn.setStyleSheet(btn_css(
-            bg=Colors.ACCENT, bg_hover=Colors.ACCENT_LIGHT, bg_press=Colors.ACCENT,
-            fg=Colors.TEXT_ON_ACCENT, border="none", padding="4px 8px",
-        ))
+        self.test_btn.setStyleSheet(button_css("primary", "sm"))
         self.test_btn.clicked.connect(self._on_test)
         right_layout.addWidget(self.test_btn)
 
@@ -359,7 +356,7 @@ class _SubsonicServerRow(SettingRow):
     def set_connected(self, username: str) -> None:
         self.status_label.setText(f"✓ Connected as {username}")
         self.status_label.setStyleSheet(
-            f"color: {Colors.SUCCESS}; background: transparent; border: none;"
+            f"color: {paint_css('status.success.text')}; background: transparent; border: none;"
         )
         self.test_btn.setEnabled(True)
         self.test_btn.setText("Test")
@@ -367,7 +364,7 @@ class _SubsonicServerRow(SettingRow):
     def set_error(self, message: str) -> None:
         self.status_label.setText(f"✕ {message}")
         self.status_label.setStyleSheet(
-            f"color: {Colors.DANGER}; background: transparent; border: none;"
+            f"color: {paint_css('status.danger.text')}; background: transparent; border: none;"
         )
         self.test_btn.setEnabled(True)
         self.test_btn.setText("Test")
@@ -375,7 +372,7 @@ class _SubsonicServerRow(SettingRow):
     def set_validating(self) -> None:
         self.status_label.setText("Testing…")
         self.status_label.setStyleSheet(
-            f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;"
+            f"color: {paint_css('text.secondary')}; background: transparent; border: none;"
         )
         self.test_btn.setEnabled(False)
         self.test_btn.setText("…")
@@ -425,7 +422,7 @@ class _SubsonicPlaylistRow(SettingRow):
         self.status_label = QLabel("Connect first to load playlists")
         self.status_label.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
         self.status_label.setStyleSheet(
-            f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;"
+            f"color: {paint_css('text.secondary')}; background: transparent; border: none;"
         )
         top.addWidget(self.status_label)
 
@@ -434,10 +431,7 @@ class _SubsonicPlaylistRow(SettingRow):
         self.refresh_btn.setFixedWidth(80)
         self.refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.refresh_btn.setEnabled(False)
-        self.refresh_btn.setStyleSheet(btn_css(
-            bg=Colors.ACCENT, bg_hover=Colors.ACCENT_LIGHT, bg_press=Colors.ACCENT,
-            fg=Colors.TEXT_ON_ACCENT, border="none", padding="4px 8px",
-        ))
+        self.refresh_btn.setStyleSheet(button_css("primary", "sm"))
         self.refresh_btn.clicked.connect(self.refresh_requested.emit)
         top.addWidget(self.refresh_btn)
         right.addLayout(top)
@@ -448,8 +442,8 @@ class _SubsonicPlaylistRow(SettingRow):
         self._scroll.setMinimumHeight(180)
         self._scroll.setMinimumWidth(360)
         self._scroll.setStyleSheet(
-            f"QScrollArea {{ border: 1px solid {Colors.BORDER_SUBTLE}; "
-            f"border-radius: 6px; background: {Colors.SURFACE_ALT}; }}"
+            f"QScrollArea {{ border: 1px solid {paint_css('border.subtle')}; "
+            f"border-radius: 6px; background: {paint_css('surface.inset')}; }}"
         )
         self._list_widget = QWidget()
         self._list_layout = QVBoxLayout(self._list_widget)
@@ -494,7 +488,7 @@ class _SubsonicPlaylistRow(SettingRow):
             cb.setChecked(pid in checked_set)
             cb.setFont(QFont(FONT_FAMILY, Metrics.FONT_SM))
             cb.setStyleSheet(
-                f"QCheckBox {{ color: {Colors.TEXT_PRIMARY}; background: transparent; }}"
+                f"QCheckBox {{ color: {paint_css('text.primary')}; background: transparent; }}"
             )
             cb.toggled.connect(self._on_change)
             self._list_layout.insertWidget(self._list_layout.count() - 1, cb)
@@ -503,7 +497,7 @@ class _SubsonicPlaylistRow(SettingRow):
         if playlists:
             self.status_label.setText(f"{len(playlists)} playlist(s)")
             self.status_label.setStyleSheet(
-                f"color: {Colors.TEXT_SECONDARY}; background: transparent; border: none;"
+                f"color: {paint_css('text.secondary')}; background: transparent; border: none;"
             )
         else:
             self.status_label.setText("No playlists found")
@@ -512,7 +506,7 @@ class _SubsonicPlaylistRow(SettingRow):
     def set_error(self, message: str) -> None:
         self.status_label.setText(f"✕ {message}")
         self.status_label.setStyleSheet(
-            f"color: {Colors.DANGER}; background: transparent; border: none;"
+            f"color: {paint_css('status.danger.text')}; background: transparent; border: none;"
         )
         self.set_enabled(True)
 
